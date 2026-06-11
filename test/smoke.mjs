@@ -1,0 +1,58 @@
+// Smoke test: spawns the built server over stdio and exercises the non-emulator tools
+// against the real local toolchain. Run: npm run smoke
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import os from "node:os";
+import path from "node:path";
+
+const CLAIMSIGHT = path.join(os.homedir(), "AndroidStudioProjects/claimsight");
+const EXISTING_BUNDLE = path.join(CLAIMSIGHT, "editor-asset/build/spatial/bundle/editor-asset.bundle");
+// The project root is the directory CONTAINING the <Name>.spatialproject file
+const SCENE_PROJECT = path.join(CLAIMSIGHT, "editor-asset/src/main/res3d/SpatialPackContent");
+const OUT_BUNDLE = path.join(os.tmpdir(), "pico-mcp-smoke", "smoke.bundle");
+
+const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"] });
+const client = new Client({ name: "smoke", version: "0.0.0" });
+await client.connect(transport);
+
+let failures = 0;
+const show = (name, res) => {
+  const text = res.content
+    .map((c) => (c.type === "text" ? c.text : `[${c.type} ${c.data ? Math.round(c.data.length * 0.75) + " bytes" : ""}]`))
+    .join("\n");
+  const status = res.isError ? "FAIL" : "ok";
+  if (res.isError) failures++;
+  console.log(`\n=== ${name} [${status}] ===\n${text.slice(0, 2500)}`);
+};
+
+const tools = await client.listTools();
+console.log(`Tools registered (${tools.tools.length}):`, tools.tools.map((t) => t.name).join(", "));
+
+show("validate_toolchain", await client.callTool({ name: "validate_toolchain", arguments: {} }));
+show("emulator_list", await client.callTool({ name: "emulator_list", arguments: {} }));
+show("inspect_bundle (existing claimsight bundle)", await client.callTool({
+  name: "inspect_bundle",
+  arguments: { bundlePath: EXISTING_BUNDLE },
+}));
+show("pack_bundle (claimsight scenes -> /tmp)", await client.callTool({
+  name: "pack_bundle",
+  arguments: {
+    sceneDir: path.join(SCENE_PROJECT, "Sources", "Scenes"),
+    projectDir: SCENE_PROJECT,
+    output: OUT_BUNDLE,
+    forceBuild: true,
+  },
+}));
+show("inspect_bundle (freshly packed)", await client.callTool({
+  name: "inspect_bundle",
+  arguments: { bundlePath: OUT_BUNDLE },
+}));
+show("scene_schemas (first 1k chars)", await client.callTool({ name: "scene_schemas", arguments: {} }));
+show("xr_grpc_describe (proto introspection, no emulator needed)", await client.callTool({
+  name: "xr_grpc_describe",
+  arguments: {},
+}));
+
+await client.close();
+console.log(`\nSmoke test done. Failures: ${failures}`);
+process.exit(failures ? 1 : 0);
