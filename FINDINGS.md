@@ -137,6 +137,17 @@ The protos ship in the SDK; the server is proven to start. Unverified only becau
 
 ---
 
+## Appendix — implementation findings (v0.2 / v0.3, verified live 2026-06-11)
+
+Discovered while building and testing the server against the running emulator:
+
+1. **Headless editor build works** (`build_spatial_project`). `Spatial Editor --project=<f>.spatialproject --ide_noGraphics --ide_buildOutputDir=... --ide_resultCodeFile=...` builds a bundle with no GUI; result code `0`/`10000` = success, written as JSON `{"data":{"code":...}}`. Respects the editor's lock file (`<proj>/.CacheData/lock` holds a live PID). Verified producing `AgentDemo.bundle`.
+2. **ScenePreview on-device protocol reverse-engineered** (`preview_scene`). The editor's actual "preview on device" path is: install `ScenePreview.apk`, push the bundle to `/storage/emulated/0/Android/data/com.pico.spatial.editor.scenepreview/files/`, launch `.platform.LaunchActivity` with extras `--es sceneName <stem> --es previewConfig {} --ef cameraHeightOffset 0`, then signal load via **broadcast** `com.pico.spatial.editor.scenepreview.FILE_TRANSFER_COMPLETE` carrying `--es filePath <remote> --es sceneName <stem>`. Confirmed by recovering the command templates from the editor binary and the activity's `getStringExtra` calls from the ScenePreview dex; the app logs `Broadcast parsed values - filePath: ... sceneName: ...` and loads without a `LoadFromStorage` error. (Caveat: a scene of *primitive* USD shapes did not visibly render in the preview's default camera framing — mesh-based scenes from the editor are the normal input; this is a scene-content/camera matter, not a protocol one.)
+3. **`spatialbundle pack` succeeds without `--compress-textures`** despite the `[required]` help text (confirmed: help-text bug).
+4. **`.spatialproject` is a 2-line JSON** (`{"projectName","version"}`); the project dir also needs `Sources/Scenes/`, `Sources/Assets/`, `.Component/component.json`. The editor's new-scene template is an 11-line empty-Root USDA. `create_scene_project` reproduces this.
+5. **Controller key map** is ASCII-coded in `controller_settings.ini` (Q=81, Space=32, …); `input keyevent` needs `KEYCODE_*`. `controller_press`/`controller_map` translate. No 6DOF controller-pose path exists (consistent with §1.1).
+6. **gRPC `getStatus` exposes full VM/guest config** (CPU/RAM/hypervisor, API level) — a cheap health/identity probe used by `xr_grpc_status`.
+
 ## Sources
 
 **Local artifacts (primary, this machine):** `~/Library/PICO/sdk/0.13/{emulator,editor}` (binaries, protos, `NOTICE.csv`, `package.xml`, `ide_build.sh`, `spatialbundle --help` output); `~/.gradle/caches/.../com.pico.spatial.tools.gradle.plugin-0.13.1.jar` (decompiled); `~/Library/Application Support/Google/AndroidStudio2025.1.4/plugins/SpatialPlugin/`; `~/.pico/avd/PICO_0.13.avd/{config.ini,controller_settings.ini,emu-launch-params.txt}`; `/tmp/android-sushantsrikrish/qemu-log/*.log`; `~/AndroidStudioProjects/claimsight` (working end-to-end example).

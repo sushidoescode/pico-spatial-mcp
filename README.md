@@ -1,6 +1,8 @@
 # pico-spatial-mcp
 
-An MCP server that lets AI agents drive **PICO XR spatial development**: the PICO OS6 Emulator, adb automation, the `spatialbundle`/Gradle scene-compilation pipeline, and (experimentally) gRPC-based XR input injection — head pose, recenter, passthrough — discovered in [FINDINGS.md](FINDINGS.md).
+An MCP server that lets AI agents drive **PICO XR spatial development** end-to-end: author USDA scenes as text, compile them with the `spatialbundle`/Gradle pipeline, build & deploy APKs, drive the PICO OS6 Emulator (lifecycle, adb, snapshots), preview scenes via the editor's ScenePreview app, and observe/verify with screenshots, UI dumps, log-waits, and crash detection — plus an experimental gRPC XR layer (head pose, recenter, passthrough). Background research: [FINDINGS.md](FINDINGS.md).
+
+**42 tools** across observe/control, the full editor+build pipeline, and autonomous-loop orchestration (`iterate_scene`, `build_and_run`). A built-in prompt (`pico_spatial_dev_loop`) teaches an agent the whole workflow.
 
 > **Status: private / pre-release.** Do not make this repository public until the licensing review in `FINDINGS.md` §5 is completed (PICO SDK License Terms + NDA scope). This server **wraps the user's locally installed, license-accepted PICO toolchain** — it contains and redistributes no PICO software, and loads the emulator's gRPC `.proto` definitions from the local installation at runtime.
 
@@ -41,6 +43,15 @@ Or in any MCP client config:
 | `pack_bundle` / `inspect_bundle` | Headless USDA→`.bundle` compilation + bundle stats/manifest (`spatialbundle` CLI) |
 | `scene_schemas` | PICO's custom USD schemas (SpatialComponent/Audio/Timeline) for text-first scene authoring |
 | `gradle_build` / `gradle_tasks` | Full `./gradlew` builds — the `com.pico.spatial.tools` plugin packs scenes into the APK automatically |
+| `create_scene_project` / `build_spatial_project` | Scaffold a `.spatialproject` (editor structure); build it via the editor's own headless mode (`--ide_noGraphics`) for GUI parity |
+| `preview_scene` | Deploy a `.bundle` to the editor's ScenePreview app (push + `FILE_TRANSFER_COMPLETE` broadcast — the editor's real on-device-preview protocol) |
+| `iterate_scene` | **Orchestration:** pack → inspect → deploy-to-preview → screenshot in one call (the inner dev loop) |
+| `build_and_run` | **Orchestration:** Gradle build → install → launch → crash-check → screenshot (the full app loop) |
+| `snapshot_save` / `snapshot_load` / `snapshot_list` | Emulator VM snapshots — capture a known-good state, restore it before each test for determinism |
+| `ui_dump` | UI hierarchy as structured elements (text/id/bounds/center) — find elements by name instead of guessing coordinates (2D view layer) |
+| `wait_for_log` / `check_crash` | Block until a logcat pattern appears; scan for crashes/ANRs and process liveness |
+| `controller_map` / `controller_press` | PICO controller bindings (from the AVD's `controller_settings.ini`) and press-by-name (e.g. `RC_Trigger`) |
+| `screenrecord` | Record N seconds of the screen to mp4 (verify animation a screenshot can't) |
 | `xr_grpc_describe` / `xr_grpc_status` / `xr_screenshot` | **Experimental** gRPC control channel (protos loaded from your install) — verified working on emulator 0.13.1 |
 | `xr_set_head_pose` / `xr_recenter` / `xr_set_options` / `xr_send_key` | **Experimental** XR input: 6DOF head pose injection, recenter, passthrough/environment, controller keys |
 
@@ -48,7 +59,11 @@ Or in any MCP client config:
 
 ## Typical agent loop
 
-1. `validate_toolchain` → 2. edit USDA scene (plain text) → 3. `pack_bundle` → 4. `inspect_bundle` → 5. `gradle_build assembleDebug` → 6. `emulator_boot` → 7. `app_install` + `app_launch` → 8. `xr_set_head_pose` / `ui_input` → 9. `screencap` / `logcat` → iterate.
+Inner loop (fast, scene-only): `validate_toolchain` → edit USDA text → **`iterate_scene`** (pack+inspect+preview+screenshot) → adjust → repeat.
+
+Full app loop: `emulator_boot` → **`build_and_run`** (build+install+launch+crash-check+screenshot) → `controller_press` / `ui_dump`+`ui_input` → `check_crash` / `wait_for_log` → `snapshot_save` a good state for repeatable tests.
+
+Load the built-in `pico_spatial_dev_loop` prompt for full agent guidance.
 
 ## Testing
 

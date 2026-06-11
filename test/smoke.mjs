@@ -28,6 +28,17 @@ const show = (name, res) => {
 const tools = await client.listTools();
 console.log(`Tools registered (${tools.tools.length}):`, tools.tools.map((t) => t.name).join(", "));
 
+const EXPECTED = [
+  "validate_toolchain", "emulator_boot", "pack_bundle", "inspect_bundle", "scene_schemas",
+  "gradle_build", "xr_grpc_describe", "create_scene_project", "build_spatial_project",
+  "preview_scene", "snapshot_save", "ui_dump", "wait_for_log", "check_crash",
+  "controller_map", "controller_press", "screenrecord", "iterate_scene", "build_and_run",
+];
+const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n));
+if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }
+const prompts = await client.listPrompts().catch(() => ({ prompts: [] }));
+console.log("Prompts:", prompts.prompts.map((p) => p.name).join(", ") || "(none)");
+
 show("validate_toolchain", await client.callTool({ name: "validate_toolchain", arguments: {} }));
 show("emulator_list", await client.callTool({ name: "emulator_list", arguments: {} }));
 show("inspect_bundle (existing claimsight bundle)", await client.callTool({

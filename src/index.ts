@@ -9,10 +9,14 @@ import { registerEmulatorTools } from "./emulator.js";
 import { registerBundleTools } from "./bundle.js";
 import { registerGradleTools } from "./gradle.js";
 import { registerGrpcTools } from "./grpc.js";
+import { registerEditorTools } from "./editor.js";
+import { registerAgentLoopTools } from "./agentloop.js";
+import { registerWorkflowTools } from "./workflow.js";
+import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "0.1.0",
+  version: "0.3.0",
 });
 
 server.registerTool(
@@ -33,6 +37,10 @@ registerAdbTools(server);
 registerBundleTools(server);
 registerGradleTools(server);
 registerGrpcTools(server);
+registerEditorTools(server);
+registerAgentLoopTools(server);
+registerWorkflowTools(server);
+registerPrompts(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
