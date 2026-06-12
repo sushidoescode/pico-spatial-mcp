@@ -2,7 +2,9 @@
 
 An MCP server that lets AI agents drive **PICO XR spatial development** end-to-end: author USDA scenes as text, compile them with the `spatialbundle`/Gradle pipeline, build & deploy APKs, drive the PICO OS6 Emulator (lifecycle, adb, snapshots), preview scenes via the editor's ScenePreview app, and observe/verify with screenshots, UI dumps, log-waits, and crash detection — plus an experimental gRPC XR layer (head pose, recenter, passthrough). Background research: [FINDINGS.md](FINDINGS.md).
 
-**54 tools** across observe/control, the full editor+build pipeline, programmatic scene authoring (`compose_scene`, `import_asset`), autonomous-loop orchestration (`iterate_scene`, `verify_scene`, `build_and_run`), host-GUI capture/drive of the real 3D view (`gui_capture`, `gui_camera`), and a ClaimSight-style inspection-app builder (`compose_inspection_scene`, `import_environment`, `worldmodel_guide`). A built-in prompt (`pico_spatial_dev_loop`) teaches an agent the whole workflow.
+**55 tools** for driving the whole loop: observe/control, the editor+build pipeline, programmatic scene authoring, autonomous orchestration (`iterate_scene`, `verify_scene`, `build_and_run`), host-GUI capture of the real 3D view (`gui_capture`), a general new-project generator (`scaffold_spatial_app`), and an inspection-app builder with surface-stick markers + world-model environments (`compose_inspection_scene`, `import_environment`, `worldmodel_guide`). A built-in prompt (`pico_spatial_dev_loop`) teaches an agent the whole workflow; it is model-agnostic and runs with local open-weight models too ([docs/local-models.md](docs/local-models.md)).
+
+**v1.0 proves the full loop end-to-end on the emulator:** scaffold a new app → author a scene → build → install → render (verified) → load a world-model environment → place surface-stick damage markers at runtime (each oriented to its surface normal) → capture the real 3D view. Worked example: [docs/claimsight-native.md](docs/claimsight-native.md).
 
 ### Start any new spatial project: `scaffold_spatial_app`
 

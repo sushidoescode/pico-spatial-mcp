@@ -333,19 +333,23 @@ export function registerInspectionTools(server: McpServer) {
     },
     async () =>
       okJson({
-        why: "The PICO OS6 emulator has no passthrough cameras, so a ClaimSight inspection needs a virtual damaged-room environment as the backdrop (matches ClaimSight's own PLAN_PICO_EMULATOR/PLAN_VR_DEMO GLB-virtual-room approach).",
-        options: {
+        why: "The PICO OS6 emulator has no passthrough cameras, so a native spatial app shows an empty (white) Full stage unless you load an environment. A virtual damaged-room backdrop makes a ClaimSight inspection legible (matches ClaimSight's own PLAN_PICO_EMULATOR/PLAN_VR_DEMO GLB-virtual-room approach).",
+        howToLoad: "import_environment <file> into the project, then compose_inspection_scene environment={type:'glb'|'skybox', asset:'<file>'}. A GLB mesh becomes a referenced room; an equirectangular image becomes a skybox sphere. Rebuild with build_and_run. (Verified: loading Sky Sphere.usdz replaced the white background.)",
+        worldModels: {
           worldLabsMarble: {
-            generate: "Prompt Marble (text or a photo of a damaged room) at marble.worldlabs.ai to generate a 3D world.",
-            export: "Export as GLB mesh (~600k tris + textures) — best for the emulator. PLY Gaussian splats are higher fidelity but need a splat renderer (Spark.js); convert splat→mesh for native USD use.",
-            cost: "Free tier = 4 generations/month, VIEW-ONLY. GLB/PLY export requires a paid plan (Standard $20/mo and up).",
+            best: "Highest fidelity damaged-room worlds. Generate at marble.worldlabs.ai (text or a photo of a damaged room), export GLB mesh (~600k tris + PBR textures) for the emulator. PLY splats are higher fidelity but need a splat renderer (Spark.js).",
+            cost: "Free tier = 4 gens/month VIEW-ONLY; GLB/PLY export needs a paid plan. (User has credits.)",
+            promptForDamagedRoom:
+              "Interior of a residential living room with significant water and storm damage for an insurance inspection: large brown water stain spreading across a sagging drywall ceiling with bubbling paint, a dark mold bloom in the corner where wall meets ceiling, buckled and water-stained hardwood floor, a cracked plaster wall near an old electrical panel, peeling baseboards, dim overcast daylight through a partly boarded window, realistic, photogrammetry-style, empty of people, neutral furniture pushed aside.",
           },
-          scaniverse_polycam: "Free phone scan of a real damaged room → GLB/USDZ export → import_environment. ClaimSight already uses Scaniverse (SPZ/GLB) in PLAN_3DGS.",
-          skybox360: "A 360 equirectangular image of a damaged room used as a skybox sphere (the MyScene.usda Sky_Sphere pattern). Lower effort, no geometry.",
-          procedural: "compose_inspection_scene environment.type='procedural_room' — zero-dependency authored room shell with damage markers; use to prove the pipeline now and swap in a Marble GLB later.",
+          hunyuan3D: "OPEN SOURCE (Apache-2.0), runs LOCALLY on ~6GB VRAM — text/image-to-3D with PBR textures in seconds (hy-3d.net / Tencent Hunyuan3D). Best free+local option for individual props or a room shell; generate → export GLB → import_environment.",
+          text2Room_ctrlRoom: "Open-source research (Text2Room, Ctrl-Room) that extract a full textured 3D ROOM mesh from a text prompt — closest free analog to Marble for room-scale; heavier to run locally.",
+          blockadeSkyboxAI: "Blockade Labs Skybox AI — text→360° equirectangular panorama with a free tier; cheapest path to a damaged-room SKYBOX (no geometry). Export the PNG → import_environment (type:'skybox').",
+          meshyTripo: "Meshy / Tripo — text/image-to-3D with free-tier APIs; good for individual damaged-asset props (broken furniture, debris) to scatter in the scene.",
         },
-        recommendedForEmulator: "GLB mesh (Marble paid export or a free Scaniverse scan). Import with import_environment, then compose_inspection_scene environment={type:'glb', asset:'<file>.glb'}.",
-        automationBoundary: "This MCP automates IMPORT + scene composition + build + verify. World-model GENERATION is an external web step (no free public API for Marble export as of 2026-06).",
+        scaniverse_polycam: "Free phone scan of a real damaged room → GLB/USDZ export → import_environment. ClaimSight already uses Scaniverse (SPZ/GLB) in PLAN_3DGS.",
+        recommendedForEmulator: "Marble GLB (highest fidelity, user has credits) or Hunyuan3D locally (free). Import with import_environment, then compose_inspection_scene environment={type:'glb', asset:'<file>.glb'}.",
+        automationBoundary: "This MCP automates IMPORT + scene composition + build + verify + run. World-model GENERATION is an external step (web for Marble/Skybox AI; local for Hunyuan3D). Once you have a GLB/PNG, the MCP does the rest.",
       }),
   );
 }

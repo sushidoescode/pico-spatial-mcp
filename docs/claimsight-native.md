@@ -90,13 +90,26 @@ inspection loop:
 5. `Entity.loadSuspend("Pin", bundle)` instantiates a saturn-marker model at the hit
    point and `sceneRoot.addChild(pin)`.
 
-This validates the decompiled interaction recipe in
-[spatial-interaction-api.md](spatial-interaction-api.md) end-to-end (it compiles and the
-provider runs). **Triggering** it requires the right-trigger input: press the mapped key
-(`U` = RC_Trigger) in the focused emulator window, or grant Accessibility so the MCP can
-send it via `gui_camera`. On a real headset it's the physical trigger. Selection-to-open-
-card needs `InteractableComponent` (a hit-test marker; the SDK exposes no public select
-callback, so a controller-ray UI hit-test layer is the follow-on).
+**Verified end-to-end (v1.0):** the placement pipeline (`loadSuspend("Pin", bundle)` →
+`setQuaternion(quatYToNormal(normal))` → `addChild`) places runtime pins correctly —
+captured 4 live pins stuck to a wall, the ceiling, the floor, and a front panel, each
+oriented to its surface normal (ceiling pin hangs down, wall pin sideways, floor pin
+up). On a real headset the right trigger + controller ray drives `placeAt`; in the
+**emulator** there is no 6DOF controller pose, so `demoSeed()` exercises the same
+`placeAt` path against preset surfaces to prove the pipeline. Triggering by hand needs
+the right-trigger key (`U`) with the emulator's *Controller Button Mode* enabled.
+Selection-to-open-card needs a controller-ray UI hit-test layer (`InteractableComponent`
+makes entities hittable; the SDK exposes no public select callback) — the follow-on.
+
+## Environment (no more white background)
+
+A native Full stage is empty (white) until you load an environment. `import_environment`
++ `compose_inspection_scene environment={type:'glb'|'skybox', asset}` loads a GLB room or
+a skybox sphere — **verified** by loading `Sky Sphere.usdz`, which replaced the white
+background. For a photoreal damaged room, generate one with a world model (`worldmodel_guide`):
+**World Labs Marble** (GLB export, paid), **Hunyuan3D** (open-source, runs locally on
+~6GB VRAM, free), **Blockade Labs Skybox AI** (free-tier 360° panorama → skybox), or a
+free **Scaniverse/Polycam** phone scan — then `import_environment` and rebuild.
 
 ## Key gotchas (now handled by the MCP)
 
