@@ -109,8 +109,31 @@ function matBlock(name: string, rgb: [number, number, number], emissive: [number
   ].join("\n");
 }
 
+/** An unlit (emissive) image-textured material for a skybox — the 360 pano shows full-bright. */
+function skyboxMat(asset: string): string {
+  return [
+    `        def Material "Skybox"`,
+    "        {",
+    `            token outputs:mtlx:surface.connect = </Root/Materials/Skybox/Surf.outputs:out>`,
+    `            def Shader "Surf"`,
+    "            {",
+    `                uniform token info:id = "ND_UsdPreviewSurface_surfaceshader"`,
+    `                color3f inputs:diffuseColor = (0, 0, 0)`,
+    `                color3f inputs:emissiveColor.connect = </Root/Materials/Skybox/Tex.outputs:out>`,
+    `                token outputs:out`,
+    "            }",
+    `            def Shader "Tex"`,
+    "            {",
+    `                uniform token info:id = "ND_image_color3"`,
+    `                asset inputs:file = @../Assets/${asset}@`,
+    `                token outputs:out`,
+    "            }",
+    "        }",
+  ].join("\n");
+}
+
 /** The shared material library, referenced by absolute path </Root/Materials/Name>. */
-function materialsScope(): string {
+function materialsScope(skyboxAsset?: string): string {
   const mats: string[] = [];
   for (let s = 1; s <= 5; s++) {
     const c = SEVERITY_RGB[s];
@@ -122,6 +145,7 @@ function materialsScope(): string {
     const a = ROOM_AMBIENT[n] ?? 0;
     mats.push(matBlock(n, c, [c[0] * a, c[1] * a, c[2] * a]));
   }
+  if (skyboxAsset) mats.push(skyboxMat(skyboxAsset));
   return [`    def Scope "Materials"`, "    {", mats.join("\n"), "    }"].join("\n");
 }
 
@@ -239,7 +263,9 @@ export function registerInspectionTools(server: McpServer) {
         environment: z
           .object({
             type: z.enum(["procedural_room", "glb", "skybox"]).default("procedural_room"),
-            asset: z.string().optional().describe("For glb/skybox: filename under Sources/Assets (import_environment first)"),
+            asset: z.string().optional().describe("For glb: a TEXTURED mesh filename. For skybox: a 360 equirectangular IMAGE filename (under Sources/Assets; import_environment first)."),
+            skySphere: z.string().optional().describe("skybox only: the sky-sphere mesh whose texture is overridden (default 'Sky Sphere.usdz' — needs a sphere usdz with an editor-authored image material in Assets)"),
+            skyTextureNode: z.string().optional().describe("skybox only: prim path of the texture node inside the sky-sphere to override (default '_materials/Sky_Sphere_m/____________')"),
             width: z.number().default(6),
             height: z.number().default(3),
             depth: z.number().default(6),
@@ -259,8 +285,27 @@ export function registerInspectionTools(server: McpServer) {
 
       if (environment.type === "procedural_room") {
         blocks.push(roomShell(environment.width, environment.height, environment.depth));
+      } else if (environment.type === "skybox" && environment.asset) {
+        // 360 equirectangular image as a skybox. Hand-authored texture materials don't
+        // pack in this runtime, so we reference a working sky-sphere mesh (with an
+        // editor-authored Principled_BSDF image material) and OVERRIDE its texture node
+        // to the provided panorama — the proven pattern. The sky sphere surrounds the
+        // user everywhere (also fixes "falling out" of a finite room).
+        const skySphere = environment.skySphere ?? "Sky Sphere.usdz";
+        const matPath = environment.skyTextureNode ?? "_materials/Sky_Sphere_m/____________";
+        const segs = matPath.split("/");
+        let block = `    def "Sky_Sphere" (\n        prepend references = @../Assets/${skySphere}@\n    )\n    {\n`;
+        block += `        quatf xformOp:orient = (0.7071069, -0.70710665, 0, 0)\n`;
+        block += `        float3 xformOp:translate = (0, 0, 0)\n`;
+        block += `        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]\n`;
+        // nest `over` blocks down to the texture node and override its file
+        let indent = "        ";
+        segs.forEach((s, i) => { block += `${indent}over "${s}"\n${indent}{\n`; indent += "    "; if (i === segs.length - 1) block += `${indent}asset inputs:file = @../Assets/${environment.asset}@\n`; });
+        for (let i = 0; i < segs.length; i++) { indent = indent.slice(4); block += `${indent}}\n`; }
+        block += "    }";
+        blocks.push(block);
       } else if (environment.asset) {
-        // referenced environment mesh/skybox (Marble GLB export, Scaniverse splat-mesh, or a 360 skybox sphere)
+        // referenced environment mesh (Marble textured GLB export, Scaniverse mesh, usdz)
         blocks.push(
           [
             `    def "Environment" (`,

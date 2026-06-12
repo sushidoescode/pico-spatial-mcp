@@ -33,6 +33,34 @@ def Sphere "Dot" (prepend apiSchemas = ["MaterialBindingAPI"]) {
 follow the pattern. A small `emissiveColor` (~0.3× diffuse) makes geometry read brightly
 without depending on scene lighting (which the runtime may not apply to all geometry).
 
+## 1b. Skybox environments: override a working sky-sphere's texture
+
+Hand-authored image-texture materials **do not pack** in this runtime (the texture is
+dropped → black). To put a 360° equirectangular image (e.g. a World Labs Marble
+"panorama image" export) on the environment, **reference a sky-sphere mesh that already
+has an editor-authored image material and OVERRIDE its texture node's `inputs:file`**:
+
+```usda
+def "Sky_Sphere" (prepend references = @../Assets/Sky Sphere.usdz@) {
+    over "_materials" { over "Sky_Sphere_m" { over "____________" {
+        asset inputs:file = @../Assets/my_panorama.png@
+    } } }
+}
+```
+
+`compose_inspection_scene environment={type:'skybox', asset:'pano.png'}` does this. A
+skybox surrounds the user everywhere, so it **also fixes "falling out"** of a finite room
+(DESIGN.md §6). It has no near geometry, so aimed placement anchors at a fixed distance.
+
+## 1c. Aim with the HEAD pose, not the controller (in the emulator)
+
+The emulator provides **no 6DOF controller pose** (`ControllerTrackingProvider.latestData.right`
+is null) but DOES provide the **head pose** (`HMDTrackingProvider.latestData.hmdPose`,
+moved by WASD). For "place where I'm looking", cast the head's forward ray
+(`pose.rotation.rotateVector(Vector3.FORWARD)`) against the room AABB (a few plane
+intersections — no physics colliders needed) → hit point + inward normal. Works in the
+emulator and on a headset; on a real headset substitute the controller ray.
+
 ## 2. Referenced models must be TEXTURED meshes
 
 A referenced `.glb`/`.usdz` brings its own materials — but only if it HAS them. An
