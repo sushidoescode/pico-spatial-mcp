@@ -2,7 +2,15 @@
 
 An MCP server that lets AI agents drive **PICO XR spatial development** end-to-end: author USDA scenes as text, compile them with the `spatialbundle`/Gradle pipeline, build & deploy APKs, drive the PICO OS6 Emulator (lifecycle, adb, snapshots), preview scenes via the editor's ScenePreview app, and observe/verify with screenshots, UI dumps, log-waits, and crash detection — plus an experimental gRPC XR layer (head pose, recenter, passthrough). Background research: [FINDINGS.md](FINDINGS.md).
 
-**47 tools** across observe/control, the full editor+build pipeline, programmatic scene authoring (`compose_scene`, `import_asset`), and autonomous-loop orchestration (`iterate_scene`, `verify_scene`, `build_and_run`). A built-in prompt (`pico_spatial_dev_loop`) teaches an agent the whole workflow.
+**54 tools** across observe/control, the full editor+build pipeline, programmatic scene authoring (`compose_scene`, `import_asset`), autonomous-loop orchestration (`iterate_scene`, `verify_scene`, `build_and_run`), host-GUI capture/drive of the real 3D view (`gui_capture`, `gui_camera`), and a ClaimSight-style inspection-app builder (`compose_inspection_scene`, `import_environment`, `worldmodel_guide`). A built-in prompt (`pico_spatial_dev_loop`) teaches an agent the whole workflow.
+
+### Building a real app: ClaimSight inspection scenes + world-model environments
+
+`compose_inspection_scene` assembles a legit insurance-inspection spatial app — a damaged-room environment (procedural, or a referenced GLB/splat room from a world model), severity-colored damage markers pinned in 3D using ClaimSight's canonical 5-tier palette (green→purple) and real damage taxonomy (water/electrical/structural/wind/hail/mold/…), and an info panel. Environments can come from **World Labs Marble** (text/photo→3D world; free tier 4 gens/mo, GLB/PLY export needs a paid plan) or a free Scaniverse/Polycam scan — `import_environment` brings the GLB/skybox in, `worldmodel_guide` documents the full workflow.
+
+### Seeing the 3D result
+
+`gui_capture` (macOS) screenshots the emulator's **real host-composited 3D window** — the only way to see immersive 3D (display-0 screenshots can't). Needs one-time Screen Recording permission. To *navigate* the camera to framed scene content, `gui_camera` drives WASD camera mode (needs Accessibility permission); ScenePreview renders a scene as a ~2.5m "stage" diorama that spawns off the default view, so you navigate to it or grant Accessibility. Geometry correctness is always verifiable headlessly via `verify_scene`.
 
 ### Verifying spatial content (important)
 

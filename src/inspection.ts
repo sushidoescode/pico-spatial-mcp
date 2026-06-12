@@ -1,0 +1,295 @@
+import fs from "node:fs";
+import path from "node:path";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { expandHome, fail, ok, okJson } from "./util.js";
+
+/**
+ * ClaimSight-style spatial inspection scenes. A higher-level builder on top of
+ * the USDA grammar that assembles a legit-looking insurance-inspection app:
+ * a damaged-room environment, severity-colored damage markers pinned in 3D
+ * (canonical ClaimSight 5-tier palette + real IICRC/Haag damage taxonomy), and
+ * an info panel. The environment can be procedural (authored here, zero deps)
+ * or a referenced GLB/splat room (e.g. a World Labs Marble export) for photoreal.
+ */
+
+// Canonical ClaimSight severity palette (src/utils/constants.js).
+const SEVERITY_RGB: Record<number, [number, number, number]> = {
+  1: hexToRgb("#22c55e"), // minor — green
+  2: hexToRgb("#eab308"), // moderate — yellow
+  3: hexToRgb("#f97316"), // significant — orange
+  4: hexToRgb("#ef4444"), // severe — red
+  5: hexToRgb("#a855f7"), // critical — purple
+};
+const ACCENT_RGB = hexToRgb("#3b82f6");
+const SEVERITY_LABEL: Record<number, string> = { 1: "minor", 2: "moderate", 3: "significant", 4: "severe", 5: "critical" };
+
+// Real damage taxonomy (INSURANCE_DOMAIN_CONTEXT.md / IICRC / Haag).
+const DAMAGE_TYPES = ["water", "electrical", "structural", "wind", "hail", "mold", "smoke", "fire", "impact", "plumbing"] as const;
+
+function hexToRgb(hex: string): [number, number, number] {
+  const m = hex.replace("#", "");
+  const lin = (c: number) => +(c / 255).toFixed(4);
+  return [lin(parseInt(m.slice(0, 2), 16)), lin(parseInt(m.slice(2, 4), 16)), lin(parseInt(m.slice(4, 6), 16))];
+}
+function rgbStr(c: [number, number, number]): string {
+  return `(${c[0]}, ${c[1]}, ${c[2]})`;
+}
+
+const damageSchema = z.object({
+  name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+  type: z.enum(DAMAGE_TYPES),
+  severity: z.number().int().min(1).max(5),
+  location: z.tuple([z.number(), z.number(), z.number()]).describe("[x,y,z] world position of the damage, meters"),
+  note: z.string().optional().describe("Adjuster note (stored as USD documentation)"),
+  pinToFloor: z.boolean().default(true).describe("Draw a thin stem from y=0 up to the marker (the floating-pin look)"),
+});
+type Damage = z.infer<typeof damageSchema>;
+
+// ---- procedural room shell ----
+function roomShell(w: number, h: number, d: number): string {
+  const wallColor = rgbStr([0.82, 0.8, 0.76]);
+  const floorColor = rgbStr([0.34, 0.28, 0.22]);
+  const ceilColor = rgbStr([0.88, 0.88, 0.86]);
+  const hw = w / 2, hd = d / 2;
+  const slab = (name: string, sx: number, sy: number, sz: number, tx: number, ty: number, tz: number, color: string) =>
+    [
+      `    def Cube "${name}"`,
+      "    {",
+      "        double size = 1",
+      `        color3f[] primvars:displayColor = [${color}]`,
+      `        float3 xformOp:scale = (${sx}, ${sy}, ${sz})`,
+      `        float3 xformOp:translate = (${tx}, ${ty}, ${tz})`,
+      '        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]',
+      "    }",
+    ].join("\n");
+  const t = 0.08;
+  return [
+    `    def Xform "Room"`,
+    "    {",
+    slab("Floor", w, t, d, 0, 0, 0, floorColor),
+    slab("Ceiling", w, t, d, 0, h, 0, ceilColor),
+    slab("WallBack", w, h, t, 0, h / 2, -hd, wallColor),
+    slab("WallFront", w, h, t, 0, h / 2, hd, wallColor),
+    slab("WallLeft", t, h, d, -hw, h / 2, 0, wallColor),
+    slab("WallRight", t, h, d, hw, h / 2, 0, wallColor),
+    "    }",
+  ].join("\n");
+}
+
+function damageMarker(dmg: Damage): string {
+  const color = SEVERITY_RGB[dmg.severity];
+  const [x, y, z] = dmg.location;
+  const r = 0.08 + dmg.severity * 0.015; // bigger = more severe
+  const parts: string[] = [];
+  parts.push(`    def Xform "${dmg.name}" (`);
+  parts.push(`        customData = { string damageType = "${dmg.type}"; int severity = ${dmg.severity}; string severityLabel = "${SEVERITY_LABEL[dmg.severity]}"${dmg.note ? `; string note = "${dmg.note.replace(/"/g, "'")}"` : ""} }`);
+  parts.push("    )");
+  parts.push("    {");
+  if (dmg.pinToFloor && y > 0.05) {
+    parts.push(`        def Cylinder "Stem"`);
+    parts.push("        {");
+    parts.push("            double radius = 0.006");
+    parts.push(`            double height = ${y.toFixed(3)}`);
+    parts.push(`            color3f[] primvars:displayColor = [${rgbStr(color)}]`);
+    parts.push(`            float3 xformOp:translate = (${x}, ${(y / 2).toFixed(3)}, ${z})`);
+    parts.push('            uniform token[] xformOpOrder = ["xformOp:translate"]');
+    parts.push("        }");
+  }
+  parts.push(`        def Sphere "Marker"`);
+  parts.push("        {");
+  parts.push(`            double radius = ${r.toFixed(3)}`);
+  parts.push(`            color3f[] primvars:displayColor = [${rgbStr(color)}]`);
+  parts.push(`            float3 xformOp:translate = (${x}, ${y}, ${z})`);
+  parts.push('            uniform token[] xformOpOrder = ["xformOp:translate"]');
+  parts.push("        }");
+  parts.push("    }");
+  return parts.join("\n");
+}
+
+function infoPanel(title: string, pos: [number, number, number]): string {
+  return [
+    `    def Xform "InfoPanel" (`,
+    `        customData = { string title = "${title.replace(/"/g, "'")}" }`,
+    "    )",
+    "    {",
+    `        def Cube "PanelBack"`,
+    "        {",
+    "            double size = 1",
+    `            color3f[] primvars:displayColor = [${rgbStr([0.06, 0.09, 0.16])}]`,
+    `            float3 xformOp:scale = (0.9, 0.55, 0.02)`,
+    `            float3 xformOp:translate = (${pos.join(", ")})`,
+    '            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]',
+    "        }",
+    `        def Cube "PanelAccent"`,
+    "        {",
+    "            double size = 1",
+    `            color3f[] primvars:displayColor = [${rgbStr(ACCENT_RGB)}]`,
+    `            float3 xformOp:scale = (0.9, 0.04, 0.025)`,
+    `            float3 xformOp:translate = (${pos[0]}, ${(pos[1] + 0.27).toFixed(3)}, ${pos[2]})`,
+    '            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]',
+    "        }",
+    "    }",
+  ].join("\n");
+}
+
+export function registerInspectionTools(server: McpServer) {
+  server.registerTool(
+    "compose_inspection_scene",
+    {
+      description:
+        "Build a complete ClaimSight-style spatial inspection scene: an environment (procedural damaged room, or a referenced GLB/splat room from e.g. World Labs Marble), severity-colored damage markers pinned in 3D using the canonical ClaimSight 5-tier palette (1 green→5 purple) and real damage taxonomy (water/electrical/structural/wind/hail/mold/smoke/fire/impact/plumbing), and an info panel. Writes renderable USDA; pack with verify_scene/iterate_scene. Markers carry damageType/severity as USD customData.",
+      inputSchema: {
+        outPath: z.string().describe("Output .usda (e.g. <project>/Sources/Scenes/Inspection.usda)"),
+        environment: z
+          .object({
+            type: z.enum(["procedural_room", "glb", "skybox"]).default("procedural_room"),
+            asset: z.string().optional().describe("For glb/skybox: filename under Sources/Assets (import_environment first)"),
+            width: z.number().default(6),
+            height: z.number().default(3),
+            depth: z.number().default(6),
+          })
+          .default({ type: "procedural_room", width: 6, height: 3, depth: 6 }),
+        damages: z.array(damageSchema).min(1),
+        panel: z
+          .object({ title: z.string().default("ClaimSight — Inspection Log"), position: z.tuple([z.number(), z.number(), z.number()]).default([1.6, 1.4, -1.5]) })
+          .optional(),
+        ibl: z.string().optional().describe("Optional .exr/.hdr IBL filename under Sources/Assets"),
+      },
+    },
+    async ({ outPath, environment, damages, panel, ibl }) => {
+      const out = expandHome(outPath);
+      const blocks: string[] = [];
+
+      if (environment.type === "procedural_room") {
+        blocks.push(roomShell(environment.width, environment.height, environment.depth));
+      } else if (environment.asset) {
+        // referenced environment mesh/skybox (Marble GLB export, Scaniverse splat-mesh, or a 360 skybox sphere)
+        blocks.push(
+          [
+            `    def "Environment" (`,
+            `        prepend references = @../Assets/${environment.asset}@`,
+            "    )",
+            "    {",
+            "        float3 xformOp:translate = (0, 0, 0)",
+            '        uniform token[] xformOpOrder = ["xformOp:translate"]',
+            "    }",
+          ].join("\n"),
+        );
+      } else {
+        return fail(`environment.type=${environment.type} requires environment.asset (import_environment first)`);
+      }
+
+      blocks.push(`    def Xform "DamageMarkers"\n    {\n${damages.map(damageMarker).map((b) => b.replace(/^    /gm, "        ")).join("\n")}\n    }`);
+      if (panel !== undefined) blocks.push(infoPanel(panel.title ?? "ClaimSight — Inspection Log", panel.position ?? [1.6, 1.4, -1.5]));
+
+      const iblBlock = ibl
+        ? [
+            "",
+            '    def Xform "EnvironmentLighting"',
+            "    {",
+            '        def SpatialComponent "StageEnvironmentLightingComponent"',
+            "        {",
+            '            uniform token info:id = "StageEnvironmentLightingComponent"',
+            '            token mMode = "SINGLE"',
+            '            def SpatialStruct "mIblTextureOne"',
+            "            {",
+            "                bool generateMipmap = 1",
+            '                token maxSize = "MAXSIZE_256"',
+            '                token mipmapMode = "ENV_LIGHTING"',
+            '                token textureFormat = "R11F_G11F_B10F"',
+            `                asset texturePath = @../Assets/${ibl}@`,
+            '                token textureShape = "TEXTURE_CUBEMAP"',
+            "            }",
+            "        }",
+            "    }",
+          ].join("\n")
+        : "";
+
+      const usda =
+        [
+          "#usda 1.0",
+          "(",
+          '    defaultPrim = "Root"',
+          '    customLayerData = { string generator = "pico-spatial-mcp / ClaimSight" }',
+          "    metersPerUnit = 1",
+          '    upAxis = "Y"',
+          ")",
+          "",
+          'def Xform "Root"',
+          "{",
+          "    float3 xformOp:translate = (0, 0, 0)",
+          '    uniform token[] xformOpOrder = ["xformOp:translate"]',
+          "",
+        ].join("\n") +
+        blocks.join("\n\n") +
+        iblBlock +
+        "\n}\n";
+
+      fs.mkdirSync(path.dirname(out), { recursive: true });
+      fs.writeFileSync(out, usda);
+      const sevCounts = damages.reduce((a, d) => ((a[d.severity] = (a[d.severity] || 0) + 1), a), {} as Record<number, number>);
+      return ok(
+        `Wrote ClaimSight inspection scene: ${out}\n` +
+          `Environment: ${environment.type}${environment.asset ? ` (${environment.asset})` : ""}; damages: ${damages.length} (by severity ${JSON.stringify(sevCounts)}); panel: ${panel ? "yes" : "no"}; ${usda.split("\n").length} lines.\n` +
+          `Next: verify_scene (geometry check) then iterate_scene / build APK, then gui_capture to view the 3D result.`,
+      );
+    },
+  );
+
+  server.registerTool(
+    "import_environment",
+    {
+      description:
+        "Import a room ENVIRONMENT into a project for use as an inspection backdrop: a GLB/USDZ mesh (e.g. a World Labs Marble mesh export, or a Scaniverse/Polycam scan), or a 360 skybox image. Copies it into Sources/Assets and returns the filename to pass as compose_inspection_scene environment.asset. NOTE: world-model GENERATION (Marble) is external — see worldmodel_guide; this automates the IMPORT + composition side.",
+      inputSchema: {
+        sourcePath: z.string().describe("Absolute path to the .glb/.usdz/.usd/.png/.jpg/.exr environment file"),
+        projectDir: z.string(),
+        rename: z.string().optional(),
+      },
+    },
+    async ({ sourcePath, projectDir, rename }) => {
+      const src = expandHome(sourcePath);
+      if (!fs.existsSync(src)) return fail(`No such file: ${src}`);
+      const ext = path.extname(src).toLowerCase();
+      const allowed = [".glb", ".gltf", ".usdz", ".usd", ".usda", ".usdc", ".ply", ".png", ".jpg", ".jpeg", ".exr", ".hdr"];
+      if (!allowed.includes(ext)) return fail(`Unsupported environment type '${ext}'. Allowed: ${allowed.join(", ")}`);
+      const assetsDir = path.join(expandHome(projectDir), "Sources", "Assets");
+      fs.mkdirSync(assetsDir, { recursive: true });
+      const fname = rename ?? path.basename(src);
+      fs.copyFileSync(src, path.join(assetsDir, fname));
+      const kind = [".png", ".jpg", ".jpeg", ".exr", ".hdr"].includes(ext) ? "skybox" : ext === ".ply" ? "splat (convert to mesh for emulator)" : "glb";
+      return okJson({
+        imported: fname,
+        sizeMB: Number((fs.statSync(path.join(assetsDir, fname)).size / 1024 / 1024).toFixed(2)),
+        environmentType: kind,
+        useAs: `compose_inspection_scene environment={ "type": "${kind === "skybox" ? "skybox" : "glb"}", "asset": "${fname}" }`,
+      });
+    },
+  );
+
+  server.registerTool(
+    "worldmodel_guide",
+    {
+      description:
+        "Explain how to generate a damaged-room environment with a world model (World Labs Marble or alternatives) and bring it into a ClaimSight spatial scene. Returns the concrete workflow, free-vs-paid constraints, and the recommended format for the PICO emulator.",
+      inputSchema: {},
+    },
+    async () =>
+      okJson({
+        why: "The PICO OS6 emulator has no passthrough cameras, so a ClaimSight inspection needs a virtual damaged-room environment as the backdrop (matches ClaimSight's own PLAN_PICO_EMULATOR/PLAN_VR_DEMO GLB-virtual-room approach).",
+        options: {
+          worldLabsMarble: {
+            generate: "Prompt Marble (text or a photo of a damaged room) at marble.worldlabs.ai to generate a 3D world.",
+            export: "Export as GLB mesh (~600k tris + textures) — best for the emulator. PLY Gaussian splats are higher fidelity but need a splat renderer (Spark.js); convert splat→mesh for native USD use.",
+            cost: "Free tier = 4 generations/month, VIEW-ONLY. GLB/PLY export requires a paid plan (Standard $20/mo and up).",
+          },
+          scaniverse_polycam: "Free phone scan of a real damaged room → GLB/USDZ export → import_environment. ClaimSight already uses Scaniverse (SPZ/GLB) in PLAN_3DGS.",
+          skybox360: "A 360 equirectangular image of a damaged room used as a skybox sphere (the MyScene.usda Sky_Sphere pattern). Lower effort, no geometry.",
+          procedural: "compose_inspection_scene environment.type='procedural_room' — zero-dependency authored room shell with damage markers; use to prove the pipeline now and swap in a Marble GLB later.",
+        },
+        recommendedForEmulator: "GLB mesh (Marble paid export or a free Scaniverse scan). Import with import_environment, then compose_inspection_scene environment={type:'glb', asset:'<file>.glb'}.",
+        automationBoundary: "This MCP automates IMPORT + scene composition + build + verify. World-model GENERATION is an external web step (no free public API for Marble export as of 2026-06).",
+      }),
+  );
+}

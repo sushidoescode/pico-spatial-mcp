@@ -13,11 +13,13 @@ import { registerEditorTools } from "./editor.js";
 import { registerAgentLoopTools } from "./agentloop.js";
 import { registerWorkflowTools } from "./workflow.js";
 import { registerSceneTools } from "./scene.js";
+import { registerHostGuiTools } from "./hostgui.js";
+import { registerInspectionTools } from "./inspection.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "0.5.0",
+  version: "0.6.0",
 });
 
 server.registerTool(
@@ -42,6 +44,8 @@ registerEditorTools(server);
 registerAgentLoopTools(server);
 registerWorkflowTools(server);
 registerSceneTools(server);
+registerHostGuiTools(server);
+registerInspectionTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

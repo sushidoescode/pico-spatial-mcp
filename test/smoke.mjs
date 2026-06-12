@@ -34,6 +34,8 @@ const EXPECTED = [
   "preview_scene", "snapshot_save", "ui_dump", "wait_for_log", "check_crash",
   "controller_map", "controller_press", "screenrecord", "iterate_scene", "build_and_run",
   "compose_scene", "add_entity", "import_asset", "verify_scene", "xr_input_status",
+  "gui_find_window", "gui_capture", "gui_camera", "gui_permissions",
+  "compose_inspection_scene", "import_environment", "worldmodel_guide",
 ];
 const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n));
 if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }
