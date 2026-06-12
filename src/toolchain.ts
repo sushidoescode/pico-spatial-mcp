@@ -95,6 +95,38 @@ export function emulatorLibDir(root: string, version: string): string {
   return path.join(root, version, "emulator", "lib");
 }
 
+/**
+ * Locate a JDK for Gradle. Order: $JAVA_HOME, Android Studio's bundled JBR
+ * (the JDK Android devs already have), then /usr/libexec/java_home (macOS).
+ * Gradle builds fail with "Unable to locate a Java Runtime" without this.
+ */
+let cachedJavaHome: string | null | undefined;
+export function detectJavaHome(): string | null {
+  if (cachedJavaHome !== undefined) return cachedJavaHome;
+  const isJdk = (home: string) => {
+    try {
+      fs.accessSync(path.join(home, "bin", "java"), fs.constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (process.env.JAVA_HOME && isJdk(process.env.JAVA_HOME)) return (cachedJavaHome = process.env.JAVA_HOME);
+  const candidates = [
+    "/Applications/Android Studio.app/Contents/jbr/Contents/Home",
+    "/Applications/Android Studio Preview.app/Contents/jbr/Contents/Home",
+    expandHome("~/Applications/Android Studio.app/Contents/jbr/Contents/Home"),
+  ];
+  for (const c of candidates) if (isJdk(c)) return (cachedJavaHome = c);
+  return (cachedJavaHome = null);
+}
+
+/** Env for Gradle invocations — injects a detected JAVA_HOME when the host has none on PATH. */
+export function gradleEnv(): Record<string, string | undefined> {
+  const jh = detectJavaHome();
+  return jh ? { JAVA_HOME: jh } : {};
+}
+
 /** Locate adb: PATH first, then the platform-tools bundled with the emulator payload. */
 export async function findAdb(root?: string, version?: string): Promise<string | null> {
   const which = await run("which", ["adb"], { timeoutMs: 5_000 });
@@ -114,6 +146,7 @@ export interface ToolchainReport {
   spatialbundleVersion: string | null;
   emulatorVersion: string | null;
   adb: string | null;
+  javaHome: string | null;
   avdHome: string;
   avds: string[];
   licenseAccepted: boolean;
@@ -149,6 +182,9 @@ export async function validateToolchain(projectDir?: string, requestedVersion?: 
   const adb = await findAdb(root, sel?.version);
   if (!adb) problems.push("adb not found on PATH or in bundled platform-tools");
 
+  const javaHome = detectJavaHome();
+  if (!javaHome) problems.push("No JDK found (set JAVA_HOME or install Android Studio) — Gradle APK builds will fail");
+
   const avds = fs.existsSync(AVD_HOME)
     ? fs.readdirSync(AVD_HOME).filter((f) => f.endsWith(".ini")).map((f) => f.replace(/\.ini$/, ""))
     : [];
@@ -168,6 +204,7 @@ export async function validateToolchain(projectDir?: string, requestedVersion?: 
     spatialbundleVersion: sbVersion,
     emulatorVersion: emuVersion,
     adb,
+    javaHome,
     avdHome: AVD_HOME,
     avds,
     licenseAccepted,

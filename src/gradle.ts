@@ -3,6 +3,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { expandHome, fail, ok, run, tail } from "./util.js";
+import { gradleEnv } from "./toolchain.js";
 
 function findArtifacts(projectDir: string, exts: string[], maxDepth = 8): string[] {
   const found: string[] = [];
@@ -50,6 +51,7 @@ export function registerGradleTools(server: McpServer) {
       const r = await run(gradlew, [task, "--console=plain", ...extraArgs], {
         cwd: dir,
         timeoutMs: timeoutSec * 1000,
+        env: gradleEnv(),
       });
       const combined = (r.stdout + "\n" + r.stderr).trim();
       const artifacts = findArtifacts(dir, [".apk", ".bundle"]).map((p) => ({
@@ -77,7 +79,7 @@ export function registerGradleTools(server: McpServer) {
       const dir = expandHome(projectDir);
       const gradlew = path.join(dir, "gradlew");
       if (!fs.existsSync(gradlew)) return fail(`No gradlew at ${gradlew}`);
-      const r = await run(gradlew, ["tasks", "--all", "--console=plain"], { cwd: dir, timeoutMs: 300_000 });
+      const r = await run(gradlew, ["tasks", "--all", "--console=plain"], { cwd: dir, timeoutMs: 300_000, env: gradleEnv() });
       if (r.code !== 0) return fail(tail(r.stdout + r.stderr, 60));
       const lines = r.stdout.split("\n").filter((l) => /spatial|assemble|install.*Debug|bundle/i.test(l));
       return ok(lines.join("\n") || "(no matching tasks)");

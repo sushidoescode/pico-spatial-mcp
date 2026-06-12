@@ -4,7 +4,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { expandHome, fail, image, ok, okJson, run, runBinary, sleep, tail } from "./util.js";
-import { pickVersion, resolveToolsRoot } from "./toolchain.js";
+import { gradleEnv, pickVersion, resolveToolsRoot } from "./toolchain.js";
 import { adb, adbPath, resolveSerial } from "./adb.js";
 
 /**
@@ -151,7 +151,7 @@ export function registerWorkflowTools(server: McpServer) {
       if (!fs.existsSync(gradlew)) return fail(`No gradlew at ${gradlew}`);
       const report: any = { steps: [] };
 
-      const build = await run(gradlew, [task, "--console=plain"], { cwd: dir, timeoutMs: 1_800_000 });
+      const build = await run(gradlew, [task, "--console=plain"], { cwd: dir, timeoutMs: 1_800_000, env: gradleEnv() });
       if (build.code !== 0) return fail(`Gradle '${task}' failed:\n${tail(build.stdout + build.stderr, 60)}`);
 
       // newest apk under build/
@@ -175,17 +175,32 @@ export function registerWorkflowTools(server: McpServer) {
       if (!/Success/i.test(inst.stdout + inst.stderr)) return fail(`Install failed: ${(inst.stdout + inst.stderr).trim()}`);
       report.steps.push({ install: "ok" });
 
+      // Clean relaunch + clear log so the render check sees a fresh frame.
+      await adb(["-s", s, "shell", "am", "force-stop", packageName]);
+      await sleep(1000);
+      await adb(["-s", s, "logcat", "-c"]).catch(() => {});
+
       const launch = activity
         ? await adb(["-s", s, "shell", "am", "start", "-n", `${packageName}/${activity}`])
         : await adb(["-s", s, "shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"]);
       if (/Error|No activities found/i.test(launch.stdout + launch.stderr)) return fail(`Launch failed: ${(launch.stdout + launch.stderr).trim()}`);
       report.steps.push({ launch: "ok" });
-      await sleep(settleSec * 1000);
 
-      const crash = (await adb(["-s", s, "logcat", "-d", "-t", "400"])).stdout
-        .split("\n")
-        .filter((l) => /FATAL EXCEPTION|ANR in|E AndroidRuntime/.test(l) && l.includes(packageName));
-      report.steps.push({ health: crash.length ? "CRASHED" : "ok", crashes: crash.slice(-4) });
+      // Poll for the first-frame marker during settle (it scrolls out of a tail grab fast).
+      let rendered = false;
+      let crash: string[] = [];
+      const deadline = Date.now() + settleSec * 1000;
+      while (Date.now() < deadline) {
+        await sleep(1500);
+        const lines = (await adb(["-s", s, "logcat", "-d"])).stdout.split("\n");
+        crash = lines.filter((l) => /FATAL EXCEPTION|ANR in|E AndroidRuntime/.test(l) && l.includes(packageName));
+        if (crash.length) break;
+        if (lines.some((l) => (/FirstFrameRelease\(Displayed\)/.test(l) && l.includes(packageName)) || /SpatialView.*RenderEntity.*create texture success/.test(l))) {
+          rendered = true;
+          break;
+        }
+      }
+      report.steps.push({ health: crash.length ? "CRASHED" : "ok", rendered, crashes: crash.slice(-4) });
 
       const shot = await runBinary(await adbPath(), ["-s", s, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
       if (shot.code === 0 && shot.stdout.length > 8) {

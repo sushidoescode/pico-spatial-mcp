@@ -4,6 +4,10 @@ An MCP server that lets AI agents drive **PICO XR spatial development** end-to-e
 
 **54 tools** across observe/control, the full editor+build pipeline, programmatic scene authoring (`compose_scene`, `import_asset`), autonomous-loop orchestration (`iterate_scene`, `verify_scene`, `build_and_run`), host-GUI capture/drive of the real 3D view (`gui_capture`, `gui_camera`), and a ClaimSight-style inspection-app builder (`compose_inspection_scene`, `import_environment`, `worldmodel_guide`). A built-in prompt (`pico_spatial_dev_loop`) teaches an agent the whole workflow.
 
+### Shipping a real APK (god-level build experience)
+
+The MCP builds, installs, and runs **real native spatial-app APKs**, not just scene previews. `build_and_run` auto-detects a JDK (Android Studio's bundled JBR — no `java` on PATH needed), builds via Gradle, installs, clean-relaunches, and **verifies a frame actually rendered** (`FirstFrameRelease`) before screenshotting. A worked end-to-end example — turning ClaimSight into a native Full-immersion APK that renders its inspection UI on the emulator — is in [docs/claimsight-native.md](docs/claimsight-native.md).
+
 ### Building a real app: ClaimSight inspection scenes + world-model environments
 
 `compose_inspection_scene` assembles a legit insurance-inspection spatial app — a damaged-room environment (procedural, or a referenced GLB/splat room from a world model), severity-colored damage markers pinned in 3D using ClaimSight's canonical 5-tier palette (green→purple) and real damage taxonomy (water/electrical/structural/wind/hail/mold/…), and an info panel. Environments can come from **World Labs Marble** (text/photo→3D world; free tier 4 gens/mo, GLB/PLY export needs a paid plan) or a free Scaniverse/Polycam scan — `import_environment` brings the GLB/skybox in, `worldmodel_guide` documents the full workflow.
