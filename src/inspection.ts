@@ -79,14 +79,17 @@ function quatYToNormal(n: [number, number, number]): [number, number, number, nu
 // ---- materials (UsdPreviewSurface via MaterialX, the editor's own pattern) ----
 // displayColor renders as a white UNLIT material in the PICO runtime; real colors
 // require a bound Material with a ND_UsdPreviewSurface_surfaceshader shader.
+// Room materials carry a low emissive term so the room reads bright without depending
+// on scene lighting (which the runtime may not apply to referenced/procedural geometry).
 const ROOM_MATS: Record<string, [number, number, number]> = {
-  Wall: [0.82, 0.8, 0.76],
-  Floor: [0.34, 0.28, 0.22],
-  Ceiling: [0.88, 0.88, 0.86],
+  Wall: [0.86, 0.84, 0.8],
+  Floor: [0.4, 0.33, 0.27],
+  Ceiling: [0.9, 0.9, 0.88],
   Slate: [0.62, 0.65, 0.7],
   PanelBg: [0.06, 0.09, 0.16],
   Accent: ACCENT_RGB,
 };
+const ROOM_AMBIENT: Record<string, number> = { Wall: 0.35, Floor: 0.28, Ceiling: 0.38 };
 
 function matBlock(name: string, rgb: [number, number, number], emissive: [number, number, number] = [0, 0, 0]): string {
   return [
@@ -115,7 +118,10 @@ function materialsScope(): string {
     const core: [number, number, number] = [Math.min(1, c[0] + 0.4), Math.min(1, c[1] + 0.4), Math.min(1, c[2] + 0.4)];
     mats.push(matBlock(`Core${s}`, core, core)); // glowing core (emissive)
   }
-  for (const [n, c] of Object.entries(ROOM_MATS)) mats.push(matBlock(n, c));
+  for (const [n, c] of Object.entries(ROOM_MATS)) {
+    const a = ROOM_AMBIENT[n] ?? 0;
+    mats.push(matBlock(n, c, [c[0] * a, c[1] * a, c[2] * a]));
+  }
   return [`    def Scope "Materials"`, "    {", mats.join("\n"), "    }"].join("\n");
 }
 
