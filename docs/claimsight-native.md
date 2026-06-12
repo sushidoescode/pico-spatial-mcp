@@ -111,6 +111,29 @@ background. For a photoreal damaged room, generate one with a world model (`worl
 ~6GB VRAM, free), **Blockade Labs Skybox AI** (free-tier 360° panorama → skybox), or a
 free **Scaniverse/Polycam** phone scan — then `import_environment` and rebuild.
 
+## Polish: materials, environments, surface placement (v1.1)
+
+Hard-won rendering lessons, now baked into `compose_inspection_scene`:
+
+- **`primvars:displayColor` renders WHITE** in the PICO runtime (it becomes an UNLIT
+  material). Real colors require a bound **`Material`** with a
+  `ND_UsdPreviewSurface_surfaceshader` shader (`inputs:diffuseColor`, `emissiveColor`
+  for glow) via `MaterialBindingAPI` — the editor's own pattern. The MCP now authors all
+  geometry this way; markers became correctly severity-colored and the procedural room
+  (previously invisible) now renders.
+- **Place markers on the room's actual surface coordinates** so they land flush — a 6×3×6
+  procedural room has walls at ±3, ceiling at y=3, floor at y=0; a ceiling marker at
+  y≈2.92 with `surface:'ceiling'` hangs flush and oriented. Verified: red water pin on
+  the ceiling, green wind pin on the floor, structural/electrical on the walls — each
+  oriented to its normal.
+- **Referenced GLB environments must be TEXTURED meshes.** A Marble *collider* GLB is
+  untextured coarse geometry positioned in the splat's coordinate frame — it renders
+  dark and off-camera. Export Marble's **high-quality textured mesh** (not the collider),
+  or use the procedural room. SPZ Gaussian splats are not natively loadable by the USD
+  runtime (a splat renderer would be a research bet).
+- **Panel sizing:** PICO AttachmentPanel dp maps to physical size; place panels close
+  (~1.4–1.6 m) and size them generously (800+ dp) with large fonts, or they read tiny.
+
 ## Key gotchas (now handled by the MCP)
 
 - **No `java` on PATH** → Gradle fails with "Unable to locate a Java Runtime". The

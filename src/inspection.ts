@@ -76,74 +76,111 @@ function quatYToNormal(n: [number, number, number]): [number, number, number, nu
   return [round(Math.cos(angle / 2)), round((ax[0] / al) * s), round((ax[1] / al) * s), round((ax[2] / al) * s)];
 }
 
+// ---- materials (UsdPreviewSurface via MaterialX, the editor's own pattern) ----
+// displayColor renders as a white UNLIT material in the PICO runtime; real colors
+// require a bound Material with a ND_UsdPreviewSurface_surfaceshader shader.
+const ROOM_MATS: Record<string, [number, number, number]> = {
+  Wall: [0.82, 0.8, 0.76],
+  Floor: [0.34, 0.28, 0.22],
+  Ceiling: [0.88, 0.88, 0.86],
+  Slate: [0.62, 0.65, 0.7],
+  PanelBg: [0.06, 0.09, 0.16],
+  Accent: ACCENT_RGB,
+};
+
+function matBlock(name: string, rgb: [number, number, number], emissive: [number, number, number] = [0, 0, 0]): string {
+  return [
+    `        def Material "${name}"`,
+    "        {",
+    `            token outputs:mtlx:surface.connect = </Root/Materials/${name}/Shader.outputs:out>`,
+    `            def Shader "Shader"`,
+    "            {",
+    `                uniform token info:id = "ND_UsdPreviewSurface_surfaceshader"`,
+    `                color3f inputs:diffuseColor = ${rgbStr(rgb)} (colorSpace = "lin_srgb")`,
+    `                color3f inputs:emissiveColor = ${rgbStr(emissive)} (colorSpace = "lin_srgb")`,
+    `                float inputs:roughness = 0.45`,
+    `                float inputs:metallic = 0`,
+    `                token outputs:out`,
+    "            }",
+    "        }",
+  ].join("\n");
+}
+
+/** The shared material library, referenced by absolute path </Root/Materials/Name>. */
+function materialsScope(): string {
+  const mats: string[] = [];
+  for (let s = 1; s <= 5; s++) {
+    const c = SEVERITY_RGB[s];
+    mats.push(matBlock(`Sev${s}`, c, [c[0] * 0.5, c[1] * 0.5, c[2] * 0.5]));
+    const core: [number, number, number] = [Math.min(1, c[0] + 0.4), Math.min(1, c[1] + 0.4), Math.min(1, c[2] + 0.4)];
+    mats.push(matBlock(`Core${s}`, core, core)); // glowing core (emissive)
+  }
+  for (const [n, c] of Object.entries(ROOM_MATS)) mats.push(matBlock(n, c));
+  return [`    def Scope "Materials"`, "    {", mats.join("\n"), "    }"].join("\n");
+}
+
+/** Emit a primitive with a bound material. */
+function boundPrim(kind: string, name: string, body: string[], mat: string, indent = "        "): string {
+  const i2 = indent + "    ";
+  return [
+    `${indent}def ${kind} "${name}" (`,
+    `${indent}    prepend apiSchemas = ["MaterialBindingAPI"]`,
+    `${indent})`,
+    `${indent}{`,
+    ...body.map((b) => i2 + b),
+    `${i2}rel material:binding = </Root/Materials/${mat}>`,
+    `${indent}}`,
+  ].join("\n");
+}
+
 // ---- procedural room shell ----
 function roomShell(w: number, h: number, d: number): string {
-  const wallColor = rgbStr([0.82, 0.8, 0.76]);
-  const floorColor = rgbStr([0.34, 0.28, 0.22]);
-  const ceilColor = rgbStr([0.88, 0.88, 0.86]);
-  const hw = w / 2, hd = d / 2;
-  const slab = (name: string, sx: number, sy: number, sz: number, tx: number, ty: number, tz: number, color: string) =>
-    [
-      `    def Cube "${name}"`,
-      "    {",
-      "        double size = 1",
-      `        color3f[] primvars:displayColor = [${color}]`,
-      `        float3 xformOp:scale = (${sx}, ${sy}, ${sz})`,
-      `        float3 xformOp:translate = (${tx}, ${ty}, ${tz})`,
-      '        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]',
-      "    }",
-    ].join("\n");
-  const t = 0.08;
+  const hw = w / 2, hd = d / 2, t = 0.08;
+  const slab = (name: string, sx: number, sy: number, sz: number, tx: number, ty: number, tz: number, mat: string) =>
+    boundPrim("Cube", name, [
+      "double size = 1",
+      `float3 xformOp:scale = (${sx}, ${sy}, ${sz})`,
+      `float3 xformOp:translate = (${tx}, ${ty}, ${tz})`,
+      'uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]',
+    ], mat, "        ");
   return [
     `    def Xform "Room"`,
     "    {",
-    slab("Floor", w, t, d, 0, 0, 0, floorColor),
-    slab("Ceiling", w, t, d, 0, h, 0, ceilColor),
-    slab("WallBack", w, h, t, 0, h / 2, -hd, wallColor),
-    slab("WallFront", w, h, t, 0, h / 2, hd, wallColor),
-    slab("WallLeft", t, h, d, -hw, h / 2, 0, wallColor),
-    slab("WallRight", t, h, d, hw, h / 2, 0, wallColor),
+    slab("Floor", w, t, d, 0, 0, 0, "Floor"),
+    slab("Ceiling", w, t, d, 0, h, 0, "Ceiling"),
+    slab("WallBack", w, h, t, 0, h / 2, -hd, "Wall"),
+    slab("WallFront", w, h, t, 0, h / 2, hd, "Wall"),
+    slab("WallLeft", t, h, d, -hw, h / 2, 0, "Wall"),
+    slab("WallRight", t, h, d, hw, h / 2, 0, "Wall"),
     "    }",
   ].join("\n");
 }
 
 /**
- * A "saturn"-style ClaimSight damage marker that sticks to ANY surface. The whole
- * marker is an Xform oriented so its local +Y aligns with the surface normal, then
- * built up along +Y: halo disc on the surface -> stem -> dome -> glowing core -> ring.
- * Floor/wall/ceiling all use the same geometry; only the orientation changes.
+ * A "saturn"-style ClaimSight damage marker that sticks to ANY surface, built along
+ * its local +Y (= surface normal): halo disc -> stem -> dome -> glowing core -> ring.
+ * Colors come from bound Materials (Sev<N>/Core<N>/Slate), not displayColor.
  */
 function damageMarker(dmg: Damage): string {
-  const color = SEVERITY_RGB[dmg.severity];
-  const core: [number, number, number] = [Math.min(1, color[0] + 0.4), Math.min(1, color[1] + 0.4), Math.min(1, color[2] + 0.4)];
   const [x, y, z] = dmg.location;
   const n = dmg.normal ?? SURFACE_NORMAL[dmg.surface] ?? [0, 1, 0];
   const [qw, qx, qy, qz] = quatYToNormal(n);
-  const scale = 0.85 + dmg.severity * 0.06; // more severe = larger
-  const ind = "            ";
-  // Cylinders are authored with axis="Y" so they stack along the marker's local +Y (surface normal).
-  const cyl = (name: string, radius: number, height: number, ly: number, col: [number, number, number]) =>
-    [
-      `        def Cylinder "${name}"`,
-      "        {",
-      `            uniform token axis = "Y"`,
-      `            double radius = ${radius}`,
-      `            double height = ${height}`,
-      `            color3f[] primvars:displayColor = [${rgbStr(col)}]`,
-      `${ind}float3 xformOp:translate = (0, ${ly}, 0)`,
-      `${ind}uniform token[] xformOpOrder = ["xformOp:translate"]`,
-      "        }",
-    ].join("\n");
-  const sphere = (name: string, radius: number, ly: number, col: [number, number, number]) =>
-    [
-      `        def Sphere "${name}"`,
-      "        {",
-      `            double radius = ${radius}`,
-      `            color3f[] primvars:displayColor = [${rgbStr(col)}]`,
-      `${ind}float3 xformOp:translate = (0, ${ly}, 0)`,
-      `${ind}uniform token[] xformOpOrder = ["xformOp:translate"]`,
-      "        }",
-    ].join("\n");
+  const scale = 0.85 + dmg.severity * 0.06;
+  const sev = `Sev${dmg.severity}`;
+  const cyl = (name: string, radius: number, height: number, ly: number, mat: string) =>
+    boundPrim("Cylinder", name, [
+      'uniform token axis = "Y"',
+      `double radius = ${radius}`,
+      `double height = ${height}`,
+      `float3 xformOp:translate = (0, ${ly}, 0)`,
+      'uniform token[] xformOpOrder = ["xformOp:translate"]',
+    ], mat);
+  const sphere = (name: string, radius: number, ly: number, mat: string) =>
+    boundPrim("Sphere", name, [
+      `double radius = ${radius}`,
+      `float3 xformOp:translate = (0, ${ly}, 0)`,
+      'uniform token[] xformOpOrder = ["xformOp:translate"]',
+    ], mat);
 
   return [
     `    def Xform "${dmg.name}" (`,
@@ -154,11 +191,11 @@ function damageMarker(dmg: Damage): string {
     `        quatf xformOp:orient = (${qw}, ${qx}, ${qy}, ${qz})`,
     `        float3 xformOp:scale = (${scale}, ${scale}, ${scale})`,
     '        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]',
-    cyl("Halo", 0.12, 0.01, 0.006, color), // flat disc on the surface
-    cyl("Stem", 0.01, 0.16, 0.09, [0.62, 0.65, 0.7]), // slate stem
-    sphere("Dome", 0.062, 0.18, color),
-    sphere("Core", 0.04, 0.18, core), // brighter glowing center
-    cyl("Ring", 0.105, 0.014, 0.18, color), // saturn equator ring
+    cyl("Halo", 0.12, 0.01, 0.006, sev),
+    cyl("Stem", 0.01, 0.16, 0.09, "Slate"),
+    sphere("Dome", 0.062, 0.18, sev),
+    sphere("Core", 0.04, 0.18, `Core${dmg.severity}`),
+    cyl("Ring", 0.105, 0.014, 0.18, sev),
     "    }",
   ].join("\n");
 }
@@ -169,22 +206,18 @@ function infoPanel(title: string, pos: [number, number, number]): string {
     `        customData = { string title = "${title.replace(/"/g, "'")}" }`,
     "    )",
     "    {",
-    `        def Cube "PanelBack"`,
-    "        {",
-    "            double size = 1",
-    `            color3f[] primvars:displayColor = [${rgbStr([0.06, 0.09, 0.16])}]`,
-    `            float3 xformOp:scale = (0.9, 0.55, 0.02)`,
-    `            float3 xformOp:translate = (${pos.join(", ")})`,
-    '            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]',
-    "        }",
-    `        def Cube "PanelAccent"`,
-    "        {",
-    "            double size = 1",
-    `            color3f[] primvars:displayColor = [${rgbStr(ACCENT_RGB)}]`,
-    `            float3 xformOp:scale = (0.9, 0.04, 0.025)`,
-    `            float3 xformOp:translate = (${pos[0]}, ${(pos[1] + 0.27).toFixed(3)}, ${pos[2]})`,
-    '            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]',
-    "        }",
+    boundPrim("Cube", "PanelBack", [
+      "double size = 1",
+      "float3 xformOp:scale = (0.9, 0.55, 0.02)",
+      `float3 xformOp:translate = (${pos.join(", ")})`,
+      'uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]',
+    ], "PanelBg"),
+    boundPrim("Cube", "PanelAccent", [
+      "double size = 1",
+      "float3 xformOp:scale = (0.9, 0.04, 0.025)",
+      `float3 xformOp:translate = (${pos[0]}, ${(pos[1] + 0.27).toFixed(3)}, ${pos[2]})`,
+      'uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]',
+    ], "Accent"),
     "    }",
   ].join("\n");
 }
@@ -194,7 +227,7 @@ export function registerInspectionTools(server: McpServer) {
     "compose_inspection_scene",
     {
       description:
-        "Build a complete ClaimSight-style spatial inspection scene: an environment (procedural damaged room, or a referenced GLB/splat room from e.g. World Labs Marble), severity-colored damage markers pinned in 3D using the canonical ClaimSight 5-tier palette (1 green→5 purple) and real damage taxonomy (water/electrical/structural/wind/hail/mold/smoke/fire/impact/plumbing), and an info panel. Writes renderable USDA; pack with verify_scene/iterate_scene. Markers carry damageType/severity as USD customData.",
+        "Build a complete ClaimSight-style spatial inspection scene: an environment (procedural damaged room, or a referenced GLB/splat room from e.g. World Labs Marble), severity-colored damage markers pinned in 3D using the canonical ClaimSight 5-tier palette (1 green→5 purple) and real damage taxonomy. All geometry uses real bound MATERIALS (ND_UsdPreviewSurface, emissive cores) — NOT primvars:displayColor, which renders white in the PICO runtime. Writes renderable USDA; pack with verify_scene/iterate_scene. Markers carry damageType/severity as USD customData. NOTE: referenced GLBs must be TEXTURED meshes to look right — an untextured collider mesh renders dark.",
       inputSchema: {
         outPath: z.string().describe("Output .usda (e.g. <project>/Sources/Scenes/Inspection.usda)"),
         environment: z
@@ -216,6 +249,7 @@ export function registerInspectionTools(server: McpServer) {
     async ({ outPath, environment, damages, panel, ibl }) => {
       const out = expandHome(outPath);
       const blocks: string[] = [];
+      blocks.push(materialsScope()); // shared material library (real colors, not displayColor)
 
       if (environment.type === "procedural_room") {
         blocks.push(roomShell(environment.width, environment.height, environment.depth));
