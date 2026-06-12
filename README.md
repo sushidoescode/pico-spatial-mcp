@@ -10,7 +10,7 @@ The MCP builds, installs, and runs **real native spatial-app APKs**, not just sc
 
 ### Building a real app: ClaimSight inspection scenes + world-model environments
 
-`compose_inspection_scene` assembles a legit insurance-inspection spatial app — a damaged-room environment (procedural, or a referenced GLB/splat room from a world model), severity-colored damage markers pinned in 3D using ClaimSight's canonical 5-tier palette (green→purple) and real damage taxonomy (water/electrical/structural/wind/hail/mold/…), and an info panel. Environments can come from **World Labs Marble** (text/photo→3D world; free tier 4 gens/mo, GLB/PLY export needs a paid plan) or a free Scaniverse/Polycam scan — `import_environment` brings the GLB/skybox in, `worldmodel_guide` documents the full workflow.
+`compose_inspection_scene` assembles a legit insurance-inspection spatial app — a damaged-room environment (procedural, or a referenced GLB/splat room from a world model) and **"saturn" damage markers that stick to ANY surface** (floor/wall/ceiling, oriented so local +Y aligns to the surface normal — the ClaimSight stick-to-surface behavior), severity-colored using the canonical 5-tier palette (green→purple) and real damage taxonomy (water/electrical/structural/wind/hail/mold/…). Environments can come from **World Labs Marble** (text/photo→3D world; free tier 4 gens/mo, GLB/PLY export needs a paid plan) or a free Scaniverse/Polycam scan — `import_environment` brings the GLB/skybox in, `worldmodel_guide` documents the full workflow.
 
 ### Seeing the 3D result
 

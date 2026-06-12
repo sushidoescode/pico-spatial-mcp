@@ -43,6 +43,31 @@ crisply in the headset view; the 3D damage markers are pinned around the room.
 5. `gui_capture` (macOS, Screen Recording permission) screenshots the real
    host-composited 3D view to confirm visually.
 
+## The full experience (v0.8)
+
+The native app now mirrors the WebXR ClaimSight UX, built as floating Compose
+spatial panels + a 3D damage-marker scene:
+
+- **Damage markers that stick to ANY surface** — the hard problem from WebXR. Each
+  marker is a "saturn" (halo disc → stem → dome → glowing core → equator ring),
+  authored by `compose_inspection_scene` with a `surface` field
+  (`floor`/`ceiling`/`wall_north|south|east|west`) or an explicit `normal`. The marker
+  Xform is oriented by a quaternion that rotates its local **+Y onto the surface
+  normal** — the same `computePinOrientation` logic as the WebXR build (world-up snap
+  for near-horizontal surfaces). Floor, walls, and ceiling all use identical geometry;
+  only the orientation changes. For *live* placement, raycast the controller against the
+  room mesh and apply the same quaternion to the hit normal.
+- **Placement menu (ControllerMenu)** — a spatial panel with Place Pin (highlighted) /
+  Generate Report / Mute Smith / Clear All, mirroring the WebXR controller menu.
+- **Rich detail card** — the signature ClaimSight card: damage type + severity dot,
+  the adjuster action note, IICRC standard (`– IICRC S500`) + specialist callout
+  (`› iicrc_wrt`), a "Photo-grounded analysis" section with the AI text and the
+  captured-photo thumbnail (with reticle), and Close/Remove. Faithful to production.
+- **Inspection log** — the running severity-coded findings list + Smith's line.
+
+All three panels render crisply (verified via `gui_capture`); the markers are pinned
+to the room surfaces (geometry verified via `verify_scene`).
+
 ## Key gotchas (now handled by the MCP)
 
 - **No `java` on PATH** → Gradle fails with "Unable to locate a Java Runtime". The

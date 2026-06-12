@@ -40,11 +40,41 @@ const damageSchema = z.object({
   name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   type: z.enum(DAMAGE_TYPES),
   severity: z.number().int().min(1).max(5),
-  location: z.tuple([z.number(), z.number(), z.number()]).describe("[x,y,z] world position of the damage, meters"),
+  location: z.tuple([z.number(), z.number(), z.number()]).describe("[x,y,z] world position of the damage (the surface contact point), meters"),
+  surface: z
+    .enum(["floor", "ceiling", "wall_north", "wall_south", "wall_east", "wall_west"])
+    .default("floor")
+    .describe("Which surface the marker sticks to — determines its orientation (marker +Y aligns to the surface normal). The ClaimSight 'stick to any surface' behavior."),
+  normal: z.tuple([z.number(), z.number(), z.number()]).optional().describe("Explicit surface normal [x,y,z] (overrides `surface`) for arbitrary/angled surfaces"),
   note: z.string().optional().describe("Adjuster note (stored as USD documentation)"),
-  pinToFloor: z.boolean().default(true).describe("Draw a thin stem from y=0 up to the marker (the floating-pin look)"),
 });
 type Damage = z.infer<typeof damageSchema>;
+
+// Surface -> inward normal (points away from the surface into the room).
+const SURFACE_NORMAL: Record<string, [number, number, number]> = {
+  floor: [0, 1, 0],
+  ceiling: [0, -1, 0],
+  wall_north: [0, 0, 1], // back wall (-z), normal points +z
+  wall_south: [0, 0, -1],
+  wall_east: [-1, 0, 0], // +x wall, normal points -x
+  wall_west: [1, 0, 0],
+};
+
+/** Quaternion (w,x,y,z) that rotates local +Y onto the surface normal — the marker's stick-to-surface orientation. */
+function quatYToNormal(n: [number, number, number]): [number, number, number, number] {
+  const len = Math.hypot(...n) || 1;
+  const v: [number, number, number] = [n[0] / len, n[1] / len, n[2] / len];
+  const dot = v[1]; // (0,1,0)·v
+  const round = (x: number) => (Math.abs(x) < 1e-6 ? 0 : +x.toFixed(6));
+  if (dot > 0.99999) return [1, 0, 0, 0]; // already +Y (floor)
+  if (dot < -0.99999) return [0, 1, 0, 0]; // -Y (ceiling): 180° about X
+  // axis = cross((0,1,0), v) = (v.z, 0, -v.x)
+  const ax = [v[2], 0, -v[0]];
+  const al = Math.hypot(...ax) || 1;
+  const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+  const s = Math.sin(angle / 2);
+  return [round(Math.cos(angle / 2)), round((ax[0] / al) * s), round((ax[1] / al) * s), round((ax[2] / al) * s)];
+}
 
 // ---- procedural room shell ----
 function roomShell(w: number, h: number, d: number): string {
@@ -77,34 +107,60 @@ function roomShell(w: number, h: number, d: number): string {
   ].join("\n");
 }
 
+/**
+ * A "saturn"-style ClaimSight damage marker that sticks to ANY surface. The whole
+ * marker is an Xform oriented so its local +Y aligns with the surface normal, then
+ * built up along +Y: halo disc on the surface -> stem -> dome -> glowing core -> ring.
+ * Floor/wall/ceiling all use the same geometry; only the orientation changes.
+ */
 function damageMarker(dmg: Damage): string {
   const color = SEVERITY_RGB[dmg.severity];
+  const core: [number, number, number] = [Math.min(1, color[0] + 0.4), Math.min(1, color[1] + 0.4), Math.min(1, color[2] + 0.4)];
   const [x, y, z] = dmg.location;
-  const r = 0.08 + dmg.severity * 0.015; // bigger = more severe
-  const parts: string[] = [];
-  parts.push(`    def Xform "${dmg.name}" (`);
-  parts.push(`        customData = { string damageType = "${dmg.type}"; int severity = ${dmg.severity}; string severityLabel = "${SEVERITY_LABEL[dmg.severity]}"${dmg.note ? `; string note = "${dmg.note.replace(/"/g, "'")}"` : ""} }`);
-  parts.push("    )");
-  parts.push("    {");
-  if (dmg.pinToFloor && y > 0.05) {
-    parts.push(`        def Cylinder "Stem"`);
-    parts.push("        {");
-    parts.push("            double radius = 0.006");
-    parts.push(`            double height = ${y.toFixed(3)}`);
-    parts.push(`            color3f[] primvars:displayColor = [${rgbStr(color)}]`);
-    parts.push(`            float3 xformOp:translate = (${x}, ${(y / 2).toFixed(3)}, ${z})`);
-    parts.push('            uniform token[] xformOpOrder = ["xformOp:translate"]');
-    parts.push("        }");
-  }
-  parts.push(`        def Sphere "Marker"`);
-  parts.push("        {");
-  parts.push(`            double radius = ${r.toFixed(3)}`);
-  parts.push(`            color3f[] primvars:displayColor = [${rgbStr(color)}]`);
-  parts.push(`            float3 xformOp:translate = (${x}, ${y}, ${z})`);
-  parts.push('            uniform token[] xformOpOrder = ["xformOp:translate"]');
-  parts.push("        }");
-  parts.push("    }");
-  return parts.join("\n");
+  const n = dmg.normal ?? SURFACE_NORMAL[dmg.surface] ?? [0, 1, 0];
+  const [qw, qx, qy, qz] = quatYToNormal(n);
+  const scale = 0.85 + dmg.severity * 0.06; // more severe = larger
+  const ind = "            ";
+  // Cylinders are authored with axis="Y" so they stack along the marker's local +Y (surface normal).
+  const cyl = (name: string, radius: number, height: number, ly: number, col: [number, number, number]) =>
+    [
+      `        def Cylinder "${name}"`,
+      "        {",
+      `            uniform token axis = "Y"`,
+      `            double radius = ${radius}`,
+      `            double height = ${height}`,
+      `            color3f[] primvars:displayColor = [${rgbStr(col)}]`,
+      `${ind}float3 xformOp:translate = (0, ${ly}, 0)`,
+      `${ind}uniform token[] xformOpOrder = ["xformOp:translate"]`,
+      "        }",
+    ].join("\n");
+  const sphere = (name: string, radius: number, ly: number, col: [number, number, number]) =>
+    [
+      `        def Sphere "${name}"`,
+      "        {",
+      `            double radius = ${radius}`,
+      `            color3f[] primvars:displayColor = [${rgbStr(col)}]`,
+      `${ind}float3 xformOp:translate = (0, ${ly}, 0)`,
+      `${ind}uniform token[] xformOpOrder = ["xformOp:translate"]`,
+      "        }",
+    ].join("\n");
+
+  return [
+    `    def Xform "${dmg.name}" (`,
+    `        customData = { string damageType = "${dmg.type}"; int severity = ${dmg.severity}; string severityLabel = "${SEVERITY_LABEL[dmg.severity]}"; string surface = "${dmg.surface}"; float3 surfaceNormal = (${n.join(", ")})${dmg.note ? `; string note = "${dmg.note.replace(/"/g, "'")}"` : ""} }`,
+    "    )",
+    "    {",
+    `        float3 xformOp:translate = (${x}, ${y}, ${z})`,
+    `        quatf xformOp:orient = (${qw}, ${qx}, ${qy}, ${qz})`,
+    `        float3 xformOp:scale = (${scale}, ${scale}, ${scale})`,
+    '        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]',
+    cyl("Halo", 0.12, 0.01, 0.006, color), // flat disc on the surface
+    cyl("Stem", 0.01, 0.16, 0.09, [0.62, 0.65, 0.7]), // slate stem
+    sphere("Dome", 0.062, 0.18, color),
+    sphere("Core", 0.04, 0.18, core), // brighter glowing center
+    cyl("Ring", 0.105, 0.014, 0.18, color), // saturn equator ring
+    "    }",
+  ].join("\n");
 }
 
 function infoPanel(title: string, pos: [number, number, number]): string {
