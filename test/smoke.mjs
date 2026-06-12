@@ -33,6 +33,7 @@ const EXPECTED = [
   "gradle_build", "xr_grpc_describe", "create_scene_project", "build_spatial_project",
   "preview_scene", "snapshot_save", "ui_dump", "wait_for_log", "check_crash",
   "controller_map", "controller_press", "screenrecord", "iterate_scene", "build_and_run",
+  "compose_scene", "add_entity", "import_asset", "verify_scene", "xr_input_status",
 ];
 const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n));
 if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }

@@ -73,7 +73,10 @@ function getClient(toolsVersion?: string): { client: grpc.Client & Record<string
   if ("error" in p) return p;
   const ep = getEndpoint();
   if ("error" in ep) return ep;
-  const client = new p.controllerCtor(ep.address, grpc.credentials.createInsecure()) as any;
+  // Raise the receive limit: a 2160px display screenshot (PNG or RGBA) exceeds the 4 MB default.
+  const client = new p.controllerCtor(ep.address, grpc.credentials.createInsecure(), {
+    "grpc.max_receive_message_length": 64 * 1024 * 1024,
+  }) as any;
   return { client, metadata: ep.metadata };
 }
 
@@ -82,6 +85,37 @@ function unary(client: any, method: string, request: unknown, metadata: grpc.Met
     if (typeof client[method] !== "function") return reject(new Error(`RPC method not found in proto: ${method}`));
     const deadline = new Date(Date.now() + timeoutMs);
     client[method](request, metadata, { deadline }, (err: Error | null, resp: any) => (err ? reject(err) : resolve(resp)));
+  });
+}
+
+/**
+ * Grab one LIVE frame from streamScreenshot. Note: the unary getScreenshot RPC
+ * returns a CACHED frame on this emulator build (verified: byte-identical across
+ * calls and across visible state changes), so we stream and take the first frame.
+ */
+function firstStreamFrame(client: any, request: unknown, metadata: grpc.Metadata, timeoutMs = 20_000): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    if (typeof client.streamScreenshot !== "function") return reject(new Error("streamScreenshot RPC not found"));
+    const deadline = new Date(Date.now() + timeoutMs);
+    const call = client.streamScreenshot(request, metadata, { deadline });
+    let done = false;
+    const timer = setTimeout(() => {
+      if (!done) { done = true; try { call.cancel(); } catch {} reject(new Error("streamScreenshot produced no frame")); }
+    }, timeoutMs);
+    call.on("data", (img: any) => {
+      if (done) return;
+      const bytes: Buffer = img?.image;
+      if (bytes?.length) {
+        done = true;
+        clearTimeout(timer);
+        try { call.cancel(); } catch {}
+        resolve(Buffer.from(bytes));
+      }
+    });
+    call.on("error", (e: any) => {
+      // cancel() surfaces as a CANCELLED error after we already resolved — ignore.
+      if (!done) { done = true; clearTimeout(timer); reject(e); }
+    });
   });
 }
 
@@ -149,19 +183,17 @@ export function registerGrpcTools(server: McpServer) {
     "xr_screenshot",
     {
       description:
-        "EXPERIMENTAL: Capture a screenshot via gRPC getScreenshot (faster than adb screencap; works headless). Returns PNG.",
+        "Capture a LIVE screenshot of emulator display 0 via gRPC streamScreenshot (works headless; the unary getScreenshot is CACHED on this build so we stream one frame). NOTE: display 0 shows the home environment and 2D app panels — it does NOT capture host-composited immersive 3D spatial content (only the emulator GUI window shows that). Verify 3D scenes with inspect_bundle + runtime logs.",
       inputSchema: { toolsVersion: versionParam },
     },
     async ({ toolsVersion }) => {
       const c = getClient(toolsVersion);
       if ("error" in c) return fail(c.error);
       try {
-        const resp = await unary(c.client, "getScreenshot", { format: "PNG" }, c.metadata, 30_000);
-        const bytes: Buffer = resp?.image;
-        if (!bytes?.length) return fail(`getScreenshot returned no image bytes: ${JSON.stringify(resp).slice(0, 500)}`);
-        return image(Buffer.from(bytes).toString("base64"), `gRPC screenshot (${bytes.length} bytes)`);
+        const bytes = await firstStreamFrame(c.client, { format: "PNG" }, c.metadata, 20_000);
+        return image(bytes.toString("base64"), `gRPC live screenshot (${bytes.length} bytes, display 0)`);
       } catch (e: any) {
-        return fail(`getScreenshot failed: ${e.message}`);
+        return fail(`streamScreenshot failed: ${e.message}`);
       }
     },
   );
@@ -170,12 +202,12 @@ export function registerGrpcTools(server: McpServer) {
     "xr_set_head_pose",
     {
       description:
-        "EXPERIMENTAL: Inject 6DOF head pose into the running PICO emulator via gRPC streamInputEvent — xr_head_rotation_event (radians) and/or xr_head_movement_event (meters). This is the programmatic equivalent of WASD/mouse-look in the GUI.",
+        "EXPERIMENTAL (GATED — see xr_input_status): Inject 6DOF head pose via gRPC streamInputEvent (xr_head_rotation_event radians, xr_head_movement_event meters). The events are accepted, but on emulator 0.13.1 they do NOT move the rendered view: head/camera control is gated behind the GUI's WASD camera mode (virtualscene WASDInputHandler), which has no gRPC/console/keyboard entry point. Kept for forward-compat; verify any effect — do not assume it works.",
       inputSchema: {
         rotation: z
           .object({ x: z.number(), y: z.number(), z: z.number() })
           .optional()
-          .describe("Head rotation in RADIANS (pitch/yaw/roll as x/y/z)"),
+          .describe("Head rotation in RADIANS, RELATIVE to current orientation (pitch/yaw/roll as x/y/z)"),
         movement: z
           .object({ x: z.number(), y: z.number(), z: z.number() })
           .optional()
@@ -192,10 +224,41 @@ export function registerGrpcTools(server: McpServer) {
       if (movement) events.push({ xr_head_movement_event: movement });
       try {
         await streamInput(c.client, events, c.metadata);
-        return ok(`Injected ${events.length} XR head-pose event(s): ${JSON.stringify(events)}`);
+        return ok(`Sent ${events.length} XR head-pose event(s) (accepted by emulator; may NOT move the view — see xr_input_status): ${JSON.stringify(events)}`);
       } catch (e: any) {
         return fail(`streamInputEvent failed: ${e.message}\nTip: run xr_grpc_describe to check exact field names in this emulator build.`);
       }
+    },
+  );
+
+  server.registerTool(
+    "xr_input_status",
+    {
+      description:
+        "Report what XR input IS and IS NOT drivable programmatically on the PICO emulator, based on this project's empirical testing. Call this before attempting head-pose/controller automation so you don't build on an unsupported path.",
+      inputSchema: {},
+    },
+    async () => {
+      const p = loadProto();
+      const methods = "error" in p ? [] : Object.keys((p.pkgDef["android.emulation.control.EmulatorController"] as any) ?? {});
+      return okJson({
+        works: {
+          screenshots: "streamScreenshot (live); display 0 = home env + 2D panels only",
+          sensors: "setSensor / setPhysicalModel (accelerometer/gyro/etc.)",
+          keys_touch: "sendKey / sendTouch / sendMouse (drive 2D UI and keyboard-mapped controller buttons)",
+          xr_options: "setXrOptions / getXrOptions (passthrough coefficient, environment)",
+          recenter: "xr_command RECENTER (accepted; effect unverified)",
+        },
+        gated_or_unavailable: {
+          head_pose: "xr_head_rotation/movement accepted but NOT applied to the rendered view on 0.13.1 — gated behind the GUI's WASD camera mode (virtualscene WASDInputHandler), which has no gRPC/console/keyboard entry point",
+          controller_6dof_pose: "no per-controller 6DOF pose RPC exists; controllers are keyboard-mapped (see controller_map/controller_press)",
+          immersive_3d_capture: "host-composited 3D headset view is not in display-0 screenshots; only the GUI window shows it",
+          hand_skeleton: "MediaPipe webcam pipeline runs in the GUI process; no injection API",
+        },
+        recommendation:
+          "For automated scene/app verification, rely on inspect_bundle (geometry/material counts) + spatial runtime logcat + 2D-panel screenshots. Treat head-pose/immersive-capture as a GUI-only concern on this build.",
+        rpcMethodCount: methods.length,
+      });
     },
   );
 

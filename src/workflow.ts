@@ -85,6 +85,53 @@ export function registerWorkflowTools(server: McpServer) {
   );
 
   server.registerTool(
+    "verify_scene",
+    {
+      description:
+        "Compile a scene and verify it built correctly by inspecting the bundle's geometry — the reliable way to validate spatial content on the emulator (display-0 screenshots do NOT capture immersive 3D, so geometry counts + runtime logs are the source of truth). Reports Model/Asset/mesh/texture/material counts and checks any expected mesh names are present.",
+      inputSchema: {
+        sceneDir: z.string(),
+        projectDir: z.string().optional(),
+        expectMeshNames: z.array(z.string()).default([]).describe("Mesh/asset names that must appear in the bundle"),
+        minMeshes: z.number().int().optional().describe("Fail if fewer than this many mesh assets"),
+        toolsVersion: z.string().optional(),
+      },
+    },
+    async ({ sceneDir, projectDir, expectMeshNames, minMeshes, toolsVersion }) => {
+      const { root } = resolveToolsRoot();
+      const sel = pickVersion(root, toolsVersion, "editor");
+      if (!sel?.spatialbundle) return fail(`No spatialbundle found under ${root}`);
+      const outBundle = path.join(os.tmpdir(), "pico-mcp", `verify-${Date.now()}.bundle`);
+      fs.mkdirSync(path.dirname(outBundle), { recursive: true });
+      const packArgs = ["pack", "-s", expandHome(sceneDir), "-o", outBundle, "--formats", "usda", "--override-output", "--force-build"];
+      if (projectDir) packArgs.push("-p", expandHome(projectDir));
+      const pack = await run(sel.spatialbundle, packArgs, { timeoutMs: 600_000 });
+      if (pack.code !== 0 || !fs.existsSync(outBundle)) {
+        return fail(`verify_scene: compile FAILED.\n${tail(pack.stdout + pack.stderr, 40)}`);
+      }
+      const info = await run(sel.spatialbundle, ["info", "--input", outBundle, "--details"], { timeoutMs: 60_000 });
+      const txt = info.stdout;
+      const num = (re: RegExp) => Number(txt.match(re)?.[1] ?? 0);
+      const meshNames = [...txt.matchAll(/Asset Name:\s*(.+?)\s*\n\s*Asset Type:\s*mesh/g)].map((m) => m[1].trim());
+      const result = {
+        compiled: true,
+        models: num(/Model Count:\s*(\d+)/),
+        assets: num(/Asset Count:\s*(\d+)/),
+        meshAssets: (txt.match(/Asset Type:\s*mesh/g) || []).length,
+        textureAssets: (txt.match(/Asset Type:\s*texture/g) || []).length,
+        materialAssets: (txt.match(/Asset Type:\s*materialinstance/g) || []).length,
+        meshNames: [...new Set(meshNames)],
+        bundleSizeMB: Number((fs.statSync(outBundle).size / 1024 / 1024).toFixed(2)),
+      };
+      const problems: string[] = [];
+      for (const want of expectMeshNames) if (!meshNames.some((n) => n.includes(want))) problems.push(`expected mesh '${want}' not found`);
+      if (minMeshes != null && result.meshAssets < minMeshes) problems.push(`only ${result.meshAssets} mesh assets (< ${minMeshes})`);
+      const out = { pass: problems.length === 0, ...result, problems };
+      return problems.length ? fail(JSON.stringify(out, null, 2)) : okJson(out);
+    },
+  );
+
+  server.registerTool(
     "build_and_run",
     {
       description:

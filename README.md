@@ -2,7 +2,11 @@
 
 An MCP server that lets AI agents drive **PICO XR spatial development** end-to-end: author USDA scenes as text, compile them with the `spatialbundle`/Gradle pipeline, build & deploy APKs, drive the PICO OS6 Emulator (lifecycle, adb, snapshots), preview scenes via the editor's ScenePreview app, and observe/verify with screenshots, UI dumps, log-waits, and crash detection — plus an experimental gRPC XR layer (head pose, recenter, passthrough). Background research: [FINDINGS.md](FINDINGS.md).
 
-**42 tools** across observe/control, the full editor+build pipeline, and autonomous-loop orchestration (`iterate_scene`, `build_and_run`). A built-in prompt (`pico_spatial_dev_loop`) teaches an agent the whole workflow.
+**47 tools** across observe/control, the full editor+build pipeline, programmatic scene authoring (`compose_scene`, `import_asset`), and autonomous-loop orchestration (`iterate_scene`, `verify_scene`, `build_and_run`). A built-in prompt (`pico_spatial_dev_loop`) teaches an agent the whole workflow.
+
+### Verifying spatial content (important)
+
+The PICO emulator renders immersive 3D content host-side and composites it into the **GUI window only**. Display-0 screenshots (adb or gRPC) capture the home environment and 2D panels but **not** immersive 3D scene content — so verify spatial scenes with **`verify_scene` / `inspect_bundle`** (geometry, mesh, material, texture counts) and the spatial-runtime **logcat**, not screenshots. See `xr_input_status` and FINDINGS.md §6.
 
 > **Status: private / pre-release.** Do not make this repository public until the licensing review in `FINDINGS.md` §5 is completed (PICO SDK License Terms + NDA scope). This server **wraps the user's locally installed, license-accepted PICO toolchain** — it contains and redistributes no PICO software, and loads the emulator's gRPC `.proto` definitions from the local installation at runtime.
 
@@ -43,6 +47,8 @@ Or in any MCP client config:
 | `pack_bundle` / `inspect_bundle` | Headless USDA→`.bundle` compilation + bundle stats/manifest (`spatialbundle` CLI) |
 | `scene_schemas` | PICO's custom USD schemas (SpatialComponent/Audio/Timeline) for text-first scene authoring |
 | `gradle_build` / `gradle_tasks` | Full `./gradlew` builds — the `com.pico.spatial.tools` plugin packs scenes into the APK automatically |
+| `compose_scene` / `add_entity` / `import_asset` | **Author renderable scenes as text:** generate USDA from a high-level entity spec (mesh refs, primitives, lights, IBL); import meshes/textures into the project |
+| `verify_scene` | Compile + inspect a scene and assert geometry (mesh/material/texture counts, expected mesh names) — the reliable spatial-content check |
 | `create_scene_project` / `build_spatial_project` | Scaffold a `.spatialproject` (editor structure); build it via the editor's own headless mode (`--ide_noGraphics`) for GUI parity |
 | `preview_scene` | Deploy a `.bundle` to the editor's ScenePreview app (push + `FILE_TRANSFER_COMPLETE` broadcast — the editor's real on-device-preview protocol) |
 | `iterate_scene` | **Orchestration:** pack → inspect → deploy-to-preview → screenshot in one call (the inner dev loop) |
@@ -52,10 +58,11 @@ Or in any MCP client config:
 | `wait_for_log` / `check_crash` | Block until a logcat pattern appears; scan for crashes/ANRs and process liveness |
 | `controller_map` / `controller_press` | PICO controller bindings (from the AVD's `controller_settings.ini`) and press-by-name (e.g. `RC_Trigger`) |
 | `screenrecord` | Record N seconds of the screen to mp4 (verify animation a screenshot can't) |
-| `xr_grpc_describe` / `xr_grpc_status` / `xr_screenshot` | **Experimental** gRPC control channel (protos loaded from your install) — verified working on emulator 0.13.1 |
-| `xr_set_head_pose` / `xr_recenter` / `xr_set_options` / `xr_send_key` | **Experimental** XR input: 6DOF head pose injection, recenter, passthrough/environment, controller keys |
+| `xr_grpc_describe` / `xr_grpc_status` / `xr_screenshot` | gRPC control channel (protos loaded from your install); `xr_screenshot` streams a **live** display-0 frame |
+| `xr_input_status` | Reports what XR input is / isn't programmatically drivable on this build — **call before attempting XR automation** |
+| `xr_set_head_pose` / `xr_recenter` / `xr_set_options` / `xr_send_key` | **Experimental** XR input: head pose (gated — see below), recenter, passthrough/environment, controller keys |
 
-> **Known limitation (emulator 0.13.1, tested live 2026-06-11):** the `xr_*` injection RPCs are accepted by the emulator (transport, token auth, and schema all verified; `getXrOptions` returns real state), but the SpaceOS guest does **not visibly apply** head-pose, passthrough, or physical-model rotation changes — the rendered view stays fixed. The injection path is compiled in but appears gated (candidate: the emulator's input-modality mode, cf. its `-support-multiple-input-modalite` flag and `XrInputModeDialog`). `test/xr-experiment.mjs` is the probe harness; see FINDINGS.md §6. gRPC screenshots, status, sensors, and `sendKey` work.
+> **XR head-pose is GATED (emulator 0.13.1, confirmed 2026-06-11).** The `xr_head_*` RPCs are accepted but do **not** move the rendered view: head/camera control is gated behind the GUI's WASD camera mode (`virtualscene/WASDInputHandler`), which has **no gRPC, console, or keyboard entry point** — only mouse interaction with the emulator window. Rigorous pixel-diff testing (`test/xr-gate-probe.mjs`) confirms no effect. Programmatic head-pose driving is not achievable on this build; treat it as GUI-only. What *does* work: live screenshots, sensors, keys/touch, `setXrOptions`, snapshots, and the entire build/scene pipeline. Run `xr_input_status` for the full map.
 
 ## Typical agent loop
 
