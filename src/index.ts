@@ -15,11 +15,12 @@ import { registerWorkflowTools } from "./workflow.js";
 import { registerSceneTools } from "./scene.js";
 import { registerHostGuiTools } from "./hostgui.js";
 import { registerInspectionTools } from "./inspection.js";
+import { registerScaffoldTools } from "./scaffold.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "0.8.0",
+  version: "0.9.0",
 });
 
 server.registerTool(
@@ -46,6 +47,7 @@ registerWorkflowTools(server);
 registerSceneTools(server);
 registerHostGuiTools(server);
 registerInspectionTools(server);
+registerScaffoldTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
