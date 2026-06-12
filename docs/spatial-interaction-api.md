@@ -1,4 +1,5 @@
 # PICO Spatial SDK — Interactive API reference (decompiled)
+> **Status:** the live controller-ray pin-placement recipe below was IMPLEMENTED in the ClaimSight native app (PinPlacer.kt) and **verified to compile against this SDK and run** (controller provider goes active). See docs/claimsight-native.md.
 
 Reverse-engineered from the PICO Spatial SDK 0.13.3 AARs to enable interactive spatial apps (live controller-ray placement, selection, anchoring). All signatures are from javap; Kotlin call syntax may differ slightly (properties vs getters). Flagged uncertainties are real.
 

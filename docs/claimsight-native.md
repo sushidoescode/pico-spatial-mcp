@@ -68,6 +68,36 @@ spatial panels + a 3D damage-marker scene:
 All three panels render crisply (verified via `gui_capture`); the markers are pinned
 to the room surfaces (geometry verified via `verify_scene`).
 
+## Live controller-ray pin placement (v0.9 — the interaction frontier)
+
+Implemented natively and **verified to compile against the SDK and run** (controller
+provider goes active; app healthy). A `PinPlacer` (app source, ~110 lines) closes the
+inspection loop:
+
+1. `ControllerTrackingProvider().start()` + `addControllerActionListener` — registered
+   inside `SpatialView`'s `initial` (keep the `AssetBundle` open so pins can be loaded
+   on demand). Log confirms: *"PinPlacer started; pull the right trigger to drop a
+   damage pin."*; the runtime reports the controller data-provider going active.
+2. On a right-trigger press edge (`data.right.triggerPressed`), read the right
+   `ControllerPose`: `origin = pose.position`, `dir = pose.rotation.rotateVector(Vector3.FORWARD)`.
+3. `sceneRoot.scene?.rayCast(origin, dir, 10f, NEAREST, group, null)` → nearest
+   `CollisionCastResult` gives `position` (hit point) + `normal` (surface normal). If no
+   collider is hit (emulator geometry may lack colliders), fall back to a fixed distance
+   ahead facing the user.
+4. Orient the pin: `quatYToNormal(normal)` (rotate local +Y onto the normal, world-up
+   snap when `|n.y|>0.85`) → `TransformComponent.setQuaternion(...)` — the same
+   stick-to-any-surface math as the authored markers.
+5. `Entity.loadSuspend("Pin", bundle)` instantiates a saturn-marker model at the hit
+   point and `sceneRoot.addChild(pin)`.
+
+This validates the decompiled interaction recipe in
+[spatial-interaction-api.md](spatial-interaction-api.md) end-to-end (it compiles and the
+provider runs). **Triggering** it requires the right-trigger input: press the mapped key
+(`U` = RC_Trigger) in the focused emulator window, or grant Accessibility so the MCP can
+send it via `gui_camera`. On a real headset it's the physical trigger. Selection-to-open-
+card needs `InteractableComponent` (a hit-test marker; the SDK exposes no public select
+callback, so a controller-ray UI hit-test layer is the follow-on).
+
 ## Key gotchas (now handled by the MCP)
 
 - **No `java` on PATH** → Gradle fails with "Unable to locate a Java Runtime". The
