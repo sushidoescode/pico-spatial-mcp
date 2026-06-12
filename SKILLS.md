@@ -5,6 +5,8 @@ This is the operating manual for an AI agent driving `pico-spatial-mcp`. It pair
 prompt. The goal: take a spec from nothing to a **polished, running, native PICO spatial
 APK**, and — critically — **detect what's wrong and iterate to fix it** without a human.
 
+See **ROADMAP.md** for the v1.4→v2.0 plan (written so a local model can execute it if the primary agent is rate-limited).
+
 ## The capability map (55 tools)
 
 | Goal | Tools |
