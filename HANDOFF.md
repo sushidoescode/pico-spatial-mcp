@@ -1,5 +1,36 @@
 # HANDOFF — PICO-MCP, for the next chat
 
+---
+## ★ PROGRESS UPDATE (2026-06-13, session 2) — COLLIDER BLOCKER SOLVED + MCP @ v2.3.0
+The #1 hard blocker (Phase-1/2 below) is **DONE and verified on the emulator**. Scene.rayCast now
+hits and pins land on real surfaces. The fix was NOT the editor bake — it was a RUNTIME attach:
+`PhysicsWorldComponent` on a scene entity (REQUIRED on-device) + a PRIMITIVE `CollisionComponent`
+via `entity.components.set(...)`. The stale "CollisionComponent ctor is internal" belief (the real
+multi-session blocker) was half-wrong: the **5-arg ctor is public**. `createStaticMesh` cooks
+nothing queryable on-device → rooms use box "walls". Full detail in auto-memory
+(`pico-mcp-project.md`, the ★ COLLIDER SOLVED note) + DESIGN.md §9.
+
+**Shipped this session (all committed, smoke 0 failures):**
+- PICO-MCP `main`: v2.2.0 `0b4bdb0` (generate_collider_kotlin + assert_logcat + raycast_no_hit
+  diagnosis), v2.3.0 `cf2532b` (decode_spatial_bundle). NOT pushed.
+- claimsight-native `530158b`: runtime box-room collider + real-rayCast PinPlacer.commit() +
+  **restored skybox/UI texture overrides** the editor re-save had silently dropped (decayed-apartment
+  skybox + in-world ClaimSight menu now render — verified via screencapture).
+- Verification path FIXED: macOS `screencapture -l<windowid>` (and `gui_capture`) WORKS now that
+  Screen Recording is granted; `adb screencap` shows the emulator reference scene, not the immersive
+  view — use the window capture.
+
+**NEXT (toward v3.0):** (a) `drive_interaction` — resolve whether the controller trigger can be
+fired headlessly (RC_Trigger='U' host key; research says GUI-gated, UNVERIFIED — test
+`ui_input keyevent` / osascript 'U' vs the GUI Controller-Button-Mode); aim head-gaze via gui_camera
+(WASD) + read HMD pose. (b) ClaimSight menu-button interaction: gaze-ray vs the in-world menu quad
+→ arm Place Pin → trigger → commit on a wall (pin-on-surface already works; just wire the menu).
+(c) Stretch: `author_collider` USD (low value — runtime attach is the working path); more
+editor-understanding decoders. App-relaunch gotcha: 1st `am start` after `adb install -r` tears the
+stage down; single clean `force-stop; am start` + poll logcat for app-live, then capture.
+---
+
+
 **Read this AND the auto-memory `…/memory/pico-mcp-project.md` first.** The memory holds the deep,
 verified findings (every wall, with how it was proven). This doc is the **strategic direction + the
 concrete next plan**, decided with the user on 2026-06-13 at the end of a very long session that hit
