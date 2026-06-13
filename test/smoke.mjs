@@ -36,6 +36,7 @@ const EXPECTED = [
   "compose_scene", "add_entity", "import_asset", "verify_scene", "xr_input_status",
   "gui_find_window", "gui_capture", "gui_camera", "gui_permissions",
   "compose_inspection_scene", "import_environment", "worldmodel_guide", "scaffold_spatial_app", "diagnose", "design_review", "prepare_environment", "list_environment_assets", "generate_spatial_ui",
+  "run_visual_regression",
 ];
 const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n));
 if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }

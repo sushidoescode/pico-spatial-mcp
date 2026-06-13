@@ -121,10 +121,27 @@ fun mainApp(scope: SpatialAppScope) = with(scope) {
 }
 ```
 
-Verified working (telemetry `WindowContainer_Planar`). Note: windows spawn at a default
-placement (not necessarily in front); set `ContainerProperties.placement` (a
-`PlacementContext -> Placement`, anchor-relative) to position them. Make the panel
-@Composables `internal` so `Main.kt` can host them outside `HomeStage`.
+Verified working (telemetry `WindowContainer_Planar`). Make the panel @Composables `internal`
+so `Main.kt` can host them outside `HomeStage`.
+
+**Placement caveat (decompilation-confirmed, SDK 0.13):** windows spawn at a system-chosen
+default placement that is **not necessarily in the default camera view** — and you **cannot
+reliably fix this from app code**:
+- `ContainerProperties.placement` is a `(PlacementContext) -> Placement`, but `Placement`
+  only anchors a window **relative to another window** (`Placement.left/right/top/bottom(peer, dp)`)
+  — `PlacementContext` exposes no head/world/user anchor, and its `containers` accessor is
+  `internal` (`$foundation_release`), so the lambda **does not even resolve** from an app module.
+- The unanchored default is `Placement.none()` = the system spawn spot (often off-camera).
+
+So a `WindowContainer` cannot be guaranteed "in front of the user." The proven way to put a
+panel **dead-ahead** is a `SpatialView` `AttachmentPanel` positioned via its entity transform
+(`attachments.entity(tag)…setPosition(Vector3(0,1.5,-1.4))`) — **but** in SDK 0.13 declaring
+`AttachmentPanel`s in a `DefaultStage`+scene+`PinPlacer` SpatialView **tore the stage down on
+launch** (any size form), so neither path currently delivers movable-AND-in-front panels.
+Controllable window placement needs the platform window-transform API (`WindowContainerInfo`
+in `ui-platform`, internal) — a future build. Until then: movable WindowContainers (may spawn
+off-camera; reachable by turning on a headset) **or** a fixed dead-ahead AttachmentPanel where
+the stage tolerates it.
 
 ## 7. Color & domain consistency
 

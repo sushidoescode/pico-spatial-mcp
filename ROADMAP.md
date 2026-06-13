@@ -43,27 +43,32 @@ aiming** (`PinPlacer` reads `HMDTrackingProvider`/`ControllerTrackingProvider`, 
 virtual room AABB); Clear All; Generate Report panel; Mute toggle.
 
 SHIPPED since (v1.4–v2.0): **movable/closable panels** (each panel a `WindowContainer`
-with caption-bar chrome — DESIGN.md §6b; default placement still to tune via the
-`Placement` API); **`generate_spatial_ui`** (emit verified Compose panels); **asset
-pipeline** `prepare_environment`/`list_environment_assets` (auto-detect pano→skybox /
-textured-vs-collider GLB / splat; Blender projection path); **self-diagnosis**
-`diagnose` (symptom→root-cause→fix knowledge base) + `design_review` (capture the real
-view + DESIGN.md rubric); **`autonomous_spatial_build`** prompt (the v2.0 loop).
+with caption-bar chrome — DESIGN.md §6b); **`generate_spatial_ui`**; **asset pipeline**
+`prepare_environment`/`list_environment_assets`; **self-diagnosis** `diagnose` +
+`design_review`; **`autonomous_spatial_build`** prompt.
+
+SHIPPED in v2.1 (2026-06-12): **tap-a-pin → its detail card** (`PinPlacer` ray-vs-sphere +
+data-driven `DamageCard`, §6.2); **gated report backend** (`ClaimsApi` → real `/api/assess`
+with mock fallback, §6.3); **asset-free audio feedback** (`SoundFx` synthesized click + Smith
+cue via `Entity.playAudioStream`, gated by Mute, §6.5); **`run_visual_regression`** MCP tool
+(snapshot capture + sips/ImageMagick perceptual diff, §6.4 — 61 tools). App `claimsight-native`
+is now git-tracked.
 
 STILL OPEN (in priority order):
-1. **Pin lands exactly where the controller ray points.** The aim works (arm → point →
-   click) and hits a virtual AABB, but (a) the controller pose must be read correctly in
-   the emulator's controller mode, and (b) the AABB should match the apparent apartment
-   walls so pins read as "on the surface". Tune `PinPlacer`'s AABB; verify the controller
-   pose is non-null when the user drives the right controller with the trackpad.
-2. **Movable/closable/resizable panels** (like the emulator browser). API exists; not wired.
-3. **Tap a pin → opens its detail card** (controller-ray-vs-pin hit-test). No public SDK
-   select callback; needs a manual ray-vs-bounds test.
-4. **Textured mesh environments** (GLB/USDZ textures render black in this runtime). Only
-   skybox-override + USDZ-with-baked-materials render. Investigate the editor's texture
-   format, or keep skybox.
-5. **Real backend flow** (Generate Report → audio capture → assess API → Sonnet). Currently
-   a mock panel.
+1. **Panels in front of the user** (§6.1 — DEFERRED): WindowContainers can't self-anchor to the
+   user (Placement API has no head/world anchor, internal accessors) and dead-ahead
+   AttachmentPanels crash the stage in SDK 0.13. Needs the platform window-transform API; best
+   validated on device. DESIGN.md §6b has the full findings.
+2. **Pin lands exactly where the controller ray points.** Aim works against a virtual AABB; the
+   controller 6DOF pose is null in the emulator (head-gaze fallback), so this is a **device** task.
+3. **Interactive verification on device** (§7 v2.3): the emulator gates controller-trigger input
+   and host-composites the spatial UI (not in the a11y tree), so 6.2 (tap-select), 6.5 (audio),
+   and 6.3 (live API + mic) are implemented but **not interactively verifiable here** — verify on
+   the attached Quest 3 / a real PICO.
+4. **Textured mesh environments** (GLB/USDZ textures render black). Only skybox-override + baked
+   USDZ render. Investigate the editor's texture format, or keep skybox.
+5. **Real backend LIVE path** (§6.3 wired but gated `BACKEND_ENABLED=false`): stand up the
+   ClaimSight API + key, flip the gate, verify the card fills from `/api/assess`.
 
 ## 2. v1.4 — Spatial UX primitives (the next build)
 
@@ -158,31 +163,81 @@ message. Update this file's §1 (works/doesn't) as items close.
 
 ---
 
-## 6. OPEN ITEMS (do these next — concrete, ordered, each is one focused build)
+## 6. OPEN ITEMS
+
+> **Status (worked 2026-06-12):** 6.2 ✅, 6.3 ✅, 6.4 ✅, 6.5 ✅ implemented; **6.1 ⚠️ deferred
+> with findings** (no stable app-code path to in-front panels in SDK 0.13). The app
+> (`claimsight-native`, now git-tracked) builds + runs stable with 6.2/6.3/6.5 integrated;
+> 6.4 ships in the MCP (`run_visual_regression`, 61 tools, smoke 0 failures). Interactive
+> verification of 6.2/6.5 (controller trigger) and 6.3's live path (API + mic) is **emulator-
+> blocked** — those need the real-device pipeline (§7 v2.3). See per-item notes below.
 
 Each item: where, the API/approach, and how to verify. Build → `build_and_run` → `design_review` → `diagnose` any FAIL → fix → re-verify.
 
-### 6.1 WindowContainer default placement (panels spawn off-screen)
+### 6.1 WindowContainer default placement (panels spawn off-screen) — ⚠️ DEFERRED (findings)
+**Outcome:** neither viable path works in SDK 0.13. (a) The `Placement` API only anchors a
+window **relative to a peer window** — `PlacementContext` exposes no head/world anchor and its
+`containers` accessor is `internal`/`$foundation_release`, so `placement = { … }` **won't even
+compile** from the app module. (b) Rendering the panels as dead-ahead `SpatialView`
+`AttachmentPanel`s (the proven v0.x mechanism) **reproducibly tears the stage down on launch**
+in 0.13 (every size form — default and explicit `IntSize` — `pxr_handle_spatial_app_exit`,
+focus returns to launcher). So the panels stay movable/closable **WindowContainers** that spawn
+off the default camera view (reachable by turning on a headset). Real fix needs the platform
+window-transform API (`WindowContainerInfo`, `ui-platform`, internal) — a later build, ideally
+validated on device (§7 v2.3). Full decompiled signatures + both failed attempts: DESIGN.md §6b.
+
+### 6.1b (original 6.1 plan — kept for reference)
 - WHERE: `claimsight-native/app/.../Main.kt` (the three `WindowContainer(...)` calls).
 - APPROACH: set `ContainerProperties.placement` (a `(PlacementContext) -> Placement`). Decompile the constructors: `javap -p -classpath /tmp/pico-sdk/ui-foundation/x com.pico.spatial.ui.foundation.dsl.Placement$Companion` and `...PlacementContext`. `Placement` has an anchorContainer + `Placement$Orientation` + an offset (Dp). Anchor the menu/card/log left/center/right of the user at ~1.4 m. If the API proves too fiddly, an acceptable fallback is to KEEP one panel as an `AttachmentPanel` (fixed, visible) and make only the others `WindowContainer`s.
 - VERIFY: launch, `gui_capture` — panels should appear in front; confirm they still drag/close.
 
-### 6.2 Tap a pin → open its detail card
+### 6.2 Tap a pin → open its detail card — ✅ IMPLEMENTED
+**Done:** `PinPlacer` keeps parallel `placedPoints`/`placedFindings`; a NOT-armed fresh trigger
+press runs a manual controller/gaze ray-vs-sphere test (`dot(diff,diff) < 0.18²`, reuses
+`gazePose()`) and fires `onPinSelected(findingIndex)`; `HomeStage.selectedFinding` drives a now
+data-driven `DamageCard` (type/sev/note from the tapped pin's `Finding`). Compiles + app stable.
+`InteractableComponent` omitted (the manual ray does the work; only `components.set(T)` exists to
+add it). **Interactive proof needs a controller trigger → emulator-blocked (do on device, §7 v2.3).**
 - WHERE: `PinPlacer.kt` (track placed pins + world positions; already in `placed`) and `HomeStage.kt`/card state.
 - APPROACH: the SDK has NO public select callback. On a controller trigger while NOT armed, read the controller (or HMD) ray and test it against each placed pin's world position (sphere radius ~0.15 m): `t = dot(pinPos - origin, dir); closest = origin + dir*t; if (distance(closest, pinPos) < 0.15) selected = pin`. Set a shared `selectedFinding` state → the card shows that finding (give each pin a Finding via a parallel list keyed to the pin entity). Add `InteractableComponent()` to pins so they're hittable too.
 - VERIFY: place 2-3 pins, point+click one (not armed), confirm its card opens.
 
-### 6.3 Real backend wiring for Generate Report (the ClaimSight loop)
-- WHERE: app — add a small networking layer (okhttp is already on the classpath via the SDK).
+### 6.3 Real backend wiring for Generate Report (the ClaimSight loop) — ✅ IMPLEMENTED (gated)
+**Done:** new `ClaimsApi.kt` (object, `BACKEND_ENABLED=false`, `BASE_URL=http://10.0.2.2:3000`)
+POSTs to the **real** ClaimSight `/api/assess` (it's an Anthropic Messages proxy, not a tidy
+REST endpoint — body `{messages,system,max_tokens}`, response `content[].text`; assess JSON keys
+are `damage_type`/`severity`/`documentation_note`; reports reuse `/api/assess` with
+`REPORT_GENERATION_SYSTEM` — there is no `/api/report`). Uses `java.net.HttpURLConnection`
+(okhttp is **not** on the classpath — confirmed) + `org.json`; every disabled/failure path
+returns the existing mock so the emulator always renders. `Generate Report` opens the mock card
+immediately, then launches `generateReport` on a scope. `INTERNET` permission added. Compiles +
+app stable on the mock path. **Live path needs a running API + key → unverifiable here (gate off).**
+- WHERE: app — add a small networking layer (HttpURLConnection — okhttp is NOT on the classpath).
 - APPROACH: on pin commit, capture audio (MediaRecorder) → POST to the ClaimSight `/api/transcribe` + `/api/assess` (Claude Sonnet, already built per the ClaimSight repo) → populate the finding from the response. Generate Report → POST all findings → render the returned claims doc in `ReportCard`. Emulator has no mic in passthrough; gate behind a flag and mock when absent. This is the v1.8 "backend integration" item brought forward.
 - VERIFY: with the ClaimSight API reachable, commit a finding and confirm the card fills from the API; else confirm the mock path.
 
-### 6.4 Snapshot-based regression harness
+### 6.4 Snapshot-based regression harness — ✅ IMPLEMENTED & VERIFIED
+**Done:** new `src/regression.ts` → `run_visual_regression` (registered; **61 tools, smoke
+`Failures: 0`**). Reuses the `gui_capture` window-enumeration + `screencapture -l<id>` path;
+drives a resilient built-in ClaimSight step sequence (launch → arm → placed) via existing
+adb/ui helpers (inapplicable steps self-skip); perceptual diff prefers ImageMagick
+`compare -metric MAE`, else a **dependency-free `sips` downscale→32bpp-BMP mean-pixel diff**
+(reuses diagnose.ts's decode); `updateBaseline=true` records baselines; structured errors (no
+crash) on missing window / denied permission. **Diff algorithm validated on real captures:**
+identical=0.0, two app-skybox frames=0.056, app-vs-home-env=0.356 (default threshold 0.06
+discriminates correctly).
 - WHERE: MCP — a new `src/regression.ts` tool `run_visual_regression`.
 - APPROACH: `snapshot_save` a known emulator state; script a sequence (launch app, place N pins, open report) via the existing tools; `gui_capture` at each step; compare against committed baseline PNGs (perceptual diff — shell to `sips`/ImageMagick or a tiny pixel-diff). Flag regressions. Pairs with `design_review`.
 - VERIFY: run twice, expect "no regression"; intentionally break a color, expect a flagged diff.
 
-### 6.5 Audio feedback (Mute should do something)
+### 6.5 Audio feedback (Mute should do something) — ✅ IMPLEMENTED (asset-free)
+**Done:** new `SoundFx.kt` synthesizes PCM with **no bundled asset** via
+`Entity.playAudioStream(AudioStreamConfig(), AudioStreamDataCallback)` (the pull `onMoreData`
+fills a ByteBuffer; default format = interleaved INT16-LE stereo @ 48 kHz, confirmed from the
+default ctors). A ~60 ms decayed-sine **click** fires on pin commit and a ~220 ms two-tone
+**Smith cue** on Generate Report; both gated by `muted = { smithMuted.value }` and wrapped in
+`runCatching` (can never crash). Compiles + app stable. **Audibility is unverifiable on the
+emulator** (no guaranteed audio device); a real recorded Smith voice would need a bundled WAV/OGG.
 - WHERE: `PinPlacer`/`HomeStage`.
 - APPROACH: `com.pico.spatial.core.ecs.audio.AudioPlayerController` (core AAR) — play a soft click on commit + a Smith voice line; `smithMuted` gates it. Decompile its ctor/methods with the JBR javap.
 

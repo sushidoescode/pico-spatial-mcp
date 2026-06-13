@@ -19,11 +19,12 @@ import { registerScaffoldTools } from "./scaffold.js";
 import { registerComponentTools } from "./components.js";
 import { registerAssetTools } from "./assets.js";
 import { registerDiagnoseTools } from "./diagnose.js";
+import { registerRegressionTools } from "./regression.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "2.0.0",
+  version: "2.1.0",
 });
 
 server.registerTool(
@@ -54,6 +55,7 @@ registerScaffoldTools(server);
 registerComponentTools(server);
 registerAssetTools(server);
 registerDiagnoseTools(server);
+registerRegressionTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
