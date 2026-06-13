@@ -3,6 +3,44 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 /** A built-in prompt teaching an agent the PICO spatial dev loop with these tools. */
 export function registerPrompts(server: McpServer) {
   server.registerPrompt(
+    "autonomous_spatial_build",
+    {
+      description: "v2.0 autonomous build loop: take a product brief and ship a polished, self-verified native PICO spatial APK, reviewing and fixing your own work.",
+      argsSchema: {},
+    },
+    () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              "You are an autonomous spatial-app builder driving pico-spatial-mcp. Take a product brief and deliver a polished, RUNNING native PICO spatial APK — and review and fix your OWN work until it meets the bar. Read SKILLS.md + DESIGN.md first.",
+              "",
+              "## The loop (repeat until the build passes review)",
+              "1. PREFLIGHT — `validate_toolchain`; fix any `problems` before continuing.",
+              "2. SCAFFOLD — `scaffold_spatial_app` (new app) from a template; set package, name, Full stage.",
+              "3. ASSETS — for any environment/model the brief implies: `prepare_environment` (it auto-detects pano→skybox, textured-vs-collider GLB, splat-not-loadable) and follow its `recommendedCompose`. Prefer a 360 skybox for environments (mesh textures render black).",
+              "4. SCENE — `compose_inspection_scene`/`compose_scene` (real materials, surface-placed markers). `verify_scene` — geometry/material counts must match intent.",
+              "5. UI — `generate_spatial_ui` to emit verified Compose panels (sized, clickable, correct colors); wire them in HomeStage/Main (movable `WindowContainer`s if the brief wants window chrome). Interaction must be INTENTIONAL (armed placement, never automatic).",
+              "6. BUILD & RUN — `build_and_run`; require `build/install/launch` ok, `rendered: true`, `crashes: []`.",
+              "7. SELF-REVIEW — `design_review`: it captures the REAL 3D view and gives you a DESIGN.md rubric. YOU have vision — judge each rubric item against the capture. For every FAIL, call `diagnose(symptom=...)` to get the root cause + exact fix, apply it, and GOTO 4/5/6.",
+              "8. SHIP — when the review passes (geometry colored, environment visible, panels readable, content framed, interaction gated, pins on surfaces, no crash), report what you built, the verification results, and any honest limitations.",
+              "",
+              "## Principles",
+              "- The runtime fails SILENTLY. Never assume — `verify_scene` + `build_and_run` (`rendered`) + `gui_capture`/`design_review` after every change.",
+              "- Treat each capture like a senior code review: name the defect, map it to a DESIGN.md rule via `diagnose`, fix the root cause (not the symptom), re-verify.",
+              "- Don't relearn the gotchas: materials-not-displayColor, skybox-override-for-textures, head-gaze aiming, no-`java`-on-PATH (auto-detected), intentional interaction. `diagnose` has them all.",
+              "- Model-agnostic: if you are a local model, keep one tool call per step and lean on the structured results + the self-diagnosis tree.",
+              "- Commit small, verified changes. Update ROADMAP.md §1 (works/doesn't) as items close.",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
     "pico_spatial_dev_loop",
     {
       description: "Guidance for an AI agent driving PICO spatial development end-to-end with this server's tools.",

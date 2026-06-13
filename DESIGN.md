@@ -105,6 +105,27 @@ system environment. To keep the user enclosed: make the environment **large/enve
 (on a headset the user stands in place). A skybox sphere (large inverted sphere with a
 textured/emissive material) guarantees a consistent backdrop everywhere.
 
+## 6b. Movable / closable / resizable panels (window chrome)
+
+Raw `AttachmentPanel`s inside `SpatialView` are fixed in place. For browser-like panels
+the user can **grab, move, resize, and close**, render each panel as its own
+`WindowContainer` at the `SpatialAppScope` level (alongside `DefaultStage`):
+
+```kotlin
+fun mainApp(scope: SpatialAppScope) = with(scope) {
+    DefaultStage { PicoTheme { HomeStage() } }   // the immersive 3D scene
+    WindowContainer("Title", Form.Planar, {
+        defaultCaptionBarType = CaptionBarType.Default   // the move/close/resize chrome
+        resizeType = ContainerResizeType.Automatic
+    }) { PicoTheme { MyPanel() } }
+}
+```
+
+Verified working (telemetry `WindowContainer_Planar`). Note: windows spawn at a default
+placement (not necessarily in front); set `ContainerProperties.placement` (a
+`PlacementContext -> Placement`, anchor-relative) to position them. Make the panel
+@Composables `internal` so `Main.kt` can host them outside `HomeStage`.
+
 ## 7. Color & domain consistency
 
 Reuse the app's real palette and domain vocabulary. ClaimSight: severity 1→5 =

@@ -35,7 +35,7 @@ const EXPECTED = [
   "controller_map", "controller_press", "screenrecord", "iterate_scene", "build_and_run",
   "compose_scene", "add_entity", "import_asset", "verify_scene", "xr_input_status",
   "gui_find_window", "gui_capture", "gui_camera", "gui_permissions",
-  "compose_inspection_scene", "import_environment", "worldmodel_guide", "scaffold_spatial_app",
+  "compose_inspection_scene", "import_environment", "worldmodel_guide", "scaffold_spatial_app", "diagnose", "design_review", "prepare_environment", "list_environment_assets", "generate_spatial_ui",
 ];
 const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n));
 if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }

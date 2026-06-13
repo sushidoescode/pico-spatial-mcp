@@ -37,7 +37,15 @@ severity-colored saturn markers; clickable Compose menu/card buttons; **gaze/con
 aiming** (`PinPlacer` reads `HMDTrackingProvider`/`ControllerTrackingProvider`, raycasts a
 virtual room AABB); Clear All; Generate Report panel; Mute toggle.
 
-DOESN'T (open items, in priority order — these are the v1.4 work):
+SHIPPED since (v1.4–v2.0): **movable/closable panels** (each panel a `WindowContainer`
+with caption-bar chrome — DESIGN.md §6b; default placement still to tune via the
+`Placement` API); **`generate_spatial_ui`** (emit verified Compose panels); **asset
+pipeline** `prepare_environment`/`list_environment_assets` (auto-detect pano→skybox /
+textured-vs-collider GLB / splat; Blender projection path); **self-diagnosis**
+`diagnose` (symptom→root-cause→fix knowledge base) + `design_review` (capture the real
+view + DESIGN.md rubric); **`autonomous_spatial_build`** prompt (the v2.0 loop).
+
+STILL OPEN (in priority order):
 1. **Pin lands exactly where the controller ray points.** The aim works (arm → point →
    click) and hits a virtual AABB, but (a) the controller pose must be read correctly in
    the emulator's controller mode, and (b) the AABB should match the apparent apartment

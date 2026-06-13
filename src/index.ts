@@ -16,11 +16,14 @@ import { registerSceneTools } from "./scene.js";
 import { registerHostGuiTools } from "./hostgui.js";
 import { registerInspectionTools } from "./inspection.js";
 import { registerScaffoldTools } from "./scaffold.js";
+import { registerComponentTools } from "./components.js";
+import { registerAssetTools } from "./assets.js";
+import { registerDiagnoseTools } from "./diagnose.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "1.4.0",
+  version: "2.0.0",
 });
 
 server.registerTool(
@@ -48,6 +51,9 @@ registerSceneTools(server);
 registerHostGuiTools(server);
 registerInspectionTools(server);
 registerScaffoldTools(server);
+registerComponentTools(server);
+registerAssetTools(server);
+registerDiagnoseTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
