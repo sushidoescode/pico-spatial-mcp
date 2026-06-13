@@ -1,4 +1,9 @@
-# ROADMAP.md — v1.4 → v2.0, written to be executed by ANY agent (incl. a local model)
+# ROADMAP.md — v1.4 → v3.0, written to be executed by ANY agent (incl. a local model)
+
+> **v2.0 is shipped (60 tools, 2 prompts).** The remaining OPEN ITEMS are detailed in §6;
+> the v2.1 → v3.0 vision is in §7. Start a new turn/chat with `autonomous_spatial_build`
+> loaded and this file open — everything needed to continue is here + in memory.
+
 
 This is a **self-contained handoff**. If the primary agent (Claude) is unavailable (usage
 limits), a local open-weight model (e.g. Gemma 4 31B via LM Studio/llama.cpp with this MCP
@@ -150,3 +155,49 @@ self-diagnosis tree (SKILLS.md). Always end a build attempt with `build_and_run`
 `gui_capture`, compare to intent, and iterate. Commit small, verified changes
 (`git commit` + push to the private repo `sushidoescode/pico-spatial-mcp`) with a clear
 message. Update this file's §1 (works/doesn't) as items close.
+
+---
+
+## 6. OPEN ITEMS (do these next — concrete, ordered, each is one focused build)
+
+Each item: where, the API/approach, and how to verify. Build → `build_and_run` → `design_review` → `diagnose` any FAIL → fix → re-verify.
+
+### 6.1 WindowContainer default placement (panels spawn off-screen)
+- WHERE: `claimsight-native/app/.../Main.kt` (the three `WindowContainer(...)` calls).
+- APPROACH: set `ContainerProperties.placement` (a `(PlacementContext) -> Placement`). Decompile the constructors: `javap -p -classpath /tmp/pico-sdk/ui-foundation/x com.pico.spatial.ui.foundation.dsl.Placement$Companion` and `...PlacementContext`. `Placement` has an anchorContainer + `Placement$Orientation` + an offset (Dp). Anchor the menu/card/log left/center/right of the user at ~1.4 m. If the API proves too fiddly, an acceptable fallback is to KEEP one panel as an `AttachmentPanel` (fixed, visible) and make only the others `WindowContainer`s.
+- VERIFY: launch, `gui_capture` — panels should appear in front; confirm they still drag/close.
+
+### 6.2 Tap a pin → open its detail card
+- WHERE: `PinPlacer.kt` (track placed pins + world positions; already in `placed`) and `HomeStage.kt`/card state.
+- APPROACH: the SDK has NO public select callback. On a controller trigger while NOT armed, read the controller (or HMD) ray and test it against each placed pin's world position (sphere radius ~0.15 m): `t = dot(pinPos - origin, dir); closest = origin + dir*t; if (distance(closest, pinPos) < 0.15) selected = pin`. Set a shared `selectedFinding` state → the card shows that finding (give each pin a Finding via a parallel list keyed to the pin entity). Add `InteractableComponent()` to pins so they're hittable too.
+- VERIFY: place 2-3 pins, point+click one (not armed), confirm its card opens.
+
+### 6.3 Real backend wiring for Generate Report (the ClaimSight loop)
+- WHERE: app — add a small networking layer (okhttp is already on the classpath via the SDK).
+- APPROACH: on pin commit, capture audio (MediaRecorder) → POST to the ClaimSight `/api/transcribe` + `/api/assess` (Claude Sonnet, already built per the ClaimSight repo) → populate the finding from the response. Generate Report → POST all findings → render the returned claims doc in `ReportCard`. Emulator has no mic in passthrough; gate behind a flag and mock when absent. This is the v1.8 "backend integration" item brought forward.
+- VERIFY: with the ClaimSight API reachable, commit a finding and confirm the card fills from the API; else confirm the mock path.
+
+### 6.4 Snapshot-based regression harness
+- WHERE: MCP — a new `src/regression.ts` tool `run_visual_regression`.
+- APPROACH: `snapshot_save` a known emulator state; script a sequence (launch app, place N pins, open report) via the existing tools; `gui_capture` at each step; compare against committed baseline PNGs (perceptual diff — shell to `sips`/ImageMagick or a tiny pixel-diff). Flag regressions. Pairs with `design_review`.
+- VERIFY: run twice, expect "no regression"; intentionally break a color, expect a flagged diff.
+
+### 6.5 Audio feedback (Mute should do something)
+- WHERE: `PinPlacer`/`HomeStage`.
+- APPROACH: `com.pico.spatial.core.ecs.audio.AudioPlayerController` (core AAR) — play a soft click on commit + a Smith voice line; `smithMuted` gates it. Decompile its ctor/methods with the JBR javap.
+
+## 7. v2.1 → v3.0 — the longer arc (scope; refine when starting each)
+
+- **v2.1 — Polish & close-out:** finish §6.1–6.5. The app becomes genuinely usable end-to-end (panels in front + movable, tap-to-select, real report, audio, regression-guarded).
+- **v2.2 — Interaction depth:** multi-pin select/edit (change severity, delete one), a radial/controller-menu for damage TYPE selection at commit time, undo/redo, and gaze+controller dual-aim. New MCP `compose_interaction_kit` to emit these patterns.
+- **v2.3 — Real-device pipeline:** build/deploy/launch on a PHYSICAL PICO/Quest over adb-wifi (the Quest 3 is already attached per `adb devices`). On hardware the controller 6DOF pose + passthrough + real camera capture work — the placement and photo-grounded loop become real. New tools: `device_deploy`, `device_capture`. Document the emulator-vs-device capability matrix.
+- **v2.4 — Asset richness:** scatter generated PROPS (Hunyuan3D via its HF Space → GLB → place in scene); research native Gaussian-splat rendering (Spark.js bridge or a splat→mesh bake) so Marble SPZ becomes usable; crack the editor's on-mesh texture format so textured meshes stop rendering black (would unlock textured rooms with real surfaces). `place_props`, `bake_splat`.
+- **v2.5 — Generalization beyond ClaimSight:** ship 3–4 app templates via `scaffold_spatial_app` (data-viz dashboard, training/sim, gallery, control room) proving the MCP builds ANY spatial app, not one. A `template` registry.
+- **v2.6 — Collaboration & persistence:** session save/load, cross-device link (mirror ClaimSight's PLAN_TWIN link flow), and a reviewer surface. `session_save`/`session_link`.
+- **v2.7 — Performance & QA:** frame-time/draw-call profiling (integrate PICO's XR-Profiling-Toolkit), perf budgets in `verify_scene`, and CI visual-regression. A `profile_app` tool.
+- **v2.8 — Smarter agents:** upgrade `design_review` from pass/fail to a SCORED rubric with severity-weighted findings; add a corrections memory (when a human overrides a fix, record it) so the agent improves; a `critique` that proposes UX/visual improvements, not just defect detection.
+- **v2.9 — Ecosystem:** after the PICO SDK License Terms / NDA review, publish the MCP (npm + MCP registry), with a public template/recipe library. (Until then it stays private — never bundle PICO bits.)
+- **v3.0 — The autonomous spatial studio:** the full unattended pipeline — natural-language brief → world-model assets → composed app from verified primitives → built → self-reviewed/diagnosed/fixed → deployed to a real headset → interaction-tested → iterated to a quality bar — orchestrated as a multi-phase Workflow. The human gives a brief and a budget; the studio delivers a shippable, device-verified spatial app + a build/test report. ClaimSight is example output #1 of many.
+
+## 8. Verify the whole MCP still works after any change
+`npm run build && npm run smoke` → expect `Failures: 0` and the full tool list. Commit small + push to the private repo `sushidoescode/pico-spatial-mcp`. Update §1 (works/doesn't) and check off §6 items as they close.
