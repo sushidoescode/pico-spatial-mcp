@@ -241,6 +241,34 @@ export function registerAdbTools(server: McpServer) {
   );
 
   server.registerTool(
+    "app_broadcast",
+    {
+      description:
+        "Send an Android broadcast Intent via `am broadcast` — a HEADLESS command channel into an app's BroadcastReceiver. This is how an agent drives in-app actions the PICO emulator can't otherwise trigger (the controller trigger is GUI-gated). E.g. ClaimSight registers `com.example.claimsight.DEBUG_CMD` with a `cmd` string extra: arm | commit | select | report | clear | mute | demo — so the full menu→pin→panel UX is drivable without a trigger. Pair with assert_logcat (verify the action fired) + gui_capture (see the result).",
+      inputSchema: {
+        serial: serialParam,
+        action: z.string().describe("Intent action, e.g. com.example.claimsight.DEBUG_CMD"),
+        stringExtras: z.record(z.string(), z.string()).optional().describe("--es key value extras, e.g. { cmd: 'commit' }"),
+        intExtras: z.record(z.string(), z.number().int()).optional().describe("--ei key value extras, e.g. { arg: 0 }"),
+        component: z.string().optional().describe("Optional explicit receiver component pkg/cls to target a manifest receiver"),
+      },
+    },
+    async ({ serial, action, stringExtras, intExtras, component }) => {
+      const s = await resolveSerial(serial);
+      const args = ["-s", s, "shell", "am", "broadcast", "-a", action];
+      if (component) args.push("-n", component);
+      for (const [k, v] of Object.entries(stringExtras ?? {})) args.push("--es", k, v);
+      for (const [k, v] of Object.entries(intExtras ?? {})) args.push("--ei", k, String(v));
+      const r = await adb(args);
+      const out = (r.stdout + r.stderr).trim();
+      // `am broadcast` prints "Broadcast completed: result=0" on success (result=0 is normal).
+      return r.code === 0 && /Broadcast completed/i.test(out)
+        ? ok(`Sent ${action}${stringExtras ? " " + JSON.stringify(stringExtras) : ""}${intExtras ? " " + JSON.stringify(intExtras) : ""}\n${out}`)
+        : fail(out || "am broadcast produced no output");
+    },
+  );
+
+  server.registerTool(
     "adb_shell",
     {
       description: "Run an arbitrary adb shell command on the PICO emulator/device and return its output.",
