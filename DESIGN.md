@@ -156,3 +156,25 @@ The runtime fails silently. After every change: `verify_scene` (geometry/materia
 `build_and_run` (confirms a frame rendered + no crash), and `gui_capture` (the real 3D
 view). If geometry is white → materials (rule 1). If invisible → off-camera or no
 material. If tiny → panel size (rule 4). If pins everywhere → ungated placement (rule 5).
+
+## 9. Runtime physics colliders — the ONLY way Scene.rayCast hits (verified on-device 2026-06-13)
+
+Landing pins/markers on surfaces (or picking objects) needs `Scene.rayCast`, which is a
+PhysX query. The hard-won, on-device-verified rules (use `generate_collider_kotlin` to emit
+the whole recipe; `diagnose symptom=raycast_no_hit` for the fix):
+
+- **USD-authored collision does NOT work.** The runtime never turns a `CollisionComponent`
+  USD prim into a live PhysX query actor. You MUST attach the collider to a LIVE entity at
+  runtime: `entity.components.set(CollisionComponent(...))` on `Dispatchers.Main`.
+- **A `PhysicsWorldComponent` is REQUIRED on-device** (set it once on the scene root or a
+  dedicated entity). Without it, colliders register in the SceneInspector but `rayCast`
+  returns 0 hits. (The desktop editor dylib auto-creates the world; the device runtime does
+  not — trust the device.)
+- **Only PRIMITIVE shapes register.** `ShapeResource.createBox/createSphere/createCapsule`
+  work; `createStaticMesh`/`createConvexMesh` from a loaded render mesh cook NO queryable
+  triangles on-device. Model a room as 6 thin box "walls" at its AABB; model props as
+  box/sphere/capsule.
+- **API facts:** the `CollisionComponent` 5-arg ctor is public (the no-arg ctor is internal);
+  no `RigidBodyComponent` is needed for a static collider; `createBox` takes FULL extents
+  (a `Vector3(1,1,1)` box has faces at ±0.5).
+- **Verify** with `assert_logcat` against your own `rayCast HIT` log line — never assume.

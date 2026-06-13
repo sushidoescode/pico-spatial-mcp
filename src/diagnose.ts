@@ -189,6 +189,20 @@ const KB: Record<string, DiagEntry> = {
     designRule: "DESIGN.md §1c (aim with the head pose, not the controller) + §5",
     relatedTools: ["gui_camera", "xr_set_head_pose", "xr_input_status", "controller_press"],
   },
+
+  raycast_no_hit: {
+    rootCause:
+      "Scene.rayCast returns no results. On-device causes (verified 2026-06-13): (1) NO PhysicsWorldComponent on the scene root — without it, colliders register in the SceneInspector but the queryable PhysX world is empty and rayCast returns 0 hits; (2) the collider was authored in USD — the runtime never turns USD CollisionComponent prims into live query actors; (3) a StaticMesh/ConvexMesh collider was used — mesh colliders from a loaded render mesh cook NO queryable triangles on-device (only primitives register); (4) the ray points away from the geometry or origin/units are wrong.",
+    fix: [
+      "Set a PhysicsWorldComponent on the scene-root entity ONCE on Dispatchers.Main: root.components.set(PhysicsWorldComponent()). This is REQUIRED on-device even though the desktop editor auto-creates the world.",
+      "Attach colliders at RUNTIME, not in USD: build a PRIMITIVE shape (ShapeResource.createBox(fullExtents) / createSphere / createCapsule), then CollisionComponent(listOf(shape), PhysicsMaterialResource(0.5f,0.5f,0f), CollisionResponseMode.COLLIDER_FULL, CollisionFilter.COLLISION_FILTER_DEFAULT, CollisionInfoDetailLevel.BRIEF), then entity.components.set(collision). The 5-arg ctor is the public one; no RigidBody is needed for a static collider.",
+      "Do NOT use createStaticMesh/createConvexMesh for room/world geometry — they register nothing queryable on-device. Model a room as 6 thin box 'walls' at the room AABB; model props as box/sphere/capsule.",
+      "createBox takes FULL extents (a Vector3(1,1,1) box has faces at +-0.5). Place the collider entity at the world position of the surface.",
+      "Use generate_collider_kotlin to emit the entire verified recipe (PhysicsWorldComponent + primitive colliders + a rayCast helper). VERIFY with assert_logcat for your own 'rayCast HIT' log line.",
+    ],
+    designRule: "DESIGN.md §3 (surfaces need a real collider) + §9 (runtime physics: PhysicsWorldComponent + primitive CollisionComponent; USD/mesh colliders do not register)",
+    relatedTools: ["generate_collider_kotlin", "assert_logcat", "build_and_run", "logcat"],
+  },
 };
 
 // ----------------------------------------------------------------------------
@@ -377,7 +391,7 @@ export function registerDiagnoseTools(server: McpServer) {
     "diagnose",
     {
       description:
-        "Self-diagnosis knowledge base: given a SYMPTOM you observe in the PICO spatial runtime (white/invisible geometry, black/black-textured environment, tiny panels, dead buttons, scattered/hovering pins, falling out of the room, build failures, nothing rendering, no controller pose), returns the verified root cause, concrete fix steps, the DESIGN.md rule it violates, and the tools to apply the fix. Use this to self-correct instead of guessing.",
+        "Self-diagnosis knowledge base: given a SYMPTOM you observe in the PICO spatial runtime (white/invisible geometry, black/black-textured environment, tiny panels, dead buttons, scattered/hovering pins, falling out of the room, build failures, nothing rendering, no controller pose, Scene.rayCast returning no hit), returns the verified root cause, concrete fix steps, the DESIGN.md rule it violates, and the tools to apply the fix. Use this to self-correct instead of guessing.",
       inputSchema: {
         symptom: z
           .enum([
@@ -393,6 +407,7 @@ export function registerDiagnoseTools(server: McpServer) {
             "not_rendering",
             "no_controller_pose",
             "texture_black",
+            "raycast_no_hit",
           ])
           .describe("The observed symptom to diagnose."),
       },

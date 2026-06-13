@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { fail, image, ok, okJson, run, runBinary, tail } from "./util.js";
+import { fail, image, ok, okJson, run, runBinary, sleep, tail } from "./util.js";
 import { findAdb, pickVersion, resolveToolsRoot } from "./toolchain.js";
 
 let cachedAdb: string | null = null;
@@ -187,6 +187,56 @@ export function registerAdbTools(server: McpServer) {
       }
       const r = await adb(["-s", s, "shell", ...args]);
       return r.code === 0 ? ok(`${action} ok`) : fail(r.stderr || r.stdout);
+    },
+  );
+
+  server.registerTool(
+    "assert_logcat",
+    {
+      description:
+        "VERIFICATION PRIMITIVE — wait up to timeoutSec for a logcat line matching `pattern` (optionally scoped to `tag`) to appear, polling the buffer. Turns an app's Log.* markers into a machine-checkable pass/fail signal so an agent can PROVE behavior instead of eyeballing it (e.g. assert 'rayCast HIT' after attaching a collider, or 'placed pin #' after a commit). Returns {matched, line, elapsedSec} — matched:false is a normal (non-error) result so callers can branch and escalate. Typical loop: clear → trigger the action (launch / drive input) → assert_logcat.",
+      inputSchema: {
+        serial: serialParam,
+        pattern: z.string().describe("Case-insensitive regex matched against each logcat line, e.g. 'rayCast HIT' or 'placed pin #\\\\d+'"),
+        tag: z.string().optional().describe("Restrict to this log tag (logcat <tag>:V *:S), e.g. ClaimSightPin"),
+        timeoutSec: z.number().int().min(1).max(180).default(20),
+        clearFirst: z.boolean().default(false).describe("adb logcat -c before polling (use when re-running the same assertion to avoid matching stale lines)"),
+        pollMs: z.number().int().min(200).max(5000).default(700),
+      },
+    },
+    async ({ serial, pattern, tag, timeoutSec, clearFirst, pollMs }) => {
+      const s = await resolveSerial(serial);
+      let re: RegExp;
+      try {
+        re = new RegExp(pattern, "i");
+      } catch (e) {
+        return fail(`Invalid regex /${pattern}/: ${(e as Error).message}`);
+      }
+      if (clearFirst) await adb(["-s", s, "logcat", "-c"]);
+      const start = Date.now();
+      const deadline = start + timeoutSec * 1000;
+      let lastTail = "";
+      const dumpArgs = ["-s", s, "logcat", "-d", ...(tag ? [`${tag}:V`, "*:S"] : [])];
+      while (Date.now() < deadline) {
+        const r = await adb(dumpArgs, 30_000);
+        if (r.code === 0) {
+          const lines = r.stdout.split("\n");
+          const hit = lines.find((l) => re.test(l));
+          if (hit) {
+            return okJson({ matched: true, line: hit.trim(), elapsedSec: +((Date.now() - start) / 1000).toFixed(1), tag: tag ?? null, pattern });
+          }
+          lastTail = lines.filter((l) => l.trim()).slice(-8).join("\n");
+        }
+        await sleep(pollMs);
+      }
+      return okJson({
+        matched: false,
+        timedOutAfterSec: timeoutSec,
+        tag: tag ?? null,
+        pattern,
+        hint: "No matching line within the timeout. Confirm the app emitted the log (it may need an action to trigger it), the tag is right, and the serial is correct.",
+        lastLines: lastTail || "(buffer empty for this tag)",
+      });
     },
   );
 
