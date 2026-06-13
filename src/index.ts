@@ -20,12 +20,13 @@ import { registerComponentTools } from "./components.js";
 import { registerAssetTools } from "./assets.js";
 import { registerDiagnoseTools } from "./diagnose.js";
 import { registerColliderTools } from "./collider.js";
+import { registerEnvironmentTools } from "./environment.js";
 import { registerRegressionTools } from "./regression.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "2.4.0",
+  version: "2.5.0",
 });
 
 server.registerTool(
@@ -57,6 +58,7 @@ registerComponentTools(server);
 registerAssetTools(server);
 registerDiagnoseTools(server);
 registerColliderTools(server);
+registerEnvironmentTools(server);
 registerRegressionTools(server);
 registerPrompts(server);
 
