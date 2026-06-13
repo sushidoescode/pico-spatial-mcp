@@ -89,6 +89,55 @@ export function registerBundleTools(server: McpServer) {
   );
 
   server.registerTool(
+    "decode_spatial_bundle",
+    {
+      description:
+        "Decode what the PICO Spatial Editor BAKED into a compiled .bundle — the agent's window into the editor's output without opening the GUI. Parses the embedded AssetInfo.json (spatial::asset::AssetInfoMap) and returns a histogram of asset TYPES (mesh / texture / shader / materialinstance / collisionshape / physicsmaterial / scene / …) plus the per-asset guid→name→path→type list, with collision/physics/scene assets called out. Note: a `collisionshape`/`physicsmaterial` asset being present means the editor cooked the USD CollisionComponent into the bundle — but that does NOT make Scene.rayCast hit at runtime (the runtime needs a CollisionComponent attached to a live entity + a PhysicsWorldComponent; see diagnose symptom=raycast_no_hit / generate_collider_kotlin).",
+      inputSchema: {
+        bundlePath: z.string(),
+        full: z.boolean().default(false).describe("Include the full per-asset list (guid/name/path/type); default returns the histogram + collision/physics/scene assets only"),
+      },
+    },
+    async ({ bundlePath, full }) => {
+      const p = expandHome(bundlePath);
+      if (!fs.existsSync(p)) return fail(`No such file: ${p}`);
+      const r = await run("unzip", ["-p", p, "AssetInfo.json"], { timeoutMs: 60_000 });
+      if (r.code !== 0 || !r.stdout.trim()) return fail(`Could not extract AssetInfo.json from ${p} (not a spatial bundle, or older format).`);
+      let parsed: any;
+      try {
+        parsed = JSON.parse(r.stdout);
+      } catch (e) {
+        return fail(`AssetInfo.json is not valid JSON: ${(e as Error).message}`);
+      }
+      const elements: any[] = parsed?.assetInfo?.__elements ?? [];
+      if (!Array.isArray(elements) || elements.length === 0) return fail("AssetInfo.json had no assetInfo.__elements array.");
+      const histogram: Record<string, number> = {};
+      const assets = elements.map((e) => {
+        const type = String(e.type ?? "unknown");
+        histogram[type] = (histogram[type] ?? 0) + 1;
+        return { guid: e.guid, type, path: e.path, name: typeof e.name === "string" ? e.name.split("/").pop() : e.name, deps: (e.dependencies ?? []).length };
+      });
+      const sortedHist = Object.fromEntries(Object.entries(histogram).sort((a, b) => b[1] - a[1]));
+      const physicsTypes = new Set(["collisionshape", "physicsmaterial"]);
+      const colliders = assets.filter((a) => physicsTypes.has(a.type));
+      const scenes = assets.filter((a) => a.type === "scene" || /scene/i.test(a.type));
+      const out: any = {
+        bundle: p,
+        totalAssets: assets.length,
+        typeHistogram: sortedHist,
+        collisionAndPhysics: colliders,
+        scenes,
+        physicsNote:
+          colliders.length > 0
+            ? `${colliders.filter((c) => c.type === "collisionshape").length} collisionshape + ${colliders.filter((c) => c.type === "physicsmaterial").length} physicsmaterial baked by the editor. This is the editor's cooked collision — it does NOT make Scene.rayCast hit at runtime; attach a CollisionComponent at runtime (generate_collider_kotlin).`
+            : "No baked collision assets — colliders (if any) must be attached at runtime.",
+      };
+      if (full) out.allAssets = assets;
+      return okJson(out);
+    },
+  );
+
+  server.registerTool(
     "scene_schemas",
     {
       description:
