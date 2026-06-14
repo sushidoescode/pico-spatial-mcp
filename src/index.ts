@@ -25,11 +25,12 @@ import { registerRegressionTools } from "./regression.js";
 import { registerSenseTools } from "./sense.js";
 import { registerEditorProjectTools } from "./editorproject.js";
 import { registerMaterialXTools } from "./materialx.js";
+import { registerCapabilityTools } from "./capability.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "3.0.0",
+  version: "3.1.0",
 });
 
 server.registerTool(
@@ -66,6 +67,7 @@ registerRegressionTools(server);
 registerSenseTools(server);
 registerEditorProjectTools(server);
 registerMaterialXTools(server);
+registerCapabilityTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
