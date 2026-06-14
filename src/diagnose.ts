@@ -75,15 +75,29 @@ const KB: Record<string, DiagEntry> = {
 
   texture_black: {
     rootCause:
-      "GLB/USDZ MESH textures render BLACK in this runtime. Hand-authored image-texture materials also fail to pack. The skybox texture-override is the ONLY reliable textured-visual path.",
+      "A textured mesh renders BLACK. CORRECTED (2026-06-13): this is the RUNTIME path, not a fundamental limit. Causes: (1) runtime-loading a raw GLB (Entity.loadSuspend(File(glb)) + a swapped PhysicallyBasedMaterial) — gltfio's async texture loader is never driven, so the sampler is unbound → black; (2) `prepend references=@x.glb@` inside a USDA — USD has no glTF plugin, so the mesh/texture never packs (empty). A spatialbundle-BAKED model renders textured fine.",
     fix: [
-      "Do not rely on packing image textures onto mesh materials — they go black.",
-      "Route any 360°/equirectangular imagery through the skybox path: override a working sky-sphere's texture node (DESIGN.md §1b).",
-      "For mesh color use solid UsdPreviewSurface materials (diffuse + emissive), not image textures.",
-      "If a referenced GLB must be textured, verify it actually ships materials/textures (inspect glTF materials/textures) and expect mesh image textures to still render black — prefer skybox.",
+      "BAKE the model: use bake_textured_model (modelPath=<your .glb/.usd>, outBundle=app/src/main/assets/<name>.bundle). spatialbundle bakes a PHYSICALLY_BASED material + ASTC texture. The '[Error] Failed to get material texture path' log is NON-FATAL noise.",
+      "Load the BAKED model, not the raw GLB: AssetBundle.load(\"asset://<name>.bundle\") then Entity.loadSuspend(\"<modelName>\", bundle). modelName = the file stem (bake_textured_model returns it). Renders textured, sharp, any scale.",
+      "NEVER reference a GLB inside a USDA. Pack the GLB as a top-level scene file (bake_textured_model does this), or convert GLB→USD(C/Z) first (Blender wm.usd_export).",
+      "Use generate_environment_kotlin(kind='texturedMesh') to emit the baked-bundle load code. For 360°/equirect imagery the skybox texture-override is still the simplest (DESIGN.md §1b).",
+      "If still dark (not black): the baked PHYSICALLY_BASED material is lit — connect emissive / use the UNLIT MaterialX nodedef / add scene IBL.",
     ],
-    designRule: "DESIGN.md §1b + §2 (textured path is the skybox; mesh textures render black)",
-    relatedTools: ["compose_inspection_scene", "import_environment", "import_asset", "verify_scene"],
+    designRule: "DESIGN.md §9 (textured meshes: BAKE via spatialbundle, load the baked model — never runtime-load raw GLB or reference GLB in USD)",
+    relatedTools: ["bake_textured_model", "generate_environment_kotlin", "decode_spatial_bundle", "pack_bundle"],
+  },
+
+  emulator_camera_drift: {
+    rootCause:
+      "An emulator screenshot looks wrong (blob / black / the PICO home bedroom / a white shell) even though the app is healthy and logcat shows the scene/colliders/env loaded. The emulator's FREE CAMERA has drifted OUT of the app's scene (WASD nav pushes it into the home-env area; it PERSISTS across app relaunches). You are photographing the scene from outside it.",
+    fix: [
+      "BEFORE concluding anything from a capture, navigate the camera back INTO the scene: gui_camera keys (osascript key code 13='W' forward, 1='S' back) — e.g. send 'S' ~10x to return from a forward-drift.",
+      "The view is stable WITHIN a launch but the camera pose varies ACROSS launches — re-center after each relaunch.",
+      "gui_capture (screencapture -l<qemu-windowid>) captures the immersive view (with Screen Recording granted); adb screencap shows the emulator reference scene, NOT the app's immersive render.",
+      "Rule of thumb: when a capture looks wrong, suspect CAMERA POSITION first, then content. This single mistake caused hours of false 'it's broken' conclusions.",
+    ],
+    designRule: "DESIGN.md §8 (verify visually — but navigate the camera into the scene first)",
+    relatedTools: ["gui_camera", "gui_capture", "assert_logcat", "build_and_run"],
   },
 
   tiny_panels: {
@@ -408,6 +422,7 @@ export function registerDiagnoseTools(server: McpServer) {
             "no_controller_pose",
             "texture_black",
             "raycast_no_hit",
+            "emulator_camera_drift",
           ])
           .describe("The observed symptom to diagnose."),
       },
