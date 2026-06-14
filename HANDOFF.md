@@ -20,6 +20,18 @@ nothing queryable on-device → rooms use box "walls". Full detail in auto-memor
   Screen Recording is granted; `adb screencap` shows the emulator reference scene, not the immersive
   view — use the window capture.
 
+**RICH ENVIRONMENT (2026-06-13 s2, later):** The app loads the REAL Marble world as a **Gaussian
+splat** (`.spz`, native PICO support) — `ENV_MODE="splat"` in HomeStage.kt (also "pano" reliable
+fallback, "mesh" textured-GLB WIP/dark). Splat scaled 2.5x + Sky_Sphere pano scaled 20x = a BIGGER
+WALKABLE, ENCLOSED room (no PICO-home bleed). The big gremlin that wasted hours: the **emulator free
+camera DRIFTS out of the scene** (osascript WASD `W`=key13 forward / `S`=key1 back; persists across
+relaunches) — ALWAYS navigate into the scene before judging a capture. Splat is live-tunable via the
+`splat` broadcast cmd (tx/ty/tz/s/rx/ry/rz). Verified renders: /tmp/pico-render/{edge-fwd,splat-in}.png.
+REMAINING (user-requested, in order): (a) splat scale/crispness tune; (b) fix the textured-MESH
+lighting (renders dark — Entity.loadSuspend(File(glb)) + swapped PhysicallyBasedMaterial, emissive not
+self-lighting); (c) align the box colliders to the splat room so pins land on real surfaces. THEN
+continue building the MCP toward v3.0.
+
 **NEXT (toward v3.0):** (a) `drive_interaction` — resolve whether the controller trigger can be
 fired headlessly (RC_Trigger='U' host key; research says GUI-gated, UNVERIFIED — test
 `ui_input keyevent` / osascript 'U' vs the GUI Controller-Button-Mode); aim head-gaze via gui_camera
