@@ -22,6 +22,7 @@ import { registerDiagnoseTools } from "./diagnose.js";
 import { registerColliderTools } from "./collider.js";
 import { registerEnvironmentTools } from "./environment.js";
 import { registerRegressionTools } from "./regression.js";
+import { registerSenseTools } from "./sense.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -60,6 +61,7 @@ registerDiagnoseTools(server);
 registerColliderTools(server);
 registerEnvironmentTools(server);
 registerRegressionTools(server);
+registerSenseTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
