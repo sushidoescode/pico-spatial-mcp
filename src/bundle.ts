@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -134,6 +135,68 @@ export function registerBundleTools(server: McpServer) {
       };
       if (full) out.allAssets = assets;
       return okJson(out);
+    },
+  );
+
+  server.registerTool(
+    "bake_textured_model",
+    {
+      description:
+        "Bake a TEXTURED 3D model (GLB/GLTF/USD/USDC/USDZ) into a renderable PICO .bundle via spatialbundle, then verify the texture + material actually baked. This is THE way to import a textured mesh/world (e.g. a World Labs Marble GLB) so it RENDERS in-app: spatialbundle bakes a PHYSICALLY_BASED material + ASTC texture, and you load the BAKED model. (Raw-GLB runtime loading renders BLACK because gltfio's async texture loader is never driven; and you must NEVER `prepend references=@x.glb@` inside a USDA — USD has no glTF plugin, you get an empty bundle. Pass the model path here instead.) Load the result with: AssetBundle.load(\"asset://<bundle>\") then Entity.loadSuspend(\"<modelName>\", bundle).",
+      inputSchema: {
+        modelPath: z.string().describe("Absolute path to the .glb/.gltf/.usd/.usdc/.usdz model"),
+        outBundle: z.string().describe("Output .bundle path (copy into app/src/main/assets to ship it)"),
+        compressTextures: z
+          .enum(["astc4x4", "astc5x5", "astc6x6", "astc8x8", "none"])
+          .default("astc6x6")
+          .describe("ASTC texture compression (astc6x6 is a good size/quality default)"),
+        toolsVersion: z.string().optional(),
+      },
+    },
+    async ({ modelPath, outBundle, compressTextures, toolsVersion }) => {
+      const sb = getSpatialbundle(toolsVersion);
+      if ("error" in sb) return fail(sb.error);
+      const src = expandHome(modelPath);
+      if (!fs.existsSync(src)) return fail(`No such model: ${src}`);
+      const ext = path.extname(src).toLowerCase().replace(/^\./, "");
+      const fmtMap: Record<string, string> = { glb: "glb", gltf: "gltf", usd: "usd", usda: "usda", usdc: "usdc", usdz: "usdz" };
+      const fmt = fmtMap[ext];
+      if (!fmt) return fail(`Unsupported model type '.${ext}'. Use glb/gltf/usd/usda/usdc/usdz.`);
+      // spatialbundle packs a directory of scene files; stage the model in a temp dir.
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-bake-"));
+      const staged = path.join(tmp, path.basename(src));
+      fs.copyFileSync(src, staged);
+      const out = expandHome(outBundle);
+      fs.mkdirSync(path.dirname(out), { recursive: true });
+      // NOTE: --compress-textures is greedy — keep it LAST.
+      const args = ["pack", "--override-output", "-s", tmp, "-o", out, "--scene-files", staged, "--formats", fmt];
+      if (compressTextures !== "none") args.push("--compress-textures", compressTextures);
+      const r = await run(sb.bin, args, { timeoutMs: 600_000 });
+      const combined = (r.stdout + "\n" + r.stderr).trim();
+      try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
+      if (!fs.existsSync(out)) {
+        return fail(`bake failed (exit ${r.code}). NOTE: 'Failed to get material texture path' is non-fatal noise; a missing bundle is the real failure.\n${tail(combined, 50)}`);
+      }
+      // Verify the bake: info should list a texture + materialinstance + the model name.
+      const info = await run(sb.bin, ["info", "-i", out], { timeoutMs: 120_000 });
+      const infoOut = (info.stdout + info.stderr);
+      const modelName = (infoOut.match(/Name:\s*([^\n]+?)\s*\n\s*Path:\s*\1\/meshes/i)?.[1]
+        || infoOut.match(/Model List:[\s\S]*?Name:\s*([^\n]+)/i)?.[1]
+        || path.basename(src, path.extname(src))).trim();
+      const hasTexture = /Asset Type:\s*texture/i.test(infoOut);
+      const hasMaterial = /Asset Type:\s*materialinstance/i.test(infoOut);
+      return okJson({
+        bundle: out,
+        sizeMB: +(fs.statSync(out).size / 1024 / 1024).toFixed(2),
+        modelName,
+        hasTexture,
+        hasMaterial,
+        rendersTextured: hasTexture && hasMaterial,
+        loadSnippet: `val bundle = AssetBundle.load("asset://${path.basename(out)}")\nval entity = Entity.loadSuspend("${modelName}", bundle)  // renders textured\n// content.addEntity(entity) on Dispatchers.Main`,
+        note: hasTexture && hasMaterial
+          ? "Texture + material baked. Copy the .bundle into app/src/main/assets and load the baked model (NOT the raw GLB)."
+          : "WARNING: no texture/material asset detected in the bundle — the model may have had no material, or packing skipped it.",
+      });
     },
   );
 
