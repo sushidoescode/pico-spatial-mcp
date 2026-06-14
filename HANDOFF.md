@@ -27,10 +27,17 @@ WALKABLE, ENCLOSED room (no PICO-home bleed). The big gremlin that wasted hours:
 camera DRIFTS out of the scene** (osascript WASD `W`=key13 forward / `S`=key1 back; persists across
 relaunches) — ALWAYS navigate into the scene before judging a capture. Splat is live-tunable via the
 `splat` broadcast cmd (tx/ty/tz/s/rx/ry/rz). Verified renders: /tmp/pico-render/{edge-fwd,splat-in}.png.
-REMAINING (user-requested, in order): (a) splat scale/crispness tune; (b) fix the textured-MESH
-lighting (renders dark — Entity.loadSuspend(File(glb)) + swapped PhysicallyBasedMaterial, emissive not
-self-lighting); (c) align the box colliders to the splat room so pins land on real surfaces. THEN
-continue building the MCP toward v3.0.
+RICH-ENV UPDATE (later 2026-06-13 s2): splat scaled **3x** = bigger walkable room (commit a3a26e6 on
+claimsight-native; ENV_MODE="splat" default; proof /tmp/pico-render/splat3x.png). The user wants a
+bigger/crisper/walkable room verified ON THE EMULATOR (no headset). **TEXTURED-MESH is BLOCKED** by the
+embedded-texture wall (runtime swap -> black; spatialbundle bake -> "Failed to get material texture path"
+because the texture is embedded in the .glb) — see memory ★ TEXTURED-MESH note. User chose "splat now +
+mesh research in parallel". **Mesh-texture research workflow RUNNING (ww9o9r5ei / wf_d9351519-df6):**
+crack rendering the textured apartment mesh via GLB->USD-external-texture + the editor-material-override
+trick (the only proven textured-mesh path). When it lands: build the textured mesh room (sharp at any
+scale + real geometry), THEN do collider alignment on the WINNING environment (don't tune splat colliders
+first — likely throwaway if the mesh wins), THEN continue the MCP toward v3.0. CAMERA: the emulator free
+camera drifts; navigate with osascript key code 13=W/forward, 1=S/back before judging captures.
 
 **NEXT (toward v3.0):** (a) `drive_interaction` — resolve whether the controller trigger can be
 fired headlessly (RC_Trigger='U' host key; research says GUI-gated, UNVERIFIED — test
