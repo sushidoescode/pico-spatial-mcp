@@ -30,10 +30,22 @@ emulator (no headset). Three v3.0 deliverables landed:
   mouse-drag to enter camera mode). So a pretty pin-on-wall capture wasn't obtainable — **lean on
   `assert_logcat`** as the proof primitive (which is exactly what the v3.0 prompt prescribes).
 
-**NEXT:** resume the ClaimSight test bed (`~/AndroidStudioProjects/claimsight-native`) — finish
-menu→pin-on-surface→DamageCard/Report e2e — and the optional v3.0 polish (mesh brightness via
-emissive/UNLIT `ND__unlit_surfaceshader`/IBL; collider-to-mesh-room alignment; the deferred
-WindowContainer panel-placement, ROADMAP §6.1).
+**ClaimSight menu gaze-interaction — DONE (claimsight-native commit `5bfb586`).** New `MenuRaycaster`
+casts the head/controller gaze ray at the in-world menu quad (`UITestPanel` / baked `ui_menu.png`),
+maps the hit UV to a button band (from `tools/bake_ui.swift`), and fires its action — wired into
+PinPlacer's not-armed trigger path. The full loop closes: look at "Place Pin" + trigger → arm → look
+at a wall + trigger → pin on the surface; "Generate Report" → report; etc. Verified on emulator-5554
+via two headless hooks (the trigger is GUI-gated): `menusweep` mapped all 4 buttons + the title gap
+correctly; `menufire 0..3` resolved each via the same hit-test + fired its action; menu→arm→commit →
+`placed pin #1` on a wall. Hero capture `/tmp/pico-render/claimsight-menu-e2e.png` shows the textured
+apartment + the in-world menu. **GOTCHA:** the emulator free camera (what `gui_capture` sees) and the
+HMD tracking pose (what the gaze logic uses) are DECOUPLED — `menuaim` can MISS even when the menu is
+on-screen; trust `menusweep`/`menufire` for the logic and the capture for rendering.
+
+**NEXT (open frontier):** the deferred WindowContainer panel placement (DamageCard/Report spawn off
+the default camera view in 0.13 — needs the platform window-transform API, ROADMAP §6.1); mesh
+brightness (emissive/UNLIT `ND__unlit_surfaceshader`/IBL); collider-to-mesh alignment; on-headset
+interactive testing; OR codify the menu-quad raycast as an MCP tool (`generate_menu_raycaster_kotlin`).
 
 ---
 ## ★ PROGRESS UPDATE (2026-06-13, session 2) — COLLIDER BLOCKER SOLVED + MCP @ v2.3.0
