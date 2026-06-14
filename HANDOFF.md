@@ -1,6 +1,23 @@
 # HANDOFF — PICO-MCP, for the next chat
 
 ---
+## ▶ NEXT SESSION STARTS HERE (2026-06-14, end of session 3)
+**Paste `/Users/sushantsrikrish/PICO-MCP/V3.1_HANDOFF_PROMPT.md` into the next chat.** Then execute
+**`V3.1_EXECUTION_GUIDE.md`** (step-by-step, written so a LOCAL model — Gemma 4 31B — can do it one small
+verified task at a time; START at §2 TASK 1 = `generate_scene_understanding_kotlin`). Strategy is in
+**`ROADMAP_v3.1-v4.0.md`**.
+
+**The reframe that produced v3.1 (read this):** the user reality-checked v3.0 — the native app looked
+unchanged, pins float, panels aren't interactive. Empirically proven: the native PICO **emulator cannot
+verify the MR experience** (C1 no scene-understanding → 0 planes; C2 capture camera decoupled +
+uncontrollable → no reliable headless screenshots; C3 no controller pointer / gated trigger → no clickable
+panels; C4 stage-vs-window). v3.0's "verified" was code-level only. With **no hardware until the PICO
+Swan (PICO OS6)**, v3.1→v4.0 pivots to mastering the **Spatial Editor ⇄ Emulator** toolchain + generating
+the headset-only parts for Swan. **Honesty rule: never claim "renders/works" from a headless capture —
+use logcat / "built for headset".** Mixed stage (manifest stage.style=1) DOES render the home env (the
+sandbox `spatialdemo` proves it).
+
+---
 ## 🎉 v3.0 SHIPPED (2026-06-14, session 3) — THE AUTONOMOUS SPATIAL STUDIO
 **MCP @ 3.0.0 — 67 tools, 2 prompts — `npm run build && npm run smoke` → Failures: 0 — committed on `main`, NOT pushed.**
 
