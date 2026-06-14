@@ -19,7 +19,7 @@ import { expandHome, fail, okJson } from "./util.js";
  *  - Every button uses Modifier.clickable { } (NOT a static Box+Text); the action
  *    string becomes a // comment placeholder inside the lambda for the agent to wire.
  *  - Colors are Color(0xFFRRGGBB) parsed from #rrggbb hex (never displayColor / raw rgb).
- *  - Frosted panels use backgroundMaterial(Material.Thick/...) over a tinted background.
+ *  - Frosted panels use backgroundMaterial(true, Material.Thick) over a tinted background.
  */
 
 // ---- input schema: discriminated panel specs ----
@@ -225,7 +225,7 @@ function emitClickableButton(
 
 /**
  * Wrap a panel body in a frosted, >= 800 dp Compose panel: a tinted background with
- * backgroundMaterial(Material.Thick) for the PICO frosted-glass look. The width floor
+ * backgroundMaterial(true, Material.Thick) for the PICO frosted-glass look. The width floor
  * is the DESIGN.md §4 rule (560 dp reads tiny at 2 m).
  */
 function composableShell(id: string, body: string[]): string[] {
@@ -240,7 +240,7 @@ function composableShell(id: string, body: string[]): string[] {
   out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.width(880.dp) // DESIGN.md §4: panels >= 800 dp or they read tiny at distance`);
   out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.clip(RoundedCornerShape(28.dp))`);
   out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.background(Color(0xCC0E1726)) // tint behind the frosted material`);
-  out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.backgroundMaterial(Material.Thick) // PICO frosted-glass panel`);
+  out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.backgroundMaterial(true, Material.Thick) // PICO frosted-glass panel (enabled, material)`);
   out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.padding(40.dp),`);
   out.push(`${INDENT}${INDENT}) {`);
   out.push(...indent(body, 3));

@@ -1,8 +1,22 @@
 # ROADMAP.md — v1.4 → v3.0, written to be executed by ANY agent (incl. a local model)
 
-> **v2.0 is shipped (60 tools, 2 prompts).** The remaining OPEN ITEMS are detailed in §6;
-> the v2.1 → v3.0 vision is in §7. Start a new turn/chat with `autonomous_spatial_build`
-> loaded and this file open — everything needed to continue is here + in memory.
+> **🎉 v3.0 IS SHIPPED — the autonomous spatial studio (67 tools, 2 prompts).** An agent can now
+> BUILD AND VERIFY a native PICO XR app end-to-end on the emulator (no headset). The keystones
+> landed this arc: working runtime surface physics (`generate_collider_kotlin` — `PhysicsWorldComponent`
+> + primitive box room; USD/mesh colliders never become query actors on-device), rich environments
+> that render (`bake_textured_model` to bake a textured GLB/Marble world + `generate_environment_kotlin`
+> to load the baked mesh or a Gaussian splat — the "GLB textures render black" wall is cracked by
+> baking, not runtime-loading), headless interaction (`app_broadcast`), the verification primitive
+> (`assert_logcat`), and the rewritten `autonomous_spatial_build` prompt that drives the full
+> proven loop. **Demonstrated on a fresh scaffolded app** (`com.example.spatialdemo`): scaffold →
+> bake textured env → box-collider room → Compose menu → build → install → broadcast-driven
+> placement → `assert_logcat` `rayCast HIT` + `placed pin #N` on a real wall → `gui_capture` of the
+> textured room. DESIGN.md §9 = runtime physics. ClaimSight (`~/AndroidStudioProjects/claimsight-native`)
+> remains the test bed; the deferred polish items (mesh brightness, collider/mesh alignment, panel
+> placement) are in §6/§7.
+>
+> **(history)** v2.0 shipped 60 tools/2 prompts; §6 = OPEN ITEMS, §7 = the v2.1 → v3.0 arc. Start a
+> new turn/chat with `autonomous_spatial_build` loaded and this file open.
 
 
 This is a **self-contained handoff**. If the primary agent (Claude) is unavailable (usage

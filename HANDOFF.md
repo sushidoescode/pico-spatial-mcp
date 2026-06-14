@@ -1,6 +1,41 @@
 # HANDOFF — PICO-MCP, for the next chat
 
 ---
+## 🎉 v3.0 SHIPPED (2026-06-14, session 3) — THE AUTONOMOUS SPATIAL STUDIO
+**MCP @ 3.0.0 — 67 tools, 2 prompts — `npm run build && npm run smoke` → Failures: 0 — committed on `main`, NOT pushed.**
+
+The mission is done: an agent can now **build AND verify** a native PICO XR app end-to-end on the
+emulator (no headset). Three v3.0 deliverables landed:
+1. **Rewrote the `autonomous_spatial_build` prompt** (`src/prompts.ts`) to drive the REAL proven loop:
+   validate → scaffold → `bake_textured_model`/`generate_environment_kotlin` env → `generate_collider_kotlin`
+   → `generate_spatial_ui` → `build_and_run` → **navigate camera (`gui_camera`) + `gui_capture` + `assert_logcat`
+   verify** → `diagnose` → iterate, with all the gotchas (camera-drift, bake-not-runtime, mesh-colliders-don't-register) baked in.
+2. **Demonstrated the loop end-to-end on a FRESH app** — `~/AndroidStudioProjects/spatialdemo-native`
+   (pkg `com.example.spatialdemo`), assembled FROM the actual MCP tool outputs (invoked the real tool
+   handlers via `/tmp/pico-invoke.mjs`, a fake-server harness) + minimal hand-glue. **Verified on
+   emulator-5554**: logcat `baked textured mesh attached`, `rayCast HIT pos=(0,2.52,0.44) n=(0,0,-1)`,
+   `placed pin #1/2/3`, `cleared 3/3 pins`; `gui_capture` (`/tmp/pico-render/demo-1-initial.png`) shows
+   the textured Marble apartment rendering (dim — baked PBR is lit). The self-correcting loop also caught
+   a REAL generator bug: `generate_spatial_ui` emitted `backgroundMaterial(Material.Thick)` (missing the
+   Boolean first arg) → compile error → fixed `src/components.ts` to `backgroundMaterial(true, Material.Thick)`
+   → regenerated → BUILD SUCCESSFUL.
+3. **Docs + version**: README + ROADMAP → v3.0; `package.json` + `src/index.ts` → `3.0.0`.
+
+**New gotchas this session (don't repeat):**
+- A PRIOR spatial app can OWN the full-space stage and BLOCK your app from launching fullscreen
+  (`current full space don't allow start fullscreen` / topResumedActivity = the other app). Fix:
+  `adb shell am force-stop <other.pkg>` FIRST, then launch yours.
+- The emulator free camera **cannot be reframed headlessly** on this host (no Quartz/pyobjc, no
+  `cliclick`; System-Events click + WASD/arrow keys did NOT move it — it needs a real GL-surface
+  mouse-drag to enter camera mode). So a pretty pin-on-wall capture wasn't obtainable — **lean on
+  `assert_logcat`** as the proof primitive (which is exactly what the v3.0 prompt prescribes).
+
+**NEXT:** resume the ClaimSight test bed (`~/AndroidStudioProjects/claimsight-native`) — finish
+menu→pin-on-surface→DamageCard/Report e2e — and the optional v3.0 polish (mesh brightness via
+emissive/UNLIT `ND__unlit_surfaceshader`/IBL; collider-to-mesh-room alignment; the deferred
+WindowContainer panel-placement, ROADMAP §6.1).
+
+---
 ## ★ PROGRESS UPDATE (2026-06-13, session 2) — COLLIDER BLOCKER SOLVED + MCP @ v2.3.0
 The #1 hard blocker (Phase-1/2 below) is **DONE and verified on the emulator**. Scene.rayCast now
 hits and pins land on real surfaces. The fix was NOT the editor bake — it was a RUNTIME attach:

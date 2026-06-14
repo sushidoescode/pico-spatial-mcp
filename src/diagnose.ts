@@ -91,7 +91,7 @@ const KB: Record<string, DiagEntry> = {
     rootCause:
       "An emulator screenshot looks wrong (blob / black / the PICO home bedroom / a white shell) even though the app is healthy and logcat shows the scene/colliders/env loaded. The emulator's FREE CAMERA has drifted OUT of the app's scene (WASD nav pushes it into the home-env area; it PERSISTS across app relaunches). You are photographing the scene from outside it.",
     fix: [
-      "BEFORE concluding anything from a capture, navigate the camera back INTO the scene: gui_camera keys (osascript key code 13='W' forward, 1='S' back) — e.g. send 'S' ~10x to return from a forward-drift.",
+      "BEFORE concluding anything from a capture, navigate the camera back INTO the scene with gui_camera(keys=['s', ...]) — it sends WASD keystrokes (W=forward, S=back; arrows look), e.g. send 's' ~10x to return from a forward-drift. (gui_camera needs Accessibility AND the emulator already in camera mode, entered by a mouse-drag in the window — if you cannot reframe headlessly, lean on assert_logcat for proof.)",
       "The view is stable WITHIN a launch but the camera pose varies ACROSS launches — re-center after each relaunch.",
       "gui_capture (screencapture -l<qemu-windowid>) captures the immersive view (with Screen Recording granted); adb screencap shows the emulator reference scene, NOT the app's immersive render.",
       "Rule of thumb: when a capture looks wrong, suspect CAMERA POSITION first, then content. This single mistake caused hours of false 'it's broken' conclusions.",
