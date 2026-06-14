@@ -1,11 +1,34 @@
 # HANDOFF — PICO-MCP, for the next chat
 
 ---
-## ▶ NEXT SESSION STARTS HERE (2026-06-14, end of session 3)
-**Paste `/Users/sushantsrikrish/PICO-MCP/V3.1_HANDOFF_PROMPT.md` into the next chat.** Then execute
-**`V3.1_EXECUTION_GUIDE.md`** (step-by-step, written so a LOCAL model — Gemma 4 31B — can do it one small
-verified task at a time; START at §2 TASK 1 = `generate_scene_understanding_kotlin`). Strategy is in
-**`ROADMAP_v3.1-v4.0.md`**.
+## ▶ NEXT SESSION STARTS HERE (2026-06-14, end of session 4)
+**v3.1.0 IS SHIPPED** — MCP @ `3.1.0`, **71 distinct tools**, `npm run build && npm run smoke` →
+`Failures: 0`, committed on `main` (NOT pushed). The four `V3.1_EXECUTION_GUIDE.md` tasks are DONE
+(commits `64fb6a7` / `72b9796` / `60004ce` / `646ee12`):
+- **`generate_scene_understanding_kotlin`** (`src/sense.ts`) — native `sense/plane` surface-pin Kotlin;
+  **COMPILES** in `spatialdemo-native` (`:app:assembleDebug` SUCCESSFUL); runtime is **headset-only (C1)**.
+  Fixed a real API bug: `Transform.rotation` is `EulerAngles`, the quaternion is `Transform.quaternion`;
+  rotate API is `Quat.rotateVector(Vector3)`; math types live in the **foundation** sources jar, not core.
+- **`decode_editor_project`** (`src/editorproject.ts`) — X-rays a whole `SpatialPackContent` (or an Android
+  project root). **VERIFIED on real data**: claimsight (2 scenes, 13 assets, 456 mats), spatialdemo (475).
+  Facts: MaterialCache = `{GUID}.{mtlx,material,mat,parameterinfo}`; BundleCache `bundleTool 0.10.1`.
+- **`author_materialx`** (`src/materialx.ts`) — editor-format **MaterialX 1.38**, copied verbatim from real
+  `MaterialCache/*.mtlx`. `bright:true` = `emissiveColor==diffuseColor` (the editor's OWN self-lit trick);
+  `unlit` = `ND__unlit_surfaceshader`. Texture path is **UNVERIFIED** (black-texture wall) → prefer
+  `bake_textured_model`. Verified: xmllint well-formed + format-fidelity.
+- **`capability_report`** (`src/capability.ts`) — the honest **verifiedOnEmulator vs builtForHeadset** matrix
+  with the C1–C4 ceilings baked in.
+
+**DO NEXT — the per-run protocol (`ROADMAP_v3.1-v4.0.md` §5.1): `author_editor_component`.** It's the 4th
+roadmapped v3.1 tool, **deliberately deferred** because only the **Collision** USD format is decoded (memory
+~line 40) and that format does **NOT register physics via USD text alone** (working runtime physics =
+`generate_collider_kotlin`'s `PhysicsWorldComponent` recipe). **Anchor/Audio/Timeline formats are UNDECODED.**
+So: open the Spatial Editor, add each component to a throwaway prim, re-save, run `decode_editor_project` on the
+delta, and codify the **real** format — **do NOT invent formats**. Then v3.2 editor automation
+(`editor_op` / `editor_export_bundle` / `editor_project_diff`). Strategy: `ROADMAP_v3.1-v4.0.md`.
+
+> The `V3.1_EXECUTION_GUIDE.md` Tasks 1–3 are complete; it remains useful as the tool-adding pattern + the
+> key-commands reference (§1, §5.3). The honesty rules below still bind every claim.
 
 **The reframe that produced v3.1 (read this):** the user reality-checked v3.0 — the native app looked
 unchanged, pins float, panels aren't interactive. Empirically proven: the native PICO **emulator cannot

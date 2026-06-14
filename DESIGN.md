@@ -178,3 +178,37 @@ the whole recipe; `diagnose symptom=raycast_no_hit` for the fix):
   no `RigidBodyComponent` is needed for a static collider; `createBox` takes FULL extents
   (a `Vector3(1,1,1)` box has faces at ±0.5).
 - **Verify** with `assert_logcat` against your own `rayCast HIT` log line — never assume.
+
+## 10. PICO math API — the accessor names that actually compile (sources-confirmed 0.13.3)
+
+`Vector3`, `Quat`, `Transform` live in the **`foundation`** sources jar
+(`foundation-0.13.3-sources.jar`), NOT `core`/`sense` — read those for ground truth
+(`generate_scene_understanding_kotlin` embeds the verified usage).
+
+- **`Transform` exposes `.position: Vector3`, `.quaternion: Quat`, `.scale: Vector3`, AND
+  `.rotation: EulerAngles`.** `.rotation` is **Euler angles, not the quaternion** — using
+  `transform.rotation.rotateVector(...)` does NOT compile. To rotate a vector by a transform's
+  orientation use **`transform.quaternion.rotateVector(v)`**.
+- **`Quat.rotateVector(v: Vector3): Vector3`** is the rotate API (there is no `Quat.transform`).
+- **`Vector3`**: companion `Vector3.dot(a, b): Float`, constants `Vector3.UP` / `Vector3.FORWARD`;
+  instance operators `plus` / `minus` / `times(scalar)` / `normalize()`.
+
+## 11. Editor materials — MaterialX 1.38, and the bright-vs-dim trick (decoded 2026-06-14)
+
+Use `author_materialx` to emit the editor's exact `.mtlx`; `decode_editor_project` to inspect a
+project's materials. Hard facts decoded from real `MaterialCache/*.mtlx`:
+
+- **The real material *instances* live in each project's `.CacheData/MaterialCache/`** as
+  `{GUID}.{mtlx,material,mat,parameterinfo}`. The SDK *install* ships only nodedef **libraries**
+  (`extend_defs.mtlx` etc.) — don't expect a ready instance there.
+- **Editor `.mtlx` format:** `<materialx version="1.38" colorspace="workingspace" ...>` + the stdlib
+  `xi:include` block + `<combinematerial name="USD_Default">` → shader `"Shader"`.
+- **Bright vs dim is one input:** the editor's OWN bright materials set
+  **`emissiveColor == diffuseColor`** (self-lit, lighting-independent); dim ones set emissive
+  `(0,0,0)`. So make a `UsdPreviewSurface` bright by matching emissive to diffuse (`bright:true`),
+  or use the **`ND__unlit_surfaceshader`** UNLIT path. This is the editor-grade fix for "baked mesh
+  is dim" — no runtime material hacks.
+- **Image textures on hand-authored materials still pack BLACK** (no cached material uses `<image>`).
+  The proven textured path is `bake_textured_model` (GLB → baked PHYSICALLY_BASED + ASTC) or binding
+  to an editor-authored material. An `author_materialx` `baseColorTexture` is **built-for-editor/headset,
+  not emulator-verified**.
