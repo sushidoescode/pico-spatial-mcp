@@ -27,6 +27,24 @@ WALKABLE, ENCLOSED room (no PICO-home bleed). The big gremlin that wasted hours:
 camera DRIFTS out of the scene** (osascript WASD `W`=key13 forward / `S`=key1 back; persists across
 relaunches) — ALWAYS navigate into the scene before judging a capture. Splat is live-tunable via the
 `splat` broadcast cmd (tx/ty/tz/s/rx/ry/rz). Verified renders: /tmp/pico-render/{edge-fwd,splat-in}.png.
+★★★ TEXTURED-MESH BREAKTHROUGH + MCP @ v2.7.0 (2026-06-13 s2, latest). The "GLB textures render black"
+wall is CRACKED: BAKE the GLB via spatialbundle (it makes a PHYSICALLY_BASED material + ASTC texture),
+then load the BAKED model — never runtime-load the raw GLB, never `references=@x.glb@` in USD. Verified
+on emulator (the Marble apartment renders textured + sharp). Codified as MCP tool **bake_textured_model**
+(v2.6.0) + generate_environment_kotlin texturedMesh emits the baked-bundle load; v2.7.0 added diagnose
+**texture_black** (bake recipe) + **emulator_camera_drift** (navigate the camera into the scene before
+judging a capture). MCP commits: dc12a8e (v2.6.0), 6ac20ca (v2.7.0). claimsight-native: ENV_MODE in
+HomeStage.kt = "mesh" (baked apartment, default) | "splat" (3x photoreal) | "pano" | "home"; the baked
+apartment.bundle ships in app/src/main/assets (commit c1e7900). USER DIRECTIVE: push the MCP to v3.0
+(primary); ClaimSight is the test bed; use the simplest working env; if texture-embedding works (it does)
+keep building the MCP. PATH TO v3.0 (next): (1) update the autonomous_spatial_build PROMPT (prompts.ts)
+to orchestrate the full proven toolset — scaffold → bake_textured_model env → generate_collider_kotlin →
+generate_spatial_ui → build_and_run → gui_camera(navigate-in)+gui_capture+assert_logcat verify →
+diagnose → iterate; (2) demonstrate the end-to-end autonomous loop on a fresh app; (3) ROADMAP/README to
+v3.0; (4) optional polish: mesh brightness (emissive/UNLIT), collider-to-mesh alignment, ClaimSight panel
+placement (the deferred WindowContainer issue). The MCP capabilities for v3.0 are largely DONE this
+session (collider, env splat+mesh+bake, broadcast interaction, assert_logcat, decode_bundle, diagnose).
+
 RICH-ENV UPDATE (later 2026-06-13 s2): splat scaled **3x** = bigger walkable room (commit a3a26e6 on
 claimsight-native; ENV_MODE="splat" default; proof /tmp/pico-render/splat3x.png). The user wants a
 bigger/crisper/walkable room verified ON THE EMULATOR (no headset). **TEXTURED-MESH is BLOCKED** by the
