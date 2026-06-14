@@ -17,6 +17,15 @@
 >
 > **(history)** v2.0 shipped 60 tools/2 prompts; §6 = OPEN ITEMS, §7 = the v2.1 → v3.0 arc. Start a
 > new turn/chat with `autonomous_spatial_build` loaded and this file open.
+>
+> **▶ v3.1 → v4.0 PLAN: see [ROADMAP_v3.1-v4.0.md](ROADMAP_v3.1-v4.0.md)** (2026-06-14). It is grounded
+> in a hard, honest reality check: the native PICO **emulator cannot verify the MR experience** — it
+> serves no scene-understanding data (`sense/plane`/`mesh` return 0), its `screencapture` camera is
+> decoupled from the HMD view and uncontrollable headlessly, and the controller pointer/trigger is
+> gated. So v3.0's "verified" was code-level, not experience-level. With **no hardware until the PICO
+> Swan headset (PICO OS6)**, the roadmap pivots to MASTERING the **Spatial Editor ⇄ Emulator** toolchain
+> (editor automation, editor-grade materials/physics/components, deterministic verification) and
+> code-generating the headset-only parts so they light up on Swan.
 
 
 This is a **self-contained handoff**. If the primary agent (Claude) is unavailable (usage
