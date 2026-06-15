@@ -237,12 +237,15 @@ logcat proof is necessary but never sufficient. Treat "I didn't look" as "unveri
   a whole scene you must either reposition content into the forward view, navigate the camera, or use
   a fixed-viewpoint path (ScenePreview `previewConfig` — unverified spike). A screenshot tool grounds
   *what's on screen*; it does not choose *where the camera looks*.
-  - **Empirical (2026-06-15):** keystrokes (osascript `key code` WASD) do NOT move the camera (frame
-    byte-identical after). `cliclick` is installed and `AXIsProcessTrusted` = true (the process CAN post
-    mouse events — cursor warp works), but a left click-drag across the GL surface did NOT rotate the
-    emulator camera either. So it's a GESTURE/tool question, not a permission one — untried: right/middle
-    button drag, selecting a nav/orbit tool in the emulator UI first, or a modifier+drag. Treat camera
-    rotation as UNSOLVED; prefer placing content in the forward FOV for visual checks.
+  - **SOLVED (2026-06-15) — use `emulator_look`.** Keystrokes (osascript WASD) and a *left* drag
+    (incl. cliclick) do NOT move the camera, but a **CGEvent RIGHT-button DRAG on the GL surface
+    orbits it** (vision-confirmed: the room rotated to reveal the window/chair + side markers).
+    cliclick failed on event format/focus, not capability (`AXIsProcessTrusted` = true). The
+    `emulator_look` tool wraps this: it finds the qemu window, posts a right-drag from its center by
+    (dx,dy) (dx<0 = look left, dx>0 = look right; ~300px ≈ a big yaw), then captures + returns the
+    image. Call it repeatedly to sweep around and verify a WHOLE scene. Requires the controlling
+    process to have macOS Accessibility. (This drives the decoupled FREE camera — fine for "does it
+    render / look right from angle X"; it is not the HMD pose.)
 - **Grade honestly with `capability_report`:** only `vision_verified` / `rendered_emulator` (you
   looked at a capture) count as visually verified; logcat/decoded/compiles are "EXISTS, appearance
   not confirmed".

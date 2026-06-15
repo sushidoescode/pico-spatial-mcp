@@ -28,6 +28,7 @@ import { registerMaterialXTools } from "./materialx.js";
 import { registerCapabilityTools } from "./capability.js";
 import { registerAgentBridgeTools } from "./agentbridge.js";
 import { registerCaptureTools } from "./capture.js";
+import { registerEmulatorLookTools } from "./emulatorlook.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -72,6 +73,7 @@ registerMaterialXTools(server);
 registerCapabilityTools(server);
 registerAgentBridgeTools(server);
 registerCaptureTools(server);
+registerEmulatorLookTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
