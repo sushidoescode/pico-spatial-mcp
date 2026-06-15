@@ -26,6 +26,7 @@ import { registerSenseTools } from "./sense.js";
 import { registerEditorProjectTools } from "./editorproject.js";
 import { registerMaterialXTools } from "./materialx.js";
 import { registerCapabilityTools } from "./capability.js";
+import { registerAgentBridgeTools } from "./agentbridge.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -68,6 +69,7 @@ registerSenseTools(server);
 registerEditorProjectTools(server);
 registerMaterialXTools(server);
 registerCapabilityTools(server);
+registerAgentBridgeTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
