@@ -1,10 +1,37 @@
 # HANDOFF — PICO-MCP, for the next chat
 
 ---
-## ▶ NEXT SESSION STARTS HERE (2026-06-14, end of session 4)
-**v3.1.0 IS SHIPPED** — MCP @ `3.1.0`, **71 distinct tools**, `npm run build && npm run smoke` →
-`Failures: 0`, committed on `main` (NOT pushed). The four `V3.1_EXECUTION_GUIDE.md` tasks are DONE
-(commits `64fb6a7` / `72b9796` / `60004ce` / `646ee12`):
+## ▶ NEXT SESSION STARTS HERE (2026-06-14, end of session 4 — v3.2 in progress)
+**v3.2 STARTED** — MCP @ `3.1.0`, **72 distinct tools**, smoke `Failures: 0`, committed on `main`
+(NOT pushed; HEAD `bedcc44`). Two big deliverables this part of the session:
+
+**1. `generate_agent_bridge` (`src/agentbridge.ts`) — the INJECTABLE plugin. SHIPPED + VERIFIED HEADLESS.**
+Emits an injectable Kotlin "Agent Bridge" that turns any native PICO app into a headless agent
+control+verification surface: a manifest-merged **ContentProvider auto-init** (zero app code to boot),
+an `<applicationId>.AGENT_CMD` **broadcast command channel**, structured **logcat telemetry**, and a
+**live scene-graph dump** (entity tree + transforms + component types). **Verified end-to-end on
+emulator-5554** (injected into `spatialdemo-native`, git-init'd, tag `AgentBridgeVerified`): `:app:assembleDebug`
+SUCCESSFUL → `bridge_ready` (zero-code init) → `ping`=`pong` → `scene_stats entities=89` → `dump_scene`
+printed the full live scene graph, all via `adb broadcast` + `logcat`. This is **deterministic STRUCTURAL
+verification** (the app TELLS its state) — the honest answer to C2/C3, and the basis for `assert_scene`.
+SDK facts (sources): no global Scene accessor → the one-line `AgentBridge.attachScene(sceneRoot)` is
+mandatory; **no offscreen-screenshot API → C2 stands for VISUALS** (the bridge verifies structure, not pixels).
+
+**2. Editor automation SPIKE — see `V3.2_EDITOR_AUTOMATION_MAP.md`.** From a 6-investigator recon workflow:
+the editor's only headless entry is the `--ide_noGraphics` FULL build (no scripting/RPC/per-op API), so
+`editor_op` is honestly a **whitelisted FILE-EDIT lever** (edit `EditorEnvSettings.json`/`EditorContainerSettings.json`
+or scene USDA → rebuild → decode-diff). **Decoded the Timeline + Audio + Collision USD schemas + the bake
+typeId registry** (unblocks `author_editor_component`). C2 capture lead = populate ScenePreview `previewConfig`
+(UNVERIFIED — spike on a live emulator first).
+
+**DO NEXT (v3.2, prioritized):** P1 `editor_project_diff` (decode before/after a build + structural delta) +
+`decode_editor_settings` (parse the UserSettings ECS files) + the file-lever `editor_op` — all headless and
+buildable now. Then `author_editor_component` (schemas decoded above). Then the ScenePreview `previewConfig`
+capture spike. Optional: an `assert_scene` MCP tool that broadcasts `dump_scene` and asserts the `AGENTBRIDGE|`
+markers (closes the verification loop with the bridge).
+
+---
+### (prior) v3.1.0 SHIPPED — 4 tools (commits `64fb6a7` / `72b9796` / `60004ce` / `646ee12`):
 - **`generate_scene_understanding_kotlin`** (`src/sense.ts`) — native `sense/plane` surface-pin Kotlin;
   **COMPILES** in `spatialdemo-native` (`:app:assembleDebug` SUCCESSFUL); runtime is **headset-only (C1)**.
   Fixed a real API bug: `Transform.rotation` is `EulerAngles`, the quaternion is `Transform.quaternion`;
