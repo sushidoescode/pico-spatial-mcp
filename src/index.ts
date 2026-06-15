@@ -30,6 +30,7 @@ import { registerAgentBridgeTools } from "./agentbridge.js";
 import { registerCaptureTools } from "./capture.js";
 import { registerEmulatorLookTools } from "./emulatorlook.js";
 import { registerEditorComponentTools } from "./editorcomponent.js";
+import { registerEditorV32Tools } from "./editorv32.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -76,6 +77,7 @@ registerAgentBridgeTools(server);
 registerCaptureTools(server);
 registerEmulatorLookTools(server);
 registerEditorComponentTools(server);
+registerEditorV32Tools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

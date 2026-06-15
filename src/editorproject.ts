@@ -54,7 +54,7 @@ function walk(dir: string, cap = 40): { count: number; files: string[]; bytes: n
 }
 
 /** Resolve the SpatialPackContent dir from either a direct path or an Android project root. */
-function resolveProjectRoot(input: string): string | null {
+export function resolveProjectRoot(input: string): string | null {
   const p = expandHome(input);
   if (!exists(p)) return null;
   if (exists(path.join(p, "Sources")) || exists(path.join(p, "SpatialPackContent.spatialproject"))) return p;
@@ -113,8 +113,13 @@ export function registerEditorProjectTools(server: McpServer) {
     async ({ projectDir, maxScenes }) => {
       const root = resolveProjectRoot(projectDir);
       if (!root || !exists(root)) return fail(`Project path not found: ${expandHome(projectDir)}`);
-      const capScenes = maxScenes ?? 20;
+      return okJson(decodeEditorProject(root, maxScenes ?? 20));
+    },
+  );
+}
 
+/** Decode a SpatialPackContent into a structured object. Shared by decode_editor_project + editor_project_diff. */
+export function decodeEditorProject(root: string, capScenes = 20) {
       // ---- project metadata ----
       const proj = readJson(path.join(root, "SpatialPackContent.spatialproject"));
       const modelView = readJson(path.join(root, "ModelView"));
@@ -203,7 +208,5 @@ export function registerEditorProjectTools(server: McpServer) {
         },
       };
 
-      return okJson({ project, scenes, assets, components, library, cacheData });
-    },
-  );
+      return { project, scenes, assets, components, library, cacheData };
 }
