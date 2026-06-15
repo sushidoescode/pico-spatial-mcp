@@ -32,6 +32,7 @@ import { registerEmulatorLookTools } from "./emulatorlook.js";
 import { registerEditorComponentTools } from "./editorcomponent.js";
 import { registerEditorV32Tools } from "./editorv32.js";
 import { registerAssertSceneTools } from "./assertscene.js";
+import { registerVerifyVisualTools } from "./verifyvisual.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -80,6 +81,7 @@ registerEmulatorLookTools(server);
 registerEditorComponentTools(server);
 registerEditorV32Tools(server);
 registerAssertSceneTools(server);
+registerVerifyVisualTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

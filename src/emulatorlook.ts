@@ -15,7 +15,7 @@ import { run, runBinary, image, fail, expandHome } from "./util.js";
  * returns the image. Requires the controlling process to have macOS Accessibility (AXIsProcessTrusted).
  */
 
-function resolveAdb(): string {
+export function resolveAdb(): string {
   const c = [
     process.env.PICO_ADB,
     path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb"),
@@ -27,7 +27,7 @@ function resolveAdb(): string {
 }
 
 // Finds the largest qemu window and posts a button-drag from its center by (dx,dy).
-const DRAG_SWIFT = `import CoreGraphics
+export const DRAG_SWIFT = `import CoreGraphics
 import Foundation
 let a = CommandLine.arguments            // button dx dy steps delayMs
 let button = a[1]
