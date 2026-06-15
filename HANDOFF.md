@@ -1,9 +1,31 @@
 # HANDOFF — PICO-MCP, for the next chat
 
 ---
-## ▶ NEXT SESSION STARTS HERE (2026-06-14, end of session 4 — v3.2 in progress)
-**v3.2 STARTED** — MCP @ `3.1.0`, **72 distinct tools**, smoke `Failures: 0`, committed on `main`
-(NOT pushed; HEAD `bedcc44`). Two big deliverables this part of the session:
+## ▶ NEXT SESSION STARTS HERE (2026-06-15, end of session 4 — v3.2.0 SHIPPED)
+**v3.2.0 SHIPPED** — MCP @ `3.2.0`, **78 distinct tools**, smoke `Failures: 0`, committed on `main`
+(NOT pushed; HEAD `915bfdb`). The injectable plugin + the editor recon + the **VISION GATE** +
+**camera control** + **editor authoring/headless ops** all landed:
+- **`emulator_look`** — AIM the free camera (CGEvent RIGHT-drag) + capture; whole-scene visual
+  verification, VISION-VERIFIED. `capture_frame` (adb screencap) = the ground-truth capture.
+  `capability_report` is now VISION-GATED (only what you SAW renders counts as verified).
+- **`author_editor_component`** — editor USD for Collision/Audio/Timeline; round-trip-verified via
+  `spatialbundle pack` (the bake COOKS collisionshape+PhysicsMaterial+timeline — the cooked physics
+  text-USD lacks).
+- **`decode_editor_settings` / `editor_project_diff` / `editor_op`** — the headless editor set
+  (the editor has no scripting/RPC, so editor_op is a whitelisted FILE LEVER + decode-diff to verify).
+- Marker fix (spatialdemo `Pin.usda`) — vision-verified red+white saturn pins.
+
+**DO NEXT — v3.3 (verification trust), all buildable now:**
+- **`verify_visual`** — sweep `emulator_look` around + `capture_frame` at each angle + perceptual
+  diff vs baselines (extend `run_visual_regression`); deterministic whole-scene visual regression.
+- **`assert_scene`** — broadcast the Agent Bridge `dump_scene` + assert the `AGENTBRIDGE|` markers
+  (structural) AND require a `capture_frame` vision pass (closes the bridge→vision loop).
+- **Spike the recon's open Q:** does the headless `--ide_noGraphics` build CONSUME `EditorEnvSettings`?
+  (`editor_op set_skybox_color` → rebuild → `editor_project_diff` targetMd5). Bump README/ROADMAP → v3.2.
+- Earlier two-deliverable summary retained below for context.
+
+**1. `generate_agent_bridge` (`src/agentbridge.ts`) — the INJECTABLE plugin. SHIPPED + VERIFIED HEADLESS.**
+Emits an injectable Kotlin "Agent Bridge" that turns any native PICO app into a headless agent
 
 **1. `generate_agent_bridge` (`src/agentbridge.ts`) — the INJECTABLE plugin. SHIPPED + VERIFIED HEADLESS.**
 Emits an injectable Kotlin "Agent Bridge" that turns any native PICO app into a headless agent
