@@ -72,7 +72,7 @@ function diffDecode(a: any, b: any): string[] {
   }
   // baked
   if (a?.cacheData?.bundleCache?.targetMd5 !== b?.cacheData?.bundleCache?.targetMd5)
-    d.push(`bundle REBUILT (targetMd5 ${a?.cacheData?.bundleCache?.targetMd5} -> ${b?.cacheData?.bundleCache?.targetMd5})`);
+    d.push(`editor cache re-baked (BundleCache targetMd5 ${a?.cacheData?.bundleCache?.targetMd5} -> ${b?.cacheData?.bundleCache?.targetMd5}) — this is the EDITOR's cache (changes on an editor re-save); NOTE the Gradle editor-asset bundle build is non-deterministic so its raw md5 is not a content signal`);
   if (a?.cacheData?.materialCache?.distinctMaterials !== b?.cacheData?.materialCache?.distinctMaterials)
     d.push(`materialCache.distinctMaterials: ${a?.cacheData?.materialCache?.distinctMaterials} -> ${b?.cacheData?.materialCache?.distinctMaterials}`);
   return d;

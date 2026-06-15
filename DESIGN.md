@@ -249,3 +249,13 @@ logcat proof is necessary but never sufficient. Treat "I didn't look" as "unveri
 - **Grade honestly with `capability_report`:** only `vision_verified` / `rendered_emulator` (you
   looked at a capture) count as visually verified; logcat/decoded/compiles are "EXISTS, appearance
   not confirmed".
+- **The Gradle editor-asset bundle build is NON-DETERMINISTIC (verified 2026-06-15):** four rebuilds
+  of an unchanged project produced four different `editor-asset.bundle` md5s (it embeds a timestamp/
+  nonce). So a bundle md5 change means "rebuilt", NOT "content changed" — never use raw bundle md5 as
+  a content-diff signal. To detect real content changes, diff the cooked ASSET LIST (`spatialbundle
+  info`) or the decoded scene (`decode_editor_project` / `editor_project_diff` scene+component deltas).
+  (`decode_editor_project`'s `targetMd5` reads the EDITOR's `.CacheData/BundleCache/cache.json`, which
+  changes only on an editor GUI re-save — a separate, stable artifact.)
+- **OPEN (spike inconclusive):** whether the headless build CONSUMES `EditorEnvSettings.json`
+  (skybox/IBL) into the app bundle is unresolved — the non-deterministic md5 can't answer it; needs a
+  content-level bundle diff. `editor_op` env levers are therefore "applied, effect-on-bake unverified".
