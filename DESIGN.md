@@ -212,3 +212,31 @@ project's materials. Hard facts decoded from real `MaterialCache/*.mtlx`:
   The proven textured path is `bake_textured_model` (GLB → baked PHYSICALLY_BASED + ASTC) or binding
   to an editor-authored material. An `author_materialx` `baseColorTexture` is **built-for-editor/headset,
   not emulator-verified**.
+
+## 12. VISUAL GROUND TRUTH is mandatory — code/logcat prove existence, not appearance
+
+**The absolute rule (the user enforces it; it has caught over-claims twice):** a feature is NOT
+"verified" until an agent has **captured a frame and SEEN it render correctly** with its own vision.
+`BUILD SUCCESSFUL`, `smoke Failures: 0`, and a scene-dump saying `entities=89` prove the thing
+**exists in memory** — they do NOT prove a human would **see** it, or see it correct. Structural /
+logcat proof is necessary but never sufficient. Treat "I didn't look" as "unverified."
+
+- **The capture tool: `capture_frame`** → `adb exec-out screencap`. Headless, needs no macOS
+  permission, returns the **clean composited immersive (HMD) view**, and is **byte-stable across
+  repeated captures** (deterministic). This is the primary ground-truth path. Then READ the PNG and
+  judge it.
+- **Two cameras, don't confuse them (resolved 2026-06-14):** `adb exec-out screencap` = the guest's
+  rendered framebuffer (the HMD view — shows gaze-placed content, clean, stable). The macOS host
+  window capture (`screencapture -l<windowid>`, `picocap.sh`) = the qemu window: includes emulator
+  UI chrome and can show a **decoupled free camera** that drifts. Prefer `adb screencap` for app
+  content; use the host `screencapture` for the **Spatial Editor GUI** (which adb can't see).
+- **What capture does NOT fix (the real frontier): viewpoint control.** The capture shows only the
+  **forward** view; the emulator free camera can't be aimed headlessly (no GL-surface drug-drag from
+  keystrokes — C2). So content outside the FOV (e.g. a pin ring surrounding the viewer) won't appear
+  in one frame, and "looks empty" can mean "looking the wrong way", not "nothing rendered". To verify
+  a whole scene you must either reposition content into the forward view, navigate the camera, or use
+  a fixed-viewpoint path (ScenePreview `previewConfig` — unverified spike). A screenshot tool grounds
+  *what's on screen*; it does not choose *where the camera looks*.
+- **Grade honestly with `capability_report`:** only `vision_verified` / `rendered_emulator` (you
+  looked at a capture) count as visually verified; logcat/decoded/compiles are "EXISTS, appearance
+  not confirmed".
