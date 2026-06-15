@@ -237,6 +237,12 @@ logcat proof is necessary but never sufficient. Treat "I didn't look" as "unveri
   a whole scene you must either reposition content into the forward view, navigate the camera, or use
   a fixed-viewpoint path (ScenePreview `previewConfig` — unverified spike). A screenshot tool grounds
   *what's on screen*; it does not choose *where the camera looks*.
+  - **Empirical (2026-06-15):** keystrokes (osascript `key code` WASD) do NOT move the camera (frame
+    byte-identical after). `cliclick` is installed and `AXIsProcessTrusted` = true (the process CAN post
+    mouse events — cursor warp works), but a left click-drag across the GL surface did NOT rotate the
+    emulator camera either. So it's a GESTURE/tool question, not a permission one — untried: right/middle
+    button drag, selecting a nav/orbit tool in the emulator UI first, or a modifier+drag. Treat camera
+    rotation as UNSOLVED; prefer placing content in the forward FOV for visual checks.
 - **Grade honestly with `capability_report`:** only `vision_verified` / `rendered_emulator` (you
   looked at a capture) count as visually verified; logcat/decoded/compiles are "EXISTS, appearance
   not confirmed".
