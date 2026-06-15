@@ -1,10 +1,30 @@
 # HANDOFF — PICO-MCP, for the next chat
 
 ---
-## ▶ NEXT SESSION STARTS HERE (2026-06-15, end of session 4 — v3.2.0 SHIPPED)
-**v3.2.0 SHIPPED** — MCP @ `3.2.0`, **78 distinct tools**, smoke `Failures: 0`, committed on `main`
-(NOT pushed; HEAD `915bfdb`). The injectable plugin + the editor recon + the **VISION GATE** +
-**camera control** + **editor authoring/headless ops** all landed:
+## ▶ NEXT SESSION STARTS HERE (2026-06-15, end of session 4 — v3.3.0 SHIPPED)
+**v3.3.0 SHIPPED** — MCP @ `3.3.0`, **80 distinct tools**, smoke `Failures: 0`, committed on `main` (NOT pushed).
+**v3.3 (verification trust) added:**
+- **`assert_scene`** — broadcasts the Agent Bridge `dump_scene`, parses the AGENTBRIDGE| logcat markers,
+  asserts entitiesPresent/minEntities/componentsPresent/markers. Structural truth (verified on spatialdemo).
+- **`verify_visual`** — orbit-sweep (`emulator_look` yaw + `capture_frame`) returning N frames for the agent
+  to LOOK at the WHOLE scene + optional ImageMagick diff. Vision-verified on spatialdemo.
+- **Spike (recon open Q):** the Gradle editor-asset bundle build is **NON-DETERMINISTIC** (md5 changes every
+  rebuild — embeds a timestamp), so md5 ≠ content change; whether the headless build consumes
+  `EditorEnvSettings` stays OPEN (needs a content-level bundle diff, not md5). See DESIGN §12.
+
+**DO NEXT — v4.0 (the autonomous editor⇄emulator studio):**
+- **`autonomous_spatial_build` v4** — wire the full loop end-to-end: author (scaffold + `author_materialx` +
+  `author_editor_component` + colliders/UI) → `editor_op`/bake → deploy → **`verify_visual` + `assert_scene`
+  (vision + structural)** → `diagnose` → iterate → honest `capability_report`. Inject `generate_agent_bridge`
+  by default so every build is drivable + assertable.
+- **Auto-emit the capability matrix** from `build_and_run` (currently only the prompt prescribes it).
+- **Content-level bundle diff** (answer the EnvSettings spike): diff `spatialbundle info` asset lists, not md5.
+- **Headset-readiness packaging** for PICO Swan: the C1/C3 features (`generate_scene_understanding_kotlin`
+  surface pins, controller-ray interaction) generated + statically checked + a "Swan bring-up" checklist.
+- Bump README/ROADMAP → v3.3.
+
+---
+### (history) v3.2.0 — injectable plugin + editor recon + VISION GATE + camera control + editor authoring/headless ops:
 - **`emulator_look`** — AIM the free camera (CGEvent RIGHT-drag) + capture; whole-scene visual
   verification, VISION-VERIFIED. `capture_frame` (adb screencap) = the ground-truth capture.
   `capability_report` is now VISION-GATED (only what you SAW renders counts as verified).
