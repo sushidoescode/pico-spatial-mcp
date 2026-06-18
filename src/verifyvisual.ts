@@ -17,14 +17,14 @@ import { DRAG_SWIFT, resolveAdb } from "./emulatorlook.js";
  * so the diff is a coarse regression signal — the real verdict is the agent looking at the frames.
  */
 
-async function screencap(adb: string, dev: string, outFull: string): Promise<boolean> {
+export async function screencap(adb: string, dev: string, outFull: string): Promise<boolean> {
   const res = await runBinary(adb, ["-s", dev, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
   if (res.code !== 0 || res.stdout.length < 1000) return false;
   fs.writeFileSync(outFull, res.stdout);
   return true;
 }
 
-async function magickCompare(a: string, b: string): Promise<number | null> {
+export async function magickCompare(a: string, b: string): Promise<number | null> {
   let bin: string[] | null = null;
   const magick = await run("which", ["magick"], { timeoutMs: 5000 });
   if (magick.code === 0 && magick.stdout.trim()) bin = [magick.stdout.trim(), "compare"];
