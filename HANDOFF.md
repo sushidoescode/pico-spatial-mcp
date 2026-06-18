@@ -1,9 +1,24 @@
 # HANDOFF — PICO-MCP, for the next chat
 
 ---
-## ▶ NEXT SESSION STARTS HERE (2026-06-18 — v3.4.0 SHIPPED)
-**v3.4.0 SHIPPED** — MCP @ `3.4.0`, **82 distinct tools**, smoke `Failures: 0`, committed on `main` (NOT pushed).
-**v3.4 (finish + tighten verification trust) added:**
+## ▶ NEXT SESSION STARTS HERE (2026-06-18 — v4.0.0 ASSEMBLED)
+**v4.0.0 — the autonomous spatial studio is ASSEMBLED.** MCP @ `4.0.0`, **92 distinct tools**, smoke
+`Failures: 0`, committed on `main` (NOT pushed; HEAD `ceeb344`). The full **v3.5→v4.0 ladder** is built
+(mapped in `ROADMAP_v3.1-v4.0.md §7`), each tool verified per its ceiling:
+- **v3.5** build_and_run/iterate_scene AUTO-EMIT the honest capability matrix (0-visually-verified on a real build).
+- **v3.6** `editor_export_bundle` (cooks CollisionShape+PhysicsMaterial+timeline, verified) · `generate_lighting_kotlin` (compiles) · `generate_mr_app`.
+- **v3.7** `verify_baseline` deterministic regression (no-change 0.0000 PASS; planted red→green markers 0.0028 → CHANGED→LOOK, seen). ImageMagick installed.
+- **v3.8** `generate_spatial_audio_kotlin` / `generate_animation_kotlin` / `generate_persistent_anchor_kotlin` / `generate_headset_readiness_codegen` / `swan_bring_up_checklist` — all COMPILE; runtime parts headset-flagged.
+- **v4.0** `autonomous_spatial_build` V4 prompt (full loop, `verify` gate mandatory, honest report, Swan handoff) + `deploy_to_device` (dormant, verified).
+
+**DO NEXT — the v4.0 ACCEPTANCE DEMO (not yet run, the honest gap):** drive `autonomous_spatial_build`
+UNATTENDED on TWO distinct briefs (ClaimSight + one NEW) to prove the loop is brief-general (spatialdemo
+is the de-facto brief #1 — every step was exercised+verified this session, but a fresh unattended run is
+the acceptance test). Then README → v4.0 and consider pushing to GitHub (still NOT pushed). Tools installed
+this session: `cliclick` (camera control), `imagemagick` (perceptual diff).
+
+---
+### (history) v3.4.0 — finish + tighten verification trust:
 - **`bundle_content_diff`** — deterministic "did the bake change" signal: diffs two bundles' cooked
   content via `spatialbundle info`, normalizing out per-build ids (the bundle md5 is non-deterministic).
 - **`verify`** — the GATE: structural (`assert_scene`) + visual (`verify_visual` sweep) in one call,
