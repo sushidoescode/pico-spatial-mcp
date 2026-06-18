@@ -41,6 +41,7 @@ import { registerMrAppTools } from "./mrapp.js";
 import { registerVerifyBaselineTools } from "./verifybaseline.js";
 import { registerRichnessTools } from "./richness.js";
 import { registerSwanTools } from "./swan.js";
+import { registerDeployTools } from "./deploy.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -98,6 +99,7 @@ registerMrAppTools(server);
 registerVerifyBaselineTools(server);
 registerRichnessTools(server);
 registerSwanTools(server);
+registerDeployTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
