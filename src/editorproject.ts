@@ -208,5 +208,14 @@ export function decodeEditorProject(root: string, capScenes = 20) {
         },
       };
 
-      return { project, scenes, assets, components, library, cacheData };
+      // v3.5: label decoded content emulator-verifiable vs headset-only, to feed capability_report.
+  const allComps = new Set(scenes.files.flatMap((s: any) => [...(s.components ?? []), ...(s.componentIds ?? [])]));
+  const hasGeometry = scenes.files.some((s: any) => (s.meshes ?? 0) > 0 || (s.materials ?? []).length > 0);
+  const capabilityHints = {
+    visionVerifiable: hasGeometry ? ["geometry/materials render — confirm with capture_frame / verify_visual"] : [],
+    structuralOnly: [...allComps].filter((c) => /Collision|Audio|Timeline|Anchor|Model/i.test(c)).map((c) => `${c}: present/cooked — assert structurally (rayCast/attach markers); runtime playback/physics may be headset-only`),
+    headsetOnly: [] as string[],
+    note: "Editor-project content is largely emulator-verifiable (geometry=vision, components=structural). The headset-only features (sense/plane surface pins C1, controller-ray C3, in-front panels C4) live in the app Kotlin, NOT in the SpatialPackContent.",
+  };
+  return { project, scenes, assets, components, library, cacheData, capabilityHints };
 }

@@ -30,6 +30,45 @@ const STATUS_META: Record<string, { bucket: "visuallyVerified" | "structuralOnly
   built_for_headset: { bucket: "builtForHeadset", label: "built; runtime verification needs a PICO Swan headset" },
 };
 
+/** Build the honest verified-vs-built matrix from features. Shared by capability_report + the loop (build_and_run/iterate_scene auto-emit). */
+export function buildCapabilityMatrix(appName: string | undefined, features: any[]): { appName: string | null; summary: string; matrix: any; markdown: string } {
+  const buckets = {
+    visuallyVerified: [] as any[],
+    structuralOnly: [] as any[],
+    builtForHeadset: [] as any[],
+  };
+  for (const f of features) {
+    const meta = STATUS_META[f.status] ?? STATUS_META.structural;
+    const entry = {
+      name: f.name,
+      how: meta.label,
+      evidence: f.evidence ?? null,
+      ...(f.ceiling ? { ceiling: f.ceiling, ceilingReason: CEILINGS[f.ceiling] } : {}),
+    };
+    buckets[meta.bucket].push(entry);
+  }
+  const usedCeilings = Array.from(new Set(features.map((f) => f.ceiling).filter(Boolean) as string[])).sort();
+  const line = (e: any) =>
+    `- **${e.name}** — ${e.how}${e.evidence ? ` (${e.evidence})` : ""}${e.ceiling ? ` _[${e.ceiling}]_` : ""}`;
+  const md = [
+    `# Capability report${appName ? `: ${appName}` : ""}`,
+    ``,
+    `> GROUND-TRUTH RULE: only features an agent has SEEN render (a capture inspected with vision) are "verified". Everything else EXISTS but is not visually confirmed.`,
+    ``,
+    `## 👁️ Visually verified — seen rendering (${buckets.visuallyVerified.length})`,
+    ...(buckets.visuallyVerified.length ? buckets.visuallyVerified.map(line) : ["_(none)_"]),
+    ``,
+    `## ⚙️ Structural / logcat only — EXISTS, appearance NOT confirmed (${buckets.structuralOnly.length})`,
+    ...(buckets.structuralOnly.length ? buckets.structuralOnly.map(line) : ["_(none)_"]),
+    ``,
+    `## 🟡 Built for headset — verify on PICO Swan (${buckets.builtForHeadset.length})`,
+    ...(buckets.builtForHeadset.length ? buckets.builtForHeadset.map(line) : ["_(none)_"]),
+    ...(usedCeilings.length ? [``, `## Emulator ceilings referenced`, ...usedCeilings.map((c) => `- **${c}**: ${CEILINGS[c]}`)] : []),
+  ].join("\n");
+  const summary = `${buckets.visuallyVerified.length} visually verified, ${buckets.structuralOnly.length} structural/logcat only (appearance unconfirmed), ${buckets.builtForHeadset.length} built for headset`;
+  return { appName: appName ?? null, summary, matrix: buckets, markdown: md };
+}
+
 export function registerCapabilityTools(server: McpServer) {
   server.registerTool(
     "capability_report",
@@ -52,47 +91,6 @@ export function registerCapabilityTools(server: McpServer) {
           .describe("Every feature in the build and how it was verified."),
       },
     },
-    async ({ appName, features }) => {
-      const buckets = {
-        visuallyVerified: [] as any[],
-        structuralOnly: [] as any[],
-        builtForHeadset: [] as any[],
-      };
-      for (const f of features) {
-        const meta = STATUS_META[f.status];
-        const entry = {
-          name: f.name,
-          how: meta.label,
-          evidence: f.evidence ?? null,
-          ...(f.ceiling ? { ceiling: f.ceiling, ceilingReason: CEILINGS[f.ceiling] } : {}),
-        };
-        buckets[meta.bucket].push(entry);
-      }
-
-      const usedCeilings = Array.from(
-        new Set(features.map((f) => f.ceiling).filter(Boolean) as string[]),
-      ).sort();
-
-      const line = (e: any) =>
-        `- **${e.name}** — ${e.how}${e.evidence ? ` (${e.evidence})` : ""}${e.ceiling ? ` _[${e.ceiling}]_` : ""}`;
-      const md = [
-        `# Capability report${appName ? `: ${appName}` : ""}`,
-        ``,
-        `> GROUND-TRUTH RULE: only features an agent has SEEN render (a capture inspected with vision) are "verified". Everything else EXISTS but is not visually confirmed.`,
-        ``,
-        `## 👁️ Visually verified — seen rendering (${buckets.visuallyVerified.length})`,
-        ...(buckets.visuallyVerified.length ? buckets.visuallyVerified.map(line) : ["_(none)_"]),
-        ``,
-        `## ⚙️ Structural / logcat only — EXISTS, appearance NOT confirmed (${buckets.structuralOnly.length})`,
-        ...(buckets.structuralOnly.length ? buckets.structuralOnly.map(line) : ["_(none)_"]),
-        ``,
-        `## 🟡 Built for headset — verify on PICO Swan (${buckets.builtForHeadset.length})`,
-        ...(buckets.builtForHeadset.length ? buckets.builtForHeadset.map(line) : ["_(none)_"]),
-        ...(usedCeilings.length ? [``, `## Emulator ceilings referenced`, ...usedCeilings.map((c) => `- **${c}**: ${CEILINGS[c]}`)] : []),
-      ].join("\n");
-
-      const summary = `${buckets.visuallyVerified.length} visually verified, ${buckets.structuralOnly.length} structural/logcat only (appearance unconfirmed), ${buckets.builtForHeadset.length} built for headset`;
-      return okJson({ appName: appName ?? null, summary, matrix: buckets, markdown: md });
-    },
+    async ({ appName, features }) => okJson(buildCapabilityMatrix(appName, features)),
   );
 }

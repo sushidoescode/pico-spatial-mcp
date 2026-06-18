@@ -6,6 +6,7 @@ import { z } from "zod";
 import { expandHome, fail, image, ok, okJson, run, runBinary, sleep, tail } from "./util.js";
 import { gradleEnv, pickVersion, resolveToolsRoot } from "./toolchain.js";
 import { adb, adbPath, resolveSerial } from "./adb.js";
+import { buildCapabilityMatrix } from "./capability.js";
 
 /**
  * High-level orchestration: collapse the common edit→build→deploy→observe loop
@@ -52,7 +53,13 @@ export function registerWorkflowTools(server: McpServer) {
       const assetMatch = info.stdout.match(/Asset Count:\s*(\d+)/);
       report.steps.push({ inspect: "ok", models: modelMatch?.[1] ?? "?", assets: assetMatch?.[1] ?? "?" });
 
-      if (!deploy) return okJson(report);
+      if (!deploy) {
+        const m = buildCapabilityMatrix(workName, [
+          { name: "scene packs to .bundle", status: "structural", evidence: "spatialbundle pack ok" },
+          { name: "bundle has geometry", status: "structural", evidence: `models=${modelMatch?.[1] ?? "?"} assets=${assetMatch?.[1] ?? "?"}` },
+        ]);
+        return ok(JSON.stringify(report, null, 2) + "\n\n" + m.markdown);
+      }
 
       // 3. deploy to ScenePreview (reuse the editor module's protocol inline)
       const s = await resolveSerial(serial);
@@ -76,11 +83,19 @@ export function registerWorkflowTools(server: McpServer) {
       const logErr = (await adb(["-s", s, "logcat", "-d", "-t", "150"])).stdout.split("\n").find((l) => /LoadFromStorage failed|Failed to load resource/.test(l));
       report.steps.push({ deploy: logErr ? "loaded-with-warning" : "ok", remote, warning: logErr?.trim().slice(0, 160) });
 
+      const m = buildCapabilityMatrix(workName, [
+        { name: "scene packs to .bundle", status: "structural", evidence: "spatialbundle pack ok" },
+        { name: "bundle has geometry", status: "structural", evidence: `models=${modelMatch?.[1] ?? "?"} assets=${assetMatch?.[1] ?? "?"}` },
+        { name: "ScenePreview loads the scene", status: logErr ? "structural" : "logcat_asserted", evidence: logErr ? `load warning: ${logErr.trim().slice(0, 120)}` : "no load error in logcat" },
+        { name: "visual appearance correct", status: "structural", evidence: "frame captured + RETURNED — LOOK (ScenePreview is a free-cam diorama); appearance NOT auto-verified" },
+      ]);
+      report.capability = m.summary;
+      const note = JSON.stringify(report, null, 2) + "\n\n" + m.markdown;
       const shot = await runBinary(await adbPath(), ["-s", s, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
       if (shot.code === 0 && shot.stdout.length > 8) {
-        return image(shot.stdout.toString("base64"), JSON.stringify(report, null, 2));
+        return image(shot.stdout.toString("base64"), note);
       }
-      return okJson({ ...report, screenshot: "failed" });
+      return ok(note);
     },
   );
 
@@ -202,11 +217,24 @@ export function registerWorkflowTools(server: McpServer) {
       }
       report.steps.push({ health: crash.length ? "CRASHED" : "ok", rendered, crashes: crash.slice(-4) });
 
+      // v3.5: auto-emit the honest capability matrix derived from the run's signals.
+      // build_and_run did NOT look at the frame -> nothing is "vision_verified"; appearance stays
+      // structural-only and is flagged for an agent vision pass (the frame IS returned below).
+      const features: any[] = [
+        { name: "APK compiles", status: "compiles", evidence: `gradle ${task}` },
+        { name: "process runs without crash", status: crash.length ? "structural" : "logcat_asserted", evidence: crash.length ? `CRASHED: ${(crash[crash.length - 1] || "").slice(0, 120)}` : "no FATAL/ANR in logcat" },
+        { name: "first frame rendered (marker)", status: rendered ? "logcat_asserted" : "structural", evidence: rendered ? "FirstFrameRelease / RenderEntity marker" : "NO first-frame marker seen — may not have rendered" },
+        { name: "visual appearance correct", status: "structural", evidence: "frame captured + RETURNED — an agent MUST LOOK (verify / capture_frame); appearance is NOT auto-verified" },
+      ];
+      const matrix = buildCapabilityMatrix(packageName, features);
+      report.capability = matrix.summary;
+
       const shot = await runBinary(await adbPath(), ["-s", s, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
+      const note = JSON.stringify(report, null, 2) + "\n\n" + matrix.markdown;
       if (shot.code === 0 && shot.stdout.length > 8) {
-        return image(shot.stdout.toString("base64"), JSON.stringify(report, null, 2));
+        return image(shot.stdout.toString("base64"), note);
       }
-      return okJson(report);
+      return ok(note);
     },
   );
 }
