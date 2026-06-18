@@ -134,3 +134,58 @@ can't prove without hardware."
 - **v3.2:** an agent attaches a component / bakes physics / edits a material **through the editor** (not USD-text) and the change is decode-verified.
 - **v3.3:** a deterministic emulator capture exists; `verify_visual` catches a planted regression; the capability matrix is auto-emitted.
 - **v4.0:** one brief → a polished editor-authored app, deployed + verified on the emulator with an honest report, and the headset-only parts pre-built for Swan.
+
+---
+
+## 7. THE REFINED v3.4 → v4.0 EXECUTION LADDER (2026-06-18 — supersedes the v3.3→v4.0 jump above)
+
+Designed by a 3-architect panel + synthesis (workflow `roadmap-v35-to-v40`), **grounded against the live 82-tool tree** — ~16 tools the panel first called "new" already shipped, so the genuinely-unbuilt work is tight. **DONE: v3.1–v3.4** (authoring, editor headless tools, the VISION GATE + `verify`, `bundle_content_diff`, camera control). Ordering principle: **every version v3.5–v3.8 is fully emulator-verifiable** (vision where it renders, structural where vision is blind); headset-only work (C1/C3/C4) is **codegen + flag**, never blocking a DoD; v4.0 wires the unattended loop with the existing `verify` gate as the mandatory pre-ship check.
+
+### v3.5 — Honest reporting wired into the loop
+Auto-emit the verified-vs-built matrix from every build (no manual grading).
+- **`capability_report` wire-in** — `build_and_run` + `iterate_scene` CALL it automatically and append the honest `verifiedOnEmulator`-vs-`builtForHeadset` matrix. _(structural)_
+- **`decode_editor_project` harden** — label each decoded feature emulator-verifiable (geometry/material/physics-cook) vs headset-only (sense/plane, controller, in-front panels) to feed the matrix. _(structural)_
+- **`assert_scene` harden** — formalize as the machine-backed structural arm (entity/component/anchor counts + logcat markers). _(structural)_
+- **DoD:** no build finishes without a derived honest split; the loop never prints "verified" on a logcat/compile-only feature; smoke 0.
+
+### v3.6 — Editor-parity bake (cooked physics + render-correct template)
+- **`editor_export_bundle`** _(NEW)_ — invoke the editor bake (`--ide_noGraphics`; GUI fallback only if needed) to emit a bundle WITH cooked CollisionShape + PhysicsMaterial that `spatialbundle pack` alone does not cook. _(structural; rayCast HIT is logcat-asserted)_
+- **`generate_mr_app`** _(NEW, lightweight)_ — mixed-stage scaffold (`stage.style=1`) where home-env + spatial pins render together (no falling-out); a `scaffold_spatial_app` template. _(vision)_
+- **`author_scene_ibl`** _(NEW)_ — image-based-lighting USD/MaterialX so dim baked meshes are lit the correct way (not emissive hacks). _(vision: lit-vs-unlit delta visible)_
+- **`editor_op`/`editor_project_diff` harden** — attach-component / set-material / set-IBL / bake (headless-first) + dropped-`over`-block auto-restore.
+- **DoD:** `editor_export_bundle` cooked physics is decode-verified; an IBL/material chain renders BRIGHT (captured + vision-inspected); `generate_mr_app` renders home-env + pins clean.
+
+### v3.7 — Deterministic visual verification (make `verify` the mandatory gate)
+- **`verify_visual` harden + baseline** — codify a fixed verification camera pose (`emulator_look` to a content-centering framing) + baseline PNGs in `.pico/baselines/<scene>.png`; catch a PLANTED regression (diff > threshold) and report clean (~0) on an unchanged rebuild.
+- **`assert_scene` finalize** — lock the 5+-fact structural DSL as the fallback when pixels are blind.
+- **`verify` gate harden** — the single mandatory pre-ship check the v4 loop calls.
+- **DoD:** a planted color/mesh break is caught by the diff; verify is mandatory before any done-claim.
+
+### v3.8 — Richness codegen + Swan readiness (author audio/animation/anchors; pre-build the headset layer)
+- **`generate_spatial_audio_kotlin`** _(NEW)_ — attach AudioSourceComponent (3D pos/attenuation, load clip). _(structural; PLAYBACK headset-only — flagged)_
+- **`generate_animation_kotlin`** _(NEW)_ — load/play an editor-authored timeline. _(structural; keyframe PLAYBACK headset-only — flagged)_
+- **`generate_persistent_anchor_kotlin`** _(NEW)_ — save/load WorldAnchor poses. _(structural; cross-launch persistence + real anchoring C1 headset-only — flagged)_
+- **`generate_headset_readiness_codegen`** _(NEW)_ — for every C1/C3/C4 feature emit pre-built, runtime-gated Kotlin (sense/plane pins, ControllerInteractionManager with head-ray emulator fallback, in-front panels) that COMPILES + no-op-fallback runs without crashing. _(compile-only)_
+- **`swan_bring_up_checklist`** _(NEW, meta)_ — read the capability matrix + generated headset code + emulator results → emit a keyed re-test checklist for hardware. _(structural)_
+- **DoD:** each codegen COMPILES + its attach/save marker is logcat-asserted; playback/persistence honestly flagged headset-only; the checklist is emitted.
+
+### v4.0 — The autonomous spatial studio (brief → verified app + honest report + Swan handoff)
+- **`autonomous_spatial_build` V4** _(prompt rewrite)_ — unattended: scaffold → author (`editor_op` + Kotlin codegen) → bake (`editor_export_bundle`) → deploy → **`verify` GATE (structural AND inspected frames; no step advances without a machine-checkable signal)** → `diagnose` → iterate → honest auto-assembled report. Inject `generate_agent_bridge` by default.
+- **`deploy_to_device`** _(NEW, dormant skeleton)_ — Swan adb-over-USB install → launch → capture → assert_scene sanity. _(headset-only; emulator proves only that it's wired + doesn't crash the loop)_
+- **DoD:** the loop runs from a textual brief end-to-end and is demonstrated on **TWO distinct briefs** (ClaimSight + one new) to prove it's brief-general; emits the honest verified-vs-built report + the Swan bring-up checklist.
+
+### Build order (18 steps)
+v3.5: (1) wire capability_report into build_and_run + iterate_scene · (2) harden decode_editor_project labels · (3) formalize assert_scene structural arm.
+v3.6: (4) editor_export_bundle · (5) generate_mr_app · (6) author_scene_ibl · (7) harden editor_op/editor_project_diff.
+v3.7: (8) canonical verification pose + .pico/baselines · (9) harden verify_visual baseline diff + assert_scene DSL · (10) make verify mandatory.
+v3.8: (11) generate_spatial_audio_kotlin · (12) generate_animation_kotlin · (13) generate_persistent_anchor_kotlin · (14) generate_headset_readiness_codegen · (15) swan_bring_up_checklist.
+v4.0: (16) rewrite autonomous_spatial_build V4 · (17) deploy_to_device skeleton · (18) end-to-end demo on ClaimSight + one new brief + honest report + Swan checklist.
+
+### Honest risks (from the synthesis)
+- **`editor_export_bundle` cooked-physics headless reach** is the biggest unknown; `V3.2_EDITOR_AUTOMATION_MAP.md` de-risks it, but if `--ide_noGraphics` cannot bake cooked physics, fall back to GUI-driven bake (and say so).
+- **C2 residual:** capture is byte-stable but only sees the forward FOV — `emulator_look` orbit + structural fallback covers off-FOV; don't re-litigate C2.
+- **v3.8 richness is authoring-only-verifiable** — audio PLAYBACK, timeline PLAYBACK, cross-launch anchor PERSISTENCE are runtime/headset-gated; codegen + flag, never claim verified.
+- **`verify_visual` perceptual diff is coarse** (MAE ~0.06) and noisy on splats/animation → lean on `assert_scene` structural facts for noisy scenes.
+- **`deploy_to_device` is untestable until Swan** — a clearly-gated dormant skeleton that cannot crash the loop.
+- **v4.0 demo must run on TWO briefs** (not just ClaimSight) to prove brief-general, not overfit.
+- **Dropped from scope (deliberately):** mesh-collider shapes (never register on-device — box only), multi-agent parallel writers on shared app files.
