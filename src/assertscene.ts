@@ -68,19 +68,27 @@ export function registerAssertSceneTools(server: McpServer) {
       },
     },
     async (args) => {
+      const r = await runAssertScene(args);
+      return "error" in r ? fail(r.error) : okJson(r);
+    },
+  );
+}
+
+/** Core of assert_scene — returns data ({pass,results,scene} or {error}). Shared with the verify orchestrator. */
+export async function runAssertScene(args: any): Promise<any> {
       const adb = resolveAdb();
       const dev = args.serial ?? "emulator-5554";
       const tag = args.tag ?? "AgentBridge";
       const action = `${args.applicationId}.AGENT_CMD`;
       await run(adb, ["-s", dev, "logcat", "-c"], { timeoutMs: 10_000 });
       const bc = await run(adb, ["-s", dev, "shell", "am", "broadcast", "-a", action, "--es", "cmd", "dump_scene", "--ei", "depth", String(args.depth ?? 8)], { timeoutMs: 15_000 });
-      if (/error|not found/i.test(bc.stderr)) return fail(`broadcast failed: ${bc.stderr.slice(0, 300)}`);
+      if (/error|not found/i.test(bc.stderr)) return { error: `broadcast failed: ${bc.stderr.slice(0, 300)}` };
       await sleep(1500);
       const lc = await run(adb, ["-s", dev, "logcat", "-d", "-s", `${tag}:V`], { timeoutMs: 15_000 });
       const { entities, count, raw } = parseDump(lc.stdout);
 
       if (!raw.some((l) => l.includes("dump_") || l.includes("scene_attached"))) {
-        return fail(`No Agent Bridge dump seen on ${dev}. Is generate_agent_bridge injected, AgentBridge.attachScene(root) called, and the app running? (action=${action}, tag=${tag})`);
+        return { error: `No Agent Bridge dump seen on ${dev}. Is generate_agent_bridge injected, AgentBridge.attachScene(root) called, and the app running? (action=${action}, tag=${tag})` };
       }
 
       const results: { check: string; pass: boolean; detail?: string }[] = [];
@@ -104,12 +112,10 @@ export function registerAssertSceneTools(server: McpServer) {
       if (results.length === 0) results.push({ check: "dump received", pass: true });
 
       const pass = results.every((r) => r.pass);
-      return okJson({
+      return {
         pass,
         results,
         scene: { entityCount: count ?? entities.length, entities: entities.slice(0, 40), componentsSeen: [...allComps] },
         note: "STRUCTURAL truth (existence) only — confirm appearance with capture_frame / verify_visual.",
-      });
-    },
-  );
+      };
 }

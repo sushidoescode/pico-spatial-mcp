@@ -34,6 +34,7 @@ import { registerEditorV32Tools } from "./editorv32.js";
 import { registerAssertSceneTools } from "./assertscene.js";
 import { registerVerifyVisualTools } from "./verifyvisual.js";
 import { registerBundleDiffTools } from "./bundlediff.js";
+import { registerVerifyTools } from "./verify.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -84,6 +85,7 @@ registerEditorV32Tools(server);
 registerAssertSceneTools(server);
 registerVerifyVisualTools(server);
 registerBundleDiffTools(server);
+registerVerifyTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
