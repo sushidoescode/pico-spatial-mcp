@@ -256,6 +256,10 @@ logcat proof is necessary but never sufficient. Treat "I didn't look" as "unveri
   info`) or the decoded scene (`decode_editor_project` / `editor_project_diff` scene+component deltas).
   (`decode_editor_project`'s `targetMd5` reads the EDITOR's `.CacheData/BundleCache/cache.json`, which
   changes only on an editor GUI re-save — a separate, stable artifact.)
-- **OPEN (spike inconclusive):** whether the headless build CONSUMES `EditorEnvSettings.json`
-  (skybox/IBL) into the app bundle is unresolved — the non-deterministic md5 can't answer it; needs a
-  content-level bundle diff. `editor_op` env levers are therefore "applied, effect-on-bake unverified".
+- **RESOLVED (2026-06-18) via `bundle_content_diff`:** changing `EditorEnvSettings.json` skyboxColor →
+  rebuild → **no structural change in the baked app bundle** (`contentIdentical: true`), and the bundle
+  has no environment/skybox asset at all. So **`EditorEnvSettings` is editor-VIEWPORT-only — NOT baked
+  into the deployed app.** `editor_op`'s env levers change the editor's preview/ScenePreview, not the
+  shipped app. Real headless content authoring = edit the SCENE USDA (`author_editor_component` /
+  materials) + rebuild (proven: Pin.usda edits DO change the bake). Use `bundle_content_diff` (not md5)
+  to confirm a bake actually changed.

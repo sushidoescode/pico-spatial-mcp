@@ -174,7 +174,7 @@ export function registerEditorV32Tools(server: McpServer) {
       if (!res?.ok) return fail(res?.error ?? "edit failed");
       return okJson({
         op, ...res,
-        verify: "Re-run the headless build, then editor_project_diff to see if it changed the bake. A .bak of the file was saved. Effect on the headless build is UNVERIFIED.",
+        verify: "A .bak of the file was saved. NOTE (verified 2026-06-18 via bundle_content_diff): EditorEnvSettings is EDITOR-VIEWPORT-ONLY — a skybox change does NOT alter the baked app bundle. These levers change the editor's preview/ScenePreview, not the deployed app. To change the shipped app, edit the SCENE USDA (author_editor_component / materials) + rebuild, and confirm with bundle_content_diff.",
       });
     },
   );
