@@ -39,6 +39,8 @@ import { registerEditorExportTools } from "./editorexport.js";
 import { registerLightingTools } from "./lighting.js";
 import { registerMrAppTools } from "./mrapp.js";
 import { registerVerifyBaselineTools } from "./verifybaseline.js";
+import { registerRichnessTools } from "./richness.js";
+import { registerSwanTools } from "./swan.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -94,6 +96,8 @@ registerEditorExportTools(server);
 registerLightingTools(server);
 registerMrAppTools(server);
 registerVerifyBaselineTools(server);
+registerRichnessTools(server);
+registerSwanTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
