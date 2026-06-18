@@ -36,6 +36,8 @@ import { registerVerifyVisualTools } from "./verifyvisual.js";
 import { registerBundleDiffTools } from "./bundlediff.js";
 import { registerVerifyTools } from "./verify.js";
 import { registerEditorExportTools } from "./editorexport.js";
+import { registerLightingTools } from "./lighting.js";
+import { registerMrAppTools } from "./mrapp.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -88,6 +90,8 @@ registerVerifyVisualTools(server);
 registerBundleDiffTools(server);
 registerVerifyTools(server);
 registerEditorExportTools(server);
+registerLightingTools(server);
+registerMrAppTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
