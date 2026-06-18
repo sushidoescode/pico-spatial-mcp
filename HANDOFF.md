@@ -1,8 +1,16 @@
 # HANDOFF — PICO-MCP, for the next chat
 
 ---
-## ▶ NEXT SESSION STARTS HERE (2026-06-15, end of session 4 — v3.3.0 SHIPPED)
-**v3.3.0 SHIPPED** — MCP @ `3.3.0`, **80 distinct tools**, smoke `Failures: 0`, committed on `main` (NOT pushed).
+## ▶ NEXT SESSION STARTS HERE (2026-06-18 — v3.4.0 SHIPPED)
+**v3.4.0 SHIPPED** — MCP @ `3.4.0`, **82 distinct tools**, smoke `Failures: 0`, committed on `main` (NOT pushed).
+**v3.4 (finish + tighten verification trust) added:**
+- **`bundle_content_diff`** — deterministic "did the bake change" signal: diffs two bundles' cooked
+  content via `spatialbundle info`, normalizing out per-build ids (the bundle md5 is non-deterministic).
+- **`verify`** — the GATE: structural (`assert_scene`) + visual (`verify_visual` sweep) in one call,
+  returns pass/fail AND the frames to LOOK at. (Refactored assert_scene/verify_visual to export cores.)
+- **RESOLVED the v3.3 spike:** `EditorEnvSettings` is editor-VIEWPORT-ONLY — NOT baked into the app
+  bundle (proven via `bundle_content_diff`). Real headless content authoring = scene USDA + bake.
+
 **v3.3 (verification trust) added:**
 - **`assert_scene`** — broadcasts the Agent Bridge `dump_scene`, parses the AGENTBRIDGE| logcat markers,
   asserts entitiesPresent/minEntities/componentsPresent/markers. Structural truth (verified on spatialdemo).
