@@ -217,6 +217,35 @@ v4.0 proved the loop is brief-general (GalleryXR). This arc grows what an agent 
 - LLM-in-the-loop content (the gated `ClaimsApi` assess/report pattern), honest about the network gate.
 - **DoD:** a data list → laid-out spatial content matching the data, vision-verified.
 
+### v4.5 — Full lighting rig (close the lighting gap: 2 of 7 → all)
+Grounded: the SDK has Directional/Point/Spot lights, ImageBasedLight source+receiver, and GroundShadow — `generate_lighting_kotlin` covers only Directional + EnvironmentLighting.
+- **`generate_full_lighting_rig_kotlin`** — Directional + `PointLightComponent` (falloff) + `SpotLightComponent` (cone, `castsShadowEnabled`) + `GroundShadowComponent` (contact shadow).
+- **`generate_ibl_kotlin`** — `ImageBasedLightComponent` source + `ImageBasedLightReceiverComponent` (localized IBL).
+- **DoD:** on a baked-PBR scene, `capture_frame` shows point falloff, spot cone, and a ground/contact shadow (vision via `emulator_look` + capture diff). IBL asset-gated. All vision-verifiable, no asset dependency for the lights.
+
+### v4.6 — Particles + media
+- **`generate_particle_kotlin`** — `ParticleComponent` (emitter, attractor/vortex, `isEmitting`).
+- **`generate_video_player_kotlin`** — `VideoPlayerComponent` (CypressMediaPlayer) on a quad.
+- **DoD:** particles visibly MOVE across successive captures (vision); video renders non-static frames OR is honestly flagged Surface/codec-gated (compiles either way).
+
+### v4.7 — Animation (tween / orbit / skeletal)
+Grounded: `AnimationResource.generateWithTweenAnimation`, `OrbitAnimation`, `Skeleton`/`BlendShapeControllerComponent` — `generate_animation_kotlin` today only *plays a generic resource*.
+- **`generate_tween_animation_kotlin`** (`TweenAnimation.createTweenAnimation`) + **`generate_orbit_animation_kotlin`** (`OrbitAnimation`).
+- **`generate_skeletal_animation_kotlin`** — `Skeleton`/joints + blendshapes (asset-gated).
+- **DoD:** tween/orbit — an entity visibly moves across captures (vision); skeletal compiles, visual BLOCKED-on-asset (honest gap noted).
+
+### v4.8 — Scene-graph composition + display control
+- **`generate_composition_scene`** — USD references/overrides/scopes to compose multiple sub-assets + instance models (extends `compose_scene`).
+- **`generate_display_controllers_kotlin`** — `OpacityControllerComponent` (fades) + `LookAtComponent` (billboards) + `DrawOrderGroupComponent`.
+- **`generate_portal_kotlin`** — `PortalComponent`/`PortalWorldComponent` (a nested world; crossing is headset-only).
+- **DoD:** 2+ usdz refs with an override render together; opacity fades; LookAt billboards toward the user; a portal shows a nested world (all vision-verified).
+
+### v4.9 — Measured-env hardening + rigid-body physics
+- **`calibrate_home_env`** — the HONEST version of the measured-room idea: the home bedroom geometry is a Unity black box (NOT measurable — proven this session), so this tool runs the vision-calibration loop (place a face-pin → `capture_frame` → adjust the `generate_home_env_proxy` wall/ceiling box) and TAGS each face `vision-verified` vs `first-pass`. Floor `y=0` stays the anchor; it documents that exact measured numbers are impossible.
+- **`generate_rigidbody_kotlin`** — `RigidBodyComponent` + `PhysicsForceComponent` (dynamic objects on the collider floor).
+- **`generate_anchor_kotlin`** — `AnchorComponent` (headset-flagged, C1).
+- **DoD:** `calibrate_home_env` emits a per-face confidence map; a rigid body falls and rests on the floor proxy (vision-verified); anchors compile + no-op on the emulator.
+
 ### v5.0 — The brief-to-app compiler (planning layer)
 - **`autonomous_spatial_build` v5** — a PLANNING step: parse a COMPLEX brief → a structured app spec (scenes, objects, layout, interactions, data sources) → author each piece via the tools → verify each via the `verify` gate → assemble. Handles multi-scene, interactive, data-driven briefs (not just single-scene).
 - **Template library** (gallery / inspection / dashboard / ambient) + a "remix an existing app to a new brief" capability.
