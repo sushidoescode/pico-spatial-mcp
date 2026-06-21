@@ -42,6 +42,7 @@ import { registerVerifyBaselineTools } from "./verifybaseline.js";
 import { registerRichnessTools } from "./richness.js";
 import { registerSwanTools } from "./swan.js";
 import { registerDeployTools } from "./deploy.js";
+import { registerHomeEnvProxyTools } from "./homeenv.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -100,6 +101,7 @@ registerVerifyBaselineTools(server);
 registerRichnessTools(server);
 registerSwanTools(server);
 registerDeployTools(server);
+registerHomeEnvProxyTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
