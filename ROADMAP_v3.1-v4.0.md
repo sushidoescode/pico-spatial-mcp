@@ -189,3 +189,41 @@ v4.0: (16) rewrite autonomous_spatial_build V4 · (17) deploy_to_device skeleton
 - **`deploy_to_device` is untestable until Swan** — a clearly-gated dormant skeleton that cannot crash the loop.
 - **v4.0 demo must run on TWO briefs** (not just ClaimSight) to prove brief-general, not overfit.
 - **Dropped from scope (deliberately):** mesh-collider shapes (never register on-device — box only), multi-agent parallel writers on shared app files.
+
+---
+
+## 8. v4.1 → v5.0 — enabling MORE COMPLEX autonomous tasks (2026-06-20)
+
+v4.0 proved the loop is brief-general (GalleryXR). This arc grows what an agent can autonomously build — *surface-grounded* placement, *rich multi-object* scenes, *interaction depth*, *data-driven* content, and finally a *planning layer* for complex briefs. The C1–C4 ceilings still hold; each version stays emulator-verifiable (vision/structural) with headset-only parts codegen+flagged. Ground truth (a frame the agent looked at) remains the gate.
+
+### v4.1 — Surface-grounded placement (the home-env "faked hit-test") — STARTED
+- **`generate_home_env_proxy`** ✓ SHIPPED — invisible calibrated collider proxy of the KNOWN home-env bedroom (floor `y=0` VISION-VERIFIED + bed/wall boxes) → `Scene.rayCast` lands pins ON the home-env surfaces. (Real arbitrary-surface hit-test stays headset-only C1; this works because the home env is a fixed room.)
+- **`generate_gaze_placement_kotlin`** — wire the HMD gaze (head-ray) → home-env-proxy rayCast → place at the hit (place-where-you-look on the floor/bed/wall), headlessly drivable via the Agent Bridge.
+- **Calibrate the bed/walls by vision** (place→capture→LOOK→adjust loop; a helper that proposes box deltas from a capture).
+- **DoD:** a pin lands on the home-env FLOOR *and* BED by gaze, vision-verified.
+
+### v4.2 — Rich multi-object scenes + spatial layout
+- **`generate_layout_kotlin`** — arrange N objects in spatial patterns (wall-gallery / floor-grid / arc / shelf) on the home-env-proxy surfaces, collision-aware (no overlaps).
+- **`import_model_catalog`** — batch `bake_textured_model` so scenes use multiple DISTINCT textured models, not one repeated marker.
+- **DoD:** brief "5 framed artworks on the wall" → 5 distinct quads on the wall-proxy, vision-verified (the whole set seen via `verify_visual` sweep).
+
+### v4.3 — Interaction depth (emulator-verifiable + headset-ready)
+- **`generate_interaction_kotlin`** — `InteractableComponent` + gaze-DWELL selection (emulator-verifiable via the head-ray + `app_broadcast`; controller-ray flagged headset-only C3) + a hover/select VISUAL state change.
+- **`generate_state_machine_kotlin`** — multi-step flows (select → detail card → action), driven headlessly via the Agent Bridge, asserted via `assert_scene`.
+- **DoD:** a gaze-dwell selects an object → a visible state change (vision-verified) + the state asserted structurally.
+
+### v4.4 — Data-driven content
+- **`generate_data_binding_kotlin`** — bind scene content to data (local JSON or a gated API) → "show these N items as cards/markers" → fetch + lay out via `generate_layout_kotlin`.
+- LLM-in-the-loop content (the gated `ClaimsApi` assess/report pattern), honest about the network gate.
+- **DoD:** a data list → laid-out spatial content matching the data, vision-verified.
+
+### v5.0 — The brief-to-app compiler (planning layer)
+- **`autonomous_spatial_build` v5** — a PLANNING step: parse a COMPLEX brief → a structured app spec (scenes, objects, layout, interactions, data sources) → author each piece via the tools → verify each via the `verify` gate → assemble. Handles multi-scene, interactive, data-driven briefs (not just single-scene).
+- **Template library** (gallery / inspection / dashboard / ambient) + a "remix an existing app to a new brief" capability.
+- **DoD:** one complex brief — e.g. "an interactive product showcase: 6 items on shelves, gaze to select, a detail card per item, sourced from a JSON catalog" — built + verified end-to-end on the emulator, Swan-ready, with the honest verified-vs-built report.
+
+### Honest constraints (carry forward)
+- C1 (no scene-understanding) → real-surface placement off the home env is headset-only; `generate_home_env_proxy` only matches the DEFAULT home bedroom.
+- C3 (no controller/trigger) → interaction is gaze-dwell + broadcast on the emulator; controller-ray is headset.
+- C4 (stage-vs-window) → menus stay in-world textured quads; in-front interactive Compose panels are headset.
+- Every visual claim still needs a `capture_frame` the agent LOOKED at; `verify`/`verify_baseline`/`assert_scene` remain the gate.
