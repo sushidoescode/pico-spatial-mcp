@@ -1,21 +1,59 @@
 # HANDOFF — PICO-MCP, for the next chat
 
 ---
-## ▶ NEXT SESSION STARTS HERE (2026-06-18 — v4.0.0 ASSEMBLED)
-**v4.0.0 — the autonomous spatial studio is ASSEMBLED.** MCP @ `4.0.0`, **92 distinct tools**, smoke
-`Failures: 0`, committed on `main` (NOT pushed; HEAD `ceeb344`). The full **v3.5→v4.0 ladder** is built
-(mapped in `ROADMAP_v3.1-v4.0.md §7`), each tool verified per its ceiling:
-- **v3.5** build_and_run/iterate_scene AUTO-EMIT the honest capability matrix (0-visually-verified on a real build).
-- **v3.6** `editor_export_bundle` (cooks CollisionShape+PhysicsMaterial+timeline, verified) · `generate_lighting_kotlin` (compiles) · `generate_mr_app`.
-- **v3.7** `verify_baseline` deterministic regression (no-change 0.0000 PASS; planted red→green markers 0.0028 → CHANGED→LOOK, seen). ImageMagick installed.
-- **v3.8** `generate_spatial_audio_kotlin` / `generate_animation_kotlin` / `generate_persistent_anchor_kotlin` / `generate_headset_readiness_codegen` / `swan_bring_up_checklist` — all COMPILE; runtime parts headset-flagged.
-- **v4.0** `autonomous_spatial_build` V4 prompt (full loop, `verify` gate mandatory, honest report, Swan handoff) + `deploy_to_device` (dormant, verified).
+## ▶ NEXT SESSION STARTS HERE (2026-06-27 — v4.1 shipped + v4.5 lighting rig; v4.5→v4.9 mapped)
+**MCP @ `4.1.0` (package.json), 94 distinct tools, smoke `Failures: 0`.** Git HEAD `7423ad6` on `main`,
+**2 commits ahead of origin** (origin synced through `9b145ba` v4.1.0 + the README). Read this whole file +
+the auto-memory `…/memory/pico-mcp-project.md` + `ROADMAP_v3.1-v4.0.md` (§7 = v3.5→v4.0 ladder, §8 = the
+v4.1→v5.0 ladder incl. the v4.5–v4.9 fill).
 
-**DO NEXT — the v4.0 ACCEPTANCE DEMO (not yet run, the honest gap):** drive `autonomous_spatial_build`
-UNATTENDED on TWO distinct briefs (ClaimSight + one NEW) to prove the loop is brief-general (spatialdemo
-is the de-facto brief #1 — every step was exercised+verified this session, but a fresh unattended run is
-the acceptance test). Then README → v4.0 and consider pushing to GitHub (still NOT pushed). Tools installed
-this session: `cliclick` (camera control), `imagemagick` (perceptual diff).
+**WHAT SHIPPED (v4.0 → now), all verified:**
+- **v4.0.0** the autonomous studio ASSEMBLED + the **acceptance demo PASSED** (vision-verified): ran the full
+  `autonomous_spatial_build` loop on a FRESH brief, **GalleryXR** (`~/AndroidStudioProjects/galleryxr-native`,
+  pkg com.example.galleryxr, git tag/HEAD on its own repo) — 3 glowing cyan orbs in the home env, captured +
+  LOOKED. README → v4.0 + **PUSHED to origin** (private repo).
+- **v4.1.0** `generate_home_env_proxy` — FAKED hit-test on the PICO home env: an invisible calibrated collider
+  proxy (floor `y=0` VISION-VERIFIED; bed/wall boxes first-pass) → `Scene.rayCast` lands pins ON the home-env
+  surfaces. Chain `generate_home_env_proxy`→`generate_collider_kotlin`→compiles.
+- **v4.5 (started)** `generate_full_lighting_rig_kotlin` — Directional + Point + Spot + GroundShadow + IBL
+  (was 2 of 7 lights). COMPILES against the SDK.
+
+**KEY RESEARCH (the `spatial-editor-deep-dive` workflow, 2026-06-27):**
+- **MEASURED-ROOM verdict = NOT FEASIBLE.** The home bedroom is rendered by **`com.pxr.scenarioprovider`, a
+  UNITY app** (UnityPlayerActivity). Its 105 MB APK has only Unity GUID asset chunks (no USD/GLB; `level0` =
+  5 KB stub) → the room geometry is a black box, **cannot be measured statically**. Floor `y=0` stays the only
+  VISION-VERIFIED anchor; walls/ceiling can only be **vision-calibrated** (→ the `calibrate_home_env` tool, v4.9).
+- **The editor understands far more than the MCP authors** (the v4.5–v4.9 fill, `ROADMAP §8`): lighting was 2/7,
+  animation only plays a generic resource; UNCOVERED → particles (`ParticleComponent`), video (`VideoPlayerComponent`),
+  portals (`PortalComponent`), rigid-body (`RigidBodyComponent`), tween/orbit/skeletal animation, opacity/look-at/
+  drawOrder, IBL source+receiver. All sources in the SDK `core/com/pico/spatial/core/ecs/*.kt`.
+
+**DO NEXT — the v4.5→v4.9 build order (highest value first):**
+1. `generate_ibl_kotlin` (finish v4.5: `ImageBasedLightComponent` source + receiver) — then vision-verify the
+   whole lighting rig on a BAKED-MESH scene (point falloff / spot cone / contact shadow visible).
+2. **`calibrate_home_env`** (v4.9 — the honest version of the user's measured-room idea): vision-calibrate the
+   home-env proxy walls/ceiling (place a face-pin → `capture_frame` → adjust `src/homeenv.ts` boxes), tag each
+   face vision-verified vs first-pass. The user SPECIFICALLY asked to try wall/ceiling placement.
+3. `generate_particle_kotlin` (v4.6 — particles visibly MOVE across captures = strong vision check).
+4. Then v4.6 video, v4.7 animation (tween/orbit), v4.8 scene-graph + display, v4.9 rigidbody.
+5. **PUSH** the 2 pending commits (`git push origin main`).
+
+**SESSION GOTCHAS (don't relearn):**
+- **Piped shell commands (`| grep`) intermittently error** with "claude native binary not installed" — a harness
+  hiccup, NOT your code. WORKAROUND: redirect to a file (`cmd > /tmp/x.log 2>&1`) then `Read` the log.
+- **`/tmp` gets cleaned between sessions** — re-extract SDK sources (`unzip core-0.13.3-sources.jar -d /tmp/pico-src/core`)
+  and the harness `/tmp/pico-invoke.mjs` (it auto-registers all dist modules; recreate from the working copy).
+- **Read the SDK source signature BEFORE emitting Kotlin** (constructors differ: DirectionalLight/Point/Spot/Ground
+  are ctor-args not no-arg+apply; `Entity.addChild` not `addEntity`; `AnimationResource` has NO load-by-name;
+  `createAnchor` wants `EulerAngles`; `WorldTrackingResult` is sealed Success/failure). This caught several tools.
+- **Scaffold-rename keeps the LOG TAG string** (a scaffolded app's HomeStage/seed logs are under tag `SpatialDemo`,
+  not the new app name) — grep `SpatialDemo:V`.
+- **C2 camera is decoupled** — after launch the free cam looks the wrong way; use `emulator_look` to find `-Z`
+  before concluding "empty". `capture_frame` is byte-stable when static.
+- **Tools installed this session** (reversible): `cliclick` (camera control), `imagemagick` (perceptual diff).
+- **HONESTY RULE (the user enforces, has caught over-claims):** never say "renders/works/verified" without a
+  `capture_frame` you LOOKED at. Code/`smoke 0`/logcat = existence, not appearance. `verify`/`verify_baseline`/
+  `assert_scene`/`capability_report` are the gate.
 
 ---
 ### (history) v3.4.0 — finish + tighten verification trust:
