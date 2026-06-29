@@ -1,7 +1,61 @@
 # HANDOFF — PICO-MCP, for the next chat
 
 ---
-## ▶ NEXT SESSION STARTS HERE (2026-06-27 — v4.1 shipped + v4.5 lighting rig; v4.5→v4.9 mapped)
+## ▶ NEXT SESSION STARTS HERE (2026-06-29 — v4.5→v4.9 SHIPPED: the full SDK content ladder)
+**MCP @ `4.5.0` (package.json + index.ts), 104 distinct tools, smoke `Failures: 0`.** Git HEAD on `main`.
+The ENTIRE v4.1→v4.9 content ladder is now built + **compile-verified against the real SDK 0.13.3**.
+Read this whole file + the auto-memory + `ROADMAP_v3.1-v4.0.md` §8 (now marked ✓ SHIPPED per version).
+
+**WHAT SHIPPED THIS SESSION (v4.5→v4.9 — 10 new tools), all `:app:compileDebugKotlin` BUILD SUCCESSFUL:**
+- **v4.5** `generate_ibl_kotlin` (`src/lighting.ts`) — scene-wide `StageEnvironmentLightingComponent` (FULL/PROGRESSIVE
+  only; INACTIVE in MIXED) + localized `ImageBasedLightComponent` source/`ImageBasedLightReceiverComponent`, `.ktx` cubemap.
+- **v4.6** `generate_particle_kotlin` + `generate_video_player_kotlin` (`src/media.ts`). KEY: `ParticleComponent`
+  has **NO public ctor** — it auto-attaches from an editor-authored AssetBundle; the tool DRIVES it
+  (`components.get<ParticleComponent>()` → isEmitting/startColor/attractor/vortex). Video is asset+codec-gated.
+- **v4.7** `generate_tween_animation_kotlin` + `generate_orbit_animation_kotlin` (`src/anim.ts`). ★ **TWEEN IS
+  VISION-VERIFIED:** wired a vertical-bob tween onto a galleryxr orb → logcat `SceneTween: tween position playing`
+  + I LOOKED at a 3-frame montage and the orb is at clearly different heights (`/tmp/pico-render/v45-v49-tween-VERIFIED.png`).
+  Proof the animation codegen (`createTweenAnimation` → `generateWithTweenAnimation` → `playAnimation`) runs on-device.
+- **v4.8** `generate_display_controllers_kotlin` + `generate_portal_kotlin` (`src/display.ts`). Opacity/LookAt/DrawOrder;
+  Portal world+window (sibling-not-child topology enforced).
+- **v4.9** `calibrate_home_env` (`src/homeenv.ts`) + `generate_rigidbody_kotlin` + `generate_anchor_kotlin` (`src/physics.ts`).
+  `calibrate_home_env` = the honest measured-room loop (per-face confidence map + adjusted room box from observed deltas;
+  documents the Unity-black-box reality). Rigidbody on the proven collider recipe. Anchor is headset-only (C1).
+- New `src/` files: `media.ts`, `anim.ts`, `display.ts`, `physics.ts` — wired in `index.ts` + the `/tmp/pico-invoke.mjs` harness MODS.
+
+**HOW THE LADDER WAS BUILT (the method to reuse):** ran a 7-agent `pico-sdk-ladder-research` **workflow** that read the
+SDK ECS sources in parallel and returned codegen-ready signature digests (particle/video/animation/display/portal/
+rigidbody/anchor). The full digest is in the task output (`tasks/wnfpl81h2.output`) — exact ctors + gotchas + per-component
+emulator-verifiability. Then each tool was authored from VERIFIED source signatures (the #1 rule), and ALL generated
+Kotlin was dropped into a throwaway `gen/` package in galleryxr-native + compiled in ONE gradle pass.
+
+**HONEST VERIFICATION MATRIX (what's verified at what level):**
+- VISION-VERIFIED (LOOKED): `generate_tween_animation_kotlin` (orb bob).
+- COMPILE-VERIFIED (gradle, real SDK): ALL 10 — ibl, particle, video, tween, orbit, display, portal, rigidbody, anchor (+ the prior lighting rig).
+- ASSET-GATED (compiles, can't exercise on the bare emulator): ibl (.ktx), particle (editor bundle), video (.mp4+codec), skeletal anim.
+- HEADSET-ONLY (C1): anchor (world-tracking no-ops on the emulator).
+- DATA/MATH tool: `calibrate_home_env` (harness-verified front/back & left/right geometry math).
+
+**DO NEXT (highest value first):**
+1. **`generate_composition_scene`** (v4.8) — the ONE deferred tool: USD references/overrides/scopes to compose multiple
+   sub-assets + instance models (extends `compose_scene`). Then v4.7 skeletal (`generate_skeletal_animation_kotlin`, asset-gated).
+2. **Deeper vision verification on dedicated scenes** (raise compile→vision): the lighting rig on a baked-PBR FULL-stage
+   scene (point falloff/spot cone/contact shadow — needs a baked mesh, the MIXED home env won't change); rigidbody fall-and-rest
+   on a `ModelComponent` body; orbit motion; opacity fade. Each: wire into a scene → build_and_run → emulator_look → capture → LOOK.
+3. **v5.0 the brief-to-app compiler** (`autonomous_spatial_build` v5 planning layer) — parse a COMPLEX brief → structured app
+   spec → author each piece via these tools → `verify` gate each → assemble. The content ladder it needs is now COMPLETE.
+4. Optionally find/make a `.ktx` cubemap + an editor-authored particle `.glb` to vision-verify IBL + particles.
+
+**SESSION GOTCHAS (carried forward + new):**
+- **/tmp is cleaned between sessions** — re-extract sources: `unzip -o ~/.gradle/caches/modules-2/files-2.1/com.pico.spatial.core/core/0.13.3/*/core-0.13.3-sources.jar -d /tmp/pico-src/core` (+ foundation jar for math types). The light/particle SUBDIRS are empty after a partial extract — re-extract the whole jar.
+- **The `/tmp/pico-invoke.mjs` harness** auto-registers all dist modules — add new module basenames to its MODS array (done for media/anim/display/physics).
+- **Compile-verify pattern:** generate every new Kotlin into a throwaway `gen/` package in galleryxr-native, run `JAVA_HOME=".../Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:compileDebugKotlin` — fast (~7-12s), catches every signature error. Remove `gen/` after.
+- **ImageMagick `compare -metric MAE` on 2160² frames is SLOW (times out)** — for vision, CROP the region of interest + `montage` the frames + LOOK; don't full-frame compare.
+- **C2 camera decoupled** — `adb exec-out screencap -p` shows the home env but the free cam may face the wrong way; the seeded orbs were in view here. Burst-capture (screencap latency ≈0.4s spaces frames) to catch motion.
+- **HONESTY RULE (the user enforces):** never say "renders/works/verified" without a `capture_frame` you LOOKED at. Compile/`smoke 0`/logcat = existence, not appearance. Tween is the only NEW vision-verified one; the rest are honestly compile-verified.
+
+---
+## ▶ (history) NEXT SESSION (2026-06-27 — v4.1 shipped + v4.5 lighting rig; v4.5→v4.9 mapped)
 **MCP @ `4.1.0` (package.json), 94 distinct tools, smoke `Failures: 0`.** Git HEAD `7423ad6` on `main`,
 **2 commits ahead of origin** (origin synced through `9b145ba` v4.1.0 + the README). Read this whole file +
 the auto-memory `…/memory/pico-mcp-project.md` + `ROADMAP_v3.1-v4.0.md` (§7 = v3.5→v4.0 ladder, §8 = the

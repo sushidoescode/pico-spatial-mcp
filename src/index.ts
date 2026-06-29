@@ -43,11 +43,15 @@ import { registerRichnessTools } from "./richness.js";
 import { registerSwanTools } from "./swan.js";
 import { registerDeployTools } from "./deploy.js";
 import { registerHomeEnvProxyTools } from "./homeenv.js";
+import { registerMediaTools } from "./media.js";
+import { registerAnimTools } from "./anim.js";
+import { registerDisplayTools } from "./display.js";
+import { registerPhysicsTools } from "./physics.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "4.1.0",
+  version: "4.5.0",
 });
 
 server.registerTool(
@@ -102,6 +106,10 @@ registerRichnessTools(server);
 registerSwanTools(server);
 registerDeployTools(server);
 registerHomeEnvProxyTools(server);
+registerMediaTools(server);
+registerAnimTools(server);
+registerDisplayTools(server);
+registerPhysicsTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

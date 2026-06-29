@@ -68,4 +68,106 @@ export function registerHomeEnvProxyTools(server: McpServer) {
       });
     },
   );
+
+  // ── calibrate_home_env ─────────────────────────────────────────────────────
+  // The HONEST version of the "measure the room" idea. The home bedroom is rendered by a Unity app
+  // (com.pxr.scenarioprovider) whose geometry is a black box — it CANNOT be measured statically. So
+  // walls/ceiling can only be VISION-calibrated: place a marker at a proxy face → capture_frame → LOOK →
+  // does it sit ON the visible surface? → feed back a per-face delta → this tool returns the adjusted
+  // generate_home_env_proxy room box + a per-face confidence map (vision-verified vs first-pass).
+  const FACE = z.enum(["floor", "ceiling", "wallFront", "wallBack", "wallLeft", "wallRight"]);
+  server.registerTool(
+    "calibrate_home_env",
+    {
+      description:
+        "Vision-calibrate the home-env proxy walls/ceiling (the honest 'measure the room' tool). The home bedroom is a Unity black box (NOT statically measurable — floor y=0 is the only vision-verified anchor), so this runs the calibration LOOP: it returns the 6 proxy faces with a probe-pin world position for each (place a marker there → capture_frame + emulator_look → LOOK: is the marker ON the visible surface?), a per-face confidence map (vision-verified vs first-pass), and — given your observed per-face deltas — the ADJUSTED room box to pass to generate_home_env_proxy/generate_collider_kotlin. Documents that exact measured numbers are impossible.",
+      inputSchema: {
+        room: z.object({
+          halfW: z.number(), height: z.number(), halfD: z.number(), centerZ: z.number(), thickness: z.number().optional(),
+        }).partial().optional().describe("Override the current proxy room box (defaults to the generate_home_env_proxy calibration: halfW 2.8, height 2.6, halfD 2.8, centerZ -1.2, thickness 0.12)."),
+        observations: z.array(z.object({
+          face: FACE,
+          status: z.enum(["ok", "too-far", "too-close"]).describe("ok = marker sits ON the visible surface. too-far = the real surface is BEYOND the marker (marker floats in front of it) → grow. too-close = the surface is NEARER (marker is past/behind it) → shrink."),
+          deltaMeters: z.number().optional().describe("How far to move this face along its outward normal (default 0.25 for too-far, -0.25 for too-close; sign auto-applied from status if omitted)."),
+          note: z.string().optional(),
+        })).optional().describe("Per-face vision observations from the capture→LOOK step. Drives the proposed room adjustment + tags faces vision-verified."),
+        verifiedFaces: z.array(FACE).optional().describe("Faces already vision-confirmed in prior iterations (carries calibration state across stateless calls; floor is always verified)."),
+        probeInset: z.number().optional().describe("How far inside a face to place its probe marker so it visibly rests on the surface (default 0.04m)."),
+      },
+    },
+    async ({ room, observations, verifiedFaces, probeInset }) => {
+      const cur = {
+        halfW: room?.halfW ?? 2.8,
+        height: room?.height ?? 2.6,
+        halfD: room?.halfD ?? 2.8,
+        centerZ: room?.centerZ ?? -1.2,
+        thickness: room?.thickness ?? 0.12,
+      };
+      const inset = probeInset ?? 0.04;
+      const r2 = (n: number) => Math.round(n * 1000) / 1000;
+      const obs = observations ?? [];
+      const obsFor = (f: string) => obs.find((o) => o.face === f);
+      // signed outward delta per face (outward = away from room interior), from status or explicit deltaMeters
+      const outwardDelta = (f: string): number => {
+        const o = obsFor(f);
+        if (!o || o.status === "ok") return 0;
+        if (o.deltaMeters !== undefined) return o.deltaMeters;
+        return o.status === "too-far" ? 0.25 : -0.25;
+      };
+
+      // Geometry of the 6 faces of the proxy room (interior surfaces the user sees).
+      const cz = cur.centerZ, h = cur.height, hw = cur.halfW, hd = cur.halfD;
+      const frontZ = cz - hd, backZ = cz + hd; // front = far (-Z), back = behind (+Z)
+      const faces = [
+        { name: "floor",     fixed: "y=0",            center: { x: 0, y: 0, z: cz },            inward: { x: 0, y: 1, z: 0 },  probe: { x: 0, y: inset, z: cz },                controls: "y=0 (FIXED ANCHOR — never changes)" },
+        { name: "ceiling",   fixed: `y=${r2(h)}`,     center: { x: 0, y: h, z: cz },            inward: { x: 0, y: -1, z: 0 }, probe: { x: 0, y: r2(h - inset), z: cz },        controls: "height" },
+        { name: "wallFront", fixed: `z=${r2(frontZ)}`,center: { x: 0, y: h / 2, z: frontZ },    inward: { x: 0, y: 0, z: 1 },  probe: { x: 0, y: r2(h / 2), z: r2(frontZ + inset) }, controls: "halfD & centerZ" },
+        { name: "wallBack",  fixed: `z=${r2(backZ)}`, center: { x: 0, y: h / 2, z: backZ },     inward: { x: 0, y: 0, z: -1 }, probe: { x: 0, y: r2(h / 2), z: r2(backZ - inset) },  controls: "halfD & centerZ" },
+        { name: "wallLeft",  fixed: `x=${r2(-hw)}`,   center: { x: -hw, y: h / 2, z: cz },      inward: { x: 1, y: 0, z: 0 },  probe: { x: r2(-hw + inset), y: r2(h / 2), z: cz },   controls: "halfW (X-symmetric)" },
+        { name: "wallRight", fixed: `x=${r2(hw)}`,    center: { x: hw, y: h / 2, z: cz },       inward: { x: -1, y: 0, z: 0 }, probe: { x: r2(hw - inset), y: r2(h / 2), z: cz },    controls: "halfW (X-symmetric)" },
+      ];
+
+      // Confidence map: floor is always vision-verified; otherwise verified if in verifiedFaces or this run's obs is "ok".
+      const verifiedSet = new Set<string>(["floor", ...(verifiedFaces ?? [])]);
+      for (const o of obs) if (o.status === "ok") verifiedSet.add(o.face);
+      const confidence: Record<string, string> = {};
+      for (const f of faces) confidence[f.name] = verifiedSet.has(f.name) ? "vision-verified" : "first-pass";
+
+      // Propose an adjusted room from the observed deltas (front/back & left/right math).
+      const dCeil = outwardDelta("ceiling");
+      const dFront = outwardDelta("wallFront"), dBack = outwardDelta("wallBack");
+      const dLeft = outwardDelta("wallLeft"), dRight = outwardDelta("wallRight");
+      const proposed = {
+        halfW: r2(hw + (dLeft + dRight) / 2),
+        height: r2(h + dCeil),
+        halfD: r2(hd + (dFront + dBack) / 2),
+        centerZ: r2(cz + (dBack - dFront) / 2),
+        thickness: cur.thickness,
+      };
+      const changed = JSON.stringify(proposed) !== JSON.stringify(cur);
+      const warnings: string[] = [];
+      if (dLeft !== dRight && (dLeft !== 0 || dRight !== 0))
+        warnings.push("wallLeft and wallRight deltas differ, but the proxy room is X-symmetric (no centerX) — halfW used the average; add a centerX field to generate_home_env_proxy if you need an off-center X.");
+
+      return okJson({
+        currentRoom: cur,
+        faces,
+        confidenceMap: confidence,
+        proposedRoom: changed ? proposed : undefined,
+        proposedDiff: changed
+          ? { halfW: `${cur.halfW}→${proposed.halfW}`, height: `${cur.height}→${proposed.height}`, halfD: `${cur.halfD}→${proposed.halfD}`, centerZ: `${cur.centerZ}→${proposed.centerZ}` }
+          : "no observations supplied → no change; this call returns the current faces + probe pins to start the loop.",
+        warnings: warnings.length ? warnings : undefined,
+        loop: [
+          "1. Generate the proxy colliders: generate_home_env_proxy → generate_collider_kotlin (room=currentRoom), build_and_run.",
+          "2. For each non-verified face: place a small visible marker at faces[i].probe (e.g. a pin entity at that world pos, or rayCast a ray toward faces[i].center and pin the hit), then capture_frame + emulator_look to FACE it.",
+          "3. LOOK: does the marker sit flush ON the visible surface? If yes → observation {face, status:'ok'} (tags it vision-verified). If it floats in front of the real surface → 'too-far'. If it's sunk past/behind the surface → 'too-close'.",
+          "4. Call calibrate_home_env again with room=currentRoom, observations=[...], verifiedFaces=[...] → it returns proposedRoom. Feed proposedRoom back into generate_home_env_proxy/generate_collider_kotlin.",
+          "5. Repeat until every face is vision-verified. The home env is fixed, so calibrate once.",
+        ],
+        honest:
+          "EXACT measured numbers are IMPOSSIBLE: the home bedroom is rendered by com.pxr.scenarioprovider, a Unity app whose geometry is a black box (no extractable USD/GLB) — proven by the spatial-editor deep-dive. Floor y=0 is the ONLY vision-verified anchor. Walls/ceiling are VISION-CALIBRATED estimates (place→LOOK→adjust), never measured. This proxy matches the DEFAULT home bedroom only; on Swan with passthrough use real scene-understanding (sense/plane) instead.",
+      });
+    },
+  );
 }
