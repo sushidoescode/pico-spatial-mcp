@@ -69,74 +69,110 @@ def broadcast(pkg, action, hover=False):
 
 
 # ---------- menu row detection (framebuffer space) ----------
-# Button-bar colors (the AAA texture: green START, amber PAUSE, blue RESUME, red RESET).
+# Button-bar colors (the AAA texture: green START, amber PAUSE, blue RESUME, red RESET), in row order.
 _RED   = lambda r, g, b: r > 150 and g < 105 and b < 105 and (r - g) > 70 and (r - b) > 70
 _AMBER = lambda r, g, b: r > 195 and 120 <= g <= 210 and b < 110 and (r - b) > 110 and (r - g) > 35
 _BLUE  = lambda r, g, b: 90 < g < 200 and b > 150 and (b - r) > 55 and (b - g) > 35 and r < 150
 _GREEN = lambda r, g, b: g > 150 and r < 170 and b < 150 and (g - r) > 30 and (g - b) > 45
-# The navy panel backing + bright-blue glowing border (used to find the panel bbox first).
-_FRAME = lambda r, g, b: b > 150 and (b - g) > 45 and (b - r) > 60 and g > 60
+_TESTS = (_GREEN, _AMBER, _BLUE, _RED)          # index 0..3 == row order start/pause/resume/reset
 
 
-def _frame_bbox(px, W, H):
-    """Robust bbox (x0,y0,x1,y1) of the menu's blue panel backing/border.
+def _color_bars(px, W, H, test, min_w, step=2):
+    """WIDE horizontal bars of one colour -> top-4 widest as (yc, x0, x1, width).
 
-    Only the bright glowing border passes _FRAME (the dark navy backing sits just under threshold),
-    so the panel shows up as WIDE rows of frame-blue at its top + bottom edges. Scattered scene blue
-    (a window sky, the Earth planet) is narrow/round and won't make a WIDE row, so we take the bbox
-    of all wide rows — after a median-band filter that drops any wide row far from the main cluster.
+    A menu button is a wide horizontal bar; planets/cubes/plants are narrow or round and get pruned
+    by min_w. Consecutive matching rows are merged into one band.
     """
-    wide = []                                   # (y, min_x, max_x) for each WIDE frame row
-    for y in range(0, H, 2):
-        xs = [x for x in range(0, W, 2) if _FRAME(*px[x, y])]
-        if len(xs) >= 40:                       # a panel edge is a WIDE band; blobs are not
-            wide.append((y, min(xs), max(xs)))
-    if len(wide) < 3:
+    rowx = {}
+    for y in range(0, H, step):
+        xs = [x for x in range(0, W, step) if test(*px[x, y])]
+        if len(xs) >= 10:
+            rowx[y] = (min(xs), max(xs))
+    bands, cur = [], []
+    for y in sorted(rowx):
+        if cur and y - cur[-1] <= 14:
+            cur.append(y)
+        else:
+            if cur:
+                bands.append(cur)
+            cur = [y]
+    if cur:
+        bands.append(cur)
+    out = []
+    for band in bands:
+        if len(band) < 2:
+            continue
+        x0 = min(rowx[y][0] for y in band); x1 = max(rowx[y][1] for y in band)
+        if x1 - x0 >= min_w:
+            out.append((sum(band) // len(band), x0, x1, x1 - x0))
+    out.sort(key=lambda b: -b[3])
+    return out[:4]
+
+
+def _fit(chosen, W):
+    """chosen = [(rowIndex, yc, x0, x1, w), ...] (3 or 4). Validate it's a vertical, same-column,
+    equally-spaced stack and least-squares-fit y = b0 + sp*index over the 4 rows. None if it isn't."""
+    idxs = [c[0] for c in chosen]; ys = [c[1] for c in chosen]
+    cs = [(c[2] + c[3]) / 2 for c in chosen]
+    xspread = max(cs) - min(cs)
+    if xspread > 0.10 * W:                       # buttons share a column; a cube row does not
         return None
-    ys = sorted(r[0] for r in wide)
-    med = ys[len(ys) // 2]
-    keep = [r for r in wide if abs(r[0] - med) <= 450]   # one panel is ~300px tall in the fb
-    if len(keep) < 3:
+    if [y for _, y in sorted(zip(idxs, ys))] != sorted(ys) or len(set(ys)) != len(ys):
+        return None                              # y must strictly increase with row index
+    n = len(idxs); sx = sum(idxs); sy = sum(ys)
+    sxx = sum(i * i for i in idxs); sxy = sum(i * y for i, y in zip(idxs, ys))
+    denom = n * sxx - sx * sx
+    if denom == 0:
         return None
-    y0 = min(r[0] for r in keep); y1 = max(r[0] for r in keep)
-    x0 = min(r[1] for r in keep); x1 = max(r[2] for r in keep)
-    return (x0, y0, x1, y1)
+    sp = (n * sxy - sx * sy) / denom; b0 = (sy - sp * sx) / n
+    if sp <= 8:                                  # rows must be genuinely spaced (kills a flat cube row)
+        return None
+    err = sum(abs((b0 + sp * i) - y) for i, y in zip(idxs, ys)) / n
+    if err > 0.22 * sp:                          # spacing must be regular
+        return None
+    rows = {a: int(b0 + sp * i) for i, a in enumerate(ACTIONS)}
+    x0 = min(c[2] for c in chosen); x1 = max(c[3] for c in chosen)
+    score = xspread / W + err / sp + (4 - len(chosen)) * 0.3   # prefer a full 4-of-4 match
+    bbox = (x0, rows[ACTIONS[0]] - int(sp), x1, rows[ACTIONS[-1]] + int(sp))
+    return {"rows": rows, "col": (x0, x1), "sp": sp, "bbox": bbox, "_score": score}
 
 
 def detect_rows(img_path):
     """Return {'rows': {action: y_fb}, 'col': (x0, x1), 'sp': spacing, 'bbox': ...} or None.
 
-    Camera/scale robust AND scene-color robust: find the panel bbox first, then look for the
-    button color-bands ONLY inside it, and least-squares-fit the 4 equally-spaced rows.
+    Scene-color robust: the menu's UNIQUE signature is four wide colour bars (green->amber->blue->red)
+    STACKED vertically at the same column with equal spacing. Floor cubes (side-by-side, same height)
+    and planets (round) can't match that, so they can't hijack detection. A 3-of-4 fallback recovers
+    when a press flash or glassy cap momentarily washes one button's colour.
     """
     from PIL import Image
+    from itertools import product
     im = Image.open(img_path).convert("RGB")
     W, H = im.size
     px = im.load()
-    bbox = _frame_bbox(px, W, H)
-    if not bbox:
-        return None
-    fx0, fy0, fx1, fy1 = bbox
-    inset = int((fx1 - fx0) * 0.12)             # sample the bar centers, skip the border
-    ix0, ix1 = fx0 + inset, fx1 - inset
+    min_w = int(W * 0.08)
+    cand = [_color_bars(px, W, H, t, min_w) for t in _TESTS]
+    best = None
 
-    def band_median(test):
-        ys = [y for y in range(fy0, fy1 + 1) for x in range(ix0, ix1, 3) if test(*px[x, y])]
-        return int(st.median(ys)) if len(ys) > 60 else None
+    # 4-of-4: one bar from each colour forming the stack.
+    for combo in product(*cand) if all(cand) else []:
+        f = _fit([(i, *combo[i]) for i in range(4)], W)
+        if f and (best is None or f["_score"] < best["_score"]):
+            best = f
+    if best:
+        return best
 
-    pts = []
-    for row_idx, test in ((1, _GREEN), (2, _AMBER), (3, _BLUE), (4, _RED)):
-        y = band_median(test)
-        if y is not None:
-            pts.append((row_idx, y))
-    if len(pts) < 2:
-        return None
-    n = len(pts); sx = sum(p[0] for p in pts); sy = sum(p[1] for p in pts)
-    sxx = sum(p[0] ** 2 for p in pts); sxy = sum(p[0] * p[1] for p in pts)
-    sp = (n * sxy - sx * sy) / (n * sxx - sx * sx)
-    b0 = (sy - sp * sx) / n
-    rows = {a: int(b0 + sp * (i + 1)) for i, a in enumerate(ACTIONS)}
-    return {"rows": rows, "col": (fx0, fx1), "sp": sp, "bbox": bbox}
+    # 3-of-4 fallback: drop one colour (it may be washed) and fit the remaining stacked three.
+    for drop in range(4):
+        keep = [i for i in range(4) if i != drop]
+        lists = [cand[i] for i in keep]
+        if not all(lists):
+            continue
+        for combo in product(*lists):
+            f = _fit([(keep[k], *combo[k]) for k in range(3)], W)
+            if f and (best is None or f["_score"] < best["_score"]):
+                best = f
+    return best
 
 
 def classify(fbx, fby, det):
@@ -195,10 +231,12 @@ _last = {"det": None, "t": 0.0}
 def handle_point(sx, sy, win, pkg, hover=False, redetect=True):
     if redetect or _last["det"] is None or (time.time() - _last["t"]) > 1.5:
         tmp = os.path.join(tempfile.gettempdir(), "bridge_sc.png")
-        det = detect_rows(screencap(tmp))
-        if det:
-            _last["det"], _last["t"] = det, time.time()
-    det = _last["det"]
+        for _ in range(3):                       # a single frame can fail (a press flash washes a
+            det = detect_rows(screencap(tmp))    # button mid-animation) -> retry before giving up
+            if det:
+                _last["det"], _last["t"] = det, time.time()
+                break
+    det = _last["det"]                           # fall back to the last good detection if all retries fail
     if not det:
         return None
     fbx, fby = screen_to_fb(sx, sy, win)

@@ -15,22 +15,25 @@ import { ok, fail } from "./util.js";
  *    createPlane highlight ends up PERPENDICULAR to it. Rebake with rotation_euler=(radians(90),0,0)
  *    so the quad stands vertical in app X-Y (normal +Z toward viewer, texture-V -> panel-local +Y),
  *    matching the createPlane convention. See the make_panel.py snippet in the usage note.
- *  - The highlight + cursor are CHILDREN of the panel, so they ride the panel face and stay on the
- *    right button even when the emulator free camera drifts (C2).
+ *  - The button caps, underline, flash + cursor are CHILDREN of the panel, so they ride the panel
+ *    face and stay on the right button even when the emulator free camera drifts (C2).
  *  - Each button's panel-local Y is computed ANALYTICALLY from the texture row centers (NOT eyeballed):
  *    y = ((1 - rowPx/textureHeight) - 0.5) * planeHeight. Verified observed==commanded on-emulator.
  *  - select(action) is the SINGLE entry point: a DEBUG_CMD broadcast drives it on the emulator (C3:
  *    no controller), and a gaze/controller hit drives the same method on a headset.
  *  - AAA 3D feel (default on): a LIT beveled backing slab (createBox + PhysicallyBasedMaterial) gives
- *    the panel real depth/frame, a point light makes it pop, and a gentle idle-bob tween makes it
- *    float. select() never touches the panel transform, so the bob never fights the selection.
+ *    the panel real depth/frame, a point light makes it pop, a gentle idle-bob tween makes it float,
+ *    and each button is a RAISED GLASSY 3D CAP. select() lifts the active cap + slides a glowing
+ *    underline to it, then PLUNGES the cap and springs it back (position TweenAnimation, EASE_OUT,
+ *    REVERSE×1) with a ripple flash — a real button-press, not a flat colour wash. The press is a
+ *    panel-local/cap-local animation, so the idle bob (on the panel) never fights it.
  */
 export function registerMenuTools(server: McpServer) {
   server.registerTool(
     "generate_game_menu_kotlin",
     {
       description:
-        "Emit GameMenu.kt — a REAL in-world game menu (start/pause/resume/reset or custom buttons) with an AAA 3D feel, the way menuxr-native verified it. You provide a VERTICAL baked textured panel (bake_textured_model of a +90°X-rotated plane — see the usage note) and a list of AnimationPlaybackControllers; the menu adds a LIT 3D backing slab (depth/frame), a point light (pop) and a gentle idle-bob float, places a translucent highlight + bright cursor (both panel children, so camera drift never moves them off-button), and snaps them to each button via per-button panel-local Y computed ANALYTICALLY from the texture rows. select(action) is one entry point driven by a DEBUG_CMD broadcast on the emulator (no controller, C3) and by gaze/controller on a headset. Selection alignment is VISION-verifiable; pause/resume freezing is structurally verifiable via the Agent Bridge dump_scene.",
+        "Emit GameMenu.kt — a REAL in-world game menu (start/pause/resume/reset or custom buttons) with an AAA 3D feel, the way menuxr-native verified it. You provide a VERTICAL baked textured panel (bake_textured_model of a +90°X-rotated plane — see the usage note) and a list of AnimationPlaybackControllers; the menu adds a LIT 3D backing slab (depth/frame), a point light (pop), a gentle idle-bob float, and — per button — a RAISED GLASSY 3D CAP (rounded createBox) so the panel reads as real raised buttons. select(action) lifts the active cap, slides a glowing underline + cursor to the row, and PLAYS A REAL BUTTON-PRESS ANIMATION: the cap PLUNGES in and springs back (a position TweenAnimation, EASE_OUT, REVERSE×1) with a quick ripple flash (an opacity tween) — not a flat colour wash. select(action) is one entry point driven by a DEBUG_CMD broadcast on the emulator (no controller, C3) and by gaze/controller on a headset. Selection alignment + the raised cap are VISION-verifiable; pause/resume freezing is structurally verifiable via the Agent Bridge dump_scene.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
         panelModelName: z.string().optional().describe('Baked panel model name loaded via Entity.loadSuspend (default "menu" — i.e. menu.bundle from bake_textured_model).'),
@@ -42,7 +45,7 @@ export function registerMenuTools(server: McpServer) {
           .array(z.object({ action: z.string(), rowPx: z.number() }))
           .optional()
           .describe('Buttons as {action, rowPx} where rowPx is the button row CENTER in the texture (top=0). Default the verified 4: start@205, pause@315, resume@425, reset@535. Action names start/pause/resume/reset get built-in controller behavior; any other name calls a customActions[name] lambda.'),
-        highlightOpacity: z.number().optional().describe("Translucent highlight fill opacity over the active button (default 0.6)."),
+        highlightOpacity: z.number().optional().describe("Peak opacity of the ripple flash that pulses on press (default 0.6)."),
         cursorX: z.number().optional().describe("Panel-local X of the cursor marker (default -0.36 = left end of the button row)."),
         backingSlab: z.boolean().optional().describe("Add a LIT beveled 3D backing slab behind the face for depth/frame (default true = AAA)."),
         pointLight: z.boolean().optional().describe("Add a point light in front of the panel so the slab catches specular (default true)."),
@@ -79,35 +82,49 @@ export function registerMenuTools(server: McpServer) {
       });
       const spacing = btns.length > 1 ? Math.abs((btns[btns.length - 1].rowPx - btns[0].rowPx) / (btns.length - 1)) : 110;
       const hlHeight = +(((spacing * 0.92) / texH) * ph).toFixed(3); // a touch under one row
-      const hlWidth = 0.82; // ~ button width in panel-local units (panel mesh width is 1.0)
       const slabH = +(ph + 0.105).toFixed(3); // a touch taller than the panel face -> visible frame
       const rowHalf = +(((spacing / 2) / texH) * ph).toFixed(4); // panel-local half-row (poke tolerance)
+      // 3D pressable button caps (panel mesh width is 1.0; one cap per button row).
+      const capW = 0.84;
+      const capH = +(hlHeight * 0.98).toFixed(3);
+      const underW = +(capW * 0.86).toFixed(3);
+      const underDy = +(-(capH * 0.46)).toFixed(4); // underline sits just below the button centre
 
       const btnYEntries = btnY.map((b) => `"${b.action}" to ${b.y}f`).join(", ");
+
+      // Per-button accent colors so each glassy cap DEEPENS its own button (matching hue glosses,
+      // it doesn't wash like a neutral white film). Known actions get the texture's button colors.
+      const accent = (a: string): [number, number, number] =>
+        ({ start: [0.30, 0.85, 0.42], pause: [0.97, 0.72, 0.18], resume: [0.32, 0.66, 0.97], reset: [0.93, 0.34, 0.34] } as Record<string, [number, number, number]>)[a] ?? [0.55, 0.9, 1.0];
+      const capColorEntries = btns
+        .map((b) => `"${b.action}" to Color4(${accent(b.action).map((c) => c + "f").join(", ")}, 1f)`)
+        .join(", ");
+      const capGlowEntries = btns
+        .map((b) => { const [r, g, bl] = accent(b.action); return `"${b.action}" to Color4(${(r * 0.5).toFixed(3)}f, ${(g * 0.5).toFixed(3)}f, ${(bl * 0.5).toFixed(3)}f, 1f)`; })
+        .join(", ");
 
       const imports = [
         "import android.util.Log",
         "import com.pico.spatial.core.ecs.Entity",
         "import com.pico.spatial.core.ecs.ModelComponent",
         "import com.pico.spatial.core.ecs.TransformComponent",
+        "import com.pico.spatial.core.ecs.animation.AnimationBindTarget",
         "import com.pico.spatial.core.ecs.animation.AnimationPlaybackController",
+        "import com.pico.spatial.core.ecs.animation.EaseType",
+        "import com.pico.spatial.core.ecs.animation.MaterialTarget",
+        "import com.pico.spatial.core.ecs.animation.RepeatMode",
+        "import com.pico.spatial.core.ecs.animation.SpatialAnimation",
+        "import com.pico.spatial.core.ecs.animation.TweenAnimation",
+        "import com.pico.spatial.core.ecs.resource.AnimationResource",
         "import com.pico.spatial.core.ecs.resource.BlendingMode",
         "import com.pico.spatial.core.ecs.resource.MeshResource",
+        "import com.pico.spatial.core.ecs.resource.PhysicallyBasedMaterial",
         "import com.pico.spatial.core.ecs.resource.UnlitMaterial",
         "import com.pico.spatial.core.math.Color4",
         "import com.pico.spatial.core.math.Quat",
         "import com.pico.spatial.core.math.Vector3",
       ];
-      if (slabOn) imports.push("import com.pico.spatial.core.ecs.resource.PhysicallyBasedMaterial");
       if (lightOn) imports.push("import com.pico.spatial.core.ecs.PointLightComponent");
-      if (bobOn) imports.push(
-        "import com.pico.spatial.core.ecs.animation.AnimationBindTarget",
-        "import com.pico.spatial.core.ecs.animation.EaseType",
-        "import com.pico.spatial.core.ecs.animation.RepeatMode",
-        "import com.pico.spatial.core.ecs.animation.SpatialAnimation",
-        "import com.pico.spatial.core.ecs.animation.TweenAnimation",
-        "import com.pico.spatial.core.ecs.resource.AnimationResource",
-      );
       if (handOn) imports.push(
         "import android.os.Handler",
         "import android.os.Looper",
@@ -149,13 +166,39 @@ export function registerMenuTools(server: McpServer) {
         "",
       );
       attachBody.push(
-        "        // translucent highlight fill over the active button (panel child -> rides the face).",
-        "        val hl = Entity().also { it.setName(\"MenuHighlight\") }",
-        "        val hlMat = UnlitMaterial.create(BlendingMode.TRANSPARENT)",
-        `        hlMat.setBaseColor(Color4(1f, 1f, 1f, 1f)); hlMat.setOpacity(${opacity}f); hlMat.setDepthWrite(false)`,
-        `        hl.components.set(ModelComponent(MeshResource.createPlane(${hlWidth}f, ${hlHeight}f, 0.02f), hlMat))`,
-        "        hl.components.set(TransformComponent(Vector3(0f, 2f, HL_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
-        "        panel.addChild(hl); highlight = hl",
+        "        // (AAA) a raised glassy 3D button CAP per row. They sit proud of the face so the panel",
+        "        // reads as real raised buttons; the active one lifts and select() PLUNGES it like a press.",
+        "        BTN_Y.forEach { (action, y) ->",
+        "            val cap = Entity().also { it.setName(\"MenuCap_\" + action) }",
+        "            val capMat = PhysicallyBasedMaterial.create()",
+        "            val cColor = CAP_COLOR[action] ?: Color4(0.55f, 0.9f, 1f, 1f)",
+        "            val cGlow = CAP_GLOW[action] ?: Color4(0.28f, 0.45f, 0.5f, 1f)",
+        "            capMat.setBaseColor(cColor)",
+        "            runCatching {",
+        "                capMat.setBlendingMode(BlendingMode.TRANSPARENT); capMat.setOpacity(0.26f)",
+        "                capMat.setMetallic(0.45f); capMat.setRoughness(0.2f)",
+        "                capMat.setEmissiveColor(cGlow); capMat.setDepthWrite(false)",
+        "            }",
+        `            cap.components.set(ModelComponent(MeshResource.createBox(Vector3(${capW}f, ${capH}f, CAP_THICK), CAP_CORNER), capMat))`,
+        "            cap.components.set(TransformComponent(Vector3(BTN_X, y, CAP_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
+        "            panel.addChild(cap); caps[action] = cap",
+        "        }",
+        "",
+        "        // a slim glowing UNDERLINE marks the active button (modern, not a flat colour wash).",
+        "        val ul = Entity().also { it.setName(\"MenuUnderline\") }",
+        "        val ulMat = UnlitMaterial.create(BlendingMode.TRANSPARENT)",
+        "        ulMat.setBaseColor(Color4(0.30f, 0.95f, 1f, 1f)); ulMat.setOpacity(0.95f); ulMat.setDepthWrite(false)",
+        `        ul.components.set(ModelComponent(MeshResource.createPlane(${underW}f, 0.014f, 0.007f), ulMat))`,
+        "        ul.components.set(TransformComponent(Vector3(0f, 2f, MARK_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
+        "        panel.addChild(ul); underline = ul",
+        "",
+        "        // a transient RIPPLE flash that pulses on press (invisible at rest).",
+        "        val fl = Entity().also { it.setName(\"MenuFlash\") }",
+        "        val flMat = UnlitMaterial.create(BlendingMode.TRANSPARENT)",
+        "        flMat.setBaseColor(Color4(0.7f, 0.97f, 1f, 1f)); flMat.setOpacity(0f); flMat.setDepthWrite(false)",
+        `        fl.components.set(ModelComponent(MeshResource.createPlane(${capW}f, ${capH}f, 0.03f), flMat))`,
+        "        fl.components.set(TransformComponent(Vector3(0f, 2f, FLASH_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
+        "        panel.addChild(fl); flash = fl",
         "",
         "        val cur = Entity().also { it.setName(\"MenuCursor\") }",
         "        val curMat = UnlitMaterial.create()",
@@ -164,9 +207,10 @@ export function registerMenuTools(server: McpServer) {
         "        cur.components.set(TransformComponent(Vector3(0f, 2f, CUR_Z), Quat.identity(), Vector3(CUR_S, CUR_S, CUR_S)))",
         "        panel.addChild(cur); cursor = cur",
         "",
-        "        // park the indicator on the first button so nothing floats before the first selection.",
-        "        BTN_Y.values.firstOrNull()?.let { y ->",
-        "            hl.components.set(TransformComponent(Vector3(BTN_X, y, HL_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
+        "        // park the indicators on the first button so nothing floats before the first selection.",
+        "        BTN_Y.entries.firstOrNull()?.let { (action, y) ->",
+        "            caps[action]?.components?.set(TransformComponent(Vector3(BTN_X, y, CAP_Z + CAP_RAISE), Quat.identity(), Vector3(1f, 1f, 1f)))",
+        "            ul.components.set(TransformComponent(Vector3(BTN_X, y + UNDER_DY, MARK_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
         "            cur.components.set(TransformComponent(Vector3(CURSOR_X, y, CUR_Z), Quat.identity(), Vector3(CUR_S, CUR_S, CUR_S)))",
         "        }",
       );
@@ -211,8 +255,12 @@ export function registerMenuTools(server: McpServer) {
         '    private const val TAG = "GameMenu"',
         "",
         "    private var controllers: List<AnimationPlaybackController> = emptyList()",
-        "    private var highlight: Entity? = null",
+        "    private val caps = mutableMapOf<String, Entity>()  // one raised 3D cap per button row",
+        "    private var underline: Entity? = null",
+        "    private var flash: Entity? = null",
         "    private var cursor: Entity? = null",
+        "    private var pressCtrl: AnimationPlaybackController? = null",
+        "    private var flashCtrl: AnimationPlaybackController? = null",
         ...(handOn ? ["    private var panelRef: Entity? = null"] : []),
         "    /** Per-action lambdas. If an action has one it OVERRIDES the built-in controller behavior —",
         "     *  e.g. a physics demo maps \"pause\"->freeze sim, \"reset\"->rebuild. Set before/after attach. */",
@@ -223,10 +271,19 @@ export function registerMenuTools(server: McpServer) {
         "    // Panel-local Y of each button, computed analytically from the texture rows at gen time:",
         "    //   y = ((1 - rowPx/" + texH + ") - 0.5) * " + ph + "   (panel half-height = " + (ph / 2).toFixed(4) + ", +Y=up)",
         `    private val BTN_Y = mapOf(${btnYEntries})`,
+        `    private val CAP_COLOR = mapOf<String, Color4>(${capColorEntries})`,
+        `    private val CAP_GLOW = mapOf<String, Color4>(${capGlowEntries})`,
         "    private const val BTN_X = 0.0f      // buttons centered on the panel",
         `    private const val CURSOR_X = ${curX}f // left end of the active button`,
-        "    private const val HL_Z = 0.012f     // highlight sits just in front of the panel face",
-        "    private const val CUR_Z = 0.04f",
+        "    private const val CAP_Z = 0.035f       // button cap rests proud of the panel face",
+        "    private const val CAP_RAISE = 0.022f   // the active cap lifts further toward the viewer",
+        "    private const val CAP_THICK = 0.05f",
+        "    private const val CAP_CORNER = 0.02f  // <= CAP_THICK/2 so the rounded box stays valid",
+        "    private const val PRESS_DEPTH = 0.05f  // how far the cap plunges on a press",
+        "    private const val MARK_Z = 0.055f      // underline just in front of the caps",
+        "    private const val FLASH_Z = 0.062f     // ripple flash in front of everything",
+        `    private const val UNDER_DY = ${underDy}f // underline offset below the button centre`,
+        "    private const val CUR_Z = 0.075f",
         "    private const val CUR_S = 0.03f",
         "",
         "    /** Place the panel, build the highlight + cursor as panel children, and bind the controllers. */",
@@ -235,10 +292,38 @@ export function registerMenuTools(server: McpServer) {
         "    /** The single entry point — snap the indicator to the row and apply the action. @MainThread. */",
         "    fun select(action: String) {",
         "        BTN_Y[action]?.let { y ->",
-        "            runCatching { highlight?.components?.set(TransformComponent(Vector3(BTN_X, y, HL_Z), Quat.identity(), Vector3(1f, 1f, 1f))) }",
-        "                .onFailure { Log.e(TAG, \"highlight move failed: $it\") }",
+        "            // lift the active cap, settle the rest, then PLUNGE the active one (a real button press).",
+        "            caps.forEach { (a, cap) ->",
+        "                val z = if (a == action) CAP_Z + CAP_RAISE else CAP_Z",
+        "                runCatching { cap.components.set(TransformComponent(Vector3(BTN_X, BTN_Y[a] ?: y, z), Quat.identity(), Vector3(1f, 1f, 1f))) }",
+        "            }",
+        "            caps[action]?.let { cap ->",
+        "                runCatching {",
+        "                    pressCtrl?.let { c -> runCatching { c.stop() } }",
+        "                    val press = TweenAnimation.createTweenAnimation(",
+        "                        name = \"press\", bindTarget = AnimationBindTarget.bindPosition(),",
+        "                        by = Vector3(0f, 0f, -PRESS_DEPTH), duration = 0.12f,",
+        "                        repeatMode = RepeatMode.REVERSE, repeatCount = 1, easeType = EaseType.EASE_OUT,",
+        "                    )",
+        "                    pressCtrl = cap.playAnimation(AnimationResource.generateWithTweenAnimation(press))",
+        "                }.onFailure { Log.e(TAG, \"press anim failed: $it\") }",
+        "            }",
+        "            // slide the underline + cursor to the row.",
+        "            runCatching { underline?.components?.set(TransformComponent(Vector3(BTN_X, y + UNDER_DY, MARK_Z), Quat.identity(), Vector3(1f, 1f, 1f))) }",
         "            runCatching { cursor?.components?.set(TransformComponent(Vector3(CURSOR_X, y, CUR_Z), Quat.identity(), Vector3(CUR_S, CUR_S, CUR_S))) }",
-        "                .onFailure { Log.e(TAG, \"cursor move failed: $it\") }",
+        "            // ripple flash at the row (a brief tap pulse, invisible at rest).",
+        "            flash?.let { fl ->",
+        "                runCatching {",
+        "                    fl.components.set(TransformComponent(Vector3(BTN_X, y, FLASH_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
+        "                    flashCtrl?.let { c -> runCatching { c.stop() } }",
+        "                    val pulse = TweenAnimation.createTweenAnimation(",
+        "                        name = \"flash\", bindTarget = AnimationBindTarget.bindMaterial(0, MaterialTarget.OPACITY),",
+        `                        from = 0f, to = ${opacity}f, duration = 0.18f,`,
+        "                        repeatMode = RepeatMode.REVERSE, repeatCount = 1, easeType = EaseType.EASE_OUT,",
+        "                    )",
+        "                    flashCtrl = fl.playAnimation(AnimationResource.generateWithTweenAnimation(pulse))",
+        "                }.onFailure { Log.e(TAG, \"flash anim failed: $it\") }",
+        "            }",
         "        }",
         "        val custom = customActions[action]",
         "        when {",
