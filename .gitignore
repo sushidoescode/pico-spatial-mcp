@@ -4,3 +4,7 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Python bytecode (host-side bridge tools)
+__pycache__/
+*.pyc
