@@ -47,11 +47,12 @@ import { registerMediaTools } from "./media.js";
 import { registerAnimTools } from "./anim.js";
 import { registerDisplayTools } from "./display.js";
 import { registerPhysicsTools } from "./physics.js";
+import { registerMenuTools } from "./menu.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "4.5.0",
+  version: "4.6.0",
 });
 
 server.registerTool(
@@ -110,6 +111,7 @@ registerMediaTools(server);
 registerAnimTools(server);
 registerDisplayTools(server);
 registerPhysicsTools(server);
+registerMenuTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
