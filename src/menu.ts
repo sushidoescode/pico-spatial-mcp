@@ -102,6 +102,12 @@ export function registerMenuTools(server: McpServer) {
       const capGlowEntries = btns
         .map((b) => { const [r, g, bl] = accent(b.action); return `"${b.action}" to Color4(${(r * 0.5).toFixed(3)}f, ${(g * 0.5).toFixed(3)}f, ${(bl * 0.5).toFixed(3)}f, 1f)`; })
         .join(", ");
+      // Flash color = the accent pushed toward white, so a pulse reads as a BRIGHT tap of the
+      // button's own hue (a same-colour flash over a same-colour button would be invisible).
+      const bright = (c: number) => +(c + (1 - c) * 0.6).toFixed(3);
+      const capFlashEntries = btns
+        .map((b) => { const [r, g, bl] = accent(b.action); return `"${b.action}" to Color4(${bright(r)}f, ${bright(g)}f, ${bright(bl)}f, 1f)`; })
+        .join(", ");
 
       const imports = [
         "import android.util.Log",
@@ -182,6 +188,13 @@ export function registerMenuTools(server: McpServer) {
         `            cap.components.set(ModelComponent(MeshResource.createBox(Vector3(${capW}f, ${capH}f, CAP_THICK), CAP_CORNER), capMat))`,
         "            cap.components.set(TransformComponent(Vector3(BTN_X, y, CAP_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
         "            panel.addChild(cap); caps[action] = cap",
+        "            // a color-matched tap flash for THIS button (invisible at rest; pulses on press).",
+        "            val fl = Entity().also { it.setName(\"MenuFlash_\" + action) }",
+        "            val flMat = UnlitMaterial.create(BlendingMode.TRANSPARENT)",
+        "            flMat.setBaseColor(CAP_FLASH[action] ?: Color4(0.85f, 0.97f, 1f, 1f)); flMat.setOpacity(0f); flMat.setDepthWrite(false)",
+        `            fl.components.set(ModelComponent(MeshResource.createPlane(${capW}f, ${capH}f, 0.03f), flMat))`,
+        "            fl.components.set(TransformComponent(Vector3(BTN_X, y, FLASH_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
+        "            panel.addChild(fl); flashes[action] = fl",
         "        }",
         "",
         "        // a slim glowing UNDERLINE marks the active button (modern, not a flat colour wash).",
@@ -191,14 +204,6 @@ export function registerMenuTools(server: McpServer) {
         `        ul.components.set(ModelComponent(MeshResource.createPlane(${underW}f, 0.014f, 0.007f), ulMat))`,
         "        ul.components.set(TransformComponent(Vector3(0f, 2f, MARK_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
         "        panel.addChild(ul); underline = ul",
-        "",
-        "        // a transient RIPPLE flash that pulses on press (invisible at rest).",
-        "        val fl = Entity().also { it.setName(\"MenuFlash\") }",
-        "        val flMat = UnlitMaterial.create(BlendingMode.TRANSPARENT)",
-        "        flMat.setBaseColor(Color4(0.7f, 0.97f, 1f, 1f)); flMat.setOpacity(0f); flMat.setDepthWrite(false)",
-        `        fl.components.set(ModelComponent(MeshResource.createPlane(${capW}f, ${capH}f, 0.03f), flMat))`,
-        "        fl.components.set(TransformComponent(Vector3(0f, 2f, FLASH_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
-        "        panel.addChild(fl); flash = fl",
         "",
         "        val cur = Entity().also { it.setName(\"MenuCursor\") }",
         "        val curMat = UnlitMaterial.create()",
@@ -255,9 +260,9 @@ export function registerMenuTools(server: McpServer) {
         '    private const val TAG = "GameMenu"',
         "",
         "    private var controllers: List<AnimationPlaybackController> = emptyList()",
-        "    private val caps = mutableMapOf<String, Entity>()  // one raised 3D cap per button row",
+        "    private val caps = mutableMapOf<String, Entity>()     // one raised 3D cap per button row",
+        "    private val flashes = mutableMapOf<String, Entity>()  // a color-matched tap flash per row",
         "    private var underline: Entity? = null",
-        "    private var flash: Entity? = null",
         "    private var cursor: Entity? = null",
         "    private var pressCtrl: AnimationPlaybackController? = null",
         "    private var flashCtrl: AnimationPlaybackController? = null",
@@ -273,6 +278,7 @@ export function registerMenuTools(server: McpServer) {
         `    private val BTN_Y = mapOf(${btnYEntries})`,
         `    private val CAP_COLOR = mapOf<String, Color4>(${capColorEntries})`,
         `    private val CAP_GLOW = mapOf<String, Color4>(${capGlowEntries})`,
+        `    private val CAP_FLASH = mapOf<String, Color4>(${capFlashEntries})`,
         "    private const val BTN_X = 0.0f      // buttons centered on the panel",
         `    private const val CURSOR_X = ${curX}f // left end of the active button`,
         "    private const val CAP_Z = 0.035f       // button cap rests proud of the panel face",
@@ -311,10 +317,9 @@ export function registerMenuTools(server: McpServer) {
         "            // slide the underline + cursor to the row.",
         "            runCatching { underline?.components?.set(TransformComponent(Vector3(BTN_X, y + UNDER_DY, MARK_Z), Quat.identity(), Vector3(1f, 1f, 1f))) }",
         "            runCatching { cursor?.components?.set(TransformComponent(Vector3(CURSOR_X, y, CUR_Z), Quat.identity(), Vector3(CUR_S, CUR_S, CUR_S))) }",
-        "            // ripple flash at the row (a brief tap pulse, invisible at rest).",
-        "            flash?.let { fl ->",
+        "            // color-matched tap flash on the pressed button (a brief pulse, invisible at rest).",
+        "            flashes[action]?.let { fl ->",
         "                runCatching {",
-        "                    fl.components.set(TransformComponent(Vector3(BTN_X, y, FLASH_Z), Quat.identity(), Vector3(1f, 1f, 1f)))",
         "                    flashCtrl?.let { c -> runCatching { c.stop() } }",
         "                    val pulse = TweenAnimation.createTweenAnimation(",
         "                        name = \"flash\", bindTarget = AnimationBindTarget.bindMaterial(0, MaterialTarget.OPACITY),",

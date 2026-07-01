@@ -60,6 +60,22 @@ def foreground_pkg():
     return None
 
 
+_fg = {"pkg": None, "t": 0.0}
+
+def target_pkg(fixed=None):
+    """Which app to broadcast to. A pinned BRIDGE_PKG wins; otherwise the FOREGROUND spatial app,
+    re-checked each click (with a short cache) so clicks always hit the demo you're actually looking
+    at — not a stale package. (This was the 'click registered but nothing happened' bug: the command
+    went to a pinned app that wasn't in front.)"""
+    if fixed:
+        return fixed
+    if _fg["pkg"] is None or (time.time() - _fg["t"]) > 0.8:
+        fg = foreground_pkg()
+        if fg:
+            _fg["pkg"], _fg["t"] = fg, time.time()
+    return _fg["pkg"]
+
+
 def broadcast(pkg, action, hover=False):
     if hover:
         adb("shell", "am", "broadcast", "-a", f"{pkg}.DEBUG_CMD",
@@ -269,7 +285,7 @@ def cmd_point(sx, sy, hover):
     win = find_window()
     if not win:
         print("emulator window not found"); return
-    pkg = os.environ.get("BRIDGE_PKG") or foreground_pkg()
+    pkg = target_pkg(os.environ.get("BRIDGE_PKG"))
     if not pkg:
         print("no foreground com.example.* package"); return
     a = handle_point(float(sx), float(sy), win, pkg, hover=hover)
@@ -288,11 +304,12 @@ def cmd_live():
     routes a 'hover' DEBUG_CMD (headset-equivalent feedback; off by default to avoid adb spam)."""
     import Quartz
     win = {"v": find_window()}
-    pkg = {"v": os.environ.get("BRIDGE_PKG") or foreground_pkg()}
+    fixed = os.environ.get("BRIDGE_PKG")   # optional hard override; else auto-target the foreground app
     if not win["v"]:
         print("emulator window not found (is the PICO emulator running and visible?)"); return
     hover_on = os.environ.get("BRIDGE_HOVER") == "1"
-    print(f"LIVE bridge ready. pkg={pkg['v']}  hover={'on' if hover_on else 'off'}")
+    tgt = "pinned " + fixed if fixed else "auto (whichever demo is in front)"
+    print(f"LIVE bridge ready. target={tgt}  hover={'on' if hover_on else 'off'}")
     print("  -> Move your mouse over a menu button in the emulator and LEFT-CLICK to select it.")
     print("  -> Ctrl-C to stop.")
     last_move = {"t": 0.0}
@@ -304,14 +321,16 @@ def cmd_live():
             loc = Quartz.CGEventGetLocation(event)
             if etype == Quartz.kCGEventLeftMouseDown:
                 win["v"] = find_window() or win["v"]
-                pkg["v"] = pkg["v"] or foreground_pkg()
-                a = handle_point(loc.x, loc.y, win["v"], pkg["v"], hover=False)
-                print(f"click -> {a}" if a else "click (not over a menu button)")
+                pkg = target_pkg(fixed)        # re-checked each click -> always the visible demo
+                if not pkg:
+                    print("click (no foreground spatial app found)"); return
+                a = handle_point(loc.x, loc.y, win["v"], pkg, hover=False)
+                print(f"click -> {a}  [{pkg.split('.')[-1]}]" if a else "click (not over a menu button)")
             elif hover_on and etype == Quartz.kCGEventMouseMoved:
                 now = time.time()
                 if now - last_move["t"] > 0.12:   # throttle hover broadcasts
                     last_move["t"] = now
-                    handle_point(loc.x, loc.y, win["v"], pkg["v"], hover=True, redetect=False)
+                    handle_point(loc.x, loc.y, win["v"], target_pkg(fixed), hover=True, redetect=False)
         except Exception as e:
             print("cb error:", e)
         return event

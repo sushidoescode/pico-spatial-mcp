@@ -89,6 +89,8 @@ export function registerMouseBridgeTools(server: McpServer) {
 
       // 3) Compose the run command + instructions.
       const env: string[] = [];
+      // BRIDGE_PKG is an OPTIONAL hard pin. By default the bridge auto-targets the FOREGROUND demo
+      // (re-checked each click) so clicks always hit the app you're looking at — do NOT pin unless asked.
       if (packageName) env.push(`BRIDGE_PKG=${packageName}`);
       if (enableHover) env.push("BRIDGE_HOVER=1");
       const envPrefix = env.length ? env.join(" ") + " " : "";
@@ -106,7 +108,9 @@ export function registerMouseBridgeTools(server: McpServer) {
         liveCmd,
         "```",
         "Then **move your mouse over a menu button in the emulator window and LEFT-CLICK** to select it.",
-        "Each click does a fresh screen capture, so it tracks the panel even as the free camera drifts. Ctrl-C to stop.",
+        "It **auto-targets whichever demo is in the foreground** (re-checked each click) and prints the target,",
+        "e.g. `click -> reset  [gravityxr]`. Each click does a fresh capture, so it tracks the panel even as the",
+        "free camera drifts. Ctrl-C to stop." + (packageName ? `  (Pinned to \`${packageName}\` — omit BRIDGE_PKG to auto-target instead.)` : ""),
         "",
         "## One-time macOS permission",
         "The bridge needs to observe the global mouse. If the first run prints",
@@ -121,10 +125,11 @@ export function registerMouseBridgeTools(server: McpServer) {
         "```",
         "",
         "## How it works / limits",
-        "- It finds the menu's **blue panel bbox** first, then the green/amber/blue/red button bars *inside* it, so",
-        "  scene colors (red planets, a sun, plants) can't contaminate detection.",
-        "- A click is mapped **screen → emulator window → device framebuffer → nearest button row**, then it",
-        "  broadcasts `<pkg>.DEBUG_CMD` — the SAME channel a gaze/controller select uses on a real headset.",
+        "- It targets the **foreground** spatial app each click (a pinned BRIDGE_PKG overrides), then broadcasts",
+        "  `<pkg>.DEBUG_CMD` — the SAME channel a gaze/controller select uses on a real headset.",
+        "- Detection uses the menu's **unique signature** — four wide colour bars stacked vertically (green→amber→",
+        "  blue→red) at one column — so side-by-side scene objects (floor cubes) and round planets can't hijack it.",
+        "- A click is mapped **screen → emulator window → device framebuffer → nearest button row**.",
         "- The click is **listen-only** (it still reaches the emulator), so you keep full camera control.",
         "- This is an **emulator** convenience for testing in-world UI without a controller. On a PICO headset the",
         "  same `GameMenu.select` is driven by real gaze/controller (and the optional hand-tracking pinch).",
