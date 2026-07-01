@@ -171,7 +171,7 @@ export function registerPlannerTools(server: McpServer) {
       for (const f of failures) {
         const sym = f.symptom.toLowerCase();
         // placement: slot in the bed / bad position → push the layout further out & up
-        if (sym.includes("bed") || sym.includes("placement") || sym.includes("slot")) {
+        if (sym.includes("bed") || sym.includes("slot") || sym.includes("sunk")) {
           for (const l of spec.layouts) {
             if (f.targetRef && l.id !== f.targetRef) continue;
             l.params = { ...(l.params ?? {}), centerZ: -3.0, centerY: 1.5 };
@@ -201,6 +201,34 @@ export function registerPlannerTools(server: McpServer) {
             if (f.targetRef && it.id !== f.targetRef && it.target !== f.targetRef) continue;
             if (it.driveChannel !== "broadcast") { it.driveChannel = "broadcast"; recompile.add(it.id); changes.push(`interaction '${it.id}': drive controller→broadcast (emulator-verifiable; keep the controller path in headsetLayer)`); }
           }
+        }
+        // nothing rendered → ensure a lighting rig + flag the main-thread/camera checks (v5.2 critique symptom)
+        if (sym.includes("not_render") || sym.includes("empty") || sym.includes("blank")) {
+          for (const s of spec.scenes) {
+            if (s.lighting.rig === "none") { s.lighting.rig = "sun"; recompile.add(s.id); changes.push(`scene '${s.id}': lighting rig none→sun`); }
+          }
+          changes.push("not_rendering: confirm entities are added on the MAIN thread (broadcast handlers arrive off-main) and lie in the forward FOV before re-capture");
+        }
+        // occlusion / crowding → widen the layout spacing
+        if (sym.includes("placement") || sym.includes("occlud") || sym.includes("overlap") || sym.includes("crowd")) {
+          for (const l of spec.layouts) {
+            if (f.targetRef && l.id !== f.targetRef) continue;
+            const cur = Number((l.params ?? {}).spacing ?? 0.6);
+            l.params = { ...(l.params ?? {}), spacing: Math.round((cur + 0.2) * 100) / 100 };
+            recompile.add(l.id);
+            changes.push(`layout '${l.id}': spacing ${cur}→${(l.params as any).spacing} to reduce occlusion`);
+          }
+        }
+        // wrong forward view / off-screen → snap the verification node's camera pose forward (C2)
+        if (sym.includes("camera") || sym.includes("offscreen") || sym.includes("off_screen") || sym.includes("away")) {
+          for (const v of spec.verificationPlan) {
+            if (f.claim && v.claim !== f.claim) continue;
+            if (v.method === "capture") { v.forwardFOVpose = { yawDeg: 0, pitchDeg: 0, targetZ: -2.0 }; changes.push(`verification '${v.claim}': camera pose snapped to forward (yaw0/pitch0/z-2.0)`); }
+          }
+        }
+        // data-bound color mismatch → can't auto-fix a JSON, flag it
+        if (sym.includes("color") || sym.includes("mismatch")) {
+          changes.push(`color mismatch${f.targetRef ? ` on '${f.targetRef}'` : ""}: verify the JSON color entry + the RGB(0..1) order in the data node — manual check`);
         }
       }
 

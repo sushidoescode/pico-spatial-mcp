@@ -57,11 +57,12 @@ import { registerPlannerTools } from "./planner.js";
 import { registerCompilerTools } from "./compiler.js";
 import { registerSpecVerifyTools } from "./specverify.js";
 import { registerLintTools } from "./lint.js";
+import { registerCritiqueTools } from "./critique.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "5.1.1",
+  version: "5.2.0",
 });
 
 server.registerTool(
@@ -132,6 +133,8 @@ registerCompilerTools(server);
 registerSpecVerifyTools(server);
 // v5.1 — the retained-lessons lint engine (executable, fixture-backed gotchas)
 registerLintTools(server);
+// v5.2 — the self-repair critique (LOOKED-at frame -> defect list -> replan_spec)
+registerCritiqueTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
