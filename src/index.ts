@@ -60,11 +60,12 @@ import { registerLintTools } from "./lint.js";
 import { registerCritiqueTools } from "./critique.js";
 import { registerLedgerTools } from "./ledger.js";
 import { registerStackTools } from "./stack.js";
+import { registerEvalTools } from "./eval.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "5.3.0",
+  version: "5.4.0",
 });
 
 server.registerTool(
@@ -140,6 +141,8 @@ registerCritiqueTools(server);
 // v5.3 — the trust ledger (over-claims structurally impossible) + safe stacked-worktree landing
 registerLedgerTools(server);
 registerStackTools(server);
+// v5.4 — the eval corpus + scorecard (brief-generality as a distribution)
+registerEvalTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

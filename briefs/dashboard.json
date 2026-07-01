@@ -1,0 +1,81 @@
+{
+  "id": "dashboard",
+  "brief": "A data dashboard: 6 metric tiles laid out on a wall, each colored by a JSON status feed.",
+  "spec": {
+    "meta": {
+      "appName": "DashXR",
+      "packageName": "com.example.dashxr",
+      "stageStyle": "3",
+      "brief": "A data dashboard: 6 metric tiles laid out on a wall, each colored by a JSON status feed."
+    },
+    "scenes": [
+      {
+        "id": "wall",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        }
+      }
+    ],
+    "layouts": [
+      {
+        "id": "tiles",
+        "sceneId": "wall",
+        "pattern": "grid",
+        "count": 6,
+        "params": {
+          "columns": 3
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "metrics",
+        "sceneId": "wall",
+        "source": "quad",
+        "layoutRef": "tiles",
+        "dataBindRef": "feed"
+      }
+    ],
+    "data": [
+      {
+        "id": "feed",
+        "source": "json",
+        "asset": "data/metrics.json",
+        "bindsTo": [
+          "metrics"
+        ]
+      }
+    ],
+    "navigation": {
+      "startScene": "wall"
+    },
+    "verificationPlan": [
+      {
+        "claim": "6 metric tiles colored by JSON",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "tiles",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      }
+    ]
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 1,
+    "objects": 1,
+    "data": 1,
+    "interactions": 0,
+    "verifiableNowMin": 1,
+    "swanMin": 0
+  }
+}

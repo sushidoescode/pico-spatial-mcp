@@ -1,0 +1,112 @@
+{
+  "id": "narrative",
+  "brief": "A two-scene narrative: a lobby you walk from into a gallery, via a portal triggered by a broadcast.",
+  "spec": {
+    "meta": {
+      "appName": "StoryXR",
+      "packageName": "com.example.storyxr",
+      "stageStyle": "3",
+      "brief": "A two-scene narrative: a lobby you walk from into a gallery, via a portal triggered by a broadcast."
+    },
+    "scenes": [
+      {
+        "id": "lobby",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "room": {
+            "halfW": 2.5,
+            "height": 2.5,
+            "halfD": 2.5,
+            "centerZ": -2
+          },
+          "props": []
+        }
+      },
+      {
+        "id": "gallery",
+        "environment": {
+          "kind": "texturedMesh"
+        },
+        "lighting": {
+          "rig": "fullRig"
+        },
+        "colliders": {
+          "props": []
+        }
+      }
+    ],
+    "layouts": [
+      {
+        "id": "art",
+        "sceneId": "gallery",
+        "pattern": "wall",
+        "count": 4
+      }
+    ],
+    "objects": [
+      {
+        "id": "works",
+        "sceneId": "gallery",
+        "source": "quad",
+        "layoutRef": "art"
+      }
+    ],
+    "interactions": [
+      {
+        "id": "toGallery",
+        "trigger": "broadcast",
+        "target": "works",
+        "action": "navigate:gallery",
+        "driveChannel": "broadcast"
+      }
+    ],
+    "navigation": {
+      "startScene": "lobby",
+      "portals": [
+        {
+          "from": "lobby",
+          "to": "gallery",
+          "trigger": "broadcast"
+        }
+      ]
+    },
+    "verificationPlan": [
+      {
+        "claim": "lobby renders",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "lobby",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      },
+      {
+        "claim": "gallery renders after portal broadcast",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "gallery",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      }
+    ]
+  },
+  "expected": {
+    "scenes": 2,
+    "layouts": 1,
+    "objects": 1,
+    "data": 0,
+    "interactions": 1,
+    "verifiableNowMin": 2,
+    "swanMin": 0
+  }
+}

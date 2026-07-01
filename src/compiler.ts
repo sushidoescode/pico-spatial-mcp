@@ -30,7 +30,7 @@ function contentPkgPath(packageName: string): string {
   return `app/src/main/java/${packageName.replace(/\./g, "/")}/content`;
 }
 
-function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
+export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
   const steps: LedgerStep[] = [];
   const pkg = spec.meta.packageName;
   const contentPkg = `${pkg}.content`;

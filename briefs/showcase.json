@@ -1,0 +1,121 @@
+{
+  "id": "showcase",
+  "brief": "An interactive product showcase: 6 items on shelves, gaze to select, a detail card per item, from a JSON catalog.",
+  "spec": {
+    "meta": {
+      "appName": "ShowcaseXR",
+      "packageName": "com.example.showcasexr",
+      "stageStyle": "3",
+      "brief": "An interactive product showcase: 6 items on shelves, gaze to select, a detail card per item, from a JSON catalog."
+    },
+    "scenes": [
+      {
+        "id": "main",
+        "environment": {
+          "kind": "homeEnvProxy"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "room": {
+            "halfW": 2.5,
+            "height": 2.5,
+            "halfD": 2.5,
+            "centerZ": -2
+          },
+          "props": []
+        }
+      }
+    ],
+    "layouts": [
+      {
+        "id": "shelf1",
+        "sceneId": "main",
+        "pattern": "shelf",
+        "count": 6,
+        "params": {
+          "shelves": 2
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "cards",
+        "sceneId": "main",
+        "source": "quad",
+        "layoutRef": "shelf1",
+        "dataBindRef": "catalog"
+      }
+    ],
+    "data": [
+      {
+        "id": "catalog",
+        "source": "json",
+        "asset": "data/items.json",
+        "bindsTo": [
+          "cards"
+        ]
+      }
+    ],
+    "interactions": [
+      {
+        "id": "gaze",
+        "trigger": "gaze_dwell",
+        "target": "cards",
+        "action": "showDetail",
+        "driveChannel": "broadcast"
+      },
+      {
+        "id": "ray",
+        "trigger": "controller_ray",
+        "target": "cards",
+        "action": "select",
+        "driveChannel": "controller"
+      }
+    ],
+    "navigation": {
+      "startScene": "main"
+    },
+    "verificationPlan": [
+      {
+        "claim": "6 shelf cards render",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "shelf1",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      },
+      {
+        "claim": "select(item3) shows the matching detail card",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "gaze",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2
+        }
+      }
+    ],
+    "headsetLayer": [
+      {
+        "feature": "controller-ray select",
+        "capabilityClass": "C3",
+        "tool": "generate_headset_readiness_codegen"
+      }
+    ]
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 1,
+    "objects": 1,
+    "data": 1,
+    "interactions": 2,
+    "verifiableNowMin": 2,
+    "swanMin": 1
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "id": "ambient",
+  "brief": "A calm wellness corner: an ambient procedural scene, softly lit, nothing to click.",
+  "spec": {
+    "meta": {
+      "appName": "CalmXR",
+      "packageName": "com.example.calmxr",
+      "stageStyle": "2",
+      "brief": "A calm wellness corner: an ambient procedural scene, softly lit, nothing to click."
+    },
+    "scenes": [
+      {
+        "id": "corner",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "ibl"
+        },
+        "colliders": {
+          "props": []
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "ambient",
+        "sceneId": "corner",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0,
+            1.4,
+            -2.5
+          ]
+        }
+      }
+    ],
+    "navigation": {
+      "startScene": "corner"
+    },
+    "verificationPlan": [
+      {
+        "claim": "ambient scene renders softly lit",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "corner",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      }
+    ]
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 0,
+    "objects": 1,
+    "data": 0,
+    "interactions": 0,
+    "verifiableNowMin": 1,
+    "swanMin": 0
+  }
+}

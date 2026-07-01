@@ -1,0 +1,92 @@
+{
+  "id": "inspection",
+  "brief": "An equipment inspection bay: a machine on the floor with gaze-select hotspots on a grid.",
+  "spec": {
+    "meta": {
+      "appName": "InspectXR",
+      "packageName": "com.example.inspectxr",
+      "stageStyle": "3",
+      "brief": "An equipment inspection bay: a machine on the floor with gaze-select hotspots on a grid."
+    },
+    "scenes": [
+      {
+        "id": "bay",
+        "environment": {
+          "kind": "homeEnvProxy"
+        },
+        "lighting": {
+          "rig": "fullRig"
+        },
+        "colliders": {
+          "room": {
+            "halfW": 2.5,
+            "height": 2.5,
+            "halfD": 2.5,
+            "centerZ": -2
+          },
+          "props": []
+        }
+      }
+    ],
+    "layouts": [
+      {
+        "id": "spots",
+        "sceneId": "bay",
+        "pattern": "grid",
+        "count": 4,
+        "params": {
+          "columns": 2
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "hotspots",
+        "sceneId": "bay",
+        "source": "primitive",
+        "layoutRef": "spots"
+      }
+    ],
+    "interactions": [
+      {
+        "id": "gaze",
+        "trigger": "gaze_dwell",
+        "target": "hotspots",
+        "action": "showInfo",
+        "driveChannel": "broadcast"
+      }
+    ],
+    "navigation": {
+      "startScene": "bay"
+    },
+    "verificationPlan": [
+      {
+        "claim": "4 hotspots on a grid",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "spots",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      }
+    ],
+    "headsetLayer": [
+      {
+        "feature": "native-surface anchoring",
+        "capabilityClass": "C1",
+        "tool": "generate_scene_understanding_kotlin"
+      }
+    ]
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 1,
+    "objects": 1,
+    "data": 0,
+    "interactions": 1,
+    "verifiableNowMin": 1,
+    "swanMin": 1
+  }
+}

@@ -32,7 +32,7 @@ const toolExists = (name: string) => CAPABILITY_MANIFEST.some((t) => t.tool === 
 
 type Lint = { errors: string[]; warnings: string[] };
 
-function lintSpec(spec: AppSpec): Lint {
+export function lintSpec(spec: AppSpec): Lint {
   const errors: string[] = [];
   const warnings: string[] = [];
   const sceneIds = new Set(spec.scenes.map((s) => s.id));
@@ -75,7 +75,7 @@ function lintSpec(spec: AppSpec): Lint {
   return { errors, warnings };
 }
 
-function emulatorVsSwanPreview(spec: AppSpec) {
+export function emulatorVsSwanPreview(spec: AppSpec) {
   const verifiableNow: string[] = [];
   const builtForSwan: string[] = [];
   for (const it of spec.interactions) {
