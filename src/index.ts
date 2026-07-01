@@ -58,11 +58,13 @@ import { registerCompilerTools } from "./compiler.js";
 import { registerSpecVerifyTools } from "./specverify.js";
 import { registerLintTools } from "./lint.js";
 import { registerCritiqueTools } from "./critique.js";
+import { registerLedgerTools } from "./ledger.js";
+import { registerStackTools } from "./stack.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "5.2.0",
+  version: "5.3.0",
 });
 
 server.registerTool(
@@ -135,6 +137,9 @@ registerSpecVerifyTools(server);
 registerLintTools(server);
 // v5.2 — the self-repair critique (LOOKED-at frame -> defect list -> replan_spec)
 registerCritiqueTools(server);
+// v5.3 — the trust ledger (over-claims structurally impossible) + safe stacked-worktree landing
+registerLedgerTools(server);
+registerStackTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

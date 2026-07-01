@@ -40,6 +40,7 @@ const EXPECTED = [
   "generate_layout_kotlin", "generate_interaction_kotlin", "generate_data_binding_kotlin",
   "list_capabilities", "plan_app_spec", "replan_spec", "compile_app_spec", "verify_app_spec",
   "preflight_lint", "record_lesson", "critique_capture",
+  "record_verification", "ledger_report", "stack_new", "stack_verify", "stack_land",
 ];
 const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n));
 if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }
