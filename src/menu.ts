@@ -49,7 +49,7 @@ export function registerMenuTools(server: McpServer) {
         cursorX: z.number().optional().describe("Panel-local X of the cursor marker (default -0.36 = left end of the button row)."),
         backingSlab: z.boolean().optional().describe("Add a LIT beveled 3D backing slab behind the face for depth/frame (default true = AAA)."),
         pointLight: z.boolean().optional().describe("Add a point light in front of the panel so the slab catches specular (default true)."),
-        idleBob: z.boolean().optional().describe("Gently float the whole panel with a position tween (default true). Never conflicts with selection (select doesn't touch the panel transform)."),
+        idleBob: z.boolean().optional().describe("Gently float the whole panel with a position tween (default FALSE — a still panel reads as firmly anchored in space, and the bob is auto-stopped the moment you move the panel anyway). Set true for the floating look."),
         handInput: z.boolean().optional().describe("Also emit GameMenuHandInput — a HEADSET-ONLY hand-tracking path: a PINCH (thumb-tip↔index-tip) near a button pokes GameMenu.select. Default false. Compiles against the tracking module but is UNVERIFIABLE on the emulator (HandTrackingProvider returns no hands — C1). Call GameMenuHandInput.start() after attach."),
       },
     },
@@ -71,7 +71,7 @@ export function registerMenuTools(server: McpServer) {
       const curX = cursorX ?? -0.36;
       const slabOn = backingSlab !== false;
       const lightOn = pointLight !== false;
-      const bobOn = idleBob !== false;
+      const bobOn = idleBob === true;   // default OFF: a steady panel reads as anchored in space
       const handOn = handInput === true;
 
       // Analytical panel-local Y per button: y = ((1 - rowPx/texH) - 0.5) * planeHeight.

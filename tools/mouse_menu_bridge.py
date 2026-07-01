@@ -341,6 +341,7 @@ def cmd_live():
     threading.Thread(target=detector, daemon=True).start()
 
     PANEL_WORLD_W = 0.85   # panel width in metres at default scale -> world metres per fb pixel = this / px_width
+    MOVE_SENS = float(os.environ.get("BRIDGE_MOVE_SENS", "1.0"))   # drag sensitivity (1.0 = 1:1 direct drag)
 
     def fb_at(loc):
         return screen_to_fb(loc.x, loc.y, win["v"])
@@ -353,13 +354,40 @@ def cmd_live():
         return classify(fbx, fby, det)
 
     def on_panel(loc):
-        """True if the point is on the panel FRAME (not a button) — the grab zone for moving it."""
+        """True on the panel's grab zone = the title strip above the top button or the footer below the
+        bottom one (NOT a button). The detected bbox is tight around the buttons, so extend generously
+        upward (title) and downward (footer) using the row spacing."""
         det = _last["det"]
-        if not det or not det.get("bbox"):
+        if not det:
             return False
-        bx0, by0, bx1, by1 = det["bbox"]
+        x0, x1 = det["col"]; sp = det["sp"]; rows = sorted(det["rows"].values())
         fbx, fby = fb_at(loc)
-        return bx0 - 40 <= fbx <= bx1 + 40 and by0 - 30 <= fby <= by1 + 30 and classify(fbx, fby, det) is None
+        if not (x0 - 40 <= fbx <= x1 + 40):
+            return False
+        if not (rows[0] - sp * 2.6 <= fby <= rows[-1] + sp * 2.0):
+            return False
+        return classify(fbx, fby, det) is None   # title/footer/frame, not a button row
+
+    # Coalescing move sender: the drag ACCUMULATES a world delta (instant — never blocks the mouse); a
+    # background thread drains it one broadcast at a time, SUMMING everything queued while a broadcast is
+    # in flight. So the panel tracks the cursor and STOPS the moment you do — no queued-broadcast drift.
+    move = {"dx": 0.0, "dy": 0.0, "dz": 0.0, "pkg": None}
+    mlock = threading.Lock()
+
+    def mover():
+        while not stop.is_set():
+            with mlock:
+                dx, dy, dz, pkg = move["dx"], move["dy"], move["dz"], move["pkg"]
+                move["dx"] = move["dy"] = move["dz"] = 0.0
+            if pkg and (abs(dx) > 1e-5 or abs(dy) > 1e-5 or abs(dz) > 1e-5):
+                broadcast_move(pkg, dx, dy, dz)     # blocking (~21ms) but only on THIS thread
+            else:
+                stop.wait(0.012)
+    threading.Thread(target=mover, daemon=True).start()
+
+    def queue_move(pkg, dx, dy, dz):
+        with mlock:
+            move["dx"] += dx; move["dy"] += dy; move["dz"] += dz; move["pkg"] = pkg
 
     hov = {"act": "__init__"}                       # last hovered row, to broadcast only on change
     drag = {"on": False, "last": (0.0, 0.0)}        # panel-move drag state (grab the frame/title, drag to move)
@@ -385,25 +413,18 @@ def cmd_live():
                 det = _last["det"]
                 if det:
                     fbx, fby = fb_at(loc); lx, ly = drag["last"]; drag["last"] = (fbx, fby)
-                    x0, x1 = det["col"]; k = PANEL_WORLD_W / max(1, (x1 - x0))
-                    dxw = (fbx - lx) * k          # screen-right -> world +X
-                    dyw = -(fby - ly) * k         # screen-down  -> world -Y
-                    if abs(dxw) > 1e-4 or abs(dyw) > 1e-4:
-                        pkg = target_pkg(fixed)
-                        if pkg:
-                            broadcast_move(pkg, dxw, dyw, 0.0)
-            elif etype == Quartz.kCGEventLeftMouseUp and drag["on"]:
-                drag["on"] = False
-                pkg = target_pkg(fixed)
-                if pkg:
-                    broadcast_move(pkg, 0.0, 0.0, 0.0)   # nudge-zero -> app logs the final panel position
-                print("placed panel (its new position is logged in logcat -> bake it into panelPosition)")
-            elif etype == Quartz.kCGEventScrollWheel and on_panel(loc):
-                d = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGScrollWheelEventDeltaAxis1)
-                if d:
+                    x0, x1 = det["col"]; k = PANEL_WORLD_W / max(1, (x1 - x0)) * MOVE_SENS
                     pkg = target_pkg(fixed)
                     if pkg:
-                        broadcast_move(pkg, 0.0, 0.0, -d * 0.05)   # scroll = move nearer / farther (depth)
+                        queue_move(pkg, (fbx - lx) * k, -(fby - ly) * k, 0.0)   # right->+X, down->-Y
+            elif etype == Quartz.kCGEventLeftMouseUp and drag["on"]:
+                drag["on"] = False
+                print("placed panel (new position logged in logcat -> bake it into panelPosition)")
+            elif etype == Quartz.kCGEventScrollWheel and on_panel(loc):
+                d = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGScrollWheelEventDeltaAxis1)
+                pkg = target_pkg(fixed)
+                if d and pkg:
+                    queue_move(pkg, 0.0, 0.0, -d * 0.03)   # scroll = nearer / farther (depth)
             elif hover_on and etype == Quartz.kCGEventMouseMoved and not drag["on"]:
                 a = action_at(loc)
                 if a != hov["act"]:            # only broadcast when the hovered row changes
