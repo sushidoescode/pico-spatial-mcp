@@ -49,11 +49,18 @@ import { registerDisplayTools } from "./display.js";
 import { registerPhysicsTools } from "./physics.js";
 import { registerMenuTools } from "./menu.js";
 import { registerMouseBridgeTools } from "./mousebridge.js";
+import { registerLayoutTools } from "./layout.js";
+import { registerInteractionTools } from "./interaction.js";
+import { registerDataBindingTools } from "./databinding.js";
+import { registerCapabilityManifestTools } from "./capabilities.js";
+import { registerPlannerTools } from "./planner.js";
+import { registerCompilerTools } from "./compiler.js";
+import { registerSpecVerifyTools } from "./specverify.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "4.10.0",
+  version: "5.0.0",
 });
 
 server.registerTool(
@@ -114,6 +121,14 @@ registerDisplayTools(server);
 registerPhysicsTools(server);
 registerMenuTools(server);
 registerMouseBridgeTools(server);
+// v5.0 — the three interaction/layout/data primitives + the brief-to-app compiler tier
+registerLayoutTools(server);
+registerInteractionTools(server);
+registerDataBindingTools(server);
+registerCapabilityManifestTools(server);
+registerPlannerTools(server);
+registerCompilerTools(server);
+registerSpecVerifyTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

@@ -37,6 +37,8 @@ const EXPECTED = [
   "gui_find_window", "gui_capture", "gui_camera", "gui_permissions",
   "compose_inspection_scene", "import_environment", "worldmodel_guide", "scaffold_spatial_app", "diagnose", "design_review", "prepare_environment", "list_environment_assets", "generate_spatial_ui",
   "run_visual_regression",
+  "generate_layout_kotlin", "generate_interaction_kotlin", "generate_data_binding_kotlin",
+  "list_capabilities", "plan_app_spec", "replan_spec", "compile_app_spec", "verify_app_spec",
 ];
 const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n));
 if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }

@@ -58,6 +58,44 @@ export function registerPrompts(server: McpServer) {
   );
 
   server.registerPrompt(
+    "brief_to_app",
+    {
+      description:
+        "v5.0 brief-to-app COMPILER loop: turn a natural-language brief into a planned, compiled, and plan-verified native PICO XR app with far less human tool-sequencing. It inserts a PLAN → COMPILE → VERIFY-AGAINST-PLAN tier above the v4 execution spine — the brief becomes a typed AppSpec (both build plan AND verification contract), a BuildLedger drives the existing generate_*/scaffold/bake/build tools node-by-node, and a plan-level gate scores the assembled app against its own spec so over-claims are structurally impossible. WRAPS (does not replace) autonomous_spatial_build, which is the per-node executor.",
+      argsSchema: {},
+    },
+    () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              "You are the BRIEF-TO-APP COMPILER driving pico-spatial-mcp v5.0. Turn the user's brief into a spatial app you have PLANNED, COMPILED, and VERIFIED AGAINST THE PLAN. You (the LLM) are the planner; the new tools are a typechecker + driver + reconciler. The v4 prompt `autonomous_spatial_build` is your per-node EXECUTOR — this loop wraps it, it does not replace it. Read SKILLS.md + DESIGN.md; inherit EVERY non-negotiable (the visual-ground-truth rule, the C1–C4 ceilings, serial edits, SDK getter discipline).",
+              "",
+              "## The loop",
+              "1. CAPABILITIES — `list_capabilities` to see the menu of authoring tools + each one's verification ceiling (C0_emulator / C1 / C2 / C3 / C4_headset_only). Plan ONLY against this menu — you cannot build what no tool authors.",
+              "2. PLAN — author a draft AppSpec from the brief (scenes/layouts/objects/data/interactions/navigation/verificationPlan/headsetLayer), then `plan_app_spec(brief, draftSpec)`. It validates, checks referential integrity, STAMPS each node's C-class, REQUIRES a forward-FOV pose for every C0/C2 visual claim (C2 honesty), checks every node maps to a real tool, and returns an honest emulator-vs-Swan preview. Fix every `lint.errors` entry and re-plan until status=ok. (No draftSpec → it returns a scaffold to fill.)",
+              "   • Classify honestly AT PLAN TIME: a broadcast/gaze-dwell(broadcast-driven) interaction is C0_emulator; a controller_ray/grab/press is C3 (built-for-Swan); native surfaces/anchors are C1; in-front Compose panels are C4. Put the Swan-only pieces in `headsetLayer`, not in the emulator verification plan.",
+              "3. COMPILE — `compile_app_spec(spec, projectDir)` → a BuildLedger (each spec node → the exact tool call → target file → C-class). EXECUTE the ledger in order via the REAL tools (this is where `autonomous_spatial_build` runs per node): scaffold → inject `generate_agent_bridge` → per-scene environment (BAKE textured meshes; never runtime-load raw GLB) → `generate_collider_kotlin` (+ attachPhysicsWorld, REQUIRED on-device) → lighting → `generate_layout_kotlin` → `generate_data_binding_kotlin` → `generate_interaction_kotlin` → headset layer → `build_and_run`. WRITE each emitted Kotlin to its targetPath YOURSELF, SERIALLY (parallel writers clobber shared files). Wire everything into SpatialView.initial on Dispatchers.Main after the scene loads. Confirm BUILD SUCCESSFUL + PID up + the ready-log before trusting any capture (stale-APK gotcha).",
+              "   • The data path: `SceneLayout.place(root, items.size) { i -> SceneDataBinding.makeCard(items[i]) }`, then `SceneInteraction.register(item.id, cardEntity) { id -> showDetail(id) }`. Remember there is NO TextComponent — per-item text needs BAKED textures; runtime tint = color only.",
+              "4. VERIFY — `verify_app_spec(spec)` first with NO results to get the per-node directives (the exact `emulator_look` pose + capture/assert for each claim). Run each: `emulator_look` to the forward-FOV pose → `capture_frame` → LOOK at it with your own vision and judge it against DESIGN.md. Then call `verify_app_spec(spec, results)` submitting each verdict WITH EVIDENCE (the capture path + what you saw). The gate REJECTS any visual PASS with no linked capture — a scene-dump / logcat marker proves EXISTENCE, never APPEARANCE. C1/C3/C4 nodes are honestly DEFERRED_SWAN.",
+              "5. REPLAN — on any FAIL, `diagnose(symptom=…)` for the root cause, then `replan_spec(spec, failures)` to mutate the spec (move a slot out of the bed, ensure a lighting rig, mark an env asset for baking, downgrade a C3 interaction to broadcast), and re-`compile_app_spec` ONLY the returned recompileSubtree. Loop 3–5 until every verification node has a verdict or is honestly deferred, within `meta.budget`.",
+              "6. SHIP — only when `verify_app_spec` returns status=PASS (all emulator-visual claims vision-verified with evidence) or every remaining node is a legitimate Swan deferral. Then emit the spec-completion report + `swan_bring_up_checklist` (from the C1/C3/C4 nodes) + the auto-derived `capability_report` from the gate. Report each claim, the capture proving it, and exactly what re-verifies on Swan.",
+              "",
+              "## Non-negotiables (same soul as autonomous_spatial_build)",
+              "- GROUND TRUTH = a frame YOU captured and LOOKED AT. No visual claim without an inspected `capture_frame`. The verify gate enforces this in its data model — do not fight it by asserting PASS without evidence.",
+              "- Every node carries a C-class decided at PLAN time; honest deferral of C1/C3/C4 to Swan is always fine, silent over-claim is the only hard failure.",
+              "- Edit app files SERIALLY; fan-out agents stay READ-ONLY (SDK-signature research only).",
+              "- Build on the existing spine — plan_app_spec/compile_app_spec/verify_app_spec are glue over the v4 tools, not a second orchestrator. Keep `npm run build && npm run smoke` at 0 failures for any MCP change.",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
     "pico_spatial_dev_loop",
     {
       description: "Guidance for an AI agent driving PICO spatial development end-to-end with this server's tools.",
