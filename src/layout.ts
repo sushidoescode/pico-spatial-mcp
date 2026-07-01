@@ -115,7 +115,7 @@ export function registerLayoutTools(server: McpServer) {
         "        val computed = slots(count, pattern)",
         "        for (i in 0 until count) {",
         "            val slot = computed[i]",
-        "            val e = runCatching { makeItem(i) }.getOrNull() ?: continue",
+        "            val e = runCatching { makeItem(i) }.onFailure { Log.e(TAG, \"makeItem $i threw: $it\") }.getOrNull() ?: continue",
         "            runCatching {",
         "                e.components.set(",
         "                    TransformComponent(slot.position, EulerAngles(0f, slot.yawDeg, 0f), Vector3(1f, 1f, 1f)),",
