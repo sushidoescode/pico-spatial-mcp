@@ -72,24 +72,7 @@ export function installBridgeLauncher(projectDir: string): { written: string[]; 
     written.push(rel);
   };
 
-  w(
-    "pico-bridge.sh",
-    `#!/usr/bin/env bash
-# pico-bridge.sh — click/hover the in-world PICO menu with your Mac mouse on the emulator.
-# Auto-installed by the PICO MCP. Run it from Android Studio (▶ "Mouse Bridge", or Gradle: pico > mouseBridge)
-# or a terminal:  ./pico-bridge.sh        (add \`nohover\` to turn the hover preview off)
-set -euo pipefail
-PY="${venvPy}"
-BRIDGE="${BRIDGE_PY}"
-SETUP="${SETUP_SH}"
-[ -x "$PY" ] || { echo "Setting up the bridge venv (one time)…"; bash "$SETUP"; }
-export BRIDGE_HOVER="\${BRIDGE_HOVER:-1}"        # hover preview ON by default
-[ "\${1:-}" = "nohover" ] && unset BRIDGE_HOVER
-echo "Mouse bridge: move the mouse over a menu button in the emulator and click. Ctrl-C (or ■) to stop."
-exec "$PY" -u "$BRIDGE" live
-`,
-    true,
-  );
+  w("pico-bridge.sh", launcherScript(venvPy, false), true);
 
   w(
     "redeploy.sh",
@@ -151,6 +134,48 @@ tasks.register<Exec>("redeploy") {
   };
 }
 
+/** The launcher body (used for both the per-project pico-bridge.sh and the global `pico-bridge`). */
+function launcherScript(venvPy: string, isGlobal: boolean): string {
+  return `#!/usr/bin/env bash
+# pico-bridge — ${isGlobal ? "GLOBAL launcher (run from ANY terminal/project)" : "project launcher"} for the
+# PICO in-world-menu mouse bridge (installed by the PICO MCP). Move the mouse over a menu button in the
+# emulator and left-click; it auto-targets whichever demo is in front. \`nohover\` disables the hover preview.
+set -euo pipefail
+PY="${venvPy}"
+BRIDGE="${BRIDGE_PY}"
+SETUP="${SETUP_SH}"
+[ -x "$PY" ] || { echo "Setting up the bridge venv (one time)…"; bash "$SETUP"; }
+export BRIDGE_HOVER="\${BRIDGE_HOVER:-1}"          # hover preview ON by default
+[ "\${1:-}" = "nohover" ] && unset BRIDGE_HOVER
+echo "Mouse bridge: move the mouse over a menu button in the emulator and click. Ctrl-C to stop."
+exec "$PY" -u "$BRIDGE" live
+`;
+}
+
+/**
+ * Install a GLOBAL `pico-bridge` command on PATH so it runs from any terminal/project (no cwd worry).
+ * Picks the first writable dir among the usual PATH bins. Returns the installed path, or null.
+ */
+export function installGlobalCommand(): string | null {
+  const venvPy = path.join(DEFAULT_VENV, "bin", "python");
+  const prefer = ["/opt/homebrew/bin", "/usr/local/bin", path.join(os.homedir(), ".local", "bin")];
+  const onPath = new Set((process.env.PATH ?? "").split(":"));
+  for (const dir of prefer) {
+    try {
+      if (!onPath.has(dir)) continue;
+      fs.mkdirSync(dir, { recursive: true });
+      fs.accessSync(dir, fs.constants.W_OK);
+      const dest = path.join(dir, "pico-bridge");
+      fs.writeFileSync(dest, launcherScript(venvPy, true));
+      fs.chmodSync(dest, 0o755);
+      return dest;
+    } catch {
+      /* try the next dir */
+    }
+  }
+  return null;
+}
+
 export function registerMouseBridgeTools(server: McpServer) {
   server.registerTool(
     "setup_mouse_bridge",
@@ -203,7 +228,10 @@ export function registerMouseBridgeTools(server: McpServer) {
           : `menu DETECTED ✓  ${line.replace("detect:", "").trim()}`;
       }
 
-      // 3) Compose the run command + instructions.
+      // 3) Install a GLOBAL `pico-bridge` command so it runs from any terminal/project (no cwd worry).
+      const globalCmd = installGlobalCommand();
+
+      // 4) Compose the run command + instructions.
       const env: string[] = [];
       // BRIDGE_PKG is an OPTIONAL hard pin. By default the bridge auto-targets the FOREGROUND demo
       // (re-checked each click) so clicks always hit the app you're looking at — do NOT pin unless asked.
@@ -219,7 +247,12 @@ export function registerMouseBridgeTools(server: McpServer) {
         `**bridge:** \`${BRIDGE_PY}\``,
         `**readiness:** ${readiness}`,
         "",
-        "## Run it (in your terminal)",
+        "## Run it — the easy way (from ANY terminal, any project)",
+        globalCmd
+          ? "```bash\npico-bridge\n```\n(installed at `" + globalCmd + "` — hover preview on; add `nohover` to disable)"
+          : "_(couldn't install a global `pico-bridge` command — use the full command below)_",
+        "",
+        "## Or the full command",
         "```bash",
         liveCmd,
         "```",
