@@ -61,11 +61,12 @@ import { registerCritiqueTools } from "./critique.js";
 import { registerLedgerTools } from "./ledger.js";
 import { registerStackTools } from "./stack.js";
 import { registerEvalTools } from "./eval.js";
+import { registerGateTools } from "./gate.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "5.4.0",
+  version: "5.5.0",
 });
 
 server.registerTool(
@@ -143,6 +144,8 @@ registerLedgerTools(server);
 registerStackTools(server);
 // v5.4 — the eval corpus + scorecard (brief-generality as a distribution)
 registerEvalTools(server);
+// v5.5 — regression gate + reproducibility lockdown (block ship on any regression)
+registerGateTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

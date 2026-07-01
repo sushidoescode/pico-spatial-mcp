@@ -1,0 +1,10 @@
+{
+  "sdkVersion": "0.13.3",
+  "determinism": "generators are analytical (no RNG); plan+compile are byte-reproducible (v5.0 determinism gate).",
+  "canonicalPose": {
+    "yawDeg": 0,
+    "pitchDeg": 0
+  },
+  "goldenAvdSnapshot": "pico-golden",
+  "note": "Restore goldenAvdSnapshot (snapshot_load) + set canonicalPose (emulator_look) before capturing golden frames — the free cam drifts (C2), so goldens are only meaningful from a locked pose/state."
+}

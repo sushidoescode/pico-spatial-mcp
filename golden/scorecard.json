@@ -1,0 +1,37 @@
+{
+  "scorecard": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "planFailures": 0,
+    "totalCompileSteps": 49,
+    "totalVisionVerified": 0,
+    "score": 1
+  },
+  "rows": [
+    {
+      "id": "ambient",
+      "pass": true
+    },
+    {
+      "id": "dashboard",
+      "pass": true
+    },
+    {
+      "id": "gallery",
+      "pass": true
+    },
+    {
+      "id": "inspection",
+      "pass": true
+    },
+    {
+      "id": "narrative",
+      "pass": true
+    },
+    {
+      "id": "showcase",
+      "pass": true
+    }
+  ]
+}

@@ -32,9 +32,38 @@ function ledgerVisionCount(pkg: string): number {
   }
 }
 
-function defaultBriefsDir(): string {
+export function defaultBriefsDir(): string {
   // dist/eval.js -> ../briefs == repo/briefs
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "briefs");
+}
+
+/** Compute the full suite (scorecard + rows) over a briefs dir. Exported so regression_gate reuses it. */
+export function computeSuite(briefsDir?: string): { status: string; briefsDir: string; scorecard: any; rows: any[]; error?: string } {
+  const dir = briefsDir ?? defaultBriefsDir();
+  let files: string[] = [];
+  try {
+    files = fs.readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
+  } catch (e: any) {
+    return { status: "error", briefsDir: dir, scorecard: null, rows: [], error: `cannot read briefs dir ${dir}: ${e.message}` };
+  }
+  const rows = files.map((f) => {
+    try {
+      return scoreBrief(JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")));
+    } catch (e: any) {
+      return { id: f, pass: false, specValid: false, issues: [String(e.message)] };
+    }
+  });
+  const passed = rows.filter((r) => r.pass).length;
+  const scorecard = {
+    total: rows.length,
+    passed,
+    failed: rows.length - passed,
+    planFailures: rows.filter((r) => r.specValid === false || r.planOk === false).length,
+    totalCompileSteps: rows.reduce((a, r: any) => a + (r.compileSteps ?? 0), 0),
+    totalVisionVerified: rows.reduce((a, r: any) => a + (r.visionVerifiedInLedger ?? 0), 0),
+    score: rows.length ? Number((passed / rows.length).toFixed(3)) : 0,
+  };
+  return { status: "ok", briefsDir: dir, scorecard, rows };
 }
 
 function scoreBrief(entry: any) {
@@ -83,32 +112,6 @@ export function registerEvalTools(server: McpServer) {
         briefsDir: z.string().optional().describe("Directory of brief JSON files (default the repo's briefs/)."),
       },
     },
-    async ({ briefsDir }) => {
-      const dir = briefsDir ?? defaultBriefsDir();
-      let files: string[] = [];
-      try {
-        files = fs.readdirSync(dir).filter((f) => f.endsWith(".json")).sort();
-      } catch (e: any) {
-        return okJson({ status: "error", error: `cannot read briefs dir ${dir}: ${e.message}` });
-      }
-      const rows = files.map((f) => {
-        try {
-          return scoreBrief(JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")));
-        } catch (e: any) {
-          return { id: f, pass: false, specValid: false, issues: [String(e.message)] };
-        }
-      });
-      const passed = rows.filter((r) => r.pass).length;
-      const scorecard = {
-        total: rows.length,
-        passed,
-        failed: rows.length - passed,
-        planFailures: rows.filter((r) => r.specValid === false || r.planOk === false).length,
-        totalCompileSteps: rows.reduce((a, r: any) => a + (r.compileSteps ?? 0), 0),
-        totalVisionVerified: rows.reduce((a, r: any) => a + (r.visionVerifiedInLedger ?? 0), 0),
-        score: rows.length ? Number((passed / rows.length).toFixed(3)) : 0,
-      };
-      return okJson({ status: "ok", briefsDir: dir, scorecard, rows });
-    },
+    async ({ briefsDir }) => okJson(computeSuite(briefsDir)),
   );
 }
