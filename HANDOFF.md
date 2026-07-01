@@ -1,432 +1,158 @@
 # HANDOFF — PICO-MCP, for the next chat
 
----
-## ▶ NEXT SESSION STARTS HERE (2026-06-29 — v4.5→v4.9 SHIPPED: the full SDK content ladder)
-**MCP @ `4.5.0` (package.json + index.ts), 104 distinct tools, smoke `Failures: 0`.** Git HEAD on `main`.
-The ENTIRE v4.1→v4.9 content ladder is now built + **compile-verified against the real SDK 0.13.3**.
-Read this whole file + the auto-memory + `ROADMAP_v3.1-v4.0.md` §8 (now marked ✓ SHIPPED per version).
-
-**WHAT SHIPPED THIS SESSION (v4.5→v4.9 — 10 new tools), all `:app:compileDebugKotlin` BUILD SUCCESSFUL:**
-- **v4.5** `generate_ibl_kotlin` (`src/lighting.ts`) — scene-wide `StageEnvironmentLightingComponent` (FULL/PROGRESSIVE
-  only; INACTIVE in MIXED) + localized `ImageBasedLightComponent` source/`ImageBasedLightReceiverComponent`, `.ktx` cubemap.
-- **v4.6** `generate_particle_kotlin` + `generate_video_player_kotlin` (`src/media.ts`). KEY: `ParticleComponent`
-  has **NO public ctor** — it auto-attaches from an editor-authored AssetBundle; the tool DRIVES it
-  (`components.get<ParticleComponent>()` → isEmitting/startColor/attractor/vortex). Video is asset+codec-gated.
-- **v4.7** `generate_tween_animation_kotlin` + `generate_orbit_animation_kotlin` (`src/anim.ts`). ★ **TWEEN IS
-  VISION-VERIFIED:** wired a vertical-bob tween onto a galleryxr orb → logcat `SceneTween: tween position playing`
-  + I LOOKED at a 3-frame montage and the orb is at clearly different heights (`/tmp/pico-render/v45-v49-tween-VERIFIED.png`).
-  Proof the animation codegen (`createTweenAnimation` → `generateWithTweenAnimation` → `playAnimation`) runs on-device.
-- **v4.8** `generate_display_controllers_kotlin` + `generate_portal_kotlin` (`src/display.ts`). Opacity/LookAt/DrawOrder;
-  Portal world+window (sibling-not-child topology enforced).
-- **v4.9** `calibrate_home_env` (`src/homeenv.ts`) + `generate_rigidbody_kotlin` + `generate_anchor_kotlin` (`src/physics.ts`).
-  `calibrate_home_env` = the honest measured-room loop (per-face confidence map + adjusted room box from observed deltas;
-  documents the Unity-black-box reality). Rigidbody on the proven collider recipe. Anchor is headset-only (C1).
-- New `src/` files: `media.ts`, `anim.ts`, `display.ts`, `physics.ts` — wired in `index.ts` + the `/tmp/pico-invoke.mjs` harness MODS.
-
-**HOW THE LADDER WAS BUILT (the method to reuse):** ran a 7-agent `pico-sdk-ladder-research` **workflow** that read the
-SDK ECS sources in parallel and returned codegen-ready signature digests (particle/video/animation/display/portal/
-rigidbody/anchor). The full digest is in the task output (`tasks/wnfpl81h2.output`) — exact ctors + gotchas + per-component
-emulator-verifiability. Then each tool was authored from VERIFIED source signatures (the #1 rule), and ALL generated
-Kotlin was dropped into a throwaway `gen/` package in galleryxr-native + compiled in ONE gradle pass.
-
-**HONEST VERIFICATION MATRIX (what's verified at what level):**
-- VISION-VERIFIED (LOOKED): `generate_tween_animation_kotlin` (orb bob).
-- COMPILE-VERIFIED (gradle, real SDK): ALL 10 — ibl, particle, video, tween, orbit, display, portal, rigidbody, anchor (+ the prior lighting rig).
-- ASSET-GATED (compiles, can't exercise on the bare emulator): ibl (.ktx), particle (editor bundle), video (.mp4+codec), skeletal anim.
-- HEADSET-ONLY (C1): anchor (world-tracking no-ops on the emulator).
-- DATA/MATH tool: `calibrate_home_env` (harness-verified front/back & left/right geometry math).
-
-**DO NEXT (highest value first):**
-1. **`generate_composition_scene`** (v4.8) — the ONE deferred tool: USD references/overrides/scopes to compose multiple
-   sub-assets + instance models (extends `compose_scene`). Then v4.7 skeletal (`generate_skeletal_animation_kotlin`, asset-gated).
-2. **Deeper vision verification on dedicated scenes** (raise compile→vision): the lighting rig on a baked-PBR FULL-stage
-   scene (point falloff/spot cone/contact shadow — needs a baked mesh, the MIXED home env won't change); rigidbody fall-and-rest
-   on a `ModelComponent` body; orbit motion; opacity fade. Each: wire into a scene → build_and_run → emulator_look → capture → LOOK.
-3. **v5.0 the brief-to-app compiler** (`autonomous_spatial_build` v5 planning layer) — parse a COMPLEX brief → structured app
-   spec → author each piece via these tools → `verify` gate each → assemble. The content ladder it needs is now COMPLETE.
-4. Optionally find/make a `.ktx` cubemap + an editor-authored particle `.glb` to vision-verify IBL + particles.
-
-**SESSION GOTCHAS (carried forward + new):**
-- **/tmp is cleaned between sessions** — re-extract sources: `unzip -o ~/.gradle/caches/modules-2/files-2.1/com.pico.spatial.core/core/0.13.3/*/core-0.13.3-sources.jar -d /tmp/pico-src/core` (+ foundation jar for math types). The light/particle SUBDIRS are empty after a partial extract — re-extract the whole jar.
-- **The `/tmp/pico-invoke.mjs` harness** auto-registers all dist modules — add new module basenames to its MODS array (done for media/anim/display/physics).
-- **Compile-verify pattern:** generate every new Kotlin into a throwaway `gen/` package in galleryxr-native, run `JAVA_HOME=".../Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:compileDebugKotlin` — fast (~7-12s), catches every signature error. Remove `gen/` after.
-- **ImageMagick `compare -metric MAE` on 2160² frames is SLOW (times out)** — for vision, CROP the region of interest + `montage` the frames + LOOK; don't full-frame compare.
-- **C2 camera decoupled** — `adb exec-out screencap -p` shows the home env but the free cam may face the wrong way; the seeded orbs were in view here. Burst-capture (screencap latency ≈0.4s spaces frames) to catch motion.
-- **HONESTY RULE (the user enforces):** never say "renders/works/verified" without a `capture_frame` you LOOKED at. Compile/`smoke 0`/logcat = existence, not appearance. Tween is the only NEW vision-verified one; the rest are honestly compile-verified.
+Read this WHOLE file, then the auto-memory (`…/memory/MEMORY.md` index + `game-menu-demo.md` +
+`pico-mcp-project.md`), then `ROADMAP_v5.0-v6.0.md` (the authoritative plan) + `DESIGN.md`
+(§1/§9/§10/§11/§12 are the load-bearing correctness rules).
 
 ---
-## ▶ (history) NEXT SESSION (2026-06-27 — v4.1 shipped + v4.5 lighting rig; v4.5→v4.9 mapped)
-**MCP @ `4.1.0` (package.json), 94 distinct tools, smoke `Failures: 0`.** Git HEAD `7423ad6` on `main`,
-**2 commits ahead of origin** (origin synced through `9b145ba` v4.1.0 + the README). Read this whole file +
-the auto-memory `…/memory/pico-mcp-project.md` + `ROADMAP_v3.1-v4.0.md` (§7 = v3.5→v4.0 ladder, §8 = the
-v4.1→v5.0 ladder incl. the v4.5–v4.9 fill).
+## ▶ WHERE WE ARE (2026-07-01 — v4.10.0 SHIPPED: the in-world menu + Mac mouse bridge arc is complete)
 
-**WHAT SHIPPED (v4.0 → now), all verified:**
-- **v4.0.0** the autonomous studio ASSEMBLED + the **acceptance demo PASSED** (vision-verified): ran the full
-  `autonomous_spatial_build` loop on a FRESH brief, **GalleryXR** (`~/AndroidStudioProjects/galleryxr-native`,
-  pkg com.example.galleryxr, git tag/HEAD on its own repo) — 3 glowing cyan orbs in the home env, captured +
-  LOOKED. README → v4.0 + **PUSHED to origin** (private repo).
-- **v4.1.0** `generate_home_env_proxy` — FAKED hit-test on the PICO home env: an invisible calibrated collider
-  proxy (floor `y=0` VISION-VERIFIED; bed/wall boxes first-pass) → `Scene.rayCast` lands pins ON the home-env
-  surfaces. Chain `generate_home_env_proxy`→`generate_collider_kotlin`→compiles.
-- **v4.5 (started)** `generate_full_lighting_rig_kotlin` — Directional + Point + Spot + GroundShadow + IBL
-  (was 2 of 7 lights). COMPILES against the SDK.
+**MCP @ `4.10.0`** (`package.json` + `src/index.ts` agree), **~104 distinct tools + 2 prompts**, `npm run smoke`
+→ `Failures: 0`. **Git clean + fully pushed** — `HEAD == origin/main == 4bd71cc` ("v4.10.0: grid-snap placement
++ face-the-user tilt"), working tree empty, `main…origin/main` in sync. 49 `src/*.ts` modules (107 `registerTool`
+names; the project rounds to "~104"). Node ≥20, TS/ESM. Build `tsc`; verify `npm run build && npm run smoke`.
 
-**KEY RESEARCH (the `spatial-editor-deep-dive` workflow, 2026-06-27):**
-- **MEASURED-ROOM verdict = NOT FEASIBLE.** The home bedroom is rendered by **`com.pxr.scenarioprovider`, a
-  UNITY app** (UnityPlayerActivity). Its 105 MB APK has only Unity GUID asset chunks (no USD/GLB; `level0` =
-  5 KB stub) → the room geometry is a black box, **cannot be measured statically**. Floor `y=0` stays the only
-  VISION-VERIFIED anchor; walls/ceiling can only be **vision-calibrated** (→ the `calibrate_home_env` tool, v4.9).
-- **The editor understands far more than the MCP authors** (the v4.5–v4.9 fill, `ROADMAP §8`): lighting was 2/7,
-  animation only plays a generic resource; UNCOVERED → particles (`ParticleComponent`), video (`VideoPlayerComponent`),
-  portals (`PortalComponent`), rigid-body (`RigidBodyComponent`), tween/orbit/skeletal animation, opacity/look-at/
-  drawOrder, IBL source+receiver. All sources in the SDK `core/com/pico/spatial/core/ecs/*.kt`.
+**⚠ README is ONE ARC STALE** — its header still says "v4.7 / 106 tools". The code is v4.10. Fix the README header
+when you next touch docs (low priority; the ROADMAP + this file are current).
 
-**DO NEXT — the v4.5→v4.9 build order (highest value first):**
-1. `generate_ibl_kotlin` (finish v4.5: `ImageBasedLightComponent` source + receiver) — then vision-verify the
-   whole lighting rig on a BAKED-MESH scene (point falloff / spot cone / contact shadow visible).
-2. **`calibrate_home_env`** (v4.9 — the honest version of the user's measured-room idea): vision-calibrate the
-   home-env proxy walls/ceiling (place a face-pin → `capture_frame` → adjust `src/homeenv.ts` boxes), tag each
-   face vision-verified vs first-pass. The user SPECIFICALLY asked to try wall/ceiling placement.
-3. `generate_particle_kotlin` (v4.6 — particles visibly MOVE across captures = strong vision check).
-4. Then v4.6 video, v4.7 animation (tween/orbit), v4.8 scene-graph + display, v4.9 rigidbody.
-5. **PUSH** the 2 pending commits (`git push origin main`).
+**THE v4.6→v4.10 ARC (the most recent 8 commits) — an interactive in-world GAME MENU + a Mac MOUSE BRIDGE:**
+- **`generate_game_menu_kotlin`** (`src/menu.ts`) — AAA in-world game menu: 3D pressable buttons (raised glassy
+  caps that PLUNGE on press), hover-preview, color-matched flash, **grab-to-move around the room** with grid-snap
+  + a gentle face-the-user tilt. One `select(action)` entry point, driven by a `DEBUG_CMD` broadcast on the
+  emulator and by gaze/controller/pinch on a headset. **Vision-verified across all 4 demo apps** (orrery / gravity
+  / showroom / portal).
+- **`tools/mouse_menu_bridge.py`** + **`setup_mouse_bridge`/`install_bridge_launcher`** (`src/mousebridge.ts`) — a
+  host-side **Quartz event-tap** that lets a real Mac mouse CLICK / HOVER / DRAG the in-world menu on the emulator.
+  It maps screen → emulator-window → device framebuffer → nearest button (a **scene-color-robust 4-colour-bar-stack
+  detector**), then fires the app's `DEBUG_CMD` channel. This is the answer to C3 (the emulator has no
+  controller/gaze pointer). **Verified end-to-end**: a real `cliclick` on PAUSE → broadcast → the in-world
+  highlight moved to PAUSE. `install_bridge_launcher` preloads one-click Android Studio run configs + Gradle tasks
+  + a global `pico-bridge` command into every project (and `scaffold_spatial_app` auto-installs them).
 
-**SESSION GOTCHAS (don't relearn):**
-- **Piped shell commands (`| grep`) intermittently error** with "claude native binary not installed" — a harness
-  hiccup, NOT your code. WORKAROUND: redirect to a file (`cmd > /tmp/x.log 2>&1`) then `Read` the log.
-- **`/tmp` gets cleaned between sessions** — re-extract SDK sources (`unzip core-0.13.3-sources.jar -d /tmp/pico-src/core`)
-  and the harness `/tmp/pico-invoke.mjs` (it auto-registers all dist modules; recreate from the working copy).
-- **Read the SDK source signature BEFORE emitting Kotlin** (constructors differ: DirectionalLight/Point/Spot/Ground
-  are ctor-args not no-arg+apply; `Entity.addChild` not `addEntity`; `AnimationResource` has NO load-by-name;
-  `createAnchor` wants `EulerAngles`; `WorldTrackingResult` is sealed Success/failure). This caught several tools.
-- **Scaffold-rename keeps the LOG TAG string** (a scaffolded app's HomeStage/seed logs are under tag `SpatialDemo`,
-  not the new app name) — grep `SpatialDemo:V`.
-- **C2 camera is decoupled** — after launch the free cam looks the wrong way; use `emulator_look` to find `-Z`
-  before concluding "empty". `capture_frame` is byte-stable when static.
-- **Tools installed this session** (reversible): `cliclick` (camera control), `imagemagick` (perceptual diff).
-- **HONESTY RULE (the user enforces, has caught over-claims):** never say "renders/works/verified" without a
-  `capture_frame` you LOOKED at. Code/`smoke 0`/logcat = existence, not appearance. `verify`/`verify_baseline`/
-  `assert_scene`/`capability_report` are the gate.
+The full journey (every gotcha) is in memory `game-menu-demo.md`. The ladder beneath: v3.x editor X-ray / Agent
+Bridge / visual-verify suite → v4.0 the autonomous `autonomous_spatial_build` loop (brief-general, GalleryXR
+acceptance demo vision-verified) → v4.5 the full SDK content ladder (lighting/IBL/particles/video/tween+orbit/
+display+portal/rigidbody+anchor, all compile-verified vs SDK 0.13.3).
 
 ---
-### (history) v3.4.0 — finish + tighten verification trust:
-- **`bundle_content_diff`** — deterministic "did the bake change" signal: diffs two bundles' cooked
-  content via `spatialbundle info`, normalizing out per-build ids (the bundle md5 is non-deterministic).
-- **`verify`** — the GATE: structural (`assert_scene`) + visual (`verify_visual` sweep) in one call,
-  returns pass/fail AND the frames to LOOK at. (Refactored assert_scene/verify_visual to export cores.)
-- **RESOLVED the v3.3 spike:** `EditorEnvSettings` is editor-VIEWPORT-ONLY — NOT baked into the app
-  bundle (proven via `bundle_content_diff`). Real headless content authoring = scene USDA + bake.
+## ▶ HOW TO RUN + VERIFY IT
 
-**v3.3 (verification trust) added:**
-- **`assert_scene`** — broadcasts the Agent Bridge `dump_scene`, parses the AGENTBRIDGE| logcat markers,
-  asserts entitiesPresent/minEntities/componentsPresent/markers. Structural truth (verified on spatialdemo).
-- **`verify_visual`** — orbit-sweep (`emulator_look` yaw + `capture_frame`) returning N frames for the agent
-  to LOOK at the WHOLE scene + optional ImageMagick diff. Vision-verified on spatialdemo.
-- **Spike (recon open Q):** the Gradle editor-asset bundle build is **NON-DETERMINISTIC** (md5 changes every
-  rebuild — embeds a timestamp), so md5 ≠ content change; whether the headless build consumes
-  `EditorEnvSettings` stays OPEN (needs a content-level bundle diff, not md5). See DESIGN §12.
+**The loop (an agent runs this):**
+1. `validate_toolchain` — preflight the local PICO SDK (tools root, spatialbundle/emulator/adb, AVDs, license, protos).
+2. `emulator_list` / `emulator_boot` — ensure a PICO OS6 emulator is up.
+3. `scaffold_spatial_app` — clone the template, rename package/tree, set stage, install scene → a fresh
+   immediately-buildable app (also preloads the bridge launcher).
+4. Author content by emitting SDK-0.13.3 Kotlin via the `generate_*` codegen tools: environment → colliders →
+   lighting/richness → UI/menu; inject `generate_agent_bridge` for headless control.
+5. `build_and_run` — compile/install/relaunch, wait for `FirstFrameRelease`, check crash, auto-emit the
+   `capability_report` matrix.
+6. **THE `verify` GATE (mandatory pre-ship)** — structural `assert_scene` (Agent Bridge `dump_scene` + `assert_logcat`
+   markers) + visual `verify_visual`/`capture_frame` that you **actually LOOK at**. Any FAIL → `diagnose(symptom=…)`
+   → loop back to authoring.
+7. SHIP — `generate_headset_readiness_codegen` + `swan_bring_up_checklist` + the honest `capability_report`;
+   `deploy_to_device` stays dormant until a Swan is attached.
 
-**DO NEXT — v4.0 (the autonomous editor⇄emulator studio):**
-- **`autonomous_spatial_build` v4** — wire the full loop end-to-end: author (scaffold + `author_materialx` +
-  `author_editor_component` + colliders/UI) → `editor_op`/bake → deploy → **`verify_visual` + `assert_scene`
-  (vision + structural)** → `diagnose` → iterate → honest `capability_report`. Inject `generate_agent_bridge`
-  by default so every build is drivable + assertable.
-- **Auto-emit the capability matrix** from `build_and_run` (currently only the prompt prescribes it).
-- **Content-level bundle diff** (answer the EnvSettings spike): diff `spatialbundle info` asset lists, not md5.
-- **Headset-readiness packaging** for PICO Swan: the C1/C3 features (`generate_scene_understanding_kotlin`
-  surface pins, controller-ray interaction) generated + statically checked + a "Swan bring-up" checklist.
-- Bump README/ROADMAP → v3.3.
+**The mouse bridge:** run the global **`pico-bridge`** command (installed per-project) or `setup_mouse_bridge`. It
+auto-targets the FOREGROUND app, raises the (often-occluded) emulator window, and lets your Mac mouse click the
+in-world menu. Run the Python with `-u` for live click logs (stdout is block-buffered when redirected). venv lives
+at `~/.pico-bridge/venv`; needs macOS Input-Monitoring/Accessibility.
 
----
-### (history) v3.2.0 — injectable plugin + editor recon + VISION GATE + camera control + editor authoring/headless ops:
-- **`emulator_look`** — AIM the free camera (CGEvent RIGHT-drag) + capture; whole-scene visual
-  verification, VISION-VERIFIED. `capture_frame` (adb screencap) = the ground-truth capture.
-  `capability_report` is now VISION-GATED (only what you SAW renders counts as verified).
-- **`author_editor_component`** — editor USD for Collision/Audio/Timeline; round-trip-verified via
-  `spatialbundle pack` (the bake COOKS collisionshape+PhysicsMaterial+timeline — the cooked physics
-  text-USD lacks).
-- **`decode_editor_settings` / `editor_project_diff` / `editor_op`** — the headless editor set
-  (the editor has no scripting/RPC, so editor_op is a whitelisted FILE LEVER + decode-diff to verify).
-- Marker fix (spatialdemo `Pin.usda`) — vision-verified red+white saturn pins.
+**Launch is FLAKY** — the stable pattern: **force-stop ALL other `com.example.*` spatial apps FIRST** (a prior app
+owning the full-space stage makes yours exit immediately: `"current full space don't allow start fullscreen"` /
+`VM exiting result code 0`), then `am force-stop; sleep 1.5; am start` OR
+`adb shell monkey -p <pkg> -c android.intent.category.LAUNCHER 1` wrapped in a 4-try retry polling `pidof`. The
+first `am start` after `adb install -r` reliably tears the stage down. **A failed build silently leaves a STALE
+apk running** — always confirm `BUILD SUCCESSFUL` + PID up + the ready-log before reading captures; correlated
+`dump_scene`+capture is the tiebreaker.
 
-**DO NEXT — v3.3 (verification trust), all buildable now:**
-- **`verify_visual`** — sweep `emulator_look` around + `capture_frame` at each angle + perceptual
-  diff vs baselines (extend `run_visual_regression`); deterministic whole-scene visual regression.
-- **`assert_scene`** — broadcast the Agent Bridge `dump_scene` + assert the `AGENTBRIDGE|` markers
-  (structural) AND require a `capture_frame` vision pass (closes the bridge→vision loop).
-- **Spike the recon's open Q:** does the headless `--ide_noGraphics` build CONSUME `EditorEnvSettings`?
-  (`editor_op set_skybox_color` → rebuild → `editor_project_diff` targetMd5). Bump README/ROADMAP → v3.2.
-- Earlier two-deliverable summary retained below for context.
-
-**1. `generate_agent_bridge` (`src/agentbridge.ts`) — the INJECTABLE plugin. SHIPPED + VERIFIED HEADLESS.**
-Emits an injectable Kotlin "Agent Bridge" that turns any native PICO app into a headless agent
-
-**1. `generate_agent_bridge` (`src/agentbridge.ts`) — the INJECTABLE plugin. SHIPPED + VERIFIED HEADLESS.**
-Emits an injectable Kotlin "Agent Bridge" that turns any native PICO app into a headless agent
-control+verification surface: a manifest-merged **ContentProvider auto-init** (zero app code to boot),
-an `<applicationId>.AGENT_CMD` **broadcast command channel**, structured **logcat telemetry**, and a
-**live scene-graph dump** (entity tree + transforms + component types). **Verified end-to-end on
-emulator-5554** (injected into `spatialdemo-native`, git-init'd, tag `AgentBridgeVerified`): `:app:assembleDebug`
-SUCCESSFUL → `bridge_ready` (zero-code init) → `ping`=`pong` → `scene_stats entities=89` → `dump_scene`
-printed the full live scene graph, all via `adb broadcast` + `logcat`. This is **deterministic STRUCTURAL
-verification** (the app TELLS its state) — the honest answer to C2/C3, and the basis for `assert_scene`.
-SDK facts (sources): no global Scene accessor → the one-line `AgentBridge.attachScene(sceneRoot)` is
-mandatory; **no offscreen-screenshot API → C2 stands for VISUALS** (the bridge verifies structure, not pixels).
-
-**2. Editor automation SPIKE — see `V3.2_EDITOR_AUTOMATION_MAP.md`.** From a 6-investigator recon workflow:
-the editor's only headless entry is the `--ide_noGraphics` FULL build (no scripting/RPC/per-op API), so
-`editor_op` is honestly a **whitelisted FILE-EDIT lever** (edit `EditorEnvSettings.json`/`EditorContainerSettings.json`
-or scene USDA → rebuild → decode-diff). **Decoded the Timeline + Audio + Collision USD schemas + the bake
-typeId registry** (unblocks `author_editor_component`). C2 capture lead = populate ScenePreview `previewConfig`
-(UNVERIFIED — spike on a live emulator first).
-
-**DO NEXT (v3.2, prioritized):** P1 `editor_project_diff` (decode before/after a build + structural delta) +
-`decode_editor_settings` (parse the UserSettings ECS files) + the file-lever `editor_op` — all headless and
-buildable now. Then `author_editor_component` (schemas decoded above). Then the ScenePreview `previewConfig`
-capture spike. Optional: an `assert_scene` MCP tool that broadcasts `dump_scene` and asserts the `AGENTBRIDGE|`
-markers (closes the verification loop with the bridge).
+**The 4 EMULATOR CEILINGS (they still hold — never pretend otherwise):**
+- **C1** — no native scene-understanding / hand-tracking on the emulator (0 planes / 0 mesh → pins FLOAT). Real
+  surfaces are headset-only. Workaround: `generate_home_env_proxy` (invisible collider proxy of the known home
+  bedroom; floor y=0 is the only vision-verified anchor).
+- **C2** — the free camera is DECOUPLED, uncontrollable-by-keys, and DRIFTS (~3px/sec); the screencap view ≠ the
+  app's HMD view. `adb exec-out screencap` = the clean guest HMD framebuffer (shows content, byte-stable);
+  macOS host-capture = the qemu window (drifting free cam, for the Spatial Editor GUI only). Orbit the cam ONLY via
+  `emulator_look` (a CGEvent RIGHT-drag). **When a capture looks wrong, suspect the camera FIRST** (navigate before
+  blaming content).
+- **C3** — no controller / gaze pointer; the trigger is GUI-gated → 2D clicks don't raycast. **This is why the
+  mouse bridge exists.** Headless drive = `app_broadcast` (`<pkg>.DEBUG_CMD`/`AGENT_CMD`).
+- **C4** — stage-vs-window dichotomy (no room + pins + in-front Compose panels together). We stay in the
+  broadcast-driven ECS world (UI as in-world textured quads) so the bridge keeps working.
 
 ---
-### (prior) v3.1.0 SHIPPED — 4 tools (commits `64fb6a7` / `72b9796` / `60004ce` / `646ee12`):
-- **`generate_scene_understanding_kotlin`** (`src/sense.ts`) — native `sense/plane` surface-pin Kotlin;
-  **COMPILES** in `spatialdemo-native` (`:app:assembleDebug` SUCCESSFUL); runtime is **headset-only (C1)**.
-  Fixed a real API bug: `Transform.rotation` is `EulerAngles`, the quaternion is `Transform.quaternion`;
-  rotate API is `Quat.rotateVector(Vector3)`; math types live in the **foundation** sources jar, not core.
-- **`decode_editor_project`** (`src/editorproject.ts`) — X-rays a whole `SpatialPackContent` (or an Android
-  project root). **VERIFIED on real data**: claimsight (2 scenes, 13 assets, 456 mats), spatialdemo (475).
-  Facts: MaterialCache = `{GUID}.{mtlx,material,mat,parameterinfo}`; BundleCache `bundleTool 0.10.1`.
-- **`author_materialx`** (`src/materialx.ts`) — editor-format **MaterialX 1.38**, copied verbatim from real
-  `MaterialCache/*.mtlx`. `bright:true` = `emissiveColor==diffuseColor` (the editor's OWN self-lit trick);
-  `unlit` = `ND__unlit_surfaceshader`. Texture path is **UNVERIFIED** (black-texture wall) → prefer
-  `bake_textured_model`. Verified: xmllint well-formed + format-fidelity.
-- **`capability_report`** (`src/capability.ts`) — the honest **verifiedOnEmulator vs builtForHeadset** matrix
-  with the C1–C4 ceilings baked in.
+## ▶ THE NON-NEGOTIABLE PRINCIPLES (the soul of the project — keep them or you break it)
 
-**DO NEXT — the per-run protocol (`ROADMAP_v3.1-v4.0.md` §5.1): `author_editor_component`.** It's the 4th
-roadmapped v3.1 tool, **deliberately deferred** because only the **Collision** USD format is decoded (memory
-~line 40) and that format does **NOT register physics via USD text alone** (working runtime physics =
-`generate_collider_kotlin`'s `PhysicsWorldComponent` recipe). **Anchor/Audio/Timeline formats are UNDECODED.**
-So: open the Spatial Editor, add each component to a throwaway prim, re-save, run `decode_editor_project` on the
-delta, and codify the **real** format — **do NOT invent formats**. Then v3.2 editor automation
-(`editor_op` / `editor_export_bundle` / `editor_project_diff`). Strategy: `ROADMAP_v3.1-v4.0.md`.
-
-> The `V3.1_EXECUTION_GUIDE.md` Tasks 1–3 are complete; it remains useful as the tool-adding pattern + the
-> key-commands reference (§1, §5.3). The honesty rules below still bind every claim.
-
-**The reframe that produced v3.1 (read this):** the user reality-checked v3.0 — the native app looked
-unchanged, pins float, panels aren't interactive. Empirically proven: the native PICO **emulator cannot
-verify the MR experience** (C1 no scene-understanding → 0 planes; C2 capture camera decoupled +
-uncontrollable → no reliable headless screenshots; C3 no controller pointer / gated trigger → no clickable
-panels; C4 stage-vs-window). v3.0's "verified" was code-level only. With **no hardware until the PICO
-Swan (PICO OS6)**, v3.1→v4.0 pivots to mastering the **Spatial Editor ⇄ Emulator** toolchain + generating
-the headset-only parts for Swan. **Honesty rule: never claim "renders/works" from a headless capture —
-use logcat / "built for headset".** Mixed stage (manifest stage.style=1) DOES render the home env (the
-sandbox `spatialdemo` proves it).
+1. **HONEST vision-verification.** A feature is NOT "verified" until you have **captured a frame and SEEN it render
+   correctly with your own vision**. `BUILD SUCCESSFUL`, `smoke 0`, logcat markers, and `dump_scene entities=N`
+   prove EXISTENCE, never APPEARANCE. **"I didn't look" == "unverified."** The user has caught over-claims at least
+   twice and is right each time — structural/logcat proof is necessary, never sufficient. **Honest deferral
+   (C1/C3/C4 → built-for-Swan) is always fine; silent over-claim is the only hard failure.**
+   - Transient animations: temporarily make them slow + non-returning (hold), capture the held state, then restore.
+   - A same-colour flash over a same-colour button is INVISIBLE → brighten the flash tint toward white to see it.
+   - MAE numeric diff under-weights small objects → **vision is the verdict, the diff is an assist**. ImageMagick
+     full-frame `compare` on 2160² TIMES OUT → crop + montage + LOOK.
+2. **Respect the C1–C4 ceilings** (above), and tag every claim by ceiling.
+3. **Code-generate the headset-only parts so they light up on the PICO Swan.** Verify-what's-verifiable now; flag
+   headset-only honestly. The big "built-for-headset" column is pre-built code awaiting a device, NOT a gap.
+4. **Learning-retention.** The curated auto-memory (`…/memory/`) is the SOURCE OF TRUTH — dense, gotcha-rich,
+   hand-curated. Keep it curated; never let it drift into a second auto-captured store. Update MEMORY.md +
+   game-menu-demo.md + pico-mcp-project.md with every new hard-won fact.
+5. **Method discipline.** Research SDK 0.13.3 signatures from the REAL sources
+   (`~/.gradle/caches/modules-2/files-2.1/com.pico.spatial.core/core/0.13.3/*/core-0.13.3-sources.jar`; math types
+   are in the **foundation** jar, not core) BEFORE codegen → generate into a throwaway `gen/` pkg → ONE
+   `compileDebugKotlin` → then vision-verify on a real build. Do NOT invent formats. Apply edits SERIALLY (parallel
+   agents clobbered `HomeStage.kt` once — fan out READ-ONLY, or give each an isolated worktree). `JAVA_HOME` must be
+   the Android Studio JBR.
 
 ---
-## 🎉 v3.0 SHIPPED (2026-06-14, session 3) — THE AUTONOMOUS SPATIAL STUDIO
-**MCP @ 3.0.0 — 67 tools, 2 prompts — `npm run build && npm run smoke` → Failures: 0 — committed on `main`, NOT pushed.**
+## ▶▶▶ NEXT SESSION STARTS HERE <<< — BUILD v5.0 (the brief-to-app compiler)
 
-The mission is done: an agent can now **build AND verify** a native PICO XR app end-to-end on the
-emulator (no headset). Three v3.0 deliverables landed:
-1. **Rewrote the `autonomous_spatial_build` prompt** (`src/prompts.ts`) to drive the REAL proven loop:
-   validate → scaffold → `bake_textured_model`/`generate_environment_kotlin` env → `generate_collider_kotlin`
-   → `generate_spatial_ui` → `build_and_run` → **navigate camera (`gui_camera`) + `gui_capture` + `assert_logcat`
-   verify** → `diagnose` → iterate, with all the gotchas (camera-drift, bake-not-runtime, mesh-colliders-don't-register) baked in.
-2. **Demonstrated the loop end-to-end on a FRESH app** — `~/AndroidStudioProjects/spatialdemo-native`
-   (pkg `com.example.spatialdemo`), assembled FROM the actual MCP tool outputs (invoked the real tool
-   handlers via `/tmp/pico-invoke.mjs`, a fake-server harness) + minimal hand-glue. **Verified on
-   emulator-5554**: logcat `baked textured mesh attached`, `rayCast HIT pos=(0,2.52,0.44) n=(0,0,-1)`,
-   `placed pin #1/2/3`, `cleared 3/3 pins`; `gui_capture` (`/tmp/pico-render/demo-1-initial.png`) shows
-   the textured Marble apartment rendering (dim — baked PBR is lit). The self-correcting loop also caught
-   a REAL generator bug: `generate_spatial_ui` emitted `backgroundMaterial(Material.Thick)` (missing the
-   Boolean first arg) → compile error → fixed `src/components.ts` to `backgroundMaterial(true, Material.Thick)`
-   → regenerated → BUILD SUCCESSFUL.
-3. **Docs + version**: README + ROADMAP → v3.0; `package.json` + `src/index.ts` → `3.0.0`.
+The content, menu, and interaction ladders are complete. **v5.0 is the next big thing: the planning layer** — turn
+a natural-language brief into a planned, authored, built, verified spatial app with far less human steering. The
+full plan is in **`ROADMAP_v5.0-v6.0.md`** — read it, it is authoritative. Highlights:
 
-**New gotchas this session (don't repeat):**
-- A PRIOR spatial app can OWN the full-space stage and BLOCK your app from launching fullscreen
-  (`current full space don't allow start fullscreen` / topResumedActivity = the other app). Fix:
-  `adb shell am force-stop <other.pkg>` FIRST, then launch yours.
-- The emulator free camera **cannot be reframed headlessly** on this host (no Quartz/pyobjc, no
-  `cliclick`; System-Events click + WASD/arrow keys did NOT move it — it needs a real GL-surface
-  mouse-drag to enter camera mode). So a pretty pin-on-wall capture wasn't obtainable — **lean on
-  `assert_logcat`** as the proof primitive (which is exactly what the v3.0 prompt prescribes).
-
-**ClaimSight menu gaze-interaction — DONE (claimsight-native commit `5bfb586`).** New `MenuRaycaster`
-casts the head/controller gaze ray at the in-world menu quad (`UITestPanel` / baked `ui_menu.png`),
-maps the hit UV to a button band (from `tools/bake_ui.swift`), and fires its action — wired into
-PinPlacer's not-armed trigger path. The full loop closes: look at "Place Pin" + trigger → arm → look
-at a wall + trigger → pin on the surface; "Generate Report" → report; etc. Verified on emulator-5554
-via two headless hooks (the trigger is GUI-gated): `menusweep` mapped all 4 buttons + the title gap
-correctly; `menufire 0..3` resolved each via the same hit-test + fired its action; menu→arm→commit →
-`placed pin #1` on a wall. Hero capture `/tmp/pico-render/claimsight-menu-e2e.png` shows the textured
-apartment + the in-world menu. **GOTCHA:** the emulator free camera (what `gui_capture` sees) and the
-HMD tracking pose (what the gaze logic uses) are DECOUPLED — `menuaim` can MISS even when the menu is
-on-screen; trust `menusweep`/`menufire` for the logic and the capture for rendering.
-
-**NEXT (open frontier):** the deferred WindowContainer panel placement (DamageCard/Report spawn off
-the default camera view in 0.13 — needs the platform window-transform API, ROADMAP §6.1); mesh
-brightness (emissive/UNLIT `ND__unlit_surfaceshader`/IBL); collider-to-mesh alignment; on-headset
-interactive testing; OR codify the menu-quad raycast as an MCP tool (`generate_menu_raycaster_kotlin`).
+- **⚠ LOAD-BEARING CORRECTION (accept before planning anything):** ROADMAP §8's "✓ SHIPPED" markers for v4.2–v4.4
+  are WRONG. There is **no `layout.ts`, `interaction.ts`, `statemachine.ts`, `databinding.ts`, or `gaze.ts`** in
+  `src/`. The only real interaction primitive is `generate_game_menu_kotlin` + the mouse bridge. **A compiler
+  cannot compose primitives that don't exist.** So the v5.0 acceptance brief (6 shelved items, gaze-select, detail
+  card, JSON) REQUIRES first building `generate_layout_kotlin`, `generate_interaction_kotlin`,
+  `generate_data_binding_kotlin` (use the codegen method above). This is honest v5.0 scope, not an assumption.
+- **v5.0 keystone:** a typed `AppSpec` IR (`src/appspec.ts`, a zod schema) that is simultaneously the build plan
+  AND the verification contract — every node carries its own acceptance predicate + its C1–C4 capability class +
+  a required forward-FOV camera pose (C2). New thin tools over the existing spine: `list_capabilities`,
+  `plan_app_spec`, `compile_app_spec`, `verify_app_spec`, `replan_spec`; new prompt `brief_to_app` that WRAPS (does
+  not replace) `autonomous_spatial_build` v4 as the per-node executor.
+- **Acceptance test:** the §8 hard brief run with ZERO human tool-sequencing, twice reproducibly, plus a second
+  unseen brief — with ≥ the 6 shelf items + one detail card **vision-verified from a frame actually LOOKED at**.
+- **Then keep executing the 10 phases** (v5.1 lint engine → v5.2 self-repair → v5.3 trust ledger + stacked
+  worktrees → v5.4 eval corpus → v5.5 regression gates → v5.6 templates+remix → v5.7 multi-scene +
+  `generate_composition_scene` → v5.8 data-at-scale + generalized interaction → v5.9 Swan on-device parity →
+  v6.0 the autonomous spatial factory). Robustness before breadth before hardware before fleet.
 
 ---
-## ★ PROGRESS UPDATE (2026-06-13, session 2) — COLLIDER BLOCKER SOLVED + MCP @ v2.3.0
-The #1 hard blocker (Phase-1/2 below) is **DONE and verified on the emulator**. Scene.rayCast now
-hits and pins land on real surfaces. The fix was NOT the editor bake — it was a RUNTIME attach:
-`PhysicsWorldComponent` on a scene entity (REQUIRED on-device) + a PRIMITIVE `CollisionComponent`
-via `entity.components.set(...)`. The stale "CollisionComponent ctor is internal" belief (the real
-multi-session blocker) was half-wrong: the **5-arg ctor is public**. `createStaticMesh` cooks
-nothing queryable on-device → rooms use box "walls". Full detail in auto-memory
-(`pico-mcp-project.md`, the ★ COLLIDER SOLVED note) + DESIGN.md §9.
+## ▶ ACTION ITEM — agent-tooling changes (from the plugin research; see ROADMAP appendix)
 
-**Shipped this session (all committed, smoke 0 failures):**
-- PICO-MCP `main`: v2.2.0 `0b4bdb0` (generate_collider_kotlin + assert_logcat + raycast_no_hit
-  diagnosis), v2.3.0 `cf2532b` (decode_spatial_bundle). NOT pushed.
-- claimsight-native `530158b`: runtime box-room collider + real-rayCast PinPlacer.commit() +
-  **restored skybox/UI texture overrides** the editor re-save had silently dropped (decayed-apartment
-  skybox + in-world ClaimSight menu now render — verified via screencapture).
-- Verification path FIXED: macOS `screencapture -l<windowid>` (and `gui_capture`) WORKS now that
-  Screen Recording is granted; `adb screencap` shows the emulator reference scene, not the immersive
-  view — use the window capture.
-
-**RICH ENVIRONMENT (2026-06-13 s2, later):** The app loads the REAL Marble world as a **Gaussian
-splat** (`.spz`, native PICO support) — `ENV_MODE="splat"` in HomeStage.kt (also "pano" reliable
-fallback, "mesh" textured-GLB WIP/dark). Splat scaled 2.5x + Sky_Sphere pano scaled 20x = a BIGGER
-WALKABLE, ENCLOSED room (no PICO-home bleed). The big gremlin that wasted hours: the **emulator free
-camera DRIFTS out of the scene** (osascript WASD `W`=key13 forward / `S`=key1 back; persists across
-relaunches) — ALWAYS navigate into the scene before judging a capture. Splat is live-tunable via the
-`splat` broadcast cmd (tx/ty/tz/s/rx/ry/rz). Verified renders: /tmp/pico-render/{edge-fwd,splat-in}.png.
-★★★ TEXTURED-MESH BREAKTHROUGH + MCP @ v2.7.0 (2026-06-13 s2, latest). The "GLB textures render black"
-wall is CRACKED: BAKE the GLB via spatialbundle (it makes a PHYSICALLY_BASED material + ASTC texture),
-then load the BAKED model — never runtime-load the raw GLB, never `references=@x.glb@` in USD. Verified
-on emulator (the Marble apartment renders textured + sharp). Codified as MCP tool **bake_textured_model**
-(v2.6.0) + generate_environment_kotlin texturedMesh emits the baked-bundle load; v2.7.0 added diagnose
-**texture_black** (bake recipe) + **emulator_camera_drift** (navigate the camera into the scene before
-judging a capture). MCP commits: dc12a8e (v2.6.0), 6ac20ca (v2.7.0). claimsight-native: ENV_MODE in
-HomeStage.kt = "mesh" (baked apartment, default) | "splat" (3x photoreal) | "pano" | "home"; the baked
-apartment.bundle ships in app/src/main/assets (commit c1e7900). USER DIRECTIVE: push the MCP to v3.0
-(primary); ClaimSight is the test bed; use the simplest working env; if texture-embedding works (it does)
-keep building the MCP. PATH TO v3.0 (next): (1) update the autonomous_spatial_build PROMPT (prompts.ts)
-to orchestrate the full proven toolset — scaffold → bake_textured_model env → generate_collider_kotlin →
-generate_spatial_ui → build_and_run → gui_camera(navigate-in)+gui_capture+assert_logcat verify →
-diagnose → iterate; (2) demonstrate the end-to-end autonomous loop on a fresh app; (3) ROADMAP/README to
-v3.0; (4) optional polish: mesh brightness (emissive/UNLIT), collider-to-mesh alignment, ClaimSight panel
-placement (the deferred WindowContainer issue). The MCP capabilities for v3.0 are largely DONE this
-session (collider, env splat+mesh+bake, broadcast interaction, assert_logcat, decode_bundle, diagnose).
-
-RICH-ENV UPDATE (later 2026-06-13 s2): splat scaled **3x** = bigger walkable room (commit a3a26e6 on
-claimsight-native; ENV_MODE="splat" default; proof /tmp/pico-render/splat3x.png). The user wants a
-bigger/crisper/walkable room verified ON THE EMULATOR (no headset). **TEXTURED-MESH is BLOCKED** by the
-embedded-texture wall (runtime swap -> black; spatialbundle bake -> "Failed to get material texture path"
-because the texture is embedded in the .glb) — see memory ★ TEXTURED-MESH note. User chose "splat now +
-mesh research in parallel". **Mesh-texture research workflow RUNNING (ww9o9r5ei / wf_d9351519-df6):**
-crack rendering the textured apartment mesh via GLB->USD-external-texture + the editor-material-override
-trick (the only proven textured-mesh path). When it lands: build the textured mesh room (sharp at any
-scale + real geometry), THEN do collider alignment on the WINNING environment (don't tune splat colliders
-first — likely throwaway if the mesh wins), THEN continue the MCP toward v3.0. CAMERA: the emulator free
-camera drifts; navigate with osascript key code 13=W/forward, 1=S/back before judging captures.
-
-**NEXT (toward v3.0):** (a) `drive_interaction` — resolve whether the controller trigger can be
-fired headlessly (RC_Trigger='U' host key; research says GUI-gated, UNVERIFIED — test
-`ui_input keyevent` / osascript 'U' vs the GUI Controller-Button-Mode); aim head-gaze via gui_camera
-(WASD) + read HMD pose. (b) ClaimSight menu-button interaction: gaze-ray vs the in-world menu quad
-→ arm Place Pin → trigger → commit on a wall (pin-on-surface already works; just wire the menu).
-(c) Stretch: `author_collider` USD (low value — runtime attach is the working path); more
-editor-understanding decoders. App-relaunch gotcha: 1st `am start` after `adb install -r` tears the
-stage down; single clean `force-stop; am start` + poll logcat for app-live, then capture.
----
-
-
-**Read this AND the auto-memory `…/memory/pico-mcp-project.md` first.** The memory holds the deep,
-verified findings (every wall, with how it was proven). This doc is the **strategic direction + the
-concrete next plan**, decided with the user on 2026-06-13 at the end of a very long session that hit
-my context limit.
+- **Superpowers (obra/superpowers) → ADOPT-PARTIALLY, now.** Cherry-pick `brainstorm` / `write-plan` /
+  `execute-plan` + `verification-before-completion` + the SKILL.md authoring format to bootstrap v5.0's planning
+  layer. **Reframe its mandatory TDD as your existing compile+vision gate** (you can't write a failing unit test
+  for "3 cyan orbs over the bed"). Do NOT run its orchestrator against your Workflow engine.
+- **claude-mem (thedotmack/claude-mem) → SKIP.** Your curated MEMORY.md already delivers high-signal cross-session
+  recall; auto-capture duplicates it, lowers signal, and bloats context. If recall ever falls short, borrow only
+  the IDEA (a lightweight semantic index over the per-fact files) — not the plugin (planned in v6.0).
+- **gstack → CLARIFY the referent, then situational.** If it's garrytan/gstack (role-framework + browser daemon),
+  SKIP (it duplicates your bespoke memory + orchestration; borrow only the reflection-on-failure loop). If it's
+  git-stacking (stacked diffs), ADOPT-PARTIALLY only when you move to PR-based review (folded into v5.3 as
+  `stack_new`/`stack_verify`/`stack_land`).
 
 ---
-
-## The decision (from the user)
-
-**Park ClaimSight polishing. Build out the MCP's Spatial-Editor + Emulator control tooling first**, so
-the agent can author and *verify* native spatial apps without hand-driving the GUI editor or guessing
-at interactions. ClaimSight is the **test bed**, not the product. The user's exact challenge: *"be
-thorough in building the tools for the MCP to shine, that way you will have more control over the app,
-because it seems like you need it."* They're right — the agent kept hitting capability gaps that only
-the editor GUI could cross.
-
-## Why (the gaps that motivated this)
-
-Building ClaimSight natively surfaced three MCP capability gaps:
-1. **Colliders / physics — the current hard blocker.** To land pins on real surfaces you need a
-   collider for `Scene.rayCast`. Creating one is blocked from app code (`CollisionComponent` ctor is
-   Kotlin-`internal`; `ModelViewCollisionComponent` is package-private) AND from hand-authored USD
-   (even the editor's EXACT `CollisionComponent` USD format → `rayCast` returns NO HIT). It needs the
-   editor's physics bake (`.Library`/`.Component`/`.CacheData`) and/or a runtime physics-init step.
-2. **Editor-authored materials/textures.** Image textures render black except on editor-authored
-   materials. Worked around for flat UI (bake Compose→PNG, reuse the sky-sphere material on a quad —
-   this WORKS, shipped), but it's a hack, not a general capability.
-3. **Interactive verification.** The agent can't easily drive the emulator's controller trigger +
-   head-gaze to TEST interactions (pin placement, button clicks). The user insists on
-   verified-not-hallucinated results; the MCP needs real emulator-driving for end-to-end proof.
-
-## Current state (all committed, all real)
-
-- **MCP**: `/Users/sushantsrikrish/PICO-MCP`, v2.1.0, **61 tools**, `main` @ `4b7105c` (NOT pushed).
-  `npm run build && npm run smoke` → `Failures: 0`. The pico MCP tools are NOT attached to the Claude
-  Code session — drive build/install/capture via raw `gradlew`/`adb`/`screencapture`.
-- **ClaimSight native app**: `~/AndroidStudioProjects/claimsight-native` (now git-tracked) @ `dff9e80`.
-  Immersive STAGE (manifest `stage.style=3`) → decayed-apartment **skybox** + a **working in-world
-  Compose-quality menu panel** (baked-texture quad — the breakthrough that unblocked stage UI) +
-  `PinPlacer` raycast wiring. Looks great. BLOCKED only on pin-on-surface (no collider).
-- Emulator booted (`emulator-5554`). Decompiled SDK at `/tmp/pico-sdk/{core,ui-foundation,ui-platform,
-  tracking,foundation}/x` — ⚠ `/tmp` is ephemeral; re-extract from the AARs if gone (unzip the SDK
-  `.aar`s → `classes.jar` → classes). JBR javap: `"/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/javap"`.
-
-## The build plan (be thorough — research → build → verify each tool)
-
-### Phase 1 — RESEARCH (use an ultracode multi-agent Workflow; parallel decompile/investigate)
-- **Physics/collision pipeline**: decompile `com.pico.spatial.core.ecs.CollisionComponent`,
-  `ShapeResource.create{Box,StaticMesh,ConvexMesh}` (public), `Scene.rayCast`, and the physics module
-  (`spatial.physics.internal.CollisionManagerAgent` appears in the editor binary). KEY QUESTIONS: does
-  `Scene.rayCast` need a physics-system enable/init in the app? Is there ANY public path to register a
-  collider at runtime? Why does the editor's exact collision USD not make `rayCast` hit?
-- **Editor bake**: inspect what the editor wrote into `editor-asset/.../SpatialPackContent/.Library`,
-  `.Component`, `.CacheData` when the user added a Collision component (it's there now), and whether/how
-  `spatialbundle` consumes it. The editor's collision USD format IS known (in memory).
-- **Editor/spatialbundle headless**: `~/Library/PICO/sdk/0.13/editor/spatialbundle/spatialbundle --help`
-  (+ subcommands); can the Spatial Editor itself be scripted/CLI-driven to bake collision/materials?
-- **Emulator interaction**: how to programmatically drive the controller trigger + head-gaze to TEST
-  interactions (`controller_map`/`controller_press` exist; the GUI controller-button-mode; `gui_camera`
-  WASD; trigger key mapping). Goal: headless end-to-end interaction verification.
-
-### Phase 2 — BUILD MCP tools (each: implement → `npm run build && npm run smoke` → REAL verify)
-- **`compose_collider`** (or extend scene authoring): produce a *working* collider for a mesh — via the
-  correct USD + baked data, or by shelling the editor/spatialbundle to bake it. **Verify**: `Scene.rayCast`
-  hits → debug-place a pin → screenshot it on a wall.
-- **Emulator interaction-test tools**: drive controller trigger + gaze to exercise + verify app
-  interactions, so the agent can PROVE pin placement / button clicks (not claim them).
-- **(Stretch) editor-material/asset baking bridge** + general "editor operation" automation.
-
-### Phase 3 — RESUME ClaimSight with the new tools
-Finish pin-on-surface (collider) and the **menu-button interaction**: raycast the in-world menu quad
-(known world position) from the gaze → map hit to button region → `Place Pin` arms → point at a wall +
-trigger → pin commits on the surface. Verify end-to-end with the new interaction tools + screenshots,
-then hand to the user to test + confirm.
-
-## Verification discipline (non-negotiable — the user enforces it)
-NEVER claim something works without proving it: build → install/launch → `gui_capture`/screenshot →
-LOOK. For interactions, drive the input and screenshot the result. The user has caught hallucinated
-"it works" claims (pins floating in space) — earn every claim with a capture. The user tests + confirms
-before we proceed to the next thing.
-
-## Key paths / commands
-- App build: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ~/AndroidStudioProjects/claimsight-native/gradlew -p ~/AndroidStudioProjects/claimsight-native :app:assembleDebug`
-- Launch: `adb -s emulator-5554 shell monkey -p com.example.claimsight -c android.intent.category.LAUNCHER 1`  (activity `.platform.LaunchActivity`)
-- Capture the real 3D view: `/tmp/picocap.sh <out.png>` (Swift CGWindowList owner `qemu-system-aarch64` → `screencapture -l<id>`; Screen Recording granted). If gone, the logic is in `src/hostgui.ts`.
-- UI panel bake: `~/AndroidStudioProjects/claimsight-native/tools/bake_ui.swift` (Compose design → PNG). GLB→USDZ: `tools/glb2usdz.py` (Blender at `/Applications/Blender.app/Contents/MacOS/Blender`).
-- In-world UI recipe (works): bake PNG → in MyScene.usda reference `Sky Sphere.usdz` a 2nd time shrunk to a point + override its texture to the PNG → bind a flat `def Mesh` quad to that material. See memory + `MyScene.usda` `UIMatMenu`/`UITestPanel`.
-
-## Commits to know
-- claimsight-native: `0037005` (v2.1 stage), `d7fe440` (in-world UI breakthrough), `f90f770` (pre-collider clean), `dff9e80` (collision-format learning, current).
-- PICO-MCP: `4b7105c` (v2.1.0, current main, not pushed).
+## ▶ POINTERS
+- **`ROADMAP_v5.0-v6.0.md`** — the authoritative v5.0 → v6.0 plan (read first).
+- `DESIGN.md` — §1 materials-not-displayColor, §9 runtime physics, §10 PICO math API, §11 editor MaterialX,
+  §12 the visual-ground-truth rule.
+- `ROADMAP.md` §8 (the v4.1→v5.0 map — but see the LOAD-BEARING CORRECTION), `ROADMAP_v3.1-v4.0.md` §7.
+- `SKILLS.md` — the agent reference.
+- Memory: `/Users/sushantsrikrish/.claude/projects/-Users-sushantsrikrish-PICO-MCP/memory/`
+  — `MEMORY.md` (index), `game-menu-demo.md` (the v4.6→v4.10 menu+bridge journey, every gotcha),
+  `pico-mcp-project.md` (goal + walls).
+- Load-bearing code: `src/menu.ts`, `src/mousebridge.ts`, `tools/mouse_menu_bridge.py`, `src/prompts.ts`
+  (the `autonomous_spatial_build` v4 loop the planner will drive).
