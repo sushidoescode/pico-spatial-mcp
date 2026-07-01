@@ -90,6 +90,11 @@ def broadcast_move(pkg, dx, dy, dz):
         "--es", "cmd", f"move:{dx:.4f},{dy:.4f},{dz:.4f}")
 
 
+def broadcast_snap(pkg):
+    # On drop: tell the app to SNAP the panel to its grid ("move:snap" -> GameMenu.snapPanel()).
+    adb("shell", "am", "broadcast", "-a", f"{pkg}.DEBUG_CMD", "--es", "cmd", "move:snap")
+
+
 # ---------- menu row detection (framebuffer space) ----------
 # Button-bar colors (the AAA texture: green START, amber PAUSE, blue RESUME, red RESET), in row order.
 _RED   = lambda r, g, b: r > 150 and g < 105 and b < 105 and (r - g) > 70 and (r - b) > 70
@@ -371,7 +376,7 @@ def cmd_live():
     # Coalescing move sender: the drag ACCUMULATES a world delta (instant — never blocks the mouse); a
     # background thread drains it one broadcast at a time, SUMMING everything queued while a broadcast is
     # in flight. So the panel tracks the cursor and STOPS the moment you do — no queued-broadcast drift.
-    move = {"dx": 0.0, "dy": 0.0, "dz": 0.0, "pkg": None}
+    move = {"dx": 0.0, "dy": 0.0, "dz": 0.0, "pkg": None, "snap": False}
     mlock = threading.Lock()
 
     def mover():
@@ -379,8 +384,14 @@ def cmd_live():
             with mlock:
                 dx, dy, dz, pkg = move["dx"], move["dy"], move["dz"], move["pkg"]
                 move["dx"] = move["dy"] = move["dz"] = 0.0
-            if pkg and (abs(dx) > 1e-5 or abs(dy) > 1e-5 or abs(dz) > 1e-5):
+                moving = abs(dx) > 1e-5 or abs(dy) > 1e-5 or abs(dz) > 1e-5
+                snap = move["snap"] and not moving   # snap only once the drag delta has fully drained
+                if snap:
+                    move["snap"] = False
+            if pkg and moving:
                 broadcast_move(pkg, dx, dy, dz)     # blocking (~21ms) but only on THIS thread
+            elif pkg and snap:
+                broadcast_snap(pkg); print("snapped to grid")
             else:
                 stop.wait(0.012)
     threading.Thread(target=mover, daemon=True).start()
@@ -419,7 +430,9 @@ def cmd_live():
                         queue_move(pkg, (fbx - lx) * k, -(fby - ly) * k, 0.0)   # right->+X, down->-Y
             elif etype == Quartz.kCGEventLeftMouseUp and drag["on"]:
                 drag["on"] = False
-                print("placed panel (new position logged in logcat -> bake it into panelPosition)")
+                with mlock:
+                    move["snap"] = True   # snap to grid once the drag deltas have drained (mover handles order)
+                print("placed panel (snaps to grid; new position logged in logcat -> bake it into panelPosition)")
             elif etype == Quartz.kCGEventScrollWheel and on_panel(loc):
                 d = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGScrollWheelEventDeltaAxis1)
                 pkg = target_pkg(fixed)

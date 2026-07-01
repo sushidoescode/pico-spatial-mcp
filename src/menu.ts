@@ -51,9 +51,11 @@ export function registerMenuTools(server: McpServer) {
         pointLight: z.boolean().optional().describe("Add a point light in front of the panel so the slab catches specular (default true)."),
         idleBob: z.boolean().optional().describe("Gently float the whole panel with a position tween (default FALSE — a still panel reads as firmly anchored in space, and the bob is auto-stopped the moment you move the panel anyway). Set true for the floating look."),
         handInput: z.boolean().optional().describe("Also emit GameMenuHandInput — a HEADSET-ONLY hand-tracking path: a PINCH (thumb-tip↔index-tip) near a button pokes GameMenu.select. Default false. Compiles against the tracking module but is UNVERIFIABLE on the emulator (HandTrackingProvider returns no hands — C1). Call GameMenuHandInput.start() after attach."),
+        faceUser: z.boolean().optional().describe("Auto-orient the panel to FACE the user as it moves (billboard: yaw to turn toward you + pitch to tilt up/down) so it reads as a real 3D object, not a flat plane sliding on X/Y. Default true. The tilt is GENTLE + CLAMPED to ~12° (FACE_STRENGTH 0.5) so the emulator's vision-based click bridge still detects the buttons — a full face-the-user billboard slants them too far to click. On a headset (clicked by gaze/controller, not vision) you can raise FACE_STRENGTH/MAX_TILT. Recomputed on every nudgePanel + snap."),
+        snapGrid: z.number().optional().describe("Grid size (metres) the panel snaps to when you drop it (bridge sends move:snap on release) for clean placement. Default 0.1. Set 0 to disable snapping."),
       },
     },
-    async ({ packageName, panelModelName, panelPosition, panelScale, planeHeight, textureHeight, buttons, highlightOpacity, cursorX, backingSlab, pointLight, idleBob, handInput }) => {
+    async ({ packageName, panelModelName, panelPosition, panelScale, planeHeight, textureHeight, buttons, highlightOpacity, cursorX, backingSlab, pointLight, idleBob, handInput, faceUser, snapGrid }) => {
       const model = panelModelName ?? "menu";
       const pos = (panelPosition ?? [0.85, 1.45, -2.0]) as number[];
       if (pos.length !== 3) return fail("panelPosition must be [x,y,z] (3 numbers).");
@@ -72,6 +74,8 @@ export function registerMenuTools(server: McpServer) {
       const slabOn = backingSlab !== false;
       const lightOn = pointLight !== false;
       const bobOn = idleBob === true;   // default OFF: a steady panel reads as anchored in space
+      const faceUserOn = faceUser !== false;   // default ON: panel turns/tilts to face the user as it moves
+      const snap = snapGrid ?? 0.1;            // grid size (m) for snap-on-drop; 0 disables
       const handOn = handInput === true;
 
       // Analytical panel-local Y per button: y = ((1 - rowPx/texH) - 0.5) * planeHeight.
@@ -127,8 +131,12 @@ export function registerMenuTools(server: McpServer) {
         "import com.pico.spatial.core.ecs.resource.PhysicallyBasedMaterial",
         "import com.pico.spatial.core.ecs.resource.UnlitMaterial",
         "import com.pico.spatial.core.math.Color4",
+        "import com.pico.spatial.core.math.EulerAngles",
         "import com.pico.spatial.core.math.Quat",
         "import com.pico.spatial.core.math.Vector3",
+        "import kotlin.math.atan2",
+        "import kotlin.math.roundToInt",
+        "import kotlin.math.sqrt",
       ];
       if (lightOn) imports.push("import com.pico.spatial.core.ecs.PointLightComponent");
       if (handOn) imports.push(
@@ -140,7 +148,6 @@ export function registerMenuTools(server: McpServer) {
         "import com.pico.spatial.tracking.hand.HandTrackingData",
         "import com.pico.spatial.tracking.hand.HandTrackingProvider",
         "import kotlin.math.abs",
-        "import kotlin.math.sqrt",
       );
 
       const attachBody: string[] = [
@@ -150,6 +157,7 @@ export function registerMenuTools(server: McpServer) {
         "        panel.components.set(TransformComponent(PANEL_POS, Quat.identity(), Vector3(SCALE, SCALE, SCALE)))",
         "        sceneRoot.addChild(panel)",
         "        panelRef = panel; panelPos = PANEL_POS   // enable moving the panel around the room",
+        "        applyPanel()                             // orient to face the user from the start (if FACE_USER)",
         "",
       ];
       if (slabOn) attachBody.push(
@@ -290,6 +298,13 @@ export function registerMenuTools(server: McpServer) {
         `    private const val UNDER_DY = ${underDy}f // underline offset below the button centre`,
         "    private const val CUR_Z = 0.075f",
         "    private const val CUR_S = 0.03f",
+        `    private const val FACE_USER = ${faceUserOn}   // auto-orient the panel to face the user as it moves`,
+        `    private const val SNAP_GRID = ${snap}f       // grid (m) the panel snaps to on drop (0 = off)`,
+        "    private val USER_POS = Vector3(0f, 1.5f, 0f)  // the viewer/HMD the panel turns to face (headset origin)",
+        "    // A GENTLE, CLAMPED billboard: enough tilt to read as 3D, capped so the emulator's vision-based",
+        "    // click bridge still sees the buttons (it tolerates up to ~15deg). On a headset raise these.",
+        "    private const val FACE_STRENGTH = 0.5f",
+        "    private const val MAX_TILT = 12f   // degrees",
         "",
         "    /** Place the panel, build the highlight + cursor as panel children, and bind the controllers. */",
         ...attachBody,
@@ -357,17 +372,48 @@ export function registerMenuTools(server: McpServer) {
         "     *  can drag it anywhere in the room and then bake the spot in via panelPosition. Stops the idle bob",
         "     *  so it doesn't fight the move. Driven by the mouse-bridge drag (DEBUG_CMD move:dx,dy,dz) on the",
         "     *  emulator, or a controller/hand grab on a headset. @MainThread. */",
+        "    /** Orientation that turns the panel to FACE the user (yaw toward you + pitch to tilt), so it",
+        "     *  reads as a 3D object in the room instead of a flat plane. Identity if FACE_USER is off. */",
+        "    private fun faceRot(): Quat {",
+        "        if (!FACE_USER) return Quat.identity()",
+        "        val fx = USER_POS.x - panelPos.x; val fy = USER_POS.y - panelPos.y; val fz = USER_POS.z - panelPos.z",
+        "        val h = sqrt(fx * fx + fz * fz)",
+        "        if (h < 1e-4f) return Quat.identity()",
+        "        val yaw = (Math.toDegrees(atan2(fx.toDouble(), fz.toDouble())).toFloat() * FACE_STRENGTH)",
+        "            .coerceIn(-MAX_TILT, MAX_TILT)     // turn to face you (clamped so clicks still detect)",
+        "        val pitch = (-Math.toDegrees(atan2(fy.toDouble(), h.toDouble())).toFloat() * FACE_STRENGTH)",
+        "            .coerceIn(-MAX_TILT, MAX_TILT)     // tilt up/down toward you",
+        "        return EulerAngles(pitch, yaw, 0f).toQuat()",
+        "    }",
+        "",
+        "    /** Place the panel at panelPos with the face-the-user rotation. @MainThread. */",
+        "    private fun applyPanel() {",
+        "        val p = panelRef ?: return",
+        "        runCatching { p.components.set(TransformComponent(panelPos, faceRot(), Vector3(SCALE, SCALE, SCALE))) }",
+        "            .onFailure { Log.e(TAG, \"panel place failed: $it\") }",
+        "    }",
+        "",
         "    fun nudgePanel(dx: Float, dy: Float, dz: Float) {",
         "        bobCtrl?.let { runCatching { it.stop() } }; bobCtrl = null",
-        "        val p = panelRef ?: return",
         "        panelPos = Vector3(panelPos.x + dx, panelPos.y + dy, panelPos.z + dz)",
-        "        runCatching { p.components.set(TransformComponent(panelPos, Quat.identity(), Vector3(SCALE, SCALE, SCALE))) }",
-        "            .onFailure { Log.e(TAG, \"panel move failed: $it\") }",
+        "        applyPanel()",
         "        Log.i(TAG, \"panel at (${panelPos.x}, ${panelPos.y}, ${panelPos.z})  <- set panelPosition to this to bake it in\")",
         "    }",
         "",
-        "    /** Parse a \"dx,dy,dz\" world delta from the bridge and apply it. @MainThread. */",
+        "    /** Snap the panel to the SNAP_GRID for a clean placement (bridge sends this on drop). @MainThread. */",
+        "    fun snapPanel() {",
+        "        bobCtrl?.let { runCatching { it.stop() } }; bobCtrl = null",
+        "        if (SNAP_GRID > 0f) {",
+        "            fun q(v: Float): Float = (v / SNAP_GRID).roundToInt() * SNAP_GRID",
+        "            panelPos = Vector3(q(panelPos.x), q(panelPos.y), q(panelPos.z))",
+        "            applyPanel()",
+        "        }",
+        "        Log.i(TAG, \"panel SNAPPED to (${panelPos.x}, ${panelPos.y}, ${panelPos.z})  <- set panelPosition to this\")",
+        "    }",
+        "",
+        "    /** From the bridge: \"snap\" -> snapPanel(); else a \"dx,dy,dz\" world delta -> nudgePanel. @MainThread. */",
         "    fun nudgePanelCmd(s: String) {",
+        "        if (s.trim() == \"snap\") { snapPanel(); return }",
         "        val v = s.split(\",\").mapNotNull { it.trim().toFloatOrNull() }",
         "        if (v.size == 3) nudgePanel(v[0], v[1], v[2]) else Log.w(TAG, \"bad move cmd: $s\")",
         "    }",
