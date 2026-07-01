@@ -52,7 +52,7 @@ export function registerMouseBridgeTools(server: McpServer) {
           .boolean()
           .optional()
           .describe(
-            "Also move the highlight on mouse-over (not just click). Off by default — it broadcasts on every move and only does anything if the app routes a 'hover' DEBUG_CMD. Click-to-select needs NO app change.",
+            "Also PREVIEW the button under the pointer (mouse-over highlight), not just click-to-select. Apps built by generate_game_menu_kotlin route it to GameMenu.hover(); the bridge broadcasts hover:<action> only when the hovered row CHANGES (efficient). Hover never commits — a click does. Off by default.",
           ),
       },
     },
@@ -130,6 +130,9 @@ export function registerMouseBridgeTools(server: McpServer) {
         "- Detection uses the menu's **unique signature** — four wide colour bars stacked vertically (green→amber→",
         "  blue→red) at one column — so side-by-side scene objects (floor cubes) and round planets can't hijack it.",
         "- A click is mapped **screen → emulator window → device framebuffer → nearest button row**.",
+        "- With **BRIDGE_HOVER=1**, moving the mouse over a button PREVIEWS it (broadcasts `hover:<action>`",
+        "  only on a row change → `GameMenu.hover()`); hover never commits, a click does. A background",
+        "  thread keeps detection fresh so hover + clicks never block on a screencap.",
         "- The click is **listen-only** (it still reaches the emulator), so you keep full camera control.",
         "- This is an **emulator** convenience for testing in-world UI without a controller. On a PICO headset the",
         "  same `GameMenu.select` is driven by real gaze/controller (and the optional hand-tracking pinch).",

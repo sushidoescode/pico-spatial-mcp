@@ -77,11 +77,11 @@ def target_pkg(fixed=None):
 
 
 def broadcast(pkg, action, hover=False):
-    if hover:
-        adb("shell", "am", "broadcast", "-a", f"{pkg}.DEBUG_CMD",
-            "--es", "cmd", "hover", "--es", "target", action)
-    else:
-        adb("shell", "am", "broadcast", "-a", f"{pkg}.DEBUG_CMD", "--es", "cmd", action)
+    # hover PREVIEW encodes the target in the cmd string ("hover:start", "hover:none") so the app's
+    # existing single-'cmd'-extra receiver can route it without a second extra. A click sends the bare
+    # action ("reset"). action=None on hover -> "hover:none" clears the preview.
+    cmd = f"hover:{action or 'none'}" if hover else action
+    adb("shell", "am", "broadcast", "-a", f"{pkg}.DEBUG_CMD", "--es", "cmd", cmd)
 
 
 # ---------- menu row detection (framebuffer space) ----------
@@ -299,10 +299,13 @@ def cmd_window():
 def cmd_live():
     """Watch the real mouse over the emulator; a LEFT-CLICK on a menu button selects it.
 
-    Default = click-to-select only (needs NO app change). Set BRIDGE_HOVER=1 to ALSO move the
-    highlight on mouse-over — but that fires a broadcast per move and only does anything if the app
-    routes a 'hover' DEBUG_CMD (headset-equivalent feedback; off by default to avoid adb spam)."""
-    import Quartz
+    A background thread keeps the menu detection + window bounds fresh (~every 0.4s) so the click and
+    hover handlers never block on a screencap and stay accurate as the free camera drifts.
+
+    Default = click-to-select only (needs NO app change). Set BRIDGE_HOVER=1 to ALSO preview the
+    button under the pointer (mouse-over highlight) — it broadcasts `hover:<action>` only when the row
+    CHANGES (efficient), which the app routes to GameMenu.hover(). Off by default."""
+    import Quartz, threading
     win = {"v": find_window()}
     fixed = os.environ.get("BRIDGE_PKG")   # optional hard override; else auto-target the foreground app
     if not win["v"]:
@@ -310,9 +313,35 @@ def cmd_live():
     hover_on = os.environ.get("BRIDGE_HOVER") == "1"
     tgt = "pinned " + fixed if fixed else "auto (whichever demo is in front)"
     print(f"LIVE bridge ready. target={tgt}  hover={'on' if hover_on else 'off'}")
-    print("  -> Move your mouse over a menu button in the emulator and LEFT-CLICK to select it.")
+    print("  -> Move your mouse over a menu button in the emulator" +
+          (" (it highlights on hover) " if hover_on else " ") + "and LEFT-CLICK to select it.")
     print("  -> Ctrl-C to stop.")
-    last_move = {"t": 0.0}
+
+    # Background detector: refresh the window bounds + menu rows off the event loop so handlers are instant.
+    stop = threading.Event()
+    def detector():
+        tmp = os.path.join(tempfile.gettempdir(), "bridge_det.png")
+        while not stop.is_set():
+            try:
+                w = find_window()
+                if w:
+                    win["v"] = w
+                d = detect_rows(screencap(tmp))
+                if d:
+                    _last["det"], _last["t"] = d, time.time()
+            except Exception:
+                pass
+            stop.wait(0.4)
+    threading.Thread(target=detector, daemon=True).start()
+
+    def action_at(loc):
+        det = _last["det"]
+        if not det:
+            return None
+        fbx, fby = screen_to_fb(loc.x, loc.y, win["v"])
+        return classify(fbx, fby, det)
+
+    hov = {"act": "__init__"}   # last hovered row, to broadcast only on change
 
     def cb(proxy, etype, event, refcon):
         try:
@@ -320,17 +349,21 @@ def cmd_live():
                 Quartz.CGEventTapEnable(tap, True); return event
             loc = Quartz.CGEventGetLocation(event)
             if etype == Quartz.kCGEventLeftMouseDown:
-                win["v"] = find_window() or win["v"]
                 pkg = target_pkg(fixed)        # re-checked each click -> always the visible demo
                 if not pkg:
                     print("click (no foreground spatial app found)"); return
-                a = handle_point(loc.x, loc.y, win["v"], pkg, hover=False)
-                print(f"click -> {a}  [{pkg.split('.')[-1]}]" if a else "click (not over a menu button)")
+                a = action_at(loc)
+                if a:
+                    broadcast(pkg, a); print(f"click -> {a}  [{pkg.split('.')[-1]}]")
+                else:
+                    print("click (not over a menu button)")
             elif hover_on and etype == Quartz.kCGEventMouseMoved:
-                now = time.time()
-                if now - last_move["t"] > 0.12:   # throttle hover broadcasts
-                    last_move["t"] = now
-                    handle_point(loc.x, loc.y, win["v"], target_pkg(fixed), hover=True, redetect=False)
+                a = action_at(loc)
+                if a != hov["act"]:            # only broadcast when the hovered row changes
+                    hov["act"] = a
+                    pkg = target_pkg(fixed)
+                    if pkg:
+                        broadcast(pkg, a, hover=True)   # a may be None -> hover:none clears the preview
         except Exception as e:
             print("cb error:", e)
         return event
