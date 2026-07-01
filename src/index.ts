@@ -62,11 +62,13 @@ import { registerLedgerTools } from "./ledger.js";
 import { registerStackTools } from "./stack.js";
 import { registerEvalTools } from "./eval.js";
 import { registerGateTools } from "./gate.js";
+import { registerTemplateTools } from "./templates.js";
+import { registerRemixTools } from "./remix.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "5.5.0",
+  version: "5.6.0",
 });
 
 server.registerTool(
@@ -146,6 +148,9 @@ registerStackTools(server);
 registerEvalTools(server);
 // v5.5 — regression gate + reproducibility lockdown (block ship on any regression)
 registerGateTools(server);
+// v5.6 — templates + remix (reuse: parameterized AppSpec skeletons + remix an app to a new brief)
+registerTemplateTools(server);
+registerRemixTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

@@ -42,6 +42,7 @@ const EXPECTED = [
   "preflight_lint", "record_lesson", "critique_capture",
   "record_verification", "ledger_report", "stack_new", "stack_verify", "stack_land",
   "run_brief_suite", "regression_gate",
+  "list_templates", "instantiate_template", "remix_app",
 ];
 const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n));
 if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }
