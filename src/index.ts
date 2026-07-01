@@ -56,11 +56,12 @@ import { registerCapabilityManifestTools } from "./capabilities.js";
 import { registerPlannerTools } from "./planner.js";
 import { registerCompilerTools } from "./compiler.js";
 import { registerSpecVerifyTools } from "./specverify.js";
+import { registerLintTools } from "./lint.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "5.0.0",
+  version: "5.1.0",
 });
 
 server.registerTool(
@@ -129,6 +130,8 @@ registerCapabilityManifestTools(server);
 registerPlannerTools(server);
 registerCompilerTools(server);
 registerSpecVerifyTools(server);
+// v5.1 — the retained-lessons lint engine (executable, fixture-backed gotchas)
+registerLintTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

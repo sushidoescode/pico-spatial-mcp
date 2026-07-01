@@ -1,6 +1,6 @@
 {
   "name": "pico-spatial-mcp",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "MCP server for driving PICO XR spatial development: PICO OS6 Emulator lifecycle, adb automation, spatialbundle/Gradle build pipeline, and experimental gRPC XR input injection.",
   "type": "module",
   "bin": {
@@ -13,7 +13,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "smoke": "node test/smoke.mjs"
+    "smoke": "node test/smoke.mjs",
+    "test:lint": "node test/lint.mjs"
   },
   "engines": {
     "node": ">=20"
