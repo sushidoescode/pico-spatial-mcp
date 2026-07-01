@@ -84,6 +84,12 @@ def broadcast(pkg, action, hover=False):
     adb("shell", "am", "broadcast", "-a", f"{pkg}.DEBUG_CMD", "--es", "cmd", cmd)
 
 
+def broadcast_move(pkg, dx, dy, dz):
+    # MOVE the panel by a WORLD delta ("move:dx,dy,dz") — the app applies it + logs the new position.
+    adb("shell", "am", "broadcast", "-a", f"{pkg}.DEBUG_CMD",
+        "--es", "cmd", f"move:{dx:.4f},{dy:.4f},{dz:.4f}")
+
+
 # ---------- menu row detection (framebuffer space) ----------
 # Button-bar colors (the AAA texture: green START, amber PAUSE, blue RESUME, red RESET), in row order.
 _RED   = lambda r, g, b: r > 150 and g < 105 and b < 105 and (r - g) > 70 and (r - b) > 70
@@ -313,8 +319,8 @@ def cmd_live():
     hover_on = os.environ.get("BRIDGE_HOVER") == "1"
     tgt = "pinned " + fixed if fixed else "auto (whichever demo is in front)"
     print(f"LIVE bridge ready. target={tgt}  hover={'on' if hover_on else 'off'}")
-    print("  -> Move your mouse over a menu button in the emulator" +
-          (" (it highlights on hover) " if hover_on else " ") + "and LEFT-CLICK to select it.")
+    print("  -> LEFT-CLICK a menu button to select it" + (" (it highlights on hover)." if hover_on else "."))
+    print("  -> DRAG the panel's title/frame to MOVE it around the room; SCROLL over it to change depth.")
     print("  -> Ctrl-C to stop.")
 
     # Background detector: refresh the window bounds + menu rows off the event loop so handlers are instant.
@@ -334,14 +340,29 @@ def cmd_live():
             stop.wait(0.4)
     threading.Thread(target=detector, daemon=True).start()
 
+    PANEL_WORLD_W = 0.85   # panel width in metres at default scale -> world metres per fb pixel = this / px_width
+
+    def fb_at(loc):
+        return screen_to_fb(loc.x, loc.y, win["v"])
+
     def action_at(loc):
         det = _last["det"]
         if not det:
             return None
-        fbx, fby = screen_to_fb(loc.x, loc.y, win["v"])
+        fbx, fby = fb_at(loc)
         return classify(fbx, fby, det)
 
-    hov = {"act": "__init__"}   # last hovered row, to broadcast only on change
+    def on_panel(loc):
+        """True if the point is on the panel FRAME (not a button) — the grab zone for moving it."""
+        det = _last["det"]
+        if not det or not det.get("bbox"):
+            return False
+        bx0, by0, bx1, by1 = det["bbox"]
+        fbx, fby = fb_at(loc)
+        return bx0 - 40 <= fbx <= bx1 + 40 and by0 - 30 <= fby <= by1 + 30 and classify(fbx, fby, det) is None
+
+    hov = {"act": "__init__"}                       # last hovered row, to broadcast only on change
+    drag = {"on": False, "last": (0.0, 0.0)}        # panel-move drag state (grab the frame/title, drag to move)
 
     def cb(proxy, etype, event, refcon):
         try:
@@ -355,9 +376,35 @@ def cmd_live():
                 a = action_at(loc)
                 if a:
                     broadcast(pkg, a); print(f"click -> {a}  [{pkg.split('.')[-1]}]")
+                elif on_panel(loc):
+                    drag["on"] = True; drag["last"] = fb_at(loc)
+                    print("grab panel — drag to move it around the room")
                 else:
                     print("click (not over a menu button)")
-            elif hover_on and etype == Quartz.kCGEventMouseMoved:
+            elif etype == Quartz.kCGEventLeftMouseDragged and drag["on"]:
+                det = _last["det"]
+                if det:
+                    fbx, fby = fb_at(loc); lx, ly = drag["last"]; drag["last"] = (fbx, fby)
+                    x0, x1 = det["col"]; k = PANEL_WORLD_W / max(1, (x1 - x0))
+                    dxw = (fbx - lx) * k          # screen-right -> world +X
+                    dyw = -(fby - ly) * k         # screen-down  -> world -Y
+                    if abs(dxw) > 1e-4 or abs(dyw) > 1e-4:
+                        pkg = target_pkg(fixed)
+                        if pkg:
+                            broadcast_move(pkg, dxw, dyw, 0.0)
+            elif etype == Quartz.kCGEventLeftMouseUp and drag["on"]:
+                drag["on"] = False
+                pkg = target_pkg(fixed)
+                if pkg:
+                    broadcast_move(pkg, 0.0, 0.0, 0.0)   # nudge-zero -> app logs the final panel position
+                print("placed panel (its new position is logged in logcat -> bake it into panelPosition)")
+            elif etype == Quartz.kCGEventScrollWheel and on_panel(loc):
+                d = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGScrollWheelEventDeltaAxis1)
+                if d:
+                    pkg = target_pkg(fixed)
+                    if pkg:
+                        broadcast_move(pkg, 0.0, 0.0, -d * 0.05)   # scroll = move nearer / farther (depth)
+            elif hover_on and etype == Quartz.kCGEventMouseMoved and not drag["on"]:
                 a = action_at(loc)
                 if a != hov["act"]:            # only broadcast when the hovered row changes
                     hov["act"] = a
@@ -368,7 +415,10 @@ def cmd_live():
             print("cb error:", e)
         return event
 
-    mask = Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown)
+    mask = (Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown) |
+            Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDragged) |
+            Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseUp) |
+            Quartz.CGEventMaskBit(Quartz.kCGEventScrollWheel))
     if hover_on:
         mask |= Quartz.CGEventMaskBit(Quartz.kCGEventMouseMoved)
     tap = Quartz.CGEventTapCreate(Quartz.kCGSessionEventTap, Quartz.kCGHeadInsertEventTap,

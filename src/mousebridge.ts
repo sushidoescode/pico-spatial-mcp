@@ -257,6 +257,8 @@ export function registerMouseBridgeTools(server: McpServer) {
         liveCmd,
         "```",
         "Then **move your mouse over a menu button in the emulator window and LEFT-CLICK** to select it.",
+        "**Drag the panel's title/frame to MOVE it anywhere in the room** (scroll over it to change depth); on",
+        "release it logs the new position so you can bake it into `panelPosition`.",
         "It **auto-targets whichever demo is in the foreground** (re-checked each click) and prints the target,",
         "e.g. `click -> reset  [gravityxr]`. Each click does a fresh capture, so it tracks the panel even as the",
         "free camera drifts. Ctrl-C to stop." + (packageName ? `  (Pinned to \`${packageName}\` — omit BRIDGE_PKG to auto-target instead.)` : ""),

@@ -53,7 +53,7 @@ import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "4.8.2",
+  version: "4.9.0",
 });
 
 server.registerTool(
