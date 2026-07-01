@@ -35,6 +35,122 @@ const BRIDGE_PY = path.join(TOOLS_DIR, "mouse_menu_bridge.py");
 const SETUP_SH = path.join(TOOLS_DIR, "setup_bridge_venv.sh");
 const DEFAULT_VENV = path.join(os.homedir(), ".pico-bridge", "venv");
 
+const RUN_CFG = (name: string, script: string) =>
+  `<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="${name}" type="ShConfigurationType">
+    <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+    <option name="SCRIPT_PATH" value="$PROJECT_DIR$/${script}" />
+    <option name="SCRIPT_OPTIONS" value="" />
+    <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+    <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="INTERPRETER_PATH" value="/bin/zsh" />
+    <option name="INTERPRETER_OPTIONS" value="" />
+    <option name="EXECUTE_IN_TERMINAL" value="true" />
+    <option name="EXECUTE_SCRIPT_FILE" value="true" />
+    <envs />
+    <method v="2" />
+  </configuration>
+</component>
+`;
+
+/**
+ * Write the PICO dev-convenience scripts into a project so the mouse bridge (and a reliable redeploy)
+ * are one click away in Android Studio — no more pasting the long python command. Idempotent.
+ * Reused by scaffold_spatial_app so every new project is preloaded with them.
+ *
+ * Drops: pico-bridge.sh (launcher, hover on by default), redeploy.sh (assemble+forcestop+install+launch),
+ *        .run/*.run.xml (AS run configs -> green ▶), pico.gradle.kts + `apply(from=...)` (Gradle tasks).
+ */
+export function installBridgeLauncher(projectDir: string): { written: string[]; note: string } {
+  const venvPy = path.join(DEFAULT_VENV, "bin", "python");
+  const written: string[] = [];
+  const w = (rel: string, content: string, exec = false) => {
+    const full = path.join(projectDir, rel);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, content);
+    if (exec) fs.chmodSync(full, 0o755);
+    written.push(rel);
+  };
+
+  w(
+    "pico-bridge.sh",
+    `#!/usr/bin/env bash
+# pico-bridge.sh — click/hover the in-world PICO menu with your Mac mouse on the emulator.
+# Auto-installed by the PICO MCP. Run it from Android Studio (▶ "Mouse Bridge", or Gradle: pico > mouseBridge)
+# or a terminal:  ./pico-bridge.sh        (add \`nohover\` to turn the hover preview off)
+set -euo pipefail
+PY="${venvPy}"
+BRIDGE="${BRIDGE_PY}"
+SETUP="${SETUP_SH}"
+[ -x "$PY" ] || { echo "Setting up the bridge venv (one time)…"; bash "$SETUP"; }
+export BRIDGE_HOVER="\${BRIDGE_HOVER:-1}"        # hover preview ON by default
+[ "\${1:-}" = "nohover" ] && unset BRIDGE_HOVER
+echo "Mouse bridge: move the mouse over a menu button in the emulator and click. Ctrl-C (or ■) to stop."
+exec "$PY" -u "$BRIDGE" live
+`,
+    true,
+  );
+
+  w(
+    "redeploy.sh",
+    `#!/usr/bin/env bash
+# redeploy.sh — assemble + reliably (re)launch THIS app on the emulator. Force-stops other spatial apps
+# first (a prior app owning the stage makes the launch exit immediately). Auto-installed by the PICO MCP.
+set -euo pipefail
+cd "$(dirname "$0")"
+PKG="$(grep -m1 -E 'applicationId' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\\1/')"
+export JAVA_HOME="\${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+echo "Building $PKG…"; ./gradlew :app:assembleDebug
+for p in $(adb shell pm list packages 2>/dev/null | grep com.example | sed 's/package://'); do adb shell am force-stop "$p" 2>/dev/null || true; done
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+for i in 1 2 3 4; do adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1; sleep 0.6; [ -n "$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\\r')" ] && break; done
+echo "launched $PKG"
+`,
+    true,
+  );
+
+  w(".run/Mouse Bridge.run.xml", RUN_CFG("Mouse Bridge", "pico-bridge.sh"));
+  w(".run/Redeploy (emulator).run.xml", RUN_CFG("Redeploy (emulator)", "redeploy.sh"));
+
+  w(
+    "pico.gradle.kts",
+    `// pico.gradle.kts — convenience tasks (auto-installed by the PICO MCP). Applied from the root build.
+tasks.register<Exec>("mouseBridge") {
+    group = "pico"
+    description = "Click/hover the in-world menu with your Mac mouse on the emulator. Stop with the red square."
+    workingDir = rootDir
+    commandLine("bash", "\${rootDir}/pico-bridge.sh")
+    isIgnoreExitValue = true
+}
+tasks.register<Exec>("redeploy") {
+    group = "pico"
+    description = "Assemble + reliably relaunch this app on the emulator (force-stops other spatial apps)."
+    workingDir = rootDir
+    commandLine("bash", "\${rootDir}/redeploy.sh")
+    isIgnoreExitValue = true
+}
+`,
+  );
+
+  // Wire the Gradle tasks in by applying pico.gradle.kts from the root build (idempotent).
+  const rootGradle = path.join(projectDir, "build.gradle.kts");
+  let gradleNote = "added Gradle tasks (pico > mouseBridge / redeploy)";
+  if (fs.existsSync(rootGradle)) {
+    const cur = fs.readFileSync(rootGradle, "utf8");
+    if (!cur.includes("pico.gradle.kts")) {
+      fs.writeFileSync(rootGradle, cur.replace(/\s*$/, "") + '\n\napply(from = "pico.gradle.kts")\n');
+      written.push("build.gradle.kts (apply pico.gradle.kts)");
+    }
+  } else {
+    gradleNote = "root build.gradle.kts not found — Gradle tasks not wired (scripts + run configs still work)";
+  }
+
+  return {
+    written,
+    note: `Installed the PICO dev scripts. In Android Studio: pick "Mouse Bridge" from the run-config dropdown and hit ▶ (or Gradle tool window > ${path.basename(projectDir)} > Tasks > pico > mouseBridge). ${gradleNote}. First run may ask you to grant Input Monitoring to Android Studio.`,
+  };
+}
+
 export function registerMouseBridgeTools(server: McpServer) {
   server.registerTool(
     "setup_mouse_bridge",
@@ -139,6 +255,28 @@ export function registerMouseBridgeTools(server: McpServer) {
       ].join("\n");
 
       return ok(md);
+    },
+  );
+
+  server.registerTool(
+    "install_bridge_launcher",
+    {
+      description:
+        "Preload a project with PICO dev-convenience scripts so the mouse bridge (and a reliable emulator redeploy) are ONE CLICK in Android Studio — no more pasting the long python command. Writes pico-bridge.sh (launcher, hover-preview on by default), redeploy.sh (assemble + force-stop other spatial apps + install + launch), Android Studio run configs (.run/*.run.xml → green ▶ 'Mouse Bridge' / 'Redeploy (emulator)'), and a pico.gradle.kts wired into the root build (Gradle tool window > pico > mouseBridge / redeploy). Idempotent. scaffold_spatial_app runs this automatically for new projects; use this tool to add it to existing ones. macOS.",
+      inputSchema: {
+        projectDir: z.string().describe("The Android project root (e.g. ~/AndroidStudioProjects/menuxr-native)."),
+      },
+    },
+    async ({ projectDir }) => {
+      const dir = projectDir.replace(/^~(?=$|\/)/, os.homedir());
+      if (!fs.existsSync(dir)) return fail(`Project dir not found: ${dir}`);
+      if (!fs.existsSync(path.join(dir, "app"))) return fail(`${dir} doesn't look like an Android project (no app/ module).`);
+      try {
+        const { written, note } = installBridgeLauncher(dir);
+        return ok(`${note}\n\nWrote:\n${written.map((w) => "  " + w).join("\n")}`);
+      } catch (e) {
+        return fail(`install_bridge_launcher failed: ${(e as Error).message}`);
+      }
     },
   );
 }

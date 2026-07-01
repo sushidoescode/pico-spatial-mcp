@@ -380,7 +380,12 @@ def cmd_live():
     src = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
     Quartz.CFRunLoopAddSource(Quartz.CFRunLoopGetCurrent(), src, Quartz.kCFRunLoopCommonModes)
     Quartz.CGEventTapEnable(tap, True)
-    Quartz.CFRunLoopRun()
+    try:
+        Quartz.CFRunLoopRun()
+    except KeyboardInterrupt:
+        print("\nbridge stopped.")   # Ctrl-C — exit cleanly, no traceback
+    finally:
+        stop.set()
 
 
 if __name__ == "__main__":

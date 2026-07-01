@@ -5,6 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { expandHome, fail, okJson } from "./util.js";
 import { resolveToolsRoot } from "./toolchain.js";
+import { installBridgeLauncher } from "./mousebridge.js";
 
 /**
  * Generalized native PICO spatial-app scaffolding — the core "build any project"
@@ -151,6 +152,13 @@ export function registerScaffoldTools(server: McpServer) {
       }
 
       const newJavaDir = path.join(dst, "app/src/main/java", newPath);
+      // Preload the dev-convenience scripts (one-click mouse bridge + reliable redeploy in Android Studio).
+      let devScripts: string[] = [];
+      try {
+        devScripts = installBridgeLauncher(dst).written;
+      } catch {
+        /* non-fatal — the project is still fully usable without the convenience scripts */
+      }
       return okJson({
         created: dst,
         packageName,
@@ -159,6 +167,7 @@ export function registerScaffoldTools(server: McpServer) {
         appName,
         stageStyle,
         sceneInstalled,
+        devScripts,
         sourceDir: newJavaDir,
         homeStage: path.join(newJavaDir, "content/HomeStage.kt"),
         next: [
