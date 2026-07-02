@@ -172,15 +172,20 @@ export function registerWorldEnvTools(server: McpServer) {
           return okJson({ status: "mesh_ply", inspection: info, note: "A MESH .ply cannot be baked (spatialbundle takes only usda/usdc/usdz/usd/gltf/glb). Export the HIGH-QUALITY MESH as GLB from Marble, or convert .ply→.glb, then re-run." });
         }
         // Calibrate the viewer into the room from the real bbox: floor to y=0, room centered on the viewer.
+        // v7.5: default to a LARGE immersion scale (~2.2×) so the world is a big walkable space, not a small
+        // "blob" — combined with the generated HomeStage's SpatialView(Modifier.fillMaxSize()), which un-bounds
+        // the 3D region (a default-size SpatialView node compresses the scene into a small portal-like volume).
+        const immScale = scale ?? 2.2;
         const stem = shortName.replace(/\.(glb|gltf)$/i, "");
         const bb = info.bbox;
         const cal = bb
-          ? { translate: { x: Number((-((bb.min[0] + bb.max[0]) / 2)).toFixed(3)), y: Number((-bb.min[1]).toFixed(3)), z: Number((-((bb.min[2] + bb.max[2]) / 2)).toFixed(3)) }, rotationEuler: { x: 0, y: yaw === 180 ? 0 : yaw, z: 0 }, scale: scale ?? 1 }
-          : { translate: { x: 0, y: 0, z: 0 }, rotationEuler: { x: 0, y: 0, z: 0 }, scale: scale ?? 1 };
+          ? { translate: { x: Number((-immScale * ((bb.min[0] + bb.max[0]) / 2)).toFixed(3)), y: Number((-immScale * bb.min[1]).toFixed(3)), z: Number((-immScale * ((bb.min[2] + bb.max[2]) / 2)).toFixed(3)) }, rotationEuler: { x: 0, y: yaw === 180 ? 0 : yaw, z: 0 }, scale: immScale }
+          : { translate: { x: 0, y: 0, z: 0 }, rotationEuler: { x: 0, y: 0, z: 0 }, scale: immScale };
         return okJson({
           status: "mesh_ready",
           inspection: info,
           recommendation: "USE THIS (the mesh), not the splat, for a CLEAN render: a textured mesh renders crisp geometry+textures on the emulator, while a Gaussian splat renders as soft blobs there (no quality knobs; splats are for headset fidelity). VERIFIED: the mesh renders a clean, recognizable room; the splat of the same world renders as fog.",
+          immersionFix: "The world is scaled ~2.2× to a LARGE walkable space (not a small 'blob' you portal into). This REQUIRES the generated HomeStage's SpatialView(Modifier.fillMaxSize()) — a default-size SpatialView node compresses the 3D scene into a small bounded region; filling the stage gives it a large volume you can move around in. VERIFIED on the emulator (coverage 0.03 blob → 0.69 surrounding room).",
           calibration: cal,
           steps: [
             `1. BAKE: bake_textured_model(modelPath="${file}", outBundle="<project>/app/src/main/assets/${stem}.bundle")`,
