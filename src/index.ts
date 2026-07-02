@@ -72,6 +72,7 @@ import { registerCatalogTools } from "./catalog.js";
 import { registerSwanParityTools } from "./swanparity.js";
 import { registerFactoryTools } from "./factory.js";
 import { registerEyeTools } from "./eye.js";
+import { registerAssembleTools } from "./assemble.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -171,6 +172,7 @@ registerSwanParityTools(server);
 // v6.0 — the autonomous spatial factory (queue of briefs -> verified/ledgered/gated apps + fleet dashboard)
 registerFactoryTools(server);
 registerEyeTools(server);
+registerAssembleTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
