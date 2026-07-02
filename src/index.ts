@@ -66,11 +66,14 @@ import { registerTemplateTools } from "./templates.js";
 import { registerRemixTools } from "./remix.js";
 import { registerRouterTools } from "./router.js";
 import { registerCompositionTools } from "./composition.js";
+import { registerInteractableRegistryTools } from "./interactables.js";
+import { registerLayoutPlanTools } from "./layoutplan.js";
+import { registerCatalogTools } from "./catalog.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "5.7.0",
+  version: "5.8.0",
 });
 
 server.registerTool(
@@ -156,6 +159,10 @@ registerRemixTools(server);
 // v5.7 — multi-scene orchestration (scene-graph router + USD composition)
 registerRouterTools(server);
 registerCompositionTools(server);
+// v5.8 — data-driven at scale + generalized interaction
+registerInteractableRegistryTools(server);
+registerLayoutPlanTools(server);
+registerCatalogTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

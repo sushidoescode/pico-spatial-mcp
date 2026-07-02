@@ -44,6 +44,7 @@ const EXPECTED = [
   "run_brief_suite", "regression_gate",
   "list_templates", "instantiate_template", "remix_app",
   "generate_scene_router_kotlin", "generate_composition_scene",
+  "generate_interactable_registry_kotlin", "plan_layout_and_camera", "import_model_catalog",
 ];
 const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n));
 if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }

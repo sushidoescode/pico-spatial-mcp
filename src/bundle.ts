@@ -13,6 +13,48 @@ function getSpatialbundle(toolsVersion?: string): { bin: string; version: string
   return { bin: sel.spatialbundle, version: sel.version };
 }
 
+/** Bake one textured model into a .bundle via spatialbundle. Exported so import_model_catalog can batch it. */
+export async function bakeTexturedModel(opts: { modelPath: string; outBundle: string; compressTextures?: string; toolsVersion?: string }): Promise<any> {
+  const sb = getSpatialbundle(opts.toolsVersion);
+  if ("error" in sb) return { error: sb.error };
+  const src = expandHome(opts.modelPath);
+  if (!fs.existsSync(src)) return { error: `No such model: ${src}` };
+  const ext = path.extname(src).toLowerCase().replace(/^\./, "");
+  const fmtMap: Record<string, string> = { glb: "glb", gltf: "gltf", usd: "usd", usda: "usda", usdc: "usdc", usdz: "usdz" };
+  const fmt = fmtMap[ext];
+  if (!fmt) return { error: `Unsupported model type '.${ext}'. Use glb/gltf/usd/usda/usdc/usdz.` };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-bake-"));
+  const staged = path.join(tmp, path.basename(src));
+  fs.copyFileSync(src, staged);
+  const out = expandHome(opts.outBundle);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  const compress = opts.compressTextures ?? "astc6x6";
+  // NOTE: --compress-textures is greedy — keep it LAST.
+  const args = ["pack", "--override-output", "-s", tmp, "-o", out, "--scene-files", staged, "--formats", fmt];
+  if (compress !== "none") args.push("--compress-textures", compress);
+  const r = await run(sb.bin, args, { timeoutMs: 600_000 });
+  const combined = (r.stdout + "\n" + r.stderr).trim();
+  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
+  if (!fs.existsSync(out)) return { error: `bake failed (exit ${r.code}). 'Failed to get material texture path' is non-fatal; a missing bundle is the real failure.\n${tail(combined, 50)}` };
+  const info = await run(sb.bin, ["info", "-i", out], { timeoutMs: 120_000 });
+  const infoOut = info.stdout + info.stderr;
+  const modelName = (infoOut.match(/Name:\s*([^\n]+?)\s*\n\s*Path:\s*\1\/meshes/i)?.[1]
+    || infoOut.match(/Model List:[\s\S]*?Name:\s*([^\n]+)/i)?.[1]
+    || path.basename(src, path.extname(src))).trim();
+  const hasTexture = /Asset Type:\s*texture/i.test(infoOut);
+  const hasMaterial = /Asset Type:\s*materialinstance/i.test(infoOut);
+  return {
+    bundle: out,
+    sizeMB: +(fs.statSync(out).size / 1024 / 1024).toFixed(2),
+    modelName,
+    hasTexture,
+    hasMaterial,
+    rendersTextured: hasTexture && hasMaterial,
+    loadSnippet: `val bundle = AssetBundle.load("asset://${path.basename(out)}")\nval entity = Entity.loadSuspend("${modelName}", bundle)`,
+    note: hasTexture && hasMaterial ? "Texture + material baked." : "WARNING: no texture/material asset detected — model may have had no material.",
+  };
+}
+
 export function registerBundleTools(server: McpServer) {
   server.registerTool(
     "pack_bundle",
@@ -154,49 +196,8 @@ export function registerBundleTools(server: McpServer) {
       },
     },
     async ({ modelPath, outBundle, compressTextures, toolsVersion }) => {
-      const sb = getSpatialbundle(toolsVersion);
-      if ("error" in sb) return fail(sb.error);
-      const src = expandHome(modelPath);
-      if (!fs.existsSync(src)) return fail(`No such model: ${src}`);
-      const ext = path.extname(src).toLowerCase().replace(/^\./, "");
-      const fmtMap: Record<string, string> = { glb: "glb", gltf: "gltf", usd: "usd", usda: "usda", usdc: "usdc", usdz: "usdz" };
-      const fmt = fmtMap[ext];
-      if (!fmt) return fail(`Unsupported model type '.${ext}'. Use glb/gltf/usd/usda/usdc/usdz.`);
-      // spatialbundle packs a directory of scene files; stage the model in a temp dir.
-      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-bake-"));
-      const staged = path.join(tmp, path.basename(src));
-      fs.copyFileSync(src, staged);
-      const out = expandHome(outBundle);
-      fs.mkdirSync(path.dirname(out), { recursive: true });
-      // NOTE: --compress-textures is greedy — keep it LAST.
-      const args = ["pack", "--override-output", "-s", tmp, "-o", out, "--scene-files", staged, "--formats", fmt];
-      if (compressTextures !== "none") args.push("--compress-textures", compressTextures);
-      const r = await run(sb.bin, args, { timeoutMs: 600_000 });
-      const combined = (r.stdout + "\n" + r.stderr).trim();
-      try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
-      if (!fs.existsSync(out)) {
-        return fail(`bake failed (exit ${r.code}). NOTE: 'Failed to get material texture path' is non-fatal noise; a missing bundle is the real failure.\n${tail(combined, 50)}`);
-      }
-      // Verify the bake: info should list a texture + materialinstance + the model name.
-      const info = await run(sb.bin, ["info", "-i", out], { timeoutMs: 120_000 });
-      const infoOut = (info.stdout + info.stderr);
-      const modelName = (infoOut.match(/Name:\s*([^\n]+?)\s*\n\s*Path:\s*\1\/meshes/i)?.[1]
-        || infoOut.match(/Model List:[\s\S]*?Name:\s*([^\n]+)/i)?.[1]
-        || path.basename(src, path.extname(src))).trim();
-      const hasTexture = /Asset Type:\s*texture/i.test(infoOut);
-      const hasMaterial = /Asset Type:\s*materialinstance/i.test(infoOut);
-      return okJson({
-        bundle: out,
-        sizeMB: +(fs.statSync(out).size / 1024 / 1024).toFixed(2),
-        modelName,
-        hasTexture,
-        hasMaterial,
-        rendersTextured: hasTexture && hasMaterial,
-        loadSnippet: `val bundle = AssetBundle.load("asset://${path.basename(out)}")\nval entity = Entity.loadSuspend("${modelName}", bundle)  // renders textured\n// content.addEntity(entity) on Dispatchers.Main`,
-        note: hasTexture && hasMaterial
-          ? "Texture + material baked. Copy the .bundle into app/src/main/assets and load the baked model (NOT the raw GLB)."
-          : "WARNING: no texture/material asset detected in the bundle — the model may have had no material, or packing skipped it.",
-      });
+      const r = await bakeTexturedModel({ modelPath, outBundle, compressTextures, toolsVersion });
+      return "error" in r ? fail(r.error) : okJson(r);
     },
   );
 
