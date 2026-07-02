@@ -75,7 +75,7 @@ function anyLighting(spec: AppSpec): boolean {
   return spec.scenes.some((s) => s.lighting?.rig && s.lighting.rig !== "none");
 }
 function anyTexturedEnv(spec: AppSpec): boolean {
-  return spec.scenes.some((s) => s.environment?.kind === "texturedMesh" || s.environment?.kind === "splat");
+  return spec.scenes.some((s) => s.environment?.kind === "texturedMesh" || s.environment?.kind === "splat" || s.environment?.kind === "pano");
 }
 // v7.3: animation — the object's anim ({type:"tween"|"orbit", ...}) plays on each placed entity.
 function animFor(spec: AppSpec, layoutId: string | undefined): { type: string } | null {
@@ -92,7 +92,8 @@ function envLoadLine(scene: any, rootVar: string, indent: string): string | null
   // (delivered via adb push — Android would compress a large splat in APK assets and break the loader).
   if (scene.environment?.kind === "texturedMesh") return `${indent}compScope.launch { MeshEnvironment.load { ${rootVar}.addChild(it) } }`;
   if (scene.environment?.kind === "splat") return `${indent}compScope.launch { SplatEnvironment.load(SpatialApplication.appContext?.getExternalFilesDir(null)?.absolutePath) { ${rootVar}.addChild(it) } }`;
-  return null; // homeEnvProxy/procedural/pano are no-op backdrops
+  if (scene.environment?.kind === "pano") return `${indent}compScope.launch { SkyboxEnvironment.load { ${rootVar}.addChild(it) } }`; // FULL surround, no blob
+  return null; // homeEnvProxy/procedural are no-op backdrops
 }
 
 function genComposition(spec: AppSpec, pkg: string): string {

@@ -181,11 +181,33 @@ export function registerWorldEnvTools(server: McpServer) {
         const cal = bb
           ? { translate: { x: Number((-immScale * ((bb.min[0] + bb.max[0]) / 2)).toFixed(3)), y: Number((-immScale * bb.min[1]).toFixed(3)), z: Number((-immScale * ((bb.min[2] + bb.max[2]) / 2)).toFixed(3)) }, rotationEuler: { x: 0, y: yaw === 180 ? 0 : yaw, z: 0 }, scale: immScale }
           : { translate: { x: 0, y: 0, z: 0 }, rotationEuler: { x: 0, y: 0, z: 0 }, scale: immScale };
+        // Find an equirect pano in the same folder (Marble names it "<world>_pano.png"; the mesh may be renamed,
+        // so scan the dir rather than name-match). Prefer a name-adjacent one, else any *_pano image.
+        const dir = path.dirname(file);
+        let panoSibling: string | undefined;
+        try {
+          const panos = fs.readdirSync(dir).filter((n) => /_pano\.(png|jpe?g)$/i.test(n) || /\bpano\b.*\.(png|jpe?g)$/i.test(n)).map((n) => path.join(dir, n));
+          const base = stem.replace(/_textured$/, "").toLowerCase();
+          panoSibling = panos.find((p) => path.basename(p).toLowerCase().startsWith(base)) ?? panos[0];
+        } catch {}
         return okJson({
           status: "mesh_ready",
           inspection: info,
           recommendation: "USE THIS (the mesh), not the splat, for a CLEAN render: a textured mesh renders crisp geometry+textures on the emulator, while a Gaussian splat renders as soft blobs there (no quality knobs; splats are for headset fidelity). VERIFIED: the mesh renders a clean, recognizable room; the splat of the same world renders as fog.",
-          immersionFix: "The world is scaled ~2.2× to a LARGE walkable space (not a small 'blob' you portal into). This REQUIRES the generated HomeStage's SpatialView(Modifier.fillMaxSize()) — a default-size SpatialView node compresses the 3D scene into a small bounded region; filling the stage gives it a large volume you can move around in. VERIFIED on the emulator (coverage 0.03 blob → 0.69 surrounding room).",
+          fullSurroundOption: {
+            note: "A mesh/splat is a BOUNDED VOLUME — it can render as a small 'blob' you PORTAL into (bounded, floating in the home env). For a TRUE FULL SURROUND (no blob, seamless in every direction, exactly like the home environment), render the equirect PANO as a SKYBOX instead. Tradeoff: the skybox has no depth/parallax (it's at infinity); the mesh has depth but is bounded. For the best of both, load the skybox AND the mesh inside it.",
+            recommended: !!panoSibling,
+            panoFound: panoSibling ?? null,
+            skyboxSteps: panoSibling
+              ? [
+                  `A1. STAGE: magick "${panoSibling}" -resize 4096x2048 <project>/app/src/main/assets/world_pano.png`,
+                  `A2. ENV: generate_environment_kotlin(packageName="${cpkg}", kind="skybox", assetFileName="world_pano.png") → SkyboxEnvironment.kt`,
+                  `A3. WIRE: SpatialView(Modifier.fillMaxSize()); in initial → SkyboxEnvironment.load { content.addEntity(it) }. Or set AppSpec scene.environment.kind="pano", baseColorImage="world_pano.png" and let generate_app_wiring compose it.`,
+                  `A4. VERIFY: build_and_run → capture_frame → LOOK: the pano fills EVERY direction, no bounded blob. VERIFIED on emulator.`,
+                ]
+              : ["Export the equirect PANORAMA from Marble (a *_pano.png), then use generate_environment_kotlin(kind='skybox') for a full surround."],
+          },
+          immersionFix: "If you keep the MESH (for depth): it's scaled ~2.2× to a LARGE walkable space (not a tiny blob), and the generated HomeStage uses SpatialView(Modifier.fillMaxSize()). But a mesh is still a bounded volume — the SKYBOX above is the way to fully surround the viewer with no blob.",
           calibration: cal,
           steps: [
             `1. BAKE: bake_textured_model(modelPath="${file}", outBundle="<project>/app/src/main/assets/${stem}.bundle")`,
