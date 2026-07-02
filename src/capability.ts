@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
+import { validateCapture, extractImagePath } from "./evidence.js";
 
 /**
  * capability_report — the v3.1 honesty primitive. Takes the features an agent built + HOW each was
@@ -91,6 +92,18 @@ export function registerCapabilityTools(server: McpServer) {
           .describe("Every feature in the build and how it was verified."),
       },
     },
-    async ({ appName, features }) => okJson(buildCapabilityMatrix(appName, features)),
+    async ({ appName, features }) => {
+      // v6.1: gate the legacy visual bucket the same way the ledger does — a vision_verified/
+      // rendered_emulator status whose evidence isn't a real captured image is DOWNGRADED to structural,
+      // so this older path can no longer print "seen rendering" for an unlinked/fake claim.
+      const gated = features.map((f) => {
+        if (f.status === "vision_verified" || f.status === "rendered_emulator") {
+          const cap = validateCapture(extractImagePath(f.evidence));
+          if (!cap.ok) return { ...f, status: "structural", evidence: `${f.evidence ?? "no evidence"} — DOWNGRADED (not a linked real capture: ${cap.reason})` };
+        }
+        return f;
+      });
+      return okJson(buildCapabilityMatrix(appName, gated));
+    },
   );
 }

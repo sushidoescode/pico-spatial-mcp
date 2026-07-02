@@ -30,6 +30,38 @@ function environmentClass(kind: string): CapabilityClass {
 
 const toolExists = (name: string) => CAPABILITY_MANIFEST.some((t) => t.tool === name);
 
+// ── C-class reconciliation (v6.1 honesty fix) ──────────────────────────────────────────────────────────
+// A verification node's capabilityClass used to be trusted verbatim, so a Swan-only C3/C1 feature
+// relabelled C0_emulator sailed through as emulator vision_verified (ADVERSARIAL_FINDINGS C3). We now
+// COMPUTE the true class from the node's targetRef and refuse an emulator-verifiable declaration for a
+// target whose real class is Swan-only.
+const VERIFIABLE_NOW = new Set<CapabilityClass>(["C0_emulator", "C2"]);
+const SWAN_ONLY = new Set<CapabilityClass>(["C1", "C3", "C4_headset_only"]);
+
+/** The true capability class of a verification node, derived from what it targets (null if unresolved). */
+export function computeNodeClass(spec: AppSpec, v: { targetRef?: string }): CapabilityClass | null {
+  const ref = v.targetRef;
+  if (!ref) return null;
+  const it = spec.interactions.find((i) => i.id === ref);
+  if (it) return interactionClass(it.trigger, it.driveChannel);
+  const sc = spec.scenes.find((s) => s.id === ref);
+  if (sc) return environmentClass(sc.environment.kind);
+  if (spec.layouts.some((l) => l.id === ref) || spec.objects.some((o) => o.id === ref)) return "C0_emulator";
+  return null;
+}
+
+/** For a verification node, the class that must actually govern it: the STRICTER of declared vs computed. */
+export function effectiveNodeClass(spec: AppSpec, v: { targetRef?: string; capabilityClass: CapabilityClass }): CapabilityClass {
+  const computed = computeNodeClass(spec, v);
+  if (!computed) return v.capabilityClass;
+  // If either says Swan-only, the node is Swan-only (can't be honestly emulator-verified now).
+  if (SWAN_ONLY.has(computed) || SWAN_ONLY.has(v.capabilityClass)) {
+    // prefer the computed Swan class for specificity; else the declared one
+    return SWAN_ONLY.has(computed) ? computed : v.capabilityClass;
+  }
+  return computed; // both verifiable-now: computed (C0/C2) is authoritative
+}
+
 type Lint = { errors: string[]; warnings: string[] };
 
 export function lintSpec(spec: AppSpec): Lint {
@@ -67,6 +99,10 @@ export function lintSpec(spec: AppSpec): Lint {
       errors.push(`verification '${v.claim}' is a ${v.capabilityClass} capture but has no forwardFOVpose — it can't be honestly verified (C2). Add a pose or tag it Swan-only.`);
     if (v.targetRef && !sceneIds.has(v.targetRef) && !layoutIds.has(v.targetRef) && !objectIds.has(v.targetRef) && !spec.interactions.some((i) => i.id === v.targetRef))
       warnings.push(`verification '${v.claim}' targetRef '${v.targetRef}' resolves to no spec node`);
+    // v6.1 class reconciliation: an emulator-verifiable declaration for a Swan-only target is an over-claim.
+    const computed = computeNodeClass(spec, v);
+    if (computed && VERIFIABLE_NOW.has(v.capabilityClass) && SWAN_ONLY.has(computed))
+      errors.push(`verification '${v.claim}' is declared ${v.capabilityClass} (emulator-verifiable) but its target '${v.targetRef}' is truly ${computed} (Swan-only) — this would over-claim emulator verification. Set capabilityClass to ${computed} (built-for-Swan) or drive it via broadcast.`);
   }
 
   // gated api is network-flagged
@@ -127,6 +163,9 @@ export function registerPlannerTools(server: McpServer) {
       }
       const spec = parsed.data;
       if (budget) spec.meta.budget = { ...spec.meta.budget, ...budget };
+      // v6.1: an under-declared class surfaces as a lint ERROR (see lintSpec) so the author must fix it;
+      // we do NOT silently rewrite it. verify_app_spec independently reconciles (effectiveNodeClass) as a
+      // structural backstop, so a mislabeled spec can never over-claim even if it skips plan.
       const lint = lintSpec(spec);
 
       // budget overflow (rough: each scene/layout/object/data/interaction/verify node ≈ one authoring step)

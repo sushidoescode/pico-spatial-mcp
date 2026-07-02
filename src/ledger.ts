@@ -5,6 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { buildCapabilityMatrix } from "./capability.js";
+import { validateCapture } from "./evidence.js";
 
 /**
  * ledger.ts — v5.3 the TRUST LEDGER: make over-claims structurally impossible.
@@ -57,9 +58,13 @@ export function validateEntry(e: {
   attestation?: string;
   cClass?: string;
 }): { ok: boolean; error?: string; entry?: any } {
+  let capture: ReturnType<typeof validateCapture> | undefined;
   if (e.evidenceType === "vision_verified") {
     if (!e.artifactPath) return { ok: false, error: "vision_verified REQUIRES artifactPath (the capture you LOOKED at) — rejected as an over-claim." };
-    if (!fs.existsSync(e.artifactPath)) return { ok: false, error: `artifactPath '${e.artifactPath}' does not exist — a vision_verified claim must link a real capture.` };
+    // v6.1: the artifact must be a REAL rendered image, not just a path that resolves. A .txt file,
+    // /etc/hosts, a 0-byte file, or a directory used to pass fs.existsSync — they no longer do.
+    capture = validateCapture(e.artifactPath);
+    if (!capture.ok) return { ok: false, error: `${capture.reason} — a vision_verified claim must link a real rendered frame (v6.1 evidence gate).` };
     if (!e.attestation || e.attestation.trim().length < 8) return { ok: false, error: "vision_verified REQUIRES an attestation (a sentence describing what you saw in the capture)." };
   }
   return {
@@ -70,6 +75,7 @@ export function validateEntry(e: {
       artifactPath: e.artifactPath ?? null,
       attestation: e.attestation ?? null,
       cClass: e.cClass ?? null,
+      ...(capture?.ok ? { capture: { sha256: capture.sha256, width: capture.width, height: capture.height, bytes: capture.bytes, format: capture.format } } : {}),
     },
   };
 }
@@ -79,7 +85,7 @@ export function registerLedgerTools(server: McpServer) {
     "record_verification",
     {
       description:
-        "Append a verification claim to an app's trust ledger. THE HONESTY GATE: a `vision_verified` entry is REJECTED unless it links an artifactPath that EXISTS on disk (the capture you LOOKED at) plus an attestation (what you saw) — so over-claims are structurally impossible. Other evidence types (logcat / structural / compiles / built_for_headset) record existence honestly. The ship report + capability_report are GENERATED from this ledger (ledger_report), never hand-written. Record one entry per verificationPlan node as you verify it.",
+        "Append a verification claim to an app's trust ledger. THE HONESTY GATE (v6.1): a `vision_verified` entry is REJECTED unless artifactPath links a REAL rendered image — a valid PNG/JPEG with real dimensions, not merely a path that resolves (a .txt file, /etc/hosts, a 0-byte file, or a directory are all rejected) — plus an attestation (what you saw). The entry records the frame's sha256+dimensions for provenance, and reusing one frame across different claims is flagged (reusedArtifact) for audit. This makes the trivial spoofs impossible; it still cannot prove the frame shows the right thing (that is the calibrated visual judge). Other evidence types (logcat / structural / compiles / built_for_headset) record existence honestly. The ship report + capability_report are GENERATED from this ledger (ledger_report), never hand-written. Record one entry per verificationPlan node as you verify it.",
       inputSchema: {
         app: z.string().describe("App name or package (the ledger key)."),
         claim: z.string().describe("The claim, e.g. '6 shelf cards render in the forward FOV'."),
@@ -94,11 +100,22 @@ export function registerLedgerTools(server: McpServer) {
       const v = validateEntry({ claim, evidenceType, artifactPath, attestation, cClass });
       if (!v.ok) return okJson({ status: "rejected", reason: v.error });
       const entries = loadLedger(app);
+      // v6.1 reuse detection: the SAME frame linked to a DIFFERENT claim is a red flag (one real
+      // capture spread across many claims). We warn + record it rather than reject — a single frame can
+      // legitimately support two claims about the same view — so an auditor sees it without false blocks.
+      const sha = v.entry?.capture?.sha256;
+      const reused = sha ? entries.find((x) => x.capture?.sha256 === sha && x.claim !== claim) : undefined;
       // timestamp is passed-in-free: we avoid Date.now() (nondeterministic); use a monotonic seq instead.
-      const entry = { seq: entries.length, ...v.entry, reproHash: reproHash ?? null };
+      const entry = { seq: entries.length, ...v.entry, reproHash: reproHash ?? null, ...(reused ? { reusedArtifact: true } : {}) };
       entries.push(entry);
       saveLedger(app, entries);
-      return okJson({ status: "recorded", app, entry, totalEntries: entries.length });
+      return okJson({
+        status: "recorded",
+        app,
+        entry,
+        totalEntries: entries.length,
+        ...(reused ? { warning: `this capture (sha ${sha!.slice(0, 12)}) is already linked to a different claim ("${reused.claim}") — a distinct per-claim frame is expected; flagged reusedArtifact for audit.` } : {}),
+      });
     },
   );
 
