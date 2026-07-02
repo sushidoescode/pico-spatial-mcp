@@ -64,11 +64,13 @@ import { registerEvalTools } from "./eval.js";
 import { registerGateTools } from "./gate.js";
 import { registerTemplateTools } from "./templates.js";
 import { registerRemixTools } from "./remix.js";
+import { registerRouterTools } from "./router.js";
+import { registerCompositionTools } from "./composition.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "5.6.0",
+  version: "5.7.0",
 });
 
 server.registerTool(
@@ -151,6 +153,9 @@ registerGateTools(server);
 // v5.6 — templates + remix (reuse: parameterized AppSpec skeletons + remix an app to a new brief)
 registerTemplateTools(server);
 registerRemixTools(server);
+// v5.7 — multi-scene orchestration (scene-graph router + USD composition)
+registerRouterTools(server);
+registerCompositionTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

@@ -86,6 +86,11 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
   if (spec.interactions.length) {
     push({ node: spec.interactions.map((i) => i.id).join(","), tool: "generate_interaction_kotlin", args: { packageName: contentPkg }, targetPath: `${cpath}/SceneInteraction.kt`, cClass: "C0_emulator", note: "Register each object; broadcast select = C0, controller/gaze ray = C3 (built-for-Swan)." });
   }
+  // 6b. multi-scene routing — a scene-graph state machine when there is >1 scene or any portal
+  if (spec.scenes.length > 1 || spec.navigation.portals.length) {
+    push({ node: "navigation", tool: "generate_scene_router_kotlin", args: { packageName: contentPkg }, targetPath: `${cpath}/SceneRouter.kt`, cClass: "C0_emulator", note: `Register a builder per scene [${spec.scenes.map((s) => s.id).join(", ")}]; start '${spec.navigation.startScene}'; transition via 'navigate:<id>' broadcast (portal/gaze activation = Swan, C3).` });
+  }
+
   // 7. headset layer
   if (spec.headsetLayer.length) push({ node: "headset", tool: "generate_headset_readiness_codegen", args: { packageName: contentPkg }, targetPath: `${cpath}/HeadsetReadiness.kt`, cClass: "C3", note: "Guarded registry that no-ops on the emulator; lights up on Swan." });
 

@@ -43,6 +43,7 @@ const EXPECTED = [
   "record_verification", "ledger_report", "stack_new", "stack_verify", "stack_land",
   "run_brief_suite", "regression_gate",
   "list_templates", "instantiate_template", "remix_app",
+  "generate_scene_router_kotlin", "generate_composition_scene",
 ];
 const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n));
 if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }
