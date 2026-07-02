@@ -25,9 +25,10 @@ import { validateCapture } from "./evidence.js";
  *   built_for_headset -> built_for_headset (C1/C3/C4 — pre-built for Swan)
  */
 
-const evidenceTypeSchema = z.enum(["vision_verified", "logcat", "structural", "compiles", "built_for_headset"]);
+const evidenceTypeSchema = z.enum(["vision_verified", "auto_judged", "logcat", "structural", "compiles", "built_for_headset"]);
 const EVIDENCE_TO_STATUS: Record<string, string> = {
   vision_verified: "vision_verified",
+  auto_judged: "auto_judged",
   logcat: "logcat_asserted",
   structural: "structural",
   compiles: "compiles",
@@ -59,13 +60,15 @@ export function validateEntry(e: {
   cClass?: string;
 }): { ok: boolean; error?: string; entry?: any } {
   let capture: ReturnType<typeof validateCapture> | undefined;
-  if (e.evidenceType === "vision_verified") {
-    if (!e.artifactPath) return { ok: false, error: "vision_verified REQUIRES artifactPath (the capture you LOOKED at) — rejected as an over-claim." };
-    // v6.1: the artifact must be a REAL rendered image, not just a path that resolves. A .txt file,
+  // Both human vision and the automated eye must be grounded in a REAL rendered frame (v6.1/v6.2).
+  if (e.evidenceType === "vision_verified" || e.evidenceType === "auto_judged") {
+    const label = e.evidenceType;
+    if (!e.artifactPath) return { ok: false, error: `${label} REQUIRES artifactPath (the real frame) — rejected as an over-claim.` };
+    // The artifact must be a REAL rendered image, not just a path that resolves. A .txt file,
     // /etc/hosts, a 0-byte file, or a directory used to pass fs.existsSync — they no longer do.
     capture = validateCapture(e.artifactPath);
-    if (!capture.ok) return { ok: false, error: `${capture.reason} — a vision_verified claim must link a real rendered frame (v6.1 evidence gate).` };
-    if (!e.attestation || e.attestation.trim().length < 8) return { ok: false, error: "vision_verified REQUIRES an attestation (a sentence describing what you saw in the capture)." };
+    if (!capture.ok) return { ok: false, error: `${capture.reason} — a ${label} claim must link a real rendered frame (v6.1 evidence gate).` };
+    if (!e.attestation || e.attestation.trim().length < 8) return { ok: false, error: `${label} REQUIRES an attestation (${label === "vision_verified" ? "a sentence describing what you saw" : "the measurement summary"}).` };
   }
   return {
     ok: true,
@@ -77,6 +80,31 @@ export function validateEntry(e: {
       cClass: e.cClass ?? null,
       ...(capture?.ok ? { capture: { sha256: capture.sha256, width: capture.width, height: capture.height, bytes: capture.bytes, format: capture.format } } : {}),
     },
+  };
+}
+
+/**
+ * Append an entry to an app's ledger THROUGH the honesty gate (validateEntry). Shared by
+ * record_verification and the automated eye (visual_judge), so every write is gated identically.
+ * Returns {status, entry?, reason?, warning?, totalEntries?}.
+ */
+export function appendLedgerEntry(
+  app: string,
+  input: { claim: string; evidenceType: string; artifactPath?: string; attestation?: string; cClass?: string; reproHash?: string; extra?: Record<string, any> },
+): { status: string; reason?: string; entry?: any; warning?: string; totalEntries?: number } {
+  const v = validateEntry(input);
+  if (!v.ok) return { status: "rejected", reason: v.error };
+  const entries = loadLedger(app);
+  const sha = v.entry?.capture?.sha256;
+  const reused = sha ? entries.find((x) => x.capture?.sha256 === sha && x.claim !== input.claim) : undefined;
+  const entry = { seq: entries.length, ...v.entry, reproHash: input.reproHash ?? null, ...(input.extra ?? {}), ...(reused ? { reusedArtifact: true } : {}) };
+  entries.push(entry);
+  saveLedger(app, entries);
+  return {
+    status: "recorded",
+    entry,
+    totalEntries: entries.length,
+    ...(reused ? { warning: `this capture (sha ${sha!.slice(0, 12)}) is already linked to a different claim ("${reused.claim}") — flagged reusedArtifact for audit.` } : {}),
   };
 }
 
@@ -97,25 +125,9 @@ export function registerLedgerTools(server: McpServer) {
       },
     },
     async ({ app, claim, evidenceType, artifactPath, attestation, cClass, reproHash }) => {
-      const v = validateEntry({ claim, evidenceType, artifactPath, attestation, cClass });
-      if (!v.ok) return okJson({ status: "rejected", reason: v.error });
-      const entries = loadLedger(app);
-      // v6.1 reuse detection: the SAME frame linked to a DIFFERENT claim is a red flag (one real
-      // capture spread across many claims). We warn + record it rather than reject — a single frame can
-      // legitimately support two claims about the same view — so an auditor sees it without false blocks.
-      const sha = v.entry?.capture?.sha256;
-      const reused = sha ? entries.find((x) => x.capture?.sha256 === sha && x.claim !== claim) : undefined;
-      // timestamp is passed-in-free: we avoid Date.now() (nondeterministic); use a monotonic seq instead.
-      const entry = { seq: entries.length, ...v.entry, reproHash: reproHash ?? null, ...(reused ? { reusedArtifact: true } : {}) };
-      entries.push(entry);
-      saveLedger(app, entries);
-      return okJson({
-        status: "recorded",
-        app,
-        entry,
-        totalEntries: entries.length,
-        ...(reused ? { warning: `this capture (sha ${sha!.slice(0, 12)}) is already linked to a different claim ("${reused.claim}") — a distinct per-claim frame is expected; flagged reusedArtifact for audit.` } : {}),
-      });
+      // reuse detection + the honesty gate live in the shared helper (also used by the automated eye).
+      const res = appendLedgerEntry(app, { claim, evidenceType, artifactPath, attestation, cClass, reproHash });
+      return okJson({ ...res, app });
     },
   );
 

@@ -15,7 +15,8 @@
     "start": "node dist/index.js",
     "smoke": "node test/smoke.mjs",
     "test:lint": "node test/lint.mjs",
-    "test:ledger": "node test/ledger.mjs"
+    "test:ledger": "node test/ledger.mjs",
+    "test:eye": "node test/eye.mjs"
   },
   "engines": {
     "node": ">=20"
