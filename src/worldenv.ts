@@ -4,6 +4,7 @@ import zlib from "node:zlib";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson, expandHome } from "./util.js";
+import { inspectAsset } from "./assetgate.js";
 
 /**
  * worldenv.ts — v7.1 CUSTOM WORLD ENVIRONMENT loader (World Labs / Marble → a real world around the user).
@@ -110,7 +111,13 @@ export function inspectWorld(file: string): SplatInfo {
   try {
     if (ext === ".spz") return inspectSpz(file);
     if (ext === ".ply") return inspectPly(file);
-    if (ext === ".glb" || ext === ".gltf") return { kind: "mesh", format: ext.slice(1), numPoints: null, bbox: null, centroid: null, floorY: null, ceilingY: null, note: "MESH — route to bake_textured_model → texturedMesh environment." };
+    if (ext === ".glb" || ext === ".gltf") {
+      // A textured MESH renders CRISP (unlike splats, which are soft on the emulator GPU) — the clean path.
+      // Pull the real bbox so we can calibrate the viewer into the room.
+      const a = inspectAsset(file);
+      const bbox = a.bbox ? { min: a.bbox.min, max: a.bbox.max, size: a.bbox.min.map((m, i) => a.bbox!.max[i] - m) as [number, number, number] } : null;
+      return { kind: "mesh", format: ext.slice(1), numPoints: a.triangles, bbox, centroid: bbox ? (bbox.min.map((m, i) => (m + bbox.max[i]) / 2) as [number, number, number]) : null, floorY: bbox ? bbox.min[1] : null, ceilingY: bbox ? bbox.max[1] : null, note: `MESH (${a.triangles} tris) — the CLEAN path: bake → texturedMesh env + lighting.` };
+    }
     return { kind: "unknown", format: ext, numPoints: null, bbox: null, centroid: null, floorY: null, ceilingY: null, note: `unsupported extension ${ext}` };
   } catch (e: any) {
     return { kind: "unknown", format: ext, numPoints: null, bbox: null, centroid: null, floorY: null, ceilingY: null, note: `inspect failed: ${e?.message ?? e}` };
@@ -161,12 +168,28 @@ export function registerWorldEnvTools(server: McpServer) {
 
       if (info.kind === "mesh") {
         const isGlb = info.format === "glb" || info.format === "gltf";
+        if (!isGlb) {
+          return okJson({ status: "mesh_ply", inspection: info, note: "A MESH .ply cannot be baked (spatialbundle takes only usda/usdc/usdz/usd/gltf/glb). Export the HIGH-QUALITY MESH as GLB from Marble, or convert .ply→.glb, then re-run." });
+        }
+        // Calibrate the viewer into the room from the real bbox: floor to y=0, room centered on the viewer.
+        const stem = shortName.replace(/\.(glb|gltf)$/i, "");
+        const bb = info.bbox;
+        const cal = bb
+          ? { translate: { x: Number((-((bb.min[0] + bb.max[0]) / 2)).toFixed(3)), y: Number((-bb.min[1]).toFixed(3)), z: Number((-((bb.min[2] + bb.max[2]) / 2)).toFixed(3)) }, rotationEuler: { x: 0, y: yaw === 180 ? 0 : yaw, z: 0 }, scale: scale ?? 1 }
+          : { translate: { x: 0, y: 0, z: 0 }, rotationEuler: { x: 0, y: 0, z: 0 }, scale: scale ?? 1 };
         return okJson({
-          status: isGlb ? "mesh_glb" : "mesh_ply",
+          status: "mesh_ready",
           inspection: info,
-          route: isGlb
-            ? { tool: "bake_textured_model", then: "generate_environment_kotlin(kind='texturedMesh')", note: "Mesh world → bake → texturedMesh env (the verified baked path). Then set AppSpec scene.environment.kind='texturedMesh'." }
-            : { note: "A MESH .ply cannot be baked (spatialbundle takes only usda/usdc/usdz/usd/gltf/glb). Export the HIGH-QUALITY MESH as GLB from Marble, or convert .ply→.glb, then re-run." },
+          recommendation: "USE THIS (the mesh), not the splat, for a CLEAN render: a textured mesh renders crisp geometry+textures on the emulator, while a Gaussian splat renders as soft blobs there (no quality knobs; splats are for headset fidelity). VERIFIED: the mesh renders a clean, recognizable room; the splat of the same world renders as fog.",
+          calibration: cal,
+          steps: [
+            `1. BAKE: bake_textured_model(modelPath="${file}", outBundle="<project>/app/src/main/assets/${stem}.bundle")`,
+            `2. ENV: generate_environment_kotlin(packageName="${cpkg}", kind="texturedMesh", assetFileName="${stem}.glb", baseColorImage="${stem}.png", delivery="assets", translate=${JSON.stringify(cal.translate)}, rotationEuler=${JSON.stringify(cal.rotationEuler)}, scale=${cal.scale})`,
+            `3. LIGHT IT (REQUIRED — the baked PBR material is BLACK without lights): generate_lighting_kotlin(packageName="${cpkg}", sunLux=3000, iblScale=4.0) → SceneLighting.apply(root) in SpatialView.initial. This is what makes a photoscan read bright/clean.`,
+            `4. WIRE: in SpatialView.initial (main thread): SceneLighting.apply(root); MeshEnvironment.load { content.addEntity(it) }. Or set AppSpec scene.environment.kind="texturedMesh" + lighting.rig="sun" and let generate_app_wiring compose it.`,
+            `5. VERIFY: build_and_run → capture_canonical → LOOK. If dark, raise iblScale/sunLux; if you're outside the room or facing a wall, nudge calibration.translate / rotationEuler.y.`,
+          ],
+          note: `Placed viewer at the room center, floor (y=${info.floorY}) lifted to 0. ${info.numPoints} triangles. This is the polished/clean path.`,
         });
       }
       if (info.kind !== "splat" || !info.bbox) {
@@ -178,8 +201,10 @@ export function registerWorldEnvTools(server: McpServer) {
       const perf = info.numPoints && info.numPoints > 1_500_000
         ? `HEAVY: ${info.numPoints} splats — fine on device, may jank the emulator. Consider a Marble 'lightweight' (~500k) export for the emulator.`
         : `${info.numPoints} splats.`;
+      const meshSibling = path.join(path.dirname(file), path.basename(file).replace(/(_?splat)?\.(spz|ply)$/i, "") + "_textured.glb");
       return okJson({
         status: "splat_ready",
+        cleanRenderWarning: `Gaussian splats render as SOFT/FOGGY BLOBS on the emulator GPU (verified) and can't be quality-tuned — they look their best on a real headset. For a CLEAN, polished render on the emulator, prefer the Marble TEXTURED MESH export (a *_textured.glb)${fs.existsSync(meshSibling) ? ` — found one next to this file: ${meshSibling} → re-run import_world_environment on it.` : " and re-run import_world_environment on it."} Use the splat only if you specifically want splat fidelity on-device.`,
         inspection: info,
         calibration: {
           ...cal,

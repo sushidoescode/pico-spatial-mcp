@@ -126,7 +126,8 @@ function texturedMeshKotlin(pkg: string, glb: string, _baseColor: string, _deliv
   L.push("            val e = Entity.loadSuspend(MODEL, bundle)   // the BAKED model -> renders textured");
   L.push("            withContext(Dispatchers.Main) {");
   L.push("                e.setName(\"MeshEnvironment\")");
-  L.push(`                e.components.get(TransformComponent::class.java)?.setPosition(Vector3(${f(t.translate.x)}, ${f(t.translate.y)}, ${f(t.translate.z)}))`);
+  L.push(`                // Full transform (position + rotation + scale) so a scanned/imported world can be calibrated to sit around the viewer.`);
+  L.push(`                e.components.set(TransformComponent(Vector3(${f(t.translate.x)}, ${f(t.translate.y)}, ${f(t.translate.z)}), EulerAngles(${f(t.rotationEuler.x)}, ${f(t.rotationEuler.y)}, ${f(t.rotationEuler.z)}), Vector3(${f(t.scale)}, ${f(t.scale)}, ${f(t.scale)})))`);
   L.push("                add(e)");
   L.push('                Log.i(TAG, "baked textured mesh attached")');
   L.push("            }");
