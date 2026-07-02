@@ -77,6 +77,15 @@ function anyLighting(spec: AppSpec): boolean {
 function anyTexturedEnv(spec: AppSpec): boolean {
   return spec.scenes.some((s) => s.environment?.kind === "texturedMesh" || s.environment?.kind === "splat");
 }
+// v7.3: animation — the object's anim ({type:"tween"|"orbit", ...}) plays on each placed entity.
+function animFor(spec: AppSpec, layoutId: string | undefined): { type: string } | null {
+  const a: any = objectForLayout(spec, layoutId)?.anim;
+  return a && (a.type === "tween" || a.type === "orbit") ? a : null;
+}
+function animPlayCall(anim: { type: string } | null): string | null {
+  if (!anim) return null;
+  return anim.type === "orbit" ? "SceneOrbit.play" : "SceneTween.play";
+}
 function envLoadLine(scene: any, rootVar: string, indent: string): string | null {
   // texturedMesh = the verified baked-bundle backdrop; splat = a custom World Labs Gaussian splat world
   // (v7.1). Both load async so build() never blocks. Splat reads from the app's external files dir
@@ -146,10 +155,18 @@ function genComposition(spec: AppSpec, pkg: string): string {
       if (scale != null) lines.push(`            SceneDataBinding.modelScale = ${scale}f`);
       const env = envLoadLine(s, "c", "            ");
       if (env) lines.push(env);
-      lines.push(
-        `            SceneLayout.place(c, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }`,
-        `        }`,
-      );
+      const mplay = animPlayCall(animFor(spec, l?.id));
+      if (mplay) {
+        lines.push(
+          `            SceneLayout.place(c, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }.forEach { ${mplay}(it) }`,
+          `        }`,
+        );
+      } else {
+        lines.push(
+          `            SceneLayout.place(c, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }`,
+          `        }`,
+        );
+      }
     }
     lines.push(`        SceneRouter.start("${spec.navigation.startScene}")`);
   } else {
@@ -167,10 +184,17 @@ function genComposition(spec: AppSpec, pkg: string): string {
       lines.push(`        if (${dv}.isEmpty()) { Log.e(TAG, "composition: no items loaded"); return }`);
       for (const ml of materialLines(spec, l?.id, "        ")) lines.push(ml);
       if (scale != null) lines.push(`        SceneDataBinding.modelScale = ${scale}f`);
+      const play = animPlayCall(animFor(spec, l?.id));
+      // v7.3: for MODELS the animation must target the async-loaded child (via onModelLoaded), not the
+      // container; for QUADS the placed entity IS the geometry, so play it directly after placement.
+      // NOTE: quad/primitive animation is vision-verified. Loaded-MODEL rotation is BEST-EFFORT — the SDK's
+      // animation does not propagate through a loaded model's node hierarchy, so nested geometry may not move.
+      if (play && factory === "makeModelCard") lines.push(`        SceneDataBinding.onModelLoaded = { ${play}(it) }   // v7.3 animation (best-effort on loaded models — nested geometry may not rotate)`);
       lines.push(`        val cards = SceneLayout.place(root, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }`);
       if (hasInteractions) {
         lines.push(`        cards.forEachIndexed { i, card ->`, `            SceneInteraction.register(${dv}[i].id, card) { id -> showDetail(root, id) }`, `        }`);
       }
+      if (play && factory !== "makeModelCard") lines.push(`        cards.forEach { ${play}(it) }   // v7.3 animation`);
       lines.push(`        Log.i(TAG, "built " + cards.size + " cards")`);
     } else {
       lines.push(`        Log.w(TAG, "composition: scene '${s.id}' has no data-bound layout to place")`);

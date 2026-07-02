@@ -82,6 +82,17 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
     if (d.source === "json") push({ node: d.id, tool: "generate_data_binding_kotlin", args: { packageName: contentPkg }, targetPath: `${cpath}/SceneDataBinding.kt`, cClass: "C0_emulator", note: `Place ${d.asset ?? "data/items.json"} under app/src/main/assets/.` });
     else push({ node: d.id, tool: "generate_data_binding_kotlin", args: { packageName: contentPkg }, targetPath: `${cpath}/SceneDataBinding.kt`, cClass: "C3", note: "gated_api: network-gated; verify with one live call and flag it." });
   }
+  // 5b. animation (v7.3) — an object's anim ({type:tween|orbit,...}) → SceneTween/SceneOrbit, played in the wiring
+  for (const o of spec.objects) {
+    const a: any = o.anim;
+    if (!a || (a.type !== "tween" && a.type !== "orbit")) continue;
+    if (a.type === "orbit") {
+      push({ node: o.id, tool: "generate_orbit_animation_kotlin", args: { packageName: contentPkg, axis: a.axis, startPosition: a.startPosition, duration: a.duration, rotationCount: a.rotationCount, loop: a.loop ?? true }, targetPath: `${cpath}/SceneOrbit.kt`, cClass: "C0_emulator", note: "Revolves each placed entity; wiring calls SceneOrbit.play(it)." });
+    } else {
+      push({ node: o.id, tool: "generate_tween_animation_kotlin", args: { packageName: contentPkg, property: a.property ?? "rotation", from: a.from, to: a.to, duration: a.duration, repeat: a.repeat, loop: a.loop ?? true, ease: a.ease }, targetPath: `${cpath}/SceneTween.kt`, cClass: "C0_emulator", note: "Tweens each placed entity; wiring calls SceneTween.play(it)." });
+    }
+  }
+
   // 6. interactions (one engine file; per-interaction registration is authored in the wiring)
   if (spec.interactions.length) {
     push({ node: spec.interactions.map((i) => i.id).join(","), tool: "generate_interaction_kotlin", args: { packageName: contentPkg }, targetPath: `${cpath}/SceneInteraction.kt`, cClass: "C0_emulator", note: "Register each object; broadcast select = C0, controller/gaze ray = C3 (built-for-Swan)." });
