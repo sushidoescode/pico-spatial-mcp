@@ -73,6 +73,9 @@ import { registerSwanParityTools } from "./swanparity.js";
 import { registerFactoryTools } from "./factory.js";
 import { registerEyeTools } from "./eye.js";
 import { registerAssembleTools } from "./assemble.js";
+import { registerProceduralTools } from "./procedural.js";
+import { registerAssetGateTools } from "./assetgate.js";
+import { registerTextTo3dTools } from "./textto3d.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -173,6 +176,9 @@ registerSwanParityTools(server);
 registerFactoryTools(server);
 registerEyeTools(server);
 registerAssembleTools(server);
+registerProceduralTools(server);
+registerAssetGateTools(server);
+registerTextTo3dTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

@@ -191,4 +191,48 @@ export function registerPrompts(server: McpServer) {
       ],
     }),
   );
+
+  server.registerPrompt(
+    "generative_spatial_build",
+    {
+      description: "v7.0: turn a text idea into a running app with GENERATED 3D assets, under the 3-tier honesty gate (structural → auto_judged → human vision_verified). Generated content is capped at auto_judged until a human signs off on quality.",
+      argsSchema: {},
+    },
+    () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              "You are building a spatial app whose CONTENT is generated from a text idea. The whole point is that",
+              "'generated' NEVER means 'good' — quality is proven only by a human LOOK. Follow the 3-tier gate exactly.",
+              "",
+              "## 1. Generate the assets (hybrid — deterministic first)",
+              "- DEFAULT: `generate_procedural_asset` (shape + PBR color) — deterministic, offline, byte-reproducible, gives clean distinct props (gem/cube/crystal/…). Write the returned USDA to a .usda.",
+              "- HIGHER FIDELITY (opt-in): `text_to_3d(prompt, name)` — hosted GLB, cache-pinned. Without a provider it defers to procedural (honest). Commit any hosted GLB as a fixture so the build stays reproducible.",
+              "",
+              "## 2. TIER 1 — structural gate (before baking)",
+              "- `structural_asset_gate(assetPath, app=<pkg>)` on every asset: real geometry, triangle budget, finite/sane bbox, material present, UVs if textured, NOT Draco. A pass records `structural` in the trust ledger. A fail → fix/regenerate; do NOT bake a bad asset.",
+              "",
+              "## 3. Bake + bind",
+              "- `bake_textured_model` each passed asset → a per-item .bundle (raw runtime-load renders black; bake is mandatory). `import_model_catalog` batches this and emits the JSON stub (each item carries model + modelName).",
+              "- Write the stub as the scene's data/catalog.json; set the AppSpec `object.source=\"model\"` so `generate_app_wiring` places them with `makeModelCard`.",
+              "",
+              "## 4. Build + TIER 2 — auto_judged (measured, NOT human sight)",
+              "- Execute the ledger (compile_app_spec → generate_app_wiring → build_and_run). Confirm ready + 'loaded model' logs.",
+              "- `capture_canonical` then `visual_judge(expect={minObjects,notMostlyBlack,colorsPresent})`. A confident PASS records `auto_judged` (a DISTINCT class, never vision_verified). For complex multi-part models the object-count check ESCALATES — that is correct; do not force a pass.",
+              "",
+              "## 5. TIER 3 — human vision_verified (quality)",
+              "- LOOK at the captured frame yourself. Only if it genuinely looks right do you `record_verification(evidenceType=vision_verified, artifactPath=<the frame>, attestation=<what you saw>)`.",
+              "- A generated asset is CAPPED at auto_judged until this human LOOK. Never upgrade auto_judged → vision_verified without actually looking. Honest deferral ('structurally valid + rendered, quality not yet human-verified') is always acceptable.",
+              "",
+              "## The one law",
+              "The automated eye can measure count/color/coverage — it CANNOT judge aesthetic quality. So generation + render + auto_judged is EVIDENCE, not a quality verdict. Only a human LOOK (or a calibrated-and-audited judge) makes it vision_verified. A silent over-claim is the only unforgivable failure.",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
 }
