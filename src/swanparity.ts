@@ -10,8 +10,9 @@ import { okJson, run } from "./util.js";
  *
  * The single biggest honesty upgrade. `swan_verify_matrix` turns every C1–C4 built-for-Swan row into an
  * executable on-device re-test with its emulator baseline and expected device result, records the
- * emulator→device delta in a PARITY LEDGER, and — the moment a Swan is attached over USB — flips those rows
- * from "built" to "device-vision-verified". With NO Swan today it detects the absence and returns the
+ * emulator→device delta in a PARITY LEDGER. When a Swan is attached over USB it marks those rows
+ * device_pending — the flip to device-vision-verified still requires the actual on-device vision pass +
+ * a linked capture (recorded via record_verification), never auto-granted. With NO Swan today it returns the
  * matrix in `awaiting_swan` state (wired, cannot crash the loop). The C1–C4 catalogue IS the test plan
  * (0-planes-on-emulator → real planes on Swan; pins-float → pins-snap; broadcast-drive → real trigger;
  * MEASURED-ROOM infeasible on the emulator → the headset is the only way to close the walls/ceiling gap).
@@ -51,7 +52,7 @@ export function registerSwanParityTools(server: McpServer) {
     "swan_verify_matrix",
     {
       description:
-        "The v5.9 emulator→device parity gate. For an app's headset-only (C1/C3/C4) features it emits an EXECUTABLE re-test matrix — each row's emulator baseline, the exact on-device test, and the expected device result — and records the emulator→device delta in a parity ledger. Detects a PICO Swan over USB: with none attached it returns `awaiting_swan` + the matrix (wired, cannot crash the loop); the moment a Swan is connected it drives each test and flips the row from built-for-headset to device-vision-verified. Features default to the trust ledger's built_for_headset rows (or pass explicit keys: scene_understanding/world_anchor/measured_room/controller_ray/hand_pinch/in_front_panel).",
+        "The v5.9 emulator→device parity gate. For an app's headset-only (C1/C3/C4) features it emits an EXECUTABLE re-test matrix — each row's emulator baseline, the exact on-device test, and the expected device result — and records the emulator→device delta in a parity ledger. Detects a PICO Swan over USB: with none attached it returns `awaiting_swan` + the matrix (wired, cannot crash the loop); when a Swan is connected it marks each row `device_pending` and returns the on-device test to run — the flip to device-vision-verified still requires you to run the test, LOOK at the on-device capture, and record_verification it (never auto-granted). Features default to the trust ledger's built_for_headset rows (or pass explicit keys: scene_understanding/world_anchor/measured_room/controller_ray/hand_pinch/in_front_panel).",
       inputSchema: {
         app: z.string().describe("App name/package (parity ledger key)."),
         features: z.array(z.enum(["scene_understanding", "world_anchor", "measured_room", "controller_ray", "hand_pinch", "in_front_panel"])).optional().describe("Headset features to re-test (default: derived from the trust ledger's built_for_headset rows, else all)."),

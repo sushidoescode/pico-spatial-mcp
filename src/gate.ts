@@ -97,21 +97,32 @@ export function registerGateTools(server: McpServer) {
         frameResults.push({ name: fr.name, mae: r.mae, verdict, detail: r.note });
       }
       const anyChanged = frameResults.some((f) => f.verdict === "CHANGED");
+      const identicalFrames = frameResults.filter((f) => f.verdict === "IDENTICAL").length;
+
+      // v6.4: step-count drift is an ASSIST — the scorecard's pass/score can be unchanged while the
+      // compile ledger shape drifted (a step added/removed). We surface it (not a hard block, so a
+      // legitimate new step doesn't false-BLOCK) so an auditor knows to regenerate the golden.
+      const goldenSteps = golden.scorecard?.totalCompileSteps ?? null;
+      const currentSteps = suite.scorecard?.totalCompileSteps ?? null;
+      const stepDrift = goldenSteps != null && currentSteps != null && goldenSteps !== currentSteps ? { goldenSteps, currentSteps } : null;
 
       const blocked = regressed.length > 0 || scoreDrop;
       const verdict = blocked ? "BLOCK" : anyChanged ? "LOOK" : "PASS";
+      const frameNote = frameResults.length ? `${identicalFrames}/${frameResults.length} golden frame(s) identical` : "no golden frames compared (pass frame pairs for a pixel check)";
+      const driftNote = stepDrift ? ` STEP DRIFT: compile ledger is ${currentSteps} steps vs golden ${goldenSteps} — regenerate the golden (mode=save).` : "";
       return okJson({
         status: "ok",
         verdict,
         blocked,
         scorecard: { golden: golden.scorecard.score, current: suite.scorecard.score, regressedBriefs: regressed, scoreDrop },
+        stepDrift,
         frames: frameResults,
         note:
           verdict === "BLOCK"
-            ? `REGRESSION — do not merge. Briefs regressed: [${regressed.join(", ")}]${scoreDrop ? "; score dropped" : ""}.`
+            ? `REGRESSION — do not merge. Briefs regressed: [${regressed.join(", ")}]${scoreDrop ? "; score dropped" : ""}.${driftNote}`
             : verdict === "LOOK"
-              ? "Scorecard clean, but a golden frame CHANGED — LOOK at the pair(s) and decide (MAE is only an assist)."
-              : "No regression: scorecard matches golden and frames are identical.",
+              ? `Scorecard clean, but a golden frame CHANGED — LOOK at the pair(s) and decide (MAE is only an assist).${driftNote}`
+              : `No regression: score ${suite.scorecard.score} ≥ golden ${golden.scorecard.score}, no brief regressed pass→fail; ${frameNote}. This compares score + per-brief pass, NOT the full ledger shape.${driftNote}`,
       });
     },
   );

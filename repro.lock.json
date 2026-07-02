@@ -5,6 +5,6 @@
     "yawDeg": 0,
     "pitchDeg": 0
   },
-  "goldenAvdSnapshot": "pico-golden",
+  "goldenAvdSnapshot": null,
   "note": "Restore goldenAvdSnapshot (snapshot_load) + set canonicalPose (emulator_look) before capturing golden frames — the free cam drifts (C2), so goldens are only meaningful from a locked pose/state."
 }

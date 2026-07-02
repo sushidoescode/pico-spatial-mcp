@@ -24,13 +24,17 @@ import { computeSuite } from "./eval.js";
  * metric never upgrades any node's evidence class — vision_verified still comes only from the trust ledger.
  */
 
-function ledgerCounts(pkg: string): { visionVerified: number; builtForHeadset: number } {
+function ledgerCounts(pkg: string): { visionVerified: number; autoJudged: number; builtForHeadset: number } {
   try {
     const arr = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".pico-mcp", "ledgers", `${pkg.replace(/[^A-Za-z0-9._-]/g, "_")}.json`), "utf8"));
-    if (!Array.isArray(arr)) return { visionVerified: 0, builtForHeadset: 0 };
-    return { visionVerified: arr.filter((e: any) => e.evidenceType === "vision_verified").length, builtForHeadset: arr.filter((e: any) => e.evidenceType === "built_for_headset").length };
+    if (!Array.isArray(arr)) return { visionVerified: 0, autoJudged: 0, builtForHeadset: 0 };
+    return {
+      visionVerified: arr.filter((e: any) => e.evidenceType === "vision_verified").length,
+      autoJudged: arr.filter((e: any) => e.evidenceType === "auto_judged").length,
+      builtForHeadset: arr.filter((e: any) => e.evidenceType === "built_for_headset").length,
+    };
   } catch {
-    return { visionVerified: 0, builtForHeadset: 0 };
+    return { visionVerified: 0, autoJudged: 0, builtForHeadset: 0 };
   }
 }
 
@@ -108,6 +112,7 @@ export function registerFactoryTools(server: McpServer) {
         totalEmulatorVerifiableNodes: records.reduce((a, r: any) => a + (r.emulatorVerifiableNodes ?? 0), 0),
         totalBuiltForSwanNodes: records.reduce((a, r: any) => a + (r.builtForSwanNodes ?? 0), 0),
         totalVisionVerifiedInLedger: records.reduce((a, r: any) => a + (r.ledger?.visionVerified ?? 0), 0),
+        totalAutoJudgedInLedger: records.reduce((a, r: any) => a + (r.ledger?.autoJudged ?? 0), 0),
         ciScore: ci.status === "ok" ? ci.scorecard.score : null,
       };
       return okJson({
@@ -115,7 +120,7 @@ export function registerFactoryTools(server: McpServer) {
         fleetDashboard: dashboard,
         records,
         reflections: reflections.length ? reflections : ["no recurring warnings across the fleet"],
-        note: `Factory processed ${records.length} briefs: ${ready} ready-to-build, CI score ${dashboard.ciScore}. Drive the per-brief emulator build + vision pass via autonomous_spatial_build_v6; Swan flip via swan_verify_matrix. Reproducible + headless; vision_verified counts are the trust ledger's, never inflated.`,
+        note: `Factory processed ${records.length} briefs: ${ready} ready-to-build (=plan+compile OK, NOT built/run), CI score ${dashboard.ciScore}. Drive the per-brief emulator build + vision pass via autonomous_spatial_build_v6; Swan flip via swan_verify_matrix. Reproducible + headless. Evidence counts come only from the trust ledger and stay DISTINCT: vision_verified (human-seen) and auto_judged (calibrated eye, measured) are never merged and never inflated by any fleet metric.`,
       });
     },
   );
