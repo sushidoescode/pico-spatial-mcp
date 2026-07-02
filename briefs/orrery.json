@@ -1,0 +1,100 @@
+{
+  "id": "orrery",
+  "brief": "An orrery: 5 planet models in an arc, each orbiting.",
+  "spec": {
+    "meta": {
+      "appName": "OrreryXR",
+      "packageName": "com.example.orreryxr",
+      "stageStyle": "3",
+      "brief": "An orrery: 5 planet models in an arc, each orbiting."
+    },
+    "scenes": [
+      {
+        "id": "main",
+        "environment": {
+          "kind": "homeEnvProxy"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [
+      {
+        "id": "arc1",
+        "sceneId": "main",
+        "pattern": "arc",
+        "count": 5,
+        "params": {
+          "radius": 2.2
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "planets",
+        "sceneId": "main",
+        "source": "model",
+        "layoutRef": "arc1",
+        "dataBindRef": "cat",
+        "transform": {
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "anim": {
+          "type": "orbit",
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "duration": 8,
+          "loop": true
+        }
+      }
+    ],
+    "data": [
+      {
+        "id": "cat",
+        "source": "json",
+        "asset": "data/planets.json",
+        "bindsTo": [
+          "planets"
+        ]
+      }
+    ],
+    "interactions": [],
+    "navigation": {
+      "startScene": "main",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "5 planet models render in an arc",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "arc1",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 1,
+    "objects": 1,
+    "data": 1,
+    "interactions": 0
+  }
+}

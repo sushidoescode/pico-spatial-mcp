@@ -1,0 +1,106 @@
+{
+  "id": "crystals",
+  "brief": "A gem display: 6 procedurally-generated crystals in a grid, slowly spinning.",
+  "spec": {
+    "meta": {
+      "appName": "CrystalsXR",
+      "packageName": "com.example.crystalsxr",
+      "stageStyle": "3",
+      "brief": "A gem display: 6 procedurally-generated crystals in a grid, slowly spinning."
+    },
+    "scenes": [
+      {
+        "id": "main",
+        "environment": {
+          "kind": "homeEnvProxy"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [
+      {
+        "id": "grid1",
+        "sceneId": "main",
+        "pattern": "grid",
+        "count": 6,
+        "params": {
+          "columns": 3
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "gems",
+        "sceneId": "main",
+        "source": "model",
+        "layoutRef": "grid1",
+        "dataBindRef": "cat",
+        "transform": {
+          "scale": [
+            1.2,
+            1.2,
+            1.2
+          ]
+        },
+        "anim": {
+          "type": "tween",
+          "property": "rotation",
+          "from": [
+            0,
+            0,
+            0
+          ],
+          "to": [
+            0,
+            360,
+            0
+          ],
+          "duration": 6,
+          "loop": true
+        }
+      }
+    ],
+    "data": [
+      {
+        "id": "cat",
+        "source": "json",
+        "asset": "data/gems.json",
+        "bindsTo": [
+          "gems"
+        ]
+      }
+    ],
+    "interactions": [],
+    "navigation": {
+      "startScene": "main",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "6 crystals render spinning in a grid",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "grid1",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 1,
+    "objects": 1,
+    "data": 1,
+    "interactions": 0
+  }
+}

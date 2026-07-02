@@ -1,0 +1,103 @@
+{
+  "id": "museum",
+  "brief": "A museum: 6 artifacts as real 3D models in a grid, PBR-lit, gaze to inspect.",
+  "spec": {
+    "meta": {
+      "appName": "MuseumXR",
+      "packageName": "com.example.museumxr",
+      "stageStyle": "3",
+      "brief": "A museum: 6 artifacts as real 3D models in a grid, PBR-lit, gaze to inspect."
+    },
+    "scenes": [
+      {
+        "id": "main",
+        "environment": {
+          "kind": "texturedMesh",
+          "asset": "hall.glb",
+          "baseColorImage": "hall.png"
+        },
+        "lighting": {
+          "rig": "fullRig"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [
+      {
+        "id": "grid1",
+        "sceneId": "main",
+        "pattern": "grid",
+        "count": 6,
+        "params": {
+          "columns": 3
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "artifacts",
+        "sceneId": "main",
+        "source": "model",
+        "layoutRef": "grid1",
+        "dataBindRef": "cat",
+        "material": {
+          "type": "pbr"
+        },
+        "transform": {
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      }
+    ],
+    "data": [
+      {
+        "id": "cat",
+        "source": "json",
+        "asset": "data/artifacts.json",
+        "bindsTo": [
+          "artifacts"
+        ]
+      }
+    ],
+    "interactions": [
+      {
+        "id": "inspect",
+        "trigger": "gaze_dwell",
+        "target": "artifacts",
+        "action": "showDetail",
+        "driveChannel": "broadcast"
+      }
+    ],
+    "navigation": {
+      "startScene": "main",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "6 artifact models render in a grid",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "grid1",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 1,
+    "objects": 1,
+    "data": 1,
+    "interactions": 1
+  }
+}

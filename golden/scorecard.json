@@ -1,16 +1,28 @@
 {
   "scorecard": {
-    "total": 6,
-    "passed": 6,
+    "total": 12,
+    "passed": 12,
     "failed": 0,
     "planFailures": 0,
-    "totalCompileSteps": 56,
+    "totalCompileSteps": 115,
     "totalVisionVerified": 0,
     "score": 1
   },
   "rows": [
     {
       "id": "ambient",
+      "pass": true
+    },
+    {
+      "id": "atrium",
+      "pass": true
+    },
+    {
+      "id": "boutique",
+      "pass": true
+    },
+    {
+      "id": "crystals",
       "pass": true
     },
     {
@@ -26,11 +38,23 @@
       "pass": true
     },
     {
+      "id": "museum",
+      "pass": true
+    },
+    {
       "id": "narrative",
       "pass": true
     },
     {
+      "id": "orrery",
+      "pass": true
+    },
+    {
       "id": "showcase",
+      "pass": true
+    },
+    {
+      "id": "worldtour",
       "pass": true
     }
   ]

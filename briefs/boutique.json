@@ -1,0 +1,94 @@
+{
+  "id": "boutique",
+  "brief": "A boutique: 8 product cards with image textures on shelves, select for detail.",
+  "spec": {
+    "meta": {
+      "appName": "BoutiqueXR",
+      "packageName": "com.example.boutiquexr",
+      "stageStyle": "3",
+      "brief": "A boutique: 8 product cards with image textures on shelves, select for detail."
+    },
+    "scenes": [
+      {
+        "id": "main",
+        "environment": {
+          "kind": "homeEnvProxy"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [
+      {
+        "id": "shelf1",
+        "sceneId": "main",
+        "pattern": "shelf",
+        "count": 8,
+        "params": {
+          "shelves": 2
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "cards",
+        "sceneId": "main",
+        "source": "quad",
+        "layoutRef": "shelf1",
+        "dataBindRef": "cat",
+        "material": {
+          "type": "pbr"
+        }
+      }
+    ],
+    "data": [
+      {
+        "id": "cat",
+        "source": "json",
+        "asset": "data/products.json",
+        "bindsTo": [
+          "cards"
+        ]
+      }
+    ],
+    "interactions": [
+      {
+        "id": "sel",
+        "trigger": "gaze_dwell",
+        "target": "cards",
+        "action": "showDetail",
+        "driveChannel": "broadcast"
+      }
+    ],
+    "navigation": {
+      "startScene": "main",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "8 textured product cards render on shelves",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "shelf1",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 1,
+    "objects": 1,
+    "data": 1,
+    "interactions": 1
+  }
+}

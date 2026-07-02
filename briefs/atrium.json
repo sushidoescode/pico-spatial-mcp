@@ -1,0 +1,134 @@
+{
+  "id": "atrium",
+  "brief": "A two-room experience: a lobby of 3 panels, navigate to a hall of 6 tiles.",
+  "spec": {
+    "meta": {
+      "appName": "AtriumXR",
+      "packageName": "com.example.atriumxr",
+      "stageStyle": "3",
+      "brief": "A two-room experience: a lobby of 3 panels, navigate to a hall of 6 tiles."
+    },
+    "scenes": [
+      {
+        "id": "lobby",
+        "environment": {
+          "kind": "homeEnvProxy"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": [
+          {
+            "to": "hall",
+            "trigger": "navigate"
+          }
+        ]
+      },
+      {
+        "id": "hall",
+        "environment": {
+          "kind": "homeEnvProxy"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [
+      {
+        "id": "L",
+        "sceneId": "lobby",
+        "pattern": "shelf",
+        "count": 3
+      },
+      {
+        "id": "H",
+        "sceneId": "hall",
+        "pattern": "grid",
+        "count": 6,
+        "params": {
+          "columns": 3
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "lp",
+        "sceneId": "lobby",
+        "source": "quad",
+        "layoutRef": "L",
+        "dataBindRef": "ld",
+        "material": {
+          "type": "pbr"
+        }
+      },
+      {
+        "id": "hp",
+        "sceneId": "hall",
+        "source": "quad",
+        "layoutRef": "H",
+        "dataBindRef": "hd",
+        "material": {
+          "type": "pbr"
+        }
+      }
+    ],
+    "data": [
+      {
+        "id": "ld",
+        "source": "json",
+        "asset": "data/lobby.json",
+        "bindsTo": [
+          "lp"
+        ]
+      },
+      {
+        "id": "hd",
+        "source": "json",
+        "asset": "data/hall.json",
+        "bindsTo": [
+          "hp"
+        ]
+      }
+    ],
+    "interactions": [],
+    "navigation": {
+      "startScene": "lobby",
+      "portals": [
+        {
+          "from": "lobby",
+          "to": "hall",
+          "trigger": "navigate"
+        }
+      ]
+    },
+    "verificationPlan": [
+      {
+        "claim": "lobby renders 3 panels",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "L",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 2,
+    "layouts": 2,
+    "objects": 2,
+    "data": 2,
+    "interactions": 0
+  }
+}

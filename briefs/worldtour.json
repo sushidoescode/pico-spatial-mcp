@@ -1,0 +1,88 @@
+{
+  "id": "worldtour",
+  "brief": "Stand inside a scanned apartment world (textured mesh), with 3 info markers.",
+  "spec": {
+    "meta": {
+      "appName": "WorldTourXR",
+      "packageName": "com.example.worldtourxr",
+      "stageStyle": "3",
+      "brief": "Stand inside a scanned apartment world (textured mesh), with 3 info markers."
+    },
+    "scenes": [
+      {
+        "id": "main",
+        "environment": {
+          "kind": "texturedMesh",
+          "asset": "apartment.glb",
+          "baseColorImage": "apartment.png"
+        },
+        "lighting": {
+          "rig": "fullRig"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [
+      {
+        "id": "arc1",
+        "sceneId": "main",
+        "pattern": "arc",
+        "count": 3,
+        "params": {
+          "radius": 1.8
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "markers",
+        "sceneId": "main",
+        "source": "quad",
+        "layoutRef": "arc1",
+        "dataBindRef": "cat",
+        "material": {
+          "type": "pbr"
+        }
+      }
+    ],
+    "data": [
+      {
+        "id": "cat",
+        "source": "json",
+        "asset": "data/markers.json",
+        "bindsTo": [
+          "markers"
+        ]
+      }
+    ],
+    "interactions": [],
+    "navigation": {
+      "startScene": "main",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "the scanned world renders around the viewer",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "main",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        }
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 1,
+    "objects": 1,
+    "data": 1,
+    "interactions": 0
+  }
+}
