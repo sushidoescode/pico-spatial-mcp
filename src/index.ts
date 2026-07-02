@@ -78,6 +78,7 @@ import { registerAssetGateTools } from "./assetgate.js";
 import { registerTextTo3dTools } from "./textto3d.js";
 import { registerWorldEnvTools } from "./worldenv.js";
 import { registerUsdRenderTools } from "./usdrender.js";
+import { registerIblBakeTools } from "./iblbake.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -183,6 +184,7 @@ registerAssetGateTools(server);
 registerTextTo3dTools(server);
 registerWorldEnvTools(server);
 registerUsdRenderTools(server);
+registerIblBakeTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
