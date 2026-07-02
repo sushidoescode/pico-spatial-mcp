@@ -192,6 +192,8 @@ function genComposition(spec: AppSpec, pkg: string): string {
       // animation does not propagate through a loaded model's node hierarchy, so nested geometry may not move.
       if (play && factory === "makeModelCard") lines.push(`        SceneDataBinding.onModelLoaded = { ${play}(it) }   // v7.3 animation (best-effort on loaded models — nested geometry may not rotate)`);
       lines.push(`        val cards = SceneLayout.place(root, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }`);
+      // v8.5 AAA: real 3D-model props cast soft ground shadows (flat quads skip it — a flat shadow reads odd).
+      if (lighting && factory === "makeModelCard") lines.push(`        cards.forEach { SceneLighting.groundShadow(it) }`);
       if (hasInteractions) {
         lines.push(`        cards.forEachIndexed { i, card ->`, `            SceneInteraction.register(${dv}[i].id, card) { id -> showDetail(root, id) }`, `        }`);
       }

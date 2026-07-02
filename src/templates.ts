@@ -86,6 +86,28 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
     }),
     sampleData: (p) => paletteItems(p.count ?? 6, p.palette),
   },
+  studio: {
+    desc: "A premium product STUDIO: N procedural props in an arc, PBR-metallic + a sun rig with soft shadows, each slowly spinning. For real polished-metal reflections, add prepare_ibl_cubemap + generate_ibl_kotlin(mode='local', intensityExponent≈6) on the props. (Richer bespoke scenes — orrery/command-deck — are hand-crafted: see examples/HeroObservatory.kt + VIDEO_DEMO.md.)",
+    build: (p) => ({
+      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "3", brief: p.brief },
+      scenes: [{ id: "studio", environment: { kind: "procedural" }, lighting: { rig: "sun" }, colliders: { props: [] } }],
+      layouts: [{ id: "row", sceneId: "studio", pattern: "arc", count: p.count ?? 3, params: { radius: 1.8 } }],
+      objects: [{ id: "hero", sceneId: "studio", source: "primitive", layoutRef: "row", material: { mode: "pbr", metallic: 1, roughness: 0.15 }, anim: { type: "tween", property: "rotation", from: [0, 0, 0], to: [0, 360, 0], duration: 8, repeat: "restart" } }],
+      navigation: { startScene: "studio" },
+      verificationPlan: [{ claim: `${p.count ?? 3} PBR-metal props spinning in a sun-lit studio with shadows`, method: "capture", capabilityClass: "C0_emulator", targetRef: "row", forwardFOVpose: fwd(-1.8) }],
+    }),
+  },
+  constellation: {
+    desc: "An ambient CONSTELLATION: N softly-lit nodes in an arc — a calm data/ambient piece (IBL rig). Combine with SceneAnimator (bob/pulseEmissive) for gentle life.",
+    build: (p) => ({
+      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "2", brief: p.brief },
+      scenes: [{ id: "space", environment: { kind: "procedural" }, lighting: { rig: "ibl" }, colliders: { props: [] } }],
+      layouts: [{ id: "nodes", sceneId: "space", pattern: "arc", count: p.count ?? 5, params: { radius: 2.0 } }],
+      objects: [{ id: "stars", sceneId: "space", source: "primitive", layoutRef: "nodes", material: { mode: "pbr", metallic: 0, roughness: 0.3 } }],
+      navigation: { startScene: "space" },
+      verificationPlan: [{ claim: `${p.count ?? 5} glowing nodes in an arc`, method: "capture", capabilityClass: "C0_emulator", targetRef: "nodes", forwardFOVpose: fwd(-2.0) }],
+    }),
+  },
 };
 
 function paletteItems(n: number, palette?: number[][]) {
@@ -108,7 +130,7 @@ export function registerTemplateTools(server: McpServer) {
     {
       description: "Instantiate a template skeleton into a concrete, validated AppSpec for a new brief — ready for plan_app_spec -> compile_app_spec. Stamps the app/package + count + palette; for data-bound templates it also returns a sample data JSON (write it to app/src/main/assets/data/items.json). Reuse over the v5.0 pipeline; the output is regression-gated like any other app.",
       inputSchema: {
-        name: z.enum(["gallery", "inspection", "dashboard", "ambient", "showcase"]).describe("Which skeleton."),
+        name: z.enum(["gallery", "inspection", "dashboard", "ambient", "showcase", "studio", "constellation"]).describe("Which skeleton."),
         brief: z.string().describe("The new brief this instance realizes."),
         appName: z.string().describe("App name, e.g. SpiceShowcaseXR."),
         packageName: z.string().describe("applicationId, e.g. com.example.spicexr."),
