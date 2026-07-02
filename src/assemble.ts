@@ -75,12 +75,15 @@ function anyLighting(spec: AppSpec): boolean {
   return spec.scenes.some((s) => s.lighting?.rig && s.lighting.rig !== "none");
 }
 function anyTexturedEnv(spec: AppSpec): boolean {
-  return spec.scenes.some((s) => s.environment?.kind === "texturedMesh");
+  return spec.scenes.some((s) => s.environment?.kind === "texturedMesh" || s.environment?.kind === "splat");
 }
 function envLoadLine(scene: any, rootVar: string, indent: string): string | null {
-  // texturedMesh = the verified baked-bundle backdrop; loaded async so build() never blocks.
+  // texturedMesh = the verified baked-bundle backdrop; splat = a custom World Labs Gaussian splat world
+  // (v7.1). Both load async so build() never blocks. Splat reads from the app's external files dir
+  // (delivered via adb push — Android would compress a large splat in APK assets and break the loader).
   if (scene.environment?.kind === "texturedMesh") return `${indent}compScope.launch { MeshEnvironment.load { ${rootVar}.addChild(it) } }`;
-  return null; // splat needs an externalFilesPath (deferred); homeEnvProxy/procedural/pano are no-op backdrops
+  if (scene.environment?.kind === "splat") return `${indent}compScope.launch { SplatEnvironment.load(SpatialApplication.appContext?.getExternalFilesDir(null)?.absolutePath) { ${rootVar}.addChild(it) } }`;
+  return null; // homeEnvProxy/procedural/pano are no-op backdrops
 }
 
 function genComposition(spec: AppSpec, pkg: string): string {

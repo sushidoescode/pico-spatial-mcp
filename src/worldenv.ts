@@ -1,0 +1,207 @@
+import fs from "node:fs";
+import path from "node:path";
+import zlib from "node:zlib";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { okJson, expandHome } from "./util.js";
+
+/**
+ * worldenv.ts — v7.1 CUSTOM WORLD ENVIRONMENT loader (World Labs / Marble → a real world around the user).
+ *
+ * The default PICO home environments aren't enough — this loads a CUSTOM photoreal world (a Gaussian splat
+ * or a mesh) as the app's environment, so the user stands inside their own scanned/generated world. It is
+ * the highest-value "authored world" feature: it turns the whole app's backdrop into content.
+ *
+ * WHAT WAS ACTUALLY FAILING (empirically diagnosed on-device, 2026-07-02) — loading was never the problem:
+ *   1. DELIVERY: a 27 MB splat shipped in APK assets gets zip-COMPRESSED by Android → the native mmap
+ *      loader can't read it. FIX: FROM_STORAGE (adb push to the app's external files dir), which this tool
+ *      wires by default. (If you must ship in-APK, add `aaptOptions { noCompress "spz","ply" }`.)
+ *   2. CALIBRATION: the splat loads + renders fine, but the VIEWER isn't positioned inside it — Marble
+ *      worlds are huge (this one is ~29×21×32 m) and the geometric bbox-center sits out in open air/sky, so
+ *      you end up viewing the room as a distant block. FIX: place the viewer at the DENSITY-weighted
+ *      centroid (mean of all splats — pulled toward the real geometry), with the floor from the Y
+ *      distribution; this tool decodes those from the file and emits the transform. Then fine-tune with a
+ *      capture→LOOK→adjust loop (yaw + translate) — the emulator's fixed forward camera (C2) limits the
+ *      preview, but on a headset you just look around.
+ *
+ * PICO natively renders Gaussian splats (unlike visionOS) — VERIFIED: a 1.92M-point SPZ v2 deserializes and
+ * renders. spatialbundle CANNOT pack splats → they ship raw. A MESH world (GLB) goes the bake path instead.
+ */
+
+type SplatInfo = {
+  kind: "splat" | "mesh" | "unknown";
+  format: string;
+  numPoints: number | null;
+  bbox: { min: [number, number, number]; max: [number, number, number]; size: [number, number, number] } | null;
+  centroid: [number, number, number] | null; // density-weighted (mean) — the good viewer anchor
+  floorY: number | null;                       // ~5th percentile of the up axis
+  ceilingY: number | null;
+  note: string;
+};
+
+const i24 = (buf: Buffer, o: number): number => { let v = buf[o] | (buf[o + 1] << 8) | (buf[o + 2] << 16); if (v & 0x800000) v -= 0x1000000; return v; };
+
+/** Decode a Niantic SPZ (gzip) splat: header + positions → bbox, density centroid, floor/ceiling. */
+function inspectSpz(file: string): SplatInfo {
+  const raw = fs.readFileSync(file);
+  const buf = raw[0] === 0x1f && raw[1] === 0x8b ? zlib.gunzipSync(raw) : raw;
+  const magic = buf.readUInt32LE(0);
+  if (magic !== 0x5053474e) return { kind: "unknown", format: "spz?", numPoints: null, bbox: null, centroid: null, floorY: null, ceilingY: null, note: `bad SPZ magic 0x${magic.toString(16)} (expected NGSP)` };
+  const numPoints = buf.readUInt32LE(8);
+  const fractionalBits = buf.readUInt8(13);
+  const scale = 1 / (1 << fractionalBits);
+  const off = 16;
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity], sum = [0, 0, 0];
+  const ys: number[] = [];
+  for (let p = 0; p < numPoints; p++) {
+    const b = off + p * 9;
+    for (let c = 0; c < 3; c++) { const v = i24(buf, b + c * 3) * scale; if (v < min[c]) min[c] = v; if (v > max[c]) max[c] = v; sum[c] += v; if (c === 1) ys.push(v); }
+  }
+  ys.sort((a, b) => a - b);
+  const pct = (q: number) => ys[Math.min(ys.length - 1, Math.floor(q * ys.length))];
+  return {
+    kind: "splat", format: "spz", numPoints,
+    bbox: { min: min as any, max: max as any, size: min.map((m, i) => max[i] - m) as any },
+    centroid: sum.map((s) => Number((s / numPoints).toFixed(3))) as any,
+    floorY: Number(pct(0.05).toFixed(3)), ceilingY: Number(pct(0.95).toFixed(3)),
+    note: `SPZ v2, ${numPoints} points`,
+  };
+}
+
+/** Parse a PLY header + (splat) float positions → same info. Detects splat (f_dc/opacity/scale/rot) vs mesh (faces). */
+function inspectPly(file: string): SplatInfo {
+  const buf = fs.readFileSync(file);
+  const headerEnd = buf.indexOf("end_header");
+  if (headerEnd < 0) return { kind: "unknown", format: "ply?", numPoints: null, bbox: null, centroid: null, floorY: null, ceilingY: null, note: "no end_header" };
+  const header = buf.toString("ascii", 0, headerEnd);
+  const dataStart = buf.indexOf("\n", headerEnd) + 1;
+  const isSplat = /property\s+float\s+(f_dc_0|opacity|scale_0|rot_0)/.test(header);
+  const hasFaces = /element\s+face\s+\d+/.test(header);
+  const vm = header.match(/element\s+vertex\s+(\d+)/);
+  const numPoints = vm ? parseInt(vm[1], 10) : null;
+  if (hasFaces && !isSplat) return { kind: "mesh", format: "ply-mesh", numPoints, bbox: null, centroid: null, floorY: null, ceilingY: null, note: "MESH ply (has faces) — spatialbundle can't pack .ply; export GLB from Marble or convert." };
+  if (!isSplat) return { kind: "unknown", format: "ply", numPoints, bbox: null, centroid: null, floorY: null, ceilingY: null, note: "PLY is neither a recognized splat nor a mesh." };
+  // splat PLY: binary_little_endian, properties in header order; x,y,z are the first 3 floats.
+  const binary = /format\s+binary_little_endian/.test(header);
+  if (!binary) return { kind: "splat", format: "ply-ascii", numPoints, bbox: null, centroid: null, floorY: null, ceilingY: null, note: "ASCII splat PLY — provide binary_little_endian for bbox decode (loading still works)." };
+  const props = [...header.matchAll(/property\s+\w+\s+(\w+)/g)].map((m) => m[1]);
+  const stride = props.length * 4; // all float32
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity], sum = [0, 0, 0];
+  const ys: number[] = [];
+  const n = numPoints ?? 0;
+  for (let p = 0; p < n; p++) {
+    const b = dataStart + p * stride;
+    if (b + 12 > buf.length) break;
+    for (let c = 0; c < 3; c++) { const v = buf.readFloatLE(b + c * 4); if (v < min[c]) min[c] = v; if (v > max[c]) max[c] = v; sum[c] += v; if (c === 1) ys.push(v); }
+  }
+  ys.sort((a, b) => a - b);
+  const pct = (q: number) => ys[Math.min(ys.length - 1, Math.floor(q * ys.length))];
+  return {
+    kind: "splat", format: "ply-splat", numPoints,
+    bbox: { min: min as any, max: max as any, size: min.map((m, i) => max[i] - m) as any },
+    centroid: sum.map((s) => Number((s / n).toFixed(3))) as any,
+    floorY: Number(pct(0.05).toFixed(3)), ceilingY: Number(pct(0.95).toFixed(3)),
+    note: `splat PLY, ${n} points`,
+  };
+}
+
+export function inspectWorld(file: string): SplatInfo {
+  const ext = path.extname(file).toLowerCase();
+  try {
+    if (ext === ".spz") return inspectSpz(file);
+    if (ext === ".ply") return inspectPly(file);
+    if (ext === ".glb" || ext === ".gltf") return { kind: "mesh", format: ext.slice(1), numPoints: null, bbox: null, centroid: null, floorY: null, ceilingY: null, note: "MESH — route to bake_textured_model → texturedMesh environment." };
+    return { kind: "unknown", format: ext, numPoints: null, bbox: null, centroid: null, floorY: null, ceilingY: null, note: `unsupported extension ${ext}` };
+  } catch (e: any) {
+    return { kind: "unknown", format: ext, numPoints: null, bbox: null, centroid: null, floorY: null, ceilingY: null, note: `inspect failed: ${e?.message ?? e}` };
+  }
+}
+
+/** Auto-calibration: place the viewer at the density centroid, floor under the eye, facing the interior (yaw 180). */
+function autoCalibrate(info: SplatInfo, eyeHeight: number, yawDeg: number): { translate: { x: number; y: number; z: number }; rotationEuler: { x: number; y: number; z: number }; scale: number; floorY: number } {
+  const c = info.centroid ?? [0, 0, 0];
+  const floorY = info.floorY ?? (info.bbox ? info.bbox.min[1] : 0);
+  // yaw about Y: for 180, Ry·(x,y,z)=(-x,y,-z). General: rotate c by yaw, then translate so it lands at the viewer eye.
+  const rad = (yawDeg * Math.PI) / 180;
+  const rx = c[0] * Math.cos(rad) + c[2] * Math.sin(rad);
+  const rz = -c[0] * Math.sin(rad) + c[2] * Math.cos(rad);
+  // put the centroid's floor at y=0 under the viewer (raise the world by the centroid-to-floor drop), eye stays at eyeHeight
+  return {
+    translate: { x: Number((-rx).toFixed(3)), y: Number((-floorY).toFixed(3)), z: Number((-rz).toFixed(3)) },
+    rotationEuler: { x: 0, y: yawDeg, z: 0 },
+    scale: 1,
+    floorY,
+  };
+}
+
+export function registerWorldEnvTools(server: McpServer) {
+  server.registerTool(
+    "import_world_environment",
+    {
+      description:
+        "Load a CUSTOM photoreal world (World Labs / Marble) as the app's environment — the user stands inside their own scanned/generated world instead of a default home env. Handles the two things that actually break custom-world loading (empirically diagnosed): (1) DELIVERY — ships the splat FROM_STORAGE (adb push) so Android doesn't zip-compress it (which breaks the native loader); (2) CALIBRATION — decodes the file's bbox + DENSITY-weighted centroid + floor, and emits an auto-calibrated transform that places the viewer inside the real geometry (not out in the open air). Accepts a Gaussian splat (.spz / .ply-splat — rendered natively, VERIFIED 1.92M pts) or a MESH (.glb → bake path; .ply-mesh → export GLB from Marble). Returns the inspection, the adb push command, the generate_environment_kotlin call with the calibrated transform, and the capture→LOOK→adjust fine-tune loop. Splats have no collision → also emit a floor box-collider for interaction.",
+      inputSchema: {
+        assetPath: z.string().describe("Path to the world file (.spz / .ply / .glb)."),
+        packageName: z.string().describe("The app's applicationId, e.g. com.example.myapp."),
+        contentPackage: z.string().optional().describe("Kotlin content package (default <packageName>.content)."),
+        eyeHeight: z.number().optional().describe("Standing eye height in m (default 1.6)."),
+        yawDeg: z.number().optional().describe("Facing yaw about Y (default 180 — faces the interior for Marble; try 0/90/270 in the LOOK loop)."),
+        scale: z.number().optional().describe("Uniform world scale override (default 1 — Marble is metric)."),
+      },
+    },
+    async ({ assetPath, packageName, contentPackage, eyeHeight, yawDeg, scale }) => {
+      const file = expandHome(assetPath);
+      if (!fs.existsSync(file)) return okJson({ status: "error", error: `file not found: ${file}` });
+      const info = inspectWorld(file);
+      const cpkg = contentPackage ?? `${packageName}.content`;
+      const eye = eyeHeight ?? 1.6;
+      const yaw = yawDeg ?? 180;
+      const base = path.basename(file);
+      const shortName = base.replace(/[^A-Za-z0-9._-]/g, "_");
+
+      if (info.kind === "mesh") {
+        const isGlb = info.format === "glb" || info.format === "gltf";
+        return okJson({
+          status: isGlb ? "mesh_glb" : "mesh_ply",
+          inspection: info,
+          route: isGlb
+            ? { tool: "bake_textured_model", then: "generate_environment_kotlin(kind='texturedMesh')", note: "Mesh world → bake → texturedMesh env (the verified baked path). Then set AppSpec scene.environment.kind='texturedMesh'." }
+            : { note: "A MESH .ply cannot be baked (spatialbundle takes only usda/usdc/usdz/usd/gltf/glb). Export the HIGH-QUALITY MESH as GLB from Marble, or convert .ply→.glb, then re-run." },
+        });
+      }
+      if (info.kind !== "splat" || !info.bbox) {
+        return okJson({ status: "cannot_calibrate", inspection: info, note: info.note + " — loading may still work; provide a binary splat .spz/.ply for auto-calibration." });
+      }
+
+      const cal = autoCalibrate(info, eye, yaw);
+      const filesDir = `/sdcard/Android/data/${packageName}/files`;
+      const perf = info.numPoints && info.numPoints > 1_500_000
+        ? `HEAVY: ${info.numPoints} splats — fine on device, may jank the emulator. Consider a Marble 'lightweight' (~500k) export for the emulator.`
+        : `${info.numPoints} splats.`;
+      return okJson({
+        status: "splat_ready",
+        inspection: info,
+        calibration: {
+          ...cal,
+          rationale: `Placed the viewer at the DENSITY centroid ${JSON.stringify(info.centroid)} (the real geometry, not the bbox-center out in the sky), floor at y≈${info.floorY} lifted to 0, facing yaw ${yaw}. Fine-tune with the LOOK loop.`,
+        },
+        steps: [
+          `1. DELIVER (avoids APK compression): adb -s <serial> push "${file}" ${filesDir}/${shortName}`,
+          `2. GENERATE the loader: generate_environment_kotlin(packageName="${cpkg}", kind="splat", assetFileName="${shortName}", delivery="storage", translate=${JSON.stringify(cal.translate)}, rotationEuler=${JSON.stringify(cal.rotationEuler)}, scale=${cal.scale})`,
+          `3. WIRE it in SpatialView.initial: capture externalFilesPath = context.getExternalFilesDir(null)?.absolutePath, then SplatEnvironment.load(externalFilesPath) { content.addEntity(it) }.`,
+          `4. COLLISION (splats have none): generate_collider_kotlin with a floor box at y=0 (size ~${info.bbox.size[0].toFixed(0)}×0.1×${info.bbox.size[2].toFixed(0)}) so objects/pins can sit on the world floor.`,
+          `5. VERIFY (capture→LOOK→adjust): build_and_run → capture_canonical → LOOK. If you face a wall/empty, adjust yawDeg (0/90/180/270); if too high/low, nudge translate.y; if outside, the centroid placement is your best start.`,
+        ],
+        perf,
+        diagnostics: {
+          "loads but renders black / nothing": "Shipped in APK assets → Android compressed it. Use delivery='storage' (adb push) OR aaptOptions noCompress. This tool defaults to storage.",
+          "loads but you see it as a distant block / from outside": "Viewer at the bbox-center (open air). Use the density-centroid transform above; nudge translate toward the room.",
+          "upside down / sideways": "Coordinate frame — adjust rotationEuler (try x=180 for a Y-flip, or yaw 0/90/180/270).",
+          "world too big/small": "Set scale (Marble is usually metric=1; scanned worlds vary).",
+          "ANR / very slow on emulator": "Too many splats for the emulator GPU — use a lightweight export; full res is fine on a headset.",
+        },
+        note: "PICO renders Gaussian splats NATIVELY (VERIFIED). The whole point: your custom world becomes the app backdrop. Final eye-level framing is a per-world LOOK loop (inherent), best confirmed on a headset where you look around freely.",
+      });
+    },
+  );
+}
