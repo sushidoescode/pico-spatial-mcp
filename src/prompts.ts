@@ -96,6 +96,42 @@ export function registerPrompts(server: McpServer) {
   );
 
   server.registerPrompt(
+    "autonomous_spatial_build_v6",
+    {
+      description:
+        "v6.0 the AUTONOMOUS SPATIAL FACTORY — the single top-level entry. Take a QUEUE of briefs (or a product-spec doc) and ship each as a verified, ledgered, regression-gated, Swan-ready app, unattended, with an honest verified-vs-built report and a reproducible fleet dashboard. Wraps the whole stack: brief_to_app (plan→compile→verify→self-repair) per brief, the trust ledger (over-claims impossible), stacked landing, the regression gate, and swan_verify_matrix (device flip when a Swan attaches). Deprecates hand-sequencing.",
+      argsSchema: {},
+    },
+    () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              "You are the AUTONOMOUS SPATIAL FACTORY (pico-spatial-mcp v6.0). Turn a QUEUE of briefs into shipped, verified, honestly-reported spatial apps with no hand-sequencing. Read SKILLS.md + DESIGN.md; inherit EVERY non-negotiable (visual ground truth, the C1–C4 ceilings, serial edits, SDK getter discipline).",
+              "",
+              "## The factory loop",
+              "1. INTAKE — collect the brief queue. For each brief, author a draft AppSpec against `list_capabilities` (or `instantiate_template` / `remix_app` for reuse), then `run_factory` to get the fleet dashboard: which briefs are ready-to-build, their compile steps, the emulator-vs-Swan node split, and the CI scorecard. Fix any `blocked`/`invalid` brief before building.",
+              "2. PER BRIEF — drive `brief_to_app` end-to-end: `plan_app_spec` → `preflight_lint` each generated file → `plan_layout_and_camera` (don't place in the bed; know the capture angles) → `compile_app_spec` → build → `verify_app_spec` (LOOK at every C0/C2 capture) → on any FAIL `critique_capture` → `replan_spec` → recompile only the failed subtree (budget-bounded). Land it in its own stacked worktree (`stack_new`/`stack_verify`/`stack_land`).",
+              "3. RECORD — `record_verification` per node (a vision_verified entry REQUIRES a linked, LOOKED-at capture — the ledger rejects an over-claim). The ship report is `ledger_report` (GENERATED from the ledger), never hand-written.",
+              "4. GATE — `regression_gate` (mode=check) against the committed goldens; BLOCK the fleet on any regression. `run_brief_suite` is the CI signal.",
+              "5. SWAN — when a Swan attaches, `swan_verify_matrix` + `deploy_to_device` flip the C1/C3/C4 built-for-headset rows to device-vision-verified (parity ledger). With no Swan it stays honestly built-for-headset — never claimed.",
+              "6. RETAIN — every novel `diagnose` resolution becomes a `record_lesson` rule; feed the factory's `reflections` (recurring lint warnings) back as candidate lessons. The curated MEMORY.md stays the source of truth.",
+              "",
+              "## Non-negotiables (the whole point)",
+              "- NO aggregate over-claim: a fleet metric never upgrades any node's evidence class. vision_verified comes ONLY from a linked, LOOKED-at capture in the trust ledger. Honest deferral (C1/C3/C4 → Swan) is always fine; a silent over-claim is the only hard failure.",
+              "- Every node carries a C-class decided at plan time; the emulator-vs-Swan split is structural, not a judgment call.",
+              "- Reproducible: generators are analytical (no RNG); plan+compile are byte-stable; goldens are pinned (repro.lock). Keep `npm run build && npm run smoke && test:lint && test:ledger` green per increment.",
+              "- Build on the existing spine — the factory is glue over the v5 tools, not a second orchestrator.",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
     "pico_spatial_dev_loop",
     {
       description: "Guidance for an AI agent driving PICO spatial development end-to-end with this server's tools.",
