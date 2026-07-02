@@ -46,6 +46,8 @@ function renderRig(assetPath: string, domeIntensity: number, keyIntensity: numbe
     `    )`,
     `    {`,
     `    }`,
+    `    # A textureless DomeLight = uniform ambient fill (intentional; usdrecord warns "no texture asset path",`,
+    `    # which is benign per the OpenUSD spec). For an equirect-lit world, add inputs:texture:file (format="latlong").`,
     `    def DomeLight "Dome"`,
     `    {`,
     `        float inputs:intensity = ${domeIntensity}`,
