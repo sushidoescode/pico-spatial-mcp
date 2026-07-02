@@ -74,7 +74,7 @@ export function registerCatalogTools(server: McpServer) {
         failed: list.length - baked,
         results,
         dataNodeStub: dataItems,
-        note: `Baked ${baked}/${list.length} models into ${assets}. Feed dataNodeStub to generate_data_binding_kotlin (bind by 'model' -> Entity.loadSuspend the baked bundle per item).`,
+        note: `Baked ${baked}/${list.length} models into ${assets}. Write dataNodeStub as the scene's JSON catalog (each item carries a 'model' = baked .bundle); set the AppSpec object.source="model" so generate_app_wiring places them with SceneDataBinding.makeModelCard (async Entity.loadSuspend per item). The catalog→app loop is wired (v6.5).`,
       });
     },
   );

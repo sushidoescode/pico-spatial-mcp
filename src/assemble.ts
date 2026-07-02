@@ -42,6 +42,22 @@ function dataForLayout(spec: AppSpec, layoutId: string | undefined) {
 const dataVar = (id: string) => `data_${id.replace(/[^A-Za-z0-9_]/g, "_")}`;
 const assetOf = (d: { asset?: string } | undefined) => d?.asset ?? "data/items.json";
 
+// v6.5: if the object bound to a layout is a real model (source="model"), the wiring must place it with
+// SceneDataBinding.makeModelCard (async baked-bundle load) instead of makeCard (tinted quad).
+function objectForLayout(spec: AppSpec, layoutId: string | undefined) {
+  if (!layoutId) return undefined;
+  return spec.objects.find((o) => o.layoutRef === layoutId);
+}
+function factoryFor(spec: AppSpec, layoutId: string | undefined): "makeCard" | "makeModelCard" {
+  return objectForLayout(spec, layoutId)?.source === "model" ? "makeModelCard" : "makeCard";
+}
+function modelScaleFor(spec: AppSpec, layoutId: string | undefined): number | null {
+  const o = objectForLayout(spec, layoutId);
+  if (o?.source !== "model") return null;
+  const s = o.transform?.scale;
+  return Array.isArray(s) && s.length ? Number(s[0]) : null;
+}
+
 function genComposition(spec: AppSpec, pkg: string): string {
   const contentPkg = `${pkg}.content`;
   const multiScene = spec.scenes.length > 1 || spec.navigation.portals.length > 0;
@@ -80,9 +96,12 @@ function genComposition(spec: AppSpec, pkg: string): string {
       const d = dataForLayout(spec, l?.id);
       const pat = PAT[l?.pattern ?? "shelf"];
       const dv = d ? dataVar(d.id) : "emptyList()";
+      const factory = factoryFor(spec, l?.id);
+      const scale = modelScaleFor(spec, l?.id);
+      if (scale != null) lines.push(`        SceneDataBinding.modelScale = ${scale}f`);
       lines.push(
         `        SceneRouter.register("${s.id}") { c ->`,
-        `            SceneLayout.place(c, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.makeCard(${dv}[i]) }`,
+        `            SceneLayout.place(c, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }`,
         `        }`,
       );
     }
@@ -93,9 +112,12 @@ function genComposition(spec: AppSpec, pkg: string): string {
     const d = dataForLayout(spec, l?.id);
     const pat = PAT[l?.pattern ?? "shelf"];
     const dv = d ? dataVar(d.id) : null;
+    const factory = factoryFor(spec, l?.id);
+    const scale = modelScaleFor(spec, l?.id);
     if (dv) {
       lines.push(`        if (${dv}.isEmpty()) { Log.e(TAG, "composition: no items loaded"); return }`);
-      lines.push(`        val cards = SceneLayout.place(root, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.makeCard(${dv}[i]) }`);
+      if (scale != null) lines.push(`        SceneDataBinding.modelScale = ${scale}f`);
+      lines.push(`        val cards = SceneLayout.place(root, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }`);
       if (hasInteractions) {
         lines.push(`        cards.forEachIndexed { i, card ->`, `            SceneInteraction.register(${dv}[i].id, card) { id -> showDetail(root, id) }`, `        }`);
       }
