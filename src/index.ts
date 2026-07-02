@@ -69,11 +69,12 @@ import { registerCompositionTools } from "./composition.js";
 import { registerInteractableRegistryTools } from "./interactables.js";
 import { registerLayoutPlanTools } from "./layoutplan.js";
 import { registerCatalogTools } from "./catalog.js";
+import { registerSwanParityTools } from "./swanparity.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "5.8.0",
+  version: "5.9.0",
 });
 
 server.registerTool(
@@ -163,6 +164,8 @@ registerCompositionTools(server);
 registerInteractableRegistryTools(server);
 registerLayoutPlanTools(server);
 registerCatalogTools(server);
+// v5.9 — Swan on-device parity (flip built-for-headset -> device-verified when a Swan attaches)
+registerSwanParityTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();
