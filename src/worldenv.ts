@@ -172,9 +172,10 @@ export function registerWorldEnvTools(server: McpServer) {
           return okJson({ status: "mesh_ply", inspection: info, note: "A MESH .ply cannot be baked (spatialbundle takes only usda/usdc/usdz/usd/gltf/glb). Export the HIGH-QUALITY MESH as GLB from Marble, or convert .ply→.glb, then re-run." });
         }
         // Calibrate the viewer into the room from the real bbox: floor to y=0, room centered on the viewer.
-        // v7.5: default to a LARGE immersion scale (~2.2×) so the world is a big walkable space, not a small
-        // "blob" — combined with the generated HomeStage's SpatialView(Modifier.fillMaxSize()), which un-bounds
-        // the 3D region (a default-size SpatialView node compresses the scene into a small portal-like volume).
+        // v7.5: default to a larger immersion scale (~2.2×) so the world fills more of the bounded volume.
+        // HONEST LIMIT (v7.8, reproduced with camera movement): SpatialView clips content to a BOUNDED
+        // volumetric window; fillMaxSize + scale fill it but do NOT make it boundless — moving ~1m out still
+        // portals to void (the C4 stage-vs-window ceiling). Not truly walkable in the emulator free-cam.
         const immScale = scale ?? 2.2;
         const stem = shortName.replace(/\.(glb|gltf)$/i, "");
         const bb = info.bbox;
@@ -195,7 +196,7 @@ export function registerWorldEnvTools(server: McpServer) {
           inspection: info,
           recommendation: "USE THIS (the mesh), not the splat, for a CLEAN render: a textured mesh renders crisp geometry+textures on the emulator, while a Gaussian splat renders as soft blobs there (no quality knobs; splats are for headset fidelity). VERIFIED: the mesh renders a clean, recognizable room; the splat of the same world renders as fog.",
           fullSurroundOption: {
-            note: "A mesh/splat is a BOUNDED VOLUME — it can render as a small 'blob' you PORTAL into (bounded, floating in the home env). For a TRUE FULL SURROUND (no blob, seamless in every direction, exactly like the home environment), render the equirect PANO as a SKYBOX instead. Tradeoff: the skybox has no depth/parallax (it's at infinity); the mesh has depth but is bounded. For the best of both, load the skybox AND the mesh inside it.",
+            note: "IMPORTANT (verified by moving the emulator camera ~1m): ALL SpatialView content — mesh, splat, AND skybox — is clipped to a BOUNDED VOLUMETRIC WINDOW. From a fixed viewpoint the skybox fills every direction and reads as a surround, but if you MOVE ~1m out of the volume it collapses to a 'portal' and the rest goes to void. A truly boundless environment that surrounds you as you WALK (like the system home env) is NOT achievable via SpatialView in SDK 0.13.3 — that is the C4 stage-vs-window ceiling. Best current UX: keep the app a 'window into a world' (design content near the fixed viewpoint), and expect the emulator free-cam to fly out of it. On-device roomscale (small physical movement) may behave better; UNVERIFIED without hardware. The skybox is still the best FIXED-viewpoint surround; the mesh adds near depth.",
             recommended: !!panoSibling,
             panoFound: panoSibling ?? null,
             skyboxSteps: panoSibling
@@ -207,7 +208,7 @@ export function registerWorldEnvTools(server: McpServer) {
                 ]
               : ["Export the equirect PANORAMA from Marble (a *_pano.png), then use generate_environment_kotlin(kind='skybox') for a full surround."],
           },
-          immersionFix: "If you keep the MESH (for depth): it's scaled ~2.2× to a LARGE walkable space (not a tiny blob), and the generated HomeStage uses SpatialView(Modifier.fillMaxSize()). But a mesh is still a bounded volume — the SKYBOX above is the way to fully surround the viewer with no blob.",
+          immersionFix: "The MESH is scaled ~2.2× and the generated HomeStage uses SpatialView(Modifier.fillMaxSize()) so it fills more of the bounded volume. HONEST LIMIT (reproduced): it is still a bounded SpatialView volume — moving ~1m past it clips to a portal. This is not 'walkable' in the emulator free-cam; it is a window into a world. See fullSurroundOption for the C4 ceiling detail.",
           calibration: cal,
           steps: [
             `1. BAKE: bake_textured_model(modelPath="${file}", outBundle="<project>/app/src/main/assets/${stem}.bundle")`,
