@@ -146,6 +146,7 @@ export function proceduralUsda(opts: { shape: string; size: number; color: [numb
     `        texCoord2f[] primvars:st = [${uvs.join(", ")}] (interpolation = "faceVarying")`,
     `        rel material:binding = </${opts.name}/mat>`,
     `        uniform token subdivisionScheme = "none"`,
+    `        uniform bool doubleSided = 1`,
     `    }`,
     `    def Material "mat"`,
     `    {`,

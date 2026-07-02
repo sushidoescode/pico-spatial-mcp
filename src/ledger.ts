@@ -25,10 +25,11 @@ import { validateCapture } from "./evidence.js";
  *   built_for_headset -> built_for_headset (C1/C3/C4 — pre-built for Swan)
  */
 
-const evidenceTypeSchema = z.enum(["vision_verified", "auto_judged", "logcat", "structural", "compiles", "built_for_headset"]);
+const evidenceTypeSchema = z.enum(["vision_verified", "auto_judged", "usd_host_render", "logcat", "structural", "compiles", "built_for_headset"]);
 const EVIDENCE_TO_STATUS: Record<string, string> = {
   vision_verified: "vision_verified",
   auto_judged: "auto_judged",
+  usd_host_render: "usd_host_render",
   logcat: "logcat_asserted",
   structural: "structural",
   compiles: "compiles",
@@ -60,8 +61,8 @@ export function validateEntry(e: {
   cClass?: string;
 }): { ok: boolean; error?: string; entry?: any } {
   let capture: ReturnType<typeof validateCapture> | undefined;
-  // Both human vision and the automated eye must be grounded in a REAL rendered frame (v6.1/v6.2).
-  if (e.evidenceType === "vision_verified" || e.evidenceType === "auto_judged") {
+  // Human vision, the automated eye, and the off-device USD render must all be grounded in a REAL image.
+  if (e.evidenceType === "vision_verified" || e.evidenceType === "auto_judged" || e.evidenceType === "usd_host_render") {
     const label = e.evidenceType;
     if (!e.artifactPath) return { ok: false, error: `${label} REQUIRES artifactPath (the real frame) — rejected as an over-claim.` };
     // The artifact must be a REAL rendered image, not just a path that resolves. A .txt file,

@@ -77,6 +77,7 @@ import { registerProceduralTools } from "./procedural.js";
 import { registerAssetGateTools } from "./assetgate.js";
 import { registerTextTo3dTools } from "./textto3d.js";
 import { registerWorldEnvTools } from "./worldenv.js";
+import { registerUsdRenderTools } from "./usdrender.js";
 import { registerPrompts } from "./prompts.js";
 
 const server = new McpServer({
@@ -181,6 +182,7 @@ registerProceduralTools(server);
 registerAssetGateTools(server);
 registerTextTo3dTools(server);
 registerWorldEnvTools(server);
+registerUsdRenderTools(server);
 registerPrompts(server);
 
 const transport = new StdioServerTransport();

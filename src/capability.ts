@@ -21,13 +21,16 @@ const CEILINGS: Record<string, string> = {
 // has SEEN render correctly (a capture inspected with vision) counts as visually verified. Code
 // compiling, logcat markers, and structural decodes prove a thing EXISTS, never that it LOOKS right.
 // So logcat/structural/decoded land in "structuralOnly" — NOT a visual "verified".
-const STATUS_META: Record<string, { bucket: "visuallyVerified" | "autoJudged" | "structuralOnly" | "builtForHeadset"; label: string }> = {
+const STATUS_META: Record<string, { bucket: "visuallyVerified" | "autoJudged" | "usdHostRender" | "structuralOnly" | "builtForHeadset"; label: string }> = {
   vision_verified: { bucket: "visuallyVerified", label: "SEEN rendering correctly in a capture (agent/human vision)" },
   rendered_emulator: { bucket: "visuallyVerified", label: "observed rendering on emulator (vision-confirmed)" },
   // v6.2: the calibrated automated eye MEASURED objective properties (object count / colors / coverage)
   // of a real frame against the acceptance predicate. This is a distinct, weaker class than human vision —
   // it never becomes vision_verified. A human audit samples it to keep it calibrated.
   auto_judged: { bucket: "autoJudged", label: "MEASURED by the calibrated automated eye (objective CV vs the predicate on a real frame) — not human-seen" },
+  // v7.4: the off-device USD (Hydra Storm) render — verifies scene COMPOSITION/geometry deterministically,
+  // NOT the on-device Filament appearance. A distinct, honest class: never conflated with device vision.
+  usd_host_render: { bucket: "usdHostRender", label: "rendered OFF-DEVICE (Hydra Storm USD) — composition/geometry verified, NOT device appearance" },
   logcat_asserted: { bucket: "structuralOnly", label: "asserted in logcat — EXISTS, not visually confirmed" },
   decoded_real_data: { bucket: "structuralOnly", label: "verified against real data — structural, not visual" },
   compiles: { bucket: "structuralOnly", label: "compiles — no runtime behaviour or appearance verified" },
@@ -40,6 +43,7 @@ export function buildCapabilityMatrix(appName: string | undefined, features: any
   const buckets = {
     visuallyVerified: [] as any[],
     autoJudged: [] as any[],
+    usdHostRender: [] as any[],
     structuralOnly: [] as any[],
     builtForHeadset: [] as any[],
   };
@@ -67,6 +71,9 @@ export function buildCapabilityMatrix(appName: string | undefined, features: any
     `## 🤖 Auto-judged — MEASURED by the calibrated eye, not human-seen (${buckets.autoJudged.length})`,
     ...(buckets.autoJudged.length ? buckets.autoJudged.map(line) : ["_(none)_"]),
     ``,
+    `## 🖥️ USD host-render — composition verified OFF-DEVICE (Storm), NOT device appearance (${buckets.usdHostRender.length})`,
+    ...(buckets.usdHostRender.length ? buckets.usdHostRender.map(line) : ["_(none)_"]),
+    ``,
     `## ⚙️ Structural / logcat only — EXISTS, appearance NOT confirmed (${buckets.structuralOnly.length})`,
     ...(buckets.structuralOnly.length ? buckets.structuralOnly.map(line) : ["_(none)_"]),
     ``,
@@ -74,7 +81,7 @@ export function buildCapabilityMatrix(appName: string | undefined, features: any
     ...(buckets.builtForHeadset.length ? buckets.builtForHeadset.map(line) : ["_(none)_"]),
     ...(usedCeilings.length ? [``, `## Emulator ceilings referenced`, ...usedCeilings.map((c) => `- **${c}**: ${CEILINGS[c]}`)] : []),
   ].join("\n");
-  const summary = `${buckets.visuallyVerified.length} visually verified, ${buckets.autoJudged.length} auto-judged (measured, not human-seen), ${buckets.structuralOnly.length} structural/logcat only (appearance unconfirmed), ${buckets.builtForHeadset.length} built for headset`;
+  const summary = `${buckets.visuallyVerified.length} visually verified, ${buckets.autoJudged.length} auto-judged (measured, not human-seen), ${buckets.usdHostRender.length} usd-host-render (composition off-device), ${buckets.structuralOnly.length} structural/logcat only (appearance unconfirmed), ${buckets.builtForHeadset.length} built for headset`;
   return { appName: appName ?? null, summary, matrix: buckets, markdown: md };
 }
 

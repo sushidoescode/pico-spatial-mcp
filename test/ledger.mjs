@@ -69,6 +69,9 @@ check("ATTACK: text file as vision_verified is rejected", !validateEntry({ claim
 check("ATTACK: /etc/hosts as vision_verified is rejected", !fs.existsSync("/etc/hosts") || !validateEntry({ claim: "c", evidenceType: "vision_verified", artifactPath: "/etc/hosts", attestation: "I saw cards (lie)" }).ok);
 check("ATTACK: 0-byte png as vision_verified is rejected", !validateEntry({ claim: "c", evidenceType: "vision_verified", artifactPath: emptyPng, attestation: "I saw cards (lie)" }).ok);
 check("ATTACK: directory as vision_verified is rejected", !validateEntry({ claim: "c", evidenceType: "vision_verified", artifactPath: dirPath, attestation: "I saw cards (lie)" }).ok);
+// 5b) v7.4: usd_host_render is grounded in a real image (same gate as vision_verified/auto_judged)
+check("usd_host_render w/ real image + attestation is accepted", validateEntry({ claim: "c", evidenceType: "usd_host_render", artifactPath: realPng, attestation: "off-device Storm render of the composition" }).ok);
+check("usd_host_render w/ a text file is rejected", !validateEntry({ claim: "c", evidenceType: "usd_host_render", artifactPath: textFile, attestation: "fake render" }).ok);
 // 6) non-visual evidence types record without an artifact
 check("logcat records without artifact", validateEntry({ claim: "c", evidenceType: "logcat" }).ok);
 check("structural records without artifact", validateEntry({ claim: "c", evidenceType: "structural" }).ok);
