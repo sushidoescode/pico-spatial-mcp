@@ -9,3 +9,11 @@
   Drop it into a scaffolded app's `content/` package alongside the generated
   SceneLighting.kt / SceneAnimator.kt / SceneIBL.kt + an `ibl/studio.ktx`
   (from `prepare_ibl_cubemap`).
+
+- **BowlingGame.kt** — a REAL-PHYSICS bowling game (vision-verified): a lit wood lane with
+  gutters, a polished metallic PBR ball (IBL shine), 10 spotlit pins in a triangle, and a
+  glowing BOWL button. Broadcasting `bowl` (or clicking the button via the mouse bridge)
+  throws the ball down the lane under real `PhysicsWorldComponent` + `RigidBodyComponent`
+  simulation, knocking the pins down. KEY RECIPE: spawn a FRESH ball ELEVATED (not in resting
+  contact) each throw so it's awake and its `PhysicsVelocityComponent` applies — a settled ball
+  sleeps and ignores velocity. (The TransformComponent read-back is ~2s lagged; trust the visual.)
