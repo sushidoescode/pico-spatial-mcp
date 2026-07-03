@@ -46,7 +46,7 @@ export const CAPABILITY_MANIFEST: CapEntry[] = [
   { tool: "generate_particle_kotlin", authors: "driver for an editor-authored ParticleComponent", keyParams: "packageName", ceiling: "C0_emulator", note: "ParticleComponent has no ctor" },
   { tool: "generate_video_player_kotlin", authors: "video-on-quad", keyParams: "packageName", ceiling: "C0_emulator", note: "decode often fails on emulator" },
   { tool: "generate_spatial_audio_kotlin", authors: "3D ObjectAudioComponent", keyParams: "packageName", ceiling: "C3", note: "playback headset-only" },
-  { tool: "generate_rigidbody_kotlin", authors: "falling/resting dynamic bodies", keyParams: "packageName,gravity", ceiling: "C0_emulator" },
+  { tool: "generate_rigidbody_kotlin", authors: "REAL dynamics: fall/roll/strike + safe launch/reset (vision-verified bowling strike)", keyParams: "packageName,gravity", ceiling: "C0_emulator" },
   { tool: "generate_portal_kotlin", authors: "portal window + nested world", keyParams: "packageName", ceiling: "C0_emulator", note: "entity-crossing/passthrough = Swan" },
   { tool: "generate_display_controllers_kotlin", authors: "display-group ordering controllers", keyParams: "packageName", ceiling: "C0_emulator" },
   // headset codegen

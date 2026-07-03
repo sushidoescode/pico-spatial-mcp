@@ -95,6 +95,6 @@ Approve the `pico-spatial-mcp` tools when prompted (once). Then paste the prompt
 - **No boundless walk-around** — the emulator can't composite third-party immersive layers (proven);
   everything is bounded "diorama" content, which is what it renders beautifully. Mention this only
   if asked; it's a Swan-hardware feature.
-- **Physics doesn't simulate** on the emulator — motion is scripted animation, not rigidbody.
+- **Real physics simulates on the emulator** (v8.6+): dynamic bodies fall, roll, and strike (the bowling demo is vision-verified). Expect a ~2s beat between a launch command and visible motion (engine batch epoch), and reset scenes by disabling + rebuilding the game root (`ScenePhysics.resetWorld`), never by destroying live bodies.
 
 See `VIDEO_DEMO.md` for the full director's guide + alternate hero prompts.

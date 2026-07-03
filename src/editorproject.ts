@@ -213,7 +213,7 @@ export function decodeEditorProject(root: string, capScenes = 20) {
   const hasGeometry = scenes.files.some((s: any) => (s.meshes ?? 0) > 0 || (s.materials ?? []).length > 0);
   const capabilityHints = {
     visionVerifiable: hasGeometry ? ["geometry/materials render — confirm with capture_frame / verify_visual"] : [],
-    structuralOnly: [...allComps].filter((c) => /Collision|Audio|Timeline|Anchor|Model/i.test(c)).map((c) => `${c}: present/cooked — assert structurally (rayCast/attach markers); runtime playback/physics may be headset-only`),
+    structuralOnly: [...allComps].filter((c) => /Collision|Audio|Timeline|Anchor|Model/i.test(c)).map((c) => `${c}: present/cooked — assert structurally (rayCast/attach markers); runtime audio/timeline playback may be headset-only (rigid-body physics DOES simulate on the emulator, v8.8)`),
     headsetOnly: [] as string[],
     note: "Editor-project content is largely emulator-verifiable (geometry=vision, components=structural). The headset-only features (sense/plane surface pins C1, controller-ray C3, in-front panels C4) live in the app Kotlin, NOT in the SpatialPackContent.",
   };

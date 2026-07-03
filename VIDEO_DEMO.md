@@ -87,5 +87,6 @@ real lighting with shadows, animating at 60fps. (Reference frame: `/tmp/pico-ren
 | Grow-in reveal (data-viz) | `SceneAnimator.growY` | ✅ emulator |
 | Deterministic visual verification | `capture_frame` + agent LOOK | ✅ emulator |
 
-> Physics (RigidBody) is **headset-gated** — it compiles but doesn't simulate on the emulator, so
-> motion in demos is scripted animation, not physics. Say this if a viewer asks.
+> **Real physics simulates on the emulator** (v8.8): a launched ball knocks down pins that fly and
+> scatter — vision-verified (`examples/BowlingGame.kt`). There's a ~2s beat between a launch command
+> and visible motion (the engine batches physics ops); it reads as anticipation on camera.
