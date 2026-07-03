@@ -120,9 +120,11 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
           { id: "btnThrow", trigger: "press", target: "ball", action: "launch:ball", driveChannel: "broadcast", params: { velocity: [0, 0, -7], angular: [-8, 0, 0], button: "start" } },
           { id: "btnReset", trigger: "press", target: "ball", action: "resetWorld", driveChannel: "broadcast", params: { button: "reset" } },
         ],
+        panels: [{ id: "hud", title: "KNOCKDOWN", kind: "hud", fields: [{ key: "throws", label: "THROWS", initial: "0" }, { key: "status", label: "STATUS", initial: "READY" }] }],
         navigation: { startScene: "lane" },
         verificationPlan: [
           { claim: `${n} capsule targets racked on the lane + the ball at rest`, method: "capture", capabilityClass: "C0_emulator", targetRef: "lane", forwardFOVpose: fwd(-4.2) },
+          { claim: "the KNOCKDOWN live-text panel shows THROWS/STATUS and updates on START (turn the camera — panels spawn at the dock position)", method: "capture", capabilityClass: "C0_emulator", targetRef: "hud", forwardFOVpose: fwd(-4.2) },
           { claim: "after 'launch:ball' the ball rolls and the targets scatter (REAL physics)", method: "capture", capabilityClass: "C0_emulator", targetRef: "throw", forwardFOVpose: fwd(-4.2) },
         ],
       };

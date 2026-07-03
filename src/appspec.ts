@@ -159,6 +159,16 @@ export const headsetPieceSchema = z.object({
 });
 
 // ── the whole spec ───────────────────────────────────────────────────────────────────────────────────
+export const panelSchema = z.object({
+  id: z.string(),
+  title: z.string().describe("Panel heading, e.g. 'KNOCKDOWN'."),
+  kind: z.enum(["hud", "scoreboard", "info"]).default("hud"),
+  fields: z
+    .array(z.object({ key: z.string(), label: z.string(), initial: z.string() }))
+    .default([])
+    .describe("Live label:value rows. Keys 'throws'/'status' get automatic game hooks (bump on launch / READY-ROLLING)."),
+});
+
 export const appSpecSchema = z.object({
   meta: metaSchema,
   scenes: z.array(sceneSchema).min(1),
@@ -166,6 +176,7 @@ export const appSpecSchema = z.object({
   objects: z.array(objectSchema).default([]),
   data: z.array(dataSchema).default([]),
   interactions: z.array(interactionSchema).default([]),
+  panels: z.array(panelSchema).default([]).describe("v9.4 hybrid tier: Compose WindowContainer panels with LIVE runtime text (2D windows composite as floating spatial panels — vision-verified). Spawn at the dock position, off the forward view."),
   navigation: navigationSchema,
   verificationPlan: z.array(verificationNodeSchema).default([]),
   headsetLayer: z.array(headsetPieceSchema).default([]),

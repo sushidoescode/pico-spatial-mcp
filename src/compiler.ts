@@ -101,6 +101,11 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
     }
   }
 
+  // v9.4: panels -> a Compose WindowContainer with LIVE runtime text (the hybrid-app tier).
+  for (const pn of (spec as any).panels ?? []) {
+    push({ node: pn.id, tool: "generate_panel_compose_kotlin", args: { packageName: contentPkg, title: pn.title, ...(pn.fields?.length ? { fields: pn.fields } : {}) }, targetPath: `${cpath}/HudPanel.kt`, cClass: "C0_emulator", note: "LIVE TEXT panel (2D windows composite as spatial panels). Spawns at the dock position — verify by turning the camera. Headless drive: DEBUG_CMD 'hud:<key>=<value>'." });
+  }
+
   // v9.2: press interactions -> the in-world clickable GameMenu (mouse-bridge detectable).
   if (spec.interactions.some((i: any) => i.trigger === "press")) {
     push({ node: spec.interactions.filter((i: any) => i.trigger === "press").map((i: any) => i.id).join(","), tool: "generate_game_menu_kotlin", args: { packageName: `${pkg}.gen` }, targetPath: `${cpath.replace(/content$/, "gen")}/GameMenu.kt`, cClass: "C0_emulator", note: "Needs assets/menu.bundle (bake_textured_model of the 4-row panel, or copy a known-good one). The wiring attaches it on its own root + maps buttons via customActions; the mouse bridge clicks it. Broadcast start/pause/resume/reset also drives it." });
