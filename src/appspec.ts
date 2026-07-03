@@ -76,6 +76,10 @@ export const sceneSchema = z.object({
     })
     .default({ props: [] }),
   transitions: z.array(z.object({ to: z.string(), trigger: z.string() })).default([]),
+  physics: z
+    .object({ gravity: vec3.optional().describe("m/s² (default [0,-9.81,0])") })
+    .optional()
+    .describe("Presence = a REAL physics world on the scene root (verified simulating on the emulator, v8.8). Objects with a `body` fall/roll/collide."),
 });
 
 // ── layouts ────────────────────────────────────────────────────────────────────────────────────────────
@@ -96,6 +100,16 @@ export const objectSchema = z.object({
   material: z.record(z.any()).optional(),
   layoutRef: z.string().optional().describe("A layout id (positions this object)."),
   transform: z.object({ position: vec3.optional(), rotationDeg: vec3.optional(), scale: vec3.optional() }).optional(),
+  body: z
+    .object({
+      mode: z.enum(["static", "dynamic"]),
+      shape: z.enum(["box", "sphere", "capsule"]),
+      dims: z.array(z.number()).describe("box=[x,y,z] full extents; sphere=[radius]; capsule=[height,radius]"),
+      mass: z.number().optional().describe("kg (dynamic only, default 1)"),
+      color: vec3.optional().describe("[r,g,b] 0..1 tint (bodies render as PBR by default)"),
+    })
+    .optional()
+    .describe("A rigid body in the scene's physics world (requires scene.physics). Placed at transform.position. Launch it with an interaction action 'launch:<objectId>'."),
   dataBindRef: z.string().optional().describe("A data node id whose items produce these objects."),
   anim: z.record(z.any()).optional(),
 });
@@ -118,6 +132,7 @@ export const interactionSchema = z.object({
   action: z.string().describe("What happens, e.g. 'showDetail' / 'select' / 'navigate:sceneB'."),
   stateMachine: z.record(z.any()).optional(),
   driveChannel: z.enum(["broadcast", "controller"]).default("broadcast"),
+  params: z.record(z.any()).optional().describe("Action params, e.g. { velocity: [0,0,-8], angular: [-8,0,0] } for 'launch:<id>'."),
 });
 
 // ── navigation ────────────────────────────────────────────────────────────────────────────────────────

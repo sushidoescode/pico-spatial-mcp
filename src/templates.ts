@@ -97,6 +97,34 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
       verificationPlan: [{ claim: `${p.count ?? 3} PBR-metal props spinning in a sun-lit studio with shadows`, method: "capture", capabilityClass: "C0_emulator", targetRef: "row", forwardFOVpose: fwd(-1.8) }],
     }),
   },
+  knockdown: {
+    desc: "A REAL-PHYSICS knockdown game (verified simulating on the emulator, v8.8): a lane, N capsule targets racked at the far end, and a heavy ball — broadcast 'launch:ball' throws it and the targets scatter under real rigid-body dynamics. Expect a ~2s beat between launch and motion (engine epoch). Reset = relaunch the app (or wire ScenePhysics.resetWorld).",
+    build: (p) => {
+      const n = Math.min(p.count ?? 3, 6);
+      const targets = Array.from({ length: n }, (_, i) => ({
+        id: `target${i}`,
+        sceneId: "lane",
+        source: "primitive",
+        transform: { position: [(i - (n - 1) / 2) * 0.16, 1.21, -5.0] },
+        body: { mode: "dynamic", shape: "capsule", dims: [0.3, 0.06], mass: 0.35, color: [0.95, 0.95, 0.92] },
+      }));
+      return {
+        meta: { appName: p.appName, packageName: p.packageName, stageStyle: "3", brief: p.brief },
+        scenes: [{ id: "lane", environment: { kind: "procedural" }, lighting: { rig: "sun" }, colliders: { props: [] }, physics: { gravity: [0, -9.81, 0] } }],
+        objects: [
+          { id: "floor", sceneId: "lane", source: "primitive", transform: { position: [0, 0.9, -4.2] }, body: { mode: "static", shape: "box", dims: [1.4, 0.2, 3.6], color: [0.55, 0.4, 0.22] } },
+          { id: "ball", sceneId: "lane", source: "primitive", transform: { position: [0, 1.17, -2.9] }, body: { mode: "dynamic", shape: "sphere", dims: [0.15], mass: 5, color: [0.1, 0.08, 0.2] } },
+          ...targets,
+        ],
+        interactions: [{ id: "throw", trigger: "broadcast", target: "ball", action: "launch:ball", driveChannel: "broadcast", params: { velocity: [0, 0, -7], angular: [-8, 0, 0] } }],
+        navigation: { startScene: "lane" },
+        verificationPlan: [
+          { claim: `${n} capsule targets racked on the lane + the ball at rest`, method: "capture", capabilityClass: "C0_emulator", targetRef: "lane", forwardFOVpose: fwd(-4.2) },
+          { claim: "after 'launch:ball' the ball rolls and the targets scatter (REAL physics)", method: "capture", capabilityClass: "C0_emulator", targetRef: "throw", forwardFOVpose: fwd(-4.2) },
+        ],
+      };
+    },
+  },
   constellation: {
     desc: "An ambient CONSTELLATION: N softly-lit nodes in an arc — a calm data/ambient piece (IBL rig). Combine with SceneAnimator (bob/pulseEmissive) for gentle life.",
     build: (p) => ({
@@ -130,7 +158,7 @@ export function registerTemplateTools(server: McpServer) {
     {
       description: "Instantiate a template skeleton into a concrete, validated AppSpec for a new brief — ready for plan_app_spec -> compile_app_spec. Stamps the app/package + count + palette; for data-bound templates it also returns a sample data JSON (write it to app/src/main/assets/data/items.json). Reuse over the v5.0 pipeline; the output is regression-gated like any other app.",
       inputSchema: {
-        name: z.enum(["gallery", "inspection", "dashboard", "ambient", "showcase", "studio", "constellation"]).describe("Which skeleton."),
+        name: z.enum(["gallery", "inspection", "dashboard", "ambient", "showcase", "studio", "constellation", "knockdown"]).describe("Which skeleton."),
         brief: z.string().describe("The new brief this instance realizes."),
         appName: z.string().describe("App name, e.g. SpiceShowcaseXR."),
         packageName: z.string().describe("applicationId, e.g. com.example.spicexr."),

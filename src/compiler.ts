@@ -62,11 +62,17 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
       push({ node: s.id, tool: "generate_environment_kotlin", args: { packageName: contentPkg, kind: "skybox", assetFileName: env.baseColorImage ?? env.asset }, targetPath: `${cpath}/SkyboxEnvironment.kt`, cClass: "C0_emulator", note: "FULL-surround equirect skybox (no bounded blob). Ship the pano PNG (≤4096px) in assets/." });
     } else if (env.kind === "homeEnvProxy") {
       push({ node: s.id, tool: "generate_home_env_proxy", args: { packageName: contentPkg }, targetPath: `${cpath}/HomeEnvProxy.kt`, cClass: "C1", note: "Faked hit-test of the known bedroom; floor y=0 is the only vision-verified anchor." });
-    } else {
+    } else if (env.kind !== "procedural") {
       push({ node: s.id, tool: "generate_environment_kotlin", args: { packageName: contentPkg, kind: env.kind, assetFileName: env.asset }, targetPath: `${cpath}/Environment.kt`, cClass: "C0_emulator" });
     }
+    // kind "procedural" = the scene content IS the environment — no env file to generate.
     if (s.colliders.room) {
       push({ node: s.id, tool: "generate_collider_kotlin", args: { packageName: contentPkg, room: s.colliders.room, shapes: s.colliders.props }, targetPath: `${cpath}/SpatialColliders.kt`, cClass: "C0_emulator", note: "attachPhysicsWorld(root) REQUIRED on-device before rayCast." });
+    }
+    // v9.1: REAL physics (verified simulating on the emulator, v8.8) — one ScenePhysics.kt per app.
+    if ((s as any).physics || spec.objects.some((o: any) => o.body)) {
+      const g = (s as any).physics?.gravity;
+      push({ node: s.id, tool: "generate_rigidbody_kotlin", args: { packageName: contentPkg, ...(g ? { gravity: g } : {}) }, targetPath: `${cpath}/ScenePhysics.kt`, cClass: "C0_emulator", note: "REAL emulator physics (v8.8 rulebook baked in): wiring calls initWorld + per-body helpers; launch via 'launch:<id>' broadcast; reset = resetWorld (disable+rebuild), never destroy." });
     }
     const rig = s.lighting.rig;
     if (rig !== "none") {
