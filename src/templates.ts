@@ -98,7 +98,7 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
     }),
   },
   knockdown: {
-    desc: "A REAL-PHYSICS knockdown game (verified simulating on the emulator, v8.8): a lane, N capsule targets racked at the far end, and a heavy ball — broadcast 'launch:ball' throws it and the targets scatter under real rigid-body dynamics. Expect a ~2s beat between launch and motion (engine epoch). Reset = relaunch the app (or wire ScenePhysics.resetWorld).",
+    desc: "A REAL-PHYSICS knockdown game (verified simulating on the emulator, v8.8): a lane, N capsule targets racked at the far end, and a heavy ball — broadcast 'launch:ball' throws it and the targets scatter under real rigid-body dynamics. Expect a ~2s beat between launch and motion (engine epoch). Click START (green) on the in-world GameMenu to throw, RESET (red) to re-rack (disable+rebuild — the only reliable physics reset). The mouse bridge clicks the menu; broadcast start/reset also drives it. Needs assets/menu.bundle.",
     build: (p) => {
       const n = Math.min(p.count ?? 3, 6);
       const targets = Array.from({ length: n }, (_, i) => ({
@@ -116,7 +116,10 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
           { id: "ball", sceneId: "lane", source: "primitive", transform: { position: [0, 1.17, -2.9] }, body: { mode: "dynamic", shape: "sphere", dims: [0.15], mass: 5, color: [0.1, 0.08, 0.2] } },
           ...targets,
         ],
-        interactions: [{ id: "throw", trigger: "broadcast", target: "ball", action: "launch:ball", driveChannel: "broadcast", params: { velocity: [0, 0, -7], angular: [-8, 0, 0] } }],
+        interactions: [
+          { id: "btnThrow", trigger: "press", target: "ball", action: "launch:ball", driveChannel: "broadcast", params: { velocity: [0, 0, -7], angular: [-8, 0, 0], button: "start" } },
+          { id: "btnReset", trigger: "press", target: "ball", action: "resetWorld", driveChannel: "broadcast", params: { button: "reset" } },
+        ],
         navigation: { startScene: "lane" },
         verificationPlan: [
           { claim: `${n} capsule targets racked on the lane + the ball at rest`, method: "capture", capabilityClass: "C0_emulator", targetRef: "lane", forwardFOVpose: fwd(-4.2) },

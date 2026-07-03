@@ -101,6 +101,11 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
     }
   }
 
+  // v9.2: press interactions -> the in-world clickable GameMenu (mouse-bridge detectable).
+  if (spec.interactions.some((i: any) => i.trigger === "press")) {
+    push({ node: spec.interactions.filter((i: any) => i.trigger === "press").map((i: any) => i.id).join(","), tool: "generate_game_menu_kotlin", args: { packageName: `${pkg}.gen` }, targetPath: `${cpath.replace(/content$/, "gen")}/GameMenu.kt`, cClass: "C0_emulator", note: "Needs assets/menu.bundle (bake_textured_model of the 4-row panel, or copy a known-good one). The wiring attaches it on its own root + maps buttons via customActions; the mouse bridge clicks it. Broadcast start/pause/resume/reset also drives it." });
+  }
+
   // 6. interactions (one engine file; per-interaction registration is authored in the wiring)
   if (spec.interactions.length) {
     push({ node: spec.interactions.map((i) => i.id).join(","), tool: "generate_interaction_kotlin", args: { packageName: contentPkg }, targetPath: `${cpath}/SceneInteraction.kt`, cClass: "C0_emulator", note: "Register each object; broadcast select = C0, controller/gaze ray = C3 (built-for-Swan)." });
