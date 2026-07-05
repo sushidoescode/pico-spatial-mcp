@@ -1,0 +1,104 @@
+{
+  "id": "console",
+  "brief": "A status console: 6 JSON-colored metric tiles plus a floating live-text SYSTEM panel showing UPTIME and STATE.",
+  "spec": {
+    "meta": {
+      "appName": "ConsoleXR",
+      "packageName": "com.example.consolebrief",
+      "stageStyle": "3",
+      "brief": "A status console: 6 JSON-colored metric tiles plus a floating live-text SYSTEM panel showing UPTIME and STATE."
+    },
+    "scenes": [
+      {
+        "id": "wall",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [
+      {
+        "id": "tiles",
+        "sceneId": "wall",
+        "pattern": "grid",
+        "count": 6,
+        "params": {
+          "columns": 3
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "metrics",
+        "sceneId": "wall",
+        "source": "quad",
+        "layoutRef": "tiles",
+        "dataBindRef": "feed"
+      }
+    ],
+    "data": [
+      {
+        "id": "feed",
+        "source": "json",
+        "asset": "data/items.json",
+        "bindsTo": [
+          "metrics"
+        ]
+      }
+    ],
+    "interactions": [],
+    "panels": [
+      {
+        "id": "sys",
+        "title": "SYSTEM",
+        "kind": "hud",
+        "fields": [
+          {
+            "key": "uptime",
+            "label": "UPTIME",
+            "initial": "0m"
+          },
+          {
+            "key": "state",
+            "label": "STATE",
+            "initial": "NOMINAL"
+          }
+        ]
+      }
+    ],
+    "navigation": {
+      "startScene": "wall",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "6 metric tiles colored by JSON",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "tiles"
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 1,
+    "objects": 1,
+    "data": 1,
+    "interactions": 0,
+    "verifiableNowMin": 1,
+    "swanMin": 0
+  }
+}

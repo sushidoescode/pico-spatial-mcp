@@ -39,6 +39,13 @@ export const CAPABILITY_MANIFEST: CapEntry[] = [
   { tool: "generate_data_binding_kotlin", authors: "bundled JSON -> N tinted-quad cards + lookups (NO TextComponent)", keyParams: "packageName,cardWidth,cardHeight,defaultColor", ceiling: "C0_emulator", note: "dynamic text labels need baked textures" },
   // UI / menu
   { tool: "generate_game_menu_kotlin", authors: "in-world pressable 3D menu (broadcast/gaze/controller/pinch)", keyParams: "packageName,actions", ceiling: "C0_emulator", note: "controller/pinch drive = C3 Swan" },
+  { tool: "generate_scene_animator_kotlin", authors: "RELIABLE runtime animation: orbit/spin/bob + growY + pulseEmissive/fadeOpacity/cycleHue (coroutine frame loop — SDK AnimationResource does NOT propagate to runtime entities)", keyParams: "packageName", ceiling: "C0_emulator" },
+  { tool: "prepare_ibl_cubemap", authors: "a prefiltered HDR cubemap (Filament cmgen) so PBR METALS actually shine — pair with generate_ibl_kotlin(mode='local', intensityExponent~6)", keyParams: "preset|equirectPath,outKtx", ceiling: "C0_emulator" },
+  { tool: "generate_panel_compose_kotlin", authors: "LIVE RUNTIME TEXT: a Compose panel ACTIVITY auto-hosted as a floating spatial panel (HUD/scoreboard; DEBUG_CMD hud:<key>=<value> updates live). The no-TextComponent limit is in-scene-3D only", keyParams: "packageName,title,fields", ceiling: "C0_emulator", note: "needs the manifestEntry merged; an app's own WindowContainer never opens on the emulator" },
+  { tool: "render_usd_offscreen", authors: "off-device USD render (usdrecord) — verify generated content in seconds without the emulator", keyParams: "usdPath,outPng", ceiling: "C0_emulator" },
+  { tool: "import_world_environment", authors: "a CUSTOM World-Labs/Marble world (.spz/.ply splat or GLB) as the app environment", keyParams: "worldPath,projectDir", ceiling: "C0_emulator" },
+  { tool: "install_gradle_hooks", authors: "the EXTERNAL gradle plugin com.pico.hooks: USD scene-lint riding EVERY build (AS/CLI/CI, no MCP in the loop)", keyParams: "projectDir", ceiling: "C0_emulator" },
+  { tool: "emit_editor_components", authors: "per-project component SCHEMA files (.spatialEditorComponent) — interchange only; the editor's Add Component palette does NOT pick them up (verified negative)", keyParams: "projectRoot,components", ceiling: "C0_emulator", note: "structural only — never claim Inspector render" },
   { tool: "generate_spatial_ui", authors: "verified Compose panels", keyParams: "spec", ceiling: "C4_headset_only", note: "in-front interactive panels are Swan-only" },
   // animation / media / physics / display
   { tool: "generate_tween_animation_kotlin", authors: "position/scale tween on an entity", keyParams: "packageName", ceiling: "C0_emulator" },

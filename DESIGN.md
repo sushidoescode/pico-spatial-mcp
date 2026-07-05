@@ -105,6 +105,9 @@ system environment. To keep the user enclosed: make the environment **large/enve
 (on a headset the user stands in place). A skybox sphere (large inverted sphere with a
 textured/emissive material) guarantees a consistent backdrop everywhere.
 
+
+> **⚠️ v9.4 CORRECTION (tested):** an immersive app's OWN `WindowContainer` DSL never opens a panel window on the *emulator* (the window is never created — verified via dumpsys; the telemetry line below reflects registration, not a rendered window). For live panels on the emulator, emit a separate 2D panel ACTIVITY (`generate_panel_compose_kotlin`) — the OS auto-hosts 2D tasks as floating spatial panels. The WindowContainer guidance below may still apply on Swan hardware — unverified.
+
 ## 6b. Movable / closable / resizable panels (window chrome)
 
 Raw `AttachmentPanel`s inside `SpatialView` are fixed in place. For browser-like panels
@@ -263,3 +266,8 @@ logcat proof is necessary but never sufficient. Treat "I didn't look" as "unveri
   shipped app. Real headless content authoring = edit the SCENE USDA (`author_editor_component` /
   materials) + rebuild (proven: Pin.usda edits DO change the bake). Use `bundle_content_diff` (not md5)
   to confirm a bake actually changed.
+
+
+## §9b — The dynamic rigid-body rulebook (v8.6–v8.8, all verified by read-back + frames)
+
+REAL physics simulates on the emulator. The rules: (1) create bodies with ALL components (Transform+Collision+RigidBody+Model) in ONE batch at scene build; (2) never destroy+respawn individual live bodies (collision pairing is lost) and never destroy a physics-world root (poisons later worlds — reset = `oldRoot.enabled = false` + rebuild ~3s later); (3) never teleport a live body beyond a few cm (jump/timestep becomes velocity — meter jumps launch bodies through the floor); kinematic mode flips are silent no-ops; (4) keep DISCRETE collision (CONTINUOUS kills dynamic-vs-dynamic contacts); (5) expect ~2s engine batch epochs — a set velocity fires the next epoch, and TransformComponent read-backs lag ~2s (trust frames). `generate_rigidbody_kotlin` embodies all of this.

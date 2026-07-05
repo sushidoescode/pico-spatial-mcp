@@ -1,0 +1,97 @@
+{
+  "id": "studio",
+  "brief": "A premium product studio: 3 polished-metal hero props slowly spinning under a shadow-casting sun rig.",
+  "spec": {
+    "meta": {
+      "appName": "StudioXR",
+      "packageName": "com.example.studiobrief",
+      "stageStyle": "3",
+      "brief": "A premium product studio: 3 polished-metal hero props slowly spinning under a shadow-casting sun rig."
+    },
+    "scenes": [
+      {
+        "id": "studio",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [
+      {
+        "id": "row",
+        "sceneId": "studio",
+        "pattern": "arc",
+        "count": 3,
+        "params": {
+          "radius": 1.8
+        }
+      }
+    ],
+    "objects": [
+      {
+        "id": "hero",
+        "sceneId": "studio",
+        "source": "primitive",
+        "material": {
+          "mode": "pbr",
+          "metallic": 1,
+          "roughness": 0.15
+        },
+        "layoutRef": "row",
+        "anim": {
+          "type": "tween",
+          "property": "rotation",
+          "from": [
+            0,
+            0,
+            0
+          ],
+          "to": [
+            0,
+            360,
+            0
+          ],
+          "duration": 8,
+          "repeat": "restart"
+        }
+      }
+    ],
+    "data": [],
+    "interactions": [],
+    "panels": [],
+    "navigation": {
+      "startScene": "studio",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "3 PBR-metal props spinning in a sun-lit studio with shadows",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.8
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "row"
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 1,
+    "objects": 1,
+    "data": 0,
+    "interactions": 0,
+    "verifiableNowMin": 1,
+    "swanMin": 0
+  }
+}

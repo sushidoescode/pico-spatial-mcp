@@ -1,10 +1,10 @@
 {
   "scorecard": {
-    "total": 12,
-    "passed": 12,
+    "total": 15,
+    "passed": 15,
     "failed": 0,
     "planFailures": 0,
-    "totalCompileSteps": 115,
+    "totalCompileSteps": 136,
     "totalVisionVerified": 0,
     "score": 1
   },
@@ -19,6 +19,10 @@
     },
     {
       "id": "boutique",
+      "pass": true
+    },
+    {
+      "id": "console",
       "pass": true
     },
     {
@@ -38,6 +42,10 @@
       "pass": true
     },
     {
+      "id": "knockdown",
+      "pass": true
+    },
+    {
       "id": "museum",
       "pass": true
     },
@@ -51,6 +59,10 @@
     },
     {
       "id": "showcase",
+      "pass": true
+    },
+    {
+      "id": "studio",
       "pass": true
     },
     {
