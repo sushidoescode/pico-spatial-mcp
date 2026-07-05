@@ -105,7 +105,7 @@ export function registerHostGuiTools(server: McpServer) {
     "gui_capture",
     {
       description:
-        "Capture the PICO emulator's GUI window — the REAL host-composited immersive 3D headset view (what adb/gRPC screenshots cannot show). Tries window-id capture, falls back to screen-region capture. Requires macOS Screen Recording permission; returns setup instructions if denied. This is the way to visually verify 3D spatial scenes.",
+        "Capture the PICO emulator's GUI free-cam window. NOTE: this is the FREE-CAMERA view, which DRIFTS across launches (C2 orbit drift). For deterministic visual verification use capture_frame / capture_canonical (adb screencap = the composited immersive forward view, byte-deterministic, ledger-bindable — the ground-truth path). Use gui_capture only when you need the free-cam angle (e.g. to sweep for a dock panel). Tries window-id capture, falls back to screen-region capture. Requires macOS Screen Recording permission; returns setup instructions if denied.",
       inputSchema: {
         windowId: z.number().int().optional().describe("Specific window id (default: the main/largest emulator window)"),
         mode: z.enum(["window", "region", "auto"]).default("auto").describe("window=by id, region=by screen bounds, auto=window then region"),

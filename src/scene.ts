@@ -40,7 +40,7 @@ const transformSchema = {
 
 const entitySchema = z.object({
   name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
-  asset: z.string().optional().describe("Filename of a mesh under Sources/Assets (usdz/usd/gltf/glb), e.g. 'box.usdz'"),
+  asset: z.string().optional().describe("Filename of a mesh under Sources/Assets — usdz/usd ONLY (a USDA reference to .gltf/.glb yields an EMPTY bundle: USD has no glTF plugin — the repo's own usd-glb-reference ERROR lint rule. Bake GLB via bake_textured_model instead), e.g. 'box.usdz'"),
   primitive: z.enum(["Cube", "Sphere", "Cylinder", "Cone", "Capsule", "Plane"]).optional(),
   size: z.number().optional().describe("primitive Cube size / Plane size"),
   radius: z.number().optional().describe("primitive Sphere/Cylinder/Cone/Capsule radius"),

@@ -133,7 +133,7 @@ export function registerRichnessTools(server: McpServer) {
     "generate_animation_kotlin",
     {
       description:
-        "Emit SceneAnimation.kt: load an AnimationResource from the bundle and play it on an entity (Entity.playAnimation -> AnimationPlaybackController), with a simple loop helper. Loading/attach is structural; verify visible motion with verify_visual (or on headset).",
+        "Emit SceneAnimation.kt: load an AnimationResource from the bundle and play it on an entity (Entity.playAnimation -> AnimationPlaybackController), with a simple loop helper. CAVEAT (v8.1): AnimationResource playback does NOT reliably propagate through the SpatialView hierarchy for RUNTIME-built entities — expect NO visible motion there. Use this only for editor-authored/baked animation on loaded assets; for procedural motion on runtime entities use `generate_scene_animator_kotlin` (SceneAnimator, the vision-verified path). Loading/attach is structural.",
       inputSchema: { packageName: z.string().describe("Kotlin package, e.g. com.example.app.content") },
     },
     async ({ packageName }) => ok(animationKt(packageName)),

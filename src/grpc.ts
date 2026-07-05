@@ -183,7 +183,7 @@ export function registerGrpcTools(server: McpServer) {
     "xr_screenshot",
     {
       description:
-        "Capture a LIVE screenshot of emulator display 0 via gRPC streamScreenshot (works headless; the unary getScreenshot is CACHED on this build so we stream one frame). NOTE: display 0 shows the home environment and 2D app panels — it does NOT capture host-composited immersive 3D spatial content (only the emulator GUI window shows that). Verify 3D scenes with inspect_bundle + runtime logs.",
+        "Capture a LIVE screenshot of emulator display 0 via gRPC streamScreenshot (works headless; the unary getScreenshot is CACHED on this build so we stream one frame). NOTE: the guest display screenshot path (equivalently adb exec-out screencap = capture_frame) DOES show the composited immersive forward view and is byte-deterministic — capture_frame / capture_canonical are the recommended visual-verification primitives (this gRPC path is a fallback). Pair with inspect_bundle + runtime logs for structural checks.",
       inputSchema: { toolsVersion: versionParam },
     },
     async ({ toolsVersion }) => {
@@ -252,11 +252,14 @@ export function registerGrpcTools(server: McpServer) {
         gated_or_unavailable: {
           head_pose: "xr_head_rotation/movement accepted but NOT applied to the rendered view on 0.13.1 — gated behind the GUI's WASD camera mode (virtualscene WASDInputHandler), which has no gRPC/console/keyboard entry point",
           controller_6dof_pose: "no per-controller 6DOF pose RPC exists; controllers are keyboard-mapped (see controller_map/controller_press)",
-          immersive_3d_capture: "host-composited 3D headset view is not in display-0 screenshots; only the GUI window shows it",
           hand_skeleton: "MediaPipe webcam pipeline runs in the GUI process; no injection API",
         },
+        works_headless: {
+          immersive_3d_capture: "adb exec-out screencap (capture_frame / capture_canonical) DOES return the composited immersive forward view, byte-deterministic — the visual ground truth for the whole vision-verified/ledger pipeline (the GUI free-cam is the drifting path)",
+          menu_clicks: "the mouse bridge (setup_mouse_bridge) delivers real clicks on the in-world GameMenu; broadcast DEBUG_CMD drives interactions headlessly",
+        },
         recommendation:
-          "For automated scene/app verification, rely on inspect_bundle (geometry/material counts) + spatial runtime logcat + 2D-panel screenshots. Treat head-pose/immersive-capture as a GUI-only concern on this build.",
+          "For automated scene/app verification, use capture_frame / capture_canonical (visual ground truth) + inspect_bundle (structural geometry/material counts) + spatial runtime logcat. Head-pose remains a GUI-only concern on this build, but immersive CAPTURE is fully headless.",
         rpcMethodCount: methods.length,
       });
     },

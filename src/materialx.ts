@@ -15,7 +15,7 @@ import { ok, fail } from "./util.js";
  *     (extend_defs.mtlx) — guaranteed-bright, no lighting influence.
  *
  * HONESTY (C2 + the textured-mesh wall): well-formedness + format-fidelity are verifiable headless;
- * visual brightness is NOT (no reliable emulator capture). The base-color TEXTURE path follows the
+ * visual brightness IS emulator-verifiable once bound to rendered geometry (byte-deterministic forward capture_frame — the v8.0 lighting work vision-verified lit-vs-unlit deltas). The base-color TEXTURE path follows the
  * MaterialX <image> standard but is UNVERIFIED on this runtime — hand-authored image textures are
  * known to pack BLACK except via an editor-authored material or the bake path (bake_textured_model).
  * Treat textured .mtlx as "built for the editor/MaterialX pipeline; verify visually on headset."

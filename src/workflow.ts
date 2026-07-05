@@ -103,7 +103,7 @@ export function registerWorkflowTools(server: McpServer) {
     "verify_scene",
     {
       description:
-        "Compile a scene and verify it built correctly by inspecting the bundle's geometry — the reliable way to validate spatial content on the emulator (display-0 screenshots do NOT capture immersive 3D, so geometry counts + runtime logs are the source of truth). Reports Model/Asset/mesh/texture/material counts and checks any expected mesh names are present.",
+        "Compile a scene and verify it built correctly by inspecting the bundle's geometry — a STRUCTURAL pre-check (Model/Asset/mesh/texture/material counts + expected mesh names present) that COMPLEMENTS, never replaces, capture_frame. NOTE: adb display-0 screencap (capture_frame) DOES capture the composited immersive forward view (byte-deterministic — the visual ground truth for every v9.6 vision-verified capability); use it to confirm the scene actually renders. Reports Model/Asset/mesh/texture/material counts and checks any expected mesh names are present.",
       inputSchema: {
         sceneDir: z.string(),
         projectDir: z.string().optional(),

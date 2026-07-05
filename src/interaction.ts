@@ -66,6 +66,8 @@ export function registerInteractionTools(server: McpServer) {
         " *   BROADCAST  select(id)/hover(id) via <pkg>.DEBUG_CMD ........ C0 emulator-verifiable",
         " *   GAZE_DWELL head-forward ray dwell (emulator has no gaze) ... broadcast-emulated C0 / real C3",
         " *   CONTROLLER_RAY 6DOF controller ray + trigger ............... C3 headset-only",
+        " *   PRESS      a button press ............................. NOT this file — compiles to the",
+        " *              clickable in-world GameMenu (generate_game_menu_kotlin), C0 (mouse bridge + broadcast)",
         " * Usage:",
         " *   SceneInteraction.register(\"item0\", cardEntity) { id -> showDetail(id) }",
         " *   // emulator: adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd select:item0",

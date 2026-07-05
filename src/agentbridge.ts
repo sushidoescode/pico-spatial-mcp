@@ -6,10 +6,12 @@ import { okJson } from "./util.js";
  * generate_agent_bridge — emit an INJECTABLE Kotlin library ("Agent Bridge") that turns any native
  * PICO spatial app into a cooperative headless control + verification surface for an AI agent.
  *
- * The thesis (built around the proven ceilings): the emulator can't be screenshotted (C2) or
- * clicked (C3) headlessly, but `adb am broadcast` (drive) + `adb logcat` (read) ARE reliable
- * headlessly (proven by ClaimSight's DEBUG_CMD). So instead of trying to SEE the scene, the app
- * TELLS the agent its exact state on command — deterministic STRUCTURAL verification (assert_scene).
+ * The thesis: `adb am broadcast` (drive) + `adb logcat` (read) give deterministic STRUCTURAL
+ * verification — the app TELLS the agent its exact scene state on command (assert_scene / dump_scene).
+ * This COMPLEMENTS visual verification (capture_frame — the forward adb screencap IS the byte-
+ * deterministic immersive view; the mouse bridge delivers real menu clicks): use the bridge for
+ * ground-truth structural state, capture_frame for appearance. (The old 'can't screenshot/click
+ * headlessly' rationale is retired — both are now reliable.)
  *
  * Boots with ZERO app code via a manifest-merged ContentProvider (the LeakCanary/Firebase trick):
  * the provider's onCreate runs at process start and registers the AGENT_CMD BroadcastReceiver.
@@ -174,7 +176,7 @@ export function registerAgentBridgeTools(server: McpServer) {
     "generate_agent_bridge",
     {
       description:
-        "Emit an INJECTABLE Kotlin 'Agent Bridge' library that makes any native PICO app headlessly agent-drivable + verifiable. It self-initializes via a manifest-merged ContentProvider (zero app code to boot) and exposes an AGENT_CMD broadcast command channel + structured logcat telemetry + a live scene-graph dump (entity tree, transforms, component types) — so an agent can DRIVE the app (adb am broadcast) and READ its exact scene state (adb logcat) without screenshots (C2) or clicks (C3). Returns the .kt files, the AndroidManifest <provider> snippet to merge, integration steps, and adb drive examples. APIs are sources-confirmed; the broadcast+logcat pattern is emulator-proven.",
+        "Emit an INJECTABLE Kotlin 'Agent Bridge' library that makes any native PICO app headlessly agent-drivable + verifiable. It self-initializes via a manifest-merged ContentProvider (zero app code to boot) and exposes an AGENT_CMD broadcast command channel + structured logcat telemetry + a live scene-graph dump (entity tree, transforms, component types) — so an agent can DRIVE the app (adb am broadcast) and READ its exact scene state (adb logcat) — the deterministic STRUCTURAL channel that complements visual verification (capture_frame IS a reliable headless immersive capture; the mouse bridge gives real menu clicks). Returns the .kt files, the AndroidManifest <provider> snippet to merge, integration steps, and adb drive examples. APIs are sources-confirmed; the broadcast+logcat pattern is emulator-proven.",
       inputSchema: {
         packageName: z
           .string()

@@ -13,7 +13,8 @@ import { ok, fail } from "./util.js";
  *  - AnimationResource.generateWithTweenAnimation(anim) / AnimationResource.generate(orbit) bake
  *    it, then entity.playAnimation(res): AnimationPlaybackController (@MainThread).
  *  - SpatialAnimation.INFINITE = -1 (repeatCount to loop forever).
- *  These are VISION-verifiable: the entity physically moves so pixels change across captures
+ *  CAVEAT: AnimationResource does NOT propagate to runtime-built entities (v8.1) — use SceneAnimator
+ *  (generate_scene_animator_kotlin) for those. When it DOES apply (editor/baked), it is VISION-verifiable: pixels change across captures
  *  (aim the decoupled free cam with emulator_look to keep it framed — C2).
  */
 export function registerAnimTools(server: McpServer) {
@@ -22,7 +23,7 @@ export function registerAnimTools(server: McpServer) {
     "generate_tween_animation_kotlin",
     {
       description:
-        "Emit SceneTween.kt — a programmatic from→to TWEEN that moves/scales/rotates an entity over time (TweenAnimation.createTweenAnimation → AnimationResource.generateWithTweenAnimation → entity.playAnimation). Supports position/scale (Vector3) and rotation (EulerAngles), ease + repeat (none/restart/reverse) + infinite loop. Compiles against the SDK; the motion is VISION-verifiable (the entity moves across captures — use emulator_look to frame it).",
+        "Emit SceneTween.kt — a programmatic from→to TWEEN that moves/scales/rotates an entity over time (TweenAnimation.createTweenAnimation → AnimationResource.generateWithTweenAnimation → entity.playAnimation). Supports position/scale (Vector3) and rotation (EulerAngles), ease + repeat (none/restart/reverse) + infinite loop. Compiles against the SDK; CAVEAT (v8.1/v9.6): AnimationResource/entity.playAnimation does NOT reliably propagate to RUNTIME-built entities or through a loaded model's node hierarchy — an agent animating runtime spheres/boxes/models with this gets NO visible motion. For runtime entities use `generate_scene_animator_kotlin` (SceneAnimator coroutine frame-loop — the vision-verified path); reserve this tool for editor-authored/baked animation clips.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
         property: z.enum(["position", "scale", "rotation"]).optional().describe("What to animate. position/scale use [x,y,z] meters/factor; rotation uses [x,y,z] euler degrees. Default position."),
@@ -100,7 +101,7 @@ export function registerAnimTools(server: McpServer) {
     "generate_orbit_animation_kotlin",
     {
       description:
-        "Emit SceneOrbit.kt — an ORBIT animation: an entity revolves around an axis (OrbitAnimation.createOrbitAnimation → AnimationResource.generate → entity.playAnimation). The orbit radius is the perpendicular distance of startPosition from the axis (a startPosition ON the axis gives radius 0 = no motion). Compiles against the SDK; the orbital motion is VISION-verifiable across captures.",
+        "Emit SceneOrbit.kt — an ORBIT animation: an entity revolves around an axis (OrbitAnimation.createOrbitAnimation → AnimationResource.generate → entity.playAnimation). The orbit radius is the perpendicular distance of startPosition from the axis (a startPosition ON the axis gives radius 0 = no motion). Compiles against the SDK. CAVEAT (v8.1/v9.6): AnimationResource does NOT reliably propagate to RUNTIME-built entities — for runtime entities use `generate_scene_animator_kotlin` (SceneAnimator.orbit, the vision-verified path); reserve this for editor-authored/baked clips.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
         axis: z.array(z.number()).optional().describe("Orbit axis [x,y,z] (default [0,1,0] = world up). Normalized internally; never [0,0,0]."),

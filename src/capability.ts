@@ -12,8 +12,8 @@ import { validateCapture, extractImagePath } from "./evidence.js";
 
 const CEILINGS: Record<string, string> = {
   C1: "No scene-understanding on the emulator: PlaneTrackingManager/MeshTrackingManager start (RUNNING) but return 0 planes/0 mesh. Real-surface pins are headset-only.",
-  C2: "Capture camera is decoupled + uncontrollable headlessly. No reliable headless 3D screenshot — verify via logcat, never claim 'renders' from a capture.",
-  C3: "No controller pointer + the trigger is GUI-gated. Panel clicks/trigger interactions can't be verified headlessly — drive via adb am broadcast.",
+  C2: "The GUI free-cam orbit is decoupled + drifts across launches. BUT the forward adb screencap (capture_frame) IS the byte-deterministic composited immersive view — verify visually at a forward-FOV pose (keep hero content at eye level); a linked capture is REQUIRED for a vision_verified claim.",
+  C3: "No controller/gaze pointer on the emulator. Interactions are verifiable headlessly: broadcast (adb am broadcast) drives them, a `press` interaction compiles to the clickable GameMenu (mouse bridge = real clicks). Only controller_ray/grab motion remains genuinely Swan-only.",
   C4: "Stage-vs-window dichotomy: no native config gives room + spatial pins + in-front interactive panels together.",
 };
 

@@ -137,7 +137,7 @@ export function registerCompilerTools(server: McpServer) {
     "compile_app_spec",
     {
       description:
-        "Compile a validated AppSpec into an executable BUILD LEDGER: an ordered, dependency-sorted list mapping each spec node to the EXACT existing tool call (scaffold → agent bridge → per-scene environment/colliders/lighting → layouts → data binding → interactions → headset layer → build_and_run), with args pre-filled (packageName wired to <pkg>.content), the target Kotlin file, and the C-class. This is the DRIVER, not a second orchestrator: the brief_to_app prompt executes the ledger step-by-step through the real generate_*/scaffold/bake/build tools, editing files SERIALLY. Idempotent + resumable (each step names its output path). Returns the ledger + build order + integration notes.",
+        "Compile a validated AppSpec into an executable BUILD LEDGER: an ordered, dependency-sorted list mapping each spec node to the EXACT existing tool call (scaffold → agent bridge → per-scene environment/colliders → generate_rigidbody_kotlin [scene.physics/object.body] → lighting → layouts → SceneAnimator/Tween/Orbit [object.anim] → data binding → generate_panel_compose_kotlin [panels/live-text] → generate_game_menu_kotlin [press interactions] → interactions → scene router [multi-scene] → generate_app_wiring [emits SceneComposition/HomeStage/Main] → headset layer → build_and_run), with args pre-filled (packageName wired to <pkg>.content), the target Kotlin file, and the C-class. This is the DRIVER, not a second orchestrator: the brief_to_app prompt executes the ledger step-by-step through the real generate_*/scaffold/bake/build tools, editing files SERIALLY. Idempotent + resumable (each step names its output path). Returns the ledger + build order + integration notes.",
       inputSchema: {
         spec: z.any().describe("A validated AppSpec (from plan_app_spec)."),
         projectDir: z.string().describe("Target Android project dir to scaffold/build into, e.g. ~/AndroidStudioProjects/showcasexr-native."),
@@ -160,7 +160,7 @@ export function registerCompilerTools(server: McpServer) {
         ledger,
         howToExecute: [
           "Execute steps in `order`. After each generate_* returns Kotlin, WRITE it to `targetPath` yourself (serial edits — never fan out writers).",
-          "Wire each emitted object into SpatialView.initial on Dispatchers.Main after the scene loads (attachPhysicsWorld → colliders → lighting → layout.place → interaction.register).",
+          "generate_app_wiring emits SceneComposition.kt + HomeStage.kt + Main.kt (the SpatialView.initial wiring, DEBUG_CMD dispatch, panel/menu attach) — write those three yourself; no hand-wiring of individual objects.",
           "For data: SceneLayout.place(root, items.size) { i -> SceneDataBinding.makeCard(items[i]) }; then SceneInteraction.register(item.id, cardEntity) { id -> showDetail(id) }.",
           "Then run the `build` step and confirm BUILD SUCCESSFUL + PID + ready-log before verify_app_spec.",
         ],

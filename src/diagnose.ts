@@ -93,7 +93,7 @@ const KB: Record<string, DiagEntry> = {
     fix: [
       "BEFORE concluding anything from a capture, navigate the camera back INTO the scene with gui_camera(keys=['s', ...]) — it sends WASD keystrokes (W=forward, S=back; arrows look), e.g. send 's' ~10x to return from a forward-drift. (gui_camera needs Accessibility AND the emulator already in camera mode, entered by a mouse-drag in the window — if you cannot reframe headlessly, lean on assert_logcat for proof.)",
       "The view is stable WITHIN a launch but the camera pose varies ACROSS launches — re-center after each relaunch.",
-      "gui_capture (screencapture -l<qemu-windowid>) captures the immersive view (with Screen Recording granted); adb screencap shows the emulator reference scene, NOT the app's immersive render.",
+      "CAPTURE PATH: adb screencap (capture_frame) shows the composited immersive forward view and is byte-deterministic; the qemu GUI window (gui_capture) is the FREE-CAM view that drifts across launches. To verify content, prefer capture_frame at a forward pose.",
       "Rule of thumb: when a capture looks wrong, suspect CAMERA POSITION first, then content. This single mistake caused hours of false 'it's broken' conclusions.",
     ],
     designRule: "DESIGN.md §8 (verify visually — but navigate the camera into the scene first)",
@@ -180,14 +180,14 @@ const KB: Record<string, DiagEntry> = {
 
   not_rendering: {
     rootCause:
-      "No frame is reaching the host-composited GUI view, OR you are looking at the guest framebuffer (adb/gRPC screenshots) which CANNOT show the immersive 3D view. The 3D view lives only in the emulator's GUI window.",
+      "The scene did not build/attach, OR the free camera is aimed away from the content, OR the content is unlit/off-view. NOTE: adb exec-out screencap (capture_frame / capture_canonical) DOES return the composited immersive forward view and is byte-deterministic (MAE=0 across relaunch) — it is the visual ground truth the whole v5–v9 vision-verified pipeline uses. (The GUI-window free-cam is the DRIFTING view.)",
     fix: [
-      "Capture the actual GUI window with gui_capture / design_review — adb screencap and xr_screenshot miss the host-composited 3D view.",
-      "Confirm the emulator runs WITHOUT -no-window and is not minimized (gui_find_window must list a window).",
+      "Capture the forward view with capture_frame at the node's forward-FOV pose — this is the deterministic immersive render. If it's black, the content is off-view or unlit, not 'invisible'.",
+      "Keep hero content at EYE LEVEL (y≈1.3, z≈-2.7 to -3.3) so the default forward capture frames it without touching the free cam. Panels spawn at the dock — turn the camera (emulator_look) to see those.",
+      "Confirm the scene was built on Dispatchers.Main AFTER the scene loaded, and a lighting rig was applied (unlit PBR reads near-black).",
       "Run build_and_run to confirm a frame rendered and the app did not crash (check_crash / logcat for a stack trace).",
-      "If gui_capture errors with 'could not create image', grant Screen Recording permission (see gui_permissions).",
     ],
-    designRule: "DESIGN.md §8 (verify visually AND structurally) — gui_capture is the only 3D view",
+    designRule: "DESIGN.md §8 (verify visually AND structurally) — capture_frame is the deterministic immersive view; the GUI free-cam drifts",
     relatedTools: ["gui_capture", "gui_find_window", "build_and_run", "check_crash", "logcat"],
   },
 
@@ -216,6 +216,20 @@ const KB: Record<string, DiagEntry> = {
     ],
     designRule: "DESIGN.md §3 (surfaces need a real collider) + §9 (runtime physics: PhysicsWorldComponent + primitive CollisionComponent; USD/mesh colliders do not register)",
     relatedTools: ["generate_collider_kotlin", "assert_logcat", "build_and_run", "logcat"],
+  },
+
+  physics_not_simulating: {
+    rootCause:
+      "A DYNAMIC rigid body won't move / falls through geometry / launches into the void. REAL rigid-body physics DOES simulate on the emulator (v8.8, vision-verified: a thrown ball strikes pins) — the failure is almost always an adapter-rule violation, not 'physics is headset-gated'. Causes: (1) the body's components were set across multiple frames (staged) instead of ONE batch — collision pairing is lost; (2) an individual live body was destroy+respawned (loses pairing) OR a physics-world root was destroyed (POISONS every physics world built later in-process — R3); (3) a live body was teleported (a TransformComponent set on a dynamic body is read as motion: jump/timestep becomes velocity — a meter jump launches it through the floor; kinematic mode flips are silent no-ops); (4) CollisionDetectionMode.CONTINUOUS was set (kills dynamic-vs-dynamic contacts — the ball glides through pins); (5) a velocity was set on a settled/sleeping body (ignored) or read back too soon (~2s engine batch epochs — a set velocity fires the NEXT epoch, and read-backs lag ~2s).",
+    fix: [
+      "Create every body with ALL components (Transform+Collision+RigidBody+Model) in ONE batch at scene build — generate_rigidbody_kotlin does this.",
+      "NEVER destroy+respawn an individual live body, and NEVER destroy a tree containing a PhysicsWorldComponent. To reset a physics scene: disable the old game root (oldRoot.enabled = false) and rebuild a fresh one ~3s later — ScenePhysics.resetWorld().",
+      "To throw/move a body use a cm-scale nudge + PhysicsVelocityComponent (ScenePhysics.launch), NOT a large TransformComponent teleport. Expect a ~2s beat before it moves (batch epoch); trust the visual frame, not the lagged read-back.",
+      "Keep DISCRETE collision (the default) — do not set CollisionDetectionMode.CONTINUOUS.",
+      "The lint rules physics-destroy-respawn / physics-kinematic-flip / physics-ccd-continuous catch these before build (preflight_lint). Verify the strike with capture_frame (before/after).",
+    ],
+    designRule: "aaa-fidelity-emulator memory §PHYSICS ADAPTER RULES R1-R5 (examples/BowlingGame.kt); DESIGN.md §9b",
+    relatedTools: ["generate_rigidbody_kotlin", "preflight_lint", "capture_frame", "build_and_run"],
   },
 };
 
@@ -422,6 +436,7 @@ export function registerDiagnoseTools(server: McpServer) {
             "no_controller_pose",
             "texture_black",
             "raycast_no_hit",
+            "physics_not_simulating",
             "emulator_camera_drift",
           ])
           .describe("The observed symptom to diagnose."),
@@ -455,7 +470,7 @@ export function registerDiagnoseTools(server: McpServer) {
     "design_review",
     {
       description:
-        "Orchestrate a VISUAL self-review of the live emulator scene: captures the host-composited emulator GUI window (the only view of the immersive 3D scene, same path as gui_capture), runs cheap dependency-free pixel heuristics (mean brightness / contrast / color variety) to flag obvious failures (all-black env, all-white unlit geometry, low contrast), and returns the IMAGE plus a DESIGN.md rubric for YOU (the vision-capable agent) to evaluate. You make the visual judgement against the checklist; this tool supplies the capture, the rubric, and cheap heuristic flags. Pair any failing item with the 'diagnose' tool.",
+        "Orchestrate a VISUAL self-review of the live emulator scene: captures the emulator GUI free-cam window (same path as gui_capture — note this view DRIFTS across launches, C2; capture_frame's adb forward view is the deterministic ground-truth path the ledger/eye pipeline uses), runs cheap dependency-free pixel heuristics (mean brightness / contrast / color variety) to flag obvious failures (all-black env, all-white unlit geometry, low contrast), and returns the IMAGE plus a DESIGN.md rubric for YOU (the vision-capable agent) to evaluate. You make the visual judgement against the checklist; this tool supplies the capture, the rubric, and cheap heuristic flags. Pair any failing item with the 'diagnose' tool.",
       inputSchema: {
         windowId: z.number().int().optional().describe("Specific emulator window id (default: the main/largest window)."),
         checklist: z.boolean().default(true).describe("Include the DESIGN.md review rubric in the response (default true)."),

@@ -399,7 +399,7 @@ export function registerInspectionTools(server: McpServer) {
       fs.mkdirSync(assetsDir, { recursive: true });
       const fname = rename ?? path.basename(src);
       fs.copyFileSync(src, path.join(assetsDir, fname));
-      const kind = [".png", ".jpg", ".jpeg", ".exr", ".hdr"].includes(ext) ? "skybox" : ext === ".ply" ? "splat (convert to mesh for emulator)" : "glb";
+      const kind = [".png", ".jpg", ".jpeg", ".exr", ".hdr"].includes(ext) ? "skybox" : ext === ".ply" ? "splat (loads natively via import_world_environment)" : "glb";
       return okJson({
         imported: fname,
         sizeMB: Number((fs.statSync(path.join(assetsDir, fname)).size / 1024 / 1024).toFixed(2)),
@@ -422,7 +422,7 @@ export function registerInspectionTools(server: McpServer) {
         howToLoad: "import_environment <file> into the project, then compose_inspection_scene environment={type:'glb'|'skybox', asset:'<file>'}. A GLB mesh becomes a referenced room; an equirectangular image becomes a skybox sphere. Rebuild with build_and_run. (Verified: loading Sky Sphere.usdz replaced the white background.)",
         worldModels: {
           worldLabsMarble: {
-            best: "Highest fidelity damaged-room worlds. Generate at marble.worldlabs.ai (text or a photo of a damaged room), export GLB mesh (~600k tris + PBR textures) for the emulator. PLY splats are higher fidelity but need a splat renderer (Spark.js).",
+            best: "Highest fidelity damaged-room worlds. Generate at marble.worldlabs.ai (text or a photo of a damaged room), export GLB mesh (~600k tris + PBR textures) for the emulator. PLY/SPZ splats are higher fidelity AND load natively on PICO 0.13 (import_world_environment — vision-verified with a 1.92M-pt SPZ; no external renderer needed).",
             cost: "Free tier = 4 gens/month VIEW-ONLY; GLB/PLY export needs a paid plan. (User has credits.)",
             promptForDamagedRoom:
               "Interior of a residential living room with significant water and storm damage for an insurance inspection: large brown water stain spreading across a sagging drywall ceiling with bubbling paint, a dark mold bloom in the corner where wall meets ceiling, buckled and water-stained hardwood floor, a cracked plaster wall near an old electrical panel, peeling baseboards, dim overcast daylight through a partly boarded window, realistic, photogrammetry-style, empty of people, neutral furniture pushed aside.",

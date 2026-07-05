@@ -18,7 +18,11 @@ import { CAPABILITY_MANIFEST } from "./capabilities.js";
 
 // ── C-class inference (the plan-time honesty decision) ─────────────────────────────────────────────────
 function interactionClass(trigger: string, driveChannel: string): CapabilityClass {
-  if (trigger === "controller_ray" || trigger === "grab" || trigger === "press") return "C3";
+  // v9.2: a `press` interaction compiles to the in-world clickable GameMenu (generate_game_menu_kotlin),
+  // stamped C0_emulator by the compiler — it is mouse-bridge clickable AND broadcast-drivable on the
+  // emulator (vision-verified). Only controller_ray/grab stay Swan-only.
+  if (trigger === "controller_ray" || trigger === "grab") return "C3";
+  if (trigger === "press") return "C0_emulator";
   if (trigger === "gaze_dwell") return driveChannel === "broadcast" ? "C0_emulator" : "C3";
   return "C0_emulator"; // broadcast
 }

@@ -12,12 +12,12 @@ import { expandHome, fail, okJson, run } from "./util.js";
  *
  *   - A 360 equirectangular image -> skybox (the BEST visual path: surrounds the
  *     user everywhere and fixes "falling out" of a finite room).
- *   - A textured GLB -> imported, but MESH textures render BLACK in this runtime,
+ *   - A textured GLB -> BAKE it (bake_textured_model) so it renders textured; only raw RUNTIME-loaded GLB is black,
  *     so we warn and recommend converting the texture to a 360 skybox instead.
  *   - An untextured collider GLB -> optionally pano-projected to a textured GLB
  *     via headless Blender (still subject to the GLB-renders-black caveat), else
  *     imported as a dark collider.
- *   - A Gaussian splat (.spz/.ply) -> NOT loadable (needs a splat renderer);
+ *   - A Gaussian splat (.spz/.ply) -> loads NATIVELY (GaussianSplattingComponent; import_world_environment);
  *     guidance to export a 360 pano or textured mesh instead.
  *
  * All chosen assets are copied into <projectDir>/Sources/Assets and the exact
@@ -184,7 +184,7 @@ export function registerAssetTools(server: McpServer) {
     "prepare_environment",
     {
       description:
-        "Auto-detect an incoming environment asset (360 image / textured GLB / untextured collider GLB / Gaussian splat) and route it onto the path that actually RENDERS in the PICO USD runtime. Parses GLB glTF headers inline (counts materials/textures/images + checks for TEXCOORD_0 UVs) to tell a textured mesh from a bare collider. A 360 equirectangular image becomes a SKYBOX (the best visual path — surrounds the user, fixes falling out). A textured GLB is imported with a warning that MESH textures render BLACK in this runtime (prefer a 360 skybox). An untextured collider can be pano-PROJECTED to a textured GLB via headless Blender (still GLB-black-caveated) when Blender + a panorama are available, else imported as a dark collider. Gaussian splats (.spz/.ply) are NOT loadable (need a splat renderer). Copies the chosen asset(s) into Sources/Assets and returns the exact `environment` object to pass to compose_inspection_scene.",
+        "Auto-detect an incoming environment asset (360 image / textured GLB / untextured collider GLB / Gaussian splat) and route it onto the path that actually RENDERS in the PICO USD runtime. Parses GLB glTF headers inline (counts materials/textures/images + checks for TEXCOORD_0 UVs) to tell a textured mesh from a bare collider. A 360 equirectangular image becomes a SKYBOX (the best visual path — surrounds the user, fixes falling out). A textured GLB should be routed through `bake_textured_model` (a baked bundle renders textured — raw RUNTIME-loaded GLB is what renders black, not baked meshes). An untextured collider can be pano-PROJECTED to a textured GLB via headless Blender then baked, when Blender + a panorama are available, else imported as a dark collider. Gaussian splats (.spz/.ply) DO load natively on PICO 0.13 (GaussianSplattingComponent) — use `import_world_environment` (vision-verified, a 1.92M-pt SPZ on the emulator) or generate_environment_kotlin kind='splat'. Copies the chosen asset(s) into Sources/Assets and returns the exact `environment` object to pass to compose_inspection_scene.",
       inputSchema: {
         sourcePath: z.string().describe("Absolute path to the asset (.png/.jpg/.jpeg/.exr/.hdr 360 image, .glb/.gltf mesh, or .spz/.ply splat)"),
         projectDir: z.string().describe("The spatial app project dir (asset is copied into <projectDir>/Sources/Assets)"),
@@ -227,7 +227,7 @@ export function registerAssetTools(server: McpServer) {
           action: "NOT imported.",
           recommendedCompose: null,
           rationale:
-            "Gaussian splats (.spz/.ply) are NOT natively loadable by the PICO USD runtime — they need a dedicated splat renderer (e.g. Spark.js), which the emulator/runtime does not provide.",
+            "Gaussian splats (.spz/.ply) DO load natively on PICO 0.13 via GaussianSplattingComponent — use import_world_environment (vision-verified: a 1.92M-pt Decayed Apartment SPZ on the emulator) or generate_environment_kotlin kind='splat'. No external splat renderer needed.",
           caveats: [
             "Export a 360 equirectangular panorama from the splat capture and run prepare_environment on that (type:'skybox') — the working visual path.",
             "Or export a TEXTURED mesh; note GLB MESH textures still render BLACK in this runtime, so a skybox is preferred.",
@@ -375,7 +375,7 @@ export function registerAssetTools(server: McpServer) {
           note = "skybox-ready 360 image (the best visual path — surrounds the user)";
         } else if (SPLAT_EXTS.has(ext)) {
           type = "splat";
-          note = "Gaussian splat — NOT loadable by the runtime (export a 360 pano or textured mesh)";
+          note = "Gaussian splat — loads NATIVELY on PICO 0.13 (GaussianSplattingComponent); route via import_world_environment or kind='splat'";
         } else if (GLB_EXTS.has(ext)) {
           const insp = inspectGltf(full);
           if (insp.parsed && insp.images > 0 && insp.hasTexcoord0) {
