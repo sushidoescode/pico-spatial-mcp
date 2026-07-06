@@ -210,3 +210,34 @@ this MCP owns DEPLOY + VERIFY + the honesty ledger — the shared crown jewel.**
 **P14 web-3D SHIPPED (v10.16):** generate_web3d_scene — three.js scenes (orbit/grid/torusfield, PBR+lighting+animation+OrbitControls+Enter-VR) in the emulator Chromium. Vision-verified: a GALAXY orrery (glowing sun + 6 orbiting PBR spheres on tilted rings) renders + runs live in-emulator (canvas+gl+ready). three.js co-served (no runtime CDN). BONUS: P13 upgraded to vision-verified (LIVE METRICS panel seen solid in-world).
 
 **P15 capability matrix SHIPPED (v10.17):** capability_matrix — reads the whole trust ledger into an honest matrix (14 categories, all vision_verified, 21 apps, 40 looked-at captures). Generated CAPABILITIES.md. THE FULL P10-P15 ARC IS COMPLETE.
+
+---
+
+## 6) v11 ARC — depth, autonomy, real-world (P16-P20)
+
+### P16 — interactive web-3D  ✅ SHIPPED (v10.18)
+generate_web3d_scene gains interactivity: raycast pointer selection (click -> highlight + label),
+a window.Scene3D {select(i), data(values), count, selected} JS API, #select=N deep-link. Vision-
+verified: select(2) enlarged + labeled EARTH in the SOLAR orrery.
+
+### P17 — build_hybrid_experience  [the autonomy capstone]
+One command executes what compile_spatial_experience PLANS: from a brief, scaffold a native 3D
+scene + a web control panel (bridge) + a web info/HUD panel, build/install/launch unattended,
+open all surfaces, capture the composited workspace. DoD: a brief -> a running hybrid app +
+a workspace capture, unattended.
+
+### P18 — real-world data connectors
+connect_data_source: bind a REAL external API (weather / github / a system feed) to a live panel
+(P13) or a data-driven 3D scene (Scene3D.data). DoD: real API values render live in a spatial panel.
+
+### P19 — cross-lane experience templates
+A library of COMPLETE buildable experiences composing multiple capabilities: 'spatial dashboard'
+(web workspace + live data), 'physics arcade' (native game + menu + scoreboard), 'product
+configurator' (interactive web-3D + control panel), 'data command deck' (3D viz + live panels).
+
+### P20 — the ship path
+Package + deploy + an honest ship checklist: APK build/sign for native; a hostable PWA bundle
+(manifest + service worker) for web/WebSpatial; the checklist names what's verified vs
+Swan/OS6-deferred.
+
+**v11 status:** P16 shipped; P17-P20 next.
