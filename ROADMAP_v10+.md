@@ -149,7 +149,7 @@ installed and untouched. If a capture was LOOKED at, its ledger entry must exist
 - P6 interaction depth: ✅ SHIPPED (a: bake_menu_panel — custom-labeled menus, vision-verified in-world with working rows + bridge-compatible colors; c: head-pose spike CLOSED honestly — events accepted, view unchanged, MAE 0: still GUI-gated, broadcast-gaze remains the path). Remaining nicety: (b) registry-driven mouse bridge for arbitrary scenes.
 - P7 CI/distribution: ✅ CI + QUICKSTART SHIPPED (gates.yml green on main: build + smoke [SMOKE_SDK_OPTIONAL] + lint/ledger/eye/assetgate/worldenv; eye calibration skips on IM builds that can't measure — strict locally). Remaining: QUICKSTART front-matter + optional registry publish (ASK THE USER first).
 - P8 Swan: PARTIALLY CHARACTERIZED — WebXR session+pose layer works headlessly (v10.10); immersive FRAME compositing + WebSpatial spatial activation await OS6/Swan hardware.
-- P9 web workspace: NOT STARTED (web lane P3+v10.10 shipped the foundation)
+- P9 web workspace: ✅ SHIPPED (generate_web_workspace: N named WebView panels, each own task/spatial container, driven by-name via PANEL_CMD; list_spatial_panels reads the on-stage map. Proven: 3 panels live -> close:chart destroyed that container -> count dropped to 2. Gotcha: manifest receiver needs -p targeting. Visual note: shell ghosts non-focused stacked panels; single-panel solid render already vision-verified v10.10.)
 - P10 WebSpatial: NOT STARTED
 - Unity: DECISION MADE — build in the Unity MCP; add verify_pico_apk here as the shared deploy/verify contract (backlog)
 
