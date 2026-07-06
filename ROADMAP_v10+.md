@@ -200,3 +200,5 @@ this MCP owns DEPLOY + VERIFY + the honesty ledger — the shared crown jewel.**
   and hands it to this contract. One verification loop, two builders.
 - So: do NOT bake Unity BUILD into pico-spatial-mcp. DO (later) add `verify_pico_apk` as the shared
   deploy/verify contract both tools call. (Backlog — build when the Unity MCP can emit an APK.)
+
+**P11 web↔3D bridge SHIPPED (v10.13):** generate_web_bridge_kotlin — an HTML control panel (WebView + addJavascriptInterface Native.send) routes web-button clicks to the native scene dispatchDebugCommand. Vision-verified: BOWL CONTROL panel in-world + its THROW button drove the physics scene (log chain).
