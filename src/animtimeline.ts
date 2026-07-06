@@ -21,7 +21,7 @@ export function registerAnimTimelineTools(server: McpServer) {
     "generate_animation_timeline",
     {
       description:
-        "Emit SceneTimeline.kt — a MULTI-TRACK keyframe choreography driver. EXTENDS the vision-verified SceneAnimator runtime-motion path (generate_scene_animator_kotlin): identical per-frame `entity.components.set(TransformComponent(pos, rot.toQuat(), scale))` on the main thread + the same coroutine frame-loop. Each track carries position/rotation(deg)/scale/emissive keyframes; the driver LINEARLY interpolates between them over a shared timeline (loop or hold). Bind runtime entities by name: SceneTimeline.bind(\"planet\", planetEntity, planetMat); then LaunchedEffect(Unit){ SceneTimeline.run() }. HONEST SCOPE: transform + emissive keyframe choreography only — NOT skeletal/rigged/morph animation (unsupported). Emissive is grayscale intensity (Color4(v,v,v,1f)); needs a PhysicallyBasedMaterial bound. Evidence class when driven: vision_verified via before/after motion captures. RETURNS JSON {kotlin, note} — write to content/SceneTimeline.kt.",
+        "Emit SceneTimeline.kt — a MULTI-TRACK keyframe choreography driver. EXTENDS the vision-verified SceneAnimator runtime-motion path (generate_scene_animator_kotlin): identical per-frame `entity.components.set(TransformComponent(pos, rot.toQuat(), scale))` on the main thread + the same coroutine frame-loop. Each track carries position/rotation(deg)/scale/emissive keyframes; the driver LINEARLY interpolates between them over a shared timeline (loop or hold). Bind runtime entities by name: SceneTimeline.bind(\"planet\", planetEntity, planetMat); then LaunchedEffect(Unit){ SceneTimeline.run() }. HONEST SCOPE: transform + emissive keyframe choreography only — NOT skeletal/rigged/morph animation (unsupported). Emissive is grayscale intensity (Color4(v,v,v,1f)); needs a PhysicallyBasedMaterial bound. Expected evidence class once driven + captured: vision_verified via before/after motion frames (this tool extends the vision-verified SceneAnimator path but is not itself LOOKED-at until you capture it). RETURNS JSON {kotlin, note} — write to content/SceneTimeline.kt.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
         tracks: z
@@ -65,14 +65,12 @@ export function registerAnimTimelineTools(server: McpServer) {
           const rotK = sortByT(tr.keyframes.filter((k) => k.rotDeg)).map((k) => `V3Key(${kf(k.t)}, ${v3(k.rotDeg!)})`);
           const sclK = sortByT(tr.keyframes.filter((k) => k.scale !== undefined)).map((k) => `NumKey(${kf(k.t)}, ${kf(k.scale!)})`);
           const emiK = sortByT(tr.keyframes.filter((k) => k.emissive !== undefined)).map((k) => `NumKey(${kf(k.t)}, ${kf(k.emissive!)})`);
-          const restPos = sortByT(tr.keyframes.filter((k) => k.pos))[0]?.pos ?? [0, 0, 0];
           return [
             `        ${JSON.stringify(tr.target)} to Track(`,
             `            posKeys = listOf(${posK.join(", ")}),`,
             `            rotKeys = listOf(${rotK.join(", ")}),`,
             `            scaleKeys = listOf(${sclK.join(", ")}),`,
             `            emissiveKeys = listOf(${emiK.join(", ")}),`,
-            `            restPos = ${v3(restPos)},`,
             `        )`,
           ].join("\n");
         })
@@ -117,20 +115,26 @@ export function registerAnimTimelineTools(server: McpServer) {
         "        val rotKeys: List<V3Key>,",
         "        val scaleKeys: List<NumKey>,",
         "        val emissiveKeys: List<NumKey>,",
-        "        val restPos: Vector3,",
         "    )",
         "",
         "    private val tracks: Map<String, Track> = mapOf(",
         trackEntries,
         "    )",
         "",
-        "    private class Bound(val entity: Entity, val mat: PhysicallyBasedMaterial?)",
+        "    private class Bound(val entity: Entity, val mat: PhysicallyBasedMaterial?,",
+        "                        val restPos: Vector3, val restRot: Quat, val restScale: Vector3)",
         "    private val bound = mutableMapOf<String, Bound>()",
         "",
-        "    /** Bind a track NAME to its runtime Entity (+ optional PBR material for the emissive channel). */",
+        "    /** Bind a track NAME to its runtime Entity (+ optional PBR material for the emissive channel).",
+        "     *  Snapshots the entity's CURRENT transform as the rest pose, so any channel a track does NOT",
+        "     *  keyframe HOLDS its build-time value (a rotation-only track won't teleport to the origin). */",
         "    fun bind(name: String, entity: Entity, mat: PhysicallyBasedMaterial? = null) {",
         '        if (!tracks.containsKey(name)) { Log.w(TAG, "no track named " + name); return }',
-        "        bound[name] = Bound(entity, mat)",
+        "        val tc = entity.components.get<TransformComponent>()",
+        "        val rp = tc?.position ?: Vector3(0f, 0f, 0f)",
+        "        val rr = tc?.quaternion ?: Quat.identity()",
+        "        val rs = tc?.scaleVector ?: Vector3(1f, 1f, 1f)",
+        "        bound[name] = Bound(entity, mat, rp, rr, rs)",
         "    }",
         "",
         "    fun clear() { bound.clear() }",
@@ -168,11 +172,12 @@ export function registerAnimTimelineTools(server: McpServer) {
         "    private fun apply(track: Track, b: Bound, tt: Float) {",
         "        val hasTransform = track.posKeys.isNotEmpty() || track.rotKeys.isNotEmpty() || track.scaleKeys.isNotEmpty()",
         "        if (hasTransform) {",
-        "            val p = sampleV3(track.posKeys, tt, track.restPos)",
-        "            val r = if (track.rotKeys.isEmpty()) Quat.identity()",
+        "            // un-keyed channels HOLD the build-time (rest) value — no reset to origin/identity/1.",
+        "            val p = if (track.posKeys.isEmpty()) b.restPos else sampleV3(track.posKeys, tt, b.restPos)",
+        "            val r = if (track.rotKeys.isEmpty()) b.restRot",
         "                    else sampleV3(track.rotKeys, tt, Vector3(0f, 0f, 0f)).let { EulerAngles(it.x, it.y, it.z).toQuat() }",
-        "            val s = sampleNum(track.scaleKeys, tt, 1f)",
-        "            b.entity.components.set(TransformComponent(p, r, Vector3(s, s, s)))",
+        "            val s = if (track.scaleKeys.isEmpty()) b.restScale else sampleNum(track.scaleKeys, tt, 1f).let { Vector3(it, it, it) }",
+        "            b.entity.components.set(TransformComponent(p, r, s))",
         "        }",
         "        val mat = b.mat",
         "        if (track.emissiveKeys.isNotEmpty() && mat != null) {",

@@ -33,7 +33,7 @@ export function registerVerifyApkTools(server: McpServer) {
         packageName: z.string().describe("Android package id, e.g. com.example.unityxr."),
         activity: z.string().optional().describe("Fully-qualified launch activity (e.g. com.unity3d.player.UnityPlayerActivity). If omitted, launched via a monkey LAUNCHER intent."),
         expectLogcatContains: z.string().optional().describe("Optional substring to look for in logcat (e.g. a scene-ready log line). Sets logcatMatch true/false; null when not provided."),
-        settleSec: z.number().optional().describe("Seconds to wait after launch before asserting (default 8)."),
+        settleSec: z.number().min(0).max(120).optional().describe("Seconds to wait after launch before asserting (default 8)."),
       },
     },
     async ({ apkPath, packageName, activity, expectLogcatContains, settleSec }) => {
@@ -104,8 +104,9 @@ export function registerVerifyApkTools(server: McpServer) {
         const safe = packageName.replace(/[^A-Za-z0-9._-]/g, "_") || "app";
         const out = path.join(dir, `${safe}.png`);
         const png = await run(ADB, ["-s", SERIAL, "exec-out", "screencap", "-p"], { timeout: 30_000, encoding: "buffer" as any, maxBuffer: 32 * 1024 * 1024 });
-        fs.writeFileSync(out, png.stdout as any);
-        artifact = out;
+        const buf = png.stdout as unknown as Buffer;
+        if (buf && buf.length > 1000) { fs.writeFileSync(out, buf); artifact = out; }
+        else errors.push(`capture: screencap returned ${buf?.length ?? 0} bytes (too small)`);
       } catch (e: any) {
         errors.push(`capture: ${String(e?.message ?? e).slice(0, 120)}`);
       }
