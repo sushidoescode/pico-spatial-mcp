@@ -148,6 +148,55 @@ installed and untouched. If a capture was LOOKED at, its ledger entry must exist
 - P5 editor palette: ✅ SOLVED (v10.9, user-authorized): install_editor_palette appends a ThirdParty/PLUGIN entry to the bundle's componentList.json + ad-hoc re-signs — GameStats appears in the Add Component dialog (vision-verified). Opt-in with a full .BACKUP restore. Editor custom components are now end-to-end (schema + palette).
 - P6 interaction depth: ✅ SHIPPED (a: bake_menu_panel — custom-labeled menus, vision-verified in-world with working rows + bridge-compatible colors; c: head-pose spike CLOSED honestly — events accepted, view unchanged, MAE 0: still GUI-gated, broadcast-gaze remains the path). Remaining nicety: (b) registry-driven mouse bridge for arbitrary scenes.
 - P7 CI/distribution: ✅ CI + QUICKSTART SHIPPED (gates.yml green on main: build + smoke [SMOKE_SDK_OPTIONAL] + lint/ledger/eye/assetgate/worldenv; eye calibration skips on IM builds that can't measure — strict locally). Remaining: QUICKSTART front-matter + optional registry publish (ASK THE USER first).
-- P8 Swan: BLOCKED ON HARDWARE
+- P8 Swan: PARTIALLY CHARACTERIZED — WebXR session+pose layer works headlessly (v10.10); immersive FRAME compositing + WebSpatial spatial activation await OS6/Swan hardware.
+- P9 web workspace: NOT STARTED (web lane P3+v10.10 shipped the foundation)
+- P10 WebSpatial: NOT STARTED
+- Unity: DECISION MADE — build in the Unity MCP; add verify_pico_apk here as the shared deploy/verify contract (backlog)
 
 **The workspace frame (v10.8):** /tmp/pico-render/ws-0.png — four surfaces in one composited view (game + custom menu + live HUD + live-DOM web panel), vision-verified. The stack in a single capture.
+
+---
+
+## 4) THE WEB LANE (v10.10 — a second content path, verified)
+
+The emulator's Chromium 138 (SpaceBrowser) is a full WebXR/WebGL2/WebGPU runtime, CDP-drivable
+headlessly with NO APK build. Shipped: `drive_browser`, `webxr_probe` (both vision/structural
+verified). This opens a phase ladder:
+
+### P9 — Web workspace orchestration   [HIGH VALUE, LOW EFFORT]
+- `generate_web_workspace` — N NAMED web-panel activities (extend panelcompose kind='web' to a
+  parameterized class name per panel; own taskAffinity/singleTask/exported each) + a broadcast
+  drive channel (`panel:url:<name>`, `panel:js:<name>`, `panel:open/close:<name>`).
+- `list_spatial_panels` — parse `dumpsys window windows` SpaceWindowAttributes/containerId into a
+  {package, task, containerId} map (know what panels are on stage).
+- DoD: 3 named web panels co-present in one capture, each independently URL/JS-driven.
+
+### P10 — WebSpatial compile target   [MEDIUM VALUE, FORWARD-LOOKING]
+- `generate_webspatial_app` — AppSpec → a React + @webspatial/react-sdk project (enable-xr,
+  --xr-back, initScene, xr_main_scene manifest), reusing the layout/data planners. It runs as a
+  plain 2D website today (verify the 2D projection in host/desktop Chromium via the eye) and
+  activates spatially on PICO OS 6 — a new evidence class `built_for_os6` (mirrors awaiting_swan).
+- DoD: a generated WebSpatial app's 2D build auto_judged in a headless Chromium; spatial behavior
+  deferred honestly to OS 6.
+
+### P8 (refined) — Swan/OS6 day-one
+WebXR immersive FRAME compositing + WebSpatial spatial activation are the OS6/Swan re-tests
+(the session+pose layer already works headlessly — that half is characterized now).
+
+## 5) THE UNITY QUESTION (architecture decision)
+
+The user maintains a SEPARATE Unity MCP for building XR projects and asks whether PICO Swan
+Unity-plugin VR support belongs here or there. **Recommendation: BUILD stays in the Unity MCP;
+this MCP owns DEPLOY + VERIFY + the honesty ledger — the shared crown jewel.** Rationale:
+- A Unity VR app renders via the immersive OpenXR compositor, which does NOT composite on this
+  emulator (hardware-only — same gate as native immersive + WebXR frames). So a Unity XR app
+  cannot be VISUALLY verified on the emulator regardless of which tool builds it. Building it here
+  would duplicate Unity tooling for zero added verifiability.
+- What this MCP uniquely has: capture_frame + the calibrated eye + the trust ledger +
+  deploy_to_device + swan_verify_matrix (the parity path). That's the reusable asset.
+- Clean seam: expose a thin `verify_pico_apk(apkPath, packageName, expectations)` here — install +
+  launch + structural assert on the emulator (does it boot/not-crash/log-XR-init) + record the
+  honest matrix (structural on emulator, device-verified on Swan). The Unity MCP builds the APK
+  and hands it to this contract. One verification loop, two builders.
+- So: do NOT bake Unity BUILD into pico-spatial-mcp. DO (later) add `verify_pico_apk` as the shared
+  deploy/verify contract both tools call. (Backlog — build when the Unity MCP can emit an APK.)
