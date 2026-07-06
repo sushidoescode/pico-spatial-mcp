@@ -50,9 +50,11 @@ export function registerVerifyApkTools(server: McpServer) {
         errors.push(`install: ${String(e?.stderr ?? e?.message ?? e).slice(0, 200)}`);
       }
 
-      // 2. force-stop for a clean launch
+      // 2. force-stop for a clean launch, then CLEAR logcat so the crash/ANR scan is scoped to THIS
+      //    launch only (a prior app's stale FATAL in the ring buffer would false-positive as a crash).
       try {
         await run(ADB, ["-s", SERIAL, "shell", "am", "force-stop", packageName], { timeout: 20_000 });
+        await run(ADB, ["-s", SERIAL, "logcat", "-c"], { timeout: 15_000 }).catch(() => {});
       } catch (e: any) {
         errors.push(`force-stop: ${String(e?.message ?? e).slice(0, 120)}`);
       }
