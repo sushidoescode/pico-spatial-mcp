@@ -148,5 +148,5 @@ installed and untouched. If a capture was LOOKED at, its ledger entry must exist
 - P4 lathe props: NOT STARTED
 - P5 editor palette: ⛔ BLOCKED ON USER AUTHORIZATION — the spike (edit componentList.json inside the installed Spatial Editor.app + ad-hoc re-sign) modifies an installed app's code signature, which the permission system rightly requires the user to approve interactively. To proceed: the user runs the spike commands themselves (see this phase's Spike order) or grants a permission rule. Schema half remains shipped (v9.6).
 - P6 interaction depth: NOT STARTED
-- P7 CI/distribution: NOT STARTED
+- P7 CI/distribution: ✅ CI SHIPPED (gates.yml green on main: build + smoke [SMOKE_SDK_OPTIONAL] + lint/ledger/eye/assetgate/worldenv; eye calibration skips on IM builds that can't measure — strict locally). Remaining: QUICKSTART front-matter + optional registry publish (ASK THE USER first).
 - P8 Swan: BLOCKED ON HARDWARE
