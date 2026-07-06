@@ -230,7 +230,7 @@ a workspace capture, unattended.
 connect_data_source: bind a REAL external API (weather / github / a system feed) to a live panel
 (P13) or a data-driven 3D scene (Scene3D.data). DoD: real API values render live in a spatial panel.
 
-### P19 — cross-lane experience templates
+### P19 — cross-lane experience templates  ✅ SHIPPED (v10.21)
 A library of COMPLETE buildable experiences composing multiple capabilities: 'spatial dashboard'
 (web workspace + live data), 'physics arcade' (native game + menu + scoreboard), 'product
 configurator' (interactive web-3D + control panel), 'data command deck' (3D viz + live panels).
@@ -240,4 +240,4 @@ Package + deploy + an honest ship checklist: APK build/sign for native; a hostab
 (manifest + service worker) for web/WebSpatial; the checklist names what's verified vs
 Swan/OS6-deferred.
 
-**v11 status:** P16-P18 shipped; P19-P20 next. P17 vision-verified: build_hybrid_experience({appName:"BowlDeck"}) -> a complete hybrid app (physics scene + THROW/RESET web control panel composited) built + launched unattended.
+**v11 status:** P16-P19 shipped; P20 next. P17 vision-verified: build_hybrid_experience({appName:"BowlDeck"}) -> a complete hybrid app (physics scene + THROW/RESET web control panel composited) built + launched unattended.
