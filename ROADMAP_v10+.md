@@ -149,3 +149,5 @@ installed and untouched. If a capture was LOOKED at, its ledger entry must exist
 - P6 interaction depth: ✅ SHIPPED (a: bake_menu_panel — custom-labeled menus, vision-verified in-world with working rows + bridge-compatible colors; c: head-pose spike CLOSED honestly — events accepted, view unchanged, MAE 0: still GUI-gated, broadcast-gaze remains the path). Remaining nicety: (b) registry-driven mouse bridge for arbitrary scenes.
 - P7 CI/distribution: ✅ CI + QUICKSTART SHIPPED (gates.yml green on main: build + smoke [SMOKE_SDK_OPTIONAL] + lint/ledger/eye/assetgate/worldenv; eye calibration skips on IM builds that can't measure — strict locally). Remaining: QUICKSTART front-matter + optional registry publish (ASK THE USER first).
 - P8 Swan: BLOCKED ON HARDWARE
+
+**The workspace frame (v10.8):** /tmp/pico-render/ws-0.png — four surfaces in one composited view (game + custom menu + live HUD + live-DOM web panel), vision-verified. The stack in a single capture.
