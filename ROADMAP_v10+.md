@@ -132,8 +132,7 @@ the OpenXR native app (`~/AndroidStudioProjects/pico-openxr-env`) are the day-on
 - Skeletal animation (deferred since v4.5) — editor-authored clips on baked models.
 - Spatial audio playback verification — test whether emulator host audio carries ObjectAudio.
 - text_to_3d (v7.0, flagged) — deepen with a real hosted API when a key is provided.
-- Multi-scene + physics: SceneRouter is destroy-based (R3 conflict) — add an `enabled=false`
-  routing mode for physics scenes.
+- ✅ Multi-scene + physics: SceneRouter.registerPhysics(id, builder) — go() disables (R3-safe) instead of destroying; SDK compile-verified.
 - MEMORY.md hygiene: keep the index under ~24KB (one-liners; details in topic files).
 
 ## 3) HOW TO HAND OFF MID-PHASE
@@ -147,6 +146,6 @@ installed and untouched. If a capture was LOOKED at, its ledger entry must exist
 - P3 web panels: ✅ SHIPPED (vision-verified: a WebView spatial panel with a LIVE JS DOM — a setInterval counter ticked 42→130 in-world; generate_panel_compose_kotlin kind='web' + AppSpec panels[].kind='web' + compiler route; suite 15/15)
 - P4 lathe props: ✅ GENERATOR SHIPPED + HOST-RENDER LOOKED (pin/bottle lathe silhouettes; usd_host_render recorded). Remaining nicety: live device swap into the bowling scene.
 - P5 editor palette: ⛔ BLOCKED ON USER AUTHORIZATION — the spike (edit componentList.json inside the installed Spatial Editor.app + ad-hoc re-sign) modifies an installed app's code signature, which the permission system rightly requires the user to approve interactively. To proceed: the user runs the spike commands themselves (see this phase's Spike order) or grants a permission rule. Schema half remains shipped (v9.6).
-- P6 interaction depth: NOT STARTED
-- P7 CI/distribution: ✅ CI SHIPPED (gates.yml green on main: build + smoke [SMOKE_SDK_OPTIONAL] + lint/ledger/eye/assetgate/worldenv; eye calibration skips on IM builds that can't measure — strict locally). Remaining: QUICKSTART front-matter + optional registry publish (ASK THE USER first).
+- P6 interaction depth: ✅ SHIPPED (a: bake_menu_panel — custom-labeled menus, vision-verified in-world with working rows + bridge-compatible colors; c: head-pose spike CLOSED honestly — events accepted, view unchanged, MAE 0: still GUI-gated, broadcast-gaze remains the path). Remaining nicety: (b) registry-driven mouse bridge for arbitrary scenes.
+- P7 CI/distribution: ✅ CI + QUICKSTART SHIPPED (gates.yml green on main: build + smoke [SMOKE_SDK_OPTIONAL] + lint/ledger/eye/assetgate/worldenv; eye calibration skips on IM builds that can't measure — strict locally). Remaining: QUICKSTART front-matter + optional registry publish (ASK THE USER first).
 - P8 Swan: BLOCKED ON HARDWARE
