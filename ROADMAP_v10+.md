@@ -202,3 +202,5 @@ this MCP owns DEPLOY + VERIFY + the honesty ledger — the shared crown jewel.**
   deploy/verify contract both tools call. (Backlog — build when the Unity MCP can emit an APK.)
 
 **P11 web↔3D bridge SHIPPED (v10.13):** generate_web_bridge_kotlin — an HTML control panel (WebView + addJavascriptInterface Native.send) routes web-button clicks to the native scene dispatchDebugCommand. Vision-verified: BOWL CONTROL panel in-world + its THROW button drove the physics scene (log chain).
+
+**P12 unified compiler SHIPPED (v10.14):** compile_spatial_experience — the front door. A brief routes to native/web/hybrid with an ordered plan across the whole toolkit + honesty classes. Verified: bowling->native, dashboard->web, game+controls->hybrid, three.js->web (all correct).
