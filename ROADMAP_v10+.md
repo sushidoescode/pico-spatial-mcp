@@ -144,7 +144,7 @@ installed and untouched. If a capture was LOOKED at, its ledger entry must exist
 **Phase status (update on every landing):**
 - P1 cold dry-run: NOT RUN
 - P2 fleet build: NOT STARTED
-- P3 web panels: NOT STARTED
+- P3 web panels: ✅ SHIPPED (vision-verified: a WebView spatial panel with a LIVE JS DOM — a setInterval counter ticked 42→130 in-world; generate_panel_compose_kotlin kind='web' + AppSpec panels[].kind='web' + compiler route; suite 15/15)
 - P4 lathe props: NOT STARTED
 - P5 editor palette: OPEN THREAD (schema half shipped v9.6)
 - P6 interaction depth: NOT STARTED

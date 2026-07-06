@@ -103,7 +103,11 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
 
   // v9.4: panels -> a Compose WindowContainer with LIVE runtime text (the hybrid-app tier).
   for (const pn of (spec as any).panels ?? []) {
-    push({ node: pn.id, tool: "generate_panel_compose_kotlin", args: { packageName: contentPkg, title: pn.title, ...(pn.fields?.length ? { fields: pn.fields } : {}) }, targetPath: `${cpath}/HudPanel.kt`, cClass: "C0_emulator", note: "LIVE TEXT panel (2D windows composite as spatial panels). Spawns at the dock position — verify by turning the camera. Headless drive: DEBUG_CMD 'hud:<key>=<value>'." });
+    if (pn.kind === "web") {
+      push({ node: pn.id, tool: "generate_panel_compose_kotlin", args: { packageName: contentPkg, kind: "web", ...(pn.url ? { url: pn.url } : {}), ...(pn.html ? { html: pn.html } : {}) }, targetPath: `${cpath}/WebPanel.kt`, cClass: "C0_emulator", note: "WEB panel: full HTML/CSS/JS with a LIVE DOM as a spatial panel (vision-verified). Merge the returned manifestEntry (+ INTERNET permission for URLs). Show: am start -n <pkg>/<contentPkg>.WebPanelActivity." });
+    } else {
+      push({ node: pn.id, tool: "generate_panel_compose_kotlin", args: { packageName: contentPkg, title: pn.title, ...(pn.fields?.length ? { fields: pn.fields } : {}) }, targetPath: `${cpath}/HudPanel.kt`, cClass: "C0_emulator", note: "LIVE TEXT panel (2D windows composite as spatial panels). Spawns at the dock position — verify by turning the camera. Headless drive: DEBUG_CMD 'hud:<key>=<value>'." });
+    }
   }
 
   // v9.2: press interactions -> the in-world clickable GameMenu (mouse-bridge detectable).

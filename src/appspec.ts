@@ -162,7 +162,9 @@ export const headsetPieceSchema = z.object({
 export const panelSchema = z.object({
   id: z.string(),
   title: z.string().describe("Panel heading, e.g. 'KNOCKDOWN'."),
-  kind: z.enum(["hud", "scoreboard", "info"]).default("hud"),
+  kind: z.enum(["hud", "scoreboard", "info", "web"]).default("hud").describe("web = a WebView panel: full HTML/CSS/JS with a LIVE DOM in the spatial viewport (vision-verified)."),
+  url: z.string().optional().describe("kind='web': URL to load (INTERNET permission required)."),
+  html: z.string().optional().describe("kind='web': inline HTML (deterministic, no network)."),
   fields: z
     .array(z.object({ key: z.string(), label: z.string(), initial: z.string() }))
     .default([])
