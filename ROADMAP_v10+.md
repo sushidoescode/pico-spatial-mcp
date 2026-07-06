@@ -235,9 +235,9 @@ A library of COMPLETE buildable experiences composing multiple capabilities: 'sp
 (web workspace + live data), 'physics arcade' (native game + menu + scoreboard), 'product
 configurator' (interactive web-3D + control panel), 'data command deck' (3D viz + live panels).
 
-### P20 — the ship path
+### P20 — the ship path  ✅ SHIPPED (v10.22)
 Package + deploy + an honest ship checklist: APK build/sign for native; a hostable PWA bundle
 (manifest + service worker) for web/WebSpatial; the checklist names what's verified vs
 Swan/OS6-deferred.
 
-**v11 status:** P16-P19 shipped; P20 next. P17 vision-verified: build_hybrid_experience({appName:"BowlDeck"}) -> a complete hybrid app (physics scene + THROW/RESET web control panel composited) built + launched unattended.
+**v11 status:** ★ P16-P20 ALL SHIPPED. v11 arc complete (interactive web-3D, one-command hybrid builder, real-API connectors, cross-lane experience library, honest ship path + PWA packaging). P17 vision-verified: build_hybrid_experience({appName:"BowlDeck"}) -> a complete hybrid app (physics scene + THROW/RESET web control panel composited) built + launched unattended.
