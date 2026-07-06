@@ -86,3 +86,8 @@ Yes — we can cleanly build our own Gradle plugin that hooks around PICO's pack
 ## ⚠️ v9.6 correction (tested, honest): editor custom components — schema ≠ palette
 
 The recon's "custom ECS component" surface is HALF-real. Per-project `.Component/*.spatialEditorComponent` files (property SCHEMA: componentName/properties/dataType/defaultValue) emit fine and the editor opens clean — but the component does NOT appear in the Add Component palette. That palette is `componentList.json` INSIDE the editor bundle (`Contents/MacOS/inspectorconfigs/`, a different schema: belongTo/fullCompName/pkgName/componentType), signature-covered and NOT a per-project drop-in. `emit_editor_components` ships the schema half (interchange); GUI palette registration remains an unsolved bundle-level step. Verified by opening the editor GUI and LOOKING.
+
+
+## ✅ v10.9 UPDATE: editor palette SOLVED
+
+The v9.6 gap is closed. `install_editor_palette` appends a ThirdParty/PLUGIN entry to the bundle's `componentList.json` and ad-hoc re-signs the editor — the MCP-emitted component (GameStats) then appears in the Add Component dialog under a project section (vision-verified). Opt-in: it modifies + re-signs the installed Spatial Editor.app, with a full `.BACKUP` restore path. Editor custom components are now end-to-end: `emit_editor_components` (per-project property schema) + `install_editor_palette` (the GUI palette entry).
