@@ -16,12 +16,17 @@ const client = new Client({ name: "smoke", version: "0.0.0" });
 await client.connect(transport);
 
 let failures = 0;
+// CI runners have no PICO SDK/emulator payload — with SMOKE_SDK_OPTIONAL=1, checks that fail
+// ONLY because the local toolchain is absent count as SKIP (environmental), not FAIL (code).
+const SDK_OPTIONAL = !!process.env.SMOKE_SDK_OPTIONAL;
+const ENV_MISS = /No (spatialbundle binary|emulator payload) found under/;
 const show = (name, res) => {
   const text = res.content
     .map((c) => (c.type === "text" ? c.text : `[${c.type} ${c.data ? Math.round(c.data.length * 0.75) + " bytes" : ""}]`))
     .join("\n");
-  const status = res.isError ? "FAIL" : "ok";
-  if (res.isError) failures++;
+  const envMiss = res.isError && SDK_OPTIONAL && ENV_MISS.test(text);
+  const status = envMiss ? "SKIP (no local PICO SDK)" : res.isError ? "FAIL" : "ok";
+  if (res.isError && !envMiss) failures++;
   console.log(`\n=== ${name} [${status}] ===\n${text.slice(0, 2500)}`);
 };
 

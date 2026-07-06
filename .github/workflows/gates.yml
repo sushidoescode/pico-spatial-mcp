@@ -21,6 +21,8 @@ jobs:
       # (Emulator/vision tiers can't run in CI; the regression_gate golden covers plan+compile.)
       - name: Smoke (every tool registers + responds)
         run: npm run smoke
+        env:
+          SMOKE_SDK_OPTIONAL: "1"
       - name: Lint fixtures (each retained-lessons rule fires on pos, silent on neg)
         run: npm run test:lint
       - name: Ledger fixtures (over-claims structurally impossible)
