@@ -157,7 +157,14 @@ export function registerFleetBuildTools(server: McpServer) {
                 await run(ADB, ["-s", "emulator-5554", "shell", "am", "force-stop", m[1]], { timeout: 15_000 }).catch(() => {});
                 await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-S", "-n", `${pkg}/.platform.LaunchActivity`], { timeout: 30_000 });
                 rec.notes.push(`launch_blocked by ${m[1]} — force-stopped + relaunched`);
+                await new Promise((r) => setTimeout(r, settle)); // fresh settle after the recovery relaunch
               }
+            }
+            // final foreground check — capture only what is actually on stage (the eye catches it anyway,
+            // but noting it here names the cause instead of just ESCALATE)
+            const fg2 = await run(ADB, ["-s", "emulator-5554", "shell", "dumpsys", "activity", "activities"], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
+            if (!String(fg2.stdout).match(new RegExp(`topResumedActivity=ActivityRecord\\{\\S+ u0 ${pkg.replace(/\./g, "\\.")}[/]`))) {
+              rec.notes.push("app not foreground at capture time — the frame shows whatever IS on stage");
             }
             rec.installed = true;
             await new Promise((r) => setTimeout(r, settle));

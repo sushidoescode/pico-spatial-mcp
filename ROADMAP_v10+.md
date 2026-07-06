@@ -142,10 +142,10 @@ written"). Update this file's phase status line. Leave the emulator with showroo
 installed and untouched. If a capture was LOOKED at, its ledger entry must exist before the commit.
 
 **Phase status (update on every landing):**
-- P1 cold dry-run: NOT RUN
-- P2 fleet build: NOT STARTED
+- P1 cold dry-run: ✅ RUN + SUCCESS (2026-07-06, a fresh Sonnet agent, zero context: template→plan→compile→build→verified strike + live scoreboard; 6 stumbles logged in DRY_RUN.md, each fixed — incl. the new diagnose launch_blocked symptom)
+- P2 fleet build: ✅ SHIPPED + FIRST UNATTENDED RUN (fleet_build: 3/3 briefs scaffolded+built+installed unattended; studio auto_judged PASS conf 1.0; console ESCALATE→human LOOK confirmed content; knockdown ESCALATE correctly caught a not-foreground capture after a launch_blocked recovery — the guard fired twice and auto-recovered; post-recovery settle + foreground check added)
 - P3 web panels: ✅ SHIPPED (vision-verified: a WebView spatial panel with a LIVE JS DOM — a setInterval counter ticked 42→130 in-world; generate_panel_compose_kotlin kind='web' + AppSpec panels[].kind='web' + compiler route; suite 15/15)
-- P4 lathe props: ✅ GENERATOR SHIPPED + HOST-RENDER LOOKED (pin/bottle lathe shapes in generate_procedural_asset — an unmistakable bowling-pin silhouette; usd_host_render evidence recorded). Remaining: live device swap into the game scene (emulator was occupied by P1).
+- P4 lathe props: ✅ GENERATOR SHIPPED + HOST-RENDER LOOKED (pin/bottle lathe silhouettes; usd_host_render recorded). Remaining nicety: live device swap into the bowling scene.
 - P5 editor palette: ⛔ BLOCKED ON USER AUTHORIZATION — the spike (edit componentList.json inside the installed Spatial Editor.app + ad-hoc re-sign) modifies an installed app's code signature, which the permission system rightly requires the user to approve interactively. To proceed: the user runs the spike commands themselves (see this phase's Spike order) or grants a permission rule. Schema half remains shipped (v9.6).
 - P6 interaction depth: NOT STARTED
 - P7 CI/distribution: ✅ CI SHIPPED (gates.yml green on main: build + smoke [SMOKE_SDK_OPTIONAL] + lint/ledger/eye/assetgate/worldenv; eye calibration skips on IM builds that can't measure — strict locally). Remaining: QUICKSTART front-matter + optional registry publish (ASK THE USER first).
