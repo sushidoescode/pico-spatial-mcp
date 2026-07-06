@@ -231,6 +231,19 @@ const KB: Record<string, DiagEntry> = {
     designRule: "aaa-fidelity-emulator memory §PHYSICS ADAPTER RULES R1-R5 (examples/BowlingGame.kt); DESIGN.md §9b",
     relatedTools: ["generate_rigidbody_kotlin", "preflight_lint", "capture_frame", "build_and_run"],
   },
+
+  launch_blocked: {
+    rootCause:
+      "build_and_run reports launch ok but check_crash shows processAlive:false with crashCount:0 — NOT an app crash. A stale foreground activity (e.g. a leftover browser/WebXR or another spatial app the shell 'kept for the user') silently blocks the new activity start; adb prints only a quiet warning. Found by the P1 cold-run: this strands users who don't know adb.",
+    fix: [
+      "Inspect the foreground: adb shell dumpsys activity activities | grep topResumedActivity — if it's NOT your package, something is blocking the launch.",
+      "Force-stop the blocker (adb shell am force-stop <blocking.package>), then relaunch YOUR app with a clean start: adb shell am start -S -n <pkg>/.platform.LaunchActivity (-S force-stops your own stale task first).",
+      "Confirm with adb shell pidof <pkg> (a live PID) + the app's ready log line before trusting any capture.",
+      "If it recurs across runs, force-stop known blockers (com.picoxr.browser, other com.example.* apps) before every launch — fleet_build and the acceptance loops do this.",
+    ],
+    designRule: "DRY_RUN.md cold-run log #4 (2026-07-06)",
+    relatedTools: ["build_and_run", "check_crash", "logcat"],
+  },
 };
 
 // ----------------------------------------------------------------------------
@@ -437,6 +450,7 @@ export function registerDiagnoseTools(server: McpServer) {
             "texture_black",
             "raycast_no_hit",
             "physics_not_simulating",
+            "launch_blocked",
             "emulator_camera_drift",
           ])
           .describe("The observed symptom to diagnose."),

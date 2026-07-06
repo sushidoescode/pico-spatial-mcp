@@ -33,7 +33,7 @@ export function registerMenuTools(server: McpServer) {
     "generate_game_menu_kotlin",
     {
       description:
-        "Emit GameMenu.kt — a REAL in-world game menu (start/pause/resume/reset or custom buttons) with an AAA 3D feel, the way menuxr-native verified it. You provide a VERTICAL baked textured panel (bake_textured_model of a +90°X-rotated plane — see the usage note) and a list of AnimationPlaybackControllers; the menu adds a LIT 3D backing slab (depth/frame), a point light (pop), a gentle idle-bob float, and — per button — a RAISED GLASSY 3D CAP (rounded createBox) so the panel reads as real raised buttons. select(action) lifts the active cap, slides a glowing underline + cursor to the row, and PLAYS A REAL BUTTON-PRESS ANIMATION: the cap PLUNGES in and springs back (a position TweenAnimation, EASE_OUT, REVERSE×1) with a quick ripple flash (an opacity tween) — not a flat colour wash. select(action) is one entry point driven by a DEBUG_CMD broadcast on the emulator (no controller, C3) and by gaze/controller on a headset. Selection alignment + the raised cap are VISION-verifiable; pause/resume freezing is structurally verifiable via the Agent Bridge dump_scene.",
+        "Emit GameMenu.kt — a REAL in-world game menu (start/pause/resume/reset or custom buttons) with an AAA 3D feel, the way menuxr-native verified it. You provide a VERTICAL baked textured panel (bake_textured_model of a +90°X-rotated plane — see the usage note) and a list of AnimationPlaybackControllers; the menu adds a LIT 3D backing slab (depth/frame), a point light (pop), a gentle idle-bob float, and — per button — a RAISED GLASSY 3D CAP (rounded createBox) so the panel reads as real raised buttons. select(action) lifts the active cap, slides a glowing underline + cursor to the row, and PLAYS A REAL BUTTON-PRESS ANIMATION: the cap PLUNGES in and springs back (a position TweenAnimation, EASE_OUT, REVERSE×1) with a quick ripple flash (an opacity tween) — not a flat colour wash. select(action) is one entry point driven by a DEBUG_CMD broadcast on the emulator (no controller, C3) and by gaze/controller on a headset. Selection alignment + the raised cap are VISION-verifiable; pause/resume freezing is structurally verifiable via the Agent Bridge dump_scene. RETURNS: raw Kotlin text.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
         panelModelName: z.string().optional().describe('Baked panel model name loaded via Entity.loadSuspend (default "menu" — i.e. menu.bundle from bake_textured_model).'),
@@ -365,7 +365,7 @@ export function registerMenuTools(server: McpServer) {
         "            action == \"reset\" -> controllers.forEach { runCatching { it.setTime(0f); it.setSpeed(1f); it.resume() } }",
         "            else -> Log.w(TAG, \"no behavior for action '$action'\")",
         "        }",
-        "        Log.i(TAG, \"select($action): ${controllers.size} controllers updated\")",
+        "        Log.i(TAG, if (custom != null) \"select($action): customAction ran\" else \"select($action): ${controllers.size} controllers updated\")",
         "    }",
         "",
         "    /** MOVE the whole panel (+ its buttons/children) by a WORLD delta and log the new position, so you",

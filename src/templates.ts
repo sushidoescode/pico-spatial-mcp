@@ -152,7 +152,7 @@ export function registerTemplateTools(server: McpServer) {
   server.registerTool(
     "list_templates",
     {
-      description: "List the 8 parameterized AppSpec skeletons (gallery / inspection / dashboard / ambient / showcase / studio / constellation / KNOCKDOWN) — the proven app shapes you can instantiate for a new brief instead of authoring from scratch. `knockdown` is the REAL-physics game (physics + clickable GameMenu + live-text scoreboard — the proof-path for physics/interactive/hybrid briefs); `studio` is AAA PBR-metal; `constellation` is ambient + SceneAnimator. Each names its params + which are data-bound/interactive + any Swan-only pieces.",
+      description: "List the 8 parameterized AppSpec skeletons (gallery / inspection / dashboard / ambient / showcase / studio / constellation / KNOCKDOWN) — the proven app shapes you can instantiate for a new brief instead of authoring from scratch. `knockdown` is the REAL-physics game (physics + clickable GameMenu + live-text scoreboard — the proof-path for physics/interactive/hybrid briefs); `studio` is AAA PBR-metal; `constellation` is ambient + SceneAnimator. Each names its params + which are data-bound/interactive + any Swan-only pieces. Instantiate with instantiate_template(name, brief, appName, packageName[, count, palette]).",
       inputSchema: {},
     },
     async () => okJson({ templates: Object.entries(TEMPLATES).map(([name, t]) => ({ name, description: t.desc, dataBound: !!t.sampleData })) }),

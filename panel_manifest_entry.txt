@@ -1,1 +1,0 @@
-<activity android:name="com.example.coldrun.content.HudPanelActivity" android:exported="true" android:taskAffinity="com.example.coldrun.content.panel" android:launchMode="singleTask" />

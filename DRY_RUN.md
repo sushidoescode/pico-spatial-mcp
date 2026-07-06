@@ -98,3 +98,24 @@ Approve the `pico-spatial-mcp` tools when prompted (once). Then paste the prompt
 - **Real physics simulates on the emulator** (v8.6+): dynamic bodies fall, roll, and strike (the bowling demo is vision-verified). Expect a ~2s beat between a launch command and visible motion (engine batch epoch), and reset scenes by disabling + rebuilding the game root (`ScenePhysics.resetWorld`), never by destroying live bodies.
 
 See `VIDEO_DEMO.md` for the full director's guide + alternate hero prompts.
+
+---
+
+## 🧊 Cold run log — 2026-07-06 (P1, executed)
+
+A fresh Sonnet agent (zero project context; only the brief + the MCP's stdio location) built the
+knockdown brief end-to-end: `brief_to_app` → `list_templates` → `instantiate_template(knockdown)`
+→ `plan_app_spec` → `compile_app_spec` (9-step ledger) → generators → `build_and_run` → 4 captures.
+**Outcome: SUCCESS** — strike verified (racked targets scattered, ball gone) + the live scoreboard
+read THROWS: 1 / ROLLING. Maintainer re-verified the captures by eye.
+
+Stumbles found (each is now fixed in the tool descriptions/diagnostics):
+1. `list_templates` didn't name `instantiate_template`'s argument names → guessed wrong key first.
+2. The ledger's `generate_agent_bridge` args didn't note the scaffold template already ships the bridge.
+3. `generate_*_kotlin` return shapes were undocumented (raw Kotlin vs JSON envelopes) → probed each.
+4. A stale foreground activity ("kept for the user") silently blocked `am start` — `build_and_run`
+   said ok, `check_crash` said processAlive:false/crashCount:0; nothing explained it. → now
+   `diagnose(symptom=launch_blocked)`.
+5. The generated GameMenu logged "N controllers updated" even when a customAction ran.
+6. The agent skipped the formal `verify_app_spec` closing step (budget) — visual proof was
+   equivalent but diverged from the documented loop.

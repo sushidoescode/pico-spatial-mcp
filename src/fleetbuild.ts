@@ -148,7 +148,17 @@ export function registerFleetBuildTools(server: McpServer) {
             const apk = path.join(projectDir, "app/build/outputs/apk/debug/app-debug.apk");
             await run(ADB, ["-s", "emulator-5554", "install", "-r", apk], { timeout: 240_000 });
             await run(ADB, ["-s", "emulator-5554", "shell", "am", "force-stop", pkg], { timeout: 15_000 });
-            await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-n", `${pkg}/.platform.LaunchActivity`], { timeout: 30_000 });
+            await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-S", "-n", `${pkg}/.platform.LaunchActivity`], { timeout: 30_000 });
+            // launch_blocked guard (P1 cold-run finding): a stale foreground activity can silently block the start
+            const fg = await run(ADB, ["-s", "emulator-5554", "shell", "dumpsys", "activity", "activities"], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
+            if (!String(fg.stdout).split("topResumedActivity").slice(1, 2).join("").includes(pkg)) {
+              const m = String(fg.stdout).match(/topResumedActivity=ActivityRecord\{\S+ u0 ([\w.]+)\//);
+              if (m && m[1] !== pkg) {
+                await run(ADB, ["-s", "emulator-5554", "shell", "am", "force-stop", m[1]], { timeout: 15_000 }).catch(() => {});
+                await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-S", "-n", `${pkg}/.platform.LaunchActivity`], { timeout: 30_000 });
+                rec.notes.push(`launch_blocked by ${m[1]} — force-stopped + relaunched`);
+              }
+            }
             rec.installed = true;
             await new Promise((r) => setTimeout(r, settle));
 
