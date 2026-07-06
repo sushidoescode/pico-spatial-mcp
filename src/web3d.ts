@@ -103,8 +103,9 @@ window.Scene3D = {
   data:(values)=>{ objs.forEach((o,j)=>{ const v=values[j]; if(v!=null){ o.scale.setScalar(0.5+v); } }); return objs.length; },
   selected:()=>window.__selected,
 };
-// deep-link a selection (#select=N) — for deterministic capture/verification
+// deep-link a selection (#select=N) or data (#data=v0,v1,..) — for deterministic capture/verification
 if(location.hash.includes('select=')){ const n=parseInt(location.hash.split('select=')[1]); if(!isNaN(n)) highlight(n); }
+if(location.hash.includes('data=')){ const vs=location.hash.split('data=')[1].split(',').map(Number); window.Scene3D.data(vs); readout.textContent='DATA-DRIVEN'; }
 ` : ''}
 renderer.setAnimationLoop((t)=>{ animate(t||performance.now()); controls.update(); renderer.render(scene,camera); });
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
