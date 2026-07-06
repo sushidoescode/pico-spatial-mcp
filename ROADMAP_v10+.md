@@ -208,3 +208,5 @@ this MCP owns DEPLOY + VERIFY + the honesty ledger — the shared crown jewel.**
 **P13 live-data spatial SHIPPED (v10.15):** generate_live_data_panel — a floating panel polls a JSON URL and updates live. Verified via CDP DOM read: changed served data on disk -> panel displayed the new values within the poll interval (21C/NOMINAL -> 88C/CRITICAL).
 
 **P14 web-3D SHIPPED (v10.16):** generate_web3d_scene — three.js scenes (orbit/grid/torusfield, PBR+lighting+animation+OrbitControls+Enter-VR) in the emulator Chromium. Vision-verified: a GALAXY orrery (glowing sun + 6 orbiting PBR spheres on tilted rings) renders + runs live in-emulator (canvas+gl+ready). three.js co-served (no runtime CDN). BONUS: P13 upgraded to vision-verified (LIVE METRICS panel seen solid in-world).
+
+**P15 capability matrix SHIPPED (v10.17):** capability_matrix — reads the whole trust ledger into an honest matrix (14 categories, all vision_verified, 21 apps, 40 looked-at captures). Generated CAPABILITIES.md. THE FULL P10-P15 ARC IS COMPLETE.
