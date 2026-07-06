@@ -1,0 +1,23 @@
+pico-spatial-mcp ready (stdio)
+=== instantiate_template ===
+MCP error -32602: Input validation error: Invalid arguments for tool instantiate_template: [
+  {
+    "expected": "'gallery' | 'inspection' | 'dashboard' | 'ambient' | 'showcase' | 'studio' | 'constellation' | 'knockdown'",
+    "received": "undefined",
+    "code": "invalid_type",
+    "path": [
+      "name"
+    ],
+    "message": "Required"
+  },
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "undefined",
+    "path": [
+      "brief"
+    ],
+    "message": "Required"
+  }
+]
+

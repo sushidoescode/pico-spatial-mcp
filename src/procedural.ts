@@ -93,6 +93,65 @@ function crystal(s: number, sides = 6): [V3, V3, V3][] {
   return tris;
 }
 
+// v10.3 (P4): LATHE — revolve a 2D (y, radius) profile around Y into a smooth-silhouette solid.
+// Profiles are normalized to height 1 and scaled by size; radii are fractions of size.
+// 24 segments reads round at pin scale; triangles keep the flat-shaded pipeline unchanged.
+function lathe(s: number, profile: [number, number][], segments = 24): [V3, V3, V3][] {
+  const tris: [V3, V3, V3][] = [];
+  const ring = (y: number, r: number): V3[] => {
+    const pts: V3[] = [];
+    for (let i = 0; i < segments; i++) {
+      const t = (i / segments) * Math.PI * 2;
+      pts.push([r * s * Math.cos(t), y * s, r * s * Math.sin(t)]);
+    }
+    return pts;
+  };
+  const rings = profile.map(([y, r]) => ring(y, r));
+  for (let k = 0; k < profile.length - 1; k++) {
+    const [ , rA] = profile[k];
+    const [ , rB] = profile[k + 1];
+    const A = rings[k], B = rings[k + 1];
+    for (let i = 0; i < segments; i++) {
+      const j = (i + 1) % segments;
+      if (rA > 0 && rB > 0) {
+        tris.push([A[i], B[i], B[j]], [A[i], B[j], A[j]]);
+      } else if (rA > 0 && rB === 0) {
+        const apex: V3 = [0, profile[k + 1][0] * s, 0];
+        tris.push([A[i], apex, A[j]]);
+      } else if (rA === 0 && rB > 0) {
+        const apex: V3 = [0, profile[k][0] * s, 0];
+        tris.push([apex, B[i], B[j]]);
+      }
+    }
+  }
+  // bottom cap (if the first ring is open)
+  if (profile[0][1] > 0) {
+    const A = rings[0];
+    const c: V3 = [0, profile[0][0] * s, 0];
+    for (let i = 0; i < segments; i++) tris.push([c, A[(i + 1) % segments], A[i]]);
+  }
+  // top cap (if the last ring is open)
+  const last = profile.length - 1;
+  if (profile[last][1] > 0) {
+    const B = rings[last];
+    const c: V3 = [0, profile[last][0] * s, 0];
+    for (let i = 0; i < segments; i++) tris.push([c, B[i], B[(i + 1) % segments]]);
+  }
+  return tris;
+}
+
+// The classic bowling-pin silhouette: wide belly, narrow neck, small head. (y, radius) 0..1.
+const PIN_PROFILE: [number, number][] = [
+  [0.0, 0.14], [0.04, 0.19], [0.14, 0.225], [0.26, 0.235], [0.38, 0.21],
+  [0.48, 0.155], [0.58, 0.11], [0.66, 0.095], [0.74, 0.105], [0.82, 0.125],
+  [0.9, 0.11], [0.96, 0.065], [1.0, 0.0],
+];
+// A slim bottle: cylindrical body, shoulder, thin neck, small lip.
+const BOTTLE_PROFILE: [number, number][] = [
+  [0.0, 0.16], [0.02, 0.18], [0.5, 0.18], [0.62, 0.14], [0.72, 0.07],
+  [0.94, 0.065], [0.96, 0.075], [1.0, 0.07],
+];
+
 const SHAPES: Record<string, (s: number) => [V3, V3, V3][]> = {
   cube,
   gem: (s) => octahedron(s, 1.4),
@@ -101,6 +160,8 @@ const SHAPES: Record<string, (s: number) => [V3, V3, V3][]> = {
   pyramid,
   prism: (s) => prism(s, 6, 1.4),
   crystal: (s) => crystal(s, 6),
+  pin: (s) => lathe(s, PIN_PROFILE),
+  bottle: (s) => lathe(s, BOTTLE_PROFILE),
 };
 
 function fmt(n: number): string {
@@ -170,9 +231,9 @@ export function registerProceduralTools(server: McpServer) {
     "generate_procedural_asset",
     {
       description:
-        "Generate a DETERMINISTIC parametric 3D prop as a USDA mesh (shape + PBR color) — the offline, no-network, byte-reproducible content source for generative depth. spatialbundle bakes the USDA into a renderable bundle with a UsdPreviewSurface material (VERIFIED). Shapes: cube/gem/octahedron/tetrahedron/pyramid/prism/crystal. Flat-shaded crisp facets, planar UVs. Analytical (same params → identical USDA, so the determinism/regression gates hold). Returns the USDA text + a suggested outBundle name; WRITE it to a .usda, then bake_textured_model it, then bind via object.source=\"model\" (import_model_catalog does a batch). Use this instead of a hosted API when you want deterministic, free, distinct per-item props.",
+        "Generate a DETERMINISTIC parametric 3D prop as a USDA mesh (shape + PBR color) — the offline, no-network, byte-reproducible content source for generative depth. spatialbundle bakes the USDA into a renderable bundle with a UsdPreviewSurface material (VERIFIED). Shapes: cube/gem/octahedron/tetrahedron/pyramid/prism/crystal + LATHE solids pin/bottle (revolved real silhouettes — for knockdown/bowling props keep the capsule COLLIDER and use the lathe mesh as the MODEL). Flat-shaded crisp facets, planar UVs. Analytical (same params → identical USDA, so the determinism/regression gates hold). Returns the USDA text + a suggested outBundle name; WRITE it to a .usda, then bake_textured_model it, then bind via object.source=\"model\" (import_model_catalog does a batch). Use this instead of a hosted API when you want deterministic, free, distinct per-item props.",
       inputSchema: {
-        shape: z.enum(["cube", "gem", "octahedron", "tetrahedron", "pyramid", "prism", "crystal"]).describe("The parametric prop shape."),
+        shape: z.enum(["cube", "gem", "octahedron", "tetrahedron", "pyramid", "prism", "crystal", "pin", "bottle"]).describe("The parametric prop shape. pin/bottle are LATHE solids (a revolved silhouette — a real bowling-pin/bottle shape, not a capsule); size = their full HEIGHT."),
         name: z.string().describe("Asset name (the model name inside the bundle + the .usda/.bundle stem), e.g. 'ruby'."),
         color: z.array(z.number()).length(3).describe("Diffuse color [r,g,b] 0..1."),
         size: z.number().optional().describe("Overall size in meters (default 0.3)."),

@@ -1,0 +1,282 @@
+pico-spatial-mcp ready (stdio)
+=== list_capabilities ===
+{
+  "count": 34,
+  "totalRegistered": 34,
+  "ceilings": {
+    "C0_emulator": "Fully verifiable on the emulator now (renders in a forward capture / broadcast-drivable).",
+    "C1": "No scene-understanding/hand-tracking on the emulator (0 planes) — real surfaces are Swan-only.",
+    "C2": "Camera decoupled — verifiable only with a forward-FOV pose; content outside it can't be captured.",
+    "C3": "No controller/gaze pointer on the emulator — broadcast-emulate now, real controller/pinch is Swan-only.",
+    "C4_headset_only": "Stage-vs-window dichotomy — in-front Compose panels etc. are Swan-only."
+  },
+  "tools": [
+    {
+      "tool": "scaffold_spatial_app",
+      "authors": "a fresh buildable app (package/appName/stage/scene)",
+      "keyParams": "templateProject,targetDir,packageName,appName,stageStyle",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "build_and_run",
+      "authors": "compile+install+launch+auto capability matrix",
+      "keyParams": "projectDir,packageName,task,settleSec",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "generate_agent_bridge",
+      "authors": "headless command channel + dump_scene (structural assert)",
+      "keyParams": "packageName,tag",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "bake_textured_model",
+      "authors": "a baked PBR bundle from a GLB (the ONLY textured path)",
+      "keyParams": "modelPath,outBundle",
+      "ceiling": "C0_emulator",
+      "note": "never runtime-load raw GLB (renders black)"
+    },
+    {
+      "tool": "generate_environment_kotlin",
+      "authors": "MeshEnvironment/SplatEnvironment loader",
+      "keyParams": "kind,assetFileName,baseColorImage",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "generate_home_env_proxy",
+      "authors": "invisible collider proxy of the known home bedroom (floor y=0)",
+      "keyParams": "packageName",
+      "ceiling": "C1",
+      "note": "faked hit-test; real surfaces are Swan-only"
+    },
+    {
+      "tool": "generate_collider_kotlin",
+      "authors": "PhysicsWorld + primitive room/prop colliders + rayCast",
+      "keyParams": "packageName,room,shapes",
+      "ceiling": "C0_emulator",
+      "note": "PhysicsWorldComponent REQUIRED on-device; primitives only"
+    },
+    {
+      "tool": "generate_lighting_kotlin",
+      "authors": "directional sun + IBL scale",
+      "keyParams": "packageName",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "generate_full_lighting_rig_kotlin",
+      "authors": "Directional+Point+Spot+GroundShadow+IBL",
+      "keyParams": "packageName",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "generate_ibl_kotlin",
+      "authors": "image-based lighting from a .ktx",
+      "keyParams": "packageName,ktx",
+      "ceiling": "C0_emulator",
+      "note": "StageEnvironmentLighting inactive in MIXED stage"
+    },
+    {
+      "tool": "generate_layout_kotlin",
+      "authors": "analytical wall/grid/arc/shelf placement of N entities",
+      "keyParams": "packageName,pattern,count,radius,spacing,columns,shelves,centerY,centerZ,faceUser",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "generate_interaction_kotlin",
+      "authors": "raycast+broadcast select/hover + selection state + highlight",
+      "keyParams": "packageName,highlightScale,defaultBoxSize",
+      "ceiling": "C0_emulator",
+      "note": "broadcast select = C0; controller/gaze ray = C3 Swan"
+    },
+    {
+      "tool": "generate_data_binding_kotlin",
+      "authors": "bundled JSON -> N tinted-quad cards + lookups (NO TextComponent)",
+      "keyParams": "packageName,cardWidth,cardHeight,defaultColor",
+      "ceiling": "C0_emulator",
+      "note": "dynamic text labels need baked textures"
+    },
+    {
+      "tool": "generate_game_menu_kotlin",
+      "authors": "in-world pressable 3D menu (broadcast/gaze/controller/pinch)",
+      "keyParams": "packageName,actions",
+      "ceiling": "C0_emulator",
+      "note": "controller/pinch drive = C3 Swan"
+    },
+    {
+      "tool": "generate_scene_animator_kotlin",
+      "authors": "RELIABLE runtime animation: orbit/spin/bob + growY + pulseEmissive/fadeOpacity/cycleHue (coroutine frame loop — SDK AnimationResource does NOT propagate to runtime entities)",
+      "keyParams": "packageName",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "prepare_ibl_cubemap",
+      "authors": "a prefiltered HDR cubemap (Filament cmgen) so PBR METALS actually shine — pair with generate_ibl_kotlin(mode='local', intensityExponent~6)",
+      "keyParams": "preset|equirectPath,outKtx",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "generate_panel_compose_kotlin",
+      "authors": "LIVE RUNTIME TEXT: a Compose panel ACTIVITY auto-hosted as a floating spatial panel (HUD/scoreboard; DEBUG_CMD hud:<key>=<value> updates live). The no-TextComponent limit is in-scene-3D only",
+      "keyParams": "packageName,title,fields",
+      "ceiling": "C0_emulator",
+      "note": "needs the manifestEntry merged; an app's own WindowContainer never opens on the emulator"
+    },
+    {
+      "tool": "render_usd_offscreen",
+      "authors": "off-device USD render (usdrecord) — verify generated content in seconds without the emulator",
+      "keyParams": "usdPath,outPng",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "import_world_environment",
+      "authors": "a CUSTOM World-Labs/Marble world (.spz/.ply splat or GLB) as the app environment",
+      "keyParams": "worldPath,projectDir",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "install_gradle_hooks",
+      "authors": "the EXTERNAL gradle plugin com.pico.hooks: USD scene-lint riding EVERY build (AS/CLI/CI, no MCP in the loop)",
+      "keyParams": "projectDir",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "emit_editor_components",
+      "authors": "per-project component SCHEMA files (.spatialEditorComponent) — interchange only; the editor's Add Component palette does NOT pick them up (verified negative)",
+      "keyParams": "projectRoot,components",
+      "ceiling": "C0_emulator",
+      "note": "structural only — never claim Inspector render"
+    },
+    {
+      "tool": "generate_spatial_ui",
+      "authors": "verified Compose panels",
+      "keyParams": "spec",
+      "ceiling": "C4_headset_only",
+      "note": "in-front interactive panels are Swan-only"
+    },
+    {
+      "tool": "generate_tween_animation_kotlin",
+      "authors": "position/scale tween on an entity",
+      "keyParams": "packageName",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "generate_orbit_animation_kotlin",
+      "authors": "orbit animation",
+      "keyParams": "packageName",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "generate_particle_kotlin",
+      "authors": "driver for an editor-authored ParticleComponent",
+      "keyParams": "packageName",
+      "ceiling": "C0_emulator",
+      "note": "ParticleComponent has no ctor"
+    },
+    {
+      "tool": "generate_video_player_kotlin",
+      "authors": "video-on-quad",
+      "keyParams": "packageName",
+      "ceiling": "C0_emulator",
+      "note": "decode often fails on emulator"
+    },
+    {
+      "tool": "generate_spatial_audio_kotlin",
+      "authors": "3D ObjectAudioComponent",
+      "keyParams": "packageName",
+      "ceiling": "C3",
+      "note": "playback headset-only"
+    },
+    {
+      "tool": "generate_rigidbody_kotlin",
+      "authors": "REAL dynamics: fall/roll/strike + safe launch/reset (vision-verified bowling strike)",
+      "keyParams": "packageName,gravity",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "generate_portal_kotlin",
+      "authors": "portal window + nested world",
+      "keyParams": "packageName",
+      "ceiling": "C0_emulator",
+      "note": "entity-crossing/passthrough = Swan"
+    },
+    {
+      "tool": "generate_display_controllers_kotlin",
+      "authors": "display-group ordering controllers",
+      "keyParams": "packageName",
+      "ceiling": "C0_emulator"
+    },
+    {
+      "tool": "generate_scene_understanding_kotlin",
+      "authors": "sense/plane surface pins",
+      "keyParams": "packageName",
+      "ceiling": "C1",
+      "note": "0 planes on emulator; Swan-only"
+    },
+    {
+      "tool": "generate_persistent_anchor_kotlin",
+      "authors": "world anchors",
+      "keyParams": "packageName",
+      "ceiling": "C1",
+      "note": "world-tracking headset-only"
+    },
+    {
+      "tool": "generate_headset_readiness_codegen",
+      "authors": "guarded C1/C3/C4 registry for Swan",
+      "keyParams": "packageName",
+      "ceiling": "C3"
+    },
+    {
+      "tool": "generate_anchor_kotlin",
+      "authors": "camera/world anchor tether",
+      "keyParams": "packageName,trackingMode",
+      "ceiling": "C1"
+    }
+  ]
+}
+
+=== list_templates ===
+{
+  "templates": [
+    {
+      "name": "gallery",
+      "description": "A quiet gallery: N works floating in an arc, softly lit. No data/interaction.",
+      "dataBound": false
+    },
+    {
+      "name": "inspection",
+      "description": "An inspection bay: N gaze-selectable hotspots on a grid over the home-env floor. Native anchoring = Swan.",
+      "dataBound": false
+    },
+    {
+      "name": "dashboard",
+      "description": "A data dashboard: N metric tiles on a grid, each colored by a JSON status feed.",
+      "dataBound": true
+    },
+    {
+      "name": "ambient",
+      "description": "A calm ambient corner: a softly-lit procedural scene, nothing to click.",
+      "dataBound": false
+    },
+    {
+      "name": "showcase",
+      "description": "An interactive product showcase: N items on shelves, gaze-select + detail card, from a JSON catalog. Controller-ray = Swan.",
+      "dataBound": true
+    },
+    {
+      "name": "studio",
+      "description": "A premium product STUDIO: N procedural props in an arc, PBR-metallic + a sun rig with soft shadows, each slowly spinning. For real polished-metal reflections, add prepare_ibl_cubemap + generate_ibl_kotlin(mode='local', intensityExponent≈6) on the props. (Richer bespoke scenes — orrery/command-deck — are hand-crafted: see examples/HeroObservatory.kt + VIDEO_DEMO.md.)",
+      "dataBound": false
+    },
+    {
+      "name": "knockdown",
+      "description": "A REAL-PHYSICS knockdown game (verified simulating on the emulator, v8.8): a lane, N capsule targets racked at the far end, and a heavy ball — broadcast 'launch:ball' throws it and the targets scatter under real rigid-body dynamics. Expect a ~2s beat between launch and motion (engine epoch). Click START (green) on the in-world GameMenu to throw, RESET (red) to re-rack (disable+rebuild — the only reliable physics reset). The mouse bridge clicks the menu; broadcast start/reset also drives it. Needs assets/menu.bundle.",
+      "dataBound": false
+    },
+    {
+      "name": "constellation",
+      "description": "An ambient CONSTELLATION: N softly-lit nodes in an arc — a calm data/ambient piece (IBL rig). Combine with SceneAnimator (bob/pulseEmissive) for gentle life.",
+      "dataBound": false
+    }
+  ]
+}
+

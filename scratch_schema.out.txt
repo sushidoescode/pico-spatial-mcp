@@ -1,0 +1,165 @@
+pico-spatial-mcp ready (stdio)
+=== instantiate_template schema ===
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "enum": [
+        "gallery",
+        "inspection",
+        "dashboard",
+        "ambient",
+        "showcase",
+        "studio",
+        "constellation",
+        "knockdown"
+      ],
+      "description": "Which skeleton."
+    },
+    "brief": {
+      "type": "string",
+      "description": "The new brief this instance realizes."
+    },
+    "appName": {
+      "type": "string",
+      "description": "App name, e.g. SpiceShowcaseXR."
+    },
+    "packageName": {
+      "type": "string",
+      "description": "applicationId, e.g. com.example.spicexr."
+    },
+    "count": {
+      "type": "integer",
+      "description": "Object count (template default if omitted)."
+    },
+    "palette": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 3,
+        "maxItems": 3
+      },
+      "description": "Optional [r,g,b] 0..1 colors for data-bound sample items."
+    }
+  },
+  "required": [
+    "name",
+    "brief",
+    "appName",
+    "packageName"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
+
+=== plan_app_spec schema ===
+{
+  "type": "object",
+  "properties": {
+    "brief": {
+      "type": "string",
+      "description": "The natural-language product brief."
+    },
+    "draftSpec": {
+      "description": "Your candidate AppSpec (see appSpec shape). Omit to receive a scaffold to fill in."
+    },
+    "budget": {
+      "type": "object",
+      "properties": {
+        "iterations": {
+          "type": "integer"
+        },
+        "timeMin": {
+          "type": "number"
+        },
+        "toolCalls": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Optional soft budget."
+    }
+  },
+  "required": [
+    "brief"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
+
+=== compile_app_spec schema ===
+{
+  "type": "object",
+  "properties": {
+    "spec": {
+      "description": "A validated AppSpec (from plan_app_spec)."
+    },
+    "projectDir": {
+      "type": "string",
+      "description": "Target Android project dir to scaffold/build into, e.g. ~/AndroidStudioProjects/showcasexr-native."
+    }
+  },
+  "required": [
+    "projectDir"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
+
+=== scaffold_spatial_app schema ===
+{
+  "type": "object",
+  "properties": {
+    "templateProject": {
+      "type": "string",
+      "description": "Path to a working PICO spatial app to clone (has :app + :editor-asset modules, e.g. an existing built app or the PICO starter)"
+    },
+    "targetDir": {
+      "type": "string",
+      "description": "Directory to create the new app in (must not exist)"
+    },
+    "packageName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+      "description": "New application id / package, e.g. 'com.acme.viz'"
+    },
+    "appName": {
+      "type": "string",
+      "description": "Display name (app_name + homepage_title)"
+    },
+    "stageStyle": {
+      "type": "string",
+      "enum": [
+        "1",
+        "2",
+        "3"
+      ],
+      "default": "3",
+      "description": "PICO stage style: 1=Mixed, 2=Progressive, 3=Full(100% virtual, fills view)"
+    },
+    "sceneUsda": {
+      "type": "string",
+      "description": "Optional path to a .usda to install as the scene (model name becomes its filename stem; default keeps the template scene)"
+    }
+  },
+  "required": [
+    "templateProject",
+    "targetDir",
+    "packageName",
+    "appName"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
+
+=== list_templates schema ===
+{
+  "type": "object",
+  "properties": {},
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
+

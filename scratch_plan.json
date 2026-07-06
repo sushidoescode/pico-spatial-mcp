@@ -1,0 +1,354 @@
+{
+  "status": "ok",
+  "spec": {
+    "meta": {
+      "appName": "ColdRun",
+      "packageName": "com.example.coldrun",
+      "stageStyle": "3",
+      "brief": "A physics knockdown game: throw a ball at racked targets from a clickable menu, with a live THROWS scoreboard."
+    },
+    "scenes": [
+      {
+        "id": "lane",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": [],
+        "physics": {
+          "gravity": [
+            0,
+            -9.81,
+            0
+          ]
+        }
+      }
+    ],
+    "layouts": [],
+    "objects": [
+      {
+        "id": "floor",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0,
+            0.9,
+            -4.2
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            1.4,
+            0.2,
+            3.6
+          ],
+          "color": [
+            0.55,
+            0.4,
+            0.22
+          ]
+        }
+      },
+      {
+        "id": "ball",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0,
+            1.17,
+            -2.9
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "sphere",
+          "dims": [
+            0.15
+          ],
+          "mass": 5,
+          "color": [
+            0.1,
+            0.08,
+            0.2
+          ]
+        }
+      },
+      {
+        "id": "target0",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.4,
+            1.21,
+            -5
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target1",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.24,
+            1.21,
+            -5
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target2",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.08,
+            1.21,
+            -5
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target3",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.08,
+            1.21,
+            -5
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target4",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.24,
+            1.21,
+            -5
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target5",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.4,
+            1.21,
+            -5
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      }
+    ],
+    "data": [],
+    "interactions": [
+      {
+        "id": "btnThrow",
+        "trigger": "press",
+        "target": "ball",
+        "action": "launch:ball",
+        "driveChannel": "broadcast",
+        "params": {
+          "velocity": [
+            0,
+            0,
+            -7
+          ],
+          "angular": [
+            -8,
+            0,
+            0
+          ],
+          "button": "start"
+        }
+      },
+      {
+        "id": "btnReset",
+        "trigger": "press",
+        "target": "ball",
+        "action": "resetWorld",
+        "driveChannel": "broadcast",
+        "params": {
+          "button": "reset"
+        }
+      }
+    ],
+    "panels": [
+      {
+        "id": "hud",
+        "title": "KNOCKDOWN",
+        "kind": "hud",
+        "fields": [
+          {
+            "key": "throws",
+            "label": "THROWS",
+            "initial": "0"
+          },
+          {
+            "key": "status",
+            "label": "STATUS",
+            "initial": "READY"
+          }
+        ]
+      }
+    ],
+    "navigation": {
+      "startScene": "lane",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "6 capsule targets racked on the lane + the ball at rest",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -4.2
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "lane"
+      },
+      {
+        "claim": "the KNOCKDOWN live-text panel shows THROWS/STATUS and updates on START (turn the camera — panels spawn at the dock position)",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -4.2
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "hud"
+      },
+      {
+        "claim": "after 'launch:ball' the ball rolls and the targets scatter (REAL physics)",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -4.2
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "throw"
+      }
+    ],
+    "headsetLayer": []
+  },
+  "lint": {
+    "errors": [],
+    "warnings": [
+      "verification 'the KNOCKDOWN live-text panel shows THROWS/STATUS and updates on START (turn the camera — panels spawn at the dock position)' targetRef 'hud' resolves to no spec node",
+      "verification 'after 'launch:ball' the ball rolls and the targets scatter (REAL physics)' targetRef 'throw' resolves to no spec node"
+    ]
+  },
+  "emulatorVsSwanPreview": {
+    "verifiableNow": [
+      "interaction btnThrow (press) → C0_emulator",
+      "interaction btnReset (press) → C0_emulator",
+      "scene lane env procedural → C0_emulator",
+      "verify \"6 capsule targets racked on the lane + the ball at rest\" → C0_emulator",
+      "verify \"the KNOCKDOWN live-text panel shows THROWS/STATUS and updates on START (turn the camera — panels spawn at the dock position)\" → C0_emulator",
+      "verify \"after 'launch:ball' the ball rolls and the targets scatter (REAL physics)\" → C0_emulator"
+    ],
+    "builtForSwan": []
+  },
+  "rationale": "Plan for \"ColdRun\" (com.example.coldrun): 1 scene(s), 0 layout(s), 8 object(s), 0 data node(s), 2 interaction(s). 6 node(s) emulator-verifiable now; 0 built-for-Swan. No blocking errors — ready for compile_app_spec."
+}
