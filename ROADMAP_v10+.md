@@ -241,3 +241,39 @@ Package + deploy + an honest ship checklist: APK build/sign for native; a hostab
 Swan/OS6-deferred.
 
 **v11 status:** ★ P16-P20 ALL SHIPPED. v11 arc complete (interactive web-3D, one-command hybrid builder, real-API connectors, cross-lane experience library, honest ship path + PWA packaging). P17 vision-verified: build_hybrid_experience({appName:"BowlDeck"}) -> a complete hybrid app (physics scene + THROW/RESET web control panel composited) built + launched unattended.
+
+---
+
+## 7) v12 ARC — the backlog, built (P21-P24)
+
+### P21 — verify_pico_apk  ✅ SHIPPED (v10.24)
+The cross-builder DEPLOY+VERIFY handoff contract (ROADMAP §5 Unity decision, realized): install +
+launch an ARBITRARY PICO APK, structurally assert boot/no-crash/scene-log, capture a 2D frame,
+honest matrix (emulator=structural; immersive-XR=Swan). Records nothing; caller LOOKS. Vision-verified
+on the bowldeck APK; correctly returns 'attention' when the space is blocked. The Unity MCP now has a
+clean seam: it emits an APK, this contract verifies it.
+
+### P22 — generate_animation_timeline  ✅ SHIPPED (v10.25)
+Multi-track keyframe choreography (pos/rot/scale/emissive, linear-interp) over the vision-verified
+SceneAnimator per-frame TransformComponent path. Compiles against the real SDK. Reviewer-caught bug
+fixed (un-keyed channels now HOLD the build-time transform, no origin teleport). NOT skeletal.
+
+### P23 — generate_spatial_audio  ✅ SHIPPED (v10.25)
+Positioned audio via Android SoundPool (SDK 0.13.3 has no runtime spatial-audio API — only the editor
+USD schema). Honest: positional TRIGGER, structural evidence, true HRTF = Swan. Compiles.
+
+### P24 — non-hybrid experiences executed end-to-end  ✅ (2 of 5 fully; rest compose verified pieces)
+product-configurator (AERO CONFIGURATOR, part-select) + data-command-deck (MARKET DECK, 3 rings
+sized by LIVE BTC/ETH/SOL) vision-verified end-to-end from plan_experience. spatial-dashboard /
+ops-console compose already-vision-verified pieces (web workspace + live data / WebSpatial 2D). Added a
+#data= deep-link to generate_web3d_scene for deterministic data-driven capture.
+
+**AUTHORING NOTE:** P21-P23 were authored in PARALLEL by a Workflow (opus author + adversarial review),
+then integrated + verified serially. The review caught a real correctness bug (animtimeline origin-teleport)
++ the index.ts wiring + a logcat-scoping bug — all fixed before ship.
+
+**HARDWARE-BLOCKED (honest, not built):** the Swan built_for_headset -> device-verified flip (immersive
+compositing, controller-ray, head-tracked depth, WebXR immersive frames, WebSpatial spatial depth). These
+are characterized + deferred, awaiting PICO Swan hardware.
+
+**v12 status:** ★ P21-P24 done. The buildable roadmap is COMPLETE; what remains is hardware-gated.

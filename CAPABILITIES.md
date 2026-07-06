@@ -4,24 +4,24 @@
 STRONGEST proof on file — `vision_verified` means a human or agent LOOKED at a rendered frame.
 The honesty invariant makes this non-negotiable: nothing appears "verified" without a linked capture.*
 
-**14 capability categories proven across 24 apps; 66 ledger entries (42 vision_verified — a human/agent LOOKED).**
+**14 capability categories proven across 26 apps; 71 ledger entries (45 vision_verified — a human/agent LOOKED).**
 
-Evidence totals: `vision_verified` 42 · `auto_judged` 6 · `usd_host_render` 3 · `structural` 14 · `built_for_headset` 1
+Evidence totals: `vision_verified` 45 · `auto_judged` 6 · `usd_host_render` 3 · `structural` 16 · `built_for_headset` 1
 
 | Capability | Best evidence | Proofs | Apps |
 |---|---|---|---|
-| Real physics (native) | `vision_verified` | 19 | 7 |
+| Real physics (native) | `vision_verified` | 21 | 7 |
 | Interactive menus | `vision_verified` | 12 | 8 |
 | Live-text / HUD panels | `vision_verified` | 7 | 5 |
 | Web panels (live DOM) | `vision_verified` | 10 | 5 |
 | Multi-panel web workspace | `vision_verified` | 6 | 4 |
 | WebSpatial (React, OS6) | `vision_verified` | 4 | 2 |
 | Web↔3D bridge | `vision_verified` | 5 | 3 |
-| Web 3D (three.js) | `vision_verified` | 4 | 4 |
-| AAA fidelity | `vision_verified` | 16 | 9 |
+| Web 3D (three.js) | `vision_verified` | 6 | 6 |
+| AAA fidelity | `vision_verified` | 18 | 11 |
 | Pipeline (brief→app) | `vision_verified` | 7 | 4 |
 | Unattended fleet | `vision_verified` | 10 | 9 |
-| Editor integration | `vision_verified` | 5 | 3 |
+| Editor integration | `vision_verified` | 6 | 3 |
 | Custom worlds / env | `vision_verified` | 5 | 5 |
 | Off-device render | `vision_verified` | 5 | 4 |
 
