@@ -150,7 +150,7 @@ installed and untouched. If a capture was LOOKED at, its ledger entry must exist
 - P7 CI/distribution: ✅ CI + QUICKSTART SHIPPED (gates.yml green on main: build + smoke [SMOKE_SDK_OPTIONAL] + lint/ledger/eye/assetgate/worldenv; eye calibration skips on IM builds that can't measure — strict locally). Remaining: QUICKSTART front-matter + optional registry publish (ASK THE USER first).
 - P8 Swan: PARTIALLY CHARACTERIZED — WebXR session+pose layer works headlessly (v10.10); immersive FRAME compositing + WebSpatial spatial activation await OS6/Swan hardware.
 - P9 web workspace: ✅ SHIPPED (generate_web_workspace: N named WebView panels, each own task/spatial container, driven by-name via PANEL_CMD; list_spatial_panels reads the on-stage map. Proven: 3 panels live -> close:chart destroyed that container -> count dropped to 2. Gotcha: manifest receiver needs -p targeting. Visual note: shell ghosts non-focused stacked panels; single-panel solid render already vision-verified v10.10.)
-- P10 WebSpatial: NOT STARTED
+- P10 WebSpatial: ✅ SHIPPED (generate_webspatial_app: real React+@webspatial/react-sdk project + a 2D-projection preview.html; the projection is vision-verified via headless Chrome (Ops Console, 3 depth panels); spatial depth = new built_for_os6 evidence class).
 - Unity: DECISION MADE — build in the Unity MCP; add verify_pico_apk here as the shared deploy/verify contract (backlog)
 
 **The workspace frame (v10.8):** /tmp/pico-render/ws-0.png — four surfaces in one composited view (game + custom menu + live HUD + live-DOM web panel), vision-verified. The stack in a single capture.
