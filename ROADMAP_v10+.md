@@ -204,3 +204,5 @@ this MCP owns DEPLOY + VERIFY + the honesty ledger — the shared crown jewel.**
 **P11 web↔3D bridge SHIPPED (v10.13):** generate_web_bridge_kotlin — an HTML control panel (WebView + addJavascriptInterface Native.send) routes web-button clicks to the native scene dispatchDebugCommand. Vision-verified: BOWL CONTROL panel in-world + its THROW button drove the physics scene (log chain).
 
 **P12 unified compiler SHIPPED (v10.14):** compile_spatial_experience — the front door. A brief routes to native/web/hybrid with an ordered plan across the whole toolkit + honesty classes. Verified: bowling->native, dashboard->web, game+controls->hybrid, three.js->web (all correct).
+
+**P13 live-data spatial SHIPPED (v10.15):** generate_live_data_panel — a floating panel polls a JSON URL and updates live. Verified via CDP DOM read: changed served data on disk -> panel displayed the new values within the poll interval (21C/NOMINAL -> 88C/CRITICAL).
