@@ -220,7 +220,7 @@ generate_web3d_scene gains interactivity: raycast pointer selection (click -> hi
 a window.Scene3D {select(i), data(values), count, selected} JS API, #select=N deep-link. Vision-
 verified: select(2) enlarged + labeled EARTH in the SOLAR orrery.
 
-### P17 — build_hybrid_experience  [the autonomy capstone]
+### P17 — build_hybrid_experience  ✅ SHIPPED (v10.19)
 One command executes what compile_spatial_experience PLANS: from a brief, scaffold a native 3D
 scene + a web control panel (bridge) + a web info/HUD panel, build/install/launch unattended,
 open all surfaces, capture the composited workspace. DoD: a brief -> a running hybrid app +
@@ -240,4 +240,4 @@ Package + deploy + an honest ship checklist: APK build/sign for native; a hostab
 (manifest + service worker) for web/WebSpatial; the checklist names what's verified vs
 Swan/OS6-deferred.
 
-**v11 status:** P16 shipped; P17-P20 next.
+**v11 status:** P16, P17 shipped; P18-P20 next. P17 vision-verified: build_hybrid_experience({appName:"BowlDeck"}) -> a complete hybrid app (physics scene + THROW/RESET web control panel composited) built + launched unattended.
