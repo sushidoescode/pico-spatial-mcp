@@ -52,7 +52,10 @@ const EXPECTED = [
   "generate_interactable_registry_kotlin", "plan_layout_and_camera", "import_model_catalog",
   "swan_verify_matrix", "run_factory",
 ];
-const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n));
+// gui_* tools register only on macOS (Quartz window capture/camera) — exempt them off-darwin.
+const MAC_ONLY = new Set(["gui_find_window", "gui_camera", "gui_permissions", "gui_capture"]);
+const missing = EXPECTED.filter((n) => !tools.tools.some((t) => t.name === n))
+  .filter((n) => process.platform === "darwin" || !MAC_ONLY.has(n));
 if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failures++; }
 const prompts = await client.listPrompts().catch(() => ({ prompts: [] }));
 console.log("Prompts:", prompts.prompts.map((p) => p.name).join(", ") || "(none)");
