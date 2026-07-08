@@ -56,10 +56,17 @@ export function registerShipTools(server: McpServer) {
         const pdir = projectDir ?? "";
         const hasManifest = pdir && (fs.existsSync(path.join(pdir, "public/manifest.webmanifest")) || fs.existsSync(path.join(pdir, "manifest.webmanifest")));
         const hasSW = pdir && fs.existsSync(path.join(pdir, "sw.js"));
-        if (hasManifest) ready.push("web manifest present (installable)"); else blockers.push("no web manifest — run package_web_pwa to make it installable/hostable.");
-        if (hasSW) ready.push("service worker present (offline-capable)"); else deferred.push("no service worker (add via package_web_pwa for offline).");
+        // A native-primary HYBRID (native APK with an embedded WebView panel) ships the web content
+        // INSIDE the APK — a standalone PWA manifest is only needed to ALSO host it on the web, so it's
+        // optional there, not a blocker. A pure WEB-lane app does need the manifest to be shippable.
+        const nativePrimaryHybrid = ln === "hybrid";
+        if (hasManifest) ready.push("web manifest present (installable/hostable)");
+        else if (nativePrimaryHybrid) deferred.push("no standalone web manifest — fine for a native-primary hybrid (the WebView ships inside the APK); run package_web_pwa only if you ALSO want to host the web content.");
+        else blockers.push("no web manifest — run package_web_pwa to make the web-lane app installable/hostable.");
+        if (hasSW) ready.push("service worker present (offline-capable)"); else deferred.push("no service worker (add via package_web_pwa for offline web hosting).");
         deferred.push("WebSpatial spatial depth activates on PICO OS 6 (the 2D projection is shippable now).");
-        ready.push("web content is hostable today (any static host + a URL) and runs in the emulator browser.");
+        if (ln === "web") ready.push("web content is hostable today (any static host + a URL) and runs in the emulator browser.");
+        else ready.push("web control/HUD panels ship embedded in the APK (in-app WebView).");
       }
       const verdict = blockers.length === 0 ? "READY (within the honest scope below)" : `NOT READY — ${blockers.length} blocker(s)`;
       return okJson({
