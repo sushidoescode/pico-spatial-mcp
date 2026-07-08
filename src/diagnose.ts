@@ -244,6 +244,17 @@ const KB: Record<string, DiagEntry> = {
     designRule: "DRY_RUN.md cold-run log #4 (2026-07-06)",
     relatedTools: ["build_and_run", "check_crash", "logcat"],
   },
+  emu_focus_wedge: {
+    rootCause:
+      "EVERY spatial-app launch ANRs with 'Input dispatching timed out ... Waited 5000ms for FocusEvent(hasFocus=true)' — after a long emulator session (many installs/launches/reboots), the emulator's window-focus subsystem degrades so the LaunchActivity can't acquire focus in time. BISECT-PROVEN environmental: the bare app with all scene content removed ANRs identically, and it persists across `adb reboot`. NOT caused by scene complexity / entity count / your code. Found chasing a set-dressing ANR (2026-07-08).",
+    fix: [
+      "PROVE it's environmental before touching your app: strip the scene to bare (or launch a DIFFERENT known-good spatial app) — if that ANRs too with the same FocusEvent seq, it's the emulator, not you.",
+      "adb reboot is INSUFFICIENT (the wedge survives). Remedy = COLD-restart the emulator PROCESS: quit the PICO emulator app / kill qemu-system-aarch64 and relaunch it, or reboot the host.",
+      "The app itself keeps running behind the ANR dialog (pidof shows a live PID, the scene renders + animates) — the dialog is a focus-delivery artifact, not a crash. For an unattended capture, treat a persistent FocusEvent ANR as 'restart the emulator', not 'fix the app'.",
+    ],
+    designRule: "the honesty invariant: distinguish an ENVIRONMENTAL emulator fault from an app defect by bisection before attributing blame",
+    relatedTools: ["verify_pico_apk", "build_and_run", "capture_rig"],
+  },
   frozen_viewport: {
     rootCause:
       "screencap returns BYTE-IDENTICAL frames across seconds while an ANIMATED stage-3 scene is live (container visible:true, immersion=100, an animation loop logging) — the emulator's 2D viewport MIRROR froze (compositor wedge after heavy app churn: many installs/launches/panels in one session). The spatial scene keeps running; screencap serves a stale frame (often the home env), so every capture-based check silently lies. Found by the Neon Strike Alley build (2026-07-07).",
@@ -464,6 +475,7 @@ export function registerDiagnoseTools(server: McpServer) {
             "physics_not_simulating",
             "launch_blocked",
             "frozen_viewport",
+            "emu_focus_wedge",
             "emulator_camera_drift",
           ])
           .describe("The observed symptom to diagnose."),
