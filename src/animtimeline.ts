@@ -28,6 +28,7 @@ export function registerAnimTimelineTools(server: McpServer) {
           .array(
             z.object({
               target: z.string().describe("Track name — you bind the runtime Entity to it via SceneTimeline.bind(name, entity)."),
+              emissiveColor: z.array(z.number()).length(3).optional().describe("RGB 0..1 tint for the emissive channel: keyframe e drives setEmissiveColor(Color4(r*e,g*e,b*e,1)) — keeps neon COLORED while pulsing (default [1,1,1] = white/grayscale)"),
               keyframes: z
                 .array(
                   z.object({
@@ -71,6 +72,7 @@ export function registerAnimTimelineTools(server: McpServer) {
             `            rotKeys = listOf(${rotK.join(", ")}),`,
             `            scaleKeys = listOf(${sclK.join(", ")}),`,
             `            emissiveKeys = listOf(${emiK.join(", ")}),`,
+            `            emisColor = ${(() => { const c = (tr as any).emissiveColor ?? [1, 1, 1]; return `Color4(${kf(c[0])}, ${kf(c[1])}, ${kf(c[2])}, 1f)`; })()},`,
             `        )`,
           ].join("\n");
         })
@@ -115,6 +117,7 @@ export function registerAnimTimelineTools(server: McpServer) {
         "        val rotKeys: List<V3Key>,",
         "        val scaleKeys: List<NumKey>,",
         "        val emissiveKeys: List<NumKey>,",
+        "        val emisColor: Color4,",
         "    )",
         "",
         "    private val tracks: Map<String, Track> = mapOf(",
@@ -182,7 +185,8 @@ export function registerAnimTimelineTools(server: McpServer) {
         "        val mat = b.mat",
         "        if (track.emissiveKeys.isNotEmpty() && mat != null) {",
         "            val e = sampleNum(track.emissiveKeys, tt, 0f)",
-        "            mat.setEmissiveColor(Color4(e, e, e, 1f))",
+        "            val c = track.emisColor",
+        "            mat.setEmissiveColor(Color4(c.red * e, c.green * e, c.blue * e, 1f))",
         "        }",
         "    }",
         "",

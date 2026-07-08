@@ -244,6 +244,18 @@ const KB: Record<string, DiagEntry> = {
     designRule: "DRY_RUN.md cold-run log #4 (2026-07-06)",
     relatedTools: ["build_and_run", "check_crash", "logcat"],
   },
+  frozen_viewport: {
+    rootCause:
+      "screencap returns BYTE-IDENTICAL frames across seconds while an ANIMATED stage-3 scene is live (container visible:true, immersion=100, an animation loop logging) — the emulator's 2D viewport MIRROR froze (compositor wedge after heavy app churn: many installs/launches/panels in one session). The spatial scene keeps running; screencap serves a stale frame (often the home env), so every capture-based check silently lies. Found by the Neon Strike Alley build (2026-07-07).",
+    fix: [
+      "Detect: take 2 screencaps ~3s apart on a scene you KNOW animates and compare md5 — identical bytes = the frozen mirror (an animated scene never produces identical frames).",
+      "Cross-check the scene is actually live before blaming the app: dumpsys shows the stage container visible:true + your animation/scene log lines still ticking.",
+      "Remedy: adb reboot (wait for sys.boot_completed=1, ~60s, + ~20s settle), then relaunch the app. Do NOT keep iterating on the app — the captures are stale, not the scene.",
+      "Bonus: after a reboot+relaunch the emulator free-cam is RESET — the fresh-launch pose usually frames eye-level content perfectly (use capture_rig normalize:false to sweep gently around it instead of hard-recovering away from it).",
+    ],
+    designRule: "the honesty invariant: a capture pipeline that can freeze must be self-checked before captures are trusted",
+    relatedTools: ["capture_frame", "capture_rig", "fidelity_score"],
+  },
 };
 
 // ----------------------------------------------------------------------------
@@ -451,6 +463,7 @@ export function registerDiagnoseTools(server: McpServer) {
             "raycast_no_hit",
             "physics_not_simulating",
             "launch_blocked",
+            "frozen_viewport",
             "emulator_camera_drift",
           ])
           .describe("The observed symptom to diagnose."),
