@@ -41,14 +41,27 @@ export function registerFidelityTools(server: McpServer) {
         imagePath: z.string().describe("Path to the capture PNG (from capture_canonical / capture_frame)."),
         label: z.string().optional().describe("Optional label for this scoring run, e.g. 'knockdown forward view after lighting pass'."),
         profile: z.enum(["standard", "dark-theme"]).optional().describe("Weighting profile. 'dark-theme' (neon/noir/cosmic art direction) reweights to nonVoid 10 / contrast 25 / colorVariety 30 / edgeDetail 25 / brightBalance 10 and widens the exposure band down to 0.06 — an intentionally dark scene is NOT a void; judge it on color/contrast/detail instead."),
+        region: z.enum(["full", "content"]).optional().describe("'full' (default) scores the whole frame. 'content' auto-trims near-black margins first (magick -fuzz -trim) and scores only the lit CONTENT bounding box — the honest measure for a dark scene where content sits in a band with black margins (the free-cam can't dolly closer, so the void around good content would otherwise cap the score). Reports the trimmed fraction."),
       },
     },
-    async ({ imagePath, label, profile }) => {
-      const img = expandHome(imagePath);
+    async ({ imagePath, label, profile, region }) => {
+      const img0 = expandHome(imagePath);
       const honesty =
         "heuristic auto_judged-class signal for iteration — NOT a substitute for LOOKING at the frame; record_verification still requires a looked-at capture.";
-      if (!fs.existsSync(img)) {
-        return okJson({ status: "error", label, note: `image not found: ${img}`, honesty });
+      if (!fs.existsSync(img0)) {
+        return okJson({ status: "error", label, note: `image not found: ${img0}`, honesty });
+      }
+      // 'content' region: trim near-black borders to the lit content bounding box, then score that.
+      let img = img0, trimNote: string | undefined;
+      if (region === "content") {
+        try {
+          const tmp = img0.replace(/\.png$/i, "") + ".content.png";
+          await run("magick", [img0, "-alpha", "off", "-fuzz", "14%", "-trim", "+repage", tmp], { timeoutMs: 30_000 });
+          if (fs.existsSync(tmp) && fs.statSync(tmp).size > 500) {
+            const dims = await run("magick", ["identify", "-format", "%w %h", tmp], { timeoutMs: 15_000 });
+            img = tmp; trimNote = `content region ${dims.stdout.trim()} (trimmed from full frame)`;
+          }
+        } catch { /* fall back to full frame */ }
       }
 
       // Five independent magick measurements; each failure becomes a structured error, never a throw.
@@ -113,7 +126,7 @@ export function registerFidelityTools(server: McpServer) {
       if (edgeDetail < 55) suggestions.push("edgeDetail low — sparse geometry: add props/trim or move camera closer.");
       if (brightBalance < 55) suggestions.push(`brightBalance low — ${lum > HI ? "over" : "under"}-exposed (mean luminance ${lum.toFixed(3)}): adjust light intensity (dim-IBL rule).`);
 
-      return okJson({ status: "scored", label, profile: profile ?? "standard", subscores, total, grade, suggestions, honesty });
+      return okJson({ status: "scored", label, profile: profile ?? "standard", region: region ?? "full", trimNote, subscores, total, grade, suggestions, honesty });
     },
   );
 }
