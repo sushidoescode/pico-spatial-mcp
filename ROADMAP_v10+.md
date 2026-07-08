@@ -277,3 +277,22 @@ compositing, controller-ray, head-tracked depth, WebXR immersive frames, WebSpat
 are characterized + deferred, awaiting PICO Swan hardware.
 
 **v12 status:** ★ P21-P24 done. The buildable roadmap is COMPLETE; what remains is hardware-gated.
+
+---
+
+## 8) v13 ARC — THE AAA QUALITY LOOP (shipped)
+
+The challenge: agents delivered scenes that WORKED but looked like props in a void. v13 ships the
+quality machinery: **generate_set_dressing** (procedural themed stages: neon/showroom/cosmic/noir),
+**fidelity_score** (the 5-subscore AAA rubric + dark-theme profile + tool-named fixes),
+**capture_rig** (deterministic multi-angle capture; fresh-launch-pose lesson), **measure_perf**
+(honest gfxinfo scope), color-aware emissive timeline tracks, and the frozen_viewport diagnose entry.
+
+PROVEN on a real demo: BowlDeck -> NEON STRIKE ALLEY, rubric-driven iterations 11.5 (void) -> 40.5
+(dark-theme, flat) — marquee + arcade dot band + neon stripes + lane chevrons + live color pulses,
+vision-verified at each step. HONEST: the AAA grade band (>=80) is not yet reached — edgeDetail is
+the named lever (real geometric detail: props/bevels/baked models in the dressing, not more flat
+boxes). The loop that gets there now exists: dress -> capture -> score -> fix -> re-look.
+
+NEXT: edgeDetail push (procedural props/models in set dressing); fidelity as a gate; the remaining
+P19 experiences end-to-end.
