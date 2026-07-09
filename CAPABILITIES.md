@@ -4,25 +4,25 @@
 STRONGEST proof on file — `vision_verified` means a human or agent LOOKED at a rendered frame.
 The honesty invariant makes this non-negotiable: nothing appears "verified" without a linked capture.*
 
-**14 capability categories proven across 26 apps; 71 ledger entries (45 vision_verified — a human/agent LOOKED).**
+**14 capability categories proven across 27 apps; 81 ledger entries (54 vision_verified — a human/agent LOOKED).**
 
-Evidence totals: `vision_verified` 45 · `auto_judged` 6 · `usd_host_render` 3 · `structural` 16 · `built_for_headset` 1
+Evidence totals: `vision_verified` 54 · `auto_judged` 6 · `usd_host_render` 3 · `structural` 17 · `built_for_headset` 1
 
 | Capability | Best evidence | Proofs | Apps |
 |---|---|---|---|
-| Real physics (native) | `vision_verified` | 21 | 7 |
-| Interactive menus | `vision_verified` | 12 | 8 |
-| Live-text / HUD panels | `vision_verified` | 7 | 5 |
-| Web panels (live DOM) | `vision_verified` | 10 | 5 |
+| Real physics (native) | `vision_verified` | 29 | 7 |
+| Interactive menus | `vision_verified` | 13 | 9 |
+| Live-text / HUD panels | `vision_verified` | 10 | 5 |
+| Web panels (live DOM) | `vision_verified` | 12 | 5 |
 | Multi-panel web workspace | `vision_verified` | 6 | 4 |
-| WebSpatial (React, OS6) | `vision_verified` | 4 | 2 |
-| Web↔3D bridge | `vision_verified` | 5 | 3 |
+| WebSpatial (React, OS6) | `vision_verified` | 6 | 4 |
+| Web↔3D bridge | `vision_verified` | 7 | 4 |
 | Web 3D (three.js) | `vision_verified` | 6 | 6 |
-| AAA fidelity | `vision_verified` | 18 | 11 |
-| Pipeline (brief→app) | `vision_verified` | 7 | 4 |
-| Unattended fleet | `vision_verified` | 10 | 9 |
+| AAA fidelity | `vision_verified` | 22 | 12 |
+| Pipeline (brief→app) | `vision_verified` | 9 | 4 |
+| Unattended fleet | `vision_verified` | 11 | 9 |
 | Editor integration | `vision_verified` | 6 | 3 |
-| Custom worlds / env | `vision_verified` | 5 | 5 |
+| Custom worlds / env | `vision_verified` | 8 | 8 |
 | Off-device render | `vision_verified` | 5 | 4 |
 
 ## Two lanes, one verification loop
