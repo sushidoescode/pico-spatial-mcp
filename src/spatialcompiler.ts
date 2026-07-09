@@ -16,6 +16,11 @@ import { okJson } from "./util.js";
 const NATIVE = ["physics", "throw", "ball", "bowl", "strike", "pin", "gravity", "collision", "collide", "3d", "3-d", "scene", "model", "mesh", "orbit", "planet", "sun", "solar", "pbr", "metal", "shadow", "animate", "animation", "spin", "rotate", "game", "shoot", "drop", "fall", "menu", "gallery", "showcase", "sculpture", "diorama", "world", "environment", "room", "lathe", "particle"];
 const WEB = ["dashboard", "chart", "graph", "document", "docs", "web", "html", "page", "website", "scoreboard", "score", "table", "form", "article", "feed", "text", "readout", "metric", "kpi", "report", "console", "monitor", "log", "status", "panel", "browser", "webxr", "webgl", "three.js", "threejs"];
 const HYBRID = ["control panel", "control", "dashboard for the game", "with a dashboard", "hud", "scoreboard", "with controls", "and a", "plus a"];
+// OS-6 WebSpatial signals: the multi-Spatial-Scene model (OS-managed windows + volumes). Distinct
+// from the native WebView web-workspace (which is verifiable TODAY) — WebSpatial spatial depth is
+// built_for_os6. 'volume'/'volumetric' are WebSpatial-specific; plurality words push toward multi-view.
+const WEBSPATIAL = ["webspatial", "web spatial", "os 6", "os6", "os-6", "volume", "volumes", "volumetric", "multi-view", "multiview", "multi view", "install-free", "react app", "react spatial", "web app", "spatial scene", "spatial web app", "window scene", "multiple windows", "separate windows", "several windows", "several scenes", "multiple scenes", "windowed", "command center", "command deck", "mission control"];
+const MULTI = ["multi-view", "multiview", "multi view", "multiple windows", "separate windows", "several windows", "several scenes", "multiple scenes", "volume", "volumes", "and a", "plus a", "windows", "scenes", "command center", "command deck", "mission control"];
 
 function score(brief: string, words: string[]): { n: number; hits: string[] } {
   const b = brief.toLowerCase();
@@ -28,22 +33,29 @@ export function registerSpatialCompilerTools(server: McpServer) {
     "compile_spatial_experience",
     {
       description:
-        "THE UNIFIED FRONT DOOR (P12): given a natural-language brief, route it to the right lane(s) and emit a concrete, ordered build plan across the WHOLE toolkit — so you don't have to know the lanes. Native Spatial SDK for 3D/physics/games; the web lane (WebView panels / WebSpatial) for dashboards/docs/live-text/charts; HYBRID (native 3D scene + web control/info panels + the web↔3D bridge) when the brief wants both. Returns {lane, rationale, plan:[ordered tool steps], evidenceClasses, honesty}. This is a PLANNER (side-effect free) — execute the returned plan with the named tools. Use it as step 0 for any 'build me a spatial …' brief.",
+        "THE UNIFIED FRONT DOOR (P12): given a natural-language brief, route it to the right lane(s) and emit a concrete, ordered build plan across the WHOLE toolkit — so you don't have to know the lanes. Native Spatial SDK for 3D/physics/games; the WebView web lane for dashboards/docs/live-text (verifiable today); the WEBSPATIAL lane for OS-6 multi-Spatial-Scene apps (windows + volumes, multi-view, built_for_os6); HYBRID (native 3D scene + web control/info panels + the web↔3D bridge) when the brief wants both. Returns {lane, rationale, plan:[ordered tool steps], evidenceClasses, honesty}. This is a PLANNER (side-effect free) — execute the returned plan with the named tools. Use it as step 0 for any 'build me a spatial …' brief.",
       inputSchema: {
         brief: z.string().describe("The natural-language experience brief."),
-        prefer: z.enum(["auto", "native", "web", "hybrid"]).optional().describe("Override the lane choice (default auto = decide from the brief)."),
+        prefer: z.enum(["auto", "native", "web", "hybrid", "webspatial"]).optional().describe("Override the lane choice (default auto = decide from the brief). 'webspatial' forces the OS-6 multi-Spatial-Scene lane."),
       },
     },
     async ({ brief, prefer }) => {
       const nat = score(brief, NATIVE);
       const web = score(brief, WEB);
       const hyb = score(brief, HYBRID);
-      let lane: "native" | "web" | "hybrid";
+      const wsp = score(brief, WEBSPATIAL);
+      const multi = score(brief, MULTI);
+      let lane: "native" | "web" | "hybrid" | "webspatial";
       if (prefer && prefer !== "auto") lane = prefer;
+      // WebSpatial wins when its OS-6 signals fire AND the brief is web-leaning (not a physics game):
+      // volumes / multi-view / OS-6 / a spatial React web app map to the multi-Spatial-Scene model.
+      else if (wsp.n >= 1 && web.n >= nat.n) lane = "webspatial";
       else if (hyb.n >= 1 && nat.n >= 1 && web.n >= 1) lane = "hybrid";
       else if (nat.n > web.n) lane = "native";
       else if (web.n > nat.n) lane = "web";
       else lane = nat.n > 0 ? "native" : "web";
+      // single vs multi WebSpatial scene: plurality signals (multiple/volumes/multi-view) -> multiview
+      const wsMulti = multi.n >= 1 || /(\d+|two|three|four|several|multiple)\s+(window|scene|volume|view|panel)/i.test(brief);
 
       const plans: Record<string, any> = {
         native: {
@@ -79,12 +91,30 @@ export function registerSpatialCompilerTools(server: McpServer) {
           ],
           evidenceClasses: ["C0_emulator (vision_verified) for the scene + panels + bridge", "the workspace frame (all surfaces in one capture) is the flagship proof"],
         },
+        webspatial: {
+          rationale: `OS-6 WebSpatial signals fire (${wsp.hits.slice(0, 6).join(", ") || "webspatial"}${wsMulti ? "; multi-view/volume plurality" : "; single scene"}). Build on the WebSpatial lane — a React web app whose scenes become OS-managed windows/volumes on PICO OS 6 (install-free, no native code). The 2D projection is verifiable today; spatial depth = built_for_os6. NOTE: for panels that must render on the CURRENT emulator, use the native web lane (generate_web_workspace) instead — WebSpatial spatial behavior needs the OS-6 runtime.`,
+          plan: wsMulti
+            ? [
+                "1. generate_webspatial_multiview(projectDir, title, mainScene, scenes[{name,type:'window'|'volume',title,width/height/depth}]) — a main window scene + N secondary window/volume scenes (initScene + window.open; volumes use '0.9m'-style meter sizes; correct xr_spatial_scene manifest).",
+                "2. cd projectDir && npm install && npm run build (real @webspatial/react-sdk; ~vite, seconds).",
+                "3. verify_webspatial_scenes(projectDir) — STATIC scene graph (scenes/types/opens/enable-xr, valid?). Then serve dist/ (python3 -m http.server + the URL) and re-call with servedUrl=... for the headless PicoWebApp boot check + a 2D screenshot.",
+                "4. LOOK at the boot screenshot -> record_verification (the 2D projection of each scene is vision_verified; native OS-managed windows/volumes = built_for_os6).",
+                "5. check_toolchain_updates — when the OS-6 (6.1.0) runtime/simulator ships, the built_for_os6 rows flip to device-verified.",
+              ]
+            : [
+                "1. generate_webspatial_app(projectDir, title, panels) — a single-scene WebSpatial React app (enable-xr panels, --xr-back depth, correct xr_spatial_scene manifest) + a preview.html.",
+                "2. Render the 2D projection with headless Chrome (or npm run build + serve) -> LOOK / visual_judge.",
+                "3. verify_webspatial_scenes(projectDir, servedUrl=...) for the headless boot check -> record_verification (2D projection vision_verified; spatial depth built_for_os6).",
+                "4. If the brief actually wants 2+ distinct windows/volumes, switch to generate_webspatial_multiview.",
+              ],
+          evidenceClasses: ["C0_emulator (vision_verified) for the 2D projection of each scene (headless render/boot)", "structural for the declared multi-scene graph (verify_webspatial_scenes)", "built_for_os6 for native OS-managed windows/volumes + spatial depth (needs the OS-6 runtime; watched by check_toolchain_updates)"],
+        },
       };
       const chosen = plans[lane];
       return okJson({
         status: "ok",
         lane,
-        scores: { native: nat.n, web: web.n, hybridSignals: hyb.n },
+        scores: { native: nat.n, web: web.n, hybridSignals: hyb.n, webspatial: wsp.n, multiView: multi.n },
         rationale: chosen.rationale,
         plan: chosen.plan,
         evidenceClasses: chosen.evidenceClasses,
