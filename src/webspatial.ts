@@ -8,7 +8,7 @@ import { okJson } from "./util.js";
  * webspatial.ts — v10.12 (P10): the WebSpatial React compile target.
  *
  * A second, web-native compile lane. Emits a real React + @webspatial/react-sdk project
- * (enable-xr attribute, --xr-back depth CSS var, xr_main_scene manifest) that on PICO OS 6 (Swan)
+ * (enable-xr attribute, --xr-back depth CSS var, xr_spatial_scene manifest) that on PICO OS 6 (Swan)
  * activates spatially with ZERO packaging (the OS Web App runtime has WebSpatial built in), and
  * degrades to a plain website everywhere else. Because it degrades, the 2D PROJECTION is
  * verifiable NOW (headless Chrome / the emulator browser); the spatial depth is `built_for_os6`
@@ -76,7 +76,7 @@ export function registerWebSpatialTools(server: McpServer) {
     "generate_webspatial_app",
     {
       description:
-        "Generate a WebSpatial React app (P10) — the web-native compile target. Emits a real, buildable React + @webspatial/react-sdk project (enable-xr panels, --xr-back depth, xr_main_scene manifest) into projectDir, PLUS a self-contained preview.html (the 2D projection). On PICO OS 6 (Swan) the panels activate spatially with no packaging; elsewhere it's a normal website. Runtime TEXT is FREE (real HTML/CSS — no baked-texture workaround). VERIFY NOW: render preview.html with headless Chrome or the emulator browser (the 2D projection is C0-verifiable); the spatial depth is `built_for_os6` (deferred honestly, like awaiting_swan). Returns the file list + the preview path + the build/run commands.",
+        "Generate a WebSpatial React app (P10) — the web-native compile target. Emits a real, buildable React + @webspatial/react-sdk project (enable-xr panels, --xr-back depth, xr_spatial_scene manifest) into projectDir, PLUS a self-contained preview.html (the 2D projection). On PICO OS 6 (Swan) the panels activate spatially with no packaging; elsewhere it's a normal website. Runtime TEXT is FREE (real HTML/CSS — no baked-texture workaround). VERIFY NOW: render preview.html with headless Chrome or the emulator browser (the 2D projection is C0-verifiable); the spatial depth is `built_for_os6` (deferred honestly, like awaiting_swan). Returns the file list + the preview path + the build/run commands.",
       inputSchema: {
         projectDir: z.string().describe("Directory to write the React project into (created if absent)."),
         title: z.string().describe("App title, e.g. 'Ops Console'."),
@@ -132,8 +132,8 @@ h1{font-size:5vh;color:#cfe0ff;margin:0 0 3vh}
 `));
       files.push(write("public/manifest.webmanifest", JSON.stringify({
         name: title, short_name: title.slice(0, 12), display: "standalone", start_url: "/",
-        // WebSpatial: the default spatial scene size (PICO OS 6 reads this)
-        xr_main_scene: { default_size: { width: 1280, height: 720 } },
+        // WebSpatial xr_spatial_scene (verified key from the @webspatial SDK source, 2026-07-08)
+        xr_spatial_scene: { default_size: { width: "1280px", height: "720px" }, worldScaling: "automatic", worldAlignment: "automatic" },
       }, null, 2)));
       const preview = write("preview.html", previewHtml(title, panels));
 
