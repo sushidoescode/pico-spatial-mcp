@@ -20,6 +20,9 @@ const HYBRID = ["control panel", "control", "dashboard for the game", "with a da
 // from the native WebView web-workspace (which is verifiable TODAY) — WebSpatial spatial depth is
 // built_for_os6. 'volume'/'volumetric' are WebSpatial-specific; plurality words push toward multi-view.
 const WEBSPATIAL = ["webspatial", "web spatial", "os 6", "os6", "os-6", "volume", "volumes", "volumetric", "multi-view", "multiview", "multi view", "install-free", "react app", "react spatial", "web app", "spatial scene", "spatial web app", "window scene", "multiple windows", "separate windows", "several windows", "several scenes", "multiple scenes", "windowed", "command center", "command deck", "mission control"];
+// UNAMBIGUOUS WebSpatial vocabulary — a native physics game never says these, so they win the lane
+// outright (even alongside a stray native token like '3d' from '3D globe volume').
+const EXPLICIT_WS = ["webspatial", "web spatial", "os 6", "os6", "os-6", "volume", "volumes", "volumetric", "multi-view", "multiview", "multi view", "install-free", "window scene", "spatial scene", "spatial web app"];
 const MULTI = ["multi-view", "multiview", "multi view", "multiple windows", "separate windows", "several windows", "several scenes", "multiple scenes", "volume", "volumes", "and a", "plus a", "windows", "scenes", "command center", "command deck", "mission control"];
 
 function score(brief: string, words: string[]): { n: number; hits: string[] } {
@@ -44,11 +47,14 @@ export function registerSpatialCompilerTools(server: McpServer) {
       const web = score(brief, WEB);
       const hyb = score(brief, HYBRID);
       const wsp = score(brief, WEBSPATIAL);
+      const wspStrong = score(brief, EXPLICIT_WS);
       const multi = score(brief, MULTI);
       let lane: "native" | "web" | "hybrid" | "webspatial";
       if (prefer && prefer !== "auto") lane = prefer;
-      // WebSpatial wins when its OS-6 signals fire AND the brief is web-leaning (not a physics game):
-      // volumes / multi-view / OS-6 / a spatial React web app map to the multi-Spatial-Scene model.
+      // Unambiguous WebSpatial vocabulary (os6/volume/multi-view/webspatial) wins outright — a physics
+      // game never uses these, so a stray '3d'/'globe' native token doesn't pull it to the native lane.
+      else if (wspStrong.n >= 1) lane = "webspatial";
+      // Weaker WebSpatial signals (react/web app, command center, windows) only win when web-leaning.
       else if (wsp.n >= 1 && web.n >= nat.n) lane = "webspatial";
       else if (hyb.n >= 1 && nat.n >= 1 && web.n >= 1) lane = "hybrid";
       else if (nat.n > web.n) lane = "native";
