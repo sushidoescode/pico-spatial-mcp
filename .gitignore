@@ -8,3 +8,11 @@ dist/
 # Python bytecode (host-side bridge tools)
 __pycache__/
 *.pyc
+
+# Internal dev docs (roadmaps, handoffs, findings, guides) — local working memory, not public
+.dev/
+
+# Secrets + emulator state (never publish)
+adbkey
+adbkey.pub
+emu-last-feature-flags.protobuf
