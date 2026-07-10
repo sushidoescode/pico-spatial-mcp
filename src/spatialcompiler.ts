@@ -24,6 +24,8 @@ const WEBSPATIAL = ["webspatial", "web spatial", "os 6", "os6", "os-6", "volume"
 // outright (even alongside a stray native token like '3d' from '3D globe volume').
 const EXPLICIT_WS = ["webspatial", "web spatial", "os 6", "os6", "os-6", "volume", "volumes", "volumetric", "multi-view", "multiview", "multi view", "install-free", "window scene", "spatial scene", "spatial web app"];
 const MULTI = ["multi-view", "multiview", "multi view", "multiple windows", "separate windows", "several windows", "several scenes", "multiple scenes", "volume", "volumes", "and a", "plus a", "windows", "scenes", "command center", "command deck", "mission control"];
+// A DOWNLOADED photoreal world (World Labs / Marble export) -> the ingest_marble_world path, not codegen.
+const MARBLE = ["marble", "world labs", "worldlabs", "world-labs", "gaussian splat", "gaussian-splat", "splat", "downloaded world", "downloaded scene", "photoreal capture", "scanned world", "scanned room", ".spz", ".ply"];
 
 function score(brief: string, words: string[]): { n: number; hits: string[] } {
   const b = brief.toLowerCase();
@@ -49,8 +51,16 @@ export function registerSpatialCompilerTools(server: McpServer) {
       const wsp = score(brief, WEBSPATIAL);
       const wspStrong = score(brief, EXPLICIT_WS);
       const multi = score(brief, MULTI);
+      const marble = score(brief, MARBLE);
+      // An explicit downloaded-world asset path in the brief (…/foo.spz|.ply|.glb) is the strongest signal.
+      const worldPath = brief.match(/([~/][^\s"']*\.(?:spz|ply|glb|gltf))/i)?.[1] ?? null;
+      const marbleWorld = marble.n >= 1 || !!worldPath;
       let lane: "native" | "web" | "hybrid" | "webspatial";
       if (prefer && prefer !== "auto") lane = prefer;
+      // A downloaded photoreal world (Marble/World-Labs export, or an explicit .spz/.ply/.glb path) is an
+      // INGEST job, not codegen — it renders on the native lane via ingest_marble_world. Wins outright
+      // unless the brief ALSO carries explicit OS-6/WebSpatial vocabulary.
+      else if (marbleWorld && wspStrong.n === 0) lane = "native";
       // Unambiguous WebSpatial vocabulary (os6/volume/multi-view/webspatial) wins outright — a physics
       // game never uses these, so a stray '3d'/'globe' native token doesn't pull it to the native lane.
       else if (wspStrong.n >= 1) lane = "webspatial";
@@ -64,7 +74,17 @@ export function registerSpatialCompilerTools(server: McpServer) {
       const wsMulti = multi.n >= 1 || /(\d+|two|three|four|several|multiple)\s+(window|scene|volume|view|panel)/i.test(brief);
 
       const plans: Record<string, any> = {
-        native: {
+        native: marbleWorld ? {
+          rationale: `A DOWNLOADED photoreal world is referenced (${[...marble.hits.slice(0, 4), worldPath].filter(Boolean).join(", ")}). This is an INGEST job, not codegen: ingest_marble_world turns a World-Labs/Marble .spz/.ply splat (or .glb mesh) into an interactive native scene — auto collider rig + the SplatEnvironment loader + the adb-push — then dress it with objects/physics. HONEST: a splat renders photoreal but VIEW-DEPENDENT (a dense captured band + black uncaptured regions — a diorama, not a full surround); a .glb mesh is the SOLID view-independent alternative.`,
+          plan: [
+            `1. ingest_marble_world(worldPath${worldPath ? `="${worldPath}"` : "=<the .spz/.ply/.glb>"}, packageName, projectDir) -> analyze_splat (bounds/floor/collider boxes) + generate_splat_colliders + SplatEnvironment.kt (or the .glb bake path) + the adb-push command.`,
+            "2. Run the returned adbPush (splats ship via adb-push; spatialbundle can't pack them); wire SplatEnvironment.load(externalFilesPath) into SpatialView.initial with Modifier.fillMaxSize() (the C4 fill fix), and seat the world transform so the camera sits INSIDE (shift toward the interior center, drop ~0.4m to foot level).",
+            "3. Dress the scene: add objects/physics UNDER sceneRoot (they rest on / rayCast the auto colliders); a brighter SceneLighting rig makes props POP against a dim capture (self-lit splats ignore scene lights, so light is for YOUR props).",
+            "4. build_and_run -> install + launch on emulator-5554.",
+            "5. capture_frame, then emulator_look to aim at the dense captured band (a splat has no full surround) -> LOOK / visual_judge -> record_verification (honest: vision_verified render + interactive objects; note the diorama limitation).",
+          ],
+          evidenceClasses: ["C0_emulator (vision_verified) for the photoreal world render + interactive objects on the collider rig", "structural for the diorama's uncaptured (black) regions — NOT a full surround", "a .glb re-ingest gives a SOLID view-independent render (Blender can retexture first)"],
+        } : {
           rationale: `3D/physics/scene signals dominate (native: ${nat.hits.slice(0, 6).join(", ") || "default"}). Build on the native Spatial SDK lane — real Filament rendering, rigid-body physics, clickable menus.`,
           plan: [
             "1. list_templates -> instantiate_template (knockdown for physics games, studio for AAA-metal, gallery/dashboard/showcase for data, ambient/constellation for calm) OR author an AppSpec + plan_app_spec.",
@@ -120,7 +140,7 @@ export function registerSpatialCompilerTools(server: McpServer) {
       return okJson({
         status: "ok",
         lane,
-        scores: { native: nat.n, web: web.n, hybridSignals: hyb.n, webspatial: wsp.n, multiView: multi.n },
+        scores: { native: nat.n, web: web.n, hybridSignals: hyb.n, webspatial: wsp.n, multiView: multi.n, marbleWorld: marble.n, worldPath: worldPath ?? undefined },
         rationale: chosen.rationale,
         plan: chosen.plan,
         evidenceClasses: chosen.evidenceClasses,
