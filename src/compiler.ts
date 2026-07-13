@@ -135,7 +135,10 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
 
   // 7b. THE WIRING (v6.3) — the app-defining glue, generated from the spec (was hand-authored). This is
   // what closes the ledger→running-app gap: SceneComposition.build + HomeStage SpatialView.initial + Main.
-  push({ node: "wiring", tool: "generate_app_wiring", args: { spec: { meta: spec.meta } }, targetPath: `${cpath}/SceneComposition.kt`, cClass: "C0_emulator", note: "Emits SceneComposition.kt + HomeStage.kt + Main.kt from the spec; write all three (serial). No more hand-wiring." });
+  // v15.0: pass the FULL spec — the meta-only shorthand failed generate_app_wiring's zod validation,
+  // so SceneComposition/HomeStage/Main were never written in automated runs (fleet apps silently ran
+  // on the scaffold template's HomeStage and spec objects never spawned).
+  push({ node: "wiring", tool: "generate_app_wiring", args: { spec }, targetPath: `${cpath}/SceneComposition.kt`, cClass: "C0_emulator", note: "Emits SceneComposition.kt + HomeStage.kt + Main.kt from the spec; write all three (serial). No more hand-wiring." });
 
   // 8. build & run
   push({ node: "build", tool: "build_and_run", args: { projectDir, packageName: pkg }, targetPath: projectDir, cClass: "C0_emulator", note: "Require BUILD SUCCESSFUL + PID up + ready-log before reading any capture (stale-APK gotcha)." });

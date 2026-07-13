@@ -111,11 +111,20 @@ export function registerFleetBuildTools(server: McpServer) {
 
             // 2. execute the ledger's generate steps
             const steps = buildLedger(spec, projectDir) as Step[];
+            let wiringFailed = false;
             for (const st of steps) {
               if (st.tool === "scaffold_spatial_app" || st.tool === "build_and_run" || st.tool === "generate_agent_bridge") continue; // scaffolded template already has the bridge
               const out = await call(st.tool, st.args);
               if (st.tool === "generate_app_wiring") {
-                for (const f of out.files ?? []) {
+                // v15.0: a wiring failure must be LOUD — an app without its wiring silently runs on
+                // the scaffold template's HomeStage (spec objects never spawn; the judge counts
+                // template pins). That was the pre-v15 fleet state.
+                if (!Array.isArray(out.files) || out.files.length === 0) {
+                  rec.notes.push(`generate_app_wiring emitted NO files (${JSON.stringify(out).slice(0, 160)}) — aborting this brief instead of shipping a template-wired app`);
+                  wiringFailed = true;
+                  break;
+                }
+                for (const f of out.files) {
                   const fp = f.path.startsWith("/") ? f.path : path.join(projectDir, f.path);
                   fs.mkdirSync(path.dirname(fp), { recursive: true });
                   fs.writeFileSync(fp, f.content);
@@ -134,6 +143,7 @@ export function registerFleetBuildTools(server: McpServer) {
                 fs.copyFileSync(MENU_BUNDLE, path.join(projectDir, "app/src/main/assets/menu.bundle"));
               }
             }
+            if (wiringFailed) continue; // recorded above — do not build/judge a template-wired app
             // data briefs need the bundled catalog
             if (spec.data?.length) {
               const dd = path.join(projectDir, "app/src/main/assets/data");
