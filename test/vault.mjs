@@ -1,7 +1,7 @@
 // v14.6 vault test: the agent-vault symbol index parser + the preflight vault check.
 // Fixture-backed (test/fixtures/agent-vault, CI-green without pico-cli) plus assertions against
 // the REAL vault when present (skip-if-absent). Run: npm run test:vault
-import { loadVaultIndex, runVaultCheck, defaultVaultRoot } from "../dist/vault.js";
+import { loadVaultIndex, runVaultCheck, defaultVaultRoot, registerVaultTools } from "../dist/vault.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -121,6 +121,59 @@ assert(runVaultCheck("val t = com.pico.spatial.core.ecs.AnchorComponent.Tracking
 // member import (lowercase last segment) skipped
 assert(runVaultCheck("import com.pico.spatial.core.ecs.someMember", idx).length === 0, "lowercase member import skipped");
 
+// ── 2b. Phase-2 checks: @param docs, enum values, ctor arity (import-driven, 2026-07-13) ────────────────
+console.log("\nPhase-2 checks against the fixture index...\n");
+
+// @param doc capture — the unit-semantics data that would have caught the spotlight bug mechanically
+assert(createCapsule?.params[0]?.doc?.includes("total height"), `createCapsule height param carries its @param doc (got ${JSON.stringify(createCapsule?.params[0]?.doc)})`);
+
+// enum-value check: fires on a bogus entry, silent on real entries — needs the explicit import
+const enumBad = runVaultCheck("import com.pico.spatial.core.ecs.simulation.RigidBodyMode\nval m = RigidBodyMode.BOGUS", idx);
+assert(enumBad.length === 1 && enumBad[0].check === "unknown-enum-value" && enumBad[0].message.includes("KINEMATIC"), `bogus enum entry flagged w/ valid values (got ${JSON.stringify(enumBad)})`);
+assert(runVaultCheck("import com.pico.spatial.core.ecs.simulation.RigidBodyMode\nval m = RigidBodyMode.DYNAMIC", idx).length === 0, "real enum entry silent");
+assert(runVaultCheck("val m = RigidBodyMode.BOGUS", idx).length === 0, "no import → enum check does not fire (androidx safety)");
+// companion constants count as valid values
+assert(runVaultCheck("import com.pico.spatial.core.math.Vector3\nval z = Vector3.ZERO", idx).length === 0, "companion constant Vector3.ZERO silent");
+const constBad = runVaultCheck("import com.pico.spatial.core.math.Vector3\nval z = Vector3.NOPE", idx);
+assert(constBad.length === 1 && constBad[0].check === "unknown-enum-value", "bogus companion constant flagged");
+// nested-type access via the outer import is NOT a false positive
+assert(runVaultCheck("import com.pico.spatial.core.ecs.AnchorComponent\nval t = AnchorComponent.TrackingMode", idx).length === 0, "nested type access via outer import silent");
+// doc-prose sentence boundary ("Type. Capitalized...") is NOT a member access (live-sweep regression)
+assert(runVaultCheck("import com.pico.spatial.core.ecs.RigidBodyComponent\n * RigidBodyComponent. Call attach(entity) first.", idx).length === 0, "prose 'Type. Word' not treated as member access");
+
+// ── review-round-2 regressions (2026-07-13) ──
+// a comment mentioning the bogus FQN must NOT suppress the code finding (shared-seen bug)
+const suppress = runVaultCheck("import com.pico.spatial.core.ecs.simulation.RigidBodyMode\n// legacy: com.pico.spatial.core.ecs.simulation.RigidBodyMode.BOGUS\nval m = RigidBodyMode.BOGUS", idx);
+assert(suppress.some((f) => f.check === "unknown-enum-value" && f.line === 3), "comment FQN mention does not suppress the code finding");
+// SDK names inside strings / line comments are prose, not usage
+assert(runVaultCheck('import com.pico.spatial.core.ecs.simulation.RigidBodyMode\nLog.d("physics", "mode must be RigidBodyMode.STATIC or DYNAMIC")', idx).length === 0, "Type.MEMBER inside a string literal is ignored");
+assert(runVaultCheck("import com.pico.spatial.core.ecs.simulation.RigidBodyMode\nval m = mode // not RigidBodyMode.LEGACY", idx).length === 0, "Type.MEMBER inside a // comment is ignored");
+// Type.Companion is always a known member
+assert(runVaultCheck("import com.pico.spatial.core.math.Vector3\nfun Vector3.Companion.up() = Vector3(0f, 1f, 0f)", idx).length === 0, "Type.Companion is known");
+// ctor-arity must not count commas inside string args or inline lambdas; trailing lambda counts as one arg
+assert(runVaultCheck('import com.pico.spatial.core.math.Vector3\nval v = Vector3("a, b, c, d".length.toFloat(), 1f, 2f)', idx).length === 0, "commas inside string args not counted");
+assert(runVaultCheck("import com.pico.spatial.core.math.Vector3\nval v = Vector3(listOf(1f).fold(0f) { acc, x -> acc + x }, 1f, 2f)", idx).length === 0, "commas inside inline lambda args not counted");
+assert(runVaultCheck("import com.pico.spatial.core.math.Vector3\nval v = Vector3(1f, 2f, 3f) { it }", idx).length === 1, "trailing lambda counted as an argument (4 > max 3 flagged)");
+// ui.* imports must not feed phase-2 checks (type-level-only vault docs)
+assert(runVaultCheck("import com.pico.spatial.ui.design.ButtonSize\nval s = ButtonSize.Large", idx).length === 0, "ui.* types excluded from member/arity checks");
+// the FQN and entry-import forms of a bogus enum entry are caught, not just the imported-simple-name form
+const fqnBogus = runVaultCheck("val m = com.pico.spatial.core.ecs.simulation.RigidBodyMode.BOGUS", idx);
+assert(fqnBogus.length === 1 && fqnBogus[0].check === "unknown-enum-value", "inline-FQN bogus enum entry caught");
+const importBogus = runVaultCheck("import com.pico.spatial.core.ecs.simulation.RigidBodyMode.BOGUS", idx);
+assert(importBogus.length === 1 && importBogus[0].check === "unknown-enum-value", "entry-import bogus enum entry caught");
+assert(runVaultCheck("import com.pico.spatial.core.ecs.simulation.RigidBodyMode.DYNAMIC", idx).length === 0, "entry-import of a real entry silent");
+// enum-entry doc must not leak onto the enum's following member (val value: Int)
+const alignVal = ecs.get("AnchorComponent.Alignment")?.properties.find((p) => p.name === "value");
+assert(alignVal && alignVal.doc === undefined, `enum-entry doc does not leak onto 'val value' (got ${JSON.stringify(alignVal?.doc)})`);
+
+// ctor arity: fires outside every overload's [min,max], silent inside (defaults honored)
+const arityBad = runVaultCheck("import com.pico.spatial.core.ecs.TransformComponent\nval t = TransformComponent(pos, rot)", idx);
+assert(arityBad.length === 1 && arityBad[0].check === "ctor-arity" && arityBad[0].message.includes("3"), `TransformComponent(2 args) flagged, arities listed (got ${JSON.stringify(arityBad)})`);
+assert(runVaultCheck("import com.pico.spatial.core.ecs.TransformComponent\nval t = TransformComponent(pos, Quat.identity(), Vector3(1f, 1f, 1f))", idx).length === 0, "TransformComponent(3 args) silent — nested call parens counted correctly");
+assert(runVaultCheck("import com.pico.spatial.core.math.Vector3\nval v = Vector3()", idx).length === 0, "Vector3() silent (all-default ctor, minArity 0)");
+assert(runVaultCheck("import com.pico.spatial.core.math.Vector3\nval v = Vector3(1f, 2f, 3f, 4f)", idx).length === 1, "Vector3(4 args) flagged (max 3)");
+assert(runVaultCheck("import com.pico.spatial.core.ecs.RigidBodyComponent\nval r = RigidBodyComponent(MassProperties(5f), RigidBodyMode.DYNAMIC)", idx).length === 0, "RigidBodyComponent 2-arg ctor silent");
+
 // ── 3. Absent vault degrades to null ────────────────────────────────────────────────────────────────────
 assert(loadVaultIndex("/nonexistent-vault-root") === null, "absent vault → loadVaultIndex null");
 
@@ -154,6 +207,24 @@ if (!real) {
     runVaultCheck("val m = com.pico.spatial.core.ecs.simulation.RigidBodyMode.DYNAMIC", real).length === 0,
     "REAL vault: FQ enum-entry reference resolves",
   );
+  // phase 2 generalizes two retained-lessons gotchas mechanically:
+  const closest = runVaultCheck("import com.pico.spatial.core.ecs.simulation.CollisionCastHitMode\nscene.rayCast(o, d, 10f, CollisionCastHitMode.CLOSEST, g, null)", real);
+  assert(closest.some((f) => f.check === "unknown-enum-value" && f.symbol.includes("CLOSEST")), "REAL vault: CollisionCastHitMode.CLOSEST caught by the generic enum check");
+  assert(runVaultCheck("import com.pico.spatial.core.ecs.simulation.CollisionCastHitMode\nscene.rayCast(o, d, 10f, CollisionCastHitMode.NEAREST, g, null)", real).length === 0, "REAL vault: .NEAREST silent");
+  const noArg = runVaultCheck("import com.pico.spatial.core.ecs.CollisionComponent\ne.components.set(CollisionComponent())", real);
+  assert(noArg.some((f) => f.check === "ctor-arity"), "REAL vault: CollisionComponent() no-arg caught by the generic arity check");
+  const rSpotInner = rSpot?.properties.find((p) => p.name === "innerAngle");
+  assert(/degree/i.test(rSpotInner?.doc ?? ""), `REAL vault: SpotLightComponent innerAngle property doc mentions degrees (got ${JSON.stringify(rSpotInner?.doc)})`);
+  // review-round-2 live repro: PolygonFillMode.value must not carry the UNKNOWN entry's leaked doc
+  const pfmVal = real.packages.get("com.pico.spatial.core.ecs.resource")?.get("PolygonFillMode")?.properties.find((p) => p.name === "value");
+  assert(!/reserved value/i.test(pfmVal?.doc ?? ""), `REAL vault: PolygonFillMode.value doc not leaked from the UNKNOWN entry (got ${JSON.stringify(pfmVal?.doc)})`);
+  // vault_api resolves Type.MEMBER queries to the owning type card (fake-server shim)
+  const handlers = {};
+  registerVaultTools({ registerTool: (name, _m, fn) => { handlers[name] = fn; } });
+  const apiRes = JSON.parse((await handlers["vault_api"]({ symbol: "RigidBodyMode.DYNAMIC" })).content[0].text);
+  assert(apiRes.status === "ok" && /enum entry/.test(apiRes.note ?? ""), `vault_api("RigidBodyMode.DYNAMIC") resolves to the owner type card (got status=${apiRes.status})`);
+  const apiProp = JSON.parse((await handlers["vault_api"]({ symbol: "com.pico.spatial.core.ecs.SpotLightComponent.innerAngle" })).content[0].text);
+  assert(apiProp.status === "ok" && /property/.test(apiProp.note ?? ""), "vault_api FQN Type.member query resolves");
   const splatImports = ["import com.pico.spatial.core.ecs.GaussianSplattingComponent", "import com.pico.spatial.core.ecs.resource.GaussianSplattingResource", "import com.pico.spatial.core.ecs.LoadType"].join("\n");
   assert(runVaultCheck(splatImports, real).length === 0, "REAL vault: splat-env imports clean (allowlist + LoadType)");
   console.log(`\n  info real vault: SDK ${real.sdkVersion}, ${real.typeCount} types across ${real.fileCount} package files`);

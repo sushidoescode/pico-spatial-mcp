@@ -377,8 +377,8 @@ export function registerLintTools(server: McpServer) {
             typesIndexed: index.typeCount,
             findings,
             note: findings.length
-              ? "ADVISORY: these symbols don't resolve against the vault api-reference (authoritative SDK truth). Check the cited package before writing; ui.* composables are not validated."
-              : "All com.pico.spatial imports resolve against the agent-vault api-reference (ui.* composables not validated).",
+              ? "ADVISORY agent-vault findings — each is an unresolved symbol, unknown enum value/constant, or constructor-arity mismatch, with the authoritative vault declaration cited. Check the citation (vault_api gives the full signature) before writing; ui.* composables are not validated."
+              : "Emitted SDK usage resolves against the agent-vault api-reference (types, enum values, ctor arity; ui.* composables not validated).",
           };
         }
       }

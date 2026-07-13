@@ -57,6 +57,7 @@ import { registerPlannerTools } from "./planner.js";
 import { registerCompilerTools } from "./compiler.js";
 import { registerSpecVerifyTools } from "./specverify.js";
 import { registerLintTools } from "./lint.js";
+import { registerVaultTools } from "./vault.js";
 import { registerCritiqueTools } from "./critique.js";
 import { registerLedgerTools } from "./ledger.js";
 import { registerStackTools } from "./stack.js";
@@ -187,6 +188,8 @@ registerCompilerTools(server);
 registerSpecVerifyTools(server);
 // v5.1 — the retained-lessons lint engine (executable, fixture-backed gotchas)
 registerLintTools(server);
+// v14.7 — vault_api: exact SDK declarations from the agent-vault symbol index
+registerVaultTools(server);
 // v5.2 — the self-repair critique (LOOKED-at frame -> defect list -> replan_spec)
 registerCritiqueTools(server);
 // v5.3 — the trust ledger (over-claims structurally impossible) + safe stacked-worktree landing
