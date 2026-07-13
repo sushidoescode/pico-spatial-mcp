@@ -4,6 +4,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
+import { defaultVaultRoot, loadVaultIndex, runVaultCheck } from "./vault.js";
 
 /**
  * lint.ts — v5.1 the RETAINED-LESSONS LINT ENGINE.
@@ -59,7 +60,7 @@ export const BUILTIN_RULES: LintRule[] = [
     type: "present",
     pattern: /createStaticMesh|createConvexMesh/,
     message: "Static/convex MESH colliders cook nothing queryable on-device — rayCast returns 0 hits against them.",
-    fix: "Use PRIMITIVE shapes only: ShapeResource.createBox(FULL extents) / createSphere(r) / createCapsule(r,h).",
+    fix: "Use PRIMITIVE shapes only: ShapeResource.createBox(FULL extents) / createSphere(radius) / createCapsule(height, radius).",
     designRule: "DESIGN.md §9 (runtime physics: primitives only)",
     positiveFixture: "e.components.set(CollisionComponent(listOf(ShapeResource.createConvexMesh(mesh)), physMat()))",
     negativeFixture: "e.components.set(CollisionComponent(listOf(ShapeResource.createBox(Vector3(1f,1f,1f))), physMat()))",
@@ -99,6 +100,20 @@ export const BUILTIN_RULES: LintRule[] = [
     fix: "Use CollisionCastHitMode.NEAREST (closest hit) or .ALL.",
     positiveFixture: "scene.rayCast(o, d, 10f, CollisionCastHitMode.CLOSEST, g, null)",
     negativeFixture: "scene.rayCast(o, d, 10f, CollisionCastHitMode.NEAREST, g, null)",
+  },
+  {
+    id: "spotlight-cone-radians",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "present",
+    // the balanced-paren group keeps the two sub-1.0 floats OUTSIDE nested calls like Color4(...),
+    // so a tinted color ending in 0.x components can't false-fire; optional trailing bool = 6-arg ctor
+    pattern: /SpotLightComponent\s*\((?:[^();\n]|\([^()]*\))*,\s*0\.\d+f\s*,\s*0\.\d+f\s*(?:,\s*(?:true|false)\s*)?\)/,
+    message: "SpotLightComponent inner/outer cone angles are DEGREES (agent-vault: 'measured in degrees'; sample 15f/30f). Sub-1.0 values are a radians smell — a <1° cone lights nothing.",
+    fix: "Pass degrees: e.g. SpotLightComponent(color, lumens, radius, 26f, 40f).",
+    designRule: "agent-vault com.pico.spatial.core.ecs.md (SpotLightComponent innerAngle/outerAngle, 2026-07-12 vault audit)",
+    positiveFixture: "spot.components.set(SpotLightComponent(Color4(0.9f, 0.95f, 1f, 1f), 1300f, 6f, 0.45f, 0.7f, true))",
+    negativeFixture: "spot.components.set(SpotLightComponent(Color4(1f, 0.95f, 0.9f, 0.8f), 1300f, 6f, 26f, 40f))",
   },
   {
     id: "physics-ccd-continuous",
@@ -337,7 +352,7 @@ export function registerLintTools(server: McpServer) {
     "preflight_lint",
     {
       description:
-        "Scan emitted Kotlin / a shell command / gradle config against the retained-lessons rulebook BEFORE you write or run it — so the loop never repeats a solved mistake. Catches the hard-won gotchas (displayColor flat-white, mesh colliders not queryable, rayCast without PhysicsWorldComponent, CollisionCastHitMode.CLOSEST, .rotation.rotateVector, .scale vs scaleVector, ParticleComponent ctor, TextComponent, raw-GLB runtime load, USD glTF reference, StageEnvironmentLighting in MIXED, md5 bundle diff, am start without force-stop, scaffold log-tag drift) plus any lessons recorded via record_lesson. Returns violations with severity/line/message/fix/designRule. Run it on every generate_* output before writing the file.",
+        "Scan emitted Kotlin / a shell command / gradle config against the retained-lessons rulebook BEFORE you write or run it — so the loop never repeats a solved mistake. Catches the hard-won gotchas (displayColor flat-white, mesh colliders not queryable, rayCast without PhysicsWorldComponent, CollisionCastHitMode.CLOSEST, .rotation.rotateVector, .scale vs scaleVector, ParticleComponent ctor, TextComponent, raw-GLB runtime load, USD glTF reference, StageEnvironmentLighting in MIXED, md5 bundle diff, am start without force-stop, scaffold log-tag drift) plus any lessons recorded via record_lesson. Returns violations with severity/line/message/fix/designRule. Kotlin content ALSO gets an agent-vault symbol check (import/type existence vs PICO's authoritative SDK api-reference, materialized by pico-cli setup) reported in a separate advisory `vault` block — vault findings never affect `clean`, and an absent vault degrades to a note. Run it on every generate_* output before writing the file.",
       inputSchema: {
         content: z.string().describe("The Kotlin source, shell command, or config text to lint."),
         kind: z.enum(["kotlin", "command", "gradle", "usd", "any"]).optional().describe("Restrict to rules for this kind (default 'any' = all rules)."),
@@ -347,10 +362,31 @@ export function registerLintTools(server: McpServer) {
       const violations = runLint(content, kind ?? "any");
       const errors = violations.filter((v) => v.severity === "error").length;
       const warnings = violations.filter((v) => v.severity === "warn").length;
+      // agent-vault symbol stage — ADVISORY, in its own block: never touches `clean`/`violations`
+      // (vault findings are index lookups, not verified past failures; a vault gap must not stall the loop)
+      let vault: any = { status: "skipped" };
+      if ((kind ?? "any") === "kotlin" || (kind ?? "any") === "any") {
+        const index = loadVaultIndex();
+        if (!index) {
+          vault = { status: "unavailable", note: `agent-vault not found (default ${defaultVaultRoot()}, override with PICO_AGENT_VAULT; provision via 'pico-cli setup') — SDK symbol validation skipped.` };
+        } else {
+          const findings = runVaultCheck(content, index);
+          vault = {
+            status: "ok",
+            sdkVersion: index.sdkVersion,
+            typesIndexed: index.typeCount,
+            findings,
+            note: findings.length
+              ? "ADVISORY: these symbols don't resolve against the vault api-reference (authoritative SDK truth). Check the cited package before writing; ui.* composables are not validated."
+              : "All com.pico.spatial imports resolve against the agent-vault api-reference (ui.* composables not validated).",
+          };
+        }
+      }
       return okJson({
         clean: violations.length === 0,
         counts: { errors, warnings },
         violations,
+        vault,
         note: errors ? "FIX every error before writing/running this — each is a verified past failure." : warnings ? "Warnings are strong reminders; confirm they don't apply." : "Clean against the retained-lessons rulebook.",
       });
     },

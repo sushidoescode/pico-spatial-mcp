@@ -333,10 +333,15 @@ public final com.pico.spatial.core.ecs.simulation.CollisionGroup getMask()
 ### `com.pico.spatial.core.ecs.resource.ShapeResource`
 A collider shape resource. Add one (or several) to a CollisionComponent so the entity is raycastable. Factory methods on the Companion build primitive or mesh colliders; offsetBy* return a shifted/rotated copy. Implements Closeable (close() to free native resource). For raycasting a real surface (e.g. a scanned wall/desk) you typically use createStaticMesh(MeshResource).
 
+> ⚠️ javap emits **types only** — the parameter NAMES below were reconstructed, and two were wrong
+> (corrected 2026-07-13 against the agent-vault api-reference + runtime evidence): `createBox` takes
+> **FULL extents** (verified on-device, lint rule `mesh-collider-not-queryable`), and `createCapsule`
+> is **(height, radius)** (vault `@param height: total height incl. spherical caps`; v8.8 pin evidence).
+
 ```
-public static final ShapeResource createBox(com.pico.spatial.core.math.Vector3 halfExtents)
+public static final ShapeResource createBox(com.pico.spatial.core.math.Vector3 size)  // FULL extents
 public static final ShapeResource createSphere(float radius)
-public static final ShapeResource createCapsule(float radius, float height)
+public static final ShapeResource createCapsule(float height, float radius)
 public static final ShapeResource createConvexMesh(com.pico.spatial.core.ecs.resource.MeshResource)
 public static final ShapeResource createStaticMesh(com.pico.spatial.core.ecs.resource.MeshResource)
 public final ShapeResource offsetByTranslation(com.pico.spatial.core.math.Vector3)

@@ -165,7 +165,7 @@ export function registerLightingTools(server: McpServer) {
         "",
         '            val spot = Entity().also { it.setName("RigSpot") }',
         "            spot.components.set(TransformComponent(Vector3(-1.1f, 2.3f, -1.2f), Quat.identity(), Vector3(1f, 1f, 1f)).setEulerAngles(EulerAngles(-70f, 18f, 0f)))",
-        `            spot.components.set(SpotLightComponent(Color4(0.9f, 0.95f, 1f, 1f), ${sp}f, 6f, 0.45f, 0.7f)) // cone inner 0.45 / outer 0.7 rad`,
+        `            spot.components.set(SpotLightComponent(Color4(0.9f, 0.95f, 1f, 1f), ${sp}f, 6f, 26f, 40f)) // cone inner 26° / outer 40° — SDK takes DEGREES`,
         "            content.addChild(spot)",
         '            Log.i(TAG, "full lighting rig applied (sun+point+spot+groundShadow+ibl)")',
         "        }.onFailure { Log.e(TAG, \"lighting rig failed: ${it.message}\") }",

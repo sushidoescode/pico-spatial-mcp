@@ -240,7 +240,7 @@ function composableShell(id: string, body: string[]): string[] {
   out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.width(880.dp) // DESIGN.md §4: panels >= 800 dp or they read tiny at distance`);
   out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.clip(RoundedCornerShape(28.dp))`);
   out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.background(Color(0xCC0E1726)) // tint behind the frosted material`);
-  out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.backgroundMaterial(true, Material.Thick) // PICO frosted-glass panel (enabled, material)`);
+  out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.backgroundMaterial(true, Material.Thick) // PICO frosted-glass panel (enable, style)`);
   out.push(`${INDENT}${INDENT}${INDENT}${INDENT}.padding(40.dp),`);
   out.push(`${INDENT}${INDENT}) {`);
   out.push(...indent(body, 3));

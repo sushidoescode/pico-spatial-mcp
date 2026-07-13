@@ -71,7 +71,8 @@ function shapeExpr(s: z.infer<typeof shapeSpec>): string {
     case "sphere":
       return `ShapeResource.createSphere(${f(s.radius ?? 0.5)})`;
     case "capsule":
-      return `ShapeResource.createCapsule(${f(s.radius ?? 0.3)}, ${f(s.height ?? 1.0)})`;
+      // SDK order is (height, radius) — both Float, so a swap compiles silently into wrong geometry
+      return `ShapeResource.createCapsule(${f(s.height ?? 1.0)}, ${f(s.radius ?? 0.3)})`;
   }
 }
 
@@ -133,7 +134,7 @@ function buildKotlin(opts: {
   L.push("     *  a TransformComponent + CollisionComponent); pass it to content.addEntity / addChild. */");
   L.push("    fun box(name: String, pos: Vector3, fullExtents: Vector3): Entity = collider(name, pos, ShapeResource.createBox(fullExtents))");
   L.push("    fun sphere(name: String, pos: Vector3, radius: Float): Entity = collider(name, pos, ShapeResource.createSphere(radius))");
-  L.push("    fun capsule(name: String, pos: Vector3, radius: Float, height: Float): Entity = collider(name, pos, ShapeResource.createCapsule(radius, height))");
+  L.push("    fun capsule(name: String, pos: Vector3, radius: Float, height: Float): Entity = collider(name, pos, ShapeResource.createCapsule(height, radius))");
   L.push("");
   L.push("    private fun collider(name: String, pos: Vector3, shape: ShapeResource): Entity {");
   L.push("        val e = Entity()");
