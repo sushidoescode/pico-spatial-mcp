@@ -101,12 +101,30 @@ if __name__=="__main__":
     log("points",len(pos),"centroid",cen.round(2).tolist(),"bounds",lo.round(2).tolist(),hi.round(2).tolist())
     clusters=cfg.get("clusters",[])
     W,H,fov=cfg.get("W",640),cfg.get("H",640),cfg.get("fov",70)
+    save_clean=cfg.get("saveClean",False)  # unannotated copies + 2D boxes, for a headless detector (OWL-v2)
     out=[]
     for view in cfg["views"]:
         img=render(pos,rgb,view["C"],view["T"],W,H,fov)
+        clean=None; boxes2d={}
+        if save_clean:
+            stem=view["out"][:-4] if view["out"].endswith(".png") else view["out"]
+            clean=stem+"-clean.png"
+            Image.fromarray(img).save(clean)
+            for c in clusters:
+                b=project_box(c["center"],c["size"],view["C"],view["T"],W,H,fov)
+                if b is None: continue
+                x0,y0,x1,y1=b
+                if x1<0 or y1<0 or x0>W or y0>H: continue
+                # for the MATCHER, drop boxes exploding past the frame in EITHER axis (a wall seen
+                # edge-on clamps to a frame-spanning band that steals IoU matches); draw_boxes keeps
+                # the looser AND since there it is only a visual overlay
+                if (x1-x0)>W*1.6 or (y1-y0)>H*1.6: continue
+                boxes2d[str(c["id"])]=[max(0,x0),max(0,y0),min(W-1,x1),min(H-1,y1)]
         vis=[]
         if clusters:
             img,vis=draw_boxes(img,clusters,view["C"],view["T"],W,H,fov)
         Image.fromarray(img).save(view["out"])
-        out.append({"out":view["out"],"name":view.get("name"),"C":view["C"],"T":view["T"],"visibleIds":vis})
+        entry={"out":view["out"],"name":view.get("name"),"C":view["C"],"T":view["T"],"visibleIds":vis}
+        if save_clean: entry["clean"]=clean; entry["boxes2d"]=boxes2d
+        out.append(entry)
     print(json.dumps({"points":len(pos),"centroid":cen.round(3).tolist(),"bounds":[lo.round(3).tolist(),hi.round(3).tolist()],"floorY":round(float(lo[1]),3),"views":out}))

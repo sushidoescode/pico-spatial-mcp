@@ -3,8 +3,19 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
 import { okJson } from "./util.js";
+
+const execFileAsync = promisify(execFile);
+
+/** execFile errors lead with the full command line (incl. the JSON argv) — the useful part is the
+ *  stderr tail (the python traceback), so surface that first. */
+function subprocessError(e: any): string {
+  const stderr = String(e?.stderr ?? "").trim();
+  if (stderr) return stderr.slice(-400);
+  return String(e?.message ?? e).slice(0, 300);
+}
 
 /**
  * semanticsplat.ts — the SEMANTIC layer for Gaussian splats (learned from PICO's July-9 workshop +
@@ -16,8 +27,9 @@ import { okJson } from "./util.js";
  *
  *   semantic_splat_scan   — geometric clusters (via analyze_splat) + headless COLOR perspective views
  *                           covering the room, with each cluster's 3D box drawn + numbered. The agent
- *                           LOOKS at the views and labels each #id (our vision-verify ethos; OWL v2 can
- *                           automate this later). Renderer: scripts/py/splat_perspective.py (numpy, no GL).
+ *                           LOOKS at the views and labels each #id (our vision-verify ethos), OR pass
+ *                           autoLabel=true for headless OWL-v2 zero-shot labels (scripts/py/owl_label.py,
+ *                           auto_judged — spot-check the views). Renderer: scripts/py/splat_perspective.py.
  *   compose_semantic_scene — labels -> {semantic JSON, RELATIONSHIP graph (on-top-of / next-to / inside),
  *                           AUTO-FRAME camera pose facing a hero label, AUTO-PLACE physics on the floor}.
  */
@@ -52,6 +64,23 @@ function resolvePython(): { py: string; ok: boolean; hint: string } {
   }
   return { py: "python3", ok: false, hint: "The splat renderer needs numpy + Pillow. Install: python3 -m pip install numpy pillow (or point PICO_PY at a venv that has them)." };
 }
+
+// the OWL-v2 labeler needs transformers>=4.46 (post_process_grounded_object_detection) + torch +
+// scipy (Owlv2ImageProcessor); probe the actual method so old pins fail here, not mid-run
+async function hasOwlDeps(py: string): Promise<boolean> {
+  try {
+    await execFileAsync(py, ["-c", "import scipy, torch; from transformers import Owlv2Processor; assert hasattr(Owlv2Processor, 'post_process_grounded_object_detection')"], { timeout: 120_000 });
+    return true;
+  } catch { return false; }
+}
+
+/** generic indoor vocabulary for zero-shot labeling when the caller doesn't pass one. */
+const DEFAULT_LABEL_QUERIES = [
+  "counter", "bar counter", "table", "chair", "stool", "shelf", "shelving unit",
+  "menu board", "neon sign", "sign", "lamp", "light fixture", "plant", "sofa", "bed",
+  "cabinet", "refrigerator", "machine", "screen", "window", "door", "curtain",
+  "bottle", "box", "pot",
+];
 
 /** covering camera poses: 4 cardinals from the room centroid at eye level + 2 cross-room from the ends. */
 function coveringViews(min: Vec3, max: Vec3, floorY: number, outDir: string): { name: string; C: Vec3; T: Vec3; out: string }[] {
@@ -104,15 +133,17 @@ export function registerSemanticSplatTools(server: McpServer) {
     "semantic_splat_scan",
     {
       description:
-        "The SEMANTIC layer for a Gaussian splat (visual→geometric→SEMANTIC). Runs analyze_splat for the GEOMETRIC 3D boxes, then renders headless COLOR perspective views covering the room (numpy point projection, no GL — clean + recognizable, unlike the emulator's garbled splat) with each cluster's box drawn + numbered. LOOK at every returned view and label each #id ('counter','neon menu','bottle shelf','floor','stool'…), then call compose_semantic_scene with those labels. This is what lets an agent reference objects by NAME -> auto-framing + auto-placement. (OWL-v2 zero-shot detection can automate the labeling later; the agent-vision loop is the shippable v1.) Returns {clusters, views:[{out,name,visibleIds}], bounds, floorY}.",
+        "The SEMANTIC layer for a Gaussian splat (visual→geometric→SEMANTIC). Runs analyze_splat for the GEOMETRIC 3D boxes, then renders headless COLOR perspective views covering the room (numpy point projection, no GL — clean + recognizable, unlike the emulator's garbled splat) with each cluster's box drawn + numbered. LOOK at every returned view and label each #id ('counter','neon menu','bottle shelf','floor','stool'…), then call compose_semantic_scene with those labels. This is what lets an agent reference objects by NAME -> auto-framing + auto-placement. HEADLESS MODE: autoLabel=true runs OWL-v2 zero-shot detection over clean renders and returns autoLabels per cluster id — these are auto_judged detector opinions, NOT vision-verified; spot-check the annotated views before trusting a hero label. Returns {clusters, views:[{out,name,visibleIds}], bounds, floorY, autoLabels?}.",
       inputSchema: {
         splatPath: z.string().describe("Absolute path to the .ply (or .spz) Gaussian splat."),
         topK: z.number().optional().describe("Max object clusters to label (default 12)."),
         maxSamples: z.number().optional().describe("Points to render per view (default 500000)."),
         outDir: z.string().optional().describe("Where to write the view PNGs (default /tmp/pico-render/semantic/<stem>)."),
+        autoLabel: z.boolean().optional().describe("Run OWL-v2 zero-shot labeling headlessly over the views (needs transformers+torch in the resolved python; ~1GB model download on first use)."),
+        labelQueries: z.array(z.string()).optional().describe("Candidate labels for the zero-shot detector (default: a generic indoor vocabulary). Pass scene-specific terms ('ramen bar counter', 'neon menu') for better matches."),
       },
     },
-    async ({ splatPath, topK, maxSamples, outDir }) => {
+    async ({ splatPath, topK, maxSamples, outDir, autoLabel, labelQueries }) => {
       if (!fs.existsSync(splatPath)) return okJson({ status: "error", error: `not found: ${splatPath}` });
       const { py, ok, hint } = resolvePython();
       if (!ok) return okJson({ status: "error", error: hint });
@@ -124,16 +155,39 @@ export function registerSemanticSplatTools(server: McpServer) {
       if (a.status !== "ok") return okJson({ status: "error", error: `analyze_splat: ${a.error}` });
       const clusters: Cluster[] = (a.clusters ?? []).map((c: any, i: number) => ({ id: i, kind: c.kind, center: c.center, size: c.size, points: c.points }));
       const min = a.global.min as Vec3, max = a.global.max as Vec3, floorY = a.floorY as number;
-      // 2. covering color views with the boxes projected in
+      // 2. covering color views with the boxes projected in (clean copies + 2D boxes when auto-labeling).
+      // Check the OWL deps BEFORE rendering so an unavailable labeler doesn't waste the 960px render.
+      let autoLabels: any;
+      const owlReady = autoLabel ? await hasOwlDeps(py) : false;
+      if (autoLabel && !owlReady) {
+        autoLabels = { status: "unavailable", hint: `${py} lacks transformers>=4.46 + torch + scipy. Install: ${py} -m pip install transformers torch scipy` };
+      }
       const views = coveringViews(min, max, floorY, dir);
-      const scriptPath = path.join(path.resolve(path.dirname(new URL(import.meta.url).pathname)), "..", "scripts", "py", "splat_perspective.py");
-      const cfg = { splat: splatPath, maxPts: maxSamples ?? 500000, W: 640, H: 640, fov: 80, clusters, views };
+      const scriptsDir = path.join(path.resolve(path.dirname(new URL(import.meta.url).pathname)), "..", "scripts", "py");
+      const size = owlReady ? 960 : 640; // OWL-v2 ingests 960px — render at native detector resolution
+      // scale the default point budget with render area so the 960px views keep the 640px density
+      const cfg = { splat: splatPath, maxPts: maxSamples ?? (size === 960 ? 1_125_000 : 500_000), W: size, H: size, fov: 80, clusters, views, saveClean: owlReady };
       let rendered: any;
       try {
-        const stdout = execFileSync(py, [scriptPath, JSON.stringify(cfg)], { maxBuffer: 64 * 1024 * 1024, encoding: "utf8" });
+        const { stdout } = await execFileAsync(py, [path.join(scriptsDir, "splat_perspective.py"), JSON.stringify(cfg)], { maxBuffer: 64 * 1024 * 1024, encoding: "utf8", timeout: 10 * 60 * 1000 });
         rendered = JSON.parse(stdout.trim().split("\n").pop() as string);
       } catch (e: any) {
-        return okJson({ status: "error", error: `render failed: ${String(e?.message ?? e).slice(0, 300)}`, hint });
+        return okJson({ status: "error", error: `render failed: ${subprocessError(e)}`, hint });
+      }
+      // 3. optional headless OWL-v2 labeling over the clean views (generous timeout: first use
+      // downloads the ~1GB model, then CPU-inferences six 960px views)
+      if (owlReady) {
+        try {
+          const owlCfg = { views: rendered.views, queries: labelQueries?.length ? labelQueries : DEFAULT_LABEL_QUERIES };
+          const { stdout } = await execFileAsync(py, [path.join(scriptsDir, "owl_label.py"), JSON.stringify(owlCfg)], { maxBuffer: 64 * 1024 * 1024, encoding: "utf8", timeout: 30 * 60 * 1000 });
+          const owl = JSON.parse(stdout.trim().split("\n").pop() as string);
+          autoLabels = {
+            status: "ok", ...owl,
+            evidence: "auto_judged — OWL-v2 zero-shot opinions matched to cluster boxes by IoU. Spot-check the annotated views (LOOK) before trusting a hero label; record_verification stays vision_verified-only for looked-at claims.",
+          };
+        } catch (e: any) {
+          autoLabels = { status: "error", error: `owl_label failed: ${subprocessError(e)}` };
+        }
       }
       return okJson({
         status: "ok",
@@ -144,7 +198,10 @@ export function registerSemanticSplatTools(server: McpServer) {
         clusters,
         views: rendered.views,
         heatmap: a.heatmap,
-        next: "LOOK at each view PNG (the numbered cyan/magenta boxes are the clusters). Label each #id, then compose_semantic_scene(splatPath, objects=[{id,label},…], heroLabel=…). Unlabeled ids are dropped.",
+        ...(autoLabels ? { autoLabels } : {}),
+        next: autoLabels?.status === "ok"
+          ? "autoLabels holds OWL-v2 opinions per cluster id. Spot-check the annotated views, then compose_semantic_scene(objects=[{id,label,center,size}…], heroLabel=…) using the labels you accept."
+          : "LOOK at each view PNG (the numbered cyan/magenta boxes are the clusters). Label each #id, then compose_semantic_scene(splatPath, objects=[{id,label},…], heroLabel=…). Unlabeled ids are dropped.",
       });
     },
   );
