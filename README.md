@@ -28,13 +28,19 @@ An MCP server that lets AI agents build **PICO XR spatial apps end-to-end on the
 
 ## Install
 
+**As a Claude Code plugin (recommended)** — the repo is a self-contained plugin marketplace:
+
 ```bash
-npm install && npm run build
+claude plugin marketplace add sushidoescode/PICO-MCP   # or a local clone path
+claude plugin install pico-spatial-mcp@pico-mcp
 ```
 
-Register with Claude Code:
+First launch auto-installs dependencies and builds (one-time, ~1 min; progress on stderr). Works alongside PICO's official `pico-spatial-agentic-tools` plugin — theirs guides the agent with skills + SDK knowledge, this one is the build/verify/ship toolchain.
+
+**Or as a plain MCP server:**
 
 ```bash
+npm install && npm run build
 claude mcp add pico-spatial -- node /path/to/PICO-MCP/dist/index.js
 ```
 
