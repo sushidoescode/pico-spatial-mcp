@@ -44,7 +44,7 @@ const EXPECTED = [
   "run_visual_regression",
   "generate_layout_kotlin", "generate_interaction_kotlin", "generate_data_binding_kotlin",
   "list_capabilities", "plan_app_spec", "replan_spec", "compile_app_spec", "verify_app_spec",
-  "preflight_lint", "record_lesson", "vault_api", "critique_capture",
+  "preflight_lint", "record_lesson", "vault_api", "perf_diagnose", "critique_capture",
   "record_verification", "ledger_report", "stack_new", "stack_verify", "stack_land",
   "run_brief_suite", "regression_gate",
   "list_templates", "instantiate_template", "remix_app",
