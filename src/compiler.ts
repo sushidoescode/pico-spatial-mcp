@@ -77,7 +77,13 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
     const rig = s.lighting.rig;
     if (rig !== "none") {
       const tool = rig === "fullRig" ? "generate_full_lighting_rig_kotlin" : rig === "ibl" ? "generate_ibl_kotlin" : "generate_lighting_kotlin";
-      push({ node: s.id, tool, args: { packageName: contentPkg, ...(s.lighting.params ?? {}) }, targetPath: `${cpath}/SceneLighting.kt`, cClass: "C0_emulator" });
+      // v14.9: every invoker (template HomeStage + generate_app_wiring) calls SceneLighting.apply —
+      // the fullRig must be EMITTED under that object name (its default SceneLightingRig collides
+      // with the template's bundled copy AND leaves the call site unresolved; found by the
+      // spotcheck brief). ibl differs in API (SceneIBL.applyStage/applyLocal) and gets its own file.
+      const lightArgs: Record<string, unknown> = { packageName: contentPkg, ...(s.lighting.params ?? {}) };
+      if (rig === "fullRig") lightArgs.objectName = "SceneLighting";
+      push({ node: s.id, tool, args: lightArgs, targetPath: `${cpath}/${rig === "ibl" ? "SceneIBL.kt" : "SceneLighting.kt"}`, cClass: "C0_emulator" });
     }
   }
 

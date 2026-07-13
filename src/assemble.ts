@@ -74,6 +74,18 @@ function materialLines(spec: AppSpec, layoutId: string | undefined, indent: stri
 function anyLighting(spec: AppSpec): boolean {
   return spec.scenes.some((s) => s.lighting?.rig && s.lighting.rig !== "none");
 }
+// v14.9: sun and fullRig are both emitted as `object SceneLighting` by the compiler ledger
+// (fullRig via objectName — its default SceneLightingRig collided with the template's bundled
+// copy and left call sites unresolved; found by the spotcheck brief). Only ibl differs in API.
+function lightingApplyCall(spec: AppSpec): string {
+  const rig = spec.scenes.find((s) => s.lighting?.rig && s.lighting.rig !== "none")?.lighting?.rig;
+  return rig === "ibl" ? "SceneIBL.applyStage(root)" : "SceneLighting.apply(root)";
+}
+/** groundShadow/shadowReceiver helpers exist only on the sun rig's SceneLighting object. */
+function sunRig(spec: AppSpec): boolean {
+  const rig = spec.scenes.find((s) => s.lighting?.rig && s.lighting.rig !== "none")?.lighting?.rig;
+  return !rig || rig === "sun";
+}
 function anyTexturedEnv(spec: AppSpec): boolean {
   return spec.scenes.some((s) => s.environment?.kind === "texturedMesh" || s.environment?.kind === "splat" || s.environment?.kind === "pano");
 }
@@ -186,7 +198,7 @@ function genComposition(spec: AppSpec, pkg: string): string {
   if (needsCtx) lines.push(`        val ctx = SpatialApplication.appContext`);
 
   // v6.6: light the scene (so PBR content renders lit, not dim) — the rig was generated but never applied.
-  if (lighting) lines.push(`        SceneLighting.apply(root)`);
+  if (lighting) lines.push(`        ${lightingApplyCall(spec)}`);
 
   // v9.1: REAL physics — world + bodies (created in ONE batch each at build, per the rulebook).
   if (physics) for (const bl of physicsBodyLines(spec, "        ")) lines.push(bl);
@@ -247,7 +259,7 @@ function genComposition(spec: AppSpec, pkg: string): string {
       if (play && factory === "makeModelCard") lines.push(`        SceneDataBinding.onModelLoaded = { ${play}(it) }   // v7.3 animation (best-effort on loaded models — nested geometry may not rotate)`);
       lines.push(`        val cards = SceneLayout.place(root, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }`);
       // v8.5 AAA: real 3D-model props cast soft ground shadows (flat quads skip it — a flat shadow reads odd).
-      if (lighting && factory === "makeModelCard") lines.push(`        cards.forEach { SceneLighting.groundShadow(it) }`);
+      if (lighting && sunRig(spec) && factory === "makeModelCard") lines.push(`        cards.forEach { SceneLighting.groundShadow(it) }`);
       if (hasSelect) {
         lines.push(`        cards.forEachIndexed { i, card ->`, `            SceneInteraction.register(${dv}[i].id, card) { id -> showDetail(root, id) }`, `        }`);
       }

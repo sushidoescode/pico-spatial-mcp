@@ -1,0 +1,108 @@
+{
+  "id": "spotcheck",
+  "brief": "Spotlight-cone verification scene: a matte light-gray floor slab and a single white pillar under the full lighting rig, with the sun dimmed and the spot boosted so the 26deg/40deg spot cone pool is unmistakable in a capture.",
+  "spec": {
+    "meta": {
+      "appName": "SpotCheckXR",
+      "packageName": "com.example.spotcheck",
+      "stageStyle": "3",
+      "brief": "Spotlight-cone verification: dim sun, boosted spot, gray floor + white pillar \u2014 the spot pool must be visibly brighter than the ambient floor."
+    },
+    "scenes": [
+      {
+        "id": "rig",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "fullRig",
+          "params": {
+            "sunLux": 120,
+            "pointLux": 60,
+            "spotLux": 6000,
+            "iblScale": 0.5
+          }
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [],
+    "objects": [
+      {
+        "id": "floor",
+        "sceneId": "rig",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.8,
+            0.9,
+            -2.2
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            4.0,
+            0.12,
+            4.0
+          ],
+          "color": [
+            0.72,
+            0.72,
+            0.74
+          ]
+        }
+      },
+      {
+        "id": "pillar",
+        "sceneId": "rig",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -1.0,
+            1.35,
+            -1.9
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.28,
+            0.8,
+            0.28
+          ],
+          "color": [
+            0.95,
+            0.95,
+            0.95
+          ]
+        }
+      }
+    ],
+    "navigation": {
+      "startScene": "rig",
+      "portals": []
+    },
+    "data": [],
+    "interactions": [],
+    "panels": [],
+    "verificationPlan": [
+      {
+        "claim": "the gray floor slab shows a clearly brighter elliptical SPOT POOL (26/40 degree cone) and the white pillar is lit \u2014 not a uniform wash, not darkness",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.2
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "rig"
+      }
+    ]
+  }
+}
