@@ -749,12 +749,14 @@ export function registerVaultTools(server: McpServer) {
         "Look up the EXACT declaration of a PICO Spatial SDK symbol in the agent-vault api-reference (authoritative SDK truth, materialized by pico-cli setup) — constructors with param names/order/defaults, @param unit docs ('measured in degrees'), properties, functions, enum entries, supertypes, and the vault file:line citation. Consult BEFORE emitting Kotlin that calls an SDK API you have not used before — all-Float signatures compile silently with swapped/wrong-unit args (the createCapsule and SpotLightComponent bugs). Accepts a simple name ('RigidBodyComponent'), dotted nested name ('AnchorComponent.TrackingMode'), or full FQN.",
       inputSchema: {
         symbol: z.string().describe("Type name to look up: simple ('ShapeResource'), nested dotted ('Entity.CloneOptions'), or fully qualified ('com.pico.spatial.core.ecs.RigidBodyComponent')."),
+        sdkVersion: z.string().optional().describe("v26: query a specific materialized vault workspace (e.g. '0.13' -> ~/Library/PICO/sdk/0.13/agent-vault; see vault_workspaces). Default: the active vault."),
       },
     },
-    async ({ symbol }) => {
-      const index = loadVaultIndex();
+    async ({ symbol, sdkVersion }) => {
+      const root = sdkVersion ? path.join(os.homedir(), "Library", "PICO", "sdk", sdkVersion, "agent-vault") : undefined;
+      const index = loadVaultIndex(root);
       if (!index) {
-        return okJson({ status: "unavailable", note: `agent-vault not found (default ${defaultVaultRoot()}, override with PICO_AGENT_VAULT; provision via 'pico-cli setup').` });
+        return okJson({ status: "unavailable", note: `agent-vault not found (${root ?? `default ${defaultVaultRoot()}`}, override with PICO_AGENT_VAULT; provision via 'pico-cli setup').` });
       }
       const wanted = symbol.trim();
       const matches: VaultType[] = [];

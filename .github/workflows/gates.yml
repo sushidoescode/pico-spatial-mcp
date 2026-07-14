@@ -27,6 +27,8 @@ jobs:
         run: npm run test:lint
       - name: Vault fixtures (agent-vault parser + symbol check; real-vault asserts skip in CI)
         run: npm run test:vault
+      - name: Vault drift engine (fixture pair, five drift classes + hints)
+        run: npm run test:vaultdiff
       - name: Semantic placement (label-anchored resolution + compile hook)
         run: npm run test:semantic
       - name: Referring expressions (skips without the local scan)
