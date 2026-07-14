@@ -157,24 +157,41 @@ export function registerFleetBuildTools(server: McpServer) {
             rec.built = true;
             const apk = path.join(projectDir, "app/build/outputs/apk/debug/app-debug.apk");
             await run(ADB, ["-s", "emulator-5554", "install", "-r", apk], { timeout: 240_000 });
-            await run(ADB, ["-s", "emulator-5554", "shell", "am", "force-stop", pkg], { timeout: 15_000 });
-            await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-S", "-n", `${pkg}/.platform.LaunchActivity`], { timeout: 30_000 });
-            // launch_blocked guard (P1 cold-run finding): a stale foreground activity can silently block the start
-            const fg = await run(ADB, ["-s", "emulator-5554", "shell", "dumpsys", "activity", "activities"], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
-            if (!String(fg.stdout).split("topResumedActivity").slice(1, 2).join("").includes(pkg)) {
-              const m = String(fg.stdout).match(/topResumedActivity=ActivityRecord\{\S+ u0 ([\w.]+)\//);
-              if (m && m[1] !== pkg) {
-                await run(ADB, ["-s", "emulator-5554", "shell", "am", "force-stop", m[1]], { timeout: 15_000 }).catch(() => {});
-                await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-S", "-n", `${pkg}/.platform.LaunchActivity`], { timeout: 30_000 });
-                rec.notes.push(`launch_blocked by ${m[1]} — force-stopped + relaunched`);
-                await new Promise((r) => setTimeout(r, settle)); // fresh settle after the recovery relaunch
+            // v15.1: force-stop → pause → PLAIN start. An immediate `am start -S` intermittently
+            // trips Android's "activity kept for the user" and the app never reaches the stage
+            // (observed live; the paused plain start worked every time).
+            const launchApp = async () => {
+              await run(ADB, ["-s", "emulator-5554", "shell", "am", "force-stop", pkg], { timeout: 15_000 });
+              await new Promise((r) => setTimeout(r, 2000));
+              await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-n", `${pkg}/.platform.LaunchActivity`], { timeout: 30_000 });
+            };
+            await launchApp();
+            // v15.1: the stage handoff races a one-shot check (every corpus run escalated on
+            // "not foreground at capture") — POLL for foreground up to 24s instead, and read the
+            // blocker's name from the same dump if one is squatting.
+            const foregroundState = async (): Promise<{ ours: boolean; blocker: string | null }> => {
+              const d = await run(ADB, ["-s", "emulator-5554", "shell", "dumpsys", "activity", "activities"], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
+              const ours = new RegExp(`topResumedActivity=ActivityRecord\\{\\S+ u0 ${pkg.replace(/\./g, "\\.")}[/]`).test(String(d.stdout));
+              const m = String(d.stdout).match(/topResumedActivity=ActivityRecord\{\S+ u0 ([\w.]+)\//);
+              return { ours, blocker: !ours && m && m[1] !== pkg ? m[1] : null };
+            };
+            const waitForeground = async (): Promise<boolean> => {
+              for (let i = 0; i < 12; i++) {
+                if ((await foregroundState()).ours) return true;
+                await new Promise((r) => setTimeout(r, 2000));
               }
-            }
-            // final foreground check — capture only what is actually on stage (the eye catches it anyway,
-            // but noting it here names the cause instead of just ESCALATE)
-            const fg2 = await run(ADB, ["-s", "emulator-5554", "shell", "dumpsys", "activity", "activities"], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
-            if (!String(fg2.stdout).match(new RegExp(`topResumedActivity=ActivityRecord\\{\\S+ u0 ${pkg.replace(/\./g, "\\.")}[/]`))) {
-              rec.notes.push("app not foreground at capture time — the frame shows whatever IS on stage");
+              return false;
+            };
+            if (!(await waitForeground())) {
+              const { blocker } = await foregroundState();
+              if (blocker) {
+                await run(ADB, ["-s", "emulator-5554", "shell", "am", "force-stop", blocker], { timeout: 15_000 }).catch(() => {});
+                rec.notes.push(`launch_blocked by ${blocker} — force-stopped + relaunched`);
+              }
+              await launchApp();
+              if (!(await waitForeground())) {
+                rec.notes.push("app not foreground at capture time — the frame shows whatever IS on stage");
+              }
             }
             rec.installed = true;
             await new Promise((r) => setTimeout(r, settle));
