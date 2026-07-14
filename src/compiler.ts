@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { appSpecSchema, type AppSpec } from "./appspec.js";
+import { resolveAnchors } from "./semanticplace.js";
 
 /**
  * compiler.ts — v5.0 `compile_app_spec`.
@@ -31,6 +32,10 @@ function contentPkgPath(packageName: string): string {
 }
 
 export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
+  // v17.0: bake anchorTo:{label} placements into concrete transforms BEFORE any step consumes the
+  // spec (the wiring step receives the resolved spec verbatim). Resolution notes surface via the
+  // compile_app_spec response; unresolvable anchors leave objects untouched, never silently drop.
+  spec = resolveAnchors(spec).spec;
   const steps: LedgerStep[] = [];
   const pkg = spec.meta.packageName;
   const contentPkg = `${pkg}.content`;
@@ -163,6 +168,7 @@ export function registerCompilerTools(server: McpServer) {
       const ledger = buildLedger(spec, projectDir);
       const byClass: Record<string, number> = {};
       for (const s of ledger) byClass[s.cClass] = (byClass[s.cClass] ?? 0) + 1;
+      const anchorNotes = resolveAnchors(spec).notes;
       return okJson({
         status: "ok",
         appName: spec.meta.appName,
@@ -170,6 +176,7 @@ export function registerCompilerTools(server: McpServer) {
         projectDir,
         stepCount: ledger.length,
         classSummary: byClass,
+        ...(anchorNotes.length ? { semanticPlacements: anchorNotes } : {}),
         ledger,
         howToExecute: [
           "Execute steps in `order`. After each generate_* returns Kotlin, WRITE it to `targetPath` yourself (serial edits — never fan out writers).",

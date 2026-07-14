@@ -59,6 +59,7 @@ import { registerSpecVerifyTools } from "./specverify.js";
 import { registerLintTools } from "./lint.js";
 import { registerVaultTools } from "./vault.js";
 import { registerPerfCliTools } from "./perfcli.js";
+import { registerSemanticPlaceTools } from "./semanticplace.js";
 import { registerCritiqueTools } from "./critique.js";
 import { registerLedgerTools } from "./ledger.js";
 import { registerStackTools } from "./stack.js";
@@ -193,6 +194,8 @@ registerLintTools(server);
 registerVaultTools(server);
 // v14.8 — perf_diagnose: PICO's official pico-cli perf profiler + diagnosis engine
 registerPerfCliTools(server);
+// v17.0 — semantic placement: anchor spec objects to labeled real-world surfaces
+registerSemanticPlaceTools(server);
 // v5.2 — the self-repair critique (LOOKED-at frame -> defect list -> replan_spec)
 registerCritiqueTools(server);
 // v5.3 — the trust ledger (over-claims structurally impossible) + safe stacked-worktree landing

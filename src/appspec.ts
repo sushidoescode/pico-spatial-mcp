@@ -44,6 +44,7 @@ export const metaSchema = z.object({
   packageName: z.string().describe("Android applicationId, e.g. com.example.showcase."),
   stageStyle: z.enum(["1", "2", "3"]).default("3").describe("PICO stage style: 3=Full, 2=Mixed, 1=Window."),
   brief: z.string().describe("The original natural-language brief this spec realizes."),
+  semanticScenePath: z.string().optional().describe("v17.0: path to a compose_semantic_scene JSON for the scanned world this app lives in — enables object anchorTo:{label} placement against REAL labeled surfaces."),
   budget: z
     .object({
       iterations: z.number().int().optional().describe("Max replan/repair iterations."),
@@ -100,6 +101,15 @@ export const objectSchema = z.object({
   material: z.record(z.any()).optional(),
   layoutRef: z.string().optional().describe("A layout id (positions this object)."),
   transform: z.object({ position: vec3.optional(), rotationDeg: vec3.optional(), scale: vec3.optional() }).optional(),
+  anchorTo: z
+    .object({
+      label: z.string().describe("A labeled object in the scanned world's semantic scene, e.g. 'counter', 'neon menu wall'."),
+      relation: z.enum(["on-top-of", "next-to", "in-front-of"]).optional().describe("Spatial relation (default on-top-of)."),
+      offset: vec3.optional().describe("Extra world-axis offset in meters, applied after resolution."),
+      gap: z.number().optional().describe("Clearance for next-to / in-front-of (default 0.15m)."),
+    })
+    .optional()
+    .describe("v17.0 SEMANTIC PLACEMENT: anchor this object to a LABELED real-world surface from meta.semanticScenePath (semantic_splat_scan -> compose_semantic_scene output). The compiler resolves it to a concrete transform.position at ledger-build time; an explicit transform.position wins over anchorTo."),
   body: z
     .object({
       mode: z.enum(["static", "dynamic"]),

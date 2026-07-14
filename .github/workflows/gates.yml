@@ -27,6 +27,8 @@ jobs:
         run: npm run test:lint
       - name: Vault fixtures (agent-vault parser + symbol check; real-vault asserts skip in CI)
         run: npm run test:vault
+      - name: Semantic placement (label-anchored resolution + compile hook)
+        run: npm run test:semantic
       - name: Ledger fixtures (over-claims structurally impossible)
         run: npm run test:ledger
       - name: Eye calibration
