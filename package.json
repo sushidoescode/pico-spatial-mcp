@@ -22,7 +22,8 @@
     "test:assetgate": "node test/assetgate.mjs",
     "test:worldenv": "node test/worldenv.mjs",
     "test:referring": "node test/referring.mjs",
-    "test:doors": "node test/doors.mjs"
+    "test:doors": "node test/doors.mjs",
+    "test:claims": "node test/claimspage.mjs"
   },
   "engines": {
     "node": ">=20"

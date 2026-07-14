@@ -33,6 +33,8 @@ jobs:
         run: npm run test:referring
       - name: Twelve Doors (surface facade + inner orchestration)
         run: npm run test:doors
+      - name: Claims page (generated from the ledger, escaped, filterable)
+        run: npm run test:claims
       - name: Ledger fixtures (over-claims structurally impossible)
         run: npm run test:ledger
       - name: Eye calibration

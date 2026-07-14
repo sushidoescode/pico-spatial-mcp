@@ -63,6 +63,7 @@ import { registerSemanticPlaceTools } from "./semanticplace.js";
 import { registerMetricVerifyTools } from "./metricverify.js";
 import { registerCritiqueTools } from "./critique.js";
 import { registerLedgerTools } from "./ledger.js";
+import { registerClaimsPageTools } from "./claimspage.js";
 import { registerStackTools } from "./stack.js";
 import { registerEvalTools } from "./eval.js";
 import { registerGateTools } from "./gate.js";
@@ -208,6 +209,7 @@ if (!doorsSurfaceActive()) {
   registerCritiqueTools(server);
   // v5.3 — the trust ledger (over-claims structurally impossible) + safe stacked-worktree landing
   registerLedgerTools(server);
+  registerClaimsPageTools(server);
   registerStackTools(server);
   // v5.4 — the eval corpus + scorecard (brief-generality as a distribution)
   registerEvalTools(server);
