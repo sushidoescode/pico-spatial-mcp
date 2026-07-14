@@ -218,9 +218,9 @@ export function registerEnvironmentTools(server: McpServer) {
         rotationEuler: rotationEuler ?? { x: 0, y: kind === "splat" ? 180 : 0, z: 0 },
         scale: scale ?? 1,
       };
-      if (kind === "texturedMesh" && !baseColorImage) {
-        return fail("texturedMesh requires baseColorImage (the base-color PNG/JPG filename).");
-      }
+      // v19: baseColorImage is NOT required for texturedMesh — texturedMeshKotlin never uses it
+      // (the spatialbundle bake embeds the textures; the baked model renders textured by itself).
+      // Kept as an accepted-but-unused param for backward compatibility.
       const kotlin = kind === "skybox"
         ? skyboxKotlin(packageName, assetFileName, skyboxRadius ?? 30, eyeHeight ?? 1.6)
         : kind === "splat"

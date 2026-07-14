@@ -59,8 +59,12 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
   for (const s of spec.scenes) {
     const env = s.environment;
     if (env.kind === "texturedMesh") {
-      push({ node: s.id, tool: "bake_textured_model", args: { modelPath: env.asset ?? "<model.glb>", outBundle: `${projectDir}/app/src/main/assets/${(env.asset ?? "model").replace(/\.glb$/, "")}.bundle` }, targetPath: "app/src/main/assets/", cClass: "C0_emulator", note: "The ONLY textured path — never runtime-load raw GLB." });
-      push({ node: s.id, tool: "generate_environment_kotlin", args: { packageName: contentPkg, kind: "texturedMesh", assetFileName: env.asset, baseColorImage: env.baseColorImage }, targetPath: `${cpath}/MeshEnvironment.kt`, cClass: "C0_emulator" });
+      // v19: env.asset may be an ABSOLUTE path (a downloaded World Labs GLB) — the bundle name and
+      // the runtime asset reference must use the BASENAME (an absolute path concatenated into
+      // assets/ produced a mangled bake target).
+      const stem = (env.asset ?? "model").split("/").pop()!.replace(/\.(glb|gltf|usdz?|usdc)$/i, "").replace(/[^A-Za-z0-9._-]/g, "_");
+      push({ node: s.id, tool: "bake_textured_model", args: { modelPath: env.asset ?? "<model.glb>", outBundle: `${projectDir}/app/src/main/assets/${stem}.bundle` }, targetPath: "app/src/main/assets/", cClass: "C0_emulator", note: "The ONLY textured path — never runtime-load raw GLB." });
+      push({ node: s.id, tool: "generate_environment_kotlin", args: { packageName: contentPkg, kind: "texturedMesh", assetFileName: `${stem}.glb`, baseColorImage: env.baseColorImage, ...(env.params ?? {}) }, targetPath: `${cpath}/MeshEnvironment.kt`, cClass: "C0_emulator" });
     } else if (env.kind === "splat") {
       push({ node: s.id, tool: "generate_environment_kotlin", args: { packageName: contentPkg, kind: "splat", assetFileName: env.asset, delivery: "storage" }, targetPath: `${cpath}/SplatEnvironment.kt`, cClass: "C0_emulator", note: "adb-push the .spz; spatialbundle can't pack splats. NOTE: a splat is a BOUNDED volume — for a full surround use kind=pano (skybox)." });
     } else if (env.kind === "pano") {

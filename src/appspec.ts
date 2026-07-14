@@ -61,6 +61,7 @@ export const sceneSchema = z.object({
     kind: z.enum(["texturedMesh", "splat", "pano", "procedural", "homeEnvProxy"]),
     asset: z.string().optional().describe("Model/splat/pano file name (baked bundle for texturedMesh)."),
     baseColorImage: z.string().optional(),
+    params: z.record(z.any()).optional().describe("v19: passed through to generate_environment_kotlin — translate/rotationEuler/scale seat a scanned world around the fixed emulator eye (e.g. translate.y = -floorY so the world floor sits at app y=0; rotationEuler.y=180 to face the hero wall). Apply the SAME transform to the semantic scene JSON so anchorTo coordinates stay truthful."),
   }),
   lighting: z
     .object({

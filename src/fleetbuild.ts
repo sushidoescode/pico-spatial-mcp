@@ -96,8 +96,11 @@ export function registerFleetBuildTools(server: McpServer) {
             // v15.1b: asset gates check EVERY scene (multi-scene briefs like narrative previously
             // slipped past the first-scene-only check and failed the build downstream), and ibl
             // rigs without a provided .ktx are asset-gated too (generate_ibl_kotlin requires it).
-            const gated = spec.scenes.find((s: any) => ["splat", "pano", "texturedMesh"].includes(s.environment?.kind));
-            if (gated) { rec.notes.push(`skipped: env '${gated.environment.kind}' (scene '${gated.id}') needs an external asset`); continue; }
+            // v19: an env is only asset-GATED when its asset is actually MISSING — a resolvable
+            // file (e.g. a downloaded World Labs GLB) flows through bake_textured_model normally.
+            const assetOk = (a: any) => typeof a === "string" && fs.existsSync(a.replace(/^~\//, os.homedir() + "/"));
+            const gated = spec.scenes.find((s: any) => ["splat", "pano", "texturedMesh"].includes(s.environment?.kind) && !assetOk(s.environment?.asset));
+            if (gated) { rec.notes.push(`skipped: env '${gated.environment.kind}' (scene '${gated.id}') needs an external asset (environment.asset must be an existing file)`); continue; }
             const iblNoKtx = spec.scenes.find((s: any) => s.lighting?.rig === "ibl" && !s.lighting?.params?.ktxAssetPath);
             if (iblNoKtx) { rec.notes.push(`skipped: rig 'ibl' (scene '${iblNoKtx.id}') needs a baked .ktx cubemap (lighting.params.ktxAssetPath — bake with prepare_ibl_cubemap)`); continue; }
 
@@ -140,8 +143,11 @@ export function registerFleetBuildTools(server: McpServer) {
               // the bundle exists; anything else asset-gates the brief (never build against a
               // missing asset the composition references).
               if (st.tool === "bake_textured_model") {
-                if (out?.status !== "baked" && out?.status !== "ok") {
-                  rec.notes.push(`asset-gated: bake_textured_model did not bake (${JSON.stringify(out).slice(0, 120)})`);
+                // success = the tool reported a bundle AND the file exists (bake returns {bundle,...}
+                // with no status field; errors return {error})
+                const bundlePath = typeof out?.bundle === "string" ? out.bundle : null;
+                if (out?.error || !bundlePath || !fs.existsSync(bundlePath)) {
+                  rec.notes.push(`asset-gated: bake_textured_model did not bake (${JSON.stringify(out).slice(0, 140)})`);
                   wiringFailed = true;
                   break;
                 }

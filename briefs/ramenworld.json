@@ -1,0 +1,133 @@
+{
+  "id": "ramenworld",
+  "brief": "v19 flagship: inside the scanned Cozy Neon Cyberpunk Ramen Bar (World Labs textured mesh), place a magenta marker cube anchored in front of the labeled 'neon sign' and a cyan marker in front of the 'menu board' \u2014 semantic placement against REAL labeled surfaces, verified in-world.",
+  "spec": {
+    "meta": {
+      "appName": "RamenWorldXR",
+      "packageName": "com.example.ramenworld",
+      "stageStyle": "3",
+      "brief": "Semantic-placement flagship inside the scanned ramen bar: markers anchored to labeled real-world surfaces (neon sign, menu board).",
+      "semanticScenePath": "/Users/sushantsrikrish/.pico-mcp/artifacts/ramen-v19-semantic-app.json"
+    },
+    "scenes": [
+      {
+        "id": "bar",
+        "environment": {
+          "kind": "texturedMesh",
+          "asset": "/Users/sushantsrikrish/Marble Worlds/Ramen World/ramenbar.glb",
+          "params": {
+            "translate": {
+              "x": 0,
+              "y": 0.776,
+              "z": 0
+            },
+            "rotationEuler": {
+              "x": 0,
+              "y": 180,
+              "z": 0
+            }
+          }
+        },
+        "lighting": {
+          "rig": "sun",
+          "params": {
+            "sunLux": 2600,
+            "iblScale": 2.0
+          }
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": [],
+        "physics": {
+          "gravity": [
+            0,
+            -9.81,
+            0
+          ]
+        }
+      }
+    ],
+    "layouts": [],
+    "objects": [
+      {
+        "id": "signMarker",
+        "sceneId": "bar",
+        "source": "primitive",
+        "anchorTo": {
+          "label": "menu display",
+          "relation": "in-front-of",
+          "gap": 0.3,
+          "offset": [
+            0,
+            1.3,
+            0
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.25,
+            0.25,
+            0.25
+          ],
+          "color": [
+            1.0,
+            0.05,
+            0.85
+          ]
+        }
+      },
+      {
+        "id": "menuMarker",
+        "sceneId": "bar",
+        "source": "primitive",
+        "anchorTo": {
+          "label": "neon trim",
+          "relation": "in-front-of",
+          "gap": 0.25,
+          "offset": [
+            0,
+            1.2,
+            0
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "color": [
+            0.05,
+            0.95,
+            1.0
+          ]
+        }
+      }
+    ],
+    "data": [],
+    "interactions": [],
+    "panels": [],
+    "navigation": {
+      "startScene": "bar",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "magenta marker floats in front of the LEFT wall's lit menu display and the cyan marker in front of the RIGHT wall's neon-trim shelf, INSIDE the rendered ramen-bar mesh (mesh seated: y+0.776, y180 \u2014 GLB frame is y-180 from the splat frame, so the seated mesh sits in SPLAT orientation and anchors use splat coordinates lifted +0.776)",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -0.9
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "bar"
+      }
+    ]
+  }
+}
