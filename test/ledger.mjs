@@ -60,6 +60,8 @@ check("vision_verified w/o artifact is rejected", !validateEntry({ claim: "c", e
 check("vision_verified w/ missing artifact is rejected", !validateEntry({ claim: "c", evidenceType: "vision_verified", artifactPath: "/no/such/file.png", attestation: "I saw six cards" }).ok);
 // 3) vision_verified with a real IMAGE but NO attestation -> rejected
 check("vision_verified w/o attestation is rejected", !validateEntry({ claim: "c", evidenceType: "vision_verified", artifactPath: realPng }).ok);
+// 3b) v18: device_verified (real-hardware vision) is held to the SAME image+attestation bar
+check("device_verified w/o artifact is rejected", !validateEntry({ claim: "c", evidenceType: "device_verified" }).ok);
 // 4) vision_verified with real IMAGE + attestation -> accepted, and records provenance
 const good = validateEntry({ claim: "c", evidenceType: "vision_verified", artifactPath: realPng, attestation: "I saw six cards at eye level" });
 check("vision_verified w/ real image + attestation is accepted", good.ok);

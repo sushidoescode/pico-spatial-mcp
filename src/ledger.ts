@@ -25,8 +25,9 @@ import { validateCapture } from "./evidence.js";
  *   built_for_headset -> built_for_headset (C1/C3/C4 — pre-built for Swan)
  */
 
-const evidenceTypeSchema = z.enum(["vision_verified", "auto_judged", "usd_host_render", "logcat", "structural", "compiles", "built_for_headset"]);
+const evidenceTypeSchema = z.enum(["device_verified", "vision_verified", "auto_judged", "usd_host_render", "logcat", "structural", "compiles", "built_for_headset"]);
 const EVIDENCE_TO_STATUS: Record<string, string> = {
+  device_verified: "device_verified", // v18 lane: a LOOKED-at capture from REAL PICO hardware — outranks emulator vision
   vision_verified: "vision_verified",
   auto_judged: "auto_judged",
   usd_host_render: "usd_host_render",
@@ -61,8 +62,9 @@ export function validateEntry(e: {
   cClass?: string;
 }): { ok: boolean; error?: string; entry?: any } {
   let capture: ReturnType<typeof validateCapture> | undefined;
-  // Human vision, the automated eye, and the off-device USD render must all be grounded in a REAL image.
-  if (e.evidenceType === "vision_verified" || e.evidenceType === "auto_judged" || e.evidenceType === "usd_host_render") {
+  // Human vision, the automated eye, the off-device USD render, and REAL-DEVICE vision must all
+  // be grounded in a REAL image.
+  if (e.evidenceType === "device_verified" || e.evidenceType === "vision_verified" || e.evidenceType === "auto_judged" || e.evidenceType === "usd_host_render") {
     const label = e.evidenceType;
     if (!e.artifactPath) return { ok: false, error: `${label} REQUIRES artifactPath (the real frame) — rejected as an over-claim.` };
     // The artifact must be a REAL rendered image, not just a path that resolves. A .txt file,

@@ -20,3 +20,4 @@ emu-last-feature-flags.protobuf
 # pico-cli setup drops local plugin context at the repo root — local wiring, not repo content
 /CLAUDE.md
 /PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md
+test/.*.tmp.mjs

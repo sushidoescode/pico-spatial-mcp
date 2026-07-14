@@ -93,8 +93,13 @@ export function registerFleetBuildTools(server: McpServer) {
             const parsed = appSpecSchema.safeParse(entry.spec);
             if (!parsed.success) { rec.notes.push("spec invalid"); continue; }
             const spec: any = parsed.data;
-            const env = spec.scenes[0]?.environment?.kind;
-            if (env === "splat" || env === "pano" || env === "texturedMesh") { rec.notes.push(`skipped: env '${env}' needs an external asset`); continue; }
+            // v15.1b: asset gates check EVERY scene (multi-scene briefs like narrative previously
+            // slipped past the first-scene-only check and failed the build downstream), and ibl
+            // rigs without a provided .ktx are asset-gated too (generate_ibl_kotlin requires it).
+            const gated = spec.scenes.find((s: any) => ["splat", "pano", "texturedMesh"].includes(s.environment?.kind));
+            if (gated) { rec.notes.push(`skipped: env '${gated.environment.kind}' (scene '${gated.id}') needs an external asset`); continue; }
+            const iblNoKtx = spec.scenes.find((s: any) => s.lighting?.rig === "ibl" && !s.lighting?.params?.ktxAssetPath);
+            if (iblNoKtx) { rec.notes.push(`skipped: rig 'ibl' (scene '${iblNoKtx.id}') needs a baked .ktx cubemap (lighting.params.ktxAssetPath — bake with prepare_ibl_cubemap)`); continue; }
 
             // unique fleet identity so installs never collide with dev apps
             const pkg = `com.fleet.${id}`;
@@ -131,9 +136,45 @@ export function registerFleetBuildTools(server: McpServer) {
                 }
                 continue;
               }
-              // structured returns (panels) carry kotlin + manifestEntry; plain returns are the Kotlin text
-              const kotlin = typeof out === "string" ? out : out.kotlin;
-              if (typeof kotlin !== "string" || !kotlin.includes("package ")) { rec.notes.push(`${st.tool}: unexpected output`); continue; }
+              // v15.1b: bake_textured_model is an ASSET step, not a Kotlin emitter — success means
+              // the bundle exists; anything else asset-gates the brief (never build against a
+              // missing asset the composition references).
+              if (st.tool === "bake_textured_model") {
+                if (out?.status !== "baked" && out?.status !== "ok") {
+                  rec.notes.push(`asset-gated: bake_textured_model did not bake (${JSON.stringify(out).slice(0, 120)})`);
+                  wiringFailed = true;
+                  break;
+                }
+                continue;
+              }
+              // v15.1b: generate_home_env_proxy returns a room PLAN whose Kotlin comes from
+              // chaining its colliderCall into generate_collider_kotlin (the executor previously
+              // dropped it — atrium shipped with NO app content).
+              if (st.tool === "generate_home_env_proxy") {
+                const cc = out?.colliderCall;
+                const col = cc?.args ? await call(cc.tool ?? "generate_collider_kotlin", { ...cc.args, packageName: (st.args as any).packageName }) : null;
+                const kt2 = typeof col === "string" ? col : col?.kotlin;
+                if (typeof kt2 !== "string" || !kt2.includes("package ")) {
+                  rec.notes.push(`generate_home_env_proxy chain failed (${JSON.stringify(out).slice(0, 120)}) — aborting this brief`);
+                  wiringFailed = true;
+                  break;
+                }
+                // the chained emission declares `object SpatialColliders` — it must land in
+                // SpatialColliders.kt, REPLACING the scaffold template's bundled copy (two files
+                // declaring the same object = Kotlin redeclaration error).
+                const t2raw = st.targetPath.startsWith("/") ? st.targetPath : path.join(projectDir, st.targetPath);
+                const t2 = path.join(path.dirname(t2raw), "SpatialColliders.kt");
+                fs.mkdirSync(path.dirname(t2), { recursive: true });
+                fs.writeFileSync(t2, kt2);
+                if (fs.existsSync(t2raw) && t2raw !== t2) fs.unlinkSync(t2raw); // stale HomeEnvProxy.kt from the pre-fix run
+                continue;
+              }
+              // structured returns carry kotlin under {kotlin} or {file:{content|kotlin}}; plain returns are the Kotlin text
+              const kotlin = typeof out === "string" ? out : out.kotlin ?? out.file?.content ?? out.file?.kotlin;
+              if (typeof kotlin !== "string" || !kotlin.includes("package ")) {
+                rec.notes.push(`${st.tool}: unexpected output (${typeof out === "string" ? out.slice(0, 100) : JSON.stringify(out).slice(0, 100)})`);
+                continue;
+              }
               const target = st.targetPath.startsWith("/") ? st.targetPath : path.join(projectDir, st.targetPath);
               fs.mkdirSync(path.dirname(target), { recursive: true });
               fs.writeFileSync(target, kotlin);
@@ -146,9 +187,18 @@ export function registerFleetBuildTools(server: McpServer) {
             if (wiringFailed) continue; // recorded above — do not build/judge a template-wired app
             // data briefs need the bundled catalog
             if (spec.data?.length) {
-              const dd = path.join(projectDir, "app/src/main/assets/data");
-              fs.mkdirSync(dd, { recursive: true });
-              fs.writeFileSync(path.join(dd, "items.json"), JSON.stringify(PALETTE_ITEMS.slice(0, spec.layouts?.[0]?.count ?? 6), null, 2));
+              // v15.1b: provision EVERY data node's declared asset (multi-scene briefs like atrium
+              // declare data/lobby.json + data/hall.json — the old single items.json left every
+              // other node loading EMPTY and its layout placing nothing).
+              const assetsRoot = path.join(projectDir, "app/src/main/assets");
+              for (const d of spec.data) {
+                const rel = typeof d.asset === "string" && d.asset.trim() ? d.asset : "data/items.json";
+                const boundLayout = spec.objects?.find((o: any) => o.dataBindRef === d.id && o.layoutRef)?.layoutRef;
+                const count = spec.layouts?.find((l: any) => l.id === boundLayout)?.count ?? spec.layouts?.[0]?.count ?? 6;
+                const fp = path.join(assetsRoot, rel);
+                fs.mkdirSync(path.dirname(fp), { recursive: true });
+                fs.writeFileSync(fp, JSON.stringify(PALETTE_ITEMS.slice(0, Math.max(1, count)), null, 2));
+              }
             }
 
             // 3. build + install + launch
@@ -161,7 +211,14 @@ export function registerFleetBuildTools(server: McpServer) {
             // trips Android's "activity kept for the user" and the app never reaches the stage
             // (observed live; the paused plain start worked every time).
             const launchApp = async () => {
-              await run(ADB, ["-s", "emulator-5554", "shell", "am", "force-stop", pkg], { timeout: 15_000 });
+              // v15.1b: sweep ALL fleet apps off the stage first — in corpus runs the previous
+              // brief's app squats the stage and every chained launch needed blocker recovery.
+              try {
+                const pl = await run(ADB, ["-s", "emulator-5554", "shell", "pm", "list", "packages", "com.fleet"], { timeout: 15_000 });
+                for (const m of String(pl.stdout).matchAll(/package:(com\.fleet\.[\w.]+)/g)) {
+                  await run(ADB, ["-s", "emulator-5554", "shell", "am", "force-stop", m[1]], { timeout: 15_000 }).catch(() => {});
+                }
+              } catch { /* sweep is best-effort */ }
               await new Promise((r) => setTimeout(r, 2000));
               await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-n", `${pkg}/.platform.LaunchActivity`], { timeout: 30_000 });
             };

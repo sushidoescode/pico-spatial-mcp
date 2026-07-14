@@ -15,7 +15,7 @@ import { okJson } from "./util.js";
  * report can never show 'verified' for something without a linked, looked-at capture in the ledger.
  */
 const LEDGER_DIR = path.join(os.homedir(), ".pico-mcp", "ledgers");
-const RANK: Record<string, number> = { vision_verified: 5, auto_judged: 4, usd_host_render: 3, logcat: 2, structural: 2, compiles: 1, built_for_headset: 1, built_for_os6: 1 };
+const RANK: Record<string, number> = { device_verified: 6, vision_verified: 5, auto_judged: 4, usd_host_render: 3, logcat: 2, structural: 2, compiles: 1, built_for_headset: 1, built_for_os6: 1 };
 
 const CATS: { cat: string; kw: RegExp }[] = [
   { cat: "Real physics (native)", kw: /physic|rigid|\bball\b|strike|\bpin\b|bowl|launch|collision/i },
