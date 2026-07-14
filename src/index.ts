@@ -117,6 +117,7 @@ import { registerWorldEnvTools } from "./worldenv.js";
 import { registerUsdRenderTools } from "./usdrender.js";
 import { registerIblBakeTools } from "./iblbake.js";
 import { registerPrompts } from "./prompts.js";
+import { registerDoorTools, doorsSurfaceActive } from "./doors.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
@@ -136,134 +137,140 @@ server.registerTool(
   async ({ projectDir, toolsVersion }) => okJson(await validateToolchain(projectDir, toolsVersion)),
 );
 
-registerEmulatorTools(server);
-registerAdbTools(server);
-registerBundleTools(server);
-registerGradleTools(server);
-registerGrpcTools(server);
-registerEditorTools(server);
-registerAgentLoopTools(server);
-registerWorkflowTools(server);
-registerSceneTools(server);
-registerHostGuiTools(server);
-registerInspectionTools(server);
-registerScaffoldTools(server);
-registerComponentTools(server);
-registerAssetTools(server);
-registerDiagnoseTools(server);
-registerColliderTools(server);
-registerEnvironmentTools(server);
-registerRegressionTools(server);
-registerSenseTools(server);
-registerEditorProjectTools(server);
-registerMaterialXTools(server);
-registerCapabilityTools(server);
-registerAgentBridgeTools(server);
-registerCaptureTools(server);
-registerEmulatorLookTools(server);
-registerEditorComponentTools(server);
-registerEditorV32Tools(server);
-registerAssertSceneTools(server);
-registerVerifyVisualTools(server);
-registerBundleDiffTools(server);
-registerVerifyTools(server);
-registerEditorExportTools(server);
-registerLightingTools(server);
-registerMrAppTools(server);
-registerVerifyBaselineTools(server);
-registerRichnessTools(server);
-registerSwanTools(server);
-registerDeployTools(server);
-registerHomeEnvProxyTools(server);
-registerMediaTools(server);
-registerAnimTools(server);
-registerDisplayTools(server);
-registerPhysicsTools(server);
-registerMenuTools(server);
-registerMouseBridgeTools(server);
-// v5.0 — the three interaction/layout/data primitives + the brief-to-app compiler tier
-registerLayoutTools(server);
-registerInteractionTools(server);
-registerDataBindingTools(server);
-registerCapabilityManifestTools(server);
-registerPlannerTools(server);
-registerCompilerTools(server);
-registerSpecVerifyTools(server);
-// v5.1 — the retained-lessons lint engine (executable, fixture-backed gotchas)
-registerLintTools(server);
-// v14.7 — vault_api: exact SDK declarations from the agent-vault symbol index
-registerVaultTools(server);
-// v14.8 — perf_diagnose: PICO's official pico-cli perf profiler + diagnosis engine
-registerPerfCliTools(server);
-// v17.0 — semantic placement: anchor spec objects to labeled real-world surfaces
-registerSemanticPlaceTools(server);
-// v20 — metric verification: calibrated camera + measured placement errors
-registerMetricVerifyTools(server);
-// v5.2 — the self-repair critique (LOOKED-at frame -> defect list -> replan_spec)
-registerCritiqueTools(server);
-// v5.3 — the trust ledger (over-claims structurally impossible) + safe stacked-worktree landing
-registerLedgerTools(server);
-registerStackTools(server);
-// v5.4 — the eval corpus + scorecard (brief-generality as a distribution)
-registerEvalTools(server);
-// v5.5 — regression gate + reproducibility lockdown (block ship on any regression)
-registerGateTools(server);
-// v5.6 — templates + remix (reuse: parameterized AppSpec skeletons + remix an app to a new brief)
-registerTemplateTools(server);
-registerRemixTools(server);
-// v5.7 — multi-scene orchestration (scene-graph router + USD composition)
-registerRouterTools(server);
-registerCompositionTools(server);
-// v5.8 — data-driven at scale + generalized interaction
-registerInteractableRegistryTools(server);
-registerLayoutPlanTools(server);
-registerCatalogTools(server);
-// v5.9 — Swan on-device parity (flip built-for-headset -> device-verified when a Swan attaches)
-registerSwanParityTools(server);
-// v6.0 — the autonomous spatial factory (queue of briefs -> verified/ledgered/gated apps + fleet dashboard)
-registerFactoryTools(server);
-registerEyeTools(server);
-registerAssembleTools(server);
-  registerPanelComposeTools(server);
-  registerGradleHooksTools(server);
-  registerEditorCustomComponentTools(server);
-  registerFleetBuildTools(server);
-  registerMenuTextureTools(server);
-  registerEditorPaletteTools(server);
-  registerWebBrowserTools(server);
-  registerWebWorkspaceTools(server);
-  registerWebSpatialTools(server);
-  registerWebBridgeTools(server);
-  registerSpatialCompilerTools(server);
-  registerLiveDataTools(server);
-  registerWeb3DTools(server);
-  registerCapabilityReportTools(server);
-  registerHybridBuildTools(server);
-  registerDataConnectTools(server);
-  registerExperienceTools(server);
-  registerShipTools(server);
-  registerVerifyApkTools(server);
-  registerSetDressingTools(server);
-  registerSignageTools(server);
-  registerSignageBoardTools(server);
-  registerSplatAnalyzeTools(server);
-  registerSemanticSplatTools(server);
-  registerCommandCenterTools(server);
-  registerToolchainWatchTools(server);
-  registerWebSpatialMultiviewTools(server);
-  registerMarbleIngestTools(server);
-  registerFidelityTools(server);
-  registerCaptureRigTools(server);
-  registerPerfProbeTools(server);
-  registerAnimTimelineTools(server);
-  registerSpatialAudioTools(server);
-registerProceduralTools(server);
-registerAssetGateTools(server);
-registerTextTo3dTools(server);
-registerWorldEnvTools(server);
-registerUsdRenderTools(server);
-registerIblBakeTools(server);
-registerPrompts(server);
+// v21 THE TWELVE DOORS: PICO_MCP_SURFACE=doors exposes only the intent-level facade
+// (each door orchestrates the full surface through an internal child server). Default
+// "full" keeps every tool AND adds the doors.
+if (!doorsSurfaceActive()) {
+  registerEmulatorTools(server);
+  registerAdbTools(server);
+  registerBundleTools(server);
+  registerGradleTools(server);
+  registerGrpcTools(server);
+  registerEditorTools(server);
+  registerAgentLoopTools(server);
+  registerWorkflowTools(server);
+  registerSceneTools(server);
+  registerHostGuiTools(server);
+  registerInspectionTools(server);
+  registerScaffoldTools(server);
+  registerComponentTools(server);
+  registerAssetTools(server);
+  registerDiagnoseTools(server);
+  registerColliderTools(server);
+  registerEnvironmentTools(server);
+  registerRegressionTools(server);
+  registerSenseTools(server);
+  registerEditorProjectTools(server);
+  registerMaterialXTools(server);
+  registerCapabilityTools(server);
+  registerAgentBridgeTools(server);
+  registerCaptureTools(server);
+  registerEmulatorLookTools(server);
+  registerEditorComponentTools(server);
+  registerEditorV32Tools(server);
+  registerAssertSceneTools(server);
+  registerVerifyVisualTools(server);
+  registerBundleDiffTools(server);
+  registerVerifyTools(server);
+  registerEditorExportTools(server);
+  registerLightingTools(server);
+  registerMrAppTools(server);
+  registerVerifyBaselineTools(server);
+  registerRichnessTools(server);
+  registerSwanTools(server);
+  registerDeployTools(server);
+  registerHomeEnvProxyTools(server);
+  registerMediaTools(server);
+  registerAnimTools(server);
+  registerDisplayTools(server);
+  registerPhysicsTools(server);
+  registerMenuTools(server);
+  registerMouseBridgeTools(server);
+  // v5.0 — the three interaction/layout/data primitives + the brief-to-app compiler tier
+  registerLayoutTools(server);
+  registerInteractionTools(server);
+  registerDataBindingTools(server);
+  registerCapabilityManifestTools(server);
+  registerPlannerTools(server);
+  registerCompilerTools(server);
+  registerSpecVerifyTools(server);
+  // v5.1 — the retained-lessons lint engine (executable, fixture-backed gotchas)
+  registerLintTools(server);
+  // v14.7 — vault_api: exact SDK declarations from the agent-vault symbol index
+  registerVaultTools(server);
+  // v14.8 — perf_diagnose: PICO's official pico-cli perf profiler + diagnosis engine
+  registerPerfCliTools(server);
+  // v17.0 — semantic placement: anchor spec objects to labeled real-world surfaces
+  registerSemanticPlaceTools(server);
+  // v20 — metric verification: calibrated camera + measured placement errors
+  registerMetricVerifyTools(server);
+  // v5.2 — the self-repair critique (LOOKED-at frame -> defect list -> replan_spec)
+  registerCritiqueTools(server);
+  // v5.3 — the trust ledger (over-claims structurally impossible) + safe stacked-worktree landing
+  registerLedgerTools(server);
+  registerStackTools(server);
+  // v5.4 — the eval corpus + scorecard (brief-generality as a distribution)
+  registerEvalTools(server);
+  // v5.5 — regression gate + reproducibility lockdown (block ship on any regression)
+  registerGateTools(server);
+  // v5.6 — templates + remix (reuse: parameterized AppSpec skeletons + remix an app to a new brief)
+  registerTemplateTools(server);
+  registerRemixTools(server);
+  // v5.7 — multi-scene orchestration (scene-graph router + USD composition)
+  registerRouterTools(server);
+  registerCompositionTools(server);
+  // v5.8 — data-driven at scale + generalized interaction
+  registerInteractableRegistryTools(server);
+  registerLayoutPlanTools(server);
+  registerCatalogTools(server);
+  // v5.9 — Swan on-device parity (flip built-for-headset -> device-verified when a Swan attaches)
+  registerSwanParityTools(server);
+  // v6.0 — the autonomous spatial factory (queue of briefs -> verified/ledgered/gated apps + fleet dashboard)
+  registerFactoryTools(server);
+  registerEyeTools(server);
+  registerAssembleTools(server);
+    registerPanelComposeTools(server);
+    registerGradleHooksTools(server);
+    registerEditorCustomComponentTools(server);
+    registerFleetBuildTools(server);
+    registerMenuTextureTools(server);
+    registerEditorPaletteTools(server);
+    registerWebBrowserTools(server);
+    registerWebWorkspaceTools(server);
+    registerWebSpatialTools(server);
+    registerWebBridgeTools(server);
+    registerSpatialCompilerTools(server);
+    registerLiveDataTools(server);
+    registerWeb3DTools(server);
+    registerCapabilityReportTools(server);
+    registerHybridBuildTools(server);
+    registerDataConnectTools(server);
+    registerExperienceTools(server);
+    registerShipTools(server);
+    registerVerifyApkTools(server);
+    registerSetDressingTools(server);
+    registerSignageTools(server);
+    registerSignageBoardTools(server);
+    registerSplatAnalyzeTools(server);
+    registerSemanticSplatTools(server);
+    registerCommandCenterTools(server);
+    registerToolchainWatchTools(server);
+    registerWebSpatialMultiviewTools(server);
+    registerMarbleIngestTools(server);
+    registerFidelityTools(server);
+    registerCaptureRigTools(server);
+    registerPerfProbeTools(server);
+    registerAnimTimelineTools(server);
+    registerSpatialAudioTools(server);
+  registerProceduralTools(server);
+  registerAssetGateTools(server);
+  registerTextTo3dTools(server);
+  registerWorldEnvTools(server);
+  registerUsdRenderTools(server);
+  registerIblBakeTools(server);
+  registerPrompts(server);
+}
+registerDoorTools(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

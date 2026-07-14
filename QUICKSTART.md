@@ -34,3 +34,22 @@ silhouettes · custom World-Labs worlds · multi-scene apps. The `com.pico.hooks
 lints scenes in every build; `fleet_build` builds brief batches unattended with an honest
 auto-judge. Boundless walk-around immersion is PICO Swan hardware territory — the emulator's
 strength is bounded, eye-level content, and every claim above is backed by a looked-at frame.
+
+## The Twelve Doors (recommended for first-time users)
+
+190+ tools is power you don't need on day one. Start with the intent-level facade:
+
+```bash
+PICO_MCP_SURFACE=doors claude mcp add pico-spatial -- node /path/to/PICO-MCP/dist/index.js
+```
+
+Twelve doors, one per intent: `pico_build_app` (brief → verified app), `pico_scan_world`
+(splat → labeled semantic scene), `pico_place` (natural-language anchors), `pico_look`
+(deterministic capture — read it!), `pico_verify_app` (verify ANY apk), `pico_measure`
+(calibrated placement metrics), `pico_perf` (official profiler), `pico_sdk` (exact SDK
+declarations), `pico_doctor`, `pico_ship`, `pico_capabilities`, `pico_fix` (paste an error,
+get the retained lesson). Every door failure returns a `fix` pointing at the exact next step.
+Remove the env var to expose the full surface — the doors stay available either way.
+
+First light in three calls: `pico_doctor` → `pico_build_app("three spinning crystals over a
+stone floor")` → `pico_look` (and actually look).

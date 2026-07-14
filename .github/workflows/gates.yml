@@ -31,6 +31,8 @@ jobs:
         run: npm run test:semantic
       - name: Referring expressions (skips without the local scan)
         run: npm run test:referring
+      - name: Twelve Doors (surface facade + inner orchestration)
+        run: npm run test:doors
       - name: Ledger fixtures (over-claims structurally impossible)
         run: npm run test:ledger
       - name: Eye calibration
