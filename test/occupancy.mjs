@@ -135,7 +135,21 @@ const concat = (...arrs) => {
   else fail(`resolveAnchors occupancy wiring: position=${p ? `[${p.join(", ")}]` : "(none)"} notes=${notes.join(" | ")}`);
 }
 
-// 8) the REAL ramen scan: the ledgered unlabeled-counter finding, closed
+// 8) THE SCHEMA STRIP REGRESSION (found live in the ramenoccupancy fleet run): meta.occupancyPath
+// must SURVIVE appspec zod validation — zod strips unknown keys, so a schema without the field
+// silently reverts every 'on' anchor to the blind solve (both pillars baked at the blind pose).
+{
+  const { metaSchema } = await import("../dist/appspec.js");
+  const parsed = metaSchema.safeParse({
+    appName: "X", packageName: "com.x.y", stageStyle: "3", brief: "b",
+    semanticScenePath: "/tmp/scene.json", occupancyPath: "/tmp/grid.json",
+  });
+  if (parsed.success && parsed.data.occupancyPath === "/tmp/grid.json")
+    ok("meta.occupancyPath survives appspec schema validation");
+  else fail(`metaSchema strips occupancyPath: ${parsed.success ? JSON.stringify(parsed.data) : parsed.error}`);
+}
+
+// 9) the REAL ramen scan: the ledgered unlabeled-counter finding, closed
 const PLY = "/Users/sushantsrikrish/Marble Worlds/Ramen World/Cozy Neon Cyberpunk Ramen Bar.ply";
 const SCENE = `${process.env.HOME}/.pico-mcp/artifacts/ramen-v19-semantic-app.json`;
 if (fs.existsSync(PLY) && fs.existsSync(SCENE)) {

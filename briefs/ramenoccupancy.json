@@ -1,0 +1,80 @@
+{
+  "id": "ramenoccupancy",
+  "brief": "v26.1 flagship: inside the scanned Cozy Neon Cyberpunk Ramen Bar, place a 1.2m-tall GREEN pillar on the floor via the OCCUPANCY-AWARE solver (meta.occupancyPath — the unlabeled counter slab blocks it, so it lands in genuinely free floor) and a MAGENTA pillar at the pose the label-blind solver would have chosen (48 occupied voxels — it impales the unlabeled counter). The pair makes the closed v24 finding LOOKable.",
+  "spec": {
+    "meta": {
+      "appName": "RamenOccupancyXR",
+      "packageName": "com.example.ramenoccupancy",
+      "stageStyle": "3",
+      "brief": "Occupancy-from-geometry flagship inside the scanned ramen bar: the occupancy-aware pillar stands clear of the UNLABELED counter; the blind pose impales it.",
+      "semanticScenePath": "/Users/sushantsrikrish/.pico-mcp/artifacts/ramen-v19-semantic-app.json",
+      "occupancyPath": "/Users/sushantsrikrish/.pico-mcp/artifacts/ramen-v19.occupancy.json"
+    },
+    "scenes": [
+      {
+        "id": "bar",
+        "environment": {
+          "kind": "texturedMesh",
+          "asset": "/Users/sushantsrikrish/Marble Worlds/Ramen World/ramenbar.glb",
+          "params": {
+            "translate": { "x": 0, "y": 0.776, "z": 0 },
+            "rotationEuler": { "x": 0, "y": 180, "z": 0 }
+          }
+        },
+        "lighting": {
+          "rig": "sun",
+          "params": { "sunLux": 2600, "iblScale": 2.0 }
+        },
+        "colliders": { "props": [] },
+        "transitions": [],
+        "physics": { "gravity": [0, -9.81, 0] }
+      }
+    ],
+    "layouts": [],
+    "objects": [
+      {
+        "id": "occupancyPillar",
+        "sceneId": "bar",
+        "source": "primitive",
+        "anchorTo": {
+          "label": "floor",
+          "relation": "on",
+          "clearance": 0.1
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [0.35, 1.2, 0.35],
+          "color": [0.1, 1.0, 0.3]
+        }
+      },
+      {
+        "id": "blindPosePillar",
+        "sceneId": "bar",
+        "source": "primitive",
+        "transform": {
+          "position": [-0.114, 0.6, -1.436]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [0.35, 1.2, 0.35],
+          "color": [1.0, 0.05, 0.85]
+        }
+      }
+    ],
+    "data": [],
+    "interactions": [],
+    "panels": [],
+    "navigation": { "startScene": "bar", "portals": [] },
+    "verificationPlan": [
+      {
+        "claim": "the GREEN occupancy-aware pillar stands on open floor near the far-right end of the bar (solver pose [0.761, 0.6, -3.011], 0 occupied voxels in its volume, 277 candidate cells rejected by unlabeled geometry) while the MAGENTA pillar at the label-blind pose [-0.114, 0.6, -1.436] visibly intersects the UNLABELED counter slab (48 occupied voxels) — inside the rendered ramen-bar mesh (seated y+0.776, y180)",
+        "method": "capture",
+        "forwardFOVpose": { "yawDeg": 0, "pitchDeg": 0, "targetZ": -0.9 },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "bar"
+      }
+    ]
+  }
+}

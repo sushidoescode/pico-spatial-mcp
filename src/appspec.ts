@@ -45,6 +45,7 @@ export const metaSchema = z.object({
   stageStyle: z.enum(["1", "2", "3"]).default("3").describe("PICO stage style: 3=Full, 2=Mixed, 1=Window."),
   brief: z.string().describe("The original natural-language brief this spec realizes."),
   semanticScenePath: z.string().optional().describe("v17.0: path to a compose_semantic_scene JSON for the scanned world this app lives in — enables object anchorTo:{label} placement against REAL labeled surfaces."),
+  occupancyPath: z.string().optional().describe("v26.1: path to a build_occupancy_grid JSON for the scanned world — anchorTo relation:'on' placements then also avoid UNLABELED scanned geometry (zod strips unknown keys, so this MUST be declared here to reach resolveAnchors)."),
   budget: z
     .object({
       iterations: z.number().int().optional().describe("Max replan/repair iterations."),
