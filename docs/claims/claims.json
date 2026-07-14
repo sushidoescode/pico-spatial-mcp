@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-14T07:25:11.249Z",
+  "generatedAt": "2026-07-14T07:36:19.217Z",
   "apps": [
     {
       "app": "com.android.settings",
@@ -247,6 +247,23 @@
           "attestation": null,
           "artifact": null,
           "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "v25 LIVE COPILOT (LOOKED): a cyan orb was spawned INTO the RUNNING affordance app over the agent bridge (no rebuild), then live-moved — both commands acked with tags, the scene diff shows exactly +1 entity 'copilot_orb' at the moved position [-0.25, 1.5, -1.95], and the orb renders there",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKED at the canonical capture taken after the live edits: a glossy teal/cyan sphere hovers above-right of the dark storage box — up and left of where it was spawned, matching the live_move target — with the amber crate on the right side of the table and the table slab below, all unchanged. The orb did not exist at compile time: the before-snapshot had 6 entities, the after-snapshot 7, and live_scene_diff reports added=[copilot_orb @ -0.25,1.5,-1.95], removed=[], moved=[]. Spawn ack tag tmrkc5pqu0, move ack tag tmrkc5qbo0.",
+          "artifact": "canonical.png",
+          "capture": {
+            "sha256": "002ff8a4ce0361bb82da5d2ca9374bf976cecdcaab6d4faf82570489d1e0ed31",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 245956,
+            "format": "png"
+          },
           "cClass": "C0_emulator",
           "deviceSerial": null,
           "reproHash": null
@@ -1157,6 +1174,40 @@
           "cClass": "C0_emulator",
           "deviceSerial": null,
           "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "[fleet_build unattended] affordance renders",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1587 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "408a5db05e7068f284beed3504951b0879a280dadb3b325c5fd5d3461f24e305",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 216236,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "[fleet_build unattended] affordance renders",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1587 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "408a5db05e7068f284beed3504951b0879a280dadb3b325c5fd5d3461f24e305",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 216236,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
         }
       ]
     },
@@ -2012,8 +2063,8 @@
     }
   ],
   "totals": {
-    "vision_verified": 75,
-    "auto_judged": 13,
+    "vision_verified": 76,
+    "auto_judged": 15,
     "structural": 23,
     "usd_host_render": 3,
     "built_for_headset": 1

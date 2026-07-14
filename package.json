@@ -25,7 +25,8 @@
     "test:doors": "node test/doors.mjs",
     "test:claims": "node test/claimspage.mjs",
     "test:bench": "node test/spatialbench.mjs",
-    "test:affordance": "node test/affordance.mjs"
+    "test:affordance": "node test/affordance.mjs",
+    "test:copilot": "node test/copilot.mjs"
   },
   "engines": {
     "node": ">=20"

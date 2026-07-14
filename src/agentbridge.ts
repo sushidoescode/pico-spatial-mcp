@@ -28,7 +28,13 @@ function agentBridgeKt(pkg: string, tag: string): string {
 import android.os.Bundle
 import android.util.Log
 import com.pico.spatial.core.ecs.Entity
+import com.pico.spatial.core.ecs.ModelComponent
 import com.pico.spatial.core.ecs.TransformComponent
+import com.pico.spatial.core.ecs.resource.MeshResource
+import com.pico.spatial.core.ecs.resource.PhysicallyBasedMaterial
+import com.pico.spatial.core.math.Color4
+import com.pico.spatial.core.math.Quat
+import com.pico.spatial.core.math.Vector3
 
 /**
  * AgentBridge — an injectable headless control + verification surface for an AI agent.
@@ -37,7 +43,8 @@ import com.pico.spatial.core.ecs.TransformComponent
  * Drive it headlessly:   adb shell am broadcast -a <applicationId>.AGENT_CMD --es cmd dump_scene
  * Read it headlessly:    adb logcat -s ${tag}:V
  *
- * Built-in commands: ping | commands | scene_stats | dump_scene (extra --ei depth N).
+ * Built-in commands: ping | commands | scene_stats | dump_scene (extra --ei depth N)
+ *   + LIVE EDITS (v25): spawn | move | remove — each echoes your --es tag in its ack event.
  * Extend with your own: AgentBridge.register("arm") { _ -> placer.toggleArmed() }.
  * ONE-LINE GLUE (optional, for scene introspection): AgentBridge.attachScene(sceneRoot).
  */
@@ -109,6 +116,61 @@ object AgentBridge {
             }
             event("dump_end", "entities" to n)
         }
+        // v25 LIVE EDITS: an agent talks to the RUNNING scene. Each ack echoes the caller's tag so
+        // the host can await its own command. Spawned entities are visual-only (no RigidBody) —
+        // live physics mutation stays out per the physics adapter rules.
+        register("spawn") { ex ->
+            val tg = ex.getString("tag") ?: ""
+            val r = root()
+            if (r == null) { event("spawn_failed", "tag" to tg, "msg" to "no_scene_root"); return@register }
+            val id = ex.getString("id")
+            if (id == null) { event("spawn_failed", "tag" to tg, "msg" to "missing_id"); return@register }
+            if (find(r, id) != null) { event("spawn_failed", "tag" to tg, "id" to id, "msg" to "name_exists"); return@register }
+            val pos = vec3(ex.getString("pos"), Vector3(0f, 1f, -2f))
+            val dims = vec3(ex.getString("dims"), Vector3(0.3f, 0.3f, 0.3f))
+            val c = vec3(ex.getString("color"), Vector3(0.2f, 0.9f, 0.9f))
+            val mesh = if (ex.getString("shape") == "sphere") MeshResource.createSphere(dims.x) else MeshResource.createBox(dims)
+            val e = Entity()
+            e.setName(id)
+            e.components.set(TransformComponent(pos, Quat.identity(), Vector3(1f, 1f, 1f)))
+            val mat = PhysicallyBasedMaterial.create().apply { setBaseColor(Color4(c.x, c.y, c.z, 1f)); setMetallic(0.1f); setRoughness(0.4f) }
+            e.components.set(ModelComponent(mesh, mat))
+            r.addChild(e)
+            event("spawned", "tag" to tg, "id" to id, "pos" to "\${pos.x},\${pos.y},\${pos.z}")
+        }
+        register("move") { ex ->
+            val tg = ex.getString("tag") ?: ""
+            val r = root(); val id = ex.getString("id")
+            val e = if (r != null && id != null) find(r, id) else null
+            if (e == null) { event("move_failed", "tag" to tg, "id" to (id ?: "null"), "msg" to "not_found"); return@register }
+            val t = e.components[TransformComponent::class.java]
+            if (t == null) { event("move_failed", "tag" to tg, "id" to id, "msg" to "no_transform"); return@register }
+            val pos = vec3(ex.getString("pos"), t.position)
+            e.components.set(TransformComponent(pos, t.quaternion, t.scaleVector))
+            event("moved", "tag" to tg, "id" to id, "pos" to "\${pos.x},\${pos.y},\${pos.z}")
+        }
+        register("remove") { ex ->
+            val tg = ex.getString("tag") ?: ""
+            val r = root(); val id = ex.getString("id")
+            val e = if (r != null && id != null) find(r, id) else null
+            if (e == null) { event("remove_failed", "tag" to tg, "id" to (id ?: "null"), "msg" to "not_found"); return@register }
+            runCatching { e.destroy() }
+                .onSuccess { event("removed", "tag" to tg, "id" to id) }
+                .onFailure { event("remove_failed", "tag" to tg, "id" to id, "msg" to (it.message ?: "destroy_failed")) }
+        }
+    }
+
+    private fun find(root: Entity, name: String): Entity? {
+        var found: Entity? = null
+        walk(root, 0, Int.MAX_VALUE) { e, _ -> if (found == null && e.getName() == name) found = e }
+        return found
+    }
+
+    private fun vec3(s: String?, def: Vector3): Vector3 {
+        if (s == null) return def
+        val p = s.split(",")
+        if (p.size != 3) return def
+        return runCatching { Vector3(p[0].trim().toFloat(), p[1].trim().toFloat(), p[2].trim().toFloat()) }.getOrDefault(def)
     }
 
     private fun walk(e: Entity, depth: Int, maxDepth: Int, visit: (Entity, Int) -> Unit) {
@@ -215,7 +277,7 @@ export function registerAgentBridgeTools(server: McpServer) {
         manifestProvider,
         integration,
         driveExamples,
-        builtinCommands: ["ping", "commands", "scene_stats", "dump_scene"],
+        builtinCommands: ["ping", "commands", "scene_stats", "dump_scene", "spawn", "move", "remove"],
         verification:
           "COMPILES against the SDK (assembleDebug). RUNTIME is headlessly verifiable via adb broadcast + logcat (unlike rendering) — assert the AGENTBRIDGE| markers. Pairs with assert_logcat.",
       });

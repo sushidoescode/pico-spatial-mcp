@@ -39,6 +39,8 @@ jobs:
         run: npm run test:bench
       - name: Affordance solver (free space, honest no-fit, compiler on-route)
         run: npm run test:affordance
+      - name: Live copilot (bridge-line protocol + scene diff)
+        run: npm run test:copilot
       - name: Ledger fixtures (over-claims structurally impossible)
         run: npm run test:ledger
       - name: Eye calibration

@@ -121,7 +121,19 @@ export function registerFleetBuildTools(server: McpServer) {
             const steps = buildLedger(spec, projectDir) as Step[];
             let wiringFailed = false;
             for (const st of steps) {
-              if (st.tool === "scaffold_spatial_app" || st.tool === "build_and_run" || st.tool === "generate_agent_bridge") continue; // scaffolded template already has the bridge
+              if (st.tool === "scaffold_spatial_app" || st.tool === "build_and_run") continue;
+              if (st.tool === "generate_agent_bridge") {
+                // v25: OVERWRITE the template's bridge with the CURRENT generator output so live
+                // copilot commands (spawn/move/remove) exist in every fleet app — template drift
+                // was shipping a stale bridge (unknown_cmd spawn) while the host tools moved on.
+                const bridge = await call("generate_agent_bridge", { packageName: `${pkg}.agent` });
+                for (const f of bridge.files ?? []) {
+                  const dest = path.join(projectDir, f.path.replace(/^app\/src\/main\/java\/.*\/agent\//, `app/src/main/java/${pkg.replace(/\./g, "/")}/agent/`));
+                  fs.mkdirSync(path.dirname(dest), { recursive: true });
+                  fs.writeFileSync(dest, f.content);
+                }
+                continue;
+              }
               const out = await call(st.tool, st.args);
               if (st.tool === "generate_app_wiring") {
                 // v15.0: a wiring failure must be LOUD — an app without its wiring silently runs on
