@@ -2,6 +2,7 @@ import fs from "node:fs";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
+import { solveFreePlacement } from "./affordance.js";
 
 /**
  * semanticplace.ts — v17.0 SEMANTIC PLACEMENT: anchor spec objects to LABELED real-world surfaces.
@@ -208,6 +209,25 @@ export function resolveAnchors(spec: any): { spec: any; notes: string[] } {
       : o.body?.shape === "capsule" && dims?.length >= 2 ? [dims[1] * 2, dims[0], dims[1] * 2]
       : dims?.length === 3 ? [dims[0], dims[1], dims[2]]
       : [0.3, 0.3, 0.3];
+    if (o.anchorTo.relation === "on") {
+      // v24 affordance route: a COLLISION-FREE spot on the surface, not blind center-stacking
+      const sol = solveFreePlacement(scene, {
+        on: o.anchorTo.label,
+        childSize,
+        clearance: o.anchorTo.clearance,
+        facing: o.anchorTo.facing,
+        avoiding: o.anchorTo.avoiding,
+      });
+      if (sol.status !== "ok") {
+        notes.push(`object '${o.id}': affordance solver ${sol.status} — ${sol.note}`);
+        continue;
+      }
+      const off = o.anchorTo.offset ?? [0, 0, 0];
+      o.transform = { ...(o.transform ?? {}), position: sol.position.map((v: number, i: number) => Number((v + off[i]).toFixed(3))) };
+      if (sol.rotationYDeg !== null && !o.transform.rotationDeg) o.transform.rotationDeg = [0, sol.rotationYDeg, 0];
+      notes.push(`object '${o.id}': free-placed ON '${sol.surface.label}' -> [${o.transform.position.join(", ")}] (min gap ${sol.minGapM}m${sol.rotationYDeg !== null ? `, facing yaw ${sol.rotationYDeg}°` : ""}); ${sol.note}`);
+      continue;
+    }
     const res = resolveSemanticPlacement(scene, o.anchorTo, childSize);
     if (!res.position) {
       notes.push(`object '${o.id}': ${res.note}`);

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-14T07:00:33.058Z",
+  "generatedAt": "2026-07-14T07:25:11.249Z",
   "apps": [
     {
       "app": "com.android.settings",
@@ -214,6 +214,39 @@
             "bytes": 327678,
             "format": "png"
           },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.example.affordance",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "v24 flagship (LOOKED): the affordance solver free-placed an amber crate ON the labeled wooden table, visibly clear of the labeled storage box — solver pose [0.73, 1.0, -1.97], min gap 0.98m, clearance 0.08m honored",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKED at the fleet forward capture: the brown table slab fills the lower frame, the dark blue-gray storage box stands on its left half, and the solver-placed amber crate (rendered dark amber in shade) sits on the RIGHT side of the table top with clear tabletop between it and the box — no overlap, no floating, resting on the surface. Metric close: fresh camera calibration (residual 13.6px) projects the crate's expected pose to (1666,1590) and the crate's actual rendered bbox center is (1665,1576) — within 14px ≈ 1.8cm at 1.97m depth; the table center measured at 0.02m error via measure_placement.",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "408a5db05e7068f284beed3504951b0879a280dadb3b325c5fd5d3461f24e305",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 216236,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "v24 honest findings: (1) camera calibration does NOT survive an emulator cold restart — cy shifted 299px (653.5→952.5), eyeHeight 1.979→1.819; recalibrate after every restart. (2) In the scanned ramen world the solver is collision-free only against LABELED boxes — the unlabeled bar counter occluded a floor placement from the fixed eye (scan completeness bounds placement visibility). (3) measure_placement stays honest: the shadowed amber crate is out of color-key tolerance and reports not-detected rather than guessing.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
           "cClass": "C0_emulator",
           "deviceSerial": null,
           "reproHash": null
@@ -1106,6 +1139,50 @@
       ]
     },
     {
+      "app": "com.fleet.affordance",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "[fleet_build unattended] affordance renders",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1587 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "408a5db05e7068f284beed3504951b0879a280dadb3b325c5fd5d3461f24e305",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 216236,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.fleet.boutique",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "[fleet_build unattended] 8 textured product cards render on shelves",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1390 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "de190d59578e14dd050d85c5c64cbb9b30f9406cafb4714cb5f01083586728fa",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 56466,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
       "app": "com.fleet.console",
       "claims": [
         {
@@ -1119,6 +1196,89 @@
             "width": 2160,
             "height": 2158,
             "bytes": 86579,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "[fleet_build unattended] 6 metric tiles colored by JSON",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1387 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "2696ba68ece98a22d05a00c69179d984ac7f547354f296fed2dfe5dbb13e4836",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 27297,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.fleet.crystals",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "[fleet_build unattended] 6 crystals render spinning in a grid",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1387 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "2696ba68ece98a22d05a00c69179d984ac7f547354f296fed2dfe5dbb13e4836",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 27297,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.fleet.dashboard",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "[fleet_build unattended] 6 metric tiles colored by JSON",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1387 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "d8a3a1c208464902051bbc9af4b105f866fe3427ffd72605bb6a0c789783f204",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 27336,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.fleet.knockdown",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "[fleet_build unattended] 3 capsule targets racked on the lane + the ball at rest",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1321 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "505c42dabb896106728281b6d04e232c65ae52cd8d38387e1e5b5f5131422a1d",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 272936,
             "format": "png"
           },
           "cClass": "C0_emulator",
@@ -1852,10 +2012,10 @@
     }
   ],
   "totals": {
-    "vision_verified": 74,
-    "auto_judged": 7,
+    "vision_verified": 75,
+    "auto_judged": 13,
+    "structural": 23,
     "usd_host_render": 3,
-    "structural": 22,
     "built_for_headset": 1
   },
   "evidenceMeaning": {

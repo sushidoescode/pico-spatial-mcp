@@ -75,7 +75,7 @@ export function registerMetricVerifyTools(server: McpServer) {
     "calibrate_capture_camera",
     {
       description:
-        "Solve the emulator forward-capture camera model EMPIRICALLY from a capture of color-keyed cubes at KNOWN app-space positions (build briefs/calib.json via fleet_build first). Detects each cube's pixel centroid (saturation-keyed), solves focal length from the horizontal offsets and eye height from the verticals (least squares), reports per-marker residuals, and persists ~/.pico-mcp/camera-calibration.json for measure_placement. HONESTY: residuals are stored and echoed into every later measurement; recalibrate after any emulator/renderer update.",
+        "Solve the emulator forward-capture camera model EMPIRICALLY from a capture of color-keyed cubes at KNOWN app-space positions (build briefs/calib.json via fleet_build first). Detects each cube's pixel centroid (saturation-keyed), solves focal length from the horizontal offsets and eye height from the verticals (least squares), reports per-marker residuals, and persists ~/.pico-mcp/camera-calibration.json for measure_placement. HONESTY: residuals are stored and echoed into every later measurement; recalibrate after any emulator/renderer update AND after every emulator cold restart — the v24 run measured a 299px cy shift across one restart (the free-cam default pose moved), which silently corrupts every meter figure until recalibration.",
       inputSchema: {
         capturePath: z.string().describe("The calibration capture (deterministic forward frame)."),
         markers: z.array(z.object({

@@ -1,0 +1,132 @@
+{
+  "id": "affordance",
+  "brief": "v24 flagship: a table + a storage box, and an amber crate FREE-PLACED on the table by the affordance solver (collision-free, 8cm clearance, facing room-center) \u2014 every obstacle labeled, placement verified in-world and measured.",
+  "spec": {
+    "meta": {
+      "appName": "AffordanceXR",
+      "packageName": "com.example.affordance",
+      "stageStyle": "3",
+      "brief": "Affordance flagship: solver-placed crate on a labeled table, clear of the labeled storage box.",
+      "semanticScenePath": "/Users/sushantsrikrish/.pico-mcp/artifacts/affordance-table-scene.json"
+    },
+    "scenes": [
+      {
+        "id": "main",
+        "environment": {
+          "kind": "homeEnvProxy"
+        },
+        "lighting": {
+          "rig": "sun",
+          "params": {
+            "sunLux": 3000,
+            "iblScale": 1.6
+          }
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": [],
+        "physics": {
+          "gravity": [
+            0,
+            -9.81,
+            0
+          ]
+        }
+      }
+    ],
+    "layouts": [],
+    "objects": [
+      {
+        "id": "table",
+        "sceneId": "main",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0,
+            0.45,
+            -2
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            2,
+            0.9,
+            1
+          ],
+          "color": [
+            0.45,
+            0.3,
+            0.18
+          ]
+        }
+      },
+      {
+        "id": "storagebox",
+        "sceneId": "main",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.6,
+            1.1,
+            -2
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.4,
+            0.4,
+            0.4
+          ],
+          "color": [
+            0.35,
+            0.42,
+            0.55
+          ]
+        }
+      },
+      {
+        "id": "crate",
+        "sceneId": "main",
+        "source": "primitive",
+        "anchorTo": {
+          "label": "table",
+          "relation": "on",
+          "clearance": 0.08,
+          "facing": "room-center"
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.3,
+            0.2,
+            0.3
+          ],
+          "color": [
+            1.0,
+            0.63,
+            0.1
+          ]
+        }
+      }
+    ],
+    "data": [],
+    "interactions": [],
+    "navigation": {
+      "startScene": "main",
+      "portals": []
+    }
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 0,
+    "objects": 3,
+    "data": 0,
+    "interactions": 0
+  }
+}

@@ -29,16 +29,25 @@ nearest = dists.argmin(axis=0)
 
 
 def rank_sig(v):
+    """(min channel | None, max channel | None) — a rank constraint only counts when the key
+    itself clearly separates those channels (v24 fix: red's G/B are BOTH 0, so which one a lit
+    render puts lowest is chance; enforcing that tie-break dropped real markers post-restart)."""
     order = np.argsort(v)  # ascending channel indices
-    return (int(order[0]), int(order[2]))  # (min channel, max channel)
+    lo = int(order[0]) if v[order[1]] - v[order[0]] > 40 else None
+    hi = int(order[2]) if v[order[2]] - v[order[1]] > 40 else None
+    return (lo, hi)
 
 
 out = {}
+pix_min = img.argmin(axis=2)
+pix_max = img.argmax(axis=2)
 for k, name in enumerate(names):
     tsig = rank_sig(targets[k])
-    pix_min = img.argmin(axis=2)
-    pix_max = img.argmax(axis=2)
-    mask = (nearest == k) & (dists[k] < 220) & (spread > 50) & (pix_min == tsig[0]) & (pix_max == tsig[1])
+    mask = (nearest == k) & (dists[k] < 220) & (spread > 50)
+    if tsig[0] is not None:
+        mask &= pix_min == tsig[0]
+    if tsig[1] is not None:
+        mask &= pix_max == tsig[1]
     if int(mask.sum()) < 50:
         out[name] = None
         continue

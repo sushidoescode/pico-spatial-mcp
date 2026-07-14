@@ -104,10 +104,13 @@ export const objectSchema = z.object({
   transform: z.object({ position: vec3.optional(), rotationDeg: vec3.optional(), scale: vec3.optional() }).optional(),
   anchorTo: z
     .object({
-      label: z.string().describe("A labeled object in the scanned world's semantic scene, e.g. 'counter', 'neon menu wall'."),
-      relation: z.enum(["on-top-of", "next-to", "in-front-of"]).optional().describe("Spatial relation (default on-top-of)."),
+      label: z.string().describe("A labeled object in the scanned world's semantic scene, e.g. 'counter', 'neon menu wall' — or 'floor' with relation 'on'."),
+      relation: z.enum(["on-top-of", "next-to", "in-front-of", "on"]).optional().describe("Spatial relation (default on-top-of). 'on' = v24 affordance route: a COLLISION-FREE spot on the labeled surface (or 'floor') via the free-space solver, honoring clearance/facing/avoiding."),
       offset: vec3.optional().describe("Extra world-axis offset in meters, applied after resolution."),
       gap: z.number().optional().describe("Clearance for next-to / in-front-of (default 0.15m)."),
+      clearance: z.number().optional().describe("v24 ('on' only): min gap to obstacles + surface edges (default 0.05m)."),
+      facing: z.string().optional().describe("v24 ('on' only): face this label or 'room-center' — bakes transform.rotationDeg.y."),
+      avoiding: z.array(z.string()).optional().describe("v24 ('on' only): labels to keep distance from (soft)."),
     })
     .optional()
     .describe("v17.0 SEMANTIC PLACEMENT: anchor this object to a LABELED real-world surface from meta.semanticScenePath (semantic_splat_scan -> compose_semantic_scene output). The compiler resolves it to a concrete transform.position at ledger-build time; an explicit transform.position wins over anchorTo."),

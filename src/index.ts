@@ -65,6 +65,7 @@ import { registerCritiqueTools } from "./critique.js";
 import { registerLedgerTools } from "./ledger.js";
 import { registerClaimsPageTools } from "./claimspage.js";
 import { registerSpatialBenchTools } from "./spatialbench.js";
+import { registerAffordanceTools } from "./affordance.js";
 import { registerStackTools } from "./stack.js";
 import { registerEvalTools } from "./eval.js";
 import { registerGateTools } from "./gate.js";
@@ -212,6 +213,7 @@ if (!doorsSurfaceActive()) {
   registerLedgerTools(server);
   registerClaimsPageTools(server);
   registerSpatialBenchTools(server);
+  registerAffordanceTools(server);
   registerStackTools(server);
   // v5.4 — the eval corpus + scorecard (brief-generality as a distribution)
   registerEvalTools(server);
