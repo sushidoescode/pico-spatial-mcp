@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { solveFreePlacement } from "./affordance.js";
+import { loadOccupancyGrid, type OccupancyGrid } from "./occupancy.js";
 
 /**
  * semanticplace.ts — v17.0 SEMANTIC PLACEMENT: anchor spec objects to LABELED real-world surfaces.
@@ -196,6 +197,17 @@ export function resolveAnchors(spec: any): { spec: any; notes: string[] } {
     notes.push(`anchorTo present on ${anchored.length} object(s) but meta.semanticScenePath ${scenePath ? `could not be loaded (${scenePath})` : "is not set"} — anchors NOT resolved; set explicit transform.position or fix the path.`);
     return { spec, notes };
   }
+  // meta.occupancyPath (build_occupancy_grid output): unlabeled scanned geometry also blocks 'on' placements
+  const occPath = spec.meta?.occupancyPath;
+  let occupancy: OccupancyGrid | null = null;
+  if (occPath) {
+    try {
+      occupancy = loadOccupancyGrid(occPath.replace(/^~\//, `${process.env.HOME}/`));
+      notes.push(`occupancy grid loaded (${occupancy.occupiedCells} occupied cells @ ${occupancy.cell}m) — unlabeled geometry constrains 'on' anchors.`);
+    } catch {
+      notes.push(`meta.occupancyPath set but could not be loaded (${occPath}) — 'on' anchors resolved WITHOUT unlabeled-geometry occupancy.`);
+    }
+  }
   const out = JSON.parse(JSON.stringify(spec));
   for (const o of out.objects) {
     if (!o.anchorTo) continue;
@@ -217,7 +229,7 @@ export function resolveAnchors(spec: any): { spec: any; notes: string[] } {
         clearance: o.anchorTo.clearance,
         facing: o.anchorTo.facing,
         avoiding: o.anchorTo.avoiding,
-      });
+      }, occupancy);
       if (sol.status !== "ok") {
         notes.push(`object '${o.id}': affordance solver ${sol.status} — ${sol.note}`);
         continue;

@@ -26,7 +26,7 @@ const run = promisify(execFile);
 type Vec3 = [number, number, number];
 interface Cluster { center: Vec3; size: Vec3; points: number }
 
-function parsePlyPositions(buf: Buffer, maxSamples: number): { pos: Float32Array; total: number } {
+export function parsePlyPositions(buf: Buffer, maxSamples: number): { pos: Float32Array; total: number } {
   const headEnd = buf.indexOf("end_header\n");
   if (headEnd < 0) throw new Error("not a PLY (no end_header)");
   const header = buf.subarray(0, headEnd).toString("latin1");
@@ -57,7 +57,7 @@ function parsePlyPositions(buf: Buffer, maxSamples: number): { pos: Float32Array
   return { pos, total };
 }
 
-function parseSpzPositions(raw: Buffer, maxSamples: number): { pos: Float32Array; total: number } {
+export function parseSpzPositions(raw: Buffer, maxSamples: number): { pos: Float32Array; total: number } {
   const buf = zlib.gunzipSync(raw);
   const magic = buf.readUInt32LE(0);
   if (magic !== 0x5053474e) throw new Error(`not an SPZ (magic 0x${magic.toString(16)})`); // 'NGSP'
@@ -84,7 +84,7 @@ function parseSpzPositions(raw: Buffer, maxSamples: number): { pos: Float32Array
 }
 
 /** percentile trim per axis (splats have floater outliers) */
-function trim(pos: Float32Array, lo = 0.01, hi = 0.99): { pos: Float32Array; min: Vec3; max: Vec3 } {
+export function trim(pos: Float32Array, lo = 0.01, hi = 0.99): { pos: Float32Array; min: Vec3; max: Vec3 } {
   const n = pos.length / 3;
   const bounds: { min: Vec3; max: Vec3 } = { min: [0, 0, 0], max: [0, 0, 0] };
   for (let a = 0; a < 3; a++) {
@@ -161,7 +161,7 @@ function clusterBoxes(pos: Float32Array, min: Vec3, max: Vec3, cell: number, top
 }
 
 /** floor estimate: dominant low band of the Y histogram */
-function floorY(pos: Float32Array, minY: number, maxY: number): number {
+export function floorY(pos: Float32Array, minY: number, maxY: number): number {
   const bins = 200, hist = new Uint32Array(bins);
   const n = pos.length / 3, span = Math.max(1e-6, maxY - minY);
   for (let i = 0; i < n; i++) hist[Math.min(bins - 1, Math.floor(((pos[i * 3 + 1] - minY) / span) * bins))]++;

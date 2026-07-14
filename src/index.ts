@@ -66,6 +66,7 @@ import { registerLedgerTools } from "./ledger.js";
 import { registerClaimsPageTools } from "./claimspage.js";
 import { registerSpatialBenchTools } from "./spatialbench.js";
 import { registerAffordanceTools } from "./affordance.js";
+import { registerOccupancyTools } from "./occupancy.js";
 import { registerCopilotTools } from "./copilot.js";
 import { registerVaultDiffTools } from "./vaultdiff.js";
 import { registerStackTools } from "./stack.js";
@@ -216,6 +217,7 @@ if (!doorsSurfaceActive()) {
   registerClaimsPageTools(server);
   registerSpatialBenchTools(server);
   registerAffordanceTools(server);
+  registerOccupancyTools(server);
   registerCopilotTools(server);
   registerVaultDiffTools(server);
   registerStackTools(server);

@@ -41,6 +41,8 @@ jobs:
         run: npm run test:bench
       - name: Affordance solver (free space, honest no-fit, compiler on-route)
         run: npm run test:affordance
+      - name: Occupancy from geometry (unlabeled obstacles block placement)
+        run: npm run test:occupancy
       - name: Live copilot (bridge-line protocol + scene diff)
         run: npm run test:copilot
       - name: Ledger fixtures (over-claims structurally impossible)
