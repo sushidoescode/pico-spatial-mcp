@@ -51,6 +51,12 @@ async function inner() {
 
 const fixOf = (hint: string) => hint;
 
+/** Call a full-surface tool through the cached inner client (shared by the doors + spatialbench). */
+export async function innerCall(name: string, args: any = {}) {
+  const { call } = await inner();
+  return call(name, args);
+}
+
 export function registerDoorTools(server: McpServer) {
   const door = (name: string, description: string, inputSchema: any, handler: (args: any) => Promise<any>) =>
     server.registerTool(name, { description, inputSchema }, async (args: any) => {

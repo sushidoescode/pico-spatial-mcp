@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SpatialBench — pico-spatial-mcp</title>
+<style>
+:root{color-scheme:dark}body{margin:0;padding:2rem;background:#0d1117;color:#e6edf3;font:15px/1.5 -apple-system,"Segoe UI",sans-serif;max-width:66rem;margin-inline:auto}
+h1{font-size:1.6rem}table{border-collapse:collapse;width:100%;font-size:.86rem}
+th,td{padding:.45rem .6rem;border-bottom:1px solid #21262d;text-align:left;vertical-align:top}
+th{color:#8b949e;font-weight:600}.y{color:#7ce38b}.n{color:#f85149}.na{color:#484f58}
+.notes{color:#8b949e;font-size:.78rem}small{color:#d29922}
+.how{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:.9rem 1.1rem;font-size:.88rem;margin:1rem 0}
+footer{color:#8b949e;font-size:.78rem;margin-top:2rem;border-top:1px solid #21262d;padding-top:.8rem}
+code{font-family:ui-monospace,monospace;color:#79c0ff}
+</style></head><body>
+<h1>SpatialBench</h1>
+<p><b>18 briefs · tier: full (core set: boutique, console, crystals, dashboard, gallery, knockdown) · aggregate 69/69 (100%)</b> — the pico-spatial-mcp conformance corpus, scored per axis. Re-run it yourself: <code>run_spatialbench</code>.</p>
+<div class="how"><b>Reading the axes:</b> planned/compiled/shape are headless (spec validity, ledger emission, expected node counts). booted/captured/eye need the PICO emulator. <b>eye = the calibrated visual judge (auto_judged)</b> — a machine verdict, deliberately NOT vision_verified; escalations name the frames a human must look at. Skipped briefs gate on external assets (splats/panos) and are marked, not zeroed.</div>
+<table><thead><tr><th>brief</th><th>planned</th><th>compiled</th><th>shape</th><th>booted</th><th>captured</th><th>eye</th><th>score</th><th>notes</th></tr></thead>
+<tbody><tr><td>ambient</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr>
+<tr><td>atrium</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr>
+<tr><td>boutique</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><b>6/6</b></td><td class="notes">launch_blocked by com.example.knockdownxr — force-stopped + relaunched</td></tr>
+<tr><td>calib</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr>
+<tr><td>console</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><b>6/6</b></td><td class="notes"></td></tr>
+<tr><td>crystals</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><b>6/6</b></td><td class="notes"></td></tr>
+<tr><td>dashboard</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><b>6/6</b></td><td class="notes"></td></tr>
+<tr><td>gallery</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b> <small>skipped: skipped: env 'texturedMesh' (scene 'main') needs an external asset (environment.asset must be an existing file)</small></td><td class="notes"></td></tr>
+<tr><td>inspection</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr>
+<tr><td>knockdown</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><b>6/6</b></td><td class="notes"></td></tr>
+<tr><td>museum</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr>
+<tr><td>narrative</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr>
+<tr><td>orrery</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr>
+<tr><td>ramenworld</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr>
+<tr><td>showcase</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr>
+<tr><td>spotcheck</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr>
+<tr><td>studio</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr>
+<tr><td>worldtour</td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="y">●</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><span class="na">—</span></td><td><b>3/3</b></td><td class="notes"></td></tr></tbody></table>
+<footer>Generated 2026-07-14T07:07:32.096Z by pico-spatial-mcp <code>run_spatialbench</code> · corpus: /Users/sushantsrikrish/PICO-MCP/briefs · escalations: none</footer>
+</body></html>

@@ -23,7 +23,8 @@
     "test:worldenv": "node test/worldenv.mjs",
     "test:referring": "node test/referring.mjs",
     "test:doors": "node test/doors.mjs",
-    "test:claims": "node test/claimspage.mjs"
+    "test:claims": "node test/claimspage.mjs",
+    "test:bench": "node test/spatialbench.mjs"
   },
   "engines": {
     "node": ">=20"
