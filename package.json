@@ -20,7 +20,8 @@
     "test:ledger": "node test/ledger.mjs",
     "test:eye": "node test/eye.mjs",
     "test:assetgate": "node test/assetgate.mjs",
-    "test:worldenv": "node test/worldenv.mjs"
+    "test:worldenv": "node test/worldenv.mjs",
+    "test:referring": "node test/referring.mjs"
   },
   "engines": {
     "node": ">=20"

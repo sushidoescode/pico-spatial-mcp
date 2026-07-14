@@ -29,6 +29,8 @@ jobs:
         run: npm run test:vault
       - name: Semantic placement (label-anchored resolution + compile hook)
         run: npm run test:semantic
+      - name: Referring expressions (skips without the local scan)
+        run: npm run test:referring
       - name: Ledger fixtures (over-claims structurally impossible)
         run: npm run test:ledger
       - name: Eye calibration

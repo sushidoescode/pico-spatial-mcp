@@ -60,6 +60,7 @@ import { registerLintTools } from "./lint.js";
 import { registerVaultTools } from "./vault.js";
 import { registerPerfCliTools } from "./perfcli.js";
 import { registerSemanticPlaceTools } from "./semanticplace.js";
+import { registerMetricVerifyTools } from "./metricverify.js";
 import { registerCritiqueTools } from "./critique.js";
 import { registerLedgerTools } from "./ledger.js";
 import { registerStackTools } from "./stack.js";
@@ -196,6 +197,8 @@ registerVaultTools(server);
 registerPerfCliTools(server);
 // v17.0 — semantic placement: anchor spec objects to labeled real-world surfaces
 registerSemanticPlaceTools(server);
+// v20 — metric verification: calibrated camera + measured placement errors
+registerMetricVerifyTools(server);
 // v5.2 — the self-repair critique (LOOKED-at frame -> defect list -> replan_spec)
 registerCritiqueTools(server);
 // v5.3 — the trust ledger (over-claims structurally impossible) + safe stacked-worktree landing

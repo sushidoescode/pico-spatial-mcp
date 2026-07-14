@@ -29,6 +29,9 @@ export interface SemanticObject {
   label: string;
   center: Vec3;
   size: Vec3;
+  /** v20: detector confidence (0-1) and how the label was established. */
+  confidence?: number;
+  labelEvidence?: "vision_confirmed" | "auto_judged";
 }
 export interface SemanticScene {
   objects: SemanticObject[];
@@ -115,6 +118,8 @@ export function resolveSemanticPlacement(scene: SemanticScene, anchor: AnchorSpe
   const r2 = (n: number) => Math.round(n * 1000) / 1000;
   pos = [r2(pos[0]), r2(pos[1]), r2(pos[2])];
 
+  const conf = (pick.obj as SemanticObject).confidence;
+  const lowConf = conf !== undefined && conf < 0.3 && (pick.obj as SemanticObject).labelEvidence !== "vision_confirmed";
   return {
     status: ties.length > 1 ? "ambiguous" : "ok",
     position: pos,
@@ -125,6 +130,7 @@ export function resolveSemanticPlacement(scene: SemanticScene, anchor: AnchorSpe
       (ties.length > 1
         ? `'${anchor.label}' matched ${ties.length} objects equally — resolved against the largest (#${pick.id} '${pick.label}'); pass a more specific label to disambiguate. `
         : `resolved '${anchor.label}' -> #${pick.id} '${pick.label}'. `) +
+      (lowConf ? `LOW-CONFIDENCE label (${conf}) never eye-confirmed — spot-check the annotated scan view before trusting this anchor. ` : "") +
       `Placement is GEOMETRY over labeled boxes (structural evidence) — visually verify inside the world before claiming it sits right.`,
   };
 }

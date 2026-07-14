@@ -1,0 +1,190 @@
+{
+  "id": "calib",
+  "brief": "v20 camera calibration: five color-keyed cubes at exactly known app-space positions across TWO depths; their detected pixel centers solve the full pinhole model (f, cx, cy, eye height) by linear least squares.",
+  "spec": {
+    "meta": {
+      "appName": "CalibXR",
+      "packageName": "com.example.calib",
+      "stageStyle": "3",
+      "brief": "Camera calibration scene: known-position color markers for solving the capture camera model."
+    },
+    "scenes": [
+      {
+        "id": "cal",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "sun",
+          "params": {
+            "sunLux": 1400
+          }
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": [],
+        "physics": {
+          "gravity": [
+            0,
+            -9.81,
+            0
+          ]
+        }
+      }
+    ],
+    "layouts": [],
+    "objects": [
+      {
+        "id": "calRed",
+        "sceneId": "cal",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.0,
+            1.4,
+            -2.0
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "color": [
+            1.0,
+            0.05,
+            0.05
+          ]
+        }
+      },
+      {
+        "id": "calGreen",
+        "sceneId": "cal",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.8,
+            1.4,
+            -2.0
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "color": [
+            0.05,
+            1.0,
+            0.05
+          ]
+        }
+      },
+      {
+        "id": "calBlue",
+        "sceneId": "cal",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.8,
+            1.4,
+            -2.0
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "color": [
+            0.1,
+            0.35,
+            1.0
+          ]
+        }
+      },
+      {
+        "id": "calYellow",
+        "sceneId": "cal",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.0,
+            0.6,
+            -2.0
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "color": [
+            1.0,
+            0.9,
+            0.05
+          ]
+        }
+      },
+      {
+        "id": "calMagenta",
+        "sceneId": "cal",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.0,
+            1.4,
+            -3.0
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.2,
+            0.2,
+            0.2
+          ],
+          "color": [
+            1.0,
+            0.05,
+            0.85
+          ]
+        }
+      }
+    ],
+    "data": [],
+    "interactions": [],
+    "panels": [],
+    "navigation": {
+      "startScene": "cal",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "four saturated cubes (red center, green left, blue right, yellow low) at known positions for camera solving",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.0
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "cal"
+      }
+    ]
+  }
+}
