@@ -123,3 +123,27 @@ package com.pico.spatial.core.ecs {
     typealias ExtraComponentDataSyncer = (ComponentType, Entity) -> Component ? {
     }
 }
+# com.pico.spatial.core.ecs
+# SpotLightComponent
+package com.pico.spatial.core.ecs {
+    @MainThread class SpotLightComponent: Component {
+        constructor (color: Color4, intensity: Float, attenuationRadius: Float, innerAngle: Float, outerAngle: Float);
+
+        constructor (color: Color4, intensity: Float, attenuationRadius: Float, innerAngle: Float, outerAngle: Float, castsShadowEnabled: Boolean);
+
+        /**
+         * The inner cone angle of the spotlight, measured in degrees.
+         */
+        var innerAngle: Float;
+
+        /**
+         * The intensity of the light, measured in lumen.
+         */
+        var intensity: Float;
+
+        /**
+         * The outer angle of the spotlight, measured in degrees.
+         */
+        var outerAngle: Float;
+    }
+}

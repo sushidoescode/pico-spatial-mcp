@@ -502,12 +502,20 @@ export const VAULT_ALLOWLIST: Record<string, string> = {
 };
 
 export interface VaultFinding {
-  check: "unknown-type" | "undocumented-package" | "unknown-enum-value" | "ctor-arity";
+  check: "unknown-type" | "undocumented-package" | "unknown-enum-value" | "ctor-arity" | "unknown-ctor-arg" | "unit-advisory";
   severity: "warn" | "info";
   line: number;
   match: string;
   symbol: string;
   message: string;
+}
+
+const UNIT_RE = /degree|radian|lumen|meter|metre|second|millisecond|dp\b|pixel/i;
+
+/** Unit semantics for a ctor param: its own @param doc, else the same-named property's doc. */
+function unitDocFor(ty: VaultType, p: VaultParam): string | null {
+  const doc = p.doc ?? ty.properties.find((x) => x.name === p.name)?.doc;
+  return doc && UNIT_RE.test(doc) ? doc : null;
 }
 
 /** Is `member` a known member of `ty`: enum entry, property, function, nested type, or Companion? */
@@ -659,8 +667,47 @@ export function runVaultCheck(content: string, index: VaultIndex): VaultFinding[
         const close = matchParen(code[i], open);
         if (close < 0) continue;
         const inside = code[i].slice(open + 1, close).trim();
-        let n = inside ? splitTopLevel(inside, ",").length : 0;
+        const argList = inside ? splitTopLevel(inside, ",") : [];
+        let n = argList.length;
         if (/^\s*\{/.test(code[i].slice(close + 1))) n++; // trailing-lambda argument
+        // v15.3: named-argument validation — a misspelled name is a guaranteed compile error the
+        // agent can fix NOW, with the real names cited.
+        const namedArgs = argList.map((a) => /^\s*([A-Za-z_]\w*)\s*=[^=]/.exec(a)?.[1]).filter((x): x is string => !!x);
+        if (namedArgs.length) {
+          const validNames = new Set(ty.constructors.flatMap((c) => c.params.map((p) => p.name)));
+          for (const na of namedArgs) {
+            if (validNames.has(na)) continue;
+            const fqSym = `${ty.qualifiedName}(${na} = …)`;
+            if (seen.has(`arg:${fqSym}`)) continue;
+            seen.add(`arg:${fqSym}`);
+            findings.push({
+              check: "unknown-ctor-arg", severity: "warn", line: i + 1, match: lines[i].trim().slice(0, 160), symbol: fqSym,
+              message: `no ${ty.name} constructor has a parameter named '${na}' per the agent-vault (${ty.file}:${ty.line}); parameter names: ${[...validNames].join(", ")}.`,
+            });
+          }
+        }
+        // v15.3: unit advisory — bare numeric literals flowing into unit-documented params (the
+        // check that would have caught the spotlight radians bug mechanically). info-weight, once
+        // per type; fires only for all-positional calls that match an overload exactly.
+        if (!namedArgs.length && !seen.has(`unit:${ty.qualifiedName}`)) {
+          const overload = ty.constructors.find((c) => n >= c.minArity && n <= c.maxArity && c.params.length >= n);
+          if (overload) {
+            const unitHits = argList
+              .map((a, idx) => ({ arg: a.trim(), p: overload.params[idx] }))
+              .filter((x) => x.p && /^-?\d[\d_.]*f?$/i.test(x.arg))
+              .map((x) => ({ name: x.p.name, doc: unitDocFor(ty, x.p) }))
+              .filter((x): x is { name: string; doc: string } => !!x.doc);
+            if (unitHits.length) {
+              seen.add(`unit:${ty.qualifiedName}`);
+              findings.push({
+                check: "unit-advisory", severity: "info", line: i + 1, match: lines[i].trim().slice(0, 160), symbol: `${ty.qualifiedName}(units)`,
+                message:
+                  `unit-sensitive parameters receive numeric literals — verify units against the vault (${ty.file}:${ty.line}): ` +
+                  unitHits.map((u) => `${u.name} ("${u.doc.slice(0, 80)}")`).join("; ") + ".",
+              });
+            }
+          }
+        }
         if (!ty.constructors.some((c) => n >= c.minArity && n <= c.maxArity)) {
           const fqSym = `${ty.qualifiedName}(${n} args)`;
           if (seen.has(`arity:${fqSym}`)) continue;

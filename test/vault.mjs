@@ -174,6 +174,18 @@ assert(runVaultCheck("import com.pico.spatial.core.math.Vector3\nval v = Vector3
 assert(runVaultCheck("import com.pico.spatial.core.math.Vector3\nval v = Vector3(1f, 2f, 3f, 4f)", idx).length === 1, "Vector3(4 args) flagged (max 3)");
 assert(runVaultCheck("import com.pico.spatial.core.ecs.RigidBodyComponent\nval r = RigidBodyComponent(MassProperties(5f), RigidBodyMode.DYNAMIC)", idx).length === 0, "RigidBodyComponent 2-arg ctor silent");
 
+// ── 2c. v15.3: named-arg validation + unit advisories ───────────────────────────────────────────────────
+console.log("\nv15.3 named-arg + unit-advisory checks...\n");
+assert(
+  runVaultCheck("import com.pico.spatial.core.ecs.RigidBodyComponent\nval r = RigidBodyComponent(massProperties = MassProperties(1f), rigidBodyMode = RigidBodyMode.DYNAMIC)", idx).filter((f) => f.check === "unknown-ctor-arg").length === 0,
+  "valid named args silent",
+);
+const badArg = runVaultCheck("import com.pico.spatial.core.ecs.RigidBodyComponent\nval r = RigidBodyComponent(massProps = MassProperties(1f), rigidBodyMode = RigidBodyMode.DYNAMIC)", idx).filter((f) => f.check === "unknown-ctor-arg");
+assert(badArg.length === 1 && badArg[0].message.includes("massProperties"), `misspelled named arg flagged with real names cited (got ${JSON.stringify(badArg)})`);
+const unitAdv = runVaultCheck("import com.pico.spatial.core.ecs.SpotLightComponent\nspot.components.set(SpotLightComponent(Color4(1f, 1f, 1f, 1f), 1300f, 6f, 26f, 40f))", idx).filter((f) => f.check === "unit-advisory");
+assert(unitAdv.length === 1 && unitAdv[0].severity === "info" && /innerAngle.*degrees/.test(unitAdv[0].message), `unit advisory fires on numeric literals into degree params (got ${JSON.stringify(unitAdv)})`);
+assert(runVaultCheck("import com.pico.spatial.core.math.Vector3\nval v = Vector3(1f, 2f, 3f)", idx).filter((f) => f.check === "unit-advisory").length === 0, "no unit advisory when params carry no unit docs");
+
 // ── 3. Absent vault degrades to null ────────────────────────────────────────────────────────────────────
 assert(loadVaultIndex("/nonexistent-vault-root") === null, "absent vault → loadVaultIndex null");
 
@@ -215,6 +227,8 @@ if (!real) {
   assert(noArg.some((f) => f.check === "ctor-arity"), "REAL vault: CollisionComponent() no-arg caught by the generic arity check");
   const rSpotInner = rSpot?.properties.find((p) => p.name === "innerAngle");
   assert(/degree/i.test(rSpotInner?.doc ?? ""), `REAL vault: SpotLightComponent innerAngle property doc mentions degrees (got ${JSON.stringify(rSpotInner?.doc)})`);
+  const rUnit = runVaultCheck("import com.pico.spatial.core.ecs.SpotLightComponent\nspot.components.set(SpotLightComponent(Color4(1f, 1f, 1f, 1f), 1300f, 6f, 26f, 40f))", real).filter((f) => f.check === "unit-advisory");
+  assert(rUnit.length === 1 && /degree/i.test(rUnit[0].message), "REAL vault: unit advisory fires for SpotLightComponent cone params");
   // review-round-2 live repro: PolygonFillMode.value must not carry the UNKNOWN entry's leaked doc
   const pfmVal = real.packages.get("com.pico.spatial.core.ecs.resource")?.get("PolygonFillMode")?.properties.find((p) => p.name === "value");
   assert(!/reserved value/i.test(pfmVal?.doc ?? ""), `REAL vault: PolygonFillMode.value doc not leaked from the UNKNOWN entry (got ${JSON.stringify(pfmVal?.doc)})`);
