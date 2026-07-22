@@ -37,6 +37,13 @@ if (baOut.status === "needs-authoring" && baOut.scaffold?.meta && /draftSpec/.te
   ok("pico_build_app brief-only call returns the scaffold + the draftSpec re-call fix");
 else fail(`pico_build_app two-step broken: ${JSON.stringify(baOut).slice(0, 160)}`);
 
+// DOOR 12 takes FREE TEXT — never leaks the diagnose enum's schema error at the caller
+const pf = await client.callTool({ name: "pico_fix", arguments: { error: "e: HomeStage.kt:52:65 Unresolved reference 'resetScene'." } });
+const pfOut = JSON.parse(pf.content[0].text);
+if (pfOut.matchedSymptom === "build_failed" && pfOut.diagnosis && !/invalid_enum_value/i.test(JSON.stringify(pfOut)))
+  ok("pico_fix maps free text to a KB symptom (build_failed) without schema leakage");
+else fail(`pico_fix free-text handling broken: ${JSON.stringify(pfOut).slice(0, 160)}`);
+
 // pico_doctor carries the preflight checks, each non-pass with a fix pointer
 const doc = await client.callTool({ name: "pico_doctor", arguments: {} });
 const docOut = JSON.parse(doc.content[0].text);

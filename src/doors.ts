@@ -239,13 +239,37 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_fix",
-    "DOOR 12 — Paste a build/runtime error (or describe a wrong render) and get the matched retained-lesson: the known root cause and the exact fix, from a corpus of verified past failures. Also lints provided Kotlin against the gotcha rulebook + the official SDK vault.",
+    "DOOR 12 — Paste a build/runtime error (or describe a wrong render) and get the matched retained-lesson: the known root cause and the exact fix, from a corpus of verified past failures. Free text is fine — it is mapped to the diagnosis knowledge base by keyword, and always run through the retained-lessons rulebook. Also lints provided Kotlin against the gotcha rulebook + the official SDK vault.",
     { error: z.string().describe("The error text, logcat excerpt, or symptom description."), kotlin: z.string().optional().describe("The suspect emitted Kotlin, if available.") },
     async ({ error, kotlin }) => {
       const { call } = await inner();
-      const diag = await call("diagnose", { symptom: error });
+      // v27-pre first-light fix: diagnose takes a strict symptom enum — piping free text into it
+      // leaked a raw schema error at the stranger. Map keywords -> symptom; no match is honest.
+      const SYMPTOM_KEYWORDS: Array<[RegExp, string]> = [
+        [/unresolved reference|gradle|assembledebug|compil|build failed/i, "build_failed"],
+        [/texture.*black|black.*texture/i, "texture_black"],
+        [/black|very.?dark/i, "black_environment"],
+        [/white|unlit|displaycolor/i, "white_geometry"],
+        [/not rendering|nothing renders|empty scene|invisible/i, "not_rendering"],
+        [/dead button|button.* (dead|ignored)|menu.*(no|not).*(click|respond)/i, "dead_buttons"],
+        [/pins? hover/i, "pins_hovering"],
+        [/fall(ing)? (out|through)/i, "falling_out"],
+        [/physics|rigid|not simulating/i, "physics_not_simulating"],
+        [/activity not started|launch.*block|blocked.*launch/i, "launch_blocked"],
+        [/frozen|viewport/i, "frozen_viewport"],
+        [/focus|wedge/i, "emu_focus_wedge"],
+        [/drift|free.?cam|camera/i, "emulator_camera_drift"],
+        [/raycast|no.?hit|hit.?test/i, "raycast_no_hit"],
+        [/controller|pose/i, "no_controller_pose"],
+        [/tiny panel|panel.*tiny/i, "tiny_panels"],
+      ];
+      const symptom = SYMPTOM_KEYWORDS.find(([re]) => re.test(error))?.[1] ?? null;
+      const diag = symptom
+        ? await call("diagnose", { symptom })
+        : { status: "no-symptom-match", note: "The error text matched no diagnosis-KB symptom — the retained-lessons lint below still applies." };
+      const errorLint = await call("preflight_lint", { content: error, kind: "any" });
       const lint = kotlin ? await call("preflight_lint", { content: kotlin, kind: "kotlin" }) : null;
-      return { diagnosis: diag, ...(lint ? { lint } : {}), fix: "Apply the highest-confidence match; if nothing matches, this is a NEW gotcha — solve it, then record_lesson so it can never recur." };
+      return { matchedSymptom: symptom, diagnosis: diag, errorLessons: errorLint, ...(lint ? { lint } : {}), fix: "Apply the highest-confidence match; if nothing matches, this is a NEW gotcha — solve it, then record_lesson so it can never recur." };
     },
   );
 }
