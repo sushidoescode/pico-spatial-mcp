@@ -66,7 +66,7 @@ The fastest way in is the doors surface: `pico_doctor` → `pico_build_app` (two
 
 ## Honest limits (the emulator ceiling)
 
-The PICO emulator renders bounded, eye-level content and floating spatial panels — **not** boundless walk-around immersion. Full-immersive OpenXR frame compositing, controller-ray input, and head-tracked depth are **PICO Swan hardware**: the tool builds for them and defers them honestly (`built-for-Swan`), then flips each row to device-verified when a headset is attached (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Immersive 3D composites into the host GUI window only, so spatial scenes are verified via host-composited captures + the spatial runtime logcat, not display-0 screenshots. Physics simulates on the emulator; the companion Unity MCP handles the Unity XR build lane.
+The PICO emulator renders bounded, eye-level content and floating spatial panels — **not** boundless walk-around immersion. Full-immersive OpenXR frame compositing, controller-ray input, and head-tracked depth are **PICO Swan hardware**: the tool builds for them and defers them honestly (`built-for-Swan`), then flips each row to device-verified when a headset is attached (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Immersive 3D composites into the host GUI window only, so spatial scenes are verified via host-composited captures + the spatial runtime logcat, not display-0 screenshots. Physics simulates on the emulator; the companion Unity MCP handles the Unity XR build lane — see **[docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md)** for the honest Unity/OpenXR story (what verifies today, and the open compositing question we'd love PICO's read on).
 
 ## Requirements
 
@@ -119,6 +119,8 @@ The tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first sc
 ## Documentation
 
 - **[QUICKSTART.md](QUICKSTART.md)** — the front door, with the proven first-run sequence
+- **[ROADMAP.md](ROADMAP.md)** — where this is going, every line gate-labeled honestly
+- **[docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md)** — the Unity/OpenXR lane: SDK choice, the buildable-today verify loop, the open compositing question
 - **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** — repo layout, gates, and standing invariants for anyone new to this codebase
 - **[CAPABILITIES.md](CAPABILITIES.md)** — the honest capability matrix (categories + evidence)
 - **[DESIGN.md](DESIGN.md)** — architecture + correctness rules (runtime physics, PICO math API, editor MaterialX, the visual-ground-truth rule)
