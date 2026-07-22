@@ -4,14 +4,14 @@ Build native PICO XR spatial apps from natural-language briefs, with **verified*
 (the agent looks at rendered frames — it never claims what it hasn't seen).
 
 This is the proven first-run path, on the doors surface (`PICO_MCP_SURFACE=doors` — 13
-intent-level tools instead of the full ~214). It's the exact sequence a cold, unassisted run
+intent-level tools instead of the full ~214). It's the exact sequence a from-docs-only run on a fresh clone
 followed on 2026-07-21.
 
 ## 1. Register (once)
 
 ```bash
 git clone <this repo> ~/PICO-MCP && cd ~/PICO-MCP && npm ci && npm run build
-PICO_MCP_SURFACE=doors claude mcp add pico-spatial-mcp --scope user -- node ~/PICO-MCP/dist/index.js
+claude mcp add pico-spatial-mcp --scope user --env PICO_MCP_SURFACE=doors -- node ~/PICO-MCP/dist/index.js
 ```
 
 Requirements: macOS, the PICO SDK 0.13 (Spatial Editor + emulator), Android Studio (its JBR),
