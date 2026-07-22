@@ -137,17 +137,19 @@ record_verification {
   evidenceType: "device_verified",
   artifactPath: "<path to the capture PNG you looked at>",
   attestation: "<the one-sentence description of what you saw>",
+  deviceSerial: "<the Swan serial from `adb devices -l`, e.g. 'PA9K1ABCDEF'>",
   cClass: "C1" | "C3" | "C4_headset_only"   // if this closes a built_for_headset row
 }
 ```
 
-`record_verification`'s schema today (`src/ledger.ts:120-128`) does not expose a dedicated
-`deviceSerial` field, even though `src/claimspage.ts` already knows how to render one if present
-(`e.deviceSerial`, populated only via the internal `appendLedgerEntry` `extra` parameter that
-other tools like `visual_judge` use, but which `record_verification` does not currently thread
-through). Until that gap is closed, fold the device identity (model/serial + build fingerprint
-from Section 3, items 2–3) into the `attestation` text itself, so it's on record even without a
-structured field — don't invent a `deviceSerial` parameter that the running tool doesn't accept.
+`record_verification`'s schema (`src/ledger.ts`) now exposes a dedicated optional `deviceSerial`
+field, which lands on the entry the same way `src/claimspage.ts` already knew how to render it
+(`e.deviceSerial`). No tool populates `deviceSerial` on its own — set it explicitly on the
+`record_verification` call whenever the capture came from real hardware. It's still good practice
+to also fold the device identity (model/serial + build fingerprint from Section 3, items 2–3) into
+the `attestation` text itself, so the full provenance reads naturally even for anyone looking at
+just the attestation string — the structured field and the attestation text are complementary, not
+either/or.
 
 `validateEntry` will reject the call if `artifactPath` doesn't resolve to a real image or if
 `attestation` is missing/too short (Section 1) — that's the honesty gate working as designed, not

@@ -109,7 +109,9 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     let calAt: number | null = null;
     try { calAt = JSON.parse(calRaw).at ?? null; } catch { /* unparseable */ }
     if (calAt == null) calAt = io.statMtimeMs(calPath);
-    if (bootAtMs != null && calAt != null && calAt < bootAtMs) {
+    if (bootAtMs == null) {
+      push({ name: "calibration", status: "unknown", detail: "calibration on file but the emulator is not running — freshness cannot be assessed (calibration dies on emulator cold restart)", fix: "Boot the emulator, re-run preflight_env, and recalibrate if it reports stale: fleet_build(['calib']) then calibrate_capture_camera." });
+    } else if (calAt != null && calAt < bootAtMs) {
       push({ name: "calibration", status: "fail", detail: `calibration predates the current emulator boot (calibrated ${new Date(calAt).toISOString()}, booted ${new Date(bootAtMs).toISOString()}) — cy can shift ~300px across a cold restart`, fix: "Recalibrate: fleet_build(['calib']) then calibrate_capture_camera, BEFORE any measure_placement session." });
     } else {
       push({ name: "calibration", status: "pass", detail: `calibration on file${calAt ? ` (at ${new Date(calAt).toISOString()})` : ""}`, fix: null });

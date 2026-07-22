@@ -125,11 +125,12 @@ export function registerLedgerTools(server: McpServer) {
         attestation: z.string().optional().describe("What you saw in the capture (REQUIRED for vision_verified)."),
         cClass: z.enum(["C0_emulator", "C1", "C2", "C3", "C4_headset_only"]).optional().describe("The node's capability class."),
         reproHash: z.string().optional().describe("Canonical pose + seed hash (v5.5 reproducibility)."),
+        deviceSerial: z.string().optional().describe("Real-device serial (adb devices -l) — set when the capture came from hardware, e.g. for device_verified entries."),
       },
     },
-    async ({ app, claim, evidenceType, artifactPath, attestation, cClass, reproHash }) => {
+    async ({ app, claim, evidenceType, artifactPath, attestation, cClass, reproHash, deviceSerial }) => {
       // reuse detection + the honesty gate live in the shared helper (also used by the automated eye).
-      const res = appendLedgerEntry(app, { claim, evidenceType, artifactPath, attestation, cClass, reproHash });
+      const res = appendLedgerEntry(app, { claim, evidenceType, artifactPath, attestation, cClass, reproHash, extra: deviceSerial ? { deviceSerial } : undefined });
       return okJson({ ...res, app });
     },
   );

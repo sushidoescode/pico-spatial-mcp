@@ -2,7 +2,7 @@
 // REAL rendered image + attestation, and ACCEPT honest evidence. The v6.1 hardening additionally rejects
 // non-image artifacts that merely exist (a text file, /etc/hosts, a 0-byte file, a directory), which the
 // prior existsSync-only gate accepted (ADVERSARIAL_FINDINGS C1). Run: npm run test:ledger
-import { validateEntry } from "../dist/ledger.js";
+import { validateEntry, appendLedgerEntry } from "../dist/ledger.js";
 import { validateCapture } from "../dist/evidence.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -78,6 +78,21 @@ check("usd_host_render w/ a text file is rejected", !validateEntry({ claim: "c",
 check("logcat records without artifact", validateEntry({ claim: "c", evidenceType: "logcat" }).ok);
 check("structural records without artifact", validateEntry({ claim: "c", evidenceType: "structural" }).ok);
 check("built_for_headset records without artifact", validateEntry({ claim: "c", evidenceType: "built_for_headset", cClass: "C3" }).ok);
+
+// 7) v27: deviceSerial passthrough — record_verification's extra path lands deviceSerial on the entry.
+const deviceTestApp = "pico-ledger-devicetest-fixture";
+const deviceTestPng = path.join(tmp, "pico-ledger-device-fixture.png");
+fs.writeFileSync(deviceTestPng, makePng(64, 64));
+const deviceRes = appendLedgerEntry(deviceTestApp, {
+  claim: "hardware capture",
+  evidenceType: "device_verified",
+  artifactPath: deviceTestPng,
+  attestation: "I saw it running on real Swan hardware",
+  extra: { deviceSerial: "PA9K1ABCDEF" },
+});
+check("deviceSerial passthrough lands on the entry", deviceRes.entry?.deviceSerial === "PA9K1ABCDEF");
+fs.rmSync(deviceTestPng, { force: true });
+try { fs.rmSync(path.join(os.homedir(), ".pico-mcp", "ledgers", `${deviceTestApp}.json`), { force: true }); } catch { /* ignore */ }
 
 fs.rmSync(realPng, { force: true });
 fs.rmSync(textFile, { force: true });

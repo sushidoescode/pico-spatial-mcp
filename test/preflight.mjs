@@ -57,6 +57,17 @@ stale && stale.status === "fail" && /calibrate_capture_camera/.test(stale.fix)
   ? ok("stale calibration fails with the recalibrate fix")
   : fail(`stale calibration mishandled: ${JSON.stringify(stale)}`);
 
+// Calibration on file but the emulator is DOWN => freshness can't be assessed => unknown, not pass.
+const emulatorDownIO = { ...healthyIO, exec: (cmd, args) => {
+  const line = [cmd, ...args].join(" ");
+  if (line.includes("devices")) return { ok: true, stdout: "List of devices attached\n" };
+  return healthyIO.exec(cmd, args);
+} };
+const calWithEmuDown = runPreflightChecks(emulatorDownIO).find((x) => x.name === "calibration");
+calWithEmuDown && calWithEmuDown.status === "unknown" && typeof calWithEmuDown.fix === "string" && calWithEmuDown.fix.length > 0
+  ? ok("calibration on file + emulator down => unknown with a fix")
+  : fail(`calibration with emulator down mishandled: ${JSON.stringify(calWithEmuDown)}`);
+
 // MCP-level: the tool is registered on the full surface and returns the check array.
 const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
 const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");

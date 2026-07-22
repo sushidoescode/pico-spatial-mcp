@@ -35,7 +35,7 @@ jobs:
         run: npm run test:referring
       - name: Twelve Doors (surface facade + inner orchestration)
         run: npm run test:doors
-      - name: preflight
+      - name: Preflight env doctor (every failure carries the exact fix)
         run: npm run test:preflight
       - name: Claims page (generated from the ledger, escaped, filterable)
         run: npm run test:claims

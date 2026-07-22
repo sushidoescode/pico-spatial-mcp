@@ -89,7 +89,7 @@ export function registerSwanParityTools(server: McpServer) {
         matrix: rows,
         parityLedger: parityPath(app),
         note: swan
-          ? `Swan ${swan} attached: run each deviceTest (deploy_to_device then capture + LOOK), then record_verification with vision_verified to flip the row to device-verified.`
+          ? `Swan ${swan} attached: run each deviceTest (deploy_to_device then capture + LOOK), then record_verification with evidenceType: "device_verified" (same honesty bar as vision_verified — a LOOKED-at capture + attestation — plus real-hardware identity) to flip the row to device-verified.`
           : "No Swan attached — matrix returned in awaiting_swan state (wired; flips to device-verified on first attach). Emulator side stays honest built-for-headset. This cannot crash the loop.",
       });
     },
