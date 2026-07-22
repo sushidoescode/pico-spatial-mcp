@@ -37,6 +37,14 @@ export const cameraPoseSchema = z.object({
 export type CameraPose = z.infer<typeof cameraPoseSchema>;
 
 const vec3 = z.array(z.number()).length(3);
+export const captureFrustumSchema = z.object({
+  f: z.number().positive().describe("Calibrated focal length in pixels."),
+  cx: z.number().describe("Calibrated principal point X in pixels."),
+  cy: z.number().describe("Calibrated principal point Y in pixels."),
+  width: z.number().int().positive().describe("Capture width in pixels."),
+  height: z.number().int().positive().describe("Capture height in pixels."),
+  minVisibleFraction: z.number().min(0).max(1).optional().describe("Minimum clipped/full projected child-box area (default 0.5)."),
+}).strict();
 
 // ── meta ──────────────────────────────────────────────────────────────────────────────────────────────
 export const metaSchema = z.object({
@@ -113,6 +121,24 @@ export const objectSchema = z.object({
       facing: z.string().optional().describe("v24 ('on' only): face this label or 'room-center' — bakes transform.rotationDeg.y."),
       avoiding: z.array(z.string()).optional().describe("v24 ('on' only): labels to keep distance from (soft)."),
       visibleFrom: vec3.optional().describe("v27.3 ('on' only): a viewpoint in the app frame (e.g. the spawn camera [0,1.2,0]) — requires meta.occupancyPath. Candidates whose line of sight to visibleFrom is occluded by scanned geometry are hard-rejected, not just non-intersecting ones."),
+      captureFrustum: captureFrustumSchema.optional().describe("v27.7 ('on' only): calibrated deterministic-forward intrinsics. Requires visibleFrom; candidates whose projected child AABB is insufficiently inside the capture are hard-rejected."),
+    })
+    .strict()
+    .superRefine((anchor, ctx) => {
+      if (anchor.captureFrustum && !anchor.visibleFrom) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["captureFrustum"],
+          message: "anchorTo.captureFrustum requires anchorTo.visibleFrom as the camera center",
+        });
+      }
+      if (anchor.captureFrustum && anchor.relation !== "on") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["relation"],
+          message: "anchorTo.captureFrustum requires explicit relation 'on' so the affordance solver enforces it",
+        });
+      }
     })
     .optional()
     .describe("v17.0 SEMANTIC PLACEMENT: anchor this object to a LABELED real-world surface from meta.semanticScenePath (semantic_splat_scan -> compose_semantic_scene output). The compiler resolves it to a concrete transform.position at ledger-build time; an explicit transform.position wins over anchorTo."),

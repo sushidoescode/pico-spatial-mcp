@@ -2,7 +2,7 @@ import fs from "node:fs";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
-import { solveFreePlacement } from "./affordance.js";
+import { projectedCaptureFraction, solveFreePlacement } from "./affordance.js";
 import { loadOccupancyGrid, type OccupancyGrid } from "./occupancy.js";
 
 /**
@@ -230,13 +230,28 @@ export function resolveAnchors(spec: any): { spec: any; notes: string[] } {
         facing: o.anchorTo.facing,
         avoiding: o.anchorTo.avoiding,
         visibleFrom: o.anchorTo.visibleFrom,
+        captureFrustum: o.anchorTo.captureFrustum,
       }, occupancy);
       if (sol.status !== "ok") {
         notes.push(`object '${o.id}': affordance solver ${sol.status} — ${sol.note}`);
         continue;
       }
       const off = o.anchorTo.offset ?? [0, 0, 0];
-      o.transform = { ...(o.transform ?? {}), position: sol.position.map((v: number, i: number) => Number((v + off[i]).toFixed(3))) };
+      const finalPosition = sol.position.map((v: number, i: number) => Number((v + off[i]).toFixed(3))) as Vec3;
+      // The solver validates its own returned pose. anchorTo.offset is applied afterward, so the
+      // final BAKED pose needs the same frustum gate or an offset can silently invalidate the claim.
+      if (o.anchorTo.captureFrustum) {
+        const threshold = o.anchorTo.captureFrustum.minVisibleFraction ?? 0.5;
+        const fraction = projectedCaptureFraction(finalPosition, childSize, o.anchorTo.visibleFrom, o.anchorTo.captureFrustum);
+        if (fraction === null || fraction + 1e-12 < threshold) {
+          notes.push(
+            `object '${o.id}': anchorTo.offset [${off.join(", ")}] moves the solver pose to [${finalPosition.join(", ")}], outside the capture frustum ` +
+            `(${fraction === null ? "a box corner is behind the camera" : `${(fraction * 100).toFixed(1)}% < ${(threshold * 100).toFixed(1)}% visible`}) — object left unplaced.`,
+          );
+          continue;
+        }
+      }
+      o.transform = { ...(o.transform ?? {}), position: finalPosition };
       if (sol.rotationYDeg !== null && !o.transform.rotationDeg) o.transform.rotationDeg = [0, sol.rotationYDeg, 0];
       notes.push(`object '${o.id}': free-placed ON '${sol.surface.label}' -> [${o.transform.position.join(", ")}] (min gap ${sol.minGapM}m${sol.rotationYDeg !== null ? `, facing yaw ${sol.rotationYDeg}°` : ""}); ${sol.note}`);
       continue;

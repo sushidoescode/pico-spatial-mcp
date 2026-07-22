@@ -1,6 +1,6 @@
 {
  "id": "ramenlos",
- "brief": "v27.3 flagship: inside the scanned ramen bar, a SHORT (0.4m) GREEN cube placed by the LINE-OF-SIGHT solver (anchorTo visibleFrom [0,1.2,0] \u2014 it must be free AND visible from the eye) vs a MAGENTA cube at the LOS-blind free pose [0.061,0.2,-1.311] that hides behind the unlabeled counter slab. Free is not enough \u2014 you have to be able to SEE it.",
+ "brief": "v27.7 flagship: inside the scanned ramen bar, a SHORT (0.4m) GREEN cube placed by the visibility solver (anchorTo visibleFrom [0.034,1.896,0.147], cross-checked against the v26.1 pillar projection, plus the calibrated capture frustum at 75% minimum projected-box visibility) vs a MAGENTA cube at the blind free pose [0.061,0.2,-1.311] that hides behind the unlabeled counter slab. Free and line-of-sight-clear are not enough \u2014 the object also has to land inside the rendered frame.",
  "spec": {
   "meta": {
    "appName": "RamenLosXR",
@@ -60,10 +60,18 @@
      "relation": "on",
      "clearance": 0.1,
      "visibleFrom": [
-      0,
-      1.2,
-      0
-     ]
+      0.034,
+      1.896,
+      0.147
+     ],
+     "captureFrustum": {
+      "f": 1535.4,
+      "cx": 1097.6,
+      "cy": 955.3,
+      "width": 2160,
+      "height": 2158,
+      "minVisibleFraction": 0.75
+     }
     },
     "body": {
      "mode": "static",

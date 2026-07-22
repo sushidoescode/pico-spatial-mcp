@@ -189,6 +189,193 @@ const concat = (...arrs) => {
   else fail(`objectSchema strips anchorTo.visibleFrom: ${parsed.success ? JSON.stringify(parsed.data) : parsed.error}`);
 }
 
+// v27.7 regression: captureFrustum is AppSpec data, not an out-of-band solver knob. Zod strips
+// unknown fields, so the complete calibration payload (including an explicit threshold) must survive.
+{
+  const { objectSchema } = await import("../dist/appspec.js");
+  const captureFrustum = { f: 1535.4, cx: 1080, cy: 1036, width: 2160, height: 2160, minVisibleFraction: 0.75 };
+  const candidate = {
+    id: "pillar", sceneId: "bar", source: "primitive",
+    anchorTo: { label: "floor", relation: "on", visibleFrom: [0, 1.815, 0], captureFrustum },
+  };
+  const parsed = objectSchema.safeParse(candidate);
+  const got = parsed.success ? parsed.data.anchorTo?.captureFrustum : null;
+  const intact = got && Object.entries(captureFrustum).every(([key, value]) => got[key] === value);
+  const missingF = objectSchema.safeParse({ ...candidate, anchorTo: { ...candidate.anchorTo, captureFrustum: { cx: 1080, cy: 1036, width: 2160, height: 2160 } } });
+  const stringWidth = objectSchema.safeParse({ ...candidate, anchorTo: { ...candidate.anchorTo, captureFrustum: { ...captureFrustum, width: "2160" } } });
+  if (intact && !missingF.success && !stringWidth.success)
+    ok("anchorTo.captureFrustum survives appspec objectSchema validation intact; malformed shapes are rejected");
+  else fail(`objectSchema captureFrustum contract wrong: parsed=${parsed.success ? JSON.stringify(parsed.data) : parsed.error} missingF=${missingF.success} stringWidth=${stringWidth.success}`);
+}
+
+// Strictness regressions: these near-miss field names used to be silently stripped by Zod,
+// disabling the visual constraint while leaving the AppSpec apparently valid.
+{
+  const { objectSchema } = await import("../dist/appspec.js");
+  const frustum = { f: 100, cx: 50, cy: 50, width: 100, height: 100 };
+  const typo = objectSchema.safeParse({
+    id: "typo", sceneId: "main", source: "primitive",
+    anchorTo: { label: "floor", relation: "on", visibleFrom: [0, 1, 0], captureFrustrum: frustum },
+  });
+  const namesTypo = !typo.success && typo.error.issues.some((issue) => JSON.stringify(issue).includes("captureFrustrum"));
+  if (namesTypo) ok("anchorTo.captureFrustrum typo is rejected instead of silently stripped");
+  else fail(`anchorTo.captureFrustrum was not rejected loudly: ${typo.success ? JSON.stringify(typo.data) : typo.error}`);
+}
+
+{
+  const { objectSchema } = await import("../dist/appspec.js");
+  const nestedTypo = objectSchema.safeParse({
+    id: "nested-typo", sceneId: "main", source: "primitive",
+    anchorTo: {
+      label: "floor", relation: "on", visibleFrom: [0, 1, 0],
+      captureFrustum: { f: 100, cx: 50, cy: 50, width: 100, height: 100, minVisiblePercent: 75 },
+    },
+  });
+  const namesNestedTypo = !nestedTypo.success && nestedTypo.error.issues.some((issue) => JSON.stringify(issue).includes("minVisiblePercent"));
+  if (namesNestedTypo) ok("unknown captureFrustum.minVisiblePercent is rejected instead of silently stripped");
+  else fail(`captureFrustum.minVisiblePercent was not rejected loudly: ${nestedTypo.success ? JSON.stringify(nestedTypo.data) : nestedTypo.error}`);
+}
+
+// captureFrustum is meaningful ONLY for the affordance relation:'on'. Omitting relation defaults
+// to on-top-of, and every other relation bypasses solveFreePlacement, so Zod must reject both loudly.
+{
+  const { objectSchema, appSpecSchema } = await import("../dist/appspec.js");
+  const captureFrustum = { f: 100, cx: 50, cy: 50, width: 100, height: 100 };
+  const visibleFrom = [0, 1, 0];
+  const omittedRelation = objectSchema.safeParse({
+    id: "omitted", sceneId: "main", source: "primitive",
+    anchorTo: { label: "floor", visibleFrom, captureFrustum },
+  });
+  const wholeSpecFor = (relation) => appSpecSchema.safeParse({
+    meta: { appName: "Bad Frustum Relation", packageName: "com.test.badfrustumrelation", stageStyle: "3", brief: "test" },
+    scenes: [{ id: "main", environment: { kind: "homeEnvProxy" } }],
+    objects: [{
+      id: "next", sceneId: "main", source: "primitive",
+      anchorTo: { label: "marker", relation, visibleFrom, captureFrustum },
+    }],
+    navigation: { startScene: "main" },
+  });
+  const nonOnRelations = ["on-top-of", "next-to", "in-front-of"];
+  const nonOnResults = nonOnRelations.map((relation) => ({ relation, parsed: wholeSpecFor(relation) }));
+  const namesRelationOn = (parsed) =>
+    !parsed.success && parsed.error.issues.some((issue) => /\brelation\b/i.test(issue.message) && /\bon\b/i.test(issue.message));
+  if (namesRelationOn(omittedRelation) && nonOnResults.every(({ parsed }) => namesRelationOn(parsed)))
+    ok("objectSchema and whole AppSpec reject captureFrustum for omitted/on-top-of/next-to/in-front-of relations; only explicit 'on' is valid");
+  else fail(`captureFrustum relation guard missing/not loud: omitted=${omittedRelation.success ? "accepted" : omittedRelation.error} nonOn=${nonOnResults.map(({ relation, parsed }) => `${relation}:${parsed.success ? "accepted" : parsed.error}`).join(" | ")}`);
+}
+
+function projectedCaptureFraction(center, size, camera, frustum) {
+  const us = [];
+  const vs = [];
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+    const d = camera[2] - (center[2] + sz * size[2] / 2);
+    if (!(d > 0)) return 0;
+    us.push(frustum.cx + frustum.f * (center[0] + sx * size[0] / 2 - camera[0]) / d);
+    vs.push(frustum.cy - frustum.f * (center[1] + sy * size[1] / 2 - camera[1]) / d);
+  }
+  const minU = Math.min(...us), maxU = Math.max(...us);
+  const minV = Math.min(...vs), maxV = Math.max(...vs);
+  const fullArea = (maxU - minU) * (maxV - minV);
+  const clippedW = Math.max(0, Math.min(frustum.width, maxU) - Math.max(0, minU));
+  const clippedH = Math.max(0, Math.min(frustum.height, maxV) - Math.max(0, minV));
+  return fullArea > 0 ? clippedW * clippedH / fullArea : 0;
+}
+
+// v27.7 end-to-end: parse a WHOLE AppSpec, then resolve its anchor. The blind central pose is
+// completely outside this synthetic camera; captureFrustum must survive parsing, flow through
+// resolveAnchors, and bake a different pose whose projected child bbox is at least 50% in-frame.
+{
+  const { appSpecSchema } = await import("../dist/appspec.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "occ-capture-frustum-"));
+  const scenePath = path.join(dir, "scene.json");
+  fs.writeFileSync(scenePath, JSON.stringify({
+    objects: [{ id: 1, label: "high marker", center: [-1.8, 2.6, -3.8], size: [0.1, 0.1, 0.1] }],
+    floorY: 0,
+    bounds: { min: [-2, 0, -4], max: [2, 3, -2] },
+  }));
+  const camera = [2, 1, 0];
+  const frustum = { f: 100, cx: 50, cy: 50, width: 100, height: 100 };
+  const makeSpec = (anchorTo) => appSpecSchema.parse({
+    meta: { appName: "Capture Frustum", packageName: "com.test.capturefrustum", stageStyle: "3", brief: "test", semanticScenePath: scenePath },
+    scenes: [{ id: "main", environment: { kind: "homeEnvProxy" } }],
+    objects: [{
+      id: "crate", sceneId: "main", source: "primitive",
+      body: { mode: "static", shape: "box", dims: [0.2, 0.2, 0.2] },
+      anchorTo,
+    }],
+    navigation: { startScene: "main" },
+  });
+  const blind = resolveAnchors(makeSpec({ label: "floor", relation: "on", clearance: 0 }));
+  const throughSchema = makeSpec({ label: "floor", relation: "on", clearance: 0, visibleFrom: camera, captureFrustum: frustum });
+  const framed = resolveAnchors(throughSchema);
+  let missingCameraClosed = false;
+  let missingCameraDetail = "";
+  try {
+    const missingCamera = resolveAnchors(makeSpec({ label: "floor", relation: "on", clearance: 0, captureFrustum: frustum }));
+    const missingP = missingCamera.spec.objects[0].transform?.position;
+    missingCameraDetail = `position=${missingP} notes=${missingCamera.notes.join(" | ")}`;
+    missingCameraClosed = !missingP && missingCamera.notes.some((n) => /capture.?frustum/i.test(n) && /visibleFrom/i.test(n));
+  } catch (error) {
+    // A cross-field Zod rejection is also a valid fail-closed AppSpec contract, provided it names
+    // the conflicting fields rather than surfacing an unrelated parse error.
+    missingCameraDetail = String(error);
+    missingCameraClosed = /capture.?frustum/i.test(missingCameraDetail) && /visibleFrom/i.test(missingCameraDetail);
+  }
+  const blindP = blind.spec.objects[0].transform?.position;
+  const framedP = framed.spec.objects[0].transform?.position;
+  const visibleFraction = framedP ? projectedCaptureFraction(framedP, [0.2, 0.2, 0.2], camera, frustum) : 0;
+  const parsedFrustum = throughSchema.objects[0].anchorTo?.captureFrustum;
+  const survived = parsedFrustum && Object.entries(frustum).every(([key, value]) => parsedFrustum[key] === value);
+  const changed = blindP && framedP && blindP.join(",") !== framedP.join(",");
+  if (survived && blindP?.join(",") === "0,0.1,-3" && changed && visibleFraction >= 0.5 - 1e-9 && framed.notes.some((n) => /frustum/i.test(n)) && missingCameraClosed)
+    ok(`AppSpec -> zod -> resolveAnchors bakes an in-frame pose [${framedP.join(", ")}] (${(100 * visibleFraction).toFixed(1)}% visible) instead of blind [${blindP.join(", ")}]`);
+  else fail(`captureFrustum AppSpec flow failed: survived=${survived} blind=${blindP} framed=${framedP} visibleFraction=${visibleFraction} notes=${framed.notes.join(" | ")} missingCamera={${missingCameraDetail}}`);
+}
+
+// OFFSET REGRESSION: resolveAnchors used to validate the solver pose, then add anchorTo.offset
+// afterward without re-checking. A large offset must not bake a final transform outside the frame.
+{
+  const { appSpecSchema } = await import("../dist/appspec.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "occ-capture-offset-"));
+  const scenePath = path.join(dir, "scene.json");
+  fs.writeFileSync(scenePath, JSON.stringify({
+    objects: [{ id: 1, label: "marker", center: [-1.8, 2.6, -3.8], size: [0.1, 0.1, 0.1] }],
+    floorY: 0,
+    bounds: { min: [-2, 0, -4], max: [2, 3, -2] },
+  }));
+  const camera = [2, 1, 0];
+  const frustum = { f: 100, cx: 50, cy: 50, width: 100, height: 100 };
+  const makeSpec = (offset) => appSpecSchema.parse({
+    meta: { appName: "Capture Offset", packageName: "com.test.captureoffset", stageStyle: "3", brief: "test", semanticScenePath: scenePath },
+    scenes: [{ id: "main", environment: { kind: "homeEnvProxy" } }],
+    objects: [{
+      id: "crate", sceneId: "main", source: "primitive",
+      body: { mode: "static", shape: "box", dims: [0.2, 0.2, 0.2] },
+      anchorTo: { label: "floor", relation: "on", clearance: 0, visibleFrom: camera, captureFrustum: frustum, ...(offset ? { offset } : {}) },
+    }],
+    navigation: { startScene: "main" },
+  });
+  const baseline = resolveAnchors(makeSpec(null));
+  const inFrameOffset = resolveAnchors(makeSpec([0.1, 0, 0]));
+  const shifted = resolveAnchors(makeSpec([10, 0, 0]));
+  const baselineP = baseline.spec.objects[0].transform?.position;
+  const inFrameP = inFrameOffset.spec.objects[0].transform?.position;
+  const shiftedP = shifted.spec.objects[0].transform?.position;
+  const baselineFraction = baselineP ? projectedCaptureFraction(baselineP, [0.2, 0.2, 0.2], camera, frustum) : 0;
+  const inFrameFraction = inFrameP ? projectedCaptureFraction(inFrameP, [0.2, 0.2, 0.2], camera, frustum) : 0;
+  const shiftedFraction = shiftedP ? projectedCaptureFraction(shiftedP, [0.2, 0.2, 0.2], camera, frustum) : 0;
+  const loudClosedNote = shifted.notes.some((note) => /frustum/i.test(note) && /offset/i.test(note));
+  const smallOffset = [0.1, 0, 0];
+  const validOffsetApplied =
+    baselineP && inFrameP &&
+    inFrameP.every((value, i) => Math.abs(value - (baselineP[i] + smallOffset[i])) < 1e-9) &&
+    inFrameFraction >= 0.5 - 1e-12;
+  const invalidHasNoTransform = !shifted.spec.objects[0].transform;
+  if (baselineP && baselineFraction >= 0.5 - 1e-12 && validOffsetApplied && invalidHasNoTransform && loudClosedNote)
+    ok(`resolveAnchors validates the FINAL offset pose: +0.1m bakes at ${(100 * inFrameFraction).toFixed(1)}% visible; +10m fails closed with no transform`);
+  else fail(`offset final-pose validation wrong: baseline=${baselineP}@${baselineFraction} inFrame=${inFrameP}@${inFrameFraction} shifted=${shiftedP}@${shiftedFraction} shiftedTransform=${JSON.stringify(shifted.spec.objects[0].transform)} notes=${shifted.notes.join(" | ")}`);
+}
+
 // 13) the REAL ramen scan: the ledgered unlabeled-counter finding, closed
 const PLY = "/Users/sushantsrikrish/Marble Worlds/Ramen World/Cozy Neon Cyberpunk Ramen Bar.ply";
 const SCENE = `${process.env.HOME}/.pico-mcp/artifacts/ramen-v19-semantic-app.json`;
