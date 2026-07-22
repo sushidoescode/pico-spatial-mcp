@@ -19,7 +19,7 @@ None of this is PICO Spatial SDK vocabulary — it's this project's own layer on
 
 ## 15-minute first light
 
-The fastest way in is the doors surface: `pico_doctor` → `pico_build_app` (two-step: brief → scaffold you author against → build) → `pico_look` (and actually look at the capture). This exact sequence was timed end-to-end on 2026-07-21, cold clone, emulator pre-started as a documented pre-condition — see **[QUICKSTART.md](QUICKSTART.md)** for the walkthrough, the exact commands, and the two first-run gotchas (macOS Accessibility, calibration-after-restart) inline where they bite.
+The fastest way in is the doors surface: `pico_doctor` → `pico_build_app` (two-step: brief → scaffold you author against → build) → `pico_look` (and actually look at the capture). This exact sequence was timed end-to-end on 2026-07-21 at ~10 minutes (including two first-run toolchain-fix detours you won't hit), cold clone, emulator pre-started as a documented pre-condition — see **[QUICKSTART.md](QUICKSTART.md)** for the walkthrough, the exact commands, and the two first-run gotchas (macOS Accessibility, calibration-after-restart) inline where they bite.
 
 ## Verify YOUR apk in 5 minutes
 
@@ -53,7 +53,7 @@ The fastest way in is the doors surface: `pico_doctor` → `pico_build_app` (two
 
 ## Honest limits (the emulator ceiling)
 
-The PICO emulator renders bounded, eye-level content and floating spatial panels — **not** boundless walk-around immersion. Full-immersive OpenXR frame compositing, controller-ray input, and head-tracked depth are **PICO Swan hardware**: the tool builds for them and defers them honestly (`built-for-Swan`), then flips each row to device-verified when a headset is attached (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Immersive 3D composites into the host GUI window only, so spatial scenes are verified via host-composited captures + the spatial runtime logcat, not display-0 screenshots.
+The PICO emulator renders bounded, eye-level content and floating spatial panels — **not** boundless walk-around immersion. Full-immersive OpenXR frame compositing, controller-ray input, and head-tracked depth are **PICO Swan hardware**: the tool builds for them and defers them honestly (`built-for-Swan`), then flips each row to device-verified when a headset is attached (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Immersive 3D composites into the host GUI window only, so spatial scenes are verified via host-composited captures + the spatial runtime logcat, not display-0 screenshots. Physics simulates on the emulator; the companion Unity MCP handles the Unity XR build lane.
 
 ## Requirements
 
