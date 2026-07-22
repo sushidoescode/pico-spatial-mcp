@@ -39,6 +39,8 @@ jobs:
         run: npm run test:preflight
       - name: Name-aware procedural provisioning (matcher always runs; bake self-skips without an SDK)
         run: npm run test:provision
+      - name: Mouse bridge (pidfile lifecycle + tool surface)
+        run: npm run test:bridge
       - name: Claims page (generated from the ledger, escaped, filterable)
         run: npm run test:claims
       - name: SpatialBench headless tier (corpus scores 3/3, no emulator-axis leaks)

@@ -10,6 +10,7 @@ import { buildLedger } from "./compiler.js";
 import { appSpecSchema } from "./appspec.js";
 import { proceduralUsda } from "./procedural.js";
 import { bakeTexturedModel } from "./bundle.js";
+import { startBridgeDetached } from "./mousebridge.js";
 
 const run = promisify(execFile);
 
@@ -369,6 +370,14 @@ export function registerFleetBuildTools(server: McpServer) {
               }
             }
             rec.installed = true;
+            // v27.2 baked-in bridge: a menu app is clickable the moment it launches — auto-start
+            // the detached mouse bridge so nobody pastes a pico-bridge command. Best-effort;
+            // idempotent; opt out with PICO_MCP_NO_AUTOBRIDGE=1.
+            const hasMenu = (entry.spec?.interactions ?? []).some((i: any) => i.trigger === "press");
+            if (hasMenu && process.env.PICO_MCP_NO_AUTOBRIDGE !== "1") {
+              const b = await startBridgeDetached().catch((e) => ({ status: "failed", pid: null, note: String(e?.message ?? e) }));
+              rec.notes.push(`mouse bridge: ${b.status}${b.pid ? ` (pid ${b.pid})` : ""}${b.status === "permission-needed" ? ` — ${b.note}` : ""}`);
+            }
             await new Promise((r) => setTimeout(r, settle));
 
             // 4. deterministic forward capture + the calibrated eye

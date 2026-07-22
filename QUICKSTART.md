@@ -54,6 +54,16 @@ order:
    image. That look is what turns a claim into `vision_verified`; record it with
    `record_verification` if you want it in the trust ledger.
 
+## Clicking the in-world menu (baked in — no manual step)
+
+When a built app has a GameMenu, `fleet_build` **auto-starts the mouse bridge** as a detached
+background process — move your Mac mouse over a menu button in the emulator window and click;
+hover previews the selection. No terminal command needed (the old manual `pico-bridge` step is
+gone). Manage it with `mouse_bridge_start` / `mouse_bridge_status` / `mouse_bridge_stop`; opt
+out of auto-start with `PICO_MCP_NO_AUTOBRIDGE=1`. One-time macOS grant if the status log says
+"could not create event tap": System Settings → Privacy & Security → **Input Monitoring** →
+enable the app hosting this MCP.
+
 ## Two first-run gotchas
 
 - **macOS Accessibility.** Free-cam drags (`emulator_look`) go through synthetic CGEvents; without

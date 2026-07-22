@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -176,7 +177,113 @@ export function installGlobalCommand(): string | null {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// v27.2 BAKED-IN BRIDGE: the bridge is a blocking host process (CFRunLoop), so it
+// can't run inside the MCP loop — but it CAN run as a DETACHED child with a pidfile.
+// startBridgeDetached() is idempotent (alive pid = no-op) and is auto-invoked by
+// fleet_build after launching a menu app, so nobody has to paste a command again.
+// Opt out with PICO_MCP_NO_AUTOBRIDGE=1. Logs: ~/.pico-mcp/bridge.log.
+// ---------------------------------------------------------------------------
+
+const BRIDGE_DIR = path.join(os.homedir(), ".pico-mcp");
+const BRIDGE_PIDFILE = path.join(BRIDGE_DIR, "bridge.pid");
+const BRIDGE_LOG = path.join(BRIDGE_DIR, "bridge.log");
+
+function pidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+/** Read the pidfile; clean it up if the process is gone. Exported for tests + status. */
+export function bridgeStatus(): { running: boolean; pid: number | null; logTail: string } {
+  let pid: number | null = null;
+  try { pid = parseInt(fs.readFileSync(BRIDGE_PIDFILE, "utf8").trim(), 10) || null; } catch { /* no pidfile */ }
+  const running = pid != null && pidAlive(pid);
+  if (pid != null && !running) { try { fs.unlinkSync(BRIDGE_PIDFILE); } catch { /* ok */ } pid = null; }
+  let logTail = "";
+  try { logTail = fs.readFileSync(BRIDGE_LOG, "utf8").split("\n").slice(-6).join("\n"); } catch { /* no log */ }
+  return { running, pid: running ? pid : null, logTail };
+}
+
+/**
+ * Start the mouse bridge as a detached background process (idempotent). Ensures the venv first.
+ * Returns an honest status: "already-running" | "started" | "permission-needed" | "failed" |
+ * "unsupported". Never throws — callers use it best-effort from launch paths.
+ */
+export async function startBridgeDetached(opts?: { hover?: boolean; packageName?: string }): Promise<{ status: string; pid: number | null; note: string }> {
+  if (os.platform() !== "darwin") return { status: "unsupported", pid: null, note: "mouse bridge is macOS-only" };
+  if (!fs.existsSync(BRIDGE_PY)) return { status: "failed", pid: null, note: `bridge script missing: ${BRIDGE_PY}` };
+  const existing = bridgeStatus();
+  if (existing.running) return { status: "already-running", pid: existing.pid, note: `bridge already live (pid ${existing.pid})` };
+
+  const venvPy = path.join(DEFAULT_VENV, "bin", "python");
+  if (!fs.existsSync(venvPy)) {
+    const setup = await run("bash", [SETUP_SH], { timeoutMs: 240_000 });
+    if (setup.code !== 0 && !fs.existsSync(venvPy)) {
+      return { status: "failed", pid: null, note: `venv setup failed — run: bash ${SETUP_SH}` };
+    }
+  }
+
+  fs.mkdirSync(BRIDGE_DIR, { recursive: true });
+  const logFd = fs.openSync(BRIDGE_LOG, "a");
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  if (opts?.hover === false) delete env.BRIDGE_HOVER; else env.BRIDGE_HOVER = "1";
+  if (opts?.packageName) env.BRIDGE_PKG = opts.packageName;
+  const child = spawn(venvPy, ["-u", BRIDGE_PY, "live"], { detached: true, stdio: ["ignore", logFd, logFd], env });
+  child.unref();
+  fs.closeSync(logFd);
+  if (child.pid == null) return { status: "failed", pid: null, note: "spawn returned no pid" };
+  fs.writeFileSync(BRIDGE_PIDFILE, String(child.pid));
+
+  // settle, then read the log for the known permission failure signature
+  await new Promise((r) => setTimeout(r, 1200));
+  const after = bridgeStatus();
+  if (!after.running) {
+    const permHit = /could not create event tap/i.test(after.logTail);
+    return {
+      status: permHit ? "permission-needed" : "failed",
+      pid: null,
+      note: permHit
+        ? "bridge exited: macOS Input Monitoring not granted. System Settings → Privacy & Security → Input Monitoring → enable the app hosting this MCP (your terminal/IDE), quit + relaunch it, then re-run mouse_bridge_start."
+        : `bridge exited early — log tail:\n${after.logTail}`,
+    };
+  }
+  return { status: "started", pid: after.pid, note: `mouse bridge live (pid ${after.pid}) — move the mouse over a menu button in the emulator and click. Stop: mouse_bridge_stop.` };
+}
+
+export function stopBridge(): { stopped: boolean; note: string } {
+  const s = bridgeStatus();
+  if (!s.running || s.pid == null) return { stopped: false, note: "bridge not running" };
+  try { process.kill(s.pid, "SIGTERM"); } catch { /* already gone */ }
+  try { fs.unlinkSync(BRIDGE_PIDFILE); } catch { /* ok */ }
+  return { stopped: true, note: `stopped bridge (pid ${s.pid})` };
+}
+
 export function registerMouseBridgeTools(server: McpServer) {
+  server.registerTool(
+    "mouse_bridge_start",
+    {
+      description:
+        "Start the in-world-menu MOUSE BRIDGE as a DETACHED background process (idempotent — a live bridge is reused). No terminal needed: this is the baked-in replacement for manually running `pico-bridge`. The bridge lets a Mac mouse click/hover the in-world GameMenu on the emulator, auto-targeting the foreground app. fleet_build auto-calls this after launching a menu app (opt out: PICO_MCP_NO_AUTOBRIDGE=1). One-time macOS grant: Input Monitoring for the app hosting this MCP. Logs: ~/.pico-mcp/bridge.log.",
+      inputSchema: {
+        hover: z.boolean().optional().describe("Hover preview (default ON): mousing over a button broadcasts hover:<action>. false = click-only."),
+        packageName: z.string().optional().describe("Pin the target package. Default: auto-target the foreground spatial app (recommended)."),
+      },
+    },
+    async ({ hover, packageName }) => ok(JSON.stringify(await startBridgeDetached({ hover, packageName }), null, 2)),
+  );
+
+  server.registerTool(
+    "mouse_bridge_stop",
+    { description: "Stop the detached mouse bridge (SIGTERM the pidfile process; cleans up ~/.pico-mcp/bridge.pid).", inputSchema: {} },
+    async () => ok(JSON.stringify(stopBridge(), null, 2)),
+  );
+
+  server.registerTool(
+    "mouse_bridge_status",
+    { description: "Is the detached mouse bridge running? Returns pid + the last log lines (the place to see permission errors).", inputSchema: {} },
+    async () => ok(JSON.stringify(bridgeStatus(), null, 2)),
+  );
+
   server.registerTool(
     "setup_mouse_bridge",
     {

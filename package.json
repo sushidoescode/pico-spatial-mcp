@@ -30,7 +30,8 @@
     "test:copilot": "node test/copilot.mjs",
     "test:vaultdiff": "node test/vaultdiff.mjs",
     "test:preflight": "node test/preflight.mjs",
-    "test:provision": "node test/provision.mjs"
+    "test:provision": "node test/provision.mjs",
+    "test:bridge": "node test/mousebridge.mjs"
   },
   "engines": {
     "node": ">=20"
