@@ -125,6 +125,7 @@ import { registerIblBakeTools } from "./iblbake.js";
 import { registerPrompts } from "./prompts.js";
 import { registerDoorTools, doorsSurfaceActive } from "./doors.js";
 import { registerPreflightTools } from "./preflight.js";
+import { registerVirtualCameraTools } from "./virtualcamera.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
@@ -276,6 +277,7 @@ if (!doorsSurfaceActive()) {
     registerPerfProbeTools(server);
     registerAnimTimelineTools(server);
     registerSpatialAudioTools(server);
+    registerVirtualCameraTools(server);
   registerProceduralTools(server);
   registerAssetGateTools(server);
   registerTextTo3dTools(server);

@@ -12,7 +12,10 @@ def log(*a): print("[PERSP]", *a, file=sys.stderr); sys.stderr.flush()
 def parse_ply(path, max_pts):
     with open(path,'rb') as f:
         header=b""
-        while b"end_header\n" not in header: header+=f.read(256)
+        while b"end_header\n" not in header:
+            chunk=f.read(256)
+            if not chunk: raise ValueError("not a binary PLY: missing end_header")
+            header+=chunk
         he=header.index(b"end_header\n")+len(b"end_header\n"); f.seek(he)
         htxt=header[:he].decode('latin1')
         n=int([l for l in htxt.splitlines() if l.startswith("element vertex")][0].split()[-1])
@@ -37,15 +40,16 @@ def look_at(C,T,up=(0,1,0)):
     u=np.cross(r,f)
     return f,r,u
 
-def render(pos,rgb,C,T,W=640,H=640,fov=70.0,psize=2,bg=(8,8,12)):
+def render(pos,rgb,C,T,W=640,H=640,fov=70.0,psize=2,bg=(8,8,12),focal_px=None,cx=None,cy=None):
     C=np.array(C,np.float32)
     f,r,u=look_at(C,T)
     v=pos-C
     zc=v@f; xc=v@r; yc=v@u
     m=zc>0.05
     zc,xc,yc,col=zc[m],xc[m],yc[m],rgb[m]
-    focal=(W/2)/math.tan(math.radians(fov)/2)
-    px=(W/2+focal*xc/zc).astype(np.int32); py=(H/2-focal*yc/zc).astype(np.int32)
+    focal=(W/2)/math.tan(math.radians(fov)/2) if focal_px is None else float(focal_px)
+    principal_x=W/2 if cx is None else float(cx); principal_y=H/2 if cy is None else float(cy)
+    px=(principal_x+focal*xc/zc).astype(np.int32); py=(principal_y-focal*yc/zc).astype(np.int32)
     inb=(px>=0)&(px<W)&(py>=0)&(py<H)
     px,py,zc,col=px[inb],py[inb],zc[inb],col[inb]
     order=np.argsort(-zc)  # far -> near (painter)
@@ -56,21 +60,22 @@ def render(pos,rgb,C,T,W=640,H=640,fov=70.0,psize=2,bg=(8,8,12)):
         for dy in range(-psize,psize+1):
             xx=np.clip(px+dx,0,W-1); yy=np.clip(py+dy,0,H-1)
             img[yy,xx]=c8
-    return img
+    return img,int(len(px))
 
-def project_box(center,size,C,T,W,H,fov):
+def project_box(center,size,C,T,W,H,fov,focal_px=None,principal_cx=None,principal_cy=None):
     """project an axis-aligned 3D box's 8 corners -> 2D bbox (for labeling overlays)."""
-    cx,cy,cz=center; sx,sy,sz=[s/2 for s in size]
-    corners=np.array([[cx+i*sx,cy+j*sy,cz+k*sz] for i in(-1,1) for j in(-1,1) for k in(-1,1)],np.float32)
+    center_x,center_y,center_z=center; sx,sy,sz=[s/2 for s in size]
+    corners=np.array([[center_x+i*sx,center_y+j*sy,center_z+k*sz] for i in(-1,1) for j in(-1,1) for k in(-1,1)],np.float32)
     C=np.array(C,np.float32); f,r,u=look_at(C,T)
     v=corners-C; zc=v@f
     if (zc<=0.05).all(): return None
-    xc=v@r; yc=v@u; focal=(W/2)/math.tan(math.radians(fov)/2)
+    xc=v@r; yc=v@u; focal=(W/2)/math.tan(math.radians(fov)/2) if focal_px is None else float(focal_px)
+    principal_x=W/2 if principal_cx is None else float(principal_cx); principal_y=H/2 if principal_cy is None else float(principal_cy)
     zc=np.clip(zc,0.05,None)
-    px=W/2+focal*xc/zc; py=H/2-focal*yc/zc
+    px=principal_x+focal*xc/zc; py=principal_y-focal*yc/zc
     return [int(px.min()),int(py.min()),int(px.max()),int(py.max())]
 
-def draw_boxes(img, clusters, C, T, W, H, fov):
+def draw_boxes(img, clusters, C, T, W, H, fov, focal_px=None, cx=None, cy=None):
     """draw each cluster's projected 2D bbox + id onto the rendered view; return which ids are visible."""
     from PIL import ImageDraw, ImageFont
     pil=Image.fromarray(img); d=ImageDraw.Draw(pil)
@@ -79,7 +84,7 @@ def draw_boxes(img, clusters, C, T, W, H, fov):
     vis=[]
     palette=[(0,229,255),(255,62,165),(120,255,90),(255,196,60),(180,120,255),(255,120,80),(90,200,255),(255,255,120)]
     for c in clusters:
-        b=project_box(c["center"],c["size"],C,T,W,H,fov)
+        b=project_box(c["center"],c["size"],C,T,W,H,fov,focal_px,cx,cy)
         if b is None: continue
         x0,y0,x1,y1=b
         # skip boxes essentially off-frame or covering the whole view (behind camera / huge)
@@ -101,17 +106,18 @@ if __name__=="__main__":
     log("points",len(pos),"centroid",cen.round(2).tolist(),"bounds",lo.round(2).tolist(),hi.round(2).tolist())
     clusters=cfg.get("clusters",[])
     W,H,fov=cfg.get("W",640),cfg.get("H",640),cfg.get("fov",70)
+    focal_px,cx,cy=cfg.get("f"),cfg.get("cx"),cfg.get("cy")
     save_clean=cfg.get("saveClean",False)  # unannotated copies + 2D boxes, for a headless detector (OWL-v2)
     out=[]
     for view in cfg["views"]:
-        img=render(pos,rgb,view["C"],view["T"],W,H,fov)
+        img,points_rendered=render(pos,rgb,view["C"],view["T"],W,H,fov,focal_px=focal_px,cx=cx,cy=cy)
         clean=None; boxes2d={}
         if save_clean:
             stem=view["out"][:-4] if view["out"].endswith(".png") else view["out"]
             clean=stem+"-clean.png"
             Image.fromarray(img).save(clean)
             for c in clusters:
-                b=project_box(c["center"],c["size"],view["C"],view["T"],W,H,fov)
+                b=project_box(c["center"],c["size"],view["C"],view["T"],W,H,fov,focal_px,cx,cy)
                 if b is None: continue
                 x0,y0,x1,y1=b
                 if x1<0 or y1<0 or x0>W or y0>H: continue
@@ -122,9 +128,9 @@ if __name__=="__main__":
                 boxes2d[str(c["id"])]=[max(0,x0),max(0,y0),min(W-1,x1),min(H-1,y1)]
         vis=[]
         if clusters:
-            img,vis=draw_boxes(img,clusters,view["C"],view["T"],W,H,fov)
+            img,vis=draw_boxes(img,clusters,view["C"],view["T"],W,H,fov,focal_px,cx,cy)
         Image.fromarray(img).save(view["out"])
-        entry={"out":view["out"],"name":view.get("name"),"C":view["C"],"T":view["T"],"visibleIds":vis}
+        entry={"out":view["out"],"name":view.get("name"),"C":view["C"],"T":view["T"],"visibleIds":vis,"pointsRendered":points_rendered}
         if save_clean: entry["clean"]=clean; entry["boxes2d"]=boxes2d
         out.append(entry)
     print(json.dumps({"points":len(pos),"centroid":cen.round(3).tolist(),"bounds":[lo.round(3).tolist(),hi.round(3).tolist()],"floorY":round(float(lo[1]),3),"views":out}))

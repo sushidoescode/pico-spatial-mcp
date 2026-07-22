@@ -51,6 +51,8 @@ jobs:
         run: npm run test:affordance
       - name: Occupancy from geometry (unlabeled obstacles block placement)
         run: npm run test:occupancy
+      - name: Virtual camera (deterministic world render + frame mapping)
+        run: npm run test:vcam
       - name: Live copilot (bridge-line protocol + scene diff)
         run: npm run test:copilot
       - name: Ledger fixtures (over-claims structurally impossible)

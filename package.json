@@ -32,7 +32,8 @@
     "test:vaultdiff": "node test/vaultdiff.mjs",
     "test:preflight": "node test/preflight.mjs",
     "test:provision": "node test/provision.mjs",
-    "test:bridge": "node test/mousebridge.mjs"
+    "test:bridge": "node test/mousebridge.mjs",
+    "test:vcam": "node test/vcam.mjs"
   },
   "engines": {
     "node": ">=20"
