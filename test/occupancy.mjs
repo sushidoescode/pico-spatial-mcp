@@ -215,5 +215,39 @@ if (fs.existsSync(PLY) && fs.existsSync(SCENE)) {
   console.log("  skip real ramen splat not on this machine — real-world asserts skipped");
 }
 
+
+// 13) v27.3 e2e: anchorTo.visibleFrom flows THROUGH resolveAnchors and changes the baked pose
+// (a wall of geometry between the viewer and half the floor: without visibleFrom the solver may
+// pick either side; with it, the baked position's ray from the viewer must be CLEAR).
+{
+  const { rayOccluded } = await import("../dist/occupancy.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "occ-los-"));
+  const scenePath = path.join(dir, "scene.json");
+  fs.writeFileSync(scenePath, JSON.stringify({ objects: [{ id: 1, label: "plant", center: [0.3, 0.15, 3.7], size: [0.2, 0.3, 0.2] }], floorY: 0, bounds: { min: [0, 0, 0], max: [4, 3, 4] } }));
+  // a dense wall slab across the middle: x 0..4, y 0..1.2, z 1.9..2.1 — the far half is hidden from the near viewer
+  const grid = buildOccupancyGrid(lattice([0, 0, 1.9], [4, 1.2, 2.1], 0.02), { cell: 0.05, minPointsPerCell: 2 });
+  const gridPath = path.join(dir, "grid.json");
+  saveOccupancyGrid(grid, gridPath);
+  const viewer = [2, 1.1, 0.2];
+  const spec = {
+    meta: { semanticScenePath: scenePath, occupancyPath: gridPath },
+    objects: [{ id: "crate", body: { shape: "box", dims: [0.4, 0.4, 0.4] }, anchorTo: { label: "floor", relation: "on", clearance: 0.05, visibleFrom: viewer } }],
+  };
+  const { spec: out, notes } = resolveAnchors(spec);
+  const p = out.objects[0].transform?.position;
+  const clear = p && !rayOccluded(grid, viewer, [p[0], 0.2, p[2]]).occluded;
+  if (p && clear) ok(`resolveAnchors honors anchorTo.visibleFrom: crate baked at [${p.join(", ")}], ray from viewer CLEAR`);
+  else fail(`resolveAnchors LOS wiring: position=${p ? `[${p.join(", ")}]` : "(none)"} clear=${clear} notes=${notes.join(" | ")}`);
+}
+
+// 14) v27.3 honesty: visibleFrom WITHOUT an occupancy grid must WARN loudly, not silently skip
+{
+  const { solveFreePlacement } = await import("../dist/affordance.js");
+  const scene = { objects: [{ id: 1, label: "plant", center: [0.3, 0.15, 3.7], size: [0.2, 0.3, 0.2] }], floorY: 0, bounds: { min: [0, 0, 0], max: [4, 3, 4] } };
+  const r = solveFreePlacement(scene, { on: "floor", childSize: [0.4, 0.4, 0.4], visibleFrom: [2, 1.1, 0.2] }, null);
+  if (/WARNING: visibleFrom was set but NO occupancy grid/.test(r.note ?? "")) ok("visibleFrom without a grid warns loudly in the note");
+  else fail(`missing loud warning — note: ${(r.note ?? "").slice(0, 200)}`);
+}
+
 console.log(failures ? `\n${failures} FAILURE(S)` : "\nall occupancy asserts passed");
 process.exit(failures ? 1 : 0);

@@ -135,6 +135,11 @@ export function solveFreePlacement(scene: SemanticScene, q: FreePlacementQuery, 
   let occBlocked = 0;
   let losBlocked = 0;
   const checkLos = !!(occupancy && q.visibleFrom);
+  // honesty: visibleFrom is a HARD constraint only when an occupancy grid exists — say so
+  // loudly instead of silently skipping (reviewer finding, v27.3).
+  const losSkippedNote = q.visibleFrom && !occupancy
+    ? "; WARNING: visibleFrom was set but NO occupancy grid was provided — line-of-sight was NOT checked (pass occupancyPath / meta.occupancyPath)"
+    : "";
   for (let x = minX; x <= maxX + 1e-9; x += step) {
     for (let z = minZ; z <= maxZ + 1e-9; z += step) {
       // hard constraint: no XZ overlap (inflated by clearance) with any vertically-overlapping box
@@ -174,7 +179,7 @@ export function solveFreePlacement(scene: SemanticScene, q: FreePlacementQuery, 
   if (!candidates.length) {
     return {
       status: "no-fit" as const,
-      note: `no collision-free spot on '${s.label}' for ${cw.toFixed(2)}×${cd.toFixed(2)}m with ${clearance}m clearance — tightest gap found was ${tightest === -Infinity ? "n/a" : tightest.toFixed(3) + "m"} (${obstacles.length} obstacles share the surface${occBlocked ? `; ${occBlocked} candidate cells blocked by UNLABELED scanned geometry in the occupancy grid` : ""}${losBlocked ? `; ${losBlocked} candidate cells blocked by line-of-sight occlusion from visibleFrom` : ""})`,
+      note: `no collision-free spot on '${s.label}' for ${cw.toFixed(2)}×${cd.toFixed(2)}m with ${clearance}m clearance — tightest gap found was ${tightest === -Infinity ? "n/a" : tightest.toFixed(3) + "m"} (${obstacles.length} obstacles share the surface${occBlocked ? `; ${occBlocked} candidate cells blocked by UNLABELED scanned geometry in the occupancy grid` : ""}${checkLos ? `; line-of-sight checked from visibleFrom (${losBlocked} candidate cells blocked)` : ""}${losSkippedNote})`,
       surface: s,
       obstacles: obstacles.map((o) => `#${o.id} '${o.label}'`),
       losBlocked,
@@ -204,7 +209,7 @@ export function solveFreePlacement(scene: SemanticScene, q: FreePlacementQuery, 
     surface: { kind: s.kind, label: s.label, objectId: s.objectId, y: s.y },
     minGapM: Number(best.minGap.toFixed(3)),
     losBlocked,
-    note: `${res.note}; ${candidates.length}/${Math.round(((maxX - minX) / step + 1) * ((maxZ - minZ) / step + 1))} grid cells clear; best min-gap ${best.minGap === 99 ? "unobstructed" : best.minGap.toFixed(2) + "m"}${occupancy ? `; occupancy grid consulted (${occBlocked} cells blocked by unlabeled geometry)` : ""}${checkLos ? `; line-of-sight checked from visibleFrom (${losBlocked} candidate cells blocked)` : ""}`,
+    note: `${res.note}; ${candidates.length}/${Math.round(((maxX - minX) / step + 1) * ((maxZ - minZ) / step + 1))} grid cells clear; best min-gap ${best.minGap === 99 ? "unobstructed" : best.minGap.toFixed(2) + "m"}${occupancy ? `; occupancy grid consulted (${occBlocked} cells blocked by unlabeled geometry)` : ""}${checkLos ? `; line-of-sight checked from visibleFrom (${losBlocked} candidate cells blocked)` : ""}${losSkippedNote}`,
     alternatives: candidates.slice(1, 4).map((c) => [Number(c.x.toFixed(3)), Number((s.y + ch / 2).toFixed(3)), Number(c.z.toFixed(3))]),
     honesty: "pure geometry over detector-labeled boxes (structural) — LOOK at a frame with the child in the world before claiming placement.",
   };
