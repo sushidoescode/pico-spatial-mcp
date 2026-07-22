@@ -1,6 +1,6 @@
 {
  "id": "ramenlos",
- "brief": "v27.7 flagship: inside the scanned ramen bar, a SHORT (0.4m) GREEN cube placed by the visibility solver (anchorTo visibleFrom [0.034,1.896,0.147], cross-checked against the v26.1 pillar projection, plus the calibrated capture frustum at 75% minimum projected-box visibility) vs a MAGENTA cube at the blind free pose [0.061,0.2,-1.311] that hides behind the unlabeled counter slab. Free and line-of-sight-clear are not enough \u2014 the object also has to land inside the rendered frame.",
+ "brief": "v27.7 flagship: inside the scanned ramen bar, a TALL (1.2m) GREEN pillar placed by the FULL constraint stack \u2014 free (occupancy) + visible (line-of-sight) + in-frame (capture frustum) \u2014 vs a short MAGENTA cube at the old LOS-blind floor pose that hides behind the counter. The lesson from two honest misses: a SHORT floor object visible from the canonical camera does not exist in this world; the solver must be given a viable target.",
  "spec": {
   "meta": {
    "appName": "RamenLosXR",
@@ -52,7 +52,7 @@
   "layouts": [],
   "objects": [
    {
-    "id": "seenCube",
+    "id": "seenPillar",
     "sceneId": "bar",
     "source": "primitive",
     "anchorTo": {
@@ -77,9 +77,9 @@
      "mode": "static",
      "shape": "box",
      "dims": [
-      0.4,
-      0.4,
-      0.4
+      0.35,
+      1.2,
+      0.35
      ],
      "color": [
       0.1,
@@ -124,14 +124,14 @@
   },
   "verificationPlan": [
    {
-    "claim": "the GREEN LOS-placed cube is VISIBLE on open floor from the forward eye; the MAGENTA free-but-blind cube is hidden or mostly hidden behind the counter slab",
+    "claim": "the GREEN pillar placed by occupancy+LOS+frustum stands visibly clear beyond the counter; the MAGENTA blind-pose cube is hidden",
     "method": "capture",
     "capabilityClass": "C0_emulator",
-    "targetRef": "seenCube",
+    "targetRef": "seenPillar",
     "forwardFOVpose": {
      "yawDeg": 0,
      "pitchDeg": 0,
-     "targetZ": -2.0
+     "targetZ": -3.0
     }
    }
   ]
