@@ -112,6 +112,7 @@ export const objectSchema = z.object({
       clearance: z.number().optional().describe("v24 ('on' only): min gap to obstacles + surface edges (default 0.05m)."),
       facing: z.string().optional().describe("v24 ('on' only): face this label or 'room-center' — bakes transform.rotationDeg.y."),
       avoiding: z.array(z.string()).optional().describe("v24 ('on' only): labels to keep distance from (soft)."),
+      visibleFrom: vec3.optional().describe("v27.3 ('on' only): a viewpoint in the app frame (e.g. the spawn camera [0,1.2,0]) — requires meta.occupancyPath. Candidates whose line of sight to visibleFrom is occluded by scanned geometry are hard-rejected, not just non-intersecting ones."),
     })
     .optional()
     .describe("v17.0 SEMANTIC PLACEMENT: anchor this object to a LABELED real-world surface from meta.semanticScenePath (semantic_splat_scan -> compose_semantic_scene output). The compiler resolves it to a concrete transform.position at ledger-build time; an explicit transform.position wins over anchorTo."),

@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { loadSemanticScene, labelScore, type SemanticScene, type SemanticObject } from "./semanticplace.js";
-import { boxOccupied, loadOccupancyGrid, type OccupancyGrid } from "./occupancy.js";
+import { boxOccupied, rayOccluded, loadOccupancyGrid, type OccupancyGrid } from "./occupancy.js";
 
 /**
  * affordance.ts — v24 THE AFFORDANCE MODEL: from labeled boxes to VERIFIED FREE SPACE.
@@ -34,6 +34,7 @@ export interface FreePlacementQuery {
   clearance?: number; // min gap to obstacles + surface edges (default 0.05)
   facing?: string; // label or "room-center" — yields rotationYDeg
   avoiding?: string[]; // labels to maximize distance from (soft)
+  visibleFrom?: [number, number, number]; // v27.3: a viewpoint (app frame) — candidates occluded from it are hard-rejected (needs an occupancy grid)
 }
 
 const half = (v: [number, number, number], i: number) => v[i] / 2;
@@ -132,6 +133,8 @@ export function solveFreePlacement(scene: SemanticScene, q: FreePlacementQuery, 
   // (floor sheet, table top) don't block everything, then require the child's swept volume clear
   const occBand = occupancy ? Math.max(1.5 * occupancy.cell, 0.08) : 0;
   let occBlocked = 0;
+  let losBlocked = 0;
+  const checkLos = !!(occupancy && q.visibleFrom);
   for (let x = minX; x <= maxX + 1e-9; x += step) {
     for (let z = minZ; z <= maxZ + 1e-9; z += step) {
       // hard constraint: no XZ overlap (inflated by clearance) with any vertically-overlapping box
@@ -152,6 +155,13 @@ export function solveFreePlacement(scene: SemanticScene, q: FreePlacementQuery, 
         const r = boxOccupied(occupancy, [x - cw / 2 - clearance, yLo, z - cd / 2 - clearance], [x + cw / 2 + clearance, s.y + ch, z + cd / 2 + clearance]);
         if (r.occupied > 0) { occBlocked++; continue; }
       }
+      // hard constraint: the candidate must be VISIBLE from visibleFrom (occupancy required — this
+      // is a line-of-sight check against scanned geometry, not just non-intersection)
+      if (checkLos) {
+        const target: [number, number, number] = [x, s.y + ch / 2, z];
+        const los = rayOccluded(occupancy!, q.visibleFrom!, target);
+        if (los.occluded) { losBlocked++; continue; }
+      }
       // soft scores: stay clear of obstacles, drift from 'avoiding' labels, mild centrality
       const cx = (s.min[0] + s.max[0]) / 2;
       const cz = (s.min[1] + s.max[1]) / 2;
@@ -164,9 +174,10 @@ export function solveFreePlacement(scene: SemanticScene, q: FreePlacementQuery, 
   if (!candidates.length) {
     return {
       status: "no-fit" as const,
-      note: `no collision-free spot on '${s.label}' for ${cw.toFixed(2)}×${cd.toFixed(2)}m with ${clearance}m clearance — tightest gap found was ${tightest === -Infinity ? "n/a" : tightest.toFixed(3) + "m"} (${obstacles.length} obstacles share the surface${occBlocked ? `; ${occBlocked} candidate cells blocked by UNLABELED scanned geometry in the occupancy grid` : ""})`,
+      note: `no collision-free spot on '${s.label}' for ${cw.toFixed(2)}×${cd.toFixed(2)}m with ${clearance}m clearance — tightest gap found was ${tightest === -Infinity ? "n/a" : tightest.toFixed(3) + "m"} (${obstacles.length} obstacles share the surface${occBlocked ? `; ${occBlocked} candidate cells blocked by UNLABELED scanned geometry in the occupancy grid` : ""}${losBlocked ? `; ${losBlocked} candidate cells blocked by line-of-sight occlusion from visibleFrom` : ""})`,
       surface: s,
       obstacles: obstacles.map((o) => `#${o.id} '${o.label}'`),
+      losBlocked,
     };
   }
   candidates.sort((a, b) => b.score - a.score);
@@ -192,7 +203,8 @@ export function solveFreePlacement(scene: SemanticScene, q: FreePlacementQuery, 
     rotationYDeg,
     surface: { kind: s.kind, label: s.label, objectId: s.objectId, y: s.y },
     minGapM: Number(best.minGap.toFixed(3)),
-    note: `${res.note}; ${candidates.length}/${Math.round(((maxX - minX) / step + 1) * ((maxZ - minZ) / step + 1))} grid cells clear; best min-gap ${best.minGap === 99 ? "unobstructed" : best.minGap.toFixed(2) + "m"}${occupancy ? `; occupancy grid consulted (${occBlocked} cells blocked by unlabeled geometry)` : ""}`,
+    losBlocked,
+    note: `${res.note}; ${candidates.length}/${Math.round(((maxX - minX) / step + 1) * ((maxZ - minZ) / step + 1))} grid cells clear; best min-gap ${best.minGap === 99 ? "unobstructed" : best.minGap.toFixed(2) + "m"}${occupancy ? `; occupancy grid consulted (${occBlocked} cells blocked by unlabeled geometry)` : ""}${checkLos ? `; line-of-sight checked from visibleFrom (${losBlocked} candidate cells blocked)` : ""}`,
     alternatives: candidates.slice(1, 4).map((c) => [Number(c.x.toFixed(3)), Number((s.y + ch / 2).toFixed(3)), Number(c.z.toFixed(3))]),
     honesty: "pure geometry over detector-labeled boxes (structural) — LOOK at a frame with the child in the world before claiming placement.",
   };
@@ -213,8 +225,9 @@ export function registerAffordanceTools(server: McpServer) {
       facing: z.string().optional().describe("Face this label (or 'room-center') — returns rotationYDeg."),
       avoiding: z.array(z.string()).optional().describe("Labels to keep distance from (soft constraint)."),
       occupancyPath: z.string().optional().describe("build_occupancy_grid output JSON — UNLABELED scanned geometry then also blocks candidates (closes the ramen-counter class of miss)."),
+      visibleFrom: z.tuple([z.number(), z.number(), z.number()]).optional().describe("v27.3 LINE OF SIGHT: a viewpoint in the app frame (e.g. the spawn camera [0,1.2,0]). Requires occupancyPath — candidates whose ray to visibleFrom is occluded by scanned geometry are hard-rejected, not just non-intersecting ones."),
     },
-    async ({ semanticScenePath, objects, floorY, bounds, on, childSize, clearance, facing, avoiding, occupancyPath }) => {
+    async ({ semanticScenePath, objects, floorY, bounds, on, childSize, clearance, facing, avoiding, occupancyPath, visibleFrom }) => {
       let scene: SemanticScene | null = null;
       if (semanticScenePath) scene = loadSemanticScene(semanticScenePath.replace(/^~\//, `${process.env.HOME}/`));
       else if (objects?.length) scene = { objects: objects as SemanticObject[], floorY, bounds: bounds as SemanticScene["bounds"] };
@@ -224,7 +237,7 @@ export function registerAffordanceTools(server: McpServer) {
         try { occupancy = loadOccupancyGrid(occupancyPath.replace(/^~\//, `${process.env.HOME}/`)); }
         catch { return okJson({ status: "error", error: `cannot load occupancy grid ${occupancyPath}` }); }
       }
-      return okJson(solveFreePlacement(scene, { on, childSize: childSize as [number, number, number], clearance, facing, avoiding }, occupancy));
+      return okJson(solveFreePlacement(scene, { on, childSize: childSize as [number, number, number], clearance, facing, avoiding, visibleFrom: visibleFrom as [number, number, number] | undefined }, occupancy));
     },
   );
 }

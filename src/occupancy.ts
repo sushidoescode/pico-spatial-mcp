@@ -103,6 +103,38 @@ export function boxOccupied(grid: OccupancyGrid, min: Vec3, max: Vec3): { occupi
   return { occupied, checked };
 }
 
+/**
+ * v27.3 LINE OF SIGHT: sample the segment from->to at grid.cell/2 steps and report the first
+ * occupied voxel hit. Samples within skipNearM (default 0.25m) of EITHER endpoint are skipped —
+ * the viewer's own position and the target's own volume must not self-occlude the check. Points
+ * outside the grid's bbox are free (same rule as boxOccupied).
+ */
+export function rayOccluded(
+  grid: OccupancyGrid,
+  from: Vec3,
+  to: Vec3,
+  opts: { skipNearM?: number } = {},
+): { occluded: boolean; fraction: number | null } {
+  const skipNear = opts.skipNearM ?? 0.25;
+  const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2];
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist < 1e-9) return { occluded: false, fraction: null };
+  const step = grid.cell / 2;
+  const steps = Math.max(1, Math.ceil(dist / step));
+  const [gx, gy, gz] = grid.dims;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    if (t * dist < skipNear || (1 - t) * dist < skipNear) continue;
+    const px = from[0] + dx * t, py = from[1] + dy * t, pz = from[2] + dz * t;
+    const cx = Math.floor((px - grid.origin[0]) / grid.cell);
+    const cy = Math.floor((py - grid.origin[1]) / grid.cell);
+    const cz = Math.floor((pz - grid.origin[2]) / grid.cell);
+    if (cx < 0 || cy < 0 || cz < 0 || cx >= gx || cy >= gy || cz >= gz) continue; // outside the grid = free
+    if (grid.bits[(cz * gy + cy) * gx + cx]) return { occluded: true, fraction: Number(t.toFixed(4)) };
+  }
+  return { occluded: false, fraction: null };
+}
+
 export function saveOccupancyGrid(grid: OccupancyGrid, p: string) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, JSON.stringify({

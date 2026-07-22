@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import { extractSupportSurfaces, solveFreePlacement } from "../dist/affordance.js";
 import { resolveAnchors } from "../dist/semanticplace.js";
+import { buildOccupancyGrid, rayOccluded } from "../dist/occupancy.js";
 
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
@@ -91,7 +92,49 @@ const r6 = resolveAnchors(spec2);
 if (!r6.spec.objects[0].transform?.position && r6.notes.some((n) => /no-fit/.test(n))) ok("compiler 'on' no-fit: object left unplaced + note (no silent overlap)");
 else fail(`no-fit leak: ${JSON.stringify(r6.notes)}`);
 
-// 10) the REAL ramen scan: only the floor is a usable surface (all tops sit above 2m) — honest
+// 10) LINE OF SIGHT: a synthetic room where the floor has free spots both IN FRONT of and BEHIND
+// a tall unlabeled wall relative to visibleFrom. Without visibleFrom the solver may pick either
+// side (occupancy alone only forbids intersecting the wall's own footprint). WITH visibleFrom, any
+// candidate whose ray to the viewpoint crosses the wall must be hard-rejected: the chosen spot's
+// ray must be clear, and losBlocked must be > 0 (some behind-the-wall candidates got eliminated).
+function lattice(min, max, spacing = 0.025) {
+  const pts = [];
+  for (let x = min[0]; x <= max[0] + 1e-9; x += spacing)
+    for (let y = min[1]; y <= max[1] + 1e-9; y += spacing)
+      for (let z = min[2]; z <= max[2] + 1e-9; z += spacing) pts.push(x, y, z);
+  return new Float32Array(pts);
+}
+{
+  // room is deeper (z 0-6) than the wall's position (z 1.8-2.2) so the room CENTROID — and hence
+  // the solver's centrality bonus — sits in the larger back region; the blind (occupancy-only)
+  // pick is expected to land BEHIND the wall, invisible from a front viewpoint.
+  const losScene = { objects: [], floorY: 0, bounds: { min: [0, 0, 0], max: [4, 3, 6] } };
+  // a tall wall (y 0-1.5) spanning the FULL x width at z 1.8-2.2 — anything behind it (z>2.2), seen
+  // from a viewpoint at z=0, is necessarily occluded (the wall blocks the whole width).
+  // minPointsPerCell pinned: the wall is thin (0.4m in z, 8 cells) so the mean-density auto-threshold
+  // (biased by edge-cell undercounts) would otherwise punch holes in an otherwise-solid slab.
+  const wallGrid = buildOccupancyGrid(lattice([0, 0, 1.8], [4, 1.5, 2.2]), { cell: 0.05, minPointsPerCell: 2 });
+  const q = { on: "floor", childSize: [0.4, 0.4, 0.4], clearance: 0.05 };
+  const visibleFrom = [2, 1.2, 0];
+
+  const withoutLos = solveFreePlacement(losScene, q, wallGrid); // occupancy only — free to land on either side of the wall
+  const withLos = solveFreePlacement(losScene, { ...q, visibleFrom }, wallGrid);
+
+  const blindBehindWall = withoutLos.status === "ok" && withoutLos.position[2] > 2.2;
+  const losOk =
+    withLos.status === "ok" &&
+    !rayOccluded(wallGrid, visibleFrom, withLos.position).occluded &&
+    withLos.losBlocked > 0;
+  if (losOk)
+    ok(
+      `visibleFrom hard-rejects occluded spots: without-LOS picked [${withoutLos.position?.join(", ") ?? withoutLos.status}]` +
+        `${blindBehindWall ? " (BEHIND the wall, as expected from centrality alone)" : ""}, ` +
+        `with-LOS picked [${withLos.position.join(", ")}] (clear ray, losBlocked=${withLos.losBlocked})`,
+    );
+  else fail(`LOS solve wrong: withoutLos=${withoutLos.status}@${withoutLos.position}; withLos=${JSON.stringify(withLos).slice(0, 200)}`);
+}
+
+// 11) the REAL ramen scan: only the floor is a usable surface (all tops sit above 2m) — honest
 const RAMEN = "/Users/sushantsrikrish/.pico-mcp/artifacts/ramen-v19-semantic-app.json";
 if (fs.existsSync(RAMEN)) {
   const ramen = JSON.parse(fs.readFileSync(RAMEN, "utf8"));

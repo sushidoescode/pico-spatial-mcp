@@ -229,6 +229,7 @@ export function resolveAnchors(spec: any): { spec: any; notes: string[] } {
         clearance: o.anchorTo.clearance,
         facing: o.anchorTo.facing,
         avoiding: o.anchorTo.avoiding,
+        visibleFrom: o.anchorTo.visibleFrom,
       }, occupancy);
       if (sol.status !== "ok") {
         notes.push(`object '${o.id}': affordance solver ${sol.status} — ${sol.note}`);

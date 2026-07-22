@@ -8,6 +8,7 @@ import path from "node:path";
 import {
   buildOccupancyGrid,
   boxOccupied,
+  rayOccluded,
   saveOccupancyGrid,
   loadOccupancyGrid,
   loadSplatPositions,
@@ -149,7 +150,46 @@ const concat = (...arrs) => {
   else fail(`metaSchema strips occupancyPath: ${parsed.success ? JSON.stringify(parsed.data) : parsed.error}`);
 }
 
-// 9) the REAL ramen scan: the ledgered unlabeled-counter finding, closed
+// 9) rayOccluded: a ray straight through a wall slab reports occluded with a sensible fraction
+{
+  const wall = lattice([1.9, 0, 0], [2.1, 2, 4], 0.05);
+  const floor = lattice([0, 0, 0], [4, 0.02, 4], 0.04); // thin floor sheet, same room, keeps the grid's bbox room-sized
+  // minPointsPerCell pinned: the wall/floor are thin so the mean-density auto-threshold (skewed by
+  // edge-cell undercounts) would otherwise punch holes in an otherwise-solid slab.
+  const grid = buildOccupancyGrid(concat(wall, floor), { cell: 0.05, minPointsPerCell: 2 });
+  const from = [0, 1, 2];
+  const to = [4, 1, 2];
+  const hit = rayOccluded(grid, from, to);
+  if (hit.occluded && hit.fraction !== null && hit.fraction > 0.4 && hit.fraction < 0.6)
+    ok(`rayOccluded through the wall: occluded=true fraction=${hit.fraction} (wall sits at ~0.5 along the 4m segment)`);
+  else fail(`rayOccluded through-wall: expected occluded~0.5, got ${JSON.stringify(hit)}`);
+
+  // 10) a ray that stays clear of the wall (same grid bbox) reports not occluded
+  const clear = rayOccluded(grid, [0, 1, 0.2], [1.5, 1, 0.2]);
+  if (!clear.occluded && clear.fraction === null) ok(`rayOccluded clear path: not occluded (${JSON.stringify(clear)})`);
+  else fail(`rayOccluded expected clear, got ${JSON.stringify(clear)}`);
+
+  // 11) self-occlusion skip: the ONLY obstruction sits within skipNearM (default 0.25m) of the
+  // target endpoint (the target's own volume) — must NOT report occluded
+  const selfOccl = rayOccluded(grid, [0, 1, 2], [2.05, 1, 2]); // target sits just inside the wall band
+  if (!selfOccl.occluded) ok(`rayOccluded self-occlusion skip: target inside its own near-band -> not occluded (${JSON.stringify(selfOccl)})`);
+  else fail(`rayOccluded self-occlusion skip failed: ${JSON.stringify(selfOccl)}`);
+}
+
+// 12) anchorTo.visibleFrom SURVIVES appspec objectSchema validation (the v26.2 lesson: zod strips
+// unknown keys — any new field needs the schema too)
+{
+  const { objectSchema } = await import("../dist/appspec.js");
+  const parsed = objectSchema.safeParse({
+    id: "pillar", sceneId: "bar", source: "primitive",
+    anchorTo: { label: "floor", relation: "on", visibleFrom: [0, 1.2, 0] },
+  });
+  if (parsed.success && Array.isArray(parsed.data.anchorTo?.visibleFrom) && parsed.data.anchorTo.visibleFrom.join(",") === "0,1.2,0")
+    ok("anchorTo.visibleFrom survives appspec objectSchema validation");
+  else fail(`objectSchema strips anchorTo.visibleFrom: ${parsed.success ? JSON.stringify(parsed.data) : parsed.error}`);
+}
+
+// 13) the REAL ramen scan: the ledgered unlabeled-counter finding, closed
 const PLY = "/Users/sushantsrikrish/Marble Worlds/Ramen World/Cozy Neon Cyberpunk Ramen Bar.ply";
 const SCENE = `${process.env.HOME}/.pico-mcp/artifacts/ramen-v19-semantic-app.json`;
 if (fs.existsSync(PLY) && fs.existsSync(SCENE)) {
