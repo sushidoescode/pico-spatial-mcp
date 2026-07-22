@@ -21,6 +21,8 @@ const {
   intrinsicsFromFov,
   registerVirtualCameraTools,
   renderVirtualFrame,
+  selectForegroundPackage,
+  virtualCameraFromApp,
 } = await import("../dist/virtualcamera.js");
 const { buildOccupancyGrid } = await import("../dist/occupancy.js");
 
@@ -358,6 +360,237 @@ if (!fs.existsSync(ramenSemantic) || !fs.existsSync(ramenOccupancy)) {
   } catch (error) {
     fail(`real surfaces: ${error.stack ?? error.message}`);
   }
+}
+
+// ── virtual_camera_from_app ────────────────────────────────────────────────────────────────
+const appCapturePath = path.join(tmpDir, "app-capture.png");
+const appVirtualPath = path.join(tmpDir, "app-virtual.png");
+const appComparisonPath = path.join(tmpDir, "app-comparison.png");
+for (const imagePath of [appCapturePath, appVirtualPath, appComparisonPath]) {
+  fs.writeFileSync(imagePath, ONE_PIXEL_PNG);
+}
+
+try {
+  const calls = {};
+  const surfaceReport = {
+    surfaces: [{ label: "floor", visibleFraction: 0.31, losClear: false }],
+    honesty: "simulated scene understanding from scanned geometry — structural evidence",
+  };
+  const result = await virtualCameraFromApp({
+    serial: "emulator-5554",
+    worldConfig: worldConfigPath,
+    semanticScenePath: worldConfigPath,
+    occupancyPath: worldConfigPath,
+    calibrationPath,
+    outDir: tmpDir,
+    captureApp: async (options) => {
+      calls.capture = {
+        packageName: options.packageName,
+        serial: options.serial,
+        outPath: options.outPath,
+      };
+      return { packageName: "com.example.ramenlos", capturePath: appCapturePath, foregroundVerified: true };
+    },
+    renderFrame: async (options) => {
+      calls.render = {
+        position: [...options.position],
+        yawDeg: options.yawDeg,
+        pitchDeg: options.pitchDeg,
+        calibratedIntrinsics: options.calibratedIntrinsics,
+        calibrationPath: options.calibrationPath,
+        maxPoints: options.maxPoints,
+      };
+      return {
+        imagePath: appVirtualPath,
+        pose: { position: options.position, yawDeg: options.yawDeg, pitchDeg: options.pitchDeg },
+        honesty: "host-side synthetic render; usd_host_render at best",
+      };
+    },
+    detectSurfaces: (options) => {
+      calls.surfaces = {
+        position: [...options.position],
+        yawDeg: options.yawDeg,
+        pitchDeg: options.pitchDeg,
+        calibratedIntrinsics: options.calibratedIntrinsics,
+        calibrationPath: options.calibrationPath,
+      };
+      return surfaceReport;
+    },
+    composeFrames: async (options) => {
+      calls.compose = {
+        emulatorCapturePath: options.emulatorCapturePath,
+        virtualFramePath: options.virtualFramePath,
+        outDir: options.outDir,
+        packageName: options.packageName,
+      };
+      return { imagePath: appComparisonPath };
+    },
+  });
+
+  const derivedPosition = [0.034, 1.896, 0.147];
+  assert.equal(calls.capture.packageName, undefined);
+  assert.equal(calls.capture.serial, "emulator-5554");
+  assert.equal(path.dirname(calls.capture.outPath), tmpDir);
+  for (const cameraCall of [calls.render, calls.surfaces]) {
+    assert.deepEqual(cameraCall.position, derivedPosition);
+    assert.equal(cameraCall.yawDeg, 0);
+    assert.equal(cameraCall.pitchDeg, 20);
+    assert.equal(cameraCall.calibratedIntrinsics, true);
+    assert.equal(cameraCall.calibrationPath, calibrationPath);
+  }
+  assert.deepEqual(calls.render.position, calls.surfaces.position);
+  assert.equal(calls.render.yawDeg, calls.surfaces.yawDeg);
+  assert.equal(calls.render.pitchDeg, calls.surfaces.pitchDeg);
+  assert.equal(calls.render.maxPoints, 1_500_000);
+  assert.equal(calls.compose.emulatorCapturePath, appCapturePath);
+  assert.equal(calls.compose.virtualFramePath, appVirtualPath);
+  assert.equal(calls.compose.outDir, tmpDir);
+  assert.equal(calls.compose.packageName, "com.example.ramenlos");
+
+  assert.equal(result.packageName, "com.example.ramenlos");
+  assert.equal(result.serial, "emulator-5554");
+  assert.equal(result.foregroundVerified, true);
+  assert.equal(result.emulatorCapturePath, appCapturePath);
+  assert.equal(result.virtualFramePath, appVirtualPath);
+  assert.deepEqual(result.surfaces, surfaceReport);
+  assert.equal(result.sideBySidePath, appComparisonPath);
+  assert.deepEqual(result.pose.position, derivedPosition);
+  assert.equal(result.pose.yawDeg, 0);
+  assert.equal(result.pose.pitchDeg, 20);
+  assert.equal(result.poseAssumed, true);
+  assert.match(result.poseSource, /position.*derived/i);
+  assert.match(result.poseSource, /orientation.*(?:assumed|calibrated)|(?:assumed|calibrated).*orientation/i);
+  assert.match(result.poseSource, /(?:not|no).*live head pose|live head pose.*(?:not|unavailable)/i);
+  assert.match(result.honesty, /emulatorCapturePath.*real adb display capture/i);
+  assert.match(result.honesty, /virtualFramePath.*host-side synthetic/i);
+  assert.match(result.honesty, /usd_host_render.*at best/i);
+  assert.match(result.honesty, /(?:no|not).*head pose.*measured|head pose.*(?:not|never) measured/i);
+  ok("from-app default uses the derived pose consistently and labels every artifact/evidence boundary");
+} catch (error) {
+  fail(`from-app deterministic orchestration: ${error.stack ?? error.message}`);
+}
+
+try {
+  await assert.rejects(
+    () => virtualCameraFromApp({
+      packageName: "com.example.ramenlos",
+      serial: "emulator-5554",
+      worldConfig: worldConfigPath,
+      semanticScenePath: worldConfigPath,
+      assumeSpawnPose: false,
+    }),
+    /assumeSpawnPose.*false.*(?:explicit )?position|(?:explicit )?position.*required/i,
+  );
+  ok("from-app fails closed when pose assumption is disabled without an explicit position");
+} catch (error) {
+  fail(`from-app missing explicit pose: ${error.stack ?? error.message}`);
+}
+
+try {
+  const multiDisplay = [
+    "Display #0:",
+    "  topResumedActivity=ActivityRecord{aaa u0 com.picoxr.launcher/.MainActivity t3}",
+    "Display #2:",
+    "  topResumedActivity=ActivityRecord{bbb u0 com.fleet.ramenlos/.platform.LaunchActivity t21}",
+    "ResumedActivity: ActivityRecord{aaa u0 com.picoxr.launcher/.MainActivity t3}",
+  ].join("\n");
+  assert.equal(selectForegroundPackage(multiDisplay, "com.fleet.ramenlos"), "com.fleet.ramenlos");
+  assert.equal(selectForegroundPackage(multiDisplay), "com.fleet.ramenlos");
+  assert.throws(
+    () => selectForegroundPackage(`${multiDisplay}\ntopResumedActivity=ActivityRecord{ccc u0 com.fleet.dashboard/.platform.LaunchActivity t19}`),
+    /multiple.*fleet|ambiguous/i,
+  );
+  ok("from-app foreground selection searches all resumed displays and fails closed on ambiguous fleet apps");
+} catch (error) {
+  fail(`from-app multi-display foreground: ${error.stack ?? error.message}`);
+}
+
+try {
+  const makeCall = (packageName) => {
+    const comparisonPath = path.join(tmpDir, `${packageName}-comparison.png`);
+    return virtualCameraFromApp({
+      packageName,
+      serial: "emulator-5554",
+      worldConfig: worldConfigPath,
+      semanticScenePath: worldConfigPath,
+      position: [0, 1.8, 0],
+      yawDeg: 45,
+      outDir: tmpDir,
+      captureApp: async (options) => {
+        fs.writeFileSync(options.outPath, ONE_PIXEL_PNG);
+        return { packageName, capturePath: options.outPath, foregroundVerified: true };
+      },
+      renderFrame: async () => ({ imagePath: appVirtualPath }),
+      detectSurfaces: () => ({ surfaces: [] }),
+      composeFrames: async () => {
+        fs.writeFileSync(comparisonPath, ONE_PIXEL_PNG);
+        return { imagePath: comparisonPath };
+      },
+    });
+  };
+  const [first, second] = await Promise.all([
+    makeCall("com.example.concurrenta"),
+    makeCall("com.example.concurrentb"),
+  ]);
+  assert.notEqual(first.emulatorCapturePath, second.emulatorCapturePath);
+  for (const result of [first, second]) {
+    assert.equal(result.poseAssumed, false);
+    assert.equal(result.orientationAssumed, true);
+    assert.match(result.poseSource, /yaw.*caller/i);
+    assert.match(result.poseSource, /pitch.*(?:default|assum)/i);
+  }
+  ok("from-app isolates concurrent captures and reports partial yaw/pitch provenance honestly");
+} catch (error) {
+  fail(`from-app concurrency/orientation provenance: ${error.stack ?? error.message}`);
+}
+
+try {
+  const server = new McpServer({ name: "vcam-from-app-input-test", version: "0.0.0" });
+  registerVirtualCameraTools(server);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "vcam-from-app-input-test", version: "0.0.0" });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  try {
+    const listed = await client.listTools();
+    assert.ok(listed.tools.some((tool) => tool.name === "virtual_camera_from_app"));
+    const typo = await client.callTool({
+      name: "virtual_camera_from_app",
+      arguments: {
+        packageName: "com.example.ramenlos",
+        serial: "emulator-5554",
+        worldConfig: worldConfigPath,
+        semanticScenePath: worldConfigPath,
+        packagName: "com.example.typo",
+      },
+    });
+    const conflictingPose = await client.callTool({
+      name: "virtual_camera_from_app",
+      arguments: {
+        packageName: "com.example.ramenlos",
+        serial: "emulator-5554",
+        worldConfig: worldConfigPath,
+        semanticScenePath: worldConfigPath,
+        assumeSpawnPose: false,
+        position: [0, 1.8, 0],
+        target: [0, 1.8, -1],
+        yawDeg: 0,
+      },
+    });
+    const textOf = (result) => (result.content ?? [])
+      .filter((item) => item.type === "text")
+      .map((item) => item.text)
+      .join("\n");
+    assert.equal(typo.isError, true);
+    assert.match(textOf(typo), /packagName/);
+    assert.equal(conflictingPose.isError, true);
+    assert.match(textOf(conflictingPose), /position\+target OR yawDeg\/pitchDeg/);
+  } finally {
+    await client.close();
+  }
+  ok("MCP registers virtual_camera_from_app and rejects unknown/conflicting-pose inputs");
+} catch (error) {
+  fail(`from-app MCP registration/schema: ${error.stack ?? error.message}`);
 }
 
 try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}

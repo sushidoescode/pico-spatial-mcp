@@ -7,10 +7,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { adbPath } from "./adb.js";
 import { extractSupportSurfaces, projectedCaptureFraction, type CaptureFrustum, type SupportSurface } from "./affordance.js";
 import { loadOccupancyGrid, rayOccluded, type OccupancyGrid } from "./occupancy.js";
 import { loadSemanticScene, type SemanticScene } from "./semanticplace.js";
-import { okJson } from "./util.js";
+import { okJson, run, runBinary } from "./util.js";
 
 type Vec3 = [number, number, number];
 
@@ -73,14 +74,65 @@ export interface DetectVirtualSurfacesOptions {
   minVisibleFraction?: number;
 }
 
+interface CaptureAppArgs {
+  serial: string;
+  packageName?: string;
+  outPath: string;
+}
+
+interface CaptureAppResult {
+  packageName: string;
+  capturePath: string;
+  foregroundVerified: boolean;
+}
+
+interface ComposeFramesArgs {
+  emulatorCapturePath: string;
+  virtualFramePath: string;
+  outDir: string;
+  packageName: string;
+}
+
+export interface VirtualCameraFromAppOptions {
+  packageName?: string;
+  serial?: string;
+  assumeSpawnPose?: boolean;
+  splatPath?: string;
+  worldConfig?: WorldConfigInput;
+  semanticScenePath?: string;
+  occupancyPath?: string;
+  position?: Vec3;
+  target?: Vec3;
+  yawDeg?: number;
+  pitchDeg?: number;
+  fovDeg?: number;
+  width?: number;
+  height?: number;
+  maxPoints?: number;
+  calibrationPath?: string;
+  outDir?: string;
+  captureApp?: (args: CaptureAppArgs) => Promise<CaptureAppResult>;
+  renderFrame?: (options: RenderVirtualFrameOptions) => Promise<any>;
+  detectSurfaces?: (options: DetectVirtualSurfacesOptions) => any;
+  composeFrames?: (args: ComposeFramesArgs) => Promise<{ imagePath: string }>;
+}
+
 const execFileAsync = promisify(execFile) as unknown as ExecOverride;
 const DEFAULT_CALIBRATION = path.join(os.homedir(), ".pico-mcp", "camera-calibration.json");
 const DEFAULT_OUT_DIR = "/tmp/pico-render/vcam";
+const DEFAULT_FROM_APP_OUT_DIR = "/tmp/pico-render/vcam/from-app";
+const DEFAULT_EMULATOR_SERIAL = "emulator-5554";
+const ASSUMED_CAPTURE_POSITION: Vec3 = [0.034, 1.896, 0.147];
 const RENDER_TIMEOUT_MS = 10 * 60 * 1000;
 export const VIRTUAL_CAMERA_HONESTY =
   "host-side synthetic render of the scanned world — NOT an emulator capture; evidence class usd_host_render at best";
 export const VIRTUAL_SURFACES_HONESTY =
   "simulated scene understanding from scanned geometry — structural evidence; labels are detector opinions";
+export const VIRTUAL_FROM_APP_HONESTY =
+  "emulatorCapturePath is a real adb display capture of the foreground emulator app; " +
+  "virtualFramePath is a host-side synthetic render of scanned geometry, usd_host_render at best; " +
+  "surfaces are structural detector opinions; no live head pose was measured; " +
+  "sideBySidePath earns no visual claim until a vision-capable reviewer LOOKS at it";
 
 function finiteVec3(value: unknown, label: string): Vec3 {
   if (!Array.isArray(value) || value.length !== 3 || value.some((v) => typeof v !== "number" || !Number.isFinite(v))) {
@@ -446,6 +498,219 @@ export async function renderVirtualFrame(options: RenderVirtualFrameOptions) {
   };
 }
 
+export function selectForegroundPackage(output: string, requestedPackage?: string): string {
+  const packages = [...output.matchAll(
+    /(?:topResumedActivity=|mResumedActivity:\s*|ResumedActivity:\s*)ActivityRecord\{\S+\s+u\d+\s+([\w.]+)\//g,
+  )].map((matched) => matched[1]);
+  const unique = [...new Set(packages)];
+  if (requestedPackage) {
+    if (unique.includes(requestedPackage)) return requestedPackage;
+    throw new Error(`requested package ${requestedPackage} is not resumed on any display (resumed: ${unique.join(", ") || "none"})`);
+  }
+  const fleet = unique.filter((packageName) => packageName.startsWith("com.fleet."));
+  if (fleet.length === 1) return fleet[0];
+  if (fleet.length > 1) {
+    throw new Error(`multiple resumed fleet apps make foreground selection ambiguous (${fleet.join(", ")}); pass packageName`);
+  }
+  throw new Error(`no resumed com.fleet.* app found (resumed: ${unique.join(", ") || "none"})`);
+}
+
+async function foregroundPackage(serial: string, requestedPackage?: string): Promise<string> {
+  const result = await run(await adbPath(), ["-s", serial, "shell", "dumpsys", "activity", "activities"], {
+    timeoutMs: 20_000,
+  });
+  if (result.code !== 0) {
+    throw new Error(`cannot query foreground package on ${serial}: ${(result.stderr || result.stdout).trim()}`);
+  }
+  return selectForegroundPackage(result.stdout, requestedPackage);
+}
+
+function assertPng(filePath: string, label: string, minBytes = 8) {
+  if (!fs.existsSync(filePath)) throw new Error(`${label} was not written: ${filePath}`);
+  const bytes = fs.readFileSync(filePath);
+  if (bytes.length < minBytes || !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    throw new Error(`${label} is not a valid non-empty PNG: ${filePath}`);
+  }
+}
+
+async function captureForegroundApp(args: CaptureAppArgs): Promise<CaptureAppResult> {
+  if (!/^emulator-\d+$/.test(args.serial)) {
+    throw new Error(`virtual_camera_from_app only captures a PICO emulator; got serial '${args.serial}'`);
+  }
+  const before = await foregroundPackage(args.serial, args.packageName);
+  const packageName = args.packageName ?? before;
+  const result = await runBinary(await adbPath(), ["-s", args.serial, "exec-out", "screencap", "-p"], {
+    timeoutMs: 30_000,
+  });
+  if (result.code !== 0 || result.stdout.length < 1000) {
+    throw new Error(`adb screencap failed on ${args.serial} (code ${result.code}, ${result.stdout.length} bytes): ${result.stderr.trim()}`);
+  }
+  fs.mkdirSync(path.dirname(args.outPath), { recursive: true });
+  fs.writeFileSync(args.outPath, result.stdout);
+  assertPng(args.outPath, "emulator capture", 1000);
+  const after = await foregroundPackage(args.serial, packageName);
+  if (after !== packageName) {
+    throw new Error(`foreground changed during capture (${packageName} -> ${after}); refusing to attribute the pixels`);
+  }
+  return { packageName, capturePath: args.outPath, foregroundVerified: true };
+}
+
+function magickPath(): string {
+  const configured = process.env.PICO_MAGICK;
+  if (configured) return configured;
+  for (const candidate of ["/opt/homebrew/bin/magick", "/usr/local/bin/magick"]) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return "magick";
+}
+
+async function composeFromAppFrames(args: ComposeFramesArgs): Promise<{ imagePath: string }> {
+  const invocationHash = crypto.createHash("sha256").update(args.emulatorCapturePath).digest("hex").slice(0, 16);
+  const imagePath = path.join(args.outDir, `side-by-side-${invocationHash}.png`);
+  fs.mkdirSync(args.outDir, { recursive: true });
+  const fontPath = "/System/Library/Fonts/Helvetica.ttc";
+  if (!fs.existsSync(fontPath)) {
+    throw new Error(`side-by-side label font not found: ${fontPath}`);
+  }
+  try {
+    await execFileAsync(magickPath(), [
+      "montage",
+      "-font", fontPath,
+      "-background", "#111827",
+      "-fill", "#f8fafc",
+      "-pointsize", "36",
+      "-label", `EMULATOR DISPLAY (adb) — ${args.packageName}`,
+      args.emulatorCapturePath,
+      "-label", "HOST SYNTHETIC WORLD MODEL (usd_host_render)",
+      args.virtualFramePath,
+      "-tile", "2x1",
+      "-geometry", "1080x1079+16+16",
+      imagePath,
+    ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 120_000 });
+  } catch (error: any) {
+    throw new Error(`side-by-side composition failed: ${subprocessError(error)}`);
+  }
+  assertPng(imagePath, "side-by-side composition");
+  return { imagePath };
+}
+
+function inferredWorldInputs(packageName: string): { semanticScenePath?: string; occupancyPath?: string } {
+  const matched = packageName.match(/^com\.fleet\.([a-z0-9_-]+)$/i);
+  if (!matched) return {};
+  const briefPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "briefs", `${matched[1]}.json`);
+  if (!fs.existsSync(briefPath)) return {};
+  const brief = readJson(briefPath, `brief for ${packageName}`);
+  return {
+    semanticScenePath: brief?.spec?.meta?.semanticScenePath,
+    occupancyPath: brief?.spec?.meta?.occupancyPath,
+  };
+}
+
+export async function virtualCameraFromApp(options: VirtualCameraFromAppOptions) {
+  const assumeSpawnPose = options.assumeSpawnPose ?? true;
+  if (!options.position && !assumeSpawnPose) {
+    throw new Error("assumeSpawnPose is false, so an explicit position is required");
+  }
+  if (options.target && (options.yawDeg !== undefined || options.pitchDeg !== undefined)) {
+    throw new Error("pass position+target OR yawDeg/pitchDeg, not both");
+  }
+  const poseAssumed = !options.position;
+  const position = options.position ? finiteVec3(options.position, "position") : [...ASSUMED_CAPTURE_POSITION] as Vec3;
+  const target = options.target ? finiteVec3(options.target, "target") : undefined;
+  const yawExplicit = options.yawDeg !== undefined;
+  const pitchExplicit = options.pitchDeg !== undefined;
+  const orientationAssumed = !target && (!yawExplicit || !pitchExplicit);
+  const yawDeg = target ? undefined : options.yawDeg ?? 0;
+  const pitchDeg = target ? undefined : options.pitchDeg ?? (poseAssumed ? 20 : 0);
+  const resolvedTarget = target ?? targetFromAngles(position, yawDeg, pitchDeg);
+  validateLookDirection(position, resolvedTarget);
+
+  const serial = options.serial ?? DEFAULT_EMULATOR_SERIAL;
+  if (!/^emulator-\d+$/.test(serial)) {
+    throw new Error(`virtual_camera_from_app only targets a PICO emulator; got serial '${serial}'`);
+  }
+  const outDir = options.outDir ?? DEFAULT_FROM_APP_OUT_DIR;
+  fs.mkdirSync(outDir, { recursive: true });
+  const invocationId = crypto.randomBytes(8).toString("hex");
+  const capture = await (options.captureApp ?? captureForegroundApp)({
+    serial,
+    packageName: options.packageName,
+    outPath: path.join(outDir, `emulator-display-${invocationId}.png`),
+  });
+  if (options.packageName && capture.packageName !== options.packageName) {
+    throw new Error(`capture attributed to ${capture.packageName}, not requested ${options.packageName}`);
+  }
+  if (!capture.foregroundVerified) {
+    throw new Error("capture did not verify the foreground package before and after screencap");
+  }
+  assertPng(capture.capturePath, "emulator capture");
+
+  const inferred = inferredWorldInputs(capture.packageName);
+  const semanticScenePath = options.semanticScenePath ?? inferred.semanticScenePath;
+  const occupancyPath = options.occupancyPath ?? inferred.occupancyPath;
+  const worldConfig = options.worldConfig ?? occupancyPath;
+  if (!semanticScenePath) {
+    throw new Error(`semanticScenePath is required (no spec.meta.semanticScenePath found for ${capture.packageName})`);
+  }
+  if (!options.splatPath && !worldConfig) {
+    throw new Error(`splatPath or worldConfig is required (no spec.meta.occupancyPath found for ${capture.packageName})`);
+  }
+
+  const poseOptions = target ? { target } : { yawDeg, pitchDeg };
+  const virtualFrame = await (options.renderFrame ?? renderVirtualFrame)({
+    splatPath: options.splatPath,
+    worldConfig,
+    position,
+    ...poseOptions,
+    fovDeg: options.fovDeg,
+    width: options.width,
+    height: options.height,
+    maxPoints: options.maxPoints ?? 1_500_000,
+    calibratedIntrinsics: true,
+    calibrationPath: options.calibrationPath,
+    outDir,
+  });
+  assertPng(virtualFrame.imagePath, "virtual frame");
+  const surfaces = (options.detectSurfaces ?? detectVirtualSurfaces)({
+    semanticScenePath,
+    occupancyPath,
+    position,
+    ...poseOptions,
+    fovDeg: options.fovDeg,
+    width: options.width,
+    height: options.height,
+    calibratedIntrinsics: true,
+    calibrationPath: options.calibrationPath,
+  });
+  const composed = await (options.composeFrames ?? composeFromAppFrames)({
+    emulatorCapturePath: capture.capturePath,
+    virtualFramePath: virtualFrame.imagePath,
+    outDir,
+    packageName: capture.packageName,
+  });
+  assertPng(composed.imagePath, "side-by-side composition");
+
+  return {
+    packageName: capture.packageName,
+    serial,
+    foregroundVerified: true,
+    emulatorCapturePath: capture.capturePath,
+    virtualFramePath: virtualFrame.imagePath,
+    surfaces,
+    sideBySidePath: composed.imagePath,
+    pose: {
+      position,
+      ...(target ? { target } : { yawDeg, pitchDeg }),
+    },
+    poseAssumed,
+    orientationAssumed,
+    poseSource: poseAssumed
+      ? `position is derived from the v27.7 ramen capture; ${target ? "orientation target is caller-supplied" : `orientation uses yaw ${yawDeg}° (${yawExplicit ? "caller-supplied" : "assumed/calibrated Task 2 default"}) and pitch ${pitchDeg}° (${pitchExplicit ? "caller-supplied" : "assumed/calibrated Task 2 default"})`}; no live head pose is available or measured`
+      : `position is caller-supplied; ${target ? "orientation target is caller-supplied" : `orientation uses yaw ${yawDeg}° (${yawExplicit ? "caller-supplied" : "defaulted/assumed"}) and pitch ${pitchDeg}° (${pitchExplicit ? "caller-supplied" : "defaulted/assumed"})`}; no live head pose was queried or measured`,
+    honesty: VIRTUAL_FROM_APP_HONESTY,
+  };
+}
+
 const vec3Schema = z.tuple([z.number(), z.number(), z.number()]);
 const worldConfigSchema = z.union([
   z.string(),
@@ -497,6 +762,33 @@ const virtualCameraSurfacesInputSchema = z.object({
   }
 });
 
+const virtualCameraFromAppInputSchema = z.object({
+  packageName: z.string().optional().describe("Foreground app package; omitted means the currently resumed com.fleet.* app."),
+  serial: z.string().regex(/^emulator-\d+$/).optional().describe("PICO emulator serial (default emulator-5554; physical devices are rejected)."),
+  assumeSpawnPose: z.boolean().optional().describe("Default true. Uses the explicitly labeled v27.7 position + Task-2-calibrated orientation when position is absent."),
+  splatPath: z.string().optional(),
+  worldConfig: worldConfigSchema.optional().describe("World/occupancy JSON. For com.fleet.* apps, omitted paths are inferred from briefs/<id>.json spec.meta."),
+  semanticScenePath: z.string().optional(),
+  occupancyPath: z.string().optional(),
+  position: vec3Schema.optional(),
+  target: vec3Schema.optional(),
+  yawDeg: z.number().optional(),
+  pitchDeg: z.number().optional(),
+  fovDeg: z.number().gt(0).lt(180).optional(),
+  width: z.number().int().positive().max(8192).optional(),
+  height: z.number().int().positive().max(8192).optional(),
+  maxPoints: z.number().int().positive().optional(),
+  calibrationPath: z.string().optional(),
+  outDir: z.string().optional(),
+}).strict().superRefine((value, context) => {
+  if (value.target && (value.yawDeg !== undefined || value.pitchDeg !== undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "pass position+target OR yawDeg/pitchDeg, not both" });
+  }
+  if (value.assumeSpawnPose === false && !value.position) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "assumeSpawnPose is false, so an explicit position is required" });
+  }
+});
+
 export function registerVirtualCameraTools(server: McpServer) {
   server.registerTool(
     "virtual_camera_frame",
@@ -525,6 +817,21 @@ export function registerVirtualCameraTools(server: McpServer) {
         return okJson({ status: "ok", ...detectVirtualSurfaces(args as DetectVirtualSurfacesOptions) });
       } catch (error: any) {
         return okJson({ status: "error", error: error?.message ?? String(error), honesty: VIRTUAL_SURFACES_HONESTY });
+      }
+    },
+  );
+  server.registerTool(
+    "virtual_camera_from_app",
+    {
+      description:
+        "Capture the foreground PICO emulator app, render the scanned world from the same explicitly reported pose, simulate visible surfaces, and compose a labeled side-by-side. The default pose is an assumption: the bridge has scene entities but NO live head pose. The adb image is a real emulator display capture; the companion frame is host synthetic (usd_host_render at best), and the composition earns no visual claim until LOOKed at.",
+      inputSchema: virtualCameraFromAppInputSchema,
+    },
+    async (args) => {
+      try {
+        return okJson({ status: "ok", ...await virtualCameraFromApp(args as VirtualCameraFromAppOptions) });
+      } catch (error: any) {
+        return okJson({ status: "error", error: error?.message ?? String(error), honesty: VIRTUAL_FROM_APP_HONESTY });
       }
     },
   );
