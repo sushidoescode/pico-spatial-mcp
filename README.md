@@ -79,7 +79,13 @@ Run `pico_doctor` (doors surface) or `preflight_env` (full surface) first on any
 
 ## Install
 
-**As a Claude Code plugin (recommended)** — the repo is a self-contained plugin marketplace:
+**The server is host-agnostic stdio MCP** — it runs identically under Claude Code, OpenAI
+Codex CLI (verified), Cursor, Windsurf, VS Code Copilot, Gemini CLI, or any MCP client: see
+**[docs/HOSTS.md](docs/HOSTS.md)** for every host's registration snippet, and **[AGENTS.md](AGENTS.md)**
+for the host-neutral agent contract (Codex reads it natively). One honest model requirement:
+the LOOK step needs a vision-capable model — text-only models use the auto-judge and escalate.
+
+**As a Claude Code plugin** — the repo is a self-contained plugin marketplace:
 
 ```bash
 claude plugin marketplace add sushidoescode/PICO-MCP   # or a local clone path

@@ -62,7 +62,7 @@ const EXPERIENCES: Experience[] = [
     capabilities: ["WebSpatial React (P10)", "live data (P13)", "connectors (P18)"],
     summary: "A React WebSpatial app (spatial on OS 6) with live-data panels — the forward-looking console.",
     recipe: (cfg) => [
-      { tool: "connect_data_source", args: { source: cfg.source ?? "github", config: cfg.config ?? { repo: "anthropics/anthropic-sdk-typescript" } } },
+      { tool: "connect_data_source", args: { source: cfg.source ?? "github", config: cfg.config ?? { repo: "modelcontextprotocol/typescript-sdk" } } },
       { tool: "generate_webspatial_app", args: { projectDir: cfg.projectDir ?? "/tmp/webspatial/ops", title: cfg.title ?? "Ops Console", panels: cfg.panels ?? [{ title: "REPO", rows: [{ label: "STARS", value: "…" }] }] }, note: "2D verifiable now; spatial on OS 6" },
     ],
     evidence: "vision_verified (2D projection, P10) + built_for_os6 (spatial depth).",
