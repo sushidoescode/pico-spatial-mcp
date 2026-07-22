@@ -29,7 +29,8 @@
         "pattern": "grid",
         "count": 6,
         "params": {
-          "columns": 3
+          "columns": 3,
+          "spacing": 0.85
         }
       }
     ],
@@ -75,6 +76,7 @@
     "objects": 1,
     "data": 1,
     "interactions": 0,
+    "panels": 0,
     "verifiableNowMin": 1,
     "swanMin": 0
   }

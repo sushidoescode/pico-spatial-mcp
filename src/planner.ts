@@ -51,7 +51,11 @@ export function computeNodeClass(spec: AppSpec, v: { targetRef?: string }): Capa
   if (it) return interactionClass(it.trigger, it.driveChannel);
   const sc = spec.scenes.find((s) => s.id === ref);
   if (sc) return environmentClass(sc.environment.kind);
-  if (spec.layouts.some((l) => l.id === ref) || spec.objects.some((o) => o.id === ref)) return "C0_emulator";
+  if (
+    spec.layouts.some((l) => l.id === ref) ||
+    spec.objects.some((o) => o.id === ref) ||
+    spec.panels.some((p) => p.id === ref)
+  ) return "C0_emulator";
   return null;
 }
 
@@ -76,6 +80,7 @@ export function lintSpec(spec: AppSpec): Lint {
   const layoutIds = new Set(spec.layouts.map((l) => l.id));
   const objectIds = new Set(spec.objects.map((o) => o.id));
   const dataIds = new Set(spec.data.map((d) => d.id));
+  const panelIds = new Set(spec.panels.map((p) => p.id));
 
   // referential integrity
   for (const l of spec.layouts) if (!sceneIds.has(l.sceneId)) errors.push(`layout '${l.id}' references unknown scene '${l.sceneId}'`);
@@ -96,13 +101,14 @@ export function lintSpec(spec: AppSpec): Lint {
   if (spec.layouts.length && !toolExists("generate_layout_kotlin")) errors.push("layouts require generate_layout_kotlin (missing from manifest)");
   if (spec.interactions.length && !toolExists("generate_interaction_kotlin")) errors.push("interactions require generate_interaction_kotlin (missing from manifest)");
   if (spec.data.some((d) => d.source === "json") && !toolExists("generate_data_binding_kotlin")) errors.push("json data requires generate_data_binding_kotlin (missing from manifest)");
+  if (spec.panels.length && !toolExists("generate_panel_compose_kotlin")) errors.push("panels require generate_panel_compose_kotlin (missing from manifest)");
 
   // C2: every C0/C2 capture claim needs a forward-FOV pose (content outside the forward view can't be captured)
   for (const v of spec.verificationPlan) {
     const visualNow = v.capabilityClass === "C0_emulator" || v.capabilityClass === "C2";
     if (v.method === "capture" && visualNow && !v.forwardFOVpose)
       errors.push(`verification '${v.claim}' is a ${v.capabilityClass} capture but has no forwardFOVpose — it can't be honestly verified (C2). Add a pose or tag it Swan-only.`);
-    if (v.targetRef && !sceneIds.has(v.targetRef) && !layoutIds.has(v.targetRef) && !objectIds.has(v.targetRef) && !spec.interactions.some((i) => i.id === v.targetRef))
+    if (v.targetRef && !sceneIds.has(v.targetRef) && !layoutIds.has(v.targetRef) && !objectIds.has(v.targetRef) && !panelIds.has(v.targetRef) && !spec.interactions.some((i) => i.id === v.targetRef))
       warnings.push(`verification '${v.claim}' targetRef '${v.targetRef}' resolves to no spec node`);
     // v6.1 class reconciliation: an emulator-verifiable declaration for a Swan-only target is an over-claim.
     const computed = computeNodeClass(spec, v);

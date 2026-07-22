@@ -30,7 +30,8 @@
         "pattern": "grid",
         "count": 6,
         "params": {
-          "columns": 3
+          "columns": 3,
+          "spacing": 0.85
         }
       }
     ],
@@ -88,6 +89,18 @@
         },
         "capabilityClass": "C0_emulator",
         "targetRef": "tiles"
+      },
+      {
+        "claim": "the floating SYSTEM panel shows UPTIME and STATE",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5,
+          "note": "The panel docks off the forward view: confirm it is on stage structurally, then sweep and LOOK at a capture before passing this visual claim."
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "sys"
       }
     ],
     "headsetLayer": []
@@ -98,6 +111,7 @@
     "objects": 1,
     "data": 1,
     "interactions": 0,
+    "panels": 1,
     "verifiableNowMin": 1,
     "swanMin": 0
   }

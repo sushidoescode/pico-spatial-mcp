@@ -76,9 +76,16 @@ function scoreBrief(entry: any) {
   const ledger = buildLedger(spec, "/tmp/eval-dummy");
   const preview = emulatorVsSwanPreview(spec);
   const exp = entry.expected ?? {};
-  const counts = { scenes: spec.scenes.length, layouts: spec.layouts.length, objects: spec.objects.length, data: spec.data.length, interactions: spec.interactions.length };
+  const counts = {
+    scenes: spec.scenes.length,
+    layouts: spec.layouts.length,
+    objects: spec.objects.length,
+    data: spec.data.length,
+    interactions: spec.interactions.length,
+    panels: spec.panels.length,
+  };
   const mism: string[] = [];
-  for (const k of ["scenes", "layouts", "objects", "data", "interactions"] as const) {
+  for (const k of ["scenes", "layouts", "objects", "data", "interactions", "panels"] as const) {
     if (exp[k] != null && counts[k] !== exp[k]) mism.push(`${k}: got ${counts[k]}, expected ${exp[k]}`);
   }
   if (exp.verifiableNowMin != null && preview.verifiableNow.length < exp.verifiableNowMin) mism.push(`verifiableNow ${preview.verifiableNow.length} < ${exp.verifiableNowMin}`);

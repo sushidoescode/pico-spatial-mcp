@@ -21,8 +21,9 @@ const run = promisify(execFile);
  * scaffold → execute the compile ledger's generate steps by SELF-DRIVING this same MCP server
  * over stdio (a child `node dist/index.js`) → write emitted files (wiring/panels/menu handled) →
  * gradle assembleDebug → install + launch on the emulator → settle → deterministic forward
- * capture → `visual_judge` against the brief's expectation → a PASS records `auto_judged`
- * (NEVER vision_verified — the honesty split holds unattended).
+ * capture. Stage claims flow to `visual_judge`; panel-only claims flow to structural window
+ * discovery instead. A stage PASS records `auto_judged` (NEVER vision_verified — the honesty
+ * split holds unattended), while panel readiness never becomes a visual verdict.
  */
 
 const ADB = path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
@@ -101,6 +102,99 @@ export function matchShapeArchetype(...names: (string | undefined)[]): string | 
   return null;
 }
 
+type VisualExpectation = {
+  minObjects: number;
+  maxObjects?: number;
+  notMostlyBlack: true;
+};
+
+/** Resolve the layout whose foreground instances a verification node actually claims. A node may
+ * target the layout directly (`targetRef: "tiles"`) or target the one object instantiated by that
+ * layout (`targetRef: "metrics"`, `metrics.layoutRef: "tiles"`). */
+function targetLayout(spec: any, verificationNode: any): any | null {
+  const ref = verificationNode?.targetRef;
+  if (!ref) return null;
+  const direct = (spec?.layouts ?? []).find((l: any) => l.id === ref);
+  if (direct) return direct;
+  const object = (spec?.objects ?? []).find((o: any) => o.id === ref);
+  if (!object?.layoutRef) return null;
+  return (spec?.layouts ?? []).find((l: any) => l.id === object.layoutRef) ?? null;
+}
+
+/** Derive the calibrated eye's predicate from the verification target. Layout-backed claims are
+ * exact: an N-slot layout must measure N foreground objects, never the historical fleet-wide 2..3
+ * fallback that allowed an unrelated environment frame to "prove" a six-tile claim. Non-layout
+ * targets retain the conservative legacy minimum; callers may still explicitly override it via the
+ * fleet_build `minObjects` map. */
+export function deriveVisualExpectation(spec: any, verificationNode: any): VisualExpectation {
+  const layout = targetLayout(spec, verificationNode);
+  const count = Number(layout?.count);
+  if (Number.isInteger(count) && count >= 0) {
+    return { minObjects: count, maxObjects: count, notMostlyBlack: true };
+  }
+  return { minObjects: 2, notMostlyBlack: true };
+}
+
+export type VerificationRoute = {
+  mode: "stage-eye" | "panel-structural" | "hybrid";
+  stageEyeClaim: any | null;
+  panelClaims: any[];
+  panelTargetIds: string[];
+  reason: string;
+};
+
+/** Split verification by rendered surface. Spatial panels are separate Android windows, so a
+ * panel-only claim must never be sent to the stage-frame eye. Hybrid specs keep the first
+ * non-panel claim for the stage eye and verify every declared panel through structural runtime
+ * evidence instead. A panel-only spec with no explicit verification node still targets all of its
+ * panels; absence of a claim does not justify inventing a foreground-object predicate. */
+export function deriveVerificationRoute(spec: any): VerificationRoute {
+  const panels = Array.isArray(spec?.panels) ? spec.panels : [];
+  const panelIds = new Set(panels.map((panel: any) => String(panel?.id ?? "")).filter(Boolean));
+  const plan = Array.isArray(spec?.verificationPlan) ? spec.verificationPlan : [];
+  const panelClaims = plan.filter((claim: any) => panelIds.has(String(claim?.targetRef ?? "")));
+  const stageClaims = plan.filter((claim: any) => !panelIds.has(String(claim?.targetRef ?? "")));
+  const noStageGeometry = (spec?.objects?.length ?? 0) === 0 && (spec?.layouts?.length ?? 0) === 0;
+  const onlyPanelClaims = panelClaims.length > 0 && stageClaims.length === 0;
+  const panelStructuralOnly = panels.length > 0 && (noStageGeometry || onlyPanelClaims);
+  const stageEyeClaim = panelStructuralOnly ? null : (stageClaims[0] ?? plan[0] ?? null);
+  const mode: VerificationRoute["mode"] = panelStructuralOnly
+    ? "panel-structural"
+    : panels.length > 0
+      ? "hybrid"
+      : "stage-eye";
+  return {
+    mode,
+    stageEyeClaim,
+    panelClaims,
+    panelTargetIds: panels.map((panel: any) => String(panel.id)),
+    reason: panelStructuralOnly
+      ? (noStageGeometry
+          ? "panels declared with no stage objects/layouts"
+          : "verification plan contains only panel targets")
+      : mode === "hybrid"
+        ? "stage claim and spatial panels are verified on separate surfaces"
+        : "no spatial panels declared",
+  };
+}
+
+type GeneratedPanel = { nodeId: string; activity: string; kind: string };
+
+/** AppSpec panel nodes currently compile to one generated activity per rendering kind. Preserve the
+ * node→activity mapping for honesty, but dedupe activities before launching: two HUD nodes do not
+ * magically become two OS panels when both map to HudPanelActivity. */
+function generatedPanels(spec: any, pkg: string): { mappings: GeneratedPanel[]; activities: string[] } {
+  const mappings: GeneratedPanel[] = (spec?.panels ?? []).map((panel: any) => {
+    const web = panel.kind === "web";
+    return {
+      nodeId: String(panel.id),
+      activity: `${pkg}.content.${web ? "WebPanelActivity" : "HudPanelActivity"}`,
+      kind: web ? "web" : "hud",
+    };
+  });
+  return { mappings, activities: [...new Set(mappings.map((m: GeneratedPanel) => m.activity))] };
+}
+
 /** Provision one data node's item catalog: PALETTE_ITEMS tinted cards by default, or — when the
  *  node/asset/bound-object name matches a shape archetype — real baked procedural props (one bundle
  *  per item, tinted by that item's palette color). Never throws; a bake failure logs to `notes` and
@@ -160,12 +254,12 @@ export function registerFleetBuildTools(server: McpServer) {
     "fleet_build",
     {
       description:
-        "UNATTENDED end-to-end fleet build (P2): for each brief id (briefs/<id>.json), SERIALLY scaffold a fresh app, execute the compile ledger's generate steps (self-driving this MCP over stdio), write the emitted Kotlin/wiring/panel/menu files (manifest patched, menu.bundle + items.json provisioned), gradle-build, install + launch on emulator-5554, settle, take the deterministic forward capture, and judge it with the calibrated eye (visual_judge). A confident PASS records an `auto_judged` ledger entry — NEVER vision_verified (the honesty split holds unattended); an ESCALATE names the brief for a human LOOK. Returns the fleet-build dashboard (per brief: built/installed/verdict/artifact). Requires the local toolchain + a running emulator. Briefs whose environments need external assets (splat/pano files) are skipped with a reason.",
+        "UNATTENDED end-to-end fleet build (P2): for each brief id (briefs/<id>.json), SERIALLY scaffold a fresh app, execute the compile ledger's generate steps (self-driving this MCP over stdio), write emitted Kotlin/wiring/panel/menu files (manifest patched, menu.bundle + items.json provisioned), gradle-build, install + launch on emulator-5554, settle, and take a deterministic forward capture. Stage claims use the calibrated visual_judge; panel-only or panel-target-only specs bypass that stage eye instead of false-failing an empty frame. A target layout is checked against its exact declared count (N means min=max=N), not the historical blanket 2..3; a confident PASS records an `auto_judged` ledger entry — NEVER vision_verified. Each distinct generated panel activity is launched and polled through list_spatial_panels; its caption-backed readiness is returned separately as structural panelEvidence plus an unjudged panel-time capture. Requires the local toolchain + a running emulator. Briefs whose environments need external assets are skipped honestly.",
       inputSchema: {
         briefIds: z.array(z.string()).min(1).describe("Brief ids from briefs/ (e.g. ['knockdown','studio','console'])."),
         projectsRoot: z.string().optional().describe("Where per-brief projects go (default ~/AndroidStudioProjects). Dir per brief: fleet-<id>-native (reused if present)."),
         settleSec: z.number().optional().describe("Seconds to wait after launch before capturing (default 12)."),
-        minObjects: z.record(z.number()).optional().describe("Per-brief judge expectation override, e.g. {knockdown: 2}. Default: 2 foreground objects + notMostlyBlack."),
+        minObjects: z.record(z.number()).optional().describe("Per-brief judge expectation override, e.g. {knockdown: 2}. Without an override, a target layout uses its exact declared count (min=max=N); non-layout targets retain the conservative 2-object fallback."),
       },
     },
     async ({ briefIds, projectsRoot, settleSec, minObjects }) => {
@@ -176,7 +270,7 @@ export function registerFleetBuildTools(server: McpServer) {
       const { client, call } = await selfClient();
       try {
         for (const id of briefIds) {
-          const rec: any = { id, built: false, installed: false, verdict: null, artifact: null, notes: [] };
+          const rec: any = { id, built: false, installed: false, verdict: null, artifact: null, verificationRoute: null, panelEvidence: null, panelArtifact: null, notes: [] };
           results.push(rec);
           try {
             const briefPath = path.join(briefsDir, `${id}.json`);
@@ -185,6 +279,8 @@ export function registerFleetBuildTools(server: McpServer) {
             const parsed = appSpecSchema.safeParse(entry.spec);
             if (!parsed.success) { rec.notes.push("spec invalid"); continue; }
             const spec: any = parsed.data;
+            const verificationRoute = deriveVerificationRoute(spec);
+            rec.verificationRoute = verificationRoute;
             // v15.1b: asset gates check EVERY scene (multi-scene briefs like narrative previously
             // slipped past the first-scene-only check and failed the build downstream), and ibl
             // rigs without a provided .ktx are asset-gated too (generate_ibl_kotlin requires it).
@@ -387,18 +483,124 @@ export function registerFleetBuildTools(server: McpServer) {
             const png = await run(ADB, ["-s", "emulator-5554", "exec-out", "screencap", "-p"], { timeout: 30_000, encoding: "buffer" as any, maxBuffer: 32 * 1024 * 1024 });
             fs.writeFileSync(shot, png.stdout as any);
             rec.artifact = shot;
-            const claim = entry.spec?.verificationPlan?.[0]?.claim ?? `${id} renders`;
-            const judged = await call("visual_judge", {
-              imagePath: shot,
-              claim: `[fleet_build unattended] ${claim}`,
-              expect: { minObjects: minObjects?.[id] ?? 2, notMostlyBlack: true },
-              app: pkg,
-              record: true,
-              cClass: "C0_emulator",
-            });
-            rec.verdict = judged.verdict ?? judged.status ?? "unknown";
-            rec.confidence = judged.confidence;
-            if (rec.verdict !== "PASS") rec.notes.push("ESCALATE: a human must LOOK at the artifact");
+            if (verificationRoute.mode !== "panel-structural") {
+              const verificationNode = verificationRoute.stageEyeClaim;
+              const derivedExpectation = deriveVisualExpectation(spec, verificationNode);
+              const explicitMin = minObjects?.[id];
+              // Preserve the public override exactly as the old fleet did (min with the judge's
+              // default +1 slack). Without one, layout-derived expectations are intentionally exact.
+              const expectation: VisualExpectation = explicitMin != null
+                ? { minObjects: explicitMin, notMostlyBlack: true }
+                : derivedExpectation;
+              const layout = targetLayout(spec, verificationNode);
+              const target = verificationNode?.targetRef ?? "scene";
+              const measuredClaim = layout && explicitMin == null
+                ? `${layout.count} foreground objects render for layout '${layout.id}'`
+                : `${expectation.minObjects}+ foreground objects render for target '${target}'`;
+              const judged = await call("visual_judge", {
+                imagePath: shot,
+                // The automated eye measures count + coverage. Do not let it auto-record the
+                // broader brief claim (for example "colored by JSON") when it measured no colors.
+                claim: `[fleet_build unattended] ${measuredClaim}`,
+                expect: expectation,
+                app: pkg,
+                record: true,
+                cClass: "C0_emulator",
+              });
+              rec.verdict = judged.verdict ?? judged.status ?? "unknown";
+              rec.confidence = judged.confidence;
+              rec.visualExpectation = expectation;
+              rec.visualClaim = measuredClaim;
+              if (rec.verdict !== "PASS") rec.notes.push("ESCALATE: a human must LOOK at the artifact");
+            } else {
+              rec.visualExpectation = null;
+              rec.visualClaim = null;
+              rec.notes.push(`stage eye not run: ${verificationRoute.reason}; panel readiness is structural evidence, not a visual verdict`);
+            }
+
+            // 5. Panels are independent 2D activities, not stage objects. Launch them only AFTER
+            // the deterministic stage capture so their docked windows cannot contaminate its eye
+            // verdict. list_spatial_panels proves WindowManager/container readiness structurally;
+            // the later screencap is an unjudged artifact and does not upgrade that evidence.
+            const panelPlan = generatedPanels(spec, pkg);
+            if (panelPlan.activities.length) {
+              const mappingMultiplicityMet = panelPlan.mappings.length === panelPlan.activities.length;
+              if (!mappingMultiplicityMet) {
+                rec.notes.push(
+                  `panel mapping NOT independently provable: ${panelPlan.mappings.length} AppSpec nodes collapse to ${panelPlan.activities.length} generated activities`,
+                );
+              }
+              const launchErrors: string[] = [];
+              for (const activity of panelPlan.activities) {
+                try {
+                  await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-n", `${pkg}/${activity}`], { timeout: 30_000 });
+                } catch (e: any) {
+                  launchErrors.push(`${activity}: ${String(e?.message ?? e)}`);
+                }
+              }
+
+              let inventory: any = null;
+              for (let attempt = 0; attempt < 10; attempt++) {
+                const probed = await call("list_spatial_panels", {
+                  packageFilter: pkg,
+                  expectedActivities: panelPlan.activities,
+                  serial: "emulator-5554",
+                }).catch((e: any) => ({ status: "error", error: String(e?.message ?? e), panels: [] }));
+                inventory = typeof probed === "object" && probed !== null
+                  ? probed
+                  : { status: "error", error: String(probed), panels: [] };
+                if (inventory.status === "error" || inventory.expectationMet === true) break;
+                await new Promise((r) => setTimeout(r, 1000));
+              }
+
+              const matchedActivities = Array.isArray(inventory?.matchedActivities) ? inventory.matchedActivities : [];
+              const missingActivities = Array.isArray(inventory?.missingActivities)
+                ? inventory.missingActivities
+                : panelPlan.activities.filter((a) => !matchedActivities.includes(a));
+              const inventoryExpectationMet = inventory?.status === "ok" && inventory?.expectationMet === true;
+              const panelExpectationMet = inventoryExpectationMet && mappingMultiplicityMet;
+              rec.panelEvidence = {
+                evidenceType: "structural",
+                status: inventory?.status === "ok" ? "ok" : "error",
+                discovery: inventory,
+                expectedActivities: panelPlan.activities,
+                expectedPanelCount: panelPlan.mappings.length,
+                nodeMappings: panelPlan.mappings,
+                mappingMultiplicityMet,
+                inventoryExpectationMet,
+                matchedActivities,
+                missingActivities,
+                expectationMet: panelExpectationMet,
+                runtimeReady: panelExpectationMet,
+                panels: Array.isArray(inventory?.panels) ? inventory.panels : [],
+                ...(inventory?.error ? { error: inventory.error } : {}),
+                ...(launchErrors.length ? { launchErrors } : {}),
+                proves: inventory?.proves ?? "WindowManager caption/container readiness only",
+                doesNotProve: inventory?.doesNotProve ?? ["panel pixels", "panel content", "layout", "colors", "legibility", "camera framing"],
+              };
+              rec.notes.push(
+                rec.panelEvidence.expectationMet
+                  ? `panelReady structural: ${matchedActivities.join(", ")}`
+                  : `panelReady structural NOT proven: ${missingActivities.join(", ") || inventory?.error || "inventory incomplete"}`,
+              );
+
+              try {
+                await new Promise((r) => setTimeout(r, 800));
+                const panelShot = path.join(shotDir, "panel-time.png");
+                const panelPng = await run(ADB, ["-s", "emulator-5554", "exec-out", "screencap", "-p"], { timeout: 30_000, encoding: "buffer" as any, maxBuffer: 32 * 1024 * 1024 });
+                const bytes = panelPng.stdout as any;
+                if (bytes?.length >= 1000) {
+                  fs.writeFileSync(panelShot, bytes);
+                  rec.panelArtifact = panelShot;
+                  rec.panelEvidence.artifactPath = panelShot;
+                  rec.panelEvidence.artifactScope = "unjudged panel-time display capture — linked for inspection, NOT auto_judged or vision_verified";
+                } else {
+                  rec.notes.push(`panel-time capture failed (${bytes?.length ?? 0} bytes)`);
+                }
+              } catch (e: any) {
+                rec.notes.push(`panel-time capture error: ${String(e?.message ?? e).slice(0, 180)}`);
+              }
+            }
           } catch (e: any) {
             rec.notes.push(`error: ${String(e?.message ?? e).slice(0, 300)}`);
           }
@@ -409,9 +611,18 @@ export function registerFleetBuildTools(server: McpServer) {
       const passed = results.filter((r) => r.verdict === "PASS").length;
       return okJson({
         status: "ok",
-        dashboard: { queued: briefIds.length, built: results.filter((r) => r.built).length, installed: results.filter((r) => r.installed).length, autoJudgedPass: passed, escalations: results.filter((r) => r.installed && r.verdict !== "PASS").map((r) => r.id) },
+        dashboard: {
+          queued: briefIds.length,
+          built: results.filter((r) => r.built).length,
+          installed: results.filter((r) => r.installed).length,
+          autoJudgedPass: passed,
+          panelReadyStructural: results.filter((r) => r.panelEvidence?.expectationMet === true).length,
+          escalations: results
+            .filter((r) => r.installed && r.verificationRoute?.mode !== "panel-structural" && r.verdict !== "PASS")
+            .map((r) => r.id),
+        },
         results,
-        honesty: "auto_judged is a DISTINCT evidence class — a fleet PASS is the eye's count, never human sight. ESCALATEd briefs need a human LOOK at the artifact.",
+        honesty: "auto_judged is a DISTINCT evidence class — a fleet PASS is the stage eye's count, never human sight. Panel-only routes leave verdict unscored; panelEvidence/panelReadyStructural are WindowManager STRUCTURAL evidence only, and panelArtifact is unjudged. ESCALATEd visuals need a human LOOK.",
       });
     },
   );
