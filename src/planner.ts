@@ -3,6 +3,7 @@ import { z } from "zod";
 import { okJson } from "./util.js";
 import { appSpecSchema, exampleSpec, type AppSpec, type CapabilityClass } from "./appspec.js";
 import { CAPABILITY_MANIFEST } from "./capabilities.js";
+import { matchShapeArchetype } from "./fleetbuild.js";
 
 /**
  * planner.ts — v5.0 `plan_app_spec` + `replan_spec`.
@@ -134,6 +135,203 @@ export function emulatorVsSwanPreview(spec: AppSpec) {
   return { verifiableNow, builtForSwan };
 }
 
+// ── v27.6: scaffold archetypes ──────────────────────────────────────────────────────────────────────────
+// The two-step plan_app_spec authoring flow used to hand every brief-only caller the SAME generic
+// showcase scaffold (6-card shelf + data binding) regardless of what they asked for — a stranger
+// authoring "three spinning crystals" got flat cards and no steer toward the pipeline's proven patterns
+// (display grid+spin, physics knockdown, HUD data-panel). pickArchetype keyword-matches the brief so the
+// scaffold ALREADY resembles the corpus brief closest to the ask; the author adapts counts/names instead
+// of inventing structure from a mismatched template.
+export type Archetype = "game" | "datapanel" | "display" | "generic";
+
+const GAME_WORDS = ["bowling", "knock", "throw", "launch", "pins", "ball", "strike", "shoot"];
+const DATAPANEL_WORDS = ["dashboard", "panel", "hud", "monitor", "feed", "stats", "data", "live"];
+const DISPLAY_WORDS = ["crystal", "gem", "display", "gallery", "showcase", "spin", "orbit", "grid of", "shelf"];
+
+/** Pick the archetype closest to the brief. Priority on overlap: game > datapanel > display (a "bowling
+ *  game dashboard" is a game — the physics/interaction pattern dominates a HUD word). */
+export function pickArchetype(brief: string): Archetype {
+  const b = brief.toLowerCase();
+  if (GAME_WORDS.some((w) => b.includes(w))) return "game";
+  if (DATAPANEL_WORDS.some((w) => b.includes(w))) return "datapanel";
+  if (DISPLAY_WORDS.some((w) => b.includes(w))) return "display";
+  return "generic";
+}
+
+/** display: grid layout + data-bound objects with a spin tween, modeled on briefs/crystals.json. The
+ *  data node's id/asset is derived from a shape word named in the brief (matchShapeArchetype — the same
+ *  table fleet_build's v27.1 procedural provisioning checks) so a stranger's "crystals"/"gems"/"cubes"
+ *  brief gets REAL baked geometry instead of a flat tinted card; falls back to "items" when no shape word
+ *  is present. */
+function displayScaffold(brief: string, appName: string, packageName: string): AppSpec {
+  const shape = matchShapeArchetype(brief) ?? "items";
+  return appSpecSchema.parse({
+    meta: { appName, packageName, stageStyle: "3", brief },
+    scenes: [
+      {
+        id: "main",
+        environment: { kind: "homeEnvProxy" },
+        lighting: { rig: "sun" },
+        colliders: { props: [] },
+      },
+    ],
+    layouts: [{ id: "grid1", sceneId: "main", pattern: "grid", count: 3, params: { columns: 3 } }],
+    objects: [
+      {
+        id: "showpieces",
+        sceneId: "main",
+        source: "model",
+        layoutRef: "grid1",
+        dataBindRef: shape,
+        transform: { scale: [1.2, 1.2, 1.2] },
+        anim: { type: "tween", property: "rotation", from: [0, 0, 0], to: [0, 360, 0], duration: 6, loop: true },
+      },
+    ],
+    data: [{ id: shape, source: "json", asset: `data/${shape}.json`, bindsTo: ["showpieces"] }],
+    interactions: [],
+    navigation: { startScene: "main", portals: [] },
+    verificationPlan: [
+      {
+        claim: "3 objects render spinning in a grid",
+        method: "capture",
+        capabilityClass: "C0_emulator",
+        targetRef: "grid1",
+        forwardFOVpose: { yawDeg: 0, pitchDeg: 0, targetZ: -2.5 },
+      },
+    ],
+    headsetLayer: [],
+  });
+}
+
+/** game: static lane box + one dynamic ball + 3 dynamic pins + a press-menu (launch:ball / resetWorld) +
+ *  a 2-field HUD panel, modeled on briefs/knockdown.json (the proven physics-adapter pattern — R1-R5). */
+function gameScaffold(brief: string, appName: string, packageName: string): AppSpec {
+  const pin = (id: string, x: number) => ({
+    id,
+    sceneId: "lane",
+    source: "primitive" as const,
+    transform: { position: [x, 1.21, -5] },
+    body: { mode: "dynamic" as const, shape: "capsule" as const, dims: [0.3, 0.06], mass: 0.35, color: [0.95, 0.95, 0.92] },
+  });
+  return appSpecSchema.parse({
+    meta: { appName, packageName, stageStyle: "3", brief },
+    scenes: [
+      {
+        id: "lane",
+        environment: { kind: "procedural" },
+        lighting: { rig: "sun" },
+        colliders: { props: [] },
+        physics: { gravity: [0, -9.81, 0] },
+      },
+    ],
+    layouts: [],
+    objects: [
+      {
+        id: "floor",
+        sceneId: "lane",
+        source: "primitive",
+        transform: { position: [0, 0.9, -4.2] },
+        body: { mode: "static", shape: "box", dims: [1.4, 0.2, 3.6], color: [0.55, 0.4, 0.22] },
+      },
+      {
+        id: "ball",
+        sceneId: "lane",
+        source: "primitive",
+        transform: { position: [0, 1.17, -2.9] },
+        body: { mode: "dynamic", shape: "sphere", dims: [0.15], mass: 5, color: [0.1, 0.08, 0.2] },
+      },
+      pin("pin0", -0.16),
+      pin("pin1", 0),
+      pin("pin2", 0.16),
+    ],
+    data: [],
+    interactions: [
+      { id: "btnLaunch", trigger: "press", target: "ball", action: "launch:ball", driveChannel: "broadcast", params: { velocity: [0, 0, -7], angular: [-8, 0, 0], button: "start" } },
+      { id: "btnReset", trigger: "press", target: "ball", action: "resetWorld", driveChannel: "broadcast", params: { button: "reset" } },
+    ],
+    panels: [
+      {
+        id: "hud",
+        title: "GAME",
+        kind: "hud",
+        fields: [
+          { key: "throws", label: "THROWS", initial: "0" },
+          { key: "status", label: "STATUS", initial: "READY" },
+        ],
+      },
+    ],
+    navigation: { startScene: "lane", portals: [] },
+    verificationPlan: [
+      {
+        claim: "the ball and 3 pins are racked on the lane",
+        method: "capture",
+        capabilityClass: "C0_emulator",
+        targetRef: "lane",
+        forwardFOVpose: { yawDeg: 0, pitchDeg: 0, targetZ: -4.2 },
+      },
+    ],
+    headsetLayer: [],
+  });
+}
+
+/** datapanel: a HUD panel with 3 live fields + a data node + one modest display object, modeled on
+ *  briefs/console.json. */
+function datapanelScaffold(brief: string, appName: string, packageName: string): AppSpec {
+  return appSpecSchema.parse({
+    meta: { appName, packageName, stageStyle: "3", brief },
+    scenes: [
+      {
+        id: "wall",
+        environment: { kind: "procedural" },
+        lighting: { rig: "sun" },
+        colliders: { props: [] },
+      },
+    ],
+    layouts: [],
+    objects: [{ id: "metric", sceneId: "wall", source: "quad", dataBindRef: "feed", transform: { position: [0, 1.4, -2] } }],
+    data: [{ id: "feed", source: "json", asset: "data/items.json", bindsTo: ["metric"] }],
+    interactions: [],
+    panels: [
+      {
+        id: "sys",
+        title: "SYSTEM",
+        kind: "hud",
+        fields: [
+          { key: "uptime", label: "UPTIME", initial: "0m" },
+          { key: "state", label: "STATE", initial: "NOMINAL" },
+          { key: "load", label: "LOAD", initial: "0%" },
+        ],
+      },
+    ],
+    navigation: { startScene: "wall", portals: [] },
+    verificationPlan: [
+      {
+        claim: "the SYSTEM panel shows UPTIME/STATE/LOAD",
+        method: "capture",
+        capabilityClass: "C0_emulator",
+        targetRef: "sys",
+        forwardFOVpose: { yawDeg: 0, pitchDeg: 0, targetZ: -2.5 },
+      },
+    ],
+    headsetLayer: [],
+  });
+}
+
+/** Build the scaffold whose shape matches the brief's closest proven pattern; "generic" keeps the
+ *  original exampleSpec (unchanged fallback). */
+export function archetypeScaffold(brief: string, archetype: Archetype, appName = "ShowcaseXR", packageName = "com.example.showcasexr"): AppSpec {
+  switch (archetype) {
+    case "display":
+      return displayScaffold(brief, appName, packageName);
+    case "game":
+      return gameScaffold(brief, appName, packageName);
+    case "datapanel":
+      return datapanelScaffold(brief, appName, packageName);
+    default:
+      return exampleSpec(brief, appName, packageName);
+  }
+}
+
 export function registerPlannerTools(server: McpServer) {
   server.registerTool(
     "plan_app_spec",
@@ -151,10 +349,12 @@ export function registerPlannerTools(server: McpServer) {
     },
     async ({ brief, draftSpec, budget }) => {
       if (draftSpec === undefined) {
+        const archetype = pickArchetype(brief);
         return okJson({
           status: "scaffold",
-          message: "No draftSpec supplied — here is a well-formed scaffold AppSpec to adapt to the brief. Author against list_capabilities, then call plan_app_spec again with draftSpec.",
-          scaffold: exampleSpec(brief),
+          message: `No draftSpec supplied — brief steered toward the '${archetype}' archetype (closest proven pattern to the brief); here is a well-formed scaffold AppSpec to adapt. Author against list_capabilities, then call plan_app_spec again with draftSpec.`,
+          archetype,
+          scaffold: archetypeScaffold(brief, archetype),
         });
       }
       const parsed = appSpecSchema.safeParse(draftSpec);

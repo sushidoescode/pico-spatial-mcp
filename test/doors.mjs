@@ -37,6 +37,13 @@ if (baOut.status === "needs-authoring" && baOut.scaffold?.meta && /draftSpec/.te
   ok("pico_build_app brief-only call returns the scaffold + the draftSpec re-call fix");
 else fail(`pico_build_app two-step broken: ${JSON.stringify(baOut).slice(0, 160)}`);
 
+// v27.6: the scaffold is archetype-steered — a crystals brief should hand back a grid+spin display
+// scaffold (briefs/crystals.json's shape), not the old one-size-fits-all card shelf.
+const hasGridLayout = (baOut.scaffold?.layouts ?? []).some((l) => l.pattern === "grid");
+const hasSpinAnim = (baOut.scaffold?.objects ?? []).some((o) => o.anim && o.anim.property === "rotation");
+if (hasGridLayout && hasSpinAnim) ok("crystals-brief scaffold has a grid layout + a spin anim (display archetype fired)");
+else fail(`crystals-brief scaffold missing grid/anim: ${JSON.stringify(baOut.scaffold).slice(0, 300)}`);
+
 // DOOR 12 takes FREE TEXT — never leaks the diagnose enum's schema error at the caller
 const pf = await client.callTool({ name: "pico_fix", arguments: { error: "e: HomeStage.kt:52:65 Unresolved reference 'resetScene'." } });
 const pfOut = JSON.parse(pf.content[0].text);

@@ -45,6 +45,8 @@ jobs:
         run: npm run test:claims
       - name: SpatialBench headless tier (corpus scores 3/3, no emulator-axis leaks)
         run: npm run test:bench
+      - name: Scaffold archetypes (brief steers plan_app_spec toward display/game/data-panel)
+        run: npm run test:archetype
       - name: Affordance solver (free space, honest no-fit, compiler on-route)
         run: npm run test:affordance
       - name: Occupancy from geometry (unlabeled obstacles block placement)
