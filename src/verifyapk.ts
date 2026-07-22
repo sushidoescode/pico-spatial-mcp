@@ -121,6 +121,13 @@ export function registerVerifyApkTools(server: McpServer) {
         logcatMatch,
         artifact,
         errors,
+        // v27-pre first-light finding: with the target dead, screencap shows whatever app the
+        // shell kept in the foreground — attributing those pixels to THIS apk is the exact
+        // over-claim the ledger exists to prevent. Also the dead-target + launched combo is the
+        // known wedged-ContainerManager signature.
+        ...(artifact && !processAlive
+          ? { captureWarning: `the ${packageName} process is NOT alive — this capture may show ANOTHER app's content (the shell keeps the incumbent activity). Do not attribute these pixels to this apk. If launch reported success but pidof is empty, suspect the wedged ContainerManager: diagnose symptom=launch_blocked (recovery: cold-restart the emulator, then re-run).` }
+          : {}),
         evidence: {
           emulator: "structural: boots + not-crashed + a 2D capture",
           swan: "immersive/XR visual + controller input = device-verified on hardware (built_for_headset)",

@@ -240,6 +240,7 @@ const KB: Record<string, DiagEntry> = {
       "Force-stop the blocker (adb shell am force-stop <blocking.package>), then relaunch YOUR app with a clean start: adb shell am start -S -n <pkg>/.platform.LaunchActivity (-S force-stops your own stale task first).",
       "Confirm with adb shell pidof <pkg> (a live PID) + the app's ready log line before trusting any capture.",
       "If it recurs across runs, force-stop known blockers (com.picoxr.browser, other com.example.* apps) before every launch — fleet_build and the acceptance loops do this.",
+      "ESCALATION (v27-pre first-light): if force-stopping every app still leaves 'Activity not started… kept for the user' + an empty pidof for ALL packages, the shell's ContainerManager is wedged — cold-restart the emulator (scripts/restart-emulator.sh) and relaunch; recalibrate the capture camera afterwards if you need pico_measure.",
     ],
     designRule: "DRY_RUN.md cold-run log #4 (2026-07-06)",
     relatedTools: ["build_and_run", "check_crash", "logcat"],
