@@ -49,6 +49,108 @@ function parseTotalPssMb(text: string): number | null {
   return kb === null ? null : Math.round((kb / 1024) * 10) / 10;
 }
 
+export type PerfProbeResult = {
+  status: "ok" | "partial";
+  packageName: string;
+  sampleSec: number;
+  totalFrames: number | null;
+  jankyFrames: number | null;
+  jankyPct: number | null;
+  p50: number | null;
+  p90: number | null;
+  p95: number | null;
+  p99: number | null;
+  totalPssMb: number | null;
+  verdict: string;
+  honesty: string;
+  errors?: string[];
+};
+
+/**
+ * Core probe, shared by the `measure_perf` tool and SpatialBench's optional perf axis: reset +
+ * sample `dumpsys gfxinfo <pkg>` frame stats and `dumpsys meminfo` PSS on the emulator. Do not
+ * duplicate this parsing elsewhere — callers that need the numbers should call this directly.
+ */
+export async function measurePerf(
+  packageName: string,
+  opts: { resetFirst?: boolean; sampleSec?: number } = {},
+): Promise<PerfProbeResult> {
+  const sec = Math.min(60, Math.max(1, Math.round(opts.sampleSec ?? 10)));
+  const errors: string[] = [];
+
+  if (opts.resetFirst ?? true) {
+    try {
+      await run(ADB, ["-s", SERIAL, "shell", "dumpsys", "gfxinfo", packageName, "reset"]);
+    } catch (e) {
+      errors.push(`gfxinfo reset failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  await sleep(sec * 1000);
+
+  let gfx = "";
+  try {
+    gfx = (await run(ADB, ["-s", SERIAL, "shell", "dumpsys", "gfxinfo", packageName])).stdout;
+  } catch (e) {
+    errors.push(`gfxinfo read failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  const totalFrames = matchNum(gfx, /Total frames rendered:\s*(\d+)/);
+  const jankyFrames = matchNum(gfx, /Janky frames:\s*(\d+)\s*\(/);
+  const jankyPct = matchNum(gfx, /Janky frames:\s*\d+\s*\(([\d.]+)%\)/);
+  const p50 = matchNum(gfx, /50th percentile:\s*([\d.]+)ms/);
+  const p90 = matchNum(gfx, /90th percentile:\s*([\d.]+)ms/);
+  const p95 = matchNum(gfx, /95th percentile:\s*([\d.]+)ms/);
+  const p99 = matchNum(gfx, /99th percentile:\s*([\d.]+)ms/);
+
+  let totalPssMb: number | null = null;
+  try {
+    const mem = (await run(ADB, ["-s", SERIAL, "shell", "dumpsys", "meminfo", packageName])).stdout;
+    totalPssMb = parseTotalPssMb(mem);
+  } catch (e) {
+    errors.push(`meminfo read failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  let verdict: string;
+  if (totalFrames === null || totalFrames === 0 || p90 === null || jankyPct === null) {
+    verdict = "no-frame-data";
+  } else if (p90 <= 16.7 && jankyPct < 10) {
+    verdict = "smooth (60fps-class UI frames)";
+  } else if (p90 <= 33.4) {
+    verdict = "acceptable (30fps-class)";
+  } else {
+    verdict = "janky";
+  }
+
+  return {
+    status: errors.length === 0 ? "ok" : "partial",
+    packageName,
+    sampleSec: sec,
+    totalFrames,
+    jankyFrames,
+    jankyPct,
+    p50,
+    p90,
+    p95,
+    p99,
+    totalPssMb,
+    verdict,
+    honesty: HONESTY,
+    ...(errors.length > 0 ? { errors } : {}),
+  };
+}
+
+/**
+ * Score the optional SpatialBench perf axis from a probe result: 1 = parsed UI frame data with
+ * p95 at or under budget, 0 = parsed data but over budget, null = no UI frame data at all (the
+ * documented emulator honesty case — e.g. a spatial-only app has ~no gfxinfo frames; that is a
+ * SKIP, not a fail, and must not be counted against the axis max).
+ */
+export function scorePerfAxis(probe: Pick<PerfProbeResult, "verdict" | "p95"> | null | undefined, budgetMs: number): 0 | 1 | null {
+  if (!probe || probe.verdict === "no-frame-data" || probe.p95 === null || probe.p95 === undefined) return null;
+  return probe.p95 <= budgetMs ? 1 : 0;
+}
+
 export function registerPerfProbeTools(server: McpServer) {
   server.registerTool(
     "measure_perf",
@@ -65,70 +167,6 @@ export function registerPerfProbeTools(server: McpServer) {
         sampleSec: z.number().min(1).max(60).optional().describe("Seconds to sample before reading stats (default 10, max 60)."),
       },
     },
-    async ({ packageName, resetFirst, sampleSec }) => {
-      const sec = Math.min(60, Math.max(1, Math.round(sampleSec ?? 10)));
-      const errors: string[] = [];
-
-      if (resetFirst ?? true) {
-        try {
-          await run(ADB, ["-s", SERIAL, "shell", "dumpsys", "gfxinfo", packageName, "reset"]);
-        } catch (e) {
-          errors.push(`gfxinfo reset failed: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
-
-      await sleep(sec * 1000);
-
-      let gfx = "";
-      try {
-        gfx = (await run(ADB, ["-s", SERIAL, "shell", "dumpsys", "gfxinfo", packageName])).stdout;
-      } catch (e) {
-        errors.push(`gfxinfo read failed: ${e instanceof Error ? e.message : String(e)}`);
-      }
-
-      const totalFrames = matchNum(gfx, /Total frames rendered:\s*(\d+)/);
-      const jankyFrames = matchNum(gfx, /Janky frames:\s*(\d+)\s*\(/);
-      const jankyPct = matchNum(gfx, /Janky frames:\s*\d+\s*\(([\d.]+)%\)/);
-      let p50 = matchNum(gfx, /50th percentile:\s*([\d.]+)ms/);
-      let p90 = matchNum(gfx, /90th percentile:\s*([\d.]+)ms/);
-      let p95 = matchNum(gfx, /95th percentile:\s*([\d.]+)ms/);
-      let p99 = matchNum(gfx, /99th percentile:\s*([\d.]+)ms/);
-
-      let totalPssMb: number | null = null;
-      try {
-        const mem = (await run(ADB, ["-s", SERIAL, "shell", "dumpsys", "meminfo", packageName])).stdout;
-        totalPssMb = parseTotalPssMb(mem);
-      } catch (e) {
-        errors.push(`meminfo read failed: ${e instanceof Error ? e.message : String(e)}`);
-      }
-
-      let verdict: string;
-      if (totalFrames === null || totalFrames === 0 || p90 === null || jankyPct === null) {
-        verdict = "no-frame-data";
-      } else if (p90 <= 16.7 && jankyPct < 10) {
-        verdict = "smooth (60fps-class UI frames)";
-      } else if (p90 <= 33.4) {
-        verdict = "acceptable (30fps-class)";
-      } else {
-        verdict = "janky";
-      }
-
-      return okJson({
-        status: errors.length === 0 ? "ok" : "partial",
-        packageName,
-        sampleSec: sec,
-        totalFrames,
-        jankyFrames,
-        jankyPct,
-        p50,
-        p90,
-        p95,
-        p99,
-        totalPssMb,
-        verdict,
-        honesty: HONESTY,
-        ...(errors.length > 0 ? { errors } : {}),
-      });
-    },
+    async ({ packageName, resetFirst, sampleSec }) => okJson(await measurePerf(packageName, { resetFirst, sampleSec })),
   );
 }
