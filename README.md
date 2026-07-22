@@ -5,6 +5,38 @@ An MCP server that lets AI agents build **PICO XR spatial apps end-to-end on the
 > ### The honesty invariant
 > "Verified" means an agent or human **looked at a rendered frame** — never a compile, a log line, or a pixel heuristic. Every visual claim is recorded in a trust ledger that *structurally rejects* a `vision_verified` entry without a linked, looked-at capture. Honest deferral (`structural`, `built-for-Swan`, "I tried X and it failed") is always acceptable; a silent over-claim is the only unforgivable failure.
 
+## Vocabulary primer
+
+None of this is PICO Spatial SDK vocabulary — it's this project's own layer on top of it. Five terms carry most of the weight:
+
+| Term | What it means |
+|---|---|
+| **trust ledger** | An append-only log (`record_verification` / `ledger_report`) of every visual claim this tool has made, each entry naming its evidence class. It structurally rejects a `vision_verified` claim with no linked capture — you can't fake the strongest tier. |
+| **the eye** | The calibrated auto-judge (`visual_judge` / `auto_judged` evidence) that scores a capture against an expected scene. It is a fast pre-check, not a replacement for a human/agent actually looking. |
+| **evidence classes** | A ranked honesty scale for how a claim was checked, strongest first: **`device_verified`** (real PICO hardware — **none yet**, said honestly) > `vision_verified` (a human/agent LOOKED at a rendered frame) > `auto_judged` (the calibrated eye scored it) > `usd_host_render` (off-device USD preview) > `structural` (installs/launches/no-crash, no visual claim) > `built_for_headset` (compiles and targets Swan-only capability, deferred honestly). Every capability in [CAPABILITIES.md](CAPABILITIES.md) is tagged with its strongest evidence on file. |
+| **doors** (`PICO_MCP_SURFACE=doors`) | An intent-level facade of 13 tools (12 doors + `validate_toolchain`) over the full ~214-tool surface — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
+| **gates** | The deterministic test-battery (`test/*.mjs`, mirrored in `.github/workflows/gates.yml`) that runs before every commit: lint fixtures, the ledger's over-claim rejection, doors-surface contract tests, occupancy/affordance solvers, the vault symbol checker, and more. All green is the bar for "this didn't regress." |
+
+## 15-minute first light
+
+The fastest way in is the doors surface: `pico_doctor` → `pico_build_app` (two-step: brief → scaffold you author against → build) → `pico_look` (and actually look at the capture). This exact sequence was timed end-to-end on 2026-07-21, cold clone, emulator pre-started as a documented pre-condition — see **[QUICKSTART.md](QUICKSTART.md)** for the walkthrough, the exact commands, and the two first-run gotchas (macOS Accessibility, calibration-after-restart) inline where they bite.
+
+## Verify YOUR apk in 5 minutes
+
+`verify_pico_apk` is a cross-builder handoff contract: point it at **any** PICO APK — including one you didn't build with this toolchain — and it installs, launches, asserts no crash, and captures a frame for you to look at.
+
+```json
+{
+  "tool": "verify_pico_apk",
+  "arguments": {
+    "apkPath": "/absolute/path/to/your-sample.apk",
+    "packageName": "com.yourorg.yourapp"
+  }
+}
+```
+
+(`activity`, `expectLogcatContains`, and `settleSec` are optional overrides — see the tool description for defaults.) On the doors surface this is `pico_verify_app`. The evidence is honestly scoped: install + launch + process-alive + logcat scan is `structural`; once you've looked at the returned capture and called `record_verification`, that specific claim becomes `vision_verified`. Immersive/OpenXR compositing, controller-ray input, and head-tracked depth stay `built_for_headset` on this emulator — they need real Swan hardware.
+
 ## What it can do
 
 **Two compile lanes, fused.**
@@ -19,12 +51,18 @@ An MCP server that lets AI agents build **PICO XR spatial apps end-to-end on the
 
 → See **[CAPABILITIES.md](CAPABILITIES.md)** for the honest capability matrix — every category with its strongest evidence class.
 
+## Honest limits (the emulator ceiling)
+
+The PICO emulator renders bounded, eye-level content and floating spatial panels — **not** boundless walk-around immersion. Full-immersive OpenXR frame compositing, controller-ray input, and head-tracked depth are **PICO Swan hardware**: the tool builds for them and defers them honestly (`built-for-Swan`), then flips each row to device-verified when a headset is attached (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Immersive 3D composites into the host GUI window only, so spatial scenes are verified via host-composited captures + the spatial runtime logcat, not display-0 screenshots.
+
 ## Requirements
 
 - macOS with the PICO Spatial toolchain installed via the Android Studio **PICO Spatial Plugin** (payloads under `~/Library/PICO/sdk/<version>/`, license accepted).
 - A PICO AVD created via Android Studio Device Manager (lives in `~/.pico/avd`).
 - `adb` on PATH (or the toolchain's bundled platform-tools are used).
 - Node.js ≥ 20.
+
+Run `pico_doctor` (doors surface) or `preflight_env` (full surface) first on any machine — it's a read-only check that names the exact fix for anything missing.
 
 ## Install
 
@@ -50,6 +88,12 @@ Or in any MCP client config:
 { "mcpServers": { "pico-spatial": { "command": "node", "args": ["/path/to/PICO-MCP/dist/index.js"] } } }
 ```
 
+**Recommended for a first session — the doors surface** (13 tools instead of ~214):
+
+```bash
+PICO_MCP_SURFACE=doors claude mcp add pico-spatial -- node /path/to/PICO-MCP/dist/index.js
+```
+
 ## How agents use it
 
 The server ships built-in prompts that drive the loop — the dev workflow and the autonomous build (brief → scaffold → author → build & run → **the verify gate: structural checks + a frame you LOOK at** → diagnose → iterate → ship). Two representative loops:
@@ -57,15 +101,12 @@ The server ships built-in prompts that drive the loop — the dev workflow and t
 - **Inner loop** (fast, scene-only): edit scene text → `iterate_scene` (pack + inspect + preview + capture) → adjust → repeat.
 - **Full app loop**: `emulator_boot` → `build_and_run` (build + install + launch + crash-check + capture) → drive interactions → `check_crash` / `wait_for_log` → `record_verification` on a frame you looked at.
 
-The tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first scene authoring + `spatialbundle`/Gradle compilation, the native + web codegen lanes, and the verification/ship suite. `scaffold_spatial_app` is the "start any project" entry point; the built-in `pico_spatial_dev_loop` prompt carries the full agent guidance. See **[QUICKSTART.md](QUICKSTART.md)** to get going and **[SKILLS.md](SKILLS.md)** for the agent reference.
-
-## Honest boundaries (the emulator ceiling)
-
-The PICO emulator renders bounded, eye-level content and floating spatial panels — **not** boundless walk-around immersion. Full-immersive OpenXR frame compositing, controller-ray input, and head-tracked depth are **PICO Swan hardware**: the tool builds for them and defers them honestly (`built-for-Swan`), then flips each row to device-verified when a headset is attached (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Immersive 3D composites into the host GUI window only, so spatial scenes are verified via host-composited captures + the spatial runtime logcat, not display-0 screenshots.
+The tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first scene authoring + `spatialbundle`/Gradle compilation, the native + web codegen lanes, and the verification/ship suite. `scaffold_spatial_app` is the "start any project" entry point; the built-in `pico_spatial_dev_loop` prompt carries the full agent guidance. See **[QUICKSTART.md](QUICKSTART.md)** to get going, **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for repo orientation, and **[SKILLS.md](SKILLS.md)** for the agent reference.
 
 ## Documentation
 
-- **[QUICKSTART.md](QUICKSTART.md)** — the front door
+- **[QUICKSTART.md](QUICKSTART.md)** — the front door, with the proven first-run sequence
+- **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** — repo layout, gates, and standing invariants for anyone new to this codebase
 - **[CAPABILITIES.md](CAPABILITIES.md)** — the honest capability matrix (categories + evidence)
 - **[DESIGN.md](DESIGN.md)** — architecture + correctness rules (runtime physics, PICO math API, editor MaterialX, the visual-ground-truth rule)
 - **[PLUGINS.md](PLUGINS.md)** — plugin surfaces · **[SKILLS.md](SKILLS.md)** — agent reference
@@ -78,6 +119,8 @@ npm run smoke        # toolchain/bundle/proto tools against the real local insta
 npm run test:lint    # the retained-lessons lint rules fire on their fixtures
 npm run test:ledger  # the trust ledger rejects an unlinked vision_verified claim
 ```
+
+The full gate battery (20+ suites, deterministic, no emulator boot) is mirrored in `.github/workflows/gates.yml` — see **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for the complete list.
 
 ## Licensing
 
