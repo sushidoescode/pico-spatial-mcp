@@ -57,5 +57,18 @@ stale && stale.status === "fail" && /calibrate_capture_camera/.test(stale.fix)
   ? ok("stale calibration fails with the recalibrate fix")
   : fail(`stale calibration mishandled: ${JSON.stringify(stale)}`);
 
+// MCP-level: the tool is registered on the full surface and returns the check array.
+const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"], env: { ...process.env, PICO_MCP_SURFACE: "full" } });
+const client = new Client({ name: "preflight-test", version: "0.0.0" });
+await client.connect(transport);
+const res = await client.callTool({ name: "preflight_env", arguments: {} });
+const body = JSON.parse(res.content[0].text);
+Array.isArray(body.checks) && body.checks.length >= 7 && ["ok", "problems"].includes(body.status)
+  ? ok(`preflight_env registered (status: ${body.status}, ${body.checks.length} checks)`)
+  : fail(`preflight_env bad shape: ${JSON.stringify(body).slice(0, 200)}`);
+await client.close();
+
 console.log(`\nPreflight test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

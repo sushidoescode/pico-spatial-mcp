@@ -124,6 +124,7 @@ import { registerUsdRenderTools } from "./usdrender.js";
 import { registerIblBakeTools } from "./iblbake.js";
 import { registerPrompts } from "./prompts.js";
 import { registerDoorTools, doorsSurfaceActive } from "./doors.js";
+import { registerPreflightTools } from "./preflight.js";
 
 const server = new McpServer({
   name: "pico-spatial-mcp",
@@ -267,6 +268,7 @@ if (!doorsSurfaceActive()) {
     registerSemanticSplatTools(server);
     registerCommandCenterTools(server);
     registerToolchainWatchTools(server);
+    registerPreflightTools(server);
     registerWebSpatialMultiviewTools(server);
     registerMarbleIngestTools(server);
     registerFidelityTools(server);

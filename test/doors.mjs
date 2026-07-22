@@ -29,6 +29,14 @@ const fxOut = JSON.parse(fx.content[0].text);
 if (fxOut.status === "error" && fxOut.fix) ok("door errors carry a fix pointer");
 else fail(`expected fix-pointing error, got ${JSON.stringify(fxOut).slice(0, 120)}`);
 
+// pico_doctor carries the preflight checks, each non-pass with a fix pointer
+const doc = await client.callTool({ name: "pico_doctor", arguments: {} });
+const docOut = JSON.parse(doc.content[0].text);
+const checks = docOut?.preflight?.checks;
+if (Array.isArray(checks) && checks.length >= 7 && checks.every((c) => c.status === "pass" || (typeof c.fix === "string" && c.fix.length > 10)))
+  ok(`pico_doctor surfaces ${checks.length} preflight checks, all fix-pointed`);
+else fail(`pico_doctor preflight missing/unfixed: ${JSON.stringify(docOut).slice(0, 200)}`);
+
 await client.close();
 console.log(`\nDoors test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

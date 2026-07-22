@@ -197,14 +197,15 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_doctor",
-    "DOOR 9 — Health-check the local PICO environment: toolchain payloads, emulator state, and the v20 camera calibration. Run this first on a new machine, and whenever anything smells off.",
+    "DOOR 9 — Health-check the local PICO environment: the read-only preflight (node/adb/emulator/gRPC/Accessibility/calibration/disk — every failure carries the exact fix), toolchain payloads, emulator state, and the v20 camera calibration. Run this FIRST on a new machine, and whenever anything smells off.",
     {},
     async () => {
       const { call } = await inner();
-      const [tc, emu] = await Promise.all([call("validate_toolchain", {}), call("emulator_status", {})]);
+      const [tc, emu, pre] = await Promise.all([call("validate_toolchain", {}), call("emulator_status", {}), call("preflight_env", {})]);
       let calibration: any = null;
       try { calibration = JSON.parse(fs.readFileSync(path.join(process.env.HOME ?? "", ".pico-mcp", "camera-calibration.json"), "utf8")); } catch { /* uncalibrated */ }
       return {
+        preflight: pre,
         toolchain: tc,
         emulator: { running: emu?.running ?? false, serial: emu?.serial ?? null },
         cameraCalibration: calibration ? { f: calibration.f, eyeHeight: calibration.eyeHeight, residualPx: calibration.residualPx, at: calibration.at } : "uncalibrated — run fleet_build(['calib']) then calibrate_capture_camera to enable pico_measure",

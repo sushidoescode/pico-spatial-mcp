@@ -35,6 +35,8 @@ jobs:
         run: npm run test:referring
       - name: Twelve Doors (surface facade + inner orchestration)
         run: npm run test:doors
+      - name: preflight
+        run: npm run test:preflight
       - name: Claims page (generated from the ledger, escaped, filterable)
         run: npm run test:claims
       - name: SpatialBench headless tier (corpus scores 3/3, no emulator-axis leaks)
