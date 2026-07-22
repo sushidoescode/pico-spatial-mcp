@@ -1,0 +1,131 @@
+{
+ "id": "ramenlos",
+ "brief": "v27.3 flagship: inside the scanned ramen bar, a SHORT (0.4m) GREEN cube placed by the LINE-OF-SIGHT solver (anchorTo visibleFrom [0,1.2,0] \u2014 it must be free AND visible from the eye) vs a MAGENTA cube at the LOS-blind free pose [0.061,0.2,-1.311] that hides behind the unlabeled counter slab. Free is not enough \u2014 you have to be able to SEE it.",
+ "spec": {
+  "meta": {
+   "appName": "RamenLosXR",
+   "packageName": "com.example.ramenlos",
+   "stageStyle": "3",
+   "brief": "Line-of-sight flagship: the visible cube vs the free-but-hidden cube behind the counter.",
+   "semanticScenePath": "/Users/sushantsrikrish/.pico-mcp/artifacts/ramen-v19-semantic-app.json",
+   "occupancyPath": "/Users/sushantsrikrish/.pico-mcp/artifacts/ramen-v19.occupancy.json"
+  },
+  "scenes": [
+   {
+    "id": "bar",
+    "environment": {
+     "kind": "texturedMesh",
+     "asset": "/Users/sushantsrikrish/Marble Worlds/Ramen World/ramenbar.glb",
+     "params": {
+      "translate": {
+       "x": 0,
+       "y": 0.776,
+       "z": 0
+      },
+      "rotationEuler": {
+       "x": 0,
+       "y": 180,
+       "z": 0
+      }
+     }
+    },
+    "lighting": {
+     "rig": "sun",
+     "params": {
+      "sunLux": 2600,
+      "iblScale": 2.0
+     }
+    },
+    "colliders": {
+     "props": []
+    },
+    "transitions": [],
+    "physics": {
+     "gravity": [
+      0,
+      -9.81,
+      0
+     ]
+    }
+   }
+  ],
+  "layouts": [],
+  "objects": [
+   {
+    "id": "seenCube",
+    "sceneId": "bar",
+    "source": "primitive",
+    "anchorTo": {
+     "label": "floor",
+     "relation": "on",
+     "clearance": 0.1,
+     "visibleFrom": [
+      0,
+      1.2,
+      0
+     ]
+    },
+    "body": {
+     "mode": "static",
+     "shape": "box",
+     "dims": [
+      0.4,
+      0.4,
+      0.4
+     ],
+     "color": [
+      0.1,
+      1.0,
+      0.3
+     ]
+    }
+   },
+   {
+    "id": "hiddenCube",
+    "sceneId": "bar",
+    "source": "primitive",
+    "transform": {
+     "position": [
+      0.061,
+      0.2,
+      -1.311
+     ]
+    },
+    "body": {
+     "mode": "static",
+     "shape": "box",
+     "dims": [
+      0.4,
+      0.4,
+      0.4
+     ],
+     "color": [
+      1.0,
+      0.05,
+      0.85
+     ]
+    }
+   }
+  ],
+  "data": [],
+  "interactions": [],
+  "panels": [],
+  "navigation": {
+   "startScene": "bar",
+   "portals": []
+  },
+  "verificationPlan": [
+   {
+    "claim": "the GREEN LOS-placed cube is VISIBLE on open floor from the forward eye; the MAGENTA free-but-blind cube is hidden or mostly hidden behind the counter slab",
+    "method": "capture",
+    "capabilityClass": "C0_emulator",
+    "targetRef": "seenCube",
+    "forwardFOVpose": {
+     "yawDeg": 0,
+     "pitchDeg": 0,
+     "targetZ": -2.0
+    }
+   }
+  ]
+ }
+}
