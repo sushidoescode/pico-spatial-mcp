@@ -29,7 +29,8 @@
     "test:occupancy": "node test/occupancy.mjs",
     "test:copilot": "node test/copilot.mjs",
     "test:vaultdiff": "node test/vaultdiff.mjs",
-    "test:preflight": "node test/preflight.mjs"
+    "test:preflight": "node test/preflight.mjs",
+    "test:provision": "node test/provision.mjs"
   },
   "engines": {
     "node": ">=20"

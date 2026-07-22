@@ -8,6 +8,8 @@ import { promisify } from "node:util";
 import { okJson } from "./util.js";
 import { buildLedger } from "./compiler.js";
 import { appSpecSchema } from "./appspec.js";
+import { proceduralUsda } from "./procedural.js";
+import { bakeTexturedModel } from "./bundle.js";
 
 const run = promisify(execFile);
 
@@ -62,6 +64,95 @@ const PALETTE_ITEMS = [
   { id: "item4", label: "Item 4", color: [0.2, 0.45, 0.9] },
   { id: "item5", label: "Item 5", color: [0.6, 0.25, 0.85] },
 ];
+
+// v27.1: NAME-AWARE PROCEDURAL PROVISIONING — closes "friction #4" from the first-light stranger
+// test. A data-bound object named like a shape ("gems"/"crystals"/…) previously always got a
+// color-only PALETTE_ITEMS card (SceneDataBinding.makeModelCard falls back to a tinted quad when
+// item.model is absent). If the data node's id, its declared asset's basename, or the bound
+// object's id names a shape archetype, provisionDataItems below bakes a REAL per-item procedural
+// prop (src/procedural.ts, tinted per-item by the palette color) via the same spatialbundle bake
+// bake_textured_model uses, and writes items WITH model/modelName so makeModelCard loads real
+// geometry. Any bake failure (or no name match at all) falls back to the honest color-only card —
+// provisioning must never abort the build.
+const SHAPE_KEYWORDS: [string, string[]][] = [
+  ["gem", ["gems", "gem", "jewels", "jewel"]],
+  ["crystal", ["crystals", "crystal"]],
+  ["prism", ["prisms", "prism"]],
+  ["cube", ["cubes", "cube", "crates", "crate", "boxes", "box"]],
+  ["pyramid", ["pyramids", "pyramid"]],
+  ["octahedron", ["octahedrons", "octahedra", "octahedron"]],
+  ["tetrahedron", ["tetrahedrons", "tetrahedra", "tetrahedron"]],
+  ["pin", ["pins", "pin"]],
+  ["bottle", ["bottles", "bottle"]],
+];
+
+/** Match a data node's names against the shape-archetype keyword table (case-insensitive substring).
+ *  Checked in order: earlier args win on a tie. Returns null when nothing names a known shape —
+ *  the honest color-only card fallback stays in place. */
+export function matchShapeArchetype(...names: (string | undefined)[]): string | null {
+  for (const raw of names) {
+    if (!raw) continue;
+    const lower = raw.toLowerCase();
+    for (const [shape, keywords] of SHAPE_KEYWORDS) {
+      if (keywords.some((kw) => lower.includes(kw))) return shape;
+    }
+  }
+  return null;
+}
+
+/** Provision one data node's item catalog: PALETTE_ITEMS tinted cards by default, or — when the
+ *  node/asset/bound-object name matches a shape archetype — real baked procedural props (one bundle
+ *  per item, tinted by that item's palette color). Never throws; a bake failure logs to `notes` and
+ *  falls back to the color-only items so the build always proceeds. */
+async function provisionDataItems(opts: {
+  assetsRoot: string;
+  briefId: string;
+  dataId: string;
+  assetBasename: string;
+  boundObjectId?: string;
+  count: number;
+  notes: string[];
+}): Promise<any[]> {
+  const n = Math.max(1, opts.count);
+  const fallback = () => PALETTE_ITEMS.slice(0, n);
+  const shape = matchShapeArchetype(opts.dataId, opts.assetBasename, opts.boundObjectId);
+  if (!shape) return fallback();
+
+  const propsDir = path.join(opts.assetsRoot, "props");
+  fs.mkdirSync(propsDir, { recursive: true });
+  const items: any[] = [];
+  for (let i = 0; i < n; i++) {
+    const base = PALETTE_ITEMS[i % PALETTE_ITEMS.length];
+    const propName = `${shape}${i}`;
+    const usda = proceduralUsda({
+      shape,
+      size: 0.34,
+      color: base.color as [number, number, number],
+      metallic: 0.15,
+      roughness: 0.35,
+      name: propName,
+    });
+    const usdaPath = path.join(os.tmpdir(), `pico-fleet-${opts.briefId}-${propName}-${Date.now()}-${i}.usda`);
+    const outBundle = path.join(propsDir, `${propName}.bundle`);
+    let bake: any;
+    try {
+      fs.writeFileSync(usdaPath, usda);
+      bake = await bakeTexturedModel({ modelPath: usdaPath, outBundle });
+    } catch (e: any) {
+      bake = { error: String(e?.message ?? e) };
+    } finally {
+      try { fs.rmSync(usdaPath, { force: true }); } catch {}
+    }
+    if (bake?.error || !fs.existsSync(outBundle)) {
+      opts.notes.push(
+        `procedural provisioning: bake failed for data '${opts.dataId}' item ${i} (shape=${shape}) — falling back to color-only cards for this data node (${bake?.error ?? "no bundle written"})`,
+      );
+      return fallback();
+    }
+    items.push({ id: base.id, label: base.label, color: base.color, model: `props/${propName}.bundle`, modelName: bake.modelName });
+  }
+  return items;
+}
 
 export function registerFleetBuildTools(server: McpServer) {
   server.registerTool(
@@ -211,11 +302,20 @@ export function registerFleetBuildTools(server: McpServer) {
               const assetsRoot = path.join(projectDir, "app/src/main/assets");
               for (const d of spec.data) {
                 const rel = typeof d.asset === "string" && d.asset.trim() ? d.asset : "data/items.json";
-                const boundLayout = spec.objects?.find((o: any) => o.dataBindRef === d.id && o.layoutRef)?.layoutRef;
-                const count = spec.layouts?.find((l: any) => l.id === boundLayout)?.count ?? spec.layouts?.[0]?.count ?? 6;
+                const boundObj = spec.objects?.find((o: any) => o.dataBindRef === d.id);
+                const count = spec.layouts?.find((l: any) => l.id === boundObj?.layoutRef)?.count ?? spec.layouts?.[0]?.count ?? 6;
                 const fp = path.join(assetsRoot, rel);
                 fs.mkdirSync(path.dirname(fp), { recursive: true });
-                fs.writeFileSync(fp, JSON.stringify(PALETTE_ITEMS.slice(0, Math.max(1, count)), null, 2));
+                const items = await provisionDataItems({
+                  assetsRoot,
+                  briefId: id,
+                  dataId: d.id,
+                  assetBasename: path.basename(rel),
+                  boundObjectId: boundObj?.id,
+                  count,
+                  notes: rec.notes,
+                });
+                fs.writeFileSync(fp, JSON.stringify(items, null, 2));
               }
             }
 
