@@ -29,6 +29,14 @@ const fxOut = JSON.parse(fx.content[0].text);
 if (fxOut.status === "error" && fxOut.fix) ok("door errors carry a fix pointer");
 else fail(`expected fix-pointing error, got ${JSON.stringify(fxOut).slice(0, 120)}`);
 
+// DOOR 1 two-step contract: a brief-only call hands back the scaffold to author, never a dead end
+// (v27-pre first-light finding: the old door misreported the planner's scaffold handoff as plan-failed)
+const ba = await client.callTool({ name: "pico_build_app", arguments: { brief: "three spinning crystals over a stone floor with a start menu" } });
+const baOut = JSON.parse(ba.content[0].text);
+if (baOut.status === "needs-authoring" && baOut.scaffold?.meta && /draftSpec/.test(baOut.fix ?? ""))
+  ok("pico_build_app brief-only call returns the scaffold + the draftSpec re-call fix");
+else fail(`pico_build_app two-step broken: ${JSON.stringify(baOut).slice(0, 160)}`);
+
 // pico_doctor carries the preflight checks, each non-pass with a fix pointer
 const doc = await client.callTool({ name: "pico_doctor", arguments: {} });
 const docOut = JSON.parse(doc.content[0].text);

@@ -69,12 +69,16 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_build_app",
-    "DOOR 1 — Build a verified spatial app from a one-sentence brief. Plans an AppSpec, compiles it through the full pipeline (scaffold → codegen → gradle → install → launch on the emulator), captures a frame, and judges it. Returns the verdict, the capture path (LOOK at it before claiming anything works), and the project dir. Escalations mean a human/agent must look — that is the honesty contract, not an error.",
-    { brief: z.string().describe("What to build, e.g. 'three spinning crystals over a stone floor with a start menu'.") },
-    async ({ brief }) => {
+    "DOOR 1 — Build a verified spatial app from a brief. TWO-STEP by design: call with just {brief} to receive a scaffold AppSpec (the planner never guesses your intent — YOU author); adapt the scaffold to the brief, then call again with {brief, draftSpec} to compile through the full pipeline (scaffold → codegen → gradle → install → launch on the emulator), capture a frame, and judge it. Returns the verdict, the capture path (LOOK at it before claiming anything works), and the project dir. Escalations mean a human/agent must look — that is the honesty contract, not an error.",
+    {
+      brief: z.string().describe("What to build, e.g. 'three spinning crystals over a stone floor with a start menu'."),
+      draftSpec: z.any().optional().describe("Your AppSpec, adapted from the scaffold a brief-only call returns. Omit on the first call."),
+    },
+    async ({ brief, draftSpec }) => {
       const { call } = await inner();
-      const plan = await call("plan_app_spec", { brief });
-      if (!plan?.spec) return { status: "plan-failed", detail: plan, fix: "Simplify the brief to concrete objects/layouts (e.g. 'N <things> on a floor with a menu')." };
+      const plan = await call("plan_app_spec", { brief, ...(draftSpec !== undefined ? { draftSpec } : {}) });
+      if (plan?.status === "scaffold") return { status: "needs-authoring", scaffold: plan.scaffold, fix: "Adapt this scaffold to the brief (objects, layouts, counts, animation, menu — see each node's fields), then re-call pico_build_app with {brief, draftSpec: <adapted scaffold>}." };
+      if (!plan?.spec) return { status: "plan-failed", detail: plan, fix: "Fix the validation problems named in detail and re-call with the corrected draftSpec; keep to concrete objects/layouts (e.g. 'N <things> on a floor with a menu')." };
       const id = `door${Math.abs([...brief].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) % 100000)}`;
       const briefsDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../briefs");
       fs.writeFileSync(path.join(briefsDir, `${id}.json`), JSON.stringify({ id, brief, spec: plan.spec }, null, 2));
