@@ -48,23 +48,16 @@ export interface CaptureFrustum {
   minVisibleFraction?: number; // clipped projected-AABB area / full projected-AABB area (default 0.5)
 }
 
-/**
- * Project all 8 corners of a child AABB through the deterministic forward camera (+X right,
- * +Y up, -Z forward). Returns null when any corner is behind the camera; otherwise the fraction
- * of the projected 2D bounding box that lies inside the capture frame.
- */
-export function projectedCaptureFraction(
-  center: [number, number, number],
-  size: [number, number, number],
-  visibleFrom: [number, number, number],
+type Point3 = [number, number, number];
+
+function projectedCornersCaptureFraction(
+  corners: Point3[],
+  visibleFrom: Point3,
   frustum: CaptureFrustum,
 ): number | null {
   const us: number[] = [];
   const vs: number[] = [];
-  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
-    const x = center[0] + (sx * size[0]) / 2;
-    const y = center[1] + (sy * size[1]) / 2;
-    const z = center[2] + (sz * size[2]) / 2;
+  for (const [x, y, z] of corners) {
     const d = visibleFrom[2] - z;
     if (!(d > 0)) return null;
     us.push(frustum.cx + (frustum.f * (x - visibleFrom[0])) / d);
@@ -79,6 +72,45 @@ export function projectedCaptureFraction(
   const clippedW = Math.max(0, Math.min(frustum.width, maxU) - Math.max(0, minU));
   const clippedH = Math.max(0, Math.min(frustum.height, maxV) - Math.max(0, minV));
   return (clippedW * clippedH) / fullArea;
+}
+
+/**
+ * Project an AABB through the deterministic forward camera (+X right, +Y up, -Z forward), or
+ * project already-camera-aligned real corners via the two-argument overload. The latter avoids
+ * enclosing rotated geometry in a second AABB and thereby inventing phantom corner combinations.
+ * Returns null when any supplied corner is behind the camera; otherwise returns the fraction of
+ * the projected 2D bounding box that lies inside the capture frame.
+ */
+export function projectedCaptureFraction(
+  center: Point3,
+  size: Point3,
+  visibleFrom: Point3,
+  frustum: CaptureFrustum,
+): number | null;
+export function projectedCaptureFraction(
+  cameraCorners: Point3[],
+  frustum: CaptureFrustum,
+): number | null;
+export function projectedCaptureFraction(
+  centerOrCorners: Point3 | Point3[],
+  sizeOrFrustum: Point3 | CaptureFrustum,
+  visibleFrom?: Point3,
+  frustum?: CaptureFrustum,
+): number | null {
+  if (Array.isArray(centerOrCorners[0])) {
+    return projectedCornersCaptureFraction(centerOrCorners as Point3[], [0, 0, 0], sizeOrFrustum as CaptureFrustum);
+  }
+  const center = centerOrCorners as Point3;
+  const size = sizeOrFrustum as Point3;
+  const corners: Point3[] = [];
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+    corners.push([
+      center[0] + (sx * size[0]) / 2,
+      center[1] + (sy * size[1]) / 2,
+      center[2] + (sz * size[2]) / 2,
+    ]);
+  }
+  return projectedCornersCaptureFraction(corners, visibleFrom!, frustum!);
 }
 
 const half = (v: [number, number, number], i: number) => v[i] / 2;

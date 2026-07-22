@@ -7,6 +7,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { extractSupportSurfaces, projectedCaptureFraction, type CaptureFrustum, type SupportSurface } from "./affordance.js";
+import { loadOccupancyGrid, rayOccluded, type OccupancyGrid } from "./occupancy.js";
+import { loadSemanticScene, type SemanticScene } from "./semanticplace.js";
 import { okJson } from "./util.js";
 
 type Vec3 = [number, number, number];
@@ -53,12 +56,31 @@ export interface RenderVirtualFrameOptions {
   exec?: ExecOverride;
 }
 
+export interface DetectVirtualSurfacesOptions {
+  semanticScenePath?: string;
+  occupancyPath?: string;
+  scene?: SemanticScene;
+  occupancy?: OccupancyGrid;
+  position: Vec3;
+  target?: Vec3;
+  yawDeg?: number;
+  pitchDeg?: number;
+  fovDeg?: number;
+  width?: number;
+  height?: number;
+  calibratedIntrinsics?: boolean;
+  calibrationPath?: string;
+  minVisibleFraction?: number;
+}
+
 const execFileAsync = promisify(execFile) as unknown as ExecOverride;
 const DEFAULT_CALIBRATION = path.join(os.homedir(), ".pico-mcp", "camera-calibration.json");
 const DEFAULT_OUT_DIR = "/tmp/pico-render/vcam";
 const RENDER_TIMEOUT_MS = 10 * 60 * 1000;
 export const VIRTUAL_CAMERA_HONESTY =
   "host-side synthetic render of the scanned world — NOT an emulator capture; evidence class usd_host_render at best";
+export const VIRTUAL_SURFACES_HONESTY =
+  "simulated scene understanding from scanned geometry — structural evidence; labels are detector opinions";
 
 function finiteVec3(value: unknown, label: string): Vec3 {
   if (!Array.isArray(value) || value.length !== 3 || value.some((v) => typeof v !== "number" || !Number.isFinite(v))) {
@@ -174,6 +196,154 @@ function validateLookDirection(position: Vec3, target: Vec3) {
   if (Math.hypot(dx, dz) < 1e-6) {
     throw new Error("target direction cannot be parallel to world up; choose a non-vertical look direction");
   }
+}
+
+function dot(a: Vec3, b: Vec3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function normalize(value: Vec3): Vec3 {
+  const length = Math.hypot(...value);
+  return [value[0] / length, value[1] / length, value[2] / length];
+}
+
+interface CameraBasis {
+  position: Vec3;
+  forward: Vec3;
+  right: Vec3;
+  up: Vec3;
+}
+
+function cameraBasis(position: Vec3, target: Vec3): CameraBasis {
+  const forward = normalize([target[0] - position[0], target[1] - position[1], target[2] - position[2]]);
+  const right = normalize(cross(forward, [0, 1, 0]));
+  return { position, forward, right, up: cross(right, forward) };
+}
+
+/** Map app/world coordinates into projectedCaptureFraction's fixed camera convention (+X,+Y,-Z). */
+function toCameraPoint(point: Vec3, basis: CameraBasis): Vec3 {
+  const relative: Vec3 = [
+    point[0] - basis.position[0],
+    point[1] - basis.position[1],
+    point[2] - basis.position[2],
+  ];
+  return [dot(relative, basis.right), dot(relative, basis.up), -dot(relative, basis.forward)];
+}
+
+function patchVisibility(
+  min: Vec3,
+  max: Vec3,
+  basis: CameraBasis,
+  frustum: CaptureFrustum,
+): number {
+  const corners: Vec3[] = [];
+  for (const x of [min[0], max[0]]) for (const y of [min[1], max[1]]) for (const z of [min[2], max[2]]) {
+    corners.push(toCameraPoint([x, y, z], basis));
+  }
+  // Use the helper's real-corner overload. Re-boxing an arbitrarily rotated patch in camera
+  // space would invent corner combinations which do not exist and can create phantom geometry.
+  return projectedCaptureFraction(corners, frustum) ?? 0;
+}
+
+/**
+ * Average clipped-projection visibility over small equal-area surface patches. Subdivision is
+ * required for floors that cross the camera plane: one giant AABB would fail closed when any
+ * corner is behind the viewer even though most of the forward floor is in-frame.
+ */
+function surfaceVisibility(surface: SupportSurface, basis: CameraBasis, frustum: CaptureFrustum): {
+  visibleFraction: number;
+  detectedPatchVisibleFraction: number;
+  visiblePatchFraction: number;
+} {
+  const spanX = surface.max[0] - surface.min[0];
+  const spanZ = surface.max[1] - surface.min[1];
+  const cellsX = Math.min(12, Math.max(1, Math.ceil(spanX / 0.25)));
+  const cellsZ = Math.min(12, Math.max(1, Math.ceil(spanZ / 0.25)));
+  let sum = 0;
+  let visibleSum = 0;
+  let visiblePatches = 0;
+  for (let ix = 0; ix < cellsX; ix++) for (let iz = 0; iz < cellsZ; iz++) {
+    const x0 = surface.min[0] + spanX * ix / cellsX;
+    const x1 = surface.min[0] + spanX * (ix + 1) / cellsX;
+    const z0 = surface.min[1] + spanZ * iz / cellsZ;
+    const z1 = surface.min[1] + spanZ * (iz + 1) / cellsZ;
+    const fraction = patchVisibility([x0, surface.y - 0.01, z0], [x1, surface.y + 0.01, z1], basis, frustum);
+    sum += fraction;
+    if (fraction > 0) { visibleSum += fraction; visiblePatches++; }
+  }
+  const totalPatches = cellsX * cellsZ;
+  return {
+    // The public visibleFraction is whole-surface coverage and drives minVisibleFraction. Keep
+    // conditional in-frame quality separate so a tiny, crisp sliver cannot pass a high threshold.
+    visibleFraction: sum / totalPatches,
+    detectedPatchVisibleFraction: visiblePatches ? visibleSum / visiblePatches : 0,
+    visiblePatchFraction: visiblePatches / totalPatches,
+  };
+}
+
+export function detectVirtualSurfaces(options: DetectVirtualSurfacesOptions) {
+  const position = finiteVec3(options.position, "position");
+  if (options.target && (options.yawDeg !== undefined || options.pitchDeg !== undefined)) {
+    throw new Error("pass position+target OR yawDeg/pitchDeg, not both");
+  }
+  const target = options.target
+    ? finiteVec3(options.target, "target")
+    : targetFromAngles(position, options.yawDeg ?? 0, options.pitchDeg ?? 0);
+  validateLookDirection(position, target);
+  const semanticPath = options.semanticScenePath?.replace(/^~\//, `${os.homedir()}/`);
+  const scene = options.scene ?? (semanticPath ? loadSemanticScene(semanticPath) : null);
+  if (!scene) throw new Error(semanticPath ? `cannot load semantic scene ${semanticPath}` : "semanticScenePath is required");
+  const occupancyPath = options.occupancyPath?.replace(/^~\//, `${os.homedir()}/`);
+  let occupancy = options.occupancy;
+  if (!occupancy && occupancyPath) {
+    try { occupancy = loadOccupancyGrid(occupancyPath); }
+    catch (error: any) { throw new Error(`cannot load occupancy grid ${occupancyPath}: ${error?.message ?? error}`); }
+  }
+  const fovDeg = options.fovDeg ?? 70;
+  const intrinsics = options.calibratedIntrinsics
+    ? loadCalibratedIntrinsics(options.calibrationPath ?? DEFAULT_CALIBRATION, options.width, options.height)
+    : intrinsicsFromFov(options.width ?? 1280, options.height ?? 1280, fovDeg);
+  const minVisibleFraction = options.minVisibleFraction ?? 0.01;
+  if (!Number.isFinite(minVisibleFraction) || minVisibleFraction < 0 || minVisibleFraction > 1) {
+    throw new Error("minVisibleFraction must be between 0 and 1");
+  }
+  const basis = cameraBasis(position, target);
+  const frustum: CaptureFrustum = intrinsics;
+  const surfaces = extractSupportSurfaces(scene).map((surface) => {
+    const center: Vec3 = [
+      (surface.min[0] + surface.max[0]) / 2,
+      surface.y,
+      (surface.min[1] + surface.max[1]) / 2,
+    ];
+    const visibility = surfaceVisibility(surface, basis, frustum);
+    return {
+      kind: surface.kind,
+      label: surface.label,
+      objectId: surface.objectId,
+      center,
+      extent: [surface.max[0] - surface.min[0], 0, surface.max[1] - surface.min[1]] as Vec3,
+      distanceM: Number(Math.hypot(center[0] - position[0], center[1] - position[1], center[2] - position[2]).toFixed(3)),
+      visibleFraction: Number(visibility.visibleFraction.toFixed(4)),
+      detectedPatchVisibleFraction: Number(visibility.detectedPatchVisibleFraction.toFixed(4)),
+      visiblePatchFraction: Number(visibility.visiblePatchFraction.toFixed(4)),
+      losClear: occupancy ? !rayOccluded(occupancy, position, center).occluded : null,
+    };
+  }).filter((surface) => surface.visibleFraction >= minVisibleFraction);
+  return {
+    surfaces,
+    intrinsics,
+    pose: { position, target },
+    occupancyConsulted: !!occupancy,
+    honesty: `${VIRTUAL_SURFACES_HONESTY}${occupancy ? "" : "; losClear is null because no occupancy grid was supplied"}`,
+  };
 }
 
 function subprocessError(error: any): string {
@@ -308,6 +478,25 @@ const virtualCameraFrameInputSchema = z.object({
   }
 });
 
+const virtualCameraSurfacesInputSchema = z.object({
+  semanticScenePath: z.string(),
+  occupancyPath: z.string().optional(),
+  position: vec3Schema,
+  target: vec3Schema.optional(),
+  yawDeg: z.number().optional(),
+  pitchDeg: z.number().optional(),
+  fovDeg: z.number().gt(0).lt(180).optional(),
+  width: z.number().int().positive().max(8192).optional(),
+  height: z.number().int().positive().max(8192).optional(),
+  calibratedIntrinsics: z.boolean().optional(),
+  calibrationPath: z.string().optional(),
+  minVisibleFraction: z.number().min(0).max(1).optional(),
+}).strict().superRefine((value, context) => {
+  if (value.target && (value.yawDeg !== undefined || value.pitchDeg !== undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "pass position+target OR yawDeg/pitchDeg, not both" });
+  }
+});
+
 export function registerVirtualCameraTools(server: McpServer) {
   server.registerTool(
     "virtual_camera_frame",
@@ -321,6 +510,21 @@ export function registerVirtualCameraTools(server: McpServer) {
         return okJson({ status: "ok", ...await renderVirtualFrame(args as RenderVirtualFrameOptions) });
       } catch (error: any) {
         return okJson({ status: "error", error: error?.message ?? String(error), honesty: VIRTUAL_CAMERA_HONESTY });
+      }
+    },
+  );
+  server.registerTool(
+    "virtual_camera_surfaces",
+    {
+      description:
+        "Simulate camera-visible support-plane detection from a semantic scanned-room model. Reports detector-labeled floor/object tops, whole-surface visibleFraction plus detectedPatchVisibleFraction/visiblePatchFraction, center-ray occupancy LOS, distance, and extents for an arbitrary pose. A tiny visible sliver cannot pass a high minVisibleFraction. Structural geometry only; losClear is null without occupancyPath.",
+      inputSchema: virtualCameraSurfacesInputSchema,
+    },
+    async (args) => {
+      try {
+        return okJson({ status: "ok", ...detectVirtualSurfaces(args as DetectVirtualSurfacesOptions) });
+      } catch (error: any) {
+        return okJson({ status: "error", error: error?.message ?? String(error), honesty: VIRTUAL_SURFACES_HONESTY });
       }
     },
   );

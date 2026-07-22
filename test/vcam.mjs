@@ -17,10 +17,12 @@ const skip = (message) => console.log(`  SKIP ${message}`);
 
 const {
   appPoseToSplatPose,
+  detectVirtualSurfaces,
   intrinsicsFromFov,
   registerVirtualCameraTools,
   renderVirtualFrame,
 } = await import("../dist/virtualcamera.js");
+const { buildOccupancyGrid } = await import("../dist/occupancy.js");
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pico-vcam-test-"));
 const fakeSplat = path.join(tmpDir, "fixture.ply");
@@ -165,6 +167,7 @@ try {
   await client.connect(clientTransport);
   const listed = await client.listTools();
   assert.ok(listed.tools.some((tool) => tool.name === "virtual_camera_frame"));
+  assert.ok(listed.tools.some((tool) => tool.name === "virtual_camera_surfaces"));
   const typo = await client.callTool({
     name: "virtual_camera_frame",
     arguments: { splatPath: fakeSplat, position: [0, 1, 0], yawDeg: 0, widht: 400 },
@@ -177,6 +180,10 @@ try {
     name: "virtual_camera_frame",
     arguments: { worldConfig: { splatPath: fakeSpz, offsetApplied: [0, 0.8, 0] }, position: [0, 1, 0], yawDeg: 0 },
   });
+  const surfaceTypo = await client.callTool({
+    name: "virtual_camera_surfaces",
+    arguments: { semanticScenePath: worldConfigPath, position: [0, 1, 0], yawDeg: 0, minVisiblePercent: 50 },
+  });
   await client.close();
   const textOf = (result) => (result.content ?? []).filter((item) => item.type === "text").map((item) => item.text).join("\n");
   assert.equal(typo.isError, true);
@@ -185,7 +192,9 @@ try {
   assert.match(textOf(conflictingPose), /position\+target OR yawDeg\/pitchDeg/);
   assert.notEqual(objectConfig.isError, true);
   assert.match(textOf(objectConfig), /SPZ is not supported/);
-  ok("MCP registers virtual_camera_frame, passes strict object configs, and rejects typo/conflicting-pose inputs");
+  assert.equal(surfaceTypo.isError, true);
+  assert.match(textOf(surfaceTypo), /minVisiblePercent/);
+  ok("MCP registers both virtual-camera tools, passes strict object configs, and rejects typo/conflicting-pose inputs");
 } catch (error) {
   fail(`MCP registration/schema: ${error.stack ?? error.message}`);
 }
@@ -246,6 +255,108 @@ if (!realReady) {
     ok(`real ramen render is a deterministic 640x640 PNG (${(firstBytes.length / 1024).toFixed(1)} KB)`);
   } catch (error) {
     fail(`real render: ${error.stack ?? error.message}`);
+  }
+}
+
+// ── virtual_camera_surfaces ────────────────────────────────────────────────────────────────────
+const syntheticScene = {
+  floorY: 0,
+  bounds: { min: [-3, 0, -6], max: [3, 3, 1] },
+  objects: [
+    { id: 1, label: "wooden table", center: [0, 0.45, -3], size: [1.5, 0.9, 1] },
+    { id: 2, label: "outside table", center: [6, 0.5, -3], size: [1, 1, 1] },
+    { id: 3, label: "mostly outside table", center: [20, 0.5, -5], size: [40, 1, 1] },
+  ],
+};
+const wallPoints = [];
+for (let ix = 0; ix <= 160; ix++)
+  for (let iy = 0; iy <= 80; iy++)
+    for (let iz = 0; iz <= 8; iz++) wallPoints.push(-2 + ix * 0.025, iy * 0.025, 0.7 + iz * 0.025);
+const wallGrid = buildOccupancyGrid(new Float32Array(wallPoints), {
+  cell: 0.05,
+  minPointsPerCell: 1,
+  trim: false,
+});
+
+try {
+  const visible = detectVirtualSurfaces({
+    scene: syntheticScene,
+    occupancy: wallGrid,
+    position: [0, 1.4, 0],
+    target: [0, 0.9, -3],
+    width: 640,
+    height: 480,
+    fovDeg: 70,
+  });
+  const floor = visible.surfaces.find((surface) => surface.label === "floor");
+  const table = visible.surfaces.find((surface) => surface.label === "wooden table");
+  assert.ok(floor && floor.visibleFraction > 0 && floor.losClear === true);
+  assert.ok(table && table.visibleFraction > 0 && table.losClear === true);
+  assert.deepEqual(table.extent, [1.5, 0, 1]);
+  assert.ok(table.distanceM > 2 && table.distanceM < 4);
+  assert.ok(!visible.surfaces.some((surface) => surface.label === "outside table"));
+  const highThreshold = detectVirtualSurfaces({
+    scene: syntheticScene,
+    position: [0, 1.4, 0],
+    target: [0, 0.9, -3],
+    width: 640,
+    height: 480,
+    fovDeg: 70,
+    minVisibleFraction: 0.5,
+  });
+  assert.ok(!highThreshold.surfaces.some((surface) => surface.label === "mostly outside table"));
+  assert.ok(highThreshold.surfaces.every((surface) => surface.losClear === null));
+
+  const yawOutside = detectVirtualSurfaces({
+    scene: {
+      objects: [{ id: 9, label: "yaw outside table", center: [0, 0.9, -0.7], size: [0.2, 0.2, 0.2] }],
+    },
+    position: [0, 1, 0],
+    target: [Math.SQRT1_2, 1, -Math.SQRT1_2],
+    width: 640,
+    height: 480,
+    fovDeg: 60,
+  });
+  assert.ok(!yawOutside.surfaces.some((surface) => surface.label === "yaw outside table"));
+
+  const occluded = detectVirtualSurfaces({
+    scene: syntheticScene,
+    occupancy: wallGrid,
+    position: [0, 1.4, 1.5],
+    target: [0, 0.9, -3],
+    width: 640,
+    height: 480,
+    fovDeg: 70,
+  });
+  assert.equal(occluded.surfaces.find((surface) => surface.label === "wooden table")?.losClear, false);
+  assert.match(visible.honesty, /structural evidence/i);
+  ok("surface simulation reports honest coverage/geometry/LOS and rejects arbitrary-yaw phantom corners");
+} catch (error) {
+  fail(`surface simulation: ${error.stack ?? error.message}`);
+}
+
+const ramenSemantic = path.join(os.homedir(), ".pico-mcp/artifacts/ramen-v19-semantic-app.json");
+if (!fs.existsSync(ramenSemantic) || !fs.existsSync(ramenOccupancy)) {
+  skip("real surfaces: ramen semantic/occupancy artifacts unavailable");
+} else {
+  try {
+    const report = detectVirtualSurfaces({
+      semanticScenePath: ramenSemantic,
+      occupancyPath: ramenOccupancy,
+      position: [0.034, 1.896, 0.147],
+      yawDeg: 0,
+      pitchDeg: 0,
+      calibratedIntrinsics: true,
+      calibrationPath: path.join(os.homedir(), ".pico-mcp/camera-calibration.json"),
+    });
+    const floor = report.surfaces.find((surface) => surface.label === "floor");
+    assert.ok(floor);
+    assert.ok(floor.visibleFraction > 0.25 && floor.visibleFraction < 0.4);
+    assert.ok(floor.detectedPatchVisibleFraction >= 0.5);
+    assert.equal(floor.losClear, false);
+    ok(`real ramen floor reports honest whole-surface visibility ${floor.visibleFraction} (detected patches ${floor.detectedPatchVisibleFraction}; center LOS blocked)`);
+  } catch (error) {
+    fail(`real surfaces: ${error.stack ?? error.message}`);
   }
 }
 
