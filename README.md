@@ -15,6 +15,7 @@ Concrete jobs this tool does on a stock PICO OS 6 emulator install, each backed 
 4. **World-model tooling for real scans** — a Gaussian-splat scan becomes a labeled semantic scene (OWL-v2), briefs anchor content to labeled real-world surfaces (`anchorTo`), free-space solving avoids even unlabeled geometry (occupancy grid), and placements come back with **measured error in centimeters** via the calibrated capture camera.
 5. **Talk to a RUNNING app** — the live agent bridge spawns/moves/removes entities in a running spatial app, with every mutation verified by scene diff.
 6. **Environment doctoring** — `pico_doctor` is a read-only preflight where every failing check carries the exact fix; it's how we caught (and report upstream) real toolchain issues.
+7. **Simulate camera views from a scanned room** — `virtual_camera_frame`, `virtual_camera_surfaces`, and `virtual_camera_from_app` render what a world-model camera would see and report camera-visible support surfaces from its semantic model; the separate emulator-HAL spike is explicitly partial, not presented as real VST support ([evidence and boundaries](docs/VIRTUAL_CAMERA.md)).
 
 It is designed to **complement** `pico-cli` and the `pico-spatial-agentic-tools` plugin, not compete: your tooling guides and scaffolds; this adds the verified build/verify/ship loop and the world-model layer. Install both side by side.
 
@@ -127,6 +128,7 @@ The tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first sc
 - **[QUICKSTART.md](QUICKSTART.md)** — the front door, with the proven first-run sequence
 - **[ROADMAP.md](ROADMAP.md)** — where this is going, every line gate-labeled honestly
 - **[docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md)** — the Unity/OpenXR lane: SDK choice, the buildable-today verify loop, and the completed emulator black-output test
+- **[docs/VIRTUAL_CAMERA.md](docs/VIRTUAL_CAMERA.md)** — simulated camera frames and surface detection from scanned rooms, plus the bounded emulator camera-HAL result
 - **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** — repo layout, gates, and standing invariants for anyone new to this codebase
 - **[CAPABILITIES.md](CAPABILITIES.md)** — the honest capability matrix (categories + evidence)
 - **[DESIGN.md](DESIGN.md)** — architecture + correctness rules (runtime physics, PICO math API, editor MaterialX, the visual-ground-truth rule)
