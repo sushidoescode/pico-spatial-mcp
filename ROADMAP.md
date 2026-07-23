@@ -15,6 +15,12 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
 - **Name-aware procedural provisioning**: data-bound briefs whose names match shape archetypes
   (gems, crystals, pins, bottles…) now get REAL baked faceted geometry instead of placeholder
   cards — vision-verified (`com.fleet.crystals`).
+- **Unity hello-XR settling test**: Unity 6000.4.9f1 + the official PICO OpenXR package reached a
+  healthy FOCUSED session, advanced frames at 60fps, and submitted an app-owned layer on emulator
+  0.13.1 / OS 6.0; three looked-at captures across two launches were uniformly black.
+  Runtime/session/layer operation is structurally proven, while the intended immersive pixels
+  are absent from capture on this emulator build — not a visual-success or `vision_verified`
+  claim. The test does not isolate the failing compositor/camera/render-target stage.
 
 ## Near-term (ungated — buildable on the current emulator)
 
@@ -26,9 +32,9 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
 - **Scaffold archetypes**: the two-step `pico_build_app` authoring flow should offer scaffold
   variants per brief archetype (display / game / data-panel), so a stranger's first authored
   spec steers toward the pipeline's proven strengths.
-- **Unity lane, step 1**: the "hello XR" settling test described in
-  [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md) — then a `unity_batch_build` tool wrapping the
-  confirmed batchmode path, if the test justifies it.
+- **Unity lane, optional build wrapper**: evaluate a `unity_batch_build` tool around the confirmed
+  batchmode path for non-immersive/build handoffs. It would not by itself visually verify
+  immersive output on the current emulator; see [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
 - **17.0 tail**: semantic scan → `anchorTo` brief into a NEW splat world through the compile
   path (proving the world-model loop generalizes beyond the ramen scan).
 
@@ -40,8 +46,9 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
   waiting for a second real vault to exist locally.
 - **First `device_verified` ledger entry** — protocol + evidence ask-list shipped
   ([docs/DEVICE_VERIFICATION.md](docs/DEVICE_VERIFICATION.md)); needs a real Swan run.
-- **Immersive OpenXR re-test** (native, WebXR, and Unity-built) — the compositing question in
-  [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md), re-run first thing on a 6.1 emulator or hardware.
+- **Immersive OpenXR re-test** (native, WebXR, and Unity-built) — re-test the observed 0.13.1 /
+  OS 6.0 black-output boundary first thing on a 6.1 emulator or Swan hardware; do not project the
+  current result onto either untested target. See [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
 
 ## Blessing-gated (needs PICO's go-ahead; nothing goes public before it)
 

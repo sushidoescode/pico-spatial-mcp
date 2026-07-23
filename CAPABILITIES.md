@@ -34,11 +34,18 @@ Evidence totals: `vision_verified` 67 · `auto_judged` 7 · `usd_host_render` 3 
   `compile_spatial_experience` routes any brief to the right lane(s).
 
 ## Honest boundaries (deferred, never claimed)
-- Boundless walk-around immersion + immersive-frame compositing (native OpenXR and WebXR) are
-  **Swan-hardware** — the WebXR *session + pose* layer runs headlessly today; only the visual
-  compositing waits for hardware.
+- Boundless walk-around immersion is not capture-verified on the tested **0.13.1 / PICO OS 6.0
+  emulator**. Native OpenXR and WebXR previously produced the same black-output symptom; the
+  Unity 6000.4.9f1 + official PICO OpenXR settling test reproduces it independently:
+  FOCUSED session, running display, advancing frames, 60/60 runtime telemetry, and an app-owned
+  layer were structurally proven, while three looked-at 2160×2158 captures were uniformly black.
+  That is a structural runtime success with the intended immersive pixels absent from capture —
+  not a visually successful or `vision_verified` Unity scene. This test does not isolate
+  compositor promotion from an earlier Unity camera/render-target stage. Re-test on a 6.1
+  emulator or Swan hardware.
 - **WebSpatial spatial depth** activates on **PICO OS 6** (the 2D projection is verified now).
-- Physics simulates on the emulator; Unity XR build stays in the companion Unity MCP (a Unity VR
-  app can't visually verify on this emulator regardless — see ROADMAP §5).
+- Physics simulates on the emulator; Unity XR build stays in the companion Unity MCP. Its APKs can
+  be build/install/session-verified here, while immersive pixels remain deferred on this emulator
+  build — see [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
 
 *Re-generate anytime: `capability_matrix`. Per-app detail: `ledger_report`.*
