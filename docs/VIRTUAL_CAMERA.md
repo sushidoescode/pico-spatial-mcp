@@ -1,9 +1,10 @@
-# Virtual camera — three levels, three evidence boundaries (v28.0)
+# Virtual camera — three levels, three evidence boundaries (v28.4)
 
 *(Direct-test-grounded 2026-07-22. “Virtual camera” here means a deterministic view synthesized
 from a scanned-world model — not PICO VST, not passthrough, and not a claim about Swan hardware.
 The L1 implementation shipped, but its planned Task 3 real-scene coverage bar did not pass; L2 is
-partial and pixel-negative, and L3 is proposal-only.)*
+partial and remains pixel-negative after an explicit injected-card transport test; L3 is
+proposal-only.)*
 
 ## The short version
 
@@ -12,14 +13,16 @@ partial and pixel-negative, and L3 is proposal-only.)*
   foreground-verified emulator capture. The planned real-scene `visibleFraction >= 0.5` check did
   not pass (floor `0.3093`; no counter result). The tools prove world-model composition — they do
   not put synthetic pixels into Android's camera stack.
-- **L2 — structurally alive, visually unresolved:** the emulator booted with
-  `-camera-back webcam0`; CameraPeek opened camera ID 10 and CameraX reported `STREAMING` — but the
-  LOOKed capture contained no recognizable webcam image. That is a useful negative pixel result,
-  not proof of a working webcam feed.
+- **L2 — structurally alive, explicitly pixel-negative:** v28.4 generated a changing high-contrast
+  nonce/card sequence, drove the public CoreMediaIO sink exposed by Immersed Camera, freshly mapped
+  that UUID to `webcam1`, and retained matching dry-run/live qemu argv plus final CameraPeek
+  build/open/`STREAMING` evidence. Two personally LOOKed captures were byte-identical and showed a
+  static emulator bedroom scene instead of the card. That refutes this end-to-end attempt; it does not prove
+  a writable source camera or working injected-pixel feed.
 - **L3 — upstream proposal only:** PICO could expose the L1 RGB and surface products through an
   emulator camera/MR provider — no such SDK/runtime shim was built or verified in this repo.
 
-No v28.0 entry is `device_verified`; no real PICO headset was used.
+No v28.0 or v28.4 entry is `device_verified`; no real PICO headset was used.
 
 ## L1 — the world model gets a camera
 
@@ -133,6 +136,83 @@ build, not the later APK.
 There was no `videoplayback` round. The local emulator help exposes the mode name, but no
 discoverable input/file configuration for it; more importantly, the prerequisite webcam-pixel
 path had not succeeded. v28.0 did not invent an undocumented argument, feed, or success claim.
+
+### v28.4 injected-card round — complete evidence chain, negative pixels
+
+v28.4 added CI-safe transport primitives rather than an unverified live-pose bridge. The TypeScript
+module generates deterministic 1280×720 BGRA cards without fonts, FFmpeg, cameras, or wall-clock
+input; parses a fresh emulator webcam listing against an exact host name and UUID; builds an
+executable/argv-separated producer plan; and owns bounded fake-producer startup, abort, join, and
+teardown behavior. Cooperative downstream work is joined after abort; an operation that ignores
+abort gets only a bounded grace period and remains rejection-observed while producer teardown
+continues. The macOS helper is separately gated on macOS and uses public CoreMediaIO APIs.
+Linux CI exercises only deterministic cards, mapping, and a fake producer; it does not require the
+Immersed extension, camera hardware, or an emulator.
+
+The retained source nonce was `VCAM-20260722-7F3A`. Its four counters have distinct raw-frame
+SHA-256 values, and the manifest SHA-256 is
+`d3f6c4869a4804ef95cd80f8a12a5b4c0511b3dfc1c3c5bc2454da02a1751d4f`. All four preview PNGs
+were personally LOOKed at: they contain the expected high-contrast bars, nonce, and counters
+`000000` through `000003`. That proves the deterministic source only.
+
+The enabled host extension exposed exactly one matching write-side stream:
+`Immersed Camera` / UUID `A1EA3EF8-F9D5-4BA7-827E-A26C1B27BEA2` /
+`ImmersedCamera.Video.Sink`, direction `0`, 1280×720 BGRA at 60 fps, with read-only logical queue
+and startup counts of `1`. Its copied `CMSimpleQueue` reported physical capacity `10`; public Apple
+headers do not promise equality with the logical queue-size property. The helper therefore keeps
+one effective in-flight token and treats queue-full as backpressure.
+
+Two producer defects were found before the final round and retained rather than hidden. The first
+implementation rejected copied capacity `10` before starting or enqueueing. A later implementation
+enqueued once and then crashed in CoreMediaIO's sample-finalization path because the removal
+callback released a borrowed token immediately before CoreMediaIO performed its own `CFRelease`.
+An LLDB control skipped the callback body and the same binary remained alive for 1,800 scheduler
+ticks; a device-free native regression now guards that ownership handoff. The final retry also
+changed sequence numbers to advance per successful enqueue, not per backpressured scheduler tick,
+as required by the CMIO sample contract. A post-proof review also found that public stop and
+callback-unregistration APIs do not document consumer quiescence. Shutdown therefore does not
+drain or release the copied queue and any remaining token; it intentionally retains them for the
+bounded remainder of the producer process instead of racing provider work. Its last stats event is
+explicitly an unquiesced `shutdown-snapshot`, not a final callback count, and handled signals return
+their deterministic `128 + signal` status. The helper accepts only the proven test-card manifest;
+the unattempted fixed-pose kind is not admitted without its own provenance contract.
+
+With the corrected producer live, fresh enumeration still resolved:
+
+```text
+webcam0 -> 6C707041-05AC-0011-0008-000000000001 (physical MacBook camera, YV12)
+webcam1 -> A1EA3EF8-F9D5-4BA7-827E-A26C1B27BEA2 (Immersed Camera, BGR4)
+```
+
+The decoded restart argv and live qemu argv both ended in `-camera-back webcam1`; post-start
+enumeration retained the same mapping, and bundled adb reported `sys.boot_completed=1`. The
+unchanged hand-authored CameraPeek APK rebuilt directly at 9,728,122 bytes with SHA-256
+`9ff4d80480190cf836fbff53f4bdb76230e376b2e6cc5f2d0c2e697ffde1d383`. After a clean install it
+was focused/resumed, camera service showed camera ID `10` open for its PID, and its own log advanced
+`IDLE -> Bound DEFAULT_BACK_CAMERA -> STREAMING`. Those facts are structural prerequisites only.
+
+The visual gate failed. Two final captures, taken more than one source-counter interval apart, are
+byte-identical with SHA-256
+`2b0f515a182ef02a23abdad836b7c7f3cb993a0a1b0f9148b8ffb6bc2ad9f5c9`. Both were personally
+LOOKed at. CameraPeek visibly says `STREAMING`, while its preview contains the static emulator
+bedroom scene; the nonce, bars, and changing counter are absent. The ledger entry is therefore
+`structural`, not `vision_verified`. The fixed-pose scanned-room round was correctly skipped because
+the card prerequisite did not pass.
+
+The narrowest proven failure interval begins after the Immersed sink removes the writer's samples
+and ends before those pixels reach CameraPeek's preview. Fresh mapping and live argv rule out an
+accidentally selected index in this run, but they do not prove that the Immersed extension republishes
+sink samples on its exposed source or that qemu acquired those source pixels. Host FFmpeg enumerated
+the Immersed source but could not open it (`Cannot use Immersed Camera`, `Input/output error`), and no
+privacy/TCC setting was changed. Distinguishing Immersed sink-to-source publication from qemu's
+AVFoundation acquisition remains an external-system dependency; the current evidence cannot assign
+the failure more narrowly.
+
+Retained root:
+`/Users/sushantsrikrish/.pico-mcp/artifacts/vcam-v28.4-20260722-7f3a`. CameraPeek and both producers
+were stopped afterward. The normal emulator profile was cold-restored and verified booted with no
+`-camera-back` argument. That final restart makes persisted camera calibration stale for any later
+metric claim.
 
 ### Calibration warning after the spike
 
