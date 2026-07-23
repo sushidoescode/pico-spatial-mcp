@@ -83,8 +83,8 @@ export function registerGateTools(server: McpServer) {
       } catch {
         return okJson({ status: "error", error: `no golden scorecard at ${goldenScorecardPath()} — run mode='save' first.` });
       }
-      const goldenPass = new Set(golden.rows.filter((r: any) => r.pass).map((r: any) => r.id));
-      const nowPass = new Set(suite.rows.filter((r: any) => r.pass).map((r: any) => r.id));
+      const goldenPass = new Set(golden.rows.filter((r: any) => r.pass === true).map((r: any) => r.id));
+      const nowPass = new Set(suite.rows.filter((r: any) => r.pass === true).map((r: any) => r.id));
       const regressed = [...goldenPass].filter((id) => !nowPass.has(id));
       const scoreDrop = suite.scorecard.score < golden.scorecard.score;
 

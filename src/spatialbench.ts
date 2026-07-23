@@ -40,9 +40,9 @@ export const BENCH_CORE: readonly string[] = ["crystals", "boutique", "knockdown
 
 type BenchRow = {
   id: string;
-  planned: 0 | 1;
-  compiled: 0 | 1;
-  shape: 0 | 1;
+  planned: 0 | 1 | null;
+  compiled: 0 | 1 | null;
+  shape: 0 | 1 | null;
   booted: 0 | 1 | null; // null = tier not run or skipped
   captured: 0 | 1 | null;
   panelReady: 0 | 1 | null; // structural WindowManager evidence; NEVER a substitute for eye
@@ -132,7 +132,7 @@ export function applyFleetRuntimeEvidence(row: BenchRow, result: any): BenchRow 
   out.eye = panelStructuralOnly ? null : result?.verdict === "PASS" ? 1 : 0;
   out.panelReady = null;
   out.max = 5 + (panelStructuralOnly ? 0 : 1);
-  out.score = out.planned + out.compiled + out.shape + out.booted + out.captured + (out.eye ?? 0);
+  out.score = (out.planned ?? 0) + (out.compiled ?? 0) + (out.shape ?? 0) + out.booted + out.captured + (out.eye ?? 0);
   out.notes.push(...(result?.notes ?? []).slice(0, 2));
 
   const evidence = result?.panelEvidence;
@@ -166,7 +166,7 @@ export function applyFleetRuntimeFailure(row: BenchRow, error: unknown): BenchRo
   out.panelReady = null;
   out.eye = panelStructuralOnly ? null : 0;
   out.max = 5 + (panelStructuralOnly ? 0 : 1);
-  out.score = out.planned + out.compiled + out.shape;
+  out.score = (out.planned ?? 0) + (out.compiled ?? 0) + (out.shape ?? 0);
   if (out.expectedPanels > 0) {
     out.panelReady = 0;
     out.max += 1;
@@ -183,9 +183,9 @@ export function headlessRows(briefIds?: string[]): { rows: BenchRow[]; briefsDir
       if (typeof r.skipped === "string" && r.skipped) {
         return {
           id: r.id,
-          planned: 0,
-          compiled: 0,
-          shape: 0,
+          planned: null,
+          compiled: null,
+          shape: null,
           booted: null,
           captured: null,
           panelReady: null,
@@ -222,13 +222,16 @@ export function headlessRows(briefIds?: string[]): { rows: BenchRow[]; briefsDir
         notes: [...(r.lintErrors ?? []), ...(r.shapeMismatches ?? [])].slice(0, 3),
       };
     });
-  for (const r of rows) r.score = r.planned + r.compiled + r.shape;
+  for (const r of rows) r.score = (r.planned ?? 0) + (r.compiled ?? 0) + (r.shape ?? 0);
   return { rows, briefsDir: suite.briefsDir };
 }
 
 export function renderBenchHtml(report: any): string {
   const esc = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const dot = (v: 0 | 1 | null) => (v === null ? '<span class="na">—</span>' : v ? '<span class="y">●</span>' : '<span class="n">○</span>');
+  const aggregatePercent = report.summary.maxAggregate > 0
+    ? `${Math.round((report.summary.aggregate / report.summary.maxAggregate) * 100)}%`
+    : "n/a";
   const rows = report.rows
     .map((r: BenchRow) => `<tr><td>${esc(r.id)}</td><td>${dot(r.planned)}</td><td>${dot(r.compiled)}</td><td>${dot(r.shape)}</td><td>${dot(r.booted)}</td><td>${dot(r.captured)}</td><td>${dot(r.panelReady ?? null)}</td><td>${dot(r.eye)}</td><td>${dot(r.perf ?? null)}</td><td><b>${r.score}/${r.max}</b>${r.skipped ? ` <small>skipped: ${esc(r.skipped)}</small>` : ""}</td><td class="notes">${esc(r.notes.join("; "))}</td></tr>`)
     .join("\n");
@@ -246,7 +249,7 @@ footer{color:#8b949e;font-size:.78rem;margin-top:2rem;border-top:1px solid #2126
 code{font-family:ui-monospace,monospace;color:#79c0ff}
 </style></head><body>
 <h1>SpatialBench</h1>
-<p><b>${report.summary.total} briefs · tier: ${esc(report.tier)} · aggregate ${report.summary.aggregate}/${report.summary.maxAggregate} (${Math.round((report.summary.aggregate / Math.max(1, report.summary.maxAggregate)) * 100)}%)</b> — the pico-spatial-mcp conformance corpus, scored per axis. Re-run it yourself: <code>run_spatialbench</code>.</p>
+<p><b>${report.summary.total} briefs · tier: ${esc(report.tier)} · aggregate ${report.summary.aggregate}/${report.summary.maxAggregate} (${aggregatePercent})</b> — the pico-spatial-mcp conformance corpus, scored per axis. Re-run it yourself: <code>run_spatialbench</code>.</p>
 <div class="how"><b>Reading the axes:</b> planned/compiled/shape are headless (spec validity, ledger emission, expected node counts). booted/captured/eye need the PICO emulator. panelReady is structural WindowManager evidence that an expected caption-backed panel is allocated, ready, visible, and on-screen; it does NOT prove the panel's pixels or appearance and never becomes an eye pass. <b>eye = the calibrated stage-frame visual judge (auto_judged)</b> — a machine verdict, deliberately NOT vision_verified; panel-only routes show — and exclude eye from their maximum instead of false-failing an off-view panel. Escalations name only stage frames a human must look at. Skipped briefs gate on external assets (splats/panos) or explicitly declare an external implementation and are marked 0/0, not failed. <b>perf</b> (optional, tier=full with perfAxis:true) measures only the app's UI/RenderThread frames via <code>dumpsys gfxinfo</code> on the emulator, verdicting p95 against a budget in ms — this is structural evidence about 2D/Compose surfaces, NOT the spatial engine's 3D frame pacing (that needs <code>pico-cli perf</code> / perf_diagnose on a real device); a brief with no UI frame data (expected for spatial-only content) shows as — and is not counted against the axis max.</div>
 <table><thead><tr><th>brief</th><th>planned</th><th>compiled</th><th>shape</th><th>booted</th><th>captured</th><th>panelReady</th><th>eye</th><th>perf</th><th>score</th><th>notes</th></tr></thead>
 <tbody>${rows}</tbody></table>
@@ -268,11 +271,12 @@ export function registerSpatialBenchTools(server: McpServer) {
     },
     async ({ tier, briefIds, settleSec, outDir, perfAxis, perfBudgetMs }) => {
       const emulatorIds = briefIds?.length ? briefIds : BENCH_CORE;
-      // full tier keeps EVERY brief's headless row and adds emulator axes for the core set only
-      const { rows, briefsDir } = headlessRows(tier === "full" ? undefined : briefIds);
+      // An explicit selection scopes the report itself. Without one, full tier keeps every
+      // brief's headless row and adds emulator axes for the core set only.
+      const { rows, briefsDir } = headlessRows(briefIds?.length ? briefIds : undefined);
       if (tier === "full") {
         for (const row of rows) {
-          if (!emulatorIds.includes(row.id)) continue;
+          if (!emulatorIds.includes(row.id) || row.skipped) continue;
           try {
             const fleet = await innerCall("fleet_build", { briefIds: [row.id], settleSec });
             const r = fleet?.results?.[0] ?? {};

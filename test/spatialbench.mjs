@@ -33,11 +33,15 @@ else fail(`expected ≥15 corpus briefs, got ${rows.length}`);
 
 const scoredRows = rows.filter((r) => !r.skipped);
 const skippedRows = rows.filter((r) => r.skipped);
+const skippedIds = skippedRows.map((r) => r.id).sort();
 const perfect = scoredRows.filter((r) => r.score === 3 && r.max === 3).length;
-if (scoredRows.length > 0 && perfect === scoredRows.length) ok(`headless tier: every pipeline brief scores 3/3 (planned+compiled+shape)`);
+if (scoredRows.length === rows.length - 1 && perfect === scoredRows.length) ok(`headless tier: every pipeline brief scores 3/3 (planned+compiled+shape)`);
 else fail(`headless regressions: ${scoredRows.filter((r) => r.score !== 3).map((r) => `${r.id}=${r.score}/${r.max} [${r.notes.join("; ")}]`).join(", ")}`);
-if (skippedRows.length > 0 && skippedRows.every((r) => r.score === 0 && r.max === 0))
-  ok(`headless tier: ${skippedRows.length} explicit external implementation(s) report 0/0 skipped`);
+if (
+  JSON.stringify(skippedIds) === JSON.stringify(["camerapeek"]) &&
+  skippedRows.every((r) => r.score === 0 && r.max === 0 && /hand-authored-classic-android/.test(r.skipped))
+)
+  ok(`headless tier: only camerapeek is the explicit 0/0 external implementation`);
 else fail(`skipped headless rows must be 0/0: ${skippedRows.map((r) => `${r.id}=${r.score}/${r.max}`).join(", ")}`);
 
 if (rows.every((r) => r.booted === null && r.captured === null && r.panelReady === null && r.eye === null && r.perf === null)) ok("headless tier never claims emulator axes (booted/captured/panelReady/eye/perf stay null)");

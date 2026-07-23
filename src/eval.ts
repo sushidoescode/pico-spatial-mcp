@@ -66,7 +66,7 @@ export function computeSuite(briefsDir?: string): { status: string; briefsDir: s
     planFailures: rows.filter((r) => r.specValid === false || r.planOk === false).length,
     totalCompileSteps: rows.reduce((a, r: any) => a + (r.compileSteps ?? 0), 0),
     totalVisionVerified: rows.reduce((a, r: any) => a + (r.visionVerifiedInLedger ?? 0), 0),
-    score: scoredRows.length ? Number((passed / scoredRows.length).toFixed(3)) : 0,
+    score: scoredRows.length ? Number((passed / scoredRows.length).toFixed(3)) : null,
   };
   return { status: "ok", briefsDir: dir, scorecard, rows };
 }
@@ -103,11 +103,11 @@ function scoreBrief(entry: any) {
   if (exp.verifiableNowMin != null && preview.verifiableNow.length < exp.verifiableNowMin) mism.push(`verifiableNow ${preview.verifiableNow.length} < ${exp.verifiableNowMin}`);
   if (exp.swanMin != null && preview.builtForSwan.length < exp.swanMin) mism.push(`builtForSwan ${preview.builtForSwan.length} < ${exp.swanMin}`);
   const planOk = lint.errors.length === 0;
-  const compileOk = external || ledger.length > 0;
+  const compileOk = ledger.length > 0;
   const shapeOk = mism.length === 0;
   return {
     id: entry.id,
-    pass: planOk && compileOk && shapeOk,
+    pass: external ? null : planOk && compileOk && shapeOk,
     skipped: external ? `execution route ${execution.route}; generic AppSpec compile/build intentionally skipped` : null,
     specValid: true,
     planOk,

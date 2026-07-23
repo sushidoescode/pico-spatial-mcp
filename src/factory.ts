@@ -43,10 +43,37 @@ function corpusDir(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "briefs");
 }
 
+function declaredExecutionForId(id: string, dir: string): unknown | undefined {
+  try {
+    for (const file of fs.readdirSync(dir).filter((name) => name.endsWith(".json")).sort()) {
+      try {
+        const candidate = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8"));
+        if (candidate?.id === id && candidate.execution !== undefined) return candidate.execution;
+      } catch {
+        // A malformed unrelated corpus row is handled by the eval gate; it must not make a
+        // caller-supplied queue silently lose the authoritative route for a different id.
+      }
+    }
+  } catch {
+    // A custom queue may intentionally run without a corpus directory.
+  }
+  return undefined;
+}
+
 export function processBrief(entry: { id: string; brief?: string; spec?: any; execution?: unknown }) {
   let execution;
   try {
-    execution = classifyBriefExecution(entry);
+    const declaredExecution = declaredExecutionForId(entry.id, corpusDir());
+    const effectiveEntry = entry.execution === undefined && declaredExecution !== undefined
+      ? { ...entry, execution: declaredExecution }
+      : entry;
+    execution = classifyBriefExecution(effectiveEntry);
+    if (declaredExecution !== undefined && entry.execution !== undefined) {
+      const declared = classifyBriefExecution({ execution: declaredExecution });
+      if (JSON.stringify(execution) !== JSON.stringify(declared)) {
+        throw new Error(`queue execution metadata for '${entry.id}' conflicts with the corpus declaration`);
+      }
+    }
   } catch (error: any) {
     return { id: entry.id, status: "invalid_execution", issues: [String(error.message)], lintWarnings: [] };
   }
@@ -128,7 +155,10 @@ export function registerFactoryTools(server: McpServer) {
       }
       if (!work.length) return okJson({ status: "error", error: "empty queue (pass `queue` or a `briefsDir`)." });
 
-      const records = work.map(processBrief);
+      // Queue callers cannot override the repository's declared route by pairing a known id with
+      // an unrelated briefsDir. Entries loaded from a custom corpus already carry their own
+      // execution metadata; the repository corpus remains authoritative for known queue ids.
+      const records = work.map((entry) => processBrief(entry));
       const statusSummary = summarizeFactoryStatuses(records);
       const ready = statusSummary.readyToBuild;
       // reflection: recurring lint warnings across the fleet -> candidate lessons
