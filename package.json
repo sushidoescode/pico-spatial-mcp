@@ -33,7 +33,8 @@
     "test:preflight": "node test/preflight.mjs",
     "test:provision": "node test/provision.mjs",
     "test:bridge": "node test/mousebridge.mjs",
-    "test:vcam": "node test/vcam.mjs"
+    "test:vcam": "node test/vcam.mjs",
+    "test:emulator-restart": "node test/restart-emulator.mjs"
   },
   "engines": {
     "node": ">=20"

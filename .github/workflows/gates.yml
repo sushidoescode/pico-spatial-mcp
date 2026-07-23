@@ -53,6 +53,8 @@ jobs:
         run: npm run test:occupancy
       - name: Virtual camera (deterministic world render + frame mapping)
         run: npm run test:vcam
+      - name: Emulator restart argv + lifecycle (fully faked; no device access)
+        run: npm run test:emulator-restart
       - name: Live copilot (bridge-line protocol + scene diff)
         run: npm run test:copilot
       - name: Ledger fixtures (over-claims structurally impossible)
