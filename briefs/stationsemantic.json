@@ -1,0 +1,100 @@
+{
+  "id": "stationsemantic",
+  "brief": "v29 second-world generalization: scan the World Labs Futuristic Space Station splat, accept the looked-at display-screen label, and compile a bright green marker from anchorTo into that newly labeled world.",
+  "spec": {
+    "meta": {
+      "appName": "StationSemanticXR",
+      "packageName": "com.example.stationsemantic",
+      "stageStyle": "3",
+      "brief": "Second-world proof: a label-anchored marker in the scanned space station, independent of the ramen world.",
+      "semanticScenePath": "/Users/sushantsrikrish/.pico-mcp/artifacts/space-station-v17-semantic-app.json"
+    },
+    "scenes": [
+      {
+        "id": "station",
+        "environment": {
+          "kind": "splat",
+          "asset": "/Users/sushantsrikrish/Marble Worlds/Space Station World/Futuristic Space Station Interior.ply",
+          "params": {
+            "translate": {
+              "x": 0.979,
+              "y": -0.319,
+              "z": 2.06
+            },
+            "rotationEuler": {
+              "x": 0,
+              "y": 32.101,
+              "z": 0
+            },
+            "scale": 1
+          }
+        },
+        "lighting": {
+          "rig": "fullRig",
+          "params": {
+            "sunLux": 1800,
+            "pointLux": 900,
+            "spotLux": 4200,
+            "iblScale": 1
+          }
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [],
+    "objects": [
+      {
+        "id": "screenMarker",
+        "sceneId": "station",
+        "source": "primitive",
+        "anchorTo": {
+          "label": "display screen bank",
+          "relation": "in-front-of",
+          "gap": 0.12,
+          "offset": [
+            0.18,
+            1.3,
+            0
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.12,
+            0.12,
+            0.12
+          ],
+          "color": [
+            0.08,
+            1,
+            0.22
+          ]
+        }
+      }
+    ],
+    "data": [],
+    "interactions": [],
+    "panels": [],
+    "navigation": {
+      "startScene": "station",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "the small bright green marker is visible just to the right of and in front of the vertical blue display-screen bank, leaving the labeled landmark readable inside the photoreal space-station splat",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "screenMarker",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.253
+        }
+      }
+    ]
+  }
+}

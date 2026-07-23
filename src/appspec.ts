@@ -238,9 +238,10 @@ const appSpecObjectSchema = z.object({
   headsetLayer: z.array(headsetPieceSchema).default([]),
 });
 
-/** SceneIBL.kt is one app-level generated object. Multiple scenes may share it, but contradictory
- * path/mode/exponent values would make the compiler overwrite that same file and leave earlier call
- * sites unresolved. Reject that shape at the IR boundary instead of emitting an uncompilable app. */
+/** SceneIBL.kt and SplatEnvironment.kt are app-level generated singletons. Multiple scenes may
+ * share an identical configuration, but contradictory values would make the compiler overwrite
+ * the same file and silently render earlier scenes with the later scene's settings. Reject those
+ * shapes at the IR boundary instead of emitting a plausible but wrong app. */
 export const appSpecSchema = appSpecObjectSchema.superRefine((spec, ctx) => {
   const iblScenes = spec.scenes.filter((scene) => scene.lighting.rig === "ibl");
   for (const scene of iblScenes) {
@@ -281,6 +282,33 @@ export const appSpecSchema = appSpecObjectSchema.superRefine((spec, ctx) => {
     }
     layoutSceneIds.add(layout.sceneId);
   }
+
+  const splatScenes = spec.scenes.filter((scene) => scene.environment.kind === "splat");
+  if (splatScenes.length >= 2) {
+    const canonicalize = (value: any): any => Array.isArray(value)
+      ? value.map(canonicalize)
+      : value && typeof value === "object"
+        ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]))
+        : value;
+    const signature = (scene: (typeof splatScenes)[number]) => {
+      const params = Object.fromEntries(
+        Object.entries(scene.environment.params ?? {}).filter(
+          ([key]) => !["packageName", "kind", "assetFileName", "delivery"].includes(key),
+        ),
+      );
+      return JSON.stringify(canonicalize({ asset: scene.environment.asset ?? null, params }));
+    };
+    const expected = signature(splatScenes[0]);
+    for (const scene of splatScenes.slice(1)) {
+      if (signature(scene) === expected) continue;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scenes"],
+        message: `all splat scenes must share one asset/params configuration because the current compiler emits one SplatEnvironment.kt; scene '${scene.id}' conflicts with '${splatScenes[0].id}'`,
+      });
+    }
+  }
+
   if (iblScenes.length < 2) return;
   const signature = (scene: (typeof iblScenes)[number]) => {
     const params = scene.lighting.params ?? {};

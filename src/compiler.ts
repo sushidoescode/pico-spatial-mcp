@@ -31,6 +31,17 @@ function contentPkgPath(packageName: string): string {
   return `app/src/main/java/${packageName.replace(/\./g, "/")}/content`;
 }
 
+/** One host-neutral spelling for a splat's generated Kotlin filename and its adb-delivered
+ * app-files filename. Absolute host paths must never leak into either runtime surface. */
+export function splatAssetFileName(asset: string | undefined): string {
+  const raw = (asset ?? "world.spz").split(/[\\/]/).pop() || "world.spz";
+  const match = raw.match(/^(.*?)(\.(?:ply|spz))$/i);
+  const sourceStem = match?.[1] ?? raw.replace(/\.[^.]*$/, "");
+  const extension = (match?.[2] ?? ".spz").toLowerCase();
+  const safeStem = sourceStem.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^\.+|\.+$/g, "") || "world";
+  return `${safeStem}${extension}`;
+}
+
 export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
   // v17.0: bake anchorTo:{label} placements into concrete transforms BEFORE any step consumes the
   // spec (the wiring step receives the resolved spec verbatim). Resolution notes surface via the
@@ -56,9 +67,10 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
   push({ node: "meta", tool: "generate_agent_bridge", args: { packageName: pkg }, targetPath: `${cpath}/AgentBridge.kt`, cClass: "C0_emulator", note: "SKIP this step if the scaffold template already ships agent/AgentBridge.kt (galleryxr-derived templates do); otherwise inject and call AgentBridge.attachScene(root). The bridge lives under <pkg>.agent." });
 
   // 3. per-scene: environment → colliders → lighting
-  // SceneIBL is one app-level object. appSpecSchema guarantees every IBL scene has the same
-  // effective config, so emit its shared file once instead of scheduling colliding overwrites.
+  // SceneIBL and SplatEnvironment are app-level objects. appSpecSchema guarantees scenes sharing
+  // either singleton have the same effective config, so emit each shared file only once.
   let emittedIbl = false;
+  let emittedSplat = false;
   for (const s of spec.scenes) {
     const env = s.environment;
     if (env.kind === "texturedMesh") {
@@ -69,7 +81,10 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
       push({ node: s.id, tool: "bake_textured_model", args: { modelPath: env.asset ?? "<model.glb>", outBundle: `${projectDir}/app/src/main/assets/${stem}.bundle` }, targetPath: "app/src/main/assets/", cClass: "C0_emulator", note: "The ONLY textured path — never runtime-load raw GLB." });
       push({ node: s.id, tool: "generate_environment_kotlin", args: { packageName: contentPkg, kind: "texturedMesh", assetFileName: `${stem}.glb`, baseColorImage: env.baseColorImage, ...(env.params ?? {}) }, targetPath: `${cpath}/MeshEnvironment.kt`, cClass: "C0_emulator" });
     } else if (env.kind === "splat") {
-      push({ node: s.id, tool: "generate_environment_kotlin", args: { packageName: contentPkg, kind: "splat", assetFileName: env.asset, delivery: "storage" }, targetPath: `${cpath}/SplatEnvironment.kt`, cClass: "C0_emulator", note: "adb-push the .spz; spatialbundle can't pack splats. NOTE: a splat is a BOUNDED volume — for a full surround use kind=pano (skybox)." });
+      if (!emittedSplat) {
+        push({ node: s.id, tool: "generate_environment_kotlin", args: { ...(env.params ?? {}), packageName: contentPkg, kind: "splat", assetFileName: splatAssetFileName(env.asset), delivery: "storage" }, targetPath: `${cpath}/SplatEnvironment.kt`, cClass: "C0_emulator", note: "fleet delivers the .ply/.spz to the app's external files dir after install and verifies its size/hash before launch. NOTE: a splat is a BOUNDED volume — for a full surround use kind=pano (skybox)." });
+        emittedSplat = true;
+      }
     } else if (env.kind === "pano") {
       push({ node: s.id, tool: "generate_environment_kotlin", args: { packageName: contentPkg, kind: "skybox", assetFileName: env.baseColorImage ?? env.asset }, targetPath: `${cpath}/SkyboxEnvironment.kt`, cClass: "C0_emulator", note: "FULL-surround equirect skybox (no bounded blob). Ship the pano PNG (≤4096px) in assets/." });
     } else if (env.kind === "homeEnvProxy") {

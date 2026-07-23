@@ -7,8 +7,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { okJson } from "./util.js";
-import { buildLedger } from "./compiler.js";
+import { buildLedger, splatAssetFileName } from "./compiler.js";
 import { appSpecSchema, isSafeIblAssetPath } from "./appspec.js";
+import { resolveAnchors } from "./semanticplace.js";
 import { proceduralUsda } from "./procedural.js";
 import { bakeTexturedModel } from "./bundle.js";
 import { startBridgeDetached } from "./mousebridge.js";
@@ -38,6 +39,185 @@ const KTX_R11F_G11F_B10F = 0x8c3a;
 const KTX_RGB = 0x1907;
 const MAX_IBL_KTX_BYTES = 256 * 1024 * 1024;
 const MAX_IBL_DIMENSION = 8192;
+
+export type SplatAssetPlan = {
+  sourcePath: string;
+  sceneIds: string[];
+  fileName: string;
+  remoteDir: string;
+  remotePath: string;
+  bytes: number;
+  sha256: string;
+};
+
+export type SplatAssetPlanResult = {
+  ok: boolean;
+  assets: SplatAssetPlan[];
+  errors: string[];
+};
+
+type CommandRunner = (
+  file: string,
+  args: string[],
+  options?: Record<string, unknown>,
+) => Promise<{ stdout?: string | Buffer; stderr?: string | Buffer }>;
+
+export type FleetSemanticAnchorResult = {
+  ok: boolean;
+  spec: any;
+  notes: string[];
+  unresolvedObjectIds: string[];
+};
+
+/** Fleet must not turn a failed authored anchor into assemble.ts's generic fallback pose.
+ * Resolve once up front, retain every structural note, and fail closed while any anchor remains
+ * without a concrete position. Explicit authored positions still count as concrete. */
+export function prepareFleetSemanticAnchors(spec: any): FleetSemanticAnchorResult {
+  const resolved = resolveAnchors(spec);
+  const unresolvedObjectIds = (resolved.spec?.objects ?? [])
+    .filter((object: any) => object?.anchorTo && !object?.transform?.position)
+    .map((object: any) => String(object.id));
+  return {
+    ok: unresolvedObjectIds.length === 0,
+    spec: resolved.spec,
+    notes: resolved.notes,
+    unresolvedObjectIds,
+  };
+}
+
+function hashFileInChunks(file: string): string {
+  const hash = createHash("sha256");
+  const fd = fs.openSync(file, "r");
+  const buffer = Buffer.allocUnsafe(8 * 1024 * 1024);
+  try {
+    let offset = 0;
+    for (;;) {
+      const read = fs.readSync(fd, buffer, 0, buffer.length, offset);
+      if (read === 0) break;
+      hash.update(buffer.subarray(0, read));
+      offset += read;
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest("hex");
+}
+
+/** Resolve every splat scene to the exact, safe app-files delivery that generated Kotlin expects.
+ * This is structural planning only; pushSplatAssets verifies the remote bytes after installation. */
+export function planSplatAssets(spec: any, packageName: string): SplatAssetPlanResult {
+  const assets: SplatAssetPlan[] = [];
+  const errors: string[] = [];
+  if (!/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$/.test(packageName)) {
+    return { ok: false, assets, errors: [`invalid Android package for splat delivery: ${packageName}`] };
+  }
+
+  const byRuntimeName = new Map<string, SplatAssetPlan>();
+  for (const scene of spec?.scenes ?? []) {
+    if (scene?.environment?.kind !== "splat") continue;
+    const declared = scene.environment.asset;
+    if (typeof declared !== "string" || !declared.trim()) {
+      errors.push(`scene '${scene.id}' splat environment.asset is missing`);
+      continue;
+    }
+    const expanded = declared.startsWith("~/") ? path.join(os.homedir(), declared.slice(2)) : declared;
+    const sourcePath = path.resolve(expanded);
+    if (!/\.(?:ply|spz)$/i.test(sourcePath)) {
+      errors.push(`scene '${scene.id}' splat must be a .ply or .spz file: ${declared}`);
+      continue;
+    }
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(sourcePath);
+    } catch {
+      errors.push(`scene '${scene.id}' splat does not exist: ${sourcePath}`);
+      continue;
+    }
+    if (stat.isSymbolicLink()) {
+      errors.push(`scene '${scene.id}' splat must be a regular file, not a symbolic link: ${sourcePath}`);
+      continue;
+    }
+    if (!stat.isFile() || stat.size <= 0) {
+      errors.push(`scene '${scene.id}' splat must be a non-empty regular file: ${sourcePath}`);
+      continue;
+    }
+
+    const fileName = splatAssetFileName(sourcePath);
+    const existing = byRuntimeName.get(fileName);
+    if (existing) {
+      if (existing.sourcePath === sourcePath) {
+        if (!existing.sceneIds.includes(scene.id)) existing.sceneIds.push(scene.id);
+      } else {
+        errors.push(`splat runtime filename collision '${fileName}' between ${existing.sourcePath} and ${sourcePath}`);
+      }
+      continue;
+    }
+
+    const remoteDir = `/sdcard/Android/data/${packageName}/files`;
+    const planned: SplatAssetPlan = {
+      sourcePath,
+      sceneIds: [scene.id],
+      fileName,
+      remoteDir,
+      remotePath: `${remoteDir}/${fileName}`,
+      bytes: stat.size,
+      sha256: hashFileInChunks(sourcePath),
+    };
+    byRuntimeName.set(fileName, planned);
+    assets.push(planned);
+  }
+  return { ok: errors.length === 0, assets: errors.length === 0 ? assets : [], errors };
+}
+
+export type SplatPushResult = {
+  ok: boolean;
+  assets: Array<SplatAssetPlan & { serial: string; remoteBytes: number; remoteSha256: string }>;
+  errors: string[];
+};
+
+/** Deliver planned splats only to the managed emulator and prove the remote file is byte-identical.
+ * A failure is returned, never swallowed, so fleet_build can abort before launch/capture/judging. */
+export async function pushSplatAssets(
+  plans: SplatAssetPlan[],
+  options: { adbPath?: string; serial?: string; runner?: CommandRunner } = {},
+): Promise<SplatPushResult> {
+  const serial = options.serial ?? "emulator-5554";
+  const pushed: SplatPushResult["assets"] = [];
+  if (!/^emulator-\d+$/.test(serial)) {
+    return { ok: false, assets: pushed, errors: [`splat delivery is emulator-only; refusing serial '${serial}'`] };
+  }
+  const adbPath = options.adbPath ?? process.env.PICO_ADB ?? ADB;
+  const runner = options.runner ?? (run as unknown as CommandRunner);
+
+  for (const asset of plans) {
+    try {
+      await runner(adbPath, ["-s", serial, "shell", "mkdir", "-p", asset.remoteDir], { timeout: 30_000, maxBuffer: 8 * 1024 * 1024 });
+      await runner(adbPath, ["-s", serial, "push", asset.sourcePath, asset.remotePath], { timeout: 15 * 60_000, maxBuffer: 16 * 1024 * 1024 });
+      const stat = await runner(adbPath, ["-s", serial, "shell", "toybox", "stat", "-c", "%s", asset.remotePath], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
+      const sizeText = String(stat.stdout ?? "").trim();
+      if (!/^\d+$/.test(sizeText)) throw new Error(`unparseable remote size '${sizeText}'`);
+      const remoteBytes = Number(sizeText);
+      if (!Number.isSafeInteger(remoteBytes) || remoteBytes !== asset.bytes) {
+        throw new Error(`size mismatch for ${asset.fileName}: local ${asset.bytes}, remote ${sizeText}`);
+      }
+      const digest = await runner(adbPath, ["-s", serial, "shell", "toybox", "sha256sum", asset.remotePath], { timeout: 180_000, maxBuffer: 8 * 1024 * 1024 });
+      const hashMatch = String(digest.stdout ?? "").trim().match(/^([a-fA-F0-9]{64})(?:\s|$)/);
+      if (!hashMatch) throw new Error(`unparseable remote sha256 '${String(digest.stdout ?? "").trim()}'`);
+      const remoteSha256 = hashMatch[1].toLowerCase();
+      if (remoteSha256 !== asset.sha256) {
+        throw new Error(`sha256 mismatch for ${asset.fileName}: local ${asset.sha256}, remote ${remoteSha256}`);
+      }
+      pushed.push({ ...asset, serial, remoteBytes, remoteSha256 });
+    } catch (error: any) {
+      return {
+        ok: false,
+        assets: pushed,
+        errors: [`${asset.fileName}: ${String(error?.message ?? error)}`],
+      };
+    }
+  }
+  return { ok: true, assets: pushed, errors: [] };
+}
 
 export type IblKtxInspection = {
   ok: boolean;
@@ -592,7 +772,16 @@ export function registerFleetBuildTools(server: McpServer) {
             }
             const parsed = appSpecSchema.safeParse(entry.spec);
             if (!parsed.success) { rec.notes.push("spec invalid"); continue; }
-            const spec: any = parsed.data;
+            const semanticPlacement = prepareFleetSemanticAnchors(parsed.data);
+            for (const note of semanticPlacement.notes) rec.notes.push(`semantic placement: ${note}`);
+            if (!semanticPlacement.ok) {
+              rec.notes.push(
+                `skipped: semantic placement unresolved for object(s) ${semanticPlacement.unresolvedObjectIds.join(", ")}; ` +
+                "launch/capture skipped instead of using a fallback pose",
+              );
+              continue;
+            }
+            const spec: any = semanticPlacement.spec;
             const verificationRoute = deriveVerificationRoute(spec);
             rec.verificationRoute = verificationRoute;
             // v15.1b: asset gates check EVERY scene (multi-scene briefs like narrative previously
@@ -611,6 +800,15 @@ export function registerFleetBuildTools(server: McpServer) {
             spec.meta.packageName = pkg;
             spec.meta.appName = `Fleet${id[0].toUpperCase()}${id.slice(1)}`;
             const projectDir = path.join(root, `fleet-${id}-native`);
+
+            // v29: a splat reference is not runtime delivery. Plan the exact sanitized app-files
+            // name and hash every local source before expensive scaffold/build work. The same
+            // splatAssetFileName helper drives compiler codegen, so Kotlin and adb cannot drift.
+            const splatPlan = planSplatAssets(spec, pkg);
+            if (!splatPlan.ok) {
+              rec.notes.push(`skipped: splat delivery planning failed: ${splatPlan.errors.join("; ")}`);
+              continue;
+            }
 
             // 1. scaffold (idempotent)
             if (!fs.existsSync(projectDir)) {
@@ -752,6 +950,22 @@ export function registerFleetBuildTools(server: McpServer) {
             rec.built = true;
             const apk = path.join(projectDir, "app/build/outputs/apk/debug/app-debug.apk");
             await run(ADB, ["-s", "emulator-5554", "install", "-r", apk], { timeout: 240_000 });
+            rec.installed = true;
+            const splatDelivery = await pushSplatAssets(splatPlan.assets, {
+              adbPath: process.env.PICO_ADB ?? ADB,
+              serial: "emulator-5554",
+            });
+            if (!splatDelivery.ok) {
+              rec.notes.push(`splat delivery failed after install; launch/capture skipped: ${splatDelivery.errors.join("; ")}`);
+              continue;
+            }
+            rec.splatAssets = splatDelivery.assets;
+            for (const asset of splatDelivery.assets) {
+              rec.notes.push(
+                `splat delivered + remote-verified: ${asset.fileName} (${asset.remoteBytes} bytes, ` +
+                `sha256 ${asset.remoteSha256}, ${asset.serial}:${asset.remotePath})`,
+              );
+            }
             // v15.1: force-stop → pause → PLAIN start. An immediate `am start -S` intermittently
             // trips Android's "activity kept for the user" and the app never reaches the stage
             // (observed live; the paused plain start worked every time).
@@ -795,7 +1009,6 @@ export function registerFleetBuildTools(server: McpServer) {
                 rec.notes.push("app not foreground at capture time — the frame shows whatever IS on stage");
               }
             }
-            rec.installed = true;
             // v27.2 baked-in bridge: a menu app is clickable the moment it launches — auto-start
             // the detached mouse bridge so nobody pastes a pico-bridge command. Best-effort;
             // idempotent; opt out with PICO_MCP_NO_AUTOBRIDGE=1.
