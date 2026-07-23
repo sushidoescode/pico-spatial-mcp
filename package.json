@@ -34,6 +34,8 @@
     "test:provision": "node test/provision.mjs",
     "test:bridge": "node test/mousebridge.mjs",
     "test:vcam": "node test/vcam.mjs",
+    "test:vcamtransport": "node --test test/vcamtransport.mjs",
+    "test:vcamtransport-native": "sh scripts/test-cmio-camera-writer.sh",
     "test:briefroute": "node test/briefroute.mjs",
     "test:emulator-restart": "node test/restart-emulator.mjs"
   },
