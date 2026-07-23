@@ -8,6 +8,7 @@ import { okJson } from "./util.js";
 import { appSpecSchema } from "./appspec.js";
 import { lintSpec, emulatorVsSwanPreview } from "./planner.js";
 import { buildLedger } from "./compiler.js";
+import { classifyBriefExecution } from "./briefroute.js";
 
 /**
  * eval.ts — v5.4 EVAL CORPUS + scorecard: measure brief-generality as a DISTRIBUTION, not one anecdote.
@@ -53,27 +54,38 @@ export function computeSuite(briefsDir?: string): { status: string; briefsDir: s
       return { id: f, pass: false, specValid: false, issues: [String(e.message)] };
     }
   });
-  const passed = rows.filter((r) => r.pass).length;
+  const skippedRows = rows.filter((r: any) => Boolean(r.skipped));
+  const scoredRows = rows.filter((r: any) => !r.skipped);
+  const passed = scoredRows.filter((r) => r.pass).length;
   const scorecard = {
-    total: rows.length,
+    total: scoredRows.length,
+    corpusTotal: rows.length,
     passed,
-    failed: rows.length - passed,
+    failed: scoredRows.length - passed,
+    skipped: skippedRows.length,
     planFailures: rows.filter((r) => r.specValid === false || r.planOk === false).length,
     totalCompileSteps: rows.reduce((a, r: any) => a + (r.compileSteps ?? 0), 0),
     totalVisionVerified: rows.reduce((a, r: any) => a + (r.visionVerifiedInLedger ?? 0), 0),
-    score: rows.length ? Number((passed / rows.length).toFixed(3)) : 0,
+    score: scoredRows.length ? Number((passed / scoredRows.length).toFixed(3)) : 0,
   };
   return { status: "ok", briefsDir: dir, scorecard, rows };
 }
 
 function scoreBrief(entry: any) {
+  let execution;
+  try {
+    execution = classifyBriefExecution(entry);
+  } catch (error: any) {
+    return { id: entry.id, pass: false, specValid: false, issues: [String(error.message)] };
+  }
   const parsed = appSpecSchema.safeParse(entry.spec);
   if (!parsed.success) {
     return { id: entry.id, pass: false, specValid: false, issues: parsed.error.issues.slice(0, 3).map((i) => `${i.path.join(".")}: ${i.message}`) };
   }
   const spec = parsed.data;
   const lint = lintSpec(spec);
-  const ledger = buildLedger(spec, "/tmp/eval-dummy");
+  const external = execution.route === "hand-authored-classic-android";
+  const ledger = external ? [] : buildLedger(spec, "/tmp/eval-dummy");
   const preview = emulatorVsSwanPreview(spec);
   const exp = entry.expected ?? {};
   const counts = {
@@ -91,11 +103,12 @@ function scoreBrief(entry: any) {
   if (exp.verifiableNowMin != null && preview.verifiableNow.length < exp.verifiableNowMin) mism.push(`verifiableNow ${preview.verifiableNow.length} < ${exp.verifiableNowMin}`);
   if (exp.swanMin != null && preview.builtForSwan.length < exp.swanMin) mism.push(`builtForSwan ${preview.builtForSwan.length} < ${exp.swanMin}`);
   const planOk = lint.errors.length === 0;
-  const compileOk = ledger.length > 0;
+  const compileOk = external || ledger.length > 0;
   const shapeOk = mism.length === 0;
   return {
     id: entry.id,
     pass: planOk && compileOk && shapeOk,
+    skipped: external ? `execution route ${execution.route}; generic AppSpec compile/build intentionally skipped` : null,
     specValid: true,
     planOk,
     compileSteps: ledger.length,

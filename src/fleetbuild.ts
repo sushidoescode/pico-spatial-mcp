@@ -11,6 +11,7 @@ import { appSpecSchema } from "./appspec.js";
 import { proceduralUsda } from "./procedural.js";
 import { bakeTexturedModel } from "./bundle.js";
 import { startBridgeDetached } from "./mousebridge.js";
+import { classifyBriefExecution } from "./briefroute.js";
 
 const run = promisify(execFile);
 
@@ -254,7 +255,7 @@ export function registerFleetBuildTools(server: McpServer) {
     "fleet_build",
     {
       description:
-        "UNATTENDED end-to-end fleet build (P2): for each brief id (briefs/<id>.json), SERIALLY scaffold a fresh app, execute the compile ledger's generate steps (self-driving this MCP over stdio), write emitted Kotlin/wiring/panel/menu files (manifest patched, menu.bundle + items.json provisioned), gradle-build, install + launch on emulator-5554, settle, and take a deterministic forward capture. Stage claims use the calibrated visual_judge; panel-only or panel-target-only specs bypass that stage eye instead of false-failing an empty frame. A target layout is checked against its exact declared count (N means min=max=N), not the historical blanket 2..3; a confident PASS records an `auto_judged` ledger entry — NEVER vision_verified. Each distinct generated panel activity is launched and polled through list_spatial_panels; its caption-backed readiness is returned separately as structural panelEvidence plus an unjudged panel-time capture. Requires the local toolchain + a running emulator. Briefs whose environments need external assets are skipped honestly.",
+        "UNATTENDED end-to-end fleet build (P2): for each brief id (briefs/<id>.json), SERIALLY scaffold a fresh app, execute the compile ledger's generate steps (self-driving this MCP over stdio), write emitted Kotlin/wiring/panel/menu files (manifest patched, menu.bundle + items.json provisioned), gradle-build, install + launch on emulator-5554, settle, and take a deterministic forward capture. Stage claims use the calibrated visual_judge; panel-only or panel-target-only specs bypass that stage eye instead of false-failing an empty frame. A target layout is checked against its exact declared count (N means min=max=N), not the historical blanket 2..3; a confident PASS records an `auto_judged` ledger entry — NEVER vision_verified. Each distinct generated panel activity is launched and polled through list_spatial_panels; its caption-backed readiness is returned separately as structural panelEvidence plus an unjudged panel-time capture. Requires the local toolchain + a running emulator. Briefs whose environments need external assets or explicitly declare a hand-authored execution route are skipped honestly.",
       inputSchema: {
         briefIds: z.array(z.string()).min(1).describe("Brief ids from briefs/ (e.g. ['knockdown','studio','console'])."),
         projectsRoot: z.string().optional().describe("Where per-brief projects go (default ~/AndroidStudioProjects). Dir per brief: fleet-<id>-native (reused if present)."),
@@ -276,6 +277,21 @@ export function registerFleetBuildTools(server: McpServer) {
             const briefPath = path.join(briefsDir, `${id}.json`);
             if (!fs.existsSync(briefPath)) { rec.notes.push("brief not found"); continue; }
             const entry = JSON.parse(fs.readFileSync(briefPath, "utf8"));
+            let execution;
+            try {
+              execution = classifyBriefExecution(entry);
+            } catch (error: any) {
+              rec.notes.push(`invalid execution metadata: ${error.message}`);
+              continue;
+            }
+            if (execution.route === "hand-authored-classic-android") {
+              rec.externalImplementation = execution;
+              rec.notes.push(
+                `skipped: execution route ${execution.route}; generic fleet codegen cannot build ` +
+                `${execution.packageName}. Build ${execution.projectPath} and launch ${execution.launcherActivity}.`,
+              );
+              continue;
+            }
             const parsed = appSpecSchema.safeParse(entry.spec);
             if (!parsed.success) { rec.notes.push("spec invalid"); continue; }
             const spec: any = parsed.data;

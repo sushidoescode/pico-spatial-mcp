@@ -9,6 +9,7 @@ import { appSpecSchema } from "./appspec.js";
 import { lintSpec, emulatorVsSwanPreview } from "./planner.js";
 import { buildLedger } from "./compiler.js";
 import { computeSuite } from "./eval.js";
+import { classifyBriefExecution } from "./briefroute.js";
 
 /**
  * factory.ts — v6.0 THE AUTONOMOUS SPATIAL FACTORY: a queue of briefs → verified, ledgered,
@@ -42,7 +43,31 @@ function corpusDir(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "briefs");
 }
 
-function processBrief(entry: { id: string; brief?: string; spec?: any }) {
+export function processBrief(entry: { id: string; brief?: string; spec?: any; execution?: unknown }) {
+  let execution;
+  try {
+    execution = classifyBriefExecution(entry);
+  } catch (error: any) {
+    return { id: entry.id, status: "invalid_execution", issues: [String(error.message)], lintWarnings: [] };
+  }
+  if (execution.route === "hand-authored-classic-android") {
+    return {
+      id: entry.id,
+      app: entry.spec?.meta?.appName ?? entry.id,
+      packageName: execution.packageName,
+      status: "external_implementation",
+      projectPath: execution.projectPath,
+      launcherActivity: execution.launcherActivity,
+      planOk: null,
+      lintErrors: [],
+      lintWarnings: [],
+      compileSteps: 0,
+      emulatorVerifiableNodes: 0,
+      builtForSwanNodes: 0,
+      ledger: ledgerCounts(execution.packageName),
+      note: "Generic AppSpec factory intentionally skipped; build the declared hand-authored classic Android project.",
+    };
+  }
   const parsed = appSpecSchema.safeParse(entry.spec);
   if (!parsed.success) return { id: entry.id, status: "invalid_spec", issues: parsed.error.issues.slice(0, 3).map((i) => `${i.path.join(".")}: ${i.message}`) };
   const spec = parsed.data;
@@ -67,6 +92,15 @@ function processBrief(entry: { id: string; brief?: string; spec?: any }) {
   };
 }
 
+export function summarizeFactoryStatuses(records: Array<{ status?: string }>) {
+  return {
+    readyToBuild: records.filter((record) => record.status === "ready_to_build").length,
+    blocked: records.filter((record) => record.status === "blocked").length,
+    externalImplementations: records.filter((record) => record.status === "external_implementation").length,
+    invalid: records.filter((record) => record.status === "invalid_spec" || record.status === "invalid_execution").length,
+  };
+}
+
 export function registerFactoryTools(server: McpServer) {
   server.registerTool(
     "run_factory",
@@ -74,19 +108,19 @@ export function registerFactoryTools(server: McpServer) {
       description:
         "The v6.0 autonomous spatial factory: take a QUEUE of briefs (each with a draft AppSpec) and run the whole pipeline headlessly per brief — PLAN (validate + feasibility lint) → COMPILE (build ledger) → fold in the trust ledger (vision-verified nodes) + parity ledger (built-for-Swan) — then emit a per-brief factory record + a reproducible FLEET DASHBOARD, run the eval scorecard as CI, and reflect (recurring lint warnings across the fleet → candidate record_lesson entries). Deterministic + headless; the per-brief emulator build + vision pass and the Swan flip are driven by the autonomous_spatial_build_v6 prompt. NO aggregate over-claim — a fleet metric never upgrades any node's evidence class; vision_verified counts come only from the trust ledger.",
       inputSchema: {
-        queue: z.array(z.object({ id: z.string(), brief: z.string().optional(), spec: z.any() })).optional().describe("Briefs with draft AppSpecs. Omit to run the repo's briefs/ corpus."),
+        queue: z.array(z.object({ id: z.string(), brief: z.string().optional(), spec: z.any(), execution: z.any().optional() })).optional().describe("Briefs with draft AppSpecs. Omit to run the repo's briefs/ corpus."),
         briefsDir: z.string().optional().describe("Corpus dir (default the repo's briefs/) used when queue is omitted."),
       },
     },
     async ({ queue, briefsDir }) => {
       // build the work queue
-      let work: { id: string; brief?: string; spec?: any }[] = queue ?? [];
+      let work: { id: string; brief?: string; spec?: any; execution?: unknown }[] = queue ?? [];
       if (!work.length) {
         const dir = briefsDir ?? corpusDir();
         try {
           work = fs.readdirSync(dir).filter((f) => f.endsWith(".json")).sort().map((f) => {
             const b = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
-            return { id: b.id ?? f, brief: b.brief, spec: b.spec };
+            return { id: b.id ?? f, brief: b.brief, spec: b.spec, execution: b.execution };
           });
         } catch (e: any) {
           return okJson({ status: "error", error: `cannot read briefs dir ${dir}: ${e.message}` });
@@ -95,7 +129,8 @@ export function registerFactoryTools(server: McpServer) {
       if (!work.length) return okJson({ status: "error", error: "empty queue (pass `queue` or a `briefsDir`)." });
 
       const records = work.map(processBrief);
-      const ready = records.filter((r: any) => r.status === "ready_to_build").length;
+      const statusSummary = summarizeFactoryStatuses(records);
+      const ready = statusSummary.readyToBuild;
       // reflection: recurring lint warnings across the fleet -> candidate lessons
       const warnCounts: Record<string, number> = {};
       for (const r of records as any[]) for (const w of r.lintWarnings ?? []) warnCounts[w] = (warnCounts[w] ?? 0) + 1;
@@ -105,9 +140,7 @@ export function registerFactoryTools(server: McpServer) {
 
       const dashboard = {
         queued: records.length,
-        readyToBuild: ready,
-        blocked: records.length - ready,
-        invalid: records.filter((r: any) => r.status === "invalid_spec").length,
+        ...statusSummary,
         totalCompileSteps: records.reduce((a, r: any) => a + (r.compileSteps ?? 0), 0),
         totalEmulatorVerifiableNodes: records.reduce((a, r: any) => a + (r.emulatorVerifiableNodes ?? 0), 0),
         totalBuiltForSwanNodes: records.reduce((a, r: any) => a + (r.builtForSwanNodes ?? 0), 0),

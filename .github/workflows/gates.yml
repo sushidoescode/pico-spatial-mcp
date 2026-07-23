@@ -43,8 +43,10 @@ jobs:
         run: npm run test:bridge
       - name: Claims page (generated from the ledger, escaped, filterable)
         run: npm run test:claims
-      - name: SpatialBench headless tier (corpus scores 3/3, no emulator-axis leaks)
+      - name: SpatialBench headless tier (pipeline briefs score 3/3; explicit external routes skip 0/0)
         run: npm run test:bench
+      - name: External brief routes (CameraPeek cannot become a generic generated HUD)
+        run: npm run test:briefroute
       - name: Scaffold archetypes (brief steers plan_app_spec toward display/game/data-panel)
         run: npm run test:archetype
       - name: Affordance solver (free space, honest no-fit, compiler on-route)

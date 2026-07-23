@@ -34,6 +34,7 @@
     "test:provision": "node test/provision.mjs",
     "test:bridge": "node test/mousebridge.mjs",
     "test:vcam": "node test/vcam.mjs",
+    "test:briefroute": "node test/briefroute.mjs",
     "test:emulator-restart": "node test/restart-emulator.mjs"
   },
   "engines": {

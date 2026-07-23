@@ -31,7 +31,8 @@ import { deriveVerificationRoute, type VerificationRoute } from "./fleetbuild.js
  *               as null — a SKIP, not a fail — and is excluded from the axis max, never zeroed.
  *
  * The report says exactly which tier ran: a headless run scores /3 and never implies runtime
- * evidence. Skipped briefs (external-asset gates) are reported as skipped, not as zeros.
+ * evidence. Skipped briefs (external-asset gates or explicit external implementations) are
+ * reported as skipped, not as failed pipeline rows.
  */
 
 // Emulator-tier core set: briefs whose assets are self-contained (no external splat/pano/GLB).
@@ -179,6 +180,25 @@ export function headlessRows(briefIds?: string[]): { rows: BenchRow[]; briefsDir
   const rows: BenchRow[] = suite.rows
     .filter((r: any) => !briefIds?.length || briefIds.includes(r.id))
     .map((r: any) => {
+      if (typeof r.skipped === "string" && r.skipped) {
+        return {
+          id: r.id,
+          planned: 0,
+          compiled: 0,
+          shape: 0,
+          booted: null,
+          captured: null,
+          panelReady: null,
+          eye: null,
+          perf: null,
+          score: 0,
+          max: 0,
+          skipped: r.skipped,
+          expectedPanels: Number(r.counts?.panels ?? 0),
+          verificationRoute: null,
+          notes: [r.skipped],
+        } satisfies BenchRow;
+      }
       let verificationRoute: VerificationRoute | null = null;
       try {
         const entry = JSON.parse(fs.readFileSync(path.join(suite.briefsDir, `${r.id}.json`), "utf8"));
@@ -227,7 +247,7 @@ code{font-family:ui-monospace,monospace;color:#79c0ff}
 </style></head><body>
 <h1>SpatialBench</h1>
 <p><b>${report.summary.total} briefs · tier: ${esc(report.tier)} · aggregate ${report.summary.aggregate}/${report.summary.maxAggregate} (${Math.round((report.summary.aggregate / Math.max(1, report.summary.maxAggregate)) * 100)}%)</b> — the pico-spatial-mcp conformance corpus, scored per axis. Re-run it yourself: <code>run_spatialbench</code>.</p>
-<div class="how"><b>Reading the axes:</b> planned/compiled/shape are headless (spec validity, ledger emission, expected node counts). booted/captured/eye need the PICO emulator. panelReady is structural WindowManager evidence that an expected caption-backed panel is allocated, ready, visible, and on-screen; it does NOT prove the panel's pixels or appearance and never becomes an eye pass. <b>eye = the calibrated stage-frame visual judge (auto_judged)</b> — a machine verdict, deliberately NOT vision_verified; panel-only routes show — and exclude eye from their maximum instead of false-failing an off-view panel. Escalations name only stage frames a human must look at. Skipped briefs gate on external assets (splats/panos) and are marked, not zeroed. <b>perf</b> (optional, tier=full with perfAxis:true) measures only the app's UI/RenderThread frames via <code>dumpsys gfxinfo</code> on the emulator, verdicting p95 against a budget in ms — this is structural evidence about 2D/Compose surfaces, NOT the spatial engine's 3D frame pacing (that needs <code>pico-cli perf</code> / perf_diagnose on a real device); a brief with no UI frame data (expected for spatial-only content) shows as — and is not counted against the axis max.</div>
+<div class="how"><b>Reading the axes:</b> planned/compiled/shape are headless (spec validity, ledger emission, expected node counts). booted/captured/eye need the PICO emulator. panelReady is structural WindowManager evidence that an expected caption-backed panel is allocated, ready, visible, and on-screen; it does NOT prove the panel's pixels or appearance and never becomes an eye pass. <b>eye = the calibrated stage-frame visual judge (auto_judged)</b> — a machine verdict, deliberately NOT vision_verified; panel-only routes show — and exclude eye from their maximum instead of false-failing an off-view panel. Escalations name only stage frames a human must look at. Skipped briefs gate on external assets (splats/panos) or explicitly declare an external implementation and are marked 0/0, not failed. <b>perf</b> (optional, tier=full with perfAxis:true) measures only the app's UI/RenderThread frames via <code>dumpsys gfxinfo</code> on the emulator, verdicting p95 against a budget in ms — this is structural evidence about 2D/Compose surfaces, NOT the spatial engine's 3D frame pacing (that needs <code>pico-cli perf</code> / perf_diagnose on a real device); a brief with no UI frame data (expected for spatial-only content) shows as — and is not counted against the axis max.</div>
 <table><thead><tr><th>brief</th><th>planned</th><th>compiled</th><th>shape</th><th>booted</th><th>captured</th><th>panelReady</th><th>eye</th><th>perf</th><th>score</th><th>notes</th></tr></thead>
 <tbody>${rows}</tbody></table>
 <footer>Generated ${esc(report.generatedAt)} by pico-spatial-mcp <code>run_spatialbench</code> · corpus: ${esc(report.briefsDir)} · escalations: ${report.summary.escalations.length ? esc(report.summary.escalations.join(", ")) : "none"}</footer>
@@ -237,7 +257,7 @@ code{font-family:ui-monospace,monospace;color:#79c0ff}
 export function registerSpatialBenchTools(server: McpServer) {
   server.tool(
     "run_spatialbench",
-    "v23 SPATIALBENCH: score the conformance corpus (briefs/) as a public benchmark and emit a static league-table report (docs/spatialbench/). tier='headless' (default, CI-safe) scores planned/compiled/shape per brief from the spec+ledger alone — /3, no runtime claims. tier='full' additionally fleet-builds each brief on the emulator and scores booted/captured plus the stage eye when applicable. eye is the CALIBRATED JUDGE (auto_judged, never vision_verified; escalations name stage frames for a human LOOK). Briefs that declare panels gain a separate panelReady axis backed only by structural WindowManager caption/container evidence; it never becomes eye or vision proof. Panel-only routes leave eye null and exclude it from the maximum rather than false-failing an off-view panel. Asset-gated briefs are reported as skipped, not zeroed. perfAxis:true (tier='full' only) adds an optional perf axis via measure_perf: 1 = UI/RenderThread frame p95 under perfBudgetMs, 0 = over budget, null (not counted) when the emulator reports no UI frame data for the app — scoped honestly to gfxinfo's UI surfaces only, not the spatial engine's 3D pacing. Returns the report paths + the league table.",
+    "v23 SPATIALBENCH: score the conformance corpus (briefs/) as a public benchmark and emit a static league-table report (docs/spatialbench/). tier='headless' (default, CI-safe) scores planned/compiled/shape per brief from the spec+ledger alone — /3, no runtime claims. tier='full' additionally fleet-builds each brief on the emulator and scores booted/captured plus the stage eye when applicable. eye is the CALIBRATED JUDGE (auto_judged, never vision_verified; escalations name stage frames for a human LOOK). Briefs that declare panels gain a separate panelReady axis backed only by structural WindowManager caption/container evidence; it never becomes eye or vision proof. Panel-only routes leave eye null and exclude it from the maximum rather than false-failing an off-view panel. Asset-gated or explicitly external-implementation briefs are reported as skipped, not failed. perfAxis:true (tier='full' only) adds an optional perf axis via measure_perf: 1 = UI/RenderThread frame p95 under perfBudgetMs, 0 = over budget, null (not counted) when the emulator reports no UI frame data for the app — scoped honestly to gfxinfo's UI surfaces only, not the spatial engine's 3D pacing. Returns the report paths + the league table.",
     {
       tier: z.enum(["headless", "full"]).default("headless").describe("headless = spec+ledger axes only; full = also emulator boot/capture/eye per brief (slow, serial)"),
       briefIds: z.array(z.string()).optional().describe(`full tier defaults to the self-contained core set [${BENCH_CORE.join(", ")}]; headless defaults to every brief`),

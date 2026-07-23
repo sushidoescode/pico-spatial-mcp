@@ -27,9 +27,14 @@ const { rows, briefsDir } = headlessRows();
 if (rows.length >= 15) ok(`corpus loads (${rows.length} briefs from ${briefsDir})`);
 else fail(`expected ≥15 corpus briefs, got ${rows.length}`);
 
-const perfect = rows.filter((r) => r.score === 3 && r.max === 3).length;
-if (perfect === rows.length) ok(`headless tier: every brief scores 3/3 (planned+compiled+shape)`);
-else fail(`headless regressions: ${rows.filter((r) => r.score !== 3).map((r) => `${r.id}=${r.score}/3 [${r.notes.join("; ")}]`).join(", ")}`);
+const scoredRows = rows.filter((r) => !r.skipped);
+const skippedRows = rows.filter((r) => r.skipped);
+const perfect = scoredRows.filter((r) => r.score === 3 && r.max === 3).length;
+if (perfect === scoredRows.length) ok(`headless tier: every pipeline brief scores 3/3 (planned+compiled+shape)`);
+else fail(`headless regressions: ${scoredRows.filter((r) => r.score !== 3).map((r) => `${r.id}=${r.score}/${r.max} [${r.notes.join("; ")}]`).join(", ")}`);
+if (skippedRows.every((r) => r.score === 0 && r.max === 0))
+  ok(`headless tier: ${skippedRows.length} explicit external implementation(s) report 0/0 skipped`);
+else fail(`skipped headless rows must be 0/0: ${skippedRows.map((r) => `${r.id}=${r.score}/${r.max}`).join(", ")}`);
 
 if (rows.every((r) => r.booted === null && r.captured === null && r.panelReady === null && r.eye === null && r.perf === null)) ok("headless tier never claims emulator axes (booted/captured/panelReady/eye/perf stay null)");
 else fail("headless tier leaked emulator-axis claims");

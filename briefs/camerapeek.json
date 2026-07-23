@@ -1,0 +1,118 @@
+{
+  "id": "camerapeek",
+  "brief": "ON_PLAIN single-panel CameraX probe for one narrow question: does the emulator expose a working back-camera HAL to an ordinary Android activity? The hand-authored panel fills its black window with PreviewView, reports IDLE or STREAMING, and displays full CameraX failures.",
+  "surface": "ON_PLAIN",
+  "execution": {
+    "route": "hand-authored-classic-android",
+    "projectPath": "/Users/sushantsrikrish/AndroidStudioProjects/camerapeek-native",
+    "packageName": "com.pico.camerapeek",
+    "launcherActivity": ".CameraPeekActivity"
+  },
+  "honesty": "The AppSpec below is a corpus-compatible descriptive shape only. The Spatial AppSpec compiler emits a generic HUD and does NOT generate CameraX, PreviewView, or this probe. Build the classic Android implementation at execution.projectPath. That path is a local-machine project, not source committed in this repository. A successful compile proves structure only; only a human/vision-capable agent looking at a launch capture can decide whether a camera feed is visible.",
+  "probe": {
+    "packageName": "com.pico.camerapeek",
+    "launcherActivity": ".CameraPeekActivity",
+    "cameraSelector": "DEFAULT_BACK_CAMERA",
+    "panelCount": 1,
+    "previewView": {
+      "implementationMode": "COMPATIBLE",
+      "scaleType": "FIT_CENTER"
+    }
+  },
+  "acceptance": {
+    "structural": [
+      "assembleDebug succeeds and produces an APK for com.pico.camerapeek",
+      "the manifest declares android.permission.CAMERA and a required back-camera feature",
+      "a fresh install requests CAMERA at runtime before attempting to bind",
+      "the launcher is a resizeable, hardware-accelerated, landscape, singleTask activity with its own panel taskAffinity",
+      "CameraX 1.5.3 camera-camera2, camera-lifecycle, and camera-view are resolved",
+      "the activity binds DEFAULT_BACK_CAMERA through ProcessCameraProvider and logs/displays previewStreamState"
+    ],
+    "visualPositive": {
+      "claim": "a live webcam image is visibly rendered inside the CameraPeek panel and the overlay reaches previewStreamState: STREAMING",
+      "evidenceRequired": "vision_verified with a linked capture",
+      "status": "not observed on 2026-07-22: CameraX reached STREAMING, but the LOOKed capture contained no recognizable webcam pixels"
+    },
+    "visualNegative": {
+      "claim": "the webcam feed is absent, black, or failed while CameraPeek is launched",
+      "evidenceRequired": "a linked capture plus structural evidence only; do not label a negative visual finding vision_verified",
+      "status": "observed on 2026-07-22; structural ledger camerapeek-webcam0 seq 0; capture /Users/sushantsrikrish/.pico-mcp/artifacts/camerapeek-webcam0-v28.0.png; sha256 6e6cedf4dedf287df188682e2f72e482944655efbf929ed6f83261948823a595"
+    }
+  },
+  "spec": {
+    "meta": {
+      "appName": "CameraPeek",
+      "packageName": "com.pico.camerapeek",
+      "stageStyle": "1",
+      "brief": "Descriptive ON_PLAIN one-panel CameraX HAL probe. This AppSpec preserves corpus planning shape only; the real CameraX activity is hand-authored classic Android."
+    },
+    "scenes": [
+      {
+        "id": "plain",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "none"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [],
+    "objects": [],
+    "data": [],
+    "interactions": [],
+    "panels": [
+      {
+        "id": "camera",
+        "title": "CAMERA HAL",
+        "kind": "hud",
+        "fields": [
+          {
+            "key": "status",
+            "label": "PREVIEW STREAM",
+            "initial": "IDLE"
+          }
+        ]
+      }
+    ],
+    "navigation": {
+      "startScene": "plain",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "the descriptive ON_PLAIN panel target and stream-status field are structurally present; this does not prove CameraX pixels",
+        "method": "assert_scene",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "camera"
+      },
+      {
+        "claim": "the hand-authored CameraPeek panel visibly shows a live webcam feed and STREAMING status",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.5,
+          "note": "Locate the OS-hosted 2D panel, capture it, and LOOK; do not infer the feed from logs or build output."
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "camera"
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 0,
+    "objects": 0,
+    "data": 0,
+    "interactions": 0,
+    "panels": 1,
+    "verifiableNowMin": 2,
+    "swanMin": 0
+  }
+}
