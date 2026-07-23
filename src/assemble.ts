@@ -69,6 +69,28 @@ function materialLines(spec: AppSpec, layoutId: string | undefined, indent: stri
   if (typeof m?.metallic === "number") out.push(`${indent}SceneDataBinding.metallic = ${m.metallic}f`);
   return out;
 }
+function finiteLayoutNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+/** SceneLayout.kt is one app-level object, so every placement must restore the selected layout's
+ * full parameter set before calling place(). This prevents another scene/layout generator step's
+ * defaults from silently leaking into the current scene. */
+function layoutConfigLines(layout: AppSpec["layouts"][number], indent: string): string[] {
+  const params: any = layout.params ?? {};
+  const intValue = (value: unknown, fallback: number) => Math.trunc(finiteLayoutNumber(value, fallback));
+  return [
+    `${indent}SceneLayout.radius = ${finiteLayoutNumber(params.radius, 2.5)}f`,
+    `${indent}SceneLayout.spacing = ${finiteLayoutNumber(params.spacing, 0.6)}f`,
+    `${indent}SceneLayout.columns = ${intValue(params.columns, 3)}`,
+    `${indent}SceneLayout.shelves = ${intValue(params.shelves, 2)}`,
+    `${indent}SceneLayout.centerY = ${finiteLayoutNumber(params.centerY, 1.4)}f`,
+    `${indent}SceneLayout.centerZ = ${finiteLayoutNumber(params.centerZ, -2.5)}f`,
+    `${indent}SceneLayout.arcSpanDeg = ${finiteLayoutNumber(params.arcSpanDeg, 90)}f`,
+    `${indent}SceneLayout.faceUser = ${typeof params.faceUser === "boolean" ? params.faceUser : true}`,
+    `${indent}SceneLayout.yawOffsetDeg = ${finiteLayoutNumber(params.yawOffsetDeg, 0)}f`,
+    `${indent}SceneLayout.defaultCount = ${layout.count}`,
+  ];
+}
 // v6.6: compose the orphaned lighting + environment tiers — the compiler generates SceneLighting.kt and
 // MeshEnvironment.kt but nothing invoked them, so PBR content was unlit and backdrops never loaded.
 function anyLighting(spec: AppSpec): boolean {
@@ -77,24 +99,40 @@ function anyLighting(spec: AppSpec): boolean {
 // v14.9: sun and fullRig are both emitted as `object SceneLighting` by the compiler ledger
 // (fullRig via objectName — its default SceneLightingRig collided with the template's bundled
 // copy and left call sites unresolved; found by the spotcheck brief). Only ibl differs in API.
-function lightingApplyCall(spec: AppSpec): string {
-  const rig = spec.scenes.find((s) => s.lighting?.rig && s.lighting.rig !== "none")?.lighting?.rig;
-  return rig === "ibl" ? "SceneIBL.applyStage(root)" : "SceneLighting.apply(root)";
+function iblModeForScene(scene: AppSpec["scenes"][number]): "stage" | "local" | "both" | null {
+  const lighting: any = scene.lighting?.rig === "ibl" ? scene.lighting : null;
+  if (!lighting) return null;
+  return lighting.params?.mode === "local" || lighting.params?.mode === "both" ? lighting.params.mode : "stage";
+}
+function sceneUsesLocalIbl(scene: AppSpec["scenes"][number]): boolean {
+  const mode = iblModeForScene(scene);
+  return mode === "local" || mode === "both";
+}
+function lightingApplyCalls(spec: AppSpec): string[] {
+  const calls: string[] = [];
+  if (spec.scenes.some((scene) => scene.lighting.rig === "sun" || scene.lighting.rig === "fullRig")) {
+    calls.push("SceneLighting.apply(root)");
+  }
+  if (spec.scenes.some((scene) => {
+    const mode = iblModeForScene(scene);
+    return mode === "stage" || mode === "both";
+  })) calls.push("SceneIBL.applyStage(root)");
+  return calls;
 }
 /** groundShadow/shadowReceiver helpers exist only on the sun rig's SceneLighting object. */
-function sunRig(spec: AppSpec): boolean {
-  const rig = spec.scenes.find((s) => s.lighting?.rig && s.lighting.rig !== "none")?.lighting?.rig;
-  return !rig || rig === "sun";
+function sunRig(scene: AppSpec["scenes"][number]): boolean {
+  return scene.lighting.rig === "sun";
 }
 function anyTexturedEnv(spec: AppSpec): boolean {
   return spec.scenes.some((s) => s.environment?.kind === "texturedMesh" || s.environment?.kind === "splat" || s.environment?.kind === "pano");
 }
-// v15.1: a single-scene layout with no data node feeding it → procedural props (multi-scene keeps
-// the warning). Mirrors EXACTLY the l/dv resolution the single-scene body branch uses.
-function dataLessLayout(spec: AppSpec): boolean {
-  if (spec.scenes.length > 1) return false;
-  const l = layoutForScene(spec, spec.scenes[0]?.id ?? "");
-  return !!l && !dataForLayout(spec, l.id);
+// v15.1/v28.3: any layout with no data node feeding it uses procedural props. This predicate also
+// controls the makeProp imports/helper, including multi-scene router builders.
+function hasDataLessLayout(spec: AppSpec): boolean {
+  return spec.scenes.some((scene) => {
+    const layout = layoutForScene(spec, scene.id);
+    return !!layout && !dataForLayout(spec, layout.id);
+  });
 }
 // v7.3: animation — the object's anim ({type:"tween"|"orbit", ...}) plays on each placed entity.
 function animFor(spec: AppSpec, layoutId: string | undefined): { type: string } | null {
@@ -168,6 +206,9 @@ function genComposition(spec: AppSpec, pkg: string): string {
   const asyncEnv = anyTexturedEnv(spec);
   const physics = specHasPhysics(spec);
   const launches = launchVelocityMap(spec);
+  const localIblBodyIds = (spec.objects as any[])
+    .filter((object) => object.body && spec.scenes.some((scene) => scene.id === object.sceneId && sceneUsesLocalIbl(scene)))
+    .map((object) => String(object.id));
 
   const lines: string[] = [];
   const needsCtx = spec.data.length > 0 || anyTexturedEnv(spec);
@@ -189,7 +230,7 @@ function genComposition(spec: AppSpec, pkg: string): string {
     imports.add(`import com.pico.spatial.core.math.Color4`);
     imports.add(`import com.pico.spatial.core.math.Vector3`);
   }
-  if (dataLessLayout(spec)) {
+  if (hasDataLessLayout(spec)) {
     for (const i of [
       `import com.pico.spatial.core.ecs.ModelComponent`,
       `import com.pico.spatial.core.ecs.resource.MeshResource`,
@@ -218,10 +259,14 @@ function genComposition(spec: AppSpec, pkg: string): string {
   lines.push(``, `    fun build(root: Entity, ctx: Context? = null) {`);
 
   // v6.6: light the scene (so PBR content renders lit, not dim) — the rig was generated but never applied.
-  if (lighting) lines.push(`        ${lightingApplyCall(spec)}`);
+  if (lighting) for (const lightingCall of lightingApplyCalls(spec)) lines.push(`        ${lightingCall}`);
 
   // v9.1: REAL physics — world + bodies (created in ONE batch each at build, per the rulebook).
   if (physics) for (const bl of physicsBodyLines(spec, "        ")) lines.push(bl);
+  if (localIblBodyIds.length) {
+    const bodyRefs = localIblBodyIds.map((id) => `bodies["${id}"]`).join(", ");
+    lines.push(`        SceneIBL.applyLocal(root, listOfNotNull(${bodyRefs}))`);
+  }
 
   // load each data node
   for (const d of spec.data) {
@@ -234,26 +279,38 @@ function genComposition(spec: AppSpec, pkg: string): string {
       const l = layoutForScene(spec, s.id);
       const d = dataForLayout(spec, l?.id);
       const pat = PAT[l?.pattern ?? "shelf"];
-      const dv = d ? dataVar(d.id) : "emptyList()";
+      const dv = d ? dataVar(d.id) : null;
       const factory = factoryFor(spec, l?.id);
       const scale = modelScaleFor(spec, l?.id);
       lines.push(`        SceneRouter.register("${s.id}") { c ->`);
-      for (const ml of materialLines(spec, l?.id, "            ")) lines.push(ml);
-      if (scale != null) lines.push(`            SceneDataBinding.modelScale = ${scale}f`);
       const env = envLoadLine(s, "c", "            ");
       if (env) lines.push(env);
+      if (l) lines.push(...layoutConfigLines(l, "            "));
       const mplay = animPlayCall(animFor(spec, l?.id));
-      if (mplay) {
-        lines.push(
-          `            SceneLayout.place(c, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }.forEach { ${mplay}(it) }`,
-          `        }`,
-        );
+      if (dv && l) {
+        for (const ml of materialLines(spec, l.id, "            ")) lines.push(ml);
+        if (scale != null) lines.push(`            SceneDataBinding.modelScale = ${scale}f`);
+        if (factory === "makeModelCard") {
+          const loadedActions: string[] = [];
+          if (mplay) loadedActions.push(`${mplay}(it)`);
+          if (sceneUsesLocalIbl(s)) loadedActions.push(`SceneIBL.applyLocal(c, listOf(it))`);
+          if (sunRig(s)) loadedActions.push(`SceneLighting.groundShadow(it)`);
+          lines.push(loadedActions.length
+            ? `            SceneDataBinding.onModelLoaded = { ${loadedActions.join("; ")} }`
+            : `            SceneDataBinding.onModelLoaded = null`);
+        }
+        lines.push(`            val placed = SceneLayout.place(c, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }`);
+        if (mplay && factory !== "makeModelCard") lines.push(`            placed.forEach { ${mplay}(it) }`);
+        if (sceneUsesLocalIbl(s) && factory !== "makeModelCard") lines.push(`            SceneIBL.applyLocal(c, placed)`);
+      } else if (l) {
+        lines.push(`            val placed = SceneLayout.place(c, ${l.count ?? 3}, SceneLayout.Pattern.${pat}) { i -> makeProp(i) }`);
+        if (sceneUsesLocalIbl(s)) lines.push(`            SceneIBL.applyLocal(c, placed)`);
+        if (sunRig(s)) lines.push(`            placed.forEach { SceneLighting.groundShadow(it) }`);
+        if (mplay) lines.push(`            placed.forEach { ${mplay}(it) }`);
       } else {
-        lines.push(
-          `            SceneLayout.place(c, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }`,
-          `        }`,
-        );
+        lines.push(`            Log.w(TAG, "composition: scene '${s.id}' has no layout to place")`);
       }
+      lines.push(`        }`);
     }
     lines.push(`        SceneRouter.start("${spec.navigation.startScene}")`);
   } else {
@@ -267,6 +324,7 @@ function genComposition(spec: AppSpec, pkg: string): string {
     // v6.6: load a real backdrop (texturedMesh) if the scene has one.
     const env = envLoadLine(s, "root", "        ");
     if (env) lines.push(env);
+    if (l) lines.push(...layoutConfigLines(l, "        "));
     if (dv) {
       lines.push(`        if (${dv}.isEmpty()) { Log.e(TAG, "composition: no items loaded"); return }`);
       for (const ml of materialLines(spec, l?.id, "        ")) lines.push(ml);
@@ -276,10 +334,18 @@ function genComposition(spec: AppSpec, pkg: string): string {
       // container; for QUADS the placed entity IS the geometry, so play it directly after placement.
       // NOTE: quad/primitive animation is vision-verified. Loaded-MODEL rotation is BEST-EFFORT — the SDK's
       // animation does not propagate through a loaded model's node hierarchy, so nested geometry may not move.
-      if (play && factory === "makeModelCard") lines.push(`        SceneDataBinding.onModelLoaded = { ${play}(it) }   // v7.3 animation (best-effort on loaded models — nested geometry may not rotate)`);
+      if (factory === "makeModelCard") {
+        const loadedActions: string[] = [];
+        if (play) loadedActions.push(`${play}(it)`);
+        if (sceneUsesLocalIbl(s)) loadedActions.push(`SceneIBL.applyLocal(root, listOf(it))`);
+        if (sunRig(s)) loadedActions.push(`SceneLighting.groundShadow(it)`);
+        lines.push(loadedActions.length
+          ? `        SceneDataBinding.onModelLoaded = { ${loadedActions.join("; ")} }   // target the loaded geometry, not its container`
+          : `        SceneDataBinding.onModelLoaded = null`);
+      }
       lines.push(`        val cards = SceneLayout.place(root, ${dv}.size, SceneLayout.Pattern.${pat}) { i -> SceneDataBinding.${factory}(${dv}[i]) }`);
+      if (sceneUsesLocalIbl(s) && factory !== "makeModelCard") lines.push(`        SceneIBL.applyLocal(root, cards)`);
       // v8.5 AAA: real 3D-model props cast soft ground shadows (flat quads skip it — a flat shadow reads odd).
-      if (lighting && sunRig(spec) && factory === "makeModelCard") lines.push(`        cards.forEach { SceneLighting.groundShadow(it) }`);
       if (hasSelect) {
         lines.push(`        cards.forEachIndexed { i, card ->`, `            SceneInteraction.register(${dv}[i].id, card) { id -> showDetail(root, id) }`, `        }`);
       }
@@ -291,7 +357,8 @@ function genComposition(spec: AppSpec, pkg: string): string {
       // NOTHING; the studio black-frame defect).
       const play = animPlayCall(animFor(spec, l.id));
       lines.push(`        val props = SceneLayout.place(root, ${l.count ?? 3}, SceneLayout.Pattern.${pat}) { i -> makeProp(i) }`);
-      if (lighting && sunRig(spec)) lines.push(`        props.forEach { SceneLighting.groundShadow(it) }`);
+      if (sceneUsesLocalIbl(s)) lines.push(`        SceneIBL.applyLocal(root, props)`);
+      if (lighting && sunRig(s)) lines.push(`        props.forEach { SceneLighting.groundShadow(it) }`);
       if (play) lines.push(`        props.forEach { ${play}(it) }`);
       lines.push(`        Log.i(TAG, "placed " + props.size + " procedural props (data-less layout)")`);
     } else {
@@ -300,7 +367,7 @@ function genComposition(spec: AppSpec, pkg: string): string {
     }
   }
   lines.push(`        Log.i(TAG, "${readyMsg}")`, `    }`);
-  if (dataLessLayout(spec)) {
+  if (hasDataLessLayout(spec)) {
     lines.push(
       ``,
       `    /** Procedural PBR prop for data-less layouts: sphere/box/capsule cycled by index, metallic tints. */`,

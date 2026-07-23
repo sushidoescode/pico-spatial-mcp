@@ -56,6 +56,9 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
   push({ node: "meta", tool: "generate_agent_bridge", args: { packageName: pkg }, targetPath: `${cpath}/AgentBridge.kt`, cClass: "C0_emulator", note: "SKIP this step if the scaffold template already ships agent/AgentBridge.kt (galleryxr-derived templates do); otherwise inject and call AgentBridge.attachScene(root). The bridge lives under <pkg>.agent." });
 
   // 3. per-scene: environment → colliders → lighting
+  // SceneIBL is one app-level object. appSpecSchema guarantees every IBL scene has the same
+  // effective config, so emit its shared file once instead of scheduling colliding overwrites.
+  let emittedIbl = false;
   for (const s of spec.scenes) {
     const env = s.environment;
     if (env.kind === "texturedMesh") {
@@ -84,7 +87,7 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
       push({ node: s.id, tool: "generate_rigidbody_kotlin", args: { packageName: contentPkg, ...(g ? { gravity: g } : {}) }, targetPath: `${cpath}/ScenePhysics.kt`, cClass: "C0_emulator", note: "REAL emulator physics (v8.8 rulebook baked in): wiring calls initWorld + per-body helpers; launch via 'launch:<id>' broadcast; reset = resetWorld (disable+rebuild), never destroy." });
     }
     const rig = s.lighting.rig;
-    if (rig !== "none") {
+    if (rig !== "none" && !(rig === "ibl" && emittedIbl)) {
       const tool = rig === "fullRig" ? "generate_full_lighting_rig_kotlin" : rig === "ibl" ? "generate_ibl_kotlin" : "generate_lighting_kotlin";
       // v14.9: every invoker (template HomeStage + generate_app_wiring) calls SceneLighting.apply —
       // the fullRig must be EMITTED under that object name (its default SceneLightingRig collides
@@ -93,12 +96,16 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
       const lightArgs: Record<string, unknown> = { packageName: contentPkg, ...(s.lighting.params ?? {}) };
       if (rig === "fullRig") lightArgs.objectName = "SceneLighting";
       push({ node: s.id, tool, args: lightArgs, targetPath: `${cpath}/${rig === "ibl" ? "SceneIBL.kt" : "SceneLighting.kt"}`, cClass: "C0_emulator" });
+      if (rig === "ibl") emittedIbl = true;
     }
   }
 
-  // 4. layouts
-  for (const l of spec.layouts) {
-    push({ node: l.id, tool: "generate_layout_kotlin", args: { packageName: contentPkg, pattern: l.pattern, count: l.count, ...(l.params ?? {}) }, targetPath: `${cpath}/SceneLayout.kt`, cClass: "C0_emulator" });
+  // 4. layouts — SceneLayout is one app-level engine. Generate it once; generated wiring restores
+  // every selected layout's full parameter set immediately before placement, so later scenes cannot
+  // overwrite radius/span/center defaults in this shared file.
+  const firstLayout = spec.layouts[0];
+  if (firstLayout) {
+    push({ node: firstLayout.id, tool: "generate_layout_kotlin", args: { packageName: contentPkg, pattern: firstLayout.pattern, count: firstLayout.count, ...(firstLayout.params ?? {}) }, targetPath: `${cpath}/SceneLayout.kt`, cClass: "C0_emulator" });
   }
   // 5. data binding
   for (const d of spec.data) {

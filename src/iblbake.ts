@@ -6,13 +6,13 @@ import { z } from "zod";
 import { run, okJson, fail, expandHome } from "./util.js";
 
 /**
- * iblbake.ts — prepare_ibl_cubemap: author a BRIGHT prefiltered HDR IBL cubemap (.ktx) so PBR METALS
+ * iblbake.ts — prepare_ibl_cubemap: author a BRIGHT prefiltered floating-point IBL cubemap (.ktx) so PBR METALS
  * SHINE with real studio reflections. Wraps Filament's `cmgen` (equirect → prefiltered R11F_G11F_B10F
  * cubemap with roughness mips — the exact format the PICO SDK ImageBasedLightComponent wants).
  *
  * WHY: the emulator's system IBL environment is DARK (metals reflect black), and the editor's shipped
  * SystemIbl_ibl_brightness.ktx is a DIM GRAYSCALE brightness map (darkens the scene). A proper bright
- * COLOR HDR cubemap is what makes chrome/gold read as polished metal. VISION-VERIFIED on the emulator:
+ * COLOR environment cubemap is what makes chrome/gold read as polished metal. VISION-VERIFIED on the emulator:
  * a cmgen studio cubemap + generate_ibl_kotlin(mode=local, intensityExponent≈6) → gold/chrome reflect
  * the softbox.
  */
@@ -49,7 +49,7 @@ export function registerIblBakeTools(server: McpServer) {
     "prepare_ibl_cubemap",
     {
       description:
-        "Author a BRIGHT prefiltered HDR IBL cubemap (.ktx) so PBR METALS SHINE with studio reflections — wraps Filament's cmgen (equirect → R11F_G11F_B10F cubemap w/ roughness mips, the format ImageBasedLightComponent wants). Provide your own equirect HDR/PNG, OR auto-generate one (preset: studio | sky | neutral). Place the output .ktx under app assets, then wire it with generate_ibl_kotlin(mode='local', intensityExponent≈6) + tag the metallic meshes. VISION-VERIFIED: cmgen studio cubemap → gold/chrome reflect the softbox on the emulator. Requires cmgen at ~/.pico-mcp/bin/cmgen (Filament release binary).",
+        "Author a BRIGHT prefiltered floating-point IBL cubemap (.ktx) so PBR METALS SHINE with studio reflections — wraps Filament's cmgen (equirect → R11F_G11F_B10F cubemap w/ roughness mips, the format ImageBasedLightComponent wants). Provide your own equirect HDR/PNG, OR auto-generate an LDR procedural PNG (preset: studio | sky | neutral). Place the output .ktx under app assets, then wire it with generate_ibl_kotlin(mode='local', intensityExponent≈6) + tag the metallic meshes. VISION-VERIFIED recipe: cmgen studio cubemap → gold/chrome reflected the softbox on the emulator. Requires cmgen at ~/.pico-mcp/bin/cmgen (Filament release binary).",
       inputSchema: {
         outKtx: z.string().describe("Output .ktx path, e.g. <project>/app/src/main/assets/ibl/studio.ktx"),
         equirect: z.string().optional().describe("Path to an equirectangular (2:1) HDR/EXR/PNG env image. If omitted, one is auto-generated from `preset`."),
@@ -98,13 +98,14 @@ export function registerIblBakeTools(server: McpServer) {
         ktx: out,
         bytes,
         source: equirect ? "provided-equirect" : `auto:${preset ?? "studio"}`,
+        sourceRange: equirect ? "caller-provided (inspect the source to determine dynamic range)" : "procedural LDR PNG",
         wireUp: [
           `1. The .ktx is under assets (relative path e.g. 'ibl/${path.basename(out)}').`,
           `2. generate_ibl_kotlin(packageName=..., ktxAssetPath='ibl/${path.basename(out)}', mode='local', intensityExponent=6)`,
           `3. In SpatialView.initial: SceneIBL.applyLocal(root, listOf(<metallic meshes>)).`,
           `4. GOTCHA: the receiver replaces DIRECT lighting, so use a HIGH exponent (~6/64x) for bright reflective metals; stage mode darkens the whole scene, avoid it.`,
         ],
-        note: "Prefiltered HDR cubemap for ImageBasedLightComponent. Makes PBR metals (metallic≈1, low roughness) reflect the studio → polished-metal look. VISION-VERIFIED on the emulator.",
+        note: "Prefiltered floating-point cubemap for ImageBasedLightComponent. Makes PBR metals (metallic≈1, low roughness) reflect the environment. The local+exp6 studio recipe was vision-verified previously; every new app still needs its own rendered LOOK.",
       });
     },
   );

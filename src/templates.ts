@@ -59,10 +59,11 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
     desc: "A calm ambient corner: a softly-lit procedural scene, nothing to click.",
     build: (p) => ({
       meta: { appName: p.appName, packageName: p.packageName, stageStyle: "2", brief: p.brief },
-      scenes: [{ id: "corner", environment: { kind: "procedural" }, lighting: { rig: "ibl" }, colliders: { props: [] } }],
-      objects: [{ id: "ambient", sceneId: "corner", source: "primitive", transform: { position: [0, 1.4, -2.5] } }],
+      scenes: [{ id: "corner", environment: { kind: "procedural" }, lighting: { rig: "ibl", params: { ktxAssetPath: "ibl/studio.ktx", mode: "local", intensityExponent: 6 } }, colliders: { props: [] } }],
+      layouts: [{ id: "ambient-one", sceneId: "corner", pattern: "arc", count: 1, params: { radius: 2.5, centerY: 1.4, arcSpanDeg: 0 } }],
+      objects: [{ id: "ambient", sceneId: "corner", source: "primitive", layoutRef: "ambient-one" }],
       navigation: { startScene: "corner" },
-      verificationPlan: [{ claim: "ambient scene renders softly lit", method: "capture", capabilityClass: "C0_emulator", targetRef: "corner", forwardFOVpose: fwd() }],
+      verificationPlan: [{ claim: "ambient scene renders softly lit", method: "capture", capabilityClass: "C0_emulator", targetRef: "ambient-one", forwardFOVpose: fwd() }],
     }),
   },
   showcase: {
@@ -134,7 +135,7 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
     desc: "An ambient CONSTELLATION: N softly-lit nodes in an arc — a calm data/ambient piece (IBL rig). Combine with SceneAnimator (bob/pulseEmissive) for gentle life.",
     build: (p) => ({
       meta: { appName: p.appName, packageName: p.packageName, stageStyle: "2", brief: p.brief },
-      scenes: [{ id: "space", environment: { kind: "procedural" }, lighting: { rig: "ibl" }, colliders: { props: [] } }],
+      scenes: [{ id: "space", environment: { kind: "procedural" }, lighting: { rig: "ibl", params: { ktxAssetPath: "ibl/studio.ktx", mode: "local", intensityExponent: 6 } }, colliders: { props: [] } }],
       layouts: [{ id: "nodes", sceneId: "space", pattern: "arc", count: p.count ?? 5, params: { radius: 2.0 } }],
       objects: [{ id: "stars", sceneId: "space", source: "primitive", layoutRef: "nodes", material: { mode: "pbr", metallic: 0, roughness: 0.3 } }],
       navigation: { startScene: "space" },
@@ -142,6 +143,14 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
     }),
   },
 };
+
+/** Pure template constructor used by the MCP wrapper and regression tests. Validation remains the
+ * caller's next step so error reporting can retain appSpecSchema's full issue list. */
+export function buildTemplateDraft(name: keyof typeof TEMPLATES, params: Params): any {
+  const template = TEMPLATES[name];
+  if (!template) throw new Error(`unknown template '${String(name)}'`);
+  return template.build(params);
+}
 
 function paletteItems(n: number, palette?: number[][]) {
   const pal = palette && palette.length ? palette : [[0.85, 0.12, 0.2], [0.95, 0.6, 0.1], [0.95, 0.9, 0.2], [0.15, 0.75, 0.35], [0.2, 0.45, 0.9], [0.6, 0.25, 0.85]];
@@ -173,15 +182,17 @@ export function registerTemplateTools(server: McpServer) {
     },
     async ({ name, brief, appName, packageName, count, palette }) => {
       const t = TEMPLATES[name];
-      const draft = t.build({ appName, packageName, brief, count, palette });
+      const draft = buildTemplateDraft(name, { appName, packageName, brief, count, palette });
       const parsed = appSpecSchema.safeParse(draft);
       if (!parsed.success) return okJson({ status: "error", issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) });
+      const iblPath = parsed.data.scenes.find((scene) => scene.lighting.rig === "ibl")?.lighting.params?.ktxAssetPath;
       return okJson({
         status: "ok",
         template: name,
         spec: parsed.data,
         sampleData: t.sampleData ? t.sampleData({ appName, packageName, brief, count, palette }) : null,
-        next: "Review the spec, then compile_app_spec(spec, projectDir). For data-bound templates write sampleData to app/src/main/assets/data/items.json.",
+        next: "Review the spec, then compile_app_spec(spec, projectDir). For data-bound templates write sampleData to app/src/main/assets/data/items.json." +
+          (iblPath ? ` Before building, bake or copy a real prefiltered cubemap to app/src/main/assets/${iblPath}.` : ""),
       });
     },
   );

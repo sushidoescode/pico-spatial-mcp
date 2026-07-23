@@ -36,7 +36,7 @@ import { deriveVerificationRoute, type VerificationRoute } from "./fleetbuild.js
  */
 
 // Emulator-tier core set: briefs whose assets are self-contained (no external splat/pano/GLB).
-const BENCH_CORE = ["crystals", "boutique", "knockdown", "gallery", "console", "dashboard", "affordance"];
+export const BENCH_CORE: readonly string[] = ["crystals", "boutique", "knockdown", "gallery", "console", "dashboard", "ambient", "affordance"];
 
 type BenchRow = {
   id: string;

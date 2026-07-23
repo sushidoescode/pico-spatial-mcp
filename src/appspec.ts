@@ -50,7 +50,7 @@ export const captureFrustumSchema = z.object({
 export const metaSchema = z.object({
   appName: z.string().describe("Human app name."),
   packageName: z.string().describe("Android applicationId, e.g. com.example.showcase."),
-  stageStyle: z.enum(["1", "2", "3"]).default("3").describe("PICO stage style: 3=Full, 2=Mixed, 1=Window."),
+  stageStyle: z.enum(["1", "2", "3"]).default("3").describe("PICO stage style: 1=Mixed, 2=Progressive, 3=Full."),
   brief: z.string().describe("The original natural-language brief this spec realizes."),
   semanticScenePath: z.string().optional().describe("v17.0: path to a compose_semantic_scene JSON for the scanned world this app lives in — enables object anchorTo:{label} placement against REAL labeled surfaces."),
   occupancyPath: z.string().optional().describe("v26.1: path to a build_occupancy_grid JSON for the scanned world — anchorTo relation:'on' placements then also avoid UNLABELED scanned geometry (zod strips unknown keys, so this MUST be declared here to reach resolveAnchors)."),
@@ -213,7 +213,19 @@ export const panelSchema = z.object({
     .describe("Live label:value rows. Keys 'throws'/'status' get automatic game hooks (bump on launch / READY-ROLLING)."),
 });
 
-export const appSpecSchema = z.object({
+/** Asset paths are embedded in generated Kotlin and also used as APK-relative filesystem paths.
+ * Keep the accepted alphabet deliberately boring: no interpolation/quote escapes, traversal, empty
+ * segments, platform separators, or spelling that provisioning would normalize differently. */
+export function isSafeIblAssetPath(value: unknown): value is string {
+  if (typeof value !== "string" || value !== value.trim() || !/^[A-Za-z0-9._/-]+\.ktx$/i.test(value)) return false;
+  if (value.startsWith("/") || value.includes("//")) return false;
+  return value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+export const iblKtxAssetPathSchema = z.string().refine(isSafeIblAssetPath, {
+  message: "must be a safe APK-relative .ktx path using only letters, digits, '.', '_', '-', and '/'",
+});
+
+const appSpecObjectSchema = z.object({
   meta: metaSchema,
   scenes: z.array(sceneSchema).min(1),
   layouts: z.array(layoutSchema).default([]),
@@ -224,6 +236,69 @@ export const appSpecSchema = z.object({
   navigation: navigationSchema,
   verificationPlan: z.array(verificationNodeSchema).default([]),
   headsetLayer: z.array(headsetPieceSchema).default([]),
+});
+
+/** SceneIBL.kt is one app-level generated object. Multiple scenes may share it, but contradictory
+ * path/mode/exponent values would make the compiler overwrite that same file and leave earlier call
+ * sites unresolved. Reject that shape at the IR boundary instead of emitting an uncompilable app. */
+export const appSpecSchema = appSpecObjectSchema.superRefine((spec, ctx) => {
+  const iblScenes = spec.scenes.filter((scene) => scene.lighting.rig === "ibl");
+  for (const scene of iblScenes) {
+    const params = scene.lighting.params ?? {};
+    if (!isSafeIblAssetPath(params.ktxAssetPath)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scenes"],
+        message: `IBL scene '${scene.id}' needs a safe APK-relative .ktx ktxAssetPath using only letters, digits, '.', '_', '-', and '/'`,
+      });
+    }
+    if (params.mode !== undefined && !["stage", "local", "both"].includes(params.mode)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scenes"],
+        message: `IBL scene '${scene.id}' mode must be 'stage', 'local', or 'both' when provided`,
+      });
+    }
+    if (
+      params.intensityExponent !== undefined &&
+      (typeof params.intensityExponent !== "number" || !Number.isFinite(params.intensityExponent) || params.intensityExponent < -24 || params.intensityExponent > 24)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scenes"],
+        message: `IBL scene '${scene.id}' intensityExponent must be a finite number in [-24, 24] when provided`,
+      });
+    }
+  }
+  const layoutSceneIds = new Set<string>();
+  for (const layout of spec.layouts) {
+    if (layoutSceneIds.has(layout.sceneId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["layouts"],
+        message: `the current wiring compiler supports one layout per scene; scene '${layout.sceneId}' declares multiple layouts`,
+      });
+    }
+    layoutSceneIds.add(layout.sceneId);
+  }
+  if (iblScenes.length < 2) return;
+  const signature = (scene: (typeof iblScenes)[number]) => {
+    const params = scene.lighting.params ?? {};
+    return JSON.stringify({
+      ktxAssetPath: params.ktxAssetPath ?? null,
+      mode: params.mode ?? "stage",
+      intensityExponent: params.intensityExponent ?? 0,
+    });
+  };
+  const expected = signature(iblScenes[0]);
+  for (const scene of iblScenes.slice(1)) {
+    if (signature(scene) === expected) continue;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["scenes"],
+      message: `all IBL scenes must share one ktxAssetPath/mode/intensityExponent configuration; scene '${scene.id}' conflicts with '${iblScenes[0].id}'`,
+    });
+  }
 });
 export type AppSpec = z.infer<typeof appSpecSchema>;
 

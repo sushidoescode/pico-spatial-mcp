@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ok, fail } from "./util.js";
+import { iblKtxAssetPathSchema } from "./appspec.js";
 
 /**
  * generate_lighting_kotlin — emit SceneLighting.kt that lights a scene the CORRECT way (a directional
@@ -186,7 +187,7 @@ export function registerLightingTools(server: McpServer) {
         "Emit SceneIBL.kt — image-based lighting (IBL) from an HDR .ktx cubemap. Two modes: 'stage' = scene-wide StageEnvironmentLightingComponent (lights ALL PBR meshes; ACTIVE only in FULL/PROGRESSIVE stage, INACTIVE in MIXED where the system real-world IBL wins) and 'local' = an ImageBasedLightComponent source entity + ImageBasedLightReceiverComponent on tagged receivers (localized reflections/lighting on chosen meshes). Compiles against the SDK; the IBL effect (reflections/ambient) is vision-verifiable on a baked-PBR/metallic mesh. VERIFIED usage for shiny metals: mode=`local` + intensityExponent~6 (the receiver REPLACES direct lighting, so crank it high for bright reflective metals). mode=`stage` DARKENS the whole scene on the emulator — avoid it. Bake the cubemap with prepare_ibl_cubemap (Filament cmgen); the shipped SystemIbl grayscale .ktx is dim and only darkens.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
-        ktxAssetPath: z.string().describe("Path to the HDR cubemap .ktx under app assets (loaded FROM_ASSETS), e.g. 'ibl/studio.ktx'. Only .ktx cubemaps are supported by the SDK."),
+        ktxAssetPath: iblKtxAssetPathSchema.describe("Safe APK-relative path to the cubemap .ktx under app assets (loaded FROM_ASSETS), e.g. 'ibl/studio.ktx'. Only .ktx cubemaps are supported by the SDK."),
         mode: z.enum(["stage", "local", "both"]).optional().describe("stage = scene-wide (FULL/PROGRESSIVE stage only). local = source+receiver on tagged meshes. both = emit both. Default 'stage'."),
         intensityExponent: z.number().optional().describe("IBL intensity exponent; actual intensity = 2^exp (range -24..24). Default 0 (= 1.0x)."),
       },

@@ -3,11 +3,12 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { okJson } from "./util.js";
 import { buildLedger } from "./compiler.js";
-import { appSpecSchema } from "./appspec.js";
+import { appSpecSchema, isSafeIblAssetPath } from "./appspec.js";
 import { proceduralUsda } from "./procedural.js";
 import { bakeTexturedModel } from "./bundle.js";
 import { startBridgeDetached } from "./mousebridge.js";
@@ -31,6 +32,303 @@ const ADB = path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-image
 const JBR = "/Applications/Android Studio.app/Contents/jbr/Contents/Home";
 const TEMPLATE = path.join(os.homedir(), "AndroidStudioProjects/galleryxr-native");
 const MENU_BUNDLE = path.join(os.homedir(), "AndroidStudioProjects/showroomxr-native/app/src/main/assets/menu.bundle");
+
+const KTX1_IDENTIFIER = Buffer.from([0xab, 0x4b, 0x54, 0x58, 0x20, 0x31, 0x31, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
+const KTX_R11F_G11F_B10F = 0x8c3a;
+const KTX_RGB = 0x1907;
+const MAX_IBL_KTX_BYTES = 256 * 1024 * 1024;
+const MAX_IBL_DIMENSION = 8192;
+
+export type IblKtxInspection = {
+  ok: boolean;
+  file: string;
+  error?: string;
+  version?: 1;
+  bytes?: number;
+  sha256?: string;
+  width?: number;
+  height?: number;
+  depth?: number;
+  arrayElements?: number;
+  faces?: number;
+  mipLevels?: number;
+  internalFormat?: number;
+  payloadBytes?: number;
+};
+
+/** Inspect the exact cmgen KTX1 shape that PICO's ImageBasedLightComponent consumes. A filename
+ * or magic prefix alone is not evidence: an IBL must be a square six-face cubemap with a roughness
+ * mip chain. This is structural validation only; a rendered LOOK is still required for appearance. */
+export function inspectIblKtx(file: string): IblKtxInspection {
+  try {
+    if (!fs.existsSync(file)) return { ok: false, file, error: "file does not exist" };
+    const stat = fs.lstatSync(file);
+    if (stat.isSymbolicLink()) return { ok: false, file, error: "IBL KTX must be a regular file, not a symbolic link" };
+    if (!stat.isFile()) return { ok: false, file, error: "IBL KTX is not a regular file" };
+    if (stat.size > MAX_IBL_KTX_BYTES) {
+      return { ok: false, file, bytes: stat.size, error: `IBL KTX exceeds the ${MAX_IBL_KTX_BYTES}-byte validation limit` };
+    }
+    const data = fs.readFileSync(file);
+    if (data.length < 64) return { ok: false, file, error: `KTX1 header truncated (${data.length} bytes)` };
+    if (!data.subarray(0, KTX1_IDENTIFIER.length).equals(KTX1_IDENTIFIER)) {
+      return { ok: false, file, error: "not a KTX1 file (cmgen conformance assets use KTX1)" };
+    }
+    if (data.readUInt32LE(12) !== 0x04030201) {
+      return { ok: false, file, error: "unsupported non-little-endian KTX1" };
+    }
+    const width = data.readUInt32LE(36);
+    const height = data.readUInt32LE(40);
+    const depth = data.readUInt32LE(44);
+    const arrayElements = data.readUInt32LE(48);
+    const faces = data.readUInt32LE(52);
+    const mipLevels = data.readUInt32LE(56);
+    const glType = data.readUInt32LE(16);
+    const glTypeSize = data.readUInt32LE(20);
+    const glFormat = data.readUInt32LE(24);
+    const internalFormat = data.readUInt32LE(28);
+    const baseInternalFormat = data.readUInt32LE(32);
+    const base = {
+      file,
+      version: 1 as const,
+      bytes: data.length,
+      sha256: createHash("sha256").update(data).digest("hex"),
+      width,
+      height,
+      depth,
+      arrayElements,
+      faces,
+      mipLevels,
+      internalFormat,
+    };
+    if (width === 0 || height === 0 || width !== height || depth !== 0) {
+      return { ok: false, ...base, error: `IBL must be a square 2D-face cubemap (got ${width}x${height}, depth=${depth})` };
+    }
+    if (width > MAX_IBL_DIMENSION || (width & (width - 1)) !== 0) {
+      return { ok: false, ...base, error: `IBL dimensions must be power-of-two and at most ${MAX_IBL_DIMENSION} (got ${width}x${height})` };
+    }
+    if (arrayElements !== 0) return { ok: false, ...base, error: `IBL must not be a cubemap array (got ${arrayElements} array elements)` };
+    if (faces !== 6) return { ok: false, ...base, error: `IBL cubemap must contain six faces (got ${faces})` };
+    if (mipLevels <= 1) return { ok: false, ...base, error: `prefiltered IBL needs a roughness mip chain (got ${mipLevels} level)` };
+    const maxMipLevels = Math.floor(Math.log2(width)) + 1;
+    if (mipLevels > maxMipLevels) {
+      return { ok: false, ...base, error: `IBL declares ${mipLevels} mips but ${width}x${height} permits at most ${maxMipLevels}` };
+    }
+    if (
+      internalFormat !== KTX_R11F_G11F_B10F ||
+      glType !== KTX_R11F_G11F_B10F ||
+      glTypeSize !== 1 ||
+      glFormat !== KTX_RGB ||
+      baseInternalFormat !== KTX_R11F_G11F_B10F
+    ) {
+      return {
+        ok: false,
+        ...base,
+        error: `unsupported IBL KTX format (expected cmgen R11F_G11F_B10F, got internalFormat=0x${internalFormat.toString(16)})`,
+      };
+    }
+
+    // KTX1 stores a uint32 imageSize followed by one padded payload per face for every mip.
+    // Walk all of them so a plausible 64-byte header cannot masquerade as a baked cubemap.
+    const keyValueBytes = data.readUInt32LE(60);
+    if (keyValueBytes % 4 !== 0 || keyValueBytes > data.length - 64) {
+      return { ok: false, ...base, error: `KTX1 key/value data is truncated (${keyValueBytes} declared bytes)` };
+    }
+    const metadataEnd = 64 + keyValueBytes;
+    let metadataOffset = 64;
+    while (metadataOffset < metadataEnd) {
+      if (metadataEnd - metadataOffset < 4) {
+        return { ok: false, ...base, error: "KTX1 metadata entry header is truncated" };
+      }
+      const entryBytes = data.readUInt32LE(metadataOffset);
+      metadataOffset += 4;
+      const paddedEntryBytes = Math.ceil(entryBytes / 4) * 4;
+      if (entryBytes === 0 || paddedEntryBytes > metadataEnd - metadataOffset) {
+        return { ok: false, ...base, error: `KTX1 metadata key/value entry declares invalid size ${entryBytes}` };
+      }
+      const entryEnd = metadataOffset + entryBytes;
+      const keyTerminator = data.indexOf(0, metadataOffset);
+      if (keyTerminator <= metadataOffset || keyTerminator >= entryEnd) {
+        return { ok: false, ...base, error: "KTX1 metadata entry has no non-empty null-terminated key" };
+      }
+      metadataOffset += paddedEntryBytes;
+    }
+    let offset = metadataEnd;
+    let payloadBytes = 0;
+    for (let level = 0; level < mipLevels; level++) {
+      if (offset + 4 > data.length) {
+        return { ok: false, ...base, payloadBytes, error: `KTX1 mip ${level} imageSize/payload is truncated` };
+      }
+      const imageSize = data.readUInt32LE(offset);
+      offset += 4;
+      if (imageSize === 0) {
+        return { ok: false, ...base, payloadBytes, error: `KTX1 mip ${level} declares an empty face payload` };
+      }
+      const mipWidth = Math.max(1, Math.floor(width / (2 ** level)));
+      const mipHeight = Math.max(1, Math.floor(height / (2 ** level)));
+      const expectedImageSize = mipWidth * mipHeight * 4;
+      if (imageSize !== expectedImageSize) {
+        return {
+          ok: false,
+          ...base,
+          payloadBytes,
+          error: `KTX1 mip ${level} R11F_G11F_B10F face payload is ${imageSize} bytes, expected ${expectedImageSize}`,
+        };
+      }
+      const padded = Math.ceil(imageSize / 4) * 4;
+      for (let face = 0; face < faces; face++) {
+        if (padded > data.length - offset) {
+          return { ok: false, ...base, payloadBytes, error: `KTX1 mip ${level} face ${face} payload is truncated` };
+        }
+        payloadBytes += imageSize;
+        offset += padded;
+      }
+    }
+    if (offset !== data.length) {
+      return { ok: false, ...base, payloadBytes, error: `KTX1 has ${data.length - offset} unexpected trailing bytes after its mip payloads` };
+    }
+    return { ok: true, ...base, payloadBytes };
+  } catch (e: any) {
+    return { ok: false, file, error: String(e?.message ?? e) };
+  }
+}
+
+/** Return the first symbolic-link component below a trusted lexical root. The root itself is the
+ * caller-selected trust anchor; descendants must be real directories/files so staging cannot walk
+ * through an assets/ibl link and write elsewhere. Missing descendants are safe until we create them. */
+function symlinkBelow(root: string, target: string): string | null {
+  const rel = path.relative(root, target);
+  if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+  let current = root;
+  for (const part of rel.split(path.sep)) {
+    current = path.join(current, part);
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) return current;
+    } catch (error: any) {
+      if (error?.code === "ENOENT") break;
+      throw error;
+    }
+  }
+  return null;
+}
+
+export type ProvisionedIblAsset = IblKtxInspection & {
+  sceneId: string;
+  assetPath: string;
+  source: string;
+  destination: string;
+  copied: boolean;
+};
+
+/** Stage every IBL scene's declared APK-relative KTX from the corpus beside its brief. Reused
+ * fleet projects may supply the destination themselves; either route must pass the same cubemap
+ * inspection. Paths are deliberately relative and traversal-free so a brief cannot write outside
+ * app/src/main/assets. */
+export function provisionIblAssets(
+  spec: any,
+  opts: { briefsDir: string; projectDir: string },
+): { ok: boolean; assets: ProvisionedIblAsset[]; errors: string[] } {
+  const assets: ProvisionedIblAsset[] = [];
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  const projectRoot = path.resolve(opts.projectDir);
+  const projectAssets = path.resolve(opts.projectDir, "app/src/main/assets");
+  const corpusRoot = path.resolve(opts.briefsDir);
+
+  for (const scene of spec?.scenes ?? []) {
+    if (scene?.lighting?.rig !== "ibl") continue;
+    const raw = scene?.lighting?.params?.ktxAssetPath;
+    if (typeof raw !== "string" || !raw.trim()) {
+      errors.push(`scene '${scene?.id ?? "?"}': IBL needs lighting.params.ktxAssetPath`);
+      continue;
+    }
+    const rel = raw;
+    const normalized = path.posix.normalize(rel);
+    if (
+      raw !== raw.trim() ||
+      normalized !== rel ||
+      !isSafeIblAssetPath(rel) ||
+      path.isAbsolute(rel) ||
+      rel.includes("\\") ||
+      normalized === ".." ||
+      normalized.startsWith("../") ||
+      normalized.startsWith("/") ||
+      path.posix.extname(normalized).toLowerCase() !== ".ktx"
+    ) {
+      errors.push(`scene '${scene.id}': ktxAssetPath must be a safe relative .ktx asset path (got '${rel}')`);
+      continue;
+    }
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+
+    const source = path.resolve(corpusRoot, normalized);
+    const destination = path.resolve(projectAssets, normalized);
+    if (!source.startsWith(corpusRoot + path.sep) || !destination.startsWith(projectAssets + path.sep)) {
+      errors.push(`scene '${scene.id}': ktxAssetPath must be a safe relative .ktx asset path (got '${rel}')`);
+      continue;
+    }
+
+    const sourceLink = symlinkBelow(corpusRoot, source);
+    const destinationLink = symlinkBelow(projectRoot, destination);
+    if (sourceLink || destinationLink) {
+      errors.push(
+        `scene '${scene.id}': IBL paths must not traverse a symbolic link` +
+        `${sourceLink ? ` (corpus: '${sourceLink}')` : ""}${destinationLink ? ` (project: '${destinationLink}')` : ""}`,
+      );
+      continue;
+    }
+
+    const bundled = inspectIblKtx(source);
+    const existing = inspectIblKtx(destination);
+    const selected = bundled.ok ? bundled : existing;
+    const selectedFile = bundled.ok ? source : destination;
+    if (!selected.ok) {
+      errors.push(
+        `scene '${scene.id}': no valid baked IBL at corpus '${source}' or project '${destination}'` +
+        ` (corpus: ${bundled.error}; project: ${existing.error})`,
+      );
+      continue;
+    }
+
+    let copied = false;
+    if (selectedFile === source) {
+      try {
+        fs.mkdirSync(path.dirname(destination), { recursive: true });
+        const linkAfterMkdir = symlinkBelow(projectRoot, destination);
+        if (linkAfterMkdir) {
+          errors.push(`scene '${scene.id}': IBL destination traverses symbolic link '${linkAfterMkdir}'`);
+          continue;
+        }
+        if (!existing.ok || existing.sha256 !== bundled.sha256) {
+          const temporary = path.join(path.dirname(destination), `.${path.basename(destination)}.${randomUUID()}.tmp`);
+          try {
+            fs.copyFileSync(source, temporary, fs.constants.COPYFILE_EXCL);
+            fs.renameSync(temporary, destination);
+          } finally {
+            if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+          }
+          copied = true;
+        }
+      } catch (error: any) {
+        errors.push(`scene '${scene.id}': failed to stage IBL at '${destination}': ${String(error?.message ?? error)}`);
+        continue;
+      }
+    }
+    const final = inspectIblKtx(destination);
+    if (!final.ok) {
+      errors.push(`scene '${scene.id}': staged IBL failed validation at '${destination}': ${final.error}`);
+      continue;
+    }
+    assets.push({
+      ...final,
+      sceneId: String(scene.id ?? "?"),
+      assetPath: normalized,
+      source: selectedFile,
+      destination,
+      copied,
+    });
+  }
+  return { ok: errors.length === 0, assets, errors };
+}
 
 type Step = { order: number; tool: string; args: any; targetPath: string; note?: string };
 
@@ -320,6 +618,22 @@ export function registerFleetBuildTools(server: McpServer) {
               if (!sc.created) { rec.notes.push(`scaffold failed: ${JSON.stringify(sc).slice(0, 150)}`); continue; }
             }
             const jdir = path.join(projectDir, `app/src/main/java/${pkg.replace(/\./g, "/")}`);
+
+            // v28.3: a ktxAssetPath string is not an asset. Validate the corpus/project file as a
+            // real six-face prefiltered KTX cubemap, then stage it at the exact APK-relative path
+            // before codegen/build. This closes ambient's historical "ungated but missing in APK"
+            // hole while keeping custom project-provided assets possible on reused fleet projects.
+            const iblAssets = provisionIblAssets(spec, { briefsDir, projectDir });
+            if (!iblAssets.ok) {
+              rec.notes.push(`skipped: IBL asset validation/provisioning failed: ${iblAssets.errors.join("; ")}`);
+              continue;
+            }
+            for (const asset of iblAssets.assets) {
+              rec.notes.push(
+                `IBL asset staged: ${asset.assetPath} (${asset.width}x${asset.height}, ${asset.faces} faces, ` +
+                `${asset.mipLevels} mips, sha256 ${asset.sha256}${asset.copied ? ", copied from corpus" : ", reused"})`,
+              );
+            }
 
             // 2. execute the ledger's generate steps
             const steps = buildLedger(spec, projectDir) as Step[];

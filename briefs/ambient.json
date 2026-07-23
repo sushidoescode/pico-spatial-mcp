@@ -1,12 +1,12 @@
 {
   "id": "ambient",
-  "brief": "A calm wellness corner: an ambient procedural scene, softly lit, nothing to click.",
+  "brief": "A baked-IBL conformance studio: 3 polished PBR props receive a real cmgen-prefiltered studio cubemap, with no direct light.",
   "spec": {
     "meta": {
-      "appName": "CalmXR",
-      "packageName": "com.example.calmxr",
-      "stageStyle": "2",
-      "brief": "A calm wellness corner: an ambient procedural scene, softly lit, nothing to click."
+      "appName": "AmbientIblXR",
+      "packageName": "com.example.ambientibl",
+      "stageStyle": "3",
+      "brief": "A baked-IBL conformance studio: 3 polished PBR props receive a real cmgen-prefiltered studio cubemap, with no direct light."
     },
     "scenes": [
       {
@@ -15,24 +15,41 @@
           "kind": "procedural"
         },
         "lighting": {
-          "rig": "ibl"
+          "rig": "ibl",
+          "params": {
+            "ktxAssetPath": "ibl/studio.ktx",
+            "mode": "local",
+            "intensityExponent": 8
+          }
         },
         "colliders": {
           "props": []
         }
       }
     ],
+    "layouts": [
+      {
+        "id": "ibl-heroes",
+        "sceneId": "corner",
+        "pattern": "arc",
+        "count": 3,
+        "params": {
+          "radius": 2.2,
+          "arcSpanDeg": 32,
+          "centerY": 1.4
+        }
+      }
+    ],
     "objects": [
       {
-        "id": "ambient",
+        "id": "polished-heroes",
         "sceneId": "corner",
         "source": "primitive",
-        "transform": {
-          "position": [
-            0,
-            1.4,
-            -2.5
-          ]
+        "layoutRef": "ibl-heroes",
+        "material": {
+          "mode": "pbr",
+          "metallic": 0.9,
+          "roughness": 0.25
         }
       }
     ],
@@ -41,21 +58,21 @@
     },
     "verificationPlan": [
       {
-        "claim": "ambient scene renders softly lit",
+        "claim": "3 polished PBR props remain bright and show the baked studio cubemap's softbox gradient with no direct light",
         "method": "capture",
         "capabilityClass": "C0_emulator",
-        "targetRef": "corner",
+        "targetRef": "ibl-heroes",
         "forwardFOVpose": {
           "yawDeg": 0,
           "pitchDeg": 0,
-          "targetZ": -2.5
+          "targetZ": -2.2
         }
       }
     ]
   },
   "expected": {
     "scenes": 1,
-    "layouts": 0,
+    "layouts": 1,
     "objects": 1,
     "data": 0,
     "interactions": 0,

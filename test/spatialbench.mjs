@@ -14,6 +14,10 @@ import * as spatialbench from "../dist/spatialbench.js";
 import * as fleetbuild from "../dist/fleetbuild.js";
 import * as planner from "../dist/planner.js";
 import * as webworkspace from "../dist/webworkspace.js";
+import { buildLedger } from "../dist/compiler.js";
+import { generateWiring } from "../dist/assemble.js";
+import { appSpecSchema, iblKtxAssetPathSchema } from "../dist/appspec.js";
+import { buildTemplateDraft } from "../dist/templates.js";
 import { scorePerfAxis } from "../dist/perfprobe.js";
 
 const { headlessRows, renderBenchHtml } = spatialbench;
@@ -30,14 +34,18 @@ else fail(`expected ≥15 corpus briefs, got ${rows.length}`);
 const scoredRows = rows.filter((r) => !r.skipped);
 const skippedRows = rows.filter((r) => r.skipped);
 const perfect = scoredRows.filter((r) => r.score === 3 && r.max === 3).length;
-if (perfect === scoredRows.length) ok(`headless tier: every pipeline brief scores 3/3 (planned+compiled+shape)`);
+if (scoredRows.length > 0 && perfect === scoredRows.length) ok(`headless tier: every pipeline brief scores 3/3 (planned+compiled+shape)`);
 else fail(`headless regressions: ${scoredRows.filter((r) => r.score !== 3).map((r) => `${r.id}=${r.score}/${r.max} [${r.notes.join("; ")}]`).join(", ")}`);
-if (skippedRows.every((r) => r.score === 0 && r.max === 0))
+if (skippedRows.length > 0 && skippedRows.every((r) => r.score === 0 && r.max === 0))
   ok(`headless tier: ${skippedRows.length} explicit external implementation(s) report 0/0 skipped`);
 else fail(`skipped headless rows must be 0/0: ${skippedRows.map((r) => `${r.id}=${r.score}/${r.max}`).join(", ")}`);
 
 if (rows.every((r) => r.booted === null && r.captured === null && r.panelReady === null && r.eye === null && r.perf === null)) ok("headless tier never claims emulator axes (booted/captured/panelReady/eye/perf stay null)");
 else fail("headless tier leaked emulator-axis claims");
+
+if (Array.isArray(spatialbench.BENCH_CORE) && spatialbench.BENCH_CORE.includes("ambient"))
+  ok("the default full SpatialBench core includes the self-contained ambient IBL conformance brief");
+else fail(`default SpatialBench core lost ambient: ${JSON.stringify(spatialbench.BENCH_CORE)}`);
 
 // renderer honesty: emulator axes render as —, skips marked, auto_judged framing present
 const report = {
@@ -222,6 +230,312 @@ if (typeof fleetbuild.deriveVisualExpectation !== "function") {
     ok("visual expectation follows object 'metrics' through layoutRef to the exact 6-slot layout");
   else fail(`object.layoutRef expectation must also be min=max=6: ${JSON.stringify(objectExpectation)}`);
 }
+
+// ── baked IBL conformance: a REAL cubemap must reach the APK, and local mode must receive props ──
+const ambientEntry = JSON.parse(fs.readFileSync(path.join(ROOT, "briefs", "ambient.json"), "utf8"));
+const ambientSpec = appSpecSchema.parse(ambientEntry.spec);
+const ambientScene = ambientSpec.scenes?.[0];
+const ambientLayout = ambientSpec.layouts?.[0];
+const ambientObject = ambientSpec.objects?.[0];
+const ambientClaim = ambientSpec.verificationPlan?.[0];
+const ambientKtxRel = ambientScene?.lighting?.params?.ktxAssetPath;
+const ambientKtx = typeof ambientKtxRel === "string" ? path.join(ROOT, "briefs", ambientKtxRel) : "";
+
+if (
+  ambientSpec.meta?.stageStyle === "3" &&
+  ambientScene?.lighting?.rig === "ibl" &&
+  ambientScene?.lighting?.params?.mode === "local" &&
+  ambientScene?.lighting?.params?.intensityExponent === 8 &&
+  ambientLayout?.count === 3 &&
+  ambientLayout?.params?.radius === 2.2 &&
+  ambientLayout?.params?.arcSpanDeg === 32 &&
+  ambientObject?.layoutRef === ambientLayout?.id &&
+  ambientClaim?.targetRef === ambientLayout?.id &&
+  ambientEntry.expected?.layouts === 1
+) ok("ambient is a Full-stage, 3-receiver local-IBL conformance brief with a layout-backed eye target");
+else fail(`ambient IBL conformance contract missing: ${JSON.stringify({ meta: ambientSpec.meta, lighting: ambientScene?.lighting, layout: ambientLayout, object: ambientObject, claim: ambientClaim, expected: ambientEntry.expected })}`);
+
+if (typeof fleetbuild.inspectIblKtx !== "function" || typeof fleetbuild.provisionIblAssets !== "function") {
+  fail("fleet exports inspectIblKtx + provisionIblAssets (real cubemap validation/staging contract)");
+} else {
+  const info = ambientKtx ? fleetbuild.inspectIblKtx(ambientKtx) : { ok: false, error: "missing ktxAssetPath" };
+  if (
+    info.ok === true &&
+    info.version === 1 &&
+    info.width === 256 &&
+    info.height === 256 &&
+    info.faces === 6 &&
+    info.mipLevels > 1 &&
+    info.internalFormat === 0x8c3a &&
+    /^[a-f0-9]{64}$/.test(info.sha256 ?? "")
+  ) ok("committed ambient asset is a cmgen-style 256² R11F_G11F_B10F cubemap with six faces + roughness mips");
+  else fail(`ambient KTX is missing or not a real prefiltered cubemap: ${JSON.stringify(info)}`);
+
+  const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR ?? "/tmp", "ibl-provision-test-"));
+  try {
+    const projectDir = path.join(tmp, "fleet-ambient-native");
+    const staged = fleetbuild.provisionIblAssets(ambientSpec, { briefsDir: path.join(ROOT, "briefs"), projectDir });
+    const copied = ambientKtxRel ? path.join(projectDir, "app/src/main/assets", ambientKtxRel) : "";
+    const sourceBytes = ambientKtx && fs.existsSync(ambientKtx) ? fs.readFileSync(ambientKtx) : null;
+    const copiedBytes = copied && fs.existsSync(copied) ? fs.readFileSync(copied) : null;
+    if (staged.ok === true && staged.assets?.length === 1 && sourceBytes && copiedBytes && sourceBytes.equals(copiedBytes))
+      ok("fleet stages the corpus KTX byte-identically under the declared APK asset path");
+    else fail(`fleet KTX staging failed: ${JSON.stringify(staged)}`);
+
+    const traversalSpec = structuredClone(ambientSpec);
+    traversalSpec.scenes[0].lighting.params.ktxAssetPath = "../escape.ktx";
+    const traversal = fleetbuild.provisionIblAssets(traversalSpec, { briefsDir: path.join(ROOT, "briefs"), projectDir: path.join(tmp, "bad-project") });
+    if (traversal.ok === false && /safe relative.*\.ktx/i.test(traversal.errors?.join(" ") ?? "") && !fs.existsSync(path.join(tmp, "bad-project/app/src/main/escape.ktx")))
+      ok("IBL provisioning rejects traversal instead of writing outside app assets");
+    else fail(`IBL traversal did not fail closed: ${JSON.stringify(traversal)}`);
+
+    const fakeDir = path.join(tmp, "fake-briefs");
+    fs.mkdirSync(path.join(fakeDir, "ibl"), { recursive: true });
+    const fake = Buffer.from(fs.readFileSync(ambientKtx).subarray(0, 64));
+    fake.writeUInt32LE(0, 60); // valid cmgen header, but no key/value or image payload follows
+    fs.writeFileSync(path.join(fakeDir, "ibl", "studio.ktx"), fake);
+    const fakeResult = fleetbuild.provisionIblAssets(ambientSpec, { briefsDir: fakeDir, projectDir: path.join(tmp, "fake-project") });
+    if (fakeResult.ok === false && /payload|truncated|imageSize/i.test(fakeResult.errors?.join(" ") ?? ""))
+      ok("a metadata-only KTX cannot spoof six baked faces + a roughness mip chain");
+    else fail(`metadata-only KTX passed provisioning: ${JSON.stringify(fakeResult)}`);
+
+    const malformedMetadata = Buffer.from(fs.readFileSync(ambientKtx));
+    malformedMetadata.writeUInt32LE(0xffffffff, 64); // first keyAndValueByteSize exceeds the declared 320-byte metadata block
+    const malformedMetadataPath = path.join(tmp, "malformed-metadata.ktx");
+    fs.writeFileSync(malformedMetadataPath, malformedMetadata);
+    const malformedMetadataInfo = fleetbuild.inspectIblKtx(malformedMetadataPath);
+    if (malformedMetadataInfo.ok === false && /metadata|key.?value|entry/i.test(malformedMetadataInfo.error ?? ""))
+      ok("KTX validation walks metadata entries instead of trusting only the outer byte count");
+    else fail(`malformed KTX metadata entry passed: ${JSON.stringify(malformedMetadataInfo)}`);
+
+    const hostile = Buffer.alloc(72);
+    fs.readFileSync(ambientKtx).subarray(0, 64).copy(hostile);
+    hostile.writeUInt32LE(2, 36);
+    hostile.writeUInt32LE(2, 40);
+    hostile.writeUInt32LE(6, 52);
+    hostile.writeUInt32LE(2, 56);
+    hostile.writeUInt32LE(0, 60);
+    hostile.writeUInt32LE(0xfffffffd, 64);
+    hostile.writeUInt32LE(0xfffffffd, 68);
+    const hostilePath = path.join(tmp, "hostile-overflow.ktx");
+    fs.writeFileSync(hostilePath, hostile);
+    const hostileInfo = fleetbuild.inspectIblKtx(hostilePath);
+    if (hostileInfo.ok === false && /payload|imageSize|size/i.test(hostileInfo.error ?? ""))
+      ok("supported-format KTX payload sizing rejects uint32 values before padding arithmetic");
+    else fail(`supported-format KTX arithmetic spoof passed: ${JSON.stringify(hostileInfo)}`);
+
+    const generic = Buffer.alloc(64 + (4 + 24) * 2);
+    hostile.copy(generic, 0, 0, 64);
+    generic.writeUInt32LE(0xdeadbeef, 16);
+    generic.writeUInt32LE(0xdeadbeef, 28);
+    generic.writeUInt32LE(0x1907, 32);
+    generic.writeUInt32LE(1, 64);
+    generic.fill(0xaa, 68, 92);
+    generic.writeUInt32LE(1, 92);
+    generic.fill(0xbb, 96, 120);
+    const genericPath = path.join(tmp, "generic-format.ktx");
+    fs.writeFileSync(genericPath, generic);
+    const genericInfo = fleetbuild.inspectIblKtx(genericPath);
+    if (genericInfo.ok === false && /format|R11F|unsupported/i.test(genericInfo.error ?? ""))
+      ok("IBL validation accepts only the cmgen R11F_G11F_B10F payload shape it can prove");
+    else fail(`unsupported generic KTX format passed: ${JSON.stringify(genericInfo)}`);
+
+    const hugeDimensions = Buffer.alloc(120);
+    const sourceHeader = fs.readFileSync(ambientKtx).subarray(0, 64);
+    sourceHeader.copy(hugeDimensions);
+    hugeDimensions.writeUInt32LE(0x80000000, 36);
+    hugeDimensions.writeUInt32LE(0x80000000, 40);
+    hugeDimensions.writeUInt32LE(2, 56);
+    hugeDimensions.writeUInt32LE(4, 64);
+    hugeDimensions.writeUInt32LE(4, 92);
+    const hugeDimensionsPath = path.join(tmp, "huge-dimensions.ktx");
+    fs.writeFileSync(hugeDimensionsPath, hugeDimensions);
+    const hugeDimensionsInfo = fleetbuild.inspectIblKtx(hugeDimensionsPath);
+    if (hugeDimensionsInfo.ok === false && /dimension|8192|power-of-two|size/i.test(hugeDimensionsInfo.error ?? ""))
+      ok("KTX validation caps dimensions before mip arithmetic can wrap signed integers");
+    else fail(`huge-dimension KTX passed: ${JSON.stringify(hugeDimensionsInfo)}`);
+
+    const oversizedPath = path.join(tmp, "oversized.ktx");
+    fs.writeFileSync(oversizedPath, sourceHeader);
+    fs.truncateSync(oversizedPath, 256 * 1024 * 1024 + 1);
+    const oversizedInfo = fleetbuild.inspectIblKtx(oversizedPath);
+    if (oversizedInfo.ok === false && /limit|exceeds|size/i.test(oversizedInfo.error ?? ""))
+      ok("KTX validation rejects oversized files before synchronous read/hash work");
+    else fail(`oversized KTX did not hit resource cap: ${JSON.stringify(oversizedInfo)}`);
+
+    const spacedSpec = structuredClone(ambientSpec);
+    spacedSpec.scenes[0].lighting.params.ktxAssetPath = ` ${ambientKtxRel} `;
+    const spaced = fleetbuild.provisionIblAssets(spacedSpec, { briefsDir: path.join(ROOT, "briefs"), projectDir: path.join(tmp, "spaced-project") });
+    if (spaced.ok === false && /canonical|whitespace|safe relative/i.test(spaced.errors?.join(" ") ?? ""))
+      ok("IBL provisioning rejects a path whose staged spelling would differ from generated runtime Kotlin");
+    else fail(`whitespace-mismatched KTX path passed: ${JSON.stringify(spaced)}`);
+
+    const interpolationDir = path.join(tmp, "interpolation-briefs");
+    fs.mkdirSync(path.join(interpolationDir, "ibl"), { recursive: true });
+    fs.copyFileSync(ambientKtx, path.join(interpolationDir, "ibl", "$foo.ktx"));
+    const interpolationSpec = structuredClone(ambientSpec);
+    interpolationSpec.scenes[0].lighting.params.ktxAssetPath = "ibl/$foo.ktx";
+    const interpolation = fleetbuild.provisionIblAssets(interpolationSpec, { briefsDir: interpolationDir, projectDir: path.join(tmp, "interpolation-project") });
+    if (interpolation.ok === false && /safe|Kotlin|asset path/i.test(interpolation.errors?.join(" ") ?? ""))
+      ok("IBL provisioning rejects Kotlin interpolation characters in an otherwise valid asset path");
+    else fail(`Kotlin-interpolated KTX path provisioned: ${JSON.stringify(interpolation)}`);
+
+    const outside = path.join(tmp, "outside-assets");
+    const linkedProject = path.join(tmp, "linked-project");
+    fs.mkdirSync(outside, { recursive: true });
+    fs.mkdirSync(path.join(linkedProject, "app/src/main/assets"), { recursive: true });
+    fs.symlinkSync(outside, path.join(linkedProject, "app/src/main/assets/ibl"), "dir");
+    const linked = fleetbuild.provisionIblAssets(ambientSpec, { briefsDir: path.join(ROOT, "briefs"), projectDir: linkedProject });
+    if (linked.ok === false && /symbolic link|symlink|safe/i.test(linked.errors?.join(" ") ?? "") && !fs.existsSync(path.join(outside, "studio.ktx")))
+      ok("IBL provisioning rejects a symlinked destination parent instead of escaping app assets");
+    else fail(`symlinked IBL destination escaped or passed: ${JSON.stringify(linked)}`);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+const fleetSource = fs.readFileSync(path.join(ROOT, "src", "fleetbuild.ts"), "utf8");
+const provisionCallAt = fleetSource.indexOf("const iblAssets = provisionIblAssets(spec");
+const ledgerCallAt = fleetSource.indexOf("const steps = buildLedger(spec", provisionCallAt);
+if (provisionCallAt >= 0 && ledgerCallAt > provisionCallAt)
+  ok("fleet_build invokes IBL validation/staging before code generation and build");
+else fail("fleet_build call site no longer provisions IBL assets before its compile ledger");
+
+const ambientIblStep = buildLedger(ambientSpec, "/tmp/fleet-ambient-native").find((s) => s.tool === "generate_ibl_kotlin");
+if (
+  ambientIblStep?.args?.ktxAssetPath === "ibl/studio.ktx" &&
+  ambientIblStep?.args?.mode === "local" &&
+  ambientIblStep?.args?.intensityExponent === 8
+) ok("ambient compile ledger carries the exact local IBL asset + exponent contract");
+else fail(`ambient compile ledger lost IBL params: ${JSON.stringify(ambientIblStep)}`);
+
+const compositionOf = (spec) => generateWiring(spec).find((f) => f.path.endsWith("/SceneComposition.kt"))?.content ?? "";
+const localComposition = compositionOf(ambientSpec);
+const propsAt = localComposition.indexOf("val props = SceneLayout.place");
+const localAt = localComposition.indexOf("SceneIBL.applyLocal(root, props)");
+if (propsAt >= 0 && localAt > propsAt && !localComposition.includes("SceneIBL.applyStage(root)"))
+  ok("mode=local wires the IBL receiver after procedural props exist, with no unresolved applyStage call");
+else fail(`local IBL wiring is invalid or ordered before receivers: ${localComposition}`);
+
+const stageSpec = structuredClone(ambientSpec);
+stageSpec.scenes[0].lighting.params = { ...(stageSpec.scenes[0].lighting.params ?? {}), mode: "stage" };
+const stageComposition = compositionOf(stageSpec);
+if (stageComposition.includes("SceneIBL.applyStage(root)") && !stageComposition.includes("SceneIBL.applyLocal(root, props)"))
+  ok("mode=stage keeps the existing scene-wide IBL wiring path");
+else fail(`stage IBL wiring regressed: ${stageComposition}`);
+
+const bothSpec = structuredClone(ambientSpec);
+bothSpec.scenes[0].lighting.params = { ...(bothSpec.scenes[0].lighting.params ?? {}), mode: "both" };
+const bothComposition = compositionOf(bothSpec);
+if (bothComposition.includes("SceneIBL.applyStage(root)") && bothComposition.indexOf("SceneIBL.applyLocal(root, props)") > bothComposition.indexOf("val props = SceneLayout.place"))
+  ok("mode=both applies stage IBL and then attaches local receivers");
+else fail(`both-mode IBL wiring is incomplete: ${bothComposition}`);
+
+const modelIblSpec = structuredClone(ambientSpec);
+modelIblSpec.objects[0].source = "model";
+modelIblSpec.objects[0].dataBindRef = "catalog";
+modelIblSpec.data = [{ id: "catalog", source: "json", asset: "data/items.json", bindsTo: [modelIblSpec.objects[0].id] }];
+const modelIblComposition = compositionOf(appSpecSchema.parse(modelIblSpec));
+const dataBindingGeneratorSource = fs.readFileSync(path.join(ROOT, "src", "databinding.ts"), "utf8");
+const fallbackCallbackCount = dataBindingGeneratorSource.match(/onModelLoaded\?\.invoke\(placeholder\)/g)?.length ?? 0;
+if (/onModelLoaded\s*=\s*\{[^}]*SceneIBL\.applyLocal\(root, listOf\(it\)\)/s.test(modelIblComposition) && !modelIblComposition.includes("SceneIBL.applyLocal(root, cards)") && fallbackCallbackCount >= 2)
+  ok("async model IBL targets loaded geometry and the generator invokes the same receiver callback for missing/failed-model placeholders");
+else fail(`async model local-IBL receiver wiring is wrong: ${modelIblComposition}`);
+
+const templateAmbientSpec = appSpecSchema.parse(buildTemplateDraft("ambient", {
+  appName: "TemplateAmbient",
+  packageName: "com.example.templateambient",
+  brief: "template ambient regression",
+}));
+const templateAmbientComposition = compositionOf(templateAmbientSpec);
+if (templateAmbientSpec.layouts.length === 1 && templateAmbientComposition.includes("val props = SceneLayout.place") && templateAmbientComposition.includes("SceneIBL.applyLocal(root, props)"))
+  ok("ambient template places a real procedural receiver before applying its declared local IBL");
+else fail(`ambient template still emits no IBL receiver: ${templateAmbientComposition}`);
+
+const physicsDataIblSpec = structuredClone(modelIblSpec);
+physicsDataIblSpec.objects[0].source = "quad";
+physicsDataIblSpec.scenes[0].physics = { gravity: [0, -9.81, 0] };
+physicsDataIblSpec.objects[0].body = { mode: "dynamic", shape: "sphere", dims: [0.2], mass: 1 };
+const physicsDataIblComposition = compositionOf(appSpecSchema.parse(physicsDataIblSpec));
+if (/SceneIBL\.applyLocal\(root, .*bodies/s.test(physicsDataIblComposition))
+  ok("local IBL includes physics bodies even when the scene also has data-backed cards");
+else fail(`data+physics local-IBL bodies are unlit: ${physicsDataIblComposition}`);
+
+const conflictingIblSpec = structuredClone(ambientSpec);
+const secondIblScene = structuredClone(conflictingIblSpec.scenes[0]);
+secondIblScene.id = "second";
+secondIblScene.lighting.params.mode = "stage";
+conflictingIblSpec.scenes.push(secondIblScene);
+const conflictingIbl = appSpecSchema.safeParse(conflictingIblSpec);
+if (!conflictingIbl.success && /IBL|lighting|mode|configuration/i.test(conflictingIbl.error.issues.map((issue) => issue.message).join(" ")))
+  ok("AppSpec rejects contradictory multi-scene IBL configs that would overwrite SceneIBL.kt");
+else fail(`contradictory multi-scene IBL config did not fail closed: ${JSON.stringify(conflictingIbl)}`);
+
+const invalidIblCases = [
+  { label: "missing asset path", params: { mode: "local", intensityExponent: 8 } },
+  { label: "null asset path", params: { ktxAssetPath: null, mode: "local", intensityExponent: 8 } },
+  { label: "Kotlin interpolation path", params: { ktxAssetPath: "ibl/$foo.ktx", mode: "local", intensityExponent: 8 } },
+  { label: "invalid mode", params: { ktxAssetPath: "ibl/studio.ktx", mode: "bogus", intensityExponent: 8 } },
+  { label: "null mode", params: { ktxAssetPath: "ibl/studio.ktx", mode: null, intensityExponent: 8 } },
+  { label: "out-of-range exponent", params: { ktxAssetPath: "ibl/studio.ktx", mode: "local", intensityExponent: 25 } },
+  { label: "null exponent", params: { ktxAssetPath: "ibl/studio.ktx", mode: "local", intensityExponent: null } },
+];
+const invalidIblAccepted = invalidIblCases.filter(({ params }) => {
+  const candidate = structuredClone(ambientSpec);
+  candidate.scenes[0].lighting.params = params;
+  return appSpecSchema.safeParse(candidate).success;
+});
+if (invalidIblAccepted.length === 0 && !iblKtxAssetPathSchema.safeParse("ibl/$foo.ktx").success)
+  ok("AppSpec and the reusable generator path schema reject missing, unsafe, null, invalid, and out-of-range IBL parameters");
+else fail(`invalid IBL params passed AppSpec validation: ${invalidIblAccepted.map((entry) => entry.label).join(", ")}`);
+
+const duplicateSceneLayoutSpec = structuredClone(ambientSpec);
+duplicateSceneLayoutSpec.layouts.push({ id: "badges", sceneId: "corner", pattern: "grid", count: 2, params: { columns: 2 } });
+duplicateSceneLayoutSpec.objects.push({ id: "badges", sceneId: "corner", source: "primitive", layoutRef: "badges" });
+const duplicateSceneLayout = appSpecSchema.safeParse(duplicateSceneLayoutSpec);
+if (!duplicateSceneLayout.success && /one layout per scene|multiple layouts|layout/i.test(duplicateSceneLayout.error.issues.map((issue) => issue.message).join(" ")))
+  ok("AppSpec fails closed on multiple layouts in one scene instead of silently compiling only the first");
+else fail(`same-scene multiple layouts still pass silently: ${JSON.stringify(duplicateSceneLayout)}`);
+
+const sharedIblSpec = structuredClone(ambientSpec);
+const sharedIblScene = structuredClone(sharedIblSpec.scenes[0]);
+sharedIblScene.id = "second";
+sharedIblSpec.scenes.push(sharedIblScene);
+const sharedIblParsed = appSpecSchema.parse(sharedIblSpec);
+const sharedIblSteps = buildLedger(sharedIblParsed, "/tmp/fleet-ambient-native").filter((step) => step.tool === "generate_ibl_kotlin");
+if (sharedIblSteps.length === 1) ok("identical multi-scene IBL config generates SceneIBL.kt exactly once");
+else fail(`identical multi-scene IBL generated ${sharedIblSteps.length} colliding files`);
+
+const multiDataLessSpec = structuredClone(sharedIblSpec);
+multiDataLessSpec.layouts.push({
+  id: "second-heroes",
+  sceneId: "second",
+  pattern: "arc",
+  count: 2,
+  params: { radius: 2, arcSpanDeg: 20, centerY: 1.4 },
+});
+multiDataLessSpec.objects.push({
+  id: "second-polished-heroes",
+  sceneId: "second",
+  source: "primitive",
+  material: { mode: "pbr", metallic: 0.8, roughness: 0.3 },
+  layoutRef: "second-heroes",
+});
+const multiDataLessComposition = compositionOf(appSpecSchema.parse(multiDataLessSpec));
+const proceduralPlacements = multiDataLessComposition.match(/SceneLayout\.place\(c, \d+, .*makeProp\(i\)/g) ?? [];
+const multiLayoutSteps = buildLedger(appSpecSchema.parse(multiDataLessSpec), "/tmp/fleet-ambient-native").filter((step) => step.tool === "generate_layout_kotlin");
+if (
+  proceduralPlacements.length === 2 &&
+  multiLayoutSteps.length === 1 &&
+  multiDataLessComposition.includes("SceneLayout.radius = 2.2f") &&
+  multiDataLessComposition.includes("SceneLayout.arcSpanDeg = 32f") &&
+  multiDataLessComposition.includes("SceneLayout.radius = 2f") &&
+  multiDataLessComposition.includes("SceneLayout.arcSpanDeg = 20f") &&
+  !multiDataLessComposition.includes("emptyList().size") &&
+  !multiDataLessComposition.includes("SceneDataBinding.makeCard(emptyList()")
+)
+  ok("multi-scene data-less layouts place procedural props without an unresolved SceneDataBinding dependency");
+else fail(`multi-scene data-less layout wiring/collision is invalid: ${JSON.stringify({ steps: multiLayoutSteps.length, composition: multiDataLessComposition })}`);
 
 // ── planner: panels are real C0 AppSpec targets, not unresolved refs ────────────────────────────────
 const consoleSpec = JSON.parse(fs.readFileSync(path.join(ROOT, "briefs", "console.json"), "utf8")).spec;
