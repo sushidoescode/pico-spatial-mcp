@@ -59,6 +59,8 @@ jobs:
         run: npm run test:vcamtransport
       - name: Virtual camera boundary (fail-closed source-readback report + orchestration)
         run: npm run test:vcamboundary
+      - name: Virtual camera reader (read-only CMIO probe source audit; no camera on Linux)
+        run: npm run test:vcamreader
       - name: Emulator restart argv + lifecycle (fully faked; no device access)
         run: npm run test:emulator-restart
       - name: Live copilot (bridge-line protocol + scene diff)
@@ -79,5 +81,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Virtual camera native helper (strict compile + pre-CMIO manifest rejection)
+      - name: Virtual camera native writer (strict compile + pre-CMIO manifest rejection)
         run: npm run test:vcamtransport-native
+      - name: Virtual camera native reader (strict compile + signal/stop lifetime + parser rejection)
+        run: npm run test:vcamreader-native

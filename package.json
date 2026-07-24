@@ -36,7 +36,9 @@
     "test:vcam": "node test/vcam.mjs",
     "test:vcamtransport": "node --test test/vcamtransport.mjs",
     "test:vcamboundary": "node --test test/vcamboundary.mjs",
+    "test:vcamreader": "node --test test/vcamreader.mjs",
     "test:vcamtransport-native": "sh scripts/test-cmio-camera-writer.sh",
+    "test:vcamreader-native": "sh scripts/test-cmio-camera-reader.sh",
     "test:briefroute": "node test/briefroute.mjs",
     "test:emulator-restart": "node test/restart-emulator.mjs"
   },
