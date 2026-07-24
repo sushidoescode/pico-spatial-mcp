@@ -12,11 +12,33 @@ output_path=${1:-"$HOME/.pico-mcp/bin/cmio-camera-reader"}
 output_dir=$(dirname -- "$output_path")
 
 mkdir -p -- "$output_dir"
-temporary_output=$(mktemp "$output_dir/.cmio-camera-reader.XXXXXX")
+# Compile into a file literally named cmio-camera-reader: on Apple silicon the linker ad-hoc-signs
+# with the OUTPUT basename as the sealed code-signing identifier, so this keeps that identity stable
+# and meaningful (a random mktemp basename would be baked in before the final rename).
+temporary_dir=$(mktemp -d "$output_dir/.cmio-camera-reader-build.XXXXXX")
+temporary_output="$temporary_dir/cmio-camera-reader"
+info_plist=$(mktemp "${TMPDIR:-/tmp}/cmio-camera-reader-info.XXXXXX")
 cleanup() {
-  rm -f -- "$temporary_output"
+  rm -rf -- "$temporary_dir" "$info_plist"
 }
 trap cleanup EXIT HUP INT TERM
+
+# An embedded camera-usage description is required for a host binary that can touch a capture
+# device. It is a prompt PREREQUISITE that grants nothing and never moves the authorization state.
+cat > "$info_plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.pico.vcam.cmio-camera-reader</string>
+  <key>CFBundleName</key>
+  <string>cmio-camera-reader</string>
+  <key>NSCameraUsageDescription</key>
+  <string>PICO virtual-camera diagnostic verifies the injected test-card feed. It reads camera frames only when this client is already authorized and never requests access.</string>
+</dict>
+</plist>
+PLIST
 
 xcrun --sdk macosx clang \
   -fobjc-arc \
@@ -26,9 +48,14 @@ xcrun --sdk macosx clang \
   -Werror \
   -Wpedantic \
   -framework Foundation \
+  -framework AVFoundation \
   -framework CoreMediaIO \
   -framework CoreMedia \
   -framework CoreVideo \
+  -framework CoreGraphics \
+  -framework ImageIO \
+  -framework Security \
+  -sectcreate __TEXT __info_plist "$info_plist" \
   "$source_path" \
   -o "$temporary_output"
 

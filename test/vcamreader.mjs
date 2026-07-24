@@ -77,6 +77,76 @@ test("argument parsing runs before any CoreMediaIO call and fails closed on unkn
   assert.match(source, /exactly one mode|mutually exclusive|choose one mode|one mode is required/i);
 });
 
+test("the reader never contains the only explicit camera-permission-prompt API", async () => {
+  const source = await loadSource();
+  assert.doesNotMatch(source, /\brequestAccessForMediaType\b/, "requestAccessForMediaType is the sole explicit prompt and must never appear");
+});
+
+test("authorization-only and avfoundation-readback are mutually-exclusive modes counted with the probe", async () => {
+  const source = await loadSource();
+  assert.match(source, /--authorization-only/);
+  assert.match(source, /--avfoundation-readback/);
+  // All three modes participate in the exactly-one-mode count so they cannot be combined.
+  const modeCountLine = source.match(/int modeCount =[^;]*;/);
+  assert.ok(modeCountLine, "a modeCount is computed");
+  assert.match(modeCountLine[0], /cmioProbeOnly/);
+  assert.match(modeCountLine[0], /authorizationOnly/);
+  assert.match(modeCountLine[0], /avfoundationReadback/);
+});
+
+test("authorization-only reports executable identity, code signing, and AV status without capturing", async () => {
+  const source = await loadSource();
+  // Read-only authorization status query (never the prompting request API) + binary identity.
+  assert.match(source, /authorizationStatusForMediaType/);
+  assert.match(source, /SecStaticCodeCreateWithPath/);
+  assert.match(source, /SecCodeCopySigningInformation/);
+  assert.match(source, /_NSGetExecutablePath/);
+  assert.match(source, /CC_SHA256/);
+  assert.match(source, /\\"event\\":\\"authorization\\"/);
+  // The authorization-only path must not build or start a capture session.
+  const emitStart = source.indexOf("static int EmitAuthorization");
+  assert.ok(emitStart >= 0, "EmitAuthorization is inspectable");
+  const emitEnd = source.indexOf("\nstatic ", emitStart + 1);
+  const emitSource = source.slice(emitStart, emitEnd > emitStart ? emitEnd : source.length);
+  for (const forbidden of ["AVCaptureSession", "AVCaptureDeviceInput", "AVCaptureVideoDataOutput", "startRunning"]) {
+    assert.ok(!emitSource.includes(forbidden), `authorization-only must not reference ${forbidden}`);
+  }
+});
+
+test("an AVCaptureDeviceInput is only constructed after the client is already Authorized", async () => {
+  const source = await loadSource();
+  // A pure guard maps status to a construct/no-construct decision, unit-tested in the native gate.
+  assert.match(source, /static BOOL CanConstructInput\(AVAuthorizationStatus status\)/);
+  assert.match(source, /AVAuthorizationStatusAuthorized/);
+  // Device selection uses the exact unique ID, never a list index.
+  assert.match(source, /deviceWithUniqueID/);
+  // Readback checks authorization and blocks before any device/input/session construction.
+  const readbackStart = source.indexOf("static int RunAvfReadback");
+  assert.ok(readbackStart >= 0, "RunAvfReadback is inspectable");
+  const readbackSource = source.slice(readbackStart);
+  const authCheck = readbackSource.search(/CanConstructInput|authorizationStatusForMediaType/);
+  const firstInput = readbackSource.indexOf("AVCaptureDeviceInput");
+  assert.ok(authCheck >= 0, "readback checks authorization");
+  assert.ok(firstInput >= 0, "readback does construct an AVCaptureDeviceInput on the authorized path");
+  assert.ok(authCheck < firstInput, "authorization is checked before any AVCaptureDeviceInput construction");
+});
+
+test("avfoundation readback is bounded by finite frame and time limits and records full frame provenance", async () => {
+  const source = await loadSource();
+  assert.match(source, /kMaximumReadbackFrames/);
+  assert.match(source, /--frames/);
+  assert.match(source, /--timeout-ms/);
+  assert.match(source, /--output-dir/);
+  // Per-frame provenance: dimensions, pixel format, timestamps, raw + preview hashes.
+  assert.match(source, /presentationTimeMs|presentationTime/);
+  assert.match(source, /rawSha256/);
+  assert.match(source, /previewSha256/);
+  // It must not silently succeed with zero frames or a single static frame; the decision is a pure
+  // seam unit-tested in the native lifetime gate.
+  assert.match(source, /distinctRawHashes/);
+  assert.match(source, /static int AvfExitCode\(NSUInteger captured, NSUInteger distinct, NSUInteger requested\)/);
+});
+
 test("the source declares signal normalization and stop handling (ordering is proven by the native lifetime gate)", async () => {
   // Presence check only. The runtime proof that a pending stop short-circuits BEFORE any CMIO
   // access lives in test/macos/cmio-camera-reader-lifetime.m (the test:vcamreader-native gate).

@@ -26,9 +26,13 @@ xcrun --sdk macosx clang \
   -Werror \
   -Wpedantic \
   -framework Foundation \
+  -framework AVFoundation \
   -framework CoreMediaIO \
   -framework CoreMedia \
   -framework CoreVideo \
+  -framework CoreGraphics \
+  -framework ImageIO \
+  -framework Security \
   "$script_dir/../test/macos/cmio-camera-reader-lifetime.m" \
   -o "$lifetime_test"
 "$lifetime_test"
@@ -73,4 +77,63 @@ case "$diagnostic" in
     ;;
 esac
 
-echo "cmio-camera-reader native gate: strict build, signal/stop lifetime, JSON escaping, and fail-closed rejection passed"
+# --authorization-only is read-only: it must report identity + AV status and exit 0 without prompting.
+set +e
+authorization=$("$reader" --authorization-only)
+status=$?
+set -e
+if [ "$status" -ne 0 ]; then
+  echo "cmio-camera-reader native gate: --authorization-only exit $status" >&2
+  echo "$authorization" >&2
+  exit 1
+fi
+for field in '"event":"authorization"' '"executablePath"' '"executableSha256"' '"authStatus"' '"canConstructInput"'; do
+  case "$authorization" in
+    *"$field"*) ;;
+    *)
+      echo "cmio-camera-reader native gate: --authorization-only missing $field" >&2
+      echo "$authorization" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# Readback authorization guard: only assert the blocked path when this client is NOT authorized, so
+# the gate can never open a camera. A truly authorized reader (rare for a fresh ad-hoc binary) is
+# skipped to keep the gate device-free.
+case "$authorization" in
+  *'"authStatus":"authorized"'*)
+    echo "cmio-camera-reader native gate: reader is authorized; skipping the readback-block assertion to stay device-free"
+    ;;
+  *)
+    frames_dir="$temporary_dir/frames"
+    mkdir -p "$frames_dir"
+    set +e
+    blocked=$(
+      "$reader" --avfoundation-readback \
+        --device-uid 00000000-0000-0000-0000-0000000000ff \
+        --output-dir "$frames_dir" --frames 2 --timeout-ms 1000 2>&1
+    )
+    status=$?
+    set -e
+    if [ "$status" -ne 77 ]; then
+      echo "cmio-camera-reader native gate: expected not-authorized readback block exit 77, got $status" >&2
+      echo "$blocked" >&2
+      exit 1
+    fi
+    case "$blocked" in
+      *'"event":"blocked"'*) ;;
+      *)
+        echo "cmio-camera-reader native gate: readback did not report a blocked event" >&2
+        echo "$blocked" >&2
+        exit 1
+        ;;
+    esac
+    if [ -n "$(ls -A "$frames_dir" 2>/dev/null)" ]; then
+      echo "cmio-camera-reader native gate: a blocked readback must not write any frame artifact" >&2
+      exit 1
+    fi
+    ;;
+esac
+
+echo "cmio-camera-reader native gate: strict build, lifetime (signal/stop, JSON, auth guard), authorization-only, and fail-closed readback block passed"

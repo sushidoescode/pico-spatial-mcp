@@ -9,11 +9,19 @@
 // with --authorization-only and --avfoundation-readback so one retained binary owns their shared
 // authorization guard.
 #import <Foundation/Foundation.h>
+#import <AVFoundation/AVFoundation.h>
 
+#include <CommonCrypto/CommonDigest.h>
+#include <CoreGraphics/CoreGraphics.h>
 #include <CoreMedia/CoreMedia.h>
 #include <CoreMediaIO/CoreMediaIO.h>
 #include <CoreVideo/CoreVideo.h>
+#include <ImageIO/ImageIO.h>
+#include <Security/Security.h>
+#include <dispatch/dispatch.h>
 #include <errno.h>
+#include <limits.h>
+#include <mach-o/dyld.h>
 #include <math.h>
 #include <signal.h>
 #include <stdint.h>
@@ -22,13 +30,20 @@
 #include <string.h>
 
 static const UInt32 kMaximumObjectIDs = 4096;
+static const NSUInteger kMaximumReadbackFrames = 240;
+static const uint64_t kMaximumReadbackTimeoutMs = 60000;
 static NSString *const kRequiredDeviceName = @"Immersed Camera";
 
 static volatile sig_atomic_t gStopRequested = 0;
 
 typedef struct {
     __strong NSString *deviceUid;
+    __strong NSString *outputDir;
+    NSUInteger frames;
+    uint64_t timeoutMs;
     BOOL cmioProbeOnly;
+    BOOL authorizationOnly;
+    BOOL avfoundationReadback;
     BOOL help;
 } Options;
 
@@ -67,11 +82,28 @@ static void PrintUsage(FILE *stream) {
     fprintf(stream,
             "Usage:\n"
             "  cmio-camera-reader --cmio-probe-only --device-uid UUID\n"
+            "  cmio-camera-reader --authorization-only\n"
+            "  cmio-camera-reader --avfoundation-readback --device-uid UUID\n"
+            "      --output-dir DIR --frames N --timeout-ms MS\n"
             "  cmio-camera-reader --help\n"
             "\n"
             "--cmio-probe-only reports the exact device's stream topology and current formats\n"
-            "through public CoreMediaIO property reads ONLY. It does not copy a stream queue,\n"
-            "start a stream, dequeue a sample, or write a frame.\n");
+            "through public CoreMediaIO property reads ONLY (no queue copy, stream start,\n"
+            "dequeue, or frame write).\n"
+            "--authorization-only reports this executable's canonical path/SHA-256, code-signing\n"
+            "identity when present, and its AVCaptureDevice video authorization status. It never\n"
+            "requests access, constructs a capture input, starts a session, or writes a frame.\n"
+            "--avfoundation-readback captures a bounded frame set from the exact device unique ID,\n"
+            "but ONLY when this client is already authorized; otherwise it reports blocked.\n");
+}
+
+static BOOL ParseSize(NSString *text, size_t *valueOut) {
+    if (text.length == 0) return NO;
+    NSScanner *scanner = [NSScanner scannerWithString:text];
+    unsigned long long parsed = 0;
+    if (![scanner scanUnsignedLongLong:&parsed] || !scanner.isAtEnd || parsed > SIZE_MAX) return NO;
+    *valueOut = (size_t)parsed;
+    return YES;
 }
 
 static BOOL ParseOptions(int argc, const char *argv[], Options *options) {
@@ -97,8 +129,29 @@ static BOOL ParseOptions(int argc, const char *argv[], Options *options) {
             options->cmioProbeOnly = YES;
             continue;
         }
+        if ([argument isEqualToString:@"--authorization-only"]) {
+            if ([seen containsObject:argument]) {
+                fprintf(stderr, "cmio-camera-reader: duplicate argument --authorization-only\n");
+                return NO;
+            }
+            [seen addObject:argument];
+            options->authorizationOnly = YES;
+            continue;
+        }
+        if ([argument isEqualToString:@"--avfoundation-readback"]) {
+            if ([seen containsObject:argument]) {
+                fprintf(stderr, "cmio-camera-reader: duplicate argument --avfoundation-readback\n");
+                return NO;
+            }
+            [seen addObject:argument];
+            options->avfoundationReadback = YES;
+            continue;
+        }
 
-        BOOL known = [argument isEqualToString:@"--device-uid"];
+        BOOL known = [argument isEqualToString:@"--device-uid"] ||
+                     [argument isEqualToString:@"--output-dir"] ||
+                     [argument isEqualToString:@"--frames"] ||
+                     [argument isEqualToString:@"--timeout-ms"];
         if (!known) {
             fprintf(stderr, "cmio-camera-reader: unknown argument: %s\n", argv[index]);
             return NO;
@@ -120,6 +173,22 @@ static BOOL ParseOptions(int argc, const char *argv[], Options *options) {
         index += 1;
 
         if ([argument isEqualToString:@"--device-uid"]) options->deviceUid = value;
+        else if ([argument isEqualToString:@"--output-dir"]) options->outputDir = value;
+        else if ([argument isEqualToString:@"--frames"]) {
+            size_t parsed = 0;
+            if (!ParseSize(value, &parsed) || parsed < 1 || parsed > kMaximumReadbackFrames) {
+                fprintf(stderr, "cmio-camera-reader: --frames must be an integer in 1..%lu\n", (unsigned long)kMaximumReadbackFrames);
+                return NO;
+            }
+            options->frames = (NSUInteger)parsed;
+        } else if ([argument isEqualToString:@"--timeout-ms"]) {
+            size_t parsed = 0;
+            if (!ParseSize(value, &parsed) || parsed < 1 || (uint64_t)parsed > kMaximumReadbackTimeoutMs) {
+                fprintf(stderr, "cmio-camera-reader: --timeout-ms must be an integer in 1..%llu\n", (unsigned long long)kMaximumReadbackTimeoutMs);
+                return NO;
+            }
+            options->timeoutMs = (uint64_t)parsed;
+        }
     }
 
     if (options->help) {
@@ -130,19 +199,44 @@ static BOOL ParseOptions(int argc, const char *argv[], Options *options) {
         return YES;
     }
 
-    // Exactly one mode must be selected. (Task 4 adds --authorization-only and
-    // --avfoundation-readback to this count so the modes stay mutually exclusive.)
-    int modeCount = options->cmioProbeOnly ? 1 : 0;
+    // Exactly one mode must be selected so the modes can never be combined.
+    int modeCount = (options->cmioProbeOnly ? 1 : 0) +
+                    (options->authorizationOnly ? 1 : 0) +
+                    (options->avfoundationReadback ? 1 : 0);
     if (modeCount != 1) {
-        fprintf(stderr, "cmio-camera-reader: exactly one mode is required (e.g. --cmio-probe-only)\n");
+        fprintf(stderr, "cmio-camera-reader: exactly one mode is required "
+                        "(--cmio-probe-only, --authorization-only, or --avfoundation-readback)\n");
         return NO;
     }
 
-    if (options->cmioProbeOnly) {
+    if (options->cmioProbeOnly || options->avfoundationReadback) {
         if (options->deviceUid.length == 0 || [[NSUUID alloc] initWithUUIDString:options->deviceUid] == nil) {
             fprintf(stderr, "cmio-camera-reader: --device-uid must be a non-empty UUID\n");
             return NO;
         }
+    }
+    if (options->avfoundationReadback) {
+        if (options->outputDir.length == 0) {
+            fprintf(stderr, "cmio-camera-reader: --avfoundation-readback requires --output-dir\n");
+            return NO;
+        }
+        if (options->frames < 1) {
+            fprintf(stderr, "cmio-camera-reader: --avfoundation-readback requires --frames (>=1)\n");
+            return NO;
+        }
+        if (options->timeoutMs < 1) {
+            fprintf(stderr, "cmio-camera-reader: --avfoundation-readback requires --timeout-ms (>=1)\n");
+            return NO;
+        }
+    }
+    if ((options->cmioProbeOnly || options->authorizationOnly) &&
+        (options->outputDir.length > 0 || options->frames > 0 || options->timeoutMs > 0)) {
+        fprintf(stderr, "cmio-camera-reader: --output-dir/--frames/--timeout-ms are only valid with --avfoundation-readback\n");
+        return NO;
+    }
+    if (options->authorizationOnly && options->deviceUid.length > 0) {
+        fprintf(stderr, "cmio-camera-reader: --device-uid is not valid with --authorization-only\n");
+        return NO;
     }
     return YES;
 }
@@ -472,6 +566,282 @@ static BOOL ProbeDeviceTopology(NSString *expectedUid) {
     return result >= 0 && fflush(stdout) == 0;
 }
 
+static NSString *HexEncode(const unsigned char *digest, size_t length) {
+    NSMutableString *encoded = [NSMutableString stringWithCapacity:length * 2];
+    for (size_t index = 0; index < length; index += 1) [encoded appendFormat:@"%02x", digest[index]];
+    return encoded;
+}
+
+static NSString *SHA256HexOfData(NSData *data) {
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+    return HexEncode(digest, CC_SHA256_DIGEST_LENGTH);
+}
+
+static NSString *CanonicalExecutablePath(void) {
+    uint32_t size = 0;
+    _NSGetExecutablePath(NULL, &size);
+    if (size == 0) return nil;
+    char *buffer = malloc(size);
+    if (buffer == NULL) return nil;
+    NSString *path = nil;
+    if (_NSGetExecutablePath(buffer, &size) == 0) {
+        char resolved[PATH_MAX];
+        if (realpath(buffer, resolved) != NULL) path = [NSString stringWithUTF8String:resolved];
+        else path = [NSString stringWithUTF8String:buffer];
+    }
+    free(buffer);
+    return path;
+}
+
+// Returns the sealed signing identifier when the binary is signed, nil when it is unsigned (the
+// kSecCodeInfoIdentifier key is present iff signed). Read-only; verifies nothing.
+static NSString *CopyCodeSigningIdentity(NSString *path) {
+    if (path == nil) return nil;
+    CFURLRef url = (__bridge_retained CFURLRef)[NSURL fileURLWithPath:path];
+    SecStaticCodeRef code = NULL;
+    OSStatus status = SecStaticCodeCreateWithPath(url, kSecCSDefaultFlags, &code);
+    CFRelease(url);
+    if (status != errSecSuccess || code == NULL) {
+        if (code != NULL) CFRelease(code);
+        return nil;
+    }
+    CFDictionaryRef information = NULL;
+    status = SecCodeCopySigningInformation(code, kSecCSSigningInformation, &information);
+    NSString *identity = nil;
+    if (status == errSecSuccess && information != NULL) {
+        const void *identifier = CFDictionaryGetValue(information, kSecCodeInfoIdentifier);
+        if (identifier != NULL && CFGetTypeID(identifier) == CFStringGetTypeID()) {
+            identity = [(__bridge NSString *)identifier copy];
+        }
+    }
+    if (information != NULL) CFRelease(information);
+    CFRelease(code);
+    return identity;
+}
+
+static NSString *AuthStatusString(AVAuthorizationStatus status) {
+    switch (status) {
+        case AVAuthorizationStatusAuthorized: return @"authorized";
+        case AVAuthorizationStatusDenied: return @"denied";
+        case AVAuthorizationStatusRestricted: return @"restricted";
+        case AVAuthorizationStatusNotDetermined: return @"notDetermined";
+    }
+    return @"unknown";
+}
+
+// The single authorization decision: an AVCaptureDeviceInput may be constructed ONLY when the
+// client is already Authorized. notDetermined/denied/restricted all return NO, so the readback
+// path blocks before it can implicitly prompt or open the device.
+static BOOL CanConstructInput(AVAuthorizationStatus status) {
+    return status == AVAuthorizationStatusAuthorized;
+}
+
+static int EmitAuthorization(void) {
+    NSString *path = CanonicalExecutablePath();
+    NSString *hash = nil;
+    if (path != nil) {
+        NSData *data = [NSData dataWithContentsOfFile:path];
+        if (data != nil) hash = SHA256HexOfData(data);
+    }
+    NSString *identity = CopyCodeSigningIdentity(path);
+    AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
+
+    NSString *hashJson = hash != nil ? [NSString stringWithFormat:@"\"%@\"", hash] : @"null";
+    NSString *identityJson = identity != nil ? [NSString stringWithFormat:@"\"%@\"", JSONEscaped(identity)] : @"null";
+    int result = fprintf(stdout,
+                         "{\"event\":\"authorization\",\"mode\":\"authorization-only\",\"executablePath\":\"%s\","
+                         "\"executableSha256\":%s,\"codeSigningIdentity\":%s,\"authStatus\":\"%s\","
+                         "\"canConstructInput\":%s}\n",
+                         path != nil ? JSONEscaped(path).UTF8String : "",
+                         hashJson.UTF8String,
+                         identityJson.UTF8String,
+                         AuthStatusString(status).UTF8String,
+                         CanConstructInput(status) ? "true" : "false");
+    return (result >= 0 && fflush(stdout) == 0) ? 0 : 1;
+}
+
+static BOOL WriteBGRAToPNG(const uint8_t *base, size_t width, size_t height, size_t bytesPerRow, NSString *path) {
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    if (colorSpace == NULL) return NO;
+    CGBitmapInfo bitmapInfo = (CGBitmapInfo)kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little;
+    CGContextRef context = CGBitmapContextCreate((void *)base, width, height, 8, bytesPerRow, colorSpace, bitmapInfo);
+    CGColorSpaceRelease(colorSpace);
+    if (context == NULL) return NO;
+    CGImageRef image = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    if (image == NULL) return NO;
+    CFURLRef url = (__bridge_retained CFURLRef)[NSURL fileURLWithPath:path];
+    CGImageDestinationRef destination = CGImageDestinationCreateWithURL(url, CFSTR("public.png"), 1, NULL);
+    CFRelease(url);
+    if (destination == NULL) {
+        CGImageRelease(image);
+        return NO;
+    }
+    CGImageDestinationAddImage(destination, image, NULL);
+    BOOL ok = CGImageDestinationFinalize(destination) ? YES : NO;
+    CFRelease(destination);
+    CGImageRelease(image);
+    return ok;
+}
+
+@interface FrameCollector : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
+- (instancetype)initWithTarget:(NSUInteger)target outputDir:(NSString *)outputDir;
+@property (nonatomic, readonly) NSMutableArray<NSString *> *records;
+@property (nonatomic, readonly) NSMutableSet<NSString *> *distinctRaw;
+@property (nonatomic, readonly) dispatch_semaphore_t done;
+@end
+
+@implementation FrameCollector {
+    NSUInteger _target;
+    NSString *_outputDir;
+}
+
+- (instancetype)initWithTarget:(NSUInteger)target outputDir:(NSString *)outputDir {
+    self = [super init];
+    if (self != nil) {
+        _target = target;
+        _outputDir = [outputDir copy];
+        _records = [NSMutableArray array];
+        _distinctRaw = [NSMutableSet set];
+        _done = dispatch_semaphore_create(0);
+    }
+    return self;
+}
+
+- (void)captureOutput:(AVCaptureOutput *)output
+    didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
+           fromConnection:(AVCaptureConnection *)connection {
+    (void)output;
+    (void)connection;
+    if (_records.count >= _target) return;
+    CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
+    if (imageBuffer == NULL) return;
+    if (CVPixelBufferLockBaseAddress(imageBuffer, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) return;
+
+    size_t width = CVPixelBufferGetWidth(imageBuffer);
+    size_t height = CVPixelBufferGetHeight(imageBuffer);
+    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(imageBuffer);
+    OSType pixelFormat = CVPixelBufferGetPixelFormatType(imageBuffer);
+    const uint8_t *base = CVPixelBufferGetBaseAddress(imageBuffer);
+
+    NSString *rawHash = nil;
+    NSString *previewHash = nil;
+    NSString *previewPath = nil;
+    if (base != NULL && width > 0 && height > 0 && bytesPerRow >= width * 4) {
+        CC_SHA256_CTX shaContext;
+        CC_SHA256_Init(&shaContext);
+        for (size_t row = 0; row < height; row += 1) {
+            CC_SHA256_Update(&shaContext, base + row * bytesPerRow, (CC_LONG)(width * 4));
+        }
+        unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+        CC_SHA256_Final(digest, &shaContext);
+        rawHash = HexEncode(digest, CC_SHA256_DIGEST_LENGTH);
+        previewPath = [_outputDir stringByAppendingPathComponent:
+                       [NSString stringWithFormat:@"avf-frame-%03lu.png", (unsigned long)_records.count]];
+        if (WriteBGRAToPNG(base, width, height, bytesPerRow, previewPath)) {
+            NSData *png = [NSData dataWithContentsOfFile:previewPath];
+            if (png != nil) previewHash = SHA256HexOfData(png);
+        }
+    }
+
+    CMTime presentation = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
+    double presentationMs = CMTIME_IS_VALID(presentation) ? CMTimeGetSeconds(presentation) * 1000.0 : -1.0;
+    if (!isfinite(presentationMs)) presentationMs = -1.0;  // a degenerate CMTime must not emit inf/nan JSON
+    CVPixelBufferUnlockBaseAddress(imageBuffer, kCVPixelBufferLock_ReadOnly);
+    if (rawHash == nil) return;
+
+    [_distinctRaw addObject:rawHash];
+    NSString *previewHashJson = previewHash != nil ? [NSString stringWithFormat:@"\"%@\"", previewHash] : @"null";
+    NSString *record = [NSString stringWithFormat:
+                        @"{\"event\":\"frame\",\"index\":%lu,\"width\":%lu,\"height\":%lu,\"pixelFormat\":\"%@\","
+                        @"\"presentationTimeMs\":%.3f,\"rawSha256\":\"%@\",\"previewSha256\":%@,\"previewPath\":\"%@\"}",
+                        (unsigned long)_records.count, (unsigned long)width, (unsigned long)height,
+                        JSONEscaped(FourCCString(pixelFormat)), presentationMs, rawHash, previewHashJson,
+                        JSONEscaped(previewPath != nil ? previewPath : @"")];
+    [_records addObject:record];
+    if (_records.count >= _target) dispatch_semaphore_signal(_done);
+}
+
+@end
+
+// The fail-closed success-side decision, factored out so it is unit-testable without a live camera.
+// A changing-card success (0) requires at least the requested frames AND two distinct raw frames;
+// zero frames or a single static frame can never reach 0.
+static int AvfExitCode(NSUInteger captured, NSUInteger distinct, NSUInteger requested) {
+    if (captured == 0) return 74;         // zero frames is never a success
+    if (distinct < 2) return 75;          // a single repeated static frame is not a changing delivery
+    if (captured < requested) return 74;  // fewer frames than requested within the bound
+    return 0;
+}
+
+static int RunAvfReadback(NSString *deviceUid, NSString *outputDir, NSUInteger frames, uint64_t timeoutMs) {
+    AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
+    if (!CanConstructInput(status)) {
+        // Blocked, not failed. No input is constructed, no session started, no prompt shown.
+        fprintf(stdout,
+                "{\"event\":\"blocked\",\"mode\":\"avfoundation-readback\",\"authStatus\":\"%s\","
+                "\"reason\":\"camera authorization is not authorized for this client\"}\n",
+                AuthStatusString(status).UTF8String);
+        fflush(stdout);
+        return 77;
+    }
+
+    AVCaptureDevice *device = [AVCaptureDevice deviceWithUniqueID:deviceUid];
+    if (device == nil) {
+        fprintf(stderr, "cmio-camera-reader: no AVCaptureDevice with exact unique ID %s\n", deviceUid.UTF8String);
+        return 69;
+    }
+    NSError *error = nil;
+    AVCaptureDeviceInput *input = [AVCaptureDeviceInput deviceInputWithDevice:device error:&error];
+    if (input == nil) {
+        fprintf(stderr, "cmio-camera-reader: could not open device input: %s\n",
+                error != nil ? error.localizedDescription.UTF8String : "(unknown)");
+        return 69;
+    }
+    AVCaptureSession *session = [[AVCaptureSession alloc] init];
+    AVCaptureVideoDataOutput *output = [[AVCaptureVideoDataOutput alloc] init];
+    output.videoSettings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA) };
+    output.alwaysDiscardsLateVideoFrames = NO;
+    FrameCollector *collector = [[FrameCollector alloc] initWithTarget:frames outputDir:outputDir];
+    dispatch_queue_t queue = dispatch_queue_create("com.pico.vcam.reader.frames", DISPATCH_QUEUE_SERIAL);
+    [output setSampleBufferDelegate:collector queue:queue];
+    if (![session canAddInput:input] || ![session canAddOutput:output]) {
+        fprintf(stderr, "cmio-camera-reader: capture session rejected the device input/output\n");
+        return 69;
+    }
+    [session addInput:input];
+    [session addOutput:output];
+
+    [session startRunning];
+    long waited = dispatch_semaphore_wait(collector.done,
+                                          dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeoutMs * NSEC_PER_MSEC)));
+    [session stopRunning];
+    [output setSampleBufferDelegate:nil queue:NULL];
+    dispatch_sync(queue, ^{});  // barrier: no in-flight callback survives before we read the records
+
+    NSUInteger captured = collector.records.count;
+    NSUInteger distinct = collector.distinctRaw.count;
+    for (NSString *record in collector.records) {
+        fprintf(stdout, "%s\n", record.UTF8String);
+    }
+    BOOL timedOut = waited != 0;
+    BOOL changing = distinct >= 2;
+    BOOL ok = captured >= frames && changing;
+    fprintf(stdout,
+            "{\"event\":\"readback\",\"mode\":\"avfoundation-readback\",\"ok\":%s,\"authStatus\":\"authorized\","
+            "\"deviceUid\":\"%s\",\"requestedFrames\":%lu,\"framesCaptured\":%lu,\"distinctRawHashes\":%lu,"
+            "\"changingFrames\":%s,\"timedOut\":%s,\"outputDir\":\"%s\"}\n",
+            ok ? "true" : "false", JSONEscaped(deviceUid).UTF8String, (unsigned long)frames,
+            (unsigned long)captured, (unsigned long)distinct, changing ? "true" : "false",
+            timedOut ? "true" : "false", JSONEscaped(outputDir).UTF8String);
+    fflush(stdout);
+
+    int code = AvfExitCode(captured, distinct, frames);
+    if (code != 0) return code;
+    return NormalizeExitCodeForStopRequest(0, gStopRequested);
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         Options options = {0};
@@ -489,6 +859,12 @@ int main(int argc, const char *argv[]) {
         if (options.cmioProbeOnly) {
             if (!ProbeDeviceTopology(options.deviceUid)) return 69;
             return NormalizeExitCodeForStopRequest(0, gStopRequested);
+        }
+        if (options.authorizationOnly) {
+            return EmitAuthorization();
+        }
+        if (options.avfoundationReadback) {
+            return RunAvfReadback(options.deviceUid, options.outputDir, options.frames, options.timeoutMs);
         }
 
         fprintf(stderr, "cmio-camera-reader: no mode selected\n");

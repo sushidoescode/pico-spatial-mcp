@@ -53,6 +53,31 @@ int main(void) {
         if (![JSONEscaped(@"café Cam \U0001F3A5") isEqualToString:@"café Cam \U0001F3A5"]) {
             return Fail(@"JSONEscaped altered a printable unicode/emoji stream name");
         }
+
+        // An AVCaptureDeviceInput may be constructed ONLY when already Authorized.
+        if (CanConstructInput(AVAuthorizationStatusAuthorized) != YES ||
+            CanConstructInput(AVAuthorizationStatusNotDetermined) != NO ||
+            CanConstructInput(AVAuthorizationStatusDenied) != NO ||
+            CanConstructInput(AVAuthorizationStatusRestricted) != NO) {
+            return Fail(@"an AVCaptureDeviceInput must be constructible only when already Authorized");
+        }
+        if (![AuthStatusString(AVAuthorizationStatusAuthorized) isEqualToString:@"authorized"] ||
+            ![AuthStatusString(AVAuthorizationStatusNotDetermined) isEqualToString:@"notDetermined"] ||
+            ![AuthStatusString(AVAuthorizationStatusDenied) isEqualToString:@"denied"] ||
+            ![AuthStatusString(AVAuthorizationStatusRestricted) isEqualToString:@"restricted"]) {
+            return Fail(@"AVAuthorizationStatus string mapping is wrong");
+        }
+
+        // The fail-closed readback exit decision must never reach success (0) for an empty or static
+        // capture — the only paths that reach a live camera in Task 5.
+        if (AvfExitCode(0, 0, 2) != 74 ||   // zero frames captured
+            AvfExitCode(3, 1, 2) != 75 ||   // three frames but only one distinct (static)
+            AvfExitCode(2, 1, 2) != 75 ||   // exactly the requested frames, still static
+            AvfExitCode(1, 2, 2) != 74 ||   // two distinct but fewer frames than requested
+            AvfExitCode(2, 2, 2) != 0  ||   // exactly requested, changing -> success
+            AvfExitCode(5, 4, 2) != 0) {    // more than requested, changing -> success
+            return Fail(@"AvfExitCode fail-closed success logic is wrong");
+        }
     }
 
     puts("cmio-camera-reader lifetime test: signal normalization and pre-CMIO stop passed");
