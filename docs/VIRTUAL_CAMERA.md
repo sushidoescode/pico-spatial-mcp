@@ -1,10 +1,10 @@
-# Virtual camera — three levels, three evidence boundaries (v28.4)
+# Virtual camera — three levels, three evidence boundaries (v29.1)
 
-*(Direct-test-grounded 2026-07-22. “Virtual camera” here means a deterministic view synthesized
-from a scanned-world model — not PICO VST, not passthrough, and not a claim about Swan hardware.
-The L1 implementation shipped, but its planned Task 3 real-scene coverage bar did not pass; L2 is
-partial and remains pixel-negative after an explicit injected-card transport test; L3 is
-proposal-only.)*
+*(Direct-test-grounded; L2 updated 2026-07-24. “Virtual camera” here means a deterministic view
+synthesized from a scanned-world model — not PICO VST, not passthrough, and not a claim about Swan
+hardware. The L1 implementation shipped, but its planned Task 3 real-scene coverage bar did not
+pass. **L2 is now PROVEN end-to-end (v29.1): an injected changing card reaches an Android app's
+camera preview inside the emulator, vision_verified.** L3 is proposal-only.)*
 
 ## The short version
 
@@ -13,16 +13,81 @@ proposal-only.)*
   foreground-verified emulator capture. The planned real-scene `visibleFraction >= 0.5` check did
   not pass (floor `0.3093`; no counter result). The tools prove world-model composition — they do
   not put synthetic pixels into Android's camera stack.
-- **L2 — structurally alive, explicitly pixel-negative:** v28.4 generated a changing high-contrast
-  nonce/card sequence, drove the public CoreMediaIO sink exposed by Immersed Camera, freshly mapped
-  that UUID to `webcam1`, and retained matching dry-run/live qemu argv plus final CameraPeek
-  build/open/`STREAMING` evidence. Two personally LOOKed captures were byte-identical and showed a
-  static emulator bedroom scene instead of the card. That refutes this end-to-end attempt; it does not prove
-  a writable source camera or working injected-pixel feed.
+- **L2 — PROVEN end-to-end (v29.1), vision_verified:** an injected high-contrast nonce/card
+  sequence is written to the public CoreMediaIO sink exposed by Immersed Camera; the Immersed
+  extension republishes it on its source; the emulator is booted with `-camera-back webcam1`
+  (mapped to the exact Immersed UUID); and a hand-authored CameraX app (CameraPeek) running inside
+  the emulator **visibly displays the card** — the exact nonce `VCAM-20260724-9K2D`, `STREAMING`,
+  and two different counters (`FRAME 000003` and `000001`) across a looked-at capture pair. Both the
+  host source-read and the in-app preview were personally LOOKed at. This proves injected-pixel
+  delivery into the emulator's camera stack from a host-side virtual camera. It is still a
+  simulation of camera access — not PICO VST, passthrough, SecureMR, MRC, scene understanding, or a
+  Swan-hardware claim — and no real PICO headset was used.
 - **L3 — upstream proposal only:** PICO could expose the L1 RGB and surface products through an
   emulator camera/MR provider — no such SDK/runtime shim was built or verified in this repo.
 
-No v28.0 or v28.4 entry is `device_verified`; no real PICO headset was used.
+No entry is `device_verified`; every L1/L2 claim is host-side or emulator evidence.
+
+## L2 — v29.1: the full injected-pixel pipeline, proven
+
+v28.4 proved the whole *structure* of the route (producer → Immersed sink, fresh `webcam1` mapping,
+live `-camera-back webcam1` argv, CameraPeek `STREAMING`) but its final captures were byte-identical
+and showed the emulator's default bedroom scene, not the card. v28.4 could not say *where* the pixels
+were lost — between the Immersed sink and CameraPeek's preview. v29.1 narrowed and then closed that
+gap.
+
+**The pipeline, and where each boundary is proven:**
+
+```text
+deterministic card  →  Immersed CoreMediaIO SINK  →  Immersed SOURCE  →  qemu -camera-back webcam1  →  CameraPeek preview
+   (LOOKed source)      (enqueue/removal stats)      (host AVFoundation      (live qemu argv,            (LOOKed in-app,
+                                                      read, LOOKed)          adb boot, camera id 10)     two counters)
+```
+
+**1. Host source-read (the v28.4 ambiguity, resolved).** A new read-only, permission-safe macOS
+diagnostic (`scripts/macos/cmio-camera-reader.m`) was added. Its `--cmio-probe-only` topology probe
+showed the Immersed device exposes two streams — `ImmersedCamera.Video` (input/source) and
+`ImmersedCamera.Video.Sink` (output/sink). Its authorization-gated `--avfoundation-readback` mode,
+run while the producer streamed the card, captured frames from the Immersed **source** that were
+**byte-identical** to the injected source frames and personally LOOKed at — the exact nonce and two
+different counters (`000000`, `000001`). This proves the Immersed extension **does** republish the
+injected pixels on its source, and a host client reads them. (v28.4's FFmpeg could not even open the
+source; the AVFoundation client can.) Ledger: `vcam-hostsource` seq 0, `vision_verified`.
+
+**2. End-to-end into the app.** With the producer streaming and the emulator cold-restarted with
+`-camera-back webcam1`, the unchanged CameraPeek APK (9,728,122 bytes, SHA-256 `9ff4d804…`) was
+clean-installed and launched; camera id `10` opened for `com.pico.camerapeek`, `previewStreamState`
+reached `STREAMING`, and a looked-at capture pair showed the injected card **inside the app** — nonce
+`VCAM-20260724-9K2D`, counters `FRAME 000003` and `000001`. Ledger: `com.pico.camerapeek` seq 1,
+`vision_verified`. Artifact: `~/.pico-mcp/artifacts/vcam-v29.1-20260724-9k2d/`.
+
+**Root cause of the v28.4 negative.** The difference was **macOS camera authorization for qemu's
+responsible app**. In v28.4 the terminal/IDE hosting the run lacked camera access, so qemu could not
+open the host webcam and the emulator fell back to its default scene — hence the bedroom, not the
+card. Granting the responsible app camera access (a one-time System-Settings toggle by the operator;
+no TCC reset, no `requestAccessForMediaType`, no software install) let qemu acquire the Immersed
+source and the injected pixels flowed all the way through.
+
+**Honest caveats.**
+
+- **The Immersed source updates slowly.** A 217 ms host read froze on a single counter; only a
+  ~15 s read spanned two counters. So the in-app feed changes over seconds, not at 60 fps. The card
+  arrives and changes, but this is not a real-time video path as-is.
+- **Direct CMIO client readback stays `blocked`, by contract.** Apple does not document the
+  ownership of a `CMSampleBuffer` dequeued from a CMIO input stream (`CMSimpleQueue` delegates
+  element lifetime "externally"; no retain annotation; the documented source-consumer path is
+  AVFoundation). The reader therefore only *probes* CMIO topology read-only and reads pixels via
+  AVFoundation — never a direct CMIO stream client. This is a deliberate blocked branch, not a
+  failure.
+- **Camera-mode runs invalidate calibration.** The cold restarts leave the persisted capture-camera
+  calibration stale; recalibrate before any metric/placement claim.
+
+**Device-free tooling shipped this arc (all CI-safe, no camera/emulator/Immersed required):**
+`src/vcamboundary.ts` (a fail-closed boundary-report model with four first-class terminal states and
+a changing-card bar that requires two distinct counters backed by two distinct captures);
+`scripts/macos/cmio-camera-reader.m` (the read-only CMIO probe + permission-safe authorization-only
+and AVFoundation readback modes). Gates: `test:vcamboundary`, `test:vcamreader`,
+`test:vcamreader-native`.
 
 ## L1 — the world model gets a camera
 

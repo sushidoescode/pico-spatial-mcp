@@ -5,6 +5,22 @@ emulator, or explicitly labeled with the event that unblocks it. Nothing here is
 date; everything shipped gets a ledger entry before it gets a claim. Rejected-on-the-record
 ideas are listed too — knowing what we won't do is part of the honesty contract.)*
 
+## Just shipped (v29.1)
+
+- **Emulator camera-HAL — L2 PROVEN end-to-end, `vision_verified`**: an injected high-contrast
+  nonce/card sequence written to the Immersed Camera CoreMediaIO sink reaches a hand-authored
+  CameraX app (CameraPeek) *inside* the emulator via `-camera-back webcam1` — the looked-at in-app
+  preview shows the exact nonce and two different counters (`FRAME 000003`/`000001`), `STREAMING`.
+  A new read-only, permission-safe macOS host reader (`cmio-camera-reader`) first proved the same
+  injected pixels are readable byte-for-byte on the Immersed **source** via AVFoundation, isolating
+  v28.4's negative to its true cause: qemu's responsible app lacked macOS camera authorization and
+  fell back to the default scene. Ledgers `vcam-hostsource` seq 0 and `com.pico.camerapeek` seq 1.
+  Caveats: the source updates slowly (seconds, not 60 fps); direct CMIO client readback stays
+  `blocked` on an undocumented ownership contract (AVFoundation is the documented source-consumer
+  path); calibration is stale after camera-mode restarts. Device-free tooling: a fail-closed
+  boundary-report model (`src/vcamboundary.ts`) + the native reader, gated by `test:vcamboundary`,
+  `test:vcamreader`, `test:vcamreader-native`. Full evidence: [docs/VIRTUAL_CAMERA.md](docs/VIRTUAL_CAMERA.md).
+
 ## Just shipped (v28.0)
 
 - **World-model virtual camera — L1 shipped**: `virtual_camera_frame` renders a deterministic
@@ -14,11 +30,10 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
   structural geometry, and looked-at comparison — it is not camera-HAL or VST emulation. The
   planned real-room coverage bar did not pass: the returned floor was `0.3093` visible, below
   `0.5`, and no counter surface was returned.
-- **Emulator camera-HAL spike — partial L2, negative pixels result**: live discovery reported an
-  opt-in `webcam0` boot (no separate argv artifact was retained), camera ID 10 opened for
-  CameraPeek, and CameraX reached `STREAMING`; the looked-at panel still contained no recognizable
-  webcam image. Emulator help advertises `videoplayback` but exposes no file/input configuration,
-  so no input was invented and no playback-success claim was made.
+- **Emulator camera-HAL spike — L2 (v28.0/v28.4 stage, since resolved)**: camera ID 10 opened for
+  CameraPeek and CameraX reached `STREAMING`, but the looked-at panel showed the emulator's default
+  scene, not the card. This stage isolated a structural route without delivering pixels; **v29.1
+  above closes it** (the missing piece was qemu's camera authorization).
   Full evidence and artifacts: [docs/VIRTUAL_CAMERA.md](docs/VIRTUAL_CAMERA.md).
 
 ## Just shipped (v27.x)
@@ -40,9 +55,12 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
 
 ## Near-term (ungated — buildable on the current emulator)
 
-- **Live virtual-webcam bridge** — route rendered world-model frames through an OBS/host virtual
-  camera into `webcam<N>`. Gate: CameraPeek must show recognizable injected pixels in a looked-at
-  capture; `STREAMING` or an open HAL client alone does not pass.
+- **Live world-model webcam bridge** — the injected-pixel gate is now MET (v29.1: a deterministic
+  card reaches CameraPeek via the Immersed virtual camera + `-camera-back webcam1`, `vision_verified`).
+  What remains: drive the Immersed sink with *continuous rendered world-model frames from a live pose*
+  instead of a static card sequence, and address the source's slow update rate (the current Immersed
+  path changes over seconds, not at 60 fps) — likely via a higher-throughput host virtual-camera
+  producer (e.g. OBS, operator-approved) keyed to the head pose.
 - **Line-of-sight placement constraint**: occupancy solving today guarantees non-intersection;
   a visibility constraint (can the camera actually SEE the placed object?) is the next honest
   step for the free-space world model.
