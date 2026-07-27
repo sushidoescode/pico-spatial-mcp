@@ -274,6 +274,78 @@ if (!realReady) {
       crypto.createHash("sha256").update(secondBytes).digest("hex"),
     );
     ok(`real ramen render is a deterministic 640x640 PNG (${(firstBytes.length / 1024).toFixed(1)} KB)`);
+
+    // v29.2: raw BGRA sibling — real-renderer coverage. The fake-exec test above only proves the
+    // config is *constructed*; it never runs Python, so it cannot catch a bad channel order, a
+    // wrong byte count, or a byte-count gate that silently stops checking. This block does.
+    const bgraOptions = { ...options, width: 1280, height: 720, emitBgra: true };
+    const bgraRendered = await renderVirtualFrame(bgraOptions);
+    assert.ok(bgraRendered.bgraPath && fs.existsSync(bgraRendered.bgraPath), "bgraPath must exist");
+    const bgraBytes = fs.readFileSync(bgraRendered.bgraPath);
+    assert.equal(bgraBytes.length, 1280 * 720 * 4, `expected exactly ${1280 * 720 * 4} bytes, got ${bgraBytes.length}`);
+    assert.match(bgraRendered.bgraSha256, /^[0-9a-f]{64}$/, "bgraSha256 must be 64 lowercase hex chars");
+    assert.equal(
+      crypto.createHash("sha256").update(bgraBytes).digest("hex"),
+      bgraRendered.bgraSha256,
+      "returned bgraSha256 must match the file's actual hash",
+    );
+    ok(`real ramen render emits an exact ${bgraBytes.length}-byte BGRA sibling (bgraSha256 ${bgraRendered.bgraSha256.slice(0, 12)}…)`);
+
+    // Channel order: decode the PNG's own pixel(0,0) via PIL (this repo has no in-process PNG
+    // decoder — that's the whole reason the raw sibling exists) and check the raw file's first
+    // 3 bytes are that RGB triple REVERSED, with an opaque 4th byte. A swapped channel order
+    // would pass every size/hash check above and only show up as wrong colors on-device later.
+    const pixelCheckCode = [
+      "import sys, json",
+      "from PIL import Image",
+      "png_path, bgra_path = sys.argv[1], sys.argv[2]",
+      "img = Image.open(png_path).convert('RGB')",
+      "r, g, b = img.getpixel((0, 0))",
+      "fh = open(bgra_path, 'rb')",
+      "raw4 = list(fh.read(4))",
+      "fh.close()",
+      "print(json.dumps({'rgb': [r, g, b], 'raw4': raw4}))",
+    ].join(";");
+    const pixelCheck = JSON.parse(execFileSync(
+      picoPython,
+      ["-c", pixelCheckCode, bgraRendered.imagePath, bgraRendered.bgraPath],
+      { encoding: "utf8" },
+    ));
+    const [pr, pg, pb] = pixelCheck.rgb;
+    assert.deepEqual(
+      pixelCheck.raw4,
+      [pb, pg, pr, 255],
+      `expected BGRA [${pb},${pg},${pr},255] from PNG rgb (${pr},${pg},${pb}), got ${JSON.stringify(pixelCheck.raw4)}`,
+    );
+    ok(`BGRA channel order verified against the PNG's own pixel(0,0): rgb=(${pr},${pg},${pb}) -> raw [${pixelCheck.raw4.join(",")}]`);
+
+    // Cluster refusal: emitBgra + non-empty clusters must refuse to write the raw sibling rather
+    // than silently drawing box overlays into what's supposed to be the PNG's exact pixel sibling.
+    // renderVirtualFrame never sets clusters (Task 7's own design note), so this invokes the
+    // renderer script directly with a raw config, the same way renderVirtualFrame's exec does.
+    const refusalSplat = JSON.parse(fs.readFileSync(ramenOccupancy, "utf8")).source;
+    const refusalOut = path.join(tmpDir, "cluster-refusal.png");
+    const refusalBgraOut = path.join(tmpDir, "cluster-refusal.bgra");
+    const refusalConfig = {
+      splat: refusalSplat,
+      maxPts: 5000,
+      W: 64,
+      H: 64,
+      fov: 70,
+      emitBgra: true,
+      clusters: [{ id: 0, center: [0, 0, -1], size: [1, 1, 1] }],
+      views: [{ name: "cluster-refusal", C: [0, 0, 0], T: [0, 0, -1], out: refusalOut, bgraOut: refusalBgraOut }],
+    };
+    let refusalError = null;
+    try {
+      execFileSync(picoPython, [rendererPath, JSON.stringify(refusalConfig)], { encoding: "utf8" });
+    } catch (error) {
+      refusalError = error;
+    }
+    assert.ok(refusalError, "emitBgra + non-empty clusters must fail the renderer process, not succeed");
+    assert.match(String(refusalError.stderr ?? ""), /clusters must be empty/i);
+    assert.ok(!fs.existsSync(refusalBgraOut), "the raw sibling must not be written when clusters are present");
+    ok("emitBgra + clusters refuses to write the raw sibling instead of silently mismatching the PNG");
   } catch (error) {
     fail(`real render: ${error.stack ?? error.message}`);
   }
