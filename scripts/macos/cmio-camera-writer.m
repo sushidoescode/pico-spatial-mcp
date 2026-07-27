@@ -1281,6 +1281,12 @@ static int RunProducer(NSString *deviceUid,
                     }
                 } else {
                     atomic_fetch_add_explicit(&state->enqueued, 1, memory_order_relaxed);
+                    // DELIBERATE: the host stamp is taken AFTER CMSimpleQueueEnqueue returns, so it
+                    // excludes the enqueue call itself and understates end-to-end latency by a few
+                    // hundred nanoseconds. That is the correct direction — every latency this feeds
+                    // is reported as isLowerBound in src/vcamthroughput.ts, and a stamp taken before
+                    // the enqueue would inflate the number past what the evidence supports. Do not
+                    // "fix" this by hoisting the mach_absolute_time() call above the enqueue.
                     RecordEnqueue(sequenceNumber,
                                   (uint64_t)frameIndex,
                                   NanosecondsForMachTicks(mach_absolute_time(), timebase),

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico-vcam-fixed-pose-sequence",
+  "nonce": "VCAM-GOLDEN-V292",
+  "width": 1280,
+  "height": 720,
+  "pixelFormat": "BGRA",
+  "frameBytes": 3686400,
+  "counterRegion": {
+    "x": 960,
+    "y": 480,
+    "width": 256,
+    "height": 160
+  },
+  "provenance": {
+    "worldModel": {
+      "splatPath": "/Users/pico/worlds/Cozy-Neon-Cyberpunk-Ramen-Bar.ply",
+      "splatSha256": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+      "offsetApplied": [
+        0,
+        0.775604248046875,
+        0
+      ]
+    },
+    "pose": {
+      "position": [
+        0.034,
+        1.896,
+        0.147
+      ],
+      "target": [
+        0.034,
+        1.7224,
+        -0.8378
+      ],
+      "frame": "app"
+    },
+    "intrinsics": {
+      "f": 914.01,
+      "cx": 640,
+      "cy": 360,
+      "fovDeg": 70
+    },
+    "renderer": {
+      "script": "/Users/pico/PICO-MCP/scripts/splat_perspective.py",
+      "scriptSha256": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+      "pointsRendered": 500000
+    },
+    "baseFrameSha256": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"
+  },
+  "frames": [
+    {
+      "counter": 3,
+      "bytes": 3686400,
+      "sha256": "c731a813d64ce1847a2f1cebde0b7296f3932bed93ad023153281388a4522a93"
+    },
+    {
+      "counter": 9,
+      "bytes": 3686400,
+      "sha256": "9cf2f9735fd82e312a9b8f162a4cf5d1530b07e9f4555f1040314e31c8ce4273"
+    }
+  ]
+}

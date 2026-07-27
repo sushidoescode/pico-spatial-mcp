@@ -180,8 +180,30 @@ assert_frames_accepted() {
   status=$?
   set -e
   # 69 = the bogus UID resolved to no device; 77 = this client is not authorized. Either proves the
-  # parser accepted the arguments, and neither opens a camera.
-  if [ "$status" -ne 69 ] && [ "$status" -ne 77 ]; then
+  # parser accepted the arguments, and neither opens a camera. But 69 alone is not enough: THREE
+  # paths in RunAvfReadback return it, and two of them (deviceInputWithDevice failing, and the
+  # session rejecting the input/output) are only reachable AFTER an input has been constructed
+  # against a real device. Pin the diagnostic so this gate can only ever pass via the device-lookup
+  # path, where the bogus UID matched nothing and no input was ever built.
+  if [ "$status" -eq 69 ]; then
+    case "$diagnostic" in
+      *'no AVCaptureDevice with exact unique ID'*) ;;
+      *)
+        echo "cmio-camera-reader native gate: '$*' exited 69 but not from the device lookup — an input may have been constructed" >&2
+        echo "$diagnostic" >&2
+        exit 1
+        ;;
+    esac
+  elif [ "$status" -eq 77 ]; then
+    case "$diagnostic" in
+      *'"event":"blocked"'*) ;;
+      *)
+        echo "cmio-camera-reader native gate: '$*' exited 77 without reporting a blocked event" >&2
+        echo "$diagnostic" >&2
+        exit 1
+        ;;
+    esac
+  else
     echo "cmio-camera-reader native gate: '$*' was not accepted by the parser (exit $status)" >&2
     echo "$diagnostic" >&2
     exit 1

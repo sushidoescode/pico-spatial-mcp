@@ -297,7 +297,11 @@ int main(void) {
         if (captured == nil) return Fail(@"captured stdout was not readable UTF-8");
 
         NSArray<NSString *> *lines = [captured componentsSeparatedByString:@"\n"];
-        if (lines.count < 4 || ((NSString *)lines.lastObject).length != 0) {
+        // Exactly three newline-terminated lines: two enqueue records plus one stats record, which
+        // split into four components with an empty tail. `!=` rather than `<` so a spurious FOURTH
+        // emitted line — an extra record, a stray debug print on the same stream the analyzer
+        // parses — fails here instead of being silently tolerated.
+        if (lines.count != 4 || ((NSString *)lines.lastObject).length != 0) {
             return Fail(@"emitted JSONL must be exactly three newline-terminated lines");
         }
         NSString *expectedFirst = [NSString stringWithFormat:

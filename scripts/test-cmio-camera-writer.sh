@@ -16,8 +16,35 @@ trap cleanup EXIT HUP INT TERM
 writer="$temporary_dir/cmio-camera-writer"
 lifetime_test="$temporary_dir/cmio-camera-writer-lifetime"
 manifest="$temporary_dir/manifest.json"
+# Every case below targets this UID. The whole gate's device-freedom rests on it matching NOTHING:
+# a case whose manifest validates cleanly proceeds to DiscoverSink, and if that ever SUCCEEDED the
+# gate would fall through to RunProducer and start writing frames into a live camera sink. That was
+# a comment and an assumption; the precondition immediately after the build makes it a check.
+synthetic_uid=00000000-0000-0000-0000-000000000001
 "$script_dir/build-cmio-camera-writer.sh" "$writer" >/dev/null
 "$writer" --help >/dev/null
+
+# PRECONDITION, before any case that can proceed toward the producer path. --probe-only performs
+# read-only property lookups and never opens a producer, so it is safe to run first, and it reports
+# exactly how many CMIO devices the UID matched.
+set +e
+diagnostic=$("$writer" --probe-only --device-uid "$synthetic_uid" --width 1280 --height 720 --pixel-format BGRA 2>&1)
+status=$?
+set -e
+if [ "$status" -ne 69 ]; then
+  echo "cmio-camera-writer native gate: the synthetic UID $synthetic_uid RESOLVED TO A DEVICE (exit $status)." >&2
+  echo "Refusing to continue: later cases would write frames into a live camera sink." >&2
+  echo "$diagnostic" >&2
+  exit 1
+fi
+case "$diagnostic" in
+  *"matched 0 CMIO devices"*) ;;
+  *)
+    echo "cmio-camera-writer native gate: could not prove the synthetic UID matches zero devices" >&2
+    echo "$diagnostic" >&2
+    exit 1
+    ;;
+esac
 
 xcrun --sdk macosx clang \
   -fobjc-arc \
@@ -39,7 +66,7 @@ printf '{}\n' > "$manifest"
 set +e
 diagnostic=$(
   "$writer" \
-    --device-uid 00000000-0000-0000-0000-000000000001 \
+    --device-uid "$synthetic_uid" \
     --width 1280 \
     --height 720 \
     --pixel-format BGRA \
@@ -70,7 +97,7 @@ manifest_sha=$(shasum -a 256 "$manifest" | awk '{print $1}')
 set +e
 diagnostic=$(
   "$writer" \
-    --device-uid 00000000-0000-0000-0000-000000000001 \
+    --device-uid "$synthetic_uid" \
     --width 1280 \
     --height 720 \
     --pixel-format BGRA \
@@ -99,7 +126,7 @@ for bad_ticks in 0 61 abc -1; do
   set +e
   diagnostic=$(
     "$writer" \
-      --device-uid 00000000-0000-0000-0000-000000000001 \
+      --device-uid "$synthetic_uid" \
       --width 1280 \
       --height 720 \
       --pixel-format BGRA \
@@ -129,7 +156,7 @@ set +e
 diagnostic=$(
   "$writer" \
     --probe-only \
-    --device-uid 00000000-0000-0000-0000-000000000001 \
+    --device-uid "$synthetic_uid" \
     --width 1280 \
     --height 720 \
     --pixel-format BGRA \
@@ -155,7 +182,7 @@ esac
 set +e
 diagnostic=$(
   "$writer" \
-    --device-uid 00000000-0000-0000-0000-000000000001 \
+    --device-uid "$synthetic_uid" \
     --width 1280 \
     --height 720 \
     --pixel-format BGRA \
@@ -183,8 +210,8 @@ case "$usage" in
 esac
 
 # A VALID fixed-pose manifest must get past kind + provenance + frame validation and fail only at
-# sink discovery. The synthetic UID below must never match a real device, or this gate would fall
-# through to RunProducer and start writing into a live sink.
+# sink discovery. Reaching that point is only safe because the precondition at the top of this file
+# proved $synthetic_uid matches zero CMIO devices.
 fixed_dir="$temporary_dir/fixed-pose"
 mkdir -p "$fixed_dir"
 dd if=/dev/zero of="$fixed_dir/frame-000.bgra" bs=1024 count=3600 2>/dev/null
@@ -217,7 +244,7 @@ fixed_sha=$(shasum -a 256 "$fixed_dir/manifest.json" | awk '{print $1}')
 set +e
 diagnostic=$(
   "$writer" \
-    --device-uid 00000000-0000-0000-0000-000000000001 \
+    --device-uid "$synthetic_uid" \
     --width 1280 \
     --height 720 \
     --pixel-format BGRA \
@@ -239,7 +266,7 @@ printf '%s\n' "{\"schemaVersion\":1,\"kind\":\"pico-vcam-test-card-sequence\",\"
 card_sha=$(shasum -a 256 "$fixed_dir/test-card.json" | awk '{print $1}')
 set +e
 diagnostic=$(
-  "$writer" --device-uid 00000000-0000-0000-0000-000000000001 --width 1280 --height 720 \
+  "$writer" --device-uid "$synthetic_uid" --width 1280 --height 720 \
     --pixel-format BGRA --manifest "$fixed_dir/test-card.json" --expected-manifest-sha256 "$card_sha" 2>&1
 )
 status=$?
@@ -255,7 +282,7 @@ printf '%s\n' '{"schemaVersion":1,"kind":"pico-vcam-fixed-pose-sequence","nonce"
 manifest_sha=$(shasum -a 256 "$manifest" | awk '{print $1}')
 set +e
 diagnostic=$(
-  "$writer" --device-uid 00000000-0000-0000-0000-000000000001 --width 1280 --height 720 \
+  "$writer" --device-uid "$synthetic_uid" --width 1280 --height 720 \
     --pixel-format BGRA --manifest "$manifest" --expected-manifest-sha256 "$manifest_sha" 2>&1
 )
 status=$?
@@ -289,7 +316,7 @@ reject_provenance() {
   reject_sha=$(shasum -a 256 "$reject_path" | awk '{print $1}')
   set +e
   diagnostic=$(
-    "$writer" --device-uid 00000000-0000-0000-0000-000000000001 --width 1280 --height 720 \
+    "$writer" --device-uid "$synthetic_uid" --width 1280 --height 720 \
       --pixel-format BGRA --manifest "$reject_path" --expected-manifest-sha256 "$reject_sha" 2>&1
   )
   status=$?
@@ -318,8 +345,12 @@ short_offset="{\"splatPath\":\"/gate/world.ply\",\"splatSha256\":\"$zero_hex\",\
 bad_position='{"position":"not-an-array","target":[0.034,2.238,-0.7927],"frame":"app"}'
 missing_target='{"position":[0.034,1.896,0.147],"frame":"app"}'
 bad_frame='{"position":[0.034,1.896,0.147],"target":[0.034,2.238,-0.7927],"frame":"splat"}'
-# target is present and valid here, so the ONLY defect is the extra yaw/pitch encoding.
-yaw_pitch_pose='{"position":[0.034,1.896,0.147],"target":[0.034,2.238,-0.7927],"frame":"app","yawDeg":0,"pitchDeg":20}'
+# target is present and valid in both, so the ONLY defect is the extra yaw/pitch encoding. The two
+# halves are SPLIT because the native rule is a disjunction (yawDeg != nil || pitchDeg != nil): a
+# single fixture carrying both would keep passing with either half of that `||` deleted, since the
+# surviving half would still fire. One defect per fixture is what makes each half load-bearing.
+yaw_only_pose='{"position":[0.034,1.896,0.147],"target":[0.034,2.238,-0.7927],"frame":"app","yawDeg":0}'
+pitch_only_pose='{"position":[0.034,1.896,0.147],"target":[0.034,2.238,-0.7927],"frame":"app","pitchDeg":20}'
 zero_fov='{"f":914.01,"cx":640,"cy":360,"fovDeg":0}'
 empty_script="{\"script\":\"\",\"scriptSha256\":\"$zero_hex\",\"pointsRendered\":500000}"
 bad_script_sha='{"script":"/gate/splat_perspective.py","scriptSha256":"NOTHEX","pointsRendered":500000}'
@@ -342,8 +373,10 @@ bad=$(compose_provenance "$good_world_model" "$missing_target" "$good_intrinsics
 reject_provenance "missing pose.target" "provenance pose.target" "$bad"
 bad=$(compose_provenance "$good_world_model" "$bad_frame" "$good_intrinsics" "$good_renderer" "$zero_hex")
 reject_provenance "pose.frame that is not app" "provenance pose.frame" "$bad"
-bad=$(compose_provenance "$good_world_model" "$yaw_pitch_pose" "$good_intrinsics" "$good_renderer" "$zero_hex")
-reject_provenance "pose carrying yawDeg/pitchDeg" "yawDeg/pitchDeg" "$bad"
+bad=$(compose_provenance "$good_world_model" "$yaw_only_pose" "$good_intrinsics" "$good_renderer" "$zero_hex")
+reject_provenance "pose carrying yawDeg only" "yawDeg/pitchDeg" "$bad"
+bad=$(compose_provenance "$good_world_model" "$pitch_only_pose" "$good_intrinsics" "$good_renderer" "$zero_hex")
+reject_provenance "pose carrying pitchDeg only" "yawDeg/pitchDeg" "$bad"
 bad=$(compose_provenance "$good_world_model" "$good_pose" "$zero_fov" "$good_renderer" "$zero_hex")
 reject_provenance "non-positive intrinsics.fovDeg" "provenance intrinsics.fovDeg" "$bad"
 bad=$(compose_provenance "$good_world_model" "$good_pose" "$good_intrinsics" "$empty_script" "$zero_hex")
@@ -361,7 +394,7 @@ emit_fixed_pose_manifest "$fixed_dir/recheck.json" "$good_provenance"
 recheck_sha=$(shasum -a 256 "$fixed_dir/recheck.json" | awk '{print $1}')
 set +e
 diagnostic=$(
-  "$writer" --device-uid 00000000-0000-0000-0000-000000000001 --width 1280 --height 720 \
+  "$writer" --device-uid "$synthetic_uid" --width 1280 --height 720 \
     --pixel-format BGRA --manifest "$fixed_dir/recheck.json" --expected-manifest-sha256 "$recheck_sha" 2>&1
 )
 status=$?
@@ -372,4 +405,63 @@ if [ "$status" -ne 69 ]; then
   exit 1
 fi
 
-echo "cmio-camera-writer native gate: strict build, ownership lifetime, parser, cadence-flag validation, pre-CMIO manifest rejection, two-kind allowlist, and fixed-pose provenance validation passed"
+# ---------------------------------------------------------------------------------------------
+# THE REAL PRODUCER'S OUTPUT AGAINST THE REAL NATIVE VALIDATOR.
+#
+# Every fixture above is hand-composed shell JSON. That proves the native validator's rules, but it
+# never proves the TypeScript producer and the Objective-C consumer agree — the one hop in the whole
+# chain that nothing else exercises, and which otherwise first runs inside the expensive emulator
+# round. test/fixtures/vcam/fixed-pose-manifest.json is committed output of a REAL
+# createFixedPoseSequence (nonce VCAM-GOLDEN-V292, counters [3, 9], a deterministic synthetic base).
+#
+# It is fed to the writer with NO sibling frame files, so the expected outcome is exit 65 with a
+# "frame 0" open failure. Reaching the frame-read stage at all is the proof: it means this real
+# manifest already cleared the kind allowlist, the nonce, counterRegion, frameBytes, and all twelve
+# provenance rules. The ABSENCE of "provenance" in the diagnostic is what distinguishes "got past
+# provenance and failed on a missing file" from "was rejected earlier for a provenance reason" —
+# without it, a producer/consumer schema divergence would show up as the same exit 65.
+#
+# Committing the 3.6 MB frames is not required and not wanted; the manifest alone is ~1.5 KB.
+# To regenerate after a producer change (needs node; this gate does not):
+#   node -e 'import("./dist/vcamtransport.js").then(({createFixedPoseSequence})=>{ ... })'
+# See .dev notes; the base pixels are byte i = (i * 7 + 13) % 251 over 1280*720*4.
+golden_dir="$temporary_dir/golden"
+mkdir -p "$golden_dir"
+cp "$script_dir/../test/fixtures/vcam/fixed-pose-manifest.json" "$golden_dir/manifest.json"
+if [ -e "$golden_dir/frame-000.bgra" ]; then
+  echo "cmio-camera-writer native gate: the golden directory must contain NO sibling frames" >&2
+  exit 1
+fi
+golden_sha=$(shasum -a 256 "$golden_dir/manifest.json" | awk '{print $1}')
+set +e
+diagnostic=$(
+  "$writer" --device-uid "$synthetic_uid" --width 1280 --height 720 \
+    --pixel-format BGRA --manifest "$golden_dir/manifest.json" --expected-manifest-sha256 "$golden_sha" 2>&1
+)
+status=$?
+set -e
+if [ "$status" -ne 65 ]; then
+  echo "cmio-camera-writer native gate: the real producer's golden manifest should reach the frame read and exit 65, got $status" >&2
+  echo "$diagnostic" >&2
+  exit 1
+fi
+# Order matters: the provenance check runs FIRST. A provenance-reason rejection also lacks the
+# "frame 0" text, so checking "frame 0" first would swallow every provenance divergence into the
+# vaguer "did not reach the frame-read stage" message and leave this check unreachable.
+case "$diagnostic" in
+  *provenance*)
+    echo "cmio-camera-writer native gate: the real producer's manifest was rejected for a PROVENANCE reason — createFixedPoseSequence and the native validator have diverged" >&2
+    echo "$diagnostic" >&2
+    exit 1
+    ;;
+esac
+case "$diagnostic" in
+  *"frame 0"*) ;;
+  *)
+    echo "cmio-camera-writer native gate: the golden manifest did not reach the frame-read stage; it was rejected earlier (kind, nonce, counterRegion, frameBytes, or a frame entry)" >&2
+    echo "$diagnostic" >&2
+    exit 1
+    ;;
+esac
+
+echo "cmio-camera-writer native gate: strict build, ownership lifetime, parser, cadence-flag validation, pre-CMIO manifest rejection, two-kind allowlist, fixed-pose provenance validation, and a real producer manifest clearing the native validator passed"
