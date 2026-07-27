@@ -78,8 +78,9 @@ staleIso && staleIso.status === "fail" && /calibrate_capture_camera/.test(staleI
   : fail(`stale ISO calibration mishandled: ${JSON.stringify(staleIso)}`);
 
 // A FRESH ISO calibration (written after boot) must still pass.
+// Override statMtimeMs to be stale: only correct ISO parsing yields pass; fallback to mtime would fail.
 const freshIsoIO = { ...healthyIO, readFile: (p) => p.endsWith("camera-calibration.json")
-  ? JSON.stringify({ f: 1355.2, at: new Date(1_800_000_000_000 - 30 * 60 * 1000).toISOString() }) : null };
+  ? JSON.stringify({ f: 1355.2, at: new Date(1_800_000_000_000 - 30 * 60 * 1000).toISOString() }) : null, statMtimeMs: () => bootAt - 24 * 60 * 60 * 1000 };
 const freshIso = runPreflightChecks(freshIsoIO).find((x) => x.name === "calibration");
 freshIso && freshIso.status === "pass"
   ? ok("fresh ISO-string calibration passes")
