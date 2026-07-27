@@ -147,6 +147,62 @@ test("avfoundation readback is bounded by finite frame and time limits and recor
   assert.match(source, /static int AvfExitCode\(NSUInteger captured, NSUInteger distinct, NSUInteger requested\)/);
 });
 
+test("the reader retains host arrival time, drop accounting, and a preview-free fast path", async () => {
+  const source = await loadSource();
+  assert.match(source, /mach_absolute_time/, "a monotonic host stamp is required for latency correlation");
+  assert.match(source, /hostTimeNs/, "the per-frame record must carry hostTimeNs");
+  assert.match(source, /didDropSampleBuffer/, "dropped frames must be counted, not invisible");
+  assert.match(source, /--no-preview/, "a rate run must be able to skip the in-callback PNG encode");
+  assert.match(source, /elapsedMs/, "the readback summary must report its own wall-clock span");
+});
+
+test("the host stamp is scaled to nanoseconds and the frame cap follows the mode, not the flag order", async () => {
+  const source = await loadSource();
+  // Raw mach ticks would parse, validate, and yield a plausible-looking latency that nothing
+  // downstream could flag. The stamp must be scaled by the host timebase, exactly as the sibling
+  // producer scales its enqueue stamps, so both binaries share one clock AND one scale.
+  assert.match(source, /mach_timebase_info/, "raw mach ticks are not nanoseconds; scale by the host timebase");
+  assert.match(source, /NanosecondsForMachTicks/, "the reader reuses the producer's tick-to-nanosecond conversion");
+  // The preview-free mode may run long precisely because it dropped the in-callback PNG encode.
+  assert.match(source, /kMaximumReadbackFrames\s*=\s*240\b/, "the preview cap stays 240");
+  assert.match(source, /kMaximumReadbackFramesNoPreview\s*=\s*3600\b/, "the preview-free cap is 3600");
+  // The bound is resolved from the MODE by a pure helper and applied after the argument loop, so
+  // `--frames 3600 --no-preview` and `--no-preview --frames 3600` must behave identically.
+  assert.match(source, /static NSUInteger MaximumReadbackFramesForMode\(BOOL noPreview\)/);
+  const parseStart = source.indexOf("static BOOL ParseOptions");
+  assert.ok(parseStart >= 0, "ParseOptions is inspectable");
+  const loopEnd = source.indexOf("if (options->help)", parseStart);
+  const boundCheck = source.indexOf("MaximumReadbackFramesForMode(options->noPreview)", parseStart);
+  assert.ok(loopEnd > parseStart, "the argument loop ends before the post-parse validation block");
+  assert.ok(boundCheck > loopEnd, "the frame bound is applied after the argument loop, once --no-preview is known");
+  // Record shape stays stable across modes: the preview fields become JSON null, never disappear.
+  assert.match(source, /\\"previewSha256\\":%@,\\"previewPath\\":%@/, "preview fields are emitted in both modes");
+});
+
+test("a long readback wait is sliced so a pending stop can interrupt it", async () => {
+  // Structural only, and deliberately so: this loop is inside RunAvfReadback, which needs an
+  // authorized live camera, and the gates must stay device-free. What it pins is that the bounded
+  // wait is taken in short slices under the stop flag rather than as one span of the full timeout,
+  // which is the difference between a SIGTERM landing in 100 ms and being ignored for 60 s.
+  const source = await loadSource();
+  const readbackStart = source.indexOf("static int RunAvfReadback");
+  assert.ok(readbackStart >= 0, "RunAvfReadback is inspectable");
+  const readbackSource = source.slice(readbackStart);
+  assert.match(
+    readbackSource,
+    /while \(!gStopRequested\) \{[\s\S]{0,400}?dispatch_semaphore_wait\([\s\S]{0,200}?kStopPollIntervalNs/,
+    "the semaphore wait sits inside a loop guarded by the stop flag, with a short poll interval",
+  );
+  assert.doesNotMatch(
+    readbackSource,
+    /dispatch_semaphore_wait\([\s\S]{0,200}?timeoutMs \* NSEC_PER_MSEC/,
+    "the wait must not be taken as one uninterruptible span of the whole timeout",
+  );
+  // The overall bound still exists; slicing must not turn the timeout into an unbounded wait.
+  assert.match(readbackSource, /deadlineNs/, "the sliced wait still honors an overall deadline");
+  assert.match(source, /kStopPollIntervalNs\s*=\s*100 \* NSEC_PER_MSEC/);
+});
+
 test("the source declares signal normalization and stop handling (ordering is proven by the native lifetime gate)", async () => {
   // Presence check only. The runtime proof that a pending stop short-circuits BEFORE any CMIO
   // access lives in test/macos/cmio-camera-reader-lifetime.m (the test:vcamreader-native gate).

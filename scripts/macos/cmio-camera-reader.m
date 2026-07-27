@@ -22,8 +22,10 @@
 #include <errno.h>
 #include <limits.h>
 #include <mach-o/dyld.h>
+#include <mach/mach_time.h>
 #include <math.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,8 +33,19 @@
 
 static const UInt32 kMaximumObjectIDs = 4096;
 static const NSUInteger kMaximumReadbackFrames = 240;
+// Each preview costs an in-callback PNG encode, a disk write, and a second SHA-256, so a preview
+// run stays short. --no-preview removes all three, which is what makes a longer rate run a
+// measurement of the source rather than of this process's own encoder.
+static const NSUInteger kMaximumReadbackFramesNoPreview = 3600;
 static const uint64_t kMaximumReadbackTimeoutMs = 60000;
+// A pending stop must interrupt a long readback, so the bounded wait is taken in short slices.
+static const uint64_t kStopPollIntervalNs = 100 * NSEC_PER_MSEC;
 static NSString *const kRequiredDeviceName = @"Immersed Camera";
+
+// The bound follows the MODE, never the order the flags appeared in argv.
+static NSUInteger MaximumReadbackFramesForMode(BOOL noPreview) {
+    return noPreview ? kMaximumReadbackFramesNoPreview : kMaximumReadbackFrames;
+}
 
 static volatile sig_atomic_t gStopRequested = 0;
 
@@ -44,6 +57,7 @@ typedef struct {
     BOOL cmioProbeOnly;
     BOOL authorizationOnly;
     BOOL avfoundationReadback;
+    BOOL noPreview;
     BOOL help;
 } Options;
 
@@ -84,7 +98,7 @@ static void PrintUsage(FILE *stream) {
             "  cmio-camera-reader --cmio-probe-only --device-uid UUID\n"
             "  cmio-camera-reader --authorization-only\n"
             "  cmio-camera-reader --avfoundation-readback --device-uid UUID\n"
-            "      --output-dir DIR --frames N --timeout-ms MS\n"
+            "      --output-dir DIR --frames N --timeout-ms MS [--no-preview]\n"
             "  cmio-camera-reader --help\n"
             "\n"
             "--cmio-probe-only reports the exact device's stream topology and current formats\n"
@@ -94,7 +108,10 @@ static void PrintUsage(FILE *stream) {
             "identity when present, and its AVCaptureDevice video authorization status. It never\n"
             "requests access, constructs a capture input, starts a session, or writes a frame.\n"
             "--avfoundation-readback captures a bounded frame set from the exact device unique ID,\n"
-            "but ONLY when this client is already authorized; otherwise it reports blocked.\n");
+            "but ONLY when this client is already authorized; otherwise it reports blocked.\n"
+            "--no-preview drops the in-callback PNG encode, disk write, and preview hash, leaving\n"
+            "only the raw frame digest. It raises the --frames bound from 240 to 3600 because the\n"
+            "delegate no longer perturbs the rate it is measuring.\n");
 }
 
 static BOOL ParseSize(NSString *text, size_t *valueOut) {
@@ -147,6 +164,15 @@ static BOOL ParseOptions(int argc, const char *argv[], Options *options) {
             options->avfoundationReadback = YES;
             continue;
         }
+        if ([argument isEqualToString:@"--no-preview"]) {
+            if ([seen containsObject:argument]) {
+                fprintf(stderr, "cmio-camera-reader: duplicate argument --no-preview\n");
+                return NO;
+            }
+            [seen addObject:argument];
+            options->noPreview = YES;
+            continue;
+        }
 
         BOOL known = [argument isEqualToString:@"--device-uid"] ||
                      [argument isEqualToString:@"--output-dir"] ||
@@ -176,8 +202,10 @@ static BOOL ParseOptions(int argc, const char *argv[], Options *options) {
         else if ([argument isEqualToString:@"--output-dir"]) options->outputDir = value;
         else if ([argument isEqualToString:@"--frames"]) {
             size_t parsed = 0;
-            if (!ParseSize(value, &parsed) || parsed < 1 || parsed > kMaximumReadbackFrames) {
-                fprintf(stderr, "cmio-camera-reader: --frames must be an integer in 1..%lu\n", (unsigned long)kMaximumReadbackFrames);
+            // The UPPER bound depends on --no-preview, which may still appear later in argv, so
+            // only the format and the positive minimum are decided here.
+            if (!ParseSize(value, &parsed) || parsed < 1) {
+                fprintf(stderr, "cmio-camera-reader: --frames must be a positive decimal integer\n");
                 return NO;
             }
             options->frames = (NSUInteger)parsed;
@@ -224,14 +252,22 @@ static BOOL ParseOptions(int argc, const char *argv[], Options *options) {
             fprintf(stderr, "cmio-camera-reader: --avfoundation-readback requires --frames (>=1)\n");
             return NO;
         }
+        // Both flags are known here, so the bound follows the selected mode rather than argv order.
+        NSUInteger maximumFrames = MaximumReadbackFramesForMode(options->noPreview);
+        if (options->frames > maximumFrames) {
+            fprintf(stderr, "cmio-camera-reader: --frames must be an integer in 1..%lu %s\n",
+                    (unsigned long)maximumFrames,
+                    options->noPreview ? "with --no-preview" : "when previews are written");
+            return NO;
+        }
         if (options->timeoutMs < 1) {
             fprintf(stderr, "cmio-camera-reader: --avfoundation-readback requires --timeout-ms (>=1)\n");
             return NO;
         }
     }
     if ((options->cmioProbeOnly || options->authorizationOnly) &&
-        (options->outputDir.length > 0 || options->frames > 0 || options->timeoutMs > 0)) {
-        fprintf(stderr, "cmio-camera-reader: --output-dir/--frames/--timeout-ms are only valid with --avfoundation-readback\n");
+        (options->outputDir.length > 0 || options->frames > 0 || options->timeoutMs > 0 || options->noPreview)) {
+        fprintf(stderr, "cmio-camera-reader: --output-dir/--frames/--timeout-ms/--no-preview are only valid with --avfoundation-readback\n");
         return NO;
     }
     if (options->authorizationOnly && options->deviceUid.length > 0) {
@@ -685,33 +721,96 @@ static BOOL WriteBGRAToPNG(const uint8_t *base, size_t width, size_t height, siz
     return ok;
 }
 
+// Mach ticks are NOT nanoseconds on every machine (Apple silicon counts at 24 MHz), so a raw
+// mach_absolute_time() value would still parse, still validate, and still yield a plausible-looking
+// latency while being ~41x wrong. The sibling producer stamps each enqueue with this same monotonic
+// clock scaled by this same timebase, and the throughput analyzer subtracts one from the other, so
+// the two binaries must agree on scale as well as on origin.
+static uint64_t NanosecondsForMachTicks(uint64_t ticks, mach_timebase_info_data_t timebase) {
+    if (timebase.numer == 0 || timebase.denom == 0) return 0;
+    __uint128_t scaled = (__uint128_t)ticks * timebase.numer;
+    return (uint64_t)(scaled / timebase.denom);
+}
+
+// The timebase is constant for the life of the process, and the sample-buffer delegate runs on a
+// capture queue that cannot be handed one, so it is read once. An unreadable timebase is caught by
+// the readback path before any session starts, rather than silently emitting a wrong-scale stamp.
+static mach_timebase_info_data_t HostTimebase(void) {
+    static mach_timebase_info_data_t timebase;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        if (mach_timebase_info(&timebase) != KERN_SUCCESS) {
+            timebase.numer = 0;
+            timebase.denom = 0;
+        }
+    });
+    return timebase;
+}
+
+static uint64_t MachAbsoluteToNanoseconds(uint64_t ticks) {
+    return NanosecondsForMachTicks(ticks, HostTimebase());
+}
+
+// Factored out so the reported unit is provable without a capture session: elapsedMs is only
+// computed on the live readback path, and a missing divisor there would look entirely plausible.
+static double MillisecondsForNanoseconds(uint64_t nanoseconds) {
+    return (double)nanoseconds / 1e6;
+}
+
 @interface FrameCollector : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
-- (instancetype)initWithTarget:(NSUInteger)target outputDir:(NSString *)outputDir;
+- (instancetype)initWithTarget:(NSUInteger)target
+                     outputDir:(NSString *)outputDir
+                 writePreviews:(BOOL)writePreviews;
 @property (nonatomic, readonly) NSMutableArray<NSString *> *records;
 @property (nonatomic, readonly) NSMutableSet<NSString *> *distinctRaw;
 @property (nonatomic, readonly) dispatch_semaphore_t done;
+// AVFoundation reports discarded frames on the delegate queue. Counting them is what keeps a drop
+// from looking like a slow source. Read after the delegate has been detached and the queue drained.
+- (uint64_t)droppedFrames;
 @end
 
 @implementation FrameCollector {
     NSUInteger _target;
     NSString *_outputDir;
+    BOOL _writePreviews;
+    _Atomic uint64_t _droppedFrames;
 }
 
-- (instancetype)initWithTarget:(NSUInteger)target outputDir:(NSString *)outputDir {
+- (instancetype)initWithTarget:(NSUInteger)target
+                     outputDir:(NSString *)outputDir
+                 writePreviews:(BOOL)writePreviews {
     self = [super init];
     if (self != nil) {
         _target = target;
         _outputDir = [outputDir copy];
+        _writePreviews = writePreviews;
         _records = [NSMutableArray array];
         _distinctRaw = [NSMutableSet set];
         _done = dispatch_semaphore_create(0);
+        atomic_init(&_droppedFrames, 0);
     }
     return self;
+}
+
+- (uint64_t)droppedFrames {
+    return atomic_load_explicit(&_droppedFrames, memory_order_relaxed);
+}
+
+- (void)captureOutput:(AVCaptureOutput *)output
+      didDropSampleBuffer:(CMSampleBufferRef)sampleBuffer
+           fromConnection:(AVCaptureConnection *)connection {
+    (void)output;
+    (void)sampleBuffer;
+    (void)connection;
+    atomic_fetch_add_explicit(&self->_droppedFrames, 1, memory_order_relaxed);
 }
 
 - (void)captureOutput:(AVCaptureOutput *)output
     didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
            fromConnection:(AVCaptureConnection *)connection {
+    // The first statement, before any hashing or encoding: this is the arrival time the throughput
+    // analyzer subtracts the producer's enqueue stamp from, so it must not include our own work.
+    const uint64_t hostTimeNs = MachAbsoluteToNanoseconds(mach_absolute_time());
     (void)output;
     (void)connection;
     if (_records.count >= _target) return;
@@ -737,11 +836,13 @@ static BOOL WriteBGRAToPNG(const uint8_t *base, size_t width, size_t height, siz
         unsigned char digest[CC_SHA256_DIGEST_LENGTH];
         CC_SHA256_Final(digest, &shaContext);
         rawHash = HexEncode(digest, CC_SHA256_DIGEST_LENGTH);
-        previewPath = [_outputDir stringByAppendingPathComponent:
-                       [NSString stringWithFormat:@"avf-frame-%03lu.png", (unsigned long)_records.count]];
-        if (WriteBGRAToPNG(base, width, height, bytesPerRow, previewPath)) {
-            NSData *png = [NSData dataWithContentsOfFile:previewPath];
-            if (png != nil) previewHash = SHA256HexOfData(png);
+        if (_writePreviews) {
+            previewPath = [_outputDir stringByAppendingPathComponent:
+                           [NSString stringWithFormat:@"avf-frame-%03lu.png", (unsigned long)_records.count]];
+            if (WriteBGRAToPNG(base, width, height, bytesPerRow, previewPath)) {
+                NSData *png = [NSData dataWithContentsOfFile:previewPath];
+                if (png != nil) previewHash = SHA256HexOfData(png);
+            }
         }
     }
 
@@ -752,13 +853,19 @@ static BOOL WriteBGRAToPNG(const uint8_t *base, size_t width, size_t height, siz
     if (rawHash == nil) return;
 
     [_distinctRaw addObject:rawHash];
+    // The preview fields stay present in both modes and become JSON null when no preview was
+    // written, so the record shape does not change under --no-preview.
     NSString *previewHashJson = previewHash != nil ? [NSString stringWithFormat:@"\"%@\"", previewHash] : @"null";
+    NSString *previewPathJson = previewPath != nil
+        ? [NSString stringWithFormat:@"\"%@\"", JSONEscaped(previewPath)]
+        : @"null";
     NSString *record = [NSString stringWithFormat:
                         @"{\"event\":\"frame\",\"index\":%lu,\"width\":%lu,\"height\":%lu,\"pixelFormat\":\"%@\","
-                        @"\"presentationTimeMs\":%.3f,\"rawSha256\":\"%@\",\"previewSha256\":%@,\"previewPath\":\"%@\"}",
+                        @"\"hostTimeNs\":%llu,\"presentationTimeMs\":%.3f,\"rawSha256\":\"%@\","
+                        @"\"previewSha256\":%@,\"previewPath\":%@}",
                         (unsigned long)_records.count, (unsigned long)width, (unsigned long)height,
-                        JSONEscaped(FourCCString(pixelFormat)), presentationMs, rawHash, previewHashJson,
-                        JSONEscaped(previewPath != nil ? previewPath : @"")];
+                        JSONEscaped(FourCCString(pixelFormat)), (unsigned long long)hostTimeNs,
+                        presentationMs, rawHash, previewHashJson, previewPathJson];
     [_records addObject:record];
     if (_records.count >= _target) dispatch_semaphore_signal(_done);
 }
@@ -775,7 +882,45 @@ static int AvfExitCode(NSUInteger captured, NSUInteger distinct, NSUInteger requ
     return 0;
 }
 
-static int RunAvfReadback(NSString *deviceUid, NSString *outputDir, NSUInteger frames, uint64_t timeoutMs) {
+// Built as a string, like the per-frame record, so the exact wire format the throughput analyzer
+// parses is checkable without a capture session. `ok` is derived from AvfExitCode rather than
+// recomputed, so the reported verdict and the process exit code can never disagree.
+static NSString *ReadbackSummaryRecord(NSString *deviceUid,
+                                       NSString *outputDir,
+                                       NSUInteger requestedFrames,
+                                       NSUInteger captured,
+                                       NSUInteger distinct,
+                                       uint64_t dropped,
+                                       double elapsedMs,
+                                       BOOL timedOut,
+                                       BOOL noPreview) {
+    BOOL ok = AvfExitCode(captured, distinct, requestedFrames) == 0;
+    BOOL changing = distinct >= 2;
+    // elapsedMs is only interpretable alongside the mode that produced it: with previews on, this
+    // process's own PNG encode is inside the measured span.
+    return [NSString stringWithFormat:
+            @"{\"event\":\"readback\",\"mode\":\"avfoundation-readback\",\"ok\":%@,\"authStatus\":\"authorized\","
+            @"\"deviceUid\":\"%@\",\"requestedFrames\":%lu,\"framesCaptured\":%lu,\"distinctRawHashes\":%lu,"
+            @"\"dropped\":%llu,\"elapsedMs\":%.3f,\"changingFrames\":%@,\"timedOut\":%@,\"previews\":%@,"
+            @"\"outputDir\":\"%@\"}",
+            ok ? @"true" : @"false",
+            JSONEscaped(deviceUid),
+            (unsigned long)requestedFrames,
+            (unsigned long)captured,
+            (unsigned long)distinct,
+            (unsigned long long)dropped,
+            elapsedMs,
+            changing ? @"true" : @"false",
+            timedOut ? @"true" : @"false",
+            noPreview ? @"false" : @"true",
+            JSONEscaped(outputDir)];
+}
+
+static int RunAvfReadback(NSString *deviceUid,
+                          NSString *outputDir,
+                          NSUInteger frames,
+                          uint64_t timeoutMs,
+                          BOOL noPreview) {
     AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
     if (!CanConstructInput(status)) {
         // Blocked, not failed. No input is constructed, no session started, no prompt shown.
@@ -785,6 +930,14 @@ static int RunAvfReadback(NSString *deviceUid, NSString *outputDir, NSUInteger f
                 AuthStatusString(status).UTF8String);
         fflush(stdout);
         return 77;
+    }
+
+    // Fail closed before any device is touched: without a readable timebase the per-frame stamps
+    // would be a plausible-looking wrong scale rather than an obvious absence.
+    mach_timebase_info_data_t timebase = HostTimebase();
+    if (timebase.numer == 0 || timebase.denom == 0) {
+        fprintf(stderr, "cmio-camera-reader: failed to read the monotonic clock timebase\n");
+        return 1;
     }
 
     AVCaptureDevice *device = [AVCaptureDevice deviceWithUniqueID:deviceUid];
@@ -803,7 +956,9 @@ static int RunAvfReadback(NSString *deviceUid, NSString *outputDir, NSUInteger f
     AVCaptureVideoDataOutput *output = [[AVCaptureVideoDataOutput alloc] init];
     output.videoSettings = @{ (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA) };
     output.alwaysDiscardsLateVideoFrames = NO;
-    FrameCollector *collector = [[FrameCollector alloc] initWithTarget:frames outputDir:outputDir];
+    FrameCollector *collector = [[FrameCollector alloc] initWithTarget:frames
+                                                             outputDir:outputDir
+                                                         writePreviews:!noPreview];
     dispatch_queue_t queue = dispatch_queue_create("com.pico.vcam.reader.frames", DISPATCH_QUEUE_SERIAL);
     [output setSampleBufferDelegate:collector queue:queue];
     if (![session canAddInput:input] || ![session canAddOutput:output]) {
@@ -813,10 +968,20 @@ static int RunAvfReadback(NSString *deviceUid, NSString *outputDir, NSUInteger f
     [session addInput:input];
     [session addOutput:output];
 
+    const uint64_t startNs = MachAbsoluteToNanoseconds(mach_absolute_time());
     [session startRunning];
-    long waited = dispatch_semaphore_wait(collector.done,
-                                          dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeoutMs * NSEC_PER_MSEC)));
+    // The bounded wait is taken in short slices that re-check the stop flag between them, so a
+    // SIGINT/SIGTERM/SIGHUP aborts a long readback instead of being ignored until the timeout.
+    const uint64_t deadlineNs = startNs + timeoutMs * NSEC_PER_MSEC;
+    long waited = -1;
+    while (!gStopRequested) {
+        waited = dispatch_semaphore_wait(collector.done,
+                                         dispatch_time(DISPATCH_TIME_NOW, (int64_t)kStopPollIntervalNs));
+        if (waited == 0) break;
+        if (MachAbsoluteToNanoseconds(mach_absolute_time()) >= deadlineNs) break;
+    }
     [session stopRunning];
+    const uint64_t endNs = MachAbsoluteToNanoseconds(mach_absolute_time());
     [output setSampleBufferDelegate:nil queue:NULL];
     dispatch_sync(queue, ^{});  // barrier: no in-flight callback survives before we read the records
 
@@ -825,16 +990,17 @@ static int RunAvfReadback(NSString *deviceUid, NSString *outputDir, NSUInteger f
     for (NSString *record in collector.records) {
         fprintf(stdout, "%s\n", record.UTF8String);
     }
-    BOOL timedOut = waited != 0;
-    BOOL changing = distinct >= 2;
-    BOOL ok = captured >= frames && changing;
-    fprintf(stdout,
-            "{\"event\":\"readback\",\"mode\":\"avfoundation-readback\",\"ok\":%s,\"authStatus\":\"authorized\","
-            "\"deviceUid\":\"%s\",\"requestedFrames\":%lu,\"framesCaptured\":%lu,\"distinctRawHashes\":%lu,"
-            "\"changingFrames\":%s,\"timedOut\":%s,\"outputDir\":\"%s\"}\n",
-            ok ? "true" : "false", JSONEscaped(deviceUid).UTF8String, (unsigned long)frames,
-            (unsigned long)captured, (unsigned long)distinct, changing ? "true" : "false",
-            timedOut ? "true" : "false", JSONEscaped(outputDir).UTF8String);
+    // An interrupted run is a stop, not a timeout; the exit code carries the signal.
+    BOOL timedOut = waited != 0 && !gStopRequested;
+    fprintf(stdout, "%s\n", ReadbackSummaryRecord(deviceUid,
+                                                  outputDir,
+                                                  frames,
+                                                  captured,
+                                                  distinct,
+                                                  collector.droppedFrames,
+                                                  MillisecondsForNanoseconds(endNs - startNs),
+                                                  timedOut,
+                                                  noPreview).UTF8String);
     fflush(stdout);
 
     int code = AvfExitCode(captured, distinct, frames);
@@ -864,7 +1030,11 @@ int main(int argc, const char *argv[]) {
             return EmitAuthorization();
         }
         if (options.avfoundationReadback) {
-            return RunAvfReadback(options.deviceUid, options.outputDir, options.frames, options.timeoutMs);
+            return RunAvfReadback(options.deviceUid,
+                                  options.outputDir,
+                                  options.frames,
+                                  options.timeoutMs,
+                                  options.noPreview);
         }
 
         fprintf(stderr, "cmio-camera-reader: no mode selected\n");

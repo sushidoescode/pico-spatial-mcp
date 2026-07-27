@@ -136,4 +136,108 @@ case "$authorization" in
     ;;
 esac
 
-echo "cmio-camera-reader native gate: strict build, lifetime (signal/stop, JSON, auth guard), authorization-only, and fail-closed readback block passed"
+# --no-preview is documented in the usage text, so a rate run is discoverable from --help alone.
+case "$("$reader" --help)" in
+  *--no-preview*) ;;
+  *)
+    echo "cmio-camera-reader native gate: --help does not document --no-preview" >&2
+    exit 1
+    ;;
+esac
+
+# The readback frame cap follows the MODE. Preview runs stay bounded at 240 because each frame pays
+# for an in-callback PNG encode; --no-preview raises it to 3600. Both are parser-only decisions and
+# never reach a device. The bogus device UID keeps the accepted cases device-free.
+frames_dir="$temporary_dir/cap-frames"
+mkdir -p "$frames_dir"
+assert_frames_rejected() {
+  set +e
+  diagnostic=$("$reader" --avfoundation-readback \
+    --device-uid 00000000-0000-0000-0000-0000000000ff \
+    --output-dir "$frames_dir" --timeout-ms 1000 "$@" 2>&1)
+  status=$?
+  set -e
+  if [ "$status" -ne 64 ]; then
+    echo "cmio-camera-reader native gate: expected frame-cap exit 64 for '$*', got $status" >&2
+    echo "$diagnostic" >&2
+    exit 1
+  fi
+  case "$diagnostic" in
+    *'--frames must be an integer in 1..'*) ;;
+    *)
+      echo "cmio-camera-reader native gate: missing frame-cap diagnostic for '$*'" >&2
+      echo "$diagnostic" >&2
+      exit 1
+      ;;
+  esac
+}
+
+assert_frames_accepted() {
+  set +e
+  diagnostic=$("$reader" --avfoundation-readback \
+    --device-uid 00000000-0000-0000-0000-0000000000ff \
+    --output-dir "$frames_dir" --timeout-ms 1000 "$@" 2>&1)
+  status=$?
+  set -e
+  # 69 = the bogus UID resolved to no device; 77 = this client is not authorized. Either proves the
+  # parser accepted the arguments, and neither opens a camera.
+  if [ "$status" -ne 69 ] && [ "$status" -ne 77 ]; then
+    echo "cmio-camera-reader native gate: '$*' was not accepted by the parser (exit $status)" >&2
+    echo "$diagnostic" >&2
+    exit 1
+  fi
+}
+
+assert_frames_rejected --frames 3600
+assert_frames_rejected --frames 3601 --no-preview
+assert_frames_rejected --no-preview --frames 3601
+assert_frames_accepted --frames 240
+assert_frames_accepted --frames 3600 --no-preview
+# The same request with the flags transposed must behave identically: the bound follows the mode.
+assert_frames_accepted --no-preview --frames 3600
+
+if [ -n "$(ls -A "$frames_dir" 2>/dev/null)" ]; then
+  echo "cmio-camera-reader native gate: frame-cap parsing must not write any artifact" >&2
+  exit 1
+fi
+
+# --no-preview belongs to the readback mode only, and cannot be repeated.
+set +e
+diagnostic=$("$reader" --cmio-probe-only --device-uid 00000000-0000-0000-0000-000000000001 --no-preview 2>&1)
+status=$?
+set -e
+if [ "$status" -ne 64 ]; then
+  echo "cmio-camera-reader native gate: expected mode-mismatch exit 64 for --no-preview, got $status" >&2
+  echo "$diagnostic" >&2
+  exit 1
+fi
+case "$diagnostic" in
+  *'only valid with --avfoundation-readback'*) ;;
+  *)
+    echo "cmio-camera-reader native gate: missing --no-preview mode-mismatch diagnostic" >&2
+    echo "$diagnostic" >&2
+    exit 1
+    ;;
+esac
+
+set +e
+diagnostic=$("$reader" --avfoundation-readback --no-preview --no-preview \
+  --device-uid 00000000-0000-0000-0000-0000000000ff \
+  --output-dir "$frames_dir" --frames 2 --timeout-ms 1000 2>&1)
+status=$?
+set -e
+if [ "$status" -ne 64 ]; then
+  echo "cmio-camera-reader native gate: expected duplicate --no-preview exit 64, got $status" >&2
+  echo "$diagnostic" >&2
+  exit 1
+fi
+case "$diagnostic" in
+  *'duplicate argument --no-preview'*) ;;
+  *)
+    echo "cmio-camera-reader native gate: missing duplicate --no-preview diagnostic" >&2
+    echo "$diagnostic" >&2
+    exit 1
+    ;;
+esac
+
+echo "cmio-camera-reader native gate: strict build, lifetime (signal/stop, JSON, auth guard, host-time scale, record wire format), authorization-only, mode-dependent frame cap, and fail-closed readback block passed"
