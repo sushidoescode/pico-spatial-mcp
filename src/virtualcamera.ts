@@ -55,6 +55,7 @@ export interface RenderVirtualFrameOptions {
   outDir?: string;
   pythonPath?: string;
   exec?: ExecOverride;
+  emitBgra?: boolean;
 }
 
 export interface DetectVirtualSurfacesOptions {
@@ -449,6 +450,7 @@ export async function renderVirtualFrame(options: RenderVirtualFrameOptions) {
   fs.mkdirSync(outDir, { recursive: true });
   const imagePath = path.join(outDir, `${stem}-${hash}.png`);
   const rendererPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "py", "splat_perspective.py");
+  const bgraPath = options.emitBgra ? imagePath.replace(/\.png$/, ".bgra") : null;
   const config = {
     splat: world.splatPath,
     maxPts: maxPoints,
@@ -458,7 +460,8 @@ export async function renderVirtualFrame(options: RenderVirtualFrameOptions) {
     f: intrinsics.f,
     cx: intrinsics.cx,
     cy: intrinsics.cy,
-    views: [{ name: "virtual-camera", C: splatPose.position, T: splatPose.target, out: imagePath }],
+    emitBgra: !!options.emitBgra,
+    views: [{ name: "virtual-camera", C: splatPose.position, T: splatPose.target, out: imagePath, bgraOut: bgraPath }],
   };
   const execute = options.exec ?? execFileAsync;
   const python = resolvePython(options.pythonPath, !!options.exec);
@@ -478,8 +481,19 @@ export async function renderVirtualFrame(options: RenderVirtualFrameOptions) {
     throw new Error(`renderer returned without a non-empty PNG: ${imagePath}`);
   }
 
+  let bgraSha256: string | null = null;
+  if (bgraPath) {
+    const expected = intrinsics.width * intrinsics.height * 4;
+    if (!fs.existsSync(bgraPath) || fs.statSync(bgraPath).size !== expected) {
+      throw new Error(`renderer returned without a ${expected}-byte BGRA frame: ${bgraPath}`);
+    }
+    bgraSha256 = crypto.createHash("sha256").update(fs.readFileSync(bgraPath)).digest("hex");
+  }
+
   return {
     imagePath,
+    bgraPath,
+    bgraSha256,
     intrinsics,
     pose: {
       frame: "app",
@@ -737,6 +751,7 @@ const virtualCameraFrameInputSchema = z.object({
   calibratedIntrinsics: z.boolean().optional().describe("Use persisted capture-camera f/cx/cy instead of centered FOV intrinsics."),
   calibrationPath: z.string().optional().describe("Calibration JSON override; default ~/.pico-mcp/camera-calibration.json."),
   outDir: z.string().optional().describe("Output directory (default /tmp/pico-render/vcam)."),
+  emitBgra: z.boolean().optional().describe("Also write a raw BGRA sibling next to the PNG for the injected-pixel camera transport; this is a host-rendered file, not itself emulator/device evidence."),
 }).strict().superRefine((value, context) => {
   if (value.target && (value.yawDeg !== undefined || value.pitchDeg !== undefined)) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "pass position+target OR yawDeg/pitchDeg, not both" });

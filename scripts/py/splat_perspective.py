@@ -108,6 +108,7 @@ if __name__=="__main__":
     W,H,fov=cfg.get("W",640),cfg.get("H",640),cfg.get("fov",70)
     focal_px,cx,cy=cfg.get("f"),cfg.get("cx"),cfg.get("cy")
     save_clean=cfg.get("saveClean",False)  # unannotated copies + 2D boxes, for a headless detector (OWL-v2)
+    emit_bgra=cfg.get("emitBgra",False)
     out=[]
     for view in cfg["views"]:
         img,points_rendered=render(pos,rgb,view["C"],view["T"],W,H,fov,focal_px=focal_px,cx=cx,cy=cy)
@@ -132,5 +133,15 @@ if __name__=="__main__":
         Image.fromarray(img).save(view["out"])
         entry={"out":view["out"],"name":view.get("name"),"C":view["C"],"T":view["T"],"visibleIds":vis,"pointsRendered":points_rendered}
         if save_clean: entry["clean"]=clean; entry["boxes2d"]=boxes2d
+        if emit_bgra and view.get("bgraOut"):
+            # Same array the PNG encodes, so the raw sibling and the PNG are provably identical
+            # pixels. RGB -> BGRA with an opaque alpha; C-contiguous, top row first, 4 bytes/px.
+            if cfg.get("clusters"):
+                raise SystemExit("emitBgra requires an unannotated frame: clusters must be empty")
+            raw = np.dstack([img[:, :, ::-1], np.full(img.shape[:2], 255, np.uint8)]).tobytes()
+            with open(view["bgraOut"], "wb") as handle:
+                handle.write(raw)
+            entry["bgraOut"] = view["bgraOut"]
+            entry["bgraBytes"] = len(raw)
         out.append(entry)
     print(json.dumps({"points":len(pos),"centroid":cen.round(3).tolist(),"bounds":[lo.round(3).tolist(),hi.round(3).tolist()],"floorY":round(float(lo[1]),3),"views":out}))

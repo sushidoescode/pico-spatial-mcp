@@ -159,6 +159,25 @@ try {
   fail(`camera contract validation: ${error.stack ?? error.message}`);
 }
 
+// v29.2: the CMIO transport needs raw 1280x720 BGRA, not a 1280x1280 PNG.
+// renderVirtualFrame fails closed on a missing splat before it ever builds the renderer config
+// (resolveWorld's existsSync gate), so /tmp/fake.ply must actually exist for exec to be reached.
+fs.writeFileSync("/tmp/fake.ply", "fixture only");
+const bgraCalls = [];
+const bgraFakeExec = async (file, args) => { bgraCalls.push(JSON.parse(args[1])); return { stdout: '{"views":[{"pointsRendered":123}]}' }; };
+try {
+  await renderVirtualFrame({
+    splatPath: "/tmp/fake.ply", position: [0, 1.6, 0], target: [0, 1.6, -1],
+    width: 1280, height: 720, fovDeg: 70, emitBgra: true, exec: bgraFakeExec,
+  });
+} catch { /* the existence gate fails with a fake exec; the config is what we assert */ }
+try { fs.unlinkSync("/tmp/fake.ply"); } catch {}
+const cfg = bgraCalls[0] ?? {};
+cfg.emitBgra === true ? ok("emitBgra reaches the renderer config") : fail(`emitBgra missing: ${JSON.stringify(cfg)}`);
+typeof cfg.views?.[0]?.bgraOut === "string" && cfg.views[0].bgraOut.endsWith(".bgra")
+  ? ok("a per-view bgraOut path is supplied") : fail(`bgraOut missing: ${JSON.stringify(cfg.views)}`);
+cfg.W === 1280 && cfg.H === 720 ? ok("720p is passed through, not the 1280x1280 default") : fail(`bad dims: ${cfg.W}x${cfg.H}`);
+
 // Direct MCP regression: registration and strict/cross-field schemas are part of the delivered API.
 try {
   const server = new McpServer({ name: "vcam-input-test", version: "0.0.0" });
