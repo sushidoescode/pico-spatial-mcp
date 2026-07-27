@@ -400,11 +400,21 @@ export function createFixedPoseSequence(options: {
     throw new Error("counters must contain 1-16 values");
   }
   const seen = new Set<number>();
+  const seenBarSteps = new Set<number>();
   for (const counter of options.counters) {
     if (!Number.isSafeInteger(counter) || counter < 0 || counter > 999_999 || seen.has(counter)) {
       throw new Error("counters must be unique safe nonnegative integers no greater than 999999");
     }
     seen.add(counter);
+    // The liveness bar's width is a function of `counter % 16` (see stampFrame), so two counters
+    // that are congruent mod 16 — [0, 16], say — draw a BYTE-IDENTICAL bar. Uniqueness of the
+    // counter itself is not enough: the digits would still differ, but the at-a-glance delta the
+    // bar exists to supply would silently collapse to roughly the digits' own ~75 pixels, far
+    // under the >=700 floor this sequence's whole liveness argument rests on.
+    if (seenBarSteps.has(counter % 16)) {
+      throw new Error("counters must be distinct modulo 16; the liveness bar width is counter % 16, so congruent counters draw a byte-identical bar");
+    }
+    seenBarSteps.add(counter % 16);
   }
   validateFixedPoseProvenance(options.provenance);
 

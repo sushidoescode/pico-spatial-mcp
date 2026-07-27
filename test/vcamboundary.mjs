@@ -28,6 +28,9 @@ function baseReport() {
   return {
     runId: "vcam-v29.1-20260724-AB12",
     source: {
+      // The v29.1 host gate injected deterministic test cards, so the card kind is the honest one
+      // here — and it is what forbids this baseline from carrying a scanned-room renderProvenance.
+      kind: "pico-vcam-test-card-sequence",
       manifestPath: "/run/vcam/manifest.json",
       manifestSha256: MANIFEST_SHA256,
       nonce: "VCAM-20260724-AB12",
@@ -355,7 +358,7 @@ function baseDeps(overrides = {}) {
   const deps = {
     identity: {
       runId: "vcam-v29.1-20260724-AB12",
-      source: { manifestPath: "/run/vcam/manifest.json", manifestSha256: MANIFEST_SHA256, nonce: "VCAM-20260724-AB12", width: 1280, height: 720, pixelFormat: "BGRA" },
+      source: { kind: "pico-vcam-test-card-sequence", manifestPath: "/run/vcam/manifest.json", manifestSha256: MANIFEST_SHA256, nonce: "VCAM-20260724-AB12", width: 1280, height: 720, pixelFormat: "BGRA" },
       device: { name: "Immersed Camera", uuid: IMMERSED_UUID },
       reader: { executable: "/run/vcam/bin/cmio-camera-reader", argv: ["--authorization-only"], sha256: READER_SHA256 },
       producer: { executable: "/run/vcam/bin/cmio-camera-writer", argv: ["--device-uid", IMMERSED_UUID], sha256: PRODUCER_SHA256 },
@@ -579,19 +582,76 @@ test("runHostBoundary returns a complete report instead of rejecting when a read
   }
 });
 
-test("render provenance is optional, but validated whenever it is present", async () => {
+const GOOD_RENDER_PROVENANCE = {
+  worldModel: { splatPath: "/abs/world.ply", splatSha256: "1a".repeat(32), offsetApplied: [0, 0.775604248046875, 0] },
+  pose: { position: [0.034, 1.896, 0.147], target: [0.034, 1.7224, -0.8378], frame: "app" },
+  intrinsics: { f: 914.01, cx: 640, cy: 360, fovDeg: 70 },
+  renderer: { script: "/abs/splat_perspective.py", scriptSha256: "2b".repeat(32), pointsRendered: 500000 },
+  baseFrameSha256: "3c".repeat(32),
+};
+
+// A fixed-pose (rendered scanned-room) report: the kind and the provenance block travel together.
+function renderedReport(overrides = {}) {
+  const report = baseReport();
+  report.source.kind = "pico-vcam-fixed-pose-sequence";
+  report.renderProvenance = clone(GOOD_RENDER_PROVENANCE);
+  return { ...report, ...overrides };
+}
+
+test("source.kind is an exact two-value allowlist, never a prefix or pattern match", async () => {
+  const { validateBoundaryReport, SOURCE_KINDS } = await loadSut();
+  assert.deepEqual(
+    [...SOURCE_KINDS],
+    ["pico-vcam-test-card-sequence", "pico-vcam-fixed-pose-sequence"],
+    "the allowlist mirrors the native writer's kTestCardKind/kFixedPoseKind exactly",
+  );
+  const mutate = (kind) => { const r = clone(baseReport()); r.source.kind = kind; return r; };
+  assert.throws(() => validateBoundaryReport(mutate(undefined)), /source\.kind/i, "a report must name which manifest kind produced its pixels");
+  for (const bad of [
+    "pico-vcam-live-pose-stream",
+    // Near-misses that a prefix/substring/case-insensitive match would wrongly admit.
+    "pico-vcam-test-card-sequence-v2",
+    "pico-vcam-test-card",
+    "PICO-VCAM-TEST-CARD-SEQUENCE",
+    " pico-vcam-test-card-sequence",
+    "", null, 1, {},
+  ]) {
+    assert.throws(
+      () => validateBoundaryReport(mutate(bad)),
+      /source\.kind/i,
+      `source.kind ${JSON.stringify(bad)} must be rejected by exact membership`,
+    );
+  }
+});
+
+test("render provenance is bound to source.kind in BOTH directions, never decorative", async () => {
   const { validateBoundaryReport } = await loadSut();
-  const good = {
-    worldModel: { splatPath: "/abs/world.ply", splatSha256: "1a".repeat(32), offsetApplied: [0, 0.775604248046875, 0] },
-    pose: { position: [0.034, 1.896, 0.147], target: [0.034, 1.7224, -0.8378], frame: "app" },
-    intrinsics: { f: 914.01, cx: 640, cy: 360, fovDeg: 70 },
-    renderer: { script: "/abs/splat_perspective.py", scriptSha256: "2b".repeat(32), pointsRendered: 500000 },
-    baseFrameSha256: "3c".repeat(32),
-  };
+  const good = GOOD_RENDER_PROVENANCE;
 
   // A card run carries no render provenance at all; every existing fixture must keep validating.
   assert.doesNotThrow(() => validateBoundaryReport(baseReport()));
-  assert.doesNotThrow(() => validateBoundaryReport({ ...baseReport(), renderProvenance: good }));
+  // The fixed-pose kind carries it, and that is the only shape that may.
+  assert.doesNotThrow(() => validateBoundaryReport(renderedReport()));
+
+  // THE DEFECT THIS TEST EXISTS FOR: validating renderProvenance "whenever present" let a report
+  // describing a synthetic test-card run carry a fully valid scanned-room provenance block and
+  // still validate — the provenance would have been decoration attached to pixels it never
+  // described. The kind is what makes the block mean something.
+  assert.throws(
+    () => validateBoundaryReport({ ...baseReport(), renderProvenance: good }),
+    /renderProvenance|over-?claim/i,
+    "a test-card run must not be able to claim a rendered world frame",
+  );
+
+  // And the converse: a fixed-pose run cannot claim rendered room pixels while describing no
+  // world, pose, intrinsics, or renderer at all.
+  const rendered = renderedReport();
+  delete rendered.renderProvenance;
+  assert.throws(
+    () => validateBoundaryReport(rendered),
+    /renderProvenance|requires/i,
+    "a rendered-world kind with no provenance is an unsubstantiated claim",
+  );
 
   for (const [label, bad] of [
     ["non-object", "nope"],
@@ -609,8 +669,13 @@ test("render provenance is optional, but validated whenever it is present", asyn
     ["negative points", { ...good, renderer: { ...good.renderer, pointsRendered: -1 } }],
     ["zero fov", { ...good, intrinsics: { ...good.intrinsics, fovDeg: 0 } }],
     ["short offset", { ...good, worldModel: { ...good.worldModel, offsetApplied: [0, 1] } }],
+    // Relative paths: src/vcamtransport.ts's producer requires both of these to be absolute, so a
+    // relative one could never have been emitted by createFixedPoseSequence. Accepting it here
+    // would let a report describe a world file its own producer would have refused to name.
+    ["relative worldModel.splatPath", { ...good, worldModel: { ...good.worldModel, splatPath: "world.ply" } }],
+    ["relative renderer.script", { ...good, renderer: { ...good.renderer, script: "scripts/splat_perspective.py" } }],
   ]) {
-    assert.throws(() => validateBoundaryReport({ ...baseReport(), renderProvenance: bad }),
+    assert.throws(() => validateBoundaryReport(renderedReport({ renderProvenance: bad })),
       /renderProvenance/, `renderProvenance must reject: ${label}`);
   }
 });

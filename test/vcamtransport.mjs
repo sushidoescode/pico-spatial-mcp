@@ -1230,6 +1230,51 @@ test("fixed-pose manifest carries validated provenance and the reserved kind", a
   }
 });
 
+test("counters congruent modulo 16 are refused: the liveness bar would repeat byte-identically", async () => {
+  const { createFixedPoseSequence, stampFrame } = await loadSut();
+  const base = roomBase();
+  const make = (counters) => createFixedPoseSequence({
+    basePixels: base, nonce: NONCE, counters,
+    width: WIDTH, height: HEIGHT, pixelFormat: PIXEL_FORMAT, provenance: PROVENANCE,
+  });
+
+  // First establish that the collapse is REAL, not a hypothetical: the bar width is
+  // 8 + (counter % 16) * (240 - 8) / 15, so 0 and 16 draw the same bar and the only remaining
+  // difference is the digit run — roughly the card's own worst case, far under the >=700 floor
+  // the sequence's liveness argument depends on.
+  const collapsed = countChangedPixels(
+    stampFrame(base, { nonce: NONCE, counter: 0 }),
+    stampFrame(base, { nonce: NONCE, counter: 16 }),
+    COUNTER_REGION,
+    true,
+  );
+  assert.ok(
+    collapsed < 700,
+    `counters 0 and 16 must demonstrably collapse below the 700 floor (measured ${collapsed}); if this ever rises, the modulo rule below is guarding nothing`,
+  );
+
+  // Therefore the producer must refuse the pair outright rather than emit a sequence whose
+  // at-a-glance liveness delta silently disappeared. Counter uniqueness alone does not catch it.
+  for (const counters of [[0, 16], [3, 19], [5, 21, 6], [999_999, 15]]) {
+    assert.throws(
+      () => make(counters),
+      /modulo 16|counter % 16/i,
+      `counters ${JSON.stringify(counters)} are unique but congruent mod 16, so they must be refused`,
+    );
+  }
+
+  // The rule must not over-reach: distinct residues across the full 0..999999 range still pass,
+  // and produce a delta above the floor.
+  const wide = make([999_999, 4, 100_000]);
+  assert.equal(wide.frames.length, 3);
+  for (let index = 1; index < wide.frames.length; index += 1) {
+    assert.ok(
+      countChangedPixels(wide.frames[index - 1].pixels, wide.frames[index].pixels, COUNTER_REGION, true) >= 700,
+      `large but mod-16-distinct counters must still clear the 700 floor at pair ${index - 1}->${index}`,
+    );
+  }
+});
+
 test("the reviewed test-card golden is unaffected by the fixed-pose path", async () => {
   const { createTestCardSequence } = await loadSut();
   const retained = createTestCardSequence({

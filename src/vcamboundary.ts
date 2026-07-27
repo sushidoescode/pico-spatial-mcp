@@ -46,6 +46,16 @@ export const STAGE_DEPENDENCIES: Readonly<Record<StageId, readonly StageId[]>> =
 const AUTH_STAGES: ReadonlySet<StageId> = new Set(["cmioAuthorization", "avfAuthorization", "qemuAuthorization"]);
 const READBACK_STAGES: ReadonlySet<StageId> = new Set(["cmioSource", "avFoundation", "cameraPeek"]);
 
+// The two manifest kinds the native writer admits (scripts/macos/cmio-camera-writer.m's
+// kTestCardKind / kFixedPoseKind, mirrored by src/vcamtransport.ts's two manifest types). A report
+// must name which one produced its pixels: without it a synthetic-card run could carry a fully
+// valid scanned-room `renderProvenance` block and still validate, which is exactly the over-claim
+// the provenance block exists to prevent. Matched by exact string equality, never by prefix.
+export const SOURCE_KINDS = ["pico-vcam-test-card-sequence", "pico-vcam-fixed-pose-sequence"] as const;
+export type SourceKind = (typeof SOURCE_KINDS)[number];
+const SOURCE_KIND_SET: ReadonlySet<string> = new Set(SOURCE_KINDS);
+const RENDERED_SOURCE_KIND: SourceKind = "pico-vcam-fixed-pose-sequence";
+
 export type StageState = "passed" | "failed" | "blocked" | "skipped";
 export type AuthStatus = "authorized" | "notDetermined" | "denied" | "restricted";
 export type Delivery = "none" | "static" | "changing";
@@ -81,6 +91,8 @@ export type RenderProvenance = {
 export type BoundaryReport = {
   runId: string;
   source: {
+    /** Which manifest kind produced the injected pixels. Binds `renderProvenance` on or off. */
+    kind: SourceKind;
     manifestPath: string;
     manifestSha256: string;
     nonce: string;
@@ -92,8 +104,9 @@ export type BoundaryReport = {
   reader: ExecutableProvenance;
   producer: ExecutableProvenance;
   stages: Record<StageId, StageResult>;
-  /** Optional: which world/pose/intrinsics/renderer produced a rendered scanned-room frame. Absent
-   *  for card-path runs; validated whenever present so the claim is not decorative. */
+  /** Which world/pose/intrinsics/renderer produced a rendered scanned-room frame. Required if and
+   *  only if `source.kind` is the fixed-pose kind — forbidden on a card run, so the block can never
+   *  decorate a report whose pixels were a synthetic test card. */
   renderProvenance?: RenderProvenance;
 };
 
@@ -145,8 +158,11 @@ function vec3(label: string, value: unknown): void {
 export function validateRenderProvenance(value: unknown): void {
   if (!isObject(value)) fail("renderProvenance must be an object");
   const world = (value as any).worldModel;
-  if (!isObject(world) || typeof world.splatPath !== "string" || world.splatPath.length === 0) {
-    fail("renderProvenance.worldModel.splatPath must be a non-empty string");
+  // Absolute, matching src/vcamtransport.ts's producer rule exactly. A relative path could never
+  // have been emitted by createFixedPoseSequence, so accepting one here would let a report claim a
+  // world file that the only thing able to produce that report would have refused.
+  if (!isObject(world) || typeof world.splatPath !== "string" || !world.splatPath.startsWith("/")) {
+    fail("renderProvenance.worldModel.splatPath must be an absolute path");
   }
   if (typeof world.splatSha256 !== "string" || !SHA256_RE.test(world.splatSha256)) {
     fail("renderProvenance.worldModel.splatSha256 must be 64 lowercase hex characters (SHA-256)");
@@ -172,8 +188,9 @@ export function validateRenderProvenance(value: unknown): void {
   }
 
   const renderer = (value as any).renderer;
-  if (!isObject(renderer) || typeof renderer.script !== "string" || renderer.script.length === 0) {
-    fail("renderProvenance.renderer.script must be a non-empty string");
+  // Absolute for the same reason as worldModel.splatPath above.
+  if (!isObject(renderer) || typeof renderer.script !== "string" || !renderer.script.startsWith("/")) {
+    fail("renderProvenance.renderer.script must be an absolute path");
   }
   if (typeof renderer.scriptSha256 !== "string" || !SHA256_RE.test(renderer.scriptSha256)) {
     fail("renderProvenance.renderer.scriptSha256 must be 64 lowercase hex characters (SHA-256)");
@@ -294,6 +311,11 @@ export function validateBoundaryReport(report: unknown): BoundaryReport {
 
   const source = report.source;
   if (!isObject(source)) fail("source is required");
+  // Exact membership only — no prefix, suffix, or pattern match. A near-miss kind is an unknown
+  // kind, not a variant of a known one.
+  if (typeof source.kind !== "string" || !SOURCE_KIND_SET.has(source.kind)) {
+    fail(`source.kind must be exactly one of: ${SOURCE_KINDS.join(", ")}`);
+  }
   if (typeof source.manifestPath !== "string" || !source.manifestPath.startsWith("/")) {
     fail("source.manifestPath must be an absolute path");
   }
@@ -315,6 +337,18 @@ export function validateBoundaryReport(report: unknown): BoundaryReport {
 
   validateProvenance("reader", report.reader);
   validateProvenance("producer", report.producer);
+
+  // renderProvenance is bound to source.kind in BOTH directions. Validating it only "whenever
+  // present" left it decorative: a report describing a synthetic test-card run could carry a fully
+  // valid scanned-room provenance block and still validate, and a fixed-pose run could claim
+  // rendered room pixels while describing no world, pose, intrinsics, or renderer at all.
+  const expectsRenderProvenance = source.kind === RENDERED_SOURCE_KIND;
+  if (expectsRenderProvenance && report.renderProvenance === undefined) {
+    fail(`source.kind ${RENDERED_SOURCE_KIND} requires renderProvenance; a rendered-world claim must name the world, pose, intrinsics, and renderer that produced it`);
+  }
+  if (!expectsRenderProvenance && report.renderProvenance !== undefined) {
+    fail(`source.kind ${source.kind} must not carry renderProvenance; a synthetic card has no world frame to describe (over-claim)`);
+  }
   if (report.renderProvenance !== undefined) validateRenderProvenance(report.renderProvenance);
 
   const stages = report.stages;
