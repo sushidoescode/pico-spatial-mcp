@@ -95,4 +95,91 @@ case "$diagnostic" in
     ;;
 esac
 
-echo "cmio-camera-writer native gate: strict build, ownership lifetime, parser, and pre-CMIO manifest rejection passed"
+for bad_ticks in 0 61 abc -1; do
+  set +e
+  diagnostic=$(
+    "$writer" \
+      --device-uid 00000000-0000-0000-0000-000000000001 \
+      --width 1280 \
+      --height 720 \
+      --pixel-format BGRA \
+      --manifest "$manifest" \
+      --expected-manifest-sha256 "$manifest_sha" \
+      --ticks-per-source-frame "$bad_ticks" \
+      2>&1
+  )
+  status=$?
+  set -e
+  if [ "$status" -ne 64 ]; then
+    echo "cmio-camera-writer native gate: --ticks-per-source-frame $bad_ticks should exit 64, got $status" >&2
+    echo "$diagnostic" >&2
+    exit 1
+  fi
+  case "$diagnostic" in
+    *"--ticks-per-source-frame must be"*) ;;
+    *)
+      echo "cmio-camera-writer native gate: missing tick-range diagnostic for $bad_ticks" >&2
+      echo "$diagnostic" >&2
+      exit 1
+      ;;
+  esac
+done
+
+set +e
+diagnostic=$(
+  "$writer" \
+    --probe-only \
+    --device-uid 00000000-0000-0000-0000-000000000001 \
+    --width 1280 \
+    --height 720 \
+    --pixel-format BGRA \
+    --ticks-per-source-frame 1 \
+    2>&1
+)
+status=$?
+set -e
+if [ "$status" -ne 64 ]; then
+  echo "cmio-camera-writer native gate: --probe-only + producer flag should exit 64, got $status" >&2
+  echo "$diagnostic" >&2
+  exit 1
+fi
+case "$diagnostic" in
+  *"--probe-only cannot be combined with producer arguments"*) ;;
+  *)
+    echo "cmio-camera-writer native gate: --probe-only did not reject the producer-only cadence flag" >&2
+    echo "$diagnostic" >&2
+    exit 1
+    ;;
+esac
+
+set +e
+diagnostic=$(
+  "$writer" \
+    --device-uid 00000000-0000-0000-0000-000000000001 \
+    --width 1280 \
+    --height 720 \
+    --pixel-format BGRA \
+    --manifest "$manifest" \
+    --expected-manifest-sha256 "$manifest_sha" \
+    --ticks-per-source-frame 60 \
+    2>&1
+)
+status=$?
+set -e
+if [ "$status" -ne 65 ]; then
+  echo "cmio-camera-writer native gate: accepted --ticks-per-source-frame should still reach manifest validation (exit 65), got $status" >&2
+  echo "$diagnostic" >&2
+  exit 1
+fi
+
+usage=$("$writer" --help)
+case "$usage" in
+  *"--ticks-per-source-frame"*) ;;
+  *)
+    echo "cmio-camera-writer native gate: --help does not document --ticks-per-source-frame" >&2
+    echo "$usage" >&2
+    exit 1
+    ;;
+esac
+
+echo "cmio-camera-writer native gate: strict build, ownership lifetime, parser, cadence-flag validation, and pre-CMIO manifest rejection passed"

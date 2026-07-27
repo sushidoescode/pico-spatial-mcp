@@ -29,9 +29,15 @@ static const int32_t kMaximumCopiedQueueCapacity = 1024;
 static const NSUInteger kMaximumFrames = 16;
 static const NSUInteger kMaximumManifestBytes = 1024 * 1024;
 static const uint64_t kTicksPerSourceFrame = 60;
+static const uint64_t kMinimumTicksPerSourceFrame = 1;
+static const uint64_t kMaximumTicksPerSourceFrame = 60;
 static NSString *const kRequiredDeviceName = @"Immersed Camera";
 static NSString *const kRequiredStreamName = @"ImmersedCamera.Video.Sink";
 static NSString *const kTestCardKind = @"pico-vcam-test-card-sequence";
+
+// An enum, not a `static const NSUInteger`: C requires a constant expression for a file-scope
+// array bound, and a const object is not one.
+enum { kMaximumEnqueueRecords = 4096 };
 
 static volatile sig_atomic_t gStopRequested = 0;
 
@@ -39,7 +45,13 @@ typedef struct {
     _Atomic uint64_t scheduled;
     _Atomic uint64_t enqueued;
     _Atomic uint64_t removed;
+    // backpressured stays the total of the four named causes below so existing consumers and
+    // previously captured statistics keep the same meaning.
     _Atomic uint64_t backpressured;
+    _Atomic uint64_t dropInFlight;
+    _Atomic uint64_t dropQueueNonEmpty;
+    _Atomic uint64_t dropCasLost;
+    _Atomic uint64_t dropQueueFull;
     _Atomic uintptr_t inFlightToken;
     _Atomic uint32_t callbackViolation;
 } ProducerState;
@@ -64,6 +76,7 @@ typedef struct {
     size_t width;
     size_t height;
     __strong NSString *pixelFormat;
+    uint64_t ticksPerSourceFrame;
     BOOL probeOnly;
     BOOL help;
 } Options;
@@ -107,13 +120,16 @@ static void PrintUsage(FILE *stream) {
             "  cmio-camera-writer --device-uid UUID --width 1280 --height 720\n"
             "      --pixel-format BGRA --manifest PATH\n"
             "      --expected-manifest-sha256 LOWERCASE_HEX\n"
+            "      [--ticks-per-source-frame 1..60]\n"
             "  cmio-camera-writer --probe-only --device-uid UUID --width 1280\n"
             "      --height 720 --pixel-format BGRA\n"
             "  cmio-camera-writer --help\n"
             "\n"
             "Streams verified sibling frame-%%03d.bgra files through the exact public\n"
             "CoreMediaIO sink. --probe-only performs property reads only: it does not\n"
-            "copy the stream queue, start the stream, enqueue a frame, or mutate CMIO.\n");
+            "copy the stream queue, start the stream, enqueue a frame, or mutate CMIO.\n"
+            "--ticks-per-source-frame sets how many 60 Hz stream ticks each source\n"
+            "image is held for (default 60, i.e. one image per second).\n");
 }
 
 static BOOL ParseSize(NSString *text, size_t *valueOut) {
@@ -154,7 +170,8 @@ static BOOL ParseOptions(int argc, const char *argv[], Options *options) {
                      [argument isEqualToString:@"--height"] ||
                      [argument isEqualToString:@"--pixel-format"] ||
                      [argument isEqualToString:@"--manifest"] ||
-                     [argument isEqualToString:@"--expected-manifest-sha256"];
+                     [argument isEqualToString:@"--expected-manifest-sha256"] ||
+                     [argument isEqualToString:@"--ticks-per-source-frame"];
         if (!known) {
             fprintf(stderr, "cmio-camera-writer: unknown argument: %s\n", argv[index]);
             return NO;
@@ -185,6 +202,15 @@ static BOOL ParseOptions(int argc, const char *argv[], Options *options) {
         } else if ([argument isEqualToString:@"--height"] && !ParseSize(value, &options->height)) {
             fprintf(stderr, "cmio-camera-writer: --height must be a positive decimal integer\n");
             return NO;
+        } else if ([argument isEqualToString:@"--ticks-per-source-frame"]) {
+            size_t parsedTicks = 0;
+            if (!ParseSize(value, &parsedTicks) ||
+                (uint64_t)parsedTicks < kMinimumTicksPerSourceFrame ||
+                (uint64_t)parsedTicks > kMaximumTicksPerSourceFrame) {
+                fprintf(stderr, "cmio-camera-writer: --ticks-per-source-frame must be a decimal integer in 1..60\n");
+                return NO;
+            }
+            options->ticksPerSourceFrame = (uint64_t)parsedTicks;
         }
     }
 
@@ -205,8 +231,9 @@ static BOOL ParseOptions(int argc, const char *argv[], Options *options) {
         return NO;
     }
     if (options->probeOnly) {
-        if (options->manifestPath.length > 0 || options->expectedManifestSha256.length > 0) {
-            fprintf(stderr, "cmio-camera-writer: --probe-only cannot be combined with manifest arguments\n");
+        if (options->manifestPath.length > 0 || options->expectedManifestSha256.length > 0 ||
+            options->ticksPerSourceFrame != 0) {
+            fprintf(stderr, "cmio-camera-writer: --probe-only cannot be combined with producer arguments\n");
             return NO;
         }
     } else {
@@ -218,6 +245,8 @@ static BOOL ParseOptions(int argc, const char *argv[], Options *options) {
             fprintf(stderr, "cmio-camera-writer: --expected-manifest-sha256 must be exactly 64 lowercase hex characters\n");
             return NO;
         }
+        // `Options options = {0}` makes 0 mean "not supplied"; the parser never accepts 0.
+        if (options->ticksPerSourceFrame == 0) options->ticksPerSourceFrame = kTicksPerSourceFrame;
     }
     return YES;
 }
@@ -626,8 +655,12 @@ static NSData *ReadRegularFileNoFollow(NSString *path,
     return data;
 }
 
+// frameHashesOut receives the validated lowercase per-frame SHA-256 strings in frame order, so the
+// tick loop can label each enqueue without rehashing 3.6 MB per frame.
 static NSArray<NSData *> *LoadAndValidateFrames(NSString *manifestPath,
-                                                NSString *expectedManifestSha256) {
+                                                NSString *expectedManifestSha256,
+                                                NSArray<NSString *> **frameHashesOut) {
+    *frameHashesOut = nil;
     NSData *manifestBytes = ReadRegularFileNoFollow(manifestPath, 1, (off_t)kMaximumManifestBytes, @"manifest");
     if (manifestBytes == nil) return nil;
     NSString *actualManifestSha256 = SHA256Hex(manifestBytes);
@@ -681,6 +714,7 @@ static NSArray<NSData *> *LoadAndValidateFrames(NSString *manifestPath,
 
     NSString *directory = [manifestPath stringByDeletingLastPathComponent];
     NSMutableArray<NSData *> *loaded = [NSMutableArray arrayWithCapacity:frames.count];
+    NSMutableArray<NSString *> *hashes = [NSMutableArray arrayWithCapacity:frames.count];
     for (NSUInteger index = 0; index < frames.count; index += 1) {
         id entryValue = frames[index];
         if (![entryValue isKindOfClass:[NSDictionary class]]) {
@@ -708,7 +742,9 @@ static NSArray<NSData *> *LoadAndValidateFrames(NSString *manifestPath,
             return nil;
         }
         [loaded addObject:data];
+        [hashes addObject:actualHash];
     }
+    *frameHashesOut = [hashes copy];
     return [loaded copy];
 }
 
@@ -874,6 +910,59 @@ static BOOL EmitProbe(NSString *deviceUid, const Sink *sink) {
     return result >= 0 && fflush(stdout) == 0;
 }
 
+typedef struct {
+    uint64_t sequence;
+    uint64_t frameIndex;
+    uint64_t hostTimeNs;
+    double presentationTimeMs;
+    char sha256[CC_SHA256_DIGEST_LENGTH * 2 + 1];
+} EnqueueRecord;
+
+// Written only by the single producer tick loop, read only after that loop exits.
+static EnqueueRecord gEnqueueRecords[kMaximumEnqueueRecords];
+static NSUInteger gEnqueueRecordCount = 0;
+static BOOL gEnqueueRecordsTruncated = NO;
+
+// Bounded and never wrapped. Wrapping would delete the OLDEST records, which are exactly the ones
+// a "latest enqueue at or before the observation" correlation depends on, so an overflow stops
+// recording and reports itself instead of silently corrupting the timeline.
+static void RecordEnqueue(uint64_t sequence,
+                          uint64_t frameIndex,
+                          uint64_t hostTimeNs,
+                          double presentationTimeMs,
+                          NSString *sha256) {
+    if (gEnqueueRecordCount >= (NSUInteger)kMaximumEnqueueRecords) {
+        gEnqueueRecordsTruncated = YES;
+        return;
+    }
+    EnqueueRecord *record = &gEnqueueRecords[gEnqueueRecordCount];
+    record->sequence = sequence;
+    record->frameIndex = frameIndex;
+    record->hostTimeNs = hostTimeNs;
+    record->presentationTimeMs = presentationTimeMs;
+    const char *encoded = sha256.UTF8String;
+    if (encoded == NULL) encoded = "";
+    strncpy(record->sha256, encoded, sizeof(record->sha256) - 1);
+    record->sha256[sizeof(record->sha256) - 1] = '\0';
+    gEnqueueRecordCount += 1;
+}
+
+static BOOL FlushEnqueueRecords(void) {
+    for (NSUInteger index = 0; index < gEnqueueRecordCount; index += 1) {
+        const EnqueueRecord *record = &gEnqueueRecords[index];
+        int result = fprintf(stdout,
+                             "{\"event\":\"enqueue\",\"sequence\":%llu,\"frameIndex\":%llu,\"sha256\":\"%s\","
+                             "\"hostTimeNs\":%llu,\"presentationTimeMs\":%.4f}\n",
+                             (unsigned long long)record->sequence,
+                             (unsigned long long)record->frameIndex,
+                             record->sha256,
+                             (unsigned long long)record->hostTimeNs,
+                             record->presentationTimeMs);
+        if (result < 0) return NO;
+    }
+    return fflush(stdout) == 0;
+}
+
 static BOOL EmitStats(NSString *phase,
                       const ProducerState *state,
                       BOOL consumerQuiescenceProven) {
@@ -881,15 +970,26 @@ static BOOL EmitStats(NSString *phase,
     uint64_t enqueued = atomic_load_explicit(&state->enqueued, memory_order_relaxed);
     uint64_t removed = atomic_load_explicit(&state->removed, memory_order_relaxed);
     uint64_t backpressured = atomic_load_explicit(&state->backpressured, memory_order_relaxed);
+    uint64_t dropInFlight = atomic_load_explicit(&state->dropInFlight, memory_order_relaxed);
+    uint64_t dropQueueNonEmpty = atomic_load_explicit(&state->dropQueueNonEmpty, memory_order_relaxed);
+    uint64_t dropCasLost = atomic_load_explicit(&state->dropCasLost, memory_order_relaxed);
+    uint64_t dropQueueFull = atomic_load_explicit(&state->dropQueueFull, memory_order_relaxed);
     int result = fprintf(stdout,
                          "{\"event\":\"stats\",\"phase\":\"%s\",\"scheduled\":%llu,\"enqueued\":%llu,"
-                         "\"removed\":%llu,\"backpressured\":%llu,\"callbackViolation\":%u,"
+                         "\"removed\":%llu,\"backpressured\":%llu,"
+                         "\"dropInFlight\":%llu,\"dropQueueNonEmpty\":%llu,\"dropCasLost\":%llu,"
+                         "\"dropQueueFull\":%llu,\"recordsTruncated\":%s,\"callbackViolation\":%u,"
                          "\"consumerQuiescenceProven\":%s}\n",
                          phase.UTF8String,
                          (unsigned long long)scheduled,
                          (unsigned long long)enqueued,
                          (unsigned long long)removed,
                          (unsigned long long)backpressured,
+                         (unsigned long long)dropInFlight,
+                         (unsigned long long)dropQueueNonEmpty,
+                         (unsigned long long)dropCasLost,
+                         (unsigned long long)dropQueueFull,
+                         gEnqueueRecordsTruncated ? "true" : "false",
                          (unsigned)atomic_load_explicit(&state->callbackViolation, memory_order_acquire),
                          consumerQuiescenceProven ? "true" : "false");
     return result >= 0 && fflush(stdout) == 0;
@@ -898,6 +998,11 @@ static BOOL EmitStats(NSString *phase,
 static uint64_t MachTicksForNanoseconds(uint64_t nanoseconds, mach_timebase_info_data_t timebase) {
     __uint128_t scaled = (__uint128_t)nanoseconds * timebase.denom;
     return (uint64_t)(scaled / timebase.numer);
+}
+
+static uint64_t NanosecondsForMachTicks(uint64_t ticks, mach_timebase_info_data_t timebase) {
+    __uint128_t scaled = (__uint128_t)ticks * timebase.numer;
+    return (uint64_t)(scaled / timebase.denom);
 }
 
 static void ReclaimStoppedQueue(CMSimpleQueueRef queue,
@@ -915,12 +1020,26 @@ static void ReclaimStoppedQueue(CMSimpleQueueRef queue,
 static int RunProducer(NSString *deviceUid,
                        NSString *manifestSha256,
                        Sink *sink,
-                       NSArray<NSData *> *frames) {
+                       NSArray<NSData *> *frames,
+                       NSArray<NSString *> *frameHashes,
+                       uint64_t ticksPerSourceFrame) {
+    // The cadence divides below, so an out-of-range value would be undefined behavior rather than
+    // a misconfiguration. ParseOptions already rejects it; this refuses to trust a future caller.
+    if (ticksPerSourceFrame < kMinimumTicksPerSourceFrame ||
+        ticksPerSourceFrame > kMaximumTicksPerSourceFrame) {
+        fprintf(stderr, "cmio-camera-writer: ticks per source frame must be in 1..60\n");
+        return 1;
+    }
+
     ProducerState *state = &gProducerState;
     atomic_init(&state->scheduled, 0);
     atomic_init(&state->enqueued, 0);
     atomic_init(&state->removed, 0);
     atomic_init(&state->backpressured, 0);
+    atomic_init(&state->dropInFlight, 0);
+    atomic_init(&state->dropQueueNonEmpty, 0);
+    atomic_init(&state->dropCasLost, 0);
+    atomic_init(&state->dropQueueFull, 0);
     atomic_init(&state->inFlightToken, 0);
     atomic_init(&state->callbackViolation, 0);
 
@@ -961,8 +1080,13 @@ static int RunProducer(NSString *deviceUid,
     started = YES;
 
     CMTime presentationBase = CMClockGetTime(CMClockGetHostTimeClock());
+    if (!CMTIME_IS_NUMERIC(presentationBase)) {
+        fprintf(stderr, "cmio-camera-writer: host time clock returned a non-numeric base timestamp\n");
+        exitCode = 1;
+        goto cleanup;
+    }
     mach_timebase_info_data_t timebase;
-    if (mach_timebase_info(&timebase) != KERN_SUCCESS || timebase.numer == 0) {
+    if (mach_timebase_info(&timebase) != KERN_SUCCESS || timebase.numer == 0 || timebase.denom == 0) {
         fprintf(stderr, "cmio-camera-writer: failed to read monotonic clock timebase\n");
         exitCode = 1;
         goto cleanup;
@@ -983,11 +1107,14 @@ static int RunProducer(NSString *deviceUid,
         }
 
         uint64_t scheduled = atomic_fetch_add_explicit(&state->scheduled, 1, memory_order_relaxed) + 1;
-        if (atomic_load_explicit(&state->inFlightToken, memory_order_acquire) != 0 ||
-            CMSimpleQueueGetCount(queue) > 0) {
+        if (atomic_load_explicit(&state->inFlightToken, memory_order_acquire) != 0) {
+            atomic_fetch_add_explicit(&state->dropInFlight, 1, memory_order_relaxed);
+            atomic_fetch_add_explicit(&state->backpressured, 1, memory_order_relaxed);
+        } else if (CMSimpleQueueGetCount(queue) > 0) {
+            atomic_fetch_add_explicit(&state->dropQueueNonEmpty, 1, memory_order_relaxed);
             atomic_fetch_add_explicit(&state->backpressured, 1, memory_order_relaxed);
         } else {
-            NSUInteger frameIndex = (NSUInteger)(((scheduled - 1) / kTicksPerSourceFrame) % frames.count);
+            NSUInteger frameIndex = (NSUInteger)(((scheduled - 1) / ticksPerSourceFrame) % frames.count);
             CMTime presentationTime = CMTimeAdd(presentationBase, CMTimeMake((int64_t)(scheduled - 1), 60));
             uint64_t sequenceNumber = atomic_load_explicit(&state->enqueued, memory_order_relaxed);
             CMSampleBufferRef sampleBuffer = CreateSampleBuffer(frames[frameIndex],
@@ -1005,12 +1132,14 @@ static int RunProducer(NSString *deviceUid,
                                                          memory_order_acq_rel,
                                                          memory_order_acquire)) {
                 CFRelease(sampleBuffer);
+                atomic_fetch_add_explicit(&state->dropCasLost, 1, memory_order_relaxed);
                 atomic_fetch_add_explicit(&state->backpressured, 1, memory_order_relaxed);
             } else {
                 status = CMSimpleQueueEnqueue(queue, sampleBuffer);
                 FinalizeEnqueueOwnership(state, sampleBuffer, status);
                 if (status != noErr) {
                     if (status == kCMSimpleQueueError_QueueIsFull) {
+                        atomic_fetch_add_explicit(&state->dropQueueFull, 1, memory_order_relaxed);
                         atomic_fetch_add_explicit(&state->backpressured, 1, memory_order_relaxed);
                     } else {
                         PrintOSStatus(@"enqueue output sample", status);
@@ -1019,6 +1148,11 @@ static int RunProducer(NSString *deviceUid,
                     }
                 } else {
                     atomic_fetch_add_explicit(&state->enqueued, 1, memory_order_relaxed);
+                    RecordEnqueue(sequenceNumber,
+                                  (uint64_t)frameIndex,
+                                  NanosecondsForMachTicks(mach_absolute_time(), timebase),
+                                  CMTimeGetSeconds(presentationTime) * 1000.0,
+                                  frameHashes[frameIndex]);
                     if (gStopRequested) {
                         break;
                     }
@@ -1065,6 +1199,10 @@ cleanup:
     // or release queue references that may still be used by provider work. This process exits
     // immediately, so intentionally retaining the queue and any remaining token is bounded.
     ReclaimStoppedQueue(queue, state, NO);
+    if (!FlushEnqueueRecords()) {
+        fprintf(stderr, "cmio-camera-writer: failed to emit enqueue record JSONL\n");
+        exitCode = 1;
+    }
     // This is a pre-exit snapshot, not a final callback count: stop/unregister did not prove a
     // consumer join, and process-lifetime retention intentionally leaves late work possible.
     if (!EmitStats(@"shutdown-snapshot", state, NO)) {
@@ -1089,8 +1227,9 @@ int main(int argc, const char *argv[]) {
         if (gStopRequested) return NormalizeExitCodeForStopRequest(0, gStopRequested);
 
         NSArray<NSData *> *frames = nil;
+        NSArray<NSString *> *frameHashes = nil;
         if (!options.probeOnly) {
-            frames = LoadAndValidateFrames(options.manifestPath, options.expectedManifestSha256);
+            frames = LoadAndValidateFrames(options.manifestPath, options.expectedManifestSha256, &frameHashes);
             if (frames == nil) return 65;
             if (gStopRequested) return NormalizeExitCodeForStopRequest(0, gStopRequested);
         }
@@ -1111,7 +1250,12 @@ int main(int argc, const char *argv[]) {
             return NormalizeExitCodeForStopRequest(0, gStopRequested);
         }
 
-        int result = RunProducer(options.deviceUid, options.expectedManifestSha256, &sink, frames);
+        int result = RunProducer(options.deviceUid,
+                                 options.expectedManifestSha256,
+                                 &sink,
+                                 frames,
+                                 frameHashes,
+                                 options.ticksPerSourceFrame);
         CFRelease(sink.formatDescription);
         return result;
     }
