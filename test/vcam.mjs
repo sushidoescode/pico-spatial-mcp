@@ -161,17 +161,21 @@ try {
 
 // v29.2: the CMIO transport needs raw 1280x720 BGRA, not a 1280x1280 PNG.
 // renderVirtualFrame fails closed on a missing splat before it ever builds the renderer config
-// (resolveWorld's existsSync gate), so /tmp/fake.ply must actually exist for exec to be reached.
-fs.writeFileSync("/tmp/fake.ply", "fixture only");
+// (resolveWorld's existsSync gate), so the fixture must actually exist for exec to be reached.
+// It lives in this file's own mkdtemp directory rather than at a fixed /tmp path this process does
+// not own — a hardcoded /tmp/fake.ply is both a collision between concurrent runs and an
+// unconditional unlink of a path that may belong to something else.
+const fakePlyPath = path.join(tmpDir, "fake.ply");
+fs.writeFileSync(fakePlyPath, "fixture only");
 const bgraCalls = [];
 const bgraFakeExec = async (file, args) => { bgraCalls.push(JSON.parse(args[1])); return { stdout: '{"views":[{"pointsRendered":123}]}' }; };
 try {
   await renderVirtualFrame({
-    splatPath: "/tmp/fake.ply", position: [0, 1.6, 0], target: [0, 1.6, -1],
+    splatPath: fakePlyPath, position: [0, 1.6, 0], target: [0, 1.6, -1],
     width: 1280, height: 720, fovDeg: 70, emitBgra: true, exec: bgraFakeExec,
   });
 } catch { /* the existence gate fails with a fake exec; the config is what we assert */ }
-try { fs.unlinkSync("/tmp/fake.ply"); } catch {}
+try { fs.unlinkSync(fakePlyPath); } catch {}
 const cfg = bgraCalls[0] ?? {};
 cfg.emitBgra === true ? ok("emitBgra reaches the renderer config") : fail(`emitBgra missing: ${JSON.stringify(cfg)}`);
 typeof cfg.views?.[0]?.bgraOut === "string" && cfg.views[0].bgraOut.endsWith(".bgra")
@@ -312,6 +316,14 @@ if (!realReady) {
       { encoding: "utf8" },
     ));
     const [pr, pg, pb] = pixelCheck.rgb;
+    // Degeneracy guard: if R happened to equal B, [pb,pg,pr,255] and [pr,pg,pb,255] are the SAME
+    // array and the assertion below becomes a tautology that passes identically for correct BGRA
+    // and for RGBA wrongly passed through. It discriminates today only incidentally (this pose
+    // gives rgb≈(28,32,26)); a world or pose change could quiet it with no failure signal.
+    assert.notEqual(
+      pr, pb,
+      `pixel(0,0) has R == B (${pr}), so the channel-order check below cannot distinguish BGRA from RGBA — pick a pixel or pose where they differ`,
+    );
     assert.deepEqual(
       pixelCheck.raw4,
       [pb, pg, pr, 255],

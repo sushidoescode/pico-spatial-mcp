@@ -64,7 +64,21 @@ test("a wrong-size frame is refused", async () => {
   const sequence = fakeSequence([0]);
   sequence.frames[0].pixels = Buffer.alloc(FRAME_BYTES - 1);
   assert.throws(() => materializeSequence(sequence, dir), /3686400|bytes/i);
+  assert.deepEqual(fs.readdirSync(dir), [], "a rejected sequence must leave no partial output");
   fs.rmSync(dir, { recursive: true, force: true });
+
+  // The single-frame case above cannot distinguish "validated everything up front" from "validated
+  // inside the write loop" — with one frame both orderings write nothing. Put the defect on the
+  // SECOND frame: a size check that ran per-write instead of up front would still throw, and would
+  // still satisfy the assert.throws above, while frame-000.bgra had already landed on disk for the
+  // native writer to pick up. Only the directory contents tell those two apart.
+  const late = tempDir();
+  const twoFrames = fakeSequence([0, 1]);
+  twoFrames.frames[1].pixels = Buffer.alloc(FRAME_BYTES - 1);
+  assert.throws(() => materializeSequence(twoFrames, late), /3686400|bytes/i);
+  assert.deepEqual(fs.readdirSync(late), [],
+    "a defect on a later frame must still be caught before ANY frame is written");
+  fs.rmSync(late, { recursive: true, force: true });
 });
 
 test("refuses to overwrite an existing manifest", async () => {

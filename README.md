@@ -143,7 +143,7 @@ npm run test:lint    # the retained-lessons lint rules fire on their fixtures
 npm run test:ledger  # the trust ledger rejects an unlinked vision_verified claim
 ```
 
-The full gate battery — 28 gate invocations (27 `test:` suites plus `smoke`), across Linux and macOS jobs, deterministic, no emulator boot — is mirrored in `.github/workflows/gates.yml` — see **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for the complete list.
+The full gate battery — 30 gate invocations (29 `test:` suites plus `smoke`), across Linux and macOS jobs, deterministic, no emulator boot — is mirrored in `.github/workflows/gates.yml` — see **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for the complete list.
 
 ## Licensing
 

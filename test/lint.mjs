@@ -1,5 +1,6 @@
 // v5.1 fixture test: every retained-lessons rule must FIRE on its positive fixture
 // and STAY SILENT on its negative fixture. Run: npm run test:lint
+import fs from "node:fs";
 import { BUILTIN_RULES, runLint } from "../dist/lint.js";
 
 let failures = 0;
@@ -31,6 +32,58 @@ for (const id of ["displayColor-flat-white", "collisioncomponent-no-arg", "colli
   if (!found.includes(id)) fail(`integration: expected '${id}' in a dirty blob, got [${found.join(", ")}]`);
 }
 console.log(`\n  ok   integration blob surfaced ${found.length} violations`);
+
+// --------------------------------------------------------------------------------------------
+// Repo self-consistency lint: the PUBLISHED size of the gate battery must match reality.
+//
+// This number has drifted three times — it was corrected earlier in the v29.2 arc and re-broken by
+// two later tasks that each added a gate — because nothing asserted it. Three sources have to
+// agree: the `test:` scripts in package.json, the `npm run test:` invocations in gates.yml (the
+// file that actually gates main), and the count stated in README.md and docs/COLLABORATORS.md.
+// Set equality, not just cardinality: equal counts with a different membership would mean a gate
+// exists that CI never runs, which is the failure the "mirrored 1:1" claim is about.
+// --------------------------------------------------------------------------------------------
+{
+  const repoRoot = new URL("../", import.meta.url);
+  const read = (relative) => fs.readFileSync(new URL(relative, repoRoot), "utf8");
+
+  const scriptNames = Object.keys(JSON.parse(read("package.json")).scripts)
+    .filter((name) => name.startsWith("test:"))
+    .sort();
+  const gatesYml = read(".github/workflows/gates.yml");
+  const gateNames = [...gatesYml.matchAll(/npm run (test:[A-Za-z0-9:_-]+)/g)]
+    .map((match) => match[1])
+    .sort();
+
+  const onlyInPackage = scriptNames.filter((name) => !gateNames.includes(name));
+  const onlyInGates = gateNames.filter((name) => !scriptNames.includes(name));
+  if (onlyInPackage.length) fail(`battery: package.json declares gates that gates.yml never runs: ${onlyInPackage.join(", ")}`);
+  if (onlyInGates.length) fail(`battery: gates.yml runs scripts package.json does not declare: ${onlyInGates.join(", ")}`);
+  if (new Set(gateNames).size !== gateNames.length) {
+    fail(`battery: gates.yml invokes the same gate twice: ${gateNames.join(", ")}`);
+  }
+  if (!/npm run smoke/.test(gatesYml)) fail("battery: gates.yml no longer runs smoke");
+
+  // `smoke` is the one gate invocation that is not a `test:` script.
+  const suiteCount = scriptNames.length;
+  const invocationCount = suiteCount + 1;
+  const CLAIM = /(\d+) gate invocations \((\d+) `test:` suites plus `smoke`\)/;
+  for (const doc of ["README.md", "docs/COLLABORATORS.md"]) {
+    const claim = CLAIM.exec(read(doc));
+    if (!claim) {
+      fail(`battery: ${doc} no longer states the gate-battery size in the checked form ` +
+           `"<N> gate invocations (<M> \`test:\` suites plus \`smoke\`)"`);
+      continue;
+    }
+    if (Number(claim[1]) !== invocationCount || Number(claim[2]) !== suiteCount) {
+      fail(`battery: ${doc} claims ${claim[1]} invocations / ${claim[2]} suites; ` +
+           `package.json + gates.yml say ${invocationCount} / ${suiteCount}`);
+    }
+  }
+  if (!failures) {
+    console.log(`\n  ok   published gate-battery size agrees across package.json, gates.yml, README.md, and docs/COLLABORATORS.md (${invocationCount} invocations / ${suiteCount} test: suites)`);
+  }
+}
 
 console.log(`\nLint fixture test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);
