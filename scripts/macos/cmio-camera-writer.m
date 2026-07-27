@@ -34,6 +34,7 @@ static const uint64_t kMaximumTicksPerSourceFrame = 60;
 static NSString *const kRequiredDeviceName = @"Immersed Camera";
 static NSString *const kRequiredStreamName = @"ImmersedCamera.Video.Sink";
 static NSString *const kTestCardKind = @"pico-vcam-test-card-sequence";
+static NSString *const kFixedPoseKind = @"pico-vcam-fixed-pose-sequence";
 
 // An enum, not a `static const NSUInteger`: C requires a constant expression for a file-scope
 // array bound, and a const object is not one.
@@ -589,6 +590,130 @@ static BOOL ValidateCounterRegion(id value) {
     return x + width <= (long long)kRequiredWidth && y + height <= (long long)kRequiredHeight;
 }
 
+static BOOL IsFiniteJSONNumber(id value) {
+    if (![value isKindOfClass:[NSNumber class]] ||
+        CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID()) {
+        return NO;
+    }
+    return isfinite([value doubleValue]) ? YES : NO;
+}
+
+static BOOL IsPositiveFiniteJSONNumber(id value) {
+    return IsFiniteJSONNumber(value) && [value doubleValue] > 0.0;
+}
+
+static BOOL IsNonEmptyJSONString(id value) {
+    return [value isKindOfClass:[NSString class]] && ((NSString *)value).length > 0;
+}
+
+static BOOL IsFiniteVector3(id value, const char *label) {
+    NSArray *vector = [value isKindOfClass:[NSArray class]] ? (NSArray *)value : nil;
+    if (vector == nil || vector.count != 3) {
+        fprintf(stderr, "cmio-camera-writer: provenance %s must be exactly three finite numbers\n", label);
+        return NO;
+    }
+    for (id element in vector) {
+        if (!IsFiniteJSONNumber(element)) {
+            fprintf(stderr, "cmio-camera-writer: provenance %s must be exactly three finite numbers\n", label);
+            return NO;
+        }
+    }
+    return YES;
+}
+
+// Presence, type, and range only. The writer deliberately does not attempt semantic verification —
+// it never opens splatPath or renderer.script to confirm the recorded digests, because a producer
+// that must stay fail-closed and offline cannot be made to depend on files it does not own. What
+// this check guarantees is that a fixed-pose manifest cannot reach a live camera sink without a
+// complete, well-formed record of which world, pose, intrinsics, renderer, and base frame the
+// pixels came from. Every failure names `provenance` so the exit-65 diagnostic is unambiguous.
+static BOOL ValidateFixedPoseProvenance(id value) {
+    if (![value isKindOfClass:[NSDictionary class]]) {
+        fprintf(stderr, "cmio-camera-writer: fixed-pose manifest provenance is required and must be an object\n");
+        return NO;
+    }
+    NSDictionary *provenance = value;
+
+    NSDictionary *worldModel = [provenance[@"worldModel"] isKindOfClass:[NSDictionary class]]
+                                   ? (NSDictionary *)provenance[@"worldModel"]
+                                   : nil;
+    if (worldModel == nil) {
+        fprintf(stderr, "cmio-camera-writer: provenance worldModel must be an object\n");
+        return NO;
+    }
+    if (!IsNonEmptyJSONString(worldModel[@"splatPath"])) {
+        fprintf(stderr, "cmio-camera-writer: provenance worldModel.splatPath must be a non-empty string\n");
+        return NO;
+    }
+    if (!IsSHA256(worldModel[@"splatSha256"])) {
+        fprintf(stderr, "cmio-camera-writer: provenance worldModel.splatSha256 must be 64 lowercase hex characters\n");
+        return NO;
+    }
+    if (!IsFiniteVector3(worldModel[@"offsetApplied"], "worldModel.offsetApplied")) return NO;
+
+    NSDictionary *pose = [provenance[@"pose"] isKindOfClass:[NSDictionary class]]
+                             ? (NSDictionary *)provenance[@"pose"]
+                             : nil;
+    if (pose == nil) {
+        fprintf(stderr, "cmio-camera-writer: provenance pose must be an object\n");
+        return NO;
+    }
+    // `target` is the single canonical orientation encoding: it is what the renderer consumes, and
+    // re-verifying it needs no trigonometry. yaw/pitch are rejected outright rather than accepted as
+    // an alternative so this stays a flat three-finite-numbers check with exactly one truth.
+    if (pose[@"yawDeg"] != nil || pose[@"pitchDeg"] != nil) {
+        fprintf(stderr, "cmio-camera-writer: provenance pose must encode orientation as target, not yawDeg/pitchDeg\n");
+        return NO;
+    }
+    if (!IsFiniteVector3(pose[@"position"], "pose.position")) return NO;
+    if (!IsFiniteVector3(pose[@"target"], "pose.target")) return NO;
+    if (![pose[@"frame"] isEqual:@"app"]) {
+        fprintf(stderr, "cmio-camera-writer: provenance pose.frame must be exactly \"app\"\n");
+        return NO;
+    }
+
+    NSDictionary *intrinsics = [provenance[@"intrinsics"] isKindOfClass:[NSDictionary class]]
+                                   ? (NSDictionary *)provenance[@"intrinsics"]
+                                   : nil;
+    if (intrinsics == nil) {
+        fprintf(stderr, "cmio-camera-writer: provenance intrinsics must be an object\n");
+        return NO;
+    }
+    for (NSString *key in @[@"f", @"cx", @"cy", @"fovDeg"]) {
+        if (!IsPositiveFiniteJSONNumber(intrinsics[key])) {
+            fprintf(stderr, "cmio-camera-writer: provenance intrinsics.%s must be a positive finite number\n",
+                    key.UTF8String);
+            return NO;
+        }
+    }
+
+    NSDictionary *renderer = [provenance[@"renderer"] isKindOfClass:[NSDictionary class]]
+                                 ? (NSDictionary *)provenance[@"renderer"]
+                                 : nil;
+    if (renderer == nil) {
+        fprintf(stderr, "cmio-camera-writer: provenance renderer must be an object\n");
+        return NO;
+    }
+    if (!IsNonEmptyJSONString(renderer[@"script"])) {
+        fprintf(stderr, "cmio-camera-writer: provenance renderer.script must be a non-empty string\n");
+        return NO;
+    }
+    if (!IsSHA256(renderer[@"scriptSha256"])) {
+        fprintf(stderr, "cmio-camera-writer: provenance renderer.scriptSha256 must be 64 lowercase hex characters\n");
+        return NO;
+    }
+    if (!IsJSONInteger(renderer[@"pointsRendered"], 0, LLONG_MAX, NULL)) {
+        fprintf(stderr, "cmio-camera-writer: provenance renderer.pointsRendered must be a nonnegative integer\n");
+        return NO;
+    }
+
+    if (!IsSHA256(provenance[@"baseFrameSha256"])) {
+        fprintf(stderr, "cmio-camera-writer: provenance baseFrameSha256 must be 64 lowercase hex characters\n");
+        return NO;
+    }
+    return YES;
+}
+
 static BOOL SameFileTimes(const struct stat *left, const struct stat *right) {
     return left->st_mtimespec.tv_sec == right->st_mtimespec.tv_sec &&
            left->st_mtimespec.tv_nsec == right->st_mtimespec.tv_nsec &&
@@ -695,16 +820,24 @@ static NSArray<NSData *> *LoadAndValidateFrames(NSString *manifestPath,
         return nil;
     }
     NSString *kind = kindValue;
-    if (![kind isEqualToString:kTestCardKind]) {
+    // Exact string equality against a two-entry allowlist. Never a prefix/hasPrefix/regex test: an
+    // unrecognized kind must fail closed, and a prefix match would silently admit successors that
+    // this writer has never validated.
+    BOOL isTestCard = [kind isEqualToString:kTestCardKind];
+    BOOL isFixedPose = [kind isEqualToString:kFixedPoseKind];
+    if (!isTestCard && !isFixedPose) {
         fprintf(stderr, "cmio-camera-writer: unsupported manifest kind: %s\n",
                 [kind isKindOfClass:[NSString class]] ? kind.UTF8String : "(non-string)");
         return nil;
     }
+    // Nothing is relaxed for the new kind: both kinds still require the nonce and the in-bounds
+    // counterRegion the boundary report's changing-frame rule depends on.
     NSString *nonce = manifest[@"nonce"];
     if (![nonce isKindOfClass:[NSString class]] || nonce.length == 0 || !ValidateCounterRegion(manifest[@"counterRegion"])) {
-        fprintf(stderr, "cmio-camera-writer: test-card manifest requires a non-empty nonce and in-bounds counterRegion\n");
+        fprintf(stderr, "cmio-camera-writer: manifest requires a non-empty nonce and in-bounds counterRegion\n");
         return nil;
     }
+    if (isFixedPose && !ValidateFixedPoseProvenance(manifest[@"provenance"])) return nil;
 
     NSArray *frames = manifest[@"frames"];
     if (![frames isKindOfClass:[NSArray class]] || frames.count == 0 || frames.count > kMaximumFrames) {

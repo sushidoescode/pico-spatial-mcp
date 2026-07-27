@@ -502,7 +502,7 @@ test("native writer binds the already-opened manifest bytes and bounds provider-
     "the opened manifest bytes are authenticated before JSON parsing or frame lookup",
   );
   assert.match(loadSource, /manifest SHA-256 mismatch/i);
-  assert.doesNotMatch(source, /pico-vcam-fixed-pose-sequence/);
+  assert.doesNotMatch(source, /pico-vcam-live-pose-stream/);
 
   const idsStart = source.indexOf("static BOOL CopyObjectIDs");
   const idsEnd = source.indexOf("static NSString *FourCCString", idsStart);
