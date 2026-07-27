@@ -63,6 +63,8 @@ jobs:
         run: npm run test:vcamreader
       - name: Virtual camera throughput (cadence + lower-bound latency; confounded rather than wrong)
         run: npm run test:vcamthroughput
+      - name: Virtual camera materializer (frames before manifest, array-indexed, fail-closed)
+        run: npm run test:vcammaterialize
       - name: Emulator restart argv + lifecycle (fully faked; no device access)
         run: npm run test:emulator-restart
       - name: Live copilot (bridge-line protocol + scene diff)
