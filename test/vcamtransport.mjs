@@ -1098,6 +1098,12 @@ const PROVENANCE = {
   baseFrameSha256: "3c".repeat(32),
 };
 
+// The counter digit run: drawText(..., String(counter).padStart(6, "0"), COUNTER_REGION.x + 38,
+// COUNTER_REGION.y + 76, 5, white) — 6 characters at a 6*scale=30px advance (width 180), 7 glyph
+// rows at scale 5 (height 35). This is the operator's only human-legible readout of the counter
+// value, and the liveness bar must never draw into it.
+const DIGIT_BOX = { x: COUNTER_REGION.x + 38, y: COUNTER_REGION.y + 76, width: 180, height: 35 };
+
 test("fixed-pose frames change ONLY inside the counter region, and change a lot", async () => {
   const { createFixedPoseSequence } = await loadSut();
   const base = roomBase();
@@ -1109,6 +1115,13 @@ test("fixed-pose frames change ONLY inside the counter region, and change a lot"
   assert.equal(sequence.frames.length, 16);
   sequence.frames.forEach((frame, index) => assertCardFrame(frame, index));
 
+  // The bar must not overdraw the digit row (COUNTER_REGION.x+38..+218, .y+76..+111) — legibility
+  // took priority over raw pixel count after an earlier version bought its delta by covering the
+  // digits entirely (an operator could see two frames differed but not which counters they were).
+  // With the bar confined below the digit row, measuring all 15 adjacent pairs over this exact
+  // roomBase() gives a minimum of 715 changed pixels (pair 8->9) and a maximum of 1250 (pair 9->10).
+  // 700 is used as the floor: comfortably below the measured 715 (small integer margin, not a
+  // knife-edge), and ~9x the card's own worst case of 75.
   for (let index = 1; index < sequence.frames.length; index += 1) {
     const previous = sequence.frames[index - 1].pixels;
     const current = sequence.frames[index].pixels;
@@ -1117,10 +1130,52 @@ test("fixed-pose frames change ONLY inside the counter region, and change a lot"
       `counters ${index - 1}->${index} must not change a pixel outside the counter panel`,
     );
     assert.ok(
-      countChangedPixels(previous, current, COUNTER_REGION, true) >= 1000,
-      `counters ${index - 1}->${index} must change >=1000 pixels; the card's own worst pair is only 75`,
+      countChangedPixels(previous, current, COUNTER_REGION, true) >= 700,
+      `counters ${index - 1}->${index} must change >=700 pixels (measured minimum is 715); the card's own worst pair is only 75`,
     );
   }
+});
+
+test("the digit readout inside COUNTER_REGION stays legible: the bar changes without overdrawing it", async () => {
+  const { stampFrame } = await loadSut();
+  const base = roomBase();
+  const frameA = stampFrame(base, { nonce: NONCE, counter: 3 });
+  const frameB = stampFrame(base, { nonce: NONCE, counter: 9 });
+
+  for (const [label, frame] of [["counter 3", frameA], ["counter 9", frameB]]) {
+    const colors = new Set();
+    for (let y = DIGIT_BOX.y; y < DIGIT_BOX.y + DIGIT_BOX.height; y += 1) {
+      for (let x = DIGIT_BOX.x; x < DIGIT_BOX.x + DIGIT_BOX.width; x += 1) {
+        const offset = (y * WIDTH + x) * 4;
+        colors.add(`${frame[offset]},${frame[offset + 1]},${frame[offset + 2]},${frame[offset + 3]}`);
+      }
+    }
+    assert.ok(colors.has("0,0,0,255"), `${label}: digit box must retain its black background`);
+    assert.ok(
+      colors.has("255,255,255,255"),
+      `${label}: digit box must retain white glyph pixels — the counter must stay human-readable`,
+    );
+    assert.ok(
+      !colors.has("0,255,255,255"),
+      `${label}: the liveness bar (yellow) must not intrude into the digit box`,
+    );
+  }
+
+  let differing = 0;
+  for (let y = DIGIT_BOX.y; y < DIGIT_BOX.y + DIGIT_BOX.height; y += 1) {
+    for (let x = DIGIT_BOX.x; x < DIGIT_BOX.x + DIGIT_BOX.width; x += 1) {
+      const offset = (y * WIDTH + x) * 4;
+      if (
+        frameA[offset] !== frameB[offset] ||
+        frameA[offset + 1] !== frameB[offset + 1] ||
+        frameA[offset + 2] !== frameB[offset + 2]
+      ) differing += 1;
+    }
+  }
+  assert.ok(
+    differing > 0,
+    "the digit box itself must change between two different counters — it is legible content, not a frozen decoration",
+  );
 });
 
 test("the stamp preserves room pixels outside the stamped regions", async () => {
@@ -1158,6 +1213,11 @@ test("fixed-pose manifest carries validated provenance and the reserved kind", a
     { ...PROVENANCE, pose: { ...PROVENANCE.pose, frame: "splat" } },
     { ...PROVENANCE, pose: { ...PROVENANCE.pose, target: undefined, yawDeg: 0, pitchDeg: 20 } },
     { ...PROVENANCE, intrinsics: { ...PROVENANCE.intrinsics, fovDeg: 0 } },
+    // assertVec3 failure modes on worldModel.offsetApplied and pose.position specifically, not just
+    // the fields already covered above.
+    { ...PROVENANCE, worldModel: { ...PROVENANCE.worldModel, offsetApplied: [0, 1] } },
+    { ...PROVENANCE, pose: { ...PROVENANCE.pose, position: [0, Infinity, 0] } },
+    { ...PROVENANCE, pose: { ...PROVENANCE.pose, position: "not-an-array" } },
   ]) {
     assert.throws(
       () => createFixedPoseSequence({

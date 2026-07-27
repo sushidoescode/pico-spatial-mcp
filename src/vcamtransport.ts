@@ -360,15 +360,21 @@ export function stampFrame(basePixels: Buffer, options: { nonce: string; counter
   drawText(pixels, CARD_WIDTH, CARD_HEIGHT, String(options.counter).padStart(6, "0"), COUNTER_REGION.x + 38, COUNTER_REGION.y + 76, 5, white);
 
   // Digits alone are too weak over a photograph: the card's worst adjacent pair changes only 75
-  // pixels. A counter-proportional bar guarantees a large delta for every adjacent pair. A 208x20
-  // track (matching the card's own digit-row scale) only clears ~266 changed pixels per step, well
-  // under the 1000-pixel floor measured necessary over a photographic base, so the track and height
-  // are both widened here; the box stays within COUNTER_REGION (region height 160: barY 60 + barHeight
-  // 100 = 160 exactly, the boundary the region check treats as exclusive).
-  const barTrack = 224;
-  const barHeight = 100;
-  const barX = COUNTER_REGION.x + 16;
-  const barY = COUNTER_REGION.y + 60;
+  // pixels. A counter-proportional bar supplies the large, obvious-at-a-glance delta a photograph
+  // needs — but the digit run just above (COUNTER_REGION.x+38..+218, COUNTER_REGION.y+76..+111) is
+  // the only human-legible readout of which counter this frame is, and an operator comparing two
+  // captures must be able to both read the counter AND see an obvious difference. A pixel-count
+  // proxy for "obvious difference" must never be bought by destroying "readable" — an earlier
+  // version of this bar (224x100 starting at y+60) did exactly that: it fully overdrew the digit
+  // row, so the operator could tell two frames apart but not tell WHICH counters they were. The bar
+  // now lives in the free strip below the digit row instead: a 5px gap under the digits' y+111
+  // bottom, ending with a 4px margin above the region's own y+160 bottom, and it runs across nearly
+  // the full region width (not just the inner plaque's 224px) to keep the delta as large as this
+  // constrained geometry allows without touching "FRAME" (ends y+60) or the digits (y+76..+111).
+  const barTrack = 240;
+  const barHeight = 40;
+  const barX = COUNTER_REGION.x + 8;
+  const barY = COUNTER_REGION.y + 116;
   const barWidth = 8 + ((options.counter % 16) * (barTrack - 8)) / 15;
   fillRect(pixels, CARD_WIDTH, CARD_HEIGHT, barX, barY, barTrack, barHeight, black);
   fillRect(pixels, CARD_WIDTH, CARD_HEIGHT, barX, barY, barWidth, barHeight, yellow);
