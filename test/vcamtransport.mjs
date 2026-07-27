@@ -1073,3 +1073,107 @@ test("teardown still escalates to SIGKILL when sending SIGTERM throws", async ()
   assert.equal(value, "operation-complete");
   assert.deepEqual(child.signals, ["SIGTERM", "SIGKILL"]);
 });
+
+const roomBase = () => {
+  // A deterministic non-uniform "photographic" base: gradients in all three channels so a stamp
+  // has to supply its own contrast rather than inheriting the card's black background.
+  const pixels = Buffer.alloc(WIDTH * HEIGHT * 4);
+  for (let y = 0; y < HEIGHT; y += 1) {
+    for (let x = 0; x < WIDTH; x += 1) {
+      const offset = (y * WIDTH + x) * 4;
+      pixels[offset] = (x * 7 + y * 3) % 256;
+      pixels[offset + 1] = (x * 3 + y * 11) % 256;
+      pixels[offset + 2] = (x * 13 + y * 5) % 256;
+      pixels[offset + 3] = 255;
+    }
+  }
+  return pixels;
+};
+
+const PROVENANCE = {
+  worldModel: { splatPath: "/abs/world.ply", splatSha256: "1a".repeat(32), offsetApplied: [0, 0.775604248046875, 0] },
+  pose: { position: [0.034, 1.896, 0.147], target: [0.034, 1.7224, -0.8378], frame: "app" },
+  intrinsics: { f: 914.01, cx: 640, cy: 360, fovDeg: 70 },
+  renderer: { script: "/abs/splat_perspective.py", scriptSha256: "2b".repeat(32), pointsRendered: 500000 },
+  baseFrameSha256: "3c".repeat(32),
+};
+
+test("fixed-pose frames change ONLY inside the counter region, and change a lot", async () => {
+  const { createFixedPoseSequence } = await loadSut();
+  const base = roomBase();
+  const counters = Array.from({ length: 16 }, (_, index) => index);
+  const sequence = createFixedPoseSequence({
+    basePixels: base, nonce: NONCE, counters,
+    width: WIDTH, height: HEIGHT, pixelFormat: PIXEL_FORMAT, provenance: PROVENANCE,
+  });
+  assert.equal(sequence.frames.length, 16);
+  sequence.frames.forEach((frame, index) => assertCardFrame(frame, index));
+
+  for (let index = 1; index < sequence.frames.length; index += 1) {
+    const previous = sequence.frames[index - 1].pixels;
+    const current = sequence.frames[index].pixels;
+    assert.equal(
+      countChangedPixels(previous, current, COUNTER_REGION, false), 0,
+      `counters ${index - 1}->${index} must not change a pixel outside the counter panel`,
+    );
+    assert.ok(
+      countChangedPixels(previous, current, COUNTER_REGION, true) >= 1000,
+      `counters ${index - 1}->${index} must change >=1000 pixels; the card's own worst pair is only 75`,
+    );
+  }
+});
+
+test("the stamp preserves room pixels outside the stamped regions", async () => {
+  const { stampFrame } = await loadSut();
+  const base = roomBase();
+  const stamped = stampFrame(base, { nonce: NONCE, counter: 3 });
+  assert.notEqual(stamped, base, "stampFrame must not mutate its input");
+  assert.equal(base.equals(roomBase()), true, "the caller's buffer is untouched");
+  let differing = 0;
+  for (let offset = 0; offset < base.length; offset += 4) if (base[offset] !== stamped[offset]) differing += 1;
+  assert.ok(differing > 0 && differing < WIDTH * HEIGHT * 0.25, "a stamp covers some of the frame, not most of it");
+});
+
+test("fixed-pose manifest carries validated provenance and the reserved kind", async () => {
+  const { createFixedPoseSequence } = await loadSut();
+  const sequence = createFixedPoseSequence({
+    basePixels: roomBase(), nonce: NONCE, counters: [0, 1],
+    width: WIDTH, height: HEIGHT, pixelFormat: PIXEL_FORMAT, provenance: PROVENANCE,
+  });
+  assert.equal(sequence.manifest.kind, "pico-vcam-fixed-pose-sequence");
+  assert.equal(sequence.manifest.schemaVersion, 1);
+  assert.deepEqual(sequence.manifest.counterRegion, COUNTER_REGION);
+  assert.deepEqual(sequence.manifest.provenance, PROVENANCE);
+  assert.equal(sequence.manifestJson, `${JSON.stringify(sequence.manifest, null, 2)}\n`);
+  assert.equal(sequence.manifestSha256, sha256(Buffer.from(sequence.manifestJson, "utf8")));
+
+  const repeated = createFixedPoseSequence({
+    basePixels: roomBase(), nonce: NONCE, counters: [0, 1],
+    width: WIDTH, height: HEIGHT, pixelFormat: PIXEL_FORMAT, provenance: PROVENANCE,
+  });
+  assert.equal(repeated.manifestSha256, sequence.manifestSha256, "generation is deterministic");
+
+  for (const bad of [
+    { ...PROVENANCE, baseFrameSha256: "NOTHEX" },
+    { ...PROVENANCE, pose: { ...PROVENANCE.pose, frame: "splat" } },
+    { ...PROVENANCE, pose: { ...PROVENANCE.pose, target: undefined, yawDeg: 0, pitchDeg: 20 } },
+    { ...PROVENANCE, intrinsics: { ...PROVENANCE.intrinsics, fovDeg: 0 } },
+  ]) {
+    assert.throws(
+      () => createFixedPoseSequence({
+        basePixels: roomBase(), nonce: NONCE, counters: [0],
+        width: WIDTH, height: HEIGHT, pixelFormat: PIXEL_FORMAT, provenance: bad,
+      }),
+      /provenance|frame|target|fovDeg|sha256/i,
+      `provenance must be rejected: ${JSON.stringify(bad).slice(0, 80)}`,
+    );
+  }
+});
+
+test("the reviewed test-card golden is unaffected by the fixed-pose path", async () => {
+  const { createTestCardSequence } = await loadSut();
+  const retained = createTestCardSequence({
+    nonce: NONCE, counters: [0, 1, 2, 3], width: WIDTH, height: HEIGHT, pixelFormat: PIXEL_FORMAT,
+  });
+  assert.equal(retained.manifestSha256, "d3f6c4869a4804ef95cd80f8a12a5b4c0511b3dfc1c3c5bc2454da02a1751d4f");
+});

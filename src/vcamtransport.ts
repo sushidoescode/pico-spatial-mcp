@@ -277,6 +277,151 @@ export function createTestCardSequence(options: {
   return { frames, manifest, manifestJson, manifestSha256: hash(manifestJson) };
 }
 
+export type FixedPoseProvenance = {
+  worldModel: { splatPath: string; splatSha256: string; offsetApplied: [number, number, number] };
+  pose: { position: [number, number, number]; target: [number, number, number]; frame: "app" };
+  intrinsics: { f: number; cx: number; cy: number; fovDeg: number };
+  renderer: { script: string; scriptSha256: string; pointsRendered: number };
+  baseFrameSha256: string;
+};
+
+export type FixedPoseManifest = {
+  schemaVersion: 1;
+  kind: "pico-vcam-fixed-pose-sequence";
+  nonce: string;
+  width: number;
+  height: number;
+  pixelFormat: "BGRA";
+  frameBytes: number;
+  counterRegion: typeof COUNTER_REGION;
+  provenance: FixedPoseProvenance;
+  frames: Array<{ counter: number; bytes: number; sha256: string }>;
+};
+
+const SHA256_TEXT = /^[0-9a-f]{64}$/;
+
+function assertVec3(value: unknown, label: string): [number, number, number] {
+  if (!Array.isArray(value) || value.length !== 3 || !value.every((n) => typeof n === "number" && Number.isFinite(n))) {
+    throw new Error(`provenance ${label} must be exactly three finite numbers`);
+  }
+  return [value[0], value[1], value[2]];
+}
+
+function validateFixedPoseProvenance(provenance: FixedPoseProvenance): void {
+  if (!provenance || typeof provenance !== "object") throw new Error("provenance is required");
+  const { worldModel, pose, intrinsics, renderer, baseFrameSha256 } = provenance;
+  if (!worldModel?.splatPath?.startsWith("/")) throw new Error("provenance worldModel.splatPath must be absolute");
+  if (!SHA256_TEXT.test(worldModel?.splatSha256 ?? "")) throw new Error("provenance worldModel.splatSha256 must be 64 lowercase hex");
+  assertVec3(worldModel?.offsetApplied, "worldModel.offsetApplied");
+  assertVec3(pose?.position, "pose.position");
+  // target is the single canonical orientation encoding: it is what the renderer consumes and it
+  // needs no trig to re-verify. yaw/pitch are rejected so the native validator stays a flat check.
+  if ((pose as any)?.yawDeg !== undefined || (pose as any)?.pitchDeg !== undefined) {
+    throw new Error("provenance pose must use target, not yawDeg/pitchDeg");
+  }
+  assertVec3(pose?.target, "pose.target");
+  if (pose?.frame !== "app") throw new Error('provenance pose.frame must be exactly "app"');
+  for (const key of ["f", "cx", "cy", "fovDeg"] as const) {
+    const value = intrinsics?.[key];
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      throw new Error(`provenance intrinsics.${key} must be a positive finite number`);
+    }
+  }
+  if (!renderer?.script?.startsWith("/")) throw new Error("provenance renderer.script must be absolute");
+  if (!SHA256_TEXT.test(renderer?.scriptSha256 ?? "")) throw new Error("provenance renderer.scriptSha256 must be 64 lowercase hex");
+  if (!Number.isSafeInteger(renderer?.pointsRendered) || renderer.pointsRendered < 0) {
+    throw new Error("provenance renderer.pointsRendered must be a nonnegative integer");
+  }
+  if (!SHA256_TEXT.test(baseFrameSha256 ?? "")) throw new Error("provenance baseFrameSha256 must be 64 lowercase hex");
+}
+
+export function stampFrame(basePixels: Buffer, options: { nonce: string; counter: number }): Buffer {
+  if (!Buffer.isBuffer(basePixels) || basePixels.length !== CARD_WIDTH * CARD_HEIGHT * 4) {
+    throw new Error("stampFrame requires an exact 1280x720 BGRA buffer");
+  }
+  const pixels = Buffer.from(basePixels);
+  const black: Bgra = [0, 0, 0, 255];
+  const white: Bgra = [255, 255, 255, 255];
+  const yellow: Bgra = [0, 255, 255, 255];
+
+  // The nonce sits over photographic content, so it supplies its own opaque plaque. The card gets
+  // contrast from its black background; a room does not.
+  fillRect(pixels, CARD_WIDTH, CARD_HEIGHT, 48, 40, 1184, 96, black);
+  fillRect(pixels, CARD_WIDTH, CARD_HEIGHT, 60, 52, 1160, 72, white);
+  fillRect(pixels, CARD_WIDTH, CARD_HEIGHT, 72, 64, 1136, 48, black);
+  drawText(pixels, CARD_WIDTH, CARD_HEIGHT, options.nonce, 88, 72, 5, yellow);
+
+  // Counter panel. Identical geometry to the card so the native counterRegion bounds check and the
+  // boundary report's changing-frame rule apply unchanged.
+  fillRect(pixels, CARD_WIDTH, CARD_HEIGHT, COUNTER_REGION.x, COUNTER_REGION.y, COUNTER_REGION.width, COUNTER_REGION.height, black);
+  fillRect(pixels, CARD_WIDTH, CARD_HEIGHT, COUNTER_REGION.x + 8, COUNTER_REGION.y + 8, 240, 144, white);
+  fillRect(pixels, CARD_WIDTH, CARD_HEIGHT, COUNTER_REGION.x + 16, COUNTER_REGION.y + 16, 224, 128, black);
+  drawText(pixels, CARD_WIDTH, CARD_HEIGHT, "FRAME", COUNTER_REGION.x + 28, COUNTER_REGION.y + 25, 5, yellow);
+  drawText(pixels, CARD_WIDTH, CARD_HEIGHT, String(options.counter).padStart(6, "0"), COUNTER_REGION.x + 38, COUNTER_REGION.y + 76, 5, white);
+
+  // Digits alone are too weak over a photograph: the card's worst adjacent pair changes only 75
+  // pixels. A counter-proportional bar guarantees a large delta for every adjacent pair. A 208x20
+  // track (matching the card's own digit-row scale) only clears ~266 changed pixels per step, well
+  // under the 1000-pixel floor measured necessary over a photographic base, so the track and height
+  // are both widened here; the box stays within COUNTER_REGION (region height 160: barY 60 + barHeight
+  // 100 = 160 exactly, the boundary the region check treats as exclusive).
+  const barTrack = 224;
+  const barHeight = 100;
+  const barX = COUNTER_REGION.x + 16;
+  const barY = COUNTER_REGION.y + 60;
+  const barWidth = 8 + ((options.counter % 16) * (barTrack - 8)) / 15;
+  fillRect(pixels, CARD_WIDTH, CARD_HEIGHT, barX, barY, barTrack, barHeight, black);
+  fillRect(pixels, CARD_WIDTH, CARD_HEIGHT, barX, barY, barWidth, barHeight, yellow);
+  return pixels;
+}
+
+export function createFixedPoseSequence(options: {
+  basePixels: Buffer;
+  nonce: string;
+  counters: number[];
+  width: number;
+  height: number;
+  pixelFormat: string;
+  provenance: FixedPoseProvenance;
+}): { frames: TestCardFrame[]; manifest: FixedPoseManifest; manifestJson: string; manifestSha256: string } {
+  if (options.width !== CARD_WIDTH || options.height !== CARD_HEIGHT || options.pixelFormat !== CARD_PIXEL_FORMAT) {
+    throw new Error("fixed-pose frames require exact 1280x720 BGRA output");
+  }
+  if (typeof options.nonce !== "string" || options.nonce.length < 1 || options.nonce.length > 64 || !/^[A-Za-z0-9._:-]+$/.test(options.nonce)) {
+    throw new Error("nonce must be 1-64 ASCII letters, digits, dot, underscore, colon, or hyphen");
+  }
+  if (!Array.isArray(options.counters) || options.counters.length < 1 || options.counters.length > 16) {
+    throw new Error("counters must contain 1-16 values");
+  }
+  const seen = new Set<number>();
+  for (const counter of options.counters) {
+    if (!Number.isSafeInteger(counter) || counter < 0 || counter > 999_999 || seen.has(counter)) {
+      throw new Error("counters must be unique safe nonnegative integers no greater than 999999");
+    }
+    seen.add(counter);
+  }
+  validateFixedPoseProvenance(options.provenance);
+
+  const frames = options.counters.map((counter): TestCardFrame => {
+    const pixels = stampFrame(options.basePixels, { nonce: options.nonce, counter });
+    return { counter, width: CARD_WIDTH, height: CARD_HEIGHT, pixelFormat: CARD_PIXEL_FORMAT, pixels, sha256: hash(pixels) };
+  });
+  const manifest: FixedPoseManifest = {
+    schemaVersion: 1,
+    kind: "pico-vcam-fixed-pose-sequence",
+    nonce: options.nonce,
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    pixelFormat: CARD_PIXEL_FORMAT,
+    frameBytes: CARD_WIDTH * CARD_HEIGHT * 4,
+    counterRegion: COUNTER_REGION,
+    provenance: options.provenance,
+    frames: frames.map((frame) => ({ counter: frame.counter, bytes: frame.pixels.length, sha256: frame.sha256 })),
+  };
+  const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`;
+  return { frames, manifest, manifestJson, manifestSha256: hash(manifestJson) };
+}
+
 export type EmulatorWebcam = {
   route: string;
   uuid: string;
