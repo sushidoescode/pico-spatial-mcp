@@ -68,6 +68,31 @@ calWithEmuDown && calWithEmuDown.status === "unknown" && typeof calWithEmuDown.f
   ? ok("calibration on file + emulator down => unknown with a fix")
   : fail(`calibration with emulator down mishandled: ${JSON.stringify(calWithEmuDown)}`);
 
+// Real writers persist `at` as an ISO STRING (metricverify.ts:138 — at: new Date().toISOString()).
+// A stale ISO calibration MUST fail exactly like a stale epoch one; string<number coerces to NaN.
+const staleIsoIO = { ...healthyIO, readFile: (p) => p.endsWith("camera-calibration.json")
+  ? JSON.stringify({ f: 1355.2, at: new Date(bootAt - 24 * 60 * 60 * 1000).toISOString() }) : null };
+const staleIso = runPreflightChecks(staleIsoIO).find((x) => x.name === "calibration");
+staleIso && staleIso.status === "fail" && /calibrate_capture_camera/.test(staleIso.fix)
+  ? ok("stale ISO-string calibration fails with the recalibrate fix")
+  : fail(`stale ISO calibration mishandled: ${JSON.stringify(staleIso)}`);
+
+// A FRESH ISO calibration (written after boot) must still pass.
+const freshIsoIO = { ...healthyIO, readFile: (p) => p.endsWith("camera-calibration.json")
+  ? JSON.stringify({ f: 1355.2, at: new Date(1_800_000_000_000 - 30 * 60 * 1000).toISOString() }) : null };
+const freshIso = runPreflightChecks(freshIsoIO).find((x) => x.name === "calibration");
+freshIso && freshIso.status === "pass"
+  ? ok("fresh ISO-string calibration passes")
+  : fail(`fresh ISO calibration mishandled: ${JSON.stringify(freshIso)}`);
+
+// Unparseable `at` must fall back to file mtime rather than silently passing.
+const garbageAtIO = { ...healthyIO, readFile: (p) => p.endsWith("camera-calibration.json")
+  ? JSON.stringify({ f: 1355.2, at: "not-a-date" }) : null, statMtimeMs: () => bootAt - 60 * 60 * 1000 };
+const garbageAt = runPreflightChecks(garbageAtIO).find((x) => x.name === "calibration");
+garbageAt && garbageAt.status === "fail"
+  ? ok("unparseable calibration `at` falls back to mtime and reports stale")
+  : fail(`garbage calibration at mishandled: ${JSON.stringify(garbageAt)}`);
+
 // MCP-level: the tool is registered on the full surface and returns the check array.
 const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
 const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");

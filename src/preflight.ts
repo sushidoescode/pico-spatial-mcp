@@ -106,8 +106,14 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   if (!calRaw) {
     push({ name: "calibration", status: "warn", detail: "no camera calibration on file — pico_measure/measure_placement unavailable", fix: "Run fleet_build(['calib']) then calibrate_capture_camera (one-time per emulator boot)." });
   } else {
+    // calibrate_capture_camera persists `at` as an ISO string (metricverify.ts). Comparing a string
+    // to a number coerces to NaN, which silently reported every stale calibration as fresh.
     let calAt: number | null = null;
-    try { calAt = JSON.parse(calRaw).at ?? null; } catch { /* unparseable */ }
+    try {
+      const rawAt = JSON.parse(calRaw).at;
+      if (typeof rawAt === "number" && Number.isFinite(rawAt)) calAt = rawAt;
+      else if (typeof rawAt === "string" && Number.isFinite(Date.parse(rawAt))) calAt = Date.parse(rawAt);
+    } catch { /* unparseable */ }
     if (calAt == null) calAt = io.statMtimeMs(calPath);
     if (bootAtMs == null) {
       push({ name: "calibration", status: "unknown", detail: "calibration on file but the emulator is not running — freshness cannot be assessed (calibration dies on emulator cold restart)", fix: "Boot the emulator, re-run preflight_env, and recalibrate if it reports stale: fleet_build(['calib']) then calibrate_capture_camera." });
