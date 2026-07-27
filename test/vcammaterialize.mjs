@@ -73,6 +73,12 @@ test("refuses to overwrite an existing manifest", async () => {
   fs.writeFileSync(path.join(dir, "manifest.json"), "{}");
   assert.throws(() => materializeSequence(fakeSequence([0]), dir), /exists/i,
     "a run must never silently clobber a retained evidence directory");
+  // The throw alone doesn't prove nothing was written: Node's own "wx"-flag EEXIST error also
+  // matches /exists/i, so a refactor that dropped the early existsSync guard and relied solely on
+  // that flag at the final manifest write would still pass the line above while frame-000.bgra had
+  // already landed in the directory. Check the directory holds only the pre-existing manifest.
+  assert.deepEqual(fs.readdirSync(dir), ["manifest.json"],
+    "a refused overwrite must not leave a partial frame behind");
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
