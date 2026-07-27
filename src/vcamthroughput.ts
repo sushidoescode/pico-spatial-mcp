@@ -49,6 +49,11 @@ export function analyzeThroughput(input: ThroughputInput): ThroughputReport {
   if (writerRows.length === 0) add("empty or unparseable writer JSONL");
   if (readerRows.length === 0) add("empty or unparseable reader JSONL");
 
+  // A missing summary record must not read as a confirmed zero — a killed-before-flush writer
+  // or reader leaves these fields absent, not zero, so flag it before defaulting the counters.
+  if (!writerRows.some((r) => r.event === "stats")) add("no writer stats record");
+  if (!readerRows.some((r) => r.event === "readback")) add("no reader readback record");
+
   const stats = writerRows.filter((r) => r.event === "stats").pop() ?? {};
   if (stats.recordsTruncated === true) add("recordsTruncated");
 
@@ -97,6 +102,8 @@ export function analyzeThroughput(input: ThroughputInput): ThroughputReport {
     if (deltas.length > 0) {
       const mean = deltas.reduce((sum, d) => sum + d, 0) / deltas.length;
       observedSourceHz = 1000 / mean;
+    } else {
+      add("no positive presentationTimeMs deltas");
     }
     const spanMs = frames[frames.length - 1].presentationTimeMs - frames[0].presentationTimeMs;
     let flips = 0;
