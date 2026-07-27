@@ -22,8 +22,10 @@ const readerLines = (frames, summary = {}, { omitReadback = false } = {}) => {
   const frameLines = frames.map((f) => JSON.stringify({ event: "frame", width: 1280, height: 720, pixelFormat: "BGRA", ...f })).join("\n");
   if (omitReadback) return frameLines + "\n";
   return frameLines +
+    // `previews` mirrors the real reader's summary record (cmio-camera-reader.m emits it for every
+    // readback), so a fixture cannot accidentally describe a shape the reader never produces.
     "\n" + JSON.stringify({ event: "readback", framesCaptured: frames.length, dropped: 0,
-      elapsedMs: 1000, timedOut: false, ...summary }) + "\n";
+      elapsedMs: 1000, timedOut: false, previews: true, ...summary }) + "\n";
 };
 
 test("observed source cadence comes from presentationTimeMs deltas, not wall clock", async () => {
@@ -93,17 +95,36 @@ test("garbage and empty input are confounded, not exceptions", async () => {
   }
 });
 
-test("a reader whose wall span dwarfs its source span is self-perturbed", async () => {
+test("a wall span that dwarfs the source span is reported as a measurement, not as a reader diagnosis", async () => {
   const { analyzeThroughput } = await loadSut();
   const report = analyzeThroughput({
     writerJsonl: writerLines([{ sequence: 1, frameIndex: 0, sha256: HASH_A, hostTimeNs: 1e9, presentationTimeMs: 0 }]),
     readerJsonl: readerLines(
       [{ index: 0, presentationTimeMs: 0, rawSha256: HASH_A, hostTimeNs: 1.05e9 },
        { index: 1, presentationTimeMs: 33.3, rawSha256: HASH_B, hostTimeNs: 1.06e9 }],
-      { elapsedMs: 15_000 },
+      { elapsedMs: 15_000, previews: true },
     ),
   });
-  assert.equal(report.selfPerturbed, true, "33ms of source time across 15s of wall clock is the v29.1 PNG-encode stall");
+  assert.equal(report.wallSpanExceedsSourceSpan, true, "33ms of source time across 15s of wall clock is a real divergence");
+  assert.equal(report.readerWritesPreviews, true, "only the reader's own previews flag can point the finger at the reader");
+});
+
+test("the same divergence under --no-preview carries no reader attribution", async () => {
+  const { analyzeThroughput } = await loadSut();
+  // A genuinely STALLED SOURCE: two frames 33ms apart inside a 15s run, with a reader doing almost
+  // no work. The old name (`selfPerturbed`) asserted a cause this input flatly contradicts — the
+  // reader wrote no PNGs, so nothing it did can explain the wall span. The measurement must still
+  // be reported, and `readerWritesPreviews:false` is what stops an operator chasing the reader.
+  const report = analyzeThroughput({
+    writerJsonl: writerLines([{ sequence: 1, frameIndex: 0, sha256: HASH_A, hostTimeNs: 1e9, presentationTimeMs: 0 }]),
+    readerJsonl: readerLines(
+      [{ index: 0, presentationTimeMs: 0, rawSha256: HASH_A, hostTimeNs: 1.05e9 },
+       { index: 1, presentationTimeMs: 33.3, rawSha256: HASH_B, hostTimeNs: 1.06e9 }],
+      { elapsedMs: 15_000, previews: false },
+    ),
+  });
+  assert.equal(report.wallSpanExceedsSourceSpan, true, "the divergence is real regardless of who caused it");
+  assert.equal(report.readerWritesPreviews, false, "a --no-preview reader cannot be blamed for its own wall span");
 });
 
 test("a writer killed before its shutdown stats record is confounded, not a silent zero-drop reading", async () => {
@@ -120,7 +141,7 @@ test("a writer killed before its shutdown stats record is confounded, not a sile
   assert.equal(report.drops.inFlight, 0, "the counter still reports a value, just alongside the caveat");
 });
 
-test("a reader killed before its readback record is confounded, not a silent zero-drop or false selfPerturbed", async () => {
+test("a reader killed before its readback record is confounded, not a silent zero-drop or false divergence", async () => {
   const { analyzeThroughput } = await loadSut();
   const report = analyzeThroughput({
     writerJsonl: writerLines([{ sequence: 1, frameIndex: 0, sha256: HASH_A, hostTimeNs: 1e9, presentationTimeMs: 0 }]),
@@ -133,7 +154,8 @@ test("a reader killed before its readback record is confounded, not a silent zer
   });
   assert.ok(report.confounded.includes("no reader readback record"), "a missing summary must not read as a confirmed zero");
   assert.equal(report.drops.readerDropped, 0, "the counter still reports a value, just alongside the caveat");
-  assert.equal(report.selfPerturbed, false, "no elapsedMs means selfPerturbed cannot be computed; it must default false, not throw");
+  assert.equal(report.wallSpanExceedsSourceSpan, false, "no elapsedMs means the comparison cannot be made; it must default false, not throw");
+  assert.equal(report.readerWritesPreviews, null, "an absent readback record means the preview mode is UNKNOWN, never a confident false");
 });
 
 test("duplicate or decreasing presentationTimeMs deltas leave cadence unknown, with a reason recorded", async () => {
@@ -147,4 +169,27 @@ test("duplicate or decreasing presentationTimeMs deltas leave cadence unknown, w
   });
   assert.equal(report.observedSourceHz, null, "a zero delta between two identically-stamped frames cannot yield a cadence");
   assert.ok(report.confounded.includes("no positive presentationTimeMs deltas"), "silence here would read as a real 0Hz measurement");
+});
+
+test("a SUBSET of dropped deltas is recorded, not silently averaged away into a lower cadence", async () => {
+  const { analyzeThroughput } = await loadSut();
+  // Exactly what a source republishing each rendered image twice looks like: each image is
+  // delivered as a pair sharing one presentationTimeMs. Two of the three deltas are zero, so the
+  // mean is taken over one surviving 33.3ms gap and observedSourceHz reports 30Hz for a stream
+  // that actually delivered four frames. The number is not wrong to compute — it is wrong to
+  // publish WITHOUT saying that most of the evidence was discarded to get it.
+  const report = analyzeThroughput({
+    writerJsonl: writerLines([{ sequence: 1, frameIndex: 0, sha256: HASH_A, hostTimeNs: 1e9, presentationTimeMs: 0 }]),
+    readerJsonl: readerLines([
+      { index: 0, presentationTimeMs: 0, rawSha256: HASH_A, hostTimeNs: 1.00e9 },
+      { index: 1, presentationTimeMs: 0, rawSha256: HASH_A, hostTimeNs: 1.01e9 },
+      { index: 2, presentationTimeMs: 33.3, rawSha256: HASH_B, hostTimeNs: 1.02e9 },
+      { index: 3, presentationTimeMs: 33.3, rawSha256: HASH_B, hostTimeNs: 1.03e9 },
+    ]),
+  });
+  assert.equal(Math.round(report.observedSourceHz), 30, "the survivors still average to 30Hz — that is precisely the trap");
+  assert.ok(
+    report.confounded.includes("non-positive presentationTimeMs deltas dropped from the cadence average"),
+    `an under-reported headline number must never ship with confounded: [] — got ${JSON.stringify(report.confounded)}`,
+  );
 });

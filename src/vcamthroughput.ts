@@ -9,7 +9,13 @@ export type ThroughputReport = {
   latencyMs: { p50: number; p90: number; max: number; isLowerBound: true } | null;
   drops: { inFlight: number; queueNonEmpty: number; casLost: number; queueFull: number; readerDropped: number };
   distinctFramesObserved: number;
-  selfPerturbed: boolean;
+  /** The reader's own `previews` flag from its readback record: true when it wrote a PNG per frame,
+   *  false under --no-preview, null when no readback record was emitted at all. This is the only
+   *  field that can attribute `wallSpanExceedsSourceSpan` to the reader rather than to the source. */
+  readerWritesPreviews: boolean | null;
+  /** Wall-clock elapsed far exceeded the observed source presentation span. A MEASUREMENT, not a
+   *  diagnosis — see the computation below for exactly what it does and does not attribute. */
+  wallSpanExceedsSourceSpan: boolean;
   confounded: string[];
 };
 
@@ -105,6 +111,13 @@ export function analyzeThroughput(input: ThroughputInput): ThroughputReport {
     } else {
       add("no positive presentationTimeMs deltas");
     }
+    // Averaging only the surviving deltas silently UNDER-reports the cadence whenever a subset was
+    // dropped: a source republishing each image twice makes half the deltas zero, and the mean is
+    // then taken over fewer, larger gaps. This is the arc's headline number, so a partial drop is
+    // recorded even though a number is still produced. (The all-invalid case above is separate.)
+    if (deltas.length < frames.length - 1) {
+      add("non-positive presentationTimeMs deltas dropped from the cadence average");
+    }
     const spanMs = frames[frames.length - 1].presentationTimeMs - frames[0].presentationTimeMs;
     let flips = 0;
     for (let i = 1; i < frames.length; i += 1) if (frames[i].rawSha256 !== frames[i - 1].rawSha256) flips += 1;
@@ -115,14 +128,23 @@ export function analyzeThroughput(input: ThroughputInput): ThroughputReport {
 
   const distinctFramesObserved = new Set(frames.map((f) => f.rawSha256)).size;
 
-  // A slow delegate stretches wall time but not the source's presentation cadence. When the two
-  // diverge sharply the reader perturbed its own run (v29.1: in-callback PNG encode + disk read-back).
+  // Wall-clock elapsed versus the source's own presentation span. Deliberately named for WHAT IT
+  // MEASURES, because the data cannot support a cause:
+  //   - It does NOT establish reader self-perturbation. `elapsedMs` is stamped BEFORE
+  //     [session startRunning] (scripts/macos/cmio-camera-reader.m), so it also contains
+  //     AVFoundation session warmup, which no amount of delegate work explains.
+  //   - A stalled or slow SOURCE sets it just as readily: three frames arriving across ten seconds
+  //     of wall clock is a source problem with a completely idle reader.
+  //   - Reader self-perturbation (v29.1's in-callback PNG encode + disk read-back) is one possible
+  //     cause and is only plausible when `readerWritesPreviews` is true. Under --no-preview the
+  //     delegate does almost no work, so a true reading there points AWAY from the reader.
   const readback = readerRows.filter((r) => r.event === "readback").pop() ?? {};
+  const readerWritesPreviews = typeof readback.previews === "boolean" ? readback.previews : null;
   const elapsedMs = finite(readback.elapsedMs);
   const sourceSpanMs = frames.length >= 2
     ? frames[frames.length - 1].presentationTimeMs - frames[0].presentationTimeMs
     : null;
-  const selfPerturbed = elapsedMs !== null && sourceSpanMs !== null && sourceSpanMs > 0
+  const wallSpanExceedsSourceSpan = elapsedMs !== null && sourceSpanMs !== null && sourceSpanMs > 0
     ? elapsedMs > 3 * sourceSpanMs
     : false;
 
@@ -165,5 +187,14 @@ export function analyzeThroughput(input: ThroughputInput): ThroughputReport {
     }
   }
 
-  return { observedSourceHz, injectedImageHz, latencyMs, drops, distinctFramesObserved, selfPerturbed, confounded };
+  return {
+    observedSourceHz,
+    injectedImageHz,
+    latencyMs,
+    drops,
+    distinctFramesObserved,
+    readerWritesPreviews,
+    wallSpanExceedsSourceSpan,
+    confounded,
+  };
 }
