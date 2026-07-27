@@ -579,6 +579,48 @@ test("runHostBoundary returns a complete report instead of rejecting when a read
   }
 });
 
+test("render provenance is optional, but validated whenever it is present", async () => {
+  const { validateBoundaryReport } = await loadSut();
+  const good = {
+    worldModel: { splatPath: "/abs/world.ply", splatSha256: "1a".repeat(32), offsetApplied: [0, 0.775604248046875, 0] },
+    pose: { position: [0.034, 1.896, 0.147], target: [0.034, 1.7224, -0.8378], frame: "app" },
+    intrinsics: { f: 914.01, cx: 640, cy: 360, fovDeg: 70 },
+    renderer: { script: "/abs/splat_perspective.py", scriptSha256: "2b".repeat(32), pointsRendered: 500000 },
+    baseFrameSha256: "3c".repeat(32),
+  };
+
+  // A card run carries no render provenance at all; every existing fixture must keep validating.
+  assert.doesNotThrow(() => validateBoundaryReport(baseReport()));
+  assert.doesNotThrow(() => validateBoundaryReport({ ...baseReport(), renderProvenance: good }));
+
+  for (const [label, bad] of [
+    ["non-object", "nope"],
+    // A non-object rejection must fire because the top-level shape is wrong, not merely because a
+    // stray property lookup on a primitive happens to be undefined. An array carrying otherwise
+    // fully-valid fields as own properties would sail through every nested check if the top-level
+    // `isObject` guard were ever weakened to admit arrays — this is the case that actually pins it.
+    ["array carrying otherwise-valid fields", Object.assign([], good)],
+    ["bad hash", { ...good, baseFrameSha256: "NOTHEX" }],
+    ["wrong frame", { ...good, pose: { ...good.pose, frame: "splat" } }],
+    // Also keeps a valid `target` present, so this case is rejected ONLY by the yawDeg/pitchDeg
+    // presence rule and not incidentally by the separate pose.target shape check (which would mask
+    // the very rule this case exists to prove, since the original brief fixture omits target).
+    ["yaw/pitch alongside a valid target", { ...good, pose: { ...good.pose, yawDeg: 0, pitchDeg: 20 } }],
+    ["negative points", { ...good, renderer: { ...good.renderer, pointsRendered: -1 } }],
+    ["zero fov", { ...good, intrinsics: { ...good.intrinsics, fovDeg: 0 } }],
+    ["short offset", { ...good, worldModel: { ...good.worldModel, offsetApplied: [0, 1] } }],
+  ]) {
+    assert.throws(() => validateBoundaryReport({ ...baseReport(), renderProvenance: bad }),
+      /renderProvenance/, `renderProvenance must reject: ${label}`);
+  }
+});
+
+test("the nine-stage graph is unchanged by render provenance", async () => {
+  const { validateBoundaryReport } = await loadSut();
+  const report = validateBoundaryReport(baseReport());
+  assert.equal(Object.keys(report.stages).length, 9, "v29.2 must not add a tenth stage id");
+});
+
 test("an unmapped authorization status fail-closes to a blocked report rather than rejecting", async () => {
   const { runHostBoundary, validateBoundaryReport } = await loadSut();
   const { deps, producer } = baseDeps({ checkAuthorization: async () => "granted" });

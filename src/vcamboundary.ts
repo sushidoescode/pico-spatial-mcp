@@ -70,6 +70,14 @@ export type StageResult = {
 
 export type ExecutableProvenance = { executable: string; argv: string[]; sha256: string };
 
+export type RenderProvenance = {
+  worldModel: { splatPath: string; splatSha256: string; offsetApplied: [number, number, number] };
+  pose: { position: [number, number, number]; target: [number, number, number]; frame: "app" };
+  intrinsics: { f: number; cx: number; cy: number; fovDeg: number };
+  renderer: { script: string; scriptSha256: string; pointsRendered: number };
+  baseFrameSha256: string;
+};
+
 export type BoundaryReport = {
   runId: string;
   source: {
@@ -84,6 +92,9 @@ export type BoundaryReport = {
   reader: ExecutableProvenance;
   producer: ExecutableProvenance;
   stages: Record<StageId, StageResult>;
+  /** Optional: which world/pose/intrinsics/renderer produced a rendered scanned-room frame. Absent
+   *  for card-path runs; validated whenever present so the claim is not decorative. */
+  renderProvenance?: RenderProvenance;
 };
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
@@ -119,6 +130,61 @@ function validateProvenance(label: string, value: unknown): void {
   }
   if (typeof value.sha256 !== "string" || !SHA256_RE.test(value.sha256)) {
     fail(`${label}.sha256 must be 64 lowercase hex characters (SHA-256)`);
+  }
+}
+
+function vec3(label: string, value: unknown): void {
+  if (!Array.isArray(value) || value.length !== 3 ||
+      !value.every((n) => typeof n === "number" && Number.isFinite(n))) {
+    fail(`renderProvenance.${label} must be exactly three finite numbers`);
+  }
+}
+
+// Top-level report fields are an open set, so an unvalidated provenance block would be decorative.
+// This is the validator that makes the world-frame claim mean something.
+export function validateRenderProvenance(value: unknown): void {
+  if (!isObject(value)) fail("renderProvenance must be an object");
+  const world = (value as any).worldModel;
+  if (!isObject(world) || typeof world.splatPath !== "string" || world.splatPath.length === 0) {
+    fail("renderProvenance.worldModel.splatPath must be a non-empty string");
+  }
+  if (typeof world.splatSha256 !== "string" || !SHA256_RE.test(world.splatSha256)) {
+    fail("renderProvenance.worldModel.splatSha256 must be 64 lowercase hex characters (SHA-256)");
+  }
+  vec3("worldModel.offsetApplied", world.offsetApplied);
+
+  const pose = (value as any).pose;
+  if (!isObject(pose)) fail("renderProvenance.pose is required");
+  vec3("pose.position", pose.position);
+  if (pose.yawDeg !== undefined || pose.pitchDeg !== undefined) {
+    fail("renderProvenance.pose must use target, not yawDeg/pitchDeg");
+  }
+  vec3("pose.target", pose.target);
+  if (pose.frame !== "app") fail('renderProvenance.pose.frame must be exactly "app"');
+
+  const intrinsics = (value as any).intrinsics;
+  if (!isObject(intrinsics)) fail("renderProvenance.intrinsics is required");
+  for (const key of ["f", "cx", "cy", "fovDeg"]) {
+    const n = (intrinsics as any)[key];
+    if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) {
+      fail(`renderProvenance.intrinsics.${key} must be a positive finite number`);
+    }
+  }
+
+  const renderer = (value as any).renderer;
+  if (!isObject(renderer) || typeof renderer.script !== "string" || renderer.script.length === 0) {
+    fail("renderProvenance.renderer.script must be a non-empty string");
+  }
+  if (typeof renderer.scriptSha256 !== "string" || !SHA256_RE.test(renderer.scriptSha256)) {
+    fail("renderProvenance.renderer.scriptSha256 must be 64 lowercase hex characters (SHA-256)");
+  }
+  if (!Number.isSafeInteger((renderer as any).pointsRendered) || (renderer as any).pointsRendered < 0) {
+    fail("renderProvenance.renderer.pointsRendered must be a nonnegative integer");
+  }
+
+  const base = (value as any).baseFrameSha256;
+  if (typeof base !== "string" || !SHA256_RE.test(base)) {
+    fail("renderProvenance.baseFrameSha256 must be 64 lowercase hex characters (SHA-256)");
   }
 }
 
@@ -249,6 +315,7 @@ export function validateBoundaryReport(report: unknown): BoundaryReport {
 
   validateProvenance("reader", report.reader);
   validateProvenance("producer", report.producer);
+  if (report.renderProvenance !== undefined) validateRenderProvenance(report.renderProvenance);
 
   const stages = report.stages;
   if (!isObject(stages)) fail("stages is required");
