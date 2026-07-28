@@ -3,6 +3,7 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { okJson } from "./util.js";
+import { fileURLToPath } from "node:url";
 
 /**
  * marbleingest.ts — v14: ingest_marble_world — a downloaded World-Labs/Marble world -> an
@@ -21,7 +22,7 @@ import { okJson } from "./util.js";
 async function selfClient() {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-  const here = path.resolve(path.dirname(new URL(import.meta.url).pathname));
+  const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
   const transport = new StdioClientTransport({ command: "node", args: [path.join(here, "index.js")], cwd: path.dirname(here) });
   const client = new Client({ name: "marble-ingest", version: "1" });
   await client.connect(transport);

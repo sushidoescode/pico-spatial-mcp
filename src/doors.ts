@@ -3,6 +3,8 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
+import { fileURLToPath } from "node:url";
+import { writeUserBrief } from "./briefstore.js";
 
 /**
  * doors.ts — v21 THE TWELVE DOORS: an intent-level facade over the full ~190-tool surface.
@@ -29,7 +31,7 @@ async function inner() {
   if (cached) return cached;
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-  const here = path.resolve(path.dirname(new URL(import.meta.url).pathname));
+  const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
   const transport = new StdioClientTransport({
     command: "node",
     args: [path.join(here, "index.js")],
@@ -80,8 +82,7 @@ export function registerDoorTools(server: McpServer) {
       if (plan?.status === "scaffold") return { status: "needs-authoring", scaffold: plan.scaffold, fix: "Adapt this scaffold to the brief (objects, layouts, counts, animation, menu — see each node's fields), then re-call pico_build_app with {brief, draftSpec: <adapted scaffold>}." };
       if (!plan?.spec) return { status: "plan-failed", detail: plan, fix: "Fix the validation problems named in detail and re-call with the corrected draftSpec; keep to concrete objects/layouts (e.g. 'N <things> on a floor with a menu')." };
       const id = `door${Math.abs([...brief].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) % 100000)}`;
-      const briefsDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../briefs");
-      fs.writeFileSync(path.join(briefsDir, `${id}.json`), JSON.stringify({ id, brief, spec: plan.spec }, null, 2));
+      writeUserBrief(id, { id, brief, spec: plan.spec });
       const fleet = await call("fleet_build", { briefIds: [id], settleSec: 16 });
       const r = fleet?.results?.[0] ?? {};
       return {
@@ -168,7 +169,7 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_measure",
-    "DOOR 6 — MEASURE a placement in a capture (v20 metric layer): color-keyed detection + calibrated-camera projection → error in px and meters, box IoU. Requires a one-time calibrate_capture_camera run (pico_doctor reports calibration state). Refuses occluded/absent targets instead of guessing.",
+    "DOOR 6 — MEASURE a placement in a capture (v20 metric layer): color-keyed detection + calibrated-camera projection → error in px and meters, box IoU. Requires a one-time calibrate_capture_camera run, which lives on the full surface — pico_doctor reports calibration state and the exact route. Refuses occluded/absent targets instead of guessing.",
     {
       capturePath: z.string(),
       targets: z.array(z.object({ name: z.string(), colorKey: z.array(z.number()).length(3), expectedPosition: z.array(z.number()).length(3), expectedSize: z.array(z.number()).length(3).optional() })).min(1),
@@ -212,7 +213,7 @@ export function registerDoorTools(server: McpServer) {
         preflight: pre,
         toolchain: tc,
         emulator: { running: emu?.running ?? false, serial: emu?.serial ?? null },
-        cameraCalibration: calibration ? { f: calibration.f, eyeHeight: calibration.eyeHeight, residualPx: calibration.residualPx, at: calibration.at } : "uncalibrated — run fleet_build(['calib']) then calibrate_capture_camera to enable pico_measure",
+        cameraCalibration: calibration ? { f: calibration.f, eyeHeight: calibration.eyeHeight, residualPx: calibration.residualPx, at: calibration.at } : "uncalibrated — pico_measure needs a one-time calibration, and the two tools that perform it (fleet_build(['calib']) then calibrate_capture_camera) are not on the doors surface: unset PICO_MCP_SURFACE (or set it to `full`), restart your MCP client, run them once, then come back",
       };
     },
   );

@@ -53,6 +53,17 @@ function findAdb(io: PreflightIO): string | null {
   return null;
 }
 
+/**
+ * The calibration remedy names fleet_build + calibrate_capture_camera, neither of which is
+ * registered on the `doors` surface. Telling a doors-only user to run them is telling them to do
+ * something they cannot do, so name the way out of the surface as part of the fix.
+ */
+function calibrationRoute(): string {
+  return process.env.PICO_MCP_SURFACE === "doors"
+    ? "fleet_build(['calib']) then calibrate_capture_camera — both live on the full surface, so unset PICO_MCP_SURFACE (or set it to `full`) in your MCP server env and restart the client first"
+    : "fleet_build(['calib']) then calibrate_capture_camera";
+}
+
 export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   const out: CheckResult[] = [];
   const push = (c: CheckResult) => out.push(c);
@@ -68,6 +79,27 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   push(adb
     ? { name: "adb", status: "pass", detail: adb, fix: null }
     : { name: "adb", status: "fail", detail: "no adb on PATH and no bundled platform-tools", fix: `Install the PICO Spatial Plugin in Android Studio (payloads land under ~/Library/PICO/sdk/0.13/) or add adb to PATH; expected bundled path: ${SDK_ADB(io.home)}` });
+
+  // 2b. PICO SDK payload. adb can be on PATH from an unrelated Android install, so a passing adb
+  //     check is not evidence the PICO SDK is present. Without it there is nothing to build against.
+  const sdkRoot = path.join(io.home, "Library/PICO/sdk/0.13");
+  push(io.statMtimeMs(sdkRoot) != null
+    ? { name: "pico-sdk", status: "pass", detail: sdkRoot, fix: null }
+    : { name: "pico-sdk", status: "fail", detail: `no PICO SDK payload at ${sdkRoot}`, fix: "Install the PICO Spatial Plugin in Android Studio and let it download the SDK + emulator payloads; they land under ~/Library/PICO/sdk/0.13/." });
+
+  // 2c. JDK. Gradle needs it, and its absence surfaces as an opaque build failure much later.
+  //     validate_toolchain already reports this; a tester told preflight_env names their missing
+  //     prerequisites should not have to know that a second tool holds the other half of the answer.
+  const javaHome = process.env.JAVA_HOME;
+  const javaOk = (javaHome && io.statMtimeMs(path.join(javaHome, "bin", "java")) != null) || io.exec("java", ["-version"]).ok;
+  push(javaOk
+    ? { name: "jdk", status: "pass", detail: javaHome ? `JAVA_HOME=${javaHome}` : "java on PATH", fix: null }
+    : { name: "jdk", status: "fail", detail: "no JDK found (JAVA_HOME unset and no java on PATH)", fix: "Install a JDK 17+ (Android Studio bundles one, or `brew install openjdk@17`) and set JAVA_HOME — Gradle APK builds fail without it." });
+
+  // 2d. ImageMagick. Only the capture-analysis lane needs it, so this is a warn, not a fail.
+  push(io.exec("magick", ["-version"]).ok
+    ? { name: "imagemagick", status: "pass", detail: "magick on PATH", fix: null }
+    : { name: "imagemagick", status: "warn", detail: "no `magick` on PATH — golden-frame MAE compare and some capture analysis are unavailable", fix: "brew install imagemagick (only needed for the capture-analysis lane; building and running apps works without it)." });
 
   // 3. emulator (a PICO device attached and in 'device' state)
   let bootAtMs: number | null = null;
@@ -104,7 +136,7 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   const calPath = path.join(io.home, ".pico-mcp", "camera-calibration.json");
   const calRaw = io.readFile(calPath);
   if (!calRaw) {
-    push({ name: "calibration", status: "warn", detail: "no camera calibration on file — pico_measure/measure_placement unavailable", fix: "Run fleet_build(['calib']) then calibrate_capture_camera (one-time per emulator boot)." });
+    push({ name: "calibration", status: "warn", detail: "no camera calibration on file — pico_measure/measure_placement unavailable", fix: `Run ${calibrationRoute()} (one-time per emulator boot).` });
   } else {
     // calibrate_capture_camera persists `at` as an ISO string (metricverify.ts). Comparing a string
     // to a number coerces to NaN, which silently reported every stale calibration as fresh.
@@ -116,9 +148,9 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     } catch { /* unparseable */ }
     if (calAt == null) calAt = io.statMtimeMs(calPath);
     if (bootAtMs == null) {
-      push({ name: "calibration", status: "unknown", detail: "calibration on file but the emulator is not running — freshness cannot be assessed (calibration dies on emulator cold restart)", fix: "Boot the emulator, re-run preflight_env, and recalibrate if it reports stale: fleet_build(['calib']) then calibrate_capture_camera." });
+      push({ name: "calibration", status: "unknown", detail: "calibration on file but the emulator is not running — freshness cannot be assessed (calibration dies on emulator cold restart)", fix: `Boot the emulator, re-run preflight_env, and recalibrate if it reports stale: ${calibrationRoute()}.` });
     } else if (calAt != null && calAt < bootAtMs) {
-      push({ name: "calibration", status: "fail", detail: `calibration predates the current emulator boot (calibrated ${new Date(calAt).toISOString()}, booted ${new Date(bootAtMs).toISOString()}) — cy can shift ~300px across a cold restart`, fix: "Recalibrate: fleet_build(['calib']) then calibrate_capture_camera, BEFORE any measure_placement session." });
+      push({ name: "calibration", status: "fail", detail: `calibration predates the current emulator boot (calibrated ${new Date(calAt).toISOString()}, booted ${new Date(bootAtMs).toISOString()}) — cy can shift ~300px across a cold restart`, fix: `Recalibrate BEFORE any measure_placement session: ${calibrationRoute()}.` });
     } else {
       push({ name: "calibration", status: "pass", detail: `calibration on file${calAt ? ` (at ${new Date(calAt).toISOString()})` : ""}`, fix: null });
     }

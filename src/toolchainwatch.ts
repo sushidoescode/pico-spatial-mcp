@@ -84,9 +84,18 @@ export function registerToolchainWatchTools(server: McpServer) {
       try {
         const res = await fetch(MAVEN_BOM, { signal: AbortSignal.timeout(20_000) });
         const xml = await res.text();
+        const versions = [...xml.matchAll(/<version>([^<]+)<\/version>/g)].map((m) => m[1]);
+        // <latest> lags <release> in this repository — it read 0.12.2 while <release> was 0.13.3,
+        // which made the verdict advertise a version OLDER than the installed pin. Prefer <release>,
+        // then the highest published version, and only then <latest>.
+        const byVersion = (a: string, b: string) =>
+          a.split(".").map(Number).reduce((acc, n, i) => acc || n - (Number(b.split(".")[i]) || 0), 0);
+        const release = xml.match(/<release>([^<]+)<\/release>/)?.[1] ?? null;
+        const highest = versions.length ? [...versions].sort(byVersion).pop()! : null;
         result.maven = {
-          latest: xml.match(/<latest>([^<]+)<\/latest>/)?.[1] ?? null,
-          versions: [...xml.matchAll(/<version>([^<]+)<\/version>/g)].map((m) => m[1]),
+          latest: release ?? highest ?? xml.match(/<latest>([^<]+)<\/latest>/)?.[1] ?? null,
+          release,
+          versions,
           lastUpdated: xml.match(/<lastUpdated>(\d+)<\/lastUpdated>/)?.[1] ?? null,
         };
       } catch (e: any) {

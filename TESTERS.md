@@ -33,13 +33,15 @@ Claude Code (`.mcp.json` in your project, or your user config):
   "mcpServers": {
     "pico-spatial-mcp": {
       "command": "node",
-      "args": ["<absolute-path>/node_modules/pico-spatial-mcp/dist/index.js"]
+      "args": ["<absolute-path>/node_modules/pico-spatial-mcp/dist/index.js"],
+      "env": {}
     }
   }
 }
 ```
 
-Any MCP client works — it speaks JSON-RPC over stdio.
+Any MCP client works — it speaks JSON-RPC over stdio. The `env` block is where `PICO_MCP_SURFACE`
+goes if you want the narrowed surface — see below.
 
 ## Check it works
 
@@ -51,7 +53,11 @@ Expect ~220 tools on the full surface.
 
 ## Choosing a surface
 
-Set `PICO_MCP_SURFACE` in the server env:
+Set `PICO_MCP_SURFACE` in the `env` block of the config above:
+
+```json
+"env": { "PICO_MCP_SURFACE": "doors" }
+```
 
 - unset / `full` — **~220 tools.** Everything.
 - `doors` — **13 tools**: `validate_toolchain` `pico_build_app` `pico_scan_world` `pico_place`
@@ -60,19 +66,31 @@ Set `PICO_MCP_SURFACE` in the server env:
 
 Start with `doors` if 220 tools is overwhelming; it's the curated path through the same engine.
 
+One sharp edge worth knowing up front: **`pico_measure` needs a one-time camera calibration, and the
+two tools that perform it are not on the `doors` surface.** To calibrate, switch to the full surface
+(remove `PICO_MCP_SURFACE` or set it to `full`), restart your client, run `fleet_build(['calib'])`
+then `calibrate_capture_camera` once, and switch back if you prefer the narrow surface. `pico_doctor`
+reports your calibration state and repeats this route. Calibration also dies on an emulator cold
+restart, so expect to redo it after rebooting the emulator.
+
 ## What you'll also need
 
-The server runs on its own, but most tools drive real local software. `preflight_env` tells you
-precisely which of these you're missing:
+The server runs on its own, but most tools drive real local software. `preflight_env` checks each of
+these and names an exact fix for any that fail:
 
 - **PICO OS 6 emulator** + the PICO SDK (this is the main one)
 - **adb** on `PATH`
-- **Android SDK / JDK** for the Gradle build lane
-- **ImageMagick** for some capture analysis
-- macOS for the native virtual-camera gates
+- **JDK** for the Gradle build lane
+- **ImageMagick** for some capture analysis (a warning, not a failure — you can build without it)
+
+One thing it does not check is **macOS**, which the native virtual-camera gates require; nothing on
+your machine can be probed for that beyond the platform you're already on.
 
 Without the emulator you can still start the server, list tools, and read documentation tools —
 you just can't build or capture anything.
+
+Apps you generate are written to `~/.pico-mcp/briefs/`, outside the installed package, so upgrading
+the tarball never discards your work.
 
 ## Known limits, stated plainly
 

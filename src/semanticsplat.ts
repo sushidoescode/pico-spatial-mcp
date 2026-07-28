@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { okJson } from "./util.js";
+import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
 
@@ -40,7 +41,7 @@ interface Cluster { id: number; kind: string; center: Vec3; size: Vec3; points: 
 async function selfCall(name: string, args: any): Promise<any> {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-  const here = path.resolve(path.dirname(new URL(import.meta.url).pathname));
+  const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
   const transport = new StdioClientTransport({ command: "node", args: [path.join(here, "index.js")], cwd: path.dirname(here) });
   const client = new Client({ name: "semantic-splat", version: "1" });
   await client.connect(transport);
@@ -163,7 +164,7 @@ export function registerSemanticSplatTools(server: McpServer) {
         autoLabels = { status: "unavailable", hint: `${py} lacks transformers>=4.46 + torch + scipy. Install: ${py} -m pip install transformers torch scipy` };
       }
       const views = coveringViews(min, max, floorY, dir);
-      const scriptsDir = path.join(path.resolve(path.dirname(new URL(import.meta.url).pathname)), "..", "scripts", "py");
+      const scriptsDir = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url))), "..", "scripts", "py");
       const size = owlReady ? 960 : 640; // OWL-v2 ingests 960px — render at native detector resolution
       // scale the default point budget with render area so the 960px views keep the 640px density
       const cfg = { splat: splatPath, maxPts: maxSamples ?? (size === 960 ? 1_125_000 : 500_000), W: size, H: size, fov: 80, clusters, views, saveClean: owlReady };

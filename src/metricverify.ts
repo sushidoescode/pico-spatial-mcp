@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
+import { fileURLToPath } from "node:url";
 
 const run = promisify(execFile);
 
@@ -44,7 +45,7 @@ function resolvePython(): string | null {
 async function detect(capturePath: string, keys: Record<string, [number, number, number]>) {
   const py = resolvePython();
   if (!py) throw new Error("no python with PIL+numpy found (PICO_PY / ~/.pico/venv) — required for color-key detection");
-  const script = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../scripts/py/detect_colorkey.py");
+  const script = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../scripts/py/detect_colorkey.py");
   const { stdout } = await run(py, [script, capturePath, JSON.stringify(keys)], { timeout: 120_000, maxBuffer: 8 * 1024 * 1024 });
   return JSON.parse(stdout) as { detections: Record<string, { centroid: [number, number]; bboxCenter: [number, number]; bbox: [number, number, number, number]; pixels: number } | null>; width: number; height: number };
 }

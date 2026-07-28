@@ -54,14 +54,35 @@ function derivedSiblingDirs() {
   const dirs = new Set();
   for (const f of fs.readdirSync(path.join(repoRoot, "dist")).filter((n) => n.endsWith(".js"))) {
     const src = fs.readFileSync(path.join(repoRoot, "dist", f), "utf8");
+    // Two shapes appear in the built output: ("..", "briefs") and ("../briefs"). Matching only the
+    // first missed the single-string form four shipped modules use.
+    //
+    // Scope matters in both directions. Matching ".." anywhere over-fires — editorcomponent emits
+    // "../Assets/audio.wav" as a default value INTO a generated USD file, which resolves nothing and
+    // names no directory we could ship. Restricting to lines that cite import.meta.url under-fires —
+    // mousebridge computes its base once (`const here = ...`) and joins "tools" several lines later,
+    // so `tools/` silently dropped out of the payload.
+    //
+    // A FILE-level gate is the honest granularity: only a module that resolves against itself can
+    // have a sibling-of-dist dependency, and the false-positive file contains no import.meta.url at
+    // all. Do not narrow this to per-line.
+    if (!src.includes("import.meta.url")) continue;
     for (const m of src.matchAll(/["'`]\.\.["'`]\s*,\s*["'`]([A-Za-z0-9._-]+)["'`]/g)) dirs.add(m[1]);
+    for (const m of src.matchAll(/["'`]\.\.\/([A-Za-z0-9._-]+)[^"'`]*["'`]/g)) dirs.add(m[1]);
   }
   // Created at runtime, never packaged — resolved as siblings of the INSTALL, not of dist.
   for (const runtime of [".pico-stacks", "golden"]) dirs.delete(runtime);
   return [...dirs].sort();
 }
 
-const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "pico-mcp-tester-"));
+// [M6] The sandbox name deliberately contains a SPACE and a non-ASCII character. A review found nine
+//      sites using `new URL(import.meta.url).pathname`, which keeps URL percent-encoding: a space
+//      becomes %20 and an accented character becomes %C3%A9, so the resolved path does not exist.
+//      That killed the whole `doors` surface and fleet_build for anyone whose install path had a
+//      space in it — "~/My Projects", an accented username — and the old sandbox could never catch
+//      it, because mkdtemp under /var/folders is always space-free. Every check below now runs in a
+//      hostile path by default. Do not "clean up" this name.
+const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "pico mcp tester é "));
 console.log(`sandbox: ${sandbox}\n`);
 let verifiedTarball = null;
 
@@ -131,6 +152,16 @@ try {
     ? ok("TESTERS.md ships")
     : fail("TESTERS.md missing — a tarball recipient has no working install path");
 
+  // [M7] Docs the shipped PROMPTS instruct the agent to read. These are cited by name in prompt text
+  //      rather than resolved as paths, so the [M1] derivation structurally cannot see them: a review
+  //      found all five prompts opening with "Read SKILLS.md + DESIGN.md first" while neither was in
+  //      the package. An unfollowable first instruction makes an agent stall or invent the rubric.
+  for (const doc of ["SKILLS.md", "DESIGN.md"]) {
+    fs.existsSync(path.join(installed, doc))
+      ? ok(`prompt-referenced doc ships: ${doc}`)
+      : fail(`${doc} missing — the shipped prompts tell the agent to read it`);
+  }
+
   const entry = path.join(installed, "dist", "index.js");
   if (!fs.existsSync(entry)) { fail(`bin entry missing: ${entry}`); process.exit(1); }
   fs.readFileSync(entry, "utf8").startsWith("#!") ? ok("bin entry has a shebang") : fail("dist/index.js lost its shebang — npx would break");
@@ -164,6 +195,26 @@ try {
     : ok("preflight fixes contain no repo-only commands");
 
   await client.close();
+
+  // [M6] Exercise the `doors` surface TESTERS.md tells people to start with. This is the check that
+  //      would have caught the percent-encoding bug: door tools spawn an INNER full-surface server
+  //      via StdioClientTransport using a module-relative script path and cwd, so a bad resolution
+  //      surfaces as `spawn node ENOENT` — which reads like a missing Node, not a path bug.
+  const doorsTransport = new StdioClientTransport({
+    command: process.execPath, args: [entry], cwd: sandbox,
+    env: { ...process.env, PICO_MCP_SURFACE: "doors" },
+  });
+  const doorsClient = new Client({ name: "tarball-verifier-doors", version: "0.0.0" });
+  await doorsClient.connect(doorsTransport);
+  const doorTools = await doorsClient.listTools();
+  doorTools.tools.length === 13
+    ? ok(`doors surface registered all 13 door tools`)
+    : fail(`doors surface listed ${doorTools.tools.length} tools, expected 13`);
+  const sdk = await doorsClient.callTool({ name: "pico_sdk", arguments: { symbol: "Entity" } });
+  const sdkBody = JSON.parse(sdk.content[0].text);
+  if (sdkBody.status === "ok") ok("a door tool completed its inner self-client spawn from a path containing a space");
+  else fail(`door tool failed in a spaced path: ${JSON.stringify(sdkBody).slice(0, 200)} — module-relative resolution is broken`);
+  await doorsClient.close();
 
   // [M5] Publish only what passed, so the shipped artifact IS the verified artifact.
   if (publishDir && failures === 0) {

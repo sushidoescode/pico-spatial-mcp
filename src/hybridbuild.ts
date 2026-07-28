@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { okJson } from "./util.js";
 import { buildLedger } from "./compiler.js";
 import { appSpecSchema } from "./appspec.js";
+import { fileURLToPath } from "node:url";
 
 const run = promisify(execFile);
 const ADB = process.env.PICO_ADB ?? path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
@@ -27,7 +28,7 @@ const MENU_BUNDLE = path.join(os.homedir(), "AndroidStudioProjects/showroomxr-na
 async function selfClient() {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-  const here = path.resolve(path.dirname(new URL(import.meta.url).pathname));
+  const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
   const transport = new StdioClientTransport({ command: "node", args: [path.join(here, "index.js")], cwd: path.dirname(here) });
   const client = new Client({ name: "hybrid-builder", version: "1" });
   await client.connect(transport);

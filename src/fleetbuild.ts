@@ -14,6 +14,8 @@ import { proceduralUsda } from "./procedural.js";
 import { bakeTexturedModel } from "./bundle.js";
 import { startBridgeDetached } from "./mousebridge.js";
 import { classifyBriefExecution } from "./briefroute.js";
+import { fileURLToPath } from "node:url";
+import { findBriefPath } from "./briefstore.js";
 
 const run = promisify(execFile);
 
@@ -515,7 +517,7 @@ type Step = { order: number; tool: string; args: any; targetPath: string; note?:
 async function selfClient() {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-  const here = path.resolve(path.dirname(new URL(import.meta.url).pathname));
+  const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
   const transport = new StdioClientTransport({ command: "node", args: [path.join(here, "index.js")], cwd: path.dirname(here) });
   const client = new Client({ name: "fleet-executor", version: "1" });
   await client.connect(transport);
@@ -743,7 +745,7 @@ export function registerFleetBuildTools(server: McpServer) {
     },
     async ({ briefIds, projectsRoot, settleSec, minObjects }) => {
       const root = projectsRoot ?? path.join(os.homedir(), "AndroidStudioProjects");
-      const briefsDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../briefs");
+
       const settle = (settleSec ?? 12) * 1000;
       const results: any[] = [];
       const { client, call } = await selfClient();
@@ -752,8 +754,11 @@ export function registerFleetBuildTools(server: McpServer) {
           const rec: any = { id, built: false, installed: false, verdict: null, artifact: null, verificationRoute: null, panelEvidence: null, panelArtifact: null, notes: [] };
           results.push(rec);
           try {
-            const briefPath = path.join(briefsDir, `${id}.json`);
-            if (!fs.existsSync(briefPath)) { rec.notes.push("brief not found"); continue; }
+            const briefPath = findBriefPath(id);
+            if (!briefPath) { rec.notes.push("brief not found"); continue; }
+            // IBL assets are resolved relative to the brief that was actually found, so a corpus
+            // brief keeps using the packaged assets and a user brief can carry its own alongside it.
+            const briefsDir = path.dirname(briefPath);
             const entry = JSON.parse(fs.readFileSync(briefPath, "utf8"));
             let execution;
             try {

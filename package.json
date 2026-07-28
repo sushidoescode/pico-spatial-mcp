@@ -12,7 +12,9 @@
     "scripts",
     "tools",
     "briefs",
-    "TESTERS.md"
+    "TESTERS.md",
+    "SKILLS.md",
+    "DESIGN.md"
   ],
   "scripts": {
     "build": "tsc",
