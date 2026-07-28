@@ -1,10 +1,12 @@
-# Virtual camera — three levels, three evidence boundaries (v29.1)
+# Virtual camera — three levels, three evidence boundaries (v29.2)
 
-*(Direct-test-grounded; L2 updated 2026-07-24. “Virtual camera” here means a deterministic view
+*(Direct-test-grounded; L2 updated 2026-07-28. “Virtual camera” here means a deterministic view
 synthesized from a scanned-world model — not PICO VST, not passthrough, and not a claim about Swan
 hardware. The L1 implementation shipped, but its planned Task 3 real-scene coverage bar did not
-pass. **L2 is now PROVEN end-to-end (v29.1): an injected changing card reaches an Android app's
-camera preview inside the emulator, vision_verified.** L3 is proposal-only.)*
+pass. **L2 is PROVEN end-to-end: an injected changing card reaches an Android app's camera preview
+inside the emulator (v29.1), and the scanned room itself now makes the same trip (v29.2) — both
+vision_verified.** In v29.2 the room and its run-unique nonce are legible in-app; reading the
+liveness counter is `blocked` by a capture-path limit, characterised below. L3 is proposal-only.)*
 
 ## The short version
 
@@ -70,9 +72,24 @@ source and the injected pixels flowed all the way through.
 
 **Honest caveats.**
 
-- **The Immersed source updates slowly.** A 217 ms host read froze on a single counter; only a
-  ~15 s read spanned two counters. So the in-app feed changes over seconds, not at 60 fps. The card
-  arrives and changes, but this is not a real-time video path as-is.
+- ~~**The Immersed source updates slowly.**~~ **RETRACTED in v29.2 — this was our own bug, not the
+  source's.** The v29.1 figures ("a 217 ms host read froze on a single counter; only a ~15 s read
+  spanned two counters") were misread as a property of the Immersed device. The 217 ms was a
+  *source-timestamp* span — 8 frames at 30 Hz, all inside one 1-second producer hold, so a single
+  counter is exactly what `kTicksPerSourceFrame = 60` predicts.
+  v29.2 measured the rate directly: **Immersed republishes at a dead-steady 30.00 Hz**, unchanged
+  whether we feed it one image per second or thirty. The ~1 Hz in-app cadence was that same producer
+  constant, which held each source image for a full second; and the ~15 s was the reader perturbing
+  its own run — a PNG encode, a disk read-back and a second SHA-256 *inside* the capture callback.
+  v29.1's own records show 40 consecutive frames spanning just 1.28 s of source time across that read.
+  The split between those three costs was never measured, because the v29.2 cells ran `--no-preview`,
+  which removes the path entirely. Two host-only cells settled the rate: at
+  `--ticks-per-source-frame 60` the delivered image rate was 1.01 Hz, at `1` it was 30.00 Hz, with
+  `observedSourceHz` pinned at 30.00 in both. Ledger `vcam-worldframe` seq 0.
+- **One thing still unmeasured.** The reader reported `dropped: 0` in both cells, but
+  `alwaysDiscardsLateVideoFrames = NO` makes late frames queue rather than drop, so that zero is not
+  evidence of a clean capture. Whether `didDropSampleBuffer` ever fires against real AVFoundation
+  remains unmeasured, not confirmed. Ledger seq 2.
 - **Direct CMIO client readback stays `blocked`, by contract.** Apple does not document the
   ownership of a `CMSampleBuffer` dequeued from a CMIO input stream (`CMSimpleQueue` delegates
   element lifetime "externally"; no retain annotation; the documented source-consumer path is
@@ -88,6 +105,57 @@ a changing-card bar that requires two distinct counters backed by two distinct c
 `scripts/macos/cmio-camera-reader.m` (the read-only CMIO probe + permission-safe authorization-only
 and AVFoundation readback modes). Gates: `test:vcamboundary`, `test:vcamreader`,
 `test:vcamreader-native`.
+
+## L2 — v29.2: the scanned room itself makes the trip
+
+v29.1 proved the transport with a synthetic test card. v29.2 replaced the card with the world model's
+own pixels: a fixed-pose render of the scanned-world model — the `Cozy Neon Cyberpunk Ramen Bar`
+Gaussian-splat world — stamped with a run-unique nonce and a legible counter, carrying provenance the
+native writer validates before a single sample is enqueued.
+
+**Proven, `vision_verified`.** A rendered fixed-pose scanned-room frame reaches an in-emulator CameraX
+preview. The looked-at capture shows CameraPeek's `STREAMING` label, the nonce plaque reading
+`VCAM-20260728-046A`, and beneath it the scanned ramen bar — cyan neon signage on both side walls and
+the three-tier illuminated food display. The nonce was minted minutes before the run, so the frame
+cannot be a cached image or the v28.4 default-scene fallback. Ledger `vcam-worldframe` seq 3.
+Artifact: `~/.pico-mcp/artifacts/vcam-v29.2-20260728-046a/`.
+
+**Blocked, and precisely characterised: the counter could not be *read* in-app.** This is a
+capture-path limit, not a delivery failure and not in-app clipping. CameraPeek's window is 1920×1080,
+but `adb screencap` captures the 2160×2158 built-in spatial display, which frames a *zoomed portion*
+of that floating panel — CameraPeek's own `STREAMING` label is clipped at the top edge for the same
+reason. The system's second display is a `FLAG_PRIVATE` / `OWN_CONTENT_ONLY` `VirtualDisplay` and
+`screencap -a` returns a single file, so the app surface is not capturable. The full frame is on
+CameraPeek's surface; the region carrying the counter simply cannot be photographed. Nothing here is
+evidence that delivery is static. Ledger seq 4.
+
+**The retraction above matters more than either.** The "Immersed is slow" caveat that shaped the
+v29.1 write-up was wrong, and v29.2 measured the truth: a dead-steady 30.00 Hz source, with our own
+`kTicksPerSourceFrame = 60` responsible for the ~1 Hz in-app cadence.
+
+**A hazard found in passing.** At `--ticks-per-source-frame 1`, the producer's single-outstanding-sample
+gate admits only every *other* scheduled tick, so enqueued frame indices acquire fixed even parity —
+measured `{0: 109, 2: 108}`, with indices 1 and 3 never delivered at all. With an even-length frame
+loop, exactly half the frames can never reach the sink. This is a coupling between the backpressure
+gate and the frame-advance rate, not a tuning constant, and any streaming work must fix it rather
+than merely lowering the constant. Ledger seq 1.
+
+**A design consequence worth carrying forward.** Confining *all* per-frame variation to
+`COUNTER_REGION` is what makes changing frames distinguishable from animation or encoder drift — that
+invariant is load-bearing. But it also means that when the viewport omits that one region, nothing
+visible varies, and liveness becomes unreadable even if delivery is perfect. A redundant counter
+inside the nonce plaque, which sits comfortably in view, would have made this round a full pass at no
+cost to the invariant. Ledger seq 5.
+
+**Device-free tooling shipped this arc:** `src/vcamthroughput.ts` (a pure analyzer that correlates
+producer and reader JSONL by frame hash and refuses to publish a number it cannot justify — latency
+is always an explicit lower bound, and truncated records, a non-BGRA format, or missing host stamps
+each become a `confounded` reason rather than a confident zero); `src/vcammaterialize.ts` (writes
+frames before the manifest, indexed by array position, validating everything before writing anything);
+`stampFrame`/`createFixedPoseSequence` in `src/vcamtransport.ts`; a second natively-validated manifest
+kind with twelve required provenance rules; and `renderProvenance` on the boundary report, bound to an
+exact-match `source.kind` so scanned-room provenance cannot be attached to a card run. New gates:
+`test:vcamthroughput`, `test:vcammaterialize`.
 
 ## L1 — the world model gets a camera
 

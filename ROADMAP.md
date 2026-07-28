@@ -5,6 +5,39 @@ emulator, or explicitly labeled with the event that unblocks it. Nothing here is
 date; everything shipped gets a ledger entry before it gets a claim. Rejected-on-the-record
 ideas are listed too — knowing what we won't do is part of the honesty contract.)*
 
+## Just shipped (v29.2)
+
+- **The scanned room reaches the emulator's camera — `vision_verified`**: a fixed-pose render of the
+  scanned-world model (the `Cozy Neon Cyberpunk Ramen Bar` Marble Gaussian-splat world), stamped with
+  a run-unique nonce and carrying natively-validated provenance
+  (world + pose + intrinsics + renderer + base-frame hash), reaches an in-emulator CameraX preview.
+  The looked-at capture shows the nonce plaque `VCAM-20260728-046A` and the room beneath it; the
+  nonce was minted minutes earlier, so it cannot be a cached frame or v28.4's default-scene fallback.
+  Ledger `vcam-worldframe` seq 3.
+- **`blocked`, and precisely characterised**: the liveness counter could not be *read* in-app. This
+  is a capture-path limit, not a delivery failure and not in-app clipping — CameraPeek's window is
+  1920×1080 while `adb screencap` captures the 2160×2158 spatial display, which frames a zoomed
+  portion of that panel. The system's only other display is a `FLAG_PRIVATE`/`OWN_CONTENT_ONLY`
+  `VirtualDisplay` owned by `com.pxr.scenarioprovider`, and `screencap -a` returns a single file — so
+  there is no second capture path to the unclipped panel. Ledger seq 4.
+- **The "Immersed is slow" caveat is RETRACTED** — it was our bug, not the device's. Measured:
+  Immersed republishes at a dead-steady **30.00 Hz**; the ~1 Hz in-app cadence was
+  `kTicksPerSourceFrame = 60` in our own producer, and v29.1's "~15 s" was the reader perturbing its
+  own run with an in-callback PNG encode, disk read-back and second SHA-256 — not source latency.
+  Two host-only cells: 1.01 Hz at `--ticks-per-source-frame 60`, 30.00 Hz at
+  `1`. OBS was pre-approved for this and deliberately left unspent. Ledger seq 0.
+- **New hazard found**: at high cadence the single-outstanding-sample gate admits only every *other*
+  scheduled tick, so enqueued frame indices acquire fixed even parity — measured `{0:109, 2:108}`,
+  with indices 1 and 3 never delivered. With an even-length loop, half the frames can never reach the
+  sink. A coupling to fix, not a constant to tune. Ledger seq 1.
+- **Device-free tooling**: a pure throughput analyzer that refuses to publish a number it cannot
+  justify (latency is always an explicit lower bound; truncated records, a non-BGRA format, or
+  missing host stamps each become a `confounded` reason rather than a confident zero), a fail-closed
+  materializer, a second natively-validated manifest kind with twelve required provenance rules, and
+  `renderProvenance` bound to an exact-match `source.kind` so scanned-room provenance cannot be
+  attached to a card run. Battery 27 → 29 `test:` suites (30 invocations), now self-checking against
+  the published count. Full evidence: [docs/VIRTUAL_CAMERA.md](docs/VIRTUAL_CAMERA.md).
+
 ## Just shipped (v29.1)
 
 - **Emulator camera-HAL — L2 PROVEN end-to-end, `vision_verified`**: an injected high-contrast
@@ -15,7 +48,9 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
   injected pixels are readable byte-for-byte on the Immersed **source** via AVFoundation, isolating
   v28.4's negative to its true cause: qemu's responsible app lacked macOS camera authorization and
   fell back to the default scene. Ledgers `vcam-hostsource` seq 0 and `com.pico.camerapeek` seq 1.
-  Caveats: the source updates slowly (seconds, not 60 fps); direct CMIO client readback stays
+  Caveats: ~~the source updates slowly (seconds, not 60 fps)~~ **— retracted in v29.2, see above:
+  Immersed runs at a steady 30.00 Hz and the limiter was our own producer constant**; direct CMIO
+  client readback stays
   `blocked` on an undocumented ownership contract (AVFoundation is the documented source-consumer
   path); calibration is stale after camera-mode restarts. Device-free tooling: a fail-closed
   boundary-report model (`src/vcamboundary.ts`) + the native reader, gated by `test:vcamboundary`,
@@ -55,12 +90,19 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
 
 ## Near-term (ungated — buildable on the current emulator)
 
-- **Live world-model webcam bridge** — the injected-pixel gate is now MET (v29.1: a deterministic
-  card reaches CameraPeek via the Immersed virtual camera + `-camera-back webcam1`, `vision_verified`).
-  What remains: drive the Immersed sink with *continuous rendered world-model frames from a live pose*
-  instead of a static card sequence, and address the source's slow update rate (the current Immersed
-  path changes over seconds, not at 60 fps) — likely via a higher-throughput host virtual-camera
-  producer (e.g. OBS, operator-approved) keyed to the head pose.
+- **Live world-model webcam bridge** — the injected-pixel gate is MET (v29.1: a deterministic card
+  reaches CameraPeek via the Immersed virtual camera + `-camera-back webcam1`, `vision_verified`),
+  and **v29.2 pushed the scanned room itself through the same path**, `vision_verified` — the room
+  and a run-unique nonce are legible in an in-emulator CameraX preview. **The "slow source" blocker
+  named here previously is RETRACTED:** v29.2 measured Immersed at a dead-steady 30.00 Hz, and traced
+  the ~1 Hz in-app cadence to `kTicksPerSourceFrame = 60` in our own producer. No higher-throughput
+  host virtual camera is needed for that reason; OBS was pre-approved and deliberately left unspent.
+  What remains: drive the sink with *continuous rendered world-model frames from a live pose* instead
+  of a static sequence — which needs a different producer input contract, since the current manifest
+  is a set of pre-hashed static files and structurally cannot express a stream. Two v29.2 findings
+  gate that work: an even/odd aliasing coupling between the backpressure gate and the frame-advance
+  rate silently drops half the frames at high cadence, and liveness must be readable from wherever
+  the viewport actually looks — a redundant counter in the nonce plaque is the cheap fix.
 - **Line-of-sight placement constraint**: occupancy solving today guarantees non-intersection;
   a visibility constraint (can the camera actually SEE the placed object?) is the next honest
   step for the free-space world model.
