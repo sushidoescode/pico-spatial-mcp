@@ -33,16 +33,10 @@ const run = promisify(execFile);
 
 const ADB = path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
 const JBR = "/Applications/Android Studio.app/Contents/jbr/Contents/Home";
-/**
- * The known-good Gradle project every generated app is cloned and rebranded from. It is NOT shipped
- * in the npm package: it is a full Android project whose editor-asset module alone is ~420MB, so a
- * generated app is a rebranded clone of it rather than a thin scaffold. Anyone installing from the
- * tarball therefore has no template and cannot build until one exists at this path. preflight_env
- * checks for it by name so that failure is reported up front rather than after a long build.
- */
-export const APP_TEMPLATE = path.join(os.homedir(), "AndroidStudioProjects/galleryxr-native");
-const TEMPLATE = APP_TEMPLATE;
-const MENU_BUNDLE = path.join(os.homedir(), "AndroidStudioProjects/showroomxr-native/app/src/main/assets/menu.bundle");
+// v29.3: apps are GENERATED from the packaged skeleton (src/projectgen.ts / appskeleton/) — the
+// old clone-of-~/AndroidStudioProjects/galleryxr-native path existed only on the author's machine,
+// so every tarball install died at `scaffold failed`. The GameMenu bundle ships in the package too.
+import { MENU_BUNDLE_ASSET } from "./projectgen.js";
 
 const KTX1_IDENTIFIER = Buffer.from([0xab, 0x4b, 0x54, 0x58, 0x20, 0x31, 0x31, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
 const KTX_R11F_G11F_B10F = 0x8c3a;
@@ -829,7 +823,7 @@ export function registerFleetBuildTools(server: McpServer) {
 
             // 1. scaffold (idempotent)
             if (!fs.existsSync(projectDir)) {
-              const sc = await call("scaffold_spatial_app", { templateProject: TEMPLATE, targetDir: projectDir, packageName: pkg, appName: spec.meta.appName, stageStyle: spec.meta.stageStyle ?? "3" });
+              const sc = await call("scaffold_spatial_app", { targetDir: projectDir, packageName: pkg, appName: spec.meta.appName, stageStyle: spec.meta.stageStyle ?? "3" });
               if (!sc.created) { rec.notes.push(`scaffold failed: ${JSON.stringify(sc).slice(0, 150)}`); continue; }
             }
             const jdir = path.join(projectDir, `app/src/main/java/${pkg.replace(/\./g, "/")}`);
@@ -930,9 +924,9 @@ export function registerFleetBuildTools(server: McpServer) {
               fs.mkdirSync(path.dirname(target), { recursive: true });
               fs.writeFileSync(target, kotlin);
               if (typeof out === "object" && out.manifestEntry) patchManifest(projectDir, out.manifestEntry);
-              if (st.tool === "generate_game_menu_kotlin" && fs.existsSync(MENU_BUNDLE)) {
+              if (st.tool === "generate_game_menu_kotlin" && fs.existsSync(MENU_BUNDLE_ASSET)) {
                 fs.mkdirSync(path.join(projectDir, "app/src/main/assets"), { recursive: true });
-                fs.copyFileSync(MENU_BUNDLE, path.join(projectDir, "app/src/main/assets/menu.bundle"));
+                fs.copyFileSync(MENU_BUNDLE_ASSET, path.join(projectDir, "app/src/main/assets/menu.bundle"));
               }
             }
             if (wiringFailed) continue; // recorded above — do not build/judge a template-wired app

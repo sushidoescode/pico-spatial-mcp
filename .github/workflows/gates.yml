@@ -37,6 +37,8 @@ jobs:
         run: npm run test:doors
       - name: Preflight env doctor (every failure carries the exact fix)
         run: npm run test:preflight
+      - name: Project generator (packaged skeleton emits a complete rebrandable project)
+        run: npm run test:projectgen
       - name: Name-aware procedural provisioning (matcher always runs; bake self-skips without an SDK)
         run: npm run test:provision
       - name: Mouse bridge (pidfile lifecycle + tool surface)

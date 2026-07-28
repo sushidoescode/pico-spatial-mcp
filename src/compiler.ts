@@ -61,7 +61,7 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
     args: { targetDir: projectDir, packageName: pkg, appName: spec.meta.appName, stageStyle: spec.meta.stageStyle },
     targetPath: projectDir,
     cClass: "C0_emulator",
-    note: "Provide a known-good templateProject. Force-stop other com.example.* apps first (launch flakiness).",
+    note: "Generates from the packaged skeleton by default (templateProject optional). Force-stop other com.example.* apps first (launch flakiness).",
   });
   // 2. agent bridge (headless assert channel) — always
   push({ node: "meta", tool: "generate_agent_bridge", args: { packageName: pkg }, targetPath: `${cpath}/AgentBridge.kt`, cClass: "C0_emulator", note: "SKIP this step if the scaffold template already ships agent/AgentBridge.kt (galleryxr-derived templates do); otherwise inject and call AgentBridge.attachScene(root). The bridge lives under <pkg>.agent." });

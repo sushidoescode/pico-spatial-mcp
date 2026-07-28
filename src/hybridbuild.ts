@@ -13,8 +13,9 @@ import { fileURLToPath } from "node:url";
 const run = promisify(execFile);
 const ADB = process.env.PICO_ADB ?? path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
 const JBR = "/Applications/Android Studio.app/Contents/jbr/Contents/Home";
-const TEMPLATE = path.join(os.homedir(), "AndroidStudioProjects/galleryxr-native");
-const MENU_BUNDLE = path.join(os.homedir(), "AndroidStudioProjects/showroomxr-native/app/src/main/assets/menu.bundle");
+// v29.3: scaffold_spatial_app now generates from the packaged skeleton (no templateProject),
+// and the GameMenu bundle ships in the package — no machine-local paths in the hybrid lane.
+import { MENU_BUNDLE_ASSET } from "./projectgen.js";
 
 /**
  * hybridbuild.ts — v10.19 (P17): the one-command HYBRID experience builder.
@@ -71,7 +72,7 @@ export function registerHybridBuildTools(server: McpServer) {
       try {
         // 1. scaffold
         if (!fs.existsSync(projectDir)) {
-          const sc = await call("scaffold_spatial_app", { templateProject: TEMPLATE, targetDir: projectDir, packageName, appName, stageStyle: "3" });
+          const sc = await call("scaffold_spatial_app", { targetDir: projectDir, packageName, appName, stageStyle: "3" });
           if (!sc.created) { rec.notes.push(`scaffold failed: ${JSON.stringify(sc).slice(0, 160)}`); return okJson({ status: "error", ...rec }); }
         }
         // 2. the native scene: instantiate the game template -> compile -> execute the ledger
@@ -91,7 +92,7 @@ export function registerHybridBuildTools(server: McpServer) {
           fs.mkdirSync(path.dirname(target), { recursive: true });
           fs.writeFileSync(target, kotlin);
           if (typeof out === "object" && out.manifestEntry) patchManifest(projectDir, out.manifestEntry);
-          if (st.tool === "generate_game_menu_kotlin" && fs.existsSync(MENU_BUNDLE)) { fs.mkdirSync(path.join(projectDir, "app/src/main/assets"), { recursive: true }); fs.copyFileSync(MENU_BUNDLE, path.join(projectDir, "app/src/main/assets/menu.bundle")); }
+          if (st.tool === "generate_game_menu_kotlin" && fs.existsSync(MENU_BUNDLE_ASSET)) { fs.mkdirSync(path.join(projectDir, "app/src/main/assets"), { recursive: true }); fs.copyFileSync(MENU_BUNDLE_ASSET, path.join(projectDir, "app/src/main/assets/menu.bundle")); }
         }
         rec.surfaces.push("native 3D scene (physics + menu + HUD)");
         // 3. the web CONTROL panel (the bridge)

@@ -23,7 +23,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let failures = 0;
@@ -160,6 +160,29 @@ try {
     fs.existsSync(path.join(installed, doc))
       ? ok(`reader-facing doc ships: ${doc}`)
       : fail(`${doc} missing — the shipped prompts or TESTERS.md send the reader to it`);
+  }
+
+  // [M8] The app-skeleton generator payload (v29.3). The build lane used to clone a template that
+  //      existed only on the author's machine, so every tarball install died at `scaffold failed` —
+  //      the exact class of repo-green/tarball-broken failure this script exists for. Import the
+  //      INSTALLED generator (pathToFileURL: the sandbox path contains a space — [M6]) and let its
+  //      own canary list judge the payload, so a new canary is enforced here automatically.
+  try {
+    const pg = await import(pathToFileURL(path.join(installed, "dist", "projectgen.js")).href);
+    const skel = pg.verifySkeleton();
+    skel.ok ? ok(`app skeleton ships complete (${pg.SKELETON_CANARIES.length} canaries)`) : fail(`app skeleton incomplete in the tarball: ${skel.missing.join(", ")}`);
+    (fs.statSync(path.join(installed, "appskeleton", "gradlew")).mode & 0o111)
+      ? ok("appskeleton/gradlew kept its exec bit through pack+install")
+      : fail("appskeleton/gradlew lost its exec bit — generated projects cannot build");
+    fs.statSync(path.join(installed, "appskeleton", "gradle", "wrapper", "gradle-wrapper.jar")).size >= 40_000
+      ? ok("gradle wrapper jar ships intact") : fail("gradle wrapper jar missing/truncated");
+    fs.existsSync(path.join(installed, "appskeleton", "_gitignore"))
+      ? ok("dot-less _gitignore survived packing (npm drops files named .gitignore)")
+      : fail("appskeleton/_gitignore missing — generated projects would ship without a .gitignore");
+    fs.statSync(pg.MENU_BUNDLE_ASSET).size >= 45_000
+      ? ok("menu.bundle ships for GameMenu briefs") : fail("assets/menu.bundle missing/truncated — GameMenu briefs lose their panel");
+  } catch (e) {
+    fail(`app-skeleton payload check failed outright: ${e.message}`);
   }
 
   const entry = path.join(installed, "dist", "index.js");

@@ -73,7 +73,7 @@ export function registerMrAppTools(server: McpServer) {
         manifestMetaData,
         homeStageKt,
         integration: [
-          "1. Use scaffold_spatial_app to create the buildable project (it clones a known-good template).",
+          "1. Use scaffold_spatial_app to create the buildable project (it generates from the packaged skeleton).",
           "2. Ensure the launcher <activity> in AndroidManifest.xml has the stage <meta-data> above (style=1 Mixed).",
           `3. Write the HomeStage.kt to app/src/main/java/${contentPkg.replace(/\./g, "/")}/HomeStage.kt and call it from your SpatialApplication entry (DefaultStage { PicoTheme { HomeStage() } }).`,
           ...(bridge ? ["4. generate_agent_bridge + inject it so the scene is headlessly drivable/assertable."] : []),

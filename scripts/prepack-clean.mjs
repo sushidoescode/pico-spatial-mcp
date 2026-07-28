@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // Only the directories that actually ship (package.json `files`), so we never touch anything else.
-const SHIPPED = ["scripts", "tools", "briefs", "dist"];
+const SHIPPED = ["scripts", "tools", "briefs", "dist", "appskeleton", "assets"];
 const removed = [];
 
 function sweep(dir) {

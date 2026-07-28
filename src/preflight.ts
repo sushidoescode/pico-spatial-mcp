@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { okJson } from "./util.js";
 import { detectJavaHome } from "./toolchain.js";
-import { APP_TEMPLATE } from "./fleetbuild.js";
+import { SKELETON_CANARIES, SKELETON_ROOT } from "./projectgen.js";
 
 /**
  * preflight.ts — v27-pre: the read-only environment doctor.
@@ -121,13 +121,15 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     ? { name: "imagemagick", status: "pass", detail: "magick on PATH", fix: null }
     : { name: "imagemagick", status: "warn", detail: "no `magick` on PATH — golden-frame MAE compare and some capture analysis are unavailable", fix: "brew install imagemagick (only needed for the capture-analysis lane; building and running apps works without it)." });
 
-  // 2e. App template. Every build path (pico_build_app -> fleet_build -> scaffold_spatial_app) clones
-  //     this project and rebrands it. It is not shipped in the npm package, so a tarball install has
-  //     no template and every build dies at scaffold. Reporting it here means a tester learns on
-  //     their first call instead of after a multi-minute build that fails with an opaque note.
-  push(io.statMtimeMs(path.join(APP_TEMPLATE, "settings.gradle.kts")) != null
-    ? { name: "app-template", status: "pass", detail: APP_TEMPLATE, fix: null }
-    : { name: "app-template", status: "fail", detail: `no buildable app template at ${APP_TEMPLATE} — pico_build_app and fleet_build will fail at scaffold`, fix: "This template is not shipped in the npm package (it is a full Android project, ~420MB of editor assets). Ask the maintainer for a template project, place it at the path above, and re-run preflight_env. Everything that does not build an APK — scanning, capture, SDK lookup, diagnosis, perf — works without it." });
+  // 2e. App skeleton. Every build path (pico_build_app -> fleet_build -> scaffold_spatial_app)
+  //     GENERATES a fresh project from the skeleton packaged at appskeleton/ (v29.3 — no more
+  //     machine-local template). The payload rides in the npm tarball, so this can only fail on a
+  //     truncated/blocked install; checking it here still beats a multi-minute build dying at
+  //     scaffold. Goes through io.statMtimeMs so fixtures can describe other machines.
+  const missingSkel = SKELETON_CANARIES.filter((rel) => io.statMtimeMs(path.join(SKELETON_ROOT, ...rel.split("/"))) == null);
+  push(missingSkel.length === 0
+    ? { name: "app-skeleton", status: "pass", detail: `generator payload at ${SKELETON_ROOT} (${SKELETON_CANARIES.length} canaries present)`, fix: null }
+    : { name: "app-skeleton", status: "fail", detail: `packaged app skeleton incomplete at ${SKELETON_ROOT} — missing: ${missingSkel.slice(0, 4).join(", ")}${missingSkel.length > 4 ? ` (+${missingSkel.length - 4} more)` : ""}`, fix: "Reinstall the pico-spatial-mcp package (the tarball ships appskeleton/ — a partial or filtered install cannot scaffold projects). Everything that does not build an APK — scanning, capture, SDK lookup, diagnosis, perf — works without it." });
 
   // 3. emulator (a PICO device attached and in 'device' state)
   let bootAtMs: number | null = null;

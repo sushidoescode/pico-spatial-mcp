@@ -6,14 +6,15 @@ import { z } from "zod";
 import { expandHome, fail, okJson } from "./util.js";
 import { resolveToolsRoot } from "./toolchain.js";
 import { installBridgeLauncher } from "./mousebridge.js";
+import { generateSpatialProject, SKELETON_PACKAGE } from "./projectgen.js";
 
 /**
  * Generalized native PICO spatial-app scaffolding — the core "build any project"
- * capability. Clones a known-good spatial app (the only reliable way to get a
- * buildable Gradle + PICO-SDK + modified-Compose project), renames its package,
- * sets the app name/stage, and optionally swaps in a scene — producing a fresh,
- * immediately buildable app. This is what makes the MCP a general spatial-app
- * builder, not a ClaimSight-specific one.
+ * capability. By default GENERATES a complete buildable Gradle + PICO-SDK +
+ * modified-Compose project from the packaged skeleton (src/projectgen.ts — no
+ * machine-local template needed, which is what makes the npm tarball's build lane
+ * work at all). Passing templateProject instead clones + rebrands that project
+ * (the pre-v29.3 path, kept for local power users with their own templates).
  */
 
 const TEXT_EXT = new Set([".kt", ".kts", ".gradle", ".xml", ".toml", ".properties", ".pro", ".usda", ".md", ".json"]);
@@ -43,11 +44,12 @@ export function registerScaffoldTools(server: McpServer) {
     "scaffold_spatial_app",
     {
       description:
-        "Create a fresh, immediately-buildable native PICO spatial app by cloning a known-good template app and rebranding it: renames the package across all sources + the Java dir tree, sets the app display name and stage style, points local.properties at the resolved PICO toolchain, and (optionally) installs a scene .usda. Returns the new project path — then author HomeStage.kt + a scene and run build_and_run. This is the general 'start a new spatial project' entry point (works for any app, not just ClaimSight).",
+        "Create a fresh, immediately-buildable native PICO spatial app. DEFAULT (no templateProject): generates the complete project from the packaged skeleton — Gradle files, wrapper, manifest, res tree, PICO-SDK dependencies, agent bridge, and a minimal bundle-free HomeStage that renders out of the box; nothing machine-local required. With templateProject: clones + rebrands that project instead (for users with their own known-good template). Either way it sets the package, app display name and stage style, points local.properties at the resolved PICO toolchain, and returns the new project path — then author HomeStage.kt + a scene and run build_and_run. This is the general 'start a new spatial project' entry point.",
       inputSchema: {
         templateProject: z
           .string()
-          .describe("Path to a working PICO spatial app to clone (has :app + :editor-asset modules, e.g. an existing built app or the PICO starter)"),
+          .optional()
+          .describe("OPTIONAL: path to a working PICO spatial app to clone instead of generating from the packaged skeleton (e.g. an existing built app with :app + :editor-asset modules)"),
         targetDir: z.string().describe("Directory to create the new app in (must not exist)"),
         packageName: z
           .string()
@@ -59,11 +61,47 @@ export function registerScaffoldTools(server: McpServer) {
       },
     },
     async ({ templateProject, targetDir, packageName, appName, stageStyle, sceneUsda }) => {
-      const src = expandHome(templateProject);
       const dst = expandHome(targetDir);
+      if (fs.existsSync(dst)) return fail(`Target already exists: ${dst}`);
+
+      // DEFAULT: generate from the packaged skeleton — no machine-local template involved.
+      if (!templateProject) {
+        if (sceneUsda)
+          return fail("sceneUsda requires templateProject (an editor-asset scene to install into); the generated skeleton has no editor-asset module — compose scenes procedurally or bake models instead.");
+        let gen;
+        try {
+          gen = generateSpatialProject({ targetDir: dst, packageName, appName, stageStyle });
+        } catch (e: any) {
+          return fail(`generate failed: ${e.message}`);
+        }
+        let devScripts: string[] = [];
+        try {
+          devScripts = installBridgeLauncher(dst).written;
+        } catch {
+          /* non-fatal — the project is still fully usable without the convenience scripts */
+        }
+        return okJson({
+          created: gen.created,
+          packageName,
+          renamedFrom: SKELETON_PACKAGE,
+          filesUpdated: gen.filesWritten,
+          appName,
+          stageStyle,
+          sceneInstalled: null,
+          devScripts,
+          sourceDir: gen.sourceDir,
+          homeStage: gen.homeStage,
+          next: [
+            `Author the UI in ${gen.homeStage} (SpatialView; the default hello scene renders without any assets).`,
+            "Optionally add data/assets under app/src/main/assets/ and generate content via the compile ledger.",
+            `build_and_run with projectDir='${dst}', packageName='${packageName}'.`,
+          ],
+        });
+      }
+
+      const src = expandHome(templateProject);
       if (!fs.existsSync(path.join(src, "settings.gradle.kts")) && !fs.existsSync(path.join(src, "settings.gradle")))
         return fail(`Template '${src}' is not a Gradle project (no settings.gradle[.kts]).`);
-      if (fs.existsSync(dst)) return fail(`Target already exists: ${dst}`);
 
       const appGradle = fs.existsSync(path.join(src, "app/build.gradle.kts")) ? path.join(src, "app/build.gradle.kts") : path.join(src, "app/build.gradle");
       const oldPkg = detectPackage(appGradle);
