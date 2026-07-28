@@ -72,7 +72,8 @@ One sharp edge worth knowing up front: **`pico_measure` needs a one-time camera 
 two tools that perform it are not on the `doors` surface.** To calibrate, switch to the full surface
 (remove `PICO_MCP_SURFACE` or set it to `full`), restart your client, run `fleet_build(['calib'])`
 then `calibrate_capture_camera` once, and switch back if you prefer the narrow surface. `pico_doctor`
-reports your calibration state and repeats this route. Calibration also dies on an emulator cold
+reports your calibration state and repeats this route. `fleet_build(['calib'])` builds an app, so it
+needs the app template as well. Calibration also dies on an emulator cold
 restart, so expect to redo it after rebooting the emulator.
 
 ## What you'll also need
@@ -84,6 +85,11 @@ these and names an exact fix for any that fail:
 - **adb** on `PATH`
 - **JDK** for the Gradle build lane
 - **ImageMagick** for some capture analysis (a warning, not a failure — you can build without it)
+- an **app template project** — required to build APKs, and **not shipped in this package**. It is a
+  full Android project (~420MB of editor assets), so the tarball cannot carry it. `preflight_env`
+  reports this as the `app-template` check. Ask whoever sent you the tarball for one. Everything
+  that does not produce an APK — scanning, capture, SDK lookup, diagnosis, perf, verifying an
+  existing APK — works without it.
 
 One thing it does not check is **macOS**, which the native virtual-camera gates require; nothing on
 your machine can be probed for that beyond the platform you're already on.

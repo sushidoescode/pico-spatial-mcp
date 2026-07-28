@@ -36,8 +36,23 @@ on its own; it has no UI.
 | **adb** | Drives the emulator | Bundled with the SDK, or on your `PATH` |
 | **JDK 17+** | Gradle builds the APK | Android Studio bundles one — that counts |
 | **ImageMagick** | *Optional.* Some capture analysis | `brew install imagemagick` |
+| **An app template project** | **Required to build APKs.** Not shipped — see below | `preflight_env` names it |
 
 Don't chase these manually. Step 3 tells you exactly which ones you're missing.
+
+> ### Read this before step 4
+>
+> **The APK build lane needs a template project that is not in the package.** Every app is produced by
+> cloning a known-good Gradle project and rebranding it, and that template is a full Android project —
+> its editor-asset module alone is around 420MB — so it isn't something a tarball can carry. Until you
+> have one, `pico_build_app` and `fleet_build` fail at the scaffold step.
+>
+> `preflight_env` reports this as the **`app-template`** check and tells you where to put it. Ask
+> whoever sent you the tarball for a template project.
+>
+> Everything that doesn't produce an APK works without it: world scanning, capture and look, SDK
+> lookup, diagnosis, perf profiling, the capability ledger, and verifying an APK you already have
+> (`pico_verify_app`).
 
 ---
 
@@ -92,8 +107,9 @@ Ask your agent:
 > Run `preflight_env`.
 
 This is the intended first call. It's strictly read-only — it changes nothing on your machine — and it
-runs ten checks: Node, adb, the PICO SDK payload, the JDK, ImageMagick, whether an emulator is actually
-running, the emulator's gRPC port, macOS Accessibility, camera calibration, and disk space.
+runs eleven checks: Node, adb, the PICO SDK payload, the JDK, ImageMagick, the app template, whether an
+emulator is actually running, the emulator's gRPC port, macOS Accessibility, camera calibration, and
+disk space.
 
 Every check that isn't passing comes back with a **specific fix**, not "check your setup". Work down
 the list until the things you care about pass.
@@ -110,7 +126,11 @@ Two you can expect to see and shouldn't panic about:
 
 ## Step 4 — Build your first app
 
-Ask your agent:
+**This step needs the app template described above.** If `preflight_env` reports `app-template` as
+failing, skip to step 5 — `pico_look` works against any app already on the emulator, and
+`pico_verify_app` will verify an APK you supply.
+
+With a template in place, ask your agent:
 
 > Use `pico_build_app` to build "three colored cubes on a table with a menu".
 
@@ -181,7 +201,7 @@ The thirteen: `validate_toolchain` `pico_build_app` `pico_scan_world` `pico_plac
 it are *not* on the doors surface. To calibrate: switch to the full surface (remove `PICO_MCP_SURFACE`
 or set it to `full`), restart your client, run `fleet_build(['calib'])` then `calibrate_capture_camera`
 once, then switch back if you prefer the narrow surface. `pico_doctor` reports your calibration state
-and repeats this route.
+and repeats this route. Note that `fleet_build(['calib'])` builds an app, so it needs the template too.
 
 Calibration also **dies on an emulator cold restart** — the camera's principal point can shift by
 hundreds of pixels. Expect to redo it after rebooting the emulator, and before any measuring session.

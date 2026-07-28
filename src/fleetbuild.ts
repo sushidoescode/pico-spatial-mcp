@@ -33,7 +33,15 @@ const run = promisify(execFile);
 
 const ADB = path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
 const JBR = "/Applications/Android Studio.app/Contents/jbr/Contents/Home";
-const TEMPLATE = path.join(os.homedir(), "AndroidStudioProjects/galleryxr-native");
+/**
+ * The known-good Gradle project every generated app is cloned and rebranded from. It is NOT shipped
+ * in the npm package: it is a full Android project whose editor-asset module alone is ~420MB, so a
+ * generated app is a rebranded clone of it rather than a thin scaffold. Anyone installing from the
+ * tarball therefore has no template and cannot build until one exists at this path. preflight_env
+ * checks for it by name so that failure is reported up front rather than after a long build.
+ */
+export const APP_TEMPLATE = path.join(os.homedir(), "AndroidStudioProjects/galleryxr-native");
+const TEMPLATE = APP_TEMPLATE;
 const MENU_BUNDLE = path.join(os.homedir(), "AndroidStudioProjects/showroomxr-native/app/src/main/assets/menu.bundle");
 
 const KTX1_IDENTIFIER = Buffer.from([0xab, 0x4b, 0x54, 0x58, 0x20, 0x31, 0x31, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -1161,14 +1169,20 @@ export function registerFleetBuildTools(server: McpServer) {
         await client.close().catch(() => {});
       }
       const passed = results.filter((r) => r.verdict === "PASS").length;
+      // A brief that never built cannot appear in `escalations`, which filters on r.installed. That
+      // let the top level report status "ok" with an empty escalation list while NOTHING was built —
+      // the caller had to dig into results[].notes to discover total failure. `status` now reflects
+      // the outcome and unbuilt briefs are surfaced by name with the reason attached.
+      const unbuilt = results.filter((r) => !r.built);
       return okJson({
-        status: "ok",
+        status: unbuilt.length === 0 ? "ok" : unbuilt.length === results.length ? "failed" : "partial",
         dashboard: {
           queued: briefIds.length,
           built: results.filter((r) => r.built).length,
           installed: results.filter((r) => r.installed).length,
           autoJudgedPass: passed,
           panelReadyStructural: results.filter((r) => r.panelEvidence?.expectationMet === true).length,
+          notBuilt: unbuilt.map((r) => ({ id: r.id, why: r.notes?.[0] ?? "no reason recorded" })),
           escalations: results
             .filter((r) => r.installed && r.verificationRoute?.mode !== "panel-structural" && r.verdict !== "PASS")
             .map((r) => r.id),
