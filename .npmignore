@@ -1,0 +1,19 @@
+# Packaging exclusions. `files` in package.json selects WHAT ships; this trims what
+# would otherwise ride along inside those directories.
+
+# Python bytecode from tools/ — machine-specific, never useful to a consumer.
+__pycache__/
+*.pyc
+
+# Local virtualenvs a developer may have created next to the bridge scripts.
+.venv/
+venv/
+
+# Never ship internal working docs, evidence, or scratch state.
+.dev/
+.superpowers/
+.pico-stacks/
+
+# Editor/OS noise.
+.DS_Store
+*.swp

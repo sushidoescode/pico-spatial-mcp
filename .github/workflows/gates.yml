@@ -65,6 +65,8 @@ jobs:
         run: npm run test:vcamthroughput
       - name: Virtual camera materializer (frames before manifest, array-indexed, fail-closed)
         run: npm run test:vcammaterialize
+      - name: Distributable tarball (installs clean and runs with no repo present)
+        run: npm run test:tarball
       - name: Emulator restart argv + lifecycle (fully faked; no device access)
         run: npm run test:emulator-restart
       - name: Live copilot (bridge-line protocol + scene diff)
