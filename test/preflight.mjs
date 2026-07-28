@@ -13,6 +13,7 @@ const brokenIO = {
   statMtimeMs: () => null,
   now: () => 1_800_000_000_000,
   home: "/nonexistent-home",
+  detectJavaHome: () => null,
 };
 const broken = runPreflightChecks(brokenIO);
 const names = broken.map((c) => c.name);
@@ -42,6 +43,7 @@ const healthyIO = {
   statMtimeMs: () => 1_800_000_000_000 - 30 * 60 * 1000,
   now: () => 1_800_000_000_000,
   home: "/fake-home",
+  detectJavaHome: () => "/fake-home/jbr/Contents/Home",
 };
 const healthy = runPreflightChecks(healthyIO);
 for (const name of ["node", "adb", "emulator", "calibration"]) {

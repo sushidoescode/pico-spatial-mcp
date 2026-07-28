@@ -89,8 +89,13 @@ your machine can be probed for that beyond the platform you're already on.
 Without the emulator you can still start the server, list tools, and read documentation tools —
 you just can't build or capture anything.
 
-Apps you generate are written to `~/.pico-mcp/briefs/`, outside the installed package, so upgrading
-the tarball never discards your work.
+Everything you generate lands outside the installed package, so upgrading the tarball never discards
+your work. Three different places, worth knowing before you go looking:
+
+- the **app itself** (Gradle project, Kotlin sources, APK) → `~/AndroidStudioProjects/fleet-<id>-native`.
+  This is what you open in Android Studio or sideload. Tools return it to you as `projectDir`.
+- the **brief spec** (the JSON describing what you asked for) → `~/.pico-mcp/briefs/`
+- **captures** taken during verification → `/tmp/pico-render/fleet/<id>/`
 
 ## Known limits, stated plainly
 

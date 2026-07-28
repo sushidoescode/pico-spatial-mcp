@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { okJson } from "./util.js";
+import { detectJavaHome } from "./toolchain.js";
 
 /**
  * preflight.ts — v27-pre: the read-only environment doctor.
@@ -27,6 +28,9 @@ export type PreflightIO = {
   statMtimeMs: (p: string) => number | null;
   now: () => number;
   home: string;
+  /** Injected so a fixture can describe a machine WITHOUT a JDK; the default is the real resolver
+   *  the Gradle lane uses, so this check can never disagree with whether builds actually work. */
+  detectJavaHome: () => string | null;
 };
 
 export function defaultIO(): PreflightIO {
@@ -40,6 +44,7 @@ export function defaultIO(): PreflightIO {
     statMtimeMs: (p) => { try { return fs.statSync(p).mtimeMs; } catch { return null; } },
     now: () => Date.now(),
     home: os.homedir(),
+    detectJavaHome,
   };
 }
 
@@ -59,7 +64,13 @@ function findAdb(io: PreflightIO): string | null {
  * something they cannot do, so name the way out of the surface as part of the fix.
  */
 function calibrationRoute(): string {
-  return process.env.PICO_MCP_SURFACE === "doors"
+  // The doors surface does not register preflight_env; pico_doctor reaches these strings by spawning
+  // an INNER server with PICO_MCP_SURFACE=full, so keying off PICO_MCP_SURFACE alone made this branch
+  // unreachable and shipped the dead-end remedy anyway. doors.ts marks the inner server with
+  // PICO_MCP_OUTER_SURFACE so the ultimate consumer is still knowable here.
+  const servingDoors =
+    process.env.PICO_MCP_SURFACE === "doors" || process.env.PICO_MCP_OUTER_SURFACE === "doors";
+  return servingDoors
     ? "fleet_build(['calib']) then calibrate_capture_camera — both live on the full surface, so unset PICO_MCP_SURFACE (or set it to `full`) in your MCP server env and restart the client first"
     : "fleet_build(['calib']) then calibrate_capture_camera";
 }
@@ -82,19 +93,27 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
 
   // 2b. PICO SDK payload. adb can be on PATH from an unrelated Android install, so a passing adb
   //     check is not evidence the PICO SDK is present. Without it there is nothing to build against.
-  const sdkRoot = path.join(io.home, "Library/PICO/sdk/0.13");
+  // PICO_HOME overrides the default location for the rest of the toolchain, so this check has to
+  // honour it too — otherwise preflight reports "no SDK" while validate_toolchain reports one.
+  const sdkRoot = process.env.PICO_HOME
+    ? path.join(process.env.PICO_HOME, "0.13")
+    : path.join(io.home, "Library/PICO/sdk/0.13");
   push(io.statMtimeMs(sdkRoot) != null
     ? { name: "pico-sdk", status: "pass", detail: sdkRoot, fix: null }
     : { name: "pico-sdk", status: "fail", detail: `no PICO SDK payload at ${sdkRoot}`, fix: "Install the PICO Spatial Plugin in Android Studio and let it download the SDK + emulator payloads; they land under ~/Library/PICO/sdk/0.13/." });
 
   // 2c. JDK. Gradle needs it, and its absence surfaces as an opaque build failure much later.
-  //     validate_toolchain already reports this; a tester told preflight_env names their missing
-  //     prerequisites should not have to know that a second tool holds the other half of the answer.
-  const javaHome = process.env.JAVA_HOME;
-  const javaOk = (javaHome && io.statMtimeMs(path.join(javaHome, "bin", "java")) != null) || io.exec("java", ["-version"]).ok;
-  push(javaOk
-    ? { name: "jdk", status: "pass", detail: javaHome ? `JAVA_HOME=${javaHome}` : "java on PATH", fix: null }
-    : { name: "jdk", status: "fail", detail: "no JDK found (JAVA_HOME unset and no java on PATH)", fix: "Install a JDK 17+ (Android Studio bundles one, or `brew install openjdk@17`) and set JAVA_HOME — Gradle APK builds fail without it." });
+  //     This MUST use detectJavaHome() — the same resolver gradleEnv() injects into every Gradle
+  //     invocation. An earlier version checked only $JAVA_HOME and `java` on PATH, which meant the
+  //     standard setup (Android Studio installed, JAVA_HOME unset, macOS's /usr/bin/java stub
+  //     exiting non-zero) reported "no JDK found — Gradle APK builds fail without it" while builds
+  //     in fact succeeded against Android Studio's bundled JBR. That is the same false claim this
+  //     check was added to prevent, only inverted: a false "broken" instead of a false "healthy".
+  //     If the build lane can find a JDK, this check must agree with it.
+  const javaHome = io.detectJavaHome();
+  push(javaHome
+    ? { name: "jdk", status: "pass", detail: process.env.JAVA_HOME === javaHome ? `JAVA_HOME=${javaHome}` : `${javaHome} (auto-detected; Gradle gets it injected)`, fix: null }
+    : { name: "jdk", status: "fail", detail: "no JDK found (JAVA_HOME unset, none on PATH, no Android Studio JBR)", fix: "Install a JDK 17+ (Android Studio bundles one, or `brew install openjdk@17`) and set JAVA_HOME — Gradle APK builds fail without it." });
 
   // 2d. ImageMagick. Only the capture-analysis lane needs it, so this is a warn, not a fail.
   push(io.exec("magick", ["-version"]).ok

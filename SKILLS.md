@@ -5,7 +5,7 @@ This is the operating manual for an AI agent driving `pico-spatial-mcp`. It pair
 prompt. The goal: take a spec from nothing to a **polished, running, native PICO spatial
 APK**, and — critically — **detect what's wrong and iterate to fix it** without a human.
 
-See **ROADMAP.md** for the v1.4→v2.0 plan (written so a local model can execute it if the primary agent is rate-limited).
+See **ROADMAP.md** in the git repository for the v1.4→v2.0 plan (written so a local model can execute it if the primary agent is rate-limited).
 
 ## The capability map (55 tools)
 
@@ -70,13 +70,15 @@ rule, apply the fix, rebuild, re-capture. That loop is the whole point of the MC
 - The emulator has **no passthrough cameras and no 6DOF controller pose** — design for a
   virtual environment + a button-driven interaction path; the controller-ray path is for
   real headsets.
-- Model-agnostic: a local open-weight model can drive this (see `docs/local-models.md`);
+- Model-agnostic: a local open-weight model can drive this (see `docs/local-models.md` in the git repository);
   prefer the high-level orchestration tools to keep chains short.
 
 ## Where these docs live
 
-In this repo, at the root: `SKILLS.md` (this file), `DESIGN.md`, plus `docs/` for deep
-references (`spatial-interaction-api.md`, `claimsight-native.md`, `local-models.md`). Add
+`SKILLS.md` (this file) and `DESIGN.md` ship with the package. The deeper references under
+`docs/` (`spatial-interaction-api.md`, `claimsight-native.md`, `local-models.md`) live only in the
+git repository — if you installed from a tarball you will not have them, and nothing here requires
+them. Add
 project-specific automation via Claude Code hooks in `.claude/settings.json` (e.g. run
 `verify_scene` after editing a `.usda`, or `build_and_run` after editing Kotlin) — those
 live with the consuming project, not here.

@@ -15,7 +15,7 @@ import { bakeTexturedModel } from "./bundle.js";
 import { startBridgeDetached } from "./mousebridge.js";
 import { classifyBriefExecution } from "./briefroute.js";
 import { fileURLToPath } from "node:url";
-import { findBriefPath } from "./briefstore.js";
+import { findBriefPath, corpusBriefsDir } from "./briefstore.js";
 
 const run = promisify(execFile);
 
@@ -756,9 +756,13 @@ export function registerFleetBuildTools(server: McpServer) {
           try {
             const briefPath = findBriefPath(id);
             if (!briefPath) { rec.notes.push("brief not found"); continue; }
-            // IBL assets are resolved relative to the brief that was actually found, so a corpus
-            // brief keeps using the packaged assets and a user brief can carry its own alongside it.
-            const briefsDir = path.dirname(briefPath);
+            // IBL assets (ibl/*.ktx) ship with the packaged corpus. Resolving them relative to the
+            // brief that was found breaks user-store briefs, which sit in ~/.pico-mcp/briefs where no
+            // ibl/ exists — provisioning then fails with "no valid baked IBL at corpus ...". So use
+            // the brief's own directory only when it actually carries assets, and fall back to the
+            // corpus otherwise. This keeps corpus briefs behaving exactly as before.
+            const briefDir = path.dirname(briefPath);
+            const briefsDir = fs.existsSync(path.join(briefDir, "ibl")) ? briefDir : corpusBriefsDir();
             const entry = JSON.parse(fs.readFileSync(briefPath, "utf8"));
             let execution;
             try {

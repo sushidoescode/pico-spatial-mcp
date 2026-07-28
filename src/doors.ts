@@ -36,7 +36,9 @@ async function inner() {
     command: "node",
     args: [path.join(here, "index.js")],
     cwd: path.dirname(here),
-    env: { ...process.env, PICO_MCP_SURFACE: "full" },
+    // The inner server runs on the full surface, but remedies it produces are read by a DOORS user.
+    // Carry the outer surface through so guidance can name the route out of it (see calibrationRoute).
+    env: { ...process.env, PICO_MCP_SURFACE: "full", PICO_MCP_OUTER_SURFACE: "doors" },
   });
   const client = new Client({ name: "doors", version: "1" });
   await client.connect(transport);
