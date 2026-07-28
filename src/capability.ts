@@ -11,7 +11,7 @@ import { validateCapture, extractImagePath } from "./evidence.js";
  */
 
 const CEILINGS: Record<string, string> = {
-  C1: "No scene-understanding on the emulator: PlaneTrackingManager/MeshTrackingManager start (RUNNING) but return 0 planes/0 mesh. Real-surface pins are headset-only.",
+  C1: "Scene-understanding PLANES DO work on the emulator — the old 'returns 0 planes' ceiling was refuted 2026-07-28 (ledger emulator-scene-understanding seq 0). A Spatial SDK app in FULL SPACE (an OPEN Stage) gets 43 real planes with BED/WALL/CEILING/CABINET semantics, orientations and metre bounding boxes, from PICO's built-in MR simulation. Full Space is the one documented prerequisite; querying outside an open Stage is what returns 0. MESHES remain unresolved: MeshTrackingManager returned 0 in the same probe with no error.",
   C2: "The GUI free-cam orbit is decoupled + drifts across launches. BUT the forward adb screencap (capture_frame) IS the byte-deterministic composited immersive view — verify visually at a forward-FOV pose (keep hero content at eye level); a linked capture is REQUIRED for a vision_verified claim.",
   C3: "No controller/gaze pointer on the emulator. Interactions are verifiable headlessly: broadcast (adb am broadcast) drives them, a `press` interaction compiles to the clickable GameMenu (mouse bridge = real clicks). Only controller_ray/grab motion remains genuinely Swan-only.",
   C4: "Stage-vs-window dichotomy: no native config gives room + spatial pins + in-front interactive panels together.",

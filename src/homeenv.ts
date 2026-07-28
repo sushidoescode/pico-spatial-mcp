@@ -3,6 +3,16 @@ import { z } from "zod";
 import { okJson } from "./util.js";
 
 /**
+ * ⚠️ LARGELY OBSOLETE as of 2026-07-28 — PREFER REAL PLANES.
+ * This tool exists because we believed the emulator had no scene understanding. It does. A Spatial
+ * SDK app in FULL SPACE (an OPEN Stage) receives 43 real planes with BED/WALL/CEILING/CABINET
+ * semantics and metre bounding boxes from PICO's built-in MR simulation (ledger
+ * emulator-scene-understanding seq 0). Use generate_scene_understanding_kotlin and real
+ * PlaneAnchors instead of the hand-calibrated boxes below wherever the app can hold a Stage.
+ * The hand-guessed room here is also the wrong size: it assumes ~5.6 x 5.6 m; the real simulated
+ * bedroom is ~4.9 x 2.9 m.
+ * Kept only as a fallback for app shapes that genuinely cannot enter Full Space.
+ *
  * generate_home_env_proxy — a FAKED hit-test against the PICO default home environment (the system
  * bedroom). Native scene-understanding (sense/plane) returns 0 planes on the emulator (C1), so real
  * arbitrary-surface hit-test is headset-only. BUT the home env is a KNOWN, FIXED virtual room, so we

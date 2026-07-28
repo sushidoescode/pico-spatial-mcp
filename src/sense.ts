@@ -4,8 +4,24 @@ import { ok } from "./util.js";
 
 /**
  * generate_scene_understanding_kotlin — the CORRECT native surface-pin path (sense/plane).
- * VERIFIED on emulator-5554 2026-06-14: PlaneTrackingManager.start()/state/loadAllAnchors() compile +
- * run; the emulator returns 0 planes (no sensors). Lands real-surface pins on a PICO Swan headset.
+ *
+ * CORRECTED 2026-07-28 (ledger emulator-scene-understanding seq 0, evidence class logcat).
+ * The earlier note here — "the emulator returns 0 planes (no sensors)" — was WRONG, and the whole
+ * C1 ceiling and the generate_home_env_proxy workaround were built on it.
+ *
+ * The emulator DOES supply scene understanding. PICO's own emulator docs state the bedroom IS the
+ * Video See-Through simulation and that "Spatial Mesh simulation provides spatial mesh data for the
+ * virtual scene". A Spatial SDK app in FULL SPACE receives 43 real planes with semantics
+ * (BED / WALL / CEILING / CABINET), orientations and metre bounding boxes, within one second of
+ * PlaneTrackingManager.start().
+ *
+ * THE PREREQUISITE IS FULL SPACE — the app must hold an OPEN Stage. That is the single condition
+ * PICO's plane-detection doc lists, and querying outside it is the likely cause of the old 0-plane
+ * reading. Call these APIs from inside an open Stage, not from a WindowContainer or before the
+ * Stage opens.
+ *
+ * STILL UNRESOLVED: MeshTrackingManager.loadAllAnchors() returned 0 in the same full-space probe
+ * with no error, while planes returned 43. Do not claim mesh data works on the emulator.
  */
 export function registerSenseTools(server: McpServer) {
   server.registerTool(
