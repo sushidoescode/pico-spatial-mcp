@@ -21,3 +21,6 @@ emu-last-feature-flags.protobuf
 /CLAUDE.md
 /PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md
 test/.*.tmp.mjs
+
+# stray MCP client artifacts
+.playwright-mcp/

@@ -23,6 +23,19 @@ import { computeSuite } from "./eval.js";
  */
 
 const repoRoot = () => path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * regression_gate is a REPO tool: its baselines (golden/scorecard.json, repro.lock.json) are
+ * development artifacts that are deliberately not published in the npm package, and `mode=save`
+ * would write into node_modules where the next install wipes it. Running from an installed package
+ * it must therefore say so plainly rather than reporting "no golden scorecard", which reads like a
+ * missing baseline the caller could create.
+ */
+const runningFromInstalledPackage = () => repoRoot().includes(`${path.sep}node_modules${path.sep}`);
+const NOT_AVAILABLE_INSTALLED =
+  "regression_gate is unavailable in an installed package: its golden baselines are repo development " +
+  "artifacts and are not published, and saving one would write into node_modules where the next " +
+  "install discards it. Run this from a source checkout of pico-spatial-mcp.";
 // goldens live OUTSIDE briefs/ so the suite never picks the scorecard up as a (broken) brief.
 const goldenScorecardPath = () => path.join(repoRoot(), "golden", "scorecard.json");
 const reproLockPath = () => path.join(repoRoot(), "repro.lock.json");
@@ -59,6 +72,9 @@ export function registerGateTools(server: McpServer) {
       },
     },
     async ({ mode, briefsDir, canonicalPose, goldenAvdSnapshot, frames, identicalEps }) => {
+      if (runningFromInstalledPackage()) {
+        return okJson({ status: "blocked", reason: NOT_AVAILABLE_INSTALLED });
+      }
       const suite = computeSuite(briefsDir);
       if (suite.status !== "ok") return okJson({ status: "error", error: suite.error });
 

@@ -61,7 +61,7 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   const major = Number((io.nodeVersion.match(/^v(\d+)/) ?? [])[1] ?? 0);
   push(major >= 20
     ? { name: "node", status: "pass", detail: io.nodeVersion, fix: null }
-    : { name: "node", status: "fail", detail: `found ${io.nodeVersion}, need >=20`, fix: "Install Node 20+ (e.g. `brew install node@20`) and re-run `npm ci && npm run build`." });
+    : { name: "node", status: "fail", detail: `found ${io.nodeVersion}, need >=20`, fix: "Install Node 20 or newer (e.g. `brew install node@20`), then restart your MCP client so the server runs on it." });
 
   // 2. adb
   const adb = findAdb(io);
@@ -83,7 +83,7 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
       if (up.ok && Number.isFinite(uptimeSec)) bootAtMs = io.now() - uptimeSec * 1000;
       push({ name: "emulator", status: "pass", detail: `${serial} (device)`, fix: null });
     } else {
-      push({ name: "emulator", status: "fail", detail: `no running emulator in: ${dev.stdout.trim() || "(empty)"}`, fix: "Open the PICO Spatial Editor app (it boots the emulator), or run scripts/restart-emulator.sh, then re-run preflight_env." });
+      push({ name: "emulator", status: "fail", detail: `no running emulator in: ${dev.stdout.trim() || "(empty)"}`, fix: "Open the PICO Spatial Editor app — it boots the emulator — then re-run preflight_env. (From a source checkout you can instead run scripts/restart-emulator.sh.)" });
     }
   }
 
@@ -92,7 +92,7 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   push(emuUp
     ? (io.exec("nc", ["-z", "127.0.0.1", "8554"]).ok
         ? { name: "grpc", status: "pass", detail: "emulator gRPC port 8554 reachable", fix: null }
-        : { name: "grpc", status: "warn", detail: "port 8554 not reachable — XR input injection and some capture paths degrade", fix: "Restart the emulator via scripts/restart-emulator.sh (the gRPC endpoint comes up with a clean boot)." })
+        : { name: "grpc", status: "warn", detail: "port 8554 not reachable — XR input injection and some capture paths degrade", fix: "Cold-restart the emulator; the gRPC endpoint comes up with a clean boot. (From a source checkout: scripts/restart-emulator.sh.)" })
     : { name: "grpc", status: "unknown", detail: "emulator not running", fix: "Boot the emulator first (see the emulator check), then re-run preflight_env." });
 
   // 5. accessibility — macOS gives no reliable read-only query for another process's AX grant.

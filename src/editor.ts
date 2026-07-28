@@ -17,7 +17,7 @@ const PREVIEW_PKG = "com.pico.spatial.editor.scenepreview";
 const PREVIEW_FILES_DIR = `/storage/emulated/0/Android/data/${PREVIEW_PKG}/files`;
 const PREVIEW_ACTIVITY = `${PREVIEW_PKG}/.platform.LaunchActivity`;
 // The editor signals an already-running ScenePreview to load a transferred bundle
-// via this broadcast (reverse-engineered from the editor binary + ScenePreview dex).
+// via this broadcast.
 const PREVIEW_BROADCAST = `${PREVIEW_PKG}.FILE_TRANSFER_COMPLETE`;
 
 /** Result codes written by the editor's --ide_resultCodeFile (from the Gradle plugin's BundleResult). */

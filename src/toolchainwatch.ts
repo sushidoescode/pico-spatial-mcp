@@ -6,14 +6,12 @@ import * as path from "node:path";
 import { okJson } from "./util.js";
 
 /**
- * toolchainwatch.ts — v14: WATCH the PICO toolchain update channel for the OS 6 drop.
+ * toolchainwatch.ts — check whether the installed PICO toolchain is current.
  *
- * Research (2026-07-08) found the plugin's live update channel (a ByteDance TCC config endpoint,
- * extracted from the SpatialPlugin jar) with a STAGED 6.1.0 line: SDK 6.1.0, editor 6.1.0, and a
- * "swan_spaceos" 6.1.0 emulator — hosted NDA-internal, not yet public. This tool polls that channel
- * + public Maven and diffs against the installed toolchain, so the moment the 6.1.0 (or 0.13.6)
- * artifacts flip to a public CDN we know — the trigger to install + re-run swan_verify_matrix
- * (the Swan SpaceOS emulator may finally break the C4 immersive-compositing ceiling).
+ * Polls the toolchain update channel the PICO Android Studio plugin reads, plus the public Maven
+ * metadata, and diffs both against what is installed locally. Reports which advertised artifacts
+ * are publicly downloadable and which are not, so an upgrade can be taken as soon as one is
+ * available. Read-only: it fetches metadata and downloads nothing.
  */
 const TCC_URL = "https://lf3-config.bytetcc.com/obj/tcc-config-web/tcc-v2-data-pico.spatial-plugin.emulator-default";
 const MAVEN_BOM = "https://artifact.bytedance.com/repository/Volcengine/com/pico/spatial/bom/maven-metadata.xml";
@@ -37,7 +35,7 @@ export function registerToolchainWatchTools(server: McpServer) {
     "check_toolchain_updates",
     {
       description:
-        "Poll PICO's live toolchain UPDATE CHANNEL (the TCC config the Android Studio plugin reads — discovered 2026-07-08 with a STAGED 6.1.0 line: SDK 6.1.0 + editor 6.1.0 + a 'swan_spaceos' emulator) and public Maven, then diff against the installed toolchain. Reports: staged versions per (osVersion, package), whether each artifact URL is PUBLICLY downloadable yet (internal tosv.byted.org = NDA-only, lf-*.picoxr.com CDN = public), and the installed-vs-available delta. THE TRIGGER: when 6.1.0/0.13.6 flips public, install it and re-run swan_verify_matrix — the Swan SpaceOS emulator may break the C4 immersive ceiling. Read-only; no downloads.",
+        "Check whether your installed PICO toolchain is current. Polls the update channel the PICO Android Studio plugin reads plus public Maven metadata, then diffs both against your local install. Reports the advertised versions per (osVersion, package), which artifacts are publicly downloadable, and the installed-vs-available delta — so you can take an upgrade as soon as one is available to you. Read-only: fetches metadata, downloads nothing.",
       inputSchema: {
         includeRaw: z.boolean().optional().describe("Include the raw channel package list (default false)."),
       },
@@ -100,10 +98,10 @@ export function registerToolchainWatchTools(server: McpServer) {
       const mavenLatest = result.maven?.latest ?? "0.13.3";
       const public61 = result.publicNow.some((p: any) => /swan_spaceos|_6\.\d/i.test(p.name));
       result.verdict = public61
-        ? "🚨 A 6.x/swan_spaceos artifact is PUBLICLY downloadable — install it and re-run swan_verify_matrix (potential C4 ceiling breaker)."
+        ? `A newer 6.x runtime is publicly downloadable — install it, then re-run your verification matrix against it.`
         : sdk61 || staged6.length
-          ? `6.x IS STAGED but internal/NDA-only: sdkMap ${sdk61 ? `osVersion ${sdk61.osVersion} → SDK ${sdk61.spatialSDK}` : "n/a"}; ${staged6.length} swan/6.x artifact(s) on internal hosts (latest: ${staged6.slice(-1)[0]?.name ?? "?"}). Public Maven SDK: ${mavenLatest} (installed pin ${installed.sdkMaven}). Keep polling — the flip is the trigger.`
-          : `No 6.x staged right now. Public Maven SDK: ${mavenLatest}; installed editor ${installed.editor}, emulator ${installed.emulator}.`;
+          ? `A newer 6.x line is advertised on the channel but is not publicly downloadable from here, so there is nothing to install yet. Public Maven SDK: ${mavenLatest} (installed pin ${installed.sdkMaven}). Re-run this check periodically.`
+          : `Nothing newer advertised. Public Maven SDK: ${mavenLatest}; installed editor ${installed.editor}, emulator ${installed.emulator}.`;
       return okJson(result);
     },
   );
