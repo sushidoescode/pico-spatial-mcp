@@ -50,13 +50,24 @@ def screencap(path):
     return path
 
 
+# Shell / system packages that are never the click target. Matching the USER app by excluding these
+# — NOT by a com.example.* prefix — because fleet apps are com.fleet.* and testers use any
+# applicationId. The old prefix filter returned None for com.fleet.knockdown, so target_pkg kept a
+# stale cached package forever and every click was broadcast to a dead app ("clicks do nothing").
+SYSTEM_PKG_PREFIXES = ("com.pxr.", "com.picoxr.", "com.pico.", "com.android.", "android", "com.bytedance.", "com.unity")
+
+
 def foreground_pkg():
     out = adb("shell", "dumpsys", "activity", "activities")
     for line in out.splitlines():
-        if "topResumedActivity" in line and "com.example." in line:
-            for tok in line.split():
-                if tok.startswith("com.example."):
-                    return tok.split("/")[0]
+        if "topResumedActivity" not in line:
+            continue
+        for tok in line.split():
+            if "/" not in tok:
+                continue
+            pkg = tok.split("/")[0]
+            if "." in pkg and pkg[0].isalpha() and not pkg.startswith(SYSTEM_PKG_PREFIXES):
+                return pkg
     return None
 
 
@@ -69,10 +80,15 @@ def target_pkg(fixed=None):
     went to a pinned app that wasn't in front.)"""
     if fixed:
         return fixed
-    if _fg["pkg"] is None or (time.time() - _fg["t"]) > 0.8:
+    now = time.time()
+    if _fg["pkg"] is None or (now - _fg["t"]) > 0.8:
         fg = foreground_pkg()
         if fg:
-            _fg["pkg"], _fg["t"] = fg, time.time()
+            _fg["pkg"], _fg["t"] = fg, now
+        elif _fg["pkg"] and (now - _fg["t"]) > 10.0:
+            # A stale target is worse than none: ghost-broadcasting to a dead app reads as
+            # "clicks do nothing". Drop the cache and let the handler say so.
+            _fg["pkg"] = None
     return _fg["pkg"]
 
 

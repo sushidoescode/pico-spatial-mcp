@@ -344,6 +344,28 @@ if (secondWorldParsed.success) {
   }
 }
 
+// ── v29.4: the wiring must route EVERY channel the mouse bridge sends to a menu app ──────────────
+// Found on com.fleet.knockdown (2026-07-28): the generated GameMenu ships nudgePanelCmd + hover, and
+// the bridge streams `move:dx,dy,dz` on a title-drag — but the generated dispatchDebugCommand never
+// routed `move:` (or menu `hover:`), so the panel was undraggable in every generated app while the
+// hand-edited demo apps worked. Guard the emission contract itself.
+{
+  const { generateWiring } = await import("../dist/assemble.js");
+  const knockdown = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "briefs", "knockdown.json"), "utf8"));
+  const menuSpec = appSpecSchema.parse(knockdown.spec);
+  const files = generateWiring(menuSpec);
+  const home = files.find((f) => f.path.endsWith("HomeStage.kt"))?.content ?? "";
+  assert(home.includes('cmd.startsWith("move:") -> GameMenu.nudgePanelCmd(cmd.removePrefix("move:"))'),
+    "menu app wiring routes move: to GameMenu.nudgePanelCmd (bridge panel-drag)");
+  assert(/cmd\.startsWith\("hover:"\)[^\n]*GameMenu\.hover/.test(home),
+    "menu app wiring routes menu hover: actions to GameMenu.hover");
+  assert(home.includes('cmd == "start" || cmd == "pause" || cmd == "resume" || cmd == "reset"'),
+    "menu app wiring still routes the four select actions");
+  const noMenuSpec = appSpecSchema.parse({ ...knockdown.spec, interactions: [] });
+  const noMenuHome = generateWiring(noMenuSpec).find((f) => f.path.endsWith("HomeStage.kt"))?.content ?? "";
+  assert(!noMenuHome.includes("GameMenu"), "menu-free wiring emits no GameMenu references");
+}
+
 fs.unlinkSync(sceneFile);
 fs.rmSync(splatRoot, { recursive: true, force: true });
 console.log(`\nSemantic-placement test done. Failures: ${failures}`);

@@ -91,6 +91,18 @@ export const BUILTIN_RULES: LintRule[] = [
     negativeFixture: "root.components.set(PhysicsWorldComponent())\nval hit = scene.rayCast(o, d, 10f, CollisionCastHitMode.NEAREST, group, null).results.firstOrNull()",
   },
   {
+    id: "menu-dispatch-missing-move-route",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "conditional",
+    when: /import\s+\S+\.gen\.GameMenu[\s\S]*fun dispatchDebugCommand/,
+    unless: /cmd\.startsWith\("move:"\)\s*->\s*GameMenu\.nudgePanelCmd/,
+    message: "This app attaches a GameMenu but dispatchDebugCommand has no move: route — the mouse bridge's panel title-drag broadcasts move:dx,dy,dz and the panel silently stays put (the com.fleet.knockdown 'menu not moveable' bug).",
+    fix: 'Add `cmd.startsWith("move:") -> GameMenu.nudgePanelCmd(cmd.removePrefix("move:"))` to the dispatch when{} (generate_app_wiring emits it for menu specs since v29.4).',
+    positiveFixture: 'import com.demo.app.gen.GameMenu\ninternal fun dispatchDebugCommand(cmd: String, arg: Int = 0) {\n    when {\n        cmd == "start" -> GameMenu.select(cmd)\n        else -> Log.w(TAG, cmd)\n    }\n}',
+    negativeFixture: 'import com.demo.app.gen.GameMenu\ninternal fun dispatchDebugCommand(cmd: String, arg: Int = 0) {\n    when {\n        cmd == "start" -> GameMenu.select(cmd)\n        cmd.startsWith("move:") -> GameMenu.nudgePanelCmd(cmd.removePrefix("move:"))\n        else -> Log.w(TAG, cmd)\n    }\n}',
+  },
+  {
     id: "collisioncasthitmode-closest",
     severity: "error",
     kinds: ["kotlin"],

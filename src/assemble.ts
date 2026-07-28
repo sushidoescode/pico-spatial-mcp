@@ -465,6 +465,14 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
   // `adb shell am start -n <pkg>/<pkg>.content.HudPanelActivity` (it is exported; no context plumbing).
   if (panels) dispatch.push(`        cmd.startsWith("hud:") -> cmd.removePrefix("hud:").split("=", limit = 2).let { if (it.size == 2) HudState.set(it[0], it[1]) }`);
   if (menu.length) dispatch.push(`        cmd == "start" || cmd == "pause" || cmd == "resume" || cmd == "reset" -> runCatching { GameMenu.select(cmd) }.onFailure { Log.e(TAG, "select " + cmd + ": " + it.message) }.let { }`);
+  if (menu.length) {
+    // The mouse bridge streams move:dx,dy,dz on a panel title-drag and hover:<row> previews. The
+    // generated GameMenu has carried nudgePanelCmd/hover since v4.9 — but only the hand-edited demo
+    // apps ever ROUTED them, so every generated menu app shipped an undraggable panel (found on
+    // com.fleet.knockdown 2026-07-28). Menu hover MUST precede the SceneInteraction hover branch.
+    dispatch.push(`        cmd.startsWith("move:") -> GameMenu.nudgePanelCmd(cmd.removePrefix("move:"))`);
+    dispatch.push(`        cmd.startsWith("hover:") && cmd.removePrefix("hover:") in setOf("start", "pause", "resume", "reset", "none") -> GameMenu.hover(cmd.removePrefix("hover:"))`);
+  }
   if (multiScene) dispatch.push(`        cmd.startsWith("navigate:") -> SceneRouter.go(cmd.removePrefix("navigate:"))`);
   if (specHasPhysics(spec) && launchVelocityMap(spec).size) dispatch.push(`        cmd.startsWith("launch:") -> SceneComposition.launchBody(cmd.removePrefix("launch:"))`);
   if (hasSelect) {
@@ -578,7 +586,7 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
             ``,
           ]
       : []),
-    `/** Headless command channel: adb shell am broadcast -a ${pkg}.DEBUG_CMD --es cmd <navigate:|select:|hover:|start|reset|launch:><id> */`,
+    `/** Headless command channel: adb shell am broadcast -a ${pkg}.DEBUG_CMD --es cmd <navigate:|select:|hover:|move:|start|reset|launch:><id> */`,
     `internal fun dispatchDebugCommand(cmd: String, arg: Int = 0) {`,
     `    Log.i(TAG, "DEBUG_CMD cmd=" + cmd + " arg=" + arg)`,
     `    when {`,

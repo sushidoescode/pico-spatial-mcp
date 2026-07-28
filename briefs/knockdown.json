@@ -1,12 +1,12 @@
 {
   "id": "knockdown",
-  "brief": "A physics knockdown game: throw a ball at 3 racked targets from a clickable menu, with a live THROWS/STATUS scoreboard.",
+  "brief": "A physics knockdown game: throw a ball at 10 pins racked like a real bowling lane (1-2-3-4 triangle) from a clickable menu, with a live THROWS/STATUS scoreboard.",
   "spec": {
     "meta": {
       "appName": "KnockdownXR",
       "packageName": "com.example.kdbrief",
       "stageStyle": "3",
-      "brief": "A physics knockdown game: throw a ball at 3 racked targets from a clickable menu, with a live THROWS/STATUS scoreboard."
+      "brief": "A physics knockdown game: throw a ball at 10 pins racked like a real bowling lane (1-2-3-4 triangle) from a clickable menu, with a live THROWS/STATUS scoreboard."
     },
     "scenes": [
       {
@@ -89,9 +89,9 @@
         "source": "primitive",
         "transform": {
           "position": [
-            -0.16,
+            0.0,
             1.21,
-            -5
+            -4.7
           ]
         },
         "body": {
@@ -115,9 +115,9 @@
         "source": "primitive",
         "transform": {
           "position": [
-            0,
+            -0.15,
             1.21,
-            -5
+            -4.96
           ]
         },
         "body": {
@@ -141,9 +141,191 @@
         "source": "primitive",
         "transform": {
           "position": [
-            0.16,
+            0.15,
             1.21,
-            -5
+            -4.96
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target3",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.3,
+            1.21,
+            -5.22
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target4",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.0,
+            1.21,
+            -5.22
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target5",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.3,
+            1.21,
+            -5.22
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target6",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.45,
+            1.21,
+            -5.48
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target7",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.15,
+            1.21,
+            -5.48
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target8",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.15,
+            1.21,
+            -5.48
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "capsule",
+          "dims": [
+            0.3,
+            0.06
+          ],
+          "mass": 0.35,
+          "color": [
+            0.95,
+            0.95,
+            0.92
+          ]
+        }
+      },
+      {
+        "id": "target9",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.45,
+            1.21,
+            -5.48
           ]
         },
         "body": {
@@ -220,7 +402,7 @@
     },
     "verificationPlan": [
       {
-        "claim": "3 capsule targets racked on the lane + the ball at rest",
+        "claim": "10 capsule pins racked in a 1-2-3-4 bowling triangle on the lane + the ball at rest",
         "method": "capture",
         "forwardFOVpose": {
           "yawDeg": 0,
@@ -231,7 +413,7 @@
         "targetRef": "lane"
       },
       {
-        "claim": "the KNOCKDOWN live-text panel shows THROWS/STATUS and updates on START (turn the camera — panels spawn at the dock position)",
+        "claim": "the KNOCKDOWN live-text panel shows THROWS/STATUS and updates on START (turn the camera \u2014 panels spawn at the dock position)",
         "method": "capture",
         "forwardFOVpose": {
           "yawDeg": 0,
@@ -258,7 +440,7 @@
   "expected": {
     "scenes": 1,
     "layouts": 0,
-    "objects": 5,
+    "objects": 12,
     "data": 0,
     "interactions": 2,
     "verifiableNowMin": 2,
