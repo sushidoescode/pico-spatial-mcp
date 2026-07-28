@@ -1,6 +1,8 @@
 # pico-spatial-mcp — installing from the tarball
 
-You were handed a `.tgz`. This page is the whole install path. **The other docs in this project
+You were handed a `.tgz`. This page is the whole install path, condensed. If you'd rather have
+a step-by-step walkthrough — install through to a running app you've looked at — read
+**`GETTING_STARTED.md`**, which ships alongside this file. **The other docs in this project
 assume you cloned the git repository — you didn't, so ignore install/testing instructions in
 `README.md`.** What's in the tarball is exactly what you need to run the server.
 

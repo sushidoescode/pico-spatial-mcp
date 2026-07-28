@@ -156,10 +156,10 @@ try {
   //      rather than resolved as paths, so the [M1] derivation structurally cannot see them: a review
   //      found all five prompts opening with "Read SKILLS.md + DESIGN.md first" while neither was in
   //      the package. An unfollowable first instruction makes an agent stall or invent the rubric.
-  for (const doc of ["SKILLS.md", "DESIGN.md"]) {
+  for (const doc of ["SKILLS.md", "DESIGN.md", "GETTING_STARTED.md"]) {
     fs.existsSync(path.join(installed, doc))
-      ? ok(`prompt-referenced doc ships: ${doc}`)
-      : fail(`${doc} missing — the shipped prompts tell the agent to read it`);
+      ? ok(`reader-facing doc ships: ${doc}`)
+      : fail(`${doc} missing — the shipped prompts or TESTERS.md send the reader to it`);
   }
 
   const entry = path.join(installed, "dist", "index.js");
