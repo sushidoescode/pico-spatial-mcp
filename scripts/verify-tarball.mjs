@@ -64,12 +64,38 @@ try {
       : fail(`payload MISSING: ${rel}  (${why})`);
   }
 
-  // 4. Junk that must NOT ship.
-  for (const junk of ["__pycache__", ".dev", ".superpowers", "node_modules/.cache"]) {
-    fs.existsSync(path.join(installed, junk))
-      ? fail(`unwanted content shipped: ${junk}`)
-      : ok(`excluded: ${junk}`);
-  }
+  // 4. Junk that must NOT ship — checked RECURSIVELY.
+  //    An earlier version only looked at the package root and passed a tarball that shipped
+  //    tools/__pycache__ and scripts/py/__pycache__. A top-level check is not a check.
+  const offenders = [];
+  const leaks = [];
+  const HOME_RE = /\/Users\/[A-Za-z0-9._-]+\//g;
+  (function walk(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      const rel = path.relative(installed, p);
+      if (e.isDirectory()) {
+        if (["__pycache__", ".dev", ".superpowers", ".pico-stacks"].includes(e.name)) offenders.push(rel);
+        else walk(p);
+      } else {
+        if (e.name.endsWith(".pyc") || e.name === ".DS_Store") offenders.push(rel);
+        // Absolute local paths leak the author's username into every install. .pyc files embed
+        // them invisibly, which is exactly how this got missed the first time.
+        if (/\.(mjs|js|ts|json|md|py|sh|m)$/.test(e.name)) {
+          const hits = (fs.readFileSync(p, "utf8").match(HOME_RE) || []);
+          if (hits.length) leaks.push(`${rel} (${[...new Set(hits)].slice(0, 2).join(", ")})`);
+        }
+      }
+    }
+  })(installed);
+  offenders.length ? fail(`unwanted content shipped: ${offenders.join(", ")}`) : ok("no build droppings anywhere in the package");
+  leaks.length ? fail(`absolute local paths leak in: ${leaks.slice(0, 5).join("; ")}`) : ok("no absolute local paths in shipped text files");
+
+  // 4b. A tarball recipient has no repo, so the docs written for repo users must not be the only
+  //     onboarding. Require a tarball-facing guide to be present.
+  fs.existsSync(path.join(installed, "TESTERS.md"))
+    ? ok("TESTERS.md ships (tarball recipients have install instructions)")
+    : fail("TESTERS.md missing — a tarball recipient has no working install path in the docs");
 
   // 5. Boot the INSTALLED server over stdio, cwd = sandbox, and list its tools. This is the real
   //    consumer path: if a tool's module-load-time code reaches for a repo path, it dies here.

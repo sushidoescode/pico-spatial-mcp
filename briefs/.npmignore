@@ -1,0 +1,9 @@
+# These briefs reference assets that exist only on the author's machine
+# (~/Marble Worlds, ~/.pico-mcp/artifacts, ~/AndroidStudioProjects). They would leak an
+# absolute home path into every tarball AND be broken for anyone else, so they stay local.
+affordance.json
+camerapeek.json
+ramenlos.json
+ramenoccupancy.json
+ramenworld.json
+stationsemantic.json

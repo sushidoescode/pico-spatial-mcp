@@ -11,11 +11,12 @@
     "dist",
     "scripts",
     "tools",
-    "briefs"
+    "briefs",
+    "TESTERS.md"
   ],
   "scripts": {
     "build": "tsc",
-    "prepack": "npm run build",
+    "prepack": "node scripts/prepack-clean.mjs && npm run build",
     "test:tarball": "node scripts/verify-tarball.mjs",
     "start": "node dist/index.js",
     "smoke": "node test/smoke.mjs",
