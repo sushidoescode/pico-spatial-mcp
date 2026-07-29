@@ -6,6 +6,12 @@ using UnityEngine;
 /// color string), spin:<on|off>.
 public sealed class HelloSpatialRuntime : MonoBehaviour
 {
+    /// Assigned by PicoBuild in the generated scene. The material ASSET references Unlit/Color,
+    /// which is what actually ships the shader in the build — without a built asset reference,
+    /// Unity strips it and every primitive renders Hidden/InternalErrorShader magenta (found by
+    /// LOOKing at the first E2E capture, 2026-07-28).
+    public Material unlitMaterial;
+
     private GameObject _cube;
     private bool _spin = true;
 
@@ -38,7 +44,7 @@ public sealed class HelloSpatialRuntime : MonoBehaviour
         if (_spin && _cube != null) _cube.transform.Rotate(0f, 40f * Time.deltaTime, 0f);
     }
 
-    private static GameObject Place(PrimitiveType type, string name, Vector3 position, Color color)
+    private GameObject Place(PrimitiveType type, string name, Vector3 position, Color color)
     {
         GameObject go = GameObject.CreatePrimitive(type);
         go.name = name;
@@ -47,8 +53,10 @@ public sealed class HelloSpatialRuntime : MonoBehaviour
         return go;
     }
 
-    private static void Tint(GameObject go, Color color)
+    private void Tint(GameObject go, Color color)
     {
-        go.GetComponent<Renderer>().material.color = color;
+        Material m = unlitMaterial != null ? new Material(unlitMaterial) : new Material(Shader.Find("Unlit/Color"));
+        m.color = color;
+        go.GetComponent<Renderer>().sharedMaterial = m;
     }
 }

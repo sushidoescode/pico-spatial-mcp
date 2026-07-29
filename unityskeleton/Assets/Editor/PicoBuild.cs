@@ -138,8 +138,14 @@ public static class PicoBuild
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(0f, 0.8f, 0.9f); // cyan — unmistakable in a capture
         camera.transform.position = new Vector3(0f, 1f, -4f);
+        // A material ASSET referenced by the scene is what ships the Unlit/Color shader in the
+        // build; runtime new Material(Shader.Find(...)) alone gets stripped -> InternalErrorShader
+        // magenta (found by LOOKing at the first E2E capture).
+        Material unlit = new Material(Shader.Find("Unlit/Color"));
+        AssetDatabase.CreateAsset(unlit, "Assets/PicoAgent/UnlitColor.mat");
         GameObject root = new GameObject("PicoAgentRoot");
-        root.AddComponent<HelloSpatialRuntime>();
+        HelloSpatialRuntime runtime = root.AddComponent<HelloSpatialRuntime>();
+        runtime.unlitMaterial = unlit;
         root.AddComponent<PicoAgentBridge>();
         const string scenePath = "Assets/Scenes/HelloSpatial.unity";
         EditorSceneManager.SaveScene(scene, scenePath);

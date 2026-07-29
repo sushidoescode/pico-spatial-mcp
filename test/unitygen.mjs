@@ -43,7 +43,11 @@ if (failures === 0) {
   buildCs.includes("build-result.json") ? ok("build writes build-result.json") : fail("structured build result missing");
   !/using\s+UnityEngine\.XR|using\s+UnityEditor\.XR/.test(buildCs)
     ? ok("PicoBuild has no compile-time XR references (windowed-safe)") : fail("PicoBuild references XR types — breaks windowed compile");
-  const bridge = fs.readFileSync(path.join(SK, "Assets/PicoAgent/PicoAgentBridge.cs"), "utf8");
+  const runtimeCs = fs.readFileSync(path.join(SK, "Assets/Scripts/HelloSpatialRuntime.cs"), "utf8");
+runtimeCs.includes("public Material unlitMaterial") && buildCs.includes("UnlitColor.mat")
+  ? ok("shader ships via a scene-referenced material asset (anti-stripping)")
+  : fail("Unlit material asset wiring missing — primitives will render InternalErrorShader magenta");
+const bridge = fs.readFileSync(path.join(SK, "Assets/PicoAgent/PicoAgentBridge.cs"), "utf8");
   bridge.includes('"PicoAgentBridge"') && bridge.includes("OnDebugCmd")
     ? ok("bridge GameObject/UnitySendMessage contract") : fail("bridge contract drifted");
   const javaSrc = fs.readFileSync(path.join(SK, "Assets/Plugins/Android/PicoDebugCmdReceiver.java"), "utf8");
