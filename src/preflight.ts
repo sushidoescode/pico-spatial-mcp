@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { okJson } from "./util.js";
 import { detectJavaHome } from "./toolchain.js";
 import { SKELETON_CANARIES, SKELETON_ROOT } from "./projectgen.js";
+import { UNITY_SKELETON_CANARIES, UNITY_SKELETON_ROOT } from "./unitygen.js";
 
 /**
  * preflight.ts — v27-pre: the read-only environment doctor.
@@ -130,6 +131,19 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   push(missingSkel.length === 0
     ? { name: "app-skeleton", status: "pass", detail: `generator payload at ${SKELETON_ROOT} (${SKELETON_CANARIES.length} canaries present)`, fix: null }
     : { name: "app-skeleton", status: "fail", detail: `packaged app skeleton incomplete at ${SKELETON_ROOT} — missing: ${missingSkel.slice(0, 4).join(", ")}${missingSkel.length > 4 ? ` (+${missingSkel.length - 4} more)` : ""}`, fix: "Reinstall the pico-spatial-mcp package (the tarball ships appskeleton/ — a partial or filtered install cannot scaffold projects). Everything that does not build an APK — scanning, capture, SDK lookup, diagnosis, perf — works without it." });
+
+  // 2f. Unity lane (OPTIONAL — warn-tier so it never blocks non-Unity testers). Payload canaries
+  //     fail only on a broken install; a missing editor is a warn with the install path named.
+  const missingUnitySkel = UNITY_SKELETON_CANARIES.filter((rel) => io.statMtimeMs(path.join(UNITY_SKELETON_ROOT, ...rel.split("/"))) == null);
+  if (missingUnitySkel.length > 0) {
+    push({ name: "unity-lane", status: "fail", detail: `packaged unity skeleton incomplete — missing: ${missingUnitySkel.slice(0, 3).join(", ")}${missingUnitySkel.length > 3 ? ` (+${missingUnitySkel.length - 3} more)` : ""}`, fix: "Reinstall the pico-spatial-mcp package (the tarball ships unityskeleton/). The Unity lane is optional; everything else works without it." });
+  } else {
+    const hub = io.statMtimeMs("/Applications/Unity/Hub/Editor") != null;
+    const envEditor = !!process.env.UNITY_EDITOR_PATH;
+    push(hub || envEditor
+      ? { name: "unity-lane", status: "pass", detail: envEditor ? `UNITY_EDITOR_PATH=${process.env.UNITY_EDITOR_PATH}` : "Unity Hub editors present; unity skeleton payload complete", fix: null }
+      : { name: "unity-lane", status: "warn", detail: "no Unity editor found (optional lane) — unity_build_apk needs one", fix: "Install Unity 6000.4.9f1 + Android Build Support via Unity Hub, or set UNITY_EDITOR_PATH. Skip this if you are not building Unity apps." });
+  }
 
   // 3. emulator (a PICO device attached and in 'device' state)
   let bootAtMs: number | null = null;

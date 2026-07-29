@@ -50,6 +50,12 @@ for (const name of ["node", "adb", "emulator", "calibration"]) {
   const c = healthy.find((x) => x.name === name);
   c && c.status === "pass" ? ok(`healthy env passes: ${name}`) : fail(`healthy env should pass ${name}: ${JSON.stringify(c)}`);
 }
+// v30: the Unity lane is optional — healthy fixture (statMtimeMs non-null everywhere) must PASS it,
+// and the broken fixture is covered by the no-pass + fix-required loop above.
+const unityLane = healthy.find((x) => x.name === "unity-lane");
+unityLane && unityLane.status === "pass"
+  ? ok("healthy env passes unity-lane")
+  : fail(`unity-lane wrong on healthy env: ${JSON.stringify(unityLane)}`);
 
 // Calibration STALER than the emulator boot => fail with the recalibrate fix (the dies-on-restart gotcha).
 const staleIO = { ...healthyIO, readFile: (p) => p.endsWith("camera-calibration.json")

@@ -190,6 +190,19 @@ try {
     fail(`app-skeleton payload check failed outright: ${e.message}`);
   }
 
+  // [M8b] The Unity-lane payload (v30) — same class of risk as [M8]: repo-green, tarball-broken.
+  try {
+    const ug = await import(pathToFileURL(path.join(installed, "dist", "unitygen.js")).href);
+    const uskel = ug.verifyUnitySkeleton();
+    uskel.ok
+      ? ok(`unity skeleton ships complete (${ug.UNITY_SKELETON_CANARIES.length} canaries)`)
+      : fail(`unity skeleton incomplete in the tarball: ${[...uskel.missing, ...uskel.empty].join(", ")}`);
+    fs.existsSync(path.join(installed, "unityskeleton", "_gitignore"))
+      ? ok("unityskeleton _gitignore survived packing") : fail("unityskeleton/_gitignore missing");
+  } catch (e) {
+    fail(`unity-skeleton payload check failed outright: ${e.message}`);
+  }
+
   const entry = path.join(installed, "dist", "index.js");
   if (!fs.existsSync(entry)) { fail(`bin entry missing: ${entry}`); process.exit(1); }
   fs.readFileSync(entry, "utf8").startsWith("#!") ? ok("bin entry has a shebang") : fail("dist/index.js lost its shebang — npx would break");
