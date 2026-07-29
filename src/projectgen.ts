@@ -54,10 +54,21 @@ export const SKELETON_CANARIES = [
   "app/src/main/res/values/strings.xml",
   "app/src/main/res/values/drawables_3d.xml",
   "app/src/main/res/drawable/icon_3d_layer_0.png",
+  // AndroidManifest references this as android:icon AND android:roundIcon. It shipped as a 0-byte
+  // file, which debug builds tolerate (AGP passes --no-crunch) but assembleRelease does not — aapt2
+  // fails with "failed to read PNG signature". Presence alone never caught it; see the size check below.
+  "app/src/main/res/mipmap-xxxhdpi/ic_spatial_launcher.png",
 ];
 
-/** Structural payload check (stat injectable so preflight fixtures can describe other machines). */
-export function verifySkeleton(statMtimeMs?: (p: string) => number | null): { ok: boolean; root: string; missing: string[] } {
+/**
+ * Structural payload check (stat injectable so preflight fixtures can describe other machines).
+ *
+ * Checks EXISTENCE and NON-EMPTINESS. Presence alone was not enough: the launcher icon shipped as a
+ * 0-byte PNG and passed every gate, because `statSync(...) != null` is true for an empty file. A
+ * truncated or empty payload file fails at build time, far from here, so it has to be caught at the
+ * package boundary.
+ */
+export function verifySkeleton(statMtimeMs?: (p: string) => number | null): { ok: boolean; root: string; missing: string[]; empty: string[] } {
   const stat =
     statMtimeMs ??
     ((p: string) => {
@@ -68,7 +79,19 @@ export function verifySkeleton(statMtimeMs?: (p: string) => number | null): { ok
       }
     });
   const missing = SKELETON_CANARIES.filter((rel) => stat(path.join(SKELETON_ROOT, ...rel.split("/"))) == null);
-  return { ok: missing.length === 0, root: SKELETON_ROOT, missing };
+  // Size is not available through the injected stat (fixtures describe presence, not bytes), so only
+  // check it when reading the real filesystem — which is every case that can actually ship a package.
+  const empty = statMtimeMs
+    ? []
+    : SKELETON_CANARIES.filter((rel) => {
+        if (missing.includes(rel)) return false;
+        try {
+          return fs.statSync(path.join(SKELETON_ROOT, ...rel.split("/"))).size === 0;
+        } catch {
+          return false;
+        }
+      });
+  return { ok: missing.length === 0 && empty.length === 0, root: SKELETON_ROOT, missing, empty };
 }
 
 function walkFiles(dir: string): string[] {
@@ -100,7 +123,15 @@ export function detectAndroidSdkDir(env: NodeJS.ProcessEnv = process.env, home: 
   return null;
 }
 
-const xmlEscape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/**
+ * Android string resources need MORE than XML-markup escaping. An apostrophe or a double quote is a
+ * resource-format escape, so `Sam's Gallery` compiles to "unescaped apostrophe in string" at aapt2 —
+ * long after scaffold_spatial_app has already reported success and told the caller to run a build it
+ * had made impossible. Escape both here rather than at the call site: every value that reaches a
+ * strings.xml goes through this function.
+ */
+const xmlEscape = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/'/g, "\\'").replace(/"/g, "&quot;");
 
 export interface GenerateOptions {
   targetDir: string;

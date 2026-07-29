@@ -170,7 +170,12 @@ try {
   try {
     const pg = await import(pathToFileURL(path.join(installed, "dist", "projectgen.js")).href);
     const skel = pg.verifySkeleton();
-    skel.ok ? ok(`app skeleton ships complete (${pg.SKELETON_CANARIES.length} canaries)`) : fail(`app skeleton incomplete in the tarball: ${skel.missing.join(", ")}`);
+    if (skel.ok) ok(`app skeleton ships complete and non-empty (${pg.SKELETON_CANARIES.length} canaries)`);
+    else {
+      if (skel.missing?.length) fail(`app skeleton incomplete in the tarball: ${skel.missing.join(", ")}`);
+      // A 0-byte canary is the failure presence checks cannot see; it survives to break the build.
+      if (skel.empty?.length) fail(`app skeleton ships EMPTY file(s): ${skel.empty.join(", ")}`);
+    }
     (fs.statSync(path.join(installed, "appskeleton", "gradlew")).mode & 0o111)
       ? ok("appskeleton/gradlew kept its exec bit through pack+install")
       : fail("appskeleton/gradlew lost its exec bit — generated projects cannot build");

@@ -1168,8 +1168,17 @@ export function registerFleetBuildTools(server: McpServer) {
       // the caller had to dig into results[].notes to discover total failure. `status` now reflects
       // the outcome and unbuilt briefs are surfaced by name with the reason attached.
       const unbuilt = results.filter((r) => !r.built);
+      // v29.2e closed the never-built hole but left its sibling open: a brief that COMPILED an APK and
+      // then failed at install, launch, capture or judging is still built:true, so status read "ok" and
+      // both problem lists came back empty for a run that established nothing. `escalations` filters on
+      // r.installed, so it could not see it either. The likeliest trigger is the most common tester
+      // mistake there is — running fleet_build without booting the emulator, which makes adb install
+      // throw straight down this path. "ok" must mean every brief reached a real conclusion.
+      const isConcluded = (r: any) =>
+        r.built && r.installed && (r.verdict != null || r.verificationRoute?.mode === "panel-structural");
+      const incomplete = results.filter((r) => !isConcluded(r));
       return okJson({
-        status: unbuilt.length === 0 ? "ok" : unbuilt.length === results.length ? "failed" : "partial",
+        status: incomplete.length === 0 ? "ok" : unbuilt.length === results.length ? "failed" : "partial",
         dashboard: {
           queued: briefIds.length,
           built: results.filter((r) => r.built).length,
@@ -1177,6 +1186,13 @@ export function registerFleetBuildTools(server: McpServer) {
           autoJudgedPass: passed,
           panelReadyStructural: results.filter((r) => r.panelEvidence?.expectationMet === true).length,
           notBuilt: unbuilt.map((r) => ({ id: r.id, why: r.notes?.[0] ?? "no reason recorded" })),
+          incomplete: incomplete.map((r) => ({
+            id: r.id,
+            reachedBuild: !!r.built,
+            reachedInstall: !!r.installed,
+            verdict: r.verdict ?? null,
+            why: r.notes?.[0] ?? (r.built && !r.installed ? "built but never installed — is the emulator booted?" : "no reason recorded"),
+          })),
           escalations: results
             .filter((r) => r.installed && r.verificationRoute?.mode !== "panel-structural" && r.verdict !== "PASS")
             .map((r) => r.id),

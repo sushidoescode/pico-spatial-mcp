@@ -48,6 +48,20 @@ function loadLedger(app: string): any[] {
     return [];
   }
 }
+
+/**
+ * Entries that still count as evidence.
+ *
+ * A ledger is append-only — a claim later found false is marked `retracted` with a reason rather than
+ * deleted, so the record of the mistake survives. But a retracted entry must never feed a generated
+ * report: the reports are what get handed to other people, and a false claim reaching one is exactly
+ * the over-claim this whole ledger exists to prevent. An audit found a vision_verified entry whose
+ * frame was real but whose causal claim was not (the build had reused a pre-existing project instead
+ * of exercising the code path it claimed to prove), which is what this filter is for.
+ */
+function activeEntries(app: string): any[] {
+  return loadLedger(app).filter((e) => !e?.retracted);
+}
 function saveLedger(app: string, entries: any[]) {
   fs.mkdirSync(LEDGER_DIR, { recursive: true });
   fs.writeFileSync(ledgerPath(app), JSON.stringify(entries, null, 2));
@@ -145,7 +159,7 @@ export function registerLedgerTools(server: McpServer) {
       },
     },
     async ({ app }) => {
-      const entries = loadLedger(app);
+      const entries = activeEntries(app);
       const features = entries.map((e) => ({
         name: e.claim,
         status: EVIDENCE_TO_STATUS[e.evidenceType] ?? "structural",

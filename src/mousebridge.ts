@@ -85,7 +85,7 @@ cd "$(dirname "$0")"
 PKG="$(grep -m1 -E 'applicationId' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\\1/')"
 export JAVA_HOME="\${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
 echo "Building $PKG…"; ./gradlew :app:assembleDebug
-for p in $(adb shell pm list packages 2>/dev/null | grep com.example | sed 's/package://'); do adb shell am force-stop "$p" 2>/dev/null || true; done
+adb shell am force-stop "$PKG" 2>/dev/null || true
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 for i in 1 2 3 4; do adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1; sleep 0.6; [ -n "$(adb shell pidof "$PKG" 2>/dev/null | tr -d '\\r')" ] && break; done
 echo "launched $PKG"
@@ -294,7 +294,7 @@ export function registerMouseBridgeTools(server: McpServer) {
           .string()
           .optional()
           .describe(
-            "App package to drive, e.g. com.example.orreryxr. If omitted, the bridge auto-detects the foreground com.example.* app at click time.",
+            "App package to drive, e.g. com.fleet.knockdown. If omitted, the bridge auto-detects the foreground spatial app at click time (system packages are excluded).",
           ),
         enableHover: z
           .boolean()
