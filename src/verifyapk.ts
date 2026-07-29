@@ -20,7 +20,8 @@ export const VERIFY_APK_TEARDOWN_MS = 2_000;
  * WITHOUT CRASHING (pidof process-alive + a logcat FATAL/ANR scan), and capture ONE 2D frame — then
  * return an HONEST evidence matrix. We RECORD NOTHING: the caller LOOKS at the artifact and calls
  * record_verification itself. The matrix is structural; the returned pixels support only what the
- * caller actually LOOKS at. Unity immersive pixels were absent on the tested 0.13.1 / OS 6.0
+ * caller actually LOOKS at — through a path that can SEE the app's mode (immersive XR needs gui_capture;
+ * adb screencap is black for it — corrected 2026-07-29). Unity immersive pixels were absent on 0.13.1 / OS 6.0
  * emulator, while a 6.1 emulator and hardware remain untested here. Every adb step is wrapped so a
  * failure becomes a structured field, never a throw.
  */
@@ -29,7 +30,7 @@ export function registerVerifyApkTools(server: McpServer) {
     "verify_pico_apk",
     {
       description:
-        "Cross-builder DEPLOY+VERIFY handoff contract: install + launch an ARBITRARY PICO APK (from an external builder, e.g. the user's separate Unity MCP), structurally assert it BOOTS WITHOUT CRASHING (pidof process-alive + a logcat FATAL/ANR scan), and capture ONE 2D frame. HONEST SCOPE: the automatic matrix is STRUCTURAL (installs, launches, process stays alive, no FATAL/ANR) + a 2D screencap — NOT a visual XR claim. The caller must LOOK and record only what the returned pixels prove. A Unity immersive test showed black output on emulator 0.13.1 / OS 6.0; that does not establish behavior on an untested 6.1 emulator or hardware. Records NOTHING itself. Each adb step is caught, so failures become structured fields (installed/launched/processAlive/crashed/logcatMatch/errors), never a throw.",
+        "Cross-builder DEPLOY+VERIFY handoff contract: install + launch an ARBITRARY PICO APK (from an external builder, e.g. the user's separate Unity MCP), structurally assert it BOOTS WITHOUT CRASHING (pidof process-alive + a logcat FATAL/ANR scan), and capture ONE 2D frame. HONEST SCOPE: the automatic matrix is STRUCTURAL (installs, launches, process stays alive, no FATAL/ANR) + a 2D screencap — NOT a visual XR claim. The caller must LOOK and record only what the returned pixels prove. NOTE (corrected 2026-07-29): an immersive Unity app returns a BLACK screencap here even while rendering correctly — Unity is presenting to the XR display, not the Android surface; verify those with gui_capture. Records NOTHING itself. Each adb step is caught, so failures become structured fields (installed/launched/processAlive/crashed/logcatMatch/errors), never a throw.",
       inputSchema: {
         apkPath: z.string().describe("Absolute path to the .apk the external builder emitted."),
         packageName: z.string().describe("Android package id, e.g. com.example.unityxr."),
@@ -141,7 +142,7 @@ export function registerVerifyApkTools(server: McpServer) {
           swan: "hardware remains a separate run: LOOK at a device capture before device_verified",
         },
         honesty:
-          "Structural only: installs/launches/process-alive/no-FATAL-or-ANR + one 2D screencap. This is NOT a vision_verified claim and says nothing by itself about immersive/XR rendering, controller-ray, or head-tracked depth. A green matrix means it BOOTS, not that it LOOKS right. LOOK at the frame; scope any conclusion to the tested emulator/device version.",
+          "Structural only: installs/launches/process-alive/no-FATAL-or-ANR + one 2D screencap. This is NOT a vision_verified claim and says nothing by itself about immersive/XR rendering, controller-ray, or head-tracked depth. A green matrix means it BOOTS, not that it LOOKS right. LOOK at the frame; scope any conclusion to the tested emulator/device version. CAPTURE-PATH WARNING: this screencap is the SHELL composite — for an XR-RUNTIME IMMERSIVE app (Unity OpenXR / Unity Integration SDK) it comes back BLACK even when the app is rendering perfectly; use gui_capture for those and never read a black screencap as a rendering failure.",
         note: "Records nothing — the caller LOOKS at the artifact then calls record_verification. This is the Unity/other-builder handoff contract.",
       });
     },

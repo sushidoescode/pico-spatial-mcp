@@ -81,12 +81,14 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
 - **Name-aware procedural provisioning**: data-bound briefs whose names match shape archetypes
   (gems, crystals, pins, bottles…) now get REAL baked faceted geometry instead of placeholder
   cards — vision-verified (`com.fleet.crystals`).
-- **Unity hello-XR settling test**: Unity 6000.4.9f1 + the official PICO OpenXR package reached a
-  healthy FOCUSED session, advanced frames at 60fps, and submitted an app-owned layer on emulator
-  0.13.1 / OS 6.0; three looked-at captures across two launches were uniformly black.
-  Runtime/session/layer operation is structurally proven, while the intended immersive pixels
-  are absent from capture on this emulator build — not a visual-success or `vision_verified`
-  claim. The test does not isolate the failing compositor/camera/render-target stage.
+- **Immersive Unity VR renders on the emulator** (2026-07-29, `vision_verified`) — **corrects the
+  July 22 settling test**, whose uniformly-black captures were an `adb screencap` artifact, not a
+  compositing failure. Unity apps built on BOTH PICO XR routes — the Integration SDK
+  (`PXR_Loader`) and the OpenXR SDK (the unchanged sha-pinned July-22 APK) — fill the entire
+  emulator view with their scene when captured through the emulator window (`gui_capture`).
+  Unity announces the cause itself: `Skip Present To Main Screen: Yes` — it presents to the XR
+  display, not the Android surface screencap reads. Capture-path rule now enforced in the tool
+  descriptions; see [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
 
 ## Near-term (ungated — buildable on the current emulator)
 
@@ -114,8 +116,9 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
 - **Unity lane — SHIPPED (v30)**: `unity_scaffold_project` (packaged skeleton, windowed default,
   immersive option, SpatialAdapter slot) + `unity_build_apk` (confirmed batchmode path,
   structured result). Windowed Unity content composites as a panel and is vision-verified on the
-  emulator; immersive stays structural on 0.13.x. The SpatialAdapter slot awaits PICO's Unity
-  packages. See [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
+  emulator; immersive Unity VR also renders (capture it with `gui_capture` — see the correction
+  above). The SpatialAdapter slot awaits PICO's Unity packages. See
+  [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
 - **17.0 tail**: semantic scan → `anchorTo` brief into a NEW splat world through the compile
   path (proving the world-model loop generalizes beyond the ramen scan).
 
@@ -131,9 +134,11 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
   waiting for a second real vault to exist locally.
 - **First `device_verified` ledger entry** — protocol + evidence ask-list shipped
   ([docs/DEVICE_VERIFICATION.md](docs/DEVICE_VERIFICATION.md)); needs a real Swan run.
-- **Immersive OpenXR re-test** (native, WebXR, and Unity-built) — re-test the observed 0.13.1 /
-  OS 6.0 black-output boundary first thing on a 6.1 emulator or Swan hardware; do not project the
-  current result onto either untested target. See [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
+- **Native-NDK and WebXR immersive re-test with `gui_capture`** — the Unity routes are settled
+  (they render); the 2026-07-02 native-NDK/WebXR probes reported a compositor *loading fallback*
+  in the GUI viewport and were never re-run after the shell-policy fix or through the corrected
+  capture path. Their immersive status is OPEN, not negative. See
+  [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
 
 ## Blessing-gated (needs PICO's go-ahead; nothing goes public before it)
 

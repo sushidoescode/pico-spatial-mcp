@@ -16,9 +16,10 @@ MCP is the **APK boundary** plus one optional drive contract:
    (string extra `cmd`) — the identical channel every generated native app carries. Scaffolded
    apps get it via a 40-line `Plugins/Android` Java shim forwarding to C# over `UnitySendMessage`
    (built-ins: `ping`, `color:<html-color>`, `spin:<on|off>`; extend via `PicoAgentBridge.Commands`).
-3. **Evidence tiers (engine-agnostic):** 2D/windowed Unity content → `vision_verified` is
-   attainable today; immersive OpenXR on emulator 0.13.x → `structural` ceiling; Swan/6.1 →
-   `device_verified` when reachable.
+3. **Evidence tiers (engine-agnostic):** windowed AND immersive Unity content can both reach
+   `vision_verified` on emulator 0.13.x — **as long as you capture through the right path**
+   (windowed → `capture_frame`/adb; immersive → `gui_capture`, see the corrected section below).
+   Swan hardware → `device_verified` when reachable.
 
 Two tools implement our side (build and verify stay separate by design):
 
@@ -54,16 +55,14 @@ launch can legitimately show no Unity-side scene logs until focus.
 - **Install / launch / logcat / capture on the PICO emulator**: identical to any other APK —
   and this MCP already does it: point **`verify_pico_apk`** at your Unity-built APK and you get
   install → launch → crash-scan → a captured frame. A looked-at frame proves only what its
-  pixels show; it does not turn a structurally healthy but visually black XR run into a visual
-  success.
-- **The boundary**: a Unity app running as a **2D/windowed Android activity** (menus, MR-window
-  surfaces, anything not opening an immersive OpenXR session) composites and is visually
-  verifiable on this emulator — the same proven panel pipeline used across this repo. The direct
-  Unity hello-XR test confirmed that an **immersive OpenXR session** can run and submit an
-  app-owned layer at 60fps while its intended scene remains absent from the captured viewport.
-  That reproduces the black-output boundary on emulator 0.13.1 / PICO OS 6.0; the test does not
-  by itself isolate compositor promotion from an earlier Unity camera/render-target stage, and
-  makes no claim about 6.1 or Swan hardware.
+  pixels show — and only if it came from a capture path that can see the app's mode.
+- **The real boundary is the CAPTURE PATH, not the rendering** (corrected 2026-07-29, measured):
+  windowed Unity content composites as a floating panel and is captured by adb screencap;
+  **immersive Unity VR also composites — it fills the whole view — but adb screencap shows it as
+  black**, because Unity stops presenting to the Android main surface (`Skip Present To Main
+  Screen: Yes`). Capture immersive content with **`gui_capture`** (the emulator's own window).
+  Both Unity XR routes — Integration SDK (`PXR_Loader`) and OpenXR SDK — were LOOKED at rendering
+  full-immersive on emulator 0.13.1 / OS 6.0. See the corrected section below.
 
 ## Which PICO Unity SDK?
 
@@ -99,53 +98,67 @@ Which one PICO steers new projects toward is not publicly settled; the marketing
    `verify_pico_apk { apkPath, packageName }` — installs, launches, asserts no crash, captures.
 3. Scope logcat to this launch and confirm the target PID, OpenXR session state, running display,
    advancing frames, and app-owned layer before interpreting the capture.
-4. LOOK at the capture. For 2D/windowed Unity content, visible app pixels can honestly become
-   `vision_verified` via `record_verification`. For immersive content on emulator 0.13.1, the
-   healthy runtime result remains `structural`; the looked-at black frame is a negative finding,
-   not a visual-success claim.
+4. LOOK at the capture — **from the right capture path** (see the rule below). For **windowed**
+   Unity content, `capture_frame` / `verify_pico_apk`'s adb screencap is correct. For
+   **immersive** Unity content, adb screencap returns BLACK by design; use **`gui_capture`**
+   (the emulator's own window). Either way, visible app pixels can honestly become
+   `vision_verified` via `record_verification`.
 5. On real Swan hardware, the same loop can mint `device_verified` after a device capture is
    actually looked at — see
    [DEVICE_VERIFICATION.md](DEVICE_VERIFICATION.md).
 
-## Settling result: runtime yes, intended pixels absent from capture
+## ⚠️ CORRECTED 2026-07-29: immersive Unity VR DOES render — the old finding was a capture-path artifact
 
-This project's own reverse-engineering (2026-07-02, on the 0.13.x / OS 6.0 emulator) found:
-a from-scratch native OpenXR app gets a real tracked 60fps stereo session, but the compositor
-never promotes ANY third-party projection layer to the viewport (`PxrCompositor: atw No app
-layer`), and the emulator's own privileged WebXR runtime hits the identical failure. That is a
-**project-local empirical finding**, not a documented platform fact.
+**Retracted:** every earlier claim on this page and in this repo that immersive OpenXR content
+"does not composite" on emulator 0.13.1. It does. Two Unity apps were run and **looked at in the
+emulator's own window** on 2026-07-29, both filling the entire view with their scene (home
+environment replaced, no panel, no frame):
 
-The Unity-specific settling test has now reproduced that boundary with **Unity 6000.4.9f1** and
-the official PICO package `com.unity.xr.openxr.picoxr` **1.4.1** from `release_1.4.0` commit
-`3aa3e62`, on emulator **0.13.1 / PICO OS 6.0**. The final APK SHA-256 is
-`141c974b18dd71625bce3d9c0293c87485ae186cab3b7b96d0f9a349229541bc`.
+| Route | Package | Result (host window) | Same moment via `adb screencap` |
+|---|---|---|---|
+| **PICO Unity Integration SDK** (`PXR_Loader`, `com.unity.xr.picoxr` 3.4.0 @`c93a59b`) | `com.picoagent.pxrvr` | full-immersive: cyan clear, white floor, magenta cube, yellow sphere, green capsule | **black** |
+| **PICO Unity OpenXR SDK** (`com.unity.xr.openxr.picoxr` 1.4.1, the sha-pinned July 22 APK) | `com.picospatial.helloopenxr` | full-immersive: the intended scene, incl. the red bar and checker geometry | **black** |
 
-The runtime path was structurally healthy: PID 23401 remained alive; the PICO runtime loaded;
-the session advanced IDLE → READY → SYNCHRONIZED → VISIBLE → FOCUSED;
-`xrDeviceActive` and `displayRunning` were true; `renderPasses=1`; `beforeRender` and the frame
-counter advanced; and `PxrMetric` reported 60/60 with an app-owned `LayerCnt=1` after a brief
-initial value of 2. No crash occurred. Unity's own diagnostic simultaneously reported
-`Skip Present To Main Screen: Yes`.
+Ledger: `com.picoagent.pxrvr` seq 0, `com.picospatial.helloopenxr` seq 3 (both `vision_verified`),
+`pico-emulator-capture-paths` seq 0 (the rule below).
 
-Two same-session 2160×2158 captures were byte-identical, SHA-256
-`5cf4d98756168e8d98e61e02e8449d16bc389960af062f938762ac35d9adc060`. The frame was LOOKED at:
-it was uniformly black, with none of the deliberately loud cyan, magenta, yellow, or green scene
-visible. After fixing the verifier's immediate-relaunch race, a fresh `verify_pico_apk` run
-returned `status=ok` (PID 24712 alive, no crash, expected log matched) and produced a third
-byte-identical capture; that frame was LOOKED at and was also uniformly black. Therefore the
-OpenXR/runtime/session/frame/layer path is **structurally proven**, while the intended immersive
-pixels are **absent from capture on this build**. This reproduces the prior native/WebXR symptom,
-but does not independently distinguish failed compositor promotion from an earlier Unity
-camera/render-target failure. It is not a visually successful or `vision_verified` Unity scene
-claim. The looked capture path and attestation remain linked to the structural ledger entry so
-the negative finding is auditable without upgrading it into successful visual proof.
+### The capture-path rule (this is the real boundary)
 
-PICO's emulator-differences documentation still lists only a bounded set of unsupported
-Unity/Unreal/OpenXR features and does not name immersive composition. The Unity reproduction
-sharpens that ambiguity for this exact 0.13.1 / OS 6.0 environment; it
-does not isolate the failing render stage or establish behavior on a 6.1 emulator or Swan
-hardware. Independent unresolved reports of the same black-screen symptom
-also exist for Unity OpenXR APKs on Google's Android XR Emulator.
+- **`adb screencap`** (`capture_frame`, `verify_pico_apk`) captures the **shell composite**: the
+  home environment, 2D panels, and native Spatial SDK apps (knockdown's lane shows up fine).
+- It returns **black for XR-runtime immersive apps** — Unity OpenXR and Unity Integration SDK
+  alike. Unity says so itself in the log: `Skip Present To Main Screen: Yes`. The app is
+  presenting to the XR display, not to the Android surface screencap reads.
+- **`gui_capture`** (the emulator's host window) shows immersive content correctly. For immersive
+  verification it is the ground-truth path, not a fallback.
+
+### What is now unknown (do not re-assert either way)
+
+The 2026-07-02 native-NDK/WebXR reverse-engineering concluded from `PxrCompositor: atw No app
+layer` that the compositor promotes nothing. Those tests were only ever judged by adb screencap,
+so their **visual** conclusion is void; they have not been re-run against `gui_capture`. Whether
+that log line means anything at all is now an open question. What is established: two independent
+Unity XR routes composite and are visible.
+
+### How the July 22 test misread itself (worth knowing — the same trap catches anyone)
+
+That test built the sha-pinned APK (`141c974b…`), ran it on emulator 0.13.1, and correctly
+observed a structurally healthy session: PID alive, PICO runtime loaded, IDLE → READY →
+SYNCHRONIZED → VISIBLE → FOCUSED, `xrDeviceActive`/`displayRunning` true, `renderPasses=1`, frame
+counters advancing, `PxrMetric` 60/60 with an app-owned `LayerCnt=1`, no crash. Three
+byte-identical captures (`5cf4d987…`) were LOOKED at and were uniformly black — and *were read as
+a rendering failure*.
+
+The refutation was sitting in the same log: **`Skip Present To Main Screen: Yes`** — Unity
+announcing it is not presenting to the Android main surface. That is the surface `adb screencap`
+reads. Everything the test measured was true; only the inference from the black frame was wrong,
+because a single capture path was treated as ground truth for a mode it structurally cannot see.
+On 2026-07-29 the same APK, unchanged, was captured through the emulator window and its scene is
+fully visible.
+
+PICO's emulator-differences documentation lists only a bounded set of unsupported
+Unity/Unreal/OpenXR features and never claims immersive composition is missing — which now reads
+as simply correct, and agrees with the measurements above.
 
 ## Roadmap for the lane (see [ROADMAP.md](../ROADMAP.md))
 
