@@ -120,5 +120,31 @@ if (failures === 0) {
   } finally { fs.rmSync(sandbox, { recursive: true, force: true }); }
 }
 
+// ── resolver tier: unity_build_apk's editor resolution, fully injected (no Unity needed) ────────
+{
+  const { resolveUnityEditor } = await import("../dist/unitybuild.js");
+  const os = await import("node:os");
+  const sb = fs.mkdtempSync(path.join(os.default.tmpdir(), "unityresolve é "));
+  try {
+    fs.mkdirSync(path.join(sb, "proj/ProjectSettings"), { recursive: true });
+    fs.writeFileSync(path.join(sb, "proj/ProjectSettings/ProjectVersion.txt"), "m_EditorVersion: 6000.4.9f1\n");
+    const hub = (vers) => ({
+      existsSync: (p) => (p.includes("Hub/Editor") ? true : fs.existsSync(p)),
+      readdirSync: (p) => (p.endsWith("Hub/Editor") ? vers : fs.readdirSync(p)),
+      readFileSync: (p, e) => fs.readFileSync(p, e),
+    });
+    const pinned = resolveUnityEditor(path.join(sb, "proj"), undefined, {}, hub(["6000.4.9f1", "6000.5.3f1"]));
+    pinned?.version === "6000.4.9f1" && pinned.source === "hub-pinned" && !pinned.warning
+      ? ok("resolver prefers the ProjectVersion pin") : fail(`resolver pin wrong: ${JSON.stringify(pinned)}`);
+    const other = resolveUnityEditor(path.join(sb, "proj"), undefined, {}, hub(["6000.5.3f1"]));
+    other?.version === "6000.5.3f1" && other.source === "hub-any" && /mismatch/.test(other.warning ?? "")
+      ? ok("resolver falls back with a mismatch warning") : fail(`resolver fallback wrong: ${JSON.stringify(other)}`);
+    const envr = resolveUnityEditor(path.join(sb, "proj"), undefined, { UNITY_EDITOR_PATH: "/fake/Unity" }, { ...hub([]), existsSync: (p) => p === "/fake/Unity" });
+    envr?.source === "env" ? ok("UNITY_EDITOR_PATH honored") : fail(`env resolution wrong: ${JSON.stringify(envr)}`);
+    resolveUnityEditor(path.join(sb, "proj"), undefined, {}, { existsSync: () => false, readdirSync: () => [], readFileSync: (p, e) => fs.readFileSync(p, e) }) === null
+      ? ok("no editor -> null") : fail("resolver invented an editor");
+  } finally { fs.rmSync(sb, { recursive: true, force: true }); }
+}
+
 console.log(`\nUnitygen test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);
