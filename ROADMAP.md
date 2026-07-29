@@ -111,9 +111,11 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
 - **Scaffold archetypes**: the two-step `pico_build_app` authoring flow should offer scaffold
   variants per brief archetype (display / game / data-panel), so a stranger's first authored
   spec steers toward the pipeline's proven strengths.
-- **Unity lane, optional build wrapper**: evaluate a `unity_batch_build` tool around the confirmed
-  batchmode path for non-immersive/build handoffs. It would not by itself visually verify
-  immersive output on the current emulator; see [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
+- **Unity lane — SHIPPED (v30)**: `unity_scaffold_project` (packaged skeleton, windowed default,
+  immersive option, SpatialAdapter slot) + `unity_build_apk` (confirmed batchmode path,
+  structured result). Windowed Unity content composites as a panel and is vision-verified on the
+  emulator; immersive stays structural on 0.13.x. The SpatialAdapter slot awaits PICO's Unity
+  packages. See [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
 - **17.0 tail**: semantic scan → `anchorTo` brief into a NEW splat world through the compile
   path (proving the world-model loop generalizes beyond the ramen scan).
 

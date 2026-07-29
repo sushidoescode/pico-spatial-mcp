@@ -1,9 +1,48 @@
 # Unity & OpenXR with pico-spatial-mcp — the honest lane
 
-*(Research- and direct-test-grounded 2026-07-22; every claim below is labeled by how it was
-checked. This page documents what works TODAY on the PICO OS 6 emulator and the Unity hello-XR
-test of the open compositing question on emulator 0.13.1. No Unity build tools ship
-in this MCP yet — this is the documented handoff contract + the roadmap for the lane.)*
+*(Research- and direct-test-grounded 2026-07-22, extended 2026-07-28 with the SHIPPED Unity lane;
+every claim below is labeled by how it was checked. This page documents what works TODAY on the
+PICO OS 6 emulator, the Unity hello-XR test of the open compositing question on emulator 0.13.1,
+and the v30 seam tools.)*
+
+## The shipped Unity lane (v30) — the seam
+
+The seam between ANY Unity toolchain (Editor, batchmode, the Unity CLI, a Unity MCP) and this
+MCP is the **APK boundary** plus one optional drive contract:
+
+1. **Handoff:** `{apkPath, packageName}` — exactly what `verify_pico_apk` takes. Any producer of
+   an installable arm64 APK satisfies the seam.
+2. **Drive contract (optional):** the app listens for the `<applicationId>.DEBUG_CMD` broadcast
+   (string extra `cmd`) — the identical channel every generated native app carries. Scaffolded
+   apps get it via a 40-line `Plugins/Android` Java shim forwarding to C# over `UnitySendMessage`
+   (built-ins: `ping`, `color:<html-color>`, `spin:<on|off>`; extend via `PicoAgentBridge.Commands`).
+3. **Evidence tiers (engine-agnostic):** 2D/windowed Unity content → `vision_verified` is
+   attainable today; immersive OpenXR on emulator 0.13.x → `structural` ceiling; Swan/6.1 →
+   `device_verified` when reachable.
+
+Two tools implement our side (build and verify stay separate by design):
+
+- **`unity_scaffold_project`** — emits a complete Unity project from a packaged ~11-file
+  skeleton (all Unity configuration is applied programmatically at build time by
+  `Assets/Editor/PicoBuild.cs`; editor pinned 6000.4.9f1). Default = **2D windowed**; add
+  `immersive: true` for the OpenXR config; `spatialAdapter` injects PICO's (pending)
+  SpatialAdapter packages — scoped registry, git URLs, or `file:` tarballs — behind a
+  `PICO_SPATIAL_ADAPTER` define with a ready init slot (`SpatialAdapterSlot.cs`).
+- **`unity_build_apk`** — the confirmed `-batchmode -executeMethod PicoBuild.Apk` path with a
+  structured `build-result.json` contract and pointed fixes for the known traps (license,
+  Android modules, scaffold drift). Then `verify_pico_apk`, then LOOK.
+
+**Vision-verified 2026-07-28** (trust ledger `com.picoagent.hellounity` seq 0): the windowed
+default scaffold builds (41s cold / 12s warm on the reference machine), installs, and its scene
+**composites as a floating panel** on the emulator — cyan sky, white floor, red cube (recolored
+live by a `DEBUG_CMD color:red`, the drive proof), yellow sphere, green capsule.
+
+**The focus gate (know this before driving a Unity panel)** — measured, seq 1 (structural): the
+shell keeps an **unfocused** panel's activity paused, so the Unity player loop runs only while
+the panel has focus. Broadcast commands always reach the Java receiver and **queue**, draining
+in order when focus arrives; first frame can lag launch by ~60s until the shell grants focus (an
+input tap does it immediately). Plan captures and `expectLogcatContains` accordingly: a healthy
+launch can legitimately show no Unity-side scene logs until focus.
 
 ## TL;DR
 

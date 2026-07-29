@@ -89,6 +89,11 @@ The APK build lane itself works out of the box: every app is **generated from a 
 inside this package** (no template project to obtain). `preflight_env` verifies the payload as the
 `app-skeleton` check — it only fails on a truncated install, and the fix is reinstalling the package.
 
+There is also an **optional Unity lane** (`unity_scaffold_project` + `unity_build_apk`): it needs a
+local Unity editor (6000.4.9f1 + Android Build Support) and shows up in `preflight_env` as the
+warn-tier `unity-lane` check. Skip it entirely if you are not building Unity apps — nothing else
+depends on it. Details: [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
+
 One thing it does not check is **macOS**, which the native virtual-camera gates require; nothing on
 your machine can be probed for that beyond the platform you're already on.
 
