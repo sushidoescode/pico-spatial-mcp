@@ -1,0 +1,6 @@
+{
+  "packageName": "com.example.spatialunity",
+  "productName": "SpatialUnity",
+  "immersive": false,
+  "extraDefines": []
+}
