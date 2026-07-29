@@ -29,6 +29,7 @@
     "test:lint": "node test/lint.mjs",
     "test:projectgen": "node test/projectgen.mjs",
     "test:unitygen": "node test/unitygen.mjs",
+    "test:surfaceplace": "node test/surfaceplace.mjs",
     "test:vault": "node test/vault.mjs",
     "test:semantic": "node test/semanticplace.mjs",
     "test:ledger": "node test/ledger.mjs",
