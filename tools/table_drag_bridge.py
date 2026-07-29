@@ -40,11 +40,12 @@ PKG = os.environ.get("BRIDGE_PKG", "com.picoagent.mrtable")
 # the table roughly the width of the room; override with TABLE_DRAG_SENS.
 SENS = float(os.environ.get("TABLE_DRAG_SENS", "0.0055"))
 
-# Bare left-drag moves the table by default — that is the ask ("move the table on mouse click").
-# TRADE-OFF: while this runs, dragging the MARKET DESK panel by its caption ALSO slides the table,
-# because one gesture reaches both the shell and this tap. Set TABLE_DRAG_MODIFIER=alt to require
-# holding Option, which hands bare drags back to the shell for panel moving.
-REQUIRE_ALT = os.environ.get("TABLE_DRAG_MODIFIER", "").lower() in ("alt", "option")
+# OPTION-drag by default. Bare-drag was tried first and is genuinely dangerous here: every drag of
+# the MARKET DESK panel ALSO slid the table (one gesture reaches both the shell and this tap), and
+# the error accumulated until the table sat 36 METRES away, invisible. Set TABLE_DRAG_MODIFIER=none
+# for bare-drag if no panel is open. The app also clamps the table to the detected floor now, so
+# this can no longer lose it.
+REQUIRE_ALT = os.environ.get("TABLE_DRAG_MODIFIER", "alt").lower() in ("alt", "option")
 
 
 def adb(*args):

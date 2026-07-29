@@ -29,7 +29,7 @@ assert(/while \(planes\.isEmpty\(\) && tries < 20\)/.test(kt) && /delay\(1000\)/
   "TRAP 1: polls for planes (a one-shot query returns 0 during Full Space entry)");
 // The y must be READ from the converted anchor, never a constant. (Careful: BASE_LIFT is legitimately
 // 0.4187f for this model, so a naive "no 0.4 anywhere" check false-positives — it did, first run.)
-assert(/Vector3\(surface\.x, surface\.y \+ BASE_LIFT, surface\.z\)/.test(kt) && !/FLOOR_Y|floorHeight\s*=/.test(kt),
+assert(/surface\.y \+ BASE_LIFT/.test(kt) && !/FLOOR_Y|floorHeight\s*=/.test(kt),
   "TRAP 2: height comes from the detected plane, never a hardcoded floor constant");
 assert(/root\.convertPositionFrom\(anchor\.transform\.position, null\)/.test(kt),
   "TRAP 3: converts anchor space into the root's space");
@@ -39,6 +39,13 @@ assert(/ShapeResource\.createBox/.test(kt) && !/createConvexMesh|createStaticMes
   "TRAP 5: PRIMITIVE box collider only (mesh colliders never register on PICO)");
 assert(/PhysicsWorldComponent\(\)/.test(kt),
   "collider carries the REQUIRED PhysicsWorldComponent");
+// TRAP 6 is the one that cost a whole debugging round on 2026-07-29: the table WAS seated, on the
+// right plane, at the right height — 1.82 m to the user's right, ~83 deg off the view axis, so it
+// read as "the table never appeared". Height from the plane; X/Z from the USER; clamped to the rect.
+assert(/FRONT_DIST = 1\.6f/.test(kt) && /\(-FRONT_DIST\)\.coerceIn/.test(kt) && /0f\.coerceIn/.test(kt),
+  "TRAP 6: a FLOOR-seated model stands in FRONT of the user, clamped into the plane rectangle");
+assert(/surface\.y \+ BASE_LIFT/.test(kt) && !/Vector3\(surface\.x, surface\.y \+ BASE_LIFT, surface\.z\)/.test(kt),
+  "TRAP 6: FLOOR takes the plane's HEIGHT but never its X/Z centroid");
 
 // ── contract ────────────────────────────────────────────────────────────────────────────────────
 assert(kt.startsWith("package com.demo.app.content"), "emits into the requested package");
@@ -67,6 +74,12 @@ assert(/minByOrNull \{ it\.transform\.position\.y \}/.test(kt) && /startsWith\("
 {
   const bottom = surfacePlacementKotlin({ ...base, originAt: "bottom" });
   assert(/BASE_LIFT = 0\.0000f/.test(bottom), "bottom-origin model gets NO lift");
+
+  // An object-sized plane is the opposite case: a TABLE's centroid IS where you want the model,
+  // and re-aiming it at the user would slide it off the table.
+  const table = surfacePlacementKotlin({ ...base, semantic: "TABLE" });
+  assert(/Vector3\(surface\.x, surface\.y \+ BASE_LIFT, surface\.z\)/.test(table) && !/FRONT_DIST/.test(table),
+    "object-sized surfaces (TABLE) still seat at the plane centroid, not in front of the user");
 
   const wall = surfacePlacementKotlin({ ...base, semantic: "WALL" });
   assert(/semantics\.name == "WALL"/.test(wall) && /VERTICAL/.test(wall),

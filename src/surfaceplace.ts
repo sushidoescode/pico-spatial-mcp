@@ -100,6 +100,10 @@ export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
   lines.push(`    private const val SIZE_Z = ${d}f`);
   lines.push(`    /** Origin is ${o.originAt}: lift by this to put the model's base on the surface. */`);
   lines.push(`    private const val BASE_LIFT = ${halfH}f`);
+  if (o.semantic === "FLOOR") {
+    lines.push("    /** How far in front of the user a floor-seated model stands, in metres. */");
+    lines.push("    private const val FRONT_DIST = 1.6f");
+  }
   lines.push("");
   lines.push("    var placedAt: Vector3? = null");
   lines.push("        private set");
@@ -119,7 +123,26 @@ export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
   lines.push("            // Anchor space -> root space. Identity while root sits at the origin, which is");
   lines.push("            // exactly why skipping it hides the bug until the root moves.");
   lines.push("            val surface = root.convertPositionFrom(anchor.transform.position, null)");
-  lines.push("            val pos = Vector3(surface.x, surface.y + BASE_LIFT, surface.z)");
+  if (o.semantic === "FLOOR") {
+    lines.push("            // TRAP 6 — the height comes from the detected plane, but the X/Z must NOT.");
+    lines.push("            // A FLOOR plane is room-sized and its centroid is wherever the room's middle");
+    lines.push("            // happens to fall: measured 2026-07-29 at x=1.82, i.e. 1.8 m to the user's");
+    lines.push("            // RIGHT and ~83 deg off the view axis. The model was seated correctly and");
+    lines.push("            // still read as MISSING, because it was never in front of anyone. So seat it");
+    lines.push("            // FRONT_DIST straight ahead (forward is -Z, origin at the user's feet), then");
+    lines.push("            // clamp into the plane's own rectangle so it cannot stand off the surface.");
+    lines.push("            val halfX = kotlin.math.max(0.25f, anchor.boundingBoxSize.x / 2f - SIZE_X / 2f)");
+    lines.push("            val halfZ = kotlin.math.max(0.25f, anchor.boundingBoxSize.y / 2f - SIZE_Z / 2f)");
+    lines.push("            val pos = Vector3(");
+    lines.push("                0f.coerceIn(surface.x - halfX, surface.x + halfX),");
+    lines.push("                surface.y + BASE_LIFT,");
+    lines.push("                (-FRONT_DIST).coerceIn(surface.z - halfZ, surface.z + halfZ),");
+    lines.push("            )");
+  } else {
+    lines.push("            // A TABLE/CABINET/BED/WALL plane is object-sized, so its centroid IS the");
+    lines.push("            // place you want. (Only a room-sized FLOOR needs seating relative to the user.)");
+    lines.push("            val pos = Vector3(surface.x, surface.y + BASE_LIFT, surface.z)");
+  }
   lines.push(`            model.setName("${o.modelName}")`);
   lines.push("            model.components.set(TransformComponent(pos, Quat.identity(), Vector3(1f, 1f, 1f)))");
   lines.push("            add(model)");
