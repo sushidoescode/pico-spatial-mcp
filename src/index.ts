@@ -16,6 +16,7 @@ import { registerSceneTools } from "./scene.js";
 import { registerHostGuiTools } from "./hostgui.js";
 import { registerInspectionTools } from "./inspection.js";
 import { registerScaffoldTools } from "./scaffold.js";
+import { registerUnityGenTools } from "./unitygen.js";
 import { registerComponentTools } from "./components.js";
 import { registerAssetTools } from "./assets.js";
 import { registerDiagnoseTools } from "./diagnose.js";
@@ -161,6 +162,7 @@ if (!doorsSurfaceActive()) {
   registerHostGuiTools(server);
   registerInspectionTools(server);
   registerScaffoldTools(server);
+  registerUnityGenTools(server);
   registerComponentTools(server);
   registerAssetTools(server);
   registerDiagnoseTools(server);
