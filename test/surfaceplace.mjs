@@ -48,7 +48,11 @@ assert(/BUNDLE = "asset:\/\/table\.bundle"/.test(kt) && /MODEL = "Meshy_table"/.
 assert(/semantics\.name == "FLOOR"/.test(kt), "targets the requested semantic label");
 assert(/maxByOrNull \{ it\.boundingBoxSize\.x \* it\.boundingBoxSize\.y \}/.test(kt),
   "largest matching plane wins (a 0.2m shelf is a poor floor)");
-assert(/HORIZONTAL_UPWARD|UPWARD/.test(kt), "falls back to orientation when the label is absent");
+// Fallback must be by HEIGHT, not orientation: measured across two PICO home environments, the
+// convention FLIPS (room A: FLOOR=UPWARD; room B: FLOOR=DOWNWARD with CEILING=UPWARD), so an
+// orientation filter picks the CEILING in room B.
+assert(/minByOrNull \{ it\.transform\.position\.y \}/.test(kt) && /startsWith\("HORIZONTAL"\)/.test(kt),
+  "FLOOR fallback picks the LOWEST large horizontal plane (orientation flips between rooms)");
 
 // ── the generated Kotlin must pass this repo's OWN retained-lessons lint ─────────────────────────
 {
@@ -69,7 +73,7 @@ assert(/HORIZONTAL_UPWARD|UPWARD/.test(kt), "falls back to orientation when the 
     "WALL target falls back to VERTICAL planes, not horizontal");
 
   const ceil = surfacePlacementKotlin({ ...base, semantic: "CEILING" });
-  assert(/DOWNWARD/.test(ceil), "CEILING target falls back to DOWNWARD-facing planes");
+  assert(/maxByOrNull \{ it\.transform\.position\.y \}/.test(ceil), "CEILING fallback picks the HIGHEST horizontal plane");
 
   const none = surfacePlacementKotlin({ ...base, collider: "none" });
   assert(!/CollisionComponent\(/.test(none) && !/makeCollider/.test(none), "collider:none emits no collider");

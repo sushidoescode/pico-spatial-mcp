@@ -59,7 +59,6 @@ export interface SurfacePlacementOptions {
 export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
   const [w, h, d] = o.modelSize;
   const halfH = o.originAt === "center" ? (h / 2).toFixed(4) : "0f".replace("0f", "0.0000");
-  const upward = o.semantic === "CEILING" ? "DOWNWARD" : "UPWARD";
   const wantsUp = o.semantic !== "WALL" && o.semantic !== "DOOR" && o.semantic !== "WINDOW";
   const lines: string[] = [];
 
@@ -164,14 +163,22 @@ export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
     lines.push("        // Biggest matching plane wins; a 0.2m shelf is a poor floor.");
     lines.push("        val best = labelled.maxByOrNull { it.boundingBoxSize.x * it.boundingBoxSize.y }");
     lines.push("        if (best != null) return best");
-    lines.push("        // Fallback: the largest same-orientation plane, so a missing label still places.");
-    lines.push("        return planes");
-    lines.push(`            .filter { it.planeOrientation.name.contains("${upward}") }`);
-    lines.push("            .maxByOrNull { it.boundingBoxSize.x * it.boundingBoxSize.y }");
+    lines.push("        // Fallback by HEIGHT, not orientation. Measured 2026-07-29 across two PICO home");
+    lines.push("        // environments: the orientation convention FLIPS between them — one reports");
+    lines.push("        // FLOOR as HORIZONTAL_UPWARD, the other reports FLOOR as HORIZONTAL_DOWNWARD");
+    lines.push("        // with CEILING as UPWARD. Filtering on orientation picks the CEILING in the");
+    lines.push("        // second room. Lowest (or highest) large horizontal plane is stable.");
+    lines.push("        val horizontal = planes.filter { it.planeOrientation.name.startsWith(\"HORIZONTAL\") }");
+    lines.push("            .filter { it.boundingBoxSize.x * it.boundingBoxSize.y >= 1.0f }");
+    if (o.semantic === "CEILING") {
+      lines.push("        return horizontal.maxByOrNull { it.transform.position.y }");
+    } else {
+      lines.push("        return horizontal.minByOrNull { it.transform.position.y }");
+    }
   } else {
     lines.push("        val best = labelled.maxByOrNull { it.boundingBoxSize.x * it.boundingBoxSize.y }");
     lines.push("        if (best != null) return best");
-    lines.push('        return planes.filter { it.planeOrientation.name.contains("VERTICAL") }');
+    lines.push("        return planes.filter { it.planeOrientation.name.contains(\"VERTICAL\") }");
     lines.push("            .maxByOrNull { it.boundingBoxSize.x * it.boundingBoxSize.y }");
   }
   lines.push("    }");
