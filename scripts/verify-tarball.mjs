@@ -34,7 +34,7 @@ const publishIdx = process.argv.indexOf("--publish");
 const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
-const EXPECTED_TOOLS = 223; // v30: +unity_scaffold_project +unity_build_apk +generate_surface_placement_kotlin
+const EXPECTED_TOOLS = 224; // v30: +unity_scaffold_project +unity_build_apk +generate_surface_placement_kotlin
 const TOOL_TOLERANCE = 3;
 const REQUIRED_TOOLS = [
   // the 13 doors TESTERS.md promises

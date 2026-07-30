@@ -26,6 +26,7 @@ export const CAPABILITY_MANIFEST: CapEntry[] = [
   { tool: "build_and_run", authors: "compile+install+launch+auto capability matrix", keyParams: "projectDir,packageName,task,settleSec", ceiling: "C0_emulator" },
   { tool: "generate_agent_bridge", authors: "headless command channel + dump_scene (structural assert)", keyParams: "packageName,tag", ceiling: "C0_emulator" },
   // environment / richness
+  { tool: "measure_model", authors: "a model's REAL bounding box + baseLift, so placement never runs on hand-measured numbers", keyParams: "modelPath", ceiling: "C0_emulator", note: "step 1 of measure -> bake -> generate_surface_placement_kotlin; generated GLBs are origin-CENTRED" },
   { tool: "bake_textured_model", authors: "a baked PBR bundle from a GLB (the ONLY textured path)", keyParams: "modelPath,outBundle", ceiling: "C0_emulator", note: "never runtime-load raw GLB (renders black)" },
   { tool: "generate_environment_kotlin", authors: "MeshEnvironment/SplatEnvironment loader", keyParams: "kind,assetFileName,baseColorImage", ceiling: "C0_emulator" },
   { tool: "generate_home_env_proxy", authors: "invisible collider proxy of the known home bedroom (floor y=0)", keyParams: "packageName", ceiling: "C1", note: "faked hit-test; real surfaces are Swan-only" },

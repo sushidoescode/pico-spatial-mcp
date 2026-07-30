@@ -51,6 +51,8 @@ export interface SurfacePlacementOptions {
   semantic: string;
   modelSize: [number, number, number];
   originAt: "center" | "bottom";
+  /** Measured lift from measure_model — overrides originAt when present. */
+  baseLift?: number;
   collider: "boxTop" | "boxFull" | "none";
   pollSeconds: number;
 }
@@ -58,7 +60,11 @@ export interface SurfacePlacementOptions {
 /** Deterministic: same options -> byte-identical Kotlin. */
 export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
   const [w, h, d] = o.modelSize;
-  const halfH = o.originAt === "center" ? (h / 2).toFixed(4) : "0f".replace("0f", "0.0000");
+  // A measured baseLift (from measure_model) wins over the originAt label: "centred" and
+  // "bottom-origin" are only two points on a continuum and plenty of downloaded models are neither,
+  // whereas the distance from the origin to the model's lowest point is exact for all of them.
+  const halfH =
+    o.baseLift !== undefined ? o.baseLift.toFixed(4) : o.originAt === "center" ? (h / 2).toFixed(4) : "0.0000";
   const wantsUp = o.semantic !== "WALL" && o.semantic !== "DOOR" && o.semantic !== "WINDOW";
   const lines: string[] = [];
 
@@ -98,7 +104,9 @@ export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
   lines.push(`    private const val SIZE_X = ${w}f`);
   lines.push(`    private const val SIZE_Y = ${h}f`);
   lines.push(`    private const val SIZE_Z = ${d}f`);
-  lines.push(`    /** Origin is ${o.originAt}: lift by this to put the model's base on the surface. */`);
+  lines.push(
+    `    /** ${o.baseLift !== undefined ? "MEASURED by measure_model" : `Origin is ${o.originAt}`}: lift by this to put the model's base on the surface. */`,
+  );
   lines.push(`    private const val BASE_LIFT = ${halfH}f`);
   if (o.semantic === "FLOOR") {
     lines.push("    /** How far in front of the user a floor-seated model stands, in metres. */");
@@ -254,12 +262,13 @@ export function registerSurfacePlacementTools(server: McpServer) {
         modelName: z.string().describe("Model name inside the bundle (bake_textured_model returns it)."),
         semantic: z.enum(SEMANTICS).default("FLOOR").describe("Target plane label. Falls back to the largest same-orientation plane when the label is absent."),
         modelSize: z.array(z.number()).length(3).describe("Measured [x,y,z] metres of the model — read them from the source GLB accessors, do not guess."),
-        originAt: z.enum(["center", "bottom"]).default("center").describe("Where the model's origin sits. Meshy/most generated GLBs are 'center' (Meshy can emit bottom via origin_at)."),
+        originAt: z.enum(["center", "bottom"]).default("center").describe("Where the model's origin sits. Meshy/most generated GLBs are 'center' (Meshy can emit bottom via origin_at). Prefer passing a measured baseLift instead."),
+        baseLift: z.number().optional().describe("MEASURED distance from the model's origin down to its lowest point, straight from measure_model. Overrides originAt, and is exact for models that are neither centred nor bottom-origin."),
         collider: z.enum(["boxTop", "boxFull", "none"]).default("boxTop").describe("boxTop = a slab across the model's top (things can rest on it); boxFull = the whole bbox; none."),
         pollSeconds: z.number().int().min(1).max(60).default(20).describe("How many 1-second retries to wait for planes (Full Space entry can take seconds)."),
       },
     },
-    async ({ packageName, objectName, bundleAsset, modelName, semantic, modelSize, originAt, collider, pollSeconds }) => {
+    async ({ packageName, objectName, bundleAsset, modelName, semantic, modelSize, originAt, baseLift, collider, pollSeconds }) => {
       const kotlin = surfacePlacementKotlin({
         packageName,
         objectName: objectName ?? "SurfacePlacement",
@@ -268,6 +277,7 @@ export function registerSurfacePlacementTools(server: McpServer) {
         semantic: semantic ?? "FLOOR",
         modelSize: modelSize as [number, number, number],
         originAt: originAt ?? "center",
+        baseLift,
         collider: collider ?? "boxTop",
         pollSeconds: pollSeconds ?? 20,
       });

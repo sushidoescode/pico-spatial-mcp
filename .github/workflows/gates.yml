@@ -41,8 +41,10 @@ jobs:
         run: npm run test:projectgen
       - name: Unity lane generator (packaged skeleton + scaffold contract; no Unity needed)
         run: npm run test:unitygen
-      - name: Surface placement (the five silent MR-seating traps stay closed)
+      - name: Surface placement (the six silent MR-seating traps stay closed)
         run: npm run test:surfaceplace
+      - name: Model measurement (bbox + baseLift are measured, never hand-typed)
+        run: npm run test:modelmeasure
       - name: Name-aware procedural provisioning (matcher always runs; bake self-skips without an SDK)
         run: npm run test:provision
       - name: Mouse bridge (pidfile lifecycle + tool surface)

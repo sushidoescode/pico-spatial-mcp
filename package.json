@@ -57,7 +57,8 @@
     "test:vcamtransport-native": "sh scripts/test-cmio-camera-writer.sh",
     "test:vcamreader-native": "sh scripts/test-cmio-camera-reader.sh",
     "test:briefroute": "node test/briefroute.mjs",
-    "test:emulator-restart": "node test/restart-emulator.mjs"
+    "test:emulator-restart": "node test/restart-emulator.mjs",
+    "test:modelmeasure": "node test/modelmeasure.mjs"
   },
   "engines": {
     "node": ">=20"
