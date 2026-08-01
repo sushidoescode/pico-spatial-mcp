@@ -732,6 +732,24 @@ async function provisionDataItems(opts: {
   return items;
 }
 
+/** Surface an inner tool failure honestly. The MCP SDK serializes a zod rejection as an issue
+ * array ('[{"code":...,"message":...,"path":[...]}]'); when the payload embeds one, return the
+ * first issue as `path: message` — that IS the root cause. Otherwise return the raw payload up to
+ * 600 chars: the old 150-char cut amputated exactly the part that named the doorNaN package bug. */
+export function innerFailureDetail(out: unknown): string {
+  const text = typeof out === "string" ? out : JSON.stringify(out);
+  const start = text.indexOf("[");
+  const end = text.lastIndexOf("]");
+  if (start !== -1 && end > start) {
+    try {
+      const issues = JSON.parse(text.slice(start, end + 1));
+      const first = Array.isArray(issues) ? issues.find((i: any) => typeof i?.message === "string") : null;
+      if (first) return `${Array.isArray(first.path) && first.path.length ? `${first.path.join(".")}: ` : ""}${first.message}`;
+    } catch { /* not an embedded zod issue array — fall through to the raw slice */ }
+  }
+  return text.slice(0, 600);
+}
+
 export function registerFleetBuildTools(server: McpServer) {
   server.registerTool(
     "fleet_build",
@@ -824,7 +842,7 @@ export function registerFleetBuildTools(server: McpServer) {
             // 1. scaffold (idempotent)
             if (!fs.existsSync(projectDir)) {
               const sc = await call("scaffold_spatial_app", { targetDir: projectDir, packageName: pkg, appName: spec.meta.appName, stageStyle: spec.meta.stageStyle ?? "3" });
-              if (!sc.created) { rec.notes.push(`scaffold failed: ${JSON.stringify(sc).slice(0, 150)}`); continue; }
+              if (!sc.created) { rec.notes.push(`scaffold failed: ${innerFailureDetail(sc)}`); continue; }
             }
             const jdir = path.join(projectDir, `app/src/main/java/${pkg.replace(/\./g, "/")}`);
 

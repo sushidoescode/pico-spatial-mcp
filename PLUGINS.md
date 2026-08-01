@@ -1,5 +1,7 @@
 # 🔌 External-plugin surfaces — recon report (v9.3, 2026-07-03)
 
+> **Historical snapshot** — a dated recon report preserved as-recorded; versions, paths, and findings reflect 2026-07-03 except where a dated correction (v9.6, v10.9) below says otherwise.
+
 Four parallel investigations into how third-party tooling (like this MCP) can extend the PICO stack,
 plus the live-verified answer to "do plain Android apps work on the emulator?" (YES — they composite
 as floating spatial panels; vision-verified after correcting a camera-framing error).

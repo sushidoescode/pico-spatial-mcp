@@ -24,3 +24,6 @@ test/.*.tmp.mjs
 
 # stray MCP client artifacts
 .playwright-mcp/
+
+# distribution tarballs are built artifacts — hand testers a Release asset, never a committed binary
+*.tgz

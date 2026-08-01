@@ -138,18 +138,84 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
     }
   }
 
+  // 5c. seatOn (v31) — RUNTIME surface seating: the proven v30 chain (measure_model ->
+  // bake_textured_model -> generate_surface_placement_kotlin), lowered per object. Planes ARE
+  // detected on the emulator (43 measured 2026-07-29), so every step is C0_emulator.
+  for (const o of spec.objects) {
+    const seat = o.seatOn;
+    if (!seat) continue;
+    const asset = seat.asset ?? "<model.glb>";
+    const stem = asset.split("/").pop()!.replace(/\.(glb|gltf|usdz?|usdc)$/i, "").replace(/[^A-Za-z0-9._-]/g, "_");
+    const objName = `${o.id.replace(/[^A-Za-z0-9]/g, "").replace(/^./, (c) => c.toUpperCase())}Placement`;
+    push({ node: o.id, tool: "measure_model", args: { modelPath: asset }, targetPath: asset, cClass: "C0_emulator", note: "Feed the returned size into the placement step's modelSize and baseLift into its baseLift — never hand-measure." });
+    push({ node: o.id, tool: "bake_textured_model", args: { modelPath: asset, outBundle: `${projectDir}/app/src/main/assets/${stem}.bundle` }, targetPath: "app/src/main/assets/", cClass: "C0_emulator", note: "The ONLY textured path — never runtime-load raw GLB. Its result names the model inside the bundle for the placement step." });
+    push({
+      node: o.id,
+      tool: "generate_surface_placement_kotlin",
+      args: {
+        packageName: contentPkg,
+        objectName: objName,
+        bundleAsset: `asset://${stem}.bundle`,
+        modelName: "<modelName from bake_textured_model result>",
+        semantic: seat.semantic,
+        modelSize: "<size from measure_model result>",
+        baseLift: "<baseLift from measure_model result>",
+      },
+      targetPath: `${cpath}/${objName}.kt`,
+      cClass: "C0_emulator",
+      note: `Replace the <...> args from the measure/bake results before calling (loud placeholders — the tool rejects them unfilled). ${seat.offset ? `Then apply seatOn.offset [${seat.offset.join(", ")}] to the seated position by hand — the generator has no offset arg yet. ` : ""}The wiring does not auto-call seat() yet: call ${objName}.seat(sceneRoot) { sceneRoot.addChild(it) } inside SpatialView.initial after SceneComposition.build. REQUIRES Full Space (an open Stage); a WindowContainer returns 0 planes.`,
+    });
+  }
+
   // v9.4: panels -> a Compose WindowContainer with LIVE runtime text (the hybrid-app tier).
   for (const pn of (spec as any).panels ?? []) {
+    // v31: placement 'world' has NO vault-confirmed world-position API for auto-hosted 2D panels —
+    // compile to the dock path with the loud fallback note, never emit unverified SDK calls.
+    const world = pn.placement?.kind === "world";
+    const worldNote = world
+      ? `WORLD PLACEMENT REQUESTED${pn.placement?.position ? ` at [${pn.placement.position.join(", ")}]` : ""}: world placement pending SDK confirmation — head-docked fallback. `
+      : "";
+    const worldArg = world ? { placement: "world" } : {};
     if (pn.kind === "web") {
-      push({ node: pn.id, tool: "generate_panel_compose_kotlin", args: { packageName: contentPkg, kind: "web", ...(pn.url ? { url: pn.url } : {}), ...(pn.html ? { html: pn.html } : {}) }, targetPath: `${cpath}/WebPanel.kt`, cClass: "C0_emulator", note: "WEB panel: full HTML/CSS/JS with a LIVE DOM as a spatial panel (vision-verified). Merge the returned manifestEntry (+ INTERNET permission for URLs). Show: am start -n <pkg>/<contentPkg>.WebPanelActivity." });
+      push({ node: pn.id, tool: "generate_panel_compose_kotlin", args: { packageName: contentPkg, kind: "web", ...(pn.url ? { url: pn.url } : {}), ...(pn.html ? { html: pn.html } : {}), ...worldArg }, targetPath: `${cpath}/WebPanel.kt`, cClass: "C0_emulator", note: `${worldNote}WEB panel: full HTML/CSS/JS with a LIVE DOM as a spatial panel (vision-verified). Merge the returned manifestEntry (+ INTERNET permission for URLs). Show: am start -n <pkg>/<contentPkg>.WebPanelActivity.` });
     } else {
-      push({ node: pn.id, tool: "generate_panel_compose_kotlin", args: { packageName: contentPkg, title: pn.title, ...(pn.fields?.length ? { fields: pn.fields } : {}) }, targetPath: `${cpath}/HudPanel.kt`, cClass: "C0_emulator", note: "LIVE TEXT panel (2D windows composite as spatial panels). Spawns at the dock position — verify by turning the camera. Headless drive: DEBUG_CMD 'hud:<key>=<value>'." });
+      push({ node: pn.id, tool: "generate_panel_compose_kotlin", args: { packageName: contentPkg, title: pn.title, ...(pn.fields?.length ? { fields: pn.fields } : {}), ...worldArg }, targetPath: `${cpath}/HudPanel.kt`, cClass: "C0_emulator", note: `${worldNote}LIVE TEXT panel (2D windows composite as spatial panels). Spawns at the dock position — verify by turning the camera. Headless drive: DEBUG_CMD 'hud:<key>=<value>'.` });
     }
   }
 
   // v9.2: press interactions -> the in-world clickable GameMenu (mouse-bridge detectable).
-  if (spec.interactions.some((i: any) => i.trigger === "press")) {
-    push({ node: spec.interactions.filter((i: any) => i.trigger === "press").map((i: any) => i.id).join(","), tool: "generate_game_menu_kotlin", args: { packageName: `${pkg}.gen` }, targetPath: `${cpath.replace(/content$/, "gen")}/GameMenu.kt`, cClass: "C0_emulator", note: "Needs assets/menu.bundle (bake_textured_model of the 4-row panel, or copy a known-good one). The wiring attaches it on its own root + maps buttons via customActions; the mouse bridge clicks it. Broadcast start/pause/resume/reset also drives it." });
+  // v31: custom labels (interactions[].params.label / a non-builtin params.button) lower a
+  // bake_menu_panel step so the panel TEXTURE renders the brief's words (labels are baked into
+  // menu.bundle — they cannot change at runtime), then prefill the generator's row map.
+  const press = spec.interactions.filter((i: any) => i.trigger === "press");
+  if (press.length) {
+    const BUILTIN = ["start", "pause", "resume", "reset"];
+    // Row centres of the verified 900x680 panel — mirror menutexture.ts ROWS_Y (the bridge's
+    // color-bar detection and the generator's row math both assume this layout).
+    const ROWS_PX = [205, 315, 425, 535];
+    const rows: Array<{ action: string; label?: string }> = [];
+    for (const i of press as any[]) {
+      const a = String(i.action);
+      // Same inference as generate_app_wiring's menuButtons, so customActions keys line up.
+      const btn = String(i.params?.button ?? (a.startsWith("launch:") ? "start" : a === "resetWorld" ? "reset" : "start"));
+      if (!rows.some((r) => r.action === btn)) rows.push({ action: btn, label: i.params?.label });
+    }
+    const node = press.map((i: any) => i.id).join(",");
+    const menuTarget = `${cpath.replace(/content$/, "gen")}/GameMenu.kt`;
+    const custom = rows.some((r) => r.label || !BUILTIN.includes(r.action));
+    if (custom) {
+      // Pad to the 4 rows the panel texture has (appSpecSchema caps distinct buttons at 4).
+      for (const b of BUILTIN) {
+        if (rows.length >= 4) break;
+        if (!rows.some((r) => r.action === b)) rows.push({ action: b });
+      }
+      const labels = rows.map((r) => r.label ?? r.action.toUpperCase().replace(/_/g, " "));
+      push({ node, tool: "bake_menu_panel", args: { title: spec.meta.appName.toUpperCase(), labels, actions: rows.map((r) => r.action), outBundle: `${projectDir}/app/src/main/assets/menu.bundle` }, targetPath: "app/src/main/assets/menu.bundle", cClass: "C0_emulator", note: "CUSTOM menu labels: renders the brief's words onto the verified 4-row panel (same row layout + bar colors, so the mouse bridge still detects the bars). Needs ImageMagick + Blender + spatialbundle on the host." });
+      const nonBuiltin = rows.filter((r) => !BUILTIN.includes(r.action)).map((r) => r.action);
+      push({ node, tool: "generate_game_menu_kotlin", args: { packageName: `${pkg}.gen`, buttons: rows.map((r, idx) => ({ action: r.action, rowPx: ROWS_PX[idx] })) }, targetPath: menuTarget, cClass: "C0_emulator", note: `Uses the bake_menu_panel bundle from the previous step. The wiring maps buttons via customActions.${nonBuiltin.length ? ` HONEST LIMIT: the generated DEBUG_CMD dispatch + hover set route only start/pause/resume/reset, so broadcast-drive non-builtin button(s) [${nonBuiltin.join(", ")}] needs the wiring's dispatch extended (or keep builtin action names and change only labels).` : ""}` });
+    } else {
+      push({ node, tool: "generate_game_menu_kotlin", args: { packageName: `${pkg}.gen` }, targetPath: menuTarget, cClass: "C0_emulator", note: "Needs assets/menu.bundle (bake_textured_model of the 4-row panel, or copy a known-good one). The wiring attaches it on its own root + maps buttons via customActions; the mouse bridge clicks it. Broadcast start/pause/resume/reset also drives it." });
+    }
   }
 
   // 6. interactions (one engine file; per-interaction registration is authored in the wiring)
@@ -181,7 +247,7 @@ export function registerCompilerTools(server: McpServer) {
     "compile_app_spec",
     {
       description:
-        "Compile a validated AppSpec into an executable BUILD LEDGER: an ordered, dependency-sorted list mapping each spec node to the EXACT existing tool call (scaffold → agent bridge → per-scene environment/colliders → generate_rigidbody_kotlin [scene.physics/object.body] → lighting → layouts → SceneAnimator/Tween/Orbit [object.anim] → data binding → generate_panel_compose_kotlin [panels/live-text] → generate_game_menu_kotlin [press interactions] → interactions → scene router [multi-scene] → generate_app_wiring [emits SceneComposition/HomeStage/Main] → headset layer → build_and_run), with args pre-filled (packageName wired to <pkg>.content), the target Kotlin file, and the C-class. This is the DRIVER, not a second orchestrator: the brief_to_app prompt executes the ledger step-by-step through the real generate_*/scaffold/bake/build tools, editing files SERIALLY. Idempotent + resumable (each step names its output path). Returns the ledger + build order + integration notes.",
+        "Compile a validated AppSpec into an executable BUILD LEDGER: an ordered, dependency-sorted list mapping each spec node to the EXACT existing tool call (scaffold → agent bridge → per-scene environment/colliders → generate_rigidbody_kotlin [scene.physics/object.body] → lighting → layouts → SceneAnimator/Tween/Orbit [object.anim] → measure_model/bake_textured_model/generate_surface_placement_kotlin [objects.seatOn — RUNTIME seating on live DETECTED planes] → data binding → generate_panel_compose_kotlin [panels/live-text; placement 'world' compiles to the dock path with a loud pending-SDK note] → bake_menu_panel [custom press-button labels] + generate_game_menu_kotlin [press interactions] → interactions → scene router [multi-scene] → generate_app_wiring [emits SceneComposition/HomeStage/Main] → headset layer → build_and_run), with args pre-filled (packageName wired to <pkg>.content), the target Kotlin file, and the C-class. This is the DRIVER, not a second orchestrator: the brief_to_app prompt executes the ledger step-by-step through the real generate_*/scaffold/bake/build tools, editing files SERIALLY. Idempotent + resumable (each step names its output path). Returns the ledger + build order + integration notes.",
       inputSchema: {
         spec: z.any().describe("A validated AppSpec (from plan_app_spec)."),
         projectDir: z.string().describe("Target Android project dir to scaffold/build into, e.g. ~/AndroidStudioProjects/showcasexr-native."),
@@ -195,6 +261,11 @@ export function registerCompilerTools(server: McpServer) {
       const byClass: Record<string, number> = {};
       for (const s of ledger) byClass[s.cClass] = (byClass[s.cClass] ?? 0) + 1;
       const anchorNotes = resolveAnchors(spec).notes;
+      // v31: world panel placement is a REQUEST we cannot honor yet (no vault-confirmed API) —
+      // say so in the compile result, not just deep in a ledger note.
+      const placementFallbacks = (spec.panels ?? [])
+        .filter((p) => p.placement?.kind === "world")
+        .map((p) => `panel '${p.id}': world placement pending SDK confirmation — head-docked fallback (spawns at the dock; verify by turning the camera)`);
       return okJson({
         status: "ok",
         appName: spec.meta.appName,
@@ -202,6 +273,7 @@ export function registerCompilerTools(server: McpServer) {
         projectDir,
         stepCount: ledger.length,
         classSummary: byClass,
+        ...(placementFallbacks.length ? { placementFallbacks } : {}),
         ...(anchorNotes.length ? { semanticPlacements: anchorNotes } : {}),
         ledger,
         howToExecute: [

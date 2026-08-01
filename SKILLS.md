@@ -5,9 +5,9 @@ This is the operating manual for an AI agent driving `pico-spatial-mcp`. It pair
 prompt. The goal: take a spec from nothing to a **polished, running, native PICO spatial
 APK**, and — critically — **detect what's wrong and iterate to fix it** without a human.
 
-See **ROADMAP.md** in the git repository for the v1.4→v2.0 plan (written so a local model can execute it if the primary agent is rate-limited).
+See **ROADMAP.md** in the git repository for where this is going — every line gate-labeled honestly.
 
-## The capability map (55 tools)
+## The capability map (a core sampler of the 220+-tool surface)
 
 | Goal | Tools |
 |---|---|
@@ -18,7 +18,7 @@ See **ROADMAP.md** in the git repository for the v1.4→v2.0 plan (written so a 
 | Build / run / verify an APK | `build_and_run` (build→install→relaunch→render-check→shot), `gradle_build` |
 | Drive the emulator | `emulator_boot/kill/list/status/console`, `snapshot_*` |
 | Observe & control | `screencap`, `logcat`, `ui_dump`, `ui_input`, `adb_shell`, `wait_for_log`, `check_crash`, `screenrecord` |
-| See the REAL 3D view (macOS) | `gui_capture`, `gui_find_window`, `gui_camera`, `gui_permissions` |
+| Capture the host GUI window (macOS — XR-runtime immersive apps, editor GUI) | `gui_capture`, `gui_find_window`, `gui_camera`, `gui_permissions` |
 | XR input | `xr_*` (gated — read `xr_input_status` first), `controller_map/press` |
 | World-model environments | `worldmodel_guide`, `import_environment` |
 
@@ -34,7 +34,9 @@ See **ROADMAP.md** in the git repository for the v1.4→v2.0 plan (written so a 
    > 0 means real materials, not white `displayColor`).
 5. **`build_and_run`** — read the result: `build/install/launch` ok, `rendered: true`,
    `crashes: []`. It returns a screenshot.
-6. **`gui_capture`** (macOS) — look at the real 3D view; compare to intent.
+6. **`capture_frame`** — look at the real render and compare to intent. adb screencap is the
+   shell composite: the ground truth for native Spatial SDK apps and panels. For XR-runtime
+   immersive apps (Unity), use `gui_capture` instead — screencap is blind to XR-runtime output.
 7. Iterate.
 
 ## Self-diagnosis — the part that matters
@@ -57,10 +59,12 @@ decision tree:
   (DESIGN.md §5).
 - **User "falls out" into the system environment** → finite room; envelop with a large
   room or skybox (DESIGN.md §6).
-- **Can't see immersive 3D in adb/gRPC screenshots** → expected; use `gui_capture`
-  (only the GUI window has the host-composited 3D). See `xr_input_status`.
+- **Black adb/gRPC screenshot** → depends on the app's mode (the v30.1 correction). For
+  native Spatial SDK apps and panels, adb `capture_frame` IS the real render — a black frame
+  there is a real defect. For XR-runtime immersive apps (Unity), adb screencap is structurally
+  blind to the output — capture via `gui_capture`. See `xr_input_status`.
 
-Treat each `gui_capture` like a code review: name what's wrong, map it to a DESIGN.md
+Treat each capture like a code review: name what's wrong, map it to a DESIGN.md
 rule, apply the fix, rebuild, re-capture. That loop is the whole point of the MCP.
 
 ## Hard constraints (do not violate)

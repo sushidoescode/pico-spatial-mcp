@@ -48,12 +48,12 @@ verifies the payload as the **`app-skeleton`** check; it only fails on a truncat
 
 ## Step 1 — Install the package
 
-You were handed a file like `pico-spatial-mcp-27.0.0-pre.tgz`. Put it anywhere, then:
+You were handed a file like `pico-spatial-mcp-<version>.tgz`. Put it anywhere, then:
 
 ```bash
 mkdir pico-mcp && cd pico-mcp
 npm init -y
-npm install --omit=dev /path/to/pico-spatial-mcp-27.0.0-pre.tgz
+npm install --omit=dev /path/to/pico-spatial-mcp-<version>.tgz
 ```
 
 That's the whole install. Nothing goes global, and nothing is written outside this directory.
@@ -85,7 +85,7 @@ For **Claude Code**, add this to `.mcp.json` in your project (or your user-level
 
 Any MCP client works — it's JSON-RPC over stdio. Restart your client so it picks up the new server.
 
-You should now see roughly **220 tools**. That's a lot, and step 5 explains how to cut it down to 13
+You should now see **233+ tools**. That's a lot, and step 5 explains how to cut it down to 13
 if you'd rather start small.
 
 ---
@@ -172,7 +172,7 @@ back to you as `projectDir`.
 
 ## Choosing a smaller surface
 
-220 tools is a lot of context. There's a curated **13-tool** surface covering the same engine. Set it
+233+ tools is a lot of context. There's a curated **15-tool** surface covering the same engine. Set it
 in the `env` block from step 2:
 
 ```json
@@ -199,7 +199,10 @@ hundreds of pixels. Expect to redo it after rebooting the emulator, and before a
 This project treats over-claiming as a bug, so here's the honest boundary:
 
 - It is **emulator-first**. Headset-only capabilities are reported as such rather than faked.
-- **Unity and WebXR immersive-AR are not supported paths today.**
+- **Immersive Unity VR renders on the emulator** (v30.1 corrected an earlier "uniformly black"
+  result — that was an `adb screencap` artifact; screencap is blind to XR-runtime output, so
+  immersive apps are captured via `gui_capture`). **Native-NDK and WebXR immersive status is
+  OPEN** — never re-tested through the corrected capture path; neither claimed nor ruled out.
 - Tools distinguish `structural` (it built and didn't crash) from `vision_verified` (a frame was
   captured and looked at). Don't read the first as the second.
 - Ask `pico_capabilities` at any time — it's generated from the trust ledger and shows every

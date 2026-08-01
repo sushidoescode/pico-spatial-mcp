@@ -25,7 +25,7 @@ fact: the frame came from real Swan hardware, not the emulator.
 
 The enforcement lives in the ledger gate itself, not in discipline. In `src/ledger.ts`,
 `validateEntry` groups `device_verified` with `vision_verified`, `auto_judged`, and
-`usd_host_render` under the same check (`src/ledger.ts:67`):
+`usd_host_render` under the same check (`src/ledger.ts:81`):
 
 ```ts
 if (e.evidenceType === "device_verified" || e.evidenceType === "vision_verified" || e.evidenceType === "auto_judged" || e.evidenceType === "usd_host_render") {
@@ -60,11 +60,29 @@ already exist in this repo for exactly this:
 
 **`deploy_to_device`** (`src/deploy.ts`) is the wired hardware handoff. Today, with only the
 emulator attached, it returns a `dormant` status and does nothing else — that's intentional, it
-cannot crash the pipeline. The moment it sees a non-emulator adb device in `adb devices` (any
-serial not prefixed `emulator-`), it takes over: installs the APK (`adb -s <serial> install -r`),
-force-stops any prior instance, launches (`adb -s <serial> shell am start -S -n <package>/<activity>`,
-default activity `.platform.LaunchActivity`), waits 8 seconds to settle, then captures one frame
-via `adb -s <serial> exec-out screencap -p` and returns it as an image for you to look at.
+cannot crash the pipeline. When it sees a non-emulator adb device in `adb devices` it first runs
+a hardware-identity probe (`getprop ro.product.model` + `ro.build.fingerprint` + `ro.boot.qemu`,
+all included in the result): a device that doesn't look like PICO hardware — a phone, another
+vendor's headset (a Meta Quest 3 over USB was the live case that motivated this), or the
+emulator reattached over adb-over-TCP — is refused with `identity_blocked` unless you pass
+`assumeSwan: true`. Once the gate passes it takes over: installs the APK
+(`adb -s <serial> install -r`), force-stops any prior instance, launches
+(`adb -s <serial> shell am start -S -n <package>/<activity>`, default activity
+`.platform.LaunchActivity`), waits 8 seconds to settle, then captures one frame via
+`adb -s <serial> exec-out screencap -p` and returns it as an image for you to look at.
+
+> **Day-one warning — a black screencap of an immersive app is NOT a failure.** The v30.1
+> retraction (commit `1827676`, ledger `pico-emulator-capture-paths` seq 0) proved on the
+> emulator that `adb screencap` captures the **shell composite** (home environment, 2D panels,
+> native Spatial SDK apps) and is **structurally blind to XR-runtime output**: two immersive
+> Unity apps that demonstrably rendered (LOOKED at in the emulator's own window) came back
+> uniformly black over screencap. Every capture path in this section — `deploy_to_device`'s
+> first frame, `capture_frame`, the manual `exec-out screencap -p` below — has the same
+> blind spot. On real hardware, before concluding an immersive app failed, verify through a
+> different channel (logcat markers via `assert_logcat`, `assert_scene`'s entity dump, or
+> whatever on-device casting/recording facility the Swan build offers — we could not test
+> that from here). If screencap on Swan turns out to capture immersive content correctly,
+> that's a finding too — send it back per Section 3.
 
 If you'd rather drive the steps by hand (recommended the first time, so you can see exactly
 where reality diverges from what this doc claims):
@@ -86,17 +104,19 @@ against Swan's OS build, but that assumption has never been checked on real hard
 **`swan_verify_matrix`** (`src/swanparity.ts`) is the companion tool for the C1/C3/C4
 headset-only capability catalogue (scene understanding, world anchors, controller-ray, hand
 pinch, in-front panels, measured room) that this repo has only ever been able to defer as
-`built_for_headset`. With a Swan attached it marks each relevant row `device_pending` and gives
+`built_for_headset`. It runs the same hardware-identity gate as `deploy_to_device` (an
+unrecognized non-emulator serial returns `unrecognized_hardware` until you pass
+`assumeSwan: true`). With a Swan attached it marks each relevant row `device_pending` and gives
 you the exact on-device re-test to run (e.g. "point the controller ray at an interactable, pull
 the trigger" for `controller_ray`). Run `deploy_to_device` (or the manual steps above) to get the
 build on-device, run the listed test, capture, look, then record the result per Section 4 below.
-
-Note a wording inconsistency you may notice in that tool's own output: `swan_verify_matrix`'s
-`note` field currently says to flip rows using `evidenceType: vision_verified`. That's stale —
-`device_verified` is the evidence type that actually exists in the ledger schema for this
-purpose and is the one ranked correctly above `vision_verified` in the capability report and
-claims page. Use `device_verified`, not `vision_verified`, for anything captured on real
-hardware; this doc is the correction until the tool's own string is fixed.
+After you record a `device_verified` entry, re-running `swan_verify_matrix` reads it back and
+flips the matching row to `device_verified` (carrying the capture's sha256 and the
+`deviceSerial`), merging into the existing parity file — a closed row is never reopened by a
+later run. The match contract: the entry's `cClass` must equal the row's class
+(`C4_headset_only` and `C4` are treated as the same), and the entry's claim must contain the
+feature keyword with underscores/hyphens/spaces folded together — so a claim like
+"controller-ray select fires on hardware" closes the `controller_ray` row.
 
 Either path, LOOK at the returned/pulled PNG before you do anything else with it. A capture that
 exists but that nobody looked at is worth nothing here — that's the whole point of the ledger.
@@ -182,3 +202,40 @@ None of that flips by editing prose. It flips the moment `record_verification` a
 `device_verified` entry backed by a real capture someone looked at — which is exactly what this
 document exists to make possible, and exactly why every claim in it is written as a protocol we
 designed, not a result we're reporting.
+
+## 6. Serial support: which tools work against a hardware serial today
+
+Classified by reading each tool's actual serial handling in `src/` (file:line cited), not by
+assumption. Three buckets: **takes-serial** (pass `serial` and it targets the headset),
+**emulator-only** (the mechanism itself has no meaning on hardware), and **needs-param-added**
+(hardcodes `emulator-5554` with no way to point it at a headset — a known gap, not a promise).
+
+One operational note that applies to every `src/adb.ts` / `src/agentloop.ts` row: their default
+serial is "the sole connected device" (`resolveSerial`, `src/adb.ts:23-37`). With the headset
+AND the emulator both attached there is no sole device, so omitting `serial` **errors** — always
+pass the Swan's serial explicitly during bring-up.
+
+| Tool | Bucket | Evidence |
+| --- | --- | --- |
+| `deploy_to_device` | takes-serial (auto-targets the first non-emulator device; identity-gated) | `src/deploy.ts:36` |
+| `swan_verify_matrix` | takes-serial (scans `adb devices`; identity-gated) | `src/swanparity.ts` |
+| `capture_frame` | takes-serial (`serial` param, default `emulator-5554`) — screencap blind spot applies (Section 2) | `src/capture.ts:39,46` |
+| `assert_scene` | takes-serial (`serial` param, default `emulator-5554`); needs the Agent Bridge injected in the APK | `src/assertscene.ts:61,80` |
+| `logcat` / `assert_logcat` | takes-serial (explicit `serial`, else sole-device resolution) | `src/adb.ts:120,194` |
+| `app_broadcast` | takes-serial (same resolution) | `src/adb.ts:244` |
+| `adb_shell` / `app_install` / `app_launch` / `app_stop` / `screencap` / `ui_input` / `file_push` / `file_pull` | takes-serial (same resolution) | `src/adb.ts` |
+| `screenrecord` / `wait_for_log` / `check_crash` / `ui_dump` | takes-serial (same resolution) — screenrecord records the same shell composite as screencap | `src/agentloop.ts:135,166,98,235` |
+| `verify_baseline` / `verify_visual` | takes-serial (`serial` param, default `emulator-5554`) | `src/verifybaseline.ts:26`, `src/verifyvisual.ts:91` |
+| `capture_canonical` | takes-serial (`serial` param, default `emulator-5554`) | `src/eye.ts:155` |
+| `visual_judge` | no adb at all — judges a saved frame by path, wherever it was captured | `src/eye.ts:200` |
+| `verify_pico_apk` | **needs-param-added** — `const SERIAL = "emulator-5554"` is hardcoded; cannot target a headset today | `src/verifyapk.ts:12` |
+| `gui_capture` / `gui_camera` / `gui_find_window` | emulator-only — captures the emulator's macOS host window, which is exactly the capture path immersive apps NEED on the emulator (Section 2); no equivalent exists for hardware from this machine | `src/hostgui.ts` |
+| `emulator_look` | emulator-only — drives the emulator free-cam via host mouse drag | `src/emulatorlook.ts` |
+| `snapshot_save` / `snapshot_load` / `snapshot_list` | emulator-only — AVD snapshots | `src/agentloop.ts:56,71,85` |
+| `controller_map` / `controller_press` | emulator-only — keyboard-mapped emulator controllers via key events | `src/agentloop.ts:197,212` |
+| `record_verification` / `ledger_report` | no adb at all — works identically for hardware evidence (set `deviceSerial` yourself, Section 4) | `src/ledger.ts` |
+
+Beyond this day-one list, roughly 20 more `src/` files hardcode `emulator-5554` inside larger
+pipelines (`fleetbuild.ts` ×13, `agentbridge.ts` ×4, `hybridbuild.ts` ×4, and others — grep
+`emulator-5554` for the current census). Those pipelines are emulator-first by design; treat any
+of them as **needs-param-added** if a hardware workflow ever needs them directly.

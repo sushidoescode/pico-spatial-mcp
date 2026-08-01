@@ -97,9 +97,13 @@ export function registerMenuTools(server: McpServer) {
       const btnYEntries = btnY.map((b) => `"${b.action}" to ${b.y}f`).join(", ");
 
       // Per-button accent colors so each glassy cap DEEPENS its own button (matching hue glosses,
-      // it doesn't wash like a neutral white film). Known actions get the texture's button colors.
+      // it doesn't wash like a neutral white film). Known actions get the texture's button colors;
+      // CUSTOM actions get their ROW's bar color (bake_menu_panel keeps the verified green/amber/
+      // blue/red rows top→bottom), so a custom cap deepens its own bar instead of washing cyan.
+      const ROW_ACCENTS: [number, number, number][] = [[0.30, 0.85, 0.42], [0.97, 0.72, 0.18], [0.32, 0.66, 0.97], [0.93, 0.34, 0.34]];
+      const rowOrder = [...btns].sort((x, y) => x.rowPx - y.rowPx).map((b) => b.action);
       const accent = (a: string): [number, number, number] =>
-        ({ start: [0.30, 0.85, 0.42], pause: [0.97, 0.72, 0.18], resume: [0.32, 0.66, 0.97], reset: [0.93, 0.34, 0.34] } as Record<string, [number, number, number]>)[a] ?? [0.55, 0.9, 1.0];
+        ({ start: [0.30, 0.85, 0.42], pause: [0.97, 0.72, 0.18], resume: [0.32, 0.66, 0.97], reset: [0.93, 0.34, 0.34] } as Record<string, [number, number, number]>)[a] ?? ROW_ACCENTS[rowOrder.indexOf(a)] ?? [0.55, 0.9, 1.0];
       const capColorEntries = btns
         .map((b) => `"${b.action}" to Color4(${accent(b.action).map((c) => c + "f").join(", ")}, 1f)`)
         .join(", ");

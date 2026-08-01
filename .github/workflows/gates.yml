@@ -45,6 +45,14 @@ jobs:
         run: npm run test:surfaceplace
       - name: Model measurement (bbox + baseLift are measured, never hand-typed)
         run: npm run test:modelmeasure
+      - name: Docs/metadata sync (versions, tool counts, links, manifests)
+        run: npm run test:docsmeta
+      - name: pico-cli probe + perf trace lane
+        run: npm run test:picocli
+      - name: Swan identity gate + parity closure
+        run: npm run test:swan
+      - name: place_model_on_surface orchestrator
+        run: npm run test:placeonsurface
       - name: Name-aware procedural provisioning (matcher always runs; bake self-skips without an SDK)
         run: npm run test:provision
       - name: Mouse bridge (pidfile lifecycle + tool surface)

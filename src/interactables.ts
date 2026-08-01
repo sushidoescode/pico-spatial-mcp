@@ -6,19 +6,21 @@ import { ok } from "./util.js";
  * interactables.ts — v5.8 `generate_interactable_registry_kotlin`: the app SELF-DESCRIBES its clickables.
  *
  * Generalizes the mouse bridge beyond the hardcoded 4-colour-bar menu detector: the app publishes an
- * interactable registry (id + base colour + layout slot) as a logcat marker (INTERACTABLES|<json>), and the
- * host bridge reads THAT instead of pattern-matching a fixed layout — so any spec-emitted scene (N cards, a
- * grid, an arc) becomes clickable without bespoke detection. The registry is colour-keyed (the free cam is
- * decoupled and there is no world→screen projection headlessly, so the bridge still locates each interactable
- * by its published colour in the framebuffer, but now driven by the app's own data, not a hardcoded pattern).
- * Pairs with generate_interaction_kotlin (select(id) does the actual commit) and the Agent Bridge.
+ * interactable registry (id + base colour + layout slot) as a logcat marker (INTERACTABLES|<json>) so a
+ * bridge can read THAT instead of pattern-matching a fixed layout. HONESTY (2026-08-01 grep-verified):
+ * the marker is EMITTED for bridge consumers, but the shipped tools/mouse_menu_bridge.py does not yet
+ * parse it — it still detects only the fixed 4-colour GameMenu bars; a registry-driven consumer is
+ * pending host-side work. The registry is colour-keyed (the free cam is decoupled and there is no
+ * world→screen projection headlessly, so a consumer would locate each interactable by its published
+ * colour in the framebuffer). Pairs with generate_interaction_kotlin (select(id) does the actual
+ * commit) and the Agent Bridge.
  */
 export function registerInteractableRegistryTools(server: McpServer) {
   server.registerTool(
     "generate_interactable_registry_kotlin",
     {
       description:
-        "Emit InteractableRegistry.kt — the app self-describes its clickable interactables (id + base colour hex + layout slot) as a logcat marker (INTERACTABLES|<json>) that the generalized mouse bridge reads, so ANY spec-emitted scene becomes clickable without a bespoke colour-bar detector. Call add(id, colorHex, slot) as you build each card, then publish(); the host bridge greps `adb logcat -s InteractableRegistry` for the JSON, maps a Mac click's colour->id, and fires a `select:<id>` DEBUG_CMD broadcast. Compiles against SDK 0.13.3; the real-click path is C3-emulated via the bridge (a real Mac click was vision-verified end-to-end in v4.7).",
+        "Emit InteractableRegistry.kt — the app self-describes its clickable interactables (id + base colour hex + layout slot) as a logcat marker (INTERACTABLES|<json>) emitted for host bridge consumers. Call add(id, colorHex, slot) as you build each card, then publish(); a consumer greps `adb logcat -s InteractableRegistry` for the JSON, maps a click's colour->id, and fires a `select:<id>` DEBUG_CMD broadcast (that broadcast route is real today, and drives generate_tappable_detail_kotlin / SceneInteraction). HONEST STATUS: the SHIPPED tools/mouse_menu_bridge.py does NOT yet read this marker — it detects only the fixed 4-colour GameMenu bars; a registry-driven bridge consumer is pending host-side work. Compiles against SDK 0.13.3; a real Mac click through the (menu) bridge was vision-verified end-to-end in v4.7.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
       },

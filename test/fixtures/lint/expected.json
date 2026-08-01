@@ -1,0 +1,18 @@
+{
+  "_comment": "Expected shape for the vault-symbols lint fixture pair. Drive dist/lint.js runVaultSymbolStage (and runLint with kind 'kotlin') against loadVaultIndex(test/fixtures/agent-vault). test/lint.mjs does NOT auto-discover fixtures, so wiring these assertions there is an integrator step.",
+  "vaultRoot": "test/fixtures/agent-vault",
+  "kind": "kotlin",
+  "good": {
+    "file": "vault-symbols-good.kt",
+    "ruleErrorCount": 0,
+    "vaultFindingCount": 0
+  },
+  "bad": {
+    "file": "vault-symbols-bad.kt",
+    "ruleIdsFired": ["collisioncomponent-no-arg"],
+    "vaultChecksFired": ["unknown-type", "ctor-arity", "unknown-enum-value"],
+    "nearest": {
+      "com.pico.spatial.core.ecs.RigidbodyComponent": "com.pico.spatial.core.ecs.RigidBodyComponent"
+    }
+  }
+}

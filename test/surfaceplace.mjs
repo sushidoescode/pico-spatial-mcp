@@ -4,6 +4,8 @@
 // Run: npm run test:surfaceplace
 import { surfacePlacementKotlin } from "../dist/surfaceplace.js";
 import { runLint } from "../dist/lint.js";
+import { buildLedger } from "../dist/compiler.js";
+import { appSpecSchema } from "../dist/appspec.js";
 
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
@@ -97,6 +99,117 @@ assert(/minByOrNull \{ it\.transform\.position\.y \}/.test(kt) && /startsWith\("
 
 // ── determinism (the repo's standing rule for generators) ────────────────────────────────────────
 assert(surfacePlacementKotlin(base) === kt, "deterministic: same options -> byte-identical Kotlin");
+
+// ── v31 seatOn: AppSpec validation + compiler lowering (pure zod + ledger — no emulator) ─────────
+{
+  const spec = {
+    meta: { appName: "MrTable", packageName: "com.demo.mrtable", stageStyle: "1", brief: "seat a kraken on the floor" },
+    scenes: [{ id: "main", environment: { kind: "procedural" } }],
+    objects: [{ id: "kraken", sceneId: "main", source: "model", seatOn: { semantic: "FLOOR", asset: "/tmp/models/kraken.glb", offset: [0, 0, -0.2] } }],
+    navigation: { startScene: "main", portals: [] },
+  };
+  const parsed = appSpecSchema.safeParse(spec);
+  assert(parsed.success, "seatOn: a valid seatOn object parses");
+  if (parsed.success) {
+    const ledger = buildLedger(parsed.data, "/tmp/proj");
+    const measure = ledger.find((s) => s.tool === "measure_model");
+    const bake = ledger.find((s) => s.tool === "bake_textured_model");
+    const place = ledger.find((s) => s.tool === "generate_surface_placement_kotlin");
+    assert(measure && bake && place, "seatOn lowers to measure_model -> bake_textured_model -> generate_surface_placement_kotlin");
+    assert(measure && bake && place && measure.order < bake.order && bake.order < place.order,
+      "seatOn steps are ordered measure -> bake -> place");
+    assert(place && place.args.semantic === "FLOOR" && place.args.packageName === "com.demo.mrtable.content",
+      "placement args prefilled: semantic target + content package");
+    assert(place && place.cClass === "C0_emulator",
+      "seatOn placement is C0_emulator (planes ARE detected on the emulator — 2026-07-29 measured)");
+    assert(place && place.args.bundleAsset === "asset://kraken.bundle" && bake.args.outBundle === "/tmp/proj/app/src/main/assets/kraken.bundle",
+      "bundle ref derived from the seatOn asset stem");
+    assert(place && String(place.args.modelSize).startsWith("<") && String(place.args.baseLift).startsWith("<"),
+      "measured args are LOUD placeholders (tool rejects them unfilled), never guessed numbers");
+    assert(place && place.targetPath.endsWith("/content/KrakenPlacement.kt"), "placement Kotlin lands in the content package");
+    assert(place && place.note.includes("offset"), "seatOn.offset surfaces in the ledger note (the generator has no offset arg yet)");
+  }
+
+  // exclusivity: one placement authority per object; the pipeline needs a bakeable model
+  const objBase = spec.objects[0];
+  const withAnchor = { ...spec, objects: [{ ...objBase, anchorTo: { label: "floor", relation: "on" } }] };
+  assert(!appSpecSchema.safeParse(withAnchor).success, "seatOn + anchorTo is rejected (two placement authorities)");
+  const withBody = { ...spec, objects: [{ ...objBase, body: { mode: "dynamic", shape: "sphere", dims: [0.1] } }] };
+  assert(!appSpecSchema.safeParse(withBody).success, "seatOn + body is rejected (bodies are placed at compile-time positions)");
+  const asQuad = { ...spec, objects: [{ ...objBase, source: "quad" }] };
+  assert(!appSpecSchema.safeParse(asQuad).success, "seatOn on a non-model source is rejected (nothing to measure/bake)");
+}
+
+// ── v31 panels[].placement: 'world' compiles to the dock path with the LOUD fallback note ────────
+{
+  const spec = {
+    meta: { appName: "Hud", packageName: "com.demo.hud", stageStyle: "3", brief: "world hud" },
+    scenes: [{ id: "main", environment: { kind: "procedural" } }],
+    panels: [
+      { id: "score", title: "SCORE", placement: { kind: "world", position: [0, 1.4, -2] } },
+      { id: "info", title: "INFO" },
+    ],
+    navigation: { startScene: "main", portals: [] },
+  };
+  const parsed = appSpecSchema.safeParse(spec);
+  assert(parsed.success, "panels[].placement parses (kind world + default dock)");
+  if (parsed.success) {
+    const ledger = buildLedger(parsed.data, "/tmp/proj");
+    const steps = ledger.filter((s) => s.tool === "generate_panel_compose_kotlin");
+    const world = steps.find((s) => s.node === "score");
+    const dock = steps.find((s) => s.node === "info");
+    assert(world && world.args.placement === "world" && world.note.includes("world placement pending SDK confirmation — head-docked fallback"),
+      "world panel: dock path + the LOUD pending-SDK fallback note (never an invented world-position API)");
+    assert(dock && dock.args.placement === undefined && !dock.note.includes("WORLD PLACEMENT"),
+      "default panel: unchanged dock lowering");
+  }
+}
+
+// ── v31 GameMenu custom labels: params.label/params.button thread through bake_menu_panel ────────
+{
+  const meta = { appName: "Knockdown", packageName: "com.demo.knock", stageStyle: "3", brief: "drop ball" };
+  const scenes = [{ id: "main", environment: { kind: "procedural" } }];
+  const navigation = { startScene: "main", portals: [] };
+  const custom = appSpecSchema.safeParse({
+    meta, scenes, navigation,
+    interactions: [
+      { id: "drop", trigger: "press", target: "menu", action: "launch:ball", params: { label: "DROP BALL" } },
+      { id: "rerack", trigger: "press", target: "menu", action: "resetWorld", params: { label: "RERACK" } },
+    ],
+  });
+  assert(custom.success, "press interactions with params.label parse");
+  if (custom.success) {
+    const ledger = buildLedger(custom.data, "/tmp/proj");
+    const bakeMenu = ledger.find((s) => s.tool === "bake_menu_panel");
+    const menu = ledger.find((s) => s.tool === "generate_game_menu_kotlin");
+    assert(bakeMenu && menu && bakeMenu.order < menu.order, "custom labels lower a bake_menu_panel step BEFORE the menu codegen");
+    assert(bakeMenu && bakeMenu.args.labels.length === 4 && bakeMenu.args.labels[0] === "DROP BALL" && bakeMenu.args.labels[1] === "RERACK",
+      "brief labels render on the baked panel texture (padded to the 4-row layout)");
+    assert(bakeMenu && bakeMenu.args.actions[0] === "start" && bakeMenu.args.actions[1] === "reset",
+      "actions keep the wiring's inferred builtin names (launch:* -> start, resetWorld -> reset) so dispatch/bridge still route");
+    assert(bakeMenu && bakeMenu.args.outBundle === "/tmp/proj/app/src/main/assets/menu.bundle", "custom panel bakes straight to assets/menu.bundle");
+    assert(menu && Array.isArray(menu.args.buttons) && menu.args.buttons[0].action === "start" && menu.args.buttons[0].rowPx === 205,
+      "menu codegen rows prefilled at the verified row centres (205/315/425/535)");
+  }
+  const plain = appSpecSchema.safeParse({
+    meta, scenes, navigation,
+    interactions: [{ id: "go", trigger: "press", target: "menu", action: "launch:ball" }],
+  });
+  assert(plain.success, "plain press interactions parse");
+  if (plain.success) {
+    const ledger = buildLedger(plain.data, "/tmp/proj");
+    assert(!ledger.some((s) => s.tool === "bake_menu_panel"), "no custom labels -> no bake_menu_panel step (verified default panel)");
+    const menu = ledger.find((s) => s.tool === "generate_game_menu_kotlin");
+    assert(menu && menu.args.buttons === undefined, "no custom labels -> the generator keeps its verified default rows");
+  }
+  const tooMany = appSpecSchema.safeParse({
+    meta, scenes, navigation,
+    interactions: ["a", "b", "c", "d", "e"].map((b, i) => (
+      { id: `p${i}`, trigger: "press", target: "menu", action: "go", params: { button: b } }
+    )),
+  });
+  assert(!tooMany.success, "more than 4 distinct menu buttons is rejected (the panel is a 4-row texture)");
+}
 
 console.log(`\nSurface-placement test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

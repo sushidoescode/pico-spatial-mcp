@@ -5,6 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { defaultVaultRoot, loadVaultIndex, runVaultCheck } from "./vault.js";
+import type { VaultFinding, VaultIndex } from "./vault.js";
 
 /**
  * lint.ts — v5.1 the RETAINED-LESSONS LINT ENGINE.
@@ -359,37 +360,93 @@ export function runLint(content: string, kind: RuleKind = "any", rules: LintRule
   return violations;
 }
 
+// ── the advisory agent-vault symbol stage (v31: nearest-match enrichment) ───────────────────────────────
+
+/** Plain Levenshtein — vault simple names are short, so the O(n*m) rolling-row form is plenty. */
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Nearest vault type by case-insensitive simple-name edit distance — capped, so a completely
+ *  unrelated name gets NO suggestion rather than a fake one. */
+function nearestVaultType(index: VaultIndex, simpleName: string): string | null {
+  const target = simpleName.toLowerCase();
+  let best: { qualifiedName: string; d: number } | null = null;
+  for (const types of index.packages.values()) {
+    for (const ty of types.values()) {
+      const d = editDistance(target, ty.name.split(".").pop()!.toLowerCase());
+      if (!best || d < best.d) best = { qualifiedName: ty.qualifiedName, d };
+    }
+  }
+  return best && best.d <= Math.max(2, Math.ceil(target.length / 3)) ? best.qualifiedName : null;
+}
+
+/**
+ * The vault-symbol pass preflight_lint runs over Kotlin: runVaultCheck plus a machine-usable
+ * `nearest` vault match on each unknown-type finding (an exact simple-name hit in another package
+ * first, else the smallest edit distance under the cap). ADVISORY by contract — findings are
+ * warnings/info and must never gate `clean`. Exported so a fixture test can drive it against
+ * test/fixtures/agent-vault without spawning the server.
+ */
+export function runVaultSymbolStage(content: string, index: VaultIndex): (VaultFinding & { nearest?: string })[] {
+  return runVaultCheck(content, index).map((f) => {
+    if (f.check !== "unknown-type") return f;
+    const simple = f.symbol.split(".").pop()!;
+    const exact = [...index.packages.entries()].find(([, m]) => m.has(simple));
+    const nearest = exact ? `${exact[0]}.${simple}` : nearestVaultType(index, simple);
+    if (!nearest) return f;
+    return {
+      ...f,
+      nearest,
+      // "declared in: ..." messages already cite the match; only the declared-nowhere case needs it
+      ...(f.message.includes("no vault package declares it") ? { message: `${f.message} Nearest vault match: ${nearest}.` } : {}),
+    };
+  });
+}
+
 export function registerLintTools(server: McpServer) {
   server.registerTool(
     "preflight_lint",
     {
       description:
-        "Scan emitted Kotlin / a shell command / gradle config against the retained-lessons rulebook BEFORE you write or run it — so the loop never repeats a solved mistake. Catches the hard-won gotchas (displayColor flat-white, mesh colliders not queryable, rayCast without PhysicsWorldComponent, CollisionCastHitMode.CLOSEST, .rotation.rotateVector, .scale vs scaleVector, ParticleComponent ctor, TextComponent, raw-GLB runtime load, USD glTF reference, StageEnvironmentLighting in MIXED, md5 bundle diff, am start without force-stop, scaffold log-tag drift) plus any lessons recorded via record_lesson. Returns violations with severity/line/message/fix/designRule. Kotlin content ALSO gets an agent-vault symbol check (import/type existence vs PICO's authoritative SDK api-reference, materialized by pico-cli setup) reported in a separate advisory `vault` block — vault findings never affect `clean`, and an absent vault degrades to a note. Run it on every generate_* output before writing the file.",
+        "Scan emitted Kotlin / a shell command / gradle config against the retained-lessons rulebook BEFORE you write or run it — so the loop never repeats a solved mistake. Catches the hard-won gotchas (displayColor flat-white, mesh colliders not queryable, rayCast without PhysicsWorldComponent, CollisionCastHitMode.CLOSEST, .rotation.rotateVector, .scale vs scaleVector, ParticleComponent ctor, TextComponent, raw-GLB runtime load, USD glTF reference, StageEnvironmentLighting in MIXED, md5 bundle diff, am start without force-stop, scaffold log-tag drift) plus any lessons recorded via record_lesson. Returns violations with severity/line/message/fix/designRule. Kotlin content ALSO gets an agent-vault symbol check (import/type existence vs PICO's authoritative SDK api-reference, materialized by pico-cli setup) reported in a separate advisory `vault` block — vault findings never affect `clean` (unknown symbols come back as warnings carrying the `nearest` vault match), an absent vault degrades to a note naming pico-cli setup, and `vaultSymbols` overrides the default (false skips the pass, true forces it for any kind). Run it on every generate_* output before writing the file.",
       inputSchema: {
         content: z.string().describe("The Kotlin source, shell command, or config text to lint."),
         kind: z.enum(["kotlin", "command", "gradle", "usd", "any"]).optional().describe("Restrict to rules for this kind (default 'any' = all rules)."),
+        vaultSymbols: z.boolean().optional().describe("Override the advisory agent-vault symbol pass: false skips it, true forces it regardless of kind. Default: it runs for kind 'kotlin'/'any'."),
       },
     },
-    async ({ content, kind }) => {
+    async ({ content, kind, vaultSymbols }) => {
       const violations = runLint(content, kind ?? "any");
       const errors = violations.filter((v) => v.severity === "error").length;
       const warnings = violations.filter((v) => v.severity === "warn").length;
       // agent-vault symbol stage — ADVISORY, in its own block: never touches `clean`/`violations`
       // (vault findings are index lookups, not verified past failures; a vault gap must not stall the loop)
       let vault: any = { status: "skipped" };
-      if ((kind ?? "any") === "kotlin" || (kind ?? "any") === "any") {
+      const wantVault = vaultSymbols ?? ((kind ?? "any") === "kotlin" || (kind ?? "any") === "any");
+      if (vaultSymbols === false) {
+        vault = { status: "skipped", note: "agent-vault symbol pass disabled by vaultSymbols:false." };
+      } else if (wantVault) {
         const index = loadVaultIndex();
         if (!index) {
           vault = { status: "unavailable", note: `agent-vault not found (default ${defaultVaultRoot()}, override with PICO_AGENT_VAULT; provision via 'pico-cli setup') — SDK symbol validation skipped.` };
         } else {
-          const findings = runVaultCheck(content, index);
+          const findings = runVaultSymbolStage(content, index);
           vault = {
             status: "ok",
             sdkVersion: index.sdkVersion,
             typesIndexed: index.typeCount,
             findings,
             note: findings.length
-              ? "ADVISORY agent-vault findings — each is an unresolved symbol, unknown enum value/constant, or constructor-arity mismatch, with the authoritative vault declaration cited. Check the citation (vault_api gives the full signature) before writing; ui.* composables are not validated."
+              ? "ADVISORY agent-vault findings — each is an unresolved symbol (with the nearest vault match when one exists), unknown enum value/constant, or constructor-arity mismatch, with the authoritative vault declaration cited. Check the citation (vault_api gives the full signature) before writing; ui.* composables are not validated."
               : "Emitted SDK usage resolves against the agent-vault api-reference (types, enum values, ctor arity; ui.* composables not validated).",
           };
         }

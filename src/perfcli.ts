@@ -6,11 +6,16 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { okJson } from "./util.js";
+import { probePicoCli, classifyPicoCliFailure, type PicoCliFailureClass } from "./picocli.js";
+
+export { picoCliPath } from "./picocli.js";
 
 const run = promisify(execFile);
 
 /**
  * perfcli.ts — v14.8 perf_diagnose: PICO's OFFICIAL perf profiler routed through our loop.
+ * (v31: CLI probing moved to the shared picocli.ts module; the diagnose core is exported so
+ * SpatialBench's perfSource:'pico-cli' axis reuses it directly instead of round-tripping a tool.)
  *
  * Wraps `pico-cli perf monitor run` (the PICO Spatial Performance Profiler: per-second sampling,
  * app/system FPS percentiles, CPU/GPU counters, jank windows, and a DIAGNOSIS engine that
@@ -31,14 +36,116 @@ const HONESTY =
   "diagnosis block is pico-cli's own rule engine quoted verbatim (rule + evidence included). " +
   "Evidence class: structural — not a substitute for LOOKING at a capture.";
 
-async function picoCliPath(): Promise<string | null> {
-  try {
-    const { stdout } = await run("which", ["pico-cli"]);
-    const p = stdout.trim();
-    return p.length ? p : null;
-  } catch {
-    return null;
+export type PerfDiagnoseResult = {
+  status: "ok" | "unavailable" | "failed";
+  failureClass?: PicoCliFailureClass;
+  note?: string;
+  error?: string;
+  outputTail?: string;
+  source?: string;
+  reportPath?: string;
+  metadata?: any;
+  diagnosis?: any;
+  summary?: any;
+  jankWindowCount?: number;
+  jankWindows?: any[];
+  honesty?: string;
+};
+
+/** Core diagnose, shared by the `perf_diagnose` tool and SpatialBench's perfSource:'pico-cli'
+ * axis. Callers that need the numbers call this directly — never innerCall the tool. */
+export async function runPerfDiagnose(
+  packageName: string,
+  opts: { durationSec?: number; device?: string } = {},
+): Promise<PerfDiagnoseResult> {
+  const cli = probePicoCli();
+  if (cli.status !== "ok") {
+    return {
+      status: "unavailable",
+      failureClass: "cli-missing",
+      note: "pico-cli not found on PATH — install with `npm install -g @picoxr/pico-cli` (and run `pico-cli perf doctor` once); perf diagnosis skipped.",
+    };
   }
+  const sec = Math.min(120, Math.max(5, Math.round(opts.durationSec ?? 15)));
+  const serial = opts.device ?? "emulator-5554";
+  const outDir = path.join(os.homedir(), ".pico-mcp", "perf");
+  fs.mkdirSync(outDir, { recursive: true });
+  const reportPath = path.join(outDir, `${packageName}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+
+  try {
+    await run(cli.path, ["perf", "monitor", "run", "--app", packageName, "-d", String(sec), "--device", serial, "-o", reportPath], {
+      timeout: (sec + 90) * 1000,
+    });
+  } catch (e: any) {
+    // Three honest failure classes: cli-missing is handled above; a usage/unknown-option dump means
+    // OUR wrapped flags drifted from the installed CLI (retrying unchanged cannot help); everything
+    // else is a runtime failure whose cause is in the CLI's own words — never assert "device not
+    // connected" for it, that was a guess this wrapper used to present as fact.
+    const stderrText = String(e?.stderr ?? "");
+    const stdoutText = String(e?.stdout ?? "");
+    const failureClass = classifyPicoCliFailure(stderrText, stdoutText);
+    const tail = `${stderrText}\n${stdoutText}`.trim().split("\n").slice(-6).join("\n");
+    return {
+      status: "failed",
+      failureClass,
+      note: failureClass === "flag-or-version-drift"
+        ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — the flags this wrapper passes were verified against 0.3.0 and no longer match; report outputTail upstream instead of retrying.`
+        : "pico-cli perf monitor run failed at runtime — read outputTail (the CLI's own words) before assuming a cause; a stopped app or wrong device serial are common but NOT proven by this wrapper.",
+      error: e instanceof Error ? e.message : String(e),
+      ...(tail ? { outputTail: tail } : {}),
+    };
+  }
+
+  let report: any;
+  try {
+    report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  } catch (e) {
+    return {
+      status: "failed",
+      failureClass: "runtime",
+      note: `pico-cli reported success but the report at ${reportPath} is missing/unparseable.`,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+
+  const jank = Array.isArray(report.jankWindows) ? report.jankWindows : [];
+  return {
+    status: "ok",
+    source: "pico-cli perf monitor run (official PICO profiler + diagnosis engine)",
+    reportPath,
+    metadata: report.metadata ?? null,
+    diagnosis: report.diagnosis ?? null,
+    summary: report.summary ?? null,
+    jankWindowCount: jank.length,
+    jankWindows: jank.slice(0, 5),
+    honesty: HONESTY,
+  };
+}
+
+/**
+ * Score SpatialBench's perf axis from a diagnose result. HONESTY: the pico-cli report exposes
+ * appFps percentiles p5/p10/p50 — FPS LOWS, where p5 is the frame-time-p95 analog ("95% of
+ * sampled seconds ran at least this fast"). There is NO appFps p95 field in the 0.3.0 report
+ * (shape verified against a real report, 2026-07-13); do not invent one. appFps avg 0/absent
+ * means the profiler saw no app 3D frames (diagnosis "no_3d_frame" — the measured emulator
+ * behavior) -> null, a SKIP that must never be counted against the axis max, never a 0.
+ */
+export function scorePicoCliPerfAxis(
+  result: Pick<PerfDiagnoseResult, "status" | "summary"> | null | undefined,
+  budgetMs: number,
+): { perf: 0 | 1 | null; note: string } {
+  if (!result || result.status !== "ok") {
+    return { perf: null, note: `perf(pico-cli): source ${result?.status ?? "absent"} — not measured` };
+  }
+  const app = result.summary?.appFps;
+  const p5 = typeof app?.p5 === "number" ? app.p5 : null;
+  const avg = typeof app?.avg === "number" ? app.avg : null;
+  if (p5 === null || avg === null || avg === 0) {
+    return { perf: null, note: "perf(pico-cli): profiler reports no app 3D frames (appFps 0/absent — the emulator's no_3d_frame case) — not measured, not a fail" };
+  }
+  const floorFps = 1000 / budgetMs;
+  const perf: 0 | 1 = p5 >= floorFps ? 1 : 0;
+  return { perf, note: `perf(pico-cli): appFps p5=${p5} vs floor ${floorFps.toFixed(1)}fps (${budgetMs}ms budget) -> ${perf ? "meets" : "misses"} budget` };
 }
 
 export function registerPerfCliTools(server: McpServer) {
@@ -50,65 +157,16 @@ export function registerPerfCliTools(server: McpServer) {
         "and return its JSON report: app/system FPS percentiles, CPU/GPU usage, jank windows, and pico-cli's DIAGNOSIS " +
         "(bottleneck category + rule + evidence — e.g. no_3d_frame, app-bound, compositor-bound). Prefer this over " +
         "measure_perf for engine/3D-pipeline analysis; keep measure_perf for the 2D UI-frame (gfxinfo) view. " +
-        "Requires @picoxr/pico-cli on PATH (degrades to status:'unavailable' with the install hint). The full report is " +
-        "saved to reportPath for deep dives. HONESTY: " + HONESTY,
+        "Requires @picoxr/pico-cli on PATH (degrades to status:'unavailable' with the install hint). Failures carry an " +
+        "honest failureClass: cli-missing / flag-or-version-drift (the CLI rejected our flags) / runtime (read the CLI's " +
+        "outputTail — the cause is not guessed for you). The full report is saved to reportPath for deep dives. " +
+        "HONESTY: " + HONESTY,
       inputSchema: {
         packageName: z.string().describe("Target app package (must be running), e.g. com.example.knockdownxr"),
         durationSec: z.number().min(5).max(120).optional().describe("Sampling window in seconds (default 15)."),
         device: z.string().optional().describe("Device serial (default emulator-5554)."),
       },
     },
-    async ({ packageName, durationSec, device }) => {
-      const cli = await picoCliPath();
-      if (!cli) {
-        return okJson({
-          status: "unavailable",
-          note: "pico-cli not found on PATH — install with `npm install -g @picoxr/pico-cli` (and run `pico-cli perf doctor` once); perf diagnosis skipped.",
-        });
-      }
-      const sec = Math.min(120, Math.max(5, Math.round(durationSec ?? 15)));
-      const serial = device ?? "emulator-5554";
-      const outDir = path.join(os.homedir(), ".pico-mcp", "perf");
-      fs.mkdirSync(outDir, { recursive: true });
-      const reportPath = path.join(outDir, `${packageName}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
-
-      try {
-        await run(cli, ["perf", "monitor", "run", "--app", packageName, "-d", String(sec), "--device", serial, "-o", reportPath], {
-          timeout: (sec + 90) * 1000,
-        });
-      } catch (e: any) {
-        const tail = `${e?.stderr ?? ""}\n${e?.stdout ?? ""}`.trim().split("\n").slice(-6).join("\n");
-        return okJson({
-          status: "failed",
-          note: "pico-cli perf monitor run failed — is the device connected and the app running?",
-          error: e instanceof Error ? e.message : String(e),
-          ...(tail ? { outputTail: tail } : {}),
-        });
-      }
-
-      let report: any;
-      try {
-        report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
-      } catch (e) {
-        return okJson({
-          status: "failed",
-          note: `pico-cli reported success but the report at ${reportPath} is missing/unparseable.`,
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
-
-      const jank = Array.isArray(report.jankWindows) ? report.jankWindows : [];
-      return okJson({
-        status: "ok",
-        source: "pico-cli perf monitor run (official PICO profiler + diagnosis engine)",
-        reportPath,
-        metadata: report.metadata ?? null,
-        diagnosis: report.diagnosis ?? null,
-        summary: report.summary ?? null,
-        jankWindowCount: jank.length,
-        jankWindows: jank.slice(0, 5),
-        honesty: HONESTY,
-      });
-    },
+    async ({ packageName, durationSec, device }) => okJson(await runPerfDiagnose(packageName, { durationSec, device })),
   );
 }

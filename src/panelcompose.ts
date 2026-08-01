@@ -19,7 +19,7 @@ export function registerPanelComposeTools(server: McpServer) {
     "generate_panel_compose_kotlin",
     {
       description:
-        "Emit HudPanel.kt — a LIVE-RUNTIME-TEXT spatial panel (the hybrid-app tier). ARCHITECTURE (the proven path): the panel is its OWN 2D ACTIVITY (HudPanelActivity, same APK + process) — the OS auto-hosts every 2D task as a floating spatial panel over the still-rendering immersive scene (vision-verified with Settings, v9.3). An immersive app's own WindowContainer does NOT open a panel window on the emulator — don't use it for this. Compose state is shared in-process, so DEBUG_CMD 'hud:<key>=<value>' -> HudState.set updates the text LIVE; HudState.onLaunch()/onReset() are game hooks the wiring calls from menu actions (bump 'throws', READY/ROLLING 'status'). Show the panel headlessly: adb shell am start -n <pkg>/<contentPkg>.HudPanelActivity (exported, own task). RETURNS: JSON {kotlin, manifestEntry, note} — write kotlin to the targetPath and merge manifestEntry into <application>: the activity with its own taskAffinity so it doesn't replace the immersive task.",
+        "Emit HudPanel.kt — a LIVE-RUNTIME-TEXT spatial panel (the hybrid-app tier). ARCHITECTURE (the proven path): the panel is its OWN 2D ACTIVITY (HudPanelActivity, same APK + process) — the OS auto-hosts every 2D task as a floating spatial panel over the still-rendering immersive scene (vision-verified with Settings, v9.3). An immersive app's own WindowContainer does NOT open a panel window on the emulator — don't use it for this. Compose state is shared in-process, so DEBUG_CMD 'hud:<key>=<value>' -> HudState.set updates the text LIVE; HudState.onLaunch()/onReset() are game hooks the wiring calls from menu actions (bump 'throws', READY/ROLLING 'status'). Show the panel headlessly: adb shell am start -n <pkg>/<contentPkg>.HudPanelActivity (exported, own task). RETURNS: JSON {kotlin, manifestEntry, note} — write kotlin to the targetPath and merge manifestEntry into <application>: the activity with its own taskAffinity so it doesn't replace the immersive task. placement:'world' is accepted but NOT world-locked — no vault-confirmed API positions an auto-hosted 2D panel in world space; it emits the same dock path plus a loud head-docked-fallback marker in the code + note.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
         kind: z.enum(["hud", "web"]).default("hud").describe("hud = the live label:value Compose scoreboard. web = a WebView panel (FULL HTML/CSS/JS with a LIVE DOM — vision-verified: a JS setInterval ticked live in-world). Web panels put charts/dashboards/docs in the spatial viewport."),
@@ -30,9 +30,23 @@ export function registerPanelComposeTools(server: McpServer) {
           .array(z.object({ key: z.string(), label: z.string(), initial: z.string() }))
           .optional()
           .describe("The label:value rows, e.g. [{key:'throws',label:'THROWS',initial:'0'},{key:'status',label:'STATUS',initial:'READY'}]. Default exactly that."),
+        placement: z
+          .enum(["dock", "world"])
+          .optional()
+          .describe("'world' = a world-anchored panel was REQUESTED. HONEST LIMIT: no public API positions an auto-hosted 2D panel in world space (vault-checked), so 'world' changes NOTHING behaviorally — it only stamps a loud 'world placement pending SDK confirmation — head-docked fallback' comment into the emitted code + note. Default 'dock' (the proven path)."),
       },
     },
-    async ({ packageName, kind, url, html, title, fields }) => {
+    async ({ packageName, kind, url, html, title, fields, placement }) => {
+      // v31: 'world' placement has no vault-confirmed API — emit the dock path with a LOUD marker
+      // so the fallback is visible in the source and the tool result, never silently swallowed.
+      const worldCommentLines = placement === "world"
+        ? [
+            ` * WORLD PLACEMENT REQUESTED — world placement pending SDK confirmation: no public API`,
+            ` * positions an auto-hosted 2D panel in world space (vault-checked), so this panel uses`,
+            ` * the HEAD-DOCKED fallback and spawns at the dock. Verify by turning the camera.`,
+          ]
+        : [];
+      const worldNote = placement === "world" ? "; WORLD PLACEMENT REQUESTED: world placement pending SDK confirmation — head-docked fallback" : "";
       if (kind === "web") {
         const load = url
           ? `wv.loadUrl(${JSON.stringify(url)})`
@@ -53,6 +67,7 @@ export function registerPanelComposeTools(server: McpServer) {
           ` * panel. Full HTML/CSS/JS with a LIVE DOM (vision-verified: JS timers tick in-world). The`,
           ` * activity is its own task; the OS auto-hosts it as a spatial panel (spawns at the dock).`,
           ` * Show: adb shell am start -n <pkg>/${packageName}.WebPanelActivity`,
+          ...worldCommentLines,
           ` */`,
           `class WebPanelActivity : ComponentActivity() {${htmlConst}`,
           `    @SuppressLint("SetJavaScriptEnabled")`,
@@ -67,7 +82,7 @@ export function registerPanelComposeTools(server: McpServer) {
           ``,
         ].join("\n");
         const manifestEntry = `<activity android:name="${packageName}.WebPanelActivity" android:exported="true" android:taskAffinity="${packageName}.webpanel" android:launchMode="singleTask" />`;
-        return ok(JSON.stringify({ kotlin: kt, manifestEntry, note: `Write kotlin to WebPanel.kt; merge manifestEntry into <application>${url ? "; add <uses-permission android:name=\"android.permission.INTERNET\"/> for the URL" : ""}; show via: adb shell am start -n <pkg>/${packageName}.WebPanelActivity` }, null, 2));
+        return ok(JSON.stringify({ kotlin: kt, manifestEntry, note: `Write kotlin to WebPanel.kt; merge manifestEntry into <application>${url ? "; add <uses-permission android:name=\"android.permission.INTERNET\"/> for the URL" : ""}; show via: adb shell am start -n <pkg>/${packageName}.WebPanelActivity${worldNote}` }, null, 2));
       }
       const t = title ?? "STATUS";
       const fl = fields && fields.length ? fields : [
@@ -104,6 +119,7 @@ export function registerPanelComposeTools(server: McpServer) {
         ` * over the immersive scene (an app's own WindowContainer does NOT open on the emulator).`,
         ` * Same process => shared Compose state: DEBUG_CMD 'hud:<key>=<value>' updates text LIVE;`,
         ` * 'panel:show' starts the activity. Panels spawn near the dock — turn the camera to see.`,
+        ...worldCommentLines,
         ` */`,
         `object HudState {`,
         `    val values = mutableStateMapOf(${fl.map((f) => `"${f.key}" to "${f.initial}"`).join(", ")})`,
@@ -154,7 +170,7 @@ export function registerPanelComposeTools(server: McpServer) {
         ``,
       ].join("\n");
       const manifestEntry = `<activity android:name="${packageName}.HudPanelActivity" android:exported="true" android:taskAffinity="${packageName}.panel" android:launchMode="singleTask" />`;
-      return ok(JSON.stringify({ kotlin: kt, manifestEntry, note: "Write kotlin to HudPanel.kt; merge manifestEntry into <application>; show via: adb shell am start -n <pkg>/<contentPkg>.HudPanelActivity" }, null, 2));
+      return ok(JSON.stringify({ kotlin: kt, manifestEntry, note: `Write kotlin to HudPanel.kt; merge manifestEntry into <application>; show via: adb shell am start -n <pkg>/<contentPkg>.HudPanelActivity${worldNote}` }, null, 2));
     },
   );
 }

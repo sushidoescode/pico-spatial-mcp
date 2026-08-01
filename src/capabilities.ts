@@ -28,6 +28,8 @@ export const CAPABILITY_MANIFEST: CapEntry[] = [
   // environment / richness
   { tool: "measure_model", authors: "a model's REAL bounding box + baseLift, so placement never runs on hand-measured numbers", keyParams: "modelPath", ceiling: "C0_emulator", note: "step 1 of measure -> bake -> generate_surface_placement_kotlin; generated GLBs are origin-CENTRED" },
   { tool: "bake_textured_model", authors: "a baked PBR bundle from a GLB (the ONLY textured path)", keyParams: "modelPath,outBundle", ceiling: "C0_emulator", note: "never runtime-load raw GLB (renders black)" },
+  { tool: "generate_surface_placement_kotlin", authors: "the 6-trap MR seating object: poll planes -> convert anchor space -> seat with measured lift + primitive collider", keyParams: "packageName,bundleAsset,modelName,semantic,modelSize,baseLift", ceiling: "C0_emulator", note: "emulator-proven against the SIMULATED room planes (mrtable seq 10-11); REAL-room surfaces are hardware" },
+  { tool: "place_model_on_surface", authors: "ONE CALL: measure -> bake -> surface-placement Kotlin seating a GLB on a detected FLOOR/TABLE/WALL", keyParams: "modelPath,semantic,packageName,modelName,offset", ceiling: "C0_emulator", note: "chains the proven v30 steps; the bake step runs the real spatialbundle toolchain" },
   { tool: "generate_environment_kotlin", authors: "MeshEnvironment/SplatEnvironment loader", keyParams: "kind,assetFileName,baseColorImage", ceiling: "C0_emulator" },
   { tool: "generate_home_env_proxy", authors: "invisible collider proxy of the known home bedroom (floor y=0)", keyParams: "packageName", ceiling: "C1", note: "faked hit-test; real surfaces are Swan-only" },
   { tool: "generate_collider_kotlin", authors: "PhysicsWorld + primitive room/prop colliders + rayCast", keyParams: "packageName,room,shapes", ceiling: "C0_emulator", note: "PhysicsWorldComponent REQUIRED on-device; primitives only" },
@@ -38,6 +40,7 @@ export const CAPABILITY_MANIFEST: CapEntry[] = [
   { tool: "generate_layout_kotlin", authors: "analytical wall/grid/arc/shelf placement of N entities", keyParams: "packageName,pattern,count,radius,spacing,columns,shelves,centerY,centerZ,faceUser", ceiling: "C0_emulator" },
   { tool: "generate_interaction_kotlin", authors: "raycast+broadcast select/hover + selection state + highlight", keyParams: "packageName,highlightScale,defaultBoxSize", ceiling: "C0_emulator", note: "broadcast select = C0; controller/gaze ray = C3 Swan" },
   { tool: "generate_data_binding_kotlin", authors: "bundled JSON -> N tinted-quad cards + lookups (NO TextComponent)", keyParams: "packageName,cardWidth,cardHeight,defaultColor", ceiling: "C0_emulator", note: "dynamic text labels need baked textures" },
+  { tool: "generate_tappable_detail_kotlin", authors: "named entities -> tappable detail views: interactable + primitive collider + colour-keyed registry + HUD detail expand", keyParams: "packageName,items,hudKey", ceiling: "C0_emulator", note: "broadcast select:<id> = C0; real pointer tap = C3 Swan; composition compiles + broadcast-drivable, not yet vision-verified end-to-end" },
   // UI / menu
   { tool: "generate_game_menu_kotlin", authors: "in-world pressable 3D menu (broadcast/gaze/controller/pinch)", keyParams: "packageName,actions", ceiling: "C0_emulator", note: "controller/pinch drive = C3 Swan" },
   { tool: "generate_scene_animator_kotlin", authors: "RELIABLE runtime animation: orbit/spin/bob + growY + pulseEmissive/fadeOpacity/cycleHue (coroutine frame loop — SDK AnimationResource does NOT propagate to runtime entities)", keyParams: "packageName", ceiling: "C0_emulator" },
@@ -58,7 +61,7 @@ export const CAPABILITY_MANIFEST: CapEntry[] = [
   { tool: "generate_portal_kotlin", authors: "portal window + nested world", keyParams: "packageName", ceiling: "C0_emulator", note: "entity-crossing/passthrough = Swan" },
   { tool: "generate_display_controllers_kotlin", authors: "display-group ordering controllers", keyParams: "packageName", ceiling: "C0_emulator" },
   // headset codegen
-  { tool: "generate_scene_understanding_kotlin", authors: "sense/plane surface pins", keyParams: "packageName", ceiling: "C1", note: "0 planes on emulator; Swan-only" },
+  { tool: "generate_scene_understanding_kotlin", authors: "sense/plane surface pins", keyParams: "packageName", ceiling: "C0_emulator", note: "the emulator DOES return SIMULATED planes with semantics (FLOOR/TABLE/CHAIR/DOOR/WINDOW…) in Full Space after polling (cold boot ~7 retries; FLOOR at y=0.40, measured 2026-07-29) — REAL-room surfaces remain hardware" },
   { tool: "generate_persistent_anchor_kotlin", authors: "world anchors", keyParams: "packageName", ceiling: "C1", note: "world-tracking headset-only" },
   { tool: "generate_headset_readiness_codegen", authors: "guarded C1/C3/C4 registry for Swan", keyParams: "packageName", ceiling: "C3" },
   { tool: "generate_anchor_kotlin", authors: "camera/world anchor tether", keyParams: "packageName,trackingMode", ceiling: "C1" },
@@ -66,7 +69,7 @@ export const CAPABILITY_MANIFEST: CapEntry[] = [
 
 const CEILINGS: Record<string, string> = {
   C0_emulator: "Fully verifiable on the emulator now (renders in a forward capture / broadcast-drivable).",
-  C1: "No scene-understanding/hand-tracking on the emulator (0 planes) — real surfaces are Swan-only.",
+  C1: "REAL-world scene understanding / hand-tracking need hardware. RETRACTION (2026-07-29, measured): the emulator DOES supply SIMULATED planes with semantics (FLOOR/TABLE/CHAIR/DOOR/WINDOW…; FLOOR at y=0.40) in Full Space after polling (~7 retries on a cold boot), so plane-based placement verifies on the emulator; only real-room surfaces, mesh data, and hand-tracking remain Swan.",
   C2: "Camera decoupled — verifiable only with a forward-FOV pose; content outside it can't be captured.",
   C3: "No controller/gaze pointer on the emulator — broadcast-emulate now, real controller/pinch is Swan-only.",
   C4_headset_only: "Stage-vs-window dichotomy — in-front Compose panels etc. are Swan-only.",

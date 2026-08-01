@@ -4,14 +4,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
-import { writeUserBrief } from "./briefstore.js";
+import { writeUserBrief, findBriefPath } from "./briefstore.js";
 
 /**
- * doors.ts — v21 THE TWELVE DOORS: an intent-level facade over the full ~190-tool surface.
+ * doors.ts — THE DOORS (v21): an intent-level facade over the full tool surface.
  *
- * 190 exposed tools is a moat for us and a wall for everyone else. With
- * `PICO_MCP_SURFACE=doors`, the server registers ONLY these twelve intent-level tools (plus
- * validate_toolchain); each door orchestrates the full machinery through an internal client that
+ * The full surface is a moat for us and a wall for everyone else. With
+ * `PICO_MCP_SURFACE=doors`, the server registers 15 tools (14 doors + validate_toolchain);
+ * each door orchestrates the full machinery through an internal client that
  * spawns the full-surface server on demand. Default surface stays "full" (all tools + the doors,
  * additive and backward compatible).
  *
@@ -55,6 +55,15 @@ async function inner() {
 
 const fixOf = (hint: string) => hint;
 
+/** Deterministic brief id for Door 1. The reduce is modular PER STEP: the old unbounded
+ * `a*31 + charCode` accumulator lost Number precision and reached Infinity around ~205 chars, so
+ * `Math.abs(Infinity % 100000)` went NaN and EVERY long brief collided on briefId 'doorNaN'
+ * (whose capital N then failed scaffold's lowercase package regex). The modulus keeps the id
+ * matching /^door\d+$/ so `com.fleet.<id>` is always a valid Android package. */
+export function briefIdOf(brief: string): string {
+  return `door${[...brief].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 1000003, 7)}`;
+}
+
 /** Call a full-surface tool through the cached inner client (shared by the doors + spatialbench). */
 export async function innerCall(name: string, args: any = {}) {
   const { call } = await inner();
@@ -83,7 +92,7 @@ export function registerDoorTools(server: McpServer) {
       const plan = await call("plan_app_spec", { brief, ...(draftSpec !== undefined ? { draftSpec } : {}) });
       if (plan?.status === "scaffold") return { status: "needs-authoring", scaffold: plan.scaffold, fix: "Adapt this scaffold to the brief (objects, layouts, counts, animation, menu — see each node's fields), then re-call pico_build_app with {brief, draftSpec: <adapted scaffold>}." };
       if (!plan?.spec) return { status: "plan-failed", detail: plan, fix: "Fix the validation problems named in detail and re-call with the corrected draftSpec; keep to concrete objects/layouts (e.g. 'N <things> on a floor with a menu')." };
-      const id = `door${Math.abs([...brief].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) % 100000)}`;
+      const id = briefIdOf(brief);
       writeUserBrief(id, { id, brief, spec: plan.spec });
       const fleet = await call("fleet_build", { briefIds: [id], settleSec: 16 });
       const r = fleet?.results?.[0] ?? {};
@@ -171,7 +180,7 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_measure",
-    "DOOR 6 — MEASURE a placement in a capture (v20 metric layer): color-keyed detection + calibrated-camera projection → error in px and meters, box IoU. Requires a one-time calibrate_capture_camera run, which lives on the full surface — pico_doctor reports calibration state and the exact route. Refuses occluded/absent targets instead of guessing.",
+    "DOOR 6 — MEASURE a placement in a capture (v20 metric layer): color-keyed detection + calibrated-camera projection → error in px and meters, box IoU. Requires a one-time camera calibration — pico_doctor reports calibration state, and pico_doctor {calibrate:true} performs it end-to-end through the full-surface inner server. Refuses occluded/absent targets instead of guessing.",
     {
       capturePath: z.string(),
       targets: z.array(z.object({ name: z.string(), colorKey: z.array(z.number()).length(3), expectedPosition: z.array(z.number()).length(3), expectedSize: z.array(z.number()).length(3).optional() })).min(1),
@@ -204,18 +213,43 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_doctor",
-    "DOOR 9 — Health-check the local PICO environment: the read-only preflight (node/adb/emulator/gRPC/Accessibility/calibration/disk — every failure carries the exact fix), toolchain payloads, emulator state, and the v20 camera calibration. Run this FIRST on a new machine, and whenever anything smells off.",
-    {},
-    async () => {
+    "DOOR 9 — Health-check the local PICO environment: the read-only preflight (node/adb/emulator/gRPC/Accessibility/calibration/disk — every failure carries the exact fix), toolchain payloads, emulator state, and the v20 camera calibration. Run this FIRST on a new machine, and whenever anything smells off. Pass {calibrate:true} to also RUN the one-time camera calibration end-to-end (fleet_build(['calib']) → calibrate_capture_camera): the inner child server already runs the FULL surface, so no surface switch or client restart is needed — it does need a running emulator and takes a few minutes.",
+    { calibrate: z.boolean().optional().describe("Build+launch the calib brief and solve the capture camera through the full-surface inner server. Requires a running emulator; takes minutes.") },
+    async ({ calibrate }) => {
       const { call } = await inner();
       const [tc, emu, pre] = await Promise.all([call("validate_toolchain", {}), call("emulator_status", {}), call("preflight_env", {})]);
-      let calibration: any = null;
-      try { calibration = JSON.parse(fs.readFileSync(path.join(process.env.HOME ?? "", ".pico-mcp", "camera-calibration.json"), "utf8")); } catch { /* uncalibrated */ }
+      const readCalibration = () => {
+        try { return JSON.parse(fs.readFileSync(path.join(process.env.HOME ?? "", ".pico-mcp", "camera-calibration.json"), "utf8")); } catch { return null; }
+      };
+      let calibrationRun: any = null;
+      if (calibrate) {
+        if (!(emu?.running ?? false)) {
+          calibrationRun = { status: "skipped", fix: "Boot the emulator first (pico_emulator {action:'boot'}), then re-run pico_doctor {calibrate:true}." };
+        } else {
+          const fleet = await call("fleet_build", { briefIds: ["calib"], settleSec: 16 });
+          const r = fleet?.results?.[0] ?? {};
+          if (!r.artifact) {
+            calibrationRun = { status: "failed", stage: "fleet_build", notes: r.notes ?? [], fix: "Read the notes — they name the failing step; fix it and re-run pico_doctor {calibrate:true}." };
+          } else {
+            // marker truth lives in the calib brief itself: color-keyed cubes at known positions
+            const calibBrief = findBriefPath("calib");
+            const calibSpec = calibBrief ? JSON.parse(fs.readFileSync(calibBrief, "utf8")).spec : null;
+            const markers = (calibSpec?.objects ?? [])
+              .filter((o: any) => Array.isArray(o?.body?.color) && Array.isArray(o?.transform?.position))
+              .map((o: any) => ({ name: o.id, colorKey: o.body.color, position: o.transform.position }));
+            calibrationRun = markers.length >= 3
+              ? await call("calibrate_capture_camera", { capturePath: r.artifact, markers })
+              : { status: "failed", stage: "markers", error: `calib brief provides ${markers.length} color-keyed markers; calibrate_capture_camera needs at least 3` };
+          }
+        }
+      }
+      const calibration = readCalibration();
       return {
         preflight: pre,
         toolchain: tc,
         emulator: { running: emu?.running ?? false, serial: emu?.serial ?? null },
-        cameraCalibration: calibration ? { f: calibration.f, eyeHeight: calibration.eyeHeight, residualPx: calibration.residualPx, at: calibration.at } : "uncalibrated — pico_measure needs a one-time calibration, and the two tools that perform it (fleet_build(['calib']) then calibrate_capture_camera) are not on the doors surface: unset PICO_MCP_SURFACE (or set it to `full`), restart your MCP client, run them once, then come back",
+        ...(calibrationRun ? { calibrationRun } : {}),
+        cameraCalibration: calibration ? { f: calibration.f, eyeHeight: calibration.eyeHeight, residualPx: calibration.residualPx, at: calibration.at } : "uncalibrated — pico_measure needs a one-time calibration: re-run pico_doctor with {calibrate:true} and it runs fleet_build(['calib']) + calibrate_capture_camera for you through the full-surface inner server (emulator must be running)",
       };
     },
   );
@@ -242,9 +276,23 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_fix",
-    "DOOR 12 — Paste a build/runtime error (or describe a wrong render) and get the matched retained-lesson: the known root cause and the exact fix, from a corpus of verified past failures. Free text is fine — it is mapped to the diagnosis knowledge base by keyword, and always run through the retained-lessons rulebook. Also lints provided Kotlin against the gotcha rulebook + the official SDK vault.",
-    { error: z.string().describe("The error text, logcat excerpt, or symptom description."), kotlin: z.string().optional().describe("The suspect emitted Kotlin, if available.") },
-    async ({ error, kotlin }) => {
+    "DOOR 12 — Paste a build/runtime error (or describe a wrong render) and get the matched retained-lesson: the known root cause and the exact fix, from a corpus of verified past failures. Free text is fine — it is mapped to the diagnosis knowledge base by keyword, and always run through the retained-lessons rulebook. Also lints provided Kotlin against the gotcha rulebook + the official SDK vault. Once you SOLVE a novel gotcha, re-call with {recordLesson:{...}} to persist it as a new lint rule (passed through to record_lesson on the full-surface inner server).",
+    {
+      error: z.string().describe("The error text, logcat excerpt, or symptom description."),
+      kotlin: z.string().optional().describe("The suspect emitted Kotlin, if available."),
+      recordLesson: z.object({
+        id: z.string().describe("Unique kebab-case rule id, e.g. 'my-new-gotcha'."),
+        pattern: z.string().describe("A JS regex source string that detects the anti-pattern."),
+        message: z.string().describe("What's wrong (the verified failure)."),
+        fix: z.string().describe("The concrete fix."),
+        severity: z.enum(["error", "warn"]).optional().describe("Default 'error'."),
+        kinds: z.array(z.enum(["kotlin", "command", "gradle", "usd", "any"])).optional().describe("Which content kinds this applies to (default ['any'])."),
+        designRule: z.string().optional().describe("The DESIGN.md rule / diagnose symptom it maps to."),
+        positiveFixture: z.string().optional().describe("A sample that MUST trigger the rule."),
+        negativeFixture: z.string().optional().describe("A sample that MUST NOT trigger the rule."),
+      }).optional().describe("After you SOLVE a novel gotcha: persist it as a retained-lessons lint rule. Passed through unchanged to record_lesson, which validates the regex + fixtures before persisting."),
+    },
+    async ({ error, kotlin, recordLesson }) => {
       const { call } = await inner();
       // v27-pre first-light fix: diagnose takes a strict symptom enum — piping free text into it
       // leaked a raw schema error at the stranger. Map keywords -> symptom; no match is honest.
@@ -272,7 +320,57 @@ export function registerDoorTools(server: McpServer) {
         : { status: "no-symptom-match", note: "The error text matched no diagnosis-KB symptom — the retained-lessons lint below still applies." };
       const errorLint = await call("preflight_lint", { content: error, kind: "any" });
       const lint = kotlin ? await call("preflight_lint", { content: kotlin, kind: "kotlin" }) : null;
-      return { matchedSymptom: symptom, diagnosis: diag, errorLessons: errorLint, ...(lint ? { lint } : {}), fix: "Apply the highest-confidence match; if nothing matches, this is a NEW gotcha — solve it, then record_lesson so it can never recur." };
+      const lesson = recordLesson ? await call("record_lesson", recordLesson) : null;
+      return { matchedSymptom: symptom, diagnosis: diag, errorLessons: errorLint, ...(lint ? { lint } : {}), ...(lesson ? { recordedLesson: lesson } : {}), fix: "Apply the highest-confidence match; if nothing matches, this is a NEW gotcha — solve it, then re-call pico_fix with {recordLesson:{...}} so it can never recur." };
+    },
+  );
+
+  door(
+    "pico_record",
+    "DOOR 13 — RECORD a verification claim in the app's trust ledger AFTER you LOOKED (closes the pico_look loop: capture → LOOK → record). Passes through the ledger's honesty gate UNTOUCHED: a vision_verified/device_verified/auto_judged/usd_host_render entry is REJECTED unless artifactPath links a real rendered image (valid PNG/JPEG) plus an attestation of what you saw; other evidence classes record honestly without upgrades. Set report:true to also return the ledger-generated capability report for the app.",
+    {
+      app: z.string().describe("App name or package (the ledger key)."),
+      claim: z.string().describe("The claim, e.g. '6 shelf cards render in the forward FOV'."),
+      evidenceType: z.enum(["device_verified", "vision_verified", "auto_judged", "usd_host_render", "logcat", "structural", "compiles", "built_for_headset"]).describe("How it was verified. vision_verified needs a linked, existing capture + attestation."),
+      artifactPath: z.string().optional().describe("Path to the capture you LOOKED at (REQUIRED for vision_verified)."),
+      attestation: z.string().optional().describe("What you saw in the capture (REQUIRED for vision_verified)."),
+      cClass: z.enum(["C0_emulator", "C1", "C2", "C3", "C4_headset_only"]).optional().describe("The claim's capability class."),
+      report: z.boolean().optional().describe("Also return ledger_report's generated capability report for the app."),
+    },
+    async ({ app, claim, evidenceType, artifactPath, attestation, cClass, report }) => {
+      const { call } = await inner();
+      const recorded = await call("record_verification", {
+        app,
+        claim,
+        evidenceType,
+        ...(artifactPath ? { artifactPath } : {}),
+        ...(attestation ? { attestation } : {}),
+        ...(cClass ? { cClass } : {}),
+      });
+      const out: any = typeof recorded === "object" && recorded !== null ? recorded : { status: String(recorded) };
+      if (report) out.report = await call("ledger_report", { app });
+      return out;
+    },
+  );
+
+  door(
+    "pico_emulator",
+    "DOOR 14 — Emulator lifecycle without leaving the doors surface. {action:'status'} reports adb/boot/gRPC state; {action:'boot'} boots the PICO OS6 emulator headless and waits for Android (fails honestly if one is already online); {action:'restart'} returns the documented COLD-restart command instead of running it — the cold restart kills the qemu process by PID and relaunches with explicit -sysdir/-kernel (adb reboot is insufficient for a wedged ContainerManager), which touches the host process table, so a human runs it.",
+    { action: z.enum(["status", "boot", "restart"]).describe("status = report state; boot = boot + wait for Android; restart = get the exact cold-restart command (NOT executed).") },
+    async ({ action }) => {
+      if (action === "restart") {
+        const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
+        const script = path.resolve(here, "..", "scripts", "restart-emulator.sh");
+        return {
+          status: "manual-restart-required",
+          script: fs.existsSync(script) ? script : null,
+          fix: `Run in a terminal: bash ${script} — it kills the qemu process (adb emu kill + discovery-pid TERM fallback) and relaunches with the explicit -sysdir/-kernel flags the AVD needs outside the PICO app wrapper, then waits for sys.boot_completed=1. Afterwards RECALIBRATE before any pico_measure (pico_doctor {calibrate:true}) — a cold restart moves the capture camera.`,
+          honesty: "Not executed by this tool: the cold restart kills a host process by PID, so it stays a human-run command.",
+        };
+      }
+      const { call } = await inner();
+      const out = await call(action === "boot" ? "emulator_boot" : "emulator_status", {});
+      return typeof out === "object" && out !== null ? out : { status: "ok", detail: out };
     },
   );
 }

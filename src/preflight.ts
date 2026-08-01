@@ -73,7 +73,7 @@ function calibrationRoute(): string {
   const servingDoors =
     process.env.PICO_MCP_SURFACE === "doors" || process.env.PICO_MCP_OUTER_SURFACE === "doors";
   return servingDoors
-    ? "fleet_build(['calib']) then calibrate_capture_camera — both live on the full surface, so unset PICO_MCP_SURFACE (or set it to `full`) in your MCP server env and restart the client first"
+    ? "run pico_doctor {calibrate:true} — it runs fleet_build(['calib']) then calibrate_capture_camera through the full-surface inner server, no client restart needed"
     : "fleet_build(['calib']) then calibrate_capture_camera";
 }
 
@@ -143,6 +143,19 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     push(hub || envEditor
       ? { name: "unity-lane", status: "pass", detail: envEditor ? `UNITY_EDITOR_PATH=${process.env.UNITY_EDITOR_PATH}` : "Unity Hub editors present; unity skeleton payload complete", fix: null }
       : { name: "unity-lane", status: "warn", detail: "no Unity editor found (optional lane) — unity_build_apk needs one", fix: "Install Unity 6000.4.9f1 + Android Build Support via Unity Hub, or set UNITY_EDITOR_PATH. Skip this if you are not building Unity apps." });
+  }
+
+  // 2g. pico-cli (OPTIONAL — warn-tier, never a failure). perf_diagnose/perf_trace/watch_crash/
+  //     capture_record and agent-vault provisioning ride on it; building, capture, and verification
+  //     all work without it. Probe with `-v` ONLY: `pico-cli doctor` and `pico-cli plugin doctor`
+  //     hang (measured >=90s / 45s on 0.3.0, 2026-08-01) and must never be inlined here.
+  const picoCli = io.exec("pico-cli", ["-v"]);
+  if (picoCli.ok) {
+    const raw = picoCli.stdout.trim();
+    const cliVersion = raw.match(/pico-cli\/(\d+\.\d+\.\d+\S*)/)?.[1] ?? null;
+    push({ name: "pico-cli", status: "pass", detail: cliVersion ? `version ${cliVersion} (${raw})` : `on PATH (version string unparsed: ${raw || "(empty)"})`, fix: null });
+  } else {
+    push({ name: "pico-cli", status: "warn", detail: "no pico-cli on PATH — perf_diagnose/perf_trace/watch_crash/capture_record degrade to status:'unavailable'; agent-vault provisioning (`pico-cli setup`) needs it", fix: "npm install -g @picoxr/pico-cli (optional lane; building, capture, and verification work without it)." });
   }
 
   // 3. emulator (a PICO device attached and in 'device' state)
@@ -220,7 +233,7 @@ export function registerPreflightTools(server: McpServer) {
     "preflight_env",
     {
       description:
-        "v27-pre READ-ONLY environment doctor: node, adb, emulator/AVD state, gRPC reachability, macOS Accessibility (the silent CGEvent-drop gotcha), camera-calibration freshness (dies on emulator cold restart), and disk headroom. Every non-pass check carries the EXACT fix. Run this FIRST on a new machine. Never mutates anything.",
+        "v27-pre READ-ONLY environment doctor: node, adb, emulator/AVD state, gRPC reachability, pico-cli presence (warn-tier — the perf/trace/recording lane is optional), macOS Accessibility (the silent CGEvent-drop gotcha), camera-calibration freshness (dies on emulator cold restart), and disk headroom. Every non-pass check carries the EXACT fix. Run this FIRST on a new machine. Never mutates anything.",
       inputSchema: {},
     },
     async () => {

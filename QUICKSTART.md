@@ -4,7 +4,7 @@ Build native PICO XR spatial apps from natural-language briefs, with **verified*
 (the agent looks at rendered frames — it never claims what it hasn't seen).
 
 This is the proven first-run path, on the doors surface (`PICO_MCP_SURFACE=doors` — 13
-intent-level tools instead of the full ~214). It's the exact sequence a from-docs-only run on a fresh clone
+intent-level tools instead of the full 220+ surface). It's the exact sequence a from-docs-only run on a fresh clone
 followed on 2026-07-21.
 
 ## 1. Register (once)
@@ -92,12 +92,13 @@ Mac mouse clicks them) · **live-text scoreboards/HUDs** and full **web-content 
 DOM) · AAA fidelity (PBR, shadows, shining IBL metals, animation) · procedural props incl. lathe
 silhouettes · custom World-Labs worlds · multi-scene apps. The `com.pico.hooks` gradle plugin
 lints scenes in every build; `fleet_build` builds brief batches unattended with an honest
-auto-judge. Boundless walk-around immersion is PICO Swan hardware territory — the emulator's
-strength is bounded, eye-level content, and every claim above is backed by a looked-at frame.
+auto-judge. Immersive Unity VR renders on the emulator too (v30.1 — capture it via `gui_capture`;
+adb screencap is blind to XR-runtime output). Controller-ray input and head-tracked depth stay
+PICO Swan / 6.1 territory, and every claim above is backed by a looked-at frame.
 
 ## The full surface
 
-The doors surface is 13 tools; the full server exposes ~214. Remove `PICO_MCP_SURFACE=doors` (or
+The doors surface is 15 tools; the full server exposes 220+. Remove `PICO_MCP_SURFACE=doors` (or
 just add the full-surface server alongside) to get everything — codegen for every SDK subsystem,
 the fleet/asset/editor pipelines, and the raw building blocks the doors orchestrate internally.
 The doors stay available either way. See **[SKILLS.md](SKILLS.md)** for the agent reference and

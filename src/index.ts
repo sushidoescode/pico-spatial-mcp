@@ -2,6 +2,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { okJson } from "./util.js";
 import { validateToolchain } from "./toolchain.js";
 import { registerAdbTools } from "./adb.js";
@@ -20,6 +23,10 @@ import { registerUnityGenTools } from "./unitygen.js";
 import { registerUnityBuildTools } from "./unitybuild.js";
 import { registerModelMeasureTools } from "./modelmeasure.js";
 import { registerSurfacePlacementTools } from "./surfaceplace.js";
+import { registerPlaceOnSurfaceTools } from "./placeonsurface.js";
+import { registerTappableDetailTools } from "./tappable.js";
+import { registerPerfTraceTools } from "./perftrace.js";
+import { registerPicoCliTools } from "./picoclitools.js";
 import { registerComponentTools } from "./components.js";
 import { registerAssetTools } from "./assets.js";
 import { registerDiagnoseTools } from "./diagnose.js";
@@ -131,9 +138,21 @@ import { registerDoorTools, doorsSurfaceActive } from "./doors.js";
 import { registerPreflightTools } from "./preflight.js";
 import { registerVirtualCameraTools } from "./virtualcamera.js";
 
+// The handshake version comes from package.json (dist/ sits one level below it both in the repo
+// and in the installed package) — a hardcoded string here drifted to 6.0.0 while the package
+// moved on. Read failure degrades to 0.0.0 rather than refusing to serve.
+const packageVersion = (() => {
+  try {
+    const pkgPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+    return JSON.parse(fs.readFileSync(pkgPath, "utf8")).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
+
 const server = new McpServer({
   name: "pico-spatial-mcp",
-  version: "6.0.0",
+  version: packageVersion,
 });
 
 server.registerTool(
@@ -149,9 +168,9 @@ server.registerTool(
   async ({ projectDir, toolsVersion }) => okJson(await validateToolchain(projectDir, toolsVersion)),
 );
 
-// v21 THE TWELVE DOORS: PICO_MCP_SURFACE=doors exposes only the intent-level facade
-// (each door orchestrates the full surface through an internal child server). Default
-// "full" keeps every tool AND adds the doors.
+// THE DOORS (v21): PICO_MCP_SURFACE=doors exposes only the intent-level facade — 15 tools
+// (14 doors + validate_toolchain); each door orchestrates the full surface through an internal
+// child server. Default "full" keeps every tool AND adds the doors.
 if (!doorsSurfaceActive()) {
   registerEmulatorTools(server);
   registerAdbTools(server);
@@ -169,6 +188,8 @@ if (!doorsSurfaceActive()) {
   registerUnityGenTools(server);
   registerUnityBuildTools(server);
   registerSurfacePlacementTools(server);
+  // v31 — one-call Meshy->MR seating orchestrator (measure -> bake -> seat)
+  registerPlaceOnSurfaceTools(server);
   registerComponentTools(server);
   registerAssetTools(server);
   registerDiagnoseTools(server);
@@ -205,6 +226,8 @@ if (!doorsSurfaceActive()) {
   // v5.0 — the three interaction/layout/data primitives + the brief-to-app compiler tier
   registerLayoutTools(server);
   registerInteractionTools(server);
+  // v31 — tap a 3D child, expand a detail panel (InteractableRegistry + HUD channel)
+  registerTappableDetailTools(server);
   registerDataBindingTools(server);
   registerCapabilityManifestTools(server);
   registerPlannerTools(server);
@@ -216,6 +239,9 @@ if (!doorsSurfaceActive()) {
   registerVaultTools(server);
   // v14.8 — perf_diagnose: PICO's official pico-cli perf profiler + diagnosis engine
   registerPerfCliTools(server);
+  // v31 — pico-cli evidence lane: Perfetto traces + official crash watcher + screen recording
+  registerPerfTraceTools(server);
+  registerPicoCliTools(server);
   // v17.0 — semantic placement: anchor spec objects to labeled real-world surfaces
   registerSemanticPlaceTools(server);
   // v20 — metric verification: calibrated camera + measured placement errors
@@ -292,9 +318,11 @@ if (!doorsSurfaceActive()) {
   registerWorldEnvTools(server);
   registerUsdRenderTools(server);
   registerIblBakeTools(server);
-  registerPrompts(server);
 }
 registerDoorTools(server);
+// Prompts are surface-independent: register them OUTSIDE the full-surface block so a doors user
+// gets the built-in prompts too (they previously got zero).
+registerPrompts(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

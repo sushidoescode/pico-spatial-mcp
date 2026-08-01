@@ -1,6 +1,22 @@
 {
-  "generatedAt": "2026-07-14T07:36:19.217Z",
+  "generatedAt": "2026-08-01T11:20:55.361Z",
   "apps": [
+    {
+      "app": "camerapeek-webcam0",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "With -camera-back webcam0, the PICO emulator exposes/open camera ID 10 and CameraX reaches STREAMING, but this captured run does not visibly deliver a recognizable webcam frame into the CameraPeek panel.",
+          "evidenceType": "structural",
+          "attestation": "LOOKED at the 2160x2158 emulator capture. The CameraPeek panel visibly reports previewStreamState: STREAMING, but no recognizable Mac webcam image appears in the preview area; the underlying FleetAmbient sphere, tan cube, and blue capsule remain visible through it. Separately, dumpsys media.camera shows camera ID 10 open by com.pico.camerapeek PID 5584. This proves enumeration/open/stream-state structure only and is a negative visual result for webcam pixels.",
+          "artifact": "camerapeek-webcam0-v28.0.png",
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
     {
       "app": "com.android.settings",
       "claims": [
@@ -315,6 +331,28 @@
       ]
     },
     {
+      "app": "com.example.firstlightxr",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "First-light stranger run: door-built app renders 3 data-bound grid objects + a clickable GAME MENU (START/PAUSE/RESUME/RESET); objects are flat cards not crystal geometry, no floor authored, spin not claimable from one frame",
+          "evidenceType": "vision_verified",
+          "attestation": "Agent LOOKED at the capture: three colored card-quads in a row (red/ochre/yellow) with the GAME MENU panel right, black background; honest gaps noted in the claim",
+          "artifact": "first-light-door44480.png",
+          "capture": {
+            "sha256": "07d19031d2efc7e91a5e93686f7192dffc7abdac71ad0165d55c3137ebd6ebce",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 228147,
+            "format": "png"
+          },
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
       "app": "com.example.knockdownxr",
       "claims": [
         {
@@ -562,6 +600,23 @@
             "format": "png"
           },
           "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 16,
+          "claim": "Verify-anything smoke (v27-pre Task 9): hand-authored non-pipeline APK verified through the documented README flow — lane, ball, 3 racked pins, KNOCKDOWN menu (THROW/RERACK/PINS/INFO) all rendered",
+          "evidenceType": "vision_verified",
+          "attestation": "Agent LOOKED: wooden bowling lane, glossy black ball, three white pins racked at the far end, KNOCKDOWN menu panel right. First attempt captured the INCUMBENT app (wedged ContainerManager); cold restart per the launch_blocked lesson resolved it.",
+          "artifact": "verify-anything-knockdown-2026-07-21.png",
+          "capture": {
+            "sha256": "d667a0f0ae94f8316d7859066c7273bfab96ad4247359517a7e28909c60940f9",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 230615,
+            "format": "png"
+          },
+          "cClass": null,
           "deviceSerial": null,
           "reproHash": null
         }
@@ -1212,6 +1267,56 @@
       ]
     },
     {
+      "app": "com.fleet.ambient",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "The ambient fleet build packages a real prefiltered KTX cubemap byte-identically and attaches local IBL to exactly three generated PBR receivers",
+          "evidenceType": "structural",
+          "attestation": "KTX1 inspection: 256x256, six faces, five mip levels, GL_R11F_G11F_B10F, SHA-256 ae560ba072dd5ce0b737e4bcc39839a95eda4e373b1f18fe17c34ca3facfd111. The APK assets/ibl/studio.ktx has the same size and SHA. Same-launch logcat reports placed 3/3 and local IBL applied to 3 receivers from ibl/studio.ktx, with no crash. This entry proves packaging and runtime attachment only; appearance is recorded separately.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "The fresh cmgen-baked studio KTX visibly lights three local PBR receivers with broad softbox reflections and distinct silver, gold, and blue surfaces",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKED at the final restored 2160x2158 rendered frame. All three props are fully in frame against the black Full-stage background: a silver sphere, warm gold box, and blue capsule. The sphere and capsule have bright circular softbox tops and broad horizontal environment bands; the box has a bright top edge and readable warm face. The app has no direct light. The frame is byte-identical across two clean captures, SHA-256 4b36b15ceaf6a8f980c52b10c6f93485edb0a2d3224b925b7acb26872a6f230f. I also LOOKED at the identical-pose IBL-off control: it is near-black with small sharp white points and vertical rails, and the gold box nearly disappears.",
+          "artifact": "ambient-ibl-final-restored.png",
+          "capture": {
+            "sha256": "4b36b15ceaf6a8f980c52b10c6f93485edb0a2d3224b925b7acb26872a6f230f",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 138495,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "An identical-pose IBL-off control removes the broad studio bands and leaves the metallic receivers near-black under fallback environment lighting",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKED at this 2160x2158 control frame after deliberately removing only SceneIBL.applyLocal from the generated experiment app and rebuilding. The same three shapes and pose remain, but the silver sphere and blue capsule are nearly black with small sharp white points and narrow vertical rails instead of broad horizontal studio bands; the gold box is almost lost against black. This control is diagnostic evidence only. The final app was rebuilt with local IBL restored and its positive frame was looked at separately.",
+          "artifact": "ambient-ibl-off-control.png",
+          "capture": {
+            "sha256": "94461002f22c128d31f4e92e30bea92b9fdc478eaff7dba91786c7a5c9695812",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 160160,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
       "app": "com.fleet.boutique",
       "claims": [
         {
@@ -1269,6 +1374,119 @@
           "cClass": "C0_emulator",
           "deviceSerial": null,
           "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "[fleet_build unattended] 6 metric tiles colored by JSON",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1387 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "785273e77c5a91275b11a9123de3ee6f5d4a2ad125e2c1c2ff45b69d522a8237",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 27284,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 3,
+          "claim": "[fleet_build unattended] 6 foreground objects render for layout 'tiles'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 6 foreground objects; expected 6; coverage 0.1496 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "3be727eb363c9d2f069f551c4b8d51615d23c20941e7ee235be6f0945241b134",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 28429,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 4,
+          "claim": "6 metric tiles colored by JSON",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKED at the 2160x2158 rendered frame. Exactly six separate rounded metric cards are visible in a clean 3x2 grid with gaps: red, orange, yellow across the top and green, blue, purple below. The six visible colors match the provisioned JSON palette.",
+          "artifact": "console-v27.8-six-tiles-verified.png",
+          "capture": {
+            "sha256": "3be727eb363c9d2f069f551c4b8d51615d23c20941e7ee235be6f0945241b134",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 28429,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 5,
+          "claim": "HudPanelActivity is allocated as a ready, visible, on-screen caption-backed spatial panel",
+          "evidenceType": "structural",
+          "attestation": "Fresh list_spatial_panels matched com.fleet.console.content.HudPanelActivity only after joining app containerId 14 to a healthy SystemUI captionBarContainerId 14; content and caption were surfaceShown, readyForDisplay, onScreen, and WM-visible. This structural entry does not claim pixel appearance.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 6,
+          "claim": "the floating SYSTEM panel shows UPTIME and STATE",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKED at the swept 2160x2158 rendered frame. A large dark SYSTEM panel is centered and fully visible; UPTIME is legibly paired with 0m and STATE with NOMINAL. Six colored scene tiles remain partially visible below the floating panel.",
+          "artifact": "console-v27.8-system-panel-verified.png",
+          "capture": {
+            "sha256": "7b6f3798860ef6e7d2048baf6e6500a33a234db880466332d0eac21796e95f48",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 54088,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 7,
+          "claim": "[fleet_build unattended] 6 foreground objects render for layout 'tiles'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 6 foreground objects; expected 6; coverage 0.1496 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "3be727eb363c9d2f069f551c4b8d51615d23c20941e7ee235be6f0945241b134",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 28429,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 8,
+          "claim": "[fleet_build unattended] 6 foreground objects render for layout 'tiles'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 6 foreground objects; expected 6; coverage 0.1496 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "3be727eb363c9d2f069f551c4b8d51615d23c20941e7ee235be6f0945241b134",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 28429,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
         }
       ]
     },
@@ -1291,6 +1509,23 @@
           "cClass": "C0_emulator",
           "deviceSerial": null,
           "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "v27.1 name-aware procedural provisioning: the crystals brief renders 6 REAL faceted gem octahedra (distinct palette colors, per-face shading) in a 3x2 grid — flat placeholder cards eliminated for shape-archetype data nodes",
+          "evidenceType": "vision_verified",
+          "attestation": "Agent LOOKED: six faceted crystal solids (ruby/gold/citrine/emerald/sapphire/amethyst) with visible flat-shaded facets, 3x2 grid, black background. Closes first-light friction #4 and the carried crystals-frame-look minor.",
+          "artifact": "crystals-v27.1-real-gems.png",
+          "capture": {
+            "sha256": "0f792b7a33b8b9d4948a5a4b9787cfaeb9445a8092920ddd0a4b3cbe8367f099",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 127496,
+            "format": "png"
+          },
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
         }
       ]
     },
@@ -1308,6 +1543,146 @@
             "width": 2160,
             "height": 2158,
             "bytes": 27336,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "[fleet_build unattended] 6 metric tiles colored by JSON",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1387 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "2696ba68ece98a22d05a00c69179d984ac7f547354f296fed2dfe5dbb13e4836",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 27297,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "[fleet_build unattended] 6 foreground objects render for layout 'tiles'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 6 foreground objects; expected 6; coverage 0.1496 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "3be727eb363c9d2f069f551c4b8d51615d23c20941e7ee235be6f0945241b134",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 28429,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 3,
+          "claim": "6 metric tiles colored by JSON",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKED at the 2160x2158 rendered frame. Exactly six separate rounded metric cards are visible in a clean 3x2 grid with gaps: red, orange, yellow across the top and green, blue, purple below. The six visible colors match the provisioned JSON palette.",
+          "artifact": "dashboard-v27.8-six-tiles-verified.png",
+          "capture": {
+            "sha256": "3be727eb363c9d2f069f551c4b8d51615d23c20941e7ee235be6f0945241b134",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 28429,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 4,
+          "claim": "[fleet_build unattended] 6 foreground objects render for layout 'tiles'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 6 foreground objects; expected 6; coverage 0.1496 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "3be727eb363c9d2f069f551c4b8d51615d23c20941e7ee235be6f0945241b134",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 28429,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.fleet.door48128",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "Hoop stand (cyan pole, pink backboard, orange rim bar) at the back of the court with three colored basketballs (green/orange/blue) racked in front, plus the GAME MENU panel",
+          "evidenceType": "vision_verified",
+          "attestation": "Agent LOOKED: dark court platform, cyan pole rising to a pink/magenta backboard with an orange-brown rim bar beneath it, three spheres racked left-to-right green/orange-brown/blue, GAME MENU panel with START/PAUSE/RESUME/RESET rows at right",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "70c342068dfb39e452da41ef35e9c4c5929933035945454d2837cd6d9be4a4ac",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 364863,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "ARCADE SHOTS live-text HUD updates on a driven start action (SHOTS 0->1, STATUS READY->ROLLING)",
+          "evidenceType": "vision_verified",
+          "attestation": "Agent LOOKED after app_broadcast cmd=start: ARCADE SHOTS panel shows SHOTS 1 and STATUS ROLLING; GAME MENU visible behind it; panel spawned head-docked and occludes the court",
+          "artifact": "canonical.png",
+          "capture": {
+            "sha256": "d822c903dc33415a560430174802f79cf5bf157bdf960f399a8cc8319401ede3",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 339704,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "After launch:ball0 the ball arcs toward the hoop under rigid-body physics",
+          "evidenceType": "structural",
+          "attestation": "Broadcast start returned result=0 and the HUD hooks advanced (SHOTS 1 / ROLLING); the head-docked HUD occluded the court in the settle capture, so the arc itself was not seen — honest deferral, re-capture from an off-axis pose to upgrade",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.fleet.door681168",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "v31 P0 regression proof: the exact 342-char brief that produced briefId doorNaN and a scaffold package-regex failure on 2026-08-01 pre-fix now hashes to door681168 and builds/installs/launches/captures through Door 1",
+          "evidenceType": "vision_verified",
+          "attestation": "Agent LOOKED post-fix: dark court platform, cyan pole to pink backboard with orange rim bar, three balls racked green/orange/blue, GAME MENU panel with START/PAUSE/RESUME/RESET — same authored scene as the short-brief door48128 build, now reachable from the long brief",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "2a6432486e7979a1c9b0726a3d7f15b6adb3641f0f26bd683fb52bd4d942b1e9",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 357673,
             "format": "png"
           },
           "cClass": "C0_emulator",
@@ -1335,6 +1710,315 @@
           "cClass": "C0_emulator",
           "deviceSerial": null,
           "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "[fleet_build unattended] 2+ foreground objects render for target 'lane'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1196 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "9c2844339f3ecf32f99e3042cc4e07b5f79d315899b5d476c6a99b40a2f2713b",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 324623,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "v29.3 generator E2E: built from the INSTALLED npm tarball with NO app template on disk (galleryxr-native + showroomxr-native renamed away for the whole run) — scaffold generated from the packaged appskeleton, menu.bundle taken from the packaged assets/; app installed, launched, and rendered the knockdown scene on the PICO OS 6 emulator",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED at the forward capture: wooden lane wedge with the dark ball at rest, THREE grey capsule targets racked at the lane end, and the GAME MENU panel (START/PAUSE/RESUME/RESET + gaze/controller caption) from the packaged menu.bundle, on a Full-stage black surround. Matches the stage-eye claim; the calibrated eye independently scored PASS (auto_judged) in the same run.",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "9c2844339f3ecf32f99e3042cc4e07b5f79d315899b5d476c6a99b40a2f2713b",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 324623,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 3,
+          "claim": "[fleet_build unattended] 2+ foreground objects render for target 'lane'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1189 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "bc4887cc09424c2b2c13c2946608aa694d22009b0c5ac437d9e434dbaca280b2",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 334409,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 4,
+          "claim": "v29.4: 10 capsule pins racked in a 1-2-3-4 bowling triangle on the lane + the ball at rest",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED: full 10-pin rack at the lane far end — head pin nearest the ball, rows of 2, 3, 4 behind it — ball at rest mid-lane, GAME MENU right. Calibrated eye PASS in the same fleet run.",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "bc4887cc09424c2b2c13c2946608aa694d22009b0c5ac437d9e434dbaca280b2",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 334409,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 5,
+          "claim": "v29.4: the GAME MENU is mouse-CLICKABLE end-to-end — a real host click on START threw the ball and demolished the rack; a click on RESET re-racked all 10 pins",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED: after one real cliclick on the START row (bridge log: click -> start [knockdown]; logcat: DEBUG_CMD cmd=start, GameMenu select(start): customAction ran) the rack is demolished — pins toppled/scattered at the lane end, ball flung past, HUD THROWS 4 / STATUS ROLLING. A later RESET click re-racked (reracked2.png shows 10 standing pins again).",
+          "artifact": "after-click.png",
+          "capture": {
+            "sha256": "81bb75dd5446aa362218704475b9c197dde237af61e9054f7546475f8208fdaf",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 335090,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 6,
+          "claim": "v29.4: the GAME MENU is MOVEABLE — a real title-strip mouse drag streamed move: deltas through the new wiring route and the panel snapped to (0.5, 2.0, -2.0)",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED: the panel renders up-left of its original right-edge spot after the drag (logcat: DEBUG_CMD cmd=move:... walking the pos, then panel SNAPPED to (0.5, 2.0, -2.0)); bridge log grab panel -> placed panel -> snapped to grid.",
+          "artifact": "panel-moved.png",
+          "capture": {
+            "sha256": "f9f0bd90e060d77237ef6a03524d4732c251321c39323b653d09a0a5831c8187",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 282818,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 7,
+          "claim": "[fleet_build unattended] 2+ foreground objects render for target 'lane'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1181 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "b6b82d63cd304e69c176d76e7d3d4789a93caef67cf8dfb38c538f9631431b61",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 333417,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 8,
+          "claim": "[fleet_build unattended] 2+ foreground objects render for target 'lane'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.1181 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "b6b82d63cd304e69c176d76e7d3d4789a93caef67cf8dfb38c538f9631431b61",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 333417,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 9,
+          "claim": "v29.5 INDEPENDENT re-proof of the generator lane: fleet_build driven from the INSTALLED npm tarball (installed into a path containing a space and an accent) with projectsRoot pointed at an EMPTY /tmp dir, so no legacy clone could be reused and generation was forced. The built project carries the generator marker in local.properties and contains NO editor-asset module; a 31.7MB APK was produced, installed and launched on emulator-5554. SUPERSEDES seq 2.",
+          "evidenceType": "vision_verified",
+          "attestation": "I looked at the 2160x2158 forward capture: a brown wooden bowling lane on a black backdrop, a black ball resting mid-lane, TEN grey capsule pins racked in a 1-2-3-4 triangle with the head pin nearest the ball, and the GAME MENU panel to the right showing START / PAUSE / RESUME / RESET over a gaze-or-controller hint — the panel served from the packaged assets/menu.bundle.",
+          "artifact": "v295-knockdown-generated-2026-07-28.png",
+          "capture": {
+            "sha256": "b6b82d63cd304e69c176d76e7d3d4789a93caef67cf8dfb38c538f9631431b61",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 333417,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.fleet.ramenlos",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "v27.3 LOS wiring THROUGH the full pipeline: anchorTo.visibleFrom flowed brief->schema->resolveAnchors->baked Kotlin (seenCube baked at the exact solver pose [-0.939,0.2,-0.911]); but the VISIBILITY claim is NOT verified — the color-key scan finds ZERO green pixels in the deterministic forward capture. Root cause: visibleFrom [0,1.2,0] does not match the actual capture camera (which sits nearly on the counter, hiding all near floor-level content); possible secondary: voxel-grid false-clear on the thin counter face",
+          "evidenceType": "structural",
+          "attestation": "Agent LOOKED at the capture and ran a hue-dominance color scan: v26.1 flagship green pillar = 2569 px detected by the same scan; ramenlos seenCube = 0 px. Honest deferral — the LOS solver needs the REAL capture-camera pose as visibleFrom before the visual claim can be made.",
+          "artifact": "ramenlos-v27.3-honest-miss.png",
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "v27.7 capture-camera/frustum follow-up is structurally wired but the visual claim remains UNVERIFIED: fresh 4-marker calibration (f=1535.4px, cx=1097.6, cy=955.3, eyeHeight=1.815m, max residual 13.6px) and independent v26.1 pillar reprojection yielded visibleFrom [0.034,1.896,0.147]; captureFrustum rejected 161 off-frame candidates and baked seenCube at [-0.539,0.2,-2.511], yet the LOOKED capture shows no green cube and the exact stride-2 hue scan found 0 green pixels (reference pillar 2569). The frame is byte-identical to the prior honest miss. A denser minPointsPerCell=2 grid returned no-fit (242 occupied, 18 LOS-blocked), confirming the default grid false-clears thin geometry rather than proving visibility.",
+          "evidenceType": "structural",
+          "attestation": "I looked at the linked 2160x2158 frame. It shows the canonical ramen bar with the brown counter mound filling the near field; no green cube or magenta cube is visibly present.",
+          "artifact": "ramenlos-v27.7-frustum.png",
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "v27.7 FULL-STACK PLACEMENT VERIFIED: the 1.2m pillar placed by occupancy (free) + line-of-sight (visible) + capture-frustum (in-frame) constraints with the DERIVED camera pose [0.034,1.896,0.147] renders VISIBLY beyond the counter (hue scan: 2569 green px at the exact v26.1 reference bbox); the blind-pose short cube stays hidden (5 noise px). Root lesson from two honest misses: the solver needs a VIABLE target — no short floor object visible from the canonical camera exists in this world, and that no-fit answer is correct",
+          "evidenceType": "vision_verified",
+          "attestation": "Agent LOOKED: green pillar section visibly clear beyond the counter mid-right near the R sign, same visual signature as the v26.1 flagship; magenta cube absent (hidden behind counter). Supersedes the two structural entries honest-miss question.",
+          "artifact": "ramenlos-v27.7-fullstack-verified.png",
+          "capture": {
+            "sha256": "2fc4ea61cb3c485eecd8fb7bd0a6142565ab759734711b733fc0dfd7a2d8367e",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 2298801,
+            "format": "png"
+          },
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.fleet.ramenoccupancy",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "v26.1 OCCUPANCY-FROM-GEOMETRY flagship (LOOKED): the occupancy-aware solver pillar (green, 0.35x1.2x0.35m, baked pose [0.761, 0.6, -3.011] via meta.occupancyPath through the FULL fleet pipeline) renders standing in genuinely free floor space beyond the ramen-bar counter; the SAME query solved blind lands at [-0.114, 0.6, -1.436] with 48 occupied voxels inside its volume — inside the UNLABELED counter — and the magenta pillar placed at that blind pose is invisible in the frame, swallowed by the counter geometry (run 1 of this brief had BOTH pillars at the blind pose: no pillar visible anywhere). Closes the v24 honest finding on com.example.affordance seq 1.",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKED at the deterministic forward capture (and a 3x magnified crop): the green pillar is unambiguous — a flat-shaded green primitive with a lighter top face (seen from above, consistent with its 1.2m top below the ~1.5m eye) standing at far-right beyond the brown counter mass, beside the right wall neon R panel, partially occluded by the counter edge in the foreground. No magenta pillar appears anywhere in the frame — the blind pose is inside the counter volume, so the counter mesh swallows it. The world is the seated ramen-bar textured mesh (y+0.776, y180), same framing as the v19 flagship.",
+          "artifact": "ramenoccupancy-v26.1-flagship.png",
+          "capture": {
+            "sha256": "2fc4ea61cb3c485eecd8fb7bd0a6142565ab759734711b733fc0dfd7a2d8367e",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 2298801,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.fleet.stationsemantic",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "[fleet_build unattended] 2+ foreground objects render for target 'screenMarker'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.9966 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "b6330ffb628add71757686dc505bd6c7b7f009c0efa24a72a6c1a1ab0580c844",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 3302825,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "[fleet_build unattended] 2+ foreground objects render for target 'screenMarker'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.9966 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "9e375d57f00c8531936b14cece6d83e02dd6fae45e8c61f5dfc829dd31e66919",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 3619160,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "The semantic anchorTo marker is visibly placed immediately below-right and in front of the accepted display screen bank in the transformed space-station splat, while the blue, green, and red landmark screens remain readable.",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKED at the 2160x2158 rendered frame. It shows the photoreal space-station control wall, the accepted narrow blue/green/red display-screen bank still readable, and a distinct bright-green cube immediately below-right and visibly in front of that bank without covering the labeled screens.",
+          "artifact": "vision-verified.png",
+          "capture": {
+            "sha256": "9e375d57f00c8531936b14cece6d83e02dd6fae45e8c61f5dfc829dd31e66919",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 3619160,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 3,
+          "claim": "[fleet_build unattended] 2+ foreground objects render for target 'screenMarker'",
+          "evidenceType": "auto_judged",
+          "attestation": "auto_judged: objectCount=1, notMostlyBlack=1 (conf 1); measured 3 foreground objects; expected 2..3; coverage 0.9966 (has content)",
+          "artifact": "forward.png",
+          "capture": {
+            "sha256": "71b9cb651c6df75d36436ce34dcaf0ce8534a1bfb9efdecb3e5fa45e2eebed74",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 3619202,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 4,
+          "claim": "Final reviewed fleet path resolves the semantic anchor and visibly places the marker below-right and in front of the accepted display-screen bank without hiding its blue, green, and red screens.",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKED at the final-tree 2160x2158 rerun. The photoreal station control wall is visible; the narrow blue/green/red display bank remains readable; and the bright-green cube appears immediately below-right and visibly in front of that bank without covering the labeled screens.",
+          "artifact": "vision-verified-final-tree.png",
+          "capture": {
+            "sha256": "71b9cb651c6df75d36436ce34dcaf0ce8534a1bfb9efdecb3e5fa45e2eebed74",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 3619202,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
         }
       ]
     },
@@ -1352,6 +2036,372 @@
             "width": 2160,
             "height": 2158,
             "bytes": 86579,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.pico.camerapeek",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "v28.4 injected-pixel end-to-end transport is not proven: the exact webcam1 route and streaming CameraPeek app did not visibly deliver the deterministic nonce/counter frames.",
+          "evidenceType": "structural",
+          "attestation": "Personally inspected: CameraPeek visibly reports STREAMING, but the preview contains the static grayscale emulator room. The VCAM-20260722-7F3A high-contrast card, nonce, color bars, and changing counter are absent. A second capture is byte-identical.",
+          "artifact": "camerapeek-capture-02.png",
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": "d3f6c4869a4804ef95cd80f8a12a5b4c0511b3dfc1c3c5bc2454da02a1751d4f"
+        },
+        {
+          "seq": 1,
+          "claim": "END-TO-END injected-pixel delivery PROVEN: CameraPeek (hand-authored Android CameraX app) in the PICO OS6 emulator with -camera-back webcam1 (mapped to the Immersed Camera source, UUID A1EA3EF8-F9D5-4BA7-827E-A26C1B27BEA2) visibly displays the injected CHANGING card - nonce VCAM-20260724-9K2D, previewStreamState STREAMING, two visibly different counters (FRAME 000003 and 000001) across the capture sequence, matching the host source frames. Resolves the v28.4 negative: the earlier bedroom-scene fallback was because qemu's responsible app (VS Code) lacked macOS camera authorization; once granted, qemu acquires the Immersed webcam and the injected card reaches the app.",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKed at cap-00.png (FRAME 000003) and cap-04.png (FRAME 000001); both show the CameraPeek panel with previewStreamState STREAMING, the PICO VCAM color-bar card, the exact nonce VCAM-20260724-9K2D, and different counters. Camera ID 10 open by com.pico.camerapeek PID 4955. The source updates slowly, so counters change over seconds, not per frame; 4 distinct captures over ~25s.",
+          "artifact": "vcam-v29.1-cameapeek-endtoend.png",
+          "capture": {
+            "sha256": "9ce323e6db61b287cd157a9e5cb82057bb55a300551544278123adfdd683f6ce",
+            "width": 1836,
+            "height": 967,
+            "bytes": 797476,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.picoagent.hellounity",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "v30 Unity lane E2E: a windowed Unity app (unity_scaffold_project -> unity_build_apk, packaged skeleton, no template) composites as a floating panel on the PICO OS 6 emulator with correct colors, and a DEBUG_CMD color:red visibly recolored the cube",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED: the Unity panel floats over the bedroom showing cyan sky, white floor, RED cube (ships magenta — red IS the color:red drive effect), yellow sphere, green capsule; cube frozen mid-rotation by spin:off. Earlier capture (hellounity-rendering.png) showed the pre-fix InternalErrorShader magenta silhouettes — the scene-referenced material asset fix produced this correctly-colored frame.",
+          "artifact": "hellounity-focused.png",
+          "capture": {
+            "sha256": "e587f06bf35eb6bf2c2bb0b4dfaa9fbe076dce5295e249c7e2c82d78d957550e",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 3343838,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "v30 Unity lane drive contract: adb DEBUG_CMD broadcast -> Plugins/Android Java receiver -> UnitySendMessage -> C# dispatch (ping->pong, color:, spin:); the shell keeps an UNFOCUSED panel activity paused, so commands queue at the Java receiver and drain when the panel gains focus",
+          "evidenceType": "structural",
+          "attestation": "PID-scoped logcat: PicoAgent (Java) logged every broadcast immediately (21:05:44 ping/color:red/spin:off) while Unity C# logged nothing until an input tap focused the panel (21:06:38) — then the queue drained in order: cmd=ping/pong, cmd=color:red, cmd=spin:off, cmd=ping/pong. Same mechanism explains the ~61s launch-to-first-frame latency observed on both launches.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.picoagent.mrtable",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "A TEXTURED MESH TABLE placed in MR in the emulator's default home environment, seated on the REAL detected FLOOR plane in a Mixed stage — mesh from a Meshy-generated GLB baked to a .bundle, plus a queryable box collider",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED at the emulator view: a wooden table with visible wood-grain TEXTURE on its top stands on the bedroom floor, its four legs reaching the grey rug, with the real home environment all around it - bed and platform at left, alcove shelving with pottery, framed art, arched door, blinded window, potted plants, wooden cabinet at right. It reads as furniture in the room, not a floating panel. Placement came from scene understanding: 43 detected planes, FLOOR/HORIZONTAL_UPWARD bbox 4.92x2.90m, table seated at that plane's centre and height.",
+          "artifact": "mrtable-final.png",
+          "capture": {
+            "sha256": "07a090500963a8d4db23a0a7c752ffdfdb535563d0e6d8a4ee45a60ff8b9198a",
+            "width": 1100,
+            "height": 1099,
+            "bytes": 1613011,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "The table's collider is QUERYABLE (not merely attached): a ray dropped from 2m above the table hits the tabletop surface with an upward normal",
+          "evidenceType": "structural",
+          "attestation": "DEBUG_CMD raycast -> logcat: 'raycast HIT pos=(-0.89,1.23,-3.54) normal=(0.0,1.0,0.0) dist=1.58'. Ray origin was 2m above the table origin (y=2.81); 2.81-1.58=1.23 = the tabletop height (centre 0.81 + half the measured 0.8373m bbox). Normal (0,1,0) is the up-facing surface. PhysicsWorldComponent on the scene root + a PRIMITIVE box collider (mesh/convex colliders do not register on PICO).",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "REAL PHYSICS on the MR table: dynamic bodies dropped from different heights come to rest exactly on the Meshy table's box collider, in the emulator home environment",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED: two blue spheres and a white cube sit ON the wooden tabletop, table legs on the rug, bedroom around it. Numeric proof from dump_scene: tabletop surface y=1.2379 (collider centre 1.1879 + half-slab 0.05); spawned at +0.7/+1.0/+0.85m above, all settled to contact - Ball0 y=1.3579 and Ball1 y=1.3579 (radius 0.12 => 1.2379), Cube0 y=1.33796 (half-extent 0.1 => 1.23796).",
+          "artifact": "mrtable-physics.png",
+          "capture": {
+            "sha256": "ea760a8d6a39b29475da2d899b68a0ec37f33063fc4f37c9da4b172815ca37ce",
+            "width": 1100,
+            "height": 1099,
+            "bytes": 1668029,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 3,
+          "claim": "3D DATA TABLETOP: a live market visualisation standing on a real MR table in the emulator home environment, driven by a REALTIME data stream the app itself pulls (Kraken public ticker) - six columns whose height auto-scales to the biggest mover and whose colour shows direction",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED: a dark plinth sits on the wooden Meshy table; six glowing columns rise from it with green/red status tiles beneath, the tallest being the session's biggest mover. The bedroom is all around - bed, art, alcove shelving, plants, lamp, rug. Column heights and colours match the tick logged seconds earlier (BTC+1.04% ETH-0.33% SOL+0.33% ADA+1.46% DOT+0.2% LINK-0.36%): ADA tallest, ETH and LINK red.",
+          "artifact": "datatop-hero.png",
+          "capture": {
+            "sha256": "b7654aac02789719499fe5105a5d4b4eaabefcb7d4aa34583515bd8b1b2a6844",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 4225255,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 4,
+          "claim": "The tabletop's live-text panel streams real market values in the shared space (3D text does not exist in this SDK, so numbers live on a Compose panel activity)",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED: a LIVE MARKET spatial panel showing BTC/USD $64,447.50 +0.94%, ETH/USD $1,912.26 -0.39%, TICKS 8. The TICKS counter (8, later 14) proves a running stream rather than a one-shot snapshot; values changed across captures ($64,447.50 -> $64,470.80 -> $64,495.00).",
+          "artifact": "datatop-final.png",
+          "capture": {
+            "sha256": "048015a2215811d5607ea317bb4a9e97feed7e4450f470bb861d2b33add34981",
+            "width": 1100,
+            "height": 1099,
+            "bytes": 1159417,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 5,
+          "claim": "The emulator app has real outbound internet: it polls https://api.kraken.com every 5s from inside the guest and drives the scene from the response",
+          "evidenceType": "structural",
+          "attestation": "logcat: 'MARKET| stream started (https://api.kraken.com/0/public/Ticker?pair=XBTUSD,ETHUSD,SOLUSD,ADAUSD,DOTUSD,LINKUSD, every 5000ms)' then per-tick lines e.g. 'MARKET| tick#1 BTC=64475.1(0.99%) ETH=1914.49(-0.28%)...' with values changing between ticks. HTTP on Dispatchers.IO, applied to the ECS on Main.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 6,
+          "claim": "GOTCHA (fixed): rebuilding meshes+materials per tick ANR'd the app; the correct ECS tick path is one mesh scaled via TransformComponent.setScaleVector plus mutation of a retained material",
+          "evidenceType": "structural",
+          "attestation": "First data build recreated 12 MeshResource+Material objects every 5s on the main thread and never released them: the emulator showed a system 'MR Table isn't responding' dialog and the HUD panel rendered labels with no values (LOOKed). After switching to a unit-height mesh + setScaleVector + retained material mutation, 0 ANRs across many ticks and values render.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 7,
+          "claim": "POLISHED WEB SPATIAL PANEL: an HTML/CSS 'MARKET DESK' dashboard composited as a spatial panel beside the MR table, rendering the same live Kraken feed as the 3D columns and carrying the table-placement controls",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED: a dark glass dashboard headed MARKET DESK / KRAKEN·SPOT with a pulsing green LIVE dot; rows for BTC $64,353.60 +0.80%, ETH $1,908.14 -0.61%, SOL $73.79 +0.09%, ADA $0.16 +1.25%, DOT $0.76 -0.20% with centre-anchored diverging bars (green right = up, red left = down); a TABLE PLACEMENT control cluster (Left/Right/Away/Near/Rotate 15/Re-seat on floor/Drop objects). Footer reads 'ticks 11  table (0.25, -2.46) yaw 15.0' - native table state rendered back into the web panel. The wooden table is visible through the translucent panel.",
+          "artifact": "webdesk-1.png",
+          "capture": {
+            "sha256": "cde19ae76e0968e68da79aa478950a7e76fc640dc72c4cee2f9969d566f4ca79",
+            "width": 1100,
+            "height": 1099,
+            "bytes": 1464500,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 8,
+          "claim": "The web panel DRIVES the native 3D scene: clicking its HTML button runs Native.send -> dispatchDebugCommand and spawns physics bodies on the table",
+          "evidenceType": "structural",
+          "attestation": "Clicked via DevTools on the real element (WebView debugging enabled): CDP returned 'clicked:⬇ Drop objects on table'; logcat then showed 'DEBUG_CMD cmd=drop arg=0' followed by 'MRTABLE| drop: 3 dynamic bodies spawned above tabletop y=1.23'. Note adb 'input tap' does NOT reach spatial panels (composited in 3D) - a real user taps through the emulator window; CDP exercises the identical onclick->bridge path.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 9,
+          "claim": "TABLE PLACEMENT: the table can be moved and rotated at runtime and always RE-SEATS to the detected floor height, with its collider and the whole data visualisation travelling with it",
+          "evidenceType": "structural",
+          "attestation": "Commands driven in sequence, logcat: 'table (0.25, -2.21) yaw 0.0 floorY=0.4' -> 'table (0.25, -2.21) yaw 15.0' -> 'table (0.25, -2.46) yaw 15.0' -> 're-seated on detected floor y=0.4'. y is always re-derived from the detected FLOOR plane rather than from wherever a move left it; a single applyTablePose() writes mesh + collider together so they cannot drift apart; the DataTabletop viz is parented to the table entity so it moves as one instrument.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 10,
+          "claim": "The MR data tabletop survives a COLD emulator restart and re-derives its own placement: after a fresh boot it re-detected the room, re-seated on the FLOOR plane, and resumed the live market stream",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED after a cold emulator restart: the wooden table stands on the bedroom floor carrying the dark plinth and six live columns (tall green, short pink, colour by direction), bed/art/alcove/plants around it. Logs from the same launch: 'planes=40 (after 7 retries)', 'floor=FLOOR/HORIZONTAL_UPWARD rawY=0.4 convY=0.4 bbox=(4.92,2.9)', 'table placed at y=0.81', and DATATOP applying fresh Kraken quotes. Nothing was hardcoded across the restart - the room was re-measured.",
+          "artifact": "fresh-tabletop2.png",
+          "capture": {
+            "sha256": "7eeab4004dd541abaf69423d80e054e9b3879a942db85e00b9326b0c80173145",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 4183495,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 11,
+          "claim": "The MARKET DESK web spatial panel runs with LIVE data in the user's NEW home environment, and reflects the table's live pose back into its footer",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED in the new open apartment (herringbone floor, white walls, track lighting, framed art): the MARKET DESK panel renders BTC $63,850.00 +0.01%, ETH $1,903.13 -0.87%, SOL $73.37 -0.47%, ADA -0.15%, DOT +0.07% with diverging bars and a pulsing LIVE dot, plus the TABLE PLACEMENT controls. Footer reads 'ticks 111  table (1.8, 0.63) yaw 0.0' - the tick counter proves a running stream and the coordinates match the move command sent seconds earlier.",
+          "artifact": "newenv-table2.png",
+          "capture": {
+            "sha256": "ced421eeff7c34e55d12d3e5e41ba20c3e8eeb6b59e72fbf01ba1735ca1a6411",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 1845019,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 12,
+          "claim": "MOUSE-DRAG table placement works: a real left-drag on the emulator slides the table and dropping it RE-SEATS it onto the newly detected floor of a DIFFERENT home environment",
+          "evidenceType": "structural",
+          "attestation": "tools/table_drag_bridge.py (listen-only Quartz event tap, coalesced sender) translated a real cliclick drag into streamed table:move commands then table:reseat on release. Logcat: 'table (2.61,-0.51)' -> 'table (2.78,-0.51)' -> 're-seated on detected floor y=0.15', and a second drag 'table (3.0,-0.4)' -> re-seat. The floor height 0.15 was re-measured in the user's NEW environment (79 planes, FLOOR bbox 6.55x4.36) - nothing carried over from the old room's 0.40.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 13,
+          "claim": "The table's position is now clamped into the detected floor plane's rectangle, so a drag cannot walk it out of the room. Before the clamp it had accumulated to z=36.48 m — 36 metres away and invisible — because every drag of the MARKET DESK panel also reached the mouse bridge and slid the table. The drag bridge now requires Option by default so a bare panel drag no longer moves the table.",
+          "evidenceType": "logcat",
+          "attestation": "Broadcast 'table:move:0,50' (a deliberate 50 m fling) produced 'MRTABLE| table (1.82, 1.26) yaw 0.0 floorY=0.15' — clamped to the floor edge instead of 50 m. The 36.48 m figure is read from the user's own screenshot footer 'ticks 397  table (4.76, 36.48) yaw 0.0'.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 14,
+          "claim": "Option+left-drag on the host mouse moves the table and drops it anchored to the detected floor, end to end. A synthetic Option-drag of +112 px moved the table exactly 0.616 m (112 x 0.0055 m/px) and the release re-derived y from the FLOOR plane.",
+          "evidenceType": "logcat",
+          "attestation": "Bridge log: 'grabbed the table - slide it' then 'dropped -> anchored to the detected floor'. App log: 'MRTABLE| table (0.61, -1.74) yaw 0.0 floorY=0.15' followed by 'MRTABLE| re-seated on detected floor y=0.15'. Table x went 0.00 -> 0.61 for a 112 px drag.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 15,
+          "claim": "A 2D panel activity cannot be launched with `adb shell am start` while the app's Stage holds Full Space — the shell request has no owning container. It must be started from the app's own context. This is a launch-path constraint, not a bug in the panel.",
+          "evidenceType": "logcat",
+          "attestation": "`am start -n com.picoagent.mrtable/.WebControlPanelActivity` from uid 2000: 'ActivityTaskManager: START ... result code=-92' and 'ContainerManager: handleOpenRequestResult callback null'; no panel appeared in the window capture. The same activity started from inside the app via a DEBUG_CMD ('panel:open' -> ctx.startActivity) was accepted: 'WorldSpace: WorldSpaceDB, syncSpaceDetailToClient: ... container_id: 11, task_id: 22, intent ... WebControlPanelActivity' and the panel rendered.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.picoagent.pxrvr",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "Unity VR built with the PICO Unity INTEGRATION SDK (PXR_Loader, com.unity.xr.picoxr 3.4.0 @c93a59b) renders FULL-IMMERSIVE on PICO emulator 0.13.1 — the home environment is replaced by the Unity scene",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED at the emulator host window: the entire view is the Unity scene — cyan clear filling the display, white floor to the horizon, magenta cube, yellow sphere, green capsule. No bedroom, no panel, no frame. PXR runtime logged 60/60 FPS, LayerCnt=1, PXR_Loader active. THE SAME MOMENT via adb screencap was pure black (/tmp/pico-render/pxrvr-immersive.png).",
+          "artifact": "pxrvr-gui.png",
+          "capture": {
+            "sha256": "fe66fa6865c4b8e932309de29b0d55c468de21bbb220778023686ae40ba99745",
+            "width": 1804,
+            "height": 1860,
+            "bytes": 138228,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.picospatial.helloopenxr",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "Unity PICO OpenXR APK boots into a focused, frame-submitting session on emulator 0.13.1 / PICO OS 6.0",
+          "evidenceType": "structural",
+          "attestation": "Fresh verify_pico_apk returned status=ok: installed, launched, PID 24712 alive, no FATAL/ANR, and the expected Unity status log. Same-launch logcat tied to PID 24712 shows UNKNOWN→IDLE→READY→SYNCHRONIZED→VISIBLE→FOCUSED, xrDeviceActive/displayRunning true, renderPasses=1, advancing beforeRender/frame counters, and PxrMetric 60/60 with LayerCnt 2 then 1.",
+          "artifact": "unity-openxr-verifyapk.png",
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": "141c974b18dd71625bce3d9c0293c87485ae186cab3b7b96d0f9a349229541bc"
+        },
+        {
+          "seq": 1,
+          "claim": "Unity immersive projection does not composite into the emulator 0.13.1 / PICO OS 6.0 forward capture",
+          "evidenceType": "structural",
+          "attestation": "I LOOKED at three 2160×2158 captures across the original focused run and a fresh verify_pico_apk run. They are byte-identical (SHA-256 5cf4d98756168e8d98e61e02e8449d16bc389960af062f938762ac35d9adc060) and uniformly black; none of the deliberately loud cyan, magenta, yellow, or green scene is visible. This is a negative emulator-boundary finding, not a vision_verified scene-success claim.",
+          "artifact": "unity-openxr-verifyapk.png",
+          "capture": null,
+          "cClass": "C4_headset_only",
+          "deviceSerial": null,
+          "reproHash": "141c974b18dd71625bce3d9c0293c87485ae186cab3b7b96d0f9a349229541bc"
+        },
+        {
+          "seq": 2,
+          "claim": "Scope correction: the black Unity captures prove intended immersive pixels are absent, not which render stage failed",
+          "evidenceType": "structural",
+          "attestation": "Independent review correctly narrowed the causal claim. The focused session, advancing frames, submitted layer telemetry, and uniformly black looked captures reproduce the black-output symptom, but do not distinguish failed compositor promotion from an earlier Unity camera or render-target failure. No Unity scene success is vision_verified.",
+          "artifact": "unity-openxr-verifyapk.png",
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": "141c974b18dd71625bce3d9c0293c87485ae186cab3b7b96d0f9a349229541bc"
+        },
+        {
+          "seq": 3,
+          "claim": "CORRECTION of the 2026-07-22 settling test: Unity + the PICO OpenXR SDK DOES composite full-immersive on emulator 0.13.1 — the July 22 black captures were an adb-screencap artifact, not a compositor failure",
+          "evidenceType": "vision_verified",
+          "attestation": "LOOKED at the emulator host window with the sha-pinned July 22 APK (141c974b...) running: the intended scene is fully visible and immersive — blue/cyan clear, magenta cube, yellow sphere, green capsule, white floor, dark red bar overhead, checker geometry behind. adb screencap at the same moment: uniformly black (/tmp/pico-render/openxr-adb-black.png). Runtime logged 60/60 FPS LayerCnt=1.",
+          "artifact": "openxr-gui.png",
+          "capture": {
+            "sha256": "1e263e7143b2e72d11124995aabf5348a561e6a06356ae8267181cebd10cbf82",
+            "width": 1804,
+            "height": 1860,
+            "bytes": 399881,
             "format": "png"
           },
           "cClass": "C0_emulator",
@@ -1388,6 +2438,121 @@
           "artifact": null,
           "capture": null,
           "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "com.vranywhere.cliproof",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "Cross-toolchain interop: a pico-cli 0.3.0 project-create stage-template app (SDK BOM 0.13.3) builds with gradle and renders its Hello Spatial SDK panel on the emulator via verify_pico_apk",
+          "evidenceType": "vision_verified",
+          "attestation": "Agent LOOKED: emulator home environment (living room, wall TV, shelf with vase) with the white Hello, Spatial SDK! panel floating centered — the stage template's hello content, process alive, no crash. Caveats: raw gradlew needed JAVA_HOME/ANDROID_HOME exported (the MCP injects these; the CLI project does not self-locate them), and the first verify_pico_apk run hit the full-space incumbent block (current full space dont allow start fullscreen) which verify_pico_apk does not auto-recover — fleet_build does",
+          "artifact": "com.vranywhere.cliproof.png",
+          "capture": {
+            "sha256": "a80acd15bc572d0bc03b8d94b17205d9bbeb889c2a6a4d277696c6b0d8395aba",
+            "width": 2160,
+            "height": 2158,
+            "bytes": 2150734,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "emulator-scene-understanding",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "REFUTES this repo's C1 ceiling. A PICO Spatial SDK app in Full Space (an OPEN Stage) receives 43 real planes from the emulator's MR simulation, with semantics BED / WALL / CEILING / CABINET / UNKNOWN, orientations HORIZONTAL_UPWARD / HORIZONTAL_DOWNWARD / VERTICAL, per-plane bounding boxes in metres and 4 vertices each. PlaneTrackingManager.state went PAUSED then RUNNING, and loadAllAnchors() returned 43 within one second of start().",
+          "evidenceType": "logcat",
+          "attestation": "logcat from com.fleet.stationsemantic pid 3838: 'PROBE attempt=0 planeState=RUNNING planes=43 meshes=0', followed by per-plane lines e.g. 'plane[0] semantics=BED orient=HORIZONTAL_UPWARD bbox=Vector2(x=1.39715, y=1.32805) verts=4' and 'plane[3] semantics=CEILING orient=HORIZONTAL_DOWNWARD bbox=Vector2(x=0.46005008, y=2.3424) verts=4'.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "The missing ingredient was FULL SPACE, not sensor data. PICO's plane-detection doc lists exactly one prerequisite: 'The app is in Full Space state', which means the app holds an OPEN Stage. The prior 2026-06-14 finding recorded in src/sense.ts ('state=RUNNING but loadAllAnchors()=0') is therefore explained by querying outside Full Space rather than by the emulator lacking a data source. The emulator ships VST simulation (the bedroom IS the passthrough background) and Spatial Mesh simulation by PICO's own documentation.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "UNRESOLVED: MeshTrackingManager.loadAllAnchors() returned 0 in the same Full Space probe, with no error logged, while planes returned 43. The emulator MR server was observed publishing 48 meshes at the service layer, so the mesh path may need scanning to have occurred, an LOD/config step, or a different start call. Not investigated. Do not claim mesh data works on the emulator.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 3,
+          "claim": "HIT TESTING WORKS against the emulator's home-environment surfaces. Bounded ray-vs-plane tests from a nominal eye point returned CEILING/HORIZONTAL_DOWNWARD at 2.193 m, FLOOR/HORIZONTAL_UPWARD at 1.099 m, and WALL/VERTICAL on 5 of 6 rays aimed at wall centres (1.209 m to 5.253 m). Nearest-hit ordering is correct: a ray aimed at one wall returned a nearer horizontal surface instead, which is proper occlusion.",
+          "evidenceType": "logcat",
+          "attestation": "logcat com.fleet.stationsemantic: 'HITTEST UP -> CEILING/HORIZONTAL_DOWNWARD at Vector3(x=0.0, y=3.6928, z=0.0) dist=2.193'; 'HITTEST DOWN -> FLOOR/HORIZONTAL_UPWARD dist=1.099'; 'AIMED wall[1] -> HIT WALL/VERTICAL dist=4.088'; 'AIMED SUMMARY: 5 wall hits when aimed at wall centres'.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 4,
+          "claim": "OCCLUSION GEOMETRY IS AVAILABLE: 42 mesh anchors with real triangle data reach a Full Space app, e.g. 1493 verts / 6261 indices labelled CABINET, 5304 verts / 11094 indices, 240 verts labelled LAMP, each with a Vector3 bounding box and world transform. This supersedes the earlier 0-mesh reading.",
+          "evidenceType": "logcat",
+          "attestation": "logcat: 'PROBE MESH RESULT: 42 mesh anchors — occlusion geometry IS available'; 'MESH[2] verts=1493 idx=6261 bbox=Vector3(x=1.0648, y=0.2644, z=2.5349) sem=[CABINET x4] pos=Vector3(x=-3.7857, y=0.6551, z=-2.3878)'.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 5,
+          "claim": "ROOT CAUSE of the earlier 0-mesh result: MeshTrackingManager requires subscribeAnchorUpdate BEFORE start(). PICO's Spatial Mesh doc states it plainly — 'You need to subscribe to the mesh anchor's AnchorUpdate event before the start function can push update data.' The first probe called start() with no subscription and got 0. With the subscription first, 42 anchors arrived after roughly 7 seconds.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 6,
+          "claim": "MEASURED COORDINATE FACTS for plane hit-testing, recorded so nobody re-derives them. PlaneAnchor.vertices are LOCAL to the anchor, not world. A plane's local quad lies in the XZ plane (every vertex has y == 0), so the plane NORMAL is local +Y — NOT forward. An earlier version of this hit test used FORWARD and consequently reported a horizontal ray hitting the FLOOR, which was a real bug. Observed vertices sit at exactly +/-boundingBoxSize, so that field behaves as a HALF-extent here; deriving bounds from the vertices avoids depending on that.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 7,
+          "claim": "CAVEAT for anyone building on this: WALL planes are small SEGMENTS, not whole wall surfaces — observed sizes include 1.687 x 0.847, 0.825 x 0.214 and 1.189 x 0.124 m, with 15 WALL planes in the room. A blind horizontal ray sweep at fixed eye height hit nothing across all 12 compass bearings, purely because rays passed between segments. Do not conclude from a missed ray that hit-testing is broken; aim at geometry or use the meshes.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
           "deviceSerial": null,
           "reproHash": null
         }
@@ -1742,6 +2907,38 @@
       ]
     },
     {
+      "app": "pico-emulator-capture-paths",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "CAPTURE-PATH RULE (measured 2026-07-29): adb screencap captures the SHELL composite (home env, 2D panels, native Spatial SDK apps) but returns BLACK for XR-runtime immersive apps (Unity OpenXR and Unity Integration SDK alike); the emulator host window (gui_capture) shows them correctly",
+          "evidenceType": "structural",
+          "attestation": "Three same-session comparisons on emulator 0.13.1: com.fleet.knockdown (native Spatial SDK) -> adb screencap SHOWS the lane; com.picoagent.pxrvr (Unity PXR) -> adb black, host window shows the scene; com.picospatial.helloopenxr (Unity OpenXR) -> adb black, host window shows the scene. The distinguishing factor is the rendering route (spatial engine vs XR runtime), not the app or the SDK.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "pico-emulator-scene-understanding",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "Emulator plane semantics are RICHER than previously recorded (FLOOR, TABLE, CHAIR, DOOR, WINDOW all emitted), and a one-shot query right after PlaneTrackingManager.start() returns 0 - Full Space entry must finish first",
+          "evidenceType": "logcat",
+          "attestation": "43 planes logged with per-plane semantics/orientation/position/bbox. Beyond the previously recorded BED/WALL/CEILING/CABINET/UNKNOWN set: FLOOR (bbox 4.92x2.90 at y=0.40), TABLE, CHAIR, DOOR, WINDOW. The first query returned planes=0 at 45ms after 'plane tracking RUNNING' while logcat showed 'enter fullSpace animation start'; polling reached 43 planes after 4 one-second retries.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
       "app": "pico-spatial-mcp",
       "claims": [
         {
@@ -1876,6 +3073,28 @@
           "cClass": null,
           "deviceSerial": null,
           "reproHash": null
+        },
+        {
+          "seq": 11,
+          "claim": "generate_surface_placement_kotlin (v30.2) emits Kotlin that COMPILES against the real SDK in a real project - the MR seating recipe is now a reusable capability, not a hand-written one-off",
+          "evidenceType": "structural",
+          "attestation": "Generated TablePlacement.kt for the real mrtable app (bundle asset://table.bundle, model Meshy_AI_a_table_0729105533_texture, semantic FLOOR, measured bbox 2.0035x0.8373x1.3509, origin centre, boxTop collider) and ./gradlew :app:assembleDebug returned BUILD SUCCESSFUL with it in the source set. test:surfaceplace (20 asserts) gates the five silent traps and runs the emitted Kotlin through this repo's own retained-lessons lint (0 errors). Cold-boot evidence strengthened the polling design: a fresh emulator needed 7 one-second retries for planes vs 4 on a warm one.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 12,
+          "claim": "PLANE ORIENTATION IS NOT PORTABLE ACROSS HOME ENVIRONMENTS: one PICO room reports FLOOR as HORIZONTAL_UPWARD, another reports FLOOR as HORIZONTAL_DOWNWARD with CEILING as HORIZONTAL_UPWARD — so an orientation filter picks the CEILING in the second room",
+          "evidenceType": "logcat",
+          "attestation": "Room A (bedroom): 'plane[33] sem=FLOOR orient=HORIZONTAL_UPWARD pos=(1.14,0.40,-1.87) bbox=(4.92,2.90)'. Room B (open apartment): 'plane[8] sem=FLOOR orient=HORIZONTAL_DOWNWARD pos=(1.95,0.15,-0.37) bbox=(6.55,4.36)' while 'sem=CEILING orient=HORIZONTAL_UPWARD' at y=3.18 and y=2.80. generate_surface_placement_kotlin's fallback was changed from orientation-based to HEIGHT-based (lowest large horizontal plane for FLOOR, highest for CEILING) and test:surfaceplace now gates it.",
+          "artifact": null,
+          "capture": null,
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
         }
       ]
     },
@@ -1974,6 +3193,198 @@
       ]
     },
     {
+      "app": "unity-on-pico",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "THE COMPOSITOR WALL DOES NOT APPLY TO PICO UNITY SDK 0.13.1 IN SPATIAL MODE. The SDK forks on an explicit AppMode enum: XR ('Rendering by Unity Engine') is the same OpenXR-ish path that failed three times, while Spatial ('Rendering by PICO System', PICO_MS_SDK) creates NO display subsystem at all — so there is no OpenXR projection layer to be denied promotion. Four independent lines of evidence: Spatial/UnitySubsystemsManifest.json declares only inputs and meshings with no displays key; PXR_Loader's PICO_MS_SDK branch creates only input/hands/session/anchor/mesh subsystems and returns true without a display; libStagePlatform.so exports 24 Pmp_* symbols with ZERO swapchain/frame/layer/render symbols; and content is handed over as scene data via SpatialAdapterRuntime.SyncMesh with glTF and USD as its dependencies. Unity renders nothing and submits nothing; the PICO system compositor renders exported scene content — the same compositor this repo has vision-verified many times.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "BLOCKED ON A DISTRIBUTION GAP, NOT A TECHNICAL ONE. The supplied PICO-Unity-SDK-0.13.1-Preview.zip contains ONLY the XR/ package (com.bytedance.pico.xr 0.13.1). Spatial mode additionally requires three packages that are absent: com.bytedance.pico.spatialadapter, com.plattar.unitygltf, and com.unity.formats.usd. PXR_Utils.GetRootPackageDirectory() walks one level up expecting a parent folder containing XR/ AND SpatialAdapter/ side by side; we received only XR/. Verified by grep over the archive listing: zero matches for spatialadapter, unitygltf or formats.usd. Spatial mode therefore cannot be enabled from this zip, and only AppMode.XR — the known-black path — is reachable.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "THE HANDOFF SEAM ALREADY WORKS. verify_pico_apk was written for exactly this cross-builder case and was exercised end-to-end against the prior Unity APK: installed=true, launched=true, processAlive=false, crashed=false, plus a 2D capture and an explicit captureWarning that the pixels cannot be attributed to the app because its process is not alive. It claimed nothing it had not established. ~90% of the existing Kotlin loop is already builder-agnostic because it consumes only an APK and a PNG, so the Unity lane needs roughly five new tools rather than a second copy of the pipeline.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 3,
+          "claim": "TOOLCHAIN RISKS to check before building. (1) The SDK's Android native libraries are arm64-v8a ONLY, with no x86_64 anywhere — fine for this emulator, which is qemu-system-aarch64, but fatal on an x86_64 image. (2) Version guidance is self-contradictory: package.json requires Unity 2022.3.15f1 minimum, PXR_ProjectValidationRequired says 'from minUnityVersion to Unity 6', but PXR_PortalEditor.cs:689 states 'Supported Unity Version: 2022.3.23f, version above this aren't supported.' Installed locally are 6000.4.9f1 and 6000.5.3f1 — above that stated ceiling, though UNITY_6000_3_OR_NEWER branches exist in the code. (3) PXR_Plugin.cs hardcodes PXR_SDK_Version '0.13.0' while package.json says 0.13.1. (4) The bundled README is stale — it is verbatim the PICO Unity Integration SDK 3.2.0 changelog.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "vcam-from-app-ramenlos",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "virtual_camera_from_app pairs a foreground-verified com.fleet.ramenlos adb display capture with a host-synthetic world-model frame from an explicitly assumed comparison pose; broad room structure corresponds, but the views are not pixel-aligned or camera-HAL evidence",
+          "evidenceType": "usd_host_render",
+          "attestation": "LOOKed at emulator, synthetic, and composed frames. Both sides show cyan wall signs flanking a forward shelf/wall region. The emulator side is dominated by a large brown counter mound and torn black ceiling; the synthetic side exposes shelf contents, lanterns, and ceiling, so correspondence is broad only. Pose is assumed (derived position, calibrated yaw 0/pitch +20), not a measured live head pose, and this does not prove camera HAL access.",
+          "artifact": "vcam-from-app-ramenlos-v28.0.png",
+          "capture": {
+            "sha256": "807809587d2f69965b0005adceddb861b798e483e8f7c585b92cae18e3b5d8cd",
+            "width": 2224,
+            "height": 1152,
+            "bytes": 11605924,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "vcam-hostsource",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "HOST source-read ONLY (not emulator/CameraPeek/guest delivery): a host AVFoundation client reading the Immersed Camera SOURCE (uniqueID A1EA3EF8-F9D5-4BA7-827E-A26C1B27BEA2) captured the injected CHANGING card - nonce VCAM-20260724-9K2D, two visibly different counters 000000 and 000001, byte-identical to the injected source frames. Proves Immersed sink->source publication of injected pixels reaches a host client; does NOT prove qemu/guest delivery.",
+          "evidenceType": "vision_verified",
+          "attestation": "I LOOKed at avf-frame-000.png (FRAME 000000) and avf-frame-019.png (FRAME 000001); both show the PICO VCAM card, the exact nonce VCAM-20260724-9K2D, and the counter panel, matching the injected source byte-for-byte (raw SHA-256 d1c40aec and 2d4d0e13). The source updates slowly: a 15s read yielded 2 distinct counters, while a 217ms read froze on counter 000002.",
+          "artifact": "vcam-v29.1-hostsource-changing.png",
+          "capture": {
+            "sha256": "c76ff46f5d0ac5490f9280892579de12516866c8dd4a70f9f484a235a53eb1aa",
+            "width": 2596,
+            "height": 784,
+            "bytes": 13987,
+            "format": "png"
+          },
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "vcam-ramen",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "virtual_camera_frame at app position [0.034,1.896,0.147], calibrated intrinsics, and explicit +20° pitch reproduces the ramen room's broad left/right-sign and forward-shelf framing relative to the v27.7 emulator baseline, with material/occlusion mismatches stated",
+          "evidenceType": "usd_host_render",
+          "attestation": "LOOKED at the 2192x1128 side-by-side. Both frames show the cyan wall signs on opposite sides and the same forward ramen-bar corridor/shelf structure. The synthetic point render exposes substantially more ceiling and lower shelf; the emulator textured-mesh capture has a dark/torn ceiling and a large brown counter mound obscuring most of the lower half. This is broad framing correspondence only, not pixel alignment or photoreal equivalence. The initial 0° synthetic frame was a clear vertical/occlusion mismatch; the linked comparison uses an explicit +20° pitch selected after LOOKING at 10°/20°/30° variants.",
+          "artifact": "vcam-ramen-v28.0-side-by-side.png",
+          "capture": {
+            "sha256": "2abaefb2518b1aeda6bbba7c891a2d5ca9f51f8ac6145ad6be514a2ff7de96fa",
+            "width": 2192,
+            "height": 1128,
+            "bytes": 11592682,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
+      "app": "vcam-worldframe",
+      "claims": [
+        {
+          "seq": 0,
+          "claim": "Task 6 cadence: the ~1 Hz injected-image rate was our own kTicksPerSourceFrame=60, not the Immersed source. At ticks=60 injectedImageHz=1.01; at ticks=1 it rose to 30.00, the backpressure ceiling. Immersed republished at a dead-steady observedSourceHz=30.00 in BOTH cells, reproducing the v29.1 artifact measurement.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 1,
+          "claim": "Task 6 NEW HAZARD: at --ticks-per-source-frame 1 the maxInFlight=1 gate admits only every other scheduled tick, so enqueued frame indices acquire fixed even parity — measured {0:109, 2:108}, never 1 or 3. With an even-length frame loop exactly half the frames can never reach the sink. Validates running the emulator round at the default ticks=60, where all four indices were delivered.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 2,
+          "claim": "Task 6 UNRESOLVED: the reader reported dropped=0 in both cells, but alwaysDiscardsLateVideoFrames=NO queues late frames rather than dropping them, so this is not evidence of a clean capture. Whether didDropSampleBuffer ever fires against real AVFoundation remains unmeasured.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 3,
+          "claim": "A rendered fixed-pose scanned-room frame, carrying provenance and a run-unique nonce, reaches an in-emulator CameraX preview through the injected-pixel virtual-camera path.",
+          "evidenceType": "vision_verified",
+          "attestation": "I looked at this capture. CameraPeek shows its STREAMING label; the nonce plaque reads VCAM-20260728-046A in yellow, fully legible; beneath it is the scanned ramen bar, with cyan neon signage on both side walls, the three-tier illuminated food display centred (magenta top tier, two orange/gold tiers), and the counter panel's top-left corner at bottom right. The nonce was generated minutes before this run, so it cannot be a cached frame or the v28.4 default bedroom scene. What I could NOT see: the counter digits, because the panel is cut off at the right and bottom edges of the capture.",
+          "artifact": "LOOKED-full-view.png",
+          "capture": {
+            "sha256": "43f7ee701d847fc6524421c0ca2db25fb1cd222dc4b4e140d10e5e9806645aab",
+            "width": 1004,
+            "height": 1003,
+            "bytes": 1327925,
+            "format": "png"
+          },
+          "cClass": "C0_emulator",
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 4,
+          "claim": "Task 12 BLOCKED on counter liveness: two distinct counters could not be read in-app. Root cause is the capture path, not delivery. CameraPeek's window is 1920x1080 while adb screencap captures the 2160x2158 built-in spatial display, which frames a zoomed portion of that panel (its own STREAMING label is clipped too). The second display is a FLAG_PRIVATE / OWN_CONTENT_ONLY VirtualDisplay and screencap -a returns a single file, so the app surface is not capturable. This is NOT evidence that delivery is static, and it is NOT spec Risk 2 in-app clipping.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        },
+        {
+          "seq": 5,
+          "claim": "Design consequence for v29.3: confining ALL per-frame variation to COUNTER_REGION is what makes changing frames distinguishable from animation or encoder drift, but it also means that when the viewport does not show that one region, no visible element varies and liveness becomes unreadable even if delivery is perfect. A redundant counter inside the nonce plaque, which is comfortably in view, would have made this round a full pass at no cost to the invariant.",
+          "evidenceType": "structural",
+          "attestation": null,
+          "artifact": null,
+          "capture": null,
+          "cClass": null,
+          "deviceSerial": null,
+          "reproHash": null
+        }
+      ]
+    },
+    {
       "app": "web3d.galaxy",
       "claims": [
         {
@@ -2063,11 +3474,12 @@
     }
   ],
   "totals": {
-    "vision_verified": 76,
-    "auto_judged": 15,
-    "structural": 23,
-    "usd_host_render": 3,
-    "built_for_headset": 1
+    "structural": 56,
+    "vision_verified": 110,
+    "auto_judged": 29,
+    "usd_host_render": 5,
+    "built_for_headset": 1,
+    "logcat": 8
   },
   "evidenceMeaning": {
     "device_verified": "a capture from REAL PICO hardware that a human/agent eye actually looked at",

@@ -1,0 +1,236 @@
+{
+  "id": "mrtable",
+  "brief": "A Mixed-stage MR tabletop built ONLY from primitives: a wooden table standing on the floor of the passthrough home environment, dynamic bodies dropped from a clickable menu that settle on the tabletop, and a live DROPS/STATUS panel.",
+  "spec": {
+    "meta": {
+      "appName": "MRTableXR",
+      "packageName": "com.example.mrtablebrief",
+      "stageStyle": "1",
+      "brief": "A Mixed-stage MR tabletop built ONLY from primitives: a wooden table standing on the floor of the passthrough home environment, dynamic bodies dropped from a clickable menu that settle on the tabletop, and a live DROPS/STATUS panel."
+    },
+    "scenes": [
+      {
+        "id": "table",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": [],
+        "physics": {
+          "gravity": [
+            0,
+            -9.81,
+            0
+          ]
+        }
+      }
+    ],
+    "layouts": [],
+    "objects": [
+      {
+        "id": "tableTop",
+        "sceneId": "table",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0,
+            0.8,
+            -1.6
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            1.2,
+            0.8,
+            0.7
+          ],
+          "color": [
+            0.55,
+            0.4,
+            0.22
+          ]
+        }
+      },
+      {
+        "id": "ball0",
+        "sceneId": "table",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0,
+            1.7,
+            -1.6
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "sphere",
+          "dims": [
+            0.08
+          ],
+          "mass": 0.5,
+          "color": [
+            0.1,
+            0.55,
+            0.85
+          ]
+        }
+      },
+      {
+        "id": "ball1",
+        "sceneId": "table",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.25,
+            1.9,
+            -1.55
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "sphere",
+          "dims": [
+            0.08
+          ],
+          "mass": 0.5,
+          "color": [
+            0.9,
+            0.45,
+            0.1
+          ]
+        }
+      },
+      {
+        "id": "cube0",
+        "sceneId": "table",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.25,
+            1.8,
+            -1.65
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "box",
+          "dims": [
+            0.14,
+            0.14,
+            0.14
+          ],
+          "mass": 0.8,
+          "color": [
+            0.2,
+            0.8,
+            0.4
+          ]
+        }
+      }
+    ],
+    "data": [],
+    "interactions": [
+      {
+        "id": "btnDrop",
+        "trigger": "press",
+        "target": "ball0",
+        "action": "launch:ball0",
+        "driveChannel": "broadcast",
+        "params": {
+          "velocity": [
+            0,
+            -2,
+            0
+          ],
+          "button": "start"
+        }
+      },
+      {
+        "id": "btnReset",
+        "trigger": "press",
+        "target": "ball0",
+        "action": "resetWorld",
+        "driveChannel": "broadcast",
+        "params": {
+          "button": "reset"
+        }
+      }
+    ],
+    "panels": [
+      {
+        "id": "hud",
+        "title": "MR TABLE",
+        "kind": "hud",
+        "fields": [
+          {
+            "key": "throws",
+            "label": "DROPS",
+            "initial": "0"
+          },
+          {
+            "key": "status",
+            "label": "STATUS",
+            "initial": "READY"
+          }
+        ]
+      }
+    ],
+    "navigation": {
+      "startScene": "table",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "a primitive wooden table stands on the floor in the passthrough Mixed stage, in front of the user",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.6
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "tableTop"
+      },
+      {
+        "claim": "after 'launch:ball0' the dropped bodies fall and SETTLE to rest on the tabletop (REAL physics contact, not intersection)",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.6
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "btnDrop"
+      },
+      {
+        "claim": "the MR TABLE live-text panel shows DROPS/STATUS and updates on drop (turn the camera \u2014 panels spawn at the dock position)",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.6
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "hud"
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 0,
+    "objects": 4,
+    "data": 0,
+    "interactions": 2,
+    "verifiableNowMin": 2,
+    "swanMin": 0
+  }
+}

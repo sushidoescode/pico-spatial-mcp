@@ -14,7 +14,7 @@ import { z } from "zod";
 
 // ── Capability classes (the honesty engine) ──────────────────────────────────────────────────────────
 // C0_emulator      — fully verifiable on the emulator now (renders in a forward capture / broadcast-drivable).
-// C1               — needs native scene-understanding/hand-tracking (0 planes on emulator) → Swan-only.
+// C1               — REAL-world scene-understanding/hand-tracking → hardware; the emulator DOES return simulated planes with FLOOR/TABLE/etc. semantics after polling (2026-07-29).
 // C2               — camera-decoupled; verifiable ONLY with a forward-FOV pose (content outside it can't be seen).
 // C3               — needs a controller/gaze pointer (none on emulator) → broadcast-emulate now / Swan for real.
 // C4_headset_only  — stage-vs-window dichotomy (in-front Compose panels etc.) → Swan-only.
@@ -142,6 +142,15 @@ export const objectSchema = z.object({
     })
     .optional()
     .describe("v17.0 SEMANTIC PLACEMENT: anchor this object to a LABELED real-world surface from meta.semanticScenePath (semantic_splat_scan -> compose_semantic_scene output). The compiler resolves it to a concrete transform.position at ledger-build time; an explicit transform.position wins over anchorTo."),
+  seatOn: z
+    .object({
+      semantic: z.enum(["FLOOR", "TABLE", "WALL", "CEILING"]).describe("Target plane label, matched against the LIVE detected planes at runtime (the generated seat() polls, then falls back to the largest same-orientation plane)."),
+      asset: z.string().optional().describe("Source GLB/GLTF path on the host — the compiler lowers it through measure_model -> bake_textured_model. Omitted = a loud '<model.glb>' placeholder in the ledger."),
+      offset: vec3.optional().describe("Extra world-axis offset in metres. NOT yet consumed by generate_surface_placement_kotlin — the compiler records it in the ledger-step note for the executing agent to apply after seating."),
+    })
+    .strict()
+    .optional()
+    .describe("v31 RUNTIME surface seating — the v30.2 recipe: lowers to measure_model -> bake_textured_model -> generate_surface_placement_kotlin, whose seat() polls LIVE DETECTED planes at runtime (planes ARE detected on the emulator — 43 measured 2026-07-29) and seats the baked model on the matching surface. Distinct from anchorTo, which resolves against a SCANNED world (meta.semanticScenePath) at compile time. Mutually exclusive with anchorTo and with body (the physics wiring places bodies at a compile-time transform.position, but a seatOn position exists only at runtime — the placement generator emits its own primitive collider). Requires source 'model' and Full Space (an open Stage)."),
   body: z
     .object({
       mode: z.enum(["static", "dynamic"]),
@@ -174,7 +183,7 @@ export const interactionSchema = z.object({
   action: z.string().describe("What happens, e.g. 'showDetail' / 'select' / 'navigate:sceneB'."),
   stateMachine: z.record(z.any()).optional(),
   driveChannel: z.enum(["broadcast", "controller"]).default("broadcast"),
-  params: z.record(z.any()).optional().describe("Action params, e.g. { velocity: [0,0,-8], angular: [-8,0,0] } for 'launch:<id>'."),
+  params: z.record(z.any()).optional().describe("Action params, e.g. { velocity: [0,0,-8], angular: [-8,0,0] } for 'launch:<id>'. For trigger 'press': { button: 'start'|'pause'|'resume'|'reset'|<custom>, label: 'DROP BALL' } names + labels the GameMenu row — a custom label lowers a bake_menu_panel step so the panel texture actually renders it (max 4 distinct buttons: the panel is a 4-row texture)."),
 });
 
 // ── navigation ────────────────────────────────────────────────────────────────────────────────────────
@@ -211,6 +220,14 @@ export const panelSchema = z.object({
     .array(z.object({ key: z.string(), label: z.string(), initial: z.string() }))
     .default([])
     .describe("Live label:value rows. Keys 'throws'/'status' get automatic game hooks (bump on launch / READY-ROLLING)."),
+  placement: z
+    .object({
+      kind: z.enum(["dock", "world"]).default("dock").describe("dock = the OS dock spawn (the proven path). 'world' = a REQUEST for a world-anchored panel — no public world-position API for auto-hosted 2D panels is vault-confirmed, so it currently compiles to the dock path with a loud fallback note."),
+      position: vec3.optional().describe("Desired world position [x,y,z] for kind='world'. Recorded in the ledger note only — not consumable until a world-position API is confirmed."),
+    })
+    .strict()
+    .optional()
+    .describe("Where the panel should live (default dock). HONEST LIMIT: 'world' does not world-lock today — the vault api-reference has no public API to position an auto-hosted 2D panel in world space, so 'world' compiles to the dock path plus a loud 'world placement pending SDK confirmation — head-docked fallback' note in the ledger, the compile result, and the emitted code."),
 });
 
 /** Asset paths are embedded in generated Kotlin and also used as APK-relative filesystem paths.
@@ -281,6 +298,49 @@ export const appSpecSchema = appSpecObjectSchema.superRefine((spec, ctx) => {
       });
     }
     layoutSceneIds.add(layout.sceneId);
+  }
+
+  // v31 seatOn exclusivity: one placement authority per object, and the pipeline needs a bakeable model.
+  for (const o of spec.objects) {
+    if (!o.seatOn) continue;
+    if (o.anchorTo) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["objects"],
+        message: `object '${o.id}': seatOn (LIVE detected planes at runtime) and anchorTo (scanned-world resolution at compile time) are mutually exclusive — pick one placement authority`,
+      });
+    }
+    if (o.body) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["objects"],
+        message: `object '${o.id}': seatOn and body are mutually exclusive — the physics wiring places bodies at a compile-time transform.position, but a seatOn position exists only at runtime (the placement generator emits its own primitive collider)`,
+      });
+    }
+    if (o.source !== "model") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["objects"],
+        message: `object '${o.id}': seatOn seats a BAKED model (measure_model -> bake_textured_model) — source must be 'model'`,
+      });
+    }
+  }
+
+  // v31: the verified in-world menu panel is a 4-row texture (bake_menu_panel keeps the same rows),
+  // so more than 4 distinct press-interaction buttons can never render.
+  const menuButtons = new Set<string>();
+  for (const i of spec.interactions) {
+    if (i.trigger !== "press") continue;
+    const a = String(i.action);
+    const p: any = i.params ?? {};
+    menuButtons.add(String(p.button ?? (a.startsWith("launch:") ? "start" : a === "resetWorld" ? "reset" : "start")));
+  }
+  if (menuButtons.size > 4) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["interactions"],
+      message: `press interactions declare ${menuButtons.size} distinct menu buttons; the in-world menu panel is a 4-row texture — 4 max`,
+    });
   }
 
   const splatScenes = spec.scenes.filter((scene) => scene.environment.kind === "splat");

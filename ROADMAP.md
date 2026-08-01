@@ -5,6 +5,57 @@ emulator, or explicitly labeled with the event that unblocks it. Nothing here is
 date; everything shipped gets a ledger entry before it gets a claim. Rejected-on-the-record
 ideas are listed too — knowing what we won't do is part of the honesty contract.)*
 
+## Just shipped (v30.x)
+
+- **Unity lane E2E — `vision_verified`** (v30.0a–f): `unity_scaffold_project` (a packaged
+  ~11-file skeleton — windowed default, immersive option, a ready SpatialAdapter slot) +
+  `unity_build_apk` (the confirmed `-batchmode -executeMethod` path with a structured
+  `build-result.json` contract). The windowed scaffold builds (41 s cold / 12 s warm), installs,
+  and **composites as a floating Unity panel** on the emulator; the first LOOK caught a real
+  payload bug (every primitive rendered InternalErrorShader magenta — fixed by shipping a built
+  material asset). The focus gate is measured and documented: an unfocused panel's activity is
+  paused; broadcast commands queue at the Java receiver and drain on focus. Ledger
+  `com.picoagent.hellounity` seq 0–1. See [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
+- **v30.1 RETRACTION — immersive Unity VR DOES render on the emulator; the boundary was our
+  capture path.** The user challenged the "immersive OpenXR doesn't composite" claim, and they
+  were right. Both Unity routes — the PICO Integration SDK (`PXR_Loader`) and the OpenXR SDK,
+  via the *unchanged sha-pinned July-22 APK* — fill the emulator view with their intended
+  immersive scenes when captured through the emulator window (`gui_capture`); ledgers
+  `com.picoagent.pxrvr` seq 0 and `com.picospatial.helloopenxr` seq 3, both `vision_verified`.
+  Root cause of the July-22 "uniformly black" result: `adb screencap` captures the SHELL
+  composite and is structurally blind to XR-runtime output — Unity said so in the July-22 log
+  itself (`Skip Present To Main Screen: Yes`) and we misread it. The capture-path rule is now
+  enforced in the tool descriptions. NOT over-corrected: the 2026-07-02 native-NDK/WebXR probes
+  observed a different symptom and were never re-tested through `gui_capture` — their status is
+  OPEN, not negative (see Partner-gated below).
+- **`generate_surface_placement_kotlin`** (v30.2): seat a baked model on a DETECTED real-world
+  surface (semantic FLOOR/TABLE/WALL/CEILING/BED/CABINET targeting), with every silent trap from
+  the hand-built MR-tabletop session generated-correct by construction and gated in
+  `test:surfaceplace`: plane queries POLL (a one-shot query during the Full Space entry
+  animation returns 0 — very likely the source of the historic "no scene understanding" belief),
+  height is read from the plane (the emulator's bedroom FLOOR sits at y=0.40, not 0), anchor
+  space converts via `convertPositionFrom`, centred-origin models get a base lift, and colliders
+  are PRIMITIVE boxes with `PhysicsWorldComponent`.
+- **Plane orientation is NOT portable across home environments** (v30.3, ledgered): a second
+  PICO home env reports FLOOR as HORIZONTAL_DOWNWARD and CEILING as HORIZONTAL_UPWARD — the
+  exact inverse of the bedroom — so any "largest HORIZONTAL_UPWARD plane" fallback picks the
+  CEILING there. The generator now falls back by HEIGHT; labels stayed reliable in both rooms.
+  Same release: `tools/table_drag_bridge.py` — drag the table with a real mouse, anchored to the
+  detected floor on drop (Option-gated so panel drags stay with the shell), verified in the new
+  environment with live Kraken values on the seated panel (LOOKed).
+- **Floor placements seat in FRONT of the user, not at the plane centroid** (v30.4): a
+  room-sized FLOOR plane's centroid is wherever the room's middle falls — the MR table was
+  seated 1.8 m to the user's right, correct plane, correct height, invisible. FLOOR now takes
+  the plane's height + a point 1.6 m ahead of the user, clamped into the plane's rectangle;
+  object-sized surfaces (TABLE/CABINET/BED/WALL) still seat at the centroid. Two captures of the
+  same app prove it (ledger seq 12).
+- **`measure_model`** (v30.5): reads the real world-space AABB out of a glTF/GLB (composed node
+  TRS, all eight corners, no buffer decoding) and reports a measured `baseLift = -min.y` instead
+  of an origin-convention guess — the real Meshy table's origin sits 0.5 mm below centre, exactly
+  the class of error measuring removes. The Meshy → MR path is now
+  `measure_model` → `bake_textured_model` → `generate_surface_placement_kotlin` with no
+  hand-typed numbers in it; `test:modelmeasure` gates it on synthesized fixtures.
+
 ## Just shipped (v29.2)
 
 - **The scanned room reaches the emulator's camera — `vision_verified`**: a fixed-pose render of the
@@ -81,14 +132,6 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
 - **Name-aware procedural provisioning**: data-bound briefs whose names match shape archetypes
   (gems, crystals, pins, bottles…) now get REAL baked faceted geometry instead of placeholder
   cards — vision-verified (`com.fleet.crystals`).
-- **Immersive Unity VR renders on the emulator** (2026-07-29, `vision_verified`) — **corrects the
-  July 22 settling test**, whose uniformly-black captures were an `adb screencap` artifact, not a
-  compositing failure. Unity apps built on BOTH PICO XR routes — the Integration SDK
-  (`PXR_Loader`) and the OpenXR SDK (the unchanged sha-pinned July-22 APK) — fill the entire
-  emulator view with their scene when captured through the emulator window (`gui_capture`).
-  Unity announces the cause itself: `Skip Present To Main Screen: Yes` — it presents to the XR
-  display, not the Android surface screencap reads. Capture-path rule now enforced in the tool
-  descriptions; see [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
 
 ## Near-term (ungated — buildable on the current emulator)
 
@@ -105,11 +148,14 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
   gate that work: an even/odd aliasing coupling between the backpressure gate and the frame-advance
   rate silently drops half the frames at high cadence, and liveness must be readable from wherever
   the viewport actually looks — a redundant counter in the nonce plaque is the cheap fix.
-- **Line-of-sight placement constraint**: occupancy solving today guarantees non-intersection;
-  a visibility constraint (can the camera actually SEE the placed object?) is the next honest
-  step for the free-space world model.
-- **SpatialBench perf axis**: add frame-budget measurement (`measure_perf`) as an optional
-  scored column in the public conformance harness.
+- **Line-of-sight placement constraint — SHIPPED (v27.3)**: free-space placement queries take
+  `visibleFrom` — a viewpoint from which candidates occluded by the occupancy grid are
+  hard-rejected — so a solved placement is not just non-intersecting but actually seeable.
+- **SpatialBench perf axis — SHIPPED**: `run_spatialbench` scores an optional `perf` column
+  (tier=full + `perfAxis`): `measure_perf`'s UI/RenderThread frame p95 against a budget,
+  honestly scoped to what gfxinfo measures on this emulator (Compose panels/2D activities, NOT
+  the spatial engine's 3D frame pacing); briefs with no UI frame data score null — a SKIP,
+  never zeroed.
 - **Scaffold archetypes**: the two-step `pico_build_app` authoring flow should offer scaffold
   variants per brief archetype (display / game / data-panel), so a stranger's first authored
   spec steers toward the pipeline's proven strengths.

@@ -6,6 +6,7 @@ import { okJson } from "./util.js";
 import { computeSuite } from "./eval.js";
 import { innerCall } from "./doors.js";
 import { measurePerf, scorePerfAxis } from "./perfprobe.js";
+import { runPerfDiagnose, scorePicoCliPerfAxis } from "./perfcli.js";
 import { deriveVerificationRoute, type VerificationRoute } from "./fleetbuild.js";
 
 /**
@@ -24,11 +25,17 @@ import { deriveVerificationRoute, type VerificationRoute } from "./fleetbuild.js
  *                on-screen according to WindowManager                    (emulator, STRUCTURAL)
  *   eye       — the CALIBRATED JUDGE passes the stage frame — auto_judged, (emulator)
  *               NEVER vision_verified; panel-only routes leave it null/excluded
- *   perf      — OPTIONAL (tier=full + perfAxis:true): measure_perf's UI/RenderThread frame       (emulator)
- *               p95 is under perfBudgetMs. This is scoped to what gfxinfo actually measures on
- *               this emulator (Compose panels/2D activities) — NOT the spatial engine's 3D frame
- *               pacing. A brief with no UI frame data (a spatial-only app has ~none) scores perf
- *               as null — a SKIP, not a fail — and is excluded from the axis max, never zeroed.
+ *   perf      — OPTIONAL (tier=full + perfAxis:true): the frame-pacing axis.                     (emulator)
+ *               Default source (perfSource:'gfxinfo') is measure_perf's UI/RenderThread p95 vs
+ *               perfBudgetMs — scoped to what gfxinfo actually measures (Compose panels/2D
+ *               activities), NOT the spatial engine's 3D frame pacing. perfSource:'pico-cli'
+ *               closes that self-declared 3D blind spot when the official profiler is installed:
+ *               it scores perf_diagnose's appFps LOW percentile (p5 — the 0.3.0 report has no
+ *               appFps p95 field) against the budget's fps floor, falling back to gfxinfo when
+ *               the CLI or appFps data is absent (appFps is 0 on this emulator — no_3d_frame,
+ *               measured 2026-07-13 — so the pico-cli source proves out on real devices). Either
+ *               source scores null — a SKIP, not a fail, excluded from the axis max, never
+ *               zeroed — when its data is absent.
  *
  * The report says exactly which tier ran: a headless run scores /3 and never implies runtime
  * evidence. Skipped briefs (external-asset gates or explicit external implementations) are
@@ -250,7 +257,7 @@ code{font-family:ui-monospace,monospace;color:#79c0ff}
 </style></head><body>
 <h1>SpatialBench</h1>
 <p><b>${report.summary.total} briefs · tier: ${esc(report.tier)} · aggregate ${report.summary.aggregate}/${report.summary.maxAggregate} (${aggregatePercent})</b> — the pico-spatial-mcp conformance corpus, scored per axis. Re-run it yourself: <code>run_spatialbench</code>.</p>
-<div class="how"><b>Reading the axes:</b> planned/compiled/shape are headless (spec validity, ledger emission, expected node counts). booted/captured/eye need the PICO emulator. panelReady is structural WindowManager evidence that an expected caption-backed panel is allocated, ready, visible, and on-screen; it does NOT prove the panel's pixels or appearance and never becomes an eye pass. <b>eye = the calibrated stage-frame visual judge (auto_judged)</b> — a machine verdict, deliberately NOT vision_verified; panel-only routes show — and exclude eye from their maximum instead of false-failing an off-view panel. Escalations name only stage frames a human must look at. Skipped briefs gate on external assets (splats/panos) or explicitly declare an external implementation and are marked 0/0, not failed. <b>perf</b> (optional, tier=full with perfAxis:true) measures only the app's UI/RenderThread frames via <code>dumpsys gfxinfo</code> on the emulator, verdicting p95 against a budget in ms — this is structural evidence about 2D/Compose surfaces, NOT the spatial engine's 3D frame pacing (that needs <code>pico-cli perf</code> / perf_diagnose on a real device); a brief with no UI frame data (expected for spatial-only content) shows as — and is not counted against the axis max.</div>
+<div class="how"><b>Reading the axes:</b> planned/compiled/shape are headless (spec validity, ledger emission, expected node counts). booted/captured/eye need the PICO emulator. panelReady is structural WindowManager evidence that an expected caption-backed panel is allocated, ready, visible, and on-screen; it does NOT prove the panel's pixels or appearance and never becomes an eye pass. <b>eye = the calibrated stage-frame visual judge (auto_judged)</b> — a machine verdict, deliberately NOT vision_verified; panel-only routes show — and exclude eye from their maximum instead of false-failing an off-view panel. Escalations name only stage frames a human must look at. Skipped briefs gate on external assets (splats/panos) or explicitly declare an external implementation and are marked 0/0, not failed. <b>perf</b> (optional, tier=full with perfAxis:true) has two sources: the default <code>gfxinfo</code> measures only the app's UI/RenderThread frames, verdicting p95 against a budget in ms — structural evidence about 2D/Compose surfaces, NOT the spatial engine's 3D frame pacing; <code>perfSource:'pico-cli'</code> closes that gap via the official profiler (perf_diagnose), verdicting appFps p5 — the report's frame-time-p95 analog — against the budget's fps floor, falling back to gfxinfo when the CLI or appFps data is absent (on this emulator appFps measures 0 / no_3d_frame, so the pico-cli source proves out on real devices). Either source shows — and is not counted against the axis max when its data is absent.</div>
 <table><thead><tr><th>brief</th><th>planned</th><th>compiled</th><th>shape</th><th>booted</th><th>captured</th><th>panelReady</th><th>eye</th><th>perf</th><th>score</th><th>notes</th></tr></thead>
 <tbody>${rows}</tbody></table>
 <footer>Generated ${esc(report.generatedAt)} by pico-spatial-mcp <code>run_spatialbench</code> · corpus: ${esc(report.briefsDir)} · escalations: ${report.summary.escalations.length ? esc(report.summary.escalations.join(", ")) : "none"}</footer>
@@ -260,16 +267,17 @@ code{font-family:ui-monospace,monospace;color:#79c0ff}
 export function registerSpatialBenchTools(server: McpServer) {
   server.tool(
     "run_spatialbench",
-    "v23 SPATIALBENCH: score the conformance corpus (briefs/) as a public benchmark and emit a static league-table report (docs/spatialbench/). tier='headless' (default, CI-safe) scores planned/compiled/shape per brief from the spec+ledger alone — /3, no runtime claims. tier='full' additionally fleet-builds each brief on the emulator and scores booted/captured plus the stage eye when applicable. eye is the CALIBRATED JUDGE (auto_judged, never vision_verified; escalations name stage frames for a human LOOK). Briefs that declare panels gain a separate panelReady axis backed only by structural WindowManager caption/container evidence; it never becomes eye or vision proof. Panel-only routes leave eye null and exclude it from the maximum rather than false-failing an off-view panel. Asset-gated or explicitly external-implementation briefs are reported as skipped, not failed. perfAxis:true (tier='full' only) adds an optional perf axis via measure_perf: 1 = UI/RenderThread frame p95 under perfBudgetMs, 0 = over budget, null (not counted) when the emulator reports no UI frame data for the app — scoped honestly to gfxinfo's UI surfaces only, not the spatial engine's 3D pacing. Returns the report paths + the league table.",
+    "v23 SPATIALBENCH: score the conformance corpus (briefs/) as a public benchmark and emit a static league-table report (docs/spatialbench/). tier='headless' (default, CI-safe) scores planned/compiled/shape per brief from the spec+ledger alone — /3, no runtime claims. tier='full' additionally fleet-builds each brief on the emulator and scores booted/captured plus the stage eye when applicable. eye is the CALIBRATED JUDGE (auto_judged, never vision_verified; escalations name stage frames for a human LOOK). Briefs that declare panels gain a separate panelReady axis backed only by structural WindowManager caption/container evidence; it never becomes eye or vision proof. Panel-only routes leave eye null and exclude it from the maximum rather than false-failing an off-view panel. Asset-gated or explicitly external-implementation briefs are reported as skipped, not failed. perfAxis:true (tier='full' only) adds an optional perf axis: perfSource='gfxinfo' (default) scores measure_perf's UI/RenderThread p95 under perfBudgetMs — gfxinfo's UI surfaces only, not the spatial engine's 3D pacing; perfSource='pico-cli' closes that gap via the official profiler (perf_diagnose), scoring appFps p5 (the report's frame-time-p95 analog — it has no appFps p95 field) against the budget's fps floor, and falls back to gfxinfo with the reason in notes when the CLI or appFps data is absent (on this emulator appFps measures 0/no_3d_frame). Either source scores null (not counted, never zeroed) without data. Returns the report paths + the league table.",
     {
       tier: z.enum(["headless", "full"]).default("headless").describe("headless = spec+ledger axes only; full = also emulator boot/capture/eye per brief (slow, serial)"),
       briefIds: z.array(z.string()).optional().describe(`full tier defaults to the self-contained core set [${BENCH_CORE.join(", ")}]; headless defaults to every brief`),
       settleSec: z.number().min(0).max(120).default(14).describe("full tier: seconds to settle after launch before capture"),
       outDir: z.string().optional().describe("report dir (default <repo>/docs/spatialbench)"),
-      perfAxis: z.boolean().default(false).describe("tier='full' only: after boot/capture/eye, sample measure_perf for the brief's package and score a 7th 'perf' axis (0/1/null)"),
-      perfBudgetMs: z.number().default(16.7).describe("perfAxis frame budget in ms for the UI/RenderThread p95 (default 16.7ms = 60fps-class)"),
+      perfAxis: z.boolean().default(false).describe("tier='full' only: after boot/capture/eye, sample the perfSource for the brief's package and score a 7th 'perf' axis (0/1/null)"),
+      perfBudgetMs: z.number().default(16.7).describe("perfAxis frame budget in ms (default 16.7ms = 60fps-class): gfxinfo verdicts the UI/RenderThread p95 against it; pico-cli verdicts appFps p5 against its fps floor (1000/budget)"),
+      perfSource: z.enum(["gfxinfo", "pico-cli"]).default("gfxinfo").describe("perfAxis source: 'gfxinfo' = measure_perf UI-frame p95 (emulator-safe default); 'pico-cli' = perf_diagnose's appFps p5 via the official profiler (real 3D pacing — needs pico-cli on PATH; falls back to gfxinfo, with the reason in notes, when the CLI or appFps data is absent)"),
     },
-    async ({ tier, briefIds, settleSec, outDir, perfAxis, perfBudgetMs }) => {
+    async ({ tier, briefIds, settleSec, outDir, perfAxis, perfBudgetMs, perfSource }) => {
       const emulatorIds = briefIds?.length ? briefIds : BENCH_CORE;
       // An explicit selection scopes the report itself. Without one, full tier keeps every
       // brief's headless row and adds emulator axes for the core set only.
@@ -291,20 +299,44 @@ export function registerSpatialBenchTools(server: McpServer) {
               if (row.booted !== 1) {
                 row.notes.push("perf: skipped (app never booted, nothing to measure)");
               } else {
-                try {
-                  // v27.5: fleet_build always installs each brief under com.fleet.<id> — reuse
-                  // that identity rather than re-deriving it from the (already-mutated) spec.
-                  const probe = await measurePerf(`com.fleet.${row.id}`, { sampleSec: 10 });
-                  row.perf = scorePerfAxis(probe, perfBudgetMs);
-                  if (row.perf === null) {
-                    row.notes.push("perf: no UI frame data on this emulator (spatial-only content — not a failure; see honesty note)");
-                  } else {
-                    row.max += 1;
-                    row.score += row.perf;
-                    row.notes.push(`perf: UI p95=${probe.p95 ?? "?"}ms vs budget ${perfBudgetMs}ms -> ${row.perf ? "under" : "over"}`);
+                // v27.5: fleet_build always installs each brief under com.fleet.<id> — reuse
+                // that identity rather than re-deriving it from the (already-mutated) spec.
+                const pkg = `com.fleet.${row.id}`;
+                let scoredByCli = false;
+                if (perfSource === "pico-cli") {
+                  // v31: the official profiler's 3D pacing, called directly (module function,
+                  // not innerCall). Any null — CLI missing, run failed, appFps 0/absent — falls
+                  // back to the gfxinfo UI view with the reason kept in notes.
+                  try {
+                    const diag = await runPerfDiagnose(pkg, { durationSec: 10 });
+                    const cliScore = scorePicoCliPerfAxis(diag, perfBudgetMs);
+                    if (cliScore.perf === null) {
+                      row.notes.push(`${cliScore.note} — falling back to the gfxinfo UI view`);
+                    } else {
+                      row.perf = cliScore.perf;
+                      row.max += 1;
+                      row.score += row.perf;
+                      row.notes.push(cliScore.note);
+                      scoredByCli = true;
+                    }
+                  } catch (e) {
+                    row.notes.push(`perf(pico-cli) probe error: ${e instanceof Error ? e.message : String(e)} — falling back to the gfxinfo UI view`);
                   }
-                } catch (e) {
-                  row.notes.push(`perf probe error: ${e instanceof Error ? e.message : String(e)}`);
+                }
+                if (!scoredByCli) {
+                  try {
+                    const probe = await measurePerf(pkg, { sampleSec: 10 });
+                    row.perf = scorePerfAxis(probe, perfBudgetMs);
+                    if (row.perf === null) {
+                      row.notes.push("perf: no UI frame data on this emulator (spatial-only content — not a failure; see honesty note)");
+                    } else {
+                      row.max += 1;
+                      row.score += row.perf;
+                      row.notes.push(`perf: UI p95=${probe.p95 ?? "?"}ms vs budget ${perfBudgetMs}ms -> ${row.perf ? "under" : "over"}`);
+                    }
+                  } catch (e) {
+                    row.notes.push(`perf probe error: ${e instanceof Error ? e.message : String(e)}`);
+                  }
                 }
               }
             }

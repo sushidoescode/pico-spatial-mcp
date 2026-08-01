@@ -28,7 +28,7 @@ None of this is PICO Spatial SDK vocabulary — it's this project's own layer on
 | **trust ledger** | An append-only log (`record_verification` / `ledger_report`) of every visual claim this tool has made, each entry naming its evidence class. It structurally rejects a `vision_verified` claim with no linked capture — you can't fake the strongest tier. |
 | **the eye** | The calibrated auto-judge (`visual_judge` / `auto_judged` evidence) that scores a capture against an expected scene. It is a fast pre-check, not a replacement for a human/agent actually looking. |
 | **evidence classes** | A ranked honesty scale for how a claim was checked, strongest first: **`device_verified`** (real PICO hardware — **none yet**, said honestly) > `vision_verified` (a human/agent LOOKED and the intended content is present) > `auto_judged` (the calibrated eye scored it) > `usd_host_render` (off-device USD preview) > `structural` (runtime/log proof; successful appearance unconfirmed — a linked looked-at negative finding can stay here rather than masquerade as render success) > `built_for_headset` (compiles and targets Swan-only capability, deferred honestly). Every capability in [CAPABILITIES.md](CAPABILITIES.md) is tagged with its strongest evidence on file. |
-| **doors** (`PICO_MCP_SURFACE=doors`) | An intent-level facade of 13 tools (12 doors + `validate_toolchain`) over the full 220-tool surface — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
+| **doors** (`PICO_MCP_SURFACE=doors`) | An intent-level facade of 15 tools (14 doors + `validate_toolchain`) over the full 233+-tool surface — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
 | **gates** | The deterministic test-battery (`test/*.mjs`, mirrored in `.github/workflows/gates.yml`) that runs before every commit: lint fixtures, the ledger's over-claim rejection, doors-surface contract tests, occupancy/affordance solvers, the vault symbol checker, and more. All green is the bar for "this didn't regress." |
 
 ## 15-minute first light
@@ -49,7 +49,7 @@ The fastest way in is the doors surface: `pico_doctor` → `pico_build_app` (two
 }
 ```
 
-(`activity`, `expectLogcatContains`, and `settleSec` are optional overrides — see the tool description for defaults.) On the doors surface this is `pico_verify_app`. The evidence is honestly scoped: install + launch + process-alive + logcat scan is `structural`; a looked-at capture supports only the claim its pixels actually prove. Visible app content can become `vision_verified`; a black frame does not vision-verify the app's intended content. The Unity hello-XR settling test reached a healthy focused OpenXR session and submitted an app-owned layer on emulator 0.13.1, yet its three looked-at captures were uniformly black, so that result remains structural and immersive visual composition stays deferred to a 6.1 emulator or Swan hardware.
+(`activity`, `expectLogcatContains`, and `settleSec` are optional overrides — see the tool description for defaults.) On the doors surface this is `pico_verify_app`. The evidence is honestly scoped: install + launch + process-alive + logcat scan is `structural`; a looked-at capture supports only the claim its pixels actually prove. Visible app content can become `vision_verified`; a black frame does not vision-verify the app's intended content — and know the capture-path rule before judging one: `adb screencap` sees the shell composite (2D panels, native Spatial SDK apps, the home environment) and is structurally blind to XR-runtime output, so a black screencap of an immersive XR app is a capture-path artifact, not a failure. Capture immersive apps through the emulator window (`gui_capture`). That rule is how the July-22 Unity settling test's "uniformly black" conclusion was retracted (v30.1): captured through the window, both Unity routes render their full-immersive scenes on this emulator, `vision_verified`.
 
 ## What it can do
 
@@ -67,7 +67,7 @@ The fastest way in is the doors surface: `pico_doctor` → `pico_build_app` (two
 
 ## Honest limits (the emulator ceiling)
 
-The PICO emulator renders bounded, eye-level content and floating spatial panels — **not** boundless walk-around immersion. On emulator 0.13.1 / PICO OS 6.0, a direct Unity 6000.4.9f1 + official PICO OpenXR test reached FOCUSED, advanced frames at 60fps, and owned a submitted layer, but three byte-identical looked-at frames across two launches were uniformly black. The runtime path works structurally while the intended immersive pixels remain absent from capture; this test does not isolate compositor promotion from an earlier Unity camera/render-target stage. Full-immersive OpenXR visual composition, controller-ray input, and head-tracked depth therefore remain deferred to a **6.1 emulator or PICO Swan hardware**, then flip only after direct looked-at evidence (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Bounded Spatial SDK scenes and floating panels remain capture-verifiable; that does not imply OpenXR projection-layer support. Physics simulates on the emulator; the companion Unity MCP handles the Unity XR build lane — see **[docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md)** for the completed settling test and exact evidence.
+The PICO emulator renders bounded, eye-level content, floating spatial panels — and, corrected in v30.1, **full-immersive Unity VR**. The July-22 Unity settling test's uniformly black captures were an `adb screencap` artifact, not a compositing failure: screencap reads the shell composite and is structurally blind to XR-runtime output (Unity's own log said so — `Skip Present To Main Screen: Yes`). Captured through the emulator window (`gui_capture`), both Unity routes — the PICO Integration SDK (`PXR_Loader`) and the OpenXR SDK, via the unchanged sha-pinned July-22 APK — fill the view with their intended immersive scenes, `vision_verified`. The honest residue: the 2026-07-02 **native-NDK and WebXR** immersive probes reported a compositor loading fallback in the GUI viewport and were never re-run through the corrected capture path — their status is **OPEN**, not negative and not settled. **Controller-ray input and head-tracked depth** remain deferred to a **6.1 emulator or PICO Swan hardware**, and flip only after direct looked-at evidence (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Physics simulates on the emulator; the Unity build lane is `unity_scaffold_project` + `unity_build_apk` — see **[docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md)** for the capture-path rule, the retraction, and the exact evidence.
 
 ## Requirements
 
@@ -108,7 +108,7 @@ Or in any MCP client config:
 { "mcpServers": { "pico-spatial": { "command": "node", "args": ["/path/to/PICO-MCP/dist/index.js"] } } }
 ```
 
-**Recommended for a first session — the doors surface** (13 tools instead of 220):
+**Recommended for a first session — the doors surface** (15 tools instead of 233+):
 
 ```bash
 PICO_MCP_SURFACE=doors claude mcp add pico-spatial -- node /path/to/PICO-MCP/dist/index.js
@@ -127,7 +127,7 @@ The tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first sc
 
 - **[QUICKSTART.md](QUICKSTART.md)** — the front door, with the proven first-run sequence
 - **[ROADMAP.md](ROADMAP.md)** — where this is going, every line gate-labeled honestly
-- **[docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md)** — the Unity/OpenXR lane: SDK choice, the buildable-today verify loop, and the completed emulator black-output test
+- **[docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md)** — the Unity/OpenXR lane: SDK choice, the buildable-today verify loop, the capture-path rule, and the v30.1 immersive-rendering retraction
 - **[docs/VIRTUAL_CAMERA.md](docs/VIRTUAL_CAMERA.md)** — simulated camera frames and surface detection from scanned rooms, plus the bounded emulator camera-HAL result
 - **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** — repo layout, gates, and standing invariants for anyone new to this codebase
 - **[CAPABILITIES.md](CAPABILITIES.md)** — the honest capability matrix (categories + evidence)
@@ -143,7 +143,7 @@ npm run test:lint    # the retained-lessons lint rules fire on their fixtures
 npm run test:ledger  # the trust ledger rejects an unlinked vision_verified claim
 ```
 
-The full gate battery — 35 gate invocations (34 `test:` suites plus `smoke`), across Linux and macOS jobs, deterministic, no emulator boot — is mirrored in `.github/workflows/gates.yml` — see **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for the complete list.
+The full gate battery — 39 gate invocations (38 `test:` suites plus `smoke`), across Linux and macOS jobs, deterministic, no emulator boot — is mirrored in `.github/workflows/gates.yml` — see **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for the complete list.
 
 ## Licensing
 

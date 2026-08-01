@@ -30,7 +30,7 @@ export function registerVerifyApkTools(server: McpServer) {
     "verify_pico_apk",
     {
       description:
-        "Cross-builder DEPLOY+VERIFY handoff contract: install + launch an ARBITRARY PICO APK (from an external builder, e.g. the user's separate Unity MCP), structurally assert it BOOTS WITHOUT CRASHING (pidof process-alive + a logcat FATAL/ANR scan), and capture ONE 2D frame. HONEST SCOPE: the automatic matrix is STRUCTURAL (installs, launches, process stays alive, no FATAL/ANR) + a 2D screencap — NOT a visual XR claim. The caller must LOOK and record only what the returned pixels prove. NOTE (corrected 2026-07-29): an immersive Unity app returns a BLACK screencap here even while rendering correctly — Unity is presenting to the XR display, not the Android surface; verify those with gui_capture. Records NOTHING itself. Each adb step is caught, so failures become structured fields (installed/launched/processAlive/crashed/logcatMatch/errors), never a throw.",
+        "Cross-builder DEPLOY+VERIFY handoff contract: install + launch an ARBITRARY PICO APK (from an external builder, e.g. the user's separate Unity MCP), structurally assert it BOOTS WITHOUT CRASHING (pidof process-alive + a logcat FATAL/ANR scan), and capture ONE 2D frame. HONEST SCOPE: the automatic matrix is STRUCTURAL (installs, launches, process stays alive, no FATAL/ANR) + a 2D screencap — NOT a visual XR claim. The caller must LOOK and record only what the returned pixels prove. NOTE (corrected 2026-07-29): an immersive Unity app returns a BLACK screencap here even while rendering correctly — Unity is presenting to the XR display, not the Android surface; verify those with gui_capture. RECOVERY: if the launch reports success but the process is dead and logcat shows the full-space block (\"current full space don't allow start fullscreen\" / ContainerManager), the incumbent full-space app is force-stopped and the launch retried ONCE (mirroring fleet_build's launch_blocked recovery); what happened lands in recoveryNotes. Records NOTHING itself. Each adb step is caught, so failures become structured fields (installed/launched/processAlive/crashed/logcatMatch/errors), never a throw.",
       inputSchema: {
         apkPath: z.string().describe("Absolute path to the .apk the external builder emitted."),
         packageName: z.string().describe("Android package id, e.g. com.example.unityxr."),
@@ -67,42 +67,80 @@ export function registerVerifyApkTools(server: McpServer) {
       }
 
       // 3. launch (explicit activity, else monkey LAUNCHER)
-      let launched = false;
-      try {
-        // PLAIN start is deliberate: `am start -S` would force-stop the package a second time
-        // immediately before launch and recreate the full-space teardown race fixed above.
-        const args = activity
-          ? ["-s", SERIAL, "shell", "am", "start", "-n", `${packageName}/${activity}`]
-          : ["-s", SERIAL, "shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"];
-        const r = await run(ADB, args, { timeout: 30_000 });
-        launched = !/Error|Exception|No activities found|aborted|current full space don't allow start fullscreen/i.test(`${r.stdout}${r.stderr}`);
-        if (!launched) errors.push(`launch: ${(r.stdout + r.stderr).trim().slice(0, 200)}`);
-      } catch (e: any) {
-        errors.push(`launch: ${String(e?.stderr ?? e?.message ?? e).slice(0, 200)}`);
-      }
+      // PLAIN start is deliberate: `am start -S` would force-stop the package a second time
+      // immediately before launch and recreate the full-space teardown race fixed above.
+      const launchArgs = activity
+        ? ["-s", SERIAL, "shell", "am", "start", "-n", `${packageName}/${activity}`]
+        : ["-s", SERIAL, "shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"];
+      const attemptLaunch = async (): Promise<boolean> => {
+        try {
+          const r = await run(ADB, launchArgs, { timeout: 30_000 });
+          const started = !/Error|Exception|No activities found|aborted|current full space don't allow start fullscreen/i.test(`${r.stdout}${r.stderr}`);
+          if (!started) errors.push(`launch: ${(r.stdout + r.stderr).trim().slice(0, 200)}`);
+          return started;
+        } catch (e: any) {
+          errors.push(`launch: ${String(e?.stderr ?? e?.message ?? e).slice(0, 200)}`);
+          return false;
+        }
+      };
+      let launched = await attemptLaunch();
 
       // 4. settle
       await new Promise((r) => setTimeout(r, settle * 1000));
 
       // 5a. process alive? (pidof exits non-zero when no process)
-      let processAlive = false;
-      try {
-        const r = await run(ADB, ["-s", SERIAL, "shell", "pidof", packageName], { timeout: 15_000 });
-        processAlive = r.stdout.trim().length > 0;
-      } catch {
-        processAlive = false;
-      }
+      const probeAlive = async (): Promise<boolean> => {
+        try {
+          const r = await run(ADB, ["-s", SERIAL, "shell", "pidof", packageName], { timeout: 15_000 });
+          return r.stdout.trim().length > 0;
+        } catch {
+          return false;
+        }
+      };
+      let processAlive = await probeAlive();
 
       // 5b. crash / ANR scan + optional expected-log match
       let crashed = false;
       let logcatMatch: boolean | null = expectLogcatContains ? false : null;
-      try {
-        const r = await run(ADB, ["-s", SERIAL, "shell", "logcat", "-d"], { timeout: 30_000, maxBuffer: 32 * 1024 * 1024 });
-        const log = `${r.stdout}`;
-        crashed = /\bFATAL\b/.test(log) || log.includes(`ANR in ${packageName}`);
-        if (expectLogcatContains) logcatMatch = log.includes(expectLogcatContains);
-      } catch (e: any) {
-        errors.push(`logcat: ${String(e?.message ?? e).slice(0, 120)}`);
+      let fullSpaceBlocked = false;
+      const scanLogcat = async () => {
+        try {
+          const r = await run(ADB, ["-s", SERIAL, "shell", "logcat", "-d"], { timeout: 30_000, maxBuffer: 32 * 1024 * 1024 });
+          const log = `${r.stdout}`;
+          crashed = /\bFATAL\b/.test(log) || log.includes(`ANR in ${packageName}`);
+          if (expectLogcatContains) logcatMatch = log.includes(expectLogcatContains);
+          fullSpaceBlocked = /don't allow start fullscreen|ContainerManager/i.test(log);
+        } catch (e: any) {
+          errors.push(`logcat: ${String(e?.message ?? e).slice(0, 120)}`);
+        }
+      };
+      await scanLogcat();
+
+      // 5c. incumbent recovery — `am start` can report success while the incumbent full-space app
+      // blocks the actual start (logcat: "current full space don't allow start fullscreen" /
+      // ContainerManager). Mirror fleet_build's launch_blocked path ONCE: read the incumbent from
+      // dumpsys, force-stop it, wait out the container teardown, relaunch, re-assert. The outcome
+      // is recorded in recoveryNotes, never silently absorbed.
+      const recoveryNotes: string[] = [];
+      if (launched && !processAlive && fullSpaceBlocked) {
+        try {
+          const d = await run(ADB, ["-s", SERIAL, "shell", "dumpsys", "activity", "activities"], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
+          const m = String(d.stdout).match(/topResumedActivity=ActivityRecord\{\S+ u0 ([\w.]+)\//);
+          const incumbent = m && m[1] !== packageName ? m[1] : null;
+          if (incumbent) {
+            await run(ADB, ["-s", SERIAL, "shell", "am", "force-stop", incumbent], { timeout: 20_000 });
+            await new Promise((r) => setTimeout(r, VERIFY_APK_TEARDOWN_MS));
+            launched = await attemptLaunch();
+            await new Promise((r) => setTimeout(r, settle * 1000));
+            processAlive = await probeAlive();
+            await scanLogcat();
+            recoveryNotes.push(`full-space block by incumbent ${incumbent} — force-stopped it and relaunched once (processAlive now ${processAlive})`);
+          } else {
+            recoveryNotes.push("full-space block in logcat but no foreign topResumedActivity found — suspect a wedged ContainerManager: cold-restart the emulator (scripts/restart-emulator.sh) and re-run");
+          }
+        } catch (e: any) {
+          recoveryNotes.push(`incumbent recovery failed: ${String(e?.message ?? e).slice(0, 160)}`);
+        }
       }
 
       // 6. capture ONE 2D frame (the caller LOOKS at this, then records)
@@ -130,6 +168,7 @@ export function registerVerifyApkTools(server: McpServer) {
         logcatMatch,
         artifact,
         errors,
+        ...(recoveryNotes.length ? { recoveryNotes } : {}),
         // v27-pre first-light finding: with the target dead, screencap shows whatever app the
         // shell kept in the foreground — attributing those pixels to THIS apk is the exact
         // over-claim the ledger exists to prevent. Also the dead-target + launched combo is the

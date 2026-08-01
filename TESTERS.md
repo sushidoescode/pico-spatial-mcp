@@ -51,7 +51,7 @@ Ask your agent to run **`preflight_env`** (or **`pico_doctor`** on the narrowed 
 read-only, mutates nothing, and reports what your machine is missing with an exact fix for every
 non-passing check. That is the intended first call.
 
-Expect ~220 tools on the full surface.
+Expect 233+ tools on the full surface.
 
 ## Choosing a surface
 
@@ -61,19 +61,19 @@ Set `PICO_MCP_SURFACE` in the `env` block of the config above:
 "env": { "PICO_MCP_SURFACE": "doors" }
 ```
 
-- unset / `full` — **~220 tools.** Everything.
-- `doors` — **13 tools**: `validate_toolchain` `pico_build_app` `pico_scan_world` `pico_place`
+- unset / `full` — **233+ tools.** Everything.
+- `doors` — **15 tools**: `validate_toolchain` `pico_build_app` `pico_scan_world` `pico_place`
   `pico_look` `pico_verify_app` `pico_measure` `pico_perf` `pico_sdk` `pico_doctor` `pico_ship`
-  `pico_capabilities` `pico_fix`.
+  `pico_capabilities` `pico_fix` `pico_record` `pico_emulator`.
 
-Start with `doors` if 220 tools is overwhelming; it's the curated path through the same engine.
+Start with `doors` if 233+ tools is overwhelming; it's the curated path through the same engine.
 
-One sharp edge worth knowing up front: **`pico_measure` needs a one-time camera calibration, and the
-two tools that perform it are not on the `doors` surface.** To calibrate, switch to the full surface
-(remove `PICO_MCP_SURFACE` or set it to `full`), restart your client, run `fleet_build(['calib'])`
-then `calibrate_capture_camera` once, and switch back if you prefer the narrow surface. `pico_doctor`
-reports your calibration state and repeats this route. Calibration also dies on an emulator cold
-restart, so expect to redo it after rebooting the emulator.
+One sharp edge worth knowing up front: **`pico_measure` needs a one-time camera calibration.**
+On the `doors` surface run `pico_doctor` with `{calibrate: true}` — it performs
+`fleet_build(['calib'])` then `calibrate_capture_camera` through the full-surface inner server,
+no client restart needed (v31). `pico_doctor` reports your calibration state either way.
+Calibration also dies on an emulator cold restart, so expect to redo it after rebooting the
+emulator.
 
 ## What you'll also need
 
@@ -112,8 +112,11 @@ your work. Three different places, worth knowing before you go looking:
 
 This project treats over-claiming as a bug, so: it is **emulator-first**. Tools will tell you when
 a result is `structural` (it built and didn't crash) rather than `vision_verified` (someone looked
-at a frame), and when something is headset-only or simply `blocked`. Unity and WebXR immersive-ar
-are **not** supported paths today.
+at a frame), and when something is headset-only or simply `blocked`. Immersive Unity VR **does**
+render on the emulator (corrected v30.1) — but `adb screencap` cannot see it: screencap reads the
+shell composite and is blind to XR-runtime output, so capture immersive apps with `gui_capture`.
+Native-NDK and WebXR immersive status is OPEN (never re-tested through the corrected capture
+path) — neither claimed nor ruled out.
 
 ## Reporting problems
 
