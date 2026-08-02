@@ -46,21 +46,35 @@ toolchain scaffolds, ours verifies; install both."**
 *Evidence: proven 2026-08-01, 41 s build — ledger `com.vranywhere.cliproof` seq 0
 (vision_verified) [live].*
 
-### 4. MR tabletop (~4 min, pre-built — do NOT build this live)
+### 4. ROCKETSIM — the MR centerpiece (~5 min, pre-built — do NOT build this live)
 
-Launch the pre-built tabletop app: detected FLOOR plane, physics settling on it, live Kraken
-feed on the panel, web panel driving native physics. Narrate the v30 lane behind it:
-`measure_model` → `bake_textured_model` → `generate_surface_placement_kotlin`, no hand-typed
-numbers.
+Launch `com.picoagent.rocketsim` (project `~/AndroidStudioProjects/rocketsim-native`): the
+Meshy table seated on the DETECTED floor by the v31 one-call `place_model_on_surface`, a
+NASA-textured Blue Marble Earth (sha-pinned provenance) with an orbiting LROC Moon, and the
+glass MISSION CONTROL web panel — two big LAUNCH/RESET buttons plus live PHASE/ALT/VEL
+telemetry. Click LAUNCH (a real click on the web panel; CDP drives the same path headlessly)
+and narrate the ~31 s mission: countdown → ignition → liftoff → a visible point-gravity ORBIT
+around Earth → trans-lunar flyby → return → retro-burn → Falcon-9 touchdown ON the pad.
 
-- If the world-locked panel work (plan §5.3) lands, use it; otherwise accept the head-docked
-  HUD and stage the camera so it doesn't occlude the table — the occlusion was reproduced live
-  2026-08-01, so know your camera pose in advance.
-- Full Space entry animation: plane queries poll for a reason — give the app its ~2.5 s before
+- Say the honest sentence out loud — it's the pitch: "guided simulation with integrated point
+  gravity; the SDK's uniform-gravity rigid body cannot orbit, so the sim says exactly what it
+  is on the panel footer."
+- The OS places the web panel; from the fixed forward pose it can occlude the scene — use
+  `panel:hide`/`panel:show` DEBUG_CMDs for clean flight views (the app auto-opens the panel
+  after seating).
+- Full Space entry animation: plane queries poll for a reason — give the app ~2.5 s before
   expecting the table.
+- Fallback: the full-mission video `rocketsim_v2_fullmission_frameseq.mp4` (55 real frames,
+  click → orbit → flyby → landing → reset).
 
-*Evidence: the 2026-07-29 MR-tabletop session + the v30.2–v30.5 lane (test-gated); front-of-user
-seating proven by two captures, ledger seq 12 [live, 2026-07-30].*
+*Evidence: ledger `com.picoagent.rocketsim` seq 9–19 [live, 2026-08-02] — composition, panel,
+CDP click, mid-orbit, flyby, landing burn, reset all vision_verified with linked captures;
+NASA texture shas recorded seq 17.*
+
+**Fallback beat — MR tabletop** (if rocketsim misbehaves): the 2026-07-29 tabletop app —
+detected FLOOR, physics settling, live Kraken feed, web panel driving native physics; same
+v30 lane narration (`measure_model` → `bake_textured_model` →
+`generate_surface_placement_kotlin`). Evidence: ledger seq 12 [live, 2026-07-30].
 
 ### 5. Capabilities + claims — the honesty close (~3 min)
 
