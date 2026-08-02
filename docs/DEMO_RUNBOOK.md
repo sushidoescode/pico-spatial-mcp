@@ -64,8 +64,15 @@ around Earth → trans-lunar flyby → return → retro-burn → Falcon-9 touchd
   after seating).
 - Full Space entry animation: plane queries poll for a reason — give the app ~2.5 s before
   expecting the table.
-- Fallback: the full-mission video `rocketsim_v2_fullmission_frameseq.mp4` (55 real frames,
-  click → orbit → flyby → landing → reset).
+- **Placement is a demo moment (v3)**: the whole installation — table, pad, rocket, planets,
+  trajectory — is one movable root. Nudge/rotate/reseat from the panel's TABLE PLACEMENT
+  cluster (real clicks), or OPTION+drag with `tools/table_drag_bridge.py`
+  (`BRIDGE_PKG=com.picoagent.rocketsim`; needs Input Monitoring). Height re-derives from the
+  detected floor on every move; placement is rejected (greyed, LOCKED IN FLIGHT) mid-mission.
+  A mission flown from a moved+rotated pose landed dead-center on the relocated pad
+  (ledger seq 25–32, 2026-08-02).
+- Fallback: full-mission videos `rocketsim_v2_fullmission_frameseq.mp4` (default pose) and
+  `rocketsim_v3_movedpos_fullmission_frameseq.mp4` (moved pose, 62 real frames).
 
 *Evidence: ledger `com.picoagent.rocketsim` seq 9–19 [live, 2026-08-02] — composition, panel,
 CDP click, mid-orbit, flyby, landing burn, reset all vision_verified with linked captures;
