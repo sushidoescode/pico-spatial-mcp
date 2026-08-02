@@ -38,6 +38,14 @@ fs.existsSync(path.join(SKELETON_ROOT, "_gitignore")) && !fs.existsSync(path.joi
   ? ok("gitignores stored dot-less (_gitignore) so npm pack cannot drop them")
   : fail("skeleton gitignore storage wrong: need _gitignore, not .gitignore (npm pack drops dotfile gitignores)");
 
+// v32 MR default: the raw skeleton bakes stage.style "1" (Mixed) so an un-substituted skeleton
+// matches the product default, in the exact shape the substitution regex rewrites (the "3" opt-in
+// substitution is asserted on a generated project below).
+const skelManifest = fs.readFileSync(path.join(SKELETON_ROOT, "app/src/main/AndroidManifest.xml"), "utf8");
+/(pico\.spatial\.stage\.style"\s*\n?\s*android:value=")1(")/.test(skelManifest)
+  ? ok("skeleton bakes stage.style 1 (Mixed — the MR default) in the regex-substitutable shape")
+  : fail("skeleton manifest must bake stage.style 1 (Mixed default) in the regex-rewritable shape");
+
 // Load-bearing gradle facts (handoff-verified): Compose excludes + .bundle noCompress + arm64 + SDK 35.
 const appGradle = fs.readFileSync(path.join(SKELETON_ROOT, "app/build.gradle.kts"), "utf8");
 for (const needle of ['exclude("androidx.compose.ui", "ui")', 'noCompress += listOf(".bundle")', 'abiFilters.add("arm64-v8a")', "compileSdk = 35"]) {
@@ -95,7 +103,8 @@ try {
     ? ok("strings.xml keeps the scaffold-rewritable shape") : fail("strings.xml shape no longer matches the rebrand regexes");
   const manifest = fs.readFileSync(path.join(dst, "app/src/main/AndroidManifest.xml"), "utf8");
   /(pico\.spatial\.stage\.style"\s*\n?\s*android:value=")3(")/.test(manifest)
-    ? ok("stage.style set to 3 in the regex-compatible shape") : fail("manifest stage.style wrong or shape drifted");
+    ? ok("stage.style substituted to 3 (the Full opt-in flips the baked Mixed default) in the regex-compatible shape")
+    : fail("manifest stage.style wrong or shape drifted");
   manifest.includes("${applicationId}.agentbridge") ? ok("AgentBridgeInitProvider provider entry survives") : fail("agent bridge provider entry lost");
   const lp = fs.readFileSync(path.join(dst, "local.properties"), "utf8");
   /spatial\.tools\.dir=/.test(lp) ? ok("local.properties generated with spatial.tools.dir") : fail(`local.properties missing spatial.tools.dir: ${lp}`);

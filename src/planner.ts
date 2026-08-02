@@ -187,7 +187,10 @@ function displayScaffold(brief: string, appName: string, packageName: string): A
   const museum = MUSEUM_WORDS.some((w) => brief.toLowerCase().includes(w));
   const layoutId = museum ? "arc1" : "grid1";
   return appSpecSchema.parse({
-    meta: { appName, packageName, stageStyle: "3", brief },
+    // v32 MR default: Mixed ("1") — the showpieces float at eye level in front of the user with the
+    // real room as the backdrop (explicit centerY/centerZ document the placement; the values are the
+    // proven layout-generator defaults, unchanged geometry). Fully-virtual briefs opt into "3".
+    meta: { appName, packageName, stageStyle: "1", brief },
     scenes: [
       {
         id: "main",
@@ -198,8 +201,8 @@ function displayScaffold(brief: string, appName: string, packageName: string): A
     ],
     layouts: [
       museum
-        ? { id: layoutId, sceneId: "main", pattern: "arc", count: 3, params: { radius: 2.2 } }
-        : { id: layoutId, sceneId: "main", pattern: "grid", count: 3, params: { columns: 3 } },
+        ? { id: layoutId, sceneId: "main", pattern: "arc", count: 3, params: { radius: 2.2, centerY: 1.4 } }
+        : { id: layoutId, sceneId: "main", pattern: "grid", count: 3, params: { columns: 3, centerY: 1.4, centerZ: -2.5 } },
     ],
     objects: [
       {
@@ -239,21 +242,29 @@ function displayScaffold(brief: string, appName: string, packageName: string): A
   });
 }
 
-/** game: static lane box + one dynamic ball + 3 dynamic pins + a press-menu (launch:ball / resetWorld) +
- *  a 2-field HUD panel, modeled on briefs/knockdown.json (the proven physics-adapter pattern — R1-R5). */
+/** game: an MR TABLETOP knockdown modeled on briefs/mrtable.json (the proven Mixed-stage pattern):
+ *  a static primitive table standing in the user's real room (the exact mrtable table — base at
+ *  y=0.4, the emulator room's measured FLOOR plane height), 3 pins racked on the tabletop rear edge,
+ *  a ball at the near edge launched across the top (press-menu launch:ball / resetWorld), and a
+ *  2-field HUD panel. The old floating lane over passthrough was Full-Space geometry; the table IS
+ *  the lane now. Table + settle-on-tabletop physics are capture-proven (the mrtable MR-lane proof
+ *  run — human-LOOKed forward capture); the
+ *  pins-on-tabletop rack composes that with knockdown's proven rack offsets (+0.21 above surface)
+ *  and awaits its own fleet capture. */
 function gameScaffold(brief: string, appName: string, packageName: string): AppSpec {
+  // tabletop surface: table center y 0.8 + half-height 0.4 = 1.2
   const pin = (id: string, x: number) => ({
     id,
-    sceneId: "lane",
+    sceneId: "table",
     source: "primitive" as const,
-    transform: { position: [x, 1.21, -5] },
+    transform: { position: [x, 1.41, -1.85] },
     body: { mode: "dynamic" as const, shape: "capsule" as const, dims: [0.3, 0.06], mass: 0.35, color: [0.95, 0.95, 0.92] },
   });
   return appSpecSchema.parse({
-    meta: { appName, packageName, stageStyle: "3", brief },
+    meta: { appName, packageName, stageStyle: "1", brief },
     scenes: [
       {
-        id: "lane",
+        id: "table",
         environment: { kind: "procedural" },
         lighting: { rig: "sun" },
         colliders: { props: [] },
@@ -263,18 +274,18 @@ function gameScaffold(brief: string, appName: string, packageName: string): AppS
     layouts: [],
     objects: [
       {
-        id: "floor",
-        sceneId: "lane",
+        id: "tableTop",
+        sceneId: "table",
         source: "primitive",
-        transform: { position: [0, 0.9, -4.2] },
-        body: { mode: "static", shape: "box", dims: [1.4, 0.2, 3.6], color: [0.55, 0.4, 0.22] },
+        transform: { position: [0, 0.8, -1.6] },
+        body: { mode: "static", shape: "box", dims: [1.2, 0.8, 0.7], color: [0.55, 0.4, 0.22] },
       },
       {
         id: "ball",
-        sceneId: "lane",
+        sceneId: "table",
         source: "primitive",
-        transform: { position: [0, 1.17, -2.9] },
-        body: { mode: "dynamic", shape: "sphere", dims: [0.15], mass: 5, color: [0.1, 0.08, 0.2] },
+        transform: { position: [0, 1.3, -1.35] },
+        body: { mode: "dynamic", shape: "sphere", dims: [0.08], mass: 0.5, color: [0.1, 0.08, 0.2] },
       },
       pin("pin0", -0.16),
       pin("pin1", 0),
@@ -282,7 +293,7 @@ function gameScaffold(brief: string, appName: string, packageName: string): AppS
     ],
     data: [],
     interactions: [
-      { id: "btnLaunch", trigger: "press", target: "ball", action: "launch:ball", driveChannel: "broadcast", params: { velocity: [0, 0, -7], angular: [-8, 0, 0], button: "start" } },
+      { id: "btnLaunch", trigger: "press", target: "ball", action: "launch:ball", driveChannel: "broadcast", params: { velocity: [0, 0, -3], angular: [-8, 0, 0], button: "start" } },
       { id: "btnReset", trigger: "press", target: "ball", action: "resetWorld", driveChannel: "broadcast", params: { button: "reset" } },
     ],
     panels: [
@@ -296,14 +307,14 @@ function gameScaffold(brief: string, appName: string, packageName: string): AppS
         ],
       },
     ],
-    navigation: { startScene: "lane", portals: [] },
+    navigation: { startScene: "table", portals: [] },
     verificationPlan: [
       {
-        claim: "the ball and 3 pins are racked on the lane",
+        claim: "a primitive table stands in the room with the ball and 3 pins racked on the tabletop",
         method: "capture",
         capabilityClass: "C0_emulator",
-        targetRef: "lane",
-        forwardFOVpose: { yawDeg: 0, pitchDeg: 0, targetZ: -4.2 },
+        targetRef: "table",
+        forwardFOVpose: { yawDeg: 0, pitchDeg: 0, targetZ: -1.6 },
       },
     ],
     headsetLayer: [],
@@ -314,7 +325,9 @@ function gameScaffold(brief: string, appName: string, packageName: string): AppS
  *  briefs/console.json. */
 function datapanelScaffold(brief: string, appName: string, packageName: string): AppSpec {
   return appSpecSchema.parse({
-    meta: { appName, packageName, stageStyle: "3", brief },
+    // v32 MR default: Mixed ("1") — the metric quad already sits at eye level in front of the user
+    // ([0, 1.4, -2]), so the real room is the backdrop; the HUD panel docks as before.
+    meta: { appName, packageName, stageStyle: "1", brief },
     scenes: [
       {
         id: "wall",
@@ -352,6 +365,11 @@ function datapanelScaffold(brief: string, appName: string, packageName: string):
     headsetLayer: [],
   });
 }
+
+/** Named in every scaffold response so authors see the stage decision AND the Full-Space opt-in.
+ *  The Guardian-boundary caveat is PARTNER-STATED (PICO, fix in progress) — not measured by us. */
+export const SCAFFOLD_STAGE_NOTE =
+  "All scaffolds default to stageStyle '1' (Mixed — the MR default: content renders in the user's real room). Fully-virtual briefs opt in with meta.stageStyle '3' (Full — first-class and fully supported; carries a partner-stated Guardian-boundary issue on hardware, per PICO, fix in progress).";
 
 /** Build the scaffold whose shape matches the brief's closest proven pattern; "generic" keeps the
  *  original exampleSpec (unchanged fallback). */
@@ -442,6 +460,7 @@ export function registerPlannerTools(server: McpServer) {
           archetypeWhy: matched.length
             ? `matched keyword(s): ${matched.join(", ")}. A wrong steer is cheap to override — adapt any part of the scaffold, or restate the brief without the keyword.`
             : "no archetype keywords matched — generic scaffold (the safe fallback).",
+          stage: SCAFFOLD_STAGE_NOTE,
           scaffold: archetypeScaffold(brief, archetype),
         });
       }

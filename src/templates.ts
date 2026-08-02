@@ -19,10 +19,13 @@ const fwd = (targetZ = -2.5) => ({ yawDeg: 0, pitchDeg: 0, targetZ });
 
 const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampleData?: (p: Params) => any }> = {
   gallery: {
-    desc: "A quiet gallery: N works floating in an arc, softly lit. No data/interaction.",
+    desc: "A quiet gallery: N works floating in an arc in the user's room, softly lit. No data/interaction.",
+    // v32 MR default: Mixed ("1") — the room IS the hall. The old texturedMesh env belonged to the
+    // Full-Space presentation and would occlude passthrough, so the env is procedural now; opt back
+    // into "3" + a texturedMesh env asset for a fully-virtual hall.
     build: (p) => ({
-      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "3", brief: p.brief },
-      scenes: [{ id: "main", environment: { kind: "texturedMesh" }, lighting: { rig: "sun" }, colliders: { props: [] } }],
+      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "1", brief: p.brief },
+      scenes: [{ id: "main", environment: { kind: "procedural" }, lighting: { rig: "sun" }, colliders: { props: [] } }],
       layouts: [{ id: "arc1", sceneId: "main", pattern: "arc", count: p.count ?? 3, params: { radius: 2.2 } }],
       objects: [{ id: "works", sceneId: "main", source: "quad", layoutRef: "arc1" }],
       navigation: { startScene: "main" },
@@ -31,8 +34,10 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
   },
   inspection: {
     desc: "An inspection bay: N gaze-selectable hotspots on a grid over the home-env floor. Native anchoring = Swan.",
+    // v32 MR default: Mixed ("1") — the template was already authored against the home environment
+    // (homeEnvProxy colliders); in Mixed the hotspots sit over the REAL room instead of a void.
     build: (p) => ({
-      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "3", brief: p.brief },
+      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "1", brief: p.brief },
       scenes: [{ id: "bay", environment: { kind: "homeEnvProxy" }, lighting: { rig: "fullRig" }, colliders: { room, props: [] } }],
       layouts: [{ id: "spots", sceneId: "bay", pattern: "grid", count: p.count ?? 4, params: { columns: 2 } }],
       objects: [{ id: "hotspots", sceneId: "bay", source: "primitive", layoutRef: "spots" }],
@@ -44,8 +49,9 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
   },
   dashboard: {
     desc: "A data dashboard: N metric tiles on a grid, each colored by a JSON status feed.",
+    // v32 MR default: Mixed ("1") — metric tiles float at eye level with the real room behind them.
     build: (p) => ({
-      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "3", brief: p.brief },
+      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "1", brief: p.brief },
       scenes: [{ id: "wall", environment: { kind: "procedural" }, lighting: { rig: "sun" }, colliders: { props: [] } }],
       layouts: [{ id: "tiles", sceneId: "wall", pattern: "grid", count: p.count ?? 6, params: { columns: 3 } }],
       objects: [{ id: "metrics", sceneId: "wall", source: "quad", layoutRef: "tiles", dataBindRef: "feed" }],
@@ -57,6 +63,7 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
   },
   ambient: {
     desc: "A calm ambient corner: a softly-lit procedural scene, nothing to click.",
+    // Progressive ("2") intentionally kept — the adjustable virtual/real balance is this template's point.
     build: (p) => ({
       meta: { appName: p.appName, packageName: p.packageName, stageStyle: "2", brief: p.brief },
       scenes: [{ id: "corner", environment: { kind: "procedural" }, lighting: { rig: "ibl", params: { ktxAssetPath: "ibl/studio.ktx", mode: "local", intensityExponent: 6 } }, colliders: { props: [] } }],
@@ -68,8 +75,10 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
   },
   showcase: {
     desc: "An interactive product showcase: N items on shelves, gaze-select + detail card, from a JSON catalog. Controller-ray = Swan.",
+    // v32 MR default: Mixed ("1") — the shelf stands in the user's room (homeEnvProxy colliders were
+    // already the home bedroom's geometry).
     build: (p) => ({
-      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "3", brief: p.brief },
+      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "1", brief: p.brief },
       scenes: [{ id: "main", environment: { kind: "homeEnvProxy" }, lighting: { rig: "sun" }, colliders: { room, props: [] } }],
       layouts: [{ id: "shelf1", sceneId: "main", pattern: "shelf", count: p.count ?? 6, params: { shelves: 2 } }],
       objects: [{ id: "cards", sceneId: "main", source: "quad", layoutRef: "shelf1", dataBindRef: "catalog" }],
@@ -89,8 +98,10 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
   },
   studio: {
     desc: "A premium product STUDIO: N procedural props in an arc, PBR-metallic + a sun rig with soft shadows, each slowly spinning. For real polished-metal reflections, add prepare_ibl_cubemap + generate_ibl_kotlin(mode='local', intensityExponent≈6) on the props. (Richer bespoke scenes — orrery/command-deck — are hand-crafted: see examples/HeroObservatory.kt + VIDEO_DEMO.md.)",
+    // v32 MR default: Mixed ("1") — the product props spin in the user's room; the IBL upgrade the
+    // desc suggests already names mode='local' (stage-mode IBL is inert in Mixed and fails closed).
     build: (p) => ({
-      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "3", brief: p.brief },
+      meta: { appName: p.appName, packageName: p.packageName, stageStyle: "1", brief: p.brief },
       scenes: [{ id: "studio", environment: { kind: "procedural" }, lighting: { rig: "sun" }, colliders: { props: [] } }],
       layouts: [{ id: "row", sceneId: "studio", pattern: "arc", count: p.count ?? 3, params: { radius: 1.8 } }],
       objects: [{ id: "hero", sceneId: "studio", source: "primitive", layoutRef: "row", material: { mode: "pbr", metallic: 1, roughness: 0.15 }, anim: { type: "tween", property: "rotation", from: [0, 0, 0], to: [0, 360, 0], duration: 8, repeat: "restart" } }],
@@ -100,6 +111,11 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
   },
   knockdown: {
     desc: "A REAL-PHYSICS knockdown game (verified simulating on the emulator, v8.8): a lane, N capsule targets racked at the far end, and a heavy ball — broadcast 'launch:ball' throws it and the targets scatter under real rigid-body dynamics. Expect a ~2s beat between launch and motion (engine epoch). Click START (green) on the in-world GameMenu to throw, RESET (red) to re-rack (disable+rebuild — the only reliable physics reset). The mouse bridge clicks the menu; broadcast start/reset also drives it. Needs assets/menu.bundle.",
+    // v32 DELIBERATELY still "3" (Full — explicit opt-in): this is the verified Full-Space physics
+    // proof-path (v8.8) whose lane geometry (rack at z=-5 over a floating slab) was proven against
+    // the void and reads as floating furniture over passthrough; it has NOT been re-captured in
+    // Mixed. The MR-native equivalent is the tabletop game archetype (plan_app_spec game scaffold,
+    // modeled on briefs/mrtable.json).
     build: (p) => {
       const n = Math.min(p.count ?? 3, 6);
       const targets = Array.from({ length: n }, (_, i) => ({
@@ -133,6 +149,7 @@ const TEMPLATES: Record<string, { desc: string; build: (p: Params) => any; sampl
   },
   constellation: {
     desc: "An ambient CONSTELLATION: N softly-lit nodes in an arc — a calm data/ambient piece (IBL rig). Combine with SceneAnimator (bob/pulseEmissive) for gentle life.",
+    // Progressive ("2") intentionally kept — the adjustable virtual/real balance is this template's point.
     build: (p) => ({
       meta: { appName: p.appName, packageName: p.packageName, stageStyle: "2", brief: p.brief },
       scenes: [{ id: "space", environment: { kind: "procedural" }, lighting: { rig: "ibl", params: { ktxAssetPath: "ibl/studio.ktx", mode: "local", intensityExponent: 6 } }, colliders: { props: [] } }],

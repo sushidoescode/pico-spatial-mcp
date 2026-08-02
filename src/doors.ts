@@ -88,9 +88,9 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_build_app",
-    "DOOR 1 — Build a verified spatial app from a brief. TWO-STEP by design: call with just {brief} to receive a scaffold AppSpec (the planner never guesses your intent — YOU author); adapt the scaffold to the brief, then call again with {brief, draftSpec} to compile through the full pipeline (scaffold → codegen → gradle → install → launch on the emulator), capture a frame, and judge it. Returns the verdict, the capture path (LOOK at it before claiming anything works), and the project dir. Escalations mean a human/agent must look — that is the honesty contract, not an error.",
+    "DOOR 1 — Build a verified spatial app from a brief. TWO-STEP by design: call with just {brief} to receive a scaffold AppSpec (the planner never guesses your intent — YOU author); adapt the scaffold to the brief, then call again with {brief, draftSpec} to compile through the full pipeline (scaffold → codegen → gradle → install → launch on the emulator), capture a frame, and judge it. Apps default to the Mixed stage (stageStyle '1' — the passthrough home environment is the backdrop and content seats ON the room, mrtable-style); a fully-virtual app remains a first-class opt-in via meta.stageStyle '3' (Full). Honest expectation: the calibrated eye cannot yet score passthrough frames, so Mixed-stage builds land 'built-needs-look' rather than auto-PASS. Returns the verdict, the capture path (LOOK at it before claiming anything works), and the project dir. Escalations mean a human/agent must look — that is the honesty contract, not an error.",
     {
-      brief: z.string().describe("What to build, e.g. 'three spinning crystals over a stone floor with a start menu'."),
+      brief: z.string().describe("What to build, e.g. 'a primitive table standing on my real floor with bodies dropping onto it from a clickable menu' (Mixed-stage MR, the default; a fully-virtual brief opts into stage style 3)."),
       draftSpec: z.any().optional().describe("Your AppSpec, adapted from the scaffold a brief-only call returns. Omit on the first call."),
     },
     async ({ brief, draftSpec }) => {
@@ -447,7 +447,7 @@ export function registerDoorTools(server: McpServer) {
         actions.push({ door: "pico_doctor", argsExample: { calibrate: true }, why: "the capture camera is uncalibrated — pico_measure refuses metric claims until the one-time calibration runs (takes minutes; the emulator is already up)." });
       if (!actions.length) {
         if (!briefs.length)
-          actions.push({ door: "pico_build_app", argsExample: { brief: "three spinning crystals over a stone floor with a start menu" }, why: "no generated briefs exist yet — a brief-only call returns a scaffold AppSpec to author (the two-step contract), the front door of the whole pipeline." });
+          actions.push({ door: "pico_build_app", argsExample: { brief: "a primitive table standing on my real floor with bodies dropping onto it from a clickable menu" }, why: "no generated briefs exist yet — a brief-only call returns a scaffold AppSpec to author (the two-step contract), the front door of the whole pipeline. The suggested brief is the Mixed-stage MR lane (the default: content seated on the passthrough room); a fully-virtual scene stays a first-class opt-in via meta.stageStyle '3'." });
         else
           actions.push({ door: "pico_build_app", argsExample: { brief: "<your next brief>" }, why: `all ${briefs.length} recent brief(s) are vision-recorded — nothing is pending; start the next app, or run pico_ship on a finished project to see what shipping still needs.` });
       }

@@ -19,19 +19,30 @@ read-only, and calibration freshness is checked against the current emulator boo
 
 *Evidence: `preflight_env`/`pico_doctor` green with two soft flags [live].*
 
-### 2. Doors first-light (~10 min, the timed loop)
+### 2. Doors first-light — the MR brief (~10 min, the timed loop)
 
-Short brief → `pico_build_app` returns `needs-authoring` + a scaffold (say why: the planner
-never guesses intent) → author the spec → `pico_build_app({brief, draftSpec})` → build →
-`pico_look` → **actually LOOK at the frame on screen** → record it with `pico_record`, closing
-the honesty loop in front of them.
+Short **Mixed-stage MR brief** — mrtable-style, e.g. *"a primitive table standing on my real
+floor with bodies dropping onto it from a clickable menu"* → `pico_build_app` returns
+`needs-authoring` + a scaffold (say why: the planner never guesses intent) → author the spec
+(stageStyle `1` — the default) → `pico_build_app({brief, draftSpec})` → build → `pico_look` →
+**actually LOOK at the frame on screen** → record it with `pico_record`, closing the honesty
+loop in front of them.
 
 - The two-step protocol is the design, not a failure — rehearse the narration for call one.
+- **Narrate the escalation as the pitch, not an apology**: the calibrated eye cannot score
+  passthrough frames (its checks were trained on a black void), so the Mixed build comes back
+  `built-needs-look`/ESCALATE by construction — the machinery degrades safely instead of lying,
+  and YOUR look on stage is the verification. That is the honesty contract working in front of
+  them.
 - `pico_record` is the doors ledger-write door (landed in v31; the doors surface is now
   16 tools — smoke-verified; pico_next answers 'what should I do now' from live local state).
 
-*Evidence: the exact loop ran end-to-end 2026-08-01 on a fresh arcade brief — ledger
-`com.fleet.door48128` seq 0–2 (2 vision_verified, 1 honest structural); the driven `start`
+*Evidence: the MR lane ran the exact brief unattended through `fleet_build` 2026-08-02 —
+built 1 / installed 1 on the first pass, eye ESCALATE (confidence 0.5, correctly refused to
+auto-PASS a passthrough frame), human LOOK confirmed the table seated in the passthrough room
+with all three bodies settled on it — ledger `com.fleet.mrtable` seq 0–2 (1 vision_verified +
+2 honest structural), capture sha `4f3a9c36…` [live]. The doors loop itself ran end-to-end
+2026-08-01 on a fresh arcade brief — ledger `com.fleet.door48128` seq 0–2; the driven `start`
 action bumped the HUD live [live]. First-light previously timed at ~10 min (2026-07-21).*
 
 ### 3. The interop beat (~4 min)

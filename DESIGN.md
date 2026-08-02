@@ -96,14 +96,25 @@ when the relevant mode is armed. (The emulator provides trigger events but **no 
 controller pose**, so design a button-driven path that works without aiming, plus the
 controller-ray path for real headsets.)
 
-## 6. Stage style + keeping the user "inside"
+## 6. Stage style — Mixed is the default; Full is the opt-in that owns the enclosure problem
 
-`pico.spatial.stage.style = 3` (Full) replaces the home environment with the app's
-content. But a small procedural room is a finite box — moving past its walls reveals the
-system environment. To keep the user enclosed: make the environment **large/enveloping**
-(a big room or a skybox sphere), or accept that the emulator's free WASD camera can roam
-(on a headset the user stands in place). A skybox sphere (large inverted sphere with a
-textured/emissive material) guarantees a consistent backdrop everywhere.
+`pico.spatial.stage.style = 1` (Mixed) is the MR default: the passthrough home environment
+IS the environment, so the user is **always enclosed** — there is no "falling out", no void
+to dress, and no backdrop to build (a set-dressing kit would *occlude* the real room, which
+is a defect in Mixed, not a remedy). Design Mixed scenes by **seating content ON the room**:
+detected floor/table/wall planes, measured base lifts, primitive colliders (the
+`place_model_on_surface` lane).
+
+`pico.spatial.stage.style = 3` (Full) stays a first-class opt-in for fully-virtual scenes:
+it replaces the home environment with the app's content — and thereby **inherits the
+enclosure problem**. A small procedural room is a finite box; moving past its walls reveals
+the system environment. To keep the user enclosed in Full: make the environment
+**large/enveloping** (a big room or a skybox sphere), or accept that the emulator's free
+WASD camera can roam (on a headset the user stands in place). A skybox sphere (large
+inverted sphere with a textured/emissive material) guarantees a consistent backdrop
+everywhere. One hardware caveat, **partner-stated** (per Matt/PICO, fix in progress — not
+measured by us): Full-Space (style 3) immersive apps hit a known Guardian-boundary issue on
+hardware, so style 3 stays an explicit choice until re-verified there.
 
 
 > **⚠️ v9.4 CORRECTION (tested):** an immersive app's OWN `WindowContainer` DSL never opens a panel window on the *emulator* (the window is never created — verified via dumpsys; the telemetry line below reflects registration, not a rendered window). For live panels on the emulator, emit a separate 2D panel ACTIVITY (`generate_panel_compose_kotlin`) — the OS auto-hosts 2D tasks as floating spatial panels. The WindowContainer guidance below may still apply on Swan hardware — unverified.

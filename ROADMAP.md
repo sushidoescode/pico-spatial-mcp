@@ -170,6 +170,13 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
 
 ## Partner-gated (needs PICO-side artifacts or hardware)
 
+- **Full Space Guardian-boundary fix — PARTNER-STATED** (Matt/PICO, known issue, fix in
+  progress; reported to us, **not measured by us**): Full-Space (stageStyle 3) immersive
+  Spatial SDK apps hit a Guardian-boundary issue on hardware. Until PICO's fix lands and we
+  re-verify on hardware, stageStyle 3 stays a first-class *explicit opt-in* while Mixed
+  (stageStyle 1) is the default. Scope note: this attaches to stageStyle-3 immersion only —
+  "Full Space" in the plane-detection lane means an open Stage (vs a WindowContainer),
+  which Mixed apps also satisfy, and that lane is unaffected.
 - **L3 emulator camera-provider shim** — propose a PICO-side provider that serves deterministic
   world-model RGB plus plane/surface metadata through camera/VST-facing APIs. Gate: PICO blessing
   and an integration surface or emulator source artifact; this repo will not claim an upstream

@@ -40,18 +40,33 @@ function listContentKt(projectDir: string, pkg: string): string[] {
   }
 }
 
+/** The app's ACTUAL stage style from its AndroidManifest.xml (v32: stamping every decoded app "3"
+ *  misdescribed MR apps like mrtable). Falls back to "1" — the MR default — when the meta-data is
+ *  missing, unreadable, or a value the AppSpec enum doesn't carry (e.g. "0" Automatic). */
+function findManifestStageStyle(projectDir: string): { style: "1" | "2" | "3"; source: "manifest" | "fallback" } {
+  try {
+    const txt = fs.readFileSync(path.join(projectDir, "app/src/main/AndroidManifest.xml"), "utf8");
+    const m = /pico\.spatial\.stage\.style"\s*android:value="([0-9]+)"/.exec(txt);
+    if (m && (m[1] === "1" || m[1] === "2" || m[1] === "3")) return { style: m[1], source: "manifest" };
+  } catch {
+    /* fall through to the default */
+  }
+  return { style: "1", source: "fallback" };
+}
+
 // Infer a coarse AppSpec from which content files the loop authored.
 function inferSpec(projectDir: string): { spec: any; evidence: string[] } {
   const pkg = findGradlePackage(projectDir) ?? "com.example.app";
   const kt = listContentKt(projectDir, pkg);
   const has = (n: string) => kt.some((f) => f.toLowerCase().includes(n));
-  const evidence = [`package=${pkg}`, `content=[${kt.join(", ")}]`];
+  const stage = findManifestStageStyle(projectDir);
+  const evidence = [`package=${pkg}`, `stageStyle=${stage.style} (${stage.source})`, `content=[${kt.join(", ")}]`];
 
   const env = has("meshenvironment") ? "texturedMesh" : has("splatenvironment") ? "splat" : has("homeenvproxy") ? "homeEnvProxy" : "procedural";
   const rig = has("lightingrig") || has("fulllighting") ? "fullRig" : has("scenelighting") || has("lighting") ? "sun" : "none";
   const scene: any = { id: "main", environment: { kind: env }, lighting: { rig }, colliders: has("collider") ? { room: { halfW: 2.5, height: 2.5, halfD: 2.5, centerZ: -2 }, props: [] } : { props: [] } };
 
-  const spec: any = { meta: { appName: pkg.split(".").pop() ?? "app", packageName: pkg, stageStyle: "3", brief: "(decoded from existing app)" }, scenes: [scene], navigation: { startScene: "main" } };
+  const spec: any = { meta: { appName: pkg.split(".").pop() ?? "app", packageName: pkg, stageStyle: stage.style, brief: "(decoded from existing app)" }, scenes: [scene], navigation: { startScene: "main" } };
   if (has("scenelayout")) spec.layouts = [{ id: "layout1", sceneId: "main", pattern: "shelf", count: 6 }];
   if (has("databinding")) spec.data = [{ id: "data1", source: "json", asset: "data/items.json", bindsTo: ["objects1"] }];
   if (has("scenelayout")) spec.objects = [{ id: "objects1", sceneId: "main", source: "quad", layoutRef: "layout1", ...(has("databinding") ? { dataBindRef: "data1" } : {}) }];

@@ -1,8 +1,12 @@
 // v27.6 scaffold-archetype test: pickArchetype steers a brief-only plan_app_spec call toward the
 // pipeline's proven patterns (display/game/data-panel) instead of one generic showcase scaffold.
+// v32 adds the MR-first pivot contract: every scaffold defaults to Mixed ("1"), the game archetype
+// is the mrtable-style tabletop (not a floating Full-Space lane), stage-mode IBL under Mixed fails
+// closed, and the per-template stage decisions hold.
 // Run: npm run test:archetype
-import { pickArchetype, matchArchetype, archetypeScaffold } from "../dist/planner.js";
+import { pickArchetype, matchArchetype, archetypeScaffold, SCAFFOLD_STAGE_NOTE } from "../dist/planner.js";
 import { appSpecSchema } from "../dist/appspec.js";
+import { buildTemplateDraft } from "../dist/templates.js";
 
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
@@ -29,6 +33,10 @@ for (const { brief, want } of CASES) {
   const parsed = appSpecSchema.safeParse(scaffold);
   if (parsed.success) ok(`${got} scaffold for "${brief}" parses through appSpecSchema with zero issues`);
   else fail(`${got} scaffold for "${brief}" failed schema: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+
+  // v32 MR default: every archetype scaffold ships Mixed ("1"); Full ("3") is an explicit opt-in.
+  if (parsed.success && parsed.data.meta.stageStyle === "1") ok(`${got} scaffold defaults to Mixed (stageStyle "1")`);
+  else if (parsed.success) fail(`${got} scaffold stageStyle is "${parsed.data.meta.stageStyle}", expected "1" (the MR default)`);
 }
 
 // Priority: a "bowling game dashboard" is a game — physics/interaction pattern dominates a HUD word.
@@ -49,16 +57,23 @@ else fail(`priority broken: "a bowling game dashboard" -> ${mixed}, expected gam
   else fail("display scaffold missing a rotation tween anim");
   if (dataId === "crystal") ok(`display scaffold data node named from the brief's shape word ("${dataId}")`);
   else fail(`display scaffold data node id "${dataId}" not derived from the brief's shape word (expected "crystal")`);
+  // v32 MR placement is explicit: eye-level content in front of the user, the room as backdrop
+  // (the values are the proven layout-generator defaults, now named in the scaffold).
+  const grid = spec.layouts[0];
+  if (grid?.params?.centerY === 1.4 && grid?.params?.centerZ === -2.5) ok("display grid names its MR placement (centerY 1.4 eye level, centerZ -2.5 in front)");
+  else fail(`display grid MR placement params missing: ${JSON.stringify(grid?.params)}`);
 }
 
-// game archetype: static lane box + one dynamic ball + 3 dynamic pins + press-menu + a 2-field HUD panel.
+// game archetype (v32 MR restructure): a TABLETOP knockdown in the user's room modeled on
+// briefs/mrtable.json — one static table + one dynamic ball + 3 dynamic pins racked ON the tabletop
+// + press-menu + a 2-field HUD panel. No floating Full-Space lane.
 {
   const spec = archetypeScaffold("a bowling knockdown game", "game");
   const statics = spec.objects.filter((o) => o.body?.mode === "static");
   const dynamics = spec.objects.filter((o) => o.body?.mode === "dynamic");
   const presses = spec.interactions.filter((i) => i.trigger === "press");
   const actions = presses.map((i) => i.action).sort();
-  if (statics.length === 1) ok("game scaffold has one static lane object");
+  if (statics.length === 1) ok("game scaffold has one static table object");
   else fail(`game scaffold has ${statics.length} static objects, expected 1`);
   if (dynamics.length === 4) ok("game scaffold has 1 dynamic ball + 3 dynamic pins (4 dynamic bodies)");
   else fail(`game scaffold has ${dynamics.length} dynamic objects, expected 4`);
@@ -66,6 +81,27 @@ else fail(`priority broken: "a bowling game dashboard" -> ${mixed}, expected gam
   else fail(`game scaffold interactions mismatch: ${JSON.stringify(actions)}`);
   if (spec.panels.length === 1 && spec.panels[0].fields.length === 2) ok("game scaffold has a 2-field HUD panel");
   else fail(`game scaffold panels mismatch: ${JSON.stringify(spec.panels)}`);
+
+  // mrtable geometry contract: the table's base sits at y=0.4 (the emulator room's measured FLOOR
+  // plane height) so it reads as standing in the room, and every dynamic body starts above the
+  // tabletop surface inside its footprint (they settle on the table, not on a void lane).
+  const table = spec.objects.find((o) => o.id === "tableTop");
+  if (table && table.body?.mode === "static" && table.body?.shape === "box") ok("game scaffold's static object is the mrtable-style tableTop box");
+  else fail(`game scaffold missing static tableTop box: ${JSON.stringify(spec.objects.map((o) => o.id))}`);
+  if (table) {
+    const [tx, ty, tz] = table.transform.position;
+    const [dx, dy, dz] = table.body.dims;
+    const base = ty - dy / 2;
+    if (Math.abs(base - 0.4) < 1e-9) ok("table base sits at y=0.4 (the measured floor-plane height — standing in the room)");
+    else fail(`table base at y=${base}, expected 0.4`);
+    const topY = ty + dy / 2;
+    const offTable = dynamics.filter((o) => {
+      const [x, y, z] = o.transform.position;
+      return !(y > topY && Math.abs(x - tx) <= dx / 2 && Math.abs(z - tz) <= dz / 2);
+    });
+    if (offTable.length === 0) ok("all dynamic bodies start above the tabletop surface, inside its footprint");
+    else fail(`dynamic bodies off the tabletop: ${offTable.map((o) => o.id).join(", ")}`);
+  }
 }
 
 // datapanel archetype: a HUD panel with 3 fields + a data node + one modest display object.
@@ -109,6 +145,68 @@ else fail(`priority broken: "a bowling game dashboard" -> ${mixed}, expected gam
   if (parsed.success) ok("museum display variant parses through appSpecSchema");
   else fail(`museum variant schema: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
 }
+
+// v32 schema-level MR default: an omitted meta.stageStyle parses as Mixed ("1"), and stage-mode IBL
+// (explicit OR the implicit default) under Mixed fails closed naming mode 'local' — the capabilities
+// boundary records StageEnvironmentLighting inactive in a MIXED stage. 'stage' stays valid for "3".
+{
+  const iblSpec = (mode, stageStyle) => ({
+    meta: { appName: "X", packageName: "com.x.y", brief: "b", ...(stageStyle ? { stageStyle } : {}) },
+    scenes: [{
+      id: "main",
+      environment: { kind: "procedural" },
+      lighting: { rig: "ibl", params: { ktxAssetPath: "ibl/studio.ktx", intensityExponent: 6, ...(mode ? { mode } : {}) } },
+      colliders: { props: [] },
+    }],
+    navigation: { startScene: "main" },
+  });
+
+  const defaulted = appSpecSchema.parse({ ...iblSpec("local", undefined) });
+  if (defaulted.meta.stageStyle === "1") ok('omitted meta.stageStyle parses as Mixed ("1") — the MR default');
+  else fail(`omitted stageStyle parsed as "${defaulted.meta.stageStyle}", expected "1"`);
+
+  const implicitStage = appSpecSchema.safeParse(iblSpec(undefined, undefined));
+  if (!implicitStage.success && /local/.test(implicitStage.error.issues.map((i) => i.message).join(" ")))
+    ok("implicit stage-mode IBL under the Mixed default fails closed, naming mode 'local'");
+  else fail(`implicit stage-mode IBL under Mixed did not fail closed: ${JSON.stringify(implicitStage.success ? "parsed" : implicitStage.error.issues)}`);
+
+  const explicitStage = appSpecSchema.safeParse(iblSpec("stage", "1"));
+  if (!explicitStage.success) ok("explicit mode 'stage' IBL under stageStyle \"1\" fails closed");
+  else fail("explicit stage-mode IBL under Mixed parsed — it would silently light nothing");
+
+  const fullStage = appSpecSchema.safeParse(iblSpec("stage", "3"));
+  if (fullStage.success) ok("mode 'stage' IBL stays valid for stageStyle \"3\" (Full opt-in)");
+  else fail(`stage-mode IBL under "3" wrongly rejected: ${fullStage.error.issues.map((i) => i.message).join("; ")}`);
+
+  const localMixed = appSpecSchema.safeParse(iblSpec("local", "1"));
+  if (localMixed.success) ok("mode 'local' IBL parses under Mixed");
+  else fail(`local-mode IBL under Mixed wrongly rejected: ${localMixed.error.issues.map((i) => i.message).join("; ")}`);
+}
+
+// v32 per-template stage decisions: gallery/inspection/dashboard/showcase/studio flip to Mixed ("1");
+// knockdown deliberately stays Full ("3" — the verified Full-Space physics proof-path, not yet
+// re-captured in Mixed); ambient/constellation keep Progressive ("2") intentionally.
+{
+  const WANT_STAGE = { gallery: "1", inspection: "1", dashboard: "1", showcase: "1", studio: "1", knockdown: "3", ambient: "2", constellation: "2" };
+  for (const [name, want] of Object.entries(WANT_STAGE)) {
+    const draft = buildTemplateDraft(name, { appName: "T", packageName: "com.t.t", brief: "template stage check" });
+    if (draft?.meta?.stageStyle === want) ok(`template '${name}' stageStyle "${want}"`);
+    else fail(`template '${name}' stageStyle "${draft?.meta?.stageStyle}", expected "${want}"`);
+    const parsed = appSpecSchema.safeParse(draft);
+    if (parsed.success) ok(`template '${name}' still parses through appSpecSchema`);
+    else fail(`template '${name}' schema: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+  }
+  // gallery's env is procedural now — a texturedMesh env under Mixed would occlude the passthrough room.
+  const gallery = buildTemplateDraft("gallery", { appName: "T", packageName: "com.t.t", brief: "b" });
+  if (gallery.scenes[0].environment.kind === "procedural") ok("gallery template env is procedural (the room is the hall — no env mesh occluding passthrough)");
+  else fail(`gallery template env is ${gallery.scenes[0].environment.kind}, expected procedural under Mixed`);
+}
+
+// v32: the scaffold response names the stage choice + the Full opt-in, with the Guardian caveat
+// PARTNER-STATED (never presented as measured by us).
+if (/'1'/.test(SCAFFOLD_STAGE_NOTE) && /Mixed/.test(SCAFFOLD_STAGE_NOTE) && /'3'/.test(SCAFFOLD_STAGE_NOTE) && /opt/i.test(SCAFFOLD_STAGE_NOTE) && /partner-stated/i.test(SCAFFOLD_STAGE_NOTE))
+  ok("SCAFFOLD_STAGE_NOTE names Mixed default + the '3' opt-in + the partner-stated caveat");
+else fail(`SCAFFOLD_STAGE_NOTE incomplete: ${SCAFFOLD_STAGE_NOTE}`);
 
 console.log(`\nArchetype test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

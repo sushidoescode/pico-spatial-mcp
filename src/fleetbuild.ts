@@ -589,6 +589,7 @@ type VisualExpectation = {
   minObjects: number;
   maxObjects?: number;
   notMostlyBlack: true;
+  authoredColors?: { name?: string; color: number[] }[];
 };
 
 /** Resolve the layout whose foreground instances a verification node actually claims. A node may
@@ -611,11 +612,18 @@ function targetLayout(spec: any, verificationNode: any): any | null {
  * fleet_build `minObjects` map. */
 export function deriveVisualExpectation(spec: any, verificationNode: any): VisualExpectation {
   const layout = targetLayout(spec, verificationNode);
+  // v33: the spec's authored body colors ride along so the eye can color-key MR (passthrough)
+  // frames — the eye filters neutrals and refuses to score < 2 distinct keys, so passing the
+  // palette unconditionally is safe for Full-Space briefs too.
+  const authoredColors = (spec?.objects ?? [])
+    .filter((o: any) => Array.isArray(o?.body?.color))
+    .map((o: any) => ({ name: o.id, color: o.body.color }));
+  const palette = authoredColors.length ? { authoredColors } : {};
   const count = Number(layout?.count);
   if (Number.isInteger(count) && count >= 0) {
-    return { minObjects: count, maxObjects: count, notMostlyBlack: true };
+    return { minObjects: count, maxObjects: count, notMostlyBlack: true, ...palette };
   }
-  return { minObjects: 2, notMostlyBlack: true };
+  return { minObjects: 2, notMostlyBlack: true, ...palette };
 }
 
 export type VerificationRoute = {
@@ -843,7 +851,7 @@ export function registerFleetBuildTools(server: McpServer) {
 
             // 1. scaffold (idempotent)
             if (!fs.existsSync(projectDir)) {
-              const sc = await call("scaffold_spatial_app", { targetDir: projectDir, packageName: pkg, appName: spec.meta.appName, stageStyle: spec.meta.stageStyle ?? "3" });
+              const sc = await call("scaffold_spatial_app", { targetDir: projectDir, packageName: pkg, appName: spec.meta.appName, stageStyle: spec.meta.stageStyle ?? "1" });
               if (!sc.created) { rec.notes.push(`scaffold failed: ${innerFailureDetail(sc)}`); continue; }
             }
             const jdir = path.join(projectDir, `app/src/main/java/${pkg.replace(/\./g, "/")}`);
@@ -1081,7 +1089,7 @@ export function registerFleetBuildTools(server: McpServer) {
               // Preserve the public override exactly as the old fleet did (min with the judge's
               // default +1 slack). Without one, layout-derived expectations are intentionally exact.
               const expectation: VisualExpectation = explicitMin != null
-                ? { minObjects: explicitMin, notMostlyBlack: true }
+                ? { minObjects: explicitMin, notMostlyBlack: true, ...(derivedExpectation.authoredColors ? { authoredColors: derivedExpectation.authoredColors } : {}) }
                 : derivedExpectation;
               const layout = targetLayout(spec, verificationNode);
               const target = verificationNode?.targetRef ?? "scene";

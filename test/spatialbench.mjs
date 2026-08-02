@@ -28,8 +28,9 @@ const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
 
 const { rows, briefsDir } = headlessRows();
-if (rows.length >= 15) ok(`corpus loads (${rows.length} briefs from ${briefsDir})`);
-else fail(`expected ≥15 corpus briefs, got ${rows.length}`);
+// v32: the corpus gained the two Mixed-stage MR-tier briefs (mrpedestal, mrknock) — 26 total.
+if (rows.length >= 26) ok(`corpus loads (${rows.length} briefs from ${briefsDir})`);
+else fail(`expected ≥26 corpus briefs, got ${rows.length}`);
 
 const scoredRows = rows.filter((r) => !r.skipped);
 const skippedRows = rows.filter((r) => r.skipped);
@@ -50,6 +51,28 @@ else fail("headless tier leaked emulator-axis claims");
 if (Array.isArray(spatialbench.BENCH_CORE) && spatialbench.BENCH_CORE.includes("ambient"))
   ok("the default full SpatialBench core includes the self-contained ambient IBL conformance brief");
 else fail(`default SpatialBench core lost ambient: ${JSON.stringify(spatialbench.BENCH_CORE)}`);
+
+// v32 MR tier: additive alongside BENCH_CORE — core membership is FROZEN for league continuity.
+const EXPECTED_CORE = ["crystals", "boutique", "knockdown", "gallery", "console", "dashboard", "ambient", "affordance"];
+if (JSON.stringify([...spatialbench.BENCH_CORE]) === JSON.stringify(EXPECTED_CORE))
+  ok("BENCH_CORE membership is unchanged by the MR tier (league-table continuity)");
+else fail(`BENCH_CORE membership changed: ${JSON.stringify(spatialbench.BENCH_CORE)}`);
+if (
+  Array.isArray(spatialbench.BENCH_MR) &&
+  JSON.stringify([...spatialbench.BENCH_MR]) === JSON.stringify(["mrtable", "mrpedestal", "mrknock"]) &&
+  !spatialbench.BENCH_MR.some((id) => spatialbench.BENCH_CORE.includes(id))
+)
+  ok("BENCH_MR is the additive Mixed-stage tier (mrtable + mrpedestal + mrknock), disjoint from core");
+else fail(`BENCH_MR tier wrong: ${JSON.stringify(spatialbench.BENCH_MR)}`);
+const mrRows = headlessRows([...spatialbench.BENCH_MR]).rows;
+if (mrRows.length === 3 && mrRows.every((r) => !r.skipped && r.score === 3 && r.max === 3))
+  ok("every MR-tier brief scores 3/3 headless (planned+compiled+shape)");
+else fail(`MR-tier headless regressions: ${mrRows.map((r) => `${r.id}=${r.score}/${r.max} [${r.notes.join("; ")}]`).join(", ")}`);
+const mrStageStyles = spatialbench.BENCH_MR.map((id) => {
+  try { return JSON.parse(fs.readFileSync(path.join(ROOT, "briefs", `${id}.json`), "utf8")).spec?.meta?.stageStyle; } catch { return null; }
+});
+if (mrStageStyles.every((s) => s === "1")) ok("every BENCH_MR brief declares stageStyle '1' (Mixed) explicitly");
+else fail(`BENCH_MR briefs must declare stageStyle '1': ${JSON.stringify(mrStageStyles)}`);
 
 // renderer honesty: emulator axes render as —, skips marked, auto_judged framing present
 const report = {

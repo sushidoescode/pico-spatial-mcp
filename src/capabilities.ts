@@ -61,7 +61,7 @@ export const CAPABILITY_MANIFEST: CapEntry[] = [
   { tool: "generate_portal_kotlin", authors: "portal window + nested world", keyParams: "packageName", ceiling: "C0_emulator", note: "entity-crossing/passthrough = Swan" },
   { tool: "generate_display_controllers_kotlin", authors: "display-group ordering controllers", keyParams: "packageName", ceiling: "C0_emulator" },
   // headset codegen
-  { tool: "generate_scene_understanding_kotlin", authors: "sense/plane surface pins", keyParams: "packageName", ceiling: "C0_emulator", note: "the emulator DOES return SIMULATED planes with semantics (FLOOR/TABLE/CHAIR/DOOR/WINDOW…) in Full Space after polling (cold boot ~7 retries; FLOOR at y=0.40, measured 2026-07-29) — REAL-room surfaces remain hardware" },
+  { tool: "generate_scene_understanding_kotlin", authors: "sense/plane surface pins", keyParams: "packageName", ceiling: "C0_emulator", note: "the emulator DOES return SIMULATED planes with semantics (FLOOR/TABLE/CHAIR/DOOR/WINDOW…) on an OPEN Stage — any stage style, Mixed (1) included — after polling (cold boot ~7 retries; FLOOR at y=0.40, measured 2026-07-29) — REAL-room surfaces remain hardware" },
   { tool: "generate_persistent_anchor_kotlin", authors: "world anchors", keyParams: "packageName", ceiling: "C1", note: "world-tracking headset-only" },
   { tool: "generate_headset_readiness_codegen", authors: "guarded C1/C3/C4 registry for Swan", keyParams: "packageName", ceiling: "C3" },
   { tool: "generate_anchor_kotlin", authors: "camera/world anchor tether", keyParams: "packageName,trackingMode", ceiling: "C1" },
@@ -69,10 +69,11 @@ export const CAPABILITY_MANIFEST: CapEntry[] = [
 
 const CEILINGS: Record<string, string> = {
   C0_emulator: "Fully verifiable on the emulator now (renders in a forward capture / broadcast-drivable).",
-  C1: "REAL-world scene understanding / hand-tracking need hardware. RETRACTION (2026-07-29, measured): the emulator DOES supply SIMULATED planes with semantics (FLOOR/TABLE/CHAIR/DOOR/WINDOW…; FLOOR at y=0.40) in Full Space after polling (~7 retries on a cold boot), so plane-based placement verifies on the emulator; only real-room surfaces, mesh data, and hand-tracking remain Swan.",
+  C1: "REAL-world scene understanding / hand-tracking need hardware. RETRACTION (2026-07-29, measured): the emulator DOES supply SIMULATED planes with semantics (FLOOR/TABLE/CHAIR/DOOR/WINDOW…; FLOOR at y=0.40) on an OPEN Stage after polling (~7 retries on a cold boot) — 'Full Space' in older notes meant Stage-not-WindowContainer, which Mixed stageStyle 1 also satisfies (mrtable gets 40+ planes) — so plane-based placement verifies on the emulator; only real-room surfaces, mesh data, and hand-tracking remain Swan.",
   C2: "Camera decoupled — verifiable only with a forward-FOV pose; content outside it can't be captured.",
   C3: "No controller/gaze pointer on the emulator — broadcast-emulate now, real controller/pinch is Swan-only.",
   C4_headset_only: "Stage-vs-window dichotomy — in-front Compose panels etc. are Swan-only.",
+  PARTNER_STATED_stageStyle3: "Full Space stageStyle-3 immersive apps hit a known Guardian-boundary issue on hardware — PARTNER-STATED (per Matt/PICO, fix in progress), NOT measured by us. Scoped strictly to stageStyle '3' immersion: it does NOT taint the open-Stage plane/seating lane, which Mixed (stageStyle 1, the MR default) satisfies. Style 3 stays a first-class explicit opt-in until re-verified on hardware.",
 };
 
 export function registerCapabilityManifestTools(server: McpServer) {

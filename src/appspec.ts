@@ -50,7 +50,7 @@ export const captureFrustumSchema = z.object({
 export const metaSchema = z.object({
   appName: z.string().describe("Human app name."),
   packageName: z.string().describe("Android applicationId, e.g. com.example.showcase."),
-  stageStyle: z.enum(["1", "2", "3"]).default("3").describe("PICO stage style: 1=Mixed, 2=Progressive, 3=Full."),
+  stageStyle: z.enum(["1", "2", "3"]).default("1").describe("PICO stage style: 1=Mixed (DEFAULT — the MR product: virtual content renders over the user's real room), 2=Progressive, 3=Full (fully-virtual, first-class explicit opt-in; note a partner-stated Guardian-boundary issue on hardware for Full-Space immersion — per PICO, known, fix in progress — not measured by us)."),
   brief: z.string().describe("The original natural-language brief this spec realizes."),
   semanticScenePath: z.string().optional().describe("v17.0: path to a compose_semantic_scene JSON for the scanned world this app lives in — enables object anchorTo:{label} placement against REAL labeled surfaces."),
   occupancyPath: z.string().optional().describe("v26.1: path to a build_occupancy_grid JSON for the scanned world — anchorTo relation:'on' placements then also avoid UNLABELED scanned geometry (zod strips unknown keys, so this MUST be declared here to reach resolveAnchors)."),
@@ -150,7 +150,7 @@ export const objectSchema = z.object({
     })
     .strict()
     .optional()
-    .describe("v31 RUNTIME surface seating — the v30.2 recipe: lowers to measure_model -> bake_textured_model -> generate_surface_placement_kotlin, whose seat() polls LIVE DETECTED planes at runtime (planes ARE detected on the emulator — 43 measured 2026-07-29) and seats the baked model on the matching surface. Distinct from anchorTo, which resolves against a SCANNED world (meta.semanticScenePath) at compile time. Mutually exclusive with anchorTo and with body (the physics wiring places bodies at a compile-time transform.position, but a seatOn position exists only at runtime — the placement generator emits its own primitive collider). Requires source 'model' and Full Space (an open Stage)."),
+    .describe("v31 RUNTIME surface seating — the v30.2 recipe: lowers to measure_model -> bake_textured_model -> generate_surface_placement_kotlin, whose seat() polls LIVE DETECTED planes at runtime (planes ARE detected on the emulator — 43 measured 2026-07-29) and seats the baked model on the matching surface. Distinct from anchorTo, which resolves against a SCANNED world (meta.semanticScenePath) at compile time. Mutually exclusive with anchorTo and with body (the physics wiring places bodies at a compile-time transform.position, but a seatOn position exists only at runtime — the placement generator emits its own primitive collider). Requires source 'model' and an open Stage (any stage style — NOT a WindowContainer); Mixed ('1'), the default, shows the real room behind the seated model."),
   body: z
     .object({
       mode: z.enum(["static", "dynamic"]),
@@ -277,6 +277,15 @@ export const appSpecSchema = appSpecObjectSchema.superRefine((spec, ctx) => {
         message: `IBL scene '${scene.id}' mode must be 'stage', 'local', or 'both' when provided`,
       });
     }
+    // v32 MR default: StageEnvironmentLighting is inactive in a MIXED stage (capabilities), so a
+    // stage-mode IBL rig under stageStyle "1" would silently light nothing — fail closed instead.
+    if (spec.meta.stageStyle === "1" && (params.mode ?? "stage") === "stage") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scenes"],
+        message: `IBL scene '${scene.id}' uses mode 'stage'${params.mode === undefined ? " (the implicit default)" : ""} under stageStyle '1' (Mixed) — StageEnvironmentLighting is inactive in a Mixed stage, so this rig would silently do nothing; set lighting.params.mode to 'local' ('stage' remains valid for stageStyle '3')`,
+      });
+    }
     if (
       params.intensityExponent !== undefined &&
       (typeof params.intensityExponent !== "number" || !Number.isFinite(params.intensityExponent) || params.intensityExponent < -24 || params.intensityExponent > 24)
@@ -393,7 +402,7 @@ export type AppSpec = z.infer<typeof appSpecSchema>;
 /** A tiny well-formed example spec (used by plan_app_spec as a scaffold when no draft is supplied). */
 export function exampleSpec(brief: string, appName = "ShowcaseXR", packageName = "com.example.showcasexr"): AppSpec {
   return appSpecSchema.parse({
-    meta: { appName, packageName, stageStyle: "3", brief },
+    meta: { appName, packageName, stageStyle: "1", brief },
     scenes: [
       {
         id: "main",

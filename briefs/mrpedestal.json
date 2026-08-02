@@ -1,0 +1,198 @@
+{
+  "id": "mrpedestal",
+  "brief": "A Mixed-stage MR display built ONLY from primitives: a stone pedestal standing on the floor of the passthrough home environment with three gem-colored primitives resting on its top, and a live GEMS/STATUS panel.",
+  "comment": "v32 MR-tier twin of the Full-Space display archetype (crystals), structurally modeled on mrtable.json — the proven Mixed-stage fleet brief. Primitives-only, self-contained, fleet-buildable; BENCH_MR member.",
+  "spec": {
+    "meta": {
+      "appName": "MRPedestalXR",
+      "packageName": "com.example.mrpedestal",
+      "stageStyle": "1",
+      "brief": "A Mixed-stage MR display built ONLY from primitives: a stone pedestal standing on the floor of the passthrough home environment with three gem-colored primitives resting on its top, and a live GEMS/STATUS panel."
+    },
+    "scenes": [
+      {
+        "id": "display",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": [],
+        "physics": {
+          "gravity": [
+            0,
+            -9.81,
+            0
+          ]
+        }
+      }
+    ],
+    "layouts": [],
+    "objects": [
+      {
+        "id": "pedestal",
+        "sceneId": "display",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0,
+            0.8,
+            -1.5
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.5,
+            0.8,
+            0.5
+          ],
+          "color": [
+            0.5,
+            0.5,
+            0.55
+          ]
+        }
+      },
+      {
+        "id": "gemRed",
+        "sceneId": "display",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.12,
+            1.27,
+            -1.5
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "sphere",
+          "dims": [
+            0.07
+          ],
+          "color": [
+            0.9,
+            0.1,
+            0.2
+          ]
+        }
+      },
+      {
+        "id": "gemGreen",
+        "sceneId": "display",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.12,
+            1.25,
+            -1.5
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            0.1,
+            0.1,
+            0.1
+          ],
+          "color": [
+            0.1,
+            0.8,
+            0.3
+          ]
+        }
+      },
+      {
+        "id": "gemBlue",
+        "sceneId": "display",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0,
+            1.27,
+            -1.38
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "sphere",
+          "dims": [
+            0.07
+          ],
+          "color": [
+            0.2,
+            0.4,
+            0.95
+          ]
+        }
+      }
+    ],
+    "data": [],
+    "interactions": [],
+    "panels": [
+      {
+        "id": "hud",
+        "title": "MR DISPLAY",
+        "kind": "hud",
+        "fields": [
+          {
+            "key": "gems",
+            "label": "GEMS",
+            "initial": "3"
+          },
+          {
+            "key": "status",
+            "label": "STATUS",
+            "initial": "ON SHOW"
+          }
+        ]
+      }
+    ],
+    "navigation": {
+      "startScene": "display",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "a stone primitive pedestal stands on the floor in the passthrough Mixed stage with three saturated gem primitives resting on its top, in front of the user",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.5
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "pedestal"
+      },
+      {
+        "claim": "the MR DISPLAY live-text panel shows GEMS/STATUS (turn the camera — panels spawn at the dock position)",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.5
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "hud"
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 0,
+    "objects": 4,
+    "data": 0,
+    "interactions": 0,
+    "panels": 1,
+    "verifiableNowMin": 2,
+    "swanMin": 0
+  }
+}

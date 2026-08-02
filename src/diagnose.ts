@@ -154,7 +154,7 @@ const KB: Record<string, DiagEntry> = {
 
   falling_out: {
     rootCause:
-      "The environment is a small finite procedural room (a box). With stage style 3 (Full), moving past its walls reveals the system environment because there is nothing enclosing the user out there.",
+      "The environment is a small finite procedural room (a box). With stage style 3 (Full), moving past its walls reveals the system environment because there is nothing enclosing the user out there. This symptom CANNOT occur in Mixed (stage style 1, the default): the passthrough home environment always encloses the user — falling_out is specific to the Full-Space (style 3) opt-in.",
     fix: [
       "Make the environment large/enveloping, or use a skybox sphere which surrounds the user everywhere.",
       "compose_inspection_scene environment={type:'skybox', asset:'pano.png'} guarantees a consistent backdrop and also fixes black environments (DESIGN.md §1b).",

@@ -95,7 +95,7 @@ export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
   lines.push(" *");
   lines.push(`ering *   ${o.objectName}.seat(sceneRoot) { sceneRoot.addChild(it) }`.replace("ering *", " *"));
   lines.push(" *");
-  lines.push(" * REQUIRES Full Space (an open Stage). A WindowContainer returns 0 planes.");
+  lines.push(" * REQUIRES an OPEN Stage — any stage style, Mixed (1) included. A WindowContainer returns 0 planes.");
   lines.push(" */");
   lines.push(`object ${o.objectName} {`);
   lines.push(`    private const val TAG = "SpatialDemo"`);
@@ -170,7 +170,7 @@ export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
   lines.push("    }");
   lines.push("");
   lines.push("    /**");
-  lines.push("     * POLLS. A query fired immediately after start() returns 0 planes because Full Space");
+  lines.push("     * POLLS. A query fired immediately after start() returns 0 planes because the Stage");
   lines.push("     * is still animating in — measured 2026-07-29, and the most likely cause of historic");
   lines.push('     * "the emulator has no sense data" readings.');
   lines.push("     */");
@@ -254,7 +254,7 @@ export function registerSurfacePlacementTools(server: McpServer) {
     "generate_surface_placement_kotlin",
     {
       description:
-        "Seat a BAKED model on a DETECTED real-world surface (FLOOR/TABLE/WALL/BED/CABINET…) — the MR placement recipe, generated instead of hand-written. Emits a self-contained Kotlin object whose seat(root, add) detects the plane, converts anchor space into the scene root's space, seats the model with the right base lift, and attaches a PRIMITIVE box collider plus the required PhysicsWorldComponent. It bakes in five silent traps measured on 2026-07-29: a one-shot plane query returns 0 (Full Space is still animating in — so it POLLS), the emulator's floor is at y=0.40 not 0 (so height comes from the plane, never a constant), anchor space needs root.convertPositionFrom, downloaded/generated models are origin-CENTRED (so half-height lift), and MESH colliders never register in PICO's queryable physics world (so the collider is a box). Pair with bake_textured_model — a raw runtime-loaded GLB renders black. REQUIRES Full Space (an open Stage); a WindowContainer returns 0 planes.",
+        "Seat a BAKED model on a DETECTED real-world surface (FLOOR/TABLE/WALL/BED/CABINET…) — the MR placement recipe, generated instead of hand-written. Emits a self-contained Kotlin object whose seat(root, add) detects the plane, converts anchor space into the scene root's space, seats the model with the right base lift, and attaches a PRIMITIVE box collider plus the required PhysicsWorldComponent. It bakes in five silent traps measured on 2026-07-29: a one-shot plane query returns 0 (the Stage entry animation is still running — so it POLLS), the emulator's floor is at y=0.40 not 0 (so height comes from the plane, never a constant), anchor space needs root.convertPositionFrom, downloaded/generated models are origin-CENTRED (so half-height lift), and MESH colliders never register in PICO's queryable physics world (so the collider is a box). Pair with bake_textured_model — a raw runtime-loaded GLB renders black. REQUIRES an open Stage — any stage style, Mixed (1) included; a WindowContainer returns 0 planes ('Full Space' in older notes meant open-Stage, not stageStyle 3).",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
         objectName: z.string().default("SurfacePlacement").describe("Generated object name (e.g. TablePlacement)."),
@@ -265,7 +265,7 @@ export function registerSurfacePlacementTools(server: McpServer) {
         originAt: z.enum(["center", "bottom"]).default("center").describe("Where the model's origin sits. Meshy/most generated GLBs are 'center' (Meshy can emit bottom via origin_at). Prefer passing a measured baseLift instead."),
         baseLift: z.number().optional().describe("MEASURED distance from the model's origin down to its lowest point, straight from measure_model. Overrides originAt, and is exact for models that are neither centred nor bottom-origin."),
         collider: z.enum(["boxTop", "boxFull", "none"]).default("boxTop").describe("boxTop = a slab across the model's top (things can rest on it); boxFull = the whole bbox; none."),
-        pollSeconds: z.number().int().min(1).max(60).default(20).describe("How many 1-second retries to wait for planes (Full Space entry can take seconds)."),
+        pollSeconds: z.number().int().min(1).max(60).default(20).describe("How many 1-second retries to wait for planes (Stage entry can take seconds)."),
       },
     },
     async ({ packageName, objectName, bundleAsset, modelName, semantic, modelSize, originAt, baseLift, collider, pollSeconds }) => {
@@ -286,9 +286,9 @@ export function registerSurfacePlacementTools(server: McpServer) {
         targetPath: `app/src/main/java/${packageName.replace(/\./g, "/")}/${objectName ?? "SurfacePlacement"}.kt`,
         usage: `${objectName ?? "SurfacePlacement"}.seat(sceneRoot) { sceneRoot.addChild(it) }  // inside SpatialView.initial`,
         requires: [
-          "Full Space — an OPEN Stage. A WindowContainer or a query before the Stage opens returns 0 planes.",
+          "An OPEN Stage — any stage style, Mixed (1) included; the requirement is Stage-not-WindowContainer, NOT stageStyle 3. A WindowContainer or a query before the Stage opens returns 0 planes.",
           `The baked bundle at ${bundleAsset} must ship in app/src/main/assets/ (bake_textured_model writes it).`,
-          "Stage style 1 (Mixed) or 2 (Progressive) if you want the real room visible behind the model.",
+          "Stage style 1 (Mixed — the default presentation) or 2 (Progressive) shows the real room behind the model; 3 (Full) seats it against the app's own environment.",
         ],
         verify: [
           "logcat 'SURFACE| planes=N after R retries' then 'SURFACE| seated <model> on <SEMANTIC> at (x,y,z)'.",

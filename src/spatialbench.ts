@@ -43,7 +43,16 @@ import { deriveVerificationRoute, type VerificationRoute } from "./fleetbuild.js
  */
 
 // Emulator-tier core set: briefs whose assets are self-contained (no external splat/pano/GLB).
+// Membership is FROZEN for league-table continuity — the MR tier below is additive, not a re-cut.
 export const BENCH_CORE: readonly string[] = ["crystals", "boutique", "knockdown", "gallery", "console", "dashboard", "ambient", "affordance"];
+
+// v32 MR tier (ADDITIVE): Mixed-stage (stageStyle "1") briefs, primitives-only and self-contained,
+// scored alongside — never instead of — BENCH_CORE. Honesty note, measured 2026-08-02 (mrtable MR-lane
+// proof run): the calibrated eye cannot score passthrough frames (its foreground segmentation assumes a
+// black void and notMostlyBlack is vacuously true on a home-env frame), so MR rows are EXPECTED to land
+// eye=0/escalations rather than auto-PASS — that is the machinery degrading safely, not a pipeline
+// failure. A human LOOK is the MR tier's verification bar until the eye grows an MR mode.
+export const BENCH_MR: readonly string[] = ["mrtable", "mrpedestal", "mrknock"];
 
 type BenchRow = {
   id: string;
@@ -267,10 +276,10 @@ code{font-family:ui-monospace,monospace;color:#79c0ff}
 export function registerSpatialBenchTools(server: McpServer) {
   server.tool(
     "run_spatialbench",
-    "v23 SPATIALBENCH: score the conformance corpus (briefs/) as a public benchmark and emit a static league-table report (docs/spatialbench/). tier='headless' (default, CI-safe) scores planned/compiled/shape per brief from the spec+ledger alone — /3, no runtime claims. tier='full' additionally fleet-builds each brief on the emulator and scores booted/captured plus the stage eye when applicable. eye is the CALIBRATED JUDGE (auto_judged, never vision_verified; escalations name stage frames for a human LOOK). Briefs that declare panels gain a separate panelReady axis backed only by structural WindowManager caption/container evidence; it never becomes eye or vision proof. Panel-only routes leave eye null and exclude it from the maximum rather than false-failing an off-view panel. Asset-gated or explicitly external-implementation briefs are reported as skipped, not failed. perfAxis:true (tier='full' only) adds an optional perf axis: perfSource='gfxinfo' (default) scores measure_perf's UI/RenderThread p95 under perfBudgetMs — gfxinfo's UI surfaces only, not the spatial engine's 3D pacing; perfSource='pico-cli' closes that gap via the official profiler (perf_diagnose), scoring appFps p5 (the report's frame-time-p95 analog — it has no appFps p95 field) against the budget's fps floor, and falls back to gfxinfo with the reason in notes when the CLI or appFps data is absent (on this emulator appFps measures 0/no_3d_frame). Either source scores null (not counted, never zeroed) without data. Returns the report paths + the league table.",
+    "v23 SPATIALBENCH: score the conformance corpus (briefs/) as a public benchmark and emit a static league-table report (docs/spatialbench/). tier='headless' (default, CI-safe) scores planned/compiled/shape per brief from the spec+ledger alone — /3, no runtime claims. tier='full' additionally fleet-builds each brief on the emulator and scores booted/captured plus the stage eye when applicable. v32 adds the ADDITIVE MR tier (BENCH_MR: Mixed-stage briefs, reported as their own mrTier section) alongside the frozen BENCH_CORE; MR rows are expected to escalate rather than auto-PASS — the eye cannot score passthrough frames yet, so eye=0 there means 'human LOOK required', not app failure. eye is the CALIBRATED JUDGE (auto_judged, never vision_verified; escalations name stage frames for a human LOOK). Briefs that declare panels gain a separate panelReady axis backed only by structural WindowManager caption/container evidence; it never becomes eye or vision proof. Panel-only routes leave eye null and exclude it from the maximum rather than false-failing an off-view panel. Asset-gated or explicitly external-implementation briefs are reported as skipped, not failed. perfAxis:true (tier='full' only) adds an optional perf axis: perfSource='gfxinfo' (default) scores measure_perf's UI/RenderThread p95 under perfBudgetMs — gfxinfo's UI surfaces only, not the spatial engine's 3D pacing; perfSource='pico-cli' closes that gap via the official profiler (perf_diagnose), scoring appFps p5 (the report's frame-time-p95 analog — it has no appFps p95 field) against the budget's fps floor, and falls back to gfxinfo with the reason in notes when the CLI or appFps data is absent (on this emulator appFps measures 0/no_3d_frame). Either source scores null (not counted, never zeroed) without data. Returns the report paths + the league table.",
     {
       tier: z.enum(["headless", "full"]).default("headless").describe("headless = spec+ledger axes only; full = also emulator boot/capture/eye per brief (slow, serial)"),
-      briefIds: z.array(z.string()).optional().describe(`full tier defaults to the self-contained core set [${BENCH_CORE.join(", ")}]; headless defaults to every brief`),
+      briefIds: z.array(z.string()).optional().describe(`full tier defaults to the self-contained core set [${BENCH_CORE.join(", ")}] plus the additive MR tier [${BENCH_MR.join(", ")}]; headless defaults to every brief`),
       settleSec: z.number().min(0).max(120).default(14).describe("full tier: seconds to settle after launch before capture"),
       outDir: z.string().optional().describe("report dir (default <repo>/docs/spatialbench)"),
       perfAxis: z.boolean().default(false).describe("tier='full' only: after boot/capture/eye, sample the perfSource for the brief's package and score a 7th 'perf' axis (0/1/null)"),
@@ -278,7 +287,7 @@ export function registerSpatialBenchTools(server: McpServer) {
       perfSource: z.enum(["gfxinfo", "pico-cli"]).default("gfxinfo").describe("perfAxis source: 'gfxinfo' = measure_perf UI-frame p95 (emulator-safe default); 'pico-cli' = perf_diagnose's appFps p5 via the official profiler (real 3D pacing — needs pico-cli on PATH; falls back to gfxinfo, with the reason in notes, when the CLI or appFps data is absent)"),
     },
     async ({ tier, briefIds, settleSec, outDir, perfAxis, perfBudgetMs, perfSource }) => {
-      const emulatorIds = briefIds?.length ? briefIds : BENCH_CORE;
+      const emulatorIds = briefIds?.length ? briefIds : [...BENCH_CORE, ...BENCH_MR];
       // An explicit selection scopes the report itself. Without one, full tier keeps every
       // brief's headless row and adds emulator axes for the core set only.
       const { rows, briefsDir } = headlessRows(briefIds?.length ? briefIds : undefined);
@@ -359,7 +368,22 @@ export function registerSpatialBenchTools(server: McpServer) {
       const jsonPath = path.join(dir, "results.json");
       fs.writeFileSync(htmlPath, renderBenchHtml(report));
       fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2));
-      return okJson({ status: "ok", tier, htmlPath, jsonPath, summary, league: rows.map((r) => ({ id: r.id, score: `${r.score}/${r.max}`, skipped: r.skipped })) });
+      const mrRows = rows.filter((r) => BENCH_MR.includes(r.id));
+      return okJson({
+        status: "ok",
+        tier,
+        htmlPath,
+        jsonPath,
+        summary,
+        league: rows.map((r) => ({ id: r.id, score: `${r.score}/${r.max}`, skipped: r.skipped })),
+        // The MR tier is ADDITIVE: BENCH_CORE membership (and its league history) is unchanged.
+        mrTier: {
+          briefIds: [...BENCH_MR],
+          league: mrRows.map((r) => ({ id: r.id, score: `${r.score}/${r.max}`, skipped: r.skipped })),
+          honesty:
+            "Mixed-stage (stageStyle '1') briefs scored by the same axes. The calibrated eye cannot score passthrough frames (foreground segmentation assumes a black void; notMostlyBlack is vacuously true on a home-env frame — measured 2026-08-02, mrtable proof run), so eye=0/escalation on an MR row means 'a human must LOOK', not 'the app failed'.",
+        },
+      });
     },
   );
 }

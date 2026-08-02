@@ -4,6 +4,9 @@ This is the operating manual for an AI agent driving `pico-spatial-mcp`. It pair
 [DESIGN.md](DESIGN.md) (how to make it look right) and the built-in `pico_spatial_dev_loop`
 prompt. The goal: take a spec from nothing to a **polished, running, native PICO spatial
 APK**, and — critically — **detect what's wrong and iterate to fix it** without a human.
+Apps are **MR-first**: the default stage is Mixed (`1`) — the passthrough home environment
+is the environment and content seats ON the real room; Full Space (`3`) is the explicit,
+fully-supported opt-in for fully-virtual scenes.
 
 See **ROADMAP.md** in the git repository for where this is going — every line gate-labeled honestly.
 
@@ -27,6 +30,12 @@ See **ROADMAP.md** in the git repository for where this is going — every line 
 1. **`validate_toolchain`** — fix anything it flags (missing JDK → it auto-detects the
    Android Studio JBR; no AVD; license). Don't proceed with `problems` non-empty.
 2. **`scaffold_spatial_app`** (new app) or open an existing project.
+2b. **Decide the stage style** — it's architectural, not cosmetic. Mixed (`1`, the default):
+   the real room is the backdrop, content seats on detected surfaces
+   (`place_model_on_surface`), and there is no void to dress. Full (`3`, explicit opt-in):
+   the app replaces the environment and owns the enclosure problem (DESIGN.md §6) — and
+   carries the partner-stated Guardian-boundary caveat on hardware (per Matt/PICO, fix in
+   progress; not measured by us).
 3. **Author**: `compose_inspection_scene` / `compose_scene` into the editor-asset scene;
    `import_asset`/`import_environment` for meshes/rooms. Author the spatial UI in
    `HomeStage.kt` (Compose `AttachmentPanel`s; load the scene by model name).
@@ -58,7 +67,8 @@ decision tree:
 - **Pins/objects appear randomly** → ungated trigger or auto-seed; gate on an armed mode
   (DESIGN.md §5).
 - **User "falls out" into the system environment** → finite room; envelop with a large
-  room or skybox (DESIGN.md §6).
+  room or skybox (DESIGN.md §6). Full-Space (`3`) opt-in only — cannot occur in Mixed
+  (`1`), the default, where the passthrough room always encloses the user.
 - **Black adb/gRPC screenshot** → depends on the app's mode (the v30.1 correction). For
   native Spatial SDK apps and panels, adb `capture_frame` IS the real render — a black frame
   there is a real defect. For XR-runtime immersive apps (Unity), adb screencap is structurally

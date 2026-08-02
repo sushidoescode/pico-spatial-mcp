@@ -52,7 +52,7 @@ export function registerHybridBuildTools(server: McpServer) {
     "build_hybrid_experience",
     {
       description:
-        "ONE COMMAND -> a complete HYBRID spatial app (P17, the autonomy capstone). From a brief + config, scaffolds a fresh app, builds a native 3D physics scene (a game template: physics + clickable menu + live-text HUD), adds an HTML web CONTROL panel wired to the scene via the web↔3D bridge, builds/installs/launches, opens the scene + control panel, and captures the composited workspace — all unattended. Composes the verified generators; records the result (auto_judged; escalates to a human LOOK). Requires the toolchain + a running emulator. Returns {built, installed, artifact, verdict, surfaces}.",
+        "ONE COMMAND -> a complete HYBRID spatial app (P17, the autonomy capstone). From a brief + config, scaffolds a fresh MIXED-stage (MR default) app, builds a native 3D physics scene (a game template: physics + clickable menu + live-text HUD), adds an HTML web CONTROL panel wired to the scene via the web↔3D bridge, builds/installs/launches, opens the scene + control panel, and captures the composited workspace — all unattended. Composes the verified generators; records the result (auto_judged via the eye's color-keyed MR lane when the template has >= 2 distinct authored colors; otherwise escalates to a human LOOK — passthrough frames never auto-pass on the count checks). Requires the toolchain + a running emulator. Returns {built, installed, artifact, verdict, surfaces}.",
       inputSchema: {
         appName: z.string().describe("App display name, e.g. 'BowlDeck'."),
         packageName: z.string().describe("applicationId, e.g. com.demo.bowldeck."),
@@ -70,14 +70,19 @@ export function registerHybridBuildTools(server: McpServer) {
       const rec: any = { appName, packageName, projectDir, built: false, installed: false, surfaces: [], notes: [] };
       const { client, call } = await selfClient();
       try {
-        // 1. scaffold
+        // 1. scaffold — Mixed stage ("1") is the MR product default (v32); Full Space ("3") remains
+        // an explicit opt-in at the scaffold_spatial_app level, not something this lane hardcodes.
         if (!fs.existsSync(projectDir)) {
-          const sc = await call("scaffold_spatial_app", { targetDir: projectDir, packageName, appName, stageStyle: "3" });
+          const sc = await call("scaffold_spatial_app", { targetDir: projectDir, packageName, appName, stageStyle: "1" });
           if (!sc.created) { rec.notes.push(`scaffold failed: ${JSON.stringify(sc).slice(0, 160)}`); return okJson({ status: "error", ...rec }); }
         }
         // 2. the native scene: instantiate the game template -> compile -> execute the ledger
         const inst = await call("instantiate_template", { name: game ?? "knockdown", brief: appName, appName, packageName, count: 3 });
         const spec = appSpecSchema.parse(inst.spec);
+        // The Mixed-stage capture is a passthrough frame, where the eye's count/black checks are
+        // advisory by design — give the judge the spec's authored body colors so the color-keyed MR
+        // lane can score. A weak (mostly neutral) palette escalates honestly to a human LOOK.
+        const authoredColors = (spec.objects ?? []).filter((o) => o.body?.color).map((o) => ({ name: o.id, color: o.body!.color as number[] }));
         const steps = buildLedger(spec as any, projectDir) as any[];
         for (const st of steps) {
           if (["scaffold_spatial_app", "build_and_run", "generate_agent_bridge"].includes(st.tool)) continue;
@@ -119,9 +124,9 @@ export function registerHybridBuildTools(server: McpServer) {
         const png = await run(ADB, ["-s", "emulator-5554", "exec-out", "screencap", "-p"], { timeout: 30_000, encoding: "buffer" as any, maxBuffer: 32 * 1024 * 1024 });
         fs.writeFileSync(shot, png.stdout as any);
         rec.artifact = shot;
-        const judged = await call("visual_judge", { imagePath: shot, claim: `[build_hybrid_experience] ${appName}: native scene + web control panel composited`, expect: { minObjects: 2, notMostlyBlack: true }, app: packageName, record: true, cClass: "C0_emulator" });
+        const judged = await call("visual_judge", { imagePath: shot, claim: `[build_hybrid_experience] ${appName}: native scene + web control panel composited`, expect: { minObjects: 2, notMostlyBlack: true, ...(authoredColors.length ? { authoredColors } : {}) }, app: packageName, record: true, cClass: "C0_emulator" });
         rec.verdict = judged.verdict ?? judged.status;
-        if (rec.verdict !== "PASS") rec.notes.push("ESCALATE: LOOK at the workspace artifact");
+        if (rec.verdict !== "PASS") rec.notes.push("ESCALATE: LOOK at the workspace artifact (Mixed-stage passthrough capture — the eye auto-passes only via >= 2 distinct authored colors)");
         return okJson({ status: "ok", ...rec, note: "A complete hybrid app built + launched unattended. The control panel's buttons drive the native scene (web↔3D bridge). auto_judged; LOOK at the artifact to confirm the composited workspace." });
       } catch (e: any) {
         rec.notes.push(`error: ${String(e?.message ?? e).slice(0, 300)}`);

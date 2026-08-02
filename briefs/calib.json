@@ -1,6 +1,7 @@
 {
   "id": "calib",
   "brief": "v20 camera calibration: five color-keyed cubes at exactly known app-space positions across TWO depths; their detected pixel centers solve the full pinhole model (f, cx, cy, eye height) by linear least squares.",
+  "comment": "DELIBERATELY PINNED to stageStyle '3' (Full Space) even after the v32 MR-first pivot: the entire v20 metric layer — saturation-keyed color detection, the pinhole solve, and every meter figure downstream — was solved against a black-void frame. Color-key detection and the solve are UNPROVEN on a Mixed passthrough frame (a colorful home env can false-match a key's channel-rank signature); do not flip this brief to '1' without re-proving both on Mixed captures first. Calibration-only stage; not part of the MR tier.",
   "spec": {
     "meta": {
       "appName": "CalibXR",

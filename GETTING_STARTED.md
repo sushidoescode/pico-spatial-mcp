@@ -118,7 +118,12 @@ Two you can expect to see and shouldn't panic about:
 
 Ask your agent:
 
-> Use `pico_build_app` to build "three colored cubes on a table with a menu".
+> Use `pico_build_app` to build "a table standing on my real floor with three colored cubes
+> dropping onto it from a menu".
+
+That's a **Mixed-stage MR app** — the default: the passthrough home environment renders behind
+your content, which seats on it. (A fully-virtual scene is the explicit opt-in: declare
+`meta.stageStyle: "3"` in the spec you author in call two.)
 
 This door is **deliberately two-step**, and the first response will look like a failure but isn't.
 
@@ -134,7 +139,9 @@ install on the emulator, launch, let it settle, and capture a deterministic forw
 back one of:
 
 - `verified` — built, ran, and the capture was judged to match
-- `built-needs-look` — it built and ran, but the judgment wasn't conclusive; go look at the capture
+- `built-needs-look` — it built and ran, but the judgment wasn't conclusive; go look at the capture.
+  For a Mixed-stage app this is the *expected* outcome, not a soft failure: the automated judge
+  can't score passthrough frames yet, so MR builds always route to your eyes
 - `failed` — with the actual error
 
 A first build takes a few minutes, most of it Gradle.
@@ -199,6 +206,10 @@ hundreds of pixels. Expect to redo it after rebooting the emulator, and before a
 This project treats over-claiming as a bug, so here's the honest boundary:
 
 - It is **emulator-first**. Headset-only capabilities are reported as such rather than faked.
+- It is **MR-first**: apps default to the Mixed stage (the passthrough room is the environment).
+  Full Space (`stageStyle: "3"`) stays fully supported as an explicit opt-in, with one
+  **partner-stated** caveat we report but did not measure: Full-Space immersive apps hit a known
+  Guardian-boundary issue on hardware (per Matt/PICO, fix in progress).
 - **Immersive Unity VR renders on the emulator** (v30.1 corrected an earlier "uniformly black"
   result — that was an `adb screencap` artifact; screencap is blind to XR-runtime output, so
   immersive apps are captured via `gui_capture`). **Native-NDK and WebXR immersive status is

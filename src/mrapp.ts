@@ -16,7 +16,7 @@ export function registerMrAppTools(server: McpServer) {
     "generate_mr_app",
     {
       description:
-        "Emit the proven MIXED-STAGE config (manifest pico.spatial.stage.style=1) that renders the PICO home environment + spatial content together with no falling-out, plus a minimal HomeStage.kt template (SpatialView + scene root + AgentBridge.attachScene hook). Vision-verified config (spatialdemo renders home-env + pins). Use with scaffold_spatial_app for a full project; this captures the stage recipe + entry point.",
+        "Emit the proven MIXED-STAGE config (manifest pico.spatial.stage.style=1) that renders the PICO home environment + spatial content together with no falling-out, plus a minimal HomeStage.kt template (SpatialView + scene root + AgentBridge.attachScene hook). Vision-verified config (spatialdemo renders home-env + pins). NOTE (v32): scaffold_spatial_app now does Mixed natively by default (stageStyle '1'), so a new project needs no extra step — this tool remains the standalone recipe reference for the manifest block + HomeStage entry point (e.g. when retrofitting an existing app).",
       inputSchema: {
         packageName: z.string().describe("App package, e.g. com.example.mrapp"),
         stageId: z.string().optional().describe("Stage id (default 'MainStage')."),

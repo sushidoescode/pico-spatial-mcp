@@ -1,7 +1,10 @@
 # ⚡ Quickstart — pico-spatial-mcp
 
 Build native PICO XR spatial apps from natural-language briefs, with **verified** results
-(the agent looks at rendered frames — it never claims what it hasn't seen).
+(the agent looks at rendered frames — it never claims what it hasn't seen). Apps are
+**MR-first**: the default is the Mixed stage (stageStyle `1`) — your real room is the
+environment and content seats on it; a fully-virtual Full-Space app (stageStyle `3`) is an
+explicit, fully-supported opt-in.
 
 This is the proven first-run path, on the doors surface (`PICO_MCP_SURFACE=doors` — 13
 intent-level tools instead of the full 220+ surface). It's the exact sequence a from-docs-only run on a fresh clone
@@ -34,10 +37,13 @@ order:
    checks routinely come back `warn`/`unknown` rather than `fail`, and that's expected (see the
    gotchas below).
 
-2. **`pico_build_app({ brief })`** — describe what you want, e.g. *"three spinning crystals over a
-   stone floor with a start menu."* The first call returns `needs-authoring` + a scaffold AppSpec.
-   **This is by design** — the planner never guesses your intent from prose; it hands you a
-   scaffold to author against (objects, layout, counts, animation, menu).
+2. **`pico_build_app({ brief })`** — describe what you want, e.g. *"a primitive table standing on
+   my real floor with bodies dropping onto it from a clickable menu"* (the Mixed-stage MR lane —
+   the default; for a fully-virtual scene like *"three spinning crystals over a stone floor"*,
+   declare `meta.stageStyle: "3"` in the spec you author). The first call returns
+   `needs-authoring` + a scaffold AppSpec. **This is by design** — the planner never guesses your
+   intent from prose; it hands you a scaffold to author against (objects, layout, counts,
+   animation, menu).
 
 3. **Adapt the scaffold** to your brief, then re-call **`pico_build_app({ brief, draftSpec })`**
    with the adapted spec. The pipeline now builds → installs → launches on the emulator → captures
@@ -46,7 +52,10 @@ order:
      substitute for looking).
    - `status: "built-needs-look"` — it built and installed; **you look at the returned `capture`
      path yourself** before claiming anything works. This is the normal outcome for a novel brief,
-     not a failure.
+     not a failure — and it is the *expected* outcome for every Mixed-stage brief today: the
+     calibrated eye cannot score passthrough frames (the home environment defeats its
+     black-void-trained checks — measured 2026-08-02), so MR builds escalate to your look by
+     construction.
    - `status: "failed"` — read `notes`; asset-gated briefs name the missing prerequisite, build
      errors name the file. Feed the error text into `pico_fix` for the matched retained lesson.
 
@@ -87,10 +96,14 @@ number — treat ~10 minutes as an upper bound, not a promise.
 
 ## What it can build (all verified on the emulator)
 
-Real rigid-body **physics** (strikes, drops) · clickable in-world **menus** (custom labels; your
-Mac mouse clicks them) · **live-text scoreboards/HUDs** and full **web-content panels** (live JS
-DOM) · AAA fidelity (PBR, shadows, shining IBL metals, animation) · procedural props incl. lathe
-silhouettes · custom World-Labs worlds · multi-scene apps. The `com.pico.hooks` gradle plugin
+**Mixed-stage MR apps first** — content seated on the passthrough room's detected surfaces
+(floor/table/wall planes with semantics; the measured `measure_model` → `bake_textured_model` →
+`generate_surface_placement_kotlin` chain, or one-call `place_model_on_surface`), proven by the
+mrtable and rocketsim apps · real rigid-body **physics** (strikes, drops) · clickable in-world
+**menus** (custom labels; your Mac mouse clicks them) · **live-text scoreboards/HUDs** and full
+**web-content panels** (live JS DOM) · AAA fidelity (PBR, shadows, shining IBL metals, animation)
+· procedural props incl. lathe silhouettes · custom World-Labs worlds · multi-scene apps ·
+fully-virtual Full-Space (stageStyle `3`) scenes as the explicit opt-in. The `com.pico.hooks` gradle plugin
 lints scenes in every build; `fleet_build` builds brief batches unattended with an honest
 auto-judge. Immersive Unity VR renders on the emulator too (v30.1 — capture it via `gui_capture`;
 adb screencap is blind to XR-runtime output). Controller-ray input and head-tracked depth stay

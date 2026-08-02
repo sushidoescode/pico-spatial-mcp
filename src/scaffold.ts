@@ -56,7 +56,7 @@ export function registerScaffoldTools(server: McpServer) {
           .regex(/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/)
           .describe("New application id / package, e.g. 'com.acme.viz'"),
         appName: z.string().describe("Display name (app_name + homepage_title)"),
-        stageStyle: z.enum(["1", "2", "3"]).default("3").describe("PICO stage style: 1=Mixed, 2=Progressive, 3=Full(100% virtual, fills view)"),
+        stageStyle: z.enum(["1", "2", "3"]).default("1").describe("PICO stage style: 1=Mixed (DEFAULT — MR: content renders over the real environment), 2=Progressive, 3=Full (100% virtual, fills view — explicit opt-in)"),
         sceneUsda: z.string().optional().describe("Optional path to a .usda to install as the scene (model name becomes its filename stem; default keeps the template scene)"),
       },
     },

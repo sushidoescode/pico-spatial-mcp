@@ -1,0 +1,267 @@
+{
+  "id": "mrknock",
+  "brief": "A Mixed-stage MR knockdown game built ONLY from primitives: a wooden table standing on the floor of the passthrough home environment, three standing pins on the tabletop, a ball launched from a clickable THROW menu that knocks them down, and a live THROWS/STATUS panel.",
+  "comment": "v32 MR-tier twin of the Full-Space game archetype (knockdown), structurally modeled on mrtable.json — the proven Mixed-stage fleet brief. Primitives-only, self-contained, fleet-buildable; BENCH_MR member.",
+  "spec": {
+    "meta": {
+      "appName": "MRKnockXR",
+      "packageName": "com.example.mrknock",
+      "stageStyle": "1",
+      "brief": "A Mixed-stage MR knockdown game built ONLY from primitives: a wooden table standing on the floor of the passthrough home environment, three standing pins on the tabletop, a ball launched from a clickable THROW menu that knocks them down, and a live THROWS/STATUS panel."
+    },
+    "scenes": [
+      {
+        "id": "lane",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": [],
+        "physics": {
+          "gravity": [
+            0,
+            -9.81,
+            0
+          ]
+        }
+      }
+    ],
+    "layouts": [],
+    "objects": [
+      {
+        "id": "tableTop",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0,
+            0.8,
+            -1.6
+          ]
+        },
+        "body": {
+          "mode": "static",
+          "shape": "box",
+          "dims": [
+            1.2,
+            0.8,
+            0.7
+          ],
+          "color": [
+            0.55,
+            0.4,
+            0.22
+          ]
+        }
+      },
+      {
+        "id": "pin0",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            -0.2,
+            1.32,
+            -1.75
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "box",
+          "dims": [
+            0.08,
+            0.24,
+            0.08
+          ],
+          "mass": 0.3,
+          "color": [
+            0.85,
+            0.15,
+            0.15
+          ]
+        }
+      },
+      {
+        "id": "pin1",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0,
+            1.32,
+            -1.75
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "box",
+          "dims": [
+            0.08,
+            0.24,
+            0.08
+          ],
+          "mass": 0.3,
+          "color": [
+            0.95,
+            0.75,
+            0.1
+          ]
+        }
+      },
+      {
+        "id": "pin2",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0.2,
+            1.32,
+            -1.75
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "box",
+          "dims": [
+            0.08,
+            0.24,
+            0.08
+          ],
+          "mass": 0.3,
+          "color": [
+            0.1,
+            0.7,
+            0.7
+          ]
+        }
+      },
+      {
+        "id": "ball",
+        "sceneId": "lane",
+        "source": "primitive",
+        "transform": {
+          "position": [
+            0,
+            1.32,
+            -1.1
+          ]
+        },
+        "body": {
+          "mode": "dynamic",
+          "shape": "sphere",
+          "dims": [
+            0.08
+          ],
+          "mass": 0.8,
+          "color": [
+            0.2,
+            0.45,
+            0.9
+          ]
+        }
+      }
+    ],
+    "data": [],
+    "interactions": [
+      {
+        "id": "btnThrow",
+        "trigger": "press",
+        "target": "ball",
+        "action": "launch:ball",
+        "driveChannel": "broadcast",
+        "params": {
+          "velocity": [
+            0,
+            0.5,
+            -3
+          ],
+          "button": "start"
+        }
+      },
+      {
+        "id": "btnReset",
+        "trigger": "press",
+        "target": "ball",
+        "action": "resetWorld",
+        "driveChannel": "broadcast",
+        "params": {
+          "button": "reset"
+        }
+      }
+    ],
+    "panels": [
+      {
+        "id": "hud",
+        "title": "MR KNOCK",
+        "kind": "hud",
+        "fields": [
+          {
+            "key": "throws",
+            "label": "THROWS",
+            "initial": "0"
+          },
+          {
+            "key": "status",
+            "label": "STATUS",
+            "initial": "READY"
+          }
+        ]
+      }
+    ],
+    "navigation": {
+      "startScene": "lane",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "a primitive wooden table stands on the floor in the passthrough Mixed stage with three saturated pins standing on the tabletop, in front of the user",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.6
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "tableTop"
+      },
+      {
+        "claim": "after 'launch:ball' the ball strikes the pins and they topple onto the tabletop (REAL physics contact, not intersection)",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.6
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "btnThrow"
+      },
+      {
+        "claim": "the MR KNOCK live-text panel shows THROWS/STATUS and updates on throw (turn the camera — panels spawn at the dock position)",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.6
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "hud"
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 0,
+    "objects": 5,
+    "data": 0,
+    "interactions": 2,
+    "panels": 1,
+    "verifiableNowMin": 2,
+    "swanMin": 0
+  }
+}
