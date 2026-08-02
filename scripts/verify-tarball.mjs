@@ -34,13 +34,13 @@ const publishIdx = process.argv.indexOf("--publish");
 const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
-const EXPECTED_TOOLS = 233; // v31: +pico_record +pico_emulator (doors) +perf_trace +watch_crash +capture_record +place_model_on_surface +generate_tappable_detail_kotlin +probe_planes +generate_hand_input_kotlin
+const EXPECTED_TOOLS = 234; // v31: +pico_record +pico_emulator (doors) +perf_trace +watch_crash +capture_record +place_model_on_surface +generate_tappable_detail_kotlin +probe_planes +generate_hand_input_kotlin
 const TOOL_TOLERANCE = 3;
 const REQUIRED_TOOLS = [
   // the 15 doors-surface tools TESTERS.md promises
   "validate_toolchain", "pico_build_app", "pico_scan_world", "pico_place", "pico_look",
   "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship",
-  "pico_capabilities", "pico_fix", "pico_record", "pico_emulator",
+  "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next",
   // core lanes whose loss a count check would tolerate
   "emulator_boot", "build_and_run", "capture_frame", "record_verification", "scaffold_spatial_app",
   "adb_shell", "gradle_build", "preflight_env",
@@ -248,9 +248,9 @@ try {
   const doorsClient = new Client({ name: "tarball-verifier-doors", version: "0.0.0" });
   await doorsClient.connect(doorsTransport);
   const doorTools = await doorsClient.listTools();
-  doorTools.tools.length === 15
-    ? ok(`doors surface registered all 15 door tools`)
-    : fail(`doors surface listed ${doorTools.tools.length} tools, expected 15`);
+  doorTools.tools.length === 16
+    ? ok(`doors surface registered all 16 door tools`)
+    : fail(`doors surface listed ${doorTools.tools.length} tools, expected 16`);
   const sdk = await doorsClient.callTool({ name: "pico_sdk", arguments: { symbol: "Entity" } });
   const sdkBody = JSON.parse(sdk.content[0].text);
   if (sdkBody.status === "ok") ok("a door tool completed its inner self-client spawn from a path containing a space");

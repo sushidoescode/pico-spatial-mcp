@@ -359,7 +359,7 @@ if (secondWorldParsed.success) {
     "menu app wiring routes move: to GameMenu.nudgePanelCmd (bridge panel-drag)");
   assert(/cmd\.startsWith\("hover:"\)[^\n]*GameMenu\.hover/.test(home),
     "menu app wiring routes menu hover: actions to GameMenu.hover");
-  assert(home.includes('cmd == "start" || cmd == "pause" || cmd == "resume" || cmd == "reset"'),
+  assert(home.includes('cmd in setOf("start", "pause", "resume", "reset")'),
     "menu app wiring still routes the four select actions");
   const noMenuSpec = appSpecSchema.parse({ ...knockdown.spec, interactions: [] });
   const noMenuHome = generateWiring(noMenuSpec).find((f) => f.path.endsWith("HomeStage.kt"))?.content ?? "";

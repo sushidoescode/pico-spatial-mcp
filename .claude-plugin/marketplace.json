@@ -11,7 +11,7 @@
     {
       "name": "pico-spatial-mcp",
       "source": ".",
-      "description": "MCP server: brief-to-verified-APK compilation for PICO OS 6 (native + WebSpatial), vision-verified honesty, splat world models with semantic labeling, agent-vault SDK validation, emulator automation, and pico-cli perf diagnosis. 233 tools."
+      "description": "MCP server: brief-to-verified-APK compilation for PICO OS 6 (native + WebSpatial), vision-verified honesty, splat world models with semantic labeling, agent-vault SDK validation, emulator automation, and pico-cli perf diagnosis. 234 tools."
     }
   ]
 }

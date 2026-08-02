@@ -98,7 +98,7 @@ PICO Swan / 6.1 territory, and every claim above is backed by a looked-at frame.
 
 ## The full surface
 
-The doors surface is 15 tools; the full server exposes 220+. Remove `PICO_MCP_SURFACE=doors` (or
+The doors surface is 16 tools; the full server exposes 220+. Remove `PICO_MCP_SURFACE=doors` (or
 just add the full-surface server alongside) to get everything — codegen for every SDK subsystem,
 the fleet/asset/editor pipelines, and the raw building blocks the doors orchestrate internally.
 The doors stay available either way. See **[SKILLS.md](SKILLS.md)** for the agent reference and

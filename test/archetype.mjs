@@ -1,7 +1,7 @@
 // v27.6 scaffold-archetype test: pickArchetype steers a brief-only plan_app_spec call toward the
 // pipeline's proven patterns (display/game/data-panel) instead of one generic showcase scaffold.
 // Run: npm run test:archetype
-import { pickArchetype, archetypeScaffold } from "../dist/planner.js";
+import { pickArchetype, matchArchetype, archetypeScaffold } from "../dist/planner.js";
 import { appSpecSchema } from "../dist/appspec.js";
 
 let failures = 0;
@@ -13,6 +13,11 @@ const CASES = [
   { brief: "a live stats dashboard panel", want: "datapanel" },
   { brief: "three spinning crystals over a floor", want: "display" },
   { brief: "something abstract", want: "generic" },
+  // v31.3 detection extensions: museum/gallery briefs are display; monitor is datapanel; a bare
+  // "game" word (no bowling vocabulary) still steers game.
+  { brief: "a museum hall of ancient relics on pedestals", want: "display" },
+  { brief: "a system monitor for the build farm", want: "datapanel" },
+  { brief: "target practice game", want: "game" },
 ];
 
 for (const { brief, want } of CASES) {
@@ -72,6 +77,37 @@ else fail(`priority broken: "a bowling game dashboard" -> ${mixed}, expected gam
   else fail(`datapanel scaffold has ${spec.data.length} data nodes, expected 1`);
   if (spec.objects.length === 1) ok("datapanel scaffold has one modest display object");
   else fail(`datapanel scaffold has ${spec.objects.length} objects, expected 1`);
+}
+
+// v31.3: matchArchetype names WHY (the matched keywords) so the scaffold response can surface the
+// steer and the author can override it; the fallback matches nothing.
+{
+  const m = matchArchetype("a museum gallery of relics on pedestals");
+  if (m.archetype === "display" && m.matched.includes("museum") && m.matched.includes("gallery") && m.matched.includes("pedestal"))
+    ok(`matchArchetype names the matched keywords (${m.matched.join(", ")})`);
+  else fail(`matchArchetype why broken: ${JSON.stringify(m)}`);
+  const g = matchArchetype("something abstract");
+  if (g.archetype === "generic" && g.matched.length === 0) ok("fallback stays generic with zero matched keywords");
+  else fail(`generic fallback broken: ${JSON.stringify(g)}`);
+}
+
+// v31.3: museum/gallery briefs get the corpus exhibition variant of display — an ARC layout
+// (briefs/gallery.json) + a gaze-dwell showDetail inspect interaction (briefs/museum.json,
+// broadcast-driven so it stays C0) and NO spin tween; crystal-style briefs keep grid+spin (asserted
+// above), so the doors crystals contract is unchanged.
+{
+  const spec = archetypeScaffold("a museum hall of ancient relics on pedestals", "display");
+  if (spec.layouts.length === 1 && spec.layouts[0].pattern === "arc") ok("museum display variant lays out in an arc");
+  else fail(`museum variant layout mismatch: ${JSON.stringify(spec.layouts)}`);
+  const inspect = spec.interactions[0];
+  if (spec.interactions.length === 1 && inspect.trigger === "gaze_dwell" && inspect.action === "showDetail" && inspect.driveChannel === "broadcast")
+    ok("museum display variant carries the gaze-dwell showDetail inspect interaction (broadcast-driven)");
+  else fail(`museum variant interactions mismatch: ${JSON.stringify(spec.interactions)}`);
+  if (spec.objects.every((o) => !o.anim)) ok("museum display variant exhibits sit still (no spin tween)");
+  else fail(`museum variant unexpectedly animates: ${JSON.stringify(spec.objects)}`);
+  const parsed = appSpecSchema.safeParse(spec);
+  if (parsed.success) ok("museum display variant parses through appSpecSchema");
+  else fail(`museum variant schema: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
 }
 
 console.log(`\nArchetype test done. Failures: ${failures}`);

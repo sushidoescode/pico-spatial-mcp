@@ -4,13 +4,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
-import { writeUserBrief, findBriefPath } from "./briefstore.js";
+import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
 
 /**
  * doors.ts — THE DOORS (v21): an intent-level facade over the full tool surface.
  *
  * The full surface is a moat for us and a wall for everyone else. With
- * `PICO_MCP_SURFACE=doors`, the server registers 15 tools (14 doors + validate_toolchain);
+ * `PICO_MCP_SURFACE=doors`, the server registers 16 tools (15 doors + validate_toolchain);
  * each door orchestrates the full machinery through an internal client that
  * spawns the full-surface server on demand. Default surface stays "full" (all tools + the doors,
  * additive and backward compatible).
@@ -55,6 +55,12 @@ async function inner() {
 
 const fixOf = (hint: string) => hint;
 
+/** ~/.pico-mcp/camera-calibration.json (the v20 metric layer's one-time solve) — read by pico_doctor
+ * and pico_next. Null = uncalibrated. */
+function readCameraCalibration(): any | null {
+  try { return JSON.parse(fs.readFileSync(path.join(process.env.HOME ?? "", ".pico-mcp", "camera-calibration.json"), "utf8")); } catch { return null; }
+}
+
 /** Deterministic brief id for Door 1. The reduce is modular PER STEP: the old unbounded
  * `a*31 + charCode` accumulator lost Number precision and reached Infinity around ~205 chars, so
  * `Math.abs(Infinity % 100000)` went NaN and EVERY long brief collided on briefId 'doorNaN'
@@ -90,12 +96,16 @@ export function registerDoorTools(server: McpServer) {
     async ({ brief, draftSpec }) => {
       const { call } = await inner();
       const plan = await call("plan_app_spec", { brief, ...(draftSpec !== undefined ? { draftSpec } : {}) });
-      if (plan?.status === "scaffold") return { status: "needs-authoring", scaffold: plan.scaffold, fix: "Adapt this scaffold to the brief (objects, layouts, counts, animation, menu — see each node's fields), then re-call pico_build_app with {brief, draftSpec: <adapted scaffold>}." };
-      if (!plan?.spec) return { status: "plan-failed", detail: plan, fix: "Fix the validation problems named in detail and re-call with the corrected draftSpec; keep to concrete objects/layouts (e.g. 'N <things> on a floor with a menu')." };
+      if (plan?.status === "scaffold") return { status: "needs-authoring", scaffold: plan.scaffold, ...(plan.archetype ? { archetype: plan.archetype, archetypeWhy: plan.archetypeWhy } : {}), fix: "Adapt this scaffold to the brief (objects, layouts, counts, animation, menu — see each node's fields), then re-call pico_build_app with {brief, draftSpec: <adapted scaffold>}." };
+      if (!plan?.spec) return { status: "plan-failed", detail: plan, fix: "Fix the problems named in detail (each detail.issues entry names the failing path, the expected shape, and a known-good example fragment to copy-adapt), then re-call with the corrected draftSpec." };
+      // needs_fix = schema-valid but blocking lint errors (broken references, unposed capture claims,
+      // over-claimed C-classes). Building it anyway ships a broken/unverifiable app — stop here.
+      if (plan.status === "needs_fix") return { status: "plan-failed", detail: { lint: plan.lint, rationale: plan.rationale }, fix: "The draftSpec parsed but has blocking lint errors — fix each detail.lint.errors entry (they name the exact node and remedy) and re-call with the corrected draftSpec." };
       const id = briefIdOf(brief);
       writeUserBrief(id, { id, brief, spec: plan.spec });
       const fleet = await call("fleet_build", { briefIds: [id], settleSec: 16 });
       const r = fleet?.results?.[0] ?? {};
+      const identity = (r.notes ?? []).find((n: any) => typeof n === "string" && n.startsWith("authored identity"));
       return {
         status: r.built ? (r.verdict === "PASS" ? "verified" : "built-needs-look") : "failed",
         briefId: id,
@@ -105,6 +115,7 @@ export function registerDoorTools(server: McpServer) {
         capture: r.artifact ?? null,
         notes: r.notes ?? [],
         projectDir: `~/AndroidStudioProjects/fleet-${id}-native`,
+        ...(identity ? { identity } : {}),
         ...(r.built ? {} : { fix: fixOf(`Read the notes — asset-gated briefs name the missing prerequisite; build errors name the file. Then call pico_fix with the error text.`) }),
         honesty: "verdict PASS = the calibrated eye's count; 'built-needs-look' = LOOK at `capture` yourself before claiming success.",
       };
@@ -159,7 +170,7 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_look",
-    "DOOR 4 — Capture the emulator's forward view deterministically and return the image path. READ the image; that look is what turns a claim into vision_verified (record it with pico_record).",
+    "DOOR 4 — Capture the emulator's forward view deterministically and return the image path. READ the image; that look is what turns a claim into vision_verified (record it with pico_record). NO pose control exists on this path: deterministic = the fixed forward screencap; the multi-angle alternatives are Accessibility-gated GUI drags whose free-cam drifts — so bring content into the forward FOV instead of moving the camera. OCCLUSION: a docked HUD/menu panel can cover the scene; when the app's generated wiring routes the panel DEBUG_CMDs, drive 'panel:hide' before a scene capture and 'panel:show' after (adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd panel:hide). Apps without that route ignore the broadcast — confirm with the capture itself, never by assumption.",
     {},
     async () => {
       const { call } = await inner();
@@ -218,9 +229,6 @@ export function registerDoorTools(server: McpServer) {
     async ({ calibrate }) => {
       const { call } = await inner();
       const [tc, emu, pre] = await Promise.all([call("validate_toolchain", {}), call("emulator_status", {}), call("preflight_env", {})]);
-      const readCalibration = () => {
-        try { return JSON.parse(fs.readFileSync(path.join(process.env.HOME ?? "", ".pico-mcp", "camera-calibration.json"), "utf8")); } catch { return null; }
-      };
       let calibrationRun: any = null;
       if (calibrate) {
         if (!(emu?.running ?? false)) {
@@ -243,7 +251,7 @@ export function registerDoorTools(server: McpServer) {
           }
         }
       }
-      const calibration = readCalibration();
+      const calibration = readCameraCalibration();
       return {
         preflight: pre,
         toolchain: tc,
@@ -371,6 +379,94 @@ export function registerDoorTools(server: McpServer) {
       const { call } = await inner();
       const out = await call(action === "boot" ? "emulator_boot" : "emulator_status", {});
       return typeof out === "object" && out !== null ? out : { status: "ok", detail: out };
+    },
+  );
+
+  door(
+    "pico_next",
+    "DOOR 15 — What should I do NOW? Reads the ACTUAL local state — preflight checks, emulator, camera calibration, your generated briefs with their build/capture/trust-ledger progress — and returns {situation, nextAction:{door,argsExample,why}, alternatives}. Every recommendation names a real door on this surface; nothing is executed for you, and a LOOK step still means YOU read the capture.",
+    {},
+    async () => {
+      const { call } = await inner();
+      // a probe that cannot run (e.g. no adb) reads as its unhealthy state, not as a door error
+      const [pre, emu] = await Promise.all([call("preflight_env", {}).catch(() => null), call("emulator_status", {}).catch(() => null)]);
+      const failing = (Array.isArray(pre?.checks) ? pre.checks : []).filter((c: any) => c.status === "fail");
+      const emulatorRunning = emu?.running === true;
+      const calibration = readCameraCalibration();
+
+      // briefstore + trust-ledger state, straight from the same files pico_build_app / fleet_build /
+      // record_verification write (userBriefsDir, ~/.pico-mcp/ledgers, fleet's capture dir).
+      const home = process.env.HOME ?? "";
+      const readLedger = (app: string): any[] => {
+        try {
+          const raw = JSON.parse(fs.readFileSync(path.join(home, ".pico-mcp", "ledgers", `${app.replace(/[^A-Za-z0-9._-]/g, "_")}.json`), "utf8"));
+          return Array.isArray(raw) ? raw.filter((e: any) => !e?.retracted) : [];
+        } catch { return []; }
+      };
+      let briefFiles: Array<{ id: string; brief: string; mtime: number }> = [];
+      try {
+        briefFiles = fs.readdirSync(userBriefsDir()).filter((f) => f.endsWith(".json")).map((f) => {
+          const p = path.join(userBriefsDir(), f);
+          let mtime = 0; try { mtime = fs.statSync(p).mtimeMs; } catch {}
+          let brief = ""; try { brief = String(JSON.parse(fs.readFileSync(p, "utf8")).brief ?? ""); } catch {}
+          return { id: f.replace(/\.json$/, ""), brief, mtime };
+        });
+      } catch { /* no user briefs yet */ }
+      const briefs = briefFiles
+        .sort((a, b) => b.mtime - a.mtime)
+        .slice(0, 5)
+        .map(({ id, brief }) => {
+          const projectDir = path.join(home, "AndroidStudioProjects", `fleet-${id}-native`);
+          const capture = `/tmp/pico-render/fleet/${id}/forward.png`; // fleet_build's shot path
+          const entries = readLedger(`com.fleet.${id}`);
+          const looked = entries.some((e) => e.evidenceType === "vision_verified" || e.evidenceType === "device_verified");
+          const state = looked ? "vision-recorded"
+            : fs.existsSync(capture) ? (entries.some((e) => e.evidenceType === "auto_judged") ? "auto-judged-needs-look" : "built-needs-look")
+            : fs.existsSync(path.join(projectDir, "app/build/outputs/apk/debug/app-debug.apk")) ? "built-no-capture"
+            : fs.existsSync(projectDir) ? "scaffolded-no-apk"
+            : "planned-not-built";
+          // brief stays FULL here: argsExample re-feeds it to pico_build_app, and a truncated brief
+          // would hash to a DIFFERENT briefIdOf (a new project instead of resuming this one).
+          return { id, brief, state, ...(fs.existsSync(capture) ? { capture } : {}) };
+        });
+      const needsLook = briefs.filter((b) => b.state === "built-needs-look" || b.state === "auto-judged-needs-look");
+      const unbuilt = briefs.filter((b) => ["planned-not-built", "scaffolded-no-apk", "built-no-capture"].includes(b.state));
+
+      const actions: Array<{ door: string; argsExample: any; why: string }> = [];
+      if (failing.length)
+        actions.push({ door: "pico_doctor", argsExample: {}, why: `preflight reports ${failing.length} failing check(s) (${failing.map((c: any) => c.name).join(", ")}) — each carries the exact fix; nothing downstream is trustworthy until they pass.` });
+      for (const b of needsLook.slice(0, 2))
+        actions.push({ door: "pico_record", argsExample: { app: `com.fleet.${b.id}`, claim: "<what the brief promised, as observed>", evidenceType: "vision_verified", artifactPath: b.capture, attestation: "<what you actually saw in the frame>" }, why: `'${b.id}' is ${b.state}: a capture exists at ${b.capture} but its trust ledger has no human-LOOKED entry — READ that image first, then record what you saw (the ledger rejects the entry without a real frame + attestation).` });
+      if (unbuilt.length) {
+        const b = unbuilt[0];
+        if (!emulatorRunning)
+          actions.push({ door: "pico_emulator", argsExample: { action: "boot" }, why: `brief '${b.id}' is ${b.state} and the emulator is not running — the build pipeline (install/launch/capture) needs it.` });
+        actions.push({ door: "pico_build_app", argsExample: { brief: b.brief, draftSpec: `<the stored spec — ${path.join(userBriefsDir(), `${b.id}.json`)}>` }, why: `brief '${b.id}' is ${b.state} — re-run the build with its stored spec; if it fails again, hand the failing note's error text to pico_fix.` });
+      }
+      if (!calibration && emulatorRunning)
+        actions.push({ door: "pico_doctor", argsExample: { calibrate: true }, why: "the capture camera is uncalibrated — pico_measure refuses metric claims until the one-time calibration runs (takes minutes; the emulator is already up)." });
+      if (!actions.length) {
+        if (!briefs.length)
+          actions.push({ door: "pico_build_app", argsExample: { brief: "three spinning crystals over a stone floor with a start menu" }, why: "no generated briefs exist yet — a brief-only call returns a scaffold AppSpec to author (the two-step contract), the front door of the whole pipeline." });
+        else
+          actions.push({ door: "pico_build_app", argsExample: { brief: "<your next brief>" }, why: `all ${briefs.length} recent brief(s) are vision-recorded — nothing is pending; start the next app, or run pico_ship on a finished project to see what shipping still needs.` });
+      }
+      if (!emulatorRunning && !actions.some((a) => a.door === "pico_emulator"))
+        actions.push({ door: "pico_emulator", argsExample: { action: "status" }, why: "the emulator is not running — status reports adb/boot/gRPC state before you decide to boot." });
+      actions.push({ door: "pico_capabilities", argsExample: {}, why: "the ledger-generated capability matrix shows what this toolchain has actually PROVEN, per evidence class." });
+
+      const [nextAction, ...rest] = actions;
+      return {
+        situation: [
+          failing.length ? `${failing.length} preflight check(s) FAILING` : "preflight healthy",
+          emulatorRunning ? `emulator running (${emu?.serial ?? "?"})` : "emulator not running",
+          calibration ? `camera calibrated (${calibration.at ?? "date unknown"})` : "camera UNCALIBRATED (pico_measure blocked)",
+          briefs.length ? `${briefs.length} recent brief(s): ${briefs.map((b) => `${b.id}=${b.state}`).join(", ")}` : "no generated briefs yet",
+        ].join("; "),
+        nextAction,
+        alternatives: rest.slice(0, 3),
+        state: { preflightFailing: failing.map((c: any) => c.name), emulatorRunning, cameraCalibrated: !!calibration, briefs: briefs.map((b) => ({ ...b, brief: b.brief.length > 90 ? `${b.brief.slice(0, 90)}…` : b.brief })) },
+      };
     },
   );
 }

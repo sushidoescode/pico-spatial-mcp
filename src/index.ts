@@ -168,8 +168,8 @@ server.registerTool(
   async ({ projectDir, toolsVersion }) => okJson(await validateToolchain(projectDir, toolsVersion)),
 );
 
-// THE DOORS (v21): PICO_MCP_SURFACE=doors exposes only the intent-level facade — 15 tools
-// (14 doors + validate_toolchain); each door orchestrates the full surface through an internal
+// THE DOORS (v21): PICO_MCP_SURFACE=doors exposes only the intent-level facade — 16 tools
+// (15 doors + validate_toolchain); each door orchestrates the full surface through an internal
 // child server. Default "full" keeps every tool AND adds the doors.
 if (!doorsSurfaceActive()) {
   registerEmulatorTools(server);

@@ -85,7 +85,7 @@ For **Claude Code**, add this to `.mcp.json` in your project (or your user-level
 
 Any MCP client works — it's JSON-RPC over stdio. Restart your client so it picks up the new server.
 
-You should now see **233+ tools**. That's a lot, and step 5 explains how to cut it down to 13
+You should now see **234+ tools**. That's a lot, and step 5 explains how to cut it down to 13
 if you'd rather start small.
 
 ---
@@ -172,7 +172,7 @@ back to you as `projectDir`.
 
 ## Choosing a smaller surface
 
-233+ tools is a lot of context. There's a curated **15-tool** surface covering the same engine. Set it
+234+ tools is a lot of context. There's a curated **16-tool** surface covering the same engine. Set it
 in the `env` block from step 2:
 
 ```json

@@ -51,7 +51,7 @@ Ask your agent to run **`preflight_env`** (or **`pico_doctor`** on the narrowed 
 read-only, mutates nothing, and reports what your machine is missing with an exact fix for every
 non-passing check. That is the intended first call.
 
-Expect 233+ tools on the full surface.
+Expect 234+ tools on the full surface.
 
 ## Choosing a surface
 
@@ -61,12 +61,12 @@ Set `PICO_MCP_SURFACE` in the `env` block of the config above:
 "env": { "PICO_MCP_SURFACE": "doors" }
 ```
 
-- unset / `full` — **233+ tools.** Everything.
-- `doors` — **15 tools**: `validate_toolchain` `pico_build_app` `pico_scan_world` `pico_place`
+- unset / `full` — **234+ tools.** Everything.
+- `doors` — **16 tools**: `validate_toolchain` `pico_build_app` `pico_scan_world` `pico_place`
   `pico_look` `pico_verify_app` `pico_measure` `pico_perf` `pico_sdk` `pico_doctor` `pico_ship`
-  `pico_capabilities` `pico_fix` `pico_record` `pico_emulator`.
+  `pico_capabilities` `pico_fix` `pico_record` `pico_emulator` `pico_next`.
 
-Start with `doors` if 233+ tools is overwhelming; it's the curated path through the same engine.
+Start with `doors` if 234+ tools is overwhelming; it's the curated path through the same engine.
 
 One sharp edge worth knowing up front: **`pico_measure` needs a one-time camera calibration.**
 On the `doors` surface run `pico_doctor` with `{calibrate: true}` — it performs

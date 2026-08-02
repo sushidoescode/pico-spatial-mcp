@@ -174,9 +174,15 @@ function physicsBodyLines(spec: AppSpec, indent: string): string[] {
     const tint = colorKt(b.color);
     const tintArg = tint ? `, tint = ${tint}` : "";
     const mass = b.mass ?? 1;
+    // v31.3: every {mode, shape} pair maps to its true helper — static capsule/sphere used to
+    // silently coerce to the dynamic variant (a spec-declared static flag pole would FALL).
+    // Static colliders are vault-grounded: CollisionComponent with no RigidBody accepts
+    // box/sphere/capsule ShapeResources alike.
     if (b.shape === "box" && b.mode === "static") out.push(`${indent}bodies["${o.id}"] = ScenePhysics.staticBox(root, "${o.id}", ${pos}, ${vec3Kt(b.dims, [1, 0.2, 1])}${tintArg})`);
     else if (b.shape === "box") out.push(`${indent}bodies["${o.id}"] = ScenePhysics.dynamicBox(root, "${o.id}", ${pos}, ${vec3Kt(b.dims, [0.3, 0.3, 0.3])}, ${mass}f${tintArg})`);
+    else if (b.shape === "sphere" && b.mode === "static") out.push(`${indent}bodies["${o.id}"] = ScenePhysics.staticSphere(root, "${o.id}", ${pos}, ${b.dims?.[0] ?? 0.15}f${tintArg})`);
     else if (b.shape === "sphere") out.push(`${indent}bodies["${o.id}"] = ScenePhysics.dynamicSphere(root, "${o.id}", ${pos}, ${b.dims?.[0] ?? 0.15}f, ${mass}f${tintArg})`);
+    else if (b.mode === "static") out.push(`${indent}bodies["${o.id}"] = ScenePhysics.staticCapsule(root, "${o.id}", ${pos}, ${b.dims?.[0] ?? 0.3}f, ${b.dims?.[1] ?? 0.06}f${tintArg})`);
     else out.push(`${indent}bodies["${o.id}"] = ScenePhysics.dynamicCapsule(root, "${o.id}", ${pos}, ${b.dims?.[0] ?? 0.3}f, ${b.dims?.[1] ?? 0.06}f, ${mass}f${tintArg})`);
   }
   return out;
@@ -459,19 +465,35 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
   // now always gets the rebuildable-scene closure + a resetScene matching the scene's nature.
   const hasResetMenu = (spec.interactions as any[]).some((i) => i.trigger === "press" && String(i.action) === "resetWorld");
   const rebuildable = menu.length > 0 && (physics || hasResetMenu);
-  const panels = ((spec as any).panels ?? []).length > 0;
+  const panelDefs = ((spec as any).panels ?? []) as any[];
+  const panels = panelDefs.length > 0;
+  // One activity per generated panel host: panelcompose emits HudPanelActivity for hud-style
+  // panels and WebPanelActivity for web panels (same content package as this file).
+  const panelActivities = [...new Set(panelDefs.map((p) => (p.kind === "web" ? "WebPanelActivity" : "HudPanelActivity")))];
+  // v31.3: the dispatcher's select/hover whitelist is DERIVED from the spec's actual buttons
+  // (builtins always kept) — the hardcoded four made a custom action like 'putt' unreachable by
+  // broadcast even though GameMenu carried its row + customActions closure (com.fleet.door671805).
+  const menuActions = [...new Set(["start", "pause", "resume", "reset", ...menu.map(([b]) => b)])];
+  const ktSet = (names: string[]) => names.map((a) => `"${a}"`).join(", ");
   const dispatch: string[] = [];
-  // Panels: hud:<key>=<value> updates the live text. SHOW the panel headlessly via
-  // `adb shell am start -n <pkg>/<pkg>.content.HudPanelActivity` (it is exported; no context plumbing).
+  // Panels: hud:<key>=<value> updates the live text; panel:show/panel:hide open/close the panel
+  // activity for ANY generated app (rocketsim-proven: the head-docked panel occludes the scene
+  // from the fixed emulator pose — hiding it is the only way to capture clean composition frames).
   if (panels) dispatch.push(`        cmd.startsWith("hud:") -> cmd.removePrefix("hud:").split("=", limit = 2).let { if (it.size == 2) HudState.set(it[0], it[1]) }`);
-  if (menu.length) dispatch.push(`        cmd == "start" || cmd == "pause" || cmd == "resume" || cmd == "reset" -> runCatching { GameMenu.select(cmd) }.onFailure { Log.e(TAG, "select " + cmd + ": " + it.message) }.let { }`);
+  if (panels) {
+    // panel:show must start the activity from the APP'S OWN context — shell `am start` is refused
+    // while the Stage holds Full Space (rocketsim/mrtable seq 15), hence appCtxRef.
+    dispatch.push(`        cmd == "panel:show" -> appCtxRef?.let { c -> ${panelActivities.map((a) => `c.startActivity(android.content.Intent(c, ${a}::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))`).join("; ")} } ?: Log.w(TAG, "panel:show before HomeStage composed — no context")`);
+    dispatch.push(`        cmd == "panel:hide" -> { ${panelActivities.map((a) => `${a}.instance?.finish()`).join("; ")} }`);
+  }
+  if (menu.length) dispatch.push(`        cmd in setOf(${ktSet(menuActions)}) -> runCatching { GameMenu.select(cmd) }.onFailure { Log.e(TAG, "select " + cmd + ": " + it.message) }.let { }`);
   if (menu.length) {
     // The mouse bridge streams move:dx,dy,dz on a panel title-drag and hover:<row> previews. The
     // generated GameMenu has carried nudgePanelCmd/hover since v4.9 — but only the hand-edited demo
     // apps ever ROUTED them, so every generated menu app shipped an undraggable panel (found on
     // com.fleet.knockdown 2026-07-28). Menu hover MUST precede the SceneInteraction hover branch.
     dispatch.push(`        cmd.startsWith("move:") -> GameMenu.nudgePanelCmd(cmd.removePrefix("move:"))`);
-    dispatch.push(`        cmd.startsWith("hover:") && cmd.removePrefix("hover:") in setOf("start", "pause", "resume", "reset", "none") -> GameMenu.hover(cmd.removePrefix("hover:"))`);
+    dispatch.push(`        cmd.startsWith("hover:") && cmd.removePrefix("hover:") in setOf(${ktSet([...menuActions, "none"])}) -> GameMenu.hover(cmd.removePrefix("hover:"))`);
   }
   if (multiScene) dispatch.push(`        cmd.startsWith("navigate:") -> SceneRouter.go(cmd.removePrefix("navigate:"))`);
   if (specHasPhysics(spec) && launchVelocityMap(spec).size) dispatch.push(`        cmd.startsWith("launch:") -> SceneComposition.launchBody(cmd.removePrefix("launch:"))`);
@@ -501,12 +523,19 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
     `private const val TAG = "SpatialDemo"`,
     `private var rootRef: Entity? = null`,
     ...(rebuildable ? [`private var rebuildGame: (() -> Unit)? = null`] : []),
+    ...(panels
+      ? [
+          `// panel:show needs the app's OWN context — shell am start is refused while the Stage holds Full Space.`,
+          `private var appCtxRef: android.content.Context? = null`,
+        ]
+      : []),
     ``,
     `@Composable`,
     `fun HomeStage() {`,
     `    // Captured in the composable (template-independent) and handed to SceneComposition.build —`,
     `    // data loading + splat/mesh environments need an app Context.`,
     `    val appCtx = LocalContext.current.applicationContext`,
+    ...(panels ? [`    appCtxRef = appCtx   // panel:show starts the panel activity from this context`] : []),
     `    SpatialView(`,
     `        // fillMaxSize: the 3D content is transform-mapped to the SpatialView's 2D node — a small/default`,
     `        // node compresses the scene into a small bounded region (the "blob" you portal in/out of), so fill`,
@@ -586,7 +615,7 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
             ``,
           ]
       : []),
-    `/** Headless command channel: adb shell am broadcast -a ${pkg}.DEBUG_CMD --es cmd <navigate:|select:|hover:|move:|start|reset|launch:><id> */`,
+    `/** Headless command channel: adb shell am broadcast -a ${pkg}.DEBUG_CMD --es cmd <navigate:|select:|hover:|move:|${panels ? "panel:show|panel:hide|" : ""}${menu.length ? menuActions.join("|") + "|" : "start|reset|"}launch:><id> */`,
     `internal fun dispatchDebugCommand(cmd: String, arg: Int = 0) {`,
     `    Log.i(TAG, "DEBUG_CMD cmd=" + cmd + " arg=" + arg)`,
     `    when {`,
@@ -633,7 +662,7 @@ export function registerAssembleTools(server: McpServer) {
     "generate_app_wiring",
     {
       description:
-        "Generate the app-DEFINING wiring from an AppSpec — the files that turn the primitives into a running app, which previously had NO generator and were hand-authored (the ledger→running-app gap). Emits three deterministic Kotlin files: SceneComposition.kt (the build(root) body: load data → SceneRouter for multi-scene or SceneLayout.place + SceneInteraction.register + showDetail for single scene), HomeStage.kt (the SpatialView.initial wiring on the main thread + AgentBridge + DEBUG_CMD dispatch, with branches only for the primitives the spec uses), and Main.kt (the mainApp entrypoint). Analytical/deterministic (same spec → byte-identical wiring). Write each to its path, then build_and_run. Pairs with compile_app_spec (which now lists these as steps). RETURNS: JSON {files: [{path, content}]} — write ALL of them (path is project-relative).",
+        "Generate the app-DEFINING wiring from an AppSpec — the files that turn the primitives into a running app, which previously had NO generator and were hand-authored (the ledger→running-app gap). Emits three deterministic Kotlin files: SceneComposition.kt (the build(root) body: load data → SceneRouter for multi-scene or SceneLayout.place + SceneInteraction.register + showDetail for single scene), HomeStage.kt (the SpatialView.initial wiring on the main thread + AgentBridge + DEBUG_CMD dispatch, with branches only for the primitives the spec uses; the menu select/hover whitelist is derived from the spec's actual buttons — custom actions like 'putt' are broadcast-drivable; specs with panels get 'panel:show'/'panel:hide' routing that starts/finishes the panel activity from the app's own context), and Main.kt (the mainApp entrypoint). Analytical/deterministic (same spec → byte-identical wiring). Write each to its path, then build_and_run. Pairs with compile_app_spec (which now lists these as steps). RETURNS: JSON {files: [{path, content}]} — write ALL of them (path is project-relative).",
       inputSchema: {
         spec: z.any().describe("A validated AppSpec (from plan_app_spec)."),
       },

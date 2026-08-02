@@ -826,6 +826,8 @@ export function registerFleetBuildTools(server: McpServer) {
 
             // unique fleet identity so installs never collide with dev apps
             const pkg = `com.fleet.${id}`;
+            if (spec.meta.packageName && spec.meta.packageName !== pkg)
+              rec.notes.push(`authored identity ${spec.meta.packageName} (${spec.meta.appName ?? "unnamed"}) shipped as ${pkg} — fleet apps get generated identity so installs never collide`);
             spec.meta.packageName = pkg;
             spec.meta.appName = `Fleet${id[0].toUpperCase()}${id.slice(1)}`;
             const projectDir = path.join(root, `fleet-${id}-native`);
@@ -865,6 +867,7 @@ export function registerFleetBuildTools(server: McpServer) {
             // 2. execute the ledger's generate steps
             const steps = buildLedger(spec, projectDir) as Step[];
             let wiringFailed = false;
+            let customMenuBaked = false;
             for (const st of steps) {
               if (st.tool === "scaffold_spatial_app" || st.tool === "build_and_run") continue;
               if (st.tool === "generate_agent_bridge") {
@@ -910,6 +913,20 @@ export function registerFleetBuildTools(server: McpServer) {
                 }
                 continue;
               }
+              // v32: bake_menu_panel is an ASSET step returning {status:'ok', bundle,...} — the
+              // generic Kotlin-extraction fallback below used to slice its JSON into the truncated
+              // 'unexpected output' note that hid custom-label failures (found by the sonnet-high
+              // experiment, ledger com.fleet.door671805).
+              if (st.tool === "bake_menu_panel") {
+                const bundlePath = typeof out?.bundle === "string" ? out.bundle : null;
+                if (out?.status !== "ok" || !bundlePath || !fs.existsSync(bundlePath)) {
+                  rec.notes.push(`asset-gated: bake_menu_panel did not bake (${JSON.stringify(out).slice(0, 300)})`);
+                  wiringFailed = true;
+                  break;
+                }
+                customMenuBaked = true;
+                continue;
+              }
               // v15.1b: generate_home_env_proxy returns a room PLAN whose Kotlin comes from
               // chaining its colliderCall into generate_collider_kotlin (the executor previously
               // dropped it — atrium shipped with NO app content).
@@ -942,7 +959,9 @@ export function registerFleetBuildTools(server: McpServer) {
               fs.mkdirSync(path.dirname(target), { recursive: true });
               fs.writeFileSync(target, kotlin);
               if (typeof out === "object" && out.manifestEntry) patchManifest(projectDir, out.manifestEntry);
-              if (st.tool === "generate_game_menu_kotlin" && fs.existsSync(MENU_BUNDLE_ASSET)) {
+              // v32: never clobber a custom-baked menu bundle with the default four-label texture —
+              // bake_menu_panel's outBundle points at this exact path.
+              if (st.tool === "generate_game_menu_kotlin" && !customMenuBaked && fs.existsSync(MENU_BUNDLE_ASSET)) {
                 fs.mkdirSync(path.join(projectDir, "app/src/main/assets"), { recursive: true });
                 fs.copyFileSync(MENU_BUNDLE_ASSET, path.join(projectDir, "app/src/main/assets/menu.bundle"));
               }

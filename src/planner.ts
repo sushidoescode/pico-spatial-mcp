@@ -150,27 +150,42 @@ export function emulatorVsSwanPreview(spec: AppSpec) {
 // of inventing structure from a mismatched template.
 export type Archetype = "game" | "datapanel" | "display" | "generic";
 
-const GAME_WORDS = ["bowling", "knock", "throw", "launch", "pins", "ball", "strike", "shoot"];
+const GAME_WORDS = ["bowling", "knock", "throw", "launch", "pins", "ball", "strike", "shoot", "game", "putt"];
 const DATAPANEL_WORDS = ["dashboard", "panel", "hud", "monitor", "feed", "stats", "data", "live"];
-const DISPLAY_WORDS = ["crystal", "gem", "display", "gallery", "showcase", "spin", "orbit", "grid of", "shelf"];
+const DISPLAY_WORDS = ["crystal", "gem", "display", "gallery", "showcase", "spin", "orbit", "grid of", "shelf", "museum", "exhibit", "pedestal"];
+// Within display: these steer the museum/gallery variant (arc + inspect) instead of the crystals grid.
+const MUSEUM_WORDS = ["museum", "gallery", "exhibit", "pedestal"];
 
-/** Pick the archetype closest to the brief. Priority on overlap: game > datapanel > display (a "bowling
- *  game dashboard" is a game — the physics/interaction pattern dominates a HUD word). */
-export function pickArchetype(brief: string): Archetype {
+/** Pick the archetype closest to the brief, WITH the keyword(s) that fired — the scaffold response
+ *  names them so the author can see why the steer happened and override a wrong one. Priority on
+ *  overlap: game > datapanel > display (a "bowling game dashboard" is a game — the physics/interaction
+ *  pattern dominates a HUD word). No keyword match → generic, always. */
+export function matchArchetype(brief: string): { archetype: Archetype; matched: string[] } {
   const b = brief.toLowerCase();
-  if (GAME_WORDS.some((w) => b.includes(w))) return "game";
-  if (DATAPANEL_WORDS.some((w) => b.includes(w))) return "datapanel";
-  if (DISPLAY_WORDS.some((w) => b.includes(w))) return "display";
-  return "generic";
+  const table: Array<[Archetype, string[]]> = [["game", GAME_WORDS], ["datapanel", DATAPANEL_WORDS], ["display", DISPLAY_WORDS]];
+  for (const [archetype, words] of table) {
+    const matched = words.filter((w) => b.includes(w));
+    if (matched.length) return { archetype, matched };
+  }
+  return { archetype: "generic", matched: [] };
+}
+
+export function pickArchetype(brief: string): Archetype {
+  return matchArchetype(brief).archetype;
 }
 
 /** display: grid layout + data-bound objects with a spin tween, modeled on briefs/crystals.json. The
  *  data node's id/asset is derived from a shape word named in the brief (matchShapeArchetype — the same
  *  table fleet_build's v27.1 procedural provisioning checks) so a stranger's "crystals"/"gems"/"cubes"
  *  brief gets REAL baked geometry instead of a flat tinted card; falls back to "items" when no shape word
- *  is present. */
+ *  is present. Museum/gallery briefs (MUSEUM_WORDS) instead get the corpus exhibition shape: an ARC
+ *  layout (briefs/gallery.json) + a gaze-dwell showDetail inspect interaction (briefs/museum.json,
+ *  broadcast-driven so it stays C0/emulator-verifiable) — the closest proven "tour the exhibits"
+ *  pattern; the compiler has no dedicated 'tour' action. */
 function displayScaffold(brief: string, appName: string, packageName: string): AppSpec {
   const shape = matchShapeArchetype(brief) ?? "items";
+  const museum = MUSEUM_WORDS.some((w) => brief.toLowerCase().includes(w));
+  const layoutId = museum ? "arc1" : "grid1";
   return appSpecSchema.parse({
     meta: { appName, packageName, stageStyle: "3", brief },
     scenes: [
@@ -181,29 +196,44 @@ function displayScaffold(brief: string, appName: string, packageName: string): A
         colliders: { props: [] },
       },
     ],
-    layouts: [{ id: "grid1", sceneId: "main", pattern: "grid", count: 3, params: { columns: 3 } }],
+    layouts: [
+      museum
+        ? { id: layoutId, sceneId: "main", pattern: "arc", count: 3, params: { radius: 2.2 } }
+        : { id: layoutId, sceneId: "main", pattern: "grid", count: 3, params: { columns: 3 } },
+    ],
     objects: [
       {
         id: "showpieces",
         sceneId: "main",
         source: "model",
-        layoutRef: "grid1",
+        layoutRef: layoutId,
         dataBindRef: shape,
         transform: { scale: [1.2, 1.2, 1.2] },
-        anim: { type: "tween", property: "rotation", from: [0, 0, 0], to: [0, 360, 0], duration: 6, loop: true },
+        // exhibits sit still (gallery.json's works are static); the crystals variant spins
+        ...(museum ? {} : { anim: { type: "tween", property: "rotation", from: [0, 0, 0], to: [0, 360, 0], duration: 6, loop: true } }),
       },
     ],
     data: [{ id: shape, source: "json", asset: `data/${shape}.json`, bindsTo: ["showpieces"] }],
-    interactions: [],
+    interactions: museum
+      ? [{ id: "inspect", trigger: "gaze_dwell", target: "showpieces", action: "showDetail", driveChannel: "broadcast" }]
+      : [],
     navigation: { startScene: "main", portals: [] },
     verificationPlan: [
-      {
-        claim: "3 objects render spinning in a grid",
-        method: "capture",
-        capabilityClass: "C0_emulator",
-        targetRef: "grid1",
-        forwardFOVpose: { yawDeg: 0, pitchDeg: 0, targetZ: -2.5 },
-      },
+      museum
+        ? {
+            claim: "3 exhibits render in an arc",
+            method: "capture",
+            capabilityClass: "C0_emulator",
+            targetRef: layoutId,
+            forwardFOVpose: { yawDeg: 0, pitchDeg: 0, targetZ: -2.2 },
+          }
+        : {
+            claim: "3 objects render spinning in a grid",
+            method: "capture",
+            capabilityClass: "C0_emulator",
+            targetRef: layoutId,
+            forwardFOVpose: { yawDeg: 0, pitchDeg: 0, targetZ: -2.5 },
+          },
     ],
     headsetLayer: [],
   });
@@ -338,6 +368,55 @@ export function archetypeScaffold(brief: string, archetype: Archetype, appName =
   }
 }
 
+// ── v31.3: schema hints on validation failure ──────────────────────────────────────────────────────────
+// The Haiku experiment proved actionable errors self-resolve — but a bare "path: message" line still
+// made the author re-derive the shape from the schema source. Each zod issue now carries the expected
+// shape AND a known-good fragment lifted from the brief's own archetype scaffold at the same path, so
+// the fix is copy-adapt instead of re-derive.
+function expectedShapeOf(issue: z.ZodIssue): string {
+  const i = issue as any;
+  switch (issue.code) {
+    case "invalid_type": return `expected ${i.expected}, received ${i.received}`;
+    case "invalid_enum_value": return `one of ${(i.options ?? []).map((o: unknown) => JSON.stringify(o)).join(" | ")}`;
+    case "unrecognized_keys": return `unknown key(s) ${(i.keys ?? []).join(", ")} — remove them`;
+    case "invalid_union": return "none of the allowed variants matched — compare against the example fragment";
+    case "invalid_string": return `a string matching the '${typeof i.validation === "string" ? i.validation : JSON.stringify(i.validation)}' rule`;
+    default: return issue.message;
+  }
+}
+
+/** The known-good value at (or at the nearest resolvable ancestor of) an issue path in the scaffold.
+ *  Draft array indices beyond the scaffold's length clamp to the last scaffold sibling — any sibling
+ *  demonstrates the same shape. */
+export function scaffoldExampleAt(scaffold: unknown, issuePath: (string | number)[]): { path: string; fragment: unknown } {
+  let node: any = scaffold;
+  const walked: (string | number)[] = [];
+  for (const seg of issuePath) {
+    const key = typeof seg === "number" && Array.isArray(node) ? Math.min(seg, Math.max(node.length - 1, 0)) : seg;
+    if (node !== null && typeof node === "object" && key in node) { node = node[key]; walked.push(seg); }
+    else break;
+  }
+  return { path: walked.join(".") || "(root)", fragment: node };
+}
+
+export function schemaHints(issues: z.ZodIssue[], brief: string) {
+  const good = archetypeScaffold(brief, pickArchetype(brief));
+  return issues.map((issue) => {
+    const at = issue.path.join(".") || "(root)";
+    const ex = scaffoldExampleAt(good, issue.path);
+    const json = JSON.stringify(ex.fragment);
+    return {
+      path: at,
+      problem: issue.message,
+      expected: expectedShapeOf(issue),
+      example: json !== undefined && json.length <= 600
+        ? ex.fragment
+        : `the known-good '${ex.path}' fragment is large — call plan_app_spec with {brief} only for the full scaffold shape`,
+      ...(ex.path !== at ? { exampleFrom: ex.path } : {}),
+    };
+  });
+}
+
 export function registerPlannerTools(server: McpServer) {
   server.registerTool(
     "plan_app_spec",
@@ -355,11 +434,14 @@ export function registerPlannerTools(server: McpServer) {
     },
     async ({ brief, draftSpec, budget }) => {
       if (draftSpec === undefined) {
-        const archetype = pickArchetype(brief);
+        const { archetype, matched } = matchArchetype(brief);
         return okJson({
           status: "scaffold",
           message: `No draftSpec supplied — brief steered toward the '${archetype}' archetype (closest proven pattern to the brief); here is a well-formed scaffold AppSpec to adapt. Author against list_capabilities, then call plan_app_spec again with draftSpec.`,
           archetype,
+          archetypeWhy: matched.length
+            ? `matched keyword(s): ${matched.join(", ")}. A wrong steer is cheap to override — adapt any part of the scaffold, or restate the brief without the keyword.`
+            : "no archetype keywords matched — generic scaffold (the safe fallback).",
           scaffold: archetypeScaffold(brief, archetype),
         });
       }
@@ -367,8 +449,8 @@ export function registerPlannerTools(server: McpServer) {
       if (!parsed.success) {
         return okJson({
           status: "invalid",
-          message: "draftSpec failed schema validation — fix these and retry.",
-          issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
+          message: "draftSpec failed schema validation — each issue names the failing path, the expected shape, and a known-good example fragment from this brief's scaffold. Fix and retry.",
+          issues: schemaHints(parsed.error.issues, brief),
         });
       }
       const spec = parsed.data;

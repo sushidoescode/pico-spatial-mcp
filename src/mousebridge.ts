@@ -17,7 +17,7 @@ import { fail, ok, run } from "./util.js";
  * is over (scene-color robust: it finds the menu's blue panel bbox first, then the button bars inside
  * it, and least-squares-fits the 4 equally-spaced rows wherever the free camera drifted the panel),
  * and fires the already-proven command channel:
- *     adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd <start|pause|resume|reset>
+ *     adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd <start|pause|resume|reset|custom action names declared in the spec>
  * which the app routes to GameMenu.select(action).
  *
  * VERIFIED end-to-end (2026-06-30, orreryxr on emulator-5554): a REAL system mouse click (cliclick)

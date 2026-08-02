@@ -53,6 +53,8 @@ jobs:
         run: npm run test:swan
       - name: place_model_on_surface orchestrator
         run: npm run test:placeonsurface
+      - name: Menu actions + static shapes + panel show/hide codegen truth
+        run: npm run test:menuactions
       - name: Name-aware procedural provisioning (matcher always runs; bake self-skips without an SDK)
         run: npm run test:provision
       - name: Mouse bridge (pidfile lifecycle + tool surface)

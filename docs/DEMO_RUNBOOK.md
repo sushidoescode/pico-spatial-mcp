@@ -28,7 +28,7 @@ the honesty loop in front of them.
 
 - The two-step protocol is the design, not a failure — rehearse the narration for call one.
 - `pico_record` is the doors ledger-write door (landed in v31; the doors surface is now
-  15 tools — smoke-verified 2026-08-01).
+  16 tools — smoke-verified; pico_next answers 'what should I do now' from live local state).
 
 *Evidence: the exact loop ran end-to-end 2026-08-01 on a fresh arcade brief — ledger
 `com.fleet.door48128` seq 0–2 (2 vision_verified, 1 honest structural); the driven `start`

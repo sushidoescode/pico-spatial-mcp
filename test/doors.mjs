@@ -1,4 +1,4 @@
-// THE DOORS test: PICO_MCP_SURFACE=doors exposes ONLY the intent facade — 15 tools (14 doors +
+// THE DOORS test: PICO_MCP_SURFACE=doors exposes ONLY the intent facade — 16 tools (15 doors +
 // validate_toolchain); the doors orchestrate the full surface through the internal child server.
 // Run: npm run test:doors
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -43,7 +43,7 @@ const client = new Client({ name: "doors-test", version: "0.0.0" });
 await client.connect(transport);
 
 const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-const DOORS = ["pico_build_app", "pico_scan_world", "pico_place", "pico_look", "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship", "pico_capabilities", "pico_fix", "pico_record", "pico_emulator"];
+const DOORS = ["pico_build_app", "pico_scan_world", "pico_place", "pico_look", "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship", "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next"];
 const expected = [...DOORS, "validate_toolchain"].sort();
 if (JSON.stringify(tools) === JSON.stringify(expected)) ok(`doors surface exposes exactly ${expected.length} tools`);
 else fail(`surface mismatch — got [${tools.join(", ")}]`);
@@ -75,6 +75,20 @@ const hasSpinAnim = (baOut.scaffold?.objects ?? []).some((o) => o.anim && o.anim
 if (hasGridLayout && hasSpinAnim) ok("crystals-brief scaffold has a grid layout + a spin anim (display archetype fired)");
 else fail(`crystals-brief scaffold missing grid/anim: ${JSON.stringify(baOut.scaffold).slice(0, 300)}`);
 
+// v31.3: the scaffold response NAMES the archetype + WHY (the matched keywords) so the author can override.
+if (baOut.archetype === "display" && /matched keyword/.test(baOut.archetypeWhy ?? "") && /crystal/.test(baOut.archetypeWhy ?? ""))
+  ok("needs-authoring names the archetype + the matched keyword(s) that steered it");
+else fail(`archetype/why missing from needs-authoring: ${JSON.stringify({ archetype: baOut.archetype, archetypeWhy: baOut.archetypeWhy })}`);
+
+// v31.3 schema hints: an invalid draftSpec comes back as plan-failed with, per zod issue, the failing
+// path, the expected shape, and a known-good example fragment lifted from the brief's own scaffold.
+const bad = await client.callTool({ name: "pico_build_app", arguments: { brief: "three spinning crystals over a stone floor with a start menu", draftSpec: { meta: { appName: "CrystalsXR" } } } });
+const badOut = JSON.parse(bad.content[0].text);
+const hint = (badOut.detail?.issues ?? []).find((i) => i.path === "meta.packageName");
+if (badOut.status === "plan-failed" && hint && /expected string/.test(hint.expected ?? "") && hint.example === "com.example.showcasexr")
+  ok("plan-failed schema hints carry path + expected shape + known-good example fragment");
+else fail(`plan-failed schema hints missing: ${JSON.stringify(badOut).slice(0, 300)}`);
+
 // DOOR 12 takes FREE TEXT — never leaks the diagnose enum's schema error at the caller
 const pf = await client.callTool({ name: "pico_fix", arguments: { error: "e: HomeStage.kt:52:65 Unresolved reference 'resetScene'." } });
 const pfOut = JSON.parse(pf.content[0].text);
@@ -96,6 +110,17 @@ const emuOut = JSON.parse(emuRestart.content[0].text);
 if (emuOut.status === "manual-restart-required" && /restart-emulator\.sh/.test(emuOut.fix ?? "") && /recalibrate/i.test(emuOut.fix ?? ""))
   ok("pico_emulator restart returns the cold-restart command + recalibration reminder (not executed)");
 else fail(`pico_emulator restart broken: ${JSON.stringify(emuOut).slice(0, 200)}`);
+
+// DOOR 15 pico_next: reads real local state and recommends a REAL door — never executes it.
+const nx = await client.callTool({ name: "pico_next", arguments: {} });
+const nxOut = JSON.parse(nx.content[0].text);
+if (typeof nxOut.situation === "string" && nxOut.situation.length > 20
+    && nxOut.nextAction && DOORS.includes(nxOut.nextAction.door)
+    && typeof nxOut.nextAction.why === "string" && nxOut.nextAction.why.length > 10
+    && "argsExample" in nxOut.nextAction
+    && Array.isArray(nxOut.alternatives) && nxOut.alternatives.every((a) => DOORS.includes(a.door)))
+  ok(`pico_next returns a nextAction naming a real door (${nxOut.nextAction.door}) + ${nxOut.alternatives.length} alternative(s)`);
+else fail(`pico_next broken: ${JSON.stringify(nxOut).slice(0, 300)}`);
 
 // DOOR 13 closes the LOOK -> record loop on the doors surface with the ledger's honesty gate intact
 const recordApp = "pico-doors-record-fixture";
