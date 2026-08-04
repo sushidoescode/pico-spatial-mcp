@@ -8,7 +8,7 @@ demo. Nothing in this runbook may be claimed on stage beyond what its evidence l
 
 ---
 
-## The arc (25 min, six beats)
+## The arc (28 min, seven beats)
 
 ### 1. `pico_doctor` live (~2 min, the call itself is ~10 s)
 
@@ -88,6 +88,30 @@ around Earth → trans-lunar flyby → return → retro-burn → Falcon-9 touchd
 *Evidence: ledger `com.picoagent.rocketsim` seq 9–19 [live, 2026-08-02] — composition, panel,
 CDP click, mid-orbit, flyby, landing burn, reset all vision_verified with linked captures;
 NASA texture shas recorded seq 17.*
+
+### 4b. MISSION TOWER — the live-data MR centerpiece (~4 min, pre-built)
+
+Launch `com.picoagent.missiontower` (project `~/AndroidStudioProjects/missiontower-native`): a
+Tripo-asset airport diorama (triaged + Blender-decimated from 80 MB raw to 26 MB shipped) seated
+adaptively on the detected floor — verified at ×2.0 in the atrium and ×1.56 in the bedroom, same
+binary — with four bundle-instanced airliners flying full guided lifecycles under
+separation-is-law choreography (altitude bands, in-trail gaps, runway lock with visible
+GO-AROUND flashes; measured session minimum 0.50 m world). The TOWER CONTROL panel carries the
+SIMULATION launch bar, a world-metre radar with trails, phase-chipped flight strips, and
+per-strip LIVE/SIM chips.
+
+- **The live beat**: daytime SFO gives dense LIVE traffic — real callsigns with LIVE chips
+  (AAL3295 on approach was rendered in-room, ledger seq 4). Launch the app FRESH on demo day:
+  anonymous OpenSky credits (~400/day) reset daily, and an overnight poller exhausts them
+  (measured: fail #257). If rate-limited, the truthful 429 banner + auto-SIM fallback IS a
+  demo beat — it proved itself in the wild, ledger seq 22.
+- Reseat/move from the panel's placement cluster; placement locks (greyed, "FOLLOWED AIRCRAFT
+  ON FINAL") while a followed aircraft is on final — show it.
+- Full-cycle video fallback: `/tmp/pico-render/missiontower/v2/missiontower_v2_fullcycle_frameseq.mp4`.
+
+*Evidence: ledger `com.picoagent.missiontower` seq 0–22 [live, 2026-08-03/04] — seat, panel v2,
+separation money shot, touchdown, GO-AROUND flash, moved-with-traffic, atrium ×2.0 reseat +
+wild 429 fallback all vision_verified with linked captures; seq 11 properly retracted.*
 
 **Fallback beat — MR tabletop** (if rocketsim misbehaves): the 2026-07-29 tabletop app —
 detected FLOOR, physics settling, live Kraken feed, web panel driving native physics; same
