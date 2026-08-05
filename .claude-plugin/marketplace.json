@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "PICO Spatial MCP — vision-verified agentic toolchain for PICO OS 6 spatial development.",
-    "version": "31.0.0-pre"
+    "version": "33.1.0-pre"
   },
   "plugins": [
     {
