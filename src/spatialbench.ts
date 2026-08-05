@@ -47,11 +47,10 @@ import { deriveVerificationRoute, type VerificationRoute } from "./fleetbuild.js
 export const BENCH_CORE: readonly string[] = ["crystals", "boutique", "knockdown", "gallery", "console", "dashboard", "ambient", "affordance"];
 
 // v32 MR tier (ADDITIVE): Mixed-stage (stageStyle "1") briefs, primitives-only and self-contained,
-// scored alongside — never instead of — BENCH_CORE. Honesty note, measured 2026-08-02 (mrtable MR-lane
-// proof run): the calibrated eye cannot score passthrough frames (its foreground segmentation assumes a
-// black void and notMostlyBlack is vacuously true on a home-env frame), so MR rows are EXPECTED to land
-// eye=0/escalations rather than auto-PASS — that is the machinery degrading safely, not a pipeline
-// failure. A human LOOK is the MR tier's verification bar until the eye grows an MR mode.
+// scored alongside — never instead of — BENCH_CORE. On high-coverage passthrough frames,
+// count/not-black/dominant-color checks are advisory and add zero confidence. At least two distinct
+// authored colors can score through the color-key lane at its default 0.8 confidence threshold;
+// otherwise MR rows escalate. A human LOOK remains the verification bar; auto_judged is weaker.
 export const BENCH_MR: readonly string[] = ["mrtable", "mrpedestal", "mrknock"];
 
 type BenchRow = {
@@ -276,7 +275,7 @@ code{font-family:ui-monospace,monospace;color:#79c0ff}
 export function registerSpatialBenchTools(server: McpServer) {
   server.tool(
     "run_spatialbench",
-    "v23 SPATIALBENCH: score the conformance corpus (briefs/) as a public benchmark and emit a static league-table report (docs/spatialbench/). tier='headless' (default, CI-safe) scores planned/compiled/shape per brief from the spec+ledger alone — /3, no runtime claims. tier='full' additionally fleet-builds each brief on the emulator and scores booted/captured plus the stage eye when applicable. v32 adds the ADDITIVE MR tier (BENCH_MR: Mixed-stage briefs, reported as their own mrTier section) alongside the frozen BENCH_CORE; MR rows are expected to escalate rather than auto-PASS — the eye cannot score passthrough frames yet, so eye=0 there means 'human LOOK required', not app failure. eye is the CALIBRATED JUDGE (auto_judged, never vision_verified; escalations name stage frames for a human LOOK). Briefs that declare panels gain a separate panelReady axis backed only by structural WindowManager caption/container evidence; it never becomes eye or vision proof. Panel-only routes leave eye null and exclude it from the maximum rather than false-failing an off-view panel. Asset-gated or explicitly external-implementation briefs are reported as skipped, not failed. perfAxis:true (tier='full' only) adds an optional perf axis: perfSource='gfxinfo' (default) scores measure_perf's UI/RenderThread p95 under perfBudgetMs — gfxinfo's UI surfaces only, not the spatial engine's 3D pacing; perfSource='pico-cli' closes that gap via the official profiler (perf_diagnose), scoring appFps p5 (the report's frame-time-p95 analog — it has no appFps p95 field) against the budget's fps floor, and falls back to gfxinfo with the reason in notes when the CLI or appFps data is absent (on this emulator appFps measures 0/no_3d_frame). Either source scores null (not counted, never zeroed) without data. Returns the report paths + the league table.",
+    "v23 SPATIALBENCH: score the conformance corpus (briefs/) as a public benchmark and emit a static league-table report (docs/spatialbench/). tier='headless' (default, CI-safe) scores planned/compiled/shape per brief from the spec+ledger alone — /3, no runtime claims. tier='full' additionally fleet-builds each brief on the emulator and scores booted/captured plus the stage eye when applicable. v32 adds the ADDITIVE MR tier (BENCH_MR: Mixed-stage briefs, reported as their own mrTier section) alongside the frozen BENCH_CORE; on high-coverage passthrough frames count/not-black/dominant-color checks are advisory with zero confidence, while at least two authored colors can score through the color-key lane at the default 0.8 threshold; other MR rows escalate. eye is the CALIBRATED JUDGE (auto_judged, never vision_verified; escalations name stage frames for a human LOOK). Briefs that declare panels gain a separate panelReady axis backed only by structural WindowManager caption/container evidence; it never becomes eye or vision proof. Panel-only routes leave eye null and exclude it from the maximum rather than false-failing an off-view panel. Asset-gated or explicitly external-implementation briefs are reported as skipped, not failed. perfAxis:true (tier='full' only) adds an optional perf axis: perfSource='gfxinfo' (default) scores measure_perf's UI/RenderThread p95 under perfBudgetMs — gfxinfo's UI surfaces only, not the spatial engine's 3D pacing; perfSource='pico-cli' closes that gap via the official profiler (perf_diagnose), scoring appFps p5 (the report's frame-time-p95 analog — it has no appFps p95 field) against the budget's fps floor, and falls back to gfxinfo with the reason in notes when the CLI or appFps data is absent (on this emulator appFps measures 0/no_3d_frame). Either source scores null (not counted, never zeroed) without data. Returns the report paths + the league table.",
     {
       tier: z.enum(["headless", "full"]).default("headless").describe("headless = spec+ledger axes only; full = also emulator boot/capture/eye per brief (slow, serial)"),
       briefIds: z.array(z.string()).optional().describe(`full tier defaults to the self-contained core set [${BENCH_CORE.join(", ")}] plus the additive MR tier [${BENCH_MR.join(", ")}]; headless defaults to every brief`),
@@ -381,7 +380,7 @@ export function registerSpatialBenchTools(server: McpServer) {
           briefIds: [...BENCH_MR],
           league: mrRows.map((r) => ({ id: r.id, score: `${r.score}/${r.max}`, skipped: r.skipped })),
           honesty:
-            "Mixed-stage (stageStyle '1') briefs scored by the same axes. The calibrated eye cannot score passthrough frames (foreground segmentation assumes a black void; notMostlyBlack is vacuously true on a home-env frame — measured 2026-08-02, mrtable proof run), so eye=0/escalation on an MR row means 'a human must LOOK', not 'the app failed'.",
+            "Mixed-stage (stageStyle '1') briefs use the same axes. On high-coverage passthrough frames, count/not-black/dominant-color checks are advisory with zero confidence. At least two distinct authored colors can score via the color-key lane at the default 0.8 threshold; otherwise eye escalation means 'a human must LOOK', not 'the app failed'. auto_judged remains weaker than vision_verified.",
         },
       });
     },

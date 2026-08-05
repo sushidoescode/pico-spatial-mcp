@@ -29,11 +29,11 @@ floor with bodies dropping onto it from a clickable menu"* → `pico_build_app` 
 loop in front of them.
 
 - The two-step protocol is the design, not a failure — rehearse the narration for call one.
-- **Narrate the escalation as the pitch, not an apology**: the calibrated eye cannot score
-  passthrough frames (its checks were trained on a black void), so the Mixed build comes back
-  `built-needs-look`/ESCALATE by construction — the machinery degrades safely instead of lying,
-  and YOUR look on stage is the verification. That is the honesty contract working in front of
-  them.
+- **Narrate an escalation as the pitch, not an apology**: on a high-coverage passthrough frame,
+  count/not-black/dominant-color checks are advisory and contribute zero confidence. At least two
+  distinct authored colors can score through the color-key lane at its default 0.8 threshold;
+  otherwise the Mixed build returns `built-needs-look`/ESCALATE. In either case YOUR look on stage,
+  not an `auto_judged` score, is the `vision_verified` bar.
 - `pico_record` is the doors ledger-write door (landed in v31; the doors surface is now
   16 tools — smoke-verified; pico_next answers 'what should I do now' from live local state).
 

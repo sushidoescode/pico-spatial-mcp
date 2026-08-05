@@ -14,7 +14,7 @@ const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 // These lanes are frozen inputs to the public benchmark/calibration contract. This adoption work
 // is intentionally a repo-only recipe, never a way to inflate the benchmark corpus.
 const protectedFiles = new Map([
-  ["src/spatialbench.ts", "e096b8648154bc6f3bfdb701b82d78ece8442ca10464c7423d62a37cf642fb49"],
+  ["src/spatialbench.ts", "f20ceadce7d9904644551206f192e92581db95e0fa106ddc78271f2006340a2e"],
   ["briefs/calib.json", "b9b76f5fe63afa0fb8f30721f0f548ae5082b77a611f4e1410b4466abcda9179"],
 ]);
 const protectedBefore = new Map();

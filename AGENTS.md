@@ -21,16 +21,21 @@ capture path, and escalate the look to a human or a vision-capable agent.
 
 1. **Start with `pico_doctor`** (doors surface) or `preflight_env` (full surface) — read-only;
    every failing check carries the exact fix command. Never debug the environment by guessing.
-2. **Prefer the doors surface for your first sessions** (`PICO_MCP_SURFACE=doors`): 13
-   intent-level tools instead of 233+. `pico_build_app` is a TWO-STEP protocol by design —
+2. **Prefer the doors surface for your first sessions** (`PICO_MCP_SURFACE=doors`): 16
+   intent-level tools instead of the full surface (239 tools on macOS; 236 on other hosts).
+   `pico_build_app` is a TWO-STEP protocol by design —
    a brief-only call returns a scaffold AppSpec for YOU to author; re-call with
    `{brief, draftSpec}` to build.
 3. **On any error, feed the text to `pico_fix`** — it maps free text to a knowledge base of
    verified past failures and returns the known fix. Door errors carry a `fix` field; follow it
    before improvising.
-4. **Emulator pre-condition**: the PICO emulator must be running (Spatial Editor app, or
+4. **Use the right knowledge authority**: `knowledge_api` supplies broad graph context on the full
+   surface; `vault_api` is authoritative for exact SDK declarations and file/line citations.
+   `preflight_lint` queries the graph only through explicit `knowledgeSecondOpinion`, and the result
+   is advisory — it never changes `clean`.
+5. **Emulator pre-condition**: the PICO emulator must be running (Spatial Editor app, or
    `scripts/restart-emulator.sh`). `pico_doctor` tells you if it isn't.
-5. **Record what you proved**: `record_verification` with the evidence class you actually
+6. **Record what you proved**: `record_verification` with the evidence class you actually
    earned (`structural` < `auto_judged` < `vision_verified` < `device_verified`). The full
    ranking and vocabulary: [README.md](README.md#vocabulary-primer).
 

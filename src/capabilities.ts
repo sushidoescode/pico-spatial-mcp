@@ -80,6 +80,15 @@ const CEILINGS: Record<string, string> = {
   PARTNER_STATED_stageStyle3: "Full Space stageStyle-3 immersive apps hit a known Guardian-boundary issue on hardware — PARTNER-STATED (per Matt/PICO, fix in progress), NOT measured by us. Scoped strictly to stageStyle '3' immersion: it does NOT taint the open-Stage plane/seating lane, which Mixed (stageStyle 1, the MR default) satisfies. Style 3 stays a first-class explicit opt-in until re-verified on hardware.",
 };
 
+export const CAPABILITY_EVIDENCE_NOTES = {
+  knowledgeGraph:
+    "knowledge_api is broad contextual graph evidence over a persistent pico-cli session; it does not prove exact SDK declarations",
+  exactSdkSymbols:
+    "vault_api is authoritative for exact installed-SDK signatures and file/line citations",
+  lintSecondOpinion:
+    "knowledgeSecondOpinion is opt-in query_graph context and never changes preflight_lint clean",
+};
+
 export function registerCapabilityManifestTools(server: McpServer) {
   server.registerTool(
     "list_capabilities",
@@ -105,6 +114,7 @@ export function registerCapabilityManifestTools(server: McpServer) {
         count: tools.length,
         totalRegistered: CAPABILITY_MANIFEST.length,
         ceilings: CEILINGS,
+        evidenceNotes: CAPABILITY_EVIDENCE_NOTES,
         tools,
       });
     },

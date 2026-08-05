@@ -1,0 +1,18 @@
+{
+  "$schema": "https://cursor.com/schemas/cursor-plugin/marketplace.json",
+  "name": "pico-mcp",
+  "owner": {
+    "name": "Sushant Srikrishnan"
+  },
+  "metadata": {
+    "description": "PICO Spatial MCP host integration for building and verifying PICO OS 6 Spatial SDK applications."
+  },
+  "plugins": [
+    {
+      "name": "pico-spatial-mcp",
+      "source": ".",
+      "description": "Build, inspect, validate, and vision-verify PICO OS 6 Spatial SDK applications through a host-neutral MCP server.",
+      "version": "31.0.0-pre"
+    }
+  ]
+}

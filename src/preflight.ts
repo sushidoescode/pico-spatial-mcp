@@ -54,6 +54,14 @@ export function defaultIO(): PreflightIO {
 const SDK_ADB = (home: string) =>
   path.join(home, "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
 
+export const PICO_EMULATOR_INSTALL_COMMAND = "pico-cli emulator install --source auto --yes";
+
+function emulatorAcquisitionFix(): string {
+  return `To download/update only the PICO emulator bundle, run \`${PICO_EMULATOR_INSTALL_COMMAND}\`. ` +
+    "This does not create an AVD and does not install the JDK, Android SDK, Gradle, or PICO build SDK. " +
+    "After the bundle is present, open the PICO Spatial Editor app to boot the emulator (or, from a source checkout, run scripts/restart-emulator.sh), then re-run preflight_env.";
+}
+
 function findAdb(io: PreflightIO): string | null {
   if (io.exec("adb", ["version"]).ok) return "adb";
   const bundled = SDK_ADB(io.home);
@@ -103,7 +111,7 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     : path.join(io.home, "Library/PICO/sdk/0.13");
   push(io.statMtimeMs(sdkRoot) != null
     ? { name: "pico-sdk", status: "pass", detail: sdkRoot, fix: null }
-    : { name: "pico-sdk", status: "fail", detail: `no PICO SDK payload at ${sdkRoot}`, fix: "Install the PICO Spatial Plugin in Android Studio and let it download the SDK + emulator payloads; they land under ~/Library/PICO/sdk/0.13/." });
+    : { name: "pico-sdk", status: "fail", detail: `no PICO SDK payload at ${sdkRoot}`, fix: "Install the PICO Spatial Plugin in Android Studio and let it download the PICO build SDK under ~/Library/PICO/sdk/0.13/. This is separate from `pico-cli emulator install --source auto --yes`, which downloads/updates only the emulator bundle and does not install the build SDK." });
 
   // 2c. JDK. Gradle needs it, and its absence surfaces as an opaque build failure much later.
   //     This MUST use detectJavaHome() — the same resolver gradleEnv() injects into every Gradle
@@ -185,7 +193,7 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
       if (up.ok && Number.isFinite(uptimeSec)) bootAtMs = io.now() - uptimeSec * 1000;
       push({ name: "emulator", status: "pass", detail: `${serial} (device)`, fix: null });
     } else {
-      push({ name: "emulator", status: "fail", detail: `no running emulator in: ${dev.stdout.trim() || "(empty)"}`, fix: "Open the PICO Spatial Editor app — it boots the emulator — then re-run preflight_env. (From a source checkout you can instead run scripts/restart-emulator.sh.)" });
+      push({ name: "emulator", status: "fail", detail: `no running emulator in: ${dev.stdout.trim() || "(empty)"}`, fix: emulatorAcquisitionFix() });
     }
   }
 

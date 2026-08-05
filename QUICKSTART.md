@@ -6,8 +6,8 @@ Build native PICO XR spatial apps from natural-language briefs, with **verified*
 environment and content seats on it; a fully-virtual Full-Space app (stageStyle `3`) is an
 explicit, fully-supported opt-in.
 
-This is the proven first-run path, on the doors surface (`PICO_MCP_SURFACE=doors` — 13
-intent-level tools instead of the full 238-tool surface). It's the exact sequence a from-docs-only run on a fresh clone
+This is the proven first-run path, on the doors surface (`PICO_MCP_SURFACE=doors` — 16
+intent-level tools instead of the full surface: 239 tools on macOS, 236 on other hosts). It's the exact sequence a from-docs-only run on a fresh clone
 followed on 2026-07-21.
 
 ## 1. Register (once)
@@ -17,14 +17,20 @@ git clone <this repo> ~/PICO-MCP && cd ~/PICO-MCP && npm ci && npm run build
 claude mcp add pico-spatial-mcp --scope user --env PICO_MCP_SURFACE=doors -- node ~/PICO-MCP/dist/index.js
 ```
 
-Requirements: macOS, the PICO SDK 0.13 (Spatial Editor + emulator), Android Studio (its JBR),
-ImageMagick (`brew install imagemagick`). Optional: Blender (custom menu panels), Filament cmgen (IBL).
+Requirements: macOS, the PICO SDK 0.13 build payload from the Android Studio PICO Spatial Plugin,
+Android Studio (its JBR/Android SDK/Gradle and Device Manager), a PICO AVD, and the emulator bundle.
+Download/update that bundle through the Spatial Editor/plugin flow or with
+`pico-cli emulator install --source auto --yes`. The CLI command does not create an AVD and does not
+install the JDK, Android SDK, Gradle, or PICO build SDK. Optional: ImageMagick (`brew install imagemagick`),
+Blender (custom menu panels), and Filament cmgen (IBL).
 
 ## 2. Start the emulator (pre-condition, outside the timed path)
 
-Open the PICO **Spatial Editor** app (it boots the emulator), or run `scripts/restart-emulator.sh`
-for a CLI cold-restart. Either way, do this *before* you start the flow below — it isn't part of
-the 15-minute bar.
+If the emulator bundle is missing or stale, download/update it with the Spatial Editor/plugin flow
+or `pico-cli emulator install --source auto --yes`; that command still does not create the AVD or
+install the build toolchain. Create/select the AVD in Android Studio Device Manager. Then open the
+PICO **Spatial Editor** app (it boots the emulator), or run `scripts/restart-emulator.sh` for a CLI
+cold-restart. Do this *before* the flow below — it isn't part of the 15-minute bar.
 
 ## 3. The proven flow
 
@@ -52,10 +58,11 @@ order:
      substitute for looking).
    - `status: "built-needs-look"` — it built and installed; **you look at the returned `capture`
      path yourself** before claiming anything works. This is the normal outcome for a novel brief,
-     not a failure — and it is the *expected* outcome for every Mixed-stage brief today: the
-     calibrated eye cannot score passthrough frames (the home environment defeats its
-     black-void-trained checks — measured 2026-08-02), so MR builds escalate to your look by
-     construction.
+     not a failure. On high-coverage passthrough frames, count/not-black/dominant-color checks are
+     advisory and contribute zero confidence. If the expected scene declares at least two distinct
+     authored colors, the color-key lane can auto-score at its default 0.8 confidence threshold;
+     otherwise the judge escalates to your look. An `auto_judged` result remains weaker than a
+     looked-at `vision_verified` result either way.
    - `status: "failed"` — read `notes`; asset-gated briefs name the missing prerequisite, build
      errors name the file. Feed the error text into `pico_fix` for the matched retained lesson.
 
@@ -111,7 +118,8 @@ PICO Swan / 6.1 territory, and every claim above is backed by a looked-at frame.
 
 ## The full surface
 
-The doors surface is 16 tools; the full server exposes 238. Remove `PICO_MCP_SURFACE=doors` (or
+The doors surface is 16 tools; the full server exposes 239 on macOS (236 on other hosts, where four
+host-GUI tools collapse to one explanatory stub). Remove `PICO_MCP_SURFACE=doors` (or
 just add the full-surface server alongside) to get everything — codegen for every SDK subsystem,
 the fleet/asset/editor pipelines, and the raw building blocks the doors orchestrate internally.
 The doors stay available either way. See **[SKILLS.md](SKILLS.md)** for the agent reference and

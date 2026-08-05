@@ -7,13 +7,34 @@ node /abs/path/to/PICO-MCP/dist/index.js
 ```
 
 Optional env: `PICO_MCP_SURFACE=doors` (the 16-tool intent facade — recommended for first
-sessions; omit for the full 238-tool surface). Build once first: `npm ci && npm run build`.
+sessions; omit for the full surface: 239 tools on macOS, 236 on other hosts). Build once first:
+`npm ci && npm run build`.
 Whatever the host, point it at that command and the agent contract in [AGENTS.md](../AGENTS.md)
 applies as-is.
 
 Verification status is labeled honestly per host: **VERIFIED** = we ran it; **standard config**
 = the host's documented MCP config format, not independently exercised by us — check your host
 version's docs if it doesn't load.
+
+## Repository plugin layouts — structurally validated
+
+The checkout includes the host-native payload and marketplace locations below. All point to the
+shared root `.mcp.json`; it launches `node scripts/plugin-bootstrap.mjs`. The launcher resolves the
+repository from its own `import.meta.url`, uses `npm.cmd` on Windows and `npm` elsewhere, builds only
+when `node_modules` or `dist/index.js` is missing, keeps setup output off MCP stdout, and forwards the
+server's exit/signal. A cold source launch is tested from an unrelated path containing spaces and
+non-ASCII characters.
+
+| Host | Marketplace | Payload | Status |
+|---|---|---|---|
+| Claude Code | `.claude-plugin/marketplace.json` | `.claude-plugin/plugin.json` | live plugin route verified |
+| Codex | `.agents/plugins/marketplace.json` | `.codex-plugin/plugin.json` | current validator + paths structurally validated |
+| Cursor | `.cursor-plugin/marketplace.json` | `.cursor-plugin/plugin.json` | schema + paths structurally validated; not live-installed here |
+| GitHub Copilot | `.github/plugin/marketplace.json` | `.github/plugin/plugin.json` | schema + paths structurally validated; not live-installed here |
+
+The relative source-plugin command assumes the host launches it at the plugin root. When that host
+behavior is unknown or differs, use the absolute plain-server configuration below; no invented host
+root environment variable is required.
 
 ## Claude Code — VERIFIED
 

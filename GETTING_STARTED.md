@@ -1,8 +1,8 @@
 # Getting started with pico-spatial-mcp
 
 A step-by-step walkthrough, from a `.tgz` file to a PICO XR spatial app you have watched run in the
-emulator. Assumes you already have the **PICO SDK** and the **PICO OS 6 emulator** installed, and that
-you have never seen this tool before.
+emulator. Assumes you already have the **PICO build SDK**, an **emulator bundle**, and a separately
+created **PICO AVD**, and that you have never seen this tool before.
 
 If you want the condensed reference instead of the walkthrough, `TESTERS.md` inside the package covers
 the same ground in one page.
@@ -32,12 +32,18 @@ on its own; it has no UI.
 |---|---|---|
 | **macOS** | The emulator and the native capture path are macOS-only | — |
 | **Node ≥ 20** | Runs the server | `node --version` |
-| **PICO SDK + OS 6 emulator** | Everything real | Installed via the PICO Spatial Plugin in Android Studio |
+| **PICO build SDK** | Compilers and app dependencies | PICO Spatial Plugin in Android Studio |
+| **PICO emulator bundle** | Emulator runtime | Spatial Editor/plugin flow, or `pico-cli emulator install --source auto --yes` |
+| **PICO AVD** | Bootable virtual device | Create separately in Android Studio Device Manager |
 | **adb** | Drives the emulator | Bundled with the SDK, or on your `PATH` |
 | **JDK 17+** | Gradle builds the APK | Android Studio bundles one — that counts |
 | **ImageMagick** | *Optional.* Some capture analysis | `brew install imagemagick` |
 
 Don't chase these manually. Step 3 tells you exactly which ones you're missing.
+
+The pico-cli install command above only downloads/updates the emulator bundle. It does **not**
+create an AVD and does not install the JDK, Android SDK, Gradle, or PICO build SDK; keep those
+Android Studio/toolchain steps separate.
 
 The APK build lane works **out of the box**: every app is generated from a skeleton that ships inside
 this package — Gradle files, wrapper, manifest, resources, PICO SDK dependencies, and a minimal stage
@@ -85,7 +91,7 @@ For **Claude Code**, add this to `.mcp.json` in your project (or your user-level
 
 Any MCP client works — it's JSON-RPC over stdio. Restart your client so it picks up the new server.
 
-You should now see **238+ tools**. That's a lot, and step 5 explains how to cut it down to 13
+You should now see **239 tools on macOS or 236 on other hosts**. That's a lot, and step 5 explains how to cut it down to 16
 if you'd rather start small.
 
 ---
@@ -109,8 +115,10 @@ Two you can expect to see and shouldn't panic about:
 - **`accessibility` — `unknown`.** macOS gives no read-only way to ask whether another process holds
   the Accessibility grant, so the tool refuses to guess. It matters because without it, free-camera
   drags are *silently dropped* — the check text tells you how to confirm it yourself.
-- **`emulator` — `fail`** if you haven't booted one. Open the PICO Spatial Editor app; it boots the
-  emulator for you. Then re-run `preflight_env`.
+- **`emulator` — `fail`** if you haven't booted one. Its remedy includes the verified bundle route
+  `pico-cli emulator install --source auto --yes`, while stating that AVD creation and the build
+  toolchain remain separate. After the bundle and AVD exist, open the PICO Spatial Editor app to
+  boot it, then re-run `preflight_env`.
 
 ---
 
@@ -140,8 +148,10 @@ back one of:
 
 - `verified` — built, ran, and the capture was judged to match
 - `built-needs-look` — it built and ran, but the judgment wasn't conclusive; go look at the capture.
-  For a Mixed-stage app this is the *expected* outcome, not a soft failure: the automated judge
-  can't score passthrough frames yet, so MR builds always route to your eyes
+  On a high-coverage Mixed-stage frame, count/not-black/dominant-color checks are advisory and add
+  zero confidence. At least two distinct authored colors can score through the color-key lane at
+  the default 0.8 confidence threshold; otherwise it routes to your eyes. Even a color-key PASS is
+  only `auto_judged`, never a substitute for a looked-at `vision_verified` claim
 - `failed` — with the actual error
 
 A first build takes a few minutes, most of it Gradle.
@@ -179,16 +189,17 @@ back to you as `projectDir`.
 
 ## Choosing a smaller surface
 
-238+ tools is a lot of context. There's a curated **16-tool** surface covering the same engine. Set it
+The full surface—239 tools on macOS and 236 on other hosts—is a lot of context. There's a curated **16-tool** surface covering the same engine. Set it
 in the `env` block from step 2:
 
 ```json
 "env": { "PICO_MCP_SURFACE": "doors" }
 ```
 
-The thirteen: `validate_toolchain` `pico_build_app` `pico_scan_world` `pico_place` `pico_look`
+The sixteen: `validate_toolchain` `pico_build_app` `pico_scan_world` `pico_place` `pico_look`
 `pico_verify_app` `pico_measure` `pico_perf` `pico_sdk` `pico_doctor` `pico_ship` `pico_capabilities`
-`pico_fix`. On this surface `pico_doctor` replaces `preflight_env` as your health check.
+`pico_fix` `pico_record` `pico_emulator` `pico_next`. On this surface `pico_doctor` replaces
+`preflight_env` as your health check.
 
 **One sharp edge.** `pico_measure` needs a one-time camera calibration, and the two tools that perform
 it are *not* on the doors surface. To calibrate: switch to the full surface (remove `PICO_MCP_SURFACE`

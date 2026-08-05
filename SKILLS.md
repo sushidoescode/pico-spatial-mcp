@@ -10,7 +10,7 @@ fully-supported opt-in for fully-virtual scenes.
 
 See **ROADMAP.md** in the git repository for where this is going — every line gate-labeled honestly.
 
-## The capability map (a core sampler of the 238-tool surface)
+## The capability map (a core sampler of the full surface: 239 tools on macOS, 236 on other hosts)
 
 | Goal | Tools |
 |---|---|
@@ -24,6 +24,29 @@ See **ROADMAP.md** in the git repository for where this is going — every line 
 | Capture the host GUI window (macOS — XR-runtime immersive apps, editor GUI) | `gui_capture`, `gui_find_window`, `gui_camera`, `gui_permissions` |
 | XR input | `xr_*` (gated — read `xr_input_status` first), `controller_map/press` |
 | World-model environments | `worldmodel_guide`, `import_environment` |
+| Query broad installed PICO context | `knowledge_api` (full surface); use `vault_api` for exact SDK declarations |
+
+## Persistent spatial-knowledge actions
+
+`knowledge_api` is a flattened action API over one lazy, persistent
+`pico-cli mcp spatial-knowledge` process. Persistence matters: `switch_workspace` affects later
+calls in the same server session. The adapter bounds startup/calls, resets after protocol failures,
+and returns `status: "unavailable"` when pico-cli or graph data is absent.
+
+| Action | Fields |
+|---|---|
+| `query_graph` | `question`; optional `mode`, `depth`, `token_budget`, `max_degree`, `query_variants`, `sort_by` |
+| `get_node` | `label` |
+| `get_neighbors` | `label`; optional `relation_filter` |
+| `get_community` | nonnegative integer `community_id` |
+| `god_nodes` | optional positive integer `top_n` (default 10) |
+| `graph_stats` | no fields beyond `action` |
+| `shortest_path` | `source`, `target`; optional positive integer `max_hops` (default 8) |
+| `switch_workspace` | `workspace` |
+
+The graph is broad contextual evidence, not an exact symbol oracle. Use `vault_api` for authoritative
+SDK signatures and file/line citations. `preflight_lint(..., knowledgeSecondOpinion: "...")` opts
+into `query_graph` only; its separate advisory block never changes lint `clean`.
 
 ## The build loop
 

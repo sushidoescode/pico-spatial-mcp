@@ -9,9 +9,10 @@ this once, then start from the pointers at the bottom.
 - **`src/`** — one TypeScript module per concern (emulator control, bundle/gradle compilation,
   codegen per SDK subsystem, the trust ledger, the doors facade, …). Every module exports a
   `registerXTools(server)` function; `src/index.ts` imports and calls each one to build the full
-  MCP tool surface (238 tools as of this writing — `npm run smoke` prints the exact registered
-  count). `src/doors.ts` is the intent-level facade described in the README's vocabulary primer.
-- **`test/*.mjs`** — the deterministic gate battery, 42 gate invocations (41 `test:` suites plus `smoke`):
+  MCP tool surface (239 tools on macOS and 236 on other hosts as of this writing — `npm run smoke`
+  prints the exact registered count). `src/doors.ts` is the intent-level facade described in the
+  README's vocabulary primer.
+- **`test/*.mjs`** — the deterministic gate battery, 43 gate invocations (42 `test:` suites plus `smoke`):
   `test:lint`, `test:ledger`, `test:doors`, `test:vault`, `test:occupancy`, `test:affordance`,
   `test:eye`, `test:worldenv`, …. All of it runs headless, no emulator boot required. It's mirrored 1:1 in
   `.github/workflows/gates.yml`, which is what actually gates `main` — if a suite isn't in that

@@ -4,17 +4,19 @@
  *
  * Two truths, read from files that already gate reality, get stamped everywhere they are published:
  *   - `version`             from package.json
- *   - the full-surface tool count from scripts/verify-tarball.mjs EXPECTED_TOOLS (the number the
- *     tarball gate asserts against an installed copy), plus the doors-name list at the head of
- *     REQUIRED_TOOLS (used only for small-count honesty WARNINGS, never for replacements).
+ *   - the macOS and other-host full-surface counts from scripts/verify-tarball.mjs (the exact
+ *     numbers the tarball gate asserts against an installed copy), plus the doors-name list at the
+ *     head of REQUIRED_TOOLS (used only for small-count honesty WARNINGS, never for replacements).
  *
  * Stamped targets:
  *   - .claude-plugin/plugin.json      version + "NNN tools" phrases in the description
  *   - plugin.json                     rewritten as an EXACT copy of .claude-plugin/plugin.json —
  *                                     which loader reads which file is unverified, so both ship,
  *                                     but only the .claude-plugin one is authored
- *   - .claude-plugin/marketplace.json metadata.version + description tool counts
- *   - README.md GETTING_STARTED.md TESTERS.md QUICKSTART.md AGENTS.md docs/HOSTS.md
+ *   - every host payload/marketplace manifest: version + any published tool-count phrases
+ *     (Claude/root remain exact copies; Codex/Cursor/Copilot keep their host-specific shapes)
+ *   - README.md GETTING_STARTED.md TESTERS.md QUICKSTART.md SKILLS.md AGENTS.md docs/HOSTS.md
+ *     docs/COLLABORATORS.md
  *     full-surface tool-count claims + versioned tarball filenames. Deliberately CONSERVATIVE:
  *     only the known stale-literal shapes below are touched, and every replacement is printed.
  *
@@ -36,28 +38,33 @@ const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), "utf8");
 const version = JSON.parse(read("package.json")).version;
 const vt = read("scripts/verify-tarball.mjs");
 const toolsMatch = /const EXPECTED_TOOLS = (\d+)/.exec(vt);
+const otherHostToolsMatch = /const EXPECTED_OTHER_HOST_TOOLS = (\d+)/.exec(vt);
 const reqMatch = /const REQUIRED_TOOLS = \[([\s\S]*?)\];/.exec(vt);
-if (!toolsMatch || !reqMatch) {
-  console.error("FATAL: cannot parse EXPECTED_TOOLS / REQUIRED_TOOLS from scripts/verify-tarball.mjs — its shape changed");
+if (!toolsMatch || !otherHostToolsMatch || !reqMatch) {
+  console.error("FATAL: cannot parse platform tool counts / REQUIRED_TOOLS from scripts/verify-tarball.mjs — its shape changed");
   process.exit(2);
 }
 const TOOLS = Number(toolsMatch[1]);
+const OTHER_HOST_TOOLS = Number(otherHostToolsMatch[1]);
 // the doors names are the run of entries before the "core lanes" comment in REQUIRED_TOOLS
 const DOORS = [...reqMatch[1].split(/\/\/ core lanes/)[0].matchAll(/"([A-Za-z0-9_]+)"/g)].map((m) => m[1]);
 if (DOORS.length < 10) {
   console.error(`FATAL: parsed only ${DOORS.length} doors names from REQUIRED_TOOLS — the doors/core-lanes comment boundary moved`);
   process.exit(2);
 }
-console.log(`truth: version=${version}  tools=${TOOLS}  doors=${DOORS.length}\n`);
+console.log(`truth: version=${version}  macOS-tools=${TOOLS}  other-host-tools=${OTHER_HOST_TOOLS}  doors=${DOORS.length}\n`);
 
 // Every full-surface count this project has ever published (55/190/214/220/224 have all appeared in
 // docs). Bare "~NNN" and "instead of NNN" forms are only replaced for THESE counts — a generic
 // bare-number rule would eat measurements like "~90 s".
-const PUBLISHED_COUNTS = [55, 190, 214, 220, 224].filter((c) => c !== TOOLS);
+const PUBLISHED_COUNTS = [55, 190, 214, 220, 224, 233, 234, 238]
+  .filter((c) => c !== TOOLS && c !== OTHER_HOST_TOOLS);
 
 /** "NNN tools" / "NNN-tool" phrases: any 2-3 digit count >= 50 that isn't the truth. */
 const countPhrases = (text) =>
-  text.replace(/\b(\d{2,3})(\+?[- ]tools?)\b/g, (m, d, suffix) => (Number(d) >= 50 && Number(d) !== TOOLS ? `${TOOLS}${suffix}` : m));
+  text.replace(/\b(\d{2,3})(\+?[- ]tools?)\b/g, (m, d, suffix) => (
+    Number(d) >= 50 && ![TOOLS, OTHER_HOST_TOOLS].includes(Number(d)) ? `${TOOLS}${suffix}` : m
+  ));
 
 function stampDocLine(line) {
   let out = countPhrases(line);
@@ -144,6 +151,10 @@ function stampManifests() {
     }
   }
   for (const pl of mp.plugins ?? []) {
+    if (pl.version !== version) {
+      mpEdits.push(`plugins[${pl.name}].version ${pl.version} -> ${version}`);
+      pl.version = version;
+    }
     const d = countPhrases(pl.description ?? "");
     if (d !== pl.description) {
       mpEdits.push(`plugins[${pl.name}].description tool count -> ${TOOLS}`);
@@ -151,11 +162,67 @@ function stampManifests() {
     }
   }
   emit(".claude-plugin/marketplace.json", mpBefore, JSON.stringify(mp, null, 2) + "\n", mpEdits);
+
+  // Host payloads have deliberately different accepted schemas; synchronize shared truths only.
+  for (const file of [
+    ".codex-plugin/plugin.json",
+    ".cursor-plugin/plugin.json",
+    ".github/plugin/plugin.json",
+  ]) {
+    const before = read(file);
+    const manifest = JSON.parse(before);
+    const hostEdits = [];
+    if (manifest.version !== version) {
+      hostEdits.push(`version ${manifest.version} -> ${version}`);
+      manifest.version = version;
+    }
+    const hostDescription = countPhrases(manifest.description ?? "");
+    if (hostDescription !== manifest.description) {
+      hostEdits.push(`description tool count -> ${TOOLS}`);
+      manifest.description = hostDescription;
+    }
+    emit(file, before, JSON.stringify(manifest, null, 2) + "\n", hostEdits);
+  }
+
+  for (const file of [
+    ".agents/plugins/marketplace.json",
+    ".cursor-plugin/marketplace.json",
+    ".github/plugin/marketplace.json",
+  ]) {
+    const before = read(file);
+    const marketplace = JSON.parse(before);
+    const hostEdits = [];
+    if (marketplace.metadata && Object.hasOwn(marketplace.metadata, "version") && marketplace.metadata.version !== version) {
+      hostEdits.push(`metadata.version ${marketplace.metadata.version} -> ${version}`);
+      marketplace.metadata.version = version;
+    }
+    if (marketplace.metadata?.description) {
+      const description = countPhrases(marketplace.metadata.description);
+      if (description !== marketplace.metadata.description) {
+        hostEdits.push(`metadata.description tool count -> ${TOOLS}`);
+        marketplace.metadata.description = description;
+      }
+    }
+    for (const plugin of marketplace.plugins ?? []) {
+      if (plugin.version !== version) {
+        hostEdits.push(`plugins[${plugin.name}].version ${plugin.version} -> ${version}`);
+        plugin.version = version;
+      }
+      if (typeof plugin.description === "string") {
+        const description = countPhrases(plugin.description);
+        if (description !== plugin.description) {
+          hostEdits.push(`plugins[${plugin.name}].description tool count -> ${TOOLS}`);
+          plugin.description = description;
+        }
+      }
+    }
+    emit(file, before, JSON.stringify(marketplace, null, 2) + "\n", hostEdits);
+  }
 }
 
 console.log(CHECK ? "sync-metadata --check (dry run):" : "sync-metadata stamping:");
 stampManifests();
-for (const doc of ["README.md", "GETTING_STARTED.md", "TESTERS.md", "QUICKSTART.md", "AGENTS.md", "docs/HOSTS.md"]) stampDoc(doc);
+for (const doc of ["README.md", "GETTING_STARTED.md", "TESTERS.md", "QUICKSTART.md", "SKILLS.md", "AGENTS.md", "docs/HOSTS.md", "docs/COLLABORATORS.md"]) stampDoc(doc);
 for (const w of [...new Set(warns)]) console.log(`  WARN ${w}`);
 
 if (CHECK) {

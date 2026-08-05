@@ -20,6 +20,14 @@ for (const [file, pick] of [
   ["plugin.json", (o) => o.version],
   [".claude-plugin/plugin.json", (o) => o.version],
   [".claude-plugin/marketplace.json", (o) => o.metadata?.version],
+  [".claude-plugin/marketplace.json", (o) => o.plugins?.[0]?.version],
+  [".codex-plugin/plugin.json", (o) => o.version],
+  [".agents/plugins/marketplace.json", (o) => o.plugins?.[0]?.version],
+  [".cursor-plugin/plugin.json", (o) => o.version],
+  [".cursor-plugin/marketplace.json", (o) => o.plugins?.[0]?.version],
+  [".github/plugin/plugin.json", (o) => o.version],
+  [".github/plugin/marketplace.json", (o) => o.metadata?.version],
+  [".github/plugin/marketplace.json", (o) => o.plugins?.[0]?.version],
 ]) {
   const v = pick(JSON.parse(read(file)));
   v === pkgVersion ? ok(`${file} carries version ${v}`) : fail(`${file} version ${v} != package.json ${pkgVersion}`);

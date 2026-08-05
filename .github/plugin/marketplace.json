@@ -1,0 +1,41 @@
+{
+  "name": "pico-mcp",
+  "owner": {
+    "name": "Sushant Srikrishnan"
+  },
+  "metadata": {
+    "description": "PICO Spatial MCP host integration for building and verifying PICO OS 6 Spatial SDK applications.",
+    "version": "31.0.0-pre",
+    "pluginRoot": "."
+  },
+  "plugins": [
+    {
+      "name": "pico-spatial-mcp",
+      "description": "Build, inspect, validate, and vision-verify PICO OS 6 Spatial SDK applications through a host-neutral MCP server.",
+      "version": "31.0.0-pre",
+      "author": {
+        "name": "Sushant Srikrishnan"
+      },
+      "homepage": "https://github.com/sushidoescode/pico-spatial-mcp",
+      "source": ".",
+      "keywords": [
+        "pico",
+        "pico-xr",
+        "spatial-sdk",
+        "mcp",
+        "xr",
+        "android",
+        "emulator",
+        "vision-verified"
+      ],
+      "license": "Apache-2.0",
+      "category": "developer-tools",
+      "tags": [
+        "pico",
+        "spatial-sdk",
+        "mcp",
+        "xr"
+      ]
+    }
+  ]
+}

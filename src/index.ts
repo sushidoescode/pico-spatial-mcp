@@ -141,6 +141,7 @@ import { registerPreflightTools } from "./preflight.js";
 import { registerProjectConfigTools } from "./projectconfig.js";
 import { registerBuildMatrixTools } from "./buildmatrix.js";
 import { registerVirtualCameraTools } from "./virtualcamera.js";
+import { registerKnowledgeTools } from "./knowledge.js";
 
 // The handshake version comes from package.json (dist/ sits one level below it both in the repo
 // and in the installed package) — a hardcoded string here drifted to 6.0.0 while the package
@@ -241,6 +242,7 @@ if (!doorsSurfaceActive()) {
   registerSpecVerifyTools(server);
   // v5.1 — the retained-lessons lint engine (executable, fixture-backed gotchas)
   registerLintTools(server);
+  registerKnowledgeTools(server);
   registerProjectConfigTools(server);
   registerBuildMatrixTools(server);
   // v14.7 — vault_api: exact SDK declarations from the agent-vault symbol index

@@ -7,6 +7,8 @@ import { okJson } from "./util.js";
 import { auditProjectConfig } from "./projectconfig.js";
 import { defaultVaultRoot, loadVaultIndex, runVaultCheck } from "./vault.js";
 import type { VaultFinding, VaultIndex } from "./vault.js";
+import { sharedKnowledgeBridge } from "./knowledge.js";
+import type { KnowledgeCaller, KnowledgeResult } from "./knowledge.js";
 
 /**
  * lint.ts — v5.1 the RETAINED-LESSONS LINT ENGINE.
@@ -424,20 +426,24 @@ export function runVaultSymbolStage(content: string, index: VaultIndex): (VaultF
   });
 }
 
-export function registerLintTools(server: McpServer) {
+export function registerLintTools(
+  server: McpServer,
+  knowledgeCaller: KnowledgeCaller = sharedKnowledgeBridge,
+) {
   server.registerTool(
     "preflight_lint",
     {
       description:
-        "Scan emitted Kotlin / a shell command / gradle config against the retained-lessons rulebook BEFORE you write or run it — so the loop never repeats a solved mistake. Catches the hard-won gotchas (displayColor flat-white, mesh colliders not queryable, rayCast without PhysicsWorldComponent, CollisionCastHitMode.CLOSEST, .rotation.rotateVector, .scale vs scaleVector, ParticleComponent ctor, TextComponent, raw-GLB runtime load, USD glTF reference, StageEnvironmentLighting in MIXED, md5 bundle diff, am start without force-stop, scaffold log-tag drift) plus any lessons recorded via record_lesson. Returns violations with severity/line/message/fix/designRule. Kotlin content ALSO gets an agent-vault symbol check (import/type existence vs PICO's authoritative SDK api-reference, materialized by pico-cli setup) reported in a separate advisory `vault` block — vault findings never affect `clean` (unknown symbols come back as warnings carrying the `nearest` vault match), an absent vault degrades to a note naming pico-cli setup, and `vaultSymbols` overrides the default (false skips the pass, true forces it for any kind). Run it on every generate_* output before writing the file.",
+        "Scan emitted Kotlin / a shell command / gradle config against the retained-lessons rulebook BEFORE you write or run it — so the loop never repeats a solved mistake. Catches the hard-won gotchas (displayColor flat-white, mesh colliders not queryable, rayCast without PhysicsWorldComponent, CollisionCastHitMode.CLOSEST, .rotation.rotateVector, .scale vs scaleVector, ParticleComponent ctor, TextComponent, raw-GLB runtime load, USD glTF reference, StageEnvironmentLighting in MIXED, md5 bundle diff, am start without force-stop, scaffold log-tag drift) plus any lessons recorded via record_lesson. Returns violations with severity/line/message/fix/designRule. Kotlin content ALSO gets an agent-vault symbol check (import/type existence vs PICO's authoritative SDK api-reference, materialized by pico-cli setup) reported in a separate advisory `vault` block — vault findings never affect `clean` (unknown symbols come back as warnings carrying the `nearest` vault match), an absent vault degrades to a note naming pico-cli setup, and `vaultSymbols` overrides the default (false skips the pass, true forces it for any kind). Optional `knowledgeSecondOpinion` runs only a broader query_graph lookup in a separate explicitly advisory block; it never changes `clean` or overrides vault_api exact-symbol truth. Run this tool on every generate_* output before writing the file.",
       inputSchema: {
         content: z.string().describe("The Kotlin source, shell command, or config text to lint."),
         kind: z.enum(["kotlin", "command", "gradle", "usd", "any"]).optional().describe("Restrict to rules for this kind (default 'any' = all rules)."),
         vaultSymbols: z.boolean().optional().describe("Override the advisory agent-vault symbol pass: false skips it, true forces it regardless of kind. Default: it runs for kind 'kotlin'/'any'."),
         projectDir: z.string().optional().describe("Optional Android project root for a read-only static configuration audit (Compose exclusions and container family/root consistency). Never invokes Gradle."),
+        knowledgeSecondOpinion: z.string().trim().min(1).optional().describe("Optional question for a broader knowledge-graph second opinion. Advisory only: it never changes clean and never overrides vault_api exact-symbol truth."),
       },
     },
-    async ({ content, kind, vaultSymbols, projectDir }) => {
+    async ({ content, kind, vaultSymbols, projectDir, knowledgeSecondOpinion }) => {
       const violations = runLint(content, kind ?? "any");
       const errors = violations.filter((v) => v.severity === "error").length;
       const warnings = violations.filter((v) => v.severity === "warn").length;
@@ -466,12 +472,40 @@ export function registerLintTools(server: McpServer) {
       }
       const projectConfig = projectDir ? auditProjectConfig(projectDir) : null;
       const projectErrors = projectConfig?.static.errors.length ?? 0;
+      const clean = violations.length === 0 && projectErrors === 0;
+      let knowledge: {
+        advisory: true;
+        authority: "context-only";
+        query: string;
+        result: KnowledgeResult;
+        note: string;
+      } | undefined;
+      if (knowledgeSecondOpinion !== undefined) {
+        let result: KnowledgeResult;
+        try {
+          result = await knowledgeCaller.call("query_graph", { question: knowledgeSecondOpinion });
+        } catch (error) {
+          result = {
+            status: "unavailable",
+            action: "query_graph",
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+        knowledge = {
+          advisory: true,
+          authority: "context-only",
+          query: knowledgeSecondOpinion,
+          result,
+          note: "ADVISORY broader graph context only — this block never changes clean. vault_api remains authoritative for exact SDK declarations and file/line citations.",
+        };
+      }
       return okJson({
-        clean: violations.length === 0 && projectErrors === 0,
+        clean,
         counts: { errors, warnings, projectErrors },
         violations,
         vault,
         ...(projectConfig ? { projectConfig } : {}),
+        ...(knowledge ? { knowledge } : {}),
         note: errors || projectErrors ? "FIX every error before writing/running this — each is a verified past failure or a source-grounded project configuration issue." : warnings ? "Warnings are strong reminders; confirm they don't apply." : "Clean against the retained-lessons rulebook.",
       });
     },
