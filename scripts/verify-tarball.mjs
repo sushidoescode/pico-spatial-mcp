@@ -34,7 +34,7 @@ const publishIdx = process.argv.indexOf("--publish");
 const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
-const EXPECTED_TOOLS = 234; // v31: +pico_record +pico_emulator (doors) +perf_trace +watch_crash +capture_record +place_model_on_surface +generate_tappable_detail_kotlin +probe_planes +generate_hand_input_kotlin
+const EXPECTED_TOOLS = 236; // v34.1: +verify_gradle_config +build_matrix_report
 const TOOL_TOLERANCE = 3;
 const REQUIRED_TOOLS = [
   // the 15 doors-surface tools TESTERS.md promises
@@ -44,6 +44,7 @@ const REQUIRED_TOOLS = [
   // core lanes whose loss a count check would tolerate
   "emulator_boot", "build_and_run", "capture_frame", "record_verification", "scaffold_spatial_app",
   "adb_shell", "gradle_build", "preflight_env",
+  "verify_gradle_config", "build_matrix_report",
 ];
 // [M2] Briefs the brief lane depends on; directory existence is not content.
 const BRIEF_CANARIES = ["gallery.json", "knockdown.json"];

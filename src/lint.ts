@@ -4,6 +4,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
+import { auditProjectConfig } from "./projectconfig.js";
 import { defaultVaultRoot, loadVaultIndex, runVaultCheck } from "./vault.js";
 import type { VaultFinding, VaultIndex } from "./vault.js";
 
@@ -42,6 +43,17 @@ export interface LintRule {
 
 // ── The built-in rules (one per retained gotcha) ────────────────────────────────────────────────────────
 export const BUILTIN_RULES: LintRule[] = [
+  {
+    id: "compose-fork-direct-dependency",
+    severity: "error",
+    kinds: ["gradle"],
+    type: "present",
+    pattern: /(?:implementation|api)\s*\(\s*["']androidx\.compose\.(?:ui|foundation):/,
+    message: "Direct androidx.compose dependency bypasses the PICO Spatial fork and BOM exclusions.",
+    fix: "Use the PICO Spatial UI artifact and preserve the required configurations.all exclusions; audit a project directory with preflight_lint(projectDir) or verify_gradle_config.",
+    positiveFixture: 'implementation("androidx.compose.ui:ui:1.7.0")',
+    negativeFixture: 'implementation(libs.platform)',
+  },
   {
     id: "displayColor-flat-white",
     severity: "error",
@@ -422,9 +434,10 @@ export function registerLintTools(server: McpServer) {
         content: z.string().describe("The Kotlin source, shell command, or config text to lint."),
         kind: z.enum(["kotlin", "command", "gradle", "usd", "any"]).optional().describe("Restrict to rules for this kind (default 'any' = all rules)."),
         vaultSymbols: z.boolean().optional().describe("Override the advisory agent-vault symbol pass: false skips it, true forces it regardless of kind. Default: it runs for kind 'kotlin'/'any'."),
+        projectDir: z.string().optional().describe("Optional Android project root for a read-only static configuration audit (Compose exclusions and container family/root consistency). Never invokes Gradle."),
       },
     },
-    async ({ content, kind, vaultSymbols }) => {
+    async ({ content, kind, vaultSymbols, projectDir }) => {
       const violations = runLint(content, kind ?? "any");
       const errors = violations.filter((v) => v.severity === "error").length;
       const warnings = violations.filter((v) => v.severity === "warn").length;
@@ -451,12 +464,15 @@ export function registerLintTools(server: McpServer) {
           };
         }
       }
+      const projectConfig = projectDir ? auditProjectConfig(projectDir) : null;
+      const projectErrors = projectConfig?.static.errors.length ?? 0;
       return okJson({
-        clean: violations.length === 0,
-        counts: { errors, warnings },
+        clean: violations.length === 0 && projectErrors === 0,
+        counts: { errors, warnings, projectErrors },
         violations,
         vault,
-        note: errors ? "FIX every error before writing/running this — each is a verified past failure." : warnings ? "Warnings are strong reminders; confirm they don't apply." : "Clean against the retained-lessons rulebook.",
+        ...(projectConfig ? { projectConfig } : {}),
+        note: errors || projectErrors ? "FIX every error before writing/running this — each is a verified past failure or a source-grounded project configuration issue." : warnings ? "Warnings are strong reminders; confirm they don't apply." : "Clean against the retained-lessons rulebook.",
       });
     },
   );

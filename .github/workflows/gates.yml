@@ -97,6 +97,8 @@ jobs:
         run: npm run test:assetgate
       - name: World-env
         run: npm run test:worldenv
+      - name: Adoption safety (project configuration + build truth)
+        run: npm run test:adoption-safety
 
   vcam-native:
     runs-on: macos-latest

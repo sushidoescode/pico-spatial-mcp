@@ -54,6 +54,28 @@ export function probePicoCli(force = false): PicoCliProbe {
 
 export type PicoCliFailureClass = "cli-missing" | "flag-or-version-drift" | "runtime";
 
+export type PicoCliEnvelope =
+  | { status: "ok"; toolStatus: "SUCCESS" | "PARTIAL" | "FAILED"; outcome: "operational" | "degraded" | "failed"; summary: string | null; data: unknown; errors: unknown[] }
+  | { status: "invalid"; detail: string };
+
+/** Total parser for pico-cli's machine envelope: callers can safely turn malformed output into a warn. */
+export function parsePicoCliEnvelope(raw: string): PicoCliEnvelope {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return { status: "invalid", detail: "pico-cli did not return JSON." }; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { status: "invalid", detail: "pico-cli JSON envelope is not an object." };
+  const envelope = parsed as Record<string, unknown>;
+  const toolStatus = envelope.tool_status;
+  if (toolStatus !== "SUCCESS" && toolStatus !== "PARTIAL" && toolStatus !== "FAILED") return { status: "invalid", detail: "pico-cli JSON envelope has no recognized tool_status." };
+  return {
+    status: "ok",
+    toolStatus,
+    outcome: toolStatus === "SUCCESS" ? "operational" : toolStatus === "PARTIAL" ? "degraded" : "failed",
+    summary: typeof envelope.summary === "string" ? envelope.summary : null,
+    data: envelope.data,
+    errors: Array.isArray(envelope.errors) ? envelope.errors : [],
+  };
+}
+
 /**
  * Classify a FAILED pico-cli invocation honestly. Usage dumps / unknown-option complaints mean the
  * wrapped flags no longer match the installed CLI (drift — retrying unchanged cannot help); anything

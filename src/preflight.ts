@@ -7,6 +7,7 @@ import { okJson } from "./util.js";
 import { detectJavaHome } from "./toolchain.js";
 import { SKELETON_CANARIES, SKELETON_ROOT } from "./projectgen.js";
 import { UNITY_SKELETON_CANARIES, UNITY_SKELETON_ROOT } from "./unitygen.js";
+import { parsePicoCliEnvelope } from "./picocli.js";
 
 /**
  * preflight.ts — v27-pre: the read-only environment doctor.
@@ -154,6 +155,16 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     const raw = picoCli.stdout.trim();
     const cliVersion = raw.match(/pico-cli\/(\d+\.\d+\.\d+\S*)/)?.[1] ?? null;
     push({ name: "pico-cli", status: "pass", detail: cliVersion ? `version ${cliVersion} (${raw})` : `on PATH (version string unparsed: ${raw || "(empty)"})`, fix: null });
+    const emulatorStatus = io.exec("pico-cli", ["emulator", "status", "--format", "json"]);
+    const envelope = parsePicoCliEnvelope(emulatorStatus.stdout);
+    if (!emulatorStatus.ok || envelope.status === "invalid") {
+      push({ name: "pico-cli-emulator-status", status: "warn", detail: `structured emulator status unavailable: ${envelope.status === "invalid" ? envelope.detail : emulatorStatus.stderr ?? "non-zero exit"}`, fix: "Run `pico-cli emulator status --format json` directly and inspect its diagnostics; this read-only check does not run pico-cli doctor." });
+    } else if (envelope.outcome === "operational") {
+      push({ name: "pico-cli-emulator-status", status: "pass", detail: "pico-cli structured emulator status: operational", fix: null });
+    } else {
+      const diagnostic = envelope.summary ?? (envelope.errors.length ? JSON.stringify(envelope.errors).slice(0, 500) : "no diagnostic supplied");
+      push({ name: "pico-cli-emulator-status", status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}`, fix: "Run `pico-cli emulator status --format json` directly and address its reported diagnostics; this read-only check does not run pico-cli doctor." });
+    }
   } else {
     push({ name: "pico-cli", status: "warn", detail: "no pico-cli on PATH — perf_diagnose/perf_trace/watch_crash/capture_record degrade to status:'unavailable'; agent-vault provisioning (`pico-cli setup`) needs it", fix: "npm install -g @picoxr/pico-cli (optional lane; building, capture, and verification work without it)." });
   }

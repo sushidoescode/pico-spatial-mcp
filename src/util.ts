@@ -13,6 +13,7 @@ export interface RunOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;
   timeoutMs?: number;
+  maxOutputBytes?: number;
 }
 
 /** Run a command to completion, capturing output. Never throws on non-zero exit. */
@@ -31,8 +32,20 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       timedOut = true;
       child.kill("SIGKILL");
     }, timeoutMs);
-    child.stdout.on("data", (d) => (stdout += d.toString()));
-    child.stderr.on("data", (d) => (stderr += d.toString()));
+    const append = (which: "stdout" | "stderr", d: Buffer) => {
+      const next = d.toString();
+      const current = stdout.length + stderr.length;
+      const limit = opts.maxOutputBytes;
+      if (limit != null && current + next.length > limit) {
+        const allowed = Math.max(0, limit - current);
+        if (which === "stdout") stdout += next.slice(0, allowed); else stderr += next.slice(0, allowed);
+        child.kill("SIGKILL");
+        return;
+      }
+      if (which === "stdout") stdout += next; else stderr += next;
+    };
+    child.stdout.on("data", (d: Buffer) => append("stdout", d));
+    child.stderr.on("data", (d: Buffer) => append("stderr", d));
     child.on("error", (e) => {
       clearTimeout(timer);
       resolve({ code: null, stdout, stderr: `${stderr}\nspawn error: ${e.message}`, timedOut });

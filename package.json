@@ -64,7 +64,8 @@
     "test:picocli": "node test/picocli.mjs",
     "test:swan": "node test/swan.mjs",
     "test:placeonsurface": "node test/placeonsurface.mjs",
-    "test:menuactions": "node test/menuactions.mjs"
+    "test:menuactions": "node test/menuactions.mjs",
+    "test:adoption-safety": "node test/adoption-safety.mjs"
   },
   "engines": {
     "node": ">=20"

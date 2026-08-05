@@ -136,6 +136,8 @@ import { registerIblBakeTools } from "./iblbake.js";
 import { registerPrompts } from "./prompts.js";
 import { registerDoorTools, doorsSurfaceActive } from "./doors.js";
 import { registerPreflightTools } from "./preflight.js";
+import { registerProjectConfigTools } from "./projectconfig.js";
+import { registerBuildMatrixTools } from "./buildmatrix.js";
 import { registerVirtualCameraTools } from "./virtualcamera.js";
 
 // The handshake version comes from package.json (dist/ sits one level below it both in the repo
@@ -235,6 +237,8 @@ if (!doorsSurfaceActive()) {
   registerSpecVerifyTools(server);
   // v5.1 — the retained-lessons lint engine (executable, fixture-backed gotchas)
   registerLintTools(server);
+  registerProjectConfigTools(server);
+  registerBuildMatrixTools(server);
   // v14.7 — vault_api: exact SDK declarations from the agent-vault symbol index
   registerVaultTools(server);
   // v14.8 — perf_diagnose: PICO's official pico-cli perf profiler + diagnosis engine

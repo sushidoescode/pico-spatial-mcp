@@ -7,7 +7,7 @@ node /abs/path/to/PICO-MCP/dist/index.js
 ```
 
 Optional env: `PICO_MCP_SURFACE=doors` (the 16-tool intent facade — recommended for first
-sessions; omit for the full 234-tool surface). Build once first: `npm ci && npm run build`.
+sessions; omit for the full 236-tool surface). Build once first: `npm ci && npm run build`.
 Whatever the host, point it at that command and the agent contract in [AGENTS.md](../AGENTS.md)
 applies as-is.
 

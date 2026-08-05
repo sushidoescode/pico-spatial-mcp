@@ -57,6 +57,19 @@ unityLane && unityLane.status === "pass"
   ? ok("healthy env passes unity-lane")
   : fail(`unity-lane wrong on healthy env: ${JSON.stringify(unityLane)}`);
 
+// v34.1: after a healthy `-v`, preflight also consumes pico-cli's structured, read-only status.
+const picoCalls = [];
+const structuredStatusIO = { ...healthyIO, exec: (cmd, args) => {
+  picoCalls.push([cmd, args]);
+  if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, stdout: "pico-cli/0.3.0\n" };
+  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: true, stdout: '{"tool_status":"SUCCESS","data":{},"errors":[]}' };
+  return healthyIO.exec(cmd, args);
+} };
+const structuredStatus = runPreflightChecks(structuredStatusIO).find((c) => c.name === "pico-cli-emulator-status");
+structuredStatus?.status === "pass" && picoCalls.some(([cmd, args]) => cmd === "pico-cli" && args.join(" ") === "emulator status --format json") && !picoCalls.some(([cmd, args]) => cmd === "pico-cli" && /doctor/.test(args.join(" ")))
+  ? ok("pico-cli structured status is read-only, exact-argv, and never a doctor probe")
+  : fail(`structured pico-cli status wrong: ${JSON.stringify({ structuredStatus, picoCalls })}`);
+
 // Calibration STALER than the emulator boot => fail with the recalibrate fix (the dies-on-restart gotcha).
 const staleIO = { ...healthyIO, readFile: (p) => p.endsWith("camera-calibration.json")
   ? JSON.stringify({ f: 1355.2, at: bootAt - 24 * 60 * 60 * 1000 }) : null };

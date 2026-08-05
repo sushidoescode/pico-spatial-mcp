@@ -25,6 +25,19 @@ import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
 
 const SURFACE = () => process.env.PICO_MCP_SURFACE ?? "full";
 
+export function picoFixDecision(error: string): { symptom: string | null; nextAction: string } {
+  const keywords: Array<[RegExp, string, string]> = [
+    [/androidx\.compose|compose.*(?:exclude|bom|fork)|(?:exclude|bom|fork).*compose/i, "compose_fork_conflict", "Run verify_gradle_config with the project directory; set resolveTransitives:true only if an explicit resolved-graph check is needed."],
+    [/Default(?:Stage|WindowContainer)|pico\.spatial\.(?:stage|windowcontainer)|container.*mismatch/i, "container_mode_mismatch", "Run verify_gradle_config and align manifest metadata with the Kotlin container root."],
+    [/unresolved reference|gradle|assembledebug|compil|build failed/i, "build_failed", "Read the diagnosis and fix the first concrete build error."],
+    [/texture.*black|black.*texture/i, "texture_black", "Use the diagnosis's baked-bundle path."],
+    [/black|very.?dark/i, "black_environment", "Use the diagnosis's environment fix."],
+    [/white|unlit|displaycolor/i, "white_geometry", "Bind a real material as directed."],
+  ];
+  const found = keywords.find(([re]) => re.test(error));
+  return found ? { symptom: found[1], nextAction: found[2] } : { symptom: null, nextAction: "Apply the highest-confidence lint or diagnosis match; if none applies, solve and record the new lesson." };
+}
+
 let cached: { call: (name: string, args?: any) => Promise<any>; close: () => Promise<void> } | null = null;
 
 async function inner() {
@@ -88,7 +101,7 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_build_app",
-    "DOOR 1 — Build a verified spatial app from a brief. TWO-STEP by design: call with just {brief} to receive a scaffold AppSpec (the planner never guesses your intent — YOU author); adapt the scaffold to the brief, then call again with {brief, draftSpec} to compile through the full pipeline (scaffold → codegen → gradle → install → launch on the emulator), capture a frame, and judge it. Apps default to the Mixed stage (stageStyle '1' — the passthrough home environment is the backdrop and content seats ON the room, mrtable-style); a fully-virtual app remains a first-class opt-in via meta.stageStyle '3' (Full). Honest expectation: the calibrated eye cannot yet score passthrough frames, so Mixed-stage builds land 'built-needs-look' rather than auto-PASS. Returns the verdict, the capture path (LOOK at it before claiming anything works), and the project dir. Escalations mean a human/agent must look — that is the honesty contract, not an error.",
+    "DOOR 1 — Build a verified spatial app from a brief. TWO-STEP by design: call with just {brief} to receive a scaffold AppSpec (the planner never guesses your intent — YOU author); adapt the scaffold to the brief, then call again with {brief, draftSpec} to compile through the full pipeline (scaffold → codegen → gradle → install → launch on the emulator), capture a frame, and judge it. Apps default to the Mixed stage (stageStyle '1' — the passthrough home environment is the backdrop and content seats ON the room, mrtable-style); a fully-virtual app remains a first-class opt-in via meta.stageStyle '3' (Full). Honest expectation: a color-keyed authored MR scene with multiple saturated colors can be auto-judged; otherwise Mixed-stage builds land 'built-needs-look' and require a person or vision-capable agent to inspect the capture. Returns the verdict, the capture path (LOOK at it before claiming anything works), and the project dir. Escalations mean a human/agent must look — that is the honesty contract, not an error.",
     {
       brief: z.string().describe("What to build, e.g. 'a primitive table standing on my real floor with bodies dropping onto it from a clickable menu' (Mixed-stage MR, the default; a fully-virtual brief opts into stage style 3)."),
       draftSpec: z.any().optional().describe("Your AppSpec, adapted from the scaffold a brief-only call returns. Omit on the first call."),
@@ -305,10 +318,6 @@ export function registerDoorTools(server: McpServer) {
       // v27-pre first-light fix: diagnose takes a strict symptom enum — piping free text into it
       // leaked a raw schema error at the stranger. Map keywords -> symptom; no match is honest.
       const SYMPTOM_KEYWORDS: Array<[RegExp, string]> = [
-        [/unresolved reference|gradle|assembledebug|compil|build failed/i, "build_failed"],
-        [/texture.*black|black.*texture/i, "texture_black"],
-        [/black|very.?dark/i, "black_environment"],
-        [/white|unlit|displaycolor/i, "white_geometry"],
         [/not rendering|nothing renders|empty scene|invisible/i, "not_rendering"],
         [/dead button|button.* (dead|ignored)|menu.*(no|not).*(click|respond)/i, "dead_buttons"],
         [/pins? hover/i, "pins_hovering"],
@@ -322,14 +331,15 @@ export function registerDoorTools(server: McpServer) {
         [/controller|pose/i, "no_controller_pose"],
         [/tiny panel|panel.*tiny/i, "tiny_panels"],
       ];
-      const symptom = SYMPTOM_KEYWORDS.find(([re]) => re.test(error))?.[1] ?? null;
+      const decision = picoFixDecision(error);
+      const symptom = decision.symptom ?? SYMPTOM_KEYWORDS.find(([re]) => re.test(error))?.[1] ?? null;
       const diag = symptom
         ? await call("diagnose", { symptom })
         : { status: "no-symptom-match", note: "The error text matched no diagnosis-KB symptom — the retained-lessons lint below still applies." };
       const errorLint = await call("preflight_lint", { content: error, kind: "any" });
       const lint = kotlin ? await call("preflight_lint", { content: kotlin, kind: "kotlin" }) : null;
       const lesson = recordLesson ? await call("record_lesson", recordLesson) : null;
-      return { matchedSymptom: symptom, diagnosis: diag, errorLessons: errorLint, ...(lint ? { lint } : {}), ...(lesson ? { recordedLesson: lesson } : {}), fix: "Apply the highest-confidence match; if nothing matches, this is a NEW gotcha — solve it, then re-call pico_fix with {recordLesson:{...}} so it can never recur." };
+      return { matchedSymptom: symptom, nextAction: decision.nextAction, diagnosis: diag, errorLessons: errorLint, ...(lint ? { lint } : {}), ...(lesson ? { recordedLesson: lesson } : {}), fix: "Apply the highest-confidence match; if nothing matches, this is a NEW gotcha — solve it, then re-call pico_fix with {recordLesson:{...}} so it can never recur." };
     },
   );
 
