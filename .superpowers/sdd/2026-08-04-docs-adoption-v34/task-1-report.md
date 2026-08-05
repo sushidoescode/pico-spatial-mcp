@@ -36,3 +36,9 @@
 - GREEN: recursive remediation extraction now uses deterministic precedence (`fix`, then `nextAction`; errors, checks, data, then sorted remaining fields), is bounded by the parsed-envelope limits, and preserves only returned strings.
 - Expanded matrix/document assertions iterate every executable observed field, the spatial-tools sentinel, and both source-link mappings. Timeout/nonzero assertions now retain a genuine direct-Compose static error.
 - Final verification: focused build/adoption/preflight/picocli/lint/smoke and the complete 40 `test:` script battery passed (41 documented invocations including smoke).
+
+## Final matrix row binding
+
+- RED: `npm run build && npm run test:adoption-safety` failed because the new exhaustive row test called the intentionally absent `buildMatrixMarkdownRows` projection.
+- GREEN: the exported projection now binds each Markdown label to its exact ordered executable fields, exact source link, or spatial-tools sentinel; the focused build/adoption test passed.
+- Final battery: smoke plus all 40 current `test:` scripts passed with exit 0 (41 documented invocations total).

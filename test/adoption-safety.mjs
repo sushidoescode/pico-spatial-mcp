@@ -132,6 +132,16 @@ try {
     assert(doc.includes("appskeleton/gradle/libs.versions.toml"));
     assert(doc.includes("known-good scaffold matrix, not the support envelope"));
   });
+  check("BUILD_MATRIX named rows exactly bind ordered fields and source links", () => {
+    const doc = readFileSync(new URL("../docs/BUILD_MATRIX.md", import.meta.url), "utf8");
+    const rows = buildmatrix.buildMatrixMarkdownRows(matrix);
+    let cursor = -1;
+    for (const row of rows) {
+      const next = doc.indexOf(row);
+      assert(next > cursor, `missing or out-of-order canonical row: ${row}`);
+      cursor = next;
+    }
+  });
   check("spatialToolsVersion is exactly not-declared", () => assert.equal(matrix.observed.spatialToolsVersion.status, "not-declared"));
 
   for (const [name, outcome] of [["success", "operational"], ["partial", "degraded"], ["failed", "failed"]]) {

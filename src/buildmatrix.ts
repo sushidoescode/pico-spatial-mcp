@@ -29,6 +29,22 @@ export function extractBuildMatrix() {
   };
 }
 
+/** Canonical labeled/ordered projection used to keep the human matrix bound to executable facts. */
+export function buildMatrixMarkdownRows(matrix: ReturnType<typeof extractBuildMatrix>): string[] {
+  const o = matrix.observed;
+  const app = "[app build file](../appskeleton/app/build.gradle.kts)";
+  const catalog = "[version catalog](../appskeleton/gradle/libs.versions.toml)";
+  return [
+    `| compile / min / target SDK | ${o.compileSdk} / ${o.minSdk} / ${o.targetSdk} | ${app} |`,
+    `| Java / Kotlin JVM target | ${o.javaTarget} / ${o.kotlinJvmTarget} | ${app} |`,
+    `| Android Gradle Plugin | ${o.agp} | ${catalog} |`,
+    `| Kotlin / Compose compiler plugin | ${o.kotlin} / ${o.composePlugin} | ${catalog} |`,
+    `| PICO Spatial BOM | ${o.bom} | ${catalog} |`,
+    `| ABI | ${o.abi} | ${app} |`,
+    `| Spatial tools version | \`${o.spatialToolsVersion.status}\` | no version key in the checked-in catalog |`,
+  ];
+}
+
 export function registerBuildMatrixTools(server: McpServer): void {
   server.registerTool("build_matrix_report", {
     description: "Return observed SDK, Java, AGP, Kotlin, Compose BOM, ABI, and spatial-tools declaration state from the packaged app skeleton. This is source-grounded configuration evidence, not a build or runtime claim.",
