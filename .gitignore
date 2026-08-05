@@ -30,3 +30,10 @@ test/.*.tmp.mjs
 
 # distribution tarballs are built artifacts — hand testers a Release asset, never a committed binary
 *.tgz
+
+# secrets — never commit (a live API key sat here untracked on 2026-08-05)
+.env
+.env.*
+!.env.example
+*.key
+*.pem

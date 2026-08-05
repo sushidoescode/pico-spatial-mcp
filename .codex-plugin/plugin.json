@@ -1,0 +1,24 @@
+{
+  "name": "pico-spatial-mcp",
+  "version": "34.0.0-pre",
+  "description": "Build, inspect, validate, and vision-verify PICO OS 6 Spatial SDK applications through a host-neutral MCP server.",
+  "author": {
+    "name": "Sushant Srikrishnan"
+  },
+  "interface": {
+    "displayName": "PICO Spatial MCP",
+    "shortDescription": "Build and verify PICO Spatial SDK apps.",
+    "longDescription": "Build, inspect, validate, and vision-verify native PICO OS 6 and WebSpatial applications with emulator and device automation.",
+    "developerName": "Sushant Srikrishnan",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/sushidoescode/pico-spatial-mcp",
+    "defaultPrompt": [
+      "Build and verify a PICO Spatial SDK app from this brief.",
+      "Diagnose this PICO emulator or device workflow."
+    ]
+  }
+}

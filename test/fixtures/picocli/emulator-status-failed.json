@@ -1,0 +1,14 @@
+{
+  "tool_name": "emulator.status",
+  "tool_status": "FAILED",
+  "summary": "Could not collect emulator runtime status.",
+  "data": {
+    "processRunning": false,
+    "adbOnline": false,
+    "adbDeviceId": "emulator-5554",
+    "state": null
+  },
+  "errors": [{ "message": "emulator is not running" }],
+  "resources": [],
+  "meta": { "format": "json", "truncated": false, "candidateCount": 0 }
+}

@@ -34,8 +34,11 @@ const publishIdx = process.argv.indexOf("--publish");
 const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
-const EXPECTED_TOOLS = 234; // v31: +pico_record +pico_emulator (doors) +perf_trace +watch_crash +capture_record +place_model_on_surface +generate_tappable_detail_kotlin +probe_planes +generate_hand_input_kotlin
-const TOOL_TOLERANCE = 3;
+const EXPECTED_TOOLS = 239; // v34.3: +knowledge_api
+const EXPECTED_OTHER_HOST_TOOLS = 236;
+// macOS exposes four host-GUI tools; other hosts intentionally expose one explanatory gui_capture
+// stub. Assert the exact platform surface instead of hiding this documented delta in a tolerance.
+const EXPECTED_PLATFORM_TOOLS = process.platform === "darwin" ? EXPECTED_TOOLS : EXPECTED_OTHER_HOST_TOOLS;
 const REQUIRED_TOOLS = [
   // the 15 doors-surface tools TESTERS.md promises
   "validate_toolchain", "pico_build_app", "pico_scan_world", "pico_place", "pico_look",
@@ -44,6 +47,9 @@ const REQUIRED_TOOLS = [
   // core lanes whose loss a count check would tolerate
   "emulator_boot", "build_and_run", "capture_frame", "record_verification", "scaffold_spatial_app",
   "adb_shell", "gradle_build", "preflight_env",
+  "verify_gradle_config", "build_matrix_report",
+  "generate_subwindow_kotlin", "generate_spatial_gestures_kotlin",
+  "knowledge_api",
 ];
 // [M2] Briefs the brief lane depends on; directory existence is not content.
 const BRIEF_CANARIES = ["gallery.json", "knockdown.json"];
@@ -218,10 +224,10 @@ try {
   const { tools } = await client.listTools();
   const names = new Set(tools.map((t) => t.name));
 
-  // [M3] Exact-with-tolerance, plus names. A floor tolerated an entire lane disappearing.
-  Math.abs(tools.length - EXPECTED_TOOLS) <= TOOL_TOLERANCE
-    ? ok(`installed server listed ${tools.length} tools (expected ~${EXPECTED_TOOLS})`)
-    : fail(`tool count ${tools.length} is outside ${EXPECTED_TOOLS}+/-${TOOL_TOLERANCE} — update EXPECTED_TOOLS deliberately if this is intended`);
+  // [M3] Exact count, plus named anchors. A floor or tolerance can hide a whole lane disappearing.
+  tools.length === EXPECTED_PLATFORM_TOOLS
+    ? ok(`installed server listed exactly ${EXPECTED_PLATFORM_TOOLS} tools for ${process.platform} (${EXPECTED_TOOLS} on the full macOS surface)`)
+    : fail(`tool count ${tools.length} != exact ${process.platform} expectation ${EXPECTED_PLATFORM_TOOLS} (${EXPECTED_TOOLS} full macOS) — update EXPECTED_TOOLS deliberately if this is intended`);
   const missing = REQUIRED_TOOLS.filter((t) => !names.has(t));
   missing.length ? fail(`required tools absent: ${missing.join(", ")}`) : ok(`all ${REQUIRED_TOOLS.length} anchor tools present`);
 

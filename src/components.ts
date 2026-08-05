@@ -28,6 +28,22 @@ const hexField = z
   .string()
   .regex(/^#?[0-9a-fA-F]{6}$/, "expected a 6-digit hex color like '#3b82f6'");
 
+const KOTLIN_KEYWORDS = new Set([
+  "as", "break", "class", "continue", "do", "else", "false", "for", "fun", "if", "in", "interface", "is",
+  "null", "object", "package", "return", "super", "this", "throw", "true", "try", "typealias", "typeof", "val",
+  "var", "when", "while", "by", "catch", "constructor", "delegate", "dynamic", "field", "file", "finally", "get",
+  "import", "init", "param", "property", "receiver", "set", "setparam", "value", "where", "actual", "abstract",
+  "annotation", "companion", "const", "crossinline", "data", "enum", "expect", "external", "final", "infix", "inline",
+  "inner", "internal", "lateinit", "noinline", "open", "operator", "out", "override", "private", "protected", "public",
+  "reified", "sealed", "suspend", "tailrec", "vararg",
+]);
+const packageNameField = z
+  .string()
+  .refine(
+    (value) => value.includes(".") && value.split(".").every((segment) => /^[a-z][a-z0-9_]*$/.test(segment) && !KOTLIN_KEYWORDS.has(segment)),
+    "expected a non-keyword Kotlin package like 'com.acme.viz.content'",
+  );
+
 const cardButton = z.object({
   label: z.string(),
   colorHex: hexField,
@@ -71,11 +87,35 @@ const listPanel = z.object({
   items: z.array(listItem).min(1),
 });
 
-const panelSpec = z.discriminatedUnion("kind", [cardPanel, menuPanel, listPanel]);
+const expandedPanel = z.object({
+  kind: z.enum(["titleBar", "toolbar", "tabBar", "sheet", "snackbarHost", "coachmark", "segmentControl"]),
+  id: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+  title: z.string(),
+  items: z.array(z.string()).default([]),
+  container: z.enum(["ordinary", "window"]).default("ordinary"),
+}).superRefine((panel, ctx) => {
+  if (["sheet", "snackbarHost", "coachmark"].includes(panel.kind) && panel.container !== "window") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["container"],
+      message: `${panel.kind} is only valid in a secondary WindowContainer`,
+    });
+  }
+  if (["tabBar", "segmentControl"].includes(panel.kind) && panel.items.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["items"],
+      message: `${panel.kind} requires at least one item`,
+    });
+  }
+});
+
+const panelSpec = z.union([cardPanel, menuPanel, listPanel, expandedPanel]);
 
 type CardPanel = z.infer<typeof cardPanel>;
 type MenuPanel = z.infer<typeof menuPanel>;
 type ListPanel = z.infer<typeof listPanel>;
+type ExpandedPanel = z.infer<typeof expandedPanel>;
 type PanelSpec = z.infer<typeof panelSpec>;
 
 // ---- helpers ----
@@ -87,12 +127,25 @@ function color(hex: string): string {
 
 /** Escape a JS string for a Kotlin "double-quoted" literal. */
 function kstr(s: string): string {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$/g, "\\$").replace(/\r?\n/g, "\\n")}"`;
+  let escaped = "";
+  for (const char of s) {
+    const code = char.codePointAt(0)!;
+    if (char === "\\") escaped += "\\\\";
+    else if (char === '"') escaped += '\\"';
+    else if (char === "$") escaped += "\\$";
+    else if (char === "\b") escaped += "\\b";
+    else if (char === "\t") escaped += "\\t";
+    else if (char === "\n") escaped += "\\n";
+    else if (char === "\r") escaped += "\\r";
+    else if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029) escaped += `\\u${code.toString(16).padStart(4, "0")}`;
+    else escaped += char;
+  }
+  return `"${escaped}"`;
 }
 
 /** Escape for use inside a single-line // comment (no newlines). */
 function kcomment(s: string): string {
-  return s.replace(/\r?\n/g, " ").trim();
+  return s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
 }
 
 /** Clamp a font size into the DESIGN.md 18-40 sp window. */
@@ -258,21 +311,60 @@ function emitPanel(p: PanelSpec): string[] {
       return emitMenu(p);
     case "list":
       return emitList(p);
+    default:
+      return emitExpanded(p as ExpandedPanel);
   }
+}
+
+function emitExpanded(p: ExpandedPanel): string[] {
+  const fn = p.id.charAt(0).toUpperCase() + p.id.slice(1) + "Panel";
+  const title = `Text(text = ${kstr(p.title)})`;
+  const call: Record<ExpandedPanel["kind"], string> = {
+    titleBar: `TitleBar(title = { ${title} })`,
+    toolbar: `Toolbar(cornerSize = 32.dp, content = { ${title} })`,
+    tabBar: `TabBar(content = { ${p.items.map((item, index) => `item(selected = ${index === 0}, onClick = {}, mainContent = { Text(text = ${kstr(item)}) })`).join("; ")} })`,
+    sheet: `Sheet(onDismissRequest = {}) { ${title} }`,
+    snackbarHost: `SnackbarHost { ${title} } // WindowContainer-only host`,
+    coachmark: `CoachmarkBox(coachmark = { SimpleCoachmark(text = { ${title} }) }) { ${title} }`,
+    segmentControl: `SegmentControl(content = { ${p.items.map((item, index) => `SegmentItem(selected = ${index === 0}, onClick = {}, title = { Text(text = ${kstr(item)}) })`).join("; ")} })`,
+  };
+  const boundary: Record<ExpandedPanel["kind"], string> = {
+    titleBar: "Structural placeholder: source-grounded TitleBar call; content and appearance still require integration, compilation, and a LOOK.",
+    toolbar: "Structural placeholder: Toolbar is a root/container augment; content and appearance still require integration, compilation, and a LOOK.",
+    tabBar: "Structural placeholder: TabBar onClick callbacks are no-ops until the caller wires state and actions.",
+    sheet: "Structural placeholder: WindowContainer-only Sheet; its dismiss callback is a no-op until the caller wires it.",
+    snackbarHost: "Structural placeholder: WindowContainer-only host content; this does not call SnackbarHostState.show.",
+    coachmark: "Structural placeholder: WindowContainer-only CoachmarkBox; state and actions still belong to the caller.",
+    segmentControl: "Structural placeholder: SegmentItem onClick callbacks are no-ops until the caller wires selection state.",
+  };
+  return [`// ${boundary[p.kind]}`, "@Composable", `fun ${fn}() {`, `${INDENT}${call[p.kind]}`, `}`];
 }
 
 /** Build the full Kotlin file: package, the PICO modified-Compose imports, all @Composables. */
 function buildKotlin(packageName: string, panels: PanelSpec[]): string {
+  const hasExpandedPanels = panels.some((p) => !["card", "menu", "list"].includes(p.kind));
+  const preamble = hasExpandedPanels
+    ? [
+        `package ${packageName}`,
+        ``,
+        `// Generated by pico-spatial-mcp generate_spatial_ui.`,
+        `// SDK 0.13.3 source-grounded call shapes; caller owns the spatial container, state, and actions.`,
+        `// Compilation and a LOOK remain pending before any appearance or interaction claim.`,
+        ``,
+      ]
+    : [
+        `package ${packageName}`,
+        ``,
+        `// Generated by pico-spatial-mcp generate_spatial_ui (DESIGN.md §4/§5 encoded).`,
+        `// Spatial UI = real Jetpack-Compose panels rendered flat in 3D. Rules enforced here:`,
+        `//  - panels >= 800 dp wide, placed close (1.3-1.6 m) by the caller`,
+        `//  - fonts 18-40 sp; colors via Color(0xFF......), never primvars:displayColor`,
+        `//  - every button is a real Modifier.clickable { } (not a static Box+Text)`,
+        `// Call these @Composables from HomeStage's AttachmentPanels; wire each // action.`,
+        ``,
+      ];
   const header = [
-    `package ${packageName}`,
-    ``,
-    `// Generated by pico-spatial-mcp generate_spatial_ui (DESIGN.md §4/§5 encoded).`,
-    `// Spatial UI = real Jetpack-Compose panels rendered flat in 3D. Rules enforced here:`,
-    `//  - panels >= 800 dp wide, placed close (1.3-1.6 m) by the caller`,
-    `//  - fonts 18-40 sp; colors via Color(0xFF......), never primvars:displayColor`,
-    `//  - every button is a real Modifier.clickable { } (not a static Box+Text)`,
-    `// Call these @Composables from HomeStage's AttachmentPanels; wire each // action.`,
-    ``,
+    ...preamble,
     `import androidx.compose.foundation.background`,
     `import androidx.compose.foundation.border`,
     `import androidx.compose.foundation.clickable`,
@@ -302,8 +394,32 @@ function buildKotlin(packageName: string, panels: PanelSpec[]): string {
     `import com.pico.spatial.ui.platform.Material`,
     ``,
   ];
+  if (hasExpandedPanels) {
+    const expandedImports: string[] = [];
+    const kinds = new Set(panels.map((p) => p.kind));
+    if (kinds.has("titleBar")) expandedImports.push(`import com.pico.spatial.ui.design.TitleBar`);
+    if (kinds.has("toolbar")) expandedImports.push(`import com.pico.spatial.ui.design.windows.Toolbar`);
+    if (kinds.has("tabBar")) expandedImports.push(`import com.pico.spatial.ui.design.windows.TabBar`);
+    if (kinds.has("sheet")) expandedImports.push(`import com.pico.spatial.ui.design.windows.Sheet`);
+    if (kinds.has("snackbarHost")) expandedImports.push(`import com.pico.spatial.ui.design.windows.SnackbarHost`);
+    if (kinds.has("coachmark")) expandedImports.push(
+      `import com.pico.spatial.ui.design.windows.CoachmarkBox`,
+      `import com.pico.spatial.ui.design.windows.SimpleCoachmark`,
+    );
+    if (kinds.has("segmentControl")) expandedImports.push(
+      `import com.pico.spatial.ui.design.SegmentControl`,
+      `import com.pico.spatial.ui.design.SegmentItem`,
+    );
+    header.splice(header.length - 1, 0, ...expandedImports);
+  }
   const sections = panels.map((p) => emitPanel(p).join("\n"));
   return header.join("\n") + sections.join("\n\n") + "\n";
+}
+
+export function generateSpatialUIKotlin(input: {packageName:string; panels:unknown[]}): string {
+  const packageName = packageNameField.parse(input.packageName);
+  const panels = z.array(panelSpec).min(1).parse(input.panels);
+  return buildKotlin(packageName, panels);
 }
 
 export function registerComponentTools(server: McpServer) {
@@ -311,14 +427,12 @@ export function registerComponentTools(server: McpServer) {
     "generate_spatial_ui",
     {
       description:
-        "Generate verified, compilable Jetpack-Compose Kotlin spatial UI panels (DESIGN.md §4/§5 encoded) so agents don't hand-write broken UI. Each panel kind ('card' | 'menu' | 'list') becomes a @Composable using the PICO modified-Compose imports. Rules are baked into the output: panels are >= 800 dp wide, fonts are clamped to 18-40 sp, every button is a real Modifier.clickable { } (never a static Box+Text), and colors come from Color(0xFF......) hex (never primvars:displayColor). Each button's 'action' string becomes a // comment placeholder inside its clickable lambda for the agent to wire. Writes one .kt file. EMULATOR CAVEAT (v9.3/v9.4): an immersive app's own attachment-panel/WindowContainer DSL does NOT open a panel window on the emulator (C4 — Swan-only). For a panel that renders on the emulator (live text, HUD, menu), use `generate_panel_compose_kotlin` — a separate plain 2D ACTIVITY the OS auto-hosts as a floating spatial panel (spawns at the dock, off the forward view).",
+        "Generate SDK 0.13.3 source-grounded Jetpack-Compose Kotlin for card, menu, list, titleBar, toolbar, tabBar, sheet, snackbarHost, coachmark, and segmentControl. Existing card/menu/list output remains byte-compatible. Expanded variants are structural placeholders: TabBar/SegmentItem clicks and Sheet dismissal are no-ops, and SnackbarHost does not call SnackbarHostState.show. Toolbar and TabBar are root/container augments, not legacy panel-shell children; Sheet, SnackbarHost, and Coachmark are accepted only for a secondary WindowContainer. This tool emits composables only and never owns a Stage or WindowContainer. Output still needs integration, compilation, and a LOOK before any rendering or interaction claim. EMULATOR CAVEAT: an immersive app's own attachment-panel/WindowContainer DSL does not prove an emulator-visible panel; use generate_panel_compose_kotlin for the separately established 2D Activity lane.",
       inputSchema: {
         outPath: z.string().describe("Output .kt file path (e.g. <project>/app/src/main/java/.../content/Panels.kt)"),
-        packageName: z
-          .string()
-          .regex(/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/, "expected a Kotlin package like 'com.acme.viz.content'")
+        packageName: packageNameField
           .describe("Kotlin package declaration for the generated file"),
-        panels: z.array(panelSpec).min(1).describe("One or more panel specs: discriminated by 'kind' (card | menu | list)"),
+        panels: z.array(panelSpec).min(1).describe("One or more specs discriminated by kind: card | menu | list | titleBar | toolbar | tabBar | sheet | snackbarHost | coachmark | segmentControl"),
       },
     },
     async ({ outPath, packageName, panels }) => {
@@ -332,7 +446,7 @@ export function registerComponentTools(server: McpServer) {
         ids.add(p.id);
       }
 
-      const kotlin = buildKotlin(packageName, panels);
+      const kotlin = generateSpatialUIKotlin({packageName, panels});
       try {
         fs.mkdirSync(path.dirname(out), { recursive: true });
         fs.writeFileSync(out, kotlin);
@@ -345,7 +459,7 @@ export function registerComponentTools(server: McpServer) {
         written: out,
         panels: panels.length,
         composables: fnNames,
-        nextSteps: "call these @Composables from HomeStage's AttachmentPanels",
+        nextSteps: "Place card/menu/list in the existing panel lane; place Toolbar/TabBar as root/container augments; call Sheet/SnackbarHost/Coachmark only from a secondary WindowContainer. Then compile and LOOK.",
       });
     },
   );

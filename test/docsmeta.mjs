@@ -20,15 +20,27 @@ for (const [file, pick] of [
   ["plugin.json", (o) => o.version],
   [".claude-plugin/plugin.json", (o) => o.version],
   [".claude-plugin/marketplace.json", (o) => o.metadata?.version],
+  [".claude-plugin/marketplace.json", (o) => o.plugins?.[0]?.version],
+  [".codex-plugin/plugin.json", (o) => o.version],
+  [".agents/plugins/marketplace.json", (o) => o.plugins?.[0]?.version],
+  [".cursor-plugin/plugin.json", (o) => o.version],
+  [".cursor-plugin/marketplace.json", (o) => o.plugins?.[0]?.version],
+  [".github/plugin/marketplace.json", (o) => o.metadata?.version],
+  [".github/plugin/marketplace.json", (o) => o.plugins?.[0]?.version],
 ]) {
   const v = pick(JSON.parse(read(file)));
   v === pkgVersion ? ok(`${file} carries version ${v}`) : fail(`${file} version ${v} != package.json ${pkgVersion}`);
 }
 
-// the root manifest must be an exact copy of the canonical one (sync-metadata rewrites it as such)
-read("plugin.json") === read(".claude-plugin/plugin.json")
-  ? ok("plugin.json is an exact copy of .claude-plugin/plugin.json")
-  : fail("plugin.json differs from .claude-plugin/plugin.json — run `npm run sync:meta`");
+// Portable core and Claude's host overlay deliberately have different schemas, but one identity.
+const portableManifest = JSON.parse(read("plugin.json"));
+const claudeManifest = JSON.parse(read(".claude-plugin/plugin.json"));
+portableManifest.$schema === "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+  ? ok("plugin.json targets Agent Plugins 1.0.0")
+  : fail("plugin.json does not target the canonical Agent Plugins 1.0.0 schema");
+portableManifest.name === claudeManifest.name && portableManifest.version === claudeManifest.version
+  ? ok("portable and Claude manifests carry one plugin identity")
+  : fail("portable and Claude manifests disagree on name/version");
 
 // ── (b) no stale version/tool-count literals anywhere sync-metadata governs ─────────────────────
 const check = spawnSync(process.execPath, [path.join(repoRoot, "scripts", "sync-metadata.mjs"), "--check"], {

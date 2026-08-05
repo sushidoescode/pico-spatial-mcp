@@ -1,0 +1,14 @@
+{
+  "tool_name": "emulator.status",
+  "tool_status": "SUCCESS",
+  "summary": "Collected emulator runtime status.",
+  "data": {
+    "processRunning": true,
+    "adbOnline": true,
+    "adbDeviceId": "emulator-5554",
+    "state": { "bootCompleted": true, "bundleVersion": "0.13.1" }
+  },
+  "errors": [],
+  "resources": [],
+  "meta": { "format": "json", "truncated": false, "candidateCount": 1 }
+}

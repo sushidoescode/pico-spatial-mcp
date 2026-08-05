@@ -1,6 +1,6 @@
 {
   "name": "pico-spatial-mcp",
-  "version": "33.1.0-pre",
+  "version": "34.0.0-pre",
   "description": "MCP server for driving PICO XR spatial development: PICO OS6 Emulator lifecycle, adb automation, spatialbundle/Gradle build pipeline, and experimental gRPC XR input injection.",
   "type": "module",
   "bin": {
@@ -64,7 +64,10 @@
     "test:picocli": "node test/picocli.mjs",
     "test:swan": "node test/swan.mjs",
     "test:placeonsurface": "node test/placeonsurface.mjs",
-    "test:menuactions": "node test/menuactions.mjs"
+    "test:menuactions": "node test/menuactions.mjs",
+    "test:adoption-safety": "node test/adoption-safety.mjs",
+    "test:spatialui-adoption": "node test/spatialui-adoption.mjs",
+    "test:distribution-adoption": "node --test test/distribution-adoption.mjs"
   },
   "engines": {
     "node": ">=20"

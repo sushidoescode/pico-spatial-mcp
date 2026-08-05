@@ -54,6 +54,46 @@ export function probePicoCli(force = false): PicoCliProbe {
 
 export type PicoCliFailureClass = "cli-missing" | "flag-or-version-drift" | "runtime";
 
+export type PicoCliEnvelope =
+  | { status: "ok"; toolStatus: "SUCCESS" | "PARTIAL" | "FAILED"; outcome: "operational" | "degraded" | "failed"; summary: string | null; data: unknown; errors: unknown[]; envelope: Record<string, unknown>; raw: string }
+  | { status: "invalid"; detail: string };
+
+/** Total parser for pico-cli's machine envelope: callers can safely turn malformed output into a warn. */
+export function parsePicoCliEnvelope(raw: string): PicoCliEnvelope {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return { status: "invalid", detail: "pico-cli did not return JSON." }; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { status: "invalid", detail: "pico-cli JSON envelope is not an object." };
+  const envelope = parsed as Record<string, unknown>;
+  const toolStatus = envelope.tool_status;
+  if (toolStatus !== "SUCCESS" && toolStatus !== "PARTIAL" && toolStatus !== "FAILED") return { status: "invalid", detail: "pico-cli JSON envelope has no recognized tool_status." };
+  return {
+    status: "ok",
+    toolStatus,
+    outcome: toolStatus === "SUCCESS" ? "operational" : toolStatus === "PARTIAL" ? "degraded" : "failed",
+    summary: typeof envelope.summary === "string" ? envelope.summary : null,
+    data: envelope.data,
+    errors: Array.isArray(envelope.errors) ? envelope.errors : [],
+    envelope,
+    raw: raw.slice(0, 50_000),
+  };
+}
+
+/** Returns returned remediation strings in deterministic depth-first/key order; never invents one. */
+export function extractPicoCliRemediations(value: unknown, cap = 32): string[] {
+  const out: string[] = [];
+  const visit = (node: unknown) => {
+    if (out.length >= cap || !node || typeof node !== "object") return;
+    if (Array.isArray(node)) { for (const item of node) visit(item); return; }
+    const obj = node as Record<string, unknown>;
+    for (const key of ["fix", "nextAction"]) if (typeof obj[key] === "string" && !out.includes(obj[key] as string)) out.push(obj[key] as string);
+    const keys = Object.keys(obj).filter((key) => key !== "fix" && key !== "nextAction");
+    const ordered = ["errors", "checks", "data", ...keys.filter((key) => !["errors", "checks", "data"].includes(key)).sort()];
+    for (const key of ordered) visit(obj[key]);
+  };
+  visit(value);
+  return out;
+}
+
 /**
  * Classify a FAILED pico-cli invocation honestly. Usage dumps / unknown-option complaints mean the
  * wrapped flags no longer match the installed CLI (drift — retrying unchanged cannot help); anything

@@ -34,6 +34,15 @@ Evidence totals: `vision_verified` 110 · `auto_judged` 29 · `usd_host_render` 
   `compile_spatial_experience` routes any brief to the right lane(s).
 
 ## Honest boundaries (and one retraction, on the record)
+- **Knowledge evidence has two tiers.** `knowledge_api` provides broad contextual graph results
+  through a persistent pico-cli session; availability or a graph answer is structural integration
+  evidence, not proof that a symbol or signature is correct. `vault_api` remains authoritative for
+  exact installed-SDK declarations and file/line citations. An opt-in `knowledgeSecondOpinion` from
+  `preflight_lint` is explicitly advisory and never changes `clean`.
+- **Passthrough auto-judging is conditional, not blanket-disabled.** On high-coverage Mixed-stage
+  frames, count/not-black/dominant-color checks contribute zero confidence. At least two distinct
+  authored colors can score through the color-key lane at its default 0.8 threshold; otherwise the
+  judge escalates. `auto_judged` remains weaker than a capture someone actually LOOKED at.
 - **Immersive Unity VR RENDERS on the emulator** — the v30.1 retraction. The July-22 Unity
   settling test's uniformly black captures were an `adb screencap` artifact, not a compositing
   failure: screencap reads the shell composite (home env, 2D panels, native Spatial SDK apps)
@@ -54,3 +63,6 @@ Evidence totals: `vision_verified` 110 · `auto_judged` 29 · `usd_host_render` 
   the right capture path — see [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
 
 *Re-generate anytime: `capability_matrix`. Per-app detail: `ledger_report`.*
+
+Six ecosystem questions with narrower evidence boundaries are collected in
+[Questions answered by measurement](docs/ANSWERED_BY_MEASUREMENT.md).

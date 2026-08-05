@@ -28,6 +28,8 @@ import { registerTappableDetailTools } from "./tappable.js";
 import { registerPerfTraceTools } from "./perftrace.js";
 import { registerPicoCliTools } from "./picoclitools.js";
 import { registerComponentTools } from "./components.js";
+import { registerSubwindowTools } from "./subwindow.js";
+import { registerSpatialGestureTools } from "./spatialgestures.js";
 import { registerAssetTools } from "./assets.js";
 import { registerDiagnoseTools } from "./diagnose.js";
 import { registerColliderTools } from "./collider.js";
@@ -136,7 +138,10 @@ import { registerIblBakeTools } from "./iblbake.js";
 import { registerPrompts } from "./prompts.js";
 import { registerDoorTools, doorsSurfaceActive } from "./doors.js";
 import { registerPreflightTools } from "./preflight.js";
+import { registerProjectConfigTools } from "./projectconfig.js";
+import { registerBuildMatrixTools } from "./buildmatrix.js";
 import { registerVirtualCameraTools } from "./virtualcamera.js";
+import { registerKnowledgeTools } from "./knowledge.js";
 
 // The handshake version comes from package.json (dist/ sits one level below it both in the repo
 // and in the installed package) — a hardcoded string here drifted to 6.0.0 while the package
@@ -191,6 +196,8 @@ if (!doorsSurfaceActive()) {
   // v31 — one-call Meshy->MR seating orchestrator (measure -> bake -> seat)
   registerPlaceOnSurfaceTools(server);
   registerComponentTools(server);
+  registerSubwindowTools(server);
+  registerSpatialGestureTools(server);
   registerAssetTools(server);
   registerDiagnoseTools(server);
   registerColliderTools(server);
@@ -235,6 +242,9 @@ if (!doorsSurfaceActive()) {
   registerSpecVerifyTools(server);
   // v5.1 — the retained-lessons lint engine (executable, fixture-backed gotchas)
   registerLintTools(server);
+  registerKnowledgeTools(server);
+  registerProjectConfigTools(server);
+  registerBuildMatrixTools(server);
   // v14.7 — vault_api: exact SDK declarations from the agent-vault symbol index
   registerVaultTools(server);
   // v14.8 — perf_diagnose: PICO's official pico-cli perf profiler + diagnosis engine

@@ -57,6 +57,64 @@ unityLane && unityLane.status === "pass"
   ? ok("healthy env passes unity-lane")
   : fail(`unity-lane wrong on healthy env: ${JSON.stringify(unityLane)}`);
 
+// v34.1: after a healthy `-v`, preflight also consumes pico-cli's structured, read-only status.
+const picoCalls = [];
+const structuredStatusIO = { ...healthyIO, exec: (cmd, args) => {
+  picoCalls.push([cmd, args]);
+  if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, stdout: "pico-cli/0.3.0\n" };
+  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: true, stdout: '{"tool_status":"SUCCESS","data":{},"errors":[]}' };
+  return healthyIO.exec(cmd, args);
+} };
+const structuredStatus = runPreflightChecks(structuredStatusIO).find((c) => c.name === "pico-cli-emulator-status");
+structuredStatus?.status === "pass" && picoCalls.some(([cmd, args]) => cmd === "pico-cli" && args.join(" ") === "emulator status --format json") && !picoCalls.some(([cmd, args]) => cmd === "pico-cli" && /doctor/.test(args.join(" ")))
+  ? ok("pico-cli structured status is read-only, exact-argv, and never a doctor probe")
+  : fail(`structured pico-cli status wrong: ${JSON.stringify({ structuredStatus, picoCalls })}`);
+const nestedFixIO = { ...healthyIO, exec: (cmd, args) => {
+  if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, stdout: "pico-cli/0.3.0\n" };
+  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: true, stdout: JSON.stringify({ tool_status: "FAILED", errors: [{ fix: "Start the Spatial Editor" }], checks: [{ nextAction: "Retry after boot" }] }) };
+  return healthyIO.exec(cmd, args);
+} };
+const nestedFix = runPreflightChecks(nestedFixIO).find((c) => c.name === "pico-cli-emulator-status");
+nestedFix?.fix === "Start the Spatial Editor"
+  ? ok("nested pico-cli returned remediation is surfaced with deterministic precedence")
+  : fail(`nested pico-cli remediation was hidden: ${JSON.stringify(nestedFix)}`);
+
+// pico-cli uses a non-zero process exit for a valid FAILED tool envelope. The envelope remains the
+// authoritative diagnosis: preserve its structured payload, surface its exact nested remediation,
+// and retain the process exit only as supplemental context after the structured result.
+const failedEnvelopeRemediation = "pico-cli emulator install --source auto --yes";
+const failedEnvelopeIO = { ...healthyIO, exec: (cmd, args) => {
+  if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, stdout: "pico-cli/0.3.0\n" };
+  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") {
+    return {
+      ok: false,
+      stdout: JSON.stringify({
+        tool_status: "FAILED",
+        summary: "The emulator status check found a missing bundle.",
+        errors: [{
+          code: "EMULATOR_BUNDLE_MISSING",
+          diagnostic: "No installed emulator payload matched the configured SDK.",
+          recovery: { nextAction: failedEnvelopeRemediation },
+        }],
+      }),
+      stderr: "pico-cli exited with code 23",
+    };
+  }
+  return healthyIO.exec(cmd, args);
+} };
+const failedEnvelopeRow = runPreflightChecks(failedEnvelopeIO).find((c) => c.name === "pico-cli-emulator-status");
+const failedEnvelopeDetail = failedEnvelopeRow?.detail ?? "";
+const structuredFailureAt = failedEnvelopeDetail.indexOf("pico-cli structured emulator status: failed");
+const exitContextAt = failedEnvelopeDetail.indexOf("pico-cli exited with code 23");
+failedEnvelopeRow?.status === "warn"
+  && failedEnvelopeRow.fix === failedEnvelopeRemediation
+  && failedEnvelopeDetail.includes("EMULATOR_BUNDLE_MISSING")
+  && failedEnvelopeDetail.includes("No installed emulator payload matched the configured SDK.")
+  && structuredFailureAt >= 0
+  && exitContextAt > structuredFailureAt
+  ? ok("non-zero pico-cli exit preserves its valid FAILED envelope and exact nested remediation")
+  : fail(`non-zero structured pico-cli failure was flattened: ${JSON.stringify(failedEnvelopeRow)}`);
+
 // Calibration STALER than the emulator boot => fail with the recalibrate fix (the dies-on-restart gotcha).
 const staleIO = { ...healthyIO, readFile: (p) => p.endsWith("camera-calibration.json")
   ? JSON.stringify({ f: 1355.2, at: bootAt - 24 * 60 * 60 * 1000 }) : null };

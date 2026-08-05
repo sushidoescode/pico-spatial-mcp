@@ -16,6 +16,12 @@ Concrete jobs this tool does on a stock PICO OS 6 emulator install, each backed 
 5. **Talk to a RUNNING app** — the live agent bridge spawns/moves/removes entities in a running spatial app, with every mutation verified by scene diff.
 6. **Environment doctoring** — `pico_doctor` is a read-only preflight where every failing check carries the exact fix; it's how we caught (and report upstream) real toolchain issues.
 7. **Simulate camera access from a scanned room** — `virtual_camera_frame`, `virtual_camera_surfaces`, and `virtual_camera_from_app` render what a world-model camera would see and report camera-visible support surfaces from its semantic model. Separately, the emulator camera-HAL is now proven end-to-end (v29.1, `vision_verified`): an injected changing card reaches a CameraX app's preview *inside* the emulator via `-camera-back webcam1` — a simulation of camera access, explicitly not VST/passthrough ([evidence and boundaries](docs/VIRTUAL_CAMERA.md)).
+8. **Query PICO's broader knowledge graph** — `knowledge_api` keeps one persistent
+   `pico-cli mcp spatial-knowledge` session and exposes `query_graph`, `get_node`,
+   `get_neighbors`, `get_community`, `god_nodes`, `graph_stats`, `shortest_path`, and
+   `switch_workspace`. Graph answers are contextual evidence; `vault_api` remains the authority
+   for exact SDK declarations and file/line citations. `preflight_lint` consults the graph only
+   when `knowledgeSecondOpinion` is explicitly supplied, and that advisory never changes `clean`.
 
 It is designed to **complement** `pico-cli` and the `pico-spatial-agentic-tools` plugin, not compete: your tooling guides and scaffolds; this adds the verified build/verify/ship loop and the world-model layer. Install both side by side.
 
@@ -28,12 +34,12 @@ None of this is PICO Spatial SDK vocabulary — it's this project's own layer on
 | **trust ledger** | An append-only log (`record_verification` / `ledger_report`) of every visual claim this tool has made, each entry naming its evidence class. It structurally rejects a `vision_verified` claim with no linked capture — you can't fake the strongest tier. |
 | **the eye** | The calibrated auto-judge (`visual_judge` / `auto_judged` evidence) that scores a capture against an expected scene. It is a fast pre-check, not a replacement for a human/agent actually looking. |
 | **evidence classes** | A ranked honesty scale for how a claim was checked, strongest first: **`device_verified`** (real PICO hardware — **none yet**, said honestly) > `vision_verified` (a human/agent LOOKED and the intended content is present) > `auto_judged` (the calibrated eye scored it) > `usd_host_render` (off-device USD preview) > `structural` (runtime/log proof; successful appearance unconfirmed — a linked looked-at negative finding can stay here rather than masquerade as render success) > `built_for_headset` (compiles and targets Swan-only capability, deferred honestly). Every capability in [CAPABILITIES.md](CAPABILITIES.md) is tagged with its strongest evidence on file. |
-| **doors** (`PICO_MCP_SURFACE=doors`) | An intent-level facade of 16 tools (15 doors + `validate_toolchain`) over the full 234+-tool surface — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
+| **doors** (`PICO_MCP_SURFACE=doors`) | An intent-level facade of 16 tools (15 doors + `validate_toolchain`) over the full surface (239 tools on macOS; 236 on other hosts) — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
 | **gates** | The deterministic test-battery (`test/*.mjs`, mirrored in `.github/workflows/gates.yml`) that runs before every commit: lint fixtures, the ledger's over-claim rejection, doors-surface contract tests, occupancy/affordance solvers, the vault symbol checker, and more. All green is the bar for "this didn't regress." |
 
 ## 15-minute first light
 
-The fastest way in is the doors surface: `pico_doctor` → `pico_build_app` (two-step: brief → scaffold you author against → build) → `pico_look` (and actually look at the capture). The first-light brief is **Mixed-stage MR** — a primitive table standing on your real floor with bodies dropping onto it (the mrtable lane, proven through the unattended fleet pipeline on 2026-08-02). Expect `built-needs-look`, not auto-PASS: the calibrated eye cannot score passthrough frames yet, so YOUR look closes the loop — which is the point. This exact sequence was timed end-to-end on 2026-07-21 at ~10 minutes (including two first-run toolchain-fix detours you won't hit), cold clone, emulator pre-started as a documented pre-condition — see **[QUICKSTART.md](QUICKSTART.md)** for the walkthrough, the exact commands, and the two first-run gotchas (macOS Accessibility, calibration-after-restart) inline where they bite.
+The fastest way in is the doors surface: `pico_doctor` → `pico_build_app` (two-step: brief → scaffold you author against → build) → `pico_look` (and actually look at the capture). The first-light brief is **Mixed-stage MR** — a primitive table standing on your real floor with bodies dropping onto it (the mrtable lane, proven through the unattended fleet pipeline on 2026-08-02). Expect `built-needs-look` for that count-only frame: on high-coverage passthrough captures, count/not-black/dominant-color checks are advisory and contribute zero confidence. A scene with at least two distinct authored colors can score through the color-key lane at the default 0.8 confidence threshold; otherwise it escalates. Either way, YOUR look is what earns `vision_verified`; `auto_judged` is honestly weaker. This exact sequence was timed end-to-end on 2026-07-21 at ~10 minutes (including two first-run toolchain-fix detours you won't hit), cold clone, emulator pre-started as a documented pre-condition — see **[QUICKSTART.md](QUICKSTART.md)** for the walkthrough, the exact commands, and the two first-run gotchas (macOS Accessibility, calibration-after-restart) inline where they bite.
 
 ## Verify YOUR apk in 5 minutes
 
@@ -69,12 +75,16 @@ The fastest way in is the doors surface: `pico_doctor` → `pico_build_app` (two
 
 ## Honest limits (the emulator ceiling)
 
-The PICO emulator renders bounded, eye-level content, floating spatial panels, **the Mixed-stage MR lane** (the passthrough home environment plus simulated semantic planes an app's content seats on — the product default) — and, corrected in v30.1, **full-immersive Unity VR**. Two MR-specific honesty notes: the calibrated auto-judge cannot score passthrough frames yet (Mixed-stage builds escalate to a human LOOK rather than auto-PASS — measured 2026-08-02), and Full Space (stageStyle `3`) carries a **partner-stated** caveat: Full-Space immersive apps hit a known Guardian-boundary issue on hardware (per Matt/PICO, fix in progress — reported to us, not measured by us). The July-22 Unity settling test's uniformly black captures were an `adb screencap` artifact, not a compositing failure: screencap reads the shell composite and is structurally blind to XR-runtime output (Unity's own log said so — `Skip Present To Main Screen: Yes`). Captured through the emulator window (`gui_capture`), both Unity routes — the PICO Integration SDK (`PXR_Loader`) and the OpenXR SDK, via the unchanged sha-pinned July-22 APK — fill the view with their intended immersive scenes, `vision_verified`. The honest residue: the 2026-07-02 **native-NDK and WebXR** immersive probes reported a compositor loading fallback in the GUI viewport and were never re-run through the corrected capture path — their status is **OPEN**, not negative and not settled. **Controller-ray input and head-tracked depth** remain deferred to a **6.1 emulator or PICO Swan hardware**, and flip only after direct looked-at evidence (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Physics simulates on the emulator; the Unity build lane is `unity_scaffold_project` + `unity_build_apk` — see **[docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md)** for the capture-path rule, the retraction, and the exact evidence.
+The PICO emulator renders bounded, eye-level content, floating spatial panels, **the Mixed-stage MR lane** (the passthrough home environment plus simulated semantic planes an app's content seats on — the product default) — and, corrected in v30.1, **full-immersive Unity VR**. Two MR-specific honesty notes: on high-coverage passthrough frames the calibrated auto-judge gives count/not-black/dominant-color checks zero confidence; a scene with at least two authored colors can use the color-key lane (default threshold 0.8), while other frames escalate to a human LOOK. That machine verdict is `auto_judged`, never `vision_verified`. Full Space (stageStyle `3`) carries a **partner-stated** caveat: Full-Space immersive apps hit a known Guardian-boundary issue on hardware (per Matt/PICO, fix in progress — reported to us, not measured by us). The July-22 Unity settling test's uniformly black captures were an `adb screencap` artifact, not a compositing failure: screencap reads the shell composite and is structurally blind to XR-runtime output (Unity's own log said so — `Skip Present To Main Screen: Yes`). Captured through the emulator window (`gui_capture`), both Unity routes — the PICO Integration SDK (`PXR_Loader`) and the OpenXR SDK, via the unchanged sha-pinned July-22 APK — fill the view with their intended immersive scenes, `vision_verified`. The honest residue: the 2026-07-02 **native-NDK and WebXR** immersive probes reported a compositor loading fallback in the GUI viewport and were never re-run through the corrected capture path — their status is **OPEN**, not negative and not settled. **Controller-ray input and head-tracked depth** remain deferred to a **6.1 emulator or PICO Swan hardware**, and flip only after direct looked-at evidence (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Physics simulates on the emulator; the Unity build lane is `unity_scaffold_project` + `unity_build_apk` — see **[docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md)** for the capture-path rule, the retraction, and the exact evidence.
 
 ## Requirements
 
-- macOS with the PICO Spatial toolchain installed via the Android Studio **PICO Spatial Plugin** (payloads under `~/Library/PICO/sdk/<version>/`, license accepted).
-- A PICO AVD created via Android Studio Device Manager (lives in `~/.pico/avd`).
+- macOS with the PICO build toolchain installed via the Android Studio **PICO Spatial Plugin**
+  (JDK/Android SDK/Gradle/PICO build payloads under `~/Library/PICO/sdk/<version>/`, license accepted).
+- A PICO emulator bundle, downloaded/updated either by the Spatial Editor/plugin flow or with
+  `pico-cli emulator install --source auto --yes`, plus a PICO AVD created separately in Android
+  Studio Device Manager (lives in `~/.pico/avd`). The CLI command installs only the emulator bundle;
+  it does not create an AVD and does not install the JDK, Android SDK, Gradle, or PICO build SDK.
 - `adb` on PATH (or the toolchain's bundled platform-tools are used).
 - Node.js ≥ 20.
 
@@ -82,11 +92,13 @@ Run `pico_doctor` (doors surface) or `preflight_env` (full surface) first on any
 
 ## Install
 
-**The server is host-agnostic stdio MCP** — it runs identically under Claude Code, OpenAI
-Codex CLI (verified), Cursor, Windsurf, VS Code Copilot, Gemini CLI, or any MCP client: see
-**[docs/HOSTS.md](docs/HOSTS.md)** for every host's registration snippet, and **[AGENTS.md](AGENTS.md)**
-for the host-neutral agent contract (Codex reads it natively). One honest model requirement:
-the LOOK step needs a vision-capable model — text-only models use the auto-judge and escalate.
+**The server is host-agnostic stdio MCP.** Its absolute plain-MCP registration was historically
+live-verified in Claude Code and OpenAI Codex CLI; Cursor, Windsurf, VS Code Copilot, Gemini CLI,
+and other clients use their standard MCP configurations and are not all independently live-verified.
+See **[docs/HOSTS.md](docs/HOSTS.md)** for every host's registration snippet, and
+**[AGENTS.md](AGENTS.md)** for the host-neutral agent contract (Codex reads it natively). One honest
+model requirement: the LOOK step needs a vision-capable model — text-only models use the auto-judge
+and escalate.
 
 **As a Claude Code plugin** — the repo is a self-contained plugin marketplace:
 
@@ -95,7 +107,25 @@ claude plugin marketplace add sushidoescode/PICO-MCP   # or a local clone path
 claude plugin install pico-spatial-mcp@pico-mcp
 ```
 
-First launch auto-installs dependencies and builds (one-time, ~1 min; progress on stderr). Works alongside PICO's official `pico-spatial-agentic-tools` plugin — theirs guides the agent with skills + SDK knowledge, this one is the build/verify/ship toolchain.
+The launcher auto-installs dependencies and builds when needed (one-time, ~1 min; progress on
+stderr). Claude's dedicated `${CLAUDE_PLUGIN_ROOT}` manifest invocation is cold-started as a real
+MCP process from an unrelated working directory in the executable distribution suite. That proves
+the launcher contract, not a post-change live install in Claude Code; an earlier revision's Claude
+plugin route and the absolute plain-MCP Claude/Codex registrations were live-verified. It works
+alongside PICO's official `pico-spatial-agentic-tools` plugin — theirs guides the agent with skills
++ SDK knowledge, this one is the build/verify/ship toolchain.
+
+The source checkout also carries a portable Agent Plugins core (`plugin.json` + `mcp.json`) for
+Codex and Copilot, host presentation/marketplace overlays (`.agents/plugins`, `.codex-plugin`, and
+`.github/plugin`), and a Cursor-specific payload (`.cursor-plugin` + `mcp.cursor.json`). The
+portable core uses `${PLUGIN_ROOT}`; Claude uses its documented `${CLAUDE_PLUGIN_ROOT}` contract in
+a separate MCP config. Both tokenized launcher forms are process-tested from a hostile
+spaces/non-ASCII working directory. Cursor's `${CURSOR_PLUGIN_ROOT}` declaration gets the same
+test-side launcher smoke, but remains structural until a current Cursor client expands it and
+connects the tools live.
+The current host-native layouts have not been live-installed after this launcher change, so this is
+not a live-loading claim; use the absolute plain-MCP registration in
+[docs/HOSTS.md](docs/HOSTS.md) where the host-native route is not yet proven.
 
 **Or as a plain MCP server:**
 
@@ -110,7 +140,7 @@ Or in any MCP client config:
 { "mcpServers": { "pico-spatial": { "command": "node", "args": ["/path/to/PICO-MCP/dist/index.js"] } } }
 ```
 
-**Recommended for a first session — the doors surface** (16 tools instead of 233+):
+**Recommended for a first session — the doors surface** (16 tools instead of 239 on macOS / 236 on other hosts):
 
 ```bash
 PICO_MCP_SURFACE=doors claude mcp add pico-spatial -- node /path/to/PICO-MCP/dist/index.js
@@ -133,6 +163,7 @@ The tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first sc
 - **[docs/VIRTUAL_CAMERA.md](docs/VIRTUAL_CAMERA.md)** — simulated camera frames and surface detection from scanned rooms, plus the bounded emulator camera-HAL result
 - **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** — repo layout, gates, and standing invariants for anyone new to this codebase
 - **[CAPABILITIES.md](CAPABILITIES.md)** — the honest capability matrix (categories + evidence)
+- **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWERED_BY_MEASUREMENT.md)** — six narrow ecosystem questions answered only to the limit of tracked evidence
 - **[DESIGN.md](DESIGN.md)** — architecture + correctness rules (runtime physics, PICO math API, editor MaterialX, the visual-ground-truth rule)
 - **[PLUGINS.md](PLUGINS.md)** — plugin surfaces · **[SKILLS.md](SKILLS.md)** — agent reference
 - **[docs/](docs/)** — worked examples (a ClaimSight native build, local open-weight models, the decompiled spatial interaction API) and **[examples/](examples/)** — reference scenes
@@ -145,7 +176,7 @@ npm run test:lint    # the retained-lessons lint rules fire on their fixtures
 npm run test:ledger  # the trust ledger rejects an unlinked vision_verified claim
 ```
 
-The full gate battery — 40 gate invocations (39 `test:` suites plus `smoke`), across Linux and macOS jobs, deterministic, no emulator boot — is mirrored in `.github/workflows/gates.yml` — see **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for the complete list.
+The full gate battery — 43 gate invocations (42 `test:` suites plus `smoke`), across Linux and macOS jobs, deterministic, no emulator boot — is mirrored in `.github/workflows/gates.yml` — see **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for the complete list.
 
 ## Licensing
 

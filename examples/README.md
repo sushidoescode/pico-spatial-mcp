@@ -1,4 +1,13 @@
-# Example scenes (vision-verified on the PICO Swan emulator)
+# Examples (evidence labeled per entry)
+
+- **docs-adoption-workbench.json** — a repo-only, non-executable structural recipe for a
+  `DefaultStage` with caller-applied Mixed manifest style, a secondary `WindowContainer`, and
+  spatial gesture lanes. It carries replayable generator args plus an explicit list of the app
+  scaffolding, entity/color authorship, modifier mounting, destinations, and compile/LOOK work
+  that a consuming proof must supply. It is deliberately
+  outside `BENCH_CORE` / `BENCH_MR` and excluded from the npm package. Its checks are structural;
+  every appearance claim remains pending until someone builds the disposable demo and LOOKS at
+  its captures.
 
 - **HeroObservatory.kt** — the flagship complex experience for the video showcase
   (see `../VIDEO_DEMO.md`): a glowing emissive sun + point light, 5 orbiting PBR

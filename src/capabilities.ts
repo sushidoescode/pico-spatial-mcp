@@ -21,6 +21,8 @@ export type CapEntry = {
 };
 
 export const CAPABILITY_MANIFEST: CapEntry[] = [
+  { tool: "verify_gradle_config", authors: "source-grounded project configuration audit", keyParams: "projectDir,resolveTransitives", ceiling: "C0_emulator", note: "static mode is read-only; resolveTransitives may populate caches and use configured network repositories" },
+  { tool: "build_matrix_report", authors: "observed packaged scaffold build matrix", keyParams: "none", ceiling: "C0_emulator", note: "source-grounded configuration evidence only" },
   // spine
   { tool: "scaffold_spatial_app", authors: "a fresh buildable app (package/appName/stage/scene)", keyParams: "templateProject,targetDir,packageName,appName,stageStyle", ceiling: "C0_emulator" },
   { tool: "build_and_run", authors: "compile+install+launch+auto capability matrix", keyParams: "projectDir,packageName,task,settleSec", ceiling: "C0_emulator" },
@@ -50,7 +52,9 @@ export const CAPABILITY_MANIFEST: CapEntry[] = [
   { tool: "import_world_environment", authors: "a CUSTOM World-Labs/Marble world (.spz/.ply splat or GLB) as the app environment", keyParams: "worldPath,projectDir", ceiling: "C0_emulator" },
   { tool: "install_gradle_hooks", authors: "the EXTERNAL gradle plugin com.pico.hooks: USD scene-lint riding EVERY build (AS/CLI/CI, no MCP in the loop)", keyParams: "projectDir", ceiling: "C0_emulator" },
   { tool: "emit_editor_components", authors: "per-project component SCHEMA files (.spatialEditorComponent) — interchange only; the editor's Add Component palette does NOT pick them up (verified negative)", keyParams: "projectRoot,components", ceiling: "C0_emulator", note: "structural only — never claim Inspector render" },
-  { tool: "generate_spatial_ui", authors: "verified Compose panels", keyParams: "spec", ceiling: "C4_headset_only", note: "in-front interactive panels are Swan-only" },
+  { tool: "generate_spatial_ui", authors: "SDK 0.13.3 source-grounded Compose component functions", keyParams: "packageName,panels", ceiling: "C4_headset_only", note: "structural composables only; expanded callbacks are placeholders, this tool owns no container, and appearance remains unverified until a capture is LOOKED at" },
+  { tool: "generate_subwindow_kotlin", authors: "DefaultStage entrypoint with retained primary content, a named secondary WindowContainer, and Subwindow", keyParams: "packageName,primaryId,primaryContent,secondaryId,stableTag,payload,size,constraints,subwindowSide,componentContent", ceiling: "C4_headset_only", note: "structural SDK 0.13.3 codegen; Mixed requires the caller-applied launcher manifest style 1 contract; Subwindow is an attached augment and does not prove arbitrary world lock or pixel rendering" },
+  { tool: "generate_spatial_gestures_kotlin", authors: "target-filtered tap, drag, and scale gesture lanes with primitive collision", keyParams: "packageName,targetId,commandDispatcher", ceiling: "C3", note: "tap has a structural select:<id> command route; drag/scale remain named callbacks and native pointer behavior requires headset driving and observation" },
   // animation / media / physics / display
   { tool: "generate_tween_animation_kotlin", authors: "position/scale tween on an entity", keyParams: "packageName", ceiling: "C0_emulator" },
   { tool: "generate_orbit_animation_kotlin", authors: "orbit animation", keyParams: "packageName", ceiling: "C0_emulator" },
@@ -74,6 +78,15 @@ const CEILINGS: Record<string, string> = {
   C3: "No controller/gaze pointer on the emulator — broadcast-emulate now, real controller/pinch is Swan-only.",
   C4_headset_only: "Stage-vs-window dichotomy — in-front Compose panels etc. are Swan-only.",
   PARTNER_STATED_stageStyle3: "Full Space stageStyle-3 immersive apps hit a known Guardian-boundary issue on hardware — PARTNER-STATED (per Matt/PICO, fix in progress), NOT measured by us. Scoped strictly to stageStyle '3' immersion: it does NOT taint the open-Stage plane/seating lane, which Mixed (stageStyle 1, the MR default) satisfies. Style 3 stays a first-class explicit opt-in until re-verified on hardware.",
+};
+
+export const CAPABILITY_EVIDENCE_NOTES = {
+  knowledgeGraph:
+    "knowledge_api is broad contextual graph evidence over a persistent pico-cli session; it does not prove exact SDK declarations",
+  exactSdkSymbols:
+    "vault_api is authoritative for exact installed-SDK signatures and file/line citations",
+  lintSecondOpinion:
+    "knowledgeSecondOpinion is opt-in query_graph context and never changes preflight_lint clean",
 };
 
 export function registerCapabilityManifestTools(server: McpServer) {
@@ -101,6 +114,7 @@ export function registerCapabilityManifestTools(server: McpServer) {
         count: tools.length,
         totalRegistered: CAPABILITY_MANIFEST.length,
         ceilings: CEILINGS,
+        evidenceNotes: CAPABILITY_EVIDENCE_NOTES,
         tools,
       });
     },

@@ -1,0 +1,21 @@
+{
+  "name": "pico-mcp",
+  "interface": {
+    "displayName": "PICO MCP"
+  },
+  "plugins": [
+    {
+      "name": "pico-spatial-mcp",
+      "source": {
+        "source": "local",
+        "path": "."
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools",
+      "version": "34.0.0-pre"
+    }
+  ]
+}

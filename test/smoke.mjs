@@ -44,13 +44,14 @@ const EXPECTED = [
   "run_visual_regression",
   "generate_layout_kotlin", "generate_interaction_kotlin", "generate_data_binding_kotlin",
   "list_capabilities", "plan_app_spec", "replan_spec", "compile_app_spec", "verify_app_spec",
-  "preflight_lint", "record_lesson", "vault_api", "perf_diagnose", "resolve_semantic_placement", "calibrate_capture_camera", "measure_placement", "critique_capture",
+  "preflight_lint", "record_lesson", "knowledge_api", "vault_api", "perf_diagnose", "resolve_semantic_placement", "calibrate_capture_camera", "measure_placement", "critique_capture",
   "record_verification", "ledger_report", "stack_new", "stack_verify", "stack_land",
   "run_brief_suite", "regression_gate",
   "list_templates", "instantiate_template", "remix_app",
   "generate_scene_router_kotlin", "generate_composition_scene",
   "generate_interactable_registry_kotlin", "plan_layout_and_camera", "import_model_catalog",
   "swan_verify_matrix", "run_factory", "virtual_camera_frame", "virtual_camera_surfaces", "virtual_camera_from_app",
+  "generate_subwindow_kotlin", "generate_spatial_gestures_kotlin",
 ];
 // gui_* tools register only on macOS (Quartz window capture/camera) — exempt them off-darwin.
 const MAC_ONLY = new Set(["gui_find_window", "gui_camera", "gui_permissions", "gui_capture"]);

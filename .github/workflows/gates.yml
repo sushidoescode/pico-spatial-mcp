@@ -97,6 +97,12 @@ jobs:
         run: npm run test:assetgate
       - name: World-env
         run: npm run test:worldenv
+      - name: Adoption safety (project configuration + build truth)
+        run: npm run test:adoption-safety
+      - name: SpatialUI adoption (containers, gestures, and source-grounded components)
+        run: npm run test:spatialui-adoption
+      - name: Distribution adoption (host manifests, bootstrap, knowledge graph, emulator acquisition)
+        run: npm run test:distribution-adoption
 
   vcam-native:
     runs-on: macos-latest

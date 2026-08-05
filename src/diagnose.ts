@@ -31,6 +31,18 @@ interface DiagEntry {
 }
 
 const KB: Record<string, DiagEntry> = {
+  compose_fork_conflict: {
+    rootCause: "An AndroidX Compose artifact was resolved directly instead of through the PICO Spatial fork/BOM, or one of the required exclusions is missing.",
+    fix: ["Remove the direct androidx.compose dependency.", "Keep all four required configurations.all exclusions and run verify_gradle_config for a read-only source check.", "Use verify_gradle_config with resolveTransitives:true only when you explicitly accept bounded Gradle resolution."],
+    designRule: "Repository source: appskeleton/app/build.gradle.kts: configurations.all resolutionStrategy exclusions (validated by src/projectconfig.ts).",
+    relatedTools: ["verify_gradle_config", "preflight_lint"],
+  },
+  container_mode_mismatch: {
+    rootCause: "Manifest metadata declares a Stage or WindowContainer family that does not match the Kotlin root container.",
+    fix: ["Use DefaultStage with pico.spatial.stage.* metadata.", "Use DefaultWindowContainer with pico.spatial.windowcontainer.* metadata.", "Remove duplicate roots unless the project deliberately handles the ambiguity."],
+    designRule: "Repository source: appskeleton/app/src/main/AndroidManifest.xml Stage metadata and generated Kotlin root contract (validated by src/projectconfig.ts).",
+    relatedTools: ["verify_gradle_config", "preflight_lint"],
+  },
   white_geometry: {
     rootCause:
       "Geometry rendered flat white/unlit because it relies on `primvars:displayColor`, which the PICO runtime treats as a flat UNLIT white material. Color does NOT come from displayColor.",
@@ -479,6 +491,8 @@ export function registerDiagnoseTools(server: McpServer) {
             "frozen_viewport",
             "emu_focus_wedge",
             "emulator_camera_drift",
+            "compose_fork_conflict",
+            "container_mode_mismatch",
           ])
           .describe("The observed symptom to diagnose."),
       },

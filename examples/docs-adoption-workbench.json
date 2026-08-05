@@ -1,0 +1,99 @@
+{
+  "kind": "structural-recipe",
+  "repositoryOnly": true,
+  "executable": false,
+  "scope": "Replayable generator calls and integration checklist, not a complete app; a consuming proof must create, compile, drive, capture, and LOOK before raising evidence.",
+  "stageStyle": "1",
+  "manifestContract": "Caller-owned: retain DefaultStage launcher metadata with pico.spatial.stage.style=1 (Mixed); these generators do not edit AndroidManifest.xml.",
+  "tools": [
+    "generate_subwindow_kotlin",
+    "generate_spatial_gestures_kotlin"
+  ],
+  "calls": [
+    {
+      "tool": "generate_subwindow_kotlin",
+      "arguments": {
+        "packageName": "com.example.docsadoption",
+        "primaryId": "home",
+        "primaryContent": "HomeStage()",
+        "primaryContentImport": "com.example.docsadoption.content.HomeStage",
+        "secondaryId": "inspector",
+        "stableTag": "docs-adoption-workbench",
+        "payloadKey": "mode",
+        "payloadValue": "inspect",
+        "widthMeters": 1.2,
+        "heightMeters": 0.6,
+        "depthMeters": 0.1,
+        "minWidthDp": 520,
+        "minHeightDp": 410,
+        "maxWidthDp": 1180,
+        "maxHeightDp": 880,
+        "subwindowSide": "Right",
+        "componentContent": "InspectorPanel()"
+      },
+      "application": "Replace the scaffold Main.kt exactly as required by the returned ownership contract."
+    },
+    {
+      "tool": "generate_spatial_gestures_kotlin",
+      "arguments": {
+        "packageName": "com.example.docsadoption.content",
+        "targetId": "blueCube",
+        "commandDispatcher": "dispatchDebugCommand"
+      }
+    },
+    {
+      "tool": "generate_spatial_gestures_kotlin",
+      "arguments": {
+        "packageName": "com.example.docsadoption.content",
+        "targetId": "redSphere",
+        "commandDispatcher": "dispatchDebugCommand"
+      }
+    }
+  ],
+  "targets": [
+    {
+      "id": "blueCube",
+      "colorHex": "#0066FF"
+    },
+    {
+      "id": "redSphere",
+      "colorHex": "#FF2200"
+    }
+  ],
+  "outputDestinations": {
+    "generate_subwindow_kotlin": "Replace app/src/main/java/com/example/docsadoption/Main.kt according to the returned ownership contract.",
+    "generate_spatial_gestures_kotlin": "Write each returned file under app/src/main/java/com/example/docsadoption/content/."
+  },
+  "missingIntegration": [
+    "A scaffolded app that already defines HomeStage() and InspectorPanel()",
+    "An existing dispatchDebugCommand(String) route",
+    "Authorship of the named blueCube and redSphere entities with the listed colors",
+    "Calls to each configure<target>Target(entity) helper",
+    "Mounting each returned <target>Gestures(entity, onDrag, onScale) Modifier on the intended Compose hit layer",
+    "Writing returned files to outputDestinations and applying the caller-owned Mixed manifest contract",
+    "A real Gradle compile, gesture drive, capture, and human/agent LOOK"
+  ],
+  "integrationSteps": [
+    "Author entity blueCube with saturated material color #0066FF, then call configureblueCubeTarget(entity) and mount blueCubeGestures(...).",
+    "Author entity redSphere with saturated material color #FF2200, then call configureredSphereTarget(entity) and mount redSphereGestures(...).",
+    "Write Main.kt as a replacement and both gesture files at outputDestinations; never add a second mainApp.",
+    "A consuming app supplies HomeStage(), InspectorPanel(), dispatchDebugCommand, and callback state; compile, native-input, capture, and LOOK evidence must be earned separately."
+  ],
+  "structuralChecks": [
+    "replacement Main.kt retains HomeStage() and owns exactly one DefaultStage",
+    "secondary WindowContainer reads its initial Bundle",
+    "three separate spatial gesture detectors target each entity",
+    "non-rigidbody targets use primitive colliders"
+  ],
+  "visualClaims": [
+    {
+      "claim": "both saturated targets are visible in Mixed space",
+      "requiresLook": true
+    },
+    {
+      "claim": "secondary UI and attached Subwindow are readable",
+      "requiresLook": true
+    }
+  ],
+  "benchmarkMembership": "none"
+}

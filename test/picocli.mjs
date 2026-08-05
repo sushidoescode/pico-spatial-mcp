@@ -5,7 +5,7 @@ let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
 
-const { probePicoCli, classifyPicoCliFailure, picoCliPath } = await import("../dist/picocli.js");
+const { probePicoCli, classifyPicoCliFailure, picoCliPath, parsePicoCliEnvelope } = await import("../dist/picocli.js");
 const { runPerfDiagnose, scorePicoCliPerfAxis, registerPerfCliTools } = await import("../dist/perfcli.js");
 const { parseTraceSessionId, registerPerfTraceTools } = await import("../dist/perftrace.js");
 const { scanForCrashIndicators, registerPicoCliTools } = await import("../dist/picoclitools.js");
@@ -113,6 +113,32 @@ const unparsedRow = runPreflightChecks(unparsedIO).find((c) => c.name === "pico-
 unparsedRow && unparsedRow.status === "pass" && /unparsed/.test(unparsedRow.detail)
   ? ok("preflight pico-cli row admits an unparsed version instead of inventing one")
   : fail(`preflight pico-cli unparsed row: ${JSON.stringify(unparsedRow)}`);
+
+// A successful version probe is followed by the exact read-only structured status argv, never doctor.
+const successEnvelope = '{"tool_status":"SUCCESS","data":{},"errors":[]}';
+const calls = [];
+const structuredIO = { ...baseIO, exec: (cmd, args) => {
+  calls.push([cmd, args]);
+  if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, stdout: "pico-cli/0.3.0\n" };
+  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: true, stdout: successEnvelope };
+  return { ok: false, stdout: "", stderr: "not found" };
+} };
+const structured = runPreflightChecks(structuredIO).find((c) => c.name === "pico-cli-emulator-status");
+structured?.status === "pass" && calls.some(([cmd, args]) => cmd === "pico-cli" && args.join(" ") === "emulator status --format json") && !calls.some(([cmd, args]) => cmd === "pico-cli" && /doctor/.test(args.join(" ")))
+  ? ok("preflight uses exact structured emulator-status argv and never pico-cli doctor")
+  : fail(`structured preflight argv/status wrong: ${JSON.stringify({ structured, calls })}`);
+for (const [toolStatus, expected] of [["PARTIAL", "warn"], ["FAILED", "warn"], ["garbage", "warn"]]) {
+  const io = { ...baseIO, exec: (cmd, args) => {
+    if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, stdout: "pico-cli/0.3.0\n" };
+    if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: toolStatus !== "garbage", stdout: toolStatus === "garbage" ? "not-json" : JSON.stringify({ tool_status: toolStatus }) };
+    return { ok: false, stdout: "", stderr: "not found" };
+  } };
+  const row = runPreflightChecks(io).find((c) => c.name === "pico-cli-emulator-status");
+  row?.status === expected ? ok(`preflight ${toolStatus} structured status degrades honestly`) : fail(`preflight ${toolStatus} status wrong: ${JSON.stringify(row)}`);
+}
+parsePicoCliEnvelope(successEnvelope).outcome === "operational"
+  ? ok("total pico-cli envelope parser is exported for fixture callers")
+  : fail("pico-cli envelope parser did not normalize SUCCESS");
 
 // --- parseTraceSessionId: best-effort, never throws, null on garbage.
 parseTraceSessionId('{"sessionId":"abc-123"}') === "abc-123"
