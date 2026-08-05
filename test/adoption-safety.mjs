@@ -99,16 +99,17 @@ try {
     assert.equal(out.resolved.status, "not-requested");
   });
   await asyncCheck("timeout preserves the static result and reports timeout", async () => {
+    writeFileSync(path.join(resolved, "app/build.gradle.kts"), 'implementation("androidx.compose.ui:ui:1.7.0")');
     writeFileSync(wrapper, "#!/bin/sh\nsleep 2\n"); chmodSync(wrapper, 0o755);
     const out = await projectconfig.verifyGradleConfig({ projectDir: resolved, resolveTransitives: true, timeoutMs: 1_000 });
     assert.equal(out.resolved.status, "timeout");
-    assert.equal(out.static.errors.length, 0);
+    assert(out.static.errors.some((x) => /direct dependency/.test(x.message)));
   });
   await asyncCheck("non-zero Gradle preserves the static result and reports failure", async () => {
     writeFileSync(wrapper, "#!/bin/sh\necho bad >&2\nexit 9\n"); chmodSync(wrapper, 0o755);
     const out = await projectconfig.verifyGradleConfig({ projectDir: resolved, resolveTransitives: true, timeoutMs: 2_000 });
     assert.equal(out.resolved.status, "failed");
-    assert.equal(out.static.errors.length, 0);
+    assert(out.static.errors.some((x) => /direct dependency/.test(x.message)));
   });
 
   const matrix = buildmatrix.extractBuildMatrix();
@@ -123,7 +124,12 @@ try {
   });
   check("BUILD_MATRIX literals stay aligned with the extractor", () => {
     const doc = readFileSync(new URL("../docs/BUILD_MATRIX.md", import.meta.url), "utf8");
-    for (const fact of [matrix.observed.minSdk, matrix.observed.agp, matrix.observed.bom, matrix.observed.abi]) assert(doc.includes(fact));
+    for (const [key, fact] of Object.entries(matrix.observed)) {
+      if (key === "spatialToolsVersion") assert(doc.includes("`not-declared`"));
+      else assert(doc.includes(fact), `missing matrix fact ${key}: ${fact}`);
+    }
+    assert(doc.includes("appskeleton/app/build.gradle.kts"));
+    assert(doc.includes("appskeleton/gradle/libs.versions.toml"));
     assert(doc.includes("known-good scaffold matrix, not the support envelope"));
   });
   check("spatialToolsVersion is exactly not-declared", () => assert.equal(matrix.observed.spatialToolsVersion.status, "not-declared"));

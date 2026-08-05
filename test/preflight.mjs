@@ -69,6 +69,15 @@ const structuredStatus = runPreflightChecks(structuredStatusIO).find((c) => c.na
 structuredStatus?.status === "pass" && picoCalls.some(([cmd, args]) => cmd === "pico-cli" && args.join(" ") === "emulator status --format json") && !picoCalls.some(([cmd, args]) => cmd === "pico-cli" && /doctor/.test(args.join(" ")))
   ? ok("pico-cli structured status is read-only, exact-argv, and never a doctor probe")
   : fail(`structured pico-cli status wrong: ${JSON.stringify({ structuredStatus, picoCalls })}`);
+const nestedFixIO = { ...healthyIO, exec: (cmd, args) => {
+  if (cmd === "pico-cli" && args[0] === "-v") return { ok: true, stdout: "pico-cli/0.3.0\n" };
+  if (cmd === "pico-cli" && args.join(" ") === "emulator status --format json") return { ok: true, stdout: JSON.stringify({ tool_status: "FAILED", errors: [{ fix: "Start the Spatial Editor" }], checks: [{ nextAction: "Retry after boot" }] }) };
+  return healthyIO.exec(cmd, args);
+} };
+const nestedFix = runPreflightChecks(nestedFixIO).find((c) => c.name === "pico-cli-emulator-status");
+nestedFix?.fix === "Start the Spatial Editor"
+  ? ok("nested pico-cli returned remediation is surfaced with deterministic precedence")
+  : fail(`nested pico-cli remediation was hidden: ${JSON.stringify(nestedFix)}`);
 
 // Calibration STALER than the emulator boot => fail with the recalibrate fix (the dies-on-restart gotcha).
 const staleIO = { ...healthyIO, readFile: (p) => p.endsWith("camera-calibration.json")

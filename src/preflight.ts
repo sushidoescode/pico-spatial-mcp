@@ -7,7 +7,7 @@ import { okJson } from "./util.js";
 import { detectJavaHome } from "./toolchain.js";
 import { SKELETON_CANARIES, SKELETON_ROOT } from "./projectgen.js";
 import { UNITY_SKELETON_CANARIES, UNITY_SKELETON_ROOT } from "./unitygen.js";
-import { parsePicoCliEnvelope } from "./picocli.js";
+import { extractPicoCliRemediations, parsePicoCliEnvelope } from "./picocli.js";
 
 /**
  * preflight.ts — v27-pre: the read-only environment doctor.
@@ -163,7 +163,7 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
       push({ name: "pico-cli-emulator-status", status: "pass", detail: "pico-cli structured emulator status: operational", fix: null });
     } else {
       const payload = JSON.stringify(envelope.envelope).slice(0, 1_000);
-      const action = [envelope.envelope.nextAction, envelope.envelope.fix, (envelope.data as any)?.nextAction, (envelope.data as any)?.fix].find((v) => typeof v === "string") as string | undefined;
+      const action = extractPicoCliRemediations(envelope.envelope)[0];
       const diagnostic = envelope.summary ?? payload;
       push({ name: "pico-cli-emulator-status", status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}; payload=${payload}`, fix: action ?? "Run `pico-cli emulator status --format json` directly and address its returned diagnostics; this read-only check does not run pico-cli doctor." });
     }

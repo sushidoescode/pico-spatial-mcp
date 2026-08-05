@@ -29,3 +29,10 @@
 - GREEN: `npm run build`, `test:adoption-safety`, `test:preflight`, `test:picocli`, `test:lint`, and smoke passed after the fixes.
 - Added extractor-to-document literal consistency, global Kotlin/Groovy exclusion scope tests, unused-block negative coverage, mixed-metadata warning coverage, and complete bounded pico-cli diagnostic-payload coverage.
 - Final follow-up battery: all 40 current `test:` scripts passed (after smoke, together the documented 41-invocation battery) with exit 0.
+
+## Re-review contract fixes
+
+- RED: nested `errors[].fix` was retained only in the raw payload and did not become the preflight remedy; the new fixture failed with the generic fallback.
+- GREEN: recursive remediation extraction now uses deterministic precedence (`fix`, then `nextAction`; errors, checks, data, then sorted remaining fields), is bounded by the parsed-envelope limits, and preserves only returned strings.
+- Expanded matrix/document assertions iterate every executable observed field, the spatial-tools sentinel, and both source-link mappings. Timeout/nonzero assertions now retain a genuine direct-Compose static error.
+- Final verification: focused build/adoption/preflight/picocli/lint/smoke and the complete 40 `test:` script battery passed (41 documented invocations including smoke).

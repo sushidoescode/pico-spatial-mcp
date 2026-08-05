@@ -78,6 +78,22 @@ export function parsePicoCliEnvelope(raw: string): PicoCliEnvelope {
   };
 }
 
+/** Returns returned remediation strings in deterministic depth-first/key order; never invents one. */
+export function extractPicoCliRemediations(value: unknown, cap = 32): string[] {
+  const out: string[] = [];
+  const visit = (node: unknown) => {
+    if (out.length >= cap || !node || typeof node !== "object") return;
+    if (Array.isArray(node)) { for (const item of node) visit(item); return; }
+    const obj = node as Record<string, unknown>;
+    for (const key of ["fix", "nextAction"]) if (typeof obj[key] === "string" && !out.includes(obj[key] as string)) out.push(obj[key] as string);
+    const keys = Object.keys(obj).filter((key) => key !== "fix" && key !== "nextAction");
+    const ordered = ["errors", "checks", "data", ...keys.filter((key) => !["errors", "checks", "data"].includes(key)).sort()];
+    for (const key of ordered) visit(obj[key]);
+  };
+  visit(value);
+  return out;
+}
+
 /**
  * Classify a FAILED pico-cli invocation honestly. Usage dumps / unknown-option complaints mean the
  * wrapped flags no longer match the installed CLI (drift — retrying unchanged cannot help); anything
