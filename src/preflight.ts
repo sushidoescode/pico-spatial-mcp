@@ -165,15 +165,16 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     push({ name: "pico-cli", status: "pass", detail: cliVersion ? `version ${cliVersion} (${raw})` : `on PATH (version string unparsed: ${raw || "(empty)"})`, fix: null });
     const emulatorStatus = io.exec("pico-cli", ["emulator", "status", "--format", "json"]);
     const envelope = parsePicoCliEnvelope(emulatorStatus.stdout);
-    if (!emulatorStatus.ok || envelope.status === "invalid") {
-      push({ name: "pico-cli-emulator-status", status: "warn", detail: `structured emulator status unavailable: ${envelope.status === "invalid" ? envelope.detail : emulatorStatus.stderr ?? "non-zero exit"}`, fix: "Run `pico-cli emulator status --format json` directly and inspect its diagnostics; this read-only check does not run pico-cli doctor." });
+    const processContext = emulatorStatus.ok ? "" : `; process exit: non-zero${emulatorStatus.stderr?.trim() ? `; stderr=${emulatorStatus.stderr.trim()}` : ""}`;
+    if (envelope.status === "invalid") {
+      push({ name: "pico-cli-emulator-status", status: "warn", detail: `structured emulator status unavailable: ${envelope.detail}${processContext}`, fix: "Run `pico-cli emulator status --format json` directly and inspect its diagnostics; this read-only check does not run pico-cli doctor." });
     } else if (envelope.outcome === "operational") {
-      push({ name: "pico-cli-emulator-status", status: "pass", detail: "pico-cli structured emulator status: operational", fix: null });
+      push({ name: "pico-cli-emulator-status", status: "pass", detail: `pico-cli structured emulator status: operational${processContext}`, fix: null });
     } else {
       const payload = JSON.stringify(envelope.envelope).slice(0, 1_000);
       const action = extractPicoCliRemediations(envelope.envelope)[0];
       const diagnostic = envelope.summary ?? payload;
-      push({ name: "pico-cli-emulator-status", status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}; payload=${payload}`, fix: action ?? "Run `pico-cli emulator status --format json` directly and address its returned diagnostics; this read-only check does not run pico-cli doctor." });
+      push({ name: "pico-cli-emulator-status", status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}; payload=${payload}${processContext}`, fix: action ?? "Run `pico-cli emulator status --format json` directly and address its returned diagnostics; this read-only check does not run pico-cli doctor." });
     }
   } else {
     push({ name: "pico-cli", status: "warn", detail: "no pico-cli on PATH — perf_diagnose/perf_trace/watch_crash/capture_record degrade to status:'unavailable'; agent-vault provisioning (`pico-cli setup`) needs it", fix: "npm install -g @picoxr/pico-cli (optional lane; building, capture, and verification work without it)." });

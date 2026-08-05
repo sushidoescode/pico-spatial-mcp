@@ -285,10 +285,14 @@ Mutation check: collapse gesture blocks, change TargetEntity, remove the Bundle 
 - Create: `.cursor-plugin/marketplace.json`
 - Create: `.cursor-plugin/plugin.json`
 - Create: `.github/plugin/marketplace.json`
-- Create: `.github/plugin/plugin.json`
+- Modify: `plugin.json`
 - Create: `test/distribution-adoption.mjs`
 - Create: `test/fixtures/fake-knowledge-server.mjs`
-- Modify: `.mcp.json`
+- Delete: `.mcp.json`
+- Delete: `.github/plugin/plugin.json` (created in the initial pass, then removed after discovery-order review)
+- Create: `.mcp.claude.json`
+- Create: `mcp.json`
+- Create: `mcp.cursor.json`
 - Modify: `scripts/plugin-bootstrap.sh`
 - Modify: `scripts/sync-metadata.mjs`
 - Modify: `test/docsmeta.mjs`
@@ -341,7 +345,7 @@ Expected RED: absent host files/bootstrap/knowledge module.
 
 `scripts/plugin-bootstrap.mjs` exports pure decision helpers and a main path. Resolve root from `import.meta.url`; run bounded npm install/build only when needed; then spawn `process.execPath dist/index.js` with inherited stdio, forward SIGINT/SIGTERM, and propagate exit status. Keep the shell file only as a Node-invoking compatibility shim.
 
-Create exact Codex/Cursor/Copilot payload and marketplace manifests. Point all to the shared `.mcp.json`, which uses a relative Node bootstrap and no `${CLAUDE_PLUGIN_ROOT}`. Extend metadata sync/checks for every copy. A cold source-plugin smoke from a hostile temporary path must pass before claiming that host layout; unavailable host clients remain documented as structurally validated, not live-installed.
+Create a canonical Agent Plugins 1.0.0 core at root `plugin.json` + `mcp.json` for Codex/Copilot, using the required `${PLUGIN_ROOT}` token. Keep `.codex-plugin/plugin.json` as an MCP-free interface/identity overlay. Point Claude's payload to `.mcp.claude.json` using its documented `${CLAUDE_PLUGIN_ROOT}` token. Give Cursor a separate `mcp.cursor.json` declaration using `${CURSOR_PLUGIN_ROOT}`, labeled structural pending a live client load. Remove duplicate-prone `.mcp.json` and the root-shadowed `.github/plugin/plugin.json`. Extend metadata sync/checks for every remaining copy. Cold source-plugin and exact-launcher smokes from a hostile temporary path must pass before claiming portable or Claude launcher execution; unavailable host clients remain documented as structurally validated, not live-installed.
 
 ### Step 4: Implement persistent `knowledge_api`
 
@@ -353,7 +357,7 @@ export class KnowledgeBridge { call(action: KnowledgeAction, input: unknown): Pr
 export function registerKnowledgeTools(server: McpServer): void;
 ```
 
-Use a lazy persistent MCP `Client`/`StdioClientTransport` launched as `pico-cli mcp spatial-knowledge`. Validate the exact eight input schemas discovered on 2026-08-04. Bound startup/calls, cap returned text, close/reset on error, and preserve switch-workspace state. Register one `knowledge_api` tool with action-specific validation and clear unavailable results.
+Use a lazy persistent MCP `Client`/`StdioClientTransport` launched as `pico-cli mcp spatial-knowledge`. Validate the exact eight input schemas discovered on 2026-08-04. Bound startup/calls, cap returned text, close/reset on startup/timeout/transport/protocol failure, and preserve switch-workspace state across valid tool-level `isError` responses. Recognize the installed provider's production-shaped plain-text `Error executing <action>:` failures; classify missing graph data as unavailable without retiring the child. Register one `knowledge_api` tool with action-specific validation and distinct `error` versus `unavailable` results.
 
 Add optional `knowledgeSecondOpinion` to `preflight_lint`. Only `query_graph` participates automatically, only when explicitly requested. Return it in a separate advisory block; never let it change `clean` or override `vault_api` exact-symbol truth.
 
@@ -389,7 +393,7 @@ npm run smoke
 Run the complete 43-invocation battery serially and commit:
 
 ```bash
-git add .agents .codex-plugin .cursor-plugin .github/plugin .mcp.json scripts src test docs README.md QUICKSTART.md GETTING_STARTED.md package.json .github/workflows/gates.yml SKILLS.md CAPABILITIES.md plugin.json .claude-plugin
+git add -A .agents .codex-plugin .cursor-plugin .github/plugin .mcp.json mcp.json mcp.cursor.json scripts src test docs README.md QUICKSTART.md GETTING_STARTED.md package.json .github/workflows/gates.yml SKILLS.md CAPABILITIES.md plugin.json .claude-plugin
 git commit -m "v34.3: distribute and query the richer PICO knowledge surface"
 ```
 

@@ -47,7 +47,7 @@ export function buildMatrixMarkdownRows(matrix: ReturnType<typeof extractBuildMa
 
 export function registerBuildMatrixTools(server: McpServer): void {
   server.registerTool("build_matrix_report", {
-    description: "Return observed SDK, Java, AGP, Kotlin, Compose BOM, ABI, and spatial-tools declaration state from the packaged app skeleton. This is source-grounded configuration evidence, not a build or runtime claim.",
+    description: "Return observed compile/min/target SDK, Java and Kotlin JVM targets, Android Gradle Plugin (AGP), Kotlin and Compose compiler plugin, PICO Spatial BOM, ABI, and spatial-tools declaration state from the packaged app skeleton. This is source-grounded configuration evidence, not a build or runtime claim.",
     inputSchema: {},
   }, async () => okJson(extractBuildMatrix()));
 }

@@ -2,7 +2,7 @@
   "mcpServers": {
     "pico-spatial-mcp": {
       "command": "node",
-      "args": ["scripts/plugin-bootstrap.mjs"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bootstrap.mjs"]
     }
   }
 }

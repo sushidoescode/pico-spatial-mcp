@@ -10,11 +10,10 @@
  *
  * Stamped targets:
  *   - .claude-plugin/plugin.json      version + "NNN tools" phrases in the description
- *   - plugin.json                     rewritten as an EXACT copy of .claude-plugin/plugin.json —
- *                                     which loader reads which file is unverified, so both ship,
- *                                     but only the .claude-plugin one is authored
- *   - every host payload/marketplace manifest: version + any published tool-count phrases
- *     (Claude/root remain exact copies; Codex/Cursor/Copilot keep their host-specific shapes)
+ *   - plugin.json                     portable Agent Plugins core: version + tool-count phrases
+ *   - .claude-plugin/plugin.json      Claude-specific overlay: version + tool-count phrases
+ *   - version-bearing host payload/marketplace manifests: version + any published tool-count
+ *     phrases (portable core and every overlay keep their host-specific shapes)
  *   - README.md GETTING_STARTED.md TESTERS.md QUICKSTART.md SKILLS.md AGENTS.md docs/HOSTS.md
  *     docs/COLLABORATORS.md
  *     full-surface tool-count claims + versioned tarball filenames. Deliberately CONSERVATIVE:
@@ -131,9 +130,21 @@ function stampManifests() {
   const canonAfter = JSON.stringify(canon, null, 2) + "\n";
   emit(".claude-plugin/plugin.json", canonBefore, canonAfter, edits);
 
-  // root plugin.json: an exact copy, so the two manifests structurally cannot drift
-  const rootBefore = fs.existsSync(path.join(repoRoot, "plugin.json")) ? read("plugin.json") : "";
-  emit("plugin.json", rootBefore, canonAfter, ["exact copy of .claude-plugin/plugin.json"]);
+  // Portable Agent Plugins core: synchronize shared truths without replacing its closed schema
+  // with Claude-only manifest fields.
+  const rootBefore = read("plugin.json");
+  const rootManifest = JSON.parse(rootBefore);
+  const rootEdits = [];
+  if (rootManifest.version !== version) {
+    rootEdits.push(`version ${rootManifest.version} -> ${version}`);
+    rootManifest.version = version;
+  }
+  const rootDescription = countPhrases(rootManifest.description ?? "");
+  if (rootDescription !== rootManifest.description) {
+    rootEdits.push(`description tool count -> ${TOOLS}`);
+    rootManifest.description = rootDescription;
+  }
+  emit("plugin.json", rootBefore, JSON.stringify(rootManifest, null, 2) + "\n", rootEdits);
 
   // marketplace manifest
   const mpBefore = read(".claude-plugin/marketplace.json");
@@ -167,7 +178,6 @@ function stampManifests() {
   for (const file of [
     ".codex-plugin/plugin.json",
     ".cursor-plugin/plugin.json",
-    ".github/plugin/plugin.json",
   ]) {
     const before = read(file);
     const manifest = JSON.parse(before);

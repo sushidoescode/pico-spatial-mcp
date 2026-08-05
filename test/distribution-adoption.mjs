@@ -94,49 +94,72 @@ function mcpText(result) {
   return (result.content ?? []).filter((item) => item.type === "text").map((item) => item.text).join("\n");
 }
 
-test("all host payloads resolve the shared MCP manifest and carry one plugin identity", () => {
+test("portable core and host overlays use only their documented MCP contracts", () => {
   const pkg = readJson("package.json");
-  const payloads = [
-    { file: "plugin.json", declared: "./.mcp.json" },
-    { file: ".claude-plugin/plugin.json", declared: "./.mcp.json" },
-    { file: ".codex-plugin/plugin.json", declared: "./.mcp.json" },
-    { file: ".cursor-plugin/plugin.json", declared: ".mcp.json" },
-    { file: ".github/plugin/plugin.json", declared: "../../.mcp.json" },
-  ];
+  const portable = readJson("plugin.json");
+  assert.equal(portable.$schema, "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json");
+  assert.equal(portable.name, pkg.name);
+  assert.equal(portable.version, pkg.version);
+  assert.deepEqual(Object.keys(portable).sort(), [
+    "$schema", "author", "description", "homepage", "keywords", "license", "name", "repository", "version",
+  ]);
 
-  for (const expected of payloads) {
-    const manifest = readJson(expected.file);
-    assert.equal(manifest.name, pkg.name, expected.file);
-    assert.equal(manifest.version, pkg.version, expected.file);
-    assert.equal(Object.hasOwn(manifest, "skills"), false, `${expected.file} must not advertise an absent skills directory`);
-    assert.equal(manifest.mcpServers, expected.declared, expected.file);
-    const resolved = expected.file.startsWith(".github/plugin/")
-      ? path.resolve(path.dirname(path.join(repoRoot, expected.file)), manifest.mcpServers)
-      : path.resolve(repoRoot, manifest.mcpServers);
-    assert.equal(resolved, path.join(repoRoot, ".mcp.json"), expected.file);
-    assert.equal(fs.existsSync(resolved), true, expected.file);
-  }
+  const portableMcp = readJson("mcp.json");
+  assert.deepEqual(portableMcp, {
+    $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+    mcpServers: {
+      "pico-spatial-mcp": {
+        type: "stdio",
+        command: "node",
+        args: ["${PLUGIN_ROOT}/scripts/plugin-bootstrap.mjs"],
+      },
+    },
+  });
+
+  const claude = readJson(".claude-plugin/plugin.json");
+  assert.equal(claude.name, pkg.name);
+  assert.equal(claude.version, pkg.version);
+  assert.equal(claude.mcpServers, "./.mcp.claude.json");
+  assert.equal(fs.existsSync(path.join(repoRoot, ".mcp.claude.json")), true);
 
   const codex = readJson(".codex-plugin/plugin.json");
-  assert.deepEqual(Object.keys(codex).sort(), [
-    "author", "description", "homepage", "interface", "keywords", "license", "mcpServers", "name", "repository", "version",
-  ]);
+  assert.deepEqual(Object.keys(codex).sort(), ["author", "description", "interface", "name", "version"]);
+  assert.equal(codex.version, pkg.version);
   for (const key of ["displayName", "shortDescription", "longDescription", "developerName", "category", "capabilities", "websiteURL", "defaultPrompt"]) {
     assert.ok(codex.interface[key], `.codex-plugin/plugin.json interface.${key}`);
   }
   assert.ok(Array.isArray(codex.interface.capabilities));
   assert.ok(Array.isArray(codex.interface.defaultPrompt));
 
-  const mcp = readJson(".mcp.json");
-  assert.deepEqual(mcp, {
+  const cursor = readJson(".cursor-plugin/plugin.json");
+  assert.equal(cursor.name, pkg.name);
+  assert.equal(cursor.version, pkg.version);
+  assert.equal(Object.hasOwn(cursor, "$schema"), false, "Cursor payload must not publish the dead hosted schema URL");
+  assert.equal(cursor.mcpServers, "mcp.cursor.json");
+  assert.deepEqual(readJson("mcp.cursor.json"), {
     mcpServers: {
       "pico-spatial-mcp": {
         command: "node",
-        args: ["scripts/plugin-bootstrap.mjs"],
+        args: ["${CURSOR_PLUGIN_ROOT}/scripts/plugin-bootstrap.mjs"],
       },
     },
   });
-  assert.equal(fs.existsSync(path.join(repoRoot, mcp.mcpServers["pico-spatial-mcp"].args[0])), true);
+  assert.equal(fs.existsSync(path.join(repoRoot, ".mcp.json")), false, "legacy .mcp.json would duplicate canonical mcp.json discovery");
+  assert.equal(fs.existsSync(path.join(repoRoot, ".github/plugin/plugin.json")), false, "shadowed Copilot payload must not drift from root plugin.json");
+
+  const claudeMcp = readJson(".mcp.claude.json");
+  assert.deepEqual(claudeMcp, {
+    mcpServers: {
+      "pico-spatial-mcp": {
+        command: "node",
+        args: ["${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bootstrap.mjs"],
+      },
+    },
+  });
+  for (const [config, token] of [[portableMcp, "${PLUGIN_ROOT}"], [claudeMcp, "${CLAUDE_PLUGIN_ROOT}"]]) {
+    const bootstrap = config.mcpServers["pico-spatial-mcp"].args[0].replace(token, repoRoot);
+    assert.equal(fs.existsSync(bootstrap), true);
+  }
 });
 
 test("all host marketplaces use their exact source descriptor and synchronized metadata", () => {
@@ -150,6 +173,9 @@ test("all host marketplaces use their exact source descriptor and synchronized m
 
   for (const expected of marketplaces) {
     const marketplace = readJson(expected.file);
+    if (expected.file === ".cursor-plugin/marketplace.json") {
+      assert.equal(Object.hasOwn(marketplace, "$schema"), false, "Cursor marketplace must not publish the dead hosted schema URL");
+    }
     assert.equal(marketplace.plugins.length, 1, expected.file);
     const plugin = marketplace.plugins[0];
     assert.equal(plugin.name, pkg.name, expected.file);
@@ -337,6 +363,46 @@ process.exit(Number(process.env.FAKE_CHILD_EXIT ?? 0));
   assert.equal(fs.readFileSync(npmLog, "utf8"), "");
 });
 
+test("documented portable and Claude token contracts launch from a hostile cwd", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico manifest launcher "));
+  const hostileCwd = path.join(tempRoot, "unrelated caller cwd ü 漢字");
+  fs.mkdirSync(hostileCwd, { recursive: true });
+
+  for (const [file, token, typed] of [["mcp.json", "${PLUGIN_ROOT}", true], [".mcp.claude.json", "${CLAUDE_PLUGIN_ROOT}", false]]) {
+    const manifest = readJson(file);
+    const launcher = manifest.mcpServers["pico-spatial-mcp"];
+    assert.equal(launcher.command, "node");
+    assert.deepEqual(launcher.args, [`${token}/scripts/plugin-bootstrap.mjs`]);
+    assert.equal(Object.hasOwn(launcher, "type"), typed);
+
+    const hostResolvedArgs = launcher.args.map((arg) => arg.replaceAll(token, repoRoot));
+    assert.notDeepEqual(hostResolvedArgs, [path.resolve(hostileCwd, "scripts/plugin-bootstrap.mjs")]);
+    const result = spawnSync(launcher.command, hostResolvedArgs, {
+      cwd: hostileCwd,
+      env: { ...process.env, [token.slice(2, -1)]: repoRoot },
+      input: "",
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    assert.equal(result.error, undefined, result.error?.message);
+    assert.equal(result.status, 0, `${file}: ${result.stderr}`);
+    assert.equal(result.signal, null, `${file}: ${result.stderr}`);
+    assert.equal(result.stdout, "", `${file}: MCP bootstrap must not contaminate stdout before EOF shutdown`);
+  }
+
+  const cursor = readJson("mcp.cursor.json").mcpServers["pico-spatial-mcp"];
+  assert.deepEqual(cursor.args, ["${CURSOR_PLUGIN_ROOT}/scripts/plugin-bootstrap.mjs"]);
+  const cursorResolvedArgs = cursor.args.map((arg) => arg.replaceAll("${CURSOR_PLUGIN_ROOT}", repoRoot));
+  const cursorResult = spawnSync(cursor.command, cursorResolvedArgs, {
+    cwd: hostileCwd,
+    input: "",
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+  assert.equal(cursorResult.status, 0, cursorResult.stderr);
+  assert.equal(cursorResult.stdout, "", "Cursor candidate must keep MCP stdout clean after test-side root expansion");
+});
+
 test("bounded bootstrap children are killed after timeout", async () => {
   const { runBoundedChild } = await import("../scripts/plugin-bootstrap.mjs");
   await assert.rejects(
@@ -482,6 +548,108 @@ test("KnowledgeBridge calls every action through one persistent serialized stdio
   assert.equal(new Set(remoteCalls.map((event) => event.pid)).size, 1);
   assert.deepEqual(remoteCalls[1].args, calls[1][1]);
   assert.equal(Object.hasOwn(remoteCalls[1].args, "action"), false);
+});
+
+test("KnowledgeBridge returns remote tool errors without retiring switched workspace state", async () => {
+  const { KnowledgeBridge } = await import("../dist/knowledge.js");
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico knowledge remote error "));
+  const logPath = path.join(tempRoot, "server.jsonl");
+  const fakeServer = path.join(tempRoot, "remote-error-server.mjs");
+  const sdkServerUrl = import.meta.resolve("@modelcontextprotocol/sdk/server/mcp.js");
+  const sdkStdioUrl = import.meta.resolve("@modelcontextprotocol/sdk/server/stdio.js");
+  const zodUrl = import.meta.resolve("zod");
+  fs.writeFileSync(fakeServer, `#!/usr/bin/env node
+import fs from "node:fs";
+import { McpServer } from ${JSON.stringify(sdkServerUrl)};
+import { StdioServerTransport } from ${JSON.stringify(sdkStdioUrl)};
+import { z } from ${JSON.stringify(zodUrl)};
+
+const logPath = process.env.FAKE_KNOWLEDGE_LOG;
+const append = (event) => fs.appendFileSync(logPath, JSON.stringify({ pid: process.pid, ...event }) + "\\n");
+append({ event: "start" });
+let workspace = "default";
+const server = new McpServer({ name: "remote-error-knowledge", version: "0.0.0" });
+for (const action of ["switch_workspace", "get_node", "god_nodes", "graph_stats"]) {
+  server.registerTool(action, { inputSchema: z.object({}).passthrough() }, async (args) => {
+    append({ event: "call", action, args, workspace });
+    if (action === "switch_workspace") workspace = String(args.workspace);
+    if (action === "get_node") {
+      return {
+        isError: true,
+        content: [{ type: "text", text: "remote graph rejected this node" }],
+      };
+    }
+    if (action === "god_nodes") {
+      return {
+        content: [{ type: "text", text: "Error executing god_nodes: Graph file not found: /missing/graph.json" }],
+      };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify({ action, workspace, pid: process.pid }) }],
+    };
+  });
+}
+await server.connect(new StdioServerTransport());
+`);
+
+  const bridge = new KnowledgeBridge({
+    command: process.execPath,
+    args: [fakeServer],
+    cwd: repoRoot,
+    env: { ...process.env, FAKE_KNOWLEDGE_LOG: logPath },
+    startupTimeoutMs: 2_000,
+    callTimeoutMs: 1_000,
+    maxOutputBytes: 8_192,
+  });
+
+  try {
+    const switched = await bridge.call("switch_workspace", { workspace: "retained-after-remote-error" });
+    assert.equal(switched.status, "ok", JSON.stringify(switched));
+    const switchedPayload = JSON.parse(switched.text);
+
+    const remoteError = await bridge.call("get_node", { label: "missing-node" });
+    assert.deepEqual(remoteError, {
+      status: "error",
+      action: "get_node",
+      error: "remote graph rejected this node",
+      truncated: false,
+      remoteError: true,
+    });
+
+    const followUp = await bridge.call("graph_stats", {});
+    assert.equal(followUp.status, "ok", JSON.stringify(followUp));
+    const followUpPayload = JSON.parse(followUp.text);
+    assert.equal(followUpPayload.workspace, "retained-after-remote-error");
+    assert.equal(followUpPayload.pid, switchedPayload.pid);
+
+    const missingGraph = await bridge.call("god_nodes", { top_n: 5 });
+    assert.deepEqual(missingGraph, {
+      status: "unavailable",
+      action: "god_nodes",
+      error: "Error executing god_nodes: Graph file not found: /missing/graph.json",
+      truncated: false,
+      remoteError: true,
+    });
+
+    const afterMissingGraph = await bridge.call("graph_stats", {});
+    assert.equal(afterMissingGraph.status, "ok", JSON.stringify(afterMissingGraph));
+    const afterMissingPayload = JSON.parse(afterMissingGraph.text);
+    assert.equal(afterMissingPayload.workspace, "retained-after-remote-error");
+    assert.equal(afterMissingPayload.pid, switchedPayload.pid);
+  } finally {
+    await bridge.close();
+  }
+
+  const events = readJsonLines(logPath);
+  assert.equal(events.filter((event) => event.event === "start").length, 1, JSON.stringify(events));
+  assert.equal(new Set(events.filter((event) => event.event === "call").map((event) => event.pid)).size, 1);
+  assert.deepEqual(events.filter((event) => event.event === "call").map((event) => event.action), [
+    "switch_workspace",
+    "get_node",
+    "graph_stats",
+    "god_nodes",
+    "graph_stats",
+  ]);
 });
 
 test("KnowledgeBridge deduplicates concurrent startup and caps returned text", async () => {
@@ -975,7 +1143,6 @@ test("distribution metadata records platform-exact full surfaces, 16 doors, and 
   }
 
   for (const description of [
-    readJson("plugin.json").description,
     readJson(".claude-plugin/plugin.json").description,
     readJson(".claude-plugin/marketplace.json").plugins[0].description,
   ]) {

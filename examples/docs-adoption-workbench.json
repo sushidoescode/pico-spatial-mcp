@@ -2,7 +2,7 @@
   "kind": "structural-recipe",
   "repositoryOnly": true,
   "executable": false,
-  "scope": "Replayable generator calls and integration checklist, not a complete app; Task 5 creates, compiles, drives, and LOOKS at the disposable app.",
+  "scope": "Replayable generator calls and integration checklist, not a complete app; a consuming proof must create, compile, drive, capture, and LOOK before raising evidence.",
   "stageStyle": "1",
   "manifestContract": "Caller-owned: retain DefaultStage launcher metadata with pico.spatial.stage.style=1 (Mixed); these generators do not edit AndroidManifest.xml.",
   "tools": [
@@ -77,7 +77,7 @@
     "Author entity blueCube with saturated material color #0066FF, then call configureblueCubeTarget(entity) and mount blueCubeGestures(...).",
     "Author entity redSphere with saturated material color #FF2200, then call configureredSphereTarget(entity) and mount redSphereGestures(...).",
     "Write Main.kt as a replacement and both gesture files at outputDestinations; never add a second mainApp.",
-    "Task 5 supplies HomeStage(), InspectorPanel(), dispatchDebugCommand, callback state, compile, input driving, captures, and LOOK evidence."
+    "A consuming app supplies HomeStage(), InspectorPanel(), dispatchDebugCommand, and callback state; compile, native-input, capture, and LOOK evidence must be earned separately."
   ],
   "structuralChecks": [
     "replacement Main.kt retains HomeStage() and owns exactly one DefaultStage",

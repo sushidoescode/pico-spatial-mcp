@@ -134,17 +134,18 @@ The source plugin adds the official-layout counterparts to the existing Claude f
 - `.cursor-plugin/marketplace.json`
 - `.cursor-plugin/plugin.json`
 - `.github/plugin/marketplace.json`
-- `.github/plugin/plugin.json`
+- root `plugin.json` + `mcp.json` portable core
+- `.mcp.claude.json` and `mcp.cursor.json` host MCP declarations
 
-Payload manifests copy the official PICO path conventions exactly for each host. Marketplace source paths are validated from the location of each marketplace file; they are not assumed from examples alone.
+Payload manifests follow each current host's active discovery convention. Marketplace source paths are validated from the location of each marketplace file; they are not assumed from examples alone.
 
-`scripts/plugin-bootstrap.mjs` resolves the repository from `import.meta.url`, uses `npm.cmd` on Windows and `npm` elsewhere, conditionally installs/builds, and then spawns `process.execPath dist/index.js` with inherited stdio while forwarding termination signals and the child's exit status. `.mcp.json` uses no invented cross-host root variable. Its relative launch form must pass a cold source-install smoke; if a host does not define the required working directory, that host remains honestly documented as unverified and uses the published-package route rather than a fabricated variable. The Bash bootstrap may remain only as a compatibility shim during the transition; manifests prefer Node.
+`scripts/plugin-bootstrap.mjs` resolves the repository from `import.meta.url`, uses `npm.cmd` on Windows and `npm` elsewhere, conditionally installs/builds, and then spawns `process.execPath dist/index.js` with inherited stdio while forwarding termination signals and the child's exit status. Review established that neither one shared relative launch nor one legacy-host token was portable. Root `plugin.json` + `mcp.json` therefore implement Agent Plugins 1.0.0 with `${PLUGIN_ROOT}` for Codex/Copilot; `.mcp.claude.json` uses Claude's documented `${CLAUDE_PLUGIN_ROOT}`; `mcp.cursor.json` uses a separate `${CURSOR_PLUGIN_ROOT}` declaration and remains structural until live-connected. The duplicate-prone root `.mcp.json` and shadowed `.github/plugin/plugin.json` are absent. Exact portable/Claude forms and the Cursor candidate must pass executable source smokes; unavailable host clients remain honestly documented as unverified. The Bash bootstrap may remain only as a compatibility shim during the transition; manifests prefer Node.
 
 Metadata synchronization and docs-meta tests cover every host copy. Source-marketplace files need not enter the npm `files` allowlist unless tarball validation shows an npm-install use case requires them.
 
 ### 8. Knowledge graph adapter
 
-`knowledge_api` is a lazy persistent MCP client over `pico-cli mcp spatial-knowledge`. Persistence is required so `switch_workspace` affects subsequent calls. Calls and startup have bounded timeouts; timeout/protocol failure closes and resets the child so the next request can recover.
+`knowledge_api` is a lazy persistent MCP client over `pico-cli mcp spatial-knowledge`. Persistence is required so `switch_workspace` affects subsequent calls. Calls and startup have bounded timeouts; timeout/transport/protocol failure closes and resets the child so the next request can recover. A valid MCP tool response carrying `isError` is an application-level error, not a protocol failure: it normally returns `status: "error"` and preserves the current child and workspace; the explicit missing-graph form is `unavailable` and also preserves them. The installed provider's production-shaped plain-text `Error executing <action>:` response is classified by the same rule.
 
 The action schema exposes all eight advertised tools without weakening their inputs:
 

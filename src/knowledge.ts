@@ -94,12 +94,21 @@ export type KnowledgeResult =
       action: KnowledgeAction;
       text: string;
       truncated: boolean;
-      remoteError: boolean;
+      remoteError: false;
+    }
+  | {
+      status: "error";
+      action: KnowledgeAction;
+      error: string;
+      truncated: boolean;
+      remoteError: true;
     }
   | {
       status: "unavailable";
       action: KnowledgeAction;
       error: string;
+      truncated?: boolean;
+      remoteError?: true;
     };
 
 export type KnowledgeBridgeOptions = {
@@ -324,18 +333,30 @@ export class KnowledgeBridge {
         const content = Array.isArray(response.content)
           ? response.content as Array<{ type: string; text?: string }>
           : [];
-        if (response.isError === true) {
-          const remoteText = content
-            .filter((item): item is { type: "text"; text: string } => item.type === "text" && typeof item.text === "string")
-            .map((item) => item.text)
-            .join("\n");
-          throw new Error(remoteText || `${parsedAction} returned an MCP tool error`);
-        }
         const joined = content
           .filter((item): item is { type: "text"; text: string } => item.type === "text" && typeof item.text === "string")
           .map((item) => item.text)
-          .join("\n");
+          .join("\n") || (response.isError === true ? `${parsedAction} returned an MCP tool error` : "");
         const capped = capUtf8(joined, this.maxOutputBytes);
+        const providerTextError = joined.startsWith(`Error executing ${parsedAction}:`);
+        if ((response.isError === true || providerTextError) && /\bGraph file not found:/i.test(joined)) {
+          return {
+            status: "unavailable",
+            action: parsedAction,
+            error: capped.text,
+            truncated: capped.truncated,
+            remoteError: true,
+          };
+        }
+        if (response.isError === true || providerTextError) {
+          return {
+            status: "error",
+            action: parsedAction,
+            error: capped.text,
+            truncated: capped.truncated,
+            remoteError: true,
+          };
+        }
         return {
           status: "ok",
           action: parsedAction,

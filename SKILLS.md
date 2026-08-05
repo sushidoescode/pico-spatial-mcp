@@ -33,7 +33,10 @@ repository can ground today, see **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWER
 `knowledge_api` is a flattened action API over one lazy, persistent
 `pico-cli mcp spatial-knowledge` process. Persistence matters: `switch_workspace` affects later
 calls in the same server session. The adapter bounds startup/calls, resets after protocol failures,
-and returns `status: "unavailable"` when pico-cli or graph data is absent.
+and returns `status: "unavailable"` when pico-cli, transport, or graph data is absent. A valid MCP
+tool-level `isError` result normally returns `status: "error"`; the explicit missing-graph form is
+`unavailable`. Neither application-level result discards the persistent session or the workspace
+selected by an earlier `switch_workspace` call.
 
 | Action | Fields |
 |---|---|

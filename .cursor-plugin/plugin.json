@@ -1,12 +1,11 @@
 {
-  "$schema": "https://cursor.com/schemas/cursor-plugin/plugin.json",
   "name": "pico-spatial-mcp",
   "description": "Build, inspect, validate, and vision-verify PICO OS 6 Spatial SDK applications through a host-neutral MCP server.",
   "version": "31.0.0-pre",
   "author": {
     "name": "Sushant Srikrishnan"
   },
-  "mcpServers": ".mcp.json",
+  "mcpServers": "mcp.cursor.json",
   "homepage": "https://github.com/sushidoescode/pico-spatial-mcp",
   "keywords": [
     "pico",

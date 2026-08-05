@@ -92,11 +92,13 @@ Run `pico_doctor` (doors surface) or `preflight_env` (full surface) first on any
 
 ## Install
 
-**The server is host-agnostic stdio MCP** — it runs identically under Claude Code, OpenAI
-Codex CLI (verified), Cursor, Windsurf, VS Code Copilot, Gemini CLI, or any MCP client: see
-**[docs/HOSTS.md](docs/HOSTS.md)** for every host's registration snippet, and **[AGENTS.md](AGENTS.md)**
-for the host-neutral agent contract (Codex reads it natively). One honest model requirement:
-the LOOK step needs a vision-capable model — text-only models use the auto-judge and escalate.
+**The server is host-agnostic stdio MCP.** Its absolute plain-MCP registration was historically
+live-verified in Claude Code and OpenAI Codex CLI; Cursor, Windsurf, VS Code Copilot, Gemini CLI,
+and other clients use their standard MCP configurations and are not all independently live-verified.
+See **[docs/HOSTS.md](docs/HOSTS.md)** for every host's registration snippet, and
+**[AGENTS.md](AGENTS.md)** for the host-neutral agent contract (Codex reads it natively). One honest
+model requirement: the LOOK step needs a vision-capable model — text-only models use the auto-judge
+and escalate.
 
 **As a Claude Code plugin** — the repo is a self-contained plugin marketplace:
 
@@ -105,14 +107,25 @@ claude plugin marketplace add sushidoescode/PICO-MCP   # or a local clone path
 claude plugin install pico-spatial-mcp@pico-mcp
 ```
 
-First launch auto-installs dependencies and builds (one-time, ~1 min; progress on stderr). Works alongside PICO's official `pico-spatial-agentic-tools` plugin — theirs guides the agent with skills + SDK knowledge, this one is the build/verify/ship toolchain.
+The launcher auto-installs dependencies and builds when needed (one-time, ~1 min; progress on
+stderr). Claude's dedicated `${CLAUDE_PLUGIN_ROOT}` manifest invocation is cold-started as a real
+MCP process from an unrelated working directory in the executable distribution suite. That proves
+the launcher contract, not a post-change live install in Claude Code; an earlier revision's Claude
+plugin route and the absolute plain-MCP Claude/Codex registrations were live-verified. It works
+alongside PICO's official `pico-spatial-agentic-tools` plugin — theirs guides the agent with skills
++ SDK knowledge, this one is the build/verify/ship toolchain.
 
-The source checkout also carries host-native plugin layouts for Codex
-(`.agents/plugins` + `.codex-plugin`), Cursor (`.cursor-plugin`), and GitHub Copilot
-(`.github/plugin`). Their schemas, paths, metadata, and a cold Node-bootstrap launch from a hostile
-spaces/non-ASCII path are structurally tested. They have not all been live-installed in those host
-clients, so this is not a live-loading claim; use the absolute plain-MCP registration in
-[docs/HOSTS.md](docs/HOSTS.md) if a host does not launch source plugins from the repository root.
+The source checkout also carries a portable Agent Plugins core (`plugin.json` + `mcp.json`) for
+Codex and Copilot, host presentation/marketplace overlays (`.agents/plugins`, `.codex-plugin`, and
+`.github/plugin`), and a Cursor-specific payload (`.cursor-plugin` + `mcp.cursor.json`). The
+portable core uses `${PLUGIN_ROOT}`; Claude uses its documented `${CLAUDE_PLUGIN_ROOT}` contract in
+a separate MCP config. Both tokenized launcher forms are process-tested from a hostile
+spaces/non-ASCII working directory. Cursor's `${CURSOR_PLUGIN_ROOT}` declaration gets the same
+test-side launcher smoke, but remains structural until a current Cursor client expands it and
+connects the tools live.
+The current host-native layouts have not been live-installed after this launcher change, so this is
+not a live-loading claim; use the absolute plain-MCP registration in
+[docs/HOSTS.md](docs/HOSTS.md) where the host-native route is not yet proven.
 
 **Or as a plain MCP server:**
 

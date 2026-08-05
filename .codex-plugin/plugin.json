@@ -5,20 +5,6 @@
   "author": {
     "name": "Sushant Srikrishnan"
   },
-  "mcpServers": "./.mcp.json",
-  "homepage": "https://github.com/sushidoescode/pico-spatial-mcp",
-  "repository": "https://github.com/sushidoescode/PICO-MCP",
-  "license": "Apache-2.0",
-  "keywords": [
-    "pico",
-    "pico-xr",
-    "spatial-sdk",
-    "mcp",
-    "xr",
-    "android",
-    "emulator",
-    "vision-verified"
-  ],
   "interface": {
     "displayName": "PICO Spatial MCP",
     "shortDescription": "Build and verify PICO Spatial SDK apps.",

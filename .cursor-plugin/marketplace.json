@@ -1,5 +1,4 @@
 {
-  "$schema": "https://cursor.com/schemas/cursor-plugin/marketplace.json",
   "name": "pico-mcp",
   "owner": {
     "name": "Sushant Srikrishnan"

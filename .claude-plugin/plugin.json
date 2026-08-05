@@ -7,7 +7,7 @@
   "author": {
     "name": "Sushant Srikrishnan"
   },
-  "mcpServers": "./.mcp.json",
+  "mcpServers": "./.mcp.claude.json",
   "homepage": "https://github.com/sushidoescode/pico-spatial-mcp",
   "keywords": [
     "pico",

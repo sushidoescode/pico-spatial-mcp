@@ -12,43 +12,64 @@ sessions; omit for the full surface: 239 tools on macOS, 236 on other hosts). Bu
 Whatever the host, point it at that command and the agent contract in [AGENTS.md](../AGENTS.md)
 applies as-is.
 
-Verification status is labeled honestly per host: **VERIFIED** = we ran it; **standard config**
-= the host's documented MCP config format, not independently exercised by us — check your host
-version's docs if it doesn't load.
+Verification status is labeled honestly per host: **current launcher smoke** = the exact manifest
+command was started as a real MCP process after the contract's required token expansion;
+**historical plain-MCP verification** = the absolute registration was run before this launcher
+change; **standard config** = the host's documented MCP config format, not independently exercised
+by us. Check your host version's docs if it doesn't load.
 
 ## Repository plugin layouts — structurally validated
 
-The checkout includes the host-native payload and marketplace locations below. All point to the
-shared root `.mcp.json`; it launches `node scripts/plugin-bootstrap.mjs`. The launcher resolves the
-repository from its own `import.meta.url`, uses `npm.cmd` on Windows and `npm` elsewhere, builds only
-when `node_modules` or `dist/index.js` is missing, keeps setup output off MCP stdout, and forwards the
-server's exit/signal. A cold source launch is tested from an unrelated path containing spaces and
-non-ASCII characters.
+The checkout includes a standards-forward portable core plus host overlays. Root `plugin.json` and
+`mcp.json` implement [Agent Plugins 1.0.0](https://agent-plugins.org/specification); the portable
+server command is `node ${PLUGIN_ROOT}/scripts/plugin-bootstrap.mjs`. Claude points its native
+overlay to `.mcp.claude.json`, whose documented command is
+`node ${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bootstrap.mjs`. Cursor points its overlay to
+`mcp.cursor.json`, a `${CURSOR_PLUGIN_ROOT}` declaration that remains a live-test candidate rather
+than a documented MCP placeholder. Keeping those configs separate prevents one host's root
+semantics from leaking into another host's payload. The old root `.mcp.json` was removed so clients
+cannot discover a duplicate definition beside canonical `mcp.json`.
+The launcher resolves the repository
+from its own `import.meta.url`, uses `npm.cmd` on Windows and `npm` elsewhere, builds only when
+`node_modules` or `dist/index.js` is missing, keeps setup output off MCP stdout, and forwards the
+server's exit/signal. The portable and Claude invocations are started as real MCP processes from an
+unrelated working directory containing spaces and non-ASCII characters after their specified root
+expansion. Cursor gets the same smoke after test-side token expansion only. These are executable
+launcher checks, not post-change live installs in the host clients.
 
 | Host | Marketplace | Payload | Status |
 |---|---|---|---|
-| Claude Code | `.claude-plugin/marketplace.json` | `.claude-plugin/plugin.json` | live plugin route verified |
-| Codex | `.agents/plugins/marketplace.json` | `.codex-plugin/plugin.json` | current validator + paths structurally validated |
-| Cursor | `.cursor-plugin/marketplace.json` | `.cursor-plugin/plugin.json` | schema + paths structurally validated; not live-installed here |
-| GitHub Copilot | `.github/plugin/marketplace.json` | `.github/plugin/plugin.json` | schema + paths structurally validated; not live-installed here |
+| Claude Code | `.claude-plugin/marketplace.json` | `.claude-plugin/plugin.json` | current launcher smoke; post-change live install not rerun |
+| Codex | `.agents/plugins/marketplace.json` | root portable core + `.codex-plugin/plugin.json` interface | portable schema/launcher + Codex overlay validated; not live-installed here |
+| Cursor | `.cursor-plugin/marketplace.json` | `.cursor-plugin/plugin.json` + `mcp.cursor.json` | declaration structurally validated; not live-installed here |
+| GitHub Copilot | `.github/plugin/marketplace.json` | root portable core | portable schema/launcher validated; not live-installed here |
 
-The relative source-plugin command assumes the host launches it at the plugin root. When that host
-behavior is unknown or differs, use the absolute plain-server configuration below; no invented host
-root environment variable is required.
+Claude Code documents `${CLAUDE_PLUGIN_ROOT}` as the installed plugin root and expands it before
+launch. Agent Plugins requires `${PLUGIN_ROOT}` expansion for portable `mcp.json`; current Codex and
+Copilot implementations support that core layout. GitHub's discovery order selects root
+`plugin.json` before `.github/plugin/plugin.json`, so the shadowed nested payload was removed rather
+than presented as active. Cursor's plugin-root expansion is not claimed: its separate declaration
+remains structural. Use the absolute plain-server configuration below if a particular client
+version does not implement the relevant plugin contract.
 
-## Claude Code — VERIFIED
+## Claude Code — current launcher smoke; historical plain-MCP verification
 
-As a plugin (the repo is its own marketplace; first launch auto-builds):
+As a plugin (the repo is its own marketplace; the launcher builds when needed):
 ```bash
 claude plugin marketplace add sushidoescode/PICO-MCP
 claude plugin install pico-spatial-mcp@pico-mcp
 ```
-Or as a plain server (doors surface shown):
+The current Claude-specific tokenized manifest has executable launcher coverage but has not been reinstalled live in
+Claude Code. An earlier plugin revision was live-loaded. The absolute plain-server route below was
+also historically verified (doors surface shown):
 ```bash
 claude mcp add pico-spatial --scope user --env PICO_MCP_SURFACE=doors -- node /abs/path/PICO-MCP/dist/index.js
 ```
 
-## OpenAI Codex CLI — VERIFIED (codex-cli 0.144.6, 2026-07-22)
+## OpenAI Codex CLI — historical plain-MCP verification (codex-cli 0.144.6, 2026-07-22)
+
+This evidence applies to the absolute plain-MCP registration below, not to a post-change live install
+of the `.codex-plugin` layout.
 
 ```bash
 codex mcp add pico-spatial --env PICO_MCP_SURFACE=doors -- node /abs/path/PICO-MCP/dist/index.js

@@ -301,6 +301,7 @@ assert.equal(demo.kind, "structural-recipe");
 assert.equal(demo.repositoryOnly, true);
 assert.equal(demo.executable, false);
 assert.match(demo.scope, /replayable generator calls.*not a complete app/i);
+assert.doesNotMatch(demo.scope, /Task\s+\d+/i, "public recipe scope must not promise a later task's evidence");
 assert.match(demo.manifestContract, /caller-owned.*style=1.*Mixed.*do not edit/i);
 assert(demo.missingIntegration.some((item) => /HomeStage.*InspectorPanel/.test(item)));
 assert(demo.missingIntegration.some((item) => /dispatchDebugCommand/.test(item)));
@@ -327,8 +328,11 @@ for (const target of demo.targets) {
 }
 assert(demo.visualClaims.every((claim) => claim.requiresLook === true));
 assert(!protectedBefore.get("src/spatialbench.ts").includes("docs-adoption-workbench"));
-assert(readRepo("examples/README.md").includes("docs-adoption-workbench.json"));
-assert(/repo-only/i.test(readRepo("examples/README.md")));
+const examplesReadme = readRepo("examples/README.md");
+assert(examplesReadme.includes("docs-adoption-workbench.json"));
+assert(/repo-only/i.test(examplesReadme));
+assert.doesNotMatch(examplesReadme.split(/\r?\n/, 1)[0], /vision-verified/i, "page heading must not blanket-upgrade structural recipes");
+assert(demo.integrationSteps.every((step) => !/Task\s+\d+/i.test(step)), "integration steps must stay replayable and task-neutral");
 assert(!JSON.parse(readRepo("package.json")).files.includes("examples"), "repo-only recipe must stay out of the npm package");
 
 const subwindowCapability = CAPABILITY_MANIFEST.find((entry) => entry.tool === "generate_subwindow_kotlin");
