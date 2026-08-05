@@ -34,7 +34,7 @@ const publishIdx = process.argv.indexOf("--publish");
 const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
-const EXPECTED_TOOLS = 236; // v34.1: +verify_gradle_config +build_matrix_report
+const EXPECTED_TOOLS = 238; // v34.2: +generate_subwindow_kotlin +generate_spatial_gestures_kotlin
 const TOOL_TOLERANCE = 3;
 const REQUIRED_TOOLS = [
   // the 15 doors-surface tools TESTERS.md promises
@@ -45,6 +45,7 @@ const REQUIRED_TOOLS = [
   "emulator_boot", "build_and_run", "capture_frame", "record_verification", "scaffold_spatial_app",
   "adb_shell", "gradle_build", "preflight_env",
   "verify_gradle_config", "build_matrix_report",
+  "generate_subwindow_kotlin", "generate_spatial_gestures_kotlin",
 ];
 // [M2] Briefs the brief lane depends on; directory existence is not content.
 const BRIEF_CANARIES = ["gallery.json", "knockdown.json"];

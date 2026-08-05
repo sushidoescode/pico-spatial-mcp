@@ -10,7 +10,7 @@ fully-supported opt-in for fully-virtual scenes.
 
 See **ROADMAP.md** in the git repository for where this is going — every line gate-labeled honestly.
 
-## The capability map (a core sampler of the 220+-tool surface)
+## The capability map (a core sampler of the 238-tool surface)
 
 | Goal | Tools |
 |---|---|

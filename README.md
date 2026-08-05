@@ -28,7 +28,7 @@ None of this is PICO Spatial SDK vocabulary — it's this project's own layer on
 | **trust ledger** | An append-only log (`record_verification` / `ledger_report`) of every visual claim this tool has made, each entry naming its evidence class. It structurally rejects a `vision_verified` claim with no linked capture — you can't fake the strongest tier. |
 | **the eye** | The calibrated auto-judge (`visual_judge` / `auto_judged` evidence) that scores a capture against an expected scene. It is a fast pre-check, not a replacement for a human/agent actually looking. |
 | **evidence classes** | A ranked honesty scale for how a claim was checked, strongest first: **`device_verified`** (real PICO hardware — **none yet**, said honestly) > `vision_verified` (a human/agent LOOKED and the intended content is present) > `auto_judged` (the calibrated eye scored it) > `usd_host_render` (off-device USD preview) > `structural` (runtime/log proof; successful appearance unconfirmed — a linked looked-at negative finding can stay here rather than masquerade as render success) > `built_for_headset` (compiles and targets Swan-only capability, deferred honestly). Every capability in [CAPABILITIES.md](CAPABILITIES.md) is tagged with its strongest evidence on file. |
-| **doors** (`PICO_MCP_SURFACE=doors`) | An intent-level facade of 16 tools (15 doors + `validate_toolchain`) over the full 236+-tool surface — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
+| **doors** (`PICO_MCP_SURFACE=doors`) | An intent-level facade of 16 tools (15 doors + `validate_toolchain`) over the full 238+-tool surface — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
 | **gates** | The deterministic test-battery (`test/*.mjs`, mirrored in `.github/workflows/gates.yml`) that runs before every commit: lint fixtures, the ledger's over-claim rejection, doors-surface contract tests, occupancy/affordance solvers, the vault symbol checker, and more. All green is the bar for "this didn't regress." |
 
 ## 15-minute first light
@@ -145,7 +145,7 @@ npm run test:lint    # the retained-lessons lint rules fire on their fixtures
 npm run test:ledger  # the trust ledger rejects an unlinked vision_verified claim
 ```
 
-The full gate battery — 41 gate invocations (40 `test:` suites plus `smoke`), across Linux and macOS jobs, deterministic, no emulator boot — is mirrored in `.github/workflows/gates.yml` — see **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for the complete list.
+The full gate battery — 42 gate invocations (41 `test:` suites plus `smoke`), across Linux and macOS jobs, deterministic, no emulator boot — is mirrored in `.github/workflows/gates.yml` — see **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for the complete list.
 
 ## Licensing
 

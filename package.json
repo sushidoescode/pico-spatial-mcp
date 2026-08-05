@@ -65,7 +65,8 @@
     "test:swan": "node test/swan.mjs",
     "test:placeonsurface": "node test/placeonsurface.mjs",
     "test:menuactions": "node test/menuactions.mjs",
-    "test:adoption-safety": "node test/adoption-safety.mjs"
+    "test:adoption-safety": "node test/adoption-safety.mjs",
+    "test:spatialui-adoption": "node test/spatialui-adoption.mjs"
   },
   "engines": {
     "node": ">=20"

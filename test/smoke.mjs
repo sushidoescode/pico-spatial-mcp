@@ -51,6 +51,7 @@ const EXPECTED = [
   "generate_scene_router_kotlin", "generate_composition_scene",
   "generate_interactable_registry_kotlin", "plan_layout_and_camera", "import_model_catalog",
   "swan_verify_matrix", "run_factory", "virtual_camera_frame", "virtual_camera_surfaces", "virtual_camera_from_app",
+  "generate_subwindow_kotlin", "generate_spatial_gestures_kotlin",
 ];
 // gui_* tools register only on macOS (Quartz window capture/camera) — exempt them off-darwin.
 const MAC_ONLY = new Set(["gui_find_window", "gui_camera", "gui_permissions", "gui_capture"]);

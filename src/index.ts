@@ -28,6 +28,8 @@ import { registerTappableDetailTools } from "./tappable.js";
 import { registerPerfTraceTools } from "./perftrace.js";
 import { registerPicoCliTools } from "./picoclitools.js";
 import { registerComponentTools } from "./components.js";
+import { registerSubwindowTools } from "./subwindow.js";
+import { registerSpatialGestureTools } from "./spatialgestures.js";
 import { registerAssetTools } from "./assets.js";
 import { registerDiagnoseTools } from "./diagnose.js";
 import { registerColliderTools } from "./collider.js";
@@ -193,6 +195,8 @@ if (!doorsSurfaceActive()) {
   // v31 — one-call Meshy->MR seating orchestrator (measure -> bake -> seat)
   registerPlaceOnSurfaceTools(server);
   registerComponentTools(server);
+  registerSubwindowTools(server);
+  registerSpatialGestureTools(server);
   registerAssetTools(server);
   registerDiagnoseTools(server);
   registerColliderTools(server);
