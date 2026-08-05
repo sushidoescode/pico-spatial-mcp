@@ -25,5 +25,8 @@ test/.*.tmp.mjs
 # stray MCP client artifacts
 .playwright-mcp/
 
+# Isolated feature worktrees (never package or commit their contents)
+.worktrees/
+
 # distribution tarballs are built artifacts — hand testers a Release asset, never a committed binary
 *.tgz
