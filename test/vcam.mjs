@@ -452,7 +452,7 @@ if (!fs.existsSync(ramenSemantic) || !fs.existsSync(ramenOccupancy)) {
       yawDeg: 0,
       pitchDeg: 0,
       calibratedIntrinsics: true,
-      calibrationPath: path.join(os.homedir(), ".pico-mcp/camera-calibration.json"),
+      calibrationPath,
     });
     const floor = report.surfaces.find((surface) => surface.label === "floor");
     assert.ok(floor);
