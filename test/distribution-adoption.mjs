@@ -30,6 +30,48 @@ function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(repoRoot, relativePath), "utf8"));
 }
 
+function validateTrackedMarkdownCitation({ link, sourceFile, root, tracked }) {
+  const fragmentAt = link.indexOf("#");
+  const target = fragmentAt === -1 ? link : link.slice(0, fragmentAt);
+  const anchor = fragmentAt === -1 ? null : link.slice(fragmentAt + 1);
+  assert.doesNotMatch(target, /^(?:[A-Za-z][A-Za-z0-9+.-]*:|~|\/|\\\\|[A-Za-z]:[\\/])/, `citation must be repo-relative: ${link}`);
+  assert.doesNotMatch(target, /(?:^|\/)\.dev(?:\/|$)/, `citation must not use .dev: ${link}`);
+  const decodedTarget = decodeURIComponent(target);
+  assert.doesNotMatch(decodedTarget, /^(?:[A-Za-z][A-Za-z0-9+.-]*:|~|\/|\\\\|[A-Za-z]:[\\/])/, `decoded citation must be repo-relative: ${link}`);
+  assert.equal(path.normalize(decodedTarget).split(/[\\/]+/).includes(".dev"), false, `decoded citation must not use .dev: ${link}`);
+  const lexicalRoot = path.resolve(root);
+  const resolved = path.resolve(path.dirname(sourceFile), decodedTarget);
+  assert.ok(resolved.startsWith(`${lexicalRoot}${path.sep}`), `citation escapes the repository: ${link}`);
+  assert.equal(fs.existsSync(resolved), true, `citation target does not exist: ${link}`);
+  const realRoot = fs.realpathSync(lexicalRoot);
+  const realTarget = fs.realpathSync(resolved);
+  const realRelative = path.relative(realRoot, realTarget);
+  assert.ok(
+    realRelative !== ""
+      && realRelative !== ".."
+      && !realRelative.startsWith(`..${path.sep}`)
+      && !path.isAbsolute(realRelative),
+    `citation resolves outside the repository: ${link}`,
+  );
+  assert.equal(path.normalize(realRelative).split(/[\\/]+/).includes(".dev"), false, `citation real target must not use .dev: ${link}`);
+  const relative = path.normalize(path.relative(lexicalRoot, resolved));
+  assert.equal(tracked.has(relative), true, `citation target is not tracked: ${link}`);
+  assert.equal(tracked.has(path.normalize(realRelative)), true, `citation real target is not tracked: ${link}`);
+  if (anchor !== null) {
+    const range = /^L(\d+)(?:-L(\d+))?$/.exec(anchor);
+    assert.ok(range, `malformed line anchor: ${link}`);
+    const first = Number(range[1]);
+    const last = Number(range[2] ?? range[1]);
+    const lineCount = fs.readFileSync(resolved, "utf8").split(/\r?\n/).length;
+    assert.ok(first >= 1 && first <= last && last <= lineCount, `line anchor outside ${relative} (${lineCount} lines): ${link}`);
+  }
+}
+
+function extractLedgerLabels(markdown) {
+  return [...new Set([...markdown.matchAll(/\b([A-Za-z0-9._-]+)#(\d+)\b/g)]
+    .map((match) => `${match[1]}#${match[2]}`))];
+}
+
 function readJsonLines(file) {
   if (!fs.existsSync(file)) return [];
   return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(JSON.parse);
@@ -787,6 +829,113 @@ test("public adoption docs keep bundle installation, AVD creation, and build too
     assert.match(normalized, /pico-cli emulator install --source auto --yes/, file);
     assert.match(normalized, /does not\s+create (?:an|the) AVD/i, file);
     assert.match(normalized, /does not\s+install[\s\S]{0,120}JDK[\s\S]{0,120}Android SDK[\s\S]{0,120}Gradle[\s\S]{0,120}PICO build SDK/i, file);
+  }
+});
+
+test("answers-by-measurement publishes exactly six narrow answers backed by tracked citations", () => {
+  const answerFile = path.join(repoRoot, "docs", "ANSWERED_BY_MEASUREMENT.md");
+  assert.equal(fs.existsSync(answerFile), true, "docs/ANSWERED_BY_MEASUREMENT.md must exist");
+  const page = fs.readFileSync(answerFile, "utf8");
+  const expectedQuestions = ["5", "23", "24", "25", "33", "36"];
+  const questionMatches = [...page.matchAll(/^## Q(\d+)\b[^\n]*$/gm)];
+  assert.deepEqual(questionMatches.map((match) => match[1]), expectedQuestions);
+
+  for (let index = 0; index < questionMatches.length; index++) {
+    const start = questionMatches[index].index;
+    const end = questionMatches[index + 1]?.index ?? page.length;
+    const section = page.slice(start, end);
+    const question = `Q${expectedQuestions[index]}`;
+    assert.equal((section.match(/^### Answer\s*$/gm) ?? []).length, 1, `${question} Answer`);
+    assert.equal((section.match(/^### Evidence\s*$/gm) ?? []).length, 1, `${question} Evidence`);
+    assert.equal((section.match(/^### Does not prove\s*$/gm) ?? []).length, 1, `${question} Does not prove`);
+    const evidence = section.match(/^### Evidence\s*$([\s\S]*?)^### Does not prove\s*$/m)?.[1] ?? "";
+    assert.match(evidence, /Evidence type\/class:\s*`(?:configuration|source-derived|structural|logcat|auto_judged|vision_verified|device_verified|partner-stated)(?:`\s*\+\s*`(?:configuration|source-derived|structural|logcat|auto_judged|vision_verified|device_verified|partner-stated))*`?\./, `${question} evidence classification`);
+    assert.match(evidence, /\[[^\]]+\]\([^)]+\)/, `${question} tracked citation`);
+    const boundary = section.match(/^### Does not prove\s*$([\s\S]*)$/m)?.[1].trim() ?? "";
+    assert.ok(boundary.length >= 20, `${question} must state a substantive boundary`);
+  }
+
+  assert.doesNotMatch(page, /(?:^|[\s(/])\.dev(?:[\s/)#]|$)/m, "public evidence must not cite .dev");
+
+  const tracked = new Set(spawnSync("git", ["ls-files", "-z"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  }).stdout.split("\0").filter(Boolean).map((file) => path.normalize(file)));
+  const links = [...page.matchAll(/!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g)].map((match) => match[1]);
+  assert.ok(links.length >= expectedQuestions.length, "each answer must carry tracked evidence citations");
+  for (const link of links) {
+    validateTrackedMarkdownCitation({ link, sourceFile: answerFile, root: repoRoot, tracked });
+  }
+
+  const mutationSandbox = fs.mkdtempSync(path.join(os.tmpdir(), "pico evidence citation "));
+  const mutationRoot = path.join(mutationSandbox, "repo");
+  const mutationDocs = path.join(mutationRoot, "docs");
+  fs.mkdirSync(mutationDocs, { recursive: true });
+  const outside = path.join(mutationSandbox, "outside.md");
+  fs.writeFileSync(outside, "outside\n");
+  fs.symlinkSync(outside, path.join(mutationDocs, "escape.md"));
+  const mutationDev = path.join(mutationRoot, ".dev");
+  fs.mkdirSync(mutationDev);
+  const devEvidence = path.join(mutationDev, "private.md");
+  fs.writeFileSync(devEvidence, "private\n");
+  fs.symlinkSync(devEvidence, path.join(mutationDocs, "dev-link.md"));
+  const acceptedMutations = [];
+  for (const [label, validate] of [
+    ["non-line fragment", () => validateTrackedMarkdownCitation({
+      link: "BUILD_MATRIX.md#bogus",
+      sourceFile: answerFile,
+      root: repoRoot,
+      tracked,
+    })],
+    ["second fragment", () => validateTrackedMarkdownCitation({
+      link: "BUILD_MATRIX.md#L1#bogus",
+      sourceFile: answerFile,
+      root: repoRoot,
+      tracked,
+    })],
+    ["tracked symlink escape", () => validateTrackedMarkdownCitation({
+      link: "escape.md#L1",
+      sourceFile: path.join(mutationDocs, "answer.md"),
+      root: mutationRoot,
+      tracked: new Set([path.join("docs", "escape.md")]),
+    })],
+    ["tracked symlink to untracked .dev", () => validateTrackedMarkdownCitation({
+      link: "dev-link.md#L1",
+      sourceFile: path.join(mutationDocs, "answer.md"),
+      root: mutationRoot,
+      tracked: new Set([path.join("docs", "dev-link.md")]),
+    })],
+    ["encoded .dev segment", () => validateTrackedMarkdownCitation({
+      link: "../%2Edev/private.md#L1",
+      sourceFile: path.join(mutationDocs, "answer.md"),
+      root: mutationRoot,
+      tracked: new Set([path.join(".dev", "private.md")]),
+    })],
+  ]) {
+    try {
+      validate();
+      acceptedMutations.push(label);
+    } catch {
+      // Expected: hostile citation mutations must fail closed.
+    }
+  }
+  assert.deepEqual(acceptedMutations, [], `citation guard accepted mutations: ${acceptedMutations.join(", ")}`);
+
+  const claims = readJson("docs/claims/claims.json");
+  assert.deepEqual(
+    extractLedgerLabels("plain com.example.unformatted#7 and other-app#2"),
+    ["com.example.unformatted#7", "other-app#2"],
+    "ledger extraction must not depend on Markdown backticks",
+  );
+  const ledgerLabels = extractLedgerLabels(page);
+  assert.ok(ledgerLabels.length >= 1, "the page must cite measured ledger evidence");
+  for (const label of ledgerLabels) {
+    const split = label.lastIndexOf("#");
+    const app = label.slice(0, split);
+    const seq = Number(label.slice(split + 1));
+    const ledger = claims.apps.find((entry) => entry.app === app);
+    assert.ok(ledger, `cited ledger app is absent from tracked claims: ${label}`);
+    assert.ok(ledger.claims.some((claim) => claim.seq === seq), `cited ledger sequence is absent from tracked claims: ${label}`);
   }
 });
 

@@ -9,6 +9,8 @@ is the environment and content seats ON the real room; Full Space (`3`) is the e
 fully-supported opt-in for fully-virtual scenes.
 
 See **ROADMAP.md** in the git repository for where this is going — every line gate-labeled honestly.
+For the ABI, ownership, threading, model-loading, emulator/device, and pico-cli conclusions this
+repository can ground today, see **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWERED_BY_MEASUREMENT.md)**.
 
 ## The capability map (a core sampler of the full surface: 239 tools on macOS, 236 on other hosts)
 

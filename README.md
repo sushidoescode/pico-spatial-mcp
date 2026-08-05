@@ -150,6 +150,7 @@ The tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first sc
 - **[docs/VIRTUAL_CAMERA.md](docs/VIRTUAL_CAMERA.md)** — simulated camera frames and surface detection from scanned rooms, plus the bounded emulator camera-HAL result
 - **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** — repo layout, gates, and standing invariants for anyone new to this codebase
 - **[CAPABILITIES.md](CAPABILITIES.md)** — the honest capability matrix (categories + evidence)
+- **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWERED_BY_MEASUREMENT.md)** — six narrow ecosystem questions answered only to the limit of tracked evidence
 - **[DESIGN.md](DESIGN.md)** — architecture + correctness rules (runtime physics, PICO math API, editor MaterialX, the visual-ground-truth rule)
 - **[PLUGINS.md](PLUGINS.md)** — plugin surfaces · **[SKILLS.md](SKILLS.md)** — agent reference
 - **[docs/](docs/)** — worked examples (a ClaimSight native build, local open-weight models, the decompiled spatial interaction API) and **[examples/](examples/)** — reference scenes

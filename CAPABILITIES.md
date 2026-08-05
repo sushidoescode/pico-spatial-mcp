@@ -63,3 +63,6 @@ Evidence totals: `vision_verified` 110 · `auto_judged` 29 · `usd_host_render` 
   the right capture path — see [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
 
 *Re-generate anytime: `capability_matrix`. Per-app detail: `ledger_report`.*
+
+Six ecosystem questions with narrower evidence boundaries are collected in
+[Questions answered by measurement](docs/ANSWERED_BY_MEASUREMENT.md).
