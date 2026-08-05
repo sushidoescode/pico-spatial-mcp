@@ -68,6 +68,15 @@ try {
   const escaping = project(); dirs.push(escaping);
   symlinkSync(outside, path.join(escaping, "escape"));
   check("escaping symlink is refused", () => assert(projectconfig.auditProjectConfig(escaping).static.errors.some((x) => /symlink/i.test(x.message))));
+  const unrelated = project(); dirs.push(unrelated);
+  writeFileSync(path.join(unrelated, "app/build.gradle.kts"), `fun unused() {\n${exclusions()}\n}\ndependencies { }`);
+  check("exclusions outside global resolution scope do not satisfy the contract", () => assert(projectconfig.auditProjectConfig(unrelated).static.errors.some((x) => /Missing required exclusion/.test(x.message))));
+  const groovy = project(); dirs.push(groovy);
+  writeFileSync(path.join(groovy, "app/build.gradle.kts"), `configurations.all {\n resolutionStrategy {\n${MODULES.map(([g,n]) => `exclude group: '${g}', module: '${n}'`).join("\n")}\n }\n}\n`);
+  check("canonical Groovy global exclusions satisfy the contract", () => assert.equal(projectconfig.auditProjectConfig(groovy).static.errors.length, 0));
+  const mixedMeta = project(); dirs.push(mixedMeta);
+  writeFileSync(path.join(mixedMeta, "app/src/main/AndroidManifest.xml"), manifest("stage").replace("</activity>", '<meta-data android:name="pico.spatial.windowcontainer.id" android:value="secondary"/></activity>'));
+  check("mixed metadata is warning-only ambiguity", () => assert(projectconfig.auditProjectConfig(mixedMeta).static.warnings.some((x) => /Both pico\.spatial/.test(x.message))));
 
   const graph = "+--- com.example:wrapper:1.0\n|    \\--- androidx.compose.ui:ui:1.7.0\n";
   check("resolved Compose graph retains the parent chain", () => {
@@ -108,6 +117,14 @@ try {
     assert.equal(matrix.observed.agp, "8.13.2");
     assert.equal(matrix.observed.bom, "0.13.3");
     assert(matrix.sourceFiles.every((p) => p.includes("appskeleton")));
+    assert.equal(matrix.observed.abi, "arm64-v8a");
+    assert.equal(matrix.extractionFailures.length, 0);
+    assert(matrix.caveat.includes("known-good scaffold matrix, not the support envelope"));
+  });
+  check("BUILD_MATRIX literals stay aligned with the extractor", () => {
+    const doc = readFileSync(new URL("../docs/BUILD_MATRIX.md", import.meta.url), "utf8");
+    for (const fact of [matrix.observed.minSdk, matrix.observed.agp, matrix.observed.bom, matrix.observed.abi]) assert(doc.includes(fact));
+    assert(doc.includes("known-good scaffold matrix, not the support envelope"));
   });
   check("spatialToolsVersion is exactly not-declared", () => assert.equal(matrix.observed.spatialToolsVersion.status, "not-declared"));
 
@@ -117,6 +134,7 @@ try {
   }
   check("malformed envelope is an explicit parse error", () => assert.equal(parsePicoCliEnvelope("{bad").status, "invalid"));
   check("missing tool_status is an explicit parse error", () => assert.equal(parsePicoCliEnvelope('{"data":{}}').status, "invalid"));
+  check("envelope preserves bounded full diagnostic payload", () => { const p = parsePicoCliEnvelope('{"tool_status":"FAILED","summary":"no boot","data":{"nextAction":"boot emulator"},"errors":[{"fix":"open editor"}]}'); assert.equal(p.envelope.data.nextAction, "boot emulator"); assert(p.raw.includes("open editor")); });
   check("pico_fix routes Compose and container failures before generic Gradle", () => {
     assert.equal(picoFixDecision("Gradle found androidx.compose.ui:ui and an exclusion is missing").symptom, "compose_fork_conflict");
     assert.equal(picoFixDecision("DefaultWindowContainer does not match pico.spatial.stage.id").symptom, "container_mode_mismatch");

@@ -55,7 +55,7 @@ export function probePicoCli(force = false): PicoCliProbe {
 export type PicoCliFailureClass = "cli-missing" | "flag-or-version-drift" | "runtime";
 
 export type PicoCliEnvelope =
-  | { status: "ok"; toolStatus: "SUCCESS" | "PARTIAL" | "FAILED"; outcome: "operational" | "degraded" | "failed"; summary: string | null; data: unknown; errors: unknown[] }
+  | { status: "ok"; toolStatus: "SUCCESS" | "PARTIAL" | "FAILED"; outcome: "operational" | "degraded" | "failed"; summary: string | null; data: unknown; errors: unknown[]; envelope: Record<string, unknown>; raw: string }
   | { status: "invalid"; detail: string };
 
 /** Total parser for pico-cli's machine envelope: callers can safely turn malformed output into a warn. */
@@ -73,6 +73,8 @@ export function parsePicoCliEnvelope(raw: string): PicoCliEnvelope {
     summary: typeof envelope.summary === "string" ? envelope.summary : null,
     data: envelope.data,
     errors: Array.isArray(envelope.errors) ? envelope.errors : [],
+    envelope,
+    raw: raw.slice(0, 50_000),
   };
 }
 

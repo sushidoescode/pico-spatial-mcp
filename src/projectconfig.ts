@@ -84,12 +84,13 @@ export function auditProjectConfig(projectDir: string): ProjectConfigAudit {
   const files = collectProjectFiles(projectDir, errors);
   const gradleFiles = files.filter((file) => file.endsWith(".gradle") || file.endsWith(".gradle.kts"));
   const gradle = gradleFiles.map(fileText).join("\n");
+  const globalResolution = gradle.match(/configurations\.all\s*\{[\s\S]*?resolutionStrategy\s*\{([\s\S]*?)\}\s*\}/)?.[1] ?? "";
   for (const coordinate of FORBIDDEN_COMPOSE_MODULES) {
     const [group, name] = coordinate.split(":");
     const direct = new RegExp(`(?:implementation|api|compileOnly|runtimeOnly|debugImplementation|testImplementation|androidTestImplementation)\\s*(?:\\(\\s*)?["']${group.replace(/\./g, "\\.")}:${name}[^"']*["']`, "m");
     if (direct.test(gradle)) errors.push({ severity: "error", code: "forbidden-compose-direct", message: `Forbidden Compose direct dependency: ${coordinate}` });
     // The tighter paired check permits either named-argument ordering used by Gradle Kotlin/Groovy.
-    const exclusionBlocks = [...gradle.matchAll(/exclude\s*\(([^)]*)\)/g)].map((m) => m[1]);
+    const exclusionBlocks = [...globalResolution.matchAll(/exclude\s*\(([^)]*)\)|exclude\s+([^\n}]*)/g)].map((m) => m[1] ?? m[2]);
     const hasNamedExclusion = exclusionBlocks.some((block) =>
       new RegExp(`group\\s*(?:=|:)\\s*["']${group.replace(/\./g, "\\.")}["']`).test(block) &&
       new RegExp(`(?:module|name)\\s*(?:=|:)\\s*["']${name}["']`).test(block),

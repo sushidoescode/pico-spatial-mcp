@@ -162,8 +162,10 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
     } else if (envelope.outcome === "operational") {
       push({ name: "pico-cli-emulator-status", status: "pass", detail: "pico-cli structured emulator status: operational", fix: null });
     } else {
-      const diagnostic = envelope.summary ?? (envelope.errors.length ? JSON.stringify(envelope.errors).slice(0, 500) : "no diagnostic supplied");
-      push({ name: "pico-cli-emulator-status", status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}`, fix: "Run `pico-cli emulator status --format json` directly and address its reported diagnostics; this read-only check does not run pico-cli doctor." });
+      const payload = JSON.stringify(envelope.envelope).slice(0, 1_000);
+      const action = [envelope.envelope.nextAction, envelope.envelope.fix, (envelope.data as any)?.nextAction, (envelope.data as any)?.fix].find((v) => typeof v === "string") as string | undefined;
+      const diagnostic = envelope.summary ?? payload;
+      push({ name: "pico-cli-emulator-status", status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}; payload=${payload}`, fix: action ?? "Run `pico-cli emulator status --format json` directly and address its returned diagnostics; this read-only check does not run pico-cli doctor." });
     }
   } else {
     push({ name: "pico-cli", status: "warn", detail: "no pico-cli on PATH — perf_diagnose/perf_trace/watch_crash/capture_record degrade to status:'unavailable'; agent-vault provisioning (`pico-cli setup`) needs it", fix: "npm install -g @picoxr/pico-cli (optional lane; building, capture, and verification work without it)." });

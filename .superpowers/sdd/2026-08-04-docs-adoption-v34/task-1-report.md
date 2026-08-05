@@ -22,3 +22,10 @@
 
 - Independent review found and the implementation addressed: ABI extraction, source-output bounding, pico-cli diagnostic retention, and Groovy Gradle syntax support. The final focus/full verification above was rerun after those fixes.
 - No emulator/device mutation was introduced or performed. The mandated live CLI observation was read-only `pico-cli emulator status --format json`; no `pico-cli doctor` or plugin doctor command was called.
+
+## Follow-up safety-evidence tightening
+
+- RED: the expanded adoption suite initially failed on scope-aware exclusions and the extractor caveat; this demonstrated the prior global-scope parser was too strict for the scaffold end-of-file form and the extractor caveat lacked the required wording.
+- GREEN: `npm run build`, `test:adoption-safety`, `test:preflight`, `test:picocli`, `test:lint`, and smoke passed after the fixes.
+- Added extractor-to-document literal consistency, global Kotlin/Groovy exclusion scope tests, unused-block negative coverage, mixed-metadata warning coverage, and complete bounded pico-cli diagnostic-payload coverage.
+- Final follow-up battery: all 40 current `test:` scripts passed (after smoke, together the documented 41-invocation battery) with exit 0.

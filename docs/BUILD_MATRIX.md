@@ -1,6 +1,6 @@
 # Build matrix
 
-This page reports configuration observed in the packaged Android scaffold. It is not proof that a build, install, or rendered frame succeeded.
+This is a **known-good scaffold matrix, not the support envelope**. It reports configuration observed in the packaged Android scaffold and is not proof that a build, install, launch, dependency resolution, or rendered frame succeeded. If a support claim contradicts this table, treat the source path as configuration evidence and investigate the specific supported toolchain/runtime claim rather than inventing build evidence.
 
 | Setting | Observed value | Source |
 | --- | --- | --- |

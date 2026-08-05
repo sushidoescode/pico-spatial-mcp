@@ -21,7 +21,7 @@ export type CapEntry = {
 };
 
 export const CAPABILITY_MANIFEST: CapEntry[] = [
-  { tool: "verify_gradle_config", authors: "read-only source-grounded project configuration audit", keyParams: "projectDir,resolveTransitives", ceiling: "C0_emulator", note: "static by default; resolved graph is explicit opt-in" },
+  { tool: "verify_gradle_config", authors: "source-grounded project configuration audit", keyParams: "projectDir,resolveTransitives", ceiling: "C0_emulator", note: "static mode is read-only; resolveTransitives may populate caches and use configured network repositories" },
   { tool: "build_matrix_report", authors: "observed packaged scaffold build matrix", keyParams: "none", ceiling: "C0_emulator", note: "source-grounded configuration evidence only" },
   // spine
   { tool: "scaffold_spatial_app", authors: "a fresh buildable app (package/appName/stage/scene)", keyParams: "templateProject,targetDir,packageName,appName,stageStyle", ceiling: "C0_emulator" },

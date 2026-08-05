@@ -25,7 +25,7 @@ export function extractBuildMatrix() {
     sourceFiles: [CATALOG, APP_GRADLE],
     sourcePaths: { catalog: CATALOG, appGradle: APP_GRADLE },
     extractionFailures: Object.entries(observed).filter(([key, value]) => key !== "spatialToolsVersion" && value === null).map(([key]) => key),
-    caveat: "Observed source configuration only; this does not prove dependency resolution, a successful build, install, launch, or rendered result. spatialToolsVersion is not declared in the checked-in catalog.",
+    caveat: "known-good scaffold matrix, not the support envelope. Observed source configuration only; this does not prove dependency resolution, a successful build, install, launch, or rendered result. spatialToolsVersion is not declared in the checked-in catalog.",
   };
 }
 
