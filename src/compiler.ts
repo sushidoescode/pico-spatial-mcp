@@ -173,7 +173,7 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
     // compile to the dock path with the loud fallback note, never emit unverified SDK calls.
     const world = pn.placement?.kind === "world";
     const worldNote = world
-      ? `WORLD PLACEMENT REQUESTED${pn.placement?.position ? ` at [${pn.placement.position.join(", ")}]` : ""}: world placement pending SDK confirmation — head-docked fallback. `
+      ? `IN-SCENE PLACEMENT REQUESTED${pn.placement?.position ? ` at [${pn.placement.position.join(", ")}]` : ""}: this node lowers to a docked 2D Activity, and no public API world-poses an OS-composited window — that limit is real. CORRECTED v35.2: for Compose INSIDE the 3D scene use generate_attachment_panel_kotlin (AttachmentPanel + TransformComponent, metres; public in 0.13.3). That is scene placement, not world-locking — a real-room anchor still needs AnchorComponent. `
       : "";
     const worldArg = world ? { placement: "world" } : {};
     if (pn.kind === "web") {
@@ -267,7 +267,7 @@ export function registerCompilerTools(server: McpServer) {
       // say so in the compile result, not just deep in a ledger note.
       const placementFallbacks = (spec.panels ?? [])
         .filter((p) => p.placement?.kind === "world")
-        .map((p) => `panel '${p.id}': world placement pending SDK confirmation — head-docked fallback (spawns at the dock; verify by turning the camera)`);
+        .map((p) => `panel '${p.id}': lowers to the docked 2D Activity (spawns at the dock; verify by turning the camera). No public API world-poses an OS-composited window. CORRECTED v35.2 — for Compose placed INSIDE the 3D scene, run generate_attachment_panel_kotlin alongside this; scene placement is still not world-locking (anchors remain deferred)`);
       return okJson({
         status: "ok",
         appName: spec.meta.appName,

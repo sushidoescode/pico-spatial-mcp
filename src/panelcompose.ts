@@ -39,7 +39,7 @@ export function registerPanelComposeTools(server: McpServer) {
     "generate_panel_compose_kotlin",
     {
       description:
-        "Emit HudPanel.kt — a LIVE-RUNTIME-TEXT spatial panel (the hybrid-app tier). ARCHITECTURE (the proven path): the panel is its OWN 2D ACTIVITY (HudPanelActivity, same APK + process) — the OS auto-hosts every 2D task as a floating spatial panel over the still-rendering immersive scene (vision-verified with Settings, v9.3). An immersive app's own WindowContainer does NOT open a panel window on the emulator — don't use it for this. Compose state is shared in-process, so DEBUG_CMD 'hud:<key>=<value>' -> HudState.set updates the text LIVE; HudState.onLaunch()/onReset() are game hooks the wiring calls from menu actions (bump 'throws', READY/ROLLING 'status'). Show/hide headlessly: DEBUG_CMD 'panel:show'/'panel:hide' (wired by generate_app_wiring for any spec with panels — show starts the activity from the APP'S OWN context because shell am start is refused while the Stage holds Full Space; hide finishes it via the activity's instance companion, the rocketsim-proven way to un-occlude scene captures). adb shell am start -n <pkg>/<contentPkg>.HudPanelActivity also works when the shell start is not refused. SPATIALUI (v35.1): the hud panel is mounted inside PicoTheme { } and every colour/text size comes from a PicoTheme.colorScheme / PicoTheme.typography ROLE (fillSecondary surface, fillPrimary title, labelSecondary/labelPrimary rows, displayMedium/headlineLarge) — no hardcoded hex, no androidx.compose.material, matching PICO's own samples (0 material imports, 17 PicoTheme wraps). Because PICO's default scheme is light-on-glass, the panel now reads as native glass rather than the previous dark-navy slab. RETURNS: JSON {kotlin, manifestEntry, note} — write kotlin to the targetPath and merge manifestEntry into <application>: the activity with its own taskAffinity so it doesn't replace the immersive task. placement:'world' is accepted but NOT world-locked — no vault-confirmed API positions an auto-hosted 2D panel in world space; it emits the same dock path plus a loud head-docked-fallback marker in the code + note.",
+        "Emit HudPanel.kt — a LIVE-RUNTIME-TEXT spatial panel (the hybrid-app tier). ARCHITECTURE (the proven path): the panel is its OWN 2D ACTIVITY (HudPanelActivity, same APK + process) — the OS auto-hosts every 2D task as a floating spatial panel over the still-rendering immersive scene (vision-verified with Settings, v9.3). An immersive app's own WindowContainer does NOT open a panel window on the emulator — don't use it for this. Compose state is shared in-process, so DEBUG_CMD 'hud:<key>=<value>' -> HudState.set updates the text LIVE; HudState.onLaunch()/onReset() are game hooks the wiring calls from menu actions (bump 'throws', READY/ROLLING 'status'). Show/hide headlessly: DEBUG_CMD 'panel:show'/'panel:hide' (wired by generate_app_wiring for any spec with panels — show starts the activity from the APP'S OWN context because shell am start is refused while the Stage holds Full Space; hide finishes it via the activity's instance companion, the rocketsim-proven way to un-occlude scene captures). adb shell am start -n <pkg>/<contentPkg>.HudPanelActivity also works when the shell start is not refused. SPATIALUI (v35.1): the hud panel is mounted inside PicoTheme { } and every colour/text size comes from a PicoTheme.colorScheme / PicoTheme.typography ROLE (fillSecondary surface, fillPrimary title, labelSecondary/labelPrimary rows, displayMedium/headlineLarge) — no hardcoded hex, no androidx.compose.material, matching PICO's own samples (0 material imports, 17 PicoTheme wraps). Because PICO's default scheme is light-on-glass, the panel now reads as native glass rather than the previous dark-navy slab. RETURNS: JSON {kotlin, manifestEntry, note} — write kotlin to the targetPath and merge manifestEntry into <application>: the activity with its own taskAffinity so it doesn't replace the immersive task. placement:'world' is accepted and still emits the dock path: no public API world-poses an OS-composited 2D window, which remains true. CORRECTED v35.2 — that limit was over-generalised into 'in-scene 2D is impossible', which is false; generate_attachment_panel_kotlin places Compose INSIDE the 3D scene via AttachmentPanel + TransformComponent (metres), and 'world' now points there in the emitted code + note. Scene placement is still not world-locking; anchors remain deferred.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
         kind: z.enum(["hud", "web"]).default("hud").describe("hud = the live label:value Compose scoreboard. web = a WebView panel (FULL HTML/CSS/JS with a LIVE DOM — vision-verified: a JS setInterval ticked live in-world). Web panels put charts/dashboards/docs in the spatial viewport."),
@@ -53,20 +53,31 @@ export function registerPanelComposeTools(server: McpServer) {
         placement: z
           .enum(["dock", "world"])
           .optional()
-          .describe("'world' = a world-anchored panel was REQUESTED. HONEST LIMIT: no public API positions an auto-hosted 2D panel in world space (vault-checked), so 'world' changes NOTHING behaviorally — it only stamps a loud 'world placement pending SDK confirmation — head-docked fallback' comment into the emitted code + note. Default 'dock' (the proven path)."),
+          .describe("'world' = in-scene placement was REQUESTED. CORRECTED v35.2: this tool emits a separate 2D ACTIVITY that PICO OS composites as a floating window, and no public API sets the world pose of one of those — that limit is real and unchanged. But our older wording implied in-scene 2D content was impossible, and that was wrong: use generate_attachment_panel_kotlin, where AttachmentPanel inside a SpatialView gives a Compose surface on a real ECS Entity you position in metres (0.13.3, SpatialView.kt:182; six of eight PICO samples use it). 'world' here still emits the dock path, now with a comment + note naming that route. Note even AttachmentPanel is SCENE placement, not world-LOCKING — a real-room anchor needs AnchorComponent, still deferred. Default 'dock'."),
       },
     },
     async ({ packageName, kind, url, html, title, fields, placement }) => {
-      // v31: 'world' placement has no vault-confirmed API — emit the dock path with a LOUD marker
-      // so the fallback is visible in the source and the tool result, never silently swallowed.
+      // v35.2 CORRECTION. v31 emitted "no public API positions an auto-hosted 2D panel in world
+      // space" here and treated 'world' as a dead end. The half about an auto-hosted 2D Activity
+      // window is true and stays. The implication — that in-scene 2D content is impossible — was
+      // false: AttachmentPanel has been public in 0.13.3 all along (SpatialView.kt:182), and six of
+      // PICO's eight samples use it. 'world' now names the real route instead of a dead end.
       const worldCommentLines = placement === "world"
         ? [
-            ` * WORLD PLACEMENT REQUESTED — world placement pending SDK confirmation: no public API`,
-            ` * positions an auto-hosted 2D panel in world space (vault-checked), so this panel uses`,
-            ` * the HEAD-DOCKED fallback and spawns at the dock. Verify by turning the camera.`,
+            ` * IN-SCENE PLACEMENT REQUESTED — this tool cannot do it, and here is what can.`,
+            ` * This panel is a separate 2D ACTIVITY that PICO OS composites as a floating window, and`,
+            ` * no public API sets the world pose of one of those. That much was always true.`,
+            ` * For Compose content positioned INSIDE the 3D scene, use`,
+            ` * generate_attachment_panel_kotlin: AttachmentPanel(id, size, alignment, content) inside`,
+            ` * a SpatialView yields a Compose surface backed by a real ECS Entity whose`,
+            ` * TransformComponent you set, in metres. Note that is SCENE placement, not world-LOCKING`,
+            ` * — the panel moves with its container; a pose fixed to the real room still needs`,
+            ` * AnchorComponent. This activity keeps the dock behaviour. Verify by turning the camera.`,
           ]
         : [];
-      const worldNote = placement === "world" ? "; WORLD PLACEMENT REQUESTED: world placement pending SDK confirmation — head-docked fallback" : "";
+      const worldNote = placement === "world"
+        ? "; IN-SCENE PLACEMENT REQUESTED: this tool emits the docked 2D Activity (no public API world-poses an OS-composited window — that limit is real). For Compose INSIDE the 3D scene use generate_attachment_panel_kotlin (AttachmentPanel + TransformComponent, metres). That is scene placement, not world-locking; a real-room anchor still needs AnchorComponent"
+        : "";
       if (kind === "web") {
         const load = url
           ? `wv.loadUrl(${JSON.stringify(url)})`

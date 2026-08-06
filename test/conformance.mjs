@@ -283,5 +283,92 @@ console.log("\n§1.4/§2.3 per-frame and per-event transform writes mutate, neve
   assert(/\.position = Vector3\(/.test(launchBody), "launch() writes position in place");
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// §3.2 — AttachmentPanel: Compose placed INSIDE the 3D scene.
+//
+// We shipped "no public API positions an auto-hosted 2D panel in world space" and compiled
+// placement:'world' to a head-docked fallback. True of an OS-composited 2D Activity window; false
+// as the general claim it was read as. These assertions pin both the route and the retraction.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+console.log("\n§3.2 in-scene Compose panels, and the correction that unlocked them");
+{
+  const { generateAttachmentPanelFiles } = await import("../dist/attachmentpanel.js");
+  const out = generateAttachmentPanelFiles({
+    packageName: "com.test.conf.content",
+    panels: [
+      { id: "score", title: "SCORE", lines: ["0"], position: [0, -0.3, 0.28], widthDp: 320, heightDp: 140, alignment: "CENTER" },
+      { id: "label", title: "LABEL", position: [0.4, 1.2, -2], faceViewer: true },
+    ],
+  });
+  const kt = out.files["SceneAttachments.kt"];
+
+  assert(kt.includes("import com.pico.spatial.ui.foundation.content.AttachmentPanelBuilder"), "imports AttachmentPanelBuilder");
+  assert(kt.includes("fun AttachmentPanelBuilder.sceneAttachmentPanels("), "emits the attachments builder extension");
+  assert(kt.includes("fun SpatialViewAttachments.seatSceneAttachmentPanels("), "emits the seating helper");
+  assert((kt.match(/AttachmentPanel\(\n/g) || []).length === 2, "one AttachmentPanel per requested panel");
+
+  // TRAP 1: the attachments lambda is NOT a composable scope, so panelSize must be hoisted.
+  const builderBlock = /fun AttachmentPanelBuilder\.sceneAttachmentPanels[\s\S]*?\n\}/.exec(kt)?.[0] ?? "";
+  assert(builderBlock.length > 0, "the builder extension is well-formed");
+  assert(!/panelSize\(/.test(builderBlock), "panelSize is NOT called inside the attachments lambda (it is not a composable scope)");
+  assert(/@Composable\nfun rememberAttachmentPanelSizes\(\)/.test(kt), "panel sizes are hoisted into a @Composable");
+
+  // TRAP 2/3: the Dp overload only — the metres overload throws outside a spatial container, and
+  // panelSize is remembered with no keys.
+  assert(/panelSize\(\d+\.dp, \d+\.dp\)/.test(kt), "uses the Dp overload of panelSize");
+  assert(!/panelSize\([\d.]+f\s*,/.test(kt), "does not use the metres overload (it throws without LocalPhysicalLengthConverter)");
+
+  // TRAP 4: the attachment entity must be explicitly added or it silently never renders.
+  assert((kt.match(/content\.addEntity\(panel\)/g) || []).length === 2, "every attachment entity is explicitly added to the scene");
+  assert(/entity\(SceneAttachments\.ID_\w+\)\?\.let/.test(kt), "entity(id) is null-guarded (it returns Entity?)");
+
+  // Position is metres; and it must be set by mutation on the existing component.
+  assert(/setPosition\(SceneAttachments\.POS_/.test(kt), "positions the attachment via TransformComponent");
+  assert(!/components\.set\(TransformComponent\(/.test(kt), "does not replace the attachment's TransformComponent");
+
+  // faceViewer: there is no BillboardComponent in 0.13.3; LookAtComponent is the equivalent.
+  assert(kt.includes("LookAtComponent().apply { setViewerAsTarget() }"), "faceViewer uses LookAtComponent.setViewerAsTarget()");
+  // The word appears in the comment explaining why we do not use it; what must never appear is a use.
+  assert(!/BillboardComponent\s*\(|import .*Billboard/.test(kt), "never constructs or imports a BillboardComponent (no such type in 0.13.3)");
+
+  // SpatialUI, not Material — same house rule as every other panel.
+  assert(/PicoTheme \{/.test(kt), "panel content is wrapped in PicoTheme");
+  assert(!/androidx\.compose\.material/.test(kt), "no Material import");
+  assert(!/Color\(0x/.test(kt), "no hardcoded colour literals");
+  const errs = runLint(kt, "kotlin").filter((v) => v.severity === "error");
+  assert(errs.length === 0, `emitted attachment file is lint-clean${errs.length ? `: ${errs.map((e) => e.ruleId).join(", ")}` : ""}`);
+
+  // The note must state the scope limit rather than overclaiming a world anchor.
+  assert(/not world-?LOCKING|NOT world-locking|not world-locking/i.test(out.note), "the note distinguishes scene placement from world-locking");
+  assert(/AnchorComponent/.test(out.note), "the note names AnchorComponent as what world-locking would still need");
+  assert(/structural/i.test(out.note), "the note reports honest evidence status");
+
+  // Input validation: ids are map keys, and the SDK silently clamps oversize panels.
+  let threw = false;
+  try { generateAttachmentPanelFiles({ packageName: "com.x", panels: [{ id: "a" }, { id: "a" }] }); } catch { threw = true; }
+  assert(threw, "duplicate attachment ids are rejected (ids are map keys)");
+  threw = false;
+  try { generateAttachmentPanelFiles({ packageName: "com.x", panels: [{ id: "a", widthDp: 4096 }] }); } catch { threw = true; }
+  assert(threw, "a panel wider than MAX_PANEL_SIZE_DP=2048 is rejected rather than silently clamped");
+}
+
+console.log("\n§3.2 the shipped 'no world placement' claim is corrected everywhere it was published");
+{
+  // The claim lived in three places. Each must now name the real route AND keep the half that is
+  // genuinely true (no public API world-poses an OS-composited 2D Activity window).
+  for (const file of ["src/panelcompose.ts", "src/appspec.ts", "src/compiler.ts"]) {
+    const s = read(file);
+    assert(!/world placement pending SDK confirmation/.test(s), `${file}: the dead-end wording is gone`);
+    assert(/generate_attachment_panel_kotlin/.test(s), `${file}: points at the route that actually works`);
+    assert(/AnchorComponent/.test(s), `${file}: still distinguishes scene placement from world-locking`);
+  }
+  const hud = await callJson("generate_panel_compose_kotlin", {
+    packageName: "com.test.conf.content", kind: "hud", placement: "world",
+  });
+  assert(/generate_attachment_panel_kotlin/.test(hud.kotlin), "a 'world' request emits the real route in the generated source");
+  assert(/generate_attachment_panel_kotlin/.test(hud.note), "a 'world' request names the real route in the tool note");
+  assert(!/head-docked fallback/.test(hud.note), "the 'head-docked fallback' framing is gone from the note");
+}
+
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

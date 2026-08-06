@@ -227,7 +227,7 @@ export const panelSchema = z.object({
     })
     .strict()
     .optional()
-    .describe("Where the panel should live (default dock). HONEST LIMIT: 'world' does not world-lock today — the vault api-reference has no public API to position an auto-hosted 2D panel in world space, so 'world' compiles to the dock path plus a loud 'world placement pending SDK confirmation — head-docked fallback' note in the ledger, the compile result, and the emitted code."),
+    .describe("Where the panel should live (default dock). CORRECTED v35.2: 'world' still compiles to the dock path, because this AppSpec node lowers to an auto-hosted 2D Activity and no public API world-poses one of those — that limit is real. What was WRONG was the implication that in-scene 2D is impossible. It is not: generate_attachment_panel_kotlin places Compose INSIDE the 3D scene (AttachmentPanel + TransformComponent, metres — public in 0.13.3, used by six of eight PICO samples). The ledger note for 'world' now names that route. Even so, scene placement is not world-LOCKING: an anchor fixed to the real room still needs AnchorComponent, which stays honestly deferred."),
 });
 
 /** Asset paths are embedded in generated Kotlin and also used as APK-relative filesystem paths.

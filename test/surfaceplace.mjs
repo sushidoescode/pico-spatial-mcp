@@ -158,9 +158,20 @@ assert(surfacePlacementKotlin(base) === kt, "deterministic: same options -> byte
     const steps = ledger.filter((s) => s.tool === "generate_panel_compose_kotlin");
     const world = steps.find((s) => s.node === "score");
     const dock = steps.find((s) => s.node === "info");
-    assert(world && world.args.placement === "world" && world.note.includes("world placement pending SDK confirmation — head-docked fallback"),
-      "world panel: dock path + the LOUD pending-SDK fallback note (never an invented world-position API)");
-    assert(dock && dock.args.placement === undefined && !dock.note.includes("WORLD PLACEMENT"),
+    // v35.2: this node still lowers to the docked 2D Activity — no public API world-poses an
+    // OS-composited window, and that limit is real. What changed is the note: it used to say
+    // "world placement pending SDK confirmation — head-docked fallback", which read as "in-scene 2D
+    // is impossible". It is not. The note must now name generate_attachment_panel_kotlin AND keep
+    // the scene-placement / world-locking distinction honest.
+    assert(world && world.args.placement === "world" && world.note.includes("IN-SCENE PLACEMENT REQUESTED"),
+      "world panel: still the dock lowering, now flagged as an in-scene request");
+    assert(world && world.note.includes("generate_attachment_panel_kotlin"),
+      "world panel: the note names the route that actually places Compose in the 3D scene");
+    assert(world && world.note.includes("AnchorComponent"),
+      "world panel: the note keeps scene placement distinct from world-locking (anchors still deferred)");
+    assert(world && !world.note.includes("pending SDK confirmation"),
+      "world panel: the retracted dead-end wording is gone");
+    assert(dock && dock.args.placement === undefined && !dock.note.includes("PLACEMENT REQUESTED"),
       "default panel: unchanged dock lowering");
   }
 }
