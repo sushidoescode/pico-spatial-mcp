@@ -125,7 +125,20 @@ fun mainApp(scope: SpatialAppScope) = with(scope) {
             PicoTheme {
                 ${value.componentContent}
                 // The SDK owns the fixed 360.dp x MatchContainerHeight attached augment.
-                // It follows this WindowContainer; it is not an arbitrary world-lock primitive.
+                //
+                // CONTAINER-RELATIVE, NOT WORLD-SPACE — precise as of v35.5, from the 0.13.3 KDoc
+                // (ui/design windows/Subwindow.kt:41-42), verbatim: "Subwindow is a component shown
+                // at left or right side of the window container. and it's height always fill the
+                // height of the window container."
+                // So 'placement' picks a SIDE of this container, and 'offset: DpOffset3D' is an
+                // offset FROM that side — it defaults to getGap(getLayoutDirection(placement)),
+                // a gap measured off the container edge, not a world coordinate. 'rotation3D' is
+                // likewise applied about the subwindow's own pivot relative to the container
+                // (Rotation3D.pivot's z is ignored, per the same KDoc).
+                // Consequence: a Subwindow moves when its container moves. It is not, and cannot be
+                // made into, a world-locked panel. For content placed at a chosen position inside a
+                // 3D scene use generate_attachment_panel_kotlin; for a pose fixed to the real room
+                // you still need AnchorComponent, which remains deferred.
                 Subwindow(
                     followViewpoints = ViewPoint.All,
                     placement = SubwindowPlacement.${value.subwindowSide},
@@ -149,7 +162,7 @@ fun mainApp(scope: SpatialAppScope) = with(scope) {
     ],
     evidence:["SDK 0.13.3 source-grounded structure"],
     doesNotProve:[
-      "Subwindow is an attached augment; this does not prove arbitrary world lock.",
+      "Subwindow is CONTAINER-RELATIVE by definition (0.13.3 KDoc, Subwindow.kt:41-42: shown at the left or right side of the window container, height always filling it). placement picks a side; offset is measured from that side, defaulting to getGap(...); rotation3D is about its own pivot. It follows its container and can never be world-locked — that is a property of the component, not a limit of this generator.",
       "Generated structure does not prove compilation or pixel rendering.",
       "The generator does not write or verify AndroidManifest.xml; Mixed behavior depends on applying manifestNotes to the launcher.",
     ],

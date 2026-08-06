@@ -78,7 +78,15 @@ assert(sk.includes("placement = SubwindowPlacement.Right"));
 assert(!sk.includes("offset = DpOffset3D"));
 assert(sk.includes("fixed 360.dp x MatchContainerHeight attached augment"));
 assert.equal((sk.match(/Subwindow\(/g) || []).length, 1);
-assert(sub.doesNotProve.some((x) => /attached augment.*world lock/i.test(x)));
+// v35.5: the old assertion accepted the hedge "an attached augment; this does not prove arbitrary
+// world lock" — true, but a negative that never said what a Subwindow IS. The 0.13.3 KDoc
+// (Subwindow.kt:41-42) settles it: "shown at left or right side of the window container ... height
+// always fill the height of the window container". It is CONTAINER-RELATIVE by construction, so it
+// can never be world-locked — a property of the component, not a limit of our generator. Assert the
+// precise statement, and that it still denies world lock.
+assert(sub.doesNotProve.some((x) => /container-relative/i.test(x)), "Subwindow is described as container-relative");
+assert(sub.doesNotProve.some((x) => /never be world-locked|world lock/i.test(x)), "Subwindow still denies world lock");
+assert(sub.doesNotProve.some((x) => /Subwindow\.kt:41-42/.test(x)), "the container-relative claim cites the 0.13.3 KDoc");
 assert(sub.doesNotProve.some((x) => /pixel rendering/i.test(x)));
 assert(sub.doesNotProve.some((x) => /does not write or verify.*manifest.*Mixed.*manifestNotes/i.test(x)));
 assert(sub.manifestNotes.some((x) => /launcher.*DefaultStage.*style 1.*Mixed/i.test(x)));
@@ -337,7 +345,11 @@ assert(!JSON.parse(readRepo("package.json")).files.includes("examples"), "repo-o
 
 const subwindowCapability = CAPABILITY_MANIFEST.find((entry) => entry.tool === "generate_subwindow_kotlin");
 assert.equal(subwindowCapability?.ceiling, "C4_headset_only");
-assert.match(subwindowCapability?.note ?? "", /structural.*attached augment.*world lock/i);
+// v35.5: same strengthening as above — assert the precise container-relative statement and its
+// citation, not just the old "does not prove world lock" hedge.
+assert.match(subwindowCapability?.note ?? "", /structural.*attached augment.*container-relative/i);
+assert.match(subwindowCapability?.note ?? "", /Subwindow\.kt:41-42/);
+assert.match(subwindowCapability?.note ?? "", /never be world-locked/i);
 assert.match(subwindowCapability?.note ?? "", /Mixed requires.*caller-applied.*manifest style 1/i);
 const gestureCapability = CAPABILITY_MANIFEST.find((entry) => entry.tool === "generate_spatial_gestures_kotlin");
 assert.equal(gestureCapability?.ceiling, "C3");
