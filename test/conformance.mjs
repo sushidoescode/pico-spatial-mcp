@@ -370,5 +370,88 @@ console.log("\n§3.2 the shipped 'no world placement' claim is corrected everywh
   assert(!/head-docked fallback/.test(hud.note), "the 'head-docked fallback' framing is gone from the note");
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// §3.3/§3.4/§6.3 — multi-container apps and the SpatialNavigator.
+//
+// Our genMain has always emitted DefaultStage for every app. WelcomeSpace declares three containers
+// and navigates between them. MEASURED 2026-08-06 on emulator-5554 (ledger com.picoagent.v35expb#0,
+// vision_verified): with the explicit open call, an immersive app's own secondary WindowContainer
+// really does open — which narrows, not discards, our v9.3 note.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+console.log("\n§3.3 multi-container apps open through the navigator");
+{
+  const { generateContainerAppFiles } = await import("../dist/containers.js");
+  const out = generateContainerAppFiles({
+    packageName: "com.test.conf",
+    root: "windowContainer",
+    rootContent: "MainNavHost()",
+    rootContentImport: "com.test.conf.ui.MainNavHost",
+    containers: [
+      { kind: "window", id: "display_box", form: "Volumetric", widthDp: 1520, heightDp: 700, depthDp: 600 },
+      { kind: "stage", id: "room", style: "Full", immersion: 100 },
+    ],
+  });
+  const kt = out.files["Main.kt"];
+
+  assert((kt.match(/fun mainApp\(/g) || []).length === 1, "exactly one mainApp");
+  assert((kt.match(/DefaultWindowContainer \{|DefaultStage \{/g) || []).length === 1, "exactly one Default* container — it is what the OS launches");
+  assert(/WindowContainer\(\n\s+id = SpatialContainers\.ID_DISPLAY_BOX/.test(kt), "the secondary WindowContainer is declared with its id");
+  assert(/Stage\(\n\s+id = SpatialContainers\.ID_ROOM/.test(kt), "the secondary Stage is declared with its id");
+
+  // Stage has NO style param — style is chosen at openStage time. Emitting it would not compile.
+  const stageDecl = /    Stage\([\s\S]*?\n    \) \{/.exec(kt)?.[0] ?? "";
+  assert(stageDecl.length > 0 && !/style\s*=/.test(stageDecl), "Stage() is declared without a style parameter (it has none)");
+  assert(/Immersion\(default = \d+, min = \d+, max = \d+\)/.test(kt), "immersion uses the Immersion(...) factory, not the internal class ctor");
+
+  // windowConstraints is a WindowContainerConstraintsScope member — only valid inside a WindowContainer.
+  assert(/Modifier\.windowConstraints\(width = \d+\.dp, height = \d+\.dp\)/.test(kt), "the WindowContainer root carries windowConstraints");
+  const stageRoot = generateContainerAppFiles({ packageName: "com.test.conf", root: "stage" }).files["Main.kt"];
+  assert(!/windowConstraints/.test(stageRoot), "a Stage-rooted app emits no windowConstraints (the scope does not provide it)");
+
+  // A declared container does not open itself.
+  assert(/navigator\.openWindowContainer\(SpatialContainers\.ID_DISPLAY_BOX/.test(kt), "an explicit openWindowContainer call is emitted");
+  assert(/navigator\.openStage\(SpatialContainers\.ID_ROOM/.test(kt), "an explicit openStage call is emitted");
+  assert(/LocalSpatialNavigator\.current/.test(kt), "the navigator comes from LocalSpatialNavigator");
+
+  // THE BROKEN TEARDOWN. closeStage is suspend; a rememberCoroutineScope is cancelled before
+  // onDispose runs, so `onDispose { scope.launch { closeStage() } }` silently never executes.
+  // Both PICO samples close on the lifecycle instead.
+  const stageHelper = /fun OpenRoomOnEnter\([\s\S]*?\n\}/.exec(kt)?.[0] ?? "";
+  assert(stageHelper.length > 0, "the Stage open/close helper is emitted");
+  assert(!/onDispose \{[^}]*scope\.launch/.test(stageHelper),
+    "closeStage is NOT called from onDispose (the scope is already cancelled there — it would silently no-op)");
+  assert(/LifecycleEventObserver/.test(stageHelper) && /ON_PAUSE/.test(stageHelper),
+    "the Stage is closed on ON_PAUSE/ON_DESTROY, before disposal");
+
+  // The manifest keys whose 0.13.3 backing is a framework stub must not be emitted.
+  for (const key of ["pico.spatial.windowcontainer.style", "pico.spatial.windowcontainer.worldscaletype", "pico.spatial.windowcontainer.defaultsize"]) {
+    assert(!kt.includes(key), `does not emit the unbacked manifest key ${key}`);
+  }
+
+  const errs = runLint(kt, "kotlin").filter((v) => v.severity === "error");
+  assert(errs.length === 0, `container Main.kt is lint-clean${errs.length ? `: ${errs.map((e) => e.ruleId).join(", ")}` : ""}`);
+
+  // Refuse ungrounded configurations rather than guessing.
+  let threw = false;
+  try { generateContainerAppFiles({ packageName: "com.x", root: "stage", containers: [{ kind: "stage", id: "s" }] }); } catch { threw = true; }
+  assert(threw, "a DefaultStage app declaring another Stage is refused (not a grounded configuration)");
+  threw = false;
+  try { generateContainerAppFiles({ packageName: "com.x", containers: [{ kind: "window", id: "a" }, { kind: "window", id: "a" }] }); } catch { threw = true; }
+  assert(threw, "duplicate container ids are rejected (ids address the open/close calls)");
+
+  // The note must carry the measurement, not the retracted absolute.
+  assert(/MEASURED 2026-08-06/.test(out.note), "the note carries the emulator measurement");
+  assert(/com\.picoagent\.v35expb#0/.test(out.note), "the note cites the ledger entry");
+}
+
+console.log("\n§3.3 the v9.3 'own WindowContainer never opens' note is narrowed, not deleted");
+{
+  for (const file of ["src/panelcompose.ts", "src/assemble.ts"]) {
+    const s = read(file);
+    assert(!/own WindowContainer does NOT open/.test(s), `${file}: the unqualified absolute is gone`);
+    assert(/spatialNavigator\.openWindowContainer|openWindowContainer/.test(s), `${file}: names the call that makes it open`);
+  }
+}
+
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

@@ -1127,8 +1127,8 @@ test("distribution metadata records platform-exact full surfaces, 16 doors, and 
   assert.equal((workflow.match(/run: npm run smoke\s/g) ?? []).length, 1);
 
   const tarball = fs.readFileSync(path.join(repoRoot, "scripts", "verify-tarball.mjs"), "utf8");
-  assert.match(tarball, /const EXPECTED_TOOLS = 241;/);
-  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 238;/);
+  assert.match(tarball, /const EXPECTED_TOOLS = 242;/);
+  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 239;/);
   assert.doesNotMatch(tarball, /TOOL_TOLERANCE/);
   assert.match(tarball, /tools\.length === EXPECTED_PLATFORM_TOOLS/);
 
@@ -1145,14 +1145,14 @@ test("distribution metadata records platform-exact full surfaces, 16 doors, and 
     "docs/COLLABORATORS.md",
   ]) {
     const prose = fs.readFileSync(path.join(repoRoot, file), "utf8").replaceAll("\n", " ");
-    assert.match(prose, /241(?: tools?)? on macOS[\s\S]{0,160}238(?: tools?)? on other hosts/i, file);
-    assert.doesNotMatch(prose, /\b241\+(?:[- ]tools?)?/i, file);
+    assert.match(prose, /242(?: tools?)? on macOS[\s\S]{0,160}239(?: tools?)? on other hosts/i, file);
+    assert.doesNotMatch(prose, /\b242\+(?:[- ]tools?)?/i, file);
   }
 
   for (const description of [
     readJson(".claude-plugin/plugin.json").description,
     readJson(".claude-plugin/marketplace.json").plugins[0].description,
   ]) {
-    assert.match(description, /241 tools on macOS \/ 238 on other hosts/i);
+    assert.match(description, /242 tools on macOS \/ 239 on other hosts/i);
   }
 });
