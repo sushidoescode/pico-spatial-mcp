@@ -493,6 +493,49 @@ export function loadVaultIndex(vaultRoot?: string): VaultIndex | null {
   return index;
 }
 
+/**
+ * v34.1 — the SpatialUI blind spot. `knowledge/api-reference/` documents the ECS/type surface only.
+ * Compose modifiers, composables and gesture functions (rotate3D, SpatialModelView, Offset3D,
+ * vibrantEffect, detectSpatialScaleGesture …) are documented in `knowledge/documentation/` instead,
+ * so vault_api answered "not-found" for symbols PICO's own samples compile against — and the agent
+ * contract ("never invent an SDK API; ground it in the vault") then forbade writing correct code.
+ * Measured 2026-08-05 against the 8 official samples. This is a SECONDARY, prose-grade source: it
+ * proves the symbol is real and cites where it is documented, but it is NOT a declaration.
+ */
+export type VaultDocHit = { symbol: string; file: string; line: number; excerpt: string };
+
+export function searchVaultDocs(symbol: string, vaultRoot?: string, limit = 4): VaultDocHit[] {
+  const root = vaultRoot ?? defaultVaultRoot();
+  const docDir = path.join(root, "knowledge", "documentation");
+  const hits: VaultDocHit[] = [];
+  const bare = symbol.split(".").pop() ?? symbol;
+  if (!bare || bare.length < 3) return hits;
+  const needle = new RegExp(`\\b${bare.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+  let files: string[];
+  try {
+    files = fs.readdirSync(docDir).filter((f) => f.endsWith(".md"));
+  } catch {
+    return hits;
+  }
+  for (const f of files) {
+    if (hits.length >= limit) break;
+    let text: string;
+    try {
+      text = fs.readFileSync(path.join(docDir, f), "utf8");
+    } catch {
+      continue;
+    }
+    if (!needle.test(text)) continue;
+    const lines = text.split("\n");
+    for (let i = 0; i < lines.length && hits.length < limit; i++) {
+      if (!needle.test(lines[i])) continue;
+      hits.push({ symbol: bare, file: `knowledge/documentation/${f}`, line: i + 1, excerpt: lines[i].trim().slice(0, 240) });
+      break; // one citation per file is enough to prove existence
+    }
+  }
+  return hits;
+}
+
 // ── the check ───────────────────────────────────────────────────────────────────────────────────────────
 
 /** SDK symbols that are REAL (runtime-verified by us) but absent from the vault api-reference. */
@@ -802,9 +845,18 @@ export function registerVaultTools(server: McpServer) {
         for (const m of index.packages.values())
           for (const [name, t] of m)
             if (name.toLowerCase().includes(needle)) near.add(t.qualifiedName);
+        const docHits = searchVaultDocs(wanted, index.vaultRoot);
+        if (docHits.length) {
+          return okJson({
+            status: "documented-only", sdkVersion: index.sdkVersion, symbol: wanted,
+            note: "NOT in api-reference/ (which covers the ECS/type surface), but documented in the vault's prose docs — this is the SpatialUI/Compose surface: modifiers, composables and gesture functions. The symbol is REAL; the api-reference simply does not carry it. Read the cited doc for the call shape — do NOT invent parameters it does not show.",
+            documentation: docHits,
+            ...(near.size ? { similar: [...near].slice(0, 10) } : {}),
+          });
+        }
         return okJson({
           status: "not-found", sdkVersion: index.sdkVersion, symbol: wanted,
-          note: "no vault declaration — either the symbol does not exist in SDK " + (index.sdkVersion ?? "?") + " or it is a vault coverage gap (cf. GaussianSplatting*). Do NOT invent a signature.",
+          note: "no vault declaration and no prose-doc mention — either the symbol does not exist in SDK " + (index.sdkVersion ?? "?") + " or it is a vault coverage gap (cf. GaussianSplatting*). Do NOT invent a signature.",
           ...(near.size ? { similar: [...near].slice(0, 10) } : {}),
         });
       }
