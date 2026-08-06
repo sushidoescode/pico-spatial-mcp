@@ -177,8 +177,13 @@ assert.throws(() => generateSpatialGestureFiles({ packageName: "com.when", targe
 
 const componentInputs = {
   titleBar: { kind: "titleBar", id: "titleDemo", title: "Demo", items: [] },
-  toolbar: { kind: "toolbar", id: "toolbarDemo", title: "Demo", items: [] },
-  tabBar: { kind: "tabBar", id: "tabDemo", title: "Demo", items: ["One", "Two"] },
+  // v35.14: these two now REQUIRE container:"window". TabBar and Toolbar are AugmentImpl-backed
+  // (Augments.kt:167-181); outside a WindowContainer AugmentImpl takes its else branch and only
+  // logs "Augment-like components are not supported in <type>. Use WindowContainer instead."
+  // (:222-226) — no exception, no compile error, no pixel. These fixtures previously omitted
+  // container, defaulting to "ordinary", i.e. they described the silent-no-op case.
+  toolbar: { kind: "toolbar", id: "toolbarDemo", title: "Demo", items: [], container: "window" },
+  tabBar: { kind: "tabBar", id: "tabDemo", title: "Demo", items: ["One", "Two"], container: "window" },
   sheet: { kind: "sheet", id: "sheetDemo", title: "Demo", items: [], container: "window" },
   snackbarHost: { kind: "snackbarHost", id: "snackDemo", title: "Demo", items: [], container: "window" },
   coachmark: { kind: "coachmark", id: "coachDemo", title: "Demo", items: [], container: "window" },
@@ -187,7 +192,9 @@ const componentInputs = {
 const exactCalls = {
   titleBar: 'TitleBar(title = { Text(text = "Demo") })',
   toolbar: 'Toolbar(cornerSize = 32.dp, content = { Text(text = "Demo") })',
-  tabBar: 'TabBar(content = { item(selected = true, onClick = {}, mainContent = { Text(text = "One") }); item(selected = false, onClick = {}, mainContent = { Text(text = "Two") }) })',
+  // v35.14: followViewpoints is now explicit. Omitting it silently defaults to ViewPoint.All (all
+  // four sides); PICO's own sample passes a set (HomePage.kt:68-98).
+  tabBar: 'TabBar(followViewpoints = setOf(ViewPoint.Front, ViewPoint.Left), content = { item(selected = true, onClick = {}, mainContent = { Text(text = "One") }); item(selected = false, onClick = {}, mainContent = { Text(text = "Two") }) })',
   sheet: 'Sheet(onDismissRequest = {}) { Text(text = "Demo") }',
   snackbarHost: 'SnackbarHost { Text(text = "Demo") }',
   coachmark: 'CoachmarkBox(coachmark = { SimpleCoachmark(text = { Text(text = "Demo") }) }) { Text(text = "Demo") }',
@@ -197,7 +204,9 @@ const expandedOutputs = {};
 const componentImports = {
   titleBar: ["com.pico.spatial.ui.design.TitleBar"],
   toolbar: ["com.pico.spatial.ui.design.windows.Toolbar"],
-  tabBar: ["com.pico.spatial.ui.design.windows.TabBar"],
+  // TabBar.kt:81 imports the PLATFORM ViewPoint; a second, different ViewPoint exists in
+  // ui.foundation.content and would not compile here.
+  tabBar: ["com.pico.spatial.ui.design.windows.TabBar", "com.pico.spatial.ui.platform.ViewPoint"],
   sheet: ["com.pico.spatial.ui.design.windows.Sheet"],
   snackbarHost: ["com.pico.spatial.ui.design.windows.SnackbarHost"],
   coachmark: ["com.pico.spatial.ui.design.windows.CoachmarkBox", "com.pico.spatial.ui.design.windows.SimpleCoachmark"],

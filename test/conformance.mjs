@@ -790,5 +790,41 @@ console.log("\n§1.5 tap targets are TRIGGER_LITE, not physical obstacles");
     "an InteractableComponent with COLLIDER_FULL is an error");
 }
 
+// P1-7 — Augment-backed components are a SILENT NO-OP outside a WindowContainer. No exception, no
+// compile error, no pixel: AugmentImpl gates on isWindowContainer (Augments.kt:182) and its else
+// branch only logs (:222-226). TabBar, Toolbar and Subwindow all route through it.
+console.log("\nP1-7 Augment-backed components are refused outside a WindowContainer");
+{
+  const { generateSpatialUIKotlin } = await import("../dist/components.js");
+  const AUGMENT_BACKED = ["tabBar", "toolbar"];
+  for (const kind of AUGMENT_BACKED) {
+    let refused = false, msg = "";
+    try {
+      generateSpatialUIKotlin({ packageName: "com.test.conf", panels: [{ kind, id: "p", title: "T", items: ["a", "b"], container: "ordinary" }] });
+    } catch (e) { refused = true; msg = String(e?.message ?? e); }
+    assert(refused, `${kind} in an 'ordinary' container is REFUSED (it would render nothing and only log)`);
+    assert(/WindowContainer/.test(msg), `${kind}'s refusal names WindowContainer as the fix`);
+  }
+  // The already-guarded kinds must stay guarded.
+  for (const kind of ["sheet", "snackbarHost", "coachmark"]) {
+    let refused = false;
+    try { generateSpatialUIKotlin({ packageName: "com.test.conf", panels: [{ kind, id: "p", title: "T", container: "ordinary" }] }); } catch { refused = true; }
+    assert(refused, `${kind} in an 'ordinary' container is still refused`);
+  }
+  // A non-Augment kind must NOT be over-constrained.
+  let ok = true;
+  try { generateSpatialUIKotlin({ packageName: "com.test.conf", panels: [{ kind: "card", id: "c", title: "T", container: "ordinary" }] }); } catch { ok = false; }
+  assert(ok, "a plain card is still valid in an ordinary container (the gate is not over-broad)");
+
+  // followViewpoints: omitting it silently defaults to all four sides.
+  const r = generateSpatialUIKotlin({ packageName: "com.test.conf", panels: [{ kind: "tabBar", id: "t", title: "T", items: ["Feeds", "Search"], container: "window" }] });
+  const kt = typeof r === "string" ? r : (r.kotlin ?? JSON.stringify(r));
+  assert(/followViewpoints = setOf\(ViewPoint\./.test(kt), "TabBar passes an explicit followViewpoints set");
+  // TabBar.kt:81 imports the PLATFORM ViewPoint; there is a second, different ViewPoint in
+  // ui.foundation.content, and picking that one would not compile.
+  assert(/import com\.pico\.spatial\.ui\.platform\.ViewPoint/.test(kt),
+    "ViewPoint comes from ui.platform (the type TabBar actually takes), not ui.foundation.content");
+}
+
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

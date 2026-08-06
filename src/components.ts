@@ -94,11 +94,19 @@ const expandedPanel = z.object({
   items: z.array(z.string()).default([]),
   container: z.enum(["ordinary", "window"]).default("ordinary"),
 }).superRefine((panel, ctx) => {
-  if (["sheet", "snackbarHost", "coachmark"].includes(panel.kind) && panel.container !== "window") {
+  // v35.14: tabBar and toolbar were MISSING from this list, and that is a silent-failure bug, not a
+  // style nit. TabBar, Toolbar and Subwindow are all AugmentImpl-backed (ui/foundation
+  // window/Augments.kt:167-181). AugmentImpl gates on LocalSpatialContainerInfo.current
+  // .isWindowContainer (:182) and its else branch does nothing but log (:222-226, verbatim):
+  //     Logger.i("Augment") { "Augment-like components are not supported in $type. Use
+  //                            WindowContainer instead." }
+  // No exception, no compile error, no rendered pixel. An agent could generate a TabBar for a
+  // DefaultStage app, build green, see an empty scene, and have no error string to search for.
+  if (["sheet", "snackbarHost", "coachmark", "tabBar", "toolbar"].includes(panel.kind) && panel.container !== "window") {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["container"],
-      message: `${panel.kind} is only valid in a secondary WindowContainer`,
+      message: `${panel.kind} is only valid in a secondary WindowContainer. TabBar/Toolbar/Subwindow are AugmentImpl-backed (Augments.kt:167-181): outside a WindowContainer they render NOTHING and only log "Augment-like components are not supported in <type>. Use WindowContainer instead." (Augments.kt:222-226) — no exception, no compile error. Set container:'window' and host this panel in a WindowContainer (see generate_container_app_kotlin).`,
     });
   }
   if (["tabBar", "segmentControl"].includes(panel.kind) && panel.items.length === 0) {
@@ -322,7 +330,10 @@ function emitExpanded(p: ExpandedPanel): string[] {
   const call: Record<ExpandedPanel["kind"], string> = {
     titleBar: `TitleBar(title = { ${title} })`,
     toolbar: `Toolbar(cornerSize = 32.dp, content = { ${title} })`,
-    tabBar: `TabBar(content = { ${p.items.map((item, index) => `item(selected = ${index === 0}, onClick = {}, mainContent = { Text(text = ${kstr(item)}) })`).join("; ")} })`,
+    // followViewpoints is the gaze-follow set. PICO's SpatialUI sample passes an explicit set
+    // (HomePage.kt:68-98: setOf(ViewPoint.Front, ViewPoint.Left)); omitting it silently defaults to
+    // ViewPoint.All, i.e. the bar follows on all four sides — rarely what an author means.
+    tabBar: `TabBar(followViewpoints = setOf(ViewPoint.Front, ViewPoint.Left), content = { ${p.items.map((item, index) => `item(selected = ${index === 0}, onClick = {}, mainContent = { Text(text = ${kstr(item)}) })`).join("; ")} })`,
     sheet: `Sheet(onDismissRequest = {}) { ${title} }`,
     snackbarHost: `SnackbarHost { ${title} } // WindowContainer-only host`,
     coachmark: `CoachmarkBox(coachmark = { SimpleCoachmark(text = { ${title} }) }) { ${title} }`,
@@ -399,7 +410,7 @@ function buildKotlin(packageName: string, panels: PanelSpec[]): string {
     const kinds = new Set(panels.map((p) => p.kind));
     if (kinds.has("titleBar")) expandedImports.push(`import com.pico.spatial.ui.design.TitleBar`);
     if (kinds.has("toolbar")) expandedImports.push(`import com.pico.spatial.ui.design.windows.Toolbar`);
-    if (kinds.has("tabBar")) expandedImports.push(`import com.pico.spatial.ui.design.windows.TabBar`);
+    if (kinds.has("tabBar")) expandedImports.push(`import com.pico.spatial.ui.design.windows.TabBar`, `import com.pico.spatial.ui.platform.ViewPoint`);
     if (kinds.has("sheet")) expandedImports.push(`import com.pico.spatial.ui.design.windows.Sheet`);
     if (kinds.has("snackbarHost")) expandedImports.push(`import com.pico.spatial.ui.design.windows.SnackbarHost`);
     if (kinds.has("coachmark")) expandedImports.push(
