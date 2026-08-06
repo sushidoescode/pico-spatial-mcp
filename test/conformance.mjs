@@ -5,6 +5,8 @@
 // Fully deterministic: dist imports + fake-server tool shims. No emulator, no adb, no server spawn.
 // Run: node test/conformance.mjs
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
@@ -17,7 +19,13 @@ const read = (relative) => fs.readFileSync(new URL(relative, repoRoot), "utf8");
 const { registerPanelComposeTools } = await import("../dist/panelcompose.js");
 const { generateWiring } = await import("../dist/assemble.js");
 const { appSpecSchema } = await import("../dist/appspec.js");
-const { runLint } = await import("../dist/lint.js");
+const { runLint: runLintRaw, BUILTIN_RULES } = await import("../dist/lint.js");
+
+// HERMETIC: lint against the BUILT-IN rules only. runLint otherwise merges ~/.pico-mcp/lessons.json,
+// a user-writable store — so a developer's local lesson could pass or fail this gate depending on
+// their machine. That is not hypothetical: a malformed row in that file (no id, empty pattern) once
+// made this gate fail across eight unrelated generators with a blank rule id.
+const runLint = (content, kind) => runLintRaw(content, kind, BUILTIN_RULES);
 
 const handlers = {};
 const shim = { registerTool: (name, _meta, fn) => { handlers[name] = fn; } };
@@ -482,6 +490,112 @@ console.log("\n§1.1 the mesh-collider rule is narrowed to the case that still h
   // what would have made Experiment A falsely confirm the old claim.
   const pw = (await import("../dist/lint.js")).BUILTIN_RULES.find((r) => r.id === "raycast-without-physicsworld");
   assert(pw?.severity === "error", "rayCast without PhysicsWorldComponent is still an error");
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// §7 — acquisition without release, the cross-cutting finding.
+//
+// Across all of src/ our codegen emitted .close() exactly ONCE (on an Android AssetFileDescriptor,
+// not an SDK resource) and .destroy() once, while 8/8 samples pair every acquisition with a
+// release. This block asserts BOTH halves: the rules exist and fire, AND our own generators pass
+// them — which is how the databinding and menu leaks were found in the first place.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+console.log("\n§7 every generator that acquires a resource also releases it");
+{
+  const { BUILTIN_RULES } = await import("../dist/lint.js");
+  for (const id of ["animationresource-never-closed", "assetbundle-never-closed", "trackingmanager-never-stopped", "subscription-never-cancelled"]) {
+    const r = BUILTIN_RULES.find((x) => x.id === id);
+    assert(r && r.severity === "error", `${id} is an error-level rule`);
+    assert(r.type === "conditional", `${id} is conditional — a file that DOES clean up stays clean`);
+  }
+
+  // Sweep the generators that acquire SDK resources. Every one of these was emitting an
+  // acquisition with no release before this wave.
+  const LANES = [
+    ["anim", ["generate_tween_animation_kotlin", "generate_orbit_animation_kotlin", "generate_scene_animator_kotlin"]],
+    ["richness", ["generate_animation_kotlin"]],
+    ["sense", ["generate_scene_understanding_kotlin"]],
+    ["databinding", ["generate_data_binding_kotlin"]],
+    ["menu", ["generate_game_menu_kotlin"]],
+    ["interaction", ["generate_interaction_kotlin"]],
+    ["physics", ["generate_rigidbody_kotlin"]],
+  ];
+  for (const [mod, tools] of LANES) {
+    const m = await import(`../dist/${mod}.js`);
+    const reg = Object.values(m).find((x) => typeof x === "function" && /^register/.test(x.name));
+    const h = {};
+    reg({ registerTool: (n, _meta, fn) => { h[n] = fn; } });
+    for (const tool of tools) {
+      if (!h[tool]) { fail(`§7: ${tool} is not registered by ${mod}.ts`); continue; }
+      const res = await h[tool]({ packageName: "com.test.conf.content" });
+      const raw = res.content[0].text;
+      const kt = raw.trimStart().startsWith("{")
+        ? (() => { const j = JSON.parse(raw); return Object.values(j.files ?? {}).join("\n") || j.kotlin || ""; })()
+        : raw;
+      const errs = runLint(kt, "kotlin").filter((v) => v.severity === "error").map((v) => v.ruleId).filter(Boolean);
+      assert(errs.length === 0, `${tool} emits no unpaired acquisition${errs.length ? `: ${[...new Set(errs)].join(", ")}` : ""}`);
+    }
+  }
+
+  // The specific releases this wave added, asserted by shape so a refactor cannot quietly drop them.
+  const anim = await import("../dist/anim.js");
+  const ah = {};
+  anim.registerAnimTools({ registerTool: (n, _m, f) => { ah[n] = f; } });
+  for (const tool of ["generate_tween_animation_kotlin", "generate_orbit_animation_kotlin"]) {
+    const kt = (await ah[tool]({ packageName: "com.test.conf.content" })).content[0].text;
+    assert(/private var res: AnimationResource\? = null/.test(kt), `${tool} retains the AnimationResource`);
+    // Order matters: closing a resource that is still playing is what PICO's comments warn about.
+    const stopBody = /fun stop\(entity: Entity\)[\s\S]*?\n    \}/.exec(kt)?.[0] ?? "";
+    assert(stopBody.indexOf("stopAllAnimations") >= 0 && stopBody.indexOf("stopAllAnimations") < stopBody.indexOf("close()"),
+      `${tool} stops playback BEFORE closing the resource`);
+  }
+
+  const sense = await import("../dist/sense.js");
+  const sh = {};
+  sense.registerSenseTools({ registerTool: (n, _m, f) => { sh[n] = f; } });
+  const senseKt = (await sh["generate_scene_understanding_kotlin"]({ packageName: "com.test.conf.content" })).content[0].text;
+  assert(/fun stop\(\)/.test(senseKt) && /PlaneTrackingManager\.stop\(\)/.test(senseKt),
+    "scene understanding pairs start() with stop() (battery/thermal cost on hardware otherwise)");
+  // §4.1: loadAllAnchors resumes EMPTY with no error while state != RUNNING, so a bare retry loop
+  // is a blind spin on a condition the SDK exposes directly.
+  assert(/PLANES\| retry=\$tries state=\$\{PlaneTrackingManager\.state\}/.test(senseKt),
+    "the plane retry loop logs TrackingState each attempt (turns '0 planes' into a diagnosis)");
+
+  const db = await import("../dist/databinding.js");
+  const dh = {};
+  db.registerDataBindingTools({ registerTool: (n, _m, f) => { dh[n] = f; } });
+  const dbKt = (await dh["generate_data_binding_kotlin"]({ packageName: "com.test.conf.content" })).content[0].text;
+  assert(/fun dispose\(\)/.test(dbKt), "data binding emits a dispose()");
+  assert(/bundles\.values\.forEach \{ runCatching \{ it\.close\(\) \} \}/.test(dbKt), "dispose() closes every cached AssetBundle");
+  assert(/private val bundles = mutableMapOf<String, AssetBundle>\(\)/.test(dbKt),
+    "bundles are cached by path, not re-loaded per catalog item");
+  assert(/cancelChildren\(\)/.test(dbKt), "dispose() cancels in-flight loads before closing what they use");
+  assert(/placeholder\.destroy\(\)/.test(dbKt), "a replaced placeholder Entity is destroyed, not stranded");
+}
+
+// A malformed row in the user-writable lessons store must never be able to fire.
+console.log("\n§7 the learned-lesson store is treated as untrusted input");
+{
+  const poison = [
+    { severity: "error", kinds: ["any"], pattern: "(?:)", positiveFixture: "", negativeFixture: "" },
+    { id: "no-pattern", severity: "error", kinds: ["any"], message: "x" },
+    { id: "matches-everything", severity: "error", kinds: ["any"], pattern: ".*", message: "x" },
+    { id: "bad-regex", severity: "error", kinds: ["any"], pattern: "([", message: "x" },
+  ];
+  const home = process.env.HOME;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pico-lessons-"));
+  fs.mkdirSync(path.join(dir, ".pico-mcp"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".pico-mcp", "lessons.json"), JSON.stringify(poison));
+  process.env.HOME = dir;
+  try {
+    // Fresh import so the module re-reads LESSONS_PATH under the patched HOME.
+    const { runLint: rl } = await import(`../dist/lint.js?poison=${Date.now()}`);
+    const hits = rl("package com.example.app\nfun main() {}", "kotlin");
+    assert(hits.length === 0, `a malformed lessons store fires nothing (got ${hits.map((h) => h.ruleId ?? "<no id>").join(", ")})`);
+  } finally {
+    process.env.HOME = home;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);

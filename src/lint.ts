@@ -227,12 +227,15 @@ export const BUILTIN_RULES: LintRule[] = [
     severity: "error",
     kinds: ["kotlin"],
     type: "present",
-    pattern: /\bTextComponent\b/,
+    // v35.5: match a USE (constructor call or import), not a mention. The bare-word pattern fired
+    // on our own doc comments explaining that TextComponent does not exist — the same false
+    // positive the Material rule had, found by scanning our generators against these rules.
+    pattern: /(?:^|\n)\s*import\s+\S*TextComponent\b|\bTextComponent\s*\(/,
     message: "There is no public TextComponent in SDK 0.13.3 — IN-SCENE 3D text cannot be drawn. (LIVE runtime text DOES work via a 2D panel activity — this limit is in-scene-3D only, v9.4.)",
     fix: "For in-scene 3D labels, bake text into a texture (bake_textured_model) and select it per item. For LIVE/dynamic text (HUD, scoreboards, detail) use generate_panel_compose_kotlin (a 2D panel activity auto-hosted as a floating spatial panel; DEBUG_CMD hud:<key>=<value> updates it live).",
     designRule: "DESIGN.md §1/§12",
     positiveFixture: "entity.components.set(TextComponent(\"Nebula\"))",
-    negativeFixture: "entity.components.set(ModelComponent(mesh, UnlitMaterial.create()))",
+    negativeFixture: "// NOTE: there is no TextComponent in 0.13.3, so this bakes a texture instead\nentity.components.set(ModelComponent(mesh, UnlitMaterial.create()))",
   },
   {
     id: "raw-glb-runtime-load",
@@ -378,6 +381,68 @@ export const BUILTIN_RULES: LintRule[] = [
     positiveFixture: "LaunchedEffect(Unit) { registerSystem<SpinSystem>() }",
     negativeFixture: "DisposableEffect(Unit) {\n    registerSystem<SpinSystem>()\n    onDispose { unregisterSystem<SpinSystem>() }\n}",
   },
+  // ── v35.5: acquisition without release ────────────────────────────────────────────────────────
+  // The cross-cutting finding of the samples diff. Across all of src/ our codegen emitted .close()
+  // exactly ONCE (on an Android AssetFileDescriptor, not an SDK resource) and .destroy() once, while
+  // 8/8 PICO samples pair every acquisition with a release — eleven pairs tabulated in the report.
+  // Our own house rules already said "lifecycle cleanup is mandatory"; the generators were on the
+  // wrong side of it. These rules make the omission mechanically visible.
+  //
+  // Each is CONDITIONAL (acquire present, release absent) so a file that does clean up stays clean,
+  // and each release symbol below was confirmed to exist in 0.13.3 before being recommended — an
+  // unpaired-but-uncloseable resource would otherwise send an agent chasing a method that is not there.
+  {
+    id: "animationresource-never-closed",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "conditional",
+    when: /AnimationResource\s*\.\s*(?:generate|generateWithTweenAnimation)\s*\(/,
+    unless: /\.close\s*\(\s*\)/,
+    message: "An AnimationResource is baked and never closed — every play() leaks one. AnimationResource extends Resource, which is Closeable (Resource.kt:24; override at AnimationResource.kt:69).",
+    fix: "Retain it (private var res: AnimationResource?) and add a stop(): entity.stopAllAnimations() FIRST, then res?.close(); res = null. Never close a resource that is still playing — PICO's own comments warn about exactly that.",
+    designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (lifecycle cleanup is mandatory)",
+    positiveFixture: "val res = AnimationResource.generateWithTweenAnimation(anim)\nval c = entity.playAnimation(res)",
+    negativeFixture: "val res = AnimationResource.generateWithTweenAnimation(anim)\nval c = entity.playAnimation(res)\nfun stop(e: Entity) { e.stopAllAnimations(); res.close() }",
+  },
+  {
+    id: "assetbundle-never-closed",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "conditional",
+    when: /AssetBundle\s*\.\s*load\s*\(/,
+    unless: /\.close\s*\(\s*\)|releaseModel\s*\(/,
+    message: "An AssetBundle is loaded and never released — bundles are Closeable (AssetBundle.kt:76-77, close() at :235) and hold their models until they are.",
+    fix: "Release per-model with bundle.releaseModel(name) (AssetBundle.kt:213) and close the bundle in teardown. For a bundle shared by several call sites, refcount it — WelcomeSpace's AssetBundleManager is the reference shape.",
+    designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (lifecycle cleanup is mandatory)",
+    positiveFixture: 'val bundle = AssetBundle.load("asset://menu.bundle")\nval panel = Entity.loadSuspend("menu", bundle)',
+    negativeFixture: 'val bundle = AssetBundle.load("asset://menu.bundle")\nval panel = Entity.loadSuspend("menu", bundle)\nfun dispose() { bundle.close() }',
+  },
+  {
+    id: "trackingmanager-never-stopped",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "conditional",
+    when: /\b(?:Plane|Mesh|Image|Object)TrackingManager\s*\.\s*start\s*\(\s*\)/,
+    unless: /TrackingManager\s*\.\s*stop\s*\(\s*\)/,
+    message: "Tracking is started and never stopped — on hardware that keeps a sensor pipeline alive for the process lifetime (battery + thermal) after the app is done with it.",
+    fix: "Pair it: PlaneTrackingManager.stop() (plane/PlaneTrackingManager.kt:210) from onDispose / ON_PAUSE / onCleared. PICO pair theirs the same way (MeshScanManager.kt:57,74).",
+    designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (lifecycle cleanup is mandatory)",
+    positiveFixture: "fun start() { PlaneTrackingManager.start() }",
+    negativeFixture: "fun start() { PlaneTrackingManager.start() }\nfun stop() { PlaneTrackingManager.stop() }",
+  },
+  {
+    id: "subscription-never-cancelled",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "conditional",
+    when: /\b(?:content|scene)\s*\.\s*subscribe\s*\(|subscribeAnchorUpdate\s*\(/,
+    unless: /\.cancel\s*\(\s*\)/,
+    message: "An event subscription is created and never cancelled — subscribe returns a Cancellable precisely so you can release it, and an uncancelled subscriber keeps firing into a dead scope.",
+    fix: "Hold the Cancellable and cancel it in teardown: DisposableEffect(Unit) { onDispose { subscription?.cancel() } }. PICO's EventManager.kt:31,40 is the reference pair.",
+    designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (lifecycle cleanup is mandatory)",
+    positiveFixture: "subscription = content.subscribe(eventType = event, subscriber = { c -> onCollision(c) })",
+    negativeFixture: "subscription = content.subscribe(eventType = event, subscriber = { c -> onCollision(c) })\nfun dispose() { subscription?.cancel() }",
+  },
   {
     id: "scaffold-log-tag-drift",
     severity: "warn",
@@ -395,11 +460,39 @@ export const BUILTIN_RULES: LintRule[] = [
 // ── learned-lesson store (~/.pico-mcp/lessons.json) ─────────────────────────────────────────────────────
 const LESSONS_PATH = path.join(os.homedir(), ".pico-mcp", "lessons.json");
 
+/**
+ * v35.5 — a malformed entry used to poison EVERY lint result.
+ *
+ * A record with no `pattern` compiled to `new RegExp(undefined)` = `/(?:)/`, which matches any
+ * string, so a single bad row turned preflight_lint into "one error on every file, with no rule id
+ * to explain it". Found the honest way: the v35 conformance gate started failing across eight
+ * unrelated generators with an EMPTY rule id, and the cause was a partial row in this machine's
+ * ~/.pico-mcp/lessons.json — repo code was fine.
+ *
+ * The store is user-writable and grows over time, so it has to be treated as untrusted input: a row
+ * without a usable id, pattern and message is skipped rather than allowed to fire. Skipping is the
+ * right failure mode — a lost lesson is recoverable, a lint that cries wolf on every file gets the
+ * whole tool ignored.
+ */
+function isUsableLearnedRule(r: any): boolean {
+  if (!r || typeof r !== "object") return false;
+  if (typeof r.id !== "string" || !r.id.trim()) return false;
+  if (typeof r.pattern !== "string" || !r.pattern.trim()) return false;
+  if (typeof r.message !== "string" || !r.message.trim()) return false;
+  // An empty-matching regex ("", "(?:)", "^", ".*") fires on everything — never useful as a rule.
+  try {
+    if (new RegExp(r.pattern).test("")) return false;
+  } catch {
+    return false; // an invalid regex would throw at every call site
+  }
+  return true;
+}
+
 function loadLearned(): LintRule[] {
   try {
     const raw = JSON.parse(fs.readFileSync(LESSONS_PATH, "utf8"));
     if (!Array.isArray(raw)) return [];
-    return raw.map((r: any) => ({
+    return raw.filter(isUsableLearnedRule).map((r: any) => ({
       id: r.id,
       severity: r.severity === "warn" ? "warn" : "error",
       kinds: Array.isArray(r.kinds) && r.kinds.length ? r.kinds : ["any"],
