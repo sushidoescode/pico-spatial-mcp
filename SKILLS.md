@@ -12,7 +12,7 @@ See **ROADMAP.md** in the git repository for where this is going — every line 
 For the ABI, ownership, threading, model-loading, emulator/device, and pico-cli conclusions this
 repository can ground today, see **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWERED_BY_MEASUREMENT.md)**.
 
-## The capability map (a core sampler of the full surface: 239 tools on macOS, 236 on other hosts)
+## The capability map (a core sampler of the full surface: 240 tools on macOS, 237 on other hosts)
 
 | Goal | Tools |
 |---|---|

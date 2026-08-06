@@ -29,6 +29,7 @@ import { registerPerfTraceTools } from "./perftrace.js";
 import { registerPicoCliTools } from "./picoclitools.js";
 import { registerComponentTools } from "./components.js";
 import { registerSubwindowTools } from "./subwindow.js";
+import { registerEcsSystemTools } from "./ecssystem.js";
 import { registerSpatialGestureTools } from "./spatialgestures.js";
 import { registerAssetTools } from "./assets.js";
 import { registerDiagnoseTools } from "./diagnose.js";
@@ -197,6 +198,7 @@ if (!doorsSurfaceActive()) {
   registerPlaceOnSurfaceTools(server);
   registerComponentTools(server);
   registerSubwindowTools(server);
+  registerEcsSystemTools(server);
   registerSpatialGestureTools(server);
   registerAssetTools(server);
   registerDiagnoseTools(server);

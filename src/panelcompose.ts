@@ -13,13 +13,33 @@ import { ok } from "./util.js";
  *
  * Panels spawn at the shell dock position, OFF the default forward view — verify by turning the
  * camera (the C2 sweep), not by a forward-only capture.
+ *
+ * v35.1 — SPATIALUI CONFORMANCE. Until now the emitted HudPanel was raw Compose with hardcoded hex
+ * (Color(0xFF0B1020) / 0xFF7FD7FF / 0xFF9AA4BF) and NO PicoTheme wrap, which violated our own house
+ * rule ("all 2D UI with SpatialUI wrapped in PicoTheme"). PICO's eight official samples carry ZERO
+ * androidx.compose.material* imports and 17 `PicoTheme {` wraps. The panel now mounts inside
+ * `PicoTheme { }` and takes every colour from a role and every text size from a typography role.
+ *
+ * Role/token facts, read from the 0.13.3 sources jars (ui/design), NOT from the 6.0.0 samples:
+ *   ColorScheme.kt:49-66   fillPrimary/fillSecondary/fillTertiary/fillLight, labelPrimaryLight,
+ *                          labelPrimary/Secondary/Tertiary/Quaternary, lightenHover/lightenPressed,
+ *                          error/alert/passable/interaction/dividerLine  — that is the WHOLE set.
+ *   Typography.kt:44-62    display{Large,Medium,Small}, headline{L,M,S}, title{L,M,S}, body*, label*.
+ *   TypeScaleTokens.kt:171 DisplayMediumSize = 32.sp; :176 HeadlineLargeSize = 24.sp — close to the
+ *                          34/26 sp we had picked by eye, so the DESIGN.md §4 read-at-distance
+ *                          lesson survives the switch to roles.
+ *   PicoTheme.kt:29-44     PicoTheme.colorScheme / .typography are @Composable @ReadOnlyComposable
+ *                          getters — legal only inside composition, which is where we read them.
+ * The default scheme is LIGHT-on-glass (fillSecondary = 0x66FFFFFF, labelPrimary = 0xFF000000), and
+ * our panel activity's theme is android:Theme.Translucent, so the panel reads as PICO-native glass
+ * rather than the dark-navy slab we were drawing. That is a visible change — see the ledger entry.
  */
 export function registerPanelComposeTools(server: McpServer) {
   server.registerTool(
     "generate_panel_compose_kotlin",
     {
       description:
-        "Emit HudPanel.kt — a LIVE-RUNTIME-TEXT spatial panel (the hybrid-app tier). ARCHITECTURE (the proven path): the panel is its OWN 2D ACTIVITY (HudPanelActivity, same APK + process) — the OS auto-hosts every 2D task as a floating spatial panel over the still-rendering immersive scene (vision-verified with Settings, v9.3). An immersive app's own WindowContainer does NOT open a panel window on the emulator — don't use it for this. Compose state is shared in-process, so DEBUG_CMD 'hud:<key>=<value>' -> HudState.set updates the text LIVE; HudState.onLaunch()/onReset() are game hooks the wiring calls from menu actions (bump 'throws', READY/ROLLING 'status'). Show/hide headlessly: DEBUG_CMD 'panel:show'/'panel:hide' (wired by generate_app_wiring for any spec with panels — show starts the activity from the APP'S OWN context because shell am start is refused while the Stage holds Full Space; hide finishes it via the activity's instance companion, the rocketsim-proven way to un-occlude scene captures). adb shell am start -n <pkg>/<contentPkg>.HudPanelActivity also works when the shell start is not refused. RETURNS: JSON {kotlin, manifestEntry, note} — write kotlin to the targetPath and merge manifestEntry into <application>: the activity with its own taskAffinity so it doesn't replace the immersive task. placement:'world' is accepted but NOT world-locked — no vault-confirmed API positions an auto-hosted 2D panel in world space; it emits the same dock path plus a loud head-docked-fallback marker in the code + note.",
+        "Emit HudPanel.kt — a LIVE-RUNTIME-TEXT spatial panel (the hybrid-app tier). ARCHITECTURE (the proven path): the panel is its OWN 2D ACTIVITY (HudPanelActivity, same APK + process) — the OS auto-hosts every 2D task as a floating spatial panel over the still-rendering immersive scene (vision-verified with Settings, v9.3). An immersive app's own WindowContainer does NOT open a panel window on the emulator — don't use it for this. Compose state is shared in-process, so DEBUG_CMD 'hud:<key>=<value>' -> HudState.set updates the text LIVE; HudState.onLaunch()/onReset() are game hooks the wiring calls from menu actions (bump 'throws', READY/ROLLING 'status'). Show/hide headlessly: DEBUG_CMD 'panel:show'/'panel:hide' (wired by generate_app_wiring for any spec with panels — show starts the activity from the APP'S OWN context because shell am start is refused while the Stage holds Full Space; hide finishes it via the activity's instance companion, the rocketsim-proven way to un-occlude scene captures). adb shell am start -n <pkg>/<contentPkg>.HudPanelActivity also works when the shell start is not refused. SPATIALUI (v35.1): the hud panel is mounted inside PicoTheme { } and every colour/text size comes from a PicoTheme.colorScheme / PicoTheme.typography ROLE (fillSecondary surface, fillPrimary title, labelSecondary/labelPrimary rows, displayMedium/headlineLarge) — no hardcoded hex, no androidx.compose.material, matching PICO's own samples (0 material imports, 17 PicoTheme wraps). Because PICO's default scheme is light-on-glass, the panel now reads as native glass rather than the previous dark-navy slab. RETURNS: JSON {kotlin, manifestEntry, note} — write kotlin to the targetPath and merge manifestEntry into <application>: the activity with its own taskAffinity so it doesn't replace the immersive task. placement:'world' is accepted but NOT world-locked — no vault-confirmed API positions an auto-hosted 2D panel in world space; it emits the same dock path plus a loud head-docked-fallback marker in the code + note.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
         kind: z.enum(["hud", "web"]).default("hud").describe("hud = the live label:value Compose scoreboard. web = a WebView panel (FULL HTML/CSS/JS with a LIVE DOM — vision-verified: a JS setInterval ticked live in-world). Web panels put charts/dashboards/docs in the spatial viewport."),
@@ -118,12 +138,11 @@ export function registerPanelComposeTools(server: McpServer) {
         `import androidx.compose.runtime.Composable`,
         `import androidx.compose.runtime.mutableStateMapOf`,
         `import androidx.compose.ui.Modifier`,
-        `import androidx.compose.ui.graphics.Color`,
         `import androidx.compose.ui.unit.dp`,
-        `import androidx.compose.ui.unit.sp`,
         `import android.os.Bundle`,
         `import androidx.activity.ComponentActivity`,
         `import androidx.compose.ui.platform.ComposeView`,
+        `import com.pico.spatial.ui.design.PicoTheme`,
         `import com.pico.spatial.ui.design.Text`,
         ``,
         `/**`,
@@ -134,6 +153,11 @@ export function registerPanelComposeTools(server: McpServer) {
         ` * 'panel:show' starts the activity (from the app's own context) and 'panel:hide' finishes`,
         ` * it — the panel occludes the fixed emulator pose, so hide it for clean scene captures.`,
         ` * Panels spawn near the dock — turn the camera to see.`,
+        ` *`,
+        ` * SPATIALUI: every colour is a PicoTheme.colorScheme ROLE and every text size a`,
+        ` * PicoTheme.typography role — no hardcoded hex, and no Material/Material3. HudPanel MUST`,
+        ` * be composed inside PicoTheme { } (HudPanelActivity below does this); calling it outside`,
+        ` * falls back to LocalColorScheme's default provider instead of the host's scheme.`,
         ...worldCommentLines,
         ` */`,
         `object HudState {`,
@@ -158,18 +182,23 @@ export function registerPanelComposeTools(server: McpServer) {
         ``,
         `@Composable`,
         `fun HudPanel() {`,
+        `    val colors = PicoTheme.colorScheme`,
+        `    val type = PicoTheme.typography`,
         `    Column(`,
         `        modifier = Modifier`,
         `            .width(720.dp) // DESIGN.md §4: panels >= 700dp or they read tiny at distance (wrap-content can collapse the window)`,
-        `            .background(Color(0xFF0B1020), RoundedCornerShape(18.dp))`,
+        `            // fillSecondary is the role for "background colour for large areas" (ColorScheme.kt:51).`,
+        `            .background(colors.fillSecondary, RoundedCornerShape(18.dp))`,
         `            .padding(28.dp),`,
         `        verticalArrangement = Arrangement.spacedBy(14.dp),`,
         `    ) {`,
-        `        Text("${t}", fontSize = 34.sp, color = Color(0xFF7FD7FF))`,
+        `        // displayMedium = 32sp, headlineLarge = 24sp (TypeScaleTokens.kt:171,176) — the`,
+        `        // read-at-distance sizes DESIGN.md §4 asks for, now taken from the type scale.`,
+        `        Text("${t}", style = type.displayMedium, color = colors.fillPrimary)`,
         `        HudState.labels.forEach { (key, label) ->`,
         `            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {`,
-        `                Text(label, fontSize = 26.sp, color = Color(0xFF9AA4BF))`,
-        `                Text(HudState.values[key] ?: "", fontSize = 26.sp, color = Color.White)`,
+        `                Text(label, style = type.headlineLarge, color = colors.labelSecondary)`,
+        `                Text(HudState.values[key] ?: "", style = type.headlineLarge, color = colors.labelPrimary)`,
         `            }`,
         `        }`,
         `    }`,
@@ -180,7 +209,10 @@ export function registerPanelComposeTools(server: McpServer) {
         `    override fun onCreate(savedInstanceState: Bundle?) {`,
         `        super.onCreate(savedInstanceState)`,
         `        instance = this`,
-        `        setContentView(ComposeView(this).apply { setContent { HudPanel() } })`,
+        `        // PicoTheme provides the colour scheme, type scale, indication and snackbar host the`,
+        `        // SpatialUI components expect (PicoTheme.kt:53-69). Every sample wraps its container`,
+        `        // content the same way; a bare setContent gets library defaults, not the host's theme.`,
+        `        setContentView(ComposeView(this).apply { setContent { PicoTheme { HudPanel() } } })`,
         `    }`,
         ``,
         `    override fun onDestroy() {`,

@@ -34,8 +34,8 @@ const publishIdx = process.argv.indexOf("--publish");
 const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
-const EXPECTED_TOOLS = 239; // v34.3: +knowledge_api
-const EXPECTED_OTHER_HOST_TOOLS = 236;
+const EXPECTED_TOOLS = 240; // v35.2: +generate_ecs_system_kotlin
+const EXPECTED_OTHER_HOST_TOOLS = 237;
 // macOS exposes four host-GUI tools; other hosts intentionally expose one explanatory gui_capture
 // stub. Assert the exact platform surface instead of hiding this documented delta in a tolerance.
 const EXPECTED_PLATFORM_TOOLS = process.platform === "darwin" ? EXPECTED_TOOLS : EXPECTED_OTHER_HOST_TOOLS;
@@ -49,7 +49,7 @@ const REQUIRED_TOOLS = [
   "adb_shell", "gradle_build", "preflight_env",
   "verify_gradle_config", "build_matrix_report",
   "generate_subwindow_kotlin", "generate_spatial_gestures_kotlin",
-  "knowledge_api",
+  "knowledge_api", "generate_ecs_system_kotlin",
 ];
 // [M2] Briefs the brief lane depends on; directory existence is not content.
 const BRIEF_CANARIES = ["gallery.json", "knockdown.json"];

@@ -20,7 +20,14 @@
         <activity
             android:name=".platform.LaunchActivity"
             android:exported="true"
-            android:theme="@style/Theme.SpatialApp">
+            android:theme="@style/Theme.SpatialApp"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|density|uiMode|keyboardHidden|navigation|keyboard">
+            <!-- v35.1: these nine flags are the exact set PICO declares in 7/7 sample manifests
+                 (Physics:34, WelcomeSpace:34, Animation:35, SpatialMesh:34, SpatialAudio:34,
+                 SpatialVideo:36). Without them Android DESTROYS and recreates LaunchActivity on any
+                 size / density / uiMode change — and in a spatial shell a container resize or
+                 world-scale change is exactly that. The whole scene would be rebuilt: every entity
+                 re-created, every asset re-loaded, physics and animation state lost. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -45,6 +52,20 @@
                 android:name="pico.spatial.stage.style"
                 android:value="1" />
 
+            <!-- v35.1 — KEPT DELIBERATELY, against the samples-conformance recommendation.
+                 The conformance diff proposed deleting these three keys because no PICO sample
+                 declares them. That inference is wrong: both Stage samples ship style="1" (Mixed),
+                 where immersion is inapplicable, so their silence says nothing about the keys.
+                 The 0.13.3 SDK source settles it — ui/foundation dsl/Stage.kt:29-56 documents this
+                 exact meta-data block as the DefaultStage configuration mechanism ("Currently must
+                 be configured at app's AndroidManifest.xml"), and DefaultStage(content) at
+                 Stage.kt:64 takes NO immersion parameter. Deleting them would remove the only way
+                 to configure a Progressive default stage, which scaffold_spatial_app offers as
+                 stageStyle "2".
+                 What WAS broken is the range: min was 100, so a Progressive stage launched at 100
+                 and could not be adjusted at all — the opposite of what Progressive is for. min is
+                 now 0, matching the SDK's own documented example (Stage.kt:51-53). -->
+
             <!-- The immersion of a Progressive Stage at launch, only works when stage style is Progressive, range [0, 100], default value is 50 -->
             <meta-data
                 android:name="pico.spatial.stage.immersion"
@@ -53,7 +74,7 @@
             <!-- The minimum immersion of a Progressive Stage that the user can adjust to, only works when stage style is Progressive, range [0, 100], default value is 0 -->
             <meta-data
                 android:name="pico.spatial.stage.immersion_min"
-                android:value="100" />
+                android:value="0" />
 
             <!-- The maximum immersion of a Progressive Stage that the user can adjust to, only works when stage style is Progressive, range [0, 100], default value is 100 -->
             <meta-data

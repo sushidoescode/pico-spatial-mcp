@@ -103,6 +103,8 @@ jobs:
         run: npm run test:spatialui-adoption
       - name: Distribution adoption (host manifests, bootstrap, knowledge graph, emulator acquisition)
         run: npm run test:distribution-adoption
+      - name: Sample conformance (our codegen vs PICO's eight official Spatial SDK samples)
+        run: npm run test:conformance
 
   vcam-native:
     runs-on: macos-latest

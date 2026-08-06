@@ -726,8 +726,15 @@ test("KnowledgeBridge observes a timed-out generation exit before starting its r
       FAKE_KNOWLEDGE_STARTUP_HANG_ONCE_FILE: path.join(tempRoot, "once.state"),
       FAKE_KNOWLEDGE_DELAYED_CLOSE_MS: "80",
     },
-    startupTimeoutMs: 100,
-    callTimeoutMs: 1_000,
+    // v35.2 — was startupTimeoutMs: 100 / callTimeoutMs: 1_000, which made this test flaky under
+    // machine load (reproduced at 0db8e29, before this wave: it fails on a loaded box and passes on
+    // an idle one). The first generation hangs UNCONDITIONALLY — fake-knowledge-server.mjs:20-29
+    // takes the setInterval branch and never connects a transport — so the first call's
+    // "unavailable" comes from the hang, not from the budget being tight. The budget was only ever
+    // racing the SECOND, genuine node spawn, which is not what this test is about. Widening it
+    // changes nothing that is asserted below and makes the ordering check deterministic.
+    startupTimeoutMs: 3_000,
+    callTimeoutMs: 5_000,
   });
 
   const unavailable = await bridge.call("graph_stats", {});
@@ -1107,10 +1114,10 @@ test("answers-by-measurement publishes exactly six narrow answers backed by trac
   }
 });
 
-test("distribution metadata records platform-exact full surfaces, 16 doors, and 42 test suites plus smoke", () => {
+test("distribution metadata records platform-exact full surfaces, 16 doors, and 43 test suites plus smoke", () => {
   const pkg = readJson("package.json");
   const testScripts = Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"));
-  assert.equal(testScripts.length, 42, testScripts.join("\n"));
+  assert.equal(testScripts.length, 43, testScripts.join("\n"));
   assert.equal(pkg.scripts["test:distribution-adoption"], "node --test test/distribution-adoption.mjs");
 
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
@@ -1120,8 +1127,8 @@ test("distribution metadata records platform-exact full surfaces, 16 doors, and 
   assert.equal((workflow.match(/run: npm run smoke\s/g) ?? []).length, 1);
 
   const tarball = fs.readFileSync(path.join(repoRoot, "scripts", "verify-tarball.mjs"), "utf8");
-  assert.match(tarball, /const EXPECTED_TOOLS = 239;/);
-  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 236;/);
+  assert.match(tarball, /const EXPECTED_TOOLS = 240;/);
+  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 237;/);
   assert.doesNotMatch(tarball, /TOOL_TOLERANCE/);
   assert.match(tarball, /tools\.length === EXPECTED_PLATFORM_TOOLS/);
 
@@ -1138,14 +1145,14 @@ test("distribution metadata records platform-exact full surfaces, 16 doors, and 
     "docs/COLLABORATORS.md",
   ]) {
     const prose = fs.readFileSync(path.join(repoRoot, file), "utf8").replaceAll("\n", " ");
-    assert.match(prose, /239(?: tools?)? on macOS[\s\S]{0,160}236(?: tools?)? on other hosts/i, file);
-    assert.doesNotMatch(prose, /\b239\+(?:[- ]tools?)?/i, file);
+    assert.match(prose, /240(?: tools?)? on macOS[\s\S]{0,160}237(?: tools?)? on other hosts/i, file);
+    assert.doesNotMatch(prose, /\b240\+(?:[- ]tools?)?/i, file);
   }
 
   for (const description of [
     readJson(".claude-plugin/plugin.json").description,
     readJson(".claude-plugin/marketplace.json").plugins[0].description,
   ]) {
-    assert.match(description, /239 tools on macOS \/ 236 on other hosts/i);
+    assert.match(description, /240 tools on macOS \/ 237 on other hosts/i);
   }
 });

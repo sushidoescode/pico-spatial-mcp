@@ -289,6 +289,88 @@ export const BUILTIN_RULES: LintRule[] = [
     negativeFixture: "adb shell am force-stop com.example.other; sleep 1.5; adb shell am start -n com.example.showcasexr/.platform.LaunchActivity",
   },
   {
+    // v35.1 — from the samples-conformance diff: PICO's eight official samples carry ZERO
+    // androidx.compose.material* imports across 131 files. Our own AGENTS.md forbids them too.
+    // Material is a different design system: it will not pick up PicoTheme roles, will not get
+    // SpatialUI hover/haptics, and drags in a Compose fork we deliberately exclude in Gradle.
+    id: "compose-material-in-spatial-ui",
+    severity: "error",
+    kinds: ["kotlin", "gradle"],
+    type: "present",
+    // Matches a real import statement or a real Gradle coordinate — NOT a prose mention. A doc
+    // comment that says "no Material here" must not be an error; the first draft of this rule fired
+    // on the very comment that documents the ban.
+    pattern: /(?:^|\n)\s*import\s+androidx\.compose\.material|["']androidx\.compose\.material3?:/,
+    message: "Material/Material3 is forbidden in PICO Spatial apps — PICO's 8 official samples contain zero material imports across 131 files.",
+    fix: "Use com.pico.spatial.ui.design components (Text, Button, Icon, Slider, TitleBar, windows.*) inside PicoTheme, and take colours from PicoTheme.colorScheme roles.",
+    designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (SpatialUI is mandatory; Material is forbidden)",
+    positiveFixture: "import androidx.compose.material3.Text",
+    negativeFixture: "// SpatialUI only — no Material here\nimport com.pico.spatial.ui.design.Text",
+  },
+  {
+    // v35.1 — the panel generator shipped a bare `setContent { HudPanel() }` for four versions.
+    // Without the provider, LocalColorScheme/LocalTypography fall back to library defaults and the
+    // SpatialUI indication + snackbar host are never installed (PicoTheme.kt:53-69).
+    id: "compose-setcontent-without-picotheme",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "conditional",
+    when: /setContent\s*\{/,
+    unless: /PicoTheme\s*(\{|\.)/,
+    message: "Compose content is mounted without a PicoTheme wrap — colour/type roles fall back to library defaults and SpatialUI indication + snackbar host are never provided.",
+    fix: "setContent { PicoTheme { YourPanel() } } — and read colours from PicoTheme.colorScheme, sizes from PicoTheme.typography.",
+    designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (all 2D UI wrapped in PicoTheme)",
+    positiveFixture: "setContentView(ComposeView(this).apply { setContent { HudPanel() } })",
+    negativeFixture: "setContentView(ComposeView(this).apply { setContent { PicoTheme { HudPanel() } } })",
+  },
+  {
+    // v35.2 — the SDK's OWN KDoc is wrong here. Scene.kt:230-231 shows
+    //   EntityQueryCondition.custom { entity -> entity.name == "Player" }
+    // and BOTH halves fail to compile: the factory is `customCondition` (EntityQueryCondition.kt:128),
+    // and Entity exposes getName()/setName() functions (Entity.kt:1695,1716), not a `name` property —
+    // Kotlin does not synthesise property syntax for a getter declared on a Kotlin class.
+    // Anyone who copies that KDoc — human or agent — gets two compile errors.
+    id: "entityquerycondition-custom",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "present",
+    pattern: /EntityQueryCondition\s*\.\s*custom\s*[({]/,
+    message: "EntityQueryCondition.custom does not exist — the factory is customCondition. (The SDK's own KDoc at Scene.kt:230 has this typo.)",
+    fix: "EntityQueryCondition.customCondition { entity -> ... }. Inside the predicate use entity.getName(), not entity.name. Prefer hasComponent(...) where possible: customCondition forces a full linear scan of the scene (Scene.kt:270-282).",
+    positiveFixture: 'val c = EntityQueryCondition.custom { e -> e.getName() == "Player" }',
+    negativeFixture: 'val c = EntityQueryCondition.customCondition { e -> e.getName() == "Player" }',
+  },
+  {
+    // v35.2 — System has exactly one overridable member: update (System.kt:47). A grep of System.kt
+    // for onRegister/onUnregister/priority/enabled returns zero hits, so these compile-fail with
+    // "overrides nothing". Easy to assume from other ECS frameworks.
+    id: "ecs-system-nonexistent-override",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "present",
+    pattern: /:\s*System\s*\(\s*\)[\s\S]*override\s+fun\s+(?:onRegister|onUnregister)\s*\(/,
+    message: "PICO's ECS System has no onRegister/onUnregister/priority/enabled to override — update(SceneUpdateContext) is its only open member (System.kt:47).",
+    fix: "Put setup/teardown in the registerSystem<T>()/unregisterSystem<T>() DisposableEffect that owns the system's lifetime, not in a System override.",
+    positiveFixture: "class SpinSystem : System() {\n    override fun onRegister() {}\n    override fun update(context: SceneUpdateContext) {}\n}",
+    negativeFixture: "class SpinSystem : System() {\n    override fun update(context: SceneUpdateContext) {}\n}",
+  },
+  {
+    // v35.2 — the acquisition/release rule applied to ECS registration. Systems live in a single
+    // GLOBAL static set (System.kt:53); a system registered and never unregistered keeps ticking
+    // once per container per frame for the rest of the process.
+    id: "registersystem-without-unregister",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "conditional",
+    when: /\bregisterSystem\s*</,
+    unless: /\bunregisterSystem\s*</,
+    message: "registerSystem<T>() with no matching unregisterSystem<T>() — System instances live in one global static set (System.kt:53), so the system keeps ticking for the process lifetime.",
+    fix: "DisposableEffect(Unit) { registerSystem<T>(); onDispose { unregisterSystem<T>() } }",
+    designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (lifecycle cleanup is mandatory)",
+    positiveFixture: "LaunchedEffect(Unit) { registerSystem<SpinSystem>() }",
+    negativeFixture: "DisposableEffect(Unit) {\n    registerSystem<SpinSystem>()\n    onDispose { unregisterSystem<SpinSystem>() }\n}",
+  },
+  {
     id: "scaffold-log-tag-drift",
     severity: "warn",
     kinds: ["command", "kotlin"],
@@ -434,7 +516,7 @@ export function registerLintTools(
     "preflight_lint",
     {
       description:
-        "Scan emitted Kotlin / a shell command / gradle config against the retained-lessons rulebook BEFORE you write or run it — so the loop never repeats a solved mistake. Catches the hard-won gotchas (displayColor flat-white, mesh colliders not queryable, rayCast without PhysicsWorldComponent, CollisionCastHitMode.CLOSEST, .rotation.rotateVector, .scale vs scaleVector, ParticleComponent ctor, TextComponent, raw-GLB runtime load, USD glTF reference, StageEnvironmentLighting in MIXED, md5 bundle diff, am start without force-stop, scaffold log-tag drift) plus any lessons recorded via record_lesson. Returns violations with severity/line/message/fix/designRule. Kotlin content ALSO gets an agent-vault symbol check (import/type existence vs PICO's authoritative SDK api-reference, materialized by pico-cli setup) reported in a separate advisory `vault` block — vault findings never affect `clean` (unknown symbols come back as warnings carrying the `nearest` vault match), an absent vault degrades to a note naming pico-cli setup, and `vaultSymbols` overrides the default (false skips the pass, true forces it for any kind). Optional `knowledgeSecondOpinion` runs only a broader query_graph lookup in a separate explicitly advisory block; it never changes `clean` or overrides vault_api exact-symbol truth. Run this tool on every generate_* output before writing the file.",
+        "Scan emitted Kotlin / a shell command / gradle config against the retained-lessons rulebook BEFORE you write or run it — so the loop never repeats a solved mistake. Catches the hard-won gotchas (displayColor flat-white, mesh colliders not queryable, rayCast without PhysicsWorldComponent, CollisionCastHitMode.CLOSEST, .rotation.rotateVector, .scale vs scaleVector, ParticleComponent ctor, TextComponent, raw-GLB runtime load, USD glTF reference, StageEnvironmentLighting in MIXED, md5 bundle diff, am start without force-stop, scaffold log-tag drift, androidx.compose.material* in a Spatial app, Compose mounted without a PicoTheme wrap) plus any lessons recorded via record_lesson. Returns violations with severity/line/message/fix/designRule. Kotlin content ALSO gets an agent-vault symbol check (import/type existence vs PICO's authoritative SDK api-reference, materialized by pico-cli setup) reported in a separate advisory `vault` block — vault findings never affect `clean` (unknown symbols come back as warnings carrying the `nearest` vault match), an absent vault degrades to a note naming pico-cli setup, and `vaultSymbols` overrides the default (false skips the pass, true forces it for any kind). Optional `knowledgeSecondOpinion` runs only a broader query_graph lookup in a separate explicitly advisory block; it never changes `clean` or overrides vault_api exact-symbol truth. Run this tool on every generate_* output before writing the file.",
       inputSchema: {
         content: z.string().describe("The Kotlin source, shell command, or config text to lint."),
         kind: z.enum(["kotlin", "command", "gradle", "usd", "any"]).optional().describe("Restrict to rules for this kind (default 'any' = all rules)."),

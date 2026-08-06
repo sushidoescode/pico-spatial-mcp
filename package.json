@@ -67,7 +67,8 @@
     "test:menuactions": "node test/menuactions.mjs",
     "test:adoption-safety": "node test/adoption-safety.mjs",
     "test:spatialui-adoption": "node test/spatialui-adoption.mjs",
-    "test:distribution-adoption": "node --test test/distribution-adoption.mjs"
+    "test:distribution-adoption": "node --test test/distribution-adoption.mjs",
+    "test:conformance": "node test/conformance.mjs"
   },
   "engines": {
     "node": ">=20"

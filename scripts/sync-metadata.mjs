@@ -59,9 +59,20 @@ console.log(`truth: version=${version}  macOS-tools=${TOOLS}  other-host-tools=$
 const PUBLISHED_COUNTS = [55, 190, 214, 220, 224, 233, 234, 238]
   .filter((c) => c !== TOOLS && c !== OTHER_HOST_TOOLS);
 
+// v35.2: the OTHER-HOST count is published alongside the macOS one ("240 tools on macOS / 236 on
+// other hosts") in docs AND in every host manifest description. The "NNN tools" rule below could
+// not see it, because the other-host figure is usually written bare — so it silently drifted off
+// truth for as long as the macOS number kept being stamped correctly. Anchor on the trailing
+// "on other hosts" instead of on a "tools" suffix, and run it FIRST so the macOS rule then sees an
+// already-correct value and leaves it alone.
+const otherHostPhrases = (text) =>
+  text.replace(/\b(\d{2,3})(\+?[- ]tools?)?(\s+on other hosts)\b/g, (m, d, suffix, tail) => (
+    Number(d) >= 50 ? `${OTHER_HOST_TOOLS}${suffix ?? ""}${tail}` : m
+  ));
+
 /** "NNN tools" / "NNN-tool" phrases: any 2-3 digit count >= 50 that isn't the truth. */
 const countPhrases = (text) =>
-  text.replace(/\b(\d{2,3})(\+?[- ]tools?)\b/g, (m, d, suffix) => (
+  otherHostPhrases(text).replace(/\b(\d{2,3})(\+?[- ]tools?)\b/g, (m, d, suffix) => (
     Number(d) >= 50 && ![TOOLS, OTHER_HOST_TOOLS].includes(Number(d)) ? `${TOOLS}${suffix}` : m
   ));
 
