@@ -700,5 +700,55 @@ console.log("\n§4.1 mesh tracking is emitted, and nothing gates readiness on Tr
   assert(/com\.picoagent\.v35expa#1/.test(src), "the retraction cites its ledger entry");
 }
 
+// §2.6 — skeletal animation. The gap that made most downloaded character GLBs un-animatable.
+// The load-bearing rule is PROVENANCE: model-obtained clips are model-lifetime; generated clips are
+// per-use. Getting it backwards either leaks every clip or closes one mid-playback.
+console.log("\n§2.6 skeletal animation, and the provenance rule that decides disposal");
+{
+  const { generateSkeletalKotlin } = await import("../dist/skeletal.js");
+  const kt = generateSkeletalKotlin({ packageName: "com.test.conf.content", modelUri: "asset://robot.glb", clips: ["Idle", "Wave"] });
+
+  assert(/Entity\.load\(MODEL_URI\)/.test(kt) && /withContext\(Dispatchers\.IO\)/.test(kt),
+    "the model load is the one call pushed to IO");
+  // Everything else is @MainThread with a runtime check — moving it off-main throws.
+  const ioBlock = /withContext\(Dispatchers\.IO\) \{[^}]*\}/.exec(kt)?.[0] ?? "";
+  for (const mainOnly of ["findSkinnedMeshEntity", "getAnimationResources", "playAnimation", "stopAllAnimations"]) {
+    assert(!ioBlock.includes(mainOnly), `${mainOnly} is NOT inside the IO block (it is @MainThread and would throw)`);
+  }
+  assert(/root\.findSkinnedMeshEntity\(\)/.test(kt),
+    "findSkinnedMeshEntity runs on the PARENT (it searches this entity AND its children)");
+  assert(/No Skinned Mesh Found/.test(kt),
+    "an empty skinned-mesh array is logged (a non-skinned GLB returns empty silently)");
+  assert(/firstOrNull \{ it\.getName\(\) == clipName \}/.test(kt),
+    "clips are looked up BY NAME, not by a positional index into the GLB's clip order");
+  assert(/index !in c\.indices/.test(kt), "the positional form is bounds-checked");
+
+  // PROVENANCE: close exactly once, in dispose() — never in stop(), never on clip switch.
+  const stopBody = /fun stop\(\) \{[\s\S]*?\n    \}/.exec(kt)?.[0] ?? "";
+  const playBody = /fun play\(clipName[\s\S]*?\n    \}/.exec(kt)?.[0] ?? "";
+  const disposeBody = /fun dispose\(\) \{[\s\S]*?\n    \}/.exec(kt)?.[0] ?? "";
+  assert(stopBody && !/\.close\(\)/.test(stopBody), "stop() does NOT close model-owned clips");
+  assert(playBody && !/\.close\(\)/.test(playBody), "switching clips does NOT close the previous one");
+  assert(/clips\?\.forEach \{ runCatching \{ it\.close\(\) \} \}/.test(disposeBody),
+    "dispose() is the ONE place model-owned clips are closed");
+  assert((kt.match(/\.close\(\)/g) || []).length === 1, "there is exactly one close() call in the file");
+
+  const errs = runLint(kt, "kotlin").filter((v) => v.severity === "error").map((v) => v.ruleId).filter(Boolean);
+  assert(errs.length === 0, `skeletal output is lint-clean${errs.length ? `: ${errs.join(", ")}` : ""}`);
+
+  // The acquisition/release rule must respect provenance too: it fires on GENERATED clips and must
+  // NOT fire on model-obtained ones, which are correctly left open.
+  const modelClips = "val clips = e.findSkinnedMeshEntity().firstOrNull()?.getAnimationResources()\nval c = m.playAnimation(clips[0])";
+  assert(!runLint(modelClips, "kotlin").map((v) => v.ruleId).includes("animationresource-never-closed"),
+    "the never-closed rule does NOT fire on model-obtained clips (they are model-lifetime)");
+  const generated = "val res = AnimationResource.generateWithTweenAnimation(anim)\nval c = e.playAnimation(res)";
+  assert(runLint(generated, "kotlin").map((v) => v.ruleId).includes("animationresource-never-closed"),
+    "the never-closed rule DOES fire on generated clips (you own those)");
+
+  let threw = false;
+  try { generateSkeletalKotlin({ packageName: "com.x", modelUri: "robot.glb" }); } catch { threw = true; }
+  assert(threw, "a modelUri without a scheme is rejected");
+}
+
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

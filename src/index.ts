@@ -32,6 +32,7 @@ import { registerSubwindowTools } from "./subwindow.js";
 import { registerEcsSystemTools } from "./ecssystem.js";
 import { registerAttachmentPanelTools } from "./attachmentpanel.js";
 import { registerContainerTools } from "./containers.js";
+import { registerSkeletalTools } from "./skeletal.js";
 import { registerSpatialGestureTools } from "./spatialgestures.js";
 import { registerAssetTools } from "./assets.js";
 import { registerDiagnoseTools } from "./diagnose.js";
@@ -203,6 +204,7 @@ if (!doorsSurfaceActive()) {
   registerEcsSystemTools(server);
   registerAttachmentPanelTools(server);
   registerContainerTools(server);
+  registerSkeletalTools(server);
   registerSpatialGestureTools(server);
   registerAssetTools(server);
   registerDiagnoseTools(server);

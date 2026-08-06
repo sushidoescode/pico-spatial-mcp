@@ -12,7 +12,7 @@ See **ROADMAP.md** in the git repository for where this is going — every line 
 For the ABI, ownership, threading, model-loading, emulator/device, and pico-cli conclusions this
 repository can ground today, see **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWERED_BY_MEASUREMENT.md)**.
 
-## The capability map (a core sampler of the full surface: 242 tools on macOS, 239 on other hosts)
+## The capability map (a core sampler of the full surface: 243 tools on macOS, 240 on other hosts)
 
 > **Reference implementations.** PICO's eight official samples build and run on this emulator at
 > **0.13.3** — see [docs/PICO_OFFICIAL_SAMPLES.md](docs/PICO_OFFICIAL_SAMPLES.md) for the download

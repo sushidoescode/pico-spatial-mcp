@@ -1,0 +1,224 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { ok, fail } from "./util.js";
+
+/**
+ * skeletal.ts — v35.12 SKELETAL animation: baked clips on a loaded model.
+ *
+ * THE GAP. We had no generator for this at all, which meant any GLB with baked clips — most
+ * character content an agent would download — was un-animatable through our toolchain. Our two
+ * animation lanes covered procedural motion only: SceneTween/SceneOrbit bake an AnimationResource
+ * from a TweenAnimation, and SceneAnimator drives TransformComponents per frame. Neither can play a
+ * clip that already exists inside a model.
+ *
+ * Every symbol below is cited from the 0.13.3 sources jars, and the shape follows PICO's own
+ * Animation sample (0.13.3 release — verified running on our emulator 2026-08-06).
+ *
+ *   core `ecs/Entity.kt:2201`  @JvmStatic Entity.load(uriString: String): Entity  (companion, throws)
+ *   `Entity.kt:1736`           @MainThread findSkinnedMeshEntity(includeDisabled: Boolean = false): Array<Entity>
+ *   `Entity.kt:1757`           @MainThread getAnimationResources(): Array<AnimationResource>
+ *   `Entity.kt:663`            @MainThread playAnimation(res, config: AnimationPlayConfig = ...): AnimationPlaybackController
+ *   `Entity.kt:926`            @MainThread stopAllAnimations()
+ *   `ecs/animation/AnimationPlayConfig.kt:74-79`
+ *                              constructor(transitionDuration: Float = 0f,
+ *                                          transitionMode: AnimationTransitionMode = DEFAULT,
+ *                                          blendLayer: Int = -1, blendWeight: Float = 1f)
+ *                              KDoc :32-34 — DEFAULT means CROSSFADE for skeletal animation.
+ *   `ecs/resource/AnimationResource.kt:48`  getName(): String   `:69` override close()
+ *
+ * FIVE THINGS THIS ENCODES, each of which is easy to get wrong:
+ *
+ *  1. PROVENANCE DECIDES DISPOSAL. This is the subtle one. Clips obtained FROM A MODEL via
+ *     getAnimationResources() are MODEL-LIFETIME: never `use {}`, never closed on stop or reset,
+ *     closed exactly once at final teardown. Clips you GENERATE (AnimationResource.generate*) are
+ *     per-use and you own them. Same type, opposite policy, decided purely by where it came from.
+ *     PICO state it three times in their own source:
+ *       "Do not use use() here; animation resource must remain open for continuous playback"
+ *       "Closes animation resources. Should be called when animations are no longer needed"
+ *       "Do not close animation resources here, as they may be reused for subsequent playback"
+ *
+ *  2. findSkinnedMeshEntity searches THIS ENTITY AND ITS CHILDREN (KDoc Entity.kt:1724-1733), so it
+ *     is called on the PARENT you added the model to, not on the loaded root.
+ *
+ *  3. THREADING. Only Entity.load may leave the main thread. findSkinnedMeshEntity,
+ *     getAnimationResources, playAnimation and stopAllAnimations are all @MainThread with a runtime
+ *     checkIsMainThread() — moving them to Dispatchers.IO throws. We wrap ONLY the load.
+ *
+ *  4. A non-skinned GLB yields an EMPTY array silently, with no exception. Unguarded, that is an
+ *     invisible no-op; we log it the way the sample does.
+ *
+ *  5. CLIP LOOKUP BY NAME, not index. The sample indexes positionally, which is a hard contract with
+ *     the GLB's clip order and throws ArrayIndexOutOfBoundsException when it is wrong. For a
+ *     user-supplied model whose clip order we cannot know, name lookup via getName() is the safe
+ *     default — a jar-cited improvement on the sample, not an invention. A bounds-checked positional
+ *     form is emitted alongside for callers who do know the order.
+ */
+
+export interface SkeletalArgs {
+  packageName: string;
+  modelUri?: string;
+  clips?: string[];
+}
+
+/** Pure generator, exported so the conformance gate can drive it without spawning the server. */
+export function generateSkeletalKotlin(args: SkeletalArgs): string {
+  const { packageName } = args;
+  const modelUri = args.modelUri ?? "asset://robot.glb";
+  if (!/^(asset|file|http|https):\/\//.test(modelUri)) {
+    throw new Error(`modelUri must carry a scheme (asset:// | file:// | http(s)://) — got '${modelUri}'`);
+  }
+  const clips = (args.clips ?? []).filter((c) => c.trim());
+
+  return [
+    `package ${packageName}`,
+    ``,
+    `import android.util.Log`,
+    `import com.pico.spatial.core.ecs.Entity`,
+    `import com.pico.spatial.core.ecs.TransformComponent`,
+    `import com.pico.spatial.core.ecs.animation.AnimationPlayConfig`,
+    `import com.pico.spatial.core.ecs.resource.AnimationResource`,
+    `import com.pico.spatial.core.math.Vector3`,
+    `import kotlinx.coroutines.CoroutineScope`,
+    `import kotlinx.coroutines.Dispatchers`,
+    `import kotlinx.coroutines.launch`,
+    `import kotlinx.coroutines.withContext`,
+    ``,
+    `/**`,
+    ` * Generated by generate_skeletal_animation_kotlin — play BAKED clips from a loaded model.`,
+    ` *`,
+    ` * Usage, from a MAIN-dispatched scope (rememberCoroutineScope / viewModelScope):`,
+    ` *   SceneSkeletal.initialize(scope, Vector3(0f, 1.0f, -2f), Vector3(1f, 1f, 1f)) {`,
+    ` *       SceneSkeletal.play(${clips.length ? JSON.stringify(clips[0]) : `"Idle"`})`,
+    ` *   }`,
+    ` *   // ...and in your teardown path:`,
+    ` *   SceneSkeletal.dispose()`,
+    ` *`,
+    ` * RESOURCE OWNERSHIP — the rule that is easy to invert. These clips come FROM THE MODEL, so`,
+    ` * they are MODEL-LIFETIME: never wrapped in use{}, never closed on stop() or when switching`,
+    ` * clips, closed exactly ONCE in dispose(). A clip you GENERATE (AnimationResource.generate*) is`,
+    ` * the opposite — you own it per use and must close it. Same type, opposite policy, decided by`,
+    ` * where the clip came from.`,
+    ` */`,
+    `object SceneSkeletal {`,
+    `    private const val TAG = "SceneSkeletal"`,
+    `    private const val MODEL_URI = ${JSON.stringify(modelUri)}`,
+    ...(clips.length
+      ? [
+          ``,
+          `    /** Clip names this model is expected to carry. Verified against the model at load. */`,
+          `    val CLIPS = listOf(${clips.map((c) => JSON.stringify(c)).join(", ")})`,
+        ]
+      : []),
+    ``,
+    `    /** The parent you add to the scene. findSkinnedMeshEntity searches THIS entity and its`,
+    `     *  children (Entity.kt:1724-1733), so the search runs from here, not from the loaded root. */`,
+    `    val root = Entity()`,
+    ``,
+    `    // MODEL-OWNED clips — closed once, in dispose(), and nowhere else.`,
+    `    private var clips: Array<AnimationResource>? = null`,
+    `    private var skinned: List<Entity> = emptyList()`,
+    ``,
+    `    /**`,
+    `     * Load the model and discover its clips. [scope] MUST be main-dispatched: only Entity.load`,
+    `     * may leave the main thread — findSkinnedMeshEntity/getAnimationResources/playAnimation/`,
+    `     * stopAllAnimations are all @MainThread with a runtime checkIsMainThread(), so running them`,
+    `     * on Dispatchers.IO throws.`,
+    `     */`,
+    `    fun initialize(scope: CoroutineScope, position: Vector3, scale: Vector3 = Vector3(1f, 1f, 1f), onReady: () -> Unit = {}) {`,
+    `        scope.launch {`,
+    `            runCatching {`,
+    `                val model = withContext(Dispatchers.IO) { Entity.load(MODEL_URI) }   // the ONLY off-main call`,
+    `                root.addChild(model)`,
+    `                model.components[TransformComponent::class.java]?.apply {`,
+    `                    setPosition(position)`,
+    `                    setScaleVector(scale)`,
+    `                }`,
+    `                skinned = root.findSkinnedMeshEntity().toList()`,
+    `                if (skinned.isEmpty()) {`,
+    `                    // A non-skinned GLB returns an EMPTY array silently — no exception. Without`,
+    `                    // this line the whole feature is an invisible no-op.`,
+    `                    Log.e(TAG, "No Skinned Mesh Found in " + MODEL_URI + " — this model has no skeletal animation")`,
+    `                    return@runCatching`,
+    `                }`,
+    `                clips = skinned.firstOrNull()?.getAnimationResources()`,
+    `                Log.i(TAG, "skeletal ready: " + skinned.size + " skinned entities, clips=" + (clips?.map { it.getName() } ?: emptyList<String>()))`,
+    ...(clips.length
+      ? [
+          `                val have = clips?.map { it.getName() }?.toSet() ?: emptySet()`,
+          `                CLIPS.filterNot { it in have }.forEach { Log.w(TAG, "expected clip '" + it + "' is NOT in this model") }`,
+        ]
+      : []),
+    `                onReady()`,
+    `            }.onFailure { Log.e(TAG, "skeletal initialize failed: " + it.message) }`,
+    `        }`,
+    `    }`,
+    ``,
+    `    /**`,
+    `     * Play a clip BY NAME. Preferred over the positional form: clip order is a property of the`,
+    `     * GLB, so an index is a contract you cannot verify for a model you did not author.`,
+    `     * transitionSeconds > 0 crossfades — AnimationPlayConfig's DEFAULT mode is CROSSFADE for`,
+    `     * skeletal animation (AnimationPlayConfig.kt:32-34).`,
+    `     */`,
+    `    fun play(clipName: String, transitionSeconds: Float = 0.25f) {`,
+    `        val clip = clips?.firstOrNull { it.getName() == clipName }`,
+    `        if (clip == null) {`,
+    `            Log.e(TAG, "clip '" + clipName + "' not found; model has " + (clips?.map { it.getName() } ?: emptyList<String>()))`,
+    `            return`,
+    `        }`,
+    `        val cfg = AnimationPlayConfig(transitionDuration = transitionSeconds)`,
+    `        skinned.forEach { runCatching { it.playAnimation(clip, cfg) } }`,
+    `        // Do not use use() here; animation resource must remain open for continuous playback.`,
+    `    }`,
+    ``,
+    `    /** Play by INDEX — bounds-checked. Use only when you authored the model and know its order. */`,
+    `    fun playAt(index: Int, transitionSeconds: Float = 0.25f) {`,
+    `        val c = clips ?: return`,
+    `        if (index !in c.indices) {`,
+    `            Log.e(TAG, "clip index " + index + " out of 0.." + c.lastIndex)`,
+    `            return`,
+    `        }`,
+    `        val cfg = AnimationPlayConfig(transitionDuration = transitionSeconds)`,
+    `        skinned.forEach { runCatching { it.playAnimation(c[index], cfg) } }`,
+    `    }`,
+    ``,
+    `    /** Stop playback. Deliberately does NOT close anything — the clips belong to the model and`,
+    `     *  are reused for the next play(). Closing here is the classic mistake. */`,
+    `    fun stop() {`,
+    `        runCatching { root.stopAllAnimations() }`,
+    `        // Do not close animation resources here, as they may be reused for subsequent playback.`,
+    `    }`,
+    ``,
+    `    /** MANDATORY paired teardown — onCleared / onDispose / ON_STOP. The ONE place clips close. */`,
+    `    fun dispose() {`,
+    `        runCatching { root.stopAllAnimations() }`,
+    `        clips?.forEach { runCatching { it.close() } }`,
+    `        clips = null`,
+    `        skinned = emptyList()`,
+    `        Log.i(TAG, "skeletal disposed")`,
+    `    }`,
+    `}`,
+    ``,
+  ].join("\n");
+}
+
+export function registerSkeletalTools(server: McpServer) {
+  server.registerTool(
+    "generate_skeletal_animation_kotlin",
+    {
+      description:
+        "Emit SceneSkeletal.kt — play BAKED skeletal clips from a loaded model (Entity.load -> findSkinnedMeshEntity -> getAnimationResources -> playAnimation). WHY IT EXISTS: we had no generator for this, so any GLB with baked clips — most character content an agent would download — was un-animatable through our toolchain. Our other two lanes are procedural only: SceneTween/SceneOrbit bake a clip from a TweenAnimation, and SceneAnimator drives TransformComponents per frame; neither can play a clip that already exists inside a model. FIVE TRAPS IT ENCODES, each grounded in the 0.13.3 jars and PICO's own Animation sample: (1) PROVENANCE DECIDES DISPOSAL — clips obtained from a MODEL are MODEL-LIFETIME (never use{}, never closed on stop or when switching clips, closed exactly once at teardown), whereas clips you GENERATE are per-use and yours to close; same type, opposite policy, and PICO say so three times in their own source; (2) findSkinnedMeshEntity searches THIS ENTITY AND ITS CHILDREN, so it runs on the parent you added the model to, not the loaded root; (3) only Entity.load may leave the main thread — findSkinnedMeshEntity/getAnimationResources/playAnimation/stopAllAnimations are @MainThread with a runtime check and throw on Dispatchers.IO; (4) a non-skinned GLB returns an EMPTY array silently with no exception, so the feature becomes an invisible no-op unless you log it; (5) clip lookup is BY NAME via AnimationResource.getName(), because positional indexing is a hard contract with the GLB's clip order — a bounds-checked positional form is emitted alongside for callers who authored the model. transitionSeconds crossfades: AnimationPlayConfig's DEFAULT transition mode is CROSSFADE for skeletal. HONEST STATUS: structural — every symbol is jar-cited and the shape follows PICO's 0.13.3 Animation sample (verified running on our emulator), but this composition has not been built or looked at; capture a frame before claiming motion.",
+      inputSchema: {
+        packageName: z.string().describe("Kotlin package for the emitted file, e.g. com.example.app.content"),
+        modelUri: z.string().optional().describe("Model URI with a scheme, e.g. asset://robot.glb. Must be a BAKED model — raw runtime-loaded GLB renders black (see bake_textured_model). Default asset://robot.glb."),
+        clips: z.array(z.string()).optional().describe("Expected clip names, e.g. ['Idle','Wave','Run']. Emitted as a CLIPS list and checked against the model at load, so a missing clip is a warning at startup rather than a silent no-op at play time."),
+      },
+    },
+    async ({ packageName, modelUri, clips }) => {
+      try {
+        return ok(generateSkeletalKotlin({ packageName, modelUri, clips }));
+      } catch (e: any) {
+        return fail(String(e?.message ?? e));
+      }
+    },
+  );
+}
