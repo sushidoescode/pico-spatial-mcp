@@ -453,5 +453,36 @@ console.log("\n§3.3 the v9.3 'own WindowContainer never opens' note is narrowed
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// §1.1 — mesh colliders. EXPERIMENT A, measured on emulator-5554 (ledger com.picoagent.v35expa#0).
+//
+// We shipped "mesh colliders cook nothing queryable — rayCast returns 0 hits". A createStaticMesh
+// collider built from a RUNTIME MeshResource both held a dropped body (restY=1.14, exactly the
+// predicted rest height) and answered a rayCast (hits=2), matching a createBox control exactly.
+// What is NOT refuted: the original finding was about a mesh LOADED from a bundle/GLB, which was
+// never re-tested. The rule is narrowed to that scope, not deleted.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+console.log("\n§1.1 the mesh-collider rule is narrowed to the case that still holds");
+{
+  const rule = (await import("../dist/lint.js")).BUILTIN_RULES.find((r) => r.id === "mesh-collider-not-queryable");
+  assert(rule, "the mesh-collider rule still exists (narrowed, not deleted)");
+  assert(rule.severity === "warn", `it is a warning, not an error (measured queryable in the runtime-mesh case) — got ${rule?.severity}`);
+  assert(/LOADED/.test(rule.message), "the message names the LOADED-asset case as the one still suspect");
+  assert(/RUNTIME MeshResource/.test(rule.message), "the message states what was actually measured");
+  assert(!/returns 0 hits against them/.test(rule.message), "the refuted absolute is gone");
+
+  // The three places that published the over-general claim.
+  for (const [file, needle] of [["src/collider.ts", "com.picoagent.v35expa#0"], ["src/surfaceplace.ts", "com.picoagent.v35expa#0"]]) {
+    const s = read(file);
+    assert(s.includes(needle), `${file}: cites the ledger entry that narrowed it`);
+    assert(!/A MESH collider never registers/.test(s), `${file}: the refuted absolute is gone`);
+  }
+
+  // PhysicsWorldComponent stays an ERROR — without it nothing is queryable, and that is exactly
+  // what would have made Experiment A falsely confirm the old claim.
+  const pw = (await import("../dist/lint.js")).BUILTIN_RULES.find((r) => r.id === "raycast-without-physicsworld");
+  assert(pw?.severity === "error", "rayCast without PhysicsWorldComponent is still an error");
+}
+
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

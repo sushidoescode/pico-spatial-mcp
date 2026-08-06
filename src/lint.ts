@@ -69,14 +69,22 @@ export const BUILTIN_RULES: LintRule[] = [
     negativeFixture: "mat.setBaseColor(Color4(1f, 0f, 0f, 1f))",
   },
   {
+    // v35.4 NARROWED BY MEASUREMENT (ledger com.picoagent.v35expa#0). This rule used to be an
+    // error reading "mesh colliders cook nothing queryable — rayCast returns 0 hits". Experiment A
+    // refuted that as stated: a createStaticMesh collider built from a RUNTIME MeshResource both
+    // held a dropped dynamic body (restY matched the predicted rest height exactly) and answered a
+    // rayCast, indistinguishably from a createBox control in the same scene.
+    // What is NOT refuted, and is why this stays a warning rather than being deleted: the original
+    // finding was about a mesh LOADED from a bundle/GLB (a 20x20m grid scan at all heights returned
+    // 0 hits). That case was not re-tested. Loaded-asset mesh colliders remain suspect.
     id: "mesh-collider-not-queryable",
-    severity: "error",
+    severity: "warn",
     kinds: ["kotlin"],
     type: "present",
     pattern: /createStaticMesh|createConvexMesh/,
-    message: "Static/convex MESH colliders cook nothing queryable on-device — rayCast returns 0 hits against them.",
-    fix: "Use PRIMITIVE shapes only: ShapeResource.createBox(FULL extents) / createSphere(radius) / createCapsule(height, radius).",
-    designRule: "DESIGN.md §9 (runtime physics: primitives only)",
+    message: "Mesh collider: queryable when built from a RUNTIME MeshResource (measured 2026-08-06 — contact AND rayCast both worked, matching a primitive control), but a mesh collider built from a LOADED asset previously measured 0 rayCast hits and has not been re-tested.",
+    fix: "From a runtime MeshResource this is fine. From a LOADED model, verify with a rayCast before relying on picking — or use a PRIMITIVE proxy: ShapeResource.createBox(FULL extents) / createSphere(radius) / createCapsule(height, radius). Either way a PhysicsWorldComponent on the scene root is required or nothing is queryable at all.",
+    designRule: "DESIGN.md §9 (runtime physics) — narrowed by ledger com.picoagent.v35expa#0",
     positiveFixture: "e.components.set(CollisionComponent(listOf(ShapeResource.createConvexMesh(mesh)), physMat()))",
     negativeFixture: "e.components.set(CollisionComponent(listOf(ShapeResource.createBox(Vector3(1f,1f,1f))), physMat()))",
   },

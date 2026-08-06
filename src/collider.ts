@@ -16,9 +16,16 @@ import { ok, fail } from "./util.js";
  *      on-device, or every collider registers in the SceneInspector yet rayCast returns 0 hits.
  *      (The decompiled macOS editor dylib auto-creates the PxScene with no guard; the DEVICE
  *      runtime 0.13.2 differs and requires the component.)
- *   2. Only PRIMITIVE shapes register as queryable actors. ShapeResource.createStaticMesh /
- *      createConvexMesh from a loaded render mesh cook NO queryable triangles on-device
- *      (grid-scanned 20x20m at all heights -> 0 hits). Use box / sphere / capsule.
+ *   2. NARROWED 2026-08-06 (ledger com.picoagent.v35expa#0) — the ORIGINAL wording of this rule,
+ *      preserved because its scope turned out to be the whole point:
+ *      "ShapeResource.createStaticMesh / createConvexMesh FROM A LOADED RENDER MESH cook NO
+ *      queryable triangles on-device" 
+ *      (grid-scanned 20x20m at all heights -> 0 hits). That loaded-mesh finding STANDS — it has
+ *      not been re-tested. What was over-generalised is the leading clause "only primitive shapes
+ *      register": Experiment A measured a createStaticMesh collider built from a RUNTIME
+ *      MeshResource providing BOTH contact and rayCast hits, matching a createBox control exactly.
+ *      So: runtime-built mesh shapes are queryable; loaded-asset mesh shapes are still suspect.
+ *      This generator keeps emitting box / sphere / capsule, which are proven in both cases.
  *   3. CollisionComponent's 5-arg ctor is PUBLIC (only the no-arg ctor is internal); no
  *      RigidBodyComponent is needed for a static collider; ShapeResource.createBox takes
  *      FULL extents (a Vector3(1,1,1) box has faces at +-0.5).
@@ -207,7 +214,7 @@ export function registerColliderTools(server: McpServer) {
     "generate_collider_kotlin",
     {
       description:
-        "Emit a verified, drop-in Kotlin file (SpatialColliders.kt) that gives a native PICO spatial app WORKING Scene.rayCast surface collision — the keystone for landing pins/markers on walls/floor/ceiling and for object picking. Encodes the hard-won on-device recipe: a PhysicsWorldComponent on the scene root is REQUIRED (USD-authored collision never becomes a query actor); only PRIMITIVE shapes (box/sphere/capsule) register (static/convex mesh colliders cook nothing queryable on-device); createBox uses FULL extents; the public 5-arg CollisionComponent ctor; no RigidBody needed. Provide a `room` AABB to get a 6-wall box room, and/or `shapes` for arbitrary primitive colliders (furniture, props). Returns the Kotlin + integration notes.",
+        "Emit a verified, drop-in Kotlin file (SpatialColliders.kt) that gives a native PICO spatial app WORKING Scene.rayCast surface collision — the keystone for landing pins/markers on walls/floor/ceiling and for object picking. Encodes the hard-won on-device recipe: a PhysicsWorldComponent on the scene root is REQUIRED (USD-authored collision never becomes a query actor); primitive shapes (box/sphere/capsule) are proven queryable in every case measured, which is why this tool emits them (NARROWED 2026-08-06, ledger com.picoagent.v35expa#0: a mesh collider built from a RUNTIME MeshResource IS queryable — contact and rayCast both matched a primitive control — but one built from a LOADED asset measured 0 hits and has not been re-tested); createBox uses FULL extents; the public 5-arg CollisionComponent ctor; no RigidBody needed. Provide a `room` AABB to get a 6-wall box room, and/or `shapes` for arbitrary primitive colliders (furniture, props). Returns the Kotlin + integration notes.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package for the generated file, e.g. com.example.claimsight.content"),
         room: roomSpec.optional().describe("Emit a 6-wall box room collider at this AABB (you stand inside; rays hit walls from inside with inward normals)"),

@@ -22,8 +22,15 @@ import { okJson } from "./util.js";
  *  4. Generated/downloaded models (Meshy et al.) are usually origin-CENTRED, so seating them at
  *     the surface height buries half the model. Emitted code lifts by half the height unless the
  *     asset is declared bottom-origin.
- *  5. A MESH collider never registers in PICO's queryable physics world. Only primitives do, so
- *     the emitted collider is a box — and it carries the required PhysicsWorldComponent.
+ *  5. NARROWED 2026-08-06 by measurement (ledger com.picoagent.v35expa#0). This used to read "a
+ *     MESH collider never registers in PICO's queryable physics world. Only primitives do."
+ *     Experiment A refuted that as stated: a createStaticMesh collider built from a RUNTIME
+ *     MeshResource both held a dropped dynamic body and answered a rayCast, indistinguishably from
+ *     a createBox control in the same scene. What was NOT re-tested — and so still stands — is the
+ *     original case: a mesh collider built from a LOADED bundle/GLB, which a 20x20m grid scan at
+ *     all heights measured at 0 hits. The emitted collider stays a BOX here, because this generator
+ *     seats LOADED models and that is precisely the untested-and-suspect case; it also carries the
+ *     required PhysicsWorldComponent, without which nothing is queryable at all.
  *
  * The emitted object is self-contained: call `seat(root, add)` from inside SpatialView.initial.
  */
