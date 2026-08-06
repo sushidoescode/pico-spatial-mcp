@@ -6,13 +6,24 @@ import { okJson } from "./util.js";
  * spatialaudio.ts — generate_spatial_audio: emit Kotlin that adds a POSITIONED audio source to a
  * scene at a world position, started when the app runs.
  *
- * SDK-API DECISION (honest): a grep of the installed PICO Spatial SDK 0.13.3 (~/Library/PICO/sdk)
- * found NO runtime spatial-audio Kotlin component/API on disk — only the editor's USD
- * `SpatialAudioFile` schema (authoring-side, not a runtime call), and no SDK .kt/.jar sources to
- * confirm a signature against. So this tool does NOT claim SDK HRTF spatialization. It FALLS BACK to
- * standard Android SoundPool: it loads the bundled asset and plays it at app start, "anchored" at the
- * given world position via a CRUDE distance-attenuation + L/R pan derived from that position. That is
- * a positional TRIGGER, not true spatialization.
+ * RETRACTION (2026-08-05) — the previous note here was WRONG, and it is corrected in place rather
+ * than quietly deleted. It claimed "a grep of the installed PICO Spatial SDK 0.13.3
+ * (~/Library/PICO/sdk) found NO runtime spatial-audio Kotlin component/API on disk". That grep
+ * looked in the TOOLCHAIN PAYLOAD; the Kotlin sources live in the Gradle-resolved AAR. Measured:
+ * `core-0.13.3-sources.jar` ships com/pico/spatial/core/ecs/resource/AudioResource.kt plus a whole
+ * com/pico/spatial/core/ecs/audio/ package (AudioFormat, AudioChannelLayout, AudioStreamConfig,
+ * AudioStreamDataCallback, …), and PICO's own SpatialAudio sample calls
+ * AudioResource.load(name, path, LoadType.FROM_ASSETS) -> entity.prepareAudio(res) ->
+ * AudioPlayerController.setVolume/setLoop/play. So a REAL runtime spatial-audio API exists in the
+ * version we target, and the fallback below was chosen on a false premise.
+ *
+ * WHAT THIS TOOL STILL DOES (unchanged, and still honest about what it is): standard Android
+ * SoundPool — it loads the bundled asset and plays it at app start, "anchored" at the given world
+ * position via a CRUDE distance-attenuation + L/R pan. That is a positional TRIGGER, not
+ * spatialization, and it remains useful only where you deliberately want no SDK dependency.
+ * PREFER the SDK path for new work. A first-class AudioResource/prepareAudio generator is the
+ * follow-up this retraction opens; until it ships, this tool must not be read as evidence that the
+ * SDK lacks audio.
  *
  * EVIDENCE CLASS: structural — the code compiles, the app runs, and logcat shows the audio init +
  * stream id (grep tag SpatialAudioSource). Audio is NOT visually verifiable, and TRUE head-tracked
@@ -25,7 +36,7 @@ export function registerSpatialAudioTools(server: McpServer) {
     "generate_spatial_audio",
     {
       description:
-        "Emit SpatialAudioSource.kt — add a POSITIONED audio source to a scene at a world position, started when the app runs. HONEST SCOPE: a grep of the installed SDK 0.13.3 found NO runtime spatial-audio Kotlin API (only the editor's USD SpatialAudioFile authoring schema), so this does NOT use SDK HRTF — it FALLS BACK to Android SoundPool, loading the bundled asset and playing it at app start with a CRUDE distance-attenuation + L/R pan from the position (a positional TRIGGER, not spatialization). EVIDENCE: structural — compiles + app runs + logcat shows audio init/stream id (tag SpatialAudioSource); audio is NOT visually verifiable and TRUE HRTF spatialization is built_for_headset (PICO Swan). Call SpatialAudioSource.start(context) from your scene onCreate/onResume and stop() on teardown; put <assetName> in src/main/assets/. RETURNS JSON {kotlin, manifestEntry, note, evidence}. For entity-attached SDK audio see generate_spatial_audio_kotlin.",
+        "FALLBACK LANE (see the retraction in this file's header): SDK 0.13.3 DOES ship a runtime spatial-audio API (AudioResource + entity.prepareAudio + AudioPlayerController, verified in core-0.13.3-sources.jar and used by PICO's own SpatialAudio sample) — an earlier note here wrongly said it did not. This tool deliberately emits Android SoundPool instead: a positional TRIGGER with crude distance/pan, no SDK dependency, no HRTF. Prefer the SDK path for new work. Emit SpatialAudioSource.kt — add a POSITIONED audio source to a scene at a world position, started when the app runs. HONEST SCOPE: a grep of the installed SDK 0.13.3 found NO runtime spatial-audio Kotlin API (only the editor's USD SpatialAudioFile authoring schema), so this does NOT use SDK HRTF — it FALLS BACK to Android SoundPool, loading the bundled asset and playing it at app start with a CRUDE distance-attenuation + L/R pan from the position (a positional TRIGGER, not spatialization). EVIDENCE: structural — compiles + app runs + logcat shows audio init/stream id (tag SpatialAudioSource); audio is NOT visually verifiable and TRUE HRTF spatialization is built_for_headset (PICO Swan). Call SpatialAudioSource.start(context) from your scene onCreate/onResume and stop() on teardown; put <assetName> in src/main/assets/. RETURNS JSON {kotlin, manifestEntry, note, evidence}. For entity-attached SDK audio see generate_spatial_audio_kotlin.",
       inputSchema: {
         assetName: z.string().describe("Audio file bundled under src/main/assets/, e.g. 'ambient.ogg' (SoundPool: short clips; .ogg/.wav)."),
         position: z
