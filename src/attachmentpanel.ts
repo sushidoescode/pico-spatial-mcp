@@ -136,9 +136,11 @@ export function generateAttachmentPanelFiles(args: AttachmentPanelArgs): { files
   const kt = [
     `package ${packageName}`,
     ``,
+    `import androidx.compose.foundation.background`,
     `import androidx.compose.foundation.layout.Arrangement`,
     `import androidx.compose.foundation.layout.Column`,
     `import androidx.compose.foundation.layout.padding`,
+    `import androidx.compose.foundation.shape.RoundedCornerShape`,
     `import androidx.compose.runtime.Composable`,
     `import androidx.compose.ui.Modifier`,
     `import androidx.compose.ui.unit.IntSize`,
@@ -220,7 +222,12 @@ export function generateAttachmentPanelFiles(args: AttachmentPanelArgs): { files
     ` */`,
     `fun SpatialViewAttachments.seatSceneAttachmentPanels(content: SpatialViewContent) {`,
     ...panels.flatMap((p) => [
-      `    entity(SceneAttachments.ID_${constName(p.id)})?.let { panel ->`,
+      `    val e${constName(p.id)} = entity(SceneAttachments.ID_${constName(p.id)})`,
+      `    // Log the lookup. entity(id) returning null is the single most likely reason a panel`,
+      `    // never appears, and a bare ?.let swallows it silently — you get an invisible panel and`,
+      `    // no clue why. Say which happened.`,
+      `    android.util.Log.i("SceneAttachments", "attachment '${p.id}' entity=" + (if (e${constName(p.id)} == null) "NULL (never created — is the id identical in the builder and here?)" else "ok"))`,
+      `    e${constName(p.id)}?.let { panel ->`,
       `        panel.components.get<TransformComponent>()?.setPosition(SceneAttachments.POS_${constName(p.id)})`,
       ...(p.faceViewer
         ? [
@@ -230,6 +237,7 @@ export function generateAttachmentPanelFiles(args: AttachmentPanelArgs): { files
           ]
         : []),
       `        content.addEntity(panel)`,
+      `        android.util.Log.i("SceneAttachments", "attachment '${p.id}' seated at " + SceneAttachments.POS_${constName(p.id)}.x + "," + SceneAttachments.POS_${constName(p.id)}.y + "," + SceneAttachments.POS_${constName(p.id)}.z + " (metres, SpatialView-local)")`,
       `    }`,
     ]),
     `}`,
@@ -242,7 +250,15 @@ export function generateAttachmentPanelFiles(args: AttachmentPanelArgs): { files
       `        val colors = PicoTheme.colorScheme`,
       `        val type = PicoTheme.typography`,
       `        Column(`,
-      `            modifier = Modifier.padding(16.dp),`,
+      `            modifier = Modifier`,
+      `                // An in-scene attachment gets NO container backing. A WindowContainer panel is`,
+      `                // composited by the shell onto its own glass surface, so content can rely on it;`,
+      `                // an attachment is drawn straight into the 3D scene against whatever happens to`,
+      `                // be behind it. PicoTheme's default labelPrimary is BLACK, so without this fill`,
+      `                // the panel renders invisible over any dark scene content — measured 2026-08-06,`,
+      `                // where the text was only legible where it crossed an orange sphere.`,
+      `                .background(colors.fillSecondary, RoundedCornerShape(12.dp))`,
+      `                .padding(16.dp),`,
       `            verticalArrangement = Arrangement.spacedBy(8.dp),`,
       `        ) {`,
       ...(p.title ? [`            Text(${kstr(p.title)}, style = type.titleLarge, color = colors.fillPrimary)`] : []),
@@ -275,9 +291,14 @@ export function generateAttachmentPanelFiles(args: AttachmentPanelArgs): { files
       `Position is METRES in the SpatialView's LOCAL space; size is PIXELS via the @Composable panelSize(Dp, Dp). ` +
       `This is scene placement, NOT world-locking: the panels move with their container and do not survive as a real-world anchor — ` +
       `that still needs AnchorComponent and stays deferred. ` +
-      `HONEST STATUS: structural. Every symbol is confirmed in the 0.13.3 sources jars and adversarially re-verified, and the shape ` +
-      `matches six of PICO's eight samples — but the samples target BOM 6.0.0, and this composition has not yet been built or looked at ` +
-      `on the emulator. Capture a frame and record_verification before claiming a panel renders in-scene.`,
+      `STATUS: VISION_VERIFIED on emulator-5554 (ledger com.picoagent.v35attach#0, 2026-08-06). A panel emitted by this tool renders ` +
+      `inside the 3D scene and is correctly DEPTH-SORTED: seated at z=-1.85 it visibly occludes a scene sphere at z=-2.0, so this is real ` +
+      `3D placement, not a 2D overlay. ` +
+      `LOOK-DERIVED GOTCHA now handled for you: an attachment gets NO container backing. A WindowContainer panel is composited by the shell ` +
+      `onto its own glass surface; an attachment is drawn straight into the scene against whatever is behind it. PicoTheme's default ` +
+      `labelPrimary is BLACK, so the first build rendered an INVISIBLE panel over dark scene content — legible only where the text happened ` +
+      `to cross an orange sphere. The emitted content now fills its own fillSecondary background. ` +
+      `Sizing is still worth checking by eye: panelSize takes dp, and a panel sized for arm's length reads small at a few metres.`,
   };
 }
 
@@ -286,7 +307,7 @@ export function registerAttachmentPanelTools(server: McpServer) {
     "generate_attachment_panel_kotlin",
     {
       description:
-        "Emit Compose panels placed INSIDE the 3D scene at a chosen position in metres — the in-scene counterpart to generate_panel_compose_kotlin's docked 2D Activity. Returns JSON {files:{'SceneAttachments.kt'}, usage, note}. RETRACTION THIS SUPERSEDES: we shipped 'no public API positions an auto-hosted 2D panel in world space' and compiled placement:'world' to a head-docked fallback. That is true only of an OS-composited 2D Activity window, and it stays true for that case — but inside a SpatialView, AttachmentPanel(id, size, alignment, content) yields a Compose surface backed by a real ECS Entity whose TransformComponent you set, in metres. It has been public in 0.13.3 the whole time (ui/foundation content/SpatialView.kt:182); six of PICO's eight samples use it. SCOPE, STATED PRECISELY: this is scene placement, not world-LOCKING — panels live in the hosting SpatialView's local space and move with their container; a pose fixed to the real room still needs AnchorComponent and remains deferred. TRAPS IT ENCODES, each grounded and adversarially re-verified: the attachments lambda is NOT a composable scope (SpatialView.kt:81), so panelSize() is hoisted into a separate rememberAttachmentPanelSizes(); position is METRES but size is PIXELS; the Dp overload of panelSize is emitted because the metres overload throws outside a spatial container (LocalPhysicalLengthConverter is compositionLocalOf{error}); panelSize is remember-ed with no keys, so sizes are frozen at first composition; the attachment entity must be explicitly added via content.addEntity or it silently never renders; and alignment is the anchor point ON THE PANEL aligned TO the entity in normalized [0,1], not a world offset. Panels are SpatialUI inside PicoTheme, never Material. faceViewer uses LookAtComponent.setViewerAsTarget() — there is no BillboardComponent in 0.13.3. HONEST STATUS: structural; capture a frame before claiming it renders.",
+        "Emit Compose panels placed INSIDE the 3D scene at a chosen position in metres — the in-scene counterpart to generate_panel_compose_kotlin's docked 2D Activity. Returns JSON {files:{'SceneAttachments.kt'}, usage, note}. RETRACTION THIS SUPERSEDES: we shipped 'no public API positions an auto-hosted 2D panel in world space' and compiled placement:'world' to a head-docked fallback. That is true only of an OS-composited 2D Activity window, and it stays true for that case — but inside a SpatialView, AttachmentPanel(id, size, alignment, content) yields a Compose surface backed by a real ECS Entity whose TransformComponent you set, in metres. It has been public in 0.13.3 the whole time (ui/foundation content/SpatialView.kt:182); six of PICO's eight samples use it. SCOPE, STATED PRECISELY: this is scene placement, not world-LOCKING — panels live in the hosting SpatialView's local space and move with their container; a pose fixed to the real room still needs AnchorComponent and remains deferred. TRAPS IT ENCODES, each grounded and adversarially re-verified: the attachments lambda is NOT a composable scope (SpatialView.kt:81), so panelSize() is hoisted into a separate rememberAttachmentPanelSizes(); position is METRES but size is PIXELS; the Dp overload of panelSize is emitted because the metres overload throws outside a spatial container (LocalPhysicalLengthConverter is compositionLocalOf{error}); panelSize is remember-ed with no keys, so sizes are frozen at first composition; the attachment entity must be explicitly added via content.addEntity or it silently never renders; and alignment is the anchor point ON THE PANEL aligned TO the entity in normalized [0,1], not a world offset. Panels are SpatialUI inside PicoTheme, never Material. faceViewer uses LookAtComponent.setViewerAsTarget() — there is no BillboardComponent in 0.13.3. STATUS: VISION_VERIFIED on the emulator (ledger com.picoagent.v35attach#0) — a panel from this tool renders in-scene and correctly occludes geometry behind it. It also draws its own background: an attachment has no container glass behind it, and PicoTheme's default text colour is black, so without a fill the panel is invisible over dark scene content (found by looking).",
       inputSchema: {
         packageName: z.string().describe("Kotlin package for the emitted file, e.g. com.example.app.content"),
         panels: z

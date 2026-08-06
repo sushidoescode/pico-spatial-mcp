@@ -328,7 +328,8 @@ console.log("\n§3.2 in-scene Compose panels, and the correction that unlocked t
 
   // TRAP 4: the attachment entity must be explicitly added or it silently never renders.
   assert((kt.match(/content\.addEntity\(panel\)/g) || []).length === 2, "every attachment entity is explicitly added to the scene");
-  assert(/entity\(SceneAttachments\.ID_\w+\)\?\.let/.test(kt), "entity(id) is null-guarded (it returns Entity?)");
+  assert(/val e\w+ = entity\(SceneAttachments\.ID_\w+\)/.test(kt) && /e\w+\?\.let \{ panel ->/.test(kt),
+    "entity(id) is null-guarded (it returns Entity?)");
 
   // Position is metres; and it must be set by mutation on the existing component.
   assert(/setPosition\(SceneAttachments\.POS_/.test(kt), "positions the attachment via TransformComponent");
@@ -338,6 +339,14 @@ console.log("\n§3.2 in-scene Compose panels, and the correction that unlocked t
   assert(kt.includes("LookAtComponent().apply { setViewerAsTarget() }"), "faceViewer uses LookAtComponent.setViewerAsTarget()");
   // The word appears in the comment explaining why we do not use it; what must never appear is a use.
   assert(!/BillboardComponent\s*\(|import .*Billboard/.test(kt), "never constructs or imports a BillboardComponent (no such type in 0.13.3)");
+
+  // An attachment has NO container glass behind it (unlike a WindowContainer, which the shell
+  // composites onto a material surface). PicoTheme's default labelPrimary is BLACK, so without its
+  // own fill the panel renders invisible over dark scene content — measured 2026-08-06, where the
+  // text was legible only where it crossed an orange sphere.
+  assert(/\.background\(colors\.fillSecondary/.test(kt), "attachment content draws its own background (no container glass behind it)");
+  // A silent null from entity(id) is the likeliest cause of an invisible panel; say which happened.
+  assert(/entity=" \+ \(if \(e\w+ == null\)/.test(kt), "the entity lookup logs NULL vs ok rather than silently skipping");
 
   // SpatialUI, not Material — same house rule as every other panel.
   assert(/PicoTheme \{/.test(kt), "panel content is wrapped in PicoTheme");
@@ -349,7 +358,8 @@ console.log("\n§3.2 in-scene Compose panels, and the correction that unlocked t
   // The note must state the scope limit rather than overclaiming a world anchor.
   assert(/not world-?LOCKING|NOT world-locking|not world-locking/i.test(out.note), "the note distinguishes scene placement from world-locking");
   assert(/AnchorComponent/.test(out.note), "the note names AnchorComponent as what world-locking would still need");
-  assert(/structural/i.test(out.note), "the note reports honest evidence status");
+  assert(/VISION_VERIFIED/i.test(out.note) && /ledger com\.picoagent\.v35attach#0/.test(out.note),
+    "the note reports the evidence class it actually earned, with its ledger entry");
 
   // Input validation: ids are map keys, and the SDK silently clamps oversize panels.
   let threw = false;
