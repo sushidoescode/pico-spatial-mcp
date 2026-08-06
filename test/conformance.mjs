@@ -669,5 +669,36 @@ console.log("\nv35.9 every generator this wave added is REACHABLE, not just regi
     "the 'world' ledger note points at the route that does work");
 }
 
+// §4.1 — mesh tracking. Measured working 2026-08-06 (ledger com.picoagent.v35expa#1): 44 anchors.
+// The trap worth pinning: TrackingState.RUNNING is NOT a readiness signal — both trackers report
+// RUNNING while still returning 0 for 1-2s — so nothing may gate a retry loop on state.
+console.log("\n§4.1 mesh tracking is emitted, and nothing gates readiness on TrackingState");
+{
+  const sense = await import("../dist/sense.js");
+  const sh = {};
+  sense.registerSenseTools({ registerTool: (n, _m, f) => { sh[n] = f; } });
+  const kt = (await sh["generate_scene_understanding_kotlin"]({ packageName: "com.test.conf.content" })).content[0].text;
+
+  assert(/fun startMesh\(/.test(kt) && /subscribeAnchorUpdate/.test(kt),
+    "mesh tracking is emitted via subscribeAnchorUpdate (the path PICO's own sample uses)");
+  assert(/fun stopMesh\(/.test(kt) && /meshSub\?\.cancel\(\)/.test(kt) && /MeshTrackingManager\.stop\(\)/.test(kt),
+    "startMesh is paired with a stopMesh that cancels the subscription AND stops the tracker");
+  // Subscribing after start() can miss the first ADDED burst.
+  assert(kt.indexOf("subscribeAnchorUpdate") < kt.indexOf("MeshTrackingManager.start()"),
+    "subscription is set up BEFORE start()");
+  // The refuted recommendation must never come back: a loop must not exit because state == RUNNING.
+  assert(!/while\s*\([^)]*state\s*[!=]=\s*TrackingState\.RUNNING/.test(kt),
+    "no retry loop gates on TrackingState.RUNNING (both trackers report RUNNING while returning 0)");
+  assert(/MESH\| retry=\$tries state=/.test(kt), "the mesh retry loop logs state, making a 0 diagnosable");
+  const errs = runLint(kt, "kotlin").filter((v) => v.severity === "error").map((v) => v.ruleId).filter(Boolean);
+  assert(errs.length === 0, `scene-understanding is lint-clean${errs.length ? `: ${errs.join(", ")}` : ""}`);
+
+  // And the retracted claim must be gone from the shipped text.
+  const src = read("src/sense.ts");
+  assert(!/Do not claim mesh data works on the emulator\.(?!~)/.test(src.replace(/~~[\s\S]*?~~/g, "")),
+    "the 'do not claim mesh data works' absolute is retracted, not still asserted");
+  assert(/com\.picoagent\.v35expa#1/.test(src), "the retraction cites its ledger entry");
+}
+
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

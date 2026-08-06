@@ -26,8 +26,23 @@ import { fail, ok, okJson, run, sleep } from "./util.js";
  * or before the Stage opens returns 0 planes. REAL-room surfaces (vs the simulated bedroom) remain
  * hardware (Swan).
  *
- * STILL UNRESOLVED: MeshTrackingManager.loadAllAnchors() returned 0 in the same full-space probe
- * with no error, while planes returned 43. Do not claim mesh data works on the emulator.
+ * ~~STILL UNRESOLVED: MeshTrackingManager.loadAllAnchors() returned 0 ... Do not claim mesh data
+ * works on the emulator.~~ **RESOLVED AND REFUTED 2026-08-06** (ledger com.picoagent.v35expa#1).
+ * A probe running subscription and one-shot side by side against BOTH trackers, logging state every
+ * second, measured: **44 distinct mesh anchors** via MeshTrackingManager.subscribeAnchorUpdate, and
+ * loadAllAnchors() returning 44 as well. Mesh data works on the emulator.
+ *
+ * The old 0-mesh/43-plane result was a READINESS RACE, not a mesh-specific failure:
+ *   TICK=0  meshState=RUNNING planeState=RUNNING  meshLoadAllAnchors=0   planeLoadAllAnchors=0
+ *   TICK=1  meshState=RUNNING planeState=RUNNING  meshLoadAllAnchors=44  planeLoadAllAnchors=0
+ *   TICK=2  meshState=RUNNING planeState=RUNNING  meshLoadAllAnchors=44  planeLoadAllAnchors=37
+ * Mesh was actually READY BEFORE planes here. A one-shot at the wrong instant returns 0 for either.
+ *
+ * LOAD-BEARING CONSEQUENCE: `state == TrackingState.RUNNING` is **not** a readiness signal — both
+ * trackers report RUNNING while still returning 0. So the conformance report's action §4.1-2 ("gate
+ * the retry on state != RUNNING rather than on isEmpty; an empty room in RUNNING should exit
+ * immediately") is **REFUTED — do not implement it.** It would exit at TICK=0 with 0 results. The
+ * poll-until-non-empty gate below stays; the per-retry state log is what makes a 0 diagnosable.
  *
  * v31 adds `dumpPlanes` (polls + emits PLANES| markers) and the host-side `probe_planes` tool that
  * drives it through the Agent Bridge and parses the inventory back out of logcat.
@@ -84,7 +99,7 @@ export function registerSenseTools(server: McpServer) {
     "generate_scene_understanding_kotlin",
     {
       description:
-        "Emit drop-in Kotlin (SceneUnderstanding.kt) that uses PICO native scene-understanding (sense/plane) to land markers on detected surfaces (floor/wall/ceiling) — the native equivalent of WebXR hit-test. RETRACTION (2026-07-28/29, measured): the emulator DOES supply scene understanding — a FULL SPACE app receives ~40 SIMULATED planes with semantics (FLOOR/TABLE/CHAIR/DOOR/WINDOW + BED/WALL/CEILING/CABINET), orientations and metre bounding boxes; you MUST POLL, because a one-shot query during Full Space entry returns 0 (warm boot ~4 one-second retries, COLD boot ~7; FLOOR is at y=0.40, not 0 — the historic '0 planes' belief came from one-shot queries). REAL-room surfaces remain hardware (Swan), and MeshTrackingManager still returned 0 anchors in the same probe — do not claim mesh data works. Includes dumpPlanes(maxRetries) which polls and emits PLANES| logcat markers; register it as an AgentBridge command and drive it with probe_planes. REQUIRES Full Space (an open Stage); a WindowContainer returns 0 planes.",
+        "Emit drop-in Kotlin (SceneUnderstanding.kt) that uses PICO native scene-understanding (sense/plane) to land markers on detected surfaces (floor/wall/ceiling) — the native equivalent of WebXR hit-test. RETRACTION (2026-07-28/29, measured): the emulator DOES supply scene understanding — a FULL SPACE app receives ~40 SIMULATED planes with semantics (FLOOR/TABLE/CHAIR/DOOR/WINDOW + BED/WALL/CEILING/CABINET), orientations and metre bounding boxes; you MUST POLL, because a one-shot query during Full Space entry returns 0 (warm boot ~4 one-second retries, COLD boot ~7; FLOOR is at y=0.40, not 0 — the historic '0 planes' belief came from one-shot queries). REAL-room surfaces remain hardware (Swan). MESH: RETRACTED 2026-08-06 (ledger com.picoagent.v35expa#1) — mesh data DOES work on the emulator: 44 distinct anchors, via both subscribeAnchorUpdate and loadAllAnchors. The old 0 was a readiness race, and note that state==RUNNING is NOT a readiness signal (both trackers report RUNNING while still returning 0 for ~1-2s), so POLL until non-empty rather than gating on state. Includes dumpPlanes(maxRetries) which polls and emits PLANES| logcat markers; register it as an AgentBridge command and drive it with probe_planes. REQUIRES Full Space (an open Stage); a WindowContainer returns 0 planes.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
       },
@@ -96,6 +111,10 @@ export function registerSenseTools(server: McpServer) {
         "import android.util.Log",
         "import com.pico.spatial.core.math.Vector3",
         "import com.pico.spatial.sense.plane.PlaneAnchor",
+        "import com.pico.spatial.core.lifecycle.Cancellable",
+        "import com.pico.spatial.sense.base.AnchorUpdate",
+        "import com.pico.spatial.sense.mesh.MeshAnchor",
+        "import com.pico.spatial.sense.mesh.MeshTrackingManager",
         "import com.pico.spatial.sense.plane.PlaneTrackingManager",
         "import kotlinx.coroutines.Dispatchers",
         "import kotlinx.coroutines.delay",
@@ -169,6 +188,60 @@ export function registerSenseTools(server: McpServer) {
         "            val c = p.transform.position",
         '            Log.i(TAG, "PLANES| idx=$i label=${p.semantics.name} orient=${p.planeOrientation.name} pos=${c.x},${c.y},${c.z} bbox=${p.boundingBoxSize.x},${p.boundingBoxSize.y}")',
         "        }",
+        "    }",
+        "",
+        "    // ── MESH (v35.10) ────────────────────────────────────────────────────────────────────",
+        "    // Measured working on the emulator 2026-08-06: 44 distinct anchors (ledger",
+        "    // com.picoagent.v35expa#1). SUBSCRIPTION is the primary path — it is what PICO's own",
+        "    // SpatialMesh sample uses, and it is the only one that reports UPDATED/REMOVED, which",
+        "    // matters on hardware where mesh refines over seconds. loadAllAnchors also works once",
+        "    // ready, but it is a one-shot snapshot.",
+        "    private var meshSub: Cancellable? = null",
+        "    private val meshAnchors = mutableMapOf<String, MeshAnchor>()",
+        "",
+        "    /** Start mesh tracking and stream anchor updates. PAIR WITH stopMesh(). */",
+        "    fun startMesh(onUpdate: ((AnchorUpdate.Event, MeshAnchor) -> Unit)? = null) {",
+        "        runCatching {",
+        "            // Subscribe BEFORE start(), the order the sample uses — otherwise the first",
+        "            // ADDED burst can be missed.",
+        "            meshSub = MeshTrackingManager.subscribeAnchorUpdate { update ->",
+        "                val key = update.anchor.anchorUUID.toString()",
+        "                when (update.event) {",
+        "                    AnchorUpdate.Event.REMOVED -> meshAnchors.remove(key)",
+        "                    else -> meshAnchors[key] = update.anchor",
+        "                }",
+        "                onUpdate?.invoke(update.event, update.anchor)",
+        "            }",
+        "            MeshTrackingManager.start()",
+        "            Log.i(TAG, \"mesh tracking ${MeshTrackingManager.state}\")",
+        "        }.onFailure { Log.e(TAG, \"mesh start failed: ${it.message}\") }",
+        "    }",
+        "",
+        "    /** Release the subscription and the tracker. Call from onDispose / ON_PAUSE / onCleared. */",
+        "    fun stopMesh() {",
+        "        runCatching { meshSub?.cancel() }; meshSub = null",
+        "        runCatching { MeshTrackingManager.stop() }",
+        "        meshAnchors.clear()",
+        "        Log.i(TAG, \"mesh tracking stopped\")",
+        "    }",
+        "",
+        "    /**",
+        "     * POLL + dump the mesh inventory as MESH| markers. Polls for the same reason planes do:",
+        "     * TrackingState.RUNNING is NOT a readiness signal — both trackers report RUNNING while",
+        "     * still returning 0 for the first 1-2s (measured). Never gate on state; poll until",
+        "     * non-empty, and log state so a 0 is diagnosable.",
+        "     */",
+        "    suspend fun dumpMesh(maxRetries: Int = 15) {",
+        "        startMesh()",
+        "        var tries = 0",
+        "        var n = runCatching { MeshTrackingManager.loadAllAnchors().size }.getOrDefault(0)",
+        "        while (n == 0 && meshAnchors.isEmpty() && tries < maxRetries) {",
+        "            delay(1000)",
+        "            tries++",
+        "            Log.i(TAG, \"MESH| retry=$tries state=${MeshTrackingManager.state}\")",
+        "            n = runCatching { MeshTrackingManager.loadAllAnchors().size }.getOrDefault(0)",
+        "        }",
+        "        Log.i(TAG, \"MESH| oneShot=$n subscribed=${meshAnchors.size} retries=$tries state=${MeshTrackingManager.state}\")",
         "    }",
         "",
         "    /** Raycast the gaze ray vs the detected planes; nearest hit point + plane normal, or null.",
