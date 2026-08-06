@@ -608,5 +608,66 @@ console.log("\n§7 the learned-lesson store is treated as untrusted input");
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// v35.9 — A TOOL THAT NOTHING ROUTES TO IS NOT SHIPPED.
+//
+// All three tools this wave added were registered MCP tools, tested, and documented — and INVISIBLE
+// to the planner, the capability manifest and the compile ledger. An agent driving brief_to_app
+// could never arrive at any of them. For generate_container_app_kotlin that gutted the point: its
+// whole justification was "the agentic track cannot reach a WelcomeSpace-class outcome by
+// prompting", and it still could not. Registration is not adoption; this asserts the difference.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+console.log("\nv35.9 every generator this wave added is REACHABLE, not just registered");
+{
+  const { CAPABILITY_MANIFEST } = await import("../dist/capabilities.js");
+  const { buildLedger } = await import("../dist/compiler.js");
+  const NEW_TOOLS = ["generate_ecs_system_kotlin", "generate_attachment_panel_kotlin", "generate_container_app_kotlin"];
+
+  for (const t of NEW_TOOLS) {
+    assert(CAPABILITY_MANIFEST.some((c) => c.tool === t), `${t} is in CAPABILITY_MANIFEST (list_capabilities / the planner see it)`);
+  }
+
+  // A spec that asks for all three must produce a ledger step for each.
+  const spec = appSpecSchema.parse({
+    meta: {
+      appName: "Parity", packageName: "com.test.parity", stageStyle: "1", brief: "welcomespace-class",
+      rootContainer: "windowContainer",
+      secondaryContainers: [{ kind: "window", id: "display_box", form: "Volumetric" }, { kind: "stage", id: "room", style: "Full" }],
+    },
+    navigation: { startScene: "main", portals: [] },
+    scenes: [{ id: "main", environment: { kind: "procedural" }, lighting: { rig: "sun" } }],
+    objects: [{ id: "gem", sceneId: "main", source: "primitive", transform: { position: [0, 1.2, -2] }, anim: { type: "spin", driver: "system" } }],
+    panels: [{ id: "hud", title: "SCORE", placement: { kind: "scene", position: [0, 1.45, -1.9] } }],
+  });
+  const ledger = buildLedger(spec, "/tmp/parity");
+  for (const t of NEW_TOOLS) {
+    assert(ledger.some((st) => st.tool === t), `${t} is ROUTED by compile_app_spec (an agent can reach it by prompting)`);
+  }
+
+  // Ordering: the container step REPLACES the Main.kt that generate_app_wiring emits, so it has to
+  // come after it. Reversed, the app would end up with a DefaultStage Main.kt and two mainApps.
+  const wiringAt = ledger.findIndex((st) => st.tool === "generate_app_wiring");
+  const containersAt = ledger.findIndex((st) => st.tool === "generate_container_app_kotlin");
+  assert(wiringAt >= 0 && containersAt > wiringAt, `the container step follows generate_app_wiring (${wiringAt} -> ${containersAt})`);
+
+  // placement 'scene' must lower to the attachment route INSTEAD of the dock panel, not alongside.
+  assert(!ledger.some((st) => st.tool === "generate_panel_compose_kotlin"),
+    "a 'scene' panel does not also emit a docked 2D Activity");
+
+  // ...and 'world' must still lower to the dock path, because world-LOCKING remains deferred.
+  const worldSpec = appSpecSchema.parse({
+    meta: { appName: "W", packageName: "com.test.w", stageStyle: "1", brief: "b" },
+    navigation: { startScene: "main", portals: [] },
+    scenes: [{ id: "main", environment: { kind: "procedural" } }],
+    objects: [{ id: "o", sceneId: "main", source: "primitive", transform: { position: [0, 1, -2] } }],
+    panels: [{ id: "p", title: "T", placement: { kind: "world", position: [0, 1, -2] } }],
+  });
+  const worldLedger = buildLedger(worldSpec, "/tmp/w");
+  assert(worldLedger.some((st) => st.tool === "generate_panel_compose_kotlin"),
+    "a 'world' panel still lowers to the dock path (world-locking needs AnchorComponent, still deferred)");
+  assert(worldLedger.some((st) => /generate_attachment_panel_kotlin/.test(st.note ?? "")),
+    "the 'world' ledger note points at the route that does work");
+}
+
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

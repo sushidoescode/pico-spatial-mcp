@@ -52,6 +52,26 @@ export const metaSchema = z.object({
   packageName: z.string().describe("Android applicationId, e.g. com.example.showcase."),
   stageStyle: z.enum(["1", "2", "3"]).default("1").describe("PICO stage style: 1=Mixed (DEFAULT — the MR product: virtual content renders over the user's real room), 2=Progressive, 3=Full (fully-virtual, first-class explicit opt-in; note a partner-stated Guardian-boundary issue on hardware for Full-Space immersion — per PICO, known, fix in progress — not measured by us)."),
   brief: z.string().describe("The original natural-language brief this spec realizes."),
+  rootContainer: z
+    .enum(["stage", "windowContainer"])
+    .default("stage")
+    .describe("v35.9: the app's LAUNCH container — exactly one Default* per app. 'stage' (default, and what every app we have generated used) is the immersive-first shape. 'windowContainer' is the WelcomeSpace shape: a panel-led app that opens a Stage on demand, and it is what the Week-1 parity target needs. Non-default values lower to generate_container_app_kotlin, which REPLACES the Main.kt that generate_app_wiring emits."),
+  secondaryContainers: z
+    .array(
+      z.object({
+        kind: z.enum(["window", "stage"]),
+        id: z.string().describe("Unique id — it addresses the navigator open/close calls."),
+        form: z.enum(["Planar", "Volumetric"]).optional().describe("window only. Default Planar."),
+        widthDp: z.number().optional(),
+        heightDp: z.number().optional(),
+        depthDp: z.number().optional().describe("Volumetric only."),
+        style: z.enum(["Automatic", "Mixed", "Progressive", "Full"]).optional().describe("stage only — the style used when OPENING it (Stage itself has no style parameter). Default Mixed."),
+        immersion: z.number().optional().describe("stage only, 0-100 (Progressive). Default 100."),
+        content: z.string().optional().describe("Composable call for this container's content."),
+      }),
+    )
+    .default([])
+    .describe("v35.9: containers DECLARED in mainApp beside the root and opened at runtime through LocalSpatialNavigator. A declared container does NOT open itself. Secondary containers need no manifest entry. Any entry here lowers to generate_container_app_kotlin."),
   semanticScenePath: z.string().optional().describe("v17.0: path to a compose_semantic_scene JSON for the scanned world this app lives in — enables object anchorTo:{label} placement against REAL labeled surfaces."),
   occupancyPath: z.string().optional().describe("v26.1: path to a build_occupancy_grid JSON for the scanned world — anchorTo relation:'on' placements then also avoid UNLABELED scanned geometry (zod strips unknown keys, so this MUST be declared here to reach resolveAnchors)."),
   budget: z
@@ -162,7 +182,10 @@ export const objectSchema = z.object({
     .optional()
     .describe("A rigid body in the scene's physics world (requires scene.physics). Placed at transform.position. Launch it with an interaction action 'launch:<objectId>'."),
   dataBindRef: z.string().optional().describe("A data node id whose items produce these objects."),
-  anim: z.record(z.any()).optional(),
+  anim: z
+    .record(z.any())
+    .optional()
+    .describe("Per-object animation. {type:'tween'|'orbit', ...} lowers to SceneTween/SceneOrbit. v35.9: add driver:'system' with type 'spin'|'orbit'|'bob' to lower to generate_ecs_system_kotlin instead — PICO's own engine-driven Component+System mechanism, preferred for NEW work. Default stays the SceneAnimator/Tween lane, which is the vision-verified path for runtime-built entities."),
 });
 
 // ── data ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -222,8 +245,11 @@ export const panelSchema = z.object({
     .describe("Live label:value rows. Keys 'throws'/'status' get automatic game hooks (bump on launch / READY-ROLLING)."),
   placement: z
     .object({
-      kind: z.enum(["dock", "world"]).default("dock").describe("dock = the OS dock spawn (the proven path). 'world' = a REQUEST for a world-anchored panel — no public world-position API for auto-hosted 2D panels is vault-confirmed, so it currently compiles to the dock path with a loud fallback note."),
-      position: vec3.optional().describe("Desired world position [x,y,z] for kind='world'. Recorded in the ledger note only — not consumable until a world-position API is confirmed."),
+      kind: z.enum(["dock", "scene", "world"]).default("dock").describe("dock = the OS dock spawn: its own 2D Activity, shell-composited, independent of any SpatialView (the proven path). 'scene' = placed INSIDE the 3D scene at position, in METRES, via AttachmentPanel + TransformComponent — vision_verified on the emulator (ledger com.picoagent.v35attach#0); it lowers to generate_attachment_panel_kotlin. 'world' = a request for a WORLD-LOCKED panel, which is still deferred: it lowers to the dock path with a note pointing at 'scene', because world-locking needs AnchorComponent and scene placement moves with its container."),
+      position: vec3.optional().describe("Position [x,y,z] in METRES. CONSUMED for kind='scene' (the attachment's TransformComponent). Recorded in the ledger note only for kind='world'."),
+      widthDp: z.number().optional().describe("kind='scene': panel width in dp, (0,2048]. Default 420. Note dp sizes read small at a few metres."),
+      heightDp: z.number().optional().describe("kind='scene': panel height in dp, (0,2048]. Default 200."),
+      faceViewer: z.boolean().optional().describe("kind='scene': attach LookAtComponent().setViewerAsTarget() so the panel turns to face the headset. There is no BillboardComponent in 0.13.3."),
     })
     .strict()
     .optional()

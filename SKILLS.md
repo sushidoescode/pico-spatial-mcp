@@ -14,6 +14,12 @@ repository can ground today, see **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWER
 
 ## The capability map (a core sampler of the full surface: 242 tools on macOS, 239 on other hosts)
 
+> **Reference implementations.** PICO's eight official samples build and run on this emulator at
+> **0.13.3** — see [docs/PICO_OFFICIAL_SAMPLES.md](docs/PICO_OFFICIAL_SAMPLES.md) for the download
+> URLs, the build recipe, and the editor/SDK version rule that blocks the 6.0.0 GitHub copies. Read
+> them for idiom; confirm every symbol against a 0.13.3 sources jar (`vault_api`) before emitting it.
+
+
 | Goal | Tools |
 |---|---|
 | Preflight the environment | `validate_toolchain` (tools root, JDK, AVD, license, protos) |

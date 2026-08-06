@@ -102,6 +102,17 @@ export function lintSpec(spec: AppSpec): Lint {
   if (spec.interactions.length && !toolExists("generate_interaction_kotlin")) errors.push("interactions require generate_interaction_kotlin (missing from manifest)");
   if (spec.data.some((d) => d.source === "json") && !toolExists("generate_data_binding_kotlin")) errors.push("json data requires generate_data_binding_kotlin (missing from manifest)");
   if (spec.panels.length && !toolExists("generate_panel_compose_kotlin")) errors.push("panels require generate_panel_compose_kotlin (missing from manifest)");
+  // v35.9: the routes added this wave. Each was reachable as a registered MCP tool but INVISIBLE to
+  // the planner and the ledger, so an agent driving brief_to_app could never arrive at them —
+  // shipped as a capability, not as a route. These checks make that failure loud instead of silent.
+  if ((spec as any).panels?.some((p: any) => p.placement?.kind === "scene") && !toolExists("generate_attachment_panel_kotlin"))
+    errors.push("panels[].placement.kind 'scene' requires generate_attachment_panel_kotlin (missing from manifest)");
+  if (((spec as any).meta?.rootContainer && (spec as any).meta.rootContainer !== "stage") || ((spec as any).meta?.secondaryContainers ?? []).length) {
+    if (!toolExists("generate_container_app_kotlin"))
+      errors.push("meta.rootContainer/secondaryContainers require generate_container_app_kotlin (missing from manifest)");
+  }
+  if (spec.objects.some((o: any) => o.anim?.driver === "system") && !toolExists("generate_ecs_system_kotlin"))
+    errors.push("objects[].anim.driver 'system' requires generate_ecs_system_kotlin (missing from manifest)");
 
   // C2: every C0/C2 capture claim needs a forward-FOV pose (content outside the forward view can't be captured)
   for (const v of spec.verificationPlan) {

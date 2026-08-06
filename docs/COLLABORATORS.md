@@ -17,6 +17,10 @@ this once, then start from the pointers at the bottom.
   `test:eye`, `test:worldenv`, `test:conformance`, …. All of it runs headless, no emulator boot required. It's mirrored 1:1 in
   `.github/workflows/gates.yml`, which is what actually gates `main` — if a suite isn't in that
   workflow file, it isn't a real gate yet.
+- **[`docs/PICO_OFFICIAL_SAMPLES.md`](PICO_OFFICIAL_SAMPLES.md)** — how to get, build and run PICO's
+  eight official samples at **0.13.3** (the version that matches this toolchain; GitHub publishes
+  6.0.0 only, and PICO's Gradle plugin refuses an editor/SDK version mismatch). All eight verified
+  running on the emulator 2026-08-06. The best reference for PICO's own idiom.
 - **`briefs/`** — JSON brief fixtures (`{id, brief, spec}`) used by `fleet_build` and the
   SpatialBench corpus to build a batch of apps unattended.
 - **`golden/`** — golden-file fixtures (a scorecard, a reference capture) that regression tests

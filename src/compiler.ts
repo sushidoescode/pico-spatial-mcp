@@ -130,6 +130,24 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
   // 5b. animation (v7.3) — an object's anim ({type:tween|orbit,...}) → SceneTween/SceneOrbit, played in the wiring
   for (const o of spec.objects) {
     const a: any = o.anim;
+    // v35.9: anim.driver 'system' lowers to PICO's OWN per-frame mechanism (Component + System +
+    // registerSystem) instead of our hand-rolled coroutine loop. Opt-in, because SceneAnimator is
+    // the vision-verified path for runtime-built entities and we do not silently switch a proven
+    // lane. Prefer 'system' for NEW work: the engine drives it, per-entity state lives on the
+    // component, and there is no loop of ours to leak.
+    if (a?.driver === "system") {
+      const kind = a.type === "orbit" ? "orbit" : a.type === "bob" ? "bob" : a.type === "spin" ? "spin" : "custom";
+      const base = kind === "custom" ? "Behaviour" : kind[0].toUpperCase() + kind.slice(1);
+      push({
+        node: o.id,
+        tool: "generate_ecs_system_kotlin",
+        args: { packageName: `${contentPkg}.ecs`, kind, name: base },
+        targetPath: `${cpath}/ecs/${base}System.kt`,
+        cClass: "C0_emulator",
+        note: `ECS ${kind} system (PICO's own per-frame mechanism). Also writes ${base}Component.kt. WIRING REQUIRED: attach the component per entity — entity.components.set(${base}Component(...)) — and paste the returned registration snippet (a DisposableEffect pairing registerSystem<${base}System>() with unregisterSystem) into the composable that owns the scene. The module needs the ui:foundation dependency. STRUCTURAL: registerSystem is a no-op unless SpatialBuild.isSpatialPlatform(), so nothing ticks under JVM/Robolectric; capture a frame before claiming motion.`,
+      });
+      continue;
+    }
     if (!a || (a.type !== "tween" && a.type !== "orbit")) continue;
     if (a.type === "orbit") {
       push({ node: o.id, tool: "generate_orbit_animation_kotlin", args: { packageName: contentPkg, axis: a.axis, startPosition: a.startPosition, duration: a.duration, rotationCount: a.rotationCount, loop: a.loop ?? true }, targetPath: `${cpath}/SceneOrbit.kt`, cClass: "C0_emulator", note: "Revolves each placed entity; wiring calls SceneOrbit.play(it)." });
@@ -171,6 +189,33 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
   for (const pn of (spec as any).panels ?? []) {
     // v31: placement 'world' has NO vault-confirmed world-position API for auto-hosted 2D panels —
     // compile to the dock path with the loud fallback note, never emit unverified SDK calls.
+    // v35.9: 'scene' is now a REAL route, not a note. It lowers to generate_attachment_panel_kotlin
+    // — Compose placed inside the SpatialView's scene graph, positioned in metres. Vision-verified
+    // (ledger com.picoagent.v35attach#0). 'world' still lowers to the dock path, because
+    // world-LOCKING needs AnchorComponent and remains deferred; its note points here.
+    if (pn.placement?.kind === "scene") {
+      const pos = pn.placement?.position ?? [0, 1.45, -1.9];
+      push({
+        node: pn.id,
+        tool: "generate_attachment_panel_kotlin",
+        args: {
+          packageName: contentPkg,
+          panels: [{
+            id: pn.id,
+            ...(pn.title ? { title: pn.title } : {}),
+            ...(pn.fields?.length ? { lines: pn.fields.map((f: any) => `${f.label}: ${f.initial}`) } : {}),
+            position: pos,
+            ...(pn.placement?.widthDp ? { widthDp: pn.placement.widthDp } : {}),
+            ...(pn.placement?.heightDp ? { heightDp: pn.placement.heightDp } : {}),
+            ...(pn.placement?.faceViewer ? { faceViewer: true } : {}),
+          }],
+        },
+        targetPath: `${cpath}/SceneAttachments.kt`,
+        cClass: "C0_emulator",
+        note: `IN-SCENE panel at [${pos.join(", ")}] METRES in the SpatialView's local space (vision-verified, ledger com.picoagent.v35attach#0). WIRING REQUIRED — this is not automatic: in the composable hosting SpatialView call rememberAttachmentPanelSizes(), pass it to attachments = { sceneAttachmentPanels(sizes) }, and call attachments.seatSceneAttachmentPanels(content) inside initial. The attachment entity is NOT added to the scene for you. NOT world-locking: it moves with its container; a real-room anchor still needs AnchorComponent.`,
+      });
+      continue;
+    }
     const world = pn.placement?.kind === "world";
     const worldNote = world
       ? `IN-SCENE PLACEMENT REQUESTED${pn.placement?.position ? ` at [${pn.placement.position.join(", ")}]` : ""}: this node lowers to a docked 2D Activity, and no public API world-poses an OS-composited window — that limit is real. CORRECTED v35.2: for Compose INSIDE the 3D scene use generate_attachment_panel_kotlin (AttachmentPanel + TransformComponent, metres; public in 0.13.3). That is scene placement, not world-locking — a real-room anchor still needs AnchorComponent. `
@@ -239,6 +284,27 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
   // on the scaffold template's HomeStage and spec objects never spawned).
   push({ node: "wiring", tool: "generate_app_wiring", args: { spec }, targetPath: `${cpath}/SceneComposition.kt`, cClass: "C0_emulator", note: "Emits SceneComposition.kt + HomeStage.kt + Main.kt from the spec; write all three (serial). No more hand-wiring." });
 
+  // v35.9: a multi-container app. MUST come after generate_app_wiring — that step emits a
+  // DefaultStage Main.kt, and this one REPLACES it. An app has exactly one mainApp.
+  const rootContainer = (spec as any).meta?.rootContainer ?? "stage";
+  const secondaries = (spec as any).meta?.secondaryContainers ?? [];
+  if (rootContainer !== "stage" || secondaries.length) {
+    push({
+      node: "containers",
+      tool: "generate_container_app_kotlin",
+      args: {
+        packageName: pkg,
+        root: rootContainer,
+        rootContent: "HomeStage()",
+        rootContentImport: `${contentPkg}.HomeStage`,
+        ...(secondaries.length ? { containers: secondaries } : {}),
+      },
+      targetPath: `${cpath.replace(/\/content$/, "")}/Main.kt`,
+      cClass: "C0_emulator",
+      note: `MULTI-CONTAINER app (${rootContainer} root${secondaries.length ? ` + ${secondaries.length} secondary` : ""}). REPLACE the Main.kt generate_app_wiring just wrote — never add it alongside, an app has exactly one mainApp. A declared container does NOT open itself: call the emitted Open*OnEnter helper from a composable inside a container. Secondary WindowContainer opening is vision-verified (ledger com.picoagent.v35expb#0); opening a secondary STAGE and cross-container Bundle delivery are unmeasured.`,
+    });
+  }
+
   // 8. build & run
   push({ node: "build", tool: "build_and_run", args: { projectDir, packageName: pkg }, targetPath: projectDir, cClass: "C0_emulator", note: "Require BUILD SUCCESSFUL + PID up + ready-log before reading any capture (stale-APK gotcha)." });
   return steps;
@@ -249,7 +315,7 @@ export function registerCompilerTools(server: McpServer) {
     "compile_app_spec",
     {
       description:
-        "Compile a validated AppSpec into an executable BUILD LEDGER: an ordered, dependency-sorted list mapping each spec node to the EXACT existing tool call (scaffold → agent bridge → per-scene environment/colliders → generate_rigidbody_kotlin [scene.physics/object.body] → lighting → layouts → SceneAnimator/Tween/Orbit [object.anim] → measure_model/bake_textured_model/generate_surface_placement_kotlin [objects.seatOn — RUNTIME seating on live DETECTED planes] → data binding → generate_panel_compose_kotlin [panels/live-text; placement 'world' compiles to the dock path with a loud pending-SDK note] → bake_menu_panel [custom press-button labels] + generate_game_menu_kotlin [press interactions] → interactions → scene router [multi-scene] → generate_app_wiring [emits SceneComposition/HomeStage/Main] → headset layer → build_and_run), with args pre-filled (packageName wired to <pkg>.content), the target Kotlin file, and the C-class. This is the DRIVER, not a second orchestrator: the brief_to_app prompt executes the ledger step-by-step through the real generate_*/scaffold/bake/build tools, editing files SERIALLY. Idempotent + resumable (each step names its output path). Returns the ledger + build order + integration notes.",
+        "Compile a validated AppSpec into an executable BUILD LEDGER: an ordered, dependency-sorted list mapping each spec node to the EXACT existing tool call (scaffold → agent bridge → per-scene environment/colliders → generate_rigidbody_kotlin [scene.physics/object.body] → lighting → layouts → SceneAnimator/Tween/Orbit [object.anim] / generate_ecs_system_kotlin [object.anim.driver 'system' — PICO's engine-driven Component+System] → measure_model/bake_textured_model/generate_surface_placement_kotlin [objects.seatOn — RUNTIME seating on live DETECTED planes] → data binding → generate_panel_compose_kotlin [panels/live-text, placement 'dock'] / generate_attachment_panel_kotlin [placement 'scene' — Compose INSIDE the 3D scene, positioned in metres, vision-verified; 'world' still lowers to dock because world-LOCKING needs AnchorComponent] → bake_menu_panel [custom press-button labels] + generate_game_menu_kotlin [press interactions] → interactions → scene router [multi-scene] → generate_app_wiring [emits SceneComposition/HomeStage/Main] → generate_container_app_kotlin [meta.rootContainer 'windowContainer' or meta.secondaryContainers — the WelcomeSpace multi-container shape; REPLACES the Main.kt wiring just wrote] → headset layer → build_and_run), with args pre-filled (packageName wired to <pkg>.content), the target Kotlin file, and the C-class. This is the DRIVER, not a second orchestrator: the brief_to_app prompt executes the ledger step-by-step through the real generate_*/scaffold/bake/build tools, editing files SERIALLY. Idempotent + resumable (each step names its output path). Returns the ledger + build order + integration notes.",
       inputSchema: {
         spec: z.any().describe("A validated AppSpec (from plan_app_spec)."),
         projectDir: z.string().describe("Target Android project dir to scaffold/build into, e.g. ~/AndroidStudioProjects/showcasexr-native."),
