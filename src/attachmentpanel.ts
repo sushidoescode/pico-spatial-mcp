@@ -65,6 +65,16 @@ import { ok, fail } from "./util.js";
  *   `initial` runs on Main (SpatialView.kt:89,135), which matters because Entity(), ComponentSet.get,
  *   addChild and the TransformComponent setters are all @MainThread with a checkIsMainThread().
  *
+ *   WHY THIS WORKS FOR US, and where its floor is. The v34 Rik research (.dev/drafts/
+ *   2026-08-04-reply-to-rik.md:103-107) decompiled the AttachmentPanelComponent handler and found it
+ *   branches on Build.VERSION.SDK_INT >= 35, with only that branch calling
+ *   ViewLink.setViewLinkGlobalMatrix3D(Matrix44) — Matrix44 being an AOSP class added in API 35. Our
+ *   appskeleton sets minSdk = 35 (app/build.gradle.kts:13), so the branch is always taken and the
+ *   world-matrix path is live. An app built against a lower minSdk would take the other branch, and
+ *   ViewLink/SpaceView are PICO platform classes absent from AOSP's android.jar, so on a non-PICO
+ *   device that path throws rather than degrading. Do not lower minSdk below 35 and expect
+ *   positioned attachments to keep working.
+ *
  *   NOT emitted: the hand-built Entity + attachmentPanelComponent() route. Both symbols are real
  *   (ui AttachmentPanelComponent.kt:99-105, :50-53) but nothing in the jars or any sample shows a
  *   hand-built entity rendering outside the builder path, and content() hard-checks that its Context
