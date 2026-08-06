@@ -444,6 +444,24 @@ export const BUILTIN_RULES: LintRule[] = [
     negativeFixture: "subscription = content.subscribe(eventType = event, subscriber = { c -> onCollision(c) })\nfun dispose() { subscription?.cancel() }",
   },
   {
+    // v35.13 — the invisible-wall defect. A tap target with COLLIDER_FULL is a PHYSICAL obstacle:
+    // CollisionResponseMode.COLLIDER_FULL "applies physical collision effects" (kt:41-46), and both
+    // the target and every physics body default to COLLISION_FILTER_DEFAULT (group 1u, mask ALL),
+    // which always pairs (CollisionFilter.kt:26-28,93-97). We shipped this in three generators, so
+    // every selectable card in an app that also had physics was an invisible wall.
+    // PICO's own spatial-tap target is TRIGGER_LITE on a private group (InteractionReceiver.kt:49-55).
+    id: "interactable-collider-full",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "present",
+    pattern: /InteractableComponent\s*\([\s\S]{0,400}?CollisionResponseMode\.COLLIDER_FULL/,
+    message: "An InteractableComponent target with CollisionResponseMode.COLLIDER_FULL is a physical obstacle — dynamic bodies bounce off your UI. Tap targets must not exchange forces.",
+    fix: "Use CollisionResponseMode.TRIGGER_LITE, and scope the pair with CollisionFilter(CollisionGroup(group), CollisionGroup(mask)) — keep group on bit 0 so Scene.rayCast(..., COLLISION_GROUP_ALL, ...) still picks it, and narrow the MASK to exclude physics bodies.",
+    designRule: "DESIGN.md §9 — PICO's tap target is TRIGGER_LITE (InteractionReceiver.kt:49-55)",
+    positiveFixture: "entity.components.set(InteractableComponent())\nentity.components.set(CollisionComponent(listOf(shape), physMat(), CollisionResponseMode.COLLIDER_FULL, CollisionFilter.COLLISION_FILTER_DEFAULT, CollisionInfoDetailLevel.BRIEF))",
+    negativeFixture: "entity.components.set(InteractableComponent())\nentity.components.set(CollisionComponent(listOf(shape), physMat(), CollisionResponseMode.TRIGGER_LITE, CollisionFilter(CollisionGroup(1u), CollisionGroup(1u)), CollisionInfoDetailLevel.BRIEF))",
+  },
+  {
     id: "scaffold-log-tag-drift",
     severity: "warn",
     kinds: ["command", "kotlin"],
@@ -528,17 +546,67 @@ function saveLearned(rules: LintRule[]) {
 
 const ruleApplies = (rule: LintRule, kind: RuleKind) => kind === "any" || rule.kinds.includes("any") || rule.kinds.includes(kind);
 
+/**
+ * v35.13 — strip comments before deciding whether a rule fires.
+ *
+ * THREE TIMES in one wave a rule matched its own documentation: the Material rule fired on the
+ * comment banning Material, the TextComponent rule fired on the comment explaining TextComponent
+ * does not exist, and the interactable rule fired on the comment explaining why COLLIDER_FULL is
+ * wrong. Each time the fix was to hand-tighten one regex, and each time the next rule repeated it.
+ *
+ * The root cause is structural, not per-rule: a lint rule describes an anti-pattern, and good code
+ * DOCUMENTS the anti-pattern it is avoiding — so the more carefully a generator explains itself, the
+ * more likely it is to trip its own guard. Fixing it once here beats fixing it in every rule author's
+ * head. Blanking comment BODIES (rather than deleting them) preserves every byte offset and line
+ * number, so reported line numbers stay exact.
+ *
+ * Applies to kotlin/gradle only — `command` content is shell, where # is not reliably a comment, and
+ * `usd` uses # for real directives.
+ */
+export function stripCommentsForLint(content: string): string {
+  let out = "";
+  let i = 0;
+  let mode: "code" | "line" | "block" | "str" | "char" = "code";
+  while (i < content.length) {
+    const c = content[i];
+    const n = content[i + 1];
+    if (mode === "code") {
+      if (c === "/" && n === "/") { mode = "line"; out += "  "; i += 2; continue; }
+      if (c === "/" && n === "*") { mode = "block"; out += "  "; i += 2; continue; }
+      if (c === '"') { mode = "str"; out += c; i++; continue; }
+      out += c; i++; continue;
+    }
+    if (mode === "line") {
+      if (c === "\n") { mode = "code"; out += c; i++; continue; }
+      out += c === "\n" ? c : " "; i++; continue;
+    }
+    if (mode === "block") {
+      if (c === "*" && n === "/") { mode = "code"; out += "  "; i += 2; continue; }
+      out += c === "\n" ? c : " "; i++; continue;
+    }
+    // inside a string literal: keep it (a rule may legitimately match string content)
+    if (c === "\\") { out += content.slice(i, i + 2); i += 2; continue; }
+    if (c === '"') { mode = "code"; }
+    out += c; i++;
+  }
+  return out;
+}
+
 /** Run all applicable rules over content. Exported so the fixture test can call it directly. */
 export function runLint(content: string, kind: RuleKind = "any", rules: LintRule[] = [...BUILTIN_RULES, ...loadLearned()]) {
   const lines = content.split("\n");
+  // Decide on comment-free text; report against the original so line numbers stay exact.
+  const probeText = kind === "kotlin" || kind === "gradle" ? stripCommentsForLint(content) : content;
   const violations: any[] = [];
   for (const rule of rules) {
     if (!ruleApplies(rule, kind)) continue;
     let fired = false;
     if (rule.type === "present" && rule.pattern) {
-      fired = rule.pattern.test(content);
+      fired = rule.pattern.test(probeText);
     } else if (rule.type === "conditional" && rule.when) {
-      fired = rule.when.test(content) && !(rule.unless && rule.unless.test(content));
+      // NOTE the asymmetry: `when` matches comment-free text (so prose cannot TRIGGER a rule), but
+      // `unless` matches the ORIGINAL (so a documented, deliberate exemption can still suppress one).
+      fired = rule.when.test(probeText) && !(rule.unless && rule.unless.test(content));
     }
     if (!fired) continue;
     const probe = rule.pattern ?? rule.when;

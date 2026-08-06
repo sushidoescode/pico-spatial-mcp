@@ -47,6 +47,7 @@ import com.pico.spatial.core.ecs.InteractableComponent
 import com.pico.spatial.core.ecs.resource.PhysicsMaterialResource
 import com.pico.spatial.core.ecs.resource.ShapeResource
 import com.pico.spatial.core.ecs.simulation.CollisionFilter
+import com.pico.spatial.core.ecs.simulation.CollisionGroup
 import com.pico.spatial.core.ecs.simulation.CollisionInfoDetailLevel
 import com.pico.spatial.core.ecs.simulation.CollisionResponseMode
 import com.pico.spatial.core.math.Vector3
@@ -56,8 +57,14 @@ fun configure${value.targetId}Target(entity: Entity) {
     entity.components.set(CollisionComponent(
         listOf(ShapeResource.createBox(Vector3(0.2f, 0.2f, 0.2f))),
         PhysicsMaterialResource(0.4f, 0.4f, 0.1f),
-        CollisionResponseMode.COLLIDER_FULL,
-        CollisionFilter.COLLISION_FILTER_DEFAULT,
+        // v35.13: TRIGGER_LITE, not COLLIDER_FULL — a tap target with COLLIDER_FULL is a physical
+        // obstacle. Both this and every ScenePhysics body default to COLLISION_FILTER_DEFAULT
+        // (group 1u, mask ALL) which always pairs, so a selectable card used to be an invisible
+        // wall that dynamic bodies bounced off. PICO's tap target is TRIGGER_LITE on a private
+        // group: InteractionReceiver.kt:49-55. Group stays bit 0 so rayCast still picks it; the
+        // MASK is what excludes physics.
+        CollisionResponseMode.TRIGGER_LITE,
+        CollisionFilter(CollisionGroup(1u), CollisionGroup(1u)),
         CollisionInfoDetailLevel.BRIEF,
     ))
 }

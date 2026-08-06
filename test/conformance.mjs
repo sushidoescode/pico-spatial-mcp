@@ -750,5 +750,45 @@ console.log("\n§2.6 skeletal animation, and the provenance rule that decides di
   assert(threw, "a modelUri without a scheme is rejected");
 }
 
+// §1.5 — the invisible-wall defect. Tap targets must not exchange forces.
+console.log("\n§1.5 tap targets are TRIGGER_LITE, not physical obstacles");
+{
+  const LANES = [
+    ["interaction", "generate_interaction_kotlin", { packageName: "com.test.conf.content" }],
+    ["tappable", "generate_tappable_detail_kotlin", { packageName: "com.test.conf.content", items: [{ id: "a", colorHex: "#3B82F6" }] }],
+    ["spatialgestures", "generate_spatial_gestures_kotlin", { packageName: "com.test.conf.content", targetId: "gem", commandDispatcher: "dispatchGestureCommand" }],
+  ];
+  for (const [mod, tool, args] of LANES) {
+    const m = await import(`../dist/${mod}.js`);
+    const reg = Object.values(m).find((x) => typeof x === "function" && /^register/.test(x.name));
+    const h = {};
+    reg({ registerTool: (n, _meta, fn) => { h[n] = fn; } });
+    const raw = (await h[tool](args)).content[0].text;
+    const kt = raw.trimStart().startsWith("{")
+      ? (() => { const j = JSON.parse(raw); return Object.values(j.files ?? {}).join("\n") || j.kotlin || raw; })()
+      : raw;
+    assert(/CollisionResponseMode\.TRIGGER_LITE/.test(kt), `${tool}: tap target uses TRIGGER_LITE`);
+    assert(!/CollisionResponseMode\.COLLIDER_FULL,/.test(kt),
+      `${tool}: no COLLIDER_FULL on an interactable (that makes the card an invisible wall)`);
+    assert(!/CollisionFilter\.COLLISION_FILTER_DEFAULT/.test(kt),
+      `${tool}: the filter is scoped, not COLLISION_FILTER_DEFAULT (group 1u + mask ALL always pairs)`);
+    assert(/CollisionFilter\(CollisionGroup\(/.test(kt), `${tool}: emits an explicit CollisionFilter(group, mask)`);
+    const errs = runLint(kt, "kotlin").filter((v) => v.severity === "error").map((v) => v.ruleId).filter(Boolean);
+    assert(errs.length === 0, `${tool} is lint-clean${errs.length ? `: ${errs.join(", ")}` : ""}`);
+  }
+
+  // Physics colliders are MEANT to be physical — the fix must not have leaked into them.
+  const phys = await import("../dist/physics.js");
+  const ph = {};
+  phys.registerPhysicsTools({ registerTool: (n, _m, f) => { ph[n] = f; } });
+  const physKt = (await ph["generate_rigidbody_kotlin"]({ packageName: "com.test.conf.content" })).content[0].text;
+  assert(!/TRIGGER_LITE/.test(physKt), "physics bodies are NOT demoted to TRIGGER_LITE (they must collide)");
+
+  // And the guard itself.
+  const bad = "entity.components.set(InteractableComponent())\nentity.components.set(CollisionComponent(listOf(s), m(), CollisionResponseMode.COLLIDER_FULL, CollisionFilter.COLLISION_FILTER_DEFAULT, CollisionInfoDetailLevel.BRIEF))";
+  assert(runLint(bad, "kotlin").map((v) => v.ruleId).includes("interactable-collider-full"),
+    "an InteractableComponent with COLLIDER_FULL is an error");
+}
+
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

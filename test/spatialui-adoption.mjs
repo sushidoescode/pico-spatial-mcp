@@ -143,10 +143,17 @@ for (const token of [
   "CollisionComponent(",
   "listOf(ShapeResource.createBox(Vector3(0.2f, 0.2f, 0.2f)))",
   "PhysicsMaterialResource(0.4f, 0.4f, 0.1f)",
-  "CollisionResponseMode.COLLIDER_FULL",
-  "CollisionFilter.COLLISION_FILTER_DEFAULT",
+  // v35.13: was COLLIDER_FULL + COLLISION_FILTER_DEFAULT. A gesture target is a TAP TARGET, and
+  // COLLIDER_FULL "applies physical collision effects" (CollisionResponseMode.kt:41-46) while
+  // COLLISION_FILTER_DEFAULT (group 1u, mask ALL) pairs with every physics body — so the target was
+  // an invisible wall that dynamic bodies bounced off. PICO's own tap target is TRIGGER_LITE on a
+  // scoped filter (InteractionReceiver.kt:49-55).
+  "CollisionResponseMode.TRIGGER_LITE",
+  "CollisionFilter(CollisionGroup(1u), CollisionGroup(1u))",
   "CollisionInfoDetailLevel.BRIEF",
 ]) assert(gk.includes(token), token);
+assert(!gk.includes("CollisionResponseMode.COLLIDER_FULL,"), "gesture target is not a physical obstacle");
+assert(!gk.includes("CollisionFilter.COLLISION_FILTER_DEFAULT"), "gesture target does not pair with every physics body");
 assert(!gk.includes("RigidBodyComponent"));
 assert.equal((gk.match(/dispatchDebugCommand\("select:blueCube"\)/g) || []).length, 1);
 assert(gk.includes("onDrag: (SpatialDragValue, Vector3)->Unit"));
