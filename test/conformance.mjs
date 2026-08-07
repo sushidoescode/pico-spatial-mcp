@@ -939,5 +939,35 @@ console.log("\n§1.2/1.3/1.6 physics: shared resources, expressive bodies, toggl
     "setting the mode on a FRESH component is allowed (it is what the rule's own fix recommends)");
 }
 
+// §6.6 — one bundle per path, refcounted by owner.
+console.log("\n§6.6 bundle leases are owner-refcounted, and validity is re-checked");
+{
+  const { generateBundleLeaseKotlin } = await import("../dist/bundlelease.js");
+  const kt = generateBundleLeaseKotlin({ packageName: "com.test.conf.content", bundles: ["asset://furniture.bundle"] });
+
+  assert(/private val owners = mutableMapOf<String, MutableSet<String>>\(\)/.test(kt),
+    "leases are keyed by OWNER, not a bare count");
+  // The whole point: release must be a no-op while anyone else holds the lease.
+  const rel = /suspend fun release\(path: String, owner: String\)[\s\S]*?\n    \}/.exec(kt)?.[0] ?? "";
+  assert(rel.length > 0, "release is emitted");
+  assert(/if \(set\.isNotEmpty\(\)\)[\s\S]*?return@withLock/.test(rel),
+    "release returns early while other owners remain (it must not free what the room still holds)");
+  assert(/bundles\.remove\(path\)\?\.let \{ runCatching \{ it\.close\(\) \} \}/.test(rel),
+    "the bundle is closed only on the LAST release");
+  // A cache handing back a closed bundle fails far from the cache.
+  assert(/existing != null && existing\.valid/.test(kt), "AssetBundle.valid is re-checked before reuse");
+  // acquire suspends on IO, so a synchronized block cannot span it.
+  assert(/private val lock = Mutex\(\)/.test(kt) && /lock\.withLock/.test(kt), "concurrency uses a suspending Mutex");
+  assert(!/\bsynchronized\s*\(/.test(kt), "not synchronized (it cannot span a suspension point)");
+  assert(/suspend fun closeAll\(\)/.test(kt), "there is a teardown that closes everything");
+
+  const errs = runLint(kt, "kotlin").filter((v) => v.severity === "error").map((v) => v.ruleId).filter(Boolean);
+  assert(errs.length === 0, `bundle lease is lint-clean${errs.length ? `: ${errs.join(", ")}` : ""}`);
+
+  let threw = false;
+  try { generateBundleLeaseKotlin({ packageName: "com.x", bundles: ["furniture.bundle"] }); } catch { threw = true; }
+  assert(threw, "a bundle path without a scheme is rejected");
+}
+
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

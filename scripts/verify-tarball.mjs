@@ -34,8 +34,8 @@ const publishIdx = process.argv.indexOf("--publish");
 const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
-const EXPECTED_TOOLS = 244; // v35.16: +generate_ecs_system_kotlin, +generate_attachment_panel_kotlin, +generate_container_app_kotlin, +generate_skeletal_animation_kotlin, +generate_event_subscription_kotlin
-const EXPECTED_OTHER_HOST_TOOLS = 241;
+const EXPECTED_TOOLS = 245; // v35.18: +ecs_system, +attachment_panel, +container_app, +skeletal_animation, +event_subscription, +bundle_lease
+const EXPECTED_OTHER_HOST_TOOLS = 242;
 // macOS exposes four host-GUI tools; other hosts intentionally expose one explanatory gui_capture
 // stub. Assert the exact platform surface instead of hiding this documented delta in a tolerance.
 const EXPECTED_PLATFORM_TOOLS = process.platform === "darwin" ? EXPECTED_TOOLS : EXPECTED_OTHER_HOST_TOOLS;
@@ -49,7 +49,7 @@ const REQUIRED_TOOLS = [
   "adb_shell", "gradle_build", "preflight_env",
   "verify_gradle_config", "build_matrix_report",
   "generate_subwindow_kotlin", "generate_spatial_gestures_kotlin",
-  "knowledge_api", "generate_ecs_system_kotlin", "generate_attachment_panel_kotlin", "generate_container_app_kotlin", "generate_skeletal_animation_kotlin", "generate_event_subscription_kotlin",
+  "knowledge_api", "generate_ecs_system_kotlin", "generate_attachment_panel_kotlin", "generate_container_app_kotlin", "generate_skeletal_animation_kotlin", "generate_event_subscription_kotlin", "generate_bundle_lease_kotlin",
 ];
 // [M2] Briefs the brief lane depends on; directory existence is not content.
 const BRIEF_CANARIES = ["gallery.json", "knockdown.json"];

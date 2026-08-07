@@ -34,6 +34,7 @@ import { registerAttachmentPanelTools } from "./attachmentpanel.js";
 import { registerContainerTools } from "./containers.js";
 import { registerSkeletalTools } from "./skeletal.js";
 import { registerEventTools } from "./events.js";
+import { registerBundleLeaseTools } from "./bundlelease.js";
 import { registerSpatialGestureTools } from "./spatialgestures.js";
 import { registerAssetTools } from "./assets.js";
 import { registerDiagnoseTools } from "./diagnose.js";
@@ -207,6 +208,7 @@ if (!doorsSurfaceActive()) {
   registerContainerTools(server);
   registerSkeletalTools(server);
   registerEventTools(server);
+  registerBundleLeaseTools(server);
   registerSpatialGestureTools(server);
   registerAssetTools(server);
   registerDiagnoseTools(server);
