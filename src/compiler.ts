@@ -144,7 +144,7 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
         args: { packageName: `${contentPkg}.ecs`, kind, name: base },
         targetPath: `${cpath}/ecs/${base}System.kt`,
         cClass: "C0_emulator",
-        note: `ECS ${kind} system (PICO's own per-frame mechanism). Also writes ${base}Component.kt. WIRING REQUIRED: attach the component per entity — entity.components.set(${base}Component(...)) — and paste the returned registration snippet (a DisposableEffect pairing registerSystem<${base}System>() with unregisterSystem) into the composable that owns the scene. The module needs the ui:foundation dependency. STRUCTURAL: registerSystem is a no-op unless SpatialBuild.isSpatialPlatform(), so nothing ticks under JVM/Robolectric; capture a frame before claiming motion.`,
+        note: `ECS ${kind} system (PICO's own per-frame mechanism). Also writes ${base}Component.kt. WIRING REQUIRED: attach the component per entity — entity.components.set(${base}Component(...)) — and paste the returned registration snippet (a DisposableEffect pairing registerSystem<${base}System>() with unregisterSystem) into the composable that owns the scene. The module needs the ui:foundation dependency. VERIFIED on device (ledger com.picoagent.v35expc#0): registration and per-frame ticking measured on emulator-5554. registerSystem is still a no-op unless SpatialBuild.isSpatialPlatform(), so nothing ticks under JVM/Robolectric — a green unit test is not evidence of motion. The pairing is scoped to COMPOSITION, not lifecycle: backgrounding does not unregister.`,
       });
       continue;
     }
