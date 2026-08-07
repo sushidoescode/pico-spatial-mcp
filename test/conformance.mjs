@@ -895,5 +895,49 @@ console.log("\nP1-7 SideNavigation encodes the missing-onClick trap");
     "Modifier is imported exactly once (a duplicate is a Kotlin 'ambiguous import' error)");
 }
 
+// §1.2/§1.3/§1.6 — physics resource sharing, the .apply{} form, and reset-by-toggling.
+console.log("\n§1.2/1.3/1.6 physics: shared resources, expressive bodies, toggle-not-rebuild");
+{
+  const phys = await import("../dist/physics.js");
+  const ph = {};
+  phys.registerPhysicsTools({ registerTool: (n, _m, f) => { ph[n] = f; } });
+  const kt = (await ph["generate_rigidbody_kotlin"]({ packageName: "com.test.conf.content" })).content[0].text;
+
+  // §1.3 — one material and one shape per KIND, not per body. A 50-body scene used to allocate 50.
+  assert(/private val physMat = PhysicsMaterialResource\(/.test(kt), "the physics material is hoisted to a single shared val");
+  assert(!/private fun physMat\(\)/.test(kt), "physMat is no longer a per-call factory");
+  assert(/private val shapeCache = mutableMapOf<String, ShapeResource>\(\)/.test(kt), "shapes are memoized");
+  assert(/private val meshCache = mutableMapOf<String, MeshResource>\(\)/.test(kt), "meshes are memoized");
+  assert(/shapeFor\(/.test(kt) && /meshFor\(/.test(kt), "the helpers actually route through the caches");
+
+  // §1.2 — the 2-arg ctor cannot express inertia/centerOfMass/gravity; centerOfMass is what makes a
+  // toppling chain work. A fresh instance per entity stays mandatory.
+  assert(/RigidBodyComponent\(\)\.apply \{/.test(kt), "bodies use the no-arg + .apply{} form PICO document");
+  assert(/centerOfMass/.test(kt) && /inertia/.test(kt), "inertia and centerOfMass are expressible");
+  assert(/isAffectedByGravity/.test(kt), "isAffectedByGravity is expressible");
+
+  // §1.6 — toggle the component on a LIVE entity rather than rebuilding the world.
+  assert(/fun setDynamic\(body: Entity, enabled: Boolean/.test(kt), "setDynamic toggles simulation on a live body");
+  assert(/components\.remove\(RigidBodyComponent::class\.java\)/.test(kt), "disabling REMOVES the component (PICO's play loop)");
+  assert(/fun resetTo\(/.test(kt), "resetTo restores a pose");
+  // ...and it must restore IN PLACE; replacing the component would stamp identity rotation + unit scale.
+  const resetBody = /fun resetTo\([\s\S]*?\n    \}/.exec(kt)?.[0] ?? "";
+  assert(resetBody && !/components\.set\(TransformComponent\(/.test(resetBody), "resetTo mutates the transform in place");
+
+  // R3 is untouched: destroying a physics world still poisons later worlds, so resetWorld survives.
+  assert(/fun resetWorld\(/.test(kt), "resetWorld remains for structural rebuilds");
+
+  const errs = runLint(kt, "kotlin").filter((v) => v.severity === "error").map((v) => v.ruleId).filter(Boolean);
+  assert(errs.length === 0, `physics output is lint-clean${errs.length ? `: ${errs.join(", ")}` : ""}`);
+
+  // The narrowed rule must still catch a genuine LIVE flip while allowing construction-time init.
+  const liveFlip = "body.components.get<RigidBodyComponent>()?.rigidBodyMode = RigidBodyMode.KINEMATIC";
+  assert(runLint(liveFlip, "kotlin").map((v) => v.ruleId).includes("physics-kinematic-flip"),
+    "flipping rigidBodyMode on an attached component is still an error");
+  const ctorInit = "e.components.set(RigidBodyComponent().apply { rigidBodyMode = RigidBodyMode.DYNAMIC })";
+  assert(!runLint(ctorInit, "kotlin").map((v) => v.ruleId).includes("physics-kinematic-flip"),
+    "setting the mode on a FRESH component is allowed (it is what the rule's own fix recommends)");
+}
+
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

@@ -180,12 +180,17 @@ export const BUILTIN_RULES: LintRule[] = [
     severity: "error",
     kinds: ["kotlin"],
     type: "present",
-    pattern: /rigidBodyMode\s*=\s*RigidBodyMode\s*\.\s*(KINEMATIC|DYNAMIC)/,
-    message: "Flipping rigidBodyMode on a live body is a SILENT NO-OP on the emulator adapter — kinematic-teleport patterns do nothing, and the transform-set they wrap becomes (jump/timestep) velocity that launches the body through geometry (verified v8.8).",
-    fix: "Construct bodies in their final mode. To move a body: cm-scale nudges + PhysicsVelocityComponent (ScenePhysics.launch). To reset a scene: ScenePhysics.resetWorld (disable + rebuild).",
+    // v35.17 NARROWED. The old pattern matched ANY `rigidBodyMode = RigidBodyMode.X`, which also
+    // caught CONSTRUCTION-time initialisation inside `RigidBodyComponent().apply { ... }` — the very
+    // thing this rule's own fix line recommends ("construct bodies in their final mode"), and the
+    // form PICO document (PhysicsManager.kt:140-155). The defect is mutating an ALREADY-ATTACHED
+    // component, so match that: an assignment reached through the entity's component set.
+    pattern: /components\s*(?:\.\s*get\s*<\s*RigidBodyComponent\s*>\s*\(\)|\[\s*RigidBodyComponent::class\.java\s*\])[\s\S]{0,80}?rigidBodyMode\s*=\s*RigidBodyMode\s*\.\s*(?:KINEMATIC|DYNAMIC)/,
+    message: "Flipping rigidBodyMode on a LIVE, already-attached body is a SILENT NO-OP on the emulator adapter — kinematic-teleport patterns do nothing, and the transform-set they wrap becomes (jump/timestep) velocity that launches the body through geometry (verified v8.8).",
+    fix: "Construct bodies in their final mode — RigidBodyComponent().apply { rigidBodyMode = ... } on a FRESH instance is fine and is what PICO document. To move a body: cm-scale nudges + PhysicsVelocityComponent (ScenePhysics.launch). To start/stop simulation on a live body, ADD or REMOVE the whole RigidBodyComponent (ScenePhysics.setDynamic) — that is PICO's own play loop and is a strictly weaker operation than a mode flip.",
     designRule: "physics rulebook R2 (v8.8, examples/BowlingGame.kt)",
     positiveFixture: "body.components.get<RigidBodyComponent>()?.rigidBodyMode = RigidBodyMode.KINEMATIC",
-    negativeFixture: "e.components.set(RigidBodyComponent(MassProperties(1f), RigidBodyMode.KINEMATIC))",
+    negativeFixture: "e.components.set(RigidBodyComponent(MassProperties(1f), RigidBodyMode.KINEMATIC))\ne.components.set(RigidBodyComponent().apply { rigidBodyMode = RigidBodyMode.DYNAMIC })",
   },
   {
     id: "rotation-rotateVector",
