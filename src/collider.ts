@@ -48,7 +48,7 @@ const vec3 = z.object({
 
 const shapeSpec = z.object({
   name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/).describe("Kotlin-safe entity name, e.g. Col_Desk"),
-  kind: z.enum(["box", "sphere", "capsule"]).describe("Primitive only — mesh colliders do not register on-device"),
+  kind: z.enum(["box", "sphere", "capsule"]).describe("Primitives only in THIS generator — cheapest per query and no alignment reasoning. Mesh shapes ARE queryable (ledger com.picoagent.v35expc#4); build those yourself from a MeshResource when you need the real silhouette."),
   pos: vec3.describe("World-frame center of the collider"),
   size: vec3.optional().describe("box: FULL extents (x,y,z). createBox takes full extents, faces at +-size/2"),
   radius: z.number().optional().describe("sphere/capsule radius"),

@@ -226,7 +226,7 @@ const KB: Record<string, DiagEntry> = {
       "createBox takes FULL extents (a Vector3(1,1,1) box has faces at +-0.5). Place the collider entity at the world position of the surface.",
       "Use generate_collider_kotlin to emit the entire verified recipe (PhysicsWorldComponent + primitive colliders + a rayCast helper). VERIFY with assert_logcat for your own 'rayCast HIT' log line.",
     ],
-    designRule: "DESIGN.md §3 (surfaces need a real collider) + §9 (runtime physics: PhysicsWorldComponent + primitive CollisionComponent; USD/mesh colliders do not register)",
+    designRule: "DESIGN.md §3 (surfaces need a real collider) + §9 (runtime physics: PhysicsWorldComponent + a runtime CollisionComponent; USD-authored colliders never register — mesh shapes DO, ledger com.picoagent.v35expc#4, but must be aligned)",
     relatedTools: ["generate_collider_kotlin", "assert_logcat", "build_and_run", "logcat"],
   },
 
