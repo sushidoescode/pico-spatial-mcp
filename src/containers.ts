@@ -84,6 +84,7 @@ export interface SecondaryWindowContainer {
   resizeType?: (typeof RESIZE_TYPES)[number];
   materialBackground?: boolean;
   content?: string;
+  contentImport?: string;
 }
 
 export interface SecondaryStage {
@@ -94,6 +95,7 @@ export interface SecondaryStage {
   immersionMin?: number;
   immersionMax?: number;
   content?: string;
+  contentImport?: string;
 }
 
 export type SecondaryContainer = SecondaryWindowContainer | SecondaryStage;
@@ -146,6 +148,11 @@ export function generateContainerAppFiles(args: ContainerAppArgs): { files: Reco
     ...(needsNavigator ? [`import androidx.lifecycle.Lifecycle`, `import androidx.lifecycle.LifecycleEventObserver`] : []),
     ...(hasStage ? [`import kotlinx.coroutines.launch`] : []),
     ...(args.rootContentImport ? [`import ${args.rootContentImport}`] : []),
+    // Per-container content imports. Without these a multi-container app whose secondary content
+    // lives in a subpackage (which is what our own scaffold does) does not compile, and the tool
+    // reports success — the failure only surfaces at build time. Deduped so two containers sharing
+    // a composable do not emit it twice.
+    ...[...new Set(containers.map((c) => c.contentImport).filter(Boolean))].map((i) => `import ${i}`),
     `import com.pico.spatial.ui.design.PicoTheme`,
     ...(root === "windowContainer"
       ? [`import com.pico.spatial.ui.foundation.dsl.DefaultWindowContainer`]
@@ -306,7 +313,7 @@ export function generateContainerAppFiles(args: ContainerAppArgs): { files: Reco
       `Write Main.kt to app/src/main/java/${packageName.replace(/\./g, "/")}/Main.kt — it REPLACES the existing Main.kt (an app has exactly one mainApp). ` +
       `The Default* container is what PICO OS launches and needs the matching manifest meta-data; secondary containers are declared here and need NO manifest entry. ` +
       `Declaring a container does not open it — call the emitted Open*OnEnter helper, or navigator.openWindowContainer/openStage directly. ` +
-      `HONEST STATUS: structural. Every symbol is confirmed in the 0.13.3 sources jars and adversarially re-verified. ` +
+      `HONEST STATUS: vision_verified for both container kinds (see below). Every symbol is confirmed in the 0.13.3 sources jars and adversarially re-verified. ` +
       `MEASURED 2026-08-06 (vision_verified, ledger com.picoagent.v35expb#0): a DefaultStage app declaring a secondary WindowContainer and calling this generator's ` +
       `Open*OnEnter helper DOES get a real floating glass spatial panel on the emulator, rendering live SpatialUI text over the passthrough home environment; ` +
       `dumpsys shows a second visible SpatialStubActivity task the app launched itself. That NARROWS our v9.3 note ("an immersive app's own WindowContainer does ` +
@@ -320,7 +327,7 @@ export function registerContainerTools(server: McpServer) {
     "generate_container_app_kotlin",
     {
       description:
-        "Emit a Main.kt with MORE THAN ONE container — a DefaultWindowContainer or DefaultStage root plus secondary WindowContainers and Stages, opened and closed at runtime through LocalSpatialNavigator. Returns JSON {files:{'Main.kt'}, note}. WHY: generate_app_wiring has always emitted DefaultStage for every app, but PICO's WelcomeSpace (the Week-1 curriculum anchor) declares three containers in one mainApp and navigates between them, so an agentic track limited to DefaultStage cannot reach a comparable outcome by prompting. FOUR RULES IT ENCODES, each read from the 0.13.3 sources jars and adversarially re-verified: (1) a DECLARED container does not open itself — WindowContainer(id=...) only registers it, something must call navigator.openWindowContainer(id), which is very likely why our own measurement said an app's own WindowContainer never appears; (2) the obvious Stage teardown is BROKEN — closeStage is suspend, and DisposableEffect{onDispose{scope.launch{closeStage()}}} silently never runs because a rememberCoroutineScope is cancelled before onDispose, so we close on a LifecycleEventObserver at ON_PAUSE/ON_DESTROY like PICO's own samples; (3) Stage has NO style parameter — immersion is declared via the Immersion(...) factory (its class ctor is internal) and the style is chosen at openStage time; (4) Modifier.windowConstraints belongs to WindowContainerConstraintsScope, so it exists only inside WindowContainer content, and under ContainerResizeType.ContentSize it is what actually sizes the window. It deliberately does NOT emit the manifest meta-data keys for style/worldscaletype/defaultsize — those resolve through framework stubs absent from 0.13.3 and their encodings are KDoc-only; the DSL parameters are the verified path. HONEST STATUS: structural — symbols verified, but whether a secondary container actually opens on the EMULATOR is an open measurement; capture a frame before claiming it appears.",
+        "Emit a Main.kt with MORE THAN ONE container — a DefaultWindowContainer or DefaultStage root plus secondary WindowContainers and Stages, opened and closed at runtime through LocalSpatialNavigator. Returns JSON {files:{'Main.kt'}, note}. WHY: generate_app_wiring has always emitted DefaultStage for every app, but PICO's WelcomeSpace (the Week-1 curriculum anchor) declares three containers in one mainApp and navigates between them, so an agentic track limited to DefaultStage cannot reach a comparable outcome by prompting. FOUR RULES IT ENCODES, each read from the 0.13.3 sources jars and adversarially re-verified: (1) a DECLARED container does not open itself — WindowContainer(id=...) only registers it, something must call navigator.openWindowContainer(id), which is very likely why our own measurement said an app's own WindowContainer never appears; (2) the obvious Stage teardown is BROKEN — closeStage is suspend, and DisposableEffect{onDispose{scope.launch{closeStage()}}} silently never runs because a rememberCoroutineScope is cancelled before onDispose, so we close on a LifecycleEventObserver at ON_PAUSE/ON_DESTROY like PICO's own samples; (3) Stage has NO style parameter — immersion is declared via the Immersion(...) factory (its class ctor is internal) and the style is chosen at openStage time; (4) Modifier.windowConstraints belongs to WindowContainerConstraintsScope, so it exists only inside WindowContainer content, and under ContainerResizeType.ContentSize it is what actually sizes the window. It deliberately does NOT emit the manifest meta-data keys for style/worldscaletype/defaultsize — those resolve through framework stubs absent from 0.13.3 and their encodings are KDoc-only; the DSL parameters are the verified path. (5) every container's content needs its OWN import — `contentImport` per container, not just rootContentImport. Without it a multi-container app whose secondary content lives in a subpackage (which is what our own scaffold does) failed to compile while this tool reported success; that gap was found by building the output rather than reading it. HONEST STATUS: vision_verified on emulator-5554 for BOTH container kinds. WindowContainer: ledger com.picoagent.v35expb#0. Stage: ledger com.picoagent.v35expc#2 (2026-08-06) — a declared secondary Stage DOES open on navigator.openStage(id, style, bundle), and the Bundle CROSSES the boundary intact (receiver read StageScope.bundle and got back exactly what was sent). Also measured: opening the second Stage REPLACES the first — the DefaultStage content stops rendering, matching Stage.kt:73 'When Stage is opened, the system will hide windows from other apps'. So a Stage is not a second window you add; it is a takeover.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package of the app entry, e.g. com.example.app"),
         root: z
@@ -344,6 +351,7 @@ export function registerContainerTools(server: McpServer) {
                 resizeType: z.enum(RESIZE_TYPES).optional().describe("Default ContentSize, which reads its bounds from Modifier.windowConstraints on the content."),
                 materialBackground: z.boolean().optional().describe("Glass/material backing. Default true."),
                 content: z.string().optional().describe("Composable call for this container's content. It can read `bundle` (whatever the opener passed)."),
+                contentImport: z.string().optional().describe("Fully-qualified import for `content`, e.g. com.example.app.content.DetailPanel. REQUIRED when the composable is not in the same package as Main.kt, or the emitted file will not compile."),
               }),
               z.object({
                 kind: z.literal("stage"),
@@ -353,6 +361,7 @@ export function registerContainerTools(server: McpServer) {
                 immersionMin: z.number().optional().describe("Default 0 — keep below immersionMax or Progressive cannot be adjusted."),
                 immersionMax: z.number().optional().describe("Default 100."),
                 content: z.string().optional(),
+                contentImport: z.string().optional().describe("Fully-qualified import for `content`. REQUIRED when the composable is not in Main.kt's package."),
               }),
             ]),
           )
