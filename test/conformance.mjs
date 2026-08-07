@@ -451,8 +451,27 @@ console.log("\n§3.3 multi-container apps open through the navigator");
 
   // Refuse ungrounded configurations rather than guessing.
   let threw = false;
-  try { generateContainerAppFiles({ packageName: "com.x", root: "stage", containers: [{ kind: "stage", id: "s" }] }); } catch { threw = true; }
-  assert(threw, "a DefaultStage app declaring another Stage is refused (not a grounded configuration)");
+  // v35.24: ONE secondary Stage on a Stage root is now ALLOWED — it was refused as ungrounded, and
+  // then it got measured (ledger com.picoagent.v35expc#2): it opens, the Bundle crosses, and the
+  // second Stage takes over from the first. Two or more remain refused.
+  const stageOnStage = generateContainerAppFiles({ packageName: "com.x", root: "stage", rootContent: "HomeStage()", containers: [{ kind: "stage", id: "s", content: "S()" }] });
+  assert(/TAKEOVER, not an addition/.test(stageOnStage.files["Main.kt"]),
+    "a Stage-root app declaring one Stage is allowed AND warns that opening it stops the root rendering");
+  try { generateContainerAppFiles({ packageName: "com.x", root: "stage", containers: [{ kind: "stage", id: "a" }, { kind: "stage", id: "b" }] }); } catch { threw = true; }
+  assert(threw, "more than one secondary Stage is still refused (only one Stage is open at a time)");
+
+  // The validation hole that let a refused configuration be generated: `root` was never checked, so
+  // `root: "DefaultStage"` emitted a DefaultStage app AND slipped past the root === "stage" guard.
+  threw = false;
+  try { generateContainerAppFiles({ packageName: "com.x", root: "DefaultStage" }); } catch { threw = true; }
+  assert(threw, "an unrecognised root value is rejected rather than silently reinterpreted");
+
+  // Every container's content needs its own import, or the emitted Main.kt does not compile.
+  const withImport = generateContainerAppFiles({
+    packageName: "com.x", containers: [{ kind: "window", id: "w", content: "Detail()", contentImport: "com.x.content.Detail" }],
+  });
+  assert(/import com\.x\.content\.Detail/.test(withImport.files["Main.kt"]),
+    "a secondary container's contentImport is emitted (without it the output does not compile)");
   threw = false;
   try { generateContainerAppFiles({ packageName: "com.x", containers: [{ kind: "window", id: "a" }, { kind: "window", id: "a" }] }); } catch { threw = true; }
   assert(threw, "duplicate container ids are rejected (ids address the open/close calls)");

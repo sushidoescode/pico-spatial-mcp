@@ -117,6 +117,12 @@ const idConst = (id: string) => `ID_${id.replace(/[^A-Za-z0-9]+/g, "_").replace(
 export function generateContainerAppFiles(args: ContainerAppArgs): { files: Record<string, string>; note: string } {
   const { packageName } = args;
   const root = args.root ?? "windowContainer";
+  // Validate explicitly. This is not defensive noise: `root: "DefaultStage"` (a plausible-looking
+  // but invalid value) was accepted, emitted a DefaultStage app, and slipped past the root === "stage"
+  // guard below — so a typo silently produced a configuration the generator means to refuse.
+  if (root !== "windowContainer" && root !== "stage") {
+    throw new Error(`root must be 'windowContainer' or 'stage' — got '${root}'`);
+  }
   const rootContent = args.rootContent ?? "HomeStage()";
   const containers = args.containers ?? [];
 
@@ -128,10 +134,10 @@ export function generateContainerAppFiles(args: ContainerAppArgs): { files: Reco
   }
   const stages = containers.filter((c): c is SecondaryStage => c.kind === "stage");
   const windows = containers.filter((c): c is SecondaryWindowContainer => c.kind === "window");
-  if (root === "stage" && stages.length) {
-    // Only one Stage can be open at a time; a DefaultStage app that also declares a Stage is a
-    // configuration we cannot ground in any sample or in the jars, so refuse rather than guess.
-    throw new Error("root 'stage' plus a secondary stage is not a grounded configuration — a DefaultStage app already owns the Stage; use root 'windowContainer' to open a Stage on demand");
+  if (root === "stage" && stages.length > 1) {
+    // Still refused: several secondary Stages on a Stage root has no grounding at all, and only one
+    // Stage is open at a time, so the second and third could only ever take over from each other.
+    throw new Error("root 'stage' with MORE THAN ONE secondary stage is not a grounded configuration — only one Stage is open at a time; declare one and reuse it");
   }
 
   const needsNavigator = containers.length > 0;
@@ -216,6 +222,16 @@ export function generateContainerAppFiles(args: ContainerAppArgs): { files: Reco
       ``,
       `    // A Stage has NO style parameter — style is chosen when you OPEN it (openStage(id, style)).`,
       `    // Immersion is declared here, via the Immersion(...) FACTORY; its class ctor is internal.`,
+      ...(root === "stage"
+        ? [
+            `    // TAKEOVER, not an addition. MEASURED on emulator-5554 (ledger com.picoagent.v35expc#2):`,
+            `    // opening this Stage STOPS the DefaultStage above from rendering — its entities are still`,
+            `    // alive, but nothing of it is drawn until this one closes. Stage.kt:73 says as much`,
+            `    // ("When Stage is opened, the system will hide windows from other apps"); the practical`,
+            `    // consequence is that a second Stage is a MODE SWITCH, not a second view. If you wanted`,
+            `    // both on screen at once, you wanted a WindowContainer.`,
+          ]
+        : []),
       `    Stage(`,
       `        id = SpatialContainers.${idConst(s.id)},`,
       `        immersion = Immersion(default = ${s.immersion ?? 100}, min = ${s.immersionMin ?? 0}, max = ${s.immersionMax ?? 100}),`,
