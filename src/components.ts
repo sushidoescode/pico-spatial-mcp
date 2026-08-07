@@ -88,7 +88,7 @@ const listPanel = z.object({
 });
 
 const expandedPanel = z.object({
-  kind: z.enum(["titleBar", "toolbar", "tabBar", "sheet", "snackbarHost", "coachmark", "segmentControl"]),
+  kind: z.enum(["titleBar", "toolbar", "tabBar", "sheet", "snackbarHost", "coachmark", "segmentControl", "sideNavigation"]),
   id: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   title: z.string(),
   items: z.array(z.string()).default([]),
@@ -109,7 +109,7 @@ const expandedPanel = z.object({
       message: `${panel.kind} is only valid in a secondary WindowContainer. TabBar/Toolbar/Subwindow are AugmentImpl-backed (Augments.kt:167-181): outside a WindowContainer they render NOTHING and only log "Augment-like components are not supported in <type>. Use WindowContainer instead." (Augments.kt:222-226) — no exception, no compile error. Set container:'window' and host this panel in a WindowContainer (see generate_container_app_kotlin).`,
     });
   }
-  if (["tabBar", "segmentControl"].includes(panel.kind) && panel.items.length === 0) {
+  if (["tabBar", "segmentControl", "sideNavigation"].includes(panel.kind) && panel.items.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["items"],
@@ -338,10 +338,19 @@ function emitExpanded(p: ExpandedPanel): string[] {
     snackbarHost: `SnackbarHost { ${title} } // WindowContainer-only host`,
     coachmark: `CoachmarkBox(coachmark = { SimpleCoachmark(text = { ${title} }) }) { ${title} }`,
     segmentControl: `SegmentControl(content = { ${p.items.map((item, index) => `SegmentItem(selected = ${index === 0}, onClick = {}, title = { Text(text = ${kstr(item)}) })`).join("; ")} })`,
+    // THE SIDE-NAVIGATION TRAP. SideNavigationItem has NO onClick parameter (SideNavigation.kt:140-152;
+    // its KDoc at :126-139 lists nine params and none of them is onClick), even though `shape` is
+    // documented as "Shape of the item's clickable surface". Clickability is a MODIFIER you attach
+    // yourself. Emitting `SideNavigationItem(selected = ..., onClick = { ... })` does not compile, and
+    // emitting it without any modifier compiles into an item that can never be selected — a silent
+    // dead control. PICO's own sample attaches Modifier.spatialHoverEffect().clickable {} (UserPage.kt:127-130),
+    // which also buys the native hover affordance.
+    sideNavigation: `SideNavigation(content = { ${p.items.map((item, index) => `SideNavigationItem(selected = ${index === 0}, modifier = Modifier.spatialHoverEffect().clickable { /* TODO: select ${kstr(item)} */ }, content = { Text(text = ${kstr(item)}) })`).join("; ")} })`,
   };
   const boundary: Record<ExpandedPanel["kind"], string> = {
     titleBar: "Structural placeholder: source-grounded TitleBar call; content and appearance still require integration, compilation, and a LOOK.",
     toolbar: "Structural placeholder: Toolbar is a root/container augment; content and appearance still require integration, compilation, and a LOOK.",
+    sideNavigation: "Structural placeholder: SideNavigationItem has NO onClick (SideNavigation.kt:140-152) — selection is a Modifier.clickable you attach, and the emitted TODO must be replaced with real selection state or every item is a dead control. Appearance still requires a LOOK.",
     tabBar: "Structural placeholder: TabBar onClick callbacks are no-ops until the caller wires state and actions.",
     sheet: "Structural placeholder: WindowContainer-only Sheet; its dismiss callback is a no-op until the caller wires it.",
     snackbarHost: "Structural placeholder: WindowContainer-only host content; this does not call SnackbarHostState.show.",
@@ -416,6 +425,15 @@ function buildKotlin(packageName: string, panels: PanelSpec[]): string {
     if (kinds.has("coachmark")) expandedImports.push(
       `import com.pico.spatial.ui.design.windows.CoachmarkBox`,
       `import com.pico.spatial.ui.design.windows.SimpleCoachmark`,
+    );
+    if (kinds.has("sideNavigation")) expandedImports.push(
+      // package `design`, NOT `design.windows` — SideNavigation.kt lives beside Text/Button.
+      `import com.pico.spatial.ui.design.SideNavigation`,
+      `import com.pico.spatial.ui.design.SideNavigationItem`,
+      `import androidx.compose.foundation.clickable`,
+      // NOTE: androidx.compose.ui.Modifier is already imported unconditionally by this emitter;
+      // adding it here again produces "Conflicting import: imported name 'Modifier' is ambiguous".
+      `import com.pico.spatial.ui.foundation.hover.spatialHoverEffect`,
     );
     if (kinds.has("segmentControl")) expandedImports.push(
       `import com.pico.spatial.ui.design.SegmentControl`,

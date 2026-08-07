@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "pico-spatial-mcp",
   "displayName": "PICO Spatial MCP",
-  "description": "MCP server that compiles natural-language briefs into native PICO OS 6 / Spatial SDK apps and VERIFIES them by capturing frames and looking: 243 tools on macOS / 240 on other hosts spanning brief-to-APK compilation (native + WebSpatial lanes), vision-verified honesty (trust ledger + hermetic eye), Gaussian-splat world models with semantic labeling, emulator/device automation, agent-vault SDK symbol validation (vault_api + preflight lint), and PICO's official pico-cli perf diagnosis. Complements PICO's pico-spatial-agentic-tools plugin: install both — theirs guides the agent with skills + SDK knowledge, this one gives the agent a verified build/verify/ship toolchain.",
+  "description": "MCP server that compiles natural-language briefs into native PICO OS 6 / Spatial SDK apps and VERIFIES them by capturing frames and looking: 244 tools on macOS / 241 on other hosts spanning brief-to-APK compilation (native + WebSpatial lanes), vision-verified honesty (trust ledger + hermetic eye), Gaussian-splat world models with semantic labeling, emulator/device automation, agent-vault SDK symbol validation (vault_api + preflight lint), and PICO's official pico-cli perf diagnosis. Complements PICO's pico-spatial-agentic-tools plugin: install both — theirs guides the agent with skills + SDK knowledge, this one gives the agent a verified build/verify/ship toolchain.",
   "version": "34.0.0-pre",
   "author": {
     "name": "Sushant Srikrishnan"

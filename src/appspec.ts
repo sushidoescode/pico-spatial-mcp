@@ -108,7 +108,13 @@ export const sceneSchema = z.object({
     .default({ props: [] }),
   transitions: z.array(z.object({ to: z.string(), trigger: z.string() })).default([]),
   physics: z
-    .object({ gravity: vec3.optional().describe("m/s² (default [0,-9.81,0])") })
+    .object({
+      gravity: vec3.optional().describe("m/s² (default [0,-9.81,0])"),
+      events: z
+        .array(z.enum(["Enter", "Update", "Exit"]))
+        .optional()
+        .describe("v35.16: subscribe to collision events, so the app can REACT ('ball hits pin -> score') instead of the agent bridge polling for it. Lowers to generate_event_subscription_kotlin. Enter = first contact, Update = every frame in contact, Exit = separation (carries entityA/entityB ONLY). NOTE the SDK precondition: collision events fire only when at least one body is DYNAMIC — two static colliders touching report nothing, silently."),
+    })
     .optional()
     .describe("Presence = a REAL physics world on the scene root (verified simulating on the emulator, v8.8). Objects with a `body` fall/roll/collide."),
 });

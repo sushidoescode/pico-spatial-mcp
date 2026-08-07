@@ -7,7 +7,7 @@ environment and content seats on it; a fully-virtual Full-Space app (stageStyle 
 explicit, fully-supported opt-in.
 
 This is the proven first-run path, on the doors surface (`PICO_MCP_SURFACE=doors` — 16
-intent-level tools instead of the full surface: 243 tools on macOS, 240 on other hosts). It's the exact sequence a from-docs-only run on a fresh clone
+intent-level tools instead of the full surface: 244 tools on macOS, 241 on other hosts). It's the exact sequence a from-docs-only run on a fresh clone
 followed on 2026-07-21.
 
 ## 1. Register (once)
@@ -118,7 +118,7 @@ PICO Swan / 6.1 territory, and every claim above is backed by a looked-at frame.
 
 ## The full surface
 
-The doors surface is 16 tools; the full server exposes 239 on macOS (240 on other hosts, where four
+The doors surface is 16 tools; the full server exposes 239 on macOS (241 on other hosts, where four
 host-GUI tools collapse to one explanatory stub). Remove `PICO_MCP_SURFACE=doors` (or
 just add the full-surface server alongside) to get everything — codegen for every SDK subsystem,
 the fleet/asset/editor pipelines, and the raw building blocks the doors orchestrate internally.

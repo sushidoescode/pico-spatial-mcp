@@ -185,6 +185,21 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
     });
   }
 
+  // v35.16: collision events -> the SDK event bus. This is what turns a simulating scene into a
+  // REACTING one; without it "ball hits pin -> score" has to be polled from the agent bridge.
+  const eventScenes = spec.scenes.filter((sc: any) => (sc.physics?.events ?? []).length);
+  if (eventScenes.length) {
+    const events = [...new Set(eventScenes.flatMap((sc: any) => sc.physics.events as string[]))];
+    push({
+      node: "events",
+      tool: "generate_event_subscription_kotlin",
+      args: { packageName: contentPkg, collision: events },
+      targetPath: `${cpath}/SceneEvents.kt`,
+      cClass: "C0_emulator",
+      note: `Collision events [${events.join(", ")}] on the SDK event bus. WIRING: set the SceneEvents.onCollision* callbacks and call SceneEvents.subscribe(content) inside SpatialView's initial block, then SceneEvents.unsubscribeAll() from a DisposableEffect onDispose. PRECONDITION: events fire only when at least one body in the pair is DYNAMIC — two static colliders touching report NOTHING, silently (CollisionEvents.kt:35-40); the override is PhysicsWorldComponent.kinematicCollisionReportMode, default NONE.`,
+    });
+  }
+
   // v9.4: panels -> a Compose WindowContainer with LIVE runtime text (the hybrid-app tier).
   for (const pn of (spec as any).panels ?? []) {
     // v31: placement 'world' has NO vault-confirmed world-position API for auto-hosted 2D panels —

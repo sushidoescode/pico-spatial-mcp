@@ -826,5 +826,74 @@ console.log("\nP1-7 Augment-backed components are refused outside a WindowContai
     "ViewPoint comes from ui.platform (the type TabBar actually takes), not ui.foundation.content");
 }
 
+// §1.5/§5.3 — the event bus. One generator for physics, audio and animation, because they share one.
+console.log("\n§5.3 the SDK event bus, and the preconditions that make handlers silently never fire");
+{
+  const { generateEventSubscriptionKotlin } = await import("../dist/events.js");
+  const kt = generateEventSubscriptionKotlin({
+    packageName: "com.test.conf.content",
+    collision: ["Enter", "Exit"], animation: ["Started"], audio: ["PlaybackCompleted"],
+  });
+
+  assert(/private val subscriptions = mutableListOf<Cancellable>\(\)/.test(kt),
+    "subscriptions are held in a LIST (one Cancellable? silently leaks all but the last)");
+  assert(/fun unsubscribeAll\(\)/.test(kt) && /subscriptions\.forEach \{ runCatching \{ it\.cancel\(\) \} \}/.test(kt),
+    "unsubscribeAll cancels every subscription");
+  // Count real CALL SITES, not the doc comment that also says "content.subscribe(...)" — the same
+  // prose-vs-code confusion that bit three lint rules this wave, here in the assertion itself.
+  assert((kt.match(/content\.subscribe\(\w+Events\.\w+::class\.java\)/g) || []).length === 4,
+    "one subscribe call site per requested event");
+
+  // CollisionEvents.Exit carries ONLY entityA/entityB — reading position there does not compile.
+  const exitBlock = /CollisionEvents\.Exit::class\.java\) \{ event ->[\s\S]*?\n            \},/.exec(kt)?.[0] ?? "";
+  assert(exitBlock.length > 0, "the Exit handler is emitted");
+  assert(!/event\.position|event\.impulse|event\.contacts/.test(exitBlock),
+    "the Exit handler reads no position/impulse/contacts (Exit carries entityA/entityB only)");
+  const enterBlock = /CollisionEvents\.Enter::class\.java\) \{ event ->[\s\S]*?\n            \},/.exec(kt)?.[0] ?? "";
+  assert(/event\.position/.test(enterBlock), "the Enter handler DOES read position");
+
+  // The two silent-failure preconditions must be stated in the emitted file.
+  assert(/at least one[\s\S]{0,40}dynamic/i.test(kt),
+    "the emitted file states that events fire only when a body is DYNAMIC (two statics fire nothing)");
+  assert(/kinematicCollisionReportMode/.test(kt), "it names the override for the static/kinematic case");
+  assert(/BRIEF/.test(kt) && /contacts/i.test(kt),
+    "it states that event.contacts is empty under the default BRIEF detail level");
+
+  // It must not emit the samples' generic when(event) wrapper, which only compiles via smart cast.
+  assert(!/when \(event\)/.test(kt), "emits the direct class-literal form, not the smart-cast-dependent generic wrapper");
+
+  const errs = runLint(kt, "kotlin").filter((v) => v.severity === "error").map((v) => v.ruleId).filter(Boolean);
+  assert(errs.length === 0, `event file is lint-clean${errs.length ? `: ${errs.join(", ")}` : ""}`);
+
+  // And it must be REACHABLE — the v35.9 lesson.
+  const { CAPABILITY_MANIFEST } = await import("../dist/capabilities.js");
+  assert(CAPABILITY_MANIFEST.some((c) => c.tool === "generate_event_subscription_kotlin"), "the event tool is in the manifest");
+  const { buildLedger } = await import("../dist/compiler.js");
+  const spec = appSpecSchema.parse({
+    meta: { appName: "B", packageName: "com.test.b", stageStyle: "1", brief: "b" },
+    navigation: { startScene: "main", portals: [] },
+    scenes: [{ id: "main", environment: { kind: "procedural" }, physics: { events: ["Enter"] } }],
+    objects: [{ id: "o", sceneId: "main", source: "primitive", transform: { position: [0, 1, -2] } }],
+  });
+  assert(buildLedger(spec, "/tmp/b").some((st) => st.tool === "generate_event_subscription_kotlin"),
+    "scenes[].physics.events routes to the event generator");
+}
+
+// P1-7 — SideNavigation. The trap: SideNavigationItem has NO onClick.
+console.log("\nP1-7 SideNavigation encodes the missing-onClick trap");
+{
+  const { generateSpatialUIKotlin } = await import("../dist/components.js");
+  const r = generateSpatialUIKotlin({ packageName: "com.test.conf", panels: [{ kind: "sideNavigation", id: "n", title: "N", items: ["Profile", "Settings"], container: "window" }] });
+  const kt = typeof r === "string" ? r : (r.kotlin ?? "");
+  // SideNavigation.kt:140-152 has nine params and none is onClick, despite `shape` being documented
+  // as "Shape of the item's clickable surface". Emitting onClick does not compile; emitting no
+  // modifier compiles into an item that can never be selected.
+  assert(!/SideNavigationItem\([^)]*onClick/.test(kt), "no onClick on SideNavigationItem (it has no such parameter)");
+  assert(/Modifier\.spatialHoverEffect\(\)\.clickable/.test(kt), "clickability comes from a Modifier, as in PICO's sample");
+  assert(/import com\.pico\.spatial\.ui\.design\.SideNavigation\b/.test(kt), "imported from design, not design.windows");
+  assert((kt.match(/import androidx\.compose\.ui\.Modifier/g) || []).length === 1,
+    "Modifier is imported exactly once (a duplicate is a Kotlin 'ambiguous import' error)");
+}
+
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);
