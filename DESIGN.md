@@ -184,10 +184,18 @@ the whole recipe; `diagnose symptom=raycast_no_hit` for the fix):
   dedicated entity). Without it, colliders register in the SceneInspector but `rayCast`
   returns 0 hits. (The desktop editor dylib auto-creates the world; the device runtime does
   not — trust the device.)
-- **Only PRIMITIVE shapes register.** `ShapeResource.createBox/createSphere/createCapsule`
-  work; `createStaticMesh`/`createConvexMesh` from a loaded render mesh cook NO queryable
-  triangles on-device. Model a room as 6 thin box "walls" at its AABB; model props as
-  box/sphere/capsule.
+- **Mesh shapes DO register — the trap is alignment, not queryability.** This bullet used to read
+  "only PRIMITIVE shapes register"; both halves of that have now been refuted by measurement
+  (v35.4 for a runtime `MeshResource`, ledger `com.picoagent.v35expc#4` for a loaded one).
+  `createStaticMesh` and `createConvexMesh` built from a mesh taken off a LOADED model's
+  `ModelComponent` both answer `rayCast` — measured against a primitive control in the same cast.
+  What bites instead: the cooked shape follows the mesh's **local vertex data** and is placed by the
+  **collider entity's** transform, inheriting nothing from the source model's node hierarchy. Measured,
+  one sat entirely *above* its entity origin (y +0.00..+0.60) and shrank to ~2 mm under the asset's
+  own 0.0045 display scale. So a single ray at the entity origin — or a metre-scale grid — reports
+  0 hits against a collider that works. **A negative from one ray is not evidence of absence; sweep.**
+  Primitives are still the default here: they cost less per query and need no alignment reasoning.
+  Model a room as 6 thin box "walls" at its AABB; model props as box/sphere/capsule.
 - **API facts:** the `CollisionComponent` 5-arg ctor is public (the no-arg ctor is internal);
   no `RigidBodyComponent` is needed for a static collider; `createBox` takes FULL extents
   (a `Vector3(1,1,1)` box has faces at ±0.5).

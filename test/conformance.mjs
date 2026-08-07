@@ -491,32 +491,45 @@ console.log("\n§3.3 the v9.3 'own WindowContainer never opens' note is narrowed
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-// §1.1 — mesh colliders. EXPERIMENT A, measured on emulator-5554 (ledger com.picoagent.v35expa#0).
+// §1.1 — mesh colliders. EXPERIMENT C-5, measured on emulator-5554 (ledger com.picoagent.v35expc#4).
 //
-// We shipped "mesh colliders cook nothing queryable — rayCast returns 0 hits". A createStaticMesh
-// collider built from a RUNTIME MeshResource both held a dropped body (restY=1.14, exactly the
-// predicted rest height) and answered a rayCast (hits=2), matching a createBox control exactly.
-// What is NOT refuted: the original finding was about a mesh LOADED from a bundle/GLB, which was
-// never re-tested. The rule is narrowed to that scope, not deleted.
+// We shipped "mesh colliders cook nothing queryable — rayCast returns 0 hits". v35.4 refuted the
+// RUNTIME half. C-5 refuted the LOADED half that v35.4 kept alive as untested: a mesh taken off a
+// loaded model's ModelComponent answers rayCast through BOTH createStaticMesh and createConvexMesh
+// (548 / 50 self-hits vs a 441-hit primitive control in the same cast).
+//
+// The rule survives because the TRAP MOVED, not because the doubt did. What actually produces a
+// "0 hits" reading is ALIGNMENT: the cooked shape follows the mesh's LOCAL vertex data and the
+// collider entity's own transform, so it need not contain the entity origin (measured: entirely
+// above it) and shrinks with the entity's scale (measured: ~2mm at the asset's 0.0045). This gate
+// exists to stop the OLD claim creeping back in as if it had never been tested.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-console.log("\n§1.1 the mesh-collider rule is narrowed to the case that still holds");
+console.log("\n§1.1 the mesh-collider rule states alignment, not un-queryability");
 {
   const rule = (await import("../dist/lint.js")).BUILTIN_RULES.find((r) => r.id === "mesh-collider-not-queryable");
-  assert(rule, "the mesh-collider rule still exists (narrowed, not deleted)");
-  assert(rule.severity === "warn", `it is a warning, not an error (measured queryable in the runtime-mesh case) — got ${rule?.severity}`);
-  assert(/LOADED/.test(rule.message), "the message names the LOADED-asset case as the one still suspect");
-  assert(/RUNTIME MeshResource/.test(rule.message), "the message states what was actually measured");
-  assert(!/returns 0 hits against them/.test(rule.message), "the refuted absolute is gone");
+  assert(rule, "the mesh-collider rule still exists (retargeted, not deleted)");
+  assert(rule.severity === "warn", `it is a warning, not an error (measured queryable in BOTH provenances) — got ${rule?.severity}`);
+  assert(/QUERYABLE/.test(rule.message), "the message leads with the measured result: mesh colliders ARE queryable");
+  assert(/LOADED/.test(rule.message), "the message still names the LOADED-asset case — now as measured, not suspect");
+  assert(/ALIGNMENT/.test(rule.message), "the message names the trap that actually bites");
+  assert(!/returns 0 hits against them/.test(rule.message), "the first refuted absolute is gone");
+  assert(!/has not been re-tested|remain suspect|still suspect/i.test(rule.message),
+    "the second refuted claim — loaded-asset meshes untested/suspect — is gone from the message");
+  // The single-ray-at-the-origin check is what manufactured the false negative. The fix must say so.
+  assert(/one ray|single ray/i.test(rule.fix) && /origin/i.test(rule.fix),
+    "the fix warns that one ray at the entity origin returns NONE against a working collider");
 
-  // The three places that published the over-general claim.
-  for (const [file, needle] of [["src/collider.ts", "com.picoagent.v35expa#0"], ["src/surfaceplace.ts", "com.picoagent.v35expa#0"]]) {
+  // Every place that published the superseded claim must cite the experiment that killed it.
+  for (const file of ["src/collider.ts", "src/surfaceplace.ts"]) {
     const s = read(file);
-    assert(s.includes(needle), `${file}: cites the ledger entry that narrowed it`);
-    assert(!/A MESH collider never registers/.test(s), `${file}: the refuted absolute is gone`);
+    assert(s.includes("com.picoagent.v35expc#4"), `${file}: cites the ledger entry that refuted it`);
+    assert(!/A MESH collider never registers/.test(s), `${file}: the first refuted absolute is gone`);
+    assert(!/still suspect|untested-and-suspect|loaded-mesh finding STANDS/.test(s),
+      `${file}: no longer calls loaded-asset mesh colliders suspect`);
   }
 
   // PhysicsWorldComponent stays an ERROR — without it nothing is queryable, and that is exactly
-  // what would have made Experiment A falsely confirm the old claim.
+  // what would have made either experiment falsely confirm the old claim.
   const pw = (await import("../dist/lint.js")).BUILTIN_RULES.find((r) => r.id === "raycast-without-physicsworld");
   assert(pw?.severity === "error", "rayCast without PhysicsWorldComponent is still an error");
 }

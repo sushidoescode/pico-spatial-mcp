@@ -69,22 +69,32 @@ export const BUILTIN_RULES: LintRule[] = [
     negativeFixture: "mat.setBaseColor(Color4(1f, 0f, 0f, 1f))",
   },
   {
-    // v35.4 NARROWED BY MEASUREMENT (ledger com.picoagent.v35expa#0). This rule used to be an
-    // error reading "mesh colliders cook nothing queryable — rayCast returns 0 hits". Experiment A
-    // refuted that as stated: a createStaticMesh collider built from a RUNTIME MeshResource both
-    // held a dropped dynamic body (restY matched the predicted rest height exactly) and answered a
-    // rayCast, indistinguishably from a createBox control in the same scene.
-    // What is NOT refuted, and is why this stays a warning rather than being deleted: the original
-    // finding was about a mesh LOADED from a bundle/GLB (a 20x20m grid scan at all heights returned
-    // 0 hits). That case was not re-tested. Loaded-asset mesh colliders remain suspect.
+    // v35.26 REFUTED BY MEASUREMENT (ledger com.picoagent.v35expc#4). Both earlier versions of this
+    // rule are now dead. It began as an error — "mesh colliders cook nothing queryable, rayCast
+    // returns 0 hits" — which v35.4 narrowed to the LOADED-asset case after a RUNTIME MeshResource
+    // measured queryable. Experiment C-5 re-tested that surviving half on emulator-5554, and it does
+    // not hold either. A mesh pulled off a LOADED model (ModelComponent.mesh on SM_PicoRobot_001 of
+    // PICO's own pico_robot_animated.glb) cooks through BOTH createStaticMesh and createConvexMesh,
+    // neither throws, the CollisionComponent reads back present, and rayCast HITS it: 548 self-hits
+    // on the static shape at scale 1, 35 at scale 0.0045, 50 on the convex shape — against a
+    // primitive control measuring 441 in the same cast.
+    //
+    // What actually bites — and what produced every "0 hits" reading, including the first cast of
+    // this very experiment — is ALIGNMENT. The shape is cooked from the mesh's LOCAL vertex data and
+    // placed by the COLLIDER ENTITY's transform; it does NOT inherit the source model's node
+    // hierarchy. Measured, the cooked shape sat y +0.00..+0.60 ABOVE its entity origin and spanned
+    // x -0.24..+0.26, so a ray aimed at the entity origin passes underneath a collider that is
+    // registered and working perfectly. Scale compounds it: at the asset's own 0.0045 the entire
+    // collider measured ~1.6 x 3.6 x 1.6 MILLIMETRES, which any metre-scale grid scan sweeps
+    // straight past. A negative from a single ray, or from a coarse grid, is not evidence of absence.
     id: "mesh-collider-not-queryable",
     severity: "warn",
     kinds: ["kotlin"],
     type: "present",
     pattern: /createStaticMesh|createConvexMesh/,
-    message: "Mesh collider: queryable when built from a RUNTIME MeshResource (measured 2026-08-06 — contact AND rayCast both worked, matching a primitive control), but a mesh collider built from a LOADED asset previously measured 0 rayCast hits and has not been re-tested.",
-    fix: "From a runtime MeshResource this is fine. From a LOADED model, verify with a rayCast before relying on picking — or use a PRIMITIVE proxy: ShapeResource.createBox(FULL extents) / createSphere(radius) / createCapsule(height, radius). Either way a PhysicsWorldComponent on the scene root is required or nothing is queryable at all.",
-    designRule: "DESIGN.md §9 (runtime physics) — narrowed by ledger com.picoagent.v35expa#0",
+    message: "Mesh collider: QUERYABLE from a RUNTIME MeshResource and from a LOADED asset alike (re-measured 2026-08-06 on emulator — createStaticMesh and createConvexMesh both answered rayCast). The real trap is ALIGNMENT: the shape is cooked from the mesh's LOCAL vertex data and positioned by the COLLIDER entity's transform, not by the source model's node hierarchy, so it commonly does not contain the entity origin and it scales with that entity — measured ~2mm across at the asset's own 0.0045 scale.",
+    fix: "Do not verify with one ray aimed at the entity origin — that returns NONE against a working collider. Sweep a grid, or derive the ray from the shape's real extent. Match the collider entity's transform to the source model's, and offset it if the submesh is offset in its own space. A PRIMITIVE proxy (createBox(FULL extents) / createSphere(radius) / createCapsule(height, radius)) is still the cheapest correct answer when an approximate volume will do — triangle meshes cost far more per query. Either way a PhysicsWorldComponent on the scene root is required or nothing is queryable at all.",
+    designRule: "DESIGN.md §9 (runtime physics) — refuted by ledger com.picoagent.v35expc#4",
     positiveFixture: "e.components.set(CollisionComponent(listOf(ShapeResource.createConvexMesh(mesh)), physMat()))",
     negativeFixture: "e.components.set(CollisionComponent(listOf(ShapeResource.createBox(Vector3(1f,1f,1f))), physMat()))",
   },

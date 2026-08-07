@@ -22,15 +22,18 @@ import { okJson } from "./util.js";
  *  4. Generated/downloaded models (Meshy et al.) are usually origin-CENTRED, so seating them at
  *     the surface height buries half the model. Emitted code lifts by half the height unless the
  *     asset is declared bottom-origin.
- *  5. NARROWED 2026-08-06 by measurement (ledger com.picoagent.v35expa#0). This used to read "a
+ *  5. REFUTED 2026-08-06 by measurement (ledger com.picoagent.v35expc#4). This used to read "a
  *     MESH collider never registers in PICO's queryable physics world. Only primitives do."
- *     Experiment A refuted that as stated: a createStaticMesh collider built from a RUNTIME
- *     MeshResource both held a dropped dynamic body and answered a rayCast, indistinguishably from
- *     a createBox control in the same scene. What was NOT re-tested — and so still stands — is the
- *     original case: a mesh collider built from a LOADED bundle/GLB, which a 20x20m grid scan at
- *     all heights measured at 0 hits. The emitted collider stays a BOX here, because this generator
- *     seats LOADED models and that is precisely the untested-and-suspect case; it also carries the
- *     required PhysicsWorldComponent, without which nothing is queryable at all.
+ *     v35.4 refuted the runtime half; Experiment C-5 has now refuted the loaded half too. A mesh
+ *     taken off a LOADED model's ModelComponent answers rayCast through both createStaticMesh and
+ *     createConvexMesh, measured against a primitive control in the same cast.
+ *     The emitted collider still stays a BOX here — but for a reason that survives the refutation
+ *     rather than the one that did not. A mesh shape cooked from a loaded submesh is positioned by
+ *     the COLLIDER ENTITY's transform and inherits none of the source model's node hierarchy, so
+ *     seating it correctly requires knowing that submesh's own offset and scale; measured, one sat
+ *     entirely above its entity origin and shrank to ~2mm at the asset's display scale. A box
+ *     derived from the declared footprint needs none of that, and costs less per query. It also
+ *     carries the required PhysicsWorldComponent, without which nothing is queryable at all.
  *
  * The emitted object is self-contained: call `seat(root, add)` from inside SpatialView.initial.
  */
