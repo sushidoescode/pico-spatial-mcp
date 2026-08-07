@@ -123,6 +123,11 @@ export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
   lines.push("    var placedAt: Vector3? = null");
   lines.push("        private set");
   lines.push("");
+  lines.push("    // Retained for dispose(). AssetBundle is Closeable but NOT a Resource, so it is not");
+  lines.push("    // lifecycle-tied to anything (Resource.kt:35-42) — if this object does not close it,");
+  lines.push("    // nothing ever will.");
+  lines.push("    private var bundle: AssetBundle? = null");
+  lines.push("");
   lines.push("    /**");
   lines.push("     * Detect -> convert -> seat. `add` attaches the loaded root (content.addEntity or");
   lines.push("     * an ancestor's addChild). Returns the model entity, or null if no surface was found.");
@@ -132,8 +137,9 @@ export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
   lines.push(`            Log.w(TAG, "SURFACE| no ${o.semantic} plane found — nothing seated")`);
   lines.push("            return null");
   lines.push("        }");
-  lines.push("        val bundle = withContext(Dispatchers.IO) { AssetBundle.load(BUNDLE) }");
-  lines.push("        val model = Entity.loadSuspend(MODEL, bundle)");
+  lines.push("        val b = bundle?.takeIf { it.valid } ?: withContext(Dispatchers.IO) { AssetBundle.load(BUNDLE) }");
+  lines.push("        bundle = b");
+  lines.push("        val model = Entity.loadSuspend(MODEL, b)");
   lines.push("        return withContext(Dispatchers.Main) {");
   lines.push("            // Anchor space -> root space. Identity while root sits at the origin, which is");
   lines.push("            // exactly why skipping it hides the bug until the root moves.");
@@ -249,6 +255,23 @@ export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
     lines.push("        return e");
     lines.push("    }");
   }
+  lines.push("");
+  lines.push("    /**");
+  lines.push("     * MANDATORY teardown — DisposableEffect { onDispose { " + o.objectName + ".dispose() } }.");
+  lines.push("     * Two things are released here and NOTHING else releases them:");
+  lines.push("     *  1. the AssetBundle (Closeable, not lifecycle-tied to any component);");
+  lines.push("     *  2. plane tracking, which this object START()ed and which keeps running app-wide.");
+  lines.push("     * The seated model's own mesh/material are owned by its ModelComponent and are NOT");
+  lines.push("     * closed here (Resource.kt:35-42) — closing those would be a use-after-free.");
+  lines.push("     */");
+  lines.push("    fun dispose() {");
+  lines.push("        runCatching { PlaneTrackingManager.stop() }");
+  lines.push(`            .onFailure { Log.e(TAG, "SURFACE| plane stop failed: " + it.message) }`);
+  lines.push("        bundle?.takeIf { it.valid }?.let { runCatching { it.close() } }");
+  lines.push("        bundle = null");
+  lines.push("        placedAt = null");
+  lines.push(`        Log.i(TAG, "SURFACE| disposed (tracking stopped, bundle closed)")`);
+  lines.push("    }");
   lines.push("");
   lines.push("    private fun fmt(v: Float): String = ((v * 100f).toInt() / 100f).toString()");
   lines.push("}");

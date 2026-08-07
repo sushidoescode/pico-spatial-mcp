@@ -417,10 +417,66 @@ export const BUILTIN_RULES: LintRule[] = [
     when: /AssetBundle\s*\.\s*load\s*\(/,
     unless: /\.close\s*\(\s*\)|releaseModel\s*\(/,
     message: "An AssetBundle is loaded and never released — bundles are Closeable (AssetBundle.kt:76-77, close() at :235) and hold their models until they are.",
-    fix: "Release per-model with bundle.releaseModel(name) (AssetBundle.kt:213) and close the bundle in teardown. For a bundle shared by several call sites, refcount it — WelcomeSpace's AssetBundleManager is the reference shape.",
+    fix: "Release per-model with bundle.releaseModel(name) (AssetBundle.kt:213) and close the bundle in teardown. For a bundle shared by several call sites, refcount it by owner — generate_bundle_lease_kotlin emits that. (An earlier version of this line pointed at WelcomeSpace's AssetBundleManager; that refcounted manager exists only in the 6.0.0 GitHub copy, not in PICO's 0.13.3 archive, whose AssetBundle.kt is a 29-line lazy singleton.)",
     designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (lifecycle cleanup is mandatory)",
     positiveFixture: 'val bundle = AssetBundle.load("asset://menu.bundle")\nval panel = Entity.loadSuspend("menu", bundle)',
     negativeFixture: 'val bundle = AssetBundle.load("asset://menu.bundle")\nval panel = Entity.loadSuspend("menu", bundle)\nfun dispose() { bundle.close() }',
+  },
+  {
+    // The ownership rule for SDK resources, which is NOT "always close" and NOT "never close".
+    // Resource.kt:35-42, on toGlobal(): "After turning the Resource instance into a global instance,
+    // it will no longer be tied to the lifecycle of any other instance. You need to actively call
+    // the close method to release the resource." So a plain Resource handed to a component is owned
+    // by that component, and toGlobal() is the act that transfers ownership to the app.
+    // Corroborated both ways in PICO's own 0.13.3 samples: WelcomeSpace calls material.toGlobal()
+    // (FullSpaceRoomViewModel.kt:126) and closes it (:168, guarded by material.valid), while the
+    // Physics sample — which never calls toGlobal — closes nothing at all.
+    id: "toglobal-without-close",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "conditional",
+    when: /\.\s*toGlobal\s*\(\s*\)/,
+    unless: /\bclose\s*\(\s*\)/,   // receiver-less close() inside apply{}/let{} counts
+    message: "A Resource is made global with toGlobal() and never closed. toGlobal() detaches it from its consumer's lifecycle and makes the APP responsible for it (Resource.kt:35-42) — after that call, nothing else will ever free it.",
+    fix: "Close it in teardown, guarded by valid: `res.takeIf { it.valid }?.close()` — the pairing WelcomeSpace uses (toGlobal at FullSpaceRoomViewModel.kt:126, close at :168). If you did not mean to take ownership, drop the toGlobal() call instead and let the component keep it.",
+    designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (lifecycle cleanup is mandatory)",
+    positiveFixture: "val mat = UnlitMaterial.create()\nmat.toGlobal()\ne.components.set(ModelComponent(mesh, mat))",
+    negativeFixture: "val mat = UnlitMaterial.create()\nmat.toGlobal()\ne.components.set(ModelComponent(mesh, mat))\nfun dispose() { if (mat.valid) mat.close() }",
+  },
+  {
+    // The INVERSE error, and the more dangerous direction: closing a resource the app does not own.
+    // A leak costs memory; this crashes, and only on teardown, where it is hardest to attribute.
+    // Deliberately a WARNING and deliberately narrow (named mesh/material/shape/texture locals in a
+    // file with no toGlobal anywhere) — a resource closed without toGlobal is at best redundant,
+    // since Resource.kt:73-83 makes every later use throw "You can't ... on a closed X".
+    id: "resource-closed-without-toglobal",
+    severity: "warn",
+    kinds: ["kotlin"],
+    type: "conditional",
+    when: /\b(mesh|shape|mat|material|texture|tex)[A-Za-z0-9_]*\s*(?:\?\s*)?\.\s*close\s*\(\s*\)/i,
+    unless: /\.\s*toGlobal\s*\(\s*\)/,
+    message: "A mesh/material/shape/texture resource is closed in a file that never calls toGlobal(). Until toGlobal(), a Resource is tied to the lifecycle of whatever consumed it (Resource.kt:35-42) — the component owns it, so closing it here is a use-after-free rather than a cleanup.",
+    fix: "Delete the close(); the ModelComponent/CollisionComponent that received it will release it. Close it ONLY if you first call toGlobal() to take ownership. PICO's Physics sample hands shapes and physics materials to components and closes neither.",
+    designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (do not invent lifecycle contracts)",
+    positiveFixture: "val mesh = MeshResource.createSphere(2f)\ne.components.set(ModelComponent(mesh, mat))\nfun dispose() { mesh.close() }",
+    negativeFixture: "val mesh = MeshResource.createSphere(2f)\nmesh.toGlobal()\ne.components.set(ModelComponent(mesh, mat))\nfun dispose() { mesh.close() }",
+  },
+  {
+    // CypressMediaPlayer implements Closeable DIRECTLY — it is not a Resource, so the
+    // lifecycle-tied default above never applies to it. It holds a decoder and a Surface.
+    id: "mediaplayer-never-closed",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "conditional",
+    when: /CypressMediaPlayer\s*\(\s*\)/,
+    // \bclose(), not \.close(): the teardown idiom is `player.apply { ...; close() }` (PlaybackManager
+    // .kt:147-150), where the call has no receiver. Requiring the dot would fire on PICO's own sample.
+    unless: /\bclose\s*\(\s*\)/,
+    message: "A CypressMediaPlayer is constructed and never closed. It is Closeable but NOT a Resource, so no component will ever adopt it — the decoder and Surface stay alive until close().",
+    fix: "Tear it down with unregisterCypressMediaPlayerCallback() BEFORE close(), the order PICO's own PlaybackManager.reset() uses (SpatialVideo/data/PlaybackManager.kt:147-150, called from VideoViewModel.onCleared). A callback delivered against a closed player is a teardown-only crash.",
+    designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (lifecycle cleanup is mandatory)",
+    positiveFixture: "val player = CypressMediaPlayer()\nplayer.setDataSource(src)\nplayer.prepareAsync()",
+    negativeFixture: "val player = CypressMediaPlayer()\nplayer.prepareAsync()\nfun release() { player.unregisterCypressMediaPlayerCallback(); player.close() }",
   },
   {
     id: "trackingmanager-never-stopped",

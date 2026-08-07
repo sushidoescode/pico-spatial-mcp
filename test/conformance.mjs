@@ -519,33 +519,91 @@ console.log("\n§7 every generator that acquires a resource also releases it");
     assert(r.type === "conditional", `${id} is conditional — a file that DOES clean up stays clean`);
   }
 
-  // Sweep the generators that acquire SDK resources. Every one of these was emitting an
-  // acquisition with no release before this wave.
-  const LANES = [
-    ["anim", ["generate_tween_animation_kotlin", "generate_orbit_animation_kotlin", "generate_scene_animator_kotlin"]],
-    ["richness", ["generate_animation_kotlin"]],
-    ["sense", ["generate_scene_understanding_kotlin"]],
-    ["databinding", ["generate_data_binding_kotlin"]],
-    ["menu", ["generate_game_menu_kotlin"]],
-    ["interaction", ["generate_interaction_kotlin"]],
-    ["physics", ["generate_rigidbody_kotlin"]],
+  // EXHAUSTIVE sweep of every generate_*_kotlin tool.
+  //
+  // This replaced a hand-maintained 7-lane list, which is precisely why it was worth doing: the list
+  // covered the lanes this wave happened to touch, so `environment`, `surfaceplace` and `media` were
+  // never swept and were each leaking an app-owned handle in shipped output. A list you have to
+  // remember to extend is a list that silently stops being true.
+  //
+  // Two implementation notes, both learned the hard way:
+  //  - dist/index.js is EXCLUDED. Importing it constructs the server and connects the stdio
+  //    transport, which never resolves — that is what hung the original unbounded sweep for 10
+  //    minutes. It was never a slow tool.
+  //  - Args are synthesized from each tool's zod schema. A few tools take REFINED strings
+  //    (z.string().refine(...) shows up as ZodEffects, so type-based synthesis cannot satisfy them)
+  //    and get an explicit override below.
+  const ARG_OVERRIDES = {
+    generate_collider_kotlin: {
+      packageName: "com.test.conf.content",
+      shapes: [{ name: "Col_Desk", kind: "box", pos: { x: 0, y: 0, z: 0 }, size: { x: 1, y: 1, z: 1 } }],
+    },
+    generate_subwindow_kotlin: {
+      packageName: "com.test.conf.content", primaryId: "primary", primaryContent: "PrimaryPanel()",
+      secondaryId: "secondary", stableTag: "tag", payloadKey: "k", payloadValue: "v",
+      widthMeters: 0.6, heightMeters: 0.4, depthMeters: 0.05, subwindowSide: "Right",
+      componentContent: "DetailPanel()",
+    },
+  };
+  const synth = (key, shape) => {
+    const d = shape?._def ?? {};
+    if (d.typeName === "ZodOptional" || d.typeName === "ZodDefault") return undefined; // let the tool default it
+    if (d.typeName === "ZodEnum") return d.values?.[0];
+    if (d.typeName === "ZodArray") return /size|scale|dimension|position|extent/i.test(key) ? [1, 1, 1] : [];
+    if (d.typeName === "ZodNumber") return 1;
+    if (d.typeName === "ZodBoolean") return false;
+    if (/^packageName$/i.test(key)) return "com.test.conf.content";
+    if (/bundle/i.test(key)) return "asset://x.bundle";
+    if (/ktx/i.test(key)) return "env.ktx";
+    if (/assetFileName|glb/i.test(key)) return "model.glb";
+    if (/png|image/i.test(key)) return "tex.png";
+    if (/id$|name$/i.test(key)) return "thing";
+    return "x";
+  };
+
+  const CODEGEN_MODULES = [
+    "anim", "attachmentpanel", "bundlelease", "collider", "containers", "databinding", "display",
+    "ecssystem", "environment", "events", "interactables", "interaction", "layout", "lighting",
+    "media", "menu", "panelcompose", "physics", "richness", "router", "sense", "skeletal",
+    "spatialgestures", "subwindow", "surfaceplace", "swan", "tappable", "webbridge",
   ];
-  for (const [mod, tools] of LANES) {
+  let swept = 0;
+  const uncovered = [];
+  for (const mod of CODEGEN_MODULES) {
     const m = await import(`../dist/${mod}.js`);
-    const reg = Object.values(m).find((x) => typeof x === "function" && /^register/.test(x.name));
-    const h = {};
-    reg({ registerTool: (n, _meta, fn) => { h[n] = fn; } });
-    for (const tool of tools) {
-      if (!h[tool]) { fail(`§7: ${tool} is not registered by ${mod}.ts`); continue; }
-      const res = await h[tool]({ packageName: "com.test.conf.content" });
-      const raw = res.content[0].text;
+    const h = {}, meta = {};
+    for (const reg of Object.values(m).filter((x) => typeof x === "function" && /^register/.test(x.name))) {
+      try { reg({ registerTool: (n, mt, fn) => { h[n] = fn; meta[n] = mt; } }); } catch { /* needs a live server */ }
+    }
+    for (const [tool, fn] of Object.entries(h)) {
+      if (!/^generate_.*_kotlin$/.test(tool)) continue;
+      let args = ARG_OVERRIDES[tool];
+      if (!args) {
+        args = {};
+        for (const [k, v] of Object.entries(meta[tool]?.inputSchema ?? {})) {
+          const s = synth(k, v);
+          if (s !== undefined) args[k] = s;
+        }
+      }
+      let raw;
+      try {
+        const res = await fn(args);
+        raw = res?.content?.[0]?.text ?? "";
+        if (res?.isError) { uncovered.push(`${tool} (isError)`); continue; }
+      } catch (e) { uncovered.push(`${tool} (threw: ${String(e?.message).slice(0, 60)})`); continue; }
       const kt = raw.trimStart().startsWith("{")
-        ? (() => { const j = JSON.parse(raw); return Object.values(j.files ?? {}).join("\n") || j.kotlin || ""; })()
+        ? (() => { try { const j = JSON.parse(raw); return Object.values(j.files ?? {}).join("\n") || j.kotlin || raw; } catch { return raw; } })()
         : raw;
-      const errs = runLint(kt, "kotlin").filter((v) => v.severity === "error").map((v) => v.ruleId).filter(Boolean);
-      assert(errs.length === 0, `${tool} emits no unpaired acquisition${errs.length ? `: ${[...new Set(errs)].join(", ")}` : ""}`);
+      if (!/\b(object|class|fun|import)\b/.test(kt)) { uncovered.push(`${tool} (no kotlin)`); continue; }
+      swept++;
+      const errs = [...new Set(runLint(kt, "kotlin").filter((v) => v.severity === "error").map((v) => v.ruleId).filter(Boolean))];
+      assert(errs.length === 0, `${tool} emits no unpaired acquisition${errs.length ? `: ${errs.join(", ")}` : ""}`);
     }
   }
+  // No silent caps: a tool that cannot be invoked is a COVERAGE HOLE, and a gate that quietly skips
+  // it reads as "everything passed" when it did not.
+  assert(uncovered.length === 0, `every generate_*_kotlin tool is reachable by the sweep${uncovered.length ? ` — uncovered: ${uncovered.join("; ")}` : ""}`);
+  assert(swept >= 33, `the sweep covers the whole codegen surface (swept ${swept})`);
 
   // The specific releases this wave added, asserted by shape so a refactor cannot quietly drop them.
   const anim = await import("../dist/anim.js");
