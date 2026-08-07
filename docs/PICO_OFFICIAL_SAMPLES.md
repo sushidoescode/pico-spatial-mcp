@@ -104,3 +104,41 @@ PICO compose an API; confirm *that* it exists against the jar.
 Our own conformance diff against these samples is
 `.dev/findings/SAMPLES_CONFORMANCE_2026-08-05.md`, and what it changed in our codegen is in
 `.dev/handoffs/HANDOFF_2026-08-06_SAMPLE_CONFORMANCE.md`.
+
+---
+
+## Two contracts the samples teach that no signature states
+
+Both are silent: the compiler is happy, the app runs, and the behaviour is quietly wrong.
+
+### Resource ownership — `toGlobal()` decides who closes
+
+`Resource.kt:35-42`, on `toGlobal()`: a resource is *"tied to the lifecycle of any other instance"*
+until you make it global, and only then *"you need to actively call the close method"*. So:
+
+| Situation | Close it? |
+| --- | --- |
+| Handed to a component (`ModelComponent`, `CollisionComponent`, …) | **No** — the component owns it. Closing is a use-after-free. |
+| You called `toGlobal()` | **Yes** — nothing else ever will. |
+| `AssetBundle`, `CypressMediaPlayer`, `AudioPlayerController` | **Yes** — Closeable but *not* `Resource`, so the tie never applied. |
+
+The samples confirm it both ways: `WelcomeSpace` calls `material.toGlobal()`
+(`FullSpaceRoomViewModel.kt:126`) and closes it (`:168`, guarded by `material.valid`), while
+`Physics` — which never calls `toGlobal` — closes nothing at all. `SpatialVideo` makes two resources
+global (`VideoEffectManager.kt:60,65`) and closes neither, which is a real leak in PICO's own sample.
+
+Enforced by `toglobal-without-close`, `resource-closed-without-toglobal`, `assetbundle-never-closed`
+and `mediaplayer-never-closed`.
+
+### Vibrant lives in the colour bits
+
+`ColorVibrant.kt:33-40`, verbatim: *"The vibrant info is encoded directly into the color bits.
+Operations such as: - Animation interpolation - Gradients - Shader manipulations - Android blending
+will destroy the encoded vibrant info."* Animate a vibrant colour and it keeps rendering — it just
+stops adapting to the glass, with no error to search for. `Vibrant.None` is the deliberate opt-out
+that preserves a literal colour (`SearchPage.kt:140`). Enforced by `vibrant-encoding-destroyed`.
+
+Related: `PicoTheme.colorTokens` is `@hide` + `@RestrictTo(LIBRARY)` (`PicoTheme.kt:38-43`). Every
+one of the sample's four uses is wrapped in `@SuppressLint("RestrictedApi")` — the tell that it is
+not app-side API. Use `PicoTheme.colorScheme` / `.typography` (`PicoTheme.kt:30-36`) instead;
+enforced by `picotheme-colortokens-restricted`.

@@ -444,6 +444,42 @@ export const BUILTIN_RULES: LintRule[] = [
     negativeFixture: "val mat = UnlitMaterial.create()\nmat.toGlobal()\ne.components.set(ModelComponent(mesh, mat))\nfun dispose() { if (mat.valid) mat.close() }",
   },
   {
+    // Vibrant encodes its level INTO THE COLOR BITS, which is why ordinary colour maths erases it.
+    // ColorVibrant.kt:33-40, verbatim: "WARNING: The vibrant info is encoded directly into the color
+    // bits. Operations such as: - Animation interpolation - Gradients - Shader manipulations -
+    // Android blending will destroy the encoded vibrant info."
+    // There is no error and no warning at runtime: the colour simply stops adapting to the glass.
+    id: "vibrant-encoding-destroyed",
+    severity: "warn",
+    kinds: ["kotlin"],
+    // An AND of two positives (uses Vibrant AND does something that erases it), which the
+    // when/unless form cannot express — so it is a `present` rule with two lookaheads.
+    type: "present",
+    pattern: /^(?=[\s\S]*(?:\.\s*withVibrant\s*\(|\bColor\s*\.\s*Vibrant\b))(?=[\s\S]*(?:animateColorAsState|updateTransition|Brush\s*\.\s*(?:linear|radial|sweep|vertical|horizontal)Gradient|\blerp\s*\(|\.\s*copy\s*\(\s*alpha))/,
+    message: "A Vibrant-encoded colour is fed through animation, a gradient, a shader or an alpha copy. Vibrant stores its level in the colour BITS (ColorVibrant.kt:33-40), so these operations silently strip it — the colour keeps rendering, it just stops adapting to the glass.",
+    fix: "Animate something other than the colour (alpha on a wrapper, or crossfade two vibrant colours), or drop Vibrant for that element and use a literal Color(0xFF…).withVibrant(Vibrant.None) — the opt-out idiom PICO use at SearchPage.kt:140. For a static tint prefer the Modifier form: Modifier.vibrantEffect(Vibrant.Neutral).",
+    designRule: "PICO SpatialUI design system (vibrant materials)",
+    positiveFixture: "val c = Color.Vibrant.withVibrant(Vibrant.Dark)\nval a by animateColorAsState(c)",
+    negativeFixture: "val c = Color.Vibrant.withVibrant(Vibrant.Dark)\nText(\"hi\", color = c)",
+  },
+  {
+    // PicoTheme.colorTokens is @hide + @RestrictTo(LIBRARY) (PicoTheme.kt:38-43). PICO's own sample
+    // reaches for it four times and every single one is wrapped in @SuppressLint("RestrictedApi")
+    // (ContentDetailPage.kt:76, :96; FeedsPage.kt:125/144; RelationshipContent.kt:118/124) — which
+    // is the tell that it is not app-side API, not that suppressing it is fine.
+    id: "picotheme-colortokens-restricted",
+    severity: "error",
+    kinds: ["kotlin"],
+    type: "conditional",
+    when: /PicoTheme\s*\.\s*colorTokens\s*\./,
+    unless: /@SuppressLint\s*\(\s*"RestrictedApi"\s*\)/,
+    message: "PicoTheme.colorTokens is restricted design-system internals — @hide and @RestrictTo(LIBRARY) at PicoTheme.kt:38-43. It is not app-side API and can change without notice.",
+    fix: "Use the public roles instead: PicoTheme.colorScheme for colour and PicoTheme.typography for type (PicoTheme.kt:30-36). If you genuinely need a token PICO have not exposed as a role, you must annotate the call site @SuppressLint(\"RestrictedApi\") and accept that it may break on an SDK bump.",
+    designRule: "PICO-SPATIAL-AGENTIC-TOOLS.AGENTS.md (SpatialUI should stay app-side and public)",
+    positiveFixture: "Text(\"t\", color = PicoTheme.colorTokens.LabelPrimary)",
+    negativeFixture: "Text(\"t\", color = PicoTheme.colorScheme.labelPrimary)",
+  },
+  {
     // The INVERSE error, and the more dangerous direction: closing a resource the app does not own.
     // A leak costs memory; this crashes, and only on teardown, where it is hardest to attribute.
     // Deliberately a WARNING and deliberately narrow (named mesh/material/shape/texture locals in a
