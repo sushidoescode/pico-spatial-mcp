@@ -808,7 +808,23 @@ console.log("\n§2.6 skeletal animation, and the provenance rule that decides di
   assert(playBody && !/\.close\(\)/.test(playBody), "switching clips does NOT close the previous one");
   assert(/clips\?\.forEach \{ runCatching \{ it\.close\(\) \} \}/.test(disposeBody),
     "dispose() is the ONE place model-owned clips are closed");
-  assert((kt.match(/\.close\(\)/g) || []).length === 1, "there is exactly one close() call in the file");
+  // v35.25: there are now TWO close sites, and that is the point — two ownership classes, not one.
+  // The model's clips are model-owned; anything AnimationResource.repeat() returns is app-created
+  // (AnimationResource.kt:55-68 "Creates a new animation resource") and therefore ours to close.
+  // Same type, opposite policy. What must stay invariant is that EVERY close is inside dispose().
+  assert(/derived\.forEach \{ runCatching \{ it\.close\(\) \} \}/.test(disposeBody),
+    "dispose() also closes the repeat()-derived resources, which the app created");
+  assert((kt.match(/\.close\(\)/g) || []).length === (disposeBody.match(/\.close\(\)/g) || []).length,
+    "every close() in the file is inside dispose() — none in stop(), none on clip switch");
+  assert((kt.match(/\.close\(\)/g) || []).length === 2, "exactly two close() calls: model-owned clips, and app-derived resources");
+
+  // A failed playAnimation must be LOGGED. A bare runCatching here is what made the on-device
+  // experiment inconclusive: "no motion because it threw" and "no motion because the clip finished"
+  // are indistinguishable from a capture unless the failure says so.
+  assert(/playAnimation\([\s\S]{0,80}?\)[\s\S]{0,80}?\.onFailure/.test(kt),
+    "a failed playAnimation is logged, not swallowed");
+  assert(/AnimationPlayConfig has NO loop field|repeat\(count\)/.test(kt),
+    "the play-once/repeat() trap is stated in the emitted file");
 
   const errs = runLint(kt, "kotlin").filter((v) => v.severity === "error").map((v) => v.ruleId).filter(Boolean);
   assert(errs.length === 0, `skeletal output is lint-clean${errs.length ? `: ${errs.join(", ")}` : ""}`);
