@@ -77,6 +77,10 @@ function payloadLines(family: Family, event: string, indent: string): string[] {
         `${i}// no position, impulse, penetrationDistance or contacts. Reading those does not compile.`,
         `${i}val a = event.entityA ?: return@subscribe`,
         `${i}val b = event.entityB ?: return@subscribe`,
+        `${i}// MEASURED 2026-08-06 on emulator-5554 (ledger com.picoagent.v35expc#1): the bus delivers`,
+        `${i}// every collision TWICE, once per ordering — (a,b) and (b,a), same contact point, ~1ms`,
+        `${i}// apart. Without this guard a score++/sound/spawn in the handler fires twice per hit.`,
+        `${i}if (!endContact(a, b)) return@subscribe`,
         `${i}Log.i(TAG, "collision Exit " + a.getName() + " <-> " + b.getName())`,
         `${i}onCollisionExit?.invoke(a, b)`,
       ];
@@ -87,6 +91,15 @@ function payloadLines(family: Family, event: string, indent: string): string[] {
       `${i}// event.contacts is EMPTY unless the CollisionComponent asked for DETAILED.`,
       `${i}val a = event.entityA ?: return@subscribe`,
       `${i}val b = event.entityB ?: return@subscribe`,
+      ...(event === "Enter"
+        ? [
+            `${i}// MEASURED 2026-08-06 on emulator-5554 (ledger com.picoagent.v35expc#1): the bus`,
+            `${i}// delivers every collision TWICE, once per ordering — (a,b) and (b,a), same contact`,
+            `${i}// point, ~1ms apart. A raw handler double-counts every hit. beginContact() collapses`,
+            `${i}// the pair to ONE call and stays correct across bounces, because Exit clears the key.`,
+            `${i}if (!beginContact(a, b)) return@subscribe`,
+          ]
+        : []),
       `${i}Log.i(TAG, "collision ${event} " + a.getName() + " <-> " + b.getName() + " at " + event.position)`,
       `${i}onCollision${event}?.invoke(a, b, event.position)`,
     ];
@@ -200,6 +213,31 @@ export function generateEventSubscriptionKotlin(args: EventArgs): string {
     `    // PICO's SpatialMesh sample never cancels its collision subscription at all.`,
     `    private val subscriptions = mutableListOf<Cancellable>()`,
     ``,
+    ...(collision.length
+      ? [
+          `    // ACTIVE CONTACTS, keyed ORDERLESS. Measured on emulator-5554 2026-08-06 (ledger`,
+          `    // com.picoagent.v35expc#1): a DYNAMIC sphere landing on a STATIC pad produced`,
+          `    //     Enter DropSphere <-> PadStatic   at (-1.2, 0.95, -2.0)`,
+          `    //     Enter PadStatic  <-> DropSphere  at (-1.2, 0.95, -2.0)   <- same hit, 1ms later`,
+          `    // and the same doubling on Exit. The bus reports each collision from BOTH participants'`,
+          `    // perspectives; nothing in the signature says so. Entity.id is the documented unique id`,
+          `    // (Entity.kt:126) — names are not unique and are not safe as a key.`,
+          `    private val activeContacts = mutableSetOf<Long>()`,
+          ``,
+          `    private fun pairKey(a: Entity, b: Entity): Long {`,
+          `        val lo = minOf(a.id, b.id)`,
+          `        val hi = maxOf(a.id, b.id)`,
+          `        return lo * 31L + hi   // orderless: (a,b) and (b,a) collapse to one key`,
+          `    }`,
+          ``,
+          `    /** True for the FIRST delivery of a contact; false for the mirrored duplicate. */`,
+          `    private fun beginContact(a: Entity, b: Entity): Boolean = activeContacts.add(pairKey(a, b))`,
+          ``,
+          `    /** True for the FIRST delivery of a separation. Clearing the key lets a bounce re-fire. */`,
+          `    private fun endContact(a: Entity, b: Entity): Boolean = activeContacts.remove(pairKey(a, b))`,
+          ``,
+        ]
+      : []),
     ...callbacks,
     ``,
     `    /** Subscribe every configured event. @MainThread — call from SpatialView's initial block. */`,
@@ -218,6 +256,7 @@ export function generateEventSubscriptionKotlin(args: EventArgs): string {
     `    fun unsubscribeAll() {`,
     `        subscriptions.forEach { runCatching { it.cancel() } }`,
     `        subscriptions.clear()`,
+    ...(collision.length ? [`        activeContacts.clear()   // stale keys would suppress the first hit after re-subscribing`] : []),
     `        Log.i(TAG, "unsubscribed")`,
     `    }`,
     `}`,
@@ -230,7 +269,7 @@ export function registerEventTools(server: McpServer) {
     "generate_event_subscription_kotlin",
     {
       description:
-        "Emit SceneEvents.kt — the SDK EVENT BUS (content.subscribe(eventType, subscriber): Cancellable), covering collision, animation and audio events in ONE generator because they share one bus. WHY IT EXISTS: before this, grep for CollisionEvents / content.subscribe / AudioEvents / AnimationEvents across our whole codegen returned nothing — generated apps could SIMULATE but not REACT, so 'ball hits pin -> score' had to be polled from the agent bridge instead of handled in-app. FIVE THINGS IT ENCODES, all jar-cited: (1) subscriptions are held in a LIST and all cancelled — an app subscribing to three event types with one Cancellable? silently leaks two, and PICO's own SpatialMesh sample never cancels its collision subscription at all, so we follow the sample that gets it right; (2) it emits the direct concrete-class-literal form rather than the samples' generic `when (event) { X::class.java -> }` wrapper, which only compiles thanks to Kotlin's equality-based smart cast and is a trap for a generator; (3) CollisionEvents.Exit carries ONLY entityA/entityB — no position, impulse or contacts, unlike Enter/Update — so payload handling is generated per event rather than assumed uniform; (4) THE REPORTING PRECONDITION: collision events fire only when at least one body is DYNAMIC, so two static colliders touching fire nothing silently, and the escape hatch is PhysicsWorldComponent.kinematicCollisionReportMode (default NONE) — stated in the emitted file because 'my handler never fires' is otherwise unsearchable; (5) event.contacts is EMPTY under the default BRIEF detail level, which gives averaged position and accumulated impulse only — DETAILED is what populates per-contact data. HONEST STATUS: structural — jar-cited and sample-shaped; capture evidence before claiming a handler fired on device.",
+        "Emit SceneEvents.kt — the SDK EVENT BUS (content.subscribe(eventType, subscriber): Cancellable), covering collision, animation and audio events in ONE generator because they share one bus. WHY IT EXISTS: before this, grep for CollisionEvents / content.subscribe / AudioEvents / AnimationEvents across our whole codegen returned nothing — generated apps could SIMULATE but not REACT, so 'ball hits pin -> score' had to be polled from the agent bridge instead of handled in-app. FIVE THINGS IT ENCODES, all jar-cited: (1) subscriptions are held in a LIST and all cancelled — an app subscribing to three event types with one Cancellable? silently leaks two, and PICO's own SpatialMesh sample never cancels its collision subscription at all, so we follow the sample that gets it right; (2) it emits the direct concrete-class-literal form rather than the samples' generic `when (event) { X::class.java -> }` wrapper, which only compiles thanks to Kotlin's equality-based smart cast and is a trap for a generator; (3) CollisionEvents.Exit carries ONLY entityA/entityB — no position, impulse or contacts, unlike Enter/Update — so payload handling is generated per event rather than assumed uniform; (4) THE REPORTING PRECONDITION: collision events fire only when at least one body is DYNAMIC, so two static colliders touching fire nothing silently, and the escape hatch is PhysicsWorldComponent.kinematicCollisionReportMode (default NONE) — stated in the emitted file because 'my handler never fires' is otherwise unsearchable; (5) event.contacts is EMPTY under the default BRIEF detail level, which gives averaged position and accumulated impulse only — DETAILED is what populates per-contact data. (6) THE MIRRORED-DELIVERY TRAP, measured not read: the bus delivers every collision TWICE from a SINGLE subscribe — once as (entityA,entityB) and once as (entityB,entityA), same averaged contact point, ~1ms apart — so a raw score++/sound/spawn handler double-counts every hit, and nothing in the signature or KDoc says so. The emitted file collapses the pair with an orderless guard keyed on Entity.id (Entity.kt:126; names are not unique), and Exit clears the key so a bounce still re-fires. HONEST STATUS: verified on emulator-5554 (ledger com.picoagent.v35expc#1). A dynamic sphere dropped on a static pad fired 6 raw events and exactly 3 after the guard (Enter, Exit, Enter — the bounce survives); a static box resting on a static box fired ZERO, independently confirming the dynamic-body precondition in (4). Animation and audio events remain structural — not yet exercised on device.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package for the emitted file, e.g. com.example.app.content"),
         collision: z.array(z.enum(COLLISION)).optional().describe("Collision events to subscribe. Enter = first contact, Update = every frame while in contact, Exit = separation (entityA/entityB ONLY). Default ['Enter']."),
