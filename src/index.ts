@@ -48,6 +48,7 @@ import { registerCapabilityTools } from "./capability.js";
 import { registerAgentBridgeTools } from "./agentbridge.js";
 import { registerCaptureTools } from "./capture.js";
 import { registerEmulatorLookTools } from "./emulatorlook.js";
+import { registerCameraDriveTools } from "./cameradrive.js";
 import { registerEditorComponentTools } from "./editorcomponent.js";
 import { registerEditorV32Tools } from "./editorv32.js";
 import { registerAssertSceneTools } from "./assertscene.js";
@@ -222,6 +223,7 @@ if (!doorsSurfaceActive()) {
   registerAgentBridgeTools(server);
   registerCaptureTools(server);
   registerEmulatorLookTools(server);
+  registerCameraDriveTools(server);
   registerEditorComponentTools(server);
   registerEditorV32Tools(server);
   registerAssertSceneTools(server);

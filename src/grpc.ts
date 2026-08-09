@@ -68,7 +68,7 @@ function getEndpoint(): { address: string; metadata: grpc.Metadata } | { error: 
   return { address: `127.0.0.1:${port}`, metadata };
 }
 
-function getClient(toolsVersion?: string): { client: grpc.Client & Record<string, any>; metadata: grpc.Metadata } | { error: string } {
+export function getClient(toolsVersion?: string): { client: grpc.Client & Record<string, any>; metadata: grpc.Metadata } | { error: string } {
   const p = loadProto(toolsVersion);
   if ("error" in p) return p;
   const ep = getEndpoint();
@@ -80,7 +80,7 @@ function getClient(toolsVersion?: string): { client: grpc.Client & Record<string
   return { client, metadata: ep.metadata };
 }
 
-function unary(client: any, method: string, request: unknown, metadata: grpc.Metadata, timeoutMs = 15_000): Promise<any> {
+export function unary(client: any, method: string, request: unknown, metadata: grpc.Metadata, timeoutMs = 15_000): Promise<any> {
   return new Promise((resolve, reject) => {
     if (typeof client[method] !== "function") return reject(new Error(`RPC method not found in proto: ${method}`));
     const deadline = new Date(Date.now() + timeoutMs);
@@ -245,12 +245,12 @@ export function registerGrpcTools(server: McpServer) {
         works: {
           screenshots: "streamScreenshot (live); display 0 = home env + 2D panels only",
           sensors: "setSensor / setPhysicalModel (accelerometer/gyro/etc.)",
-          keys_touch: "sendKey / sendTouch / sendMouse (drive 2D UI and keyboard-mapped controller buttons)",
+          keys_touch: "sendKey / sendTouch / sendMouse (drive 2D UI and keyboard-mapped controller buttons). CORRECTION 2026-08-08: sendKey w/a/s/d/q/e holds ALSO drive the free-cam WALK (translation) when the emulator window is frontmost — applies in ~0.5s plus an inertia tail, so settle-wait before judging captures. Rotation still needs the right-drag CGEvent lane (sendMouse does NOT rotate). See capture_orbit / capture_multiview.",
           xr_options: "setXrOptions / getXrOptions (passthrough coefficient, environment)",
           recenter: "xr_command RECENTER (accepted; effect unverified)",
         },
         gated_or_unavailable: {
-          head_pose: "xr_head_rotation/movement accepted but NOT applied to the rendered view on 0.13.1 — gated behind the GUI's WASD camera mode (virtualscene WASDInputHandler), which has no gRPC/console/keyboard entry point",
+          head_pose: "xr_head_rotation/movement accepted but NOT applied to the rendered view on 0.13.1 (re-tested 2026-08-08: one apparent success was actually the glide-tail of a preceding sendKey W-hold; controlled retests with settle-watching all no-op'd)",
           controller_6dof_pose: "no per-controller 6DOF pose RPC exists; controllers are keyboard-mapped (see controller_map/controller_press)",
           hand_skeleton: "MediaPipe webcam pipeline runs in the GUI process; no injection API",
         },
@@ -259,7 +259,7 @@ export function registerGrpcTools(server: McpServer) {
           menu_clicks: "the mouse bridge (setup_mouse_bridge) delivers real clicks on the in-world GameMenu; broadcast DEBUG_CMD drives interactions headlessly",
         },
         recommendation:
-          "For automated scene/app verification, use capture_frame / capture_canonical (visual ground truth) + inspect_bundle (structural geometry/material counts) + spatial runtime logcat. Head-pose remains a GUI-only concern on this build, but immersive CAPTURE is fully headless.",
+          "For automated scene/app verification, use capture_orbit / capture_multiview to LOOK from several angles (walks via gRPC sendKey, look via right-drag), with capture_frame as the no-move capture. A single forward view cannot verify a 3D layout. Direct head-pose injection remains unavailable, but the free-cam walk makes multi-angle capture fully scriptable.",
         rpcMethodCount: methods.length,
       });
     },
