@@ -2,6 +2,18 @@
 
 Versions here key the plugin manifests (`/plugin update` uses them as its cache key).
 
+## 36.5.1 — 2026-08-12
+- **`pico_loop`: an eye ESCALATE is a look obligation, not a defect** — found by the first
+  live loop run (crystals brief on the emulator): the eye escalated (high-coverage
+  passthrough frames are machine-unjudgeable by design), and the loop wrongly treated that
+  as a repairable failure. New `needs-look` criterion state: verdict PASS = pass, FAIL =
+  repairable, anything else = needs-look; once everything measurable passes the loop exits
+  **`built-needs-look`** with the capture in `remainingLookObligation` — repair never
+  mutates an app nothing has judged wrong. Live-verified twice on the emulator (26 s):
+  before the fix the same goal dead-ended no-progress; after it, built-needs-look with the
+  capture handed over. The capture was then LOOKED at and the three-crystals claim recorded
+  `vision_verified` with an honest attestation (spin/menu/stone-floor explicitly unproven).
+
 ## 36.5.0 — 2026-08-12
 - **Perf loop lane in `pico_loop`** (the 2026-08-12 call's second lane): a perf acceptance
   criterion now makes the loop a measure→fix→re-measure cycle with the evidence kept —

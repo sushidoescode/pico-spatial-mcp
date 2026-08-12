@@ -45,8 +45,13 @@ export function picoFixDecision(error: string): { symptom: string | null; nextAc
 
 /** One acceptance criterion's outcome inside a pico_loop iteration. `unmeasurable` is an HONEST
  * third state: the criterion could not be checked on this machine (missing pico-cli perf
- * utilities, no Agent Bridge, …) — it never silently passes and it is not a repairable failure. */
-export type LoopCriterionOutcome = { kind: string; status: "pass" | "fail" | "unmeasurable"; detail?: string };
+ * utilities, no Agent Bridge, …) — it never silently passes and it is not a repairable failure.
+ * `needs-look` is the eye's ESCALATE: the machine cannot judge this frame class (measured: on
+ * high-coverage passthrough frames count/color checks carry zero confidence) — not a defect to
+ * repair, and never a pass; when it is the ONLY thing short of acceptance the loop exits
+ * built-needs-look (first live-observed 2026-08-12: crystals brief, eye ESCALATE, a replan would
+ * have mutated a correct app). */
+export type LoopCriterionOutcome = { kind: string; status: "pass" | "fail" | "unmeasurable" | "needs-look"; detail?: string };
 
 /** Signature of an iteration's failure state for the no-progress detector: failing/unmeasurable
  * criteria only, first line of each detail (tails carry paths/timings that vary run to run), with
@@ -542,7 +547,10 @@ export function registerDoorTools(server: McpServer) {
       "returns a remainingLookObligation naming the artifacts a person or vision-capable agent must " +
       "still LOOK at before any vision_verified claim. A no-progress detector stops after two " +
       "consecutive iterations failing with the identical signature; an unmeasurable criterion " +
-      "(missing perf utilities, no Agent Bridge) stops the loop honestly instead of silently passing. " +
+      "(missing perf utilities, no Agent Bridge) stops the loop honestly instead of silently passing; " +
+      "an eye ESCALATE (a frame class the machine cannot judge, e.g. high-coverage passthrough) exits " +
+      "built-needs-look once everything measurable passes — escalation is a look obligation, never a " +
+      "defect to repair. " +
       "PERF LOOP LANE: a perf criterion turns the loop into measure→fix→re-measure — every iteration's " +
       "pico-cli appFps numbers are ledgered and returned as perfTrend (before→after, structural " +
       "evidence), and a perf failure carries pico-cli's own diagnosis engine verdict, never a guess. " +
@@ -556,7 +564,7 @@ export function registerDoorTools(server: McpServer) {
       draftSpec: z.any().optional().describe("An authored AppSpec to iterate from (recommended — the planner never guesses intent as well as you author it). Omitted: the loop starts from the planner's archetype scaffold and says so."),
       acceptance: z
         .array(z.object({
-          kind: z.enum(["structural", "visual", "logcat", "perf"]).describe("structural = Agent Bridge scene asserts; visual = the calibrated eye's PASS on the canonical capture (auto_judged); logcat = assert_logcat pattern; perf = pico-cli appFps p5 floor."),
+          kind: z.enum(["structural", "visual", "logcat", "perf"]).describe("structural = Agent Bridge scene asserts; visual = the calibrated eye's PASS on the canonical capture (auto_judged; an eye ESCALATE becomes the built-needs-look exit, not a failure); logcat = assert_logcat pattern; perf = pico-cli appFps p5 floor."),
           entitiesPresent: z.array(z.string()).optional().describe("structural: entity names that must exist."),
           minEntities: z.number().int().optional().describe("structural: minimum entity count."),
           componentsPresent: z.array(z.string()).optional().describe("structural: component class names that must exist."),
@@ -650,9 +658,16 @@ export function registerDoorTools(server: McpServer) {
         } else {
           for (const c of acceptance) {
             if (c.kind === "visual") {
+              // Three-way, matching the eye's own vocabulary: PASS = auto_judged; FAIL = the eye
+              // AFFIRMATIVELY judged the content wrong (repairable); anything else (ESCALATE /
+              // unknown / unscored) = the machine cannot judge this frame class — needs-look,
+              // never a repairable failure (replanning a possibly-correct app is worse than
+              // stopping and asking for the look).
               outcomes.push(r.verdict === "PASS"
                 ? { kind: "visual", status: "pass", detail: `eye verdict PASS (auto_judged); capture ${r.artifact ?? "n/a"}` }
-                : { kind: "visual", status: "fail", detail: `eye verdict ${r.verdict ?? "none"}; notes: ${(r.notes ?? []).slice(-3).join(" | ") || "none"}` });
+                : r.verdict === "FAIL"
+                  ? { kind: "visual", status: "fail", detail: `eye verdict FAIL; notes: ${(r.notes ?? []).slice(-3).join(" | ") || "none"}` }
+                  : { kind: "visual", status: "needs-look", detail: `eye verdict ${r.verdict ?? "unscored"} — the machine cannot judge this frame class; capture ${r.artifact ?? "n/a"}` });
             } else if (c.kind === "structural") {
               // assert_scene, not the "verify" orchestrator: verify's TEXT content is prose for a
               // reading agent (its JSON lives in structuredContent, which innerCall's text-parse
@@ -719,8 +734,9 @@ export function registerDoorTools(server: McpServer) {
           : `NOT recorded: ${(typeof led === "string" ? led : JSON.stringify(led ?? null)).slice(0, 200)}`;
         iterationsLog.push({ iteration: i, outcomes, capture: r.artifact ?? null, ledger });
 
-        const failing = outcomes.filter((o) => o.status !== "pass");
-        if (!failing.length) {
+        const needsLook = outcomes.filter((o) => o.status === "needs-look");
+        const failing = outcomes.filter((o) => o.status === "fail" || o.status === "unmeasurable");
+        if (!failing.length && !needsLook.length) {
           return exit("accepted", i, {
             ceiling: "auto_judged",
             remainingLookObligation: [
@@ -728,6 +744,19 @@ export function registerDoorTools(server: McpServer) {
               ...(r.panelArtifact ? [{ artifact: r.panelArtifact, whatToConfirm: "panel content renders as intended (panel captures are returned unjudged)" }] : []),
             ],
             honesty: "auto_judged is this loop's ceiling BY DESIGN — every acceptance criterion was machine-checked, none human-seen. LOOK at each remainingLookObligation artifact (or have a vision-capable agent do it), then record what you saw with pico_record {evidenceType:'vision_verified'}.",
+          });
+        }
+        if (!failing.length) {
+          // Everything measurable passed; what remains is the eye's ESCALATE. That is the loop's
+          // honest terminal state for this frame class — machine acceptance is impossible, and
+          // repair would mutate an app nothing has judged wrong.
+          return exit("built-needs-look", i, {
+            needsLook,
+            remainingLookObligation: [
+              { artifact: r.artifact ?? null, whatToConfirm: `the running app actually shows the goal: ${goal}` },
+              ...(r.panelArtifact ? [{ artifact: r.panelArtifact, whatToConfirm: "panel content renders as intended (panel captures are returned unjudged)" }] : []),
+            ],
+            honesty: "The calibrated eye ESCALATEd — this frame class cannot be machine-judged (measured: high-coverage passthrough frames give count/color checks zero confidence). Everything measurable passed. LOOK at the capture (or have a vision-capable agent do it), then record what you actually saw with pico_record {evidenceType:'vision_verified'} — that look, not this loop, decides success.",
           });
         }
         if (failing.some((o) => o.status === "unmeasurable"))
