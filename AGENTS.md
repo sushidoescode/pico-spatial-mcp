@@ -4,6 +4,16 @@
 Gemini CLI and any other MCP host get the same contract. The server is plain stdio MCP — no
 host-specific behavior. Registration per host: [docs/HOSTS.md](docs/HOSTS.md).)*
 
+## Register first (any host)
+
+- **Claude Code**: `claude plugin marketplace add sushidoescode/pico-spatial-mcp` then
+  `claude plugin install pico-spatial-mcp@pico-mcp`.
+- **Codex CLI**: clone + `npm ci && npm run build`, then
+  `codex mcp add pico-spatial --env PICO_MCP_SURFACE=doors -- node /abs/path/PICO-MCP/dist/index.js`.
+- **Any MCP host**: plain stdio registration — [docs/HOSTS.md](docs/HOSTS.md) has every snippet.
+
+Start with `pico_doctor` (read-only; names the exact fix for anything missing).
+
 ## The one rule that is not negotiable
 
 **"Verified" means someone LOOKED at a rendered frame.** Never claim a visual result from a

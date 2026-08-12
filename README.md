@@ -5,6 +5,43 @@ An MCP server that lets AI agents build **PICO XR spatial apps end-to-end on the
 > ### The honesty invariant
 > "Verified" means an agent or human **looked at a rendered frame** — never a compile, a log line, or a pixel heuristic. Every visual claim is recorded in a trust ledger that *structurally rejects* a `vision_verified` entry without a linked, looked-at capture. Honest deferral (`structural`, `built-for-Swan`, "I tried X and it failed") is always acceptable; a silent over-claim is the only unforgivable failure.
 
+## Install in two minutes
+
+The server is **plain stdio MCP** — it works in any MCP-capable host; the plugin marketplaces are
+per-host conveniences on top of the same engine. While this repo is invite-only, every path below
+requires your GitHub access.
+
+**Claude Code** (plugin marketplace):
+
+```bash
+claude plugin marketplace add sushidoescode/pico-spatial-mcp
+claude plugin install pico-spatial-mcp@pico-mcp
+```
+
+**OpenAI Codex CLI**:
+
+```bash
+git clone https://github.com/sushidoescode/pico-spatial-mcp ~/PICO-MCP
+cd ~/PICO-MCP && npm ci && npm run build
+codex mcp add pico-spatial --env PICO_MCP_SURFACE=doors -- node "$HOME/PICO-MCP/dist/index.js"
+```
+
+**Any other MCP host** (Cursor, Windsurf, VS Code Copilot, Gemini CLI, …) — register the same
+stdio command; substitute your absolute clone path:
+
+```json
+{ "mcpServers": { "pico-spatial": {
+    "command": "node", "args": ["/abs/path/PICO-MCP/dist/index.js"],
+    "env": { "PICO_MCP_SURFACE": "doors" } } } }
+```
+
+Per-host detail and per-host verification status: [docs/HOSTS.md](docs/HOSTS.md). First call:
+`pico_doctor` — read-only, names the exact fix for anything missing. No PICO SDK or emulator yet?
+The doctor, SDK-knowledge, codegen, and lint lanes work on any machine.
+
+> **AI agents landing in this repo:** read [AGENTS.md](AGENTS.md) first — the machine-oriented
+> contract for driving this server (registration, surfaces, and the honesty rule).
+
 ## What you can use this for, today
 
 Concrete jobs this tool does on a stock PICO OS 6 emulator install, each backed by ledger evidence you can audit:

@@ -66,7 +66,12 @@ also historically verified (doors surface shown):
 claude mcp add pico-spatial --scope user --env PICO_MCP_SURFACE=doors -- node /abs/path/PICO-MCP/dist/index.js
 ```
 
-## OpenAI Codex CLI — historical plain-MCP verification (codex-cli 0.144.6, 2026-07-22)
+## OpenAI Codex CLI — plain-MCP registration re-verified (codex-cli 0.147.0, 2026-08-12)
+
+Fresh evidence: `codex mcp add pico-spatial --env PICO_MCP_SURFACE=doors -- node <abs>/dist/index.js`
+on codex-cli **0.147.0** registers and lists the server (`enabled`, transport `stdio`) on the current
+tree. Scope honestly stated: registration + listing verified; a tool-call round-trip inside a live
+Codex session was last exercised on 0.144.6 (2026-07-22, below).
 
 This evidence applies to the absolute plain-MCP registration below, not to a post-change live install
 of the `.codex-plugin` layout.

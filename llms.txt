@@ -1,0 +1,13 @@
+# pico-spatial-mcp
+
+> MCP server that builds PICO OS 6 / Spatial SDK apps from natural-language briefs and
+> vision-verifies them on the PICO emulator: 248 tools (macOS) / 245 (other hosts), a curated
+> 17-tool "doors" surface, a trust ledger where "verified" means a rendered frame was looked at.
+
+## Start here
+- [README.md](README.md): what it is, install in two minutes (Claude Code / Codex / any MCP host)
+- [AGENTS.md](AGENTS.md): the agent contract — registration, surfaces, the honesty rule
+- [docs/HOSTS.md](docs/HOSTS.md): per-host registration snippets + verification status
+- [GETTING_STARTED.md](GETTING_STARTED.md): guided first session (tarball or clone)
+- [QUICKSTART.md](QUICKSTART.md): shortest path to a verified APK
+- [SKILLS.md](SKILLS.md): task-shaped skill guides the server exposes
