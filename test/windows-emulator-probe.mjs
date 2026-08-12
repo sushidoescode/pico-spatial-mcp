@@ -49,7 +49,7 @@ test("collectWindowsEmulatorProbe records the bounded Windows install-channel co
     },
     {
       command: "npm",
-      arguments: ["install", "-g", "@picoxr/pico-cli"],
+      arguments: ["install", "-g", "@picoxr/pico-cli@latest", "--no-audit", "--no-fund"],
       options: { env, timeoutMs: 120_000, maxOutputBytes: 64 * 1024 },
     },
     {
@@ -59,7 +59,7 @@ test("collectWindowsEmulatorProbe records the bounded Windows install-channel co
     },
     {
       command: "C:\\npm\\pico-cli.CMD",
-      arguments: ["emulator", "install", "--help"],
+      arguments: ["emulator", "install", "--source", "auto", "--yes", "--help"],
       options: { env, timeoutMs: 30_000, maxOutputBytes: 64 * 1024 },
     },
     {

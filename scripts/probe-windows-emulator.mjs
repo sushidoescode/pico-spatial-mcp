@@ -59,10 +59,10 @@ export async function collectWindowsEmulatorProbe({
     }
   };
   const npmLatest = await run("npm", ["view", "@picoxr/pico-cli", "version", "--json"], STANDARD_TIMEOUT_MS);
-  const cliInstall = await run("npm", ["install", "-g", "@picoxr/pico-cli"], INSTALL_TIMEOUT_MS);
+  const cliInstall = await run("npm", ["install", "-g", "@picoxr/pico-cli@latest", "--no-audit", "--no-fund"], INSTALL_TIMEOUT_MS);
   const cliPath = resolveCli(env, platform) ?? "pico-cli";
   const cliVersion = await run(cliPath, ["-v"], STANDARD_TIMEOUT_MS);
-  const emulatorInstallHelp = await run(cliPath, ["emulator", "install", "--help"], STANDARD_TIMEOUT_MS);
+  const emulatorInstallHelp = await run(cliPath, ["emulator", "install", "--source", "auto", "--yes", "--help"], STANDARD_TIMEOUT_MS);
   const emulatorStatus = await run(cliPath, ["emulator", "status", "--format", "json"], STANDARD_TIMEOUT_MS);
 
   return {
