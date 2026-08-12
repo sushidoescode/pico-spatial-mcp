@@ -1,0 +1,35 @@
+name: windows-emulator-probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Verify the probe contract
+        run: node --test test/windows-emulator-probe.mjs
+      - name: Probe the official emulator install channel
+        env:
+          PICO_WINDOWS_PROBE_OUT: ${{ runner.temp }}\windows-emulator-probe.json
+          PICO_WINDOWS_PROBE_SHA: ${{ github.sha }}
+        run: node scripts/probe-windows-emulator.mjs
+      - name: Upload the bounded evidence record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-emulator-probe
+          path: ${{ runner.temp }}\windows-emulator-probe.json
+          retention-days: 30
+          if-no-files-found: error

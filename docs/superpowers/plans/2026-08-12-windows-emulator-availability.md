@@ -129,17 +129,16 @@ git diff -- test/windows-emulator-probe.mjs scripts/probe-windows-emulator.mjs .
 
 Expected: no whitespace errors, YAML formatting passes, and the diff contains no emulator-install invocation lacking `--help`.
 
-- [ ] **Step 7: Commit and push the probe**
+- [ ] **Step 7: Commit the probe for review**
 
 Run:
 
 ```bash
 git add docs/superpowers/plans/2026-08-12-windows-emulator-availability.md test/windows-emulator-probe.mjs scripts/probe-windows-emulator.mjs .github/workflows/windows-emulator-probe.yml
 git commit -m "probe(windows): measure the emulator install channel"
-git push origin main
 ```
 
-Expected: the private repository remains private, the push starts the normal four-job `gates` workflow, and the manual probe workflow becomes dispatchable on `main`.
+Expected: the task commit is reviewable on the isolated branch. Do not push until the task review is clean.
 
 ---
 
@@ -158,6 +157,7 @@ Expected: the private repository remains private, the push starts the normal fou
 Run:
 
 ```bash
+git push origin HEAD:main
 gh workflow run windows-emulator-probe.yml --repo sushidoescode/pico-spatial-mcp --ref main
 gh run list --repo sushidoescode/pico-spatial-mcp --workflow windows-emulator-probe.yml --limit 1 --json databaseId,headSha,status,conclusion,url
 ```
@@ -225,7 +225,7 @@ Run:
 ```bash
 git add docs/findings/WINDOWS_EMULATOR_AVAILABILITY_2026-08-12.md
 git commit -m "docs(windows): record the measured emulator availability ceiling"
-git push origin main
+git push origin HEAD:main
 ```
 
 Expected: the commit claims no more than the Windows artifact proves.
