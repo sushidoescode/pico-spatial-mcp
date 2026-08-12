@@ -10,7 +10,8 @@ import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
  * doors.ts — THE DOORS (v21): an intent-level facade over the full tool surface.
  *
  * The full surface is a moat for us and a wall for everyone else. With
- * `PICO_MCP_SURFACE=doors`, the server registers 16 tools (15 doors + validate_toolchain);
+ * `PICO_MCP_SURFACE=doors`, the server registers 17 tools (15 doors + validate_toolchain +
+ * ensure_pico_cli);
  * each door orchestrates the full machinery through an internal client that
  * spawns the full-surface server on demand. Default surface stays "full" (all tools + the doors,
  * additive and backward compatible).
@@ -38,31 +39,60 @@ export function picoFixDecision(error: string): { symptom: string | null; nextAc
   return found ? { symptom: found[1], nextAction: found[2] } : { symptom: null, nextAction: "Apply the highest-confidence lint or diagnosis match; if none applies, solve and record the new lesson." };
 }
 
-let cached: { call: (name: string, args?: any) => Promise<any>; close: () => Promise<void> } | null = null;
+type InnerCache = {
+  call: (name: string, args?: any) => Promise<any>;
+  close: () => Promise<void>;
+  inheritedPath: string | undefined;
+};
+
+let cached: InnerCache | null = null;
+
+/** PATH is case-insensitive on Windows, where Node commonly exposes it as `Path`. */
+function inheritedPath(env: NodeJS.ProcessEnv): string | undefined {
+  if (process.platform !== "win32") return env.PATH;
+  const key = Object.keys(env).find((name) => name.toUpperCase() === "PATH");
+  return key ? env[key] : undefined;
+}
 
 async function inner() {
+  // ensure_pico_cli may expose npm's global bin by extending the outer server's PATH. An inner
+  // server spawned before that change cannot see the newly installed CLI, so retire its cached
+  // environment snapshot before routing the next door call through it.
+  if (cached && cached.inheritedPath !== inheritedPath(process.env)) await cached.close();
   if (cached) return cached;
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
   const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
+  const childEnv: Record<string, string> = {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    ),
+    PICO_MCP_SURFACE: "full",
+    PICO_MCP_OUTER_SURFACE: "doors",
+  };
   const transport = new StdioClientTransport({
     command: "node",
     args: [path.join(here, "index.js")],
     cwd: path.dirname(here),
     // The inner server runs on the full surface, but remedies it produces are read by a DOORS user.
     // Carry the outer surface through so guidance can name the route out of it (see calibrationRoute).
-    env: { ...process.env, PICO_MCP_SURFACE: "full", PICO_MCP_OUTER_SURFACE: "doors" },
+    env: childEnv,
   });
   const client = new Client({ name: "doors", version: "1" });
   await client.connect(transport);
-  cached = {
+  const entry: InnerCache = {
+    inheritedPath: inheritedPath(childEnv),
     call: async (name: string, args: any = {}) => {
       const r: any = await client.callTool({ name, arguments: args }, undefined, { timeout: 2_700_000 });
       const text = (r.content ?? []).map((c: any) => (c.type === "text" ? c.text : "")).join("\n");
       try { return JSON.parse(text); } catch { return text; }
     },
-    close: async () => { await client.close().catch(() => {}); cached = null; },
+    close: async () => {
+      await client.close().catch(() => {});
+      if (cached === entry) cached = null;
+    },
   };
+  cached = entry;
   return cached;
 }
 

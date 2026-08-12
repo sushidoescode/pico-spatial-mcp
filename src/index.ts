@@ -149,6 +149,7 @@ import { registerProjectConfigTools } from "./projectconfig.js";
 import { registerBuildMatrixTools } from "./buildmatrix.js";
 import { registerVirtualCameraTools } from "./virtualcamera.js";
 import { registerKnowledgeTools } from "./knowledge.js";
+import { registerPicoCliHealthTool } from "./picoclihealth.js";
 
 // The handshake version comes from package.json (dist/ sits one level below it both in the repo
 // and in the installed package) — a hardcoded string here drifted to 6.0.0 while the package
@@ -180,9 +181,13 @@ server.registerTool(
   async ({ projectDir, toolsVersion }) => okJson(await validateToolchain(projectDir, toolsVersion)),
 );
 
-// THE DOORS (v21): PICO_MCP_SURFACE=doors exposes only the intent-level facade — 16 tools
-// (15 doors + validate_toolchain); each door orchestrates the full surface through an internal
-// child server. Default "full" keeps every tool AND adds the doors.
+// Surface-independent explicit consent for lazy pico-cli provisioning. Registration is pure: npm
+// is invoked only from the handler (or later from a real CLI-backed tool when the opt-in env is 1).
+registerPicoCliHealthTool(server);
+
+// THE DOORS (v21): PICO_MCP_SURFACE=doors exposes only the intent-level facade — 17 tools
+// (15 doors + validate_toolchain + ensure_pico_cli); each door orchestrates the full surface
+// through an internal child server. Default "full" keeps every tool AND adds the doors.
 if (!doorsSurfaceActive()) {
   registerEmulatorTools(server);
   registerAdbTools(server);

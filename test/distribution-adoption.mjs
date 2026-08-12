@@ -14,6 +14,21 @@ function writeExecutable(file, body) {
   fs.chmodSync(file, 0o755);
 }
 
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", `'"'"'`)}'`;
+}
+
+function writeNodeCommand(binDir, name, driverPath) {
+  if (process.platform === "win32") {
+    const command = path.join(binDir, `${name}.cmd`);
+    fs.writeFileSync(command, `@echo off\r\n"${process.execPath}" "${driverPath}" %*\r\n`);
+    return command;
+  }
+  const command = path.join(binDir, name);
+  writeExecutable(command, `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(driverPath)} "$@"\n`);
+  return command;
+}
+
 function waitForFile(file, timeoutMs = 3_000) {
   const started = Date.now();
   return new Promise((resolve, reject) => {
@@ -682,13 +697,13 @@ test("KnowledgeBridge deduplicates concurrent startup and caps returned text", a
   assert.equal(readJsonLines(logPath).filter((event) => event.event === "start").length, 1);
 });
 
-test("KnowledgeBridge production environment preserves PICO_HOME without forwarding arbitrary variables", async () => {
+test("KnowledgeBridge production environment forwards the full host environment", async () => {
   const { KnowledgeBridge } = await import("../dist/knowledge.js");
   const priorPicoHome = process.env.PICO_HOME;
   const priorSecret = process.env.PICO_KNOWLEDGE_TEST_SECRET;
   const expectedPicoHome = path.join(os.tmpdir(), "pico home ü 漢字");
   process.env.PICO_HOME = expectedPicoHome;
-  process.env.PICO_KNOWLEDGE_TEST_SECRET = "must-not-be-forwarded";
+  process.env.PICO_KNOWLEDGE_TEST_SECRET = "must-reach-child";
 
   const bridge = new KnowledgeBridge({
     command: process.execPath,
@@ -703,7 +718,7 @@ test("KnowledgeBridge production environment preserves PICO_HOME without forward
     assert.equal(result.status, "ok", JSON.stringify(result));
     const payload = JSON.parse(result.text);
     assert.equal(payload.picoHome, expectedPicoHome);
-    assert.equal(payload.testSecret, null);
+    assert.equal(payload.testSecret, "must-reach-child");
   } finally {
     await bridge.close();
     if (priorPicoHome === undefined) delete process.env.PICO_HOME;
@@ -826,6 +841,74 @@ test("KnowledgeBridge reports a missing pico-cli command as unavailable", async 
   assert.equal(result.status, "unavailable", JSON.stringify(result));
   assert.match(result.error, /ENOENT|not found|spawn/i);
   await bridge.close();
+});
+
+test("KnowledgeBridge provisions only its production default pico-cli command", { concurrency: false }, async () => {
+  const [{ KnowledgeBridge }, picocli] = await Promise.all([
+    import("../dist/knowledge.js"),
+    import("../dist/picocli.js"),
+  ]);
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico knowledge provision "));
+  const fakeBin = path.join(tempRoot, "bin");
+  const npmLog = path.join(tempRoot, "npm.jsonl");
+  const npmDriver = path.join(tempRoot, "fake-npm.mjs");
+  const knowledgeLog = path.join(tempRoot, "knowledge.jsonl");
+  fs.mkdirSync(fakeBin);
+  fs.writeFileSync(npmDriver, `
+import fs from "node:fs";
+fs.appendFileSync(${JSON.stringify(npmLog)}, JSON.stringify(process.argv.slice(2)) + "\\n");
+process.stderr.write("npm ERR! code ENETUNREACH network request failed\\n");
+process.exit(1);
+`);
+  writeNodeCommand(fakeBin, "npm", npmDriver);
+
+  const pathKey = process.platform === "win32"
+    ? Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "Path"
+    : "PATH";
+  const priorPath = process.env[pathKey];
+  const priorAutoInstall = process.env[picocli.PICO_CLI_AUTOINSTALL_ENV];
+  const priorAutoUpdate = process.env[picocli.PICO_CLI_AUTOUPDATE_ENV];
+  process.env[pathKey] = fakeBin;
+  process.env[picocli.PICO_CLI_AUTOINSTALL_ENV] = "1";
+  delete process.env[picocli.PICO_CLI_AUTOUPDATE_ENV];
+  picocli.probePicoCli(true);
+
+  const production = new KnowledgeBridge({ startupTimeoutMs: 500, callTimeoutMs: 500 });
+  let custom;
+  try {
+    const unavailable = await production.call("graph_stats", {});
+    assert.equal(unavailable.status, "unavailable", JSON.stringify(unavailable));
+    assert.equal(unavailable.failureClass, "network", JSON.stringify(unavailable));
+    assert.equal(unavailable.cliProvisioning?.status, "failed");
+    assert.equal(unavailable.cliProvisioning?.phase, "install");
+    assert.deepEqual(readJsonLines(npmLog).map((entry) => entry), [
+      ["install", "-g", "@picoxr/pico-cli"],
+    ]);
+
+    custom = new KnowledgeBridge({
+      command: process.execPath,
+      args: [path.join(repoRoot, "test", "fixtures", "fake-knowledge-server.mjs")],
+      cwd: repoRoot,
+      env: { FAKE_KNOWLEDGE_LOG: knowledgeLog },
+      startupTimeoutMs: 2_000,
+      callTimeoutMs: 1_000,
+    });
+    const customResult = await custom.call("graph_stats", {});
+    assert.equal(customResult.status, "ok", JSON.stringify(customResult));
+    assert.equal(Object.hasOwn(customResult, "cliProvisioning"), false);
+    assert.equal(readJsonLines(npmLog).length, 1, "an injected custom command must not provision pico-cli");
+  } finally {
+    await custom?.close();
+    await production.close();
+    if (priorPath === undefined) delete process.env[pathKey];
+    else process.env[pathKey] = priorPath;
+    if (priorAutoInstall === undefined) delete process.env[picocli.PICO_CLI_AUTOINSTALL_ENV];
+    else process.env[picocli.PICO_CLI_AUTOINSTALL_ENV] = priorAutoInstall;
+    if (priorAutoUpdate === undefined) delete process.env[picocli.PICO_CLI_AUTOUPDATE_ENV];
+    else process.env[picocli.PICO_CLI_AUTOUPDATE_ENV] = priorAutoUpdate;
+    picocli.probePicoCli(true);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("registered knowledge_api keeps the flattened union strict", async () => {
@@ -1114,7 +1197,7 @@ test("answers-by-measurement publishes exactly six narrow answers backed by trac
   }
 });
 
-test("distribution metadata records platform-exact full surfaces, 16 doors, and 43 test suites plus smoke", () => {
+test("distribution metadata records platform-exact full surfaces, 17 doors, and 43 test suites plus smoke", () => {
   const pkg = readJson("package.json");
   const testScripts = Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"));
   assert.equal(testScripts.length, 43, testScripts.join("\n"));
@@ -1127,13 +1210,14 @@ test("distribution metadata records platform-exact full surfaces, 16 doors, and 
   assert.equal((workflow.match(/run: npm run smoke\s/g) ?? []).length, 1);
 
   const tarball = fs.readFileSync(path.join(repoRoot, "scripts", "verify-tarball.mjs"), "utf8");
-  assert.match(tarball, /const EXPECTED_TOOLS = 245;/);
-  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 242;/);
+  assert.match(tarball, /const EXPECTED_TOOLS = 248;/);
+  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 245;/);
+  assert.match(tarball, /"ensure_pico_cli"/);
   assert.doesNotMatch(tarball, /TOOL_TOLERANCE/);
   assert.match(tarball, /tools\.length === EXPECTED_PLATFORM_TOOLS/);
 
   const agents = fs.readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
-  assert.match(agents, /doors surface[\s\S]{0,120}: 16/);
+  assert.match(agents, /doors surface[\s\S]{0,120}: 17/);
   for (const file of [
     "README.md",
     "QUICKSTART.md",
@@ -1145,14 +1229,14 @@ test("distribution metadata records platform-exact full surfaces, 16 doors, and 
     "docs/COLLABORATORS.md",
   ]) {
     const prose = fs.readFileSync(path.join(repoRoot, file), "utf8").replaceAll("\n", " ");
-    assert.match(prose, /245(?: tools?)? on macOS[\s\S]{0,160}242(?: tools?)? on other hosts/i, file);
-    assert.doesNotMatch(prose, /\b245\+(?:[- ]tools?)?/i, file);
+    assert.match(prose, /248(?: tools?)? on macOS[\s\S]{0,160}245(?: tools?)? on other hosts/i, file);
+    assert.doesNotMatch(prose, /\b248\+(?:[- ]tools?)?/i, file);
   }
 
   for (const description of [
     readJson(".claude-plugin/plugin.json").description,
     readJson(".claude-plugin/marketplace.json").plugins[0].description,
   ]) {
-    assert.match(description, /245 tools on macOS \/ 242 on other hosts/i);
+    assert.match(description, /248 tools on macOS \/ 245 on other hosts/i);
   }
 });

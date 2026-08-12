@@ -34,7 +34,7 @@ const tools = await client.listTools();
 console.log(`Tools registered (${tools.tools.length}):`, tools.tools.map((t) => t.name).join(", "));
 
 const EXPECTED = [
-  "validate_toolchain", "emulator_boot", "pack_bundle", "inspect_bundle", "scene_schemas",
+  "validate_toolchain", "ensure_pico_cli", "emulator_boot", "pack_bundle", "inspect_bundle", "scene_schemas",
   "gradle_build", "xr_grpc_describe", "create_scene_project", "build_spatial_project",
   "preview_scene", "snapshot_save", "ui_dump", "wait_for_log", "check_crash",
   "controller_map", "controller_press", "screenrecord", "iterate_scene", "build_and_run",

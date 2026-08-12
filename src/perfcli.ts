@@ -3,14 +3,17 @@ import { z } from "zod";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { okJson } from "./util.js";
-import { probePicoCli, classifyPicoCliFailure, type PicoCliFailureClass } from "./picocli.js";
+import {
+  ensurePicoCli,
+  picoCliFromEnsure,
+  runPicoCli,
+  classifyPicoCliFailure,
+  type PicoCliEnsureResult,
+  type PicoCliFailureClass,
+} from "./picocli.js";
 
 export { picoCliPath } from "./picocli.js";
-
-const run = promisify(execFile);
 
 /**
  * perfcli.ts — v14.8 perf_diagnose: PICO's OFFICIAL perf profiler routed through our loop.
@@ -50,6 +53,8 @@ export type PerfDiagnoseResult = {
   jankWindowCount?: number;
   jankWindows?: any[];
   honesty?: string;
+  cliProvisioning?: PicoCliEnsureResult;
+  outputTruncated?: boolean;
 };
 
 /** Core diagnose, shared by the `perf_diagnose` tool and SpatialBench's perfSource:'pico-cli'
@@ -58,31 +63,50 @@ export async function runPerfDiagnose(
   packageName: string,
   opts: { durationSec?: number; device?: string } = {},
 ): Promise<PerfDiagnoseResult> {
-  const cli = probePicoCli();
-  if (cli.status !== "ok") {
+  const ensured = await ensurePicoCli();
+  const cli = picoCliFromEnsure(ensured);
+  if (!cli) {
+    if (ensured.action === "failed") {
+      return {
+        status: "unavailable",
+        failureClass: ensured.failureClass,
+        note: ensured.note,
+        ...(ensured.outputTail ? { outputTail: ensured.outputTail } : {}),
+        cliProvisioning: ensured,
+      };
+    }
+    if (ensured.status === "unavailable" && ensured.failureClass === "cli-unusable") {
+      return {
+        status: "unavailable",
+        failureClass: "cli-unusable",
+        note: ensured.note,
+      };
+    }
     return {
       status: "unavailable",
       failureClass: "cli-missing",
-      note: "pico-cli not found on PATH — install with `npm install -g @picoxr/pico-cli` (and run `pico-cli perf doctor` once); perf diagnosis skipped.",
+      note: "pico-cli not found on PATH — install with `npm install -g @picoxr/pico-cli`; perf diagnosis skipped.",
     };
   }
+  const provisioning = ensured.action === "present" ? {} : { cliProvisioning: ensured };
   const sec = Math.min(120, Math.max(5, Math.round(opts.durationSec ?? 15)));
   const serial = opts.device ?? "emulator-5554";
   const outDir = path.join(os.homedir(), ".pico-mcp", "perf");
   fs.mkdirSync(outDir, { recursive: true });
   const reportPath = path.join(outDir, `${packageName}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
 
-  try {
-    await run(cli.path, ["perf", "monitor", "run", "--app", packageName, "-d", String(sec), "--device", serial, "-o", reportPath], {
-      timeout: (sec + 90) * 1000,
-    });
-  } catch (e: any) {
+  const runResult = await runPicoCli(
+    cli,
+    ["perf", "monitor", "run", "--app", packageName, "-d", String(sec), "--device", serial, "-o", reportPath],
+    { timeoutMs: (sec + 90) * 1000 },
+  );
+  if (runResult.timedOut || runResult.code !== 0) {
     // Three honest failure classes: cli-missing is handled above; a usage/unknown-option dump means
     // OUR wrapped flags drifted from the installed CLI (retrying unchanged cannot help); everything
     // else is a runtime failure whose cause is in the CLI's own words — never assert "device not
     // connected" for it, that was a guess this wrapper used to present as fact.
-    const stderrText = String(e?.stderr ?? "");
-    const stdoutText = String(e?.stdout ?? "");
+    const stderrText = runResult.stderr;
+    const stdoutText = runResult.stdout;
     const failureClass = classifyPicoCliFailure(stderrText, stdoutText);
     const tail = `${stderrText}\n${stdoutText}`.trim().split("\n").slice(-6).join("\n");
     return {
@@ -91,8 +115,12 @@ export async function runPerfDiagnose(
       note: failureClass === "flag-or-version-drift"
         ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — the flags this wrapper passes were verified against 0.3.0 and no longer match; report outputTail upstream instead of retrying.`
         : "pico-cli perf monitor run failed at runtime — read outputTail (the CLI's own words) before assuming a cause; a stopped app or wrong device serial are common but NOT proven by this wrapper.",
-      error: e instanceof Error ? e.message : String(e),
+      error: runResult.spawnError ?? (runResult.timedOut
+        ? `pico-cli perf monitor run timed out after ${sec + 90}s and was killed.`
+        : `pico-cli perf monitor run exited with code ${runResult.code}.`),
       ...(tail ? { outputTail: tail } : {}),
+      ...(runResult.outputTruncated ? { outputTruncated: true } : {}),
+      ...provisioning,
     };
   }
 
@@ -105,6 +133,8 @@ export async function runPerfDiagnose(
       failureClass: "runtime",
       note: `pico-cli reported success but the report at ${reportPath} is missing/unparseable.`,
       error: e instanceof Error ? e.message : String(e),
+      ...(runResult.outputTruncated ? { outputTruncated: true } : {}),
+      ...provisioning,
     };
   }
 
@@ -119,6 +149,8 @@ export async function runPerfDiagnose(
     jankWindowCount: jank.length,
     jankWindows: jank.slice(0, 5),
     honesty: HONESTY,
+    ...(runResult.outputTruncated ? { outputTruncated: true } : {}),
+    ...provisioning,
   };
 }
 
@@ -157,8 +189,9 @@ export function registerPerfCliTools(server: McpServer) {
         "and return its JSON report: app/system FPS percentiles, CPU/GPU usage, jank windows, and pico-cli's DIAGNOSIS " +
         "(bottleneck category + rule + evidence — e.g. no_3d_frame, app-bound, compositor-bound). Prefer this over " +
         "measure_perf for engine/3D-pipeline analysis; keep measure_perf for the 2D UI-frame (gfxinfo) view. " +
-        "Requires @picoxr/pico-cli on PATH (degrades to status:'unavailable' with the install hint). Failures carry an " +
-        "honest failureClass: cli-missing / flag-or-version-drift (the CLI rejected our flags) / runtime (read the CLI's " +
+        "Uses @picoxr/pico-cli from PATH. If it is missing, default behavior remains status:'unavailable'; set " +
+        "PICO_MCP_AUTOINSTALL_CLI=1 or call ensure_pico_cli for a lazy bounded install and same-call retry. Failures carry an " +
+        "honest failureClass for provisioning, cli-missing, cli-unusable, flag-or-version-drift (the CLI rejected our flags), or runtime (read the CLI's " +
         "outputTail — the cause is not guessed for you). The full report is saved to reportPath for deep dives. " +
         "HONESTY: " + HONESTY,
       inputSchema: {

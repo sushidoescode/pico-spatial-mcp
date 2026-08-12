@@ -62,7 +62,8 @@ npm init -y
 npm install --omit=dev /path/to/pico-spatial-mcp-<version>.tgz
 ```
 
-That's the whole install. Nothing goes global, and nothing is written outside this directory.
+That's the whole MCP install. It puts nothing global on its own, and nothing is written outside this
+directory. The optional, explicit pico-cli provisioning described in step 2 is separate.
 
 > **Do not run `npm run build`.** The package ships a prebuilt `dist/`. There's no TypeScript source
 > or `tsconfig.json` inside it, so `tsc` would just print its help text and exit non-zero. If you
@@ -91,8 +92,31 @@ For **Claude Code**, add this to `.mcp.json` in your project (or your user-level
 
 Any MCP client works — it's JSON-RPC over stdio. Restart your client so it picks up the new server.
 
-You should now see **245 tools on macOS or 242 on other hosts**. That's a lot, and step 5 explains how to cut it down to 16
-if you'd rather start small.
+You should now see **248 tools on macOS or 245 on other hosts**. That's a lot, and step 5 explains
+how to cut it down to 17 if you'd rather start small.
+
+### Optional: lazy pico-cli provisioning
+
+The optional CLI-backed tools still degrade to `status: "unavailable"` with the manual
+`npm install -g @picoxr/pico-cli` remedy when pico-cli is missing. Provisioning is **off by default**
+and never runs when the MCP starts.
+
+To provision it explicitly, ask your agent to run `ensure_pico_cli`. If pico-cli is already present,
+the call is a fast no-op. If it is missing, that call is consent to run a bounded, 120-second
+`npm install -g @picoxr/pico-cli`, report a specific failure class rather than hang, and re-probe with
+`pico-cli -v` so the same MCP process can use it immediately. Availability checks never call
+`pico-cli doctor` or `pico-cli plugin doctor`; both commands can hang in pico-cli 0.3.0.
+
+For missing-only provisioning when a CLI-backed tool is actually invoked, opt in through the config:
+
+```json
+"env": { "PICO_MCP_AUTOINSTALL_CLI": "1" }
+```
+
+That flag does not update an existing CLI. Updates (including repair of an executable whose `-v`
+probe fails) require separate consent: set `PICO_MCP_AUTOUPDATE_CLI=1`, or call `ensure_pico_cli`
+with `{update: true}` for a one-call update check. The update flag alone does not consent to a first
+install. Leave both flags unset to keep the original manual-install behavior.
 
 ---
 
@@ -189,17 +213,17 @@ back to you as `projectDir`.
 
 ## Choosing a smaller surface
 
-The full surface—245 tools on macOS and 242 on other hosts—is a lot of context. There's a curated **16-tool** surface covering the same engine. Set it
-in the `env` block from step 2:
+The full surface—248 tools on macOS and 245 on other hosts—is a lot of context. There's a curated
+**17-tool** surface covering the same engine. Set it in the `env` block from step 2:
 
 ```json
 "env": { "PICO_MCP_SURFACE": "doors" }
 ```
 
-The sixteen: `validate_toolchain` `pico_build_app` `pico_scan_world` `pico_place` `pico_look`
-`pico_verify_app` `pico_measure` `pico_perf` `pico_sdk` `pico_doctor` `pico_ship` `pico_capabilities`
-`pico_fix` `pico_record` `pico_emulator` `pico_next`. On this surface `pico_doctor` replaces
-`preflight_env` as your health check.
+The seventeen: `validate_toolchain` `ensure_pico_cli` `pico_build_app` `pico_scan_world`
+`pico_place` `pico_look` `pico_verify_app` `pico_measure` `pico_perf` `pico_sdk` `pico_doctor`
+`pico_ship` `pico_capabilities` `pico_fix` `pico_record` `pico_emulator` `pico_next`. On this
+surface `pico_doctor` replaces `preflight_env` as your health check.
 
 **One sharp edge.** `pico_measure` needs a one-time camera calibration, and the two tools that perform
 it are *not* on the doors surface. To calibrate: switch to the full surface (remove `PICO_MCP_SURFACE`

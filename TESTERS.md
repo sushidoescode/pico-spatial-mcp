@@ -24,7 +24,8 @@ npm install --omit=dev /path/to/pico-spatial-mcp-<version>.tgz
 That's it. **Do not run `npm run build`** — the tarball ships prebuilt `dist/`, and there is no
 TypeScript source or `tsconfig.json` in it, so `tsc` will just print its help text and exit 1.
 
-Requires **Node ≥ 20**. Nothing is installed globally.
+Requires **Node ≥ 20**. The MCP package itself installs nothing globally; optional pico-cli
+provisioning is separate and explicit, as described below.
 
 ## Register it with your MCP client
 
@@ -45,13 +46,30 @@ Claude Code (`.mcp.json` in your project, or your user config):
 Any MCP client works — it speaks JSON-RPC over stdio. The `env` block is where `PICO_MCP_SURFACE`
 goes if you want the narrowed surface — see below.
 
+## Optional pico-cli provisioning
+
+Provisioning is lazy and **off by default**. If pico-cli is missing, CLI-backed tools keep the
+original `status: "unavailable"` response and manual `npm install -g @picoxr/pico-cli` remedy; the
+MCP never installs it at startup.
+
+Run **`ensure_pico_cli`** to consent explicitly. A present CLI is a fast no-op; a missing one gets a
+bounded, 120-second `npm install -g @picoxr/pico-cli`, an honest failure class on error, and a fresh
+`pico-cli -v` probe so it is immediately usable. The MCP never runs `pico-cli doctor` or
+`pico-cli plugin doctor`, which can hang in pico-cli 0.3.0.
+
+Set `PICO_MCP_AUTOINSTALL_CLI=1` in the MCP `env` block to let a CLI-backed tool perform that same
+missing-only install when it is invoked. Existing installs are not updated unless you separately set
+`PICO_MCP_AUTOUPDATE_CLI=1` (or call `ensure_pico_cli` with `{update: true}`); that separate update
+consent also repairs an existing executable whose `-v` probe fails, but does not imply consent to a
+first install.
+
 ## Check it works
 
 Ask your agent to run **`preflight_env`** (or **`pico_doctor`** on the narrowed surface). It is
 read-only, mutates nothing, and reports what your machine is missing with an exact fix for every
 non-passing check. That is the intended first call.
 
-Expect 245 tools on macOS and 242 on other hosts on the full surface.
+Expect 248 tools on macOS and 245 on other hosts on the full surface.
 
 ## Choosing a surface
 
@@ -61,12 +79,13 @@ Set `PICO_MCP_SURFACE` in the `env` block of the config above:
 "env": { "PICO_MCP_SURFACE": "doors" }
 ```
 
-- unset / `full` — **245 tools on macOS; 242 on other hosts.** Everything.
-- `doors` — **16 tools**: `validate_toolchain` `pico_build_app` `pico_scan_world` `pico_place`
-  `pico_look` `pico_verify_app` `pico_measure` `pico_perf` `pico_sdk` `pico_doctor` `pico_ship`
-  `pico_capabilities` `pico_fix` `pico_record` `pico_emulator` `pico_next`.
+- unset / `full` — **248 tools on macOS; 245 on other hosts.** Everything.
+- `doors` — **17 tools**: `validate_toolchain` `ensure_pico_cli` `pico_build_app`
+  `pico_scan_world` `pico_place` `pico_look` `pico_verify_app` `pico_measure` `pico_perf`
+  `pico_sdk` `pico_doctor` `pico_ship` `pico_capabilities` `pico_fix` `pico_record`
+  `pico_emulator` `pico_next`.
 
-Start with `doors` if the full surface (245 tools on macOS, 242 on other hosts) is overwhelming;
+Start with `doors` if the full surface (248 tools on macOS, 245 on other hosts) is overwhelming;
 it's the curated path through the same engine.
 
 One sharp edge worth knowing up front: **`pico_measure` needs a one-time camera calibration.**

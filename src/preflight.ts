@@ -7,7 +7,13 @@ import { okJson } from "./util.js";
 import { detectJavaHome } from "./toolchain.js";
 import { SKELETON_CANARIES, SKELETON_ROOT } from "./projectgen.js";
 import { UNITY_SKELETON_CANARIES, UNITY_SKELETON_ROOT } from "./unitygen.js";
-import { extractPicoCliRemediations, parsePicoCliEnvelope } from "./picocli.js";
+import {
+  extractPicoCliRemediations,
+  parsePicoCliEnvelope,
+  probePicoCliBounded,
+  runPicoCli,
+  runPicoCliSync,
+} from "./picocli.js";
 
 /**
  * preflight.ts — v27-pre: the read-only environment doctor.
@@ -40,6 +46,7 @@ export function defaultIO(): PreflightIO {
   return {
     nodeVersion: process.version,
     exec: (cmd, args) => {
+      if (cmd === "pico-cli") return runPicoCliSync(args);
       const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 15_000 });
       return { ok: r.status === 0, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
     },
@@ -48,6 +55,34 @@ export function defaultIO(): PreflightIO {
     now: () => Date.now(),
     home: os.homedir(),
     detectJavaHome,
+  };
+}
+
+/** Production preflight adapter: keep the fixture-friendly synchronous evaluator, but precompute
+ * pico-cli's two read-only calls through the hard-bounded process-tree runner. */
+async function defaultBoundedIO(): Promise<PreflightIO> {
+  const base = defaultIO();
+  const probe = await probePicoCliBounded();
+  const versionResult = probe.status === "ok"
+    ? { ok: true, stdout: probe.raw, stderr: "" }
+    : { ok: false, stdout: "", stderr: probe.raw };
+  const emulatorResult = probe.status === "ok"
+    ? await runPicoCli(probe, ["emulator", "status", "--format", "json"], { timeoutMs: 15_000 })
+    : null;
+  return {
+    ...base,
+    exec: (cmd, args) => {
+      if (cmd !== "pico-cli") return base.exec(cmd, args);
+      if (args.length === 1 && args[0] === "-v") return versionResult;
+      if (args.join(" ") === "emulator status --format json" && emulatorResult) {
+        return {
+          ok: !emulatorResult.timedOut && emulatorResult.code === 0,
+          stdout: emulatorResult.stdout,
+          stderr: [emulatorResult.spawnError, emulatorResult.stderr].filter(Boolean).join("\n"),
+        };
+      }
+      return { ok: false, stdout: "", stderr: "unsupported pico-cli preflight command" };
+    },
   };
 }
 
@@ -259,7 +294,7 @@ export function registerPreflightTools(server: McpServer) {
       inputSchema: {},
     },
     async () => {
-      const checks = runPreflightChecks(defaultIO());
+      const checks = runPreflightChecks(await defaultBoundedIO());
       const failing = checks.filter((c) => c.status === "fail");
       return okJson({ status: failing.length ? "problems" : "ok", checks, summary: failing.length ? `${failing.length} failing check(s) — apply each 'fix' in order.` : "environment looks healthy" });
     },

@@ -1,11 +1,16 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import {
-  getDefaultEnvironment,
-  StdioClientTransport,
-} from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
+import {
+  ensurePicoCli,
+  picoCliFromEnsure,
+  PICO_CLI_AUTOINSTALL_ENV,
+  PICO_CLI_AUTOUPDATE_ENV,
+  type PicoCliEnsureResult,
+  type PicoCliFailureClass,
+} from "./picocli.js";
 
 export const DEFAULT_KNOWLEDGE_COMMAND = "pico-cli";
 export const DEFAULT_KNOWLEDGE_ARGS = ["mcp", "spatial-knowledge"] as const;
@@ -13,7 +18,6 @@ const DEFAULT_STARTUP_TIMEOUT_MS = 15_000;
 const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 const DEFAULT_RETIREMENT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1_024;
-const REQUIRED_KNOWLEDGE_ENV = ["PICO_HOME"] as const;
 
 export type KnowledgeAction =
   | "query_graph"
@@ -88,7 +92,7 @@ export const knowledgeInputSchema = z.discriminatedUnion("action", [
 
 export type KnowledgeInput = z.infer<typeof knowledgeInputSchema>;
 
-export type KnowledgeResult =
+export type KnowledgeResult = (
   | {
       status: "ok";
       action: KnowledgeAction;
@@ -109,7 +113,11 @@ export type KnowledgeResult =
       error: string;
       truncated?: boolean;
       remoteError?: true;
-    };
+    }
+) & {
+  cliProvisioning?: PicoCliEnsureResult;
+  failureClass?: PicoCliFailureClass;
+};
 
 export type KnowledgeBridgeOptions = {
   command?: string;
@@ -140,13 +148,12 @@ function errorMessage(error: unknown): string {
 }
 
 function productionKnowledgeEnvironment(): Record<string, string> {
-  const env = getDefaultEnvironment();
-  for (const key of REQUIRED_KNOWLEDGE_ENV) {
-    const value = process.env[key];
-    if (value === undefined || value.includes("\0") || value.startsWith("()")) continue;
-    env[key] = value;
-  }
-  return env;
+  // The SDK's default stdio environment is intentionally sanitized, but this server's child needs
+  // the complete host configuration (PICO_HOME, API keys, npm/PATH settings, proxies, etc.). Node's
+  // process.env cannot contain NUL values; only omit the type-level undefined case.
+  return Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  );
 }
 
 function capUtf8(text: string, maxBytes: number): { text: string; truncated: boolean } {
@@ -178,6 +185,7 @@ export class KnowledgeBridge {
   private readonly args: string[];
   private readonly cwd?: string;
   private readonly env?: Record<string, string>;
+  private readonly provisionDefaultPicoCli: boolean;
   private readonly startupTimeoutMs: number;
   private readonly callTimeoutMs: number;
   private readonly retirementTimeoutMs: number;
@@ -193,7 +201,12 @@ export class KnowledgeBridge {
     this.command = options.command ?? DEFAULT_KNOWLEDGE_COMMAND;
     this.args = [...(options.args ?? DEFAULT_KNOWLEDGE_ARGS)];
     this.cwd = options.cwd;
-    this.env = options.env ?? productionKnowledgeEnvironment();
+    // Supplying a command is the injection/custom-command seam used by tests and alternate
+    // providers. Only the production default pico-cli command participates in MCP provisioning.
+    this.provisionDefaultPicoCli = options.command === undefined;
+    // Leave production env unresolved until spawn time: a successful lazy global install may add
+    // npm's bin directory to process.env.PATH before the first knowledge_api call starts this child.
+    this.env = options.env ? { ...productionKnowledgeEnvironment(), ...options.env } : undefined;
     this.startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
     this.callTimeoutMs = options.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
     this.retirementTimeoutMs = options.retirementTimeoutMs ?? DEFAULT_RETIREMENT_TIMEOUT_MS;
@@ -253,7 +266,7 @@ export class KnowledgeBridge {
       command: this.command,
       args: this.args,
       ...(this.cwd ? { cwd: this.cwd } : {}),
-      ...(this.env ? { env: this.env } : {}),
+      env: this.env ?? productionKnowledgeEnvironment(),
       stderr: "inherit",
     });
     const client = new Client({ name: "pico-spatial-mcp-knowledge", version: "1.0.0" });
@@ -322,7 +335,27 @@ export class KnowledgeBridge {
     const { action: parsedAction, ...argumentsForRemote } = parsed;
     return this.enqueue(async () => {
       let session: KnowledgeSession | undefined;
+      let cliProvisioning: PicoCliEnsureResult | null = null;
+      const withProvisioning = (result: KnowledgeResult): KnowledgeResult =>
+        cliProvisioning && cliProvisioning.action !== "present"
+          ? { ...result, cliProvisioning }
+          : result;
       try {
+        if (
+          this.provisionDefaultPicoCli &&
+          (process.env[PICO_CLI_AUTOINSTALL_ENV] === "1" || process.env[PICO_CLI_AUTOUPDATE_ENV] === "1")
+        ) {
+          cliProvisioning = await ensurePicoCli();
+          if (!picoCliFromEnsure(cliProvisioning)) {
+            return {
+              status: "unavailable",
+              action: parsedAction,
+              error: cliProvisioning.note ?? "pico-cli is unavailable after provisioning.",
+              failureClass: "failureClass" in cliProvisioning ? cliProvisioning.failureClass : "cli-missing",
+              cliProvisioning,
+            };
+          }
+        }
         session = await this.ensureStarted();
         const response = await session.client.callTool(
           { name: parsedAction, arguments: argumentsForRemote },
@@ -340,33 +373,33 @@ export class KnowledgeBridge {
         const capped = capUtf8(joined, this.maxOutputBytes);
         const providerTextError = joined.startsWith(`Error executing ${parsedAction}:`);
         if ((response.isError === true || providerTextError) && /\bGraph file not found:/i.test(joined)) {
-          return {
+          return withProvisioning({
             status: "unavailable",
             action: parsedAction,
             error: capped.text,
             truncated: capped.truncated,
             remoteError: true,
-          };
+          });
         }
         if (response.isError === true || providerTextError) {
-          return {
+          return withProvisioning({
             status: "error",
             action: parsedAction,
             error: capped.text,
             truncated: capped.truncated,
             remoteError: true,
-          };
+          });
         }
-        return {
+        return withProvisioning({
           status: "ok",
           action: parsedAction,
           text: capped.text,
           truncated: capped.truncated,
           remoteError: false,
-        };
+        });
       } catch (error) {
         if (session) await this.retire(session);
-        return { status: "unavailable", action: parsedAction, error: errorMessage(error) };
+        return withProvisioning({ status: "unavailable", action: parsedAction, error: errorMessage(error) });
       }
     });
   }
@@ -390,7 +423,7 @@ export function registerKnowledgeTools(
     "knowledge_api",
     {
       description:
-        "Query PICO's persistent spatial-knowledge graph through pico-cli. Exposes query_graph, get_node, get_neighbors, get_community, god_nodes, graph_stats, shortest_path, and switch_workspace. Graph answers are broad contextual evidence; use vault_api for authoritative exact SDK declarations and citations.",
+        "Query PICO's persistent spatial-knowledge graph through pico-cli. Exposes query_graph, get_node, get_neighbors, get_community, god_nodes, graph_stats, shortest_path, and switch_workspace. When the shared CLI is missing, PICO_MCP_AUTOINSTALL_CLI=1 enables the same lazy bounded provisioning used by the perf/trace tools; default remains unavailable with no install. Graph answers are broad contextual evidence; use vault_api for authoritative exact SDK declarations and citations.",
       inputSchema: knowledgeInputSchema,
     },
     async (input) => {

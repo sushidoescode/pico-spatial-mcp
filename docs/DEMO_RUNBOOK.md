@@ -35,7 +35,7 @@ loop in front of them.
   otherwise the Mixed build returns `built-needs-look`/ESCALATE. In either case YOUR look on stage,
   not an `auto_judged` score, is the `vision_verified` bar.
 - `pico_record` is the doors ledger-write door (landed in v31; the doors surface is now
-  16 tools — smoke-verified; pico_next answers 'what should I do now' from live local state).
+  17 tools — smoke-verified; pico_next answers 'what should I do now' from live local state).
 
 *Evidence: the MR lane ran the exact brief unattended through `fleet_build` 2026-08-02 —
 built 1 / installed 1 on the first pass, eye ESCALATE (confidence 0.5, correctly refused to

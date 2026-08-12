@@ -5,6 +5,20 @@ on:
   pull_request:
 
 jobs:
+  picocli-windows:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Build (Windows pico-cli shim lane)
+        run: npm run build
+      - name: Lazy pico-cli provisioning (.cmd execution + bounded tree kill)
+        run: npm run test:picocli
+
   gates:
     runs-on: ubuntu-latest
     steps:

@@ -3,8 +3,8 @@ import { z } from "zod";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { okJson, run, tail } from "./util.js";
-import { probePicoCli, classifyPicoCliFailure } from "./picocli.js";
+import { okJson, tail } from "./util.js";
+import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure } from "./picocli.js";
 
 /**
  * picoclitools.ts — v31: thin evidence primitives over the official pico-cli.
@@ -56,8 +56,9 @@ export function registerPicoCliTools(server: McpServer) {
         "Monitor a package for crashes with PICO's OFFICIAL crash watcher (`pico-cli app watch-crash <pkg>`: PID-change " +
         "polling + surfaced exception logs) for a bounded window. The 0.3.0 CLI has NO duration flag and streams until " +
         "killed, so this wrapper kills the watcher after durationSec — a timed-out child is the EXPECTED healthy end of " +
-        "the window, reported as endedBy:'duration-cap'. Optionally starts the app first (--start/--activity). Requires " +
-        "@picoxr/pico-cli on PATH (degrades to status:'unavailable'). HONESTY: " + WATCH_HONESTY,
+        "the window, reported as endedBy:'duration-cap'. Optionally starts the app first (--start/--activity). Uses " +
+        "@picoxr/pico-cli from PATH; missing defaults to status:'unavailable', while PICO_MCP_AUTOINSTALL_CLI=1 or " +
+        "ensure_pico_cli enables a lazy bounded install and same-call retry. HONESTY: " + WATCH_HONESTY,
       inputSchema: {
         packageName: z.string().describe("Package to watch, e.g. com.example.knockdownxr"),
         durationSec: z.number().min(5).max(300).optional().describe("Watch window in seconds (default 30) — this wrapper kills the watcher when it elapses."),
@@ -68,21 +69,35 @@ export function registerPicoCliTools(server: McpServer) {
       },
     },
     async ({ packageName, durationSec, device, start, activity, intervalSec }) => {
-      const cli = probePicoCli();
-      if (cli.status !== "ok") {
+      const ensured = await ensurePicoCli();
+      const cli = picoCliFromEnsure(ensured);
+      if (!cli) {
+        if (ensured.action === "failed") {
+          return okJson({
+            status: "unavailable",
+            failureClass: ensured.failureClass,
+            note: ensured.note,
+            ...(ensured.outputTail ? { outputTail: ensured.outputTail } : {}),
+            cliProvisioning: ensured,
+          });
+        }
+        const unavailable = ensured.status === "unavailable" ? ensured : null;
         return okJson({
           status: "unavailable",
-          failureClass: "cli-missing",
-          note: "pico-cli not found on PATH — install with `npm install -g @picoxr/pico-cli`; crash watching skipped.",
+          failureClass: unavailable?.failureClass ?? "cli-missing",
+          note: unavailable?.failureClass === "cli-missing"
+            ? "pico-cli not found on PATH — install with `npm install -g @picoxr/pico-cli`; crash watching skipped."
+            : unavailable?.note ?? "pico-cli did not become usable.",
         });
       }
+      const provisioning = ensured.action === "present" ? {} : { cliProvisioning: ensured };
       const sec = Math.min(300, Math.max(5, Math.round(durationSec ?? 30)));
       const args = ["app", "watch-crash", packageName, "-d", device ?? "emulator-5554"];
       if (start) args.push("--start");
       if (activity) args.push("--activity", activity);
       if (intervalSec) args.push("--interval", String(Math.round(intervalSec)));
 
-      const r = await run(cli.path, args, { timeoutMs: sec * 1000 });
+      const r = await runPicoCli(cli, args, { timeoutMs: sec * 1000 });
       const output = `${r.stdout}\n${r.stderr}`.trim();
       if (!r.timedOut && r.code !== 0) {
         const failureClass = classifyPicoCliFailure(r.stderr, r.stdout);
@@ -94,6 +109,8 @@ export function registerPicoCliTools(server: McpServer) {
             : "pico-cli app watch-crash exited before the window elapsed — read outputTail (the CLI's own words) before assuming a cause.",
           exitCode: r.code,
           ...(output ? { outputTail: tail(output, 20) } : {}),
+          ...(r.outputTruncated ? { outputTruncated: true } : {}),
+          ...provisioning,
         });
       }
       const indicators = scanForCrashIndicators(output);
@@ -103,9 +120,15 @@ export function registerPicoCliTools(server: McpServer) {
         watchedSec: sec,
         endedBy: r.timedOut ? "duration-cap (watcher killed by this wrapper — pico-cli has no duration flag)" : `cli-exit code ${r.code}`,
         crashIndicated: indicators.length > 0,
+        crashScanComplete: !r.outputTruncated,
         indicators,
         ...(output ? { outputTail: tail(output, 40) } : { outputTail: "(no output during the window)" }),
+        ...(r.outputTruncated ? {
+          outputTruncated: true,
+          note: "pico-cli output exceeded the capture cap; crash indicators were scanned only in the retained tail, so crashIndicated:false does not prove the full window was quiet.",
+        } : {}),
         honesty: WATCH_HONESTY,
+        ...provisioning,
       });
     },
   );
@@ -116,8 +139,9 @@ export function registerPicoCliTools(server: McpServer) {
       description:
         "Record the device screen with PICO's OFFICIAL recorder (`pico-cli capture record`, 1-180s) and pull the file " +
         "locally as a RECORDING evidence artifact — the video lane for demos and ledger evidence that single-frame " +
-        "captures lack. Returns the stat-checked output path + size. Requires @picoxr/pico-cli on PATH (degrades to " +
-        "status:'unavailable'). HONESTY: " + RECORD_HONESTY,
+        "captures lack. Returns the stat-checked output path + size. Uses @picoxr/pico-cli from PATH; missing defaults " +
+        "to status:'unavailable', while PICO_MCP_AUTOINSTALL_CLI=1 or ensure_pico_cli enables a lazy bounded install " +
+        "and same-call retry. HONESTY: " + RECORD_HONESTY,
       inputSchema: {
         durationSec: z.number().min(1).max(180).optional().describe("Recording length in seconds (CLI range 1-180; default 15)."),
         device: z.string().optional().describe("Device serial (default emulator-5554)."),
@@ -125,14 +149,28 @@ export function registerPicoCliTools(server: McpServer) {
       },
     },
     async ({ durationSec, device, outputPath }) => {
-      const cli = probePicoCli();
-      if (cli.status !== "ok") {
+      const ensured = await ensurePicoCli();
+      const cli = picoCliFromEnsure(ensured);
+      if (!cli) {
+        if (ensured.action === "failed") {
+          return okJson({
+            status: "unavailable",
+            failureClass: ensured.failureClass,
+            note: ensured.note,
+            ...(ensured.outputTail ? { outputTail: ensured.outputTail } : {}),
+            cliProvisioning: ensured,
+          });
+        }
+        const unavailable = ensured.status === "unavailable" ? ensured : null;
         return okJson({
           status: "unavailable",
-          failureClass: "cli-missing",
-          note: "pico-cli not found on PATH — install with `npm install -g @picoxr/pico-cli`; screen recording skipped.",
+          failureClass: unavailable?.failureClass ?? "cli-missing",
+          note: unavailable?.failureClass === "cli-missing"
+            ? "pico-cli not found on PATH — install with `npm install -g @picoxr/pico-cli`; screen recording skipped."
+            : unavailable?.note ?? "pico-cli did not become usable.",
         });
       }
+      const provisioning = ensured.action === "present" ? {} : { cliProvisioning: ensured };
       const sec = Math.min(180, Math.max(1, Math.round(durationSec ?? 15)));
       const outDir = path.join(os.homedir(), ".pico-mcp", "recordings");
       fs.mkdirSync(outDir, { recursive: true });
@@ -140,7 +178,7 @@ export function registerPicoCliTools(server: McpServer) {
       const args = ["capture", "record", "-t", String(sec), "-o", artifact, "-d", device ?? "emulator-5554"];
 
       // The CLI blocks for the recording duration, then pulls the file — allow generous pull time.
-      const r = await run(cli.path, args, { timeoutMs: (sec + 120) * 1000 });
+      const r = await runPicoCli(cli, args, { timeoutMs: (sec + 120) * 1000 });
       const output = `${r.stdout}\n${r.stderr}`.trim();
       if (r.timedOut || r.code !== 0) {
         const failureClass = classifyPicoCliFailure(r.stderr, r.stdout);
@@ -154,6 +192,8 @@ export function registerPicoCliTools(server: McpServer) {
               : "pico-cli capture record failed at runtime — read outputTail (the CLI's own words) before assuming a cause.",
           exitCode: r.code,
           ...(output ? { outputTail: tail(output, 20) } : {}),
+          ...(r.outputTruncated ? { outputTruncated: true } : {}),
+          ...provisioning,
         });
       }
       // Exit 0 is not evidence the recording exists — stat it and say which.
@@ -169,7 +209,9 @@ export function registerPicoCliTools(server: McpServer) {
           ? {}
           : { note: `pico-cli exited 0 but the recording at ${artifact} is ${exists ? "empty" : "missing"} — treat as failed.` }),
         ...(output ? { outputTail: tail(output, 12) } : {}),
+        ...(r.outputTruncated ? { outputTruncated: true } : {}),
         honesty: RECORD_HONESTY,
+        ...provisioning,
       });
     },
   );

@@ -1,5 +1,6 @@
-// THE DOORS test: PICO_MCP_SURFACE=doors exposes ONLY the intent facade — 16 tools (15 doors +
-// validate_toolchain); the doors orchestrate the full surface through the internal child server.
+// THE DOORS test: PICO_MCP_SURFACE=doors exposes ONLY the intent facade — 17 tools (15 doors +
+// validate_toolchain + ensure_pico_cli); the doors orchestrate the full surface through the
+// internal child server.
 // Run: npm run test:doors
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -44,7 +45,7 @@ await client.connect(transport);
 
 const tools = (await client.listTools()).tools.map((t) => t.name).sort();
 const DOORS = ["pico_build_app", "pico_scan_world", "pico_place", "pico_look", "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship", "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next"];
-const expected = [...DOORS, "validate_toolchain"].sort();
+const expected = [...DOORS, "validate_toolchain", "ensure_pico_cli"].sort();
 if (JSON.stringify(tools) === JSON.stringify(expected)) ok(`doors surface exposes exactly ${expected.length} tools`);
 else fail(`surface mismatch — got [${tools.join(", ")}]`);
 

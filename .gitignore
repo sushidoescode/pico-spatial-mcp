@@ -41,3 +41,4 @@ test/.*.tmp.mjs
 # internal session notes, not part of any deliverable
 HANDOFF.md
 NEXT-AGENT-PROMPT.md
+evidence-frame-drift-*.png
