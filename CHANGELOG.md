@@ -2,6 +2,17 @@
 
 Versions here key the plugin manifests (`/plugin update` uses them as its cache key).
 
+## 36.5.0 — 2026-08-12
+- **Perf loop lane in `pico_loop`** (the 2026-08-12 call's second lane): a perf acceptance
+  criterion now makes the loop a measure→fix→re-measure cycle with the evidence kept —
+  every iteration's pico-cli appFps numbers (p5/p10/p50/avg, jank-window count, report
+  path) are recorded into the iteration's trust-ledger claim and returned as `perfTrend`
+  on every exit (before→after, labeled structural: numbers moved, not looks). A perf
+  failure carries pico-cli's own diagnosis-engine verdict and the report path — grounded
+  repair, never a guess from code structure. Honest residue: a live loop-to-acceptance
+  perf run needs a perf-measurable session (emulator appFps is often the no_3d_frame
+  case; real-device evidence pending Swan hardware).
+
 ## 36.4.0 — 2026-08-12
 - **`pico_loop` (door 16)** — the declarative build→verify→repair loop, shipped after the
   2026-08-12 PICO call confirmed the Loop Engineering reading (the summer's agentic-loop

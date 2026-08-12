@@ -543,6 +543,9 @@ export function registerDoorTools(server: McpServer) {
       "still LOOK at before any vision_verified claim. A no-progress detector stops after two " +
       "consecutive iterations failing with the identical signature; an unmeasurable criterion " +
       "(missing perf utilities, no Agent Bridge) stops the loop honestly instead of silently passing. " +
+      "PERF LOOP LANE: a perf criterion turns the loop into measure→fix→re-measure — every iteration's " +
+      "pico-cli appFps numbers are ledgered and returned as perfTrend (before→after, structural " +
+      "evidence), and a perf failure carries pico-cli's own diagnosis engine verdict, never a guess. " +
       "Every iteration writes a structural trust-ledger entry. Budget uses meta.budget semantics " +
       "(iterations, timeMin). Builds take minutes each — configure your host's MCP timeout accordingly " +
       "(≥ 10 minutes, more for multi-iteration budgets). Prefer authoring a draftSpec first " +
@@ -607,6 +610,9 @@ export function registerDoorTools(server: McpServer) {
       let prevSignature: string | null = null;
       let lastOutcomes: LoopCriterionOutcome[] = [];
       let lastCapture: string | null = null;
+      // The perf loop lane (2026-08-12 call, lane 2): every measured perf iteration lands here, so
+      // every exit carries the before→after trail — measure → fix → re-measure, ledgered.
+      const perfTrail: Array<Record<string, unknown>> = [];
 
       const exit = (status: string, iteration: number, extra: Record<string, unknown>) => ({
         status,
@@ -616,6 +622,10 @@ export function registerDoorTools(server: McpServer) {
         scaffoldStarted,
         iterationsLog,
         ...(lastCapture ? { capture: lastCapture } : {}),
+        ...(perfTrail.length ? {
+          perfTrend: perfTrail,
+          perfEvidence: "structural — pico-cli-measured appFps numbers (the official profiler); a delta proves the numbers moved, never how anything looks",
+        } : {}),
         ...extra,
       });
 
@@ -676,10 +686,24 @@ export function registerDoorTools(server: McpServer) {
               if (p5 === null || avg === null || avg === 0) {
                 outcomes.push({ kind: "perf", status: "unmeasurable", detail: p?.note ?? p?.error ?? "profiler reports no app 3D frames (or pico-cli/perf utilities unavailable) — not measured, never assumed" });
               } else {
+                // Perf loop lane: record the measurement (before→after evidence) and ground any
+                // failure in pico-cli's OWN diagnosis engine — never a guess from code structure.
+                perfTrail.push({
+                  iteration: i,
+                  p5,
+                  ...(typeof appFps?.p10 === "number" ? { p10: appFps.p10 } : {}),
+                  ...(typeof appFps?.p50 === "number" ? { p50: appFps.p50 } : {}),
+                  avg,
+                  ...(typeof p?.jankWindowCount === "number" ? { jankWindows: p.jankWindowCount } : {}),
+                  ...(p?.reportPath ? { reportPath: p.reportPath } : {}),
+                });
                 const floor = c.minAppFpsP5 ?? 60;
+                const diagTop = p?.diagnosis
+                  ? (typeof p.diagnosis === "string" ? p.diagnosis : JSON.stringify(p.diagnosis)).slice(0, 220)
+                  : null;
                 outcomes.push(p5 >= floor
-                  ? { kind: "perf", status: "pass", detail: `appFps p5=${p5} >= floor ${floor}` }
-                  : { kind: "perf", status: "fail", detail: `appFps p5=${p5} below floor ${floor}` });
+                  ? { kind: "perf", status: "pass", detail: `appFps p5=${p5} >= floor ${floor} (avg ${avg})` }
+                  : { kind: "perf", status: "fail", detail: `appFps p5=${p5} below floor ${floor} (avg ${avg})${diagTop ? `; pico-cli diagnosis: ${diagTop}` : ""}${p?.reportPath ? `; report: ${p.reportPath}` : ""}` });
               }
             }
           }
@@ -688,7 +712,8 @@ export function registerDoorTools(server: McpServer) {
         // Per-iteration ledger entry — structural BY DESIGN: the machine ran checks; nothing was
         // human-seen. A failed write is DISCLOSED in the iteration log (never silently swallowed:
         // the door's contract promises an entry per iteration, so a broken ledger lane must show).
-        const led = await call("record_verification", { app, claim: `pico_loop iteration ${i}/${maxIterations} [${goal.slice(0, 80)}]: ${outcomes.map((o) => `${o.kind}=${o.status}`).join(" ")}`, evidenceType: "structural" }).catch((e) => `record_verification threw: ${e instanceof Error ? e.message : String(e)}`);
+        const perfNow = perfTrail.length && (perfTrail[perfTrail.length - 1] as any).iteration === i ? perfTrail[perfTrail.length - 1] as any : null;
+        const led = await call("record_verification", { app, claim: `pico_loop iteration ${i}/${maxIterations} [${goal.slice(0, 80)}]: ${outcomes.map((o) => `${o.kind}=${o.status}`).join(" ")}${perfNow ? ` | appFps p5=${perfNow.p5} avg=${perfNow.avg} (pico-cli measured)` : ""}`, evidenceType: "structural" }).catch((e) => `record_verification threw: ${e instanceof Error ? e.message : String(e)}`);
         const ledger = led && typeof led === "object" && led.status === "recorded"
           ? "recorded"
           : `NOT recorded: ${(typeof led === "string" ? led : JSON.stringify(led ?? null)).slice(0, 200)}`;
