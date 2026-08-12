@@ -234,7 +234,14 @@ test("pico-cli auto-install contract", { concurrency: false, timeout: 45_000 }, 
     assert.equal(unusable.status, "unavailable", JSON.stringify(unusable));
     assert.equal(unusable.action, "skipped");
     assert.equal(unusable.failureClass, "cli-unusable");
-    assert.equal(unusable.path, harness.cliTarget);
+    // Windows resolves the shim via PATHEXT and may report the extension in PATHEXT's
+    // canonical casing (.CMD) while the fixture wrote .cmd — same file on a
+    // case-insensitive filesystem, so compare accordingly there.
+    if (process.platform === "win32") {
+      assert.equal(String(unusable.path).toLowerCase(), String(harness.cliTarget).toLowerCase());
+    } else {
+      assert.equal(unusable.path, harness.cliTarget);
+    }
     const calls = harness.calls();
     assert.equal(calls.filter((call) => call.role === "npm").length, 0, JSON.stringify(calls));
     assert.ok(calls.some((call) => call.role === "cli" && call.args.length === 1 && call.args[0] === "-v"), JSON.stringify(calls));
