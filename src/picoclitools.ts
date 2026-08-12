@@ -3,8 +3,8 @@ import { z } from "zod";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { okJson, tail } from "./util.js";
-import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure } from "./picocli.js";
+import { okJson, tail, okJsonStructured } from "./util.js";
+import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, cliWrapperContractShape } from "./picocli.js";
 
 /**
  * picoclitools.ts — v31: thin evidence primitives over the official pico-cli.
@@ -61,6 +61,18 @@ export function registerPicoCliTools(server: McpServer) {
         "the window, reported as endedBy:'duration-cap'. Optionally starts the app first (--start/--activity). Uses " +
         "@picoxr/pico-cli from PATH; missing defaults to status:'unavailable', while PICO_MCP_AUTOINSTALL_CLI=1 or " +
         "ensure_pico_cli enables a lazy bounded install and same-call retry. HONESTY: " + WATCH_HONESTY,
+      // Typed contract (2026-07-28 revision lane): the shared CLI-wrapper core + the watch fields.
+      outputSchema: z.object({
+        status: z.enum(["ok", "failed", "unavailable"]).describe("ok = the window ran (a duration-capped kill is the healthy end); failed = the CLI exited non-zero early; unavailable = pico-cli absent/unusable."),
+        ...cliWrapperContractShape,
+        packageName: z.string().optional(),
+        watchedSec: z.number().optional(),
+        endedBy: z.string().optional().describe("'duration-cap …' is the EXPECTED healthy end; anything else is the CLI's own exit."),
+        crashIndicated: z.boolean().optional().describe("Best-effort keyword scan — a verdict lives in outputTail, not here."),
+        crashScanComplete: z.boolean().optional().describe("False when output was truncated: crashIndicated:false then does not prove a quiet window."),
+        indicators: z.array(z.string()).optional().describe("Named crash markers found (fatal-exception, anr, …)."),
+        exitCode: z.number().nullable().optional(),
+      }).passthrough(),
       inputSchema: {
         packageName: z.string().describe("Package to watch, e.g. com.example.knockdownxr"),
         durationSec: z.number().min(5).max(300).optional().describe("Watch window in seconds (default 30) — this wrapper kills the watcher when it elapses."),
@@ -75,7 +87,7 @@ export function registerPicoCliTools(server: McpServer) {
       const cli = picoCliFromEnsure(ensured);
       if (!cli) {
         if (ensured.action === "failed") {
-          return okJson({
+          return okJsonStructured({
             status: "unavailable",
             failureClass: ensured.failureClass,
             note: ensured.note,
@@ -84,7 +96,7 @@ export function registerPicoCliTools(server: McpServer) {
           });
         }
         const unavailable = ensured.status === "unavailable" ? ensured : null;
-        return okJson({
+        return okJsonStructured({
           status: "unavailable",
           failureClass: unavailable?.failureClass ?? "cli-missing",
           note: unavailable?.failureClass === "cli-missing"
@@ -103,7 +115,7 @@ export function registerPicoCliTools(server: McpServer) {
       const output = `${r.stdout}\n${r.stderr}`.trim();
       if (!r.timedOut && r.code !== 0) {
         const failureClass = classifyPicoCliFailure(r.stderr, r.stdout);
-        return okJson({
+        return okJsonStructured({
           status: "failed",
           failureClass,
           note: failureClass === "flag-or-version-drift"
@@ -118,7 +130,7 @@ export function registerPicoCliTools(server: McpServer) {
         });
       }
       const indicators = scanForCrashIndicators(output);
-      return okJson({
+      return okJsonStructured({
         status: "ok",
         packageName,
         watchedSec: sec,
@@ -146,6 +158,16 @@ export function registerPicoCliTools(server: McpServer) {
         "captures lack. Returns the stat-checked output path + size. Uses @picoxr/pico-cli from PATH; missing defaults " +
         "to status:'unavailable', while PICO_MCP_AUTOINSTALL_CLI=1 or ensure_pico_cli enables a lazy bounded install " +
         "and same-call retry. HONESTY: " + RECORD_HONESTY,
+      // Typed contract (2026-07-28 revision lane): the shared CLI-wrapper core + the artifact fields.
+      outputSchema: z.object({
+        status: z.enum(["ok", "failed", "unavailable"]).describe("ok = the recording exists with real bytes (stat-checked — exit 0 alone is never ok); failed = run failed or the file is missing/empty; unavailable = pico-cli absent/unusable."),
+        ...cliWrapperContractShape,
+        artifact: z.string().optional().describe("The recording path. Its pixels prove nothing until LOOKED at."),
+        artifactExists: z.boolean().optional(),
+        artifactBytes: z.number().nullable().optional(),
+        durationSec: z.number().optional(),
+        exitCode: z.number().nullable().optional(),
+      }).passthrough(),
       inputSchema: {
         durationSec: z.number().min(1).max(180).optional().describe("Recording length in seconds (CLI range 1-180; default 15)."),
         device: z.string().optional().describe("Device serial (default emulator-5554)."),
@@ -157,7 +179,7 @@ export function registerPicoCliTools(server: McpServer) {
       const cli = picoCliFromEnsure(ensured);
       if (!cli) {
         if (ensured.action === "failed") {
-          return okJson({
+          return okJsonStructured({
             status: "unavailable",
             failureClass: ensured.failureClass,
             note: ensured.note,
@@ -166,7 +188,7 @@ export function registerPicoCliTools(server: McpServer) {
           });
         }
         const unavailable = ensured.status === "unavailable" ? ensured : null;
-        return okJson({
+        return okJsonStructured({
           status: "unavailable",
           failureClass: unavailable?.failureClass ?? "cli-missing",
           note: unavailable?.failureClass === "cli-missing"
@@ -186,7 +208,7 @@ export function registerPicoCliTools(server: McpServer) {
       const output = `${r.stdout}\n${r.stderr}`.trim();
       if (r.timedOut || r.code !== 0) {
         const failureClass = classifyPicoCliFailure(r.stderr, r.stdout);
-        return okJson({
+        return okJsonStructured({
           status: "failed",
           failureClass,
           note: r.timedOut
@@ -205,7 +227,7 @@ export function registerPicoCliTools(server: McpServer) {
       // Exit 0 is not evidence the recording exists — stat it and say which.
       const exists = fs.existsSync(artifact);
       const bytes = exists ? fs.statSync(artifact).size : null;
-      return okJson({
+      return okJsonStructured({
         status: exists && (bytes ?? 0) > 0 ? "ok" : "failed",
         artifact,
         artifactExists: exists,

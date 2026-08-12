@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { okJson } from "./util.js";
+import { z } from "zod";
+import { okJson, okJsonStructured } from "./util.js";
 import { doorsSurfaceActive } from "./doors.js";
 import { detectJavaHome } from "./toolchain.js";
 import { SKELETON_CANARIES, SKELETON_ROOT } from "./projectgen.js";
@@ -296,11 +297,22 @@ export function registerPreflightTools(server: McpServer) {
       description:
         "v27-pre READ-ONLY environment doctor: node, adb, emulator/AVD state, gRPC reachability, pico-cli presence (warn-tier — the perf/trace/recording lane is optional), macOS Accessibility (the silent CGEvent-drop gotcha), camera-calibration freshness (dies on emulator cold restart), and disk headroom. Every non-pass check carries the EXACT fix. Run this FIRST on a new machine. Never mutates anything.",
       inputSchema: {},
+      // Typed contract (2026-07-28 revision lane): the doctor's check list, fix-pointed.
+      outputSchema: z.object({
+        status: z.enum(["ok", "problems"]).describe("problems = at least one check FAILING (warn/unknown do not fail the doctor)."),
+        checks: z.array(z.object({
+          name: z.string(),
+          status: z.enum(["pass", "fail", "warn", "unknown"]),
+          detail: z.string(),
+          fix: z.string().nullable().describe("The EXACT next command/action for a non-pass check; null when passing."),
+        }).passthrough()),
+        summary: z.string(),
+      }).passthrough(),
     },
     async () => {
       const checks = runPreflightChecks(await defaultBoundedIO());
       const failing = checks.filter((c) => c.status === "fail");
-      return okJson({ status: failing.length ? "problems" : "ok", checks, summary: failing.length ? `${failing.length} failing check(s) — apply each 'fix' in order.` : "environment looks healthy" });
+      return okJsonStructured({ status: failing.length ? "problems" : "ok", checks, summary: failing.length ? `${failing.length} failing check(s) — apply each 'fix' in order.` : "environment looks healthy" });
     },
   );
 }

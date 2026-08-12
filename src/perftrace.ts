@@ -3,8 +3,8 @@ import { z } from "zod";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { okJson } from "./util.js";
-import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure } from "./picocli.js";
+import { okJson, okJsonStructured } from "./util.js";
+import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, cliWrapperContractShape } from "./picocli.js";
 
 /**
  * perftrace.ts — v31 perf_trace: PICO's Perfetto trace pipeline routed through our loop.
@@ -72,6 +72,17 @@ export function registerPerfTraceTools(server: McpServer) {
         "ensure_pico_cli enables a lazy bounded install and same-call retry. Failures carry an honest provisioning, " +
         "cli-missing, cli-unusable, flag-or-version-drift, not-provisioned (0.4.x: run `pico-cli setup`), or runtime failureClass with the CLI's own outputTail. " +
         "HONESTY: " + HONESTY,
+      // Typed contract (2026-07-28 revision lane): the shared CLI-wrapper core + trace fields.
+      outputSchema: z.object({
+        status: z.enum(["ok", "failed", "unavailable"]).describe("ok = the action completed AND any expected artifact stat-checked non-missing; failed = run/artifact failure (exit 0 with a missing file is failed, not ok); unavailable = pico-cli absent/unusable."),
+        ...cliWrapperContractShape,
+        action: z.enum(["record", "decode", "load", "query"]).optional(),
+        command: z.string().optional().describe("The exact pico-cli invocation."),
+        artifact: z.string().optional().describe("record/decode: the expected output file."),
+        artifactExists: z.boolean().optional().describe("Stat-checked — exit 0 is not evidence the artifact exists."),
+        artifactBytes: z.number().nullable().optional(),
+        sessionId: z.string().nullable().optional().describe("load: best-effort parse; the raw output rides in outputTail either way."),
+      }).passthrough(),
       inputSchema: {
         action: z.enum(["record", "decode", "load", "query"]).describe("record = capture a .perfetto-trace from the device; decode = convert it; load = open a SQL session on it; query = run SQL in that session."),
         packageName: z.string().optional().describe("record: target app package (-a). Optional — omitting it records a whole-device trace."),
@@ -97,16 +108,16 @@ export function registerPerfTraceTools(server: McpServer) {
         if (packageName) args.push("-a", packageName);
         timeoutMs = (sec + 90) * 1000;
       } else if (action === "decode") {
-        if (!tracePath) return okJson({ status: "failed", note: "decode needs tracePath (a .perfetto-trace file from record)." });
+        if (!tracePath) return okJsonStructured({ status: "failed", note: "decode needs tracePath (a .perfetto-trace file from record)." });
         artifact = outputPath ?? `${tracePath}.${format ?? "json"}`;
         args = ["perf", "trace", "decode", tracePath, "-f", format ?? "json", "-o", artifact];
         timeoutMs = 300_000; // traceconv may auto-download on first use
       } else if (action === "load") {
-        if (!tracePath) return okJson({ status: "failed", note: "load needs tracePath (a .perfetto-trace file from record)." });
+        if (!tracePath) return okJsonStructured({ status: "failed", note: "load needs tracePath (a .perfetto-trace file from record)." });
         args = ["perf", "trace", "load", tracePath];
         timeoutMs = 180_000; // starts trace_processor_shell via the CLI's daemon
       } else {
-        if (!sessionId || !sql) return okJson({ status: "failed", note: "query needs sessionId (from load) and sql." });
+        if (!sessionId || !sql) return okJsonStructured({ status: "failed", note: "query needs sessionId (from load) and sql." });
         args = ["perf", "trace", "query", "--session", sessionId, "--sql", sql];
       }
 
@@ -114,7 +125,7 @@ export function registerPerfTraceTools(server: McpServer) {
       const cli = picoCliFromEnsure(ensured);
       if (!cli) {
         if (ensured.action === "failed") {
-          return okJson({
+          return okJsonStructured({
             status: "unavailable",
             failureClass: ensured.failureClass,
             note: ensured.note,
@@ -123,7 +134,7 @@ export function registerPerfTraceTools(server: McpServer) {
           });
         }
         const unavailable = ensured.status === "unavailable" ? ensured : null;
-        return okJson({
+        return okJsonStructured({
           status: "unavailable",
           failureClass: unavailable?.failureClass ?? "cli-missing",
           note: unavailable?.failureClass === "cli-missing"
@@ -142,7 +153,7 @@ export function registerPerfTraceTools(server: McpServer) {
         const stdoutText = stdout;
         const failureClass = classifyPicoCliFailure(stderrText, stdoutText);
         const failTail = `${stderrText}\n${stdoutText}`.trim().split("\n").slice(-8).join("\n");
-        return okJson({
+        return okJsonStructured({
           status: "failed",
           failureClass,
           note: failureClass === "flag-or-version-drift"
@@ -194,7 +205,7 @@ export function registerPerfTraceTools(server: McpServer) {
           out.note = "query output was not JSON — the raw text is in outputTail.";
         }
       }
-      return okJson(out);
+      return okJsonStructured(out);
     },
   );
 }

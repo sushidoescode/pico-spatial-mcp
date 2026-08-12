@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "pico-spatial-mcp",
-  "version": "36.5.1",
+  "version": "36.6.0",
   "description": "Build, inspect, validate, and vision-verify PICO OS 6 Spatial SDK applications through a host-neutral MCP server.",
   "author": {
     "name": "Sushant Srikrishnan",
