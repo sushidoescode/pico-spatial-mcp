@@ -5,7 +5,7 @@ import { z } from "zod";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { okJson } from "./util.js";
+import { okJson, okJsonStructured } from "./util.js";
 import { validateToolchain } from "./toolchain.js";
 import { registerAdbTools } from "./adb.js";
 import { registerEmulatorTools } from "./emulator.js";
@@ -177,8 +177,30 @@ server.registerTool(
       projectDir: z.string().optional().describe("Android project dir whose local.properties should be honored"),
       toolsVersion: z.string().optional().describe("Pin a specific toolchain version, e.g. '0.13'"),
     },
+    // Typed contract (2026-07-28 revision lane, works on SDK v1). Mirrors ToolchainReport exactly.
+    outputSchema: {
+      toolsRoot: z.string().describe("Resolved PICO tools root directory."),
+      toolsRootSource: z.string().describe("How the root was resolved (local.properties / $PICO_HOME / default)."),
+      versions: z.array(z.object({
+        version: z.string(),
+        hasEditor: z.boolean(),
+        hasEmulator: z.boolean(),
+        spatialbundle: z.string().nullable(),
+        emulatorBin: z.string().nullable(),
+      }).passthrough()).describe("Toolchain versions found under the root."),
+      selected: z.string().nullable().describe("Version selected for this report."),
+      spatialbundleVersion: z.string().nullable().describe("`spatialbundle --version` output, or null if the probe failed."),
+      emulatorVersion: z.string().nullable(),
+      adb: z.string().nullable().describe("Resolved adb path, or null if none found."),
+      javaHome: z.string().nullable(),
+      avdHome: z.string(),
+      avds: z.array(z.string()),
+      licenseAccepted: z.boolean(),
+      protosAvailable: z.boolean(),
+      problems: z.array(z.string()).describe("Empty array = toolchain fully operational; each entry is a concrete gap."),
+    },
   },
-  async ({ projectDir, toolsVersion }) => okJson(await validateToolchain(projectDir, toolsVersion)),
+  async ({ projectDir, toolsVersion }) => okJsonStructured(await validateToolchain(projectDir, toolsVersion) as unknown as Record<string, unknown>),
 );
 
 // Surface-independent explicit consent for lazy pico-cli provisioning. Registration is pure: npm

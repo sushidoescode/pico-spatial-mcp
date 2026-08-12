@@ -109,6 +109,7 @@ type ToolResult = {
     | { type: "text"; text: string }
     | { type: "image"; data: string; mimeType: string }
   >;
+  structuredContent?: Record<string, unknown>;
   isError?: boolean;
 };
 
@@ -118,6 +119,14 @@ export function ok(text: string): ToolResult {
 
 export function okJson(obj: unknown): ToolResult {
   return { content: [{ type: "text", text: JSON.stringify(obj, null, 2) }] };
+}
+
+/** okJson + the same object as MCP structuredContent — for tools that declare an outputSchema
+ * (2026-07-28 revision lane, works on SDK v1). The SDK REJECTS a non-error result from a
+ * schema-declaring tool that lacks structuredContent, so every success return of such a tool
+ * must come through here (or set structuredContent itself). isError results are exempt. */
+export function okJsonStructured(obj: Record<string, unknown>): ToolResult {
+  return { content: [{ type: "text", text: JSON.stringify(obj, null, 2) }], structuredContent: obj };
 }
 
 export function fail(text: string): ToolResult {

@@ -15,6 +15,13 @@ Versions here key the plugin manifests (`/plugin update` uses them as its cache 
   (fleet_build, build_hybrid_experience, ingest_marble_world, semantic splat) whose SDK
   child env never inherits the variable — each now pins `PICO_MCP_SURFACE=full`
   explicitly, and a static `test:doors` guard keeps future self-spawns pinned.
+- **Typed outputSchema on the five highest-value tools** (2026-07-28 MCP revision lane,
+  live on SDK v1): `validate_toolchain`, `capability_report`, `diagnose`,
+  `build_and_run`, `verify` now advertise typed output contracts and return matching
+  `structuredContent` on every non-error call (SDK-enforced server-side). The honesty
+  split is in the schemas: `build_and_run.rendered` is a logcat marker, `verify.visual`
+  only ever counts frames captured — appearance has no machine field because looking is
+  the agent's job. Smoke asserts the contract on all five and round-trips three live.
 - **pico-cli 0.4.2 re-verification** (measured 2026-08-12, sandboxed npm install; see
   ANSWERED_BY_MEASUREMENT Q37): 0.4.x gates the perf family behind one-time
   `pico-cli setup` — new `not-provisioned` failure class carries that exact remedy;

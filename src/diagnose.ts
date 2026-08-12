@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { fail, image, okJson, run } from "./util.js";
+import { fail, image, okJson, okJsonStructured, run } from "./util.js";
 
 /**
  * Self-diagnosis — the heart of v2.0. Two tools:
@@ -496,6 +496,14 @@ export function registerDiagnoseTools(server: McpServer) {
           ])
           .describe("The observed symptom to diagnose."),
       },
+      // Typed contract (2026-07-28 revision lane, works on SDK v1). Mirrors DiagEntry + the echo.
+      outputSchema: {
+        symptom: z.string().describe("The symptom that was diagnosed (echoed)."),
+        rootCause: z.string().describe("The verified root cause from the knowledge base."),
+        fix: z.array(z.string()).describe("Concrete fix steps, in order."),
+        designRule: z.string().describe("The DESIGN.md rule or repository source the symptom violates."),
+        relatedTools: z.array(z.string()).describe("Tools that apply or verify the fix."),
+      },
     },
     async ({ symptom }) => {
       const entry = KB[symptom];
@@ -503,7 +511,7 @@ export function registerDiagnoseTools(server: McpServer) {
         // Should be unreachable given the enum, but stay honest if the KB drifts.
         return fail(`No knowledge-base entry for symptom '${symptom}'. Known: ${Object.keys(KB).join(", ")}.`);
       }
-      return okJson({ symptom, ...entry });
+      return okJsonStructured({ symptom, ...entry });
     },
   );
 

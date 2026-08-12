@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { okJson } from "./util.js";
+import { okJson, okJsonStructured } from "./util.js";
 import { validateCapture, extractImagePath } from "./evidence.js";
 
 /**
@@ -85,6 +85,15 @@ export function buildCapabilityMatrix(appName: string | undefined, features: any
   return { appName: appName ?? null, summary, matrix: buckets, markdown: md };
 }
 
+/** One matrix row (buildCapabilityMatrix's `entry` shape): ceiling fields appear only on gated items. */
+const capabilityFeatureShape = z.object({
+  name: z.string(),
+  how: z.string(),
+  evidence: z.string().nullable(),
+  ceiling: z.string().optional(),
+  ceilingReason: z.string().optional(),
+}).passthrough();
+
 export function registerCapabilityTools(server: McpServer) {
   server.registerTool(
     "capability_report",
@@ -106,6 +115,20 @@ export function registerCapabilityTools(server: McpServer) {
           )
           .describe("Every feature in the build and how it was verified."),
       },
+      // Typed contract (2026-07-28 revision lane, works on SDK v1). One bucket per evidence tier;
+      // the tiers stay structurally separate so "seen rendering" can never absorb "code exists".
+      outputSchema: {
+        appName: z.string().nullable(),
+        summary: z.string().describe("One-line bucket counts, strongest evidence first."),
+        matrix: z.object({
+          visuallyVerified: z.array(capabilityFeatureShape).describe("An agent LOOKED at a linked capture."),
+          autoJudged: z.array(capabilityFeatureShape).describe("Calibrated eye scored it — measured, not human-seen."),
+          usdHostRender: z.array(capabilityFeatureShape).describe("Off-device USD composition render."),
+          structuralOnly: z.array(capabilityFeatureShape).describe("Exists per code/logs; appearance unconfirmed."),
+          builtForHeadset: z.array(capabilityFeatureShape).describe("Compiles for Swan-only capability; deferred honestly."),
+        }),
+        markdown: z.string().describe("The same matrix rendered for humans."),
+      },
     },
     async ({ appName, features }) => {
       // v6.1: gate the legacy visual bucket the same way the ledger does — a vision_verified/
@@ -118,7 +141,7 @@ export function registerCapabilityTools(server: McpServer) {
         }
         return f;
       });
-      return okJson(buildCapabilityMatrix(appName, gated));
+      return okJsonStructured(buildCapabilityMatrix(appName, gated));
     },
   );
 }

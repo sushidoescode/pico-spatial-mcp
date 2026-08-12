@@ -30,13 +30,42 @@ export function registerVerifyTools(server: McpServer) {
         skipStructural: z.boolean().optional(),
         skipVisual: z.boolean().optional(),
       },
+      // Typed contract (2026-07-28 revision lane, works on SDK v1). The honesty split is the
+      // schema: structural status is machine truth about EXISTENCE; the visual half only ever
+      // reports frames CAPTURED — appearance has no machine field here because looking is the
+      // agent's job (groundTruthRule says so in-band).
+      outputSchema: {
+        structural: z.object({
+          status: z.enum(["pass", "fail", "error", "skipped"]),
+          error: z.string().optional().describe("Present when status=error (e.g. Agent Bridge unreachable)."),
+          entityCount: z.number().optional(),
+          componentsSeen: z.array(z.string()).optional(),
+          results: z.array(z.object({
+            check: z.string(),
+            pass: z.boolean(),
+            detail: z.string().optional(),
+          }).passthrough()).optional(),
+        }).passthrough(),
+        visual: z.object({
+          status: z.enum(["captured", "error", "skipped"]),
+          framesCaptured: z.number().optional(),
+          error: z.string().optional(),
+          baselineDiffs: z.array(z.object({ frame: z.number(), diff: z.number().nullable() })).optional()
+            .describe("Coarse perceptual diffs vs baselineDir, when one was given."),
+        }).passthrough(),
+        groundTruthRule: z.string(),
+      },
     },
     async (args) => {
       const content: any[] = [];
+      const GROUND_TRUTH_RULE =
+        "structural proves the scene graph EXISTS; the frames prove it RENDERS/looks right. " +
+        "You MUST look at the frames — a structural PASS alone is NOT \"verified\". Grade with capability_report.";
 
       // --- structural (assert_scene core) ---
       let structLine = "skipped";
       let structDetail = "";
+      let structural: Record<string, unknown> = { status: "skipped" };
       if (!args.skipStructural) {
         const a = await runAssertScene({
           applicationId: args.applicationId,
@@ -48,8 +77,15 @@ export function registerVerifyTools(server: McpServer) {
         });
         if ("error" in a) {
           structLine = `ERROR (${a.error})`;
+          structural = { status: "error", error: a.error };
         } else {
           structLine = a.pass ? "PASS" : "FAIL";
+          structural = {
+            status: a.pass ? "pass" : "fail",
+            entityCount: a.scene.entityCount,
+            componentsSeen: a.scene.componentsSeen,
+            results: a.results.map((r: any) => ({ check: r.check, pass: r.pass, ...(r.detail ? { detail: r.detail } : {}) })),
+          };
           structDetail =
             `\nStructural (${a.scene.entityCount} entities, comps: ${a.scene.componentsSeen.join(",")}):\n` +
             a.results.map((r: any) => `  ${r.pass ? "OK " : "FAIL"} ${r.check}${r.detail ? ` · ${r.detail}` : ""}`).join("\n");
@@ -59,12 +95,19 @@ export function registerVerifyTools(server: McpServer) {
       // --- visual (verify_visual core) ---
       let visualLine = "skipped";
       let visualDetail = "";
+      let visual: Record<string, unknown> = { status: "skipped" };
       if (!args.skipVisual) {
         const sw = await sweepFrames({ serial: args.serial, steps: args.steps, stepDx: args.stepDx, baselineDir: args.baselineDir });
         if (sw.error) {
           visualLine = `ERROR (${sw.error})`;
+          visual = { status: "error", error: sw.error };
         } else {
           visualLine = `${sw.frames.length} frames captured — LOOK at the images below`;
+          visual = {
+            status: "captured",
+            framesCaptured: sw.frames.length,
+            ...(args.baselineDir ? { baselineDiffs: sw.frames.map((f) => ({ frame: f.i, diff: f.diff ?? null })) } : {}),
+          };
           content.push(...(await framesToImageContent(sw.frames, args.maxReturned ?? 4)));
           if (args.baselineDir) visualDetail = "\nVisual diffs vs baseline (coarse): " + sw.frames.map((f) => `f${f.i}=${f.diff ?? "n/a"}`).join(" ");
         }
@@ -74,11 +117,10 @@ export function registerVerifyTools(server: McpServer) {
         type: "text",
         text:
           `# verify — STRUCTURAL: ${structLine}  |  VISUAL: ${visualLine}\n` +
-          `GROUND-TRUTH RULE: structural proves the scene graph EXISTS; the frames prove it RENDERS/looks right. ` +
-          `You MUST look at the frames — a structural PASS alone is NOT "verified". Grade with capability_report.`,
+          `GROUND-TRUTH RULE: ${GROUND_TRUTH_RULE}`,
       });
       content.push({ type: "text", text: (structDetail + visualDetail).trim() || "(no detail)" });
-      return { content };
+      return { content, structuredContent: { structural, visual, groundTruthRule: GROUND_TRUTH_RULE } };
     },
   );
 }

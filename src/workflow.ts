@@ -159,6 +159,20 @@ export function registerWorkflowTools(server: McpServer) {
         serial: z.string().optional(),
         settleSec: z.number().int().default(6),
       },
+      // Typed contract (2026-07-28 revision lane, works on SDK v1). Success path only — every
+      // failure branch returns isError (exempt). The honesty split is structural: `rendered` is a
+      // logcat marker, `appearanceRule` states that NOTHING here is vision_verified.
+      outputSchema: {
+        apk: z.string().describe("The newest APK that was installed."),
+        installed: z.literal(true),
+        launched: z.literal(true),
+        health: z.enum(["ok", "CRASHED"]),
+        rendered: z.boolean().describe("First-frame logcat marker seen during settle — a marker, not a look."),
+        crashes: z.array(z.string()).describe("Last crash lines when health=CRASHED; empty otherwise."),
+        capabilitySummary: z.string().describe("Auto-emitted honest capability matrix summary for this run."),
+        screenshotIncluded: z.boolean().describe("Whether a frame rides along as image content — an agent must LOOK at it; appearance is NOT auto-verified."),
+        appearanceRule: z.string(),
+      },
     },
     async ({ projectDir, packageName, task, activity, serial, settleSec }) => {
       const dir = expandHome(projectDir);
@@ -231,10 +245,22 @@ export function registerWorkflowTools(server: McpServer) {
 
       const shot = await runBinary(await adbPath(), ["-s", s, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
       const note = JSON.stringify(report, null, 2) + "\n\n" + matrix.markdown;
-      if (shot.code === 0 && shot.stdout.length > 8) {
-        return image(shot.stdout.toString("base64"), note);
+      const screenshotIncluded = shot.code === 0 && shot.stdout.length > 8;
+      const structuredContent: Record<string, unknown> = {
+        apk,
+        installed: true,
+        launched: true,
+        health: crash.length ? "CRASHED" : "ok",
+        rendered,
+        crashes: crash.slice(-4),
+        capabilitySummary: matrix.summary,
+        screenshotIncluded,
+        appearanceRule: "frame captured and returned — an agent MUST LOOK (verify / capture_frame); appearance is NOT auto-verified",
+      };
+      if (screenshotIncluded) {
+        return { ...image(shot.stdout.toString("base64"), note), structuredContent };
       }
-      return ok(note);
+      return { ...ok(note), structuredContent };
     },
   );
 }

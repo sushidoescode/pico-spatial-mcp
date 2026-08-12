@@ -62,7 +62,31 @@ if (missing.length) { console.log("MISSING TOOLS:", missing.join(", ")); failure
 const prompts = await client.listPrompts().catch(() => ({ prompts: [] }));
 console.log("Prompts:", prompts.prompts.map((p) => p.name).join(", ") || "(none)");
 
-show("validate_toolchain", await client.callTool({ name: "validate_toolchain", arguments: {} }));
+// v36.3 outputSchema wave: the five highest-value tools advertise a typed contract, and every
+// non-error call must carry matching structuredContent (the SDK enforces it server-side — a
+// missing/mismatched payload turns the call into an error, so these calls double as validation).
+{
+  const TYPED = ["validate_toolchain", "capability_report", "diagnose", "build_and_run", "verify"];
+  const untyped = TYPED.filter((n) => !tools.tools.find((t) => t.name === n)?.outputSchema);
+  if (untyped.length) { console.log(`\n=== typed outputSchema [FAIL] ===\nmissing on: ${untyped.join(", ")}`); failures++; }
+  else console.log("\n=== typed outputSchema [ok] === advertised on all five contract tools");
+
+  const diag = await client.callTool({ name: "diagnose", arguments: { symptom: "white_geometry" } });
+  if (!diag.isError && diag.structuredContent?.rootCause && Array.isArray(diag.structuredContent?.fix))
+    console.log("=== diagnose structuredContent [ok] ===");
+  else { console.log(`=== diagnose structuredContent [FAIL] === ${JSON.stringify(diag.structuredContent ?? null).slice(0, 200)}`); failures++; }
+
+  const cap = await client.callTool({ name: "capability_report", arguments: { appName: "smoke", features: [{ name: "smoke check", status: "structural", evidence: "smoke test fixture" }] } });
+  if (!cap.isError && cap.structuredContent?.matrix?.structuralOnly?.length === 1 && typeof cap.structuredContent?.summary === "string")
+    console.log("=== capability_report structuredContent [ok] ===");
+  else { console.log(`=== capability_report structuredContent [FAIL] === ${JSON.stringify(cap.structuredContent ?? null).slice(0, 200)}`); failures++; }
+}
+
+const vt = await client.callTool({ name: "validate_toolchain", arguments: {} });
+if (!vt.isError && !Array.isArray(vt.structuredContent?.problems)) {
+  console.log("=== validate_toolchain structuredContent [FAIL] === missing typed problems array"); failures++;
+}
+show("validate_toolchain", vt);
 show("emulator_list", await client.callTool({ name: "emulator_list", arguments: {} }));
 show("inspect_bundle (existing claimsight bundle)", await client.callTool({
   name: "inspect_bundle",
