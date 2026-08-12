@@ -260,6 +260,7 @@ try {
   const sdk = await doorsClient.callTool({ name: "pico_sdk", arguments: { symbol: "Entity" } });
   const sdkBody = JSON.parse(sdk.content[0].text);
   if (sdkBody.status === "ok") ok("a door tool completed its inner self-client spawn from a path containing a space");
+  else if (sdkBody.status === "unavailable") ok("spaced-path inner spawn proven (vault absent on this machine; the unavailable answer still round-tripped through the spawned server)");
   else fail(`door tool failed in a spaced path: ${JSON.stringify(sdkBody).slice(0, 200)} — module-relative resolution is broken`);
   await doorsClient.close();
 

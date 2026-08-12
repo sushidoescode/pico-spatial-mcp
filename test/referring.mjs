@@ -10,7 +10,7 @@ let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
 
-const SCENE_PATH = "/Users/sushantsrikrish/.pico-mcp/artifacts/ramen-v19-semantic-app.json";
+const SCENE_PATH = `${process.env.HOME}/.pico-mcp/artifacts/ramen-v19-semantic-app.json`;
 if (!fs.existsSync(SCENE_PATH)) {
   console.log("  skip real ramen semantic scene not on this machine — suite skipped");
   process.exit(0);

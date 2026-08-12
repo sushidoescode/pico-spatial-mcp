@@ -132,7 +132,7 @@ This is deliberately the same rigor as a `vision_verified` claim, plus hardware 
 3. **`adb -s <serial> shell getprop ro.build.fingerprint`** — the exact build fingerprint of the
    OS on the device at capture time. This pins down which PICO OS/Swan build produced the frame,
    which matters the moment there's more than one build in circulation (see the OS 6.1 bring-up
-   playbook, `docs/playbooks/os61-bringup.md`, for why version identity matters here).
+   playbook (internal notes) for why version identity matters here).
 4. **The app package + the exact launch command used** — package name, activity (or the monkey
    LAUNCHER invocation if none was given), and the `adb install`/`am start` commands actually
    run, so the run is reproducible from the ask-list alone.
@@ -142,7 +142,7 @@ This is deliberately the same rigor as a `vision_verified` claim, plus hardware 
 
 Package these as a directory (PNG + a short text file with the other four items is enough — no
 need to write prose beyond the one-sentence attestation). This is the same "send the artifact,
-not a summary" discipline used in `docs/playbooks/os61-bringup.md` Section 6.
+not a summary" discipline used in the OS 6.1 bring-up playbook (internal notes).
 
 ## 4. How we mint the entry
 

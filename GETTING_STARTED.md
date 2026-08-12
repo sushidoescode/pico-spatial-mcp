@@ -127,9 +127,9 @@ Ask your agent:
 > Run `preflight_env`.
 
 This is the intended first call. It's strictly read-only — it changes nothing on your machine — and it
-runs eleven checks: Node, adb, the PICO SDK payload, the JDK, ImageMagick, the packaged app skeleton,
-whether an emulator is actually running, the emulator's gRPC port, macOS Accessibility, camera
-calibration, and disk space.
+runs fourteen checks: Node, adb, the PICO SDK payload, the JDK, ImageMagick, the packaged app
+skeleton, whether an emulator is actually running, the emulator's gRPC port, macOS Accessibility,
+camera calibration, disk space, the Unity lane, pico-cli, and pico-cli's emulator status.
 
 Every check that isn't passing comes back with a **specific fix**, not "check your setup". Work down
 the list until the things you care about pass.
@@ -225,11 +225,10 @@ The seventeen: `validate_toolchain` `ensure_pico_cli` `pico_build_app` `pico_sca
 `pico_ship` `pico_capabilities` `pico_fix` `pico_record` `pico_emulator` `pico_next`. On this
 surface `pico_doctor` replaces `preflight_env` as your health check.
 
-**One sharp edge.** `pico_measure` needs a one-time camera calibration, and the two tools that perform
-it are *not* on the doors surface. To calibrate: switch to the full surface (remove `PICO_MCP_SURFACE`
-or set it to `full`), restart your client, run `fleet_build(['calib'])` then `calibrate_capture_camera`
-once, then switch back if you prefer the narrow surface. `pico_doctor` reports your calibration state
-and repeats this route.
+**One sharp edge.** `pico_measure` needs a one-time camera calibration. On the doors surface run
+`pico_doctor` with `{calibrate: true}` — it performs `fleet_build(['calib'])` then
+`calibrate_capture_camera` through the full-surface inner server, no surface switch and no client
+restart needed (v31). `pico_doctor` reports your calibration state either way.
 
 Calibration also **dies on an emulator cold restart** — the camera's principal point can shift by
 hundreds of pixels. Expect to redo it after rebooting the emulator, and before any measuring session.
@@ -258,7 +257,7 @@ This project treats over-claiming as a bug, so here's the honest boundary:
 
 ## When you hit a problem
 
-Send back:
+Send back (file at <https://github.com/sushidoescode/pico-spatial-mcp/issues>):
 
 1. the full output of `preflight_env` (or `pico_doctor`),
 2. the tool name and the complete error,

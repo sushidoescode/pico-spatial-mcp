@@ -180,7 +180,7 @@ test("portable core and host overlays use only their documented MCP contracts", 
 test("all host marketplaces use their exact source descriptor and synchronized metadata", () => {
   const pkg = readJson("package.json");
   const marketplaces = [
-    { file: ".claude-plugin/marketplace.json", source: "." },
+    { file: ".claude-plugin/marketplace.json", source: "./" },
     { file: ".agents/plugins/marketplace.json", source: { source: "local", path: "." } },
     { file: ".cursor-plugin/marketplace.json", source: "." },
     { file: ".github/plugin/marketplace.json", source: "." },
@@ -215,14 +215,12 @@ test("bootstrap root/platform/prerequisite decisions are independent of the call
   assert.equal(needsSourceBuild({ nodeModulesPresent: true, distEntryPresent: false }), true);
   assert.equal(needsSourceBuild({ nodeModulesPresent: false, distEntryPresent: false }), true);
 
-  const fullSetup = [
-    ["ci", "--no-audit", "--no-fund"],
-    ["run", "build"],
-  ];
+  const ci = ["ci", "--no-audit", "--no-fund"];
+  const build = ["run", "build"];
   assert.deepEqual(sourceSetupPlan({ nodeModulesPresent: true, distEntryPresent: true }), []);
-  assert.deepEqual(sourceSetupPlan({ nodeModulesPresent: false, distEntryPresent: true }), fullSetup);
-  assert.deepEqual(sourceSetupPlan({ nodeModulesPresent: true, distEntryPresent: false }), fullSetup);
-  assert.deepEqual(sourceSetupPlan({ nodeModulesPresent: false, distEntryPresent: false }), fullSetup);
+  assert.deepEqual(sourceSetupPlan({ nodeModulesPresent: false, distEntryPresent: true }), [ci]);
+  assert.deepEqual(sourceSetupPlan({ nodeModulesPresent: true, distEntryPresent: false }), [build]);
+  assert.deepEqual(sourceSetupPlan({ nodeModulesPresent: false, distEntryPresent: false }), [ci, build]);
 });
 
 test("Windows bootstrap runs fixed npm scripts through ComSpec without shell interpolation", async () => {
@@ -1197,10 +1195,10 @@ test("answers-by-measurement publishes exactly six narrow answers backed by trac
   }
 });
 
-test("distribution metadata records platform-exact full surfaces, 17 doors, and 43 test suites plus smoke", () => {
+test("distribution metadata records platform-exact full surfaces, 17 doors, and 44 test suites plus smoke", () => {
   const pkg = readJson("package.json");
   const testScripts = Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"));
-  assert.equal(testScripts.length, 43, testScripts.join("\n"));
+  assert.equal(testScripts.length, 44, testScripts.join("\n"));
   assert.equal(pkg.scripts["test:distribution-adoption"], "node --test test/distribution-adoption.mjs");
 
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");

@@ -354,10 +354,13 @@ static BOOL CopyObjectIDs(CMIOObjectID objectID,
         PrintOSStatus([NSString stringWithFormat:@"read %@ size", label], status);
         return NO;
     }
-    if (size == 0 || size % sizeof(CMIOObjectID) != 0 ||
+    if (size % sizeof(CMIOObjectID) != 0 ||
         size > kMaximumObjectIDs * sizeof(CMIOObjectID)) {
         fprintf(stderr, "cmio-camera-writer: %s returned invalid byte size %u\n", label.UTF8String, (unsigned)size);
         return NO;
+    }
+    if (size == 0) {
+        return YES;  // Zero devices is a valid, honestly-reported topology (headless runners).
     }
     CMIOObjectID *ids = calloc(1, size);
     if (ids == NULL) {

@@ -5,7 +5,7 @@ An MCP server that lets AI agents build **PICO XR spatial apps end-to-end on the
 > ### The honesty invariant
 > "Verified" means an agent or human **looked at a rendered frame** — never a compile, a log line, or a pixel heuristic. Every visual claim is recorded in a trust ledger that *structurally rejects* a `vision_verified` entry without a linked, looked-at capture. Honest deferral (`structural`, `built-for-Swan`, "I tried X and it failed") is always acceptable; a silent over-claim is the only unforgivable failure.
 
-## For PICO reviewers: what you can use this for, today
+## What you can use this for, today
 
 Concrete jobs this tool does on a stock PICO OS 6 emulator install, each backed by ledger evidence you can audit:
 
@@ -75,7 +75,7 @@ The fastest way in is the doors surface: `pico_doctor` → `pico_build_app` (two
 
 ## Honest limits (the emulator ceiling)
 
-The PICO emulator renders bounded, eye-level content, floating spatial panels, **the Mixed-stage MR lane** (the passthrough home environment plus simulated semantic planes an app's content seats on — the product default) — and, corrected in v30.1, **full-immersive Unity VR**. Two MR-specific honesty notes: on high-coverage passthrough frames the calibrated auto-judge gives count/not-black/dominant-color checks zero confidence; a scene with at least two authored colors can use the color-key lane (default threshold 0.8), while other frames escalate to a human LOOK. That machine verdict is `auto_judged`, never `vision_verified`. Full Space (stageStyle `3`) carries a **partner-stated** caveat: Full-Space immersive apps hit a known Guardian-boundary issue on hardware (per Matt/PICO, fix in progress — reported to us, not measured by us). The July-22 Unity settling test's uniformly black captures were an `adb screencap` artifact, not a compositing failure: screencap reads the shell composite and is structurally blind to XR-runtime output (Unity's own log said so — `Skip Present To Main Screen: Yes`). Captured through the emulator window (`gui_capture`), both Unity routes — the PICO Integration SDK (`PXR_Loader`) and the OpenXR SDK, via the unchanged sha-pinned July-22 APK — fill the view with their intended immersive scenes, `vision_verified`. The honest residue: the 2026-07-02 **native-NDK and WebXR** immersive probes reported a compositor loading fallback in the GUI viewport and were never re-run through the corrected capture path — their status is **OPEN**, not negative and not settled. **Controller-ray input and head-tracked depth** remain deferred to a **6.1 emulator or PICO Swan hardware**, and flip only after direct looked-at evidence (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Physics simulates on the emulator; the Unity build lane is `unity_scaffold_project` + `unity_build_apk` — see **[docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md)** for the capture-path rule, the retraction, and the exact evidence.
+The PICO emulator renders bounded, eye-level content, floating spatial panels, **the Mixed-stage MR lane** (the passthrough home environment plus simulated semantic planes an app's content seats on — the product default) — and, corrected in v30.1, **full-immersive Unity VR**. Two MR-specific honesty notes: on high-coverage passthrough frames the calibrated auto-judge gives count/not-black/dominant-color checks zero confidence; a scene with at least two authored colors can use the color-key lane (default threshold 0.8), while other frames escalate to a human LOOK. That machine verdict is `auto_judged`, never `vision_verified`. Full Space (stageStyle `3`) carries a **partner-stated** caveat: Full-Space immersive apps hit a known Guardian-boundary issue on hardware (per PICO, fix in progress — reported to us, not measured by us). The July-22 Unity settling test's uniformly black captures were an `adb screencap` artifact, not a compositing failure: screencap reads the shell composite and is structurally blind to XR-runtime output (Unity's own log said so — `Skip Present To Main Screen: Yes`). Captured through the emulator window (`gui_capture`), both Unity routes — the PICO Integration SDK (`PXR_Loader`) and the OpenXR SDK, via the unchanged sha-pinned July-22 APK — fill the view with their intended immersive scenes, `vision_verified`. The honest residue: the 2026-07-02 **native-NDK and WebXR** immersive probes reported a compositor loading fallback in the GUI viewport and were never re-run through the corrected capture path — their status is **OPEN**, not negative and not settled. **Controller-ray input and head-tracked depth** remain deferred to a **6.1 emulator or PICO Swan hardware**, and flip only after direct looked-at evidence (`swan_verify_matrix`). WebSpatial spatial depth activates on **PICO OS 6** (the 2D projection is verifiable today). Programmatic head-pose driving is **gated** on this emulator build (GUI-only WASD, confirmed by pixel-diff probes) — `xr_input_status` reports the full map. Physics simulates on the emulator; the Unity build lane is `unity_scaffold_project` + `unity_build_apk` — see **[docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md)** for the capture-path rule, the retraction, and the exact evidence.
 
 ## Requirements
 
@@ -90,6 +90,12 @@ The PICO emulator renders bounded, eye-level content, floating spatial panels, *
 
 Run `pico_doctor` (doors surface) or `preflight_env` (full surface) first on any machine — it's a read-only check that names the exact fix for anything missing.
 
+**Without the PICO SDK or emulator** the server still installs and runs: tool listing, `pico_doctor`,
+SDK knowledge lookups (agent-vault), codegen/scaffolding, lint, and all documentation tools work
+anywhere; build/run/capture lanes report exactly which payload is missing and how to get it.
+macOS carries the full surface; Linux runs the headless codegen/knowledge surface; Windows adds the
+pico-cli lane (emulator control is macOS-only today).
+
 ## Install
 
 **The server is host-agnostic stdio MCP.** Its absolute plain-MCP registration was historically
@@ -103,7 +109,7 @@ and escalate.
 **As a Claude Code plugin** — the repo is a self-contained plugin marketplace:
 
 ```bash
-claude plugin marketplace add sushidoescode/PICO-MCP   # or a local clone path
+claude plugin marketplace add sushidoescode/pico-spatial-mcp   # or a local clone path
 claude plugin install pico-spatial-mcp@pico-mcp
 ```
 
@@ -172,11 +178,17 @@ The tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first sc
 
 ```bash
 npm run smoke        # toolchain/bundle/proto tools against the real local install (no emulator boot)
+                     # no PICO SDK installed? prefix SMOKE_SDK_OPTIONAL=1 — SDK-dependent probes skip
 npm run test:lint    # the retained-lessons lint rules fire on their fixtures
 npm run test:ledger  # the trust ledger rejects an unlinked vision_verified claim
 ```
 
-The full gate battery — 44 gate invocations (43 `test:` suites plus `smoke`), across Linux and macOS jobs, deterministic, no emulator boot — is mirrored in `.github/workflows/gates.yml` — see **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for the complete list.
+The full gate battery — 45 gate invocations (44 `test:` suites plus `smoke`), across Linux, macOS, and Windows jobs, deterministic, no emulator boot — is mirrored in `.github/workflows/gates.yml` — see **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for the complete list.
+
+## Maintainer
+
+Built and maintained by **Sushant Srikrishnan** ([@sushidoescode](https://github.com/sushidoescode)).
+Bugs, feature requests, and feedback: [GitHub Issues](https://github.com/sushidoescode/pico-spatial-mcp/issues).
 
 ## Licensing
 

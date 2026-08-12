@@ -181,7 +181,7 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
   world-model RGB plus plane/surface metadata through camera/VST-facing APIs. Gate: PICO blessing
   and an integration surface or emulator source artifact; this repo will not claim an upstream
   path exists from public flags alone.
-- **OS 6.1 emulator bring-up** — playbook ready ([docs/playbooks/os61-bringup.md](docs/playbooks/os61-bringup.md));
+- **OS 6.1 emulator bring-up** — playbook ready (internal notes);
   blocked on artifact access from our side.
 - **First 0.14/6.1 `vault_diff` drift report** — the multi-version vault tooling is shipped and
   waiting for a second real vault to exist locally.

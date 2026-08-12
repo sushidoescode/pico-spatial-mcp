@@ -377,7 +377,7 @@ function projectedCaptureFraction(center, size, camera, frustum) {
 }
 
 // 13) the REAL ramen scan: the ledgered unlabeled-counter finding, closed
-const PLY = "/Users/sushantsrikrish/Marble Worlds/Ramen World/Cozy Neon Cyberpunk Ramen Bar.ply";
+const PLY = `${process.env.HOME}/Marble Worlds/Ramen World/Cozy Neon Cyberpunk Ramen Bar.ply`;
 const SCENE = `${process.env.HOME}/.pico-mcp/artifacts/ramen-v19-semantic-app.json`;
 if (fs.existsSync(PLY) && fs.existsSync(SCENE)) {
   const { pos, total } = loadSplatPositions(PLY, 400000);

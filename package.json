@@ -1,6 +1,6 @@
 {
   "name": "pico-spatial-mcp",
-  "version": "34.0.0-pre",
+  "version": "36.2.0",
   "description": "MCP server for driving PICO XR spatial development: PICO OS6 Emulator lifecycle, adb automation, spatialbundle/Gradle build pipeline, and experimental gRPC XR input injection.",
   "type": "module",
   "bin": {
@@ -68,7 +68,8 @@
     "test:adoption-safety": "node test/adoption-safety.mjs",
     "test:spatialui-adoption": "node test/spatialui-adoption.mjs",
     "test:distribution-adoption": "node --test test/distribution-adoption.mjs",
-    "test:conformance": "node test/conformance.mjs"
+    "test:conformance": "node test/conformance.mjs",
+    "test:picocli-win": "node --test test/picocli-autoinstall.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -84,5 +85,14 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0"
+  },
+  "author": "Sushant Srikrishnan (https://github.com/sushidoescode)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sushidoescode/pico-spatial-mcp.git"
+  },
+  "homepage": "https://github.com/sushidoescode/pico-spatial-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/sushidoescode/pico-spatial-mcp/issues"
   }
 }

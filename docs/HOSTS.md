@@ -56,7 +56,7 @@ version does not implement the relevant plugin contract.
 
 As a plugin (the repo is its own marketplace; the launcher builds when needed):
 ```bash
-claude plugin marketplace add sushidoescode/PICO-MCP
+claude plugin marketplace add sushidoescode/pico-spatial-mcp
 claude plugin install pico-spatial-mcp@pico-mcp
 ```
 The current Claude-specific tokenized manifest has executable launcher coverage but has not been reinstalled live in

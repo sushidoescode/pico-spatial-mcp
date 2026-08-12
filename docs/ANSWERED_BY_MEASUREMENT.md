@@ -154,7 +154,7 @@ looked-at emulator frame. Raw Gradle required explicit `JAVA_HOME` and `ANDROID_
 
 Evidence type/class: `structural` + `vision_verified`.
 
-The dated [interop run](DEMO_RUNBOOK.md#L48-L58) structurally records the CLI and BOM versions,
+The dated interop run (internal runbook) structurally records the CLI and BOM versions,
 command chain, build time, launch path, environment caveat, and ledger reference. Ledger
 `com.vranywhere.cliproof#0` carries the looked-at capture and attestation for the displayed panel
 ([tracked claim](claims/claims.json#L2447-L2465)).

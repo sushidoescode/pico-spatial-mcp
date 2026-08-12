@@ -112,7 +112,7 @@ inside this package** (no template project to obtain). `preflight_env` verifies 
 There is also an **optional Unity lane** (`unity_scaffold_project` + `unity_build_apk`): it needs a
 local Unity editor (6000.4.9f1 + Android Build Support) and shows up in `preflight_env` as the
 warn-tier `unity-lane` check. Skip it entirely if you are not building Unity apps — nothing else
-depends on it. Details: [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
+depends on it. Details: [docs/UNITY_OPENXR.md](https://github.com/sushidoescode/pico-spatial-mcp/blob/main/docs/UNITY_OPENXR.md) (git repo; not shipped in the tarball).
 
 One thing it does not check is **macOS**, which the native virtual-camera gates require; nothing on
 your machine can be probed for that beyond the platform you're already on.
@@ -139,6 +139,8 @@ Native-NDK and WebXR immersive status is OPEN (never re-tested through the corre
 path) — neither claimed nor ruled out.
 
 ## Reporting problems
+
+File issues at <https://github.com/sushidoescode/pico-spatial-mcp/issues> (include the items below).
 
 Include the output of `preflight_env`, the tool name, and the full error. If a tool claimed
 something you don't believe, say so — that's the most valuable bug report this project can get.

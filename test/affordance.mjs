@@ -421,7 +421,7 @@ const captureConstrained = solveFreePlacement(captureScene, {
 }
 
 // 22) the REAL ramen scan: only the floor is a usable surface (all tops sit above 2m) — honest
-const RAMEN = "/Users/sushantsrikrish/.pico-mcp/artifacts/ramen-v19-semantic-app.json";
+const RAMEN = `${process.env.HOME}/.pico-mcp/artifacts/ramen-v19-semantic-app.json`;
 if (fs.existsSync(RAMEN)) {
   const ramen = JSON.parse(fs.readFileSync(RAMEN, "utf8"));
   const rs = extractSupportSurfaces(ramen);

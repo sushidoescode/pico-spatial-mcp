@@ -13,7 +13,7 @@ followed on 2026-07-21.
 ## 1. Register (once)
 
 ```bash
-git clone <this repo> ~/PICO-MCP && cd ~/PICO-MCP && npm ci && npm run build
+git clone https://github.com/sushidoescode/pico-spatial-mcp ~/PICO-MCP && cd ~/PICO-MCP && npm ci && npm run build
 claude mcp add pico-spatial-mcp --scope user --env PICO_MCP_SURFACE=doors -- node ~/PICO-MCP/dist/index.js
 ```
 

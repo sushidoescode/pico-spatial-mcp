@@ -35,12 +35,14 @@ export function needsSourceBuild({ nodeModulesPresent, distEntryPresent }) {
   return !(nodeModulesPresent && distEntryPresent);
 }
 
-export function sourceSetupPlan(prerequisites) {
-  if (!needsSourceBuild(prerequisites)) return [];
-  return [
-    ["ci", "--no-audit", "--no-fund"],
-    ["run", "build"],
-  ];
+export function sourceSetupPlan({ nodeModulesPresent, distEntryPresent }) {
+  // Split on purpose: Claude Code pre-installs deps into the plugin cache (npm ci
+  // --ignore-scripts), so the common cold start only needs the ~15 s tsc build — a full
+  // npm ci would push first launch toward the host's MCP startup timeout.
+  const plan = [];
+  if (!nodeModulesPresent) plan.push(["ci", "--no-audit", "--no-fund"]);
+  if (!distEntryPresent) plan.push(["run", "build"]);
+  return plan;
 }
 
 export function runBoundedChild(
