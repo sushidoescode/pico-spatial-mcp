@@ -11,6 +11,12 @@ test("collectWindowsEmulatorProbe records the bounded Windows install-channel co
     RUNNER_ARCH: "X64",
     ImageVersion: "20250824.1.0",
     PICO_WINDOWS_PROBE_SHA: "abc123def456",
+    GITHUB_WORKFLOW: "windows-emulator-probe",
+    GITHUB_RUN_ID: "1234567890",
+    GITHUB_RUN_ATTEMPT: "2",
+    GITHUB_JOB: "probe",
+    GITHUB_REPOSITORY: "sushidoescode/pico-spatial-mcp",
+    GITHUB_SERVER_URL: "https://github.com",
   };
   const results = [
     { code: 0, signal: null, timedOut: false, stdout: '"0.4.2"\n', stderr: "", outputTruncated: false },
@@ -72,9 +78,19 @@ test("collectWindowsEmulatorProbe records the bounded Windows install-channel co
   assert.equal(report.schemaVersion, 1);
   assert.equal(report.commitSha, "abc123def456");
   assert.equal(report.observedAtUtc, "2026-08-12T17:20:30.000Z");
+  assert.deepEqual(report.workflow, {
+    name: "windows-emulator-probe",
+    runId: "1234567890",
+    runAttempt: "2",
+    job: "probe",
+    repository: "sushidoescode/pico-spatial-mcp",
+    serverUrl: "https://github.com",
+    runUrl: "https://github.com/sushidoescode/pico-spatial-mcp/actions/runs/1234567890/attempts/2",
+  });
   assert.deepEqual(report.emulatorStatus, {
     command: "C:\\npm\\pico-cli.CMD",
     arguments: ["emulator", "status", "--format", "json"],
+    timeoutMs: 30_000,
     exitCode: 1,
     signal: "SIGTERM",
     timedOut: true,
@@ -83,6 +99,46 @@ test("collectWindowsEmulatorProbe records the bounded Windows install-channel co
     spawnError: "timed out",
     outputTruncated: true,
   });
+});
+
+test("collectWindowsEmulatorProbe retains a rejected command and continues collecting", async () => {
+  const calls = [];
+  const env = { RUNNER_OS: "Windows" };
+  const successfulResult = {
+    code: 0,
+    signal: null,
+    timedOut: false,
+    stdout: "ok\n",
+    stderr: "",
+    outputTruncated: false,
+  };
+
+  const report = await collectWindowsEmulatorProbe({
+    env,
+    platform: "win32",
+    resolveCli: () => "C:\\npm\\pico-cli.CMD",
+    runCommand: async (command, arguments_) => {
+      calls.push({ command, arguments: arguments_ });
+      if (arguments_.join(" ") === "-v") throw new Error("version runner rejected");
+      return successfulResult;
+    },
+  });
+
+  assert.equal(calls.length, 5);
+  assert.deepEqual(report.cliVersion, {
+    command: "C:\\npm\\pico-cli.CMD",
+    arguments: ["-v"],
+    timeoutMs: 30_000,
+    exitCode: null,
+    signal: null,
+    timedOut: false,
+    stdout: "",
+    stderr: "",
+    spawnError: "version runner rejected",
+    outputTruncated: false,
+  });
+  assert.equal(report.emulatorStatus.exitCode, 0);
+  assert.equal(report.emulatorStatus.timeoutMs, 30_000);
 });
 
 test("collectWindowsEmulatorProbe rejects non-Windows platforms", async () => {
