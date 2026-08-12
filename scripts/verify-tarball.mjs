@@ -34,16 +34,16 @@ const publishIdx = process.argv.indexOf("--publish");
 const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
-const EXPECTED_TOOLS = 248; // capture_orbit/capture_multiview + surface-independent ensure_pico_cli
-const EXPECTED_OTHER_HOST_TOOLS = 245;
+const EXPECTED_TOOLS = 249; // capture_orbit/capture_multiview + surface-independent ensure_pico_cli + pico_loop (door 16, v36.4)
+const EXPECTED_OTHER_HOST_TOOLS = 246;
 // macOS exposes four host-GUI tools; other hosts intentionally expose one explanatory gui_capture
 // stub. Assert the exact platform surface instead of hiding this documented delta in a tolerance.
 const EXPECTED_PLATFORM_TOOLS = process.platform === "darwin" ? EXPECTED_TOOLS : EXPECTED_OTHER_HOST_TOOLS;
 const REQUIRED_TOOLS = [
-  // the 17 tools on the doors surface: 15 intent doors + two surface-independent utilities
+  // the 18 tools on the doors surface: 16 intent doors + two surface-independent utilities
   "validate_toolchain", "pico_build_app", "pico_scan_world", "pico_place", "pico_look",
   "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship",
-  "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next", "ensure_pico_cli",
+  "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next", "pico_loop", "ensure_pico_cli",
   // core lanes whose loss a count check would tolerate
   "emulator_boot", "build_and_run", "capture_frame", "record_verification", "scaffold_spatial_app",
   "adb_shell", "gradle_build", "preflight_env",
@@ -254,9 +254,9 @@ try {
   const doorsClient = new Client({ name: "tarball-verifier-doors", version: "0.0.0" });
   await doorsClient.connect(doorsTransport);
   const doorTools = await doorsClient.listTools();
-  doorTools.tools.length === 17
-    ? ok(`doors surface registered all 17 door tools`)
-    : fail(`doors surface listed ${doorTools.tools.length} tools, expected 17`);
+  doorTools.tools.length === 18
+    ? ok(`doors surface registered all 18 door tools`)
+    : fail(`doors surface listed ${doorTools.tools.length} tools, expected 18`);
   const sdk = await doorsClient.callTool({ name: "pico_sdk", arguments: { symbol: "Entity" } });
   const sdkBody = JSON.parse(sdk.content[0].text);
   if (sdkBody.status === "ok") ok("a door tool completed its inner self-client spawn from a path containing a space");
@@ -276,9 +276,9 @@ try {
   const defaultClient = new Client({ name: "tarball-verifier-default", version: "0.0.0" });
   await defaultClient.connect(defaultTransport);
   const defaultTools = await defaultClient.listTools();
-  defaultTools.tools.length === 17
-    ? ok("PICO_MCP_SURFACE unset serves the 17-tool doors surface (full stays explicit opt-in)")
-    : fail(`env-unset default listed ${defaultTools.tools.length} tools, expected the 17-tool doors surface`);
+  defaultTools.tools.length === 18
+    ? ok("PICO_MCP_SURFACE unset serves the 18-tool doors surface (full stays explicit opt-in)")
+    : fail(`env-unset default listed ${defaultTools.tools.length} tools, expected the 18-tool doors surface`);
   await defaultClient.close();
 
   // [M5] Publish only what passed, so the shipped artifact IS the verified artifact.

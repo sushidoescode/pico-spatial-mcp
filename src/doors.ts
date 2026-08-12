@@ -10,7 +10,7 @@ import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
  * doors.ts — THE DOORS (v21): an intent-level facade over the full tool surface.
  *
  * The full surface is a moat for us and a wall for everyone else. On the doors surface the
- * server registers 17 tools (15 doors + validate_toolchain + ensure_pico_cli);
+ * server registers 18 tools (16 doors + validate_toolchain + ensure_pico_cli);
  * each door orchestrates the full machinery through an internal client that
  * spawns the full-surface server on demand. Since v36.3 doors is also the CODED default
  * (env unset): the docs already told every host to set `PICO_MCP_SURFACE=doors`, but the old
@@ -41,6 +41,24 @@ export function picoFixDecision(error: string): { symptom: string | null; nextAc
   ];
   const found = keywords.find(([re]) => re.test(error));
   return found ? { symptom: found[1], nextAction: found[2] } : { symptom: null, nextAction: "Apply the highest-confidence lint or diagnosis match; if none applies, solve and record the new lesson." };
+}
+
+/** One acceptance criterion's outcome inside a pico_loop iteration. `unmeasurable` is an HONEST
+ * third state: the criterion could not be checked on this machine (missing pico-cli perf
+ * utilities, no Agent Bridge, …) — it never silently passes and it is not a repairable failure. */
+export type LoopCriterionOutcome = { kind: string; status: "pass" | "fail" | "unmeasurable"; detail?: string };
+
+/** Signature of an iteration's failure state for the no-progress detector: failing/unmeasurable
+ * criteria only, first line of each detail (tails carry paths/timings that vary run to run), with
+ * digit runs normalized to '#' — a jittering measurement (appFps p5=43.2 vs 41.7, a pid, an
+ * elapsed-seconds count) is the SAME wall, and leaving the numbers in defeated the detector.
+ * Two consecutive identical signatures ⇒ the repair lane is not moving; the loop stops honestly
+ * instead of burning the remaining budget on the same wall. */
+export function loopFailureSignature(outcomes: LoopCriterionOutcome[]): string {
+  return outcomes
+    .filter((o) => o.status !== "pass")
+    .map((o) => `${o.kind}:${o.status}:${(o.detail ?? "").split("\n")[0].trim().replace(/\d+(?:\.\d+)?/g, "#")}`)
+    .join("|");
 }
 
 type InnerCache = {
@@ -511,6 +529,214 @@ export function registerDoorTools(server: McpServer) {
         alternatives: rest.slice(0, 3),
         state: { preflightFailing: failing.map((c: any) => c.name), emulatorRunning, cameraCalibrated: !!calibration, briefs: briefs.map((b) => ({ ...b, brief: b.brief.length > 90 ? `${b.brief.slice(0, 90)}…` : b.brief })) },
       };
+    },
+  );
+
+  door(
+    "pico_loop",
+    "DOOR 16 — Declarative build→verify→repair loop (2026-08 Loop Engineering lane): state a goal, " +
+      "acceptance criteria (structural / visual / logcat / perf), and a budget; the loop plans, builds " +
+      "through the fleet pipeline, machine-checks every criterion, and on failure applies the " +
+      "retained-lesson repair (replan_spec) and iterates — unattended. HONESTY CEILING BY DESIGN: the " +
+      "loop self-exits at `auto_judged` — every acceptance is machine-checked, none human-seen — and " +
+      "returns a remainingLookObligation naming the artifacts a person or vision-capable agent must " +
+      "still LOOK at before any vision_verified claim. A no-progress detector stops after two " +
+      "consecutive iterations failing with the identical signature; an unmeasurable criterion " +
+      "(missing perf utilities, no Agent Bridge) stops the loop honestly instead of silently passing. " +
+      "Every iteration writes a structural trust-ledger entry. Budget uses meta.budget semantics " +
+      "(iterations, timeMin). Builds take minutes each — configure your host's MCP timeout accordingly " +
+      "(≥ 10 minutes, more for multi-iteration budgets). Prefer authoring a draftSpec first " +
+      "(pico_build_app's two-step); goal-only runs start from the planner's archetype scaffold, " +
+      "declared in the result.",
+    {
+      goal: z.string().describe("What to build/achieve, e.g. 'a knockdown game with three stacked crates on my real table'. Used as the brief; also keys the fleet project + ledger."),
+      draftSpec: z.any().optional().describe("An authored AppSpec to iterate from (recommended — the planner never guesses intent as well as you author it). Omitted: the loop starts from the planner's archetype scaffold and says so."),
+      acceptance: z
+        .array(z.object({
+          kind: z.enum(["structural", "visual", "logcat", "perf"]).describe("structural = Agent Bridge scene asserts; visual = the calibrated eye's PASS on the canonical capture (auto_judged); logcat = assert_logcat pattern; perf = pico-cli appFps p5 floor."),
+          entitiesPresent: z.array(z.string()).optional().describe("structural: entity names that must exist."),
+          minEntities: z.number().int().optional().describe("structural: minimum entity count."),
+          componentsPresent: z.array(z.string()).optional().describe("structural: component class names that must exist."),
+          pattern: z.string().optional().describe("logcat: case-insensitive regex that must appear (REQUIRED for kind:'logcat')."),
+          tag: z.string().optional().describe("logcat: restrict to this tag."),
+          timeoutSec: z.number().int().optional().describe("logcat: wait window (default 20)."),
+          minAppFpsP5: z.number().optional().describe("perf: required appFps p5 floor (default 60)."),
+          durationSec: z.number().int().optional().describe("perf: profiling window (default perf_diagnose's)."),
+        }))
+        .min(1)
+        .describe("The exit bar. Every criterion must pass in the SAME iteration for the loop to accept."),
+      budget: z
+        .object({
+          iterations: z.number().int().min(1).max(6).optional().describe("Max build+verify iterations (default 3)."),
+          timeMin: z.number().optional().describe("Soft wall-clock budget in minutes (default 20; checked between iterations)."),
+          toolCalls: z.number().int().optional().describe("Accepted for meta.budget parity; iterations is the effective cap here."),
+        })
+        .optional()
+        .describe("meta.budget semantics (same shape as an AppSpec's meta.budget)."),
+      onFail: z.enum(["replan", "stop"]).optional().describe("replan (default): apply the retained-lesson repair and iterate. stop: return after the first failing iteration."),
+    },
+    async ({ goal, draftSpec, acceptance, budget, onFail }) => {
+      const { call } = await inner();
+      const started = Date.now();
+      const maxIterations = budget?.iterations ?? 3;
+      const timeMs = (budget?.timeMin ?? 20) * 60_000;
+      const repair = onFail ?? "replan";
+      const id = briefIdOf(goal);
+      const app = `com.fleet.${id}`;
+      const projectDir = `~/AndroidStudioProjects/fleet-${id}-native`;
+      const iterationsLog: Array<{ iteration: number; outcomes: LoopCriterionOutcome[]; capture: string | null; ledger: string }> = [];
+      const scaffoldStarted = draftSpec === undefined;
+
+      // Criterion pre-flight: a misconfigured criterion must be rejected BEFORE the first
+      // multi-minute build, not discovered as unmeasurable after it (zod cannot express
+      // per-kind required fields without effects, so the gate lives here).
+      const patternless = acceptance.filter((c: any) => c.kind === "logcat" && !c.pattern);
+      if (patternless.length)
+        return { status: "invalid-acceptance", iterations: 0, fix: "kind:'logcat' requires a pattern (the regex that must appear). Add one to each logcat criterion and re-call — nothing was built." };
+
+      // Plan. A goal-only call takes the planner's archetype scaffold as the starting spec —
+      // weaker than an authored draftSpec, and the result says so (scaffoldStarted).
+      let plan = await call("plan_app_spec", { brief: goal, ...(draftSpec !== undefined ? { draftSpec } : {}) });
+      if (plan?.status === "scaffold") plan = await call("plan_app_spec", { brief: goal, draftSpec: plan.scaffold });
+      if (plan?.status === "needs_fix")
+        return { status: "plan-failed", iterations: 0, detail: { lint: plan.lint, rationale: plan.rationale }, fix: "The starting spec has blocking lint errors — fix each detail.lint.errors entry and re-call (author via pico_build_app's two-step if needed)." };
+      if (!plan?.spec)
+        return { status: "plan-failed", iterations: 0, detail: plan, fix: "Fix the problems named in detail (each issues entry names the failing path and a known-good fragment), or author a draftSpec with pico_build_app's two-step first, then re-call." };
+      let spec = plan.spec;
+
+      let prevSignature: string | null = null;
+      let lastOutcomes: LoopCriterionOutcome[] = [];
+      let lastCapture: string | null = null;
+
+      const exit = (status: string, iteration: number, extra: Record<string, unknown>) => ({
+        status,
+        iterations: iteration,
+        briefId: id,
+        projectDir,
+        scaffoldStarted,
+        iterationsLog,
+        ...(lastCapture ? { capture: lastCapture } : {}),
+        ...extra,
+      });
+
+      for (let i = 1; i <= maxIterations; i++) {
+        if (Date.now() - started > timeMs)
+          return exit("budget-exhausted", i - 1, { failing: lastOutcomes.filter((o) => o.status !== "pass"), fix: `timeMin ${budget?.timeMin ?? 20} elapsed before acceptance — raise budget.timeMin/iterations or fix the failing criteria by hand (pico_fix names the next action), then re-call.` });
+
+        // Any logcat criterion: clear the buffer BEFORE the build/launch, so this iteration's
+        // assert can only match lines this iteration's app emitted (launch-time markers included).
+        // Asserting against an uncleared buffer false-PASSed on lines from a previous run.
+        if (acceptance.some((c: any) => c.kind === "logcat"))
+          await call("adb_shell", { command: "logcat -c" }).catch(() => {});
+
+        writeUserBrief(id, { id, brief: goal, spec });
+        const fleet = await call("fleet_build", { briefIds: [id], settleSec: 16 });
+        const r = fleet?.results?.[0] ?? {};
+        if (r.artifact) lastCapture = r.artifact;
+
+        const outcomes: LoopCriterionOutcome[] = [];
+        if (!r.built || !r.installed) {
+          outcomes.push({ kind: "build", status: "fail", detail: (r.notes ?? []).join("\n") || "build/install failed with no notes" });
+        } else {
+          for (const c of acceptance) {
+            if (c.kind === "visual") {
+              outcomes.push(r.verdict === "PASS"
+                ? { kind: "visual", status: "pass", detail: `eye verdict PASS (auto_judged); capture ${r.artifact ?? "n/a"}` }
+                : { kind: "visual", status: "fail", detail: `eye verdict ${r.verdict ?? "none"}; notes: ${(r.notes ?? []).slice(-3).join(" | ") || "none"}` });
+            } else if (c.kind === "structural") {
+              // assert_scene, not the "verify" orchestrator: verify's TEXT content is prose for a
+              // reading agent (its JSON lives in structuredContent, which innerCall's text-parse
+              // never sees), while assert_scene returns a parseable {pass, results, scene} body.
+              const v = await call("assert_scene", { applicationId: app, ...(c.entitiesPresent ? { entitiesPresent: c.entitiesPresent } : {}), ...(c.minEntities != null ? { minEntities: c.minEntities } : {}), ...(c.componentsPresent ? { componentsPresent: c.componentsPresent } : {}) });
+              if (v && typeof v === "object" && typeof v.pass === "boolean") {
+                outcomes.push(v.pass
+                  ? { kind: "structural", status: "pass", detail: `${v.scene?.entityCount ?? "?"} entities; all asserts hold` }
+                  : { kind: "structural", status: "fail", detail: JSON.stringify((v.results ?? []).filter((x: any) => !x.pass)).slice(0, 400) });
+              } else {
+                // isError text (no Agent Bridge, broadcast failed) comes back as a raw string.
+                outcomes.push({ kind: "structural", status: "unmeasurable", detail: (typeof v === "string" ? v : JSON.stringify(v ?? null)).slice(0, 300) });
+              }
+            } else if (c.kind === "logcat") {
+              if (!c.pattern) { outcomes.push({ kind: "logcat", status: "unmeasurable", detail: "kind:'logcat' requires a pattern" }); continue; }
+              const l = await call("assert_logcat", { pattern: c.pattern, ...(c.tag ? { tag: c.tag } : {}), timeoutSec: c.timeoutSec ?? 20 });
+              if (l && typeof l === "object" && typeof l.matched === "boolean") {
+                outcomes.push(l.matched
+                  ? { kind: "logcat", status: "pass", detail: l.line }
+                  : { kind: "logcat", status: "fail", detail: `no logcat match for '${c.pattern}' within ${c.timeoutSec ?? 20}s` });
+              } else {
+                // isError text (bad regex, no device) — the tool's own words, never a fabricated
+                // "no match" measurement that replanning would then chase.
+                outcomes.push({ kind: "logcat", status: "unmeasurable", detail: (typeof l === "string" ? l : JSON.stringify(l ?? null)).slice(0, 300) });
+              }
+            } else if (c.kind === "perf") {
+              const p = await call("perf_diagnose", { packageName: app, ...(c.durationSec ? { durationSec: c.durationSec } : {}) });
+              const appFps = p?.summary?.appFps;
+              const p5 = typeof appFps?.p5 === "number" ? appFps.p5 : null;
+              const avg = typeof appFps?.avg === "number" ? appFps.avg : null;
+              if (p5 === null || avg === null || avg === 0) {
+                outcomes.push({ kind: "perf", status: "unmeasurable", detail: p?.note ?? p?.error ?? "profiler reports no app 3D frames (or pico-cli/perf utilities unavailable) — not measured, never assumed" });
+              } else {
+                const floor = c.minAppFpsP5 ?? 60;
+                outcomes.push(p5 >= floor
+                  ? { kind: "perf", status: "pass", detail: `appFps p5=${p5} >= floor ${floor}` }
+                  : { kind: "perf", status: "fail", detail: `appFps p5=${p5} below floor ${floor}` });
+              }
+            }
+          }
+        }
+        lastOutcomes = outcomes;
+        // Per-iteration ledger entry — structural BY DESIGN: the machine ran checks; nothing was
+        // human-seen. A failed write is DISCLOSED in the iteration log (never silently swallowed:
+        // the door's contract promises an entry per iteration, so a broken ledger lane must show).
+        const led = await call("record_verification", { app, claim: `pico_loop iteration ${i}/${maxIterations} [${goal.slice(0, 80)}]: ${outcomes.map((o) => `${o.kind}=${o.status}`).join(" ")}`, evidenceType: "structural" }).catch((e) => `record_verification threw: ${e instanceof Error ? e.message : String(e)}`);
+        const ledger = led && typeof led === "object" && led.status === "recorded"
+          ? "recorded"
+          : `NOT recorded: ${(typeof led === "string" ? led : JSON.stringify(led ?? null)).slice(0, 200)}`;
+        iterationsLog.push({ iteration: i, outcomes, capture: r.artifact ?? null, ledger });
+
+        const failing = outcomes.filter((o) => o.status !== "pass");
+        if (!failing.length) {
+          return exit("accepted", i, {
+            ceiling: "auto_judged",
+            remainingLookObligation: [
+              { artifact: r.artifact ?? null, whatToConfirm: `the running app actually shows the goal: ${goal}` },
+              ...(r.panelArtifact ? [{ artifact: r.panelArtifact, whatToConfirm: "panel content renders as intended (panel captures are returned unjudged)" }] : []),
+            ],
+            honesty: "auto_judged is this loop's ceiling BY DESIGN — every acceptance criterion was machine-checked, none human-seen. LOOK at each remainingLookObligation artifact (or have a vision-capable agent do it), then record what you saw with pico_record {evidenceType:'vision_verified'}.",
+          });
+        }
+        if (failing.some((o) => o.status === "unmeasurable"))
+          return exit("unmeasurable-acceptance", i, { failing, fix: "A criterion cannot be measured on this machine (failing[].detail names the missing lane — e.g. pico-cli perf utilities need `pico-cli setup`; structural needs generate_agent_bridge injected). Fix the measurement lane or drop the criterion — replanning the app cannot help." });
+
+        const signature = loopFailureSignature(outcomes);
+        if (prevSignature !== null && signature === prevSignature)
+          return exit("no-progress", i, { failing, fix: "Two consecutive iterations failed with the identical signature — the repair lane is not moving. Read failing[].detail, run pico_fix on the concrete error text, or adjust the draftSpec/acceptance, then re-call." });
+        prevSignature = signature;
+
+        if (repair === "stop")
+          return exit("failed", i, { failing, fix: "onFail:'stop' — read failing[].detail; pico_fix maps the error text to a known fix, then re-call." });
+        if (i === maxIterations) break;
+
+        // Repair: map each failure to a diagnose-vocabulary symptom, patch via retained lessons, re-lint.
+        const failures = failing.map((o) => ({ symptom: picoFixDecision(o.detail ?? o.kind).symptom ?? (o.kind === "visual" ? "not_rendering" : "build_failed") }));
+        const rp = await call("replan_spec", { spec, failures });
+        if (rp?.status === "invalid" || !rp?.spec)
+          return exit("no-progress", i, { failing, detail: rp, fix: "replan_spec could not patch the spec (see detail) — repair by hand (pico_fix names the next action), then re-call." });
+        // replan_spec always reports status "patched" (it appends a manual-triage note to
+        // `changes` when nothing matched), so an empty recompileSubtree is the real "no lesson
+        // applied" signal — rebuilding an unmutated spec would burn a full build on the same wall.
+        if (!(rp.recompileSubtree ?? []).length)
+          return exit("no-progress", i, { failing, detail: { replanChanges: rp.changes ?? [] }, fix: "replan_spec found no applicable retained lesson for these symptoms (nothing was mutated — see detail.replanChanges). The loop cannot move on its own: read failing[].detail, repair the spec by hand, then re-call." });
+        const replanned = await call("plan_app_spec", { brief: goal, draftSpec: rp.spec });
+        // Mirror the entry gate: needs_fix carries a spec BUT with blocking lint errors —
+        // building it anyway ships a broken app, so it is a plan failure here too.
+        if (replanned?.status === "needs_fix")
+          return exit("plan-failed", i, { detail: { lint: replanned.lint, rationale: replanned.rationale }, fix: "The patched spec re-lints with blocking errors — fix each detail.lint.errors entry and re-call with the corrected draftSpec." });
+        if (!replanned?.spec)
+          return exit("plan-failed", i, { detail: replanned, fix: "The patched spec no longer lints — fix detail.issues (or detail.lint.errors) and re-call with the corrected draftSpec." });
+        spec = replanned.spec;
+      }
+      return exit("budget-exhausted", maxIterations, { failing: lastOutcomes.filter((o) => o.status !== "pass"), fix: `budget.iterations (${maxIterations}) exhausted before acceptance — raise the budget or fix the failing criteria by hand (failing[].detail + pico_fix), then re-call.` });
     },
   );
 }

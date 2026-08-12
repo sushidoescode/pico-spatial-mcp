@@ -71,7 +71,7 @@ None of this is PICO Spatial SDK vocabulary — it's this project's own layer on
 | **trust ledger** | An append-only log (`record_verification` / `ledger_report`) of every visual claim this tool has made, each entry naming its evidence class. It structurally rejects a `vision_verified` claim with no linked capture — you can't fake the strongest tier. |
 | **the eye** | The calibrated auto-judge (`visual_judge` / `auto_judged` evidence) that scores a capture against an expected scene. It is a fast pre-check, not a replacement for a human/agent actually looking. |
 | **evidence classes** | A ranked honesty scale for how a claim was checked, strongest first: **`device_verified`** (real PICO hardware — **none yet**, said honestly) > `vision_verified` (a human/agent LOOKED and the intended content is present) > `auto_judged` (the calibrated eye scored it) > `usd_host_render` (off-device USD preview) > `structural` (runtime/log proof; successful appearance unconfirmed — a linked looked-at negative finding can stay here rather than masquerade as render success) > `built_for_headset` (compiles and targets Swan-only capability, deferred honestly). Every capability in [CAPABILITIES.md](CAPABILITIES.md) is tagged with its strongest evidence on file. |
-| **doors** (`PICO_MCP_SURFACE=doors`, and the default when the variable is unset since v36.3) | An intent-level facade of 17 tools (15 intent doors + `validate_toolchain` + `ensure_pico_cli`) over the full surface (248 tools on macOS; 245 on other hosts — the `PICO_MCP_SURFACE=full` opt-in) — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
+| **doors** (`PICO_MCP_SURFACE=doors`, and the default when the variable is unset since v36.3) | An intent-level facade of 18 tools (16 intent doors + `validate_toolchain` + `ensure_pico_cli`) over the full surface (249 tools on macOS; 246 on other hosts — the `PICO_MCP_SURFACE=full` opt-in) — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
 | **gates** | The deterministic test-battery (`test/*.mjs`, mirrored in `.github/workflows/gates.yml`) that runs before every commit: lint fixtures, the ledger's over-claim rejection, doors-surface contract tests, occupancy/affordance solvers, the vault symbol checker, and more. All green is the bar for "this didn't regress." |
 
 ## 15-minute first light
@@ -183,7 +183,7 @@ Or in any MCP client config:
 { "mcpServers": { "pico-spatial": { "command": "node", "args": ["/path/to/PICO-MCP/dist/index.js"] } } }
 ```
 
-**Recommended for a first session — the doors surface** (17 tools instead of 248 on macOS / 245 on other hosts; since v36.3 this is also the default when `PICO_MCP_SURFACE` is unset, so the env below simply pins it — `PICO_MCP_SURFACE=full` opts into everything):
+**Recommended for a first session — the doors surface** (18 tools instead of 249 on macOS / 246 on other hosts; since v36.3 this is also the default when `PICO_MCP_SURFACE` is unset, so the env below simply pins it — `PICO_MCP_SURFACE=full` opts into everything):
 
 ```bash
 PICO_MCP_SURFACE=doors claude mcp add pico-spatial -- node /path/to/PICO-MCP/dist/index.js

@@ -1195,7 +1195,7 @@ test("answers-by-measurement publishes exactly seven narrow answers backed by tr
   }
 });
 
-test("distribution metadata records platform-exact full surfaces, 17 doors, and 44 test suites plus smoke", () => {
+test("distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and 44 test suites plus smoke", () => {
   const pkg = readJson("package.json");
   const testScripts = Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"));
   assert.equal(testScripts.length, 44, testScripts.join("\n"));
@@ -1208,14 +1208,14 @@ test("distribution metadata records platform-exact full surfaces, 17 doors, and 
   assert.equal((workflow.match(/run: npm run smoke\s/g) ?? []).length, 1);
 
   const tarball = fs.readFileSync(path.join(repoRoot, "scripts", "verify-tarball.mjs"), "utf8");
-  assert.match(tarball, /const EXPECTED_TOOLS = 248;/);
-  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 245;/);
+  assert.match(tarball, /const EXPECTED_TOOLS = 249;/);
+  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 246;/);
   assert.match(tarball, /"ensure_pico_cli"/);
   assert.doesNotMatch(tarball, /TOOL_TOLERANCE/);
   assert.match(tarball, /tools\.length === EXPECTED_PLATFORM_TOOLS/);
 
   const agents = fs.readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
-  assert.match(agents, /doors surface[\s\S]{0,120}: 17/);
+  assert.match(agents, /doors surface[\s\S]{0,120}: 18/);
   for (const file of [
     "README.md",
     "QUICKSTART.md",
@@ -1227,14 +1227,14 @@ test("distribution metadata records platform-exact full surfaces, 17 doors, and 
     "docs/COLLABORATORS.md",
   ]) {
     const prose = fs.readFileSync(path.join(repoRoot, file), "utf8").replaceAll("\n", " ");
-    assert.match(prose, /248(?: tools?)? on macOS[\s\S]{0,160}245(?: tools?)? on other hosts/i, file);
-    assert.doesNotMatch(prose, /\b248\+(?:[- ]tools?)?/i, file);
+    assert.match(prose, /249(?: tools?)? on macOS[\s\S]{0,160}246(?: tools?)? on other hosts/i, file);
+    assert.doesNotMatch(prose, /\b249\+(?:[- ]tools?)?/i, file);
   }
 
   for (const description of [
     readJson(".claude-plugin/plugin.json").description,
     readJson(".claude-plugin/marketplace.json").plugins[0].description,
   ]) {
-    assert.match(description, /248 tools on macOS \/ 245 on other hosts/i);
+    assert.match(description, /249 tools on macOS \/ 246 on other hosts/i);
   }
 });

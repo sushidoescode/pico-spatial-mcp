@@ -2,6 +2,22 @@
 
 Versions here key the plugin manifests (`/plugin update` uses them as its cache key).
 
+## 36.4.0 — 2026-08-12
+- **`pico_loop` (door 16)** — the declarative build→verify→repair loop, shipped after the
+  2026-08-12 PICO call confirmed the Loop Engineering reading (the summer's agentic-loop
+  practice) and deferred loop placement to this project's recommendation: the loop runs
+  inside the server as one declarative call, and the host can still drive the
+  verify/diagnose/repair primitives itself. State a goal + acceptance criteria
+  (structural / visual / logcat / perf) + a `meta.budget`-shaped budget; the loop plans,
+  builds through the fleet pipeline, machine-checks every criterion, and repairs via
+  retained lessons (`replan_spec`) until accepted or honestly stopped. Exit bar per the
+  call: a strong, clear auto-judge — the loop self-exits at the `auto_judged` ceiling and
+  returns a `remainingLookObligation`; the human/vision LOOK stays mandatory before any
+  `vision_verified` claim. No-progress detector (two consecutive identical failure
+  signatures ⇒ stop), unmeasurable-criterion honesty (a lane that cannot be measured stops
+  the loop instead of silently passing), one structural trust-ledger entry per iteration.
+  Doors surface is now 18 tools (16 doors + 2); full surface 249 on macOS / 246 elsewhere.
+
 ## 36.3.0 — 2026-08-12
 - **Default surface is now `doors`** (the 2026-08-12 tool vetting's #1 finding): with
   `PICO_MCP_SURFACE` unset the server registers the 17-tool intent facade instead of the

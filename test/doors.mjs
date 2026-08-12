@@ -1,4 +1,4 @@
-// THE DOORS test: PICO_MCP_SURFACE=doors exposes ONLY the intent facade — 17 tools (15 doors +
+// THE DOORS test: PICO_MCP_SURFACE=doors exposes ONLY the intent facade — 18 tools (16 doors +
 // validate_toolchain + ensure_pico_cli); the doors orchestrate the full surface through the
 // internal child server.
 // Run: npm run test:doors
@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { VERIFY_APK_TEARDOWN_MS } from "../dist/verifyapk.js";
-import { briefIdOf } from "../dist/doors.js";
+import { briefIdOf, loopFailureSignature } from "../dist/doors.js";
 import { innerFailureDetail } from "../dist/fleetbuild.js";
 
 let failures = 0;
@@ -39,12 +39,42 @@ const longDetail = innerFailureDetail({ created: false, detail: "x".repeat(900) 
 if (longDetail.length === 600 && longDetail.includes('"created":false')) ok("innerFailureDetail keeps 600 chars of an unparseable payload (was 150)");
 else fail(`innerFailureDetail slice wrong: len ${longDetail.length}`);
 
+// ── DOOR 16 pico_loop unit checks (no server) ──
+// The no-progress detector compares consecutive failure SIGNATURES: same criteria failing with the
+// same first-line details ⇒ the loop is not moving and must stop honestly instead of burning budget.
+{
+  const failing = [
+    { kind: "visual", status: "fail", detail: "verdict FAIL: expected >=2 objects, saw 0\nsecond line varies " + Math.random() },
+    { kind: "logcat", status: "fail", detail: "no match for 'rayCast HIT' within 20s" },
+  ];
+  const sigA = loopFailureSignature(failing);
+  const sigB = loopFailureSignature([
+    { kind: "visual", status: "fail", detail: "verdict FAIL: expected >=2 objects, saw 0\nDIFFERENT tail, same first line" },
+    { kind: "logcat", status: "fail", detail: "no match for 'rayCast HIT' within 20s" },
+  ]);
+  if (sigA === sigB && typeof sigA === "string" && sigA.length > 0)
+    ok("loopFailureSignature is stable across varying detail tails (first-line normalized)");
+  else fail(`loopFailureSignature unstable: ${sigA} vs ${sigB}`);
+  // Jittering measurements are the SAME wall: digits are normalized so a re-measured p5 (or a
+  // varying count/pid) cannot defeat the two-identical-failures stop.
+  const jitterA = loopFailureSignature([{ kind: "perf", status: "fail", detail: "appFps p5=43.2 below floor 60" }]);
+  const jitterB = loopFailureSignature([{ kind: "perf", status: "fail", detail: "appFps p5=41.7 below floor 60" }]);
+  if (jitterA === jitterB) ok("loopFailureSignature collapses jittering measurements (digit-normalized)");
+  else fail(`jittering p5 defeats the no-progress detector: ${jitterA} vs ${jitterB}`);
+  const sigC = loopFailureSignature([{ kind: "visual", status: "fail", detail: "verdict FAIL: frame is uniformly black" }]);
+  if (sigC !== sigA) ok("loopFailureSignature distinguishes genuinely different failures");
+  else fail("loopFailureSignature collides different failures");
+  if (loopFailureSignature([{ kind: "structural", status: "pass" }]) === "")
+    ok("loopFailureSignature is empty when nothing failed (passes never count as a signature)");
+  else fail("loopFailureSignature should ignore passing criteria");
+}
+
 const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"], env: { ...process.env, PICO_MCP_SURFACE: "doors" } });
 const client = new Client({ name: "doors-test", version: "0.0.0" });
 await client.connect(transport);
 
 const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-const DOORS = ["pico_build_app", "pico_scan_world", "pico_place", "pico_look", "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship", "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next"];
+const DOORS = ["pico_build_app", "pico_scan_world", "pico_place", "pico_look", "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship", "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next", "pico_loop"];
 const expected = [...DOORS, "validate_toolchain", "ensure_pico_cli"].sort();
 if (JSON.stringify(tools) === JSON.stringify(expected)) ok(`doors surface exposes exactly ${expected.length} tools`);
 else fail(`surface mismatch — got [${tools.join(", ")}]`);
@@ -136,6 +166,25 @@ if (overOut.status === "rejected" && /artifactPath/.test(overOut.reason ?? ""))
   ok("pico_record passes the ledger's vision_verified rejection through untouched");
 else fail(`pico_record upgraded an over-claim: ${JSON.stringify(overOut).slice(0, 200)}`);
 try { fs.rmSync(path.join(os.homedir(), ".pico-mcp", "ledgers", `${recordApp}.json`), { force: true }); } catch { /* ignore */ }
+
+// DOOR 16 pico_loop — cheap paths only (no gradle, no emulator):
+// (a) an invalid draftSpec must come back plan-failed with a fix pointer BEFORE any build attempt;
+const loopBad = await client.callTool({ name: "pico_loop", arguments: { goal: "three spinning crystals over a stone floor", draftSpec: { meta: { appName: "LoopBad" } }, acceptance: [{ kind: "visual" }] } });
+const loopBadOut = JSON.parse(loopBad.content[0].text);
+if (loopBadOut.status === "plan-failed" && loopBadOut.fix && loopBadOut.iterations === 0)
+  ok("pico_loop invalid draftSpec → plan-failed with fix, zero build iterations");
+else fail(`pico_loop plan-failed path broken: ${JSON.stringify(loopBadOut).slice(0, 200)}`);
+// (b) empty acceptance is a schema-level rejection — a loop with no exit criteria cannot run honestly.
+const loopNoAcc = await client.callTool({ name: "pico_loop", arguments: { goal: "anything", acceptance: [] } });
+if (loopNoAcc.isError && /acceptance/i.test(loopNoAcc.content?.[0]?.text ?? ""))
+  ok("pico_loop rejects an empty acceptance list at the schema");
+else fail(`pico_loop accepted an empty acceptance list: ${JSON.stringify(loopNoAcc).slice(0, 160)}`);
+// (c) a logcat criterion without a pattern is caught by the handler pre-flight BEFORE any build.
+const loopNoPat = await client.callTool({ name: "pico_loop", arguments: { goal: "three spinning crystals over a stone floor", acceptance: [{ kind: "logcat" }] } });
+const loopNoPatOut = JSON.parse(loopNoPat.content[0].text);
+if (loopNoPatOut.status === "invalid-acceptance" && loopNoPatOut.iterations === 0 && /pattern/.test(loopNoPatOut.fix ?? ""))
+  ok("pico_loop pre-flights a patternless logcat criterion (invalid-acceptance, zero builds)");
+else fail(`pico_loop patternless-logcat pre-flight broken: ${JSON.stringify(loopNoPatOut).slice(0, 200)}`);
 
 await client.close();
 

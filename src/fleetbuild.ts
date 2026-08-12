@@ -522,7 +522,7 @@ async function selfClient() {
   const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
   // The SDK spawns children with a WHITELIST env (HOME/PATH/...), so PICO_MCP_SURFACE never
   // inherits — pin the full surface explicitly: this client calls full-surface-only tools, and
-  // since v36.3 an unset variable serves the 17-tool doors surface (2026-08-12 review finding).
+  // since v36.3 an unset variable serves the doors surface (2026-08-12 review finding).
   const transport = new StdioClientTransport({ command: "node", args: [path.join(here, "index.js")], cwd: path.dirname(here), env: { PICO_MCP_SURFACE: "full" } });
   const client = new Client({ name: "fleet-executor", version: "1" });
   await client.connect(transport);

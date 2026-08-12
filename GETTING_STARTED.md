@@ -92,9 +92,9 @@ For **Claude Code**, add this to `.mcp.json` in your project (or your user-level
 
 Any MCP client works — it's JSON-RPC over stdio. Restart your client so it picks up the new server.
 
-You should now see the **17-tool doors surface** — the default since v36.3 when the `env` block
+You should now see the **18-tool doors surface** — the default since v36.3 when the `env` block
 sets no surface. Step 5 explains the two surfaces; set `"PICO_MCP_SURFACE": "full"` in that `env`
-block for the full surface (248 tools on macOS or 245 on other hosts).
+block for the full surface (249 tools on macOS or 246 on other hosts).
 
 ### Optional: lazy pico-cli provisioning
 
@@ -215,8 +215,8 @@ back to you as `projectDir`.
 
 ## Choosing a surface
 
-Since v36.3 the curated **17-tool** doors surface is the default. The full surface—248 tools on
-macOS and 245 on other hosts—is the power opt-in for direct access to every lane. Switch in the
+Since v36.3 the curated **18-tool** doors surface is the default. The full surface—249 tools on
+macOS and 246 on other hosts—is the power opt-in for direct access to every lane. Switch in the
 `env` block from step 2:
 
 ```json
@@ -226,9 +226,9 @@ macOS and 245 on other hosts—is the power opt-in for direct access to every la
 (`"doors"` pins the default explicitly — useful for configs that may run pre-v36.3 checkouts,
 where an unset variable served the full surface.)
 
-The seventeen: `validate_toolchain` `ensure_pico_cli` `pico_build_app` `pico_scan_world`
+The eighteen: `validate_toolchain` `ensure_pico_cli` `pico_build_app` `pico_scan_world`
 `pico_place` `pico_look` `pico_verify_app` `pico_measure` `pico_perf` `pico_sdk` `pico_doctor`
-`pico_ship` `pico_capabilities` `pico_fix` `pico_record` `pico_emulator` `pico_next`. On this
+`pico_ship` `pico_capabilities` `pico_fix` `pico_record` `pico_emulator` `pico_next` `pico_loop`. On this
 surface `pico_doctor` replaces `preflight_env` as your health check.
 
 **One sharp edge.** `pico_measure` needs a one-time camera calibration. On the doors surface run

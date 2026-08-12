@@ -15,7 +15,7 @@
  *   - version-bearing host payload/marketplace manifests: version + any published tool-count
  *     phrases (portable core and every overlay keep their host-specific shapes)
  *   - README.md GETTING_STARTED.md TESTERS.md QUICKSTART.md SKILLS.md AGENTS.md docs/HOSTS.md
- *     docs/COLLABORATORS.md
+ *     docs/COLLABORATORS.md llms.txt
  *     full-surface tool-count claims + versioned tarball filenames. Deliberately CONSERVATIVE:
  *     only the known stale-literal shapes below are touched, and every replacement is printed.
  *
@@ -243,7 +243,7 @@ function stampManifests() {
 
 console.log(CHECK ? "sync-metadata --check (dry run):" : "sync-metadata stamping:");
 stampManifests();
-for (const doc of ["README.md", "GETTING_STARTED.md", "TESTERS.md", "QUICKSTART.md", "SKILLS.md", "AGENTS.md", "docs/HOSTS.md", "docs/COLLABORATORS.md"]) stampDoc(doc);
+for (const doc of ["README.md", "GETTING_STARTED.md", "TESTERS.md", "QUICKSTART.md", "SKILLS.md", "AGENTS.md", "docs/HOSTS.md", "docs/COLLABORATORS.md", "llms.txt"]) stampDoc(doc);
 for (const w of [...new Set(warns)]) console.log(`  WARN ${w}`);
 
 if (CHECK) {

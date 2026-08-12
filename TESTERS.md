@@ -69,7 +69,7 @@ Ask your agent to run **`pico_doctor`** (or **`preflight_env`** on the full surf
 read-only, mutates nothing, and reports what your machine is missing with an exact fix for every
 non-passing check. That is the intended first call.
 
-Expect the 17-tool doors surface by default; expect 248 tools on macOS and 245 on other hosts on
+Expect the 18-tool doors surface by default; expect 249 tools on macOS and 246 on other hosts on
 the full surface.
 
 ## Choosing a surface
@@ -80,14 +80,14 @@ Set `PICO_MCP_SURFACE` in the `env` block of the config above:
 "env": { "PICO_MCP_SURFACE": "doors" }
 ```
 
-- `full` — **248 tools on macOS; 245 on other hosts.** Everything.
-- unset / `doors` (the default since v36.3) — **17 tools**: `validate_toolchain` `ensure_pico_cli` `pico_build_app`
+- `full` — **249 tools on macOS; 246 on other hosts.** Everything.
+- unset / `doors` (the default since v36.3) — **18 tools**: `validate_toolchain` `ensure_pico_cli` `pico_build_app`
   `pico_scan_world` `pico_place` `pico_look` `pico_verify_app` `pico_measure` `pico_perf`
   `pico_sdk` `pico_doctor` `pico_ship` `pico_capabilities` `pico_fix` `pico_record`
-  `pico_emulator` `pico_next`.
+  `pico_emulator` `pico_next` `pico_loop`.
 
 Start with `doors` — it's the curated path through the same engine, and set
-`PICO_MCP_SURFACE=full` when you want the whole surface (248 tools on macOS, 245 on other
+`PICO_MCP_SURFACE=full` when you want the whole surface (249 tools on macOS, 246 on other
 hosts). Before v36.3 an unset variable served `full`, so keep the explicit `doors` value in
 configs that may run older checkouts.
 

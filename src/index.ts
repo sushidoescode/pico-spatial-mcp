@@ -207,8 +207,8 @@ server.registerTool(
 // is invoked only from the handler (or later from a real CLI-backed tool when the opt-in env is 1).
 registerPicoCliHealthTool(server);
 
-// THE DOORS (v21): the doors surface exposes only the intent-level facade — 17 tools
-// (15 doors + validate_toolchain + ensure_pico_cli); each door orchestrates the full surface
+// THE DOORS (v21): the doors surface exposes only the intent-level facade — 18 tools
+// (16 doors + validate_toolchain + ensure_pico_cli); each door orchestrates the full surface
 // through an internal child server. Since v36.3 doors is the default (env unset);
 // PICO_MCP_SURFACE=full is the explicit opt-in that keeps every tool AND adds the doors.
 if (!doorsSurfaceActive()) {
