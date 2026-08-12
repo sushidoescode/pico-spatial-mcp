@@ -15,6 +15,10 @@ import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure } 
  * -t duration, -o output, -d device), decode (trace-file, -f json|systrace|ctrace, -o output),
  * load (trace-file, returns a sessionId for trace_processor_shell), query (--session, --sql).
  * `--live` (Ctrl+C-terminated streaming) is deliberately NOT wrapped — every action is bounded.
+ * 0.4.2 caveat (measured 2026-08-12): the whole perf family exits 1 with "Perf utilities 0.1.0
+ * are not installed. Run `pico-cli setup`" until a one-time setup — classified not-provisioned
+ * with that exact remedy. The 0.4.2 trace flag surface BEHIND that gate is unverified (setup
+ * mutates the machine; deferred until a provisioned 0.4.x is available here).
  *
  * HONESTY (load-bearing): outputs are pico-cli's own, quoted verbatim (outputTail) plus artifact
  * paths whose existence is stat-checked, never asserted. sessionId parsing is best-effort with
@@ -66,7 +70,7 @@ export function registerPerfTraceTools(server: McpServer) {
         "returns its sessionId (best-effort parse, raw output included); 'query' runs SQL against a loaded session. " +
         "Uses @picoxr/pico-cli from PATH. Missing defaults to status:'unavailable'; PICO_MCP_AUTOINSTALL_CLI=1 or " +
         "ensure_pico_cli enables a lazy bounded install and same-call retry. Failures carry an honest provisioning, " +
-        "cli-missing, cli-unusable, flag-or-version-drift, or runtime failureClass with the CLI's own outputTail. " +
+        "cli-missing, cli-unusable, flag-or-version-drift, not-provisioned (0.4.x: run `pico-cli setup`), or runtime failureClass with the CLI's own outputTail. " +
         "HONESTY: " + HONESTY,
       inputSchema: {
         action: z.enum(["record", "decode", "load", "query"]).describe("record = capture a .perfetto-trace from the device; decode = convert it; load = open a SQL session on it; query = run SQL in that session."),
@@ -143,7 +147,9 @@ export function registerPerfTraceTools(server: McpServer) {
           failureClass,
           note: failureClass === "flag-or-version-drift"
               ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its trace surface drifted from the 0.3.0 flags this wrapper was verified against; report outputTail upstream instead of retrying.`
-              : "pico-cli perf trace failed at runtime — read outputTail (the CLI's own words) before assuming a cause.",
+              : failureClass === "not-provisioned"
+                ? `the installed pico-cli (${cli.raw || "unknown"}) gates its perf utilities behind a one-time \`pico-cli setup\` (0.4.x behavior, measured 2026-08-12) — run \`pico-cli setup\` yourself and retry; this wrapper never runs setup (it mutates the machine).`
+                : "pico-cli perf trace failed at runtime — read outputTail (the CLI's own words) before assuming a cause.",
           command: ["pico-cli", ...args].join(" "),
           error: runResult.spawnError ?? (runResult.timedOut
             ? `pico-cli perf trace exceeded ${timeoutMs}ms and was killed.`

@@ -264,6 +264,23 @@ try {
   else fail(`door tool failed in a spaced path: ${JSON.stringify(sdkBody).slice(0, 200)} — module-relative resolution is broken`);
   await doorsClient.close();
 
+  // [M7] The CODED default (v36.3): env unset must serve the doors surface from the installed
+  //      artifact. Docs always said doors; until v36.3 the code said full, so one missed env var
+  //      exposed the ~88.5k-token surface. Delete both vars so an inherited value cannot mask it.
+  const defaultEnv = { ...process.env };
+  delete defaultEnv.PICO_MCP_SURFACE;
+  delete defaultEnv.PICO_MCP_OUTER_SURFACE;
+  const defaultTransport = new StdioClientTransport({
+    command: process.execPath, args: [entry], cwd: sandbox, env: defaultEnv,
+  });
+  const defaultClient = new Client({ name: "tarball-verifier-default", version: "0.0.0" });
+  await defaultClient.connect(defaultTransport);
+  const defaultTools = await defaultClient.listTools();
+  defaultTools.tools.length === 17
+    ? ok("PICO_MCP_SURFACE unset serves the 17-tool doors surface (full stays explicit opt-in)")
+    : fail(`env-unset default listed ${defaultTools.tools.length} tools, expected the 17-tool doors surface`);
+  await defaultClient.close();
+
   // [M5] Publish only what passed, so the shipped artifact IS the verified artifact.
   if (publishDir && failures === 0) {
     const dest = path.resolve(publishDir.replace(/^~/, os.homedir()));

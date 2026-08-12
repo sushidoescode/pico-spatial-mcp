@@ -23,7 +23,9 @@ async function selfClient() {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
   const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
-  const transport = new StdioClientTransport({ command: "node", args: [path.join(here, "index.js")], cwd: path.dirname(here) });
+  // Pin the full surface: the SDK's whitelist child env drops PICO_MCP_SURFACE, and since v36.3
+  // unset means doors — this client calls full-surface-only tools (2026-08-12 review finding).
+  const transport = new StdioClientTransport({ command: "node", args: [path.join(here, "index.js")], cwd: path.dirname(here), env: { PICO_MCP_SURFACE: "full" } });
   const client = new Client({ name: "marble-ingest", version: "1" });
   await client.connect(transport);
   const call = async (name: string, args: any = {}) => {

@@ -13,6 +13,10 @@ import {
 } from "./picocli.js";
 
 export const DEFAULT_KNOWLEDGE_COMMAND = "pico-cli";
+// pico-cli 0.4.x renamed the subcommand to `mcp dev-knowledge`; `spatial-knowledge` survives as a
+// working hidden alias (measured 2026-08-12 on 0.4.2: exit 0, prints the dev-knowledge usage).
+// Keep invoking the alias while 0.3.0 is the common install — if a future CLI drops it, the spawn
+// fails loudly and the failure carries the CLI's own words, never a silent wrong server.
 export const DEFAULT_KNOWLEDGE_ARGS = ["mcp", "spatial-knowledge"] as const;
 const DEFAULT_STARTUP_TIMEOUT_MS = 15_000;
 const DEFAULT_CALL_TIMEOUT_MS = 30_000;

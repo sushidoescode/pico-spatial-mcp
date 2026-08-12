@@ -139,6 +139,44 @@ try { fs.rmSync(path.join(os.homedir(), ".pico-mcp", "ledgers", `${recordApp}.js
 
 await client.close();
 
+// v36.3 default-surface flip: with PICO_MCP_SURFACE UNSET, the server must serve the doors
+// surface — the docs told every host to set doors while the code defaulted to full, so one
+// missed env var exposed the ~88.5k-token full surface (2026-08-12 vetting, finding #1).
+// Delete both surface vars so an inherited shell/CI value cannot mask the coded default.
+{
+  const defaultEnv = { ...process.env };
+  delete defaultEnv.PICO_MCP_SURFACE;
+  delete defaultEnv.PICO_MCP_OUTER_SURFACE;
+  const defaultTransport = new StdioClientTransport({ command: "node", args: ["dist/index.js"], env: defaultEnv });
+  const defaultClient = new Client({ name: "doors-default-test", version: "0.0.0" });
+  await defaultClient.connect(defaultTransport);
+  const defaultTools = (await defaultClient.listTools()).tools.map((t) => t.name).sort();
+  if (JSON.stringify(defaultTools) === JSON.stringify(expected))
+    ok(`PICO_MCP_SURFACE unset serves the doors surface (${expected.length} tools) — full stays explicit opt-in`);
+  else fail(`env-unset default is not the doors surface — got ${defaultTools.length} tools`);
+  await defaultClient.close();
+}
+
+// Static guard for the v36.3 flip: every src/ self-spawn of the server must pin PICO_MCP_SURFACE
+// explicitly. The SDK's child env is a whitelist — the variable never inherits — so an unpinned
+// StdioClientTransport spawn of index.js silently serves the doors surface and full-surface inner
+// calls die tool-not-found (found live in fleetbuild/hybridbuild/marbleingest/semanticsplat by the
+// 2026-08-12 adversarial review of this flip).
+{
+  const srcDir = new URL("../src/", import.meta.url);
+  const offenders = [];
+  for (const file of fs.readdirSync(srcDir).filter((f) => f.endsWith(".ts"))) {
+    const content = fs.readFileSync(new URL(file, srcDir), "utf8");
+    for (const m of content.matchAll(/new StdioClientTransport\(\{[\s\S]{0,400}?\}\)/g)) {
+      if (!/index\.js/.test(m[0])) continue; // pico-cli child MCP servers etc. are not self-spawns
+      // doors.ts pins through its named childEnv object (built with PICO_MCP_SURFACE: "full").
+      if (!/PICO_MCP_SURFACE|childEnv/.test(m[0])) offenders.push(`src/${file}`);
+    }
+  }
+  if (offenders.length === 0) ok("every src/ self-spawn of the server pins PICO_MCP_SURFACE explicitly");
+  else fail(`self-spawns without a surface pin (doors-by-default breaks their inner calls): ${offenders.join(", ")}`);
+}
+
 // v27.8 Unity hello-XR finding: an immersive container tears down asynchronously. Re-launching
 // immediately after force-stop is rejected with "current full space don't allow start fullscreen",
 // even for the SAME package. Exercise the real verify_pico_apk tool with a fake adb that only

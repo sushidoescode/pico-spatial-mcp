@@ -164,3 +164,39 @@ command chain, build time, launch path, environment caveat, and ledger reference
 This does not establish parity with the official samples, cross-host portability, behavior of a
 newer CLI version, coverage of other templates, or that a generated project locates its own
 toolchain.
+
+## Q37 — What changed between pico-cli 0.3.0 and 0.4.2?
+
+### Answer
+
+On 2026-08-12, a sandboxed `@picoxr/pico-cli@0.4.2` (npm latest, published 2026-08-08) was
+diffed against the installed 0.3.0 across fifteen `--help` surfaces and targeted behavior
+probes. Measured deltas: (1) the entire `perf` family is gated behind a one-time
+`pico-cli setup` — every `perf` invocation exits 1 with "Perf utilities 0.1.0 are not
+installed" until then; (2) `mcp spatial-knowledge` is renamed `mcp dev-knowledge`, with the
+old name kept as a working hidden alias (exit 0); (3) `files rm` defaults flipped from
+recursive=true/force=true to false/false; (4) `app watch-crash` still has no duration flag —
+0.4.2 adds only `--launch-timeout`; (5) `app install` gains `-r/--replace`, `--downgrade`,
+`-t/--test`, `-g/--grant-permissions`; (6) `doctor --format json` returns a structured JSON
+envelope in ~10s exit 0 (the 0.3.0 ≥90s hang is fixed); (7) new `update`, `editor`, and `web`
+command families; (8) `capture record`, `capture screenshot`, `emulator status`, `app
+launch/stop/list` help surfaces are byte-identical; (9) unknown commands exit 1 with
+"Error: Unknown command" on BOTH versions; 0.3.0 `perf daemon status` still exits 0 while
+reporting the daemon down.
+
+### Evidence
+
+Evidence type/class: `structural`. Verbatim `--help` captures and exit codes from bounded
+spawns; no rendered frames involved.
+
+Full sweep record and per-family findings:
+[findings/PICOCLI_042_SWEEP_2026-08-12.md](findings/PICOCLI_042_SWEEP_2026-08-12.md).
+Code carrying the dated claims: `src/picocli.ts` (not-provisioned classification, doctor
+re-measurement), `src/perftrace.ts`, `src/picoclitools.ts`, `src/knowledge.ts`.
+
+### Does not prove
+
+This does not verify the 0.4.2 perf-family flag surface behind the setup gate (`pico-cli
+setup` mutates the machine and was not run), end-to-end behavior of any 0.4.2 command against
+a device or emulator, that the `spatial-knowledge` alias survives future releases, or 0.4.2
+`doctor` behavior on machines unlike this one (macOS arm64, Node v25.8.1).

@@ -65,11 +65,12 @@ first install.
 
 ## Check it works
 
-Ask your agent to run **`preflight_env`** (or **`pico_doctor`** on the narrowed surface). It is
+Ask your agent to run **`pico_doctor`** (or **`preflight_env`** on the full surface). It is
 read-only, mutates nothing, and reports what your machine is missing with an exact fix for every
 non-passing check. That is the intended first call.
 
-Expect 248 tools on macOS and 245 on other hosts on the full surface.
+Expect the 17-tool doors surface by default; expect 248 tools on macOS and 245 on other hosts on
+the full surface.
 
 ## Choosing a surface
 
@@ -79,14 +80,16 @@ Set `PICO_MCP_SURFACE` in the `env` block of the config above:
 "env": { "PICO_MCP_SURFACE": "doors" }
 ```
 
-- unset / `full` — **248 tools on macOS; 245 on other hosts.** Everything.
-- `doors` — **17 tools**: `validate_toolchain` `ensure_pico_cli` `pico_build_app`
+- `full` — **248 tools on macOS; 245 on other hosts.** Everything.
+- unset / `doors` (the default since v36.3) — **17 tools**: `validate_toolchain` `ensure_pico_cli` `pico_build_app`
   `pico_scan_world` `pico_place` `pico_look` `pico_verify_app` `pico_measure` `pico_perf`
   `pico_sdk` `pico_doctor` `pico_ship` `pico_capabilities` `pico_fix` `pico_record`
   `pico_emulator` `pico_next`.
 
-Start with `doors` if the full surface (248 tools on macOS, 245 on other hosts) is overwhelming;
-it's the curated path through the same engine.
+Start with `doors` — it's the curated path through the same engine, and set
+`PICO_MCP_SURFACE=full` when you want the whole surface (248 tools on macOS, 245 on other
+hosts). Before v36.3 an unset variable served `full`, so keep the explicit `doors` value in
+configs that may run older checkouts.
 
 One sharp edge worth knowing up front: **`pico_measure` needs a one-time camera calibration.**
 On the `doors` surface run `pico_doctor` with `{calibrate: true}` — it performs

@@ -11,7 +11,8 @@ const EXISTING_BUNDLE = path.join(CLAIMSIGHT, "editor-asset/build/spatial/bundle
 const SCENE_PROJECT = path.join(CLAIMSIGHT, "editor-asset/src/main/res3d/SpatialPackContent");
 const OUT_BUNDLE = path.join(os.tmpdir(), "pico-mcp-smoke", "smoke.bundle");
 
-const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"] });
+// The smoke exercises full-surface tools; since v36.3 the coded default (env unset) is doors.
+const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"], env: { ...process.env, PICO_MCP_SURFACE: "full" } });
 const client = new Client({ name: "smoke", version: "0.0.0" });
 await client.connect(transport);
 

@@ -119,8 +119,9 @@ PICO Swan / 6.1 territory, and every claim above is backed by a looked-at frame.
 ## The full surface
 
 The doors surface is 17 tools; the full server exposes 248 on macOS (245 on other hosts, where four
-host-GUI tools collapse to one explanatory stub). Remove `PICO_MCP_SURFACE=doors` (or
-just add the full-surface server alongside) to get everything — codegen for every SDK subsystem,
+host-GUI tools collapse to one explanatory stub). Set `PICO_MCP_SURFACE=full` (or
+just add a full-surface server alongside) to get everything — codegen for every SDK subsystem,
 the fleet/asset/editor pipelines, and the raw building blocks the doors orchestrate internally.
+Since v36.3, an env-less registration serves the doors surface (before that, unset meant full).
 The doors stay available either way. See **[SKILLS.md](SKILLS.md)** for the agent reference and
 **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for repo orientation.

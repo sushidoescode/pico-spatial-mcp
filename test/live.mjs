@@ -10,7 +10,8 @@ import path from "node:path";
 const OUT = path.join(os.tmpdir(), "pico-mcp-live");
 fs.mkdirSync(OUT, { recursive: true });
 
-const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"] });
+// xr_* live in the full surface; since v36.3 the coded default (env unset) is doors.
+const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"], env: { ...process.env, PICO_MCP_SURFACE: "full" } });
 const client = new Client({ name: "live", version: "0.0.0" });
 await client.connect(transport);
 

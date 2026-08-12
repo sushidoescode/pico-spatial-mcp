@@ -1088,11 +1088,11 @@ test("public adoption docs keep bundle installation, AVD creation, and build too
   }
 });
 
-test("answers-by-measurement publishes exactly six narrow answers backed by tracked citations", () => {
+test("answers-by-measurement publishes exactly seven narrow answers backed by tracked citations", () => {
   const answerFile = path.join(repoRoot, "docs", "ANSWERED_BY_MEASUREMENT.md");
   assert.equal(fs.existsSync(answerFile), true, "docs/ANSWERED_BY_MEASUREMENT.md must exist");
   const page = fs.readFileSync(answerFile, "utf8");
-  const expectedQuestions = ["5", "23", "24", "25", "33", "36"];
+  const expectedQuestions = ["5", "23", "24", "25", "33", "36", "37"];
   const questionMatches = [...page.matchAll(/^## Q(\d+)\b[^\n]*$/gm)];
   assert.deepEqual(questionMatches.map((match) => match[1]), expectedQuestions);
 

@@ -58,6 +58,14 @@ classifyPicoCliFailure("adb: device 'emulator-5554' not found", "") === "runtime
 classifyPicoCliFailure("", "") === "runtime"
   ? ok("empty output defaults to runtime (never claims drift without evidence)")
   : fail("empty output should classify as runtime");
+// 0.4.x utilities gate (verbatim message measured 2026-08-12 on 0.4.2): a one-time `pico-cli setup`
+// is the exact remedy — not drift, not a device problem.
+classifyPicoCliFailure("Error: Perf utilities 0.1.0 are not installed. Run `pico-cli setup` to install.", "") === "not-provisioned"
+  ? ok("0.4.x utilities gate classified as not-provisioned (remedy: pico-cli setup)")
+  : fail("perf-utilities-gate message should classify as not-provisioned");
+classifyPicoCliFailure("", "Error: Perf utilities 0.2.0 are not installed. Run `pico-cli setup` to install.") === "not-provisioned"
+  ? ok("utilities gate on stdout with a future bundle version still classifies as not-provisioned")
+  : fail("stdout-side utilities gate should classify as not-provisioned");
 
 // --- scorePicoCliPerfAxis: shaped like the REAL 0.3.0 report (appFps has p5/p10/p50, no p95).
 const emulatorReport = { status: "ok", summary: { appFps: { avg: 0, max: 0, min: 0, p5: 0, p10: 0, p50: 0, dropsCount: 0 } } };

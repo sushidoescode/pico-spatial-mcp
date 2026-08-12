@@ -9,12 +9,16 @@ import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
 /**
  * doors.ts — THE DOORS (v21): an intent-level facade over the full tool surface.
  *
- * The full surface is a moat for us and a wall for everyone else. With
- * `PICO_MCP_SURFACE=doors`, the server registers 17 tools (15 doors + validate_toolchain +
- * ensure_pico_cli);
+ * The full surface is a moat for us and a wall for everyone else. On the doors surface the
+ * server registers 17 tools (15 doors + validate_toolchain + ensure_pico_cli);
  * each door orchestrates the full machinery through an internal client that
- * spawns the full-surface server on demand. Default surface stays "full" (all tools + the doors,
- * additive and backward compatible).
+ * spawns the full-surface server on demand. Since v36.3 doors is also the CODED default
+ * (env unset): the docs already told every host to set `PICO_MCP_SURFACE=doors`, but the old
+ * `?? "full"` fallback meant one missed env var exposed the ~88.5k-token full surface
+ * (2026-08-12 vetting, finding #1). `PICO_MCP_SURFACE=full` is the explicit opt-in — nothing
+ * is removed. Every internal self-spawn (this inner client, fleetbuild/hybridbuild/marbleingest/
+ * semanticsplat selfClients) pins PICO_MCP_SURFACE=full explicitly, because the SDK's child env
+ * is a whitelist that never inherits the variable.
  *
  * Door design rules:
  *  - one door = one developer intent ("build me an app", "what went wrong");
@@ -24,7 +28,7 @@ import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
  *    doors return the same escalation language as the underlying loop.
  */
 
-const SURFACE = () => process.env.PICO_MCP_SURFACE ?? "full";
+const SURFACE = () => process.env.PICO_MCP_SURFACE ?? "doors";
 
 export function picoFixDecision(error: string): { symptom: string | null; nextAction: string } {
   const keywords: Array<[RegExp, string, string]> = [

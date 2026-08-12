@@ -28,6 +28,9 @@ const PICO_CLI_UPDATE_CHECK_TTL_MS = 60 * 60 * 1_000;
  * HARD RULE (measured 2026-08-01 on pico-cli 0.3.0): NEVER probe with `pico-cli doctor` or
  * `pico-cli plugin doctor` — both hang (>=90s zero output / 45s timeout). `-v` and
  * `emulator status` return in well under a second; `-v` is the probe here.
+ * Re-measured 2026-08-12 on 0.4.2 (sandbox install): `doctor --format json` returns a structured
+ * JSON envelope in ~10s, exit 0 — the hang is fixed upstream. The `-v` probe stays: 0.3.0 remains
+ * the common installed version, and a sub-second probe beats a 10s one for a per-call gate.
  */
 
 function envValue(env: NodeJS.ProcessEnv, name: string, platform = process.platform): string | undefined {
@@ -99,6 +102,8 @@ let probeMemo: PicoCliProbe | null = null;
  * form has Node's nominal 15s timeout; production tool paths use probePicoCliBounded below for hard
  * process-tree settlement.
  * Verified live 2026-08-01: `pico-cli -v` -> "pico-cli/0.3.0 (public) darwin-arm64 node-v25.8.1".
+ * Re-verified 2026-08-12 against a sandboxed 0.4.2: same one-line `-v` shape ("pico-cli/0.4.2
+ * (public) darwin-arm64 node-v25.8.1"), so version parsing holds across the 0.4.x line.
  */
 export function probePicoCli(force = false): PicoCliProbe {
   if (force) probeMemo = null;
@@ -138,6 +143,7 @@ export type PicoCliFailureClass =
   | "cli-missing"
   | "cli-unusable"
   | "flag-or-version-drift"
+  | "not-provisioned"
   | "runtime"
   | PicoCliProvisionFailureClass;
 
@@ -819,12 +825,20 @@ export function extractPicoCliRemediations(value: unknown, cap = 32): string[] {
 }
 
 /**
- * Classify a FAILED pico-cli invocation honestly. Usage dumps / unknown-option complaints mean the
- * wrapped flags no longer match the installed CLI (drift — retrying unchanged cannot help); anything
- * else is a runtime failure whose cause lives in the CLI's own output, not in a guess of ours.
+ * Classify a FAILED pico-cli invocation honestly. A "…are not installed. Run `pico-cli setup`"
+ * refusal is the 0.4.x utilities gate (measured 2026-08-12 on 0.4.2: the whole perf family exits 1
+ * with "Perf utilities 0.1.0 are not installed" until a one-time `pico-cli setup`) — that is a
+ * provisioning gap with an exact user-run remedy, not drift and not a device problem. Usage dumps /
+ * unknown-option complaints mean the wrapped flags no longer match the installed CLI (drift —
+ * retrying unchanged cannot help); anything else is a runtime failure whose cause lives in the
+ * CLI's own output, not in a guess of ours.
  */
-export function classifyPicoCliFailure(stderr: string, stdout: string): "flag-or-version-drift" | "runtime" {
+export function classifyPicoCliFailure(
+  stderr: string,
+  stdout: string,
+): "flag-or-version-drift" | "not-provisioned" | "runtime" {
   const text = `${stderr}\n${stdout}`.toLowerCase();
+  if (/not installed[\s\S]{0,120}pico-cli setup/.test(text)) return "not-provisioned";
   return /unknown option|unknown command|unknown argument|missing required|\busage:/.test(text)
     ? "flag-or-version-drift"
     : "runtime";

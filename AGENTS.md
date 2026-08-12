@@ -31,8 +31,10 @@ capture path, and escalate the look to a human or a vision-capable agent.
 
 1. **Start with `pico_doctor`** (doors surface) or `preflight_env` (full surface) — read-only;
    every failing check carries the exact fix command. Never debug the environment by guessing.
-2. **Prefer the doors surface for your first sessions** (`PICO_MCP_SURFACE=doors`): 17
-   intent-level tools instead of the full surface (248 tools on macOS; 245 on other hosts).
+2. **Prefer the doors surface for your first sessions** (`PICO_MCP_SURFACE=doors`, and the
+   default when the variable is unset since v36.3): 17
+   intent-level tools instead of the full surface (`PICO_MCP_SURFACE=full` —
+   248 tools on macOS; 245 on other hosts).
    `pico_build_app` is a TWO-STEP protocol by design —
    a brief-only call returns a scaffold AppSpec for YOU to author; re-call with
    `{brief, draftSpec}` to build.

@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { okJson } from "./util.js";
+import { doorsSurfaceActive } from "./doors.js";
 import { detectJavaHome } from "./toolchain.js";
 import { SKELETON_CANARIES, SKELETON_ROOT } from "./projectgen.js";
 import { UNITY_SKELETON_CANARIES, UNITY_SKELETON_ROOT } from "./unitygen.js";
@@ -113,9 +114,10 @@ function calibrationRoute(): string {
   // The doors surface does not register preflight_env; pico_doctor reaches these strings by spawning
   // an INNER server with PICO_MCP_SURFACE=full, so keying off PICO_MCP_SURFACE alone made this branch
   // unreachable and shipped the dead-end remedy anyway. doors.ts marks the inner server with
-  // PICO_MCP_OUTER_SURFACE so the ultimate consumer is still knowable here.
+  // PICO_MCP_OUTER_SURFACE so the ultimate consumer is still knowable here. doorsSurfaceActive()
+  // (not a raw env read) keeps this correct now that UNSET also means doors (v36.3).
   const servingDoors =
-    process.env.PICO_MCP_SURFACE === "doors" || process.env.PICO_MCP_OUTER_SURFACE === "doors";
+    doorsSurfaceActive() || process.env.PICO_MCP_OUTER_SURFACE === "doors";
   return servingDoors
     ? "run pico_doctor {calibrate:true} — it runs fleet_build(['calib']) then calibrate_capture_camera through the full-surface inner server, no client restart needed"
     : "fleet_build(['calib']) then calibrate_capture_camera";
@@ -193,6 +195,8 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   //     capture_record and agent-vault provisioning ride on it; building, capture, and verification
   //     all work without it. Probe with `-v` ONLY: `pico-cli doctor` and `pico-cli plugin doctor`
   //     hang (measured >=90s / 45s on 0.3.0, 2026-08-01) and must never be inlined here.
+  //     (0.4.2 re-measured 2026-08-12: doctor returns JSON in ~10s — fixed upstream, but the
+  //     sub-second `-v` probe stays while 0.3.0 remains the common install.)
   const picoCli = io.exec("pico-cli", ["-v"]);
   if (picoCli.ok) {
     const raw = picoCli.stdout.trim();

@@ -114,7 +114,9 @@ export async function runPerfDiagnose(
       failureClass,
       note: failureClass === "flag-or-version-drift"
         ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — the flags this wrapper passes were verified against 0.3.0 and no longer match; report outputTail upstream instead of retrying.`
-        : "pico-cli perf monitor run failed at runtime — read outputTail (the CLI's own words) before assuming a cause; a stopped app or wrong device serial are common but NOT proven by this wrapper.",
+        : failureClass === "not-provisioned"
+          ? `the installed pico-cli (${cli.raw || "unknown"}) gates its perf utilities behind a one-time \`pico-cli setup\` (0.4.x behavior, measured 2026-08-12) — run \`pico-cli setup\` yourself and retry; this wrapper never runs setup (it mutates the machine).`
+          : "pico-cli perf monitor run failed at runtime — read outputTail (the CLI's own words) before assuming a cause; a stopped app or wrong device serial are common but NOT proven by this wrapper.",
       error: runResult.spawnError ?? (runResult.timedOut
         ? `pico-cli perf monitor run timed out after ${sec + 90}s and was killed.`
         : `pico-cli perf monitor run exited with code ${runResult.code}.`),

@@ -92,8 +92,9 @@ For **Claude Code**, add this to `.mcp.json` in your project (or your user-level
 
 Any MCP client works — it's JSON-RPC over stdio. Restart your client so it picks up the new server.
 
-You should now see **248 tools on macOS or 245 on other hosts**. That's a lot, and step 5 explains
-how to cut it down to 17 if you'd rather start small.
+You should now see the **17-tool doors surface** — the default since v36.3 when the `env` block
+sets no surface. Step 5 explains the two surfaces; set `"PICO_MCP_SURFACE": "full"` in that `env`
+block for the full surface (248 tools on macOS or 245 on other hosts).
 
 ### Optional: lazy pico-cli provisioning
 
@@ -124,10 +125,11 @@ install. Leave both flags unset to keep the original manual-install behavior.
 
 Ask your agent:
 
-> Run `preflight_env`.
+> Run `pico_doctor`.
 
-This is the intended first call. It's strictly read-only — it changes nothing on your machine — and it
-runs fourteen checks: Node, adb, the PICO SDK payload, the JDK, ImageMagick, the packaged app
+(That's the doors-surface health check; on the full surface the same checks live in
+`preflight_env`.) This is the intended first call. It's strictly read-only — it changes nothing on
+your machine — and it runs fourteen checks: Node, adb, the PICO SDK payload, the JDK, ImageMagick, the packaged app
 skeleton, whether an emulator is actually running, the emulator's gRPC port, macOS Accessibility,
 camera calibration, disk space, the Unity lane, pico-cli, and pico-cli's emulator status.
 
@@ -211,14 +213,18 @@ back to you as `projectDir`.
 
 ---
 
-## Choosing a smaller surface
+## Choosing a surface
 
-The full surface—248 tools on macOS and 245 on other hosts—is a lot of context. There's a curated
-**17-tool** surface covering the same engine. Set it in the `env` block from step 2:
+Since v36.3 the curated **17-tool** doors surface is the default. The full surface—248 tools on
+macOS and 245 on other hosts—is the power opt-in for direct access to every lane. Switch in the
+`env` block from step 2:
 
 ```json
-"env": { "PICO_MCP_SURFACE": "doors" }
+"env": { "PICO_MCP_SURFACE": "full" }
 ```
+
+(`"doors"` pins the default explicitly — useful for configs that may run pre-v36.3 checkouts,
+where an unset variable served the full surface.)
 
 The seventeen: `validate_toolchain` `ensure_pico_cli` `pico_build_app` `pico_scan_world`
 `pico_place` `pico_look` `pico_verify_app` `pico_measure` `pico_perf` `pico_sdk` `pico_doctor`

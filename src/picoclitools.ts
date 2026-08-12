@@ -11,11 +11,13 @@ import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure } 
  *
  * watch_crash wraps `pico-cli app watch-crash <pkg>` — PICO's own crash monitor (PID-change
  * polling + surfaced exception logs) instead of our ad-hoc logcat grepping. Verified against
- * 0.3.0 --help (2026-08-01): it has NO duration flag and streams until killed, so this wrapper
- * bounds it by killing the child after durationSec and says so honestly.
+ * 0.3.0 --help (2026-08-01) and re-verified against 0.4.2 --help (2026-08-12): STILL no duration
+ * flag — 0.4.2 adds only --launch-timeout <seconds> (wait for the process to appear) — so this
+ * wrapper's kill-bound after durationSec remains required, and it says so honestly.
  *
  * capture_record wraps `pico-cli capture record` — the official screen recorder (1-180s, pulls
  * the file locally). It gives the ledger a recording evidence lane and the demo a video fallback.
+ * Flag surface byte-identical between 0.3.0 and 0.4.2 --help (re-verified 2026-08-12).
  *
  * HONESTY (load-bearing): output is the CLI's verbatim text; crash detection is a best-effort
  * keyword scan over that text, never a verdict — read outputTail before claiming a crash or its
@@ -25,8 +27,8 @@ import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure } 
  */
 
 const WATCH_HONESTY =
-  "The watch window is bounded by THIS wrapper killing the child (pico-cli 0.3.0 has no duration " +
-  "flag and streams indefinitely). crashIndicated is a best-effort keyword scan over the CLI's " +
+  "The watch window is bounded by THIS wrapper killing the child (pico-cli has no duration " +
+  "flag through 0.4.2 and streams indefinitely). crashIndicated is a best-effort keyword scan over the CLI's " +
   "verbatim output — read outputTail before claiming a crash or its absence; a quiet window is " +
   "evidence of no DETECTED crash during the window, nothing more. Evidence class: structural.";
 
@@ -54,7 +56,7 @@ export function registerPicoCliTools(server: McpServer) {
     {
       description:
         "Monitor a package for crashes with PICO's OFFICIAL crash watcher (`pico-cli app watch-crash <pkg>`: PID-change " +
-        "polling + surfaced exception logs) for a bounded window. The 0.3.0 CLI has NO duration flag and streams until " +
+        "polling + surfaced exception logs) for a bounded window. The CLI (through 0.4.2) has NO duration flag and streams until " +
         "killed, so this wrapper kills the watcher after durationSec — a timed-out child is the EXPECTED healthy end of " +
         "the window, reported as endedBy:'duration-cap'. Optionally starts the app first (--start/--activity). Uses " +
         "@picoxr/pico-cli from PATH; missing defaults to status:'unavailable', while PICO_MCP_AUTOINSTALL_CLI=1 or " +
@@ -105,8 +107,10 @@ export function registerPicoCliTools(server: McpServer) {
           status: "failed",
           failureClass,
           note: failureClass === "flag-or-version-drift"
-            ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its watch-crash surface drifted from the 0.3.0 flags this wrapper was verified against.`
-            : "pico-cli app watch-crash exited before the window elapsed — read outputTail (the CLI's own words) before assuming a cause.",
+            ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its watch-crash surface drifted from the 0.3.0/0.4.2 flags this wrapper was verified against.`
+            : failureClass === "not-provisioned"
+              ? `the installed pico-cli (${cli.raw || "unknown"}) reports a required utility bundle is not installed — run \`pico-cli setup\` yourself and retry; this wrapper never runs setup (it mutates the machine).`
+              : "pico-cli app watch-crash exited before the window elapsed — read outputTail (the CLI's own words) before assuming a cause.",
           exitCode: r.code,
           ...(output ? { outputTail: tail(output, 20) } : {}),
           ...(r.outputTruncated ? { outputTruncated: true } : {}),
@@ -188,8 +192,10 @@ export function registerPicoCliTools(server: McpServer) {
           note: r.timedOut
             ? `pico-cli capture record did not finish within ${sec + 120}s and was killed — read outputTail.`
             : failureClass === "flag-or-version-drift"
-              ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its capture surface drifted from the 0.3.0 flags this wrapper was verified against.`
-              : "pico-cli capture record failed at runtime — read outputTail (the CLI's own words) before assuming a cause.",
+              ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its capture surface drifted from the 0.3.0/0.4.2 flags this wrapper was verified against.`
+              : failureClass === "not-provisioned"
+                ? `the installed pico-cli (${cli.raw || "unknown"}) reports a required utility bundle is not installed — run \`pico-cli setup\` yourself and retry; this wrapper never runs setup (it mutates the machine).`
+                : "pico-cli capture record failed at runtime — read outputTail (the CLI's own words) before assuming a cause.",
           exitCode: r.code,
           ...(output ? { outputTail: tail(output, 20) } : {}),
           ...(r.outputTruncated ? { outputTruncated: true } : {}),
