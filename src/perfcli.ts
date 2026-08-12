@@ -3,7 +3,7 @@ import { z } from "zod";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { okJson } from "./util.js";
+import { okJson, okJsonStructured } from "./util.js";
 import {
   ensurePicoCli,
   picoCliFromEnsure,
@@ -11,6 +11,7 @@ import {
   classifyPicoCliFailure,
   type PicoCliEnsureResult,
   type PicoCliFailureClass,
+  cliWrapperContractShape,
 } from "./picocli.js";
 
 export { picoCliPath } from "./picocli.js";
@@ -196,12 +197,24 @@ export function registerPerfCliTools(server: McpServer) {
         "honest failureClass for provisioning, cli-missing, cli-unusable, flag-or-version-drift (the CLI rejected our flags), or runtime (read the CLI's " +
         "outputTail — the cause is not guessed for you). The full report is saved to reportPath for deep dives. " +
         "HONESTY: " + HONESTY,
+      // Typed contract (2026-07-28 revision lane): the shared CLI-wrapper core + the report fields.
+      outputSchema: z.object({
+        status: z.enum(["ok", "failed", "unavailable"]).describe("ok = a report was produced and parsed; failed = the run or report failed (see failureClass/outputTail); unavailable = pico-cli absent/unusable."),
+        ...cliWrapperContractShape,
+        source: z.string().optional(),
+        reportPath: z.string().optional().describe("The full pico-cli report JSON, persisted for deep dives."),
+        metadata: z.unknown().optional(),
+        diagnosis: z.unknown().optional().describe("pico-cli's OWN rule-engine verdict, verbatim (rule + evidence)."),
+        summary: z.unknown().optional().describe("pico-cli's summary: appFps percentiles p5/p10/p50 (FPS LOWS — there is no p95), CPU/GPU counters. appFps 0/absent = the emulator's no_3d_frame case: not measured, never 'GPU idle'."),
+        jankWindowCount: z.number().optional(),
+        jankWindows: z.array(z.unknown()).optional().describe("Top jank windows (at most 5)."),
+      }).passthrough(),
       inputSchema: {
         packageName: z.string().describe("Target app package (must be running), e.g. com.example.knockdownxr"),
         durationSec: z.number().min(5).max(120).optional().describe("Sampling window in seconds (default 15)."),
         device: z.string().optional().describe("Device serial (default emulator-5554)."),
       },
     },
-    async ({ packageName, durationSec, device }) => okJson(await runPerfDiagnose(packageName, { durationSec, device })),
+    async ({ packageName, durationSec, device }) => okJsonStructured(await runPerfDiagnose(packageName, { durationSec, device }) as unknown as Record<string, unknown>),
   );
 }

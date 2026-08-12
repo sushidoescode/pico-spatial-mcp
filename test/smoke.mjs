@@ -66,10 +66,21 @@ console.log("Prompts:", prompts.prompts.map((p) => p.name).join(", ") || "(none)
 // non-error call must carry matching structuredContent (the SDK enforces it server-side — a
 // missing/mismatched payload turns the call into an error, so these calls double as validation).
 {
-  const TYPED = ["validate_toolchain", "capability_report", "diagnose", "build_and_run", "verify"];
+  const TYPED = [
+    "validate_toolchain", "capability_report", "diagnose", "build_and_run", "verify",
+    // wave 2 (v36.6): the JSON-contract CLI wrappers + the doctor
+    "perf_diagnose", "perf_trace", "watch_crash", "capture_record", "preflight_env",
+  ];
   const untyped = TYPED.filter((n) => !tools.tools.find((t) => t.name === n)?.outputSchema);
   if (untyped.length) { console.log(`\n=== typed outputSchema [FAIL] ===\nmissing on: ${untyped.join(", ")}`); failures++; }
-  else console.log("\n=== typed outputSchema [ok] === advertised on all five contract tools");
+  else console.log(`\n=== typed outputSchema [ok] === advertised on all ${TYPED.length} contract tools`);
+
+  // preflight_env round-trips live everywhere (CI included) — the SDK validates its
+  // structuredContent server-side, so a schema/payload mismatch turns this call into an error.
+  const pf = await client.callTool({ name: "preflight_env", arguments: {} });
+  if (!pf.isError && Array.isArray(pf.structuredContent?.checks) && ["ok", "problems"].includes(pf.structuredContent?.status))
+    console.log("=== preflight_env structuredContent [ok] ===");
+  else { console.log(`=== preflight_env structuredContent [FAIL] === ${JSON.stringify(pf.structuredContent ?? null).slice(0, 200)}`); failures++; }
 
   const diag = await client.callTool({ name: "diagnose", arguments: { symptom: "white_geometry" } });
   if (!diag.isError && diag.structuredContent?.rootCause && Array.isArray(diag.structuredContent?.fix))

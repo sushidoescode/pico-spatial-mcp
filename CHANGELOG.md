@@ -2,6 +2,24 @@
 
 Versions here key the plugin manifests (`/plugin update` uses them as its cache key).
 
+## 36.6.0 — 2026-08-12
+- **Typed outputSchema wave 2** (2026-07-28 revision lane, vetting optimization #3): the
+  five JSON-contract CLI/doctor tools — `perf_diagnose`, `perf_trace`, `watch_crash`,
+  `capture_record`, `preflight_env` — now advertise typed output contracts and return
+  SDK-validated `structuredContent` on every non-error branch (ok / failed / unavailable).
+  The de-facto CLI-wrapper core (status / failureClass / note / outputTail /
+  outputTruncated / honesty / cliProvisioning) is declared once (`cliWrapperContractShape`)
+  and the honesty rules ride in the schema descriptions (stat-checked artifacts, "exit 0 is
+  not evidence", appFps-zeros semantics, crash-scan partiality). All five live-validated on
+  this machine against the real 0.3.0 CLI across ok, failed, duration-cap, and
+  artifact-stat branches; ten tools now carry typed contracts (smoke asserts the list).
+- **First live `accepted` exit for `pico_loop`** (evidence, no code change): a stage-3
+  color-keyed crystals build reached `accepted`/`auto_judged` in 35 s; the follow-up LOOK
+  found the procedural environment rendered BLACK behind correctly-rendered crystals —
+  recorded `vision_verified` with the gap in the attestation (ledger
+  com.fleet.door802332). Candidate lesson: stage-3 `procedural` environment renders black
+  — needs a diagnose/replan lesson once root-caused.
+
 ## 36.5.1 — 2026-08-12
 - **`pico_loop`: an eye ESCALATE is a look obligation, not a defect** — found by the first
   live loop run (crystals brief on the emulator): the eye escalated (high-coverage

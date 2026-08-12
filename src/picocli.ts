@@ -2,6 +2,7 @@ import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from "node:child_proce
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { z } from "zod";
 
 // Node's native spawn/execFile cannot reliably execute npm's `.cmd` shims on Windows. cross-spawn
 // does that without `shell:true` interpolation (some pico-cli argv, notably trace SQL, is user
@@ -146,6 +147,20 @@ export type PicoCliFailureClass =
   | "not-provisioned"
   | "runtime"
   | PicoCliProvisionFailureClass;
+
+/** The de-facto standardized result core every CLI wrapper returns (2026-07-28 revision lane —
+ * declared as outputSchema so hosts get the typed contract instead of description prose). All
+ * optional: which fields appear depends on the status branch; tools spread tool-specific fields
+ * on top and declare the whole object with .passthrough(). */
+export const cliWrapperContractShape = {
+  failureClass: z.string().optional().describe("Why the CLI lane failed: cli-missing | cli-unusable | flag-or-version-drift | not-provisioned (0.4.x: run `pico-cli setup`) | runtime | provisioning classes."),
+  note: z.string().optional().describe("This wrapper's guidance in plain words — remedies included, causes never guessed."),
+  outputTail: z.string().optional().describe("The CLI's own words (verbatim tail) — read before assuming a cause."),
+  outputTruncated: z.boolean().optional().describe("True when CLI output exceeded the capture cap; scans over it are partial."),
+  honesty: z.string().optional().describe("The wrapper's standing honesty contract for this result."),
+  cliProvisioning: z.record(z.unknown()).optional().describe("Present when a consent-gated lazy install/update ran this call."),
+  error: z.string().optional(),
+} as const;
 
 export type PicoCliCommandResult = {
   code: number | null;
