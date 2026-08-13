@@ -6,6 +6,7 @@
 // synthesized with ImageMagick (skip if absent); the color-key path needs the pico venv (skip if absent).
 // The pure-logic checks always run. Run: npm run test:eye
 import { analyzeFrame, analyzeColorKeys, judgeFrame, PASSTHROUGH_COVERAGE_THRESHOLD } from "../dist/eye.js";
+import { sendXrRecenter } from "../dist/grpc.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,6 +20,15 @@ const golden = path.join(ROOT, "golden", "showcase-6cards.golden.png");
 
 let failures = 0;
 const check = (name, cond) => { if (cond) console.log(`  ok   ${name}`); else { console.log(`  FAIL ${name}`); failures++; } };
+
+// capture_canonical's recenter option must send the real gRPC XR command. The previous Android
+// keyevent 0 implementation was a no-op while its schema claimed xr_recenter behavior.
+let recenterEvent = null;
+const recenter = await sendXrRecenter(undefined, {
+  getClientFn: () => ({ client: {}, metadata: {} }),
+  streamInputFn: async (_client, events) => { recenterEvent = events[0]; },
+});
+check("XR recenter helper sends xr_command RECENTER", recenter.ok && recenterEvent?.xr_command?.action === "RECENTER");
 
 // ── pure judge logic (no I/O, always runs) ──
 const six = { objectCount: 6, mostlyBlack: false, nonBlackCoverage: 0.06, dominantColors: ["#48A552", "#4B40B6"] };

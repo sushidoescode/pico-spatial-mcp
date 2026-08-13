@@ -2,6 +2,17 @@
 
 Versions here key the plugin manifests (`/plugin update` uses them as its cache key).
 
+## Audit corrections — 2026-08-12
+- **Battery-evidence correction.** The six commit messages `cca05be`, `178295a`,
+  `8153156`, `d94e6cf`, `f10a0b2`, and `bf65ab2` said all 44 `test:` suites were
+  green locally. That evidence was incomplete: the fail-fast runner stopped on `smoke` at
+  invocation 1/45 because of the known environmental `scene_schemas` failure, so those runs
+  did not execute the remaining 44 invocations. An independent later audit ran all 44
+  remaining invocations and observed exit 0 from each. The later outcomes were green; the
+  earlier commit-message claims were not earned by the cited runs. The tracked battery runner
+  now executes every invocation and prints an aggregate pass/fail summary before setting its
+  exit code.
+
 ## 36.6.0 — 2026-08-12
 - **Typed outputSchema wave 2** (2026-07-28 revision lane, vetting optimization #3): the
   five JSON-contract CLI/doctor tools — `perf_diagnose`, `perf_trace`, `watch_crash`,

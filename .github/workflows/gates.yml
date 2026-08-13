@@ -47,7 +47,7 @@ jobs:
         run: npm run smoke
         env:
           SMOKE_SDK_OPTIONAL: "1"
-      - name: Lint fixtures (each retained-lessons rule fires on pos, silent on neg)
+      - name: Lint fixtures + keep-going battery-runner contract
         run: npm run test:lint
       - name: Vault fixtures (agent-vault parser + symbol check; real-vault asserts skip in CI)
         run: npm run test:vault

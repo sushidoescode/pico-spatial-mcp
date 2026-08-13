@@ -27,7 +27,7 @@
     "test:tarball": "node scripts/verify-tarball.mjs",
     "start": "node dist/index.js",
     "smoke": "node test/smoke.mjs",
-    "test:lint": "node test/lint.mjs",
+    "test:lint": "node test/lint.mjs && node --test test/run-battery.mjs",
     "test:projectgen": "node test/projectgen.mjs",
     "test:unitygen": "node test/unitygen.mjs",
     "test:surfaceplace": "node test/surfaceplace.mjs",

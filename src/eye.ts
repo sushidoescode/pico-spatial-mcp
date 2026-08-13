@@ -8,6 +8,7 @@ import { z } from "zod";
 import { run, runBinary, okJson, fail, expandHome } from "./util.js";
 import { validateCapture } from "./evidence.js";
 import { appendLedgerEntry } from "./ledger.js";
+import { sendXrRecenter } from "./grpc.js";
 
 /**
  * eye.ts — v6.3 THE TRUSTWORTHY AUTOMATED EYE + DETERMINISTIC CAPTURE (now MR-aware).
@@ -17,7 +18,7 @@ import { appendLedgerEntry } from "./ledger.js";
  * 1. capture_canonical — a deterministic capture. The adb-screencap forward view is byte-stable across
  *    repeated captures AND across kill+relaunch (measured: MAE=0), because content is authored in the
  *    forward FOV and this path (unlike the GUI free-cam orbit) does not drift. So "same brief → same
- *    pixels" is achievable simply by NOT moving the camera: recenter (best-effort), settle, screencap,
+ *    pixels" is achievable simply by NOT moving the camera: optional RECENTER command, settle, screencap,
  *    hash. Returns a content sha256 so a frame is reproducible-by-construction and ledger-bindable, and
  *    can diff against an expected sha to DETECT drift instead of silently capturing the wrong view.
  *
@@ -270,11 +271,11 @@ export function registerEyeTools(server: McpServer) {
     "capture_canonical",
     {
       description:
-        "DETERMINISTIC capture (v6.2). Grabs the emulator's forward immersive frame via `adb exec-out screencap` — byte-stable across repeated captures and across kill+relaunch (measured MAE=0) because content is authored in the forward FOV and this path does not drift (unlike the GUI free-cam orbit). Optionally sends xr_recenter first (best-effort pose reset). Returns the saved path + a content sha256 (so the frame is reproducible-by-construction and ledger-bindable) + objective measurements. Pass expectSha to DETECT drift: if the fresh sha differs, you captured a different view — do not verify against it. This is how 'same brief → same pixels' is achieved honestly: never move the camera; bring the verification target into the forward view instead.",
+        "DETERMINISTIC capture (v6.2). Grabs the emulator's forward immersive frame via `adb exec-out screencap` — byte-stable across repeated captures and across kill+relaunch (measured MAE=0) because content is authored in the forward FOV and this path does not drift (unlike the GUI free-cam orbit). With recenter:true it sends the actual gRPC xr_command RECENTER first; command acceptance is reported, while its rendered-pose effect remains unverified on emulator 0.13.1. Returns the saved path + content sha256 + objective measurements. Pass expectSha to detect drift instead of silently verifying a different view.",
       inputSchema: {
         serial: z.string().optional().describe("adb device serial (default emulator-5554)."),
         outPath: z.string().optional().describe("Full-res PNG output path (default /tmp/pico-render/canonical.png)."),
-        recenter: z.boolean().optional().describe("Send xr_recenter before capture (best-effort pose reset). Default false."),
+        recenter: z.boolean().optional().describe("Send gRPC xr_command RECENTER before capture. The command is real; its rendered-pose effect is unverified on emulator 0.13.1. Default false."),
         settleMs: z.number().int().optional().describe("Settle delay before capture (default 600ms)."),
         expectSha: z.string().optional().describe("Expected content sha256 — the tool reports match/DRIFT instead of silently returning a different view."),
       },
@@ -284,10 +285,11 @@ export function registerEyeTools(server: McpServer) {
       const dev = serial ?? "emulator-5554";
       const full = expandHome(outPath ?? "/tmp/pico-render/canonical.png");
       fs.mkdirSync(path.dirname(full), { recursive: true });
+      let recenterEffect: "unverified" | undefined;
       if (recenter) {
-        // best-effort: send RECENTER via the emulator console-less gRPC path is elsewhere; here we no-op
-        // gracefully if unavailable (recenter effect is unverified on 0.13.1 — see xr_input_status).
-        await run(adb, ["-s", dev, "shell", "input", "keyevent", "0"], { timeoutMs: 3000 }).catch(() => {});
+        const recenterResult = await sendXrRecenter();
+        if (!recenterResult.ok) return fail(`RECENTER was requested but the gRPC command failed; capture not taken: ${recenterResult.error}`);
+        recenterEffect = recenterResult.effect;
       }
       await new Promise((r) => setTimeout(r, settleMs ?? 600));
       const res = await runBinary(adb, ["-s", dev, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
@@ -301,6 +303,7 @@ export function registerEyeTools(server: McpServer) {
         path: full,
         sha256: sha,
         bytes: res.stdout.length,
+        ...(recenterEffect ? { recenter: { commandAccepted: true, renderedPoseEffect: recenterEffect } } : {}),
         ...(drift ? { drift, expectSha } : {}),
         measurements,
         note: drift === "DRIFT"

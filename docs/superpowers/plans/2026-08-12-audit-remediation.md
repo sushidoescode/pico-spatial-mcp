@@ -18,8 +18,8 @@
 - [x] P0-1: Write failing ledger tests for immutable copies, source overwrite resistance, read-time hash downgrade, missing artifacts, and append-only retraction.
 - [x] P0-1: Implement the content store, report-time provenance gate, and retraction event model; run `npm run build && npm run test:ledger`.
 - [x] P0-1: Append the requested `com.fleet.door448144` retraction through the tested implementation, without changing the original entry.
-- [ ] P0-2: Write a failing test for a keep-going battery executor and aggregate exit status; implement it and delegate the ignored `.dev` entry point.
-- [ ] P0-2/P0-3: Correct the five unearned battery claims and the false recenter description; gate both corrections.
+- [x] P0-2: Write a failing test for a keep-going battery executor and aggregate exit status; implement it and delegate the ignored `.dev` entry point.
+- [x] P0-2/P0-3: Correct the six unearned battery claims and replace the false recenter implementation with the real gRPC command; gate both corrections.
 - [ ] P1 docs: Correct the pico-cli 0.4.2 delta inventory, update-cache side effect, token measurements, tool-count provenance, answer count, and ignored-file citations.
 - [ ] P1 loop: Add deterministic injected-call tests for mixed criteria, genuine spec mutation with an empty compile subtree, non-repairable failures, perf evidence, visual escalation classes, and structured outputs.
 - [ ] P1 loop: Implement the smallest behavior changes that satisfy those tests and document the remaining automation ceiling honestly.

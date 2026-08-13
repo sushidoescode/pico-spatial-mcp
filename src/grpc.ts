@@ -131,6 +131,25 @@ function streamInput(client: any, events: unknown[], metadata: grpc.Metadata, ti
   });
 }
 
+/** Shared RECENTER primitive for xr_recenter and capture_canonical. Command delivery is testable;
+ * the rendered-pose effect remains unverified on emulator 0.13.1 and is reported as such. */
+export async function sendXrRecenter(
+  toolsVersion?: string,
+  deps: {
+    getClientFn?: typeof getClient;
+    streamInputFn?: (client: any, events: unknown[], metadata: any, timeoutMs?: number) => Promise<void>;
+  } = {},
+): Promise<{ ok: true; accepted: true; effect: "unverified" } | { ok: false; error: string }> {
+  const connection = (deps.getClientFn ?? getClient)(toolsVersion);
+  if ("error" in connection) return { ok: false, error: connection.error };
+  try {
+    await (deps.streamInputFn ?? streamInput)(connection.client, [{ xr_command: { action: "RECENTER" } }], connection.metadata);
+    return { ok: true, accepted: true, effect: "unverified" };
+  } catch (error: any) {
+    return { ok: false, error: error?.message ?? String(error) };
+  }
+}
+
 const versionParam = z.string().optional().describe("Toolchain version to load protos from (default: newest)");
 
 export function registerGrpcTools(server: McpServer) {
@@ -272,14 +291,10 @@ export function registerGrpcTools(server: McpServer) {
       inputSchema: { toolsVersion: versionParam },
     },
     async ({ toolsVersion }) => {
-      const c = getClient(toolsVersion);
-      if ("error" in c) return fail(c.error);
-      try {
-        await streamInput(c.client, [{ xr_command: { action: "RECENTER" } }], c.metadata);
-        return ok("RECENTER sent");
-      } catch (e: any) {
-        return fail(`xr_command failed: ${e.message}\nTip: run xr_grpc_describe to check the XrCommand field shape.`);
-      }
+      const result = await sendXrRecenter(toolsVersion);
+      return result.ok
+        ? ok("RECENTER command accepted; rendered-pose effect remains unverified on this emulator build")
+        : fail(`xr_command failed: ${result.error}\nTip: run xr_grpc_describe to check the XrCommand field shape.`);
     },
   );
 
