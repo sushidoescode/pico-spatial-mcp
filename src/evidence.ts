@@ -63,6 +63,17 @@ export function inspectJpeg(buf: Buffer): { width: number; height: number } | nu
  * Validate that `p` is a real, non-trivial raster image. Returns { ok, reason } on failure; on success
  * also returns format/width/height/bytes/sha256 (the ledger records these for provenance + reuse checks).
  */
+export function validateCaptureBuffer(buf: Buffer, label = "capture", opts: { minBytes?: number } = {}): CaptureCheck {
+  const minBytes = opts.minBytes ?? MIN_BYTES;
+  if (buf.length < minBytes) return { ok: false, reason: `artifact '${label}' is only ${buf.length} bytes — too small to be a real capture` };
+  let dim = inspectPng(buf);
+  let format: "png" | "jpeg" = "png";
+  if (!dim) { dim = inspectJpeg(buf); format = "jpeg"; }
+  if (!dim) return { ok: false, reason: `artifact '${label}' is not a valid PNG/JPEG image (bad header/magic bytes) — a vision_verified claim must link a real rendered frame` };
+  if (dim.width < MIN_DIM || dim.height < MIN_DIM) return { ok: false, reason: `artifact '${label}' is ${dim.width}×${dim.height} — too small to be a scene capture` };
+  return { ok: true, format, width: dim.width, height: dim.height, bytes: buf.length, sha256: crypto.createHash("sha256").update(buf).digest("hex") };
+}
+
 export function validateCapture(p: string | undefined, opts: { minBytes?: number } = {}): CaptureCheck {
   if (!p || !p.trim()) return { ok: false, reason: "no artifactPath supplied" };
   let st: fs.Stats;
@@ -73,15 +84,13 @@ export function validateCapture(p: string | undefined, opts: { minBytes?: number
   }
   if (st.isDirectory()) return { ok: false, reason: `artifact '${p}' is a directory, not an image` };
   if (!st.isFile()) return { ok: false, reason: `artifact '${p}' is not a regular file` };
-  const buf = fs.readFileSync(p);
-  const minBytes = opts.minBytes ?? MIN_BYTES;
-  if (buf.length < minBytes) return { ok: false, reason: `artifact '${p}' is only ${buf.length} bytes — too small to be a real capture` };
-  let dim = inspectPng(buf);
-  let format: "png" | "jpeg" = "png";
-  if (!dim) { dim = inspectJpeg(buf); format = "jpeg"; }
-  if (!dim) return { ok: false, reason: `artifact '${p}' is not a valid PNG/JPEG image (bad header/magic bytes) — a vision_verified claim must link a real rendered frame` };
-  if (dim.width < MIN_DIM || dim.height < MIN_DIM) return { ok: false, reason: `artifact '${p}' is ${dim.width}×${dim.height} — too small to be a scene capture` };
-  return { ok: true, format, width: dim.width, height: dim.height, bytes: buf.length, sha256: crypto.createHash("sha256").update(buf).digest("hex") };
+  let buf: Buffer;
+  try {
+    buf = fs.readFileSync(p);
+  } catch (error: any) {
+    return { ok: false, reason: `artifact '${p}' could not be read: ${error?.message ?? String(error)}` };
+  }
+  return validateCaptureBuffer(buf, p, opts);
 }
 
 /** Pull the first plausible image path out of a free-text evidence string (legacy capability_report). */

@@ -2,7 +2,7 @@
 // deterministic (no emulator, no adb). HOME is pointed at a scratch dir BEFORE importing dist —
 // swanparity.js resolves ~/.pico-mcp at module load — then a device_verified-shaped ledger entry
 // is minted directly and the matching/merge logic is asserted, including that a second run (and a
-// run after the ledger vanishes) never reopens a closed row. Identity fixtures are the values
+// a later read reopens a row if the ledger proof vanishes. Identity fixtures are the values
 // MEASURED live on 2026-08-01: the PICO emulator's own Pico/swan_oversea fingerprint (which must
 // NOT pass — emulator veto) and a real Quest 3 over USB. Run: npm run test:swan
 import fs from "node:fs";
@@ -16,24 +16,21 @@ const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
 // Point HOME at scratch BEFORE the dist import (module-load-time os.homedir()).
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "swan-test-"));
 process.env.HOME = scratch;
+const { appendLedgerEntry, appendLedgerRetraction } = await import("../dist/ledger.js");
 const { classifyDeviceIdentity, deviceVerifiedMatches, buildParityRows, mergeParityFile, normalizeFeatureText, normalizeCClass } = await import("../dist/swanparity.js");
 if (os.homedir() !== scratch) { fail(`HOME override did not take (${os.homedir()})`); process.exit(1); }
 
 const app = "com.test.swanparity";
 const ledgerDir = path.join(scratch, ".pico-mcp", "ledgers");
 fs.mkdirSync(ledgerDir, { recursive: true });
-fs.writeFileSync(
-  path.join(ledgerDir, `${app}.json`),
-  JSON.stringify([
-    { seq: 0, claim: "controller-ray select", evidenceType: "built_for_headset", artifactPath: null, attestation: null, cClass: "C3", reproHash: null },
-    // The device_verified shape record_verification writes (capture block + deviceSerial extra).
-    { seq: 1, claim: "controller-ray select fires on hardware", evidenceType: "device_verified", artifactPath: "/tmp/swan/ray.png", attestation: "the ray highlight moved onto the target and select fired", cClass: "C3", reproHash: null, deviceSerial: "PA9K1TEST", capture: { sha256: "ab12cd34ef56", width: 1024, height: 1024, bytes: 4321, format: "png" } },
-    // C4 spelled the ledger way — must still close the matrix's "C4" row.
-    { seq: 2, claim: "in-front panel is clickable over the scene", evidenceType: "device_verified", artifactPath: "/tmp/swan/panel.png", attestation: "panel rendered in front and the button responded", cClass: "C4_headset_only", reproHash: null, deviceSerial: "PA9K1TEST", capture: { sha256: "77aa88bb99cc", width: 1024, height: 1024, bytes: 4321, format: "png" } },
-    // Retracted device_verified — must NOT close its row (ledger.ts retraction shape).
-    { seq: 3, claim: "hand pinch selects the menu button", evidenceType: "device_verified", artifactPath: "/tmp/swan/pinch.png", attestation: "pinch fired select", cClass: "C3", reproHash: null, deviceSerial: "PA9K1TEST", capture: { sha256: "deadbeef0000", width: 1024, height: 1024, bytes: 4321, format: "png" }, retracted: true, retractedOn: "2026-08-01", retractedReason: "capture was of the wrong app" },
-  ], null, 2),
-);
+const fixturePng = path.resolve("golden/showcase-6cards.golden.png");
+appendLedgerEntry(app, { claim: "controller-ray select", evidenceType: "built_for_headset", cClass: "C3" });
+// These are disposable schema fixtures, not hardware observations; the wording makes that boundary
+// explicit even inside the scratch ledger.
+const rayProof = appendLedgerEntry(app, { claim: "controller-ray synthetic closure fixture (not a hardware observation)", evidenceType: "device_verified", artifactPath: fixturePng, attestation: "synthetic regression fixture only; no hardware result is claimed", cClass: "C3", extra: { deviceSerial: "PA9K1TEST" } });
+const panelProof = appendLedgerEntry(app, { claim: "in-front panel synthetic closure fixture (not a hardware observation)", evidenceType: "device_verified", artifactPath: fixturePng, attestation: "synthetic regression fixture only; no hardware result is claimed", cClass: "C4_headset_only", extra: { deviceSerial: "PA9K1TEST" } });
+const pinchProof = appendLedgerEntry(app, { claim: "hand pinch synthetic closure fixture (not a hardware observation)", evidenceType: "device_verified", artifactPath: fixturePng, attestation: "synthetic regression fixture only; no hardware result is claimed", cClass: "C3", extra: { deviceSerial: "PA9K1TEST" } });
+appendLedgerRetraction(app, { targetSeq: pinchProof.entry.seq, reason: "capture was of the wrong app", recordedAt: "2026-08-01T00:00:00.000Z" });
 
 // 1) normalization helpers
 if (normalizeFeatureText("Controller-Ray  select") === "controller ray select") ok("normalizeFeatureText folds hyphens/case/runs");
@@ -43,9 +40,9 @@ else fail("normalizeCClass wrong");
 
 // 2) ledger→matrix matching
 const m = deviceVerifiedMatches(app);
-if (m.controller_ray?.captureSha256 === "ab12cd34ef56" && m.controller_ray?.deviceSerial === "PA9K1TEST") ok("controller_ray closes (cClass C3 + 'controller-ray' keyword) with sha + serial");
+if (m.controller_ray?.captureSha256 === rayProof.entry.capture.sha256 && m.controller_ray?.deviceSerial === "PA9K1TEST") ok("controller_ray closes (cClass C3 + 'controller-ray' keyword) with intact sha + serial");
 else fail(`controller_ray match wrong: ${JSON.stringify(m.controller_ray)}`);
-if (m.in_front_panel?.captureSha256 === "77aa88bb99cc") ok("in_front_panel closes across the C4_headset_only↔C4 spelling gap");
+if (m.in_front_panel?.captureSha256 === panelProof.entry.capture.sha256) ok("in_front_panel closes across the C4_headset_only↔C4 spelling gap");
 else fail(`in_front_panel match wrong: ${JSON.stringify(m.in_front_panel)}`);
 if (!m.hand_pinch) ok("retracted device_verified entry does NOT close hand_pinch");
 else fail(`hand_pinch falsely closed: ${JSON.stringify(m.hand_pinch)}`);
@@ -64,7 +61,7 @@ const pending = buildParityRows(app, ["scene_understanding"], "localhost:5555")[
 if (pending.verifiedBy === "swan_pending" && pending.device === "pending_capture") ok("open row flips to swan_pending when a Swan serial is passed");
 else fail(`pending row wrong: ${JSON.stringify(pending)}`);
 
-// 4) merge: first write closes, a second run does not reopen
+// 4) merge: first write closes; a second read with intact proof stays closed.
 const first = mergeParityFile(app, rows, false);
 let onDisk = JSON.parse(fs.readFileSync(first.path, "utf8"));
 if (onDisk.rows.find((r) => r.feature === "controller_ray")?.verifiedBy === "device_verified") ok("parity file holds the closed row after the first merge");
@@ -74,12 +71,12 @@ const second = mergeParityFile(app, buildParityRows(app, keys, null), false);
 if (second.rows.find((r) => r.feature === "controller_ray")?.verifiedBy === "device_verified") ok("second run keeps the row closed (idempotent)");
 else fail("second run reopened the closed row");
 
-// 5) merge keeps closed rows even if the ledger evidence file disappears (never reopen with weaker rows)
+// 5) cached parity state cannot outlive proof: removing the ledger reopens the row.
 fs.rmSync(path.join(ledgerDir, `${app}.json`));
 const third = mergeParityFile(app, buildParityRows(app, keys, null), false);
 const kept = third.rows.find((r) => r.feature === "controller_ray");
-if (kept?.verifiedBy === "device_verified" && kept?.captureSha256 === "ab12cd34ef56") ok("closed row survives a run with no ledger evidence (merge, not overwrite)");
-else fail(`closed row lost after ledger removal: ${JSON.stringify(kept)}`);
+if (kept?.verifiedBy === "built_for_headset" && kept?.device === "awaiting_device") ok("closed row reopens when its ledger evidence disappears");
+else fail(`closed row survived without ledger proof: ${JSON.stringify(kept)}`);
 if (third.rows.find((r) => r.feature === "hand_pinch")?.verifiedBy === "built_for_headset") ok("open rows still update normally through the merge");
 else fail("open row shape wrong after merge");
 

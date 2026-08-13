@@ -35,6 +35,7 @@ const STATUS_META: Record<string, { bucket: "visuallyVerified" | "autoJudged" | 
   decoded_real_data: { bucket: "structuralOnly", label: "verified against real data — structural, not visual" },
   compiles: { bucket: "structuralOnly", label: "compiles — no runtime behaviour or appearance verified" },
   structural: { bucket: "structuralOnly", label: "structurally valid (parses/well-formed) only" },
+  "provenance-broken": { bucket: "structuralOnly", label: "PROVENANCE BROKEN — recorded visual evidence is missing or no longer matches its recorded hash; no visual claim survives" },
   built_for_headset: { bucket: "builtForHeadset", label: "built; runtime verification needs a PICO Swan headset" },
 };
 

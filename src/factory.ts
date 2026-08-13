@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -10,6 +9,7 @@ import { lintSpec, emulatorVsSwanPreview } from "./planner.js";
 import { buildLedger } from "./compiler.js";
 import { computeSuite } from "./eval.js";
 import { classifyBriefExecution } from "./briefroute.js";
+import { readLedger } from "./ledger.js";
 
 /**
  * factory.ts — v6.0 THE AUTONOMOUS SPATIAL FACTORY: a queue of briefs → verified, ledgered,
@@ -27,8 +27,7 @@ import { classifyBriefExecution } from "./briefroute.js";
 
 function ledgerCounts(pkg: string): { visionVerified: number; autoJudged: number; builtForHeadset: number } {
   try {
-    const arr = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".pico-mcp", "ledgers", `${pkg.replace(/[^A-Za-z0-9._-]/g, "_")}.json`), "utf8"));
-    if (!Array.isArray(arr)) return { visionVerified: 0, autoJudged: 0, builtForHeadset: 0 };
+    const arr = readLedger(pkg).effectiveEntries;
     return {
       visionVerified: arr.filter((e: any) => e.evidenceType === "vision_verified").length,
       autoJudged: arr.filter((e: any) => e.evidenceType === "auto_judged").length,

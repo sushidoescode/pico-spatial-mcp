@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -9,6 +8,7 @@ import { appSpecSchema } from "./appspec.js";
 import { lintSpec, emulatorVsSwanPreview } from "./planner.js";
 import { buildLedger } from "./compiler.js";
 import { classifyBriefExecution } from "./briefroute.js";
+import { readLedger } from "./ledger.js";
 
 /**
  * eval.ts — v5.4 EVAL CORPUS + scorecard: measure brief-generality as a DISTRIBUTION, not one anecdote.
@@ -22,12 +22,9 @@ import { classifyBriefExecution } from "./briefroute.js";
  * (fully headless + reproducible); the batched-montage visual pass is the emulator-gated extension.
  */
 
-const LEDGER_DIR = path.join(os.homedir(), ".pico-mcp", "ledgers");
 function ledgerVisionCount(pkg: string): number {
   try {
-    const p = path.join(LEDGER_DIR, `${pkg.replace(/[^A-Za-z0-9._-]/g, "_")}.json`);
-    const arr = JSON.parse(fs.readFileSync(p, "utf8"));
-    return Array.isArray(arr) ? arr.filter((e: any) => e.evidenceType === "vision_verified").length : 0;
+    return readLedger(pkg).effectiveEntries.filter((e: any) => e.evidenceType === "vision_verified").length;
   } catch {
     return 0;
   }

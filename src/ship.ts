@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { okJson } from "./util.js";
+import { readLedger } from "./ledger.js";
 
 /**
  * ship.ts — v10.22 (P20): the SHIP path — package + honest production checklist.
@@ -14,8 +15,6 @@ import { okJson } from "./util.js";
  * package_web_pwa turns a web/WebSpatial bundle into an installable, hostable PWA (manifest +
  * service worker), so the web lane has a real deploy target today.
  */
-const LEDGER_DIR = path.join(os.homedir(), ".pico-mcp", "ledgers");
-
 export function registerShipTools(server: McpServer) {
   server.registerTool(
     "ship_checklist",
@@ -32,14 +31,16 @@ export function registerShipTools(server: McpServer) {
       const ln = lane ?? "native";
       const ready: string[] = [], deferred: string[] = [], blockers: string[] = [];
       // ledger evidence
-      const lf = path.join(LEDGER_DIR, `${app.replace(/[^A-Za-z0-9._-]/g, "_")}.json`);
       let entries: any[] = [];
-      try { entries = JSON.parse(fs.readFileSync(lf, "utf8")); } catch { /* none */ }
+      let ledgerError: string | null = null;
+      try { entries = readLedger(app).effectiveEntries; } catch (error: any) { ledgerError = error?.message ?? String(error); }
       const byType: Record<string, number> = {};
       for (const e of entries) byType[e.evidenceType] = (byType[e.evidenceType] ?? 0) + 1;
       const vision = byType.vision_verified ?? 0;
       if (vision > 0) ready.push(`${vision} vision-verified proof(s) on file (a human/agent LOOKED)`);
       else blockers.push("NO vision-verified proof in the ledger — cannot claim the experience renders. Capture + record_verification first.");
+      if (byType["provenance-broken"]) blockers.push(`${byType["provenance-broken"]} visual claim(s) have broken provenance — their linked bytes are missing or do not match the recorded hash.`);
+      if (ledgerError) blockers.push(`trust ledger unreadable — no ledger evidence counted: ${ledgerError}`);
       if (byType.built_for_headset) deferred.push(`${byType.built_for_headset} capability(ies) built-for-Swan (controller-ray / anchors / immersive) — device-verify on hardware.`);
 
       if (ln === "native" || ln === "hybrid") {

@@ -1,9 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
 import { okJson } from "./util.js";
+import { ledgerDirectory, readLedger } from "./ledger.js";
 
 /**
  * capabilityreport.ts — v10.17 (P15): the honest CAPABILITY MATRIX.
@@ -14,7 +13,6 @@ import { okJson } from "./util.js";
  * built_for_headset (deferred to Swan/OS6). The honesty invariant made visible at a glance: the
  * report can never show 'verified' for something without a linked, looked-at capture in the ledger.
  */
-const LEDGER_DIR = path.join(os.homedir(), ".pico-mcp", "ledgers");
 const RANK: Record<string, number> = { device_verified: 6, vision_verified: 5, auto_judged: 4, usd_host_render: 3, logcat: 2, structural: 2, compiles: 1, built_for_headset: 1, built_for_os6: 1 };
 
 const CATS: { cat: string; kw: RegExp }[] = [
@@ -46,22 +44,25 @@ export function registerCapabilityReportTools(server: McpServer) {
       },
     },
     async ({ category, appFilter }) => {
-      if (!fs.existsSync(LEDGER_DIR)) return okJson({ status: "ok", note: "no ledgers yet", categories: [] });
-      const files = fs.readdirSync(LEDGER_DIR).filter((f) => f.endsWith(".json"));
+      const ledgerDir = ledgerDirectory();
+      if (!fs.existsSync(ledgerDir)) return okJson({ status: "ok", note: "no ledgers yet", categories: [] });
+      const files = fs.readdirSync(ledgerDir).filter((f) => f.endsWith(".json"));
       const all: any[] = [];
+      const unreadableLedgers: string[] = [];
       for (const f of files) {
         const app = f.replace(/\.json$/, "");
         if (appFilter && !app.includes(appFilter)) continue;
         try {
-          const entries = JSON.parse(fs.readFileSync(path.join(LEDGER_DIR, f), "utf8"));
-          for (const e of (Array.isArray(entries) ? entries : entries.entries ?? [])) all.push({ ...e, app });
-        } catch { /* skip */ }
+          for (const e of readLedger(app).effectiveEntries) all.push({ ...e, app });
+        } catch (error: any) { unreadableLedgers.push(`${app}: ${error?.message ?? String(error)}`); }
       }
       const byType: Record<string, number> = {};
       for (const e of all) byType[e.evidenceType] = (byType[e.evidenceType] ?? 0) + 1;
+      const broken = all.filter((entry) => entry.evidenceType === "provenance-broken");
+      const proofs = all.filter((entry) => entry.evidenceType !== "provenance-broken");
 
       const cats = CATS.map(({ cat, kw }) => {
-        const hits = all.filter((e) => kw.test(e.claim ?? "") || kw.test(e.attestation ?? ""));
+        const hits = proofs.filter((e) => kw.test(e.claim ?? "") || kw.test(e.attestation ?? ""));
         if (!hits.length) return null;
         const best = hits.reduce((a, b) => ((RANK[b.evidenceType] ?? 0) > (RANK[a.evidenceType] ?? 0) ? b : a));
         return {
@@ -77,10 +78,12 @@ export function registerCapabilityReportTools(server: McpServer) {
       const visionN = byType.vision_verified ?? 0;
       return okJson({
         status: "ok",
-        headline: `${cats.length} capability categories proven across ${new Set(all.map((e) => e.app)).size} apps; ${all.length} ledger entries (${visionN} vision_verified — a human/agent LOOKED).`,
+        headline: `${cats.length} capability categories with active proof across ${new Set(proofs.map((e) => e.app)).size} apps; ${proofs.length} effective proof entries (${visionN} vision_verified — a human/agent LOOKED); ${broken.length} provenance-broken visual claim(s) excluded.`,
         evidenceTotals: byType,
         categories: cats,
-        honesty: "Ranking: vision_verified > auto_judged > usd_host_render/structural > built-for-Swan/OS6. 'bestEvidence' is the STRONGEST proof on file for that category — a category with only built_for_headset/os6 is honestly deferred, not claimed. Every vision_verified entry links a capture that exists on disk (the ledger gate enforces it).",
+        integrityIssues: broken.map((entry) => ({ app: entry.app, seq: entry.seq, claim: entry.claim, claimedEvidenceType: entry.claimedEvidenceType, provenance: entry.provenance })),
+        unreadableLedgers,
+        honesty: "Ranking: vision_verified > auto_judged > usd_host_render/structural > built-for-Swan/OS6. Every image-grounded row is rehashed on this read. Broken provenance is excluded from categories and reported separately; unreadable ledgers are disclosed, never treated as proof.",
       });
     },
   );

@@ -1,9 +1,9 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
+import { ledgerDirectory, readLedger } from "./ledger.js";
 
 /**
  * claimspage.ts — v22 pico-verify: the PUBLIC VERIFIABLE-CLAIMS PAGE.
@@ -16,10 +16,8 @@ import { okJson } from "./util.js";
  * the page cannot say more than the ledger proved.
  */
 
-const LEDGER_DIR = path.join(os.homedir(), ".pico-mcp", "ledgers");
-
 // Strongest first. Mirrors the trust-ledger ranking (device > emulator vision > judged > host render > runtime logs > static).
-const EVIDENCE_RANK = ["device_verified", "vision_verified", "auto_judged", "usd_host_render", "logcat", "structural", "compiles", "built_for_headset"] as const;
+const EVIDENCE_RANK = ["device_verified", "vision_verified", "auto_judged", "usd_host_render", "logcat", "structural", "compiles", "built_for_headset", "provenance-broken"] as const;
 const EVIDENCE_MEANING: Record<string, string> = {
   device_verified: "a capture from REAL PICO hardware that a human/agent eye actually looked at",
   vision_verified: "an emulator frame that was actually LOOKED at (attestation + capture hash recorded)",
@@ -29,6 +27,7 @@ const EVIDENCE_MEANING: Record<string, string> = {
   structural: "asserted from code/bundle structure only",
   compiles: "the code compiles; behavior unverified",
   built_for_headset: "built for real-hardware capability; awaiting device verification",
+  "provenance-broken": "the recorded image is missing or no longer matches its recorded hash; it is not visual proof",
 };
 const BADGE_COLOR: Record<string, string> = {
   device_verified: "#7ce38b",
@@ -39,6 +38,7 @@ const BADGE_COLOR: Record<string, string> = {
   structural: "#ffb27a",
   compiles: "#9aa4b2",
   built_for_headset: "#e0c060",
+  "provenance-broken": "#ff5c5c",
 };
 
 function esc(s: string): string {
@@ -47,11 +47,12 @@ function esc(s: string): string {
 
 function loadAllLedgers(): Record<string, any[]> {
   const out: Record<string, any[]> = {};
-  if (!fs.existsSync(LEDGER_DIR)) return out;
-  for (const f of fs.readdirSync(LEDGER_DIR).filter((f) => f.endsWith(".json")).sort()) {
+  const ledgerDir = ledgerDirectory();
+  if (!fs.existsSync(ledgerDir)) return out;
+  for (const f of fs.readdirSync(ledgerDir).filter((f) => f.endsWith(".json")).sort()) {
     try {
-      const raw = JSON.parse(fs.readFileSync(path.join(LEDGER_DIR, f), "utf8"));
-      if (Array.isArray(raw) && raw.length) out[f.replace(/\.json$/, "")] = raw;
+      const effective = readLedger(f.replace(/\.json$/, "")).effectiveEntries;
+      if (effective.length) out[f.replace(/\.json$/, "")] = effective;
     } catch { /* unreadable ledger: skip, never invent */ }
   }
   return out;

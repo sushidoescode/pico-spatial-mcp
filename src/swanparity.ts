@@ -4,6 +4,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson, run } from "./util.js";
+import { readLedger } from "./ledger.js";
 
 /**
  * swanparity.ts — v5.9 SWAN ON-DEVICE PARITY: flip the "built-for-headset" column to device-verified.
@@ -45,12 +46,9 @@ const MATRIX: Record<string, { cClass: string; emulatorBaseline: string; deviceT
 
 const PARITY_DIR = path.join(os.homedir(), ".pico-mcp", "parity");
 const parityPath = (app: string) => path.join(PARITY_DIR, `${app.replace(/[^A-Za-z0-9._-]/g, "_")}.json`);
-const ledgerPath = (app: string) => path.join(os.homedir(), ".pico-mcp", "ledgers", `${app.replace(/[^A-Za-z0-9._-]/g, "_")}.json`);
-
 function loadLedgerEntries(app: string): any[] {
   try {
-    const arr = JSON.parse(fs.readFileSync(ledgerPath(app), "utf8"));
-    return Array.isArray(arr) ? arr : [];
+    return readLedger(app).effectiveEntries;
   } catch {
     return [];
   }
@@ -58,7 +56,7 @@ function loadLedgerEntries(app: string): any[] {
 
 function builtForHeadsetFromLedger(app: string): string[] {
   return loadLedgerEntries(app)
-    .filter((e: any) => e.evidenceType === "built_for_headset" && !e.retracted)
+    .filter((e: any) => e.evidenceType === "built_for_headset")
     .map((e: any) => String(e.claim ?? ""));
 }
 
@@ -117,7 +115,7 @@ export async function probeDeviceIdentity(adb: string, serial: string): Promise<
  * underscores/hyphens/spaces folded together (so "controller-ray select fires" closes controller_ray).
  */
 export function deviceVerifiedMatches(app: string): Record<string, { seq: number; claim: string; captureSha256: string | null; deviceSerial: string | null }> {
-  const entries = loadLedgerEntries(app).filter((e: any) => e?.evidenceType === "device_verified" && !e?.retracted);
+  const entries = loadLedgerEntries(app).filter((e: any) => e?.evidenceType === "device_verified");
   const out: Record<string, { seq: number; claim: string; captureSha256: string | null; deviceSerial: string | null }> = {};
   for (const [key, spec] of Object.entries(MATRIX)) {
     const kw = normalizeFeatureText(key);
@@ -150,8 +148,8 @@ export function buildParityRows(app: string, keys: string[], swanSerial: string 
 }
 
 /**
- * MERGE rows into the app's parity file (never overwrite): a row already closed (device_verified) on
- * disk is kept over any weaker replacement, and features from earlier runs outside `rows` survive.
+ * MERGE rows into the app's parity file. Features outside `rows` survive, but rows in this read are
+ * authoritative: a retracted/missing/mismatched device capture must reopen a formerly closed row.
  */
 export function mergeParityFile(app: string, rows: ParityRow[], swanAttached: boolean, deviceIdentity?: { serial: string; model: string; fingerprint: string }): { path: string; rows: ParityRow[] } {
   fs.mkdirSync(PARITY_DIR, { recursive: true });
@@ -164,8 +162,6 @@ export function mergeParityFile(app: string, rows: ParityRow[], swanAttached: bo
   }
   const byFeature = new Map(prev.map((r) => [r.feature, r]));
   for (const r of rows) {
-    const old = byFeature.get(r.feature);
-    if (old?.verifiedBy === "device_verified" && r.verifiedBy !== "device_verified") continue; // never reopen a closed row
     byFeature.set(r.feature, r);
   }
   const merged = [...byFeature.values()];
@@ -178,7 +174,7 @@ export function registerSwanParityTools(server: McpServer) {
     "swan_verify_matrix",
     {
       description:
-        "The v5.9 emulator→device parity gate. For an app's headset-only (C1/C3/C4) features it emits an EXECUTABLE re-test matrix — each row's emulator baseline, the exact on-device test, and the expected device result — and records the emulator→device delta in a parity ledger. HARDWARE-IDENTITY GATE (v31): a non-emulator serial is probed via getprop (ro.product.model + ro.build.fingerprint + ro.boot.qemu, all included in the result); anything that doesn't look like PICO hardware — a phone, a Quest, or the emulator reattached over adb-over-TCP — is NOT treated as a Swan unless you pass assumeSwan:true. PARITY CLOSURE: active device_verified trust-ledger entries are matched to matrix features (match contract: entry cClass equals the row's cClass with C4_headset_only↔C4 normalized, AND the entry's claim contains the feature keyword with underscores/hyphens/spaces folded — e.g. 'controller-ray select fires' closes controller_ray); matched rows flip to device_verified carrying the capture sha256 + deviceSerial, and results MERGE into the existing parity file — a closed row is never reopened by a later run. The flip still only ever comes from record_verification evidence, never auto-granted. Features default to the trust ledger's built_for_headset rows (or pass explicit keys: scene_understanding/world_anchor/measured_room/controller_ray/hand_pinch/in_front_panel).",
+        "The v5.9 emulator→device parity gate. For an app's headset-only (C1/C3/C4) features it emits an executable re-test matrix and records the emulator→device delta in a parity ledger. A non-emulator serial is identity-probed and rejected unless it looks like PICO hardware or assumeSwan:true is explicit. Only an active device_verified trust-ledger entry whose capture still matches its recorded hash closes a feature. A later retraction or provenance failure reopens it; cached parity state cannot outlive its proof.",
       inputSchema: {
         app: z.string().describe("App name/package (parity ledger key)."),
         features: z.array(z.enum(["scene_understanding", "world_anchor", "measured_room", "controller_ray", "hand_pinch", "in_front_panel"])).optional().describe("Headset features to re-test (default: derived from the trust ledger's built_for_headset rows, else all)."),

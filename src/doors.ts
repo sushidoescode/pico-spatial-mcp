@@ -5,6 +5,7 @@ import { z } from "zod";
 import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
+import { readLedger } from "./ledger.js";
 
 /**
  * doors.ts — THE DOORS (v21): an intent-level facade over the full tool surface.
@@ -464,11 +465,8 @@ export function registerDoorTools(server: McpServer) {
       // briefstore + trust-ledger state, straight from the same files pico_build_app / fleet_build /
       // record_verification write (userBriefsDir, ~/.pico-mcp/ledgers, fleet's capture dir).
       const home = process.env.HOME ?? "";
-      const readLedger = (app: string): any[] => {
-        try {
-          const raw = JSON.parse(fs.readFileSync(path.join(home, ".pico-mcp", "ledgers", `${app.replace(/[^A-Za-z0-9._-]/g, "_")}.json`), "utf8"));
-          return Array.isArray(raw) ? raw.filter((e: any) => !e?.retracted) : [];
-        } catch { return []; }
+      const readLedgerEntries = (app: string): any[] => {
+        try { return readLedger(app).effectiveEntries; } catch { return []; }
       };
       let briefFiles: Array<{ id: string; brief: string; mtime: number }> = [];
       try {
@@ -485,7 +483,7 @@ export function registerDoorTools(server: McpServer) {
         .map(({ id, brief }) => {
           const projectDir = path.join(home, "AndroidStudioProjects", `fleet-${id}-native`);
           const capture = `/tmp/pico-render/fleet/${id}/forward.png`; // fleet_build's shot path
-          const entries = readLedger(`com.fleet.${id}`);
+          const entries = readLedgerEntries(`com.fleet.${id}`);
           const looked = entries.some((e) => e.evidenceType === "vision_verified" || e.evidenceType === "device_verified");
           const state = looked ? "vision-recorded"
             : fs.existsSync(capture) ? (entries.some((e) => e.evidenceType === "auto_judged") ? "auto-judged-needs-look" : "built-needs-look")
