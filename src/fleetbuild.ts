@@ -1111,9 +1111,14 @@ export function registerFleetBuildTools(server: McpServer) {
               });
               rec.verdict = judged.verdict ?? judged.status ?? "unknown";
               rec.confidence = judged.confidence;
+              rec.visualChecks = Array.isArray(judged.checks) ? judged.checks : [];
+              rec.visualJudgeNote = typeof judged.note === "string" ? judged.note : null;
+              rec.visualLedger = judged.ledger ?? null;
               rec.visualExpectation = expectation;
               rec.visualClaim = measuredClaim;
-              if (rec.verdict !== "PASS") rec.notes.push("ESCALATE: a human must LOOK at the artifact");
+              if (rec.verdict === "ESCALATE") rec.notes.push("ESCALATE: a human must LOOK at the artifact");
+              else if (rec.verdict === "FAIL") rec.notes.push("calibrated eye measured FAIL; inspect visualChecks before choosing a repair");
+              else if (rec.verdict !== "PASS") rec.notes.push("visual result unscored: a human must LOOK at the artifact");
             } else {
               rec.visualExpectation = null;
               rec.visualClaim = null;
@@ -1210,7 +1215,8 @@ export function registerFleetBuildTools(server: McpServer) {
       } finally {
         await client.close().catch(() => {});
       }
-      const passed = results.filter((r) => r.verdict === "PASS").length;
+      const measuredEyePass = results.filter((r) => r.verdict === "PASS").length;
+      const recordedAutoJudged = results.filter((r) => r.verdict === "PASS" && r.visualLedger?.status === "recorded").length;
       // A brief that never built cannot appear in `escalations`, which filters on r.installed. That
       // let the top level report status "ok" with an empty escalation list while NOTHING was built —
       // the caller had to dig into results[].notes to discover total failure. `status` now reflects
@@ -1231,7 +1237,8 @@ export function registerFleetBuildTools(server: McpServer) {
           queued: briefIds.length,
           built: results.filter((r) => r.built).length,
           installed: results.filter((r) => r.installed).length,
-          autoJudgedPass: passed,
+          measuredEyePass,
+          autoJudgedRecorded: recordedAutoJudged,
           panelReadyStructural: results.filter((r) => r.panelEvidence?.expectationMet === true).length,
           notBuilt: unbuilt.map((r) => ({ id: r.id, why: r.notes?.[0] ?? "no reason recorded" })),
           incomplete: incomplete.map((r) => ({
@@ -1246,7 +1253,7 @@ export function registerFleetBuildTools(server: McpServer) {
             .map((r) => r.id),
         },
         results,
-        honesty: "auto_judged is a DISTINCT evidence class — a fleet PASS is the stage eye's count, never human sight. Panel-only routes leave verdict unscored; panelEvidence/panelReadyStructural are WindowManager STRUCTURAL evidence only, and panelArtifact is unjudged. ESCALATEd visuals need a human LOOK.",
+        honesty: "A fleet PASS is the stage eye's measurement, never human sight. It earns durable auto_judged evidence only when visualLedger.status is recorded; measuredEyePass and autoJudgedRecorded are reported separately. Panel-only routes leave verdict unscored; panelEvidence/panelReadyStructural are WindowManager STRUCTURAL evidence only, and panelArtifact is unjudged. ESCALATEd visuals need a human LOOK.",
       });
     },
   );

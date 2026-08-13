@@ -8,12 +8,52 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { VERIFY_APK_TEARDOWN_MS } from "../dist/verifyapk.js";
-import { briefIdOf, loopFailureSignature } from "../dist/doors.js";
+import * as doorsModule from "../dist/doors.js";
+import * as plannerModule from "../dist/planner.js";
 import { innerFailureDetail } from "../dist/fleetbuild.js";
+
+const {
+  briefIdOf,
+  loopFailureSignature,
+  loopCriteriaInEvidenceSafeOrder,
+  loopSpecMutated,
+  loopRepairSelection,
+  loopVisualOutcome,
+  loopNeedsLookHonesty,
+  loopAcceptanceEvidence,
+  isPositiveLookedEntry,
+  buildAppDoorStatus,
+} = doorsModule;
+const { replanMutationStatus } = plannerModule;
 
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
+
+if (isPositiveLookedEntry({ evidenceType: "vision_verified" })
+    && isPositiveLookedEntry({ evidenceType: "device_verified", deviceOutcome: "pass", deviceFeature: "controller_ray", deviceLineage: { status: "validated" } })
+    && !isPositiveLookedEntry({ evidenceType: "device_verified", deviceOutcome: "fail", deviceFeature: "controller_ray", deviceLineage: { status: "validated" } })
+    && !isPositiveLookedEntry({ evidenceType: "device_verified", deviceOutcome: "pass", deviceFeature: "controller_ray" }))
+  ok("pico_next treats device PASS as positive proof and preserves device FAIL as negative evidence");
+else fail("pico_next blurs a device-verified failure into positive visual proof");
+
+// The governing rule reserves "verified" for a frame somebody LOOKED at. Door 1's calibrated eye
+// is useful auto_judged evidence, but its PASS cannot mint a human-seen status string.
+if (typeof buildAppDoorStatus !== "function") {
+  fail("pico_build_app has no evidence-scoped status helper");
+} else {
+  const recordedPass = buildAppDoorStatus({ built: true, installed: true, artifact: "/tmp/frame.png", verdict: "PASS", visualLedger: { status: "recorded" } });
+  const unrecordedPass = buildAppDoorStatus({ built: true, installed: true, artifact: "/tmp/frame.png", verdict: "PASS", visualLedger: { status: "rejected" } });
+  const noCapture = buildAppDoorStatus({ built: true, installed: true, verdict: "ESCALATE" });
+  const notInstalled = buildAppDoorStatus({ built: true, installed: false });
+  if (recordedPass === "auto-judged-needs-look"
+      && unrecordedPass === "built-needs-look"
+      && noCapture === "built-no-capture"
+      && notInstalled === "built-not-installed"
+      && ![recordedPass, unrecordedPass, noCapture, notInstalled].includes("verified"))
+    ok("pico_build_app never labels an unlooked calibrated-eye result verified");
+  else fail(`pico_build_app status overclaims sight: ${JSON.stringify({ recordedPass, unrecordedPass, noCapture, notInstalled })}`);
+}
 
 // ── P0 (2026-08-01) unit checks — no server, no emulator ──
 // The old brief-id hash accumulated a*31+code unbounded, overflowed to Infinity around ~205 chars,
@@ -69,15 +109,146 @@ else fail(`innerFailureDetail slice wrong: len ${longDetail.length}`);
   else fail("loopFailureSignature should ignore passing criteria");
 }
 
+// A structural assert clears logcat to isolate its Agent Bridge dump. Therefore launch-time
+// logcat criteria must be consumed first even when the caller supplied structural first. Keep
+// relative order stable within the logcat and non-logcat groups so the exit report stays legible.
+if (typeof loopCriteriaInEvidenceSafeOrder !== "function") {
+  fail("pico_loop has no evidence-safe criterion ordering helper");
+} else {
+  const ordered = loopCriteriaInEvidenceSafeOrder([
+    { kind: "structural", minEntities: 3 },
+    { kind: "visual" },
+    { kind: "logcat", pattern: "APP_READY" },
+    { kind: "perf", minAppFpsP5: 60 },
+    { kind: "logcat", pattern: "rayCast HIT" },
+  ]);
+  const order = ordered.map((criterion) => `${criterion.kind}:${criterion.pattern ?? "-"}`).join("|");
+  if (order === "logcat:APP_READY|logcat:rayCast HIT|structural:-|visual:-|perf:-")
+    ok("pico_loop consumes launch logcat before structural asserts can clear it");
+  else fail(`mixed criteria remain order-dependent: ${order}`);
+}
+
+// replan_spec may mutate only verification metadata (for example the forward capture pose), for
+// which recompileSubtree is legitimately empty. Progress is the spec delta, not a subtree count.
+if (typeof loopSpecMutated !== "function") {
+  fail("pico_loop has no full-spec mutation detector");
+} else {
+  const before = { verificationPlan: [{ claim: "hero", method: "capture", forwardFOVpose: { yawDeg: 30, pitchDeg: 0, targetZ: -2 } }] };
+  const after = structuredClone(before);
+  after.verificationPlan[0].forwardFOVpose.yawDeg = 0;
+  if (loopSpecMutated(before, after) && !loopSpecMutated(before, structuredClone(before)))
+    ok("pico_loop treats a camera-pose-only replan as real progress");
+  else fail("pico_loop still equates empty recompileSubtree with an unchanged spec");
+}
+
+// replan_spec used to call an advisory-only changes[] entry "patched" even when the returned
+// AppSpec was byte-for-byte unchanged. The status must describe an actual spec mutation.
+if (typeof replanMutationStatus !== "function") {
+  fail("replan_spec has no actual-mutation status helper");
+} else {
+  const alreadyLit = { scenes: [{ id: "main", lighting: { rig: "sun" } }] };
+  const changed = structuredClone(alreadyLit);
+  changed.scenes[0].lighting.rig = "fullRig";
+  if (replanMutationStatus(alreadyLit, structuredClone(alreadyLit)) === "unchanged"
+      && replanMutationStatus(alreadyLit, changed) === "patched")
+    ok("replan_spec reports patched only when the AppSpec actually changes");
+  else fail("replan_spec still treats advisory prose as an AppSpec patch");
+}
+
+// Generic structural/perf failures have no safe AppSpec mutation. They must not be laundered into
+// build_failed (which replan_spec cannot repair). A missing logcat marker is also not repairable
+// without an explicit action/trigger contract: changing an interaction cannot itself emit a line.
+if (typeof loopRepairSelection !== "function") {
+  fail("pico_loop has no repairability-aware failure selection");
+} else {
+  const selected = loopRepairSelection([
+    { kind: "logcat", status: "fail", detail: "no logcat match for 'rayCast HIT' within 20s" },
+    { kind: "structural", status: "fail", detail: '[{"check":"entity present: hero","pass":false}]' },
+    { kind: "perf", status: "fail", detail: "appFps p5=43 below floor 60; GPU diagnosis unavailable" },
+  ]);
+  const unsupportedKinds = selected.unsupported.map((outcome) => outcome.kind).join(",");
+  if (selected.failures.length === 0 && unsupportedKinds === "logcat,structural,perf")
+    ok("pico_loop keeps undriven logcat/structural/perf failures manual");
+  else fail(`pico_loop repair selection is still a one-shot build_failed dead end: ${JSON.stringify(selected)}`);
+
+  const measuredBlack = loopVisualOutcome("FAIL", "/tmp/black.png", [], [
+    { name: "notMostlyBlack", score: 0, hardFail: true, detail: "coverage 0.001 (MOSTLY BLACK)" },
+  ]);
+  const blackRepair = loopRepairSelection([measuredBlack]);
+  if (blackRepair.failures[0]?.symptom === "not_rendering" && /notMostlyBlack/.test(measuredBlack.detail ?? ""))
+    ok("pico_loop preserves fleet-shaped eye checks and repairs only a measured black/empty frame");
+  else fail(`fleet eye details cannot reach a supported repair: ${JSON.stringify({ measuredBlack, blackRepair })}`);
+
+  const colorAbsent = loopVisualOutcome("FAIL", "/tmp/color.png", [], [
+    { name: "colorKeyCount", score: 0, hardFail: true, detail: "0/4 authored colors detected" },
+  ]);
+  const unsupportedVisual = loopRepairSelection([colorAbsent]);
+  const unsupportedLog = loopRepairSelection([{ kind: "logcat", status: "fail", detail: "no logcat match for 'rayCast HIT' within 20s" }]);
+  if (!unsupportedVisual.failures.length && unsupportedVisual.unsupported.length === 1
+      && !unsupportedLog.failures.length && unsupportedLog.unsupported.length === 1)
+    ok("pico_loop does not invent camera or interaction repairs from unsupported measured failures");
+  else fail(`unsupported visual/logcat failures were assigned speculative repairs: ${JSON.stringify({ unsupportedVisual, unsupportedLog })}`);
+}
+
+// Only an actual ESCALATE verdict may be described as the calibrated eye escalating. A missing,
+// unknown, or skipped verdict still creates an honest LOOK obligation, but it is not evidence that
+// the eye ran or classified the frame.
+if (typeof loopVisualOutcome !== "function" || typeof loopNeedsLookHonesty !== "function") {
+  fail("pico_loop has no verdict-aware needs-look classifier");
+} else {
+  const escalated = loopVisualOutcome("ESCALATE", "/tmp/escalated.png", []);
+  const unscored = loopVisualOutcome(undefined, "/tmp/unscored.png", []);
+  const escalatedHonesty = loopNeedsLookHonesty([escalated]);
+  const unscoredHonesty = loopNeedsLookHonesty([unscored]);
+  if (escalated.status === "needs-look" && escalated.machineVerdict === "ESCALATE"
+      && /ESCALATEd/.test(escalatedHonesty) && !/ESCALATEd/.test(unscoredHonesty)
+      && /unscored/.test(unscoredHonesty))
+    ok("pico_loop distinguishes an eye ESCALATE from an unscored look obligation");
+  else fail(`needs-look reason overclaims the eye verdict: ${JSON.stringify({ escalated, unscored, escalatedHonesty, unscoredHonesty })}`);
+}
+
+if (typeof loopAcceptanceEvidence !== "function") {
+  fail("pico_loop has no evidence-derived acceptance ceiling");
+} else {
+  const structuralOnly = loopAcceptanceEvidence([{ kind: "structural", status: "pass", detail: "3 entities" }], "FAIL");
+  const recordedVisualPass = loopAcceptanceEvidence(
+    [{ kind: "visual", status: "pass", machineVerdict: "PASS", recordedEvidence: true }],
+    "PASS",
+    { status: "recorded" },
+  );
+  const rejectedVisualPass = loopAcceptanceEvidence(
+    [{ kind: "visual", status: "pass", machineVerdict: "PASS", recordedEvidence: false }],
+    "PASS",
+    { status: "rejected", reason: "corrupt ledger" },
+  );
+  if (structuralOnly.ceiling === "structural" && /did not include a visual PASS/.test(structuralOnly.honesty)
+      && recordedVisualPass.ceiling === "auto_judged"
+      && rejectedVisualPass.ceiling === "structural"
+      && /not durably recorded/i.test(rejectedVisualPass.honesty))
+    ok("pico_loop earns auto_judged only from a durably recorded visual PASS");
+  else fail(`acceptance ceiling is not durable-evidence-derived: ${JSON.stringify({ structuralOnly, recordedVisualPass, rejectedVisualPass })}`);
+}
+
 const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"], env: { ...process.env, PICO_MCP_SURFACE: "doors" } });
 const client = new Client({ name: "doors-test", version: "0.0.0" });
 await client.connect(transport);
 
-const tools = (await client.listTools()).tools.map((t) => t.name).sort();
+const toolDefinitions = (await client.listTools()).tools;
+const tools = toolDefinitions.map((t) => t.name).sort();
 const DOORS = ["pico_build_app", "pico_scan_world", "pico_place", "pico_look", "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship", "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next", "pico_loop"];
 const expected = [...DOORS, "validate_toolchain", "ensure_pico_cli"].sort();
 if (JSON.stringify(tools) === JSON.stringify(expected)) ok(`doors surface exposes exactly ${expected.length} tools`);
 else fail(`surface mismatch — got [${tools.join(", ")}]`);
+
+const picoRecordSchema = toolDefinitions.find((tool) => tool.name === "pico_record")?.inputSchema;
+const picoRecordEvidenceTypes = picoRecordSchema?.properties?.evidenceType?.enum ?? [];
+if (picoRecordSchema?.properties?.app?.pattern === "^[a-z0-9][a-z0-9._-]{0,199}$"
+    && !picoRecordEvidenceTypes.includes("auto_judged")
+    && !picoRecordEvidenceTypes.includes("usd_host_render")
+    && picoRecordSchema?.properties?.deviceFeature?.pattern === "^[a-z0-9]+(?:_[a-z0-9]+)*$"
+    && JSON.stringify(picoRecordSchema?.properties?.deviceOutcome?.enum) === JSON.stringify(["pass", "fail"]))
+  ok("pico_record advertises canonical keys, caller-recordable tiers, and structured device outcomes");
+else fail(`pico_record advertises calls its inner ledger rejects: ${JSON.stringify(picoRecordSchema)}`);
 
 // a door that orchestrates through the child server (vault lookup — fast, no emulator needed)
 const sdk = await client.callTool({ name: "pico_sdk", arguments: { symbol: "RigidBodyComponent" } });
@@ -160,11 +331,42 @@ const recOut = JSON.parse(rec.content[0].text);
 if (recOut.status === "recorded" && recOut.report?.capabilityReport)
   ok("pico_record records a structural claim and returns the ledger-generated report");
 else fail(`pico_record broken: ${JSON.stringify(recOut).slice(0, 200)}`);
+const retract = await client.callTool({
+  name: "pico_record",
+  arguments: {
+    app: recordApp,
+    action: "retract",
+    targetSeq: recOut.entry?.seq,
+    retractionReason: "door correction-lane fixture",
+    report: true,
+  },
+});
+const retractOut = JSON.parse(retract.content[0].text);
+if (retractOut.status === "recorded" && retractOut.event?.retracts === recOut.entry?.seq
+    && retractOut.report?.entryCount === 0
+    && retractOut.report?.history?.some((event) => event.seq === recOut.entry?.seq && event.claim === "doors-surface fixture claim"))
+  ok("pico_record appends a retraction while retaining immutable claim history");
+else fail(`pico_record retraction lane broken: ${JSON.stringify(retractOut).slice(0, 300)}`);
 const overclaim = await client.callTool({ name: "pico_record", arguments: { app: recordApp, claim: "it renders", evidenceType: "vision_verified" } });
 const overOut = JSON.parse(overclaim.content[0].text);
 if (overOut.status === "rejected" && /artifactPath/.test(overOut.reason ?? ""))
   ok("pico_record passes the ledger's vision_verified rejection through untouched");
 else fail(`pico_record upgraded an over-claim: ${JSON.stringify(overOut).slice(0, 200)}`);
+const mixedAction = await client.callTool({
+  name: "pico_record",
+  arguments: {
+    app: recordApp,
+    action: "retract",
+    claim: "this must not be accepted as both a claim and correction",
+    evidenceType: "structural",
+    targetSeq: recOut.entry?.seq,
+    retractionReason: "mutually exclusive action fixture",
+  },
+});
+const mixedActionOut = JSON.parse(mixedAction.content[0].text);
+if (mixedActionOut.status === "rejected" && /mutually exclusive/.test(mixedActionOut.reason ?? ""))
+  ok("pico_record rejects mixed record/retract fields without appending either action");
+else fail(`pico_record accepted mixed record/retract fields: ${JSON.stringify(mixedActionOut).slice(0, 240)}`);
 try { fs.rmSync(path.join(os.homedir(), ".pico-mcp", "ledgers", `${recordApp}.json`), { force: true }); } catch { /* ignore */ }
 
 // DOOR 16 pico_loop — cheap paths only (no gradle, no emulator):
@@ -190,7 +392,8 @@ await client.close();
 
 // v36.3 default-surface flip: with PICO_MCP_SURFACE UNSET, the server must serve the doors
 // surface — the docs told every host to set doors while the code defaulted to full, so one
-// missed env var exposed the ~88.5k-token full surface (2026-08-12 vetting, finding #1).
+// missed env var exposed the 86,927-token full `tools/list` schema payload (o200k_base,
+// measured 2026-08-12).
 // Delete both surface vars so an inherited shell/CI value cannot mask the coded default.
 {
   const defaultEnv = { ...process.env };

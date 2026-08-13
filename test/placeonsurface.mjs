@@ -69,7 +69,7 @@ assert(/MODEL = "Meshy_table"/.test(kt), "model name comes from the bake info, n
 // ── the seating recipe survives composition ──────────────────────────────────────────────────────
 assert(/semantics\.name == "TABLE"/.test(kt), "semantic target honored (TABLE)");
 assert(/ShapeResource\.createBox/.test(kt) && !/createConvexMesh|createStaticMesh/.test(kt),
-  "PRIMITIVE box collider present (mesh colliders never register on PICO)");
+  "predictable primitive proxy avoids mesh local-space alignment/scale traps");
 assert(/PhysicsWorldComponent\(\)/.test(kt), "collider carries the REQUIRED PhysicsWorldComponent");
 assert(/while \(planes\.isEmpty\(\) && tries < 20\)/.test(kt), "the poll-for-planes trap stays closed");
 assert(/Vector3\(surface\.x, surface\.y \+ BASE_LIFT, surface\.z\)/.test(kt) && !/FRONT_DIST/.test(kt),

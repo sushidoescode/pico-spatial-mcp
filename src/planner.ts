@@ -1,6 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
+
+/** Advisory text in changes[] is not a patch. Status follows the returned AppSpec bytes. */
+export function replanMutationStatus(before: unknown, after: unknown): "patched" | "unchanged" {
+  return JSON.stringify(before) === JSON.stringify(after) ? "unchanged" : "patched";
+}
 import { appSpecSchema, exampleSpec, type AppSpec, type CapabilityClass } from "./appspec.js";
 import { CAPABILITY_MANIFEST } from "./capabilities.js";
 import { matchShapeArchetype } from "./fleetbuild.js";
@@ -526,6 +531,7 @@ export function registerPlannerTools(server: McpServer) {
       const parsed = appSpecSchema.safeParse(raw);
       if (!parsed.success) return okJson({ status: "invalid", issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) });
       const spec = parsed.data;
+      const before = structuredClone(spec);
       const recompile = new Set<string>();
       const changes: string[] = [];
 
@@ -594,7 +600,7 @@ export function registerPlannerTools(server: McpServer) {
       }
 
       if (!changes.length) changes.push("no automatic mutation matched the symptoms — needs manual triage (see diagnose).");
-      return okJson({ status: changes.length ? "patched" : "unchanged", spec, changes, recompileSubtree: Array.from(recompile) });
+      return okJson({ status: replanMutationStatus(before, spec), spec, changes, recompileSubtree: Array.from(recompile) });
     },
   );
 }

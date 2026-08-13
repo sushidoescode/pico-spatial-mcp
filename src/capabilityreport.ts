@@ -2,16 +2,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as fs from "node:fs";
 import { okJson } from "./util.js";
-import { ledgerDirectory, readLedger } from "./ledger.js";
+import { isPassingDeviceEvidence, ledgerDirectory, readLedger } from "./ledger.js";
 
 /**
  * capabilityreport.ts — v10.17 (P15): the honest CAPABILITY MATRIX.
  *
  * Reads the whole trust ledger (~/.pico-mcp/ledgers/*.json) into one honest report: every proven
- * capability grouped by category, with its STRONGEST evidence class — vision_verified (a human/agent
- * LOOKED) ranks above auto_judged (the calibrated eye) above usd_host_render / structural /
- * built_for_headset (deferred to Swan/OS6). The honesty invariant made visible at a glance: the
- * report can never show 'verified' for something without a linked, looked-at capture in the ledger.
+ * capability grouped by category, with its STRONGEST evidence class — device_verified (a linked,
+ * looked-at same-serial live device capture) ranks above vision_verified (a human/agent LOOKED),
+ * then auto_judged, usd_host_render / structural, and built_for_headset. The honesty invariant is
+ * visible at a glance: the report can never show 'verified' beyond effective ledger evidence.
  */
 const RANK: Record<string, number> = { device_verified: 6, vision_verified: 5, auto_judged: 4, usd_host_render: 3, logcat: 2, structural: 2, compiles: 1, built_for_headset: 1, built_for_os6: 1 };
 
@@ -37,7 +37,7 @@ export function registerCapabilityReportTools(server: McpServer) {
     "capability_matrix",
     {
       description:
-        "THE HONEST CROSS-LEDGER CAPABILITY MATRIX (P15, distinct from per-app capability_report): reads the whole trust ledger (~/.pico-mcp/ledgers) into one report — every proven capability by category, with its STRONGEST evidence class (vision_verified > auto_judged > usd_host_render/structural > built-for-Swan/OS6). Makes the honesty invariant visible at a glance: nothing shows 'verified' without a linked, looked-at capture. Returns the headline counts, the per-category matrix (with the best evidence + a sample claim), and the honest deferrals (Swan/OS6). Read-only. Use it to answer 'what can this MCP actually do, and how do we know'.",
+        "THE HONEST CROSS-LEDGER CAPABILITY MATRIX (P15, distinct from per-app capability_report): reads every selected trust ledger (~/.pico-mcp/ledgers) into one report — every proven capability by category, ranked device_verified (looked-at bytes matched a same-serial live screencap after a PICO-shaped/non-emulator identity probe) > vision_verified > auto_judged > usd_host_render/structural > built-for-Swan/OS6. Nothing shows verified beyond effective revalidated ledger evidence. If any selected ledger is unreadable, status is incomplete and the headline names how many files were excluded.",
       inputSchema: {
         category: z.string().optional().describe("Filter to one category substring (e.g. 'physics', 'web')."),
         appFilter: z.string().optional().describe("Only ledgers whose app id contains this."),
@@ -57,9 +57,13 @@ export function registerCapabilityReportTools(server: McpServer) {
         } catch (error: any) { unreadableLedgers.push(`${app}: ${error?.message ?? String(error)}`); }
       }
       const byType: Record<string, number> = {};
-      for (const e of all) byType[e.evidenceType] = (byType[e.evidenceType] ?? 0) + 1;
+      for (const e of all) {
+        const type = e.evidenceType === "device_verified" && !isPassingDeviceEvidence(e) ? "device_verified_failed" : e.evidenceType;
+        byType[type] = (byType[type] ?? 0) + 1;
+      }
       const broken = all.filter((entry) => entry.evidenceType === "provenance-broken");
-      const proofs = all.filter((entry) => entry.evidenceType !== "provenance-broken");
+      const failedDeviceObservations = all.filter((entry) => entry.evidenceType === "device_verified" && !isPassingDeviceEvidence(entry));
+      const proofs = all.filter((entry) => entry.evidenceType !== "provenance-broken" && !failedDeviceObservations.includes(entry));
 
       const cats = CATS.map(({ cat, kw }) => {
         const hits = proofs.filter((e) => kw.test(e.claim ?? "") || kw.test(e.attestation ?? ""));
@@ -76,14 +80,19 @@ export function registerCapabilityReportTools(server: McpServer) {
       }).filter(Boolean).filter((c: any) => !category || c.category.toLowerCase().includes(category.toLowerCase()));
 
       const visionN = byType.vision_verified ?? 0;
+      const deviceN = byType.device_verified ?? 0;
+      const incompleteSuffix = unreadableLedgers.length
+        ? ` INCOMPLETE: ${unreadableLedgers.length} unreadable ledger(s) were excluded; these counts are only the readable subset.`
+        : "";
       return okJson({
-        status: "ok",
-        headline: `${cats.length} capability categories with active proof across ${new Set(proofs.map((e) => e.app)).size} apps; ${proofs.length} effective proof entries (${visionN} vision_verified — a human/agent LOOKED); ${broken.length} provenance-broken visual claim(s) excluded.`,
+        status: unreadableLedgers.length ? "incomplete" : "ok",
+        headline: `${cats.length} capability categories with active proof across ${new Set(proofs.map((e) => e.app)).size} apps; ${proofs.length} effective proof entries (${deviceN} device_verified PASS — LOOKED + same-serial live device capture; ${visionN} vision_verified — LOOKED); ${failedDeviceObservations.length} device FAIL finding(s) and ${broken.length} provenance-broken visual claim(s) excluded from positive proof.${incompleteSuffix}`,
         evidenceTotals: byType,
         categories: cats,
         integrityIssues: broken.map((entry) => ({ app: entry.app, seq: entry.seq, claim: entry.claim, claimedEvidenceType: entry.claimedEvidenceType, provenance: entry.provenance })),
+        failedDeviceObservations: failedDeviceObservations.map((entry) => ({ app: entry.app, seq: entry.seq, claim: entry.claim, deviceFeature: entry.deviceFeature ?? null, deviceOutcome: entry.deviceOutcome ?? null, artifact: entry.artifactPath ?? null })),
         unreadableLedgers,
-        honesty: "Ranking: vision_verified > auto_judged > usd_host_render/structural > built-for-Swan/OS6. Every image-grounded row is rehashed on this read. Broken provenance is excluded from categories and reported separately; unreadable ledgers are disclosed, never treated as proof.",
+        honesty: `${unreadableLedgers.length ? "INCOMPLETE/PARTIAL: unreadable ledgers were excluded and may contain additional proof or integrity failures. " : ""}Ranking: device_verified PASS > vision_verified > auto_judged > usd_host_render/structural > built-for-Swan/OS6. device_verified additionally requires live-probed PICO-shaped/non-emulator identity, exact same-serial screencap bytes, and an explicit PASS outcome. Device FAIL findings are disclosed separately and never count as positive proof. No cryptographic device attestation or Swan hardware measurement is claimed. Every readable image row is rehashed on read; broken provenance is excluded and disclosed.`,
       });
     },
   );

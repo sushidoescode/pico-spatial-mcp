@@ -3,7 +3,9 @@
 This is the operating manual for an AI agent driving `pico-spatial-mcp`. It pairs with
 [DESIGN.md](DESIGN.md) (how to make it look right) and the built-in `pico_spatial_dev_loop`
 prompt. The goal: take a spec from nothing to a **polished, running, native PICO spatial
-APK**, and — critically — **detect what's wrong and iterate to fix it** without a human.
+APK**, measure what is wrong, apply a retained lesson when one matches, and stop explicitly for
+manual repair when none does. A human or vision-capable agent still must LOOK before any visual
+success claim.
 Apps are **MR-first**: the default stage is Mixed (`1`) — the passthrough home environment
 is the environment and content seats ON the real room; Full Space (`3`) is the explicit,
 fully-supported opt-in for fully-virtual scenes.
@@ -12,12 +14,14 @@ See **ROADMAP.md** in the git repository for where this is going — every line 
 For the ABI, ownership, threading, model-loading, emulator/device, and pico-cli conclusions this
 repository can ground today, see **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWERED_BY_MEASUREMENT.md)**.
 
-## The capability map (a core sampler of the full surface: 249 tools on macOS, 246 on other hosts)
+## The capability map (a core sampler of the full surface: 249 tools on macOS and 246 on Linux are runtime-measured; Windows 246 is source-derived)
 
-> **Reference implementations.** PICO's eight official samples build and run on this emulator at
-> **0.13.3** — see [docs/PICO_OFFICIAL_SAMPLES.md](docs/PICO_OFFICIAL_SAMPLES.md) for the download
-> URLs, the build recipe, and the editor/SDK version rule that blocks the 6.0.0 GitHub copies. Read
-> them for idiom; confirm every symbol against a 0.13.3 sources jar (`vault_api`) before emitting it.
+> **Reference implementations.** PICO's eight official **0.13.3** source archives are an idiom
+> reference. This repository does not retain a tracked 8/8 or per-sample runtime record. SpatialML
+> needs a local Gradle-wrapper workaround;
+> see [docs/PICO_OFFICIAL_SAMPLES.md](docs/PICO_OFFICIAL_SAMPLES.md) for the download URLs, build
+> recipe, and editor/SDK version rule that blocks the 6.0.0 GitHub copies. Confirm every symbol
+> against a 0.13.3 sources jar (`vault_api`) before emitting it.
 
 
 | Goal | Tools |
@@ -26,7 +30,7 @@ repository can ground today, see **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWER
 | Start a new app | `scaffold_spatial_app` (clone template → rename pkg → buildable) |
 | Author a scene | `compose_scene`, `compose_inspection_scene`, `add_entity`, `import_asset`, `import_environment`, `scene_schemas` |
 | Compile / verify a scene | `pack_bundle`, `inspect_bundle`, `verify_scene`, `build_spatial_project` |
-| Build / run / verify an APK | `build_and_run` (build→install→relaunch→render-check→shot), `gradle_build` |
+| Build / run / verify an APK | `build_and_run` (POSIX hosts only for now: scoped build→install→positive launch/PID→PID-scoped logs→shot), `gradle_build` |
 | Drive the emulator | `emulator_boot/kill/list/status/console`, `snapshot_*` |
 | Observe & control | `screencap`, `logcat`, `ui_dump`, `ui_input`, `adb_shell`, `wait_for_log`, `check_crash`, `screenrecord` |
 | Capture the host GUI window (macOS — XR-runtime immersive apps, editor GUI) | `gui_capture`, `gui_find_window`, `gui_camera`, `gui_permissions` |
@@ -75,11 +79,14 @@ into `query_graph` only; its separate advisory block never changes lint `clean`.
    `HomeStage.kt` (Compose `AttachmentPanel`s; load the scene by model name).
 4. **`verify_scene`** — geometry/material counts must match intent (e.g. `materialAssets`
    > 0 means real materials, not white `displayColor`).
-5. **`build_and_run`** — read the result: `build/install/launch` ok, `rendered: true`,
-   `crashes: []`. It returns a screenshot.
-6. **`capture_frame`** — look at the real render and compare to intent. adb screencap is the
-   shell composite: the ground truth for native Spatial SDK apps and panels. For XR-runtime
-   immersive apps (Unity), use `gui_capture` instead — screencap is blind to XR-runtime output.
+5. **`build_and_run`** (POSIX hosts only; no native Windows success run has been executed) — read
+   the result: `build/install/launch` status, the `rendered` logcat
+   marker, and `crashes`. `rendered: true` is not a visual-success claim. The tool returns a
+   screenshot for the separate LOOK step.
+6. **`capture_frame`** — look at the rendered frame and compare expected content to pixels. A
+   black adb frame is inconclusive: historical runs showed both shell/XR capture asymmetry and a
+   later non-black immersive adb frame. Collect an alternate host-window capture such as
+   `gui_capture`, LOOK at it, and retain the exact bytes before making a visual claim.
 7. Iterate.
 
 ## Self-diagnosis — the part that matters

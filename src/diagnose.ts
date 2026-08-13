@@ -105,7 +105,7 @@ const KB: Record<string, DiagEntry> = {
     fix: [
       "BEFORE concluding anything from a capture, navigate the camera back INTO the scene with gui_camera(keys=['s', ...]) — it sends WASD keystrokes (W=forward, S=back; arrows look), e.g. send 's' ~10x to return from a forward-drift. (gui_camera needs Accessibility AND the emulator already in camera mode, entered by a mouse-drag in the window — if you cannot reframe headlessly, lean on assert_logcat for proof.)",
       "The view is stable WITHIN a launch but the camera pose varies ACROSS launches — re-center after each relaunch.",
-      "CAPTURE PATH (corrected 2026-07-29 — measured, ledger pico-emulator-capture-paths seq 0): adb screencap (capture_frame) captures the SHELL composite — home env, 2D panels, native Spatial SDK apps — and is byte-deterministic; the qemu GUI window (gui_capture) is the FREE-CAM view that drifts across launches. BUT adb screencap returns BLACK for XR-RUNTIME immersive apps (Unity OpenXR SDK and Unity Integration SDK alike: Unity logs 'Skip Present To Main Screen: Yes' — it is presenting to the XR display, not the Android surface screencap reads). For an immersive Unity/OpenXR app, gui_capture is the ONLY path that shows the content, and a black screencap there is a capture artifact, NOT a rendering failure.",
+      "CAPTURE PATH (dated measurements, not a universal rule): adb screencap reads the shell composite while gui_capture reads the emulator host window. Some immersive Unity runs produced black adb frames while their host-window captures showed content, but a later same-moment OpenXR run did not reproduce that asymmetry. A black adb frame is inconclusive: it can be a capture-path artifact or a real rendering failure. Take an alternate capture such as gui_capture and LOOK before concluding either way.",
       "Rule of thumb: when a capture looks wrong, suspect CAMERA POSITION first, then content. This single mistake caused hours of false 'it's broken' conclusions.",
     ],
     designRule: "DESIGN.md §8 (verify visually — but navigate the camera into the scene first)",
@@ -192,14 +192,14 @@ const KB: Record<string, DiagEntry> = {
 
   not_rendering: {
     rootCause:
-      "The scene did not build/attach, OR the free camera is aimed away from the content, OR the content is unlit/off-view. NOTE: adb exec-out screencap (capture_frame / capture_canonical) DOES return the composited immersive forward view and is byte-deterministic (MAE=0 across relaunch) — it is the visual ground truth the whole v5–v9 vision-verified pipeline uses. (The GUI-window free-cam is the DRIFTING view.)",
+      "The scene did not build/attach, OR the camera is aimed away, OR the content is unlit/off-view, OR this capture path omitted the immersive output. Some adb forward captures were byte-stable across relaunch; other Unity runs were black, and a later OpenXR boot contradicted the old universal rule. Treat black as inconclusive, take an alternate host-window capture, and LOOK before assigning a cause.",
     fix: [
       "Capture the forward view with capture_frame at the node's forward-FOV pose — this is the deterministic immersive render. If it's black, the content is off-view or unlit, not 'invisible'.",
       "Keep hero content at EYE LEVEL (y≈1.3, z≈-2.7 to -3.3) so the default forward capture frames it without touching the free cam. Panels spawn at the dock — turn the camera (emulator_look) to see those.",
       "Confirm the scene was built on Dispatchers.Main AFTER the scene loaded, and a lighting rig was applied (unlit PBR reads near-black).",
       "Run build_and_run to confirm a frame rendered and the app did not crash (check_crash / logcat for a stack trace).",
     ],
-    designRule: "DESIGN.md §8 (verify visually AND structurally) — capture_frame is the deterministic immersive view; the GUI free-cam drifts",
+    designRule: "DESIGN.md §8 (verify visually AND structurally) — LOOK at capture_frame when it contains the app; use an alternate path if black/inconclusive; the GUI free-cam can drift",
     relatedTools: ["gui_capture", "gui_find_window", "build_and_run", "check_crash", "logcat"],
   },
 
@@ -533,7 +533,7 @@ export function registerDiagnoseTools(server: McpServer) {
     "design_review",
     {
       description:
-        "Orchestrate a VISUAL self-review of the live emulator scene: captures the emulator GUI free-cam window (same path as gui_capture — note this view DRIFTS across launches, C2; capture_frame's adb forward view is the deterministic ground-truth path the ledger/eye pipeline uses), runs cheap dependency-free pixel heuristics (mean brightness / contrast / color variety) to flag obvious failures (all-black env, all-white unlit geometry, low contrast), and returns the IMAGE plus a DESIGN.md rubric for YOU (the vision-capable agent) to evaluate. You make the visual judgement against the checklist; this tool supplies the capture, the rubric, and cheap heuristic flags. Pair any failing item with the 'diagnose' tool.",
+        "Orchestrate a VISUAL self-review of the live emulator scene: captures the emulator GUI free-cam window (same path as gui_capture; this view can drift across launches), runs cheap pixel heuristics (brightness / contrast / color variety) to flag obvious candidates, and returns the IMAGE plus a DESIGN.md rubric for YOU to evaluate. Heuristics and path choice are not a LOOK. capture_frame is the headless alternative, but a black frame from either route is inconclusive until another path is inspected. Pair a confirmed defect with diagnose.",
       inputSchema: {
         windowId: z.number().int().optional().describe("Specific emulator window id (default: the main/largest window)."),
         checklist: z.boolean().default(true).describe("Include the DESIGN.md review rubric in the response (default true)."),
@@ -581,7 +581,7 @@ export function registerDiagnoseTools(server: McpServer) {
 
       // (c) Assemble the rubric + heuristic flags for the vision-capable agent.
       const noteLines: string[] = [
-        `Emulator GUI capture for design review (window ${target.id}, ${target.w}x${target.h}, ${bytes.length} bytes). This is the host-composited immersive 3D view.`,
+        `Emulator GUI capture for design review (window ${target.id}, ${target.w}x${target.h}, ${bytes.length} bytes). This is the host-window frame; LOOK to determine whether it contains the intended app view.`,
         "",
         "HOW TO USE: YOU evaluate the image against the rubric below — you have vision, this tool does not. The heuristics are coarse global pixel stats, not scene understanding; trust your eyes over them. For any item that FAILS, call diagnose(symptom=...) for the fix.",
       ];

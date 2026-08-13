@@ -22,8 +22,8 @@ import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, c
  * HONESTY (load-bearing): output is the CLI's verbatim text; crash detection is a best-effort
  * keyword scan over that text, never a verdict — read outputTail before claiming a crash or its
  * absence. A recording artifact is stat-checked, and its pixels prove nothing until LOOKED at:
- * on immersive content the recorded display surface may not show the in-headset view (the v30.1
- * screencap lesson — adb screencap-class paths proved black for immersive Unity on device).
+ * on immersive content the recorded display surface may not show the intended view (some emulator
+ * Unity runs produced black display captures; a later OpenXR run did not, so this is not universal).
  */
 
 const WATCH_HONESTY =

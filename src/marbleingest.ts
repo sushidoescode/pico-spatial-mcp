@@ -108,11 +108,11 @@ export function registerMarbleIngestTools(server: McpServer) {
           out.homeStageSnippet = [
             "// In SpatialView.initial (a coroutine):",
             "MeshEnvironment.load { content.addEntity(it) }  // the BAKED textured world (solid, view-independent)",
-            "// add objects under sceneRoot; add a box-collider rig (generate_collider_kotlin) for rayCast (mesh colliders don't register)",
+            "// add objects under sceneRoot; add a box-collider rig for predictable rayCast alignment",
           ].join("\n");
           out.notes = [
             "MESH world renders SOLID + view-INDEPENDENT (the reliable path). Must be BAKED first (done above) — a raw GLB renders black at runtime.",
-            "Mesh colliders don't register on-device: pair with a box-collider rig for Scene.rayCast (generate_collider_kotlin), or analyze the matching .spz with analyze_splat for auto-boxes.",
+            "Mesh shapes are queryable, but require explicit submesh-local offset/display-scale alignment. For a predictable proxy, use generate_collider_kotlin boxes or analyze the matching .spz with analyze_splat for auto-boxes.",
             "Blender can retexture the .glb before ingest (bake_signage_board / your own UVs).",
           ];
         }

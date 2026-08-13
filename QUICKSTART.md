@@ -7,7 +7,9 @@ environment and content seats on it; a fully-virtual Full-Space app (stageStyle 
 explicit, fully-supported opt-in.
 
 This is the proven first-run path, on the doors surface (`PICO_MCP_SURFACE=doors` — 18
-intent-level tools instead of the full surface: 249 tools on macOS, 246 on other hosts). It's the exact sequence a from-docs-only run on a fresh clone
+intent-level tools instead of the full surface: 249 tools on macOS and 246 on Linux are
+runtime-measured; on Windows, the published 246-tool count is source-derived because no native
+Windows `tools/list` measurement has run). It's the exact sequence a docs-only run on a fresh clone
 followed on 2026-07-21.
 
 ## 1. Register (once)
@@ -54,11 +56,14 @@ order:
 3. **Adapt the scaffold** to your brief, then re-call **`pico_build_app({ brief, draftSpec })`**
    with the adapted spec. The pipeline now builds → installs → launches on the emulator → captures
    a frame → judges it, and returns:
-   - `status: "verified"` — the calibrated eye's verdict was `PASS` (an automated pre-check, not a
-     substitute for looking).
+   - `status: "auto-judged-needs-look"` — the calibrated eye returned `PASS` and its
+     `auto_judged` row was durably recorded. This is an automated pre-check, never a substitute for
+     looking and never a `verified` status.
    - `status: "built-needs-look"` — it built and installed; **you look at the returned `capture`
-     path yourself** before claiming anything works. This is the normal outcome for a novel brief,
-     not a failure. On high-coverage passthrough frames, count/not-black/dominant-color checks are
+     path yourself** before claiming anything works. No durable auto-judge PASS is on file. This is
+     the normal outcome for a novel brief, not a failure. (`built-not-installed` and
+     `built-no-capture` name those earlier incomplete states explicitly.) On high-coverage
+     passthrough frames, count/not-black/dominant-color checks are
      advisory and contribute zero confidence. If the expected scene declares at least two distinct
      authored colors, the color-key lane can auto-score at its default 0.8 confidence threshold;
      otherwise the judge escalates to your look. An `auto_judged` result remains weaker than a
@@ -97,29 +102,37 @@ enable the app hosting this MCP.
 
 Timed 2026-07-21, cold clone, emulator pre-started: the full first-light run (clone → build →
 doctor → two-step `pico_build_app` → look) completed in **~10 minutes**, including two toolchain
-fix detours a collaborator on the current repo will never hit (the underlying bugs are already
-fixed on `main`). A clean-docs replay against the fixed repo re-measures the honest headline
+fix detours a collaborator on the measured revision should not hit (the underlying bugs were
+fixed on `main` at that point). A clean-docs replay against the fixed repo re-measures the honest headline
 number — treat ~10 minutes as an upper bound, not a promise.
 
-## What it can build (all verified on the emulator)
+## What it can build (evidence varies by feature)
 
 **Mixed-stage MR apps first** — content seated on the passthrough room's detected surfaces
 (floor/table/wall planes with semantics; the measured `measure_model` → `bake_textured_model` →
-`generate_surface_placement_kotlin` chain, or one-call `place_model_on_surface`), proven by the
-mrtable and rocketsim apps · real rigid-body **physics** (strikes, drops) · clickable in-world
+`generate_surface_placement_kotlin` chain, or one-call `place_model_on_surface`). The mrtable and
+rocketsim apps exercised that chain structurally; their historical visual attestations are not
+current proof unless the linked capture still passes ledger revalidation. Other supported lanes
+include real rigid-body **physics** (strikes, drops) · clickable in-world
 **menus** (custom labels; your Mac mouse clicks them) · **live-text scoreboards/HUDs** and full
 **web-content panels** (live JS DOM) · AAA fidelity (PBR, shadows, shining IBL metals, animation)
 · procedural props incl. lathe silhouettes · custom World-Labs worlds · multi-scene apps ·
 fully-virtual Full-Space (stageStyle `3`) scenes as the explicit opt-in. The `com.pico.hooks` gradle plugin
-lints scenes in every build; `fleet_build` builds brief batches unattended with an honest
-auto-judge. Immersive Unity VR renders on the emulator too (v30.1 — capture it via `gui_capture`;
-adb screencap is blind to XR-runtime output). Controller-ray input and head-tracked depth stay
-PICO Swan / 6.1 territory, and every claim above is backed by a looked-at frame.
+lints scenes in every build; `fleet_build` builds brief batches unattended, reporting the eye
+verdict separately from whether a ledger write succeeded. Historical emulator runs also produced looked-at immersive Unity frames through
+`gui_capture`, but those retained captures are not uniformly intact under the current ledger
+revalidation, and a later run disproved the blanket “adb is blind to XR-runtime output” rule.
+Treat black adb frames as inconclusive, use an alternate capture, and consult the current generated
+claims snapshot for the evidence tier on each feature. Controller-ray input and head-tracked depth
+stay PICO Swan / 6.1 territory.
 
 ## The full surface
 
-The doors surface is 18 tools; the full server exposes 249 on macOS (246 on other hosts, where four
-host-GUI tools collapse to one explanatory stub). Set `PICO_MCP_SURFACE=full` (or
+The doors surface is 18 tools; the full server exposes 249 on macOS and 246 on Linux
+(runtime-measured). On Windows, the published 246-tool count is source-derived because no native
+Windows `tools/list` measurement has run; four macOS host-GUI tools collapse to one
+explanatory stub on non-macOS hosts. `build_and_run` is currently POSIX-host-only; its native
+Windows contract has not been executed or measured. Set `PICO_MCP_SURFACE=full` (or
 just add a full-surface server alongside) to get everything — codegen for every SDK subsystem,
 the fleet/asset/editor pipelines, and the raw building blocks the doors orchestrate internally.
 Since v36.3, an env-less registration serves the doors surface (before that, unset meant full).

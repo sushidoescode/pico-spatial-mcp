@@ -131,7 +131,8 @@ function texturedMeshKotlin(pkg: string, glb: string, _baseColor: string, _deliv
   L.push("    private var bundle: AssetBundle? = null");
   L.push("");
   L.push("    /** Call from SpatialView.initial (a coroutine):  MeshEnvironment.load { content.addEntity(it) }");
-  L.push("     *  Mesh colliders don't register on-device, so pair this with a box-collider rig for Scene.rayCast. */");
+  L.push("     *  Pair with a box-collider rig for predictable Scene.rayCast alignment. Mesh shapes are queryable,");
+  L.push("     *  but imported submesh local offsets/display scale must be applied to the collider entity. */");
   L.push("    suspend fun load(add: (Entity) -> Unit) {");
   L.push("        runCatching {");
   L.push("            val b = bundle?.takeIf { it.valid } ?: withContext(Dispatchers.IO) { AssetBundle.load(BUNDLE) }");

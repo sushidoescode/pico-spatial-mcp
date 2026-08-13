@@ -4,7 +4,9 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson, run } from "./util.js";
-import { readLedger } from "./ledger.js";
+import { assertCanonicalAppKey, CANONICAL_APP_KEY_PATTERN, readLedger } from "./ledger.js";
+import { classifyDeviceIdentity, probeDeviceIdentity as probeRawDeviceIdentity } from "./deviceidentity.js";
+export { classifyDeviceIdentity } from "./deviceidentity.js";
 
 /**
  * swanparity.ts — v5.9 SWAN ON-DEVICE PARITY: flip the "built-for-headset" column to device-verified.
@@ -15,14 +17,14 @@ import { readLedger } from "./ledger.js";
  * device_pending — the flip to device-vision-verified still requires the actual on-device vision pass +
  * a linked capture (recorded via record_verification), never auto-granted. With NO Swan today it returns the
  * matrix in `awaiting_swan` state (wired, cannot crash the loop). The C1–C4 catalogue IS the test plan
- * (0-planes-on-emulator → real planes on Swan; pins-float → pins-snap; broadcast-drive → real trigger;
- * MEASURED-ROOM infeasible on the emulator → the headset is the only way to close the walls/ceiling gap).
+ * (emulator-simulated geometry → physical-room proof on Swan; broadcast-drive → real trigger;
+ * emulator dimensions → a headset run to close the physical walls/ceiling gap).
  *
  * v31 closes two day-one defects:
  *  - HARDWARE-IDENTITY GATE: "any non-emulator serial" is not a Swan. A Quest 3 on this desk and the
  *    PICO emulator reattached over adb-over-TCP both present non-`emulator-` serials. The gate probes
- *    getprop identity and demands an explicit assumeSwan override for anything that doesn't look like
- *    PICO hardware.
+ *    getprop identity and refuses anything that doesn't look like PICO hardware. When more than one
+ *    plausible PICO is attached, callers must name the intended serial explicitly.
  *  - PARITY CLOSURE: the tool now reads `device_verified` trust-ledger entries back and marks matched
  *    rows closed, MERGING with the existing parity file instead of overwriting — so a closed row is
  *    structurally reachable (and never reopened by a later run with weaker evidence).
@@ -36,17 +38,21 @@ function resolveAdb(): string {
 
 // The C1–C4 re-test catalogue: each headset-only capability, its emulator baseline, and the device test.
 const MATRIX: Record<string, { cClass: string; emulatorBaseline: string; deviceTest: string; expectedOnDevice: string }> = {
-  scene_understanding: { cClass: "C1", emulatorBaseline: "PlaneTrackingManager RUNNING but 0 planes → pins float", deviceTest: "launch, raycast onto a detected plane, place a pin, capture", expectedOnDevice: "real planes; the pin snaps ONTO a physical surface (LOOK)" },
-  world_anchor: { cClass: "C1", emulatorBaseline: "world tracking returns nothing (anchor no-ops)", deviceTest: "create a world anchor, relaunch, confirm re-localization", expectedOnDevice: "anchor persists + re-localizes across sessions" },
-  measured_room: { cClass: "C1", emulatorBaseline: "home bedroom is a Unity black box → geometry unmeasurable; only floor y=0 vision-verified", deviceTest: "run scene mesh/plane capture, measure walls/ceiling", expectedOnDevice: "real room mesh → walls/ceiling measured (closes the emulator gap)" },
+  scene_understanding: { cClass: "C1", emulatorBaseline: "emulator-simulated room: measured 43 semantic planes and 42–44 mesh anchors; not evidence about a physical room", deviceTest: "launch in a physical room, raycast onto a detected real plane, place a pin, capture", expectedOnDevice: "physical-room planes; the pin snaps ONTO a real surface (LOOK)" },
+  world_anchor: { cClass: "C1", emulatorBaseline: "emulator persistence/re-localization behavior is unverified; no current measurement supports treating it as either working or a no-op", deviceTest: "create a world anchor, relaunch, confirm re-localization", expectedOnDevice: "anchor persists + re-localizes across sessions" },
+  measured_room: { cClass: "C1", emulatorBaseline: "emulator-simulated planes/meshes are measurable, but do not prove dimensions of the user's physical room", deviceTest: "run scene mesh/plane capture in a physical room and measure walls/ceiling", expectedOnDevice: "physical-room mesh → real walls/ceiling measured (LOOK + values)" },
   controller_ray: { cClass: "C3", emulatorBaseline: "no 6DOF controller + gated trigger → broadcast-emulated select", deviceTest: "point the controller ray at an interactable, pull the trigger", expectedOnDevice: "the real controller ray selects; highlight moves (LOOK)" },
   hand_pinch: { cClass: "C3", emulatorBaseline: "hand tracking returns no hands", deviceTest: "pinch on a menu button / interactable", expectedOnDevice: "the pinch selects (LOOK)" },
   in_front_panel: { cClass: "C4", emulatorBaseline: "stage-vs-window dichotomy → no room + in-front Compose panel together", deviceTest: "open the in-front Compose panel over the scene, click a button", expectedOnDevice: "the panel renders in front + is clickable (LOOK)" },
 };
 
 const PARITY_DIR = path.join(os.homedir(), ".pico-mcp", "parity");
-const parityPath = (app: string) => path.join(PARITY_DIR, `${app.replace(/[^A-Za-z0-9._-]/g, "_")}.json`);
+const parityPath = (app: string) => {
+  assertCanonicalAppKey(app);
+  return path.join(PARITY_DIR, `${app}.json`);
+};
 function loadLedgerEntries(app: string): any[] {
+  assertCanonicalAppKey(app);
   try {
     return readLedger(app).effectiveEntries;
   } catch {
@@ -77,19 +83,9 @@ export function normalizeCClass(c?: string | null): string {
  *     must NOT pass; emulator/qemu markers veto FIRST (this is exactly what adb-over-TCP reattach looks like);
  *   - a Meta Quest 3 over USB reported model "Quest 3", fingerprint "oculus/eureka/eureka:14/…".
  * Real Swan hardware getprop values are UNVERIFIED (none has ever been attached to this rig) — the
- * PICO markers are inferred from the emulator's own build strings, which is why the tools take an
- * explicit assumeSwan override instead of hard-failing on an unrecognized device.
+ * PICO markers are inferred from the emulator's own build strings. Until real Swan identity is
+ * measured, an unrecognized device fails closed rather than accepting an override.
  */
-export function classifyDeviceIdentity(model: string, fingerprint: string, bootQemu?: string): { looksLikePico: boolean; reason: string } {
-  const m = (model ?? "").trim();
-  const f = (fingerprint ?? "").trim();
-  if ((bootQemu ?? "").trim() === "1" || /emulator|qemu/i.test(m) || /emulator|qemu/i.test(f))
-    return { looksLikePico: false, reason: "emulator markers present (ro.boot.qemu=1 or 'emulator' in model/fingerprint) — this is an emulator (e.g. reattached over adb-over-TCP), not hardware" };
-  if (!m && !f) return { looksLikePico: false, reason: "identity probe returned nothing (device offline/unauthorized?) — cannot confirm PICO hardware" };
-  if (/pico|swan/i.test(m) || /pico|swan/i.test(f)) return { looksLikePico: true, reason: `model '${m}' / fingerprint '${f.slice(0, 60)}' carry PICO hardware markers` };
-  return { looksLikePico: false, reason: `model '${m}' does not look like PICO hardware (a phone or another vendor's headset — a Quest 3 was the live example)` };
-}
-
 export interface DeviceIdentity {
   serial: string;
   model: string;
@@ -101,25 +97,62 @@ export interface DeviceIdentity {
 
 /** Probe a serial's hardware identity via getprop. Exported for deploy_to_device + the TCP rehearsal. */
 export async function probeDeviceIdentity(adb: string, serial: string): Promise<DeviceIdentity> {
-  const prop = async (name: string) => (await run(adb, ["-s", serial, "shell", "getprop", name], { timeoutMs: 10_000 })).stdout.trim();
-  const model = await prop("ro.product.model");
-  const fingerprint = await prop("ro.build.fingerprint");
-  const bootQemu = await prop("ro.boot.qemu");
-  return { serial, model, fingerprint, bootQemu, ...classifyDeviceIdentity(model, fingerprint, bootQemu) };
+  const raw = await probeRawDeviceIdentity(adb, serial);
+  return { ...raw, ...classifyDeviceIdentity(raw.model, raw.fingerprint, raw.bootQemu) };
+}
+
+export type PicoDeviceSelection = {
+  status: "selected" | "no_candidate" | "requested_unavailable" | "unrecognized" | "ambiguous";
+  selected: DeviceIdentity | null;
+  identities: DeviceIdentity[];
+  probeErrors: Array<{ serial: string; reason: string }>;
+  reason: string;
+};
+
+/** Probe every online non-emulator candidate; never trust list order or an identity override. */
+export async function selectPicoDevice(
+  onlineSerials: string[],
+  requestedSerial: string | undefined,
+  probe: (serial: string) => Promise<DeviceIdentity>,
+): Promise<PicoDeviceSelection> {
+  const candidates = [...new Set(onlineSerials.filter((serial) => serial && !/^emulator-/i.test(serial)))];
+  if (requestedSerial && !candidates.includes(requestedSerial)) {
+    return { status: "requested_unavailable", selected: null, identities: [], probeErrors: [], reason: `requested deviceSerial '${requestedSerial}' is not an online non-emulator adb device` };
+  }
+  const toProbe = requestedSerial ? [requestedSerial] : candidates;
+  if (!toProbe.length) return { status: "no_candidate", selected: null, identities: [], probeErrors: [], reason: "no online non-emulator adb device is attached" };
+  const identities: DeviceIdentity[] = [];
+  const probeErrors: Array<{ serial: string; reason: string }> = [];
+  await Promise.all(toProbe.map(async (serial) => {
+    try {
+      identities.push(await probe(serial));
+    } catch (error: any) {
+      probeErrors.push({ serial, reason: error?.message ?? String(error) });
+    }
+  }));
+  const recognized = identities.filter((identity) => identity.looksLikePico);
+  if (requestedSerial) {
+    const selected = recognized.find((identity) => identity.serial === requestedSerial) ?? null;
+    return selected
+      ? { status: "selected", selected, identities, probeErrors, reason: selected.reason }
+      : { status: "unrecognized", selected: null, identities, probeErrors, reason: identities[0]?.reason ?? probeErrors[0]?.reason ?? `identity probe failed for '${requestedSerial}'` };
+  }
+  if (recognized.length === 1) return { status: "selected", selected: recognized[0], identities, probeErrors, reason: recognized[0].reason };
+  if (recognized.length > 1) return { status: "ambiguous", selected: null, identities, probeErrors, reason: `${recognized.length} PICO-shaped devices are online (${recognized.map((identity) => identity.serial).join(", ")}); pass deviceSerial explicitly` };
+  return { status: "unrecognized", selected: null, identities, probeErrors, reason: identities.length ? "no attached non-emulator identity looks like PICO hardware" : "all attached non-emulator identity probes failed" };
 }
 
 /**
- * Match ACTIVE (non-retracted) device_verified trust-ledger entries to matrix features. The contract
- * (documented in the tool description): an entry closes feature K when its cClass (normalized —
- * C4_headset_only ↔ C4) equals K's cClass AND its normalized claim contains K's keyword with
- * underscores/hyphens/spaces folded together (so "controller-ray select fires" closes controller_ray).
+ * Match ACTIVE device_verified entries to matrix features. Closure requires the exact structured
+ * deviceFeature, explicit deviceOutcome:'pass', matching cClass, intact capture, and validated
+ * lineage. Free-text claim polarity is intentionally irrelevant and can never close a row.
  */
 export function deviceVerifiedMatches(app: string): Record<string, { seq: number; claim: string; captureSha256: string | null; deviceSerial: string | null }> {
-  const entries = loadLedgerEntries(app).filter((e: any) => e?.evidenceType === "device_verified");
+  assertCanonicalAppKey(app);
+  const entries = loadLedgerEntries(app).filter((e: any) => e?.evidenceType === "device_verified" && e?.deviceLineage?.status === "validated");
   const out: Record<string, { seq: number; claim: string; captureSha256: string | null; deviceSerial: string | null }> = {};
   for (const [key, spec] of Object.entries(MATRIX)) {
-    const kw = normalizeFeatureText(key);
-    const hit = entries.find((e: any) => normalizeCClass(e.cClass) === spec.cClass && normalizeFeatureText(String(e.claim ?? "")).includes(kw));
+    const hit = entries.find((e: any) => normalizeCClass(e.cClass) === spec.cClass && e.deviceFeature === key && e.deviceOutcome === "pass");
     if (hit) out[key] = { seq: hit.seq, claim: hit.claim, captureSha256: hit.capture?.sha256 ?? null, deviceSerial: hit.deviceSerial ?? null };
   }
   return out;
@@ -152,6 +185,7 @@ export function buildParityRows(app: string, keys: string[], swanSerial: string 
  * authoritative: a retracted/missing/mismatched device capture must reopen a formerly closed row.
  */
 export function mergeParityFile(app: string, rows: ParityRow[], swanAttached: boolean, deviceIdentity?: { serial: string; model: string; fingerprint: string }): { path: string; rows: ParityRow[] } {
+  assertCanonicalAppKey(app);
   fs.mkdirSync(PARITY_DIR, { recursive: true });
   let prev: ParityRow[] = [];
   try {
@@ -161,6 +195,27 @@ export function mergeParityFile(app: string, rows: ParityRow[], swanAttached: bo
     /* first run for this app */
   }
   const byFeature = new Map(prev.map((r) => [r.feature, r]));
+  const explicit = new Set(rows.map((r) => r.feature));
+  const activeDeviceProof = deviceVerifiedMatches(app);
+  // An explicit subset is authoritative only for that subset, but cached strongest-tier rows still
+  // have to be checked. If their active ledger proof vanished, reopen them even though the caller
+  // did not ask for that feature in this invocation. Intact omitted proof is refreshed, not trusted
+  // merely because it was cached.
+  for (const [feature, cached] of byFeature) {
+    if (explicit.has(feature) || cached.verifiedBy !== "device_verified") continue;
+    if (activeDeviceProof[feature] && MATRIX[feature]) {
+      byFeature.set(feature, buildParityRows(app, [feature], swanAttached ? (deviceIdentity?.serial ?? "attached-device") : null)[0]);
+      continue;
+    }
+    const known = MATRIX[feature];
+    const { captureSha256: _captureSha256, deviceSerial: _deviceSerial, closedByClaim: _closedByClaim, ...withoutProof } = cached;
+    byFeature.set(feature, {
+      ...withoutProof,
+      ...(known ? { cClass: known.cClass, emulator: known.emulatorBaseline } : {}),
+      device: swanAttached ? "pending_capture" : "awaiting_device",
+      verifiedBy: swanAttached ? "swan_pending" : "built_for_headset",
+    });
+  }
   for (const r of rows) {
     byFeature.set(r.feature, r);
   }
@@ -174,23 +229,24 @@ export function registerSwanParityTools(server: McpServer) {
     "swan_verify_matrix",
     {
       description:
-        "The v5.9 emulator→device parity gate. For an app's headset-only (C1/C3/C4) features it emits an executable re-test matrix and records the emulator→device delta in a parity ledger. A non-emulator serial is identity-probed and rejected unless it looks like PICO hardware or assumeSwan:true is explicit. Only an active device_verified trust-ledger entry whose capture still matches its recorded hash closes a feature. A later retraction or provenance failure reopens it; cached parity state cannot outlive its proof.",
+        "The emulator→device parity gate. Only an active device_verified row with exact structured deviceFeature, explicit deviceOutcome:'pass', matching cClass, intact bytes, live-probed non-emulator PICO identity, and same-serial screencap binding closes a feature. Free-text claim polarity is never inferred. Retraction, failed outcome, capture/hash failure, missing lineage, or omitted-subset cache refresh reopens it. No Swan hardware values have been measured in this repo.",
       inputSchema: {
-        app: z.string().describe("App name/package (parity ledger key)."),
+        app: z.string().regex(CANONICAL_APP_KEY_PATTERN).describe("Canonical app/package parity key: lowercase ASCII letters, digits, dot, underscore, or hyphen; no paths or spaces."),
         features: z.array(z.enum(["scene_understanding", "world_anchor", "measured_room", "controller_ray", "hand_pinch", "in_front_panel"])).optional().describe("Headset features to re-test (default: derived from the trust ledger's built_for_headset rows, else all)."),
-        assumeSwan: z.boolean().optional().describe("Override the hardware-identity gate: treat a non-emulator serial as the Swan even though its getprop identity does not look like PICO hardware. The probe result is still recorded."),
+        deviceSerial: z.string().optional().describe("Explicit online adb serial. Required when more than one PICO-shaped candidate is attached; unrecognized identities fail closed."),
       },
     },
-    async ({ app, features, assumeSwan }) => {
+    async ({ app, features, deviceSerial }) => {
       const adb = resolveAdb();
       const devs = (await run(adb, ["devices"], { timeoutMs: 10_000 })).stdout
         .split("\n")
         .slice(1)
-        .map((l) => l.trim().split(/\s+/)[0])
-        .filter(Boolean);
-      const candidate = devs.find((d) => d && !/^emulator-/.test(d)) ?? null;
-      const identity = candidate ? await probeDeviceIdentity(adb, candidate) : null;
-      const swan = candidate && (identity?.looksLikePico || assumeSwan) ? candidate : null;
+        .map((line) => line.trim().split(/\s+/))
+        .filter((parts) => parts.length >= 2 && parts[1] === "device")
+        .map((parts) => parts[0]);
+      const selection = await selectPicoDevice(devs, deviceSerial, (serial) => probeDeviceIdentity(adb, serial));
+      const identity = selection.selected;
+      const swan = identity?.serial ?? null;
 
       // pick features: explicit → ledger-derived (built_for_headset ∪ already-closed) → all
       let keys: string[] = features ?? [];
@@ -212,20 +268,30 @@ export function registerSwanParityTools(server: McpServer) {
         ...(r.verifiedBy === "device_verified" ? { captureSha256: r.captureSha256, deviceSerial: r.deviceSerial, closedByClaim: r.closedByClaim } : {}),
       }));
 
-      const status = swan ? "swan_attached" : candidate ? "unrecognized_hardware" : "awaiting_swan";
+      const status = swan
+        ? "swan_attached"
+        : selection.status === "ambiguous"
+          ? "ambiguous_hardware"
+          : selection.status === "no_candidate"
+            ? "awaiting_swan"
+            : "unrecognized_hardware";
       return okJson({
         status,
         swanSerial: swan,
         ...(identity ? { deviceIdentity: identity } : {}),
+        deviceCandidates: selection.identities,
+        ...(selection.probeErrors.length ? { identityProbeErrors: selection.probeErrors } : {}),
         app,
         matrix,
         parityLedger: merged.path,
         closedRows: closedCount,
         note:
           status === "swan_attached"
-            ? `Swan ${swan} attached (${identity?.looksLikePico ? identity.reason : "assumeSwan override — identity did NOT look like PICO hardware: " + identity?.reason}): run each deviceTest (deploy_to_device then capture + LOOK), then record_verification with evidenceType: "device_verified" (same honesty bar as vision_verified — a LOOKED-at capture + attestation — plus real-hardware identity) to flip the row to device-verified.`
+            ? `Swan ${swan} attached (${identity?.reason ?? "live PICO identity selected"}): run each deviceTest, capture + LOOK, then record_verification with evidenceType:"device_verified", the row's exact deviceFeature, explicit deviceOutcome, and deviceSerial:"${swan}" while the same stable frame is still live. The server re-probes identity and requires a fresh same-serial screencap to match the looked artifact byte-for-byte. That byte-equality workflow has not been exercised on moving Swan hardware and may require a stable frame.`
+            : status === "ambiguous_hardware"
+              ? `${selection.reason}. Re-run with deviceSerial naming the intended PICO; no list-order guess is made.`
             : status === "unrecognized_hardware"
-              ? `Non-emulator serial ${candidate} is attached but its identity does not look like PICO hardware: ${identity?.reason}. Treating it as a Swan would put on-device claims on the wrong machine. If you are CERTAIN it is PICO hardware (e.g. a pre-release build with unexpected props), re-run with assumeSwan:true — the probe result is recorded either way.`
+              ? `${selection.reason}. Treating an unrecognized device as Swan hardware is refused; no override can mint or prepare device proof.`
               : "No Swan attached — matrix returned in awaiting_swan state (wired; flips to device-verified on first attach). Emulator side stays honest built-for-headset. This cannot crash the loop.",
       });
     },

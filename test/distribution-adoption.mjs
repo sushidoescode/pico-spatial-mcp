@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
@@ -79,6 +79,39 @@ function validateTrackedMarkdownCitation({ link, sourceFile, root, tracked }) {
     const last = Number(range[2] ?? range[1]);
     const lineCount = fs.readFileSync(resolved, "utf8").split(/\r?\n/).length;
     assert.ok(first >= 1 && first <= last && last <= lineCount, `line anchor outside ${relative} (${lineCount} lines): ${link}`);
+  }
+}
+
+function decodePublicEvidenceText(value) {
+  let decoded = value;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    // Decode only path-significant octets. Unlike decodeURIComponent(document), this keeps going
+    // past an unrelated literal/malformed percent and also peels bounded double-encoding.
+    const next = decoded.replace(/%(?:25|2e|2f|5c)/gi, (escape) => String.fromCharCode(Number.parseInt(escape.slice(1), 16)));
+    if (next === decoded) break;
+    decoded = next;
+  }
+  return decoded.replaceAll("\\", "/");
+}
+
+function assertNoPrivateDevCitation(contents, file) {
+  const decoded = decodePublicEvidenceText(contents);
+  assert.doesNotMatch(
+    decoded,
+    /(?:^|[\/\s(`])\.dev(?:[\/\s`)#]|$)/im,
+    `${file} cites ignored .dev evidence`,
+  );
+  // Decode each target independently. A literal/malformed percent elsewhere in the document must
+  // not prevent a later encoded private citation from being recognized.
+  for (const match of contents.matchAll(/!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g)) {
+    const decodedTarget = decodePublicEvidenceText(match[1]);
+    const target = decodedTarget.split("#", 1)[0];
+    const normalized = path.posix.normalize(target);
+    assert.equal(
+      normalized.split("/").some((segment) => segment.toLowerCase() === ".dev"),
+      false,
+      `${file} normalizes to ignored .dev evidence: ${match[1]}`,
+    );
   }
 }
 
@@ -1195,6 +1228,142 @@ test("answers-by-measurement publishes exactly seven narrow answers backed by tr
   }
 });
 
+test("public docs do not use ignored .dev files as evidence", () => {
+  const trackedMarkdown = spawnSync("git", ["ls-files", "*.md", "llms.txt"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  }).stdout.trim().split("\n").filter(Boolean);
+  const publicMarkdown = trackedMarkdown.filter((file) => !file.startsWith("docs/superpowers/"));
+  assert.ok(publicMarkdown.includes("llms.txt"), "llms.txt must stay inside the public evidence guard");
+  for (const file of publicMarkdown) {
+    let contents = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    if (file === "docs/COLLABORATORS.md") {
+      // This one section explains that .dev is ignored and unavailable to consumers; it is not an
+      // evidence citation. The rest of the public page remains under the same rejection gate.
+      contents = contents.replace(/^## What `\.dev\/` is[\s\S]*?(?=^## )/m, "");
+    }
+    assertNoPrivateDevCitation(contents, file);
+  }
+
+  const acceptedMutations = [];
+  for (const mutation of [
+    "[proof](../.dev/private.md)",
+    "[proof](../../.dev/private.md)",
+    "[proof](../%2Edev/private.md)",
+    "[proof](..%2F%2Edev%2Fprivate.md)",
+    "[proof](../%252Edev/private.md)",
+    "[proof](..\\.DEV\\private.md)",
+    "progress 100%\n[proof](../%2Edev/private.md)",
+    "progress 100%\nevidence: ../%2Edev/private.md",
+  ]) {
+    try {
+      assertNoPrivateDevCitation(mutation, "mutation");
+      acceptedMutations.push(mutation);
+    } catch {
+      // Expected: every spelling of a private citation must fail closed.
+    }
+  }
+  assert.deepEqual(acceptedMutations, [], `public evidence guard accepted: ${acceptedMutations.join(", ")}`);
+});
+
+test("the 45 named gate invocations are assigned to 42 Linux, one native-Windows, and two native-macOS lanes", () => {
+  const pkg = readJson("package.json");
+  const all = ["smoke", ...Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"))];
+  const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
+  const job = (name) => {
+    const start = new RegExp(`^  ${name}:\\n`, "m").exec(workflow);
+    assert.ok(start, `workflow job ${name} must exist`);
+    const bodyStart = start.index + start[0].length;
+    const remainder = workflow.slice(bodyStart);
+    const next = /^  [A-Za-z0-9_-]+:\n/m.exec(remainder);
+    return next ? remainder.slice(0, next.index) : remainder;
+  };
+  const namedCommands = (body) => [...body.matchAll(/^\s+run:\s+npm run (\S+)\s*$/gm)]
+    .map((match) => match[1]).filter((name) => all.includes(name));
+  const assigned = {
+    linux: namedCommands(job("gates")),
+    windows: namedCommands(job("picocli-windows")),
+    macos: namedCommands(job("vcam-native")),
+  };
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(assigned).map(([host, names]) => [host, names.length])),
+    { linux: 42, windows: 1, macos: 2 },
+  );
+  assert.deepEqual([...new Set(Object.values(assigned).flat())].sort(), [...all].sort(), "each named invocation must be assigned to a host lane");
+  assert.equal(Object.values(assigned).flat().length, all.length, "named invocations must not be duplicated across host lanes");
+
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8").replaceAll("\n", " ");
+  assert.match(readme, /45 gate invocations[\s\S]{0,220}42[\s\S]{0,80}Linux[\s\S]{0,120}(?:one|1)[\s\S]{0,80}(?:native )?Windows[\s\S]{0,120}(?:two|2)[\s\S]{0,80}(?:native )?macOS/i);
+});
+
+test("pico-cli 0.4.2 docs state the measured scope and corrected deltas", () => {
+  const answers = fs.readFileSync(path.join(repoRoot, "docs", "ANSWERED_BY_MEASUREMENT.md"), "utf8");
+  const sweep = fs.readFileSync(path.join(repoRoot, "docs", "findings", "PICOCLI_042_SWEEP_2026-08-12.md"), "utf8");
+  const combined = `${answers}\n${sweep}`;
+  for (const page of [answers, sweep]) {
+    assert.match(page, /fifteen (?:named )?`--help` surfaces[\s\S]{0,180}(?:not a complete|does not constitute a complete)/i);
+    assert.match(page, /app launch[\s\S]{0,180}(?:not byte-identical|differed|adds an examples block)/i);
+    assert.doesNotMatch(page, /app launch(?:\/|\|)stop(?:\/|\|)list[^\n]{0,120}byte-identical/i);
+    assert.match(page, /update --check[\s\S]{0,180}(?:writes|write)[\s\S]{0,100}update-check\.json/i);
+  }
+  for (const delta of ["device shell", "beta_cn", "plugin doctor", "project create"]) {
+    assert.match(combined, new RegExp(delta.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), `missing CLI delta: ${delta}`);
+  }
+});
+
+test("the scene-understanding ceiling does not resurrect the superseded zero-mesh claim", () => {
+  const capabilitySource = fs.readFileSync(path.join(repoRoot, "src", "capability.ts"), "utf8");
+  assert.doesNotMatch(capabilitySource, /MESHES remain unresolved|MeshTrackingManager returned 0 in the same probe/i);
+  assert.match(capabilitySource, /42.?44 mesh anchors/i);
+  assert.match(capabilitySource, /poll for non-empty results/i);
+});
+
+test("public guidance does not resurrect refuted capture, scene-understanding, or mesh-collider absolutes", () => {
+  const tracked = execFileSync("git", ["ls-files"], { cwd: repoRoot, encoding: "utf8" })
+    .trim().split("\n").filter(Boolean)
+    .filter((file) => !file.startsWith("docs/claims/") && file !== "CHANGELOG.md");
+  const liveGuidanceFiles = tracked.filter((file) => /^(?:src\/|appskeleton\/|README\.md$|ROADMAP\.md$|docs\/DEVICE_VERIFICATION\.md$)/.test(file));
+  const liveGuidance = liveGuidanceFiles.map((file) => `${file}\n${fs.readFileSync(path.join(repoRoot, file), "utf8")}`).join("\n");
+  assert.doesNotMatch(liveGuidance, /mesh colliders? (?:never|do not|don't|does not)[^\n]{0,80}register/i);
+  assert.doesNotMatch(liveGuidance, /(?:emulator:\s*)?0 planes\s*[—-]\s*no-op/i);
+  assert.doesNotMatch(liveGuidance, /home bedroom is a Unity black box[^\n]{0,120}(?:unmeasurable|impossible|only)/i);
+  assert.doesNotMatch(liveGuidance, /(?:structurally blind to XR-runtime|black (?:adb )?screencap[^\n]{0,100}(?:is|=) (?:a )?capture(?:-path)? artifact[^\n]{0,40}not a failure)/i);
+  assert.doesNotMatch(liveGuidance, /adb[^\n]{0,80}(?:does|is)[^\n]{0,80}composited immersive[^\n]{0,100}(?:byte-deterministic|visual ground truth)/i);
+  assert.doesNotMatch(liveGuidance, /immersive Unity[^\n]{0,100}returns? (?:a )?BLACK screencap/i);
+  assert.doesNotMatch(liveGuidance, /gui_capture[^\n]{0,120}(?:ONLY|REQUIRED)[^\n]{0,80}(?:path|XR-runtime)/i);
+
+  const collider = fs.readFileSync(path.join(repoRoot, "src", "collider.ts"), "utf8");
+  assert.match(collider, /mesh colliders are queryable from a RUNTIME MeshResource AND from a LOADED asset/i);
+  assert.match(collider, /real trap is ALIGNMENT/i);
+  const sense = fs.readFileSync(path.join(repoRoot, "src", "sense.ts"), "utf8");
+  assert.match(sense, /~40 SIMULATED planes/i);
+  assert.match(sense, /44 distinct anchors/i);
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  assert.match(readme, /(?:black[^\n]{0,120}(?:adb|screencap)[^\n]{0,160}inconclusive|black (?:adb )?frame[^\n]{0,80}inconclusive)/i);
+  assert.match(readme, /alternate capture path[^\n]{0,100}LOOK/i);
+});
+
+test("published schema-token measurements name the tokenizer and context boundary", () => {
+  const changelog = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
+  for (const measurement of ["5,029", "28,208", "86,927", "32.45%"])
+    assert.match(changelog, new RegExp(measurement.replace(/[.%]/g, "\\$&")), measurement);
+  assert.match(changelog, /tiktoken[\s\S]{0,80}o200k_base/i);
+  assert.match(changelog, /`JSON\.stringify\(result\.tools\)`[\s\S]{0,100}`tools\/list`/i);
+  assert.match(changelog, /not (?:the )?total host context/i);
+  assert.match(changelog, /characters?\s*[÷/]\s*4/i);
+});
+
+test("official-samples guidance retracts the untracked 8\/8 runtime claim", () => {
+  for (const file of ["docs/PICO_OFFICIAL_SAMPLES.md", "docs/COLLABORATORS.md", "SKILLS.md"]) {
+    const contents = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    assert.match(contents, /(?:does not retain|retains no) (?:a )?tracked[\s\S]{0,180}(?:8\/8|per-sample)/i, file);
+    assert.doesNotMatch(contents, /All eight[^\n]{0,120}(?:build and run|verified running)/i, file);
+  }
+  const samples = fs.readFileSync(path.join(repoRoot, "docs", "PICO_OFFICIAL_SAMPLES.md"), "utf8");
+  assert.match(samples, /SpatialML does not build as shipped/i);
+  assert.match(samples, /local workaround/i);
+});
+
 test("distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and 44 test suites plus smoke", () => {
   const pkg = readJson("package.json");
   const testScripts = Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"));
@@ -1214,6 +1383,10 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
   assert.doesNotMatch(tarball, /TOOL_TOLERANCE/);
   assert.match(tarball, /tools\.length === EXPECTED_PLATFORM_TOOLS/);
 
+  const metadataSync = fs.readFileSync(path.join(repoRoot, "scripts", "sync-metadata.mjs"), "utf8");
+  assert.match(metadataSync, /other hosts\|Linux/, "metadata sync must keep the measured Linux count aligned");
+  assert.match(metadataSync, /Windows\\s\+[\s\S]{0,180}source-derived/, "metadata sync must keep the source-derived Windows count aligned");
+
   const agents = fs.readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
   assert.match(agents, /doors surface[\s\S]{0,120}: 18/);
   for (const file of [
@@ -1227,7 +1400,7 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
     "docs/COLLABORATORS.md",
   ]) {
     const prose = fs.readFileSync(path.join(repoRoot, file), "utf8").replaceAll("\n", " ");
-    assert.match(prose, /249(?: tools?)? on macOS[\s\S]{0,160}246(?: tools?)? on other hosts/i, file);
+    assert.match(prose, /249(?: tools?)? on macOS[\s\S]{0,220}246(?: tools?)? on Linux[\s\S]{0,260}Windows[\s\S]{0,100}source-derived/i, file);
     assert.doesNotMatch(prose, /\b249\+(?:[- ]tools?)?/i, file);
   }
 
@@ -1235,6 +1408,6 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
     readJson(".claude-plugin/plugin.json").description,
     readJson(".claude-plugin/marketplace.json").plugins[0].description,
   ]) {
-    assert.match(description, /249 tools on macOS \/ 246 on other hosts/i);
+    assert.match(description, /249 tools on macOS \/ 246 on Linux[\s\S]{0,100}Windows[\s\S]{0,80}source-derived/i);
   }
 });

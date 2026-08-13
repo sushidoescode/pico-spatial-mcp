@@ -8,7 +8,7 @@ import { appSpecSchema } from "./appspec.js";
 import { lintSpec, emulatorVsSwanPreview } from "./planner.js";
 import { buildLedger } from "./compiler.js";
 import { classifyBriefExecution } from "./briefroute.js";
-import { readLedger } from "./ledger.js";
+import { isPassingDeviceEvidence, readLedger } from "./ledger.js";
 
 /**
  * eval.ts — v5.4 EVAL CORPUS + scorecard: measure brief-generality as a DISTRIBUTION, not one anecdote.
@@ -22,11 +22,18 @@ import { readLedger } from "./ledger.js";
  * (fully headless + reproducible); the batched-montage visual pass is the emulator-gated extension.
  */
 
-function ledgerVisionCount(pkg: string): number {
+export function summarizeLookedEvidence(entries: any[]): { visionVerified: number; deviceVerified: number; deviceFailed: number; lookedVerified: number } {
+  const visionVerified = entries.filter((entry) => entry?.evidenceType === "vision_verified").length;
+  const deviceVerified = entries.filter(isPassingDeviceEvidence).length;
+  const deviceFailed = entries.filter((entry) => entry?.evidenceType === "device_verified" && entry?.deviceOutcome === "fail" && entry?.deviceLineage?.status === "validated").length;
+  return { visionVerified, deviceVerified, deviceFailed, lookedVerified: visionVerified + deviceVerified };
+}
+
+function ledgerLookedCounts(pkg: string): ReturnType<typeof summarizeLookedEvidence> {
   try {
-    return readLedger(pkg).effectiveEntries.filter((e: any) => e.evidenceType === "vision_verified").length;
+    return summarizeLookedEvidence(readLedger(pkg).effectiveEntries);
   } catch {
-    return 0;
+    return { visionVerified: 0, deviceVerified: 0, deviceFailed: 0, lookedVerified: 0 };
   }
 }
 
@@ -63,6 +70,9 @@ export function computeSuite(briefsDir?: string): { status: string; briefsDir: s
     planFailures: rows.filter((r) => r.specValid === false || r.planOk === false).length,
     totalCompileSteps: rows.reduce((a, r: any) => a + (r.compileSteps ?? 0), 0),
     totalVisionVerified: rows.reduce((a, r: any) => a + (r.visionVerifiedInLedger ?? 0), 0),
+    totalDeviceVerified: rows.reduce((a, r: any) => a + (r.deviceVerifiedInLedger ?? 0), 0),
+    totalDeviceFailed: rows.reduce((a, r: any) => a + (r.deviceFailedInLedger ?? 0), 0),
+    totalLookedVerified: rows.reduce((a, r: any) => a + (r.lookedVerifiedInLedger ?? 0), 0),
     score: scoredRows.length ? Number((passed / scoredRows.length).toFixed(3)) : null,
   };
   return { status: "ok", briefsDir: dir, scorecard, rows };
@@ -102,6 +112,7 @@ function scoreBrief(entry: any) {
   const planOk = lint.errors.length === 0;
   const compileOk = ledger.length > 0;
   const shapeOk = mism.length === 0;
+  const looked = ledgerLookedCounts(spec.meta.packageName);
   return {
     id: entry.id,
     pass: external ? null : planOk && compileOk && shapeOk,
@@ -114,7 +125,10 @@ function scoreBrief(entry: any) {
     counts,
     verifiableNow: preview.verifiableNow.length,
     builtForSwan: preview.builtForSwan.length,
-    visionVerifiedInLedger: ledgerVisionCount(spec.meta.packageName),
+    visionVerifiedInLedger: looked.visionVerified,
+    deviceVerifiedInLedger: looked.deviceVerified,
+    deviceFailedInLedger: looked.deviceFailed,
+    lookedVerifiedInLedger: looked.lookedVerified,
     shapeMismatches: mism,
   };
 }
@@ -124,7 +138,7 @@ export function registerEvalTools(server: McpServer) {
     "run_brief_suite",
     {
       description:
-        "Run the brief-generality eval corpus: for each brief in briefs/ (brief + draft AppSpec + expected shape), headlessly PLAN (validate + feasibility lint) and COMPILE (build ledger), score against the expected node counts + C-class split, and emit a scorecard (planned/compiled/shape-match/verifiableNow/builtForSwan + ledger vision counts). Measures brief-generality as a distribution; a broken generator (spec fails to validate or references a missing tool) visibly drops the score. Fully headless + reproducible; per-brief emulator builds + a visual montage are the emulator-gated extension.",
+        "Run the brief-generality eval corpus: for each brief in briefs/ (brief + draft AppSpec + expected shape), headlessly PLAN (validate + feasibility lint) and COMPILE (build ledger), score against the expected node counts + C-class split, and emit a scorecard (planned/compiled/shape-match/verifiableNow/builtForSwan + ledger evidence counts). Positive device_verified PASS and looked-at device FAIL findings are counted separately; FAIL never contributes to lookedVerified proof. Fully headless + reproducible; per-brief emulator builds + a visual montage are the emulator-gated extension.",
       inputSchema: {
         briefsDir: z.string().optional().describe("Directory of brief JSON files (default the repo's briefs/)."),
       },

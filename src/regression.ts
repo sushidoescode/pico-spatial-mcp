@@ -12,7 +12,7 @@ import { adb, resolveSerial } from "./adb.js";
  *
  * LEGACY PATH: this captures the GUI free-cam window, which DRIFTS across
  * launches (C2). The deterministic path is capture_frame (adb screencap = the
- * composited immersive forward view, byte-deterministic) + regression_gate's
+ * measured forward pixels when that capture route contains the app view) + regression_gate's
  * golden MAE compare — prefer that for new work. This tool captures the GUI
  * window with the macOS `screencapture -l<id>` path, runs a scripted ClaimSight interaction sequence
  * between captures, and perceptually diff each frame against a stored baseline.
@@ -307,7 +307,7 @@ export function registerRegressionTools(server: McpServer) {
     "run_visual_regression",
     {
       description:
-        "Run a SNAPSHOT-BASED visual regression via the GUI free-cam window (LEGACY — for deterministic regression prefer regression_gate, which diffs golden capture_frame forward frames; the GUI free-cam drifts across launches, C2). For each scripted step it drives the app (launch / tap a UI node / keyevent — all via existing adb+ui helpers, resilient: inapplicable steps are skipped, never fatal), captures the emulator GUI window with the same macOS screencapture -l<id> path as gui_capture, and perceptually diffs the frame against baselineDir/<name>.png. Diff prefers ImageMagick `compare -metric MAE` when installed, else a dependency-free sips mean-pixel-difference (the chosen method is always reported). Defaults to a built-in ClaimSight sequence (home -> arm Place Pin -> placed). With updateBaseline=true it writes the current captures into baselineDir instead of diffing (record/refresh a baseline). Returns { steps, regressions, baselineUpdated, method }. Does NOT crash if the emulator window is missing or Screen Recording is denied — it returns a structured error.",
+        "Run a snapshot diff through the GUI free-cam window. This host-window view can drift across launches, so use it only against a deliberately refreshed baseline. regression_gate can diff adb forward frames when that route actually contains the app view; a black/absent view is inconclusive, not a clean regression sample. Steps drive launch/input, capture by macOS window id, and diff with ImageMagick or sips; the method is reported. updateBaseline writes current captures. Missing window/Screen Recording permission returns a structured error.",
       inputSchema: {
         projectDir: z.string().optional().describe("Spatial app project dir (informational; reserved for project-scoped defaults)"),
         baselineDir: z.string().describe("Directory holding baseline PNGs named <step>.png (also where updateBaseline writes)"),

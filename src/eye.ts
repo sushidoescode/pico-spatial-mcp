@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, runBinary, okJson, fail, expandHome } from "./util.js";
-import { validateCapture } from "./evidence.js";
-import { appendLedgerEntry } from "./ledger.js";
+import { readCaptureBytes, validateCapture, validateCaptureBuffer } from "./evidence.js";
+import { appendAutoJudgedEntry } from "./ledger.js";
 import { sendXrRecenter } from "./grpc.js";
 
 /**
@@ -26,8 +26,8 @@ import { sendXrRecenter } from "./grpc.js";
  *    (foreground object COUNT via connected-components, dominant colors, non-black coverage, brightness)
  *    against a node's acceptance predicate, and returns a verdict + confidence. THE INVARIANT HOLDS: a
  *    judge verdict is EVIDENCE, never human sight. A PASS records under the DISTINCT `auto_judged` class
- *    (bucketed separately from vision_verified in every report); low confidence or a failed check
- *    ESCALATES to a human LOOK and records nothing (or structural). It closes the "N cards render"
+ *    (bucketed separately from vision_verified in every report); a hard failed check returns FAIL,
+ *    while low confidence ESCALATES to a human LOOK. Neither records evidence. It closes the "N cards render"
  *    over-claim by actually counting the cards. Calibrated against the human-verified golden (6 cards →
  *    the judge measures 6); a human audit sampling auto_judged entries keeps it honest.
  *
@@ -198,6 +198,17 @@ function colorClose(a: string, b: string, tol = 48): boolean {
 export type Expectation = { minObjects?: number; maxObjects?: number; notMostlyBlack?: boolean; colorsPresent?: string[]; authoredColors?: AuthoredColor[] };
 export type Judgement = { verdict: "PASS" | "FAIL" | "ESCALATE"; confidence: number; checks: { name: string; score: number; detail: string; hardFail?: boolean; advisory?: boolean }[] };
 
+/** The ledger claim is producer-authored: it says exactly which predicate was evaluated and records
+ * the resulting checks. Caller prose is never interpolated here because object/color heuristics do
+ * not establish semantic assertions such as "dragons" or "finished game". */
+export function canonicalVisualJudgeClaim(expect: Expectation, judgement: Judgement): string {
+  return `visual_judge measured ${judgement.verdict}: ${JSON.stringify({
+    expect,
+    confidence: judgement.confidence,
+    checks: judgement.checks,
+  })}`;
+}
+
 /** Pure verdict logic (no I/O) — measure the frame's measurements against the predicate. Unit-testable.
  * THE PASSTHROUGH RULE (v6.3): above PASSTHROUGH_COVERAGE_THRESHOLD the count/black/dominant-color
  * checks are structurally blind (see the header) and become ADVISORY — they contribute ZERO confidence
@@ -266,7 +277,30 @@ export function judgeFrame(m: FrameMeasurements, expect: Expectation, minConfide
   return { verdict, confidence, checks };
 }
 
-export function registerEyeTools(server: McpServer) {
+/** Keep the measurement verdict separate from evidence persistence. A PASS remains a measured
+ * result when the ledger is unavailable, but it has not earned an on-file auto_judged claim. */
+export function visualJudgePassNote(confidence: number, record: boolean | undefined, app: string | undefined, ledger?: any): string {
+  const prefix = `Measured PASS at confidence ${confidence}. This is auto_judged (measured), NOT vision_verified (human-seen)`;
+  if (!record || !app) return `${prefix}. Set record+app to log it, or LOOK to upgrade to human vision_verified.`;
+  if (ledger?.status === "recorded") return `${prefix} — recorded to the ledger as auto_judged.`;
+  const why = typeof ledger?.reason === "string"
+    ? ledger.reason
+    : typeof ledger?.message === "string"
+      ? ledger.message
+      : `ledger status ${ledger?.status ?? "missing"}`;
+  return `${prefix} — NOT recorded: ${why}. Repair the ledger before treating this as durable auto_judged evidence.`;
+}
+
+export function registerEyeTools(
+  server: McpServer,
+  deps: {
+    sendXrRecenterFn?: typeof sendXrRecenter;
+    runBinaryFn?: typeof runBinary;
+    analyzeFrameFn?: typeof analyzeFrame;
+    analyzeColorKeysFn?: typeof analyzeColorKeys;
+    resolveAdbFn?: typeof resolveAdb;
+  } = {},
+) {
   server.registerTool(
     "capture_canonical",
     {
@@ -281,29 +315,29 @@ export function registerEyeTools(server: McpServer) {
       },
     },
     async ({ serial, outPath, recenter, settleMs, expectSha }) => {
-      const adb = resolveAdb();
+      const adb = (deps.resolveAdbFn ?? resolveAdb)();
       const dev = serial ?? "emulator-5554";
       const full = expandHome(outPath ?? "/tmp/pico-render/canonical.png");
       fs.mkdirSync(path.dirname(full), { recursive: true });
       let recenterEffect: "unverified" | undefined;
       if (recenter) {
-        const recenterResult = await sendXrRecenter();
+        const recenterResult = await (deps.sendXrRecenterFn ?? sendXrRecenter)(undefined, { serial: dev });
         if (!recenterResult.ok) return fail(`RECENTER was requested but the gRPC command failed; capture not taken: ${recenterResult.error}`);
         recenterEffect = recenterResult.effect;
       }
       await new Promise((r) => setTimeout(r, settleMs ?? 600));
-      const res = await runBinary(adb, ["-s", dev, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
+      const res = await (deps.runBinaryFn ?? runBinary)(adb, ["-s", dev, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
       if (res.code !== 0 || res.stdout.length < 1000) return fail(`screencap failed (code ${res.code}, ${res.stdout.length} bytes). Is ${dev} running?`);
       fs.writeFileSync(full, res.stdout);
       const sha = crypto.createHash("sha256").update(res.stdout).digest("hex");
-      const measurements = await analyzeFrame(full);
+      const measurements = await (deps.analyzeFrameFn ?? analyzeFrame)(full);
       const drift = expectSha ? (sha === expectSha ? "MATCH" : "DRIFT") : undefined;
       return okJson({
         status: "captured",
         path: full,
         sha256: sha,
         bytes: res.stdout.length,
-        ...(recenterEffect ? { recenter: { commandAccepted: true, renderedPoseEffect: recenterEffect } } : {}),
+        ...(recenterEffect ? { recenter: { commandAccepted: true, targetSerial: dev, renderedPoseEffect: recenterEffect } } : {}),
         ...(drift ? { drift, expectSha } : {}),
         measurements,
         note: drift === "DRIFT"
@@ -317,10 +351,10 @@ export function registerEyeTools(server: McpServer) {
     "visual_judge",
     {
       description:
-        "THE CALIBRATED AUTOMATED EYE (v6.3, MR-aware). MEASURES objective properties of a real captured frame (foreground object COUNT via connected-components, dominant colors, non-black coverage, brightness) against an acceptance predicate, and returns a verdict + confidence. This scales verification WITHOUT lying: a judge verdict is EVIDENCE, never human sight. A confident PASS can be recorded (record=true) under the DISTINCT `auto_judged` evidence class — bucketed separately from vision_verified in every report and NEVER upgraded to it. Low confidence or a failed check returns ESCALATE (a human must LOOK) and records nothing. It closes the 'N cards render' over-claim by actually counting the objects. Calibrated against the human-verified golden (6 cards → measures 6). MR RULE: on a passthrough/home-env frame (coverage > 0.5 — every Mixed stageStyle '1' capture) the count/black checks are structurally blind and go ADVISORY (they can never auto-PASS); pass expect.authoredColors (the spec's body.color palette) to count objects by color-key detection instead — the real MR auto_judged lane. Without a scorable palette, passthrough frames ALWAYS escalate, by design.",
+        "THE CALIBRATED AUTOMATED EYE (v6.3, MR-aware). MEASURES objective properties of a real captured frame (foreground object COUNT via connected-components, dominant colors, non-black coverage, brightness) against an acceptance predicate, and returns a verdict + confidence. This scales verification WITHOUT lying: a judge verdict is EVIDENCE, never human sight. A confident PASS can be recorded (record=true) under the DISTINCT `auto_judged` evidence class — bucketed separately from vision_verified in every report and NEVER upgraded to it. A hard failed check returns FAIL; low confidence returns ESCALATE for a human LOOK. Neither records evidence. It closes the 'N cards render' over-claim by actually counting the objects. Calibrated against the human-verified golden (6 cards → measures 6). MR RULE: on a passthrough/home-env frame (coverage > 0.5 — every Mixed stageStyle '1' capture) the count/black checks are structurally blind and go ADVISORY (they can never auto-PASS); pass expect.authoredColors (the spec's body.color palette) to count objects by color-key detection instead — the real MR auto_judged lane. Without a scorable palette, passthrough frames ALWAYS escalate, by design.",
       inputSchema: {
         imagePath: z.string().describe("Path to the captured frame (from capture_canonical / capture_frame)."),
-        claim: z.string().describe("The claim being judged, e.g. '6 shelf cards render in the forward FOV'."),
+        claim: z.string().describe("Caller-authored context for why this predicate is being run. It is returned and stored as explicitly unverified context; only the producer-derived expect/check result becomes the measured ledger claim."),
         expect: z
           .object({
             minObjects: z.number().int().optional().describe("Minimum foreground objects expected (e.g. 6 cards)."),
@@ -343,42 +377,87 @@ export function registerEyeTools(server: McpServer) {
       },
     },
     async ({ imagePath, claim, expect, app, cClass, record, minConfidence }) => {
-      const m = await analyzeFrame(imagePath);
-      if (!m.available) return okJson({ status: "error", verdict: "ESCALATE", reason: m.error ?? "could not measure frame", measurements: m });
-      if (expect.authoredColors?.length) m.colorKey = await analyzeColorKeys(imagePath, expect.authoredColors);
+      const source = readCaptureBytes(imagePath);
+      if (!source.ok) return okJson({ status: "error", verdict: "ESCALATE", reason: source.reason });
+      const sourceCapture = validateCaptureBuffer(source.bytes, imagePath);
+      if (!sourceCapture.ok) return okJson({ status: "error", verdict: "ESCALATE", reason: sourceCapture.reason });
 
-      const need = minConfidence ?? 0.8;
-      const { verdict, confidence, checks } = judgeFrame(m, expect, need);
-      const passthrough = isPassthroughFrame(m);
+      // Analyze a private snapshot written from the one bounded source read. Fleet capture paths are
+      // deterministic and may be overwritten concurrently; neither the analyzer nor CAS persistence
+      // may re-open that mutable path and accidentally bind measurements to different pixels.
+      const snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), "pico-visual-judge-"));
+      const snapshotPath = path.join(snapshotDir, `frame.${sourceCapture.format === "jpeg" ? "jpg" : "png"}`);
+      fs.writeFileSync(snapshotPath, source.bytes, { flag: "wx", mode: 0o600 });
+      try {
+        const measured = await (deps.analyzeFrameFn ?? analyzeFrame)(snapshotPath);
+        const m: FrameMeasurements = { ...measured };
+        if (!m.available) return okJson({ status: "error", verdict: "ESCALATE", reason: m.error ?? "could not measure frame", measurements: m });
+        if (expect.authoredColors?.length) m.colorKey = await (deps.analyzeColorKeysFn ?? analyzeColorKeys)(snapshotPath, expect.authoredColors);
 
-      let ledger: any = undefined;
-      if (record && verdict === "PASS" && app) {
-        const attestation = `auto_judged: ${checks.map((c) => `${c.name}=${c.score}${c.advisory ? "(advisory)" : ""}`).join(", ")} (conf ${confidence}); ${checks.map((c) => c.detail).join("; ")}`;
-        ledger = appendLedgerEntry(app, {
-          claim,
-          evidenceType: "auto_judged",
-          artifactPath: imagePath,
-          attestation,
-          cClass,
-          extra: { autoJudge: { confidence, measurements: { objectCount: m.objectCount, coverage: m.nonBlackCoverage, dominantColors: m.dominantColors, ...(m.colorKey ? { colorKey: { found: m.colorKey.found, missing: m.colorKey.missing, neutralSkipped: m.colorKey.neutralSkipped } } : {}) } } },
+        const after = readCaptureBytes(snapshotPath);
+        const afterCapture = after.ok ? validateCaptureBuffer(after.bytes, snapshotPath) : after;
+        if (!after.ok || !afterCapture.ok || afterCapture.sha256 !== sourceCapture.sha256) {
+          return okJson({
+            status: "error",
+            verdict: "ESCALATE",
+            reason: `the private measurement snapshot changed while visual_judge was running; refusing to bind measurements to unstable pixels${after.ok && afterCapture.ok ? ` (expected ${sourceCapture.sha256}, read ${afterCapture.sha256})` : `: ${afterCapture.reason}`}`,
+          });
+        }
+        if (m.sha256 && m.sha256 !== sourceCapture.sha256) {
+          return okJson({ status: "error", verdict: "ESCALATE", reason: `the analyzer measured sha256 ${m.sha256}, not the immutable snapshot ${sourceCapture.sha256}; refusing producer evidence`, measurements: m });
+        }
+        m.sha256 = sourceCapture.sha256;
+        m.width ??= sourceCapture.width;
+        m.height ??= sourceCapture.height;
+        m.bytes ??= sourceCapture.bytes;
+
+        const need = minConfidence ?? 0.8;
+        const judgement = judgeFrame(m, expect, need);
+        const { verdict, confidence, checks } = judgement;
+        const passthrough = isPassthroughFrame(m);
+        const measuredClaim = canonicalVisualJudgeClaim(expect, judgement);
+        const callerContext = { text: claim, verified: false as const };
+
+        let ledger: any = undefined;
+        if (record && verdict === "PASS" && app) {
+          const attestation = `auto_judged: ${checks.map((c) => `${c.name}=${c.score}${c.advisory ? "(advisory)" : ""}`).join(", ")} (conf ${confidence}); ${checks.map((c) => c.detail).join("; ")}`;
+          ledger = appendAutoJudgedEntry(app, {
+            claim: measuredClaim,
+            artifactPath: imagePath,
+            artifactBytes: source.bytes,
+            attestation,
+            cClass,
+            autoJudge: {
+              schemaVersion: 1,
+              verdict,
+              confidence,
+              expect,
+              checks,
+              callerContext,
+              measurements: { objectCount: m.objectCount, coverage: m.nonBlackCoverage, dominantColors: m.dominantColors, ...(m.colorKey ? { colorKey: { found: m.colorKey.found, missing: m.colorKey.missing, neutralSkipped: m.colorKey.neutralSkipped } } : {}) },
+            },
+          });
+        }
+
+        return okJson({
+          status: "judged",
+          verdict,
+          confidence,
+          claim: measuredClaim,
+          callerContext,
+          checks,
+          measurements: m,
+          ...(ledger ? { ledger } : {}),
+          note:
+            verdict === "PASS"
+              ? visualJudgePassNote(confidence, record, app, ledger)
+              : verdict === "FAIL"
+                ? "Measured FAIL (a hard check failed). Diagnose + replan; do not record."
+                : `Inconclusive (confidence ${confidence} below ${need} or a soft check is weak).${passthrough ? " Passthrough frame — count segmentation unreliable; escalated by design (pass expect.authoredColors — the spec's body.color palette — for the color-keyed MR lane)." : ""} ESCALATE to a human LOOK — do not auto-record.`,
         });
+      } finally {
+        fs.rmSync(snapshotDir, { recursive: true, force: true });
       }
-
-      return okJson({
-        status: "judged",
-        verdict,
-        confidence,
-        claim,
-        checks,
-        measurements: m,
-        ...(ledger ? { ledger } : {}),
-        note:
-          verdict === "PASS"
-            ? `Measured PASS at confidence ${confidence}. This is auto_judged (measured), NOT vision_verified (human-seen)${record && app ? " — recorded to the ledger as auto_judged" : ". Set record+app to log it, or LOOK to upgrade to human vision_verified"}.`
-            : verdict === "FAIL"
-              ? "Measured FAIL (a hard check failed). Diagnose + replan; do not record."
-              : `Inconclusive (confidence ${confidence} below ${need} or a soft check is weak).${passthrough ? " Passthrough frame — count segmentation unreliable; escalated by design (pass expect.authoredColors — the spec's body.color palette — for the color-keyed MR lane)." : ""} ESCALATE to a human LOOK — do not auto-record.`,
-      });
     },
   );
 }

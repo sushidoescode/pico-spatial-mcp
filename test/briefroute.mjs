@@ -6,11 +6,23 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { classifyBriefExecution } from "../dist/briefroute.js";
-import { computeSuite } from "../dist/eval.js";
-import { processBrief, summarizeFactoryStatuses } from "../dist/factory.js";
+import { computeSuite, summarizeLookedEvidence } from "../dist/eval.js";
+import { processBrief, summarizeFactoryStatuses, summarizeFactoryLedgerEvidence } from "../dist/factory.js";
 import { headlessRows, renderBenchHtml } from "../dist/spatialbench.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+const mixedLookedRows = [
+  { evidenceType: "vision_verified" },
+  { evidenceType: "device_verified", deviceFeature: "controller_ray", deviceOutcome: "pass", deviceLineage: { status: "validated" } },
+  { evidenceType: "device_verified", deviceOutcome: "fail", deviceLineage: { status: "validated" } },
+  { evidenceType: "auto_judged" },
+];
+assert.deepEqual(summarizeLookedEvidence(mixedLookedRows), { visionVerified: 1, deviceVerified: 1, deviceFailed: 1, lookedVerified: 2 });
+assert.deepEqual(
+  summarizeFactoryLedgerEvidence(mixedLookedRows),
+  { visionVerified: 1, deviceVerified: 1, deviceFailed: 1, lookedVerified: 2, autoJudged: 1, builtForHeadset: 0 },
+);
 const cameraPeekCorpusEntry = JSON.parse(fs.readFileSync(path.join(ROOT, "briefs", "camerapeek.json"), "utf8"));
 
 const pipeline = classifyBriefExecution({ id: "ordinary", spec: {} });

@@ -22,7 +22,8 @@ object MeshEnvironment {
     private const val MODEL = "apartment"   // model name inside the baked bundle (the file stem)
 
     /** Call from SpatialView.initial (a coroutine):  MeshEnvironment.load { content.addEntity(it) }
-     *  Mesh colliders don't register on-device, so pair this with a box-collider rig for Scene.rayCast. */
+     *  Pair with a box-collider rig for predictable Scene.rayCast alignment. Mesh shapes are queryable,
+     *  but imported submesh local offsets/display scale must be applied to the collider entity. */
     suspend fun load(add: (Entity) -> Unit) {
         runCatching {
             val bundle = withContext(Dispatchers.IO) { AssetBundle.load(BUNDLE) }

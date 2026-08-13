@@ -5,11 +5,14 @@
 // auto-PASS — only color-keyed counting against the authored palette scores there. Fixtures are
 // synthesized with ImageMagick (skip if absent); the color-key path needs the pico venv (skip if absent).
 // The pure-logic checks always run. Run: npm run test:eye
-import { analyzeFrame, analyzeColorKeys, judgeFrame, PASSTHROUGH_COVERAGE_THRESHOLD } from "../dist/eye.js";
+import { analyzeFrame, analyzeColorKeys, judgeFrame, PASSTHROUGH_COVERAGE_THRESHOLD, registerEyeTools } from "../dist/eye.js";
+import * as eyeModule from "../dist/eye.js";
 import { sendXrRecenter } from "../dist/grpc.js";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import zlib from "node:zlib";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -18,8 +21,48 @@ const exec = promisify(execFile);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const golden = path.join(ROOT, "golden", "showcase-6cards.golden.png");
 
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+const crc32 = (buf) => {
+  let c = 0xffffffff;
+  for (const byte of buf) c = CRC_TABLE[(c ^ byte) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+};
+const pngChunk = (type, data) => {
+  const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
+  const typeBytes = Buffer.from(type, "ascii");
+  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([typeBytes, data])));
+  return Buffer.concat([length, typeBytes, data, crc]);
+};
+const makePng = (shade) => {
+  const width = 64, height = 64;
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 0;
+  const rows = Buffer.alloc(height * (width + 1));
+  for (let y = 0; y < height; y++) rows.fill(shade, y * (width + 1) + 1, (y + 1) * (width + 1));
+  return Buffer.concat([signature, pngChunk("IHDR", ihdr), pngChunk("IDAT", zlib.deflateSync(rows)), pngChunk("IEND", Buffer.alloc(0))]);
+};
+
 let failures = 0;
 const check = (name, cond) => { if (cond) console.log(`  ok   ${name}`); else { console.log(`  FAIL ${name}`); failures++; } };
+
+// A measured PASS and a durable ledger write are separate outcomes. The public note must never
+// say "recorded" when appendLedgerEntry rejected (for example because the ledger is corrupt).
+const passNote = eyeModule.visualJudgePassNote;
+check(
+  "visual judge discloses a rejected evidence write instead of saying recorded",
+  typeof passNote === "function"
+    && /NOT recorded/.test(passNote(0.93, true, "fixture.app", { status: "rejected", reason: "corrupt ledger" }))
+    && !/recorded to the ledger as auto_judged/.test(passNote(0.93, true, "fixture.app", { status: "rejected", reason: "corrupt ledger" })),
+);
 
 // capture_canonical's recenter option must send the real gRPC XR command. The previous Android
 // keyevent 0 implementation was a no-op while its schema claimed xr_recenter behavior.
@@ -29,6 +72,139 @@ const recenter = await sendXrRecenter(undefined, {
   streamInputFn: async (_client, events) => { recenterEvent = events[0]; },
 });
 check("XR recenter helper sends xr_command RECENTER", recenter.ok && recenterEvent?.xr_command?.action === "RECENTER");
+
+// Registered-tool integration: recenter and screencap must be bound to the same requested emulator.
+// A helper-only test would stay green if capture_canonical stopped calling it or targeted a different
+// discovery endpoint.
+let captureHandler = null;
+let recenteredSerial = null;
+let screencapSerial = null;
+const fakeServer = {
+  registerTool(name, _definition, handler) {
+    if (name === "capture_canonical") captureHandler = handler;
+  },
+};
+registerEyeTools(fakeServer, {
+  sendXrRecenterFn: async (_toolsVersion, options) => {
+    recenteredSerial = options?.serial;
+    return { ok: true, accepted: true, effect: "unverified" };
+  },
+  runBinaryFn: async (_command, args) => {
+    screencapSerial = args[1];
+    return { code: 0, stdout: Buffer.alloc(1200, 7), stderr: "" };
+  },
+  analyzeFrameFn: async () => ({ available: true }),
+  resolveAdbFn: () => "fake-adb",
+});
+const captureScratch = fs.mkdtempSync(path.join(os.tmpdir(), "eye-recenter-target-"));
+const captureResult = JSON.parse((await captureHandler({
+  serial: "emulator-5580",
+  outPath: path.join(captureScratch, "frame.png"),
+  recenter: true,
+  settleMs: 0,
+})).content[0].text);
+check("capture_canonical binds RECENTER and screencap to one requested serial", captureResult.status === "captured" && recenteredSerial === "emulator-5580" && screencapSerial === "emulator-5580" && captureResult.recenter?.targetSerial === "emulator-5580");
+fs.rmSync(captureScratch, { recursive: true, force: true });
+
+// Public visual_judge regression: the caller's prose names semantic content that the calibrated
+// checks do not measure. A PASS may persist only a canonical claim derived from the exact predicate
+// and check results; the prose remains explicitly unverified context metadata.
+let visualJudgeHandler = null;
+const judgeServer = {
+  registerTool(name, _definition, handler) {
+    if (name === "visual_judge") visualJudgeHandler = handler;
+  },
+};
+registerEyeTools(judgeServer, {
+  analyzeFrameFn: async () => ({
+    available: true,
+    objectCount: 6,
+    mostlyBlack: false,
+    nonBlackCoverage: 0.06,
+    dominantColors: ["48A552", "4B40B6"],
+  }),
+});
+const judgeScratch = fs.mkdtempSync(path.join(os.tmpdir(), "eye-canonical-claim-"));
+const previousLedgerDir = process.env.PICO_MCP_LEDGER_DIR;
+process.env.PICO_MCP_LEDGER_DIR = path.join(judgeScratch, "ledgers");
+const callerClaim = "Six dragons breathe fire above the canyon";
+const exactExpectation = { minObjects: 6, maxObjects: 6, notMostlyBlack: true };
+const judgedResult = JSON.parse((await visualJudgeHandler({
+  imagePath: golden,
+  claim: callerClaim,
+  expect: exactExpectation,
+  app: "fixture.eye-canonical",
+  cClass: "C0_emulator",
+  record: true,
+})).content[0].text);
+const persistedJudge = judgedResult.ledger?.entry;
+check(
+  "visual_judge persists a canonical measured claim, never the caller's dragons prose",
+  judgedResult.verdict === "PASS"
+    && judgedResult.ledger?.status === "recorded"
+    && persistedJudge?.claim === judgedResult.claim
+    && !/dragons|canyon|fire/i.test(persistedJudge?.claim ?? "")
+    && /visual_judge measured PASS/.test(persistedJudge?.claim ?? "")
+    && /\"minObjects\":6/.test(persistedJudge?.claim ?? "")
+    && /\"objectCount\"/.test(persistedJudge?.claim ?? ""),
+);
+check(
+  "visual_judge stores the exact predicate/checks and labels caller prose unverified context",
+  JSON.stringify(persistedJudge?.autoJudge?.expect) === JSON.stringify(exactExpectation)
+    && JSON.stringify(persistedJudge?.autoJudge?.checks) === JSON.stringify(judgedResult.checks)
+    && persistedJudge?.autoJudge?.callerContext?.text === callerClaim
+    && persistedJudge?.autoJudge?.callerContext?.verified === false
+    && judgedResult.callerContext?.text === callerClaim
+    && judgedResult.callerContext?.verified === false,
+);
+if (previousLedgerDir === undefined) delete process.env.PICO_MCP_LEDGER_DIR;
+else process.env.PICO_MCP_LEDGER_DIR = previousLedgerDir;
+fs.rmSync(judgeScratch, { recursive: true, force: true });
+
+// The fleet source path is deterministic and can be overwritten while the producer is running.
+// Measurements and CAS persistence must bind one read of one byte sequence, not two reads of a
+// mutable path. This injected analyzer changes the caller's source after measuring it.
+let swapJudgeHandler = null;
+const swapScratch = fs.mkdtempSync(path.join(os.tmpdir(), "eye-byte-binding-"));
+const swapSource = path.join(swapScratch, "forward.png");
+const measuredBytes = makePng(40);
+const replacementBytes = makePng(210);
+const measuredSha = crypto.createHash("sha256").update(measuredBytes).digest("hex");
+const replacementSha = crypto.createHash("sha256").update(replacementBytes).digest("hex");
+fs.writeFileSync(swapSource, measuredBytes);
+registerEyeTools({
+  registerTool(name, _definition, handler) {
+    if (name === "visual_judge") swapJudgeHandler = handler;
+  },
+}, {
+  analyzeFrameFn: async (measuredPath) => {
+    const sha256 = crypto.createHash("sha256").update(fs.readFileSync(measuredPath)).digest("hex");
+    fs.writeFileSync(swapSource, replacementBytes);
+    return { available: true, sha256, objectCount: 1, mostlyBlack: false, nonBlackCoverage: 0.06, dominantColors: ["282828"] };
+  },
+});
+const priorSwapLedgerDir = process.env.PICO_MCP_LEDGER_DIR;
+process.env.PICO_MCP_LEDGER_DIR = path.join(swapScratch, "ledgers");
+const swappedResult = JSON.parse((await swapJudgeHandler({
+  imagePath: swapSource,
+  claim: "one measured foreground component",
+  expect: { minObjects: 1, maxObjects: 1, notMostlyBlack: true },
+  app: "fixture.eye-byte-binding",
+  record: true,
+})).content[0].text);
+check(
+  "visual_judge measures and persists one immutable byte snapshot when the source path is overwritten",
+  swappedResult.verdict === "PASS"
+    && swappedResult.ledger?.status === "recorded"
+    && swappedResult.measurements?.sha256 === measuredSha
+    && swappedResult.ledger?.entry?.capture?.sha256 === measuredSha
+    && swappedResult.ledger?.entry?.evidenceProducer?.artifactSha256 === measuredSha
+    && crypto.createHash("sha256").update(fs.readFileSync(swapSource)).digest("hex") === replacementSha
+    && replacementSha !== measuredSha,
+);
+if (priorSwapLedgerDir === undefined) delete process.env.PICO_MCP_LEDGER_DIR;
+else process.env.PICO_MCP_LEDGER_DIR = priorSwapLedgerDir;
+fs.rmSync(swapScratch, { recursive: true, force: true });
 
 // ── pure judge logic (no I/O, always runs) ──
 const six = { objectCount: 6, mostlyBlack: false, nonBlackCoverage: 0.06, dominantColors: ["#48A552", "#4B40B6"] };

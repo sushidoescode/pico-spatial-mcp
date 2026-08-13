@@ -7,7 +7,9 @@ node /abs/path/to/PICO-MCP/dist/index.js
 ```
 
 Optional env: `PICO_MCP_SURFACE` — `doors` is the 18-tool intent facade and, since v36.3, the
-default when unset; `full` opts into the full surface: 249 tools on macOS, 246 on other hosts.
+default when unset; `full` opts into the full surface: 249 tools on macOS and 246 on Linux are
+runtime-measured; on Windows, the published 246-tool count is source-derived because no native
+Windows `tools/list` measurement has run.
 (Before v36.3 unset meant `full`, so the explicit `doors` in the blocks below stays useful on
 older checkouts.) Build once first: `npm ci && npm run build`.
 Whatever the host, point it at that command and the agent contract in [AGENTS.md](../AGENTS.md)

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
-import { readLedger } from "./ledger.js";
+import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, readLedger } from "./ledger.js";
 
 /**
  * doors.ts — THE DOORS (v21): an intent-level facade over the full tool surface.
@@ -15,8 +15,8 @@ import { readLedger } from "./ledger.js";
  * each door orchestrates the full machinery through an internal client that
  * spawns the full-surface server on demand. Since v36.3 doors is also the CODED default
  * (env unset): the docs already told every host to set `PICO_MCP_SURFACE=doors`, but the old
- * `?? "full"` fallback meant one missed env var exposed the ~88.5k-token full surface
- * (2026-08-12 vetting, finding #1). `PICO_MCP_SURFACE=full` is the explicit opt-in — nothing
+ * `?? "full"` fallback meant one missed env var exposed the full schema payload (later measured
+ * as 86,927 `o200k_base` tokens over `JSON.stringify(result.tools)` from `tools/list`). `PICO_MCP_SURFACE=full` is the explicit opt-in — nothing
  * is removed. Every internal self-spawn (this inner client, fleetbuild/hybridbuild/marbleingest/
  * semanticsplat selfClients) pins PICO_MCP_SURFACE=full explicitly, because the SDK's child env
  * is a whitelist that never inherits the variable.
@@ -52,7 +52,14 @@ export function picoFixDecision(error: string): { symptom: string | null; nextAc
  * repair, and never a pass; when it is the ONLY thing short of acceptance the loop exits
  * built-needs-look (first live-observed 2026-08-12: crystals brief, eye ESCALATE, a replan would
  * have mutated a correct app). */
-export type LoopCriterionOutcome = { kind: string; status: "pass" | "fail" | "unmeasurable" | "needs-look"; detail?: string };
+export type LoopCriterionOutcome = {
+  kind: string;
+  status: "pass" | "fail" | "unmeasurable" | "needs-look";
+  detail?: string;
+  machineVerdict?: string;
+  recordedEvidence?: boolean;
+  machineChecks?: Array<{ name?: string; score?: number; detail?: string; hardFail?: boolean; advisory?: boolean }>;
+};
 
 /** Signature of an iteration's failure state for the no-progress detector: failing/unmeasurable
  * criteria only, first line of each detail (tails carry paths/timings that vary run to run), with
@@ -65,6 +72,134 @@ export function loopFailureSignature(outcomes: LoopCriterionOutcome[]): string {
     .filter((o) => o.status !== "pass")
     .map((o) => `${o.kind}:${o.status}:${(o.detail ?? "").split("\n")[0].trim().replace(/\d+(?:\.\d+)?/g, "#")}`)
     .join("|");
+}
+
+/** `assert_scene` clears logcat before requesting its Agent Bridge dump. Consume every launch-log
+ * criterion first so a caller's criterion order cannot erase the evidence a later logcat assert
+ * needs. The partition is stable within each group, keeping caller order everywhere it is safe. */
+export function loopCriteriaInEvidenceSafeOrder<T extends Record<string, any>>(criteria: T[]): T[] {
+  return [...criteria.filter((c) => c.kind === "logcat"), ...criteria.filter((c) => c.kind !== "logcat")];
+}
+
+/** recompileSubtree describes generated-code work, not every AppSpec mutation: camera-only repairs
+ * legitimately leave it empty. Compare the complete JSON-shaped specs to decide whether replanning
+ * made progress. */
+export function loopSpecMutated(before: unknown, after: unknown): boolean {
+  return JSON.stringify(before) !== JSON.stringify(after);
+}
+
+/** A hardware LOOK with an explicit failing outcome is valuable negative evidence, but it must
+ * never advance pico_next as though the app had earned positive visual proof. */
+export function isPositiveLookedEntry(entry: any): boolean {
+  return entry?.evidenceType === "vision_verified"
+    || isPassingDeviceEvidence(entry);
+}
+
+type LoopReplanFailure = { symptom: string };
+
+/** Select only failures for which replan_spec has a concrete retained-lesson mutation. Generic
+ * structural assertions, arbitrary log markers, and low-FPS measurements have no safe automatic
+ * AppSpec edit; calling them build_failed made the advertised loop a misleading one-shot. */
+export function loopRepairSelection(failing: LoopCriterionOutcome[]): { failures: LoopReplanFailure[]; unsupported: LoopCriterionOutcome[] } {
+  const failures: LoopReplanFailure[] = [];
+  const unsupported: LoopCriterionOutcome[] = [];
+
+  for (const outcome of failing) {
+    // The fleet judge measures count/coverage/color presence; it does not diagnose camera pose,
+    // interaction wiring, or arbitrary log markers. Only a hard black/zero-object measurement maps
+    // to replan_spec's real not_rendering mutation. Everything else stays manual rather than being
+    // laundered into a symptom the loop cannot prove or drive on the next iteration.
+    const hardChecks = (outcome.machineChecks ?? []).filter((check) => check.hardFail);
+    const measuredEmpty = hardChecks.some((check) =>
+      check.name === "notMostlyBlack"
+      || (check.name === "objectCount" && /measured\s+0\b/i.test(check.detail ?? "")),
+    );
+    if (outcome.kind === "visual" && measuredEmpty) failures.push({ symptom: "not_rendering" });
+    else unsupported.push(outcome);
+  }
+  return { failures, unsupported };
+}
+
+/** Preserve the calibrated eye's actual vocabulary. PASS is machine acceptance, FAIL is a
+ * measured defect, ESCALATE is a calibrated refusal, and absent/unknown output is merely
+ * unscored. The latter two both require a look but have different provenance. */
+export function loopVisualOutcome(
+  verdict: unknown,
+  artifact: string | null | undefined,
+  notes: unknown[],
+  checks: LoopCriterionOutcome["machineChecks"] = [],
+  judgeNote?: unknown,
+  ledger?: unknown,
+): LoopCriterionOutcome {
+  const machineVerdict = typeof verdict === "string" && verdict.trim()
+    ? verdict.trim().toUpperCase()
+    : "unscored";
+  if (machineVerdict === "PASS") {
+    const recordedEvidence = !!ledger && typeof ledger === "object" && (ledger as any).status === "recorded";
+    const writeStatus = recordedEvidence
+      ? "durably recorded as auto_judged"
+      : `NOT durably recorded (${typeof (ledger as any)?.reason === "string" ? (ledger as any).reason : `ledger status ${(ledger as any)?.status ?? "missing"}`})`;
+    return { kind: "visual", status: "pass", machineVerdict, recordedEvidence, detail: `eye verdict PASS (measured); ${writeStatus}; capture ${artifact ?? "n/a"}` };
+  }
+  if (machineVerdict === "FAIL") {
+    const measured = checks.length
+      ? checks.map((check) => `${check.name ?? "check"}: ${check.detail ?? `score ${check.score ?? "?"}`}`).join(" | ")
+      : "no structured checks returned";
+    return {
+      kind: "visual",
+      status: "fail",
+      machineVerdict,
+      machineChecks: checks,
+      detail: `eye verdict FAIL; measured checks: ${measured}${typeof judgeNote === "string" ? `; judge note: ${judgeNote}` : ""}; notes: ${notes.slice(-3).join(" | ") || "none"}`,
+    };
+  }
+  return {
+    kind: "visual",
+    status: "needs-look",
+    machineVerdict,
+    detail: `eye verdict ${machineVerdict} — no PASS/FAIL machine judgment is available; capture ${artifact ?? "n/a"}`,
+  };
+}
+
+/** Report only the strongest evidence actually earned by this iteration. The fleet may run its
+ * eye even when the caller omitted a visual criterion; a real PASS still earns auto_judged, while
+ * FAIL/ESCALATE/unscored can never be upgraded by passing structural/logcat/perf criteria. */
+export function loopAcceptanceEvidence(outcomes: LoopCriterionOutcome[], fleetVerdict?: unknown, fleetLedger?: unknown): { ceiling: "auto_judged" | "structural"; honesty: string } {
+  const visualPassed = outcomes.some((outcome) => outcome.kind === "visual" && outcome.status === "pass")
+    || (typeof fleetVerdict === "string" && fleetVerdict.toUpperCase() === "PASS");
+  const visualRecorded = outcomes.some((outcome) => outcome.kind === "visual" && outcome.status === "pass" && outcome.recordedEvidence === true)
+    || (typeof fleetVerdict === "string" && fleetVerdict.toUpperCase() === "PASS"
+      && !!fleetLedger && typeof fleetLedger === "object" && (fleetLedger as any).status === "recorded");
+  if (visualRecorded) {
+    return {
+      ceiling: "auto_judged",
+      honesty: "The calibrated eye returned PASS, so this iteration's ceiling is auto_judged — machine-measured, never human-seen. LOOK at every returned artifact before any vision_verified claim.",
+    };
+  }
+  const observed = typeof fleetVerdict === "string" && fleetVerdict.trim() ? fleetVerdict.toUpperCase() : "unscored";
+  if (visualPassed) {
+    const why = typeof (fleetLedger as any)?.reason === "string"
+      ? (fleetLedger as any).reason
+      : `ledger status ${(fleetLedger as any)?.status ?? "missing"}`;
+    return {
+      ceiling: "structural",
+      honesty: `The calibrated eye returned PASS, but its auto_judged evidence was not durably recorded (${why}); this iteration's on-file ceiling is structural. Repair the ledger and re-measure before claiming auto_judged. LOOK at the capture before any vision_verified claim.`,
+    };
+  }
+  return {
+    ceiling: "structural",
+    honesty: `The passed acceptance criteria did not include a visual PASS (fleet eye: ${observed}); this iteration's ceiling is structural. No render-success claim was earned. LOOK at the capture before any vision_verified claim.`,
+  };
+}
+
+/** Explain why the terminal look is owed without claiming the eye ran or escalated when its
+ * result was absent, skipped, or outside the known vocabulary. */
+export function loopNeedsLookHonesty(needsLook: LoopCriterionOutcome[]): string {
+  const verdicts = Array.from(new Set(needsLook.map((outcome) => outcome.machineVerdict ?? "unscored")));
+  if (verdicts.length > 0 && verdicts.every((verdict) => verdict === "ESCALATE")) {
+    return "The calibrated eye ESCALATEd — this frame class cannot be machine-judged. Everything else measurable passed. LOOK at the capture (or have a vision-capable agent do it), then record what you actually saw with pico_record {evidenceType:'vision_verified'} — that look, not this loop, decides success.";
+  }
+  return `No PASS/FAIL visual score was available (${verdicts.join(", ") || "unscored"}). This is an unscored look obligation, not evidence that the calibrated eye classified the frame. Everything else measurable passed. LOOK at the capture (or have a vision-capable agent do it), then record what you actually saw with pico_record {evidenceType:'vision_verified'} — that look, not this loop, decides success.`;
 }
 
 type InnerCache = {
@@ -141,6 +276,19 @@ export function briefIdOf(brief: string): string {
   return `door${[...brief].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 1000003, 7)}`;
 }
 
+/** Door 1 has not performed the human/agent LOOK, so no branch may call itself `verified`.
+ * A producer-recorded eye PASS is still useful, but its terminal state keeps the remaining LOOK
+ * obligation explicit. Build/install/capture failures are kept distinct instead of being folded
+ * into a success-shaped status. */
+export function buildAppDoorStatus(result: any): "failed" | "built-not-installed" | "built-no-capture" | "auto-judged-needs-look" | "built-needs-look" {
+  if (!result?.built) return "failed";
+  if (!result?.installed) return "built-not-installed";
+  if (!result?.artifact) return "built-no-capture";
+  if (result?.verdict === "PASS" && result?.visualLedger?.status === "recorded")
+    return "auto-judged-needs-look";
+  return "built-needs-look";
+}
+
 /** Call a full-surface tool through the cached inner client (shared by the doors + spatialbench). */
 export async function innerCall(name: string, args: any = {}) {
   const { call } = await inner();
@@ -159,7 +307,7 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_build_app",
-    "DOOR 1 — Build a verified spatial app from a brief. TWO-STEP by design: call with just {brief} to receive a scaffold AppSpec (the planner never guesses your intent — YOU author); adapt the scaffold to the brief, then call again with {brief, draftSpec} to compile through the full pipeline (scaffold → codegen → gradle → install → launch on the emulator), capture a frame, and judge it. Apps default to the Mixed stage (stageStyle '1' — the passthrough home environment is the backdrop and content seats ON the room, mrtable-style); a fully-virtual app remains a first-class opt-in via meta.stageStyle '3' (Full). Honest expectation: a color-keyed authored MR scene with multiple saturated colors can be auto-judged; otherwise Mixed-stage builds land 'built-needs-look' and require a person or vision-capable agent to inspect the capture. Returns the verdict, the capture path (LOOK at it before claiming anything works), and the project dir. Escalations mean a human/agent must look — that is the honesty contract, not an error.",
+    "DOOR 1 — Build an evidence-scoped spatial app from a brief. TWO-STEP by design: call with just {brief} to receive a scaffold AppSpec (the planner never guesses your intent — YOU author); adapt the scaffold to the brief, then call again with {brief, draftSpec} to compile through the full pipeline (scaffold → codegen → gradle → install → launch on the emulator), capture a frame, and judge it. Apps default to the Mixed stage (stageStyle '1' — the passthrough home environment is the backdrop and content seats ON the room, mrtable-style); a fully-virtual app remains a first-class opt-in via meta.stageStyle '3' (Full). Honest expectation: a color-keyed authored MR scene with multiple saturated colors can be auto-judged; otherwise Mixed-stage builds land 'built-needs-look' and require a person or vision-capable agent to inspect the capture. Even a recorded calibrated-eye PASS returns 'auto-judged-needs-look', never 'verified': only the later human/agent LOOK can earn vision_verified. Returns the verdict, the capture path (LOOK at it before claiming anything works), and the project dir. Escalations mean a human/agent must look — that is the honesty contract, not an error.",
     {
       brief: z.string().describe("What to build, e.g. 'a primitive table standing on my real floor with bodies dropping onto it from a clickable menu' (Mixed-stage MR, the default; a fully-virtual brief opts into stage style 3)."),
       draftSpec: z.any().optional().describe("Your AppSpec, adapted from the scaffold a brief-only call returns. Omit on the first call."),
@@ -177,18 +325,21 @@ export function registerDoorTools(server: McpServer) {
       const fleet = await call("fleet_build", { briefIds: [id], settleSec: 16 });
       const r = fleet?.results?.[0] ?? {};
       const identity = (r.notes ?? []).find((n: any) => typeof n === "string" && n.startsWith("authored identity"));
+      const status = buildAppDoorStatus(r);
+      const autoJudgedRecorded = r.verdict === "PASS" && r.visualLedger?.status === "recorded";
       return {
-        status: r.built ? (r.verdict === "PASS" ? "verified" : "built-needs-look") : "failed",
+        status,
         briefId: id,
         built: !!r.built,
         installed: !!r.installed,
         verdict: r.verdict ?? null,
+        autoJudgedRecorded,
         capture: r.artifact ?? null,
         notes: r.notes ?? [],
         projectDir: `~/AndroidStudioProjects/fleet-${id}-native`,
         ...(identity ? { identity } : {}),
-        ...(r.built ? {} : { fix: fixOf(`Read the notes — asset-gated briefs name the missing prerequisite; build errors name the file. Then call pico_fix with the error text.`) }),
-        honesty: "verdict PASS = the calibrated eye's count; 'built-needs-look' = LOOK at `capture` yourself before claiming success.",
+        ...(["failed", "built-not-installed", "built-no-capture"].includes(status) ? { fix: fixOf(`Read the notes — asset-gated briefs name the missing prerequisite; build/install/capture errors name the failing step. Then call pico_fix with the error text.`) } : {}),
+        honesty: "No Door 1 status means human-verified. 'auto-judged-needs-look' means the calibrated eye PASS was durably recorded; 'built-needs-look' means no durable auto_judged PASS is on file. In both cases, LOOK at `capture` before any vision_verified claim.",
       };
     },
   );
@@ -403,25 +554,45 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_record",
-    "DOOR 13 — RECORD a verification claim in the app's trust ledger AFTER you LOOKED (closes the pico_look loop: capture → LOOK → record). Passes through the ledger's honesty gate UNTOUCHED: a vision_verified/device_verified/auto_judged/usd_host_render entry is REJECTED unless artifactPath links a real rendered image (valid PNG/JPEG) plus an attestation of what you saw; other evidence classes record honestly without upgrades. Set report:true to also return the ledger-generated capability report for the app.",
+    "DOOR 13 — RECORD a caller-attested verification claim AFTER you LOOKED, or append an honest RETRACTION without mutating history. Record and retract fields are mutually exclusive. For a correction set action:'retract', targetSeq, and retractionReason. Image evidence needs a real PNG/JPEG plus attestation. device_verified additionally requires the ledger's live hardware/capture binding plus structured deviceFeature and explicit pass/fail outcome; free-text polarity never closes Swan parity. Producer-only auto_judged/usd_host_render rows come from visual_judge/render_usd_offscreen, not this door.",
     {
-      app: z.string().describe("App name or package (the ledger key)."),
-      claim: z.string().describe("The claim, e.g. '6 shelf cards render in the forward FOV'."),
-      evidenceType: z.enum(["device_verified", "vision_verified", "auto_judged", "usd_host_render", "logcat", "structural", "compiles", "built_for_headset"]).describe("How it was verified. vision_verified needs a linked, existing capture + attestation."),
+      app: z.string().regex(CANONICAL_APP_KEY_PATTERN).describe("Canonical lowercase app/package ledger key: ASCII lowercase letters, digits, dot, underscore, or hyphen; no paths, spaces, or case aliases."),
+      action: z.enum(["record", "retract"]).optional().describe("Default record; retract appends a correction event for targetSeq."),
+      claim: z.string().optional().describe("Record action: the claim, e.g. '6 shelf cards render in the forward FOV'."),
+      evidenceType: z.enum(["device_verified", "vision_verified", "logcat", "structural", "compiles", "built_for_headset"]).optional().describe("Record action: a caller-recordable evidence tier. vision_verified needs a linked capture + attestation; device_verified additionally uses live device/capture provenance. auto_judged and usd_host_render are producer-only and must come from visual_judge or render_usd_offscreen."),
       artifactPath: z.string().optional().describe("Path to the capture you LOOKED at (REQUIRED for vision_verified)."),
       attestation: z.string().optional().describe("What you saw in the capture (REQUIRED for vision_verified)."),
       cClass: z.enum(["C0_emulator", "C1", "C2", "C3", "C4_headset_only"]).optional().describe("The claim's capability class."),
+      deviceSerial: z.string().optional().describe("Attached adb serial (REQUIRED for device_verified; probed live)."),
+      deviceModel: z.string().optional().describe("Optional expected model; mismatch with live probe rejects."),
+      deviceFingerprint: z.string().optional().describe("Optional expected fingerprint; mismatch with live probe rejects."),
+      deviceBootQemu: z.string().optional().describe("Optional expected ro.boot.qemu; mismatch rejects and live '1' is never hardware."),
+      deviceFeature: z.string().regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/).optional().describe("device_verified only: exact lowercase feature slug measured on-device (for example controller_ray); required with deviceOutcome."),
+      deviceOutcome: z.enum(["pass", "fail"]).optional().describe("device_verified only: explicit observed outcome. Swan parity closes only an exact deviceFeature with pass; claim prose is never interpreted."),
+      targetSeq: z.number().int().nonnegative().optional().describe("Retract action: sequence number of the claim being corrected."),
+      retractionReason: z.string().optional().describe("Retract action: why the earlier claim is withdrawn."),
+      retractionNote: z.string().optional().describe("Retract action: optional nuance retained with the correction."),
       report: z.boolean().optional().describe("Also return ledger_report's generated capability report for the app."),
     },
-    async ({ app, claim, evidenceType, artifactPath, attestation, cClass, report }) => {
+    async ({ app, action, claim, evidenceType, artifactPath, attestation, cClass, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, targetSeq, retractionReason, retractionNote, report }) => {
       const { call } = await inner();
       const recorded = await call("record_verification", {
         app,
-        claim,
-        evidenceType,
+        ...(action ? { action } : {}),
+        ...(claim ? { claim } : {}),
+        ...(evidenceType ? { evidenceType } : {}),
         ...(artifactPath ? { artifactPath } : {}),
         ...(attestation ? { attestation } : {}),
         ...(cClass ? { cClass } : {}),
+        ...(deviceSerial !== undefined ? { deviceSerial } : {}),
+        ...(deviceModel !== undefined ? { deviceModel } : {}),
+        ...(deviceFingerprint !== undefined ? { deviceFingerprint } : {}),
+        ...(deviceBootQemu !== undefined ? { deviceBootQemu } : {}),
+        ...(deviceFeature !== undefined ? { deviceFeature } : {}),
+        ...(deviceOutcome !== undefined ? { deviceOutcome } : {}),
+        ...(targetSeq !== undefined ? { targetSeq } : {}),
+        ...(retractionReason !== undefined ? { retractionReason } : {}),
+        ...(retractionNote !== undefined ? { retractionNote } : {}),
       });
       const out: any = typeof recorded === "object" && recorded !== null ? recorded : { status: String(recorded) };
       if (report) out.report = await call("ledger_report", { app });
@@ -484,17 +655,26 @@ export function registerDoorTools(server: McpServer) {
           const projectDir = path.join(home, "AndroidStudioProjects", `fleet-${id}-native`);
           const capture = `/tmp/pico-render/fleet/${id}/forward.png`; // fleet_build's shot path
           const entries = readLedgerEntries(`com.fleet.${id}`);
-          const looked = entries.some((e) => e.evidenceType === "vision_verified" || e.evidenceType === "device_verified");
-          const state = looked ? "vision-recorded"
+          const deviceFailures = entries.filter((e) => e.evidenceType === "device_verified" && e.deviceOutcome === "fail");
+          const looked = entries.some(isPositiveLookedEntry);
+          const state = deviceFailures.length ? "device-verified-failure"
+            : looked ? "vision-recorded"
             : fs.existsSync(capture) ? (entries.some((e) => e.evidenceType === "auto_judged") ? "auto-judged-needs-look" : "built-needs-look")
             : fs.existsSync(path.join(projectDir, "app/build/outputs/apk/debug/app-debug.apk")) ? "built-no-capture"
             : fs.existsSync(projectDir) ? "scaffolded-no-apk"
             : "planned-not-built";
           // brief stays FULL here: argsExample re-feeds it to pico_build_app, and a truncated brief
           // would hash to a DIFFERENT briefIdOf (a new project instead of resuming this one).
-          return { id, brief, state, ...(fs.existsSync(capture) ? { capture } : {}) };
+          return {
+            id,
+            brief,
+            state,
+            ...(deviceFailures.length ? { deviceFailures: deviceFailures.map((entry) => ({ seq: entry.seq, feature: entry.deviceFeature, claim: entry.claim })) } : {}),
+            ...(fs.existsSync(capture) ? { capture } : {}),
+          };
         });
       const needsLook = briefs.filter((b) => b.state === "built-needs-look" || b.state === "auto-judged-needs-look");
+      const deviceFailed = briefs.filter((b) => b.state === "device-verified-failure");
       const unbuilt = briefs.filter((b) => ["planned-not-built", "scaffolded-no-apk", "built-no-capture"].includes(b.state));
 
       const actions: Array<{ door: string; argsExample: any; why: string }> = [];
@@ -502,6 +682,8 @@ export function registerDoorTools(server: McpServer) {
         actions.push({ door: "pico_doctor", argsExample: {}, why: `preflight reports ${failing.length} failing check(s) (${failing.map((c: any) => c.name).join(", ")}) — each carries the exact fix; nothing downstream is trustworthy until they pass.` });
       for (const b of needsLook.slice(0, 2))
         actions.push({ door: "pico_record", argsExample: { app: `com.fleet.${b.id}`, claim: "<what the brief promised, as observed>", evidenceType: "vision_verified", artifactPath: b.capture, attestation: "<what you actually saw in the frame>" }, why: `'${b.id}' is ${b.state}: a capture exists at ${b.capture} but its trust ledger has no human-LOOKED entry — READ that image first, then record what you saw (the ledger rejects the entry without a real frame + attestation).` });
+      for (const b of deviceFailed.slice(0, 1))
+        actions.push({ door: "pico_build_app", argsExample: { brief: b.brief, draftSpec: `<the stored spec — ${path.join(userBriefsDir(), `${b.id}.json`)}>` }, why: `'${b.id}' has a device-verified FAIL finding (${(b as any).deviceFailures?.map((failure: any) => failure.feature ?? failure.claim).join(", ") ?? "feature unknown"}). The LOOK is already recorded, but it is negative evidence: repair the authored spec/app and re-measure rather than calling it vision-recorded.` });
       if (unbuilt.length) {
         const b = unbuilt[0];
         if (!emulatorRunning)
@@ -539,17 +721,27 @@ export function registerDoorTools(server: McpServer) {
     "pico_loop",
     "DOOR 16 — Declarative build→verify→repair loop (2026-08 Loop Engineering lane): state a goal, " +
       "acceptance criteria (structural / visual / logcat / perf), and a budget; the loop plans, builds " +
-      "through the fleet pipeline, machine-checks every criterion, and on failure applies the " +
-      "retained-lesson repair (replan_spec) and iterates — unattended. HONESTY CEILING BY DESIGN: the " +
-      "loop self-exits at `auto_judged` — every acceptance is machine-checked, none human-seen — and " +
+      "through the fleet pipeline, machine-checks every criterion, and when a failure matches a " +
+      "retained lesson with a concrete AppSpec mutation, applies replan_spec and iterates. Failures " +
+      "without a safe automatic mutation exit manual-repair-required with their measured detail; the " +
+      "loop never relabels them build_failed or pretends an unattended fix occurred. Logcat criteria " +
+      "are evaluated before structural asserts because assert_scene clears logcat for its own dump. " +
+      "HONESTY CEILING BY EVIDENCE: a calibrated-eye PASS earns `auto_judged` only when the matching " +
+      "ledger write succeeds; a measured PASS with a rejected/missing write remains `structural`. An iteration " +
+      "whose requested structural/logcat/perf criteria pass while the eye FAILs, ESCALATEs, or is " +
+      "unscored remains `structural` — it never inherits a visual tier from the word accepted. The loop " +
       "returns a remainingLookObligation naming the artifacts a person or vision-capable agent must " +
       "still LOOK at before any vision_verified claim. A no-progress detector stops after two " +
       "consecutive iterations failing with the identical signature; an unmeasurable criterion " +
       "(missing perf utilities, no Agent Bridge) stops the loop honestly instead of silently passing; " +
       "an eye ESCALATE (a frame class the machine cannot judge, e.g. high-coverage passthrough) exits " +
       "built-needs-look once everything measurable passes — escalation is a look obligation, never a " +
-      "defect to repair. " +
-      "PERF LOOP LANE: a perf criterion turns the loop into measure→fix→re-measure — every iteration's " +
+      "defect to repair. An absent or unknown eye score uses the same terminal status but is labeled " +
+      "unscored, never misreported as an escalation. " +
+      "PERF LOOP LANE: a perf criterion measures with pico-cli and carries its diagnosis into the " +
+      "failure detail. It re-measures only when another applicable retained lesson actually mutates " +
+      "the AppSpec; a generic low-FPS result has no safe automatic quality tradeoff and exits for " +
+      "manual repair. Every measured iteration's " +
       "pico-cli appFps numbers are ledgered and returned as perfTrend (before→after, structural " +
       "evidence), and a perf failure carries pico-cli's own diagnosis engine verdict, never a guess. " +
       "Every iteration writes a structural trust-ledger entry. Budget uses meta.budget semantics " +
@@ -562,7 +754,7 @@ export function registerDoorTools(server: McpServer) {
       draftSpec: z.any().optional().describe("An authored AppSpec to iterate from (recommended — the planner never guesses intent as well as you author it). Omitted: the loop starts from the planner's archetype scaffold and says so."),
       acceptance: z
         .array(z.object({
-          kind: z.enum(["structural", "visual", "logcat", "perf"]).describe("structural = Agent Bridge scene asserts; visual = the calibrated eye's PASS on the canonical capture (auto_judged; an eye ESCALATE becomes the built-needs-look exit, not a failure); logcat = assert_logcat pattern; perf = pico-cli appFps p5 floor."),
+          kind: z.enum(["structural", "visual", "logcat", "perf"]).describe("structural = Agent Bridge scene asserts; visual = the calibrated eye's PASS on the canonical capture (auto_judged; ESCALATE becomes built-needs-look, while a missing/unknown result is explicitly unscored); logcat = assert_logcat pattern; perf = pico-cli appFps p5 floor."),
           entitiesPresent: z.array(z.string()).optional().describe("structural: entity names that must exist."),
           minEntities: z.number().int().optional().describe("structural: minimum entity count."),
           componentsPresent: z.array(z.string()).optional().describe("structural: component class names that must exist."),
@@ -654,18 +846,16 @@ export function registerDoorTools(server: McpServer) {
         if (!r.built || !r.installed) {
           outcomes.push({ kind: "build", status: "fail", detail: (r.notes ?? []).join("\n") || "build/install failed with no notes" });
         } else {
-          for (const c of acceptance) {
+          // assert_scene clears logcat for its isolated dump, so launch-log evidence must be
+          // consumed before any structural criterion regardless of the caller's array order.
+          for (const c of loopCriteriaInEvidenceSafeOrder(acceptance)) {
             if (c.kind === "visual") {
               // Three-way, matching the eye's own vocabulary: PASS = auto_judged; FAIL = the eye
               // AFFIRMATIVELY judged the content wrong (repairable); anything else (ESCALATE /
               // unknown / unscored) = the machine cannot judge this frame class — needs-look,
               // never a repairable failure (replanning a possibly-correct app is worse than
               // stopping and asking for the look).
-              outcomes.push(r.verdict === "PASS"
-                ? { kind: "visual", status: "pass", detail: `eye verdict PASS (auto_judged); capture ${r.artifact ?? "n/a"}` }
-                : r.verdict === "FAIL"
-                  ? { kind: "visual", status: "fail", detail: `eye verdict FAIL; notes: ${(r.notes ?? []).slice(-3).join(" | ") || "none"}` }
-                  : { kind: "visual", status: "needs-look", detail: `eye verdict ${r.verdict ?? "unscored"} — the machine cannot judge this frame class; capture ${r.artifact ?? "n/a"}` });
+              outcomes.push(loopVisualOutcome(r.verdict, r.artifact, r.notes ?? [], r.visualChecks ?? [], r.visualJudgeNote, r.visualLedger));
             } else if (c.kind === "structural") {
               // assert_scene, not the "verify" orchestrator: verify's TEXT content is prose for a
               // reading agent (its JSON lives in structuredContent, which innerCall's text-parse
@@ -735,26 +925,29 @@ export function registerDoorTools(server: McpServer) {
         const needsLook = outcomes.filter((o) => o.status === "needs-look");
         const failing = outcomes.filter((o) => o.status === "fail" || o.status === "unmeasurable");
         if (!failing.length && !needsLook.length) {
+          const acceptedEvidence = loopAcceptanceEvidence(outcomes, r.verdict, r.visualLedger);
           return exit("accepted", i, {
-            ceiling: "auto_judged",
+            ceiling: acceptedEvidence.ceiling,
+            acceptanceScope: "the caller's requested criteria in this iteration",
+            fleetVisualVerdict: typeof r.verdict === "string" ? r.verdict : "unscored",
             remainingLookObligation: [
               { artifact: r.artifact ?? null, whatToConfirm: `the running app actually shows the goal: ${goal}` },
               ...(r.panelArtifact ? [{ artifact: r.panelArtifact, whatToConfirm: "panel content renders as intended (panel captures are returned unjudged)" }] : []),
             ],
-            honesty: "auto_judged is this loop's ceiling BY DESIGN — every acceptance criterion was machine-checked, none human-seen. LOOK at each remainingLookObligation artifact (or have a vision-capable agent do it), then record what you saw with pico_record {evidenceType:'vision_verified'}.",
+            honesty: acceptedEvidence.honesty,
           });
         }
         if (!failing.length) {
-          // Everything measurable passed; what remains is the eye's ESCALATE. That is the loop's
-          // honest terminal state for this frame class — machine acceptance is impossible, and
-          // repair would mutate an app nothing has judged wrong.
+          // Everything measurable passed; what remains is either an explicit eye ESCALATE or an
+          // absent/unknown score. Both require a look, but only the former may claim escalation.
+          // Repair would mutate an app nothing has judged wrong.
           return exit("built-needs-look", i, {
             needsLook,
             remainingLookObligation: [
               { artifact: r.artifact ?? null, whatToConfirm: `the running app actually shows the goal: ${goal}` },
               ...(r.panelArtifact ? [{ artifact: r.panelArtifact, whatToConfirm: "panel content renders as intended (panel captures are returned unjudged)" }] : []),
             ],
-            honesty: "The calibrated eye ESCALATEd — this frame class cannot be machine-judged (measured: high-coverage passthrough frames give count/color checks zero confidence). Everything measurable passed. LOOK at the capture (or have a vision-capable agent do it), then record what you actually saw with pico_record {evidenceType:'vision_verified'} — that look, not this loop, decides success.",
+            honesty: loopNeedsLookHonesty(needsLook),
           });
         }
         if (failing.some((o) => o.status === "unmeasurable"))
@@ -769,16 +962,23 @@ export function registerDoorTools(server: McpServer) {
           return exit("failed", i, { failing, fix: "onFail:'stop' — read failing[].detail; pico_fix maps the error text to a known fix, then re-call." });
         if (i === maxIterations) break;
 
-        // Repair: map each failure to a diagnose-vocabulary symptom, patch via retained lessons, re-lint.
-        const failures = failing.map((o) => ({ symptom: picoFixDecision(o.detail ?? o.kind).symptom ?? (o.kind === "visual" ? "not_rendering" : "build_failed") }));
-        const rp = await call("replan_spec", { spec, failures });
+        // Repair only failures for which replan_spec owns a concrete AppSpec mutation. Arbitrary
+        // structural/logcat/perf failures are measurements, not generic build failures; pretending
+        // otherwise immediately selected a symptom replan_spec cannot handle.
+        const repairSelection = loopRepairSelection(failing);
+        if (!repairSelection.failures.length)
+          return exit("manual-repair-required", i, {
+            failing,
+            fix: "No failing criterion maps to a retained lesson with a safe AppSpec mutation. Read failing[].detail and use pico_fix/the named profiler or assertion output to repair it manually, then re-call; the loop will not invent a build_failed mutation.",
+          });
+        const beforeReplan = spec;
+        const rp = await call("replan_spec", { spec, failures: repairSelection.failures });
         if (rp?.status === "invalid" || !rp?.spec)
           return exit("no-progress", i, { failing, detail: rp, fix: "replan_spec could not patch the spec (see detail) — repair by hand (pico_fix names the next action), then re-call." });
-        // replan_spec always reports status "patched" (it appends a manual-triage note to
-        // `changes` when nothing matched), so an empty recompileSubtree is the real "no lesson
-        // applied" signal — rebuilding an unmutated spec would burn a full build on the same wall.
-        if (!(rp.recompileSubtree ?? []).length)
-          return exit("no-progress", i, { failing, detail: { replanChanges: rp.changes ?? [] }, fix: "replan_spec found no applicable retained lesson for these symptoms (nothing was mutated — see detail.replanChanges). The loop cannot move on its own: read failing[].detail, repair the spec by hand, then re-call." });
+        // A camera-pose repair changes verification metadata without recompiling generated code, so
+        // recompileSubtree may correctly be empty. Only a full-spec equality check proves no change.
+        if (!loopSpecMutated(beforeReplan, rp.spec))
+          return exit("manual-repair-required", i, { failing, detail: { replanChanges: rp.changes ?? [], unsupported: repairSelection.unsupported }, fix: "replan_spec found no applicable retained lesson that changed the AppSpec (see detail.replanChanges). The loop cannot move on its own: read failing[].detail, repair the spec by hand, then re-call." });
         const replanned = await call("plan_app_spec", { brief: goal, draftSpec: rp.spec });
         // Mirror the entry gate: needs_fix carries a spec BUT with blocking lint errors —
         // building it anyway ships a broken app, so it is a plan failure here too.

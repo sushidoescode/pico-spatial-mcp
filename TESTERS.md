@@ -69,8 +69,9 @@ Ask your agent to run **`pico_doctor`** (or **`preflight_env`** on the full surf
 read-only, mutates nothing, and reports what your machine is missing with an exact fix for every
 non-passing check. That is the intended first call.
 
-Expect the 18-tool doors surface by default; expect 249 tools on macOS and 246 on other hosts on
-the full surface.
+Expect the 18-tool doors surface by default. The full surface has 249 tools on macOS and 246 on
+Linux (runtime-measured); on Windows, the published 246-tool count is source-derived because no
+native Windows `tools/list` measurement has run.
 
 ## Choosing a surface
 
@@ -80,15 +81,17 @@ Set `PICO_MCP_SURFACE` in the `env` block of the config above:
 "env": { "PICO_MCP_SURFACE": "doors" }
 ```
 
-- `full` — **249 tools on macOS; 246 on other hosts.** Everything.
+- `full` — **249 tools on macOS and 246 on Linux are runtime-measured; Windows 246 is
+  source-derived because no native Windows `tools/list` measurement has run.** Everything.
 - unset / `doors` (the default since v36.3) — **18 tools**: `validate_toolchain` `ensure_pico_cli` `pico_build_app`
   `pico_scan_world` `pico_place` `pico_look` `pico_verify_app` `pico_measure` `pico_perf`
   `pico_sdk` `pico_doctor` `pico_ship` `pico_capabilities` `pico_fix` `pico_record`
   `pico_emulator` `pico_next` `pico_loop`.
 
 Start with `doors` — it's the curated path through the same engine, and set
-`PICO_MCP_SURFACE=full` when you want the whole surface (249 tools on macOS, 246 on other
-hosts). Before v36.3 an unset variable served `full`, so keep the explicit `doors` value in
+`PICO_MCP_SURFACE=full` when you want the whole surface (249 tools on macOS and 246 on Linux are
+runtime-measured; on Windows, the published 246-tool count is source-derived because no native
+Windows `tools/list` measurement has run). Before v36.3 an unset variable served `full`, so keep the explicit `doors` value in
 configs that may run older checkouts.
 
 One sharp edge worth knowing up front: **`pico_measure` needs a one-time camera calibration.**

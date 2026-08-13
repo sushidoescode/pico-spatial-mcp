@@ -87,7 +87,7 @@ export const BUILTIN_RULES: LintRule[] = [
     // registered and working perfectly. Scale compounds it: at the asset's own 0.0045 the entire
     // collider measured ~1.6 x 3.6 x 1.6 MILLIMETRES, which any metre-scale grid scan sweeps
     // straight past. A negative from a single ray, or from a coarse grid, is not evidence of absence.
-    id: "mesh-collider-not-queryable",
+    id: "mesh-collider-alignment",
     severity: "warn",
     kinds: ["kotlin"],
     type: "present",

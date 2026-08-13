@@ -266,7 +266,9 @@ try {
 
   // [M7] The CODED default (v36.3): env unset must serve the doors surface from the installed
   //      artifact. Docs always said doors; until v36.3 the code said full, so one missed env var
-  //      exposed the ~88.5k-token surface. Delete both vars so an inherited value cannot mask it.
+  //      exposed the full schema payload (86,927 o200k_base tokens over JSON.stringify(result.tools)
+  //      returned by tools/list,
+  //      measured 2026-08-12). Delete both vars so an inherited value cannot mask it.
   const defaultEnv = { ...process.env };
   delete defaultEnv.PICO_MCP_SURFACE;
   delete defaultEnv.PICO_MCP_OUTER_SURFACE;

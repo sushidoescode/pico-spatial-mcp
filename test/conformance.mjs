@@ -506,7 +506,7 @@ console.log("\n§3.3 the v9.3 'own WindowContainer never opens' note is narrowed
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 console.log("\n§1.1 the mesh-collider rule states alignment, not un-queryability");
 {
-  const rule = (await import("../dist/lint.js")).BUILTIN_RULES.find((r) => r.id === "mesh-collider-not-queryable");
+  const rule = (await import("../dist/lint.js")).BUILTIN_RULES.find((r) => r.id === "mesh-collider-alignment");
   assert(rule, "the mesh-collider rule still exists (retargeted, not deleted)");
   assert(rule.severity === "warn", `it is a warning, not an error (measured queryable in BOTH provenances) — got ${rule?.severity}`);
   assert(/QUERYABLE/.test(rule.message), "the message leads with the measured result: mesh colliders ARE queryable");

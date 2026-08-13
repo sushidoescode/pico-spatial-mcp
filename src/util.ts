@@ -70,13 +70,29 @@ export function runBinary(
       stdio: ["ignore", "pipe", "pipe"],
     });
     const chunks: Buffer[] = [];
+    let outputBytes = 0;
+    let outputExceeded = false;
     let stderr = "";
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
     }, opts.timeoutMs ?? 60_000);
-    child.stdout.on("data", (d: Buffer) => chunks.push(d));
+    child.stdout.on("data", (d: Buffer) => {
+      const limit = opts.maxOutputBytes;
+      if (limit == null) {
+        chunks.push(d);
+        return;
+      }
+      const remaining = Math.max(0, limit - outputBytes);
+      if (remaining > 0) chunks.push(d.subarray(0, remaining));
+      outputBytes += d.length;
+      if (outputBytes > limit && !outputExceeded) {
+        outputExceeded = true;
+        stderr += `${stderr ? "\n" : ""}output exceeded maxOutputBytes (${limit}); process killed`;
+        child.kill("SIGKILL");
+      }
+    });
     child.stderr.on("data", (d) => (stderr += d.toString()));
     child.on("error", () => {
       clearTimeout(timer);

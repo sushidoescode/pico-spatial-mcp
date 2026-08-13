@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { discoverBatteryCommands, runBattery } from "../scripts/run-battery.mjs";
+import * as batteryRunner from "../scripts/run-battery.mjs";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 test("discoverBatteryCommands returns smoke plus every test script", () => {
   assert.deepEqual(
@@ -52,10 +57,11 @@ test("runBattery continues after failures, retains every section, and summarizes
 
 test("null status, spawn error, and signal count as one failure without aborting", () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "battery-test-"));
+  const logPath = path.join(scratch, "battery.log");
   const calls = [];
   const result = runBattery({
     worktree: scratch,
-    logPath: path.join(scratch, "battery.log"),
+    logPath,
     commands: ["smoke", "test:after"],
     runCommand: (name) => {
       calls.push(name);
@@ -71,6 +77,52 @@ test("null status, spawn error, and signal count as one failure without aborting
   assert.equal(result.failed[0].exitCode, 1);
   assert.equal(result.failed[0].signal, "SIGTERM");
   assert.match(result.failed[0].cause, /spawn failed/);
+  assert.match(fs.readFileSync(logPath, "utf8"), /spawn failed/, "spawn diagnostics must survive in the full log");
+  fs.rmSync(scratch, { recursive: true, force: true });
+});
+
+test("battery npm launch is argv-safe and portable across POSIX and Windows", () => {
+  assert.equal(typeof batteryRunner.batteryNpmLaunch, "function", "runner must expose its platform launch boundary");
+  assert.deepEqual(batteryRunner.batteryNpmLaunch("test:ledger", "linux", {}), {
+    command: "npm",
+    args: ["run", "test:ledger"],
+  });
+  assert.deepEqual(batteryRunner.batteryNpmLaunch("test:ledger", "win32", { ComSpec: "C:\\Windows\\System32\\cmd.exe" }), {
+    command: "C:\\Windows\\System32\\cmd.exe",
+    args: ["/d", "/s", "/c", "npm.cmd run test:ledger"],
+  });
+});
+
+test("default battery log path is rooted in the host temp directory", () => {
+  assert.equal(typeof batteryRunner.defaultBatteryLogPath, "function", "runner must expose its default log boundary");
+  const worktree = path.join(os.tmpdir(), "some checkout");
+  assert.equal(
+    batteryRunner.defaultBatteryLogPath(worktree, path.join(os.tmpdir(), "explicit-host-temp")),
+    path.join(os.tmpdir(), "explicit-host-temp", "pico-battery-some checkout.log"),
+  );
+});
+
+test("battery CLI runs every discovered command and writes the requested aggregate log", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "battery-cli-test-"));
+  const logPath = path.join(scratch, "aggregate.log");
+  fs.writeFileSync(path.join(scratch, "pass.mjs"), "process.stdout.write(`fixture pass\\n`);\n");
+  fs.writeFileSync(path.join(scratch, "package.json"), JSON.stringify({
+    scripts: {
+      smoke: "node pass.mjs",
+      "test:one": "node pass.mjs",
+    },
+  }));
+  const result = spawnSync(process.execPath, [path.join(repoRoot, "scripts", "run-battery.mjs"), scratch, logPath], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    env: process.env,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /BATTERY PASS 2\/2 \(0 failed\)/);
+  const log = fs.readFileSync(logPath, "utf8");
+  assert.match(log, /1\/2 npm run smoke/);
+  assert.match(log, /2\/2 npm run test:one/);
+  assert.match(log, /BATTERY PASS 2\/2 \(0 failed\)/);
   fs.rmSync(scratch, { recursive: true, force: true });
 });
 

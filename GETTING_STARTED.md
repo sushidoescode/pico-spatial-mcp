@@ -30,7 +30,7 @@ on its own; it has no UI.
 
 | What | Why | Check |
 |---|---|---|
-| **macOS** | The emulator and the native capture path are macOS-only | — |
+| **macOS** | Required for this repository's measured emulator and native host-GUI capture path | — |
 | **Node ≥ 20** | Runs the server | `node --version` |
 | **PICO build SDK** | Compilers and app dependencies | PICO Spatial Plugin in Android Studio |
 | **PICO emulator bundle** | Emulator runtime | Spatial Editor/plugin flow, or `pico-cli emulator install --source auto --yes` |
@@ -94,7 +94,9 @@ Any MCP client works — it's JSON-RPC over stdio. Restart your client so it pic
 
 You should now see the **18-tool doors surface** — the default since v36.3 when the `env` block
 sets no surface. Step 5 explains the two surfaces; set `"PICO_MCP_SURFACE": "full"` in that `env`
-block for the full surface (249 tools on macOS or 246 on other hosts).
+block for the full surface (249 tools on macOS and 246 on Linux are runtime-measured; on Windows,
+the published 246-tool count is source-derived because no native Windows `tools/list`
+measurement has run).
 
 ### Optional: lazy pico-cli provisioning
 
@@ -216,7 +218,9 @@ back to you as `projectDir`.
 ## Choosing a surface
 
 Since v36.3 the curated **18-tool** doors surface is the default. The full surface—249 tools on
-macOS and 246 on other hosts—is the power opt-in for direct access to every lane. Switch in the
+macOS and 246 on Linux are runtime-measured; on Windows, the published 246-tool count is
+source-derived because no native Windows `tools/list` measurement has run—is the power
+opt-in for direct access to every lane. Switch in the
 `env` block from step 2:
 
 ```json

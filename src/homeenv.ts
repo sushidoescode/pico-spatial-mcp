@@ -13,10 +13,11 @@ import { okJson } from "./util.js";
  * bedroom is ~4.9 x 2.9 m.
  * Kept only as a fallback for app shapes that genuinely cannot enter Full Space.
  *
- * generate_home_env_proxy — a FAKED hit-test against the PICO default home environment (the system
- * bedroom). Native scene-understanding (sense/plane) returns 0 planes on the emulator (C1), so real
- * arbitrary-surface hit-test is headset-only. BUT the home env is a KNOWN, FIXED virtual room, so we
- * place an INVISIBLE collider proxy at its surface coords (floor y=0 + bed box + walls) and
+ * generate_home_env_proxy — a legacy FAKED hit-test against the PICO default home environment (the
+ * system bedroom). Native scene understanding is now preferred: an open Stage receives roughly 43
+ * simulated semantic planes and 42–44 mesh anchors on the emulator. This proxy remains only for app
+ * shapes that cannot hold an open Stage or for explicit fixed-room calibration experiments. It
+ * places an INVISIBLE collider proxy at estimated surface coords (floor y=0 + bed box + walls), so
  * Scene.rayCast lands pins ON those surfaces — pins visually stick to the real home-env floor/bed/wall.
  *
  * Returns the calibrated `room` + `shapes` to feed generate_collider_kotlin (the proven invisible
@@ -31,7 +32,7 @@ export function registerHomeEnvProxyTools(server: McpServer) {
     "generate_home_env_proxy",
     {
       description:
-        "Faked hit-test against the PICO DEFAULT HOME ENVIRONMENT (the system bedroom): returns a calibrated invisible collider proxy (floor y=0 [vision-verified] + a bed box + the room walls) to feed generate_collider_kotlin, so Scene.rayCast lands pins ON the home-env floor/bed/walls — pins visually stick to the surfaces you see. Real arbitrary-surface scene-understanding stays headset-only (C1); this works because the home env is a KNOWN fixed room. Refine the bed/wall boxes by capture→LOOK→adjust.",
+        "LEGACY fixed-room proxy for an app that cannot use an open Stage: returns estimated invisible floor/bed/wall box colliders for the PICO default bedroom. Prefer generate_scene_understanding_kotlin whenever possible; emulator runtime probes measured roughly 43 simulated semantic planes and 42–44 mesh anchors. This proxy is not native scene understanding and must be calibrated by capture→LOOK→adjust.",
       inputSchema: {
         includeBed: z.boolean().optional().describe("Include the bed-surface box (default true)."),
         includeRoom: z.boolean().optional().describe("Include the 6-wall room (floor/ceiling/walls) AABB (default true)."),
@@ -74,15 +75,16 @@ export function registerHomeEnvProxyTools(server: McpServer) {
           stability: "The home env is a fixed environment, so calibrate once; the same proxy works on a headset showing the home env (no passthrough).",
         },
         honest:
-          "This is NOT native scene-understanding (C1 headset-only). It's a pre-modeled proxy of the KNOWN home env — it ONLY matches the default home bedroom, not an arbitrary real room. On Swan with passthrough you'd use sense/plane (generate_scene_understanding_kotlin) instead.",
+          "This is NOT native scene understanding. It is an estimated proxy of one fixed emulator bedroom and does not generalize to an arbitrary room. Prefer sense/plane on an open emulator Stage for simulated surfaces; Swan is still required to prove behavior against a user's physical room.",
       });
     },
   );
 
   // ── calibrate_home_env ─────────────────────────────────────────────────────
-  // The HONEST version of the "measure the room" idea. The home bedroom is rendered by a Unity app
-  // (com.pxr.scenarioprovider) whose geometry is a black box — it CANNOT be measured statically. So
-  // walls/ceiling can only be VISION-calibrated: place a marker at a proxy face → capture_frame → LOOK →
+  // The fallback version of the "measure the room" idea. The scene-provider source asset is not
+  // available to this repo, but the runtime now exposes simulated plane/mesh geometry on an open
+  // Stage. Use this visual proxy calibration only when that native lane cannot be used: place a
+  // marker at a proxy face → capture_frame → LOOK →
   // does it sit ON the visible surface? → feed back a per-face delta → this tool returns the adjusted
   // generate_home_env_proxy room box + a per-face confidence map (vision-verified vs first-pass).
   const FACE = z.enum(["floor", "ceiling", "wallFront", "wallBack", "wallLeft", "wallRight"]);
@@ -90,7 +92,7 @@ export function registerHomeEnvProxyTools(server: McpServer) {
     "calibrate_home_env",
     {
       description:
-        "Vision-calibrate the home-env proxy walls/ceiling (the honest 'measure the room' tool). The home bedroom is a Unity black box (NOT statically measurable — floor y=0 is the only vision-verified anchor), so this runs the calibration LOOP: it returns the 6 proxy faces with a probe-pin world position for each (place a marker there → capture_frame + emulator_look → LOOK: is the marker ON the visible surface?), a per-face confidence map (vision-verified vs first-pass), and — given your observed per-face deltas — the ADJUSTED room box to pass to generate_home_env_proxy/generate_collider_kotlin. Documents that exact measured numbers are impossible.",
+        "Vision-calibrate the LEGACY fixed-room proxy when an app cannot use native scene understanding. An open emulator Stage now exposes simulated plane/mesh geometry and is the preferred measured lane. This fallback returns six proxy faces with probe positions, a per-face looked/not-looked confidence map, and an adjusted box from caller-supplied visual deltas; it does not claim those estimates are runtime scene measurements.",
       inputSchema: {
         room: z.object({
           halfW: z.number(), height: z.number(), halfD: z.number(), centerZ: z.number(), thickness: z.number().optional(),
@@ -176,7 +178,7 @@ export function registerHomeEnvProxyTools(server: McpServer) {
           "5. Repeat until every face is vision-verified. The home env is fixed, so calibrate once.",
         ],
         honest:
-          "EXACT measured numbers are IMPOSSIBLE: the home bedroom is rendered by com.pxr.scenarioprovider, a Unity app whose geometry is a black box (no extractable USD/GLB) — proven by the spatial-editor deep-dive. Floor y=0 is the ONLY vision-verified anchor. Walls/ceiling are VISION-CALIBRATED estimates (place→LOOK→adjust), never measured. This proxy matches the DEFAULT home bedroom only; on Swan with passthrough use real scene-understanding (sense/plane) instead.",
+          "These returned wall/ceiling values are VISION-CALIBRATED proxy estimates, not native scene measurements. The original scene-provider asset is not retained here, but an open emulator Stage now supplies simulated plane/mesh geometry; use generate_scene_understanding_kotlin for that measured runtime lane. This proxy matches only the default bedroom. Swan remains necessary to verify a user's physical room.",
       });
     },
   );

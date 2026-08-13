@@ -21,7 +21,7 @@ jobs:
       - run: npm ci
       - name: Build (Windows pico-cli shim lane)
         run: npm run build
-      - name: Lazy pico-cli provisioning (.cmd execution + bounded tree kill)
+      - name: pico-cli + battery CLI + smoke wrapper selection (no native build_and_run execution)
         run: npm run test:picocli-win
 
   gates:
@@ -41,8 +41,9 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
       - name: Build (tsc)
         run: npm run build
-      # The deterministic headless tiers — exactly what runs before every commit locally.
-      # (Emulator/vision tiers can't run in CI; the regression_gate golden covers plan+compile.)
+      # The Linux-assigned deterministic/headless tiers. The complete 45-invocation battery also
+      # includes one Windows-assigned and two macOS-assigned native contracts; emulator/LOOK work
+      # cannot run in this CI job.
       - name: Smoke (every tool registers + responds)
         run: npm run smoke
         env:

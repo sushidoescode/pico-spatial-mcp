@@ -1,8 +1,8 @@
 # PICO's official Spatial SDK samples — the 0.13.3 reference rig
 
-All eight of PICO's official samples build and run on the PICO OS 6 emulator at **SDK 0.13.3**, with
-no patching. Verified 2026-08-06 on `emulator-5554`: 8/8 launched, every one looked at
-(trust ledger `pico-official-samples-0.13.3#0`, `vision_verified`).
+The eight PICO official **0.13.3** source archives are an idiom reference for this repository.
+This repository does not retain a tracked per-sample build, launch, and looked-at-capture record
+that supports an 8/8 runtime claim.
 
 They are the best available reference for "what does PICO's own idiom look like" — and the only
 reference that matches what we target.
@@ -73,7 +73,8 @@ adb -s emulator-5554 shell monkey -p com.pico.spatial.sample.physics -c android.
 - `am start` is refused while another app holds Full Space (`current full space don't allow start
   fullscreen`). Force-stop spatial incumbents **and** press HOME first, or use `monkey`.
 - **SpatialML does not build as shipped** — in *either* distribution. Its wrapper is
-  `gradle-8.10.2` while its AGP 8.9.1 requires `>= 8.11.1`. Fix:
+  `gradle-8.10.2` while its AGP 8.9.1 requires `>= 8.11.1`. The following is a local workaround,
+  not “no patching” evidence:
   `sed -i '' 's|gradle-8.10.2-|gradle-8.11.1-|' gradle/wrapper/gradle-wrapper.properties`.
   Reported upstream; a one-line fix on PICO's side.
 
@@ -101,9 +102,10 @@ They are an **idiom** source, not an existence source. A symbol exists for us on
 `vault_api` and `preflight_lint`'s vault stage check exactly that. Read the samples to learn *how*
 PICO compose an API; confirm *that* it exists against the jar.
 
-Our own conformance diff against these samples is
-`.dev/findings/SAMPLES_CONFORMANCE_2026-08-05.md`, and what it changed in our codegen is in
-`.dev/handoffs/HANDOFF_2026-08-06_SAMPLE_CONFORMANCE.md`.
+No tracked per-sample conformance record is published with this repository. Treat a sample as
+run or vision-verified only after its build output and looked-at capture are retained in the local
+ledger-owned content-addressed store and the generated claims snapshot is refreshed. The static
+snapshot records hashes and status; it neither contains the image bytes nor monitors later changes.
 
 ---
 

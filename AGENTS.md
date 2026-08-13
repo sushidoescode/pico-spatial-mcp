@@ -34,7 +34,8 @@ capture path, and escalate the look to a human or a vision-capable agent.
 2. **Prefer the doors surface for your first sessions** (`PICO_MCP_SURFACE=doors`, and the
    default when the variable is unset since v36.3): 18
    intent-level tools instead of the full surface (`PICO_MCP_SURFACE=full` —
-   249 tools on macOS; 246 on other hosts).
+   249 tools on macOS and 246 on Linux are runtime-measured; on Windows, the published 246-tool
+   count is source-derived because no native Windows `tools/list` measurement has run).
    `pico_build_app` is a TWO-STEP protocol by design —
    a brief-only call returns a scaffold AppSpec for YOU to author; re-call with
    `{brief, draftSpec}` to build.
@@ -49,7 +50,9 @@ capture path, and escalate the look to a human or a vision-capable agent.
    `scripts/restart-emulator.sh`). `pico_doctor` tells you if it isn't.
 6. **Record what you proved**: `record_verification` with the evidence class you actually
    earned (`structural` < `auto_judged` < `vision_verified` < `device_verified`). The full
-   ranking and vocabulary: [README.md](README.md#vocabulary-primer).
+   ranking and vocabulary: [README.md](README.md#vocabulary-primer). `device_verified` is not a
+   label you can assert from strings: supply the attached serial and the server live-probes its
+   identity plus a same-serial screencap, whose bytes must equal the frame you already LOOKED at.
 
 ## What to read next
 

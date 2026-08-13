@@ -16,18 +16,13 @@ ideas are listed too — knowing what we won't do is part of the honesty contrac
   material asset). The focus gate is measured and documented: an unfocused panel's activity is
   paused; broadcast commands queue at the Java receiver and drain on focus. Ledger
   `com.picoagent.hellounity` seq 0–1. See [docs/UNITY_OPENXR.md](docs/UNITY_OPENXR.md).
-- **v30.1 RETRACTION — immersive Unity VR DOES render on the emulator; the boundary was our
-  capture path.** The user challenged the "immersive OpenXR doesn't composite" claim, and they
-  were right. Both Unity routes — the PICO Integration SDK (`PXR_Loader`) and the OpenXR SDK,
-  via the *unchanged sha-pinned July-22 APK* — fill the emulator view with their intended
-  immersive scenes when captured through the emulator window (`gui_capture`); ledgers
-  `com.picoagent.pxrvr` seq 0 and `com.picospatial.helloopenxr` seq 3, both `vision_verified`.
-  Root cause of the July-22 "uniformly black" result: `adb screencap` captures the SHELL
-  composite and is structurally blind to XR-runtime output — Unity said so in the July-22 log
-  itself (`Skip Present To Main Screen: Yes`) and we misread it. The capture-path rule is now
-  enforced in the tool descriptions. NOT over-corrected: the 2026-07-02 native-NDK/WebXR probes
-  observed a different symptom and were never re-tested through `gui_capture` — their status is
-  OPEN, not negative (see Partner-gated below).
+- **v30.1 correction, narrowed again by later evidence.** Historical host-window captures showed
+  intended immersive Unity content where same-run adb frames had been black, so the older
+  “doesn't composite” conclusion was unsupported. A later same-moment OpenXR run produced a
+  non-black adb frame, so the inverse universal rule—“adb is blind to XR runtime”—is unsupported
+  too. Black adb output is inconclusive: take an alternate capture and LOOK. The historical
+  looked-at pixels remain dated evidence, and current publication depends on retained bytes
+  surviving ledger revalidation. The 2026-07-02 native-NDK/WebXR probes remain OPEN.
 - **`generate_surface_placement_kotlin`** (v30.2): seat a baked model on a DETECTED real-world
   surface (semantic FLOOR/TABLE/WALL/CEILING/BED/CABINET targeting), with every silent trap from
   the hand-built MR-tabletop session generated-correct by construction and gated in

@@ -12,7 +12,7 @@
     {
       "name": "pico-spatial-mcp",
       "source": "./",
-      "description": "MCP server: brief-to-verified-APK compilation for PICO OS 6 (native + WebSpatial), vision-verified honesty, splat world models with semantic labeling, agent-vault SDK validation, emulator automation, and pico-cli perf diagnosis. 249 tools on macOS / 246 on other hosts. Installs with the curated 18-tool doors surface by default; set PICO_MCP_SURFACE=full for every tool.",
+      "description": "MCP server: brief-to-verified-APK compilation for PICO OS 6 (native + WebSpatial), vision-verified honesty, splat world models with semantic labeling, agent-vault SDK validation, emulator automation, and pico-cli perf diagnosis. 249 tools on macOS / 246 on Linux are runtime-measured; Windows 246 is source-derived because no native Windows tools/list measurement has run. Installs with the curated 18-tool doors surface by default; set PICO_MCP_SURFACE=full for every tool.",
       "version": "36.6.0",
       "category": "developer-tools",
       "tags": [
