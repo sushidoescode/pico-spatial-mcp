@@ -89,6 +89,82 @@ function extractHeadingSection(markdown, headingText) {
   return markdown.slice(start, next ? start + next.index : markdown.length);
 }
 
+const supportedManagedPolicyTokens = new Set([
+  "managed-latest", "managed-cached", "external", "disabled",
+  "PICO_MCP_CLI_POLICY", "PICO_MCP_CLI_PATH",
+  "PICO_MCP_AUTOINSTALL_CLI", "PICO_MCP_AUTOUPDATE_CLI",
+]);
+
+const requiredManagedPolicyClauses = [
+  "managed-latest is the default.",
+  "resolution is lazy on the first real cli-backed operation.",
+  "each exact version is published as an immutable mcp-owned cache entry.",
+  "the ambient global cli and path remain untouched.",
+  "a successful registry lookup reports registry-latest as of checkedat.",
+  "if that lookup fails, a validated cached fallback is labeled unknown; if a known-newer install fails, it is labeled outdated.",
+  "neither fallback is ever called latest.",
+  "managed-latest — lazily resolve and, on first cli use, provision the exact registry version.",
+  "managed-cached — use only a validated cached version, without registry or install work.",
+  "external — run only the absolute pico_mcp_cli_path; it is never updated by the mcp.",
+  "disabled — turn off cli-backed operations.",
+  "through 37.x, the deprecated aliases pico_mcp_autoinstall_cli=1 and pico_mcp_autoupdate_cli=1 map to managed-latest; they never install globally and conflict with another explicit policy.",
+  "ensure_pico_cli is the force-refresh health path.",
+  "its deprecated update input is inert and accepted only for compatibility.",
+  "any setup is a manual, user-run setup command using the absolute path returned by the mcp; the mcp never runs it.",
+  "the mcp also never runs update --check, because that command writes a local update cache;",
+  "0.4.2 was registry latest on 2026-08-14, an observed value rather than a timeless pin.",
+  "a v1.0 date supplied by the user/pico team is planning input, not repository-verified release evidence.",
+  "the compatibility sweep is version-agnostic and covers the complete reachable advertised help-only tree except the prohibited top-level setup subtree.",
+  "it does not establish semantic compatibility, hidden-alias longevity, perf provisioning, emulator/device/windows behavior, or visual evidence.",
+];
+
+const forbiddenManagedPolicyInversions = [
+  "managed-latest is not the default",
+  "resolution is not lazy",
+  "global cli and path are not untouched",
+  "fallback may be called latest",
+  "setup is performed automatically by the mcp",
+  "the mcp runs setup",
+  "the mcp runs update --check",
+  "update --check does not write",
+  "not an observed value",
+  "planning input that is not unverified",
+  "does not lack semantic or runtime proof",
+];
+
+function normalizeManagedPolicyText(section) {
+  return section.normalize("NFKC").replace(/[`*]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function assertManagedCliPolicySection(section, file) {
+  const tokens = new Set(section.match(/\b(?:managed-latest|managed-cached|external|disabled|PICO_MCP_CLI_[A-Z_]+|PICO_MCP_AUTO[A-Z_]*CLI)\b/g) ?? []);
+  assert.deepEqual([...tokens].sort(), [...supportedManagedPolicyTokens].sort(), `${file}: policy token table`);
+  const normalized = normalizeManagedPolicyText(section);
+  for (const clause of requiredManagedPolicyClauses) {
+    assert.equal(normalized.includes(clause), true, `${file}: missing required policy clause: ${clause}`);
+  }
+  for (const inverse of forbiddenManagedPolicyInversions) {
+    assert.equal(normalized.includes(inverse), false, `${file}: forbidden inverse policy clause: ${inverse}`);
+  }
+  assert.equal(normalized.includes("npm install -g"), false, `${file}: no global install instruction`);
+  assert.equal(normalized.includes("npm install --global"), false, `${file}: no global install instruction`);
+}
+
+function canonicalManagedCliPath(managedRoot, version) {
+  return path.join(
+    managedRoot,
+    "versions",
+    version,
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? "pico-cli.cmd" : "pico-cli",
+  );
+}
+
+function assertCanonicalManagedCliPath(actual, managedRoot, version) {
+  assert.equal(actual, canonicalManagedCliPath(managedRoot, version));
+}
+
 function validateTrackedMarkdownCitation({ link, sourceFile, root, tracked }) {
   const fragmentAt = link.indexOf("#");
   const target = fragmentAt === -1 ? link : link.slice(0, fragmentAt);
@@ -284,6 +360,8 @@ test("installed tarball keeps default startup, tools/list, and pico_doctor read-
   const env = { ...harness.env };
   delete env.PICO_MCP_SURFACE;
   delete env.PICO_MCP_OUTER_SURFACE;
+  delete env.PICO_MCP_CLI_POLICY;
+  assert.equal(Object.hasOwn(env, "PICO_MCP_CLI_POLICY"), false, "default-policy child must leave PICO_MCP_CLI_POLICY unset");
   const beforeHome = fs.readdirSync(harness.home);
   const transport = new StdioClientTransport({
     command: process.execPath,
@@ -328,23 +406,27 @@ test("installed tarball wrapper lazily uses exact managed latest without touchin
     writeExecutable(ambientCli, `#!/bin/sh\nprintf invoked > ${shellQuote(ambientMarker)}\nexit 88\n`);
   }
   const ambientBefore = fs.readFileSync(ambientCli);
-  const pathBefore = harness.env[pathKey];
+  const childEnv = { ...harness.env };
+  delete childEnv.PICO_MCP_CLI_POLICY;
+  const pathBefore = childEnv[pathKey];
+  assert.equal(Object.hasOwn(childEnv, "PICO_MCP_CLI_POLICY"), false, "wrapper child must resolve the unset default policy");
   const knowledgeUrl = pathToFileURL(path.join(artifact.installed, "dist", "knowledge.js")).href;
   const script = `
 const { KnowledgeBridge } = await import(${JSON.stringify(knowledgeUrl)});
 const pathKey = ${JSON.stringify(pathKey)};
 const pathBefore = process.env[pathKey];
+const policyWasSet = Object.hasOwn(process.env, "PICO_MCP_CLI_POLICY");
 const bridge = new KnowledgeBridge({ startupTimeoutMs: 3000, callTimeoutMs: 2000, retirementTimeoutMs: 2000 });
 const result = await bridge.call("graph_stats", {});
 const pathAfter = process.env[pathKey];
 await bridge.close();
-process.stdout.write(JSON.stringify({ result, pathBefore, pathAfter }));
+process.stdout.write(JSON.stringify({ result, pathBefore, pathAfter, policyWasSet }));
 `;
 
   try {
     const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
       cwd: artifact.installRoot,
-      env: harness.env,
+      env: childEnv,
       encoding: "utf8",
       timeout: 20_000,
     });
@@ -358,7 +440,12 @@ process.stdout.write(JSON.stringify({ result, pathBefore, pathAfter }));
     assert.equal(out.result.picoCli.freshness, "latest");
     assert.match(out.result.picoCli.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
     assert.equal(path.isAbsolute(out.result.picoCli.path), true);
-    assert.equal(out.result.picoCli.path.startsWith(path.join(harness.managedRoot, "versions", "0.4.2")), true);
+    assert.equal(out.policyWasSet, false);
+    assertCanonicalManagedCliPath(out.result.picoCli.path, harness.managedRoot, "0.4.2");
+    assert.throws(
+      () => assertCanonicalManagedCliPath(`${canonicalManagedCliPath(harness.managedRoot, "0.4.2")}-evil`, harness.managedRoot, "0.4.2"),
+      /Expected values to be strictly equal/,
+    );
     assert.equal(out.pathBefore, pathBefore);
     assert.equal(out.pathAfter, pathBefore);
     assert.deepEqual(fs.readFileSync(ambientCli), ambientBefore);
@@ -1275,11 +1362,6 @@ test("public adoption docs keep bundle installation, AVD creation, and build too
 });
 
 test("managed CLI policy sections use one supported vocabulary and honest operational boundaries", () => {
-  const supported = new Set([
-    "managed-latest", "managed-cached", "external", "disabled",
-    "PICO_MCP_CLI_POLICY", "PICO_MCP_CLI_PATH",
-    "PICO_MCP_AUTOINSTALL_CLI", "PICO_MCP_AUTOUPDATE_CLI",
-  ]);
   const policyDocs = [
     "README.md",
     "GETTING_STARTED.md",
@@ -1294,23 +1376,30 @@ test("managed CLI policy sections use one supported vocabulary and honest operat
       fs.readFileSync(path.join(repoRoot, file), "utf8"),
       "Managed pico-cli policy",
     );
-    const tokens = new Set(section.match(/\b(?:managed-latest|managed-cached|external|disabled|PICO_MCP_CLI_[A-Z_]+|PICO_MCP_AUTO[A-Z_]*CLI)\b/g) ?? []);
-    assert.deepEqual([...tokens].sort(), [...supported].sort(), `${file}: policy token table`);
-    assert.match(section, /managed-latest[\s\S]{0,180}\bdefault\b|\bdefault\b[\s\S]{0,180}managed-latest/i, `${file}: default policy`);
-    assert.match(section, /lazy[\s\S]{0,100}first[\s\S]{0,100}CLI/i, `${file}: lazy activation`);
-    assert.match(section, /immutable[\s\S]{0,100}MCP-owned|MCP-owned[\s\S]{0,100}immutable/i, `${file}: immutable ownership`);
-    assert.match(section, /global CLI[\s\S]{0,120}PATH[\s\S]{0,80}(?:untouched|unchanged)|PATH[\s\S]{0,120}global CLI[\s\S]{0,80}(?:untouched|unchanged)/i, `${file}: ambient isolation`);
-    assert.match(section, /unknown[\s\S]{0,140}outdated[\s\S]{0,180}(?:never|neither[\s\S]{0,60}ever)[\s\S]{0,80}latest/i, `${file}: fallback freshness`);
-    assert.match(section, /external[\s\S]{0,180}absolute[\s\S]{0,100}PICO_MCP_CLI_PATH/i, `${file}: external path`);
-    assert.match(section, /37\.x[\s\S]{0,180}(?:alias|deprecated)/i, `${file}: alias window`);
-    assert.match(section, /force-refresh[\s\S]{0,180}(?:update[\s\S]{0,100}(?:inert|ignored)|(?:inert|ignored)[\s\S]{0,100}update)/i, `${file}: health refresh semantics`);
-    assert.match(section, /(?:user-run|user runs|run[s]? manually)[\s\S]{0,100}setup/i, `${file}: setup is manual`);
-    assert.match(section, /update --check[\s\S]{0,180}(?:write|cache)/i, `${file}: update-check exclusion reason`);
-    assert.match(section, /0\.4\.2[\s\S]{0,180}(?:2026-08-14)[\s\S]{0,180}(?:observed|observation)/i, `${file}: dated registry observation`);
-    assert.match(section, /v1\.0[\s\S]{0,180}planning input[\s\S]{0,180}(?:not|unverified)/i, `${file}: release planning boundary`);
-    assert.match(section, /(?:help-only[\s\S]{0,180}(?:version-agnostic|reachable)|(?:version-agnostic|reachable)[\s\S]{0,180}help-only)[\s\S]{0,240}(?:does not|not establish|unverified)/i, `${file}: sweep boundary`);
-    assert.doesNotMatch(section, /npm\s+install\s+(?:-g|--global)/i, `${file}: no global install instruction`);
-    assert.doesNotMatch(section, /(?:MCP|server)\s+(?:automatically\s+)?(?:runs|invokes|executes)\s+(?:the\s+)?(?:pico-cli\s+)?setup/i, `${file}: no affirmative MCP setup claim`);
+    assertManagedCliPolicySection(section, file);
+  }
+});
+
+test("managed CLI policy validation rejects a semantically inverted section", () => {
+  const inverted = `
+managed-latest is not the default. Resolution is not lazy before the first CLI use.
+Immutable MCP-owned versions are forbidden. The global CLI and PATH are not untouched.
+An unknown fallback and an outdated fallback are neither rejected nor ever prevented from being latest.
+PICO_MCP_CLI_POLICY accepts managed-cached and disabled. The external policy need not use an absolute
+PICO_MCP_CLI_PATH. Through 37.x the aliases PICO_MCP_AUTOINSTALL_CLI and
+PICO_MCP_AUTOUPDATE_CLI are not deprecated. The force-refresh update input is not inert.
+User-run setup is not manual; setup is performed automatically by the MCP.
+update --check does not write a cache. 0.4.2 on 2026-08-14 is not an observed value.
+v1.0 is planning input that is not unverified. The version-agnostic help-only sweep does not lack
+semantic or runtime proof.
+`;
+  assert.throws(() => assertManagedCliPolicySection(inverted, "inverted fixture"));
+  const valid = extractHeadingSection(fs.readFileSync(path.join(repoRoot, "README.md"), "utf8"), "Managed pico-cli policy");
+  for (const inverse of forbiddenManagedPolicyInversions) {
+    assert.throws(
+      () => assertManagedCliPolicySection(`${valid}\n${inverse}.`, `inverse fixture: ${inverse}`),
+      /forbidden inverse policy clause/,
+    );
   }
 });
 

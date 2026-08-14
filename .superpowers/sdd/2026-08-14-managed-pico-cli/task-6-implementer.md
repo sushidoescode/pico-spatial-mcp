@@ -139,3 +139,50 @@ No real managed-root write occurred, so no cleanup or quarantine was required.
 - No real registry request, real npm install, global CLI, setup, update-check, emulator/device,
   Swan, native Windows, or rendered-frame LOOK was performed in Task 6.
 - The user/PICO-team v1.0 date is retained only as unverified planning input.
+
+## Review fix round
+
+The reviewer identified three important weaknesses in the Task 6 test gate. This round changes
+only `test/distribution-adoption.mjs` and this report; production code and public prose remain
+unchanged.
+
+The original report's statement that the installed children had no CLI policy override was not
+yet proven: the shared Task 4 harness seeds `PICO_MCP_CLI_POLICY=managed-latest`. A focused RED run
+after adding the missing assertions failed 3/4 cases: both installed children reported the policy
+as explicitly set, and a deliberately inverted policy section passed the old permissive regex
+gate. The valid current policy section passed. Both fresh child-specific environment copies now
+delete `PICO_MCP_CLI_POLICY` before launch and assert that it is absent; the wrapper child also
+reports `policyWasSet: false` from inside the process while its returned provenance independently
+reports the default `managed-latest` policy. The shared Task 4 helper was not changed.
+
+The heading-scoped documentation validator now normalizes markdown and whitespace, then requires
+independent literal normative clauses for the default, lazy activation, immutable ownership,
+ambient CLI/PATH isolation, fallback truthfulness, all policy definitions, aliases, manual setup,
+the update-check exclusion, and help-sweep limits. It also rejects known inverse clauses. An
+adversarial fully inverted section must fail, and appending each forbidden inverse to the valid
+README section must fail independently. During GREEN, the normalizer initially removed underscores
+from environment variable names and caused 2/4 focused failures; retaining underscores corrected
+the test helper without changing documentation.
+
+Managed CLI provenance now must equal the canonical platform path
+`<managedRoot>/versions/0.4.2/node_modules/.bin/pico-cli` (or `pico-cli.cmd` on Windows), rather than
+merely sharing a version-directory prefix. A mutation assertion proves that the same path with an
+`-evil` suffix is rejected. The guarded focused GREEN run passed 4/4, and the real
+`/Users/sushantsrikrish/.pico-mcp/cli` sentinel was absent before and after both RED and GREEN.
+
+The installed/tarball exercises continued to use only isolated temporary homes and fake npm/CLI
+adapters. No network, real registry, npm install, global CLI, setup, update-check, emulator/device,
+Swan, Windows, visual, remote, permission, or visibility operation was performed. Full gate results
+for this fix round:
+
+- `npm run build` — PASS (`tsc`, exit 0).
+- `npm run test:distribution-adoption` — PASS: 37/37, 0 failed.
+- `npm run test:docsmeta` — PASS: 0 failures and all 85 relative links resolve; it retained the
+  linked-worktree `.git/config` warning, so no homepage/origin equality claim is made.
+- `npm run test:lint` — PASS: 36 lint rules plus integration fixture and 7/7 battery-runner tests.
+- `git diff --check` — PASS, no output.
+
+The first exact-file staging command updated both tracked files but returned nonzero after warning
+that the report's parent scratch directory is ignored. The commit therefore did not run. Status and
+the staged-name list confirmed that no extra path was staged; the report was then restaged with the
+explicit force required by that known ignore rule before the staged scope audit and commit.
