@@ -17,6 +17,12 @@ Date: 2026-08-14
   metadata GET under a temporary home. That network request is not implementation evidence; it had
   no pico-cli or managed-store impact. No package update or global install claim is made from it.
 
+Evidence-review follow-up: the final dated finding now mirrors that GET disclosure and qualifies
+cwd isolation against the retained phase ledgers. Registry and sweep used scratch cwd; several
+focused/live audit phases used the approved worktree; packaging and battery used copied or linked
+source roots and contained consumer cwd. This is documentation remediation only: no measured value,
+generated JSON, or non-green `45/46` battery result changed.
+
 ## RED evidence and root causes
 
 The two behavior gaps were reproduced before their implementations changed:

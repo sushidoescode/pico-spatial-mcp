@@ -50,10 +50,14 @@ were copied into the new retained proof root. Their SHA-256 values were
 - The user explicitly authorized the bounded live public-registry observations and non-global
   scratch installs recorded here.
 
-Each phase started with `env -i`, a fresh `HOME`/`USERPROFILE`, scratch user identity and cwd, a
+Each phase started with `env -i`, a fresh `HOME`/`USERPROFILE`, scratch user identity, a
 credential-free user npmrc containing only the fixed public registry and update-notifier/fund/audit
 settings, an empty global npmrc, scratch npm cache/prefix/TMP/XDG/COREPACK locations, and a
-dedicated `PICO_HOME` where applicable. The public registry was fixed to
+dedicated `PICO_HOME` where applicable. Process cwd was phase-specific rather than universally
+scratch: registry and sweep used scratch cwd; online, fallback, focused, focused-final,
+evidence-final, commit-final, and native-final ledgers record the approved worktree; package,
+corrective-focused, and battery calls used retained copied/linked source roots or contained consumer
+cwd. The public registry was fixed to
 `https://registry.npmjs.org/`; update notifier, fund, and audit were disabled in scratch config.
 No ambient npm config, auth/token, or proxy variable was inherited. The restricted path was
 `$PROOF/bin:/usr/bin:/bin:/usr/sbin:/sbin`: it exposed scratch node/npm wrappers and no
@@ -348,6 +352,9 @@ old evidence, and incident artifacts remain reviewable.
   `/tmp/pico-task4-real-home-quarantine.W5mCuK`. It remained quarantined and the real root absent.
 - Task 5 recorded an early missing-npm fixture case that may have made ambient registry/cache
   contact. Therefore the broader programme/session is not described as contamination-free.
+- During independent review of `012470d`, one bounded npm self-update metadata GET occurred under a
+  temporary home. It is not implementation evidence and had no pico-cli or managed-store impact;
+  no package update or global install occurred.
 - A later consumer-review scratch probe imported `KnowledgeBridge` before installing its managed
   runtime harness and wrote a fake publication into the real root. The tree was moved intact to
   `/tmp/pico-integrity-real-home-quarantine.YSiMBi/cli`; it involved no real npm/CLI/setup/device
