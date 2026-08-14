@@ -178,3 +178,43 @@ Review-round TDD and verification evidence:
 This fix round used the existing fake-only PATH, isolated owned cwd/home/npm-cache session, and temp
 install prefixes. It made no real npm/registry, global CLI, setup, update-check, emulator/device,
 Swan, visual, native Windows, remote, permission, or visibility operation.
+
+## Review fix round 2 — repair the indented-boundary regression fixture
+
+Review at `386b8f475e8ab3d5a669b0d276a7504ebe00b33c` found that the indented `Options:`
+fixture assigned `rootHelp` with a terminating semicolon before the continuation line. JavaScript
+therefore evaluated the next unary-plus string expression and discarded it. The wrapped description,
+indented `Options:` heading, and option row never reached the production parser, so the earlier GREEN
+did not prove the boundary behavior.
+
+The test now builds the help text with an explicit string-array `.join("\n")`. It advertises both
+`safe` and the valid colon command `plugin:doctor`, contains a deeper wrapped description with
+alias-like prose, then a peer-indented `Options:` heading and deeper `optionrow`. The report must count
+only root plus the two valid commands. Invocation-log assertions require both valid `--help` paths and
+forbid any argv containing `Options:` or `optionrow`.
+
+Mutation evidence was obtained without altering production or using external dependencies:
+
+- A detached temporary worktree was created at the old parser commit
+  `a3294e608f1b901b7670572af19d57286f00fc35` under `/tmp`.
+- Only the repaired end-to-end test was applied to that temporary worktree.
+- RED: `node --test --test-name-pattern='indented Options' test/picocli-sweep.mjs` exited 1 because
+  the old parser reported `commandCount:4` instead of literal expected `3`, proving it traversed
+  `Options:`. The temporary worktree was then removed.
+- GREEN on current production with the identical command: `1/1` pass, exit 0.
+
+Final Fix Round 2 verification:
+
+- Focused parser command (`unsupported grammar|indented Options`) — `5/5` pass, exit 0.
+- `node --test test/picocli-sweep.mjs` — `25/25` pass, exit 0.
+- `npm run build` — PASS (`tsc`, exit 0).
+- Persistent-PTY `npm run test:picocli` — PASS: legacy lane `Failures: 0`; combined managed+sweep
+  runner `81/81` pass, `0` fail, exit 0.
+- Both new `.mjs` syntax checks and `git diff --check` — PASS.
+- The real managed root remained absent after all Fix Round 2 gates
+  (`REAL_ROOT_ABSENT_AFTER_FIX2_GATES`).
+
+This round changes only the sweep test and this report; production, workflow, package integration,
+and the Task 4 helper remain unchanged. All behavior runs used the fake-only PATH and owned temporary
+session. No real npm/network, global CLI, setup/update-check, emulator/device, Swan, visual, native
+Windows, remote, permission, or visibility operation occurred.

@@ -281,19 +281,32 @@ test("fails closed when a minimum-indent advertised command row uses unsupported
 });
 
 test("an indented Options heading terminates the Commands section without becoming a command", () => {
-  const rootHelp = "Usage: pico-cli\nCommands:\n  safe  Description may mention foo|f and foo.bar\n";
-    + "        wrapped description may also mention bad|b\n  Options:\n    --verbose  Verbose output\n";
-  const tree = { "pico-cli": { stdout: rootHelp }, safe: { stdout: "safe leaf\n" } };
+  const rootHelp = [
+    "Usage: pico-cli",
+    "Commands:",
+    "  safe  Description may mention foo|f and foo.bar",
+    "        wrapped description may also mention bad|b",
+    "  plugin:doctor  Colon command remains valid",
+    "  Options:",
+    "    optionrow  Must remain outside Commands",
+    "",
+  ].join("\n");
+  const tree = {
+    "pico-cli": { stdout: rootHelp },
+    safe: { stdout: "safe leaf\n" },
+    "plugin:doctor": { stdout: "colon leaf\n" },
+  };
   const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
   const result = runSweep(fix);
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(fs.readFileSync(result.output, "utf8"));
-  assert.deepEqual(report.from, { requested: "1.0.0", version: "1.0.0", commandCount: 2 });
-  assert.deepEqual(report.to, { requested: "2.0.0", version: "2.0.0", commandCount: 2 });
+  assert.deepEqual(report.from, { requested: "1.0.0", version: "1.0.0", commandCount: 3 });
+  assert.deepEqual(report.to, { requested: "2.0.0", version: "2.0.0", commandCount: 3 });
   const cliArgv = result.calls.filter((call) => call.role === "cli").map((call) => call.args.join(" "));
   assert.equal(cliArgv.includes("safe --help"), true);
-  assert.equal(cliArgv.some((argv) => argv.startsWith("Options ")), false);
-  assert.equal(cliArgv.some((argv) => argv.includes("--verbose")), false);
+  assert.equal(cliArgv.includes("plugin:doctor --help"), true);
+  assert.equal(cliArgv.some((argv) => argv.startsWith("Options:")), false);
+  assert.equal(cliArgv.some((argv) => argv.includes("optionrow")), false);
 });
 
 test("timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous", async (t) => {
