@@ -98,28 +98,42 @@ block for the full surface (249 tools on macOS and 246 on Linux are runtime-meas
 the published 246-tool count is source-derived because no native Windows `tools/list`
 measurement has run).
 
-### Optional: lazy pico-cli provisioning
+### Managed pico-cli policy
 
-The optional CLI-backed tools still degrade to `status: "unavailable"` with the manual
-`npm install -g @picoxr/pico-cli` remedy when pico-cli is missing. Provisioning is **off by default**
-and never runs when the MCP starts.
+`managed-latest` is the default. Resolution is lazy on the first real CLI-backed operation.
+Server startup, tool registration and `tools/list`, `preflight_env`, and the default
+`pico_doctor {}` inspect only an existing cache: they make no npm request, provision nothing, and
+write nothing to the managed store. The explicit `pico_doctor {calibrate:true}` exception is
+mutating because it runs the separately documented calibration workflow.
 
-To provision it explicitly, ask your agent to run `ensure_pico_cli`. If pico-cli is already present,
-the call is a fast no-op. If it is missing, that call is consent to run a bounded, 120-second
-`npm install -g @picoxr/pico-cli`, report a specific failure class rather than hang, and re-probe with
-`pico-cli -v` so the same MCP process can use it immediately. Availability checks never call
-`pico-cli doctor` or `pico-cli plugin doctor`; both commands can hang in pico-cli 0.3.0.
+Each exact version is published as an immutable MCP-owned cache entry. The ambient global CLI and
+`PATH` remain untouched. A successful registry lookup reports registry-latest as of `checkedAt`.
+If that lookup fails, a validated cached fallback is labeled `unknown`; if a known-newer install
+fails, it is labeled `outdated`. Neither fallback is ever called latest.
 
-For missing-only provisioning when a CLI-backed tool is actually invoked, opt in through the config:
+Set `PICO_MCP_CLI_POLICY` only when the default is not appropriate:
 
-```json
-"env": { "PICO_MCP_AUTOINSTALL_CLI": "1" }
-```
+- `managed-latest` — lazily resolve and, on first CLI use, provision the exact registry version.
+- `managed-cached` — use only a validated cached version, without registry or install work.
+- `external` — run only the absolute `PICO_MCP_CLI_PATH`; it is never updated by the MCP.
+- `disabled` — turn off CLI-backed operations.
 
-That flag does not update an existing CLI. Updates (including repair of an executable whose `-v`
-probe fails) require separate consent: set `PICO_MCP_AUTOUPDATE_CLI=1`, or call `ensure_pico_cli`
-with `{update: true}` for a one-call update check. The update flag alone does not consent to a first
-install. Leave both flags unset to keep the original manual-install behavior.
+Through 37.x, the deprecated aliases `PICO_MCP_AUTOINSTALL_CLI=1` and
+`PICO_MCP_AUTOUPDATE_CLI=1` map to `managed-latest`; they never install globally and conflict with
+another explicit policy. `ensure_pico_cli` is the force-refresh health path. Its deprecated
+`update` input is inert and accepted only for compatibility.
+
+Package activation and utility setup are separate. Any setup is a manual, user-run setup command
+using the absolute path returned by the MCP; the MCP never runs it. The MCP also never runs
+`update --check`, because that command writes a local update cache; freshness comes from the
+registry lookup instead.
+
+`0.4.2` was registry latest on 2026-08-14, an observed value rather than a timeless pin. A v1.0
+date supplied by the user/PICO team is planning input, not repository-verified release evidence.
+The compatibility sweep is version-agnostic and covers the complete reachable advertised
+help-only tree except the prohibited top-level setup subtree. It does not establish semantic
+compatibility, hidden-alias longevity, perf provisioning, emulator/device/Windows behavior, or
+visual evidence.
 
 ---
 
@@ -129,9 +143,10 @@ Ask your agent:
 
 > Run `pico_doctor`.
 
-(That's the doors-surface health check; on the full surface the same checks live in
-`preflight_env`.) This is the intended first call. It's strictly read-only — it changes nothing on
-your machine — and it runs fourteen checks: Node, adb, the PICO SDK payload, the JDK, ImageMagick, the packaged app
+(That's the default doors-surface health check; on the full surface the same checks live in
+`preflight_env`.) This is the intended first call. With `{}` it is strictly read-only — it changes
+nothing on your machine. The explicit `pico_doctor {calibrate:true}` route is the mutating
+calibration exception. The default call runs fourteen checks: Node, adb, the PICO SDK payload, the JDK, ImageMagick, the packaged app
 skeleton, whether an emulator is actually running, the emulator's gRPC port, macOS Accessibility,
 camera calibration, disk space, the Unity lane, pico-cli, and pico-cli's emulator status.
 

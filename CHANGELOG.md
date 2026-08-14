@@ -2,6 +2,30 @@
 
 Versions here key the plugin manifests (`/plugin update` uses them as its cache key).
 
+## 37.0.0 — 2026-08-14
+
+- **Managed registry-latest pico-cli is now the default.** The first real CLI-backed operation
+  resolves the registry version and installs that exact package into an immutable MCP-owned cache;
+  it does not replace or invoke an ambient global CLI and does not change `PATH`. The result exposes
+  its absolute path, selected/latest versions, `checkedAt`, policy, action, and freshness.
+- **Read-only boundaries remain explicit.** Startup, tool registration and `tools/list`,
+  `preflight_env`, and default `pico_doctor {}` do not contact npm, provision a package, or write
+  the managed store. `pico_doctor {calibrate:true}` remains the separately documented mutating
+  exception. Setup remains a manual user-run command; the MCP never runs setup or `update --check`.
+- **Honest fallback and migration.** Registry failure may reuse a validated cache only as
+  `freshness:"unknown"`; failure to install a known-newer version reports
+  `freshness:"outdated"`. `managed-cached`, absolute-path `external`, and `disabled` are explicit
+  escape hatches. The deprecated `PICO_MCP_AUTOINSTALL_CLI=1` and
+  `PICO_MCP_AUTOUPDATE_CLI=1` aliases map to `managed-latest` through 37.x and never install
+  globally; the deprecated `ensure_pico_cli {update:...}` input is inert while the health tool
+  force-refreshes.
+- **Compatibility observation, not a release guarantee.** 0.4.2 was registry latest when checked
+  on 2026-08-14. The version-agnostic compatibility sweep traverses the complete reachable
+  advertised help-only tree except the prohibited top-level setup subtree. It does not establish
+  semantic compatibility, hidden aliases, perf behavior behind setup, emulator/device behavior,
+  native Windows behavior, or visual evidence. A user/PICO-team v1.0 date remains unverified
+  planning input rather than repository-verified release evidence.
+
 ## Audit corrections — 2026-08-12
 - **Trust-ledger provenance correction.** New image-grounded entries copy their validated bytes
   into a ledger-owned content-addressed store; every reader re-hashes those stored bytes and
@@ -163,10 +187,11 @@ Versions here key the plugin manifests (`/plugin update` uses them as its cache 
   the agent's job. Smoke asserts the contract on all five and round-trips three live.
 - **pico-cli 0.4.2 re-verification** (measured 2026-08-12, sandboxed npm install; see
   ANSWERED_BY_MEASUREMENT Q37): 0.4.x gates the perf family behind one-time
-  `pico-cli setup` — new `not-provisioned` failure class carries that exact remedy;
+  `pico-cli setup` — the current `setup-required` failure class carries that exact remedy;
   `app watch-crash` still has no duration flag (kill-bound stays required);
   `capture record` flags byte-identical; `mcp spatial-knowledge` renamed
-  `dev-knowledge` (old name still works as a hidden alias); 0.4.2 `doctor` returned JSON in
+  `dev-knowledge` (the old name worked as a hidden alias in that measurement; production now
+  invokes the advertised name); 0.4.2 `doctor` returned JSON in
   2.956–9.7s on this machine. The earlier ≥90s 0.3.0 observation was not repeated, so this does
   not establish an upstream fix; the sub-second `-v` probe stays.
 

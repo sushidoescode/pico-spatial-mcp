@@ -43,9 +43,10 @@ const PICO_CLI_KILL_GRACE_MS = 1_000;
  * HARD RULE (measured 2026-08-01 on pico-cli 0.3.0): NEVER probe with `pico-cli doctor` or
  * `pico-cli plugin doctor` — both hang (>=90s zero output / 45s timeout). `-v` and
  * `emulator status` return in well under a second; `-v` is the probe here.
- * Re-measured 2026-08-12 on 0.4.2 (sandbox install): `doctor --format json` returns a structured
- * JSON envelope in ~10s, exit 0 — the hang is fixed upstream. The `-v` probe stays: 0.3.0 remains
- * the common installed version, and a sub-second probe beats a 10s one for a per-call gate.
+ * Re-measured 2026-08-12 on one macOS arm64 machine with a sandboxed 0.4.2 install:
+ * `doctor --format json` returned a structured JSON envelope in ~10s, exit 0. That does not
+ * establish behavior on other machines or releases. The bounded `-v` probe remains the correct
+ * version check because it is sub-second on both measured versions and avoids running doctor.
  */
 
 function envValue(env: NodeJS.ProcessEnv, name: string, platform = process.platform): string | undefined {

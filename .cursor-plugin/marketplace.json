@@ -11,7 +11,7 @@
       "name": "pico-spatial-mcp",
       "source": ".",
       "description": "Build, inspect, validate, and vision-verify PICO OS 6 Spatial SDK applications through a host-neutral MCP server.",
-      "version": "36.6.0"
+      "version": "37.0.0"
     }
   ]
 }

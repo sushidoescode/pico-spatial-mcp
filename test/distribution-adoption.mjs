@@ -46,6 +46,49 @@ function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(repoRoot, relativePath), "utf8"));
 }
 
+function installPackedArtifactWithoutNetwork() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico packed adoption "));
+  const packRoot = path.join(root, "packed");
+  const installRoot = path.join(root, "installed");
+  const modulesRoot = path.join(installRoot, "node_modules");
+  const installed = path.join(modulesRoot, "pico-spatial-mcp");
+  fs.mkdirSync(packRoot, { recursive: true });
+  fs.mkdirSync(installed, { recursive: true });
+
+  const pack = spawnSync("npm", ["pack", "--ignore-scripts", "--pack-destination", packRoot], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  assert.equal(pack.status, 0, pack.stderr || pack.stdout);
+  const tarballs = fs.readdirSync(packRoot).filter((file) => file.endsWith(".tgz"));
+  assert.equal(tarballs.length, 1, JSON.stringify(tarballs));
+  const extract = spawnSync("tar", [
+    "-xzf", path.join(packRoot, tarballs[0]), "--strip-components=1", "-C", installed,
+  ], { encoding: "utf8", timeout: 120_000 });
+  assert.equal(extract.status, 0, extract.stderr || extract.stdout);
+
+  // The artifact is installed without `npm install` or network access. Link only the already
+  // installed runtime dependencies; the package bytes themselves all come from the tarball.
+  for (const dependency of Object.keys(readJson("package.json").dependencies)) {
+    const source = path.join(repoRoot, "node_modules", ...dependency.split("/"));
+    const target = path.join(modulesRoot, ...dependency.split("/"));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.symlinkSync(source, target, process.platform === "win32" ? "junction" : "dir");
+  }
+
+  return { root, installRoot, installed, entry: path.join(installed, "dist", "index.js") };
+}
+
+function extractHeadingSection(markdown, headingText) {
+  const heading = new RegExp(`^(#{2,4}) ${headingText.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\s*$`, "m").exec(markdown);
+  assert.ok(heading, `missing heading: ${headingText}`);
+  const start = heading.index + heading[0].length;
+  const level = heading[1].length;
+  const next = new RegExp(`^#{1,${level}}\\s+`, "m").exec(markdown.slice(start));
+  return markdown.slice(start, next ? start + next.index : markdown.length);
+}
+
 function validateTrackedMarkdownCitation({ link, sourceFile, root, tracked }) {
   const fragmentAt = link.indexOf("#");
   const target = fragmentAt === -1 ? link : link.slice(0, fragmentAt);
@@ -230,6 +273,115 @@ test("all host marketplaces use their exact source descriptor and synchronized m
     assert.equal(plugin.name, pkg.name, expected.file);
     assert.equal(plugin.version, pkg.version, expected.file);
     assert.deepEqual(plugin.source, expected.source, expected.file);
+  }
+});
+
+test("installed tarball keeps default startup, tools/list, and pico_doctor read-only", async () => {
+  const artifact = installPackedArtifactWithoutNetwork();
+  const harness = createManagedRuntimeHarness();
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+  const env = { ...harness.env };
+  delete env.PICO_MCP_SURFACE;
+  delete env.PICO_MCP_OUTER_SURFACE;
+  const beforeHome = fs.readdirSync(harness.home);
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [artifact.entry],
+    cwd: artifact.installRoot,
+    env,
+  });
+  const client = new Client({ name: "packed-managed-policy", version: "0.0.0" });
+
+  try {
+    await client.connect(transport);
+    const listed = await client.listTools();
+    assert.equal(listed.tools.length, 18);
+    assert.equal(harness.calls().some((call) => call.role === "npm"), false, JSON.stringify(harness.calls()));
+    assert.equal(fs.existsSync(harness.managedRoot), false, "tools/list must not create the managed store");
+
+    const doctor = await client.callTool({ name: "pico_doctor", arguments: {} });
+    const payload = JSON.parse(mcpText(doctor));
+    assert.ok(Array.isArray(payload.preflight?.checks) && payload.preflight.checks.length > 0, JSON.stringify(payload));
+    assert.equal(harness.calls().some((call) => call.role === "npm"), false, JSON.stringify(harness.calls()));
+    assert.equal(harness.calls().some((call) => call.role === "managed-cli"), false, JSON.stringify(harness.calls()));
+    assert.equal(fs.existsSync(harness.managedRoot), false, "default pico_doctor must not create the managed store");
+    assert.deepEqual(fs.readdirSync(harness.home), beforeHome, "default pico_doctor must not write the isolated home");
+  } finally {
+    await client.close().catch(() => {});
+    fs.rmSync(harness.root, { recursive: true, force: true });
+    fs.rmSync(artifact.root, { recursive: true, force: true });
+  }
+});
+
+test("installed tarball wrapper lazily uses exact managed latest without touching ambient CLI or PATH", () => {
+  const artifact = installPackedArtifactWithoutNetwork();
+  const harness = createManagedRuntimeHarness({ latestVersion: "0.4.2" });
+  const pathKey = process.platform === "win32"
+    ? (Object.keys(harness.env).find((key) => key.toUpperCase() === "PATH") ?? "Path")
+    : "PATH";
+  const ambientMarker = path.join(harness.root, "ambient-invoked");
+  const ambientCli = path.join(harness.binDir, process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
+  if (process.platform === "win32") {
+    fs.writeFileSync(ambientCli, `@echo off\r\n>"${ambientMarker}" echo invoked\r\nexit /b 88\r\n`);
+  } else {
+    writeExecutable(ambientCli, `#!/bin/sh\nprintf invoked > ${shellQuote(ambientMarker)}\nexit 88\n`);
+  }
+  const ambientBefore = fs.readFileSync(ambientCli);
+  const pathBefore = harness.env[pathKey];
+  const knowledgeUrl = pathToFileURL(path.join(artifact.installed, "dist", "knowledge.js")).href;
+  const script = `
+const { KnowledgeBridge } = await import(${JSON.stringify(knowledgeUrl)});
+const pathKey = ${JSON.stringify(pathKey)};
+const pathBefore = process.env[pathKey];
+const bridge = new KnowledgeBridge({ startupTimeoutMs: 3000, callTimeoutMs: 2000, retirementTimeoutMs: 2000 });
+const result = await bridge.call("graph_stats", {});
+const pathAfter = process.env[pathKey];
+await bridge.close();
+process.stdout.write(JSON.stringify({ result, pathBefore, pathAfter }));
+`;
+
+  try {
+    const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+      cwd: artifact.installRoot,
+      env: harness.env,
+      encoding: "utf8",
+      timeout: 20_000,
+    });
+    assert.equal(child.status, 0, child.stderr || child.stdout);
+    const out = JSON.parse(child.stdout);
+    assert.equal(out.result.status, "ok", JSON.stringify(out.result));
+    assert.equal(out.result.picoCli.source, "managed");
+    assert.equal(out.result.picoCli.policy, "managed-latest");
+    assert.equal(out.result.picoCli.version, "0.4.2");
+    assert.equal(out.result.picoCli.latestVersion, "0.4.2");
+    assert.equal(out.result.picoCli.freshness, "latest");
+    assert.match(out.result.picoCli.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(path.isAbsolute(out.result.picoCli.path), true);
+    assert.equal(out.result.picoCli.path.startsWith(path.join(harness.managedRoot, "versions", "0.4.2")), true);
+    assert.equal(out.pathBefore, pathBefore);
+    assert.equal(out.pathAfter, pathBefore);
+    assert.deepEqual(fs.readFileSync(ambientCli), ambientBefore);
+    assert.equal(fs.existsSync(ambientMarker), false, "ambient pico-cli on PATH must not run");
+
+    const calls = harness.calls();
+    const npmCalls = calls.filter((call) => call.role === "npm");
+    assert.deepEqual(npmCalls[0].args, [
+      "view", "@picoxr/pico-cli@latest", "version", "dist.integrity", "--json",
+    ]);
+    assert.equal(npmCalls.length, 2, JSON.stringify(npmCalls));
+    assert.equal(npmCalls[1].args[0], "install");
+    assert.ok(npmCalls[1].args.includes("--prefix"), JSON.stringify(npmCalls[1]));
+    assert.equal(npmCalls[1].args.at(-1), "@picoxr/pico-cli@0.4.2");
+    const argvLedger = calls.map((call) => call.args.join(" ")).join("\n");
+    assert.doesNotMatch(argvLedger, /(?:^|\s)(?:-g|--global)(?:\s|$)/);
+    assert.doesNotMatch(argvLedger, /(?:^|\s)setup(?:\s|$)/);
+    assert.doesNotMatch(argvLedger, /update\s+--check/);
+    assert.equal(calls.some((call) => call.role === "managed-cli" && call.args.slice(1).join(" ") === "mcp dev-knowledge"), true);
+    assert.equal(fs.existsSync(path.join(harness.managedRoot, "versions", "0.4.2", "install.json")), true);
+  } finally {
+    fs.rmSync(harness.root, { recursive: true, force: true });
+    fs.rmSync(artifact.root, { recursive: true, force: true });
   }
 });
 
@@ -1119,6 +1271,46 @@ test("public adoption docs keep bundle installation, AVD creation, and build too
     assert.match(normalized, /pico-cli emulator install --source auto --yes/, file);
     assert.match(normalized, /does not\s+create (?:an|the) AVD/i, file);
     assert.match(normalized, /does not\s+install[\s\S]{0,120}JDK[\s\S]{0,120}Android SDK[\s\S]{0,120}Gradle[\s\S]{0,120}PICO build SDK/i, file);
+  }
+});
+
+test("managed CLI policy sections use one supported vocabulary and honest operational boundaries", () => {
+  const supported = new Set([
+    "managed-latest", "managed-cached", "external", "disabled",
+    "PICO_MCP_CLI_POLICY", "PICO_MCP_CLI_PATH",
+    "PICO_MCP_AUTOINSTALL_CLI", "PICO_MCP_AUTOUPDATE_CLI",
+  ]);
+  const policyDocs = [
+    "README.md",
+    "GETTING_STARTED.md",
+    "SKILLS.md",
+    "AGENTS.md",
+    "TESTERS.md",
+    "docs/HOSTS.md",
+  ];
+
+  for (const file of policyDocs) {
+    const section = extractHeadingSection(
+      fs.readFileSync(path.join(repoRoot, file), "utf8"),
+      "Managed pico-cli policy",
+    );
+    const tokens = new Set(section.match(/\b(?:managed-latest|managed-cached|external|disabled|PICO_MCP_CLI_[A-Z_]+|PICO_MCP_AUTO[A-Z_]*CLI)\b/g) ?? []);
+    assert.deepEqual([...tokens].sort(), [...supported].sort(), `${file}: policy token table`);
+    assert.match(section, /managed-latest[\s\S]{0,180}\bdefault\b|\bdefault\b[\s\S]{0,180}managed-latest/i, `${file}: default policy`);
+    assert.match(section, /lazy[\s\S]{0,100}first[\s\S]{0,100}CLI/i, `${file}: lazy activation`);
+    assert.match(section, /immutable[\s\S]{0,100}MCP-owned|MCP-owned[\s\S]{0,100}immutable/i, `${file}: immutable ownership`);
+    assert.match(section, /global CLI[\s\S]{0,120}PATH[\s\S]{0,80}(?:untouched|unchanged)|PATH[\s\S]{0,120}global CLI[\s\S]{0,80}(?:untouched|unchanged)/i, `${file}: ambient isolation`);
+    assert.match(section, /unknown[\s\S]{0,140}outdated[\s\S]{0,180}(?:never|neither[\s\S]{0,60}ever)[\s\S]{0,80}latest/i, `${file}: fallback freshness`);
+    assert.match(section, /external[\s\S]{0,180}absolute[\s\S]{0,100}PICO_MCP_CLI_PATH/i, `${file}: external path`);
+    assert.match(section, /37\.x[\s\S]{0,180}(?:alias|deprecated)/i, `${file}: alias window`);
+    assert.match(section, /force-refresh[\s\S]{0,180}(?:update[\s\S]{0,100}(?:inert|ignored)|(?:inert|ignored)[\s\S]{0,100}update)/i, `${file}: health refresh semantics`);
+    assert.match(section, /(?:user-run|user runs|run[s]? manually)[\s\S]{0,100}setup/i, `${file}: setup is manual`);
+    assert.match(section, /update --check[\s\S]{0,180}(?:write|cache)/i, `${file}: update-check exclusion reason`);
+    assert.match(section, /0\.4\.2[\s\S]{0,180}(?:2026-08-14)[\s\S]{0,180}(?:observed|observation)/i, `${file}: dated registry observation`);
+    assert.match(section, /v1\.0[\s\S]{0,180}planning input[\s\S]{0,180}(?:not|unverified)/i, `${file}: release planning boundary`);
+    assert.match(section, /(?:help-only[\s\S]{0,180}(?:version-agnostic|reachable)|(?:version-agnostic|reachable)[\s\S]{0,180}help-only)[\s\S]{0,240}(?:does not|not establish|unverified)/i, `${file}: sweep boundary`);
+    assert.doesNotMatch(section, /npm\s+install\s+(?:-g|--global)/i, `${file}: no global install instruction`);
+    assert.doesNotMatch(section, /(?:MCP|server)\s+(?:automatically\s+)?(?:runs|invokes|executes)\s+(?:the\s+)?(?:pico-cli\s+)?setup/i, `${file}: no affirmative MCP setup claim`);
   }
 });
 

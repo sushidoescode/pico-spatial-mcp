@@ -36,11 +36,49 @@ stdio command; substitute your absolute clone path:
 ```
 
 Per-host detail and per-host verification status: [docs/HOSTS.md](docs/HOSTS.md). First call:
-`pico_doctor` — read-only, names the exact fix for anything missing. No PICO SDK or emulator yet?
+`pico_doctor {}` — read-only, names the exact fix for anything missing; the explicit
+`{calibrate:true}` workflow is the mutating exception described below. No PICO SDK or emulator yet?
 The doctor, SDK-knowledge, codegen, and lint lanes work on any machine.
 
 > **AI agents landing in this repo:** read [AGENTS.md](AGENTS.md) first — the machine-oriented
 > contract for driving this server (registration, surfaces, and the honesty rule).
+
+## Managed pico-cli policy
+
+`managed-latest` is the default. Resolution is lazy on the first real CLI-backed operation.
+Server startup, tool registration and `tools/list`, `preflight_env`, and the default
+`pico_doctor {}` inspect only an existing cache: they make no npm request, provision nothing, and
+write nothing to the managed store. The explicit `pico_doctor {calibrate:true}` exception is
+mutating because it runs the separately documented calibration workflow.
+
+Each exact version is published as an immutable MCP-owned cache entry. The ambient global CLI and
+`PATH` remain untouched. A successful registry lookup reports registry-latest as of `checkedAt`.
+If that lookup fails, a validated cached fallback is labeled `unknown`; if a known-newer install
+fails, it is labeled `outdated`. Neither fallback is ever called latest.
+
+Set `PICO_MCP_CLI_POLICY` only when the default is not appropriate:
+
+- `managed-latest` — lazily resolve and, on first CLI use, provision the exact registry version.
+- `managed-cached` — use only a validated cached version, without registry or install work.
+- `external` — run only the absolute `PICO_MCP_CLI_PATH`; it is never updated by the MCP.
+- `disabled` — turn off CLI-backed operations.
+
+Through 37.x, the deprecated aliases `PICO_MCP_AUTOINSTALL_CLI=1` and
+`PICO_MCP_AUTOUPDATE_CLI=1` map to `managed-latest`; they never install globally and conflict with
+another explicit policy. `ensure_pico_cli` is the force-refresh health path. Its deprecated
+`update` input is inert and accepted only for compatibility.
+
+Package activation and utility setup are separate. Any setup is a manual, user-run setup command
+using the absolute path returned by the MCP; the MCP never runs it. The MCP also never runs
+`update --check`, because that command writes a local update cache; freshness comes from the
+registry lookup instead.
+
+`0.4.2` was registry latest on 2026-08-14, an observed value rather than a timeless pin. A v1.0
+date supplied by the user/PICO team is planning input, not repository-verified release evidence.
+The compatibility sweep is version-agnostic and covers the complete reachable advertised
+help-only tree except the prohibited top-level setup subtree. It does not establish semantic
+compatibility, hidden-alias longevity, perf provisioning, emulator/device/Windows behavior, or
+visual evidence.
 
 ## What you can use this for, today
 
@@ -51,10 +89,10 @@ Concrete jobs this tool does on a stock PICO OS 6 emulator install, each backed 
 3. **Score a toolchain with SpatialBench** — the 6-axis conformance harness (`run_spatialbench`) runs any brief corpus through plan → compile → boot → capture → judge and emits a scored report; it works on apps OUR pipeline didn't build.
 4. **World-model tooling for real scans** — a Gaussian-splat scan becomes a labeled semantic scene (OWL-v2), briefs anchor content to labeled real-world surfaces (`anchorTo`), free-space solving avoids even unlabeled geometry (occupancy grid), and placements come back with **measured error in centimeters** via the calibrated capture camera.
 5. **Talk to a RUNNING app** — the live agent bridge spawns/moves/removes entities in a running spatial app, with mutations checked structurally by scene diff.
-6. **Environment doctoring** — `pico_doctor` is a read-only preflight where every failing check carries the exact fix; it's how we caught (and report upstream) real toolchain issues.
+6. **Environment doctoring** — default `pico_doctor {}` is a read-only preflight where every failing check carries the exact fix; `pico_doctor {calibrate:true}` is the explicit mutating calibration exception. It's how we caught (and report upstream) real toolchain issues.
 7. **Simulate camera access from a scanned room** — `virtual_camera_frame`, `virtual_camera_surfaces`, and `virtual_camera_from_app` render what a world-model camera would see and report camera-visible support surfaces from its semantic model. Separately, the emulator camera-HAL is now proven end-to-end (v29.1, `vision_verified`): an injected changing card reaches a CameraX app's preview *inside* the emulator via `-camera-back webcam1` — a simulation of camera access, explicitly not VST/passthrough ([evidence and boundaries](docs/VIRTUAL_CAMERA.md)).
 8. **Query PICO's broader knowledge graph** — `knowledge_api` keeps one persistent
-   `pico-cli mcp spatial-knowledge` session and exposes `query_graph`, `get_node`,
+   `pico-cli mcp dev-knowledge` session and exposes `query_graph`, `get_node`,
    `get_neighbors`, `get_community`, `god_nodes`, `graph_stats`, `shortest_path`, and
    `switch_workspace`. Graph answers are contextual evidence; `vault_api` remains the authority
    for exact SDK declarations and file/line citations. `preflight_lint` consults the graph only
@@ -158,7 +196,7 @@ reports the current map. Physics simulates on the emulator; the Unity build lane
 - `adb` on PATH (or the toolchain's bundled platform-tools are used).
 - Node.js ≥ 20.
 
-Run `pico_doctor` (doors surface) or `preflight_env` (full surface) first on any machine — it's a read-only check that names the exact fix for anything missing.
+Run default `pico_doctor {}` (doors surface) or `preflight_env` (full surface) first on any machine — it is a read-only check that names the exact fix for anything missing. The explicit `pico_doctor {calibrate:true}` route mutates calibration state.
 
 **Without the PICO SDK or emulator** the server still installs and runs: tool listing, `pico_doctor`,
 SDK knowledge lookups (agent-vault), codegen/scaffolding, lint, and all documentation tools work

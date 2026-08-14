@@ -9,7 +9,8 @@ runs; nothing here involves a rendered frame).
 - Installed: `pico-cli/0.3.0 (public) darwin-arm64 node-v25.8.1` (global, untouched).
 - Candidate: `@picoxr/pico-cli@0.4.2`, observed as npm `latest` on 2026-08-12; 0.4.1 and
   0.4.2 were both published on 2026-08-08. It was installed into a session scratchpad prefix;
-  the machine's global install was not modified.
+  the machine's global install was not modified. The registry still reported 0.4.2 as latest when
+  checked on 2026-08-14; these are dated observations, not a timeless version claim.
 - Exactly fifteen named `--help` surfaces were targeted per version, not a complete
   command-by-command or semantic diff: `pico-cli --help`, `perf --help`,
   `perf monitor --help`, `perf trace --help`, `perf daemon --help`,
@@ -32,13 +33,14 @@ runs; nothing here involves a rendered frame).
 1. **Perf family gated behind `pico-cli setup` (0.4.2).** Every tested `perf ...` shape —
    including `perf --help` — exits 1 with `Error: Perf utilities 0.1.0 are not installed.
    Run \`pico-cli setup\` to install.` On 0.3.0 the full perf tree responds normally.
-   → `classifyPicoCliFailure` now returns `not-provisioned` for this signature; wrapper
+   → `classifyPicoCliFailure` now returns `setup-required` for this signature; wrapper
    notes carry the exact remedy and state that the wrapper never runs setup itself.
    The 0.4.2 perf flag surface BEHIND the gate is unverified.
 2. **`mcp spatial-knowledge` → `mcp dev-knowledge`.** 0.4.2's `mcp --help` lists only
    `dev-knowledge`; `mcp spatial-knowledge --help` still exits 0 and prints the
-   dev-knowledge usage — a working hidden alias. `knowledge_api` keeps invoking the alias
-   (0.3.0-compatible); a future removal fails loudly with the CLI's own words.
+   dev-knowledge usage — a working hidden alias in the measured package. Production
+   `knowledge_api` now invokes the advertised `mcp dev-knowledge` path; the measurement does not
+   assume the hidden alias survives later releases.
 3. **`app watch-crash`: still NO duration flag on 0.4.2.** Adds only
    `--launch-timeout <seconds>` (default 30; wait for the process to appear). The
    watch_crash kill-bound remains required. This is a help/source finding; the indefinitely
@@ -48,9 +50,9 @@ runs; nothing here involves a rendered frame).
    0.3.0. `app launch` is **not** byte-identical: 0.4.2 adds an Examples block explaining
    that launch waits for process creation and app-specific readiness must be polled
    separately. `log` gains `-d, --device`. `capture record` keeps `-t` 1–180s.
-5. **`files rm` defaults fixed upstream:** recursive and force both default `true` on
-   0.3.0, both `false` on 0.4.2. Help and parser registration establish the defaults; no
-   remote deletion was attempted.
+5. **`files rm` defaults differ in the measured packages:** recursive and force both default
+   `true` on 0.3.0 and `false` on 0.4.2. Help and parser registration establish the defaults;
+   no remote deletion was attempted and this is not a general upstream-fix claim.
 6. **`app install` gains** `-r/--replace`, `--downgrade`, `-t/--test`,
    `-g/--grant-permissions`. Help and source wiring establish the flags; no APK was installed.
 7. **`doctor` returned within the bounded 0.4.2 probes:** `doctor --format json` returned a
@@ -94,9 +96,9 @@ runs; nothing here involves a rendered frame).
 
 ## Code changes carried
 
-`src/picocli.ts` (not-provisioned class + dated comments), `src/perfcli.ts`,
+`src/picocli.ts` (`setup-required` class + dated comments), `src/perfcli.ts`,
 `src/perftrace.ts`, `src/picoclitools.ts` (three-way failure notes + dual-version claims),
-`src/knowledge.ts` (alias note), `src/preflight.ts` (doctor re-measurement note),
+`src/knowledge.ts` (advertised `dev-knowledge` invocation), `src/preflight.ts` (doctor re-measurement note),
 `test/picocli.mjs` (classifier cases).
 
 ## Not proven

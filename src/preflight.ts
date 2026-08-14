@@ -199,8 +199,8 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   //     capture_record and agent-vault provisioning ride on it; building, capture, and verification
   //     all work without it. Probe with `-v` ONLY: `pico-cli doctor` and `pico-cli plugin doctor`
   //     hang (measured >=90s / 45s on 0.3.0, 2026-08-01) and must never be inlined here.
-  //     (0.4.2 re-measured 2026-08-12: doctor returns JSON in ~10s — fixed upstream, but the
-  //     sub-second `-v` probe stays while 0.3.0 remains the common install.)
+  //     (0.4.2 re-measured 2026-08-12 on one macOS arm64 machine: doctor returned JSON in ~10s.
+  //     That is not a cross-machine/release claim; the bounded sub-second `-v` probe remains.)
   const picoCli = io.exec("pico-cli", ["-v"]);
   if (picoCli.ok) {
     const raw = picoCli.stdout.trim();

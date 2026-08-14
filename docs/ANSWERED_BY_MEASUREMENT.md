@@ -187,6 +187,9 @@ not a complete command-by-command or semantic diff: root, `perf`, `perf monitor`
 `plugin`, `project`, and `doctor`, plus selected second-level help and bounded behavior
 probes.
 
+The registry still reported 0.4.2 as latest when checked on 2026-08-14. Both statements are dated
+observations, not a timeless version claim.
+
 Executed probes established that: (1) every tested 0.4.2 `perf` shape, including
 `perf --help`, exits 1 with "Perf utilities 0.1.0 are not installed" until the one-time
 `pico-cli setup`; (2) `mcp spatial-knowledge --help` remains a working hidden alias for the
@@ -226,7 +229,7 @@ running command bodies were not invoked. No rendered frames were involved.
 
 Detailed targeted sweep record and per-family findings:
 [findings/PICOCLI_042_SWEEP_2026-08-12.md](findings/PICOCLI_042_SWEEP_2026-08-12.md).
-Code carrying the dated claims: `src/picocli.ts` (not-provisioned classification, doctor
+Code carrying the dated claims: `src/picocli.ts` (`setup-required` classification, doctor
 re-measurement), `src/perftrace.ts`, `src/picoclitools.ts`, `src/knowledge.ts`.
 
 ### Does not prove
