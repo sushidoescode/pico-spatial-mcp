@@ -191,7 +191,7 @@ test("KnowledgeBridge quarantines unproved retirement without poisoning the next
 test("KnowledgeBridge retains managed execution guards through process retirement", {
   concurrency: false,
   timeout: 30_000,
-}, () => {
+}, async () => {
   const harness = createManagedRuntimeHarness({ latestVersion: "0.4.2" });
   const serverPath = path.join(harness.root, "mutating-knowledge-server.mjs");
   const mutationTarget = path.join(
@@ -278,6 +278,11 @@ process.stdout.write(JSON.stringify({ first, second, observed }));
   } finally {
     const fixturePids = new Set(readEvents(harness.knowledgeLogPath).map((event) => event.pid));
     for (const pid of fixturePids) killFixturePid(pid);
+    await waitFor(
+      () => [...fixturePids].every((pid) => !pidAlive(pid)),
+      1_500,
+      "a managed Knowledge execution-guard fixture process survived emergency cleanup",
+    );
     fs.rmSync(harness.root, { recursive: true, force: true });
   }
 });
