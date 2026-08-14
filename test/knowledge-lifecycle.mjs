@@ -133,6 +133,42 @@ await server.connect(new StdioServerTransport());
   return { root, fixturePath, logPath };
 }
 
+function createTokenStrippedDescendantFixture() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico-knowledge-tokenless-descendant-"));
+  const fixturePath = path.join(root, "server.mjs");
+  const descendantPidPath = path.join(root, "descendant.pid");
+  const logPath = path.join(root, "events.jsonl");
+  fs.writeFileSync(fixturePath, `
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import { McpServer } from ${JSON.stringify(serverMcpUrl)};
+import { StdioServerTransport } from ${JSON.stringify(serverStdioUrl)};
+import { z } from ${JSON.stringify(zodUrl)};
+
+const append = (event) => fs.appendFileSync(process.env.KNOWLEDGE_LIFECYCLE_LOG, JSON.stringify({ pid: process.pid, ...event }) + "\\n");
+append({ event: "start" });
+const server = new McpServer({ name: "knowledge-tokenless-descendant-fixture", version: "0.0.0" });
+server.registerTool("graph_stats", { inputSchema: z.object({}).strict() }, async () => {
+  if (!fs.existsSync(process.env.KNOWLEDGE_LIFECYCLE_DESCENDANT_PID)) {
+    const childEnv = { ...process.env };
+    delete childEnv.PICO_MCP_KNOWLEDGE_GENERATION_TOKEN;
+    const descendant = spawn(process.execPath, ["--input-type=module", "--eval", "setInterval(() => {}, 1000)"], {
+      detached: true,
+      stdio: "ignore",
+      env: childEnv,
+      windowsHide: true,
+    });
+    fs.writeFileSync(process.env.KNOWLEDGE_LIFECYCLE_DESCENDANT_PID, String(descendant.pid));
+    append({ event: "descendant", descendantPid: descendant.pid });
+    descendant.unref();
+  }
+  return { content: [{ type: "text", text: JSON.stringify({ generationPid: process.pid }) }] };
+});
+await server.connect(new StdioServerTransport());
+`);
+  return { root, fixturePath, descendantPidPath, logPath };
+}
+
 function createExitAfterResponseFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico-knowledge-exit-after-response-"));
   const fixturePath = path.join(root, "server.mjs");
@@ -533,6 +569,44 @@ test("KnowledgeBridge refuses a reused root row when the exact child handle repo
   }
 });
 
+test("KnowledgeBridge snapshots a token-stripped descendant before requesting root EOF", {
+  skip: process.platform === "win32" ? "native Windows lifecycle evidence belongs to the separate Windows lane" : false,
+  timeout: 10_000,
+}, async () => {
+  const fixture = createTokenStrippedDescendantFixture();
+  const { KnowledgeBridge } = await import(`${knowledgeUrl}?tokenless-descendant-snapshot=${Date.now()}`);
+  const bridge = new KnowledgeBridge({
+    command: process.execPath,
+    args: [fixture.fixturePath],
+    cwd: repoRoot,
+    env: {
+      KNOWLEDGE_LIFECYCLE_LOG: fixture.logPath,
+      KNOWLEDGE_LIFECYCLE_DESCENDANT_PID: fixture.descendantPidPath,
+    },
+    startupTimeoutMs: 2_000,
+    callTimeoutMs: 500,
+    retirementTimeoutMs: 1_000,
+  });
+
+  let descendantPid = null;
+  try {
+    const first = await bridge.call("graph_stats", {});
+    assert.equal(first.status, "ok", JSON.stringify(first));
+    assert.equal(fs.existsSync(fixture.descendantPidPath), true, "the fixture did not publish its descendant PID");
+    descendantPid = Number(fs.readFileSync(fixture.descendantPidPath, "utf8"));
+    assert.equal(pidAlive(descendantPid), true, "the token-stripped descendant was not alive before retirement");
+
+    await bridge.close();
+    assert.equal(pidAlive(descendantPid), true, "retirement sent an unsafe signal to the token-stripped descendant");
+    const blocked = await bridge.call("graph_stats", {});
+    assert.equal(blocked.status, "unavailable", JSON.stringify(blocked));
+    assert.match(blocked.lifecycleWarning ?? "", /token|ownership|blocked|quarantined/i, JSON.stringify(blocked));
+    assert.equal(readEvents(fixture.logPath).filter((event) => event.event === "start").length, 1);
+  } finally {
+    await cleanupLifecycleFixture(bridge, fixture, descendantPid);
+  }
+});
+
 test("KnowledgeBridge never signals a remembered descendant PID after birth-identity reuse", {
   skip: process.platform === "win32" ? "native Windows lifecycle evidence belongs to the separate Windows lane" : false,
   timeout: 12_000,
@@ -615,9 +689,17 @@ test("KnowledgeBridge does not signal or replace when POSIX process identity is 
     processControl: fake.control,
   });
 
+  let fixturePid = null;
   try {
-    assert.equal((await bridge.call("graph_stats", {})).status, "ok");
+    const first = await bridge.call("graph_stats", {});
+    assert.equal(first.status, "ok", JSON.stringify(first));
+    fixturePid = JSON.parse(first.text).generationPid;
     await bridge.close();
+    await waitFor(
+      () => !pidAlive(fixturePid),
+      1_000,
+      "the exact EOF-responsive Knowledge child survived identity-unavailable retirement",
+    );
     assert.deepEqual(fake.signals, []);
     const blocked = await bridge.call("graph_stats", {});
     assert.equal(blocked.status, "unavailable", JSON.stringify(blocked));
@@ -685,9 +767,17 @@ test("KnowledgeBridge simulated Windows retirement fails closed without numeric-
     processControl: fake.control,
   });
 
+  let fixturePid = null;
   try {
-    assert.equal((await bridge.call("graph_stats", {})).status, "ok");
+    const first = await bridge.call("graph_stats", {});
+    assert.equal(first.status, "ok", JSON.stringify(first));
+    fixturePid = JSON.parse(first.text).generationPid;
     await bridge.close();
+    await waitFor(
+      () => !pidAlive(fixturePid),
+      1_000,
+      "the exact EOF-responsive Knowledge child survived simulated-Windows retirement",
+    );
     assert.deepEqual(fake.signals, []);
     const blocked = await bridge.call("graph_stats", {});
     assert.equal(blocked.status, "unavailable", JSON.stringify(blocked));

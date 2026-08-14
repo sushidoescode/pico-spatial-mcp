@@ -724,26 +724,36 @@ async function signalGeneration(
   return { settled: true };
 }
 
-async function terminatePosixGeneration(session: KnowledgeSession, deadlineMs: number): Promise<RetirementOutcome> {
-  let scan = await scanPosixGeneration(session, deadlineMs, "discover-generation");
-  rememberOwnedProcesses(session, scan);
+async function requestExactChildEof(
+  session: KnowledgeSession,
+  deadlineMs: number,
+): Promise<string | null> {
+  const requestFailure = session.transport.requestGracefulEof();
+  if (requestFailure) return requestFailure;
+  if (session.rootPid === null) return "the exact generation root PID was unavailable after requesting EOF";
+
+  const eofDeadline = Math.min(deadlineMs, Date.now() + NATURAL_RETIREMENT_GRACE_MS);
+  let state = exactRootProcessState(session, session.rootPid);
+  while (state === "live" && remainingMs(eofDeadline) > 0) {
+    await delay(Math.min(20, remainingMs(eofDeadline)));
+    state = exactRootProcessState(session, session.rootPid);
+  }
+  if (state === "exited") return null;
+  return state === "unavailable"
+    ? "the exact generation root handle could not be observed after requesting EOF"
+    : "the exact generation root did not exit during the bounded EOF grace period";
+}
+
+async function terminatePosixGeneration(
+  session: KnowledgeSession,
+  deadlineMs: number,
+  initialScan: ProcessScan,
+): Promise<RetirementOutcome> {
+  let scan = initialScan;
   if (!scan.available) {
     return { confirmed: false, overlapPossible: true, reason: scan.reason };
   }
   if (scan.processes.length === 0) return { confirmed: true, overlapPossible: false };
-
-  // First request ordinary protocol shutdown through the exact pipe object. This is not a PID
-  // signal and cannot affect a replacement process. If it does not settle, retain the captured
-  // identities for the validated signal path below.
-  session.transport.requestGracefulEof();
-  const eofDeadline = Math.min(deadlineMs, Date.now() + NATURAL_RETIREMENT_GRACE_MS);
-  while (remainingMs(eofDeadline) > 0) {
-    await delay(Math.min(20, remainingMs(eofDeadline)));
-    scan = await scanPosixGeneration(session, deadlineMs, "observe-retirement");
-    rememberOwnedProcesses(session, scan);
-    if (!scan.available) return { confirmed: false, overlapPossible: true, reason: scan.reason };
-    if (scan.processes.length === 0) return { confirmed: true, overlapPossible: false };
-  }
 
   scan = await scanPosixGeneration(session, deadlineMs, "observe-retirement");
   rememberOwnedProcesses(session, scan);
@@ -807,14 +817,36 @@ async function retireKnowledgeGeneration(
   // Capture ownership before asking the SDK to close: its transport deliberately drops its public
   // pid as soon as close begins, even when descendant-held stdio delays the close event.
   session.rootPid ??= session.transport.pid;
+  let initialPosixScan: ProcessScan | null = null;
+  if (session.processControl.platform !== "win32") {
+    // Capture root ancestry before EOF can exit and reparent the root's children. This best-effort
+    // snapshot lets later scans retain token-stripped descendants by birth identity. An unavailable
+    // snapshot still proceeds to the exact-pipe EOF request, but can never authorize replacement.
+    initialPosixScan = await scanPosixGeneration(session, deadlineMs, "discover-generation");
+    rememberOwnedProcesses(session, initialPosixScan);
+  }
+  // EOF targets the already-open exact child pipe, so it is safe even when OS process identity is
+  // unavailable. Give an EOF-responsive root a bounded chance to exit before any platform or
+  // process-table early return; uncertainty still blocks replacement because descendants remain
+  // unproved.
+  const eofFailure = await requestExactChildEof(session, deadlineMs);
   if (session.processControl.platform === "win32") {
     return finishRetirementValidation(session, deadlineMs, {
       confirmed: false,
       overlapPossible: true,
-      reason: "native Windows process birth identity is not implemented; no numeric-PID signal was sent and replacement is blocked",
+      reason: [
+        "native Windows process birth identity is not implemented; no numeric-PID signal was sent and replacement is blocked",
+        eofFailure,
+      ].filter(Boolean).join("; "),
     });
   }
-  const outcome = await terminatePosixGeneration(session, deadlineMs);
+  let outcome = await terminatePosixGeneration(session, deadlineMs, initialPosixScan!);
+  if (!outcome.confirmed && eofFailure) {
+    outcome = {
+      ...outcome,
+      reason: outcome.reason ? `${outcome.reason}; ${eofFailure}` : eofFailure,
+    };
+  }
   if (outcome.confirmed) {
     // Only after the birth-bound process set is proven empty may the SDK clear protocol state.
     // First remove its stale numeric child handle so a delayed SDK fallback cannot race PID reuse.
