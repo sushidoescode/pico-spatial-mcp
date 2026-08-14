@@ -41,10 +41,16 @@ if (args.length === 5 && args[0] === "view" && args[1] === "@picoxr/pico-cli@lat
   process.stdout.write(config.registryRaw ?? JSON.stringify({ version: config.latest, "dist.integrity": "sha512-fixture" }));
   process.exit(0);
 }
-if (args.length !== 8 || args[0] !== "install" || args[1] !== "--prefix" || !path.isAbsolute(args[2]) || args[3] !== "--no-save" || args[4] !== "--package-lock=false" || args[5] !== "--fund=false" || args[6] !== "--audit=false" || !/^@picoxr\\/pico-cli@[0-9]+\\.[0-9]+\\.[0-9]+$/.test(args[7])) {
+const installTail = args.at(-1);
+const legacyInstallShape = args.length === 8 && args[3] === "--no-save" && args[4] === "--package-lock=false" && args[5] === "--fund=false" && args[6] === "--audit=false";
+const lifecycleSafeInstallShape = args.length === 9 && args[3] === "--ignore-scripts" && args[4] === "--no-save" && args[5] === "--package-lock=false" && args[6] === "--fund=false" && args[7] === "--audit=false";
+if (args[0] !== "install" || args[1] !== "--prefix" || !path.isAbsolute(args[2]) || (!legacyInstallShape && !lifecycleSafeInstallShape) || !/^@picoxr\\/pico-cli@[0-9]+\\.[0-9]+\\.[0-9]+$/.test(installTail)) {
   process.stderr.write("unsafe or inexact npm argv: " + JSON.stringify(args) + "\\n"); process.exit(97);
 }
-const version = args[7].slice("@picoxr/pico-cli@".length);
+if (config.postinstallProbe && !args.includes("--ignore-scripts")) {
+  fs.writeFileSync(path.join(path.dirname(process.env.FAKE_SWEEP_CONFIG), "postinstall-ran"), "fixture lifecycle script ran\\n");
+}
+const version = installTail.slice("@picoxr/pico-cli@".length);
 const spec = config.versions[version];
 if (!spec || spec.installExit) { process.stderr.write("fixture install failed\\n"); process.exit(spec?.installExit ?? 98); }
 const packageRoot = path.join(args[2], "node_modules", "@picoxr", "pico-cli");
@@ -53,16 +59,26 @@ fs.mkdirSync(packageRoot, { recursive: true }); fs.mkdirSync(path.dirname(shim),
 fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@picoxr/pico-cli", version: spec.packageVersion ?? version }));
 fs.writeFileSync(shim, \`#!\${process.execPath}
 const fs = require("node:fs");
+const path = require("node:path");
+const { spawn } = require("node:child_process");
 const config = JSON.parse(fs.readFileSync(process.env.FAKE_SWEEP_CONFIG, "utf8"));
 const version = \${JSON.stringify(version)};
 const spec = config.versions[version];
 const args = process.argv.slice(2);
 const isolation = { cwd: process.cwd(), home: process.env.HOME, userprofile: process.env.USERPROFILE, cacheUpper: process.env.NPM_CONFIG_CACHE, cacheLower: process.env.npm_config_cache };
-fs.appendFileSync(process.env.FAKE_SWEEP_LOG, JSON.stringify({ role: "cli", version, args, isolation }) + "\\\\n");
+fs.appendFileSync(process.env.FAKE_SWEEP_LOG, JSON.stringify({ role: "cli", pid: process.pid, version, args, isolation }) + "\\\\n");
 if (args.length === 1 && args[0] === "-v") { process.stdout.write("pico-cli/" + (spec.reportedVersion ?? version) + "\\\\n"); process.exit(spec.versionExit ?? 0); }
 const key = args.slice(0, -1).join(" ") || "pico-cli";
 const entry = spec.tree[key];
 if (!entry || args.at(-1) !== "--help") { process.stderr.write("unexpected CLI argv " + JSON.stringify(args) + "\\\\n"); process.exit(96); }
+if (entry.spawnDetachedInheritedStdioMs) {
+  const descendant = spawn(process.execPath, ["-e", "setTimeout(() => {}, " + Number(entry.spawnDetachedInheritedStdioMs) + ")"], {
+    detached: true,
+    stdio: ["ignore", process.stdout, process.stderr],
+  });
+  fs.writeFileSync(path.join(path.dirname(process.env.FAKE_SWEEP_CONFIG), "descendant.pid"), String(descendant.pid));
+  descendant.unref();
+}
 if (entry.signal) process.kill(process.pid, entry.signal);
 if (entry.hangMs) setTimeout(() => {}, entry.hangMs);
 if (entry.stdout) process.stdout.write(entry.stdout);
@@ -71,16 +87,23 @@ if (!entry.hangMs) process.exit(entry.code ?? 0);
 \`, { mode: 0o755 });
 process.exit(0);
 `);
-  return { root, bin, configPath, logPath };
+  return {
+    root,
+    bin,
+    configPath,
+    logPath,
+    postinstallMarkerPath: path.join(root, "postinstall-ran"),
+    descendantPidPath: path.join(root, "descendant.pid"),
+  };
 }
 
-function runSweep(fix, extraArgs = [], env = {}) {
+function runSweep(fix, extraArgs = [], env = {}, hostTimeoutMs = 8_000) {
   const output = path.join(fix.root, "report.json");
   const result = spawnSync(process.execPath, [sweepScript,
     "--from", "1.0.0", "--to", "2.0.0", "--output", output, ...extraArgs], {
     cwd: repoRoot,
     encoding: "utf8",
-    timeout: 8_000,
+    timeout: hostTimeoutMs,
     env: {
       ...process.env,
       PATH: fix.bin,
@@ -93,6 +116,42 @@ function runSweep(fix, extraArgs = [], env = {}) {
     ? fs.readFileSync(fix.logPath, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse)
     : [];
   return { ...result, output, calls };
+}
+
+function pidExists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === "ESRCH") return false;
+    throw error;
+  }
+}
+
+function waitForPidExit(pid, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!pidExists(pid)) return true;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+  }
+  return !pidExists(pid);
+}
+
+function forceKillFixtureProcesses(fix) {
+  const pids = new Set();
+  if (fs.existsSync(fix.descendantPidPath)) pids.add(Number(fs.readFileSync(fix.descendantPidPath, "utf8")));
+  if (fs.existsSync(fix.logPath)) {
+    for (const line of fs.readFileSync(fix.logPath, "utf8").trim().split("\n").filter(Boolean)) {
+      const call = JSON.parse(line);
+      if (call.role === "cli" && Number.isInteger(call.pid) && call.args.length === 1 && call.args[0] === "--help") {
+        pids.add(call.pid);
+      }
+    }
+  }
+  for (const pid of pids) {
+    if (!Number.isSafeInteger(pid) || pid <= 1) continue;
+    try { process.kill(pid, "SIGKILL"); } catch (error) { if (error?.code !== "ESRCH") throw error; }
+  }
 }
 
 function sha(stdout, stderr = "") {
@@ -202,10 +261,29 @@ test("resolves latest to an exact install and rejects unsafe arguments and inval
     const calls = fs.readFileSync(fix.logPath, "utf8").trim().split("\n").map(JSON.parse);
     assert.deepEqual(calls.filter((call) => call.role === "npm").map((call) => call.args), [
       ["view", "@picoxr/pico-cli@latest", "version", "dist.integrity", "--json"],
-      ["install", "--prefix", calls[1].args[2], "--no-save", "--package-lock=false", "--fund=false", "--audit=false", "@picoxr/pico-cli@1.0.0"],
-      ["install", "--prefix", calls[4].args[2], "--no-save", "--package-lock=false", "--fund=false", "--audit=false", "@picoxr/pico-cli@2.0.0"],
+      ["install", "--prefix", calls[1].args[2], "--ignore-scripts", "--no-save", "--package-lock=false", "--fund=false", "--audit=false", "@picoxr/pico-cli@1.0.0"],
+      ["install", "--prefix", calls[4].args[2], "--ignore-scripts", "--no-save", "--package-lock=false", "--fund=false", "--audit=false", "@picoxr/pico-cli@2.0.0"],
     ]);
     assert.equal(JSON.parse(fs.readFileSync(output, "utf8")).to.requested, "latest");
+  });
+
+  await t.test("exact scratch installs suppress package lifecycle scripts", () => {
+    const fix = fixture({
+      latest: "2.0.0",
+      postinstallProbe: true,
+      versions: {
+        "1.0.0": { tree: { "pico-cli": { stdout: help([]) } } },
+        "2.0.0": { tree: { "pico-cli": { stdout: help([]) } } },
+      },
+    });
+    const result = runSweep(fix);
+    assert.equal(result.status, 0, result.stderr);
+    const npmCalls = result.calls.filter((call) => call.role === "npm");
+    assert.deepEqual(npmCalls.map((call) => call.args), [
+      ["install", "--prefix", npmCalls[0].args[2], "--ignore-scripts", "--no-save", "--package-lock=false", "--fund=false", "--audit=false", "@picoxr/pico-cli@1.0.0"],
+      ["install", "--prefix", npmCalls[1].args[2], "--ignore-scripts", "--no-save", "--package-lock=false", "--fund=false", "--audit=false", "@picoxr/pico-cli@2.0.0"],
+    ]);
+    assert.equal(fs.existsSync(fix.postinstallMarkerPath), false, "fake package postinstall must not run");
   });
 
   await t.test("latest registry JSON is parsed from stdout despite an npm notice on stderr", () => {
@@ -297,6 +375,62 @@ test("resolves latest to an exact install and rejects unsafe arguments and inval
     const result = spawnSync(process.execPath, args, { cwd: repoRoot, encoding: "utf8", env: { ...process.env, PATH: fix.bin, FAKE_SWEEP_CONFIG: fix.configPath, FAKE_SWEEP_LOG: fix.logPath } });
     assert.notEqual(result.status, 0, item.name);
     assert.equal(fs.existsSync(output), false, item.name);
+  });
+});
+
+test("recognizes the advertised root command heading and fails closed when root enumeration is unavailable", async (t) => {
+  await t.test("Available Commands is traversed as a complete root command section", () => {
+    const rootHelp = [
+      "Usage: pico-cli",
+      "Available Commands:",
+      "  app  Application operations",
+      "  device list  List attached devices",
+      "Options:",
+      "  --help  Print help",
+      "",
+    ].join("\n");
+    const tree = {
+      "pico-cli": { stdout: rootHelp },
+      app: { stdout: "app leaf without a command heading\n" },
+      "device list": { stdout: "device list leaf without a command heading\n" },
+    };
+    const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
+    const result = runSweep(fix);
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(fs.readFileSync(result.output, "utf8"));
+    assert.deepEqual(report.from, { requested: "1.0.0", version: "1.0.0", commandCount: 3 });
+    assert.deepEqual(report.to, { requested: "2.0.0", version: "2.0.0", commandCount: 3 });
+    assert.deepEqual(report.unchangedCommands, ["app", "device list", "pico-cli"]);
+  });
+
+  for (const item of [
+    {
+      name: "missing heading",
+      rootHelp: "Usage: pico-cli\nOptions:\n  --help  Print help\n",
+    },
+    {
+      name: "unrecognized heading",
+      rootHelp: "Usage: pico-cli\nSubcommands:\n  app  Application operations\nOptions:\n  --help  Print help\n",
+    },
+  ]) await t.test(item.name, () => {
+    const tree = { "pico-cli": { stdout: item.rootHelp }, app: { stdout: "must not be reached\n" } };
+    const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
+    const result = runSweep(fix);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /recognized root command heading/);
+    assert.equal(fs.existsSync(result.output), false);
+    assert.deepEqual(result.calls.filter((call) => call.role === "cli").map((call) => call.args), [["-v"], ["--help"]]);
+  });
+
+  await t.test("a nested leaf without any command heading remains a valid leaf", () => {
+    const tree = {
+      "pico-cli": { stdout: help(["app  Application operations"]) },
+      app: { stdout: "Usage: pico-cli app\nOptions:\n  --help  Print help\n" },
+    };
+    const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
+    const result = runSweep(fix);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(result.output, "utf8")).unchangedCommands, ["app", "pico-cli"]);
   });
 });
 
@@ -444,13 +578,43 @@ test("timeout, spawn failure, and output truncation are fatal and atomic output 
     const fix = failing({ hangMs: 10_000 });
     const result = runSweep(fix, [], { PICO_CLI_SWEEP_TIMEOUT_MS: "50" });
     assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /timed out/);
     assert.equal(fs.existsSync(result.output), false);
+  });
+
+  await t.test("timeout hard-settles and reaps a detached descendant that inherited stdio", () => {
+    const fix = failing({
+      hangMs: 10_000,
+      spawnDetachedInheritedStdioMs: 10_000,
+      stderr: "DETACHED_DESCENDANT_TIMEOUT_OUTPUT\n",
+    });
+    const startedAt = Date.now();
+    let descendantPid = null;
+    try {
+      const result = runSweep(fix, [], {
+        PICO_CLI_SWEEP_TIMEOUT_MS: "1500",
+        PICO_CLI_SWEEP_KILL_GRACE_MS: "50",
+      }, 4_000);
+      const elapsedMs = Date.now() - startedAt;
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /timed out/);
+      assert.match(result.stderr, /DETACHED_DESCENDANT_TIMEOUT_OUTPUT/);
+      assert.ok(elapsedMs < 3_000, `sweep settled after ${elapsedMs}ms instead of its timeout plus bounded grace`);
+      assert.equal(fs.existsSync(result.output), false);
+      assert.equal(fs.existsSync(fix.descendantPidPath), true, "fixture descendant was not created");
+      descendantPid = Number(fs.readFileSync(fix.descendantPidPath, "utf8"));
+      assert.equal(waitForPidExit(descendantPid, 750), true, `detached descendant ${descendantPid} survived sweep cleanup`);
+    } finally {
+      forceKillFixtureProcesses(fix);
+    }
   });
 
   await t.test("truncation", () => {
     const fix = failing({ stdout: "x".repeat(2_000) });
     const result = runSweep(fix, [], { PICO_CLI_SWEEP_MAX_OUTPUT_BYTES: "256" });
     assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /exceeded the output capture limit/);
+    assert.match(result.stderr, /x{64}/, "retained capped output must remain visible in the diagnostic");
     assert.equal(fs.existsSync(result.output), false);
   });
 
@@ -458,6 +622,7 @@ test("timeout, spawn failure, and output truncation are fatal and atomic output 
     const fix = failing({ signal: "SIGTERM" });
     const result = runSweep(fix);
     assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /terminated without an exit code \(SIGTERM\)/);
     assert.equal(fs.existsSync(result.output), false);
   });
 
@@ -466,6 +631,8 @@ test("timeout, spawn failure, and output truncation are fatal and atomic output 
     const emptyBin = path.join(fix.root, "empty-bin"); fs.mkdirSync(emptyBin);
     const result = runSweep({ ...fix, bin: emptyBin });
     assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /could not start/);
+    assert.match(result.stderr, /ENOENT/);
     assert.equal(fs.existsSync(result.output), false);
   });
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +10,7 @@ const STABLE_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const MAX_DEPTH = 8;
 const MAX_HELP_INVOCATIONS = 256;
 const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_KILL_GRACE_MS = 250;
 const DEFAULT_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 function fail(message) {
@@ -24,6 +25,7 @@ function positiveEnvInteger(name, fallback) {
 }
 
 const timeoutMs = positiveEnvInteger("PICO_CLI_SWEEP_TIMEOUT_MS", DEFAULT_TIMEOUT_MS);
+const killGraceMs = positiveEnvInteger("PICO_CLI_SWEEP_KILL_GRACE_MS", DEFAULT_KILL_GRACE_MS);
 const maxOutputBytes = positiveEnvInteger("PICO_CLI_SWEEP_MAX_OUTPUT_BYTES", DEFAULT_MAX_OUTPUT_BYTES);
 
 function parseArguments(argv) {
@@ -49,13 +51,63 @@ function parseArguments(argv) {
   return { from, to, output };
 }
 
-function terminate(child) {
-  if (!child.pid) return;
+function terminateDirectOrGroup(child, signal) {
+  if (!child?.pid) return;
   try {
-    if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
-    else child.kill("SIGKILL");
+    if (process.platform !== "win32") process.kill(-child.pid, signal);
+    else child.kill(signal);
+    return;
   } catch {
-    try { child.kill("SIGKILL"); } catch { /* child already exited */ }
+    try { child.kill(signal); } catch { /* child already exited */ }
+  }
+}
+
+function posixDescendants(rootPid) {
+  if (process.platform === "win32" || !Number.isSafeInteger(rootPid) || rootPid <= 1) return [];
+  const psPath = ["/bin/ps", "/usr/bin/ps"].find((candidate) => fs.existsSync(candidate));
+  if (!psPath) return [];
+  let result;
+  try {
+    result = spawnSync(psPath, ["-A", "-o", "pid=,ppid="], {
+      encoding: "utf8",
+      timeout: 250,
+      windowsHide: true,
+    });
+  } catch {
+    return [];
+  }
+  if (result.error || result.status !== 0) return [];
+  const byParent = new Map();
+  for (const line of result.stdout.split("\n")) {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s*$/);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    const parentPid = Number(match[2]);
+    if (!byParent.has(parentPid)) byParent.set(parentPid, []);
+    byParent.get(parentPid).push(pid);
+  }
+  const descendants = [];
+  const queue = [rootPid];
+  const seen = new Set(queue);
+  while (queue.length > 0) {
+    const parentPid = queue.shift();
+    for (const pid of byParent.get(parentPid) ?? []) {
+      if (seen.has(pid)) continue;
+      seen.add(pid);
+      descendants.push(pid);
+      queue.push(pid);
+    }
+  }
+  return descendants;
+}
+
+function signalPosixPidOrGroup(pid, signal) {
+  if (!Number.isSafeInteger(pid) || pid <= 1) return;
+  try {
+    process.kill(-pid, signal);
+    return;
+  } catch {
+    try { process.kill(pid, signal); } catch { /* process already exited */ }
   }
 }
 
@@ -68,49 +120,149 @@ function runBounded(session, command, args) {
     let timedOut = false;
     let spawnError;
     let settled = false;
+    let aborting = false;
+    let observedCode = null;
+    let observedSignal = null;
     let timer;
-    const child = spawn(command, args, {
-      cwd: session.cwd,
-      env: session.env,
-      shell: false,
-      windowsHide: true,
-      detached: process.platform !== "win32",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    let abortTimer;
+    let child;
+    let treeKiller;
+    const observedDescendants = new Set();
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(abortTimer);
+      resolve({
+        code: observedCode ?? child?.exitCode ?? null,
+        signal: observedSignal ?? child?.signalCode ?? null,
+        stdout: Buffer.concat(stdout),
+        stderr: Buffer.concat(stderr),
+        timedOut,
+        outputTruncated,
+        ...(spawnError ? { spawnError } : {}),
+      });
+    };
+
+    const settleAborted = () => {
+      child?.stdout?.destroy();
+      child?.stderr?.destroy();
+      child?.unref();
+      treeKiller?.unref();
+      finish();
+    };
+
+    const rememberPosixDescendants = () => {
+      for (const pid of posixDescendants(child?.pid)) observedDescendants.add(pid);
+    };
+
+    const signalPosixTree = (signal) => {
+      for (const pid of [...observedDescendants].reverse()) signalPosixPidOrGroup(pid, signal);
+      terminateDirectOrGroup(child, signal);
+    };
+
+    const beginAbort = () => {
+      if (settled || aborting) return;
+      aborting = true;
+
+      if (process.platform === "win32") {
+        const systemRoot = session.env.SystemRoot ?? session.env.SYSTEMROOT ?? "C:\\Windows";
+        const taskkill = path.win32.join(systemRoot, "System32", "taskkill.exe");
+        if (child?.pid) {
+          try {
+            treeKiller = spawn(taskkill, ["/pid", String(child.pid), "/t", "/f"], {
+              env: session.env,
+              stdio: "ignore",
+              windowsHide: true,
+            });
+            treeKiller.once("error", () => terminateDirectOrGroup(child, "SIGKILL"));
+            treeKiller.once("close", (code) => {
+              if (code !== 0) terminateDirectOrGroup(child, "SIGKILL");
+              settleAborted();
+            });
+          } catch {
+            terminateDirectOrGroup(child, "SIGKILL");
+          }
+        } else {
+          terminateDirectOrGroup(child, "SIGKILL");
+        }
+        abortTimer = setTimeout(() => {
+          try { treeKiller?.kill("SIGKILL"); } catch { /* tree killer already exited */ }
+          terminateDirectOrGroup(child, "SIGKILL");
+          settleAborted();
+        }, killGraceMs);
+        return;
+      }
+
+      rememberPosixDescendants();
+      signalPosixTree("SIGTERM");
+      abortTimer = setTimeout(() => {
+        rememberPosixDescendants();
+        signalPosixTree("SIGKILL");
+        settleAborted();
+      }, killGraceMs);
+    };
+
+    try {
+      child = spawn(command, args, {
+        cwd: session.cwd,
+        env: session.env,
+        shell: false,
+        windowsHide: true,
+        detached: process.platform !== "win32",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      spawnError = error instanceof Error ? error.message : String(error);
+      finish();
+      return;
+    }
+
     const append = (chunks, chunk) => {
       const remaining = Math.max(0, maxOutputBytes - capturedBytes);
       if (remaining > 0) chunks.push(chunk.subarray(0, remaining));
       capturedBytes += chunk.length;
       if (capturedBytes > maxOutputBytes && !outputTruncated) {
         outputTruncated = true;
-        terminate(child);
+        beginAbort();
       }
     };
     child.stdout.on("data", (chunk) => append(stdout, Buffer.from(chunk)));
     child.stderr.on("data", (chunk) => append(stderr, Buffer.from(chunk)));
-    child.on("error", (error) => { spawnError = error.message; });
+    child.on("error", (error) => {
+      spawnError = error.message;
+      if (!aborting) {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        finish();
+      }
+    });
+    child.on("exit", (code, signal) => {
+      observedCode = code;
+      observedSignal = signal;
+    });
     child.on("close", (code, signal) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({ code, signal, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr), timedOut, outputTruncated, spawnError });
+      observedCode = code;
+      observedSignal = signal;
+      if (!aborting) finish();
     });
     timer = setTimeout(() => {
       timedOut = true;
-      terminate(child);
+      beginAbort();
     }, timeoutMs);
-    timer.unref?.();
   });
 }
 
 function requireComplete(result, label, allowNonzero = false) {
-  if (result.spawnError) fail(`${label} could not start: ${result.spawnError}`);
-  if (result.timedOut) fail(`${label} timed out`);
-  if (result.outputTruncated) fail(`${label} exceeded the output capture limit`);
-  if (result.code === null) fail(`${label} terminated without an exit code${result.signal ? ` (${result.signal})` : ""}`);
+  const retainedOutput = Buffer.concat([result.stdout, result.stderr]).toString("utf8").slice(-2_000);
+  const outputSuffix = retainedOutput ? `: ${retainedOutput}` : "";
+  if (result.spawnError) fail(`${label} could not start: ${result.spawnError}${outputSuffix}`);
+  if (result.timedOut) fail(`${label} timed out${outputSuffix}`);
+  if (result.outputTruncated) fail(`${label} exceeded the output capture limit${outputSuffix}`);
+  if (result.code === null) fail(`${label} terminated without an exit code${result.signal ? ` (${result.signal})` : ""}${outputSuffix}`);
   if (!allowNonzero && result.code !== 0) {
-    const tail = Buffer.concat([result.stdout, result.stderr]).toString("utf8").slice(-2_000);
-    fail(`${label} exited ${result.code}: ${tail}`);
+    fail(`${label} exited ${result.code}${outputSuffix}`);
   }
   return result;
 }
@@ -154,7 +306,7 @@ async function resolveLatest(session) {
 async function installExact(session, requested, exactVersion) {
   const root = fs.mkdtempSync(path.join(session.root, "version-"));
   requireComplete(await runBounded(session, "npm", [
-    "install", "--prefix", root, "--no-save", "--package-lock=false", "--fund=false", "--audit=false",
+    "install", "--prefix", root, "--ignore-scripts", "--no-save", "--package-lock=false", "--fund=false", "--audit=false",
     `${PACKAGE}@${exactVersion}`,
   ]), `${PACKAGE}@${exactVersion} install`);
   const packagePath = path.join(root, "node_modules", "@picoxr", "pico-cli", "package.json");
@@ -173,6 +325,7 @@ async function installExact(session, requested, exactVersion) {
 }
 
 const ANSI_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+const COMMAND_SECTION_HEADINGS = new Set(["Commands:", "Available Commands:"]);
 const COMMAND_SECTION_BOUNDARIES = new Set(["Options:", "Arguments:", "Positionals:", "Examples:", "Global Options:"]);
 const SAFE_COMMAND_TOKEN_SOURCE = "[A-Za-z0-9][A-Za-z0-9_-]*(?::[A-Za-z0-9][A-Za-z0-9_-]*)*";
 const SAFE_COMMAND_TOKEN = new RegExp(`^${SAFE_COMMAND_TOKEN_SOURCE}$`);
@@ -181,8 +334,8 @@ const COMMAND_ARGUMENT_NOTATION = /^(?:(?:\s+|=)?(?:<[^<>\r\n]+>|\[[^\[\]\r\n]+\
 
 function advertisedCommands(helpBytes) {
   const lines = helpBytes.toString("utf8").replace(ANSI_CSI, "").replace(/\r\n/g, "\n").split("\n");
-  const heading = lines.findIndex((line) => line === "Commands:");
-  if (heading < 0) return [];
+  const heading = lines.findIndex((line) => COMMAND_SECTION_HEADINGS.has(line));
+  if (heading < 0) return { recognizedHeading: false, commands: [] };
   const section = [];
   for (let index = heading + 1; index < lines.length; index += 1) {
     const line = lines[index];
@@ -191,7 +344,7 @@ function advertisedCommands(helpBytes) {
     if (indent === 0) break;
     section.push({ line, indent });
   }
-  if (section.length === 0) return [];
+  if (section.length === 0) return { recognizedHeading: true, commands: [] };
   const entryIndent = Math.min(...section.map((entry) => entry.indent));
   const commands = new Map();
   for (const entry of section) {
@@ -210,11 +363,12 @@ function advertisedCommands(helpBytes) {
     }
     commands.set(tokens.join("\0"), tokens);
   }
-  return [...commands.values()].sort((left, right) => {
+  const sortedCommands = [...commands.values()].sort((left, right) => {
     const leftKey = left.join(" ");
     const rightKey = right.join(" ");
     return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
   });
+  return { recognizedHeading: true, commands: sortedCommands };
 }
 
 function commandKey(tokens) {
@@ -235,7 +389,11 @@ async function enumerateSurface(session, installed) {
     const result = await invokeCli(session, installed.cliPath, [...tokens, "--help"], `${installed.version} ${commandKey(tokens)} --help`, true);
     const exactHelp = Buffer.concat([result.stdout, result.stderr]);
     hashes.set(commandKey(tokens), crypto.createHash("sha256").update(exactHelp).digest("hex"));
-    for (const advertisedTokens of advertisedCommands(exactHelp)) {
+    const advertised = advertisedCommands(exactHelp);
+    if (tokens.length === 0 && !advertised.recognizedHeading) {
+      fail(`${installed.version} root help did not expose a recognized root command heading`);
+    }
+    for (const advertisedTokens of advertised.commands) {
       const child = [...tokens, ...advertisedTokens];
       if (child[0] === "setup") continue;
       if (child.length > MAX_DEPTH) fail(`${installed.version} exceeded command depth ${MAX_DEPTH}`);
