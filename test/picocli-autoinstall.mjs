@@ -13,6 +13,7 @@ import {
   classifyPicoCliProvisionFailure,
   executableCandidates,
   PICO_CLI_INSTALL_TIMEOUT_MS,
+  runPicoCliCommand,
 } from "../dist/picocli.js";
 import {
   createManagedConvergenceWorker,
@@ -31,9 +32,51 @@ import {
   resolvePicoCliPolicy,
   PICO_CLI_PATH_ENV,
   PICO_CLI_POLICY_ENV,
+  managedContentIdentityForFixture,
 } from "../dist/picoclimanaged.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+async function provisionManagedFixtureVersion(harness, managedRoot, version, {
+  registryIntegrity = "sha512-fixture",
+  afterInstall,
+} = {}) {
+  const keys = ["FAKE_LATEST_VERSION", "FAKE_REGISTRY_INTEGRITY", "FAKE_REGISTRY_MODE", "FAKE_NPM_MODE"];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+  process.env.FAKE_LATEST_VERSION = version;
+  process.env.FAKE_REGISTRY_INTEGRITY = registryIntegrity;
+  process.env.FAKE_REGISTRY_MODE = "success";
+  process.env.FAKE_NPM_MODE = "success";
+  const io = createManagedIO(harness);
+  if (afterInstall) {
+    const run = io.run;
+    io.run = async (command, args, options) => {
+      const result = await run(command, args, options);
+      if (command === "npm" && args[0] === "install" && result.code === 0) {
+        await afterInstall(args[args.indexOf("--prefix") + 1]);
+      }
+      return result;
+    };
+  }
+  try {
+    const result = await resolveManagedPicoCli({
+      managedRoot,
+      forceRefresh: true,
+      installTimeoutMs: 2_000,
+      updateCheckTimeoutMs: 2_000,
+      killGraceMs: 25,
+    }, io);
+    assert.equal(result.status, "ok", JSON.stringify(result));
+    assert.equal(result.version, version, JSON.stringify(result));
+    const versionRoot = path.join(managedRoot, "versions", version);
+    return { result, io, versionRoot, shimPath: result.path };
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
 async function waitForProcessExit(pid, timeoutMs = 2_000) {
   const deadline = Date.now() + timeoutMs;
@@ -66,6 +109,161 @@ test("bounded runner compatibility helpers remain covered without ambient CLI ac
   assert.equal(classifyPicoCliProvisionFailure({ code: null, signal: null, stdout: "", stderr: "", timedOut: true, outputTruncated: false }), "timeout");
 });
 
+test("the bounded runner rejects a failed synchronous pre-spawn identity check before execution", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico pre-spawn guard "));
+  tempRoots.push(root);
+  const marker = path.join(root, "executed");
+  let checks = 0;
+  const result = await runPicoCliCommand(process.execPath, [
+    "-e", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed')`,
+  ], {
+    timeoutMs: 2_000,
+    beforeSpawn: () => {
+      checks += 1;
+      return "fixture identity changed";
+    },
+  });
+  assert.equal(checks, 1);
+  assert.equal(result.code, null);
+  assert.match(result.spawnError ?? "", /fixture identity changed/);
+  assert.equal(fs.existsSync(marker), false, "a rejected pre-spawn check must prevent process creation");
+});
+
+test("post-spawn detection kills a child before delayed work but is not a prevention claim", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico post-spawn guard "));
+  tempRoots.push(root);
+  const marker = path.join(root, "executed");
+  let checks = 0;
+  const result = await runPicoCliCommand(process.execPath, [
+    "-e", `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed'), 500)`,
+  ], {
+    timeoutMs: 2_000,
+    afterSpawn: () => {
+      checks += 1;
+      return "fixture identity changed after spawn";
+    },
+  });
+  assert.equal(checks, 1);
+  assert.equal(result.code, null);
+  assert.match(result.spawnError ?? "", /fixture identity changed after spawn/);
+  await new Promise((resolve) => setTimeout(resolve, 550));
+  assert.equal(fs.existsSync(marker), false, "a post-spawn rejection must kill the child before delayed work");
+});
+
+test("post-spawn detection reports an immediate child side effect instead of claiming prevention", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico post-spawn limitation "));
+  tempRoots.push(root);
+  const marker = path.join(root, "executed");
+  const result = await runPicoCliCommand(process.execPath, [
+    "-e", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed')`,
+  ], {
+    timeoutMs: 2_000,
+    afterSpawn: () => {
+      const observationDeadline = Date.now() + 1_500;
+      while (!fs.existsSync(marker) && Date.now() < observationDeadline) { /* child runs concurrently */ }
+      return "fixture detected drift after spawn";
+    },
+  });
+  assert.match(result.spawnError ?? "", /fixture detected drift after spawn/);
+  assert.equal(fs.existsSync(marker), true, "post-spawn validation is detection/termination, not side-effect prevention");
+});
+
+test("a synchronous pre-spawn check that exhausts the command budget refuses to spawn", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico slow pre-spawn guard "));
+  tempRoots.push(root);
+  const marker = path.join(root, "executed");
+  const startedAt = Date.now();
+  const result = await runPicoCliCommand(process.execPath, [
+    "-e", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed')`,
+  ], {
+    timeoutMs: 50,
+    beforeSpawn: () => {
+      while (Date.now() - startedAt < 150) { /* model an internal synchronous filesystem guard */ }
+      return null;
+    },
+  });
+  assert.equal(result.timedOut, true, JSON.stringify(result));
+  assert.equal(result.code, null);
+  assert.equal(fs.existsSync(marker), false, "an exhausted pre-spawn budget must refuse process creation");
+});
+
+test("a post-spawn check that exhausts the budget reports that process creation already happened", async () => {
+  const result = await runPicoCliCommand(process.execPath, [
+    "-e", "setTimeout(() => {}, 1000)",
+  ], {
+    timeoutMs: 25,
+    afterSpawn: () => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 75) { /* model a slow synchronous post-spawn guard */ }
+      return null;
+    },
+  });
+  assert.equal(result.timedOut, true, JSON.stringify(result));
+  assert.match(result.spawnError ?? "", /post-spawn validation exhausted.*after process creation/i);
+  assert.doesNotMatch(result.spawnError ?? "", /before process creation/i);
+});
+
+test("default managed calls snapshot one call-time environment and home after import", { timeout: 15_000 }, () => {
+  const harness = createManagedRuntimeHarness();
+  const importHome = path.join(harness.root, "import-home");
+  const inspectHome = path.join(harness.root, "inspect-home");
+  const policyRoot = path.join(harness.root, "policy-root");
+  fs.mkdirSync(importHome);
+  fs.mkdirSync(inspectHome);
+  const runtimeKeys = new Set([
+    "HOME", "USERPROFILE", "PATH", "Path", "PATHEXT", "ComSpec", "SystemRoot",
+    "PICO_HOME", "PICO_MCP_CLI_POLICY",
+  ]);
+  const runtimeEnv = Object.fromEntries(Object.entries(harness.env).filter(
+    ([key]) => runtimeKeys.has(key) || key.startsWith("FAKE_"),
+  ));
+  runtimeEnv.FAKE_PICO_VIEW_DELAY_MS = "100";
+  const moduleUrl = new URL("../dist/picocli.js", import.meta.url).href;
+  const script = `
+const { ensurePicoCli, inspectPicoCliCached } = await import(${JSON.stringify(moduleUrl)});
+Object.assign(process.env, ${JSON.stringify(runtimeEnv)});
+const pendingEnsure = ensurePicoCli({ forceRefresh: true, updateCheckTimeoutMs: 2000, installTimeoutMs: 2000 });
+process.env.PICO_TEST_LATE_ENV = "must-not-reach-snapshotted-children";
+const ensured = await pendingEnsure;
+process.env.HOME = ${JSON.stringify(inspectHome)};
+process.env.USERPROFILE = ${JSON.stringify(inspectHome)};
+const inspected = await inspectPicoCliCached();
+delete process.env.PICO_TEST_LATE_ENV;
+process.env.PICO_MCP_CLI_POLICY = "disabled";
+const disabledPromise = ensurePicoCli({ managedRoot: ${JSON.stringify(policyRoot)}, forceRefresh: true, updateCheckTimeoutMs: 2000, installTimeoutMs: 2000 });
+process.env.PICO_MCP_CLI_POLICY = "managed-latest";
+const enabledPromise = ensurePicoCli({ managedRoot: ${JSON.stringify(policyRoot)}, forceRefresh: true, updateCheckTimeoutMs: 2000, installTimeoutMs: 2000 });
+const [disabled, enabled] = await Promise.all([disabledPromise, enabledPromise]);
+process.stdout.write(JSON.stringify({ ensured, inspected, disabled, enabled }));
+`;
+  const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+    cwd: repoRoot,
+    env: { ...process.env, HOME: importHome, USERPROFILE: importHome },
+    encoding: "utf8",
+    timeout: 12_000,
+  });
+  assert.equal(child.status, 0, child.stderr || child.stdout);
+  const out = JSON.parse(child.stdout);
+  assert.equal(out.ensured.status, "ok", JSON.stringify(out.ensured));
+  assert.equal(out.ensured.path, path.join(
+    harness.managedRoot,
+    "versions", "0.4.2", "node_modules", ".bin",
+    process.platform === "win32" ? "pico-cli.cmd" : "pico-cli",
+  ));
+  assert.equal(out.inspected.status, "unavailable", JSON.stringify(out.inspected));
+  assert.equal(out.disabled.status, "unavailable", JSON.stringify(out.disabled));
+  assert.equal(out.disabled.policy, "disabled", JSON.stringify(out.disabled));
+  assert.equal(out.enabled.status, "ok", JSON.stringify(out.enabled));
+  assert.equal(out.enabled.policy, "managed-latest", JSON.stringify(out.enabled));
+  assert.equal(fs.existsSync(path.join(importHome, ".pico-mcp", "cli")), false,
+    "the import-time home must never receive call-time fake npm output");
+  assert.equal(fs.existsSync(harness.managedRoot), true, "default ensure must use its call-time home");
+  assert.equal(harness.calls().every((call) => call.lateEnv === null), true,
+    `managed children must retain the call-time environment snapshot: ${JSON.stringify(harness.calls())}`);
+  assert.equal(fs.existsSync(path.join(inspectHome, ".pico-mcp", "cli")), false,
+    "default cached inspection must use its own call-time home without creating it");
+});
+
 test("managed pico-cli policy and immutable-store inspection", { concurrency: false }, async (t) => {
   await t.test("policy parsing rejects contradictory configuration", () => {
     const cases = [
@@ -92,32 +290,45 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
   });
 
   function managedFixture() {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico managed cli "));
-    tempRoots.push(root);
-    const managedRoot = path.join(root, "managed");
-    const versionsRoot = path.join(managedRoot, "versions");
-    const responses = new Map();
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const root = harness.root;
+    const managedRoot = path.join(harness.root, "managed");
     const calls = [];
-    const publish = (version, { recordVersion = version, packageVersion = version, cliVersion = version, relativeCliPath = "node_modules/.bin/pico-cli", recordText } = {}) => {
-      const versionRoot = path.join(versionsRoot, version);
-      const shim = path.join(versionRoot, relativeCliPath);
-      fs.mkdirSync(path.dirname(shim), { recursive: true });
-      fs.writeFileSync(shim, "fixture shim", { mode: 0o755 });
-      fs.mkdirSync(path.join(versionRoot, "node_modules", "@picoxr", "pico-cli"), { recursive: true });
-      fs.writeFileSync(path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json"), JSON.stringify({ name: "@picoxr/pico-cli", version: packageVersion }));
-      fs.writeFileSync(path.join(versionRoot, "install.json"), recordText ?? JSON.stringify({ schemaVersion: 1, version: recordVersion, relativeCliPath, registryIntegrity: null, installedAt: "2026-08-14T12:00:00.000Z" }));
-      responses.set(shim, `pico-cli/${cliVersion} (fixture)\n`);
-      return shim;
+    const publish = async (version, {
+      recordVersion = version,
+      packageVersion = version,
+      cliVersion = version,
+      relativeCliPath = path.join("node_modules", ".bin", process.platform === "win32" ? "pico-cli.cmd" : "pico-cli"),
+      recordText,
+    } = {}) => {
+      const published = await provisionManagedFixtureVersion(harness, managedRoot, version);
+      const recordPath = path.join(published.versionRoot, "install.json");
+      const packagePath = path.join(published.versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json");
+      if (recordText !== undefined) fs.writeFileSync(recordPath, recordText);
+      else if (recordVersion !== version || relativeCliPath !== path.join("node_modules", ".bin", process.platform === "win32" ? "pico-cli.cmd" : "pico-cli")) {
+        const record = JSON.parse(fs.readFileSync(recordPath, "utf8"));
+        fs.writeFileSync(recordPath, JSON.stringify({ ...record, version: recordVersion, relativeCliPath }));
+      }
+      if (packageVersion !== version) {
+        fs.writeFileSync(packagePath, JSON.stringify({ name: "@picoxr/pico-cli", version: packageVersion }));
+      }
+      if (cliVersion !== version) {
+        const shim = fs.readFileSync(published.shimPath, "utf8");
+        assert.match(shim, new RegExp(version.replaceAll(".", "\\.")));
+        fs.writeFileSync(published.shimPath, shim.replace(version, cliVersion), { mode: 0o755 });
+      }
+      return published.shimPath;
     };
+    const baseIo = createManagedIO(harness);
     const io = (env = {}) => ({
       env,
-      platform: "linux",
+      platform: process.platform,
       homeDir: path.join(root, "unused-home"),
       now: () => 0,
       randomUUID: () => "unused",
       run: async (command, args) => {
         calls.push({ command, args });
-        return { code: 0, signal: null, stdout: responses.get(command) ?? "pico-cli/0.0.0\n", stderr: "", timedOut: false, outputTruncated: false };
+        return baseIo.run(command, args);
       },
     });
     const publishedFiles = () => {
@@ -137,15 +348,17 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
 
   await t.test("cached policy picks the newest wholly validated immutable version without npm or writes", async () => {
     const fixture = managedFixture();
-    fixture.publish("0.4.1");
-    const newestShim = fixture.publish("0.4.2");
+    await fixture.publish("0.4.1");
+    const newestShim = await fixture.publish("0.4.2");
     const beforeInspection = fixture.publishedFiles();
     const result = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, fixture.io());
-    assert.deepEqual(result, {
+    const { compatibility, ...summary } = result;
+    assert.deepEqual(summary, {
       status: "ok", source: "managed", policy: "managed-latest", action: "cached", path: newestShim,
-      version: "0.4.2", raw: "pico-cli/0.4.2 (fixture)", latestVersion: null, checkedAt: null,
+      version: "0.4.2", raw: "pico-cli/0.4.2 (managed fixture)", latestVersion: null, checkedAt: null,
       freshness: "cached", deprecatedAliases: [],
     });
+    assert.equal(compatibility?.length, 9);
     assert.deepEqual(fixture.calls, [{ command: newestShim, args: ["-v"] }]);
     assert.deepEqual(fixture.publishedFiles(), beforeInspection, "inspection must not alter published files");
     assert.equal(fs.existsSync(path.join(fixture.managedRoot, "versions", "0.4.3")), false);
@@ -153,7 +366,7 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
 
   await t.test("a relative managedRoot resolves the published immutable version", async () => {
     const fixture = managedFixture();
-    const newestShim = fixture.publish("0.4.2");
+    const newestShim = await fixture.publish("0.4.2");
     const relativeManagedRoot = path.relative(process.cwd(), fixture.managedRoot);
     assert.equal(path.isAbsolute(relativeManagedRoot), false);
     const result = await inspectManagedPicoCli({ managedRoot: relativeManagedRoot }, fixture.io());
@@ -171,15 +384,13 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
     ];
     for (const item of cases) {
       const fixture = managedFixture();
-      const fallbackShim = fixture.publish("0.4.1");
-      const rejectedShim = fixture.publish("0.4.2", item.options);
+      const fallbackShim = await fixture.publish("0.4.1");
+      const rejectedShim = await fixture.publish("0.4.2", item.options);
       const result = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, fixture.io());
       assert.equal(result.status, "ok", `${item.name}: ${JSON.stringify(result)}`);
       assert.equal(result.path, fallbackShim, item.name);
       assert.equal(result.version, "0.4.1", item.name);
-      const expectedCalls = item.name === "mismatched -v version"
-        ? [{ command: rejectedShim, args: ["-v"] }, { command: fallbackShim, args: ["-v"] }]
-        : [{ command: fallbackShim, args: ["-v"] }];
+      const expectedCalls = [{ command: fallbackShim, args: ["-v"] }];
       assert.deepEqual(fixture.calls, expectedCalls, item.name);
     }
   });
@@ -193,7 +404,6 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
 
     const external = managedFixture();
     const externalPath = path.join(external.managedRoot, "external-pico-cli");
-    external.publish("0.0.1");
     const externalIo = external.io({ [PICO_CLI_POLICY_ENV]: "external", [PICO_CLI_PATH_ENV]: externalPath });
     externalIo.run = async (command, args) => {
       external.calls.push({ command, args });
@@ -226,6 +436,14 @@ test("cold managed and stale managed exact provisioning", { concurrency: false, 
     const harness = createHarness({ installedVersion: "9.9.9", latestVersion: "0.4.2", separateGlobalBin: true });
     const managedRoot = path.join(harness.root, "managed");
     const io = createManagedIO(harness);
+    const postinstallMarker = path.join(harness.root, "postinstall-ran");
+    const run = io.run;
+    io.run = async (command, args, options) => {
+      if (command === "npm" && args[0] === "install" && !args.includes("--ignore-scripts")) {
+        fs.writeFileSync(postinstallMarker, "fixture package lifecycle executed");
+      }
+      return run(command, args, options);
+    };
     const pathBefore = process.env.PATH ?? process.env.Path ?? "";
     const globalShimBefore = fs.readFileSync(harness.cliTarget);
     const globalStateBefore = fs.readFileSync(harness.statePath);
@@ -252,8 +470,9 @@ test("cold managed and stale managed exact provisioning", { concurrency: false, 
     const install = npmCalls.find((call) => call.args[0] === "install");
     assert.deepEqual(install.args, [
       "install", "--prefix", path.join(managedRoot, "staging", "fixture-staging-1"),
-      "--no-save", "--package-lock=false", "--fund=false", "--audit=false", "@picoxr/pico-cli@0.4.2",
+      "--no-save", "--package-lock=false", "--ignore-scripts", "--fund=false", "--audit=false", "@picoxr/pico-cli@0.4.2",
     ]);
+    assert.equal(fs.existsSync(postinstallMarker), false, "managed exact install must suppress package lifecycle scripts");
     for (const call of harness.calls()) {
       assert.equal(call.args.includes("-g"), false, JSON.stringify(call));
       assert.equal(call.args.includes("--global"), false, JSON.stringify(call));
@@ -263,13 +482,25 @@ test("cold managed and stale managed exact provisioning", { concurrency: false, 
 
     const versionRoot = path.join(managedRoot, "versions", "0.4.2");
     assert.equal(cold.path, path.join(versionRoot, canonicalRelativeCliPath));
-    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(versionRoot, "install.json"), "utf8")), {
-      schemaVersion: 1,
-      version: "0.4.2",
-      relativeCliPath: canonicalRelativeCliPath,
-      registryIntegrity: "sha512-fixture",
-      installedAt: "2026-08-14T12:00:00.000Z",
-    });
+    const installRecord = JSON.parse(fs.readFileSync(path.join(versionRoot, "install.json"), "utf8"));
+    assert.deepEqual(Object.keys(installRecord).sort(), [
+      "contentManifestEntryCount", "contentManifestSchemaVersion", "contentManifestSha256",
+      "contentManifestTotalBytes", "installedAt", "registryIntegrity", "relativeCliPath", "schemaVersion", "version",
+    ]);
+    assert.equal(installRecord.schemaVersion, 2);
+    assert.equal(installRecord.version, "0.4.2");
+    assert.equal(installRecord.relativeCliPath, canonicalRelativeCliPath);
+    assert.equal(installRecord.registryIntegrity, "sha512-fixture");
+    assert.equal(installRecord.installedAt, "2026-08-14T12:00:00.000Z");
+    assert.equal(installRecord.contentManifestSchemaVersion, 1);
+    assert.match(installRecord.contentManifestSha256, /^[a-f0-9]{64}$/);
+    assert.ok(Number.isSafeInteger(installRecord.contentManifestEntryCount) && installRecord.contentManifestEntryCount > 0);
+    assert.ok(Number.isSafeInteger(installRecord.contentManifestTotalBytes) && installRecord.contentManifestTotalBytes > 0);
+    const publicationRecord = JSON.parse(fs.readFileSync(path.join(versionRoot, "publication.json"), "utf8"));
+    assert.equal(publicationRecord.contentManifestSchemaVersion, installRecord.contentManifestSchemaVersion);
+    assert.equal(publicationRecord.contentManifestSha256, installRecord.contentManifestSha256);
+    assert.equal(publicationRecord.contentManifestEntryCount, installRecord.contentManifestEntryCount);
+    assert.equal(publicationRecord.contentManifestTotalBytes, installRecord.contentManifestTotalBytes);
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json"), "utf8")), {
       name: "@picoxr/pico-cli",
       version: "0.4.2",
@@ -380,6 +611,256 @@ test("managed publication no-clobber fix round", { concurrency: false, timeout: 
       fs.openSync = originalOpenSync;
     }
   });
+});
+
+test("managed publication content identity rejects post-publication byte and path drift", { concurrency: false, timeout: 45_000 }, async (t) => {
+  async function publish({ afterInstall } = {}) {
+    const harness = createHarness({ latestVersion: "0.4.2", registryIntegrity: "sha512-fixture" });
+    const managedRoot = path.join(harness.root, "managed");
+    const published = await provisionManagedFixtureVersion(harness, managedRoot, "0.4.2", { afterInstall });
+    return { harness, managedRoot, ...published };
+  }
+
+  await t.test("an unchanged finalized publication remains accepted", async () => {
+    const fixture = await publish();
+    const before = fs.readFileSync(path.join(fixture.versionRoot, "install.json"));
+    const inspected = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, createManagedIO(fixture.harness));
+    assert.equal(inspected.status, "ok", JSON.stringify(inspected));
+    assert.equal(inspected.path, fixture.shimPath);
+    assert.equal(inspected.version, "0.4.2");
+    assert.deepEqual(fs.readFileSync(path.join(fixture.versionRoot, "install.json")), before);
+  });
+
+  for (const legacy of [
+    { name: "schema-1", schemaVersion: 1 },
+    { name: "schema-2 missing content identity", schemaVersion: 2 },
+  ]) {
+    await t.test(`${legacy.name} install records fail closed with exact manual recovery`, async () => {
+      const fixture = await publish();
+      const relativeCliPath = path.join("node_modules", ".bin", process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
+      fs.writeFileSync(path.join(fixture.versionRoot, "install.json"), JSON.stringify({
+        schemaVersion: legacy.schemaVersion,
+        version: "0.4.2",
+        relativeCliPath,
+        registryIntegrity: "sha512-fixture",
+        installedAt: "2026-08-14T12:00:00.000Z",
+      }));
+      const claim = path.join(fixture.managedRoot, "versions", ".0.4.2.publish");
+      const io = createManagedIO(fixture.harness);
+      const inspected = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, io);
+      assert.equal(inspected.status, "unavailable", JSON.stringify(inspected));
+      assert.equal(inspected.failureClass, "cli-missing");
+      assert.match(inspected.note, new RegExp(fixture.versionRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.match(inspected.note, new RegExp(claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+      assert.match(inspected.note, /after confirming no managed resolver process is active/i);
+      assert.match(inspected.note, /remove both/i);
+      assert.match(inspected.note, /retry/i);
+      assert.deepEqual(io.commands, [], "an unbound install record must fail before executing the shim");
+    });
+  }
+
+  await t.test("same-version shim byte replacement is rejected before execution", async () => {
+    const fixture = await publish();
+    const original = fs.readFileSync(fixture.shimPath, "utf8");
+    const replacement = process.platform === "win32"
+      ? original.replace("@echo off", "@ECHO OFF")
+      : original.replace("exec ", "exec\t");
+    assert.notEqual(replacement, original, "fixture must change executable bytes");
+    assert.equal(Buffer.byteLength(replacement), Buffer.byteLength(original), "fixture must preserve executable size");
+    fs.writeFileSync(fixture.shimPath, replacement, process.platform === "win32" ? undefined : { mode: 0o755 });
+    const io = createManagedIO(fixture.harness);
+    const callsBefore = io.commands.length;
+    const inspected = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, io);
+    assert.equal(inspected.status, "unavailable", JSON.stringify(inspected));
+    assert.equal(inspected.failureClass, "cli-missing");
+    assert.equal(io.commands.length, callsBefore, "a content-mismatched shim must not be executed even when it still reports the same version");
+  });
+
+  await t.test("an in-root shim symlink retargeted outside the version root is rejected before execution", async (context) => {
+    if (process.platform === "win32") {
+      context.skip("native Windows symlink creation requires privileges not established by this structural lane");
+      return;
+    }
+    const fixture = await publish();
+    const outside = path.join(fixture.harness.root, "outside-same-version-pico-cli");
+    fs.copyFileSync(fixture.shimPath, outside);
+    fs.chmodSync(outside, 0o755);
+    fs.unlinkSync(fixture.shimPath);
+    fs.symlinkSync(outside, fixture.shimPath);
+    const io = createManagedIO(fixture.harness);
+    const inspected = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, io);
+    assert.equal(inspected.status, "unavailable", JSON.stringify(inspected));
+    assert.equal(inspected.failureClass, "cli-missing");
+    assert.deepEqual(io.commands, [], "an out-of-root symlink target must never be executed");
+  });
+
+  await t.test("a cached shim swapped to an out-of-root same-version executable inside io.run is rejected before spawn", async (context) => {
+    if (process.platform === "win32") {
+      context.skip("native Windows symlink creation requires privileges not established by this structural lane");
+      return;
+    }
+    const fixture = await publish();
+    const marker = path.join(fixture.harness.root, "cached-outside-executed");
+    const outside = path.join(fixture.harness.root, "cached-outside-same-version-pico-cli");
+    fs.writeFileSync(outside, `#!/bin/sh\nprintf executed > '${marker.replaceAll("'", `'\\''`)}'\nexec '${process.execPath.replaceAll("'", `'\\''`)}' '${fixture.harness.driverPath.replaceAll("'", `'\\''`)}' managed-cli 0.4.2 "$@"\n`, { mode: 0o755 });
+    const io = createManagedIO(fixture.harness);
+    const run = io.run;
+    let swapped = false;
+    io.run = (command, args, options) => {
+      if (!swapped && command === fixture.shimPath && args.length === 1 && args[0] === "-v") {
+        fs.unlinkSync(fixture.shimPath);
+        fs.symlinkSync(outside, fixture.shimPath);
+        swapped = true;
+      }
+      return run(command, args, options);
+    };
+    const inspected = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, io);
+    assert.equal(swapped, true, "fixture must swap at the validation-to-run boundary");
+    assert.equal(inspected.status, "unavailable", JSON.stringify(inspected));
+    assert.equal(fs.existsSync(marker), false, "the out-of-root replacement must not execute");
+  });
+
+  await t.test("a staged shim swapped to an out-of-root same-version executable inside io.run is rejected before spawn", async (context) => {
+    if (process.platform === "win32") {
+      context.skip("native Windows symlink creation requires privileges not established by this structural lane");
+      return;
+    }
+    const harness = createHarness({ latestVersion: "0.4.2", registryIntegrity: "sha512-fixture" });
+    const managedRoot = path.join(harness.root, "managed");
+    const marker = path.join(harness.root, "staged-outside-executed");
+    const outside = path.join(harness.root, "staged-outside-same-version-pico-cli");
+    fs.writeFileSync(outside, `#!/bin/sh\nprintf executed > '${marker.replaceAll("'", `'\\''`)}'\nexec '${process.execPath.replaceAll("'", `'\\''`)}' '${harness.driverPath.replaceAll("'", `'\\''`)}' managed-cli 0.4.2 "$@"\n`, { mode: 0o755 });
+    const io = createManagedIO(harness);
+    const run = io.run;
+    let swapped = false;
+    io.run = (command, args, options) => {
+      if (!swapped && command.includes(path.join(managedRoot, "staging")) && args.length === 1 && args[0] === "-v") {
+        fs.unlinkSync(command);
+        fs.symlinkSync(outside, command);
+        swapped = true;
+      }
+      return run(command, args, options);
+    };
+    const resolved = await resolveManagedPicoCli({
+      managedRoot,
+      forceRefresh: true,
+      installTimeoutMs: 2_000,
+      updateCheckTimeoutMs: 2_000,
+      killGraceMs: 25,
+    }, io);
+    assert.equal(swapped, true, "fixture must swap the staged shim at the validation-to-run boundary");
+    assert.equal(resolved.status, "unavailable", JSON.stringify(resolved));
+    assert.equal(fs.existsSync(marker), false, "the staged out-of-root replacement must not execute");
+  });
+
+  await t.test("queued relative paths are charged before traversal", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico managed path budget "));
+    tempRoots.push(root);
+    fs.mkdirSync(path.join(root, "long-child-name"));
+    assert.throws(
+      () => managedContentIdentityForFixture(root, { maxPathBytes: 2 }),
+      /path.*bound/i,
+    );
+  });
+
+  await t.test("registry failure still reports exact recovery for a legacy managed target", async () => {
+    const harness = createHarness({ registryMode: "failure" });
+    const managedRoot = path.join(harness.root, "managed");
+    const fixture = publishManagedFixtureVersion(harness, managedRoot, "0.4.2");
+    fs.writeFileSync(path.join(fixture.versionRoot, "install.json"), JSON.stringify({
+      schemaVersion: 1,
+      version: "0.4.2",
+      relativeCliPath: path.join("node_modules", ".bin", process.platform === "win32" ? "pico-cli.cmd" : "pico-cli"),
+      registryIntegrity: null,
+      installedAt: "2026-08-14T12:00:00.000Z",
+    }));
+    const claim = path.join(managedRoot, "versions", ".0.4.2.publish");
+    const result = await resolveManagedPicoCli({
+      managedRoot,
+      forceRefresh: true,
+      installTimeoutMs: 2_000,
+      updateCheckTimeoutMs: 2_000,
+      killGraceMs: 25,
+    }, createManagedIO(harness));
+    assert.equal(result.status, "unavailable", JSON.stringify(result));
+    assert.match(result.note, new RegExp(fixture.versionRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(result.note, new RegExp(claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(result.note, /after confirming no managed resolver process is active/i);
+    assert.match(result.note, /remove both/i);
+    assert.match(result.note, /retry/i);
+  });
+
+  await t.test("the hard-linked publication claim rejects changed bytes even when install.json is rewritten with their digest", async () => {
+    const fixture = await publish();
+    const packagePath = path.join(fixture.versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json");
+    fs.writeFileSync(packagePath, JSON.stringify({
+      name: "@picoxr/pico-cli",
+      version: "0.4.2",
+      rewrittenAfterPublication: true,
+    }));
+    const installPath = path.join(fixture.versionRoot, "install.json");
+    const install = JSON.parse(fs.readFileSync(installPath, "utf8"));
+    const rewrittenIdentity = managedContentIdentityForFixture(fixture.versionRoot);
+    install.contentManifestSchemaVersion = rewrittenIdentity.schemaVersion;
+    install.contentManifestSha256 = rewrittenIdentity.digest;
+    install.contentManifestEntryCount = rewrittenIdentity.entryCount;
+    install.contentManifestTotalBytes = rewrittenIdentity.totalBytes;
+    fs.writeFileSync(installPath, JSON.stringify(install));
+    const io = createManagedIO(fixture.harness);
+    const inspected = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, io);
+    assert.equal(inspected.status, "unavailable", JSON.stringify(inspected));
+    assert.deepEqual(io.commands, [], "publication/content mismatch must fail before executable probing");
+  });
+
+  await t.test("a changed hard-linked publication manifest binding is rejected before execution", async () => {
+    const fixture = await publish();
+    const publicationPath = path.join(fixture.versionRoot, "publication.json");
+    const claimPath = path.join(fixture.managedRoot, "versions", ".0.4.2.publish");
+    const publication = JSON.parse(fs.readFileSync(publicationPath, "utf8"));
+    publication.contentManifestSha256 = "0".repeat(64);
+    fs.writeFileSync(publicationPath, `${JSON.stringify(publication)}\n`);
+    assert.deepEqual(
+      fs.readFileSync(claimPath),
+      fs.readFileSync(publicationPath),
+      "the fixture must corrupt the shared hard-linked publication record",
+    );
+    const io = createManagedIO(fixture.harness);
+    const inspected = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, io);
+    assert.equal(inspected.status, "unavailable", JSON.stringify(inspected));
+    assert.deepEqual(io.commands, [], "a publication-record binding mismatch must fail before executable probing");
+  });
+
+  for (const mutation of [
+    {
+      name: "same-version package metadata bytes",
+      mutate: ({ versionRoot }) => fs.writeFileSync(
+        path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json"),
+        JSON.stringify({ name: "@picoxr/pico-cli", version: "0.4.2", changedAfterPublication: true }),
+      ),
+    },
+    {
+      name: "installed dependency bytes",
+      afterInstall: (staging) => {
+        const dependency = path.join(staging, "node_modules", "fixture-dependency", "index.js");
+        fs.mkdirSync(path.dirname(dependency), { recursive: true });
+        fs.writeFileSync(dependency, "export const value = 'original';\n");
+      },
+      mutate: ({ versionRoot }) => fs.writeFileSync(
+        path.join(versionRoot, "node_modules", "fixture-dependency", "index.js"),
+        "export const value = 'tampered';\n",
+      ),
+    },
+  ]) {
+    await t.test(`${mutation.name} are rejected even though pico-cli -v is unchanged`, async () => {
+      const fixture = await publish({ afterInstall: mutation.afterInstall });
+      mutation.mutate(fixture);
+      const io = createManagedIO(fixture.harness);
+      const inspected = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, io);
+      assert.equal(inspected.status, "unavailable", `${mutation.name}: ${JSON.stringify(inspected)}`);
+      assert.equal(inspected.failureClass, "cli-missing");
+      assert.deepEqual(io.commands, [], `${mutation.name} must fail before executing the shim`);
+    });
+  }
 });
 
 test("managed winner completeness fix round", { concurrency: false, timeout: 30_000 }, async (t) => {
@@ -627,11 +1108,19 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
   });
 
   for (const corruption of [
-    { name: "corrupt install record", options: { recordText: "not-json" }, mutate: () => {} },
-    { name: "corrupt package version mismatch", options: { packageVersion: "0.4.1" }, mutate: () => {} },
+    {
+      name: "corrupt install record",
+      mutate: ({ versionRoot }) => fs.writeFileSync(path.join(versionRoot, "install.json"), "not-json"),
+    },
+    {
+      name: "corrupt package version mismatch",
+      mutate: ({ versionRoot }) => fs.writeFileSync(
+        path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json"),
+        JSON.stringify({ name: "@picoxr/pico-cli", version: "0.4.1" }),
+      ),
+    },
     {
       name: "corrupt shim mutation",
-      options: {},
       mutate: ({ shimPath }) => fs.writeFileSync(shimPath, "#!/bin/sh\nexit 9\n", { mode: 0o755 }),
     },
   ]) {
@@ -639,7 +1128,7 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
       const harness = createHarness({ registryMode: "failure" });
       const managedRoot = path.join(harness.root, "managed");
       const fallback = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
-      const rejected = publishManagedFixtureVersion(harness, managedRoot, "0.4.2", corruption.options);
+      const rejected = publishManagedFixtureVersion(harness, managedRoot, "0.4.2");
       corruption.mutate(rejected);
       const rejectedRecord = fs.readFileSync(path.join(rejected.versionRoot, "install.json"));
       const rejectedShim = fs.readFileSync(rejected.shimPath);
@@ -920,12 +1409,11 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
     }
   });
 
-  await t.test("a legacy complete target remains valid only when no adjacent publication claim exists", async () => {
+  await t.test("a target missing both publication control records fails closed with exact manual recovery", async () => {
     const harness = createHarness({ latestVersion: "0.4.2" });
     const managedRoot = path.join(harness.root, "managed");
     const seeded = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
     assert.equal(seeded.status, "ok", JSON.stringify(seeded));
-    const legacyPath = seeded.path;
     const versionRoot = path.join(managedRoot, "versions", "0.4.2");
     const claim = path.join(managedRoot, "versions", ".0.4.2.publish");
     const publicationRecord = path.join(versionRoot, "publication.json");
@@ -935,11 +1423,14 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
     assert.equal(fs.existsSync(publicationRecord), false);
 
     const result = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
-    assert.equal(result.status, "ok", JSON.stringify(result));
-    assert.equal(result.path, legacyPath);
-    assert.equal(result.version, "0.4.2");
-    assert.equal(result.action, "present");
-    assert.equal(result.freshness, "latest");
+    assert.equal(result.status, "unavailable", JSON.stringify(result));
+    assert.equal(result.failureClass, "cli-unusable");
+    assert.match(result.note, new RegExp(versionRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(result.note, new RegExp(claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(result.note, /after confirming no managed resolver process is active/i);
+    assert.match(result.note, /remove both/i);
+    assert.match(result.note, /retry/i);
+    assert.equal(fs.existsSync(versionRoot), true, "the resolver must preserve the incomplete target for manual recovery");
   });
 
   await t.test("a target left before failed link finalization remains incomplete on the next resolver", async () => {

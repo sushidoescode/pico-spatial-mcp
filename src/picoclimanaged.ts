@@ -13,6 +13,17 @@ const ABANDONED_STAGING_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
 const STAGING_OWNER_FILE = "staging-owner.json";
 const PUBLICATION_SETTLE_MS = 2_000;
 const PUBLICATION_POLL_MS = 25;
+const CONTENT_IDENTITY_SCHEMA_VERSION = 1;
+const INSTALL_RECORD_SCHEMA_VERSION = 2;
+const CONTENT_IDENTITY_EXCLUDED_ROOT_ENTRIES = new Set(["install.json", "publication.json"]);
+const CONTENT_IDENTITY_MAX_ENTRIES = 100_000;
+const CONTENT_IDENTITY_MAX_DEPTH = 128;
+const CONTENT_IDENTITY_MAX_PATH_BYTES = 64 * 1024 * 1024;
+const CONTENT_IDENTITY_MAX_FILE_BYTES = 256 * 1024 * 1024;
+const CONTENT_IDENTITY_MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
+const CONTENT_IDENTITY_READ_CHUNK_BYTES = 64 * 1024;
+const EXECUTABLE_IDENTITY_MAX_FILE_BYTES = 32 * 1024 * 1024;
+const CONTROL_RECORD_MAX_BYTES = 1024 * 1024;
 const COMPATIBILITY_CANARIES = [
   ["perf", "monitor", "run", "--help"],
   ["perf", "trace", "record", "--help"],
@@ -47,6 +58,8 @@ export type ManagedPicoCliIO = {
   run: (command: string, args: string[], options?: {
     timeoutMs?: number;
     killGraceMs?: number;
+    beforeSpawn?: (deadlineMs: number) => string | null;
+    afterSpawn?: (deadlineMs: number) => string | null;
   }) => Promise<ManagedPicoCliCommandResult>;
 };
 
@@ -103,8 +116,23 @@ export type PicoCliEnsureResult =
       outputTail?: string;
     };
 
-type ManagedCliInstallRecord = {
+type ManagedContentIdentity = {
   schemaVersion: 1;
+  algorithm: "sha256";
+  digest: string;
+  entryCount: number;
+  totalBytes: number;
+};
+
+type ManagedContentBinding = {
+  contentManifestSchemaVersion: 1;
+  contentManifestSha256: string;
+  contentManifestEntryCount: number;
+  contentManifestTotalBytes: number;
+};
+
+type ManagedCliInstallRecord = ManagedContentBinding & {
+  schemaVersion: 2;
   version: string;
   relativeCliPath: string;
   registryIntegrity: string | null;
@@ -120,8 +148,8 @@ type ManagedStagingOwnerRecord = {
   createdAt: string;
 };
 
-type ManagedPublicationRecord = {
-  schemaVersion: 1;
+type ManagedPublicationRecord = ManagedContentBinding & {
+  schemaVersion: 2;
   kind: "pico-managed-publication";
   version: string;
   registryIntegrity: string | null;
@@ -233,13 +261,409 @@ function unavailable(
   };
 }
 
+function sameObservedStat(left: fs.Stats, right: fs.Stats): boolean {
+  return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode
+    && left.nlink === right.nlink && left.size === right.size
+    && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs;
+}
+
+function readBoundedRegularFileWithStat(
+  file: string,
+  maxBytes = CONTROL_RECORD_MAX_BYTES,
+): { bytes: Buffer; stat: fs.Stats } | null {
+  let descriptor: number | undefined;
+  try {
+    const pathStat = fs.lstatSync(file);
+    if (!pathStat.isFile() || pathStat.isSymbolicLink() || pathStat.size < 0 || pathStat.size > maxBytes) return null;
+    const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+    descriptor = fs.openSync(file, fs.constants.O_RDONLY | noFollow);
+    const before = fs.fstatSync(descriptor);
+    if (!before.isFile() || !sameObservedStat(pathStat, before)) return null;
+    const bytes = Buffer.allocUnsafe(before.size);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const count = fs.readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+      if (count <= 0) return null;
+      offset += count;
+    }
+    const after = fs.fstatSync(descriptor);
+    return sameObservedStat(before, after) ? { bytes, stat: before } : null;
+  } catch {
+    return null;
+  } finally {
+    if (descriptor !== undefined) {
+      try { fs.closeSync(descriptor); } catch { /* the read already failed closed */ }
+    }
+  }
+}
+
+function readBoundedRegularFile(file: string, maxBytes = CONTROL_RECORD_MAX_BYTES): Buffer | null {
+  return readBoundedRegularFileWithStat(file, maxBytes)?.bytes ?? null;
+}
+
+function pathIsWithin(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`));
+}
+
+type ManagedContentManifestPath = {
+  absolutePath: string;
+  relativePath: string;
+};
+
+type ManagedContentIdentityLimits = {
+  maxEntries: number;
+  maxDepth: number;
+  maxPathBytes: number;
+  maxFileBytes: number;
+  maxTotalBytes: number;
+};
+
+const DEFAULT_CONTENT_IDENTITY_LIMITS: ManagedContentIdentityLimits = {
+  maxEntries: CONTENT_IDENTITY_MAX_ENTRIES,
+  maxDepth: CONTENT_IDENTITY_MAX_DEPTH,
+  maxPathBytes: CONTENT_IDENTITY_MAX_PATH_BYTES,
+  maxFileBytes: CONTENT_IDENTITY_MAX_FILE_BYTES,
+  maxTotalBytes: CONTENT_IDENTITY_MAX_TOTAL_BYTES,
+};
+
+function collectManagedContentPaths(
+  versionRoot: string,
+  realRoot: string,
+  limits: ManagedContentIdentityLimits,
+): ManagedContentManifestPath[] {
+  const discovered: ManagedContentManifestPath[] = [];
+  const pending: Array<ManagedContentManifestPath & { depth: number }> = [{
+    absolutePath: versionRoot,
+    relativePath: ".",
+    depth: 0,
+  }];
+  let pathBytes = Buffer.byteLength(".", "utf8");
+  while (pending.length > 0) {
+    const current = pending.pop() as ManagedContentManifestPath & { depth: number };
+    const before = fs.lstatSync(current.absolutePath);
+    const currentRealPath = fs.realpathSync(current.absolutePath);
+    if (!pathIsWithin(realRoot, currentRealPath)) throw new Error(`managed content path escaped its version root: ${current.relativePath}`);
+    discovered.push({ absolutePath: current.absolutePath, relativePath: current.relativePath });
+    if (discovered.length > limits.maxEntries || pathBytes > limits.maxPathBytes) {
+      throw new Error("managed content manifest exceeded its path or entry bound");
+    }
+    if (!before.isDirectory() || before.isSymbolicLink()) continue;
+
+    const children: Array<{ name: string; relativePath: string }> = [];
+    const directory = fs.opendirSync(current.absolutePath);
+    try {
+      for (let entry = directory.readSync(); entry !== null; entry = directory.readSync()) {
+        if (current.relativePath === "." && CONTENT_IDENTITY_EXCLUDED_ROOT_ENTRIES.has(entry.name)) continue;
+        const relativePath = current.relativePath === "." ? entry.name : `${current.relativePath}/${entry.name}`;
+        pathBytes += Buffer.byteLength(relativePath, "utf8");
+        if (pathBytes > limits.maxPathBytes) {
+          throw new Error("managed content manifest exceeded its path bound");
+        }
+        children.push({ name: entry.name, relativePath });
+        if (discovered.length + pending.length + children.length > limits.maxEntries) {
+          throw new Error("managed content manifest exceeded its entry bound");
+        }
+      }
+    } finally {
+      directory.closeSync();
+    }
+    const after = fs.lstatSync(current.absolutePath);
+    if (!after.isDirectory() || after.isSymbolicLink() || !sameObservedStat(before, after)) {
+      throw new Error(`managed content directory changed during traversal: ${current.relativePath}`);
+    }
+    if (children.length > 0 && current.depth >= limits.maxDepth) {
+      throw new Error("managed content manifest exceeded its depth bound");
+    }
+    children.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      const child = children[index];
+      pending.push({
+        absolutePath: path.join(current.absolutePath, child.name),
+        relativePath: child.relativePath,
+        depth: current.depth + 1,
+      });
+    }
+  }
+  discovered.sort((left, right) => left.relativePath < right.relativePath ? -1 : left.relativePath > right.relativePath ? 1 : 0);
+  return discovered;
+}
+
+function updateContentManifestHeader(hash: crypto.Hash, value: Record<string, string | number>): void {
+  const bytes = Buffer.from(JSON.stringify(value), "utf8");
+  hash.update(Buffer.from(`${bytes.length}:`, "ascii"));
+  hash.update(bytes);
+  hash.update(Buffer.from([0]));
+}
+
+/**
+ * Test-fixture support for publishing a cache tree that obeys the production content-binding
+ * contract. Production callers should use resolveManagedPicoCli rather than constructing records.
+ */
+export function managedContentIdentityForFixture(
+  versionRootValue: string,
+  limitOverrides: Partial<ManagedContentIdentityLimits> = {},
+): ManagedContentIdentity {
+  const limits = { ...DEFAULT_CONTENT_IDENTITY_LIMITS, ...limitOverrides };
+  for (const [name, value] of Object.entries(limits)) {
+    const ceiling = DEFAULT_CONTENT_IDENTITY_LIMITS[name as keyof ManagedContentIdentityLimits];
+    if (!Number.isSafeInteger(value) || value <= 0 || value > ceiling) {
+      throw new Error(`managed content identity ${name} must be a positive safe integer no larger than ${ceiling}`);
+    }
+  }
+  const versionRoot = path.resolve(versionRootValue);
+  const rootStat = fs.lstatSync(versionRoot);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error("managed version root was not a real directory");
+  const realRoot = fs.realpathSync(versionRoot);
+  const entries = collectManagedContentPaths(versionRoot, realRoot, limits);
+  const hash = crypto.createHash("sha256");
+  const chunk = Buffer.allocUnsafe(CONTENT_IDENTITY_READ_CHUNK_BYTES);
+  let totalBytes = 0;
+
+  for (const entry of entries) {
+    const before = fs.lstatSync(entry.absolutePath);
+    const mode = (before.mode & 0o7777).toString(8).padStart(4, "0");
+    const currentRealPath = fs.realpathSync(entry.absolutePath);
+    if (!pathIsWithin(realRoot, currentRealPath)) throw new Error(`managed content path escaped its version root: ${entry.relativePath}`);
+    if (before.isDirectory() && !before.isSymbolicLink()) {
+      updateContentManifestHeader(hash, { path: entry.relativePath, type: "directory", mode });
+      continue;
+    }
+    if (before.isSymbolicLink()) {
+      const targetBytes = fs.readlinkSync(entry.absolutePath, { encoding: "buffer" });
+      const target = targetBytes.toString("utf8");
+      if (!Buffer.from(target, "utf8").equals(targetBytes)) throw new Error(`managed symlink target was not UTF-8: ${entry.relativePath}`);
+      const lexicalTarget = path.resolve(path.dirname(entry.absolutePath), target);
+      if (!pathIsWithin(versionRoot, lexicalTarget) || !pathIsWithin(realRoot, currentRealPath)) {
+        throw new Error(`managed symlink target escaped its version root: ${entry.relativePath}`);
+      }
+      totalBytes += targetBytes.length;
+      if (totalBytes > limits.maxTotalBytes) throw new Error("managed content manifest exceeded its byte bound");
+      updateContentManifestHeader(hash, {
+        path: entry.relativePath,
+        type: "symlink",
+        mode,
+        links: before.nlink,
+        targetBytes: targetBytes.toString("base64"),
+      });
+      const after = fs.lstatSync(entry.absolutePath);
+      if (!after.isSymbolicLink() || !sameObservedStat(before, after)) {
+        throw new Error(`managed symlink changed during hashing: ${entry.relativePath}`);
+      }
+      continue;
+    }
+    if (!before.isFile() || before.size < 0 || before.size > limits.maxFileBytes) {
+      throw new Error(`managed content entry was unsupported or oversized: ${entry.relativePath}`);
+    }
+    totalBytes += before.size;
+    if (totalBytes > limits.maxTotalBytes) throw new Error("managed content manifest exceeded its byte bound");
+    const fileHash = crypto.createHash("sha256");
+    let descriptor: number | undefined;
+    try {
+      const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+      descriptor = fs.openSync(entry.absolutePath, fs.constants.O_RDONLY | noFollow);
+      const opened = fs.fstatSync(descriptor);
+      if (!opened.isFile() || !sameObservedStat(before, opened)) {
+        throw new Error(`managed content file identity changed before hashing: ${entry.relativePath}`);
+      }
+      let offset = 0;
+      while (offset < opened.size) {
+        const count = fs.readSync(descriptor, chunk, 0, Math.min(chunk.length, opened.size - offset), offset);
+        if (count <= 0) throw new Error(`managed content file ended during hashing: ${entry.relativePath}`);
+        fileHash.update(chunk.subarray(0, count));
+        offset += count;
+      }
+      const after = fs.fstatSync(descriptor);
+      if (!sameObservedStat(opened, after)) throw new Error(`managed content file changed during hashing: ${entry.relativePath}`);
+    } finally {
+      if (descriptor !== undefined) fs.closeSync(descriptor);
+    }
+    updateContentManifestHeader(hash, {
+      path: entry.relativePath,
+      type: "file",
+      mode,
+      links: before.nlink,
+      size: before.size,
+      contentSha256: fileHash.digest("hex"),
+    });
+  }
+
+  const afterEntries = collectManagedContentPaths(versionRoot, realRoot, limits).map((entry) => entry.relativePath);
+  if (entries.length !== afterEntries.length
+    || entries.some((entry, index) => entry.relativePath !== afterEntries[index])) {
+    throw new Error("managed content paths changed during hashing");
+  }
+  return {
+    schemaVersion: CONTENT_IDENTITY_SCHEMA_VERSION,
+    algorithm: "sha256",
+    digest: hash.digest("hex"),
+    entryCount: entries.length,
+    totalBytes,
+  };
+}
+
+const managedContentIdentity = managedContentIdentityForFixture;
+
+function contentBinding(identity: ManagedContentIdentity): ManagedContentBinding {
+  return {
+    contentManifestSchemaVersion: identity.schemaVersion,
+    contentManifestSha256: identity.digest,
+    contentManifestEntryCount: identity.entryCount,
+    contentManifestTotalBytes: identity.totalBytes,
+  };
+}
+
+function validManagedContentBinding(value: Partial<ManagedContentBinding>): value is ManagedContentBinding {
+  return value.contentManifestSchemaVersion === CONTENT_IDENTITY_SCHEMA_VERSION
+    && typeof value.contentManifestSha256 === "string" && /^[a-f0-9]{64}$/.test(value.contentManifestSha256)
+    && typeof value.contentManifestEntryCount === "number" && Number.isSafeInteger(value.contentManifestEntryCount)
+    && value.contentManifestEntryCount > 0 && value.contentManifestEntryCount <= CONTENT_IDENTITY_MAX_ENTRIES
+    && typeof value.contentManifestTotalBytes === "number" && Number.isSafeInteger(value.contentManifestTotalBytes)
+    && value.contentManifestTotalBytes >= 0 && value.contentManifestTotalBytes <= CONTENT_IDENTITY_MAX_TOTAL_BYTES;
+}
+
+function contentIdentityFromBinding(binding: ManagedContentBinding): ManagedContentIdentity {
+  return {
+    schemaVersion: binding.contentManifestSchemaVersion,
+    algorithm: "sha256",
+    digest: binding.contentManifestSha256,
+    entryCount: binding.contentManifestEntryCount,
+    totalBytes: binding.contentManifestTotalBytes,
+  };
+}
+
+function sameManagedContentIdentity(left: ManagedContentIdentity, right: ManagedContentIdentity): boolean {
+  return left.schemaVersion === right.schemaVersion && left.algorithm === right.algorithm
+    && left.digest === right.digest && left.entryCount === right.entryCount && left.totalBytes === right.totalBytes;
+}
+
+type ManagedExecutableIdentity = {
+  canonicalType: "file" | "symlink";
+  canonicalMode: string;
+  canonicalLinks: number;
+  canonicalSize: number;
+  canonicalTargetBase64: string | null;
+  realRelativePath: string;
+  realMode: string;
+  realLinks: number;
+  realSize: number;
+  realContentSha256: string;
+};
+
+function executableFileIdentity(file: string, deadlineMs: number): {
+  mode: string;
+  links: number;
+  size: number;
+  contentSha256: string;
+} {
+  if (Date.now() >= deadlineMs) throw new Error("managed executable identity check exhausted its deadline");
+  const pathStat = fs.lstatSync(file);
+  if (!pathStat.isFile() || pathStat.isSymbolicLink() || pathStat.size < 0
+    || pathStat.size > EXECUTABLE_IDENTITY_MAX_FILE_BYTES) {
+    throw new Error("managed executable target was not a bounded regular file");
+  }
+  const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+  const descriptor = fs.openSync(file, fs.constants.O_RDONLY | noFollow);
+  try {
+    const opened = fs.fstatSync(descriptor);
+    if (!opened.isFile() || !sameObservedStat(pathStat, opened)) {
+      throw new Error("managed executable target changed before hashing");
+    }
+    const hash = crypto.createHash("sha256");
+    const chunk = Buffer.allocUnsafe(CONTENT_IDENTITY_READ_CHUNK_BYTES);
+    let offset = 0;
+    while (offset < opened.size) {
+      if (Date.now() >= deadlineMs) throw new Error("managed executable identity check exhausted its deadline");
+      const count = fs.readSync(descriptor, chunk, 0, Math.min(chunk.length, opened.size - offset), offset);
+      if (count <= 0) throw new Error("managed executable target ended during hashing");
+      hash.update(chunk.subarray(0, count));
+      offset += count;
+    }
+    const after = fs.fstatSync(descriptor);
+    if (!sameObservedStat(opened, after)) throw new Error("managed executable target changed during hashing");
+    return {
+      mode: (opened.mode & 0o7777).toString(8).padStart(4, "0"),
+      links: opened.nlink,
+      size: opened.size,
+      contentSha256: hash.digest("hex"),
+    };
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function managedExecutableIdentity(
+  versionRoot: string,
+  cliPath: string,
+  version: string,
+  platform: NodeJS.Platform,
+  deadlineMs = Number.POSITIVE_INFINITY,
+): ManagedExecutableIdentity {
+  if (Date.now() >= deadlineMs) throw new Error("managed executable identity check exhausted its deadline");
+  const realRoot = fs.realpathSync(versionRoot);
+  const canonical = fs.lstatSync(cliPath);
+  if ((!canonical.isFile() && !canonical.isSymbolicLink()) || packageVersion(versionRoot) !== version) {
+    throw new Error("managed executable shim or package identity was invalid");
+  }
+  const canonicalTarget = canonical.isSymbolicLink()
+    ? fs.readlinkSync(cliPath, { encoding: "buffer" })
+    : null;
+  const realCliPath = fs.realpathSync(cliPath);
+  if (!pathIsWithin(realRoot, realCliPath)) throw new Error("managed executable escaped its version root");
+  const realFile = executableFileIdentity(realCliPath, deadlineMs);
+  const afterCanonical = fs.lstatSync(cliPath);
+  if (!sameObservedStat(canonical, afterCanonical)) throw new Error("managed executable shim changed during identity capture");
+  if (platform !== "win32") fs.accessSync(cliPath, fs.constants.X_OK);
+  return {
+    canonicalType: canonical.isSymbolicLink() ? "symlink" : "file",
+    canonicalMode: (canonical.mode & 0o7777).toString(8).padStart(4, "0"),
+    canonicalLinks: canonical.nlink,
+    canonicalSize: canonical.size,
+    canonicalTargetBase64: canonicalTarget?.toString("base64") ?? null,
+    realRelativePath: path.relative(realRoot, realCliPath).split(path.sep).join("/"),
+    realMode: realFile.mode,
+    realLinks: realFile.links,
+    realSize: realFile.size,
+    realContentSha256: realFile.contentSha256,
+  };
+}
+
+function managedExecutableGuard(
+  versionRoot: string,
+  cliPath: string,
+  version: string,
+  expectedIdentity: ManagedExecutableIdentity,
+  platform: NodeJS.Platform,
+  deadlineMs: number,
+): string | null {
+  try {
+    const observedIdentity = managedExecutableIdentity(versionRoot, cliPath, version, platform, deadlineMs);
+    return JSON.stringify(observedIdentity) === JSON.stringify(expectedIdentity)
+      ? null
+      : "managed pico-cli executable identity changed before process execution";
+  } catch (error) {
+    return `managed pico-cli executable identity check could not complete: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
 function readInstallRecord(versionRoot: string): ManagedCliInstallRecord | null {
   try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(path.join(versionRoot, "install.json"), "utf8"));
+    const bytes = readBoundedRegularFile(path.join(versionRoot, "install.json"));
+    if (!bytes) return null;
+    const parsed: unknown = JSON.parse(bytes.toString("utf8"));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const keys = Object.keys(parsed).sort();
+    if (keys.join("\0") !== [
+      "contentManifestEntryCount", "contentManifestSchemaVersion", "contentManifestSha256",
+      "contentManifestTotalBytes", "installedAt", "registryIntegrity", "relativeCliPath", "schemaVersion", "version",
+    ].join("\0")) return null;
     const record = parsed as Partial<ManagedCliInstallRecord>;
-    if (record.schemaVersion !== 1 || typeof record.version !== "string" || typeof record.relativeCliPath !== "string"
-      || (record.registryIntegrity !== null && typeof record.registryIntegrity !== "string") || typeof record.installedAt !== "string") return null;
+    const installedAtMs = typeof record.installedAt === "string" ? Date.parse(record.installedAt) : Number.NaN;
+    if (record.schemaVersion !== INSTALL_RECORD_SCHEMA_VERSION
+      || typeof record.version !== "string" || typeof record.relativeCliPath !== "string"
+      || (record.registryIntegrity !== null && typeof record.registryIntegrity !== "string")
+      || !Number.isFinite(installedAtMs) || new Date(installedAtMs).toISOString() !== record.installedAt
+      || !validManagedContentBinding(record)) return null;
     return record as ManagedCliInstallRecord;
   } catch {
     return null;
@@ -263,7 +687,9 @@ function canonicalRelativeCliPath(platform: NodeJS.Platform): string {
 
 function packageVersion(versionRoot: string): string | null {
   try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json"), "utf8"));
+    const bytes = readBoundedRegularFile(path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json"));
+    if (!bytes) return null;
+    const parsed: unknown = JSON.parse(bytes.toString("utf8"));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     const packageJson = parsed as { name?: unknown; version?: unknown };
     return packageJson.name === PICO_CLI_PACKAGE && typeof packageJson.version === "string" ? packageJson.version : null;
@@ -283,7 +709,9 @@ function versionFromOutput(raw: string): string | null {
 
 function readCompatibility(versionRoot: string, version: string): PicoCliCompatibilityDiagnostic[] | undefined {
   try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(path.join(versionRoot, "compatibility.json"), "utf8"));
+    const bytes = readBoundedRegularFile(path.join(versionRoot, "compatibility.json"));
+    if (!bytes) return undefined;
+    const parsed: unknown = JSON.parse(bytes.toString("utf8"));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
     const record = parsed as { schemaVersion?: unknown; version?: unknown; diagnostics?: unknown };
     if (record.schemaVersion !== 1 || record.version !== version || !Array.isArray(record.diagnostics)) return undefined;
@@ -312,19 +740,41 @@ async function validateManagedVersion(
   const record = readInstallRecord(versionRoot);
   const relativeCliPath = canonicalRelativeCliPath(io.platform);
   if (!record || record.version !== version || stableSemver(record.version) === null
-    || record.relativeCliPath !== relativeCliPath || packageVersion(versionRoot) !== version) return null;
+    || record.relativeCliPath !== relativeCliPath) return null;
   const cliPath = managedShimPath(versionRoot, record.relativeCliPath, io.platform);
   if (!cliPath) return null;
+  const recordedContentIdentity = contentIdentityFromBinding(record);
+  let executableIdentity: ManagedExecutableIdentity;
   try {
-    if (!fs.statSync(cliPath).isFile()) return null;
-    if (io.platform !== "win32") fs.accessSync(cliPath, fs.constants.X_OK);
+    const contentIdentity = managedContentIdentity(versionRoot);
+    if (!sameManagedContentIdentity(contentIdentity, recordedContentIdentity)) return null;
+    executableIdentity = managedExecutableIdentity(versionRoot, cliPath, version, io.platform);
   } catch {
     return null;
   }
-  const command = await io.run(cliPath, ["-v"], { timeoutMs: options.installTimeoutMs, killGraceMs: options.killGraceMs });
+  const executionGuard = (deadlineMs: number) => managedExecutableGuard(
+    versionRoot,
+    cliPath,
+    version,
+    executableIdentity,
+    io.platform,
+    deadlineMs,
+  );
+  const command = await io.run(cliPath, ["-v"], {
+    timeoutMs: options.installTimeoutMs,
+    killGraceMs: options.killGraceMs,
+    beforeSpawn: executionGuard,
+    afterSpawn: executionGuard,
+  });
   const raw = outputOf(command);
   if (command.code !== 0 || command.timedOut || command.spawnError || versionFromOutput(raw) !== version) return null;
   const compatibility = readCompatibility(versionRoot, version);
+  try {
+    const contentIdentity = managedContentIdentity(versionRoot);
+    if (!sameManagedContentIdentity(contentIdentity, recordedContentIdentity)) return null;
+  } catch {
+    return null;
+  }
   return { path: cliPath, version, raw, ...(compatibility ? { compatibility } : {}) };
 }
 
@@ -462,9 +912,9 @@ function readStagingOwner(recordPath: string): {
   createdAtMs: number;
 } | null {
   try {
-    const stat = fs.lstatSync(recordPath);
-    if (!stat.isFile() || stat.isSymbolicLink()) return null;
-    const bytes = fs.readFileSync(recordPath);
+    const bounded = readBoundedRegularFileWithStat(recordPath);
+    if (!bounded) return null;
+    const { bytes, stat } = bounded;
     const parsed: unknown = JSON.parse(bytes.toString("utf8"));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     const keys = Object.keys(parsed).sort();
@@ -483,33 +933,31 @@ function readStagingOwner(recordPath: string): {
 }
 
 function readPublicationRecord(recordPath: string): { record: ManagedPublicationRecord; stat: fs.Stats; bytes: Buffer } | null {
-  let descriptor: number | undefined;
   try {
-    const pathStat = fs.lstatSync(recordPath);
-    if (!pathStat.isFile() || pathStat.isSymbolicLink()) return null;
-    descriptor = fs.openSync(recordPath, "r");
-    const stat = fs.fstatSync(descriptor);
-    if (!stat.isFile() || stat.dev !== pathStat.dev || stat.ino !== pathStat.ino) return null;
-    const bytes = fs.readFileSync(descriptor);
+    const bounded = readBoundedRegularFileWithStat(recordPath);
+    if (!bounded) return null;
+    const { bytes, stat } = bounded;
     const parsed: unknown = JSON.parse(bytes.toString("utf8"));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     const keys = Object.keys(parsed).sort();
-    if (keys.join("\0") !== ["createdAt", "kind", "ownerPid", "registryIntegrity", "schemaVersion", "token", "version"].join("\0")) return null;
+    if (keys.join("\0") !== [
+      "contentManifestEntryCount", "contentManifestSchemaVersion", "contentManifestSha256",
+      "contentManifestTotalBytes", "createdAt", "kind", "ownerPid", "registryIntegrity",
+      "schemaVersion", "token", "version",
+    ].join("\0")) return null;
     const record = parsed as Partial<ManagedPublicationRecord>;
-    const createdAtMs = typeof record.createdAt === "string" ? Date.parse(record.createdAt) : Number.NaN;
-    if (record.schemaVersion !== 1 || record.kind !== "pico-managed-publication"
+    const createdAt = record.createdAt;
+    const createdAtMs = typeof createdAt === "string" ? Date.parse(createdAt) : Number.NaN;
+    if (record.schemaVersion !== 2 || record.kind !== "pico-managed-publication"
       || typeof record.version !== "string" || stableSemver(record.version) === null
       || (record.registryIntegrity !== null && typeof record.registryIntegrity !== "string")
       || typeof record.token !== "string" || record.token.length === 0 || record.token.length > 256
       || typeof record.ownerPid !== "number" || !Number.isSafeInteger(record.ownerPid) || record.ownerPid <= 0
-      || !Number.isFinite(createdAtMs) || new Date(createdAtMs).toISOString() !== record.createdAt) return null;
+      || !validManagedContentBinding(record)
+      || !Number.isFinite(createdAtMs) || new Date(createdAtMs).toISOString() !== createdAt) return null;
     return { record: record as ManagedPublicationRecord, stat, bytes };
   } catch {
     return null;
-  } finally {
-    if (descriptor !== undefined) {
-      try { fs.closeSync(descriptor); } catch { /* preserve the validation result */ }
-    }
   }
 }
 
@@ -526,23 +974,25 @@ function publicationRecordMatches(
   candidate: { record: ManagedPublicationRecord },
   version: string,
   registryIntegrity: string | null,
+  contentIdentity: ManagedContentIdentity,
 ): boolean {
-  return candidate.record.version === version && candidate.record.registryIntegrity === registryIntegrity;
+  return candidate.record.version === version && candidate.record.registryIntegrity === registryIntegrity
+    && sameManagedContentIdentity(contentIdentityFromBinding(candidate.record), contentIdentity);
 }
 
 function validatePublicationState(versionRoot: string, version: string, registryIntegrity: string | null): boolean {
+  const install = readInstallRecord(versionRoot);
+  if (!install) return false;
+  const contentIdentity = contentIdentityFromBinding(install);
   const publicationPath = path.join(versionRoot, "publication.json");
   const claimPath = path.join(path.dirname(versionRoot), `.${version}.publish`);
   const claimExists = pathEntryExists(claimPath);
   const publicationExists = pathEntryExists(publicationPath);
-  if (!claimExists && !publicationExists) {
-    return !pathEntryExists(claimPath) && !pathEntryExists(publicationPath);
-  }
+  if (!claimExists || !publicationExists) return false;
   const publication = publicationExists ? readPublicationRecord(publicationPath) : null;
-  if (!publication || !publicationRecordMatches(publication, version, registryIntegrity)) return false;
-  if (!claimExists) return !pathEntryExists(claimPath);
+  if (!publication || !publicationRecordMatches(publication, version, registryIntegrity, contentIdentity)) return false;
   const claim = readPublicationRecord(claimPath);
-  return claim !== null && publicationRecordMatches(claim, version, registryIntegrity)
+  return claim !== null && publicationRecordMatches(claim, version, registryIntegrity, contentIdentity)
     && claim.stat.dev === publication.stat.dev && claim.stat.ino === publication.stat.ino
     && claim.record.token === publication.record.token
     && claim.bytes.equals(publication.bytes);
@@ -644,6 +1094,19 @@ async function resolveRegistryLatest(
 function publicationClaimFailureNote(version: string, publicationClaim: string): string {
   return `Managed pico-cli ${version} publication claim ${publicationClaim} remains but no complete winner validates. `
     + `If the claim is abandoned, remove ${publicationClaim} manually only after confirming no managed resolver process is active, then retry.`;
+}
+
+function immutableVersionRecoveryNote(versionRoot: string, version: string): string {
+  const publicationClaim = path.join(path.dirname(versionRoot), `.${version}.publish`);
+  return `After confirming no managed resolver process is active, remove both ${versionRoot} and ${publicationClaim} manually `
+    + `(whichever entries are present), then retry so the MCP can install and content-bind fresh bytes.`;
+}
+
+function immutableStoreRecoveryNote(versionsRoot: string, versions: string[]): string {
+  if (versions.length === 0) return "";
+  return ` No published managed pico-cli version passed content-bound immutable-store validation. ${versions
+    .map((version) => immutableVersionRecoveryNote(path.join(versionsRoot, version), version))
+    .join(" ")}`;
 }
 
 function finalizePublicationClaim(
@@ -784,7 +1247,13 @@ export async function inspectManagedPicoCli(
     const validated = await validateCachedPublishedVersion(versionRoot, version, options, io);
     if (validated) return managedOk(validated, policy.policy, "cached", null, null, "cached", policy.deprecatedAliases);
   }
-  return unavailable(policy.policy, "managed", "cli-missing", "No published managed pico-cli version passed immutable-store validation.", policy.deprecatedAliases);
+  return unavailable(
+    policy.policy,
+    "managed",
+    "cli-missing",
+    immutableStoreRecoveryNote(versionsRoot, children).trimStart(),
+    policy.deprecatedAliases,
+  );
 }
 
 export async function resolveManagedPicoCli(
@@ -814,11 +1283,12 @@ export async function resolveManagedPicoCli(
         policy.deprecatedAliases,
       );
     }
+    const rejectedVersions = publishedVersions(versionsRoot);
     return unavailable(
       "managed-latest",
       "managed",
       "latest-unknown",
-      registryResolution.note,
+      `${registryResolution.note}${immutableStoreRecoveryNote(versionsRoot, rejectedVersions)}`,
       policy.deprecatedAliases,
       null,
       "",
@@ -865,7 +1335,8 @@ export async function resolveManagedPicoCli(
       return managedOk(existing, "managed-latest", "present", registry.version, registry.checkedAt, "latest", policy.deprecatedAliases);
     }
     return await knownFailure(
-      `Published managed pico-cli ${registry.version} failed immutable-store validation and will not be overwritten.`
+      `Published managed pico-cli ${registry.version} failed content-bound immutable-store validation and will not be overwritten. `
+        + immutableVersionRecoveryNote(target, registry.version)
         + (pathEntryExists(publicationClaim) ? ` ${publicationClaimFailureNote(registry.version, publicationClaim)}` : ""),
     );
   }
@@ -892,7 +1363,7 @@ export async function resolveManagedPicoCli(
 
     const install = await io.run("npm", [
       "install", "--prefix", staging, "--no-save", "--package-lock=false",
-      "--fund=false", "--audit=false", `${PICO_CLI_PACKAGE}@${registry.version}`,
+      "--ignore-scripts", "--fund=false", "--audit=false", `${PICO_CLI_PACKAGE}@${registry.version}`,
     ], { timeoutMs: options.installTimeoutMs, killGraceMs: options.killGraceMs });
     if (install.code !== 0 || install.timedOut || install.spawnError) {
       const note = install.timedOut
@@ -908,24 +1379,35 @@ export async function resolveManagedPicoCli(
 
     const relativeCliPath = canonicalRelativeCliPath(io.platform);
     const stagedCliPath = managedShimPath(staging, relativeCliPath, io.platform);
-    if (!stagedCliPath || packageVersion(staging) !== registry.version) {
+    if (!stagedCliPath) {
       return await knownFailure(
         "The staged managed pico-cli package metadata or canonical shim was incomplete.",
         commandOutputTail(install),
       );
     }
+    let stagedExecutableIdentity: ManagedExecutableIdentity;
     try {
-      if (!fs.statSync(stagedCliPath).isFile()) throw new Error("canonical shim is not a file");
-      if (io.platform !== "win32") fs.accessSync(stagedCliPath, fs.constants.X_OK);
+      managedContentIdentity(staging);
+      stagedExecutableIdentity = managedExecutableIdentity(staging, stagedCliPath, registry.version, io.platform);
     } catch {
       return await knownFailure(
-        "The staged managed pico-cli canonical shim was not executable.",
+        "The staged managed pico-cli package tree or canonical shim failed bounded containment validation.",
         commandOutputTail(install),
       );
     }
+    const stagedExecutionGuard = (deadlineMs: number) => managedExecutableGuard(
+      staging,
+      stagedCliPath,
+      registry.version,
+      stagedExecutableIdentity,
+      io.platform,
+      deadlineMs,
+    );
     const stagedProbe = await io.run(stagedCliPath, ["-v"], {
       timeoutMs: options.installTimeoutMs,
       killGraceMs: options.killGraceMs,
+      beforeSpawn: stagedExecutionGuard,
+      afterSpawn: stagedExecutionGuard,
     });
     const stagedRaw = outputOf(stagedProbe);
     if (stagedProbe.code !== 0 || stagedProbe.timedOut || stagedProbe.spawnError
@@ -942,6 +1424,8 @@ export async function resolveManagedPicoCli(
       const result = await io.run(stagedCliPath, argv, {
         timeoutMs: options.updateCheckTimeoutMs,
         killGraceMs: options.killGraceMs,
+        beforeSpawn: stagedExecutionGuard,
+        afterSpawn: stagedExecutionGuard,
       });
       compatibility.push({
         argv,
@@ -952,29 +1436,33 @@ export async function resolveManagedPicoCli(
       });
     }
 
-    writeFsyncedJson(path.join(staging, "install.json"), {
-      schemaVersion: 1,
-      version: registry.version,
-      relativeCliPath,
-      registryIntegrity: registry.integrity,
-      installedAt: registry.checkedAt,
-    } satisfies ManagedCliInstallRecord);
     writeFsyncedJson(path.join(staging, "compatibility.json"), {
       schemaVersion: 1,
       version: registry.version,
       diagnostics: compatibility,
     });
+    const contentIdentity = managedContentIdentity(staging);
+    writeFsyncedJson(path.join(staging, "install.json"), {
+      schemaVersion: INSTALL_RECORD_SCHEMA_VERSION,
+      version: registry.version,
+      relativeCliPath,
+      registryIntegrity: registry.integrity,
+      installedAt: registry.checkedAt,
+      ...contentBinding(contentIdentity),
+    } satisfies ManagedCliInstallRecord);
+    fsyncDirectoryWhereSupported(staging);
 
     try {
       publicationClaimDescriptor = fs.openSync(publicationClaim, "wx");
       publicationClaimRecord = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         kind: "pico-managed-publication",
         version: registry.version,
         registryIntegrity: registry.integrity,
         token: crypto.randomUUID(),
         ownerPid: process.pid,
         createdAt: registry.checkedAt,
+        ...contentBinding(contentIdentity),
       };
       fs.writeFileSync(publicationClaimDescriptor, `${JSON.stringify(publicationClaimRecord)}\n`, "utf8");
       fs.fsyncSync(publicationClaimDescriptor);
@@ -998,6 +1486,7 @@ export async function resolveManagedPicoCli(
         `${winner
           ? `A complete managed pico-cli ${registry.version} target appeared after this resolver acquired its claim.`
           : `Concurrent managed pico-cli ${registry.version} publication failed validation and will not be overwritten.`} `
+          + `${immutableVersionRecoveryNote(target, registry.version)} `
           + publicationClaimFailureNote(registry.version, publicationClaim),
       );
     }
@@ -1014,6 +1503,7 @@ export async function resolveManagedPicoCli(
         `${winner
           ? `A complete managed pico-cli ${registry.version} target collided after this resolver acquired its claim.`
           : `Concurrent managed pico-cli ${registry.version} publication failed validation and will not be overwritten.`} `
+          + `${immutableVersionRecoveryNote(target, registry.version)} `
           + publicationClaimFailureNote(registry.version, publicationClaim),
       );
     }
@@ -1021,7 +1511,10 @@ export async function resolveManagedPicoCli(
     fsyncDirectoryWhereSupported(versionsRoot);
     const published = await validateOwnedUnfinalizedVersion(target, registry.version, registry.integrity, options, io);
     if (!published) {
-      return await knownFailure("The atomically published managed pico-cli failed immutable-store validation.");
+      return await knownFailure(
+        `The atomically published managed pico-cli failed content-bound immutable-store validation. `
+          + immutableVersionRecoveryNote(target, registry.version),
+      );
     }
     if (!publicationClaimIdentity || !publicationClaimRecord) {
       return await knownFailure(publicationClaimFailureNote(registry.version, publicationClaim));
@@ -1035,7 +1528,10 @@ export async function resolveManagedPicoCli(
     if (finalized.status === "failure") return await knownFailure(finalized.note);
     const finalizedPublication = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
     if (!finalizedPublication) {
-      return await knownFailure("The finalized managed pico-cli publication record failed immutable-store validation.");
+      return await knownFailure(
+        `The finalized managed pico-cli publication record failed content-bound immutable-store validation. `
+          + immutableVersionRecoveryNote(target, registry.version),
+      );
     }
     return managedOk(
       finalizedPublication, "managed-latest", hadLowerValidated ? "updated" : "installed",

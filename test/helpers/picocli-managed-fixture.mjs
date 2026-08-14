@@ -10,6 +10,7 @@ import {
   PICO_CLI_AUTOUPDATE_ENV,
   runPicoCliCommand,
 } from "../../dist/picocli.js";
+import { managedContentIdentityForFixture } from "../../dist/picoclimanaged.js";
 
 const savedEnv = new Map();
 export const tempRoots = [];
@@ -43,7 +44,13 @@ import { pathToFileURL } from "node:url";
 const [role, ...args] = process.argv.slice(2);
 const logPath = process.env.FAKE_PICO_LOG;
 const record = (extra = {}) => {
-  if (logPath) fs.appendFileSync(logPath, JSON.stringify({ role, args, pid: process.pid, ...extra }) + "\\n");
+  if (logPath) fs.appendFileSync(logPath, JSON.stringify({
+    role,
+    args,
+    pid: process.pid,
+    lateEnv: process.env.PICO_TEST_LATE_ENV ?? null,
+    ...extra,
+  }) + "\\n");
 };
 record();
 
@@ -437,13 +444,35 @@ export function publishManagedFixtureVersion(harness, managedRoot, version, {
   fs.mkdirSync(packageRoot, { recursive: true });
   writeCommand(path.dirname(shimPath), "pico-cli", harness.driverPath, "managed-cli", [cliVersion]);
   fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@picoxr/pico-cli", version: packageVersion }));
+  const contentIdentity = managedContentIdentityForFixture(versionRoot);
   fs.writeFileSync(path.join(versionRoot, "install.json"), recordText ?? JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     version: recordVersion,
     relativeCliPath,
     registryIntegrity,
     installedAt: "2026-08-14T12:00:00.000Z",
+    contentManifestSchemaVersion: contentIdentity.schemaVersion,
+    contentManifestSha256: contentIdentity.digest,
+    contentManifestEntryCount: contentIdentity.entryCount,
+    contentManifestTotalBytes: contentIdentity.totalBytes,
   }));
+  const publicationRecord = {
+    schemaVersion: 2,
+    kind: "pico-managed-publication",
+    version,
+    registryIntegrity,
+    token: `fixture-publication-${version}`,
+    ownerPid: process.pid,
+    createdAt: "2026-08-14T12:00:00.000Z",
+    contentManifestSchemaVersion: contentIdentity.schemaVersion,
+    contentManifestSha256: contentIdentity.digest,
+    contentManifestEntryCount: contentIdentity.entryCount,
+    contentManifestTotalBytes: contentIdentity.totalBytes,
+  };
+  const publicationPath = path.join(versionRoot, "publication.json");
+  const claimPath = path.join(managedRoot, "versions", `.${version}.publish`);
+  fs.writeFileSync(publicationPath, `${JSON.stringify(publicationRecord)}\n`);
+  fs.linkSync(publicationPath, claimPath);
   return { versionRoot, shimPath };
 }
 

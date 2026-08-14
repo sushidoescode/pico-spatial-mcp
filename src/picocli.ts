@@ -1,5 +1,5 @@
 import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -194,9 +194,18 @@ export type PicoCliCommandResult = {
 export type PicoCliRunOptions = {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  /** Internal exact environment baseline; `env` remains the per-command override layer. */
+  baseEnv?: NodeJS.ProcessEnv;
   timeoutMs?: number;
   killGraceMs?: number;
   maxOutputBytes?: number;
+  /**
+   * Internal managed-store guards. They run synchronously adjacent to process creation and must
+   * cooperate with the supplied deadline; JavaScript cannot interrupt a blocked synchronous call.
+   * A post-spawn failure is detection/termination, not proof that the child had no side effects.
+   */
+  beforeSpawn?: (deadlineMs: number) => string | null;
+  afterSpawn?: (deadlineMs: number) => string | null;
 };
 
 function appendCapped(current: string, chunk: Buffer | string, cap: number): { text: string; truncated: boolean } {
@@ -209,9 +218,11 @@ function appendCapped(current: string, chunk: Buffer | string, cap: number): { t
 }
 
 /**
- * Run a child with captured, capped output and a hard settlement bound. All children receive the
- * complete server environment plus explicit overrides. On timeout, kill the process group on
- * POSIX or the process tree on Windows, then settle even if a grandchild inherited stdio.
+ * Run a child with captured, capped output and a hard settlement bound once synchronous internal
+ * validation returns. All children receive the complete server environment plus explicit
+ * overrides. On timeout, kill the process group on POSIX or the process tree on Windows, then
+ * settle even if a grandchild inherited stdio. Internal validation receives the same deadline and
+ * must cooperate with it; Node cannot preempt a blocked synchronous callback.
  */
 export function runPicoCliCommand(
   command: string,
@@ -221,8 +232,35 @@ export function runPicoCliCommand(
   const timeoutMs = opts.timeoutMs ?? PICO_CLI_INSTALL_TIMEOUT_MS;
   const killGraceMs = opts.killGraceMs ?? PICO_CLI_KILL_GRACE_MS;
   const maxOutputBytes = opts.maxOutputBytes ?? PICO_CLI_OUTPUT_CAP_BYTES;
-  const childEnv = { ...process.env, ...opts.env };
+  const childEnv = { ...(opts.baseEnv ?? process.env), ...opts.env };
   const platform = process.platform;
+  const commandDeadlineMs = Date.now() + Math.max(0, timeoutMs);
+
+  const synchronousSpawnCheck = (
+    check: ((deadlineMs: number) => string | null) | undefined,
+    phase: "pre-spawn" | "post-spawn",
+  ): { failure: string | null; exhausted: boolean } => {
+    if (!check) return { failure: null, exhausted: Date.now() >= commandDeadlineMs };
+    try {
+      const failure = check(commandDeadlineMs);
+      const exhausted = Date.now() >= commandDeadlineMs;
+      return {
+        failure: failure
+          ? `${phase} validation failed: ${failure}`
+          : exhausted
+            ? phase === "pre-spawn"
+              ? "pre-spawn validation exhausted the command timeout before process creation"
+              : "post-spawn validation exhausted the command timeout after process creation, before validation could settle"
+            : null,
+        exhausted,
+      };
+    } catch (error) {
+      return {
+        failure: `${phase} validation failed: ${error instanceof Error ? error.message : String(error)}`,
+        exhausted: Date.now() >= commandDeadlineMs,
+      };
+    }
+  };
 
   return new Promise((resolve) => {
     let stdout = "";
@@ -238,6 +276,7 @@ export function runPicoCliCommand(
     let hardTimer: NodeJS.Timeout | undefined;
     let child: ReturnType<typeof crossSpawn>;
     let treeKiller: ReturnType<typeof crossSpawn> | undefined;
+    let spawnValidationFailure: string | null = null;
 
     const finish = (code: number | null, signal: NodeJS.Signals | null, spawnError?: string) => {
       if (settled) return;
@@ -268,6 +307,14 @@ export function runPicoCliCommand(
       finish(observedCode ?? child.exitCode, observedSignal ?? child.signalCode);
     };
 
+    const beforeSpawn = synchronousSpawnCheck(opts.beforeSpawn, "pre-spawn");
+    spawnValidationFailure = beforeSpawn.failure;
+    timedOut ||= beforeSpawn.exhausted;
+    if (spawnValidationFailure) {
+      finish(null, null, spawnValidationFailure);
+      return;
+    }
+
     try {
       child = crossSpawn(command, args, {
         cwd: opts.cwd,
@@ -292,6 +339,10 @@ export function runPicoCliCommand(
       outputTruncated ||= appended.truncated;
     });
     child.once("error", (error) => {
+      if (spawnValidationFailure) {
+        finish(null, null, spawnValidationFailure);
+        return;
+      }
       if (timeoutCleanupPending) {
         const appended = appendCapped(stderr, error.message, maxOutputBytes);
         stderr = appended.text;
@@ -303,10 +354,28 @@ export function runPicoCliCommand(
     child.once("close", (code, signal) => {
       observedCode = code;
       observedSignal = signal;
+      if (spawnValidationFailure) {
+        finish(null, signal, spawnValidationFailure);
+        return;
+      }
       // Once a timeout begins, do not let a `.cmd` parent (or POSIX group leader) closing early
       // cancel process-tree cleanup. The cleanup path owns settlement from this point onward.
       if (!timeoutCleanupPending) finish(code, signal);
     });
+
+    const afterSpawn = synchronousSpawnCheck(opts.afterSpawn, "post-spawn");
+    spawnValidationFailure = afterSpawn.failure;
+    timedOut ||= afterSpawn.exhausted;
+    if (spawnValidationFailure) {
+      kill("SIGKILL");
+      hardTimer = setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        child.unref();
+        finish(null, child.signalCode, spawnValidationFailure ?? "post-spawn validation failed");
+      }, 250);
+      return;
+    }
 
     timeout = setTimeout(() => {
       timedOut = true;
@@ -354,7 +423,7 @@ export function runPicoCliCommand(
         kill("SIGKILL");
         hardTimer = setTimeout(settleTimedOut, 250);
       }, killGraceMs);
-    }, timeoutMs);
+    }, Math.max(0, commandDeadlineMs - Date.now()));
   });
 }
 
@@ -499,14 +568,32 @@ export function picoCliFromEnsure(result: PicoCliEnsureResult): Extract<PicoCliP
     : null;
 }
 
-const managedIo: ManagedPicoCliIO = {
-  env: process.env,
-  platform: process.platform,
-  homeDir: os.homedir(),
-  now: () => Date.now(),
-  randomUUID,
-  run: (command, args, options) => runPicoCliCommand(command, args, options),
-};
+function managedHomeFromSnapshot(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string {
+  if (platform === "win32") {
+    const profile = envValue(env, "USERPROFILE", platform);
+    if (profile) return profile;
+    const drive = envValue(env, "HOMEDRIVE", platform);
+    const homePath = envValue(env, "HOMEPATH", platform);
+    if (drive && homePath) return path.win32.join(drive, homePath);
+  } else {
+    const home = envValue(env, "HOME", platform);
+    if (home) return home;
+  }
+  return os.homedir();
+}
+
+function managedIoSnapshot(): ManagedPicoCliIO {
+  const env = { ...process.env };
+  const platform = process.platform;
+  return {
+    env,
+    platform,
+    homeDir: managedHomeFromSnapshot(env, platform),
+    now: () => Date.now(),
+    randomUUID,
+    run: (command, args, options) => runPicoCliCommand(command, args, { ...options, baseEnv: env }),
+  };
+}
 
 type CompatibleManagedOptions = ManagedPicoCliOptions & {
   /** Deprecated 37.x inputs accepted but intentionally inert. */
@@ -514,16 +601,36 @@ type CompatibleManagedOptions = ManagedPicoCliOptions & {
   update?: boolean;
 };
 
+type ResolvedManagedOptions = ManagedPicoCliOptions & { managedRoot: string };
+
 type EnsureFlight = { forceRefresh: boolean; promise: Promise<PicoCliEnsureResult> };
 const ensureFlights = new Map<string, EnsureFlight>();
 
-function ensureOptionsKey(options: CompatibleManagedOptions): string {
-  const managedRoot = path.resolve(options.managedRoot ?? path.join(managedIo.homeDir, ".pico-mcp", "cli"));
+function resolvedManagedOptions(
+  options: CompatibleManagedOptions,
+  io: ManagedPicoCliIO,
+): ResolvedManagedOptions {
+  return {
+    managedRoot: path.resolve(options.managedRoot ?? path.join(io.homeDir, ".pico-mcp", "cli")),
+    ...(options.forceRefresh !== undefined ? { forceRefresh: options.forceRefresh } : {}),
+    ...(options.installTimeoutMs !== undefined ? { installTimeoutMs: options.installTimeoutMs } : {}),
+    ...(options.updateCheckTimeoutMs !== undefined ? { updateCheckTimeoutMs: options.updateCheckTimeoutMs } : {}),
+    ...(options.killGraceMs !== undefined ? { killGraceMs: options.killGraceMs } : {}),
+  };
+}
+
+function managedEnvironmentDigest(env: NodeJS.ProcessEnv): string {
+  const entries = Object.entries(env).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
+  return createHash("sha256").update(JSON.stringify(entries), "utf8").digest("hex");
+}
+
+function ensureOptionsKey(options: ResolvedManagedOptions, io: ManagedPicoCliIO): string {
   return JSON.stringify([
-    managedRoot,
+    options.managedRoot,
     options.installTimeoutMs ?? null,
     options.updateCheckTimeoutMs ?? null,
     options.killGraceMs ?? null,
+    managedEnvironmentDigest(io.env),
   ]);
 }
 
@@ -545,22 +652,17 @@ function unexpectedManagedFailure(error: unknown): PicoCliEnsureResult {
   };
 }
 
-/** Lazy managed resolution. Registration/startup never calls this. */
-export function ensurePicoCli(options: CompatibleManagedOptions = {}): Promise<PicoCliEnsureResult> {
-  const normalized: ManagedPicoCliOptions = {
-    ...(options.managedRoot !== undefined ? { managedRoot: options.managedRoot } : {}),
-    ...(options.forceRefresh !== undefined ? { forceRefresh: options.forceRefresh } : {}),
-    ...(options.installTimeoutMs !== undefined ? { installTimeoutMs: options.installTimeoutMs } : {}),
-    ...(options.updateCheckTimeoutMs !== undefined ? { updateCheckTimeoutMs: options.updateCheckTimeoutMs } : {}),
-    ...(options.killGraceMs !== undefined ? { killGraceMs: options.killGraceMs } : {}),
-  };
-  const key = ensureOptionsKey(options);
+function ensurePicoCliWithSnapshot(
+  normalized: ResolvedManagedOptions,
+  io: ManagedPicoCliIO,
+): Promise<PicoCliEnsureResult> {
+  const key = ensureOptionsKey(normalized, io);
   const active = ensureFlights.get(key);
   if (active) {
     if (active.forceRefresh || !normalized.forceRefresh) return active.promise;
-    return active.promise.then(() => ensurePicoCli({ ...normalized, forceRefresh: true }));
+    return active.promise.then(() => ensurePicoCliWithSnapshot({ ...normalized, forceRefresh: true }, io));
   }
-  const pending = resolveManagedPicoCli(normalized, managedIo).catch(unexpectedManagedFailure);
+  const pending = resolveManagedPicoCli(normalized, io).catch(unexpectedManagedFailure);
   ensureFlights.set(key, { forceRefresh: normalized.forceRefresh === true, promise: pending });
   void pending.finally(() => {
     if (ensureFlights.get(key)?.promise === pending) ensureFlights.delete(key);
@@ -568,8 +670,15 @@ export function ensurePicoCli(options: CompatibleManagedOptions = {}): Promise<P
   return pending;
 }
 
+/** Lazy managed resolution. Registration/startup never calls this. */
+export function ensurePicoCli(options: CompatibleManagedOptions = {}): Promise<PicoCliEnsureResult> {
+  const io = managedIoSnapshot();
+  return ensurePicoCliWithSnapshot(resolvedManagedOptions(options, io), io);
+}
+
 export function inspectPicoCliCached(options: ManagedPicoCliOptions = {}): Promise<PicoCliEnsureResult> {
-  return inspectManagedPicoCli(options, managedIo).catch(unexpectedManagedFailure);
+  const io = managedIoSnapshot();
+  return inspectManagedPicoCli(resolvedManagedOptions(options, io), io).catch(unexpectedManagedFailure);
 }
 
 export type PicoCliEnvelope =
