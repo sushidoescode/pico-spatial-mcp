@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -7,6 +8,18 @@ export const PICO_CLI_PACKAGE = "@picoxr/pico-cli";
 
 const LEGACY_POLICY_ALIASES = ["PICO_MCP_AUTOINSTALL_CLI", "PICO_MCP_AUTOUPDATE_CLI"] as const;
 const STABLE_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const REGISTRY_CACHE_TTL_MS = 60 * 60 * 1_000;
+const COMPATIBILITY_CANARIES = [
+  ["perf", "monitor", "run", "--help"],
+  ["perf", "trace", "record", "--help"],
+  ["perf", "trace", "decode", "--help"],
+  ["perf", "trace", "load", "--help"],
+  ["perf", "trace", "query", "--help"],
+  ["app", "watch-crash", "--help"],
+  ["capture", "record", "--help"],
+  ["mcp", "dev-knowledge", "--help"],
+  ["emulator", "status", "--help"],
+] as const;
 
 export type PicoCliPolicy = "managed-latest" | "managed-cached" | "external" | "disabled";
 export type PicoCliFreshness = "latest" | "outdated" | "unknown" | "cached" | "external";
@@ -96,6 +109,22 @@ type ManagedCliInstallRecord = {
 type PicoCliPolicyResolution =
   | { status: "ok"; policy: PicoCliPolicy; externalPath: string | null; deprecatedAliases: string[] }
   | { status: "invalid"; policy: null; externalPath: null; deprecatedAliases: string[]; note: string };
+
+type ValidatedManagedCli = {
+  path: string;
+  version: string;
+  raw: string;
+  compatibility?: PicoCliCompatibilityDiagnostic[];
+};
+
+type RegistryLatest = {
+  version: string;
+  integrity: string | null;
+  checkedAt: string;
+  fetchedAt: number;
+};
+
+let registryLatestCache: RegistryLatest | null = null;
 
 function envValue(env: NodeJS.ProcessEnv, name: string, platform: NodeJS.Platform): string | undefined {
   if (platform !== "win32") return env[name];
@@ -192,6 +221,11 @@ function managedShimPath(versionRoot: string, relativeCliPath: string, platform:
   return absolute.startsWith(rootPrefix) ? absolute : null;
 }
 
+function canonicalRelativeCliPath(platform: NodeJS.Platform): string {
+  const pathApi = pathApiFor(platform);
+  return pathApi.join("node_modules", ".bin", platform === "win32" ? "pico-cli.cmd" : "pico-cli");
+}
+
 function packageVersion(versionRoot: string): string | null {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json"), "utf8"));
@@ -210,6 +244,135 @@ function outputOf(result: ManagedPicoCliCommandResult): string {
 function versionFromOutput(raw: string): string | null {
   const match = raw.match(/pico-cli\/(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?=\s|$)/);
   return match ? match[0].slice("pico-cli/".length) : null;
+}
+
+function readCompatibility(versionRoot: string, version: string): PicoCliCompatibilityDiagnostic[] | undefined {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(path.join(versionRoot, "compatibility.json"), "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    const record = parsed as { schemaVersion?: unknown; version?: unknown; diagnostics?: unknown };
+    if (record.schemaVersion !== 1 || record.version !== version || !Array.isArray(record.diagnostics)) return undefined;
+    const diagnostics: PicoCliCompatibilityDiagnostic[] = [];
+    for (const item of record.diagnostics) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return undefined;
+      const diagnostic = item as Partial<PicoCliCompatibilityDiagnostic>;
+      if (!Array.isArray(diagnostic.argv) || !diagnostic.argv.every((arg) => typeof arg === "string")
+        || (diagnostic.exitCode !== null && typeof diagnostic.exitCode !== "number")
+        || typeof diagnostic.timedOut !== "boolean" || typeof diagnostic.outputTruncated !== "boolean"
+        || typeof diagnostic.helpSha256 !== "string") return undefined;
+      diagnostics.push(diagnostic as PicoCliCompatibilityDiagnostic);
+    }
+    return diagnostics;
+  } catch {
+    return undefined;
+  }
+}
+
+async function validateManagedVersion(
+  versionRoot: string,
+  version: string,
+  options: ManagedPicoCliOptions,
+  io: ManagedPicoCliIO,
+): Promise<ValidatedManagedCli | null> {
+  const record = readInstallRecord(versionRoot);
+  const relativeCliPath = canonicalRelativeCliPath(io.platform);
+  if (!record || record.version !== version || stableSemver(record.version) === null
+    || record.relativeCliPath !== relativeCliPath || packageVersion(versionRoot) !== version) return null;
+  const cliPath = managedShimPath(versionRoot, record.relativeCliPath, io.platform);
+  if (!cliPath) return null;
+  try {
+    if (!fs.statSync(cliPath).isFile()) return null;
+    if (io.platform !== "win32") fs.accessSync(cliPath, fs.constants.X_OK);
+  } catch {
+    return null;
+  }
+  const command = await io.run(cliPath, ["-v"], { timeoutMs: options.installTimeoutMs, killGraceMs: options.killGraceMs });
+  const raw = outputOf(command);
+  if (command.code !== 0 || command.timedOut || command.spawnError || versionFromOutput(raw) !== version) return null;
+  const compatibility = readCompatibility(versionRoot, version);
+  return { path: cliPath, version, raw, ...(compatibility ? { compatibility } : {}) };
+}
+
+function publishedVersions(versionsRoot: string): string[] {
+  try {
+    return fs.readdirSync(versionsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && stableSemver(entry.name) !== null)
+      .map((entry) => entry.name)
+      .sort((left, right) => compareStableSemver(right, left));
+  } catch {
+    return [];
+  }
+}
+
+function managedOk(
+  validated: ValidatedManagedCli,
+  policy: "managed-latest" | "managed-cached",
+  action: "present" | "installed" | "updated" | "cached",
+  latestVersion: string | null,
+  checkedAt: string | null,
+  freshness: "latest" | "cached",
+  deprecatedAliases: string[],
+): PicoCliEnsureResult {
+  return {
+    status: "ok", source: "managed", policy, action, path: validated.path, version: validated.version,
+    raw: validated.raw, latestVersion, checkedAt, freshness, deprecatedAliases,
+    ...(validated.compatibility ? { compatibility: validated.compatibility } : {}),
+  };
+}
+
+async function resolveRegistryLatest(
+  options: ManagedPicoCliOptions,
+  io: ManagedPicoCliIO,
+): Promise<RegistryLatest | null> {
+  const now = io.now();
+  if (!options.forceRefresh && registryLatestCache && now >= registryLatestCache.fetchedAt
+    && now - registryLatestCache.fetchedAt < REGISTRY_CACHE_TTL_MS) return registryLatestCache;
+  const checkedAt = new Date(now).toISOString();
+  const registry = await io.run("npm", [
+    "view", `${PICO_CLI_PACKAGE}@latest`, "version", "dist.integrity", "--json",
+  ], { timeoutMs: options.updateCheckTimeoutMs });
+  if (registry.code !== 0 || registry.timedOut || registry.spawnError) return null;
+  try {
+    const parsed: unknown = JSON.parse(registry.stdout);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const keys = Object.keys(parsed).sort();
+    if (keys.length !== 2 || keys[0] !== "dist.integrity" || keys[1] !== "version") return null;
+    const record = parsed as { version?: unknown; "dist.integrity"?: unknown };
+    if (typeof record.version !== "string" || stableSemver(record.version) === null
+      || (record["dist.integrity"] !== null && typeof record["dist.integrity"] !== "string")) return null;
+    registryLatestCache = {
+      version: record.version,
+      integrity: record["dist.integrity"] as string | null,
+      checkedAt,
+      fetchedAt: now,
+    };
+    return registryLatestCache;
+  } catch {
+    return null;
+  }
+}
+
+function writeFsyncedJson(file: string, value: unknown): void {
+  const descriptor = fs.openSync(file, "wx");
+  try {
+    fs.writeFileSync(descriptor, `${JSON.stringify(value)}\n`, "utf8");
+    fs.fsyncSync(descriptor);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function fsyncDirectoryWhereSupported(directory: string): void {
+  let descriptor: number | undefined;
+  try {
+    descriptor = fs.openSync(directory, "r");
+    fs.fsyncSync(descriptor);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (!code || !["EINVAL", "ENOTSUP", "EISDIR", "EBADF"].includes(code)) throw error;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
 }
 
 async function inspectExternal(
@@ -241,37 +404,203 @@ export async function inspectManagedPicoCli(
   }
   if (policy.policy === "external") return inspectExternal(policy, options, io);
 
-  const managedRoot = options.managedRoot ?? path.join(io.homeDir, ".pico-mcp", "cli");
+  const managedRoot = path.resolve(options.managedRoot ?? path.join(io.homeDir, ".pico-mcp", "cli"));
   const versionsRoot = path.join(managedRoot, "versions");
-  let children: string[];
-  try {
-    children = fs.readdirSync(versionsRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && stableSemver(entry.name) !== null)
-      .map((entry) => entry.name)
-      .sort((left, right) => compareStableSemver(right, left));
-  } catch {
+  const children = publishedVersions(versionsRoot);
+  if (children.length === 0) {
     return unavailable(policy.policy, "managed", "cli-missing", "No validated managed pico-cli version is published in the local store.", policy.deprecatedAliases);
   }
 
   for (const version of children) {
     const versionRoot = path.join(versionsRoot, version);
-    const record = readInstallRecord(versionRoot);
-    if (!record || record.version !== version || stableSemver(record.version) === null) continue;
-    const cliPath = managedShimPath(versionRoot, record.relativeCliPath, io.platform);
-    if (!cliPath || packageVersion(versionRoot) !== version) continue;
-    try {
-      if (!fs.statSync(cliPath).isFile()) continue;
-      if (io.platform !== "win32") fs.accessSync(cliPath, fs.constants.X_OK);
-    } catch {
-      continue;
-    }
-    const command = await io.run(cliPath, ["-v"], { timeoutMs: options.installTimeoutMs, killGraceMs: options.killGraceMs });
-    const raw = outputOf(command);
-    if (command.code !== 0 || command.timedOut || command.spawnError || versionFromOutput(raw) !== version) continue;
-    return {
-      status: "ok", source: "managed", policy: policy.policy, action: "cached", path: cliPath, version, raw,
-      latestVersion: null, checkedAt: null, freshness: "cached", deprecatedAliases: policy.deprecatedAliases,
-    };
+    const validated = await validateManagedVersion(versionRoot, version, options, io);
+    if (validated) return managedOk(validated, policy.policy, "cached", null, null, "cached", policy.deprecatedAliases);
   }
   return unavailable(policy.policy, "managed", "cli-missing", "No published managed pico-cli version passed immutable-store validation.", policy.deprecatedAliases);
+}
+
+export async function resolveManagedPicoCli(
+  options: ManagedPicoCliOptions,
+  io: ManagedPicoCliIO,
+): Promise<PicoCliEnsureResult> {
+  const policy = resolvePicoCliPolicy(io.env, io.platform);
+  if (policy.status === "invalid" || policy.policy !== "managed-latest") {
+    return inspectManagedPicoCli(options, io);
+  }
+
+  const registry = await resolveRegistryLatest(options, io);
+  if (!registry) {
+    return unavailable(
+      "managed-latest",
+      "managed",
+      "latest-unknown",
+      "The bounded npm registry latest check failed or returned invalid metadata.",
+      policy.deprecatedAliases,
+    );
+  }
+
+  const root = path.resolve(options.managedRoot ?? path.join(io.homeDir, ".pico-mcp", "cli"));
+  const versionsRoot = path.join(root, "versions");
+  const target = path.join(versionsRoot, registry.version);
+  if (fs.existsSync(target)) {
+    const existing = await validateManagedVersion(target, registry.version, options, io);
+    if (existing) {
+      return managedOk(existing, "managed-latest", "present", registry.version, registry.checkedAt, "latest", policy.deprecatedAliases);
+    }
+    return unavailable(
+      "managed-latest",
+      "managed",
+      "cli-unusable",
+      `Published managed pico-cli ${registry.version} failed immutable-store validation and will not be overwritten.`,
+      policy.deprecatedAliases,
+    );
+  }
+
+  let lowerValidated = false;
+  for (const version of publishedVersions(versionsRoot)) {
+    if (compareStableSemver(version, registry.version) >= 0) continue;
+    if (await validateManagedVersion(path.join(versionsRoot, version), version, options, io)) {
+      lowerValidated = true;
+      break;
+    }
+  }
+
+  const stagingRoot = path.join(root, "staging");
+  const staging = path.join(stagingRoot, io.randomUUID());
+  let ownsStaging = false;
+  try {
+    fs.mkdirSync(versionsRoot, { recursive: true });
+    fs.mkdirSync(stagingRoot, { recursive: true });
+    fs.mkdirSync(staging);
+    ownsStaging = true;
+
+    const install = await io.run("npm", [
+      "install", "--prefix", staging, "--no-save", "--package-lock=false",
+      "--fund=false", "--audit=false", `${PICO_CLI_PACKAGE}@${registry.version}`,
+    ], { timeoutMs: options.installTimeoutMs, killGraceMs: options.killGraceMs });
+    if (install.code !== 0 || install.timedOut || install.spawnError) {
+      return unavailable(
+        "managed-latest", "managed", "cli-unusable",
+        "The exact managed pico-cli package install did not complete successfully.", policy.deprecatedAliases,
+      );
+    }
+
+    const relativeCliPath = canonicalRelativeCliPath(io.platform);
+    const stagedCliPath = managedShimPath(staging, relativeCliPath, io.platform);
+    if (!stagedCliPath || packageVersion(staging) !== registry.version) {
+      return unavailable(
+        "managed-latest", "managed", "cli-unusable",
+        "The staged managed pico-cli package metadata or canonical shim was incomplete.", policy.deprecatedAliases,
+      );
+    }
+    try {
+      if (!fs.statSync(stagedCliPath).isFile()) throw new Error("canonical shim is not a file");
+      if (io.platform !== "win32") fs.accessSync(stagedCliPath, fs.constants.X_OK);
+    } catch {
+      return unavailable(
+        "managed-latest", "managed", "cli-unusable",
+        "The staged managed pico-cli canonical shim was not executable.", policy.deprecatedAliases,
+      );
+    }
+    const stagedProbe = await io.run(stagedCliPath, ["-v"], {
+      timeoutMs: options.installTimeoutMs,
+      killGraceMs: options.killGraceMs,
+    });
+    const stagedRaw = outputOf(stagedProbe);
+    if (stagedProbe.code !== 0 || stagedProbe.timedOut || stagedProbe.spawnError
+      || versionFromOutput(stagedRaw) !== registry.version) {
+      return unavailable(
+        "managed-latest", "managed", "cli-unusable",
+        "The staged managed pico-cli did not report the exact requested version.", policy.deprecatedAliases,
+      );
+    }
+
+    const compatibility: PicoCliCompatibilityDiagnostic[] = [];
+    for (const canary of COMPATIBILITY_CANARIES) {
+      const argv = [...canary];
+      const result = await io.run(stagedCliPath, argv, {
+        timeoutMs: options.updateCheckTimeoutMs,
+        killGraceMs: options.killGraceMs,
+      });
+      compatibility.push({
+        argv,
+        exitCode: result.code,
+        timedOut: result.timedOut,
+        outputTruncated: result.outputTruncated,
+        helpSha256: crypto.createHash("sha256").update(`${result.stdout}${result.stderr}`).digest("hex"),
+      });
+    }
+
+    writeFsyncedJson(path.join(staging, "install.json"), {
+      schemaVersion: 1,
+      version: registry.version,
+      relativeCliPath,
+      registryIntegrity: registry.integrity,
+      installedAt: registry.checkedAt,
+    } satisfies ManagedCliInstallRecord);
+    writeFsyncedJson(path.join(staging, "compatibility.json"), {
+      schemaVersion: 1,
+      version: registry.version,
+      diagnostics: compatibility,
+    });
+
+    if (fs.existsSync(target)) {
+      const winner = await validateManagedVersion(target, registry.version, options, io);
+      if (!winner) {
+        return unavailable(
+          "managed-latest", "managed", "cli-unusable",
+          `Concurrent managed pico-cli ${registry.version} publication failed validation and will not be overwritten.`,
+          policy.deprecatedAliases,
+        );
+      }
+      return managedOk(
+        winner, "managed-latest", lowerValidated ? "updated" : "installed",
+        registry.version, registry.checkedAt, "latest", policy.deprecatedAliases,
+      );
+    }
+
+    try {
+      fs.renameSync(staging, target);
+      ownsStaging = false;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      const collision = ["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(code ?? "") && fs.existsSync(target);
+      if (!collision) throw error;
+      const winner = await validateManagedVersion(target, registry.version, options, io);
+      if (!winner) {
+        return unavailable(
+          "managed-latest", "managed", "cli-unusable",
+          `Concurrent managed pico-cli ${registry.version} publication failed validation and will not be overwritten.`,
+          policy.deprecatedAliases,
+        );
+      }
+      return managedOk(
+        winner, "managed-latest", lowerValidated ? "updated" : "installed",
+        registry.version, registry.checkedAt, "latest", policy.deprecatedAliases,
+      );
+    }
+
+    fsyncDirectoryWhereSupported(versionsRoot);
+    const published = await validateManagedVersion(target, registry.version, options, io);
+    if (!published) {
+      return unavailable(
+        "managed-latest", "managed", "cli-unusable",
+        "The atomically published managed pico-cli failed immutable-store validation.", policy.deprecatedAliases,
+      );
+    }
+    return managedOk(
+      published, "managed-latest", lowerValidated ? "updated" : "installed",
+      registry.version, registry.checkedAt, "latest", policy.deprecatedAliases,
+    );
+  } catch (error) {
+    return unavailable(
+      "managed-latest", "managed", "cli-unusable",
+      `Managed pico-cli provisioning failed: ${error instanceof Error ? error.message : String(error)}`,
+      policy.deprecatedAliases,
+    );
+  } finally {
+    if (ownsStaging) {
+      try { fs.rmSync(staging, { recursive: true, force: true }); } catch { /* preserve the primary failure */ }
+    }
+  }
 }

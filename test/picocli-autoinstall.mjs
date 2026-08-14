@@ -2,6 +2,7 @@
 // All commands are fakes on an isolated PATH; this test never contacts npm or a device.
 import test from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -21,166 +22,21 @@ import { registerPicoCliHealthTool } from "../dist/picoclihealth.js";
 import { registerPicoCliTools } from "../dist/picoclitools.js";
 import { runPerfDiagnose } from "../dist/perfcli.js";
 import {
+  createHarness,
+  createManagedIO,
+  restoreEnvironment,
+  saveEnvironment,
+  tempRoots,
+} from "./helpers/picocli-managed-fixture.mjs";
+import {
   inspectManagedPicoCli,
+  resolveManagedPicoCli,
   resolvePicoCliPolicy,
   PICO_CLI_PATH_ENV,
   PICO_CLI_POLICY_ENV,
 } from "../dist/picoclimanaged.js";
 
-const savedEnv = new Map();
-const tempRoots = [];
-const trackedEnv = [
-  "PATH",
-  "Path",
-  PICO_CLI_AUTOINSTALL_ENV,
-  PICO_CLI_AUTOUPDATE_ENV,
-  "PICO_TEST_FULL_ENV",
-  "FAKE_PICO_STATE",
-  "FAKE_PICO_LOG",
-  "FAKE_PICO_BIN",
-  "FAKE_PICO_CLI_TEMPLATE",
-  "FAKE_PICO_CLI_TARGET",
-  "FAKE_PICO_PREFIX",
-  "FAKE_NPM_MODE",
-  "FAKE_LATEST_VERSION",
-];
-
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-function saveEnvironment() {
-  for (const key of trackedEnv) savedEnv.set(key, process.env[key]);
-}
-
-function restoreEnvironment() {
-  for (const [key, value] of savedEnv) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-}
-
-function shQuote(value) {
-  return `'${String(value).replaceAll("'", `'"'"'`)}'`;
-}
-
-function writeCommand(binDir, name, driverPath, role) {
-  if (process.platform === "win32") {
-    const command = path.join(binDir, `${name}.cmd`);
-    fs.writeFileSync(command, `@echo off\r\n"${process.execPath}" "${driverPath}" ${role} %*\r\n`);
-    return command;
-  }
-  const command = path.join(binDir, name);
-  fs.writeFileSync(command, `#!/bin/sh\nexec ${shQuote(process.execPath)} ${shQuote(driverPath)} ${shQuote(role)} "$@"\n`, { mode: 0o755 });
-  return command;
-}
-
-function readLog(logPath) {
-  if (!fs.existsSync(logPath)) return [];
-  return fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
-}
-
-function createHarness({
-  installedVersion = null,
-  cliPresent = installedVersion !== null,
-  npmMode = "success",
-  latestVersion = "0.3.0",
-  separateGlobalBin = false,
-} = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico cli auto "));
-  tempRoots.push(root);
-  const binDir = path.join(root, "bin");
-  const templateDir = path.join(root, "template");
-  const globalPrefix = path.join(root, "global-prefix");
-  const cliBinDir = separateGlobalBin
-    ? (process.platform === "win32" ? globalPrefix : path.join(globalPrefix, "bin"))
-    : binDir;
-  const statePath = path.join(root, "installed.version");
-  const logPath = path.join(root, "calls.jsonl");
-  const driverPath = path.join(root, "fake-command.mjs");
-  fs.mkdirSync(binDir);
-  fs.mkdirSync(templateDir);
-  if (separateGlobalBin) fs.mkdirSync(cliBinDir, { recursive: true });
-  if (installedVersion) fs.writeFileSync(statePath, installedVersion);
-  fs.writeFileSync(driverPath, `
-import fs from "node:fs";
-import { spawn } from "node:child_process";
-const [role, ...args] = process.argv.slice(2);
-const state = process.env.FAKE_PICO_STATE;
-const log = process.env.FAKE_PICO_LOG;
-const record = (extra = {}) => fs.appendFileSync(log, JSON.stringify({ role, args, sentinel: process.env.PICO_TEST_FULL_ENV ?? null, ...extra }) + "\\n");
-record();
-if (role === "cli") {
-  if (!fs.existsSync(state)) { process.stderr.write("pico-cli absent\\n"); process.exit(127); }
-  const version = fs.readFileSync(state, "utf8").trim();
-  if (args[0] === "-v") process.stdout.write("pico-cli/" + version + " (fake)\\n");
-  else process.stdout.write("fake pico-cli operation complete\\n");
-  process.exit(0);
-}
-if (args[0] === "prefix" && args[1] === "-g") {
-  process.stdout.write(process.env.FAKE_PICO_PREFIX + "\\n");
-  process.exit(0);
-}
-if (args[0] === "view") {
-  process.stdout.write(JSON.stringify(process.env.FAKE_LATEST_VERSION) + "\\n");
-  process.exit(0);
-}
-if (args[0] === "install") {
-  const mode = process.env.FAKE_NPM_MODE;
-  if (mode === "hang") {
-    process.on("SIGTERM", () => {});
-    const descendant = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{}); setTimeout(()=>process.exit(0),2500); setInterval(()=>{},1000)"], {
-      detached: true,
-      stdio: ["ignore", "inherit", "inherit"],
-      windowsHide: true,
-    });
-    record({ event: "descendant", descendantPid: descendant.pid });
-    descendant.unref();
-    await new Promise(() => { setInterval(() => {}, 1_000); });
-  }
-  else if (mode === "network") { process.stderr.write("npm ERR! code ENETUNREACH network request failed\\n"); process.exit(1); }
-  else if (mode === "permissions") { process.stderr.write("npm ERR! code EACCES permission denied\\n"); process.exit(1); }
-  else if (mode === "registry-404") { process.stderr.write("npm ERR! code E404 404 Not Found - not in this registry\\n"); process.exit(1); }
-  else if (mode === "no-cli") { process.stdout.write("npm claimed success without a CLI\\n"); process.exit(0); }
-  else if (mode === "update-noop") { process.stdout.write("npm claimed update success without changing pico-cli\\n"); process.exit(0); }
-  else {
-    fs.copyFileSync(process.env.FAKE_PICO_CLI_TEMPLATE, process.env.FAKE_PICO_CLI_TARGET);
-    if (process.platform !== "win32") fs.chmodSync(process.env.FAKE_PICO_CLI_TARGET, 0o755);
-    fs.writeFileSync(state, process.env.FAKE_LATEST_VERSION);
-    process.stdout.write("installed fake pico-cli\\n");
-    process.exit(0);
-  }
-}
-process.stderr.write("unexpected fake npm argv: " + JSON.stringify(args) + "\\n");
-process.exit(2);
-`);
-  const cliTemplate = writeCommand(templateDir, "pico-cli", driverPath, "cli");
-  const cliTarget = path.join(cliBinDir, process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
-  if (cliPresent) {
-    fs.copyFileSync(cliTemplate, cliTarget);
-    if (process.platform !== "win32") fs.chmodSync(cliTarget, 0o755);
-  }
-  writeCommand(binDir, "npm", driverPath, "npm");
-  const pathKey = process.platform === "win32" ? (Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "Path") : "PATH";
-  const supportPath = process.platform === "win32"
-    ? [path.win32.dirname(process.env.ComSpec ?? `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\cmd.exe`)]
-    : [];
-  process.env[pathKey] = [binDir, ...supportPath].join(path.delimiter);
-  process.env.FAKE_PICO_STATE = statePath;
-  process.env.FAKE_PICO_LOG = logPath;
-  process.env.FAKE_PICO_BIN = binDir;
-  process.env.FAKE_PICO_CLI_TEMPLATE = cliTemplate;
-  process.env.FAKE_PICO_CLI_TARGET = cliTarget;
-  process.env.FAKE_PICO_PREFIX = separateGlobalBin
-    ? globalPrefix
-    : (process.platform === "win32" ? binDir : root);
-  process.env.FAKE_NPM_MODE = npmMode;
-  process.env.FAKE_LATEST_VERSION = latestVersion;
-  process.env.PICO_TEST_FULL_ENV = "full-env-reached-child";
-  delete process.env[PICO_CLI_AUTOINSTALL_ENV];
-  delete process.env[PICO_CLI_AUTOUPDATE_ENV];
-  probePicoCli(true);
-  fs.writeFileSync(logPath, "");
-  return { root, binDir, cliBinDir, statePath, logPath, cliTarget, calls: () => readLog(logPath) };
-}
 
 async function nextTurn() {
   await new Promise((resolve) => setImmediate(resolve));
@@ -502,7 +358,7 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
     const versionsRoot = path.join(managedRoot, "versions");
     const responses = new Map();
     const calls = [];
-    const publish = (version, { recordVersion = version, packageVersion = version, cliVersion = version, relativeCliPath = "bin/pico-cli", recordText } = {}) => {
+    const publish = (version, { recordVersion = version, packageVersion = version, cliVersion = version, relativeCliPath = "node_modules/.bin/pico-cli", recordText } = {}) => {
       const versionRoot = path.join(versionsRoot, version);
       const shim = path.join(versionRoot, relativeCliPath);
       fs.mkdirSync(path.dirname(shim), { recursive: true });
@@ -569,6 +425,7 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
   await t.test("corrupt records and version disagreements are rejected before a cached version is selected", async () => {
     const cases = [
       { name: "corrupt record", options: { recordText: "not-json" } },
+      { name: "noncanonical safe shim", options: { relativeCliPath: "bin/pico-cli" } },
       { name: "mismatched package version", options: { packageVersion: "0.4.1" } },
       { name: "mismatched -v version", options: { cliVersion: "0.4.1" } },
     ];
@@ -617,6 +474,133 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
     assert.equal(missingResult.path, null);
     assert.deepEqual(missing.calls, []);
     assert.equal(fs.existsSync(missing.managedRoot), false, "inspection must not create a missing managed root");
+  });
+});
+
+test("cold managed and stale managed exact provisioning", { concurrency: false, timeout: 30_000 }, async (t) => {
+  const canonicalRelativeCliPath = process.platform === "win32"
+    ? path.join("node_modules", ".bin", "pico-cli.cmd")
+    : path.join("node_modules", ".bin", "pico-cli");
+
+  await t.test("cold managed install publishes the exact registry version without global mutation", async () => {
+    const harness = createHarness({ installedVersion: "9.9.9", latestVersion: "0.4.2", separateGlobalBin: true });
+    const managedRoot = path.join(harness.root, "managed");
+    const io = createManagedIO(harness);
+    const pathBefore = process.env.PATH ?? process.env.Path ?? "";
+    const globalShimBefore = fs.readFileSync(harness.cliTarget);
+    const globalStateBefore = fs.readFileSync(harness.statePath);
+
+    const cold = await resolveManagedPicoCli({
+      managedRoot,
+      forceRefresh: true,
+      installTimeoutMs: 2_000,
+      updateCheckTimeoutMs: 2_000,
+      killGraceMs: 25,
+    }, io);
+
+    assert.equal(cold.status, "ok", JSON.stringify(cold));
+    assert.equal(cold.action, "installed");
+    assert.equal(cold.source, "managed");
+    assert.equal(cold.version, "0.4.2");
+    assert.equal(cold.latestVersion, "0.4.2");
+    assert.equal(cold.freshness, "latest");
+    assert.equal(cold.checkedAt, "2026-08-14T12:00:00.000Z");
+    assert.ok(path.isAbsolute(cold.path));
+
+    const npmCalls = harness.calls().filter((call) => call.role === "npm");
+    assert.deepEqual(npmCalls[0].args, ["view", "@picoxr/pico-cli@latest", "version", "dist.integrity", "--json"]);
+    const install = npmCalls.find((call) => call.args[0] === "install");
+    assert.deepEqual(install.args, [
+      "install", "--prefix", path.join(managedRoot, "staging", "fixture-staging-1"),
+      "--no-save", "--package-lock=false", "--fund=false", "--audit=false", "@picoxr/pico-cli@0.4.2",
+    ]);
+    for (const call of harness.calls()) {
+      assert.equal(call.args.includes("-g"), false, JSON.stringify(call));
+      assert.equal(call.args.includes("--global"), false, JSON.stringify(call));
+      assert.equal(call.args.includes("setup"), false, JSON.stringify(call));
+      assert.equal(call.args.join(" ").includes("update --check"), false, JSON.stringify(call));
+    }
+
+    const versionRoot = path.join(managedRoot, "versions", "0.4.2");
+    assert.equal(cold.path, path.join(versionRoot, canonicalRelativeCliPath));
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(versionRoot, "install.json"), "utf8")), {
+      schemaVersion: 1,
+      version: "0.4.2",
+      relativeCliPath: canonicalRelativeCliPath,
+      registryIntegrity: "sha512-fixture",
+      installedAt: "2026-08-14T12:00:00.000Z",
+    });
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json"), "utf8")), {
+      name: "@picoxr/pico-cli",
+      version: "0.4.2",
+    });
+    const stagingEntries = fs.existsSync(path.join(managedRoot, "staging"))
+      ? fs.readdirSync(path.join(managedRoot, "staging"))
+      : [];
+    assert.deepEqual(stagingEntries, [], "a staging directory must never be exposed as a published version");
+    assert.equal(process.env.PATH ?? process.env.Path ?? "", pathBefore);
+    assert.deepEqual(fs.readFileSync(harness.cliTarget), globalShimBefore);
+    assert.deepEqual(fs.readFileSync(harness.statePath), globalStateBefore);
+  });
+
+  await t.test("stale managed version provisions and executes the exact newer shim", async () => {
+    const harness = createHarness({ latestVersion: "0.4.1" });
+    const managedRoot = path.join(harness.root, "managed");
+    const io = createManagedIO(harness);
+    const seeded = await resolveManagedPicoCli({ managedRoot, forceRefresh: true, installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000 }, io);
+    assert.equal(seeded.status, "ok", JSON.stringify(seeded));
+    assert.equal(seeded.version, "0.4.1");
+
+    process.env.FAKE_LATEST_VERSION = "0.4.2";
+    const updated = await resolveManagedPicoCli({ managedRoot, forceRefresh: true, installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000 }, io);
+    assert.equal(updated.status, "ok", JSON.stringify(updated));
+    assert.equal(updated.action, "updated");
+    assert.equal(updated.version, "0.4.2");
+    assert.equal(updated.latestVersion, "0.4.2");
+    assert.equal(updated.path, path.join(managedRoot, "versions", "0.4.2", canonicalRelativeCliPath));
+    assert.ok(io.commands.some((call) => call.command === updated.path && call.args.length === 1 && call.args[0] === "-v"), JSON.stringify(io.commands));
+  });
+
+  await t.test("cold managed help canaries remain bounded diagnostics when one command drifts", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2", canaryFailure: "perf trace decode" });
+    const managedRoot = path.join(harness.root, "managed");
+    const io = createManagedIO(harness);
+    const result = await resolveManagedPicoCli({
+      managedRoot,
+      forceRefresh: true,
+      installTimeoutMs: 2_000,
+      updateCheckTimeoutMs: 250,
+      killGraceMs: 25,
+    }, io);
+    assert.equal(result.status, "ok", JSON.stringify(result));
+    assert.equal(result.action, "installed");
+
+    const expectedArgv = [
+      ["perf", "monitor", "run", "--help"],
+      ["perf", "trace", "record", "--help"],
+      ["perf", "trace", "decode", "--help"],
+      ["perf", "trace", "load", "--help"],
+      ["perf", "trace", "query", "--help"],
+      ["app", "watch-crash", "--help"],
+      ["capture", "record", "--help"],
+      ["mcp", "dev-knowledge", "--help"],
+      ["emulator", "status", "--help"],
+    ];
+    assert.deepEqual(result.compatibility?.map((item) => item.argv), expectedArgv);
+    assert.ok(result.compatibility?.every((item) => item.argv.at(-1) === "--help"));
+    assert.ok(result.compatibility?.every((item) => item.timedOut === false && item.outputTruncated === false));
+    const decode = result.compatibility?.find((item) => item.argv.join(" ") === "perf trace decode --help");
+    assert.equal(decode?.exitCode, 7);
+    assert.equal(decode?.helpSha256, crypto.createHash("sha256").update("fixture incompatible: perf trace decode --help\n").digest("hex"));
+    const monitor = result.compatibility?.find((item) => item.argv.join(" ") === "perf monitor run --help");
+    assert.equal(monitor?.exitCode, 0);
+    assert.equal(monitor?.helpSha256, crypto.createHash("sha256").update("fixture help: perf monitor run --help\n").digest("hex"));
+
+    const canaryCalls = io.commands.filter((call) => call.args.at(-1) === "--help");
+    assert.deepEqual(canaryCalls.map((call) => call.args), expectedArgv);
+    assert.ok(canaryCalls.every((call) => call.options.timeoutMs === 250 && call.options.killGraceMs === 25), JSON.stringify(canaryCalls));
+    const stored = JSON.parse(fs.readFileSync(path.join(managedRoot, "versions", "0.4.2", "compatibility.json"), "utf8"));
+    assert.deepEqual(stored, { schemaVersion: 1, version: "0.4.2", diagnostics: result.compatibility });
   });
 });
 
