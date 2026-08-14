@@ -18,6 +18,12 @@ test("discoverBatteryCommands returns smoke plus every test script", () => {
   );
 });
 
+test("repository battery discovers the focused Knowledge lifecycle regression", () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+  const commands = discoverBatteryCommands(packageJson);
+  assert.equal(commands.includes("test:knowledge-lifecycle"), true, commands.join(", "));
+});
+
 test("runBattery continues after failures, retains every section, and summarizes", () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "battery-test-"));
   const logPath = path.join(scratch, "battery.log");

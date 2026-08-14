@@ -1863,7 +1863,7 @@ test("public docs do not use ignored .dev files as evidence", () => {
   assert.deepEqual(acceptedMutations, [], `public evidence guard accepted: ${acceptedMutations.join(", ")}`);
 });
 
-test("the 45 named gate invocations are assigned to 42 Linux, one native-Windows, and two native-macOS lanes", () => {
+test("the 46 named gate invocations are assigned to 43 Linux, one native-Windows, and two native-macOS lanes", () => {
   const pkg = readJson("package.json");
   const all = ["smoke", ...Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"))];
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
@@ -1884,13 +1884,13 @@ test("the 45 named gate invocations are assigned to 42 Linux, one native-Windows
   };
   assert.deepEqual(
     Object.fromEntries(Object.entries(assigned).map(([host, names]) => [host, names.length])),
-    { linux: 42, windows: 1, macos: 2 },
+    { linux: 43, windows: 1, macos: 2 },
   );
   assert.deepEqual([...new Set(Object.values(assigned).flat())].sort(), [...all].sort(), "each named invocation must be assigned to a host lane");
   assert.equal(Object.values(assigned).flat().length, all.length, "named invocations must not be duplicated across host lanes");
 
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8").replaceAll("\n", " ");
-  assert.match(readme, /45 gate invocations[\s\S]{0,220}42[\s\S]{0,80}Linux[\s\S]{0,120}(?:one|1)[\s\S]{0,80}(?:native )?Windows[\s\S]{0,120}(?:two|2)[\s\S]{0,80}(?:native )?macOS/i);
+  assert.match(readme, /46 gate invocations[\s\S]{0,220}43[\s\S]{0,80}Linux[\s\S]{0,120}(?:one|1)[\s\S]{0,80}(?:native )?Windows[\s\S]{0,120}(?:two|2)[\s\S]{0,80}(?:native )?macOS/i);
 });
 
 test("pico-cli 0.4.2 docs state the measured scope and corrected deltas", () => {
@@ -1961,10 +1961,10 @@ test("official-samples guidance retracts the untracked 8\/8 runtime claim", () =
   assert.match(samples, /local workaround/i);
 });
 
-test("distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and 44 test suites plus smoke", () => {
+test("distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and 45 test suites plus smoke", () => {
   const pkg = readJson("package.json");
   const testScripts = Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"));
-  assert.equal(testScripts.length, 44, testScripts.join("\n"));
+  assert.equal(testScripts.length, 45, testScripts.join("\n"));
   assert.equal(pkg.scripts["test:distribution-adoption"], "node --test test/distribution-adoption.mjs");
 
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");

@@ -13,7 +13,7 @@ this once, then start from the pointers at the bottom.
   published 246-tool count is source-derived because no native Windows `tools/list`
   measurement has run). `src/doors.ts` is the intent-level facade described in the
   README's vocabulary primer.
-- **`test/*.mjs`** — the deterministic gate battery, 45 gate invocations (44 `test:` suites plus `smoke`):
+- **`test/*.mjs`** — the deterministic gate battery, 46 gate invocations (45 `test:` suites plus `smoke`):
   `test:lint`, `test:ledger`, `test:doors`, `test:vault`, `test:occupancy`, `test:affordance`,
   `test:eye`, `test:worldenv`, `test:conformance`, …. All of it runs headless, no emulator boot required. It's mirrored 1:1 in
   `.github/workflows/gates.yml`, which is what actually gates `main` — if a suite isn't in that

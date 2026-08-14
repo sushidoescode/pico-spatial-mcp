@@ -299,7 +299,7 @@ npm run test:lint    # the retained-lessons lint rules fire on their fixtures
 npm run test:ledger  # the trust ledger rejects an unlinked vision_verified claim
 ```
 
-The full gate battery has 45 gate invocations (44 `test:` suites plus `smoke`). CI assigns 42 to
+The full gate battery has 46 gate invocations (45 `test:` suites plus `smoke`). CI assigns 43 to
 each Linux matrix run, one to native Windows (`test:picocli-win`), and two to native macOS (the
 CMIO writer/reader suites). The Windows lane checks the smoke fixture's `.cmd`/`.bat` wrapper
 selection but does **not** execute or claim a native `build_and_run` success path. All gates are
