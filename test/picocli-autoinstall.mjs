@@ -524,13 +524,26 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
         return { code: 0, signal: null, stdout: responses.get(command) ?? "pico-cli/0.0.0\n", stderr: "", timedOut: false, outputTruncated: false };
       },
     });
-    return { managedRoot, publish, io, calls };
+    const publishedFiles = () => {
+      const files = new Map();
+      const visit = (directory) => {
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+          const entryPath = path.join(directory, entry.name);
+          if (entry.isDirectory()) visit(entryPath);
+          else if (entry.isFile()) files.set(path.relative(managedRoot, entryPath), fs.readFileSync(entryPath));
+        }
+      };
+      visit(managedRoot);
+      return files;
+    };
+    return { managedRoot, publish, io, calls, publishedFiles };
   }
 
   await t.test("cached policy picks the newest wholly validated immutable version without npm or writes", async () => {
     const fixture = managedFixture();
     fixture.publish("0.4.1");
     const newestShim = fixture.publish("0.4.2");
+    const beforeInspection = fixture.publishedFiles();
     const result = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, fixture.io());
     assert.deepEqual(result, {
       status: "ok", source: "managed", policy: "managed-latest", action: "cached", path: newestShim,
@@ -538,7 +551,19 @@ test("managed pico-cli policy and immutable-store inspection", { concurrency: fa
       freshness: "cached", deprecatedAliases: [],
     });
     assert.deepEqual(fixture.calls, [{ command: newestShim, args: ["-v"] }]);
+    assert.deepEqual(fixture.publishedFiles(), beforeInspection, "inspection must not alter published files");
     assert.equal(fs.existsSync(path.join(fixture.managedRoot, "versions", "0.4.3")), false);
+  });
+
+  await t.test("a relative managedRoot resolves the published immutable version", async () => {
+    const fixture = managedFixture();
+    const newestShim = fixture.publish("0.4.2");
+    const relativeManagedRoot = path.relative(process.cwd(), fixture.managedRoot);
+    assert.equal(path.isAbsolute(relativeManagedRoot), false);
+    const result = await inspectManagedPicoCli({ managedRoot: relativeManagedRoot }, fixture.io());
+    assert.equal(result.status, "ok", JSON.stringify(result));
+    assert.equal(result.path, newestShim);
+    assert.equal(result.version, "0.4.2");
   });
 
   await t.test("corrupt records and version disagreements are rejected before a cached version is selected", async () => {

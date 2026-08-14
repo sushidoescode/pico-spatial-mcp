@@ -186,8 +186,9 @@ function managedShimPath(versionRoot: string, relativeCliPath: string, platform:
   const pathApi = pathApiFor(platform);
   if (!relativeCliPath || path.posix.isAbsolute(relativeCliPath) || path.win32.isAbsolute(relativeCliPath)
     || relativeCliPath.split(/[\\/]+/).some((part) => !part || part === "..")) return null;
-  const absolute = pathApi.resolve(versionRoot, relativeCliPath);
-  const rootPrefix = versionRoot.endsWith(pathApi.sep) ? versionRoot : `${versionRoot}${pathApi.sep}`;
+  const resolvedRoot = pathApi.resolve(versionRoot);
+  const absolute = pathApi.resolve(resolvedRoot, relativeCliPath);
+  const rootPrefix = resolvedRoot.endsWith(pathApi.sep) ? resolvedRoot : `${resolvedRoot}${pathApi.sep}`;
   return absolute.startsWith(rootPrefix) ? absolute : null;
 }
 
