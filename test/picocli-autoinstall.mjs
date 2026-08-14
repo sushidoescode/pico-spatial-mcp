@@ -569,7 +569,7 @@ test("cold managed and stale managed exact provisioning", { concurrency: false, 
       managedRoot,
       forceRefresh: true,
       installTimeoutMs: 2_000,
-      updateCheckTimeoutMs: 250,
+      updateCheckTimeoutMs: 2_000,
       killGraceMs: 25,
     }, io);
     assert.equal(result.status, "ok", JSON.stringify(result));
@@ -598,10 +598,169 @@ test("cold managed and stale managed exact provisioning", { concurrency: false, 
 
     const canaryCalls = io.commands.filter((call) => call.args.at(-1) === "--help");
     assert.deepEqual(canaryCalls.map((call) => call.args), expectedArgv);
-    assert.ok(canaryCalls.every((call) => call.options.timeoutMs === 250 && call.options.killGraceMs === 25), JSON.stringify(canaryCalls));
+    assert.ok(canaryCalls.every((call) => call.options.timeoutMs === 2_000 && call.options.killGraceMs === 25), JSON.stringify(canaryCalls));
     const stored = JSON.parse(fs.readFileSync(path.join(managedRoot, "versions", "0.4.2", "compatibility.json"), "utf8"));
     assert.deepEqual(stored, { schemaVersion: 1, version: "0.4.2", diagnostics: result.compatibility });
   });
+});
+
+test("managed publication no-clobber fix round", { concurrency: false, timeout: 30_000 }, async (t) => {
+  await t.test("a pre-existing empty target created at publication claim survives unchanged", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const managedRoot = path.join(harness.root, "managed");
+    const target = path.join(managedRoot, "versions", "0.4.2");
+    const originalOpenSync = fs.openSync;
+    let targetBefore = null;
+    let injected = false;
+    fs.openSync = function patchedOpenSync(file, flags, ...rest) {
+      if (!injected && flags === "wx" && path.basename(String(file)) === ".0.4.2.publish") {
+        fs.mkdirSync(target);
+        targetBefore = fs.statSync(target);
+        injected = true;
+      }
+      return originalOpenSync.call(this, file, flags, ...rest);
+    };
+    try {
+      const result = await resolveManagedPicoCli({
+        managedRoot,
+        forceRefresh: true,
+        installTimeoutMs: 2_000,
+        updateCheckTimeoutMs: 2_000,
+      }, createManagedIO(harness));
+      assert.equal(injected, true, "publication must acquire the exclusive adjacent claim");
+      assert.equal(result.status, "unavailable", JSON.stringify(result));
+      const targetAfter = fs.statSync(target);
+      assert.equal(targetAfter.ino, targetBefore.ino, "the empty target identity must not be replaced");
+      assert.equal(targetAfter.birthtimeMs, targetBefore.birthtimeMs);
+      assert.deepEqual(fs.readdirSync(target), [], "the pre-existing empty target must remain empty");
+    } finally {
+      fs.openSync = originalOpenSync;
+    }
+  });
+});
+
+test("managed winner completeness fix round", { concurrency: false, timeout: 30_000 }, async (t) => {
+  async function raceWithWinner(mutateWinner = () => {}) {
+    const harness = createHarness({ latestVersion: "0.4.2", registryIntegrity: "sha512-fixture" });
+    const seedRoot = path.join(harness.root, "seed-managed");
+    const seed = await resolveManagedPicoCli({
+      managedRoot: seedRoot,
+      forceRefresh: true,
+      installTimeoutMs: 2_000,
+      updateCheckTimeoutMs: 2_000,
+    }, createManagedIO(harness));
+    assert.equal(seed.status, "ok", JSON.stringify(seed));
+    const heldWinner = path.join(harness.root, "held-winner");
+    fs.renameSync(path.join(seedRoot, "versions", "0.4.2"), heldWinner);
+    mutateWinner(heldWinner);
+    const heldIdentity = fs.statSync(heldWinner);
+
+    const managedRoot = path.join(harness.root, "racing-managed");
+    const target = path.join(managedRoot, "versions", "0.4.2");
+    const claim = path.join(managedRoot, "versions", ".0.4.2.publish");
+    const originalOpenSync = fs.openSync;
+    let injected = false;
+    fs.openSync = function patchedOpenSync(file, flags, ...rest) {
+      if (!injected && flags === "wx" && String(file) === claim) {
+        fs.renameSync(heldWinner, target);
+        const competingClaim = originalOpenSync.call(this, claim, "wx");
+        fs.closeSync(competingClaim);
+        injected = true;
+      }
+      return originalOpenSync.call(this, file, flags, ...rest);
+    };
+    try {
+      const result = await resolveManagedPicoCli({
+        managedRoot,
+        forceRefresh: true,
+        installTimeoutMs: 2_000,
+        updateCheckTimeoutMs: 2_000,
+      }, createManagedIO(harness));
+      assert.equal(injected, true, "test must inject the competing winner at claim acquisition");
+      assert.equal(fs.statSync(target).ino, heldIdentity.ino, "resolver must preserve the competing target identity");
+      return { result, target };
+    } finally {
+      fs.openSync = originalOpenSync;
+    }
+  }
+
+  await t.test("a complete collision winner is validated and reused", async () => {
+    const { result, target } = await raceWithWinner();
+    assert.equal(result.status, "ok", JSON.stringify(result));
+    assert.equal(result.version, "0.4.2");
+    assert.equal(result.path, path.join(target, "node_modules", ".bin", process.platform === "win32" ? "pico-cli.cmd" : "pico-cli"));
+    assert.equal(result.compatibility?.length, 9);
+  });
+
+  await t.test("a collision winner without compatibility diagnostics is rejected and preserved", async () => {
+    const { result, target } = await raceWithWinner((winner) => {
+      fs.unlinkSync(path.join(winner, "compatibility.json"));
+    });
+    assert.equal(result.status, "unavailable", JSON.stringify(result));
+    assert.equal(fs.existsSync(path.join(target, "compatibility.json")), false);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, "install.json"), "utf8")).registryIntegrity, "sha512-fixture");
+  });
+
+  await t.test("a collision winner with mismatched registry integrity is rejected and preserved", async () => {
+    const { result, target } = await raceWithWinner((winner) => {
+      const installPath = path.join(winner, "install.json");
+      const install = JSON.parse(fs.readFileSync(installPath, "utf8"));
+      fs.writeFileSync(installPath, JSON.stringify({ ...install, registryIntegrity: "sha512-other" }));
+    });
+    assert.equal(result.status, "unavailable", JSON.stringify(result));
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, "install.json"), "utf8")).registryIntegrity, "sha512-other");
+    assert.equal(JSON.parse(fs.readFileSync(path.join(target, "compatibility.json"), "utf8")).diagnostics.length, 9);
+  });
+});
+
+test("managed registry cache fix round", { concurrency: false, timeout: 45_000 }, async (t) => {
+  const viewCalls = (harness) => harness.calls().filter((call) => call.role === "npm" && call.args[0] === "view").length;
+
+  await t.test("a successful registry result is reused only within one hour", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const managedRoot = path.join(harness.root, "managed");
+    let clock = Date.parse("2030-01-01T00:00:00.000Z");
+    const io = createManagedIO(harness, { now: () => clock });
+    const first = await resolveManagedPicoCli({ managedRoot, forceRefresh: true, installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000 }, io);
+    assert.equal(first.status, "ok", JSON.stringify(first));
+    clock += 60 * 60 * 1_000 - 1;
+    const cached = await resolveManagedPicoCli({ managedRoot, installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000 }, io);
+    assert.equal(cached.status, "ok", JSON.stringify(cached));
+    assert.equal(cached.checkedAt, "2030-01-01T00:00:00.000Z");
+    assert.equal(viewCalls(harness), 1, JSON.stringify(harness.calls()));
+
+    clock += 1;
+    const expired = await resolveManagedPicoCli({ managedRoot, installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000 }, io);
+    assert.equal(expired.status, "ok", JSON.stringify(expired));
+    assert.equal(expired.checkedAt, "2030-01-01T01:00:00.000Z");
+    assert.equal(viewCalls(harness), 2, JSON.stringify(harness.calls()));
+  });
+
+  await t.test("forceRefresh bypasses a successful unexpired registry cache", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const managedRoot = path.join(harness.root, "managed");
+    const io = createManagedIO(harness, { now: Date.parse("2031-01-01T00:00:00.000Z") });
+    const first = await resolveManagedPicoCli({ managedRoot, forceRefresh: true, installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000 }, io);
+    const refreshed = await resolveManagedPicoCli({ managedRoot, forceRefresh: true, installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000 }, io);
+    assert.equal(first.status, "ok", JSON.stringify(first));
+    assert.equal(refreshed.status, "ok", JSON.stringify(refreshed));
+    assert.equal(viewCalls(harness), 2, JSON.stringify(harness.calls()));
+  });
+
+  for (const registryMode of ["failure", "malformed"]) {
+    await t.test(`${registryMode} registry responses do not populate the successful cache`, async () => {
+      const year = registryMode === "failure" ? 2032 : 2033;
+      const harness = createHarness({ latestVersion: "0.4.2", registryMode });
+      const managedRoot = path.join(harness.root, "managed");
+      const io = createManagedIO(harness, { now: Date.parse(`${year}-01-01T00:00:00.000Z`) });
+      const rejected = await resolveManagedPicoCli({ managedRoot, installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000 }, io);
+      assert.equal(rejected.status, "unavailable", JSON.stringify(rejected));
+      process.env.FAKE_REGISTRY_MODE = "success";
+      const recovered = await resolveManagedPicoCli({ managedRoot, installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000 }, io);
+      assert.equal(recovered.status, "ok", JSON.stringify(recovered));
+      assert.equal(viewCalls(harness), 2, JSON.stringify(harness.calls()));
+    });
+  }
 });
 
 test.after(() => {

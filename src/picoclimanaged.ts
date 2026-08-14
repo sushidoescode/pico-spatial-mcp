@@ -293,6 +293,31 @@ async function validateManagedVersion(
   return { path: cliPath, version, raw, ...(compatibility ? { compatibility } : {}) };
 }
 
+function hasCompleteCompatibility(diagnostics: PicoCliCompatibilityDiagnostic[] | undefined): boolean {
+  if (!diagnostics || diagnostics.length !== COMPATIBILITY_CANARIES.length) return false;
+  const expected = new Set(COMPATIBILITY_CANARIES.map((argv) => JSON.stringify(argv)));
+  const seen = new Set<string>();
+  for (const diagnostic of diagnostics) {
+    const key = JSON.stringify(diagnostic.argv);
+    if (!expected.has(key) || seen.has(key)) return false;
+    seen.add(key);
+  }
+  return seen.size === expected.size;
+}
+
+async function validateLatestPublishedVersion(
+  versionRoot: string,
+  version: string,
+  registryIntegrity: string | null,
+  options: ManagedPicoCliOptions,
+  io: ManagedPicoCliIO,
+): Promise<ValidatedManagedCli | null> {
+  const record = readInstallRecord(versionRoot);
+  if (!record || record.registryIntegrity !== registryIntegrity) return null;
+  const validated = await validateManagedVersion(versionRoot, version, options, io);
+  return validated && hasCompleteCompatibility(validated.compatibility) ? validated : null;
+}
+
 function publishedVersions(versionsRoot: string): string[] {
   try {
     return fs.readdirSync(versionsRoot, { withFileTypes: true })
@@ -443,7 +468,7 @@ export async function resolveManagedPicoCli(
   const versionsRoot = path.join(root, "versions");
   const target = path.join(versionsRoot, registry.version);
   if (fs.existsSync(target)) {
-    const existing = await validateManagedVersion(target, registry.version, options, io);
+    const existing = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
     if (existing) {
       return managedOk(existing, "managed-latest", "present", registry.version, registry.checkedAt, "latest", policy.deprecatedAliases);
     }
@@ -467,7 +492,9 @@ export async function resolveManagedPicoCli(
 
   const stagingRoot = path.join(root, "staging");
   const staging = path.join(stagingRoot, io.randomUUID());
+  const publicationClaim = path.join(versionsRoot, `.${registry.version}.publish`);
   let ownsStaging = false;
+  let publicationClaimDescriptor: number | undefined;
   try {
     fs.mkdirSync(versionsRoot, { recursive: true });
     fs.mkdirSync(stagingRoot, { recursive: true });
@@ -544,8 +571,28 @@ export async function resolveManagedPicoCli(
       diagnostics: compatibility,
     });
 
+    try {
+      publicationClaimDescriptor = fs.openSync(publicationClaim, "wx");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
+      const winner = fs.existsSync(target)
+        ? await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io)
+        : null;
+      if (!winner) {
+        return unavailable(
+          "managed-latest", "managed", "cli-unusable",
+          `Managed pico-cli ${registry.version} publication is claimed but no complete winner validates.`,
+          policy.deprecatedAliases,
+        );
+      }
+      return managedOk(
+        winner, "managed-latest", lowerValidated ? "updated" : "installed",
+        registry.version, registry.checkedAt, "latest", policy.deprecatedAliases,
+      );
+    }
+
     if (fs.existsSync(target)) {
-      const winner = await validateManagedVersion(target, registry.version, options, io);
+      const winner = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
       if (!winner) {
         return unavailable(
           "managed-latest", "managed", "cli-unusable",
@@ -566,7 +613,7 @@ export async function resolveManagedPicoCli(
       const code = (error as NodeJS.ErrnoException)?.code;
       const collision = ["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(code ?? "") && fs.existsSync(target);
       if (!collision) throw error;
-      const winner = await validateManagedVersion(target, registry.version, options, io);
+      const winner = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
       if (!winner) {
         return unavailable(
           "managed-latest", "managed", "cli-unusable",
@@ -581,7 +628,7 @@ export async function resolveManagedPicoCli(
     }
 
     fsyncDirectoryWhereSupported(versionsRoot);
-    const published = await validateManagedVersion(target, registry.version, options, io);
+    const published = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
     if (!published) {
       return unavailable(
         "managed-latest", "managed", "cli-unusable",
@@ -599,6 +646,10 @@ export async function resolveManagedPicoCli(
       policy.deprecatedAliases,
     );
   } finally {
+    if (publicationClaimDescriptor !== undefined) {
+      try { fs.closeSync(publicationClaimDescriptor); } catch { /* preserve the primary result */ }
+      try { fs.unlinkSync(publicationClaim); } catch { /* Task 3 owns stale claim recovery */ }
+    }
     if (ownsStaging) {
       try { fs.rmSync(staging, { recursive: true, force: true }); } catch { /* preserve the primary failure */ }
     }

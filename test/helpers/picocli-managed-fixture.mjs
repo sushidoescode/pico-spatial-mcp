@@ -26,6 +26,7 @@ const trackedEnv = [
   "FAKE_NPM_MODE",
   "FAKE_LATEST_VERSION",
   "FAKE_REGISTRY_INTEGRITY",
+  "FAKE_REGISTRY_MODE",
   "FAKE_PICO_DRIVER",
   "FAKE_CANARY_FAILURE",
 ];
@@ -69,6 +70,7 @@ export function createHarness({
   npmMode = "success",
   latestVersion = "0.3.0",
   registryIntegrity = "sha512-fixture",
+  registryMode = "success",
   canaryFailure = "",
   separateGlobalBin = false,
 } = {}) {
@@ -124,6 +126,14 @@ if (args[0] === "view") {
     && args[2] === "version"
     && args[3] === "dist.integrity"
     && args[4] === "--json";
+  if (managedView && process.env.FAKE_REGISTRY_MODE === "failure") {
+    process.stderr.write("npm ERR! fixture registry unavailable\\n");
+    process.exit(1);
+  }
+  if (managedView && process.env.FAKE_REGISTRY_MODE === "malformed") {
+    process.stdout.write('{"version":');
+    process.exit(0);
+  }
   const response = managedView
     ? { version: process.env.FAKE_LATEST_VERSION, "dist.integrity": process.env.FAKE_REGISTRY_INTEGRITY || null }
     : process.env.FAKE_LATEST_VERSION;
@@ -201,6 +211,7 @@ process.exit(2);
   process.env.FAKE_NPM_MODE = npmMode;
   process.env.FAKE_LATEST_VERSION = latestVersion;
   process.env.FAKE_REGISTRY_INTEGRITY = registryIntegrity;
+  process.env.FAKE_REGISTRY_MODE = registryMode;
   process.env.FAKE_PICO_DRIVER = driverPath;
   process.env.FAKE_CANARY_FAILURE = canaryFailure;
   process.env.PICO_TEST_FULL_ENV = "full-env-reached-child";
@@ -221,7 +232,7 @@ export function createManagedIO(harness, {
     env,
     platform: process.platform,
     homeDir: path.join(harness.root, "unused-home"),
-    now: () => now,
+    now: () => typeof now === "function" ? now() : now,
     randomUUID: () => `fixture-staging-${++uuid}`,
     commands,
     run: (command, args, options = {}) => {
