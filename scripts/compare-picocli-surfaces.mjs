@@ -173,6 +173,9 @@ async function installExact(session, requested, exactVersion) {
 }
 
 const ANSI_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+const COMMAND_SECTION_BOUNDARIES = new Set(["Options:", "Arguments:", "Positionals:", "Examples:", "Global Options:"]);
+const SAFE_COMMAND_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]*(?::[A-Za-z0-9][A-Za-z0-9_-]*)*$/;
+const COMMAND_ARGUMENT_NOTATION = /^(?:(?:\s+|=)?(?:<[^<>\r\n]+>|\[[^\[\]\r\n]+\]))+$/;
 
 function advertisedCommands(helpBytes) {
   const lines = helpBytes.toString("utf8").replace(ANSI_CSI, "").replace(/\r\n/g, "\n").split("\n");
@@ -191,8 +194,17 @@ function advertisedCommands(helpBytes) {
   const commands = new Set();
   for (const entry of section) {
     if (entry.indent !== entryIndent) continue;
-    const match = entry.line.trim().match(/^([A-Za-z0-9][A-Za-z0-9_:-]*)(?=$|[\s<[=])/);
-    if (match) commands.add(match[1]);
+    const text = entry.line.trim();
+    if (COMMAND_SECTION_BOUNDARIES.has(text)) break;
+    const syntax = text.split(/\s{2,}/, 1)[0];
+    const tokenMatch = syntax.match(/^[^\s<[=]+/);
+    const token = tokenMatch?.[0] ?? "";
+    const argumentNotation = syntax.slice(token.length);
+    if (!SAFE_COMMAND_TOKEN.test(token)
+      || (argumentNotation.length > 0 && !COMMAND_ARGUMENT_NOTATION.test(argumentNotation))) {
+      fail(`unsupported advertised command grammar: ${JSON.stringify(text)}`);
+    }
+    commands.add(token);
   }
   return [...commands].sort();
 }

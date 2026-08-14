@@ -131,3 +131,50 @@ contact, only that the final tests enforce and demonstrate isolated fake executi
   and output truncation mean the tree is incomplete and prevent report publication.
 - A preexisting output is deliberately preserved and causes a nonzero exit rather than being
   overwritten.
+
+## Review fix round — total fail-closed Commands parsing
+
+Review at `a3294e608f1b901b7670572af19d57286f00fc35` identified that minimum-indent
+`Commands:` rows outside the accepted token grammar were silently omitted. End-to-end fake trees
+confirmed `foo|f` and `foo.bar` each produced an exit-0 root-only report, and a valid row mixed with
+an unsupported alias produced a partial exit-0 report. A peer-indented `Options:` heading was parsed
+as the colon-bearing command `Options:` and hashed as an extra command.
+
+The root cause was the parser's partial classification: it added regex matches and ignored every
+non-match. Colon support also allowed a trailing colon, so it could not distinguish a section heading
+from a command. The fix classifies every minimum-positive-indent peer row before traversal:
+
+- exact `Options:`, `Arguments:`, `Positionals:`, `Examples:`, and `Global Options:` headings end the
+  command section;
+- command syntax is separated from a description at the first two-or-more-space column boundary;
+- command tokens accept alphanumeric/underscore/hyphen segments and internal colon-separated
+  segments, but no trailing colon, alias bar, dot, or other punctuation;
+- suffix syntax accepts only bracketed required/optional argument notation; and
+- any other peer row throws `unsupported advertised command grammar`, aborting before a partial child
+  set is traversed or a report is published.
+
+Deeper-indented wrapped descriptions remain prose. The adversarial success fixture includes alias and
+dot text in both the description column and a wrapped description, proving those strings are not
+misclassified as command grammar. The exact ANSI-stripped, unindented English `Commands:` heading
+remains the only section start.
+
+Review-round TDD and verification evidence:
+
+- RED: `node --test --test-name-pattern='unsupported grammar|indented Options'
+  test/picocli-sweep.mjs` — exit 1, `5` tests failed. The alias, dotted, and mixed cases each observed
+  an incorrect exit 0; the indented heading case observed `commandCount:3` instead of `2`.
+- Focused GREEN for the same command — `5/5` pass, exit 0.
+- `node --test test/picocli-sweep.mjs` — `25/25` pass, exit 0.
+- `npm run build` — PASS (`tsc`, exit 0).
+- Persistent-PTY `npm run test:picocli` — PASS: legacy lane `Failures: 0`; combined managed+sweep
+  runner `81/81` pass, `0` fail, exit 0.
+- Static safety assertions — PASS: `STATIC_SAFETY_OK parser=total-fail-closed battery=45
+  workflow=observational`.
+- YAML parse — PASS (`YAML_PARSE_OK`); both new `.mjs` syntax checks pass.
+- `git diff --check` — PASS, no output.
+- The real managed root was absent before the fix round and after all gates
+  (`REAL_ROOT_ABSENT_AFTER_GATES`).
+
+This fix round used the existing fake-only PATH, isolated owned cwd/home/npm-cache session, and temp
+install prefixes. It made no real npm/registry, global CLI, setup, update-check, emulator/device,
+Swan, visual, native Windows, remote, permission, or visibility operation.

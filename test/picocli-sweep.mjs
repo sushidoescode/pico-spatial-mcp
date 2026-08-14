@@ -263,6 +263,39 @@ test("fails closed at depth eight and 256 help invocations", async (t) => {
   });
 });
 
+test("fails closed when a minimum-indent advertised command row uses unsupported grammar", async (t) => {
+  const cases = [
+    { name: "alias syntax", rows: ["foo|f  Alias row"] },
+    { name: "unsupported punctuation", rows: ["foo.bar  Dotted row"] },
+    { name: "mixed valid and unsupported rows", rows: ["safe  Valid row", "bad|b  Unsupported alias"], tree: { safe: { stdout: "safe leaf\n" } } },
+  ];
+  for (const item of cases) await t.test(item.name, () => {
+    const tree = { "pico-cli": { stdout: help(item.rows) }, ...(item.tree ?? {}) };
+    const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
+    const result = runSweep(fix);
+    assert.notEqual(result.status, 0, `${item.name} must make the advertised tree incomplete`);
+    assert.equal(fs.existsSync(result.output), false, `${item.name} must not publish a partial report`);
+    const cliArgv = result.calls.filter((call) => call.role === "cli").map((call) => call.args);
+    assert.deepEqual(cliArgv, [["-v"], ["--help"]], `${item.name} must fail before traversing any partial child set`);
+  });
+});
+
+test("an indented Options heading terminates the Commands section without becoming a command", () => {
+  const rootHelp = "Usage: pico-cli\nCommands:\n  safe  Description may mention foo|f and foo.bar\n";
+    + "        wrapped description may also mention bad|b\n  Options:\n    --verbose  Verbose output\n";
+  const tree = { "pico-cli": { stdout: rootHelp }, safe: { stdout: "safe leaf\n" } };
+  const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
+  const result = runSweep(fix);
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(fs.readFileSync(result.output, "utf8"));
+  assert.deepEqual(report.from, { requested: "1.0.0", version: "1.0.0", commandCount: 2 });
+  assert.deepEqual(report.to, { requested: "2.0.0", version: "2.0.0", commandCount: 2 });
+  const cliArgv = result.calls.filter((call) => call.role === "cli").map((call) => call.args.join(" "));
+  assert.equal(cliArgv.includes("safe --help"), true);
+  assert.equal(cliArgv.some((argv) => argv.startsWith("Options ")), false);
+  assert.equal(cliArgv.some((argv) => argv.includes("--verbose")), false);
+});
+
 test("timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous", async (t) => {
   function failing(entry) {
     return fixture({ latest: "2.0.0", versions: {
