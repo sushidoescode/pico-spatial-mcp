@@ -20,6 +20,12 @@ import {
 import { registerPicoCliHealthTool } from "../dist/picoclihealth.js";
 import { registerPicoCliTools } from "../dist/picoclitools.js";
 import { runPerfDiagnose } from "../dist/perfcli.js";
+import {
+  inspectManagedPicoCli,
+  resolvePicoCliPolicy,
+  PICO_CLI_PATH_ENV,
+  PICO_CLI_POLICY_ENV,
+} from "../dist/picoclimanaged.js";
 
 const savedEnv = new Map();
 const tempRoots = [];
@@ -461,6 +467,131 @@ test("pico-cli auto-install contract", { concurrency: false, timeout: 45_000 }, 
     assert.deepEqual(calls.find((call) => call.role === "npm" && call.args[0] === "install").args, ["install", "-g", "@picoxr/pico-cli@latest"]);
     assert.ok(calls.every((call) => !call.args.some((arg) => /doctor/.test(arg))), JSON.stringify(calls));
     await nextTurn();
+  });
+});
+
+test("managed pico-cli policy and immutable-store inspection", { concurrency: false }, async (t) => {
+  await t.test("policy parsing rejects contradictory configuration", () => {
+    const cases = [
+      [{}, { status: "ok", policy: "managed-latest", externalPath: null, deprecatedAliases: [] }],
+      [{ [PICO_CLI_POLICY_ENV]: "disabled" }, { status: "ok", policy: "disabled", externalPath: null, deprecatedAliases: [] }],
+      [{ [PICO_CLI_POLICY_ENV]: "external" }, { status: "invalid", policy: null, externalPath: null, deprecatedAliases: [] }],
+      [{ [PICO_CLI_POLICY_ENV]: "external", [PICO_CLI_PATH_ENV]: "relative/pico-cli" }, { status: "invalid", policy: null, externalPath: null, deprecatedAliases: [] }],
+      [{ [PICO_CLI_POLICY_ENV]: "managed-cached", PICO_MCP_AUTOUPDATE_CLI: "1" }, { status: "invalid", policy: null, externalPath: null, deprecatedAliases: ["PICO_MCP_AUTOUPDATE_CLI"] }],
+    ];
+    for (const [env, expected] of cases) {
+      const actual = resolvePicoCliPolicy(env, "linux");
+      assert.equal(actual.status, expected.status, JSON.stringify(actual));
+      assert.equal(actual.policy, expected.policy, JSON.stringify(actual));
+      assert.equal(actual.externalPath, expected.externalPath, JSON.stringify(actual));
+      assert.deepEqual(actual.deprecatedAliases, expected.deprecatedAliases);
+    }
+    for (const policy of [undefined, "managed-latest", "managed-cached", "disabled"]) {
+      const env = {
+        ...(policy ? { [PICO_CLI_POLICY_ENV]: policy } : {}),
+        [PICO_CLI_PATH_ENV]: "/absolute/cli-that-must-not-be-used",
+      };
+      assert.equal(resolvePicoCliPolicy(env, "linux").status, "invalid");
+    }
+  });
+
+  function managedFixture() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico managed cli "));
+    tempRoots.push(root);
+    const managedRoot = path.join(root, "managed");
+    const versionsRoot = path.join(managedRoot, "versions");
+    const responses = new Map();
+    const calls = [];
+    const publish = (version, { recordVersion = version, packageVersion = version, cliVersion = version, relativeCliPath = "bin/pico-cli", recordText } = {}) => {
+      const versionRoot = path.join(versionsRoot, version);
+      const shim = path.join(versionRoot, relativeCliPath);
+      fs.mkdirSync(path.dirname(shim), { recursive: true });
+      fs.writeFileSync(shim, "fixture shim", { mode: 0o755 });
+      fs.mkdirSync(path.join(versionRoot, "node_modules", "@picoxr", "pico-cli"), { recursive: true });
+      fs.writeFileSync(path.join(versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json"), JSON.stringify({ name: "@picoxr/pico-cli", version: packageVersion }));
+      fs.writeFileSync(path.join(versionRoot, "install.json"), recordText ?? JSON.stringify({ schemaVersion: 1, version: recordVersion, relativeCliPath, registryIntegrity: null, installedAt: "2026-08-14T12:00:00.000Z" }));
+      responses.set(shim, `pico-cli/${cliVersion} (fixture)\n`);
+      return shim;
+    };
+    const io = (env = {}) => ({
+      env,
+      platform: "linux",
+      homeDir: path.join(root, "unused-home"),
+      now: () => 0,
+      randomUUID: () => "unused",
+      run: async (command, args) => {
+        calls.push({ command, args });
+        return { code: 0, signal: null, stdout: responses.get(command) ?? "pico-cli/0.0.0\n", stderr: "", timedOut: false, outputTruncated: false };
+      },
+    });
+    return { managedRoot, publish, io, calls };
+  }
+
+  await t.test("cached policy picks the newest wholly validated immutable version without npm or writes", async () => {
+    const fixture = managedFixture();
+    fixture.publish("0.4.1");
+    const newestShim = fixture.publish("0.4.2");
+    const result = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, fixture.io());
+    assert.deepEqual(result, {
+      status: "ok", source: "managed", policy: "managed-latest", action: "cached", path: newestShim,
+      version: "0.4.2", raw: "pico-cli/0.4.2 (fixture)", latestVersion: null, checkedAt: null,
+      freshness: "cached", deprecatedAliases: [],
+    });
+    assert.deepEqual(fixture.calls, [{ command: newestShim, args: ["-v"] }]);
+    assert.equal(fs.existsSync(path.join(fixture.managedRoot, "versions", "0.4.3")), false);
+  });
+
+  await t.test("corrupt records and version disagreements are rejected before a cached version is selected", async () => {
+    const cases = [
+      { name: "corrupt record", options: { recordText: "not-json" } },
+      { name: "mismatched package version", options: { packageVersion: "0.4.1" } },
+      { name: "mismatched -v version", options: { cliVersion: "0.4.1" } },
+    ];
+    for (const item of cases) {
+      const fixture = managedFixture();
+      const fallbackShim = fixture.publish("0.4.1");
+      const rejectedShim = fixture.publish("0.4.2", item.options);
+      const result = await inspectManagedPicoCli({ managedRoot: fixture.managedRoot }, fixture.io());
+      assert.equal(result.status, "ok", `${item.name}: ${JSON.stringify(result)}`);
+      assert.equal(result.path, fallbackShim, item.name);
+      assert.equal(result.version, "0.4.1", item.name);
+      const expectedCalls = item.name === "mismatched -v version"
+        ? [{ command: rejectedShim, args: ["-v"] }, { command: fallbackShim, args: ["-v"] }]
+        : [{ command: fallbackShim, args: ["-v"] }];
+      assert.deepEqual(fixture.calls, expectedCalls, item.name);
+    }
+  });
+
+  await t.test("disabled, external, and missing-cache policies expose their read-only outcomes", async () => {
+    const disabled = managedFixture();
+    const disabledResult = await inspectManagedPicoCli({ managedRoot: disabled.managedRoot }, disabled.io({ [PICO_CLI_POLICY_ENV]: "disabled" }));
+    assert.equal(disabledResult.status, "unavailable");
+    assert.equal(disabledResult.failureClass, "cli-disabled");
+    assert.deepEqual(disabled.calls, []);
+
+    const external = managedFixture();
+    const externalPath = path.join(external.managedRoot, "external-pico-cli");
+    external.publish("0.0.1");
+    const externalIo = external.io({ [PICO_CLI_POLICY_ENV]: "external", [PICO_CLI_PATH_ENV]: externalPath });
+    externalIo.run = async (command, args) => {
+      external.calls.push({ command, args });
+      return { code: 0, signal: null, stdout: "pico-cli/0.4.2 (external fixture)\n", stderr: "", timedOut: false, outputTruncated: false };
+    };
+    const externalResult = await inspectManagedPicoCli({ managedRoot: external.managedRoot }, externalIo);
+    assert.deepEqual(externalResult, {
+      status: "ok", source: "external", policy: "external", action: "external", path: externalPath,
+      version: "0.4.2", raw: "pico-cli/0.4.2 (external fixture)", latestVersion: null, checkedAt: null,
+      freshness: "external", deprecatedAliases: [],
+    });
+    assert.deepEqual(external.calls, [{ command: externalPath, args: ["-v"] }]);
+
+    const missing = managedFixture();
+    const missingResult = await inspectManagedPicoCli({ managedRoot: missing.managedRoot }, missing.io());
+    assert.equal(missingResult.status, "unavailable");
+    assert.equal(missingResult.failureClass, "cli-missing");
+    assert.equal(missingResult.path, null);
+    assert.deepEqual(missing.calls, []);
+    assert.equal(fs.existsSync(missing.managedRoot), false, "inspection must not create a missing managed root");
   });
 });
 
