@@ -349,13 +349,35 @@ async function validateLatestPublishedVersion(
 ): Promise<ValidatedManagedCli | null> {
   const record = readInstallRecord(versionRoot);
   if (!record || record.registryIntegrity !== registryIntegrity) return null;
-  const publicationPath = path.join(versionRoot, "publication.json");
-  if (fs.existsSync(publicationPath)) {
-    const publication = readPublicationRecord(publicationPath);
-    if (!publication || publication.version !== version || publication.registryIntegrity !== registryIntegrity) return null;
-  }
+  if (!validatePublicationState(versionRoot, version, registryIntegrity)) return null;
+  const validated = await validateManagedVersion(versionRoot, version, options, io);
+  return validated && hasCompleteCompatibility(validated.compatibility)
+    && validatePublicationState(versionRoot, version, registryIntegrity) ? validated : null;
+}
+
+async function validateOwnedUnfinalizedVersion(
+  versionRoot: string,
+  version: string,
+  registryIntegrity: string | null,
+  options: ManagedPicoCliOptions,
+  io: ManagedPicoCliIO,
+): Promise<ValidatedManagedCli | null> {
+  const record = readInstallRecord(versionRoot);
+  if (!record || record.registryIntegrity !== registryIntegrity) return null;
   const validated = await validateManagedVersion(versionRoot, version, options, io);
   return validated && hasCompleteCompatibility(validated.compatibility) ? validated : null;
+}
+
+async function validateCachedPublishedVersion(
+  versionRoot: string,
+  version: string,
+  options: ManagedPicoCliOptions,
+  io: ManagedPicoCliIO,
+): Promise<ValidatedManagedCli | null> {
+  const record = readInstallRecord(versionRoot);
+  if (!record || !validatePublicationState(versionRoot, version, record.registryIntegrity)) return null;
+  const validated = await validateManagedVersion(versionRoot, version, options, io);
+  return validated && validatePublicationState(versionRoot, version, record.registryIntegrity) ? validated : null;
 }
 
 function publishedVersions(versionsRoot: string): string[] {
@@ -427,7 +449,7 @@ async function newestValidatedVersion(
 ): Promise<ValidatedManagedCli | null> {
   for (const version of publishedVersions(versionsRoot)) {
     if (!accept(version)) continue;
-    const validated = await validateManagedVersion(path.join(versionsRoot, version), version, options, io);
+    const validated = await validateCachedPublishedVersion(path.join(versionsRoot, version), version, options, io);
     if (validated) return validated;
   }
   return null;
@@ -460,11 +482,16 @@ function readStagingOwner(recordPath: string): {
   }
 }
 
-function readPublicationRecord(recordPath: string): ManagedPublicationRecord | null {
+function readPublicationRecord(recordPath: string): { record: ManagedPublicationRecord; stat: fs.Stats; bytes: Buffer } | null {
+  let descriptor: number | undefined;
   try {
-    const stat = fs.lstatSync(recordPath);
-    if (!stat.isFile() || stat.isSymbolicLink()) return null;
-    const parsed: unknown = JSON.parse(fs.readFileSync(recordPath, "utf8"));
+    const pathStat = fs.lstatSync(recordPath);
+    if (!pathStat.isFile() || pathStat.isSymbolicLink()) return null;
+    descriptor = fs.openSync(recordPath, "r");
+    const stat = fs.fstatSync(descriptor);
+    if (!stat.isFile() || stat.dev !== pathStat.dev || stat.ino !== pathStat.ino) return null;
+    const bytes = fs.readFileSync(descriptor);
+    const parsed: unknown = JSON.parse(bytes.toString("utf8"));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     const keys = Object.keys(parsed).sort();
     if (keys.join("\0") !== ["createdAt", "kind", "ownerPid", "registryIntegrity", "schemaVersion", "token", "version"].join("\0")) return null;
@@ -476,10 +503,49 @@ function readPublicationRecord(recordPath: string): ManagedPublicationRecord | n
       || typeof record.token !== "string" || record.token.length === 0 || record.token.length > 256
       || typeof record.ownerPid !== "number" || !Number.isSafeInteger(record.ownerPid) || record.ownerPid <= 0
       || !Number.isFinite(createdAtMs) || new Date(createdAtMs).toISOString() !== record.createdAt) return null;
-    return record as ManagedPublicationRecord;
+    return { record: record as ManagedPublicationRecord, stat, bytes };
   } catch {
     return null;
+  } finally {
+    if (descriptor !== undefined) {
+      try { fs.closeSync(descriptor); } catch { /* preserve the validation result */ }
+    }
   }
+}
+
+function pathEntryExists(entryPath: string): boolean {
+  try {
+    fs.lstatSync(entryPath);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException)?.code !== "ENOENT";
+  }
+}
+
+function publicationRecordMatches(
+  candidate: { record: ManagedPublicationRecord },
+  version: string,
+  registryIntegrity: string | null,
+): boolean {
+  return candidate.record.version === version && candidate.record.registryIntegrity === registryIntegrity;
+}
+
+function validatePublicationState(versionRoot: string, version: string, registryIntegrity: string | null): boolean {
+  const publicationPath = path.join(versionRoot, "publication.json");
+  const claimPath = path.join(path.dirname(versionRoot), `.${version}.publish`);
+  const claimExists = pathEntryExists(claimPath);
+  const publicationExists = pathEntryExists(publicationPath);
+  if (!claimExists && !publicationExists) {
+    return !pathEntryExists(claimPath) && !pathEntryExists(publicationPath);
+  }
+  const publication = publicationExists ? readPublicationRecord(publicationPath) : null;
+  if (!publication || !publicationRecordMatches(publication, version, registryIntegrity)) return false;
+  if (!claimExists) return !pathEntryExists(claimPath);
+  const claim = readPublicationRecord(claimPath);
+  return claim !== null && publicationRecordMatches(claim, version, registryIntegrity)
+    && claim.stat.dev === publication.stat.dev && claim.stat.ino === publication.stat.ino
+    && claim.record.token === publication.record.token
+    && claim.bytes.equals(publication.bytes);
 }
 
 function ownerPidIsDefinitelyDead(ownerPid: number): boolean {
@@ -587,6 +653,7 @@ function finalizePublicationClaim(
   expectedRecord: ManagedPublicationRecord,
 ): { status: "ok" } | { status: "failure"; note: string } {
   const publicationRecordPath = path.join(target, "publication.json");
+  const expectedBytes = Buffer.from(`${JSON.stringify(expectedRecord)}\n`, "utf8");
   try {
     fs.linkSync(publicationClaim, publicationRecordPath);
   } catch (error) {
@@ -611,11 +678,17 @@ function finalizePublicationClaim(
     };
   }
   try {
-    const movedStat = fs.lstatSync(publicationRecordPath);
-    const movedRecord = readPublicationRecord(publicationRecordPath);
-    if (movedStat.dev === expectedIdentity.dev && movedStat.ino === expectedIdentity.ino
-      && movedRecord?.token === expectedRecord.token && movedRecord.version === expectedRecord.version
-      && movedRecord.registryIntegrity === expectedRecord.registryIntegrity) return { status: "ok" };
+    const source = readPublicationRecord(publicationClaim);
+    const destination = readPublicationRecord(publicationRecordPath);
+    if (source && destination
+      && source.stat.dev === expectedIdentity.dev && source.stat.ino === expectedIdentity.ino
+      && destination.stat.dev === expectedIdentity.dev && destination.stat.ino === expectedIdentity.ino
+      && source.stat.dev === destination.stat.dev && source.stat.ino === destination.stat.ino
+      && source.record.token === expectedRecord.token && destination.record.token === expectedRecord.token
+      && source.record.version === expectedRecord.version && destination.record.version === expectedRecord.version
+      && source.record.registryIntegrity === expectedRecord.registryIntegrity
+      && destination.record.registryIntegrity === expectedRecord.registryIntegrity
+      && source.bytes.equals(destination.bytes) && source.bytes.equals(expectedBytes)) return { status: "ok" };
   } catch { /* the failure below preserves whichever path remains */ }
   return {
     status: "failure",
@@ -708,7 +781,7 @@ export async function inspectManagedPicoCli(
 
   for (const version of children) {
     const versionRoot = path.join(versionsRoot, version);
-    const validated = await validateManagedVersion(versionRoot, version, options, io);
+    const validated = await validateCachedPublishedVersion(versionRoot, version, options, io);
     if (validated) return managedOk(validated, policy.policy, "cached", null, null, "cached", policy.deprecatedAliases);
   }
   return unavailable(policy.policy, "managed", "cli-missing", "No published managed pico-cli version passed immutable-store validation.", policy.deprecatedAliases);
@@ -785,18 +858,19 @@ export async function resolveManagedPicoCli(
   };
 
   const target = path.join(versionsRoot, registry.version);
+  const publicationClaim = path.join(versionsRoot, `.${registry.version}.publish`);
   if (fs.existsSync(target)) {
     const existing = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
     if (existing) {
       return managedOk(existing, "managed-latest", "present", registry.version, registry.checkedAt, "latest", policy.deprecatedAliases);
     }
     return await knownFailure(
-      `Published managed pico-cli ${registry.version} failed immutable-store validation and will not be overwritten.`,
+      `Published managed pico-cli ${registry.version} failed immutable-store validation and will not be overwritten.`
+        + (pathEntryExists(publicationClaim) ? ` ${publicationClaimFailureNote(registry.version, publicationClaim)}` : ""),
     );
   }
 
   const staging = path.join(stagingRoot, io.randomUUID());
-  const publicationClaim = path.join(versionsRoot, `.${registry.version}.publish`);
   let ownsStaging = false;
   let publicationClaimDescriptor: number | undefined;
   let publicationClaimIdentity: { dev: number; ino: number } | undefined;
@@ -945,7 +1019,7 @@ export async function resolveManagedPicoCli(
     }
 
     fsyncDirectoryWhereSupported(versionsRoot);
-    const published = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
+    const published = await validateOwnedUnfinalizedVersion(target, registry.version, registry.integrity, options, io);
     if (!published) {
       return await knownFailure("The atomically published managed pico-cli failed immutable-store validation.");
     }

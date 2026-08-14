@@ -669,8 +669,7 @@ test("managed winner completeness fix round", { concurrency: false, timeout: 30_
     fs.openSync = function patchedOpenSync(file, flags, ...rest) {
       if (!injected && flags === "wx" && String(file) === claim) {
         fs.renameSync(heldWinner, target);
-        const competingClaim = originalOpenSync.call(this, claim, "wx");
-        fs.closeSync(competingClaim);
+        fs.linkSync(path.join(target, "publication.json"), claim);
         injected = true;
       }
       return originalOpenSync.call(this, file, flags, ...rest);
@@ -1172,6 +1171,173 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
       fs.renameSync = originalRenameSync;
       fs.linkSync = originalLinkSync;
     }
+  });
+
+  await t.test("a legacy complete target remains valid only when no adjacent publication claim exists", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const managedRoot = path.join(harness.root, "managed");
+    const seeded = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    assert.equal(seeded.status, "ok", JSON.stringify(seeded));
+    const legacyPath = seeded.path;
+    const versionRoot = path.join(managedRoot, "versions", "0.4.2");
+    const claim = path.join(managedRoot, "versions", ".0.4.2.publish");
+    const publicationRecord = path.join(versionRoot, "publication.json");
+    fs.unlinkSync(claim);
+    fs.unlinkSync(publicationRecord);
+    assert.equal(fs.existsSync(claim), false);
+    assert.equal(fs.existsSync(publicationRecord), false);
+
+    const result = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    assert.equal(result.status, "ok", JSON.stringify(result));
+    assert.equal(result.path, legacyPath);
+    assert.equal(result.version, "0.4.2");
+    assert.equal(result.action, "present");
+    assert.equal(result.freshness, "latest");
+  });
+
+  await t.test("a target left before failed link finalization remains incomplete on the next resolver", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const managedRoot = path.join(harness.root, "managed");
+    const cached = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+    const target = path.join(managedRoot, "versions", "0.4.2");
+    const claim = path.join(managedRoot, "versions", ".0.4.2.publish");
+    const publicationRecord = path.join(target, "publication.json");
+    const originalLinkSync = fs.linkSync;
+    let failedAtLink = false;
+    fs.linkSync = function failingPublicationLink(source, destination, ...rest) {
+      if (!failedAtLink && source === claim && destination === publicationRecord) {
+        failedAtLink = true;
+        const error = new Error("fixture link failure after target publication");
+        error.code = "EIO";
+        throw error;
+      }
+      return originalLinkSync.call(this, source, destination, ...rest);
+    };
+    let first;
+    try {
+      first = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    } finally {
+      fs.linkSync = originalLinkSync;
+    }
+    assert.equal(failedAtLink, true, "fixture must fail after target rename and before publication linking");
+    assert.equal(first.status, "ok", JSON.stringify(first));
+    assert.equal(first.path, cached.shimPath);
+    assert.equal(first.version, "0.4.1");
+    assert.equal(first.freshness, "outdated");
+    assert.equal(first.warning?.failureClass, "update-failed");
+    assert.match(first.warning?.note ?? "", /publication claim finalization/i);
+    const targetIdentity = fs.statSync(target);
+    const claimIdentity = fs.statSync(claim);
+    const claimBytes = fs.readFileSync(claim);
+    assert.equal(fs.existsSync(publicationRecord), false);
+
+    const second = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    assert.equal(second.status, "ok", JSON.stringify(second));
+    assert.equal(second.path, cached.shimPath);
+    assert.equal(second.version, "0.4.1");
+    assert.equal(second.action, "cached");
+    assert.equal(second.freshness, "outdated");
+    assert.equal(second.warning?.failureClass, "update-failed");
+    assert.match(second.warning?.note ?? "", /only after confirming no managed resolver process is active/i);
+    assert.equal(fs.statSync(target).ino, targetIdentity.ino, "incomplete target must remain preserved");
+    assert.equal(fs.statSync(claim).ino, claimIdentity.ino, "owned claim must remain preserved");
+    assert.deepEqual(fs.readFileSync(claim), claimBytes);
+    assert.equal(fs.existsSync(publicationRecord), false);
+  });
+
+  await t.test("finalization rejects a source claim swapped after the real hard link is created", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const managedRoot = path.join(harness.root, "managed");
+    const cached = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+    const target = path.join(managedRoot, "versions", "0.4.2");
+    const claim = path.join(managedRoot, "versions", ".0.4.2.publish");
+    const publicationRecord = path.join(target, "publication.json");
+    const heldOwner = path.join(harness.root, "held-post-link-owner-claim");
+    const originalLinkSync = fs.linkSync;
+    const originalRenameSync = fs.renameSync;
+    let swappedAfterLink = false;
+    fs.linkSync = function swappingPublicationLink(source, destination, ...rest) {
+      const linked = originalLinkSync.call(this, source, destination, ...rest);
+      if (!swappedAfterLink && source === claim && destination === publicationRecord) {
+        originalRenameSync.call(this, source, heldOwner);
+        fs.writeFileSync(source, "post-link-unowned-source");
+        swappedAfterLink = true;
+      }
+      return linked;
+    };
+    let first;
+    try {
+      first = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    } finally {
+      fs.linkSync = originalLinkSync;
+    }
+    assert.equal(swappedAfterLink, true, "fixture must swap the source after the real hard link is created");
+    assert.equal(first.status, "ok", JSON.stringify(first));
+    assert.equal(first.path, cached.shimPath);
+    assert.equal(first.version, "0.4.1");
+    assert.equal(first.freshness, "outdated");
+    assert.equal(first.warning?.failureClass, "update-failed");
+    assert.match(first.warning?.note ?? "", /ownership replacement/i);
+    assert.equal(fs.readFileSync(claim, "utf8"), "post-link-unowned-source");
+    assert.equal(fs.statSync(heldOwner).ino, fs.statSync(publicationRecord).ino, "original owner links must remain preserved");
+    const targetIdentity = fs.statSync(target);
+
+    const second = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    assert.equal(second.status, "ok", JSON.stringify(second));
+    assert.equal(second.path, cached.shimPath);
+    assert.equal(second.version, "0.4.1");
+    assert.equal(second.freshness, "outdated");
+    assert.equal(second.warning?.failureClass, "update-failed");
+    assert.match(second.warning?.note ?? "", /only after confirming no managed resolver process is active/i);
+    assert.equal(fs.statSync(target).ino, targetIdentity.ino);
+    assert.equal(fs.readFileSync(claim, "utf8"), "post-link-unowned-source");
+    assert.equal(fs.statSync(heldOwner).ino, fs.statSync(publicationRecord).ino);
+  });
+
+  await t.test("finalization binds source record bytes to the opened claim inode", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const managedRoot = path.join(harness.root, "managed");
+    const cached = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+    const target = path.join(managedRoot, "versions", "0.4.2");
+    const claim = path.join(managedRoot, "versions", ".0.4.2.publish");
+    const publicationRecord = path.join(target, "publication.json");
+    const heldOwner = path.join(harness.root, "held-same-bytes-owner-claim");
+    const originalLinkSync = fs.linkSync;
+    const originalLstatSync = fs.lstatSync;
+    const originalRenameSync = fs.renameSync;
+    let linked = false;
+    let swappedBetweenStatAndRead = false;
+    fs.linkSync = function observingPublicationLink(source, destination, ...rest) {
+      const result = originalLinkSync.call(this, source, destination, ...rest);
+      if (source === claim && destination === publicationRecord) linked = true;
+      return result;
+    };
+    fs.lstatSync = function swappingAfterSourceStat(entryPath, ...rest) {
+      const stat = originalLstatSync.call(this, entryPath, ...rest);
+      if (linked && !swappedBetweenStatAndRead && String(entryPath) === claim) {
+        originalRenameSync.call(this, claim, heldOwner);
+        fs.copyFileSync(publicationRecord, claim);
+        swappedBetweenStatAndRead = true;
+      }
+      return stat;
+    };
+    let result;
+    try {
+      result = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    } finally {
+      fs.linkSync = originalLinkSync;
+      fs.lstatSync = originalLstatSync;
+    }
+    assert.equal(swappedBetweenStatAndRead, true, "fixture must replace the claim after its old inode is observed");
+    assert.equal(result.status, "ok", JSON.stringify(result));
+    assert.equal(result.path, cached.shimPath);
+    assert.equal(result.version, "0.4.1");
+    assert.equal(result.freshness, "outdated");
+    assert.equal(result.warning?.failureClass, "update-failed");
+    assert.match(result.warning?.note ?? "", /ownership replacement/i);
+    assert.deepEqual(fs.readFileSync(claim), fs.readFileSync(publicationRecord), "same bytes must not hide inode replacement");
+    assert.notEqual(fs.statSync(claim).ino, fs.statSync(publicationRecord).ino);
+    assert.equal(fs.statSync(heldOwner).ino, fs.statSync(publicationRecord).ino);
   });
 
   await t.test("12 concurrent managed workers converge on one complete immutable version", { timeout: 45_000 }, async () => {
