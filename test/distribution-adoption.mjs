@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createManagedRuntimeHarness } from "./helpers/picocli-managed-fixture.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -554,7 +555,7 @@ test("KnowledgeBridge calls every action through one persistent serialized stdio
     DEFAULT_KNOWLEDGE_ARGS,
   } = await import("../dist/knowledge.js");
   assert.equal(DEFAULT_KNOWLEDGE_COMMAND, "pico-cli");
-  assert.deepEqual(DEFAULT_KNOWLEDGE_ARGS, ["mcp", "spatial-knowledge"]);
+  assert.deepEqual(DEFAULT_KNOWLEDGE_ARGS, ["mcp", "dev-knowledge"]);
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico knowledge actions "));
   const logPath = path.join(tempRoot, "server.jsonl");
@@ -874,72 +875,72 @@ test("KnowledgeBridge reports a missing pico-cli command as unavailable", async 
   await bridge.close();
 });
 
-test("KnowledgeBridge provisions only its production default pico-cli command", { concurrency: false }, async () => {
-  const [{ KnowledgeBridge }, picocli] = await Promise.all([
-    import("../dist/knowledge.js"),
-    import("../dist/picocli.js"),
-  ]);
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico knowledge provision "));
-  const fakeBin = path.join(tempRoot, "bin");
-  const npmLog = path.join(tempRoot, "npm.jsonl");
-  const npmDriver = path.join(tempRoot, "fake-npm.mjs");
+test("KnowledgeBridge custom injected command bypasses managed resolution", async () => {
+  const { KnowledgeBridge } = await import("../dist/knowledge.js");
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico knowledge custom bypass "));
   const knowledgeLog = path.join(tempRoot, "knowledge.jsonl");
-  fs.mkdirSync(fakeBin);
-  fs.writeFileSync(npmDriver, `
-import fs from "node:fs";
-fs.appendFileSync(${JSON.stringify(npmLog)}, JSON.stringify(process.argv.slice(2)) + "\\n");
-process.stderr.write("npm ERR! code ENETUNREACH network request failed\\n");
-process.exit(1);
-`);
-  writeNodeCommand(fakeBin, "npm", npmDriver);
-
-  const pathKey = process.platform === "win32"
-    ? Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "Path"
-    : "PATH";
-  const priorPath = process.env[pathKey];
-  const priorAutoInstall = process.env[picocli.PICO_CLI_AUTOINSTALL_ENV];
-  const priorAutoUpdate = process.env[picocli.PICO_CLI_AUTOUPDATE_ENV];
-  process.env[pathKey] = fakeBin;
-  process.env[picocli.PICO_CLI_AUTOINSTALL_ENV] = "1";
-  delete process.env[picocli.PICO_CLI_AUTOUPDATE_ENV];
-  picocli.probePicoCli(true);
-
-  const production = new KnowledgeBridge({ startupTimeoutMs: 500, callTimeoutMs: 500 });
-  let custom;
+  const custom = new KnowledgeBridge({
+    command: process.execPath,
+    args: [path.join(repoRoot, "test", "fixtures", "fake-knowledge-server.mjs")],
+    cwd: repoRoot,
+    env: { FAKE_KNOWLEDGE_LOG: knowledgeLog, PICO_MCP_CLI_POLICY: "disabled" },
+    startupTimeoutMs: 2_000,
+    callTimeoutMs: 1_000,
+  });
   try {
-    const unavailable = await production.call("graph_stats", {});
-    assert.equal(unavailable.status, "unavailable", JSON.stringify(unavailable));
-    assert.equal(unavailable.failureClass, "network", JSON.stringify(unavailable));
-    assert.equal(unavailable.cliProvisioning?.status, "failed");
-    assert.equal(unavailable.cliProvisioning?.phase, "install");
-    assert.deepEqual(readJsonLines(npmLog).map((entry) => entry), [
-      ["install", "-g", "@picoxr/pico-cli"],
-    ]);
-
-    custom = new KnowledgeBridge({
-      command: process.execPath,
-      args: [path.join(repoRoot, "test", "fixtures", "fake-knowledge-server.mjs")],
-      cwd: repoRoot,
-      env: { FAKE_KNOWLEDGE_LOG: knowledgeLog },
-      startupTimeoutMs: 2_000,
-      callTimeoutMs: 1_000,
-    });
     const customResult = await custom.call("graph_stats", {});
     assert.equal(customResult.status, "ok", JSON.stringify(customResult));
-    assert.equal(Object.hasOwn(customResult, "cliProvisioning"), false);
-    assert.equal(readJsonLines(npmLog).length, 1, "an injected custom command must not provision pico-cli");
+    assert.equal(Object.hasOwn(customResult, "picoCli"), false);
+    assert.equal(readJsonLines(knowledgeLog).filter((event) => event.event === "start").length, 1);
   } finally {
-    await custom?.close();
-    await production.close();
-    if (priorPath === undefined) delete process.env[pathKey];
-    else process.env[pathKey] = priorPath;
-    if (priorAutoInstall === undefined) delete process.env[picocli.PICO_CLI_AUTOINSTALL_ENV];
-    else process.env[picocli.PICO_CLI_AUTOINSTALL_ENV] = priorAutoInstall;
-    if (priorAutoUpdate === undefined) delete process.env[picocli.PICO_CLI_AUTOUPDATE_ENV];
-    else process.env[picocli.PICO_CLI_AUTOUPDATE_ENV] = priorAutoUpdate;
-    picocli.probePicoCli(true);
+    await custom.close();
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("KnowledgeBridge production child follows managed path/version changes and retires on disabled", { concurrency: false }, () => {
+  const harness = createManagedRuntimeHarness({ latestVersion: "0.4.1" });
+  const knowledgeUrl = pathToFileURL(path.join(repoRoot, "dist", "knowledge.js")).href;
+  const picoCliUrl = pathToFileURL(path.join(repoRoot, "dist", "picocli.js")).href;
+  const script = `
+import fs from "node:fs";
+const { KnowledgeBridge } = await import(${JSON.stringify(knowledgeUrl)});
+const { ensurePicoCli } = await import(${JSON.stringify(picoCliUrl)});
+const bridge = new KnowledgeBridge({ startupTimeoutMs: 3000, callTimeoutMs: 2000, retirementTimeoutMs: 2000 });
+const first = await bridge.call("graph_stats", {});
+fs.writeFileSync(process.env.FAKE_LATEST_VERSION_FILE, "0.4.2");
+const activated = await ensurePicoCli({ forceRefresh: true, updateCheckTimeoutMs: 2000, installTimeoutMs: 2000 });
+const second = await bridge.call("graph_stats", {});
+process.env.PICO_MCP_CLI_POLICY = "disabled";
+const disabled = await bridge.call("graph_stats", {});
+const eventsBeforeClose = fs.readFileSync(process.env.FAKE_KNOWLEDGE_LOG, "utf8").split("\\n").filter(Boolean).map(JSON.parse);
+await bridge.close();
+process.stdout.write(JSON.stringify({ first, activated, second, disabled, eventsBeforeClose }));
+`;
+  const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+    cwd: repoRoot,
+    env: harness.env,
+    encoding: "utf8",
+    timeout: 20_000,
+  });
+  assert.equal(child.status, 0, child.stderr || child.stdout);
+  const out = JSON.parse(child.stdout);
+  assert.equal(out.first.status, "ok", JSON.stringify(out.first));
+  assert.equal(out.first.picoCli.version, "0.4.1");
+  assert.equal(out.activated.version, "0.4.2", JSON.stringify(out.activated));
+  assert.equal(out.second.status, "ok", JSON.stringify(out.second));
+  assert.equal(out.second.picoCli.version, "0.4.2");
+  assert.notEqual(JSON.parse(out.first.text).pid, JSON.parse(out.second.text).pid, "new managed path/version must start a new child");
+  assert.equal(out.disabled.status, "unavailable", JSON.stringify(out.disabled));
+  assert.equal(out.disabled.failureClass, "cli-disabled");
+  const starts = out.eventsBeforeClose.filter((event) => event.event === "start");
+  const exits = out.eventsBeforeClose.filter((event) => event.event === "exit");
+  assert.equal(starts.length, 2, JSON.stringify(out.eventsBeforeClose));
+  assert.equal(exits.length, 2, "disabled resolution must retire the active managed child before returning");
+  const managedStarts = harness.calls().filter((call) => call.role === "managed-cli" && call.args.slice(1).join(" ") === "mcp dev-knowledge");
+  assert.deepEqual(managedStarts.map((call) => call.args[0]), ["0.4.1", "0.4.2"]);
+  assert.equal(harness.calls().some((call) => call.args.includes("spatial-knowledge")), false, JSON.stringify(harness.calls()));
+  fs.rmSync(harness.root, { recursive: true, force: true });
 });
 
 test("registered knowledge_api keeps the flattened union strict", async () => {

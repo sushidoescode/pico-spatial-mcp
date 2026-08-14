@@ -33,6 +33,115 @@ const trackedEnv = [
   "FAKE_CANARY_FAILURE",
 ];
 
+function runtimeDriverSource() {
+  return `
+import fs from "node:fs";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
+
+const [role, ...args] = process.argv.slice(2);
+const logPath = process.env.FAKE_PICO_LOG;
+const record = (extra = {}) => {
+  if (logPath) fs.appendFileSync(logPath, JSON.stringify({ role, args, pid: process.pid, ...extra }) + "\\n");
+};
+record();
+
+if (role === "node-proxy") {
+  const child = spawn(process.execPath, args, { env: process.env, stdio: "inherit", windowsHide: true });
+  child.once("error", (error) => { process.stderr.write(error.message + "\\n"); process.exit(127); });
+  child.once("close", (code, signal) => {
+    if (signal) process.kill(process.pid, signal);
+    else process.exit(code ?? 1);
+  });
+  await new Promise(() => {});
+}
+
+if (role === "managed-cli") {
+  const [version, ...cliArgs] = args;
+  if (cliArgs[0] === "-v") {
+    process.stdout.write("pico-cli/" + version + " (managed runtime fixture)\\n");
+    process.exit(0);
+  }
+  if (cliArgs.at(-1) === "--help") {
+    process.stdout.write("fixture help: " + cliArgs.join(" ") + "\\n");
+    process.exit(0);
+  }
+  if (cliArgs.join(" ") === "mcp dev-knowledge") {
+    await import(pathToFileURL(process.env.FAKE_KNOWLEDGE_SERVER).href);
+    await new Promise(() => {});
+  }
+  if (cliArgs.join(" ") === "emulator status --format json") {
+    process.stdout.write(JSON.stringify({ tool_status: "SUCCESS", data: { fixture: true }, errors: [] }) + "\\n");
+    process.exit(0);
+  }
+  if (process.env.FAKE_PICO_OPERATION_MODE === "setup-required") {
+    process.stderr.write("Error: Perf utilities 0.4.2 are not installed. Run \`pico-cli setup\` to install.\\n");
+    process.exit(1);
+  }
+  process.stdout.write("fake managed pico-cli operation complete\\n");
+  process.exit(0);
+}
+
+if (role !== "npm") {
+  process.stderr.write("unexpected fixture role: " + role + "\\n");
+  process.exit(2);
+}
+
+if (args[0] === "prefix" && args[1] === "-g") {
+  process.stdout.write(process.env.FAKE_PICO_GLOBAL_PREFIX + "\\n");
+  process.exit(0);
+}
+
+if (args[0] === "view") {
+  const delayMs = Number(process.env.FAKE_PICO_VIEW_DELAY_MS ?? 0);
+  if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+  if (process.env.FAKE_REGISTRY_MODE === "failure") {
+    process.stderr.write("npm ERR! fixture registry unavailable\\n");
+    process.exit(1);
+  }
+  const version = fs.readFileSync(process.env.FAKE_LATEST_VERSION_FILE, "utf8").trim();
+  process.stdout.write(JSON.stringify({ version, "dist.integrity": "sha512-runtime-fixture" }) + "\\n");
+  process.exit(0);
+}
+
+if (args[0] === "install") {
+  const prefixIndex = args.indexOf("--prefix");
+  if (prefixIndex < 0) {
+    const target = process.env.FAKE_PICO_GLOBAL_CLI;
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const version = fs.readFileSync(process.env.FAKE_LATEST_VERSION_FILE, "utf8").trim();
+    if (process.platform === "win32") {
+      fs.writeFileSync(target, '@echo off\\r\\n"' + process.execPath + '" "' + process.env.FAKE_PICO_DRIVER + '" managed-cli "' + version + '" %*\\r\\n');
+    } else {
+      fs.writeFileSync(target, '#!/bin/sh\\nexec "' + process.execPath + '" "' + process.env.FAKE_PICO_DRIVER + '" managed-cli "' + version + '" "$@"\\n', { mode: 0o755 });
+    }
+    process.stdout.write("installed fake global pico-cli\\n");
+    process.exit(0);
+  }
+  const prefix = args[prefixIndex + 1];
+  const packageArg = args.at(-1);
+  const version = packageArg.slice("@picoxr/pico-cli@".length);
+  const packageRoot = path.join(prefix, "node_modules", "@picoxr", "pico-cli");
+  const shimDir = path.join(prefix, "node_modules", ".bin");
+  fs.mkdirSync(packageRoot, { recursive: true });
+  fs.mkdirSync(shimDir, { recursive: true });
+  fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@picoxr/pico-cli", version }));
+  const shim = path.join(shimDir, process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
+  if (process.platform === "win32") {
+    fs.writeFileSync(shim, '@echo off\\r\\n"' + process.execPath + '" "' + process.env.FAKE_PICO_DRIVER + '" managed-cli "' + version + '" %*\\r\\n');
+  } else {
+    fs.writeFileSync(shim, '#!/bin/sh\\nexec "' + process.execPath + '" "' + process.env.FAKE_PICO_DRIVER + '" managed-cli "' + version + '" "$@"\\n', { mode: 0o755 });
+  }
+  process.stdout.write("installed exact fake managed pico-cli\\n");
+  process.exit(0);
+}
+
+process.stderr.write("unexpected fake npm argv: " + JSON.stringify(args) + "\\n");
+process.exit(2);
+`;
+}
+
 export function saveEnvironment() {
   for (const key of trackedEnv) savedEnv.set(key, process.env[key]);
 }
@@ -64,6 +173,72 @@ function writeCommand(binDir, name, driverPath, role, fixedArgs = []) {
 export function readLog(logPath) {
   if (!fs.existsSync(logPath)) return [];
   return fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
+/**
+ * Fresh-process Task 4 fixture. It never mutates this test process's HOME/PATH and every npm/CLI
+ * byte lives below one temporary root. Callers pass `env` to a newly spawned Node/MCP child.
+ */
+export function createManagedRuntimeHarness({ latestVersion = "0.4.2", operationMode = "success" } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico managed runtime "));
+  tempRoots.push(root);
+  const home = path.join(root, "home");
+  const binDir = path.join(root, "bin");
+  const globalPrefix = path.join(root, "fake-global");
+  const globalBin = process.platform === "win32" ? globalPrefix : path.join(globalPrefix, "bin");
+  const globalCli = path.join(globalBin, process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
+  const logPath = path.join(root, "calls.jsonl");
+  const knowledgeLogPath = path.join(root, "knowledge.jsonl");
+  const latestVersionFile = path.join(root, "latest.version");
+  const driverPath = path.join(root, "runtime-driver.mjs");
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.mkdirSync(globalBin, { recursive: true });
+  fs.writeFileSync(logPath, "");
+  fs.writeFileSync(knowledgeLogPath, "");
+  fs.writeFileSync(latestVersionFile, latestVersion);
+  fs.writeFileSync(driverPath, runtimeDriverSource());
+  writeCommand(binDir, "npm", driverPath, "npm");
+  writeCommand(binDir, "node", driverPath, "node-proxy");
+  const pathKey = process.platform === "win32"
+    ? (Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "Path")
+    : "PATH";
+  const supportPath = process.platform === "win32"
+    ? [path.win32.dirname(process.env.ComSpec ?? `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\cmd.exe`)]
+    : [path.dirname(process.execPath)];
+  const env = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    [pathKey]: [binDir, ...supportPath].join(path.delimiter),
+    PICO_MCP_CLI_POLICY: "managed-latest",
+    PICO_HOME: path.join(root, "missing-pico-home"),
+    FAKE_PICO_LOG: logPath,
+    FAKE_PICO_DRIVER: driverPath,
+    FAKE_PICO_GLOBAL_PREFIX: globalPrefix,
+    FAKE_PICO_GLOBAL_CLI: globalCli,
+    FAKE_LATEST_VERSION_FILE: latestVersionFile,
+    FAKE_PICO_OPERATION_MODE: operationMode,
+    FAKE_KNOWLEDGE_LOG: knowledgeLogPath,
+    FAKE_KNOWLEDGE_SERVER: path.resolve("test", "fixtures", "fake-knowledge-server.mjs"),
+  };
+  delete env.PICO_MCP_AUTOINSTALL_CLI;
+  delete env.PICO_MCP_AUTOUPDATE_CLI;
+  return {
+    root,
+    home,
+    binDir,
+    driverPath,
+    env,
+    logPath,
+    knowledgeLogPath,
+    latestVersionFile,
+    globalCli,
+    managedRoot: path.join(home, ".pico-mcp", "cli"),
+    calls: () => readLog(logPath),
+    knowledgeCalls: () => readLog(knowledgeLogPath),
+    setLatest(version) { fs.writeFileSync(latestVersionFile, version); },
+  };
 }
 
 export function createHarness({

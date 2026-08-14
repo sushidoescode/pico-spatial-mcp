@@ -5,19 +5,15 @@ import { z } from "zod";
 import { okJson } from "./util.js";
 import {
   ensurePicoCli,
+  picoCliProvenance,
   picoCliFromEnsure,
-  PICO_CLI_AUTOINSTALL_ENV,
-  PICO_CLI_AUTOUPDATE_ENV,
-  type PicoCliEnsureResult,
   type PicoCliFailureClass,
+  type PicoCliProvenance,
 } from "./picocli.js";
 
 export const DEFAULT_KNOWLEDGE_COMMAND = "pico-cli";
-// pico-cli 0.4.x renamed the subcommand to `mcp dev-knowledge`; `spatial-knowledge` survives as a
-// working hidden alias (measured 2026-08-12 on 0.4.2: exit 0, prints the dev-knowledge usage).
-// Keep invoking the alias while 0.3.0 is the common install — if a future CLI drops it, the spawn
-// fails loudly and the failure carries the CLI's own words, never a silent wrong server.
-export const DEFAULT_KNOWLEDGE_ARGS = ["mcp", "spatial-knowledge"] as const;
+// Managed pico-cli exposes the knowledge MCP server as `mcp dev-knowledge`.
+export const DEFAULT_KNOWLEDGE_ARGS = ["mcp", "dev-knowledge"] as const;
 const DEFAULT_STARTUP_TIMEOUT_MS = 15_000;
 const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 const DEFAULT_RETIREMENT_TIMEOUT_MS = 5_000;
@@ -119,7 +115,7 @@ export type KnowledgeResult = (
       remoteError?: true;
     }
 ) & {
-  cliProvisioning?: PicoCliEnsureResult;
+  picoCli?: PicoCliProvenance;
   failureClass?: PicoCliFailureClass;
 };
 
@@ -136,6 +132,8 @@ export type KnowledgeBridgeOptions = {
 
 type KnowledgeSession = {
   generation: number;
+  commandPath: string;
+  cliVersion: string | null;
   client: Client;
   transport: StdioClientTransport;
   fatal?: Error;
@@ -208,8 +206,8 @@ export class KnowledgeBridge {
     // Supplying a command is the injection/custom-command seam used by tests and alternate
     // providers. Only the production default pico-cli command participates in MCP provisioning.
     this.provisionDefaultPicoCli = options.command === undefined;
-    // Leave production env unresolved until spawn time: a successful lazy global install may add
-    // npm's bin directory to process.env.PATH before the first knowledge_api call starts this child.
+    // Leave production env unresolved until spawn time so current host configuration reaches the
+    // managed child. The command itself is always the resolved absolute managed path.
     this.env = options.env ? { ...productionKnowledgeEnvironment(), ...options.env } : undefined;
     this.startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
     this.callTimeoutMs = options.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
@@ -256,9 +254,12 @@ export class KnowledgeBridge {
     return session.closePromise;
   }
 
-  private async ensureStarted(): Promise<KnowledgeSession> {
-    if (this.current && !this.current.fatal && !this.current.closed) return this.current;
+  private async ensureStarted(commandPath: string, cliVersion: string | null): Promise<KnowledgeSession> {
+    const sameIdentity = (session: KnowledgeSession) =>
+      session.commandPath === commandPath && session.cliVersion === cliVersion;
+    if (this.current && !this.current.fatal && !this.current.closed && sameIdentity(this.current)) return this.current;
     if (this.current) await this.retire(this.current);
+    if (this.starting && !sameIdentity(this.starting)) await this.retire(this.starting);
     if (this.startupPromise) return this.startupPromise;
     await waitBounded(
       this.resetBarrier,
@@ -267,7 +268,7 @@ export class KnowledgeBridge {
     );
 
     const transport = new StdioClientTransport({
-      command: this.command,
+      command: commandPath,
       args: this.args,
       ...(this.cwd ? { cwd: this.cwd } : {}),
       env: this.env ?? productionKnowledgeEnvironment(),
@@ -280,6 +281,8 @@ export class KnowledgeBridge {
     });
     const session: KnowledgeSession = {
       generation: ++this.generation,
+      commandPath,
+      cliVersion,
       client,
       transport,
       intentionalClose: false,
@@ -339,28 +342,30 @@ export class KnowledgeBridge {
     const { action: parsedAction, ...argumentsForRemote } = parsed;
     return this.enqueue(async () => {
       let session: KnowledgeSession | undefined;
-      let cliProvisioning: PicoCliEnsureResult | null = null;
-      const withProvisioning = (result: KnowledgeResult): KnowledgeResult =>
-        cliProvisioning && cliProvisioning.action !== "present"
-          ? { ...result, cliProvisioning }
-          : result;
+      let provenance: PicoCliProvenance | null = null;
+      const withProvenance = (result: KnowledgeResult): KnowledgeResult =>
+        provenance ? { ...result, picoCli: provenance } : result;
       try {
-        if (
-          this.provisionDefaultPicoCli &&
-          (process.env[PICO_CLI_AUTOINSTALL_ENV] === "1" || process.env[PICO_CLI_AUTOUPDATE_ENV] === "1")
-        ) {
-          cliProvisioning = await ensurePicoCli();
-          if (!picoCliFromEnsure(cliProvisioning)) {
+        let commandPath = this.command;
+        let cliVersion: string | null = null;
+        if (this.provisionDefaultPicoCli) {
+          const ensured = await ensurePicoCli();
+          if (ensured.status !== "ok") {
+            if (this.current) await this.retire(this.current);
+            if (this.starting) await this.retire(this.starting);
             return {
               status: "unavailable",
               action: parsedAction,
-              error: cliProvisioning.note ?? "pico-cli is unavailable after provisioning.",
-              failureClass: "failureClass" in cliProvisioning ? cliProvisioning.failureClass : "cli-missing",
-              cliProvisioning,
+              error: ensured.note,
+              failureClass: ensured.failureClass,
             };
           }
+          const ready = picoCliFromEnsure(ensured)!;
+          commandPath = ready.path;
+          cliVersion = ready.version;
+          provenance = picoCliProvenance(ensured);
         }
-        session = await this.ensureStarted();
+        session = await this.ensureStarted(commandPath, cliVersion);
         const response = await session.client.callTool(
           { name: parsedAction, arguments: argumentsForRemote },
           undefined,
@@ -377,7 +382,7 @@ export class KnowledgeBridge {
         const capped = capUtf8(joined, this.maxOutputBytes);
         const providerTextError = joined.startsWith(`Error executing ${parsedAction}:`);
         if ((response.isError === true || providerTextError) && /\bGraph file not found:/i.test(joined)) {
-          return withProvisioning({
+          return withProvenance({
             status: "unavailable",
             action: parsedAction,
             error: capped.text,
@@ -386,7 +391,7 @@ export class KnowledgeBridge {
           });
         }
         if (response.isError === true || providerTextError) {
-          return withProvisioning({
+          return withProvenance({
             status: "error",
             action: parsedAction,
             error: capped.text,
@@ -394,7 +399,7 @@ export class KnowledgeBridge {
             remoteError: true,
           });
         }
-        return withProvisioning({
+        return withProvenance({
           status: "ok",
           action: parsedAction,
           text: capped.text,
@@ -403,7 +408,7 @@ export class KnowledgeBridge {
         });
       } catch (error) {
         if (session) await this.retire(session);
-        return withProvisioning({ status: "unavailable", action: parsedAction, error: errorMessage(error) });
+        return withProvenance({ status: "unavailable", action: parsedAction, error: errorMessage(error) });
       }
     });
   }
@@ -427,7 +432,7 @@ export function registerKnowledgeTools(
     "knowledge_api",
     {
       description:
-        "Query PICO's persistent spatial-knowledge graph through pico-cli. Exposes query_graph, get_node, get_neighbors, get_community, god_nodes, graph_stats, shortest_path, and switch_workspace. When the shared CLI is missing, PICO_MCP_AUTOINSTALL_CLI=1 enables the same lazy bounded provisioning used by the perf/trace tools; default remains unavailable with no install. Graph answers are broad contextual evidence; use vault_api for authoritative exact SDK declarations and citations.",
+        "Query PICO's persistent spatial-knowledge graph through the lazily resolved managed pico-cli absolute path. Exposes query_graph, get_node, get_neighbors, get_community, god_nodes, graph_stats, shortest_path, and switch_workspace. A changed managed path/version retires the old child before starting the new one. Graph answers are broad contextual evidence; use vault_api for authoritative exact SDK declarations and citations.",
       inputSchema: knowledgeInputSchema,
     },
     async (input) => {

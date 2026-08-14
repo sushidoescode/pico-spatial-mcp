@@ -205,23 +205,11 @@ export function loopNeedsLookHonesty(needsLook: LoopCriterionOutcome[]): string 
 type InnerCache = {
   call: (name: string, args?: any) => Promise<any>;
   close: () => Promise<void>;
-  inheritedPath: string | undefined;
 };
 
 let cached: InnerCache | null = null;
 
-/** PATH is case-insensitive on Windows, where Node commonly exposes it as `Path`. */
-function inheritedPath(env: NodeJS.ProcessEnv): string | undefined {
-  if (process.platform !== "win32") return env.PATH;
-  const key = Object.keys(env).find((name) => name.toUpperCase() === "PATH");
-  return key ? env[key] : undefined;
-}
-
 async function inner() {
-  // ensure_pico_cli may expose npm's global bin by extending the outer server's PATH. An inner
-  // server spawned before that change cannot see the newly installed CLI, so retire its cached
-  // environment snapshot before routing the next door call through it.
-  if (cached && cached.inheritedPath !== inheritedPath(process.env)) await cached.close();
   if (cached) return cached;
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
@@ -244,7 +232,6 @@ async function inner() {
   const client = new Client({ name: "doors", version: "1" });
   await client.connect(transport);
   const entry: InnerCache = {
-    inheritedPath: inheritedPath(childEnv),
     call: async (name: string, args: any = {}) => {
       const r: any = await client.callTool({ name, arguments: args }, undefined, { timeout: 2_700_000 });
       const text = (r.content ?? []).map((c: any) => (c.type === "text" ? c.text : "")).join("\n");

@@ -1,4 +1,11 @@
 // v27-pre preflight_env: every non-pass check MUST carry a pointed fix. Run: npm run test:preflight
+import fs from "node:fs";
+import path from "node:path";
+import {
+  createManagedRuntimeHarness,
+  publishManagedFixtureVersion,
+} from "./helpers/picocli-managed-fixture.mjs";
+
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
@@ -160,18 +167,57 @@ garbageAt && garbageAt.status === "fail"
   ? ok("unparseable calibration `at` falls back to mtime and reports stale")
   : fail(`garbage calibration at mishandled: ${JSON.stringify(garbageAt)}`);
 
-// MCP-level: the tool is registered on the full surface and returns the check array.
+// MCP-level Task 4 contract: a fresh child captures HOME at import time. Empty-store preflight is
+// read-only (no root creation/npm), while a published cache is addressed by its absolute shim.
 const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
 const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"], env: { ...process.env, PICO_MCP_SURFACE: "full" } });
-const client = new Client({ name: "preflight-test", version: "0.0.0" });
-await client.connect(transport);
-const res = await client.callTool({ name: "preflight_env", arguments: {} });
-const body = JSON.parse(res.content[0].text);
-Array.isArray(body.checks) && body.checks.length >= 7 && ["ok", "problems"].includes(body.status)
-  ? ok(`preflight_env registered (status: ${body.status}, ${body.checks.length} checks)`)
-  : fail(`preflight_env bad shape: ${JSON.stringify(body).slice(0, 200)}`);
-await client.close();
+async function productionPreflight(harness) {
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["dist/index.js"],
+    cwd: process.cwd(),
+    env: { ...harness.env, PICO_MCP_SURFACE: "full" },
+  });
+  const client = new Client({ name: "preflight-test", version: "0.0.0" });
+  await client.connect(transport);
+  try {
+    const res = await client.callTool({ name: "preflight_env", arguments: {} });
+    return JSON.parse(res.content[0].text);
+  } finally {
+    await client.close();
+  }
+}
+
+const emptyManaged = createManagedRuntimeHarness();
+const emptyBody = await productionPreflight(emptyManaged);
+const emptyCli = emptyBody.checks?.find((row) => row.name === "pico-cli");
+if (Array.isArray(emptyBody.checks)
+    && emptyBody.checks.length >= 7
+    && ["ok", "problems"].includes(emptyBody.status)
+    && emptyCli?.status === "warn"
+    && /first CLI use/i.test(`${emptyCli.detail} ${emptyCli.fix}`)
+    && !fs.existsSync(emptyManaged.managedRoot)
+    && emptyManaged.calls().filter((call) => call.role === "npm").length === 0)
+  ok(`preflight_env is managed-store read-only when empty (status: ${emptyBody.status})`);
+else fail(`preflight_env empty managed-store contract broken: ${JSON.stringify({ emptyBody, calls: emptyManaged.calls(), rootExists: fs.existsSync(emptyManaged.managedRoot) }).slice(0, 500)}`);
+
+const cachedManaged = createManagedRuntimeHarness();
+const published = publishManagedFixtureVersion(cachedManaged, cachedManaged.managedRoot, "0.4.2");
+const cachedBody = await productionPreflight(cachedManaged);
+const cachedCli = cachedBody.checks?.find((row) => row.name === "pico-cli");
+const cachedStatus = cachedBody.checks?.find((row) => row.name === "pico-cli-emulator-status");
+const cachedCalls = cachedManaged.calls();
+if (cachedCli?.status === "pass"
+    && cachedStatus?.status === "pass"
+    && cachedCalls.some((call) => call.role === "managed-cli" && call.args.join(" ") === "0.4.2 -v")
+    && cachedCalls.some((call) => call.role === "managed-cli" && call.args.join(" ") === "0.4.2 emulator status --format json")
+    && cachedCalls.filter((call) => call.role === "npm").length === 0
+    && published.shimPath.includes(path.join("versions", "0.4.2")))
+  ok("preflight_env inspects cached managed CLI and emulator status without registry/install");
+else fail(`preflight_env cached managed-store contract broken: ${JSON.stringify({ cachedCli, cachedStatus, cachedCalls }).slice(0, 500)}`);
+
+fs.rmSync(emptyManaged.root, { recursive: true, force: true });
+fs.rmSync(cachedManaged.root, { recursive: true, force: true });
 
 console.log(`\nPreflight test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

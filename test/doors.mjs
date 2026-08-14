@@ -11,6 +11,7 @@ import { VERIFY_APK_TEARDOWN_MS } from "../dist/verifyapk.js";
 import * as doorsModule from "../dist/doors.js";
 import * as plannerModule from "../dist/planner.js";
 import { innerFailureDetail } from "../dist/fleetbuild.js";
+import { createManagedRuntimeHarness } from "./helpers/picocli-managed-fixture.mjs";
 
 const {
   briefIdOf,
@@ -229,7 +230,12 @@ if (typeof loopAcceptanceEvidence !== "function") {
   else fail(`acceptance ceiling is not durable-evidence-derived: ${JSON.stringify({ structuralOnly, recordedVisualPass, rejectedVisualPass })}`);
 }
 
-const transport = new StdioClientTransport({ command: "node", args: ["dist/index.js"], env: { ...process.env, PICO_MCP_SURFACE: "doors" } });
+const managedHarness = createManagedRuntimeHarness();
+const transport = new StdioClientTransport({
+  command: process.execPath,
+  args: ["dist/index.js"],
+  env: { ...managedHarness.env, PICO_MCP_SURFACE: "doors" },
+});
 const client = new Client({ name: "doors-test", version: "0.0.0" });
 await client.connect(transport);
 
@@ -306,6 +312,29 @@ if (Array.isArray(checks) && checks.length >= 7 && checks.every((c) => c.status 
   ok(`pico_doctor surfaces ${checks.length} preflight checks, all fix-pointed`);
 else fail(`pico_doctor preflight missing/unfixed: ${JSON.stringify(docOut).slice(0, 200)}`);
 
+const doctorCli = checks?.find((check) => check.name === "pico-cli");
+if (doctorCli?.status === "warn"
+    && /first CLI use/i.test(`${doctorCli.detail} ${doctorCli.fix}`)
+    && !fs.existsSync(managedHarness.managedRoot)
+    && managedHarness.calls().filter((call) => call.role === "npm").length === 0)
+  ok("default pico_doctor is managed-store read-only and explains lazy first use");
+else fail(`default pico_doctor provisioned or hid the managed-first-use warning: ${JSON.stringify({ doctorCli, calls: managedHarness.calls(), rootExists: fs.existsSync(managedHarness.managedRoot) }).slice(0, 400)}`);
+
+// Task 4: managed activation never mutates PATH, so the already-running full-surface inner server
+// must survive an ensure call. The fake node proxy logs each inner dist/index.js lifetime.
+const innerStartsBeforeEnsure = managedHarness.calls().filter((call) => call.role === "node-proxy" && call.args.some((arg) => /dist[/\\]index\.js$/.test(arg))).length;
+const ensuredManaged = JSON.parse((await client.callTool({ name: "ensure_pico_cli", arguments: { update: false } })).content[0].text);
+const sdkAfterEnsure = JSON.parse((await client.callTool({ name: "pico_sdk", arguments: { symbol: "RigidBodyComponent" } })).content[0].text);
+const innerStartsAfterEnsure = managedHarness.calls().filter((call) => call.role === "node-proxy" && call.args.some((arg) => /dist[/\\]index\.js$/.test(arg))).length;
+if (ensuredManaged.status === "ok"
+    && ensuredManaged.source === "managed"
+    && sdkAfterEnsure.status !== "error"
+    && innerStartsBeforeEnsure === 1
+    && innerStartsAfterEnsure === 1
+    && managedHarness.calls().every((call) => !call.args.includes("-g") && !call.args.includes("--global")))
+  ok("doors keeps one inner-server lifetime across managed ensure without PATH mutation");
+else fail(`doors recycled or globally provisioned its inner server: ${JSON.stringify({ ensuredManaged, innerStartsBeforeEnsure, innerStartsAfterEnsure, calls: managedHarness.calls() }).slice(0, 600)}`);
+
 // DOOR 14 restart is advisory-only: it returns the documented cold-restart command, never runs it
 const emuRestart = await client.callTool({ name: "pico_emulator", arguments: { action: "restart" } });
 const emuOut = JSON.parse(emuRestart.content[0].text);
@@ -367,7 +396,7 @@ const mixedActionOut = JSON.parse(mixedAction.content[0].text);
 if (mixedActionOut.status === "rejected" && /mutually exclusive/.test(mixedActionOut.reason ?? ""))
   ok("pico_record rejects mixed record/retract fields without appending either action");
 else fail(`pico_record accepted mixed record/retract fields: ${JSON.stringify(mixedActionOut).slice(0, 240)}`);
-try { fs.rmSync(path.join(os.homedir(), ".pico-mcp", "ledgers", `${recordApp}.json`), { force: true }); } catch { /* ignore */ }
+try { fs.rmSync(path.join(managedHarness.home, ".pico-mcp", "ledgers", `${recordApp}.json`), { force: true }); } catch { /* ignore */ }
 
 // DOOR 16 pico_loop — cheap paths only (no gradle, no emulator):
 // (a) an invalid draftSpec must come back plan-failed with a fix pointer BEFORE any build attempt;
@@ -389,6 +418,7 @@ if (loopNoPatOut.status === "invalid-acceptance" && loopNoPatOut.iterations === 
 else fail(`pico_loop patternless-logcat pre-flight broken: ${JSON.stringify(loopNoPatOut).slice(0, 200)}`);
 
 await client.close();
+fs.rmSync(managedHarness.root, { recursive: true, force: true });
 
 // v36.3 default-surface flip: with PICO_MCP_SURFACE UNSET, the server must serve the doors
 // surface — the docs told every host to set doors while the code defaulted to full, so one

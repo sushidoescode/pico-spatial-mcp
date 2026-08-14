@@ -1,8 +1,24 @@
 import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import {
+  inspectManagedPicoCli,
+  resolveManagedPicoCli,
+  type ManagedPicoCliIO,
+  type ManagedPicoCliOptions,
+  type PicoCliEnsureResult,
+} from "./picoclimanaged.js";
+
+export {
+  PICO_CLI_PACKAGE,
+  PICO_CLI_PATH_ENV,
+  PICO_CLI_POLICY_ENV,
+} from "./picoclimanaged.js";
+export type { ManagedPicoCliOptions, PicoCliEnsureResult } from "./picoclimanaged.js";
 
 // Node's native spawn/execFile cannot reliably execute npm's `.cmd` shims on Windows. cross-spawn
 // does that without `shell:true` interpolation (some pico-cli argv, notably trace SQL, is user
@@ -10,18 +26,16 @@ import { z } from "zod";
 const require = createRequire(import.meta.url);
 const crossSpawn = require("cross-spawn") as typeof nodeSpawn & { sync: typeof nodeSpawnSync };
 
-export const PICO_CLI_PACKAGE = "@picoxr/pico-cli";
+/** Deprecated 37.x compatibility aliases. Policy parsing lives in picoclimanaged.ts. */
 export const PICO_CLI_AUTOINSTALL_ENV = "PICO_MCP_AUTOINSTALL_CLI";
 export const PICO_CLI_AUTOUPDATE_ENV = "PICO_MCP_AUTOUPDATE_CLI";
 export const PICO_CLI_INSTALL_TIMEOUT_MS = 120_000;
-const PICO_CLI_UPDATE_CHECK_TIMEOUT_MS = 30_000;
 const PICO_CLI_PROBE_TIMEOUT_MS = 15_000;
 const PICO_CLI_OUTPUT_CAP_BYTES = 64 * 1024;
 const PICO_CLI_KILL_GRACE_MS = 1_000;
-const PICO_CLI_UPDATE_CHECK_TTL_MS = 60 * 60 * 1_000;
 
 /**
- * picocli.ts — the ONE shared probe/provisioning lane for the official @picoxr/pico-cli binary.
+ * picocli.ts — the ONE shared managed-resolution lane for the official @picoxr/pico-cli binary.
  *
  * Every wrapper (perf_diagnose, perf_trace, watch_crash, capture_record, preflight_env) answers
  * "is pico-cli here, and which one?" through this module so the answer is consistent and cheap.
@@ -98,8 +112,7 @@ let probeMemo: PicoCliProbe | null = null;
 
 /**
  * Probe `pico-cli -v` into {path, version, raw}, memoized per process. Only SUCCESSFUL probes are
- * memoized (the vault.ts idiom): a server started before `npm install -g @picoxr/pico-cli` picks
- * the CLI up on the next call instead of staying blind until restart. This synchronous compatibility
+ * memoized (the vault.ts idiom). This PATH-based synchronous compatibility
  * form has Node's nominal 15s timeout; production tool paths use probePicoCliBounded below for hard
  * process-tree settlement.
  * Verified live 2026-08-01: `pico-cli -v` -> "pico-cli/0.3.0 (public) darwin-arm64 node-v25.8.1".
@@ -144,7 +157,11 @@ export type PicoCliFailureClass =
   | "cli-missing"
   | "cli-unusable"
   | "flag-or-version-drift"
-  | "not-provisioned"
+  | "setup-required"
+  | "latest-unknown"
+  | "update-failed"
+  | "cli-disabled"
+  | "configuration"
   | "runtime"
   | PicoCliProvisionFailureClass;
 
@@ -153,12 +170,13 @@ export type PicoCliFailureClass =
  * optional: which fields appear depends on the status branch; tools spread tool-specific fields
  * on top and declare the whole object with .passthrough(). */
 export const cliWrapperContractShape = {
-  failureClass: z.string().optional().describe("Why the CLI lane failed: cli-missing | cli-unusable | flag-or-version-drift | not-provisioned (0.4.x: run `pico-cli setup`) | runtime | provisioning classes."),
+  failureClass: z.string().optional().describe("Why the CLI lane failed: managed policy/freshness, setup-required, flag/version drift, or runtime."),
   note: z.string().optional().describe("This wrapper's guidance in plain words — remedies included, causes never guessed."),
   outputTail: z.string().optional().describe("The CLI's own words (verbatim tail) — read before assuming a cause."),
   outputTruncated: z.boolean().optional().describe("True when CLI output exceeded the capture cap; scans over it are partial."),
   honesty: z.string().optional().describe("The wrapper's standing honesty contract for this result."),
-  cliProvisioning: z.record(z.unknown()).optional().describe("Present when a consent-gated lazy install/update ran this call."),
+  picoCli: z.record(z.unknown()).optional().describe("Managed/external CLI identity and freshness provenance for every successful ensure-backed result."),
+  setupCommand: z.object({ path: z.string(), args: z.array(z.string()) }).optional().describe("Absolute manual setup guidance. This server never executes it."),
   error: z.string().optional(),
 } as const;
 
@@ -398,48 +416,6 @@ export function runPicoCliSync(
   };
 }
 
-export type PicoCliEnsureResult =
-  | ({ status: "ok"; action: "present" | "installed" | "updated" } & Omit<Extract<PicoCliProbe, { status: "ok" }>, "status"> & {
-      previousVersion?: string | null;
-      latestVersion?: string;
-      note?: string;
-    })
-  | {
-      status: "unavailable";
-      action: "skipped";
-      path: string | null;
-      version: null;
-      raw: string;
-      failureClass: "cli-missing" | "cli-unusable";
-      note: string;
-    }
-  | {
-      status: "failed";
-      action: "failed";
-      path: string | null;
-      version: string | null;
-      raw: string;
-      phase: "version-check" | "install" | "update" | "postinstall-probe";
-      failureClass: PicoCliProvisionFailureClass;
-      note: string;
-      previousVersion?: string | null;
-      latestVersion?: string;
-      exitCode?: number | null;
-      timedOut?: boolean;
-      outputTail?: string;
-    };
-
-export type EnsurePicoCliOptions = {
-  /** Dedicated ensure_pico_cli calls set explicit=true; that call itself is installation consent. */
-  explicit?: boolean;
-  /** Separate update consent. The environment alternative is PICO_MCP_AUTOUPDATE_CLI=1. */
-  update?: boolean;
-  /** Test seams; production callers use the bounded defaults. */
-  installTimeoutMs?: number;
-  updateCheckTimeoutMs?: number;
-  killGraceMs?: number;
-};
-
 function outputTail(result: PicoCliCommandResult, lines = 20): string | undefined {
   const text = `${result.stderr}\n${result.stdout}`.trim();
   if (!text) return result.spawnError;
@@ -498,305 +474,101 @@ export function comparePicoCliVersions(left: string | null, right: string | null
   return 0;
 }
 
-function parseLatestVersion(stdout: string): string | null {
-  const trimmed = stdout.trim();
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (typeof parsed === "string") return parseSemver(parsed) ? parsed.replace(/^v/, "") : null;
-    if (Array.isArray(parsed)) {
-      const last = [...parsed].reverse().find((item) => typeof item === "string" && parseSemver(item));
-      return typeof last === "string" ? last.replace(/^v/, "") : null;
-    }
-  } catch {
-    // npm may be configured for non-JSON output despite --json; accept one plain semver line.
-  }
-  return parseSemver(trimmed) ? trimmed.replace(/^v/, "") : null;
-}
+export type PicoCliProvenance = Pick<Extract<PicoCliEnsureResult, { status: "ok" }>,
+  "source" | "policy" | "path" | "version" | "latestVersion" | "checkedAt" | "freshness" | "action" | "warning"
+>;
 
-function currentPathKey(): string {
-  if (process.platform !== "win32") return "PATH";
-  return Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "Path";
-}
-
-async function exposeNpmGlobalBin(timeoutMs: number, killGraceMs: number): Promise<PicoCliCommandResult> {
-  const prefixResult = await runPicoCliCommand("npm", ["prefix", "-g"], {
-    timeoutMs,
-    killGraceMs,
-  });
-  if (prefixResult.code !== 0 || prefixResult.timedOut) return prefixResult;
-  const prefix = prefixResult.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1);
-  if (!prefix || !path.isAbsolute(prefix)) return prefixResult;
-  const bin = process.platform === "win32" ? prefix : path.join(prefix, "bin");
-  const key = currentPathKey();
-  const existing = process.env[key] ?? "";
-  const delimiter = process.platform === "win32" ? ";" : path.delimiter;
-  if (!existing.split(delimiter).includes(bin)) process.env[key] = existing ? `${bin}${delimiter}${existing}` : bin;
-  return prefixResult;
-}
-
-function failedEnsure(
-  probe: Extract<PicoCliProbe, { status: "ok" }> | null,
-  phase: Extract<PicoCliEnsureResult, { status: "failed" }>["phase"],
-  failureClass: PicoCliProvisionFailureClass,
-  note: string,
-  result?: PicoCliCommandResult,
-  extra: Partial<Pick<Extract<PicoCliEnsureResult, { status: "failed" }>, "previousVersion" | "latestVersion">> = {},
-): Extract<PicoCliEnsureResult, { status: "failed" }> {
+export function picoCliProvenance(result: Extract<PicoCliEnsureResult, { status: "ok" }>): PicoCliProvenance {
   return {
-    status: "failed",
-    action: "failed",
-    path: probe?.path ?? null,
-    version: probe?.version ?? null,
-    raw: probe?.raw ?? "",
-    phase,
-    failureClass,
-    note,
-    ...extra,
-    ...(result ? {
-      exitCode: result.code,
-      timedOut: result.timedOut,
-      ...(outputTail(result) ? { outputTail: outputTail(result) } : {}),
-    } : {}),
+    source: result.source,
+    policy: result.policy,
+    path: result.path,
+    version: result.version,
+    latestVersion: result.latestVersion,
+    checkedAt: result.checkedAt,
+    freshness: result.freshness,
+    action: result.action,
+    ...(result.warning ? { warning: result.warning } : {}),
   };
 }
 
-function readyProbe(result: PicoCliEnsureResult): Extract<PicoCliProbe, { status: "ok" }> | null {
-  if (result.status === "unavailable" || !result.path) return null;
-  return { status: "ok", path: result.path, version: result.version, raw: result.raw };
-}
-
-/** A failed auto-update still leaves the old CLI usable when its post-failure `-v` probe passes. */
 export function picoCliFromEnsure(result: PicoCliEnsureResult): Extract<PicoCliProbe, { status: "ok" }> | null {
-  return readyProbe(result);
+  return result.status === "ok"
+    ? { status: "ok", path: result.path, version: result.version, raw: result.raw }
+    : null;
 }
 
-let ensureInFlight: Promise<PicoCliEnsureResult> | null = null;
-let successfulUpdateCheck: { installedVersion: string; latestVersion: string; checkedAt: number } | null = null;
+const managedIo: ManagedPicoCliIO = {
+  env: process.env,
+  platform: process.platform,
+  homeDir: os.homedir(),
+  now: () => Date.now(),
+  randomUUID,
+  run: (command, args, options) => runPicoCliCommand(command, args, options),
+};
 
-async function ensurePicoCliOnce(opts: EnsurePicoCliOptions): Promise<PicoCliEnsureResult> {
-  const initial = await probePicoCliBounded();
-  const autoInstall = process.env[PICO_CLI_AUTOINSTALL_ENV] === "1";
-  const autoUpdate = process.env[PICO_CLI_AUTOUPDATE_ENV] === "1";
-  // Update consent is deliberately not first-install consent. A missing CLI still requires the
-  // dedicated ensure tool or AUTOINSTALL=1; AUTOUPDATE alone only applies to an existing install.
-  const allowInstall = opts.explicit === true || autoInstall;
-  const allowUpdate = opts.update === true || autoUpdate;
-  const installTimeoutMs = opts.installTimeoutMs ?? PICO_CLI_INSTALL_TIMEOUT_MS;
-  const updateCheckTimeoutMs = opts.updateCheckTimeoutMs ?? PICO_CLI_UPDATE_CHECK_TIMEOUT_MS;
-  const killGraceMs = opts.killGraceMs ?? PICO_CLI_KILL_GRACE_MS;
+type CompatibleManagedOptions = ManagedPicoCliOptions & {
+  /** Deprecated 37.x inputs accepted but intentionally inert. */
+  explicit?: boolean;
+  update?: boolean;
+};
 
-  if (initial.status === "missing") {
-    if (!allowInstall) {
-      return {
-        status: "unavailable",
-        action: "skipped",
-        path: null,
-        version: null,
-        raw: initial.raw,
-        failureClass: "cli-missing",
-        note: `pico-cli not found on PATH — install with \`npm install -g ${PICO_CLI_PACKAGE}\` or opt in with ${PICO_CLI_AUTOINSTALL_ENV}=1.`,
-      };
-    }
+type EnsureFlight = { forceRefresh: boolean; promise: Promise<PicoCliEnsureResult> };
+const ensureFlights = new Map<string, EnsureFlight>();
 
-    const installed = await runPicoCliCommand("npm", ["install", "-g", PICO_CLI_PACKAGE], {
-      timeoutMs: installTimeoutMs,
-      killGraceMs,
-    });
-    if (installed.timedOut || installed.code !== 0) {
-      const failureClass = classifyPicoCliProvisionFailure(installed);
-      return failedEnsure(
-        null,
-        "install",
-        failureClass,
-        failureClass === "timeout"
-          ? `npm install -g ${PICO_CLI_PACKAGE} exceeded ${installTimeoutMs}ms and was killed; pico-cli remains unavailable.`
-          : `npm install -g ${PICO_CLI_PACKAGE} failed (${failureClass}); pico-cli remains unavailable.`,
-        installed,
-      );
-    }
+function ensureOptionsKey(options: CompatibleManagedOptions): string {
+  const managedRoot = path.resolve(options.managedRoot ?? path.join(managedIo.homeDir, ".pico-mcp", "cli"));
+  return JSON.stringify([
+    managedRoot,
+    options.installTimeoutMs ?? null,
+    options.updateCheckTimeoutMs ?? null,
+    options.killGraceMs ?? null,
+  ]);
+}
 
-    let after = await probePicoCliBounded(true);
-    if (after.status !== "ok") {
-      await exposeNpmGlobalBin(Math.min(15_000, updateCheckTimeoutMs), killGraceMs);
-      after = await probePicoCliBounded(true);
-    }
-    if (after.status !== "ok") {
-      return failedEnsure(
-        null,
-        "postinstall-probe",
-        "postinstall-probe-failed",
-        `npm exited 0, but the required \`pico-cli -v\` re-probe still failed; check npm's global prefix and PATH.`,
-        installed,
-      );
-    }
-    return { status: "ok", action: "installed", path: after.path, version: after.version, raw: after.raw };
-  }
-
-  if (initial.status === "unusable" && !allowUpdate) {
-    return {
-      status: "unavailable",
-      action: "skipped",
-      path: initial.path,
-      version: null,
-      raw: initial.raw,
-      failureClass: "cli-unusable",
-      note: `Found pico-cli at ${initial.path}, but the bounded \`pico-cli -v\` probe failed. Missing-only auto-install was not allowed to replace it; use ${PICO_CLI_AUTOUPDATE_ENV}=1 or ensure_pico_cli {update:true} to consent to repair/update it.`,
-    };
-  }
-
-  if (!allowUpdate) {
-    return { status: "ok", action: "present", path: initial.path, version: initial.version, raw: initial.raw };
-  }
-
-  const usableInitial = initial.status === "ok" ? initial : null;
-
-  if (
-    initial.status === "ok" && initial.version &&
-    successfulUpdateCheck?.installedVersion === initial.version &&
-    Date.now() - successfulUpdateCheck.checkedAt < PICO_CLI_UPDATE_CHECK_TTL_MS
-  ) {
-    return {
-      status: "ok",
-      action: "present",
-      path: initial.path,
-      version: initial.version,
-      raw: initial.raw,
-      latestVersion: successfulUpdateCheck.latestVersion,
-    };
-  }
-
-  const latestResult = await runPicoCliCommand("npm", ["view", PICO_CLI_PACKAGE, "version", "--json"], {
-    timeoutMs: updateCheckTimeoutMs,
-    killGraceMs,
-  });
-  if (latestResult.timedOut || latestResult.code !== 0) {
-    const failureClass = classifyPicoCliProvisionFailure(latestResult, "version-check-failed");
-    return failedEnsure(
-      usableInitial,
-      "version-check",
-      failureClass,
-      `Could not check the latest ${PICO_CLI_PACKAGE} version (${failureClass}); ${usableInitial
-        ? "the installed CLI remains available and was not changed."
-        : "the found CLI still does not pass -v and was not changed."}`,
-      latestResult,
-      { previousVersion: initial.version },
-    );
-  }
-  const latestVersion = parseLatestVersion(latestResult.stdout);
-  const comparison = initial.status === "ok"
-    ? comparePicoCliVersions(initial.version, latestVersion)
-    : -1;
-  if (!latestVersion || (initial.status === "ok" && comparison === null)) {
-    return failedEnsure(
-      usableInitial,
-      "version-check",
-      "version-check-failed",
-      `Could not compare installed pico-cli version ${initial.version ?? "(unparsed)"} with npm's ${latestVersion ?? "unparsed response"}; no update was attempted.`,
-      latestResult,
-      { previousVersion: initial.version, ...(latestVersion ? { latestVersion } : {}) },
-    );
-  }
-  if (initial.status === "ok" && comparison !== null && comparison >= 0) {
-    successfulUpdateCheck = { installedVersion: initial.version!, latestVersion, checkedAt: Date.now() };
-    return {
-      status: "ok",
-      action: "present",
-      path: initial.path,
-      version: initial.version,
-      raw: initial.raw,
-      latestVersion,
-      ...(comparison > 0 ? { note: "Installed pico-cli is newer than the registry version; no downgrade attempted." } : {}),
-    };
-  }
-
-  const updated = await runPicoCliCommand("npm", ["install", "-g", `${PICO_CLI_PACKAGE}@latest`], {
-    timeoutMs: installTimeoutMs,
-    killGraceMs,
-  });
-  if (updated.timedOut || updated.code !== 0) {
-    const afterFailure = await probePicoCliBounded(true);
-    const usable = afterFailure.status === "ok" ? afterFailure : null;
-    const failureClass = classifyPicoCliProvisionFailure(updated);
-    return failedEnsure(
-      usable,
-      "update",
-      failureClass,
-      `Updating ${PICO_CLI_PACKAGE} failed (${failureClass}); ${usable ? "the installed CLI still passes -v and remains usable." : "pico-cli no longer passes -v."}`,
-      updated,
-      { previousVersion: initial.version, latestVersion },
-    );
-  }
-
-  let after = await probePicoCliBounded(true);
-  if (after.status !== "ok") {
-    await exposeNpmGlobalBin(Math.min(15_000, updateCheckTimeoutMs), killGraceMs);
-    after = await probePicoCliBounded(true);
-  }
-  if (after.status !== "ok") {
-    return failedEnsure(
-      null,
-      "postinstall-probe",
-      "postinstall-probe-failed",
-      "npm reported a successful update, but the required `pico-cli -v` re-probe failed.",
-      updated,
-      { previousVersion: initial.version, latestVersion },
-    );
-  }
-  const installedVsLatest = comparePicoCliVersions(after.version, latestVersion);
-  if (installedVsLatest === null || installedVsLatest < 0) {
-    return failedEnsure(
-      after,
-      "postinstall-probe",
-      "postinstall-probe-failed",
-      `npm exited 0, but ${after.path} still reports pico-cli ${after.version ?? "with an unparsed version"}; expected ${latestVersion} or newer. The update was not claimed, and the re-probed CLI remains usable.`,
-      updated,
-      { previousVersion: initial.version, latestVersion },
-    );
-  }
-  if (after.version) successfulUpdateCheck = { installedVersion: after.version, latestVersion, checkedAt: Date.now() };
+function unexpectedManagedFailure(error: unknown): PicoCliEnsureResult {
   return {
-    status: "ok",
-    action: "updated",
-    path: after.path,
-    version: after.version,
-    raw: after.raw,
-    previousVersion: initial.version,
-    latestVersion,
+    status: "unavailable",
+    source: null,
+    policy: null,
+    action: "skipped",
+    path: null,
+    version: null,
+    raw: "",
+    latestVersion: null,
+    checkedAt: null,
+    freshness: null,
+    failureClass: "configuration",
+    note: `Unexpected managed pico-cli resolution failure: ${error instanceof Error ? error.message : String(error)}`,
+    deprecatedAliases: [],
   };
 }
 
-/**
- * Lazily make pico-cli ready for a real CLI-backed operation. Imports/registration never call this.
- * Concurrent callers share one bounded npm attempt; failures are not memoized, while the underlying
- * `probePicoCli` continues to memoize only successful `-v` probes.
- */
-export function ensurePicoCli(opts: EnsurePicoCliOptions = {}): Promise<PicoCliEnsureResult> {
-  if (ensureInFlight) {
-    const active = ensureInFlight;
-    return active.then((result) => {
-      const installConsent = opts.explicit === true || process.env[PICO_CLI_AUTOINSTALL_ENV] === "1";
-      const updateConsent = opts.update === true || process.env[PICO_CLI_AUTOUPDATE_ENV] === "1";
-      const needsStrongerAttempt =
-        (installConsent && result.action === "skipped") ||
-        (updateConsent && result.status === "unavailable" && result.failureClass === "cli-unusable") ||
-        (updateConsent && result.status === "ok" && result.action === "present" && result.latestVersion === undefined);
-      if (!needsStrongerAttempt) return result;
-      if (ensureInFlight === active) ensureInFlight = null;
-      return ensurePicoCli(opts);
-    });
+/** Lazy managed resolution. Registration/startup never calls this. */
+export function ensurePicoCli(options: CompatibleManagedOptions = {}): Promise<PicoCliEnsureResult> {
+  const normalized: ManagedPicoCliOptions = {
+    ...(options.managedRoot !== undefined ? { managedRoot: options.managedRoot } : {}),
+    ...(options.forceRefresh !== undefined ? { forceRefresh: options.forceRefresh } : {}),
+    ...(options.installTimeoutMs !== undefined ? { installTimeoutMs: options.installTimeoutMs } : {}),
+    ...(options.updateCheckTimeoutMs !== undefined ? { updateCheckTimeoutMs: options.updateCheckTimeoutMs } : {}),
+    ...(options.killGraceMs !== undefined ? { killGraceMs: options.killGraceMs } : {}),
+  };
+  const key = ensureOptionsKey(options);
+  const active = ensureFlights.get(key);
+  if (active) {
+    if (active.forceRefresh || !normalized.forceRefresh) return active.promise;
+    return active.promise.then(() => ensurePicoCli({ ...normalized, forceRefresh: true }));
   }
-  const pending = ensurePicoCliOnce(opts).catch((error) => failedEnsure(
-    null,
-    "install",
-    "install-failed",
-    `Unexpected pico-cli provisioning failure: ${error instanceof Error ? error.message : String(error)}`,
-  ));
-  ensureInFlight = pending;
-  void pending.then(
-    () => { if (ensureInFlight === pending) ensureInFlight = null; },
-    () => { if (ensureInFlight === pending) ensureInFlight = null; },
-  );
+  const pending = resolveManagedPicoCli(normalized, managedIo).catch(unexpectedManagedFailure);
+  ensureFlights.set(key, { forceRefresh: normalized.forceRefresh === true, promise: pending });
+  void pending.finally(() => {
+    if (ensureFlights.get(key)?.promise === pending) ensureFlights.delete(key);
+  });
   return pending;
+}
+
+export function inspectPicoCliCached(options: ManagedPicoCliOptions = {}): Promise<PicoCliEnsureResult> {
+  return inspectManagedPicoCli(options, managedIo).catch(unexpectedManagedFailure);
 }
 
 export type PicoCliEnvelope =
@@ -851,9 +623,9 @@ export function extractPicoCliRemediations(value: unknown, cap = 32): string[] {
 export function classifyPicoCliFailure(
   stderr: string,
   stdout: string,
-): "flag-or-version-drift" | "not-provisioned" | "runtime" {
+): "flag-or-version-drift" | "setup-required" | "runtime" {
   const text = `${stderr}\n${stdout}`.toLowerCase();
-  if (/not installed[\s\S]{0,120}pico-cli setup/.test(text)) return "not-provisioned";
+  if (/not installed[\s\S]{0,120}pico-cli setup/.test(text)) return "setup-required";
   return /unknown option|unknown command|unknown argument|missing required|\busage:/.test(text)
     ? "flag-or-version-drift"
     : "runtime";

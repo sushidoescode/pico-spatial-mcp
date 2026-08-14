@@ -16,11 +16,11 @@ const firstUse = (statePath) => {
 };
 
 append({ event: "start" });
+process.on("exit", () => append({ event: "exit" }));
 
 if (firstUse(process.env.FAKE_KNOWLEDGE_STARTUP_HANG_ONCE_FILE)) {
   const delayedCloseMs = Number(process.env.FAKE_KNOWLEDGE_DELAYED_CLOSE_MS ?? 0);
   if (delayedCloseMs > 0) {
-    process.on("exit", () => append({ event: "exit" }));
     process.on("SIGTERM", () => {
       append({ event: "sigterm" });
       setTimeout(() => process.exit(0), delayedCloseMs);

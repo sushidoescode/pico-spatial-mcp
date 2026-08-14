@@ -5,40 +5,16 @@ let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
 
-const { probePicoCli, classifyPicoCliFailure, picoCliPath, parsePicoCliEnvelope } = await import("../dist/picocli.js");
-const { runPerfDiagnose, scorePicoCliPerfAxis, registerPerfCliTools } = await import("../dist/perfcli.js");
+const { classifyPicoCliFailure, picoCliPath, parsePicoCliEnvelope } = await import("../dist/picocli.js");
+const { scorePicoCliPerfAxis, registerPerfCliTools } = await import("../dist/perfcli.js");
 const { parseTraceSessionId, registerPerfTraceTools } = await import("../dist/perftrace.js");
 const { scanForCrashIndicators, registerPicoCliTools } = await import("../dist/picoclitools.js");
 const { runPreflightChecks } = await import("../dist/preflight.js");
 
-// --- probePicoCli: with PATH sabotaged the probe MUST report missing, never throw or hang.
-const realPath = process.env.PATH;
-process.env.PATH = "/nonexistent-bin";
-const missing = probePicoCli(true);
-missing && missing.status === "missing" && missing.path === null && missing.version === null
-  ? ok("probePicoCli reports missing on an empty PATH")
-  : fail(`probePicoCli on empty PATH: ${JSON.stringify(missing)}`);
-
-// --- runPerfDiagnose without the CLI: cli-missing class, unavailable status, install hint.
-// MUST run while PATH is still sabotaged and BEFORE any successful probe is memoized — a memoized
-// hit would make this test really spawn `pico-cli perf monitor run` on the host.
-const noCli = await runPerfDiagnose("com.example.nope", { durationSec: 5 });
-noCli.status === "unavailable" && noCli.failureClass === "cli-missing" && /npm install -g @picoxr\/pico-cli/.test(noCli.note ?? "")
-  ? ok("runPerfDiagnose without the CLI degrades to unavailable/cli-missing with the install hint")
-  : fail(`runPerfDiagnose without CLI: ${JSON.stringify(noCli)}`);
-process.env.PATH = realPath;
-// Missing is NOT memoized (the vault idiom): a fresh probe after PATH restore may now succeed.
-const reprobe = probePicoCli();
-reprobe && ["ok", "missing"].includes(reprobe.status)
-  ? ok(`probePicoCli re-probes after a miss (status now: ${reprobe.status})`)
-  : fail(`probePicoCli re-probe bad shape: ${JSON.stringify(reprobe)}`);
-if (reprobe.status === "ok") {
-  /^\d+\.\d+\.\d+/.test(reprobe.version ?? "")
-    ? ok(`probePicoCli parsed a version from -v (${reprobe.version})`)
-    : fail(`probePicoCli found the CLI but parsed no version from: ${JSON.stringify(reprobe.raw)}`);
-}
+// Ambient/global probing is deliberately absent from this gate. Task 4 production behavior is
+// exercised through fresh isolated MCP child processes in picocli-autoinstall.mjs.
 typeof picoCliPath === "function"
-  ? ok("picoCliPath still exported from perfcli's origin module (perfcli re-exports it)")
+  ? ok("legacy picoCliPath remains an inert compatibility export")
   : fail("picoCliPath missing");
 
 // --- classifyPicoCliFailure: usage/unknown-option dumps are drift; everything else is runtime.
@@ -60,12 +36,12 @@ classifyPicoCliFailure("", "") === "runtime"
   : fail("empty output should classify as runtime");
 // 0.4.x utilities gate (verbatim message measured 2026-08-12 on 0.4.2): a one-time `pico-cli setup`
 // is the exact remedy — not drift, not a device problem.
-classifyPicoCliFailure("Error: Perf utilities 0.1.0 are not installed. Run `pico-cli setup` to install.", "") === "not-provisioned"
-  ? ok("0.4.x utilities gate classified as not-provisioned (remedy: pico-cli setup)")
-  : fail("perf-utilities-gate message should classify as not-provisioned");
-classifyPicoCliFailure("", "Error: Perf utilities 0.2.0 are not installed. Run `pico-cli setup` to install.") === "not-provisioned"
-  ? ok("utilities gate on stdout with a future bundle version still classifies as not-provisioned")
-  : fail("stdout-side utilities gate should classify as not-provisioned");
+classifyPicoCliFailure("Error: Perf utilities 0.1.0 are not installed. Run `pico-cli setup` to install.", "") === "setup-required"
+  ? ok("0.4.x utilities gate classified as setup-required")
+  : fail("perf-utilities-gate message should classify as setup-required");
+classifyPicoCliFailure("", "Error: Perf utilities 0.2.0 are not installed. Run `pico-cli setup` to install.") === "setup-required"
+  ? ok("utilities gate on stdout with a future bundle version classifies as setup-required")
+  : fail("stdout-side utilities gate should classify as setup-required");
 
 // --- scorePicoCliPerfAxis: shaped like the REAL 0.3.0 report (appFps has p5/p10/p50, no p95).
 const emulatorReport = { status: "ok", summary: { appFps: { avg: 0, max: 0, min: 0, p5: 0, p10: 0, p50: 0, dropsCount: 0 } } };
@@ -103,8 +79,8 @@ const baseIO = {
   detectJavaHome: () => null,
 };
 const noCliRow = runPreflightChecks(baseIO).find((c) => c.name === "pico-cli");
-noCliRow && noCliRow.status === "warn" && /npm install -g @picoxr\/pico-cli/.test(noCliRow.fix ?? "")
-  ? ok("preflight pico-cli row warns (not fails) when absent, naming the install command")
+noCliRow && noCliRow.status === "warn" && /first CLI use/i.test(`${noCliRow.detail} ${noCliRow.fix}`)
+  ? ok("preflight pico-cli row warns that first CLI use provisions the managed store")
   : fail(`preflight pico-cli absent row: ${JSON.stringify(noCliRow)}`);
 const withCliIO = {
   ...baseIO,

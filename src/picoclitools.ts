@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { okJson, tail, okJsonStructured } from "./util.js";
-import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, cliWrapperContractShape } from "./picocli.js";
+import { ensurePicoCli, picoCliProvenance, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, cliWrapperContractShape } from "./picocli.js";
 
 /**
  * picoclitools.ts — v31: thin evidence primitives over the official pico-cli.
@@ -58,9 +58,9 @@ export function registerPicoCliTools(server: McpServer) {
         "Monitor a package for crashes with PICO's OFFICIAL crash watcher (`pico-cli app watch-crash <pkg>`: PID-change " +
         "polling + surfaced exception logs) for a bounded window. The CLI (through 0.4.2) has NO duration flag and streams until " +
         "killed, so this wrapper kills the watcher after durationSec — a timed-out child is the EXPECTED healthy end of " +
-        "the window, reported as endedBy:'duration-cap'. Optionally starts the app first (--start/--activity). Uses " +
-        "@picoxr/pico-cli from PATH; missing defaults to status:'unavailable', while PICO_MCP_AUTOINSTALL_CLI=1 or " +
-        "ensure_pico_cli enables a lazy bounded install and same-call retry. HONESTY: " + WATCH_HONESTY,
+        "the window, reported as endedBy:'duration-cap'. Optionally starts the app first (--start/--activity). Resolves " +
+        "the latest managed @picoxr/pico-cli lazily and runs its absolute path; successful resolution is returned as " +
+        "picoCli provenance. HONESTY: " + WATCH_HONESTY,
       // Typed contract (2026-07-28 revision lane): the shared CLI-wrapper core + the watch fields.
       outputSchema: z.object({
         status: z.enum(["ok", "failed", "unavailable"]).describe("ok = the window ran (a duration-capped kill is the healthy end); failed = the CLI exited non-zero early; unavailable = pico-cli absent/unusable."),
@@ -84,27 +84,16 @@ export function registerPicoCliTools(server: McpServer) {
     },
     async ({ packageName, durationSec, device, start, activity, intervalSec }) => {
       const ensured = await ensurePicoCli();
-      const cli = picoCliFromEnsure(ensured);
-      if (!cli) {
-        if (ensured.action === "failed") {
-          return okJsonStructured({
-            status: "unavailable",
-            failureClass: ensured.failureClass,
-            note: ensured.note,
-            ...(ensured.outputTail ? { outputTail: ensured.outputTail } : {}),
-            cliProvisioning: ensured,
-          });
-        }
-        const unavailable = ensured.status === "unavailable" ? ensured : null;
+      if (ensured.status !== "ok") {
         return okJsonStructured({
           status: "unavailable",
-          failureClass: unavailable?.failureClass ?? "cli-missing",
-          note: unavailable?.failureClass === "cli-missing"
-            ? "pico-cli not found on PATH — install with `npm install -g @picoxr/pico-cli`; crash watching skipped."
-            : unavailable?.note ?? "pico-cli did not become usable.",
+          failureClass: ensured.failureClass,
+          note: ensured.note,
+          ...(ensured.outputTail ? { outputTail: ensured.outputTail } : {}),
         });
       }
-      const provisioning = ensured.action === "present" ? {} : { cliProvisioning: ensured };
+      const cli = picoCliFromEnsure(ensured)!;
+      const provenance = { picoCli: picoCliProvenance(ensured) };
       const sec = Math.min(300, Math.max(5, Math.round(durationSec ?? 30)));
       const args = ["app", "watch-crash", packageName, "-d", device ?? "emulator-5554"];
       if (start) args.push("--start");
@@ -120,13 +109,14 @@ export function registerPicoCliTools(server: McpServer) {
           failureClass,
           note: failureClass === "flag-or-version-drift"
             ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its watch-crash surface drifted from the 0.3.0/0.4.2 flags this wrapper was verified against.`
-            : failureClass === "not-provisioned"
-              ? `the installed pico-cli (${cli.raw || "unknown"}) reports a required utility bundle is not installed — run \`pico-cli setup\` yourself and retry; this wrapper never runs setup (it mutates the machine).`
+            : failureClass === "setup-required"
+              ? "The managed CLI is current, but this utility payload is not provisioned. Run the returned command manually, then retry."
               : "pico-cli app watch-crash exited before the window elapsed — read outputTail (the CLI's own words) before assuming a cause.",
+          ...(failureClass === "setup-required" ? { setupCommand: { path: cli.path, args: ["setup"] } } : {}),
           exitCode: r.code,
           ...(output ? { outputTail: tail(output, 20) } : {}),
           ...(r.outputTruncated ? { outputTruncated: true } : {}),
-          ...provisioning,
+          ...provenance,
         });
       }
       const indicators = scanForCrashIndicators(output);
@@ -144,7 +134,7 @@ export function registerPicoCliTools(server: McpServer) {
           note: "pico-cli output exceeded the capture cap; crash indicators were scanned only in the retained tail, so crashIndicated:false does not prove the full window was quiet.",
         } : {}),
         honesty: WATCH_HONESTY,
-        ...provisioning,
+        ...provenance,
       });
     },
   );
@@ -155,9 +145,8 @@ export function registerPicoCliTools(server: McpServer) {
       description:
         "Record the device screen with PICO's OFFICIAL recorder (`pico-cli capture record`, 1-180s) and pull the file " +
         "locally as a RECORDING evidence artifact — the video lane for demos and ledger evidence that single-frame " +
-        "captures lack. Returns the stat-checked output path + size. Uses @picoxr/pico-cli from PATH; missing defaults " +
-        "to status:'unavailable', while PICO_MCP_AUTOINSTALL_CLI=1 or ensure_pico_cli enables a lazy bounded install " +
-        "and same-call retry. HONESTY: " + RECORD_HONESTY,
+        "captures lack. Returns the stat-checked output path + size. Resolves the latest managed @picoxr/pico-cli " +
+        "lazily and runs its absolute path; successful resolution is returned as picoCli provenance. HONESTY: " + RECORD_HONESTY,
       // Typed contract (2026-07-28 revision lane): the shared CLI-wrapper core + the artifact fields.
       outputSchema: z.object({
         status: z.enum(["ok", "failed", "unavailable"]).describe("ok = the recording exists with real bytes (stat-checked — exit 0 alone is never ok); failed = run failed or the file is missing/empty; unavailable = pico-cli absent/unusable."),
@@ -176,27 +165,16 @@ export function registerPicoCliTools(server: McpServer) {
     },
     async ({ durationSec, device, outputPath }) => {
       const ensured = await ensurePicoCli();
-      const cli = picoCliFromEnsure(ensured);
-      if (!cli) {
-        if (ensured.action === "failed") {
-          return okJsonStructured({
-            status: "unavailable",
-            failureClass: ensured.failureClass,
-            note: ensured.note,
-            ...(ensured.outputTail ? { outputTail: ensured.outputTail } : {}),
-            cliProvisioning: ensured,
-          });
-        }
-        const unavailable = ensured.status === "unavailable" ? ensured : null;
+      if (ensured.status !== "ok") {
         return okJsonStructured({
           status: "unavailable",
-          failureClass: unavailable?.failureClass ?? "cli-missing",
-          note: unavailable?.failureClass === "cli-missing"
-            ? "pico-cli not found on PATH — install with `npm install -g @picoxr/pico-cli`; screen recording skipped."
-            : unavailable?.note ?? "pico-cli did not become usable.",
+          failureClass: ensured.failureClass,
+          note: ensured.note,
+          ...(ensured.outputTail ? { outputTail: ensured.outputTail } : {}),
         });
       }
-      const provisioning = ensured.action === "present" ? {} : { cliProvisioning: ensured };
+      const cli = picoCliFromEnsure(ensured)!;
+      const provenance = { picoCli: picoCliProvenance(ensured) };
       const sec = Math.min(180, Math.max(1, Math.round(durationSec ?? 15)));
       const outDir = path.join(os.homedir(), ".pico-mcp", "recordings");
       fs.mkdirSync(outDir, { recursive: true });
@@ -215,13 +193,14 @@ export function registerPicoCliTools(server: McpServer) {
             ? `pico-cli capture record did not finish within ${sec + 120}s and was killed — read outputTail.`
             : failureClass === "flag-or-version-drift"
               ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its capture surface drifted from the 0.3.0/0.4.2 flags this wrapper was verified against.`
-              : failureClass === "not-provisioned"
-                ? `the installed pico-cli (${cli.raw || "unknown"}) reports a required utility bundle is not installed — run \`pico-cli setup\` yourself and retry; this wrapper never runs setup (it mutates the machine).`
+              : failureClass === "setup-required"
+                ? "The managed CLI is current, but this utility payload is not provisioned. Run the returned command manually, then retry."
                 : "pico-cli capture record failed at runtime — read outputTail (the CLI's own words) before assuming a cause.",
+          ...(failureClass === "setup-required" ? { setupCommand: { path: cli.path, args: ["setup"] } } : {}),
           exitCode: r.code,
           ...(output ? { outputTail: tail(output, 20) } : {}),
           ...(r.outputTruncated ? { outputTruncated: true } : {}),
-          ...provisioning,
+          ...provenance,
         });
       }
       // Exit 0 is not evidence the recording exists — stat it and say which.
@@ -239,7 +218,7 @@ export function registerPicoCliTools(server: McpServer) {
         ...(output ? { outputTail: tail(output, 12) } : {}),
         ...(r.outputTruncated ? { outputTruncated: true } : {}),
         honesty: RECORD_HONESTY,
-        ...provisioning,
+        ...provenance,
       });
     },
   );

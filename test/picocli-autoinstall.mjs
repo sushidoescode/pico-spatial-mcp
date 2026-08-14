@@ -3,6 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,21 +11,14 @@ import { fileURLToPath } from "node:url";
 
 import {
   classifyPicoCliProvisionFailure,
-  ensurePicoCli,
   executableCandidates,
-  picoCliFromEnsure,
-  probePicoCli,
-  PICO_CLI_AUTOINSTALL_ENV,
-  PICO_CLI_AUTOUPDATE_ENV,
   PICO_CLI_INSTALL_TIMEOUT_MS,
 } from "../dist/picocli.js";
-import { registerPicoCliHealthTool } from "../dist/picoclihealth.js";
-import { registerPicoCliTools } from "../dist/picoclitools.js";
-import { runPerfDiagnose } from "../dist/perfcli.js";
 import {
   createManagedConvergenceWorker,
   createHarness,
   createManagedIO,
+  createManagedRuntimeHarness,
   launchManagedConvergenceWorker,
   publishManagedFixtureVersion,
   restoreEnvironment,
@@ -40,10 +34,6 @@ import {
 } from "../dist/picoclimanaged.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-async function nextTurn() {
-  await new Promise((resolve) => setImmediate(resolve));
-}
 
 async function waitForProcessExit(pid, timeoutMs = 2_000) {
   const deadline = Date.now() + timeoutMs;
@@ -61,272 +51,19 @@ async function waitForProcessExit(pid, timeoutMs = 2_000) {
 
 saveEnvironment();
 
-test("pico-cli auto-install contract", { concurrency: false, timeout: 45_000 }, async (t) => {
-  await t.test("Windows PATH candidates include npm-style .CMD shims and preserve spaces", () => {
-    assert.equal(PICO_CLI_INSTALL_TIMEOUT_MS, 120_000);
-    const candidates = executableCandidates("pico-cli", {
-      Path: "C:\\Program Files\\npm;D:\\portable npm",
-      PATHEXT: ".EXE;.CMD",
-    }, "win32");
-    assert.ok(candidates.includes("C:\\Program Files\\npm\\pico-cli.CMD"), JSON.stringify(candidates));
-    assert.ok(candidates.includes("D:\\portable npm\\pico-cli.CMD"), JSON.stringify(candidates));
-  });
+test("bounded runner compatibility helpers remain covered without ambient CLI access", () => {
+  assert.equal(PICO_CLI_INSTALL_TIMEOUT_MS, 120_000);
+  const candidates = executableCandidates("pico-cli", {
+    Path: "C:\\Program Files\\npm;D:\\portable npm",
+    PATHEXT: ".EXE;.CMD",
+  }, "win32");
+  assert.ok(candidates.includes("C:\\Program Files\\npm\\pico-cli.CMD"), JSON.stringify(candidates));
+  assert.ok(candidates.includes("D:\\portable npm\\pico-cli.CMD"), JSON.stringify(candidates));
 
-  await t.test("present is a fast no-op and missing with default OFF preserves the old degrade", async () => {
-    const present = createHarness({ installedVersion: "0.3.0" });
-    process.env[PICO_CLI_AUTOINSTALL_ENV] = "1";
-    const found = await ensurePicoCli();
-    assert.equal(found.status, "ok");
-    assert.equal(found.action, "present");
-    assert.equal(found.version, "0.3.0");
-    assert.equal(present.calls().filter((call) => call.role === "npm").length, 0);
-    await nextTurn();
-
-    const missing = createHarness();
-    const unavailable = await runPerfDiagnose("com.example.absent", { durationSec: 5 });
-    assert.equal(unavailable.status, "unavailable");
-    assert.equal(unavailable.failureClass, "cli-missing");
-    assert.match(unavailable.note, /npm install -g @picoxr\/pico-cli/);
-    assert.equal(missing.calls().filter((call) => call.role === "npm").length, 0);
-    assert.ok(missing.calls().every((call) => !call.args.some((arg) => /doctor/.test(arg))), JSON.stringify(missing.calls()));
-    await nextTurn();
-  });
-
-  await t.test("a present but unusable CLI is not overwritten by missing-only auto-install", async () => {
-    const harness = createHarness({ cliPresent: true });
-    process.env[PICO_CLI_AUTOINSTALL_ENV] = "1";
-    const unusable = await ensurePicoCli();
-    assert.equal(unusable.status, "unavailable", JSON.stringify(unusable));
-    assert.equal(unusable.action, "skipped");
-    assert.equal(unusable.failureClass, "cli-unusable");
-    // Windows resolves the shim via PATHEXT and may report the extension in PATHEXT's
-    // canonical casing (.CMD) while the fixture wrote .cmd — same file on a
-    // case-insensitive filesystem, so compare accordingly there.
-    if (process.platform === "win32") {
-      assert.equal(String(unusable.path).toLowerCase(), String(harness.cliTarget).toLowerCase());
-    } else {
-      assert.equal(unusable.path, harness.cliTarget);
-    }
-    const calls = harness.calls();
-    assert.equal(calls.filter((call) => call.role === "npm").length, 0, JSON.stringify(calls));
-    assert.ok(calls.some((call) => call.role === "cli" && call.args.length === 1 && call.args[0] === "-v"), JSON.stringify(calls));
-    assert.ok(calls.every((call) => !call.args.some((arg) => /doctor/.test(arg))), JSON.stringify(calls));
-    await nextTurn();
-  });
-
-  await t.test("AUTOUPDATE alone does not install a missing CLI", async () => {
-    const harness = createHarness();
-    process.env[PICO_CLI_AUTOUPDATE_ENV] = "1";
-    const missing = await ensurePicoCli();
-    assert.equal(missing.status, "unavailable", JSON.stringify(missing));
-    assert.equal(missing.failureClass, "cli-missing");
-    assert.equal(harness.calls().filter((call) => call.role === "npm").length, 0, JSON.stringify(harness.calls()));
-    await nextTurn();
-  });
-
-  await t.test("explicit ensure installs once, re-probes with -v, and receives the full env", async () => {
-    const harness = createHarness({ separateGlobalBin: true });
-    const handlers = {};
-    registerPicoCliHealthTool({ registerTool: (name, _meta, handler) => { handlers[name] = handler; } });
-    assert.deepEqual(Object.keys(handlers), ["ensure_pico_cli"]);
-    assert.equal(harness.calls().length, 0, "registration/import must not start npm");
-    const toolResult = await handlers.ensure_pico_cli({});
-    const ensured = JSON.parse(toolResult.content[0].text);
-    assert.equal(ensured.status, "ok");
-    assert.equal(ensured.action, "installed");
-    assert.equal(ensured.version, "0.3.0");
-    const calls = harness.calls();
-    const installs = calls.filter((call) => call.role === "npm" && call.args[0] === "install");
-    assert.equal(installs.length, 1, JSON.stringify(calls));
-    assert.deepEqual(installs[0].args, ["install", "-g", "@picoxr/pico-cli"]);
-    assert.equal(installs[0].sentinel, "full-env-reached-child");
-    assert.ok(calls.some((call) => call.role === "npm" && call.args.join(" ") === "prefix -g"), JSON.stringify(calls));
-    assert.equal((process.env.PATH ?? process.env.Path ?? "").split(path.delimiter)[0], harness.cliBinDir);
-    const reProbes = calls.filter((call) => call.role === "cli" && call.args.length === 1 && call.args[0] === "-v");
-    assert.ok(reProbes.length > 0, JSON.stringify(calls));
-    assert.ok(reProbes.every((call) => call.sentinel === "full-env-reached-child"), JSON.stringify(reProbes));
-    assert.ok(calls.every((call) => !call.args.some((arg) => /doctor/.test(arg))), JSON.stringify(calls));
-    await nextTurn();
-  });
-
-  await t.test("full server startup under AUTOINSTALL registers CLI tools without running npm", async () => {
-    const harness = createHarness();
-    process.env[PICO_CLI_AUTOINSTALL_ENV] = "1";
-    const [{ Client }, { StdioClientTransport }] = await Promise.all([
-      import("@modelcontextprotocol/sdk/client/index.js"),
-      import("@modelcontextprotocol/sdk/client/stdio.js"),
-    ]);
-    const transport = new StdioClientTransport({
-      command: process.execPath,
-      args: [path.join(repoRoot, "dist", "index.js")],
-      cwd: repoRoot,
-      env: { ...process.env, PICO_MCP_SURFACE: "full" },
-    });
-    const client = new Client({ name: "pico-cli-no-startup-install", version: "1" });
-    try {
-      await client.connect(transport);
-      const listed = await client.listTools();
-      assert.ok(listed.tools.some((tool) => tool.name === "ensure_pico_cli"));
-      assert.ok(listed.tools.some((tool) => tool.name === "perf_trace"), "full-only CLI tool must register without provisioning");
-    } finally {
-      await client.close().catch(() => {});
-    }
-    assert.equal(harness.calls().filter((call) => call.role === "npm").length, 0, JSON.stringify(harness.calls()));
-    await nextTurn();
-  });
-
-  await t.test("watch_crash installs lazily under the env opt-in and continues in the same call", async () => {
-    const harness = createHarness();
-    process.env[PICO_CLI_AUTOINSTALL_ENV] = "1";
-    const handlers = {};
-    registerPicoCliTools({ registerTool: (name, _meta, handler) => { handlers[name] = handler; } });
-    const result = await handlers.watch_crash({ packageName: "com.example.fake", durationSec: 5 });
-    const out = JSON.parse(result.content[0].text);
-    assert.equal(out.status, "ok", JSON.stringify(out));
-    assert.equal(out.cliProvisioning.action, "installed");
-    assert.equal(out.cliProvisioning.version, "0.3.0");
-    const calls = harness.calls();
-    assert.equal(calls.filter((call) => call.role === "npm" && call.args[0] === "install").length, 1);
-    const watchCall = calls.find((call) => call.role === "cli" && call.args.slice(0, 2).join(" ") === "app watch-crash");
-    assert.ok(watchCall, JSON.stringify(calls));
-    assert.equal(watchCall.sentinel, "full-env-reached-child");
-    assert.ok(calls.filter((call) => call.role === "cli").every((call) => call.sentinel === "full-env-reached-child"), JSON.stringify(calls));
-    await nextTurn();
-  });
-
-  await t.test("concurrent callers share one global install", async () => {
-    const harness = createHarness();
-    process.env[PICO_CLI_AUTOINSTALL_ENV] = "1";
-    const [left, right] = await Promise.all([ensurePicoCli(), ensurePicoCli()]);
-    assert.equal(left.action, "installed");
-    assert.equal(right.action, "installed");
-    assert.equal(harness.calls().filter((call) => call.role === "npm" && call.args[0] === "install").length, 1);
-    await nextTurn();
-  });
-
-  await t.test("stronger concurrent waiters are not suppressed by a weaker in-flight result", async () => {
-    const installHarness = createHarness();
-    const [weakInstall, strongInstall] = await Promise.all([
-      ensurePicoCli(),
-      ensurePicoCli({ explicit: true }),
-    ]);
-    assert.equal(weakInstall.action, "skipped", JSON.stringify(weakInstall));
-    assert.equal(strongInstall.action, "installed", JSON.stringify(strongInstall));
-    assert.equal(installHarness.calls().filter((call) => call.role === "npm" && call.args[0] === "install").length, 1);
-    await nextTurn();
-
-    const updateHarness = createHarness({ installedVersion: "0.1.0", latestVersion: "0.1.1" });
-    const [weakUpdate, strongUpdate] = await Promise.all([
-      ensurePicoCli(),
-      ensurePicoCli({ explicit: true, update: true }),
-    ]);
-    assert.equal(weakUpdate.action, "present", JSON.stringify(weakUpdate));
-    assert.equal(strongUpdate.action, "updated", JSON.stringify(strongUpdate));
-    assert.equal(updateHarness.calls().filter((call) => call.role === "npm" && call.args[0] === "view").length, 1);
-    assert.equal(updateHarness.calls().filter((call) => call.role === "npm" && call.args[0] === "install").length, 1);
-    await nextTurn();
-
-    const repairHarness = createHarness({ cliPresent: true, latestVersion: "0.3.0" });
-    const [weakRepair, strongRepair] = await Promise.all([
-      ensurePicoCli(),
-      ensurePicoCli({ update: true }),
-    ]);
-    assert.equal(weakRepair.failureClass, "cli-unusable", JSON.stringify(weakRepair));
-    assert.equal(strongRepair.action, "updated", JSON.stringify(strongRepair));
-    assert.equal(repairHarness.calls().filter((call) => call.role === "npm" && call.args[0] === "install").length, 1);
-    await nextTurn();
-  });
-
-  await t.test("install failures are classified and a hung npm settles at the hard bound", { timeout: 10_000 }, async () => {
-    const networkHarness = createHarness({ npmMode: "network" });
-    process.env[PICO_CLI_AUTOINSTALL_ENV] = "1";
-    const network = await ensurePicoCli({ installTimeoutMs: 2_000, killGraceMs: 25 });
-    assert.equal(network.status, "failed");
-    assert.equal(network.action, "failed");
-    assert.equal(network.failureClass, "network");
-    assert.match(network.outputTail, /ENETUNREACH/);
-    assert.equal(networkHarness.calls().filter((call) => call.role === "npm").length, 1);
-    await nextTurn();
-
-    const wrapperHarness = createHarness({ npmMode: "network" });
-    process.env[PICO_CLI_AUTOINSTALL_ENV] = "1";
-    const handlers = {};
-    registerPicoCliTools({ registerTool: (name, _meta, handler) => { handlers[name] = handler; } });
-    const wrapperFailure = JSON.parse((await handlers.watch_crash({ packageName: "com.example.fake", durationSec: 5 })).content[0].text);
-    assert.equal(wrapperFailure.status, "unavailable", JSON.stringify(wrapperFailure));
-    assert.equal(wrapperFailure.failureClass, "network");
-    assert.equal(wrapperFailure.cliProvisioning?.phase, "install");
-    assert.equal(wrapperHarness.calls().filter((call) => call.role === "npm" && call.args[0] === "install").length, 1);
-    await nextTurn();
-
-    createHarness({ npmMode: "no-cli" });
-    process.env[PICO_CLI_AUTOINSTALL_ENV] = "1";
-    const missingAfterSuccess = await ensurePicoCli({ installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000, killGraceMs: 25 });
-    assert.equal(missingAfterSuccess.status, "failed");
-    assert.equal(missingAfterSuccess.failureClass, "postinstall-probe-failed");
-    assert.equal(missingAfterSuccess.phase, "postinstall-probe");
-    await nextTurn();
-
-    const hungHarness = createHarness({ npmMode: "hang" });
-    process.env[PICO_CLI_AUTOINSTALL_ENV] = "1";
-    const started = Date.now();
-    const hung = await ensurePicoCli({ installTimeoutMs: 300, killGraceMs: 25 });
-    const elapsed = Date.now() - started;
-    assert.equal(hung.status, "failed");
-    assert.equal(hung.failureClass, "timeout");
-    assert.equal(hung.timedOut, true);
-    assert.ok(elapsed < 3_000, `timeout took ${elapsed}ms`);
-    assert.ok(hungHarness.calls().every((call) => !call.args.some((arg) => /doctor/.test(arg))), JSON.stringify(hungHarness.calls()));
-    if (process.platform === "win32") {
-      const descendantPid = hungHarness.calls().find((call) => call.event === "descendant")?.descendantPid;
-      assert.equal(typeof descendantPid, "number", JSON.stringify(hungHarness.calls()));
-      await waitForProcessExit(descendantPid);
-    }
-    assert.equal(classifyPicoCliProvisionFailure({ code: 1, signal: null, stdout: "", stderr: "EACCES permission denied", timedOut: false, outputTruncated: false }), "permissions");
-    assert.equal(classifyPicoCliProvisionFailure({ code: 1, signal: null, stdout: "", stderr: "E404 404 Not Found - not in this registry", timedOut: false, outputTruncated: false }), "registry-404");
-    assert.equal(classifyPicoCliProvisionFailure({ code: null, signal: null, stdout: "", stderr: "", timedOut: false, spawnError: "spawn npm ENOENT", outputTruncated: false }), "npm-unavailable");
-    assert.equal(classifyPicoCliProvisionFailure({ code: null, signal: null, stdout: "", stderr: "", timedOut: false, spawnError: "spawn npm EACCES: permission denied", outputTruncated: false }), "permissions");
-    await nextTurn();
-  });
-
-  await t.test("a successful npm update that leaves the old version is a failed postinstall probe but keeps the CLI usable", async () => {
-    const harness = createHarness({ installedVersion: "0.2.5", latestVersion: "0.2.6", npmMode: "update-noop" });
-    process.env[PICO_CLI_AUTOUPDATE_ENV] = "1";
-    const unchanged = await ensurePicoCli({ installTimeoutMs: 2_000, updateCheckTimeoutMs: 2_000, killGraceMs: 25 });
-    assert.equal(unchanged.status, "failed", JSON.stringify(unchanged));
-    assert.equal(unchanged.phase, "postinstall-probe");
-    assert.equal(unchanged.failureClass, "postinstall-probe-failed");
-    assert.equal(unchanged.previousVersion, "0.2.5");
-    assert.equal(unchanged.latestVersion, "0.2.6");
-    assert.equal(unchanged.version, "0.2.5");
-    assert.equal(picoCliFromEnsure(unchanged)?.version, "0.2.5");
-    const calls = harness.calls();
-    assert.equal(calls.filter((call) => call.role === "npm" && call.args[0] === "view").length, 1, JSON.stringify(calls));
-    assert.equal(calls.filter((call) => call.role === "npm" && call.args[0] === "install").length, 1, JSON.stringify(calls));
-    assert.ok(calls.some((call) => call.role === "cli" && call.args[0] === "-v"), JSON.stringify(calls));
-    await nextTurn();
-  });
-
-  await t.test("auto-install never updates; the separate update opt-in updates only when stale", async () => {
-    const harness = createHarness({ installedVersion: "0.2.0", latestVersion: "0.3.0" });
-    process.env[PICO_CLI_AUTOINSTALL_ENV] = "1";
-    const installOnly = await ensurePicoCli();
-    assert.equal(installOnly.action, "present");
-    assert.equal(harness.calls().filter((call) => call.role === "npm").length, 0);
-    await nextTurn();
-
-    process.env[PICO_CLI_AUTOUPDATE_ENV] = "1";
-    const updated = await ensurePicoCli();
-    assert.equal(updated.status, "ok", JSON.stringify(updated));
-    assert.equal(updated.action, "updated");
-    assert.equal(updated.previousVersion, "0.2.0");
-    assert.equal(updated.version, "0.3.0");
-    const calls = harness.calls();
-    assert.equal(calls.filter((call) => call.role === "npm" && call.args[0] === "view").length, 1);
-    assert.deepEqual(calls.find((call) => call.role === "npm" && call.args[0] === "install").args, ["install", "-g", "@picoxr/pico-cli@latest"]);
-    assert.ok(calls.every((call) => !call.args.some((arg) => /doctor/.test(arg))), JSON.stringify(calls));
-    await nextTurn();
-  });
+  assert.equal(classifyPicoCliProvisionFailure({ code: 1, signal: null, stdout: "", stderr: "EACCES permission denied", timedOut: false, outputTruncated: false }), "permissions");
+  assert.equal(classifyPicoCliProvisionFailure({ code: 1, signal: null, stdout: "", stderr: "E404 404 Not Found - not in this registry", timedOut: false, outputTruncated: false }), "registry-404");
+  assert.equal(classifyPicoCliProvisionFailure({ code: null, signal: null, stdout: "", stderr: "", timedOut: false, spawnError: "spawn npm ENOENT", outputTruncated: false }), "npm-unavailable");
+  assert.equal(classifyPicoCliProvisionFailure({ code: null, signal: null, stdout: "", stderr: "", timedOut: true, outputTruncated: false }), "timeout");
 });
 
 test("managed pico-cli policy and immutable-store inspection", { concurrency: false }, async (t) => {
@@ -831,7 +568,9 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
       const cached = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
       const beforeRecord = fs.readFileSync(path.join(cached.versionRoot, "install.json"));
       const beforeShim = fs.readFileSync(cached.shimPath);
+      const startedAt = Date.now();
       const updateFailed = await resolveManagedPicoCli(optionsFor(managedRoot, failure.overrides), createManagedIO(harness));
+      const elapsedMs = Date.now() - startedAt;
       assert.equal(updateFailed.status, "ok", JSON.stringify(updateFailed));
       assert.equal(updateFailed.action, "cached");
       assert.equal(updateFailed.path, cached.shimPath);
@@ -844,6 +583,14 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
       assert.deepEqual(fs.readFileSync(cached.shimPath), beforeShim);
       assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
       assert.deepEqual(fs.existsSync(path.join(managedRoot, "staging")) ? fs.readdirSync(path.join(managedRoot, "staging")) : [], []);
+      if (failure.name === "npm timeout") {
+        assert.ok(elapsedMs < 3_000, `managed npm timeout took ${elapsedMs}ms`);
+        if (process.platform === "win32") {
+          const descendantPid = harness.calls().find((call) => call.event === "descendant")?.descendantPid;
+          assert.equal(typeof descendantPid, "number", JSON.stringify(harness.calls()));
+          await waitForProcessExit(descendantPid);
+        }
+      }
     });
   }
 
@@ -1431,8 +1178,163 @@ test("managed registry cache fix round", { concurrency: false, timeout: 45_000 }
   }
 });
 
+test("Task 4 production adapters use the managed absolute CLI without eager provisioning", { concurrency: false, timeout: 45_000 }, async (t) => {
+  async function withServer(harness, surface, callback) {
+    const [{ Client }, { StdioClientTransport }] = await Promise.all([
+      import("@modelcontextprotocol/sdk/client/index.js"),
+      import("@modelcontextprotocol/sdk/client/stdio.js"),
+    ]);
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(repoRoot, "dist", "index.js")],
+      cwd: repoRoot,
+      env: { ...harness.env, PICO_MCP_SURFACE: surface },
+      stderr: "pipe",
+    });
+    const client = new Client({ name: "managed-task-4-test", version: "1" });
+    try {
+      await client.connect(transport);
+      return await callback(client);
+    } finally {
+      await client.close().catch(() => {});
+    }
+  }
+
+  await t.test("startup and tools/list neither contact npm nor create the managed root", async () => {
+    const harness = createManagedRuntimeHarness();
+    await withServer(harness, "full", async (client) => {
+      const listed = await client.listTools();
+      assert.ok(listed.tools.some((tool) => tool.name === "ensure_pico_cli"));
+      assert.equal(fs.existsSync(harness.managedRoot), false);
+      assert.equal(harness.calls().filter((call) => call.role === "npm").length, 0, JSON.stringify(harness.calls()));
+    });
+  });
+
+  await t.test("a default wrapper provisions the managed absolute path and always returns provenance", async () => {
+    const harness = createManagedRuntimeHarness();
+    await withServer(harness, "full", async (client) => {
+      const invoke = async () => JSON.parse((await client.callTool({
+        name: "watch_crash",
+        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+      })).content[0].text);
+      const installed = await invoke();
+      const present = await invoke();
+      for (const out of [installed, present]) {
+        assert.equal(out.status, "ok", JSON.stringify(out));
+        assert.equal(out.picoCli.source, "managed");
+        assert.equal(out.picoCli.policy, "managed-latest");
+        assert.equal(out.picoCli.version, "0.4.2");
+        assert.equal(out.picoCli.latestVersion, "0.4.2");
+        assert.equal(out.picoCli.freshness, "latest");
+        assert.ok(path.isAbsolute(out.picoCli.path));
+      }
+      assert.equal(present.picoCli.action, "present");
+      const runtime = harness.calls().filter((call) => call.role === "managed-cli" && call.args[1] === "app");
+      assert.ok(runtime.length >= 2, JSON.stringify(harness.calls()));
+      assert.ok(runtime.every((call) => path.isAbsolute(present.picoCli.path)));
+
+      const missingArtifactPath = path.join(harness.root, "recording-that-fixture-does-not-create.mp4");
+      const artifactFailure = JSON.parse((await client.callTool({
+        name: "capture_record",
+        arguments: { durationSec: 1, outputPath: missingArtifactPath },
+      })).content[0].text);
+      assert.equal(artifactFailure.status, "failed", JSON.stringify(artifactFailure));
+      assert.equal(artifactFailure.artifactExists, false);
+      assert.equal(artifactFailure.picoCli.action, "present");
+      assert.equal(artifactFailure.picoCli.path, present.picoCli.path);
+      assert.equal(harness.calls().some((call) => call.args.includes("-g") || call.args.includes("--global")), false, JSON.stringify(harness.calls()));
+    });
+  });
+
+  await t.test("managed resolution failures propagate without falling back to PATH or global npm", async () => {
+    const harness = createManagedRuntimeHarness();
+    harness.env.FAKE_REGISTRY_MODE = "failure";
+    await withServer(harness, "full", async (client) => {
+      const out = JSON.parse((await client.callTool({
+        name: "watch_crash",
+        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+      })).content[0].text);
+      assert.equal(out.status, "unavailable", JSON.stringify(out));
+      assert.equal(out.failureClass, "latest-unknown");
+      assert.equal(Object.hasOwn(out, "picoCli"), false);
+      assert.equal(harness.calls().some((call) => call.role === "managed-cli" && call.args[1] === "app"), false, JSON.stringify(harness.calls()));
+      assert.equal(harness.calls().some((call) => call.args.includes("-g") || call.args.includes("--global")), false, JSON.stringify(harness.calls()));
+    });
+  });
+
+  await t.test("setup-required failures keep provenance and return an absolute manual command without executing it", async () => {
+    const harness = createManagedRuntimeHarness({ operationMode: "setup-required" });
+    await withServer(harness, "full", async (client) => {
+      const out = JSON.parse((await client.callTool({
+        name: "watch_crash",
+        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+      })).content[0].text);
+      assert.equal(out.status, "failed", JSON.stringify(out));
+      assert.equal(out.failureClass, "setup-required");
+      assert.deepEqual(out.setupCommand, { path: out.picoCli.path, args: ["setup"] });
+      assert.ok(path.isAbsolute(out.setupCommand.path));
+      assert.equal(out.picoCli.version, "0.4.2");
+      assert.equal(harness.calls().some((call) => call.role === "managed-cli" && call.args.slice(1).join(" ") === "setup"), false, JSON.stringify(harness.calls()));
+    });
+  });
+
+  await t.test("ensure_pico_cli force-refreshes regardless of inert legacy update input", async () => {
+    const harness = createManagedRuntimeHarness({ latestVersion: "0.4.1" });
+    await withServer(harness, "full", async (client) => {
+      const invoke = async (update) => JSON.parse((await client.callTool({ name: "ensure_pico_cli", arguments: { update } })).content[0].text);
+      const first = await invoke(false);
+      harness.setLatest("0.4.2");
+      const second = await invoke(false);
+      const third = await invoke(true);
+      assert.equal(first.version, "0.4.1", JSON.stringify(first));
+      assert.equal(second.version, "0.4.2", JSON.stringify(second));
+      assert.equal(third.version, "0.4.2", JSON.stringify(third));
+      for (const out of [first, second, third]) {
+        assert.equal(out.policy, "managed-latest");
+        assert.equal(out.freshness, "latest");
+      }
+      assert.equal(harness.calls().filter((call) => call.role === "npm" && call.args[0] === "view").length, 3, JSON.stringify(harness.calls()));
+      assert.equal(harness.calls().some((call) => call.args.includes("update") && call.args.includes("--check")), false, JSON.stringify(harness.calls()));
+    });
+  });
+
+  await t.test("coalescing is option-keyed and force-refresh strength aware", () => {
+    const harness = createManagedRuntimeHarness();
+    const moduleUrl = new URL("../dist/picocli.js", import.meta.url).href;
+    const roots = ["strength", "forced", "left", "right"].map((name) => path.join(harness.root, name));
+    const script = `
+import { ensurePicoCli } from ${JSON.stringify(moduleUrl)};
+const [strength, forced, left, right] = ${JSON.stringify(roots)};
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const weakPromise = ensurePicoCli({ managedRoot: strength, updateCheckTimeoutMs: 2000, installTimeoutMs: 2000 });
+await wait(20);
+const strongPromise = ensurePicoCli({ managedRoot: strength, forceRefresh: true, updateCheckTimeoutMs: 2000, installTimeoutMs: 2000 });
+const strengthResults = await Promise.all([weakPromise, strongPromise]);
+const forcedPromise = ensurePicoCli({ managedRoot: forced, forceRefresh: true, updateCheckTimeoutMs: 2000, installTimeoutMs: 2000 });
+await wait(20);
+const sharedWeak = ensurePicoCli({ managedRoot: forced, updateCheckTimeoutMs: 2000, installTimeoutMs: 2000 });
+const sharedResults = await Promise.all([forcedPromise, sharedWeak]);
+const distinctResults = await Promise.all([
+  ensurePicoCli({ managedRoot: left, forceRefresh: true, updateCheckTimeoutMs: 2000, installTimeoutMs: 2000 }),
+  ensurePicoCli({ managedRoot: right, forceRefresh: true, updateCheckTimeoutMs: 2000, installTimeoutMs: 2000 }),
+]);
+process.stdout.write(JSON.stringify({ strengthResults, sharedResults, distinctResults }));
+`;
+    const result = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+      cwd: repoRoot,
+      env: { ...harness.env, FAKE_PICO_VIEW_DELAY_MS: "100" },
+      encoding: "utf8",
+      timeout: 20_000,
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const output = JSON.parse(result.stdout);
+    assert.ok([...output.strengthResults, ...output.sharedResults, ...output.distinctResults].every((entry) => entry.status === "ok"), result.stdout);
+    assert.equal(harness.calls().filter((call) => call.role === "npm" && call.args[0] === "view").length, 5, JSON.stringify(harness.calls()));
+    for (const root of roots) assert.equal(fs.existsSync(path.join(root, "versions", "0.4.2")), true, root);
+  });
+});
+
 test.after(() => {
   restoreEnvironment();
-  probePicoCli(true);
   for (const root of tempRoots) fs.rmSync(root, { recursive: true, force: true });
 });

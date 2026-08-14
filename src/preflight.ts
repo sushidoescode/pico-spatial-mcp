@@ -11,8 +11,8 @@ import { SKELETON_CANARIES, SKELETON_ROOT } from "./projectgen.js";
 import { UNITY_SKELETON_CANARIES, UNITY_SKELETON_ROOT } from "./unitygen.js";
 import {
   extractPicoCliRemediations,
+  inspectPicoCliCached,
   parsePicoCliEnvelope,
-  probePicoCliBounded,
   runPicoCli,
   runPicoCliSync,
 } from "./picocli.js";
@@ -64,11 +64,14 @@ export function defaultIO(): PreflightIO {
  * pico-cli's two read-only calls through the hard-bounded process-tree runner. */
 async function defaultBoundedIO(): Promise<PreflightIO> {
   const base = defaultIO();
-  const probe = await probePicoCliBounded();
-  const versionResult = probe.status === "ok"
-    ? { ok: true, stdout: probe.raw, stderr: "" }
-    : { ok: false, stdout: "", stderr: probe.raw };
-  const emulatorResult = probe.status === "ok"
+  const inspected = await inspectPicoCliCached();
+  const probe = inspected.status === "ok"
+    ? { status: "ok" as const, path: inspected.path, version: inspected.version, raw: inspected.raw }
+    : null;
+  const versionResult = inspected.status === "ok"
+    ? { ok: true, stdout: inspected.raw, stderr: "" }
+    : { ok: false, stdout: "", stderr: inspected.note };
+  const emulatorResult = probe
     ? await runPicoCli(probe, ["emulator", "status", "--format", "json"], { timeoutMs: 15_000 })
     : null;
   return {
@@ -202,7 +205,7 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   if (picoCli.ok) {
     const raw = picoCli.stdout.trim();
     const cliVersion = raw.match(/pico-cli\/(\d+\.\d+\.\d+\S*)/)?.[1] ?? null;
-    push({ name: "pico-cli", status: "pass", detail: cliVersion ? `version ${cliVersion} (${raw})` : `on PATH (version string unparsed: ${raw || "(empty)"})`, fix: null });
+    push({ name: "pico-cli", status: "pass", detail: cliVersion ? `managed cached version ${cliVersion} (${raw})` : `managed cached CLI (version string unparsed: ${raw || "(empty)"})`, fix: null });
     const emulatorStatus = io.exec("pico-cli", ["emulator", "status", "--format", "json"]);
     const envelope = parsePicoCliEnvelope(emulatorStatus.stdout);
     const processContext = emulatorStatus.ok ? "" : `; process exit: non-zero${emulatorStatus.stderr?.trim() ? `; stderr=${emulatorStatus.stderr.trim()}` : ""}`;
@@ -217,7 +220,7 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
       push({ name: "pico-cli-emulator-status", status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}; payload=${payload}${processContext}`, fix: action ?? "Run `pico-cli emulator status --format json` directly and address its returned diagnostics; this read-only check does not run pico-cli doctor." });
     }
   } else {
-    push({ name: "pico-cli", status: "warn", detail: "no pico-cli on PATH — perf_diagnose/perf_trace/watch_crash/capture_record degrade to status:'unavailable'; agent-vault provisioning (`pico-cli setup`) needs it", fix: "npm install -g @picoxr/pico-cli (optional lane; building, capture, and verification work without it)." });
+    push({ name: "pico-cli", status: "warn", detail: "no validated managed pico-cli is cached; first CLI use will provision the MCP-owned registry-latest version lazily", fix: "Call ensure_pico_cli to provision now, or invoke the needed CLI-backed tool; neither path changes the global CLI or PATH." });
   }
 
   // 3. emulator (a PICO device attached and in 'device' state)
