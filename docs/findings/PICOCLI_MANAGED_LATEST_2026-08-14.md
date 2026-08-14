@@ -326,6 +326,17 @@ passed under an isolated home; that does not validate unrelated real-home ledger
 - Task 5 recorded one early missing-npm fixture case that could resolve ambient npm; registry/cache
   contact during that run cannot be ruled out. Therefore this programme is not described as having
   a contamination-free session, even though the final Task 7 live phases were isolated and audited.
+- During final consumer-review remediation at 09:14:05, an independent review scratch probe
+  statically imported `KnowledgeBridge` before applying a `createManagedRuntimeHarness()`
+  environment. The adapter therefore retained the real home while the later process environment
+  supplied the fake npm/CLI fixture. Without an explicit `managedRoot`, that probe published a fake
+  cache entry under the real `~/.pico-mcp/cli`. The entry carried fixture registry value
+  `sha512-runtime-fixture`, a dead owner PID `64216`, and a shim targeting the subsequently deleted
+  `pico managed runtime N6g0Go` fixture driver. This was a real-home write; it was not a network,
+  real-npm, real-pico-cli, setup, emulator, or device operation. The exact tree was moved intact to
+  `/tmp/pico-integrity-real-home-quarantine.YSiMBi/cli`; the real managed root was confirmed absent
+  afterward. This incident means the Task 7/remediation programme is not described as exclusively
+  isolated or free of real-home mutation.
 - The first Task 7 tarball attempt put its `TMPDIR` below the proof root, whose MCP-client
   `node_modules` link made npm select the proof root as the local project ancestor. It installed the
   tarball inside the proof root and failed the verifier's expected sandbox path. No real worktree or
@@ -343,5 +354,8 @@ passed under an isolated home; that does not validate unrelated real-home ledger
 - rendered-frame LOOK, visual correctness, emulator performance setup, or any visual evidence tier;
 - publisher identity beyond npm's reported integrity, and unrelated real-home claim ledgers.
 
-No `record_verification` call, setup, emulator lifecycle/control, device mutation, Swan runtime,
-rendered capture, or push occurred. Read-only smoke/native host enumeration is disclosed above.
+No real/live `record_verification` call or ledger entry was made for this CLI proof. The isolated
+synthetic fixture battery did exercise `record_verification` calls against temporary test
+ledgers; those calls are gate coverage, not evidence about the live registry, CLI, app, or host.
+No setup, emulator lifecycle/control, device mutation, Swan runtime, rendered capture, or push
+occurred. Read-only smoke/native host enumeration is disclosed above.

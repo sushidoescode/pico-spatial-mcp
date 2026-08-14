@@ -110,7 +110,7 @@ export function registerPicoCliTools(server: McpServer) {
           note: failureClass === "flag-or-version-drift"
             ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its watch-crash surface drifted from the 0.3.0/0.4.2 flags this wrapper was verified against.`
             : failureClass === "setup-required"
-              ? "The managed CLI is current, but this utility payload is not provisioned. Run the returned command manually, then retry."
+              ? "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
               : "pico-cli app watch-crash exited before the window elapsed — read outputTail (the CLI's own words) before assuming a cause.",
           ...(failureClass === "setup-required" ? { setupCommand: { path: cli.path, args: ["setup"] } } : {}),
           exitCode: r.code,
@@ -194,7 +194,7 @@ export function registerPicoCliTools(server: McpServer) {
             : failureClass === "flag-or-version-drift"
               ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its capture surface drifted from the 0.3.0/0.4.2 flags this wrapper was verified against.`
               : failureClass === "setup-required"
-                ? "The managed CLI is current, but this utility payload is not provisioned. Run the returned command manually, then retry."
+                ? "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
                 : "pico-cli capture record failed at runtime — read outputTail (the CLI's own words) before assuming a cause.",
           ...(failureClass === "setup-required" ? { setupCommand: { path: cli.path, args: ["setup"] } } : {}),
           exitCode: r.code,

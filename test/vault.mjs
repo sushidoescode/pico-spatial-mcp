@@ -12,6 +12,24 @@ const assert = (cond, msg) => (cond ? ok(msg) : fail(msg));
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "agent-vault");
 
+// Public missing-vault guidance must route through the managed resolver. A bare `pico-cli setup`
+// command could execute an unrelated ambient/global shim and contradict the managed policy.
+{
+  const handlers = {};
+  let metadata;
+  registerVaultTools({ registerTool: (name, toolMetadata, fn) => {
+    handlers[name] = fn;
+    if (name === "vault_api") metadata = toolMetadata;
+  } });
+  const missingSdk = `missing-${process.pid}-${Date.now()}`;
+  const missing = JSON.parse((await handlers.vault_api({ symbol: "Entity", sdkVersion: missingSdk })).content[0].text);
+  const publicText = JSON.stringify({ metadata, missing });
+  assert(!/pico-cli\s+setup/i.test(publicText), "vault_api public schema/result never recommends a bare pico-cli setup command");
+  assert(/ensure_pico_cli/i.test(missing.note ?? ""), "vault_api missing-vault result starts with ensure_pico_cli");
+  assert(/returned absolute path/i.test(missing.note ?? ""), "vault_api missing-vault result requires the returned absolute path");
+  assert(/args \[\"setup\"\]/i.test(missing.note ?? ""), "vault_api missing-vault result supplies setup argv structurally");
+}
+
 // ── 1. Parser over the fixture vault ────────────────────────────────────────────────────────────────────
 console.log("Parsing the fixture vault...\n");
 const idx = loadVaultIndex(FIXTURE);

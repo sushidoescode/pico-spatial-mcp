@@ -601,7 +601,7 @@ On setup refusal, return:
 {
   failureClass: "setup-required",
   setupCommand: { path: ready.path, args: ["setup"] },
-  note: "The managed CLI is current, but this utility payload is not provisioned. Run the returned command manually, then retry.",
+  note: "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry.",
 }
 ```
 

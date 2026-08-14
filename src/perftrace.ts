@@ -15,9 +15,9 @@ import { ensurePicoCli, picoCliProvenance, picoCliFromEnsure, runPicoCli, classi
  * -t duration, -o output, -d device), decode (trace-file, -f json|systrace|ctrace, -o output),
  * load (trace-file, returns a sessionId for trace_processor_shell), query (--session, --sql).
  * `--live` (Ctrl+C-terminated streaming) is deliberately NOT wrapped — every action is bounded.
- * 0.4.2 caveat (measured 2026-08-12): the whole perf family exits 1 with "Perf utilities 0.1.0
- * are not installed. Run `pico-cli setup`" until a one-time setup — classified setup-required
- * with that exact remedy. The 0.4.2 trace flag surface BEHIND that gate is unverified (setup
+ * 0.4.2 caveat (measured 2026-08-12): the whole perf family reports its optional utilities are
+ * not installed until a one-time manual setup — classified setup-required with structured
+ * absolute-path guidance. The 0.4.2 trace flag surface BEHIND that gate is unverified (setup
  * mutates the machine; deferred until a provisioned 0.4.x is available here).
  *
  * HONESTY (load-bearing): outputs are pico-cli's own, quoted verbatim (outputTail) plus artifact
@@ -148,7 +148,7 @@ export function registerPerfTraceTools(server: McpServer) {
           note: failureClass === "flag-or-version-drift"
               ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its trace surface drifted from the 0.3.0 flags this wrapper was verified against; report outputTail upstream instead of retrying.`
               : failureClass === "setup-required"
-                ? "The managed CLI is current, but this utility payload is not provisioned. Run the returned command manually, then retry."
+                ? "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
                 : "pico-cli perf trace failed at runtime — read outputTail (the CLI's own words) before assuming a cause.",
           ...(failureClass === "setup-required" ? { setupCommand: { path: cli.path, args: ["setup"] } } : {}),
           command: ["pico-cli", ...args].join(" "),

@@ -30,6 +30,7 @@ capture path, and escalate the look to a human or a vision-capable agent.
 
 ## Managed pico-cli policy
 
+<!-- pico-mcp-managed-cli-policy:start -->
 `managed-latest` is the default. Resolution is lazy on the first real CLI-backed operation.
 Server startup, tool registration and `tools/list`, `preflight_env`, and the default
 `pico_doctor {}` inspect only an existing cache: they make no npm request, provision nothing, and
@@ -53,10 +54,10 @@ Through 37.x, the deprecated aliases `PICO_MCP_AUTOINSTALL_CLI=1` and
 another explicit policy. `ensure_pico_cli` is the force-refresh health path. Its deprecated
 `update` input is inert and accepted only for compatibility.
 
-Package activation and utility setup are separate. Any setup is a manual, user-run setup command
-using the absolute path returned by the MCP; the MCP never runs it. The MCP also never runs
-`update --check`, because that command writes a local update cache; freshness comes from the
-registry lookup instead.
+Package activation and utility setup are separate. Call `ensure_pico_cli`, then manually run its
+returned absolute path with args `["setup"]` if the CLI reports an unprovisioned utility payload.
+The MCP never runs setup. It also never runs `update --check`, because that command writes a local
+update cache; freshness comes from the registry lookup instead.
 
 `0.4.2` was registry latest on 2026-08-14, an observed value rather than a timeless pin. A v1.0
 date supplied by the user/PICO team is planning input, not repository-verified release evidence.
@@ -64,6 +65,7 @@ The compatibility sweep is version-agnostic and covers the complete reachable ad
 help-only tree except the prohibited top-level setup subtree. It does not establish semantic
 compatibility, hidden-alias longevity, perf provisioning, emulator/device/Windows behavior, or
 visual evidence.
+<!-- pico-mcp-managed-cli-policy:end -->
 
 ## Session shape
 

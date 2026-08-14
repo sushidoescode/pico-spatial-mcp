@@ -9,8 +9,8 @@ import { loadVaultIndex, type VaultIndex, type VaultType } from "./vault.js";
 /**
  * vaultdiff.ts — v26 THE MULTI-VERSION VAULT: workspaces + drift reports + migration hints.
  *
- * `pico-cli setup` materializes one agent-vault per SDK version under ~/Library/PICO/sdk/<v>/.
- * This module enumerates those workspaces and DIFFS two vault indexes — types added/removed,
+ * The CLI's separately provisioned utility payload materializes one agent-vault per SDK version
+ * under ~/Library/PICO/sdk/<v>/. This module enumerates those workspaces and DIFFS two vault indexes — types added/removed,
  * members added/removed, constructor-arity changes, kind changes, enum-entry drift — and turns
  * each breaking change into a concrete migration hint. When 0.14/6.1 vaults land, `vault_diff
  * from:0.13 to:0.14` is the instant upgrade brief for spatial-sdk-update work.
@@ -21,6 +21,18 @@ import { loadVaultIndex, type VaultIndex, type VaultType } from "./vault.js";
  */
 
 export interface VaultWorkspace { version: string; root: string; mdFiles: number }
+
+const MANAGED_SETUP_GUIDANCE = "Call ensure_pico_cli, then manually run its returned absolute path with args [\"setup\"]; the MCP never runs setup.";
+
+export function vaultWorkspaceNote(workspaces: readonly VaultWorkspace[]): string {
+  if (workspaces.length === 0) {
+    return `no vault is materialized locally — vault_diff needs two; the diff engine is CI-proven against a labeled fixture pair. ${MANAGED_SETUP_GUIDANCE}`;
+  }
+  if (workspaces.length === 1) {
+    return `only one vault is materialized locally — vault_diff needs two; the diff engine is CI-proven against a labeled fixture pair. ${MANAGED_SETUP_GUIDANCE}`;
+  }
+  return "diff any pair with vault_diff {from, to}.";
+}
 
 export function listVaultWorkspaces(sdkBase?: string): VaultWorkspace[] {
   const base = sdkBase ?? path.join(os.homedir(), "Library", "PICO", "sdk");
@@ -128,14 +140,14 @@ function resolveRoot(spec: string): string {
 export function registerVaultDiffTools(server: McpServer) {
   server.tool(
     "vault_workspaces",
-    "v26: list the agent-vault WORKSPACES materialized on this machine (~/Library/PICO/sdk/<version>/agent-vault) — one per SDK version that `pico-cli setup` has installed. Feed two versions to vault_diff for a drift report; pass a version to vault_api to query that SDK's declarations.",
+    "v26: list the agent-vault WORKSPACES materialized on this machine (~/Library/PICO/sdk/<version>/agent-vault) — one per SDK version supplied by the CLI's separately provisioned utility payload. Feed two versions to vault_diff for a drift report; pass a version to vault_api to query that SDK's declarations.",
     {},
     async () => {
       const ws = listVaultWorkspaces();
       return okJson({
         status: "ok",
         workspaces: ws,
-        note: ws.length <= 1 ? "only one vault is materialized locally — vault_diff needs two (a second appears when pico-cli setup installs the next SDK; the diff engine is CI-proven against a labeled fixture pair)." : `diff any pair with vault_diff {from, to}.`,
+        note: vaultWorkspaceNote(ws),
       });
     },
   );

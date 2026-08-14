@@ -103,7 +103,7 @@ export async function runPerfDiagnose(
       note: failureClass === "flag-or-version-drift"
         ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — the flags this wrapper passes were verified against 0.3.0 and no longer match; report outputTail upstream instead of retrying.`
         : failureClass === "setup-required"
-          ? "The managed CLI is current, but this utility payload is not provisioned. Run the returned command manually, then retry."
+          ? "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
           : "pico-cli perf monitor run failed at runtime — read outputTail (the CLI's own words) before assuming a cause; a stopped app or wrong device serial are common but NOT proven by this wrapper.",
       ...(failureClass === "setup-required" ? { setupCommand: { path: cli.path, args: ["setup"] } } : {}),
       error: runResult.spawnError ?? (runResult.timedOut

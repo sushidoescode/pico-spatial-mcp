@@ -15,6 +15,7 @@ import {
   parsePicoCliEnvelope,
   runPicoCli,
   runPicoCliSync,
+  type PicoCliEnsureResult,
 } from "./picocli.js";
 
 /**
@@ -30,6 +31,9 @@ export type CheckResult = {
   status: "pass" | "fail" | "warn" | "unknown";
   detail: string;
   fix: string | null;
+  /** Exact read-only resolver evidence. Present on production pico-cli rows so policy/source/
+   * freshness are not flattened into a guessed generic status. */
+  inspection?: PicoCliEnsureResult;
 };
 
 export type PreflightIO = {
@@ -42,6 +46,9 @@ export type PreflightIO = {
   /** Injected so a fixture can describe a machine WITHOUT a JDK; the default is the real resolver
    *  the Gradle lane uses, so this check can never disagree with whether builds actually work. */
   detectJavaHome: () => string | null;
+  /** Production's exact read-only managed inspection. Fixtures that exercise the legacy pure
+   * command evaluator may omit it. */
+  picoCliInspection?: PicoCliEnsureResult;
 };
 
 export function defaultIO(): PreflightIO {
@@ -76,6 +83,7 @@ async function defaultBoundedIO(): Promise<PreflightIO> {
     : null;
   return {
     ...base,
+    picoCliInspection: inspected,
     exec: (cmd, args) => {
       if (cmd !== "pico-cli") return base.exec(cmd, args);
       if (args.length === 1 && args[0] === "-v") return versionResult;
@@ -89,6 +97,49 @@ async function defaultBoundedIO(): Promise<PreflightIO> {
       return { ok: false, stdout: "", stderr: "unsupported pico-cli preflight command" };
     },
   };
+}
+
+function picoCliInspectionFix(inspected: Extract<PicoCliEnsureResult, { status: "unavailable" }>): string {
+  if (inspected.failureClass === "configuration") {
+    return "Correct the CLI policy configuration named in the note, then restart the MCP server and re-run this read-only check.";
+  }
+  if (inspected.policy === "disabled") {
+    return "Change PICO_MCP_CLI_POLICY from disabled and restart the MCP server only if CLI-backed tools are needed; non-CLI lanes remain available.";
+  }
+  if (inspected.policy === "external") {
+    return "Set PICO_MCP_CLI_PATH to a runnable absolute pico-cli path, restart the MCP server, then re-run this read-only check.";
+  }
+  if (inspected.source === "managed" && /content-bound immutable-store validation/i.test(inspected.note)) {
+    return "Follow the exact manual recovery action in the inspection note, then call ensure_pico_cli; this read-only check does not alter the rejected cache entry.";
+  }
+  if (inspected.policy === "managed-cached") {
+    return "To provision instead of remaining cache-only, set PICO_MCP_CLI_POLICY=managed-latest, restart the MCP server, then call ensure_pico_cli; otherwise publish a validated managed cache entry outside this read-only check.";
+  }
+  return "Under managed-latest, first CLI use provisions lazily. Call ensure_pico_cli to refresh/provision now, or invoke the needed CLI-backed tool; neither path changes the global CLI or PATH.";
+}
+
+function picoCliInspectionDetail(inspected: PicoCliEnsureResult): string {
+  if (inspected.status === "ok") {
+    return [
+      "inspection status=ok",
+      `policy=${inspected.policy}`,
+      `source=${inspected.source}`,
+      `freshness=${inspected.freshness}`,
+      `version=${inspected.version}`,
+      `action=${inspected.action}`,
+      `latestVersion=${inspected.latestVersion ?? "not checked"}`,
+      `checkedAt=${inspected.checkedAt ?? "not checked"}`,
+      ...(inspected.warning ? [`warning=${inspected.warning.failureClass}: ${inspected.warning.note}`] : []),
+    ].join("; ");
+  }
+  return [
+    "inspection status=unavailable",
+    `policy=${inspected.policy ?? "invalid"}`,
+    `source=${inspected.source ?? "none"}`,
+    `freshness=${inspected.freshness ?? "unavailable"}`,
+    `failureClass=${inspected.failureClass}`,
+    inspected.note,
+  ].join("; ");
 }
 
 const SDK_ADB = (home: string) =>
@@ -201,11 +252,18 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
   //     hang (measured >=90s / 45s on 0.3.0, 2026-08-01) and must never be inlined here.
   //     (0.4.2 re-measured 2026-08-12 on one macOS arm64 machine: doctor returned JSON in ~10s.
   //     That is not a cross-machine/release claim; the bounded sub-second `-v` probe remains.)
-  const picoCli = io.exec("pico-cli", ["-v"]);
-  if (picoCli.ok) {
+  const inspectedCli = io.picoCliInspection;
+  const picoCli = inspectedCli
+    ? (inspectedCli.status === "ok"
+        ? { ok: true, stdout: inspectedCli.raw, stderr: "" }
+        : { ok: false, stdout: inspectedCli.raw, stderr: inspectedCli.note })
+    : io.exec("pico-cli", ["-v"]);
+  if (inspectedCli?.status === "ok" || (!inspectedCli && picoCli.ok)) {
     const raw = picoCli.stdout.trim();
     const cliVersion = raw.match(/pico-cli\/(\d+\.\d+\.\d+\S*)/)?.[1] ?? null;
-    push({ name: "pico-cli", status: "pass", detail: cliVersion ? `managed cached version ${cliVersion} (${raw})` : `managed cached CLI (version string unparsed: ${raw || "(empty)"})`, fix: null });
+    push(inspectedCli
+      ? { name: "pico-cli", status: "pass", detail: picoCliInspectionDetail(inspectedCli), fix: null, inspection: inspectedCli }
+      : { name: "pico-cli", status: "pass", detail: cliVersion ? `managed cached version ${cliVersion} (${raw})` : `managed cached CLI (version string unparsed: ${raw || "(empty)"})`, fix: null });
     const emulatorStatus = io.exec("pico-cli", ["emulator", "status", "--format", "json"]);
     const envelope = parsePicoCliEnvelope(emulatorStatus.stdout);
     const processContext = emulatorStatus.ok ? "" : `; process exit: non-zero${emulatorStatus.stderr?.trim() ? `; stderr=${emulatorStatus.stderr.trim()}` : ""}`;
@@ -219,6 +277,14 @@ export function runPreflightChecks(io: PreflightIO): CheckResult[] {
       const diagnostic = envelope.summary ?? payload;
       push({ name: "pico-cli-emulator-status", status: "warn", detail: `pico-cli structured emulator status: ${envelope.outcome}; ${diagnostic}; payload=${payload}${processContext}`, fix: action ?? "Run `pico-cli emulator status --format json` directly and address its returned diagnostics; this read-only check does not run pico-cli doctor." });
     }
+  } else if (inspectedCli?.status === "unavailable") {
+    push({
+      name: "pico-cli",
+      status: "warn",
+      detail: picoCliInspectionDetail(inspectedCli),
+      fix: picoCliInspectionFix(inspectedCli),
+      inspection: inspectedCli,
+    });
   } else {
     push({ name: "pico-cli", status: "warn", detail: "no validated managed pico-cli is cached; first CLI use will provision the MCP-owned registry-latest version lazily", fix: "Call ensure_pico_cli to provision now, or invoke the needed CLI-backed tool; neither path changes the global CLI or PATH." });
   }

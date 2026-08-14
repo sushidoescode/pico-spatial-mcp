@@ -31,6 +31,14 @@ import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, readLedger } from "
 
 const SURFACE = () => process.env.PICO_MCP_SURFACE ?? "doors";
 
+/** Public setup remedy shared by pico_loop failures. Resolution stays inside the MCP; setup stays
+ * an explicit user-run argv invocation of the returned absolute executable. */
+export function formatManualPicoCliSetupGuidance(context: string): string {
+  return `${context.trim()} Call ensure_pico_cli, then manually run its returned absolute path with args ["setup"]; the MCP never runs setup.`;
+}
+
+const UNMEASURABLE_ACCEPTANCE_FIX = "A criterion cannot be measured on this machine (failing[].detail names the missing lane; structural criteria may need generate_agent_bridge injected). Fix the measurement lane or drop the criterion — replanning the app cannot help.";
+
 export function picoFixDecision(error: string): { symptom: string | null; nextAction: string } {
   const keywords: Array<[RegExp, string, string]> = [
     [/androidx\.compose|compose.*(?:exclude|bom|fork)|(?:exclude|bom|fork).*compose/i, "compose_fork_conflict", "Run verify_gradle_config with the project directory; set resolveTransitives:true only if an explicit resolved-graph check is needed."],
@@ -58,8 +66,17 @@ export type LoopCriterionOutcome = {
   detail?: string;
   machineVerdict?: string;
   recordedEvidence?: boolean;
+  failureClass?: string;
   machineChecks?: Array<{ name?: string; score?: number; detail?: string; hardFail?: boolean; advisory?: boolean }>;
 };
+
+/** A setup command is materially mutating and repairs only the CLI utility-provisioning refusal.
+ * Other unmeasurable lanes keep their own diagnostic instead of receiving unrelated advice. */
+export function loopUnmeasurableFix(failing: readonly LoopCriterionOutcome[]): string {
+  return failing.some((outcome) => outcome.kind === "perf" && outcome.failureClass === "setup-required")
+    ? formatManualPicoCliSetupGuidance(UNMEASURABLE_ACCEPTANCE_FIX)
+    : UNMEASURABLE_ACCEPTANCE_FIX;
+}
 
 /** Signature of an iteration's failure state for the no-progress detector: failing/unmeasurable
  * criteria only, first line of each detail (tails carry paths/timings that vary run to run), with
@@ -874,7 +891,12 @@ export function registerDoorTools(server: McpServer) {
               const p5 = typeof appFps?.p5 === "number" ? appFps.p5 : null;
               const avg = typeof appFps?.avg === "number" ? appFps.avg : null;
               if (p5 === null || avg === null || avg === 0) {
-                outcomes.push({ kind: "perf", status: "unmeasurable", detail: p?.note ?? p?.error ?? "profiler reports no app 3D frames (or pico-cli/perf utilities unavailable) — not measured, never assumed" });
+                outcomes.push({
+                  kind: "perf",
+                  status: "unmeasurable",
+                  detail: p?.note ?? p?.error ?? "profiler reports no app 3D frames (or pico-cli/perf utilities unavailable) — not measured, never assumed",
+                  ...(typeof p?.failureClass === "string" ? { failureClass: p.failureClass } : {}),
+                });
               } else {
                 // Perf loop lane: record the measurement (before→after evidence) and ground any
                 // failure in pico-cli's OWN diagnosis engine — never a guess from code structure.
@@ -938,7 +960,7 @@ export function registerDoorTools(server: McpServer) {
           });
         }
         if (failing.some((o) => o.status === "unmeasurable"))
-          return exit("unmeasurable-acceptance", i, { failing, fix: "A criterion cannot be measured on this machine (failing[].detail names the missing lane — e.g. pico-cli perf utilities need `pico-cli setup`; structural needs generate_agent_bridge injected). Fix the measurement lane or drop the criterion — replanning the app cannot help." });
+          return exit("unmeasurable-acceptance", i, { failing, fix: loopUnmeasurableFix(failing) });
 
         const signature = loopFailureSignature(outcomes);
         if (prevSignature !== null && signature === prevSignature)

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { okJson } from "./util.js";
 import {
   ensurePicoCli,
+  classifyPicoCliFailure,
   picoCliProvenance,
   picoCliFromEnsure,
   type PicoCliFailureClass,
@@ -18,6 +19,9 @@ const DEFAULT_STARTUP_TIMEOUT_MS = 15_000;
 const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 const DEFAULT_RETIREMENT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1_024;
+const MAX_STARTUP_STDERR_BYTES = 16 * 1_024;
+const FAILURE_CLASSIFICATION_OVERLAP_CHARS = 256;
+const SETUP_REQUIRED_NOTE = "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry.";
 
 export type KnowledgeAction =
   | "query_graph"
@@ -117,6 +121,9 @@ export type KnowledgeResult = (
 ) & {
   picoCli?: PicoCliProvenance;
   failureClass?: PicoCliFailureClass;
+  setupCommand?: { path: string; args: string[] };
+  outputTail?: string;
+  outputTruncated?: boolean;
 };
 
 export type KnowledgeBridgeOptions = {
@@ -142,7 +149,23 @@ type KnowledgeSession = {
   closeObserved: Promise<void>;
   resolveCloseObserved: () => void;
   closePromise?: Promise<void>;
+  stderrTail: string;
+  stderrTruncated: boolean;
+  stderrClassificationTail: string;
+  setupRequiredObserved: boolean;
 };
+
+class KnowledgeStartupError extends Error {
+  constructor(
+    message: string,
+    readonly stderrTail: string,
+    readonly stderrTruncated: boolean,
+    readonly setupRequiredObserved: boolean,
+  ) {
+    super(message);
+    this.name = "KnowledgeStartupError";
+  }
+}
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -164,6 +187,30 @@ function capUtf8(text: string, maxBytes: number): { text: string; truncated: boo
   let end = maxBytes;
   while (end > 0 && (bytes[end] & 0b1100_0000) === 0b1000_0000) end--;
   return { text: bytes.subarray(0, end).toString("utf8"), truncated: true };
+}
+
+function appendUtf8Tail(existing: string, chunk: unknown, maxBytes: number): { text: string; truncated: boolean } {
+  const combined = Buffer.concat([Buffer.from(existing, "utf8"), Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8")]);
+  if (combined.length <= maxBytes) return { text: combined.toString("utf8"), truncated: false };
+  let start = combined.length - maxBytes;
+  while (start < combined.length && (combined[start] & 0b1100_0000) === 0b1000_0000) start++;
+  return { text: combined.subarray(start).toString("utf8"), truncated: true };
+}
+
+/** Scan every bounded window while retaining only enough overlap for the measured refusal phrase
+ * to cross chunk boundaries. The diagnostic tail may later evict that phrase; classification must
+ * not be downgraded merely because newer stderr arrived. */
+function scanSetupRequired(previousTail: string, chunk: unknown): { tail: string; observed: boolean } {
+  const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+  let tail = previousTail;
+  for (let offset = 0; offset < text.length; offset += 4_096) {
+    const window = `${tail}${text.slice(offset, offset + 4_096)}`;
+    if (classifyPicoCliFailure(window, "") === "setup-required") {
+      return { tail: window.slice(-FAILURE_CLASSIFICATION_OVERLAP_CHARS), observed: true };
+    }
+    tail = window.slice(-FAILURE_CLASSIFICATION_OVERLAP_CHARS);
+  }
+  return { tail, observed: false };
 }
 
 function waitBounded<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -272,7 +319,7 @@ export class KnowledgeBridge {
       args: this.args,
       ...(this.cwd ? { cwd: this.cwd } : {}),
       env: this.env ?? productionKnowledgeEnvironment(),
-      stderr: "inherit",
+      stderr: "pipe",
     });
     const client = new Client({ name: "pico-spatial-mcp-knowledge", version: "1.0.0" });
     let resolveCloseObserved!: () => void;
@@ -289,7 +336,21 @@ export class KnowledgeBridge {
       closed: false,
       closeObserved,
       resolveCloseObserved,
+      stderrTail: "",
+      stderrTruncated: false,
+      stderrClassificationTail: "",
+      setupRequiredObserved: false,
     };
+    transport.stderr?.on("data", (chunk) => {
+      if (!session.setupRequiredObserved) {
+        const classified = scanSetupRequired(session.stderrClassificationTail, chunk);
+        session.stderrClassificationTail = classified.tail;
+        session.setupRequiredObserved = classified.observed;
+      }
+      const capped = appendUtf8Tail(session.stderrTail, chunk, MAX_STARTUP_STDERR_BYTES);
+      session.stderrTail = capped.text;
+      session.stderrTruncated ||= capped.truncated;
+    });
     this.starting = session;
     client.onerror = (error) => this.markFatal(session, error);
     client.onclose = () => {
@@ -313,9 +374,15 @@ export class KnowledgeBridge {
         this.current = session;
         return session;
       } catch (error) {
-        session.fatal ??= error instanceof Error ? error : new Error(String(error));
+        const cause = session.fatal ?? (error instanceof Error ? error : new Error(String(error)));
+        session.fatal ??= cause;
         await this.retire(session);
-        throw session.fatal;
+        throw new KnowledgeStartupError(
+          errorMessage(cause),
+          session.stderrTail,
+          session.stderrTruncated,
+          session.setupRequiredObserved,
+        );
       } finally {
         if (this.startupPromise === startup) this.startupPromise = undefined;
       }
@@ -408,7 +475,31 @@ export class KnowledgeBridge {
         });
       } catch (error) {
         if (session) await this.retire(session);
-        return withProvenance({ status: "unavailable", action: parsedAction, error: errorMessage(error) });
+        const startupStderr = error instanceof KnowledgeStartupError ? error.stderrTail.trim() : "";
+        const startupTruncated = error instanceof KnowledgeStartupError && error.stderrTruncated;
+        const startupFailure = provenance && (
+          error instanceof KnowledgeStartupError && error.setupRequiredObserved
+            ? "setup-required"
+            : classifyPicoCliFailure(startupStderr, errorMessage(error))
+        );
+        if (provenance && startupFailure === "setup-required") {
+          return withProvenance({
+            status: "unavailable",
+            action: parsedAction,
+            error: SETUP_REQUIRED_NOTE,
+            failureClass: "setup-required",
+            setupCommand: { path: provenance.path, args: ["setup"] },
+            ...(startupStderr ? { outputTail: startupStderr } : {}),
+            ...(startupTruncated ? { outputTruncated: true } : {}),
+          });
+        }
+        return withProvenance({
+          status: "unavailable",
+          action: parsedAction,
+          error: errorMessage(error),
+          ...(startupStderr ? { outputTail: startupStderr } : {}),
+          ...(startupTruncated ? { outputTruncated: true } : {}),
+        });
       }
     });
   }

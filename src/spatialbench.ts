@@ -283,7 +283,7 @@ export function registerSpatialBenchTools(server: McpServer) {
       outDir: z.string().optional().describe("report dir (default <repo>/docs/spatialbench)"),
       perfAxis: z.boolean().default(false).describe("tier='full' only: after boot/capture/eye, sample the perfSource for the brief's package and score a 7th 'perf' axis (0/1/null)"),
       perfBudgetMs: z.number().default(16.7).describe("perfAxis frame budget in ms (default 16.7ms = 60fps-class): gfxinfo verdicts the UI/RenderThread p95 against it; pico-cli verdicts appFps p5 against its fps floor (1000/budget)"),
-      perfSource: z.enum(["gfxinfo", "pico-cli"]).default("gfxinfo").describe("perfAxis source: 'gfxinfo' = measure_perf UI-frame p95 (emulator-safe default); 'pico-cli' = perf_diagnose's appFps p5 via the official profiler (real 3D pacing — needs pico-cli on PATH; falls back to gfxinfo, with the reason in notes, when the CLI or appFps data is absent)"),
+      perfSource: z.enum(["gfxinfo", "pico-cli"]).default("gfxinfo").describe("perfAxis source: 'gfxinfo' = measure_perf UI-frame p95 (emulator-safe default); 'pico-cli' = perf_diagnose's appFps p5 via the official profiler (real 3D pacing — the managed resolver supplies a runnable absolute path; falls back to gfxinfo, with the reason in notes, when resolution or appFps data is absent)"),
     },
     async ({ tier, briefIds, settleSec, outDir, perfAxis, perfBudgetMs, perfSource }) => {
       const emulatorIds = briefIds?.length ? briefIds : [...BENCH_CORE, ...BENCH_MR];

@@ -10,7 +10,7 @@ const outFile = jsonIdx >= 0 && argv[jsonIdx + 1] && !argv[jsonIdx + 1].startsWi
 const root = argv.find((a) => !a.startsWith("--") && a !== outFile);
 const idx = loadVaultIndex(root);
 if (!idx) {
-  console.error(`agent-vault not found at ${root ?? defaultVaultRoot()} (override with PICO_AGENT_VAULT or 'pico-cli setup')`);
+  console.error(`agent-vault not found at ${root ?? defaultVaultRoot()} (override with PICO_AGENT_VAULT). Call ensure_pico_cli, then manually run its returned absolute path with args ["setup"]; the MCP never runs setup.`);
   process.exit(1);
 }
 if (argv.includes("--json")) {

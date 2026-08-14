@@ -19,6 +19,7 @@ const {
   loopCriteriaInEvidenceSafeOrder,
   loopSpecMutated,
   loopRepairSelection,
+  loopUnmeasurableFix,
   loopVisualOutcome,
   loopNeedsLookHonesty,
   loopAcceptanceEvidence,
@@ -191,6 +192,27 @@ if (typeof loopRepairSelection !== "function") {
   else fail(`unsupported visual/logcat failures were assigned speculative repairs: ${JSON.stringify({ unsupportedVisual, unsupportedLog })}`);
 }
 
+// Unmeasurable is a class, not a diagnosis. Only a measured perf setup refusal earns the
+// separately mutating setup remedy; structural/logcat/runtime gaps must keep their own lane.
+if (typeof loopUnmeasurableFix !== "function") {
+  fail("pico_loop has no provenance-aware unmeasurable-remedy helper");
+} else {
+  const structural = loopUnmeasurableFix([
+    { kind: "structural", status: "unmeasurable", detail: "Agent Bridge unavailable" },
+  ]);
+  const perfRuntime = loopUnmeasurableFix([
+    { kind: "perf", status: "unmeasurable", detail: "no app 3D frames", failureClass: "runtime" },
+  ]);
+  const perfSetup = loopUnmeasurableFix([
+    { kind: "perf", status: "unmeasurable", detail: "utility payload absent", failureClass: "setup-required" },
+  ]);
+  if (!/ensure_pico_cli|args \["setup"\]/i.test(`${structural}\n${perfRuntime}`)
+      && /ensure_pico_cli/i.test(perfSetup)
+      && /args \["setup"\]/i.test(perfSetup))
+    ok("pico_loop recommends CLI setup only for an explicitly classified perf setup refusal");
+  else fail(`pico_loop applies setup to unrelated unmeasurable lanes: ${JSON.stringify({ structural, perfRuntime, perfSetup })}`);
+}
+
 // Only an actual ESCALATE verdict may be described as the calibrated eye escalating. A missing,
 // unknown, or skipped verdict still creates an honest LOOK obligation, but it is not evidence that
 // the eye ran or classified the frame.
@@ -315,6 +337,11 @@ else fail(`pico_doctor preflight missing/unfixed: ${JSON.stringify(docOut).slice
 const doctorCli = checks?.find((check) => check.name === "pico-cli");
 if (doctorCli?.status === "warn"
     && /first CLI use/i.test(`${doctorCli.detail} ${doctorCli.fix}`)
+    && doctorCli.inspection?.status === "unavailable"
+    && doctorCli.inspection?.policy === "managed-latest"
+    && doctorCli.inspection?.source === "managed"
+    && doctorCli.inspection?.freshness === null
+    && /No validated managed pico-cli/i.test(doctorCli.inspection?.note ?? "")
     && !fs.existsSync(managedHarness.managedRoot)
     && managedHarness.calls().filter((call) => call.role === "npm").length === 0)
   ok("default pico_doctor is managed-store read-only and explains lazy first use");

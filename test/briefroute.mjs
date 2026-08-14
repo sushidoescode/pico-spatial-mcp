@@ -150,6 +150,14 @@ const transport = new StdioClientTransport({
 const client = new Client({ name: "briefroute-test", version: "0.0.0" });
 await client.connect(transport);
 try {
+  const listed = await client.listTools();
+  const benchTool = listed.tools.find((tool) => tool.name === "run_spatialbench");
+  const benchSchemaText = JSON.stringify(benchTool);
+  assert.ok(benchTool, "run_spatialbench must remain published");
+  assert.doesNotMatch(benchSchemaText, /pico-cli on PATH/i);
+  assert.match(benchSchemaText, /managed resolver/i);
+  assert.match(benchSchemaText, /absolute path/i);
+
   const result = await client.callTool({
     name: "fleet_build",
     arguments: { briefIds: ["camerapeek"] },
