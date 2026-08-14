@@ -36,6 +36,7 @@ const args = process.argv.slice(2);
 const isolation = { cwd: process.cwd(), home: process.env.HOME, userprofile: process.env.USERPROFILE, cacheUpper: process.env.NPM_CONFIG_CACHE, cacheLower: process.env.npm_config_cache };
 fs.appendFileSync(process.env.FAKE_SWEEP_LOG, JSON.stringify({ role: "npm", args, isolation }) + "\\n");
 if (args.length === 5 && args[0] === "view" && args[1] === "@picoxr/pico-cli@latest" && args[2] === "version" && args[3] === "dist.integrity" && args[4] === "--json") {
+  if (config.registryStderr) process.stderr.write(config.registryStderr);
   if (config.registryExit) { process.stderr.write("fixture registry unavailable\\n"); process.exit(config.registryExit); }
   process.stdout.write(config.registryRaw ?? JSON.stringify({ version: config.latest, "dist.integrity": "sha512-fixture" }));
   process.exit(0);
@@ -207,6 +208,69 @@ test("resolves latest to an exact install and rejects unsafe arguments and inval
     assert.equal(JSON.parse(fs.readFileSync(output, "utf8")).to.requested, "latest");
   });
 
+  await t.test("latest registry JSON is parsed from stdout despite an npm notice on stderr", () => {
+    const fix = fixture({
+      latest: "2.0.0",
+      registryStderr: "npm notice New major version of npm available! 10.0.0 -> 11.0.0\\n",
+      versions: {
+        "1.0.0": { tree: { "pico-cli": { stdout: help([]) } } },
+        "2.0.0": { tree: { "pico-cli": { stdout: help([]) } } },
+      },
+    });
+    const output = path.join(fix.root, "notice.json");
+    const result = spawnSync(process.execPath, [
+      sweepScript, "--from", "1.0.0", "--to", "latest", "--output", output,
+    ], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: { ...process.env, PATH: fix.bin, FAKE_SWEEP_CONFIG: fix.configPath, FAKE_SWEEP_LOG: fix.logPath },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(output, "utf8")).to, {
+      requested: "latest",
+      version: "2.0.0",
+      commandCount: 1,
+    });
+  });
+
+  await t.test("malformed registry stdout is rejected even when stderr is valid text", () => {
+    const fix = valid();
+    const value = JSON.parse(fs.readFileSync(fix.configPath, "utf8"));
+    value.registryRaw = "{not-json";
+    value.registryStderr = "npm notice This is not registry JSON\\n";
+    fs.writeFileSync(fix.configPath, JSON.stringify(value));
+    const output = path.join(fix.root, "malformed-stdout.json");
+    const result = spawnSync(process.execPath, [
+      sweepScript, "--from", "1.0.0", "--to", "latest", "--output", output,
+    ], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: { ...process.env, PATH: fix.bin, FAKE_SWEEP_CONFIG: fix.configPath, FAKE_SWEEP_LOG: fix.logPath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /registry lookup returned malformed JSON/);
+    assert.equal(fs.existsSync(output), false);
+  });
+
+  await t.test("failed registry lookup retains stderr in the surfaced error", () => {
+    const fix = valid();
+    const value = JSON.parse(fs.readFileSync(fix.configPath, "utf8"));
+    value.registryExit = 2;
+    value.registryStderr = "REGISTRY_FAILURE_MARKER_FROM_STDERR\\n";
+    fs.writeFileSync(fix.configPath, JSON.stringify(value));
+    const output = path.join(fix.root, "registry-error.json");
+    const result = spawnSync(process.execPath, [
+      sweepScript, "--from", "1.0.0", "--to", "latest", "--output", output,
+    ], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: { ...process.env, PATH: fix.bin, FAKE_SWEEP_CONFIG: fix.configPath, FAKE_SWEEP_LOG: fix.logPath },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /REGISTRY_FAILURE_MARKER_FROM_STDERR/);
+    assert.equal(fs.existsSync(output), false);
+  });
+
   for (const item of [
     { name: "unknown flag", args: ["--bogus", "x"] },
     { name: "relative output", args: ["--output", "relative.json"] },
@@ -307,6 +371,66 @@ test("an indented Options heading terminates the Commands section without becomi
   assert.equal(cliArgv.includes("plugin:doctor --help"), true);
   assert.equal(cliArgv.some((argv) => argv.startsWith("Options:")), false);
   assert.equal(cliArgv.some((argv) => argv.includes("optionrow")), false);
+});
+
+test("multi-token advertised commands become separate argv tokens with notation stripped and paths deduplicated", () => {
+  const rootHelp = help([
+    "sync  Sync namespace",
+    "sync component  Sync component data without traversing description words",
+    "sync asset <source> [target]  Sync asset data with required and optional arguments",
+    "sync component  Duplicate compound path",
+    "setup component  Prohibited multi-token setup subtree",
+  ]);
+  const tree = {
+    "pico-cli": { stdout: rootHelp },
+    sync: { stdout: help(["component  Duplicate path advertised by its ancestor"]) },
+    "sync component": { stdout: "sync component leaf\n" },
+    "sync asset": { stdout: "sync asset leaf\n" },
+  };
+  const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
+  const result = runSweep(fix);
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(fs.readFileSync(result.output, "utf8"));
+  assert.deepEqual(report.from, { requested: "1.0.0", version: "1.0.0", commandCount: 4 });
+  assert.deepEqual(report.to, { requested: "2.0.0", version: "2.0.0", commandCount: 4 });
+  assert.deepEqual(report.unchangedCommands, ["pico-cli", "sync", "sync asset", "sync component"]);
+
+  for (const version of ["1.0.0", "2.0.0"]) {
+    const helpArgv = result.calls
+      .filter((call) => call.role === "cli" && call.version === version && call.args.at(-1) === "--help")
+      .map((call) => call.args);
+    assert.deepEqual(helpArgv, [
+      ["--help"],
+      ["sync", "--help"],
+      ["sync", "asset", "--help"],
+      ["sync", "component", "--help"],
+    ]);
+    assert.equal(helpArgv.filter((argv) => argv.join(" ") === "sync component --help").length, 1);
+    assert.equal(helpArgv.some((argv) => argv[0] === "setup"), false);
+    assert.equal(helpArgv.some((argv) => argv.includes("<source>") || argv.includes("[target]")), false);
+    assert.equal(helpArgv.some((argv) => argv.some((token) => /^(Sync|data|without|traversing|description|words)$/.test(token))), false);
+  }
+});
+
+test("unsafe grammar anywhere in multi-token syntax fails before partial child traversal", async (t) => {
+  const cases = [
+    { name: "alias in first token", row: "bad|b child  Unsupported alias" },
+    { name: "alias in later token", row: "bad child|c  Unsupported alias" },
+    { name: "punctuation in middle token", row: "bad child.name leaf  Unsupported punctuation" },
+    { name: "more than eight command tokens", row: "a b c d e f g h i  Overlong path" },
+  ];
+  for (const item of cases) await t.test(item.name, () => {
+    const tree = {
+      "pico-cli": { stdout: help(["safe  Valid row before invalid grammar", item.row]) },
+      safe: { stdout: "safe leaf must never be visited\n" },
+    };
+    const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
+    const result = runSweep(fix);
+    assert.notEqual(result.status, 0, `${item.name} must make the advertised tree incomplete`);
+    assert.equal(fs.existsSync(result.output), false, `${item.name} must not publish a partial report`);
+    const cliArgv = result.calls.filter((call) => call.role === "cli").map((call) => call.args);
+    assert.deepEqual(cliArgv, [["-v"], ["--help"]], `${item.name} must fail before traversing the valid row`);
+  });
 });
 
 test("timeout, spawn failure, and output truncation are fatal and atomic output is never ambiguous", async (t) => {

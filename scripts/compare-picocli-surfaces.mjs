@@ -140,7 +140,7 @@ async function resolveLatest(session) {
     "view", `${PACKAGE}@latest`, "version", "dist.integrity", "--json",
   ]), "npm registry lookup");
   let parsed;
-  try { parsed = JSON.parse(Buffer.concat([result.stdout, result.stderr]).toString("utf8")); }
+  try { parsed = JSON.parse(result.stdout.toString("utf8")); }
   catch { fail("npm registry lookup returned malformed JSON"); }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)
     || Object.keys(parsed).sort().join("\0") !== ["dist.integrity", "version"].join("\0")
@@ -174,7 +174,9 @@ async function installExact(session, requested, exactVersion) {
 
 const ANSI_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 const COMMAND_SECTION_BOUNDARIES = new Set(["Options:", "Arguments:", "Positionals:", "Examples:", "Global Options:"]);
-const SAFE_COMMAND_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]*(?::[A-Za-z0-9][A-Za-z0-9_-]*)*$/;
+const SAFE_COMMAND_TOKEN_SOURCE = "[A-Za-z0-9][A-Za-z0-9_-]*(?::[A-Za-z0-9][A-Za-z0-9_-]*)*";
+const SAFE_COMMAND_TOKEN = new RegExp(`^${SAFE_COMMAND_TOKEN_SOURCE}$`);
+const SAFE_COMMAND_SEQUENCE_PREFIX = new RegExp(`^${SAFE_COMMAND_TOKEN_SOURCE}(?:[ \\t]+${SAFE_COMMAND_TOKEN_SOURCE})*`);
 const COMMAND_ARGUMENT_NOTATION = /^(?:(?:\s+|=)?(?:<[^<>\r\n]+>|\[[^\[\]\r\n]+\]))+$/;
 
 function advertisedCommands(helpBytes) {
@@ -191,22 +193,28 @@ function advertisedCommands(helpBytes) {
   }
   if (section.length === 0) return [];
   const entryIndent = Math.min(...section.map((entry) => entry.indent));
-  const commands = new Set();
+  const commands = new Map();
   for (const entry of section) {
     if (entry.indent !== entryIndent) continue;
     const text = entry.line.trim();
     if (COMMAND_SECTION_BOUNDARIES.has(text)) break;
     const syntax = text.split(/\s{2,}/, 1)[0];
-    const tokenMatch = syntax.match(/^[^\s<[=]+/);
-    const token = tokenMatch?.[0] ?? "";
-    const argumentNotation = syntax.slice(token.length);
-    if (!SAFE_COMMAND_TOKEN.test(token)
+    const sequence = syntax.match(SAFE_COMMAND_SEQUENCE_PREFIX)?.[0] ?? "";
+    const tokens = sequence.split(/[ \t]+/).filter(Boolean);
+    const argumentNotation = syntax.slice(sequence.length);
+    if (tokens.length === 0
+      || tokens.length > MAX_DEPTH
+      || tokens.some((token) => !SAFE_COMMAND_TOKEN.test(token))
       || (argumentNotation.length > 0 && !COMMAND_ARGUMENT_NOTATION.test(argumentNotation))) {
       fail(`unsupported advertised command grammar: ${JSON.stringify(text)}`);
     }
-    commands.add(token);
+    commands.set(tokens.join("\0"), tokens);
   }
-  return [...commands].sort();
+  return [...commands.values()].sort((left, right) => {
+    const leftKey = left.join(" ");
+    const rightKey = right.join(" ");
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+  });
 }
 
 function commandKey(tokens) {
@@ -227,9 +235,9 @@ async function enumerateSurface(session, installed) {
     const result = await invokeCli(session, installed.cliPath, [...tokens, "--help"], `${installed.version} ${commandKey(tokens)} --help`, true);
     const exactHelp = Buffer.concat([result.stdout, result.stderr]);
     hashes.set(commandKey(tokens), crypto.createHash("sha256").update(exactHelp).digest("hex"));
-    for (const token of advertisedCommands(exactHelp)) {
-      if (tokens.length === 0 && token === "setup") continue;
-      const child = [...tokens, token];
+    for (const advertisedTokens of advertisedCommands(exactHelp)) {
+      const child = [...tokens, ...advertisedTokens];
+      if (child[0] === "setup") continue;
       if (child.length > MAX_DEPTH) fail(`${installed.version} exceeded command depth ${MAX_DEPTH}`);
       const childSerialized = JSON.stringify(child);
       if (!visited.has(childSerialized) && !queued.has(childSerialized)) {
