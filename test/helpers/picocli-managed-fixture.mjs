@@ -285,6 +285,10 @@ record();
 if (role === "managed-cli") {
   const [version, ...cliArgs] = args;
   if (cliArgs[0] === "-v") process.stdout.write("pico-cli/" + version + " (managed fixture)\\n");
+  else if (cliArgs[0] === "fixture-mutate-managed-file") {
+    fs.appendFileSync(process.env.FAKE_MANAGED_MUTATION_TARGET, "\\nfixture post-spawn mutation\\n");
+    process.stdout.write("fake managed pico-cli mutated its published tree\\n");
+  }
   else if (cliArgs.at(-1) === "--help" && cliArgs.slice(0, -1).join(" ") === process.env.FAKE_CANARY_FAILURE) {
     process.stderr.write("fixture incompatible: " + cliArgs.join(" ") + "\\n");
     process.exit(7);
@@ -411,6 +415,7 @@ process.exit(2);
 export function createManagedIO(harness, {
   env = {},
   now = Date.parse("2026-08-14T12:00:00.000Z"),
+  npmCommandIdentity = path.join(harness.binDir, process.platform === "win32" ? "npm.cmd" : "npm"),
   uuidPrefix = "fixture-staging",
 } = {}) {
   let uuid = 0;
@@ -419,6 +424,7 @@ export function createManagedIO(harness, {
     env,
     platform: process.platform,
     homeDir: path.join(harness.root, "unused-home"),
+    npmCommandIdentity,
     now: () => typeof now === "function" ? now() : now,
     randomUUID: () => `${uuidPrefix}-${++uuid}`,
     commands,

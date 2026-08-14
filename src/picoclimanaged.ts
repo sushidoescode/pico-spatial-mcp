@@ -53,6 +53,8 @@ export type ManagedPicoCliIO = {
   env: NodeJS.ProcessEnv;
   platform: NodeJS.Platform;
   homeDir: string;
+  /** Opaque identity of the executable that this IO will run for the `npm` command. */
+  npmCommandIdentity: string;
   now: () => number;
   randomUUID: () => string;
   run: (command: string, args: string[], options?: {
@@ -116,6 +118,16 @@ export type PicoCliEnsureResult =
       outputTail?: string;
     };
 
+declare const managedPicoCliExecutionHandleBrand: unique symbol;
+
+/**
+ * Opaque in-process capability bound to one validated managed publication. The identity bytes and
+ * validator remain private to this module; consumers can only ask this module to revalidate it.
+ */
+export type ManagedPicoCliExecutionHandle = {
+  readonly [managedPicoCliExecutionHandleBrand]: "managed-pico-cli-execution";
+};
+
 type ManagedContentIdentity = {
   schemaVersion: 1;
   algorithm: "sha256";
@@ -167,6 +179,8 @@ type ValidatedManagedCli = {
   version: string;
   raw: string;
   compatibility?: PicoCliCompatibilityDiagnostic[];
+  executionHandle?: ManagedPicoCliExecutionHandle;
+  executionBinding: ManagedPicoCliExecutionBinding;
 };
 
 type RegistryLatest = {
@@ -180,7 +194,30 @@ type RegistryLatestResolution =
   | { status: "ok"; latest: RegistryLatest }
   | { status: "failure"; checkedAt: string; note: string; outputTail?: string };
 
-let registryLatestCache: RegistryLatest | null = null;
+type ManagedPublicationIdentity = {
+  device: number;
+  inode: number;
+  links: number;
+  size: number;
+  bytesSha256: string;
+  token: string;
+};
+
+type ManagedPicoCliExecutionBinding = {
+  versionRoot: string;
+  cliPath: string;
+  version: string;
+  platform: NodeJS.Platform;
+  registryIntegrity: string | null;
+  contentIdentity: ManagedContentIdentity;
+  executableIdentity: ManagedExecutableIdentity;
+  publicationIdentity?: ManagedPublicationIdentity;
+};
+
+const managedExecutionBindings = new WeakMap<object, ManagedPicoCliExecutionBinding>();
+const managedResultHandles = new WeakMap<object, ManagedPicoCliExecutionHandle>();
+const registryLatestCache = new Map<string, RegistryLatest>();
+const registryCacheIdentityKey = crypto.randomBytes(32);
 
 function envValue(env: NodeJS.ProcessEnv, name: string, platform: NodeJS.Platform): string | undefined {
   if (platform !== "win32") return env[name];
@@ -331,6 +368,7 @@ function collectManagedContentPaths(
   versionRoot: string,
   realRoot: string,
   limits: ManagedContentIdentityLimits,
+  deadlineMs = Number.POSITIVE_INFINITY,
 ): ManagedContentManifestPath[] {
   const discovered: ManagedContentManifestPath[] = [];
   const pending: Array<ManagedContentManifestPath & { depth: number }> = [{
@@ -340,6 +378,7 @@ function collectManagedContentPaths(
   }];
   let pathBytes = Buffer.byteLength(".", "utf8");
   while (pending.length > 0) {
+    if (Date.now() >= deadlineMs) throw new Error("managed content identity check exhausted its deadline");
     const current = pending.pop() as ManagedContentManifestPath & { depth: number };
     const before = fs.lstatSync(current.absolutePath);
     const currentRealPath = fs.realpathSync(current.absolutePath);
@@ -403,7 +442,9 @@ function updateContentManifestHeader(hash: crypto.Hash, value: Record<string, st
 export function managedContentIdentityForFixture(
   versionRootValue: string,
   limitOverrides: Partial<ManagedContentIdentityLimits> = {},
+  deadlineMs = Number.POSITIVE_INFINITY,
 ): ManagedContentIdentity {
+  if (Date.now() >= deadlineMs) throw new Error("managed content identity check exhausted its deadline");
   const limits = { ...DEFAULT_CONTENT_IDENTITY_LIMITS, ...limitOverrides };
   for (const [name, value] of Object.entries(limits)) {
     const ceiling = DEFAULT_CONTENT_IDENTITY_LIMITS[name as keyof ManagedContentIdentityLimits];
@@ -415,12 +456,13 @@ export function managedContentIdentityForFixture(
   const rootStat = fs.lstatSync(versionRoot);
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error("managed version root was not a real directory");
   const realRoot = fs.realpathSync(versionRoot);
-  const entries = collectManagedContentPaths(versionRoot, realRoot, limits);
+  const entries = collectManagedContentPaths(versionRoot, realRoot, limits, deadlineMs);
   const hash = crypto.createHash("sha256");
   const chunk = Buffer.allocUnsafe(CONTENT_IDENTITY_READ_CHUNK_BYTES);
   let totalBytes = 0;
 
   for (const entry of entries) {
+    if (Date.now() >= deadlineMs) throw new Error("managed content identity check exhausted its deadline");
     const before = fs.lstatSync(entry.absolutePath);
     const mode = (before.mode & 0o7777).toString(8).padStart(4, "0");
     const currentRealPath = fs.realpathSync(entry.absolutePath);
@@ -468,6 +510,7 @@ export function managedContentIdentityForFixture(
       }
       let offset = 0;
       while (offset < opened.size) {
+        if (Date.now() >= deadlineMs) throw new Error("managed content identity check exhausted its deadline");
         const count = fs.readSync(descriptor, chunk, 0, Math.min(chunk.length, opened.size - offset), offset);
         if (count <= 0) throw new Error(`managed content file ended during hashing: ${entry.relativePath}`);
         fileHash.update(chunk.subarray(0, count));
@@ -488,7 +531,7 @@ export function managedContentIdentityForFixture(
     });
   }
 
-  const afterEntries = collectManagedContentPaths(versionRoot, realRoot, limits).map((entry) => entry.relativePath);
+  const afterEntries = collectManagedContentPaths(versionRoot, realRoot, limits, deadlineMs).map((entry) => entry.relativePath);
   if (entries.length !== afterEntries.length
     || entries.some((entry, index) => entry.relativePath !== afterEntries[index])) {
     throw new Error("managed content paths changed during hashing");
@@ -744,10 +787,11 @@ async function validateManagedVersion(
   const cliPath = managedShimPath(versionRoot, record.relativeCliPath, io.platform);
   if (!cliPath) return null;
   const recordedContentIdentity = contentIdentityFromBinding(record);
+  let observedContentIdentity: ManagedContentIdentity;
   let executableIdentity: ManagedExecutableIdentity;
   try {
-    const contentIdentity = managedContentIdentity(versionRoot);
-    if (!sameManagedContentIdentity(contentIdentity, recordedContentIdentity)) return null;
+    observedContentIdentity = managedContentIdentity(versionRoot);
+    if (!sameManagedContentIdentity(observedContentIdentity, recordedContentIdentity)) return null;
     executableIdentity = managedExecutableIdentity(versionRoot, cliPath, version, io.platform);
   } catch {
     return null;
@@ -770,12 +814,26 @@ async function validateManagedVersion(
   if (command.code !== 0 || command.timedOut || command.spawnError || versionFromOutput(raw) !== version) return null;
   const compatibility = readCompatibility(versionRoot, version);
   try {
-    const contentIdentity = managedContentIdentity(versionRoot);
-    if (!sameManagedContentIdentity(contentIdentity, recordedContentIdentity)) return null;
+    observedContentIdentity = managedContentIdentity(versionRoot);
+    if (!sameManagedContentIdentity(observedContentIdentity, recordedContentIdentity)) return null;
   } catch {
     return null;
   }
-  return { path: cliPath, version, raw, ...(compatibility ? { compatibility } : {}) };
+  return {
+    path: cliPath,
+    version,
+    raw,
+    ...(compatibility ? { compatibility } : {}),
+    executionBinding: {
+      versionRoot,
+      cliPath,
+      version,
+      platform: io.platform,
+      registryIntegrity: record.registryIntegrity,
+      contentIdentity: observedContentIdentity,
+      executableIdentity,
+    },
+  };
 }
 
 function hasCompleteCompatibility(diagnostics: PicoCliCompatibilityDiagnostic[] | undefined): boolean {
@@ -802,7 +860,7 @@ async function validateLatestPublishedVersion(
   if (!validatePublicationState(versionRoot, version, registryIntegrity)) return null;
   const validated = await validateManagedVersion(versionRoot, version, options, io);
   return validated && hasCompleteCompatibility(validated.compatibility)
-    && validatePublicationState(versionRoot, version, registryIntegrity) ? validated : null;
+    && validatePublicationState(versionRoot, version, registryIntegrity) ? bindManagedExecution(validated) : null;
 }
 
 async function validateOwnedUnfinalizedVersion(
@@ -827,7 +885,9 @@ async function validateCachedPublishedVersion(
   const record = readInstallRecord(versionRoot);
   if (!record || !validatePublicationState(versionRoot, version, record.registryIntegrity)) return null;
   const validated = await validateManagedVersion(versionRoot, version, options, io);
-  return validated && validatePublicationState(versionRoot, version, record.registryIntegrity) ? validated : null;
+  return validated && validatePublicationState(versionRoot, version, record.registryIntegrity)
+    ? bindManagedExecution(validated)
+    : null;
 }
 
 function publishedVersions(versionsRoot: string): string[] {
@@ -850,11 +910,14 @@ function managedOk(
   freshness: "latest" | "cached",
   deprecatedAliases: string[],
 ): PicoCliEnsureResult {
-  return {
+  if (!validated.executionHandle) throw new Error("managed pico-cli result lacked its execution binding");
+  const result: PicoCliEnsureResult = {
     status: "ok", source: "managed", policy, action, path: validated.path, version: validated.version,
     raw: validated.raw, latestVersion, checkedAt, freshness, deprecatedAliases,
     ...(validated.compatibility ? { compatibility: validated.compatibility } : {}),
   };
+  managedResultHandles.set(result, validated.executionHandle);
+  return result;
 }
 
 function commandOutputTail(result: ManagedPicoCliCommandResult): string | undefined {
@@ -870,7 +933,8 @@ function managedFallback(
   outputTail: string | undefined,
   deprecatedAliases: string[],
 ): PicoCliEnsureResult {
-  return {
+  if (!cached.executionHandle) throw new Error("managed pico-cli fallback lacked its execution binding");
+  const result: PicoCliEnsureResult = {
     status: "ok",
     source: "managed",
     policy: "managed-latest",
@@ -889,6 +953,8 @@ function managedFallback(
       ...(outputTail ? { outputTail } : {}),
     },
   };
+  managedResultHandles.set(result, cached.executionHandle);
+  return result;
 }
 
 async function newestValidatedVersion(
@@ -980,22 +1046,120 @@ function publicationRecordMatches(
     && sameManagedContentIdentity(contentIdentityFromBinding(candidate.record), contentIdentity);
 }
 
-function validatePublicationState(versionRoot: string, version: string, registryIntegrity: string | null): boolean {
+function validatedPublicationIdentity(
+  versionRoot: string,
+  version: string,
+  registryIntegrity: string | null,
+): ManagedPublicationIdentity | null {
   const install = readInstallRecord(versionRoot);
-  if (!install) return false;
+  if (!install) return null;
   const contentIdentity = contentIdentityFromBinding(install);
   const publicationPath = path.join(versionRoot, "publication.json");
   const claimPath = path.join(path.dirname(versionRoot), `.${version}.publish`);
   const claimExists = pathEntryExists(claimPath);
   const publicationExists = pathEntryExists(publicationPath);
-  if (!claimExists || !publicationExists) return false;
+  if (!claimExists || !publicationExists) return null;
   const publication = publicationExists ? readPublicationRecord(publicationPath) : null;
-  if (!publication || !publicationRecordMatches(publication, version, registryIntegrity, contentIdentity)) return false;
+  if (!publication || !publicationRecordMatches(publication, version, registryIntegrity, contentIdentity)) return null;
   const claim = readPublicationRecord(claimPath);
-  return claim !== null && publicationRecordMatches(claim, version, registryIntegrity, contentIdentity)
-    && claim.stat.dev === publication.stat.dev && claim.stat.ino === publication.stat.ino
-    && claim.record.token === publication.record.token
-    && claim.bytes.equals(publication.bytes);
+  if (claim === null || !publicationRecordMatches(claim, version, registryIntegrity, contentIdentity)
+    || claim.stat.dev !== publication.stat.dev || claim.stat.ino !== publication.stat.ino
+    || claim.record.token !== publication.record.token || !claim.bytes.equals(publication.bytes)) return null;
+  return {
+    device: publication.stat.dev,
+    inode: publication.stat.ino,
+    links: publication.stat.nlink,
+    size: publication.stat.size,
+    bytesSha256: crypto.createHash("sha256").update(publication.bytes).digest("hex"),
+    token: publication.record.token,
+  };
+}
+
+function validatePublicationState(versionRoot: string, version: string, registryIntegrity: string | null): boolean {
+  return validatedPublicationIdentity(versionRoot, version, registryIntegrity) !== null;
+}
+
+function sameManagedPublicationIdentity(
+  left: ManagedPublicationIdentity,
+  right: ManagedPublicationIdentity,
+): boolean {
+  return left.device === right.device && left.inode === right.inode && left.links === right.links
+    && left.size === right.size && left.bytesSha256 === right.bytesSha256 && left.token === right.token;
+}
+
+function bindManagedExecution(validated: ValidatedManagedCli): ValidatedManagedCli | null {
+  const publicationIdentity = validatedPublicationIdentity(
+    validated.executionBinding.versionRoot,
+    validated.version,
+    validated.executionBinding.registryIntegrity,
+  );
+  if (!publicationIdentity) return null;
+  const token = Object.freeze(Object.create(null)) as ManagedPicoCliExecutionHandle;
+  managedExecutionBindings.set(token, { ...validated.executionBinding, publicationIdentity });
+  return { ...validated, executionHandle: token };
+}
+
+/** Return the opaque execution capability attached to an in-process managed resolver result. */
+export function managedPicoCliExecutionHandle(result: PicoCliEnsureResult): ManagedPicoCliExecutionHandle | null {
+  return result.status === "ok" && result.source === "managed"
+    ? managedResultHandles.get(result) ?? null
+    : null;
+}
+
+/**
+ * Revalidate the complete content binding plus exact publication and executable snapshots. The
+ * caller supplies its command deadline so a managed launch fails closed when validation exhausts
+ * the remaining budget.
+ */
+export function validateManagedPicoCliExecution(
+  handle: ManagedPicoCliExecutionHandle,
+  deadlineMs: number,
+): string | null {
+  const binding = managedExecutionBindings.get(handle);
+  if (!binding) return "managed pico-cli execution handle was missing or did not originate from this resolver process";
+  try {
+    if (Date.now() >= deadlineMs) throw new Error("managed publication identity check exhausted its deadline");
+    const record = readInstallRecord(binding.versionRoot);
+    if (!record || record.version !== binding.version || record.registryIntegrity !== binding.registryIntegrity
+      || !sameManagedContentIdentity(contentIdentityFromBinding(record), binding.contentIdentity)) {
+      throw new Error("managed install record changed after resolution");
+    }
+    const beforePublication = validatedPublicationIdentity(
+      binding.versionRoot,
+      binding.version,
+      binding.registryIntegrity,
+    );
+    if (!beforePublication || !binding.publicationIdentity
+      || !sameManagedPublicationIdentity(beforePublication, binding.publicationIdentity)) {
+      throw new Error("managed publication identity changed after resolution");
+    }
+    const contentIdentity = managedContentIdentity(binding.versionRoot, {}, deadlineMs);
+    if (!sameManagedContentIdentity(contentIdentity, binding.contentIdentity)) {
+      throw new Error("managed publication content changed after resolution");
+    }
+    const executableIdentity = managedExecutableIdentity(
+      binding.versionRoot,
+      binding.cliPath,
+      binding.version,
+      binding.platform,
+      deadlineMs,
+    );
+    if (JSON.stringify(executableIdentity) !== JSON.stringify(binding.executableIdentity)) {
+      throw new Error("managed pico-cli executable identity changed after resolution");
+    }
+    const afterPublication = validatedPublicationIdentity(
+      binding.versionRoot,
+      binding.version,
+      binding.registryIntegrity,
+    );
+    if (!afterPublication || !sameManagedPublicationIdentity(afterPublication, binding.publicationIdentity)) {
+      throw new Error("managed publication identity changed during execution validation");
+    }
+    if (Date.now() >= deadlineMs) throw new Error("managed publication identity check exhausted its deadline");
+    return null;
+  } catch (error) {
+    return `managed pico-cli publication identity could not be revalidated: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 function ownerPidIsDefinitelyDead(ownerPid: number): boolean {
@@ -1042,13 +1206,36 @@ function cleanupAbandonedStaging(stagingRoot: string, now: number): void {
   }
 }
 
+function opaqueRegistryEnvironmentIdentity(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string {
+  const entries = Object.entries(env)
+    .map(([key, value]) => [platform === "win32" ? key.toUpperCase() : key, value ?? null] as const)
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) => leftKey < rightKey
+      ? -1
+      : leftKey > rightKey
+        ? 1
+        : String(leftValue).localeCompare(String(rightValue)));
+  return crypto.createHmac("sha256", registryCacheIdentityKey)
+    .update(JSON.stringify(entries), "utf8")
+    .digest("hex");
+}
+
+function registryLatestCacheKey(io: ManagedPicoCliIO): string {
+  return JSON.stringify([
+    io.platform,
+    opaqueRegistryEnvironmentIdentity(io.env, io.platform),
+    io.npmCommandIdentity,
+  ]);
+}
+
 async function resolveRegistryLatest(
   options: ManagedPicoCliOptions,
   io: ManagedPicoCliIO,
 ): Promise<RegistryLatestResolution> {
   const now = io.now();
-  if (!options.forceRefresh && registryLatestCache && now >= registryLatestCache.fetchedAt
-    && now - registryLatestCache.fetchedAt < REGISTRY_CACHE_TTL_MS) return { status: "ok", latest: registryLatestCache };
+  const cacheKey = registryLatestCacheKey(io);
+  const cached = registryLatestCache.get(cacheKey);
+  if (!options.forceRefresh && cached && now >= cached.fetchedAt
+    && now - cached.fetchedAt < REGISTRY_CACHE_TTL_MS) return { status: "ok", latest: cached };
   const checkedAt = new Date(now).toISOString();
   const registry = await io.run("npm", [
     "view", `${PICO_CLI_PACKAGE}@latest`, "version", "dist.integrity", "--json",
@@ -1074,13 +1261,14 @@ async function resolveRegistryLatest(
     const record = parsed as { version?: unknown; "dist.integrity"?: unknown };
     if (typeof record.version !== "string" || stableSemver(record.version) === null
       || (record["dist.integrity"] !== null && typeof record["dist.integrity"] !== "string")) throw new Error("registry response metadata was invalid");
-    registryLatestCache = {
+    const latest: RegistryLatest = {
       version: record.version,
       integrity: record["dist.integrity"] as string | null,
       checkedAt,
       fetchedAt: now,
     };
-    return { status: "ok", latest: registryLatestCache };
+    registryLatestCache.set(cacheKey, latest);
+    return { status: "ok", latest };
   } catch {
     return {
       status: "failure",
@@ -1169,8 +1357,8 @@ async function waitForPublishedWinner(
 ): Promise<ValidatedManagedCli | null> {
   const deadline = Date.now() + PUBLICATION_SETTLE_MS;
   while (Date.now() < deadline) {
-    const claimExists = fs.existsSync(publicationClaim);
-    if (fs.existsSync(target) && !claimExists) {
+    const claimExists = pathEntryExists(publicationClaim);
+    if (pathEntryExists(target) && !claimExists) {
       const winner = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
       if (winner) return winner;
       return null;
@@ -1178,7 +1366,7 @@ async function waitForPublishedWinner(
     if (!claimExists) break;
     await new Promise((resolve) => setTimeout(resolve, PUBLICATION_POLL_MS));
   }
-  return fs.existsSync(target)
+  return pathEntryExists(target)
     ? validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io)
     : null;
 }
@@ -1329,7 +1517,7 @@ export async function resolveManagedPicoCli(
 
   const target = path.join(versionsRoot, registry.version);
   const publicationClaim = path.join(versionsRoot, `.${registry.version}.publish`);
-  if (fs.existsSync(target)) {
+  if (pathEntryExists(target)) {
     const existing = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
     if (existing) {
       return managedOk(existing, "managed-latest", "present", registry.version, registry.checkedAt, "latest", policy.deprecatedAliases);
@@ -1480,7 +1668,7 @@ export async function resolveManagedPicoCli(
       );
     }
 
-    if (fs.existsSync(target)) {
+    if (pathEntryExists(target)) {
       const winner = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
       return await knownFailure(
         `${winner
@@ -1496,7 +1684,7 @@ export async function resolveManagedPicoCli(
       ownsStaging = false;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException)?.code;
-      const collision = ["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(code ?? "") && fs.existsSync(target);
+      const collision = ["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"].includes(code ?? "") && pathEntryExists(target);
       if (!collision) throw error;
       const winner = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
       return await knownFailure(

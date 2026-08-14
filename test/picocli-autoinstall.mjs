@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,7 +13,9 @@ import { fileURLToPath } from "node:url";
 import {
   classifyPicoCliProvisionFailure,
   executableCandidates,
+  picoCliFromEnsure,
   PICO_CLI_INSTALL_TIMEOUT_MS,
+  runPicoCli,
   runPicoCliCommand,
 } from "../dist/picocli.js";
 import {
@@ -201,6 +204,80 @@ test("a post-spawn check that exhausts the budget reports that process creation 
   assert.equal(result.timedOut, true, JSON.stringify(result));
   assert.match(result.spawnError ?? "", /post-spawn validation exhausted.*after process creation/i);
   assert.doesNotMatch(result.spawnError ?? "", /before process creation/i);
+});
+
+test("post-spawn rejection uses the bounded Windows process-tree cleanup seam", async () => {
+  const { runPicoCliCommandWithProcessTreeForFixture } = await import("../dist/picocli.js");
+  assert.equal(typeof runPicoCliCommandWithProcessTreeForFixture, "function",
+    "the production runner must expose its process-tree adapter to this structural seam");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico post-spawn win-tree seam "));
+  tempRoots.push(root);
+  const marker = path.join(root, "orphaned-grandchild-work");
+  const treeCalls = [];
+  let treeCleanupSettled = false;
+  const result = await runPicoCliCommandWithProcessTreeForFixture(process.execPath, [
+    "-e", `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'orphaned'), 500)`,
+  ], {
+    timeoutMs: 2_000,
+    killGraceMs: 25,
+    baseEnv: { ...process.env, SystemRoot: "C:\\FixtureWindows" },
+    afterSpawn: () => "fixture managed identity changed after spawn",
+  }, {
+    platform: "win32",
+    spawnTreeKiller(command, args) {
+      treeCalls.push({ command, args });
+      const killer = new EventEmitter();
+      killer.kill = () => true;
+      killer.unref = () => killer;
+      const pid = Number(args[1]);
+      setImmediate(() => {
+        try { process.kill(pid, "SIGKILL"); } catch { /* the fixture child may already be gone */ }
+      });
+      setTimeout(() => {
+        treeCleanupSettled = true;
+        killer.emit("close", 0);
+      }, 200);
+      return killer;
+    },
+  });
+
+  assert.equal(result.code, null, JSON.stringify(result));
+  assert.match(result.spawnError ?? "", /fixture managed identity changed after spawn/);
+  assert.equal(treeCleanupSettled, true, "the rejected child closing must not bypass taskkill settlement ownership");
+  assert.equal(treeCalls.length, 1, JSON.stringify(treeCalls));
+  assert.deepEqual(treeCalls[0], {
+    command: "C:\\FixtureWindows\\System32\\taskkill.exe",
+    args: ["/pid", treeCalls[0].args[1], "/t", "/f"],
+  });
+  assert.match(treeCalls[0].args[1], /^\d+$/);
+  await new Promise((resolve) => setTimeout(resolve, 550));
+  assert.equal(fs.existsSync(marker), false, "the simulated .cmd payload must not survive tree cleanup");
+});
+
+test("post-completion rejection owns one Windows process-tree cleanup through settlement", async () => {
+  const { runPicoCliCommandWithProcessTreeForFixture } = await import("../dist/picocli.js");
+  const treeCalls = [];
+  const result = await runPicoCliCommandWithProcessTreeForFixture(process.execPath, ["-e", "process.exit(0)"], {
+    timeoutMs: 100,
+    killGraceMs: 25,
+    baseEnv: { ...process.env, SystemRoot: "C:\\FixtureWindows" },
+    afterCompletion: () => "fixture managed identity changed at completion",
+  }, {
+    platform: "win32",
+    spawnTreeKiller(command, args) {
+      treeCalls.push({ command, args });
+      const killer = new EventEmitter();
+      killer.kill = () => true;
+      killer.unref = () => killer;
+      setTimeout(() => killer.emit("close", 0), 200);
+      return killer;
+    },
+  });
+
+  assert.equal(result.code, null, JSON.stringify(result));
+  assert.match(result.spawnError ?? "", /fixture managed identity changed at completion/);
+  assert.equal(treeCalls.length, 1,
+    `completion rejection must cancel the command timer and retain sole cleanup ownership: ${JSON.stringify(treeCalls)}`);
 });
 
 test("default managed calls snapshot one call-time environment and home after import", { timeout: 15_000 }, () => {
@@ -576,6 +653,39 @@ test("cold managed and stale managed exact provisioning", { concurrency: false, 
 });
 
 test("managed publication no-clobber fix round", { concurrency: false, timeout: 30_000 }, async (t) => {
+  await t.test("a dangling exact-version target fails before install with complete recovery guidance", async (context) => {
+    if (process.platform === "win32") {
+      context.skip("native Windows symlink creation is outside this macOS structural lane");
+      return;
+    }
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const managedRoot = path.join(harness.root, "managed");
+    const versionsRoot = path.join(managedRoot, "versions");
+    const target = path.join(versionsRoot, "0.4.2");
+    const claim = path.join(versionsRoot, ".0.4.2.publish");
+    fs.mkdirSync(versionsRoot, { recursive: true });
+    fs.symlinkSync(path.join(harness.root, "missing-version-directory"), target);
+    const targetBefore = fs.lstatSync(target);
+
+    const result = await resolveManagedPicoCli({
+      managedRoot,
+      forceRefresh: true,
+      installTimeoutMs: 2_000,
+      updateCheckTimeoutMs: 2_000,
+    }, createManagedIO(harness));
+
+    assert.equal(result.status, "unavailable", JSON.stringify(result));
+    assert.equal(harness.calls().filter((call) => call.role === "npm" && call.args[0] === "install").length, 0,
+      `a non-directory target must fail before package installation: ${JSON.stringify(harness.calls())}`);
+    assert.equal(harness.calls().filter((call) => call.role === "managed-cli").length, 0,
+      `a non-directory target must fail before probe/canary execution: ${JSON.stringify(harness.calls())}`);
+    assert.match(result.note, new RegExp(target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(result.note, new RegExp(claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(result.note, /remove both/i);
+    assert.equal(fs.lstatSync(target).ino, targetBefore.ino, "the dangling target must be preserved exactly");
+    assert.equal(fs.existsSync(claim), false, "pre-install rejection must not create a publication claim");
+  });
+
   await t.test("a pre-existing empty target created at publication claim survives unchanged", async () => {
     const harness = createHarness({ latestVersion: "0.4.2" });
     const managedRoot = path.join(harness.root, "managed");
@@ -861,6 +971,47 @@ test("managed publication content identity rejects post-publication byte and pat
       assert.deepEqual(io.commands, [], `${mutation.name} must fail before executing the shim`);
     });
   }
+});
+
+test("managed wrapper execution retains publication identity", { concurrency: false, timeout: 45_000 }, async (t) => {
+  await t.test("a provisioned shim rewritten before runPicoCli never executes the replacement payload", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2", registryIntegrity: "sha512-fixture" });
+    const managedRoot = path.join(harness.root, "managed");
+    const provisioned = await provisionManagedFixtureVersion(harness, managedRoot, "0.4.2");
+    const marker = path.join(harness.root, "replacement-executed");
+    const replacement = process.platform === "win32"
+      ? `@echo off\r\n>"${marker}" echo replacement\r\nexit /b 0\r\n`
+      : `#!/bin/sh\nprintf replacement > '${marker.replaceAll("'", `'\\''`)}'\nexit 0\n`;
+    fs.writeFileSync(provisioned.shimPath, replacement, process.platform === "win32" ? undefined : { mode: 0o755 });
+
+    const ready = picoCliFromEnsure(provisioned.result);
+    assert.ok(ready, JSON.stringify(provisioned.result));
+    const executed = await runPicoCli(ready, ["fixture-operation"], { timeoutMs: 2_000, killGraceMs: 25 });
+
+    assert.equal(executed.code, null, JSON.stringify(executed));
+    assert.match(executed.spawnError ?? "", /managed pico-cli.*identity|managed publication/i);
+    assert.equal(fs.existsSync(marker), false, "the rewritten payload must be rejected before process creation");
+  });
+
+  await t.test("a managed tree changed by the child is rejected after command completion", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2", registryIntegrity: "sha512-fixture" });
+    const managedRoot = path.join(harness.root, "managed");
+    const provisioned = await provisionManagedFixtureVersion(harness, managedRoot, "0.4.2");
+    const packageJson = path.join(provisioned.versionRoot, "node_modules", "@picoxr", "pico-cli", "package.json");
+    const ready = picoCliFromEnsure(provisioned.result);
+    assert.ok(ready, JSON.stringify(provisioned.result));
+
+    const executed = await runPicoCli(ready, ["fixture-mutate-managed-file"], {
+      timeoutMs: 2_000,
+      killGraceMs: 25,
+      env: { FAKE_MANAGED_MUTATION_TARGET: packageJson },
+    });
+
+    assert.equal(executed.code, null, JSON.stringify(executed));
+    assert.match(executed.spawnError ?? "", /post-completion validation failed.*managed pico-cli publication identity/i);
+    assert.match(fs.readFileSync(packageJson, "utf8"), /fixture post-spawn mutation/,
+      "the fixture must prove post-completion detection rather than pre-spawn prevention");
+  });
 });
 
 test("managed winner completeness fix round", { concurrency: false, timeout: 30_000 }, async (t) => {
@@ -1621,6 +1772,68 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
 
 test("managed registry cache fix round", { concurrency: false, timeout: 45_000 }, async (t) => {
   const viewCalls = (harness) => harness.calls().filter((call) => call.role === "npm" && call.args[0] === "view").length;
+
+  await t.test("sequential registry environments sharing one npm identity never share latest metadata", async () => {
+    const firstHarness = createHarness({ latestVersion: "0.4.1", registryIntegrity: "sha512-registry-a" });
+    const firstRoot = path.join(firstHarness.root, "managed");
+    const firstIo = createManagedIO(firstHarness, {
+      env: { NPM_CONFIG_REGISTRY: "https://registry-a.invalid/" },
+      npmCommandIdentity: "shared-fixture-npm",
+    });
+    const first = await resolveManagedPicoCli({
+      managedRoot: firstRoot,
+      forceRefresh: true,
+      installTimeoutMs: 2_000,
+      updateCheckTimeoutMs: 2_000,
+    }, firstIo);
+    assert.equal(first.status, "ok", JSON.stringify(first));
+    assert.equal(first.version, "0.4.1");
+    assert.equal(viewCalls(firstHarness), 1, JSON.stringify(firstHarness.calls()));
+
+    const secondHarness = createHarness({ latestVersion: "0.4.2", registryIntegrity: "sha512-registry-b" });
+    const secondRoot = path.join(secondHarness.root, "managed");
+    const secondIo = createManagedIO(secondHarness, {
+      env: { NPM_CONFIG_REGISTRY: "https://registry-b.invalid/" },
+      npmCommandIdentity: "shared-fixture-npm",
+    });
+    const second = await resolveManagedPicoCli({
+      managedRoot: secondRoot,
+      installTimeoutMs: 2_000,
+      updateCheckTimeoutMs: 2_000,
+    }, secondIo);
+
+    assert.equal(second.status, "ok", JSON.stringify(second));
+    assert.equal(second.version, "0.4.2", JSON.stringify(second));
+    assert.equal(second.latestVersion, "0.4.2", JSON.stringify(second));
+    assert.equal(viewCalls(secondHarness), 1,
+      `the second registry/npm context must perform its own latest lookup: ${JSON.stringify(secondHarness.calls())}`);
+  });
+
+  await t.test("sequential npm identities sharing one registry environment never share latest metadata", async () => {
+    const env = { NPM_CONFIG_REGISTRY: "https://registry-shared.invalid/" };
+    const firstHarness = createHarness({ latestVersion: "0.4.3", registryIntegrity: "sha512-npm-a" });
+    const first = await resolveManagedPicoCli({
+      managedRoot: path.join(firstHarness.root, "managed"),
+      forceRefresh: true,
+      installTimeoutMs: 2_000,
+      updateCheckTimeoutMs: 2_000,
+    }, createManagedIO(firstHarness, { env, npmCommandIdentity: "fixture-npm-a" }));
+    assert.equal(first.status, "ok", JSON.stringify(first));
+    assert.equal(first.version, "0.4.3");
+    assert.equal(viewCalls(firstHarness), 1, JSON.stringify(firstHarness.calls()));
+
+    const secondHarness = createHarness({ latestVersion: "0.4.4", registryIntegrity: "sha512-npm-b" });
+    const second = await resolveManagedPicoCli({
+      managedRoot: path.join(secondHarness.root, "managed"),
+      installTimeoutMs: 2_000,
+      updateCheckTimeoutMs: 2_000,
+    }, createManagedIO(secondHarness, { env, npmCommandIdentity: "fixture-npm-b" }));
+    assert.equal(second.status, "ok", JSON.stringify(second));
+    assert.equal(second.version, "0.4.4", JSON.stringify(second));
+    assert.equal(second.latestVersion, "0.4.4", JSON.stringify(second));
+    assert.equal(viewCalls(secondHarness), 1,
+      `the second npm identity must perform its own latest lookup: ${JSON.stringify(secondHarness.calls())}`);
+  });
 
   await t.test("a successful registry result is reused only within one hour", async () => {
     const harness = createHarness({ latestVersion: "0.4.2" });

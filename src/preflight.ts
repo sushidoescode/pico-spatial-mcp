@@ -13,6 +13,7 @@ import {
   extractPicoCliRemediations,
   inspectPicoCliCached,
   parsePicoCliEnvelope,
+  picoCliFromEnsure,
   runPicoCli,
   runPicoCliSync,
   type PicoCliEnsureResult,
@@ -72,9 +73,7 @@ export function defaultIO(): PreflightIO {
 async function defaultBoundedIO(): Promise<PreflightIO> {
   const base = defaultIO();
   const inspected = await inspectPicoCliCached();
-  const probe = inspected.status === "ok"
-    ? { status: "ok" as const, path: inspected.path, version: inspected.version, raw: inspected.raw }
-    : null;
+  const probe = picoCliFromEnsure(inspected);
   const versionResult = inspected.status === "ok"
     ? { ok: true, stdout: inspected.raw, stderr: "" }
     : { ok: false, stdout: "", stderr: inspected.note };

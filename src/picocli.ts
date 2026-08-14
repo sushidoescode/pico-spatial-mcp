@@ -7,7 +7,10 @@ import path from "node:path";
 import { z } from "zod";
 import {
   inspectManagedPicoCli,
+  managedPicoCliExecutionHandle,
   resolveManagedPicoCli,
+  validateManagedPicoCliExecution,
+  type ManagedPicoCliExecutionHandle,
   type ManagedPicoCliIO,
   type ManagedPicoCliOptions,
   type PicoCliEnsureResult,
@@ -99,6 +102,41 @@ export function resolvePicoCliPath(
   return null;
 }
 
+function resolvedCommandIdentity(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+): string {
+  for (const candidate of executableCandidates(command, env, platform)) {
+    try {
+      const canonical = fs.lstatSync(candidate);
+      if (!canonical.isFile() && !canonical.isSymbolicLink()) continue;
+      if (platform !== "win32") fs.accessSync(candidate, fs.constants.X_OK);
+      const realPath = fs.realpathSync(candidate);
+      const real = fs.statSync(realPath);
+      if (!real.isFile() || real.size < 0 || real.size > 32 * 1024 * 1024) continue;
+      const bytes = fs.readFileSync(realPath);
+      return createHash("sha256").update(JSON.stringify({
+        candidate: path.resolve(candidate),
+        canonicalType: canonical.isSymbolicLink() ? "symlink" : "file",
+        canonicalMode: canonical.mode & 0o7777,
+        canonicalTarget: canonical.isSymbolicLink() ? fs.readlinkSync(candidate) : null,
+        realPath,
+        realMode: real.mode & 0o7777,
+        realSize: real.size,
+        realSha256: createHash("sha256").update(bytes).digest("hex"),
+      })).digest("hex");
+    } catch {
+      // Keep walking exactly as cross-platform command lookup does.
+    }
+  }
+  return createHash("sha256").update(JSON.stringify({
+    unresolved: command,
+    path: envValue(env, "PATH", platform) ?? "",
+    pathExt: platform === "win32" ? envValue(env, "PATHEXT", platform) ?? "" : "",
+  })).digest("hex");
+}
+
 /** Resolve the pico-cli binary on PATH, or null. Kept async for backward compatibility. */
 export async function picoCliPath(): Promise<string | null> {
   return resolvePicoCliPath();
@@ -108,6 +146,19 @@ export type PicoCliProbe =
   | { status: "ok"; path: string; version: string | null; raw: string }
   | { status: "unusable"; path: string; version: null; raw: string }
   | { status: "missing"; path: null; version: null; raw: string };
+
+export type PicoCliExecutionTarget = Extract<PicoCliProbe, { status: "ok" }> & {
+  /** Managed targets are guarded by an opaque in-process binding; external is intentionally unbound. */
+  source: "managed" | "external";
+};
+
+export type PicoCliExecutionGuards = {
+  beforeSpawn?: (deadlineMs: number) => string | null;
+  afterSpawn?: (deadlineMs: number) => string | null;
+  afterCompletion?: (deadlineMs: number) => string | null;
+};
+
+const executionTargetHandles = new WeakMap<object, ManagedPicoCliExecutionHandle>();
 
 let probeMemo: PicoCliProbe | null = null;
 
@@ -206,6 +257,28 @@ export type PicoCliRunOptions = {
    */
   beforeSpawn?: (deadlineMs: number) => string | null;
   afterSpawn?: (deadlineMs: number) => string | null;
+  afterCompletion?: (deadlineMs: number) => string | null;
+};
+
+type PicoCliTreeKiller = {
+  once(event: "error", listener: (error: Error) => void): unknown;
+  once(event: "close", listener: (code: number | null) => void): unknown;
+  kill(signal: NodeJS.Signals): unknown;
+  unref(): unknown;
+};
+
+export type PicoCliProcessTreeRuntime = {
+  platform: NodeJS.Platform;
+  spawnTreeKiller: (
+    command: string,
+    args: string[],
+    options: { env: NodeJS.ProcessEnv; stdio: "ignore"; windowsHide: true },
+  ) => PicoCliTreeKiller;
+};
+
+const defaultPicoCliProcessTreeRuntime: PicoCliProcessTreeRuntime = {
+  platform: process.platform,
+  spawnTreeKiller: (command, args, options) => crossSpawn(command, args, options),
 };
 
 function appendCapped(current: string, chunk: Buffer | string, cap: number): { text: string; truncated: boolean } {
@@ -224,21 +297,22 @@ function appendCapped(current: string, chunk: Buffer | string, cap: number): { t
  * settle even if a grandchild inherited stdio. Internal validation receives the same deadline and
  * must cooperate with it; Node cannot preempt a blocked synchronous callback.
  */
-export function runPicoCliCommand(
+function runPicoCliCommandWithRuntime(
   command: string,
   args: string[],
   opts: PicoCliRunOptions = {},
+  processTreeRuntime: PicoCliProcessTreeRuntime = defaultPicoCliProcessTreeRuntime,
 ): Promise<PicoCliCommandResult> {
   const timeoutMs = opts.timeoutMs ?? PICO_CLI_INSTALL_TIMEOUT_MS;
   const killGraceMs = opts.killGraceMs ?? PICO_CLI_KILL_GRACE_MS;
   const maxOutputBytes = opts.maxOutputBytes ?? PICO_CLI_OUTPUT_CAP_BYTES;
   const childEnv = { ...(opts.baseEnv ?? process.env), ...opts.env };
-  const platform = process.platform;
+  const platform = processTreeRuntime.platform;
   const commandDeadlineMs = Date.now() + Math.max(0, timeoutMs);
 
   const synchronousSpawnCheck = (
     check: ((deadlineMs: number) => string | null) | undefined,
-    phase: "pre-spawn" | "post-spawn",
+    phase: "pre-spawn" | "post-spawn" | "post-completion",
   ): { failure: string | null; exhausted: boolean } => {
     if (!check) return { failure: null, exhausted: Date.now() >= commandDeadlineMs };
     try {
@@ -250,7 +324,9 @@ export function runPicoCliCommand(
           : exhausted
             ? phase === "pre-spawn"
               ? "pre-spawn validation exhausted the command timeout before process creation"
-              : "post-spawn validation exhausted the command timeout after process creation, before validation could settle"
+              : phase === "post-spawn"
+                ? "post-spawn validation exhausted the command timeout after process creation, before validation could settle"
+                : "post-completion validation exhausted the command timeout after process completion"
             : null,
         exhausted,
       };
@@ -275,8 +351,9 @@ export function runPicoCliCommand(
     let killTimer: NodeJS.Timeout | undefined;
     let hardTimer: NodeJS.Timeout | undefined;
     let child: ReturnType<typeof crossSpawn>;
-    let treeKiller: ReturnType<typeof crossSpawn> | undefined;
+    let treeKiller: PicoCliTreeKiller | undefined;
     let spawnValidationFailure: string | null = null;
+    let completionValidationRan = false;
 
     const finish = (code: number | null, signal: NodeJS.Signals | null, spawnError?: string) => {
       if (settled) return;
@@ -299,12 +376,75 @@ export function runPicoCliCommand(
       try { child.kill(signal); } catch { /* already exited */ }
     };
 
-    const settleTimedOut = () => {
+    const runCompletionValidation = (): string | null => {
+      if (completionValidationRan) return null;
+      completionValidationRan = true;
+      const completed = synchronousSpawnCheck(opts.afterCompletion, "post-completion");
+      timedOut ||= completed.exhausted;
+      return completed.failure;
+    };
+
+    const settleTreeCleanup = (cleanupFailure?: string) => {
       child.stdout?.destroy();
       child.stderr?.destroy();
       child.unref();
       treeKiller?.unref();
-      finish(observedCode ?? child.exitCode, observedSignal ?? child.signalCode);
+      const completionFailure = runCompletionValidation();
+      const failure = cleanupFailure ?? completionFailure ?? undefined;
+      finish(
+        failure ? null : observedCode ?? child.exitCode,
+        observedSignal ?? child.signalCode,
+        failure,
+      );
+    };
+
+    const beginTreeCleanup = (cleanupFailure?: string) => {
+      if (timeoutCleanupPending) return;
+      timeoutCleanupPending = true;
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = undefined;
+      }
+      if (platform === "win32") {
+        if (!child.pid) {
+          kill("SIGKILL");
+          hardTimer = setTimeout(() => settleTreeCleanup(cleanupFailure), 250);
+          return;
+        }
+
+        // `.cmd` shims normally own a Node grandchild. Walk the tree before touching cmd.exe so
+        // validation rejection and ordinary timeout cannot orphan that payload.
+        const systemRoot = envValue(childEnv, "SystemRoot", "win32") ?? "C:\\Windows";
+        const taskkill = path.win32.join(systemRoot, "System32", "taskkill.exe");
+        try {
+          treeKiller = processTreeRuntime.spawnTreeKiller(taskkill, ["/pid", String(child.pid), "/t", "/f"], {
+            env: childEnv,
+            stdio: "ignore",
+            windowsHide: true,
+          });
+          treeKiller.once("error", () => {
+            kill("SIGKILL");
+          });
+          treeKiller.once("close", (code) => {
+            if (code !== 0) kill("SIGKILL");
+            settleTreeCleanup(cleanupFailure);
+          });
+        } catch {
+          kill("SIGKILL");
+        }
+        hardTimer = setTimeout(() => {
+          try { treeKiller?.kill("SIGKILL"); } catch { /* already exited */ }
+          kill("SIGKILL");
+          settleTreeCleanup(cleanupFailure);
+        }, Math.max(killGraceMs, 1_000) + 250);
+        return;
+      }
+
+      kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        kill("SIGKILL");
+        hardTimer = setTimeout(() => settleTreeCleanup(cleanupFailure), 250);
+      }, killGraceMs);
     };
 
     const beforeSpawn = synchronousSpawnCheck(opts.beforeSpawn, "pre-spawn");
@@ -339,14 +479,14 @@ export function runPicoCliCommand(
       outputTruncated ||= appended.truncated;
     });
     child.once("error", (error) => {
-      if (spawnValidationFailure) {
-        finish(null, null, spawnValidationFailure);
-        return;
-      }
       if (timeoutCleanupPending) {
         const appended = appendCapped(stderr, error.message, maxOutputBytes);
         stderr = appended.text;
         outputTruncated ||= appended.truncated;
+        return;
+      }
+      if (spawnValidationFailure) {
+        finish(null, null, spawnValidationFailure);
         return;
       }
       finish(null, null, error.message);
@@ -354,77 +494,55 @@ export function runPicoCliCommand(
     child.once("close", (code, signal) => {
       observedCode = code;
       observedSignal = signal;
+      // Cleanup owns settlement even if the `.cmd` parent or POSIX group leader closes first.
+      if (timeoutCleanupPending) return;
       if (spawnValidationFailure) {
         finish(null, signal, spawnValidationFailure);
         return;
       }
       // Once a timeout begins, do not let a `.cmd` parent (or POSIX group leader) closing early
       // cancel process-tree cleanup. The cleanup path owns settlement from this point onward.
-      if (!timeoutCleanupPending) finish(code, signal);
+      const completionFailure = runCompletionValidation();
+      if (completionFailure) {
+        spawnValidationFailure = completionFailure;
+        beginTreeCleanup(completionFailure);
+        return;
+      }
+      finish(code, signal);
     });
 
     const afterSpawn = synchronousSpawnCheck(opts.afterSpawn, "post-spawn");
     spawnValidationFailure = afterSpawn.failure;
     timedOut ||= afterSpawn.exhausted;
     if (spawnValidationFailure) {
-      kill("SIGKILL");
-      hardTimer = setTimeout(() => {
-        child.stdout?.destroy();
-        child.stderr?.destroy();
-        child.unref();
-        finish(null, child.signalCode, spawnValidationFailure ?? "post-spawn validation failed");
-      }, 250);
+      beginTreeCleanup(spawnValidationFailure);
       return;
     }
 
     timeout = setTimeout(() => {
       timedOut = true;
-      timeoutCleanupPending = true;
-      if (platform === "win32") {
-        if (!child.pid) {
-          kill("SIGKILL");
-          hardTimer = setTimeout(settleTimedOut, 250);
-          return;
-        }
-
-        // npm global commands and pico-cli are normally `.cmd` shims on Windows. Kill the tree
-        // FIRST: killing cmd.exe directly can orphan the Node/npm grandchild before taskkill walks
-        // it. taskkill is bounded too, and every event has a listener so this failure path cannot
-        // crash the MCP on a restricted PATH/SystemRoot.
-        const systemRoot = envValue(childEnv, "SystemRoot", "win32") ?? "C:\\Windows";
-        const taskkill = path.win32.join(systemRoot, "System32", "taskkill.exe");
-        try {
-          treeKiller = crossSpawn(taskkill, ["/pid", String(child.pid), "/t", "/f"], {
-            env: childEnv,
-            stdio: "ignore",
-            windowsHide: true,
-          });
-          treeKiller.once("error", () => {
-            // Best-effort fallback if taskkill itself is unavailable; the hard timer still settles.
-            kill("SIGKILL");
-          });
-          treeKiller.once("close", (code) => {
-            if (code !== 0) kill("SIGKILL");
-            settleTimedOut();
-          });
-        } catch {
-          kill("SIGKILL");
-        }
-        hardTimer = setTimeout(() => {
-          try { treeKiller?.kill("SIGKILL"); } catch { /* already exited */ }
-          kill("SIGKILL");
-          settleTimedOut();
-        }, Math.max(killGraceMs, 1_000) + 250);
-        return;
-      }
-
-      kill("SIGTERM");
-      killTimer = setTimeout(() => {
-        kill("SIGKILL");
-        hardTimer = setTimeout(settleTimedOut, 250);
-      }, killGraceMs);
+      beginTreeCleanup();
     }, Math.max(0, commandDeadlineMs - Date.now()));
   });
+}
+
+export function runPicoCliCommand(
+  command: string,
+  args: string[],
+  opts: PicoCliRunOptions = {},
+): Promise<PicoCliCommandResult> {
+  return runPicoCliCommandWithRuntime(command, args, opts, defaultPicoCliProcessTreeRuntime);
+}
+
+/** Structural cross-platform seam. It exercises the production cleanup state machine without
+ * claiming that the supplied platform ran natively on this host. */
+export function runPicoCliCommandWithProcessTreeForFixture(
+  command: string,
+  args: string[],
+  opts: PicoCliRunOptions,
+  processTreeRuntime: PicoCliProcessTreeRuntime,
+): Promise<PicoCliCommandResult> {
+  return runPicoCliCommandWithRuntime(command, args, opts, processTreeRuntime);
 }
 
 /**
@@ -457,12 +575,36 @@ export async function probePicoCliBounded(force = false): Promise<PicoCliProbe> 
   return probeMemo;
 }
 
+export function picoCliExecutionGuards(cli: PicoCliExecutionTarget): PicoCliExecutionGuards {
+  if (cli.source === "external") return {};
+  const handle = executionTargetHandles.get(cli);
+  const validate = handle
+    ? (deadlineMs: number) => validateManagedPicoCliExecution(handle, deadlineMs)
+    : () => "managed pico-cli execution target lost its opaque publication identity";
+  return { beforeSpawn: validate, afterSpawn: validate, afterCompletion: validate };
+}
+
+function chainExecutionGuards(
+  first: ((deadlineMs: number) => string | null) | undefined,
+  second: ((deadlineMs: number) => string | null) | undefined,
+): ((deadlineMs: number) => string | null) | undefined {
+  if (!first) return second;
+  if (!second) return first;
+  return (deadlineMs) => first(deadlineMs) ?? second(deadlineMs);
+}
+
 export function runPicoCli(
-  cli: Extract<PicoCliProbe, { status: "ok" }>,
+  cli: PicoCliExecutionTarget,
   args: string[],
   opts: PicoCliRunOptions = {},
 ): Promise<PicoCliCommandResult> {
-  return runPicoCliCommand(cli.path, args, opts);
+  const guards = picoCliExecutionGuards(cli);
+  return runPicoCliCommand(cli.path, args, {
+    ...opts,
+    beforeSpawn: chainExecutionGuards(guards.beforeSpawn, opts.beforeSpawn),
+    afterSpawn: chainExecutionGuards(guards.afterSpawn, opts.afterSpawn),
+    afterCompletion: chainExecutionGuards(guards.afterCompletion, opts.afterCompletion),
+  });
 }
 
 /** Read-only synchronous invocation for preflight's injected IO contract (also handles .cmd). */
@@ -562,10 +704,21 @@ export function picoCliProvenance(result: Extract<PicoCliEnsureResult, { status:
   };
 }
 
-export function picoCliFromEnsure(result: PicoCliEnsureResult): Extract<PicoCliProbe, { status: "ok" }> | null {
-  return result.status === "ok"
-    ? { status: "ok", path: result.path, version: result.version, raw: result.raw }
-    : null;
+export function picoCliFromEnsure(result: PicoCliEnsureResult): PicoCliExecutionTarget | null {
+  if (result.status !== "ok") return null;
+  const target: PicoCliExecutionTarget = {
+    status: "ok",
+    source: result.source,
+    path: result.path,
+    version: result.version,
+    raw: result.raw,
+  };
+  if (result.source === "managed") {
+    const handle = managedPicoCliExecutionHandle(result);
+    if (!handle) return null;
+    executionTargetHandles.set(target, handle);
+  }
+  return target;
 }
 
 function managedHomeFromSnapshot(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string {
@@ -589,6 +742,7 @@ function managedIoSnapshot(): ManagedPicoCliIO {
     env,
     platform,
     homeDir: managedHomeFromSnapshot(env, platform),
+    npmCommandIdentity: resolvedCommandIdentity("npm", env, platform),
     now: () => Date.now(),
     randomUUID,
     run: (command, args, options) => runPicoCliCommand(command, args, { ...options, baseEnv: env }),
