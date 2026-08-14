@@ -304,9 +304,10 @@ function hasExactEnvironmentAssignment(details: string, assignment: string): boo
   return false;
 }
 
-/** Locate only this generation's process tree. The random child-only environment capability
- * remains attributable after a detached descendant is reparented away from the CLI process. The
- * bounded process listing is inspected in memory and is never copied into diagnostics. */
+/** Locate only this generation's process tree. The exact transport root remains owned even if a
+ * wrapper removes the child-only environment capability; that random capability remains
+ * attributable after a detached descendant is reparented away from the CLI process. The bounded
+ * process listing is inspected in memory and is never copied into diagnostics. */
 function scanPosixGeneration(rootPid: number | null, ownershipToken: string, deadlineMs: number): ProcessScan {
   if (process.platform === "win32") return { available: false, pids: [], reason: "POSIX process inspection is unavailable on Windows" };
   if (!KNOWLEDGE_GENERATION_TOKEN_PATTERN.test(ownershipToken)) {
@@ -343,6 +344,12 @@ function scanPosixGeneration(rootPid: number | null, ownershipToken: string, dea
     const children = byParent.get(parentPid) ?? [];
     children.push(pid);
     byParent.set(parentPid, children);
+    if (pid === rootPid) {
+      owned.add(pid);
+      if (owned.size > PROCESS_SCAN_MAX_MATCHES) {
+        return { available: false, pids: [], reason: `generation process scan exceeded ${PROCESS_SCAN_MAX_MATCHES} exact owners` };
+      }
+    }
     if (pid !== process.pid && pid !== process.ppid && hasExactEnvironmentAssignment(match[3], assignment)) {
       owned.add(pid);
       if (owned.size > PROCESS_SCAN_MAX_MATCHES) {

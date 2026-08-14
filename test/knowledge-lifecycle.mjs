@@ -87,6 +87,30 @@ await server.connect(new StdioServerTransport());
   return { root, fixturePath, firstUsePath, descendantPidPath, logPath };
 }
 
+function createTokenStrippingRootFixture() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico-knowledge-token-strip-"));
+  const fixturePath = path.join(root, "server.mjs");
+  const logPath = path.join(root, "events.jsonl");
+  fs.writeFileSync(fixturePath, `
+import fs from "node:fs";
+import { McpServer } from ${JSON.stringify(serverMcpUrl)};
+import { StdioServerTransport } from ${JSON.stringify(serverStdioUrl)};
+import { z } from ${JSON.stringify(zodUrl)};
+
+const append = (event) => fs.appendFileSync(process.env.KNOWLEDGE_LIFECYCLE_LOG, JSON.stringify({ pid: process.pid, ...event }) + "\\n");
+append({ event: "start", tokenPresent: Object.hasOwn(process.env, "PICO_MCP_KNOWLEDGE_GENERATION_TOKEN") });
+process.on("SIGTERM", () => append({ event: "ignored-sigterm" }));
+setInterval(() => {}, 1_000);
+
+const server = new McpServer({ name: "knowledge-token-strip-fixture", version: "0.0.0" });
+server.registerTool("graph_stats", { inputSchema: z.object({}).strict() }, async () => ({
+  content: [{ type: "text", text: JSON.stringify({ generationPid: process.pid }) }],
+}));
+await server.connect(new StdioServerTransport());
+`);
+  return { root, fixturePath, logPath };
+}
+
 async function cleanupLifecycleFixture(bridge, fixture, descendantPid) {
   await bridge.close().catch(() => undefined);
   if (descendantPid !== null) killFixturePid(descendantPid);
@@ -144,6 +168,57 @@ test("KnowledgeBridge retires an inherited-stdio descendant and starts a fresh g
     assert.notEqual(payload.generationPid, starts[0].pid, "the failed generation was reused");
   } finally {
     await cleanupLifecycleFixture(bridge, fixture, descendantPid);
+  }
+});
+
+test("KnowledgeBridge retires its exact root before restart when that root removed the ownership token", {
+  skip: process.platform === "win32" ? "native Windows lifecycle evidence belongs to the separate Windows lane" : false,
+  timeout: 10_000,
+}, async () => {
+  const fixture = createTokenStrippingRootFixture();
+  const { KnowledgeBridge } = await import(`${knowledgeUrl}?token-strip=${Date.now()}`);
+  const bridge = new KnowledgeBridge({
+    command: "/bin/sh",
+    args: [
+      "-c",
+      'unset PICO_MCP_KNOWLEDGE_GENERATION_TOKEN; exec "$@"',
+      "pico-knowledge-token-strip",
+      process.execPath,
+      fixture.fixturePath,
+    ],
+    cwd: repoRoot,
+    env: { KNOWLEDGE_LIFECYCLE_LOG: fixture.logPath },
+    startupTimeoutMs: 2_000,
+    callTimeoutMs: 500,
+    retirementTimeoutMs: 1_000,
+  });
+
+  let firstPid = null;
+  try {
+    const first = await bridge.call("graph_stats", {});
+    assert.equal(first.status, "ok", JSON.stringify(first));
+    assert.equal(first.lifecycleWarning, undefined, JSON.stringify(first));
+    firstPid = JSON.parse(first.text).generationPid;
+    const firstStart = readEvents(fixture.logPath).find((event) => event.event === "start");
+    assert.equal(firstStart?.pid, firstPid, JSON.stringify(readEvents(fixture.logPath)));
+    assert.equal(firstStart?.tokenPresent, false, "the shell wrapper did not remove the ownership token");
+
+    await bridge.close();
+    assert.equal(
+      readEvents(fixture.logPath).some((event) => event.pid === firstPid && event.event === "ignored-sigterm"),
+      true,
+      `token-stripped root ${firstPid} did not exercise the SIGTERM-resistant fixture path`,
+    );
+    assert.equal(pidAlive(firstPid), false, `bridge.close returned while token-stripped root ${firstPid} was still alive`);
+
+    const recovered = await bridge.call("graph_stats", {});
+    assert.equal(recovered.status, "ok", JSON.stringify(recovered));
+    assert.equal(recovered.lifecycleWarning, undefined, JSON.stringify(recovered));
+    const secondPid = JSON.parse(recovered.text).generationPid;
+    assert.notEqual(secondPid, firstPid, "the retired generation was reused");
+    assert.equal(pidAlive(firstPid), false, `old root ${firstPid} was alive after generation ${secondPid} started`);
+  } finally {
+    await cleanupLifecycleFixture(bridge, fixture, null);
   }
 });
 
