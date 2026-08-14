@@ -186,3 +186,30 @@ The first exact-file staging command updated both tracked files but returned non
 that the report's parent scratch directory is ignored. The commit therefore did not run. Status and
 the staged-name list confirmed that no extra path was staged; the report was then restaged with the
 explicit force required by that known ignore rule before the staged scope audit and commit.
+
+## Review fix round 2
+
+A second review found that the normalized literal-clause validator had removed the earlier broad
+negative guard against affirmative setup execution. The same gap also allowed affirmative
+`update --check` execution claims. Product code and public documentation remain unchanged.
+
+The guarded focused RED kept the valid policy section green but failed the adversarial test. It
+reported four accepted mutations: `The MCP invokes pico-cli setup.`, `The server executes setup.`,
+`The MCP invokes update --check.`, and `The server runs update --check.` The existing narrow inverse
+clause already rejected `The MCP runs setup.`; this demonstrated that the regression was the missing
+general subject/verb/action coverage rather than failure of all negative validation.
+
+The heading-scoped validator now applies normalized whole-section negative patterns for MCP/server
+subjects affirmatively running, invoking, or executing either `setup` (with optional `pico-cli`) or
+`update --check`. The guards also cover `is running`, `is invoking`, and `is executing` forms and
+optional `automatically`, while leaving the required negative normative prose valid. Seven
+adversarial sentences cover the three reviewer examples plus run and progressive variants. Focused
+GREEN passed 2/2. Full fix-round gates passed: `npm run build`; distribution adoption 37/37;
+docsmeta with 0 failures and all 85 links resolving (retaining only the known linked-worktree
+`.git/config` warning, so no homepage/origin equality claim); lint with all 36 rules, its integration
+fixture, and battery runner 7/7; and `git diff --check` with no output.
+
+The real `/Users/sushantsrikrish/.pico-mcp/cli` sentinel remained absent before and after RED and
+GREEN. No product/docs file, shared Task 4 helper, network, real registry, npm install, global CLI,
+setup, update-check, emulator/device, Swan, Windows, visual, remote, permission, or visibility
+operation was touched.

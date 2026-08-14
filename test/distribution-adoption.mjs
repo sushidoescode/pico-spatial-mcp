@@ -132,6 +132,17 @@ const forbiddenManagedPolicyInversions = [
   "does not lack semantic or runtime proof",
 ];
 
+const forbiddenManagedCliExecutionPatterns = [
+  {
+    action: "setup",
+    pattern: /\b(?:the\s+)?(?:mcp|server)\s+(?:(?:automatically\s+)?(?:runs?|invokes?|executes?)|is\s+(?:automatically\s+)?(?:running|invoking|executing))\s+(?:the\s+)?(?:pico-cli\s+)?setup\b/,
+  },
+  {
+    action: "update --check",
+    pattern: /\b(?:the\s+)?(?:mcp|server)\s+(?:(?:automatically\s+)?(?:runs?|invokes?|executes?)|is\s+(?:automatically\s+)?(?:running|invoking|executing))\s+(?:the\s+)?(?:pico-cli\s+)?update\s+--check\b/,
+  },
+];
+
 function normalizeManagedPolicyText(section) {
   return section.normalize("NFKC").replace(/[`*]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -145,6 +156,9 @@ function assertManagedCliPolicySection(section, file) {
   }
   for (const inverse of forbiddenManagedPolicyInversions) {
     assert.equal(normalized.includes(inverse), false, `${file}: forbidden inverse policy clause: ${inverse}`);
+  }
+  for (const { action, pattern } of forbiddenManagedCliExecutionPatterns) {
+    assert.doesNotMatch(normalized, pattern, `${file}: MCP/server must not affirmatively execute ${action}`);
   }
   assert.equal(normalized.includes("npm install -g"), false, `${file}: no global install instruction`);
   assert.equal(normalized.includes("npm install --global"), false, `${file}: no global install instruction`);
@@ -1401,6 +1415,24 @@ semantic or runtime proof.
       /forbidden inverse policy clause/,
     );
   }
+  const affirmativeExecutionClaims = [
+    "The MCP invokes pico-cli setup.",
+    "The server executes setup.",
+    "The MCP invokes update --check.",
+    "The MCP runs setup.",
+    "The server runs update --check.",
+    "The MCP is running pico-cli setup.",
+    "The server is executing update --check.",
+  ];
+  const acceptedClaims = affirmativeExecutionClaims.filter((claim) => {
+    try {
+      assertManagedCliPolicySection(`${valid}\n${claim}`, `affirmative execution fixture: ${claim}`);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  assert.deepEqual(acceptedClaims, [], `affirmative MCP/server execution claims must be rejected: ${acceptedClaims.join(" | ")}`);
 });
 
 test("answers-by-measurement publishes exactly seven narrow answers backed by tracked citations", () => {
