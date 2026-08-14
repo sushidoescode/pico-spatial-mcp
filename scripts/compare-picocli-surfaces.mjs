@@ -412,9 +412,13 @@ function advertisedCommands(helpBytes) {
   const headingIndent = normalizedLines[heading].indent;
   const section = [];
   for (let index = heading + 1; index < normalizedLines.length; index += 1) {
-    const { line, indent } = normalizedLines[index];
+    const { line, text, indent } = normalizedLines[index];
     if (line.trim() === "") continue;
-    if (indent <= headingIndent) break;
+    if (indent < headingIndent) break;
+    if (indent === headingIndent) {
+      if (COMMAND_SECTION_BOUNDARIES.has(text)) break;
+      fail(`unsupported command-section indentation or boundary: ${JSON.stringify(text)}`);
+    }
     section.push({ line, indent });
   }
   if (section.length === 0) return { recognizedHeading: true, commands: [] };

@@ -9,9 +9,13 @@ Date: 2026-08-14
   `test/picocli-sweep.mjs`, and `test/distribution-adoption.mjs`.
 - Owned normative document:
   `docs/superpowers/specs/2026-08-14-managed-pico-cli-design.md`.
-- Every behavioral run used fake npm/fake pico-cli fixtures or local tarball packaging. No registry
-  request, package download, real/global pico-cli, setup, update-check, emulator, device, Swan,
-  native-Windows execution, rendered-frame LOOK, remote, permission or visibility change occurred.
+- The implementation and gate runs recorded here used fake npm/fake pico-cli fixtures or local
+  tarball packaging. They made no registry request, package download, real/global pico-cli, setup,
+  update-check, emulator, device, Swan, native-Windows execution, rendered-frame LOOK, remote,
+  permission or visibility change.
+- During independent review of `012470d`, the reviewer reported one bounded npm self-update
+  metadata GET under a temporary home. That network request is not implementation evidence; it had
+  no pico-cli or managed-store impact. No package update or global install claim is made from it.
 
 ## RED evidence and root causes
 
@@ -41,7 +45,7 @@ literals and the scripts/doc scanner are exercised as real child/gate behavior.
   command-section-like heading at any indentation that is not one of those two exact headings fails
   closed before report publication.
 - The operational-policy gate now classifies clauses structurally: any external, disabled, ambient
-  or global resolution token combined with CLI/default/mode/policy/path/install/resolver context is
+  or global resolution token combined with default/mode/policy/resolution/resolver context is
   rejected outside the byte-exact canonical block. This does not depend on enumerating linking
   verbs. Existing exact-block, setup/update, managed-mode, fallback and PATH gates remain in place.
 - The normative managed-store design now matches production schema 2. It documents the sibling
@@ -78,3 +82,36 @@ shared tree was verified serially again:
 - Owned-file `git diff --check` — PASS, no output.
 - Real managed-root sentinel — `/Users/sushantsrikrish/.pico-mcp/cli` absent before and after the
   final commands.
+
+## Independent-review fix round
+
+Review of `012470d` found two residual gate problems. Both were reproduced before the fix:
+
+1. Under an indented supported heading, a command row at the heading's own indentation caused the
+   parser to return `recognizedHeading:true` with no commands and publish a truncated report. The
+   RED fixture observed exit 0 and no `app build` traversal.
+2. The structural policy context was too broad: the exact benign sentences `External contributors
+   can run these commands locally.`, `The external documentation lists CLI commands for
+   troubleshooting.`, and `Global search indexes installation examples.` were rejected. The RED
+   positive-control test stopped at the first unwanted exception.
+
+The sweep now accepts only a known section boundary at the heading indentation; any other
+same-indent line fails closed, while a lower-indent line ends the containing section. The policy
+classifier now requires actual default/mode/policy/resolution framing, so its existing alternate
+default mutations still fail while all three benign controls pass.
+
+Focused GREEN after the review fix:
+
+- Heading/parser group — PASS: 8 tests, 8 pass, 0 fail.
+- Policy rejection plus positive-control group — PASS: 2 tests, 2 pass, 0 fail.
+- `npm run build` — PASS (`tsc`, exit 0).
+- Complete sweep — PASS: 45 tests, 45 pass, 0 fail.
+- JavaScript syntax checks and owned-file `git diff --check` — PASS, no output.
+- Real managed-root sentinel — absent before and after each command.
+
+The complete distribution run executed 43 tests: 41 passed and exactly two failed. Both failures
+were the concurrently assigned knowledge-lifecycle battery adoption already present in the shared
+worktree: the live Linux assignment was 43 while the still-owned assertion expected 42, and the
+live `test:` count was 45 while the still-owned assertion expected 44. The two tests were left for
+that sibling to update after this file's review-fix commit, as coordinated; this run is not called
+green. No sweep or policy test failed.

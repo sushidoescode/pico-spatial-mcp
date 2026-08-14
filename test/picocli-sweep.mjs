@@ -476,6 +476,33 @@ test("recognizes the advertised root command heading and fails closed when root 
     ]);
   });
 
+  await t.test("a same-indent row under an indented command heading fails closed", () => {
+    const tree = {
+      "pico-cli": { stdout: help(["app  Application operations"]) },
+      app: {
+        stdout: [
+          "Usage: pico-cli app",
+          "  Commands:",
+          "  build  Build an application",
+          "  Options:",
+          "    --help  Print help",
+          "",
+        ].join("\n"),
+      },
+      "app build": { stdout: "must not be reached\n" },
+    };
+    const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
+    const result = runSweep(fix);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unsupported command-section indentation or boundary/);
+    assert.equal(fs.existsSync(result.output), false);
+    assert.deepEqual(result.calls.filter((call) => call.role === "cli").map((call) => call.args), [
+      ["-v"],
+      ["--help"],
+      ["app", "--help"],
+    ]);
+  });
+
   await t.test("a nested leaf without any command heading remains a valid leaf", () => {
     const tree = {
       "pico-cli": { stdout: help(["app  Application operations"]) },

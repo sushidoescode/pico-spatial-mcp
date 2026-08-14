@@ -152,22 +152,12 @@ const contradictoryManagedPolicyPatterns = [
 
 const ALTERNATE_CLI_RESOLUTION_TOKENS = new Set(["external", "disabled", "ambient", "global"]);
 const POLICY_CLAIM_CONTEXT_TOKENS = new Set([
-  "cli",
-  "command",
-  "commands",
   "default",
   "defaults",
-  "executable",
-  "executables",
-  "install",
-  "installation",
   "mode",
   "modes",
-  "path",
-  "pico-cli",
   "policy",
   "policies",
-  "provisioning",
   "resolution",
   "resolver",
 ]);
@@ -1698,6 +1688,20 @@ test("managed CLI policy gate rejects alternate modes and automatic mutation cla
     "docs/superpowers/specs/2026-08-14-pico-evolution-programme-design.md",
   ]) {
     assert.equal(fs.existsSync(path.join(repoRoot, historical)), true, historical);
+  }
+});
+
+test("managed CLI policy gate accepts external and global prose that does not define resolution policy", () => {
+  const valid = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  for (const benign of [
+    "External contributors can run these commands locally.",
+    "The external documentation lists CLI commands for troubleshooting.",
+    "Global search indexes installation examples.",
+  ]) {
+    assert.doesNotThrow(
+      () => assertNoAppendedManagedPolicyClaims(`${valid}\n${benign}`, `benign policy fixture: ${benign}`),
+      benign,
+    );
   }
 });
 
