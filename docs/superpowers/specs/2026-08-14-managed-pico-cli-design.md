@@ -100,7 +100,13 @@ move another process back from a newer version.
 ## Resolution flow
 
 Tool registration performs no provisioning and no network request. The first actual CLI-backed
-operation calls `resolveManagedPicoCli()`.
+operation calls `resolveManagedPicoCli()`. The default `pico_doctor {}` CLI inspection and
+`preflight_env` path are not provisioning operations: they call `inspectManagedPicoCli()` to inspect
+only already-published managed versions (or an explicitly configured external path), perform no
+registry request or write, and report that first CLI use will provision the managed latest when no
+cached version exists. The existing explicit `pico_doctor {calibrate:true}` route still performs its
+separately documented capture-camera calibration work; this design does not relabel that route
+read-only.
 
 For `managed-latest`:
 
@@ -191,7 +197,7 @@ provenance fields. Wrapper-specific results continue to distinguish missing/unus
 latest-check/update failures, setup requirements, command drift, timeouts, and runtime failures.
 
 Preflight reports the managed policy and freshness. It must not resolve ambient `PATH` unless the
-explicit external policy selects a path.
+explicit external policy selects a path, and it must not contact npm or install/update a package.
 
 ## Security and durability boundaries
 
