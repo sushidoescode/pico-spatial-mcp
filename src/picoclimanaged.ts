@@ -9,6 +9,9 @@ export const PICO_CLI_PACKAGE = "@picoxr/pico-cli";
 const LEGACY_POLICY_ALIASES = ["PICO_MCP_AUTOINSTALL_CLI", "PICO_MCP_AUTOUPDATE_CLI"] as const;
 const STABLE_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const REGISTRY_CACHE_TTL_MS = 60 * 60 * 1_000;
+const ABANDONED_STAGING_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
+const PUBLICATION_SETTLE_MS = 2_000;
+const PUBLICATION_POLL_MS = 25;
 const COMPATIBILITY_CANARIES = [
   ["perf", "monitor", "run", "--help"],
   ["perf", "trace", "record", "--help"],
@@ -123,6 +126,10 @@ type RegistryLatest = {
   checkedAt: string;
   fetchedAt: number;
 };
+
+type RegistryLatestResolution =
+  | { status: "ok"; latest: RegistryLatest }
+  | { status: "failure"; checkedAt: string; note: string; outputTail?: string };
 
 let registryLatestCache: RegistryLatest | null = null;
 
@@ -345,36 +352,163 @@ function managedOk(
   };
 }
 
+function commandOutputTail(result: ManagedPicoCliCommandResult): string | undefined {
+  const output = [result.stdout, result.stderr, result.spawnError].filter((part) => part && part.trim()).join("\n").trim();
+  return output ? output.slice(-4_000) : undefined;
+}
+
+function managedFallback(
+  cached: ValidatedManagedCli,
+  knownLatest: string | null,
+  checkedAt: string,
+  note: string,
+  outputTail: string | undefined,
+  deprecatedAliases: string[],
+): PicoCliEnsureResult {
+  return {
+    status: "ok",
+    source: "managed",
+    policy: "managed-latest",
+    action: "cached",
+    path: cached.path,
+    version: cached.version,
+    raw: cached.raw,
+    latestVersion: knownLatest,
+    checkedAt,
+    freshness: knownLatest ? "outdated" : "unknown",
+    deprecatedAliases,
+    ...(cached.compatibility ? { compatibility: cached.compatibility } : {}),
+    warning: {
+      failureClass: knownLatest ? "update-failed" : "latest-unknown",
+      note,
+      ...(outputTail ? { outputTail } : {}),
+    },
+  };
+}
+
+async function newestValidatedVersion(
+  versionsRoot: string,
+  options: ManagedPicoCliOptions,
+  io: ManagedPicoCliIO,
+  accept: (version: string) => boolean = () => true,
+): Promise<ValidatedManagedCli | null> {
+  for (const version of publishedVersions(versionsRoot)) {
+    if (!accept(version)) continue;
+    const validated = await validateManagedVersion(path.join(versionsRoot, version), version, options, io);
+    if (validated) return validated;
+  }
+  return null;
+}
+
+function cleanupAbandonedStaging(stagingRoot: string, now: number): void {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(stagingRoot, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path.join(stagingRoot, entry.name);
+    try {
+      const candidateStat = fs.lstatSync(candidate);
+      if (!candidateStat.isDirectory() || candidateStat.isSymbolicLink()) continue;
+      const recordPath = path.join(candidate, "install.json");
+      let ageStat = candidateStat;
+      try {
+        const recordStat = fs.lstatSync(recordPath);
+        if (recordStat.isSymbolicLink() || !recordStat.isFile()) continue;
+        ageStat = recordStat;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") continue;
+      }
+      if (now - ageStat.mtimeMs <= ABANDONED_STAGING_AGE_MS) continue;
+
+      const cleanupPath = path.join(stagingRoot, `.cleanup-${process.pid}-${crypto.randomUUID()}`);
+      fs.renameSync(candidate, cleanupPath);
+      const movedStat = fs.lstatSync(cleanupPath);
+      if (movedStat.dev !== candidateStat.dev || movedStat.ino !== candidateStat.ino) continue;
+      fs.rmSync(cleanupPath, { recursive: true, force: true });
+    } catch {
+      // Another resolver may own or have moved this staging entry; never broaden cleanup.
+    }
+  }
+}
+
 async function resolveRegistryLatest(
   options: ManagedPicoCliOptions,
   io: ManagedPicoCliIO,
-): Promise<RegistryLatest | null> {
+): Promise<RegistryLatestResolution> {
   const now = io.now();
   if (!options.forceRefresh && registryLatestCache && now >= registryLatestCache.fetchedAt
-    && now - registryLatestCache.fetchedAt < REGISTRY_CACHE_TTL_MS) return registryLatestCache;
+    && now - registryLatestCache.fetchedAt < REGISTRY_CACHE_TTL_MS) return { status: "ok", latest: registryLatestCache };
   const checkedAt = new Date(now).toISOString();
   const registry = await io.run("npm", [
     "view", `${PICO_CLI_PACKAGE}@latest`, "version", "dist.integrity", "--json",
   ], { timeoutMs: options.updateCheckTimeoutMs });
-  if (registry.code !== 0 || registry.timedOut || registry.spawnError) return null;
+  if (registry.code !== 0 || registry.timedOut || registry.spawnError) {
+    const reason = registry.timedOut
+      ? "timed out"
+      : registry.spawnError
+        ? "could not start npm"
+        : `exited with code ${registry.code}`;
+    return {
+      status: "failure",
+      checkedAt,
+      note: `The bounded npm registry latest check ${reason}.`,
+      ...(commandOutputTail(registry) ? { outputTail: commandOutputTail(registry) } : {}),
+    };
+  }
   try {
     const parsed: unknown = JSON.parse(registry.stdout);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("registry response was not an object");
     const keys = Object.keys(parsed).sort();
-    if (keys.length !== 2 || keys[0] !== "dist.integrity" || keys[1] !== "version") return null;
+    if (keys.length !== 2 || keys[0] !== "dist.integrity" || keys[1] !== "version") throw new Error("registry response fields were invalid");
     const record = parsed as { version?: unknown; "dist.integrity"?: unknown };
     if (typeof record.version !== "string" || stableSemver(record.version) === null
-      || (record["dist.integrity"] !== null && typeof record["dist.integrity"] !== "string")) return null;
+      || (record["dist.integrity"] !== null && typeof record["dist.integrity"] !== "string")) throw new Error("registry response metadata was invalid");
     registryLatestCache = {
       version: record.version,
       integrity: record["dist.integrity"] as string | null,
       checkedAt,
       fetchedAt: now,
     };
-    return registryLatestCache;
+    return { status: "ok", latest: registryLatestCache };
   } catch {
-    return null;
+    return {
+      status: "failure",
+      checkedAt,
+      note: "The bounded npm registry latest check returned malformed or invalid metadata.",
+      ...(commandOutputTail(registry) ? { outputTail: commandOutputTail(registry) } : {}),
+    };
   }
+}
+
+function publicationClaimFailureNote(version: string, publicationClaim: string): string {
+  return `Managed pico-cli ${version} publication claim ${publicationClaim} remains but no complete winner validates. `
+    + `If the claim is abandoned, remove ${publicationClaim} manually only after confirming no managed resolver process is active, then retry.`;
+}
+
+async function waitForPublishedWinner(
+  target: string,
+  publicationClaim: string,
+  registry: RegistryLatest,
+  options: ManagedPicoCliOptions,
+  io: ManagedPicoCliIO,
+): Promise<ValidatedManagedCli | null> {
+  const deadline = Date.now() + PUBLICATION_SETTLE_MS;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(target)) {
+      const winner = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
+      if (winner) return winner;
+      return null;
+    }
+    if (!fs.existsSync(publicationClaim)) break;
+    await new Promise((resolve) => setTimeout(resolve, PUBLICATION_POLL_MS));
+  }
+  return fs.existsSync(target)
+    ? validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io)
+    : null;
 }
 
 function writeFsyncedJson(file: string, value: unknown): void {
@@ -453,48 +587,71 @@ export async function resolveManagedPicoCli(
     return inspectManagedPicoCli(options, io);
   }
 
-  const registry = await resolveRegistryLatest(options, io);
-  if (!registry) {
+  const root = path.resolve(options.managedRoot ?? path.join(io.homeDir, ".pico-mcp", "cli"));
+  const versionsRoot = path.join(root, "versions");
+  const stagingRoot = path.join(root, "staging");
+  cleanupAbandonedStaging(stagingRoot, io.now());
+
+  const registryResolution = await resolveRegistryLatest(options, io);
+  if (registryResolution.status === "failure") {
+    const cached = await newestValidatedVersion(versionsRoot, options, io);
+    if (cached) {
+      return managedFallback(
+        cached,
+        null,
+        registryResolution.checkedAt,
+        registryResolution.note,
+        registryResolution.outputTail,
+        policy.deprecatedAliases,
+      );
+    }
     return unavailable(
       "managed-latest",
       "managed",
       "latest-unknown",
-      "The bounded npm registry latest check failed or returned invalid metadata.",
+      registryResolution.note,
       policy.deprecatedAliases,
     );
   }
 
-  const root = path.resolve(options.managedRoot ?? path.join(io.homeDir, ".pico-mcp", "cli"));
-  const versionsRoot = path.join(root, "versions");
+  const registry = registryResolution.latest;
+  const lowerCached = await newestValidatedVersion(
+    versionsRoot,
+    options,
+    io,
+    (version) => compareStableSemver(version, registry.version) < 0,
+  );
+  const knownFailure = (note: string, outputTail?: string): PicoCliEnsureResult => {
+    if (lowerCached) {
+      return managedFallback(
+        lowerCached,
+        registry.version,
+        registry.checkedAt,
+        note,
+        outputTail,
+        policy.deprecatedAliases,
+      );
+    }
+    return unavailable("managed-latest", "managed", "cli-unusable", note, policy.deprecatedAliases);
+  };
+
   const target = path.join(versionsRoot, registry.version);
   if (fs.existsSync(target)) {
     const existing = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
     if (existing) {
       return managedOk(existing, "managed-latest", "present", registry.version, registry.checkedAt, "latest", policy.deprecatedAliases);
     }
-    return unavailable(
-      "managed-latest",
-      "managed",
-      "cli-unusable",
+    return knownFailure(
       `Published managed pico-cli ${registry.version} failed immutable-store validation and will not be overwritten.`,
-      policy.deprecatedAliases,
     );
   }
 
-  let lowerValidated = false;
-  for (const version of publishedVersions(versionsRoot)) {
-    if (compareStableSemver(version, registry.version) >= 0) continue;
-    if (await validateManagedVersion(path.join(versionsRoot, version), version, options, io)) {
-      lowerValidated = true;
-      break;
-    }
-  }
-
-  const stagingRoot = path.join(root, "staging");
   const staging = path.join(stagingRoot, io.randomUUID());
   const publicationClaim = path.join(versionsRoot, `.${registry.version}.publish`);
   let ownsStaging = false;
   let publicationClaimDescriptor: number | undefined;
+  let publicationClaimIdentity: { dev: number; ino: number } | undefined;
+  let publicationClaimToken: string | undefined;
   try {
     fs.mkdirSync(versionsRoot, { recursive: true });
     fs.mkdirSync(stagingRoot, { recursive: true });
@@ -506,27 +663,32 @@ export async function resolveManagedPicoCli(
       "--fund=false", "--audit=false", `${PICO_CLI_PACKAGE}@${registry.version}`,
     ], { timeoutMs: options.installTimeoutMs, killGraceMs: options.killGraceMs });
     if (install.code !== 0 || install.timedOut || install.spawnError) {
-      return unavailable(
-        "managed-latest", "managed", "cli-unusable",
-        "The exact managed pico-cli package install did not complete successfully.", policy.deprecatedAliases,
+      const note = install.timedOut
+        ? "The exact managed pico-cli package install timed out."
+        : install.spawnError
+          ? "The exact managed pico-cli package install could not start npm."
+          : `The exact managed pico-cli package install exited with code ${install.code}.`;
+      return knownFailure(
+        note,
+        commandOutputTail(install),
       );
     }
 
     const relativeCliPath = canonicalRelativeCliPath(io.platform);
     const stagedCliPath = managedShimPath(staging, relativeCliPath, io.platform);
     if (!stagedCliPath || packageVersion(staging) !== registry.version) {
-      return unavailable(
-        "managed-latest", "managed", "cli-unusable",
-        "The staged managed pico-cli package metadata or canonical shim was incomplete.", policy.deprecatedAliases,
+      return knownFailure(
+        "The staged managed pico-cli package metadata or canonical shim was incomplete.",
+        commandOutputTail(install),
       );
     }
     try {
       if (!fs.statSync(stagedCliPath).isFile()) throw new Error("canonical shim is not a file");
       if (io.platform !== "win32") fs.accessSync(stagedCliPath, fs.constants.X_OK);
     } catch {
-      return unavailable(
-        "managed-latest", "managed", "cli-unusable",
-        "The staged managed pico-cli canonical shim was not executable.", policy.deprecatedAliases,
+      return knownFailure(
+        "The staged managed pico-cli canonical shim was not executable.",
+        commandOutputTail(install),
       );
     }
     const stagedProbe = await io.run(stagedCliPath, ["-v"], {
@@ -536,9 +698,9 @@ export async function resolveManagedPicoCli(
     const stagedRaw = outputOf(stagedProbe);
     if (stagedProbe.code !== 0 || stagedProbe.timedOut || stagedProbe.spawnError
       || versionFromOutput(stagedRaw) !== registry.version) {
-      return unavailable(
-        "managed-latest", "managed", "cli-unusable",
-        "The staged managed pico-cli did not report the exact requested version.", policy.deprecatedAliases,
+      return knownFailure(
+        "The staged managed pico-cli did not report the exact requested version.",
+        commandOutputTail(stagedProbe),
       );
     }
 
@@ -573,20 +735,19 @@ export async function resolveManagedPicoCli(
 
     try {
       publicationClaimDescriptor = fs.openSync(publicationClaim, "wx");
+      publicationClaimToken = crypto.randomUUID();
+      fs.writeFileSync(publicationClaimDescriptor, publicationClaimToken, "utf8");
+      fs.fsyncSync(publicationClaimDescriptor);
+      const claimStat = fs.fstatSync(publicationClaimDescriptor);
+      publicationClaimIdentity = { dev: claimStat.dev, ino: claimStat.ino };
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
-      const winner = fs.existsSync(target)
-        ? await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io)
-        : null;
+      const winner = await waitForPublishedWinner(target, publicationClaim, registry, options, io);
       if (!winner) {
-        return unavailable(
-          "managed-latest", "managed", "cli-unusable",
-          `Managed pico-cli ${registry.version} publication is claimed but no complete winner validates.`,
-          policy.deprecatedAliases,
-        );
+        return knownFailure(publicationClaimFailureNote(registry.version, publicationClaim));
       }
       return managedOk(
-        winner, "managed-latest", lowerValidated ? "updated" : "installed",
+        winner, "managed-latest", lowerCached ? "updated" : "installed",
         registry.version, registry.checkedAt, "latest", policy.deprecatedAliases,
       );
     }
@@ -594,14 +755,12 @@ export async function resolveManagedPicoCli(
     if (fs.existsSync(target)) {
       const winner = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
       if (!winner) {
-        return unavailable(
-          "managed-latest", "managed", "cli-unusable",
+        return knownFailure(
           `Concurrent managed pico-cli ${registry.version} publication failed validation and will not be overwritten.`,
-          policy.deprecatedAliases,
         );
       }
       return managedOk(
-        winner, "managed-latest", lowerValidated ? "updated" : "installed",
+        winner, "managed-latest", lowerCached ? "updated" : "installed",
         registry.version, registry.checkedAt, "latest", policy.deprecatedAliases,
       );
     }
@@ -615,14 +774,12 @@ export async function resolveManagedPicoCli(
       if (!collision) throw error;
       const winner = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
       if (!winner) {
-        return unavailable(
-          "managed-latest", "managed", "cli-unusable",
+        return knownFailure(
           `Concurrent managed pico-cli ${registry.version} publication failed validation and will not be overwritten.`,
-          policy.deprecatedAliases,
         );
       }
       return managedOk(
-        winner, "managed-latest", lowerValidated ? "updated" : "installed",
+        winner, "managed-latest", lowerCached ? "updated" : "installed",
         registry.version, registry.checkedAt, "latest", policy.deprecatedAliases,
       );
     }
@@ -630,25 +787,27 @@ export async function resolveManagedPicoCli(
     fsyncDirectoryWhereSupported(versionsRoot);
     const published = await validateLatestPublishedVersion(target, registry.version, registry.integrity, options, io);
     if (!published) {
-      return unavailable(
-        "managed-latest", "managed", "cli-unusable",
-        "The atomically published managed pico-cli failed immutable-store validation.", policy.deprecatedAliases,
-      );
+      return knownFailure("The atomically published managed pico-cli failed immutable-store validation.");
     }
     return managedOk(
-      published, "managed-latest", lowerValidated ? "updated" : "installed",
+      published, "managed-latest", lowerCached ? "updated" : "installed",
       registry.version, registry.checkedAt, "latest", policy.deprecatedAliases,
     );
   } catch (error) {
-    return unavailable(
-      "managed-latest", "managed", "cli-unusable",
+    return knownFailure(
       `Managed pico-cli provisioning failed: ${error instanceof Error ? error.message : String(error)}`,
-      policy.deprecatedAliases,
     );
   } finally {
     if (publicationClaimDescriptor !== undefined) {
       try { fs.closeSync(publicationClaimDescriptor); } catch { /* preserve the primary result */ }
-      try { fs.unlinkSync(publicationClaim); } catch { /* Task 3 owns stale claim recovery */ }
+      try {
+        const current = fs.lstatSync(publicationClaim);
+        const token = fs.readFileSync(publicationClaim, "utf8");
+        if (publicationClaimIdentity && publicationClaimToken === token
+          && current.dev === publicationClaimIdentity.dev && current.ino === publicationClaimIdentity.ino) {
+          fs.unlinkSync(publicationClaim);
+        }
+      } catch { /* preserve a missing, replaced, or otherwise unowned claim */ }
     }
     if (ownsStaging) {
       try { fs.rmSync(staging, { recursive: true, force: true }); } catch { /* preserve the primary failure */ }

@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 import {
   probePicoCli,
@@ -164,16 +166,18 @@ if (args[0] === "install") {
       const prefix = args[prefixIndex + 1];
       const packageArg = args.at(-1);
       const version = packageArg.slice("@picoxr/pico-cli@".length);
+      const packageVersion = mode === "mismatched-package" ? "0.4.1" : version;
+      const cliVersion = mode === "mismatched-cli" ? "0.4.1" : version;
       const packageRoot = path.join(prefix, "node_modules", "@picoxr", "pico-cli");
       const shimDir = path.join(prefix, "node_modules", ".bin");
       fs.mkdirSync(packageRoot, { recursive: true });
       fs.mkdirSync(shimDir, { recursive: true });
-      fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@picoxr/pico-cli", version }));
+      fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@picoxr/pico-cli", version: packageVersion }));
       const shim = path.join(shimDir, process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
       if (process.platform === "win32") {
-        fs.writeFileSync(shim, '@echo off\\r\\n"' + process.execPath + '" "' + process.env.FAKE_PICO_DRIVER + '" managed-cli "' + version + '" %*\\r\\n');
+        fs.writeFileSync(shim, '@echo off\\r\\n"' + process.execPath + '" "' + process.env.FAKE_PICO_DRIVER + '" managed-cli "' + cliVersion + '" %*\\r\\n');
       } else {
-        fs.writeFileSync(shim, '#!/bin/sh\\nexec "' + process.execPath + '" "' + process.env.FAKE_PICO_DRIVER + '" managed-cli "' + version + '" "$@"\\n', { mode: 0o755 });
+        fs.writeFileSync(shim, '#!/bin/sh\\nexec "' + process.execPath + '" "' + process.env.FAKE_PICO_DRIVER + '" managed-cli "' + cliVersion + '" "$@"\\n', { mode: 0o755 });
       }
       process.stdout.write("installed exact fake managed pico-cli\\n");
       process.exit(0);
@@ -219,12 +223,13 @@ process.exit(2);
   delete process.env[PICO_CLI_AUTOUPDATE_ENV];
   probePicoCli(true);
   fs.writeFileSync(logPath, "");
-  return { root, binDir, cliBinDir, statePath, logPath, cliTarget, calls: () => readLog(logPath) };
+  return { root, binDir, cliBinDir, statePath, logPath, driverPath, cliTarget, calls: () => readLog(logPath) };
 }
 
 export function createManagedIO(harness, {
   env = {},
   now = Date.parse("2026-08-14T12:00:00.000Z"),
+  uuidPrefix = "fixture-staging",
 } = {}) {
   let uuid = 0;
   const commands = [];
@@ -233,11 +238,107 @@ export function createManagedIO(harness, {
     platform: process.platform,
     homeDir: path.join(harness.root, "unused-home"),
     now: () => typeof now === "function" ? now() : now,
-    randomUUID: () => `fixture-staging-${++uuid}`,
+    randomUUID: () => `${uuidPrefix}-${++uuid}`,
     commands,
     run: (command, args, options = {}) => {
       commands.push({ command, args, options });
       return runPicoCliCommand(command, args, options);
     },
   };
+}
+
+export function publishManagedFixtureVersion(harness, managedRoot, version, {
+  recordVersion = version,
+  packageVersion = version,
+  cliVersion = version,
+  recordText,
+  registryIntegrity = null,
+} = {}) {
+  const versionRoot = path.join(managedRoot, "versions", version);
+  const relativeCliPath = path.join("node_modules", ".bin", process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
+  const shimPath = path.join(versionRoot, relativeCliPath);
+  const packageRoot = path.join(versionRoot, "node_modules", "@picoxr", "pico-cli");
+  fs.mkdirSync(path.dirname(shimPath), { recursive: true });
+  fs.mkdirSync(packageRoot, { recursive: true });
+  writeCommand(path.dirname(shimPath), "pico-cli", harness.driverPath, "managed-cli", [cliVersion]);
+  fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@picoxr/pico-cli", version: packageVersion }));
+  fs.writeFileSync(path.join(versionRoot, "install.json"), recordText ?? JSON.stringify({
+    schemaVersion: 1,
+    version: recordVersion,
+    relativeCliPath,
+    registryIntegrity,
+    installedAt: "2026-08-14T12:00:00.000Z",
+  }));
+  return { versionRoot, shimPath };
+}
+
+export function createManagedConvergenceWorker(harness, repoRoot, participants) {
+  const workerPath = path.join(harness.root, "managed-worker.mjs");
+  const barrierRoot = path.join(harness.root, "managed-worker-barrier");
+  fs.mkdirSync(barrierRoot);
+  const managedModule = pathToFileURL(path.join(repoRoot, "dist", "picoclimanaged.js")).href;
+  const cliModule = pathToFileURL(path.join(repoRoot, "dist", "picocli.js")).href;
+  fs.writeFileSync(workerPath, `
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { resolveManagedPicoCli } from ${JSON.stringify(managedModule)};
+import { runPicoCliCommand } from ${JSON.stringify(cliModule)};
+
+const [managedRoot, barrierRoot, participantsText] = process.argv.slice(2);
+const participants = Number(participantsText);
+let canaries = 0;
+const io = {
+  env: {},
+  platform: process.platform,
+  homeDir: path.join(managedRoot, "unused-home"),
+  now: () => Date.parse("2026-08-14T12:00:00.000Z"),
+  randomUUID: () => process.pid + "-" + crypto.randomUUID(),
+  run: async (command, args, options = {}) => {
+    const result = await runPicoCliCommand(command, args, options);
+    if (args.at(-1) === "--help" && ++canaries === 9) {
+      fs.writeFileSync(path.join(barrierRoot, String(process.pid)), "ready");
+      const deadline = Date.now() + 15_000;
+      while (fs.readdirSync(barrierRoot).length < participants) {
+        if (Date.now() >= deadline) throw new Error("managed worker barrier timed out");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+    return result;
+  },
+};
+
+const result = await resolveManagedPicoCli({
+  managedRoot,
+  forceRefresh: true,
+  installTimeoutMs: 5_000,
+  updateCheckTimeoutMs: 5_000,
+  killGraceMs: 25,
+}, io);
+process.stdout.write(JSON.stringify(result));
+`);
+  return { workerPath, barrierRoot };
+}
+
+export function launchManagedConvergenceWorker(workerPath, managedRoot, barrierRoot, participants) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [workerPath, managedRoot, barrierRoot, String(participants)], {
+      cwd: process.cwd(),
+      env: { ...process.env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      if (code !== 0) {
+        reject(new Error(`managed worker failed code=${code} signal=${signal}: ${stderr || stdout}`));
+        return;
+      }
+      try { resolve(JSON.parse(stdout)); }
+      catch (error) { reject(new Error(`managed worker emitted invalid JSON: ${stdout}\n${stderr}`, { cause: error })); }
+    });
+  });
 }

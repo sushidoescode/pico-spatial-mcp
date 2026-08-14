@@ -22,8 +22,11 @@ import { registerPicoCliHealthTool } from "../dist/picoclihealth.js";
 import { registerPicoCliTools } from "../dist/picoclitools.js";
 import { runPerfDiagnose } from "../dist/perfcli.js";
 import {
+  createManagedConvergenceWorker,
   createHarness,
   createManagedIO,
+  launchManagedConvergenceWorker,
+  publishManagedFixtureVersion,
   restoreEnvironment,
   saveEnvironment,
   tempRoots,
@@ -710,6 +713,225 @@ test("managed winner completeness fix round", { concurrency: false, timeout: 30_
     assert.equal(result.status, "unavailable", JSON.stringify(result));
     assert.equal(JSON.parse(fs.readFileSync(path.join(target, "install.json"), "utf8")).registryIntegrity, "sha512-other");
     assert.equal(JSON.parse(fs.readFileSync(path.join(target, "compatibility.json"), "utf8")).diagnostics.length, 9);
+  });
+});
+
+test("managed fallback, corruption, and concurrent managed convergence", { concurrency: false, timeout: 90_000 }, async (t) => {
+  const optionsFor = (managedRoot, overrides = {}) => ({
+    managedRoot,
+    forceRefresh: true,
+    installTimeoutMs: 2_000,
+    updateCheckTimeoutMs: 2_000,
+    killGraceMs: 25,
+    ...overrides,
+  });
+
+  await t.test("registry failure falls back to a validated cache with latest-unknown freshness", async () => {
+    const harness = createHarness({ registryMode: "failure" });
+    const managedRoot = path.join(harness.root, "managed");
+    const cached = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+    const registryDown = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    assert.equal(registryDown.status, "ok", JSON.stringify(registryDown));
+    assert.equal(registryDown.action, "cached");
+    assert.equal(registryDown.path, cached.shimPath);
+    assert.equal(registryDown.version, "0.4.1");
+    assert.equal(registryDown.latestVersion, null);
+    assert.equal(registryDown.freshness, "unknown");
+    assert.equal(registryDown.warning?.failureClass, "latest-unknown");
+    assert.match(registryDown.warning?.outputTail ?? "", /registry unavailable/);
+    assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
+  });
+
+  await t.test("registry failure without a validated cache is unavailable as latest-unknown", async () => {
+    const harness = createHarness({ registryMode: "failure" });
+    const managedRoot = path.join(harness.root, "managed");
+    const noRegistryNoCache = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    assert.equal(noRegistryNoCache.status, "unavailable", JSON.stringify(noRegistryNoCache));
+    assert.equal(noRegistryNoCache.failureClass, "latest-unknown");
+    assert.equal(noRegistryNoCache.version, null);
+    assert.equal(fs.existsSync(path.join(managedRoot, "versions")), false);
+  });
+
+  for (const failure of [
+    {
+      name: "npm timeout",
+      result: { code: null, signal: "SIGTERM", stdout: "", stderr: "registry request exceeded bound", timedOut: true, outputTruncated: false },
+      tail: /exceeded bound/,
+    },
+    {
+      name: "npm unavailable",
+      result: { code: null, signal: null, stdout: "", stderr: "", timedOut: false, spawnError: "spawn npm ENOENT", outputTruncated: false },
+      tail: /spawn npm ENOENT/,
+    },
+  ]) {
+    await t.test(`${failure.name} fallback preserves the validated cache and failure output`, async () => {
+      const harness = createHarness();
+      const managedRoot = path.join(harness.root, "managed");
+      const cached = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+      const io = createManagedIO(harness);
+      const realRun = io.run;
+      io.run = async (command, args, runOptions) => {
+        if (command === "npm" && args[0] === "view") return failure.result;
+        return realRun(command, args, runOptions);
+      };
+      const result = await resolveManagedPicoCli(optionsFor(managedRoot), io);
+      assert.equal(result.status, "ok", JSON.stringify(result));
+      assert.equal(result.path, cached.shimPath);
+      assert.equal(result.version, "0.4.1");
+      assert.equal(result.freshness, "unknown");
+      assert.equal(result.warning?.failureClass, "latest-unknown");
+      assert.match(result.warning?.outputTail ?? "", failure.tail);
+    });
+  }
+
+  await t.test("malformed registry JSON falls back without caching or publishing it", async () => {
+    const harness = createHarness({ registryMode: "malformed" });
+    const managedRoot = path.join(harness.root, "managed");
+    const cached = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+    const malformed = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    assert.equal(malformed.status, "ok", JSON.stringify(malformed));
+    assert.equal(malformed.path, cached.shimPath);
+    assert.equal(malformed.freshness, "unknown");
+    assert.equal(malformed.warning?.failureClass, "latest-unknown");
+    assert.match(malformed.warning?.outputTail ?? "", /\{"version":/);
+    assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
+  });
+
+  for (const failure of [
+    { name: "npm timeout", npmMode: "hang", overrides: { installTimeoutMs: 300 }, tail: null },
+    { name: "successful npm exit without a shim", npmMode: "no-cli", tail: /claimed success without a CLI/ },
+    { name: "mismatched staged -v", npmMode: "mismatched-cli", tail: /pico-cli\/0\.4\.1/ },
+    { name: "package version mismatch", npmMode: "mismatched-package", tail: null },
+  ]) {
+    await t.test(`${failure.name} fallback retains the validated old version as outdated`, async () => {
+      const harness = createHarness({ latestVersion: "0.4.2", npmMode: failure.npmMode });
+      const managedRoot = path.join(harness.root, "managed");
+      const cached = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+      const beforeRecord = fs.readFileSync(path.join(cached.versionRoot, "install.json"));
+      const beforeShim = fs.readFileSync(cached.shimPath);
+      const updateFailed = await resolveManagedPicoCli(optionsFor(managedRoot, failure.overrides), createManagedIO(harness));
+      assert.equal(updateFailed.status, "ok", JSON.stringify(updateFailed));
+      assert.equal(updateFailed.action, "cached");
+      assert.equal(updateFailed.path, cached.shimPath);
+      assert.equal(updateFailed.version, "0.4.1");
+      assert.equal(updateFailed.latestVersion, "0.4.2");
+      assert.equal(updateFailed.freshness, "outdated");
+      assert.equal(updateFailed.warning?.failureClass, "update-failed");
+      if (failure.tail) assert.match(updateFailed.warning?.outputTail ?? "", failure.tail);
+      assert.deepEqual(fs.readFileSync(path.join(cached.versionRoot, "install.json")), beforeRecord);
+      assert.deepEqual(fs.readFileSync(cached.shimPath), beforeShim);
+      assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
+      assert.deepEqual(fs.existsSync(path.join(managedRoot, "staging")) ? fs.readdirSync(path.join(managedRoot, "staging")) : [], []);
+    });
+  }
+
+  for (const corruption of [
+    { name: "corrupt install record", options: { recordText: "not-json" }, mutate: () => {} },
+    { name: "corrupt package version mismatch", options: { packageVersion: "0.4.1" }, mutate: () => {} },
+    {
+      name: "corrupt shim mutation",
+      options: {},
+      mutate: ({ shimPath }) => fs.writeFileSync(shimPath, "#!/bin/sh\nexit 9\n", { mode: 0o755 }),
+    },
+  ]) {
+    await t.test(`${corruption.name} is skipped without erasing it or the valid fallback`, async () => {
+      const harness = createHarness({ registryMode: "failure" });
+      const managedRoot = path.join(harness.root, "managed");
+      const fallback = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+      const rejected = publishManagedFixtureVersion(harness, managedRoot, "0.4.2", corruption.options);
+      corruption.mutate(rejected);
+      const rejectedRecord = fs.readFileSync(path.join(rejected.versionRoot, "install.json"));
+      const rejectedShim = fs.readFileSync(rejected.shimPath);
+      const result = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+      assert.equal(result.status, "ok", JSON.stringify(result));
+      assert.equal(result.path, fallback.shimPath);
+      assert.equal(result.version, "0.4.1");
+      assert.equal(result.freshness, "unknown");
+      assert.equal(result.warning?.failureClass, "latest-unknown");
+      assert.deepEqual(fs.readFileSync(path.join(rejected.versionRoot, "install.json")), rejectedRecord);
+      assert.deepEqual(fs.readFileSync(rejected.shimPath), rejectedShim);
+      assert.equal(fs.existsSync(fallback.versionRoot), true);
+    });
+  }
+
+  await t.test("abandoned staging cleanup is older-than-seven-days only and never touches published versions", async () => {
+    const now = Date.parse("2026-08-14T12:00:00.000Z");
+    const harness = createHarness({ latestVersion: "0.4.2", npmMode: "no-cli" });
+    const managedRoot = path.join(harness.root, "managed");
+    const published = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+    const stagingRoot = path.join(managedRoot, "staging");
+    const oldDirectory = path.join(stagingRoot, "old-directory-mtime");
+    const oldRecord = path.join(stagingRoot, "old-install-record");
+    const boundary = path.join(stagingRoot, "exactly-seven-days");
+    const fresh = path.join(stagingRoot, "fresh-staging");
+    for (const directory of [oldDirectory, oldRecord, boundary, fresh]) fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(oldRecord, "install.json"), "unfinished");
+    const setAge = (target, ageMs) => fs.utimesSync(target, new Date(now - ageMs), new Date(now - ageMs));
+    setAge(oldDirectory, 8 * 24 * 60 * 60 * 1_000);
+    setAge(path.join(oldRecord, "install.json"), 8 * 24 * 60 * 60 * 1_000);
+    setAge(boundary, 7 * 24 * 60 * 60 * 1_000);
+    setAge(fresh, 6 * 24 * 60 * 60 * 1_000);
+    setAge(published.versionRoot, 30 * 24 * 60 * 60 * 1_000);
+
+    const result = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness, { now }));
+    assert.equal(result.status, "ok", JSON.stringify(result));
+    assert.equal(result.version, "0.4.1");
+    assert.equal(fs.existsSync(oldDirectory), false);
+    assert.equal(fs.existsSync(oldRecord), false);
+    assert.equal(fs.existsSync(boundary), true);
+    assert.equal(fs.existsSync(fresh), true);
+    assert.equal(fs.existsSync(published.versionRoot), true);
+    assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
+  });
+
+  await t.test("a stale publication claim fails closed with manual recovery guidance and is preserved", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const managedRoot = path.join(harness.root, "managed");
+    const cached = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+    const claim = path.join(managedRoot, "versions", ".0.4.2.publish");
+    fs.writeFileSync(claim, "stale-owner-token");
+    const claimIdentity = fs.statSync(claim);
+    const result = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    assert.equal(result.status, "ok", JSON.stringify(result));
+    assert.equal(result.path, cached.shimPath);
+    assert.equal(result.version, "0.4.1");
+    assert.equal(result.freshness, "outdated");
+    assert.equal(result.warning?.failureClass, "update-failed");
+    assert.match(result.warning?.note ?? "", new RegExp(claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(result.warning?.note ?? "", /only after confirming no managed resolver process is active/i);
+    assert.equal(fs.statSync(claim).ino, claimIdentity.ino);
+    assert.equal(fs.readFileSync(claim, "utf8"), "stale-owner-token");
+    assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
+  });
+
+  await t.test("12 concurrent managed workers converge on one complete immutable version", { timeout: 45_000 }, async () => {
+    const participants = 12;
+    const harness = createHarness({ latestVersion: "0.4.2", registryIntegrity: "sha512-fixture" });
+    const managedRoot = path.join(harness.root, "managed");
+    const { workerPath, barrierRoot } = createManagedConvergenceWorker(harness, repoRoot, participants);
+    const settlements = await Promise.allSettled(Array.from(
+      { length: participants },
+      () => launchManagedConvergenceWorker(workerPath, managedRoot, barrierRoot, participants),
+    ));
+    const rejected = settlements.filter((settlement) => settlement.status === "rejected");
+    assert.deepEqual(rejected.map((settlement) => String(settlement.reason)), [], "all workers must settle successfully");
+    const results = settlements.map((settlement) => settlement.value);
+    const expectedPath = path.join(managedRoot, "versions", "0.4.2", "node_modules", ".bin", process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
+    assert.equal(fs.readdirSync(barrierRoot).length, participants, "every worker must finish staging before claim contention");
+    for (const result of results) {
+      assert.equal(result.status, "ok", JSON.stringify(result));
+      assert.equal(result.version, "0.4.2");
+      assert.equal(result.path, expectedPath);
+      assert.equal(result.compatibility?.length, 9, JSON.stringify(result));
+    }
+    assert.equal(new Set(results.map((result) => result.path)).size, 1);
+    const versionsRoot = path.join(managedRoot, "versions");
+    assert.deepEqual(fs.readdirSync(versionsRoot), ["0.4.2"]);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(versionsRoot, "0.4.2", "install.json"), "utf8")).version, "0.4.2");
+    assert.equal(JSON.parse(fs.readFileSync(path.join(versionsRoot, "0.4.2", "compatibility.json"), "utf8")).diagnostics.length, 9);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(versionsRoot, "0.4.2", "node_modules", "@picoxr", "pico-cli", "package.json"), "utf8")).version, "0.4.2");
+    assert.deepEqual(fs.readdirSync(path.join(managedRoot, "staging")), []);
+    assert.equal(harness.calls().filter((call) => call.role === "npm" && call.args[0] === "install").length, participants);
   });
 });
 
