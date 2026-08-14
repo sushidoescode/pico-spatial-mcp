@@ -1,13 +1,20 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import {
   ensurePicoCli,
   classifyPicoCliFailure,
+  picoCliExecutionGuards,
   picoCliProvenance,
   picoCliFromEnsure,
+  type PicoCliExecutionGuards,
+  type PicoCliExecutionTarget,
   type PicoCliFailureClass,
   type PicoCliProvenance,
 } from "./picocli.js";
@@ -22,6 +29,12 @@ const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1_024;
 const MAX_STARTUP_STDERR_BYTES = 16 * 1_024;
 const FAILURE_CLASSIFICATION_OVERLAP_CHARS = 256;
 const SETUP_REQUIRED_NOTE = "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry.";
+const KNOWLEDGE_GENERATION_TOKEN_ENV = "PICO_MCP_KNOWLEDGE_GENERATION_TOKEN";
+const KNOWLEDGE_GENERATION_TOKEN_PATTERN = /^[1-9]\d*-[a-f0-9]{48}$/;
+const PROCESS_SCAN_TIMEOUT_MS = 250;
+const PROCESS_SCAN_MAX_OUTPUT_BYTES = 4 * 1_024 * 1_024;
+const PROCESS_SCAN_MAX_MATCHES = 256;
+const NATURAL_RETIREMENT_GRACE_MS = 100;
 
 export type KnowledgeAction =
   | "query_graph"
@@ -124,6 +137,7 @@ export type KnowledgeResult = (
   setupCommand?: { path: string; args: string[] };
   outputTail?: string;
   outputTruncated?: boolean;
+  lifecycleWarning?: string;
 };
 
 export type KnowledgeBridgeOptions = {
@@ -149,6 +163,14 @@ type KnowledgeSession = {
   closeObserved: Promise<void>;
   resolveCloseObserved: () => void;
   closePromise?: Promise<void>;
+  ownershipToken: string;
+  rootPid: number | null;
+  childEnv: Record<string, string>;
+  observedOwnedPids: Set<number>;
+  executionTarget?: PicoCliExecutionTarget;
+  executionGuards: PicoCliExecutionGuards;
+  spawnAcquired: boolean;
+  completionGuardRan: boolean;
   stderrTail: string;
   stderrTruncated: boolean;
   stderrClassificationTail: string;
@@ -229,6 +251,281 @@ function waitBounded<T>(promise: Promise<T>, timeoutMs: number, message: string)
   });
 }
 
+type ProcessScan = {
+  available: boolean;
+  pids: number[];
+  reason?: string;
+};
+
+type RetirementOutcome = {
+  confirmed: boolean;
+  reason?: string;
+};
+
+function remainingMs(deadlineMs: number): number {
+  return Math.max(0, deadlineMs - Date.now());
+}
+
+function runExecutionGuard(
+  guard: ((deadlineMs: number) => string | null) | undefined,
+  deadlineMs: number,
+  phase: "pre-spawn" | "post-spawn" | "post-completion",
+): string | null {
+  if (!guard) return null;
+  try {
+    const failure = guard(deadlineMs);
+    if (failure) return `${phase} managed pico-cli validation failed: ${failure}`;
+    return Date.now() >= deadlineMs
+      ? `${phase} managed pico-cli validation exhausted its shared deadline`
+      : null;
+  } catch (error) {
+    return `${phase} managed pico-cli validation failed: ${errorMessage(error)}`;
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+function posixPsPath(): string | null {
+  if (process.platform === "win32") return null;
+  return ["/bin/ps", "/usr/bin/ps"].find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
+function hasExactEnvironmentAssignment(details: string, assignment: string): boolean {
+  let offset = details.indexOf(assignment);
+  while (offset >= 0) {
+    const before = offset === 0 || /\s/.test(details[offset - 1]);
+    const end = offset + assignment.length;
+    const after = end === details.length || /\s/.test(details[end]);
+    if (before && after) return true;
+    offset = details.indexOf(assignment, offset + 1);
+  }
+  return false;
+}
+
+/** Locate only this generation's process tree. The random child-only environment capability
+ * remains attributable after a detached descendant is reparented away from the CLI process. The
+ * bounded process listing is inspected in memory and is never copied into diagnostics. */
+function scanPosixGeneration(rootPid: number | null, ownershipToken: string, deadlineMs: number): ProcessScan {
+  if (process.platform === "win32") return { available: false, pids: [], reason: "POSIX process inspection is unavailable on Windows" };
+  if (!KNOWLEDGE_GENERATION_TOKEN_PATTERN.test(ownershipToken)) {
+    return { available: false, pids: [], reason: "generation ownership token was invalid" };
+  }
+  const psPath = posixPsPath();
+  if (!psPath) return { available: false, pids: [], reason: "no bounded POSIX ps executable was available" };
+  const budgetMs = Math.min(PROCESS_SCAN_TIMEOUT_MS, remainingMs(deadlineMs));
+  if (budgetMs <= 0) return { available: false, pids: [], reason: "generation process scan deadline was exhausted" };
+  let result: ReturnType<typeof spawnSync>;
+  try {
+    result = spawnSync(psPath, ["eww", "-A", "-o", "pid=", "-o", "ppid=", "-o", "command="], {
+      encoding: "utf8",
+      timeout: budgetMs,
+      maxBuffer: PROCESS_SCAN_MAX_OUTPUT_BYTES,
+      windowsHide: true,
+    });
+  } catch (error) {
+    return { available: false, pids: [], reason: `bounded POSIX process scan failed: ${errorMessage(error)}` };
+  }
+  if (result.error || result.status !== 0 || typeof result.stdout !== "string") {
+    return { available: false, pids: [], reason: "bounded POSIX process scan did not complete" };
+  }
+
+  const assignment = `${KNOWLEDGE_GENERATION_TOKEN_ENV}=${ownershipToken}`;
+  const byParent = new Map<number, number[]>();
+  const owned = new Set<number>();
+  for (const line of result.stdout.split("\n")) {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    const parentPid = Number(match[2]);
+    if (!Number.isSafeInteger(pid) || pid <= 1) continue;
+    const children = byParent.get(parentPid) ?? [];
+    children.push(pid);
+    byParent.set(parentPid, children);
+    if (pid !== process.pid && pid !== process.ppid && hasExactEnvironmentAssignment(match[3], assignment)) {
+      owned.add(pid);
+      if (owned.size > PROCESS_SCAN_MAX_MATCHES) {
+        return { available: false, pids: [], reason: `generation process scan exceeded ${PROCESS_SCAN_MAX_MATCHES} exact owners` };
+      }
+    }
+  }
+
+  if (rootPid !== null && Number.isSafeInteger(rootPid) && rootPid > 1) {
+    const queue = [rootPid];
+    const seen = new Set(queue);
+    while (queue.length > 0) {
+      const parentPid = queue.shift()!;
+      for (const pid of byParent.get(parentPid) ?? []) {
+        if (seen.has(pid)) continue;
+        seen.add(pid);
+        owned.add(pid);
+        queue.push(pid);
+        if (owned.size > PROCESS_SCAN_MAX_MATCHES) {
+          return { available: false, pids: [], reason: `generation process tree exceeded ${PROCESS_SCAN_MAX_MATCHES} descendants` };
+        }
+      }
+    }
+  }
+  return { available: true, pids: [...owned] };
+}
+
+function signalPosixPidOrGroup(pid: number, signal: NodeJS.Signals): void {
+  if (!Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid || pid === process.ppid) return;
+  try {
+    process.kill(-pid, signal);
+    return;
+  } catch {
+    try { process.kill(pid, signal); } catch { /* this exact process is already gone */ }
+  }
+}
+
+function rememberOwnedPids(session: KnowledgeSession, scan: ProcessScan): void {
+  if (!scan.available) return;
+  for (const pid of scan.pids) session.observedOwnedPids.add(pid);
+}
+
+function signalRememberedPosixGeneration(session: KnowledgeSession, signal: NodeJS.Signals): void {
+  const pids = new Set(session.observedOwnedPids);
+  if (session.rootPid !== null) pids.add(session.rootPid);
+  for (const pid of [...pids].reverse()) signalPosixPidOrGroup(pid, signal);
+}
+
+function signalScannedPosixGeneration(scan: ProcessScan, signal: NodeJS.Signals): void {
+  for (const pid of [...scan.pids].reverse()) signalPosixPidOrGroup(pid, signal);
+}
+
+async function terminatePosixGeneration(session: KnowledgeSession, deadlineMs: number): Promise<RetirementOutcome> {
+  let scan = scanPosixGeneration(session.rootPid, session.ownershipToken, deadlineMs);
+  rememberOwnedPids(session, scan);
+  if (!scan.available) {
+    signalRememberedPosixGeneration(session, "SIGKILL");
+    return { confirmed: false, reason: scan.reason };
+  }
+  if (scan.pids.length === 0) return { confirmed: true };
+
+  signalScannedPosixGeneration(scan, "SIGTERM");
+  const gracefulDeadline = Math.min(deadlineMs, Date.now() + Math.min(NATURAL_RETIREMENT_GRACE_MS, Math.ceil(remainingMs(deadlineMs) / 2)));
+  while (remainingMs(gracefulDeadline) > 0) {
+    await delay(Math.min(20, remainingMs(gracefulDeadline)));
+    scan = scanPosixGeneration(session.rootPid, session.ownershipToken, deadlineMs);
+    rememberOwnedPids(session, scan);
+    if (!scan.available) {
+      signalRememberedPosixGeneration(session, "SIGKILL");
+      return { confirmed: false, reason: scan.reason };
+    }
+    if (scan.pids.length === 0) return { confirmed: true };
+  }
+
+  scan = scanPosixGeneration(session.rootPid, session.ownershipToken, deadlineMs);
+  rememberOwnedPids(session, scan);
+  if (!scan.available) {
+    signalRememberedPosixGeneration(session, "SIGKILL");
+    return { confirmed: false, reason: scan.reason };
+  }
+  signalScannedPosixGeneration(scan, "SIGKILL");
+  while (remainingMs(deadlineMs) > 0) {
+    await delay(Math.min(20, remainingMs(deadlineMs)));
+    scan = scanPosixGeneration(session.rootPid, session.ownershipToken, deadlineMs);
+    rememberOwnedPids(session, scan);
+    if (!scan.available) return { confirmed: false, reason: scan.reason };
+    if (scan.pids.length === 0) return { confirmed: true };
+  }
+  return {
+    confirmed: false,
+    reason: `generation ${session.generation} still had ${scan.pids.length} exact owned process(es) at the retirement deadline`,
+  };
+}
+
+function envValueCaseInsensitive(env: Record<string, string>, name: string): string | undefined {
+  const actual = Object.keys(env).find((key) => key.toUpperCase() === name.toUpperCase());
+  return actual ? env[actual] : undefined;
+}
+
+async function terminateWindowsGeneration(
+  session: KnowledgeSession,
+  childEnv: Record<string, string>,
+  deadlineMs: number,
+): Promise<RetirementOutcome> {
+  if (session.rootPid === null || !Number.isSafeInteger(session.rootPid) || session.rootPid <= 1) {
+    return { confirmed: false, reason: "the Windows generation root PID was not observed before retirement" };
+  }
+  const systemRoot = envValueCaseInsensitive(childEnv, "SystemRoot") ?? "C:\\Windows";
+  const taskkillPath = path.win32.join(systemRoot, "System32", "taskkill.exe");
+  return new Promise((resolve) => {
+    let settled = false;
+    let killer: ReturnType<typeof spawn> | undefined;
+    const finish = (outcome: RetirementOutcome) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      killer?.unref();
+      resolve(outcome);
+    };
+    const timer = setTimeout(() => {
+      try { killer?.kill("SIGKILL"); } catch { /* taskkill already exited */ }
+      finish({ confirmed: false, reason: "Windows taskkill did not settle within the generation retirement deadline" });
+    }, Math.max(1, remainingMs(deadlineMs)));
+    try {
+      killer = spawn(taskkillPath, ["/pid", String(session.rootPid), "/t", "/f"], {
+        env: childEnv,
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      killer.once("error", (error) => finish({ confirmed: false, reason: `Windows taskkill failed: ${errorMessage(error)}` }));
+      killer.once("close", (code) => finish(code === 0
+        ? { confirmed: true }
+        : { confirmed: false, reason: `Windows taskkill exited ${String(code)}; the generation is quarantined rather than claimed retired` }));
+    } catch (error) {
+      finish({ confirmed: false, reason: `Windows taskkill could not start: ${errorMessage(error)}` });
+    }
+  });
+}
+
+function finishRetirementValidation(
+  session: KnowledgeSession,
+  deadlineMs: number,
+  outcome: RetirementOutcome,
+): RetirementOutcome {
+  if (!session.spawnAcquired || session.completionGuardRan) return outcome;
+  session.completionGuardRan = true;
+  const failure = runExecutionGuard(session.executionGuards.afterCompletion, deadlineMs, "post-completion");
+  return failure ? { confirmed: false, reason: failure } : outcome;
+}
+
+async function retireKnowledgeGeneration(
+  session: KnowledgeSession,
+  timeoutMs: number,
+): Promise<RetirementOutcome> {
+  const deadlineMs = Date.now() + Math.max(1, timeoutMs);
+  // Capture ownership before asking the SDK to close: its transport deliberately drops its public
+  // pid as soon as close begins, even when descendant-held stdio delays the close event.
+  session.rootPid ??= session.transport.pid;
+  if (process.platform === "win32") {
+    // taskkill must see the live root before the SDK can close a .cmd parent and orphan its Node
+    // descendant. It owns the exact `/t` tree first; protocol closure follows either outcome.
+    const outcome = await terminateWindowsGeneration(session, session.childEnv, deadlineMs);
+    const clientClose = session.client.close().catch(() => undefined);
+    void clientClose;
+    return finishRetirementValidation(session, deadlineMs, outcome);
+  }
+  const initialPosixScan = scanPosixGeneration(session.rootPid, session.ownershipToken, deadlineMs);
+  rememberOwnedPids(session, initialPosixScan);
+  const clientClose = session.client.close().catch(() => undefined);
+  if (!initialPosixScan.available) {
+    signalRememberedPosixGeneration(session, "SIGKILL");
+    void clientClose;
+    return finishRetirementValidation(session, deadlineMs, { confirmed: false, reason: initialPosixScan.reason });
+  }
+  await Promise.race([
+    session.closeObserved,
+    delay(Math.min(NATURAL_RETIREMENT_GRACE_MS, Math.max(1, Math.floor(remainingMs(deadlineMs) / 3)))),
+  ]);
+  const outcome = await terminatePosixGeneration(session, deadlineMs);
+  void clientClose;
+  return finishRetirementValidation(session, deadlineMs, outcome);
+}
+
 export class KnowledgeBridge {
   private readonly command: string;
   private readonly args: string[];
@@ -245,6 +542,7 @@ export class KnowledgeBridge {
   private startupPromise?: Promise<KnowledgeSession>;
   private resetBarrier: Promise<void> = Promise.resolve();
   private queue: Promise<void> = Promise.resolve();
+  private lifecycleWarning?: string;
 
   constructor(options: KnowledgeBridgeOptions = {}) {
     this.command = options.command ?? DEFAULT_KNOWLEDGE_COMMAND;
@@ -280,30 +578,43 @@ export class KnowledgeBridge {
     if (this.starting === session) this.starting = undefined;
     session.intentionalClose = true;
     const priorReset = this.resetBarrier;
-    this.resetBarrier = priorReset.then(
-      () => session.closeObserved,
-      () => session.closeObserved,
-    );
+    const retirementDeadlineMs = Date.now() + Math.max(1, this.retirementTimeoutMs);
     session.closePromise = (async () => {
-      const clientClose = session.client.close().catch(() => undefined);
       try {
         await waitBounded(
-          Promise.all([clientClose, session.closeObserved]),
-          this.retirementTimeoutMs,
-          `spatial-knowledge generation ${session.generation} close was not observed within ${this.retirementTimeoutMs}ms`,
+          priorReset,
+          Math.max(1, remainingMs(retirementDeadlineMs)),
+          `the prior spatial-knowledge retirement did not settle within ${this.retirementTimeoutMs}ms`,
         );
-      } catch {
-        // Keep resetBarrier quarantined on closeObserved. The caller returns after this bounded
-        // cleanup attempt, but no replacement generation may start until the old transport's
-        // close event is actually observed.
+      } catch (error) {
+        this.lifecycleWarning = `${errorMessage(error)}; later generations use isolated ownership and the prior generation remains quarantined`;
+      }
+      try {
+        const outcome = await retireKnowledgeGeneration(session, Math.max(1, remainingMs(retirementDeadlineMs)));
+        if (!outcome.confirmed) {
+          this.lifecycleWarning = `spatial-knowledge generation ${session.generation} retirement was not fully observed: ${outcome.reason ?? "unknown cleanup state"}; the generation is quarantined and later generations use an isolated ownership token`;
+        }
+      } catch (error) {
+        this.lifecycleWarning = `spatial-knowledge generation ${session.generation} retirement failed boundedly: ${errorMessage(error)}; the generation is quarantined and later generations use an isolated ownership token`;
       }
     })();
+    // A close event held open by descendant-owned stdio must never become the restart barrier.
+    // The bounded retirement attempt above owns this generation and always settles; an unproved
+    // cleanup is carried forward as an explicit lifecycle warning instead of poisoning all future
+    // starts.
+    this.resetBarrier = session.closePromise.then(() => undefined, () => undefined);
     return session.closePromise;
   }
 
-  private async ensureStarted(commandPath: string, cliVersion: string | null): Promise<KnowledgeSession> {
+  private async ensureStarted(
+    commandPath: string,
+    cliVersion: string | null,
+    executionTarget?: PicoCliExecutionTarget,
+  ): Promise<KnowledgeSession> {
     const sameIdentity = (session: KnowledgeSession) =>
-      session.commandPath === commandPath && session.cliVersion === cliVersion;
+      session.commandPath === commandPath
+      && session.cliVersion === cliVersion
+      && session.executionTarget?.source === executionTarget?.source;
     if (this.current && !this.current.fatal && !this.current.closed && sameIdentity(this.current)) return this.current;
     if (this.current) await this.retire(this.current);
     if (this.starting && !sameIdentity(this.starting)) await this.retire(this.starting);
@@ -314,11 +625,17 @@ export class KnowledgeBridge {
       `previous spatial-knowledge process close was not observed within ${this.retirementTimeoutMs}ms`,
     );
 
+    const ownershipToken = `${process.pid}-${randomBytes(24).toString("hex")}`;
+    const executionGuards = executionTarget ? picoCliExecutionGuards(executionTarget) : {};
+    const childEnv = {
+      ...(this.env ?? productionKnowledgeEnvironment()),
+      [KNOWLEDGE_GENERATION_TOKEN_ENV]: ownershipToken,
+    };
     const transport = new StdioClientTransport({
       command: commandPath,
       args: this.args,
       ...(this.cwd ? { cwd: this.cwd } : {}),
-      env: this.env ?? productionKnowledgeEnvironment(),
+      env: childEnv,
       stderr: "pipe",
     });
     const client = new Client({ name: "pico-spatial-mcp-knowledge", version: "1.0.0" });
@@ -336,6 +653,14 @@ export class KnowledgeBridge {
       closed: false,
       closeObserved,
       resolveCloseObserved,
+      ownershipToken,
+      rootPid: null,
+      childEnv,
+      observedOwnedPids: new Set(),
+      ...(executionTarget ? { executionTarget } : {}),
+      executionGuards,
+      spawnAcquired: false,
+      completionGuardRan: false,
       stderrTail: "",
       stderrTruncated: false,
       stderrClassificationTail: "",
@@ -362,10 +687,28 @@ export class KnowledgeBridge {
     let startup!: Promise<KnowledgeSession>;
     startup = (async () => {
       try {
-        await client.connect(transport, {
+        const startupDeadlineMs = Date.now() + Math.max(1, this.startupTimeoutMs);
+        const beforeSpawnFailure = runExecutionGuard(executionGuards.beforeSpawn, startupDeadlineMs, "pre-spawn");
+        if (beforeSpawnFailure) throw new Error(beforeSpawnFailure);
+        const connection = client.connect(transport, {
           timeout: this.startupTimeoutMs,
           maxTotalTimeout: this.startupTimeoutMs,
         });
+        // StdioClientTransport assigns its ChildProcess synchronously before connect first yields.
+        // Preserve the PID because transport.close() intentionally clears the public value before
+        // descendant-held pipes have necessarily closed.
+        session.rootPid = transport.pid;
+        session.spawnAcquired = session.rootPid !== null;
+        if (executionGuards.afterSpawn && !session.spawnAcquired) {
+          void connection.catch(() => undefined);
+          throw new Error("post-spawn managed pico-cli validation could not run because no child PID was acquired");
+        }
+        const afterSpawnFailure = runExecutionGuard(executionGuards.afterSpawn, startupDeadlineMs, "post-spawn");
+        if (afterSpawnFailure) {
+          void connection.catch(() => undefined);
+          throw new Error(afterSpawnFailure);
+        }
+        await connection;
         if (session.fatal) throw session.fatal;
         if (session.closed || this.starting !== session) {
           throw new Error(`spatial-knowledge generation ${session.generation} closed during startup`);
@@ -411,28 +754,34 @@ export class KnowledgeBridge {
       let session: KnowledgeSession | undefined;
       let provenance: PicoCliProvenance | null = null;
       const withProvenance = (result: KnowledgeResult): KnowledgeResult =>
-        provenance ? { ...result, picoCli: provenance } : result;
+        ({
+          ...result,
+          ...(provenance ? { picoCli: provenance } : {}),
+          ...(this.lifecycleWarning ? { lifecycleWarning: this.lifecycleWarning } : {}),
+        });
       try {
         let commandPath = this.command;
         let cliVersion: string | null = null;
+        let executionTarget: PicoCliExecutionTarget | undefined;
         if (this.provisionDefaultPicoCli) {
           const ensured = await ensurePicoCli();
           if (ensured.status !== "ok") {
             if (this.current) await this.retire(this.current);
             if (this.starting) await this.retire(this.starting);
-            return {
+            return withProvenance({
               status: "unavailable",
               action: parsedAction,
               error: ensured.note,
               failureClass: ensured.failureClass,
-            };
+            });
           }
           const ready = picoCliFromEnsure(ensured)!;
+          executionTarget = ready;
           commandPath = ready.path;
           cliVersion = ready.version;
           provenance = picoCliProvenance(ensured);
         }
-        session = await this.ensureStarted(commandPath, cliVersion);
+        session = await this.ensureStarted(commandPath, cliVersion, executionTarget);
         const response = await session.client.callTool(
           { name: parsedAction, arguments: argumentsForRemote },
           undefined,
