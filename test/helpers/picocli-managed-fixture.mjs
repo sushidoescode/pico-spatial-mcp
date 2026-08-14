@@ -287,6 +287,31 @@ import { runPicoCliCommand } from ${JSON.stringify(cliModule)};
 
 const [managedRoot, barrierRoot, participantsText] = process.argv.slice(2);
 const participants = Number(participantsText);
+const claimPath = path.join(managedRoot, "versions", ".0.4.2.publish");
+const contentionPath = path.join(barrierRoot, "claim-contention.jsonl");
+const originalOpenSync = fs.openSync;
+const sleeper = new Int32Array(new SharedArrayBuffer(4));
+fs.openSync = function instrumentedOpenSync(file, flags, ...rest) {
+  if (String(file) !== claimPath || flags !== "wx") return originalOpenSync.call(this, file, flags, ...rest);
+  let descriptor;
+  try {
+    descriptor = originalOpenSync.call(this, file, flags, ...rest);
+  } catch (error) {
+    if (error?.code === "EEXIST") {
+      fs.appendFileSync(contentionPath, JSON.stringify({ event: "claim-eexist", pid: process.pid }) + "\\n");
+    }
+    throw error;
+  }
+  const deadline = Date.now() + 10_000;
+  while (!fs.existsSync(contentionPath)) {
+    if (Date.now() >= deadline) {
+      fs.closeSync(descriptor);
+      throw new Error("winning managed claim was not observed by a loser");
+    }
+    Atomics.wait(sleeper, 0, 0, 10);
+  }
+  return descriptor;
+};
 let canaries = 0;
 const io = {
   env: {},

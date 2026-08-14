@@ -612,6 +612,7 @@ test("managed publication no-clobber fix round", { concurrency: false, timeout: 
     const harness = createHarness({ latestVersion: "0.4.2" });
     const managedRoot = path.join(harness.root, "managed");
     const target = path.join(managedRoot, "versions", "0.4.2");
+    const claim = path.join(managedRoot, "versions", ".0.4.2.publish");
     const originalOpenSync = fs.openSync;
     let targetBefore = null;
     let injected = false;
@@ -632,6 +633,8 @@ test("managed publication no-clobber fix round", { concurrency: false, timeout: 
       }, createManagedIO(harness));
       assert.equal(injected, true, "publication must acquire the exclusive adjacent claim");
       assert.equal(result.status, "unavailable", JSON.stringify(result));
+      assert.equal(fs.existsSync(claim), true, "an ambiguous owned claim must fail closed and remain preserved");
+      assert.match(result.note, /only after confirming no managed resolver process is active/i);
       const targetAfter = fs.statSync(target);
       assert.equal(targetAfter.ino, targetBefore.ino, "the empty target identity must not be replaced");
       assert.equal(targetAfter.birthtimeMs, targetBefore.birthtimeMs);
@@ -717,6 +720,22 @@ test("managed winner completeness fix round", { concurrency: false, timeout: 30_
 });
 
 test("managed fallback, corruption, and concurrent managed convergence", { concurrency: false, timeout: 90_000 }, async (t) => {
+  const stagingOwnerRecord = ({
+    version = "0.4.2",
+    token = "fixture-owner-token",
+    ownerPid,
+    createdAt,
+  }) => ({ schemaVersion: 1, kind: "pico-managed-staging", version, token, ownerPid, createdAt });
+  const writeStagingOwner = (directory, record) => {
+    fs.writeFileSync(path.join(directory, "staging-owner.json"), `${JSON.stringify(record)}\n`);
+  };
+  const definitelyDeadPid = () => {
+    for (const candidate of [999_999, 9_999_999, 99_999_999, 2_147_483_647]) {
+      try { process.kill(candidate, 0); }
+      catch (error) { if (error?.code === "ESRCH") return candidate; }
+    }
+    assert.fail("fixture could not identify a definitively dead PID");
+  };
   const optionsFor = (managedRoot, overrides = {}) => ({
     managedRoot,
     forceRefresh: true,
@@ -749,6 +768,10 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
     assert.equal(noRegistryNoCache.status, "unavailable", JSON.stringify(noRegistryNoCache));
     assert.equal(noRegistryNoCache.failureClass, "latest-unknown");
     assert.equal(noRegistryNoCache.version, null);
+    assert.equal(noRegistryNoCache.latestVersion, null);
+    assert.equal(noRegistryNoCache.checkedAt, "2026-08-14T12:00:00.000Z");
+    assert.match(noRegistryNoCache.outputTail ?? "", /registry unavailable/);
+    assert.equal(noRegistryNoCache.raw, "");
     assert.equal(fs.existsSync(path.join(managedRoot, "versions")), false);
   });
 
@@ -825,6 +848,38 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
     });
   }
 
+  await t.test("fallback is revalidated after a failing install mutates the previously valid shim", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2", npmMode: "network" });
+    const managedRoot = path.join(harness.root, "managed");
+    const cached = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+    const io = createManagedIO(harness);
+    const realRun = io.run;
+    io.run = async (command, args, runOptions) => {
+      const result = await realRun(command, args, runOptions);
+      if (command === "npm" && args[0] === "install") fs.unlinkSync(cached.shimPath);
+      return result;
+    };
+    const result = await resolveManagedPicoCli(optionsFor(managedRoot), io);
+    assert.equal(result.status, "unavailable", JSON.stringify(result));
+    assert.equal(result.version, null);
+    assert.equal(result.failureClass, "cli-unusable");
+    assert.equal(fs.existsSync(cached.shimPath), false);
+    assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
+  });
+
+  await t.test("known-latest install failure without fallback preserves attempted provenance", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2", npmMode: "no-cli" });
+    const managedRoot = path.join(harness.root, "managed");
+    const result = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+    assert.equal(result.status, "unavailable", JSON.stringify(result));
+    assert.equal(result.failureClass, "cli-unusable");
+    assert.equal(result.latestVersion, "0.4.2");
+    assert.equal(result.checkedAt, "2026-08-14T12:00:00.000Z");
+    assert.match(result.outputTail ?? "", /claimed success without a CLI/);
+    assert.equal(result.raw, "", "raw is reserved for actual CLI -v output");
+    assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
+  });
+
   for (const corruption of [
     { name: "corrupt install record", options: { recordText: "not-json" }, mutate: () => {} },
     { name: "corrupt package version mismatch", options: { packageVersion: "0.4.1" }, mutate: () => {} },
@@ -854,21 +909,22 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
     });
   }
 
-  await t.test("abandoned staging cleanup is older-than-seven-days only and never touches published versions", async () => {
+  await t.test("abandoned staging cleanup removes only a valid dead-owner record older than seven days", async () => {
     const now = Date.parse("2026-08-14T12:00:00.000Z");
     const harness = createHarness({ latestVersion: "0.4.2", npmMode: "no-cli" });
     const managedRoot = path.join(harness.root, "managed");
     const published = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
     const stagingRoot = path.join(managedRoot, "staging");
-    const oldDirectory = path.join(stagingRoot, "old-directory-mtime");
-    const oldRecord = path.join(stagingRoot, "old-install-record");
+    const deadPid = definitelyDeadPid();
+    const oldOwned = path.join(stagingRoot, "old-owned-dead-process");
     const boundary = path.join(stagingRoot, "exactly-seven-days");
     const fresh = path.join(stagingRoot, "fresh-staging");
-    for (const directory of [oldDirectory, oldRecord, boundary, fresh]) fs.mkdirSync(directory, { recursive: true });
-    fs.writeFileSync(path.join(oldRecord, "install.json"), "unfinished");
+    for (const directory of [oldOwned, boundary, fresh]) fs.mkdirSync(directory, { recursive: true });
+    writeStagingOwner(oldOwned, stagingOwnerRecord({ ownerPid: deadPid, createdAt: new Date(now - 8 * 24 * 60 * 60 * 1_000).toISOString() }));
+    writeStagingOwner(boundary, stagingOwnerRecord({ ownerPid: deadPid, token: "boundary", createdAt: new Date(now - 7 * 24 * 60 * 60 * 1_000).toISOString() }));
+    writeStagingOwner(fresh, stagingOwnerRecord({ ownerPid: deadPid, token: "fresh", createdAt: new Date(now - 6 * 24 * 60 * 60 * 1_000).toISOString() }));
     const setAge = (target, ageMs) => fs.utimesSync(target, new Date(now - ageMs), new Date(now - ageMs));
-    setAge(oldDirectory, 8 * 24 * 60 * 60 * 1_000);
-    setAge(path.join(oldRecord, "install.json"), 8 * 24 * 60 * 60 * 1_000);
+    setAge(oldOwned, 8 * 24 * 60 * 60 * 1_000);
     setAge(boundary, 7 * 24 * 60 * 60 * 1_000);
     setAge(fresh, 6 * 24 * 60 * 60 * 1_000);
     setAge(published.versionRoot, 30 * 24 * 60 * 60 * 1_000);
@@ -876,12 +932,78 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
     const result = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness, { now }));
     assert.equal(result.status, "ok", JSON.stringify(result));
     assert.equal(result.version, "0.4.1");
-    assert.equal(fs.existsSync(oldDirectory), false);
-    assert.equal(fs.existsSync(oldRecord), false);
+    assert.equal(fs.existsSync(oldOwned), false);
     assert.equal(fs.existsSync(boundary), true);
     assert.equal(fs.existsSync(fresh), true);
     assert.equal(fs.existsSync(published.versionRoot), true);
     assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
+  });
+
+  await t.test("cleanup preserves active, unowned, malformed, and symlink staging entries", async () => {
+    const now = Date.parse("2026-08-14T12:00:00.000Z");
+    const harness = createHarness({ registryMode: "failure" });
+    const managedRoot = path.join(harness.root, "managed");
+    const stagingRoot = path.join(managedRoot, "staging");
+    const active = path.join(stagingRoot, "active-owner");
+    const unowned = path.join(stagingRoot, "unowned");
+    const malformed = path.join(stagingRoot, "malformed-owner");
+    const symlinkTarget = path.join(stagingRoot, "symlink-target");
+    const symlinkEntry = path.join(stagingRoot, "symlink-entry");
+    for (const directory of [active, unowned, malformed, symlinkTarget]) fs.mkdirSync(directory, { recursive: true });
+    const oldCreatedAt = new Date(now - 8 * 24 * 60 * 60 * 1_000).toISOString();
+    writeStagingOwner(active, stagingOwnerRecord({ ownerPid: process.pid, createdAt: oldCreatedAt }));
+    fs.writeFileSync(path.join(malformed, "staging-owner.json"), "not-json");
+    fs.symlinkSync(symlinkTarget, symlinkEntry, "dir");
+    for (const directory of [active, unowned, malformed, symlinkTarget]) {
+      fs.utimesSync(directory, new Date(now - 8 * 24 * 60 * 60 * 1_000), new Date(now - 8 * 24 * 60 * 60 * 1_000));
+    }
+
+    const result = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness, { now }));
+    assert.equal(result.status, "unavailable", JSON.stringify(result));
+    for (const entry of [active, unowned, malformed, symlinkTarget, symlinkEntry]) {
+      assert.equal(fs.existsSync(entry), true, `cleanup must preserve ${entry}`);
+    }
+  });
+
+  await t.test("cleanup detects a quarantine replacement and restores it without deletion", async () => {
+    const now = Date.parse("2026-08-14T12:00:00.000Z");
+    const harness = createHarness({ registryMode: "failure" });
+    const managedRoot = path.join(harness.root, "managed");
+    const stagingRoot = path.join(managedRoot, "staging");
+    const candidate = path.join(stagingRoot, "old-owned-raced");
+    fs.mkdirSync(candidate, { recursive: true });
+    writeStagingOwner(candidate, stagingOwnerRecord({
+      ownerPid: definitelyDeadPid(),
+      token: "raced-owner",
+      createdAt: new Date(now - 8 * 24 * 60 * 60 * 1_000).toISOString(),
+    }));
+    fs.utimesSync(candidate, new Date(now - 8 * 24 * 60 * 60 * 1_000), new Date(now - 8 * 24 * 60 * 60 * 1_000));
+    const originalRenameSync = fs.renameSync;
+    let heldOwned = null;
+    let injected = false;
+    fs.renameSync = function patchedRenameSync(source, destination, ...rest) {
+      const renamed = originalRenameSync.call(this, source, destination, ...rest);
+      if (!injected && source === candidate && path.basename(String(destination)).startsWith(".cleanup-")) {
+        heldOwned = `${destination}.held-owned`;
+        originalRenameSync.call(this, destination, heldOwned);
+        fs.mkdirSync(destination);
+        fs.writeFileSync(path.join(destination, "unowned-replacement"), "preserve-me");
+        injected = true;
+      }
+      return renamed;
+    };
+    try {
+      const result = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness, { now }));
+      assert.equal(result.status, "unavailable", JSON.stringify(result));
+      assert.equal(injected, true, "fixture must replace the quarantined directory after rename");
+      assert.equal(fs.existsSync(heldOwned), true, "the originally owned directory remains preserved by the fixture");
+      assert.equal(fs.existsSync(candidate), true, "replacement must be restored beneath the original staging entry");
+      const recovered = fs.readdirSync(candidate, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+      assert.equal(recovered.length, 1, JSON.stringify(recovered));
+      assert.equal(fs.readFileSync(path.join(candidate, recovered[0].name, "unowned-replacement"), "utf8"), "preserve-me");
+    } finally {
+      fs.renameSync = originalRenameSync;
+    }
   });
 
   await t.test("a stale publication claim fails closed with manual recovery guidance and is preserved", async () => {
@@ -904,6 +1026,42 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
     assert.equal(fs.existsSync(path.join(managedRoot, "versions", "0.4.2")), false);
   });
 
+  await t.test("publication finalization preserves a claim replacement instead of unlinking it", async () => {
+    const harness = createHarness({ latestVersion: "0.4.2" });
+    const managedRoot = path.join(harness.root, "managed");
+    const cached = publishManagedFixtureVersion(harness, managedRoot, "0.4.1");
+    const target = path.join(managedRoot, "versions", "0.4.2");
+    const claim = path.join(managedRoot, "versions", ".0.4.2.publish");
+    const publicationRecord = path.join(target, "publication.json");
+    const heldOwner = path.join(harness.root, "held-original-publication-claim");
+    const originalRenameSync = fs.renameSync;
+    let injected = false;
+    fs.renameSync = function patchedRenameSync(source, destination, ...rest) {
+      if (!injected && source === claim && destination === publicationRecord) {
+        originalRenameSync.call(this, source, heldOwner);
+        fs.writeFileSync(source, "replacement-owner-token");
+        injected = true;
+      }
+      return originalRenameSync.call(this, source, destination, ...rest);
+    };
+    try {
+      const result = await resolveManagedPicoCli(optionsFor(managedRoot), createManagedIO(harness));
+      assert.equal(injected, true, "fixture must replace the acquired claim during finalization");
+      assert.equal(result.status, "ok", JSON.stringify(result));
+      assert.equal(result.path, cached.shimPath);
+      assert.equal(result.version, "0.4.1");
+      assert.equal(result.freshness, "outdated");
+      assert.equal(result.warning?.failureClass, "update-failed");
+      assert.match(result.warning?.note ?? "", /publication claim finalization/i);
+      assert.equal(fs.existsSync(heldOwner), true, "the original owner claim must remain preserved");
+      assert.equal(fs.readFileSync(publicationRecord, "utf8"), "replacement-owner-token");
+      assert.equal(fs.existsSync(claim), false, "the replacement was atomically preserved as the durable record");
+      assert.equal(fs.existsSync(target), true, "the complete published target remains immutable");
+    } finally {
+      fs.renameSync = originalRenameSync;
+    }
+  });
+
   await t.test("12 concurrent managed workers converge on one complete immutable version", { timeout: 45_000 }, async () => {
     const participants = 12;
     const harness = createHarness({ latestVersion: "0.4.2", registryIntegrity: "sha512-fixture" });
@@ -917,7 +1075,12 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
     assert.deepEqual(rejected.map((settlement) => String(settlement.reason)), [], "all workers must settle successfully");
     const results = settlements.map((settlement) => settlement.value);
     const expectedPath = path.join(managedRoot, "versions", "0.4.2", "node_modules", ".bin", process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
-    assert.equal(fs.readdirSync(barrierRoot).length, participants, "every worker must finish staging before claim contention");
+    const readyWorkers = fs.readdirSync(barrierRoot).filter((entry) => /^\d+$/.test(entry));
+    assert.equal(readyWorkers.length, participants, "every worker must finish staging before claim contention");
+    const contentionPath = path.join(barrierRoot, "claim-contention.jsonl");
+    assert.equal(fs.existsSync(contentionPath), true, "a loser must observe EEXIST while the winning claim is held");
+    const contentionEvents = fs.readFileSync(contentionPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    assert.ok(contentionEvents.some((event) => event.event === "claim-eexist"), JSON.stringify(contentionEvents));
     for (const result of results) {
       assert.equal(result.status, "ok", JSON.stringify(result));
       assert.equal(result.version, "0.4.2");
@@ -929,6 +1092,7 @@ test("managed fallback, corruption, and concurrent managed convergence", { concu
     assert.deepEqual(fs.readdirSync(versionsRoot), ["0.4.2"]);
     assert.equal(JSON.parse(fs.readFileSync(path.join(versionsRoot, "0.4.2", "install.json"), "utf8")).version, "0.4.2");
     assert.equal(JSON.parse(fs.readFileSync(path.join(versionsRoot, "0.4.2", "compatibility.json"), "utf8")).diagnostics.length, 9);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(versionsRoot, "0.4.2", "publication.json"), "utf8")).version, "0.4.2");
     assert.equal(JSON.parse(fs.readFileSync(path.join(versionsRoot, "0.4.2", "node_modules", "@picoxr", "pico-cli", "package.json"), "utf8")).version, "0.4.2");
     assert.deepEqual(fs.readdirSync(path.join(managedRoot, "staging")), []);
     assert.equal(harness.calls().filter((call) => call.role === "npm" && call.args[0] === "install").length, participants);
