@@ -223,16 +223,18 @@ await server.connect(new StdioServerTransport());
 const { KnowledgeBridge } = await import(${JSON.stringify(knowledgeUrl)});
 const bridge = new KnowledgeBridge({ startupTimeoutMs: 3000, callTimeoutMs: 2000, retirementTimeoutMs: 2000 });
 let first;
+let second;
 let observed;
 try {
   first = await bridge.call("graph_stats", {});
+  second = await bridge.call("graph_stats", {});
   await bridge.close();
   process.env.PICO_MCP_CLI_POLICY = "disabled";
   observed = await bridge.call("graph_stats", {});
 } finally {
   await bridge.close();
 }
-process.stdout.write(JSON.stringify({ first, observed }));
+process.stdout.write(JSON.stringify({ first, second, observed }));
 `;
 
   let child;
@@ -251,12 +253,26 @@ process.stdout.write(JSON.stringify({ first, observed }));
     const result = JSON.parse(child.stdout);
     assert.equal(result.first.status, "ok", JSON.stringify(result));
     assert.equal(JSON.parse(result.first.text).mutated, true, JSON.stringify(result));
+    assert.equal(result.second.status, "unavailable", JSON.stringify(result));
+    assert.equal(result.second.failureClass, "cli-unusable", JSON.stringify(result));
+    assert.match(result.second.error, /failed content-bound immutable-store validation/i, JSON.stringify(result));
+    assert.match(result.second.error, /remove both .* manually/i, JSON.stringify(result));
+    assert.match(
+      result.second.lifecycleWarning ?? "",
+      /post-completion managed pico-cli validation failed/i,
+      JSON.stringify(result),
+    );
     assert.equal(result.observed.status, "unavailable", JSON.stringify(result));
     assert.equal(result.observed.failureClass, "cli-disabled", JSON.stringify(result));
     assert.match(
       result.observed.lifecycleWarning ?? "",
       /post-completion managed pico-cli validation failed/i,
       JSON.stringify(result),
+    );
+    assert.equal(
+      harness.knowledgeCalls().filter((event) => event.event === "start").length,
+      1,
+      JSON.stringify(harness.knowledgeCalls()),
     );
     assert.equal(harness.calls().some((call) => call.args.includes("setup")), false, JSON.stringify(harness.calls()));
   } finally {
