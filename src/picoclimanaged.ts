@@ -492,18 +492,6 @@ function ownerPidIsDefinitelyDead(ownerPid: number): boolean {
   }
 }
 
-function restoreQuarantineWithoutOverwrite(cleanupPath: string, candidate: string): void {
-  try {
-    fs.mkdirSync(candidate);
-  } catch {
-    return;
-  }
-  const recovered = path.join(candidate, `recovered-${crypto.randomUUID()}`);
-  try {
-    fs.renameSync(cleanupPath, recovered);
-  } catch { /* preserve both paths; never remove a pathname that could have been replaced */ }
-}
-
 function cleanupAbandonedStaging(stagingRoot: string, now: number): void {
   let entries: fs.Dirent[];
   try {
@@ -512,7 +500,7 @@ function cleanupAbandonedStaging(stagingRoot: string, now: number): void {
     return;
   }
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory() || entry.name.startsWith(".cleanup-")) continue;
     const candidate = path.join(stagingRoot, entry.name);
     try {
       const candidateStat = fs.lstatSync(candidate);
@@ -529,11 +517,9 @@ function cleanupAbandonedStaging(stagingRoot: string, now: number): void {
       const sameOwner = movedOwner !== null
         && movedOwner.stat.dev === owner.stat.dev && movedOwner.stat.ino === owner.stat.ino
         && movedOwner.record.token === owner.record.token && movedOwner.bytes.equals(owner.bytes);
-      if (!sameDirectory || !sameOwner) {
-        restoreQuarantineWithoutOverwrite(cleanupPath, candidate);
-        continue;
-      }
-      fs.rmSync(cleanupPath, { recursive: true, force: true });
+      if (!sameDirectory || !sameOwner) continue;
+      // Node cannot bind recursive deletion to the verified directory identity. The unique
+      // quarantine is the terminal automatic action; retained entries require manual recovery.
     } catch {
       // Another resolver may own or have moved this staging entry; never broaden cleanup.
     }
@@ -602,12 +588,13 @@ function finalizePublicationClaim(
 ): { status: "ok" } | { status: "failure"; note: string } {
   const publicationRecordPath = path.join(target, "publication.json");
   try {
-    fs.renameSync(publicationClaim, publicationRecordPath);
+    fs.linkSync(publicationClaim, publicationRecordPath);
   } catch (error) {
     return {
       status: "failure",
-      note: `Managed pico-cli ${expectedRecord.version} publication claim finalization failed. `
-        + `Preserve ${publicationClaim} and remove it manually only after confirming no managed resolver process is active, then retry: `
+      note: `Managed pico-cli ${expectedRecord.version} publication claim finalization failed without replacing either path. `
+        + `Preserve ${publicationClaim} and ${publicationRecordPath}; inspect both and remove only confirmed abandoned records `
+        + `after confirming no managed resolver process is active, then retry: `
         + `${error instanceof Error ? error.message : String(error)}`,
     };
   }
@@ -617,8 +604,9 @@ function finalizePublicationClaim(
   } catch (error) {
     return {
       status: "failure",
-      note: `Managed pico-cli ${expectedRecord.version} publication claim finalization was moved but not durably synced. `
-        + `The record is preserved at ${publicationRecordPath}; inspect it manually and retry only after confirming no managed resolver process is active: `
+      note: `Managed pico-cli ${expectedRecord.version} publication claim finalization was linked but not durably synced. `
+        + `The records are preserved at ${publicationClaim} and ${publicationRecordPath}; inspect them manually and retry `
+        + `only after confirming no managed resolver process is active: `
         + `${error instanceof Error ? error.message : String(error)}`,
     };
   }
@@ -632,7 +620,7 @@ function finalizePublicationClaim(
   return {
     status: "failure",
     note: `Managed pico-cli ${expectedRecord.version} publication claim finalization observed an ownership replacement. `
-      + `The replacement is preserved at ${publicationRecordPath}; inspect it manually and retry only after confirming no managed resolver process is active.`,
+      + `Both ${publicationClaim} and ${publicationRecordPath} are preserved; inspect them manually and retry only after confirming no managed resolver process is active.`,
   };
 }
 
