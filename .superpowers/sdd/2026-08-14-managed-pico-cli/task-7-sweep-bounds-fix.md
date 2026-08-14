@@ -67,3 +67,45 @@ shared aggregate green; the parent will rerun it after the sibling lane reaches 
 All sweep tests use only owned fake npm and fake CLI processes with a fake-only `PATH`; no
 registry/network, real npm install, real pico-cli, setup, update-check, emulator, device, Swan,
 native Windows, or rendered-frame LOOK is involved.
+
+## Independent-review fix round
+
+Review of commit `52815a4bb54661641a95bd6509fdecfaa10800a1` found two remaining incomplete
+boundaries. Both were reproduced before the fix:
+
+- A fake help process spawned a detached inherited-stdio descendant, exceeded the output cap, and
+  exited immediately. The sweep failed and settled, but the detached PID remained alive because
+  the parent had already been reparented before the PPID snapshot.
+- Root help advertised `app`; `app --help` then used an unsupported `Subcommands:` heading. The
+  sweep accepted that command as a leaf and published an incomplete report instead of failing.
+
+Each `runBounded` invocation now receives a child-only ownership assignment containing the sweep
+PID plus 192 random bits. On POSIX abort, the runner retains its direct process-group and PPID-tree
+cleanup and additionally performs a bounded `ps eww` scan for that exact inherited assignment.
+Only exact matching PIDs above 1 are retained; the sweep and its parent are excluded, more than 256
+matches are treated as a collision and discarded, and both scan time and output bytes are capped.
+The environment listing is parsed only in memory and is never printed or included in diagnostics.
+This recovers detached descendants even after their parent exits without broad name-based killing.
+
+The help parser now treats command-section-like headings as grammar at every visited command path.
+Only exact `Commands:` and `Available Commands:` headings are supported. An unsupported heading
+such as `Subcommands:` fails closed before traversal or report publication, while a genuinely
+heading-less nested leaf remains valid.
+
+Fix-round verification:
+
+- `node --test --test-name-pattern='recognizes the advertised root|timeout, spawn failure'
+  test/picocli-sweep.mjs` — PASS three consecutive times: 14 tests, 14 pass, 0 fail on each run.
+- `npm run build` — PASS (`tsc`, exit 0).
+- `node --test test/picocli-sweep.mjs` — PASS: 43 tests, 43 pass, 0 fail.
+- `node --check scripts/compare-picocli-surfaces.mjs` — PASS.
+- `node --check test/picocli-sweep.mjs` — PASS.
+- `git diff --check -- scripts/compare-picocli-surfaces.mjs test/picocli-sweep.mjs` — PASS,
+  no output.
+- Real managed-root sentinel — `/Users/sushantsrikrish/.pico-mcp/cli` absent.
+
+The shared aggregate was not rerun or claimed green in this fix round; the parent will rerun it
+after the sibling lanes are integrated. The POSIX ownership scan and reparented-child cleanup were
+exercised on this macOS host. Native Windows behavior remains unverified. No registry/network,
+real npm install, real pico-cli, setup, update-check, emulator, device, Swan, or rendered-frame
+LOOK was used.

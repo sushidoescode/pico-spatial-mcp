@@ -12,6 +12,11 @@ const MAX_HELP_INVOCATIONS = 256;
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_KILL_GRACE_MS = 250;
 const DEFAULT_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
+const INVOCATION_TOKEN_ENV = "PICO_CLI_SWEEP_INVOCATION_TOKEN";
+const INVOCATION_TOKEN_PATTERN = /^[1-9]\d*-[a-f0-9]{48}$/;
+const PROCESS_SCAN_TIMEOUT_MS = 250;
+const PROCESS_SCAN_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
+const PROCESS_SCAN_MAX_MATCHES = 256;
 
 function fail(message) {
   throw new Error(message);
@@ -62,15 +67,21 @@ function terminateDirectOrGroup(child, signal) {
   }
 }
 
+function posixPsPath() {
+  if (process.platform === "win32") return null;
+  return ["/bin/ps", "/usr/bin/ps"].find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
 function posixDescendants(rootPid) {
   if (process.platform === "win32" || !Number.isSafeInteger(rootPid) || rootPid <= 1) return [];
-  const psPath = ["/bin/ps", "/usr/bin/ps"].find((candidate) => fs.existsSync(candidate));
+  const psPath = posixPsPath();
   if (!psPath) return [];
   let result;
   try {
     result = spawnSync(psPath, ["-A", "-o", "pid=,ppid="], {
       encoding: "utf8",
-      timeout: 250,
+      timeout: PROCESS_SCAN_TIMEOUT_MS,
+      maxBuffer: PROCESS_SCAN_MAX_OUTPUT_BYTES,
       windowsHide: true,
     });
   } catch {
@@ -101,6 +112,51 @@ function posixDescendants(rootPid) {
   return descendants;
 }
 
+function posixInvocationOwners(invocationToken) {
+  if (!INVOCATION_TOKEN_PATTERN.test(invocationToken)) return [];
+  const psPath = posixPsPath();
+  if (!psPath) return [];
+  let result;
+  try {
+    result = spawnSync(psPath, ["eww", "-A", "-o", "pid=", "-o", "command="], {
+      encoding: "utf8",
+      timeout: PROCESS_SCAN_TIMEOUT_MS,
+      maxBuffer: PROCESS_SCAN_MAX_OUTPUT_BYTES,
+      windowsHide: true,
+    });
+  } catch {
+    return [];
+  }
+  if (result.error || result.status !== 0) return [];
+  // The scan output contains other processes' environments. It is bounded, matched in memory,
+  // and deliberately never included in an error or log.
+  const assignment = `${INVOCATION_TOKEN_ENV}=${invocationToken}`;
+  const owners = new Set();
+  for (const line of result.stdout.split("\n")) {
+    const match = line.match(/^\s*(\d+)\s+(.*)$/);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    if (!Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid || pid === process.ppid) continue;
+    const details = match[2];
+    let offset = details.indexOf(assignment);
+    let exactMatch = false;
+    while (offset >= 0) {
+      const before = offset === 0 || /\s/.test(details[offset - 1]);
+      const end = offset + assignment.length;
+      const after = end === details.length || /\s/.test(details[end]);
+      if (before && after) {
+        exactMatch = true;
+        break;
+      }
+      offset = details.indexOf(assignment, offset + 1);
+    }
+    if (!exactMatch) continue;
+    owners.add(pid);
+    if (owners.size > PROCESS_SCAN_MAX_MATCHES) return [];
+  }
+  return [...owners];
+}
+
 function signalPosixPidOrGroup(pid, signal) {
   if (!Number.isSafeInteger(pid) || pid <= 1) return;
   try {
@@ -113,6 +169,9 @@ function signalPosixPidOrGroup(pid, signal) {
 
 function runBounded(session, command, args) {
   return new Promise((resolve) => {
+    // A detached descendant can outlive and be reparented away from a fast-exiting group leader.
+    // This unguessable child-only capability keeps ownership exact after that PPID link disappears.
+    const invocationToken = `${process.pid}-${crypto.randomBytes(24).toString("hex")}`;
     const stdout = [];
     const stderr = [];
     let capturedBytes = 0;
@@ -155,6 +214,9 @@ function runBounded(session, command, args) {
 
     const rememberPosixDescendants = () => {
       for (const pid of posixDescendants(child?.pid)) observedDescendants.add(pid);
+      for (const pid of posixInvocationOwners(invocationToken)) {
+        if (pid !== child?.pid) observedDescendants.add(pid);
+      }
     };
 
     const signalPosixTree = (signal) => {
@@ -207,7 +269,7 @@ function runBounded(session, command, args) {
     try {
       child = spawn(command, args, {
         cwd: session.cwd,
-        env: session.env,
+        env: { ...session.env, [INVOCATION_TOKEN_ENV]: invocationToken },
         shell: false,
         windowsHide: true,
         detached: process.platform !== "win32",
@@ -326,6 +388,7 @@ async function installExact(session, requested, exactVersion) {
 
 const ANSI_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 const COMMAND_SECTION_HEADINGS = new Set(["Commands:", "Available Commands:"]);
+const COMMAND_SECTION_LIKE_HEADING = /^(?:(?:available|additional|other)\s+)?(?:sub[- ]?)?commands?(?:\s+(?:groups?|list))?:$/i;
 const COMMAND_SECTION_BOUNDARIES = new Set(["Options:", "Arguments:", "Positionals:", "Examples:", "Global Options:"]);
 const SAFE_COMMAND_TOKEN_SOURCE = "[A-Za-z0-9][A-Za-z0-9_-]*(?::[A-Za-z0-9][A-Za-z0-9_-]*)*";
 const SAFE_COMMAND_TOKEN = new RegExp(`^${SAFE_COMMAND_TOKEN_SOURCE}$`);
@@ -334,6 +397,12 @@ const COMMAND_ARGUMENT_NOTATION = /^(?:(?:\s+|=)?(?:<[^<>\r\n]+>|\[[^\[\]\r\n]+\
 
 function advertisedCommands(helpBytes) {
   const lines = helpBytes.toString("utf8").replace(ANSI_CSI, "").replace(/\r\n/g, "\n").split("\n");
+  const unsupportedHeading = lines.find((line) => line === line.trim()
+    && COMMAND_SECTION_LIKE_HEADING.test(line)
+    && !COMMAND_SECTION_HEADINGS.has(line));
+  if (unsupportedHeading !== undefined) {
+    fail(`unrecognized command-section-like heading: ${JSON.stringify(unsupportedHeading)}`);
+  }
   const heading = lines.findIndex((line) => COMMAND_SECTION_HEADINGS.has(line));
   if (heading < 0) return { recognizedHeading: false, commands: [] };
   const section = [];

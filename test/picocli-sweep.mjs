@@ -407,19 +407,48 @@ test("recognizes the advertised root command heading and fails closed when root 
     {
       name: "missing heading",
       rootHelp: "Usage: pico-cli\nOptions:\n  --help  Print help\n",
+      errorPattern: /recognized root command heading/,
     },
     {
       name: "unrecognized heading",
       rootHelp: "Usage: pico-cli\nSubcommands:\n  app  Application operations\nOptions:\n  --help  Print help\n",
+      errorPattern: /unrecognized command-section-like heading/,
     },
   ]) await t.test(item.name, () => {
     const tree = { "pico-cli": { stdout: item.rootHelp }, app: { stdout: "must not be reached\n" } };
     const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
     const result = runSweep(fix);
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /recognized root command heading/);
+    assert.match(result.stderr, item.errorPattern);
     assert.equal(fs.existsSync(result.output), false);
     assert.deepEqual(result.calls.filter((call) => call.role === "cli").map((call) => call.args), [["-v"], ["--help"]]);
+  });
+
+  await t.test("an unrecognized nested command-like heading fails closed", () => {
+    const tree = {
+      "pico-cli": { stdout: help(["app  Application operations"]) },
+      app: {
+        stdout: [
+          "Usage: pico-cli app",
+          "Subcommands:",
+          "  build  Build an application",
+          "Options:",
+          "  --help  Print help",
+          "",
+        ].join("\n"),
+      },
+      "app build": { stdout: "must not be reached\n" },
+    };
+    const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
+    const result = runSweep(fix);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unrecognized command-section-like heading/);
+    assert.equal(fs.existsSync(result.output), false);
+    assert.deepEqual(result.calls.filter((call) => call.role === "cli").map((call) => call.args), [
+      ["-v"],
+      ["--help"],
+      ["app", "--help"],
+    ]);
   });
 
   await t.test("a nested leaf without any command heading remains a valid leaf", () => {
@@ -616,6 +645,29 @@ test("timeout, spawn failure, and output truncation are fatal and atomic output 
     assert.match(result.stderr, /exceeded the output capture limit/);
     assert.match(result.stderr, /x{64}/, "retained capped output must remain visible in the diagnostic");
     assert.equal(fs.existsSync(result.output), false);
+  });
+
+  await t.test("output cap reaps a detached inherited-stdio descendant after its parent exits", () => {
+    const fix = failing({
+      spawnDetachedInheritedStdioMs: 10_000,
+      stdout: "FAST_EXIT_OUTPUT_CAP_MARKER\n" + "x".repeat(2_000),
+    });
+    let descendantPid = null;
+    try {
+      const result = runSweep(fix, [], {
+        PICO_CLI_SWEEP_KILL_GRACE_MS: "50",
+        PICO_CLI_SWEEP_MAX_OUTPUT_BYTES: "256",
+      }, 2_500);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /exceeded the output capture limit/);
+      assert.match(result.stderr, /FAST_EXIT_OUTPUT_CAP_MARKER/);
+      assert.equal(fs.existsSync(result.output), false);
+      assert.equal(fs.existsSync(fix.descendantPidPath), true, "fixture descendant was not created");
+      descendantPid = Number(fs.readFileSync(fix.descendantPidPath, "utf8"));
+      assert.equal(waitForPidExit(descendantPid, 750), true, `detached descendant ${descendantPid} survived output-cap cleanup`);
+    } finally {
+      forceKillFixtureProcesses(fix);
+    }
   });
 
   await t.test("signal termination", () => {
