@@ -150,6 +150,42 @@ const contradictoryManagedPolicyPatterns = [
   /\bPATH\b[^.\n]{0,100}\b(?:is|gets?|will\s+be|can\s+be)?\s*(?:modified|changed|rewritten|replaced|exported|prepended|appended|mutated|updated)\b/i,
 ];
 
+const ALTERNATE_CLI_RESOLUTION_TOKENS = new Set(["external", "disabled", "ambient", "global"]);
+const POLICY_CLAIM_CONTEXT_TOKENS = new Set([
+  "cli",
+  "command",
+  "commands",
+  "default",
+  "defaults",
+  "executable",
+  "executables",
+  "install",
+  "installation",
+  "mode",
+  "modes",
+  "path",
+  "pico-cli",
+  "policy",
+  "policies",
+  "provisioning",
+  "resolution",
+  "resolver",
+]);
+
+function alternateManagedPolicyClaims(markdown) {
+  return String(markdown)
+    .replace(/\r\n/g, "\n")
+    .split(/(?:\n[ \t]*){2,}|(?<=[.!?;])(?:[ \t]+|\n+)|\n(?=[ \t]*(?:#{1,6}[ \t]|[-*+][ \t]|\d+\.[ \t]|```|>))/)
+    .map((clause) => ({
+      clause: clause.replace(/\s+/g, " ").trim(),
+      tokens: new Set(clause.toLowerCase().match(/[a-z]+(?:-[a-z]+)*/g) ?? []),
+    }))
+    .filter(({ clause, tokens }) => clause.length > 0
+      && [...ALTERNATE_CLI_RESOLUTION_TOKENS].some((token) => tokens.has(token))
+      && [...POLICY_CLAIM_CONTEXT_TOKENS].some((token) => tokens.has(token)))
+    .map(({ clause }) => clause);
+}
+
 function assertNoAppendedManagedPolicyClaims(markdown, file) {
   const start = markdown.indexOf(MANAGED_POLICY_START);
   const end = markdown.indexOf(MANAGED_POLICY_END, start + MANAGED_POLICY_START.length);
@@ -159,6 +195,11 @@ function assertNoAppendedManagedPolicyClaims(markdown, file) {
   for (const pattern of contradictoryManagedPolicyPatterns) {
     assert.doesNotMatch(outsideCanonical, pattern, `${file}: contradictory or duplicate managed policy claim outside canonical block`);
   }
+  assert.deepEqual(
+    alternateManagedPolicyClaims(outsideCanonical),
+    [],
+    `${file}: alternate external/disabled/ambient/global CLI policy claim outside canonical block`,
+  );
 }
 
 function assertCanonicalManagedPolicyDocument(markdown, file) {
@@ -1601,7 +1642,7 @@ test("operational docs publish one exact canonical managed CLI policy block", ()
   }
 });
 
-test("managed CLI policy gate rejects alternate and passive automatic mutation claims", () => {
+test("managed CLI policy gate rejects alternate modes and automatic mutation claims", () => {
   const valid = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
   const alternateClaims = [
     "The MCP invokes pico-cli setup.",
@@ -1622,6 +1663,11 @@ test("managed CLI policy gate rejects alternate and passive automatic mutation c
     "Update --check gets invoked by the MCP.",
     "The server handles setup automatically.",
     "Managed-latest is not the default.",
+    "External mode is the default.",
+    "External\nis the default mode.",
+    "Disabled policy governs CLI operations.",
+    "Ambient CLI resolution is preferred.",
+    "Global installation is the default.",
     "The MCP modifies PATH for managed commands.",
     "A cached fallback is reported as latest.",
   ];
@@ -1633,7 +1679,7 @@ test("managed CLI policy gate rejects alternate and passive automatic mutation c
       return false;
     }
   });
-  assert.deepEqual(acceptedClaims, [], `automatic setup/update claims must be rejected: ${acceptedClaims.join(" | ")}`);
+  assert.deepEqual(acceptedClaims, [], `alternate modes and automatic setup/update claims must be rejected: ${acceptedClaims.join(" | ")}`);
 
   const mutatedInsideMarker = valid.replace("The MCP never runs setup.", "Setup is performed automatically by the MCP.");
   assert.throws(() => assertCanonicalManagedPolicyDocument(mutatedInsideMarker, "inside-marker mutation"), /canonical policy bytes/);

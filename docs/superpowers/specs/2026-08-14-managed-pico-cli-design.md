@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-14  
 **Programme:** [PICO MCP Evolution Programme](2026-08-14-pico-evolution-programme-design.md)  
-**Status:** Approved policy; ready for implementation planning after written review
+**Status:** Implemented policy; this document records the production schema-2 store contract
 
 ## Problem
 
@@ -71,31 +71,65 @@ Default root: `~/.pico-mcp/cli`.
 ```text
 ~/.pico-mcp/cli/
   versions/
+    .0.4.2.publish
     0.4.2/
       node_modules/
-      package.json
+      staging-owner.json
+      compatibility.json
       install.json
+      publication.json
   staging/
     <uuid>/
+      staging-owner.json
+    .cleanup-<pid>-<uuid>/
 ```
 
-Each atomically published version owns an immutable `install.json` record:
+The sibling `.0.4.2.publish` claim and `0.4.2/publication.json` are two directory entries for the
+same hard-linked inode and exact bytes. `install.json` is a separate record. Both schema-2 records
+bind the same deterministic content identity:
 
 ```ts
+type ManagedContentBinding = {
+  contentManifestSchemaVersion: 1;
+  contentManifestSha256: string;
+  contentManifestEntryCount: number;
+  contentManifestTotalBytes: number;
+};
+
 type ManagedCliInstallRecord = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   version: string;
   relativeCliPath: string;
   registryIntegrity: string | null;
   installedAt: string;
-};
+} & ManagedContentBinding;
+
+type ManagedPublicationRecord = {
+  schemaVersion: 2;
+  kind: "pico-managed-publication";
+  version: string;
+  registryIntegrity: string | null;
+  token: string;
+  ownerPid: number;
+  createdAt: string;
+} & ManagedContentBinding;
 ```
 
-There is no shared mutable “current” pointer. An online resolution uses the exact version returned by
-that check. Cached/offline resolution scans published stable-semver directories from highest to
-lowest and selects the first one whose install record, package metadata, executable path, and `-v`
-result all agree. A corrupt record cannot bless a binary, and an older concurrent publisher cannot
-move another process back from a newer version.
+The manifest hashes the sorted version-root tree, including directory/file/symlink type, relative
+path, mode, link count where applicable, regular-file size and SHA-256, and raw UTF-8 symlink target.
+Every real path and symlink target must remain inside the real version root. Its entry count and
+total retained bytes are bound alongside the hash. Exactly the root `install.json` and
+`publication.json` control records are excluded to avoid a circular digest; `staging-owner.json`,
+`compatibility.json`, the package, dependencies and canonical shim are included. Traversal is
+fail-closed and bounded to 100,000 entries, depth 128, 64 MiB of retained relative-path bytes,
+256 MiB per regular file and 1 GiB total regular-file plus symlink-target bytes.
+
+There is no shared mutable “current” pointer. An online resolution uses the exact version returned
+by that check. Cached/offline resolution scans published stable-semver directories from highest to
+lowest. Selection requires a complete schema-2 install record, matching install/publication content
+bindings, the required claim/publication hard-link identity and bytes, a fresh full-tree hash,
+canonical package/shim/version agreement, and a successful bounded `-v` probe. Schema-1 or
+incomplete records are deliberately not migrated or trusted in place.
 
 ## Resolution flow
 
@@ -113,19 +147,52 @@ For `managed-latest`:
 1. Resolve npm's stable `latest` version and registry integrity using a bounded read-only
    `npm view` request. Cache a successful result in-process for one hour. Every new MCP process
    performs its own first-use check.
-2. If the exact version directory exists, validate its absolute shim with `-v` and require the
-   reported semver to equal the directory version.
-3. Otherwise create a unique staging directory and run a bounded non-global exact-version install
-   beneath it. No command may contain `-g` or `--global`.
-4. Validate the staged package metadata and absolute shim with `-v`.
-5. Atomically publish the whole staging directory as `versions/<exact-version>`. Concurrent losers
-   validate and reuse the winner rather than overwriting it.
+2. If the exact version directory exists, run the complete schema-2 publication/content validation
+   above. Never overwrite an invalid immutable target.
+3. Otherwise create a unique staging directory and fsynced owner record, then run this bounded,
+   non-global, lifecycle-script-disabled exact install beneath it:
+
+   ```text
+   npm install --prefix <staging> --no-save --package-lock=false --ignore-scripts \
+     --fund=false --audit=false @picoxr/pico-cli@<exact-version>
+   ```
+
+4. Validate containment and executable identity, run the bounded `-v` probe and help-only canaries,
+   write `compatibility.json`, compute the final content identity, then write and fsync schema-2
+   `install.json`.
+5. Exclusively create `versions/.<exact-version>.publish`, atomically rename the complete staging
+   tree to `versions/<exact-version>`, validate that unfinalized tree, then hard-link the claim to
+   `<version>/publication.json`. Fsync directories where supported and validate the finalized
+   claim, hard link, records, content and probes again. A concurrent process never replaces a
+   target; it may use a winner only after the same validation succeeds.
 6. Return the absolute versioned shim. Never mutate `PATH`.
 
 Unique staging plus atomic version-directory publication avoids a shared install critical section.
-Concurrent processes may perform redundant downloads, but partial state is never visible as a
-version. A crash leaves only an unreferenced staging directory; later bounded cleanup may remove
-staging entries older than seven days.
+Concurrent processes may perform redundant downloads, but an incomplete tree never validates as a
+published version. A crash can leave staging, a publication claim, or a renamed-but-unfinalized
+target. Cleanup handles only a staging directory with a valid owner record older than seven days
+whose PID is definitely dead: it identity-checks and renames that directory to an owned cleanup
+quarantine, but does not recursively delete it. Invalid published targets and claims fail closed
+with their exact two paths and require manual removal only after the operator confirms that no
+managed resolver process is active.
+
+### Validation at execution boundaries
+
+Before a managed `-v` probe or staged help canary, the resolver captures a bounded identity for the
+canonical shim and its contained real target: type, mode, link count, size, raw symlink target,
+real relative path and SHA-256. A synchronous pre-spawn callback must reproduce that identity within
+the command deadline or process creation is refused. A corresponding post-spawn callback detects a
+change, terminates the process and reports the failure. The complete content tree is recomputed
+after the probe, and finalized published state is checked before and after cached validation.
+
+These checks make accidental or uncoordinated store drift evident; they do not create a privileged
+trust boundary. The store and both records are writable by the same user, so a same-user actor can
+rewrite bytes and their bindings. Cross-platform Node launch cannot execute an already validated
+file descriptor, leaving a small check-to-launch race between validation and the resolver probe,
+and another between resolution and a later wrapper command. Post-spawn checking is detection and
+termination, not proof that the child had no immediate side effect. A synchronous filesystem call
+cannot be preempted by JavaScript even though its callback checks the deadline. Native Windows
+hard-link, shim and process behavior remains fixture-only until a native Windows host runs it.
 
 ## Freshness and failure behavior
 
@@ -203,12 +270,16 @@ explicit external policy selects a path, and it must not contact npm or install/
 
 - npm remains the package transport and integrity verifier; record npm's registry integrity value
   when available, but do not claim independent publisher verification.
-- Install output is capped and time-bounded; process-tree termination remains cross-platform.
+- Package installation always uses `--ignore-scripts`; package lifecycle scripts are not executed.
+- Install output is capped and time-bounded. The runner contains POSIX process-group and Windows
+  `taskkill` paths, but the Windows path has only fixture coverage here, not a native-host run.
 - User-supplied CLI arguments continue to use argv execution without shell interpolation.
-- Version directories are immutable after publication. Validation fails closed if their package or
-  shim identity changes.
-- Each `install.json` is complete and fsynced inside staging before the whole version directory is
-  atomically published; the versions directory is then fsynced where supported.
+- Published version directories are treated as immutable. Fresh schema-2 record, publication-link,
+  content-tree and executable checks fail closed on drift; this is tamper evidence, not protection
+  against a same-user adversary.
+- `install.json` is complete and fsynced in staging before atomic rename. The exclusive publication
+  claim is fsynced before rename; its in-version hard link and affected directories are fsynced
+  where supported before final validation.
 - Global prefixes, ambient shims, `PATH`, and `~/.pico` setup state are not modified.
 
 ## Testing
@@ -224,9 +295,12 @@ Hermetic tests use temporary managed roots and fake npm/CLI executables. Require
 7. known newer version plus failed install uses the old validated version as `outdated`;
 8. interrupted or malformed staging state is never activated;
 9. concurrent processes converge on one valid immutable version directory;
-10. corrupt install record, version metadata, or shim fails closed;
+10. schema-1/incomplete records, corrupt install/publication records, broken claim hard links,
+    manifest/package/dependency/shim drift and out-of-root symlinks fail closed with exact manual
+    recovery paths;
 11. `managed-cached`, `external`, and `disabled` policies behave exactly as declared;
-12. POSIX and Windows `.cmd` absolute paths execute without shell interpolation;
+12. POSIX absolute-path execution works; Windows `.cmd` absolute-path behavior retains hermetic
+    fixture coverage without a native-Windows execution claim;
 13. wrapper results carry freshness provenance and preserve setup/drift classification;
 14. MCP startup and `tools/list` perform no registry or install operation;
 15. a full command-tree comparison script accepts arbitrary old/new versions and writes a dated,

@@ -397,20 +397,24 @@ const COMMAND_ARGUMENT_NOTATION = /^(?:(?:\s+|=)?(?:<[^<>\r\n]+>|\[[^\[\]\r\n]+\
 
 function advertisedCommands(helpBytes) {
   const lines = helpBytes.toString("utf8").replace(ANSI_CSI, "").replace(/\r\n/g, "\n").split("\n");
-  const unsupportedHeading = lines.find((line) => line === line.trim()
-    && COMMAND_SECTION_LIKE_HEADING.test(line)
-    && !COMMAND_SECTION_HEADINGS.has(line));
+  const normalizedLines = lines.map((line) => ({
+    line,
+    text: line.trim(),
+    indent: line.match(/^[ \t]*/)[0].length,
+  }));
+  const unsupportedHeading = normalizedLines.find(({ text }) => COMMAND_SECTION_LIKE_HEADING.test(text)
+    && !COMMAND_SECTION_HEADINGS.has(text));
   if (unsupportedHeading !== undefined) {
-    fail(`unrecognized command-section-like heading: ${JSON.stringify(unsupportedHeading)}`);
+    fail(`unrecognized command-section-like heading: ${JSON.stringify(unsupportedHeading.text)}`);
   }
-  const heading = lines.findIndex((line) => COMMAND_SECTION_HEADINGS.has(line));
+  const heading = normalizedLines.findIndex(({ text }) => COMMAND_SECTION_HEADINGS.has(text));
   if (heading < 0) return { recognizedHeading: false, commands: [] };
+  const headingIndent = normalizedLines[heading].indent;
   const section = [];
-  for (let index = heading + 1; index < lines.length; index += 1) {
-    const line = lines[index];
+  for (let index = heading + 1; index < normalizedLines.length; index += 1) {
+    const { line, indent } = normalizedLines[index];
     if (line.trim() === "") continue;
-    const indent = line.match(/^[ \t]*/)[0].length;
-    if (indent === 0) break;
+    if (indent <= headingIndent) break;
     section.push({ line, indent });
   }
   if (section.length === 0) return { recognizedHeading: true, commands: [] };

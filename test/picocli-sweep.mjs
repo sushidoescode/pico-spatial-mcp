@@ -430,10 +430,10 @@ test("recognizes the advertised root command heading and fails closed when root 
       app: {
         stdout: [
           "Usage: pico-cli app",
-          "Subcommands:",
-          "  build  Build an application",
-          "Options:",
-          "  --help  Print help",
+          "  Subcommands:",
+          "    build  Build an application",
+          "  Options:",
+          "    --help  Print help",
           "",
         ].join("\n"),
       },
@@ -448,6 +448,31 @@ test("recognizes the advertised root command heading and fails closed when root 
       ["-v"],
       ["--help"],
       ["app", "--help"],
+    ]);
+  });
+
+  await t.test("an indented recognized nested command heading is traversed", () => {
+    const tree = {
+      "pico-cli": { stdout: help(["app  Application operations"]) },
+      app: {
+        stdout: [
+          "Usage: pico-cli app",
+          "  Commands:",
+          "    build  Build an application",
+          "  Options:",
+          "    --help  Print help",
+          "",
+        ].join("\n"),
+      },
+      "app build": { stdout: "Usage: pico-cli app build\n" },
+    };
+    const fix = fixture({ latest: "2.0.0", versions: { "1.0.0": { tree }, "2.0.0": { tree } } });
+    const result = runSweep(fix);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(result.output, "utf8")).unchangedCommands, [
+      "app",
+      "app build",
+      "pico-cli",
     ]);
   });
 
