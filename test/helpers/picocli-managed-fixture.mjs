@@ -86,6 +86,32 @@ if (role === "managed-cli") {
     process.stderr.write("Error: Perf utilities 0.4.2 are not installed. Run \`pico-cli setup\` to install.\\n");
     process.exit(1);
   }
+  if (process.env.FAKE_PICO_OPERATION_MODE === "empty-artifact" || process.env.FAKE_PICO_OPERATION_MODE === "directory-artifact") {
+    const outputIndex = cliArgs.indexOf("-o");
+    if (outputIndex >= 0 && cliArgs[outputIndex + 1]) {
+      const outputPath = cliArgs[outputIndex + 1];
+      if (process.env.FAKE_PICO_OPERATION_MODE === "directory-artifact") {
+        fs.mkdirSync(outputPath, { recursive: true });
+      } else {
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+        fs.writeFileSync(outputPath, "");
+      }
+    }
+  }
+  if (process.env.FAKE_PICO_OPERATION_MODE === "hang" || process.env.FAKE_PICO_OPERATION_MODE === "hang-tamper") {
+    let tampered = false;
+    process.on("SIGTERM", () => {
+      // SIGTERM is sent only after the wrapper's duration deadline starts cleanup. Mutating here
+      // makes the fixture ordering deterministic: both launch guards have completed, while the
+      // post-completion guard has not yet run.
+      if (process.env.FAKE_PICO_OPERATION_MODE === "hang-tamper" && !tampered) {
+        tampered = true;
+        fs.appendFileSync(process.env.FAKE_PICO_TAMPER_TARGET, "\\nfixture managed content drift\\n");
+      }
+    });
+    setInterval(() => {}, 1_000);
+    await new Promise(() => {});
+  }
   process.stdout.write("fake managed pico-cli operation complete\\n");
   process.exit(0);
 }
@@ -226,6 +252,10 @@ export function createManagedRuntimeHarness({ latestVersion = "0.4.2", operation
     FAKE_PICO_GLOBAL_CLI: globalCli,
     FAKE_LATEST_VERSION_FILE: latestVersionFile,
     FAKE_PICO_OPERATION_MODE: operationMode,
+    FAKE_PICO_TAMPER_TARGET: path.join(
+      home, ".pico-mcp", "cli", "versions", latestVersion,
+      "node_modules", "@picoxr", "pico-cli", "package.json",
+    ),
     FAKE_KNOWLEDGE_LOG: knowledgeLogPath,
     FAKE_KNOWLEDGE_SERVER: path.resolve("test", "fixtures", "fake-knowledge-server.mjs"),
   };
@@ -280,11 +310,16 @@ import { spawn } from "node:child_process";
 const [role, ...args] = process.argv.slice(2);
 const state = process.env.FAKE_PICO_STATE;
 const log = process.env.FAKE_PICO_LOG;
-const record = (extra = {}) => fs.appendFileSync(log, JSON.stringify({ role, args, sentinel: process.env.PICO_TEST_FULL_ENV ?? null, ...extra }) + "\\n");
+const record = (extra = {}) => fs.appendFileSync(log, JSON.stringify({ role, args, pid: process.pid, sentinel: process.env.PICO_TEST_FULL_ENV ?? null, ...extra }) + "\\n");
 record();
 if (role === "managed-cli") {
   const [version, ...cliArgs] = args;
   if (cliArgs[0] === "-v") process.stdout.write("pico-cli/" + version + " (managed fixture)\\n");
+  else if (cliArgs[0] === "fixture-hang") {
+    process.on("SIGTERM", () => {});
+    setInterval(() => {}, 1_000);
+    await new Promise(() => {});
+  }
   else if (cliArgs[0] === "fixture-mutate-managed-file") {
     fs.appendFileSync(process.env.FAKE_MANAGED_MUTATION_TARGET, "\\nfixture post-spawn mutation\\n");
     process.stdout.write("fake managed pico-cli mutated its published tree\\n");

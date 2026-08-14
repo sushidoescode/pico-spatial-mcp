@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { okJson, okJsonStructured } from "./util.js";
-import { ensurePicoCli, picoCliProvenance, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, cliWrapperContractShape } from "./picocli.js";
+import { ensurePicoCli, picoCliProvenance, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, cliWrapperContractShape, inspectPicoCliArtifact } from "./picocli.js";
 
 /**
  * perftrace.ts — v31 perf_trace: PICO's Perfetto trace pipeline routed through our loop.
@@ -137,10 +137,10 @@ export function registerPerfTraceTools(server: McpServer) {
       const runResult = await runPicoCli(cli, args, { timeoutMs, maxOutputBytes: 32 * 1024 * 1024 });
       const stdout = runResult.stdout;
       const stderr = runResult.stderr;
-      if (runResult.timedOut || runResult.code !== 0) {
+      if (runResult.spawnError || runResult.timedOut || runResult.code !== 0) {
         const stderrText = stderr;
         const stdoutText = stdout;
-        const failureClass = classifyPicoCliFailure(stderrText, stdoutText);
+        const failureClass = runResult.spawnError ? "runtime" : classifyPicoCliFailure(stderrText, stdoutText);
         const failTail = `${stderrText}\n${stdoutText}`.trim().split("\n").slice(-8).join("\n");
         return okJsonStructured({
           status: "failed",
@@ -172,14 +172,24 @@ export function registerPerfTraceTools(server: McpServer) {
         ...provenance,
       };
       if (artifact) {
-        // Exit 0 is not evidence the artifact exists — stat it and say which.
-        const exists = fs.existsSync(artifact);
+        // Exit 0 is not evidence the artifact is a non-empty regular file — stat once and fail closed.
+        const inspection = inspectPicoCliArtifact(artifact);
+        const artifactOk = inspection.exists === true && inspection.regularFile && (inspection.bytes ?? 0) > 0;
+        const artifactFailure = inspection.statError
+          ? `could not be stat-checked: ${inspection.statError}`
+          : inspection.exists === false
+            ? "missing"
+            : !inspection.regularFile
+              ? "not a regular file"
+              : "empty";
         out.artifact = artifact;
-        out.artifactExists = exists;
-        out.artifactBytes = exists ? fs.statSync(artifact).size : null;
-        if (!exists) {
+        if (inspection.exists !== null) out.artifactExists = inspection.exists;
+        out.artifactBytes = inspection.bytes;
+        if (!artifactOk) {
           out.status = "failed";
-          out.note = `pico-cli exited 0 but the expected output file is missing at ${artifact} — treat as failed.`;
+          out.failureClass = "runtime";
+          out.note = `pico-cli exited 0 but the expected output file is ${artifactFailure} at ${artifact} — treat as failed.`;
+          if (inspection.statError) out.error = inspection.statError;
         }
       }
       if (action === "load") {

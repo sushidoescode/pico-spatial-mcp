@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { okJson, tail, okJsonStructured } from "./util.js";
-import { ensurePicoCli, picoCliProvenance, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, cliWrapperContractShape } from "./picocli.js";
+import { ensurePicoCli, picoCliProvenance, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, cliWrapperContractShape, inspectPicoCliArtifact } from "./picocli.js";
 
 /**
  * picoclitools.ts — v31: thin evidence primitives over the official pico-cli.
@@ -102,18 +102,23 @@ export function registerPicoCliTools(server: McpServer) {
 
       const r = await runPicoCli(cli, args, { timeoutMs: sec * 1000 });
       const output = `${r.stdout}\n${r.stderr}`.trim();
-      if (!r.timedOut && r.code !== 0) {
-        const failureClass = classifyPicoCliFailure(r.stderr, r.stdout);
+      const cleanDurationCap = r.timedOut && !r.spawnError;
+      const cleanCliExit = !r.timedOut && !r.spawnError && r.code === 0;
+      if (!cleanDurationCap && !cleanCliExit) {
+        const failureClass = r.spawnError ? "runtime" : classifyPicoCliFailure(r.stderr, r.stdout);
         return okJsonStructured({
           status: "failed",
           failureClass,
-          note: failureClass === "flag-or-version-drift"
+          note: r.spawnError
+            ? "pico-cli app watch-crash did not satisfy its bounded execution and managed-integrity checks — treat the watch window as failed."
+            : failureClass === "flag-or-version-drift"
             ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its watch-crash surface drifted from the 0.3.0/0.4.2 flags this wrapper was verified against.`
             : failureClass === "setup-required"
               ? "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
               : "pico-cli app watch-crash exited before the window elapsed — read outputTail (the CLI's own words) before assuming a cause.",
           ...(failureClass === "setup-required" ? { setupCommand: { path: cli.path, args: ["setup"] } } : {}),
           exitCode: r.code,
+          ...(r.spawnError ? { error: r.spawnError } : {}),
           ...(output ? { outputTail: tail(output, 20) } : {}),
           ...(r.outputTruncated ? { outputTruncated: true } : {}),
           ...provenance,
@@ -184,12 +189,14 @@ export function registerPicoCliTools(server: McpServer) {
       // The CLI blocks for the recording duration, then pulls the file — allow generous pull time.
       const r = await runPicoCli(cli, args, { timeoutMs: (sec + 120) * 1000 });
       const output = `${r.stdout}\n${r.stderr}`.trim();
-      if (r.timedOut || r.code !== 0) {
-        const failureClass = classifyPicoCliFailure(r.stderr, r.stdout);
+      if (r.spawnError || r.timedOut || r.code !== 0) {
+        const failureClass = r.spawnError ? "runtime" : classifyPicoCliFailure(r.stderr, r.stdout);
         return okJsonStructured({
           status: "failed",
           failureClass,
-          note: r.timedOut
+          note: r.spawnError
+            ? "pico-cli capture record did not satisfy its bounded execution and managed-integrity checks — treat the recording as failed."
+            : r.timedOut
             ? `pico-cli capture record did not finish within ${sec + 120}s and was killed — read outputTail.`
             : failureClass === "flag-or-version-drift"
               ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its capture surface drifted from the 0.3.0/0.4.2 flags this wrapper was verified against.`
@@ -198,23 +205,35 @@ export function registerPicoCliTools(server: McpServer) {
                 : "pico-cli capture record failed at runtime — read outputTail (the CLI's own words) before assuming a cause.",
           ...(failureClass === "setup-required" ? { setupCommand: { path: cli.path, args: ["setup"] } } : {}),
           exitCode: r.code,
+          ...(r.spawnError ? { error: r.spawnError } : {}),
           ...(output ? { outputTail: tail(output, 20) } : {}),
           ...(r.outputTruncated ? { outputTruncated: true } : {}),
           ...provenance,
         });
       }
-      // Exit 0 is not evidence the recording exists — stat it and say which.
-      const exists = fs.existsSync(artifact);
-      const bytes = exists ? fs.statSync(artifact).size : null;
+      // Exit 0 is not evidence the recording is a non-empty regular file — stat once and fail closed.
+      const inspection = inspectPicoCliArtifact(artifact);
+      const artifactOk = inspection.exists === true && inspection.regularFile && (inspection.bytes ?? 0) > 0;
+      const artifactFailure = inspection.statError
+        ? `could not be stat-checked: ${inspection.statError}`
+        : inspection.exists === false
+          ? "missing"
+          : !inspection.regularFile
+            ? "not a regular file"
+            : "empty";
       return okJsonStructured({
-        status: exists && (bytes ?? 0) > 0 ? "ok" : "failed",
+        status: artifactOk ? "ok" : "failed",
         artifact,
-        artifactExists: exists,
-        artifactBytes: bytes,
+        ...(inspection.exists === null ? {} : { artifactExists: inspection.exists }),
+        artifactBytes: inspection.bytes,
         durationSec: sec,
-        ...(exists && (bytes ?? 0) > 0
+        ...(artifactOk
           ? {}
-          : { note: `pico-cli exited 0 but the recording at ${artifact} is ${exists ? "empty" : "missing"} — treat as failed.` }),
+          : {
+              failureClass: "runtime",
+              note: `pico-cli exited 0 but the recording at ${artifact} is ${artifactFailure} — treat as failed.`,
+              ...(inspection.statError ? { error: inspection.statError } : {}),
+            }),
         ...(output ? { outputTail: tail(output, 12) } : {}),
         ...(r.outputTruncated ? { outputTruncated: true } : {}),
         honesty: RECORD_HONESTY,

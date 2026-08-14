@@ -36,6 +36,7 @@ export const PICO_CLI_INSTALL_TIMEOUT_MS = 120_000;
 const PICO_CLI_PROBE_TIMEOUT_MS = 15_000;
 const PICO_CLI_OUTPUT_CAP_BYTES = 64 * 1024;
 const PICO_CLI_KILL_GRACE_MS = 1_000;
+const PICO_CLI_COMPLETION_VALIDATION_TIMEOUT_MS = 15_000;
 
 /**
  * picocli.ts — the ONE shared managed-resolution lane for the official @picoxr/pico-cli binary.
@@ -242,6 +243,37 @@ export type PicoCliCommandResult = {
   outputTruncated: boolean;
 };
 
+export type PicoCliArtifactInspection = {
+  /** null means the stat itself failed for a reason other than a definite missing path. */
+  exists: boolean | null;
+  regularFile: boolean;
+  bytes: number | null;
+  statError?: string;
+};
+
+/** One point-in-time, non-throwing artifact check shared by exit-zero CLI wrappers. */
+export function inspectPicoCliArtifact(artifactPath: string): PicoCliArtifactInspection {
+  try {
+    const stat = fs.statSync(artifactPath);
+    return {
+      exists: true,
+      regularFile: stat.isFile(),
+      bytes: stat.size,
+    };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return { exists: false, regularFile: false, bytes: null };
+    }
+    return {
+      exists: null,
+      regularFile: false,
+      bytes: null,
+      statError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export type PicoCliRunOptions = {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -250,6 +282,12 @@ export type PicoCliRunOptions = {
   timeoutMs?: number;
   killGraceMs?: number;
   maxOutputBytes?: number;
+  /**
+   * Internal cooperative bound for the post-completion managed-store validation. It is capped at
+   * 15 seconds and starts only after the command/process-tree cleanup has completed, so an
+   * intentional command timeout cannot consume the validation's budget.
+   */
+  completionValidationTimeoutMs?: number;
   /**
    * Internal managed-store guards. They run synchronously adjacent to process creation and must
    * cooperate with the supplied deadline; JavaScript cannot interrupt a blocked synchronous call.
@@ -291,11 +329,13 @@ function appendCapped(current: string, chunk: Buffer | string, cap: number): { t
 }
 
 /**
- * Run a child with captured, capped output and a hard settlement bound once synchronous internal
+ * Run a child with captured, capped output and bounded cleanup once synchronous internal
  * validation returns. All children receive the complete server environment plus explicit
  * overrides. On timeout, kill the process group on POSIX or the process tree on Windows, then
- * settle even if a grandchild inherited stdio. Internal validation receives the same deadline and
- * must cooperate with it; Node cannot preempt a blocked synchronous callback.
+ * settle even if a grandchild inherited stdio. Pre/post-spawn validation shares the command
+ * deadline. Post-completion validation gets its own bounded window after ordinary completion or
+ * cleanup, because an intentional duration timeout must not consume the guard's entire budget.
+ * Node cannot preempt a blocked synchronous callback; every guard must cooperate with its deadline.
  */
 function runPicoCliCommandWithRuntime(
   command: string,
@@ -309,15 +349,24 @@ function runPicoCliCommandWithRuntime(
   const childEnv = { ...(opts.baseEnv ?? process.env), ...opts.env };
   const platform = processTreeRuntime.platform;
   const commandDeadlineMs = Date.now() + Math.max(0, timeoutMs);
+  const requestedCompletionValidationTimeoutMs = opts.completionValidationTimeoutMs
+    ?? PICO_CLI_COMPLETION_VALIDATION_TIMEOUT_MS;
+  const completionValidationTimeoutMs = Number.isFinite(requestedCompletionValidationTimeoutMs)
+    ? Math.max(1, Math.min(
+        PICO_CLI_COMPLETION_VALIDATION_TIMEOUT_MS,
+        Math.trunc(requestedCompletionValidationTimeoutMs),
+      ))
+    : PICO_CLI_COMPLETION_VALIDATION_TIMEOUT_MS;
 
   const synchronousSpawnCheck = (
     check: ((deadlineMs: number) => string | null) | undefined,
     phase: "pre-spawn" | "post-spawn" | "post-completion",
+    deadlineMs = commandDeadlineMs,
   ): { failure: string | null; exhausted: boolean } => {
-    if (!check) return { failure: null, exhausted: Date.now() >= commandDeadlineMs };
+    if (!check) return { failure: null, exhausted: Date.now() >= deadlineMs };
     try {
-      const failure = check(commandDeadlineMs);
-      const exhausted = Date.now() >= commandDeadlineMs;
+      const failure = check(deadlineMs);
+      const exhausted = Date.now() >= deadlineMs;
       return {
         failure: failure
           ? `${phase} validation failed: ${failure}`
@@ -326,14 +375,14 @@ function runPicoCliCommandWithRuntime(
               ? "pre-spawn validation exhausted the command timeout before process creation"
               : phase === "post-spawn"
                 ? "post-spawn validation exhausted the command timeout after process creation, before validation could settle"
-                : "post-completion validation exhausted the command timeout after process completion"
+                : "post-completion validation exhausted its validation deadline after process completion"
             : null,
         exhausted,
       };
     } catch (error) {
       return {
         failure: `${phase} validation failed: ${error instanceof Error ? error.message : String(error)}`,
-        exhausted: Date.now() >= commandDeadlineMs,
+        exhausted: Date.now() >= deadlineMs,
       };
     }
   };
@@ -379,8 +428,13 @@ function runPicoCliCommandWithRuntime(
     const runCompletionValidation = (): string | null => {
       if (completionValidationRan) return null;
       completionValidationRan = true;
-      const completed = synchronousSpawnCheck(opts.afterCompletion, "post-completion");
-      timedOut ||= completed.exhausted;
+      if (!opts.afterCompletion) return null;
+      const validationDeadlineMs = Date.now() + completionValidationTimeoutMs;
+      const completed = synchronousSpawnCheck(
+        opts.afterCompletion,
+        "post-completion",
+        validationDeadlineMs,
+      );
       return completed.failure;
     };
 

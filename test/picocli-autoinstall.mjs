@@ -280,6 +280,43 @@ test("post-completion rejection owns one Windows process-tree cleanup through se
     `completion rejection must cancel the command timer and retain sole cleanup ownership: ${JSON.stringify(treeCalls)}`);
 });
 
+test("a managed command timeout gets a fresh bounded post-completion validation deadline", async () => {
+  const harness = createHarness({ latestVersion: "0.4.2" });
+  const managedRoot = path.join(harness.root, "managed-timeout-validation");
+  const { result: ensured } = await provisionManagedFixtureVersion(harness, managedRoot, "0.4.2");
+  const cli = picoCliFromEnsure(ensured);
+  assert.ok(cli, JSON.stringify(ensured));
+
+  const result = await runPicoCli(cli, ["fixture-hang"], {
+    timeoutMs: 100,
+    killGraceMs: 25,
+  });
+
+  assert.equal(result.timedOut, true, JSON.stringify(result));
+  assert.equal(result.spawnError, undefined,
+    `the intentional command timeout must not exhaust a separate post-completion guard: ${JSON.stringify(result)}`);
+  const invocation = harness.calls().find((call) => call.role === "managed-cli" && call.args[1] === "fixture-hang");
+  assert.ok(invocation?.pid, JSON.stringify(harness.calls()));
+  await waitForProcessExit(invocation.pid);
+});
+
+test("the separate post-completion validation deadline remains cooperatively bounded", async () => {
+  let receivedBudgetMs = null;
+  const result = await runPicoCliCommand(process.execPath, ["-e", "process.exit(0)"], {
+    timeoutMs: 2_000,
+    completionValidationTimeoutMs: 25,
+    afterCompletion: (deadlineMs) => {
+      receivedBudgetMs = deadlineMs - Date.now();
+      while (Date.now() <= deadlineMs) { /* model a cooperative synchronous validation at its bound */ }
+      return null;
+    },
+  });
+
+  assert.ok(receivedBudgetMs > 0 && receivedBudgetMs <= 25, `unexpected guard budget: ${receivedBudgetMs}`);
+  assert.equal(result.timedOut, false, JSON.stringify(result));
+  assert.match(result.spawnError ?? "", /post-completion validation exhausted its validation deadline/i);
+});
+
 test("default managed calls snapshot one call-time environment and home after import", { timeout: 15_000 }, () => {
   const harness = createManagedRuntimeHarness();
   const importHome = path.join(harness.root, "import-home");
@@ -1936,17 +1973,184 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
       const runtime = harness.calls().filter((call) => call.role === "managed-cli" && call.args[1] === "app");
       assert.ok(runtime.length >= 2, JSON.stringify(harness.calls()));
       assert.ok(runtime.every((call) => path.isAbsolute(present.picoCli.path)));
+      assert.equal(harness.calls().some((call) => call.args.includes("-g") || call.args.includes("--global")), false, JSON.stringify(harness.calls()));
+    });
+  });
 
+  await t.test("exit-zero missing capture and trace artifacts are runtime failures", async () => {
+    const harness = createManagedRuntimeHarness();
+    await withServer(harness, "full", async (client) => {
       const missingArtifactPath = path.join(harness.root, "recording-that-fixture-does-not-create.mp4");
       const artifactFailure = JSON.parse((await client.callTool({
         name: "capture_record",
         arguments: { durationSec: 1, outputPath: missingArtifactPath },
       })).content[0].text);
-      assert.equal(artifactFailure.status, "failed", JSON.stringify(artifactFailure));
-      assert.equal(artifactFailure.artifactExists, false);
-      assert.equal(artifactFailure.picoCli.action, "present");
-      assert.equal(artifactFailure.picoCli.path, present.picoCli.path);
+
+      const missingTracePath = path.join(harness.root, "trace-that-fixture-does-not-create.perfetto-trace");
+      const traceFailure = JSON.parse((await client.callTool({
+        name: "perf_trace",
+        arguments: { action: "record", durationSec: 5, outputPath: missingTracePath },
+      })).content[0].text);
+      const missingDecodedPath = path.join(harness.root, "decoded-trace-that-fixture-does-not-create.json");
+      const decodeFailure = JSON.parse((await client.callTool({
+        name: "perf_trace",
+        arguments: {
+          action: "decode",
+          tracePath: path.join(harness.root, "fixture-input.perfetto-trace"),
+          outputPath: missingDecodedPath,
+        },
+      })).content[0].text);
+
+      assert.deepEqual([
+        {
+          status: artifactFailure.status,
+          failureClass: artifactFailure.failureClass,
+          artifactExists: artifactFailure.artifactExists,
+          artifactBytes: artifactFailure.artifactBytes,
+        },
+        {
+          status: traceFailure.status,
+          failureClass: traceFailure.failureClass,
+          artifactExists: traceFailure.artifactExists,
+          artifactBytes: traceFailure.artifactBytes,
+        },
+        {
+          status: decodeFailure.status,
+          failureClass: decodeFailure.failureClass,
+          artifactExists: decodeFailure.artifactExists,
+          artifactBytes: decodeFailure.artifactBytes,
+        },
+      ], [
+        { status: "failed", failureClass: "runtime", artifactExists: false, artifactBytes: null },
+        { status: "failed", failureClass: "runtime", artifactExists: false, artifactBytes: null },
+        { status: "failed", failureClass: "runtime", artifactExists: false, artifactBytes: null },
+      ]);
+      assert.ok(path.isAbsolute(artifactFailure.picoCli.path));
+      assert.equal(traceFailure.picoCli.path, artifactFailure.picoCli.path);
+      assert.equal(decodeFailure.picoCli.path, artifactFailure.picoCli.path);
       assert.equal(harness.calls().some((call) => call.args.includes("-g") || call.args.includes("--global")), false, JSON.stringify(harness.calls()));
+    });
+  });
+
+  await t.test("exit-zero empty capture and trace artifacts are runtime failures", async () => {
+    const harness = createManagedRuntimeHarness({ operationMode: "empty-artifact" });
+    await withServer(harness, "full", async (client) => {
+      const capturePath = path.join(harness.root, "empty-capture.mp4");
+      const capture = JSON.parse((await client.callTool({
+        name: "capture_record",
+        arguments: { durationSec: 1, outputPath: capturePath },
+      })).content[0].text);
+
+      const tracePath = path.join(harness.root, "empty-trace.perfetto-trace");
+      const trace = JSON.parse((await client.callTool({
+        name: "perf_trace",
+        arguments: { action: "record", durationSec: 5, outputPath: tracePath },
+      })).content[0].text);
+      const decodedPath = path.join(harness.root, "empty-decoded-trace.json");
+      const decoded = JSON.parse((await client.callTool({
+        name: "perf_trace",
+        arguments: {
+          action: "decode",
+          tracePath: path.join(harness.root, "fixture-input.perfetto-trace"),
+          outputPath: decodedPath,
+        },
+      })).content[0].text);
+
+      assert.deepEqual([
+        {
+          status: capture.status,
+          failureClass: capture.failureClass,
+          artifactExists: capture.artifactExists,
+          artifactBytes: capture.artifactBytes,
+        },
+        {
+          status: trace.status,
+          failureClass: trace.failureClass,
+          artifactExists: trace.artifactExists,
+          artifactBytes: trace.artifactBytes,
+        },
+        {
+          status: decoded.status,
+          failureClass: decoded.failureClass,
+          artifactExists: decoded.artifactExists,
+          artifactBytes: decoded.artifactBytes,
+        },
+      ], [
+        { status: "failed", failureClass: "runtime", artifactExists: true, artifactBytes: 0 },
+        { status: "failed", failureClass: "runtime", artifactExists: true, artifactBytes: 0 },
+        { status: "failed", failureClass: "runtime", artifactExists: true, artifactBytes: 0 },
+      ]);
+    });
+  });
+
+  await t.test("exit-zero directory capture and trace outputs are runtime failures", async () => {
+    const harness = createManagedRuntimeHarness({ operationMode: "directory-artifact" });
+    await withServer(harness, "full", async (client) => {
+      const capture = JSON.parse((await client.callTool({
+        name: "capture_record",
+        arguments: { durationSec: 1, outputPath: path.join(harness.root, "capture-directory") },
+      })).content[0].text);
+      const trace = JSON.parse((await client.callTool({
+        name: "perf_trace",
+        arguments: {
+          action: "record",
+          durationSec: 5,
+          outputPath: path.join(harness.root, "trace-directory"),
+        },
+      })).content[0].text);
+      const decoded = JSON.parse((await client.callTool({
+        name: "perf_trace",
+        arguments: {
+          action: "decode",
+          tracePath: path.join(harness.root, "fixture-input.perfetto-trace"),
+          outputPath: path.join(harness.root, "decoded-directory"),
+        },
+      })).content[0].text);
+
+      assert.deepEqual([capture, trace, decoded].map((result) => ({
+        status: result.status,
+        failureClass: result.failureClass,
+        artifactExists: result.artifactExists,
+      })), [
+        { status: "failed", failureClass: "runtime", artifactExists: true },
+        { status: "failed", failureClass: "runtime", artifactExists: true },
+        { status: "failed", failureClass: "runtime", artifactExists: true },
+      ]);
+      for (const result of [capture, trace, decoded]) {
+        assert.match(result.note ?? "", /not a regular file/i, JSON.stringify(result));
+      }
+    });
+  });
+
+  await t.test("watch_crash accepts a clean duration cap only when no runner or guard error exists", async () => {
+    const healthyHarness = createManagedRuntimeHarness({ operationMode: "hang" });
+    await withServer(healthyHarness, "full", async (client) => {
+      const healthy = JSON.parse((await client.callTool({
+        name: "watch_crash",
+        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+      })).content[0].text);
+      assert.equal(healthy.status, "ok", JSON.stringify(healthy));
+      assert.match(healthy.endedBy ?? "", /^duration-cap/);
+      assert.equal(Object.hasOwn(healthy, "failureClass"), false, JSON.stringify(healthy));
+      assert.equal(Object.hasOwn(healthy, "error"), false, JSON.stringify(healthy));
+    });
+  });
+
+  await t.test("watch_crash rejects a post-completion managed guard failure", {
+    skip: process.platform === "win32"
+      ? "this public fixture mutates from POSIX SIGTERM; Windows cleanup remains covered by the structural taskkill seam"
+      : false,
+  }, async () => {
+    const driftHarness = createManagedRuntimeHarness({ operationMode: "hang-tamper" });
+    await withServer(driftHarness, "full", async (client) => {
+      const rejected = JSON.parse((await client.callTool({
+        name: "watch_crash",
+        arguments: { packageName: "com.example.fixture", durationSec: 5 },
+      })).content[0].text);
+      assert.equal(rejected.status, "failed", JSON.stringify(rejected));
+      assert.equal(rejected.failureClass, "runtime", JSON.stringify(rejected));
+      assert.match(rejected.error ?? "", /post-completion validation failed.*managed pico-cli publication identity/i);
+      assert.equal(Object.hasOwn(rejected, "endedBy"), false, JSON.stringify(rejected));
     });
   });
 
