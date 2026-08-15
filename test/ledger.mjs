@@ -985,6 +985,8 @@ for (const variant of ["debug", "release"]) {
 const fakeShip = await callJson("ship_checklist", { app: deviceApp, projectDir: fakeShipProject });
 check("ship checklist never infers build/install/signing from .apk path existence", /^NOT READY/.test(fakeShip.verdict)
   && fakeShip.blockers.some((line) => /not bound|receipt|verified build/i.test(line))
+  && fakeShip.receipt?.status === "no-current-receipt"
+  && Array.isArray(fakeShip.receipt?.rejectedCandidates)
   && !fakeShip.ready.some((line) => /builds|installs|release APK/i.test(line)));
 const fakeWebProject = path.join(scratch, "fake-web-project");
 fs.mkdirSync(fakeWebProject, { recursive: true });

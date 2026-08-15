@@ -6,6 +6,7 @@ import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
 import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, readLedger } from "./ledger.js";
+import { findHistoricalNativeRunReceipt } from "./runreceiptstore.js";
 
 /**
  * doors.ts — THE DOORS (v21): an intent-level facade over the full tool surface.
@@ -108,7 +109,7 @@ export function loopSpecMutated(before: unknown, after: unknown): boolean {
 /** A hardware LOOK with an explicit failing outcome is valuable negative evidence, but it must
  * never advance pico_next as though the app had earned positive visual proof. */
 export function isPositiveLookedEntry(entry: any): boolean {
-  return entry?.evidenceType === "vision_verified"
+  return (entry?.evidenceType === "vision_verified" && entry?.deviceOutcome !== "fail")
     || isPassingDeviceEvidence(entry);
 }
 
@@ -504,10 +505,14 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
 
   door(
     "pico_ship",
-    "DOOR 10 — Run the honest ship checklist on a built app project: signing, icon, manifest, verified evidence. Returns READY or the exact gaps.",
-    { projectDir: z.string(), packageName: z.string().optional() },
+    "DOOR 10 — Transparently run the honest ship checklist for an app/lane/project. Native debug provenance clears only when current bytes match a digest-bound v1 run receipt and its exact capture has an effective receipt-linked LOOK. The debug receipt never clears release APK, release signing, store, web-deploy, Swan-hardware, or Windows boundaries.",
+    {
+      app: z.string().regex(CANONICAL_APP_KEY_PATTERN).describe("Canonical native applicationId or web app ledger key."),
+      lane: z.enum(["native", "web", "hybrid"]).optional().describe("Checklist lane (default native)."),
+      projectDir: z.string().optional().describe("Current project directory whose bytes the checklist must validate (uses ship_checklist's lane default when omitted)."),
+    },
     async (args) => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("ship_checklist", args);
     },
   );
@@ -654,7 +659,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       const calibration = readCameraCalibration();
 
       // briefstore + trust-ledger state, straight from the same files pico_build_app / fleet_build /
-      // record_verification write (userBriefsDir, ~/.pico-mcp/ledgers, fleet's capture dir).
+      // record_verification write (userBriefsDir, ~/.pico-mcp/ledgers, digest-bound run receipts).
       const home = process.env.HOME ?? "";
       const readLedgerEntries = (app: string): any[] => {
         try { return readLedger(app).effectiveEntries; } catch { return []; }
@@ -673,13 +678,25 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
         .slice(0, 5)
         .map(({ id, brief }) => {
           const projectDir = path.join(home, "AndroidStudioProjects", `fleet-${id}-native`);
-          const capture = `/tmp/pico-render/fleet/${id}/forward.png`; // fleet_build's shot path
-          const entries = readLedgerEntries(`com.fleet.${id}`);
-          const deviceFailures = entries.filter((e) => e.evidenceType === "device_verified" && e.deviceOutcome === "fail");
-          const looked = entries.some(isPositiveLookedEntry);
+          const app = `com.fleet.${id}`;
+          const entries = readLedgerEntries(app);
+          const historical = findHistoricalNativeRunReceipt(app);
+          const selectedReceipt = historical.status === "valid" ? historical.receipt : null;
+          const capture = selectedReceipt?.capture.artifactPath;
+          const receiptId = selectedReceipt?.receiptId;
+          const deviceFailures = entries.filter((entry) =>
+            (entry.evidenceType === "device_verified" || entry.claimedEvidenceType === "device_verified")
+            && entry.deviceOutcome === "fail",
+          );
+          const looked = selectedReceipt !== null && entries.some((entry) =>
+            isPositiveLookedEntry(entry)
+            && entry.runReceipt?.receiptId === selectedReceipt.receiptId
+            && entry.runReceipt?.captureSha256 === selectedReceipt.capture.sha256
+            && entry.capture?.sha256 === selectedReceipt.capture.sha256,
+          );
           const state = deviceFailures.length ? "device-verified-failure"
             : looked ? "vision-recorded"
-            : fs.existsSync(capture) ? (entries.some((e) => e.evidenceType === "auto_judged") ? "auto-judged-needs-look" : "built-needs-look")
+            : selectedReceipt ? (entries.some((e) => e.evidenceType === "auto_judged") ? "auto-judged-needs-look" : "built-needs-look")
             : fs.existsSync(path.join(projectDir, "app/build/outputs/apk/debug/app-debug.apk")) ? "built-no-capture"
             : fs.existsSync(projectDir) ? "scaffolded-no-apk"
             : "planned-not-built";
@@ -690,7 +707,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
             brief,
             state,
             ...(deviceFailures.length ? { deviceFailures: deviceFailures.map((entry) => ({ seq: entry.seq, feature: entry.deviceFeature, claim: entry.claim })) } : {}),
-            ...(fs.existsSync(capture) ? { capture } : {}),
+            ...(capture && receiptId ? { capture, receiptId } : {}),
           };
         });
       const needsLook = briefs.filter((b) => b.state === "built-needs-look" || b.state === "auto-judged-needs-look");
@@ -701,7 +718,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       if (failing.length)
         actions.push({ door: "pico_doctor", argsExample: {}, why: `preflight reports ${failing.length} failing check(s) (${failing.map((c: any) => c.name).join(", ")}) — each carries the exact fix; nothing downstream is trustworthy until they pass.` });
       for (const b of needsLook.slice(0, 2))
-        actions.push({ door: "pico_record", argsExample: { app: `com.fleet.${b.id}`, claim: "<what the brief promised, as observed>", evidenceType: "vision_verified", artifactPath: b.capture, attestation: "<what you actually saw in the frame>" }, why: `'${b.id}' is ${b.state}: a capture exists at ${b.capture} but its trust ledger has no human-LOOKED entry — READ that image first, then record what you saw (the ledger rejects the entry without a real frame + attestation).` });
+        actions.push({ door: "pico_record", argsExample: { app: `com.fleet.${b.id}`, claim: "<what the brief promised, as observed>", evidenceType: "vision_verified", artifactPath: b.capture, runReceiptId: b.receiptId, attestation: "<what you actually saw in the frame>" }, why: `'${b.id}' is ${b.state}: historical receipt ${b.receiptId} preserves the exact capture at ${b.capture}, but its trust ledger has no matching human-LOOKED entry — READ that exact image first, then record what you saw with the receipt ID.` });
       for (const b of deviceFailed.slice(0, 1))
         actions.push({ door: "pico_build_app", argsExample: { brief: b.brief, draftSpec: `<the stored spec — ${path.join(userBriefsDir(), `${b.id}.json`)}>` }, why: `'${b.id}' has a device-verified FAIL finding (${(b as any).deviceFailures?.map((failure: any) => failure.feature ?? failure.claim).join(", ") ?? "feature unknown"}). The LOOK is already recorded, but it is negative evidence: repair the authored spec/app and re-measure rather than calling it vision-recorded.` });
       if (unbuilt.length) {

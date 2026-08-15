@@ -102,6 +102,31 @@ The graph is broad contextual evidence, not an exact symbol oracle. Use `vault_a
 SDK signatures and file/line citations. `preflight_lint(..., knowledgeSecondOpinion: "...")` opts
 into `query_graph` only; its separate advisory block never changes lint `clean`.
 
+## Digest-bound native run receipt v1
+
+The unattended POSIX/emulator fleet lane publishes one `fleet-native-debug` structural receipt only
+after the exact normalized/effective AppSpec, bounded Gradle inputs, AGP-selected debug APK,
+installed APK bytes, package/session/PID/foreground continuity, and capture CAS all agree.
+`fleet_build` returns `receipt.status`, `receiptId`, `receiptPath`, `capturePath`,
+`sourceCapturePath`, `captureSha256`, `evidenceType: "structural"`, and `lookRequired: true` per
+successful brief. Door 1 exposes the same stable identity as top-level `receiptId`, `receiptPath`,
+and `capture`.
+
+The receipt is not visual evidence. Open the exact returned `capture`, describe only what was
+actually seen, then call `pico_record`/`record_verification` with `artifactPath` set to that capture
+and `runReceiptId` set to the returned receipt ID. Do not substitute a mutable `forward.png`, a
+later capture, or an unlinked historical LOOK. `pico_next` uses the newest valid historical
+receipt to preserve this capture/ID pair.
+
+For native shipping, call `pico_ship` or `ship_checklist` with the same
+`{app,lane:"native",projectDir}`. The checklist uses current-project validation and only reports
+`accepted-current-bytes` when an effective `vision_verified` row or passing `device_verified` row
+matches the receipt ID and both capture hashes. Retractions, broken provenance, device failures,
+and structural/automated/log/USD rows do not count. This clears only the debug-receipt blocker;
+release APK/signing/store readiness remains `NOT READY`. V1 does not cover web/hybrid deployment,
+Swan or other hardware, native Windows, or rendered appearance, and it does not turn receipt
+creation into a ledger row.
+
 ## The build loop
 
 1. **`validate_toolchain`** — fix anything it flags (missing JDK → it auto-detects the

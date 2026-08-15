@@ -377,6 +377,19 @@ const expected = [...DOORS, "validate_toolchain", "ensure_pico_cli"].sort();
 if (JSON.stringify(tools) === JSON.stringify(expected)) ok(`doors surface exposes exactly ${expected.length} tools`);
 else fail(`surface mismatch — got [${tools.join(", ")}]`);
 
+const picoShipDefinition = toolDefinitions.find((tool) => tool.name === "pico_ship");
+const picoShipSchema = picoShipDefinition?.inputSchema;
+if (picoShipSchema?.properties?.app?.pattern === "^[a-z0-9][a-z0-9._-]{0,199}$"
+    && JSON.stringify(picoShipSchema?.properties?.lane?.enum) === JSON.stringify(["native", "web", "hybrid"])
+    && picoShipSchema?.properties?.projectDir?.type === "string"
+    && !picoShipSchema?.properties?.packageName
+    && picoShipSchema?.required?.includes("app")
+    && !picoShipSchema?.required?.includes("projectDir")
+    && /digest-bound|receipt/i.test(picoShipDefinition?.description ?? "")
+    && /release|signing|store/i.test(picoShipDefinition?.description ?? ""))
+  ok("pico_ship exposes the exact app/lane/projectDir checklist contract and debug-only receipt boundary");
+else fail(`pico_ship schema or receipt boundary drifted: ${JSON.stringify(picoShipDefinition)}`);
+
 const picoRecordSchema = toolDefinitions.find((tool) => tool.name === "pico_record")?.inputSchema;
 const picoRecordDescription = toolDefinitions.find((tool) => tool.name === "pico_record")?.description ?? "";
 const picoRecordEvidenceTypes = picoRecordSchema?.properties?.evidenceType?.enum ?? [];

@@ -6,6 +6,32 @@ import * as os from "node:os";
 import { okJson } from "./util.js";
 import { isPassingDeviceEvidence, readLedger } from "./ledger.js";
 import { validateCapture } from "./evidence.js";
+import { findCurrentNativeRunReceipt } from "./runreceiptstore.js";
+
+export type NativeShipReceiptSummary =
+  | {
+      status: "accepted-current-bytes";
+      receiptId: string;
+      receiptPath: string;
+      apkSha256: string;
+      captureSha256: string;
+      linkedLook: { seq: number; evidenceType: "vision_verified" | "device_verified" };
+      rejectedCandidates: Array<{ receiptId: string; issues: string[] }>;
+    }
+  | {
+      status: "needs-linked-look";
+      receiptId: string;
+      receiptPath: string;
+      apkSha256: string;
+      captureSha256: string;
+      rejectedCandidates: Array<{ receiptId: string; issues: string[] }>;
+    }
+  | { status: "no-current-receipt"; rejectedCandidates: Array<{ receiptId: string; issues: string[] }> }
+  | { status: "invalid-store"; issues: string[] };
+
+function isPositiveVisionEvidence(entry: any): boolean {
+  return entry?.evidenceType === "vision_verified" && entry?.deviceOutcome !== "fail";
+}
 
 /**
  * ship.ts — v10.22 (P20): the SHIP path — package + honest production checklist.
@@ -21,7 +47,7 @@ export function registerShipTools(server: McpServer) {
     "ship_checklist",
     {
       description:
-        "Honest PRODUCTION-READINESS checklist (P20). Reads the effective ledger and reports build paths without treating their existence as build/install/signing proof. An intact device_verified PASS row whose looked-at bytes matched a same-serial live screencap satisfies the positive visual-proof gate just as vision_verified does; device FAIL rows remain explicit blockers, and legacy rows without live identity/capture lineage are downgraded on read. Native READY remains blocked until a future digest-bound receipt ties current APK bytes to install/session evidence and the looked-at frame.",
+        "Honest PRODUCTION-READINESS checklist (P20). Reads the effective ledger and reports build paths without treating their existence as build/install/signing proof. For native debug bytes, it requires a current digest-bound v1 run receipt plus one exact receipt-linked vision_verified or passing device_verified LOOK. Device FAIL rows remain blockers. The v1 receipt is debug-only and never clears release APK, release signing, or store-submission boundaries.",
       inputSchema: {
         app: z.string().describe("App id — native applicationId or web app id (matches a ledger)."),
         lane: z.enum(["native", "web", "hybrid"]).optional().describe("Which lane (default native)."),
@@ -31,15 +57,20 @@ export function registerShipTools(server: McpServer) {
     async ({ app, lane, projectDir }) => {
       const ln = lane ?? "native";
       const ready: string[] = [], deferred: string[] = [], blockers: string[] = [];
+      const receiptAuditWarnings: string[] = [];
+      let receipt: NativeShipReceiptSummary | undefined;
       // ledger evidence
       let entries: any[] = [];
       let ledgerError: string | null = null;
       try { entries = readLedger(app).effectiveEntries; } catch (error: any) { ledgerError = error?.message ?? String(error); }
       const byType: Record<string, number> = {};
       for (const e of entries) byType[e.evidenceType] = (byType[e.evidenceType] ?? 0) + 1;
-      const vision = byType.vision_verified ?? 0;
+      const vision = entries.filter(isPositiveVisionEvidence).length;
       const devicePass = entries.filter(isPassingDeviceEvidence).length;
-      const deviceFail = entries.filter((entry) => entry.evidenceType === "device_verified" && entry.deviceOutcome === "fail").length;
+      const deviceFail = entries.filter((entry) =>
+        (entry.evidenceType === "device_verified" || entry.claimedEvidenceType === "device_verified")
+        && entry.deviceOutcome === "fail",
+      ).length;
       if (devicePass > 0) ready.push(`${devicePass} positive device-verified proof(s) on file (a human/agent LOOKED; hardware lineage validated; outcome=pass)`);
       if (deviceFail > 0) blockers.push(`${deviceFail} device-verified failed outcome(s) on file — these are looked-at negative findings, not positive readiness proof.`);
       if (vision > 0) ready.push(`${vision} vision-verified proof(s) on file (a human/agent LOOKED)`);
@@ -58,10 +89,48 @@ export function registerShipTools(server: McpServer) {
         else blockers.push("no debug APK path found — run build_and_run / assembleDebug.");
         if (fs.existsSync(releaseApk)) deferred.push(`release APK path exists (${releaseApk}); signing and installability are unverified.`);
         else blockers.push("no RELEASE APK path — for store/sideload distribution add a signingConfig + assembleRelease.");
-        // No current receipt format binds an APK digest to both a verified install/session and the
-        // looked-at capture. Failing closed here prevents an arbitrary or replaced file named .apk
-        // from inheriting historical visual proof and producing READY.
-        blockers.push("no verified build receipt binds the current APK bytes to install/session evidence and the looked-at frame; ship_checklist cannot establish native readiness from file existence.");
+        blockers.push("the v1 native run receipt is fleet-native-debug only; release APK signing identity, release installability, and store submission remain unverified.");
+
+        const selection = findCurrentNativeRunReceipt(app, pdir);
+        if (selection.status === "invalid-store") {
+          receipt = { status: "invalid-store", issues: selection.issues };
+          blockers.push(`no verified build receipt can be selected because the native receipt store is invalid: ${selection.issues.join("; ")}`);
+        } else if (selection.status === "none") {
+          receipt = { status: "no-current-receipt", rejectedCandidates: selection.rejectedCandidates };
+          blockers.push("no verified build receipt binds the current APK bytes to install/session evidence and the looked-at frame; ship_checklist cannot establish native debug readiness from file existence.");
+          for (const candidate of selection.rejectedCandidates) {
+            receiptAuditWarnings.push(`rejected native receipt candidate ${candidate.receiptId}: ${candidate.issues.join("; ")}`);
+          }
+        } else {
+          for (const candidate of selection.rejectedCandidates) {
+            receiptAuditWarnings.push(`rejected native receipt candidate ${candidate.receiptId}: ${candidate.issues.join("; ")}`);
+          }
+          const linkedLook = entries.find((entry) =>
+            (isPositiveVisionEvidence(entry) || isPassingDeviceEvidence(entry))
+            && entry.runReceipt?.receiptId === selection.receipt.receiptId
+            && entry.runReceipt?.captureSha256 === selection.receipt.capture.sha256
+            && entry.capture?.sha256 === selection.receipt.capture.sha256,
+          );
+          const common = {
+            receiptId: selection.receipt.receiptId,
+            receiptPath: selection.receiptPath,
+            apkSha256: selection.receipt.apk.sha256,
+            captureSha256: selection.receipt.capture.sha256,
+            rejectedCandidates: selection.rejectedCandidates,
+          };
+          if (linkedLook) {
+            const evidenceType = linkedLook.evidenceType as "vision_verified" | "device_verified";
+            receipt = {
+              status: "accepted-current-bytes",
+              ...common,
+              linkedLook: { seq: linkedLook.seq, evidenceType },
+            };
+            ready.push(`current fleet-native-debug bytes are bound by receipt ${selection.receipt.receiptId}: APK sha256 ${selection.receipt.apk.sha256}, capture sha256 ${selection.receipt.capture.sha256}, exact linked ${evidenceType} LOOK at ledger seq ${linkedLook.seq}.`);
+          } else {
+            receipt = { status: "needs-linked-look", ...common };
+            blockers.push(`no verified build receipt binds the current APK bytes to an exact effective receipt-linked LOOK; current receipt ${selection.receipt.receiptId} passed byte/session validation, but capture sha256 ${selection.receipt.capture.sha256} still needs vision_verified or passing device_verified evidence recorded with that receipt ID.`);
+          }
+        }
         deferred.push("boundless walk-around immersion + true head-tracked depth activate on PICO Swan hardware (emulator ceiling C1/C2).");
       }
       if (ln === "web" || ln === "hybrid") {
@@ -82,14 +151,16 @@ export function registerShipTools(server: McpServer) {
         blockers.push("no digest-bound web build/deploy receipt ties the current entrypoint and assets to a successful host/browser session and the looked-at frame.");
         deferred.push("WebSpatial spatial depth depends on PICO OS 6; this checklist does not establish that the current 2D projection is deployable or shippable.");
         if (ln === "web") deferred.push("static hosting is a deployment option after the web receipt gate is satisfied; it has not been established by this checklist.");
-        else deferred.push("web control/HUD panels are intended to ship inside the APK, but inherit the native digest/install receipt blocker.");
+        else deferred.push("web control/HUD panels are intended to ship inside the APK, but retain the native release/signing boundary and this checklist's separate web receipt blocker.");
       }
       const verdict = blockers.length === 0 ? "READY (within the honest scope below)" : `NOT READY — ${blockers.length} blocker(s)`;
       return okJson({
         status: "ok", app, lane: ln, verdict,
         ready, deferred, blockers,
+        ...(receipt ? { receipt } : {}),
+        ...(receiptAuditWarnings.length ? { receiptAuditWarnings } : {}),
         evidenceSummary: { ...byType, deviceVerifiedPass: devicePass, deviceVerifiedFail: deviceFail },
-        honesty: "'Ready' means verified within the evidence's honest scope; 'deferred' items need Swan/OS6 or additional proof; 'blockers' must be resolved before claiming production. File existence is not build/install/deploy evidence and cannot bind historical visual proof to current native or web bytes; a future digest-bound verification receipt is required.",
+        honesty: "'Ready' means verified within the evidence's honest scope; 'deferred' items need Swan/OS6 or additional proof; 'blockers' must be resolved before claiming production. A current v1 native receipt plus an exact receipt-linked LOOK establishes only the named fleet-native-debug bytes. It does not establish release signing, store readiness, web deployment, Swan hardware, or Windows execution. File existence still proves none of those things.",
       });
     },
   );

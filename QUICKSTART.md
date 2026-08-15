@@ -55,7 +55,11 @@ order:
 
 3. **Adapt the scaffold** to your brief, then re-call **`pico_build_app({ brief, draftSpec })`**
    with the adapted spec. The pipeline now builds → installs → launches on the emulator → captures
-   a frame → judges it, and returns:
+   a frame → publishes a digest-bound native debug receipt → judges the receipt capture. Door 1
+   returns `receiptId`, `receiptPath`, and `capture`; the underlying `fleet_build` result also
+   returns `receipt.captureSha256`, `receipt.sourceCapturePath`,
+   `receipt.evidenceType: "structural"`, and `receipt.lookRequired: true`. A receipt proves the
+   exact build/install/session/capture identity, not what the pixels look like. Status is then:
    - `status: "auto-judged-needs-look"` — the calibrated eye returned `PASS` and its
      `auto_judged` row was durably recorded. This is an automated pre-check, never a substitute for
      looking and never a `verified` status.
@@ -71,9 +75,27 @@ order:
    - `status: "failed"` — read `notes`; asset-gated briefs name the missing prerequisite, build
      errors name the file. Feed the error text into `pico_fix` for the matched retained lesson.
 
-4. **`pico_look`** (or open the capture path `pico_build_app` returned) — actually look at the
-   image. That look is what turns a claim into `vision_verified`; record it with
-   `record_verification` if you want it in the trust ledger.
+4. **`pico_look`** (or open the exact `capture` path `pico_build_app` returned) — actually look at
+   that immutable receipt-bound image, not a mutable `forward.png` from another run.
+
+5. **`pico_record`** — record only what you actually observed, passing the matching receipt ID:
+
+   ```json
+   {
+     "app": "com.fleet.<brief-id>",
+     "claim": "<what was actually observed>",
+     "evidenceType": "vision_verified",
+     "artifactPath": "<the exact capture returned by pico_build_app>",
+     "runReceiptId": "<the returned receiptId>",
+     "attestation": "<what was actually seen in that frame>"
+   }
+   ```
+
+   `pico_ship({app,lane:"native",projectDir})` then revalidates current project/APK/AGP bytes and
+   the effective ledger row. `accepted-current-bytes` removes only the debug receipt blocker; the
+   verdict remains `NOT READY` while release APK/signing/store requirements remain. Receipt v1 is
+   the POSIX/emulator `fleet-native-debug` lane only: it proves no web deployment, Swan/hardware
+   behavior, native Windows execution, or rendered LOOK by itself.
 
 ## Clicking the in-world menu (baked in — no manual step)
 

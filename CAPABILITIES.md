@@ -42,6 +42,15 @@ Evidence totals: `vision_verified` 28 · `logcat` 27 · `structural` 90 · `comp
   `compile_spatial_experience` routes any brief to the right lane(s).
 
 ## Honest boundaries (and one retraction, on the record)
+- **Native run receipt v1 is structural, debug-only provenance.** On the POSIX/emulator fleet lane,
+  a producer-written receipt binds normalized/effective AppSpec identities, bounded Gradle inputs,
+  one AGP-selected debug APK and installed-byte digest, package/session/PID/foreground continuity,
+  and one immutable capture. `fleet_build` returns the full receipt object; Door 1 returns
+  `receiptId`, `receiptPath`, and the exact `capture`. The receipt creates no ledger evidence and
+  says nothing about its pixels. A separate LOOK recorded with that exact capture and
+  `runReceiptId` is required. `ship_checklist` can then accept only those current debug bytes while
+  remaining `NOT READY` for release APK/signing/store work. V1 establishes no web deployment,
+  Swan/hardware, native-Windows, release, or rendered-appearance claim.
 - **Knowledge evidence has two tiers.** `knowledge_api` provides broad contextual graph results
   through a persistent pico-cli session; availability or a graph answer is structural integration
   evidence, not proof that a symbol or signature is correct. `vault_api` remains authoritative for
