@@ -287,7 +287,12 @@ export function briefIdOf(brief: string): string {
 export function buildAppDoorStatus(result: any): "failed" | "built-not-installed" | "built-no-capture" | "auto-judged-needs-look" | "built-needs-look" {
   if (!result?.built) return "failed";
   if (!result?.installed) return "built-not-installed";
-  if (!result?.artifact) return "built-no-capture";
+  if (result?.receipt?.status !== "recorded"
+      || typeof result.receipt.receiptId !== "string"
+      || typeof result.receipt.receiptPath !== "string"
+      || typeof result.receipt.capturePath !== "string"
+      || result.artifact !== result.receipt.capturePath)
+    return "built-no-capture";
   if (result?.verdict === "PASS" && result?.visualLedger?.status === "recorded")
     return "auto-judged-needs-look";
   return "built-needs-look";
@@ -299,7 +304,13 @@ export async function innerCall(name: string, args: any = {}) {
   return call(name, args);
 }
 
-export function registerDoorTools(server: McpServer) {
+export interface DoorToolDependencies {
+  call: (name: string, args?: any) => Promise<any>;
+}
+
+export function registerDoorTools(server: McpServer, dependencies?: DoorToolDependencies) {
+  const doorCall = async (): Promise<DoorToolDependencies["call"]> =>
+    dependencies?.call ?? (await inner()).call;
   const door = (name: string, description: string, inputSchema: any, handler: (args: any) => Promise<any>) =>
     server.registerTool(name, { description, inputSchema }, async (args: any) => {
       try {
@@ -311,13 +322,13 @@ export function registerDoorTools(server: McpServer) {
 
   door(
     "pico_build_app",
-    "DOOR 1 — Build an evidence-scoped spatial app from a brief. TWO-STEP by design: call with just {brief} to receive a scaffold AppSpec (the planner never guesses your intent — YOU author); adapt the scaffold to the brief, then call again with {brief, draftSpec} to compile through the full pipeline (scaffold → codegen → gradle → install → launch on the emulator), capture a frame, and judge it. Apps default to the Mixed stage (stageStyle '1' — the passthrough home environment is the backdrop and content seats ON the room, mrtable-style); a fully-virtual app remains a first-class opt-in via meta.stageStyle '3' (Full). Honest expectation: a color-keyed authored MR scene with multiple saturated colors can be auto-judged; otherwise Mixed-stage builds land 'built-needs-look' and require a person or vision-capable agent to inspect the capture. Even a recorded calibrated-eye PASS returns 'auto-judged-needs-look', never 'verified': only the later human/agent LOOK can earn vision_verified. Returns the verdict, the capture path (LOOK at it before claiming anything works), and the project dir. Escalations mean a human/agent must look — that is the honesty contract, not an error.",
+    "DOOR 1 — Build an evidence-scoped spatial app from a brief. TWO-STEP by design: call with just {brief} to receive a scaffold AppSpec (the planner never guesses your intent — YOU author); adapt the scaffold to the brief, then call again with {brief, draftSpec} to compile through the full pipeline (scaffold → codegen → a fail-closed native run receipt). Apps default to the Mixed stage (stageStyle '1' — the passthrough home environment is the backdrop and content seats ON the room, mrtable-style); a fully-virtual app remains a first-class opt-in via meta.stageStyle '3' (Full). A recorded receipt is structural provenance for one exact build/install/session/capture, not visual proof. Returns its receiptId, receiptPath, and exact immutable capture; LOOK at that capture before claiming how it renders. Even a recorded calibrated-eye PASS returns 'auto-judged-needs-look', never 'verified': only the later human/agent LOOK can earn vision_verified.",
     {
       brief: z.string().describe("What to build, e.g. 'a primitive table standing on my real floor with bodies dropping onto it from a clickable menu' (Mixed-stage MR, the default; a fully-virtual brief opts into stage style 3)."),
       draftSpec: z.any().optional().describe("Your AppSpec, adapted from the scaffold a brief-only call returns. Omit on the first call."),
     },
     async ({ brief, draftSpec }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       const plan = await call("plan_app_spec", { brief, ...(draftSpec !== undefined ? { draftSpec } : {}) });
       if (plan?.status === "scaffold") return { status: "needs-authoring", scaffold: plan.scaffold, ...(plan.archetype ? { archetype: plan.archetype, archetypeWhy: plan.archetypeWhy } : {}), fix: "Adapt this scaffold to the brief (objects, layouts, counts, animation, menu — see each node's fields), then re-call pico_build_app with {brief, draftSpec: <adapted scaffold>}." };
       if (!plan?.spec) return { status: "plan-failed", detail: plan, fix: "Fix the problems named in detail (each detail.issues entry names the failing path, the expected shape, and a known-good example fragment to copy-adapt), then re-call with the corrected draftSpec." };
@@ -330,7 +341,8 @@ export function registerDoorTools(server: McpServer) {
       const r = fleet?.results?.[0] ?? {};
       const identity = (r.notes ?? []).find((n: any) => typeof n === "string" && n.startsWith("authored identity"));
       const status = buildAppDoorStatus(r);
-      const autoJudgedRecorded = r.verdict === "PASS" && r.visualLedger?.status === "recorded";
+      const autoJudgedRecorded = status === "auto-judged-needs-look";
+      const receipt = r.receipt?.status === "recorded" ? r.receipt : null;
       return {
         status,
         briefId: id,
@@ -338,12 +350,14 @@ export function registerDoorTools(server: McpServer) {
         installed: !!r.installed,
         verdict: r.verdict ?? null,
         autoJudgedRecorded,
-        capture: r.artifact ?? null,
+        receiptId: receipt?.receiptId ?? null,
+        receiptPath: receipt?.receiptPath ?? null,
+        capture: receipt?.capturePath ?? null,
         notes: r.notes ?? [],
         projectDir: `~/AndroidStudioProjects/fleet-${id}-native`,
         ...(identity ? { identity } : {}),
         ...(["failed", "built-not-installed", "built-no-capture"].includes(status) ? { fix: fixOf(`Read the notes — asset-gated briefs name the missing prerequisite; build/install/capture errors name the failing step. Then call pico_fix with the error text.`) } : {}),
-        honesty: "No Door 1 status means human-verified. 'auto-judged-needs-look' means the calibrated eye PASS was durably recorded; 'built-needs-look' means no durable auto_judged PASS is on file. In both cases, LOOK at `capture` before any vision_verified claim.",
+        honesty: "The returned receipt is structural provenance only. No Door 1 status means human-verified: even 'auto-judged-needs-look' is a calibrated machine PASS, not sight. LOOK at the exact receipt-bound `capture` before any vision_verified claim.",
       };
     },
   );
@@ -748,7 +762,10 @@ export function registerDoorTools(server: McpServer) {
       "manual repair. Every measured iteration's " +
       "pico-cli appFps numbers are ledgered and returned as perfTrend (before→after, structural " +
       "evidence), and a perf failure carries pico-cli's own diagnosis engine verdict, never a guess. " +
-      "Every iteration writes a structural trust-ledger entry. Budget uses meta.budget semantics " +
+      "Every iteration writes a structural trust-ledger entry. Each native run also returns a " +
+      "structural receiptId/receiptPath and its exact immutable " +
+      "capture; the receipt proves identity and continuity, never what the pixels look like, so " +
+      "the returned capture still requires a LOOK. Budget uses meta.budget semantics " +
       "(iterations, timeMin). Builds take minutes each — configure your host's MCP timeout accordingly " +
       "(≥ 10 minutes, more for multi-iteration budgets). Prefer authoring a draftSpec first " +
       "(pico_build_app's two-step); goal-only runs start from the planner's archetype scaffold, " +
@@ -781,7 +798,7 @@ export function registerDoorTools(server: McpServer) {
       onFail: z.enum(["replan", "stop"]).optional().describe("replan (default): apply the retained-lesson repair and iterate. stop: return after the first failing iteration."),
     },
     async ({ goal, draftSpec, acceptance, budget, onFail }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       const started = Date.now();
       const maxIterations = budget?.iterations ?? 3;
       const timeMs = (budget?.timeMin ?? 20) * 60_000;
@@ -789,7 +806,7 @@ export function registerDoorTools(server: McpServer) {
       const id = briefIdOf(goal);
       const app = `com.fleet.${id}`;
       const projectDir = `~/AndroidStudioProjects/fleet-${id}-native`;
-      const iterationsLog: Array<{ iteration: number; outcomes: LoopCriterionOutcome[]; capture: string | null; ledger: string }> = [];
+      const iterationsLog: Array<{ iteration: number; outcomes: LoopCriterionOutcome[]; capture: string | null; receiptId: string | null; receiptPath: string | null; ledger: string }> = [];
       const scaffoldStarted = draftSpec === undefined;
 
       // Criterion pre-flight: a misconfigured criterion must be rejected BEFORE the first
@@ -812,6 +829,9 @@ export function registerDoorTools(server: McpServer) {
       let prevSignature: string | null = null;
       let lastOutcomes: LoopCriterionOutcome[] = [];
       let lastCapture: string | null = null;
+      let lastReceiptId: string | null = null;
+      let lastReceiptPath: string | null = null;
+      let ranFleet = false;
       // The perf loop lane (2026-08-12 call, lane 2): every measured perf iteration lands here, so
       // every exit carries the before→after trail — measure → fix → re-measure, ledgered.
       const perfTrail: Array<Record<string, unknown>> = [];
@@ -823,7 +843,7 @@ export function registerDoorTools(server: McpServer) {
         projectDir,
         scaffoldStarted,
         iterationsLog,
-        ...(lastCapture ? { capture: lastCapture } : {}),
+        ...(ranFleet ? { capture: lastCapture, receiptId: lastReceiptId, receiptPath: lastReceiptPath } : {}),
         ...(perfTrail.length ? {
           perfTrend: perfTrail,
           perfEvidence: "structural — pico-cli-measured appFps numbers (the official profiler); a delta proves the numbers moved, never how anything looks",
@@ -843,12 +863,30 @@ export function registerDoorTools(server: McpServer) {
 
         writeUserBrief(id, { id, brief: goal, spec });
         const fleet = await call("fleet_build", { briefIds: [id], settleSec: 16 });
+        ranFleet = true;
         const r = fleet?.results?.[0] ?? {};
-        if (r.artifact) lastCapture = r.artifact;
+        const recordedReceipt = r.receipt?.status === "recorded"
+          && typeof r.receipt.receiptId === "string"
+          && typeof r.receipt.receiptPath === "string"
+          && typeof r.receipt.capturePath === "string"
+          && r.artifact === r.receipt.capturePath
+          ? r.receipt
+          : null;
+        if (recordedReceipt) {
+          lastCapture = recordedReceipt.capturePath;
+          lastReceiptId = recordedReceipt.receiptId;
+          lastReceiptPath = recordedReceipt.receiptPath;
+        }
 
         const outcomes: LoopCriterionOutcome[] = [];
-        if (!r.built || !r.installed) {
-          outcomes.push({ kind: "build", status: "fail", detail: (r.notes ?? []).join("\n") || "build/install failed with no notes" });
+        if (!r.built || !r.installed || !recordedReceipt || r.concluded !== true) {
+          outcomes.push({
+            kind: "build",
+            status: "fail",
+            detail: (r.notes ?? []).join("\n") || (!recordedReceipt
+              ? "native run produced no receipt-bound capture"
+              : "native receipt was recorded, but the verification route did not conclude"),
+          });
         } else {
           // assert_scene clears logcat for its isolated dump, so launch-log evidence must be
           // consumed before any structural criterion regardless of the caller's array order.
@@ -859,7 +897,7 @@ export function registerDoorTools(server: McpServer) {
               // unknown / unscored) = the machine cannot judge this frame class — needs-look,
               // never a repairable failure (replanning a possibly-correct app is worse than
               // stopping and asking for the look).
-              outcomes.push(loopVisualOutcome(r.verdict, r.artifact, r.notes ?? [], r.visualChecks ?? [], r.visualJudgeNote, r.visualLedger));
+              outcomes.push(loopVisualOutcome(r.verdict, recordedReceipt.capturePath, r.notes ?? [], r.visualChecks ?? [], r.visualJudgeNote, r.visualLedger));
             } else if (c.kind === "structural") {
               // assert_scene, not the "verify" orchestrator: verify's TEXT content is prose for a
               // reading agent (its JSON lives in structuredContent, which innerCall's text-parse
@@ -929,7 +967,14 @@ export function registerDoorTools(server: McpServer) {
         const ledger = led && typeof led === "object" && led.status === "recorded"
           ? "recorded"
           : `NOT recorded: ${(typeof led === "string" ? led : JSON.stringify(led ?? null)).slice(0, 200)}`;
-        iterationsLog.push({ iteration: i, outcomes, capture: r.artifact ?? null, ledger });
+        iterationsLog.push({
+          iteration: i,
+          outcomes,
+          capture: recordedReceipt?.capturePath ?? null,
+          receiptId: recordedReceipt?.receiptId ?? null,
+          receiptPath: recordedReceipt?.receiptPath ?? null,
+          ledger,
+        });
 
         const needsLook = outcomes.filter((o) => o.status === "needs-look");
         const failing = outcomes.filter((o) => o.status === "fail" || o.status === "unmeasurable");
@@ -940,7 +985,7 @@ export function registerDoorTools(server: McpServer) {
             acceptanceScope: "the caller's requested criteria in this iteration",
             fleetVisualVerdict: typeof r.verdict === "string" ? r.verdict : "unscored",
             remainingLookObligation: [
-              { artifact: r.artifact ?? null, whatToConfirm: `the running app actually shows the goal: ${goal}` },
+              { artifact: recordedReceipt?.capturePath ?? null, whatToConfirm: `the running app actually shows the goal: ${goal}` },
               ...(r.panelArtifact ? [{ artifact: r.panelArtifact, whatToConfirm: "panel content renders as intended (panel captures are returned unjudged)" }] : []),
             ],
             honesty: acceptedEvidence.honesty,
@@ -953,7 +998,7 @@ export function registerDoorTools(server: McpServer) {
           return exit("built-needs-look", i, {
             needsLook,
             remainingLookObligation: [
-              { artifact: r.artifact ?? null, whatToConfirm: `the running app actually shows the goal: ${goal}` },
+              { artifact: recordedReceipt?.capturePath ?? null, whatToConfirm: `the running app actually shows the goal: ${goal}` },
               ...(r.panelArtifact ? [{ artifact: r.panelArtifact, whatToConfirm: "panel content renders as intended (panel captures are returned unjudged)" }] : []),
             ],
             honesty: loopNeedsLookHonesty(needsLook),

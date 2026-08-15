@@ -4,6 +4,8 @@
 // Run: npm run test:doors
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -44,17 +46,106 @@ else fail("pico_next blurs a device-verified failure into positive visual proof"
 if (typeof buildAppDoorStatus !== "function") {
   fail("pico_build_app has no evidence-scoped status helper");
 } else {
-  const recordedPass = buildAppDoorStatus({ built: true, installed: true, artifact: "/tmp/frame.png", verdict: "PASS", visualLedger: { status: "recorded" } });
-  const unrecordedPass = buildAppDoorStatus({ built: true, installed: true, artifact: "/tmp/frame.png", verdict: "PASS", visualLedger: { status: "rejected" } });
+  const receipt = { status: "recorded", receiptId: "a".repeat(64), receiptPath: "/tmp/receipt.json", capturePath: "/tmp/frame.png" };
+  const recordedPass = buildAppDoorStatus({ built: true, installed: true, artifact: "/tmp/frame.png", receipt, verdict: "PASS", visualLedger: { status: "recorded" } });
+  const unrecordedPass = buildAppDoorStatus({ built: true, installed: true, artifact: "/tmp/frame.png", receipt, verdict: "PASS", visualLedger: { status: "rejected" } });
   const noCapture = buildAppDoorStatus({ built: true, installed: true, verdict: "ESCALATE" });
   const notInstalled = buildAppDoorStatus({ built: true, installed: false });
+  const unboundCapture = buildAppDoorStatus({ built: true, installed: true, artifact: "/tmp/mutable.png", verdict: "PASS", visualLedger: { status: "recorded" } });
   if (recordedPass === "auto-judged-needs-look"
       && unrecordedPass === "built-needs-look"
       && noCapture === "built-no-capture"
       && notInstalled === "built-not-installed"
+      && unboundCapture === "built-no-capture"
       && ![recordedPass, unrecordedPass, noCapture, notInstalled].includes("verified"))
-    ok("pico_build_app never labels an unlooked calibrated-eye result verified");
-  else fail(`pico_build_app status overclaims sight: ${JSON.stringify({ recordedPass, unrecordedPass, noCapture, notInstalled })}`);
+    ok("pico_build_app requires a receipt-bound capture and never labels an unlooked calibrated-eye result verified");
+  else fail(`pico_build_app status overclaims sight: ${JSON.stringify({ recordedPass, unrecordedPass, noCapture, notInstalled, unboundCapture })}`);
+}
+
+// Receipt identity is part of the delivered MCP-door contract, not merely a fleet implementation
+// detail. Exercise the real registered Door 1 and pico_loop handlers with an injected inner-tool
+// execution lane so this test cannot start Gradle, adb, an emulator, or a device.
+if (doorsModule.registerDoorTools.length < 2) {
+  fail("pico_build_app/pico_loop registration has no injected inner-call seam for receipt tests");
+} else {
+  const receiptHome = fs.mkdtempSync(path.join(os.tmpdir(), "pico-door-receipt-"));
+  const previousHome = process.env.HOME;
+  process.env.HOME = receiptHome;
+  const receiptCapture = path.join(receiptHome, "ledger", "artifacts", `${"a".repeat(64)}.png`);
+  const receiptId = "b".repeat(64);
+  const receiptPath = path.join(receiptHome, "run-receipts", `${receiptId}.json`);
+  const fleetResult = {
+    id: "fixture",
+    built: true,
+    installed: true,
+    concluded: true,
+    verdict: "ESCALATE",
+    artifact: receiptCapture,
+    receipt: {
+      status: "recorded",
+      receiptId,
+      receiptPath,
+      capturePath: receiptCapture,
+      sourceCapturePath: path.join(receiptHome, "captures", "unique.png"),
+      captureSha256: "a".repeat(64),
+      evidenceType: "structural",
+      lookRequired: true,
+    },
+    visualChecks: [],
+    visualJudgeNote: "fixture escalation",
+    visualLedger: null,
+    notes: [],
+  };
+  let injectedFleetResult = fleetResult;
+  const injectedCall = async (name) => {
+    if (name === "plan_app_spec") return { status: "ok", spec: { meta: { packageName: "com.example.fixture" } } };
+    if (name === "fleet_build") return { status: "ok", results: [injectedFleetResult] };
+    if (name === "record_verification") return { status: "recorded" };
+    throw new Error(`unexpected injected door call: ${name}`);
+  };
+  const receiptServer = new McpServer({ name: "door-receipt-test", version: "0.0.0" });
+  doorsModule.registerDoorTools(receiptServer, { call: injectedCall });
+  const [receiptClientTransport, receiptServerTransport] = InMemoryTransport.createLinkedPair();
+  const receiptClient = new Client({ name: "door-receipt-test", version: "0.0.0" });
+  await receiptServer.connect(receiptServerTransport);
+  await receiptClient.connect(receiptClientTransport);
+  try {
+    const built = await receiptClient.callTool({
+      name: "pico_build_app",
+      arguments: { brief: "receipt fixture", draftSpec: { meta: { packageName: "com.example.fixture" } } },
+    });
+    const builtOut = JSON.parse(built.content[0].text);
+    if (builtOut.receiptId === receiptId && builtOut.receiptPath === receiptPath && builtOut.capture === receiptCapture)
+      ok("pico_build_app returns the fleet receipt identity and exact receipt-bound capture");
+    else fail(`pico_build_app dropped or rewrote fleet receipt identity: ${JSON.stringify(builtOut).slice(0, 360)}`);
+
+    const looped = await receiptClient.callTool({
+      name: "pico_loop",
+      arguments: { goal: "receipt loop fixture", draftSpec: { meta: { packageName: "com.example.fixture" } }, acceptance: [{ kind: "visual" }], budget: { iterations: 1 } },
+    });
+    const loopedOut = JSON.parse(looped.content[0].text);
+    if (loopedOut.status === "built-needs-look" && loopedOut.receiptId === receiptId
+        && loopedOut.receiptPath === receiptPath && loopedOut.capture === receiptCapture
+        && loopedOut.remainingLookObligation?.[0]?.artifact === receiptCapture)
+      ok("pico_loop carries the last fleet receipt identity and exact capture through its exit");
+    else fail(`pico_loop dropped or rewrote fleet receipt identity: ${JSON.stringify(loopedOut).slice(0, 420)}`);
+
+    injectedFleetResult = { ...fleetResult, concluded: false, artifact: null, receipt: null, notes: ["after-install failed"] };
+    const receiptless = await receiptClient.callTool({
+      name: "pico_loop",
+      arguments: { goal: "receiptless loop fixture", draftSpec: { meta: { packageName: "com.example.fixture" } }, acceptance: [{ kind: "visual" }], budget: { iterations: 1 }, onFail: "stop" },
+    });
+    const receiptlessOut = JSON.parse(receiptless.content[0].text);
+    if (receiptlessOut.status === "failed" && receiptlessOut.capture === null
+        && receiptlessOut.receiptId === null && receiptlessOut.receiptPath === null)
+      ok("pico_loop cannot accept a receiptless run and returns explicit null receipt identity");
+    else fail(`pico_loop treated a receiptless run as concluded: ${JSON.stringify(receiptlessOut).slice(0, 420)}`);
+  } finally {
+    await receiptClient.close();
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    fs.rmSync(receiptHome, { recursive: true, force: true });
+  }
 }
 
 // ── P0 (2026-08-01) unit checks — no server, no emulator ──
