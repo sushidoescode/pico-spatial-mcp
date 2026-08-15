@@ -54,6 +54,63 @@ const EVIDENCE_TO_STATUS: Record<string, string> = {
   "provenance-broken": "provenance-broken",
 };
 
+export type ValidatedRunReceiptBinding = {
+  kind: "pico.native-run-receipt";
+  schemaVersion: 1;
+  receiptId: string;
+  captureSha256: string;
+};
+
+export type ReceiptCaptureBindingResult =
+  | { status: "valid"; binding: ValidatedRunReceiptBinding }
+  | { status: "invalid"; reason: string };
+
+export interface LedgerToolDependencies {
+  resolveRunReceiptBinding?: (
+    app: string,
+    receiptId: string,
+    artifactPath: string,
+  ) => ReceiptCaptureBindingResult;
+}
+
+export type RegisterLedgerTools = (server: McpServer, deps?: LedgerToolDependencies) => void;
+
+function validateRunReceiptBinding(
+  value: unknown,
+  expectedCaptureSha256?: string,
+): { ok: true; binding: ValidatedRunReceiptBinding } | { ok: false; reason: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, reason: "runReceipt binding is not an object" };
+  }
+  const fields = Object.keys(value as Record<string, unknown>).sort();
+  const expectedFields = ["captureSha256", "kind", "receiptId", "schemaVersion"];
+  if (fields.length !== expectedFields.length || fields.some((field, index) => field !== expectedFields[index])) {
+    return { ok: false, reason: "runReceipt binding contains missing or caller-authored fields" };
+  }
+  const candidate = value as Record<string, unknown>;
+  if (candidate.kind !== "pico.native-run-receipt" || candidate.schemaVersion !== 1) {
+    return { ok: false, reason: "runReceipt binding kind or schemaVersion is invalid" };
+  }
+  if (typeof candidate.receiptId !== "string" || !SHA256_PATTERN.test(candidate.receiptId)) {
+    return { ok: false, reason: "runReceipt binding receiptId is not a canonical sha256" };
+  }
+  if (typeof candidate.captureSha256 !== "string" || !SHA256_PATTERN.test(candidate.captureSha256)) {
+    return { ok: false, reason: "runReceipt binding captureSha256 is not a canonical sha256" };
+  }
+  if (expectedCaptureSha256 !== undefined && candidate.captureSha256 !== expectedCaptureSha256) {
+    return { ok: false, reason: `runReceipt capture sha256 ${candidate.captureSha256} does not match the materialized ledger capture sha256 ${expectedCaptureSha256}` };
+  }
+  return {
+    ok: true,
+    binding: Object.freeze({
+      kind: "pico.native-run-receipt",
+      schemaVersion: 1,
+      receiptId: candidate.receiptId,
+      captureSha256: candidate.captureSha256,
+    }),
+  };
+}
+
 export function ledgerDirectory(): string {
   return process.env.PICO_MCP_LEDGER_DIR
     ? path.resolve(process.env.PICO_MCP_LEDGER_DIR)
@@ -435,10 +492,19 @@ export function validateEntry(e: {
 
 export function appendLedgerEntry(
   app: string,
-  input: { claim: string; evidenceType: string; artifactPath?: string; attestation?: string; cClass?: string; reproHash?: string; extra?: Record<string, any> },
+  input: { claim: string; evidenceType: string; artifactPath?: string; attestation?: string; cClass?: string; reproHash?: string; extra?: Record<string, any>; runReceiptBinding?: ValidatedRunReceiptBinding },
 ): { status: string; reason?: string; entry?: any; warning?: string; totalEntries?: number } {
   try {
     assertCanonicalAppKey(app);
+    let runReceiptBinding: ValidatedRunReceiptBinding | undefined;
+    if (input.runReceiptBinding !== undefined) {
+      if (!IMAGE_EVIDENCE.has(input.evidenceType)) {
+        return { status: "rejected", reason: "a run receipt can bind only image-grounded evidence; it never promotes structural evidence" };
+      }
+      const checkedBinding = validateRunReceiptBinding(input.runReceiptBinding);
+      if (!checkedBinding.ok) return { status: "rejected", reason: checkedBinding.reason };
+      runReceiptBinding = checkedBinding.binding;
+    }
     // Image validation/materialization is deliberately outside the short ledger transaction. It
     // can involve an arbitrarily slow filesystem read/fsync; holding a synchronous mtime-based lock
     // across that work prevents its heartbeat from running and lets another process reap a live
@@ -475,6 +541,11 @@ export function appendLedgerEntry(
         const materialized = Buffer.isBuffer(immutableProducerBytes)
           ? materializeCaptureBytes(input.artifactPath, immutableProducerBytes)
           : materializeCapture(input.artifactPath);
+        if (runReceiptBinding) {
+          const checkedBinding = validateRunReceiptBinding(runReceiptBinding, materialized.capture.sha256);
+          if (!checkedBinding.ok) return { status: "rejected", reason: checkedBinding.reason };
+          runReceiptBinding = checkedBinding.binding;
+        }
         if (lineage?.ok && materialized.capture.sha256 !== lineage.captureSha256) {
           return { status: "rejected", reason: "device_verified artifact changed after the live same-serial capture comparison; refusing to bind different bytes." };
         }
@@ -486,6 +557,7 @@ export function appendLedgerEntry(
           attestation: input.attestation,
           cClass: input.cClass ?? null,
           capture: materialized.capture,
+          ...(runReceiptBinding ? { runReceipt: runReceiptBinding } : {}),
           ...(input.evidenceType === "auto_judged" ? {
             evidenceProducer: {
               kind: "visual_judge",
@@ -643,6 +715,7 @@ export async function appendDeviceVerifiedEntry(
     deviceBootQemu?: string;
     deviceFeature?: string;
     deviceOutcome?: "pass" | "fail";
+    runReceiptBinding?: ValidatedRunReceiptBinding;
   },
   probe: DeviceIdentityProbe = (serial) => probeDeviceIdentity(resolveDeviceAdb(), serial),
   captureProbe: DeviceCaptureProbe = (serial) => probeDeviceCapture(resolveDeviceAdb(), serial),
@@ -686,6 +759,7 @@ export async function appendDeviceVerifiedEntry(
     attestation: input.attestation,
     cClass: input.cClass,
     reproHash: input.reproHash,
+    runReceiptBinding: input.runReceiptBinding,
     extra: {
       [DEVICE_PROBE_RECEIPT]: true,
       deviceSerial: observed.lineage.serial,
@@ -794,6 +868,7 @@ export type LedgerReadResult = {
   integrityIssues: Array<{ seq: number; claim: string; claimedEvidenceType: string; provenance: any }>;
   deviceLineageIssues: Array<{ seq: number; claim: string; reason: string; claimedDeviceSerial: string | null }>;
   producerProvenanceIssues: Array<{ seq: number; claim: string; claimedEvidenceType: string; reason: string }>;
+  runReceiptIssues: Array<{ seq: number; claim: string; reason: string }>;
 };
 
 /** Read append-only history and derive the evidence that is safe to consume now. */
@@ -804,11 +879,25 @@ export function readLedger(app: string): LedgerReadResult {
   const integrityIssues: LedgerReadResult["integrityIssues"] = [];
   const deviceLineageIssues: LedgerReadResult["deviceLineageIssues"] = [];
   const producerProvenanceIssues: LedgerReadResult["producerProvenanceIssues"] = [];
+  const runReceiptIssues: LedgerReadResult["runReceiptIssues"] = [];
   const effectiveEntries: any[] = [];
 
   for (const raw of events) {
     if (!raw || raw.eventType === "retraction" || raw.retracted || retracted.has(raw.seq)) continue;
     const entry = { ...raw };
+    if (Object.prototype.hasOwnProperty.call(entry, "runReceipt")) {
+      const binding = IMAGE_EVIDENCE.has(entry.evidenceType)
+        ? validateRunReceiptBinding(entry.runReceipt, entry.capture?.sha256)
+        : { ok: false as const, reason: "runReceipt binding is attached to non-image evidence" };
+      if (binding.ok) {
+        entry.runReceipt = binding.binding;
+      } else {
+        entry.claimedRunReceipt = entry.runReceipt;
+        delete entry.runReceipt;
+        entry.runReceiptProvenance = { status: "unverifiable", reason: binding.reason };
+        runReceiptIssues.push({ seq: entry.seq, claim: entry.claim, reason: binding.reason });
+      }
+    }
     if (IMAGE_EVIDENCE.has(entry.evidenceType)) {
       const provenance = checkProvenance(entry);
       entry.provenance = provenance;
@@ -816,6 +905,13 @@ export function readLedger(app: string): LedgerReadResult {
         entry.claimedEvidenceType = entry.evidenceType;
         entry.evidenceType = "provenance-broken";
         integrityIssues.push({ seq: entry.seq, claim: entry.claim, claimedEvidenceType: entry.claimedEvidenceType, provenance });
+        if (entry.runReceipt) {
+          const reason = "runReceipt binding cannot be consumed because the linked capture provenance is not intact";
+          entry.claimedRunReceipt = entry.runReceipt;
+          delete entry.runReceipt;
+          entry.runReceiptProvenance = { status: "unverifiable", reason };
+          runReceiptIssues.push({ seq: entry.seq, claim: entry.claim, reason });
+        }
       }
     }
     if (entry.evidenceType === "device_verified") {
@@ -852,7 +948,7 @@ export function readLedger(app: string): LedgerReadResult {
     }
     effectiveEntries.push(entry);
   }
-  return { events, effectiveEntries, retractions, integrityIssues, deviceLineageIssues, producerProvenanceIssues };
+  return { events, effectiveEntries, retractions, integrityIssues, deviceLineageIssues, producerProvenanceIssues, runReceiptIssues };
 }
 
 export function buildLedgerReport(app: string) {
@@ -891,6 +987,7 @@ export function buildLedgerReport(app: string) {
     integrityIssues: read.integrityIssues,
     deviceLineageIssues: read.deviceLineageIssues,
     producerProvenanceIssues: read.producerProvenanceIssues,
+    runReceiptIssues: read.runReceiptIssues,
     capabilityReport: buildCapabilityMatrix(app, features),
   };
 }
@@ -903,12 +1000,12 @@ export function isPassingDeviceEvidence(entry: any): boolean {
     && entry?.deviceLineage?.status === "validated";
 }
 
-export function registerLedgerTools(server: McpServer) {
+export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {
   server.registerTool(
     "record_verification",
     {
       description:
-        "Append a verification claim or an append-only retraction event to an app's trust ledger. Record and retract fields are mutually exclusive. For a retraction, explicitly set action:'retract', targetSeq, and retractionReason; the original row remains immutable but is excluded from effective proof. Image evidence needs a structurally complete PNG/JPEG plus attestation and is copied into content-addressed storage. device_verified additionally uses live identity + same-serial screencap probes. auto_judged and usd_host_render are producer-only: use visual_judge or render_usd_offscreen. Stored bytes are revalidated on every report read.",
+        "Append a verification claim or an append-only retraction event to an app's trust ledger. Record and retract fields are mutually exclusive. For a retraction, explicitly set action:'retract', targetSeq, and retractionReason; the original row remains immutable but is excluded from effective proof. Image evidence needs a structurally complete PNG/JPEG plus attestation and is copied into content-addressed storage. To bind an exact LOOK to native-run provenance, pass the runReceiptId returned by pico_build_app with that receipt's exact capture; the receipt never changes the requested evidence class. device_verified additionally uses live identity + same-serial screencap probes. auto_judged and usd_host_render are producer-only: use visual_judge or render_usd_offscreen. Stored bytes are revalidated on every report read.",
       inputSchema: {
         app: z.string().regex(CANONICAL_APP_KEY_PATTERN).describe("Canonical app/package ledger key: lowercase ASCII letters, digits, dot, underscore, or hyphen; no paths or spaces."),
         action: z.enum(["record", "retract"]).optional().describe("Default record. Use retract to append a correction that excludes targetSeq without mutating it."),
@@ -918,6 +1015,7 @@ export function registerLedgerTools(server: McpServer) {
         attestation: z.string().optional().describe("What was seen or measured (required for image-grounded evidence)."),
         cClass: z.enum(["C0_emulator", "C1", "C2", "C3", "C4_headset_only"]).optional().describe("The node's capability class."),
         reproHash: z.string().optional().describe("Canonical pose + seed hash (v5.5 reproducibility)."),
+        runReceiptId: z.string().regex(SHA256_PATTERN).optional().describe("Record action only: receiptId returned by pico_build_app. Pass it only after LOOKING at that receipt's exact capture; binding records provenance and never promotes the evidence class."),
         deviceSerial: z.string().optional().describe("Attached adb serial (REQUIRED for device_verified; the server probes this serial live)."),
         deviceModel: z.string().optional().describe("Optional expected ro.product.model; if supplied it must match the live probe."),
         deviceFingerprint: z.string().optional().describe("Optional expected ro.build.fingerprint; if supplied it must match the live probe."),
@@ -929,9 +1027,9 @@ export function registerLedgerTools(server: McpServer) {
         retractionNote: z.string().optional().describe("Retract action: optional nuance retained in history."),
       },
     },
-    async ({ app, action, claim, evidenceType, artifactPath, attestation, cClass, reproHash, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, targetSeq, retractionReason, retractionNote }) => {
+    async ({ app, action, claim, evidenceType, artifactPath, attestation, cClass, reproHash, runReceiptId, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, targetSeq, retractionReason, retractionNote }) => {
       const mode = action ?? "record";
-      const recordFields = { claim, evidenceType, artifactPath, attestation, cClass, reproHash, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome };
+      const recordFields = { claim, evidenceType, artifactPath, attestation, cClass, reproHash, runReceiptId, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome };
       const retractionFields = { targetSeq, retractionReason, retractionNote };
       if (mode === "retract") {
         const mixed = Object.entries(recordFields).filter(([, value]) => value !== undefined).map(([name]) => name);
@@ -950,9 +1048,35 @@ export function registerLedgerTools(server: McpServer) {
       if (!claim?.trim() || !evidenceType) {
         return okJson({ status: "rejected", app, reason: "record action requires claim and evidenceType" });
       }
+      let runReceiptBinding: ValidatedRunReceiptBinding | undefined;
+      if (runReceiptId !== undefined) {
+        if (!IMAGE_EVIDENCE.has(evidenceType)) {
+          return okJson({ status: "rejected", app, reason: "runReceiptId can bind only image-grounded evidence and never promotes structural evidence" });
+        }
+        if (!artifactPath) {
+          return okJson({ status: "rejected", app, reason: "runReceiptId requires artifactPath for the exact receipt-bound capture" });
+        }
+        if (!deps.resolveRunReceiptBinding) {
+          return okJson({ status: "rejected", app, reason: "run receipt binding resolver is not configured; refusing to record an unbound receipt ID" });
+        }
+        let resolved: ReceiptCaptureBindingResult;
+        try {
+          resolved = deps.resolveRunReceiptBinding(app, runReceiptId, artifactPath);
+        } catch (error: any) {
+          return okJson({ status: "rejected", app, reason: `run receipt binding could not be resolved: ${error?.message ?? String(error)}` });
+        }
+        if (resolved.status !== "valid") {
+          return okJson({ status: "rejected", app, reason: `run receipt binding rejected: ${resolved.reason}` });
+        }
+        const checked = validateRunReceiptBinding(resolved.binding);
+        if (!checked.ok || checked.binding.receiptId !== runReceiptId) {
+          return okJson({ status: "rejected", app, reason: checked.ok ? "run receipt resolver returned a different receiptId" : `run receipt resolver returned an invalid binding: ${checked.reason}` });
+        }
+        runReceiptBinding = checked.binding;
+      }
       const res = evidenceType === "device_verified"
-        ? await appendDeviceVerifiedEntry(app, { claim, artifactPath, attestation, cClass, reproHash, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome })
-        : appendLedgerEntry(app, { claim, evidenceType, artifactPath, attestation, cClass, reproHash });
+        ? await appendDeviceVerifiedEntry(app, { claim, artifactPath, attestation, cClass, reproHash, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, runReceiptBinding })
+        : appendLedgerEntry(app, { claim, evidenceType, artifactPath, attestation, cClass, reproHash, runReceiptBinding });
       return okJson({ ...res, app });
     },
   );
@@ -972,4 +1096,4 @@ export function registerLedgerTools(server: McpServer) {
       }
     },
   );
-}
+};

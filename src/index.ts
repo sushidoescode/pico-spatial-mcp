@@ -83,6 +83,7 @@ import { registerSemanticPlaceTools } from "./semanticplace.js";
 import { registerMetricVerifyTools } from "./metricverify.js";
 import { registerCritiqueTools } from "./critique.js";
 import { registerLedgerTools } from "./ledger.js";
+import { validateNativeRunReceiptCaptureBinding } from "./runreceiptstore.js";
 import { registerClaimsPageTools } from "./claimspage.js";
 import { registerSpatialBenchTools } from "./spatialbench.js";
 import { registerAffordanceTools } from "./affordance.js";
@@ -301,7 +302,7 @@ if (!doorsSurfaceActive()) {
   // v5.2 — the self-repair critique (LOOKED-at frame -> defect list -> replan_spec)
   registerCritiqueTools(server);
   // v5.3 — the trust ledger (over-claims structurally impossible) + safe stacked-worktree landing
-  registerLedgerTools(server);
+  registerLedgerTools(server, { resolveRunReceiptBinding: validateNativeRunReceiptCaptureBinding });
   registerClaimsPageTools(server);
   registerSpatialBenchTools(server);
   registerAffordanceTools(server);

@@ -97,10 +97,11 @@ if (doorsModule.registerDoorTools.length < 2) {
     notes: [],
   };
   let injectedFleetResult = fleetResult;
-  const injectedCall = async (name) => {
+  let injectedRecordArgs = null;
+  const injectedCall = async (name, args) => {
     if (name === "plan_app_spec") return { status: "ok", spec: { meta: { packageName: "com.example.fixture" } } };
     if (name === "fleet_build") return { status: "ok", results: [injectedFleetResult] };
-    if (name === "record_verification") return { status: "recorded" };
+    if (name === "record_verification") { injectedRecordArgs = args; return { status: "recorded", entry: { evidenceType: args.evidenceType } }; }
     throw new Error(`unexpected injected door call: ${name}`);
   };
   const receiptServer = new McpServer({ name: "door-receipt-test", version: "0.0.0" });
@@ -118,6 +119,23 @@ if (doorsModule.registerDoorTools.length < 2) {
     if (builtOut.receiptId === receiptId && builtOut.receiptPath === receiptPath && builtOut.capture === receiptCapture)
       ok("pico_build_app returns the fleet receipt identity and exact receipt-bound capture");
     else fail(`pico_build_app dropped or rewrote fleet receipt identity: ${JSON.stringify(builtOut).slice(0, 360)}`);
+
+    const record = await receiptClient.callTool({
+      name: "pico_record",
+      arguments: {
+        app: "com.example.fixture",
+        claim: "synthetic Door receipt-forwarding fixture",
+        evidenceType: "vision_verified",
+        artifactPath: receiptCapture,
+        attestation: "Synthetic forwarding text only; no rendered LOOK is claimed.",
+        runReceiptId: receiptId,
+      },
+    });
+    const recordOut = JSON.parse(record.content[0].text);
+    if (recordOut.status === "recorded" && injectedRecordArgs?.runReceiptId === receiptId
+        && injectedRecordArgs?.artifactPath === receiptCapture && injectedRecordArgs?.evidenceType === "vision_verified")
+      ok("pico_record forwards the build receipt ID with the exact looked-capture record request");
+    else fail(`pico_record dropped receipt binding fields: ${JSON.stringify({ recordOut, injectedRecordArgs }).slice(0, 420)}`);
 
     const looped = await receiptClient.callTool({
       name: "pico_loop",
@@ -360,13 +378,17 @@ if (JSON.stringify(tools) === JSON.stringify(expected)) ok(`doors surface expose
 else fail(`surface mismatch — got [${tools.join(", ")}]`);
 
 const picoRecordSchema = toolDefinitions.find((tool) => tool.name === "pico_record")?.inputSchema;
+const picoRecordDescription = toolDefinitions.find((tool) => tool.name === "pico_record")?.description ?? "";
 const picoRecordEvidenceTypes = picoRecordSchema?.properties?.evidenceType?.enum ?? [];
 if (picoRecordSchema?.properties?.app?.pattern === "^[a-z0-9][a-z0-9._-]{0,199}$"
     && !picoRecordEvidenceTypes.includes("auto_judged")
     && !picoRecordEvidenceTypes.includes("usd_host_render")
     && picoRecordSchema?.properties?.deviceFeature?.pattern === "^[a-z0-9]+(?:_[a-z0-9]+)*$"
-    && JSON.stringify(picoRecordSchema?.properties?.deviceOutcome?.enum) === JSON.stringify(["pass", "fail"]))
-  ok("pico_record advertises canonical keys, caller-recordable tiers, and structured device outcomes");
+    && JSON.stringify(picoRecordSchema?.properties?.deviceOutcome?.enum) === JSON.stringify(["pass", "fail"])
+    && picoRecordSchema?.properties?.runReceiptId?.pattern === "^[a-f0-9]{64}$"
+    && /pico_build_app|receipt/i.test(picoRecordSchema?.properties?.runReceiptId?.description ?? "")
+    && /exact|capture/i.test(picoRecordDescription))
+  ok("pico_record advertises canonical keys, caller-recordable tiers, structured device outcomes, and exact receipt binding");
 else fail(`pico_record advertises calls its inner ledger rejects: ${JSON.stringify(picoRecordSchema)}`);
 
 // a door that orchestrates through the child server (vault lookup — fast, no emulator needed)
@@ -514,6 +536,20 @@ const mixedActionOut = JSON.parse(mixedAction.content[0].text);
 if (mixedActionOut.status === "rejected" && /mutually exclusive/.test(mixedActionOut.reason ?? ""))
   ok("pico_record rejects mixed record/retract fields without appending either action");
 else fail(`pico_record accepted mixed record/retract fields: ${JSON.stringify(mixedActionOut).slice(0, 240)}`);
+const mixedReceiptAction = await client.callTool({
+  name: "pico_record",
+  arguments: {
+    app: recordApp,
+    action: "retract",
+    targetSeq: recOut.entry?.seq,
+    retractionReason: "receipt IDs are record-only",
+    runReceiptId: "a".repeat(64),
+  },
+});
+const mixedReceiptActionOut = JSON.parse(mixedReceiptAction.content[0].text);
+if (mixedReceiptActionOut.status === "rejected" && /mutually exclusive|record-only|runReceiptId/.test(mixedReceiptActionOut.reason ?? ""))
+  ok("pico_record rejects runReceiptId on the retraction lane");
+else fail(`pico_record accepted a receipt ID on the retraction lane: ${JSON.stringify(mixedReceiptActionOut).slice(0, 240)}`);
 try { fs.rmSync(path.join(managedHarness.home, ".pico-mcp", "ledgers", `${recordApp}.json`), { force: true }); } catch { /* ignore */ }
 
 // DOOR 16 pico_loop — cheap paths only (no gradle, no emulator):

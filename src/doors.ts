@@ -572,7 +572,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
 
   door(
     "pico_record",
-    "DOOR 13 — RECORD a caller-attested verification claim AFTER you LOOKED, or append an honest RETRACTION without mutating history. Record and retract fields are mutually exclusive. For a correction set action:'retract', targetSeq, and retractionReason. Image evidence needs a real PNG/JPEG plus attestation. device_verified additionally requires the ledger's live hardware/capture binding plus structured deviceFeature and explicit pass/fail outcome; free-text polarity never closes Swan parity. Producer-only auto_judged/usd_host_render rows come from visual_judge/render_usd_offscreen, not this door.",
+    "DOOR 13 — RECORD a caller-attested verification claim AFTER you LOOKED, or append an honest RETRACTION without mutating history. Record and retract fields are mutually exclusive. For a correction set action:'retract', targetSeq, and retractionReason. Image evidence needs a real PNG/JPEG plus attestation. When pico_build_app returned a native-run receipt, LOOK at its exact capture and pass that returned runReceiptId here to bind the row without changing its evidence class. device_verified additionally requires the ledger's live hardware/capture binding plus structured deviceFeature and explicit pass/fail outcome; free-text polarity never closes Swan parity. Producer-only auto_judged/usd_host_render rows come from visual_judge/render_usd_offscreen, not this door.",
     {
       app: z.string().regex(CANONICAL_APP_KEY_PATTERN).describe("Canonical lowercase app/package ledger key: ASCII lowercase letters, digits, dot, underscore, or hyphen; no paths, spaces, or case aliases."),
       action: z.enum(["record", "retract"]).optional().describe("Default record; retract appends a correction event for targetSeq."),
@@ -581,6 +581,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       artifactPath: z.string().optional().describe("Path to the capture you LOOKED at (REQUIRED for vision_verified)."),
       attestation: z.string().optional().describe("What you saw in the capture (REQUIRED for vision_verified)."),
       cClass: z.enum(["C0_emulator", "C1", "C2", "C3", "C4_headset_only"]).optional().describe("The claim's capability class."),
+      runReceiptId: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Record action only: receiptId returned by pico_build_app. Pass it after LOOKING at that receipt's exact capture; it binds provenance without promoting the evidence class."),
       deviceSerial: z.string().optional().describe("Attached adb serial (REQUIRED for device_verified; probed live)."),
       deviceModel: z.string().optional().describe("Optional expected model; mismatch with live probe rejects."),
       deviceFingerprint: z.string().optional().describe("Optional expected fingerprint; mismatch with live probe rejects."),
@@ -592,8 +593,8 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       retractionNote: z.string().optional().describe("Retract action: optional nuance retained with the correction."),
       report: z.boolean().optional().describe("Also return ledger_report's generated capability report for the app."),
     },
-    async ({ app, action, claim, evidenceType, artifactPath, attestation, cClass, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, targetSeq, retractionReason, retractionNote, report }) => {
-      const { call } = await inner();
+    async ({ app, action, claim, evidenceType, artifactPath, attestation, cClass, runReceiptId, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, targetSeq, retractionReason, retractionNote, report }) => {
+      const call = await doorCall();
       const recorded = await call("record_verification", {
         app,
         ...(action ? { action } : {}),
@@ -602,6 +603,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
         ...(artifactPath ? { artifactPath } : {}),
         ...(attestation ? { attestation } : {}),
         ...(cClass ? { cClass } : {}),
+        ...(runReceiptId !== undefined ? { runReceiptId } : {}),
         ...(deviceSerial !== undefined ? { deviceSerial } : {}),
         ...(deviceModel !== undefined ? { deviceModel } : {}),
         ...(deviceFingerprint !== undefined ? { deviceFingerprint } : {}),

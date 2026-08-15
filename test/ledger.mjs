@@ -433,8 +433,28 @@ const firstReuse = appendLedgerEntry("fixture.reuse", { claim: "first", evidence
 const secondReuse = appendLedgerEntry("fixture.reuse", { claim: "second", evidenceType: "vision_verified", artifactPath: misleading, attestation: "looked at the second fixture" });
 check("canonical extension comes from image bytes", firstReuse.entry.artifactPath.endsWith(".png"));
 check("identical bytes reuse one CAS path", firstReuse.entry.artifactPath === secondReuse.entry.artifactPath && secondReuse.entry.reusedArtifact === true);
-const protectedCore = appendLedgerEntry("fixture.extra", { claim: "protected", evidenceType: "structural", extra: { deviceSerial: "PA9TEST", seq: 99, evidenceType: "vision_verified", retracted: true } });
-check("extra metadata cannot override core fields or attach unprobed hardware lineage", protectedCore.entry.seq === 0 && protectedCore.entry.evidenceType === "structural" && !protectedCore.entry.retracted && protectedCore.entry.deviceSerial == null);
+const protectedCore = appendLedgerEntry("fixture.extra", { claim: "protected", evidenceType: "structural", extra: { deviceSerial: "PA9TEST", seq: 99, evidenceType: "vision_verified", retracted: true, runReceipt: { kind: "pico.native-run-receipt", schemaVersion: 1, receiptId: "a".repeat(64), captureSha256: "b".repeat(64) } } });
+check("extra metadata cannot override core fields or attach unprobed hardware or run-receipt lineage", protectedCore.entry.seq === 0 && protectedCore.entry.evidenceType === "structural" && !protectedCore.entry.retracted && protectedCore.entry.deviceSerial == null && protectedCore.entry.runReceipt == null);
+
+// Historical ledger files are user-visible JSON. A malformed or mismatched caller-authored
+// runReceipt object must not become a Task 6 input, while the independently intact LOOK remains.
+for (const [suffix, runReceipt] of [
+  ["malformed", { kind: "pico.native-run-receipt", schemaVersion: 1, receiptId: "not-a-hash", captureSha256: "b".repeat(64) }],
+  ["capture-mismatch", { kind: "pico.native-run-receipt", schemaVersion: 1, receiptId: "a".repeat(64), captureSha256: "b".repeat(64) }],
+  ["caller-extra", { kind: "pico.native-run-receipt", schemaVersion: 1, receiptId: "a".repeat(64), captureSha256: "c".repeat(64), callerAuthored: true }],
+]) {
+  const app = `fixture.legacy-runreceipt-${suffix}`;
+  const recorded = appendLedgerEntry(app, { claim: `legacy ${suffix} binding fixture`, evidenceType: "vision_verified", artifactPath: realPng, attestation: "synthetic fixture attestation only; no rendered LOOK is claimed" });
+  const file = path.join(ledgerDir, `${app}.json`);
+  const events = JSON.parse(fs.readFileSync(file, "utf8"));
+  events[0].runReceipt = runReceipt;
+  fs.writeFileSync(file, `${JSON.stringify(events, null, 2)}\n`);
+  const read = readLedger(app);
+  check(`legacy ${suffix} runReceipt cannot be consumed while intact image evidence is preserved`, recorded.status === "recorded"
+    && read.effectiveEntries[0]?.evidenceType === "vision_verified"
+    && read.effectiveEntries[0]?.runReceipt == null
+    && read.runReceiptIssues?.length === 1);
+}
 
 const corruptSource = path.join(scratch, "corrupt-cas-source.png");
 fs.writeFileSync(corruptSource, makePng(128, 128, 99));
