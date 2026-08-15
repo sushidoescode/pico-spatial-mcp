@@ -4,7 +4,13 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { canonicalJson } from "../dist/runreceiptidentity.js";
+import {
+  canonicalIdentity,
+  canonicalJson,
+  GRADLE_INPUT_MAX_ENTRIES,
+  GRADLE_INPUT_MAX_FILE_BYTES,
+  GRADLE_INPUT_MAX_TOTAL_BYTES,
+} from "../dist/runreceiptidentity.js";
 import * as store from "../dist/runreceiptstore.js";
 import {
   FIXTURE_APP,
@@ -31,6 +37,62 @@ function publishFixtureReceipt(fixture, payload = fixture.payload) {
   return store.publishNativeRunReceipt(payload, fixture.storeOptions);
 }
 
+function setGradleEntries(payload, entries) {
+  const identity = canonicalIdentity(entries);
+  payload.source.gradleInputs = {
+    ...payload.source.gradleInputs,
+    sha256: identity.sha256,
+    entryCount: entries.length,
+    totalBytes: entries.reduce((total, entry) => total + entry.bytes, 0),
+    entries,
+  };
+}
+
+function rawReceipt(fixture, payload) {
+  const receiptId = sha256(canonicalJson(payload));
+  const receiptPath = path.join(fixture.rootDir, "native-v1", FIXTURE_APP, `${receiptId}.json`);
+  fs.mkdirSync(path.dirname(receiptPath), { recursive: true });
+  fs.writeFileSync(receiptPath, `${canonicalJson({ ...payload, receiptId })}\n`);
+  return { receiptId, receiptPath };
+}
+
+function maxGradleEntries() {
+  const entries = Array.from({ length: GRADLE_INPUT_MAX_ENTRIES }, (_, index) => ({
+    path: `x/${index.toString(36).padStart(3, "0")}`,
+    bytes: 0,
+    sha256: ZERO_HASH,
+  }));
+  for (let index = 0; index < GRADLE_INPUT_MAX_TOTAL_BYTES / GRADLE_INPUT_MAX_FILE_BYTES; index += 1) {
+    entries[index].bytes = GRADLE_INPUT_MAX_FILE_BYTES;
+  }
+  return entries;
+}
+
+const receiptIdentityMutations = [
+  ["reserved session ID", (value) => { value.runtime.sessionId = "unknown"; }],
+  ["malformed session ID", (value) => { value.runtime.sessionId = "11111111-2222-3333-4444-555555555555"; }],
+  ["reserved serial", (value) => { value.runtime.serial = "placeholder"; }],
+  ["malformed serial", (value) => { value.runtime.serial = "PICO serial with spaces"; }],
+  ["reserved model", (value) => { value.runtime.model = "unavailable"; }],
+  ["malformed model", (value) => { value.runtime.model = "PICO\u0000 4"; }],
+  ["reserved fingerprint", (value) => { value.runtime.fingerprint = "unknown"; }],
+  ["malformed fingerprint", (value) => { value.runtime.fingerprint = "PICO 4 user build"; }],
+  ["reserved boot-qemu", (value) => { value.runtime.bootQemu = "unknown"; }],
+  ["malformed boot-qemu", (value) => { value.runtime.bootQemu = "2"; }],
+  ["reserved boot ID", (value) => { value.runtime.bootId = "not-available"; }],
+  ["malformed boot ID", (value) => { value.runtime.bootId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"; }],
+  ["reserved component", (value) => { value.runtime.component = "placeholder"; }],
+  ["malformed component", (value) => { value.runtime.component = `${FIXTURE_APP} MainActivity`; }],
+  ["reserved runtime PID ticks", (value) => { value.runtime.pidStartTicks = "unknown"; }],
+  ["malformed runtime PID ticks", (value) => { value.runtime.pidStartTicks = "-1"; }],
+  ["reserved foreground package", (value) => { value.capture.before.foregroundPackage = "unknown"; }],
+  ["malformed foreground package", (value) => { value.capture.before.foregroundPackage = "PICO Receipt"; }],
+  ["reserved foreground component", (value) => { value.capture.after.foregroundComponent = "pending"; }],
+  ["malformed foreground component", (value) => { value.capture.after.foregroundComponent = `${FIXTURE_APP} MainActivity`; }],
+  ["reserved observation PID ticks", (value) => { value.capture.before.pidStartTicks = "unset"; }],
+  ["malformed observation PID ticks", (value) => { value.capture.after.pidStartTicks = "987654 ticks"; }],
+];
+
 test("receipt ID binds every payload section and canonical file bytes", async (t) => {
   await withFixture(t, (fixture) => {
     const first = publishFixtureReceipt(fixture);
@@ -43,7 +105,7 @@ test("receipt ID binds every payload section and canonical file bytes", async (t
       ["package", (value) => { value.apk.packageName = "com.example.changed"; }],
       ["install digest", (value) => { value.install.acknowledgementSha256 = sha256("different install acknowledgement"); }],
       ["serial", (value) => { value.runtime.serial = "emulator-5556"; }],
-      ["fingerprint", (value) => { value.runtime.fingerprint = "PICO/changed/fingerprint:14/test"; }],
+      ["fingerprint", (value) => { value.runtime.fingerprint = "PICO/changed/fingerprint:14/changed/test-keys"; }],
       ["boot ID", (value) => { value.runtime.bootId = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"; }],
       ["session ID", (value) => { value.runtime.sessionId = "22222222-3333-4444-8555-666666666666"; }],
       ["PID", (value) => { value.runtime.pid = 4343; value.capture.before.pid = 4343; value.capture.after.pid = 4343; }],
@@ -186,6 +248,149 @@ test("strict schemas reject unknown keys at every nested receipt object and unio
   });
 });
 
+test("publisher rejects reserved or malformed mandatory identities without excluding PICO-shaped observations", async (t) => {
+  await withFixture(t, (fixture) => {
+    for (const [name, mutate] of receiptIdentityMutations) {
+      const payload = structuredClone(fixture.payload);
+      mutate(payload);
+      assert.throws(
+        () => publishFixtureReceipt(fixture, payload),
+        /session|serial|model|fingerprint|boot|component|foreground|package|pid|identity|invalid/i,
+        name,
+      );
+    }
+
+    const picoPayload = structuredClone(fixture.payload);
+    picoPayload.runtime.sessionId = "7ad551b8-98fa-4db2-a8e7-d41f86097992";
+    picoPayload.runtime.serial = "PICO4U-A7H1234567";
+    picoPayload.runtime.model = "PICO 4 Ultra Enterprise";
+    picoPayload.runtime.fingerprint = "PICO/A9210/PICOA9210:14/UP1A.231005.007/20260814:user/release-keys";
+    picoPayload.runtime.bootQemu = ""; // Physical PICO getprop commonly reports the exact absent value.
+    picoPayload.runtime.bootId = "f1927646-a41d-4d88-b50f-8aa6873351df";
+    const published = publishFixtureReceipt(fixture, picoPayload);
+    assert.equal(store.readNativeRunReceipt(FIXTURE_APP, published.receiptId, fixture.storeOptions).status, "valid");
+  });
+});
+
+test("raw reader independently rejects reserved or malformed mandatory identities", async (t) => {
+  await withFixture(t, (fixture) => {
+    for (const [name, mutate] of receiptIdentityMutations) {
+      const payload = structuredClone(fixture.payload);
+      mutate(payload);
+      const written = rawReceipt(fixture, payload);
+      const result = store.readNativeRunReceipt(FIXTURE_APP, written.receiptId, fixture.storeOptions);
+      assert.equal(result.status, "invalid", name);
+      assert.match(
+        issueText(result),
+        /session|serial|model|fingerprint|boot|component|foreground|package|pid|identity|invalid/i,
+        name,
+      );
+    }
+  });
+});
+
+test("publisher enforces every Gradle manifest maximum and accepts their exact shared boundary", async (t) => {
+  await withFixture(t, (fixture) => {
+    const boundary = structuredClone(fixture.payload);
+    setGradleEntries(boundary, maxGradleEntries());
+    assert.equal(boundary.source.gradleInputs.entryCount, GRADLE_INPUT_MAX_ENTRIES);
+    assert.equal(boundary.source.gradleInputs.totalBytes, GRADLE_INPUT_MAX_TOTAL_BYTES);
+    assert.equal(boundary.source.gradleInputs.entries[0].bytes, GRADLE_INPUT_MAX_FILE_BYTES);
+    assert.doesNotThrow(() => publishFixtureReceipt(fixture, boundary));
+
+    const overEntries = structuredClone(fixture.payload);
+    setGradleEntries(overEntries, [
+      ...maxGradleEntries(),
+      { path: "x/zzz", bytes: 0, sha256: ZERO_HASH },
+    ]);
+    assert.throws(() => publishFixtureReceipt(fixture, overEntries), /entries|array|20000|too big|maximum/i);
+
+    const overEntryCount = structuredClone(fixture.payload);
+    overEntryCount.source.gradleInputs.entryCount = GRADLE_INPUT_MAX_ENTRIES + 1;
+    assert.throws(() => publishFixtureReceipt(fixture, overEntryCount), /entryCount|20000|too big|maximum/i);
+
+    const overTotal = structuredClone(fixture.payload);
+    setGradleEntries(overTotal, Array.from({ length: 5 }, (_, index) => ({
+      path: `oversized-total/${index}`,
+      bytes: GRADLE_INPUT_MAX_FILE_BYTES,
+      sha256: ZERO_HASH,
+    })));
+    assert.throws(() => publishFixtureReceipt(fixture, overTotal), /totalBytes|2147483648|too big|maximum/i);
+
+    const overFile = structuredClone(fixture.payload);
+    setGradleEntries(overFile, [{
+      path: "oversized-file",
+      bytes: GRADLE_INPUT_MAX_FILE_BYTES + 1,
+      sha256: ZERO_HASH,
+    }]);
+    assert.throws(() => publishFixtureReceipt(fixture, overFile), /bytes|536870912|too big|maximum/i);
+
+    const wrongEntryCount = structuredClone(fixture.payload);
+    wrongEntryCount.source.gradleInputs.entryCount += 1;
+    assert.throws(() => publishFixtureReceipt(fixture, wrongEntryCount), /entryCount|entries|match/i);
+
+    const wrongTotalBytes = structuredClone(fixture.payload);
+    wrongTotalBytes.source.gradleInputs.totalBytes += 1;
+    assert.throws(() => publishFixtureReceipt(fixture, wrongTotalBytes), /totalBytes|byte total|match/i);
+
+    const wrongManifestHash = structuredClone(fixture.payload);
+    wrongManifestHash.source.gradleInputs.sha256 = ZERO_HASH;
+    assert.throws(() => publishFixtureReceipt(fixture, wrongManifestHash), /manifest|sha256|canonical/i);
+
+    const unsafePath = structuredClone(fixture.payload);
+    const unsafeEntries = structuredClone(unsafePath.source.gradleInputs.entries);
+    unsafeEntries[0].path = "../escape";
+    setGradleEntries(unsafePath, unsafeEntries);
+    assert.throws(() => publishFixtureReceipt(fixture, unsafePath), /path|POSIX|relative|normalized/i);
+  });
+});
+
+test("raw reader independently enforces every Gradle manifest maximum and exact cross-field totals", async (t) => {
+  await withFixture(t, (fixture) => {
+    const boundary = structuredClone(fixture.payload);
+    setGradleEntries(boundary, maxGradleEntries());
+    const boundaryReceipt = rawReceipt(fixture, boundary);
+    assert.equal(
+      store.readNativeRunReceipt(FIXTURE_APP, boundaryReceipt.receiptId, fixture.storeOptions).status,
+      "valid",
+    );
+
+    const cases = [
+      ["entries", (value) => setGradleEntries(value, [
+        ...maxGradleEntries(),
+        { path: "x/zzz", bytes: 0, sha256: ZERO_HASH },
+      ]), /entries|array|20000|too big|maximum/i],
+      ["entryCount", (value) => { value.source.gradleInputs.entryCount = GRADLE_INPUT_MAX_ENTRIES + 1; }, /entryCount|20000|too big|maximum/i],
+      ["totalBytes", (value) => setGradleEntries(value, Array.from({ length: 5 }, (_, index) => ({
+        path: `oversized-total/${index}`,
+        bytes: GRADLE_INPUT_MAX_FILE_BYTES,
+        sha256: ZERO_HASH,
+      }))), /totalBytes|2147483648|too big|maximum/i],
+      ["per-file bytes", (value) => setGradleEntries(value, [{
+        path: "oversized-file",
+        bytes: GRADLE_INPUT_MAX_FILE_BYTES + 1,
+        sha256: ZERO_HASH,
+      }]), /bytes|536870912|too big|maximum/i],
+      ["entry count relationship", (value) => { value.source.gradleInputs.entryCount += 1; }, /entryCount|entries|match/i],
+      ["total bytes relationship", (value) => { value.source.gradleInputs.totalBytes += 1; }, /totalBytes|byte total|match/i],
+      ["manifest digest relationship", (value) => { value.source.gradleInputs.sha256 = ZERO_HASH; }, /manifest|sha256|canonical/i],
+      ["normalized path relationship", (value) => {
+        const entries = structuredClone(value.source.gradleInputs.entries);
+        entries[0].path = "../escape";
+        setGradleEntries(value, entries);
+      }, /path|POSIX|relative|normalized/i],
+    ];
+    for (const [name, mutate, expected] of cases) {
+      const payload = structuredClone(fixture.payload);
+      mutate(payload);
+      const written = rawReceipt(fixture, payload);
+      const result = store.readNativeRunReceipt(FIXTURE_APP, written.receiptId, fixture.storeOptions);
+      assert.equal(result.status, "invalid", name);
+      assert.match(issueText(result), expected, name);
+    }
+  });
+});
+
 test("historical validation independently detects receipt and CAS tampering", async (t) => {
   const cases = [
     ["noncanonical receipt bytes", (fixture, published) => {
@@ -269,8 +474,8 @@ test("historical validation rejects package, install, runtime, and capture cross
     for (const [name, mutate] of mutations) {
       const payload = structuredClone(fixture.payload);
       mutate(payload);
-      const published = publishFixtureReceipt(fixture, payload);
-      const result = store.readNativeRunReceipt(FIXTURE_APP, published.receiptId, fixture.storeOptions);
+      const written = rawReceipt(fixture, payload);
+      const result = store.readNativeRunReceipt(FIXTURE_APP, written.receiptId, fixture.storeOptions);
       assert.equal(result.status, "invalid", name);
       assert.match(issueText(result), /package|component|PID|digest|sha256|entries|bytes|time|before|later|agree|match/i, name);
     }

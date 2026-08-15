@@ -45,9 +45,10 @@ Evidence totals: `vision_verified` 28 · `logcat` 27 · `structural` 90 · `comp
 - **Native run receipt v1 is structural, debug-only provenance.** On the POSIX/emulator fleet lane,
   a producer-written receipt binds normalized/effective AppSpec identities, bounded Gradle inputs,
   one AGP-selected debug APK and installed-byte digest, package/session/PID/foreground continuity,
-  and one immutable capture. `fleet_build` returns the full receipt object; Door 1 returns
-  `receiptId`, `receiptPath`, and the exact `capture`. The receipt creates no ledger evidence and
-  says nothing about its pixels. A separate LOOK recorded with that exact capture and
+  and one immutable capture. `fleet_build` and Door 1 return a receipt summary with `receiptId`,
+  the canonical `receiptPath`, and the exact capture identity/path, not the full envelope inline.
+  The receipt creates no ledger evidence and says nothing about its pixels. A separate LOOK recorded
+  with that exact capture and
   `runReceiptId` is required. `ship_checklist` can then accept only those current debug bytes while
   remaining `NOT READY` for release APK/signing/store work. V1 establishes no web deployment,
   Swan/hardware, native-Windows, release, or rendered-appearance claim.

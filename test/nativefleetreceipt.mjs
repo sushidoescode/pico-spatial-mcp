@@ -125,6 +125,7 @@ async function createProducerFixture(t, mutation = {}) {
   const expectedCaptureCasPath = path.join(ledgerRoot, "artifacts", `${captureSha256}.png`);
   const expectedCaptureSourcePath = path.join(captureDir, `${SESSION_ID}.png`);
   const remoteApkPath = `/data/app/~~receipt/${PACKAGE}/base.apk`;
+  const replacementRemoteApkPath = `/data/app/~~replacement/${PACKAGE}/base.apk`;
 
   if (mutation.kind === "apk-cas-corruption") {
     fs.mkdirSync(path.dirname(expectedApkCasPath), { recursive: true });
@@ -145,7 +146,11 @@ async function createProducerFixture(t, mutation = {}) {
   let statCalls = 0;
   let foregroundCalls = 0;
   let launchCalls = 0;
+  let pmPathCalls = 0;
+  let remoteDigestCalls = 0;
+  let bootIdCalls = 0;
   let clock = Date.parse("2026-08-14T11:59:00.000Z");
+  let monotonicMs = 0;
   const projectRealDir = fs.realpathSync(projectDir);
 
   const runText = async (command, args, options = {}) => {
@@ -169,13 +174,20 @@ async function createProducerFixture(t, mutation = {}) {
       return textResult("Success\n");
     }
     if (key === `shell pm path ${PACKAGE}`) {
+      pmPathCalls += 1;
       if (mutation.kind === "pm-path-missing") return textResult("");
       if (mutation.kind === "pm-path-multiple") return textResult(`package:${remoteApkPath}\npackage:/data/app/duplicate/base.apk\n`);
-      return textResult(`package:${remoteApkPath}\n`);
+      const changed = (mutation.kind === "installed-path-before-capture" && pmPathCalls >= 2)
+        || (mutation.kind === "installed-path-after-capture" && pmPathCalls >= 3);
+      return textResult(`package:${changed ? replacementRemoteApkPath : remoteApkPath}\n`);
     }
-    if (key === `shell toybox sha256sum ${remoteApkPath}`) {
-      const digest = mutation.kind === "remote-digest-mismatch" ? "0".repeat(64) : apkSha256;
-      return textResult(`${digest}  ${remoteApkPath}\n`);
+    if (key === `shell toybox sha256sum ${remoteApkPath}` || key === `shell toybox sha256sum ${replacementRemoteApkPath}`) {
+      remoteDigestCalls += 1;
+      const requestedPath = adbArgs.at(-1);
+      const changed = mutation.kind === "remote-digest-mismatch"
+        || (mutation.kind === "installed-digest-before-capture" && remoteDigestCalls >= 2)
+        || (mutation.kind === "installed-digest-after-capture" && remoteDigestCalls >= 3);
+      return textResult(`${changed ? "0".repeat(64) : apkSha256}  ${requestedPath}\n`);
     }
     if (key === "shell getprop ro.product.model") return textResult("PICO Emulator\n");
     if (key === "shell getprop ro.build.fingerprint") {
@@ -183,7 +195,14 @@ async function createProducerFixture(t, mutation = {}) {
     }
     if (key === "shell getprop ro.boot.qemu") return textResult("1\n");
     if (key === "shell cat /proc/sys/kernel/random/boot_id") {
-      return textResult(mutation.kind === "missing-boot-id" ? "\n" : "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\n");
+      bootIdCalls += 1;
+      if (mutation.kind === "missing-boot-id") return textResult("\n");
+      const changed = (mutation.kind === "boot-change-before-launch" && bootIdCalls >= 2)
+        || (mutation.kind === "boot-change-before-capture" && bootIdCalls >= 3)
+        || (mutation.kind === "boot-change-after-capture" && bootIdCalls >= 4);
+      return textResult(changed
+        ? "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff\n"
+        : "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\n");
     }
     if (key === "shell pm list packages com.fleet") {
       return textResult("package:com.fleet.previous\npackage:com.fleet.receiptextra\npackage:com.fleetish.not-listed\n");
@@ -198,6 +217,13 @@ async function createProducerFixture(t, mutation = {}) {
     }
     if (key === `shell pidof ${PACKAGE}`) {
       pidCalls += 1;
+      if (mutation.kind === "slow-pid-missing") {
+        monotonicMs += Math.min(19_000, options.timeoutMs ?? 19_000);
+        return textResult("", { code: 1 });
+      }
+      if (mutation.kind === "slow-pid-then-foreground") {
+        monotonicMs += Math.min(19_000, options.timeoutMs ?? 19_000);
+      }
       if (mutation.kind === "pid-missing") return textResult("", { code: 1 });
       if (mutation.kind === "pid-multiple") return textResult(`${PID} ${PID + 1}\n`);
       return textResult(`${PID}\n`);
@@ -210,6 +236,10 @@ async function createProducerFixture(t, mutation = {}) {
     }
     if (key === "shell dumpsys activity activities") {
       foregroundCalls += 1;
+      if (mutation.kind === "slow-pid-then-foreground") {
+        monotonicMs += Math.min(19_000, options.timeoutMs ?? 19_000);
+        return textResult("");
+      }
       if (mutation.kind === "foreground-prefix-collision") {
         return textResult(foregroundOutput("com.fleet.receiptextra/.platform.LaunchActivity"));
       }
@@ -254,8 +284,12 @@ async function createProducerFixture(t, mutation = {}) {
       clock += 1_000;
       return value;
     },
+    monotonicNow: () => monotonicMs,
     randomUUID: () => SESSION_ID,
-    sleep: async (ms) => { sleeps.push(ms); },
+    sleep: async (ms) => {
+      sleeps.push(ms);
+      monotonicMs += ms;
+    },
     inspectApk: async (apkPath, inspectedProjectDir) => {
       assert.equal(apkPath, expectedApkCasPath);
       assert.equal(inspectedProjectDir, fs.realpathSync(projectDir));
@@ -308,6 +342,7 @@ async function createProducerFixture(t, mutation = {}) {
     deps,
     events,
     sleeps,
+    monotonicNow: () => monotonicMs,
   };
 }
 
@@ -388,6 +423,12 @@ test("successful producer binds installed bytes and brackets one exact capture",
   const captureIndex = fixture.events.findIndex((event) => event.type === "binary");
   assert.equal(statIndexes.length, 3);
   assert.ok(statIndexes[1] < captureIndex && captureIndex < statIndexes[2]);
+  assert.equal(fixture.events.filter((event) => event.type === "text"
+    && event.args.slice(2).join(" ") === `shell pm path ${PACKAGE}`).length, 3);
+  assert.equal(fixture.events.filter((event) => event.type === "text"
+    && event.args.slice(2, 5).join(" ") === "shell toybox sha256sum").length, 3);
+  assert.equal(fixture.events.filter((event) => event.type === "text"
+    && event.args.slice(2).join(" ") === "shell cat /proc/sys/kernel/random/boot_id").length, 4);
 });
 
 test("one foreign foreground blocker can be stopped and relaunched once with disclosure", async (t) => {
@@ -412,6 +453,38 @@ test("a recovered run discloses the one blocker recovery if a later stage fails"
     out.completedStages.filter((stage) => stage.startsWith("foreground-recovery:")),
     ["foreground-recovery:blocker=com.fleet.blocker"],
   );
+  assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+});
+
+test("PID polling caps child calls and sleeps to one monotonic 24000ms deadline", async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "slow-pid-missing" });
+  const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  assert.equal(out.status, "failed");
+  assert.equal(out.stage, "pid");
+  const pidEvents = fixture.events.filter((event) => event.type === "text"
+    && event.args.slice(2).join(" ") === `shell pidof ${PACKAGE}`);
+  assert.deepEqual(pidEvents.map((event) => event.options.timeoutMs), [20_000, 3_000]);
+  assert.deepEqual(fixture.sleeps, [2_000, 2_000]);
+  assert.equal(fixture.monotonicNow(), 26_000);
+  assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+});
+
+test("PID and foreground polling share one monotonic 24000ms deadline per launch attempt", async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "slow-pid-then-foreground" });
+  const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  assert.equal(out.status, "failed");
+  assert.equal(out.stage, "foreground");
+  const pidEvents = fixture.events.filter((event) => event.type === "text"
+    && event.args.slice(2).join(" ") === `shell pidof ${PACKAGE}`);
+  const statEvents = fixture.events.filter((event) => event.type === "text"
+    && event.args.slice(2).join(" ") === `shell cat /proc/${PID}/stat`);
+  const foregroundEvents = fixture.events.filter((event) => event.type === "text"
+    && event.args.slice(2).join(" ") === "shell dumpsys activity activities");
+  assert.deepEqual(pidEvents.map((event) => event.options.timeoutMs), [20_000]);
+  assert.deepEqual(statEvents.map((event) => event.options.timeoutMs), [5_000]);
+  assert.deepEqual(foregroundEvents.map((event) => event.options.timeoutMs), [5_000]);
+  assert.deepEqual(fixture.sleeps, [2_000]);
+  assert.equal(fixture.monotonicNow(), 26_000);
   assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
 });
 
@@ -491,9 +564,16 @@ test("producer fails closed at every mandatory stage and never publishes a recei
     ["pm path missing", "pm-path-missing", "installed-byte-identity", true, true],
     ["pm path multiple", "pm-path-multiple", "installed-byte-identity", true, true],
     ["remote digest mismatch", "remote-digest-mismatch", "installed-byte-identity", true, true],
+    ["installed path replacement before capture", "installed-path-before-capture", "installed-byte-identity", true, true],
+    ["installed path replacement after capture", "installed-path-after-capture", "installed-byte-identity", true, true],
+    ["installed digest replacement before capture", "installed-digest-before-capture", "installed-byte-identity", true, true],
+    ["installed digest replacement after capture", "installed-digest-after-capture", "installed-byte-identity", true, true],
     ["after-install hook", "after-install", "after-install", true, true],
     ["missing fingerprint", "missing-fingerprint", "device-identity", true, true],
     ["missing boot ID", "missing-boot-id", "device-identity", true, true],
+    ["boot ID changed before launch", "boot-change-before-launch", "device-identity", true, true],
+    ["boot ID changed before capture", "boot-change-before-capture", "device-identity", true, true],
+    ["boot ID changed after capture", "boot-change-after-capture", "device-identity", true, true],
     ["launch negative acknowledgement", "launch-negative-ack", "launch", true, true],
     ["missing PID", "pid-missing", "pid", true, true],
     ["multiple PID", "pid-multiple", "pid", true, true],
@@ -523,7 +603,7 @@ test("producer fails closed at every mandatory stage and never publishes a recei
       assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
       assert.equal(out.completedStages.includes("receipt-publication"), false);
       if (kind === "pid-missing") {
-        assert.equal(fixture.sleeps.filter((ms) => ms === 2_000).length, 13);
+        assert.equal(fixture.sleeps.filter((ms) => ms === 2_000).length, 12);
       }
     });
   }

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 import { materializeCaptureBytes } from "./ledger.js";
 import {
   collectGradleInputIdentity,
@@ -29,6 +30,7 @@ const TEXT_OUTPUT_LIMIT = 8 * 1024 * 1024;
 const CAPTURE_OUTPUT_LIMIT = 64 * 1024 * 1024;
 const OUTPUT_METADATA_MAX_BYTES = 2 * 1024 * 1024;
 const PID_FOREGROUND_ATTEMPTS = 12;
+const PID_FOREGROUND_WINDOW_MS = 24_000;
 const POLL_INTERVAL_MS = 2_000;
 const PRE_LAUNCH_SETTLE_MS = 2_000;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
@@ -55,6 +57,7 @@ export interface NativeFleetReceiptDependencies {
   adbPath: string;
   gradleEnv: Record<string, string | undefined>;
   now: () => Date;
+  monotonicNow: () => number;
   randomUUID: () => string;
   sleep: (ms: number) => Promise<void>;
   inspectApk: (apkPath: string, projectDir: string) => Promise<{
@@ -366,6 +369,7 @@ export async function produceNativeFleetReceipt(
     adbPath: deps?.adbPath ?? process.env.PICO_ADB ?? "adb",
     gradleEnv: deps?.gradleEnv ?? defaultGradleEnv(),
     now: deps?.now ?? (() => new Date()),
+    monotonicNow: deps?.monotonicNow ?? (() => performance.now()),
     randomUUID: deps?.randomUUID ?? (() => crypto.randomUUID()),
     sleep: deps?.sleep ?? defaultSleep,
     inspectApk: deps?.inspectApk ?? ((apkPath, projectDir) => defaultInspectApk(apkPath, projectDir, runText)),
@@ -465,38 +469,54 @@ export async function produceNativeFleetReceipt(
     const installAcknowledgementSha256 = sha256Text(resultText(installResult));
     completedStages.push("install");
 
-    const pmPathArgs = ["-s", input.serial, "shell", "pm", "path", input.packageName];
-    const pmPathResult = await resolvedDeps.runText(resolvedDeps.adbPath, pmPathArgs, {
-      timeoutMs: 20_000,
-      maxOutputBytes: COMMAND_TAIL_BYTES,
-    });
-    assertTextSuccess("installed-byte-identity", "installed APK path", resolvedDeps.adbPath, pmPathArgs, pmPathResult);
-    const remoteApkPath = parseInstalledApkPath(pmPathResult.stdout);
-    if (!remoteApkPath) {
-      throw new StageFailure("installed-byte-identity", commandFailure(
-        "installed APK path",
-        resolvedDeps.adbPath,
-        pmPathArgs,
-        pmPathResult,
-        "expected exactly one installed base APK path",
-      ));
-    }
-    const remoteDigestArgs = ["-s", input.serial, "shell", "toybox", "sha256sum", remoteApkPath];
-    const remoteDigestResult = await resolvedDeps.runText(resolvedDeps.adbPath, remoteDigestArgs, {
-      timeoutMs: 20_000,
-      maxOutputBytes: COMMAND_TAIL_BYTES,
-    });
-    assertTextSuccess("installed-byte-identity", "installed APK digest", resolvedDeps.adbPath, remoteDigestArgs, remoteDigestResult);
-    const remoteDigest = parseRemoteDigestLine(remoteDigestResult.stdout);
-    if (!remoteDigest || remoteDigest.path !== remoteApkPath || remoteDigest.sha256 !== apk.sha256) {
-      throw new StageFailure("installed-byte-identity", commandFailure(
-        "installed APK digest",
-        resolvedDeps.adbPath,
-        remoteDigestArgs,
-        remoteDigestResult,
-        `expected one sha256sum for '${remoteApkPath}' equal to local APK sha256 ${apk.sha256}`,
-      ));
-    }
+    type InstalledApkIdentity = { path: string; sha256: string };
+    const probeInstalledApkIdentity = async (requiredPath?: string): Promise<InstalledApkIdentity> => {
+      const pmPathArgs = ["-s", input.serial, "shell", "pm", "path", input.packageName];
+      const pmPathResult = await resolvedDeps.runText(resolvedDeps.adbPath, pmPathArgs, {
+        timeoutMs: 20_000,
+        maxOutputBytes: COMMAND_TAIL_BYTES,
+      });
+      assertTextSuccess("installed-byte-identity", "installed APK path", resolvedDeps.adbPath, pmPathArgs, pmPathResult);
+      const observedPath = parseInstalledApkPath(pmPathResult.stdout);
+      if (!observedPath) {
+        throw new StageFailure("installed-byte-identity", commandFailure(
+          "installed APK path",
+          resolvedDeps.adbPath,
+          pmPathArgs,
+          pmPathResult,
+          "expected exactly one installed base APK path",
+        ));
+      }
+      const remoteDigestArgs = ["-s", input.serial, "shell", "toybox", "sha256sum", observedPath];
+      const remoteDigestResult = await resolvedDeps.runText(resolvedDeps.adbPath, remoteDigestArgs, {
+        timeoutMs: 20_000,
+        maxOutputBytes: COMMAND_TAIL_BYTES,
+      });
+      assertTextSuccess("installed-byte-identity", "installed APK digest", resolvedDeps.adbPath, remoteDigestArgs, remoteDigestResult);
+      const observedDigest = parseRemoteDigestLine(remoteDigestResult.stdout);
+      if (!observedDigest || observedDigest.path !== observedPath || observedDigest.sha256 !== apk.sha256) {
+        throw new StageFailure("installed-byte-identity", commandFailure(
+          "installed APK digest",
+          resolvedDeps.adbPath,
+          remoteDigestArgs,
+          remoteDigestResult,
+          `expected one sha256sum for '${observedPath}' equal to immutable APK CAS sha256 ${apk.sha256}`,
+        ));
+      }
+      if (requiredPath !== undefined && observedPath !== requiredPath) {
+        throw new StageFailure("installed-byte-identity", commandFailure(
+          "installed APK path continuity",
+          resolvedDeps.adbPath,
+          pmPathArgs,
+          pmPathResult,
+          `expected the installed base APK path to remain exactly '${requiredPath}'`,
+        ));
+      }
+      return { path: observedPath, sha256: observedDigest.sha256 };
+    };
+    const installedApkIdentity = await probeInstalledApkIdentity();
+    const remoteApkPath = installedApkIdentity.path;
+    const remoteDigest = { sha256: installedApkIdentity.sha256 };
     completedStages.push("installed-byte-identity");
 
     if (input.afterInstall) {
@@ -526,6 +546,15 @@ export async function produceNativeFleetReceipt(
     const fingerprint = await readProperty(["getprop", "ro.build.fingerprint"], "device fingerprint");
     const bootQemu = await readProperty(["getprop", "ro.boot.qemu"], "device boot-qemu property");
     const bootId = await readProperty(["cat", "/proc/sys/kernel/random/boot_id"], "device boot ID");
+    const requireSameBootId = async (boundary: string): Promise<void> => {
+      const observedBootId = await readProperty(["cat", "/proc/sys/kernel/random/boot_id"], `${boundary} device boot ID`);
+      if (observedBootId !== bootId) {
+        throw new StageFailure(
+          "device-identity",
+          `${boundary} device boot ID changed: expected '${bootId}', observed '${observedBootId}'`,
+        );
+      }
+    };
     const runtimeSessionId = resolvedDeps.randomUUID();
     if (!runtimeSessionId.trim()) throw new StageFailure("device-identity", "randomUUID returned an empty session identity");
     completedStages.push("device-identity");
@@ -547,8 +576,25 @@ export async function produceNativeFleetReceipt(
     await resolvedDeps.sleep(PRE_LAUNCH_SETTLE_MS);
     completedStages.push("pre-launch-sweep");
 
-    type LaunchIdentity = { launchedAt: string; acknowledgementSha256: string; result: RunResult };
+    type PollDeadline = { deadlineMs: number };
+    const startPollDeadline = (): PollDeadline => {
+      const startedMs = resolvedDeps.monotonicNow();
+      if (!Number.isFinite(startedMs)) throw new StageFailure("launch", "monotonic clock returned a non-finite value");
+      return { deadlineMs: startedMs + PID_FOREGROUND_WINDOW_MS };
+    };
+    const remainingPollMs = (deadline: PollDeadline): number => {
+      const observedMs = resolvedDeps.monotonicNow();
+      if (!Number.isFinite(observedMs)) throw new StageFailure("pid", "monotonic clock returned a non-finite value");
+      return Math.max(0, Math.floor(deadline.deadlineMs - observedMs));
+    };
+    type LaunchIdentity = {
+      launchedAt: string;
+      acknowledgementSha256: string;
+      result: RunResult;
+      pollDeadline: PollDeadline;
+    };
     const launchOnce = async (): Promise<LaunchIdentity> => {
+      await requireSameBootId("before activity launch");
       const args = ["-s", input.serial, "shell", "am", "start", "-n", input.component];
       const result = await resolvedDeps.runText(resolvedDeps.adbPath, args, {
         timeoutMs: 30_000,
@@ -572,16 +618,19 @@ export async function produceNativeFleetReceipt(
         launchedAt: resolvedDeps.now().toISOString(),
         acknowledgementSha256: sha256Text(output),
         result,
+        pollDeadline: startPollDeadline(),
       };
     };
 
     type PidIdentity = { pid: number; pidStartTicks: string };
-    const pollPidIdentity = async (): Promise<PidIdentity> => {
+    const pollPidIdentity = async (deadline: PollDeadline): Promise<PidIdentity> => {
       const pidArgs = ["-s", input.serial, "shell", "pidof", input.packageName];
       let lastResult: RunResult = { code: 1, stdout: "", stderr: "", timedOut: false };
       for (let attempt = 0; attempt < PID_FOREGROUND_ATTEMPTS; attempt += 1) {
+        const pidTimeoutMs = Math.min(20_000, remainingPollMs(deadline));
+        if (pidTimeoutMs <= 0) break;
         lastResult = await resolvedDeps.runText(resolvedDeps.adbPath, pidArgs, {
-          timeoutMs: 20_000,
+          timeoutMs: pidTimeoutMs,
           maxOutputBytes: COMMAND_TAIL_BYTES,
         });
         if (lastResult.timedOut) assertTextSuccess("pid", "PID probe", resolvedDeps.adbPath, pidArgs, lastResult);
@@ -597,8 +646,10 @@ export async function produceNativeFleetReceipt(
             ));
           }
           const statArgs = ["-s", input.serial, "shell", "cat", `/proc/${pid}/stat`];
+          const statTimeoutMs = Math.min(20_000, remainingPollMs(deadline));
+          if (statTimeoutMs <= 0) break;
           const statResult = await resolvedDeps.runText(resolvedDeps.adbPath, statArgs, {
-            timeoutMs: 20_000,
+            timeoutMs: statTimeoutMs,
             maxOutputBytes: COMMAND_TAIL_BYTES,
           });
           assertTextSuccess("pid", "PID start identity", resolvedDeps.adbPath, statArgs, statResult);
@@ -617,25 +668,31 @@ export async function produceNativeFleetReceipt(
         if (lastResult.code !== 0 && lastResult.code !== 1) {
           assertTextSuccess("pid", "PID probe", resolvedDeps.adbPath, pidArgs, lastResult);
         }
-        await resolvedDeps.sleep(POLL_INTERVAL_MS);
+        if (attempt + 1 >= PID_FOREGROUND_ATTEMPTS) break;
+        const remainingMs = remainingPollMs(deadline);
+        const sleepMs = Math.min(POLL_INTERVAL_MS, remainingMs);
+        if (sleepMs <= 0 || sleepMs >= remainingMs) break;
+        await resolvedDeps.sleep(sleepMs);
       }
       throw new StageFailure("pid", commandFailure(
         "PID probe",
         resolvedDeps.adbPath,
         pidArgs,
         lastResult,
-        `no live PID appeared in ${PID_FOREGROUND_ATTEMPTS * POLL_INTERVAL_MS} milliseconds`,
+        `no live PID identity appeared within the ${PID_FOREGROUND_WINDOW_MS}-millisecond overall PID/foreground poll window`,
       ));
     };
 
     type ForegroundPoll = { activity?: ForegroundActivity; lastResult: RunResult };
-    const pollForeground = async (): Promise<ForegroundPoll> => {
+    const pollForeground = async (deadline: PollDeadline): Promise<ForegroundPoll> => {
       const args = ["-s", input.serial, "shell", "dumpsys", "activity", "activities"];
       let lastResult: RunResult = { code: 0, stdout: "", stderr: "", timedOut: false };
       let lastActivity: ForegroundActivity | undefined;
       for (let attempt = 0; attempt < PID_FOREGROUND_ATTEMPTS; attempt += 1) {
+        const timeoutMs = Math.min(20_000, remainingPollMs(deadline));
+        if (timeoutMs <= 0) break;
         lastResult = await resolvedDeps.runText(resolvedDeps.adbPath, args, {
-          timeoutMs: 20_000,
+          timeoutMs,
           maxOutputBytes: TEXT_OUTPUT_LIMIT,
         });
         assertTextSuccess("foreground", "foreground probe", resolvedDeps.adbPath, args, lastResult);
@@ -646,16 +703,20 @@ export async function produceNativeFleetReceipt(
         }
         if (activity?.packageName === input.packageName && activity.component !== input.component) break;
         if (foregroundActivities(lastResult.stdout).length > 1) break;
-        await resolvedDeps.sleep(POLL_INTERVAL_MS);
+        if (attempt + 1 >= PID_FOREGROUND_ATTEMPTS) break;
+        const remainingMs = remainingPollMs(deadline);
+        const sleepMs = Math.min(POLL_INTERVAL_MS, remainingMs);
+        if (sleepMs <= 0 || sleepMs >= remainingMs) break;
+        await resolvedDeps.sleep(sleepMs);
       }
       return { activity: lastActivity, lastResult };
     };
 
     let launchIdentity = await launchOnce();
     completedStages.push("launch");
-    let pidIdentity = await pollPidIdentity();
+    let pidIdentity = await pollPidIdentity(launchIdentity.pollDeadline);
     completedStages.push("pid");
-    let foreground = await pollForeground();
+    let foreground = await pollForeground(launchIdentity.pollDeadline);
     if (!foreground.activity || foreground.activity.packageName !== input.packageName || foreground.activity.component !== input.component) {
       const blocker = foreground.activity?.packageName !== input.packageName ? foreground.activity?.packageName : undefined;
       if (blocker) {
@@ -669,9 +730,9 @@ export async function produceNativeFleetReceipt(
         await resolvedDeps.sleep(PRE_LAUNCH_SETTLE_MS);
         launchIdentity = await launchOnce();
         completedStages.push("launch-recovery");
-        pidIdentity = await pollPidIdentity();
+        pidIdentity = await pollPidIdentity(launchIdentity.pollDeadline);
         completedStages.push("pid-recovery");
-        foreground = await pollForeground();
+        foreground = await pollForeground(launchIdentity.pollDeadline);
       }
     }
     if (!foreground.activity || foreground.activity.packageName !== input.packageName || foreground.activity.component !== input.component) {
@@ -747,6 +808,8 @@ export async function produceNativeFleetReceipt(
       };
     };
 
+    await probeInstalledApkIdentity(remoteApkPath);
+    await requireSameBootId("before capture");
     const before = await observe();
     completedStages.push("before-observation");
     const captureArgs = ["-s", input.serial, "exec-out", "screencap", "-p"];
@@ -766,6 +829,8 @@ export async function produceNativeFleetReceipt(
     const captureBytes = Buffer.from(captureResult.stdout);
     const capturedAt = resolvedDeps.now().toISOString();
     completedStages.push("capture");
+    await probeInstalledApkIdentity(remoteApkPath);
+    await requireSameBootId("after capture");
     const after = await observe();
     completedStages.push("after-observation");
 

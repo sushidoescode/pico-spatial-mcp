@@ -9,6 +9,9 @@ import {
   canonicalIdentity,
   canonicalJson,
   collectGradleInputIdentity,
+  GRADLE_INPUT_MAX_ENTRIES,
+  GRADLE_INPUT_MAX_FILE_BYTES,
+  GRADLE_INPUT_MAX_TOTAL_BYTES,
   readAuthoredAppSpecIdentity,
   type AuthoredAppSpecIdentity,
   type CanonicalIdentity,
@@ -26,11 +29,53 @@ export const APK_ARTIFACT_DIRECTORY = "artifacts/apk" as const;
 export const SPEC_ARTIFACT_DIRECTORY = "artifacts/spec" as const;
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const ANDROID_PACKAGE_PATTERN = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/;
+const ANDROID_COMPONENT_PATTERN = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\/(?:\.[A-Za-z_$][A-Za-z0-9_.$]*|[A-Za-z_$][A-Za-z0-9_.$]*)$/;
+const ANDROID_FINGERPRINT_PATTERN = /^[^\s/:]+\/[^\s/:]+\/[^\s/:]+:[^\s/]+\/[^\s/]+(?:[:/][^\s/]+)*$/;
+const RESERVED_IDENTITY_PATTERN = /^(?:unknown|unset|unavailable|pending|placeholder|none|null|undefined|n\/?a|not[-_ ]?(?:available|set|known|observed))$/i;
 const hashSchema = z.string().regex(SHA256_PATTERN);
 const nonemptyStringSchema = z.string().min(1);
 const timestampSchema = z.string().datetime({ offset: true });
 const byteCountSchema = z.number().int().nonnegative();
 const positiveIntegerSchema = z.number().int().positive();
+
+function observedIdentitySchema(
+  label: string,
+  maxLength: number,
+  grammar: RegExp,
+  grammarMessage: string,
+): z.ZodType<string> {
+  return z.string()
+    .min(1)
+    .max(maxLength)
+    .regex(grammar, grammarMessage)
+    .refine((value) => value === value.trim(), `${label} must not contain surrounding whitespace`)
+    .refine((value) => !RESERVED_IDENTITY_PATTERN.test(value), `${label} must not use a reserved placeholder`);
+}
+
+const packageNameSchema = z.string().regex(ANDROID_PACKAGE_PATTERN, "must be an Android package name");
+const sessionIdSchema = observedIdentitySchema(
+  "sessionId", 36,
+  /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+  "must be a canonical UUIDv4",
+);
+const serialSchema = observedIdentitySchema("serial", 255, /^[\x21-\x7e]+$/, "must be one printable adb serial token");
+const modelSchema = observedIdentitySchema("model", 256, /^[^\u0000-\u001f\u007f]+$/, "must not contain control characters");
+const fingerprintSchema = observedIdentitySchema("fingerprint", 1024, ANDROID_FINGERPRINT_PATTERN, "must be an Android build fingerprint");
+const bootQemuSchema = z.union([
+  z.literal(""),
+  observedIdentitySchema("bootQemu", 1, /^[01]$/, "must be the exact observed value '', 0, or 1"),
+]);
+const bootIdSchema = observedIdentitySchema(
+  "bootId", 36,
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+  "must be a canonical UUID",
+);
+const componentSchema = observedIdentitySchema("component", 512, ANDROID_COMPONENT_PATTERN, "must be an Android package/activity component");
+const pidStartTicksSchema = observedIdentitySchema(
+  "pidStartTicks", 64, /^[1-9][0-9]*$/,
+  "must contain positive decimal Linux process-start ticks",
+);
 
 const canonicalIdentitySchema = z.object({
   algorithm: z.literal("sha256"),
@@ -47,7 +92,7 @@ const authoredAppSpecIdentitySchema = z.object({
 
 const gradleInputEntrySchema = z.object({
   path: nonemptyStringSchema,
-  bytes: byteCountSchema,
+  bytes: byteCountSchema.max(GRADLE_INPUT_MAX_FILE_BYTES),
   sha256: hashSchema,
 }).strict();
 
@@ -56,24 +101,72 @@ const gradleInputIdentitySchema = z.object({
   projectDir: nonemptyStringSchema,
   algorithm: z.literal("sha256"),
   sha256: hashSchema,
-  entryCount: z.number().int().nonnegative(),
-  totalBytes: byteCountSchema,
-  entries: z.array(gradleInputEntrySchema),
-}).strict();
+  entryCount: z.number().int().nonnegative().max(GRADLE_INPUT_MAX_ENTRIES),
+  totalBytes: byteCountSchema.max(GRADLE_INPUT_MAX_TOTAL_BYTES),
+  entries: z.array(gradleInputEntrySchema).max(GRADLE_INPUT_MAX_ENTRIES),
+}).strict().superRefine((value, context) => {
+  if (value.entryCount !== value.entries.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["entryCount"],
+      message: "Gradle input entryCount must match the entries array length",
+    });
+  }
+  const totalBytes = value.entries.reduce((total, entry) => total + entry.bytes, 0);
+  if (!Number.isSafeInteger(totalBytes) || value.totalBytes !== totalBytes) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["totalBytes"],
+      message: "Gradle input totalBytes must match the entries array byte total",
+    });
+  }
+  if (canonicalIdentity(value.entries).sha256 !== value.sha256) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sha256"],
+      message: "Gradle input manifest sha256 must match its canonical entries",
+    });
+  }
+  const entryPaths = value.entries.map((entry) => entry.path);
+  const sortedPaths = [...entryPaths].sort();
+  if (entryPaths.some((entryPath, index) => entryPath !== sortedPaths[index])) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["entries"],
+      message: "Gradle input entries must be sorted by path",
+    });
+  }
+  if (new Set(entryPaths).size !== entryPaths.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["entries"],
+      message: "Gradle input entries must not contain duplicate paths",
+    });
+  }
+  if (entryPaths.some((entryPath) => path.posix.isAbsolute(entryPath)
+    || entryPath.includes("\\")
+    || entryPath.split("/").some((segment) => segment === "" || segment === "." || segment === ".."))) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["entries"],
+      message: "Gradle input entry paths must be normalized project-relative POSIX paths",
+    });
+  }
+});
 
 const runtimeCaptureObservationSchema = z.object({
   observedAt: timestampSchema,
-  foregroundPackage: nonemptyStringSchema,
-  foregroundComponent: nonemptyStringSchema,
+  foregroundPackage: packageNameSchema,
+  foregroundComponent: componentSchema,
   pid: positiveIntegerSchema,
-  pidStartTicks: nonemptyStringSchema,
+  pidStartTicks: pidStartTicksSchema,
 }).strict();
 
 const manifestInspectionSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("inspected"),
     tool: nonemptyStringSchema,
-    packageName: nonemptyStringSchema,
+    packageName: packageNameSchema,
     versionCode: nonemptyStringSchema,
     versionName: nonemptyStringSchema,
   }).strict(),
@@ -100,7 +193,7 @@ const nativeRunReceiptPayloadSchema = z.object({
   schemaVersion: z.literal(RUN_RECEIPT_SCHEMA_VERSION),
   createdAt: timestampSchema,
   scope: z.literal(RUN_RECEIPT_SCOPE),
-  app: nonemptyStringSchema,
+  app: packageNameSchema,
   source: z.object({
     authoredAppSpec: authoredAppSpecIdentitySchema,
     effectiveAppSpec: canonicalIdentitySchema.extend({ artifactPath: nonemptyStringSchema }).strict(),
@@ -122,7 +215,7 @@ const nativeRunReceiptPayloadSchema = z.object({
     artifactPath: nonemptyStringSchema,
     sha256: hashSchema,
     bytes: byteCountSchema,
-    packageName: nonemptyStringSchema,
+    packageName: packageNameSchema,
     manifestInspection: manifestInspectionSchema,
     signingInspection: signingInspectionSchema,
   }).strict(),
@@ -130,23 +223,23 @@ const nativeRunReceiptPayloadSchema = z.object({
     status: z.literal("success"),
     method: z.literal("adb-install-replace"),
     completedAt: timestampSchema,
-    packageName: nonemptyStringSchema,
+    packageName: packageNameSchema,
     remoteApkPath: nonemptyStringSchema,
     remoteApkSha256: hashSchema,
     acknowledgementSha256: hashSchema,
   }).strict(),
   runtime: z.object({
-    sessionId: nonemptyStringSchema,
-    serial: nonemptyStringSchema,
-    model: nonemptyStringSchema,
-    fingerprint: nonemptyStringSchema,
-    bootQemu: nonemptyStringSchema,
-    bootId: nonemptyStringSchema,
-    component: nonemptyStringSchema,
+    sessionId: sessionIdSchema,
+    serial: serialSchema,
+    model: modelSchema,
+    fingerprint: fingerprintSchema,
+    bootQemu: bootQemuSchema,
+    bootId: bootIdSchema,
+    component: componentSchema,
     launchedAt: timestampSchema,
     launchAcknowledgementSha256: hashSchema,
     pid: positiveIntegerSchema,
-    pidStartTicks: nonemptyStringSchema,
+    pidStartTicks: pidStartTicksSchema,
   }).strict(),
   capture: z.object({
     capturedAt: timestampSchema,
@@ -577,6 +670,12 @@ function validateCrossFieldBindings(receipt: NativeRunReceipt, effectiveSpec: un
     : undefined;
   if (effectivePackage !== packageName) issues.push("effective AppSpec packageName must match receipt app");
   const gradleInputs = receipt.source.gradleInputs;
+  if (gradleInputs.entries.length > GRADLE_INPUT_MAX_ENTRIES) issues.push(`Gradle input entries exceed the ${GRADLE_INPUT_MAX_ENTRIES}-entry limit`);
+  if (gradleInputs.entryCount > GRADLE_INPUT_MAX_ENTRIES) issues.push(`Gradle input entryCount exceeds the ${GRADLE_INPUT_MAX_ENTRIES}-entry limit`);
+  if (gradleInputs.totalBytes > GRADLE_INPUT_MAX_TOTAL_BYTES) issues.push(`Gradle input totalBytes exceeds the ${GRADLE_INPUT_MAX_TOTAL_BYTES}-byte limit`);
+  if (gradleInputs.entries.some((entry) => entry.bytes > GRADLE_INPUT_MAX_FILE_BYTES)) {
+    issues.push(`Gradle input entry bytes exceed the ${GRADLE_INPUT_MAX_FILE_BYTES}-byte per-file limit`);
+  }
   if (gradleInputs.entryCount !== gradleInputs.entries.length) issues.push("Gradle input entryCount must match the entries array length");
   const gradleTotalBytes = gradleInputs.entries.reduce((total, entry) => total + entry.bytes, 0);
   if (!Number.isSafeInteger(gradleTotalBytes) || gradleInputs.totalBytes !== gradleTotalBytes) {
