@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +12,7 @@ import {
   readAuthoredAppSpecIdentity,
   effectiveAppSpecIdentity,
   collectGradleInputIdentity,
+  collectGuardedGradleInputIdentity,
   guardGradleInputGeneration,
 } from "../dist/runreceiptidentity.js";
 
@@ -175,7 +177,29 @@ test("Gradle identity contains only the exact sorted V1 allowlist with independe
   writeFixtureFile(project, ".idea/x", "ignored IDE state\n");
   writeFixtureFile(project, "local.properties", "sdk.dir=/private/tmp/sdk\n");
   writeFixtureFile(project, "app/build/x", "ignored build output\n");
+  writeFixtureFile(project, "buildSrc/build/classes/kotlin/main/Generated.class", "ignored buildSrc output\n");
+  writeFixtureFile(project, "buildSrc/.gradle/cache.bin", "ignored nested Gradle cache\n");
+  writeFixtureFile(project, "buildSrc/src/.git/index", "ignored nested Git metadata\n");
+  writeFixtureFile(project, "gradle/.idea/workspace.xml", "ignored nested IDE metadata\n");
+  writeFixtureFile(project, "buildSrc/local.properties", "ignored buildSrc local configuration\n");
+  writeFixtureFile(project, "buildSrc/README.md", "ignored buildSrc documentation\n");
   assert.deepEqual(collectGradleInputIdentity(project), actual);
+});
+
+test("Gradle identity keeps packaged documentation and nested buildSrc resources", (t) => {
+  const dir = scratch(t, "pico-gradle-packaged-documentation-");
+  const project = createGradleProject(dir);
+  writeFixtureFile(project, "app/src/main/assets/README.md", "packaged asset\n");
+  writeFixtureFile(project, "buildSrc/src/main/resources/README.md", "build logic resource\n");
+  writeFixtureFile(project, "buildSrc/src/main/resources/local.properties", "build logic local resource\n");
+  writeFixtureFile(project, "buildSrc/README.md/Plugin.kt", "class DocumentationNamedDirectoryPlugin\n");
+  writeFixtureFile(project, "buildSrc/local.properties/Config.kt", "class LocalPropertiesNamedDirectoryConfig\n");
+  const identity = collectGradleInputIdentity(project);
+  assert.ok(identity.entries.some((entry) => entry.path === "app/src/main/assets/README.md"));
+  assert.ok(identity.entries.some((entry) => entry.path === "buildSrc/src/main/resources/README.md"));
+  assert.ok(identity.entries.some((entry) => entry.path === "buildSrc/src/main/resources/local.properties"));
+  assert.ok(identity.entries.some((entry) => entry.path === "buildSrc/README.md/Plugin.kt"));
+  assert.ok(identity.entries.some((entry) => entry.path === "buildSrc/local.properties/Config.kt"));
 });
 
 test("Gradle identity changes for each selected manifest, source, wrapper, and asset input", (t) => {
@@ -330,4 +354,157 @@ test("Gradle generation guard caps selected watcher diagnostics during an event 
     guard?.close();
     fs.watch = originalWatch;
   }
+});
+
+test("guarded collection catches a transient change in an existing selected directory before collection returns", async (t) => {
+  const dir = scratch(t, "pico-gradle-collection-directory-race-");
+  const project = createGradleProject(dir);
+  const largeWrapper = path.join(project, "gradlew.bat");
+  fs.writeFileSync(largeWrapper, Buffer.alloc(1024 * 1024 + 32, 0x61));
+  const selectedDirectory = path.join(project, "app/src/main/java/com/example");
+  const transient = path.join(selectedDirectory, "Transient.kt");
+  const originalReadSync = fs.readSync;
+  let mutated = false;
+  fs.readSync = function (...args) {
+    const count = originalReadSync.apply(this, args);
+    if (!mutated && args[3] === 1024 * 1024) {
+      mutated = true;
+      fs.writeFileSync(transient, "package com.example\nclass Transient\n");
+      fs.unlinkSync(transient);
+    }
+    return count;
+  };
+  let guarded;
+  try {
+    guarded = collectGuardedGradleInputIdentity(project);
+    assert.equal(mutated, true);
+    await assert.rejects(guarded.guard.assertUnchanged(), /directory|generation|continuity|mutation/i);
+  } finally {
+    guarded?.guard.close();
+    fs.readSync = originalReadSync;
+  }
+});
+
+test("Gradle collection streams bounded directory entries and closes every opened directory on failure", (t) => {
+  const streamDir = scratch(t, "pico-gradle-streaming-directory-");
+  const streamProject = createGradleProject(streamDir);
+  const streamProjectReal = fs.realpathSync(streamProject);
+  const originalReaddirSync = fs.readdirSync;
+  fs.readdirSync = function (directory, ...args) {
+    const relative = path.relative(streamProjectReal, path.resolve(directory));
+    if (relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..")) {
+      throw new Error("selected Gradle traversal used unbounded readdirSync");
+    }
+    return originalReaddirSync.call(this, directory, ...args);
+  };
+  try {
+    assert.doesNotThrow(() => collectGradleInputIdentity(streamProject));
+  } finally {
+    fs.readdirSync = originalReaddirSync;
+  }
+
+  const closeDir = scratch(t, "pico-gradle-directory-close-");
+  const closeProject = createMinimalGradleProject(closeDir);
+  for (const name of ["a", "b", "c", "d"]) fs.mkdirSync(path.join(closeProject, "app/src", name));
+  const originalOpendirSync = fs.opendirSync;
+  const opened = [];
+  fs.opendirSync = function (...args) {
+    const directory = originalOpendirSync.apply(this, args);
+    const originalCloseSync = directory.closeSync.bind(directory);
+    const record = { closeCalls: 0 };
+    directory.closeSync = () => {
+      record.closeCalls += 1;
+      return originalCloseSync();
+    };
+    opened.push(record);
+    return directory;
+  };
+  try {
+    assert.throws(
+      () => collectGuardedGradleInputIdentity(closeProject, { maxDirectories: 3 }),
+      /directory count.*3|director(?:y|ies).*3/i,
+    );
+    assert.ok(opened.length > 0, "selected traversal must use bounded directory handles");
+    assert.deepEqual(opened.map((record) => record.closeCalls), opened.map(() => 1));
+  } finally {
+    fs.opendirSync = originalOpendirSync;
+  }
+});
+
+test("guarded collection catches atomic replace and restoration of a root-selected file without watcher delivery", async (t) => {
+  const dir = scratch(t, "pico-gradle-root-restore-");
+  const project = createGradleProject(dir);
+  const selected = path.join(project, "settings.gradle.kts");
+  const held = path.join(project, "settings.gradle.kts.held");
+  const replacement = path.join(project, "settings.gradle.kts.replacement");
+  const originalWatch = fs.watch;
+  fs.watch = function () {
+    const watcher = new EventEmitter();
+    watcher.close = () => {};
+    return watcher;
+  };
+  let guarded;
+  try {
+    guarded = collectGuardedGradleInputIdentity(project);
+    fs.writeFileSync(replacement, "rootProject.name = 'replacement'\n");
+    fs.renameSync(selected, held);
+    fs.renameSync(replacement, selected);
+    fs.unlinkSync(selected);
+    fs.renameSync(held, selected);
+    await assert.rejects(guarded.guard.assertUnchanged(), /file|generation|continuity|mutation/i);
+  } finally {
+    guarded?.guard.close();
+    fs.watch = originalWatch;
+  }
+});
+
+test("guard fails closed when an initially absent selected root changes with watcher delivery dropped", async (t) => {
+  const dir = scratch(t, "pico-gradle-absent-root-");
+  const project = createGradleProject(dir);
+  const originalWatch = fs.watch;
+  fs.watch = function () {
+    const watcher = new EventEmitter();
+    watcher.close = () => {};
+    return watcher;
+  };
+  let guarded;
+  try {
+    guarded = collectGuardedGradleInputIdentity(project);
+    const transientRoot = path.join(project, "app/libs");
+    fs.mkdirSync(transientRoot, { recursive: true });
+    fs.writeFileSync(path.join(transientRoot, "transient.jar"), "transient");
+    fs.rmSync(transientRoot, { recursive: true });
+    await assert.rejects(guarded.guard.assertUnchanged(), /parent|directory|generation|continuity|mutation|ambiguous/i);
+  } finally {
+    guarded?.guard.close();
+    fs.watch = originalWatch;
+  }
+});
+
+test("guard waits for a late coalesced watcher callback and closes every watcher exactly once", async (t) => {
+  const dir = scratch(t, "pico-gradle-late-watch-");
+  const project = createGradleProject(dir);
+  const originalWatch = fs.watch;
+  const watchers = [];
+  fs.watch = function (_directory, options, listener) {
+    const callback = typeof options === "function" ? options : listener;
+    const watcher = new EventEmitter();
+    watcher.callback = callback;
+    watcher.closeCalls = 0;
+    watcher.close = () => { watcher.closeCalls += 1; };
+    watchers.push(watcher);
+    return watcher;
+  };
+  let guarded;
+  try {
+    guarded = collectGuardedGradleInputIdentity(project);
+    setImmediate(() => setImmediate(() => watchers[0].callback("rename", null)));
+    await assert.rejects(guarded.guard.assertUnchanged(), /unknown|mutation|continuity/i);
+  } finally {
+    guarded?.guard.close();
+    guarded?.guard.close();
+    fs.watch = originalWatch;
+  }
+  assert.ok(watchers.length >= 2);
+  assert.deepEqual(watchers.map((watcher) => watcher.closeCalls), watchers.map(() => 1));
 });

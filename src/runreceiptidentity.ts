@@ -35,6 +35,11 @@ export const GRADLE_INPUT_MAX_FILE_BYTES = 512 * 1024 * 1024;
 export const GRADLE_INPUT_MAX_DIRECTORIES = 20_000;
 export const GRADLE_INPUT_MAX_DEPTH = 128;
 export const GRADLE_INPUT_MAX_EVENT_SAMPLES = 8;
+const GRADLE_INPUT_EVENT_SAMPLE_MAX_CHARS = 160;
+const GRADLE_INPUT_WATCH_SETTLE_TIMEOUT_MS = 250;
+const GRADLE_INPUT_WATCH_SETTLE_POLL_MS = 5;
+const GRADLE_INPUT_WATCH_DRAIN_MAX_TURNS = 8;
+const GRADLE_INPUT_WATCH_QUIET_TURNS = 2;
 
 const ROOT_FILES = new Set([
   "settings.gradle", "settings.gradle.kts", "build.gradle", "build.gradle.kts",
@@ -42,6 +47,25 @@ const ROOT_FILES = new Set([
   "app/build.gradle", "app/build.gradle.kts", "app/proguard-rules.pro",
 ]);
 const RECURSIVE_ROOTS = ["gradle", "buildSrc", "app/src", "app/libs", "libs"] as const;
+const EXCLUDED_RECURSIVE_SEGMENTS = new Set([".gradle", ".git", ".idea"]);
+const BUILDSRC_NON_INPUT_FILE_PATTERN = /^(?:local\.properties|readme(?:\..*)?|license(?:\..*)?|changelog(?:\..*)?|contributing(?:\..*)?|code_of_conduct(?:\..*)?)$/i;
+
+function isExcludedRecursiveSubtree(relativePath: string): boolean {
+  const segments = relativePath.split("/");
+  if (segments.some((segment) => EXCLUDED_RECURSIVE_SEGMENTS.has(segment))) return true;
+  return segments[0] === "buildSrc" && segments[1] === "build";
+}
+
+function isDirectBuildSrcNonInputFilePath(relativePath: string): boolean {
+  const segments = relativePath.split("/");
+  return segments.length === 2
+    && segments[0] === "buildSrc"
+    && BUILDSRC_NON_INPUT_FILE_PATTERN.test(segments[1] ?? "");
+}
+
+function isExcludedGradleInputFile(relativePath: string): boolean {
+  return isExcludedRecursiveSubtree(relativePath) || isDirectBuildSrcNonInputFilePath(relativePath);
+}
 
 export function isGradleInputPath(relativePath: string): boolean {
   if (!relativePath
@@ -51,7 +75,8 @@ export function isGradleInputPath(relativePath: string): boolean {
     return false;
   }
   return ROOT_FILES.has(relativePath)
-    || RECURSIVE_ROOTS.some((root) => relativePath.startsWith(`${root}/`));
+    || (!isExcludedGradleInputFile(relativePath)
+      && RECURSIVE_ROOTS.some((root) => relativePath.startsWith(`${root}/`)));
 }
 
 export function gradleInputManifestPathIssues(
@@ -265,14 +290,24 @@ type GuardLimits = Readonly<{
   maxEventSamples: number;
 }>;
 
+type ParentGeneration = {
+  before: StableStat;
+  selectedObserved: boolean;
+  excludedObserved: boolean;
+  ambiguousObserved: boolean;
+};
+
 type GuardState = {
   projectDir: string;
   limits: GuardLimits;
   trackedFiles: Array<{ path: string; descriptor: number; before: StableStat }>;
   trackedDirectories: Map<string, StableStat>;
   watchers: fs.FSWatcher[];
-  selectedEventSamples: string[];
-  selectedEventsOmitted: boolean;
+  parentGenerations: Map<string, ParentGeneration>;
+  eventSamples: string[];
+  eventsOmitted: boolean;
+  eventRevision: number;
+  watchersClosed: boolean;
   closed: boolean;
 };
 
@@ -292,37 +327,77 @@ function guardLimits(options: GradleInputGuardOptions = {}): GuardLimits {
   };
 }
 
-function closeGuardState(state: GuardState): void {
-  if (state.closed) return;
-  state.closed = true;
-  for (const watcher of state.watchers) watcher.close();
-  for (const file of state.trackedFiles) {
-    try { fs.closeSync(file.descriptor); } catch {}
+function rememberGuardEvent(
+  state: GuardState,
+  parent: ParentGeneration,
+  classification: "selected" | "excluded" | "ambiguous",
+  event: string,
+): void {
+  if (classification === "selected") parent.selectedObserved = true;
+  else if (classification === "excluded") parent.excludedObserved = true;
+  else parent.ambiguousObserved = true;
+  state.eventRevision += 1;
+  if (state.eventSamples.length < state.limits.maxEventSamples) {
+    if (classification !== "excluded") state.eventSamples.push(event.slice(0, GRADLE_INPUT_EVENT_SAMPLE_MAX_CHARS));
+  } else {
+    state.eventsOmitted = true;
   }
 }
 
-function rememberSelectedEvent(state: GuardState, event: string): void {
-  if (state.selectedEventSamples.length < state.limits.maxEventSamples) {
-    state.selectedEventSamples.push(event);
-  } else {
-    state.selectedEventsOmitted = true;
+function closeWatchers(state: GuardState, recordErrors: boolean): void {
+  if (state.watchersClosed) return;
+  state.watchersClosed = true;
+  for (const watcher of state.watchers) {
+    try {
+      watcher.close();
+    } catch (error) {
+      if (recordErrors) {
+        const parent = state.parentGenerations.values().next().value as ParentGeneration | undefined;
+        if (parent) rememberGuardEvent(
+          state,
+          parent,
+          "ambiguous",
+          `watcher-close-error:${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+}
+
+function closeGuardState(state: GuardState): void {
+  if (state.closed) return;
+  state.closed = true;
+  closeWatchers(state, false);
+  for (const file of state.trackedFiles) {
+    try { fs.closeSync(file.descriptor); } catch {}
   }
 }
 
 function watchDirectChildren(
   state: GuardState,
   directory: string,
-  selectedNames: ReadonlySet<string>,
+  classifyName: (name: string) => "selected" | "excluded" | "ambiguous",
 ): void {
   if (!lstatIfPresent(directory)?.isDirectory()) return;
-  const watcher = fs.watch(directory, { persistent: false }, (eventType, filename) => {
+  const realDirectory = fs.realpathSync(directory);
+  const parent: ParentGeneration = {
+    before: lstatStable(realDirectory),
+    selectedObserved: false,
+    excludedObserved: false,
+    ambiguousObserved: false,
+  };
+  state.parentGenerations.set(realDirectory, parent);
+  const watcher = fs.watch(realDirectory, { persistent: false }, (eventType, filename) => {
     const name = filename === null ? "" : filename.toString();
-    if (!name || selectedNames.has(name.split(/[\\/]/, 1)[0])) {
-      rememberSelectedEvent(state, `${eventType}:${name || "unknown"}`);
-    }
+    const directName = name.split(/[\\/]/, 1)[0];
+    const classification = directName ? classifyName(directName) : "ambiguous";
+    rememberGuardEvent(state, parent, classification, `${eventType}:${directName || "unknown"}`);
   });
-  watcher.on("error", (error) => rememberSelectedEvent(state, `watcher-error:${error.message}`));
   state.watchers.push(watcher);
+  watcher.on("error", (error) => rememberGuardEvent(state, parent, "ambiguous", `watcher-error:${error.message}`));
+  if (!sameStableStat(parent.before, lstatStable(realDirectory))) {
+    rememberGuardEvent(state, parent, "ambiguous", "watcher-setup-parent-generation-changed");
+  }
 }
 
 function createGuardState(projectDir: string, options: GradleInputGuardOptions): GuardState {
@@ -332,20 +407,37 @@ function createGuardState(projectDir: string, options: GradleInputGuardOptions):
     trackedFiles: [],
     trackedDirectories: new Map(),
     watchers: [],
-    selectedEventSamples: [],
-    selectedEventsOmitted: false,
+    parentGenerations: new Map(),
+    eventSamples: [],
+    eventsOmitted: false,
+    eventRevision: 0,
+    watchersClosed: false,
     closed: false,
   };
   try {
-    watchDirectChildren(state, projectDir, new Set([
+    const appSelectedNames = new Set(["build.gradle", "build.gradle.kts", "proguard-rules.pro", "src", "libs"]);
+    const projectSelectedNames = new Set([
       "app",
       ...[...ROOT_FILES].filter((relativePath) => !relativePath.includes("/")),
       ...RECURSIVE_ROOTS.filter((relativePath) => !relativePath.includes("/")),
-    ]));
+    ]);
+    watchDirectChildren(state, projectDir, (name) => projectSelectedNames.has(name) ? "selected" : "excluded");
     watchDirectChildren(
       state,
       path.join(projectDir, "app"),
-      new Set(["build.gradle", "build.gradle.kts", "proguard-rules.pro", "src", "libs"]),
+      (name) => appSelectedNames.has(name)
+        ? "selected"
+        : "excluded",
+    );
+    watchDirectChildren(
+      state,
+      path.join(projectDir, "buildSrc"),
+      (name) => {
+        const relativePath = `buildSrc/${name}`;
+        if (isExcludedRecursiveSubtree(relativePath)) return "excluded";
+        if (isDirectBuildSrcNonInputFilePath(relativePath)) return "ambiguous";
+        return "selected";
+      },
     );
     return state;
   } catch (error) {
@@ -416,26 +508,44 @@ function collectGradleInputIdentityInternal(
   let directoryCount = 0;
 
   const addFile = (selectedPath: string): void => {
-    const { stat, realPath } = validateSelectedPath(projectRealPath, selectedPath);
-    const relativePath = path.relative(projectRealPath, realPath).split(path.sep).join("/");
-    const hashed = hashSelectedFile(projectRealPath, realPath, stat, state);
     if (entries.length >= GRADLE_INPUT_MAX_ENTRIES) {
       throw new Error(`Gradle input manifest exceeds ${GRADLE_INPUT_MAX_ENTRIES} entries`);
     }
-    if (totalBytes + hashed.bytes > GRADLE_INPUT_MAX_TOTAL_BYTES) {
+    const { stat, realPath } = validateSelectedPath(projectRealPath, selectedPath);
+    const relativePath = path.relative(projectRealPath, realPath).split(path.sep).join("/");
+    if (!isGradleInputPath(relativePath)) {
+      throw new Error(`selected Gradle input is outside the exact V1 allowlist: ${relativePath}`);
+    }
+    if (totalBytes + stat.size > GRADLE_INPUT_MAX_TOTAL_BYTES) {
       throw new Error(`Gradle input manifest exceeds ${GRADLE_INPUT_MAX_TOTAL_BYTES} total bytes`);
     }
+    const hashed = hashSelectedFile(projectRealPath, realPath, stat, state);
     entries.push({ path: relativePath, bytes: hashed.bytes, sha256: hashed.sha256 });
     totalBytes += hashed.bytes;
   };
 
   const pending: Array<{ selectedPath: string; depth: number }> = [];
+  let discoveredWork = 0;
+  const pendingWorkLimit = GRADLE_INPUT_MAX_ENTRIES + limits.maxDirectories;
+  const enqueue = (selectedPath: string, depth: number): void => {
+    const relativePath = path.relative(projectRealPath, selectedPath).split(path.sep).join("/");
+    if (isExcludedRecursiveSubtree(relativePath)) return;
+    discoveredWork += 1;
+    if (discoveredWork > pendingWorkLimit) {
+      throw new Error(`Gradle input traversal exceeds the bounded ${pendingWorkLimit}-entry pending-work ceiling`);
+    }
+    pending.push({ selectedPath, depth });
+  };
   for (const relativeRoot of [...RECURSIVE_ROOTS].reverse()) {
     const selectedRoot = path.join(projectRealPath, ...relativeRoot.split("/"));
-    if (lstatIfPresent(selectedRoot)) pending.push({ selectedPath: selectedRoot, depth: 0 });
+    if (lstatIfPresent(selectedRoot)) enqueue(selectedRoot, 0);
   }
   while (pending.length) {
     const { selectedPath, depth } = pending.pop()!;
+    const relativePath = path.relative(projectRealPath, selectedPath).split(path.sep).join("/");
+    if (isDirectBuildSrcNonInputFilePath(relativePath) && !fs.lstatSync(selectedPath).isDirectory()) {
+      continue;
+    }
     const selected = validateSelectedPath(projectRealPath, selectedPath);
     if (selected.stat.isFile()) {
       addFile(selected.realPath);
@@ -452,14 +562,21 @@ function collectGradleInputIdentityInternal(
       throw new Error(`Gradle input directory count exceeds the ${limits.maxDirectories} directory ceiling`);
     }
     const before = lstatStable(selected.realPath);
-    const names = fs.readdirSync(selected.realPath).sort();
+    const directory = fs.opendirSync(selected.realPath);
+    try {
+      let child: fs.Dirent | null;
+      while ((child = directory.readSync()) !== null) {
+        enqueue(path.join(selected.realPath, child.name), depth + 1);
+      }
+    } finally {
+      directory.closeSync();
+    }
     const after = lstatStable(selected.realPath);
     if (!sameStableStat(before, after)) {
       throw new Error(`selected Gradle input directory changed while collecting: ${selectedPath}`);
     }
-    state?.trackedDirectories.set(selected.realPath, before);
-    for (let index = names.length - 1; index >= 0; index -= 1) {
-      pending.push({ selectedPath: path.join(selected.realPath, names[index]), depth: depth + 1 });
+    if (state && !state.parentGenerations.has(selected.realPath)) {
+      state.trackedDirectories.set(selected.realPath, before);
     }
   }
 
@@ -483,18 +600,75 @@ function collectGradleInputIdentityInternal(
 }
 
 function generationGuard(state: GuardState): GradleInputGenerationGuard {
+  const waitForWatcherQuiet = async (): Promise<boolean> => {
+    let observedRevision = state.eventRevision;
+    let quietTurns = 0;
+    for (let turn = 0; turn < GRADLE_INPUT_WATCH_DRAIN_MAX_TURNS; turn += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      if (state.eventRevision === observedRevision) {
+        quietTurns += 1;
+        if (quietTurns >= GRADLE_INPUT_WATCH_QUIET_TURNS) return true;
+      } else {
+        observedRevision = state.eventRevision;
+        quietTurns = 0;
+      }
+    }
+    return false;
+  };
+
+  const sealAndDrainWatchers = async (): Promise<void> => {
+    const parent = state.parentGenerations.values().next().value as ParentGeneration | undefined;
+    const isClassified = (generation: ParentGeneration): boolean => generation.selectedObserved
+      || generation.excludedObserved
+      || generation.ambiguousObserved;
+    const changedUnclassifiedParents = (): ParentGeneration[] => [...state.parentGenerations]
+      .filter(([directory, generation]) => {
+        if (isClassified(generation)) return false;
+        try {
+          return !sameStableStat(generation.before, lstatStable(directory));
+        } catch {
+          return false;
+        }
+      })
+      .map(([, generation]) => generation);
+    const settleDeadline = process.hrtime.bigint()
+      + BigInt(GRADLE_INPUT_WATCH_SETTLE_TIMEOUT_MS) * 1_000_000n;
+    let observedRevision = state.eventRevision;
+    let quietTurns = 0;
+    let settled = false;
+    while (process.hrtime.bigint() < settleDeadline) {
+      await new Promise<void>((resolve) => setTimeout(resolve, GRADLE_INPUT_WATCH_SETTLE_POLL_MS));
+      if (state.eventRevision === observedRevision) quietTurns += 1;
+      else {
+        observedRevision = state.eventRevision;
+        quietTurns = 0;
+      }
+      if (quietTurns >= GRADLE_INPUT_WATCH_QUIET_TURNS && changedUnclassifiedParents().length === 0) {
+        settled = true;
+        break;
+      }
+    }
+    if (!settled && parent) {
+      rememberGuardEvent(state, parent, "ambiguous", "watcher-callbacks-did-not-settle-before-deadline");
+    }
+    closeWatchers(state, true);
+    if (!await waitForWatcherQuiet() && parent) {
+      rememberGuardEvent(state, parent, "ambiguous", "watcher-callback-drain-did-not-quiesce");
+    }
+  };
+
   return {
     close: () => closeGuardState(state),
     assertUnchanged: async (): Promise<void> => {
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await sealAndDrainWatchers();
       const issues: string[] = [];
       let issuesOmitted = false;
       const addIssue = (issue: string): void => {
         if (issues.length < GRADLE_INPUT_MAX_EVENT_SAMPLES) issues.push(issue);
         else issuesOmitted = true;
       };
-      for (const event of state.selectedEventSamples) addIssue(`selected path mutation observed (${event})`);
-      if (state.selectedEventsOmitted) addIssue("additional selected path mutations omitted");
+      for (const event of state.eventSamples) addIssue(`selected path mutation observed (${event})`);
+      if (state.eventsOmitted) addIssue("additional selected path mutations omitted");
       for (const file of state.trackedFiles) {
         try {
           const after = stableStat(fs.fstatSync(file.descriptor, { bigint: true }));
@@ -514,6 +688,20 @@ function generationGuard(state: GuardState): GradleInputGenerationGuard {
           }
         } catch (error) {
           addIssue(`selected directory continuity could not be checked: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      for (const [directory, parent] of state.parentGenerations) {
+        try {
+          if (!sameStableStat(parent.before, lstatStable(directory))) {
+            const relativePath = path.relative(state.projectDir, directory).split(path.sep).join("/") || ".";
+            if (parent.selectedObserved || parent.ambiguousObserved) {
+              addIssue(`watched parent generation changed: ${relativePath}`);
+            } else if (!parent.excludedObserved) {
+              addIssue(`watched parent generation changed without a classified event: ${relativePath}`);
+            }
+          }
+        } catch (error) {
+          addIssue(`watched parent continuity could not be checked: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
       if (issuesOmitted) issues.push("additional Gradle input continuity issues omitted");

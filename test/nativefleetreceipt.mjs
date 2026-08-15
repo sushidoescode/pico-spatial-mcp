@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -50,6 +51,50 @@ function writeFile(root, relativePath, contents) {
   return target;
 }
 
+function installFakeWatch() {
+  const originalWatch = fs.watch;
+  const watchers = [];
+  fs.watch = function (directory, options, listener) {
+    const callback = typeof options === "function" ? options : listener;
+    const watcher = new EventEmitter();
+    watcher.directory = path.resolve(directory);
+    watcher.closed = false;
+    watcher.callback = (...args) => {
+      if (!watcher.closed) callback(...args);
+    };
+    watcher.closeCalls = 0;
+    watcher.close = () => {
+      watcher.closeCalls += 1;
+      watcher.closed = true;
+    };
+    watchers.push(watcher);
+    return watcher;
+  };
+  return { watchers, restore: () => { fs.watch = originalWatch; } };
+}
+
+async function produceWithClassifiedWatchEvents(fixture, events) {
+  const fake = installFakeWatch();
+  const originalRunText = fixture.deps.runText;
+  fixture.deps.runText = async (...args) => {
+    const result = await originalRunText(...args);
+    if (args[0].endsWith("/gradlew")) {
+      for (const [relativeDirectory, filename] of events) {
+        const watchedDirectory = fs.realpathSync(path.join(fixture.projectDir, relativeDirectory));
+        const watcher = fake.watchers.find((candidate) => candidate.directory === watchedDirectory);
+        assert.ok(watcher, `${relativeDirectory || "project root"} must be watched before Gradle starts`);
+        watcher.callback("rename", filename);
+      }
+    }
+    return result;
+  };
+  try {
+    return { out: await produceNativeFleetReceipt(fixture.input, fixture.deps), watchers: fake.watchers };
+  } finally {
+    fake.restore();
+  }
+}
+
 function procStat(pid = PID, startTicks = PID_START_TICKS) {
   return `${pid} (Receipt worker (stage)) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 ${startTicks} 20 21 22\n`;
 }
@@ -93,6 +138,12 @@ async function createProducerFixture(t, mutation = {}) {
   writeFile(projectDir, "app/build.gradle.kts", `android { namespace = \"${PACKAGE}\" }\n`);
   writeFile(projectDir, "app/src/main/AndroidManifest.xml", `<manifest package=\"${PACKAGE}\" />\n`);
   writeFile(projectDir, "app/src/main/java/com/fleet/receipt/MainActivity.kt", `package ${PACKAGE}\nclass MainActivity\n`);
+  if (["gradle-excluded-buildsrc-outputs", "gradle-excluded-plus-selected"].includes(mutation.kind)) {
+    writeFile(projectDir, "buildSrc/src/main/kotlin/ReceiptPlugin.kt", "class ReceiptPlugin\n");
+  }
+  if (mutation.kind === "gradle-buildsrc-doc-file-directory-restored") {
+    writeFile(projectDir, "buildSrc/README.md", "build logic documentation\n");
+  }
   fs.writeFileSync(briefPath, JSON.stringify({ brief: "native receipt", spec: authoredSpec(PACKAGE) }));
 
   const apkBytes = Buffer.from("PK\u0003\u0004native-fleet-receipt-apk", "utf8");
@@ -179,10 +230,40 @@ async function createProducerFixture(t, mutation = {}) {
         const transient = writeFile(projectRealDir, "app/src/main/java/com/fleet/receipt/TransientDuringGradle.kt", `package ${PACKAGE}\nclass TransientDuringGradle\n`);
         fs.unlinkSync(transient);
       }
+      if (mutation.kind === "gradle-root-atomic-restored") {
+        const selected = path.join(projectRealDir, "settings.gradle.kts");
+        const held = path.join(projectRealDir, "settings.gradle.kts.held");
+        const replacement = writeFile(projectRealDir, "settings.gradle.kts.replacement", "rootProject.name = \"replacement\"\n");
+        fs.renameSync(selected, held);
+        fs.renameSync(replacement, selected);
+        fs.unlinkSync(selected);
+        fs.renameSync(held, selected);
+      }
+      if (mutation.kind === "gradle-absent-root-restored") {
+        const transientRoot = path.join(projectRealDir, "app/libs");
+        writeFile(projectRealDir, "app/libs/transient.jar", "transient selected member");
+        fs.rmSync(transientRoot, { recursive: true });
+      }
       if (mutation.kind === "gradle-excluded-output-mutations") {
         writeFile(projectRealDir, "app/build/intermediates/fixture/output.bin", "excluded build output");
         writeFile(projectRealDir, ".gradle/fixture/cache.bin", "excluded Gradle cache");
         writeFile(projectRealDir, "README.md", "excluded documentation");
+      }
+      if (["gradle-excluded-buildsrc-outputs", "gradle-excluded-plus-selected"].includes(mutation.kind)) {
+        writeFile(projectRealDir, "buildSrc/build/classes/kotlin/main/ReceiptPlugin.class", "excluded buildSrc output");
+        writeFile(projectRealDir, "buildSrc/.gradle/cache.bin", "excluded nested Gradle cache");
+      }
+      if (mutation.kind === "gradle-excluded-plus-selected") {
+        const transient = writeFile(projectRealDir, "buildSrc/Transient.kt", "class Transient\n");
+        fs.unlinkSync(transient);
+      }
+      if (mutation.kind === "gradle-buildsrc-doc-file-directory-restored") {
+        const documentation = path.join(projectRealDir, "buildSrc/README.md");
+        const held = path.join(projectRealDir, "buildSrc/README.md.held");
+        fs.renameSync(documentation, held);
+        writeFile(projectRealDir, "buildSrc/README.md/Plugin.kt", "class TransientPlugin\n");
+        fs.rmSync(documentation, { recursive: true });
+        fs.renameSync(held, documentation);
       }
       return textResult("BUILD SUCCESSFUL\n");
     }
@@ -545,6 +626,8 @@ test("producer binds one unchanged Gradle input generation across the awaited bu
     ["selected file changed and restored to identical bytes", "gradle-selected-content-restored"],
     ["persistent selected membership addition", "gradle-selected-member-persistent"],
     ["selected source added and removed", "gradle-selected-member-restored"],
+    ["root-selected file atomically replaced and restored", "gradle-root-atomic-restored"],
+    ["initially absent selected root created and removed", "gradle-absent-root-restored"],
   ];
   for (const [name, kind] of mutations) {
     await t.test(name, async (child) => {
@@ -569,6 +652,177 @@ test("producer binds one unchanged Gradle input generation across the awaited bu
     assert.equal(out.receipt.receipt.source.gradleInputs.entries.some((entry) => entry.path.startsWith(".gradle/")), false);
     assert.equal(out.receipt.receipt.source.gradleInputs.entries.some((entry) => entry.path === "README.md"), false);
   });
+
+  await t.test("buildSrc build and nested metadata outputs do not invalidate or enter the generation", async (child) => {
+    const fixture = await createProducerFixture(child, { kind: "gradle-excluded-buildsrc-outputs" });
+    const { out, watchers } = await produceWithClassifiedWatchEvents(fixture, [
+      ["buildSrc", "build"],
+      ["buildSrc", ".gradle"],
+    ]);
+    assert.equal(out.status, "recorded", JSON.stringify(out, null, 2));
+    assert.equal(out.receipt.receipt.source.gradleInputs.entries.some((entry) => entry.path.startsWith("buildSrc/build/")), false);
+    assert.equal(out.receipt.receipt.source.gradleInputs.entries.some((entry) => entry.path.includes("/.gradle/")), false);
+    assert.deepEqual(watchers.map((watcher) => watcher.closeCalls), watchers.map(() => 1));
+  });
+
+  await t.test("excluded buildSrc output cannot mask a simultaneous selected transient member", async (child) => {
+    const fixture = await createProducerFixture(child, { kind: "gradle-excluded-plus-selected" });
+    const { out, watchers } = await produceWithClassifiedWatchEvents(fixture, [
+      ["buildSrc", "build"],
+      ["buildSrc", ".gradle"],
+      ["buildSrc", "Transient.kt"],
+    ]);
+    assert.equal(out.status, "failed");
+    assert.equal(out.stage, "build-input-continuity", JSON.stringify(out, null, 2));
+    assert.equal(out.built, false);
+    assert.equal(out.installed, false);
+    assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
+    assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+    assert.deepEqual(watchers.map((watcher) => watcher.closeCalls), watchers.map(() => 1));
+  });
+
+  await t.test("restored buildSrc documentation file cannot hide a transient same-named selected directory", async (child) => {
+    const fixture = await createProducerFixture(child, { kind: "gradle-buildsrc-doc-file-directory-restored" });
+    const { out, watchers } = await produceWithClassifiedWatchEvents(fixture, [
+      ["buildSrc", "README.md"],
+    ]);
+    assert.equal(out.status, "failed");
+    assert.equal(out.stage, "build-input-continuity", JSON.stringify(out, null, 2));
+    assert.equal(out.built, false);
+    assert.equal(out.installed, false);
+    assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
+    assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+    assert.deepEqual(watchers.map((watcher) => watcher.closeCalls), watchers.map(() => 1));
+  });
+});
+
+test("producer settles a spaced excluded-only watcher backlog without invalidating continuity", { timeout: 4_000 }, async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "gradle-excluded-output-mutations" });
+  const fake = installFakeWatch();
+  const originalRunText = fixture.deps.runText;
+  fixture.deps.runText = async (...args) => {
+    const result = await originalRunText(...args);
+    if (args[0].endsWith("/gradlew")) {
+      const projectDirectory = fs.realpathSync(fixture.projectDir);
+      const projectWatcher = fake.watchers.find((watcher) => watcher.directory === projectDirectory);
+      assert.ok(projectWatcher, "project root must be watched before Gradle starts");
+      for (let index = 0; index < 20; index += 1) {
+        setTimeout(() => projectWatcher.callback("rename", index % 2 ? ".gradle" : "README.md"), index * 2);
+      }
+    }
+    return result;
+  };
+  let out;
+  try {
+    out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  } finally {
+    fake.restore();
+  }
+  assert.equal(out.status, "recorded", JSON.stringify(out, null, 2));
+  assert.deepEqual(fake.watchers.map((watcher) => watcher.closeCalls), fake.watchers.map(() => 1));
+});
+
+test("producer drains a late coalesced selected callback before accepting continuity", { timeout: 4_000 }, async (t) => {
+  const fixture = await createProducerFixture(t);
+  const fake = installFakeWatch();
+  const originalRunText = fixture.deps.runText;
+  fixture.deps.runText = async (...args) => {
+    const result = await originalRunText(...args);
+    if (args[0].endsWith("/gradlew")) {
+      setImmediate(() => setImmediate(() => fake.watchers[0].callback("rename", null)));
+    }
+    return result;
+  };
+  let out;
+  try {
+    out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  } finally {
+    fake.restore();
+  }
+  assert.equal(out.status, "failed");
+  assert.equal(out.stage, "build-input-continuity");
+  assert.equal(out.built, false);
+  assert.equal(out.installed, false);
+  assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
+  assert.ok(fake.watchers.length >= 2);
+  assert.deepEqual(fake.watchers.map((watcher) => watcher.closeCalls), fake.watchers.map(() => 1));
+});
+
+test("producer converts a watcher error into one bounded continuity failure and closes cleanly", { timeout: 4_000 }, async (t) => {
+  const fixture = await createProducerFixture(t);
+  const fake = installFakeWatch();
+  const originalRunText = fixture.deps.runText;
+  fixture.deps.runText = async (...args) => {
+    const result = await originalRunText(...args);
+    if (args[0].endsWith("/gradlew")) {
+      for (let index = 0; index < 64; index += 1) fake.watchers[0].emit("error", new Error(`fixture watcher failure ${index}`));
+    }
+    return result;
+  };
+  let out;
+  try {
+    out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  } finally {
+    fake.restore();
+  }
+  assert.equal(out.status, "failed");
+  assert.equal(out.stage, "build-input-continuity");
+  assert.equal(out.built, false);
+  assert.equal(out.installed, false);
+  assert.match(out.reason, /watcher-error|watcher failure/i);
+  assert.ok(out.reason.length < 2_000, `watcher failure must stay bounded: ${out.reason.length}`);
+  assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
+  assert.ok(fake.watchers.length >= 2);
+  assert.deepEqual(fake.watchers.map((watcher) => watcher.closeCalls), fake.watchers.map(() => 1));
+});
+
+test("producer converts a watcher close error into a bounded failure without retry or hang", { timeout: 4_000 }, async (t) => {
+  const fixture = await createProducerFixture(t);
+  const fake = installFakeWatch();
+  const originalRunText = fixture.deps.runText;
+  fixture.deps.runText = async (...args) => {
+    const result = await originalRunText(...args);
+    if (args[0].endsWith("/gradlew")) {
+      const watcher = fake.watchers[0];
+      watcher.close = () => {
+        watcher.closeCalls += 1;
+        watcher.closed = true;
+        throw new Error("fixture watcher close failure");
+      };
+    }
+    return result;
+  };
+  let out;
+  try {
+    out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  } finally {
+    fake.restore();
+  }
+  assert.equal(out.status, "failed");
+  assert.equal(out.stage, "build-input-continuity");
+  assert.match(out.reason, /watcher-close-error|watcher close failure/i);
+  assert.ok(out.reason.length < 2_000, `watcher close failure must stay bounded: ${out.reason.length}`);
+  assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
+  assert.deepEqual(fake.watchers.map((watcher) => watcher.closeCalls), fake.watchers.map(() => 1));
+});
+
+test("producer fails closed on a dropped event for an initially absent selected root", { timeout: 4_000 }, async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "gradle-absent-root-restored" });
+  const fake = installFakeWatch();
+  let out;
+  try {
+    out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  } finally {
+    fake.restore();
+  }
+  assert.equal(out.status, "failed");
+  assert.equal(out.stage, "build-input-continuity");
+  assert.equal(out.built, false);
+  assert.equal(out.installed, false);
+  assert.match(out.reason, /parent|directory|generation|continuity|mutation|ambiguous/i);
+  assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
+  assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+  assert.deepEqual(fake.watchers.map((watcher) => watcher.closeCalls), fake.watchers.map(() => 1));
 });
 
 test("producer preserves an exact empty ro.boot.qemu observation", async (t) => {

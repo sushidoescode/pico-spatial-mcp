@@ -94,6 +94,30 @@ function exactGradleAllowlistViolations(payload) {
       ...validEntries,
       { path: "README.md", bytes: 0, sha256: ZERO_HASH },
     ].sort((left, right) => left.path.localeCompare(right.path))],
+    ["buildSrc build output", [
+      ...validEntries,
+      { path: "buildSrc/build/classes/kotlin/main/Generated.class", bytes: 0, sha256: ZERO_HASH },
+    ].sort((left, right) => left.path.localeCompare(right.path))],
+    ["nested Gradle cache", [
+      ...validEntries,
+      { path: "buildSrc/.gradle/cache.bin", bytes: 0, sha256: ZERO_HASH },
+    ].sort((left, right) => left.path.localeCompare(right.path))],
+    ["nested Git metadata", [
+      ...validEntries,
+      { path: "app/src/main/.git/index", bytes: 0, sha256: ZERO_HASH },
+    ].sort((left, right) => left.path.localeCompare(right.path))],
+    ["nested IDE metadata", [
+      ...validEntries,
+      { path: "gradle/.idea/workspace.xml", bytes: 0, sha256: ZERO_HASH },
+    ].sort((left, right) => left.path.localeCompare(right.path))],
+    ["buildSrc local properties", [
+      ...validEntries,
+      { path: "buildSrc/local.properties", bytes: 0, sha256: ZERO_HASH },
+    ].sort((left, right) => left.path.localeCompare(right.path))],
+    ["buildSrc project documentation", [
+      ...validEntries,
+      { path: "buildSrc/README.md", bytes: 0, sha256: ZERO_HASH },
+    ].sort((left, right) => left.path.localeCompare(right.path))],
   ];
 }
 
@@ -304,6 +328,20 @@ test("raw historical reader rejects Gradle manifests outside the exact V1 allowl
       assert.equal(result.status, "invalid", name);
       assert.match(issueText(result), /Gradle|allowlist|AndroidManifest|Kotlin|Java|entry/i, name);
     }
+  });
+});
+
+test("publisher and raw reader accept selected files below documentation-named buildSrc directories", async (t) => {
+  await withFixture(t, (fixture) => {
+    const entries = [
+      ...fixture.payload.source.gradleInputs.entries,
+      { path: "buildSrc/README.md/Plugin.kt", bytes: 0, sha256: ZERO_HASH },
+      { path: "buildSrc/local.properties/Config.kt", bytes: 0, sha256: ZERO_HASH },
+    ].sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+    const payload = withGradleEntries(fixture.payload, entries);
+    assert.doesNotThrow(() => publishFixtureReceipt(fixture, payload));
+    const written = rawReceipt(fixture, payload);
+    assert.equal(store.readNativeRunReceipt(FIXTURE_APP, written.receiptId, fixture.storeOptions).status, "valid");
   });
 });
 
