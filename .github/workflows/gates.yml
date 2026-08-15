@@ -41,7 +41,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
       - name: Build (tsc)
         run: npm run build
-      # The Linux-assigned deterministic/headless tiers. The complete 46-invocation battery also
+      # The Linux-assigned deterministic/headless tiers. The complete 47-invocation battery also
       # includes one Windows-assigned and two macOS-assigned native contracts; emulator/LOOK work
       # cannot run in this CI job.
       - name: Smoke (every tool registers + responds)
@@ -116,6 +116,8 @@ jobs:
         run: npm run test:copilot
       - name: Ledger fixtures (over-claims structurally impossible)
         run: npm run test:ledger
+      - name: Digest-bound native run receipt identity, producer, ledger, and ship consumers
+        run: npm run test:runreceipt
       - name: Eye calibration
         run: npm run test:eye
       - name: Asset gate
