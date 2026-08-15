@@ -1,0 +1,548 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  parseForegroundActivity,
+  parseInstalledApkPath,
+  parsePid,
+  parseProcStartTicks,
+  parseRemoteSha256,
+  produceNativeFleetReceipt,
+} from "../dist/nativefleetreceipt.js";
+import { readNativeRunReceipt } from "../dist/runreceiptstore.js";
+import {
+  authoredSpec,
+  effectiveSpec,
+  makePng,
+  sha256,
+} from "./helpers/runreceipt-fixture.mjs";
+
+const PACKAGE = "com.fleet.receipt";
+const COMPONENT = `${PACKAGE}/.platform.LaunchActivity`;
+const PID = 4242;
+const PID_START_TICKS = "987654";
+const SESSION_ID = "11111111-2222-4333-8444-555555555555";
+
+const textResult = (stdout = "", overrides = {}) => ({
+  code: 0,
+  stdout,
+  stderr: "",
+  timedOut: false,
+  ...overrides,
+});
+
+const binaryResult = (stdout, overrides = {}) => ({
+  code: 0,
+  stdout,
+  stderr: "",
+  timedOut: false,
+  ...overrides,
+});
+
+function writeFile(root, relativePath, contents) {
+  const target = path.join(root, ...relativePath.split("/"));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, contents);
+  return target;
+}
+
+function procStat(pid = PID, startTicks = PID_START_TICKS) {
+  return `${pid} (Receipt worker (stage)) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 ${startTicks} 20 21 22\n`;
+}
+
+function foregroundOutput(component = COMPONENT) {
+  return `Display #0:\n  topResumedActivity=ActivityRecord{1a2b3c u0 ${component} t42}\n`;
+}
+
+function receiptFiles(rootDir, packageName = PACKAGE) {
+  const directory = path.join(rootDir, "native-v1", packageName);
+  try {
+    return fs.readdirSync(directory).filter((name) => name.endsWith(".json"));
+  } catch (error) {
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return [];
+    throw error;
+  }
+}
+
+async function createProducerFixture(t, mutation = {}) {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-native-receipt-"));
+  const projectDir = path.join(scratch, "project");
+  const captureDir = path.join(scratch, "captures");
+  const receiptRoot = path.join(scratch, "receipt-store");
+  const ledgerRoot = path.join(scratch, "ledger-store");
+  const briefPath = path.join(scratch, "brief.json");
+  const previousReceiptRoot = process.env.PICO_MCP_RUN_RECEIPT_DIR;
+  const previousLedgerRoot = process.env.PICO_MCP_LEDGER_DIR;
+  process.env.PICO_MCP_RUN_RECEIPT_DIR = receiptRoot;
+  process.env.PICO_MCP_LEDGER_DIR = ledgerRoot;
+  t.after(() => {
+    if (previousReceiptRoot === undefined) delete process.env.PICO_MCP_RUN_RECEIPT_DIR;
+    else process.env.PICO_MCP_RUN_RECEIPT_DIR = previousReceiptRoot;
+    if (previousLedgerRoot === undefined) delete process.env.PICO_MCP_LEDGER_DIR;
+    else process.env.PICO_MCP_LEDGER_DIR = previousLedgerRoot;
+    fs.rmSync(scratch, { recursive: true, force: true });
+  });
+
+  writeFile(projectDir, "settings.gradle.kts", "rootProject.name = \"native-receipt\"\n");
+  writeFile(projectDir, "build.gradle.kts", "plugins {}\n");
+  writeFile(projectDir, "gradlew", "#!/bin/sh\n");
+  writeFile(projectDir, "app/build.gradle.kts", `android { namespace = \"${PACKAGE}\" }\n`);
+  writeFile(projectDir, "app/src/main/AndroidManifest.xml", `<manifest package=\"${PACKAGE}\" />\n`);
+  writeFile(projectDir, "app/src/main/java/com/fleet/receipt/MainActivity.kt", `package ${PACKAGE}\nclass MainActivity\n`);
+  fs.writeFileSync(briefPath, JSON.stringify({ brief: "native receipt", spec: authoredSpec(PACKAGE) }));
+
+  const apkBytes = Buffer.from("PK\u0003\u0004native-fleet-receipt-apk", "utf8");
+  const apkSha256 = sha256(apkBytes);
+  const sourceApkPath = writeFile(projectDir, "app/build/outputs/apk/debug/app-debug.apk", apkBytes);
+  const metadata = {
+    version: 3,
+    applicationId: PACKAGE,
+    variantName: "debug",
+    elements: [{ type: "SINGLE", outputFile: "app-debug.apk" }],
+  };
+  const metadataPath = writeFile(
+    projectDir,
+    "app/build/outputs/apk/debug/output-metadata.json",
+    `${JSON.stringify(metadata)}\n`,
+  );
+  if (mutation.kind === "missing-metadata") fs.rmSync(metadataPath);
+  if (mutation.kind === "ambiguous-metadata") {
+    writeFile(projectDir, "app/build/outputs/apk/second/app-debug.apk", apkBytes);
+    writeFile(
+      projectDir,
+      "app/build/outputs/apk/second/output-metadata.json",
+      `${JSON.stringify(metadata)}\n`,
+    );
+  }
+
+  const captureBytes = mutation.kind === "invalid-png"
+    ? Buffer.from("not a PNG")
+    : makePng(51);
+  const captureSha256 = sha256(captureBytes);
+  const expectedApkCasPath = path.join(receiptRoot, "artifacts", "apk", `${apkSha256}.apk`);
+  const expectedCaptureCasPath = path.join(ledgerRoot, "artifacts", `${captureSha256}.png`);
+  const expectedCaptureSourcePath = path.join(captureDir, `${SESSION_ID}.png`);
+  const remoteApkPath = `/data/app/~~receipt/${PACKAGE}/base.apk`;
+
+  if (mutation.kind === "apk-cas-corruption") {
+    fs.mkdirSync(path.dirname(expectedApkCasPath), { recursive: true });
+    fs.writeFileSync(expectedApkCasPath, Buffer.from("corrupt APK CAS"));
+  }
+  if (mutation.kind === "capture-cas-corruption") {
+    fs.mkdirSync(path.dirname(expectedCaptureCasPath), { recursive: true });
+    fs.writeFileSync(expectedCaptureCasPath, makePng(99));
+  }
+  if (mutation.kind === "receipt-publication") {
+    fs.mkdirSync(receiptRoot, { recursive: true });
+    fs.writeFileSync(path.join(receiptRoot, "native-v1"), "blocks receipt directory");
+  }
+
+  const events = [];
+  const sleeps = [];
+  let pidCalls = 0;
+  let statCalls = 0;
+  let foregroundCalls = 0;
+  let launchCalls = 0;
+  let clock = Date.parse("2026-08-14T11:59:00.000Z");
+  const projectRealDir = fs.realpathSync(projectDir);
+
+  const runText = async (command, args, options = {}) => {
+    events.push({ type: "text", command, args: [...args], options: { ...options } });
+    if (command === path.join(projectRealDir, "gradlew")) {
+      if (mutation.kind === "build-nonzero") {
+        const stdout = Array.from({ length: 100 }, (_, index) => `gradle-line-${index + 1}`).join("\n");
+        return textResult(stdout, { code: 1, stderr: "gradle failed\n" });
+      }
+      if (mutation.kind === "build-timeout") return textResult("build stalled\n", { code: null, timedOut: true });
+      return textResult("BUILD SUCCESSFUL\n");
+    }
+
+    assert.equal(command, "/fixture/adb", `unexpected external command ${command}`);
+    assert.deepEqual(args.slice(0, 2), ["-s", "emulator-5554"]);
+    const adbArgs = args.slice(2);
+    const key = adbArgs.join(" ");
+    if (key === `install -r ${expectedApkCasPath}`) {
+      if (mutation.kind === "install-nonzero") return textResult("Failure [INSTALL_FAILED]\n", { code: 1 });
+      if (mutation.kind === "install-no-success") return textResult("Package replaced\n");
+      return textResult("Success\n");
+    }
+    if (key === `shell pm path ${PACKAGE}`) {
+      if (mutation.kind === "pm-path-missing") return textResult("");
+      if (mutation.kind === "pm-path-multiple") return textResult(`package:${remoteApkPath}\npackage:/data/app/duplicate/base.apk\n`);
+      return textResult(`package:${remoteApkPath}\n`);
+    }
+    if (key === `shell toybox sha256sum ${remoteApkPath}`) {
+      const digest = mutation.kind === "remote-digest-mismatch" ? "0".repeat(64) : apkSha256;
+      return textResult(`${digest}  ${remoteApkPath}\n`);
+    }
+    if (key === "shell getprop ro.product.model") return textResult("PICO Emulator\n");
+    if (key === "shell getprop ro.build.fingerprint") {
+      return textResult(mutation.kind === "missing-fingerprint" ? "\n" : "PICO/PICO_Emulator/PICO_Emulator:14/fixture/test-keys\n");
+    }
+    if (key === "shell getprop ro.boot.qemu") return textResult("1\n");
+    if (key === "shell cat /proc/sys/kernel/random/boot_id") {
+      return textResult(mutation.kind === "missing-boot-id" ? "\n" : "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\n");
+    }
+    if (key === "shell pm list packages com.fleet") {
+      return textResult("package:com.fleet.previous\npackage:com.fleet.receiptextra\npackage:com.fleetish.not-listed\n");
+    }
+    if (adbArgs[0] === "shell" && adbArgs[1] === "am" && adbArgs[2] === "force-stop") {
+      return textResult("");
+    }
+    if (key === `shell am start -n ${COMPONENT}`) {
+      launchCalls += 1;
+      if (mutation.kind === "launch-negative-ack") return textResult("Error: Activity class does not exist.\n");
+      return textResult(`Starting: Intent { cmp=${COMPONENT} }\n`);
+    }
+    if (key === `shell pidof ${PACKAGE}`) {
+      pidCalls += 1;
+      if (mutation.kind === "pid-missing") return textResult("", { code: 1 });
+      if (mutation.kind === "pid-multiple") return textResult(`${PID} ${PID + 1}\n`);
+      return textResult(`${PID}\n`);
+    }
+    if (key === `shell cat /proc/${PID}/stat`) {
+      statCalls += 1;
+      if (mutation.kind === "stat-malformed") return textResult(`${PID} malformed proc stat\n`);
+      if (mutation.kind === "pid-restarted" && statCalls >= 2) return textResult(procStat(PID, "987655"));
+      return textResult(procStat());
+    }
+    if (key === "shell dumpsys activity activities") {
+      foregroundCalls += 1;
+      if (mutation.kind === "foreground-prefix-collision") {
+        return textResult(foregroundOutput("com.fleet.receiptextra/.platform.LaunchActivity"));
+      }
+      if (mutation.kind === "foreground-wrong-activity") {
+        return textResult(foregroundOutput(`${PACKAGE}/.OtherActivity`));
+      }
+      if (mutation.kind === "foreground-before" && foregroundCalls === 2) {
+        return textResult(foregroundOutput("com.fleet.other/.platform.LaunchActivity"));
+      }
+      if (mutation.kind === "foreground-after" && foregroundCalls === 3) {
+        return textResult(foregroundOutput("com.fleet.other/.platform.LaunchActivity"));
+      }
+      if (mutation.kind === "foreground-multiple") {
+        return textResult(`${foregroundOutput()}${foregroundOutput("com.fleet.other/.platform.LaunchActivity")}`);
+      }
+      if (mutation.kind?.startsWith("blocker-recovery") && launchCalls === 1) {
+        return textResult(foregroundOutput("com.fleet.blocker/.platform.LaunchActivity"));
+      }
+      return textResult(foregroundOutput());
+    }
+    throw new Error(`unexpected adb arguments: ${key}`);
+  };
+
+  const runBinary = async (command, args, options = {}) => {
+    events.push({ type: "binary", command, args: [...args], options: { ...options } });
+    assert.equal(command, "/fixture/adb");
+    assert.deepEqual(args, ["-s", "emulator-5554", "exec-out", "screencap", "-p"]);
+    if (mutation.kind === "capture-command" || mutation.kind === "blocker-recovery-capture-command") {
+      return binaryResult(Buffer.alloc(0), { code: 1, stderr: "screencap failed\n" });
+    }
+    return binaryResult(captureBytes);
+  };
+
+  const inspectedPackage = mutation.kind === "inspection-package-mismatch" ? "com.fleet.wrong" : PACKAGE;
+  const deps = {
+    runText,
+    runBinary,
+    adbPath: "/fixture/adb",
+    gradleEnv: { JAVA_HOME: "/fixture/jbr" },
+    now: () => {
+      const value = new Date(clock);
+      clock += 1_000;
+      return value;
+    },
+    randomUUID: () => SESSION_ID,
+    sleep: async (ms) => { sleeps.push(ms); },
+    inspectApk: async (apkPath, inspectedProjectDir) => {
+      assert.equal(apkPath, expectedApkCasPath);
+      assert.equal(inspectedProjectDir, fs.realpathSync(projectDir));
+      return {
+        manifestInspection: {
+          status: "inspected",
+          tool: "aapt2",
+          packageName: inspectedPackage,
+          versionCode: "1",
+          versionName: "1.0",
+        },
+        signingInspection: {
+          status: "inspected",
+          tool: "apksigner",
+          certificateSha256: [sha256("fixture-debug-certificate")],
+        },
+      };
+    },
+  };
+
+  const input = {
+    briefPath,
+    effectiveSpec: mutation.kind === "source-package-mismatch" ? effectiveSpec("com.fleet.wrong") : effectiveSpec(PACKAGE),
+    projectDir,
+    packageName: PACKAGE,
+    task: ":app:assembleDebug",
+    serial: "emulator-5554",
+    component: COMPONENT,
+    captureDir,
+    settleMs: mutation.kind === "invalid-settle" ? Number.POSITIVE_INFINITY : 2_750,
+    ...(mutation.kind === "after-install"
+      ? { afterInstall: async () => ({ status: "failed", reason: "fixture delivery failed" }) }
+      : {}),
+  };
+
+  return {
+    scratch,
+    projectDir,
+    receiptRoot,
+    ledgerRoot,
+    sourceApkPath,
+    apkBytes,
+    apkSha256,
+    captureBytes,
+    captureSha256,
+    expectedApkCasPath,
+    expectedCaptureCasPath,
+    expectedCaptureSourcePath,
+    input,
+    deps,
+    events,
+    sleeps,
+  };
+}
+
+test("pure Android parsers reject ambiguity and preserve exact identities", () => {
+  const installed = "/data/app/~~receipt/com.fleet.receipt/base.apk";
+  assert.equal(parseInstalledApkPath(`package:${installed}\r\n`), installed);
+  assert.equal(parseInstalledApkPath(`package:${installed}\npackage:/data/app/other/base.apk\n`), null);
+  assert.equal(parseInstalledApkPath("Error: package not found\n"), null);
+
+  const digest = "A1".repeat(32);
+  assert.equal(parseRemoteSha256(`${digest}  ${installed}\n`), digest.toLowerCase());
+  assert.equal(parseRemoteSha256(`not-a-hash  ${installed}\n`), null);
+  assert.equal(parseRemoteSha256(`${digest}  ${installed}\n${"b2".repeat(32)}  ${installed}\n`), null);
+
+  assert.equal(parsePid("4242\n"), 4242);
+  assert.equal(parsePid("4242 4243\n"), null);
+  assert.equal(parsePid("4242x\n"), null);
+  assert.equal(parsePid("0\n"), null);
+
+  const literalStat = "4242 (Receipt worker (stage)) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 987654 20 21 22\n";
+  assert.equal(parseProcStartTicks(literalStat), "987654");
+  assert.equal(parseProcStartTicks("4242 (truncated) S 1 2 3\n"), null);
+  assert.equal(parseProcStartTicks("4242 malformed\n"), null);
+
+  assert.deepEqual(parseForegroundActivity(foregroundOutput()), {
+    packageName: PACKAGE,
+    component: COMPONENT,
+  });
+  assert.deepEqual(parseForegroundActivity(foregroundOutput("com.fleet.receiptextra/.platform.LaunchActivity")), {
+    packageName: "com.fleet.receiptextra",
+    component: "com.fleet.receiptextra/.platform.LaunchActivity",
+  });
+  assert.equal(
+    parseForegroundActivity(`${foregroundOutput()}${foregroundOutput("com.fleet.other/.platform.LaunchActivity")}`),
+    null,
+  );
+  assert.equal(parseForegroundActivity(`${foregroundOutput()}${foregroundOutput()}`), null);
+  assert.equal(parseForegroundActivity("mCurrentFocus=null\n"), null);
+});
+
+test("successful producer binds installed bytes and brackets one exact capture", async (t) => {
+  const fixture = await createProducerFixture(t);
+  const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  assert.equal(out.status, "recorded");
+  assert.equal(out.built, true);
+  assert.equal(out.installed, true);
+  assert.equal(out.receipt.receipt.install.remoteApkSha256, fixture.apkSha256);
+  assert.equal(out.receipt.receipt.runtime.pid, PID);
+  assert.equal(out.receipt.receipt.capture.before.pidStartTicks, PID_START_TICKS);
+  assert.equal(out.receipt.receipt.capture.after.pidStartTicks, PID_START_TICKS);
+  assert.equal(out.receipt.receipt.capture.before.foregroundPackage, PACKAGE);
+  assert.equal(out.receipt.receipt.capture.after.foregroundPackage, PACKAGE);
+  assert.equal(out.receipt.receipt.capture.artifactPath, fixture.expectedCaptureCasPath);
+  assert.equal(out.receipt.receipt.capture.sourcePath, fs.realpathSync(fixture.expectedCaptureSourcePath));
+
+  assert.deepEqual(fs.readFileSync(fixture.expectedCaptureSourcePath), fixture.captureBytes);
+  assert.deepEqual(fs.readFileSync(fixture.expectedCaptureCasPath), fixture.captureBytes);
+  assert.deepEqual(fs.readFileSync(fixture.expectedApkCasPath), fixture.apkBytes);
+  assert.equal(fs.existsSync(path.join(fixture.ledgerRoot, `${PACKAGE}.json`)), false);
+  assert.deepEqual(receiptFiles(fixture.receiptRoot), [`${out.receipt.receiptId}.json`]);
+  assert.equal(readNativeRunReceipt(PACKAGE, out.receipt.receiptId).status, "valid");
+
+  const install = fixture.events.find((event) => event.type === "text" && event.args[2] === "install");
+  assert.deepEqual(install.args.slice(2), ["install", "-r", fixture.expectedApkCasPath]);
+  const forcedPackages = fixture.events
+    .filter((event) => event.type === "text" && event.args.slice(2, 5).join(" ") === "shell am force-stop")
+    .map((event) => event.args[5]);
+  assert.deepEqual(forcedPackages, ["com.fleet.previous", "com.fleet.receiptextra"]);
+  assert.equal(fixture.sleeps.filter((ms) => ms === fixture.input.settleMs).length, 1);
+  assert.equal(fixture.sleeps.includes(2_000), true);
+  for (const event of fixture.events) {
+    assert.equal(Object.hasOwn(event.options, "timeout"), false);
+    assert.equal(Object.hasOwn(event.options, "maxBuffer"), false);
+  }
+  const statIndexes = fixture.events
+    .map((event, index) => event.type === "text" && event.args.join(" ").includes(`/proc/${PID}/stat`) ? index : -1)
+    .filter((index) => index >= 0);
+  const captureIndex = fixture.events.findIndex((event) => event.type === "binary");
+  assert.equal(statIndexes.length, 3);
+  assert.ok(statIndexes[1] < captureIndex && captureIndex < statIndexes[2]);
+});
+
+test("one foreign foreground blocker can be stopped and relaunched once with disclosure", async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "blocker-recovery" });
+  const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  assert.equal(out.status, "recorded");
+  assert.equal(out.receipt.receipt.runtime.pid, PID);
+  const blockerStops = fixture.events.filter((event) =>
+    event.type === "text" && event.args.join(" ") === "-s emulator-5554 shell am force-stop com.fleet.blocker");
+  assert.equal(blockerStops.length, 1);
+  const launches = fixture.events.filter((event) =>
+    event.type === "text" && event.args.join(" ") === `-s emulator-5554 shell am start -n ${COMPONENT}`);
+  assert.equal(launches.length, 2);
+});
+
+test("a recovered run discloses the one blocker recovery if a later stage fails", async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "blocker-recovery-capture-command" });
+  const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  assert.equal(out.status, "failed");
+  assert.equal(out.stage, "capture");
+  assert.deepEqual(
+    out.completedStages.filter((stage) => stage.startsWith("foreground-recovery:")),
+    ["foreground-recovery:blocker=com.fleet.blocker"],
+  );
+  assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+});
+
+test("default SDK inspection records available facts and explicit tool absence", async (t) => {
+  await t.test("available aapt2 and apksigner", async (child) => {
+    const fixture = await createProducerFixture(child);
+    const sdkRoot = path.join(fixture.scratch, "android-sdk");
+    writeFile(sdkRoot, "build-tools/35.0.0/aapt2", "fixture tool");
+    writeFile(sdkRoot, "build-tools/35.0.0/apksigner", "fixture tool");
+    const previousSdkRoot = process.env.ANDROID_SDK_ROOT;
+    process.env.ANDROID_SDK_ROOT = sdkRoot;
+    child.after(() => {
+      if (previousSdkRoot === undefined) delete process.env.ANDROID_SDK_ROOT;
+      else process.env.ANDROID_SDK_ROOT = previousSdkRoot;
+    });
+    const baseRunText = fixture.deps.runText;
+    fixture.deps.runText = async (command, args, options) => {
+      if (command.endsWith("/aapt2")) {
+        return textResult(`package: name='${PACKAGE}' versionCode='7' versionName='7.0'\n`);
+      }
+      if (command.endsWith("/apksigner")) {
+        return textResult(`Signer #1 certificate SHA-256 digest: ${sha256("default-inspection-certificate")}\n`);
+      }
+      return baseRunText(command, args, options);
+    };
+    delete fixture.deps.inspectApk;
+
+    const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+    assert.equal(out.status, "recorded");
+    assert.deepEqual(out.receipt.receipt.apk.manifestInspection, {
+      status: "inspected",
+      tool: "aapt2",
+      packageName: PACKAGE,
+      versionCode: "7",
+      versionName: "7.0",
+    });
+    assert.deepEqual(out.receipt.receipt.apk.signingInspection, {
+      status: "inspected",
+      tool: "apksigner",
+      certificateSha256: [sha256("default-inspection-certificate")],
+    });
+  });
+
+  await t.test("missing build tools", async (child) => {
+    const fixture = await createProducerFixture(child);
+    const sdkRoot = path.join(fixture.scratch, "empty-android-sdk");
+    fs.mkdirSync(sdkRoot, { recursive: true });
+    const previousSdkRoot = process.env.ANDROID_SDK_ROOT;
+    process.env.ANDROID_SDK_ROOT = sdkRoot;
+    child.after(() => {
+      if (previousSdkRoot === undefined) delete process.env.ANDROID_SDK_ROOT;
+      else process.env.ANDROID_SDK_ROOT = previousSdkRoot;
+    });
+    delete fixture.deps.inspectApk;
+
+    const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+    assert.equal(out.status, "recorded");
+    assert.equal(out.receipt.receipt.apk.manifestInspection.status, "unavailable");
+    assert.match(out.receipt.receipt.apk.manifestInspection.reason, /aapt2.*not found/i);
+    assert.equal(out.receipt.receipt.apk.signingInspection.status, "unavailable");
+    assert.match(out.receipt.receipt.apk.signingInspection.reason, /apksigner.*not found/i);
+  });
+});
+
+test("producer fails closed at every mandatory stage and never publishes a receipt", async (t) => {
+  const cases = [
+    ["invalid settle", "invalid-settle", "source-identity", false, false],
+    ["effective package mismatch", "source-package-mismatch", "source-identity", false, false],
+    ["Gradle nonzero", "build-nonzero", "build", false, false],
+    ["Gradle timeout", "build-timeout", "build", false, false],
+    ["missing metadata APK", "missing-metadata", "apk-resolution", true, false],
+    ["ambiguous metadata APK", "ambiguous-metadata", "apk-resolution", true, false],
+    ["APK CAS corruption", "apk-cas-corruption", "apk-publication", true, false],
+    ["inspected package mismatch", "inspection-package-mismatch", "apk-inspection", true, false],
+    ["install nonzero", "install-nonzero", "install", true, false],
+    ["install lacks Success", "install-no-success", "install", true, false],
+    ["pm path missing", "pm-path-missing", "installed-byte-identity", true, true],
+    ["pm path multiple", "pm-path-multiple", "installed-byte-identity", true, true],
+    ["remote digest mismatch", "remote-digest-mismatch", "installed-byte-identity", true, true],
+    ["after-install hook", "after-install", "after-install", true, true],
+    ["missing fingerprint", "missing-fingerprint", "device-identity", true, true],
+    ["missing boot ID", "missing-boot-id", "device-identity", true, true],
+    ["launch negative acknowledgement", "launch-negative-ack", "launch", true, true],
+    ["missing PID", "pid-missing", "pid", true, true],
+    ["multiple PID", "pid-multiple", "pid", true, true],
+    ["malformed PID stat", "stat-malformed", "pid", true, true],
+    ["PID restarted before capture", "pid-restarted", "pid", true, true],
+    ["foreground package prefix collision", "foreground-prefix-collision", "foreground", true, true],
+    ["wrong foreground activity", "foreground-wrong-activity", "foreground", true, true],
+    ["multiple foreground lines", "foreground-multiple", "foreground", true, true],
+    ["wrong foreground before capture", "foreground-before", "foreground", true, true],
+    ["wrong foreground after capture", "foreground-after", "foreground", true, true],
+    ["binary capture command", "capture-command", "capture", true, true],
+    ["invalid PNG", "invalid-png", "capture-publication", true, true],
+    ["capture CAS corruption", "capture-cas-corruption", "capture-publication", true, true],
+    ["receipt publication", "receipt-publication", "receipt-publication", true, true],
+  ];
+
+  for (const [name, kind, stage, built, installed] of cases) {
+    await t.test(name, async (child) => {
+      const fixture = await createProducerFixture(child, { kind });
+      const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+      assert.equal(out.status, "failed");
+      assert.equal(out.stage, stage);
+      assert.equal(out.built, built);
+      assert.equal(out.installed, installed);
+      assert.equal(typeof out.reason, "string");
+      assert.ok(out.reason.length > 0);
+      assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+      assert.equal(out.completedStages.includes("receipt-publication"), false);
+      if (kind === "pid-missing") {
+        assert.equal(fixture.sleeps.filter((ms) => ms === 2_000).length, 13);
+      }
+    });
+  }
+});
+
+test("command failures report bounded factual exit and timeout state", async (t) => {
+  const nonzeroFixture = await createProducerFixture(t, { kind: "build-nonzero" });
+  const nonzero = await produceNativeFleetReceipt(nonzeroFixture.input, nonzeroFixture.deps);
+  assert.equal(nonzero.status, "failed");
+  assert.match(nonzero.reason, /gradlew|assembleDebug/);
+  assert.match(nonzero.reason, /exit=1/);
+  assert.match(nonzero.reason, /timedOut=false/);
+  assert.match(nonzero.reason, /gradle-line-100/);
+  assert.doesNotMatch(nonzero.reason, /gradle-line-1(?:\D|$)/);
+  assert.ok(nonzero.reason.length <= 64 * 1024 + 1_024);
+
+  const timeoutFixture = await createProducerFixture(t, { kind: "build-timeout" });
+  const timedOut = await produceNativeFleetReceipt(timeoutFixture.input, timeoutFixture.deps);
+  assert.equal(timedOut.status, "failed");
+  assert.match(timedOut.reason, /exit=null/);
+  assert.match(timedOut.reason, /timedOut=true/);
+});
