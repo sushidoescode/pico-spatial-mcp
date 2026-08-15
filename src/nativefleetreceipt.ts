@@ -532,19 +532,23 @@ export async function produceNativeFleetReceipt(
       completedStages.push("after-install:skipped");
     }
 
-    const readProperty = async (propertyArgs: string[], label: string): Promise<string> => {
+    const readProperty = async (
+      propertyArgs: string[],
+      label: string,
+      allowEmpty = false,
+    ): Promise<string> => {
       const args = ["-s", input.serial, "shell", ...propertyArgs];
       const result = await resolvedDeps.runText(resolvedDeps.adbPath, args, { timeoutMs: 20_000, maxOutputBytes: COMMAND_TAIL_BYTES });
       assertTextSuccess("device-identity", label, resolvedDeps.adbPath, args, result);
       const value = result.stdout.trim();
-      if (!value) {
+      if (!allowEmpty && !value) {
         throw new StageFailure("device-identity", commandFailure(label, resolvedDeps.adbPath, args, result, "required a non-empty observed value"));
       }
       return value;
     };
     const model = await readProperty(["getprop", "ro.product.model"], "device model");
     const fingerprint = await readProperty(["getprop", "ro.build.fingerprint"], "device fingerprint");
-    const bootQemu = await readProperty(["getprop", "ro.boot.qemu"], "device boot-qemu property");
+    const bootQemu = await readProperty(["getprop", "ro.boot.qemu"], "device boot-qemu property", true);
     const bootId = await readProperty(["cat", "/proc/sys/kernel/random/boot_id"], "device boot ID");
     const requireSameBootId = async (boundary: string): Promise<void> => {
       const observedBootId = await readProperty(["cat", "/proc/sys/kernel/random/boot_id"], `${boundary} device boot ID`);

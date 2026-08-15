@@ -193,7 +193,9 @@ async function createProducerFixture(t, mutation = {}) {
     if (key === "shell getprop ro.build.fingerprint") {
       return textResult(mutation.kind === "missing-fingerprint" ? "\n" : "PICO/PICO_Emulator/PICO_Emulator:14/fixture/test-keys\n");
     }
-    if (key === "shell getprop ro.boot.qemu") return textResult("1\n");
+    if (key === "shell getprop ro.boot.qemu") {
+      return textResult(mutation.kind === "empty-boot-qemu" ? "\n" : "1\n");
+    }
     if (key === "shell cat /proc/sys/kernel/random/boot_id") {
       bootIdCalls += 1;
       if (mutation.kind === "missing-boot-id") return textResult("\n");
@@ -429,6 +431,13 @@ test("successful producer binds installed bytes and brackets one exact capture",
     && event.args.slice(2, 5).join(" ") === "shell toybox sha256sum").length, 3);
   assert.equal(fixture.events.filter((event) => event.type === "text"
     && event.args.slice(2).join(" ") === "shell cat /proc/sys/kernel/random/boot_id").length, 4);
+});
+
+test("producer preserves an exact empty ro.boot.qemu observation", async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "empty-boot-qemu" });
+  const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  assert.equal(out.status, "recorded");
+  assert.equal(out.receipt.receipt.runtime.bootQemu, "");
 });
 
 test("one foreign foreground blocker can be stopped and relaunched once with disclosure", async (t) => {
