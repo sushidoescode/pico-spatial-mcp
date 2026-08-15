@@ -472,6 +472,73 @@ test("producer rejects an oversized effective AppSpec before Gradle or live runn
   assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
 });
 
+test("producer detects a late selected file changed and restored between collection and guard establishment", async (t) => {
+  const fixture = await createProducerFixture(t);
+  const projectRealDir = fs.realpathSync(fixture.projectDir);
+  const lateSelectedPath = writeFile(projectRealDir, "gradlew.bat", "@echo off\r\n");
+  const originalOpenSync = fs.openSync;
+  const originalCloseSync = fs.closeSync;
+  const originalWatch = fs.watch;
+  const watchers = [];
+  const lateFileDescriptors = new Set();
+  let lateFileClosed = false;
+  let mutated = false;
+
+  fs.watch = function (directory, options, listener) {
+    const callback = typeof options === "function" ? options : listener;
+    const directoryPath = path.resolve(directory);
+    const watcher = {
+      directory: directoryPath,
+      callback,
+      close() {},
+      on() { return watcher; },
+    };
+    if (!mutated && directoryPath === projectRealDir && lateFileClosed) {
+      mutated = true;
+      const original = fs.readFileSync(lateSelectedPath);
+      fs.writeFileSync(lateSelectedPath, "changed before the root watcher was established\r\n");
+      fs.writeFileSync(lateSelectedPath, original);
+    }
+    watchers.push(watcher);
+    if (!mutated && directoryPath === projectRealDir) {
+      mutated = true;
+      const original = fs.readFileSync(lateSelectedPath);
+      fs.writeFileSync(lateSelectedPath, "changed after the root watcher was established\r\n");
+      fs.writeFileSync(lateSelectedPath, original);
+      callback("change", "gradlew.bat");
+    }
+    return watcher;
+  };
+  fs.openSync = function (filePath, ...args) {
+    const fd = originalOpenSync.call(this, filePath, ...args);
+    if (path.resolve(filePath) === path.resolve(lateSelectedPath)) lateFileDescriptors.add(fd);
+    return fd;
+  };
+  fs.closeSync = function (fd) {
+    if (lateFileDescriptors.delete(fd)) lateFileClosed = true;
+    return originalCloseSync.call(this, fd);
+  };
+
+  let out;
+  try {
+    out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  } finally {
+    fs.openSync = originalOpenSync;
+    fs.closeSync = originalCloseSync;
+    fs.watch = originalWatch;
+  }
+
+  assert.equal(mutated, true);
+  assert.equal(out.status, "failed");
+  assert.equal(out.stage, "build-input-continuity");
+  assert.equal(out.built, false);
+  assert.equal(out.installed, false);
+  assert.match(out.reason, /Gradle input|generation|changed|continuity/i);
+  assert.equal(fixture.events.filter((event) => event.command.endsWith("/gradlew")).length, 1);
+  assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
+  assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+});
+
 test("producer binds one unchanged Gradle input generation across the awaited build", async (t) => {
   const mutations = [
     ["persistent selected-file content change", "gradle-selected-content-persistent"],

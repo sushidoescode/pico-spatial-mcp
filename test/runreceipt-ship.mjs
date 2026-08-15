@@ -514,6 +514,22 @@ test("Door 10 selects the standard fleet project with the returned absolute path
   }
 });
 
+test("Door 10 omitted projectDir preserves the complete multi-segment fleet package suffix", async (t) => {
+  const fleetSuffix = "ship.multi_segment";
+  const fixture = await createRunReceiptFixture(t, store, {
+    app: `com.fleet.${fleetSuffix}`,
+    projectRelativeDir: `AndroidStudioProjects/fleet-${fleetSuffix}-native`,
+  });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const fullCall = await startSurface(t, fixture, "full");
+  await recordVision(fullCall, fixture, published);
+  const doorCall = await startSurface(t, fixture, "doors");
+
+  const ship = await doorCall("pico_ship", { app: fixture.payload.app, lane: "native" });
+  assert.equal(ship.receipt.status, "accepted-current-bytes", JSON.stringify(ship, null, 2));
+  assert.equal(ship.receipt.receiptId, published.receiptId);
+});
+
 test("ship omitted projectDir preserves the existing non-fleet basename fallback", async (t) => {
   const fixture = await createRunReceiptFixture(t, store, {
     projectRelativeDir: "AndroidStudioProjects/receipt-native",

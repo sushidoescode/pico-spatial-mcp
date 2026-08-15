@@ -11,6 +11,7 @@ import {
   readAuthoredAppSpecIdentity,
   effectiveAppSpecIdentity,
   collectGradleInputIdentity,
+  guardGradleInputGeneration,
 } from "../dist/runreceiptidentity.js";
 
 const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -54,6 +55,15 @@ function createGradleProject(parent) {
   for (const [relativePath, contents] of Object.entries(gradleFiles)) {
     writeFixtureFile(project, relativePath, contents);
   }
+  return project;
+}
+
+function createMinimalGradleProject(parent) {
+  const project = path.join(parent, "project");
+  fs.mkdirSync(project, { recursive: true });
+  writeFixtureFile(project, "gradlew", "#!/bin/sh\n");
+  writeFixtureFile(project, "app/src/AndroidManifest.xml", "<manifest package=\"com.example.identity\" />\n");
+  writeFixtureFile(project, "app/src/Main.kt", "package com.example\nclass Main\n");
   return project;
 }
 
@@ -252,4 +262,72 @@ test("Gradle identity requires an Android manifest and app Kotlin or Java source
   const noAppSource = createGradleProject(path.join(dir, "no-app-source"));
   fs.rmSync(path.join(noAppSource, "app/src/main/java/com/example/Main.kt"));
   assert.throws(() => collectGradleInputIdentity(noAppSource), /Kotlin|Java|source/i);
+});
+
+test("Gradle generation guard fails closed at an explicit directory-count ceiling", (t) => {
+  const countRoot = scratch(t, "pico-gradle-directory-count-");
+  const countProject = createMinimalGradleProject(countRoot);
+  for (const name of ["empty-a", "empty-b", "empty-c"]) {
+    fs.mkdirSync(path.join(countProject, "app/src", name));
+  }
+  const countIdentity = collectGradleInputIdentity(countProject);
+  let countGuard;
+  try {
+    assert.throws(
+      () => { countGuard = guardGradleInputGeneration(countIdentity, { maxDirectories: 3 }); },
+      /Gradle input director(?:y|ies).*3|directory count.*3/i,
+    );
+  } finally {
+    countGuard?.close();
+  }
+});
+
+test("Gradle generation guard fails closed at an explicit directory-depth ceiling", (t) => {
+  const depthRoot = scratch(t, "pico-gradle-directory-depth-");
+  const depthProject = createMinimalGradleProject(depthRoot);
+  fs.mkdirSync(path.join(depthProject, "app/src/a/b/c"), { recursive: true });
+  const depthIdentity = collectGradleInputIdentity(depthProject);
+  let depthGuard;
+  try {
+    assert.throws(
+      () => { depthGuard = guardGradleInputGeneration(depthIdentity, { maxDepth: 2 }); },
+      /Gradle input directory depth.*2|depth ceiling.*2/i,
+    );
+  } finally {
+    depthGuard?.close();
+  }
+});
+
+test("Gradle generation guard caps selected watcher diagnostics during an event storm", async (t) => {
+  const dir = scratch(t, "pico-gradle-event-cap-");
+  const project = createMinimalGradleProject(dir);
+  const identity = collectGradleInputIdentity(project);
+  const originalWatch = fs.watch;
+  const listeners = [];
+  fs.watch = function (_directory, options, listener) {
+    const callback = typeof options === "function" ? options : listener;
+    listeners.push(callback);
+    const watcher = {
+      close() {},
+      on() { return watcher; },
+    };
+    return watcher;
+  };
+  let guard;
+  try {
+    guard = guardGradleInputGeneration(identity, { maxEventSamples: 2 });
+    assert.ok(listeners.length >= 1);
+    for (let index = 0; index < 64; index += 1) listeners[0]("change", "gradlew");
+    await assert.rejects(
+      guard.assertUnchanged(),
+      (error) => {
+        assert.match(error.message, /additional selected path mutations omitted/i);
+        assert.ok((error.message.match(/selected path mutation observed/g) ?? []).length <= 2);
+        return true;
+      },
+    );
+  } finally {
+    guard?.close();
+    fs.watch = originalWatch;
+  }
 });

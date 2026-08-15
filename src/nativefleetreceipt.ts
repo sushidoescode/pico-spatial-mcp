@@ -6,7 +6,7 @@ import { materializeCaptureBytes } from "./ledger.js";
 import {
   canonicalJson,
   collectGradleInputIdentity,
-  guardGradleInputGeneration,
+  collectGuardedGradleInputIdentity,
   readAuthoredAppSpecIdentity,
   type GradleInputGenerationGuard,
 } from "./runreceiptidentity.js";
@@ -404,8 +404,9 @@ export async function produceNativeFleetReceipt(
       projectDir = fs.realpathSync(path.resolve(input.projectDir));
       authoredAppSpec = readAuthoredAppSpecIdentity(input.briefPath);
       effectiveAppSpec = publishEffectiveSpecArtifact(input.effectiveSpec);
-      gradleInputs = collectGradleInputIdentity(projectDir);
-      gradleInputGuard = guardGradleInputGeneration(gradleInputs);
+      const guardedGradleInputs = collectGuardedGradleInputIdentity(projectDir);
+      gradleInputs = guardedGradleInputs.identity;
+      gradleInputGuard = guardedGradleInputs.guard;
     } catch (error) {
       throw new StageFailure("source-identity", error instanceof Error ? error.message : String(error));
     }

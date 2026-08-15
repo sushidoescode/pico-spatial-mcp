@@ -34,7 +34,7 @@ function isPositiveVisionEvidence(entry: any): boolean {
 }
 
 export function defaultNativeProjectDirectory(app: string): string {
-  const fleet = /^com\.fleet\.([a-z][a-z0-9_]*)$/.exec(app);
+  const fleet = /^com\.fleet\.([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)$/.exec(app);
   const projectName = fleet ? `fleet-${fleet[1]}-native` : `${app.split(".").pop()}-native`;
   return path.join(os.homedir(), "AndroidStudioProjects", projectName);
 }

@@ -32,6 +32,9 @@ export type GradleInputIdentity = {
 export const GRADLE_INPUT_MAX_ENTRIES = 20_000;
 export const GRADLE_INPUT_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 export const GRADLE_INPUT_MAX_FILE_BYTES = 512 * 1024 * 1024;
+export const GRADLE_INPUT_MAX_DIRECTORIES = 20_000;
+export const GRADLE_INPUT_MAX_DEPTH = 128;
+export const GRADLE_INPUT_MAX_EVENT_SAMPLES = 8;
 
 const ROOT_FILES = new Set([
   "settings.gradle", "settings.gradle.kts", "build.gradle", "build.gradle.kts",
@@ -199,50 +202,6 @@ function lstatIfPresent(selectedPath: string): fs.Stats | null {
   }
 }
 
-function hashSelectedFile(filePath: string, expected: fs.Stats): { bytes: number; sha256: string } {
-  if (!expected.isFile()) throw new Error(`selected Gradle input is not a regular file: ${filePath}`);
-  if (expected.size > GRADLE_INPUT_MAX_FILE_BYTES) {
-    throw new Error(`selected Gradle input exceeds the ${GRADLE_INPUT_MAX_FILE_BYTES}-byte file limit: ${filePath}`);
-  }
-  const descriptor = fs.openSync(filePath, "r");
-  try {
-    const opened = fs.fstatSync(descriptor);
-    if (
-      !opened.isFile() ||
-      opened.dev !== expected.dev ||
-      opened.ino !== expected.ino ||
-      opened.size !== expected.size ||
-      opened.mtimeMs !== expected.mtimeMs ||
-      opened.ctimeMs !== expected.ctimeMs
-    ) {
-      throw new Error(`selected Gradle input changed before hashing: ${filePath}`);
-    }
-    const openedStable = fs.fstatSync(descriptor, { bigint: true });
-    const digest = crypto.createHash("sha256");
-    const buffer = Buffer.allocUnsafe(1024 * 1024);
-    let bytes = 0;
-    while (bytes < opened.size) {
-      const count = fs.readSync(descriptor, buffer, 0, Math.min(buffer.length, opened.size - bytes), null);
-      if (count === 0) throw new Error(`selected Gradle input ended while hashing: ${filePath}`);
-      digest.update(buffer.subarray(0, count));
-      bytes += count;
-    }
-    const afterStable = fs.fstatSync(descriptor, { bigint: true });
-    if (
-      afterStable.dev !== openedStable.dev ||
-      afterStable.ino !== openedStable.ino ||
-      afterStable.size !== openedStable.size ||
-      afterStable.mtimeNs !== openedStable.mtimeNs ||
-      afterStable.ctimeNs !== openedStable.ctimeNs
-    ) {
-      throw new Error(`selected Gradle input changed while hashing: ${filePath}`);
-    }
-    return { bytes, sha256: digest.digest("hex") };
-  } finally {
-    fs.closeSync(descriptor);
-  }
-}
-
 type StableStat = Readonly<{
   dev: bigint;
   ino: bigint;
@@ -294,134 +253,172 @@ export type GradleInputGenerationGuard = {
   close: () => void;
 };
 
-/**
- * Hold one descriptor for every selected file and metadata for every selected directory while
- * Gradle runs. Descriptor metadata catches write-and-restore mutations; directory generations
- * catch transient membership changes. Two filtered non-recursive watchers cover selected roots
- * that did not exist in the initial manifest without treating README/.gradle/app/build writes as
- * compiler-input changes. The manifest's 20,000-entry ceiling also bounds guard resources.
- */
-export function guardGradleInputGeneration(identity: GradleInputIdentity): GradleInputGenerationGuard {
-  const projectDir = fs.realpathSync(identity.projectDir);
-  if (projectDir !== identity.projectDir) throw new Error("Gradle input generation guard requires the canonical projectDir");
-  assertGradleInputManifestPaths(identity.entries);
+export type GradleInputGuardOptions = Readonly<{
+  maxDirectories?: number;
+  maxDepth?: number;
+  maxEventSamples?: number;
+}>;
 
-  const trackedFiles: Array<{ path: string; descriptor: number; before: StableStat }> = [];
-  const trackedDirectories = new Map<string, StableStat>();
-  const watchers: fs.FSWatcher[] = [];
-  const selectedEvents: string[] = [];
-  let closed = false;
+type GuardLimits = Readonly<{
+  maxDirectories: number;
+  maxDepth: number;
+  maxEventSamples: number;
+}>;
 
-  const close = (): void => {
-    if (closed) return;
-    closed = true;
-    for (const watcher of watchers) watcher.close();
-    for (const file of trackedFiles) {
-      try { fs.closeSync(file.descriptor); } catch {}
-    }
-  };
+type GuardState = {
+  projectDir: string;
+  limits: GuardLimits;
+  trackedFiles: Array<{ path: string; descriptor: number; before: StableStat }>;
+  trackedDirectories: Map<string, StableStat>;
+  watchers: fs.FSWatcher[];
+  selectedEventSamples: string[];
+  selectedEventsOmitted: boolean;
+  closed: boolean;
+};
 
-  const watchDirectChildren = (directory: string, selectedNames: ReadonlySet<string>): void => {
-    if (!lstatIfPresent(directory)?.isDirectory()) return;
-    watchers.push(fs.watch(directory, { persistent: false }, (eventType, filename) => {
-      const name = filename === null ? "" : filename.toString();
-      if (!name || selectedNames.has(name.split(/[\\/]/, 1)[0])) selectedEvents.push(`${eventType}:${name || "unknown"}`);
-    }));
-  };
-
-  const rememberDirectories = (directory: string): void => {
-    const selected = validateSelectedPath(projectDir, directory);
-    if (!selected.stat.isDirectory()) throw new Error(`selected Gradle input root is not a directory: ${directory}`);
-    trackedDirectories.set(selected.realPath, lstatStable(selected.realPath));
-    for (const name of fs.readdirSync(selected.realPath).sort()) {
-      const child = path.join(selected.realPath, name);
-      const childStat = fs.lstatSync(child);
-      if (childStat.isDirectory()) rememberDirectories(child);
-    }
-  };
-
-  try {
-    watchDirectChildren(projectDir, new Set([
-      ...[...ROOT_FILES].filter((relativePath) => !relativePath.includes("/")),
-      ...RECURSIVE_ROOTS.filter((relativePath) => !relativePath.includes("/")),
-    ]));
-    const appDir = path.join(projectDir, "app");
-    watchDirectChildren(appDir, new Set(["build.gradle", "build.gradle.kts", "proguard-rules.pro", "src", "libs"]));
-
-    for (const relativeRoot of RECURSIVE_ROOTS) {
-      const selectedRoot = path.join(projectDir, ...relativeRoot.split("/"));
-      if (lstatIfPresent(selectedRoot)) rememberDirectories(selectedRoot);
-    }
-
-    for (const entry of identity.entries) {
-      const filePath = path.join(projectDir, ...entry.path.split("/"));
-      const descriptor = fs.openSync(filePath, "r");
-      try {
-        const before = stableStat(fs.fstatSync(descriptor, { bigint: true }));
-        if (before.size !== BigInt(entry.bytes)
-          || hashOpenDescriptor(descriptor, entry.bytes, filePath) !== entry.sha256
-          || !sameStableStat(before, stableStat(fs.fstatSync(descriptor, { bigint: true })))) {
-          throw new Error(`selected Gradle input changed while establishing continuity: ${entry.path}`);
-        }
-        const current = validateSelectedPath(projectDir, filePath);
-        const currentStable = stableStat(fs.lstatSync(current.realPath, { bigint: true }));
-        if (!sameStableStat(before, currentStable)) {
-          throw new Error(`selected Gradle input path changed while establishing continuity: ${entry.path}`);
-        }
-        trackedFiles.push({ path: filePath, descriptor, before });
-      } catch (error) {
-        fs.closeSync(descriptor);
-        throw error;
-      }
-    }
-  } catch (error) {
-    close();
-    throw error;
+function boundedGuardOption(name: string, value: number | undefined, ceiling: number): number {
+  const resolved = value ?? ceiling;
+  if (!Number.isInteger(resolved) || resolved < 1 || resolved > ceiling) {
+    throw new Error(`${name} must be an integer within 1..${ceiling}`);
   }
+  return resolved;
+}
 
+function guardLimits(options: GradleInputGuardOptions = {}): GuardLimits {
   return {
-    close,
-    assertUnchanged: async (): Promise<void> => {
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      const issues: string[] = [...selectedEvents.map((event) => `selected path mutation observed (${event})`)];
-      for (const file of trackedFiles) {
-        try {
-          const after = stableStat(fs.fstatSync(file.descriptor, { bigint: true }));
-          const current = validateSelectedPath(projectDir, file.path);
-          const currentStable = stableStat(fs.lstatSync(current.realPath, { bigint: true }));
-          if (!sameStableStat(file.before, after) || !sameStableStat(file.before, currentStable)) {
-            issues.push(`selected file generation changed: ${path.relative(projectDir, file.path).split(path.sep).join("/")}`);
-          }
-        } catch (error) {
-          issues.push(`selected file continuity could not be checked: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-      for (const [directory, before] of trackedDirectories) {
-        try {
-          if (!sameStableStat(before, lstatStable(directory))) {
-            issues.push(`selected directory membership changed: ${path.relative(projectDir, directory).split(path.sep).join("/")}`);
-          }
-        } catch (error) {
-          issues.push(`selected directory continuity could not be checked: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-      if (issues.length) throw new Error(`Gradle input generation continuity failed: ${issues.slice(0, 8).join("; ")}`);
-    },
+    maxDirectories: boundedGuardOption("maxDirectories", options.maxDirectories, GRADLE_INPUT_MAX_DIRECTORIES),
+    maxDepth: boundedGuardOption("maxDepth", options.maxDepth, GRADLE_INPUT_MAX_DEPTH),
+    maxEventSamples: boundedGuardOption("maxEventSamples", options.maxEventSamples, GRADLE_INPUT_MAX_EVENT_SAMPLES),
   };
 }
 
-export function collectGradleInputIdentity(projectDir: string): GradleInputIdentity {
+function closeGuardState(state: GuardState): void {
+  if (state.closed) return;
+  state.closed = true;
+  for (const watcher of state.watchers) watcher.close();
+  for (const file of state.trackedFiles) {
+    try { fs.closeSync(file.descriptor); } catch {}
+  }
+}
+
+function rememberSelectedEvent(state: GuardState, event: string): void {
+  if (state.selectedEventSamples.length < state.limits.maxEventSamples) {
+    state.selectedEventSamples.push(event);
+  } else {
+    state.selectedEventsOmitted = true;
+  }
+}
+
+function watchDirectChildren(
+  state: GuardState,
+  directory: string,
+  selectedNames: ReadonlySet<string>,
+): void {
+  if (!lstatIfPresent(directory)?.isDirectory()) return;
+  const watcher = fs.watch(directory, { persistent: false }, (eventType, filename) => {
+    const name = filename === null ? "" : filename.toString();
+    if (!name || selectedNames.has(name.split(/[\\/]/, 1)[0])) {
+      rememberSelectedEvent(state, `${eventType}:${name || "unknown"}`);
+    }
+  });
+  watcher.on("error", (error) => rememberSelectedEvent(state, `watcher-error:${error.message}`));
+  state.watchers.push(watcher);
+}
+
+function createGuardState(projectDir: string, options: GradleInputGuardOptions): GuardState {
+  const state: GuardState = {
+    projectDir,
+    limits: guardLimits(options),
+    trackedFiles: [],
+    trackedDirectories: new Map(),
+    watchers: [],
+    selectedEventSamples: [],
+    selectedEventsOmitted: false,
+    closed: false,
+  };
+  try {
+    watchDirectChildren(state, projectDir, new Set([
+      "app",
+      ...[...ROOT_FILES].filter((relativePath) => !relativePath.includes("/")),
+      ...RECURSIVE_ROOTS.filter((relativePath) => !relativePath.includes("/")),
+    ]));
+    watchDirectChildren(
+      state,
+      path.join(projectDir, "app"),
+      new Set(["build.gradle", "build.gradle.kts", "proguard-rules.pro", "src", "libs"]),
+    );
+    return state;
+  } catch (error) {
+    closeGuardState(state);
+    throw error;
+  }
+}
+
+function hashSelectedFile(
+  projectRealPath: string,
+  filePath: string,
+  expected: fs.Stats,
+  guardState?: GuardState,
+): { bytes: number; sha256: string } {
+  if (!expected.isFile()) throw new Error(`selected Gradle input is not a regular file: ${filePath}`);
+  if (expected.size > GRADLE_INPUT_MAX_FILE_BYTES) {
+    throw new Error(`selected Gradle input exceeds the ${GRADLE_INPUT_MAX_FILE_BYTES}-byte file limit: ${filePath}`);
+  }
+  const descriptor = fs.openSync(filePath, "r");
+  let retained = false;
+  try {
+    const opened = fs.fstatSync(descriptor);
+    if (
+      !opened.isFile() ||
+      opened.dev !== expected.dev ||
+      opened.ino !== expected.ino ||
+      opened.size !== expected.size ||
+      opened.mtimeMs !== expected.mtimeMs ||
+      opened.ctimeMs !== expected.ctimeMs
+    ) {
+      throw new Error(`selected Gradle input changed before hashing: ${filePath}`);
+    }
+    const before = stableStat(fs.fstatSync(descriptor, { bigint: true }));
+    const sha256 = hashOpenDescriptor(descriptor, opened.size, filePath);
+    const after = stableStat(fs.fstatSync(descriptor, { bigint: true }));
+    if (!sameStableStat(before, after)) {
+      throw new Error(`selected Gradle input changed while hashing: ${filePath}`);
+    }
+    const current = validateSelectedPath(projectRealPath, filePath);
+    if (!sameStableStat(before, lstatStable(current.realPath))) {
+      throw new Error(`selected Gradle input path changed while hashing: ${filePath}`);
+    }
+    if (guardState) {
+      guardState.trackedFiles.push({ path: filePath, descriptor, before });
+      retained = true;
+    }
+    return { bytes: opened.size, sha256 };
+  } finally {
+    if (!retained) fs.closeSync(descriptor);
+  }
+}
+
+function collectGradleInputIdentityInternal(
+  projectDir: string,
+  options: GradleInputGuardOptions,
+  state?: GuardState,
+): GradleInputIdentity {
   const projectRealPath = fs.realpathSync(path.resolve(projectDir));
   if (!fs.lstatSync(projectRealPath).isDirectory()) {
     throw new Error(`Gradle project is not a directory: ${projectRealPath}`);
   }
+  if (state && state.projectDir !== projectRealPath) {
+    throw new Error("Gradle input generation guard requires the canonical projectDir");
+  }
+  const limits = state?.limits ?? guardLimits(options);
   const entries: GradleInputEntry[] = [];
   let totalBytes = 0;
+  let directoryCount = 0;
 
   const addFile = (selectedPath: string): void => {
     const { stat, realPath } = validateSelectedPath(projectRealPath, selectedPath);
     const relativePath = path.relative(projectRealPath, realPath).split(path.sep).join("/");
-    const hashed = hashSelectedFile(realPath, stat);
+    const hashed = hashSelectedFile(projectRealPath, realPath, stat, state);
     if (entries.length >= GRADLE_INPUT_MAX_ENTRIES) {
       throw new Error(`Gradle input manifest exceeds ${GRADLE_INPUT_MAX_ENTRIES} entries`);
     }
@@ -432,25 +429,43 @@ export function collectGradleInputIdentity(projectDir: string): GradleInputIdent
     totalBytes += hashed.bytes;
   };
 
-  const walk = (selectedPath: string): void => {
-    const { stat, realPath } = validateSelectedPath(projectRealPath, selectedPath);
-    if (stat.isFile()) {
-      addFile(realPath);
-      return;
+  const pending: Array<{ selectedPath: string; depth: number }> = [];
+  for (const relativeRoot of [...RECURSIVE_ROOTS].reverse()) {
+    const selectedRoot = path.join(projectRealPath, ...relativeRoot.split("/"));
+    if (lstatIfPresent(selectedRoot)) pending.push({ selectedPath: selectedRoot, depth: 0 });
+  }
+  while (pending.length) {
+    const { selectedPath, depth } = pending.pop()!;
+    const selected = validateSelectedPath(projectRealPath, selectedPath);
+    if (selected.stat.isFile()) {
+      addFile(selected.realPath);
+      continue;
     }
-    if (!stat.isDirectory()) {
+    if (!selected.stat.isDirectory()) {
       throw new Error(`selected Gradle input is not a regular file or directory: ${selectedPath}`);
     }
-    for (const name of fs.readdirSync(realPath).sort()) walk(path.join(realPath, name));
-  };
+    if (depth > limits.maxDepth) {
+      throw new Error(`Gradle input directory depth exceeds the ${limits.maxDepth} depth ceiling: ${selectedPath}`);
+    }
+    directoryCount += 1;
+    if (directoryCount > limits.maxDirectories) {
+      throw new Error(`Gradle input directory count exceeds the ${limits.maxDirectories} directory ceiling`);
+    }
+    const before = lstatStable(selected.realPath);
+    const names = fs.readdirSync(selected.realPath).sort();
+    const after = lstatStable(selected.realPath);
+    if (!sameStableStat(before, after)) {
+      throw new Error(`selected Gradle input directory changed while collecting: ${selectedPath}`);
+    }
+    state?.trackedDirectories.set(selected.realPath, before);
+    for (let index = names.length - 1; index >= 0; index -= 1) {
+      pending.push({ selectedPath: path.join(selected.realPath, names[index]), depth: depth + 1 });
+    }
+  }
 
   for (const relativePath of ROOT_FILES) {
     const selectedPath = path.join(projectRealPath, ...relativePath.split("/"));
     if (lstatIfPresent(selectedPath)) addFile(selectedPath);
-  }
-  for (const relativeRoot of RECURSIVE_ROOTS) {
-    const selectedRoot = path.join(projectRealPath, ...relativeRoot.split("/"));
-    if (lstatIfPresent(selectedRoot)) walk(selectedRoot);
   }
 
   entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
@@ -465,4 +480,84 @@ export function collectGradleInputIdentity(projectDir: string): GradleInputIdent
     totalBytes,
     entries,
   };
+}
+
+function generationGuard(state: GuardState): GradleInputGenerationGuard {
+  return {
+    close: () => closeGuardState(state),
+    assertUnchanged: async (): Promise<void> => {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const issues: string[] = [];
+      let issuesOmitted = false;
+      const addIssue = (issue: string): void => {
+        if (issues.length < GRADLE_INPUT_MAX_EVENT_SAMPLES) issues.push(issue);
+        else issuesOmitted = true;
+      };
+      for (const event of state.selectedEventSamples) addIssue(`selected path mutation observed (${event})`);
+      if (state.selectedEventsOmitted) addIssue("additional selected path mutations omitted");
+      for (const file of state.trackedFiles) {
+        try {
+          const after = stableStat(fs.fstatSync(file.descriptor, { bigint: true }));
+          const current = validateSelectedPath(state.projectDir, file.path);
+          const currentStable = stableStat(fs.lstatSync(current.realPath, { bigint: true }));
+          if (!sameStableStat(file.before, after) || !sameStableStat(file.before, currentStable)) {
+            addIssue(`selected file generation changed: ${path.relative(state.projectDir, file.path).split(path.sep).join("/")}`);
+          }
+        } catch (error) {
+          addIssue(`selected file continuity could not be checked: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      for (const [directory, before] of state.trackedDirectories) {
+        try {
+          if (!sameStableStat(before, lstatStable(directory))) {
+            addIssue(`selected directory membership changed: ${path.relative(state.projectDir, directory).split(path.sep).join("/")}`);
+          }
+        } catch (error) {
+          addIssue(`selected directory continuity could not be checked: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      if (issuesOmitted) issues.push("additional Gradle input continuity issues omitted");
+      if (issues.length) throw new Error(`Gradle input generation continuity failed: ${issues.join("; ")}`);
+    },
+  };
+}
+
+/**
+ * Collect and guard one input generation. Watchers are live before collection, the descriptors
+ * used to hash selected files stay open, and directory generations come from that same bounded
+ * iterative traversal.
+ */
+export function collectGuardedGradleInputIdentity(
+  projectDir: string,
+  options: GradleInputGuardOptions = {},
+): { identity: GradleInputIdentity; guard: GradleInputGenerationGuard } {
+  const projectRealPath = fs.realpathSync(path.resolve(projectDir));
+  if (!fs.lstatSync(projectRealPath).isDirectory()) {
+    throw new Error(`Gradle project is not a directory: ${projectRealPath}`);
+  }
+  const state = createGuardState(projectRealPath, options);
+  try {
+    const identity = collectGradleInputIdentityInternal(projectRealPath, options, state);
+    return { identity, guard: generationGuard(state) };
+  } catch (error) {
+    closeGuardState(state);
+    throw error;
+  }
+}
+
+export function guardGradleInputGeneration(
+  identity: GradleInputIdentity,
+  options: GradleInputGuardOptions = {},
+): GradleInputGenerationGuard {
+  assertGradleInputManifestPaths(identity.entries);
+  const guarded = collectGuardedGradleInputIdentity(identity.projectDir, options);
+  if (canonicalJson(guarded.identity) !== canonicalJson(identity)) {
+    guarded.guard.close();
+    throw new Error("selected Gradle input changed while establishing continuity");
+  }
+  return guarded.guard;
+}
+
+export function collectGradleInputIdentity(projectDir: string): GradleInputIdentity {
+  return collectGradleInputIdentityInternal(projectDir, {});
 }
