@@ -343,7 +343,7 @@ function captureMetadata(check: CaptureCheck) {
 
 /** Materialize an already-owned byte snapshot. Producer paths use this so the bytes they measured
  * are the exact bytes copied into CAS; a mutable source pathname is never re-read after measuring. */
-function materializeCaptureBytes(sourcePath: string, immutableBytes: Buffer): { artifactPath: string; sourceArtifactPath: string; capture: ReturnType<typeof captureMetadata> } {
+export function materializeCaptureBytes(sourcePath: string, immutableBytes: Buffer): { artifactPath: string; sourceArtifactPath: string; capture: ReturnType<typeof captureMetadata> } {
   const bytes = Buffer.from(immutableBytes);
   const checked = validateCaptureBuffer(bytes, sourcePath);
   if (!checked.ok) throw new Error(checked.reason ?? `artifact '${sourcePath}' is not a valid capture`);
