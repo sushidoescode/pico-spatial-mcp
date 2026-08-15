@@ -75,6 +75,9 @@ export interface LedgerToolDependencies {
 
 export type RegisterLedgerTools = (server: McpServer, deps?: LedgerToolDependencies) => void;
 
+type TrustedRunReceiptBinding = Readonly<{ binding: ValidatedRunReceiptBinding }>;
+const TRUSTED_RUN_RECEIPT_BINDINGS = new WeakSet<object>();
+
 function validateRunReceiptBinding(
   value: unknown,
   expectedCaptureSha256?: string,
@@ -109,6 +112,22 @@ function validateRunReceiptBinding(
       captureSha256: candidate.captureSha256,
     }),
   };
+}
+
+function createTrustedRunReceiptBinding(binding: ValidatedRunReceiptBinding): TrustedRunReceiptBinding {
+  const capability = Object.freeze({ binding });
+  TRUSTED_RUN_RECEIPT_BINDINGS.add(capability);
+  return capability;
+}
+
+function validateTrustedRunReceiptBinding(
+  value: unknown,
+  expectedCaptureSha256?: string,
+): { ok: true; binding: ValidatedRunReceiptBinding } | { ok: false; reason: string } {
+  if (!value || typeof value !== "object" || !TRUSTED_RUN_RECEIPT_BINDINGS.has(value as object)) {
+    return { ok: false, reason: "runReceiptBinding requires a private resolver-origin capability; a caller-shaped binding has no validated receipt lineage" };
+  }
+  return validateRunReceiptBinding((value as TrustedRunReceiptBinding).binding, expectedCaptureSha256);
 }
 
 export function ledgerDirectory(): string {
@@ -492,7 +511,7 @@ export function validateEntry(e: {
 
 export function appendLedgerEntry(
   app: string,
-  input: { claim: string; evidenceType: string; artifactPath?: string; attestation?: string; cClass?: string; reproHash?: string; extra?: Record<string, any>; runReceiptBinding?: ValidatedRunReceiptBinding },
+  input: { claim: string; evidenceType: string; artifactPath?: string; attestation?: string; cClass?: string; reproHash?: string; extra?: Record<string, any>; runReceiptBinding?: TrustedRunReceiptBinding },
 ): { status: string; reason?: string; entry?: any; warning?: string; totalEntries?: number } {
   try {
     assertCanonicalAppKey(app);
@@ -501,7 +520,7 @@ export function appendLedgerEntry(
       if (!IMAGE_EVIDENCE.has(input.evidenceType)) {
         return { status: "rejected", reason: "a run receipt can bind only image-grounded evidence; it never promotes structural evidence" };
       }
-      const checkedBinding = validateRunReceiptBinding(input.runReceiptBinding);
+      const checkedBinding = validateTrustedRunReceiptBinding(input.runReceiptBinding);
       if (!checkedBinding.ok) return { status: "rejected", reason: checkedBinding.reason };
       runReceiptBinding = checkedBinding.binding;
     }
@@ -542,7 +561,7 @@ export function appendLedgerEntry(
           ? materializeCaptureBytes(input.artifactPath, immutableProducerBytes)
           : materializeCapture(input.artifactPath);
         if (runReceiptBinding) {
-          const checkedBinding = validateRunReceiptBinding(runReceiptBinding, materialized.capture.sha256);
+          const checkedBinding = validateTrustedRunReceiptBinding(input.runReceiptBinding, materialized.capture.sha256);
           if (!checkedBinding.ok) return { status: "rejected", reason: checkedBinding.reason };
           runReceiptBinding = checkedBinding.binding;
         }
@@ -715,7 +734,7 @@ export async function appendDeviceVerifiedEntry(
     deviceBootQemu?: string;
     deviceFeature?: string;
     deviceOutcome?: "pass" | "fail";
-    runReceiptBinding?: ValidatedRunReceiptBinding;
+    runReceiptBinding?: TrustedRunReceiptBinding;
   },
   probe: DeviceIdentityProbe = (serial) => probeDeviceIdentity(resolveDeviceAdb(), serial),
   captureProbe: DeviceCaptureProbe = (serial) => probeDeviceCapture(resolveDeviceAdb(), serial),
@@ -724,6 +743,10 @@ export async function appendDeviceVerifiedEntry(
     assertCanonicalAppKey(app);
   } catch (error: any) {
     return { status: "rejected", reason: error?.message ?? String(error) };
+  }
+  if (input.runReceiptBinding !== undefined) {
+    const checkedBinding = validateTrustedRunReceiptBinding(input.runReceiptBinding);
+    if (!checkedBinding.ok) return { status: "rejected", reason: checkedBinding.reason };
   }
   if (typeof input.deviceFeature !== "string" || !DEVICE_FEATURE_PATTERN.test(input.deviceFeature)) {
     return { status: "rejected", reason: "device_verified requires a structured deviceFeature slug (lowercase words joined by underscores); free-text claim matching cannot close device parity." };
@@ -881,6 +904,13 @@ export function readLedger(app: string): LedgerReadResult {
   const producerProvenanceIssues: LedgerReadResult["producerProvenanceIssues"] = [];
   const runReceiptIssues: LedgerReadResult["runReceiptIssues"] = [];
   const effectiveEntries: any[] = [];
+  const invalidateRunReceipt = (entry: any, reason: string) => {
+    if (!entry.runReceipt) return;
+    entry.claimedRunReceipt = entry.runReceipt;
+    delete entry.runReceipt;
+    entry.runReceiptProvenance = { status: "unverifiable", reason };
+    runReceiptIssues.push({ seq: entry.seq, claim: entry.claim, reason });
+  };
 
   for (const raw of events) {
     if (!raw || raw.eventType === "retraction" || raw.retracted || retracted.has(raw.seq)) continue;
@@ -905,13 +935,7 @@ export function readLedger(app: string): LedgerReadResult {
         entry.claimedEvidenceType = entry.evidenceType;
         entry.evidenceType = "provenance-broken";
         integrityIssues.push({ seq: entry.seq, claim: entry.claim, claimedEvidenceType: entry.claimedEvidenceType, provenance });
-        if (entry.runReceipt) {
-          const reason = "runReceipt binding cannot be consumed because the linked capture provenance is not intact";
-          entry.claimedRunReceipt = entry.runReceipt;
-          delete entry.runReceipt;
-          entry.runReceiptProvenance = { status: "unverifiable", reason };
-          runReceiptIssues.push({ seq: entry.seq, claim: entry.claim, reason });
-        }
+        invalidateRunReceipt(entry, "runReceipt binding cannot be consumed because the linked capture provenance is not intact");
       }
     }
     if (entry.evidenceType === "device_verified") {
@@ -941,9 +965,11 @@ export function readLedger(app: string): LedgerReadResult {
       const producer = checkProducerProvenance(entry);
       entry.producerProvenance = producer;
       if (producer.status !== "validated") {
-        entry.claimedEvidenceType = entry.evidenceType;
+        const claimedEvidenceType = entry.evidenceType;
+        entry.claimedEvidenceType = claimedEvidenceType;
         entry.evidenceType = "structural";
         producerProvenanceIssues.push({ seq: entry.seq, claim: entry.claim, claimedEvidenceType: entry.claimedEvidenceType, reason: producer.reason ?? "producer provenance is unverifiable" });
+        invalidateRunReceipt(entry, `runReceipt binding cannot be consumed because ${claimedEvidenceType} producer provenance is not validated: ${producer.reason ?? "producer provenance is unverifiable"}`);
       }
     }
     effectiveEntries.push(entry);
@@ -1048,7 +1074,7 @@ export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {
       if (!claim?.trim() || !evidenceType) {
         return okJson({ status: "rejected", app, reason: "record action requires claim and evidenceType" });
       }
-      let runReceiptBinding: ValidatedRunReceiptBinding | undefined;
+      let runReceiptBinding: TrustedRunReceiptBinding | undefined;
       if (runReceiptId !== undefined) {
         if (!IMAGE_EVIDENCE.has(evidenceType)) {
           return okJson({ status: "rejected", app, reason: "runReceiptId can bind only image-grounded evidence and never promotes structural evidence" });
@@ -1072,7 +1098,7 @@ export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {
         if (!checked.ok || checked.binding.receiptId !== runReceiptId) {
           return okJson({ status: "rejected", app, reason: checked.ok ? "run receipt resolver returned a different receiptId" : `run receipt resolver returned an invalid binding: ${checked.reason}` });
         }
-        runReceiptBinding = checked.binding;
+        runReceiptBinding = createTrustedRunReceiptBinding(checked.binding);
       }
       const res = evidenceType === "device_verified"
         ? await appendDeviceVerifiedEntry(app, { claim, artifactPath, attestation, cClass, reproHash, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, runReceiptBinding })

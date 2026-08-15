@@ -203,20 +203,36 @@ fs.writeFileSync(producerUsdPath, `${JSON.stringify(producerUsdEvents, null, 2)}
 
 const legacyAutoPath = path.join(ledgerDir, `${producerAutoApp}.json`);
 const legacyAutoEvents = JSON.parse(fs.readFileSync(legacyAutoPath, "utf8"));
+legacyAutoEvents[0].runReceipt = {
+  kind: "pico.native-run-receipt",
+  schemaVersion: 1,
+  receiptId: "d".repeat(64),
+  captureSha256: legacyAutoEvents[0].capture.sha256,
+};
 delete legacyAutoEvents[0].evidenceProducer;
 fs.writeFileSync(legacyAutoPath, `${JSON.stringify(legacyAutoEvents, null, 2)}\n`);
 const legacyAutoRead = readLedger(producerAutoApp);
 check("legacy auto_judged without producer provenance downgrades to structural", legacyAutoRead.effectiveEntries[0]?.evidenceType === "structural"
   && legacyAutoRead.effectiveEntries[0]?.claimedEvidenceType === "auto_judged"
-  && legacyAutoRead.producerProvenanceIssues?.length === 1);
+  && legacyAutoRead.producerProvenanceIssues?.length === 1
+  && legacyAutoRead.effectiveEntries[0]?.runReceipt == null
+  && legacyAutoRead.runReceiptIssues?.length === 1);
 const legacyUsdPath = producerUsdPath;
 const legacyUsdEvents = JSON.parse(fs.readFileSync(legacyUsdPath, "utf8"));
+legacyUsdEvents[0].runReceipt = {
+  kind: "pico.native-run-receipt",
+  schemaVersion: 1,
+  receiptId: "e".repeat(64),
+  captureSha256: legacyUsdEvents[0].capture.sha256,
+};
 delete legacyUsdEvents[0].evidenceProducer;
 fs.writeFileSync(legacyUsdPath, `${JSON.stringify(legacyUsdEvents, null, 2)}\n`);
 const legacyUsdRead = readLedger(producerUsdApp);
 check("legacy usd_host_render without producer provenance downgrades to structural", legacyUsdRead.effectiveEntries[0]?.evidenceType === "structural"
   && legacyUsdRead.effectiveEntries[0]?.claimedEvidenceType === "usd_host_render"
-  && legacyUsdRead.producerProvenanceIssues?.length === 1);
+  && legacyUsdRead.producerProvenanceIssues?.length === 1
+  && legacyUsdRead.effectiveEntries[0]?.runReceipt == null
+  && legacyUsdRead.runReceiptIssues?.length === 1);
 
 // Device evidence has a stronger provenance contract than an emulator look. These identity values
 // are schema fixtures only; no Swan hardware was available or observed in this test.
@@ -233,6 +249,38 @@ const fixtureProbe = async (serial) => ({
   bootQemu: deviceFixture.deviceBootQemu,
 });
 const fixtureCaptureProbe = async () => fs.readFileSync(devicePng);
+const directReceiptBinding = (receiptId, artifactPath) => ({
+  kind: "pico.native-run-receipt",
+  schemaVersion: 1,
+  receiptId,
+  captureSha256: crypto.createHash("sha256").update(fs.readFileSync(artifactPath)).digest("hex"),
+});
+const directLedgerBindingApp = "fixture.direct-runreceipt-binding";
+const directLedgerBinding = appendLedgerEntry(directLedgerBindingApp, {
+  claim: "plain shaped binding has no receipt resolver lineage",
+  evidenceType: "vision_verified",
+  artifactPath: realPng,
+  attestation: "synthetic capability fixture only; no rendered LOOK is claimed",
+  runReceiptBinding: directReceiptBinding("f".repeat(64), realPng),
+});
+check("direct appendLedgerEntry rejects a plain shaped binding without resolver-origin capability",
+  directLedgerBinding.status === "rejected"
+  && /resolver|trusted|capability|lineage/i.test(directLedgerBinding.reason ?? "")
+  && readLedger(directLedgerBindingApp).events.length === 0);
+const directDeviceBindingApp = "fixture.device-direct-runreceipt-binding";
+const directDeviceBinding = await appendDeviceVerifiedEntry(directDeviceBindingApp, {
+  claim: "plain shaped binding cannot borrow synthetic device lineage",
+  artifactPath: devicePng,
+  attestation: "synthetic capability fixture only; no Swan or hardware result is claimed",
+  deviceFeature: "controller_ray",
+  deviceOutcome: "pass",
+  ...deviceFixture,
+  runReceiptBinding: directReceiptBinding("f".repeat(64), devicePng),
+}, fixtureProbe, fixtureCaptureProbe);
+check("direct appendDeviceVerifiedEntry rejects a plain shaped binding without resolver-origin capability",
+  directDeviceBinding.status === "rejected"
+  && /resolver|trusted|capability|lineage/i.test(directDeviceBinding.reason ?? "")
+  && readLedger(directDeviceBindingApp).events.length === 0);
 const missingDeviceOutcome = await appendDeviceVerifiedEntry("fixture.device-missing-outcome", {
   claim: "free-text polarity must not be inferred",
   artifactPath: devicePng,
