@@ -320,6 +320,14 @@ test("ledger reads strip bindings unless an injected historical validator re-ear
   assert.deepEqual(stripped.ledger[0].claimedRunReceipt, expectedBinding(published, fixture));
   assert.deepEqual(Object.keys(stripped.ledger[0].claimedRunReceipt).sort(), ["captureSha256", "kind", "receiptId", "schemaVersion"]);
   assert.deepEqual(stripped.history[0].claimedRunReceipt, expectedBinding(published, fixture));
+  const approvedNoValidatorDiagnostic = {
+    status: "unverifiable",
+    reason: "runReceipt binding cannot be consumed because no historical receipt validator is configured",
+  };
+  assert.deepEqual(stripped.ledger[0].runReceiptProvenance, approvedNoValidatorDiagnostic);
+  assert.deepEqual(stripped.history[0].runReceiptProvenance, approvedNoValidatorDiagnostic);
+  assert.equal(Object.prototype.hasOwnProperty.call(stripped.ledger[0], "receiptRuntime"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(stripped.history[0], "receiptRuntime"), false);
   assert.equal(stripped.runReceiptIssues.length, 1);
   assert.match(stripped.runReceiptIssues[0].reason, /historical.*validator|validator.*configured/i);
   assert.equal(stripped.capabilityReport.matrix.visuallyVerified.length, 1);
@@ -381,7 +389,7 @@ test("ledger reports erase every malformed persisted runReceipt without leaking 
   }
 });
 
-test("ledger reports discard persisted claimedRunReceipt and synthesize it only from validated bindings", async (t) => {
+test("ledger reports discard every persisted receipt diagnostic and synthesize only current validation results", async (t) => {
   const privateMarker = "persisted-claimed-runtime-must-not-leak";
   const maliciousClaimedBinding = {
     receiptRuntime: {
@@ -391,8 +399,23 @@ test("ledger reports discard persisted claimedRunReceipt and synthesize it only 
       bootQemu: "1",
     },
   };
+  const maliciousProvenance = {
+    status: "validated",
+    reason: privateMarker,
+    receiptRuntime: maliciousClaimedBinding.receiptRuntime,
+  };
+  const injectPersistedDiagnostics = (entry) => {
+    entry.claimedRunReceipt = maliciousClaimedBinding;
+    entry.runReceiptProvenance = maliciousProvenance;
+    entry.receiptRuntime = maliciousClaimedBinding.receiptRuntime;
+  };
+  const assertDiagnosticsRemoved = (entry) => {
+    assert.equal(Object.prototype.hasOwnProperty.call(entry, "claimedRunReceipt"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(entry, "runReceiptProvenance"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(entry, "receiptRuntime"), false);
+  };
 
-  await t.test("claimed binding without runReceipt", async (child) => {
+  await t.test("persisted diagnostics without runReceipt", async (child) => {
     const fixture = await createRunReceiptFixture(child, store);
     const callJson = await startFullSurface(child, fixture);
     const recorded = await callJson("record_verification", {
@@ -404,18 +427,19 @@ test("ledger reports discard persisted claimedRunReceipt and synthesize it only 
     });
     assert.equal(recorded.status, "recorded");
     mutateLedger(fixture, (events) => {
-      events[0].claimedRunReceipt = maliciousClaimedBinding;
+      injectPersistedDiagnostics(events[0]);
     });
 
     const report = await callJson("ledger_report", { app: FIXTURE_APP });
-    assert.equal(Object.prototype.hasOwnProperty.call(report.ledger[0], "claimedRunReceipt"), false);
-    assert.equal(Object.prototype.hasOwnProperty.call(report.history[0], "claimedRunReceipt"), false);
+    assertDiagnosticsRemoved(report.ledger[0]);
+    assertDiagnosticsRemoved(report.history[0]);
+    assert.equal(report.ledger[0].evidenceType, "vision_verified");
     assert.equal(report.runReceiptIssues.length, 0);
     assert.equal(report.capabilityReport.matrix.visuallyVerified.length, 1);
     assert.equal(JSON.stringify(report).includes(privateMarker), false);
   });
 
-  await t.test("valid runReceipt beside malicious claimed binding", async (child) => {
+  await t.test("valid runReceipt beside persisted diagnostics", async (child) => {
     const fixture = await createRunReceiptFixture(child, store);
     const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
     const callJson = await startFullSurface(child, fixture);
@@ -429,13 +453,15 @@ test("ledger reports discard persisted claimedRunReceipt and synthesize it only 
     });
     assert.equal(recorded.status, "recorded");
     mutateLedger(fixture, (events) => {
-      events[0].claimedRunReceipt = maliciousClaimedBinding;
+      injectPersistedDiagnostics(events[0]);
     });
 
     const report = await callJson("ledger_report", { app: FIXTURE_APP });
     assert.deepEqual(report.ledger[0].runReceipt, expectedBinding(published, fixture));
-    assert.equal(Object.prototype.hasOwnProperty.call(report.ledger[0], "claimedRunReceipt"), false);
-    assert.equal(Object.prototype.hasOwnProperty.call(report.history[0], "claimedRunReceipt"), false);
+    assertDiagnosticsRemoved(report.ledger[0]);
+    assertDiagnosticsRemoved(report.history[0]);
+    assert.deepEqual(report.history[0].runReceipt, expectedBinding(published, fixture));
+    assert.equal(report.ledger[0].evidenceType, "vision_verified");
     assert.equal(report.runReceiptIssues.length, 0);
     assert.equal(JSON.stringify(report).includes(privateMarker), false);
   });

@@ -4,8 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { okJson } from "./util.js";
-import { isPassingDeviceEvidence, readLedger } from "./ledger.js";
-import { validateDeviceLineage } from "./deviceidentity.js";
+import { isPassingDeviceEvidence, isPassingDeviceEvidenceForReceipt, readLedger } from "./ledger.js";
 import { validateCapture } from "./evidence.js";
 import { findCurrentNativeRunReceipt, validateNativeRunReceiptCaptureBinding } from "./runreceiptstore.js";
 
@@ -34,12 +33,10 @@ function isPositiveVisionEvidence(entry: any): boolean {
   return entry?.evidenceType === "vision_verified" && entry?.deviceOutcome !== "fail";
 }
 
-function isPassingDeviceEvidenceForReceipt(entry: any, runtime: { serial: string; model: string; fingerprint: string; bootQemu: string }): boolean {
-  if (!isPassingDeviceEvidence(entry) || !validateDeviceLineage(runtime).ok) return false;
-  return entry.deviceSerial === runtime.serial
-    && entry.deviceModel === runtime.model
-    && entry.deviceFingerprint === runtime.fingerprint
-    && entry.deviceBootQemu === runtime.bootQemu;
+export function defaultNativeProjectDirectory(app: string): string {
+  const fleet = /^com\.fleet\.([a-z][a-z0-9_]*)$/.exec(app);
+  const projectName = fleet ? `fleet-${fleet[1]}-native` : `${app.split(".").pop()}-native`;
+  return path.join(os.homedir(), "AndroidStudioProjects", projectName);
 }
 
 /**
@@ -91,7 +88,7 @@ export function registerShipTools(server: McpServer) {
       if (byType.built_for_headset) deferred.push(`${byType.built_for_headset} capability(ies) built-for-Swan (controller-ray / anchors / immersive) — device-verify on hardware.`);
 
       if (ln === "native" || ln === "hybrid") {
-        const pdir = projectDir ?? path.join(os.homedir(), "AndroidStudioProjects", `${app.split(".").pop()}-native`);
+        const pdir = projectDir ?? defaultNativeProjectDirectory(app);
         const apk = path.join(pdir, "app/build/outputs/apk/debug/app-debug.apk");
         const releaseApk = path.join(pdir, "app/build/outputs/apk/release/app-release.apk");
         if (fs.existsSync(apk)) deferred.push(`debug APK path exists (${apk}); path existence does not prove valid APK bytes, build success, installation, or that this ledger's looked-at frame came from this build.`);

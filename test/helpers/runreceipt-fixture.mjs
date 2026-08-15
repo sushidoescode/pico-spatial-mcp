@@ -5,6 +5,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import {
   canonicalIdentity,
+  canonicalJson,
   collectGradleInputIdentity,
   readAuthoredAppSpecIdentity,
 } from "../../dist/runreceiptidentity.js";
@@ -96,12 +97,26 @@ export const effectiveSpec = (packageName = FIXTURE_APP) => ({
   fleet: { semanticAnchorsResolved: true },
 });
 
+export function effectiveSpecWithStoredBytes(storedBytes, packageName = FIXTURE_APP) {
+  const spec = effectiveSpec(packageName);
+  spec.meta.brief = "";
+  const baseBytes = Buffer.byteLength(`${canonicalJson(spec)}\n`);
+  if (!Number.isSafeInteger(storedBytes) || storedBytes < baseBytes) {
+    throw new Error(`storedBytes must be an integer at least ${baseBytes}`);
+  }
+  spec.meta.brief = "x".repeat(storedBytes - baseBytes);
+  if (Buffer.byteLength(`${canonicalJson(spec)}\n`) !== storedBytes) {
+    throw new Error(`fixture did not produce exactly ${storedBytes} stored bytes`);
+  }
+  return spec;
+}
+
 export async function createRunReceiptFixture(t, store, options = {}) {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-run-receipt-"));
   t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
   const rootDir = options.rootDir ?? path.join(scratch, "receipt-store");
   const ledgerDir = options.ledgerDir ?? path.join(scratch, "ledger-store");
-  const projectDir = path.join(scratch, "project");
+  const projectDir = path.join(scratch, ...(options.projectRelativeDir ?? "project").split("/"));
   const briefPath = path.join(scratch, "brief.json");
   const packageName = options.app ?? FIXTURE_APP;
   const runtimeIdentity = options.runtimeIdentity ?? {

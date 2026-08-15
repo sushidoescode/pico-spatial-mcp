@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { appSpecSchema } from "../dist/appspec.js";
 import {
   canonicalIdentity,
   canonicalJson,
@@ -17,12 +18,14 @@ import {
   authoredSpec,
   createRunReceiptFixture,
   effectiveSpec,
+  effectiveSpecWithStoredBytes,
   makePng,
   sha256,
 } from "./helpers/runreceipt-fixture.mjs";
 
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 const ZERO_HASH = "0".repeat(64);
+const EXPECTED_EFFECTIVE_SPEC_MAX_BYTES = 2 * 1024 * 1024;
 
 function issueText(result) {
   return result.status === "invalid" ? result.issues.join("\n") : "";
@@ -57,15 +60,53 @@ function rawReceipt(fixture, payload) {
 }
 
 function maxGradleEntries() {
-  const entries = Array.from({ length: GRADLE_INPUT_MAX_ENTRIES }, (_, index) => ({
-    path: `x/${index.toString(36).padStart(3, "0")}`,
-    bytes: 0,
-    sha256: ZERO_HASH,
-  }));
+  const entries = [
+    { path: "app/src/main/AndroidManifest.xml", bytes: 0, sha256: ZERO_HASH },
+    { path: "app/src/main/java/com/example/MainActivity.kt", bytes: 0, sha256: ZERO_HASH },
+    ...Array.from({ length: GRADLE_INPUT_MAX_ENTRIES - 2 }, (_, index) => ({
+      path: `libs/${index.toString(36)}`,
+      bytes: 0,
+      sha256: ZERO_HASH,
+    })),
+  ].sort((left, right) => left.path.localeCompare(right.path));
   for (let index = 0; index < GRADLE_INPUT_MAX_TOTAL_BYTES / GRADLE_INPUT_MAX_FILE_BYTES; index += 1) {
     entries[index].bytes = GRADLE_INPUT_MAX_FILE_BYTES;
   }
   return entries;
+}
+
+function maxGradleByteEntries() {
+  return [
+    { path: "app/src/main/AndroidManifest.xml", bytes: GRADLE_INPUT_MAX_FILE_BYTES, sha256: ZERO_HASH },
+    { path: "app/src/main/java/com/example/MainActivity.kt", bytes: GRADLE_INPUT_MAX_FILE_BYTES, sha256: ZERO_HASH },
+    { path: "libs/a", bytes: GRADLE_INPUT_MAX_FILE_BYTES, sha256: ZERO_HASH },
+    { path: "libs/b", bytes: GRADLE_INPUT_MAX_FILE_BYTES, sha256: ZERO_HASH },
+  ];
+}
+
+function exactGradleAllowlistViolations(payload) {
+  const validEntries = payload.source.gradleInputs.entries;
+  return [
+    ["zero entries", []],
+    ["missing Android manifest", validEntries.filter((entry) => !entry.path.endsWith("/AndroidManifest.xml"))],
+    ["missing Kotlin or Java source", validEntries.filter((entry) => !/\.(?:kt|java)$/.test(entry.path))],
+    ["normalized path outside V1 allowlist", [
+      ...validEntries,
+      { path: "README.md", bytes: 0, sha256: ZERO_HASH },
+    ].sort((left, right) => left.path.localeCompare(right.path))],
+  ];
+}
+
+function withGradleEntries(payload, entries) {
+  const changed = structuredClone(payload);
+  setGradleEntries(changed, entries);
+  return changed;
+}
+
+function storedEffectiveSpec(bytes, packageName = FIXTURE_APP) {
+  const spec = effectiveSpecWithStoredBytes(bytes, packageName);
+  assert.equal(appSpecSchema.safeParse(spec).success, true, "effective AppSpec boundary fixture must remain schema-valid");
+  return spec;
 }
 
 const receiptIdentityMutations = [
@@ -219,6 +260,53 @@ test("publication uses exact CAS paths and unsafe app keys cannot create directo
   });
 });
 
+test("effective AppSpec publication and historical reading share one exact stored-byte boundary", async (t) => {
+  await withFixture(t, (fixture) => {
+    assert.equal(store.EFFECTIVE_APP_SPEC_MAX_BYTES, EXPECTED_EFFECTIVE_SPEC_MAX_BYTES);
+    const boundarySpec = storedEffectiveSpec(store.EFFECTIVE_APP_SPEC_MAX_BYTES);
+    const publishedSpec = store.publishEffectiveSpecArtifact(boundarySpec, fixture.storeOptions);
+    assert.equal(fs.statSync(publishedSpec.artifactPath).size, store.EFFECTIVE_APP_SPEC_MAX_BYTES);
+
+    const boundaryPayload = structuredClone(fixture.payload);
+    boundaryPayload.source.effectiveAppSpec = publishedSpec;
+    const boundaryReceipt = publishFixtureReceipt(fixture, boundaryPayload);
+    assert.equal(
+      store.readNativeRunReceipt(FIXTURE_APP, boundaryReceipt.receiptId, fixture.storeOptions).status,
+      "valid",
+    );
+
+    const oversized = storedEffectiveSpec(store.EFFECTIVE_APP_SPEC_MAX_BYTES + 1);
+    assert.throws(
+      () => store.publishEffectiveSpecArtifact(oversized, fixture.storeOptions),
+      /effective AppSpec|stored|byte|limit|2097152/i,
+    );
+  });
+});
+
+test("publisher rejects Gradle manifests outside the exact V1 allowlist or mandatory presence", async (t) => {
+  await withFixture(t, (fixture) => {
+    for (const [name, entries] of exactGradleAllowlistViolations(fixture.payload)) {
+      assert.throws(
+        () => publishFixtureReceipt(fixture, withGradleEntries(fixture.payload, entries)),
+        /Gradle|allowlist|AndroidManifest|Kotlin|Java|entry/i,
+        name,
+      );
+    }
+  });
+});
+
+test("raw historical reader rejects Gradle manifests outside the exact V1 allowlist or mandatory presence", async (t) => {
+  await withFixture(t, (fixture) => {
+    for (const [name, entries] of exactGradleAllowlistViolations(fixture.payload)) {
+      const payload = withGradleEntries(fixture.payload, entries);
+      const written = rawReceipt(fixture, payload);
+      const result = store.readNativeRunReceipt(FIXTURE_APP, written.receiptId, fixture.storeOptions);
+      assert.equal(result.status, "invalid", name);
+      assert.match(issueText(result), /Gradle|allowlist|AndroidManifest|Kotlin|Java|entry/i, name);
+    }
+  });
+});
+
 test("strict schemas reject unknown keys at every nested receipt object and union", async (t) => {
   await withFixture(t, (fixture) => {
     const mutations = [
@@ -291,19 +379,27 @@ test("raw reader independently rejects reserved or malformed mandatory identitie
   });
 });
 
-test("publisher enforces every Gradle manifest maximum and accepts their exact shared boundary", async (t) => {
+test("publisher enforces every Gradle manifest maximum within the independent receipt envelope bound", async (t) => {
   await withFixture(t, (fixture) => {
-    const boundary = structuredClone(fixture.payload);
-    setGradleEntries(boundary, maxGradleEntries());
-    assert.equal(boundary.source.gradleInputs.entryCount, GRADLE_INPUT_MAX_ENTRIES);
-    assert.equal(boundary.source.gradleInputs.totalBytes, GRADLE_INPUT_MAX_TOTAL_BYTES);
-    assert.equal(boundary.source.gradleInputs.entries[0].bytes, GRADLE_INPUT_MAX_FILE_BYTES);
-    assert.doesNotThrow(() => publishFixtureReceipt(fixture, boundary));
+    const entryBoundary = structuredClone(fixture.payload);
+    setGradleEntries(entryBoundary, maxGradleEntries());
+    assert.equal(entryBoundary.source.gradleInputs.entryCount, GRADLE_INPUT_MAX_ENTRIES);
+    assert.throws(
+      () => publishFixtureReceipt(fixture, entryBoundary),
+      /receipt.*2097152|receipt.*byte.*limit/i,
+      "the exact allowlisted entry-count boundary is larger than the independent 2 MiB receipt envelope",
+    );
+
+    const byteBoundary = structuredClone(fixture.payload);
+    setGradleEntries(byteBoundary, maxGradleByteEntries());
+    assert.equal(byteBoundary.source.gradleInputs.totalBytes, GRADLE_INPUT_MAX_TOTAL_BYTES);
+    assert.equal(byteBoundary.source.gradleInputs.entries[0].bytes, GRADLE_INPUT_MAX_FILE_BYTES);
+    assert.doesNotThrow(() => publishFixtureReceipt(fixture, byteBoundary));
 
     const overEntries = structuredClone(fixture.payload);
     setGradleEntries(overEntries, [
       ...maxGradleEntries(),
-      { path: "x/zzz", bytes: 0, sha256: ZERO_HASH },
+      { path: "libs/overflow", bytes: 0, sha256: ZERO_HASH },
     ]);
     assert.throws(() => publishFixtureReceipt(fixture, overEntries), /entries|array|20000|too big|maximum/i);
 
@@ -312,19 +408,17 @@ test("publisher enforces every Gradle manifest maximum and accepts their exact s
     assert.throws(() => publishFixtureReceipt(fixture, overEntryCount), /entryCount|20000|too big|maximum/i);
 
     const overTotal = structuredClone(fixture.payload);
-    setGradleEntries(overTotal, Array.from({ length: 5 }, (_, index) => ({
-      path: `oversized-total/${index}`,
-      bytes: GRADLE_INPUT_MAX_FILE_BYTES,
-      sha256: ZERO_HASH,
-    })));
+    setGradleEntries(overTotal, [
+      ...maxGradleByteEntries(),
+      { path: "libs/c", bytes: GRADLE_INPUT_MAX_FILE_BYTES, sha256: ZERO_HASH },
+    ]);
     assert.throws(() => publishFixtureReceipt(fixture, overTotal), /totalBytes|2147483648|too big|maximum/i);
 
     const overFile = structuredClone(fixture.payload);
-    setGradleEntries(overFile, [{
-      path: "oversized-file",
-      bytes: GRADLE_INPUT_MAX_FILE_BYTES + 1,
-      sha256: ZERO_HASH,
-    }]);
+    setGradleEntries(overFile, [
+      { path: "app/src/main/AndroidManifest.xml", bytes: 0, sha256: ZERO_HASH },
+      { path: "app/src/main/java/com/example/MainActivity.kt", bytes: GRADLE_INPUT_MAX_FILE_BYTES + 1, sha256: ZERO_HASH },
+    ]);
     assert.throws(() => publishFixtureReceipt(fixture, overFile), /bytes|536870912|too big|maximum/i);
 
     const wrongEntryCount = structuredClone(fixture.payload);
@@ -349,9 +443,17 @@ test("publisher enforces every Gradle manifest maximum and accepts their exact s
 
 test("raw reader independently enforces every Gradle manifest maximum and exact cross-field totals", async (t) => {
   await withFixture(t, (fixture) => {
-    const boundary = structuredClone(fixture.payload);
-    setGradleEntries(boundary, maxGradleEntries());
-    const boundaryReceipt = rawReceipt(fixture, boundary);
+    const entryBoundary = structuredClone(fixture.payload);
+    setGradleEntries(entryBoundary, maxGradleEntries());
+    const entryBoundaryReceipt = rawReceipt(fixture, entryBoundary);
+    assert.equal(
+      store.readNativeRunReceipt(FIXTURE_APP, entryBoundaryReceipt.receiptId, fixture.storeOptions).status,
+      "invalid",
+    );
+
+    const byteBoundary = structuredClone(fixture.payload);
+    setGradleEntries(byteBoundary, maxGradleByteEntries());
+    const boundaryReceipt = rawReceipt(fixture, byteBoundary);
     assert.equal(
       store.readNativeRunReceipt(FIXTURE_APP, boundaryReceipt.receiptId, fixture.storeOptions).status,
       "valid",
@@ -360,19 +462,17 @@ test("raw reader independently enforces every Gradle manifest maximum and exact 
     const cases = [
       ["entries", (value) => setGradleEntries(value, [
         ...maxGradleEntries(),
-        { path: "x/zzz", bytes: 0, sha256: ZERO_HASH },
-      ]), /entries|array|20000|too big|maximum/i],
+        { path: "libs/overflow", bytes: 0, sha256: ZERO_HASH },
+      ]), /entries|array|20000|too big|maximum|receipt.*(?:2097152|limit)/i],
       ["entryCount", (value) => { value.source.gradleInputs.entryCount = GRADLE_INPUT_MAX_ENTRIES + 1; }, /entryCount|20000|too big|maximum/i],
-      ["totalBytes", (value) => setGradleEntries(value, Array.from({ length: 5 }, (_, index) => ({
-        path: `oversized-total/${index}`,
-        bytes: GRADLE_INPUT_MAX_FILE_BYTES,
-        sha256: ZERO_HASH,
-      }))), /totalBytes|2147483648|too big|maximum/i],
-      ["per-file bytes", (value) => setGradleEntries(value, [{
-        path: "oversized-file",
-        bytes: GRADLE_INPUT_MAX_FILE_BYTES + 1,
-        sha256: ZERO_HASH,
-      }]), /bytes|536870912|too big|maximum/i],
+      ["totalBytes", (value) => setGradleEntries(value, [
+        ...maxGradleByteEntries(),
+        { path: "libs/c", bytes: GRADLE_INPUT_MAX_FILE_BYTES, sha256: ZERO_HASH },
+      ]), /totalBytes|2147483648|too big|maximum/i],
+      ["per-file bytes", (value) => setGradleEntries(value, [
+        { path: "app/src/main/AndroidManifest.xml", bytes: 0, sha256: ZERO_HASH },
+        { path: "app/src/main/java/com/example/MainActivity.kt", bytes: GRADLE_INPUT_MAX_FILE_BYTES + 1, sha256: ZERO_HASH },
+      ]), /bytes|536870912|too big|maximum/i],
       ["entry count relationship", (value) => { value.source.gradleInputs.entryCount += 1; }, /entryCount|entries|match/i],
       ["total bytes relationship", (value) => { value.source.gradleInputs.totalBytes += 1; }, /totalBytes|byte total|match/i],
       ["manifest digest relationship", (value) => { value.source.gradleInputs.sha256 = ZERO_HASH; }, /manifest|sha256|canonical/i],
@@ -380,7 +480,7 @@ test("raw reader independently enforces every Gradle manifest maximum and exact 
         const entries = structuredClone(value.source.gradleInputs.entries);
         entries[0].path = "../escape";
         setGradleEntries(value, entries);
-      }, /path|POSIX|relative|normalized/i],
+      }, /path|POSIX|relative|normalized|allowlist/i],
     ];
     for (const [name, mutate, expected] of cases) {
       const payload = structuredClone(fixture.payload);

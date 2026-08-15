@@ -15,6 +15,7 @@ import { readNativeRunReceipt } from "../dist/runreceiptstore.js";
 import {
   authoredSpec,
   effectiveSpec,
+  effectiveSpecWithStoredBytes,
   makePng,
   sha256,
 } from "./helpers/runreceipt-fixture.mjs";
@@ -24,6 +25,7 @@ const COMPONENT = `${PACKAGE}/.platform.LaunchActivity`;
 const PID = 4242;
 const PID_START_TICKS = "987654";
 const SESSION_ID = "11111111-2222-4333-8444-555555555555";
+const EXPECTED_EFFECTIVE_SPEC_MAX_BYTES = 2 * 1024 * 1024;
 
 const textResult = (stdout = "", overrides = {}) => ({
   code: 0,
@@ -152,6 +154,7 @@ async function createProducerFixture(t, mutation = {}) {
   let clock = Date.parse("2026-08-14T11:59:00.000Z");
   let monotonicMs = 0;
   const projectRealDir = fs.realpathSync(projectDir);
+  const selectedSourcePath = path.join(projectRealDir, "app/src/main/java/com/fleet/receipt/MainActivity.kt");
 
   const runText = async (command, args, options = {}) => {
     events.push({ type: "text", command, args: [...args], options: { ...options } });
@@ -161,6 +164,26 @@ async function createProducerFixture(t, mutation = {}) {
         return textResult(stdout, { code: 1, stderr: "gradle failed\n" });
       }
       if (mutation.kind === "build-timeout") return textResult("build stalled\n", { code: null, timedOut: true });
+      if (mutation.kind === "gradle-selected-content-persistent") {
+        fs.appendFileSync(selectedSourcePath, "// persistent build-interval mutation\n");
+      }
+      if (mutation.kind === "gradle-selected-content-restored") {
+        const original = fs.readFileSync(selectedSourcePath);
+        fs.writeFileSync(selectedSourcePath, Buffer.from("changed during Gradle"));
+        fs.writeFileSync(selectedSourcePath, original);
+      }
+      if (mutation.kind === "gradle-selected-member-persistent") {
+        writeFile(projectRealDir, "app/src/main/java/com/fleet/receipt/AddedDuringGradle.kt", `package ${PACKAGE}\nclass AddedDuringGradle\n`);
+      }
+      if (mutation.kind === "gradle-selected-member-restored") {
+        const transient = writeFile(projectRealDir, "app/src/main/java/com/fleet/receipt/TransientDuringGradle.kt", `package ${PACKAGE}\nclass TransientDuringGradle\n`);
+        fs.unlinkSync(transient);
+      }
+      if (mutation.kind === "gradle-excluded-output-mutations") {
+        writeFile(projectRealDir, "app/build/intermediates/fixture/output.bin", "excluded build output");
+        writeFile(projectRealDir, ".gradle/fixture/cache.bin", "excluded Gradle cache");
+        writeFile(projectRealDir, "README.md", "excluded documentation");
+      }
       return textResult("BUILD SUCCESSFUL\n");
     }
 
@@ -314,7 +337,11 @@ async function createProducerFixture(t, mutation = {}) {
 
   const input = {
     briefPath,
-    effectiveSpec: mutation.kind === "source-package-mismatch" ? effectiveSpec("com.fleet.wrong") : effectiveSpec(PACKAGE),
+    effectiveSpec: mutation.kind === "source-package-mismatch"
+      ? effectiveSpec("com.fleet.wrong")
+      : mutation.kind === "oversized-effective-spec"
+        ? effectiveSpecWithStoredBytes(EXPECTED_EFFECTIVE_SPEC_MAX_BYTES + 1, PACKAGE)
+        : effectiveSpec(PACKAGE),
     projectDir,
     packageName: PACKAGE,
     task: ":app:assembleDebug",
@@ -431,6 +458,50 @@ test("successful producer binds installed bytes and brackets one exact capture",
     && event.args.slice(2, 5).join(" ") === "shell toybox sha256sum").length, 3);
   assert.equal(fixture.events.filter((event) => event.type === "text"
     && event.args.slice(2).join(" ") === "shell cat /proc/sys/kernel/random/boot_id").length, 4);
+});
+
+test("producer rejects an oversized effective AppSpec before Gradle or live runners", async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "oversized-effective-spec" });
+  const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  assert.equal(out.status, "failed");
+  assert.equal(out.stage, "source-identity");
+  assert.equal(out.built, false);
+  assert.equal(out.installed, false);
+  assert.match(out.reason, /effective AppSpec|stored|byte|limit|2097152/i);
+  assert.deepEqual(fixture.events, []);
+  assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+});
+
+test("producer binds one unchanged Gradle input generation across the awaited build", async (t) => {
+  const mutations = [
+    ["persistent selected-file content change", "gradle-selected-content-persistent"],
+    ["selected file changed and restored to identical bytes", "gradle-selected-content-restored"],
+    ["persistent selected membership addition", "gradle-selected-member-persistent"],
+    ["selected source added and removed", "gradle-selected-member-restored"],
+  ];
+  for (const [name, kind] of mutations) {
+    await t.test(name, async (child) => {
+      const fixture = await createProducerFixture(child, { kind });
+      const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+      assert.equal(out.status, "failed");
+      assert.equal(out.stage, "build-input-continuity");
+      assert.equal(out.built, false);
+      assert.equal(out.installed, false);
+      assert.match(out.reason, /Gradle input|generation|changed|continuity/i);
+      assert.equal(fixture.events.filter((event) => event.command.endsWith("/gradlew")).length, 1);
+      assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
+      assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+    });
+  }
+
+  await t.test("excluded build outputs and documentation do not invalidate the generation", async (child) => {
+    const fixture = await createProducerFixture(child, { kind: "gradle-excluded-output-mutations" });
+    const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+    assert.equal(out.status, "recorded");
+    assert.equal(out.receipt.receipt.source.gradleInputs.entries.some((entry) => entry.path.startsWith("app/build/")), false);
+    assert.equal(out.receipt.receipt.source.gradleInputs.entries.some((entry) => entry.path.startsWith(".gradle/")), false);
+    assert.equal(out.receipt.receipt.source.gradleInputs.entries.some((entry) => entry.path === "README.md"), false);
+  });
 });
 
 test("producer preserves an exact empty ro.boot.qemu observation", async (t) => {

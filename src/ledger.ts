@@ -982,6 +982,8 @@ export function readLedger(
     if (!event || typeof event !== "object") return event;
     const cloned = { ...event };
     delete cloned.claimedRunReceipt;
+    delete cloned.runReceiptProvenance;
+    delete cloned.receiptRuntime;
     return cloned;
   });
   const retractions = events.filter((event) => event?.eventType === "retraction");
@@ -1137,6 +1139,17 @@ export function isPassingDeviceEvidence(entry: any): boolean {
     && typeof entry?.deviceFeature === "string"
     && DEVICE_FEATURE_PATTERN.test(entry.deviceFeature)
     && entry?.deviceLineage?.status === "validated";
+}
+
+export function isPassingDeviceEvidenceForReceipt(
+  entry: any,
+  runtime: ReceiptRuntimeIdentity,
+): boolean {
+  if (!isPassingDeviceEvidence(entry) || !validateDeviceLineage(runtime).ok) return false;
+  return entry.deviceSerial === runtime.serial
+    && entry.deviceModel === runtime.model
+    && entry.deviceFingerprint === runtime.fingerprint
+    && entry.deviceBootQemu === runtime.bootQemu;
 }
 
 export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {

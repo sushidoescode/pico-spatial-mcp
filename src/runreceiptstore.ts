@@ -9,6 +9,7 @@ import {
   canonicalIdentity,
   canonicalJson,
   collectGradleInputIdentity,
+  gradleInputManifestPathIssues,
   GRADLE_INPUT_MAX_ENTRIES,
   GRADLE_INPUT_MAX_FILE_BYTES,
   GRADLE_INPUT_MAX_TOTAL_BYTES,
@@ -22,6 +23,7 @@ export const RUN_RECEIPT_KIND = "pico.native-run-receipt" as const;
 export const RUN_RECEIPT_SCHEMA_VERSION = 1 as const;
 export const RUN_RECEIPT_SCOPE = "fleet-native-debug" as const;
 export const RUN_RECEIPT_MAX_BYTES = 2 * 1024 * 1024;
+export const EFFECTIVE_APP_SPEC_MAX_BYTES = 2 * 1024 * 1024;
 export const RUN_RECEIPT_MAX_PER_APP = 4_096;
 export const APK_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 export const NATIVE_RECEIPT_DIRECTORY = "native-v1" as const;
@@ -143,13 +145,11 @@ const gradleInputIdentitySchema = z.object({
       message: "Gradle input entries must not contain duplicate paths",
     });
   }
-  if (entryPaths.some((entryPath) => path.posix.isAbsolute(entryPath)
-    || entryPath.includes("\\")
-    || entryPath.split("/").some((segment) => segment === "" || segment === "." || segment === ".."))) {
+  for (const message of gradleInputManifestPathIssues(value.entries)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["entries"],
-      message: "Gradle input entry paths must be normalized project-relative POSIX paths",
+      message,
     });
   }
 });
@@ -196,7 +196,10 @@ const nativeRunReceiptPayloadSchema = z.object({
   app: packageNameSchema,
   source: z.object({
     authoredAppSpec: authoredAppSpecIdentitySchema,
-    effectiveAppSpec: canonicalIdentitySchema.extend({ artifactPath: nonemptyStringSchema }).strict(),
+    effectiveAppSpec: canonicalIdentitySchema.extend({
+      bytes: byteCountSchema.max(EFFECTIVE_APP_SPEC_MAX_BYTES - 1),
+      artifactPath: nonemptyStringSchema,
+    }).strict(),
     gradleInputs: gradleInputIdentitySchema,
   }).strict(),
   build: z.object({
@@ -590,8 +593,12 @@ export async function publishApkArtifact(sourcePath: string, options: ReceiptSto
 export function publishEffectiveSpecArtifact(spec: unknown, options: ReceiptStoreOptions = {}): PublishedSpecArtifact {
   const canonical = canonicalJson(spec);
   const identity = canonicalIdentity(spec);
+  const storedBytes = Buffer.from(`${canonical}\n`, "utf8");
+  if (storedBytes.length > EFFECTIVE_APP_SPEC_MAX_BYTES) {
+    throw new Error(`effective AppSpec stored bytes exceed the ${EFFECTIVE_APP_SPEC_MAX_BYTES}-byte limit`);
+  }
   const artifactPath = path.join(specArtifactDirectory(receiptRoot(options)), `${identity.sha256}.json`);
-  publishCanonicalBytes(artifactPath, Buffer.from(`${canonical}\n`, "utf8"));
+  publishCanonicalBytes(artifactPath, storedBytes);
   return { ...identity, artifactPath };
 }
 
@@ -698,9 +705,6 @@ function validateCrossFieldBindings(receipt: NativeRunReceipt, effectiveSpec: un
   const sortedGradlePaths = [...gradlePaths].sort();
   if (gradlePaths.some((entryPath, index) => entryPath !== sortedGradlePaths[index])) issues.push("Gradle input entries must be sorted by path");
   if (new Set(gradlePaths).size !== gradlePaths.length) issues.push("Gradle input entries must not contain duplicate paths");
-  if (gradlePaths.some((entryPath) => path.posix.isAbsolute(entryPath) || entryPath.includes("\\") || entryPath.split("/").some((segment) => segment === "" || segment === "." || segment === ".."))) {
-    issues.push("Gradle input entry paths must be normalized project-relative POSIX paths");
-  }
   const orderedObservations = [
     ["build startedAt", receipt.build.startedAt],
     ["build finishedAt", receipt.build.finishedAt],
@@ -770,7 +774,7 @@ function readHistoricalNativeRunReceipt(app: string, receiptId: string, options:
   if (receipt.source.effectiveAppSpec.artifactPath !== requiredSpecPath) issues.push("effective AppSpec artifactPath is not the exact receipt-store CAS path");
   const specSnapshot = (() => {
     try {
-      return snapshotFile(requiredSpecPath, RUN_RECEIPT_MAX_BYTES);
+      return snapshotFile(requiredSpecPath, EFFECTIVE_APP_SPEC_MAX_BYTES);
     } catch (error) {
       issues.push(`effective AppSpec snapshot could not be validated: ${error instanceof Error ? error.message : String(error)}`);
       return undefined;

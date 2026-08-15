@@ -110,6 +110,44 @@ function attachReceiptBinding(fixture, published) {
   });
 }
 
+function writePicoNextBrief(fixture, id, brief = `pico_next ${id} fixture`) {
+  const briefsDir = path.join(fixture.scratch, ".pico-mcp", "briefs");
+  fs.mkdirSync(briefsDir, { recursive: true });
+  fs.writeFileSync(path.join(briefsDir, `${id}.json`), JSON.stringify({ id, brief }));
+}
+
+async function recordUnboundDevice(callJson, fixture, runtime) {
+  const recorded = await callJson("record_verification", {
+    app: fixture.payload.app,
+    claim: "synthetic unbound device row for pico_next receipt-selection defense",
+    evidenceType: "device_verified",
+    artifactPath: fixture.captureSourcePath,
+    attestation: "Synthetic same-byte contract fixture only; no hardware observation is claimed.",
+    deviceSerial: runtime.serial,
+    deviceFeature: "controller_ray",
+    deviceOutcome: "pass",
+  });
+  assert.equal(recorded.status, "recorded");
+  return recorded.entry;
+}
+
+function rewriteAsEffectiveAutoJudged(fixture) {
+  mutateLedger(fixture, (events) => {
+    const entry = events[0];
+    entry.evidenceType = "auto_judged";
+    entry.evidenceProducer = {
+      kind: "visual_judge",
+      schemaVersion: 1,
+      producedAt: "2026-08-14T12:00:01.000Z",
+      artifactSha256: entry.capture.sha256,
+    };
+    entry.autoJudge = {
+      artifactSha256: entry.capture.sha256,
+      verdict: "PASS",
+    };
+  });
+}
+
 function shipArgs(fixture, projectDir = fixture.projectDir) {
   return { app: fixture.payload.app, lane: "native", projectDir };
 }
@@ -452,6 +490,150 @@ test("Door 10 transparently returns the exact accepted and drifted ship checklis
   const driftedDoor = await doorCall("pico_ship", shipArgs(fixture));
   assert.equal(driftedFull.receipt.status, "no-current-receipt");
   assertSameFields(driftedDoor, driftedFull);
+});
+
+test("Door 10 selects the standard fleet project with the returned absolute path or omitted projectDir", async (t) => {
+  const id = "ship_default_fixture";
+  const expectedProjectDir = path.join("AndroidStudioProjects", `fleet-${id}-native`);
+  const fixture = await createRunReceiptFixture(t, store, {
+    app: `com.fleet.${id}`,
+    projectRelativeDir: expectedProjectDir,
+  });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const fullCall = await startSurface(t, fixture, "full");
+  await recordVision(fullCall, fixture, published);
+  const doorCall = await startSurface(t, fixture, "doors");
+
+  for (const args of [
+    { app: fixture.payload.app, lane: "native", projectDir: fixture.projectDir },
+    { app: fixture.payload.app, lane: "native" },
+  ]) {
+    const ship = await doorCall("pico_ship", args);
+    assert.equal(ship.receipt.status, "accepted-current-bytes", JSON.stringify({ args, ship }, null, 2));
+    assert.equal(ship.receipt.receiptId, published.receiptId);
+  }
+});
+
+test("ship omitted projectDir preserves the existing non-fleet basename fallback", async (t) => {
+  const fixture = await createRunReceiptFixture(t, store, {
+    projectRelativeDir: "AndroidStudioProjects/receipt-native",
+  });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const callJson = await startSurface(t, fixture, "full");
+  await recordVision(callJson, fixture, published);
+  const ship = await callJson("ship_checklist", { app: fixture.payload.app, lane: "native" });
+  assert.equal(ship.receipt.status, "accepted-current-bytes");
+  assert.equal(ship.receipt.receiptId, published.receiptId);
+});
+
+test("pico_next applies the selected receipt runtime gate to device-verified rows", async (t) => {
+  const cases = [
+    {
+      name: "emulator receipt with a non-emulator device row",
+      id: "next_device_emulator",
+      receiptRuntime: undefined,
+      liveRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      expectedState: "built-needs-look",
+    },
+    {
+      name: "different serial",
+      id: "next_device_serial",
+      receiptRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      liveRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, serial: "PA9K1NEXTOTHER" },
+      expectedState: "built-needs-look",
+    },
+    {
+      name: "different model",
+      id: "next_device_model",
+      receiptRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      liveRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, model: "PICO Swan next other fixture" },
+      expectedState: "built-needs-look",
+    },
+    {
+      name: "different fingerprint",
+      id: "next_device_fingerprint",
+      receiptRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      liveRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, fingerprint: "Pico/swan/swan:16/NEXTOTHER/2:user/release-keys" },
+      expectedState: "built-needs-look",
+    },
+    {
+      name: "different bootQemu",
+      id: "next_device_boot_qemu",
+      receiptRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      liveRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, bootQemu: "0" },
+      expectedState: "built-needs-look",
+    },
+    {
+      name: "exact manual non-emulator runtime",
+      id: "next_device_exact",
+      receiptRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      liveRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      expectedState: "vision-recorded",
+    },
+  ];
+
+  for (const scenario of cases) {
+    await t.test(scenario.name, async (child) => {
+      const fixture = await createRunReceiptFixture(child, store, {
+        app: `com.fleet.${scenario.id}`,
+        ...(scenario.receiptRuntime ? { runtimeIdentity: scenario.receiptRuntime } : {}),
+      });
+      const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+      writePicoNextBrief(fixture, scenario.id);
+      const fakeAdb = writeFakeDeviceAdb(fixture, scenario.liveRuntime);
+      const fullCall = await startSurface(child, fixture, "full", {
+        PICO_ADB: fakeAdb,
+        PICO_DEVICE_FIXTURE_PATH: fixture.captureSourcePath,
+      });
+      await recordUnboundDevice(fullCall, fixture, scenario.liveRuntime);
+      attachReceiptBinding(fixture, published);
+
+      const doorCall = await startSurface(child, fixture, "doors");
+      const next = await doorCall("pico_next", {});
+      const briefState = next.state.briefs.find((brief) => brief.id === scenario.id);
+      assert.equal(briefState.state, scenario.expectedState);
+      if (scenario.expectedState === "built-needs-look") {
+        assert.equal(briefState.capture, fixture.captureArtifactPath);
+        assert.equal(briefState.receiptId, published.receiptId);
+        const actions = [next.nextAction, ...next.alternatives];
+        const record = actions.find((action) => action?.door === "pico_record" && action.argsExample?.app === fixture.payload.app);
+        assert.equal(record?.argsExample?.artifactPath, fixture.captureArtifactPath);
+        assert.equal(record?.argsExample?.runReceiptId, published.receiptId);
+      }
+    });
+  }
+});
+
+test("pico_next attributes auto-judged status only to the selected receipt and exact capture", async (t) => {
+  for (const scenario of ["unlinked", "older receipt", "selected receipt"]) {
+    await t.test(scenario, async (child) => {
+      const id = `next_auto_${scenario.replace(/\s+/g, "_")}`;
+      const fixture = await createRunReceiptFixture(child, store, { app: `com.fleet.${id}` });
+      writePicoNextBrief(fixture, id);
+
+      const olderPayload = structuredClone(fixture.payload);
+      olderPayload.createdAt = "2026-08-14T11:59:55.000Z";
+      olderPayload.runtime.sessionId = "22222222-3333-4444-8555-666666666666";
+      const older = store.publishNativeRunReceipt(olderPayload, fixture.storeOptions);
+      const selected = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+      const fullCall = await startSurface(child, fixture, "full");
+      const binding = scenario === "selected receipt" ? selected : older;
+      await recordVision(fullCall, fixture, binding, scenario !== "unlinked");
+      rewriteAsEffectiveAutoJudged(fixture);
+
+      const report = await fullCall("ledger_report", { app: fixture.payload.app });
+      assert.equal(report.ledger[0].evidenceType, "auto_judged");
+      const doorCall = await startSurface(child, fixture, "doors");
+      const next = await doorCall("pico_next", {});
+      const briefState = next.state.briefs.find((brief) => brief.id === id);
+      assert.equal(
+        briefState.state,
+        scenario === "selected receipt" ? "auto-judged-needs-look" : "built-needs-look",
+      );
+      assert.equal(briefState.capture, fixture.captureArtifactPath);
+      assert.equal(briefState.receiptId, selected.receiptId);
+    });
+  }
 });
 
 test("pico_next uses the newest historical receipt capture and ID instead of mutable forward.png", async (t) => {

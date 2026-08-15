@@ -1,11 +1,12 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
-import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, readLedger } from "./ledger.js";
+import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, isPassingDeviceEvidenceForReceipt, readLedger } from "./ledger.js";
 import { findHistoricalNativeRunReceipt, validateNativeRunReceiptCaptureBinding } from "./runreceiptstore.js";
 
 /**
@@ -281,6 +282,10 @@ export function briefIdOf(brief: string): string {
   return `door${[...brief].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 1000003, 7)}`;
 }
 
+function fleetProjectDirectory(id: string): string {
+  return path.join(os.homedir(), "AndroidStudioProjects", `fleet-${id}-native`);
+}
+
 /** Door 1 has not performed the human/agent LOOK, so no branch may call itself `verified`.
  * A producer-recorded eye PASS is still useful, but its terminal state keeps the remaining LOOK
  * obligation explicit. Build/install/capture failures are kept distinct instead of being folded
@@ -355,7 +360,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
         receiptPath: receipt?.receiptPath ?? null,
         capture: receipt?.capturePath ?? null,
         notes: r.notes ?? [],
-        projectDir: `~/AndroidStudioProjects/fleet-${id}-native`,
+        projectDir: fleetProjectDirectory(id),
         ...(identity ? { identity } : {}),
         ...(["failed", "built-not-installed", "built-no-capture"].includes(status) ? { fix: fixOf(`Read the notes — asset-gated briefs name the missing prerequisite; build/install/capture errors name the failing step. Then call pico_fix with the error text.`) } : {}),
         honesty: "The returned receipt is structural provenance only. No Door 1 status means human-verified: even 'auto-judged-needs-look' is a calibrated machine PASS, not sight. LOOK at the exact receipt-bound `capture` before any vision_verified claim.",
@@ -660,7 +665,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
 
       // briefstore + trust-ledger state, straight from the same files pico_build_app / fleet_build /
       // record_verification write (userBriefsDir, ~/.pico-mcp/ledgers, digest-bound run receipts).
-      const home = process.env.HOME ?? "";
+      const home = os.homedir();
       const readLedgerEntries = (app: string): any[] => {
         try { return readLedger(app, validateNativeRunReceiptCaptureBinding).effectiveEntries; } catch { return []; }
       };
@@ -689,14 +694,21 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
             && entry.deviceOutcome === "fail",
           );
           const looked = selectedReceipt !== null && entries.some((entry) =>
-            isPositiveLookedEntry(entry)
+            ((entry?.evidenceType === "vision_verified" && entry?.deviceOutcome !== "fail")
+              || isPassingDeviceEvidenceForReceipt(entry, selectedReceipt.runtime))
+            && entry.runReceipt?.receiptId === selectedReceipt.receiptId
+            && entry.runReceipt?.captureSha256 === selectedReceipt.capture.sha256
+            && entry.capture?.sha256 === selectedReceipt.capture.sha256,
+          );
+          const autoJudgedForReceipt = selectedReceipt !== null && entries.some((entry) =>
+            entry?.evidenceType === "auto_judged"
             && entry.runReceipt?.receiptId === selectedReceipt.receiptId
             && entry.runReceipt?.captureSha256 === selectedReceipt.capture.sha256
             && entry.capture?.sha256 === selectedReceipt.capture.sha256,
           );
           const state = deviceFailures.length ? "device-verified-failure"
             : looked ? "vision-recorded"
-            : selectedReceipt ? (entries.some((e) => e.evidenceType === "auto_judged") ? "auto-judged-needs-look" : "built-needs-look")
+            : selectedReceipt ? (autoJudgedForReceipt ? "auto-judged-needs-look" : "built-needs-look")
             : fs.existsSync(path.join(projectDir, "app/build/outputs/apk/debug/app-debug.apk")) ? "built-no-capture"
             : fs.existsSync(projectDir) ? "scaffolded-no-apk"
             : "planned-not-built";
@@ -824,7 +836,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       const repair = onFail ?? "replan";
       const id = briefIdOf(goal);
       const app = `com.fleet.${id}`;
-      const projectDir = `~/AndroidStudioProjects/fleet-${id}-native`;
+      const projectDir = fleetProjectDirectory(id);
       const iterationsLog: Array<{ iteration: number; outcomes: LoopCriterionOutcome[]; capture: string | null; receiptId: string | null; receiptPath: string | null; ledger: string }> = [];
       const scaffoldStarted = draftSpec === undefined;
 

@@ -4,8 +4,11 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { materializeCaptureBytes } from "./ledger.js";
 import {
+  canonicalJson,
   collectGradleInputIdentity,
+  guardGradleInputGeneration,
   readAuthoredAppSpecIdentity,
+  type GradleInputGenerationGuard,
 } from "./runreceiptidentity.js";
 import {
   publishApkArtifact,
@@ -67,7 +70,7 @@ export interface NativeFleetReceiptDependencies {
 }
 
 export type NativeFleetFailureStage =
-  | "source-identity" | "build" | "apk-resolution" | "apk-publication" | "apk-inspection"
+  | "source-identity" | "build" | "build-input-continuity" | "apk-resolution" | "apk-publication" | "apk-inspection"
   | "install" | "installed-byte-identity" | "after-install" | "device-identity" | "launch"
   | "pid" | "foreground" | "capture" | "capture-publication" | "receipt-publication";
 
@@ -383,6 +386,7 @@ export async function produceNativeFleetReceipt(
     let authoredAppSpec: NativeRunReceiptPayload["source"]["authoredAppSpec"];
     let effectiveAppSpec: NativeRunReceiptPayload["source"]["effectiveAppSpec"];
     let gradleInputs: NativeRunReceiptPayload["source"]["gradleInputs"];
+    let gradleInputGuard: GradleInputGenerationGuard | undefined;
     try {
       if (input.task !== ":app:assembleDebug") throw new Error("task must be exactly ':app:assembleDebug'");
       if (!FLEET_PACKAGE_PATTERN.test(input.packageName)) throw new Error(`packageName '${input.packageName}' must be an exact lowercase com.fleet.* package`);
@@ -401,6 +405,7 @@ export async function produceNativeFleetReceipt(
       authoredAppSpec = readAuthoredAppSpecIdentity(input.briefPath);
       effectiveAppSpec = publishEffectiveSpecArtifact(input.effectiveSpec);
       gradleInputs = collectGradleInputIdentity(projectDir);
+      gradleInputGuard = guardGradleInputGeneration(gradleInputs);
     } catch (error) {
       throw new StageFailure("source-identity", error instanceof Error ? error.message : String(error));
     }
@@ -409,16 +414,30 @@ export async function produceNativeFleetReceipt(
     const buildStartedAt = resolvedDeps.now().toISOString();
     const gradlew = path.join(projectDir, "gradlew");
     const buildArgs = [input.task, "--console=plain"];
-    const buildResult = await resolvedDeps.runText(gradlew, buildArgs, {
-      cwd: projectDir,
-      env: resolvedDeps.gradleEnv,
-      timeoutMs: 1_800_000,
-      maxOutputBytes: TEXT_OUTPUT_LIMIT,
-    });
-    assertTextSuccess("build", "Gradle build", gradlew, buildArgs, buildResult);
-    const buildFinishedAt = resolvedDeps.now().toISOString();
+    let buildFinishedAt: string;
+    try {
+      const buildResult = await resolvedDeps.runText(gradlew, buildArgs, {
+        cwd: projectDir,
+        env: resolvedDeps.gradleEnv,
+        timeoutMs: 1_800_000,
+        maxOutputBytes: TEXT_OUTPUT_LIMIT,
+      });
+      assertTextSuccess("build", "Gradle build", gradlew, buildArgs, buildResult);
+      buildFinishedAt = resolvedDeps.now().toISOString();
+      try {
+        await gradleInputGuard!.assertUnchanged();
+        const completedGradleInputs = collectGradleInputIdentity(projectDir);
+        if (canonicalJson(completedGradleInputs) !== canonicalJson(gradleInputs)) {
+          throw new Error("Gradle input identity changed between collection and successful build completion");
+        }
+      } catch (error) {
+        throw new StageFailure("build-input-continuity", error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      gradleInputGuard?.close();
+    }
     built = true;
-    completedStages.push("build");
+    completedStages.push("build", "build-input-continuity");
 
     let resolvedApk: ReturnType<typeof resolveAssembledApk>;
     let outputMetadata: ReturnType<typeof fileSnapshot>;

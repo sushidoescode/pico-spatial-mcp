@@ -40,6 +40,42 @@ const ROOT_FILES = new Set([
 ]);
 const RECURSIVE_ROOTS = ["gradle", "buildSrc", "app/src", "app/libs", "libs"] as const;
 
+export function isGradleInputPath(relativePath: string): boolean {
+  if (!relativePath
+    || path.posix.isAbsolute(relativePath)
+    || relativePath.includes("\\")
+    || relativePath.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+    return false;
+  }
+  return ROOT_FILES.has(relativePath)
+    || RECURSIVE_ROOTS.some((root) => relativePath.startsWith(`${root}/`));
+}
+
+export function gradleInputManifestPathIssues(
+  entries: ReadonlyArray<Pick<GradleInputEntry, "path">>,
+): string[] {
+  const issues: string[] = [];
+  if (entries.length === 0) issues.push("Gradle input manifest must contain at least one entry");
+  const outsideAllowlist = entries.map((entry) => entry.path).filter((entryPath) => !isGradleInputPath(entryPath));
+  if (outsideAllowlist.length) {
+    issues.push(`Gradle input entries must stay inside the exact V1 allowlist: ${outsideAllowlist.slice(0, 3).join(", ")}`);
+  }
+  if (!entries.some((entry) => /^app\/src\/(?:.+\/)?AndroidManifest\.xml$/.test(entry.path))) {
+    issues.push("Gradle input manifest requires at least one Android manifest at app/src/**/AndroidManifest.xml");
+  }
+  if (!entries.some((entry) => /^app\/src\/.+\.(?:kt|java)$/.test(entry.path))) {
+    issues.push("Gradle input manifest requires at least one Kotlin or Java source under app/src");
+  }
+  return issues;
+}
+
+export function assertGradleInputManifestPaths(
+  entries: ReadonlyArray<Pick<GradleInputEntry, "path">>,
+): void {
+  const issues = gradleInputManifestPathIssues(entries);
+  if (issues.length) throw new Error(issues.join("; "));
+}
+
 function canonicalValue(value: unknown, ancestors: Set<object>): unknown {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
@@ -207,6 +243,173 @@ function hashSelectedFile(filePath: string, expected: fs.Stats): { bytes: number
   }
 }
 
+type StableStat = Readonly<{
+  dev: bigint;
+  ino: bigint;
+  mode: bigint;
+  size: bigint;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+}>;
+
+function stableStat(stat: fs.BigIntStats): StableStat {
+  return {
+    dev: stat.dev,
+    ino: stat.ino,
+    mode: stat.mode,
+    size: stat.size,
+    mtimeNs: stat.mtimeNs,
+    ctimeNs: stat.ctimeNs,
+  };
+}
+
+function sameStableStat(left: StableStat, right: StableStat): boolean {
+  return left.dev === right.dev
+    && left.ino === right.ino
+    && left.mode === right.mode
+    && left.size === right.size
+    && left.mtimeNs === right.mtimeNs
+    && left.ctimeNs === right.ctimeNs;
+}
+
+function hashOpenDescriptor(descriptor: number, bytes: number, filePath: string): string {
+  const digest = crypto.createHash("sha256");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  let offset = 0;
+  while (offset < bytes) {
+    const count = fs.readSync(descriptor, buffer, 0, Math.min(buffer.length, bytes - offset), offset);
+    if (count === 0) throw new Error(`selected Gradle input ended while establishing continuity: ${filePath}`);
+    digest.update(buffer.subarray(0, count));
+    offset += count;
+  }
+  return digest.digest("hex");
+}
+
+function lstatStable(filePath: string): StableStat {
+  return stableStat(fs.lstatSync(filePath, { bigint: true }));
+}
+
+export type GradleInputGenerationGuard = {
+  assertUnchanged: () => Promise<void>;
+  close: () => void;
+};
+
+/**
+ * Hold one descriptor for every selected file and metadata for every selected directory while
+ * Gradle runs. Descriptor metadata catches write-and-restore mutations; directory generations
+ * catch transient membership changes. Two filtered non-recursive watchers cover selected roots
+ * that did not exist in the initial manifest without treating README/.gradle/app/build writes as
+ * compiler-input changes. The manifest's 20,000-entry ceiling also bounds guard resources.
+ */
+export function guardGradleInputGeneration(identity: GradleInputIdentity): GradleInputGenerationGuard {
+  const projectDir = fs.realpathSync(identity.projectDir);
+  if (projectDir !== identity.projectDir) throw new Error("Gradle input generation guard requires the canonical projectDir");
+  assertGradleInputManifestPaths(identity.entries);
+
+  const trackedFiles: Array<{ path: string; descriptor: number; before: StableStat }> = [];
+  const trackedDirectories = new Map<string, StableStat>();
+  const watchers: fs.FSWatcher[] = [];
+  const selectedEvents: string[] = [];
+  let closed = false;
+
+  const close = (): void => {
+    if (closed) return;
+    closed = true;
+    for (const watcher of watchers) watcher.close();
+    for (const file of trackedFiles) {
+      try { fs.closeSync(file.descriptor); } catch {}
+    }
+  };
+
+  const watchDirectChildren = (directory: string, selectedNames: ReadonlySet<string>): void => {
+    if (!lstatIfPresent(directory)?.isDirectory()) return;
+    watchers.push(fs.watch(directory, { persistent: false }, (eventType, filename) => {
+      const name = filename === null ? "" : filename.toString();
+      if (!name || selectedNames.has(name.split(/[\\/]/, 1)[0])) selectedEvents.push(`${eventType}:${name || "unknown"}`);
+    }));
+  };
+
+  const rememberDirectories = (directory: string): void => {
+    const selected = validateSelectedPath(projectDir, directory);
+    if (!selected.stat.isDirectory()) throw new Error(`selected Gradle input root is not a directory: ${directory}`);
+    trackedDirectories.set(selected.realPath, lstatStable(selected.realPath));
+    for (const name of fs.readdirSync(selected.realPath).sort()) {
+      const child = path.join(selected.realPath, name);
+      const childStat = fs.lstatSync(child);
+      if (childStat.isDirectory()) rememberDirectories(child);
+    }
+  };
+
+  try {
+    watchDirectChildren(projectDir, new Set([
+      ...[...ROOT_FILES].filter((relativePath) => !relativePath.includes("/")),
+      ...RECURSIVE_ROOTS.filter((relativePath) => !relativePath.includes("/")),
+    ]));
+    const appDir = path.join(projectDir, "app");
+    watchDirectChildren(appDir, new Set(["build.gradle", "build.gradle.kts", "proguard-rules.pro", "src", "libs"]));
+
+    for (const relativeRoot of RECURSIVE_ROOTS) {
+      const selectedRoot = path.join(projectDir, ...relativeRoot.split("/"));
+      if (lstatIfPresent(selectedRoot)) rememberDirectories(selectedRoot);
+    }
+
+    for (const entry of identity.entries) {
+      const filePath = path.join(projectDir, ...entry.path.split("/"));
+      const descriptor = fs.openSync(filePath, "r");
+      try {
+        const before = stableStat(fs.fstatSync(descriptor, { bigint: true }));
+        if (before.size !== BigInt(entry.bytes)
+          || hashOpenDescriptor(descriptor, entry.bytes, filePath) !== entry.sha256
+          || !sameStableStat(before, stableStat(fs.fstatSync(descriptor, { bigint: true })))) {
+          throw new Error(`selected Gradle input changed while establishing continuity: ${entry.path}`);
+        }
+        const current = validateSelectedPath(projectDir, filePath);
+        const currentStable = stableStat(fs.lstatSync(current.realPath, { bigint: true }));
+        if (!sameStableStat(before, currentStable)) {
+          throw new Error(`selected Gradle input path changed while establishing continuity: ${entry.path}`);
+        }
+        trackedFiles.push({ path: filePath, descriptor, before });
+      } catch (error) {
+        fs.closeSync(descriptor);
+        throw error;
+      }
+    }
+  } catch (error) {
+    close();
+    throw error;
+  }
+
+  return {
+    close,
+    assertUnchanged: async (): Promise<void> => {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const issues: string[] = [...selectedEvents.map((event) => `selected path mutation observed (${event})`)];
+      for (const file of trackedFiles) {
+        try {
+          const after = stableStat(fs.fstatSync(file.descriptor, { bigint: true }));
+          const current = validateSelectedPath(projectDir, file.path);
+          const currentStable = stableStat(fs.lstatSync(current.realPath, { bigint: true }));
+          if (!sameStableStat(file.before, after) || !sameStableStat(file.before, currentStable)) {
+            issues.push(`selected file generation changed: ${path.relative(projectDir, file.path).split(path.sep).join("/")}`);
+          }
+        } catch (error) {
+          issues.push(`selected file continuity could not be checked: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      for (const [directory, before] of trackedDirectories) {
+        try {
+          if (!sameStableStat(before, lstatStable(directory))) {
+            issues.push(`selected directory membership changed: ${path.relative(projectDir, directory).split(path.sep).join("/")}`);
+          }
+        } catch (error) {
+          issues.push(`selected directory continuity could not be checked: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      if (issues.length) throw new Error(`Gradle input generation continuity failed: ${issues.slice(0, 8).join("; ")}`);
+    },
+  };
+}
+
 export function collectGradleInputIdentity(projectDir: string): GradleInputIdentity {
   const projectRealPath = fs.realpathSync(path.resolve(projectDir));
   if (!fs.lstatSync(projectRealPath).isDirectory()) {
@@ -251,12 +454,7 @@ export function collectGradleInputIdentity(projectDir: string): GradleInputIdent
   }
 
   entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
-  if (!entries.some((entry) => entry.path.startsWith("app/src/") && path.posix.basename(entry.path) === "AndroidManifest.xml")) {
-    throw new Error("Gradle input manifest requires at least one Android manifest under app/src");
-  }
-  if (!entries.some((entry) => entry.path.startsWith("app/src/") && /\.(?:kt|java)$/.test(entry.path))) {
-    throw new Error("Gradle input manifest requires at least one Kotlin or Java source under app/src");
-  }
+  assertGradleInputManifestPaths(entries);
   const manifestIdentity = canonicalIdentity(entries);
   return {
     schemaVersion: 1,

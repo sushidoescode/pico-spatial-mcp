@@ -111,13 +111,16 @@ if (doorsModule.registerDoorTools.length < 2) {
   await receiptServer.connect(receiptServerTransport);
   await receiptClient.connect(receiptClientTransport);
   try {
+    const buildBrief = "receipt fixture";
+    const expectedBuildProjectDir = path.join(receiptHome, "AndroidStudioProjects", `fleet-${briefIdOf(buildBrief)}-native`);
     const built = await receiptClient.callTool({
       name: "pico_build_app",
-      arguments: { brief: "receipt fixture", draftSpec: { meta: { packageName: "com.example.fixture" } } },
+      arguments: { brief: buildBrief, draftSpec: { meta: { packageName: "com.example.fixture" } } },
     });
     const builtOut = JSON.parse(built.content[0].text);
-    if (builtOut.receiptId === receiptId && builtOut.receiptPath === receiptPath && builtOut.capture === receiptCapture)
-      ok("pico_build_app returns the fleet receipt identity and exact receipt-bound capture");
+    if (builtOut.receiptId === receiptId && builtOut.receiptPath === receiptPath && builtOut.capture === receiptCapture
+        && builtOut.projectDir === expectedBuildProjectDir && path.isAbsolute(builtOut.projectDir))
+      ok("pico_build_app returns the fleet receipt identity, exact capture, and usable absolute project path");
     else fail(`pico_build_app dropped or rewrote fleet receipt identity: ${JSON.stringify(builtOut).slice(0, 360)}`);
 
     const record = await receiptClient.callTool({
@@ -137,15 +140,18 @@ if (doorsModule.registerDoorTools.length < 2) {
       ok("pico_record forwards the build receipt ID with the exact looked-capture record request");
     else fail(`pico_record dropped receipt binding fields: ${JSON.stringify({ recordOut, injectedRecordArgs }).slice(0, 420)}`);
 
+    const loopGoal = "receipt loop fixture";
+    const expectedLoopProjectDir = path.join(receiptHome, "AndroidStudioProjects", `fleet-${briefIdOf(loopGoal)}-native`);
     const looped = await receiptClient.callTool({
       name: "pico_loop",
-      arguments: { goal: "receipt loop fixture", draftSpec: { meta: { packageName: "com.example.fixture" } }, acceptance: [{ kind: "visual" }], budget: { iterations: 1 } },
+      arguments: { goal: loopGoal, draftSpec: { meta: { packageName: "com.example.fixture" } }, acceptance: [{ kind: "visual" }], budget: { iterations: 1 } },
     });
     const loopedOut = JSON.parse(looped.content[0].text);
     if (loopedOut.status === "built-needs-look" && loopedOut.receiptId === receiptId
         && loopedOut.receiptPath === receiptPath && loopedOut.capture === receiptCapture
+        && loopedOut.projectDir === expectedLoopProjectDir && path.isAbsolute(loopedOut.projectDir)
         && loopedOut.remainingLookObligation?.[0]?.artifact === receiptCapture)
-      ok("pico_loop carries the last fleet receipt identity and exact capture through its exit");
+      ok("pico_loop carries the receipt identity, exact capture, and usable absolute project path through its exit");
     else fail(`pico_loop dropped or rewrote fleet receipt identity: ${JSON.stringify(loopedOut).slice(0, 420)}`);
 
     injectedFleetResult = { ...fleetResult, concluded: false, artifact: null, receipt: null, notes: ["after-install failed"] };
