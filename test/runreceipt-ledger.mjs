@@ -8,6 +8,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import * as store from "../dist/runreceiptstore.js";
 import {
   FIXTURE_APP,
+  MANUAL_NON_EMULATOR_RUNTIME,
   createRunReceiptFixture,
   makePng,
 } from "./helpers/runreceipt-fixture.mjs";
@@ -78,7 +79,18 @@ function assertEveryEvidenceBucketEmpty(report) {
   }
 }
 
-function writeFakeAdb(fixture) {
+function ledgerPath(fixture) {
+  return path.join(fixture.ledgerDir, `${fixture.payload.app}.json`);
+}
+
+function mutateLedger(fixture, mutate) {
+  const file = ledgerPath(fixture);
+  const events = JSON.parse(fs.readFileSync(file, "utf8"));
+  mutate(events);
+  fs.writeFileSync(file, `${JSON.stringify(events, null, 2)}\n`);
+}
+
+function writeFakeAdb(fixture, identity = MANUAL_NON_EMULATOR_RUNTIME) {
   const fakeAdb = path.join(fixture.scratch, "fake-adb.mjs");
   fs.writeFileSync(fakeAdb, `#!/usr/bin/env node
 import fs from "node:fs";
@@ -86,12 +98,13 @@ const args = process.argv.slice(2);
 const serial = args[1] ?? "";
 if (args.includes("getprop")) {
   const values = {
-    "ro.product.model": "PICO Swan receipt-binding fixture",
-    "ro.build.fingerprint": "Pico/swan/swan:16/RECEIPT/1:user/release-keys",
-    "ro.boot.qemu": "",
+    "ro.product.model": ${JSON.stringify(identity.model)},
+    "ro.build.fingerprint": ${JSON.stringify(identity.fingerprint)},
+    "ro.boot.qemu": ${JSON.stringify(identity.bootQemu)},
   };
   process.stdout.write((values[args.at(-1)] ?? "") + "\\n");
-} else if (args.includes("screencap") && serial === "PA9K1RECEIPTFIXTURE") {
+} else if (args.includes("screencap") && serial === ${JSON.stringify(identity.serial)}) {
+  if (process.env.PICO_SCREENCAP_MARKER) fs.writeFileSync(process.env.PICO_SCREENCAP_MARKER, "called\\n");
   process.stdout.write(fs.readFileSync(process.env.PICO_DEVICE_FIXTURE_PATH));
 } else {
   process.stderr.write("unsupported fixture adb invocation: " + args.join(" "));
@@ -105,11 +118,23 @@ if (args.includes("getprop")) {
 test("receipt publication records no evidence and exact public bindings preserve their requested classes", async (t) => {
   const fixture = await createRunReceiptFixture(t, store);
   const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
-  const fakeAdb = writeFakeAdb(fixture);
-  const callJson = await startFullSurface(t, fixture, {
-    PICO_ADB: fakeAdb,
-    PICO_DEVICE_FIXTURE_PATH: fixture.captureSourcePath,
+  const callJson = await startFullSurface(t, fixture);
+
+  const resolved = store.validateNativeRunReceiptCaptureBinding(
+    FIXTURE_APP,
+    published.receiptId,
+    fixture.captureSourcePath,
+    fixture.storeOptions,
+  );
+  assert.equal(resolved.status, "valid");
+  assert.deepEqual(Object.keys(resolved.binding).sort(), ["captureSha256", "kind", "receiptId", "schemaVersion"]);
+  assert.deepEqual(resolved.receiptRuntime, {
+    serial: fixture.payload.runtime.serial,
+    model: fixture.payload.runtime.model,
+    fingerprint: fixture.payload.runtime.fingerprint,
+    bootQemu: fixture.payload.runtime.bootQemu,
   });
+  assert.equal(Object.isFrozen(resolved.receiptRuntime), true);
 
   assertEveryEvidenceBucketEmpty(await callJson("ledger_report", { app: FIXTURE_APP }));
 
@@ -156,21 +181,6 @@ test("receipt publication records no evidence and exact public bindings preserve
   assert.equal(boundAuto.status, "rejected");
   assert.match(boundAuto.reason, /visual_judge|producer|auto_judged/i);
 
-  const device = await callJson("record_verification", {
-    app: FIXTURE_APP,
-    claim: "synthetic device-lineage and receipt-binding contract fixture",
-    evidenceType: "device_verified",
-    artifactPath: fixture.captureSourcePath,
-    attestation: "Synthetic same-byte fixture only; no PICO hardware observation is claimed.",
-    deviceSerial: "PA9K1RECEIPTFIXTURE",
-    deviceFeature: "controller_ray",
-    deviceOutcome: "pass",
-    runReceiptId: published.receiptId,
-  });
-  assert.equal(device.status, "recorded");
-  assert.equal(device.entry.evidenceType, "device_verified");
-  assert.deepEqual(device.entry.runReceipt, expectedBinding(published, fixture));
-
   const injected = await callJson("record_verification", {
     app: FIXTURE_APP,
     claim: "caller extra cannot inject a receipt binding",
@@ -182,11 +192,258 @@ test("receipt publication records no evidence and exact public bindings preserve
 
   const report = await callJson("ledger_report", { app: FIXTURE_APP });
   assert.equal(report.capabilityReport.matrix.visuallyVerified.length, 1);
-  assert.equal(report.capabilityReport.matrix.deviceVerified.length, 1);
+  assert.equal(report.capabilityReport.matrix.deviceVerified.length, 0);
   assert.equal(report.capabilityReport.matrix.autoJudged.length, 0);
   assert.equal(report.capabilityReport.matrix.structuralOnly.length, 2);
-  assert.equal(report.ledger.find((entry) => entry.seq === vision.entry.seq).evidenceType, "vision_verified");
+  const reportedVision = report.ledger.find((entry) => entry.seq === vision.entry.seq);
+  const historicalVision = report.history.find((entry) => entry.seq === vision.entry.seq);
+  assert.equal(reportedVision.evidenceType, "vision_verified");
+  assert.deepEqual(Object.keys(reportedVision.runReceipt).sort(), ["captureSha256", "kind", "receiptId", "schemaVersion"]);
+  assert.deepEqual(Object.keys(historicalVision.runReceipt).sort(), ["captureSha256", "kind", "receiptId", "schemaVersion"]);
+  assert.equal(JSON.stringify(report).includes("receiptRuntime"), false);
   assert.equal(report.ledger.find((entry) => entry.seq === structural.entry.seq).evidenceType, "structural");
+});
+
+test("device receipt admission rejects emulator and mismatched runtime before screencap, then accepts only an exact manual non-emulator fixture", async (t) => {
+  const cases = [
+    {
+      name: "emulator receipt runtime",
+      receiptRuntime: undefined,
+      liveRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      expected: /receipt.*(?:emulator|qemu)|(?:emulator|qemu).*receipt/i,
+    },
+    {
+      name: "different serial",
+      receiptRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, bootQemu: "0" },
+      liveRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, serial: "PA9K1OTHERFIXTURE", bootQemu: "0" },
+      expected: /receipt.*serial|serial.*receipt/i,
+    },
+    {
+      name: "different model",
+      receiptRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, bootQemu: "0" },
+      liveRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, model: "PICO Swan other fixture", bootQemu: "0" },
+      expected: /receipt.*model|model.*receipt/i,
+    },
+    {
+      name: "different fingerprint",
+      receiptRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, bootQemu: "0" },
+      liveRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, fingerprint: "Pico/swan/swan:16/OTHER/2:user/release-keys", bootQemu: "0" },
+      expected: /receipt.*fingerprint|fingerprint.*receipt/i,
+    },
+    {
+      name: "different bootQemu",
+      receiptRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, bootQemu: "0" },
+      liveRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      expected: /receipt.*bootQemu|bootQemu.*receipt/i,
+    },
+  ];
+
+  for (const scenario of cases) {
+    await t.test(scenario.name, async (child) => {
+      const fixture = await createRunReceiptFixture(child, store, {
+        ...(scenario.receiptRuntime ? { runtimeIdentity: scenario.receiptRuntime } : {}),
+      });
+      const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+      const marker = path.join(fixture.scratch, "screencap-called");
+      const fakeAdb = writeFakeAdb(fixture, scenario.liveRuntime);
+      const callJson = await startFullSurface(child, fixture, {
+        PICO_ADB: fakeAdb,
+        PICO_DEVICE_FIXTURE_PATH: fixture.captureSourcePath,
+        PICO_SCREENCAP_MARKER: marker,
+      });
+      const recorded = await callJson("record_verification", {
+        app: FIXTURE_APP,
+        claim: `synthetic ${scenario.name} receipt admission fixture`,
+        evidenceType: "device_verified",
+        artifactPath: fixture.captureSourcePath,
+        attestation: "Synthetic contract fixture only; no hardware observation is claimed.",
+        deviceSerial: scenario.liveRuntime.serial,
+        deviceFeature: "controller_ray",
+        deviceOutcome: "pass",
+        runReceiptId: published.receiptId,
+      });
+      assert.equal(recorded.status, "rejected");
+      assert.match(recorded.reason, scenario.expected);
+      assert.equal(fs.existsSync(marker), false, "receipt lineage must reject before live screencap");
+    });
+  }
+
+  await t.test("exact manual non-emulator runtime", async (child) => {
+    const fixture = await createRunReceiptFixture(child, store, { runtimeIdentity: MANUAL_NON_EMULATOR_RUNTIME });
+    const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+    const marker = path.join(fixture.scratch, "screencap-called");
+    const fakeAdb = writeFakeAdb(fixture);
+    const callJson = await startFullSurface(child, fixture, {
+      PICO_ADB: fakeAdb,
+      PICO_DEVICE_FIXTURE_PATH: fixture.captureSourcePath,
+      PICO_SCREENCAP_MARKER: marker,
+    });
+    const recorded = await callJson("record_verification", {
+      app: FIXTURE_APP,
+      claim: "synthetic exact non-emulator receipt runtime contract fixture",
+      evidenceType: "device_verified",
+      artifactPath: fixture.captureSourcePath,
+      attestation: "Synthetic same-byte contract fixture only; no hardware observation is claimed.",
+      deviceSerial: MANUAL_NON_EMULATOR_RUNTIME.serial,
+      deviceFeature: "controller_ray",
+      deviceOutcome: "pass",
+      runReceiptId: published.receiptId,
+    });
+    assert.equal(recorded.status, "recorded");
+    assert.equal(recorded.entry.evidenceType, "device_verified");
+    assert.deepEqual(recorded.entry.runReceipt, expectedBinding(published, fixture));
+    assert.deepEqual(Object.keys(recorded.entry.runReceipt).sort(), ["captureSha256", "kind", "receiptId", "schemaVersion"]);
+    assert.equal("receiptRuntime" in recorded.entry, false);
+    assert.equal(fs.existsSync(marker), true);
+  });
+});
+
+test("ledger reads strip bindings unless an injected historical validator re-earns them", async (t) => {
+  const fixture = await createRunReceiptFixture(t, store);
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const fullCall = await startFullSurface(t, fixture);
+  const recorded = await fullCall("record_verification", {
+    app: FIXTURE_APP,
+    claim: "synthetic default read binding fixture",
+    evidenceType: "vision_verified",
+    artifactPath: fixture.captureSourcePath,
+    attestation: "Synthetic fixture wording only; no rendered LOOK is claimed.",
+    runReceiptId: published.receiptId,
+  });
+  assert.equal(recorded.status, "recorded");
+
+  const noValidatorCall = await startFocusedLedger(t, fixture);
+  const stripped = await noValidatorCall("ledger_report", { app: FIXTURE_APP });
+  assert.equal(stripped.ledger[0].evidenceType, "vision_verified");
+  assert.equal("runReceipt" in stripped.ledger[0], false);
+  assert.equal("runReceipt" in stripped.history[0], false);
+  assert.equal(stripped.runReceiptIssues.length, 1);
+  assert.match(stripped.runReceiptIssues[0].reason, /historical.*validator|validator.*configured/i);
+  assert.equal(stripped.capabilityReport.matrix.visuallyVerified.length, 1);
+
+  const validated = await fullCall("ledger_report", { app: FIXTURE_APP });
+  assert.deepEqual(validated.ledger[0].runReceipt, expectedBinding(published, fixture));
+  assert.equal(validated.runReceiptIssues.length, 0);
+});
+
+test("public ledger reports fail closed on every historical receipt artifact while preserving independent LOOK evidence", async (t) => {
+  const cases = [
+    ["receipt JSON", (fixture, published) => fs.writeFileSync(published.receiptPath, "{}\n"), /receipt|schema|kind|JSON/i],
+    ["APK CAS", (fixture) => fs.writeFileSync(fixture.payload.apk.artifactPath, "changed apk CAS"), /APK.*(?:sha256|byte)|(?:sha256|byte).*APK/i],
+    ["effective AppSpec CAS", (fixture) => fs.writeFileSync(fixture.payload.source.effectiveAppSpec.artifactPath, "{}\n"), /effective AppSpec/i],
+    ["binding receipt ID", (fixture) => mutateLedger(fixture, (events) => { events[0].runReceipt.receiptId = ZERO_HASH; }), /receipt|exist|ID/i],
+    ["binding capture hash", (fixture) => mutateLedger(fixture, (events) => { events[0].runReceipt.captureSha256 = ZERO_HASH; }), /capture.*sha256/i],
+  ];
+
+  for (const [name, mutate, expectedIssue] of cases) {
+    await t.test(name, async (child) => {
+      const fixture = await createRunReceiptFixture(child, store);
+      const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+      const callJson = await startFullSurface(child, fixture);
+      const recorded = await callJson("record_verification", {
+        app: FIXTURE_APP,
+        claim: `synthetic historical ${name} fixture`,
+        evidenceType: "vision_verified",
+        artifactPath: fixture.captureSourcePath,
+        attestation: "Synthetic fixture wording only; no rendered LOOK is claimed.",
+        runReceiptId: published.receiptId,
+      });
+      assert.equal(recorded.status, "recorded");
+      mutate(fixture, published);
+
+      const report = await callJson("ledger_report", { app: FIXTURE_APP });
+      assert.equal(report.ledger[0].evidenceType, "vision_verified");
+      assert.equal("runReceipt" in report.ledger[0], false);
+      assert.equal("runReceipt" in report.history[0], false);
+      assert.equal(report.runReceiptIssues.length, 1);
+      assert.match(report.runReceiptIssues[0].reason, expectedIssue);
+      assert.equal(report.capabilityReport.matrix.visuallyVerified.length, 1);
+    });
+  }
+
+  await t.test("shared capture CAS", async (child) => {
+    const fixture = await createRunReceiptFixture(child, store);
+    const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+    const callJson = await startFullSurface(child, fixture);
+    const recorded = await callJson("record_verification", {
+      app: FIXTURE_APP,
+      claim: "synthetic shared capture CAS fixture",
+      evidenceType: "vision_verified",
+      artifactPath: fixture.captureSourcePath,
+      attestation: "Synthetic fixture wording only; no rendered LOOK is claimed.",
+      runReceiptId: published.receiptId,
+    });
+    assert.equal(recorded.status, "recorded");
+    fs.writeFileSync(fixture.captureArtifactPath, makePng(201));
+
+    const report = await callJson("ledger_report", { app: FIXTURE_APP });
+    assert.equal(report.ledger[0].evidenceType, "provenance-broken");
+    assert.equal("runReceipt" in report.ledger[0], false);
+    assert.equal(report.runReceiptIssues.length, 1);
+    assert.equal(report.capabilityReport.matrix.visuallyVerified.length, 0);
+    assert.equal(report.capabilityReport.matrix.structuralOnly.length, 1);
+  });
+
+  await t.test("receipt belonging to another app", async (child) => {
+    const fixture = await createRunReceiptFixture(child, store);
+    const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+    const other = await createRunReceiptFixture(child, store, {
+      app: "com.example.otherreceipt",
+      rootDir: fixture.rootDir,
+      ledgerDir: fixture.ledgerDir,
+    });
+    const otherPublished = store.publishNativeRunReceipt(other.payload, other.storeOptions);
+    const callJson = await startFullSurface(child, fixture);
+    const recorded = await callJson("record_verification", {
+      app: FIXTURE_APP,
+      claim: "synthetic cross-app historical binding fixture",
+      evidenceType: "vision_verified",
+      artifactPath: fixture.captureSourcePath,
+      attestation: "Synthetic fixture wording only; no rendered LOOK is claimed.",
+      runReceiptId: published.receiptId,
+    });
+    assert.equal(recorded.status, "recorded");
+    mutateLedger(fixture, (events) => {
+      events[0].runReceipt.receiptId = otherPublished.receiptId;
+      events[0].runReceipt.captureSha256 = other.payload.capture.sha256;
+    });
+
+    const report = await callJson("ledger_report", { app: FIXTURE_APP });
+    assert.equal(report.ledger[0].evidenceType, "vision_verified");
+    assert.equal("runReceipt" in report.ledger[0], false);
+    assert.equal(report.runReceiptIssues.length, 1);
+    assert.match(report.runReceiptIssues[0].reason, /receipt|exist|app/i);
+  });
+
+  await t.test("broken APK CAS preserves independently intact device evidence but strips its binding", async (child) => {
+    const fixture = await createRunReceiptFixture(child, store, { runtimeIdentity: MANUAL_NON_EMULATOR_RUNTIME });
+    const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+    const fakeAdb = writeFakeAdb(fixture);
+    const callJson = await startFullSurface(child, fixture, {
+      PICO_ADB: fakeAdb,
+      PICO_DEVICE_FIXTURE_PATH: fixture.captureSourcePath,
+    });
+    const recorded = await callJson("record_verification", {
+      app: FIXTURE_APP,
+      claim: "synthetic device evidence independent from later APK CAS integrity",
+      evidenceType: "device_verified",
+      artifactPath: fixture.captureSourcePath,
+      attestation: "Synthetic same-byte contract fixture only; no hardware observation is claimed.",
+      deviceSerial: MANUAL_NON_EMULATOR_RUNTIME.serial,
+      deviceFeature: "controller_ray",
+      deviceOutcome: "pass",
+      runReceiptId: published.receiptId,
+    });
+    assert.equal(recorded.status, "recorded");
+    fs.writeFileSync(fixture.payload.apk.artifactPath, "changed apk CAS");
+
+    const report = await callJson("ledger_report", { app: FIXTURE_APP });
+    assert.equal(report.ledger[0].evidenceType, "device_verified");
+    assert.equal(report.ledger[0].deviceLineage.status, "validated");
+    assert.equal("runReceipt" in report.ledger[0], false);
+    assert.equal(report.runReceiptIssues.length, 1);
+    assert.equal(report.capabilityReport.matrix.deviceVerified.length, 1);
+  });
 });
 
 test("full-surface receipt binding rejects wrong app, missing or tampered receipt, wrong bytes, and mixed retraction fields", async (t) => {
@@ -318,6 +575,12 @@ test("the final materialized capture SHA must still equal the resolver binding",
         schemaVersion: 1,
         receiptId: process.env.PICO_BINDING_RECEIPT_ID,
         captureSha256: process.env.PICO_BINDING_CAPTURE_SHA256,
+      },
+      receiptRuntime: {
+        serial: "emulator-5554",
+        model: "PICO Emulator",
+        fingerprint: "PICO/PICO_Emulator/PICO_Emulator:14/fixture/test-keys",
+        bootQemu: "1",
       },
     };
   }`;

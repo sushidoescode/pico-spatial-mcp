@@ -12,6 +12,7 @@ import {
   probeDeviceIdentity,
   probeDeviceCapture,
   resolveDeviceAdb,
+  validateDeviceLineage,
   validateRecordedDeviceLineage,
   verifyLiveDeviceLineage,
   type DeviceIdentityProbe,
@@ -61,21 +62,34 @@ export type ValidatedRunReceiptBinding = {
   captureSha256: string;
 };
 
+export type ReceiptRuntimeIdentity = Readonly<{
+  serial: string;
+  model: string;
+  fingerprint: string;
+  bootQemu: string;
+}>;
+
 export type ReceiptCaptureBindingResult =
-  | { status: "valid"; binding: ValidatedRunReceiptBinding }
+  | { status: "valid"; binding: ValidatedRunReceiptBinding; receiptRuntime: ReceiptRuntimeIdentity }
   | { status: "invalid"; reason: string };
 
+export type HistoricalRunReceiptBindingValidator = (
+  app: string,
+  receiptId: string,
+  artifactPath: string,
+) => ReceiptCaptureBindingResult;
+
 export interface LedgerToolDependencies {
-  resolveRunReceiptBinding?: (
-    app: string,
-    receiptId: string,
-    artifactPath: string,
-  ) => ReceiptCaptureBindingResult;
+  resolveRunReceiptBinding?: HistoricalRunReceiptBindingValidator;
+  validateHistoricalRunReceiptBinding?: HistoricalRunReceiptBindingValidator;
 }
 
 export type RegisterLedgerTools = (server: McpServer, deps?: LedgerToolDependencies) => void;
 
-type TrustedRunReceiptBinding = Readonly<{ binding: ValidatedRunReceiptBinding }>;
+type TrustedRunReceiptBinding = Readonly<{
+  binding: ValidatedRunReceiptBinding;
+  receiptRuntime: ReceiptRuntimeIdentity;
+}>;
 const TRUSTED_RUN_RECEIPT_BINDINGS = new WeakSet<object>();
 
 function validateRunReceiptBinding(
@@ -114,8 +128,51 @@ function validateRunReceiptBinding(
   };
 }
 
-function createTrustedRunReceiptBinding(binding: ValidatedRunReceiptBinding): TrustedRunReceiptBinding {
-  const capability = Object.freeze({ binding });
+function validateReceiptRuntimeIdentity(
+  value: unknown,
+): { ok: true; receiptRuntime: ReceiptRuntimeIdentity } | { ok: false; reason: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, reason: "run receipt resolver runtime identity is not an object" };
+  }
+  const fields = Object.keys(value as Record<string, unknown>).sort();
+  const expectedFields = ["bootQemu", "fingerprint", "model", "serial"];
+  if (fields.length !== expectedFields.length || fields.some((field, index) => field !== expectedFields[index])) {
+    return { ok: false, reason: "run receipt resolver runtime identity contains missing or extra fields" };
+  }
+  const candidate = value as Record<string, unknown>;
+  for (const field of ["serial", "model", "fingerprint"] as const) {
+    if (typeof candidate[field] !== "string" || !candidate[field].trim() || candidate[field] !== candidate[field].trim()) {
+      return { ok: false, reason: `run receipt resolver runtime ${field} is missing or noncanonical` };
+    }
+  }
+  if (typeof candidate.bootQemu !== "string" || candidate.bootQemu !== candidate.bootQemu.trim()) {
+    return { ok: false, reason: "run receipt resolver runtime bootQemu is missing or noncanonical" };
+  }
+  return {
+    ok: true,
+    receiptRuntime: Object.freeze({
+      serial: candidate.serial as string,
+      model: candidate.model as string,
+      fingerprint: candidate.fingerprint as string,
+      bootQemu: candidate.bootQemu,
+    }),
+  };
+}
+
+function validateResolvedRunReceiptBinding(
+  value: ReceiptCaptureBindingResult,
+  expectedCaptureSha256?: string,
+): { ok: true; binding: ValidatedRunReceiptBinding; receiptRuntime: ReceiptRuntimeIdentity } | { ok: false; reason: string } {
+  if (value.status !== "valid") return { ok: false, reason: value.reason };
+  const binding = validateRunReceiptBinding(value.binding, expectedCaptureSha256);
+  if (!binding.ok) return binding;
+  const runtime = validateReceiptRuntimeIdentity(value.receiptRuntime);
+  if (!runtime.ok) return runtime;
+  return { ok: true, binding: binding.binding, receiptRuntime: runtime.receiptRuntime };
+}
+
+function createTrustedRunReceiptBinding(binding: ValidatedRunReceiptBinding, receiptRuntime: ReceiptRuntimeIdentity): TrustedRunReceiptBinding {
+  const capability = Object.freeze({ binding, receiptRuntime });
   TRUSTED_RUN_RECEIPT_BINDINGS.add(capability);
   return capability;
 }
@@ -123,11 +180,14 @@ function createTrustedRunReceiptBinding(binding: ValidatedRunReceiptBinding): Tr
 function validateTrustedRunReceiptBinding(
   value: unknown,
   expectedCaptureSha256?: string,
-): { ok: true; binding: ValidatedRunReceiptBinding } | { ok: false; reason: string } {
+): { ok: true; binding: ValidatedRunReceiptBinding; receiptRuntime: ReceiptRuntimeIdentity } | { ok: false; reason: string } {
   if (!value || typeof value !== "object" || !TRUSTED_RUN_RECEIPT_BINDINGS.has(value as object)) {
     return { ok: false, reason: "runReceiptBinding requires a private resolver-origin capability; a caller-shaped binding has no validated receipt lineage" };
   }
-  return validateRunReceiptBinding((value as TrustedRunReceiptBinding).binding, expectedCaptureSha256);
+  const capability = value as TrustedRunReceiptBinding;
+  const binding = validateRunReceiptBinding(capability.binding, expectedCaptureSha256);
+  if (!binding.ok) return binding;
+  return { ok: true, binding: binding.binding, receiptRuntime: capability.receiptRuntime };
 }
 
 export function ledgerDirectory(): string {
@@ -744,9 +804,11 @@ export async function appendDeviceVerifiedEntry(
   } catch (error: any) {
     return { status: "rejected", reason: error?.message ?? String(error) };
   }
+  let receiptRuntime: ReceiptRuntimeIdentity | undefined;
   if (input.runReceiptBinding !== undefined) {
     const checkedBinding = validateTrustedRunReceiptBinding(input.runReceiptBinding);
     if (!checkedBinding.ok) return { status: "rejected", reason: checkedBinding.reason };
+    receiptRuntime = checkedBinding.receiptRuntime;
   }
   if (typeof input.deviceFeature !== "string" || !DEVICE_FEATURE_PATTERN.test(input.deviceFeature)) {
     return { status: "rejected", reason: "device_verified requires a structured deviceFeature slug (lowercase words joined by underscores); free-text claim matching cannot close device parity." };
@@ -761,6 +823,22 @@ export async function appendDeviceVerifiedEntry(
     bootQemu: input.deviceBootQemu,
   }, probe);
   if (!observed.ok) return { status: "rejected", reason: `device_verified REQUIRES live-probed PICO-shaped non-emulator lineage: ${observed.reason}.` };
+  if (receiptRuntime) {
+    const receiptLineage = validateDeviceLineage(receiptRuntime);
+    if (!receiptLineage.ok) {
+      return { status: "rejected", reason: `device_verified run receipt runtime must identify the same non-emulator PICO-shaped device: ${receiptLineage.reason}.` };
+    }
+    for (const [field, receiptValue, liveValue] of [
+      ["serial", receiptRuntime.serial, observed.lineage.serial],
+      ["model", receiptRuntime.model, observed.lineage.model],
+      ["fingerprint", receiptRuntime.fingerprint, observed.lineage.fingerprint],
+      ["bootQemu", receiptRuntime.bootQemu, observed.lineage.bootQemu],
+    ] as const) {
+      if (receiptValue !== liveValue) {
+        return { status: "rejected", reason: `device_verified run receipt ${field} '${receiptValue}' does not match the live probed ${field} '${liveValue}'.` };
+      }
+    }
+  }
   if (!input.artifactPath) return { status: "rejected", reason: "device_verified REQUIRES artifactPath (the exact frame LOOKED at)." };
   let liveCapture: Buffer;
   try {
@@ -895,8 +973,12 @@ export type LedgerReadResult = {
 };
 
 /** Read append-only history and derive the evidence that is safe to consume now. */
-export function readLedger(app: string): LedgerReadResult {
-  const events = loadLedgerEvents(app);
+export function readLedger(
+  app: string,
+  validateHistoricalRunReceiptBinding?: HistoricalRunReceiptBindingValidator,
+): LedgerReadResult {
+  const storedEvents = loadLedgerEvents(app);
+  const events = storedEvents.map((event) => event && typeof event === "object" ? { ...event } : event);
   const retractions = events.filter((event) => event?.eventType === "retraction");
   const retracted = new Set(retractions.map((event) => event.retracts));
   const integrityIssues: LedgerReadResult["integrityIssues"] = [];
@@ -912,22 +994,46 @@ export function readLedger(app: string): LedgerReadResult {
     runReceiptIssues.push({ seq: entry.seq, claim: entry.claim, reason });
   };
 
+  for (const entry of events) {
+    if (!entry || typeof entry !== "object" || !Object.prototype.hasOwnProperty.call(entry, "runReceipt")) continue;
+    const binding = IMAGE_EVIDENCE.has(entry.evidenceType)
+      ? validateRunReceiptBinding(entry.runReceipt, entry.capture?.sha256)
+      : { ok: false as const, reason: "runReceipt binding is attached to non-image evidence" };
+    if (!binding.ok) {
+      invalidateRunReceipt(entry, binding.reason);
+      continue;
+    }
+    if (!validateHistoricalRunReceiptBinding) {
+      invalidateRunReceipt(entry, "runReceipt binding cannot be consumed because no historical receipt validator is configured");
+      continue;
+    }
+    if (typeof entry.artifactPath !== "string" || !entry.artifactPath) {
+      invalidateRunReceipt(entry, "runReceipt binding cannot be consumed because the ledger artifact path is missing");
+      continue;
+    }
+    let resolved: ReceiptCaptureBindingResult;
+    try {
+      resolved = validateHistoricalRunReceiptBinding(app, binding.binding.receiptId, entry.artifactPath);
+    } catch (error: any) {
+      invalidateRunReceipt(entry, `historical run receipt validation failed: ${error?.message ?? String(error)}`);
+      continue;
+    }
+    const checked = validateResolvedRunReceiptBinding(resolved, entry.capture?.sha256);
+    if (!checked.ok) {
+      invalidateRunReceipt(entry, `historical run receipt validation rejected the binding: ${checked.reason}`);
+      continue;
+    }
+    if (checked.binding.receiptId !== binding.binding.receiptId
+      || checked.binding.captureSha256 !== binding.binding.captureSha256) {
+      invalidateRunReceipt(entry, "historical run receipt validator returned a different receipt or capture identity");
+      continue;
+    }
+    entry.runReceipt = binding.binding;
+  }
+
   for (const raw of events) {
     if (!raw || raw.eventType === "retraction" || raw.retracted || retracted.has(raw.seq)) continue;
     const entry = { ...raw };
-    if (Object.prototype.hasOwnProperty.call(entry, "runReceipt")) {
-      const binding = IMAGE_EVIDENCE.has(entry.evidenceType)
-        ? validateRunReceiptBinding(entry.runReceipt, entry.capture?.sha256)
-        : { ok: false as const, reason: "runReceipt binding is attached to non-image evidence" };
-      if (binding.ok) {
-        entry.runReceipt = binding.binding;
-      } else {
-        entry.claimedRunReceipt = entry.runReceipt;
-        delete entry.runReceipt;
-        entry.runReceiptProvenance = { status: "unverifiable", reason: binding.reason };
-        runReceiptIssues.push({ seq: entry.seq, claim: entry.claim, reason: binding.reason });
-      }
-    }
     if (IMAGE_EVIDENCE.has(entry.evidenceType)) {
       const provenance = checkProvenance(entry);
       entry.provenance = provenance;
@@ -977,8 +1083,8 @@ export function readLedger(app: string): LedgerReadResult {
   return { events, effectiveEntries, retractions, integrityIssues, deviceLineageIssues, producerProvenanceIssues, runReceiptIssues };
 }
 
-export function buildLedgerReport(app: string) {
-  const read = readLedger(app);
+export function buildLedgerReport(app: string, validateHistoricalRunReceiptBinding?: HistoricalRunReceiptBindingValidator) {
+  const read = readLedger(app, validateHistoricalRunReceiptBinding);
   const features = read.effectiveEntries.map((entry) => ({
     name: entry.claim,
     status: entry.evidenceType === "device_verified" && entry.deviceOutcome !== "pass"
@@ -1094,11 +1200,11 @@ export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {
         if (resolved.status !== "valid") {
           return okJson({ status: "rejected", app, reason: `run receipt binding rejected: ${resolved.reason}` });
         }
-        const checked = validateRunReceiptBinding(resolved.binding);
+        const checked = validateResolvedRunReceiptBinding(resolved);
         if (!checked.ok || checked.binding.receiptId !== runReceiptId) {
           return okJson({ status: "rejected", app, reason: checked.ok ? "run receipt resolver returned a different receiptId" : `run receipt resolver returned an invalid binding: ${checked.reason}` });
         }
-        runReceiptBinding = createTrustedRunReceiptBinding(checked.binding);
+        runReceiptBinding = createTrustedRunReceiptBinding(checked.binding, checked.receiptRuntime);
       }
       const res = evidenceType === "device_verified"
         ? await appendDeviceVerifiedEntry(app, { claim, artifactPath, attestation, cClass, reproHash, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, runReceiptBinding })
@@ -1116,7 +1222,7 @@ export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {
     },
     async ({ app }) => {
       try {
-        return okJson(buildLedgerReport(app));
+        return okJson(buildLedgerReport(app, deps.validateHistoricalRunReceiptBinding));
       } catch (error: any) {
         return okJson({ status: "error", app, entryCount: 0, ledger: [], integrityIssues: [{ reason: error?.message ?? String(error) }], capabilityReport: buildCapabilityMatrix(app, []) });
       }

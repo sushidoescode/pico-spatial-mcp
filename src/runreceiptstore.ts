@@ -372,8 +372,19 @@ export type NativeRunReceiptSelection =
   | { status: "none"; rejectedCandidates: Array<{ receiptId: string; issues: string[] }> }
   | { status: "invalid-store"; issues: string[] };
 
+export type ReceiptRuntimeIdentity = Readonly<{
+  serial: string;
+  model: string;
+  fingerprint: string;
+  bootQemu: string;
+}>;
+
 export type ReceiptCaptureBindingResult =
-  | { status: "valid"; binding: { kind: "pico.native-run-receipt"; schemaVersion: 1; receiptId: string; captureSha256: string } }
+  | {
+      status: "valid";
+      binding: Readonly<{ kind: "pico.native-run-receipt"; schemaVersion: 1; receiptId: string; captureSha256: string }>;
+      receiptRuntime: ReceiptRuntimeIdentity;
+    }
   | { status: "invalid"; reason: string };
 
 type FileSnapshot = { bytes: Buffer; sha256: string; size: number };
@@ -957,13 +968,25 @@ export function validateNativeRunReceiptCaptureBinding(
   const capture = validateCapture(artifactPath);
   if (!capture.ok) return { status: "invalid", reason: capture.reason ?? "capture could not be validated" };
   if (capture.sha256 !== result.receipt.capture.sha256) return { status: "invalid", reason: "capture sha256 does not match the run receipt" };
-  return {
+  const resolved = {
     status: "valid",
-    binding: {
+    binding: Object.freeze({
       kind: RUN_RECEIPT_KIND,
       schemaVersion: RUN_RECEIPT_SCHEMA_VERSION,
       receiptId,
       captureSha256: result.receipt.capture.sha256,
-    },
-  };
+    }),
+  } as Extract<ReceiptCaptureBindingResult, { status: "valid" }>;
+  Object.defineProperty(resolved, "receiptRuntime", {
+    value: Object.freeze({
+      serial: result.receipt.runtime.serial,
+      model: result.receipt.runtime.model,
+      fingerprint: result.receipt.runtime.fingerprint,
+      bootQemu: result.receipt.runtime.bootQemu,
+    }),
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
+  return Object.freeze(resolved);
 }

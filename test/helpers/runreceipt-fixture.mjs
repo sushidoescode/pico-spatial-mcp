@@ -11,6 +11,15 @@ import {
 
 export const FIXTURE_APP = "com.example.receipt";
 
+// Manual contract data only. These strings exercise the non-emulator lineage branch without
+// claiming that a hardware device was attached or observed.
+export const MANUAL_NON_EMULATOR_RUNTIME = Object.freeze({
+  serial: "PA9K1RECEIPTFIXTURE",
+  model: "PICO Swan receipt-binding fixture",
+  fingerprint: "Pico/swan/swan:16/RECEIPT/1:user/release-keys",
+  bootQemu: "",
+});
+
 export const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
 const CRC_TABLE = (() => {
@@ -90,11 +99,17 @@ export const effectiveSpec = (packageName = FIXTURE_APP) => ({
 export async function createRunReceiptFixture(t, store, options = {}) {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-run-receipt-"));
   t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
-  const rootDir = path.join(scratch, "receipt-store");
-  const ledgerDir = path.join(scratch, "ledger-store");
+  const rootDir = options.rootDir ?? path.join(scratch, "receipt-store");
+  const ledgerDir = options.ledgerDir ?? path.join(scratch, "ledger-store");
   const projectDir = path.join(scratch, "project");
   const briefPath = path.join(scratch, "brief.json");
   const packageName = options.app ?? FIXTURE_APP;
+  const runtimeIdentity = options.runtimeIdentity ?? {
+    serial: "emulator-5554",
+    model: "PICO Emulator",
+    fingerprint: "PICO/PICO_Emulator/PICO_Emulator:14/fixture/test-keys",
+    bootQemu: "1",
+  };
 
   writeFile(projectDir, "settings.gradle.kts", "rootProject.name = \"receipt-fixture\"\n");
   writeFile(projectDir, "build.gradle.kts", "plugins {}\n");
@@ -186,10 +201,10 @@ export async function createRunReceiptFixture(t, store, options = {}) {
     },
     runtime: {
       sessionId: "11111111-2222-4333-8444-555555555555",
-      serial: "emulator-5554",
-      model: "PICO Emulator",
-      fingerprint: "PICO/PICO_Emulator/PICO_Emulator:14/fixture/test-keys",
-      bootQemu: "1",
+      serial: runtimeIdentity.serial,
+      model: runtimeIdentity.model,
+      fingerprint: runtimeIdentity.fingerprint,
+      bootQemu: runtimeIdentity.bootQemu,
       bootId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
       component,
       launchedAt: "2026-08-14T11:59:45.000Z",

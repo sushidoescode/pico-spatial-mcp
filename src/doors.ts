@@ -6,7 +6,7 @@ import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
 import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, readLedger } from "./ledger.js";
-import { findHistoricalNativeRunReceipt } from "./runreceiptstore.js";
+import { findHistoricalNativeRunReceipt, validateNativeRunReceiptCaptureBinding } from "./runreceiptstore.js";
 
 /**
  * doors.ts — THE DOORS (v21): an intent-level facade over the full tool surface.
@@ -662,7 +662,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       // record_verification write (userBriefsDir, ~/.pico-mcp/ledgers, digest-bound run receipts).
       const home = process.env.HOME ?? "";
       const readLedgerEntries = (app: string): any[] => {
-        try { return readLedger(app).effectiveEntries; } catch { return []; }
+        try { return readLedger(app, validateNativeRunReceiptCaptureBinding).effectiveEntries; } catch { return []; }
       };
       let briefFiles: Array<{ id: string; brief: string; mtime: number }> = [];
       try {

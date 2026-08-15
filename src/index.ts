@@ -302,7 +302,10 @@ if (!doorsSurfaceActive()) {
   // v5.2 — the self-repair critique (LOOKED-at frame -> defect list -> replan_spec)
   registerCritiqueTools(server);
   // v5.3 — the trust ledger (over-claims structurally impossible) + safe stacked-worktree landing
-  registerLedgerTools(server, { resolveRunReceiptBinding: validateNativeRunReceiptCaptureBinding });
+  registerLedgerTools(server, {
+    resolveRunReceiptBinding: validateNativeRunReceiptCaptureBinding,
+    validateHistoricalRunReceiptBinding: validateNativeRunReceiptCaptureBinding,
+  });
   registerClaimsPageTools(server);
   registerSpatialBenchTools(server);
   registerAffordanceTools(server);

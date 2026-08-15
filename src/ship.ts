@@ -5,8 +5,9 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { okJson } from "./util.js";
 import { isPassingDeviceEvidence, readLedger } from "./ledger.js";
+import { validateDeviceLineage } from "./deviceidentity.js";
 import { validateCapture } from "./evidence.js";
-import { findCurrentNativeRunReceipt } from "./runreceiptstore.js";
+import { findCurrentNativeRunReceipt, validateNativeRunReceiptCaptureBinding } from "./runreceiptstore.js";
 
 export type NativeShipReceiptSummary =
   | {
@@ -31,6 +32,14 @@ export type NativeShipReceiptSummary =
 
 function isPositiveVisionEvidence(entry: any): boolean {
   return entry?.evidenceType === "vision_verified" && entry?.deviceOutcome !== "fail";
+}
+
+function isPassingDeviceEvidenceForReceipt(entry: any, runtime: { serial: string; model: string; fingerprint: string; bootQemu: string }): boolean {
+  if (!isPassingDeviceEvidence(entry) || !validateDeviceLineage(runtime).ok) return false;
+  return entry.deviceSerial === runtime.serial
+    && entry.deviceModel === runtime.model
+    && entry.deviceFingerprint === runtime.fingerprint
+    && entry.deviceBootQemu === runtime.bootQemu;
 }
 
 /**
@@ -62,7 +71,7 @@ export function registerShipTools(server: McpServer) {
       // ledger evidence
       let entries: any[] = [];
       let ledgerError: string | null = null;
-      try { entries = readLedger(app).effectiveEntries; } catch (error: any) { ledgerError = error?.message ?? String(error); }
+      try { entries = readLedger(app, validateNativeRunReceiptCaptureBinding).effectiveEntries; } catch (error: any) { ledgerError = error?.message ?? String(error); }
       const byType: Record<string, number> = {};
       for (const e of entries) byType[e.evidenceType] = (byType[e.evidenceType] ?? 0) + 1;
       const vision = entries.filter(isPositiveVisionEvidence).length;
@@ -106,7 +115,7 @@ export function registerShipTools(server: McpServer) {
             receiptAuditWarnings.push(`rejected native receipt candidate ${candidate.receiptId}: ${candidate.issues.join("; ")}`);
           }
           const linkedLook = entries.find((entry) =>
-            (isPositiveVisionEvidence(entry) || isPassingDeviceEvidence(entry))
+            (isPositiveVisionEvidence(entry) || isPassingDeviceEvidenceForReceipt(entry, selection.receipt.runtime))
             && entry.runReceipt?.receiptId === selection.receipt.receiptId
             && entry.runReceipt?.captureSha256 === selection.receipt.capture.sha256
             && entry.capture?.sha256 === selection.receipt.capture.sha256,

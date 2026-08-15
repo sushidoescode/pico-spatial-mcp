@@ -6,6 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import * as store from "../dist/runreceiptstore.js";
 import {
+  MANUAL_NON_EMULATOR_RUNTIME,
   createRunReceiptFixture,
   makePng,
 } from "./helpers/runreceipt-fixture.mjs";
@@ -58,7 +59,7 @@ async function recordVision(callJson, fixture, published, withBinding = true) {
   return recorded.entry;
 }
 
-function writeFakeDeviceAdb(fixture) {
+function writeFakeDeviceAdb(fixture, liveRuntime = fixture.payload.runtime) {
   const fakeAdb = path.join(fixture.scratch, "fake-device-adb.mjs");
   fs.writeFileSync(fakeAdb, `#!/usr/bin/env node
 import fs from "node:fs";
@@ -66,12 +67,12 @@ const args = process.argv.slice(2);
 const serial = args[1] ?? "";
 if (args.includes("getprop")) {
   const values = {
-    "ro.product.model": "PICO Swan ship fixture",
-    "ro.build.fingerprint": "Pico/swan/swan:16/SHIP/1:user/release-keys",
-    "ro.boot.qemu": "",
+    "ro.product.model": ${JSON.stringify(liveRuntime.model)},
+    "ro.build.fingerprint": ${JSON.stringify(liveRuntime.fingerprint)},
+    "ro.boot.qemu": ${JSON.stringify(liveRuntime.bootQemu)},
   };
   process.stdout.write((values[args.at(-1)] ?? "") + "\\n");
-} else if (args.includes("screencap") && serial === "PA9K1SHIPFIXTURE") {
+} else if (args.includes("screencap") && serial === ${JSON.stringify(liveRuntime.serial)}) {
   process.stdout.write(fs.readFileSync(process.env.PICO_DEVICE_FIXTURE_PATH));
 } else {
   process.stderr.write("unsupported fixture adb invocation: " + args.join(" "));
@@ -89,13 +90,24 @@ async function recordDevice(callJson, fixture, published, outcome) {
     evidenceType: "device_verified",
     artifactPath: fixture.captureSourcePath,
     attestation: "Synthetic same-byte fixture only; no PICO hardware observation is claimed.",
-    deviceSerial: "PA9K1SHIPFIXTURE",
+    deviceSerial: fixture.payload.runtime.serial,
     deviceFeature: "controller_ray",
     deviceOutcome: outcome,
     runReceiptId: published.receiptId,
   });
   assert.equal(recorded.status, "recorded");
   return recorded.entry;
+}
+
+function attachReceiptBinding(fixture, published) {
+  mutateLedger(fixture, (events) => {
+    events[0].runReceipt = {
+      kind: "pico.native-run-receipt",
+      schemaVersion: 1,
+      receiptId: published.receiptId,
+      captureSha256: fixture.payload.capture.sha256,
+    };
+  });
 }
 
 function shipArgs(fixture, projectDir = fixture.projectDir) {
@@ -170,7 +182,7 @@ test("native ship accepts current debug bytes only with one exact receipt-linked
 
 test("native ship accepts a receipt-linked passing device row but never a device failure", async (t) => {
   await t.test("passing device evidence", async (child) => {
-    const fixture = await createRunReceiptFixture(child, store);
+    const fixture = await createRunReceiptFixture(child, store, { runtimeIdentity: MANUAL_NON_EMULATOR_RUNTIME });
     const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
     const fakeAdb = writeFakeDeviceAdb(fixture);
     const callJson = await startSurface(child, fixture, "full", {
@@ -186,7 +198,7 @@ test("native ship accepts a receipt-linked passing device row but never a device
   });
 
   await t.test("failing device evidence", async (child) => {
-    const fixture = await createRunReceiptFixture(child, store);
+    const fixture = await createRunReceiptFixture(child, store, { runtimeIdentity: MANUAL_NON_EMULATOR_RUNTIME });
     const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
     const fakeAdb = writeFakeDeviceAdb(fixture);
     const callJson = await startSurface(child, fixture, "full", {
@@ -199,6 +211,70 @@ test("native ship accepts a receipt-linked passing device row but never a device
     assertReceiptBlocker(ship, true);
     assert.ok(ship.blockers.some((line) => /device-verified failed outcome/i.test(line)));
   });
+});
+
+test("native ship independently rejects emulator or mismatched receipt runtime for device rows", async (t) => {
+  const cases = [
+    {
+      name: "emulator receipt runtime",
+      receiptRuntime: undefined,
+      liveRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+    },
+    {
+      name: "different serial",
+      receiptRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      liveRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, serial: "PA9K1SHIPOTHER" },
+    },
+    {
+      name: "different model",
+      receiptRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      liveRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, model: "PICO Swan ship other fixture" },
+    },
+    {
+      name: "different fingerprint",
+      receiptRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      liveRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, fingerprint: "Pico/swan/swan:16/SHIPOTHER/2:user/release-keys" },
+    },
+    {
+      name: "different bootQemu",
+      receiptRuntime: MANUAL_NON_EMULATOR_RUNTIME,
+      liveRuntime: { ...MANUAL_NON_EMULATOR_RUNTIME, bootQemu: "0" },
+    },
+  ];
+
+  for (const scenario of cases) {
+    await t.test(scenario.name, async (child) => {
+      const fixture = await createRunReceiptFixture(child, store, {
+        ...(scenario.receiptRuntime ? { runtimeIdentity: scenario.receiptRuntime } : {}),
+      });
+      const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+      const fakeAdb = writeFakeDeviceAdb(fixture, scenario.liveRuntime);
+      const callJson = await startSurface(child, fixture, "full", {
+        PICO_ADB: fakeAdb,
+        PICO_DEVICE_FIXTURE_PATH: fixture.captureSourcePath,
+      });
+      const unbound = await callJson("record_verification", {
+        app: fixture.payload.app,
+        claim: `synthetic ship ${scenario.name} defense fixture`,
+        evidenceType: "device_verified",
+        artifactPath: fixture.captureSourcePath,
+        attestation: "Synthetic same-byte contract fixture only; no hardware observation is claimed.",
+        deviceSerial: scenario.liveRuntime.serial,
+        deviceFeature: "controller_ray",
+        deviceOutcome: "pass",
+      });
+      assert.equal(unbound.status, "recorded");
+      attachReceiptBinding(fixture, published);
+
+      const report = await callJson("ledger_report", { app: fixture.payload.app });
+      assert.equal(report.ledger[0].evidenceType, "device_verified");
+      assert.equal(report.ledger[0].runReceipt.receiptId, published.receiptId);
+
+      const ship = await callJson("ship_checklist", shipArgs(fixture));
+      assert.equal(ship.receipt.status, "needs-linked-look");
+      assertReceiptBlocker(ship, true);
+    });
+  }
 });
 
 test("nonmatching, nonvisual, retracted, and provenance-broken rows cannot satisfy the linked LOOK gate", async (t) => {
@@ -405,4 +481,14 @@ test("pico_next uses the newest historical receipt capture and ID instead of mut
   assert.ok(record, JSON.stringify(next, null, 2));
   assert.equal(record.argsExample.artifactPath, fixture.captureArtifactPath);
   assert.equal(record.argsExample.runReceiptId, published.receiptId);
+
+  const fullCall = await startSurface(t, fixture, "full");
+  await recordVision(fullCall, fixture, published);
+  const afterLook = await doorCall("pico_next", {});
+  const lookedState = afterLook.state.briefs.find((brief) => brief.id === id);
+  assert.equal(lookedState.state, "vision-recorded");
+  assert.equal(
+    [afterLook.nextAction, ...afterLook.alternatives].some((action) => action?.door === "pico_record" && action.argsExample?.app === fixture.payload.app),
+    false,
+  );
 });
