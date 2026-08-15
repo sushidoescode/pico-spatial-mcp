@@ -278,6 +278,10 @@ export type GradleInputGenerationGuard = {
   close: () => void;
 };
 
+export class GradleInputContinuityInconclusiveError extends Error {
+  override readonly name = "GradleInputContinuityInconclusiveError";
+}
+
 export type GradleInputGuardOptions = Readonly<{
   maxDirectories?: number;
   maxDepth?: number;
@@ -616,8 +620,8 @@ function generationGuard(state: GuardState): GradleInputGenerationGuard {
     return false;
   };
 
-  const sealAndDrainWatchers = async (): Promise<void> => {
-    const parent = state.parentGenerations.values().next().value as ParentGeneration | undefined;
+  const sealAndDrainWatchers = async (): Promise<string[]> => {
+    const inconclusive: string[] = [];
     const isClassified = (generation: ParentGeneration): boolean => generation.selectedObserved
       || generation.excludedObserved
       || generation.ambiguousObserved;
@@ -648,19 +652,16 @@ function generationGuard(state: GuardState): GradleInputGenerationGuard {
         break;
       }
     }
-    if (!settled && parent) {
-      rememberGuardEvent(state, parent, "ambiguous", "watcher-callbacks-did-not-settle-before-deadline");
-    }
+    if (!settled) inconclusive.push("watcher callbacks did not settle before the bounded deadline");
     closeWatchers(state, true);
-    if (!await waitForWatcherQuiet() && parent) {
-      rememberGuardEvent(state, parent, "ambiguous", "watcher-callback-drain-did-not-quiesce");
-    }
+    if (!await waitForWatcherQuiet()) inconclusive.push("watcher callback drain did not quiesce after close");
+    return inconclusive;
   };
 
   return {
     close: () => closeGuardState(state),
     assertUnchanged: async (): Promise<void> => {
-      await sealAndDrainWatchers();
+      const inconclusive = await sealAndDrainWatchers();
       const issues: string[] = [];
       let issuesOmitted = false;
       const addIssue = (issue: string): void => {
@@ -696,8 +697,8 @@ function generationGuard(state: GuardState): GradleInputGenerationGuard {
             const relativePath = path.relative(state.projectDir, directory).split(path.sep).join("/") || ".";
             if (parent.selectedObserved || parent.ambiguousObserved) {
               addIssue(`watched parent generation changed: ${relativePath}`);
-            } else if (!parent.excludedObserved) {
-              addIssue(`watched parent generation changed without a classified event: ${relativePath}`);
+            } else {
+              inconclusive.push(`watched parent generation changed without definite selected evidence: ${relativePath}`);
             }
           }
         } catch (error) {
@@ -706,6 +707,11 @@ function generationGuard(state: GuardState): GradleInputGenerationGuard {
       }
       if (issuesOmitted) issues.push("additional Gradle input continuity issues omitted");
       if (issues.length) throw new Error(`Gradle input generation continuity failed: ${issues.join("; ")}`);
+      if (inconclusive.length) {
+        throw new GradleInputContinuityInconclusiveError(
+          `Gradle input generation continuity was inconclusive: ${inconclusive.slice(0, GRADLE_INPUT_MAX_EVENT_SAMPLES).join("; ")}`,
+        );
+      }
     },
   };
 }

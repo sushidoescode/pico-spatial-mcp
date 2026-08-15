@@ -166,6 +166,35 @@ function assertReleaseBoundary(ship) {
   assert.ok(ship.blockers.some((line) => /sign|store/i.test(line)));
 }
 
+function assertNoHardwareImmersionPromise(text) {
+  assert.match(text, /room-scale movement[^.]*unverified/i);
+  assert.match(text, /headset depth behavior[^.]*unverified/i);
+  assert.match(text, /immersive-frame compositing[^.]*unverified/i);
+  assert.match(text, /Swan behavior[^.]*unverified/i);
+  assert.match(text, /hardware safety boundaries[^.]*unverified/i);
+  assert.match(text, /no hardware-readiness or immersion claim/i);
+  assert.match(text, /emulator[^.]*bounded/i);
+  assert.doesNotMatch(text, /boundless[^.]*Swan|head-tracked depth activate|activate on PICO Swan/i);
+}
+
+test("ship checklist publicly leaves hardware immersion and safety boundaries unverified", async (t) => {
+  const fixture = await createRunReceiptFixture(t, store);
+  const callJson = await startSurface(t, fixture, "full");
+  const ship = await callJson("ship_checklist", shipArgs(fixture));
+  assertNoHardwareImmersionPromise(`${ship.deferred.join(" ")} ${ship.honesty}`);
+});
+
+test("spatial planner publicly leaves hardware immersion and safety boundaries unverified", async (t) => {
+  const fixture = await createRunReceiptFixture(t, store);
+  const callJson = await startSurface(t, fixture, "full");
+  const planned = await callJson("compile_spatial_experience", {
+    brief: "a native spatial room with one eye-level sculpture",
+    prefer: "native",
+  });
+  assert.equal(planned.status, "ok");
+  assertNoHardwareImmersionPromise(planned.honesty);
+});
+
 test("native ship has no current receipt when no producer receipt was published", async (t) => {
   const fixture = await createRunReceiptFixture(t, store);
   const callJson = await startSurface(t, fixture, "full");

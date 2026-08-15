@@ -7,6 +7,7 @@ import {
   canonicalJson,
   collectGradleInputIdentity,
   collectGuardedGradleInputIdentity,
+  GradleInputContinuityInconclusiveError,
   readAuthoredAppSpecIdentity,
   type GradleInputGenerationGuard,
 } from "./runreceiptidentity.js";
@@ -75,7 +76,7 @@ export type NativeFleetFailureStage =
   | "pid" | "foreground" | "capture" | "capture-publication" | "receipt-publication";
 
 export type ProduceNativeFleetReceiptResult =
-  | { status: "recorded"; built: true; installed: true; receipt: PublishedNativeRunReceipt }
+  | { status: "recorded"; built: true; installed: true; receipt: PublishedNativeRunReceipt; completedStages: string[] }
   | { status: "failed"; stage: NativeFleetFailureStage; built: boolean; installed: boolean; reason: string; completedStages: string[] };
 
 type ForegroundActivity = { packageName: string; component: string };
@@ -412,27 +413,54 @@ export async function produceNativeFleetReceipt(
     }
     completedStages.push("source-identity");
 
-    const buildStartedAt = resolvedDeps.now().toISOString();
     const gradlew = path.join(projectDir, "gradlew");
     const buildArgs = [input.task, "--console=plain"];
-    let buildFinishedAt: string;
+    let buildStartedAt = "";
+    let buildFinishedAt = "";
     try {
-      const buildResult = await resolvedDeps.runText(gradlew, buildArgs, {
-        cwd: projectDir,
-        env: resolvedDeps.gradleEnv,
-        timeoutMs: 1_800_000,
-        maxOutputBytes: TEXT_OUTPUT_LIMIT,
-      });
-      assertTextSuccess("build", "Gradle build", gradlew, buildArgs, buildResult);
-      buildFinishedAt = resolvedDeps.now().toISOString();
-      try {
-        await gradleInputGuard!.assertUnchanged();
-        const completedGradleInputs = collectGradleInputIdentity(projectDir);
-        if (canonicalJson(completedGradleInputs) !== canonicalJson(gradleInputs)) {
-          throw new Error("Gradle input identity changed between collection and successful build completion");
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        buildStartedAt = resolvedDeps.now().toISOString();
+        const buildResult = await resolvedDeps.runText(gradlew, buildArgs, {
+          cwd: projectDir,
+          env: resolvedDeps.gradleEnv,
+          timeoutMs: 1_800_000,
+          maxOutputBytes: TEXT_OUTPUT_LIMIT,
+        });
+        assertTextSuccess("build", "Gradle build", gradlew, buildArgs, buildResult);
+        buildFinishedAt = resolvedDeps.now().toISOString();
+        try {
+          await gradleInputGuard!.assertUnchanged();
+          const completedGradleInputs = collectGradleInputIdentity(projectDir);
+          if (canonicalJson(completedGradleInputs) !== canonicalJson(gradleInputs)) {
+            throw new Error("Gradle input identity changed between collection and successful build completion");
+          }
+        } catch (error) {
+          if (!(error instanceof GradleInputContinuityInconclusiveError)) {
+            throw new StageFailure("build-input-continuity", error instanceof Error ? error.message : String(error));
+          }
+          gradleInputGuard?.close();
+          gradleInputGuard = undefined;
+          if (attempt === 2) {
+            throw new StageFailure("build-input-continuity", error.message);
+          }
+          completedStages.push("build-input-continuity:first-attempt-inconclusive");
+          try {
+            const fresh = collectGuardedGradleInputIdentity(projectDir);
+            if (canonicalJson(fresh.identity) !== canonicalJson(gradleInputs)) {
+              fresh.guard.close();
+              throw new Error("Gradle input identity changed before the fresh guarded build attempt");
+            }
+            gradleInputGuard = fresh.guard;
+          } catch (freshError) {
+            throw new StageFailure(
+              "build-input-continuity",
+              freshError instanceof Error ? freshError.message : String(freshError),
+            );
+          }
+          continue;
         }
-      } catch (error) {
-        throw new StageFailure("build-input-continuity", error instanceof Error ? error.message : String(error));
+        if (attempt === 2) completedStages.push("build-input-continuity:second-attempt-proved");
+        break;
       }
     } finally {
       gradleInputGuard?.close();
@@ -935,7 +963,7 @@ export async function produceNativeFleetReceipt(
       throw new StageFailure("receipt-publication", error instanceof Error ? error.message : String(error));
     }
     completedStages.push("receipt-publication");
-    return { status: "recorded", built: true, installed: true, receipt };
+    return { status: "recorded", built: true, installed: true, receipt, completedStages: [...completedStages] };
   } catch (error) {
     const failure = error instanceof StageFailure
       ? error

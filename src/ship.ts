@@ -137,7 +137,7 @@ export function registerShipTools(server: McpServer) {
             blockers.push(`no verified build receipt binds the current APK bytes to an exact effective receipt-linked LOOK; current receipt ${selection.receipt.receiptId} passed byte/session validation, but capture sha256 ${selection.receipt.capture.sha256} still needs vision_verified or passing device_verified evidence recorded with that receipt ID.`);
           }
         }
-        deferred.push("boundless walk-around immersion + true head-tracked depth activate on PICO Swan hardware (emulator ceiling C1/C2).");
+        deferred.push("UNVERIFIED / OUT OF SCOPE: room-scale movement, headset depth behavior, immersive-frame compositing, Swan behavior, and hardware safety boundaries remain unverified. Receipt v1 and this checklist make no hardware-readiness or immersion claim; emulator evidence remains bounded.");
       }
       if (ln === "web" || ln === "hybrid") {
         const pdir = projectDir ?? "";
