@@ -978,7 +978,12 @@ export function readLedger(
   validateHistoricalRunReceiptBinding?: HistoricalRunReceiptBindingValidator,
 ): LedgerReadResult {
   const storedEvents = loadLedgerEvents(app);
-  const events = storedEvents.map((event) => event && typeof event === "object" ? { ...event } : event);
+  const events = storedEvents.map((event) => {
+    if (!event || typeof event !== "object") return event;
+    const cloned = { ...event };
+    delete cloned.claimedRunReceipt;
+    return cloned;
+  });
   const retractions = events.filter((event) => event?.eventType === "retraction");
   const retracted = new Set(retractions.map((event) => event.retracts));
   const integrityIssues: LedgerReadResult["integrityIssues"] = [];

@@ -317,6 +317,9 @@ test("ledger reads strip bindings unless an injected historical validator re-ear
   assert.equal(stripped.ledger[0].evidenceType, "vision_verified");
   assert.equal("runReceipt" in stripped.ledger[0], false);
   assert.equal("runReceipt" in stripped.history[0], false);
+  assert.deepEqual(stripped.ledger[0].claimedRunReceipt, expectedBinding(published, fixture));
+  assert.deepEqual(Object.keys(stripped.ledger[0].claimedRunReceipt).sort(), ["captureSha256", "kind", "receiptId", "schemaVersion"]);
+  assert.deepEqual(stripped.history[0].claimedRunReceipt, expectedBinding(published, fixture));
   assert.equal(stripped.runReceiptIssues.length, 1);
   assert.match(stripped.runReceiptIssues[0].reason, /historical.*validator|validator.*configured/i);
   assert.equal(stripped.capabilityReport.matrix.visuallyVerified.length, 1);
@@ -376,6 +379,66 @@ test("ledger reports erase every malformed persisted runReceipt without leaking 
       assert.equal(JSON.stringify(report).includes(privateMarker), false);
     });
   }
+});
+
+test("ledger reports discard persisted claimedRunReceipt and synthesize it only from validated bindings", async (t) => {
+  const privateMarker = "persisted-claimed-runtime-must-not-leak";
+  const maliciousClaimedBinding = {
+    receiptRuntime: {
+      serial: privateMarker,
+      model: "private model",
+      fingerprint: "private/fingerprint",
+      bootQemu: "1",
+    },
+  };
+
+  await t.test("claimed binding without runReceipt", async (child) => {
+    const fixture = await createRunReceiptFixture(child, store);
+    const callJson = await startFullSurface(child, fixture);
+    const recorded = await callJson("record_verification", {
+      app: FIXTURE_APP,
+      claim: "synthetic persisted claimed-only receipt fixture",
+      evidenceType: "vision_verified",
+      artifactPath: fixture.captureSourcePath,
+      attestation: "Synthetic fixture wording only; no rendered LOOK is claimed.",
+    });
+    assert.equal(recorded.status, "recorded");
+    mutateLedger(fixture, (events) => {
+      events[0].claimedRunReceipt = maliciousClaimedBinding;
+    });
+
+    const report = await callJson("ledger_report", { app: FIXTURE_APP });
+    assert.equal(Object.prototype.hasOwnProperty.call(report.ledger[0], "claimedRunReceipt"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(report.history[0], "claimedRunReceipt"), false);
+    assert.equal(report.runReceiptIssues.length, 0);
+    assert.equal(report.capabilityReport.matrix.visuallyVerified.length, 1);
+    assert.equal(JSON.stringify(report).includes(privateMarker), false);
+  });
+
+  await t.test("valid runReceipt beside malicious claimed binding", async (child) => {
+    const fixture = await createRunReceiptFixture(child, store);
+    const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+    const callJson = await startFullSurface(child, fixture);
+    const recorded = await callJson("record_verification", {
+      app: FIXTURE_APP,
+      claim: "synthetic valid receipt with persisted claimed-field fixture",
+      evidenceType: "vision_verified",
+      artifactPath: fixture.captureSourcePath,
+      attestation: "Synthetic fixture wording only; no rendered LOOK is claimed.",
+      runReceiptId: published.receiptId,
+    });
+    assert.equal(recorded.status, "recorded");
+    mutateLedger(fixture, (events) => {
+      events[0].claimedRunReceipt = maliciousClaimedBinding;
+    });
+
+    const report = await callJson("ledger_report", { app: FIXTURE_APP });
+    assert.deepEqual(report.ledger[0].runReceipt, expectedBinding(published, fixture));
+    assert.equal(Object.prototype.hasOwnProperty.call(report.ledger[0], "claimedRunReceipt"), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(report.history[0], "claimedRunReceipt"), false);
+    assert.equal(report.runReceiptIssues.length, 0);
+    assert.equal(JSON.stringify(report).includes(privateMarker), false);
+  });
 });
 
 test("public ledger reports fail closed on every historical receipt artifact while preserving independent LOOK evidence", async (t) => {
