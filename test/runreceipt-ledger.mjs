@@ -326,6 +326,58 @@ test("ledger reads strip bindings unless an injected historical validator re-ear
   assert.equal(validated.runReceiptIssues.length, 0);
 });
 
+test("ledger reports erase every malformed persisted runReceipt without leaking private-shaped fields", async (t) => {
+  const privateMarker = "must-not-cross-the-public-ledger-boundary";
+  const cases = [
+    ["null", () => null],
+    ["false", () => false],
+    ["zero", () => 0],
+    ["empty string", () => ""],
+    ["runtime-bearing object", (captureSha256) => ({
+      kind: "pico.native-run-receipt",
+      schemaVersion: 1,
+      receiptId: ZERO_HASH,
+      captureSha256,
+      receiptRuntime: {
+        serial: privateMarker,
+        model: "private model",
+        fingerprint: "private/fingerprint",
+        bootQemu: "1",
+      },
+    })],
+  ];
+
+  for (const [name, malformedBinding] of cases) {
+    await t.test(name, async (child) => {
+      const fixture = await createRunReceiptFixture(child, store);
+      const callJson = await startFullSurface(child, fixture);
+      const recorded = await callJson("record_verification", {
+        app: FIXTURE_APP,
+        claim: `synthetic malformed ${name} receipt-binding fixture`,
+        evidenceType: "vision_verified",
+        artifactPath: fixture.captureSourcePath,
+        attestation: "Synthetic fixture wording only; no rendered LOOK is claimed.",
+      });
+      assert.equal(recorded.status, "recorded");
+      mutateLedger(fixture, (events) => {
+        events[0].runReceipt = malformedBinding(recorded.entry.capture.sha256);
+      });
+
+      const report = await callJson("ledger_report", { app: FIXTURE_APP });
+      assert.equal(report.ledger[0].evidenceType, "vision_verified");
+      assert.equal(Object.prototype.hasOwnProperty.call(report.ledger[0], "runReceipt"), false);
+      assert.equal(Object.prototype.hasOwnProperty.call(report.history[0], "runReceipt"), false);
+      assert.equal(Object.prototype.hasOwnProperty.call(report.ledger[0], "claimedRunReceipt"), false);
+      assert.equal(Object.prototype.hasOwnProperty.call(report.history[0], "claimedRunReceipt"), false);
+      assert.equal(report.runReceiptIssues.length, 1);
+      assert.match(report.runReceiptIssues[0].reason, /runReceipt binding/i);
+      assert.equal(report.capabilityReport.matrix.visuallyVerified.length, 1);
+      assert.equal(JSON.stringify(report).includes("receiptRuntime"), false);
+      assert.equal(JSON.stringify(report).includes(privateMarker), false);
+    });
+  }
+});
+
 test("public ledger reports fail closed on every historical receipt artifact while preserving independent LOOK evidence", async (t) => {
   const cases = [
     ["receipt JSON", (fixture, published) => fs.writeFileSync(published.receiptPath, "{}\n"), /receipt|schema|kind|JSON/i],

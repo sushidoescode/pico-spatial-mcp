@@ -987,8 +987,10 @@ export function readLedger(
   const runReceiptIssues: LedgerReadResult["runReceiptIssues"] = [];
   const effectiveEntries: any[] = [];
   const invalidateRunReceipt = (entry: any, reason: string) => {
-    if (!entry.runReceipt) return;
-    entry.claimedRunReceipt = entry.runReceipt;
+    if (!Object.prototype.hasOwnProperty.call(entry, "runReceipt")) return;
+    const claimedBinding = validateRunReceiptBinding(entry.runReceipt);
+    delete entry.claimedRunReceipt;
+    if (claimedBinding.ok) entry.claimedRunReceipt = claimedBinding.binding;
     delete entry.runReceipt;
     entry.runReceiptProvenance = { status: "unverifiable", reason };
     runReceiptIssues.push({ seq: entry.seq, claim: entry.claim, reason });
