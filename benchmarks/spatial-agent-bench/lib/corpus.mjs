@@ -20,6 +20,7 @@ const WORKSPACE_DESCRIPTIONS = [
   "Create or replace one UTF-8 file beneath submission/.",
   "Replace an exact number of text occurrences in one UTF-8 file beneath submission/.",
 ];
+const WORKSPACE_TOOLS_CANONICAL_SHA256 = "df362d7ca357fd95c89c39d767fd8d8f1c62f0f34b6b9732b7d01825b09ba056";
 const RESET_LIFECYCLE = [
   "stop_package", "uninstall_package", "reset_world", "load_fixture",
   "read_back_fixture_identity", "install_receipt_bound_apk", "launch_package",
@@ -46,6 +47,15 @@ const REPORTED_IDENTIFIERS = [
   "space browser", "worldspace", "world space", "com.picoxr.browser", "ro.spaceos",
   "persist.spaceos",
 ];
+const REPORTED_IDENTIFIER_SHA256 = new Set([
+  "03b840807bb6d9c7979aedf291315c97b218513aee9162986e03c3092a384d21",
+  "7a77df84d41b1a3c025f69ab8928346a45c2fbf6603de8f80dc6126bc53a61f2",
+  "6be342ef40e986e7d82ec373ed2896bf844e808db498589f430cbd3bdac46fa8",
+  "e27ef3df860bc4cebb24690495d6f17e9c9561ffca0ea76a84c4edaa1ec61dbc",
+  "8d85910355a9171f8104ff59e811e9fa0cfc5b79fe756da4407de7ffbd3204d7",
+  "79e2bcb4bdef3f6cafc04d38cc8ac6f758013e2d8377ae48eabda460170df01f",
+  "1ed0e2ba56fcb5aca82696b50831197ae17e1b840d9a6a100c1a16b227b3eb4f",
+]);
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -107,14 +117,27 @@ function containsIdentifier(text, term) {
   return haystack.includes(needle);
 }
 
-function validateProviderText(text, corpus, label) {
+function validateProviderText(text, corpus, label, { includeWorkspaceToolNames = true, includeDoorToolNames = true } = {}) {
   const terms = [
     ...PROVIDER_PROHIBITED_TERMS,
     ...corpus.lanes.map((lane) => lane.id),
-    ...corpus.workspaceMcp.tools,
-    ...corpus.expectedDoorTools,
+    ...(includeWorkspaceToolNames ? corpus.workspaceMcp.tools : []),
+    ...(includeDoorToolNames ? corpus.expectedDoorTools : []),
   ];
   for (const term of terms) if (containsIdentifier(text, term)) throw new Error(`${label} contains prohibited provider hint: ${term}`);
+}
+
+function containsReportedIdentifierDigest(text) {
+  const tokens = normalized(text).match(/[a-z0-9_.=]+/g) ?? [];
+  for (const token of tokens) {
+    for (let start = 0; start < token.length; start += 1) {
+      for (let end = start + 4; end <= token.length; end += 1) {
+        const digest = crypto.createHash("sha256").update(token.slice(start, end)).digest("hex");
+        if (REPORTED_IDENTIFIER_SHA256.has(digest)) return true;
+      }
+    }
+  }
+  return false;
 }
 
 function validateCorpus(corpus) {
@@ -203,6 +226,10 @@ function validateWorkspaceTools(tools, corpus) {
   }
   const inputs = tools.map((tool) => tool.inputSchema.required);
   if (canonicalJson(inputs) !== canonicalJson([["path"], ["path"], ["path", "content"], ["path", "oldText", "newText", "expectedOccurrences"]])) throw new Error("workspace tool required input drift");
+  const serialized = canonicalJson(tools);
+  validateProviderText(serialized, corpus, "workspace tool provider snapshot", { includeWorkspaceToolNames: false });
+  const digest = crypto.createHash("sha256").update(serialized).digest("hex");
+  if (digest !== WORKSPACE_TOOLS_CANONICAL_SHA256) throw new Error("workspace tool canonical snapshot digest drift");
 }
 
 function validatePicoDoorTools(tools, corpus) {
@@ -221,6 +248,7 @@ function validatePicoDoorTools(tools, corpus) {
   }
   const serialized = normalized(canonicalJson(tools));
   for (const identifier of REPORTED_IDENTIFIERS) if (serialized.includes(normalized(identifier))) throw new Error(`PICO door schema contains reported confidential identifier: ${identifier}`);
+  if (containsReportedIdentifierDigest(serialized)) throw new Error("PICO door schema contains reported confidential identifier digest");
 }
 
 function protocolStep(name, waitBeforeMs, comparison, request) {

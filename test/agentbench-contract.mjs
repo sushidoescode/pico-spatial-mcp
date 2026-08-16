@@ -35,6 +35,12 @@ function selfHash(value) {
   return { ...value, receiptSha256: digest(value) };
 }
 
+function reSelfHash(value) {
+  const without = structuredClone(value);
+  delete without.receiptSha256;
+  return selfHash(without);
+}
+
 function submissionRecord(status = "pass") {
   const base = {
     evidenceClass: "submission_test",
@@ -344,6 +350,178 @@ test("runtime attachment joins artifacts, fixtures, and distinct run names rathe
     [fixture.detailed.resetInstallReceipts.stateSha256, fixture.detailed.resetInstallReceipts.tickSha256] = [fixture.detailed.resetInstallReceipts.tickSha256, fixture.detailed.resetInstallReceipts.stateSha256];
     const detail = { ...fixture.detailed }; delete detail.receiptSha256; fixture.detailed = selfHash(detail);
     assert.throws(() => attachRuntimeProtocolEvidence({ score: fixture.score, receipt: fixture.detailed, loadedCorpusIdentitySha256: fixture.corpusIdentitySha256, loadedProtocolVectorsSha256: fixture.protocolVectorsSha256, attemptInputIdentitySha256: fixture.attemptInputIdentitySha256, receiptStore: fixture.receiptStore }), /run name|runName/i);
+  });
+});
+
+test("runtime receipt summaries and evidence require four distinct reset/install receipts", () => {
+  const fixture = attachmentFixture();
+  const duplicateDetailed = structuredClone(fixture.detailed);
+  duplicateDetailed.resetInstallReceipts.tickSha256 = duplicateDetailed.resetInstallReceipts.stateSha256;
+  assert.throws(() => validateRuntimeProtocolEvidenceReceipt(reSelfHash(duplicateDetailed)), /distinct/i);
+
+  const attached = attachRuntimeProtocolEvidence({
+    score: fixture.score,
+    receipt: fixture.detailed,
+    loadedCorpusIdentitySha256: fixture.corpusIdentitySha256,
+    loadedProtocolVectorsSha256: fixture.protocolVectorsSha256,
+    attemptInputIdentitySha256: fixture.attemptInputIdentitySha256,
+    receiptStore: fixture.receiptStore,
+  });
+  const duplicateSummary = structuredClone(attached.runtimeProtocolReceipts);
+  duplicateSummary.resetInstallReceipts.tickSha256 = duplicateSummary.resetInstallReceipts.stateSha256;
+  assert.throws(() => validateRuntimeProtocolReceipts(duplicateSummary, "pass"), /distinct/i);
+});
+
+test("runtime attachment snapshots a resolver receipt before any later resolver call", () => {
+  const fixture = attachmentFixture();
+  const alternateApkSha256 = H.zero;
+  const alternatePackageName = "com.agentbench.transplanted";
+  const replacedResets = Object.fromEntries(Object.entries(fixture.resets).map(([name, receipt]) => [
+    name,
+    reSelfHash({ ...receipt, apkSha256: alternateApkSha256, packageName: alternatePackageName }),
+  ]));
+  fixture.detailed.resetInstallReceipts = {
+    stateSha256: replacedResets.state.receiptSha256,
+    tickSha256: replacedResets.tick.receiptSha256,
+    tableSurfaceSha256: replacedResets.table_surface.receiptSha256,
+    floorSurfaceSha256: replacedResets.floor_surface.receiptSha256,
+  };
+  fixture.detailed = reSelfHash(fixture.detailed);
+
+  const exposedBuild = structuredClone(fixture.build);
+  const records = new Map([
+    [fixture.environment.receiptSha256, fixture.environment],
+    ...Object.values(replacedResets).map((receipt) => [receipt.receiptSha256, receipt]),
+  ]);
+  const receiptStore = {
+    resolve(kind, sha256) {
+      if (kind === "build") return exposedBuild;
+      if (kind === "environment") {
+        exposedBuild.apkSha256 = alternateApkSha256;
+        exposedBuild.packageName = alternatePackageName;
+      }
+      return structuredClone(records.get(sha256));
+    },
+  };
+
+  assert.throws(() => attachRuntimeProtocolEvidence({
+    score: fixture.score,
+    receipt: fixture.detailed,
+    loadedCorpusIdentitySha256: fixture.corpusIdentitySha256,
+    loadedProtocolVectorsSha256: fixture.protocolVectorsSha256,
+    attemptInputIdentitySha256: fixture.attemptInputIdentitySha256,
+    receiptStore,
+  }), /apk|package|artifact|digest/i);
+});
+
+test("contract validators reject sparse arrays at every array boundary", async (t) => {
+  await t.test("rules", () => {
+    const score = scoreRecord();
+    delete score.rules[2];
+    score.structuralAxes.spatialNative = 3;
+    score.structuralScore = 15;
+    score.buildQualifiedStructuralScore = 15;
+    assert.throws(() => validateScoreResultV2(score), /dense|indexed|plain data/i);
+  });
+  await t.test("evidence", () => {
+    const score = scoreRecord();
+    delete score.rules[2].evidence[0];
+    assert.throws(() => validateScoreResultV2(score), /dense|indexed|plain data/i);
+  });
+  await t.test("result files", () => {
+    const submission = submissionRecord("pass");
+    delete submission.resultFiles[0];
+    assert.throws(() => validateSubmissionTests(submission, "pass"), /dense|indexed|plain data/i);
+  });
+  await t.test("trusted command", () => {
+    const receipt = selfHash({
+      version: 1,
+      launcherSha256: H.a,
+      gradleExecutableSha256: H.b,
+      command: ["$PINNED_GRADLE/bin/gradle", "--offline", "--no-daemon", "--no-configuration-cache", "--console=plain", ":app:testDebugUnitTest"],
+      workingDirectory: "submission",
+      exitCode: 0,
+      stdoutBytes: 0,
+      stdoutSha256: H.c,
+      stderrBytes: 0,
+      stderrSha256: H.d,
+    });
+    delete receipt.command[2];
+    assert.throws(() => validateTestExecutionReceipt(receipt), /dense|indexed|plain data/i);
+  });
+});
+
+test("contract validators accept only canonical plain data without invoking accessors", async (t) => {
+  const qualification = () => ({ status: "pass", receiptSha256: H.a });
+  await t.test("accessor", () => {
+    let reads = 0;
+    const value = qualification();
+    Object.defineProperty(value, "status", { enumerable: true, configurable: true, get() { reads += 1; return reads === 1 ? "pass" : "not_run"; } });
+    assert.throws(() => validateBuildQualification(value), /plain data|accessor|data propert/i);
+    assert.equal(reads, 0);
+  });
+  await t.test("symbol", () => {
+    const value = qualification();
+    value[Symbol("hidden")] = true;
+    assert.throws(() => validateBuildQualification(value), /plain data|symbol|own key/i);
+  });
+  await t.test("non-enumerable", () => {
+    const value = qualification();
+    Object.defineProperty(value, "hidden", { value: true });
+    assert.throws(() => validateBuildQualification(value), /plain data|enumerable|own key/i);
+  });
+  await t.test("custom prototype", () => {
+    const value = qualification();
+    Object.setPrototypeOf(value, { inherited: true });
+    assert.throws(() => validateBuildQualification(value), /plain data|prototype/i);
+  });
+  await t.test("null prototype", () => {
+    const value = Object.assign(Object.create(null), qualification());
+    assert.throws(() => validateBuildQualification(value), /plain data|prototype/i);
+  });
+  await t.test("nested array index accessor", () => {
+    let reads = 0;
+    const score = scoreRecord();
+    const row = score.rules[2].evidence[0];
+    Object.defineProperty(score.rules[2].evidence, "0", { enumerable: true, configurable: true, get() { reads += 1; return row; } });
+    assert.throws(() => validateScoreResultV2(score), /plain data|accessor|data propert/i);
+    assert.equal(reads, 0);
+  });
+  await t.test("receipt-store accessor", () => {
+    let reads = 0;
+    const fixture = attachmentFixture();
+    const receiptStore = {};
+    Object.defineProperty(receiptStore, "resolve", { enumerable: true, get() { reads += 1; return fixture.receiptStore.resolve; } });
+    assert.throws(() => attachRuntimeProtocolEvidence({
+      score: fixture.score,
+      receipt: fixture.detailed,
+      loadedCorpusIdentitySha256: fixture.corpusIdentitySha256,
+      loadedProtocolVectorsSha256: fixture.protocolVectorsSha256,
+      attemptInputIdentitySha256: fixture.attemptInputIdentitySha256,
+      receiptStore,
+    }), /plain data|accessor|data propert/i);
+    assert.equal(reads, 0);
+  });
+  await t.test("resolved receipt stateful accessor", () => {
+    let reads = 0;
+    const fixture = attachmentFixture();
+    const build = structuredClone(fixture.build);
+    Object.defineProperty(build, "apkSha256", { enumerable: true, configurable: true, get() { reads += 1; return reads === 1 ? fixture.build.apkSha256 : H.zero; } });
+    const receiptStore = {
+      resolve(kind, sha256) {
+        if (kind === "build") return build;
+        return structuredClone(fixture.records.get(sha256));
+      },
+    };
+    assert.throws(() => attachRuntimeProtocolEvidence({
+      score: fixture.score,
+      receipt: fixture.detailed,
+      loadedCorpusIdentitySha256: fixture.corpusIdentitySha256,
+      loadedProtocolVectorsSha256: fixture.protocolVectorsSha256,
+      attemptInputIdentitySha256: fixture.attemptInputIdentitySha256,
+      receiptStore,
+    }), /plain data|accessor|data propert/i);
+    assert.equal(reads, 0);
   });
 });
 

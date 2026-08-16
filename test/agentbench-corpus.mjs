@@ -391,3 +391,57 @@ test("corpus rejects tool order drift, unknown keys, and unknown protocol items"
     assert.throws(() => loadCorpus(copy), /unknown-item literal/i);
   });
 });
+
+test("workspace tool snapshots reject any full-object drift", async (t) => {
+  const mutations = [
+    ["annotation", (tools) => { tools[0].annotations.readOnlyHint = false; }],
+    ["constraint", (tools) => { tools[1].inputSchema.properties.limit.maximum = 262_143; }],
+    ["nested description", (tools) => { tools[0].outputSchema.properties.entries.items.properties.path.description = "Nested provider text drift."; }],
+  ];
+  for (const [name, mutate] of mutations) await t.test(name, () => {
+    withCorpusCopy((copy) => {
+      mutateJson(path.join(copy, "workspace-tools.json"), mutate);
+      assert.throws(() => loadCorpus(copy), /workspace.*(snapshot|digest|drift)/i);
+    });
+  });
+});
+
+test("complete workspace provider bytes are scanned for prohibited guidance", () => {
+  withCorpusCopy((copy) => {
+    mutateJson(path.join(copy, "workspace-tools.json"), (tools) => {
+      tools[0].outputSchema.properties.entries.items.properties.path.description = "EntityQueryCondition";
+    });
+    assert.throws(() => loadCorpus(copy), /prohibited provider hint/i);
+  });
+});
+
+test("PICO schema confidentiality scan covers digest-only reported identifiers", async (t) => {
+  const reportedCodePoints = [
+    [83, 112, 97, 99, 101, 76, 97, 117, 110, 99, 104, 101, 114],
+    [83, 112, 97, 99, 101, 70, 105, 108, 101, 115],
+    [83, 112, 97, 99, 101, 87, 101, 98, 65, 112, 112],
+    [83, 112, 97, 99, 101, 87, 101, 98, 65, 112, 112, 82, 117, 110, 116, 105, 109, 101],
+    [83, 112, 97, 116, 105, 97, 108, 83, 121, 115, 116, 101, 109, 85, 73],
+    [114, 111, 46, 115, 112, 97, 99, 101, 111, 115, 46, 98, 117, 105, 108, 100, 46, 118, 101, 114, 115, 105, 111, 110],
+    [112, 101, 114, 115, 105, 115, 116, 46, 112, 118, 114, 46, 105, 115, 95, 115, 112, 97, 99, 101, 95, 111, 115, 61, 49],
+  ];
+  for (const [index, codePoints] of reportedCodePoints.entries()) await t.test(`digest ${index + 1}`, () => {
+    withCorpusCopy((copy) => {
+      mutateJson(path.join(copy, "pico-door-tools.json"), (tools) => {
+        tools[0].description += ` ${String.fromCodePoint(...codePoints)}`;
+      });
+      const expectedFailure = index === 5 ? /confidential identifier/i : /confidential identifier digest/i;
+      assert.throws(() => loadCorpus(copy), expectedFailure);
+    });
+  });
+  await t.test("compatibility-normalized digest", () => {
+    withCorpusCopy((copy) => {
+      mutateJson(path.join(copy, "pico-door-tools.json"), (tools) => {
+        const ascii = String.fromCodePoint(...reportedCodePoints[0]);
+        const compatibilityForm = [...ascii].map((character) => String.fromCodePoint(character.codePointAt(0) + 0xfee0)).join("");
+        tools[0].description += ` ${compatibilityForm}`;
+      });
+      assert.throws(() => loadCorpus(copy), /confidential identifier digest/i);
+    });
+  });
+});

@@ -63,7 +63,7 @@ const HASH_RUNTIME_FIELDS = [
 ];
 
 function isRecord(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
+  return value !== null && typeof value === "object" && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 }
 
 function deepFreeze(value) {
@@ -72,6 +72,80 @@ function deepFreeze(value) {
     Object.freeze(value);
   }
   return value;
+}
+
+function snapshotPlainData(value, label, ancestors = new WeakSet()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || Object.is(value, -0)) throw new Error(`${label} must contain canonical finite plain data`);
+    return value;
+  }
+  if (typeof value !== "object") throw new Error(`${label} must contain only canonical plain data`);
+
+  const array = Array.isArray(value);
+  const expectedPrototype = array ? Array.prototype : Object.prototype;
+  if (Object.getPrototypeOf(value) !== expectedPrototype) throw new Error(`${label} has a non-canonical plain-data prototype`);
+  if (ancestors.has(value)) throw new Error(`${label} must not contain a cycle`);
+  ancestors.add(value);
+  try {
+    const ownKeys = Reflect.ownKeys(value);
+    if (ownKeys.some((key) => typeof key !== "string")) throw new Error(`${label} must not contain symbol own keys`);
+    if (array) {
+      const length = value.length;
+      if (ownKeys.length !== length + 1 || !ownKeys.includes("length")) throw new Error(`${label} must be a dense array with only own indexed data`);
+      const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+      if (!lengthDescriptor || !Object.hasOwn(lengthDescriptor, "value") || lengthDescriptor.value !== length) throw new Error(`${label}.length must be an own data property`);
+      const copy = new Array(length);
+      for (let index = 0; index < length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw new Error(`${label}[${index}] must be an enumerable own data property`);
+        copy[index] = snapshotPlainData(descriptor.value, `${label}[${index}]`, ancestors);
+      }
+      return deepFreeze(copy);
+    }
+
+    const copy = {};
+    for (const key of ownKeys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw new Error(`${label}.${key} must be an enumerable own data property`);
+      Object.defineProperty(copy, key, {
+        value: snapshotPlainData(descriptor.value, `${label}.${key}`, ancestors),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+    return deepFreeze(copy);
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+function snapshotAttachmentInput(value) {
+  const label = "runtime attachment input";
+  if (!isRecord(value)) throw new Error(`${label} must have the canonical plain-data object prototype`);
+  const expected = new Set(["score", "receipt", "loadedCorpusIdentitySha256", "loadedProtocolVectorsSha256", "attemptInputIdentitySha256", "receiptStore"]);
+  const ownKeys = Reflect.ownKeys(value);
+  if (ownKeys.some((key) => typeof key !== "string")) throw new Error(`${label} must not contain symbol own keys`);
+  if (ownKeys.length !== expected.size || ownKeys.some((key) => !expected.has(key))) throw new Error(`${label} contains unknown or missing own keys`);
+  const descriptors = Object.fromEntries(ownKeys.map((key) => [key, Object.getOwnPropertyDescriptor(value, key)]));
+  for (const [key, descriptor] of Object.entries(descriptors)) {
+    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, "value")) throw new Error(`${label}.${key} must be an enumerable own data property`);
+  }
+  const store = descriptors.receiptStore.value;
+  if (!isRecord(store)) throw new Error("receiptStore must have the canonical plain-data object prototype");
+  const storeKeys = Reflect.ownKeys(store);
+  if (storeKeys.length !== 1 || storeKeys[0] !== "resolve") throw new Error("receiptStore must contain only an enumerable own resolve data property");
+  const resolveDescriptor = Object.getOwnPropertyDescriptor(store, "resolve");
+  if (!resolveDescriptor?.enumerable || !Object.hasOwn(resolveDescriptor, "value") || typeof resolveDescriptor.value !== "function") throw new Error("receiptStore.resolve must be an enumerable own function data property");
+  return Object.freeze({
+    score: snapshotPlainData(descriptors.score.value, `${label}.score`),
+    receipt: snapshotPlainData(descriptors.receipt.value, `${label}.receipt`),
+    loadedCorpusIdentitySha256: snapshotPlainData(descriptors.loadedCorpusIdentitySha256.value, `${label}.loadedCorpusIdentitySha256`),
+    loadedProtocolVectorsSha256: snapshotPlainData(descriptors.loadedProtocolVectorsSha256.value, `${label}.loadedProtocolVectorsSha256`),
+    attemptInputIdentitySha256: snapshotPlainData(descriptors.attemptInputIdentitySha256.value, `${label}.attemptInputIdentitySha256`),
+    receiptStore: Object.freeze({ resolve: resolveDescriptor.value }),
+  });
 }
 
 function exactKeys(value, label, keys) {
@@ -126,6 +200,7 @@ function cloneAndFreeze(value) {
 }
 
 export function validateBuildQualification(value) {
+  value = snapshotPlainData(value, "build qualification");
   exactKeys(value, "build qualification", new Set(["status", "receiptSha256"]));
   if (!BUILD_STATUSES.has(value.status)) throw new Error("build qualification has an invalid status");
   assertHash(value.receiptSha256, "build qualification receipt", true);
@@ -174,6 +249,7 @@ function validateResultFiles(files) {
 
 export function validateSubmissionTests(value, buildStatus) {
   if (!BUILD_STATUSES.has(buildStatus)) throw new Error("invalid build status for submission tests");
+  value = snapshotPlainData(value, "submissionTests");
   exactKeys(value, "submissionTests", new Set([
     "evidenceClass", "status", "testCount", "passedCount", "failureCount", "errorCount",
     "skippedCount", "preBuildResultsSha256", "resultFiles", "testExecutionReceiptSha256",
@@ -217,6 +293,7 @@ export function validateSubmissionTests(value, buildStatus) {
 }
 
 export function validateTestExecutionReceipt(value) {
+  value = snapshotPlainData(value, "test execution receipt");
   exactKeys(value, "test execution receipt", new Set([
     "version", "launcherSha256", "gradleExecutableSha256", "command", "workingDirectory",
     "exitCode", "stdoutBytes", "stdoutSha256", "stderrBytes", "stderrSha256", "receiptSha256",
@@ -272,6 +349,7 @@ function validateChecks(checks, runStatus) {
 
 export function validateRuntimeProtocolReceipts(value, buildStatus) {
   if (!BUILD_STATUSES.has(buildStatus)) throw new Error("invalid build status for runtime protocol");
+  value = snapshotPlainData(value, "runtimeProtocolReceipts");
   exactKeys(value, "runtimeProtocolReceipts", RUNTIME_KEYS);
   if (value.protocolVersion !== 1 || value.evidenceClass !== "app_self_reported_protocol" || !RUNTIME_RUN_STATUSES.has(value.runStatus)) throw new Error("runtime protocol vocabulary drift");
   const checks = validateChecks(value.checks, value.runStatus);
@@ -280,6 +358,7 @@ export function validateRuntimeProtocolReceipts(value, buildStatus) {
   if (value.resetInstallReceipts !== null) {
     exactKeys(value.resetInstallReceipts, "runtime reset/install receipts", new Set(["stateSha256", "tickSha256", "tableSurfaceSha256", "floorSurfaceSha256"]));
     for (const [key, hash] of Object.entries(value.resetInstallReceipts)) assertHash(hash, `runtime reset/install ${key}`);
+    if (new Set(Object.values(value.resetInstallReceipts)).size !== 4) throw new Error("runtime reset/install receipt hashes must be distinct");
   }
   if (buildStatus === "fail" && value.runStatus !== "not_run_build_failed") throw new Error("failed build permits only not_run_build_failed runtime protocol");
   if (buildStatus === "not_run" && value.runStatus !== "not_run") throw new Error("not-run build permits only not_run runtime protocol");
@@ -315,6 +394,7 @@ export function validateRuntimeProtocolReceipts(value, buildStatus) {
 }
 
 export function validateRuntimeEnvironmentReceipt(value) {
+  value = snapshotPlainData(value, "runtime environment receipt");
   exactKeys(value, "runtime environment receipt", new Set([
     "version", "status", "hostPlatform", "corpusIdentitySha256", "attemptInputIdentitySha256",
     "reasonCode", "emulatorIdentitySha256", "resetDriverSha256", "tableFixtureSha256",
@@ -334,6 +414,7 @@ export function validateRuntimeEnvironmentReceipt(value) {
 }
 
 export function validateRuntimeProtocolEvidenceReceipt(value) {
+  value = snapshotPlainData(value, "runtime protocol evidence receipt");
   exactKeys(value, "runtime protocol evidence receipt", new Set([
     "version", "protocolVersion", "corpusIdentitySha256", "attemptInputIdentitySha256",
     "buildReceiptSha256", "apkSha256", "packageName", "protocolVectorsSha256",
@@ -345,6 +426,7 @@ export function validateRuntimeProtocolEvidenceReceipt(value) {
   assertBoundedString(value.packageName, "runtime protocol evidence packageName", 255, { trimmed: true, singleLine: true });
   exactKeys(value.resetInstallReceipts, "runtime protocol evidence reset/install receipts", new Set(["stateSha256", "tickSha256", "tableSurfaceSha256", "floorSurfaceSha256"]));
   for (const [key, hash] of Object.entries(value.resetInstallReceipts)) assertHash(hash, `runtime protocol evidence reset ${key}`);
+  if (new Set(Object.values(value.resetInstallReceipts)).size !== 4) throw new Error("runtime protocol evidence reset/install receipt hashes must be distinct");
   exactKeys(value.checks, "runtime protocol evidence checks", new Set(["stateTranscript", "surfaceTranscript", "tickTranscript"]));
   for (const status of Object.values(value.checks)) if (!["pass", "fail"].includes(status)) throw new Error("runtime protocol evidence checks must pass or fail");
   verifySelfHash(value, "runtime protocol evidence receipt");
@@ -352,6 +434,7 @@ export function validateRuntimeProtocolEvidenceReceipt(value) {
 }
 
 function validateBuildArtifactReceipt(value, expectedHash) {
+  value = snapshotPlainData(value, "build artifact receipt");
   exactKeys(value, "build artifact receipt", new Set(["version", "status", "corpusIdentitySha256", "attemptInputIdentitySha256", "apkSha256", "packageName", "receiptSha256"]));
   if (value.version !== 1 || value.status !== "pass") throw new Error("build artifact receipt must be version 1 pass");
   for (const key of ["corpusIdentitySha256", "attemptInputIdentitySha256", "apkSha256"]) assertHash(value[key], `build artifact ${key}`);
@@ -362,6 +445,7 @@ function validateBuildArtifactReceipt(value, expectedHash) {
 }
 
 function validateResetInstallReceipt(value, expectedHash) {
+  value = snapshotPlainData(value, "reset/install receipt");
   exactKeys(value, "reset/install receipt", new Set([
     "version", "runName", "corpusIdentitySha256", "attemptInputIdentitySha256",
     "buildReceiptSha256", "apkSha256", "packageName", "resetDriverSha256", "fixtureKind",
@@ -383,7 +467,7 @@ function resolveReceipt(store, kind, sha256, label) {
 }
 
 export function attachRuntimeProtocolEvidence(input) {
-  exactKeys(input, "runtime attachment input", new Set(["score", "receipt", "loadedCorpusIdentitySha256", "loadedProtocolVectorsSha256", "attemptInputIdentitySha256", "receiptStore"]));
+  input = snapshotAttachmentInput(input);
   assertHash(input.loadedCorpusIdentitySha256, "loaded corpus identity");
   assertHash(input.loadedProtocolVectorsSha256, "loaded protocol vector identity");
   assertHash(input.attemptInputIdentitySha256, "attempt input identity");
@@ -510,6 +594,7 @@ function validateRule(value, definition, index) {
 }
 
 export function validateScoreResultV2(value) {
+  value = snapshotPlainData(value, "score result");
   exactKeys(value, "score result", new Set([
     "resultSchemaVersion", "rubricVersion", "rules", "structuralAxes", "structuralScore",
     "build", "buildQualifiedStructuralScore", "submissionTests", "runtimeProtocolReceipts",
