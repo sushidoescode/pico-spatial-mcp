@@ -21,6 +21,14 @@ function assertString(value, label) {
   if (typeof value !== "string" || value.length === 0) throw new Error(`${label} must be a non-empty string`);
 }
 
+function deepFreeze(value) {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const nested of Object.values(value)) deepFreeze(nested);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 function assertIds(items, label) {
   const ids = new Set();
   for (const item of items) {
@@ -30,12 +38,16 @@ function assertIds(items, label) {
   }
 }
 
-function parseJson(filePath, label) {
+function parseJsonBytes(bytes, label) {
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return JSON.parse(bytes.toString("utf8"));
   } catch (error) {
     throw new Error(`${label} must be valid JSON: ${error.message}`);
   }
+}
+
+function parseJson(filePath, label) {
+  return parseJsonBytes(fs.readFileSync(filePath), label);
 }
 
 function validateCorpus(corpus) {
@@ -108,11 +120,10 @@ function counterStream(seed, label) {
   return () => crypto.createHash("sha256").update(`${String(seed)}\0${label}\0${String(counter++)}`).digest().readUInt32BE(0) / 2 ** 32;
 }
 
-function fisherYates(items, random, reverseIndex = false) {
+function fisherYates(items, random) {
   const result = [...items];
   for (let index = result.length - 1; index > 0; index -= 1) {
-    const value = random();
-    const selected = reverseIndex ? (value === 0 ? index : Math.floor((1 - value) * (index + 1))) : Math.floor(value * (index + 1));
+    const selected = Math.floor(random() * (index + 1));
     [result[index], result[selected]] = [result[selected], result[index]];
   }
   return result;
@@ -124,7 +135,8 @@ export function loadCorpus(corpusDir) {
   const promptPath = path.join(directory, "prompt.md");
   const packagePath = path.join(directory, "pico-cli-toolchain", "package.json");
   const lockPath = path.join(directory, "pico-cli-toolchain", "package-lock.json");
-  const corpus = parseJson(corpusPath, "corpus");
+  const corpusBytes = fs.readFileSync(corpusPath);
+  const corpus = parseJsonBytes(corpusBytes, "corpus");
   const promptBytes = fs.readFileSync(promptPath);
   const prompt = promptBytes.toString("utf8");
   const packageBytes = fs.readFileSync(packagePath);
@@ -137,8 +149,8 @@ export function loadCorpus(corpusDir) {
     if (prompt.includes(toolName)) throw new Error(`prompt contains treatment-specific tool: ${toolName}`);
   }
   validateToolchain(packageJson, lockfile, corpus);
-  const identity = canonicalIdentity({ corpus, promptBytes: promptBytes.toString("base64"), toolchainPackageBytes: packageBytes.toString("base64"), toolchainLockBytes: lockBytes.toString("base64") });
-  return Object.freeze({ corpus: Object.freeze(corpus), prompt, identity: Object.freeze(identity) });
+  const identity = canonicalIdentity({ corpus, corpusBytes: corpusBytes.toString("base64"), promptBytes: promptBytes.toString("base64"), toolchainPackageBytes: packageBytes.toString("base64"), toolchainLockBytes: lockBytes.toString("base64") });
+  return Object.freeze({ corpus: deepFreeze(corpus), prompt, identity: Object.freeze(identity) });
 }
 
 export function renderPrompt(loaded, variantId) {
@@ -156,11 +168,14 @@ export function renderPrompt(loaded, variantId) {
 
 export function createPreliminarySchedule(loaded) {
   const { corpus } = loaded;
-  const primaryLanes = corpus.lanes.filter((lane) => lane.role === "primary").map((lane) => lane.id);
+  const primaryLanes = corpus.lanes.filter((lane) => lane.role === "primary");
+  const primaryLaneCandidates = [...primaryLanes]
+    .sort((left, right) => Number(right.treatment === "bare") - Number(left.treatment === "bare"))
+    .map((lane) => lane.id);
   const controlLanes = corpus.lanes.filter((lane) => lane.role === "control").map((lane) => lane.id);
   const orderedVariants = fisherYates(corpus.variants.map((variant) => variant.id), counterStream(corpus.seed, "preliminary-primary-order"));
   const laneRandom = counterStream(corpus.seed, "preliminary-primary-lanes");
-  const primary = orderedVariants.map((variantId) => ({ variantId, lanes: fisherYates(primaryLanes, laneRandom, true) }));
+  const primary = orderedVariants.map((variantId) => ({ variantId, lanes: fisherYates(primaryLaneCandidates, laneRandom) }));
   const controlCandidates = controlLanes.flatMap((laneId) => corpus.controlVariantIds.map((variantId) => ({ variantId, laneId })));
   const controls = fisherYates(controlCandidates, counterStream(corpus.seed, "preliminary-controls"));
   return Object.freeze({ primary: Object.freeze(primary), controls: Object.freeze(controls) });
