@@ -68,7 +68,7 @@ that:
 1. Load `pico_first_light` with the user's brief.
 2. Run `pico_doctor`; follow every fix.
 3. Run the two-step `pico_build_app` protocol.
-4. Inspect the exact returned build capture.
+4. Inspect the exact returned `pico_build_app.capture` build capture.
 5. Use `pico_record` only for evidence actually observed, then ask `pico_next`.
 
 For the `pico_spatial_dev_loop` prompt and low-level tools, set `PICO_MCP_SURFACE=full`.

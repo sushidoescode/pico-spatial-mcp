@@ -272,8 +272,8 @@ PICO_MCP_SURFACE=doors claude mcp add pico-spatial -- node /path/to/PICO-MCP/dis
 ## How agents use it
 
 The default doors surface exposes `pico_first_light`, a short loop over intent-level tools:
-doctor → two-step AppSpec authoring/build → inspect the exact receipt-bound capture → record only
-what was actually seen. The full surface additionally exposes the five advanced orchestration
+doctor → two-step AppSpec authoring/build → inspect the exact receipt-bound `pico_build_app.capture`
+→ record only what was actually seen. The full surface additionally exposes the five advanced orchestration
 prompts, including `pico_spatial_dev_loop`.
 
 Two representative full-surface examples:
