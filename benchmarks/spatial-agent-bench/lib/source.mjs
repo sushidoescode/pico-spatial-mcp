@@ -11,15 +11,38 @@ const UTF8 = new TextDecoder("utf-8", { fatal: true });
 /** @typedef {{path:string, absolutePath:string, kind:"kotlin"|"gradle"|"manifest", original:string, structural:string}} SourceFile */
 /** @typedef {{pluginIds:string[], moduleCoordinates:string[], versions:Record<string,string>, applicationIds:string[]}} GradleFacts */
 /** @typedef {{applicationName:string|null, activities:string[], metadata:Array<{name:string,value:string|null,resource:string|null}>}} ManifestFacts */
-/** @typedef {{projectDir:string, files:SourceFile[], totalBytes:number, facts:{gradle:GradleFacts,manifest:ManifestFacts}}} SourceIndex */
+/** @typedef {{kind:string,value:string,key?:string,alias?:string|null,version?:string|null,versionRef?:string|null,metadata?:{name:string,value:string|null,resource:string|null},path:string,line:number,excerpt:string}} FactEvidence */
+/** @typedef {{projectDir:string, files:SourceFile[], totalBytes:number, facts:{gradle:GradleFacts,manifest:ManifestFacts},factEvidence:FactEvidence[]}} SourceIndex */
 
 function fail(message) {
   throw new Error(`submission source rejected: ${message}`);
 }
 
+function compareStrings(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function evidenceAt(source, pathName, offset, fact) {
+  const line = source.slice(0, offset).split("\n").length;
+  return { ...fact, path: pathName, line, excerpt: source.split(/\r?\n/)[line - 1].trim() };
+}
+
+function freezeFact(fact) {
+  if (fact.metadata) Object.freeze(fact.metadata);
+  return Object.freeze(fact);
+}
+
 function inside(root, candidate) {
   const relative = path.relative(root, candidate);
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+}
+
+function sameStatIdentity(left, right) {
+  return left.dev === right.dev
+    && left.ino === right.ino
+    && left.size === right.size
+    && left.mtimeMs === right.mtimeMs
+    && left.ctimeMs === right.ctimeMs;
 }
 
 function selectedKind(relativePath) {
@@ -36,10 +59,48 @@ function maskRange(characters, start, end) {
   }
 }
 
-function maskCode(source, label) {
+function slashyCanStart(source, index) {
+  let previous = index - 1;
+  while (previous >= 0 && source[previous] !== "\n" && /[\t\r ]/.test(source[previous])) previous -= 1;
+  if (previous < 0 || source[previous] === "\n" || "=([{,:;!&|?".includes(source[previous])) return true;
+  if (source[previous] === ">" && source[previous - 1] === "-") return true;
+  const keyword = /([A-Za-z_$][A-Za-z0-9_$]*)$/.exec(source.slice(0, previous + 1))?.[1];
+  return ["assert", "case", "print", "println", "return", "throw"].includes(keyword);
+}
+
+function slashyEnd(source, start) {
+  let index = start;
+  while (index < source.length) {
+    if (source[index] === "\\") index += 2;
+    else if (source[index] === "/") return index;
+    else index += 1;
+  }
+  return -1;
+}
+
+function dollarSlashyEnd(source, start) {
+  for (let index = start; index < source.length - 1; index += 1) {
+    if (!source.startsWith("/$", index)) continue;
+    let dollars = 0;
+    for (let previous = index - 1; previous >= start && source[previous] === "$"; previous -= 1) dollars += 1;
+    if (dollars % 2 === 0) return index;
+    index += 1;
+  }
+  return -1;
+}
+
+function maskCode(source, label, groovy = false) {
   const characters = source.split("");
   let index = 0;
   while (index < source.length) {
+    if (groovy && source.startsWith("$/", index)) {
+      const start = index;
+      const closing = dollarSlashyEnd(source, index + 2);
+      if (closing < 0) fail(`${label} has an unterminated dollar-slashy string`);
+      index = closing + 2;
+      maskRange(characters, start, index);
+      continue;
+    }
     if (source.startsWith("//", index)) {
       const start = index;
       index += 2;
@@ -74,6 +135,23 @@ function maskCode(source, label) {
       maskRange(characters, start, index);
       continue;
     }
+    if (groovy && source.startsWith("'''", index)) {
+      const start = index;
+      const closing = source.indexOf("'''", index + 3);
+      if (closing < 0) fail(`${label} has an unterminated triple-single string`);
+      index = closing + 3;
+      maskRange(characters, start, index);
+      continue;
+    }
+    if (groovy && source[index] === "/" && slashyCanStart(source, index)) {
+      const start = index;
+      const closing = slashyEnd(source, index + 1);
+      if (closing < 0) fail(`${label} has an unterminated slashy string`);
+      index = closing + 1;
+      maskRange(characters, start, index);
+      continue;
+    }
+    if (groovy && source[index] === "/") fail(`${label} has ambiguous slash syntax`);
     if (source[index] === '"' || source[index] === "'") {
       const start = index;
       const quote = source[index];
@@ -298,7 +376,7 @@ function parseCatalog(source, label) {
     const target = section === "versions" ? versions : section === "libraries" ? libraries : plugins;
     if (target.has(normalized)) fail(`${label}:${lineIndex + 1} contains duplicate alias ${originalAlias}`);
     if (section === "versions") {
-      target.set(normalized, { alias: originalAlias, value: parseTomlQuoted(assignment[2].trim(), `${label}:${lineIndex + 1}`) });
+      target.set(normalized, { alias: originalAlias, value: parseTomlQuoted(assignment[2].trim(), `${label}:${lineIndex + 1}`), path: label, line: lineIndex + 1, excerpt: source.split(/\r?\n/)[lineIndex].trim() });
       continue;
     }
     const fields = parseInlineTable(assignment[2].trim(), `${label}:${lineIndex + 1}`);
@@ -310,11 +388,11 @@ function parseCatalog(source, label) {
       if (hasModule === hasPair || fields.has("group") !== fields.has("name")) fail(`${label}:${lineIndex + 1} must define exactly module or group/name`);
       const coordinate = hasModule ? fields.get("module") : `${fields.get("group")}:${fields.get("name")}`;
       if (!/^[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+$/.test(coordinate)) fail(`${label}:${lineIndex + 1} has a dynamic or malformed module coordinate`);
-      target.set(normalized, { alias: originalAlias, coordinate, versionRef: fields.get("version.ref") ?? null });
+      target.set(normalized, { alias: originalAlias, coordinate, versionRef: fields.get("version.ref") ?? null, path: label, line: lineIndex + 1, excerpt: source.split(/\r?\n/)[lineIndex].trim() });
     } else {
       const id = fields.get("id");
       if (!id || !/^[A-Za-z0-9_.-]+$/.test(id)) fail(`${label}:${lineIndex + 1} has a dynamic or malformed plugin id`);
-      target.set(normalized, { alias: originalAlias, id, versionRef: fields.get("version.ref") ?? null });
+      target.set(normalized, { alias: originalAlias, id, versionRef: fields.get("version.ref") ?? null, path: label, line: lineIndex + 1, excerpt: source.split(/\r?\n/)[lineIndex].trim() });
     }
   }
   for (const entry of [...libraries.values(), ...plugins.values()]) {
@@ -325,10 +403,12 @@ function parseCatalog(source, label) {
 
 function readQuotedToken(source, start, label) {
   const quote = source[start];
-  if (quote === '"' && source.startsWith('"""', start)) {
-    const closing = source.indexOf('"""', start + 3);
+  if ((quote === '"' && source.startsWith('"""', start)) || (quote === "'" && source.startsWith("'''", start))) {
+    const delimiter = quote.repeat(3);
+    const closing = source.indexOf(delimiter, start + 3);
     if (closing < 0) fail(`${label} has an unterminated raw string`);
-    return { type: "string", value: source.slice(start + 3, closing), start, end: closing + 3, dynamic: source.slice(start + 3, closing).includes("$") };
+    const value = source.slice(start + 3, closing);
+    return { type: "string", value, start, end: closing + 3, dynamic: quote === '"' && value.includes("$") };
   }
   let value = "";
   let index = start + 1;
@@ -348,10 +428,19 @@ function readQuotedToken(source, start, label) {
 
 function tokenizeGradle(source, label) {
   const tokens = [];
+  const groovy = label.endsWith(".gradle");
   let index = 0;
   while (index < source.length) {
     if (/\s/.test(source[index])) {
       index += 1;
+      continue;
+    }
+    if (groovy && source.startsWith("$/", index)) {
+      const closing = dollarSlashyEnd(source, index + 2);
+      if (closing < 0) fail(`${label} has an unterminated dollar-slashy string`);
+      const value = source.slice(index + 2, closing);
+      tokens.push({ type: "string", value, start: index, end: closing + 2, dynamic: value.includes("$") });
+      index = closing + 2;
       continue;
     }
     if (source.startsWith("//", index)) {
@@ -376,6 +465,15 @@ function tokenizeGradle(source, label) {
       index = token.end;
       continue;
     }
+    if (groovy && source[index] === "/" && slashyCanStart(source, index)) {
+      const closing = slashyEnd(source, index + 1);
+      if (closing < 0) fail(`${label} has an unterminated slashy string`);
+      const value = source.slice(index + 1, closing);
+      tokens.push({ type: "string", value, start: index, end: closing + 1, dynamic: value.includes("$") });
+      index = closing + 1;
+      continue;
+    }
+    if (groovy && source[index] === "/") fail(`${label} has ambiguous slash syntax`);
     const identifier = /^[A-Za-z_$][A-Za-z0-9_$-]*/.exec(source.slice(index));
     if (identifier) {
       tokens.push({ type: "ident", value: identifier[0], start: index, end: index + identifier[0].length });
@@ -409,6 +507,13 @@ function blockLabel(tokens, braceIndex) {
   return tokens[index]?.type === "ident" ? tokens[index].value : null;
 }
 
+function directDslStatement(tokens, index, source) {
+  const previous = tokens[index - 1];
+  if (!previous || previous.value === "{" || previous.value === ";") return true;
+  const continuation = new Set([".", "&", "?", "*", ":", "+", "-", "/", "%", "=", "|", "^", "!", "<", ">", ",", "(", "["]);
+  return !continuation.has(previous.value) && source.slice(previous.end, tokens[index].start).includes("\n");
+}
+
 function catalogReference(tokens, start) {
   if (tokens[start]?.type !== "ident" || tokens[start].value !== "libs") return null;
   const parts = ["libs"];
@@ -431,7 +536,13 @@ function closingParen(tokens, opening, label) {
   fail(`${label} has an unclosed Gradle call`);
 }
 
-function resolveCatalog(tokens, start, category, catalog, facts, label) {
+function addVersionFact(entry, facts) {
+  if (facts.versionEvidence.has(entry.alias)) return;
+  facts.versionEvidence.add(entry.alias);
+  facts.evidence.push({ kind: "gradle.version", key: entry.alias, value: entry.value, path: entry.path, line: entry.line, excerpt: entry.excerpt });
+}
+
+function resolveCatalog(tokens, start, category, catalog, facts, source, label, useOffset, record = true) {
   const reference = catalogReference(tokens, start);
   if (!reference || reference.parts.length < 2) fail(`${label} has a malformed catalog alias`);
   let actualCategory = "libraries";
@@ -443,32 +554,96 @@ function resolveCatalog(tokens, start, category, catalog, facts, label) {
     fail(`${label} uses unsupported catalog reference ${reference.parts.join(".")}`);
   }
   if (actualCategory !== category) fail(`${label} uses a ${actualCategory} alias where ${category} is required`);
-  const entry = catalog[category].get(aliasKey(aliasParts.join(".")));
+  const alias = aliasKey(aliasParts.join("."));
+  const entry = catalog[category].get(alias);
   if (!entry) fail(`${label} has unresolved catalog alias ${reference.parts.join(".")}`);
-  if (category === "plugins") facts.pluginIds.add(entry.id);
-  else facts.moduleCoordinates.add(entry.coordinate);
+  const value = category === "plugins" ? entry.id : entry.coordinate;
+  let version = null;
+  if (entry.versionRef !== null) {
+    const versionEntry = catalog.versions.get(aliasKey(entry.versionRef));
+    if (!versionEntry) fail(`${label} has unresolved version reference ${entry.versionRef}`);
+    version = versionEntry.value;
+    if (record) {
+      facts.versions.set(versionEntry.alias, versionEntry.value);
+      addVersionFact(versionEntry, facts);
+    }
+  }
+  if (record) {
+    if (category === "plugins") facts.pluginIds.add(value);
+    else facts.moduleCoordinates.add(value);
+    facts.evidence.push(evidenceAt(source, label, useOffset, {
+      kind: category === "plugins" ? "gradle.plugin" : "gradle.dependency",
+      value,
+      alias,
+      version,
+      versionRef: entry.versionRef,
+    }));
+  }
   return reference.end;
 }
 
-function addModuleCoordinate(token, facts, label) {
+function pluginSuffixValue(tokens, cursor, keyword, label) {
+  if (tokens[cursor]?.value === "(") {
+    const close = closingParen(tokens, cursor, label);
+    if (close !== cursor + 2) fail(`${label} has unsupported plugin ${keyword} arguments`);
+    return { value: tokens[cursor + 1], end: close + 1 };
+  }
+  return { value: tokens[cursor], end: cursor + 1 };
+}
+
+function parsePluginSuffix(tokens, start, source, label) {
+  let cursor = start;
+  let previousEnd = tokens[start - 1]?.end ?? 0;
+  let version = null;
+  let applied = true;
+  const seen = new Set();
+  while (cursor < tokens.length) {
+    const token = tokens[cursor];
+    if (token.value === ";" || token.value === "}" || source.slice(previousEnd, token.start).includes("\n")) break;
+    if (token.type !== "ident" || !["version", "apply"].includes(token.value)) fail(`${label} has an unsupported plugin declaration suffix`);
+    if (seen.has(token.value)) fail(`${label} has duplicate plugin ${token.value} suffix`);
+    seen.add(token.value);
+    const parsed = pluginSuffixValue(tokens, cursor + 1, token.value, label);
+    if (token.value === "version") {
+      if (!parsed.value || parsed.value.type !== "string" || parsed.value.dynamic || parsed.value.value.length === 0) fail(`${label} has a dynamic or malformed plugin version`);
+      version = parsed.value.value;
+    } else {
+      if (!parsed.value || parsed.value.type !== "ident" || !["true", "false"].includes(parsed.value.value)) fail(`${label} has a dynamic or malformed plugin apply suffix`);
+      applied = parsed.value.value === "true";
+    }
+    previousEnd = tokens[parsed.end - 1].end;
+    cursor = parsed.end;
+  }
+  return { version, applied, end: cursor };
+}
+
+function addModuleCoordinate(token, facts, source, label, useOffset) {
   if (token.type !== "string" || token.dynamic) fail(`${label} has a dynamic or unsupported dependency value`);
   const pieces = token.value.split(":");
   if (pieces.length < 2 || !pieces[0] || !pieces[1] || !/^[A-Za-z0-9_.-]+$/.test(pieces[0]) || !/^[A-Za-z0-9_.-]+$/.test(pieces[1])) fail(`${label} has a malformed dependency coordinate`);
-  facts.moduleCoordinates.add(`${pieces[0]}:${pieces[1]}`);
+  const coordinate = `${pieces[0]}:${pieces[1]}`;
+  facts.moduleCoordinates.add(coordinate);
+  facts.evidence.push(evidenceAt(source, label, useOffset, {
+    kind: "gradle.dependency",
+    value: coordinate,
+    alias: null,
+    version: pieces[2] ?? null,
+    versionRef: null,
+  }));
 }
 
-function parseDependencyArgument(tokens, start, catalog, facts, label) {
+function parseDependencyArgument(tokens, start, catalog, facts, source, label, useOffset) {
   const argument = tokens[start];
   if (!argument) fail(`${label} has an empty dependency call`);
   if (argument.type === "string") {
-    addModuleCoordinate(argument, facts, label);
+    addModuleCoordinate(argument, facts, source, label, useOffset);
     return start + 1;
   }
-  if (argument.value === "libs") return resolveCatalog(tokens, start, "libraries", catalog, facts, label);
+  if (argument.value === "libs") return resolveCatalog(tokens, start, "libraries", catalog, facts, source, label, useOffset);
   if (["platform", "enforcedPlatform"].includes(argument.value)) {
     if (tokens[start + 1]?.value !== "(") fail(`${label} has a malformed dependency platform`);
     const close = closingParen(tokens, start + 1, label);
-    const consumed = parseDependencyArgument(tokens, start + 2, catalog, facts, label);
+    const consumed = parseDependencyArgument(tokens, start + 2, catalog, facts, source, label, useOffset);
     if (consumed !== close) fail(`${label} has unsupported dependency platform arguments`);
     return close + 1;
   }
@@ -484,41 +659,62 @@ function parseGradle(source, label, catalog, facts) {
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
     if (token.value === "{") {
-      contexts.push(blockLabel(tokens, index));
+      const labelName = blockLabel(tokens, index);
+      if (labelName === "dependencies" || labelName === "plugins") {
+        const handlerIndex = index - 1;
+        const exactTopLevelHandler = contexts.length === 0
+          && tokens[handlerIndex]?.type === "ident"
+          && tokens[handlerIndex].value === labelName
+          && directDslStatement(tokens, handlerIndex, source);
+        if (!exactTopLevelHandler) fail(`${label} has qualified or nested ${labelName} outside recognized top-level Gradle scope`);
+      }
+      contexts.push(labelName);
       continue;
     }
     if (token.value === "}") {
       contexts.pop();
       continue;
     }
-    const inPlugins = contexts.includes("plugins");
-    const inDependencies = contexts.includes("dependencies");
-    if (token.type === "ident" && token.value === "id" && inPlugins) {
+    const inPlugins = contexts.length === 1 && contexts[0] === "plugins";
+    const inDependencies = contexts.length === 1 && contexts[0] === "dependencies";
+    if (token.type === "ident" && token.value === "id" && inPlugins && (tokens[index + 1]?.value === "(" || tokens[index + 1]?.type === "string")) {
+      if (!directDslStatement(tokens, index, source)) fail(`${label} has a qualified or indirect fake plugin id call`);
       const parenthesized = tokens[index + 1]?.value === "(";
       const value = parenthesized ? tokens[index + 2] : tokens[index + 1];
       if (!value || value.type !== "string" || value.dynamic || !/^[A-Za-z0-9_.-]+$/.test(value.value)) fail(`${label} has a dynamic or malformed plugin id`);
-      if (parenthesized && closingParen(tokens, index + 1, label) !== index + 3) fail(`${label} has unsupported plugin id arguments`);
-      facts.pluginIds.add(value.value);
+      const end = parenthesized ? closingParen(tokens, index + 1, label) + 1 : index + 2;
+      if (parenthesized && end !== index + 4) fail(`${label} has unsupported plugin id arguments`);
+      const suffix = parsePluginSuffix(tokens, end, source, label);
+      if (suffix.applied) {
+        facts.pluginIds.add(value.value);
+        facts.evidence.push(evidenceAt(source, label, token.start, { kind: "gradle.plugin", value: value.value, alias: null, version: suffix.version, versionRef: null }));
+      }
+      index = suffix.end - 1;
     }
-    if (token.type === "ident" && token.value === "alias" && inPlugins) {
-      if (tokens[index + 1]?.value !== "(") fail(`${label} has a malformed plugin alias call`);
+    if (token.type === "ident" && token.value === "alias" && inPlugins && tokens[index + 1]?.value === "(") {
+      if (!directDslStatement(tokens, index, source)) fail(`${label} has a qualified or indirect fake plugin alias call`);
       const close = closingParen(tokens, index + 1, label);
-      const consumed = resolveCatalog(tokens, index + 2, "plugins", catalog, facts, label);
+      const suffix = parsePluginSuffix(tokens, close + 1, source, label);
+      if (suffix.version !== null) fail(`${label} has an unsupported plugin alias version suffix`);
+      const consumed = resolveCatalog(tokens, index + 2, "plugins", catalog, facts, source, label, token.start, suffix.applied);
       if (consumed !== close) fail(`${label} has unsupported plugin alias arguments`);
+      index = suffix.end - 1;
     }
     if (token.type === "ident" && token.value === "applicationId" && contexts.includes("defaultConfig")) {
       const value = tokens[index + 1]?.value === "=" ? tokens[index + 2] : tokens[index + 1];
       if (!value || value.type !== "string") fail(`${label} has a dynamic or unsupported application id`);
       if (value.dynamic || !/^[A-Za-z0-9_.-]+$/.test(value.value)) fail(`${label} has a dynamic or malformed application id`);
       facts.applicationIds.add(value.value);
+      facts.evidence.push(evidenceAt(source, label, token.start, { kind: "gradle.applicationId", value: value.value }));
     }
     if (token.type === "ident" && /^(?:implementation|api|compileOnly|runtimeOnly|testImplementation|androidTestImplementation|kapt|ksp|annotationProcessor|classpath)$/i.test(token.value) && inDependencies) {
+      if (!directDslStatement(tokens, index, source)) fail(`${label} has a qualified or indirect fake dependency call`);
       if (tokens[index + 1]?.value === "(") {
         const close = closingParen(tokens, index + 1, label);
-        const consumed = parseDependencyArgument(tokens, index + 2, catalog, facts, label);
+        const consumed = parseDependencyArgument(tokens, index + 2, catalog, facts, source, label, token.start);
         if (consumed !== close) fail(`${label} has unsupported dependency call arguments`);
       } else {
-        parseDependencyArgument(tokens, index + 1, catalog, facts, label);
+        parseDependencyArgument(tokens, index + 1, catalog, facts, source, label, token.start);
       }
     }
   }
@@ -573,6 +769,7 @@ function parseManifest(source, label) {
   const activities = [];
   const metadata = [];
   const applicationIds = [];
+  const evidence = [];
   let applicationName = null;
   let applicationCount = 0;
   let sawManifest = false;
@@ -621,18 +818,21 @@ function parseManifest(source, label) {
       if (packageName) {
         if (packageName.includes("$") || !/^[A-Za-z0-9_.-]+$/.test(packageName)) fail(`${label} has a dynamic or malformed manifest package`);
         applicationIds.push(packageName);
+        evidence.push(evidenceAt(source, label, opening, { kind: "manifest.package", value: packageName }));
       }
     } else if (name === "application") {
       if (stack.at(-1) !== "manifest" || ++applicationCount > 1) fail(`${label} has an invalid or multiple application element`);
       const value = attributes.get("android:name") ?? null;
       if (value?.includes("$")) fail(`${label} has a dynamic application name`);
       applicationName = value;
+      if (value !== null) evidence.push(evidenceAt(source, label, opening, { kind: "manifest.application", value }));
     } else if (name === "activity") {
       if (stack.at(-1) !== "application") fail(`${label} activity must be a direct child of application`);
       const value = attributes.get("android:name");
       if (value) {
         if (value.includes("$")) fail(`${label} has a dynamic activity name`);
         activities.push(value);
+        evidence.push(evidenceAt(source, label, opening, { kind: "manifest.activity", value }));
       }
     } else if (name === "meta-data") {
       if (stack.at(-1) !== "application") fail(`${label} meta-data must be a direct child of application`);
@@ -642,14 +842,16 @@ function parseManifest(source, label) {
         const resource = attributes.get("android:resource") ?? null;
         if (metadataName.includes("$") || value?.includes("$") || resource?.includes("$")) fail(`${label} has dynamic manifest metadata`);
         if (value !== null && resource !== null) fail(`${label} metadata cannot define both value and resource`);
-        metadata.push({ name: metadataName, value, resource });
+        const metadataValue = { name: metadataName, value, resource };
+        metadata.push(metadataValue);
+        evidence.push(evidenceAt(source, label, opening, { kind: "manifest.metadata", value: metadataName, metadata: metadataValue }));
       }
     }
     if (!selfClosing) stack.push(name);
   }
   if (stack.length === 0 && clean.slice(index).trim()) fail(`${label} has text outside the XML root`);
   if (!sawManifest || stack.length) fail(`${label} has malformed XML nesting`);
-  return { applicationName, activities, metadata, applicationIds };
+  return { applicationName, activities, metadata, applicationIds, evidence };
 }
 
 function readStableFile(absolutePath, expectedStat, label) {
@@ -657,10 +859,12 @@ function readStableFile(absolutePath, expectedStat, label) {
   const descriptor = fs.openSync(absolutePath, fs.constants.O_RDONLY | noFollow);
   try {
     const before = fs.fstatSync(descriptor);
-    if (!before.isFile() || before.dev !== expectedStat.dev || before.ino !== expectedStat.ino || before.size !== expectedStat.size) fail(`${label} changed during inventory`);
+    if (!before.isFile() || !sameStatIdentity(before, expectedStat)) fail(`${label} changed identity during inventory`);
     const bytes = fs.readFileSync(descriptor);
     const after = fs.fstatSync(descriptor);
-    if (after.size !== before.size || after.mtimeMs !== before.mtimeMs || bytes.length !== before.size) fail(`${label} changed while being read`);
+    if (!sameStatIdentity(after, before) || bytes.length !== before.size) fail(`${label} changed while being read`);
+    const pathAfter = fs.lstatSync(absolutePath);
+    if (pathAfter.isSymbolicLink() || !sameStatIdentity(pathAfter, after)) fail(`${label} path identity changed after descriptor read`);
     try {
       return UTF8.decode(bytes);
     } catch {
@@ -672,25 +876,30 @@ function readStableFile(absolutePath, expectedStat, label) {
 }
 
 function sortedRecord(entries) {
-  return Object.fromEntries([...entries].sort(([left], [right]) => left.localeCompare(right)));
+  return Object.fromEntries([...entries].sort(([left], [right]) => compareStrings(left, right)));
 }
 
 /** @returns {SourceIndex} */
 export function loadSubmissionSources(projectDir) {
   if (typeof projectDir !== "string" || !path.isAbsolute(projectDir)) fail("project directory must be an absolute path");
-  const rootStat = fs.lstatSync(projectDir);
+  const requestedRoot = path.resolve(projectDir);
+  const rootStat = fs.lstatSync(requestedRoot);
   if (rootStat.isSymbolicLink()) fail("project directory must not be a symlink");
   if (!rootStat.isDirectory()) fail("project path must be a directory");
-  const root = fs.realpathSync(projectDir);
+  const root = fs.realpathSync(requestedRoot);
+  const canonicalRootStat = fs.lstatSync(root);
+  if (!canonicalRootStat.isDirectory() || !sameStatIdentity(rootStat, canonicalRootStat)) fail("project root identity changed between lstat and realpath");
   const entries = [];
 
   function visit(directory) {
-    for (const name of fs.readdirSync(directory).sort((left, right) => left.localeCompare(right))) {
+    for (const name of fs.readdirSync(directory).sort(compareStrings)) {
       const absolutePath = path.join(directory, name);
       const stat = fs.lstatSync(absolutePath);
       if (stat.isSymbolicLink()) fail(`symlink or escape is not allowed: ${path.relative(root, absolutePath)}`);
       const resolved = fs.realpathSync(absolutePath);
       if (!inside(root, resolved)) fail(`path escapes project directory: ${absolutePath}`);
+      const resolvedStat = fs.lstatSync(resolved);
+      if (!sameStatIdentity(stat, resolvedStat)) fail(`path identity changed during realpath: ${absolutePath}`);
       if (stat.isDirectory()) {
         if (!SKIPPED_DIRECTORIES.has(name.toLowerCase())) visit(absolutePath);
         continue;
@@ -705,7 +914,9 @@ export function loadSubmissionSources(projectDir) {
     }
   }
   visit(root);
-  entries.sort((left, right) => left.path.localeCompare(right.path));
+  const finalRootStat = fs.lstatSync(root);
+  if (!sameStatIdentity(canonicalRootStat, finalRootStat)) fail("project root changed during inventory");
+  entries.sort((left, right) => compareStrings(left.path, right.path));
   const totalBytes = entries.reduce((sum, entry) => sum + entry.stat.size, 0);
   if (totalBytes > MAX_TOTAL_BYTES) fail("selected files exceed the 32 MiB total size limit");
 
@@ -726,9 +937,7 @@ export function loadSubmissionSources(projectDir) {
       }
     }
   }
-  const facts = { pluginIds: new Set(), moduleCoordinates: new Set(), applicationIds: new Set() };
-  for (const entry of catalogs.plugins.values()) facts.pluginIds.add(entry.id);
-  for (const entry of catalogs.libraries.values()) facts.moduleCoordinates.add(entry.coordinate);
+  const facts = { pluginIds: new Set(), moduleCoordinates: new Set(), versions: new Map(), applicationIds: new Set(), evidence: [], versionEvidence: new Set() };
 
   let applicationName = null;
   const activities = new Set();
@@ -740,6 +949,7 @@ export function loadSubmissionSources(projectDir) {
       applicationName ??= parsed.applicationName;
       for (const value of parsed.activities) activities.add(value);
       for (const value of parsed.applicationIds) facts.applicationIds.add(value);
+      facts.evidence.push(...parsed.evidence);
       for (const value of parsed.metadata) {
         const key = JSON.stringify(value);
         metadataByKey.set(key, value);
@@ -753,21 +963,24 @@ export function loadSubmissionSources(projectDir) {
     let structural;
     if (file.kind === "manifest") structural = maskXml(file.original, file.path);
     else if (file.path.endsWith(".toml")) structural = parsedCatalogs.get(file.path).structural;
-    else structural = maskCode(file.original, file.path);
+    else structural = maskCode(file.original, file.path, file.path.endsWith(".gradle"));
     return Object.freeze({ path: file.path, absolutePath: file.absolutePath, kind: file.kind, original: file.original, structural });
   });
   const gradle = Object.freeze({
-    pluginIds: Object.freeze([...facts.pluginIds].sort((left, right) => left.localeCompare(right))),
-    moduleCoordinates: Object.freeze([...facts.moduleCoordinates].sort((left, right) => left.localeCompare(right))),
-    versions: Object.freeze(sortedRecord([...catalogs.versions.values()].map((entry) => [entry.alias, entry.value]))),
-    applicationIds: Object.freeze([...facts.applicationIds].sort((left, right) => left.localeCompare(right))),
+    pluginIds: Object.freeze([...facts.pluginIds].sort(compareStrings)),
+    moduleCoordinates: Object.freeze([...facts.moduleCoordinates].sort(compareStrings)),
+    versions: Object.freeze(sortedRecord(facts.versions)),
+    applicationIds: Object.freeze([...facts.applicationIds].sort(compareStrings)),
   });
   const manifest = Object.freeze({
     applicationName,
-    activities: Object.freeze([...activities].sort((left, right) => left.localeCompare(right))),
-    metadata: Object.freeze([...metadataByKey.values()].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))).map(Object.freeze)),
+    activities: Object.freeze([...activities].sort(compareStrings)),
+    metadata: Object.freeze([...metadataByKey.values()].sort((left, right) => compareStrings(JSON.stringify(left), JSON.stringify(right))).map(Object.freeze)),
   });
-  return Object.freeze({ projectDir: root, files: Object.freeze(files), totalBytes, facts: Object.freeze({ gradle, manifest }) });
+  const factEvidence = Object.freeze(facts.evidence
+    .sort((left, right) => compareStrings(left.path, right.path) || left.line - right.line || compareStrings(left.kind, right.kind) || compareStrings(left.value, right.value))
+    .map(freezeFact));
+  return Object.freeze({ projectDir: root, files: Object.freeze(files), totalBytes, facts: Object.freeze({ gradle, manifest }), factEvidence });
 }
 
 function pathSelected(relativePath, paths) {
@@ -815,4 +1028,15 @@ export function findEvidence(index, matcher, { paths, original = false } = {}) {
     }
   }
   return evidence;
+}
+
+export function findFactEvidence(index, query = {}) {
+  if (!index || !Array.isArray(index.factEvidence)) fail("source index fact evidence is invalid");
+  if (query === null || typeof query !== "object" || Array.isArray(query)) fail("fact evidence query must be an object");
+  const allowed = new Set(["kind", "value", "key", "alias", "version", "versionRef", "path"]);
+  for (const [key, value] of Object.entries(query)) {
+    if (!allowed.has(key)) fail(`fact evidence query contains unsupported field ${key}`);
+    if (typeof value !== "string" && value !== null) fail(`fact evidence query field ${key} must be a string or null`);
+  }
+  return Object.freeze(index.factEvidence.filter((fact) => Object.entries(query).every(([key, value]) => fact[key] === value)));
 }

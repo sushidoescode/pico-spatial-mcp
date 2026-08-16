@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadSubmissionSources, findEvidence } from "../benchmarks/spatial-agent-bench/lib/source.mjs";
+import { loadSubmissionSources, findEvidence, findFactEvidence } from "../benchmarks/spatial-agent-bench/lib/source.mjs";
 
 function scratch(t, prefix = "agentbench-source-") {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -23,6 +23,7 @@ test("inventory is stable and masks untrusted Kotlin, TOML, and XML prose withou
   write(project, "README.md", "ignored\n");
   write(project, "build/generated/Stuff.kt", "class Ignored\n");
   write(project, ".gradle/cache.gradle.kts", "plugins {}\n");
+  write(project, "app/build.gradle.kts", `plugins { alias(libs.plugins.android.application) }\ndependencies { implementation(platform(libs.spatial.bom)) }\n`);
   write(project, "app/src/main/java/com/agentbench/Foo.kt", String.raw`package com.agentbench
 
 /* fake in comment
@@ -45,12 +46,13 @@ fun startTracking() {
 
   assert.equal(index.projectDir, fs.realpathSync(project));
   assert.deepEqual(index.files.map((file) => file.path), [
+    "app/build.gradle.kts",
     "app/src/main/AndroidManifest.xml",
     "app/src/main/java/com/agentbench/Foo.kt",
     "gradle/libs.versions.toml",
   ]);
-  assert.deepEqual(index.files.map((file) => file.kind), ["manifest", "kotlin", "gradle"]);
-  const kotlin = index.files[1];
+  assert.deepEqual(index.files.map((file) => file.kind), ["gradle", "manifest", "kotlin", "gradle"]);
+  const kotlin = index.files.find((file) => file.kind === "kotlin");
   assert.equal(kotlin.structural.includes("PlaneTrackingManager.start()"), true);
   assert.equal(kotlin.structural.includes("fake in comment"), false);
   assert.equal(kotlin.structural.includes("com.pico.spatial"), false);
@@ -60,11 +62,13 @@ fun startTracking() {
     assert.equal(file.structural.split("\n").length, file.original.split("\n").length, file.path);
     assert.equal(path.isAbsolute(file.absolutePath), true);
   }
-  assert.equal(index.files[0].structural.includes(".Forged"), false);
-  assert.equal(index.files[0].structural.includes("untrusted com.pico.spatial"), false);
-  assert.equal(index.files[2].structural.includes("forged"), false);
-  assert.equal(index.files[2].structural.includes("com.pico.spatial"), false);
-  assert.equal(index.files[2].structural.includes("0.13.3"), false);
+  const manifest = index.files.find((file) => file.kind === "manifest");
+  const catalog = index.files.find((file) => file.path.endsWith(".toml"));
+  assert.equal(manifest.structural.includes(".Forged"), false);
+  assert.equal(manifest.structural.includes("untrusted com.pico.spatial"), false);
+  assert.equal(catalog.structural.includes("forged"), false);
+  assert.equal(catalog.structural.includes("com.pico.spatial"), false);
+  assert.equal(catalog.structural.includes("0.13.3"), false);
   assert.deepEqual(index.facts.gradle.pluginIds, ["com.android.application"]);
   assert.deepEqual(index.facts.gradle.moduleCoordinates, ["com.pico.spatial:bom"]);
   assert.deepEqual(index.facts.gradle.versions, { sdk: "0.13.3" });
@@ -91,9 +95,75 @@ test("Kotlin script masking stays aligned after non-BMP characters", (t) => {
   assert.equal(script.structural.includes("TrustedCall.after()"), true);
 });
 
+test("Groovy slashy, dollar-slashy, and triple-single strings are masked without moving lines", (t) => {
+  const project = scratch(t);
+  write(project, "app/build.gradle", `def slashy = /com.pico.spatial:forged:0.13.3\n<activity name='.Forged' \\/>/\ndef dollarSlashy = $/com.pico.spatial:forged:0.13.3\n<activity name='.Forged' />/$\ndef tripleSingle = '''com.pico.spatial:forged:0.13.3\n<activity name='.Forged' />'''\ndependencies { implementation('org.example:real:1.0') }\n`);
+
+  const index = loadSubmissionSources(project);
+  const gradle = index.files[0];
+
+  assert.equal(gradle.structural.includes("com.pico.spatial"), false);
+  assert.equal(gradle.structural.includes("0.13.3"), false);
+  assert.equal(gradle.structural.includes(".Forged"), false);
+  assert.equal(gradle.structural.split("\n").length, gradle.original.split("\n").length);
+  assert.deepEqual(index.facts.gradle.moduleCoordinates, ["org.example:real"]);
+});
+
+test("Groovy return slashy and escaped dollar-slashy delimiters cannot expose bait", (t) => {
+  const project = scratch(t);
+  write(project, "app/build.gradle", `def bait() { return /com.pico.spatial:forged:0.13.3/ }\ndef escapedDelimiter = $/com.pico.spatial:forged $/$ still-hidden 0.13.3 /$\ndependencies { implementation('org.example:real:1.0') }\n`);
+
+  const index = loadSubmissionSources(project);
+  const gradle = index.files[0];
+
+  assert.equal(gradle.structural.includes("com.pico.spatial"), false);
+  assert.equal(gradle.structural.includes("still-hidden"), false);
+  assert.equal(gradle.structural.includes("0.13.3"), false);
+  assert.equal(gradle.structural.split("\n").length, gradle.original.split("\n").length);
+  assert.deepEqual(index.facts.gradle.moduleCoordinates, ["org.example:real"]);
+});
+
+test("Groovy command-expression and closure-arrow slashy strings cannot expose bait", (t) => {
+  const project = scratch(t);
+  write(project, "app/build.gradle", `println /com.pico.spatial:forged:0.13.3/\ndef bait = { -> /com.pico.spatial:forged:0.13.3/ }\ndependencies { implementation('org.example:real:1.0') }\n`);
+
+  const index = loadSubmissionSources(project);
+  const gradle = index.files[0];
+
+  assert.equal(gradle.structural.includes("com.pico.spatial"), false);
+  assert.equal(gradle.structural.includes("0.13.3"), false);
+  assert.deepEqual(index.facts.gradle.moduleCoordinates, ["org.example:real"]);
+});
+
+test("ordinary Groovy division cannot hide block boundaries and promote nested facts", (t) => {
+  const project = scratch(t);
+  write(project, "app/build.gradle", `dependencies { def a = x / y }\ntasks.register('bait') { def b = z / q; implementation('com.pico.spatial:forged:0.13.3') }\n`);
+
+  assert.throws(() => loadSubmissionSources(project), /ambiguous|slash|Gradle/i);
+});
+
+test("ordinary Kotlin Gradle arithmetic remains accepted without changing block scope", (t) => {
+  const project = scratch(t);
+  write(project, "app/build.gradle.kts", `dependencies { val ratio = 8 / 2 }\ntasks.register("bait") { val other = 9 / 3; implementation("com.pico.spatial:forged:0.13.3") }\n`);
+
+  const index = loadSubmissionSources(project);
+
+  assert.deepEqual(index.facts.gradle.moduleCoordinates, []);
+});
+
+test("ambiguous multiline Groovy command-expression slash syntax fails closed", (t) => {
+  const project = scratch(t);
+  write(project, "app/build.gradle", `def harmless = 1; sink /com.pico.spatial:forged\nstill-bait/\n`);
+  const conditionalProject = scratch(t);
+  write(conditionalProject, "app/build.gradle", `if ((harmless = 1)) logger.lifecycle /com.pico.spatial:forged\nstill-bait/\n`);
+
+  assert.throws(() => loadSubmissionSources(project), /ambiguous|slash|Gradle/i);
+  assert.throws(() => loadSubmissionSources(conditionalProject), /ambiguous|slash|Gradle/i);
+});
+
 test("typed Gradle facts come only from catalog declarations and relevant balanced blocks", (t) => {
   const project = scratch(t);
-  write(project, "gradle/libs.versions.toml", `[versions]\nsdk = '2.4.6'\n\n[libraries]\nspatial-runtime = { group = "org.example.spatial", name = "runtime", version.ref = "sdk" }\n\n[plugins]\nandroid-application = { id = "com.android.application", version.ref = "sdk" }\n\n# com.pico.spatial:forged 0.13.3 <activity android:name=".Forged" />\n`);
+  write(project, "gradle/libs.versions.toml", `[versions]\nsdk = '2.4.6'\nunused = "0.13.3"\n\n[libraries]\nspatial-runtime = { group = "org.example.spatial", name = "runtime", version.ref = "sdk" }\nunused-bait = { module = "com.pico.spatial:forged", version.ref = "unused" }\n\n[plugins]\nandroid-application = { id = "com.android.application", version.ref = "sdk" }\nunused-plugin = { id = "com.pico.spatial.forged", version.ref = "unused" }\n\n# com.pico.spatial:forged 0.13.3 <activity android:name=".Forged" />\n`);
   write(project, "app/build.gradle.kts", `// id("com.pico.spatial.forged") and implementation("com.pico.spatial:forged:0.13.3")\nplugins {\n  alias(libs.plugins.android.application)\n}\ndependencies {\n  implementation(platform(libs.spatial.runtime))\n  implementation("org.example:direct:7.1")\n  val decoy = "com.pico.spatial:forged:0.13.3"\n}\nandroid {\n  defaultConfig { applicationId = "org.example.generated" }\n}\ntasks.register("unrelated") {\n  description = "com.pico.spatial:forged:0.13.3 <activity android:name='.Forged' />"\n}\n`);
   write(project, "app/src/main/java/org/example/Canary.kt", `val bait = "com.pico.spatial:forged 0.13.3 <activity android:name='.Forged' />"\n`);
   write(project, "notes/decoy.toml", `[versions]\ndecoy = "0.13.3"\n[libraries]\nforged = { module = "com.pico.spatial:forged", version.ref = "decoy" }\n`);
@@ -102,7 +172,7 @@ test("typed Gradle facts come only from catalog declarations and relevant balanc
 
   assert.deepEqual(index.facts.gradle, {
     pluginIds: ["com.android.application"],
-    moduleCoordinates: ["org.example:direct", "org.example.spatial:runtime"],
+    moduleCoordinates: ["org.example.spatial:runtime", "org.example:direct"],
     versions: { sdk: "2.4.6" },
     applicationIds: ["org.example.generated"],
   });
@@ -110,6 +180,97 @@ test("typed Gradle facts come only from catalog declarations and relevant balanc
   assert.equal(JSON.stringify(index.facts).includes("com.pico.spatial"), false);
   assert.equal(JSON.stringify(index.facts).includes("0.13.3"), false);
   assert.equal(JSON.stringify(index.facts).includes(".Forged"), false);
+});
+
+test("typed facts retain immutable parser-span provenance and applied alias relationships", (t) => {
+  const project = scratch(t);
+  write(project, "gradle/libs.versions.toml", `[versions]\nsdk = "2.4.6"\nagp = "8.6.1"\nunused = "0.13.3"\n\n[libraries]\nspatial-runtime = { module = "org.example.spatial:runtime", version.ref = "sdk" }\nunused-bait = { module = "com.pico.spatial:forged", version.ref = "unused" }\n\n[plugins]\nandroid-application = { id = "com.android.application", version.ref = "agp" }\n`);
+  write(project, "app/build.gradle.kts", `plugins {\n  alias(libs.plugins.android.application)\n}\ndependencies {\n  implementation(libs.spatial.runtime)\n  implementation("org.example:direct:7.1")\n}\nandroid { defaultConfig { applicationId = "org.example.generated" } }\n`);
+  write(project, "app/src/main/AndroidManifest.xml", `<manifest package="org.example.manifest">\n  <application android:name=".BenchApplication">\n    <activity android:name=".LaunchActivity" />\n    <meta-data android:name="org.example.mode" android:resource="@xml/mode" />\n  </application>\n</manifest>\n`);
+
+  const index = loadSubmissionSources(project);
+
+  assert.deepEqual(findFactEvidence(index, { kind: "gradle.dependency" }), [
+    {
+      kind: "gradle.dependency",
+      value: "org.example.spatial:runtime",
+      alias: "spatial.runtime",
+      version: "2.4.6",
+      versionRef: "sdk",
+      path: "app/build.gradle.kts",
+      line: 5,
+      excerpt: "implementation(libs.spatial.runtime)",
+    },
+    {
+      kind: "gradle.dependency",
+      value: "org.example:direct",
+      alias: null,
+      version: "7.1",
+      versionRef: null,
+      path: "app/build.gradle.kts",
+      line: 6,
+      excerpt: 'implementation("org.example:direct:7.1")',
+    },
+  ]);
+  assert.deepEqual(findFactEvidence(index, { kind: "gradle.plugin" }), [{
+    kind: "gradle.plugin",
+    value: "com.android.application",
+    alias: "android.application",
+    version: "8.6.1",
+    versionRef: "agp",
+    path: "app/build.gradle.kts",
+    line: 2,
+    excerpt: "alias(libs.plugins.android.application)",
+  }]);
+  assert.deepEqual(findFactEvidence(index, { kind: "gradle.version", key: "sdk" }), [{
+    kind: "gradle.version",
+    key: "sdk",
+    value: "2.4.6",
+    path: "gradle/libs.versions.toml",
+    line: 2,
+    excerpt: 'sdk = "2.4.6"',
+  }]);
+  assert.deepEqual(findFactEvidence(index, { kind: "manifest.activity", value: ".LaunchActivity" }), [{
+    kind: "manifest.activity",
+    value: ".LaunchActivity",
+    path: "app/src/main/AndroidManifest.xml",
+    line: 3,
+    excerpt: '<activity android:name=".LaunchActivity" />',
+  }]);
+  assert.deepEqual(findFactEvidence(index, { kind: "manifest.metadata", value: "org.example.mode" }), [{
+    kind: "manifest.metadata",
+    value: "org.example.mode",
+    metadata: { name: "org.example.mode", value: null, resource: "@xml/mode" },
+    path: "app/src/main/AndroidManifest.xml",
+    line: 4,
+    excerpt: '<meta-data android:name="org.example.mode" android:resource="@xml/mode" />',
+  }]);
+  assert.equal(findFactEvidence(index).some((fact) => fact.value === "0.13.3" || fact.value === "com.pico.spatial:forged"), false);
+  assert.equal(Object.isFrozen(index.factEvidence), true);
+  assert.equal(index.factEvidence.every(Object.isFrozen), true);
+  assert.equal(Object.isFrozen(findFactEvidence(index, { kind: "manifest.metadata" })[0].metadata), true);
+  assert.throws(() => findFactEvidence(index, { excerpt: "0.13.3" }), /query|field|excerpt/i);
+});
+
+test("plugin facts honor literal version and apply-false suffixes", (t) => {
+  const project = scratch(t);
+  write(project, "gradle/libs.versions.toml", `[versions]\nagp = "8.6.1"\n[plugins]\nskipped-alias = { id = "com.pico.spatial.forged", version.ref = "agp" }\n`);
+  write(project, "app/build.gradle.kts", `plugins {\n  alias(libs.plugins.skipped.alias) apply false\n  id("com.android.application") version "8.6.1"\n  id("com.example.skipped") apply false\n  id("com.example.also-skipped") apply(false)\n}\n`);
+
+  const index = loadSubmissionSources(project);
+
+  assert.deepEqual(index.facts.gradle.pluginIds, ["com.android.application"]);
+  assert.deepEqual(index.facts.gradle.versions, {});
+  assert.deepEqual(findFactEvidence(index, { kind: "gradle.plugin" }), [{
+    kind: "gradle.plugin",
+    value: "com.android.application",
+    alias: null,
+    version: "8.6.1",
+    versionRef: null,
+    path: "app/build.gradle.kts",
+    line: 3,
+    excerpt: 'id("com.android.application") version "8.6.1"',
+  }]);
 });
 
 test("non-Maven project dependencies do not become module facts", (t) => {
@@ -148,6 +309,65 @@ test("source inventory rejects symlinks and paths that are not absolute director
   assert.throws(() => loadSubmissionSources(outside), /directory/i);
 });
 
+test("source inventory rejects a root symlink with a trailing separator", (t) => {
+  const parent = scratch(t, "agentbench-source-root-link-");
+  const project = path.join(parent, "project");
+  const linkedProject = path.join(parent, "linked-project");
+  fs.mkdirSync(project);
+  write(project, "src/Subject.kt", "class Subject\n");
+  fs.symlinkSync(project, linkedProject, "dir");
+
+  assert.throws(() => loadSubmissionSources(`${linkedProject}${path.sep}`), /symlink|root/i);
+});
+
+test("source inventory rejects a root swapped between lstat and realpath", (t) => {
+  const parent = scratch(t, "agentbench-source-root-race-");
+  const project = path.join(parent, "project");
+  fs.mkdirSync(project);
+  write(project, "src/Original.kt", "class Original\n");
+  const displaced = path.join(parent, "displaced-project");
+  const originalRealpathSync = fs.realpathSync;
+  let swapped = false;
+  fs.realpathSync = function (target, ...args) {
+    if (!swapped && path.resolve(String(target)) === path.resolve(project)) {
+      swapped = true;
+      fs.renameSync(project, displaced);
+      fs.mkdirSync(project);
+      write(project, "src/Replacement.kt", "class Replaced\n");
+    }
+    return originalRealpathSync.call(this, target, ...args);
+  };
+
+  try {
+    assert.throws(() => loadSubmissionSources(project), /root|identity|changed|race/i);
+  } finally {
+    fs.realpathSync = originalRealpathSync;
+  }
+});
+
+test("source inventory rejects a same-size path replacement after descriptor read", (t) => {
+  const project = scratch(t, "agentbench-source-file-race-");
+  const selected = write(project, "src/Subject.kt", "class Alpha\n");
+  const replacement = write(project, "replacement.tmp", "class Bravo\n");
+  assert.equal(fs.statSync(selected).size, fs.statSync(replacement).size);
+  const originalReadFileSync = fs.readFileSync;
+  let swapped = false;
+  fs.readFileSync = function (target, ...args) {
+    const result = originalReadFileSync.call(this, target, ...args);
+    if (!swapped && typeof target === "number") {
+      swapped = true;
+      fs.renameSync(replacement, selected);
+    }
+    return result;
+  };
+
+  try {
+    assert.throws(() => loadSubmissionSources(project), /identity|changed|replacement|race/i);
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+});
+
 test("source inventory rejects more than 2,000 selected files", (t) => {
   const project = scratch(t);
   for (let index = 0; index <= 2_000; index += 1) write(project, `src/File${String(index).padStart(4, "0")}.kt`, "class X\n");
@@ -164,6 +384,27 @@ test("source inventory rejects more than 32 MiB selected in total", (t) => {
   const project = scratch(t);
   for (let index = 0; index < 17; index += 1) write(project, `src/Chunk${index}.kt`, Buffer.alloc(2 * 1024 * 1024, 0x20));
   assert.throws(() => loadSubmissionSources(project), /32 MiB|total.*large|size limit/i);
+});
+
+test("inventory and facts use locale-independent deterministic ordering", (t) => {
+  const project = scratch(t, "agentbench-source-order-");
+  write(project, "src/lower.kt", "class Lower\n");
+  write(project, "src/Upper.kt", "class Upper\n");
+  write(project, "app/build.gradle.kts", `dependencies {\n  implementation("z.example:zeta:1")\n  implementation("A.example:alpha:1")\n}\n`);
+  const originalLocaleCompare = String.prototype.localeCompare;
+  let index;
+  String.prototype.localeCompare = function () {
+    throw new Error("localeCompare must not determine source order");
+  };
+
+  try {
+    index = loadSubmissionSources(project);
+  } finally {
+    String.prototype.localeCompare = originalLocaleCompare;
+  }
+
+  assert.deepEqual(index.files.map((file) => file.path), ["app/build.gradle.kts", "src/Upper.kt", "src/lower.kt"]);
+  assert.deepEqual(index.facts.gradle.moduleCoordinates, ["A.example:alpha", "z.example:zeta"]);
 });
 
 test("strict typed parsers fail closed for malformed or ambiguous inputs", (t) => {
@@ -257,6 +498,84 @@ test("strict typed parsers fail closed for malformed or ambiguous inputs", (t) =
       path: "app/build.gradle.kts",
       contents: "android { defaultConfig { applicationId = computedId } }\n",
       error: /dynamic|unsupported|Gradle/i,
+    },
+    {
+      name: "qualified fake dependency call",
+      path: "app/build.gradle.kts",
+      contents: 'dependencies { fake.implementation("com.pico.spatial:forged:0.13.3") }\n',
+      error: /qualified|dependency|Gradle/i,
+    },
+    {
+      name: "nested dependency handler",
+      path: "app/build.gradle.kts",
+      contents: 'tasks.register("bait") { dependencies { implementation("com.pico.spatial:forged:0.13.3") } }\n',
+      error: /dependency|top-level|scope|Gradle/i,
+    },
+    {
+      name: "qualified dependency handler",
+      path: "app/build.gradle.kts",
+      contents: 'fake.dependencies { implementation("com.pico.spatial:forged:0.13.3") }\n',
+      error: /qualified|dependency|top-level|scope|Gradle/i,
+    },
+    {
+      name: "method-pointer dependency handler",
+      path: "app/build.gradle",
+      contents: 'fake.&dependencies { implementation("com.pico.spatial:forged:0.13.3") }\n',
+      error: /qualified|dependency|top-level|scope|Gradle/i,
+    },
+    {
+      name: "method-pointer plugin handler",
+      path: "app/build.gradle",
+      contents: 'fake.&plugins { id("com.pico.spatial.forged") }\n',
+      error: /qualified|plugin|top-level|scope|Gradle/i,
+    },
+    {
+      name: "newline-qualified dependency call",
+      path: "app/build.gradle",
+      contents: 'dependencies { fake.\n implementation("com.pico.spatial:forged:0.13.3") }\n',
+      error: /qualified|direct|dependency|Gradle/i,
+    },
+    {
+      name: "qualified fake plugin alias",
+      path: "app/build.gradle.kts",
+      contents: 'plugins { fake.alias(libs.plugins.missing) }\n',
+      error: /qualified|plugin|Gradle/i,
+    },
+    {
+      name: "qualified fake plugin id",
+      path: "app/build.gradle.kts",
+      contents: 'plugins { fake.id("com.pico.spatial.forged") }\n',
+      error: /qualified|plugin|Gradle/i,
+    },
+    {
+      name: "method-pointer fake dependency call",
+      path: "app/build.gradle",
+      contents: 'dependencies { fake.&implementation("com.pico.spatial:forged:0.13.3") }\n',
+      error: /qualified|direct|dependency/i,
+    },
+    {
+      name: "method-pointer fake plugin id",
+      path: "app/build.gradle",
+      contents: 'plugins { fake.&id("com.pico.spatial.forged") }\n',
+      error: /qualified|direct|plugin/i,
+    },
+    {
+      name: "method-pointer fake plugin alias",
+      path: "app/build.gradle",
+      contents: 'plugins { fake.&alias(libs.plugins.missing) }\n',
+      error: /qualified|direct|plugin/i,
+    },
+    {
+      name: "dynamic plugin version suffix",
+      path: "app/build.gradle.kts",
+      contents: 'plugins { id("com.android.application") version computedVersion }\n',
+      error: /dynamic|version|plugin/i,
+    },
+    {
+      name: "dynamic plugin apply suffix",
+      path: "app/build.gradle.kts",
+      contents: 'plugins { id("com.android.application") apply shouldApply }\n',
+      error: /dynamic|apply|plugin/i,
     },
   ];
 
