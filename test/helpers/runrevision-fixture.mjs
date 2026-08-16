@@ -10,6 +10,36 @@ export const ATTEMPT_ID = "abcdefab-cdef-4abc-8def-abcdefabcdef";
 
 export const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
+const STORE_AUTHORITY = Symbol("runrevision-test-authority");
+
+export function createTestRunStoreAuthority() {
+  const minted = new WeakSet();
+  const revoked = new WeakSet();
+  const calls = [];
+  const mint = (runId = RUN_ID, expectedRevision = null, mode = "coordination") => {
+    const request = Object.freeze({ runId, expectedRevision, ownerToken: ATTEMPT_ID, mode, [STORE_AUTHORITY]: true });
+    minted.add(request);
+    return request;
+  };
+  const assert = (request, target, operation) => {
+    calls.push({ operation, target: structuredClone(target) });
+    if (!minted.has(request) || revoked.has(request) || request[STORE_AUTHORITY] !== true) {
+      throw new Error("test run-store authority rejected");
+    }
+    if (request.runId !== target.runId) throw new Error("test run-store authority target mismatch");
+  };
+  return {
+    mint,
+    revoke(request) { revoked.add(request); },
+    calls,
+    deps: {
+      assertMutationAuthority(request, target) { assert(request, target, `mutation:${target.operation}`); },
+      assertRecoveryAuthority(request, target) { assert(request, target, "recovery"); },
+      nowUtc() { return "2026-08-16T12:34:56.000Z"; },
+    },
+  };
+}
+
 export const authoredSpec = Object.freeze({
   meta: {
     appName: "RunRevisionFixture",
