@@ -17,6 +17,10 @@
 - Claude Max is the only model entitlement. Do not configure an API key, fallback model, or metered spend. CLI dollar fields are nominal usage metadata, not incremental cash cost.
 - Raw composed prompts, stream events, generated projects, build logs, captures, account identifiers, and private reports live under an explicit absolute run root outside every Git worktree.
 - The tracked corpus and synthetic fixtures contain no emulator-derived confidential identifiers. Measured-result export stays disabled until PICO supplies written guidance and a denylist.
+- No live MCP/model attempt may transmit tool metadata or results to Anthropic until an external,
+  private confidentiality-policy receipt identifies PICO's written vendor-handling guidance. Static
+  schemas must also pass its denylist locally. Harness implementation and fake tests do not require
+  that receipt; live `smoke` and `run` fail closed without it.
 - A timeout, refusal, wrong model, missing submission, or model-caused tool failure is a treatment failure. An `NA` requires the fixed reference app to reproduce the same infrastructure failure immediately after the incident.
 - Visual quality is outside the 0–16 score. Never call a capture visually verified without opening and inspecting that exact image.
 - macOS evidence is emulator-only. Do not infer Swan-hardware or Windows behavior.
@@ -32,6 +36,8 @@
 |---|---|
 | `benchmarks/spatial-agent-bench/v1/corpus.json` | Frozen versions, lane definitions, variants, limits, and seed. |
 | `benchmarks/spatial-agent-bench/v1/prompt.md` | One treatment-neutral prompt template. |
+| `benchmarks/spatial-agent-bench/v1/pico-cli-toolchain/package.json` | Exact bare-lane CLI root dependency. |
+| `benchmarks/spatial-agent-bench/v1/pico-cli-toolchain/package-lock.json` | Exact transitive pico-cli dependency graph and registry integrities. |
 | `benchmarks/spatial-agent-bench/lib/identity.mjs` | Thin reuse boundary over digest-bound canonical JSON/identity. |
 | `benchmarks/spatial-agent-bench/lib/corpus.mjs` | Strict corpus loading, hashing, prompt rendering, and seeded schedules. |
 | `benchmarks/spatial-agent-bench/lib/source.mjs` | Bounded, symlink-safe source inventory and structural masking. |
@@ -55,13 +61,15 @@
 **Files:**
 - Create: `benchmarks/spatial-agent-bench/v1/corpus.json`
 - Create: `benchmarks/spatial-agent-bench/v1/prompt.md`
+- Create: `benchmarks/spatial-agent-bench/v1/pico-cli-toolchain/package.json`
+- Create: `benchmarks/spatial-agent-bench/v1/pico-cli-toolchain/package-lock.json`
 - Create: `benchmarks/spatial-agent-bench/lib/identity.mjs`
 - Create: `benchmarks/spatial-agent-bench/lib/corpus.mjs`
 - Create: `test/agentbench-corpus.mjs`
 
 **Interfaces:**
 - Consumes: `canonicalJson(value)` and `canonicalIdentity(value)` from `dist/runreceiptidentity.js` after `npm run build`.
-- Produces: `loadCorpus(corpusDir)`, `renderPrompt(loaded, variantId, laneId)`, `createPreliminarySchedule(loaded)`, and `createSignoffSchedule(loaded)`.
+- Produces: `loadCorpus(corpusDir)`, `renderPrompt(loaded, variantId)`, `createPreliminarySchedule(loaded)`, and `createSignoffSchedule(loaded)`.
 
 - [ ] **Step 1: Write the failing corpus contract test**
 
@@ -89,6 +97,10 @@ test("v1 corpus freezes the fair four-lane comparison", () => {
   assert.equal(loaded.corpus.picoCli.integrity, "sha512-qapgwB+OljD0qQukilhaAmhIemuoIvMO/dkQOVDcZEhLdW1KxpbpkNyLII9hJ6m5F/QYF4UZoPpkjH9IL5U7mA==");
   assert.equal(loaded.corpus.claudeCliVersion, "2.1.233");
   assert.equal(loaded.corpus.claudeCliSha256, "bc466b6cde63edafc773f471a1fb98787fabb31f52240c8616ce7e1f587b212d");
+  assert.deepEqual(loaded.corpus.toolchainNpm, {
+    version: "10.9.2",
+    integrity: "sha512-iriPEPIkoMYUy3F6f3wwSZAU93E0Eg6cHwIR6jzzOXWSy+SD/rOODEs74cVONHKSx2obXtuUoyidVEhISrisgQ==",
+  });
   assert.equal(loaded.corpus.timeoutMs, 1_800_000);
   assert.equal(loaded.corpus.maxTurns, 100);
   assert.equal(loaded.corpus.seed, 20_260_816);
@@ -121,13 +133,16 @@ test("preliminary order is seeded, paired, and controls are predeclared", () => 
 });
 
 test("the shared prompt fixes behavior without teaching rubric APIs", () => {
-  const prompt = renderPrompt(loadCorpus(corpusDir), "museum", "sonnet_mcp");
+  const loaded = loadCorpus(corpusDir);
+  const prompt = renderPrompt(loaded, "museum");
   for (const required of ["submission/", "0.13.3", "vase", "astrolabe", "mask", "Mixed Stage", "table", "floor", "visit count"]) {
     assert.match(prompt, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
   }
   for (const leaked of ["EntityQueryCondition", "SceneUpdateContext", "Bundle", "PlaneTrackingManager", "deltaTime"]) {
     assert.equal(prompt.includes(leaked), false, leaked);
   }
+  for (const lane of loaded.corpus.lanes) assert.equal(prompt.includes(lane.id), false, lane.id);
+  assert.equal(prompt, renderPrompt(loaded, "museum"), "the model/tool lane never changes prompt bytes");
 });
 ```
 
@@ -158,10 +173,20 @@ Create `corpus.json` with this exact shape and values:
   "claudeCliVersion": "2.1.233",
   "claudeCliCommit": "f8d57569aaf3",
   "claudeCliSha256": "bc466b6cde63edafc773f471a1fb98787fabb31f52240c8616ce7e1f587b212d",
+  "toolchainNpm": {
+    "version": "10.9.2",
+    "integrity": "sha512-iriPEPIkoMYUy3F6f3wwSZAU93E0Eg6cHwIR6jzzOXWSy+SD/rOODEs74cVONHKSx2obXtuUoyidVEhISrisgQ=="
+  },
   "effort": "high",
   "timeoutMs": 1800000,
   "maxTurns": 100,
   "maxOutputBytes": 67108864,
+  "expectedDoorTools": [
+    "validate_toolchain", "pico_build_app", "pico_scan_world", "pico_place", "pico_look",
+    "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship",
+    "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next", "pico_loop",
+    "ensure_pico_cli"
+  ],
   "seed": 20260816,
   "controlVariantIds": ["museum", "instruments", "vehicles"],
   "lanes": [
@@ -185,7 +210,7 @@ Create `prompt.md` with these exact bytes apart from the final newline:
 ```text
 Build a complete PICO Spatial SDK 0.13.3 application for the {{VARIANT_TITLE}} scenario.
 
-Work only inside a new submission/ directory. Use package com.agentbench.{{VARIANT_ID}}.{{LANE_ID}}.
+Work only inside a new submission/ directory. Use package com.agentbench.{{VARIANT_ID}}.
 Deliver the full Gradle project, source, manifest, resources, and executable tests; do not return only
 an explanation or snippets.
 
@@ -212,9 +237,15 @@ Before finishing, run the strongest local build and unit-test commands available
 deliverable under submission/ and summarize the attempted commands and any remaining failure honestly.
 ```
 
-The renderer substitutes all six named template tokens, including the lane-specific package suffix,
-before the prompt is hashed. The file must not name the five prohibited rubric API terms or any
-treatment-specific tool.
+The renderer substitutes the five variant template tokens before the prompt is hashed. It receives
+no model or treatment argument, and a test proves the prompt bytes for a variant are lane-independent.
+The file must not name the five prohibited rubric API terms or any treatment-specific tool.
+
+Create the toolchain `package.json` with the exact dependency
+`"@picoxr/pico-cli": "0.4.2"`, then generate and commit npm lockfile v3 with npm 10.9.2. The lock must
+pin every transitive `resolved` URL and `integrity`; reject packages lacking integrity except the
+local lockfile root. `loadCorpus` hashes both toolchain files with the corpus and prompt so dependency
+drift creates a different frozen-input identity.
 
 - [ ] **Step 4: Implement strict loading and schedules**
 
@@ -228,7 +259,7 @@ export { canonicalIdentity, canonicalJson } from "../../../dist/runreceiptidenti
 
 ```js
 export function loadCorpus(corpusDir) {}
-export function renderPrompt(loaded, variantId, laneId) {}
+export function renderPrompt(loaded, variantId) {}
 export function createPreliminarySchedule(loaded) {}
 export function createSignoffSchedule(loaded) {}
 ```
@@ -267,7 +298,8 @@ git commit -m "test(bench): freeze agent comparison corpus"
 
 **Interfaces:**
 - Consumes: an absolute generated-project directory.
-- Produces: `loadSubmissionSources(projectDir)` and `findEvidence(index, matcher, options)`.
+- Produces: `loadSubmissionSources(projectDir)`, `findEvidence(index, matcher, options)`, and typed
+  Gradle/version-catalog/manifest facts that never require matching arbitrary original text.
 
 - [ ] **Step 1: Write failing masking and containment tests**
 
@@ -286,8 +318,17 @@ assert.deepEqual(index.files.map((file) => file.path), [
 assert.equal(index.files[1].structural.includes("PlaneTrackingManager.start()"), true);
 assert.equal(index.files[1].structural.includes("fake in comment"), false);
 assert.equal(index.files[1].structural.split("\n").length, index.files[1].original.split("\n").length);
+assert.deepEqual(index.facts.gradle.pluginIds, ["com.android.application"]);
+assert.deepEqual(index.facts.gradle.moduleCoordinates, ["com.pico.spatial:bom"]);
+assert.equal(index.facts.gradle.versions.bom, "0.13.3");
+assert.deepEqual(index.facts.manifest.activities, [".LaunchActivity"]);
 assert.throws(() => loadSubmissionSources(symlinkEscapeProject), /symlink|escape/i);
 ```
+
+Add canaries where comments, arbitrary Kotlin strings, TOML comments, and an unrelated Gradle task
+string contain `com.pico.spatial`, `0.13.3`, and manifest element text; assert none appears in typed
+facts. Add malformed TOML, XML `DOCTYPE`/entity, duplicate alias, and unresolved catalog-reference
+cases and require fail-closed parse errors.
 
 - [ ] **Step 2: Run the test and observe RED**
 
@@ -303,7 +344,9 @@ Export:
 
 ```js
 /** @typedef {{path:string, absolutePath:string, kind:"kotlin"|"gradle"|"manifest", original:string, structural:string}} SourceFile */
-/** @typedef {{projectDir:string, files:SourceFile[], totalBytes:number}} SourceIndex */
+/** @typedef {{pluginIds:string[], moduleCoordinates:string[], versions:Record<string,string>, applicationIds:string[]}} GradleFacts */
+/** @typedef {{applicationName:string|null, activities:string[], metadata:Array<{name:string,value:string|null,resource:string|null}>}} ManifestFacts */
+/** @typedef {{projectDir:string, files:SourceFile[], totalBytes:number, facts:{gradle:GradleFacts,manifest:ManifestFacts}}} SourceIndex */
 export function loadSubmissionSources(projectDir) {}
 export function findEvidence(index, matcher, { paths, original = false } = {}) {}
 ```
@@ -311,6 +354,15 @@ export function findEvidence(index, matcher, { paths, original = false } = {}) {
 Select only Kotlin, Gradle, TOML, and Android manifest inputs. Skip `.gradle`, `build`, `.git`, and
 cache directories. Use `lstat`, `realpath`, and `path.relative`; reject all symlinks. Replace masked
 non-newline bytes with spaces so excerpts retain original line numbers.
+
+Build typed facts with conservative parsers: a strict version-catalog parser accepts only quoted
+scalar versions and inline-table `group`/`name`/`module`/`version.ref` values; a balanced-token
+Gradle parser accepts dependency calls and plugin aliases only inside `plugins`/`dependencies`
+blocks and resolves aliases through that catalog; a non-resolving XML tokenizer accepts only actual
+`manifest`, `application`, `activity`, and `meta-data` attributes. Reject `DOCTYPE`, entities,
+duplicate keys, unresolved aliases, malformed nesting, and dynamic/interpolated values. Scoring may
+read `original` only for a line excerpt after a structural or typed-fact match has already selected
+that location; `original` is never a predicate.
 
 - [ ] **Step 4: Run the source gate and observe GREEN**
 
@@ -337,6 +389,7 @@ git commit -m "feat(bench): index submissions without token stuffing"
 - Create: `benchmarks/spatial-agent-bench/lib/score.mjs`
 - Create: `test/helpers/agentbench-fixture.mjs`
 - Create: `test/agentbench-score.mjs`
+- Create: `test/agentbench-fixture-compile.mjs`
 
 **Interfaces:**
 - Consumes: `SourceIndex`, build evidence, and optional runtime receipts.
@@ -372,10 +425,18 @@ const RULE_IDS = [
   "plane.retry-readiness", "plane.semantic-fallback", "plane.anchor-pose", "plane.cleanup-errors",
 ];
 
-const perfect = scoreSubmission({ projectDir: writeCompleteProject(t), build: passingBuild });
+const perfectProject = writeCompleteProject(t);
+const perfect = scoreSubmission({ projectDir: perfectProject, build: passingBuild });
 assert.equal(perfect.structuralScore, 16);
 assert.equal(perfect.deliveryScore, 16);
 assert.deepEqual(perfect.rules.map((rule) => rule.id), RULE_IDS);
+assert.equal(perfect.rules.every((rule) => rule.rubricVersion === 1), true);
+assert.deepEqual(scoreSubmission({ projectDir: perfectProject, build: passingBuild }), perfect);
+assert.equal(
+  canonicalJson(scoreSubmission({ projectDir: perfectProject, build: passingBuild })),
+  canonicalJson(perfect),
+);
+assert.deepEqual(Object.keys(perfect.runtime), ["statePass", "planePass", "ecsPass"]);
 
 for (const mutation of RULE_MUTATIONS) {
   const scored = scoreSubmission({ projectDir: writeCompleteProject(t, mutation.apply), build: passingBuild });
@@ -386,7 +447,8 @@ for (const mutation of RULE_MUTATIONS) {
 
 Also assert an Activity/View/Canvas substitute loses all Spatial-native points; terms only in
 comments, strings, or fake logs earn nothing; and a failed build preserves structural diagnostics
-while forcing delivery score zero.
+while forcing delivery score zero. `state.round-trip` must fail when the unit-test receipt reports
+zero executed tests, Gradle `NO-SOURCE`, a skipped probe, or a non-zero failure count.
 
 - [ ] **Step 2: Run the score test and observe RED**
 
@@ -403,6 +465,7 @@ Every rule returns exactly:
 ```js
 {
   id: "ecs.frame-update",
+  rubricVersion: 1,
   axis: "ecs",
   pass: true,
   evidence: [{
@@ -443,7 +506,7 @@ export const RULE_MUTATIONS = [
   { ruleId: "spatial.entity-content", apply: replace("SpatialView(entity)", "AndroidView(entity)") },
   { ruleId: "spatial.ui-lifecycle", apply: replace("PicoTheme", "MaterialTheme") },
   { ruleId: "ecs.component-clone", apply: replace("copy(selected = selected)", "CounterComponent()") },
-  { ruleId: "ecs.system-query", apply: replace("private val counterQuery", "private val unrelatedQuery") },
+  { ruleId: "ecs.system-query", apply: replace("private val counterQuery = EntityQueryCondition.hasComponent(CounterComponent::class.java)", "// counter query intentionally removed") },
   { ruleId: "ecs.frame-update", apply: replace("context.deltaTime", "0.016f") },
   { ruleId: "ecs.lifecycle", apply: replace("unregisterSystem(orbitSystem)", "registerSystem(orbitSystem)") },
   { ruleId: "state.single-source", apply: replace("val sharedStore = BenchmarkStore.instance", "val sharedStore = BenchmarkStore()") },
@@ -464,17 +527,26 @@ only its named rule. The test compares the complete sixteen-element boolean vect
 
 - [ ] **Step 6: Run scorer and conformance gates**
 
+First create `test/agentbench-fixture-compile.mjs`. It copies the tracked `appskeleton/` into a
+temporary directory, installs the complete fixture sources, and runs both
+`./gradlew --no-daemon :app:assembleDebug --console=plain` and
+`./gradlew --no-daemon :app:testDebugUnitTest --console=plain`. Require a non-empty APK and parse
+JUnit XML to prove the named two-selection/retained-counter test executed once with zero failures
+and zero skips; `NO-SOURCE` is a failure. The fixture must use declarations verified in the local
+0.13.3 SDK rather than guessed current-v6 APIs.
+
 ```bash
-node --test test/agentbench-source.mjs test/agentbench-score.mjs
+node --test test/agentbench-source.mjs test/agentbench-score.mjs test/agentbench-fixture-compile.mjs
 npm run test:conformance
 ```
 
-Expected: agentbench tests pass and conformance reports `Failures: 0`.
+Expected: scorer tests pass, the perfect fixture compiles and executes its state round-trip test
+against 0.13.3, and conformance reports `Failures: 0`.
 
 - [ ] **Step 7: Commit the scorer**
 
 ```bash
-git add benchmarks/spatial-agent-bench/lib/rules-spatial.mjs benchmarks/spatial-agent-bench/lib/rules-behavior.mjs benchmarks/spatial-agent-bench/lib/score.mjs test/helpers/agentbench-fixture.mjs test/agentbench-score.mjs
+git add benchmarks/spatial-agent-bench/lib/rules-spatial.mjs benchmarks/spatial-agent-bench/lib/rules-behavior.mjs benchmarks/spatial-agent-bench/lib/score.mjs test/helpers/agentbench-fixture.mjs test/agentbench-score.mjs test/agentbench-fixture-compile.mjs
 git commit -m "feat(bench): score four spatial agent failure modes"
 ```
 
@@ -526,8 +598,9 @@ assert.equal(invocation.args.includes("--safe-mode"), false, "safe mode disables
 ```
 
 Use the fake CLI to assert expected-model success, wrong-model rejection, fallback-event rejection,
-refusal, timeout, output-cap failure, and descendant cleanup. Feed an auth fixture containing email
-and org ID; assert the returned value contains only Max/auth method plus a salted SHA-256 account
+refusal, unexpected hook/plugin/customization event rejection, wrong or incomplete 18-door inventory,
+timeout, output-cap failure, and descendant cleanup. Feed an auth fixture containing email and org
+ID; assert the returned value contains only Max/auth method plus a salted SHA-256 account
 fingerprint. Raw email and org ID must not survive serialization. Assert the pinned Claude binary
 version is `2.1.233` and its native executable SHA-256 matches the corpus preflight value.
 
@@ -553,7 +626,7 @@ stdio server:
       args: [absoluteDistIndex],
       env: {
         PICO_MCP_SURFACE: "doors",
-        PATH: mcpPathWithoutPicoCli,
+        PATH: serverPathWithPinnedPicoCli,
       },
       timeout: 900_000,
       alwaysLoad: true,
@@ -569,9 +642,11 @@ override. Set `CLAUDE_CODE_NO_MODEL_FALLBACK=1`, `CLAUDE_CODE_DISABLE_LEGACY_MOD
 `CLAUDE_CODE_DISABLE_FAST_MODE=1`, `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`,
 `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`,
 `DISABLE_AUTOUPDATER=1`, `MCP_TIMEOUT=30000`, `MCP_CONNECT_TIMEOUT_MS=10000`, and
-`MCP_TOOL_TIMEOUT=900000`. Keep the normal Max keychain/OAuth path available. The bare child PATH
-contains only the staged pico-cli toolchain plus shared system tools; the MCP child PATH omits
-pico-cli. Pass prompt bytes on stdin with `shell:false`.
+`MCP_TOOL_TIMEOUT=900000`. Keep the normal Max keychain/OAuth path available. The bare model's shell
+PATH contains the staged pico-cli toolchain plus shared system tools. The MCP model's shell PATH
+cannot resolve pico-cli, but the MCP server's explicit child environment contains the same pinned
+toolchain so wrapper tools retain their normal first-party dependency. Pass prompt bytes on stdin
+with `shell:false`.
 
 - [ ] **Step 4: Implement bounded process-tree lifecycle and stream validation**
 
@@ -592,9 +667,12 @@ Allow 5 seconds after TERM before KILL and wait for settlement. Return partial h
 `parseClaudeStream` requires one init event, assistant messages whose model equals the lane model,
 and one terminal result. It rejects fallback/rate-provider substitutions and unexpected models in
 `modelUsage`. The init event must report `apiKeySource: "oauth"` and the exact frozen local tool
-set. Bare smoke must observe zero MCP servers; MCP smoke must observe exactly `pico-spatial`
-connected with its doors tools. Extra MCP servers, connection errors, absent treatment, or another
-model rejects the attempt before inclusion. Persist nominal `total_cost_usd` only as CLI usage
+set. It also rejects any hook event, plugin-supplied tool, loaded skill, or unexpected init
+customization; managed policy state that cannot be disabled is hashed and must remain identical
+across the paired lanes. Bare smoke must observe zero MCP servers; MCP smoke must observe exactly
+`pico-spatial` connected with the 18 names frozen in `expectedDoorTools`. Extra MCP servers,
+connection errors, absent treatment, or another model rejects the attempt before inclusion. Persist
+nominal `total_cost_usd` only as CLI usage
 metadata labeled `not_incremental_spend`; Max quota remaining is not observable and must be reported
 as unknown.
 
@@ -673,7 +751,10 @@ The strict receipt shape is:
   runId,
   project: { gradleInputs: { sha256, entryCount, totalBytes } },
   assemble: { command, args, startedAt, finishedAt, exitCode, timedOut, stdoutSha256, stderrSha256 },
-  unitTests: { command, args, startedAt, finishedAt, exitCode, timedOut, stdoutSha256, stderrSha256 },
+  unitTests: {
+    command, args, startedAt, finishedAt, exitCode, timedOut, stdoutSha256, stderrSha256,
+    noSource, testCount, failureCount, skippedCount, resultFiles,
+  },
   outputMetadata: { sha256, bytes },
   apk: { sha256, bytes },
   packageName,
@@ -690,6 +771,9 @@ one APK through AGP output metadata. `buildPass` requires model delivery, assemb
 package, and a newly hashed APK; unit-test outcome remains separate evidence.
 Compute `identity` with `canonicalIdentity` over the complete receipt excluding the `identity` field;
 the validator rejects unknown keys, inconsistent booleans, malformed hashes, and identity mismatch.
+Parse only JUnit XML files created after the clean snapshot, hash each result file, and reject
+duplicate suite/testcase identities or totals inconsistent with parsed cases. Preserve `NO-SOURCE`
+as `noSource: true`; never convert a zero-test Gradle success into runtime state evidence.
 
 This is an experiment receipt, not `pico.native-run-receipt`, not `fleet-native-debug`, and not a
 trust-ledger binding. Never synthesize an AppSpec or rewrite the model submission to satisfy fleet
@@ -723,7 +807,8 @@ git commit -m "feat(bench): seal arbitrary agent build inputs"
 
 **Interfaces:**
 - Consumes: external run root, repository root, immutable attempts, and score documents.
-- Produces: `assertExternalRunRoot`, `startAttempt`, `finishAttempt`, `readAttempts`, `aggregateRuns`, and disabled `exportSanitizedReport`.
+- Produces: `assertExternalRunRoot`, `startAttempt`, `appendEvent`, `finishAttempt`, `readAttempts`,
+  `aggregateRuns`, and disabled `exportSanitizedReport`.
 
 - [ ] **Step 1: Write failing store-integrity tests**
 
@@ -735,12 +820,15 @@ assert.throws(() => assertExternalRunRoot(repoRoot, path.join(repoRoot, "nested"
 assert.throws(() => assertExternalRunRoot(repoRoot, symlinkIntoRepo), /real path|outside/i);
 const started = startAttempt(store, input);
 assert.throws(() => startAttempt(store, { ...input, attemptId: started.attemptId }), /exists|overwrite/i);
-finishAttempt(store, started.attemptId, outcome);
-assert.throws(() => finishAttempt(store, started.attemptId, outcome), /exists|overwrite/i);
+appendEvent(store, started.attemptId, { type: "phase", phase: "build" });
+finishAttempt(store, started.attemptId, { outcome, score });
+assert.throws(() => finishAttempt(store, started.attemptId, { outcome, score }), /exists|overwrite/i);
 ```
 
 Corrupt a terminal record and assert it appears only under `rejected`. Leave a start record without
-a terminal record and assert it remains `incomplete`; resume uses a new UUID.
+a terminal record and assert it remains `incomplete`; resume uses a new UUID. Assert outcome without
+score is `incomplete`, score without outcome is `rejected`, a stale event lock fails closed, and a
+concurrent second appender cannot write.
 
 - [ ] **Step 2: Write failing statistics and claim-bar tests**
 
@@ -764,8 +852,13 @@ Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `lib/store.mjs`.
 
 Use `fs.openSync(path, "wx", 0o600)`, `fs.fsyncSync`, and no-replace publication. Store
 `attempts/<uuid>/started.json`, append-only hash-chained `events.jsonl`, and create-only
-`outcome.json`/`score.json`. Each event carries `sequence`, `previousEventSha256`, and its canonical
-event hash. `readAttempts` recomputes every digest and returns `{ valid, incomplete, rejected }`.
+`outcome.json`/`score.json`. `appendEvent` acquires `events.lock` with `wx`, reads and validates the
+entire prior chain, creates `{ sequence, previousEventSha256, payload }`, hashes that object before
+adding `eventSha256`, writes the complete canonical line with one `O_APPEND` write, fsyncs, then
+releases the lock. A stale lock fails closed and requires a new attempt; it is never auto-broken.
+`readAttempts` recomputes every digest and returns `{ valid, incomplete, rejected }`. Only both
+terminal files with matching attempt/score identities are valid; outcome-only is incomplete and
+score-only is rejected.
 
 - [ ] **Step 5: Implement deterministic aggregation**
 
@@ -812,7 +905,8 @@ git commit -m "feat(bench): preserve and aggregate agent run evidence"
 - Consumes: frozen corpus, repository checkout, explicit external run root, selected phase, and
   injected process/build dependencies.
 - Produces: `prepareRun`, `smokeLanes`, `runPreliminaryCohort`, `runSignoffCohort`, and
-  `resumeCohort` checkpoints that never mutate an existing attempt.
+  `resumeCohort` checkpoints that never mutate an existing attempt, plus
+  `validateConfidentialityPolicy` as the live-egress gate.
 
 - [ ] **Step 1: Write failing preflight and serial-runner tests**
 
@@ -829,11 +923,14 @@ assert.equal(attempts[0].scratchDir.startsWith(runRoot + path.sep), true);
 assert.notEqual(attempts[0].scratchDir, attempts[1].scratchDir);
 ```
 
-Cover dirty checkout, missing P0 tests, wrong SDK, wrong CLI tarball integrity, stale MCP build,
-reference-build failure, account-block mismatch, treatment failure scored as zero, infrastructure
+Cover dirty checkout, missing P0 tests, wrong SDK, wrong npm or CLI tarball integrity, stale MCP build,
+user/home/ancestor Claude instruction files or rules, reference-build failure, account-block
+mismatch, treatment failure scored as zero, infrastructure
 failure reclassified only after an immediate failing reference build, refusal to selectively rerun,
-and restart from a new attempt UUID after interruption. Assert a matched pair finishes before the
-next pair begins.
+restart from a new attempt UUID after interruption, missing PICO vendor-handling receipt, malformed
+or mismatched denylist identity, and a denylist hit in serialized doors schemas. Assert a matched
+pair finishes before the next pair begins. All policy fixtures use synthetic canaries, never the
+reported branding literals.
 
 - [ ] **Step 2: Run the runner test and observe RED**
 
@@ -854,13 +951,34 @@ Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `lib/runner.mjs`.
 4. hash the built `dist/index.js`, Claude native executable, corpus, prompt, and scorer files;
 5. require Claude Code `2.1.233` and sanitize `claude auth status --json` immediately into the
    blinded Max-account block without persisting raw auth output;
-6. fetch `@picoxr/pico-cli@0.4.2` with `npm pack --json`, require integrity
+6. reject `~/.claude/CLAUDE.md`, `~/.claude/CLAUDE.local.md`, any Markdown file below
+   `~/.claude/rules/`, and the same instruction/rules locations at every ancestor of the external
+   scratch root; reject symlinks as well as regular files so instruction discovery cannot bypass
+   init-metadata checks;
+7. fetch `npm@10.9.2` as a tarball, require its SHA-512 integrity
+   `sha512-iriPEPIkoMYUy3F6f3wwSZAU93E0Eg6cHwIR6jzzOXWSy+SD/rOODEs74cVONHKSx2obXtuUoyidVEhISrisgQ==`,
+   inspect every tar path for absolute/parent escape, extract it under the external toolchain, and
+   invoke that package's absolute `bin/npm-cli.js`; copy the frozen pico-cli toolchain manifests to
+   the external toolchain directory, run the pinned CLI with
+   `ci --ignore-scripts --no-audit --no-fund`, then verify every installed name/version against the
+   lockfile plus the top-level integrity
    `sha512-qapgwB+OljD0qQukilhaAmhIemuoIvMO/dkQOVDcZEhLdW1KxpbpkNyLII9hJ6m5F/QYF4UZoPpkjH9IL5U7mA==`,
-   and install that exact tarball into the external toolchain directory;
-7. derive a shared base PATH that contains no other `pico-cli` executable, prepend the staged CLI
-   bin only for bare lanes, and assert MCP lanes cannot resolve `pico-cli`;
-8. copy tracked `appskeleton/` into an external reference directory, verify Spatial SDK `0.13.3`,
+   and reject any lock or installed-tree identity drift;
+8. derive a shared base PATH that contains no other `pico-cli` executable, prepend the staged CLI
+   bin for bare model shells and the MCP server child only, and assert the MCP model shell cannot
+   resolve `pico-cli` while a server-side capability probe resolves exactly `0.4.2`;
+9. copy tracked `appskeleton/` into an external reference directory, verify Spatial SDK `0.13.3`,
    and build `com.example.spatialapp` through `produceAgentBenchBuildReceipt`.
+
+`validateConfidentialityPolicy` reads an external operator-supplied receipt with strict fields
+`schemaVersion: 1`, `issuer: "PICO"`, `guidanceId`, `issuedAt`,
+`approvedProvider: "Anthropic"`, `approvedPurpose: "SpatialAgentBench v1"`,
+`guidanceSha256`, `denylistPath`, and `denylistSha256`. It verifies both external file hashes, then
+starts the built MCP locally, calls `listTools`, requires the exact frozen 18-door names, and scans
+the canonical descriptions/input schemas against the private denylist. The policy and denylist stay
+under the external run root. This receipt is an operator attestation of PICO's written guidance, not
+a cryptographic PICO signature. Without it, `prepare` may finish deterministic checks but marks
+`liveModelRuns: "blocked_confidentiality"`; `smoke` and `run` refuse before starting Claude.
 
 The preflight manifest records hashes and sanitized facts, not absolute home paths or raw account
 identifiers. A stale `dist/`, failed owner gate, unclean tracked tree, unpinned tool, or failed
@@ -886,9 +1004,9 @@ model attempt remains a zero. Checkpoint only a complete pair.
 
 ```text
 prepare --run-root ABSOLUTE_PATH
-smoke --run-root ABSOLUTE_PATH
-run --run-root ABSOLUTE_PATH --cohort preliminary
-run --run-root ABSOLUTE_PATH --cohort signoff
+smoke --run-root ABSOLUTE_PATH --confidentiality-policy ABSOLUTE_PATH
+run --run-root ABSOLUTE_PATH --cohort preliminary --confidentiality-policy ABSOLUTE_PATH
+run --run-root ABSOLUTE_PATH --cohort signoff --confidentiality-policy ABSOLUTE_PATH
 report --run-root ABSOLUTE_PATH --format private-json
 export --run-root ABSOLUTE_PATH
 ```
@@ -973,7 +1091,8 @@ tarball gate to reject the four private prefixes above from the actual packed fi
 commands from Task 7, Max/no-API-spend boundary, nominal-cost warning, timeout/refusal/NA semantics,
 private external-root requirement, preliminary-versus-sign-off thresholds, and these explicit
 limitations: no Swan hardware, no Windows validation, no visual claim without an inspected capture,
-and no result export before PICO guidance. It must not contain model scores or emulator-derived
+no live MCP/model attempt without PICO vendor-handling guidance plus a private denylist receipt, and
+no result export before PICO guidance. It must not contain model scores or emulator-derived
 confidential identifiers.
 
 - [ ] **Step 5: Run the complete deterministic gate**
@@ -1004,10 +1123,11 @@ git commit -m "test(bench): gate reproducibility without shipping corpus"
 
 **Files:**
 - Create outside Git: `$PICO_AGENTBENCH_RUN_ROOT/**`
-- Create ignored local finding: `.dev/findings/SPATIAL_AGENT_BENCH_2026-08-16.md`
+- Create outside Git: `$PICO_AGENTBENCH_RUN_ROOT/findings/SPATIAL_AGENT_BENCH_2026-08-16.md`
 
 **Interfaces:**
-- Consumes: current Max OAuth session, frozen preliminary schedule, passing deterministic gates.
+- Consumes: current Max OAuth session, frozen preliminary schedule, passing deterministic gates,
+  and the external PICO vendor-handling/denylist policy required by Task 7.
 - Produces: five primary matched pairs, six declared control runs, four excluded smoke runs, a
   private aggregate, and an honest preliminary classification.
 
@@ -1023,12 +1143,16 @@ node benchmarks/spatial-agent-bench/run.mjs prepare --run-root "$PICO_AGENTBENCH
 
 Expected: the receipt gates pass on the exact checkout, preparation records only sanitized auth,
 and the reference app builds before model use. Keep this task-specific variable in the active shell;
-do not repurpose `HOME`, `CODEX_HOME`, or a shared system variable.
+do not repurpose `HOME`, `CODEX_HOME`, or a shared system variable. If preparation reports
+`blocked_confidentiality`, stop before model use, report that no benchmark numbers were measured,
+and continue with non-egress implementation work while Sushant obtains PICO's written handling.
 
 - [ ] **Step 2: Run four excluded smoke attempts**
 
 ```bash
-node benchmarks/spatial-agent-bench/run.mjs smoke --run-root "$PICO_AGENTBENCH_RUN_ROOT"
+: "${PICO_AGENTBENCH_POLICY:?set this to the absolute external PICO policy receipt path}"
+node benchmarks/spatial-agent-bench/run.mjs smoke --run-root "$PICO_AGENTBENCH_RUN_ROOT" \
+  --confidentiality-policy "$PICO_AGENTBENCH_POLICY"
 ```
 
 Require the stream init event to prove the exact canonical model and frozen local-tool list. Bare
@@ -1039,7 +1163,8 @@ freezing measured execution.
 - [ ] **Step 3: Run all preliminary attempts serially**
 
 ```bash
-node benchmarks/spatial-agent-bench/run.mjs run --run-root "$PICO_AGENTBENCH_RUN_ROOT" --cohort preliminary
+node benchmarks/spatial-agent-bench/run.mjs run --run-root "$PICO_AGENTBENCH_RUN_ROOT" \
+  --cohort preliminary --confidentiality-policy "$PICO_AGENTBENCH_POLICY"
 ```
 
 Run the five primary pairs in the frozen order and then the six controls, for sixteen measured model
@@ -1055,8 +1180,9 @@ node benchmarks/spatial-agent-bench/run.mjs report --run-root "$PICO_AGENTBENCH_
 
 Verify attempt counts, pair IDs, raw score evidence, build receipts, exclusions, and bootstrap inputs
 against stored hashes. Record actual per-lane 0–16 scores, per-axis scores, build rates, paired
-differences, 95% interval, elapsed times, and failure reasons in the ignored local finding. Label
-five pairs `preliminary` even if Sonnet+MCP wins every pair; do not call it PICO sign-off.
+differences, 95% interval, elapsed times, and failure reasons only in the external private finding
+and the direct user handoff. Label five pairs `preliminary` even if Sonnet+MCP wins every pair; do
+not call it PICO sign-off.
 
 - [ ] **Step 5: Record the evidence boundary and commit no measured artifacts**
 
@@ -1067,8 +1193,10 @@ captures, or measured report:
 
 ```bash
 git status --short
-git check-ignore -v .dev/findings/SPATIAL_AGENT_BENCH_2026-08-16.md
+test -f "$PICO_AGENTBENCH_RUN_ROOT/findings/SPATIAL_AGENT_BENCH_2026-08-16.md"
+if git ls-files --others --exclude-standard | rg -q 'SPATIAL_AGENT_BENCH_2026-08-16'; then exit 1; fi
 ```
 
-Expected: only intentional source/doc changes are tracked, and the local finding is ignored. Do not
-run `export`; measured publication remains blocked pending PICO guidance.
+Expected: the checkout is clean, the private finding exists only under the external run root, and
+Git sees no measured artifact. Do not run `export`; measured publication remains blocked pending
+PICO guidance.
