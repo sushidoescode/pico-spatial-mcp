@@ -637,6 +637,42 @@ test("strict typed parsers fail closed for malformed or ambiguous inputs", (t) =
       error: /application|conditional|direct|scope|Gradle/i,
     },
     {
+      name: "conditional labeled dependency handler",
+      path: "app/build.gradle.kts",
+      contents: 'if (false)\ndead@\ndependencies { implementation("org.example:dead:1") }\n',
+      error: /dependency|label|direct|scope|Gradle/i,
+    },
+    {
+      name: "conditional annotated dependency handler",
+      path: "app/build.gradle.kts",
+      contents: 'if (false)\n@Suppress("UNUSED_EXPRESSION")\ndependencies { implementation("org.example:dead:1") }\n',
+      error: /dependency|annotation|direct|scope|Gradle/i,
+    },
+    {
+      name: "conditional labeled application id",
+      path: "app/build.gradle.kts",
+      contents: 'android { defaultConfig {\nif (false)\ndead@\napplicationId = "org.example.dead"\n} }\n',
+      error: /application|label|direct|scope|Gradle/i,
+    },
+    {
+      name: "conditional annotated application id",
+      path: "app/build.gradle.kts",
+      contents: 'android { defaultConfig {\nif (false)\n@Suppress("UNUSED_EXPRESSION")\napplicationId = "org.example.dead"\n} }\n',
+      error: /application|annotation|direct|scope|Gradle/i,
+    },
+    {
+      name: "conditional grouped-annotation dependency handler",
+      path: "app/build.gradle.kts",
+      contents: 'if (false)\n@[Suppress("UNUSED_EXPRESSION")]\ndependencies { implementation("org.example:dead:1") }\n',
+      error: /dependency|annotation|direct|scope|Gradle/i,
+    },
+    {
+      name: "conditional grouped-annotation application id",
+      path: "app/build.gradle.kts",
+      contents: 'android { defaultConfig {\nif (false)\n@[Suppress("UNUSED_EXPRESSION")]\napplicationId = "org.example.dead"\n} }\n',
+      error: /application|annotation|direct|scope|Gradle/i,
+    },
+    {
       name: "top-level application id assignment",
       path: "app/build.gradle.kts",
       contents: 'applicationId = "org.example.top"\n',

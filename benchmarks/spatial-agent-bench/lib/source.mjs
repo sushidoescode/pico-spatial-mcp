@@ -6,7 +6,7 @@ const MAX_FILES = 2_000;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 32 * 1024 * 1024;
 const SKIPPED_DIRECTORIES = new Set([".git", ".gradle", ".cache", "build", "cache", "caches"]);
-const DSL_CONTINUATION_TOKENS = new Set([".", "&", "?", "*", ":", "+", "-", "/", "%", "=", "|", "^", "!", "<", ">", ",", "(", "[", "as", "in", "is"]);
+const DSL_CONTINUATION_TOKENS = new Set([".", "&", "?", "*", ":", "+", "-", "/", "%", "=", "|", "^", "!", "<", ">", ",", "(", "[", "@", "as", "in", "is"]);
 const UTF8 = new TextDecoder("utf-8", { fatal: true });
 
 /** @typedef {{path:string, absolutePath:string, kind:"kotlin"|"gradle"|"manifest", original:string, structural:string}} SourceFile */
@@ -533,12 +533,48 @@ function closesControlFlowHeader(tokens, closeIndex) {
   return false;
 }
 
+function hasAnnotationMarkerBefore(tokens, start) {
+  if (tokens[start - 1]?.value === "@") return true;
+  return tokens[start - 1]?.value === ":"
+    && tokens[start - 2]?.type === "ident"
+    && tokens[start - 3]?.value === "@";
+}
+
+function annotationNameIsPrefixed(tokens, nameEnd) {
+  if (tokens[nameEnd]?.type !== "ident") return false;
+  let start = nameEnd;
+  while (tokens[start - 1]?.value === "." && tokens[start - 2]?.type === "ident") start -= 2;
+  return hasAnnotationMarkerBefore(tokens, start);
+}
+
+function endsAnnotationPrefix(tokens, endIndex) {
+  if (annotationNameIsPrefixed(tokens, endIndex)) return true;
+  if (tokens[endIndex]?.value === "]") {
+    let depth = 1;
+    for (let index = endIndex - 1; index >= 0; index -= 1) {
+      if (tokens[index].value === "]") depth += 1;
+      else if (tokens[index].value === "[") depth -= 1;
+      if (depth === 0) return hasAnnotationMarkerBefore(tokens, index);
+    }
+    return false;
+  }
+  if (tokens[endIndex]?.value !== ")") return false;
+  let depth = 1;
+  for (let index = endIndex - 1; index >= 0; index -= 1) {
+    if (tokens[index].value === ")") depth += 1;
+    else if (tokens[index].value === "(") depth -= 1;
+    if (depth === 0) return annotationNameIsPrefixed(tokens, index - 1);
+  }
+  return false;
+}
+
 function directDslStatement(tokens, index, source) {
   const previous = tokens[index - 1];
   if (!previous || previous.value === "{" || previous.value === ";") return true;
   return !DSL_CONTINUATION_TOKENS.has(previous.value)
     && !["do", "else"].includes(previous.value)
     && !closesControlFlowHeader(tokens, index - 1)
+    && !endsAnnotationPrefix(tokens, index - 1)
     && source.slice(previous.end, tokens[index].start).includes("\n");
 }
 
