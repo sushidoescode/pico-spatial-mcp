@@ -7,6 +7,7 @@ import {
   RUBRIC_VERSION,
   RULE_DEFINITIONS,
   RUNTIME_PROTOCOL_VERSION,
+  TEST_EXECUTION_STREAM_MAX_BYTES,
   attachRuntimeProtocolEvidence,
   createDefaultRuntimeProtocolReceipts,
   createDefaultSubmissionTests,
@@ -66,7 +67,7 @@ function submissionRecord(status = "pass") {
 function ruleRecord([id, axis, evidenceClass], index) {
   const evidence = [{ evidenceClass: "source", path: `src/rule-${String(index).padStart(2, "0")}.kt`, line: index + 1, excerpt: `source evidence ${index}` }];
   if (evidenceClass === "source_and_typed_fact") evidence.push({ evidenceClass: "typed_fact", kind: "plugin", value: `fact-${index}`, path: `src/rule-${String(index).padStart(2, "0")}.kt`, line: index + 1, excerpt: `typed evidence ${index}` });
-  evidence.sort((left, right) => canonicalJson([left.evidenceClass, left.path, left.line, left.kind ?? "", left.key ?? "", left.value ?? "", left.excerpt]).localeCompare(canonicalJson([right.evidenceClass, right.path, right.line, right.kind ?? "", right.key ?? "", right.value ?? "", right.excerpt])));
+  evidence.sort((left, right) => canonicalJson([left.evidenceClass, left.path, left.line, left.kind ?? "", left.scope ?? "", left.activityName ?? "", left.key ?? "", left.value ?? "", left.excerpt]).localeCompare(canonicalJson([right.evidenceClass, right.path, right.line, right.kind ?? "", right.scope ?? "", right.activityName ?? "", right.key ?? "", right.value ?? "", right.excerpt])));
   return { id, rubricVersion: 2, axis, evidenceClass, pass: true, evidence, reason: `Rule ${id} has structural evidence.` };
 }
 
@@ -169,6 +170,7 @@ test("contract freezes rubric-v2 structural-only vocabulary", () => {
   assert.equal(RESULT_SCHEMA_VERSION, 2);
   assert.equal(RUBRIC_VERSION, 2);
   assert.equal(RUNTIME_PROTOCOL_VERSION, 1);
+  assert.equal(TEST_EXECUTION_STREAM_MAX_BYTES, 4_194_304);
   assert.deepEqual(RULE_DEFINITIONS, [
     ["spatial.project-entry", "spatialNative", "source_and_typed_fact"],
     ["spatial.container-topology", "spatialNative", "source_and_typed_fact"],
@@ -253,6 +255,27 @@ test("trusted test-execution receipts bind the exact command and output bytes", 
   assert.throws(() => validateTestExecutionReceipt(wrapper), /command/i);
   const forged = structuredClone(receipt); forged.stdoutBytes = 43;
   assert.throws(() => validateTestExecutionReceipt(forged), /digest|receipt/i);
+});
+
+test("trusted test-execution receipts enforce an inclusive 4 MiB cap per stream", () => {
+  const receipt = selfHash({
+    version: 1,
+    launcherSha256: H.a,
+    gradleExecutableSha256: H.b,
+    command: ["$PINNED_GRADLE/bin/gradle", "--offline", "--no-daemon", "--no-configuration-cache", "--console=plain", ":app:testDebugUnitTest"],
+    workingDirectory: "submission",
+    exitCode: 0,
+    stdoutBytes: 4_194_304,
+    stdoutSha256: H.c,
+    stderrBytes: 4_194_304,
+    stderrSha256: H.d,
+  });
+  assert.deepEqual(validateTestExecutionReceipt(receipt), receipt);
+  for (const field of ["stdoutBytes", "stderrBytes"]) {
+    const overflow = structuredClone(receipt);
+    overflow[field] = 4_194_305;
+    assert.throws(() => validateTestExecutionReceipt(reSelfHash(overflow)), /stdout|stderr|byte|limit|maximum|range/i, field);
+  }
 });
 
 test("runtime receipt validators distinguish blocked, not-run, and complete records", () => {
@@ -537,6 +560,96 @@ test("score-result v2 validates complete structural evidence and retains no call
     const mutated = scoreRecord(); mutated[forbidden] = null;
     assert.throws(() => validateScoreResultV2(mutated), /unknown/i, forbidden);
   }
+});
+
+test("typed manifest metadata evidence preserves and validates activity scope", async (t) => {
+  const metadataRow = () => ({
+    evidenceClass: "typed_fact",
+    kind: "manifest.metadata",
+    value: "pico.spatial.stage.style",
+    scope: "activity",
+    activityName: ".platform.LaunchActivity",
+    metadata: {
+      scope: "activity",
+      activityName: ".platform.LaunchActivity",
+      name: "pico.spatial.stage.style",
+      value: "1",
+      resource: null,
+    },
+    path: "app/src/main/AndroidManifest.xml",
+    line: 52,
+    excerpt: '<meta-data android:name="pico.spatial.stage.style" android:value="1" />',
+  });
+  const withMetadata = () => {
+    const score = scoreRecord();
+    score.rules[1].evidence[1] = metadataRow();
+    return score;
+  };
+  const input = withMetadata();
+  const validated = validateScoreResultV2(input);
+  const validatedRow = validated.rules[1].evidence[1];
+  assert.deepEqual(validatedRow, metadataRow());
+  assert.equal(Object.isFrozen(validatedRow), true);
+  assert.equal(Object.isFrozen(validatedRow.metadata), true);
+  input.rules[1].evidence[1].metadata.value = "3";
+  assert.equal(validatedRow.metadata.value, "1");
+
+  const cases = [
+    ["missing scope", (row) => { delete row.scope; }],
+    ["missing activity owner field", (row) => { delete row.activityName; }],
+    ["missing metadata", (row) => { delete row.metadata; }],
+    ["invalid scope", (row) => { row.scope = "service"; row.metadata.scope = "service"; }],
+    ["activity scope with null owner", (row) => { row.activityName = null; row.metadata.activityName = null; }],
+    ["application scope with non-null owner", (row) => { row.scope = "application"; row.metadata.scope = "application"; }],
+    ["top-level and nested scope mismatch", (row) => { row.metadata.scope = "application"; row.metadata.activityName = null; }],
+    ["top-level and nested owner mismatch", (row) => { row.metadata.activityName = ".OtherActivity"; }],
+    ["metadata name and fact value mismatch", (row) => { row.metadata.name = "pico.spatial.stage.id"; }],
+    ["missing value and resource", (row) => { row.metadata.value = null; }],
+    ["both value and resource", (row) => { row.metadata.resource = "@string/style"; }],
+  ];
+  for (const [name, mutate] of cases) await t.test(name, () => {
+    const score = withMetadata();
+    mutate(score.rules[1].evidence[1]);
+    assert.throws(() => validateScoreResultV2(score));
+  });
+
+  for (const field of ["scope", "activityName", "metadata"]) await t.test(`${field} is forbidden on another fact kind`, () => {
+    const score = scoreRecord();
+    const row = score.rules[0].evidence.find(({ evidenceClass }) => evidenceClass === "typed_fact");
+    if (field === "scope") row.scope = "application";
+    else if (field === "activityName") row.activityName = null;
+    else row.metadata = { scope: "application", activityName: null, name: row.value, value: "x", resource: null };
+    assert.throws(() => validateScoreResultV2(score), /forbidden|metadata|scope|activity|typed.fact/i);
+  });
+});
+
+test("typed metadata ordering distinguishes scopes and owners on one physical source line", () => {
+  const score = scoreRecord();
+  const row = (activityName) => ({
+    evidenceClass: "typed_fact",
+    kind: "manifest.metadata",
+    value: "pico.spatial.stage.style",
+    scope: "activity",
+    activityName,
+    metadata: { scope: "activity", activityName, name: "pico.spatial.stage.style", value: "1", resource: null },
+    path: "app/src/main/AndroidManifest.xml",
+    line: 52,
+    excerpt: '<meta-data android:name="pico.spatial.stage.style" android:value="1" />',
+  });
+  const applicationRow = {
+    ...row(null),
+    scope: "application",
+    metadata: { scope: "application", activityName: null, name: "pico.spatial.stage.style", value: "1", resource: null },
+  };
+  score.rules[1].evidence = [score.rules[1].evidence[0], row(".FirstActivity"), row(".SecondActivity"), applicationRow];
+  assert.deepEqual(validateScoreResultV2(score).rules[1].evidence.slice(1).map(({ scope, activityName }) => [scope, activityName]), [
+    ["activity", ".FirstActivity"],
+    ["activity", ".SecondActivity"],
+    ["application", null],
+  ]);
+
+  score.rules[1].evidence = [score.rules[1].evidence[0], applicationRow, row(".SecondActivity"), row(".FirstActivity")];
+  assert.throws(() => validateScoreResultV2(score), /sorted|unique/i);
 });
 
 test("score-result v2 rejects incomplete, malformed, duplicated, or reordered evidence", async (t) => {

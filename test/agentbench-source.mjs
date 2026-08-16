@@ -76,7 +76,7 @@ fun startTracking() {
   assert.deepEqual(index.facts.manifest, {
     applicationName: ".BenchApplication",
     activities: [".LaunchActivity"],
-    metadata: [{ name: "org.example.mode", value: "spatial", resource: null }],
+    metadata: [{ scope: "application", activityName: null, name: "org.example.mode", value: "spatial", resource: null }],
   });
   assert.equal(index.totalBytes, index.files.reduce((sum, file) => sum + Buffer.byteLength(file.original), 0));
 });
@@ -278,7 +278,9 @@ test("typed facts retain immutable parser-span provenance and applied alias rela
   assert.deepEqual(findFactEvidence(index, { kind: "manifest.metadata", value: "org.example.mode" }), [{
     kind: "manifest.metadata",
     value: "org.example.mode",
-    metadata: { name: "org.example.mode", value: null, resource: "@xml/mode" },
+    scope: "application",
+    activityName: null,
+    metadata: { scope: "application", activityName: null, name: "org.example.mode", value: null, resource: "@xml/mode" },
     path: "app/src/main/AndroidManifest.xml",
     line: 4,
     excerpt: '<meta-data android:name="org.example.mode" android:resource="@xml/mode" />',
@@ -288,6 +290,121 @@ test("typed facts retain immutable parser-span provenance and applied alias rela
   assert.equal(index.factEvidence.every(Object.isFrozen), true);
   assert.equal(Object.isFrozen(findFactEvidence(index, { kind: "manifest.metadata" })[0].metadata), true);
   assert.throws(() => findFactEvidence(index, { excerpt: "0.13.3" }), /query|field|excerpt/i);
+});
+
+test("activity-scoped manifest metadata preserves direct owners and parser-span provenance", (t) => {
+  const project = scratch(t);
+  write(project, "app/src/main/AndroidManifest.xml", `<manifest>
+  <application>
+    <meta-data android:name="org.example.mode" android:value="application" />
+    <activity android:name=".SecondActivity">
+      <meta-data android:name="org.example.mode" android:resource="@xml/second" />
+    </activity>
+    <activity android:name=".FirstActivity"><meta-data android:name="org.example.mode" android:value="first" /></activity>
+  </application>
+</manifest>
+`);
+
+  const index = loadSubmissionSources(project);
+
+  assert.deepEqual(index.facts.manifest.metadata, [
+    { scope: "activity", activityName: ".FirstActivity", name: "org.example.mode", value: "first", resource: null },
+    { scope: "activity", activityName: ".SecondActivity", name: "org.example.mode", value: null, resource: "@xml/second" },
+    { scope: "application", activityName: null, name: "org.example.mode", value: "application", resource: null },
+  ]);
+  assert.equal(Object.isFrozen(index.facts.manifest.metadata), true);
+  assert.equal(index.facts.manifest.metadata.every(Object.isFrozen), true);
+  assert.deepEqual(findFactEvidence(index, {
+    kind: "manifest.metadata",
+    value: "org.example.mode",
+    scope: "activity",
+    activityName: ".SecondActivity",
+  }), [{
+    kind: "manifest.metadata",
+    value: "org.example.mode",
+    scope: "activity",
+    activityName: ".SecondActivity",
+    metadata: {
+      scope: "activity",
+      activityName: ".SecondActivity",
+      name: "org.example.mode",
+      value: null,
+      resource: "@xml/second",
+    },
+    path: "app/src/main/AndroidManifest.xml",
+    line: 5,
+    excerpt: '<meta-data android:name="org.example.mode" android:resource="@xml/second" />',
+  }]);
+  assert.deepEqual(findFactEvidence(index, {
+    kind: "manifest.metadata",
+    value: "org.example.mode",
+    scope: "application",
+    activityName: null,
+  }).map(({ path, line, excerpt }) => ({ path, line, excerpt })), [{
+    path: "app/src/main/AndroidManifest.xml",
+    line: 3,
+    excerpt: '<meta-data android:name="org.example.mode" android:value="application" />',
+  }]);
+  assert.throws(() => findFactEvidence(index, { metadata: "org.example.mode" }), /query|field|metadata/i);
+});
+
+test("manifest metadata rejects unsupported parents and ambiguous scoped identities", async (t) => {
+  const cases = [
+    ["unsupported parent", '<manifest><application><activity android:name=".Main"><intent-filter><meta-data android:name="mode" android:value="x" /></intent-filter></activity></application></manifest>', /meta-data|parent|application|activity/i],
+    ["unnamed activity owner", '<manifest><application><activity><meta-data android:name="mode" android:value="x" /></activity></application></manifest>', /activity|name|owner/i],
+    ["empty activity owner", '<manifest><application><activity android:name=""><meta-data android:name="mode" android:value="x" /></activity></application></manifest>', /activity|name|owner|empty/i],
+    ["dynamic activity owner", '<manifest><application><activity android:name="${activityName}"><meta-data android:name="mode" android:value="x" /></activity></application></manifest>', /dynamic|activity|name/i],
+    ["missing metadata name", '<manifest><application><meta-data android:value="x" /></application></manifest>', /metadata|name/i],
+    ["empty metadata name", '<manifest><application><meta-data android:name="" android:value="x" /></application></manifest>', /metadata|name|empty/i],
+    ["untrimmed metadata name", '<manifest><application><meta-data android:name=" mode" android:value="x" /></application></manifest>', /metadata|name|trim/i],
+    ["dynamic metadata name", '<manifest><application><meta-data android:name="${mode}" android:value="x" /></application></manifest>', /dynamic|metadata/i],
+    ["missing value and resource", '<manifest><application><meta-data android:name="mode" /></application></manifest>', /metadata|value|resource/i],
+    ["both value and resource", '<manifest><application><meta-data android:name="mode" android:value="x" android:resource="@xml/x" /></application></manifest>', /metadata|value|resource|both/i],
+    ["empty value", '<manifest><application><meta-data android:name="mode" android:value="" /></application></manifest>', /metadata|value|empty/i],
+    ["untrimmed resource", '<manifest><application><meta-data android:name="mode" android:resource=" @xml/x" /></application></manifest>', /metadata|resource|trim/i],
+    ["conflicting duplicate identity", '<manifest><application><activity android:name=".Main"><meta-data android:name="mode" android:value="first" /><meta-data android:name="mode" android:value="second" /></activity></application></manifest>', /metadata|conflict|duplicate/i],
+  ];
+
+  for (const [name, manifest, error] of cases) await t.test(name, () => {
+    const project = scratch(t, "agentbench-source-metadata-");
+    write(project, "app/src/main/AndroidManifest.xml", `${manifest}\n`);
+    assert.throws(() => loadSubmissionSources(project), error);
+  });
+});
+
+test("identical scoped metadata duplicates collapse only in the flattened aggregate", (t) => {
+  const project = scratch(t);
+  write(project, "app/src/main/AndroidManifest.xml", `<manifest><application><activity android:name=".Main">
+  <meta-data android:name="mode" android:value="mixed" />
+  <meta-data android:name="mode" android:value="mixed" />
+</activity></application></manifest>
+`);
+
+  const index = loadSubmissionSources(project);
+
+  assert.deepEqual(index.facts.manifest.metadata, [{ scope: "activity", activityName: ".Main", name: "mode", value: "mixed", resource: null }]);
+  assert.deepEqual(findFactEvidence(index, { kind: "manifest.metadata", scope: "activity", activityName: ".Main" }).map(({ line }) => line), [2, 3]);
+});
+
+test("tracked appskeleton loads with direct activity-scoped Stage metadata", () => {
+  const index = loadSubmissionSources(path.resolve(import.meta.dirname, "..", "appskeleton"));
+  const stageRows = index.facts.manifest.metadata.filter(({ name }) => name.startsWith("pico.spatial.stage."));
+
+  assert.deepEqual(stageRows.map(({ name }) => name), [
+    "pico.spatial.stage.id",
+    "pico.spatial.stage.immersion",
+    "pico.spatial.stage.immersion_max",
+    "pico.spatial.stage.immersion_min",
+    "pico.spatial.stage.style",
+  ]);
+  assert.equal(stageRows.length, 5);
+  assert.equal(stageRows.every(({ scope, activityName }) => scope === "activity" && activityName === ".platform.LaunchActivity"), true);
+  assert.equal(findFactEvidence(index, {
+    kind: "manifest.metadata",
+    value: "pico.spatial.stage.style",
+    scope: "activity",
+    activityName: ".platform.LaunchActivity",
+  }).length, 1);
 });
 
 test("applicationId facts require direct top-level android/defaultConfig scope and retain provenance", (t) => {
@@ -518,6 +635,19 @@ test("inventory and facts use locale-independent deterministic ordering", (t) =>
 
   assert.deepEqual(index.files.map((file) => file.path), ["app/build.gradle.kts", "src/Upper.kt", "src/lower.kt"]);
   assert.deepEqual(index.facts.gradle.moduleCoordinates, ["A.example:alpha", "z.example:zeta"]);
+});
+
+test("source fact ordering distinguishes metadata scopes and owners on one physical line", (t) => {
+  const project = scratch(t, "agentbench-source-fact-order-");
+  write(project, "app/src/main/AndroidManifest.xml", '<manifest><application><meta-data android:name="mode" android:value="app" /><activity android:name=".Second"><meta-data android:name="mode" android:value="second" /></activity><activity android:name=".First"><meta-data android:name="mode" android:value="first" /></activity></application></manifest>\n');
+
+  const index = loadSubmissionSources(project);
+
+  assert.deepEqual(findFactEvidence(index, { kind: "manifest.metadata" }).map(({ scope, activityName }) => [scope, activityName]), [
+    ["activity", ".First"],
+    ["activity", ".Second"],
+    ["application", null],
+  ]);
 });
 
 test("strict typed parsers fail closed for malformed or ambiguous inputs", (t) => {

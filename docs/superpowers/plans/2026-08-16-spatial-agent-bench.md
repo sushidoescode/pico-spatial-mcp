@@ -487,10 +487,12 @@ Every rule returns exactly:
 ```
 
 Award the first eight points only for the approved conjunctions: 0.13.3 spatial project and one
-`mainApp`; planar WindowContainer plus declared/opened Mixed Stage; SpatialView/PICO entities rather
-than Android substitutes; SpatialUI/PicoTheme lifecycle; defaultable state-bearing Component with
-state-preserving clone; custom System with hoisted query against `context.scene`; delta-time-based
-in-place transform mutation; paired register/unregister in one lifecycle scope.
+`mainApp`; exact activity-owned planar `DefaultWindowContainer` metadata plus a secondary Stage
+declared without a style constructor argument and opened with `StageStyle.Mixed`; SpatialView/PICO
+entities rather than Android substitutes; SpatialUI/PicoTheme lifecycle; defaultable state-bearing
+Component with state-preserving clone; custom System with hoisted query against `context.scene`;
+delta-time-based in-place transform mutation; the same System type/class registered and
+unregistered in one paired lifecycle scope.
 
 - [ ] **Step 4: Implement state and plane rules**
 
@@ -511,13 +513,13 @@ the upstream audit.
 export function writeCompleteProject(t, mutate = (files) => files) {}
 export const RULE_MUTATIONS = [
   { ruleId: "spatial.project-entry", apply: replace("fun mainApp", "fun notMainApp") },
-  { ruleId: "spatial.container-topology", apply: replace("StageType.Mixed", "StageType.Immersive") },
+  { ruleId: "spatial.container-topology", apply: replace("StageStyle.Mixed", "StageStyle.Full") },
   { ruleId: "spatial.entity-content", apply: replace("SpatialView(entity)", "AndroidView(entity)") },
   { ruleId: "spatial.ui-lifecycle", apply: replace("PicoTheme", "MaterialTheme") },
   { ruleId: "ecs.component-clone", apply: replace("copy(selected = selected)", "CounterComponent()") },
   { ruleId: "ecs.system-query", apply: replace("private val counterQuery = EntityQueryCondition.hasComponent(CounterComponent::class.java)", "// counter query intentionally removed") },
   { ruleId: "ecs.frame-update", apply: replace("context.deltaTime", "0.016f") },
-  { ruleId: "ecs.lifecycle", apply: replace("unregisterSystem(orbitSystem)", "registerSystem(orbitSystem)") },
+  { ruleId: "ecs.lifecycle", apply: replace("unregisterSystem<OrbitSystem>()", "registerSystem<OrbitSystem>()") },
   { ruleId: "state.single-source", apply: replace("val sharedStore = BenchmarkStore.instance", "val sharedStore = BenchmarkStore()") },
   { ruleId: "state.typed-handoff", apply: replace("GallerySelection(selectedId)", "selectedId") },
   { ruleId: "state.shared-read-write", apply: replace("stageStore = sharedStore", "stageStore = BenchmarkStore()") },
@@ -533,6 +535,10 @@ export function writeAndroidStyleProject(t) {}
 Define `replace(from, to)` as an exact-one-occurrence edit that throws for zero or multiple matches.
 Name the complete fixture declarations to match the literals above, and make each mutation affect
 only its named rule. The test compares the complete sixteen-element boolean vector, not only totals.
+The temporary fixture replaces the copied skeleton's default-Stage metadata with activity-owned
+`pico.spatial.windowcontainer.id`, planar style `1`, and default size `1280x720` metadata for a
+`DefaultWindowContainer` root. It declares the secondary Stage in `mainApp`, supplies no Stage style
+constructor argument or default-Stage metadata, and opens it with `StageStyle.Mixed`.
 
 - [ ] **Step 6: Run scorer and conformance gates**
 
@@ -542,7 +548,11 @@ temporary directory, installs the complete fixture sources, and runs both
 `./gradlew --no-daemon :app:testDebugUnitTest --console=plain`. Require a non-empty APK and parse
 JUnit XML to prove the named two-selection/retained-counter test executed once with zero failures
 and zero skips; `NO-SOURCE` is a failure. The fixture must use declarations verified in the local
-0.13.3 SDK rather than guessed current-v6 APIs.
+0.13.3 SDK rather than guessed current-v6 APIs. Before either child spawn, the trusted launcher
+resolves and validates a JDK and Android SDK using valid environment values before Android Studio
+bundled defaults, then passes explicit `JAVA_HOME`, `ANDROID_SDK_ROOT`, and `ANDROID_HOME`; it fails
+closed if either dependency is unresolved and accepts no wrapper or submission-controlled child
+environment.
 
 ```bash
 node --test test/agentbench-source.mjs test/agentbench-score.mjs test/agentbench-fixture-compile.mjs

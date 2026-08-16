@@ -11,8 +11,9 @@ const UTF8 = new TextDecoder("utf-8", { fatal: true });
 
 /** @typedef {{path:string, absolutePath:string, kind:"kotlin"|"gradle"|"manifest", original:string, structural:string}} SourceFile */
 /** @typedef {{pluginIds:string[], moduleCoordinates:string[], versions:Record<string,string>, applicationIds:string[]}} GradleFacts */
-/** @typedef {{applicationName:string|null, activities:string[], metadata:Array<{name:string,value:string|null,resource:string|null}>}} ManifestFacts */
-/** @typedef {{kind:string,value:string,key?:string,alias?:string|null,version?:string|null,versionRef?:string|null,metadata?:{name:string,value:string|null,resource:string|null},path:string,line:number,excerpt:string}} FactEvidence */
+/** @typedef {{scope:"application"|"activity",activityName:string|null,name:string,value:string|null,resource:string|null}} ManifestMetadataFact */
+/** @typedef {{applicationName:string|null, activities:string[], metadata:ManifestMetadataFact[]}} ManifestFacts */
+/** @typedef {{kind:string,value:string,scope?:string|null,activityName?:string|null,key?:string,alias?:string|null,version?:string|null,versionRef?:string|null,metadata?:ManifestMetadataFact,path:string,line:number,excerpt:string}} FactEvidence */
 /** @typedef {{projectDir:string, files:SourceFile[], totalBytes:number, facts:{gradle:GradleFacts,manifest:ManifestFacts},factEvidence:FactEvidence[]}} SourceIndex */
 
 function fail(message) {
@@ -838,6 +839,7 @@ function parseManifest(source, label) {
   if (clean.includes("&")) fail(`${label} contains a forbidden XML entity`);
   if (/<!\[CDATA\[/i.test(clean)) fail(`${label} contains unsupported XML CDATA`);
   const stack = [];
+  const activityOwners = [];
   const activities = [];
   const metadata = [];
   const applicationIds = [];
@@ -871,7 +873,9 @@ function parseManifest(source, label) {
     if (content.startsWith("!")) fail(`${label} has an unsupported XML declaration`);
     if (content.startsWith("/")) {
       const closing = content.slice(1).trim();
-      if (!/^[A-Za-z_:][A-Za-z0-9_.:-]*$/.test(closing) || stack.pop() !== closing) fail(`${label} has malformed XML nesting`);
+      const opened = stack.pop();
+      activityOwners.pop();
+      if (!/^[A-Za-z_:][A-Za-z0-9_.:-]*$/.test(closing) || opened !== closing) fail(`${label} has malformed XML nesting`);
       continue;
     }
     const nameMatch = /^[A-Za-z_:][A-Za-z0-9_.:-]*/.exec(content);
@@ -880,6 +884,7 @@ function parseManifest(source, label) {
     if (sawManifest && stack.length === 0) fail(`${label} has multiple XML root elements`);
     const selfClosing = /\/\s*$/.test(content);
     const attributes = parseXmlAttributes(content, name.length, label);
+    let openedActivityName = null;
     if (!sawManifest) {
       if (name !== "manifest") fail(`${label} root element must be manifest`);
       sawManifest = true;
@@ -900,26 +905,42 @@ function parseManifest(source, label) {
       if (value !== null) evidence.push(evidenceAt(source, label, opening, { kind: "manifest.application", value }));
     } else if (name === "activity") {
       if (stack.at(-1) !== "application") fail(`${label} activity must be a direct child of application`);
-      const value = attributes.get("android:name");
-      if (value) {
+      const value = attributes.get("android:name") ?? null;
+      if (value !== null) {
         if (value.includes("$")) fail(`${label} has a dynamic activity name`);
+        if (!value || value !== value.trim()) fail(`${label} activity name must be non-empty and trimmed`);
+        openedActivityName = value;
         activities.push(value);
         evidence.push(evidenceAt(source, label, opening, { kind: "manifest.activity", value }));
       }
     } else if (name === "meta-data") {
-      if (stack.at(-1) !== "application") fail(`${label} meta-data must be a direct child of application`);
+      const parent = stack.at(-1);
+      if (parent !== "application" && parent !== "activity") fail(`${label} meta-data must be a direct child of application or activity`);
+      const scope = parent;
+      const activityName = scope === "activity" ? activityOwners.at(-1) : null;
+      if (scope === "activity" && activityName === null) fail(`${label} activity metadata requires a static non-empty activity name owner`);
       const metadataName = attributes.get("android:name");
-      if (metadataName) {
-        const value = attributes.get("android:value") ?? null;
-        const resource = attributes.get("android:resource") ?? null;
-        if (metadataName.includes("$") || value?.includes("$") || resource?.includes("$")) fail(`${label} has dynamic manifest metadata`);
-        if (value !== null && resource !== null) fail(`${label} metadata cannot define both value and resource`);
-        const metadataValue = { name: metadataName, value, resource };
-        metadata.push(metadataValue);
-        evidence.push(evidenceAt(source, label, opening, { kind: "manifest.metadata", value: metadataName, metadata: metadataValue }));
-      }
+      const value = attributes.get("android:value") ?? null;
+      const resource = attributes.get("android:resource") ?? null;
+      if (metadataName === undefined || !metadataName || metadataName !== metadataName.trim()) fail(`${label} metadata name must be present, non-empty, and trimmed`);
+      if (metadataName.includes("$") || value?.includes("$") || resource?.includes("$")) fail(`${label} has dynamic manifest metadata`);
+      if ((value === null) === (resource === null)) fail(`${label} metadata must define exactly one of value and resource`);
+      if (value !== null && (!value || value !== value.trim())) fail(`${label} metadata value must be non-empty and trimmed`);
+      if (resource !== null && (!resource || resource !== resource.trim())) fail(`${label} metadata resource must be non-empty and trimmed`);
+      const metadataValue = { scope, activityName, name: metadataName, value, resource };
+      metadata.push(metadataValue);
+      evidence.push(evidenceAt(source, label, opening, {
+        kind: "manifest.metadata",
+        value: metadataName,
+        scope,
+        activityName,
+        metadata: metadataValue,
+      }));
     }
-    if (!selfClosing) stack.push(name);
+    if (!selfClosing) {
+      stack.push(name);
+      activityOwners.push(name === "activity" ? openedActivityName : null);
+    }
   }
   if (stack.length === 0 && clean.slice(index).trim()) fail(`${label} has text outside the XML root`);
   if (!sawManifest || stack.length) fail(`${label} has malformed XML nesting`);
@@ -1037,8 +1058,10 @@ export function loadSubmissionSources(projectDir) {
       for (const value of parsed.applicationIds) facts.applicationIds.add(value);
       facts.evidence.push(...parsed.evidence);
       for (const value of parsed.metadata) {
-        const key = JSON.stringify(value);
-        metadataByKey.set(key, value);
+        const key = JSON.stringify([value.scope, value.activityName, value.name]);
+        const existing = metadataByKey.get(key);
+        if (existing && (existing.value !== value.value || existing.resource !== value.resource)) fail(`manifest metadata declarations conflict for ${value.name}`);
+        metadataByKey.set(key, existing ?? value);
       }
     } else if ((file.path.endsWith(".gradle") || file.path.endsWith(".gradle.kts"))) {
       parseGradle(file.original, file.path, catalogs, facts);
@@ -1061,10 +1084,25 @@ export function loadSubmissionSources(projectDir) {
   const manifest = Object.freeze({
     applicationName,
     activities: Object.freeze([...activities].sort(compareStrings)),
-    metadata: Object.freeze([...metadataByKey.values()].sort((left, right) => compareStrings(JSON.stringify(left), JSON.stringify(right))).map(Object.freeze)),
+    metadata: Object.freeze([...metadataByKey.values()].sort((left, right) => {
+      const leftTuple = [left.scope, left.activityName ?? "", left.name, left.value ?? "", left.resource ?? ""];
+      const rightTuple = [right.scope, right.activityName ?? "", right.name, right.value ?? "", right.resource ?? ""];
+      for (let index = 0; index < leftTuple.length; index += 1) {
+        const order = compareStrings(leftTuple[index], rightTuple[index]);
+        if (order !== 0) return order;
+      }
+      return 0;
+    }).map(Object.freeze)),
   });
   const factEvidence = Object.freeze(facts.evidence
-    .sort((left, right) => compareStrings(left.path, right.path) || left.line - right.line || compareStrings(left.kind, right.kind) || compareStrings(left.value, right.value))
+    .sort((left, right) => compareStrings(left.path, right.path)
+      || left.line - right.line
+      || compareStrings(left.kind, right.kind)
+      || compareStrings(left.scope ?? "", right.scope ?? "")
+      || compareStrings(left.activityName ?? "", right.activityName ?? "")
+      || compareStrings(left.key ?? "", right.key ?? "")
+      || compareStrings(left.value, right.value)
+      || compareStrings(left.excerpt, right.excerpt))
     .map(freezeFact));
   return Object.freeze({ projectDir: root, files: Object.freeze(files), totalBytes, facts: Object.freeze({ gradle, manifest }), factEvidence });
 }
@@ -1119,7 +1157,7 @@ export function findEvidence(index, matcher, { paths, original = false } = {}) {
 export function findFactEvidence(index, query = {}) {
   if (!index || !Array.isArray(index.factEvidence)) fail("source index fact evidence is invalid");
   if (query === null || typeof query !== "object" || Array.isArray(query)) fail("fact evidence query must be an object");
-  const allowed = new Set(["kind", "value", "key", "alias", "version", "versionRef", "path"]);
+  const allowed = new Set(["kind", "value", "scope", "activityName", "key", "alias", "version", "versionRef", "path"]);
   for (const [key, value] of Object.entries(query)) {
     if (!allowed.has(key)) fail(`fact evidence query contains unsupported field ${key}`);
     if (typeof value !== "string" && value !== null) fail(`fact evidence query field ${key} must be a string or null`);

@@ -5,6 +5,7 @@ import { canonicalJson } from "./identity.mjs";
 export const RESULT_SCHEMA_VERSION = 2;
 export const RUBRIC_VERSION = 2;
 export const RUNTIME_PROTOCOL_VERSION = 1;
+export const TEST_EXECUTION_STREAM_MAX_BYTES = 4 * 1024 * 1024;
 
 export const RULE_DEFINITIONS = deepFreeze([
   ["spatial.project-entry", "spatialNative", "source_and_typed_fact"],
@@ -304,6 +305,8 @@ export function validateTestExecutionReceipt(value) {
   assertSafeInteger(value.exitCode, "test execution exitCode");
   assertSafeInteger(value.stdoutBytes, "test execution stdoutBytes", 0);
   assertSafeInteger(value.stderrBytes, "test execution stderrBytes", 0);
+  if (value.stdoutBytes > TEST_EXECUTION_STREAM_MAX_BYTES) throw new Error(`test execution stdoutBytes exceeds ${TEST_EXECUTION_STREAM_MAX_BYTES}`);
+  if (value.stderrBytes > TEST_EXECUTION_STREAM_MAX_BYTES) throw new Error(`test execution stderrBytes exceeds ${TEST_EXECUTION_STREAM_MAX_BYTES}`);
   assertHash(value.stdoutSha256, "test execution stdout hash");
   assertHash(value.stderrSha256, "test execution stderr hash");
   verifySelfHash(value, "test execution receipt");
@@ -519,16 +522,20 @@ export function attachRuntimeProtocolEvidence(input) {
 }
 
 function validateMetadata(value, label) {
-  exactKeys(value, label, new Set(["name", "value", "resource"]));
+  exactKeys(value, label, new Set(["scope", "activityName", "name", "value", "resource"]));
+  if (value.scope !== "application" && value.scope !== "activity") throw new Error(`${label}.scope must be application or activity`);
+  if (value.scope === "application" && value.activityName !== null) throw new Error(`${label}.activityName must be null for application scope`);
+  if (value.scope === "activity") assertBoundedString(value.activityName, `${label}.activityName`, 512, { trimmed: true, singleLine: true });
   assertBoundedString(value.name, `${label}.name`, 512, { trimmed: true, singleLine: true });
   for (const key of ["value", "resource"]) {
     if (value[key] !== null) assertBoundedString(value[key], `${label}.${key}`, 1_024, { trimmed: true, singleLine: true });
   }
-  return { name: value.name, value: value.value, resource: value.resource };
+  if ((value.value === null) === (value.resource === null)) throw new Error(`${label} must contain exactly one non-null value or resource`);
+  return { scope: value.scope, activityName: value.activityName, name: value.name, value: value.value, resource: value.resource };
 }
 
 function evidenceTuple(row) {
-  return [row.evidenceClass, row.path, row.line, row.kind ?? "", row.key ?? "", row.value ?? "", row.excerpt];
+  return [row.evidenceClass, row.path, row.line, row.kind ?? "", row.scope ?? "", row.activityName ?? "", row.key ?? "", row.value ?? "", row.excerpt];
 }
 
 function compareTuples(left, right) {
@@ -544,7 +551,7 @@ function validateEvidenceRow(value, label) {
   if (value.evidenceClass === "source") {
     exactKeys(value, label, new Set(["evidenceClass", "path", "line", "excerpt"]));
   } else if (value.evidenceClass === "typed_fact") {
-    const allowed = new Set(["evidenceClass", "kind", "value", "path", "line", "excerpt", "key", "alias", "version", "versionRef", "metadata"]);
+    const allowed = new Set(["evidenceClass", "kind", "value", "path", "line", "excerpt", "scope", "activityName", "key", "alias", "version", "versionRef", "metadata"]);
     for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`${label} contains unknown typed-fact key: ${key}`);
     for (const key of ["evidenceClass", "kind", "value", "path", "line", "excerpt"]) if (!Object.hasOwn(value, key)) throw new Error(`${label} is missing required key: ${key}`);
   } else {
@@ -559,6 +566,19 @@ function validateEvidenceRow(value, label) {
     assertBoundedString(value.value, `${label}.value`, 1_024, { trimmed: true, singleLine: true });
     normalized.kind = value.kind;
     normalized.value = value.value;
+    const manifestMetadata = value.kind === "manifest.metadata";
+    for (const key of ["scope", "activityName", "metadata"]) {
+      if (manifestMetadata && !Object.hasOwn(value, key)) throw new Error(`${label} is missing required manifest metadata key: ${key}`);
+      if (!manifestMetadata && Object.hasOwn(value, key)) throw new Error(`${label}.${key} is forbidden for non-manifest metadata facts`);
+    }
+    if (manifestMetadata) {
+      const metadata = validateMetadata(value.metadata, `${label}.metadata`);
+      if (value.scope !== metadata.scope || value.activityName !== metadata.activityName) throw new Error(`${label} manifest metadata scope or activity owner mismatch`);
+      if (value.value !== metadata.name) throw new Error(`${label} manifest metadata name must equal fact value`);
+      normalized.scope = metadata.scope;
+      normalized.activityName = metadata.activityName;
+      normalized.metadata = metadata;
+    }
   }
   normalized.path = value.path;
   normalized.line = value.line;
@@ -570,7 +590,6 @@ function validateEvidenceRow(value, label) {
       if (value[key] !== null) assertBoundedString(value[key], `${label}.${key}`, 1_024, { trimmed: true, singleLine: true });
       normalized[key] = value[key];
     }
-    if (Object.hasOwn(value, "metadata")) normalized.metadata = validateMetadata(value.metadata, `${label}.metadata`);
   }
   return normalized;
 }

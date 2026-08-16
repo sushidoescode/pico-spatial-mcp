@@ -60,6 +60,97 @@ None of those is external behavior, visual verification, device verification, or
   `structural-threshold-primary` and `structural-threshold-primary-lanes`; the latter shuffles five
   copies of each lane order and is therefore exactly balanced.
 
+## Task 3 prerequisite corrections
+
+These corrections bind the reviewed source and receipt interfaces before any measurement.
+
+Manifest metadata facts preserve their direct owner:
+
+```ts
+type ManifestMetadataFact = {
+  scope: "application" | "activity";
+  activityName: string | null;
+  name: string;
+  value: string | null;
+  resource: string | null;
+};
+
+type ManifestFacts = {
+  applicationName: string | null;
+  activities: string[];
+  metadata: ManifestMetadataFact[];
+};
+```
+
+Only metadata immediately below `application` or `activity` is indexable. Application rows have a
+null owner; activity rows carry the exact static, trimmed, non-empty `android:name` of their direct
+activity parent. Metadata names and their one required `android:value` or `android:resource` are
+static, trimmed, and non-empty. The identity is `(scope, activityName, name)`: identical duplicates
+may collapse in the flattened aggregate while every parser span remains typed evidence, and a
+conflicting declaration for one identity fails closed. Rows sort locale-independently over
+`[scope, activityName || "", name, value || "", resource || ""]` and are deeply frozen.
+
+`manifest.metadata` evidence repeats `scope` and `activityName` at top level and in the exact
+five-field nested metadata object. The score contract requires those values to agree, requires the
+nested name to equal the evidence value, forbids scope/owner/metadata fields on every other fact
+kind, and retains no caller reference. Exact queries may include `scope` and `activityName`.
+Normalized evidence order is:
+
+```js
+[
+  evidenceClass,
+  path,
+  line,
+  kind || "",
+  scope || "",
+  activityName || "",
+  key || "",
+  value || "",
+  excerpt,
+]
+```
+
+The shared trusted-JUnit contract exports
+`TEST_EXECUTION_STREAM_MAX_BYTES = 4 * 1024 * 1024` (`4_194_304`). Receipt version 1 requires each
+of `stdoutBytes` and `stderrBytes` independently in the inclusive range `0..4_194_304`. The Task 3
+producer imports that same constant and counts raw bytes. On either overflow it terminates and
+settles the child and pipes, returns no captured buffers, and mints no receipt; it never truncates,
+hashes a prefix, converts overflow to `execution_failed`, or transfers unused capacity between
+streams. At or below the limit it hashes only the complete captured streams, records their exact
+lengths and digests, self-hashes the receipt, and validates it before return.
+
+The compile fixture replaces, rather than supplements, the copied skeleton's default-Stage
+metadata. Its launch activity owns `pico.spatial.windowcontainer.id` with value `BenchmarkWindow`,
+`pico.spatial.windowcontainer.style` with planar value `1`, and
+`pico.spatial.windowcontainer.defaultsize` with value `1280x720`; `mainApp` uses a
+`DefaultWindowContainer` root. The secondary `Stage(...)` declaration has no style constructor
+argument and needs no default-Stage metadata. Style is selected only on open:
+
+```kotlin
+navigator.openStage(
+    SpatialContainers.ID_GALLERY,
+    StageStyle.Mixed,
+    bundle,
+)
+```
+
+`spatial.container-topology` requires those exact activity-owned window facts plus the structural
+secondary-Stage declaration and Mixed `openStage` path. Application-scoped bait or retained
+default-Stage metadata cannot satisfy it. Its exact compile-valid isolation mutation is
+`StageStyle.Mixed` to `StageStyle.Full`.
+
+For `ecs.lifecycle`, the same System type/class is registered and unregistered in one paired
+lifecycle scope. SDK 0.13.3 uses `registerSystem<OrbitSystem>()` and
+`unregisterSystem<OrbitSystem>()`, not an object-instance parameter. The compile-valid isolation
+mutation replaces `unregisterSystem<OrbitSystem>()` with `registerSystem<OrbitSystem>()`.
+
+Finally, the trusted compile/JUnit launcher resolves and validates a JDK and Android SDK before
+spawn and supplies explicit `JAVA_HOME`, `ANDROID_SDK_ROOT`, and `ANDROID_HOME` child values. It
+uses the `scripts/sdk-facts.mjs` precedence: valid environment values first, Android Studio's
+bundled JBR and platform SDK defaults second, and fail closed if either remains unresolved. This is
+a compile precondition, not runtime or device evidence, and it does not authorize a wrapper or any
+submission-controlled environment value.
+
 ## Frozen corpus revision
 
 The `pico-spatial-agent-bench-v1` manifest contains these new binding fields:
