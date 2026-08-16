@@ -8,6 +8,15 @@
 
 **Tech Stack:** Node.js 20/22 ESM, `node:test`, Zod 3, Claude Code 2.1.233 with Claude Max authentication, `@picoxr/pico-cli@0.4.2`, Spatial SDK 0.13.3, Gradle, and the landed digest-bound provenance primitives.
 
+> **Premeasurement amendment (2026-08-16):**
+> [the approved contract correction](../specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md)
+> supersedes this plan's rubric-v1 `state.round-trip`, `deliveryScore`, zero-MCP comparator,
+> runtime/behavior vocabulary, and Tasks 3–9 interfaces. Downstream executable surfaces use only
+> `createStructuralThresholdSchedule`, `runStructuralThresholdCohort`,
+> `--cohort structural-threshold`, `structural_threshold_met`, and
+> `structural_threshold_not_met`; there is no compatibility alias. No measured attempt used the
+> superseded corpus identity, and the original task text remains below as historical rationale.
+
 ## Global Constraints
 
 - `sushidoescode/pico-spatial-mcp` remains PRIVATE; never change visibility, collaborators, or permissions.

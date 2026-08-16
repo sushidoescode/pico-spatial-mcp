@@ -6,6 +6,12 @@
 
 **Scope:** A reproducible agent-generation benchmark for PICO Spatial SDK applications
 
+> **Premeasurement amendment (2026-08-16):**
+> [the approved contract correction](2026-08-16-spatial-agent-bench-premeasurement-amendment.md)
+> supersedes this document's rubric-v1 `state.round-trip`, `deliveryScore`, zero-MCP comparator,
+> runtime/behavior vocabulary, and Tasks 3–9 interfaces. No measured attempt used the superseded
+> corpus identity; the historical rationale below is intentionally retained.
+
 ## Decision
 
 Build `SpatialAgentBench` as a sibling to the existing `run_spatialbench` evaluator. The existing

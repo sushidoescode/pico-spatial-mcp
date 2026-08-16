@@ -1,0 +1,134 @@
+[
+  {
+    "name": "workspace_list",
+    "description": "List one directory beneath submission/ with stable bounded entries.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 }
+      },
+      "required": ["path"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "type": { "type": "string", "enum": ["file", "directory"] },
+              "size": { "type": "integer", "minimum": 0 }
+            },
+            "required": ["path", "type", "size"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["entries"],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "workspace_read",
+    "description": "Read bounded UTF-8 text from one file beneath submission/.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "offset": { "type": "integer", "minimum": 0 },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 262144 }
+      },
+      "required": ["path"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "offset": { "type": "integer", "minimum": 0 },
+        "text": { "type": "string" },
+        "eof": { "type": "boolean" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "required": ["path", "offset", "text", "eof", "sha256"],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "workspace_write",
+    "description": "Create or replace one UTF-8 file beneath submission/.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "content": { "type": "string" }
+      },
+      "required": ["path", "content"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "required": ["path", "bytes", "sha256"],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "workspace_replace",
+    "description": "Replace an exact number of text occurrences in one UTF-8 file beneath submission/.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "oldText": { "type": "string" },
+        "newText": { "type": "string" },
+        "expectedOccurrences": { "type": "integer", "minimum": 1, "maximum": 100 }
+      },
+      "required": ["path", "oldText", "newText", "expectedOccurrences"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "replacements": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "required": ["path", "replacements", "bytes", "sha256"],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  }
+]

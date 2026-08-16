@@ -1,7 +1,26 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "corpusId": "pico-spatial-agent-bench-v1",
-  "rubricVersion": 1,
+  "corpusRevision": 2,
+  "supersedes": {
+    "identitySha256": "449ba40d15eb60d96b9a1572b6d2fecfc41f1072bee2846701c48895f47b7f70",
+    "measuredAttempts": 0,
+    "reason": "premeasurement_contract_correction"
+  },
+  "rubricVersion": 2,
+  "resultSchemaVersion": 2,
+  "runtimeProtocolVersion": 1,
+  "protocolVectorsFile": "protocol-vectors.json",
+  "workspaceMcp": {
+    "serverName": "agentbench-workspace",
+    "tools": ["workspace_list", "workspace_read", "workspace_write", "workspace_replace"]
+  },
+  "claudeClientBoundary": {
+    "version": 1,
+    "clientZone": "trusted_supervisor",
+    "authentication": "max_oauth_keychain",
+    "subprocessCredentialScrub": true
+  },
   "sdkVersion": "0.13.3",
   "picoCli": {
     "package": "@picoxr/pico-cli",
@@ -20,10 +39,10 @@
   "maxTurns": 100,
   "maxOutputBytes": 67108864,
   "expectedDoorTools": [
-    "validate_toolchain", "pico_build_app", "pico_scan_world", "pico_place", "pico_look",
-    "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship",
-    "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next", "pico_loop",
-    "ensure_pico_cli"
+    "validate_toolchain", "ensure_pico_cli", "pico_build_app", "pico_scan_world", "pico_place",
+    "pico_look", "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor",
+    "pico_ship", "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next",
+    "pico_loop"
   ],
   "seed": 20260816,
   "controlVariantIds": ["museum", "instruments", "vehicles"],
