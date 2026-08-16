@@ -41,6 +41,8 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
       - name: Build (tsc)
         run: npm run build
+      - name: Prompt/tool surface conformance
+        run: npm run test:prompts
       # The Linux-assigned deterministic/headless tiers. The complete 47-invocation battery also
       # includes one Windows-assigned and two macOS-assigned native contracts; emulator/LOOK work
       # cannot run in this CI job.

@@ -271,12 +271,22 @@ PICO_MCP_SURFACE=doors claude mcp add pico-spatial -- node /path/to/PICO-MCP/dis
 
 ## How agents use it
 
-The server ships built-in prompts that drive the loop — the dev workflow and the bounded autonomous build (brief → scaffold → author → build & run → **the verify gate: structural checks + a frame you LOOK at** → diagnose → apply a retained lesson when one exists, otherwise stop for manual repair → evidence-scoped ship checklist). Two representative loops:
+The default doors surface exposes `pico_first_light`, a short loop over intent-level tools:
+doctor → two-step AppSpec authoring/build → inspect the exact receipt-bound capture → record only
+what was actually seen. The full surface additionally exposes the five advanced orchestration
+prompts, including `pico_spatial_dev_loop`.
 
-- **Inner loop** (fast, scene-only): edit scene text → `iterate_scene` (pack + inspect + preview + capture) → adjust → repeat.
-- **Full app loop**: `emulator_boot` → `build_and_run` (build + install + launch + crash-check + capture) → drive interactions → `check_crash` / `wait_for_log` → `record_verification` on a frame you looked at.
+Two representative full-surface examples:
 
-The tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first scene authoring + `spatialbundle`/Gradle compilation, the native + web codegen lanes, and the verification/ship suite. `scaffold_spatial_app` is the "start any project" entry point; the built-in `pico_spatial_dev_loop` prompt carries the full agent guidance. See **[QUICKSTART.md](QUICKSTART.md)** to get going, **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for repo orientation, and **[SKILLS.md](SKILLS.md)** for the agent reference.
+- **Inner loop** (fast, scene-only): edit scene text → `iterate_scene` (pack + inspect + preview + capture) → adjust → repeat. These low-level tools require `PICO_MCP_SURFACE=full`.
+- **Full app loop**: `emulator_boot` → `build_and_run` (build + install + launch + crash-check + capture) → drive interactions → `check_crash` / `wait_for_log` → `record_verification` on a frame you looked at. These low-level tools require `PICO_MCP_SURFACE=full`.
+
+On the full surface, the tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first
+scene authoring + `spatialbundle`/Gradle compilation, the native + web codegen lanes, and the
+verification/ship suite. `scaffold_spatial_app` is the "start any project" entry point; the built-in
+`pico_spatial_dev_loop` prompt carries the full agent guidance. See **[QUICKSTART.md](QUICKSTART.md)**
+to get going, **[docs/COLLABORATORS.md](docs/COLLABORATORS.md)** for repo orientation, and
+**[SKILLS.md](SKILLS.md)** for the agent reference.
 
 ## Documentation
 
