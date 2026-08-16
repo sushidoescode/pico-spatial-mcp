@@ -39,6 +39,7 @@
     "test:worldenv": "node test/worldenv.mjs",
     "test:referring": "node test/referring.mjs",
     "test:doors": "node test/doors.mjs",
+    "test:prompts": "node --test test/prompts.mjs",
     "test:archetype": "node test/archetype.mjs",
     "test:claims": "node test/claimspage.mjs",
     "test:bench": "node test/spatialbench.mjs",

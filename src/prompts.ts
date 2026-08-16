@@ -1,7 +1,68 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 
-/** A built-in prompt teaching an agent the PICO spatial dev loop with these tools. */
-export function registerPrompts(server: McpServer) {
+export type PromptSurface = "doors" | "full";
+
+export const PROMPT_CONTRACTS = {
+  pico_first_light: {
+    surfaces: ["doors", "full"],
+    requiredTools: [
+      "pico_doctor",
+      "pico_emulator",
+      "pico_build_app",
+      "pico_fix",
+      "pico_look",
+      "pico_record",
+      "pico_next",
+    ],
+  },
+  autonomous_spatial_build: { surfaces: ["full"] },
+  brief_to_app: { surfaces: ["full"] },
+  autonomous_spatial_build_v6: { surfaces: ["full"] },
+  pico_spatial_dev_loop: { surfaces: ["full"] },
+  generative_spatial_build: { surfaces: ["full"] },
+} as const;
+
+type PromptName = keyof typeof PROMPT_CONTRACTS;
+const enabled = (name: PromptName, surface: PromptSurface) =>
+  (PROMPT_CONTRACTS[name].surfaces as readonly PromptSurface[]).includes(surface);
+
+/** Registers prompts available on the requested public tool surface. */
+export function registerPrompts(server: McpServer, surface: PromptSurface): void {
+  if (enabled("pico_first_light", surface)) {
+    server.registerPrompt(
+      "pico_first_light",
+      {
+        description: "Doors-native first-light loop: doctor, two-step AppSpec authoring/build, receipt-bound LOOK, and honest recording using only intent-level tools.",
+        argsSchema: {
+          brief: z.string().min(1).describe("The spatial app to build."),
+        },
+      },
+      ({ brief }) => ({
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: [
+                `Objective: build ${JSON.stringify(brief)} honestly through the doors surface.`,
+                "",
+                "1. Call `pico_doctor` first. Every failed check and its fix blocks progress; apply the named fix before continuing. Use `pico_emulator` only when doctor names an emulator lifecycle action.",
+                "2. Call `pico_build_app` first with {brief}. The first response is expected to be needs-authoring: author the returned scaffold as draftSpec, then call it with {brief,draftSpec}.",
+                "3. Advance to LOOK only when pico_build_app returns auto-judged-needs-look or built-needs-look with capture, receiptId, and briefId. For plan-failed, failed, built-not-installed, built-no-capture, or error: stop, send the exact detail to `pico_fix`, apply its fix, and retry the blocked step.",
+                "4. LOOK at the exact receipt-bound capture from pico_build_app.capture. Black, missing, unreadable, or non-app pixels are inconclusive. `pico_look` is optional diagnosis only; new bytes from it cannot use the earlier receipt ID.",
+                "5. After a successful human LOOK, make a positive record with `pico_record`: app: \"com.fleet.\" + briefId, claim, evidenceType: \"vision_verified\", artifactPath: capture, a concrete attestation, and runReceiptId: receiptId. Never ask pico_record for producer-only auto_judged; do not record positive visual evidence after an inconclusive or failed look.",
+                "6. Finish with `pico_next` for the next honest step.",
+              ].join("\n"),
+            },
+          },
+        ],
+      }),
+    );
+  }
+
+  if (!enabled("autonomous_spatial_build", surface)) return;
+
   server.registerPrompt(
     "autonomous_spatial_build",
     {
@@ -16,7 +77,7 @@ export function registerPrompts(server: McpServer) {
           content: {
             type: "text",
             text: [
-              "You are an autonomous SPATIAL STUDIO driving pico-spatial-mcp. Take the user's product brief and deliver a native PICO XR spatial app that you have BUILT and VERIFIED end-to-end on the emulator — no headset, no hand-driving the GUI editor. The bar for 'done' is a real capture + a logcat assertion, never a claim. Read SKILLS.md + DESIGN.md first; this prompt is the orchestration spine, `diagnose` is the gotcha encyclopedia.",
+              "You are an autonomous SPATIAL STUDIO driving pico-spatial-mcp. Take the user's product brief and deliver a native PICO XR spatial app that you have BUILT and VERIFIED end-to-end on the emulator — no headset, no hand-driving the GUI editor. The bar for 'done' is a real capture you LOOKED at plus the matching structural assertion, never a claim. Read SKILLS.md + DESIGN.md first; this prompt is the orchestration spine, `diagnose` is the gotcha encyclopedia.",
               "",
               "## The loop (each step ends in a machine-checkable signal — don't advance on assumption)",
               "1. PREFLIGHT — `validate_toolchain`; resolve every `problems` entry before continuing. Confirm a device with `emulator_list` (`emulator_boot` if none).",
@@ -183,7 +244,7 @@ export function registerPrompts(server: McpServer) {
               "- `xr_set_options` (passthrough/environment) and `xr_recenter` are accepted; `xr_send_key` drives keys.",
               "",
               "## Principles",
-              "- After every build/deploy, VERIFY with a screenshot or log — never assume success.",
+              "- After every build/deploy, check structural or behavioral claims with the matching log/assertion, and verify appearance only by LOOKing at the exact captured frame; neither substitutes for the other.",
               "- Prefer the orchestration tools (`iterate_scene`, `build_and_run`) over hand-sequencing primitives.",
               "- When something fails, read the returned error/log tail and fix the root cause before retrying; don't loop blindly.",
             ].join("\n"),
