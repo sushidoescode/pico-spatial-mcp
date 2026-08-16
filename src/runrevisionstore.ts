@@ -32,6 +32,7 @@ const REVISION_STAGING = new RegExp(`^\\.(0|[1-9][0-9]*)\\.json\\.${STAGING_PID}
 const HEAD_STAGING = new RegExp(`^\\.HEAD\\.json\\.${STAGING_PID}\\.${STAGING_UUID}\\.tmp$`);
 const OBJECT_STAGING = new RegExp(`^\\.[a-f0-9]{64}\\.json\\.${STAGING_PID}\\.${STAGING_UUID}\\.tmp$`);
 const OBJECT_FILE = new RegExp(`^${SHA256.source.slice(1, -1)}\\.json$`);
+const RESERVATION_FILE = /^reservation-([0-5][0-9]|6[0-3])\.json$/;
 const MAX_HEAD_BYTES = 64 * 1024;
 const MAX_ROOT_ENTRIES = 4_096;
 const MAX_RUN_ENTRIES = 1_024;
@@ -40,6 +41,8 @@ const MAX_AGGREGATE_REVISIONS = 16_384;
 const MAX_OBJECTS = 32_768;
 const MAX_ROOT_CANONICAL_BYTES = 512 * 1024 * 1024;
 const MAX_ISSUES = 64;
+const MAX_RESERVATIONS = 64;
+const MAX_RESERVATION_BYTES = 4 * 1024;
 
 const SNAPSHOT_DIRECTORY: Readonly<Record<SnapshotRefV1["kind"], string>> = Object.freeze({
   goal: "goal",
@@ -131,6 +134,14 @@ type StableFile = Readonly<{
   canonical: string;
   storedBytes: number;
   identity: string;
+  objectIdentity: string;
+  stat: fs.BigIntStats;
+}>;
+
+type StableLeafObservation = Readonly<{
+  identity: string;
+  objectIdentity: string;
+  stat: fs.BigIntStats;
 }>;
 
 type Inspection = Readonly<{
@@ -138,6 +149,51 @@ type Inspection = Readonly<{
   tail: RunRevisionV1 | null;
   headless: boolean;
   directories: ReadonlyMap<string, fs.BigIntStats>;
+  ancestors: ReadonlyMap<string, fs.BigIntStats>;
+}>;
+
+type ReservationOperation =
+  | "snapshot-publication"
+  | "revision-publication"
+  | "head-publication";
+
+type ReservationRecord = Readonly<{
+  kind: "pico.workflow-run-reservation";
+  schemaVersion: 1;
+  token: LowercaseUuidV4;
+  pid: number;
+  operation: ReservationOperation;
+  rootEntries: number;
+  objectsEntries: number;
+  nestedEntries: number;
+  aggregateRevisions: number;
+  casObjects: number;
+  contentBytes: number;
+  canonicalBytes: number;
+  runId: LowercaseUuidV4 | null;
+  runEntries: number;
+  revisionEntries: number;
+  namespace: string | null;
+  namespaceEntries: number;
+}>;
+
+type ReservationTotals = {
+  rootEntries: number;
+  objectsEntries: number;
+  nestedEntries: number;
+  aggregateRevisions: number;
+  casObjects: number;
+  canonicalBytes: number;
+  runEntries: Map<string, number>;
+  revisionEntries: Map<string, number>;
+  namespaceEntries: Map<string, number>;
+};
+
+type ReservationLease = Readonly<{
+  path: string;
+  canonical: string;
+  identity: string;
+  record: ReservationRecord;
 }>;
 
 type RootScan = Readonly<{
@@ -145,6 +201,12 @@ type RootScan = Readonly<{
   nestedEntries: number;
   aggregateRevisions: number;
   canonicalBytes: number;
+  runEntries: ReadonlyMap<string, number>;
+  revisionEntries: ReadonlyMap<string, number>;
+  reservations: ReservationTotals;
+  directories: ReadonlyMap<string, fs.BigIntStats>;
+  leaves: ReadonlyMap<string, string>;
+  ancestors: ReadonlyMap<string, fs.BigIntStats>;
 }>;
 
 type CasCatalogEntry = Readonly<{
@@ -235,6 +297,34 @@ function lstatDirectoryComponents(directory: string): fs.BigIntStats {
     latest = lstatDirectory(current);
   }
   return latest;
+}
+
+function captureDirectoryComponentObjects(directory: string): Map<string, fs.BigIntStats> {
+  const resolved = path.resolve(directory);
+  const parsed = path.parse(resolved);
+  const relative = resolved.slice(parsed.root.length).split(path.sep).filter(Boolean);
+  const captured = new Map<string, fs.BigIntStats>();
+  let current = parsed.root;
+  captured.set(current, lstatDirectory(current));
+  for (const component of relative) {
+    current = path.join(current, component);
+    captured.set(current, lstatDirectory(current));
+  }
+  return captured;
+}
+
+function assertDirectoryComponentObjectsStable(
+  before: ReadonlyMap<string, fs.BigIntStats>,
+  status: StoreStatus = "run-busy",
+): void {
+  const after = captureDirectoryComponentObjects([...before.keys()].at(-1)!);
+  if (before.size !== after.size) failure(status, "configured-root ancestor set changed");
+  for (const [directory, stat] of before) {
+    const later = after.get(directory);
+    if (later === undefined || !sameObjectIdentity(stat, later)) {
+      failure(status, `configured-root ancestor '${directory}' was replaced`);
+    }
+  }
 }
 
 function captureDirectories(paths: readonly string[]): Map<string, fs.BigIntStats> {
@@ -371,7 +461,7 @@ function openNoFollow(filePath: string): number {
   return fs.openSync(filePath, fs.constants.O_RDONLY | noFollow);
 }
 
-function stableLeafIdentity(filePath: string): string {
+function stableLeafObservation(filePath: string): StableLeafObservation {
   let beforePath: fs.BigIntStats;
   try {
     beforePath = fs.lstatSync(filePath, { bigint: true });
@@ -393,7 +483,11 @@ function stableLeafIdentity(filePath: string): string {
       || !samePathDescriptorMetadata(afterPath, descriptorStat)) {
       failure("invalid-store", `leaf '${filePath}' changed during inspection`);
     }
-    return statIdentity(descriptorStat);
+    return {
+      identity: statIdentity(descriptorStat),
+      objectIdentity: `${descriptorStat.dev}:${descriptorStat.ino}`,
+      stat: descriptorStat,
+    };
   } catch (error) {
     throw asStoreError(error);
   } finally {
@@ -401,7 +495,15 @@ function stableLeafIdentity(filePath: string): string {
   }
 }
 
-function readStableCanonical(filePath: string, maxBytes: number, chargeBeforeAllocation?: (bytes: number) => void): StableFile {
+function stableLeafIdentity(filePath: string): string {
+  return stableLeafObservation(filePath).identity;
+}
+
+function readStableCanonical(
+  filePath: string,
+  maxBytes: number,
+  chargeBeforeAllocation?: (bytes: number, stat: fs.BigIntStats) => void,
+): StableFile {
   let pathBefore: fs.BigIntStats;
   try {
     pathBefore = fs.lstatSync(filePath, { bigint: true });
@@ -420,7 +522,7 @@ function readStableCanonical(filePath: string, maxBytes: number, chargeBeforeAll
     }
     if (before.size <= 0n || before.size > BigInt(maxBytes + 1)) failure("invalid-store", `leaf '${filePath}' exceeds its byte bound`);
     const size = Number(before.size);
-    chargeBeforeAllocation?.(size);
+    chargeBeforeAllocation?.(size, before);
     const bytes = Buffer.allocUnsafe(size);
     let offset = 0;
     while (offset < size) {
@@ -439,10 +541,20 @@ function readStableCanonical(filePath: string, maxBytes: number, chargeBeforeAll
     const canonicalBytes = bytes.subarray(0, bytes.length - 1);
     if (canonicalBytes.includes(0x0a) || canonicalBytes.includes(0x0d)) failure("invalid-store", `leaf '${filePath}' has noncanonical line breaks`);
     const canonical = canonicalBytes.toString("utf8");
+    if (!Buffer.from(canonical, "utf8").equals(canonicalBytes)) {
+      failure("invalid-store", `leaf '${filePath}' contains invalid UTF-8 raw bytes`);
+    }
     let raw: unknown;
     try { raw = JSON.parse(canonical); } catch (error) { failure("invalid-store", `leaf '${filePath}' is not JSON: ${errorText(error)}`); }
     if (canonicalJson(raw) !== canonical) failure("invalid-store", `leaf '${filePath}' bytes are not canonical JSON plus one newline`);
-    return { raw, canonical, storedBytes: size, identity: statIdentity(after) };
+    return {
+      raw,
+      canonical,
+      storedBytes: size,
+      identity: statIdentity(after),
+      objectIdentity: `${after.dev}:${after.ino}`,
+      stat: after,
+    };
   } catch (error) {
     throw asStoreError(error);
   } finally {
@@ -533,16 +645,187 @@ function scanDirectory(directory: string, maximum: number, visit: (name: string)
   return count;
 }
 
-function scanRoot(root: string, issues: BoundedDiagnosticV1[]): RootScan {
+function emptyReservationTotals(): ReservationTotals {
+  return {
+    rootEntries: 0,
+    objectsEntries: 0,
+    nestedEntries: 0,
+    aggregateRevisions: 0,
+    casObjects: 0,
+    canonicalBytes: 0,
+    runEntries: new Map(),
+    revisionEntries: new Map(),
+    namespaceEntries: new Map(),
+  };
+}
+
+function reservationInteger(value: unknown, maximum: number, field: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > maximum) {
+    failure("invalid-store", `malformed reservation record field '${field}'`);
+  }
+  return value as number;
+}
+
+function parseReservationRecord(value: unknown): ReservationRecord {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    failure("invalid-store", "malformed reservation record object");
+  }
+  const record = value as Record<string, unknown>;
+  const expectedKeys = [
+    "kind", "schemaVersion", "token", "pid", "operation", "rootEntries", "objectsEntries",
+    "nestedEntries", "aggregateRevisions", "casObjects", "contentBytes", "canonicalBytes", "runId", "runEntries",
+    "revisionEntries", "namespace", "namespaceEntries",
+  ];
+  if (Object.keys(record).length !== expectedKeys.length || expectedKeys.some((key) => !Object.hasOwn(record, key))) {
+    failure("invalid-store", "malformed reservation record shape");
+  }
+  if (record.kind !== "pico.workflow-run-reservation" || record.schemaVersion !== 1
+    || typeof record.token !== "string" || !UUID_V4.test(record.token)
+    || !Number.isSafeInteger(record.pid) || (record.pid as number) <= 0
+    || !["snapshot-publication", "revision-publication", "head-publication"].includes(String(record.operation))) {
+    failure("invalid-store", "malformed reservation record identity");
+  }
+  const rootEntries = reservationInteger(record.rootEntries, MAX_ROOT_ENTRIES, "rootEntries");
+  const objectsEntries = reservationInteger(record.objectsEntries, Object.keys(SNAPSHOT_DIRECTORY).length, "objectsEntries");
+  const nestedEntries = reservationInteger(record.nestedEntries, MAX_NESTED_RUN_ENTRIES, "nestedEntries");
+  const aggregateRevisions = reservationInteger(record.aggregateRevisions, MAX_AGGREGATE_REVISIONS, "aggregateRevisions");
+  const casObjects = reservationInteger(record.casObjects, MAX_OBJECTS, "casObjects");
+  const contentBytes = reservationInteger(record.contentBytes, MAX_ROOT_CANONICAL_BYTES, "contentBytes");
+  const canonicalBytes = reservationInteger(record.canonicalBytes, MAX_ROOT_CANONICAL_BYTES, "canonicalBytes");
+  const runEntries = reservationInteger(record.runEntries, MAX_RUN_ENTRIES, "runEntries");
+  const revisionEntries = reservationInteger(record.revisionEntries, MAX_RUN_ENTRIES, "revisionEntries");
+  const namespaceEntries = reservationInteger(record.namespaceEntries, MAX_OBJECTS + 1, "namespaceEntries");
+  const runId = record.runId === null ? null
+    : typeof record.runId === "string" && UUID_V4.test(record.runId) ? record.runId as LowercaseUuidV4
+      : failure("invalid-store", "malformed reservation record runId");
+  const namespace = record.namespace === null ? null
+    : typeof record.namespace === "string" && DIRECTORY_SNAPSHOT_KIND.has(record.namespace) ? record.namespace
+      : failure("invalid-store", "malformed reservation record namespace");
+  if ((runId === null) !== (runEntries === 0 && revisionEntries === 0)) {
+    failure("invalid-store", "malformed reservation record run coordinate");
+  }
+  if ((namespace === null) !== (namespaceEntries === 0)) {
+    failure("invalid-store", "malformed reservation record namespace coordinate");
+  }
+  if (rootEntries + objectsEntries + nestedEntries + aggregateRevisions + casObjects + canonicalBytes
+    + runEntries + revisionEntries + namespaceEntries === 0) {
+    failure("invalid-store", "malformed reservation record has no positive peak delta");
+  }
+  const operation = record.operation as ReservationOperation;
+  const snapshotKind = namespace === null ? null : DIRECTORY_SNAPSHOT_KIND.get(namespace) ?? null;
+  const validOperationShape = operation === "snapshot-publication"
+    ? rootEntries <= 1 && objectsEntries <= 1 && nestedEntries === 0 && aggregateRevisions === 0
+      && rootEntries <= objectsEntries && casObjects === 1 && contentBytes > 0
+      && snapshotKind !== null && contentBytes <= SNAPSHOT_MAX_BYTES[snapshotKind]
+      && canonicalBytes === (2 * contentBytes) + 1 && runId === null && runEntries === 0
+      && revisionEntries === 0 && namespace !== null && namespaceEntries === 2
+    : operation === "revision-publication"
+      ? rootEntries <= 1 && objectsEntries === 0 && nestedEntries === runEntries + revisionEntries
+        && rootEntries <= runEntries && aggregateRevisions === 1 && casObjects === 0
+        && contentBytes > 0 && contentBytes <= RUN_REVISION_MAX_BYTES
+        && canonicalBytes === (2 * contentBytes) + 1 && runId !== null
+        && runEntries <= 1 && revisionEntries === 2 && namespace === null && namespaceEntries === 0
+      : rootEntries === 0 && objectsEntries === 0 && nestedEntries === 1 && aggregateRevisions === 0
+        && casObjects === 0 && contentBytes > 0 && contentBytes <= MAX_HEAD_BYTES
+        && canonicalBytes === contentBytes + 1 && runId !== null && runEntries === 1
+        && revisionEntries === 0 && namespace === null && namespaceEntries === 0;
+  if (!validOperationShape) failure("invalid-store", "malformed reservation record operation shape");
+  return {
+    kind: "pico.workflow-run-reservation",
+    schemaVersion: 1,
+    token: record.token as LowercaseUuidV4,
+    pid: record.pid as number,
+    operation,
+    rootEntries,
+    objectsEntries,
+    nestedEntries,
+    aggregateRevisions,
+    casObjects,
+    contentBytes,
+    canonicalBytes,
+    runId,
+    runEntries,
+    revisionEntries,
+    namespace,
+    namespaceEntries,
+  };
+}
+
+function addReservationRecord(totals: ReservationTotals, record: ReservationRecord): void {
+  totals.rootEntries += record.rootEntries;
+  totals.objectsEntries += record.objectsEntries;
+  totals.nestedEntries += record.nestedEntries;
+  totals.aggregateRevisions += record.aggregateRevisions;
+  totals.casObjects += record.casObjects;
+  totals.canonicalBytes += record.canonicalBytes;
+  if (record.runId !== null) {
+    totals.runEntries.set(record.runId, (totals.runEntries.get(record.runId) ?? 0) + record.runEntries);
+    totals.revisionEntries.set(record.runId, (totals.revisionEntries.get(record.runId) ?? 0) + record.revisionEntries);
+  }
+  if (record.namespace !== null) {
+    totals.namespaceEntries.set(record.namespace, (totals.namespaceEntries.get(record.namespace) ?? 0) + record.namespaceEntries);
+  }
+}
+
+function scanReservations(
+  directory: string,
+  issues: BoundedDiagnosticV1[],
+  admittedToken?: LowercaseUuidV4,
+): ReservationTotals {
+  const totals = emptyReservationTotals();
+  const seenTokens = new Set<string>();
+  let admittedMatches = 0;
+  scanDirectory(directory, MAX_RESERVATIONS, (name) => {
+    if (!RESERVATION_FILE.test(name)) failure("invalid-store", `unknown reservation entry '${name}'`, issues);
+    const target = path.join(directory, name);
+    let stable: StableFile;
+    let record: ReservationRecord;
+    try {
+      stable = readStableCanonical(target, MAX_RESERVATION_BYTES);
+      record = parseReservationRecord(stable.raw);
+      if (canonicalJson(record) !== stable.canonical) failure("invalid-store", "reservation record parser projection is noncanonical");
+    } catch (error) {
+      failure("invalid-store", `malformed reservation record '${name}': ${errorText(error)}`, issues);
+    }
+    if (seenTokens.has(record.token)) failure("invalid-store", `duplicate reservation token in '${name}'`, issues);
+    seenTokens.add(record.token);
+    addIssue(issues, "reservation-preserved", `capacity reservation '${name}' was preserved`);
+    if (record.token === admittedToken) admittedMatches += 1;
+    else addReservationRecord(totals, record);
+  });
+  if (admittedToken !== undefined && admittedMatches !== 1) {
+    failure("state-write-failed", "owned capacity reservation is missing from the reservation namespace", issues);
+  }
+  return totals;
+}
+
+function scanRoot(
+  root: string,
+  issues: BoundedDiagnosticV1[],
+  admittedToken?: LowercaseUuidV4,
+): RootScan {
   let nestedEntries = 0;
   let aggregateRevisions = 0;
   let canonicalBytes = 0;
+  const runEntries = new Map<string, number>();
+  const revisionEntries = new Map<string, number>();
+  const directories = new Map<string, fs.BigIntStats>();
+  const leaves = new Map<string, string>();
+  const ancestors = captureDirectoryComponentObjects(root);
+  let reservations = emptyReservationTotals();
+  let reservationsFound = false;
   const rootEntries = scanDirectory(root, MAX_ROOT_ENTRIES, (name) => {
     const target = path.join(root, name);
     const stat = fs.lstatSync(target, { bigint: true });
     if (stat.isSymbolicLink()) failure("invalid-store", `root entry '${name}' is a symbolic link`, issues);
     if (name === "objects") {
       if (!stat.isDirectory()) failure("invalid-store", "root objects entry is not a directory", issues);
+      return;
+    }
+    if (name === "reservations") {
+      if (!stat.isDirectory()) failure("invalid-store", "root reservations entry is not a directory", issues);
+      reservationsFound = true;
+      reservations = scanReservations(target, issues, admittedToken);
       return;
     }
     if (name === "locks" || name === "staging") {
@@ -553,57 +836,195 @@ function scanRoot(root: string, issues: BoundedDiagnosticV1[]): RootScan {
     if (name.startsWith(".")) failure("invalid-store", `unknown or unsafe root entry '${name}'`, issues);
     if (!UUID_V4.test(name) || !stat.isDirectory()) failure("invalid-store", `unknown or unsafe root entry '${name}'`, issues);
     const runDirectory = target;
-    scanDirectory(runDirectory, MAX_RUN_ENTRIES, (runName) => {
+    const directCount = scanDirectory(runDirectory, MAX_RUN_ENTRIES, (runName) => {
       nestedEntries += 1;
       if (nestedEntries > MAX_NESTED_RUN_ENTRIES) failure("limit-exceeded", "aggregate nested run-entry bound exceeded", issues);
       const runTarget = path.join(runDirectory, runName);
-      const runStat = fs.lstatSync(runTarget, { bigint: true });
-      if (runStat.isSymbolicLink()) failure("invalid-store", `unsafe run entry '${runTarget}'`, issues);
       if (runName === "revisions") {
+        const runStat = fs.lstatSync(runTarget, { bigint: true });
+        if (runStat.isSymbolicLink()) failure("invalid-store", `unsafe run entry '${runTarget}'`, issues);
         if (!runStat.isDirectory()) failure("invalid-store", `revisions path '${runTarget}' is not a directory`, issues);
-        scanDirectory(runTarget, MAX_RUN_ENTRIES, (revisionName) => {
+        const revisionsCount = scanDirectory(runTarget, MAX_RUN_ENTRIES, (revisionName) => {
           nestedEntries += 1;
           if (nestedEntries > MAX_NESTED_RUN_ENTRIES) failure("limit-exceeded", "aggregate nested run-entry bound exceeded", issues);
           const revisionTarget = path.join(runTarget, revisionName);
-          const revisionStat = fs.lstatSync(revisionTarget, { bigint: true });
-          if (!revisionStat.isFile() || revisionStat.isSymbolicLink() || revisionStat.nlink !== 1n) failure("invalid-store", `unsafe revision entry '${revisionTarget}'`, issues);
-          stableLeafIdentity(revisionTarget);
-          if (REVISION_FILE.test(revisionName)) {
-            if (revisionStat.size <= 0n || revisionStat.size > BigInt(RUN_REVISION_MAX_BYTES + 1)) failure("invalid-store", `revision leaf '${revisionTarget}' exceeds its byte bound`, issues);
+          const revisionFile = REVISION_FILE.test(revisionName);
+          const revisionStaging = REVISION_STAGING.test(revisionName);
+          if (!revisionFile && !revisionStaging) failure("invalid-store", `unknown revision entry '${revisionTarget}'`, issues);
+          const observed = stableLeafObservation(revisionTarget);
+          leaves.set(revisionTarget, observed.identity);
+          if (revisionFile) {
+            if (observed.stat.size <= 0n || observed.stat.size > BigInt(RUN_REVISION_MAX_BYTES + 1)) failure("invalid-store", `revision leaf '${revisionTarget}' exceeds its byte bound`, issues);
             aggregateRevisions += 1;
             if (aggregateRevisions > MAX_AGGREGATE_REVISIONS) failure("limit-exceeded", "aggregate revision-envelope bound exceeded", issues);
-            if (revisionStat.size > BigInt(MAX_ROOT_CANONICAL_BYTES)) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
-            canonicalBytes += Number(revisionStat.size - 1n);
+            if (observed.stat.size > BigInt(MAX_ROOT_CANONICAL_BYTES)) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
+            canonicalBytes += Number(observed.stat.size - 1n);
             if (canonicalBytes > MAX_ROOT_CANONICAL_BYTES) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
-          } else if (REVISION_STAGING.test(revisionName)) {
-            if (revisionStat.size > BigInt(MAX_ROOT_CANONICAL_BYTES)) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
-            canonicalBytes += Number(revisionStat.size);
+          } else {
+            if (observed.stat.size > BigInt(MAX_ROOT_CANONICAL_BYTES)) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
+            canonicalBytes += Number(observed.stat.size);
             if (canonicalBytes > MAX_ROOT_CANONICAL_BYTES) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
             addIssue(issues, "revision-staging-leftover", `unpublished revision staging leaf '${revisionName}' was preserved`);
-          } else failure("invalid-store", `unknown revision entry '${revisionTarget}'`, issues);
+          }
         });
+        revisionEntries.set(name, revisionsCount);
+        directories.set(runTarget, lstatDirectory(runTarget));
         return;
       }
       if (runName === "HEAD.json") {
-        if (!runStat.isFile() || runStat.nlink !== 1n) failure("invalid-store", `unsafe HEAD leaf '${runTarget}'`, issues);
-        if (runStat.size <= 0n || runStat.size > BigInt(MAX_HEAD_BYTES + 1)) failure("invalid-store", `HEAD leaf '${runTarget}' exceeds its byte bound`, issues);
-        canonicalBytes += Number(runStat.size - 1n);
+        const observed = stableLeafObservation(runTarget);
+        if (observed.stat.size <= 0n || observed.stat.size > BigInt(MAX_HEAD_BYTES + 1)) failure("invalid-store", `HEAD leaf '${runTarget}' exceeds its byte bound`, issues);
+        canonicalBytes += Number(observed.stat.size - 1n);
         if (canonicalBytes > MAX_ROOT_CANONICAL_BYTES) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
-        stableLeafIdentity(runTarget);
+        leaves.set(runTarget, observed.identity);
         return;
       }
-      if (HEAD_STAGING.test(runName) && runStat.isFile() && runStat.nlink === 1n) {
-        stableLeafIdentity(runTarget);
-        if (runStat.size > BigInt(MAX_ROOT_CANONICAL_BYTES)) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
-        canonicalBytes += Number(runStat.size);
+      if (HEAD_STAGING.test(runName)) {
+        const observed = stableLeafObservation(runTarget);
+        leaves.set(runTarget, observed.identity);
+        if (observed.stat.size > BigInt(MAX_ROOT_CANONICAL_BYTES)) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
+        canonicalBytes += Number(observed.stat.size);
         if (canonicalBytes > MAX_ROOT_CANONICAL_BYTES) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
         addIssue(issues, "head-staging-leftover", `unpublished HEAD staging leaf '${runName}' was preserved`);
         return;
       }
       failure("invalid-store", `unknown run entry '${runTarget}'`, issues);
     });
+    runEntries.set(name, directCount);
+    directories.set(runDirectory, lstatDirectory(runDirectory));
   });
-  return { rootEntries, nestedEntries, aggregateRevisions, canonicalBytes };
+  directories.set(root, lstatDirectory(root));
+  if (admittedToken !== undefined && !reservationsFound) {
+    failure("state-write-failed", "owned capacity reservation namespace disappeared during validation", issues);
+  }
+  assertDirectoryComponentObjectsStable(ancestors);
+  assertCapacity(rootEntries + reservations.rootEntries, MAX_ROOT_ENTRIES, "reserved root-entry capacity is exhausted", issues);
+  assertCapacity(
+    nestedEntries + reservations.nestedEntries,
+    MAX_NESTED_RUN_ENTRIES,
+    "reserved aggregate nested run-entry capacity is exhausted",
+    issues,
+  );
+  assertCapacity(
+    aggregateRevisions + reservations.aggregateRevisions,
+    MAX_AGGREGATE_REVISIONS,
+    "reserved aggregate revision-envelope capacity is exhausted",
+    issues,
+  );
+  assertCapacity(
+    canonicalBytes + reservations.canonicalBytes,
+    MAX_ROOT_CANONICAL_BYTES,
+    "reserved root canonical-byte capacity is exhausted",
+    issues,
+  );
+  for (const [runId, reserved] of reservations.runEntries) {
+    assertCapacity((runEntries.get(runId) ?? 0) + reserved, MAX_RUN_ENTRIES, `reserved run-entry capacity is exhausted for '${runId}'`, issues);
+  }
+  for (const [runId, reserved] of reservations.revisionEntries) {
+    assertCapacity(
+      (revisionEntries.get(runId) ?? 0) + reserved,
+      MAX_RUN_ENTRIES,
+      `reserved revision-entry capacity is exhausted for '${runId}'`,
+      issues,
+    );
+  }
+  return {
+    rootEntries,
+    nestedEntries,
+    aggregateRevisions,
+    canonicalBytes,
+    runEntries,
+    revisionEntries,
+    reservations,
+    directories,
+    leaves,
+    ancestors,
+  };
+}
+
+function ensureReservationDirectory(root: string): string {
+  const directory = path.join(root, "reservations");
+  if (optionalDirectory(directory) !== null) return directory;
+  const issues: BoundedDiagnosticV1[] = [];
+  const before = scanRoot(root, issues);
+  assertCapacity(
+    before.rootEntries + 1,
+    MAX_ROOT_ENTRIES,
+    `root entry capacity ${MAX_ROOT_ENTRIES} is exhausted before reservation namespace creation`,
+    issues,
+  );
+  let created = false;
+  try {
+    fs.mkdirSync(directory, { mode: 0o700 });
+    created = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      failure("state-write-failed", `cannot create reservation namespace: ${errorText(error)}`, issues);
+    }
+  }
+  if (created) fsyncDirectory(root);
+  lstatDirectory(directory);
+  return directory;
+}
+
+function acquireReservation(root: string, record: ReservationRecord): ReservationLease {
+  const directory = ensureReservationDirectory(root);
+  scanReservations(directory, []);
+  const canonical = canonicalJson(record);
+  const bytes = Buffer.from(`${canonical}\n`, "utf8");
+  if (bytes.length > MAX_RESERVATION_BYTES + 1) failure("state-write-failed", "internal reservation record exceeds its fixed byte bound");
+  const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+  for (let slot = 0; slot < MAX_RESERVATIONS; slot += 1) {
+    const target = path.join(directory, `reservation-${slot.toString().padStart(2, "0")}.json`);
+    let descriptor: number;
+    try {
+      descriptor = fs.openSync(
+        target,
+        fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | noFollow,
+        0o600,
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
+      failure("state-write-failed", `cannot enroll capacity reservation: ${errorText(error)}`);
+    }
+    try {
+      writeAll(descriptor, bytes);
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    fsyncDirectory(directory);
+    const stable = readStableCanonical(target, MAX_RESERVATION_BYTES);
+    if (stable.canonical !== canonical) failure("state-write-failed", "capacity reservation changed during enrollment");
+    return { path: target, canonical, identity: stable.identity, record };
+  }
+  failure("limit-exceeded", `reservation namespace has reached its fixed ${MAX_RESERVATIONS}-slot cap`);
+}
+
+function assertReservationOwned(lease: ReservationLease): void {
+  const stable = readStableCanonical(lease.path, MAX_RESERVATION_BYTES);
+  if (stable.canonical !== lease.canonical || stable.identity !== lease.identity) {
+    failure("state-write-failed", "owned capacity reservation was replaced or changed");
+  }
+}
+
+function releaseReservation(lease: ReservationLease): void {
+  assertReservationOwned(lease);
+  const directory = path.dirname(lease.path);
+  const before = lstatDirectory(directory);
+  fs.unlinkSync(lease.path);
+  fsyncDirectory(directory);
+  const after = lstatDirectory(directory);
+  if (!sameObjectIdentity(before, after)) failure("state-write-failed", "reservation namespace was replaced during owned cleanup");
+}
+
+function withReservation<T>(root: string, record: ReservationRecord, action: (lease: ReservationLease) => T): T {
+  const lease = acquireReservation(root, record);
+  try {
+    return action(lease);
+  } finally {
+    releaseReservation(lease);
+  }
 }
 
 function scanObjects(
@@ -613,6 +1034,7 @@ function scanObjects(
   initialCanonicalBytes = 0,
   runRefs: ReadonlyMap<string, SnapshotRefV1> | null = null,
   runAggregate: { actual: number } | null = null,
+  reservations: ReservationTotals = emptyReservationTotals(),
 ): ObjectsScan {
   const objects = path.join(root, "objects");
   lstatDirectory(objects);
@@ -629,25 +1051,28 @@ function scanObjects(
     lstatDirectory(directory);
     const entryCount = scanDirectory(directory, MAX_OBJECTS + 1, (name) => {
       const target = path.join(directory, name);
-      const stat = fs.lstatSync(target, { bigint: true });
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n) failure("invalid-store", `CAS leaf '${target}' is not a regular one-link file`, issues);
-      const identity = `${stat.dev}:${stat.ino}`;
-      if (!identities.has(identity)) {
-        identities.add(identity);
-        if (identities.size > MAX_OBJECTS) failure("limit-exceeded", `CAS object aggregate exceeds ${MAX_OBJECTS}`, issues);
-      }
       if (OBJECT_STAGING.test(name)) {
-        if (stat.size > BigInt(MAX_ROOT_CANONICAL_BYTES)) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
-        bytes += Number(stat.size);
+        const observed = stableLeafObservation(target);
+        if (!identities.has(observed.objectIdentity)) {
+          identities.add(observed.objectIdentity);
+          if (identities.size > MAX_OBJECTS) failure("limit-exceeded", `CAS object aggregate exceeds ${MAX_OBJECTS}`, issues);
+        }
+        if (observed.stat.size > BigInt(MAX_ROOT_CANONICAL_BYTES)) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
+        bytes += Number(observed.stat.size);
         if (bytes > MAX_ROOT_CANONICAL_BYTES) failure("limit-exceeded", "root canonical-byte aggregate exceeded", issues);
-        leaves.set(target, stableLeafIdentity(target));
+        leaves.set(target, observed.identity);
         addIssue(issues, "cas-staging-leftover", `unpublished CAS staging leaf '${name}' was preserved`);
         return;
       }
       if (!OBJECT_FILE.test(name)) failure("invalid-store", `unknown CAS leaf '${name}'`, issues);
       const digest = name.slice(0, -".json".length);
       const key = `${kind}:${digest}`;
-      const stable = readStableCanonical(target, SNAPSHOT_MAX_BYTES[kind], (storedBytes) => {
+      const stable = readStableCanonical(target, SNAPSHOT_MAX_BYTES[kind], (storedBytes, stat) => {
+        const identity = `${stat.dev}:${stat.ino}`;
+        if (!identities.has(identity)) {
+          identities.add(identity);
+          if (identities.size > MAX_OBJECTS) failure("limit-exceeded", `CAS object aggregate exceeds ${MAX_OBJECTS}`, issues);
+        }
         const canonicalBytes = Math.max(0, storedBytes - 1);
         if (runRefs?.has(key) && runAggregate !== null) chargeActualSnapshotBytes(runAggregate, canonicalBytes);
         bytes += canonicalBytes;
@@ -677,6 +1102,32 @@ function scanObjects(
     directories.set(directory, lstatDirectory(directory));
   });
   directories.set(objects, lstatDirectory(objects));
+  assertCapacity(
+    objectsEntries + reservations.objectsEntries,
+    Object.keys(SNAPSHOT_DIRECTORY).length,
+    "reserved CAS namespace directory capacity is exhausted",
+    issues,
+  );
+  assertCapacity(
+    identities.size + reservations.casObjects,
+    MAX_OBJECTS,
+    `reserved CAS object aggregate exceeds ${MAX_OBJECTS}`,
+    issues,
+  );
+  for (const [namespace, reserved] of reservations.namespaceEntries) {
+    assertCapacity(
+      (namespaceEntries.get(namespace) ?? 0) + reserved,
+      MAX_OBJECTS + 1,
+      `reserved CAS namespace entry capacity is exhausted for '${namespace}'`,
+      issues,
+    );
+  }
+  assertCapacity(
+    bytes + reservations.canonicalBytes,
+    MAX_ROOT_CANONICAL_BYTES,
+    "reserved root canonical-byte capacity is exhausted",
+    issues,
+  );
   return {
     count: identities.size,
     canonicalBytes: bytes,
@@ -745,41 +1196,44 @@ function readRevisionFile(filePath: string, number: number, validator: RunCoreVa
 
 function revalidateLeaves(leaves: ReadonlyMap<string, string>): void {
   for (const [filePath, identity] of leaves) {
-    if (stableLeafIdentity(filePath) !== identity) failure("run-busy", `CAS leaf '${filePath}' changed after enumeration`);
+    if (stableLeafIdentity(filePath) !== identity) failure("run-busy", `globally charged leaf '${filePath}' changed after enumeration`);
   }
 }
 
+function revalidateRootScan(scan: RootScan): void {
+  assertDirectoriesStable(scan.directories, captureDirectories([...scan.directories.keys()]));
+  revalidateLeaves(scan.leaves);
+  assertDirectoryComponentObjectsStable(scan.ancestors);
+}
+
 function completeInspectionDirectories(
-  root: string,
-  rootBefore: fs.BigIntStats,
-  runDirectory: string,
-  runBefore: fs.BigIntStats,
-  revisionsDirectory: string,
-  revisionsBefore: fs.BigIntStats,
+  rootScan: RootScan,
   objects: ObjectsScan,
 ): Map<string, fs.BigIntStats> {
-  const before = new Map<string, fs.BigIntStats>([
-    [root, rootBefore],
-    [runDirectory, runBefore],
-    [revisionsDirectory, revisionsBefore],
-  ]);
+  const before = new Map<string, fs.BigIntStats>(rootScan.directories);
   for (const [directory, stat] of objects.directories) before.set(directory, stat);
   const after = captureDirectories([...before.keys()]);
   assertDirectoriesStable(before, after);
+  revalidateRootScan(rootScan);
   revalidateLeaves(objects.leaves);
+  assertDirectoryComponentObjectsStable(rootScan.ancestors);
   return after;
 }
 
-function inspectRun(root: string, runId: LowercaseUuidV4, validators: RunCoreValidatorsV1): Inspection {
+function inspectRun(
+  root: string,
+  runId: LowercaseUuidV4,
+  validators: RunCoreValidatorsV1,
+  admittedToken?: LowercaseUuidV4,
+): Inspection {
   assertRunId(runId);
   const issues: BoundedDiagnosticV1[] = [];
   lstatDirectoryComponents(root);
-  const rootBefore = lstatDirectory(root);
-  const rootScan = scanRoot(root, issues);
+  const rootScan = scanRoot(root, issues, admittedToken);
   const runDirectory = path.join(root, runId);
-  const runBefore = lstatDirectory(runDirectory);
+  lstatDirectory(runDirectory);
   const revisionsDirectory = path.join(runDirectory, "revisions");
-  const revisionsBefore = lstatDirectory(revisionsDirectory);
+  lstatDirectory(revisionsDirectory);
   const headFile = path.join(runDirectory, "HEAD.json");
   const selectedLeaves = new Map<string, string>();
   let headExists = false;
@@ -832,13 +1286,11 @@ function inspectRun(root: string, runId: LowercaseUuidV4, validators: RunCoreVal
     if (zero.runId !== runId || zero.parent !== null) failure("invalid-store", "headless revision zero coordinate mismatch", issues);
     const aggregate = { declared: 0, actual: 0 };
     const refs = collectRunSnapshotRefs([zero], aggregate);
-    const objects = scanObjects(root, issues, validators, rootScan.canonicalBytes, refs, aggregate);
+    const objects = scanObjects(root, issues, validators, rootScan.canonicalBytes, refs, aggregate, rootScan.reservations);
     validateSnapshots(refs, objects.catalog);
     revalidateLeaves(selectedLeaves);
-    const directories = completeInspectionDirectories(
-      root, rootBefore, runDirectory, runBefore, revisionsDirectory, revisionsBefore, objects,
-    );
-    return { chain: null, tail: zero, headless: true, directories };
+    const directories = completeInspectionDirectories(rootScan, objects);
+    return { chain: null, tail: zero, headless: true, directories, ancestors: rootScan.ancestors };
   }
   const firstHead = readStableCanonical(headFile, MAX_HEAD_BYTES);
   selectedLeaves.set(headFile, firstHead.identity);
@@ -874,16 +1326,14 @@ function inspectRun(root: string, runId: LowercaseUuidV4, validators: RunCoreVal
   const allValidated = tail === null ? revisions : [...revisions, tail];
   const aggregate = { declared: 0, actual: 0 };
   const refs = collectRunSnapshotRefs(allValidated, aggregate);
-  const objects = scanObjects(root, issues, validators, rootScan.canonicalBytes, refs, aggregate);
+  const objects = scanObjects(root, issues, validators, rootScan.canonicalBytes, refs, aggregate, rootScan.reservations);
   const snapshots = validateSnapshots(refs, objects.catalog);
   const secondHead = readStableCanonical(headFile, MAX_HEAD_BYTES);
   if (firstHead.identity !== secondHead.identity || firstHead.canonical !== secondHead.canonical) failure("run-busy", "HEAD changed during validation", issues);
   revalidateLeaves(selectedLeaves);
-  const directories = completeInspectionDirectories(
-    root, rootBefore, runDirectory, runBefore, revisionsDirectory, revisionsBefore, objects,
-  );
+  const directories = completeInspectionDirectories(rootScan, objects);
   const chain: CoreRunChainV1 = { head, revisions, snapshots, issues, validation: "core-only" };
-  return { chain, tail, headless: false, directories };
+  return { chain, tail, headless: false, directories, ancestors: rootScan.ancestors };
 }
 
 function readForPublic(root: string, runId: LowercaseUuidV4, validators: RunCoreValidatorsV1): CoreRunChainV1 {
@@ -966,13 +1416,19 @@ export function createRunRevisionStore(
     issues: BoundedDiagnosticV1[],
     refs: ReadonlyMap<string, SnapshotRefV1> | null = null,
     aggregate: { actual: number } | null = null,
+    admittedToken?: LowercaseUuidV4,
   ): { rootScan: RootScan; objects: ObjectsScan | null } => {
     lstatDirectoryComponents(root);
-    const rootScan = scanRoot(root, issues);
+    const rootScan = scanRoot(root, issues, admittedToken);
     const objectsDirectory = path.join(root, "objects");
     const objects = optionalDirectory(objectsDirectory) === null
       ? null
-      : scanObjects(root, issues, builtinValidators, rootScan.canonicalBytes, refs, aggregate);
+      : scanObjects(root, issues, builtinValidators, rootScan.canonicalBytes, refs, aggregate, rootScan.reservations);
+    if (objects !== null) {
+      assertDirectoriesStable(objects.directories, captureDirectories([...objects.directories.keys()]));
+      revalidateLeaves(objects.leaves);
+    }
+    revalidateRootScan(rootScan);
     return { rootScan, objects };
   };
 
@@ -996,105 +1452,88 @@ export function createRunRevisionStore(
     }
     const objectsMissing = current.objects === null;
     const namespaceMissing = optionalDirectory(directory) === null;
-    assertCapacity(
-      current.rootScan.rootEntries + (objectsMissing ? 1 : 0),
-      MAX_ROOT_ENTRIES,
-      `root entry capacity ${MAX_ROOT_ENTRIES} is exhausted before objects creation`,
-      issues,
-    );
-    assertCapacity(
-      (current.objects?.objectsEntries ?? 0) + (namespaceMissing ? 1 : 0),
-      Object.keys(SNAPSHOT_DIRECTORY).length,
-      "CAS namespace directory capacity is exhausted",
-      issues,
-    );
-    const namespaceEntryCount = current.objects?.namespaceEntries.get(SNAPSHOT_DIRECTORY[kind]) ?? 0;
-    assertCapacity(
-      namespaceEntryCount + 2,
-      MAX_OBJECTS + 1,
-      `CAS namespace staging/link capacity ${MAX_OBJECTS + 1} is exhausted`,
-      issues,
-    );
-    assertCapacity(
-      (current.objects?.count ?? 0) + 1,
-      MAX_OBJECTS,
-      `CAS object aggregate capacity ${MAX_OBJECTS} is exhausted`,
-      issues,
-    );
-    const currentCanonicalBytes = current.objects?.canonicalBytes ?? current.rootScan.canonicalBytes;
-    assertCapacity(
-      currentCanonicalBytes + (bytes + 1) + bytes,
-      MAX_ROOT_CANONICAL_BYTES,
-      "root canonical-byte aggregate staging/link capacity is exhausted",
-      issues,
-    );
-    ensureChildDirectory(root, "objects");
-    ensureChildDirectory(objects, SNAPSHOT_DIRECTORY[kind]);
-    const publicationDirectories = captureDirectories([root, objects, directory]);
-    publishCreateOnly(target, Buffer.from(`${canonical}\n`, "utf8"), true);
-    assertPublicationDirectories(publicationDirectories, captureDirectories([...publicationDirectories.keys()]), directory);
-    return { kind, algorithm: "sha256", sha256: digest, bytes };
+    const record: ReservationRecord = {
+      kind: "pico.workflow-run-reservation",
+      schemaVersion: 1,
+      token: crypto.randomUUID() as LowercaseUuidV4,
+      pid: process.pid,
+      operation: "snapshot-publication",
+      rootEntries: objectsMissing ? 1 : 0,
+      objectsEntries: namespaceMissing ? 1 : 0,
+      nestedEntries: 0,
+      aggregateRevisions: 0,
+      casObjects: 1,
+      contentBytes: bytes,
+      canonicalBytes: (bytes + 1) + bytes,
+      runId: null,
+      runEntries: 0,
+      revisionEntries: 0,
+      namespace: SNAPSHOT_DIRECTORY[kind],
+      namespaceEntries: 2,
+    };
+    return withReservation(root, record, (lease) => {
+      const admittedIssues: BoundedDiagnosticV1[] = [];
+      const admitted = scanStore(admittedIssues);
+      const admittedExisting = admitted.objects?.catalog.get(`${kind}:${digest}`);
+      if (admittedExisting !== undefined) {
+        if (admittedExisting.canonical !== canonical) {
+          failure("invalid-store", `content-addressed target '${target}' has different canonical bytes`, admittedIssues);
+        }
+        return { kind, algorithm: "sha256", sha256: digest, bytes };
+      }
+      if (!objectsMissing && admitted.objects === null) failure("run-busy", "objects directory disappeared before admitted publication", admittedIssues);
+      if (!namespaceMissing && optionalDirectory(directory) === null) failure("run-busy", "CAS namespace disappeared before admitted publication", admittedIssues);
+      ensureChildDirectory(root, "objects");
+      ensureChildDirectory(objects, SNAPSHOT_DIRECTORY[kind]);
+      const beforePublication = scanStore(admittedIssues, null, null, lease.record.token);
+      if (beforePublication.objects === null) failure("state-write-failed", "objects directory disappeared after creation", admittedIssues);
+      const publicationDirectories = new Map<string, fs.BigIntStats>(beforePublication.rootScan.directories);
+      for (const [entry, stat] of beforePublication.objects.directories) publicationDirectories.set(entry, stat);
+      assertReservationOwned(lease);
+      publishCreateOnly(target, Buffer.from(`${canonical}\n`, "utf8"), true);
+      assertPublicationDirectories(
+        publicationDirectories,
+        captureDirectories([...publicationDirectories.keys()]),
+        directory,
+      );
+      assertDirectoryComponentObjectsStable(beforePublication.rootScan.ancestors, "state-write-failed");
+      const confirmed = scanStore(admittedIssues, null, null, lease.record.token);
+      const published = confirmed.objects?.catalog.get(`${kind}:${digest}`);
+      if (published === undefined || published.canonical !== canonical) {
+        failure("state-write-failed", "CAS publication was not confirmed at its exact digest target", admittedIssues);
+      }
+      return { kind, algorithm: "sha256", sha256: digest, bytes };
+    });
   };
 
   const assertRevisionAdmission = (
     revision: RunRevisionV1,
     canonicalBytes: number,
     priorRevisions: readonly RunRevisionV1[],
-  ): { issues: BoundedDiagnosticV1[]; directories: readonly string[] } => {
+    admittedToken?: LowercaseUuidV4,
+  ): { issues: BoundedDiagnosticV1[]; directories: ReadonlyMap<string, fs.BigIntStats>; ancestors: ReadonlyMap<string, fs.BigIntStats> } => {
     const issues: BoundedDiagnosticV1[] = [];
     const declared = { declared: 0 };
     const refs = collectRunSnapshotRefs([...priorRevisions, revision], declared);
     const actual = { actual: 0 };
-    const current = scanStore(issues, refs, actual);
+    const current = scanStore(issues, refs, actual, admittedToken);
     if (current.objects === null) failure("invalid-store", "run revision references a missing objects directory", issues);
     validateSnapshots(refs, current.objects.catalog);
     const runDirectory = path.join(root, revision.runId);
     const revisionsDirectory = path.join(runDirectory, "revisions");
     const runMissing = optionalDirectory(runDirectory) === null;
     const revisionsMissing = optionalDirectory(revisionsDirectory) === null;
-    const runEntries = runMissing ? 0 : scanDirectory(runDirectory, MAX_RUN_ENTRIES, () => {});
-    const revisionEntries = revisionsMissing ? 0 : scanDirectory(revisionsDirectory, MAX_RUN_ENTRIES, () => {});
+    if (!runMissing) scanDirectory(runDirectory, MAX_RUN_ENTRIES, () => {});
+    if (!revisionsMissing) scanDirectory(revisionsDirectory, MAX_RUN_ENTRIES, () => {});
     const target = path.join(revisionsDirectory, `${revision.revision}.json`);
     if (optionalLeaf(target) !== null) throw new Error(`immutable revision target '${target}' already exists`);
-    assertCapacity(
-      current.rootScan.rootEntries + (runMissing ? 1 : 0),
-      MAX_ROOT_ENTRIES,
-      `root entry capacity ${MAX_ROOT_ENTRIES} is exhausted before run creation`,
-      issues,
-    );
-    assertCapacity(
-      runEntries + (revisionsMissing ? 1 : 0),
-      MAX_RUN_ENTRIES,
-      `run entry capacity ${MAX_RUN_ENTRIES} is exhausted before revisions creation`,
-      issues,
-    );
-    assertCapacity(
-      revisionEntries + 2,
-      MAX_RUN_ENTRIES,
-      `revision staging/link capacity ${MAX_RUN_ENTRIES} is exhausted`,
-      issues,
-    );
-    assertCapacity(
-      current.rootScan.nestedEntries + (revisionsMissing ? 1 : 0) + 2,
-      MAX_NESTED_RUN_ENTRIES,
-      "aggregate nested run-entry capacity is exhausted by revision staging/link",
-      issues,
-    );
-    assertCapacity(
-      current.rootScan.aggregateRevisions + 1,
-      MAX_AGGREGATE_REVISIONS,
-      "aggregate revision-envelope capacity is exhausted",
-      issues,
-    );
-    assertCapacity(
-      current.objects.canonicalBytes + (canonicalBytes + 1) + canonicalBytes,
-      MAX_ROOT_CANONICAL_BYTES,
-      "root canonical-byte aggregate revision staging/link capacity is exhausted",
-      issues,
-    );
+    void canonicalBytes;
+    const directories = new Map<string, fs.BigIntStats>(current.rootScan.directories);
+    for (const [entry, stat] of current.objects.directories) directories.set(entry, stat);
     return {
       issues,
-      directories: [root, ...current.objects.directories.keys(), ...(runMissing ? [] : [runDirectory]), ...(revisionsMissing ? [] : [revisionsDirectory])],
+      directories,
+      ancestors: current.rootScan.ancestors,
     };
   };
 
@@ -1122,36 +1561,73 @@ export function createRunRevisionStore(
     const canonicalBytes = Buffer.byteLength(canonical);
     if (canonicalBytes > RUN_REVISION_MAX_BYTES) throw new Error("run revision exceeds canonical byte bound");
     assertRevisionAdmission(revision, canonicalBytes, priorRevisions);
-    ensureChildDirectory(root, revision.runId);
-    ensureChildDirectory(runDirectory, "revisions");
-    if (revision.revision === 0) {
-      const entries = scanDirectory(revisionsDirectory, MAX_RUN_ENTRIES, () => {});
-      if (entries !== 0) throw new Error("revision-zero target is not an empty immutable run");
-    }
-    const beforeAuthorityAdmission = assertRevisionAdmission(revision, canonicalBytes, priorRevisions);
-    const beforeAuthority = captureDirectories(beforeAuthorityAdmission.directories);
-    deps.assertMutationAuthority(request, { runId: revision.runId, operation: "revision" });
-    assertDirectoriesStable(beforeAuthority, captureDirectories([...beforeAuthority.keys()]));
-    assertRevisionAdmission(revision, canonicalBytes, priorRevisions);
-    readExpectedHead(runDirectory, expectedHead);
-    if (revision.revision === 0) {
-      const entries = scanDirectory(revisionsDirectory, MAX_RUN_ENTRIES, () => {});
-      if (entries !== 0) throw new Error("revision-zero target changed before immutable publication");
-    } else {
-      const final = inspectRun(root, revision.runId, builtinValidators);
-      if (final.tail !== null || final.chain === null || !exactHead(final.chain.head, expectedHead!)) {
-        throw new Error("authoritative revision chain changed before immutable publication");
+    const runMissing = optionalDirectory(runDirectory) === null;
+    const revisionsMissing = optionalDirectory(revisionsDirectory) === null;
+    const record: ReservationRecord = {
+      kind: "pico.workflow-run-reservation",
+      schemaVersion: 1,
+      token: crypto.randomUUID() as LowercaseUuidV4,
+      pid: process.pid,
+      operation: "revision-publication",
+      rootEntries: runMissing ? 1 : 0,
+      objectsEntries: 0,
+      nestedEntries: (revisionsMissing ? 1 : 0) + 2,
+      aggregateRevisions: 1,
+      casObjects: 0,
+      contentBytes: canonicalBytes,
+      canonicalBytes: (canonicalBytes + 1) + canonicalBytes,
+      runId: revision.runId,
+      runEntries: revisionsMissing ? 1 : 0,
+      revisionEntries: 2,
+      namespace: null,
+      namespaceEntries: 0,
+    };
+    return withReservation(root, record, (lease) => {
+      const admitted = assertRevisionAdmission(revision, canonicalBytes, priorRevisions);
+      if (!runMissing && optionalDirectory(runDirectory) === null) {
+        failure("run-busy", "run directory disappeared before admitted publication", admitted.issues);
       }
-    }
-    const target = path.join(revisionsDirectory, `${revision.revision}.json`);
-    const publicationDirectories = captureDirectories([...beforeAuthority.keys()]);
-    publishCreateOnly(target, Buffer.from(`${canonical}\n`, "utf8"), false);
-    assertPublicationDirectories(
-      publicationDirectories,
-      captureDirectories([...publicationDirectories.keys()]),
-      revisionsDirectory,
-    );
-    return { revision, path: target, publication: "linked-head-pending" };
+      if (!revisionsMissing && optionalDirectory(revisionsDirectory) === null) {
+        failure("run-busy", "revisions directory disappeared before admitted publication", admitted.issues);
+      }
+      ensureChildDirectory(root, revision.runId);
+      ensureChildDirectory(runDirectory, "revisions");
+      if (revision.revision === 0) {
+        const entries = scanDirectory(revisionsDirectory, MAX_RUN_ENTRIES, () => {});
+        if (entries !== 0) throw new Error("revision-zero target is not an empty immutable run");
+      }
+      const beforeAuthority = assertRevisionAdmission(revision, canonicalBytes, priorRevisions, lease.record.token);
+      assertDirectoriesStable(beforeAuthority.directories, captureDirectories([...beforeAuthority.directories.keys()]));
+      assertDirectoryComponentObjectsStable(beforeAuthority.ancestors);
+      deps.assertMutationAuthority(request, { runId: revision.runId, operation: "revision" });
+      assertDirectoriesStable(beforeAuthority.directories, captureDirectories([...beforeAuthority.directories.keys()]));
+      assertDirectoryComponentObjectsStable(beforeAuthority.ancestors);
+      const finalAdmission = assertRevisionAdmission(revision, canonicalBytes, priorRevisions, lease.record.token);
+      readExpectedHead(runDirectory, expectedHead);
+      if (revision.revision === 0) {
+        const entries = scanDirectory(revisionsDirectory, MAX_RUN_ENTRIES, () => {});
+        if (entries !== 0) throw new Error("revision-zero target changed before immutable publication");
+      } else {
+        const final = inspectRun(root, revision.runId, builtinValidators, lease.record.token);
+        if (final.tail !== null || final.chain === null || !exactHead(final.chain.head, expectedHead!)) {
+          throw new Error("authoritative revision chain changed before immutable publication");
+        }
+      }
+      const target = path.join(revisionsDirectory, `${revision.revision}.json`);
+      assertReservationOwned(lease);
+      publishCreateOnly(target, Buffer.from(`${canonical}\n`, "utf8"), false);
+      assertPublicationDirectories(
+        finalAdmission.directories,
+        captureDirectories([...finalAdmission.directories.keys()]),
+        revisionsDirectory,
+      );
+      assertDirectoryComponentObjectsStable(finalAdmission.ancestors, "state-write-failed");
+      const confirmed = inspectRun(root, revision.runId, builtinValidators, lease.record.token);
+      if (confirmed.tail?.revision !== revision.revision || confirmed.tail.revisionId !== revision.revisionId) {
+        failure("state-write-failed", "linked revision was not confirmed as the exact immutable tail");
+      }
+      return { revision, path: target, publication: "linked-head-pending" };
+    });
   };
 
   const readExpectedHead = (runDirectory: string, expected: RunHeadV1 | null): void => {
@@ -1197,60 +1673,79 @@ export function createRunRevisionStore(
         throw new Error("next revision parent does not match expected HEAD");
       }
     };
-    const initial = inspectRun(root, next.runId, builtinValidators);
-    assertNextInspection(initial);
     const canonical = canonicalJson(next);
     const canonicalBytes = Buffer.byteLength(canonical);
-    {
-      const issues: BoundedDiagnosticV1[] = [];
-      const current = scanStore(issues);
-      if (current.objects === null) failure("invalid-store", "HEAD publication requires the objects directory", issues);
-      const runEntries = scanDirectory(runDirectory, MAX_RUN_ENTRIES, () => {});
-      assertCapacity(runEntries + 1, MAX_RUN_ENTRIES, "HEAD staging exceeds the run directory entry capacity", issues);
-      assertCapacity(current.rootScan.nestedEntries + 1, MAX_NESTED_RUN_ENTRIES, "HEAD staging exceeds the aggregate nested run-entry capacity", issues);
-      const replacedBytes = expected === null ? 0 : Buffer.byteLength(canonicalJson(expected));
-      assertCapacity(
-        current.objects.canonicalBytes + canonicalBytes + 1,
-        MAX_ROOT_CANONICAL_BYTES,
-        "HEAD staging exceeds the root canonical-byte aggregate",
-        issues,
-      );
-      assertCapacity(
-        current.objects.canonicalBytes - replacedBytes + canonicalBytes,
-        MAX_ROOT_CANONICAL_BYTES,
-        "HEAD publication exceeds the root canonical-byte aggregate",
-        issues,
-      );
-    }
-    const staging = createStaging(runDirectory, "HEAD.json", Buffer.from(`${canonical}\n`, "utf8"));
-    try {
+    const record: ReservationRecord = {
+      kind: "pico.workflow-run-reservation",
+      schemaVersion: 1,
+      token: crypto.randomUUID() as LowercaseUuidV4,
+      pid: process.pid,
+      operation: "head-publication",
+      rootEntries: 0,
+      objectsEntries: 0,
+      nestedEntries: 1,
+      aggregateRevisions: 0,
+      casObjects: 0,
+      contentBytes: canonicalBytes,
+      canonicalBytes: canonicalBytes + 1,
+      runId: next.runId,
+      runEntries: 1,
+      revisionEntries: 0,
+      namespace: null,
+      namespaceEntries: 0,
+    };
+    const preflight = inspectRun(root, next.runId, builtinValidators);
+    assertNextInspection(preflight);
+    withReservation(root, record, (lease) => {
+      const initial = inspectRun(root, next.runId, builtinValidators);
+      assertNextInspection(initial);
       const beforeAuthority = captureDirectories([...initial.directories.keys()]);
       assertDirectoryObjectsStable(initial.directories, beforeAuthority);
+      assertDirectoryComponentObjectsStable(initial.ancestors);
       if (authority === "mutation") deps.assertMutationAuthority(request, { runId: next.runId, operation: "head" });
       else deps.assertRecoveryAuthority(request, { runId: next.runId, tailRevision: next.revision });
       assertDirectoriesStable(beforeAuthority, captureDirectories([...beforeAuthority.keys()]));
+      assertDirectoryComponentObjectsStable(initial.ancestors);
       const final = inspectRun(root, next.runId, builtinValidators);
       assertNextInspection(final);
-      const target = path.join(runDirectory, "HEAD.json");
-      fs.renameSync(staging, target);
-      tracker.stage = "renamed";
-      fsyncDirectory(runDirectory);
-      tracker.stage = "directory-flushed";
-      const committed = readStableCanonical(target, MAX_HEAD_BYTES);
-      if (committed.canonical !== canonical) failure("state-write-failed", "HEAD changed after publication");
-      assertPublicationDirectories(
-        beforeAuthority,
-        captureDirectories([...beforeAuthority.keys()]),
-        runDirectory,
-      );
-      tracker.stage = "confirmed";
-    } finally {
-      let removed = false;
-      try { fs.unlinkSync(staging); removed = true; } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      assertReservationOwned(lease);
+      const staging = createStaging(runDirectory, "HEAD.json", Buffer.from(`${canonical}\n`, "utf8"));
+      try {
+        const bound = readStableCanonical(staging, MAX_HEAD_BYTES);
+        if (bound.canonical !== canonical) failure("state-write-failed", "HEAD staging bytes differ from the intended canonical coordinate");
+        assertPublicationDirectories(
+          beforeAuthority,
+          captureDirectories([...beforeAuthority.keys()]),
+          runDirectory,
+        );
+        assertDirectoryComponentObjectsStable(final.ancestors, "state-write-failed");
+        assertReservationOwned(lease);
+        const beforeRename = readStableCanonical(staging, MAX_HEAD_BYTES);
+        if (beforeRename.identity !== bound.identity || beforeRename.canonical !== canonical) {
+          failure("state-write-failed", "HEAD staging changed before rename");
+        }
+        const target = path.join(runDirectory, "HEAD.json");
+        fs.renameSync(staging, target);
+        tracker.stage = "renamed";
+        fsyncDirectory(runDirectory);
+        tracker.stage = "directory-flushed";
+        const committed = readStableCanonical(target, MAX_HEAD_BYTES);
+        if (committed.canonical !== canonical) failure("state-write-failed", "HEAD changed after publication");
+        assertPublicationDirectories(
+          beforeAuthority,
+          captureDirectories([...beforeAuthority.keys()]),
+          runDirectory,
+        );
+        assertDirectoryComponentObjectsStable(final.ancestors, "state-write-failed");
+        tracker.stage = "confirmed";
+      } finally {
+        let removed = false;
+        try { fs.unlinkSync(staging); removed = true; } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        if (removed) fsyncDirectory(runDirectory);
       }
-      if (removed) fsyncDirectory(runDirectory);
-    }
+    });
   };
 
   const publishHead = (expected: RunHeadV1 | null, candidate: RunHeadV1, request: RunStoreMutationRequestV1): void => {
@@ -1336,8 +1831,8 @@ export function createRunRevisionStore(
       return { status: "head-advanced", chain, recoveredRevision: tail.revision };
     } catch (error) {
       const storeError = asStoreError(error, "state-write-failed");
-      const publication = tracker.stage === "renamed" ? "unknown"
-        : tracker.stage === "directory-flushed" || tracker.stage === "confirmed" ? "advanced"
+      const publication = tracker.stage === "confirmed" ? "advanced"
+        : tracker.stage === "renamed" || tracker.stage === "directory-flushed" ? "unknown"
           : "unchanged";
       const coordinate = publication === "unchanged" ? currentHead : next;
       return controlResult(

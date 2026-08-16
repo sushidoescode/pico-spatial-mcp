@@ -106,6 +106,29 @@ function writeCanonical(filePath, value) {
   fs.writeFileSync(filePath, `${canonicalJson(value)}\n`);
 }
 
+function reservationRecord(overrides = {}) {
+  return {
+    kind: "pico.workflow-run-reservation",
+    schemaVersion: 1,
+    token: uuidAt(65000),
+    pid: 9000,
+    operation: "head-publication",
+    rootEntries: 0,
+    objectsEntries: 0,
+    nestedEntries: 1,
+    aggregateRevisions: 0,
+    casObjects: 0,
+    contentBytes: 256,
+    canonicalBytes: 257,
+    runId: RUN_ID,
+    runEntries: 1,
+    revisionEntries: 0,
+    namespace: null,
+    namespaceEntries: 0,
+    ...overrides,
+  };
+}
+
 function expectStoreStatus(fn, status, detailPattern = null) {
   let captured;
   assert.throws(fn, (error) => {
@@ -127,6 +150,16 @@ function writeStaging(directory, basename, index, bytes = "") {
   const target = path.join(directory, stagingName(basename, index));
   fs.writeFileSync(target, bytes);
   return target;
+}
+
+function fillRootTo(root, count, start = 0) {
+  let index = start;
+  while (fs.readdirSync(root).length < count) {
+    const target = path.join(root, uuidAt(index));
+    index += 1;
+    if (!fs.existsSync(target)) fs.mkdirSync(target);
+  }
+  return index;
 }
 
 function createAttemptTail(fixture, committed, transitionType, disposition = "possible") {
@@ -183,6 +216,56 @@ async function killAtBarrier(root, barrier, scenario = "append") {
   });
   child.kill("SIGKILL");
   await new Promise((resolve) => child.once("exit", resolve));
+}
+
+function startConcurrentPublisher(root, operation, value, options = {}) {
+  const gate = path.join(fs.realpathSync(os.tmpdir()), `pico-runrevision-concurrency-gate-${crypto.randomUUID()}`);
+  const child = fork(
+    new URL("./fixtures/runrevision-concurrency-child.mjs", import.meta.url),
+    [root, operation, value, gate, options.pause === true ? "pause" : "continue"],
+    { stdio: ["ignore", "ignore", "pipe", "ipc"] },
+  );
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const barrier = options.pause !== true ? Promise.resolve() : new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`concurrency barrier timeout: ${stderr}`)), 15_000);
+    child.on("message", (message) => {
+      if (message?.type === "barrier") {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    child.once("error", reject);
+  });
+  const result = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`concurrency result timeout: ${stderr}`)), 30_000);
+    child.on("message", (message) => {
+      if (message?.type === "result") {
+        clearTimeout(timer);
+        resolve(message.result);
+      }
+    });
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code !== 0 && signal === null) {
+        clearTimeout(timer);
+        reject(new Error(`concurrency child exited ${code}: ${stderr}`));
+      }
+    });
+  });
+  let released = false;
+  return {
+    barrier,
+    result,
+    release() {
+      if (!released && options.pause === true) {
+        released = true;
+        fs.writeFileSync(gate, "continue\n");
+      }
+    },
+    terminate() { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); },
+  };
 }
 
 test("runStoreRoot uses the explicit root, then environment, then the home store", () => {
@@ -591,6 +674,37 @@ test("the final HEAD authority boundary revalidates the complete next chain befo
   assert.deepEqual(JSON.parse(fs.readFileSync(headPath(root), "utf8")), committed.head);
 });
 
+test("Round 2: an authority-side HEAD stage overwrite cannot publish unintended bytes", (t) => {
+  const root = tempRoot(t);
+  const authority = createTestRunStoreAuthority();
+  let active = false;
+  const deps = {
+    ...authority.deps,
+    assertMutationAuthority(request, target) {
+      authority.deps.assertMutationAuthority(request, target);
+      if (active && target.operation === "head") {
+        const runDirectory = path.join(root, RUN_ID);
+        const staging = fs.readdirSync(runDirectory).find((name) => /^\.HEAD\.json\./.test(name));
+        if (staging !== undefined) {
+          fs.writeFileSync(path.join(runDirectory, staging), "{}\n");
+        }
+      }
+    },
+  };
+  const store = createRunRevisionStore(deps, { rootDir: root });
+  const fixture = { root, authority, store, request: authority.mint() };
+  const committed = publishRoot(fixture);
+  const tail = makePlanFailedTail(fixture, committed.revision);
+  store.publishRevision(tail, fixture.request);
+  active = true;
+  let rejected = false;
+  try { store.publishHead(committed.head, headOf(tail), fixture.request); } catch { rejected = true; }
+  const actual = JSON.parse(fs.readFileSync(headPath(root), "utf8"));
+  if (rejected) assert.deepEqual(actual, committed.head);
+  else assert.deepEqual(actual, headOf(tail));
+  assert.notDeepEqual(actual, {});
+});
+
 test("recovery reports publication stages conservatively and every control result parses", async (t) => {
   await t.test("rename visible but run-directory fsync failed is publication-in-doubt", (subtest) => {
     const fixture = fixtureStore(tempRoot(t));
@@ -612,6 +726,60 @@ test("recovery reports publication stages conservatively and every control resul
     subtest.after(() => { fs.renameSync = originalRename; fs.fsyncSync = originalFsync; });
     const result = fixture.store.recoverLinkedTail(RUN_ID, fixture.request);
     assert.deepEqual(parseRunControlResult(result), result);
+    assert.equal(result.status, "state-write-failed");
+    assert.equal(result.runStateByThisCall, "publication-in-doubt");
+    assert.equal(result.runRevisionCommitted, null);
+    assert.equal(result.runRevisionPublication, "unknown");
+    assert.equal(result.revision, tail.revision);
+    assert.equal(result.revisionId, tail.revisionId);
+  });
+
+  await t.test("Round 2: post-fsync run-directory replacement remains publication-in-doubt", (subtest) => {
+    const fixture = fixtureStore(tempRoot(t));
+    const committed = publishRoot(fixture);
+    const tail = makePlanFailedTail(fixture, committed.revision);
+    fixture.store.publishRevision(tail, fixture.request);
+    const runDirectory = path.join(fixture.root, RUN_ID);
+    const savedDirectory = path.join(fixture.root, `${RUN_ID}.saved`);
+    const originalOpen = fs.openSync;
+    const originalClose = fs.closeSync;
+    const originalRename = fs.renameSync;
+    const originalFsync = fs.fsyncSync;
+    const descriptors = new Map();
+    let headRenamed = false;
+    let replaced = false;
+    fs.openSync = (target, ...args) => {
+      const descriptor = originalOpen(target, ...args);
+      descriptors.set(descriptor, path.resolve(String(target)));
+      return descriptor;
+    };
+    fs.closeSync = (descriptor) => {
+      descriptors.delete(descriptor);
+      return originalClose(descriptor);
+    };
+    fs.renameSync = (source, target) => {
+      const result = originalRename(source, target);
+      if (target === headPath(fixture.root)) headRenamed = true;
+      return result;
+    };
+    fs.fsyncSync = (descriptor) => {
+      const result = originalFsync(descriptor);
+      if (headRenamed && !replaced && descriptors.get(descriptor) === runDirectory) {
+        replaced = true;
+        originalRename(runDirectory, savedDirectory);
+        fs.mkdirSync(runDirectory);
+      }
+      return result;
+    };
+    subtest.after(() => {
+      fs.openSync = originalOpen;
+      fs.closeSync = originalClose;
+      fs.renameSync = originalRename;
+      fs.fsyncSync = originalFsync;
+    });
+    const result = fixture.store.recoverLinkedTail(RUN_ID, fixture.request);
+    assert.deepEqual(parseRunControlResult(result), result);
+    assert.equal(replaced, true);
     assert.equal(result.status, "state-write-failed");
     assert.equal(result.runStateByThisCall, "publication-in-doubt");
     assert.equal(result.runRevisionCommitted, null);
@@ -658,6 +826,169 @@ test("recovery reports publication stages conservatively and every control resul
     assert.equal(result.revision, tail.revision);
     assert.equal(result.revisionId, tail.revisionId);
   });
+});
+
+test("Round 2: globally charged other-run identities remain stable through selected-run CAS validation", async (t) => {
+  await t.test("charged leaf growth is detected after its enumeration", () => {
+    const fixture = fixtureStore(tempRoot(t));
+    publishRoot(fixture);
+    const otherRun = path.join(fixture.root, uuidAt(60000));
+    const otherRevisions = path.join(otherRun, "revisions");
+    fs.mkdirSync(otherRevisions, { recursive: true });
+    const staging = writeStaging(otherRevisions, "0.json", 60001, "x");
+    let changed = false;
+    const mutatingValidators = {
+      ...validators,
+      parseSnapshot(kind, value) {
+        if (!changed) {
+          changed = true;
+          fs.appendFileSync(staging, "y");
+        }
+        return parseSnapshotEnvelope(kind, value);
+      },
+    };
+    expectStoreStatus(
+      () => fixture.store.readCommittedRun(RUN_ID, mutatingValidators),
+      "run-busy",
+      /changed|stable|enumeration|globally charged/i,
+    );
+    assert.equal(changed, true);
+  });
+
+  await t.test("charged other-run revisions-directory replacement is detected", () => {
+    const fixture = fixtureStore(tempRoot(t));
+    publishRoot(fixture);
+    const otherRun = path.join(fixture.root, uuidAt(60002));
+    const otherRevisions = path.join(otherRun, "revisions");
+    fs.mkdirSync(otherRevisions, { recursive: true });
+    writeStaging(otherRevisions, "0.json", 60003, "x");
+    let changed = false;
+    const mutatingValidators = {
+      ...validators,
+      parseSnapshot(kind, value) {
+        if (!changed) {
+          changed = true;
+          fs.renameSync(otherRevisions, `${otherRevisions}.saved`);
+          fs.mkdirSync(otherRevisions);
+        }
+        return parseSnapshotEnvelope(kind, value);
+      },
+    };
+    expectStoreStatus(
+      () => fixture.store.readCommittedRun(RUN_ID, mutatingValidators),
+      "run-busy",
+      /directory|replaced|changed|stable/i,
+    );
+    assert.equal(changed, true);
+  });
+
+  for (const location of ["other-run", "CAS"]) {
+    await t.test(`${location} staging growth cannot split charged size from retained identity`, (subtest) => {
+      const fixture = fixtureStore(tempRoot(t));
+      publishRoot(fixture);
+      let staging;
+      if (location === "other-run") {
+        const revisions = path.join(fixture.root, uuidAt(60004), "revisions");
+        fs.mkdirSync(revisions, { recursive: true });
+        staging = writeStaging(revisions, "0.json", 60005);
+      } else {
+        const directory = path.join(fixture.root, "objects", "goal");
+        staging = writeStaging(directory, `${"d".repeat(64)}.json`, 60006);
+      }
+      const originalLstat = fs.lstatSync;
+      let changed = false;
+      fs.lstatSync = (target, ...args) => {
+        const stat = originalLstat(target, ...args);
+        if (!changed && path.resolve(String(target)) === staging) {
+          changed = true;
+          fs.truncateSync(staging, 512 * 1024 * 1024);
+        }
+        return stat;
+      };
+      subtest.after(() => { fs.lstatSync = originalLstat; });
+      assert.throws(
+        () => fixture.store.readCommittedRun(RUN_ID, validators),
+        (error) => ["invalid-store", "limit-exceeded", "run-busy"].includes(error?.status),
+        "staging growth between observations must fail closed",
+      );
+      assert.equal(changed, true);
+    });
+  }
+
+  await t.test("publication revalidates an earlier CAS staging leaf after later namespace traversal", (subtest) => {
+    const fixture = fixtureStore(tempRoot(t));
+    publishRoot(fixture);
+    const initialResult = structuredClone(planFailedEnvelope());
+    initialResult.publicResult.fix = "initial fixture fix";
+    fixture.store.publishSnapshot("public-result", initialResult);
+    const objects = path.join(fixture.root, "objects");
+    const namespaceOrder = fs.readdirSync(objects).filter((name) => ["goal", "result"].includes(name));
+    assert.equal(namespaceOrder.length, 2);
+    const stagingDirectory = path.join(objects, namespaceOrder[0]);
+    const staging = writeStaging(stagingDirectory, `${"d".repeat(64)}.json`, 60007);
+    const candidate = planFailedEnvelope();
+    const resultDirectory = path.join(objects, "result");
+    const beforeResultEntries = fs.readdirSync(resultDirectory).sort();
+    const originalOpendir = fs.opendirSync;
+    const originalOpen = fs.openSync;
+    const originalClose = fs.closeSync;
+    const descriptors = new Map();
+    let objectScans = 0;
+    let grew = false;
+    fs.opendirSync = (directory, ...args) => {
+      if (path.resolve(String(directory)) === objects) objectScans += 1;
+      return originalOpendir(directory, ...args);
+    };
+    fs.openSync = (target, ...args) => {
+      const descriptor = originalOpen(target, ...args);
+      descriptors.set(descriptor, path.resolve(String(target)));
+      return descriptor;
+    };
+    fs.closeSync = (descriptor) => {
+      const target = descriptors.get(descriptor);
+      descriptors.delete(descriptor);
+      const result = originalClose(descriptor);
+      if (!grew && target === staging && objectScans === 3) {
+        grew = true;
+        fs.truncateSync(staging, 512 * 1024 * 1024);
+      }
+      return result;
+    };
+    subtest.after(() => {
+      fs.opendirSync = originalOpendir;
+      fs.openSync = originalOpen;
+      fs.closeSync = originalClose;
+    });
+    let publicationError;
+    assert.throws(
+      () => fixture.store.publishSnapshot("public-result", candidate),
+      (error) => {
+        publicationError = error;
+        return ["invalid-store", "limit-exceeded", "run-busy"].includes(error?.status);
+      },
+      "publication must fail after a retained CAS observation changes",
+    );
+    assert.equal(grew, true);
+    assert.match(publicationError.message, /globally charged leaf.*changed after enumeration/i);
+    assert.deepEqual(fs.readdirSync(resultDirectory).sort(), beforeResultEntries);
+  });
+});
+
+test("Round 2: raw invalid UTF-8 in an unreferenced CAS leaf is rejected", (t) => {
+  const fixture = fixtureStore(tempRoot(t));
+  publishRoot(fixture);
+  const decoded = canonicalJson({ kind: "pico.workflow-goal", schemaVersion: 1, goal: "invalid \ufffd byte" });
+  const replacement = Buffer.from("\ufffd", "utf8");
+  const canonical = Buffer.from(decoded, "utf8");
+  const offset = canonical.indexOf(replacement);
+  assert.notEqual(offset, -1);
+  const invalid = Buffer.concat([canonical.subarray(0, offset), Buffer.from([0xff]), canonical.subarray(offset + replacement.length), Buffer.from("\n")]);
+  const target = path.join(fixture.root, "objects", "goal", `${sha(decoded)}.json`);
+  fs.writeFileSync(target, invalid);
+  expectStoreStatus(
+    () => fixture.store.readCommittedRun(RUN_ID, validators),
+    "invalid-store",
+  );
 });
 
 test("conflicting duplicate snapshot refs are rejected independent of traversal order", async (t) => {
@@ -750,7 +1081,7 @@ test("directory-entry capacity is reserved before every store mutation", { timeo
   await t.test("root objects creation is preflighted", () => {
     const fixture = fixtureStore(tempRoot(t));
     fs.mkdirSync(fixture.root, { recursive: true });
-    for (let index = 0; index < 4096; index += 1) fs.mkdirSync(path.join(fixture.root, uuidAt(index)));
+    fillRootTo(fixture.root, 4096);
     expectStoreStatus(() => fixture.store.publishSnapshot("goal", goalEnvelope()), "limit-exceeded");
     assert.equal(fs.existsSync(path.join(fixture.root, "objects")), false);
   });
@@ -758,7 +1089,7 @@ test("directory-entry capacity is reserved before every store mutation", { timeo
   await t.test("run and revisions creation are independently preflighted", () => {
     const fixture = fixtureStore(tempRoot(t));
     const goal = fixture.store.publishSnapshot("goal", goalEnvelope());
-    for (let index = 0; index < 4095; index += 1) fs.mkdirSync(path.join(fixture.root, uuidAt(index)));
+    fillRootTo(fixture.root, 4096);
     const revision = refreshRevisionId(baseRevision({ intent: { ...baseRevision().intent, goal } }));
     expectStoreStatus(() => fixture.store.publishRevision(revision, fixture.request), "limit-exceeded");
     assert.equal(fs.existsSync(path.join(fixture.root, RUN_ID)), false);
@@ -823,9 +1154,9 @@ test("root, run-directory, and object enumeration accept exact count and reject 
   await t.test("root 4096 / 4097", () => {
     const fixture = fixtureStore(tempRoot(t));
     publishRoot(fixture);
-    for (let index = 0; index < 4094; index += 1) fs.mkdirSync(path.join(fixture.root, uuidAt(index)));
+    const next = fillRootTo(fixture.root, 4096);
     assert.equal(fixture.store.readCommittedRun(RUN_ID, validators).head.revision, 0);
-    fs.mkdirSync(path.join(fixture.root, uuidAt(4094)));
+    fs.mkdirSync(path.join(fixture.root, uuidAt(next)));
     expectStoreStatus(() => fixture.store.readCommittedRun(RUN_ID, validators), "limit-exceeded");
   });
   await t.test("run 1024 / 1025", () => {
@@ -868,6 +1199,215 @@ test("root, run-directory, and object enumeration accept exact count and reject 
     assert.equal(fixture.store.readCommittedRun(RUN_ID, validators).head.revision, 0);
     writeStaging(directory, `${"d".repeat(64)}.json`, 1, "x");
     expectStoreStatus(() => fixture.store.readCommittedRun(RUN_ID, validators), "limit-exceeded");
+  });
+});
+
+test("Round 2: root-wide reservations make concurrent admission atomic", { timeout: 120_000 }, async (t) => {
+  await t.test("combined CAS publishers cannot cross the global object ceiling", async () => {
+    const fixture = fixtureStore(tempRoot(t));
+    publishRoot(fixture);
+    const directory = path.join(fixture.root, "objects", "goal");
+    for (let index = 0; index < 32766; index += 1) {
+      const envelope = { kind: "pico.workflow-goal", schemaVersion: 1, goal: `reserved object ${index}` };
+      writeCanonical(path.join(directory, `${sha(canonicalJson(envelope))}.json`), envelope);
+    }
+    const first = startConcurrentPublisher(fixture.root, "snapshot", "Round 2 concurrent goal A", { pause: true });
+    let second;
+    try {
+      await first.barrier;
+      second = startConcurrentPublisher(fixture.root, "snapshot", "Round 2 concurrent goal B");
+      const secondResult = await second.result;
+      first.release();
+      const firstResult = await first.result;
+      assert.equal(firstResult.ok, true, JSON.stringify(firstResult));
+      assert.deepEqual(secondResult.ok, false);
+      assert.equal(secondResult.status, "limit-exceeded");
+      assert.equal(fs.readdirSync(directory).length, 32768);
+    } finally {
+      first.release();
+      first.terminate();
+      second?.terminate();
+    }
+  });
+
+  await t.test("combined CAS publishers reserve the fixed canonical-byte peak", async () => {
+    const fixture = fixtureStore(tempRoot(t));
+    const committed = publishRoot(fixture);
+    const valueA = "Round 2 concurrent byte goal A";
+    const valueB = "Round 2 concurrent byte goal B";
+    const candidateBytes = Buffer.byteLength(canonicalJson({ kind: "pico.workflow-goal", schemaVersion: 1, goal: valueA }));
+    assert.equal(candidateBytes, Buffer.byteLength(canonicalJson({ kind: "pico.workflow-goal", schemaVersion: 1, goal: valueB })));
+    const fixedBytes = (fs.statSync(headPath(fixture.root)).size - 1)
+      + (fs.statSync(revisionPath(fixture.root, 0)).size - 1)
+      + (fs.statSync(objectPath(fixture.root, committed.goal)).size - 1);
+    const directory = path.dirname(objectPath(fixture.root, committed.goal));
+    const fill = writeStaging(directory, `${"d".repeat(64)}.json`, 40000);
+    fs.truncateSync(fill, 512 * 1024 * 1024 - fixedBytes - (2 * candidateBytes + 1));
+    const first = startConcurrentPublisher(fixture.root, "snapshot", valueA, { pause: true });
+    let second;
+    try {
+      await first.barrier;
+      second = startConcurrentPublisher(fixture.root, "snapshot", valueB);
+      const secondResult = await second.result;
+      first.release();
+      const firstResult = await first.result;
+      assert.equal(firstResult.ok, true, JSON.stringify(firstResult));
+      assert.deepEqual(secondResult.ok, false);
+      assert.equal(secondResult.status, "limit-exceeded");
+    } finally {
+      first.release();
+      first.terminate();
+      second?.terminate();
+    }
+  });
+
+  await t.test("different-run publishers cannot cross the root ceiling", async () => {
+    const fixture = fixtureStore(tempRoot(t));
+    fixture.store.publishSnapshot("goal", goalEnvelope());
+    fillRootTo(fixture.root, 4095, 70000);
+    const firstRun = uuidAt(80000);
+    const secondRun = uuidAt(80001);
+    const first = startConcurrentPublisher(fixture.root, "revision", firstRun, { pause: true });
+    let second;
+    try {
+      await first.barrier;
+      second = startConcurrentPublisher(fixture.root, "revision", secondRun);
+      const secondResult = await second.result;
+      first.release();
+      const firstResult = await first.result;
+      assert.equal(firstResult.ok, true, JSON.stringify(firstResult));
+      assert.deepEqual(secondResult.ok, false);
+      assert.equal(secondResult.status, "limit-exceeded");
+      assert.equal(fs.readdirSync(fixture.root).length, 4096);
+      assert.equal(fs.existsSync(path.join(fixture.root, firstRun, "revisions", "0.json")), true);
+      assert.equal(fs.existsSync(path.join(fixture.root, secondRun)), false);
+    } finally {
+      first.release();
+      first.terminate();
+      second?.terminate();
+    }
+  });
+});
+
+test("Round 2: reservation leftovers are bounded evidence and malformed records fail closed", { timeout: 30_000 }, async (t) => {
+  await t.test("SIGKILL preserves only the producer reservation and reports it", async () => {
+    const fixture = fixtureStore(tempRoot(t));
+    publishRoot(fixture);
+    await killAtBarrier(fixture.root, "before-revision-link");
+    const reservations = path.join(fixture.root, "reservations");
+    const slots = fs.readdirSync(reservations);
+    assert.equal(slots.length, 1);
+    assert.match(slots[0], /^reservation-[0-9]{2}\.json$/);
+    const fresh = fixtureStore(fixture.root);
+    let chain = fresh.store.readCommittedRun(RUN_ID, validators);
+    assert.equal(chain.head.revision, 0);
+    assert.equal(chain.issues.some((issue) => issue.code === "reservation-preserved"), true);
+    assert.equal(fs.readdirSync(reservations).length, 1);
+    const revisions = path.dirname(revisionPath(fixture.root, 0));
+    const occupied = fs.readdirSync(revisions).length;
+    const reserved = JSON.parse(fs.readFileSync(path.join(reservations, slots[0]), "utf8")).revisionEntries;
+    for (let index = 0; index < 1024 - occupied - reserved; index += 1) {
+      writeStaging(revisions, "1.json", 61000 + index);
+    }
+    chain = fresh.store.readCommittedRun(RUN_ID, validators);
+    assert.equal(chain.issues.some((issue) => issue.code === "reservation-preserved"), true);
+    writeStaging(revisions, "1.json", 62050);
+    expectStoreStatus(() => fresh.store.readCommittedRun(RUN_ID, validators), "limit-exceeded", /reserved revision-entry/i);
+  });
+
+  await t.test("partial reservation records are never skipped", () => {
+    const fixture = fixtureStore(tempRoot(t));
+    publishRoot(fixture);
+    const reservations = path.join(fixture.root, "reservations");
+    fs.mkdirSync(reservations, { recursive: true });
+    fs.writeFileSync(path.join(reservations, "reservation-00.json"), "{}\n");
+    expectStoreStatus(
+      () => fixture.store.readCommittedRun(RUN_ID, validators),
+      "invalid-store",
+      /malformed reservation record|reservation record.*canonical/i,
+    );
+  });
+
+  await t.test("duplicate reservation tokens fail closed", () => {
+    const fixture = fixtureStore(tempRoot(t));
+    publishRoot(fixture);
+    const reservations = path.join(fixture.root, "reservations");
+    fs.mkdirSync(reservations, { recursive: true });
+    writeCanonical(path.join(reservations, "reservation-00.json"), reservationRecord());
+    writeCanonical(path.join(reservations, "reservation-01.json"), reservationRecord());
+    expectStoreStatus(() => fixture.store.readCommittedRun(RUN_ID, validators), "invalid-store", /duplicate reservation token/i);
+  });
+
+  await t.test("operation-specific reservation delta shapes are exact", () => {
+    const fixture = fixtureStore(tempRoot(t));
+    publishRoot(fixture);
+    const reservations = path.join(fixture.root, "reservations");
+    fs.mkdirSync(reservations, { recursive: true });
+    writeCanonical(
+      path.join(reservations, "reservation-00.json"),
+      reservationRecord({ casObjects: 1 }),
+    );
+    expectStoreStatus(() => fixture.store.readCommittedRun(RUN_ID, validators), "invalid-store", /operation shape/i);
+  });
+
+  for (const [name, record] of [
+    ["snapshot missing objects also reserves its namespace", reservationRecord({
+      operation: "snapshot-publication",
+      rootEntries: 1,
+      objectsEntries: 0,
+      nestedEntries: 0,
+      casObjects: 1,
+      runId: null,
+      runEntries: 0,
+      namespace: "goal",
+      namespaceEntries: 2,
+    })],
+    ["revision missing run also reserves its revisions directory", reservationRecord({
+      operation: "revision-publication",
+      rootEntries: 1,
+      nestedEntries: 2,
+      aggregateRevisions: 1,
+      runEntries: 0,
+      revisionEntries: 2,
+    })],
+    ["HEAD byte peak cannot be an arbitrary undercharge", reservationRecord({ canonicalBytes: 1 })],
+  ]) {
+    await t.test(name, () => {
+      const fixture = fixtureStore(tempRoot(t));
+      publishRoot(fixture);
+      const reservations = path.join(fixture.root, "reservations");
+      fs.mkdirSync(reservations, { recursive: true });
+      writeCanonical(path.join(reservations, "reservation-00.json"), record);
+      expectStoreStatus(
+        () => fixture.store.readCommittedRun(RUN_ID, validators),
+        "invalid-store",
+        /operation shape|implication|byte peak|content byte/i,
+      );
+    });
+  }
+
+  await t.test("reservation slots accept exactly 64 and reject a 65th", () => {
+    const fixture = fixtureStore(tempRoot(t));
+    publishRoot(fixture);
+    const reservations = path.join(fixture.root, "reservations");
+    fs.mkdirSync(reservations, { recursive: true });
+    for (let index = 0; index < 64; index += 1) {
+      writeCanonical(
+        path.join(reservations, `reservation-${index.toString().padStart(2, "0")}.json`),
+        reservationRecord({ token: uuidAt(65100 + index), canonicalBytes: 257 }),
+      );
+    }
+    const chain = fixture.store.readCommittedRun(RUN_ID, validators);
+    assert.equal(chain.issues.filter((issue) => issue.code === "reservation-preserved").length, 64);
+    writeCanonical(
+      path.join(reservations, "reservation-64.json"),
+      reservationRecord({ token: uuidAt(65200), canonicalBytes: 257 }),
+    );
+    assert.throws(
+      () => fixture.store.readCommittedRun(RUN_ID, validators),
+      (error) => ["invalid-store", "limit-exceeded"].includes(error?.status),
+      "a 65th reservation namespace entry must fail closed",
+    );
   });
 });
 
@@ -933,6 +1473,25 @@ test("per-run unique declared snapshot bytes are charged as a complete set befor
     const syntheticValidators = rewriteSyntheticRevision(fixture, refs);
     expectStoreStatus(() => fixture.store.readCommittedRun(RUN_ID, syntheticValidators), "limit-exceeded", /declared snapshot-byte/i);
   });
+});
+
+test("Round 2: a real referenced CAS leaf reaches production actual-byte accounting", (t) => {
+  const fixture = fixtureStore(tempRoot(t));
+  const committed = publishRoot(fixture);
+  const stored = fs.statSync(objectPath(fixture.root, committed.goal)).size - 1;
+  assert.equal(stored, committed.goal.bytes);
+  const chain = fixture.store.readCommittedRun(RUN_ID, validators);
+  assert.equal(chain.snapshots.has(`goal:${committed.goal.sha256}`), true);
+  const wrong = structuredClone(committed.revision);
+  wrong.intent.goal = { ...wrong.intent.goal, bytes: stored + 1 };
+  const rewritten = refreshRevisionId(wrong);
+  writeCanonical(revisionPath(fixture.root, 0), rewritten);
+  writeCanonical(headPath(fixture.root), headOf(rewritten));
+  expectStoreStatus(
+    () => fixture.store.readCommittedRun(RUN_ID, validators),
+    "invalid-store",
+    /declared byte count mismatch/i,
+  );
 });
 
 test("fixed pure accumulator covers exact and plus-one unique run snapshot totals", async (t) => {
