@@ -1,0 +1,8 @@
+{
+  "name": "pico-spatial-agent-bench-pico-cli-toolchain",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@picoxr/pico-cli": "0.4.2"
+  }
+}

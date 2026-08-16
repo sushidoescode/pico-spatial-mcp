@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "pico-spatial-agent-bench-v1",
+  "rubricVersion": 1,
+  "sdkVersion": "0.13.3",
+  "picoCli": {
+    "package": "@picoxr/pico-cli",
+    "version": "0.4.2",
+    "integrity": "sha512-qapgwB+OljD0qQukilhaAmhIemuoIvMO/dkQOVDcZEhLdW1KxpbpkNyLII9hJ6m5F/QYF4UZoPpkjH9IL5U7mA=="
+  },
+  "claudeCliVersion": "2.1.233",
+  "claudeCliCommit": "f8d57569aaf3",
+  "claudeCliSha256": "bc466b6cde63edafc773f471a1fb98787fabb31f52240c8616ce7e1f587b212d",
+  "toolchainNpm": {
+    "version": "10.9.2",
+    "integrity": "sha512-iriPEPIkoMYUy3F6f3wwSZAU93E0Eg6cHwIR6jzzOXWSy+SD/rOODEs74cVONHKSx2obXtuUoyidVEhISrisgQ=="
+  },
+  "effort": "high",
+  "timeoutMs": 1800000,
+  "maxTurns": 100,
+  "maxOutputBytes": 67108864,
+  "expectedDoorTools": [
+    "validate_toolchain", "pico_build_app", "pico_scan_world", "pico_place", "pico_look",
+    "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship",
+    "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next", "pico_loop",
+    "ensure_pico_cli"
+  ],
+  "seed": 20260816,
+  "controlVariantIds": ["museum", "instruments", "vehicles"],
+  "lanes": [
+    { "id": "sonnet_mcp", "model": "claude-sonnet-5", "treatment": "mcp", "role": "primary" },
+    { "id": "opus_bare", "model": "claude-opus-5", "treatment": "bare", "role": "primary" },
+    { "id": "sonnet_bare", "model": "claude-sonnet-5", "treatment": "bare", "role": "control" },
+    { "id": "opus_mcp", "model": "claude-opus-5", "treatment": "mcp", "role": "control" }
+  ],
+  "variants": [
+    { "id": "museum", "title": "Museum Objects", "items": ["vase", "astrolabe", "mask"] },
+    { "id": "planets", "title": "Planet Gallery", "items": ["Mercury", "Venus", "Mars"] },
+    { "id": "instruments", "title": "Instrument Gallery", "items": ["cello", "synthesizer", "drum"] },
+    { "id": "botanical", "title": "Botanical Specimens", "items": ["fern", "orchid", "cactus"] },
+    { "id": "vehicles", "title": "Exploration Vehicles", "items": ["rover", "drone", "submersible"] }
+  ]
+}
