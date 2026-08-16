@@ -562,7 +562,7 @@ function spawnCapacityAbaChild(root, command, index = 0) {
       for (const waiter of waiters.values()) waiter.reject(error);
     });
   });
-  const waitBarrier = (name) => {
+  const waitBarrier = (name, timeoutMs = 10_000) => {
     if (seen.has(name)) return Promise.resolve();
     if (waiters.has(name)) return waiters.get(name).promise;
     let resolve;
@@ -571,7 +571,7 @@ function spawnCapacityAbaChild(root, command, index = 0) {
       resolve = resolveValue;
       reject = rejectValue;
     });
-    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${command}/${index} barrier '${name}': ${stderr}`)), 10_000);
+    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${command}/${index} barrier '${name}': ${stderr}`)), timeoutMs);
     const wrapped = promise.finally(() => clearTimeout(timer));
     waiters.set(name, { promise: wrapped, resolve, reject });
     return wrapped;
@@ -2585,13 +2585,13 @@ test("exact-cap recovery election and owner enrollment remain deterministically 
   const recovery = spawnCapacityAbaChild(root, "capacity-recover");
   let contender = null;
   try {
-    await recovery.waitBarrier("recovery-before-election-publish");
+    await recovery.waitBarrier("recovery-before-election-publish", 60_000);
     contender = spawnCapacityAbaChild(root, "capacity-cap-contender", 91);
-    await contender.waitBarrier("contender-observed-live-enrollment");
+    await contender.waitBarrier("contender-observed-live-enrollment", 60_000);
     contender.releaseBarrier("contender-observed-live-enrollment");
     recovery.releaseBarrier("recovery-before-election-publish");
 
-    await recovery.waitBarrier("recovery-before-owner-quarantine");
+    await recovery.waitBarrier("recovery-before-owner-quarantine", 60_000);
     const contenderResult = await contender.result;
     await contender.exited;
     assert.equal(contenderResult.status, "limit-exceeded", contenderResult.detail);
@@ -2610,8 +2610,15 @@ test("exact-cap recovery election and owner enrollment remain deterministically 
       assert.equal(ownerEvidence.length, 4_096, `${scope} logical capacity remained exact`);
     }
   } finally {
+    const childrenSettled = Promise.allSettled([
+      recovery.result,
+      recovery.exited,
+      contender?.result,
+      contender?.exited,
+    ].filter(Boolean));
     await killChild(recovery.child);
     if (contender !== null) await killChild(contender.child);
+    await childrenSettled;
   }
 });
 

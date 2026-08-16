@@ -38,6 +38,16 @@ function gatedBarrier(name) {
   while (!fs.existsSync(release)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
 }
 
+function sendCapacityResult(message) {
+  if (typeof process.send !== "function") return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    process.send(message, (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
+
 function processIdentityFor(pid) {
   return `runlock-child:${pid}`;
 }
@@ -280,7 +290,7 @@ try {
       chain: null,
       classification: "pre-target",
     }, acquireDeps);
-    process.send?.({ kind: "capacity-result", status: result.status, detail: result.detail });
+    await sendCapacityResult({ kind: "capacity-result", status: result.status, detail: result.detail });
   } else if (command === "cut-acquire") {
     const owners = await acquireRunOwners(input, acquireDeps);
     process.send?.({
@@ -304,7 +314,7 @@ try {
     });
     if (command === "capacity-acquire" || command === "capacity-aba-a" || command === "capacity-aba-c"
         || command === "capacity-aba-reaper" || command === "capacity-cap-contender") {
-      process.send?.({ kind: "capacity-result", status: "acquired" });
+      await sendCapacityResult({ kind: "capacity-result", status: "acquired" });
       process.exitCode = 0;
     } else {
     if (command === "hold") barrier("holding");
@@ -327,7 +337,11 @@ try {
   if (command === "capacity-acquire" || command === "capacity-aba-a" || command === "capacity-aba-c"
       || command === "capacity-aba-reaper" || command === "capacity-cap-contender"
       || command === "capacity-recover") {
-    process.send?.({ kind: "capacity-result", status: error?.status ?? "error", detail: String(error?.message ?? error) });
+    await sendCapacityResult({
+      kind: "capacity-result",
+      status: error?.status ?? "error",
+      detail: String(error?.message ?? error),
+    });
   } else {
     process.stderr.write(`${error?.stack ?? error}\n`);
     process.exitCode = 1;
