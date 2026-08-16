@@ -288,6 +288,12 @@ export type GradleInputGuardOptions = Readonly<{
   maxEventSamples?: number;
 }>;
 
+export type GradleInputIdentityTestHooks = Readonly<{
+  onBeforeSelectedFileOpen?(filePath: string): void;
+}>;
+
+const NO_GRADLE_INPUT_TEST_HOOKS: GradleInputIdentityTestHooks = Object.freeze({});
+
 type GuardLimits = Readonly<{
   maxDirectories: number;
   maxDepth: number;
@@ -474,12 +480,17 @@ function hashSelectedFile(
   filePath: string,
   expected: fs.Stats,
   guardState?: GuardState,
+  testHooks: GradleInputIdentityTestHooks = NO_GRADLE_INPUT_TEST_HOOKS,
 ): { bytes: number; sha256: string } {
   if (!expected.isFile()) throw new Error(`selected Gradle input is not a regular file: ${filePath}`);
   if (expected.size > GRADLE_INPUT_MAX_FILE_BYTES) {
     throw new Error(`selected Gradle input exceeds the ${GRADLE_INPUT_MAX_FILE_BYTES}-byte file limit: ${filePath}`);
   }
-  const descriptor = fs.openSync(filePath, "r");
+  testHooks.onBeforeSelectedFileOpen?.(filePath);
+  const descriptor = fs.openSync(
+    filePath,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,
+  );
   let retained = false;
   try {
     const opened = fs.fstatSync(descriptor);
@@ -517,6 +528,7 @@ function collectGradleInputIdentityInternal(
   projectDir: string,
   options: GradleInputGuardOptions,
   state?: GuardState,
+  testHooks: GradleInputIdentityTestHooks = NO_GRADLE_INPUT_TEST_HOOKS,
 ): GradleInputIdentity {
   const projectRealPath = fs.realpathSync(path.resolve(projectDir));
   if (!fs.lstatSync(projectRealPath).isDirectory()) {
@@ -542,7 +554,7 @@ function collectGradleInputIdentityInternal(
     if (totalBytes + stat.size > GRADLE_INPUT_MAX_TOTAL_BYTES) {
       throw new Error(`Gradle input manifest exceeds ${GRADLE_INPUT_MAX_TOTAL_BYTES} total bytes`);
     }
-    const hashed = hashSelectedFile(projectRealPath, realPath, stat, state);
+    const hashed = hashSelectedFile(projectRealPath, realPath, stat, state, testHooks);
     entries.push({ path: relativePath, bytes: hashed.bytes, sha256: hashed.sha256 });
     totalBytes += hashed.bytes;
   };
@@ -773,4 +785,21 @@ export function guardGradleInputGeneration(
 
 export function collectGradleInputIdentity(projectDir: string): GradleInputIdentity {
   return collectGradleInputIdentityInternal(projectDir, {});
+}
+
+/** Test-only semantic race seam; production collection always uses closed no-op hooks. */
+export function collectGradleInputIdentityForTest(
+  projectDir: string,
+  hooks: GradleInputIdentityTestHooks = {},
+): GradleInputIdentity {
+  if (hooks === null || typeof hooks !== "object" || Array.isArray(hooks)) {
+    throw new Error("Gradle input test hooks must be an object");
+  }
+  if (hooks.onBeforeSelectedFileOpen !== undefined
+    && typeof hooks.onBeforeSelectedFileOpen !== "function") {
+    throw new Error("onBeforeSelectedFileOpen test hook must be a function");
+  }
+  const onBeforeSelectedFileOpen = hooks.onBeforeSelectedFileOpen;
+  const capturedHooks: GradleInputIdentityTestHooks = Object.freeze({ onBeforeSelectedFileOpen });
+  return collectGradleInputIdentityInternal(projectDir, {}, undefined, capturedHooks);
 }

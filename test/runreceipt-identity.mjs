@@ -12,6 +12,7 @@ import {
   readAuthoredAppSpecIdentity,
   effectiveAppSpecIdentity,
   collectGradleInputIdentity,
+  collectGradleInputIdentityForTest,
   collectGuardedGradleInputIdentity,
   GradleInputContinuityInconclusiveError,
   guardGradleInputGeneration,
@@ -173,6 +174,7 @@ test("Gradle identity contains only the exact sorted V1 allowlist with independe
     totalBytes: entries.reduce((sum, entry) => sum + entry.bytes, 0),
     entries,
   });
+  assert.deepEqual(collectGradleInputIdentityForTest(project), actual);
 
   writeFixtureFile(project, "README.md", "ignored documentation\n");
   writeFixtureFile(project, ".idea/x", "ignored IDE state\n");
@@ -276,6 +278,45 @@ test("Gradle identity fails closed on selected special entries", (t) => {
   const created = spawnSync("mkfifo", [fifo], { encoding: "utf8" });
   assert.equal(created.status, 0, created.stderr);
   assert.throws(() => collectGradleInputIdentity(project), /regular|special|unsupported/i);
+});
+
+test("Gradle identity regular-to-FIFO replacement cannot block before authoritative fstat", (t) => {
+  const dir = scratch(t, "pico-gradle-fifo-race-");
+  const project = createGradleProject(dir);
+  const moduleUrl = new URL("../dist/runreceiptidentity.js", import.meta.url).href;
+  const script = `
+    import fs from "node:fs";
+    import path from "node:path";
+    import { spawnSync } from "node:child_process";
+    import { collectGradleInputIdentityForTest } from ${JSON.stringify(moduleUrl)};
+    const project = process.argv[1];
+    const selectedSource = path.join(project, "app/src/main/java/com/example/Main.kt");
+    let swapped = false;
+    try {
+      collectGradleInputIdentityForTest(project, {
+        onBeforeSelectedFileOpen(filePath) {
+          if (!swapped && filePath === fs.realpathSync(selectedSource)) {
+            swapped = true;
+            fs.unlinkSync(selectedSource);
+            const fifo = spawnSync("mkfifo", [selectedSource], { encoding: "utf8" });
+            if (fifo.status !== 0) throw new Error(fifo.stderr || "mkfifo failed");
+          }
+        },
+      });
+      process.exitCode = 2;
+    } catch (error) {
+      if (swapped && /regular|changed|FIFO|special/i.test(String(error))) process.exitCode = 0;
+      else { console.error(error); process.exitCode = 3; }
+    }
+  `;
+  const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script, project], {
+    encoding: "utf8",
+    timeout: 1_200,
+    killSignal: "SIGTERM",
+  });
+  assert.equal(child.error, undefined, child.error?.message);
+  assert.equal(child.signal, null, `child signal: ${child.signal}\n${child.stderr}`);
+  assert.equal(child.status, 0, child.stderr);
 });
 
 test("Gradle identity requires an Android manifest and app Kotlin or Java source", (t) => {
