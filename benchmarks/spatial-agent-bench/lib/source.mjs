@@ -6,6 +6,7 @@ const MAX_FILES = 2_000;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 32 * 1024 * 1024;
 const SKIPPED_DIRECTORIES = new Set([".git", ".gradle", ".cache", "build", "cache", "caches"]);
+const DSL_CONTINUATION_TOKENS = new Set([".", "&", "?", "*", ":", "+", "-", "/", "%", "=", "|", "^", "!", "<", ">", ",", "(", "[", "as", "in", "is"]);
 const UTF8 = new TextDecoder("utf-8", { fatal: true });
 
 /** @typedef {{path:string, absolutePath:string, kind:"kotlin"|"gradle"|"manifest", original:string, structural:string}} SourceFile */
@@ -89,6 +90,20 @@ function dollarSlashyEnd(source, start) {
   return -1;
 }
 
+function tripleQuotedEnd(source, start, delimiter, escaped) {
+  let index = start;
+  while (index < source.length) {
+    const candidate = source.indexOf(delimiter, index);
+    if (candidate < 0) return -1;
+    if (!escaped) return candidate;
+    let backslashes = 0;
+    for (let previous = candidate - 1; previous >= start && source[previous] === "\\"; previous -= 1) backslashes += 1;
+    if (backslashes % 2 === 0) return candidate;
+    index = candidate + 1;
+  }
+  return -1;
+}
+
 function maskCode(source, label, groovy = false) {
   const characters = source.split("");
   let index = 0;
@@ -129,7 +144,7 @@ function maskCode(source, label, groovy = false) {
     }
     if (source.startsWith('"""', index)) {
       const start = index;
-      const closing = source.indexOf('"""', index + 3);
+      const closing = tripleQuotedEnd(source, index + 3, '"""', groovy);
       if (closing < 0) fail(`${label} has an unterminated raw string`);
       index = closing + 3;
       maskRange(characters, start, index);
@@ -137,7 +152,7 @@ function maskCode(source, label, groovy = false) {
     }
     if (groovy && source.startsWith("'''", index)) {
       const start = index;
-      const closing = source.indexOf("'''", index + 3);
+      const closing = tripleQuotedEnd(source, index + 3, "'''", true);
       if (closing < 0) fail(`${label} has an unterminated triple-single string`);
       index = closing + 3;
       maskRange(characters, start, index);
@@ -405,7 +420,7 @@ function readQuotedToken(source, start, label) {
   const quote = source[start];
   if ((quote === '"' && source.startsWith('"""', start)) || (quote === "'" && source.startsWith("'''", start))) {
     const delimiter = quote.repeat(3);
-    const closing = source.indexOf(delimiter, start + 3);
+    const closing = tripleQuotedEnd(source, start + 3, delimiter, label.endsWith(".gradle"));
     if (closing < 0) fail(`${label} has an unterminated raw string`);
     const value = source.slice(start + 3, closing);
     return { type: "string", value, start, end: closing + 3, dynamic: quote === '"' && value.includes("$") };
@@ -507,11 +522,24 @@ function blockLabel(tokens, braceIndex) {
   return tokens[index]?.type === "ident" ? tokens[index].value : null;
 }
 
+function closesControlFlowHeader(tokens, closeIndex) {
+  if (tokens[closeIndex]?.value !== ")") return false;
+  let depth = 1;
+  for (let index = closeIndex - 1; index >= 0; index -= 1) {
+    if (tokens[index].value === ")") depth += 1;
+    else if (tokens[index].value === "(") depth -= 1;
+    if (depth === 0) return ["catch", "for", "if", "while"].includes(tokens[index - 1]?.value);
+  }
+  return false;
+}
+
 function directDslStatement(tokens, index, source) {
   const previous = tokens[index - 1];
   if (!previous || previous.value === "{" || previous.value === ";") return true;
-  const continuation = new Set([".", "&", "?", "*", ":", "+", "-", "/", "%", "=", "|", "^", "!", "<", ">", ",", "(", "["]);
-  return !continuation.has(previous.value) && source.slice(previous.end, tokens[index].start).includes("\n");
+  return !DSL_CONTINUATION_TOKENS.has(previous.value)
+    && !["do", "else"].includes(previous.value)
+    && !closesControlFlowHeader(tokens, index - 1)
+    && source.slice(previous.end, tokens[index].start).includes("\n");
 }
 
 function catalogReference(tokens, start) {
@@ -660,13 +688,15 @@ function parseGradle(source, label, catalog, facts) {
     const token = tokens[index];
     if (token.value === "{") {
       const labelName = blockLabel(tokens, index);
-      if (labelName === "dependencies" || labelName === "plugins") {
+      if (["android", "defaultConfig", "dependencies", "plugins"].includes(labelName)) {
         const handlerIndex = index - 1;
-        const exactTopLevelHandler = contexts.length === 0
-          && tokens[handlerIndex]?.type === "ident"
+        const exactDirectHandler = tokens[handlerIndex]?.type === "ident"
           && tokens[handlerIndex].value === labelName
           && directDslStatement(tokens, handlerIndex, source);
-        if (!exactTopLevelHandler) fail(`${label} has qualified or nested ${labelName} outside recognized top-level Gradle scope`);
+        const exactScope = labelName === "defaultConfig"
+          ? contexts.length === 1 && contexts[0] === "android"
+          : contexts.length === 0;
+        if (!exactDirectHandler || !exactScope) fail(`${label} has qualified or nested ${labelName} outside recognized Gradle scope`);
       }
       contexts.push(labelName);
       continue;
@@ -700,10 +730,16 @@ function parseGradle(source, label, catalog, facts) {
       if (consumed !== close) fail(`${label} has unsupported plugin alias arguments`);
       index = suffix.end - 1;
     }
-    if (token.type === "ident" && token.value === "applicationId" && contexts.includes("defaultConfig")) {
-      const value = tokens[index + 1]?.value === "=" ? tokens[index + 2] : tokens[index + 1];
+    if (token.type === "ident" && token.value === "applicationId") {
+      if (contexts.length !== 2 || contexts[0] !== "android" || contexts[1] !== "defaultConfig") fail(`${label} has applicationId outside recognized android/defaultConfig scope`);
+      if (!directDslStatement(tokens, index, source)) fail(`${label} has a qualified or indirect applicationId assignment`);
+      if (tokens[index + 1]?.value !== "=") fail(`${label} applicationId must use a direct assignment`);
+      const value = tokens[index + 2];
       if (!value || value.type !== "string") fail(`${label} has a dynamic or unsupported application id`);
       if (value.dynamic || !/^[A-Za-z0-9_.-]+$/.test(value.value)) fail(`${label} has a dynamic or malformed application id`);
+      const following = tokens[index + 3];
+      const lineSeparated = following && source.slice(value.end, following.start).includes("\n");
+      if (following && following.value !== ";" && following.value !== "}" && (!lineSeparated || DSL_CONTINUATION_TOKENS.has(following.value))) fail(`${label} has an unsupported applicationId assignment suffix`);
       facts.applicationIds.add(value.value);
       facts.evidence.push(evidenceAt(source, label, token.start, { kind: "gradle.applicationId", value: value.value }));
     }
@@ -875,6 +911,14 @@ function readStableFile(absolutePath, expectedStat, label) {
   }
 }
 
+function validateRootIdentity(root, expectedStat, phase) {
+  const rootStat = fs.lstatSync(root);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory() || !sameStatIdentity(expectedStat, rootStat)) fail(`project root identity changed ${phase}`);
+  const canonicalRoot = fs.realpathSync(root);
+  const canonicalStat = fs.lstatSync(canonicalRoot);
+  if (canonicalRoot !== root || !sameStatIdentity(expectedStat, canonicalStat)) fail(`project root identity changed ${phase}`);
+}
+
 function sortedRecord(entries) {
   return Object.fromEntries([...entries].sort(([left], [right]) => compareStrings(left, right)));
 }
@@ -920,7 +964,13 @@ export function loadSubmissionSources(projectDir) {
   const totalBytes = entries.reduce((sum, entry) => sum + entry.stat.size, 0);
   if (totalBytes > MAX_TOTAL_BYTES) fail("selected files exceed the 32 MiB total size limit");
 
-  const rawFiles = entries.map((entry) => ({ ...entry, original: readStableFile(entry.absolutePath, entry.stat, entry.path) }));
+  const rawFiles = [];
+  for (const entry of entries) {
+    const original = readStableFile(entry.absolutePath, entry.stat, entry.path);
+    validateRootIdentity(root, canonicalRootStat, `after reading ${entry.path}`);
+    rawFiles.push({ ...entry, original });
+  }
+  validateRootIdentity(root, canonicalRootStat, "after selected file reads");
   const catalogs = { versions: new Map(), libraries: new Map(), plugins: new Map() };
   const parsedCatalogs = new Map();
   for (const file of rawFiles.filter((entry) => entry.path.endsWith(".toml"))) {

@@ -109,6 +109,44 @@ test("Groovy slashy, dollar-slashy, and triple-single strings are masked without
   assert.deepEqual(index.facts.gradle.moduleCoordinates, ["org.example:real"]);
 });
 
+test("escaped Groovy triple-quote delimiters cannot expose dependency-shaped text", (t) => {
+  const project = scratch(t);
+  write(project, "app/build.gradle", String.raw`dependencies {
+  def single = '''hidden \'''
+  implementation('org.example:forged-single:9.9')
+  \''' still hidden'''
+  def double = """hidden \"""
+  implementation("org.example:forged-double:9.9")
+  \""" still hidden"""
+  implementation('org.example:real:1.0')
+}
+`);
+
+  const index = loadSubmissionSources(project);
+  const gradle = index.files[0];
+
+  assert.equal(gradle.structural.includes("forged-single"), false);
+  assert.equal(gradle.structural.includes("forged-double"), false);
+  assert.equal(gradle.structural.split("\n").length, gradle.original.split("\n").length);
+  assert.deepEqual(index.facts.gradle.moduleCoordinates, ["org.example:real"]);
+});
+
+test("overlapping escaped Groovy triple-quote delimiters retain the real closer", (t) => {
+  const project = scratch(t);
+  write(project, "app/build.gradle", String.raw`dependencies {
+  def single = '''hidden \''''
+  def double = """hidden \""""
+  implementation('org.example:real:1.0')
+}
+`);
+
+  const index = loadSubmissionSources(project);
+  const gradle = index.files[0];
+
+  assert.equal(gradle.structural.includes("hidden"), false);
+  assert.deepEqual(index.facts.gradle.moduleCoordinates, ["org.example:real"]);
+});
+
 test("Groovy return slashy and escaped dollar-slashy delimiters cannot expose bait", (t) => {
   const project = scratch(t);
   write(project, "app/build.gradle", `def bait() { return /com.pico.spatial:forged:0.13.3/ }\ndef escapedDelimiter = $/com.pico.spatial:forged $/$ still-hidden 0.13.3 /$\ndependencies { implementation('org.example:real:1.0') }\n`);
@@ -252,6 +290,27 @@ test("typed facts retain immutable parser-span provenance and applied alias rela
   assert.throws(() => findFactEvidence(index, { excerpt: "0.13.3" }), /query|field|excerpt/i);
 });
 
+test("applicationId facts require direct top-level android/defaultConfig scope and retain provenance", (t) => {
+  const project = scratch(t);
+  write(project, "app/build.gradle.kts", `android {
+  defaultConfig {
+    applicationId = "org.example.real"
+  }
+}
+`);
+
+  const index = loadSubmissionSources(project);
+
+  assert.deepEqual(index.facts.gradle.applicationIds, ["org.example.real"]);
+  assert.deepEqual(findFactEvidence(index, { kind: "gradle.applicationId" }), [{
+    kind: "gradle.applicationId",
+    value: "org.example.real",
+    path: "app/build.gradle.kts",
+    line: 3,
+    excerpt: 'applicationId = "org.example.real"',
+  }]);
+});
+
 test("plugin facts honor literal version and apply-false suffixes", (t) => {
   const project = scratch(t);
   write(project, "gradle/libs.versions.toml", `[versions]\nagp = "8.6.1"\n[plugins]\nskipped-alias = { id = "com.pico.spatial.forged", version.ref = "agp" }\n`);
@@ -363,6 +422,60 @@ test("source inventory rejects a same-size path replacement after descriptor rea
 
   try {
     assert.throws(() => loadSubmissionSources(project), /identity|changed|replacement|race/i);
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+});
+
+test("source inventory revalidates root identity after all selected file reads", (t) => {
+  const parent = scratch(t, "agentbench-source-post-read-root-race-");
+  const project = path.join(parent, "project");
+  const displaced = path.join(parent, "displaced-project");
+  fs.mkdirSync(project);
+  write(project, "src/Subject.kt", "class Subject\n");
+  const originalReadFileSync = fs.readFileSync;
+  let swapped = false;
+  fs.readFileSync = function (target, ...args) {
+    const result = originalReadFileSync.call(this, target, ...args);
+    if (!swapped && typeof target === "number") {
+      swapped = true;
+      fs.renameSync(project, displaced);
+      fs.symlinkSync(displaced, project, "dir");
+    }
+    return result;
+  };
+
+  try {
+    assert.throws(() => loadSubmissionSources(project), /root|identity|changed|symlink|race/i);
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+});
+
+test("source inventory revalidates root identity after each selected file read", (t) => {
+  const parent = scratch(t, "agentbench-source-each-read-root-race-");
+  const project = path.join(parent, "project");
+  const displaced = path.join(parent, "displaced-project");
+  fs.mkdirSync(project);
+  write(project, "src/First.kt", "class First\n");
+  write(project, "src/Second.kt", "class Second\n");
+  const originalReadFileSync = fs.readFileSync;
+  let completedReads = 0;
+  fs.readFileSync = function (target, ...args) {
+    const result = originalReadFileSync.call(this, target, ...args);
+    if (typeof target === "number") {
+      completedReads += 1;
+      if (completedReads === 1) {
+        fs.renameSync(project, displaced);
+        fs.symlinkSync(displaced, project, "dir");
+      }
+    }
+    return result;
+  };
+
+  try {
+    assert.throws(() => loadSubmissionSources(project), /root|identity|changed|symlink|race/i);
+    assert.equal(completedReads, 1);
   } finally {
     fs.readFileSync = originalReadFileSync;
   }
@@ -498,6 +611,66 @@ test("strict typed parsers fail closed for malformed or ambiguous inputs", (t) =
       path: "app/build.gradle.kts",
       contents: "android { defaultConfig { applicationId = computedId } }\n",
       error: /dynamic|unsupported|Gradle/i,
+    },
+    {
+      name: "qualified application id assignment",
+      path: "app/build.gradle.kts",
+      contents: 'android { defaultConfig { fake.applicationId = "org.example.qualified" } }\n',
+      error: /qualified|direct|application|Gradle/i,
+    },
+    {
+      name: "task-local android scope",
+      path: "app/build.gradle.kts",
+      contents: 'tasks.register("bait") { android { defaultConfig { applicationId = "org.example.task" } } }\n',
+      error: /android|top-level|scope|Gradle/i,
+    },
+    {
+      name: "conditional android scope",
+      path: "app/build.gradle.kts",
+      contents: 'if (false)\nandroid { defaultConfig { applicationId = "org.example.dead" } }\n',
+      error: /android|conditional|direct|scope|Gradle/i,
+    },
+    {
+      name: "conditional application id assignment",
+      path: "app/build.gradle.kts",
+      contents: 'android { defaultConfig {\nif (false)\napplicationId = "org.example.dead"\n} }\n',
+      error: /application|conditional|direct|scope|Gradle/i,
+    },
+    {
+      name: "top-level application id assignment",
+      path: "app/build.gradle.kts",
+      contents: 'applicationId = "org.example.top"\n',
+      error: /application|scope|Gradle/i,
+    },
+    {
+      name: "wrong-parent default config",
+      path: "app/build.gradle.kts",
+      contents: 'other { defaultConfig { applicationId = "org.example.parent" } }\n',
+      error: /defaultConfig|android|scope|Gradle/i,
+    },
+    {
+      name: "qualified android scope",
+      path: "app/build.gradle.kts",
+      contents: 'fake.android { defaultConfig { applicationId = "org.example.android" } }\n',
+      error: /qualified|android|top-level|scope|Gradle/i,
+    },
+    {
+      name: "qualified default config scope",
+      path: "app/build.gradle.kts",
+      contents: 'android { fake.defaultConfig { applicationId = "org.example.config" } }\n',
+      error: /qualified|defaultConfig|scope|Gradle/i,
+    },
+    {
+      name: "non-assignment application id",
+      path: "app/build.gradle.kts",
+      contents: 'android { defaultConfig { applicationId("org.example.call") } }\n',
+      error: /assignment|application|Gradle/i,
+    },
+    {
+      name: "multiline application id expression suffix",
+      path: "app/build.gradle.kts",
+      contents: 'android {\n  defaultConfig {\n    applicationId = "org.example.safe"\n      .replace("safe", "forged")\n  }\n}\n',
+      error: /application|suffix|literal|Gradle/i,
     },
     {
       name: "qualified fake dependency call",
