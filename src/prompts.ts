@@ -48,11 +48,12 @@ export function registerPrompts(server: McpServer, surface: PromptSurface): void
                 `Objective: build ${JSON.stringify(brief)} honestly through the doors surface.`,
                 "",
                 "1. Call `pico_doctor` first. Every failed check and its fix blocks progress; apply the named fix before continuing. Use `pico_emulator` only when doctor names an emulator lifecycle action.",
-                "2. Call `pico_build_app` first with {brief}. The first response is expected to be needs-authoring: author the returned scaffold as draftSpec, then call it with {brief,draftSpec}.",
-                "3. Advance to LOOK only when pico_build_app returns auto-judged-needs-look or built-needs-look with capture, receiptId, and briefId. For plan-failed, failed, built-not-installed, built-no-capture, or error: stop, send the exact detail to `pico_fix`, apply its fix, and retry the blocked step.",
-                "4. LOOK at the exact receipt-bound capture from pico_build_app.capture. Black, missing, unreadable, or non-app pixels are inconclusive. `pico_look` is optional diagnosis only; new bytes from it cannot use the earlier receipt ID.",
-                "5. After a successful human LOOK, make a positive record with `pico_record`: app: \"com.fleet.\" + briefId, claim, evidenceType: \"vision_verified\", artifactPath: capture, a concrete attestation, and runReceiptId: receiptId. Never ask pico_record for producer-only auto_judged; do not record positive visual evidence after an inconclusive or failed look.",
-                "6. Finish with `pico_next` for the next honest step.",
+                "2. Call `pico_build_app` first with exactly {brief}. Require status needs-authoring and the returned scaffold, author that scaffold as draftSpec, then call it with {brief,draftSpec}.",
+                "3. Fail closed after every door call: inspect both status and fix before advancing. Any failure, rejection, or unexpected status stops. Apply a usable returned fix; when none is returned, send the exact non-success response to `pico_fix`. If `pico_fix` itself gives no usable remedy, stop and report the blocker. Retry the originating step only after satisfying the remedy.",
+                "4. For the second pico_build_app call, advance to LOOK only when status is auto-judged-needs-look or built-needs-look and all three are non-null: capture, receiptId, and briefId. The statuses plan-failed, failed, built-not-installed, built-no-capture, and error stop under the fail-closed gate.",
+                "5. LOOK at the exact receipt-bound `pico_build_app.capture`. Black, missing, unreadable, or non-app pixels are inconclusive; do not record a positive visual claim, and stop and report the unmet LOOK obligation as an explicit deferral. `pico_look` is an optional diagnostic recapture only; its new bytes do not replace `pico_build_app.capture` and must never be bound to the earlier receiptId.",
+                "6. Only after you actually LOOKED at the exact frame, call `pico_record`: app: \"com.fleet.\" + briefId, a claim that is precise and bounded to only what is visible in the exact inspected frame, evidenceType: \"vision_verified\", artifactPath: capture, a concrete attestation of what you saw, and runReceiptId: receiptId. Never ask `pico_record` for the producer-only auto_judged tier.",
+                "7. Require `pico_record.status === \"recorded\"` before calling `pico_next` for the next honest step.",
               ].join("\n"),
             },
           },
@@ -61,9 +62,7 @@ export function registerPrompts(server: McpServer, surface: PromptSurface): void
     );
   }
 
-  if (!enabled("autonomous_spatial_build", surface)) return;
-
-  server.registerPrompt(
+  if (enabled("autonomous_spatial_build", surface)) server.registerPrompt(
     "autonomous_spatial_build",
     {
       description:
@@ -118,7 +117,7 @@ export function registerPrompts(server: McpServer, surface: PromptSurface): void
     }),
   );
 
-  server.registerPrompt(
+  if (enabled("brief_to_app", surface)) server.registerPrompt(
     "brief_to_app",
     {
       description:
@@ -157,7 +156,7 @@ export function registerPrompts(server: McpServer, surface: PromptSurface): void
     }),
   );
 
-  server.registerPrompt(
+  if (enabled("autonomous_spatial_build_v6", surface)) server.registerPrompt(
     "autonomous_spatial_build_v6",
     {
       description:
@@ -193,7 +192,7 @@ export function registerPrompts(server: McpServer, surface: PromptSurface): void
     }),
   );
 
-  server.registerPrompt(
+  if (enabled("pico_spatial_dev_loop", surface)) server.registerPrompt(
     "pico_spatial_dev_loop",
     {
       description: "Guidance for an AI agent driving PICO spatial development end-to-end with this server's tools.",
@@ -254,7 +253,7 @@ export function registerPrompts(server: McpServer, surface: PromptSurface): void
     }),
   );
 
-  server.registerPrompt(
+  if (enabled("generative_spatial_build", surface)) server.registerPrompt(
     "generative_spatial_build",
     {
       description: "v7.0: turn a text idea into a running app with GENERATED 3D assets, under the 3-tier honesty gate (structural → auto_judged → human vision_verified). Generated content is capped at auto_judged until a human signs off on quality.",

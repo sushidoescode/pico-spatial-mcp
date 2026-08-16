@@ -10,7 +10,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
 const serverPath = path.join(root, "dist", "index.js");
 const fixtureBrief = "a prompt conformance fixture";
-const { PROMPT_CONTRACTS } = promptsModule;
+const { PROMPT_CONTRACTS, registerPrompts } = promptsModule;
 const advanced = [
   "autonomous_spatial_build",
   "brief_to_app",
@@ -74,6 +74,90 @@ function referencedTools(text, universe) {
   }).sort();
 }
 
+function picoIdentifiers(text) {
+  return [...new Set(text.match(/\bpico_[A-Za-z0-9_]+\b/g) ?? [])].sort();
+}
+
+function assertDeclaredPicoTools(text, declaredTools) {
+  const actual = picoIdentifiers(text);
+  assert.deepEqual(
+    actual,
+    [...declaredTools].sort(),
+    `pico_* identifiers must exactly match declared tools; found ${actual.join(", ")}`,
+  );
+}
+
+function assertFirstLightSafetyContract(firstLight) {
+  assert.ok(
+    firstLight.includes(JSON.stringify(fixtureBrief)),
+    "the rendered prompt must interpolate the supplied brief",
+  );
+  assert.match(firstLight, /first[^\n]*\{brief\}[^\n]*needs-authoring[^\n]*scaffold[^\n]*draftSpec/i);
+  assert.match(firstLight, /\{brief,draftSpec\}/i);
+  assert.match(firstLight, /only when[^.\n]*auto-judged-needs-look[^.\n]*built-needs-look/i);
+  for (const status of ["plan-failed", "failed", "built-not-installed", "built-no-capture", "error"]) {
+    assert.match(firstLight, new RegExp(`\\b${escapeRegex(status)}\\b`));
+  }
+  assert.match(firstLight, /after every door call[^.\n]*inspect[^.\n]*status[^.\n]*fix[^.\n]*before advancing/i);
+  assert.match(firstLight, /failure, rejection, or unexpected status[^.\n]*stop/i);
+  assert.match(firstLight, /send the exact non-success response to `pico_fix`/i);
+  assert.match(firstLight, /if `pico_fix` itself[^.\n]*no usable remedy[^.\n]*stop[^.\n]*report/i);
+  assert.match(firstLight, /non-null[^.\n]*capture[^.\n]*receiptId[^.\n]*briefId/i);
+  assert.match(firstLight, /LOOK at the exact receipt-bound `pico_build_app\.capture`/);
+  assert.match(firstLight, /`pico_look`[^.\n]*diagnostic recapture/i);
+  assert.match(firstLight, /new bytes[^.\n]*do not replace[^.\n]*`pico_build_app\.capture`/i);
+  assert.match(firstLight, /new bytes[^\n]*must never be bound to the earlier receiptId/i);
+  assert.match(firstLight, /after you actually LOOKED at the exact frame/i);
+  assert.doesNotMatch(firstLight, /successful human LOOK/i);
+  assert.match(firstLight, /claim[^.\n]*precise[^.\n]*bounded[^.\n]*exact[^.\n]*frame/i);
+  assert.match(firstLight, /evidenceType: "vision_verified"/);
+  assert.match(firstLight, /artifactPath: capture/);
+  assert.match(firstLight, /concrete attestation/i);
+  assert.match(firstLight, /runReceiptId: receiptId/);
+  assert.match(firstLight, /never ask `pico_record`[^.\n]*producer-only[^.\n]*auto_judged/i);
+  assert.match(firstLight, /black, missing, unreadable, or non-app pixels are inconclusive/i);
+  assert.match(firstLight, /do not record a positive visual claim/i);
+  assert.match(firstLight, /explicit deferral/i);
+  assert.match(firstLight, /`pico_record\.status === "recorded"`[^.\n]*before[^.\n]*`pico_next`/i);
+}
+
+test("first-light pico identifier gate rejects an invented tool name", () => {
+  const declaredTools = ["pico_doctor", "pico_build_app"];
+  const mutatedFixture = "Call `pico_doctor`, `pico_build_app`, then `pico_bulid_app`.";
+
+  assert.deepEqual(
+    picoIdentifiers(mutatedFixture),
+    ["pico_build_app", "pico_bulid_app", "pico_doctor"],
+  );
+  assert.throws(
+    () => assertDeclaredPicoTools(mutatedFixture, declaredTools),
+    /pico_bulid_app/,
+  );
+});
+
+test("each advanced prompt registration consults its own contract entry", () => {
+  for (const promptName of advanced) {
+    const promptSurfaces = PROMPT_CONTRACTS[promptName].surfaces;
+    const registered = [];
+    promptSurfaces.push("doors");
+    try {
+      registerPrompts({
+        registerPrompt(name) {
+          registered.push(name);
+        },
+      }, "doors");
+    } finally {
+      promptSurfaces.pop();
+    }
+
+    assert.deepEqual(
+      registered.sort(),
+      ["pico_first_light", promptName].sort(),
+      `${promptName} must be controlled by its own PROMPT_CONTRACTS entry`,
+    );
+  }
+});
+
 test("prompt listings and guidance conform to the active tool surface", async () => {
   const defaults = await inspectSurface(undefined);
   const doors = await inspectSurface("doors");
@@ -102,21 +186,16 @@ test("prompt listings and guidance conform to the active tool surface", async ()
   }
 
   const firstLight = promptText(doors, "pico_first_light");
+  assertDeclaredPicoTools(firstLight, PROMPT_CONTRACTS.pico_first_light.requiredTools);
   const firstLightRefs = referencedTools(firstLight, universe);
   assert.deepEqual(firstLightRefs, [...PROMPT_CONTRACTS.pico_first_light.requiredTools].sort());
   const orderedPositions = PROMPT_CONTRACTS.pico_first_light.requiredTools
     .map((name) => firstLight.indexOf(`\`${name}\``));
   assert.ok(orderedPositions.every((position, index) =>
     position >= 0 && (index === 0 || position > orderedPositions[index - 1])));
-  assert.match(firstLight, /brief.*draftSpec/is);
-  assert.match(firstLight, /auto-judged-needs-look.*built-needs-look/is);
-  assert.match(firstLight, /exact.*receipt-bound.*capture/is);
-  assert.match(firstLight, /black.*missing.*non-app.*inconclusive/is);
+  assertFirstLightSafetyContract(firstLight);
   assert.match(firstLight, /com\.fleet\..*briefId/is);
-  assert.match(firstLight, /artifactPath.*capture/is);
-  assert.match(firstLight, /runReceiptId.*receiptId/is);
   assert.match(firstLight, /LOOK/is);
-  assert.match(firstLight, /do not record|never record/is);
 
   const allFullPromptText = full.listed
     .map((prompt) => promptText(full, prompt.name))
