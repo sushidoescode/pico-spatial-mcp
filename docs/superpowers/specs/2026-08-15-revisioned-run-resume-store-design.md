@@ -3,7 +3,7 @@
 **Date:** 2026-08-15
 **Programme:** [PICO MCP Evolution Programme](2026-08-14-pico-evolution-programme-design.md)
 **Base:** `c9931eb3e683888aca9f21e48013560a41c56ec3` (`pico-evolution-2026-08-14`)
-**Status:** Written design complete; implementation plan pending user review
+**Status:** Approved by the user on 2026-08-16; implementation planned
 **Scope:** Durable POSIX workflow state for Door 1 (`pico_build_app`) and `pico_loop`
 
 ## Purpose
