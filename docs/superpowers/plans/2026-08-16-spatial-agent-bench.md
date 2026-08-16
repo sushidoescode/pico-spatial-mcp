@@ -17,6 +17,342 @@
 > `structural_threshold_not_met`; there is no compatibility alias. No measured attempt used the
 > superseded corpus identity, and the original task text remains below as historical rationale.
 
+## Binding Task 3 replacement: supported-subset abstract interpreter v1
+
+This section replaces the historical Task 3 steps below. It also narrows the Task 7 and Task 8
+interfaces where analyzer identity and deterministic restoration are concerned. The binding design
+is the approved `task-3-parser-redesign.md` with SHA-256
+`fe5b6533683854e18623d1bd3668ad846e7d7ed7cd20e788e21ea2d5d59c0b28`.
+
+**Required ancestor:** `258ad3a9968d3a91991b513123e139e1cc60b608`
+
+**Claim boundary:** Kotlin 2.0.0 PSI supplies syntax to the frozen, incomplete
+`supported-subset-abstract-interpreter-v1`. A pass means only a conservative source witness under
+subset v1. Every passing source-rule reason starts `supported-subset-v1 witness:`. Unknown or
+ambiguous syntax, dispatch, type, callback, effect, alias, operator, or control flow makes the
+affected rule false. This remains structural-only evidence and returns the unchanged strict
+`ScoreResultV2`: analyzer identities do not add a result field, rubric point, behavioral score,
+runtime claim, or visual claim.
+
+### Authorized Task 3 files and generated locators
+
+Retain and replace only these seven checkpoint files:
+
+```text
+benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+benchmarks/spatial-agent-bench/lib/score.mjs
+test/agentbench-fixture-compile.mjs
+test/agentbench-score.mjs
+test/helpers/agentbench-fixture.mjs
+test/helpers/agentbench-junit.mjs
+```
+
+Add only:
+
+```text
+benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs
+benchmarks/spatial-agent-bench/analyzer/.gitignore
+benchmarks/spatial-agent-bench/analyzer/domain-v1.json
+benchmarks/spatial-agent-bench/analyzer/dependencies-v1.json
+benchmarks/spatial-agent-bench/analyzer/toolchain-v1.json
+benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Main.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Protocol.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/PsiIndex.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/AbstractInterpreter.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Rules.java
+test/agentbench-kotlin-analysis.mjs
+test/helpers/agentbench-analyzer-corpus.mjs
+test/helpers/agentbench-gradle-cache.mjs
+test/fixtures/agentbench/fake-analyzer.mjs
+test/fixtures/agentbench/fixture-gradle-cache-v1.json
+```
+
+The analyzer-local `.gitignore` must ignore exactly the generated
+`benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/` tree—including `analyzer-v1.jar`,
+`analyzer-build-receipt-v1.json`, numbered runtime JARs `01` through `07`, `run-cwd/`, `run-home/`,
+and `run-tmp/`—and
+`benchmarks/spatial-agent-bench/analyzer/.artifacts/fixture-gradle-seed-v1/`. These artifacts and
+receipts are never staged and must remain excluded from npm. Task 3 does not modify `source.mjs`,
+`contract.mjs`, corpus inputs, `appskeleton/`, package/CI/root-dependency files, private reports, or
+the Windows lane.
+
+### Frozen analysis, artifact, and fixture contracts
+
+- The bridge includes every selected `kind:"kotlin"` `.kt` and `.kts` in one bounded sorted
+  request and `kotlinInputSetSha256`. The sidecar validates the entire receipt set and digest before
+  PSI creation. Any `.kts`, malformed `.kt`, incomplete or ambiguous whole-program index/import,
+  exceeded limit, or internal uncertainty rejects the whole analysis with no nodes or claims. All
+  sixteen source rules, including both mixed rules, are then false. Protocol/artifact/receipt/
+  digest/launch faults throw; partial scoring is forbidden.
+- `selectedInputSetSha256` separately covers all selected Kotlin, Gradle/catalog, and manifest
+  bytes. It is checked before analysis, immediately before assembly, immediately after assembly,
+  and after JUnit. It is not a complete Gradle-input identity.
+- `build-analyzer.mjs` uses a content-pinned Node process and absolute pinned JBR `javac`/`jar`; it
+  invokes no Gradle and resolves no dependency. The current Darwin entry is launched through
+  `/usr/bin/env -i` with exactly `LANG=C`, `LC_ALL=C`, `TZ=UTC`, and
+  `__CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0`, rejects Node/Java preload options, and confines Java tool
+  properties with receipt-bound `-J-Duser.home=$BUILD_HOME` and
+  `-J-Djava.io.tmpdir=$BUILD_TMP` arguments.
+- Two clean builds in distinct roots must produce an identical deterministic thin JAR containing
+  only analyzer-owned classes and tracked `domain-v1.json`. Runtime classpath order is that JAR,
+  followed by the byte/hash-pinned Kotlin compiler embeddable 2.0.0, stdlib 2.0.0, script runtime
+  2.0.0, reflect 1.6.10, daemon embeddable 2.0.0, trove4j 1.0.20200330, and annotations 13.0
+  JARs. The self-hashed receipt binds all analyzer source/config/build/bridge bytes, ordered
+  classpath, complete allowed JDK tree, artifact, versions, exact launch, and scrubbed build/runtime
+  environments. Verification precedes every scoring spawn and cache lookup.
+- The scorer remains synchronous. `kotlin-analysis.mjs` uses one module-private `spawnSync` seam,
+  direct JVM only, an exact eight-entry classpath, absolute receipt-supplied `java`, no shell, a
+  canonical empty cwd, runner-owned home/tmp, explicit runtime `-Duser.home`/`-Djava.io.tmpdir`,
+  and a scrubbed no-`PATH`/no-proxy/no-tool-options child environment. Missing or changed source,
+  JDK, classpath, domain, bridge, artifact, receipt, cwd, environment, or launch identity fails.
+- `POSITIVE_SUBSET_V1_CASES` has at least two independently named compile-valid examples for every
+  accepted form. Each row has exact source hashes and exactly one of one to eight complete 0.13.3
+  compile aggregates. A bijection proves full coverage with no orphaned source. Every aggregate
+  runs a fresh offline `:app:testDebugUnitTest` pure compile-smoke test and all four selected-input
+  digest checkpoints; PSI-clean examples alone are insufficient.
+- The fixture exports `RULE_ATTACKS`, each with `expectedFalseRuleIds`. Fifteen attacks are
+  exact-one. The weak-getter authority-origin attack has exactly
+  `state.single-source`, `state.shared-read-write`, and `state.reopen-wiring` false and score 13.
+  A top-level constructed strong `val` remains positive. The equivalent fixture scores 16 before
+  its reachable callback attack flips only `state.reopen-wiring`. The uncorrected checkpoint RED
+  vector is exactly `plane.retry-readiness`, `state.shared-read-write`, and
+  `state.reopen-wiring` false, all other rules true, and score 13.
+
+The current `toolchain-v1.json` Darwin row pins Node at `/usr/local/bin/node`, version `v22.14.0`,
+220,243,216 bytes, SHA-256
+`c583851fc85e4618b2374cda13399d59d373ad7cebfc4b55160820b88dcce67b`. The seven ordered
+`dependencies-v1.json` rows are:
+
+| Order and dependency | Bytes | SHA-256 |
+|---|---:|---|
+| `01-kotlin-compiler-embeddable-2.0.0.jar` | 57,192,195 | `eb8ae09df38e212eec3965cafa97ab08112773fe2e870ebeb6131b8f69bfb92e` |
+| `02-kotlin-stdlib-2.0.0.jar` | 1,729,731 | `240938c4aab8e73e888703e3e7d3f87383ffe5bd536d6d5e3c100d4cd0379fcf` |
+| `03-kotlin-script-runtime-2.0.0.jar` | 43,404 | `b57a14387a504f1d3d8634899a830cb0bc5fe1adb86a62cc65d940fe982b04f9` |
+| `04-kotlin-reflect-1.6.10.jar` | 3,038,560 | `3277ac102ae17aad10a55abec75ff5696c8d109790396434b496e75087854203` |
+| `05-kotlin-daemon-embeddable-2.0.0.jar` | 346,229 | `b907a36e9cfa587ca0523793d89eb2ea9bb545456935f180e12422486c14049f` |
+| `06-trove4j-1.0.20200330.jar` | 572,985 | `c5fd725bffab51846bf3c77db1383c60aaaebfe1b7fe2f00d23fe1b7df0a439d` |
+| `07-annotations-13.0.jar` | 17,536 | `ace2a10dc8e2d5fd34925ecac03e4988b2c0f851650c94b8cef49ba1bd111478` |
+
+The allowed JBR 21.0.8 image is the complete normalized 430-entry tree (183 files, 72 directories,
+175 symlinks, 100,129,016 file bytes), SHA-256
+`89b10d67dd49a0f809716313416a78734fb3ff466ab7b9a801eabdd1e10109d7`. Redundant drift
+diagnostics are: `release` `b99658db6bb33d2e6bc276c61b3a4c32b4a041621ddca27565f17d5a3deba3b2`,
+`bin/java` `7e056ddcbca2017e574a596a3dea0025750c5b9aa188e1362661c2a84be15099`,
+`bin/javac` `05add01371c9cadba2f2df0d94c4f47bbff6ac329bd0b5f4494ee783dd1b112b`,
+`bin/jar` `b12b3b8b95247f0c0a99bbccdd0749a706e75ccbc01ad50a3f56e37ae4905276`,
+`lib/modules` `104902874e64833ab492ca3709b0456088f0cbc7f6cd414bc8ac79993f39c3a2`,
+`lib/libjava.dylib` `caa0bba58915b27ef635536debd12d127ffa60f4a221edaf66666411bf90ac74`,
+`lib/libjli.dylib` `eaeb739744b5f46c5da633e487ed0c5bbc1a4067b744b974f8171af39593378e`,
+and `lib/server/libjvm.dylib`
+`2c4329111e496bd8e3d9fbf3f32a52031f6753f26afac33285171582720a8bfd`. These are
+darwin-aarch64 facts only; another platform needs a reviewed allowed row.
+
+With normalized placeholders in its receipt, each fresh build uses exactly:
+
+```text
+$PINNED_JDK/bin/javac
+-J-Duser.home=$BUILD_HOME -J-Djava.io.tmpdir=$BUILD_TMP
+--release 17 -encoding UTF-8 -g:none -proc:none
+-classpath <ordered seven-JAR classpath>
+-d <fresh classes dir>
+<sorted absolute staged Java source paths>
+
+$PINNED_JDK/bin/jar
+-J-Duser.home=$BUILD_HOME -J-Djava.io.tmpdir=$BUILD_TMP
+--create --no-manifest --file <temporary analyzer-v1.jar>
+--date=1980-01-01T00:00:02Z @<sorted relative entry argument file>
+```
+
+The receipt-bound runtime vector is exactly:
+
+```text
+$PINNED_JDK/bin/java
+-Xms32m -Xmx512m
+-Djava.awt.headless=true -Dfile.encoding=UTF-8
+-Duser.language=en -Duser.country=US -Duser.timezone=UTC
+-Duser.home=<run-home> -Djava.io.tmpdir=<run-tmp>
+-Dkotlin.environment.keepalive=false
+-cp <analyzer-v1.jar followed by runtime 01 through 07>
+com.agentbench.analyzer.Main analyze
+```
+
+The separate pinned Gradle 8.13 distribution is a normalized 318-entry tree (313 files, five
+directories, no symlinks, 151,645,130 file bytes), SHA-256
+`9ee05b71d613d47b98f09927f7b652dd1d1e286523b3adf91910c2e4e496d6ac`; no distribution
+ZIP is retained or claimed. `fixture-gradle-cache-v1.json` supplies the exact populated seed-tree
+identity and every cache-relative file identity.
+
+### Batch 0: reviewed authority amendment
+
+From exact `HEAD` `258ad3a9968d3a91991b513123e139e1cc60b608`, modify only this plan and the
+tracked premeasurement amendment, then create one commit with subject:
+
+```text
+docs(bench): bind subset-v1 analyzer boundary
+```
+
+An independent reviewer records that commit's actual 40-hex SHA as
+`TASK_3_ANALYZER_AMENDMENT_SHA`. Before any analyzer file is created, run this complete authority
+gate from the benchmark worktree:
+
+```bash
+set -euo pipefail
+test "${#TASK_3_ANALYZER_AMENDMENT_SHA}" -eq 40
+case "$TASK_3_ANALYZER_AMENDMENT_SHA" in
+  *[!0-9a-f]*) exit 1 ;;
+esac
+git cat-file -e "$TASK_3_ANALYZER_AMENDMENT_SHA^{commit}"
+git merge-base --is-ancestor 258ad3a9968d3a91991b513123e139e1cc60b608 HEAD
+test "$(git rev-parse HEAD)" = "$TASK_3_ANALYZER_AMENDMENT_SHA"
+test "$(git rev-parse "$TASK_3_ANALYZER_AMENDMENT_SHA^")" = "258ad3a9968d3a91991b513123e139e1cc60b608"
+test "$(git show -s --format=%s "$TASK_3_ANALYZER_AMENDMENT_SHA")" = "docs(bench): bind subset-v1 analyzer boundary"
+expected_amendment_paths='docs/superpowers/plans/2026-08-16-spatial-agent-bench.md
+docs/superpowers/specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md'
+test "$(git diff-tree --no-commit-id --name-only -r "$TASK_3_ANALYZER_AMENDMENT_SHA" | LC_ALL=C sort)" = "$expected_amendment_paths"
+test "$(git diff-tree --no-commit-id --name-status -r "$TASK_3_ANALYZER_AMENDMENT_SHA" | cut -f1 | LC_ALL=C sort)" = 'M
+M'
+git diff --quiet
+git diff --cached --quiet
+expected_checkpoint_status='?? benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+?? benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+?? benchmarks/spatial-agent-bench/lib/score.mjs
+?? test/agentbench-fixture-compile.mjs
+?? test/agentbench-score.mjs
+?? test/helpers/agentbench-fixture.mjs
+?? test/helpers/agentbench-junit.mjs'
+test "$(git status --porcelain=v1 --untracked-files=all | LC_ALL=C sort)" = "$expected_checkpoint_status"
+npm run build
+node --test test/agentbench-source.mjs test/agentbench-contract.mjs
+```
+
+The amendment commit is the exact starting `HEAD`; `258ad3a` remains only its required direct
+ancestor. Batch 0 performs no analyzer implementation.
+
+### Batch 1: Java PSI artifact, receipt, and synchronous protocol
+
+Write focused RED tests for the missing/mismatched artifact or receipt, canonical frame and stream
+bounds, fake-child timeout/overflow/signal/exit/malformed outputs, all-or-nothing malformed and
+`.kts` cases, scrubbed parent/JDK-option injection, copied receipt/JDK cache misses, and every
+protocol/cache identity bound. Then build and verify with:
+
+```bash
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs clean-build-twice
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs verify
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  --test --test-name-pattern='analyzer artifact|build env|protocol|spawnSync|all-or-nothing|cache identity' \
+  test/agentbench-kotlin-analysis.mjs
+```
+
+Require two byte-identical thin JAR builds, a current receipt, rejection before publish under
+forbidden options, whole-analysis script/malformed rejection, and an actual cache miss on a
+receipt/JDK-only identity transition. No Gradle or network operation belongs to this batch.
+
+### Batch 2: subset graph/effect kernel and corrected fixture
+
+First prove the exact uncorrected 13/16 vector. Then apply only the reviewed Button/coroutine roots,
+Window mutation, reachable standard/equivalent reopen seams, and bounded retained-value retry-loop
+corrections. Run:
+
+```bash
+node --test --test-name-pattern='uncorrected fixture|subset forms|round 4|baseline attacks|positive subset' \
+  test/agentbench-kotlin-analysis.mjs test/agentbench-score.mjs
+```
+
+### Batch 3: sixteen adapters and span provenance
+
+Port the rules in rubric order as thin claim/typed-fact adapters; discard all regex, helper-name,
+fixture-name, and fallback recognizers. Run exact rule vectors and all historical/baseline/provenance
+attacks after each axis:
+
+```bash
+node --test --test-name-pattern='exact rule attack|equivalent|round 1|round 2|round 3|round 4|witness provenance' \
+  test/agentbench-kotlin-analysis.mjs test/agentbench-score.mjs
+```
+
+Require both corrected positives at 16, fifteen exact-one attacks, the exact three-rule authority
+attack, and every forged span/node/digest response rejected before public evidence construction.
+
+### Batch 4: compile/JUnit and positive-aggregate qualification
+
+Provision the tracked-manifest-verified populated Gradle seed from an explicitly supplied cache
+before entering the offline compile gate, and then use only fresh writable copies:
+
+```bash
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  test/helpers/agentbench-gradle-cache.mjs provision --source-root /Users/sushantsrikrish/.gradle
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  test/helpers/agentbench-gradle-cache.mjs verify
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  --test test/agentbench-fixture-compile.mjs
+node --test --test-name-pattern='trusted JUnit|stream cap|fresh JUnit|XML boundary' \
+  test/agentbench-score.mjs
+```
+
+Compile corrected standard/equivalent fixtures and every coverage-proven positive aggregate under
+0.13.3; require nonempty APKs, one fresh pure repository-model test for each main fixture, one fresh
+compile-smoke test for every aggregate, zero failure/error/skip, and identical selected-input bytes
+at all four checkpoints.
+
+### Batch 5: final deterministic Task 3 gate
+
+```bash
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs clean-build-twice
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs verify
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  test/helpers/agentbench-gradle-cache.mjs verify
+npm run build
+node --test test/agentbench-source.mjs test/agentbench-contract.mjs \
+  test/agentbench-kotlin-analysis.mjs test/agentbench-score.mjs \
+  test/agentbench-fixture-compile.mjs
+npm run test:conformance
+npm run test:runreceipt
+node --input-type=module -e '
+  import { execFileSync } from "node:child_process";
+  const packed = JSON.parse(execFileSync("npm", ["pack", "--json", "--dry-run"], { encoding: "utf8" }));
+  const files = packed[0].files.map((row) => row.path);
+  if (files.some((file) => file.startsWith("benchmarks/") || file.startsWith(".superpowers/") || file.includes("agentbench"))) process.exit(1);
+'
+git check-ignore -q benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/analyzer-v1.jar
+git check-ignore -q benchmarks/spatial-agent-bench/analyzer/.artifacts/fixture-gradle-seed-v1
+test -z "$(git ls-files benchmarks/spatial-agent-bench/analyzer/.artifacts)"
+git diff --check
+git status --short
+```
+
+Completion requires a new adversarial review of subset soundness, effect summaries, positive-form
+bias, process/receipt identity, all-or-nothing parsing, and corrected fixture vectors. Test totals
+or compilation alone never authorize a broader claim.
+
+### Binding Task 7 identity reservation
+
+In addition to the historical runner interface, the preflight manifest strictly carries
+`analyzerProtocolVersion`, `analyzerSubsetVersion`, `analyzerDomainVersion`,
+`analyzerDomainSha256`, `analyzerSourceSha256`, `analyzerBridgeSha256`, `analyzerJarSha256`,
+`analyzerClasspathSha256`, `analyzerJdkTreeSha256`, and `analyzerReceiptSha256`, and reserves
+`kotlinInputSetSha256` and `selectedInputSetSha256` as required per-attempt fields. Preflight
+validates and records the analyzer domain/source/bridge/thin-JAR/ordered-classpath/complete-JDK/
+receipt identities before attempts. Every attempt copies those static values and supplies both
+source-set digests for the immutable bytes scored for its submission. Missing, stale, or mismatched
+identity is a preflight/attempt failure, never an invented preflight digest, omitted field, or cache
+hit.
+
+### Binding Task 8 restoration and fail-closed gate
+
+Before the deterministic no-network gate, CI/reproduction must restore by content identity and
+checksum-verify all seven analyzer runtime dependencies, an allowed complete JDK image, the full
+pinned Gradle distribution, and the populated fixture-Gradle seed described by
+`test/fixtures/agentbench/fixture-gradle-cache-v1.json`. It then runs analyzer
+`clean-build-twice`/`verify`, cache `verify`, the complete analyzer/scorer suite, and every
+positive-aggregate compile test offline. A cache miss or mismatch fails. The gate must not consult
+ambient Gradle/JDK/dependency state, resolve a missing item from the network after the no-network
+boundary, or silently skip analyzer/compile coverage.
+
 ## Global Constraints
 
 - `sushidoescode/pico-spatial-mcp` remains PRIVATE; never change visibility, collaborators, or permissions.

@@ -64,6 +64,182 @@ None of those is external behavior, visual verification, device verification, or
 
 These corrections bind the reviewed source and receipt interfaces before any measurement.
 
+### Supported-subset analyzer authority
+
+Task 3 starts from required ancestor
+`258ad3a9968d3a91991b513123e139e1cc60b608`. This is the pre-amendment ancestor, not the
+post-amendment starting `HEAD`. Before analyzer implementation, this amendment and its implementation
+plan must be the only two tracked paths modified by one direct-child commit with subject
+`docs(bench): bind subset-v1 analyzer boundary`. The reviewed 40-hex SHA of that commit becomes the
+exact Task 3 starting `HEAD`; an ancestor-only or later-descendant checkout is insufficient.
+
+The Task 3 analyzer is `supported-subset-abstract-interpreter-v1`: Kotlin compiler 2.0.0 PSI is only
+the syntax front end, and a frozen incomplete domain model supplies conservative source declaration
+resolution, callback/effect summaries, bounded control flow, origin/alias tracking, and def-use.
+This is not general Kotlin, Compose, Spatial SDK, runtime, or behavioral proof. A passing source
+rule establishes only a source witness accepted under analyzer subset v1. Every passing source-rule
+reason begins exactly `supported-subset-v1 witness:`. “Reachable,” “flows,” and “same authority”
+refer only to the accepted modeled source graph, def-use/effect model, and origin abstraction.
+Unknown or ambiguous syntax, receiver or return type, member/extension/overload dispatch, callback,
+effect, aliasing, operator, or control flow makes the affected proof false.
+
+Task 3 remains structurally capped. Its result is still exactly `ScoreResultV2` below, including
+`structuralScore`, `buildQualifiedStructuralScore`, submission-test separation, not-run runtime
+protocol defaults, and `visual.status: "not_performed"`. Analyzer protocol, artifact, classpath,
+JDK, receipt, and source-set identities are internal scoring/preflight provenance and do not add a
+rubric point, delivery score, behavioral claim, or new public result field in Task 3.
+
+### Complete Kotlin input and result rule
+
+The bridge transports every selected `SourceIndex` file with `kind === "kotlin"`, both `.kt` and
+`.kts`, in one sorted bounded request and one `kotlinInputSetSha256`. The sidecar validates every
+file receipt and that complete digest before creating PSI. Any selected `.kts`, any extension other
+than `.kt`, any PSI parse error in any selected `.kt`, incomplete or ambiguous global declaration
+or import indexing, exceeded limit, or internal analysis uncertainty rejects the complete Kotlin
+analysis. A rejection returns no nodes and no claims. The scorer then makes all sixteen source
+rules false, including both `source_and_typed_fact` mixed rules even when their typed facts exist.
+Protocol, launch, receipt, artifact, digest, or impossible-response failures throw instead of
+returning a partial score. `build.gradle.kts` and `settings.gradle.kts` remain Gradle inputs handled
+only by the typed Gradle parser; they are not Kotlin program declarations.
+
+`kotlinInputSetSha256` is the SHA-256 of canonical JSON over sorted
+`{path,bytes,sha256}` rows for the complete selected Kotlin set. `selectedInputSetSha256` is the
+SHA-256 of canonical JSON over sorted `{path,kind,bytes,sha256}` rows for every selected Kotlin,
+Gradle/catalog, and manifest input. Neither identity is a complete Gradle-input or build identity;
+the guarded build receipt remains authoritative for the build.
+
+### Task 3 tracked and ignored scope
+
+Only these seven checkpoint paths may be retained/replaced:
+
+```text
+benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+benchmarks/spatial-agent-bench/lib/score.mjs
+test/agentbench-fixture-compile.mjs
+test/agentbench-score.mjs
+test/helpers/agentbench-fixture.mjs
+test/helpers/agentbench-junit.mjs
+```
+
+Task 3 may add only these analyzer paths:
+
+```text
+benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs
+benchmarks/spatial-agent-bench/analyzer/.gitignore
+benchmarks/spatial-agent-bench/analyzer/domain-v1.json
+benchmarks/spatial-agent-bench/analyzer/dependencies-v1.json
+benchmarks/spatial-agent-bench/analyzer/toolchain-v1.json
+benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Main.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Protocol.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/PsiIndex.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/AbstractInterpreter.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Rules.java
+test/agentbench-kotlin-analysis.mjs
+test/helpers/agentbench-analyzer-corpus.mjs
+test/helpers/agentbench-gradle-cache.mjs
+test/fixtures/agentbench/fake-analyzer.mjs
+test/fixtures/agentbench/fixture-gradle-cache-v1.json
+```
+
+The tracked analyzer-local `.gitignore` owns only these generated locators:
+
+```text
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/analyzer-v1.jar
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/analyzer-build-receipt-v1.json
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/runtime/01-kotlin-compiler-embeddable-2.0.0.jar
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/runtime/02-kotlin-stdlib-2.0.0.jar
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/runtime/03-kotlin-script-runtime-2.0.0.jar
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/runtime/04-kotlin-reflect-1.6.10.jar
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/runtime/05-kotlin-daemon-embeddable-2.0.0.jar
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/runtime/06-trove4j-1.0.20200330.jar
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/runtime/07-annotations-13.0.jar
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/run-cwd/
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/run-home/
+benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/run-tmp/
+benchmarks/spatial-agent-bench/analyzer/.artifacts/fixture-gradle-seed-v1/
+```
+
+Everything below `.artifacts/` is generated, ignored, untracked, and excluded from npm. No other
+Task 3 path is authorized. In particular Task 3 does not modify `source.mjs`, `contract.mjs`, corpus
+inputs, `appskeleton/`, package or CI files, root dependencies, private reports, or the Windows lane.
+
+### Analyzer artifact and fixture qualification
+
+The sidecar is Java source compiled directly by the pinned JBR `javac`; analyzer assembly invokes
+no Gradle and performs no dependency resolution. The reproducible output is a deterministic thin
+JAR containing analyzer-owned classes and the exact tracked `domain-v1.json` only. Runtime uses
+that JAR plus the seven byte/hash-pinned Kotlin compiler/stdlib/script/reflect/daemon/trove/
+annotations JARs in the numbered order above. Two builds in distinct temporary roots must produce
+byte-identical JARs before publication. The self-hashed receipt binds every analyzer source/config/
+dependency/toolchain/build-script/bridge byte, the ordered runtime classpath, complete allowed JDK
+tree, analyzer JAR, domain and protocol/subset versions, canonical runtime launch vector, and the
+scrubbed build/runtime environment projections.
+
+The build orchestrator is the content-pinned Node executable and rejects `NODE_OPTIONS`,
+`NODE_PATH`, nonempty `process.execArgv`, and any environment other than the current reviewed Darwin
+projection `LANG=C`, `LC_ALL=C`, `TZ=UTC`, and
+`__CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0`. Each absolute `javac` and `jar` child receives only the
+reviewed allowlist and both receipt-bound `-J-Duser.home=$BUILD_HOME` and
+`-J-Djava.io.tmpdir=$BUILD_TMP` arguments. Runtime uses absolute receipt-supplied `java`, an exact
+eight-entry classpath, empty runner-owned cwd/home/tmp directories, a scrubbed no-`PATH`/no-proxy/
+no-tool-options environment, and explicit `-Duser.home`/`-Djava.io.tmpdir`. Missing or mismatched
+source, artifact, dependency, JDK, domain, bridge, receipt, cwd, environment, or launch identity
+fails before scoring.
+
+Every accepted form in the frozen `POSITIVE_SUBSET_V1_CASES` matrix must have at least two
+compile-valid independently named examples. Each row names exact source hashes and exactly one of
+one to eight complete Spatial SDK 0.13.3 compile aggregates. A bijection gate rejects missing,
+duplicate, or orphaned rows/sources. Every aggregate must run a fresh offline
+`:app:testDebugUnitTest` containing one pure compile-smoke test, and must preserve one identical
+`selectedInputSetSha256` at the four checkpoints before analysis, immediately before assembly,
+immediately after assembly, and after JUnit. PSI acceptance alone never earns “compile-valid.”
+
+### Corrected attack vectors
+
+The fixture export is `RULE_ATTACKS`, and each row declares `expectedFalseRuleIds`; the withdrawn
+all-sixteen-exact-one `RULE_MUTATIONS` promise is not retained. Fifteen rows are exact-one. In
+particular, `state.shared-read-write` removes only the reachable Window mutation while preserving
+the shared authority and Stage mutation, and `state.reopen-wiring` changes only the unique
+root-reachable close/reopen retained-state argument or independently named equivalent snapshot
+callback. The authority-origin attack replaces the strong retained declaration with:
+
+```kotlin
+val sharedStore: BenchmarkStore get() = BenchmarkStore()
+```
+
+Its exact false vector is `state.single-source`, `state.shared-read-write`, and
+`state.reopen-wiring`, with structural score 13. A top-level constructed strong
+`val sharedStore = BenchmarkStore()` remains positive. The independently named equivalent fixture
+must first score 16; mutating its reachable snapshot callback then flips only
+`state.reopen-wiring`. Before fixture correction, the uncorrected checkpoint's exact subset-v1 RED
+vector is false only for `plane.retry-readiness`, `state.shared-read-write`, and
+`state.reopen-wiring`, with the other thirteen true and structural score 13.
+
+### Downstream identity and restoration reservations
+
+Task 7's preflight manifest must record `analyzerProtocolVersion`, `analyzerSubsetVersion`,
+`analyzerDomainVersion`, `analyzerDomainSha256`, `analyzerSourceSha256`,
+`analyzerBridgeSha256`, `analyzerJarSha256`, `analyzerClasspathSha256`,
+`analyzerJdkTreeSha256`, and `analyzerReceiptSha256`, and must reserve
+`kotlinInputSetSha256` and `selectedInputSetSha256` as required per-attempt fields. Every attempt
+copies the exact static analyzer identities from preflight and supplies both source-set identities
+for the immutable submission bytes it scored. The attempt values must join exactly to the validated
+preflight receipt and those immutable bytes; a missing or mismatched field fails closed. Preflight
+does not invent source-set digests for a submission that does not yet exist.
+
+Task 8 must restore content-addressed, checksum-verified caches for all seven analyzer runtime
+dependencies, the complete allowed JDK image, the complete pinned Gradle distribution, and the
+populated fixture-Gradle seed before entering its deterministic no-network gate. The fixture seed
+is verified against tracked `fixture-gradle-cache-v1.json`, copied into a fresh writable
+`GRADLE_USER_HOME` with no init scripts, and used only with `--offline`. The analyzer must then run
+`clean-build-twice` and `verify`, and the fixture helper must run its cache `verify`, before scorer
+or compile tests. A cache miss or identity mismatch fails the gate; Task 8 may not consult ambient
+Gradle/JDK/dependency state, resolve from the network inside the gate, or silently omit analyzer,
+positive-aggregate, or compile tests.
+
 Manifest metadata facts preserve their direct owner:
 
 ```ts
@@ -221,11 +397,15 @@ plane.anchor-pose          planarTracking source
 plane.cleanup-errors       planarTracking source
 ```
 
-A passing source rule has one or more source rows. A passing mixed rule has at least one source row
+A passing source rule has one or more source rows derived from a validated subset-v1 claim and its
+reason begins `supported-subset-v1 witness:`. A passing mixed rule has at least one such source row
 and one typed-fact row. Failed rules have no evidence. Evidence paths are normalized attempt-relative
 POSIX paths; rows are bounded, unique, and sorted. Typed facts retain Task 2's parser-span-derived
-path, line, excerpt, and typed fields. The scorer must join every row back to `SourceIndex` or
-`findFactEvidence`; schema validation alone does not establish provenance.
+path, line, excerpt, and typed fields. Each source row retains an internal validated PSI-node and
+claim-witness digest until it joins the exact immutable `SourceIndex` bytes; every public row must
+join back to `SourceIndex` or `findFactEvidence`. Schema validation alone does not establish
+provenance, and neither a syntactically valid program nor a successful compile raises the
+structural-only evidence ceiling.
 
 The replacement state rule requires all of the following:
 
