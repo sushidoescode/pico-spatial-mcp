@@ -1,6 +1,6 @@
 # Surface-Aware Prompt Registration Design
 
-**Status:** Design approved; written specification awaiting review  
+**Status:** Approved for implementation
 **Date:** 2026-08-16  
 **Base:** `pico-evolution-2026-08-14` at `acdbebb`
 
