@@ -21,6 +21,7 @@ import {
   RUN_ID,
   SHA_A,
   SHA_B,
+  SHA_C,
   absentGeneration,
   authoredSpec,
   baseRevision,
@@ -129,16 +130,32 @@ test("acceptance expands exact per-kind defaults and ignores cross-kind fields",
   }
 });
 
-test("acceptance preserves public-schema signed integers for downstream validation", () => {
-  const largeInteger = Number.MAX_SAFE_INTEGER + 1;
-  const criteria = normalizeAcceptance([
-    { kind: "structural", minEntities: -1 },
-    { kind: "logcat", pattern: "READY", timeoutSec: -2 },
-    { kind: "perf", durationSec: largeInteger },
+test("acceptance strict numerics are safe, bounded, and uniquely normalized", () => {
+  const bounded = normalizeAcceptance([
+    { kind: "structural", minEntities: 0 },
+    { kind: "logcat", pattern: "READY", timeoutSec: 180 },
+    { kind: "perf", minAppFpsP5: 0, durationSec: 120 },
   ]).envelope.criteria;
-  assert.equal(criteria[0].minEntities, -1);
-  assert.equal(criteria[1].timeoutSec, -2);
-  assert.equal(criteria[2].durationSec, largeInteger);
+  assert.equal(bounded[0].minEntities, 0);
+  assert.equal(bounded[1].timeoutSec, 180);
+  assert.equal(bounded[2].durationSec, 120);
+  for (const criterion of [
+    { kind: "structural", minEntities: -1 },
+    { kind: "structural", minEntities: Number.MAX_SAFE_INTEGER + 1 },
+    { kind: "logcat", pattern: "READY", timeoutSec: 0 },
+    { kind: "logcat", pattern: "READY", timeoutSec: 181 },
+    { kind: "perf", minAppFpsP5: -1 },
+    { kind: "perf", minAppFpsP5: Number.MAX_SAFE_INTEGER + 1 },
+    { kind: "perf", durationSec: 4 },
+    { kind: "perf", durationSec: 121 },
+    { kind: "perf", durationSec: Number.MAX_SAFE_INTEGER + 1 },
+  ]) mustReject(() => normalizeAcceptance([criterion]));
+
+  const stored = normalizeAcceptance([{ kind: "perf", durationSec: 15 }]).envelope;
+  stored.criteria[0].durationSec = 0;
+  const { criterionDigest: _digest, ...payload } = stored.criteria[0];
+  stored.criteria[0].criterionDigest = sha(canonicalJson(payload));
+  mustReject(() => parseSnapshotEnvelope("acceptance", stored));
 });
 
 test("acceptance allows 64 criteria and rejects 65", () => {
@@ -346,16 +363,19 @@ test("build public results accept only workflow-specific strict status shapes", 
 test("loop public results accept every exact status arm", () => {
   const buildFailure = { kind: "build", status: "fail", detail: "build failed" };
   const common = loopCommon();
+  const withOutcome = (outcome) => ({ ...structuredClone(common), iterationsLog: [{ ...structuredClone(common.iterationsLog[0]), outcomes: [outcome] }] });
+  const visualNeedsLook = { ...structuredClone(common.iterationsLog[0].outcomes[0]), kind: "visual", status: "needs-look" };
+  const unmeasurable = { ...structuredClone(common.iterationsLog[0].outcomes[0]), status: "unmeasurable" };
   const cases = [
     { status: "plan-failed", iterations: 0, detail: null, fix: "fix" },
     { ...common, status: "plan-failed", detail: null, fix: "fix" },
-    { ...common, status: "budget-exhausted", failing: [buildFailure], fix: "fix" },
+    { ...withOutcome(buildFailure), status: "budget-exhausted", failing: [buildFailure], fix: "fix" },
     { ...common, status: "accepted", ceiling: "structural", acceptanceScope: "declared criteria", fleetVisualVerdict: "unscored", remainingLookObligation: [], honesty: "structural only" },
-    { ...common, status: "built-needs-look", needsLook: [common.iterationsLog[0].outcomes[0]], remainingLookObligation: [], honesty: "look required" },
-    { ...common, status: "unmeasurable-acceptance", failing: [buildFailure], fix: "fix" },
-    { ...common, status: "no-progress", failing: [buildFailure], fix: "fix" },
-    { ...common, status: "failed", failing: [buildFailure], fix: "fix" },
-    { ...common, status: "manual-repair-required", failing: [buildFailure], fix: "fix" },
+    { ...withOutcome(visualNeedsLook), status: "built-needs-look", needsLook: [visualNeedsLook], remainingLookObligation: [], honesty: "look required" },
+    { ...withOutcome(unmeasurable), status: "unmeasurable-acceptance", failing: [unmeasurable], fix: "fix" },
+    { ...withOutcome(buildFailure), status: "no-progress", failing: [buildFailure], fix: "fix" },
+    { ...withOutcome(buildFailure), status: "failed", failing: [buildFailure], fix: "fix" },
+    { ...withOutcome(buildFailure), status: "manual-repair-required", failing: [buildFailure], fix: "fix" },
   ];
   for (const value of cases) assert.equal(parsePublicResult("pico-loop", value).status, value.status);
 });
@@ -381,12 +401,27 @@ test("loop public results reject partial receipt triples, partial perf pairs, wr
   const evidence = structuredClone(common);
   evidence.iterationsLog[0].outcomes[0].recordedEvidence = true;
   mustReject(() => parsePublicResult("pico-loop", { ...evidence, status: "failed", failing: [], fix: "fix" }));
+  const passing = common.iterationsLog[0].outcomes[0];
+  mustReject(() => parsePublicResult("pico-loop", { ...common, status: "built-needs-look", needsLook: [passing], remainingLookObligation: [], honesty: "invalid pass" }));
+  mustReject(() => parsePublicResult("pico-loop", { ...common, status: "failed", failing: [passing], fix: "invalid pass" }));
+  const failed = { ...passing, status: "fail" };
+  const failedCommon = structuredClone(common);
+  failedCommon.iterationsLog[0].outcomes = [failed];
+  mustReject(() => parsePublicResult("pico-loop", { ...failedCommon, status: "failed", failing: [failed, failed], fix: "duplicates" }));
+  const buildFailure = { kind: "build", status: "fail", detail: "build failed" };
+  const duplicateBuild = structuredClone(common);
+  duplicateBuild.iterationsLog[0].outcomes = [buildFailure, buildFailure];
+  mustReject(() => parsePublicResult("pico-loop", { ...duplicateBuild, status: "failed", failing: [buildFailure, buildFailure], fix: "duplicates" }));
+  const secondFailed = { ...failed, inputIndex: 1, criterionDigest: SHA_B };
+  const orderedFailures = structuredClone(common);
+  orderedFailures.iterationsLog[0].outcomes = [failed, secondFailed];
+  mustReject(() => parsePublicResult("pico-loop", { ...orderedFailures, status: "failed", failing: [secondFailed, failed], fix: "wrong subset order" }));
 });
 
 test("run head is strict and bounded", () => {
-  const head = { kind: "pico.workflow-run-head", schemaVersion: 1, runId: RUN_ID, revision: RUN_REVISION_MAX, revisionId: SHA_A, updatedAt: "2026-08-16T12:00:00.000Z" };
+  const head = { kind: "pico.workflow-run-head", schemaVersion: 1, runId: RUN_ID, revision: RUN_REVISION_MAX - 1, revisionId: SHA_A, updatedAt: "2026-08-16T12:00:00.000Z" };
   assert.deepEqual(parseRunHead(head), head);
-  mustReject(() => parseRunHead({ ...head, revision: RUN_REVISION_MAX + 1 }));
+  mustReject(() => parseRunHead({ ...head, revision: RUN_REVISION_MAX }));
   mustReject(() => parseRunHead({ ...head, runId: RUN_ID.toUpperCase() }));
   mustReject(() => parseRunHead({ ...head, updatedAt: "2026-08-16T12:00:00Z" }));
   mustReject(() => parseRunHead({ ...head, extra: null }));
@@ -417,6 +452,18 @@ test("run revision verifies its derived identity and workflow intent shape", () 
   const longLocator = structuredClone(build);
   longLocator.target.projectLocator.missingSuffix = ["x".repeat(16 * 1024 + 1)];
   mustReject(() => parseRunRevision(refreshRevisionId(longLocator)));
+  const authored = transitionRevision(
+    { type: "spec-authored", previousSpec: SHA_A, currentSpec: SHA_B },
+    { status: "open", phase: "ready-to-plan", publicStatus: null },
+  );
+  const revision255 = refreshRevisionId({ ...authored, revision: RUN_REVISION_MAX - 1, parent: { revision: RUN_REVISION_MAX - 2, revisionId: SHA_C } });
+  assert.equal(parseRunRevision(revision255).revision, RUN_REVISION_MAX - 1);
+  mustReject(() => parseRunRevision(refreshRevisionId({ ...revision255, revision: RUN_REVISION_MAX, parent: { revision: RUN_REVISION_MAX - 1, revisionId: SHA_C } })));
+  const targetBase255 = refreshRevisionId({ ...structuredClone(build), target: { ...structuredClone(build.target), base: { runId: RUN_ID, revision: RUN_REVISION_MAX - 1, revisionId: SHA_A } } });
+  assert.equal(parseRunRevision(targetBase255).target.base.revision, RUN_REVISION_MAX - 1);
+  const targetBase256 = structuredClone(targetBase255);
+  targetBase256.target.base.revision = RUN_REVISION_MAX;
+  mustReject(() => parseRunRevision(refreshRevisionId(targetBase256)));
   assert.ok(Buffer.byteLength(canonicalJson(build)) < RUN_REVISION_MAX_BYTES);
 });
 
@@ -466,6 +513,12 @@ test("transition state matrix requires matching intent, attempt, result, compile
   );
   assert.equal(parseRunRevision(inDoubt).compiler.status, "in-doubt");
   mustReject(() => parseRunRevision(refreshRevisionId({ ...inDoubt, compiler: { status: "not-run" } })));
+  const receiptlessSucceededDoubt = structuredClone(inDoubt);
+  receiptlessSucceededDoubt.compiler = {
+    status: "succeeded", ledger: snapshotRef("compiler-ledger", SHA_B),
+    plannedCount: 1, completedCount: 1, elapsedMs: 1, executionDisposition: "definitely-completed",
+  };
+  mustReject(() => parseRunRevision(refreshRevisionId(receiptlessSucceededDoubt)));
   const wrongAfter = structuredClone(inDoubt);
   wrongAfter.projectGeneration.lastAttempt.after = absentGeneration;
   mustReject(() => parseRunRevision(refreshRevisionId(wrongAfter)));
@@ -497,6 +550,25 @@ test("transition state matrix requires matching intent, attempt, result, compile
   assert.equal(parseRunRevision(terminal).compiler.status, "succeeded");
   mustReject(() => parseRunRevision(refreshRevisionId({ ...terminal, publicResult: null })));
   mustReject(() => parseRunRevision(refreshRevisionId({ ...terminal, receiptReferences: [] })));
+  const failedTerminalCompiler = structuredClone(terminal);
+  failedTerminalCompiler.compiler = {
+    status: "failed", ledger: snapshotRef("compiler-ledger", SHA_B), phase: "compiler", failure: d,
+    plannedCount: 1, completedCount: 0, elapsedMs: 1, executionDisposition: "definitely-completed",
+  };
+  mustReject(() => parseRunRevision(refreshRevisionId(failedTerminalCompiler)));
+
+  const builtNotInstalled = transitionRevision(
+    { type: "attempt-paused", attemptId: ATTEMPT_ID, phase: "install", publicStatus: "built-not-installed", failure: d, externalMutationDisposition: "confirmed" },
+    { status: "paused", publicStatus: "built-not-installed" },
+  );
+  builtNotInstalled.compiler = {
+    status: "succeeded", ledger: snapshotRef("compiler-ledger", SHA_B),
+    plannedCount: 1, completedCount: 1, elapsedMs: 1, executionDisposition: "definitely-completed",
+  };
+  assert.equal(parseRunRevision(refreshRevisionId(builtNotInstalled)).compiler.status, "succeeded");
+  const failedBuiltNotInstalled = structuredClone(builtNotInstalled);
+  failedBuiltNotInstalled.compiler = failedTerminalCompiler.compiler;
+  mustReject(() => parseRunRevision(refreshRevisionId(failedBuiltNotInstalled)));
 
   const awaiting = transitionRevision(
     { type: "plan-completed", outcome: "awaiting-authoring", diagnostic: null },
@@ -524,6 +596,15 @@ test("transition state matrix requires matching intent, attempt, result, compile
   );
   assert.equal(parseRunRevision(iteration).iteration.status, "blocked");
   mustReject(() => parseRunRevision(refreshRevisionId({ ...iteration, iteration: baseRevision().iteration })));
+  const iterationFour = structuredClone(iteration);
+  iterationFour.intent.budget.iterations = 4;
+  iterationFour.transition.iteration = 4;
+  iterationFour.iteration.index = 4;
+  iterationFour.iteration.completedCount = 4;
+  iterationFour.iteration.nextIndex = 5;
+  assert.equal(parseRunRevision(refreshRevisionId(iterationFour)).iteration.index, 4);
+  iterationFour.intent.budget.iterations = 3;
+  mustReject(() => parseRunRevision(refreshRevisionId(iterationFour)));
 
   const policy = transitionRevision(
     { type: "policy-terminal", reason: "time-budget-exhausted", publicStatus: "budget-exhausted" },
@@ -605,6 +686,11 @@ test("run-control result is exact and status-specific", () => {
   mustReject(() => parseRunControlResult({ ...base, expectedRevision: 0 }));
   const conflict = { ...base, status: "revision-conflict", runId: RUN_ID, revision: 2, revisionId: SHA_A, expectedRevision: 1, actualRevision: 2, actualRevisionId: SHA_A };
   assert.equal(parseRunControlResult(conflict).status, "revision-conflict");
+  const limitConflict = { ...conflict, revision: RUN_REVISION_MAX - 1, expectedRevision: RUN_REVISION_MAX - 2, actualRevision: RUN_REVISION_MAX - 1 };
+  assert.equal(parseRunControlResult(limitConflict).revision, RUN_REVISION_MAX - 1);
+  mustReject(() => parseRunControlResult({ ...limitConflict, revision: RUN_REVISION_MAX }));
+  mustReject(() => parseRunControlResult({ ...limitConflict, expectedRevision: RUN_REVISION_MAX }));
+  mustReject(() => parseRunControlResult({ ...limitConflict, actualRevision: RUN_REVISION_MAX }));
   mustReject(() => parseRunControlResult({ ...conflict, actualRevisionId: null }));
   const publication = { ...base, status: "state-write-failed", runId: RUN_ID, revision: 2, revisionId: SHA_A, runStateByThisCall: "publication-in-doubt", runRevisionCommitted: null, runRevisionPublication: "unknown" };
   assert.equal(parseRunControlResult(publication).runRevisionPublication, "unknown");

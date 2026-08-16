@@ -634,11 +634,11 @@ function strictCriterion(value: unknown, inputIndex: number, normalize: boolean)
       const entitiesPresent = source.entitiesPresent ?? [];
       const componentsPresent = source.componentsPresent ?? [];
       if (!Array.isArray(entitiesPresent) || !Array.isArray(componentsPresent)) fail("structural arrays are invalid");
-      payload = { kind, inputIndex, entitiesPresent: entitiesPresent.map((item) => stringValue(item, "entity")), minEntities: source.minEntities === undefined ? null : publicSchemaInteger(source.minEntities, "minEntities"), componentsPresent: componentsPresent.map((item) => stringValue(item, "component")) };
+      payload = { kind, inputIndex, entitiesPresent: entitiesPresent.map((item) => stringValue(item, "entity")), minEntities: source.minEntities === undefined ? null : integer(source.minEntities, "minEntities"), componentsPresent: componentsPresent.map((item) => stringValue(item, "component")) };
     } else if (kind === "visual") payload = { kind, inputIndex };
     else if (kind === "logcat") {
-      payload = { kind, inputIndex, pattern: stringValue(source.pattern, "logcat pattern", false), tag: source.tag ? stringValue(source.tag, "logcat tag") : null, timeoutSec: source.timeoutSec === undefined ? 20 : publicSchemaInteger(source.timeoutSec, "timeoutSec") };
-    } else payload = { kind, inputIndex, minAppFpsP5: source.minAppFpsP5 === undefined ? 60 : finite(source.minAppFpsP5, "minAppFpsP5"), durationSec: source.durationSec ? publicSchemaInteger(source.durationSec, "durationSec") : 15 };
+      payload = { kind, inputIndex, pattern: stringValue(source.pattern, "logcat pattern", false), tag: source.tag ? stringValue(source.tag, "logcat tag") : null, timeoutSec: source.timeoutSec === undefined ? 20 : integer(source.timeoutSec, "timeoutSec", 1, 180) };
+    } else payload = { kind, inputIndex, minAppFpsP5: source.minAppFpsP5 === undefined ? 60 : finite(source.minAppFpsP5, "minAppFpsP5", 0, Number.MAX_SAFE_INTEGER), durationSec: source.durationSec ? integer(source.durationSec, "durationSec", 5, 120) : 15 };
     return { ...payload, criterionDigest: sha256(canonicalJson(payload)) } as StrictAcceptanceCriterionV1;
   }
   const keys = kind === "structural"
@@ -651,10 +651,10 @@ function strictCriterion(value: unknown, inputIndex: number, normalize: boolean)
   if (storedIndex !== inputIndex) fail("criterion inputIndex must preserve array position");
   if (kind === "structural") {
     if (!Array.isArray(source.entitiesPresent) || !Array.isArray(source.componentsPresent)) fail("structural arrays are invalid");
-    payload = { kind, inputIndex: storedIndex, entitiesPresent: source.entitiesPresent.map((item) => stringValue(item, "entity")), minEntities: source.minEntities === null ? null : publicSchemaInteger(source.minEntities, "minEntities"), componentsPresent: source.componentsPresent.map((item) => stringValue(item, "component")) };
+    payload = { kind, inputIndex: storedIndex, entitiesPresent: source.entitiesPresent.map((item) => stringValue(item, "entity")), minEntities: source.minEntities === null ? null : integer(source.minEntities, "minEntities"), componentsPresent: source.componentsPresent.map((item) => stringValue(item, "component")) };
   } else if (kind === "visual") payload = { kind, inputIndex: storedIndex };
-  else if (kind === "logcat") payload = { kind, inputIndex: storedIndex, pattern: stringValue(source.pattern, "logcat pattern", false), tag: source.tag === null ? null : stringValue(source.tag, "tag"), timeoutSec: publicSchemaInteger(source.timeoutSec, "timeoutSec") };
-  else payload = { kind, inputIndex: storedIndex, minAppFpsP5: finite(source.minAppFpsP5, "minAppFpsP5"), durationSec: publicSchemaInteger(source.durationSec, "durationSec") };
+  else if (kind === "logcat") payload = { kind, inputIndex: storedIndex, pattern: stringValue(source.pattern, "logcat pattern", false), tag: source.tag === null ? null : stringValue(source.tag, "tag"), timeoutSec: integer(source.timeoutSec, "timeoutSec", 1, 180) };
+  else payload = { kind, inputIndex: storedIndex, minAppFpsP5: finite(source.minAppFpsP5, "minAppFpsP5", 0, Number.MAX_SAFE_INTEGER), durationSec: integer(source.durationSec, "durationSec", 5, 120) };
   const digest = shaValue(source.criterionDigest, "criterionDigest");
   if (digest !== sha256(canonicalJson(payload))) fail("criterionDigest mismatch");
   return { ...payload, criterionDigest: digest } as StrictAcceptanceCriterionV1;
@@ -889,6 +889,7 @@ function parseOutcome(value: unknown, allowBuild = true): LoopPublicOutcomeV1 {
     failureClass: nullableString(object.failureClass, "failureClass"), machineChecks: object.machineChecks as JsonValue[],
   };
   if (outcome.kind !== "visual" && outcome.recordedEvidence !== null) fail("only visual outcomes may carry recordedEvidence");
+  if (outcome.status === "needs-look" && outcome.kind !== "visual") fail("only visual outcomes may need a look");
   if (outcome.recordedEvidence === true && outcome.status !== "pass") fail("recorded visual evidence requires a passing outcome");
   return outcome;
 }
@@ -897,10 +898,15 @@ function validateOutcomeOrder(outcomes: LoopPublicOutcomeV1[]): void {
   const seen = new Set<string>();
   let lastLogcat = -1;
   let lastOther = -1;
+  let sawBuild = false;
   let sawNonLogcat = false;
   let sawCriterion = false;
   for (const outcome of outcomes) {
-    if (outcome.kind === "build") { if (sawCriterion) fail("build failure outcome must precede criterion outcomes"); continue; }
+    if (outcome.kind === "build") {
+      if (sawBuild || sawCriterion) fail("build failure outcome must be unique and precede criterion outcomes");
+      sawBuild = true;
+      continue;
+    }
     sawCriterion = true;
     const identity = `${outcome.inputIndex}:${outcome.criterionDigest}`;
     if (seen.has(identity)) fail("duplicate criterion outcome identity");
@@ -914,6 +920,21 @@ function validateOutcomeOrder(outcomes: LoopPublicOutcomeV1[]): void {
       lastOther = outcome.inputIndex;
     }
   }
+}
+
+function parseOutcomeSubset(
+  value: unknown,
+  label: string,
+  finalOutcomes: LoopPublicOutcomeV1[],
+  predicate: (outcome: LoopPublicOutcomeV1) => boolean,
+): LoopPublicOutcomeV1[] {
+  if (!Array.isArray(value) || value.length === 0) fail(`${label} must be a nonempty outcome array`);
+  const outcomes = value.map((outcome) => parseOutcome(outcome));
+  validateOutcomeOrder(outcomes);
+  if (outcomes.some((outcome) => !predicate(outcome))) fail(`${label} contains an outcome with an invalid status`);
+  const expected = finalOutcomes.filter(predicate);
+  if (canonicalJson(outcomes) !== canonicalJson(expected)) fail(`${label} must exactly match the stable final-iteration subset`);
+  return outcomes;
 }
 
 function parseLoopCommon(source: Record<string, unknown>, allowedExtras: string[]): LoopExitCommonV1 {
@@ -1021,14 +1042,20 @@ export function parsePublicResult(workflow: RunWorkflowV1, value: unknown): Buil
   if (!Object.hasOwn(statusExtras, status)) fail("status is not valid for pico-loop");
   if (status === "plan-failed" && !Object.hasOwn(source, "detail")) fail("plan-failed detail is required");
   const common = parseLoopCommon(source, statusExtras[status]!);
+  const finalOutcomes = common.iterationsLog.at(-1)!.outcomes;
   if (status === "accepted") return { ...common, status, ceiling: oneOf(source.ceiling, ["structural", "auto_judged"] as const, "acceptance ceiling"), acceptanceScope: stringValue(source.acceptanceScope, "acceptanceScope"), fleetVisualVerdict: stringValue(source.fleetVisualVerdict, "fleetVisualVerdict"), remainingLookObligation: parseLookObligations(source.remainingLookObligation), honesty: stringValue(source.honesty, "honesty") };
   if (status === "built-needs-look") {
-    if (!Array.isArray(source.needsLook)) fail("needsLook must be an array");
-    return { ...common, status, needsLook: source.needsLook.map((outcome) => parseOutcome(outcome)), remainingLookObligation: parseLookObligations(source.remainingLookObligation), honesty: stringValue(source.honesty, "honesty") };
+    const needsLook = parseOutcomeSubset(source.needsLook, "needsLook", finalOutcomes, (outcome) => outcome.kind !== "build" && outcome.kind === "visual" && outcome.status === "needs-look");
+    return { ...common, status, needsLook, remainingLookObligation: parseLookObligations(source.remainingLookObligation), honesty: stringValue(source.honesty, "honesty") };
   }
   if (status === "plan-failed") return { ...common, status, detail: source.detail as JsonValue, fix: stringValue(source.fix, "fix") };
-  if (!Array.isArray(source.failing)) fail("failing must be an array");
-  const failing = source.failing.map((outcome) => parseOutcome(outcome));
+  const failingPredicate = status === "budget-exhausted"
+    ? (outcome: LoopPublicOutcomeV1) => outcome.status !== "pass"
+    : status === "unmeasurable-acceptance"
+      ? (outcome: LoopPublicOutcomeV1) => outcome.status === "fail" || outcome.status === "unmeasurable"
+      : (outcome: LoopPublicOutcomeV1) => outcome.status === "fail";
+  const failing = parseOutcomeSubset(source.failing, "failing", finalOutcomes, failingPredicate);
+  if (status === "unmeasurable-acceptance" && !failing.some((outcome) => outcome.kind !== "build" && outcome.status === "unmeasurable")) fail("unmeasurable-acceptance requires an unmeasurable criterion");
   const fix = stringValue(source.fix, "fix");
   if (status === "no-progress" || status === "manual-repair-required") {
     return Object.hasOwn(source, "detail") ? { ...common, status, failing, detail: source.detail as JsonValue, fix } : { ...common, status, failing, fix };
@@ -1268,11 +1295,11 @@ export function parseRunRevision(value: unknown): RunRevisionV1 {
   inspectCanonical(value, RUN_REVISION_MAX_BYTES, "run revision", ORIGINAL_GOAL_MAX_BYTES);
   const object = record(value, ["kind", "schemaVersion", "runId", "revision", "revisionId", "parent", "createdAt", "workflow", "intent", "target", "transition", "projectGeneration", "attemptInputs", "compiler", "receiptReferences", "autoJudgeEvidence", "iteration", "publicResult", "lifecycle", "storedEvidenceCeiling"], "run revision");
   literal(object.kind, "pico.workflow-run-revision", "revision kind"); literal(object.schemaVersion, 1, "revision schemaVersion");
-  const runId = uuidValue(object.runId, "runId"); const revision = integer(object.revision, "revision", 0, RUN_REVISION_MAX);
+  const runId = uuidValue(object.runId, "runId"); const revision = integer(object.revision, "revision", 0, RUN_REVISION_MAX - 1);
   let parent: RunRevisionV1["parent"] = null;
   if (object.parent !== null) {
     const parentObject = record(object.parent, ["revision", "revisionId"], "revision parent");
-    parent = { revision: integer(parentObject.revision, "parent revision"), revisionId: shaValue(parentObject.revisionId, "parent revisionId") };
+    parent = { revision: integer(parentObject.revision, "parent revision", 0, RUN_REVISION_MAX - 1), revisionId: shaValue(parentObject.revisionId, "parent revisionId") };
   }
   if ((revision === 0) !== (parent === null)) fail("revision parent presence mismatch");
   if (parent !== null && parent.revision !== revision - 1) fail("revision parent number mismatch");
@@ -1313,7 +1340,7 @@ export function parseRunRevision(value: unknown): RunRevisionV1 {
   const projectResourceKey = shaValue(targetObject.projectResourceKey, "projectResourceKey"); const expectedProjectResourceKey = sha256(canonicalJson({ kind: "pico.physical-project-resource", schemaVersion: 1, physicalProjectDir: projectLocator.physicalProjectDir }));
   if (projectResourceKey !== expectedProjectResourceKey) fail("project resource key mismatch");
   let base: RunRevisionV1["target"]["base"] = null;
-  if (targetObject.base !== null) { const baseObject = record(targetObject.base, ["runId", "revision", "revisionId"], "target base"); base = { runId: uuidValue(baseObject.runId, "base runId"), revision: integer(baseObject.revision, "base revision", 0, RUN_REVISION_MAX), revisionId: shaValue(baseObject.revisionId, "base revisionId") }; }
+  if (targetObject.base !== null) { const baseObject = record(targetObject.base, ["runId", "revision", "revisionId"], "target base"); base = { runId: uuidValue(baseObject.runId, "base runId"), revision: integer(baseObject.revision, "base revision", 0, RUN_REVISION_MAX - 1), revisionId: shaValue(baseObject.revisionId, "base revisionId") }; }
 
   const transition = parseTransition(object.transition); const lifecycle = parseLifecycle(object.lifecycle);
   if (!transitionMatchesLifecycle(transition, lifecycle)) fail("transition/lifecycle mismatch");
@@ -1342,17 +1369,22 @@ export function parseRunRevision(value: unknown): RunRevisionV1 {
   if (attemptInputs === null && compiler.status !== "not-run") fail("compiler outcome requires attempt inputs");
   if (attemptInputs !== null && currentSpec === null) fail("attempt inputs require a current spec");
   if (workflow === "pico-build-app" && iteration.status !== "not-run") fail("build workflow cannot contain loop iteration state");
+  if (workflow === "pico-loop" && iteration.status !== "not-run") {
+    if (iteration.index > budget!.iterations || iteration.completedCount > budget!.iterations || iteration.nextIndex > budget!.iterations + 1) fail("iteration state exceeds the stored iteration budget");
+  }
   if (transition.type === "iteration-completed" || transition.type === "policy-terminal") {
     if (workflow !== "pico-loop") fail(`${transition.type} is loop-only`);
   }
   if (transition.type === "attempt-started") {
     if ((workflow === "pico-build-app") !== (transition.phase === "build")) fail("attempt phase/workflow mismatch");
+    if (workflow === "pico-loop" && (transition.iteration! > budget!.iterations || transition.iteration !== iteration.nextIndex)) fail("attempt iteration exceeds or disagrees with the stored budget state");
   }
   if (transition.type === "attempt-paused") {
     const allowed = workflow === "pico-build-app"
       ? ["failed", "built-not-installed", "built-no-capture"]
       : ["unmeasurable-acceptance", "no-progress", "manual-repair-required"];
     if (!allowed.includes(transition.publicStatus)) fail("paused public status/workflow mismatch");
+    if (["built-not-installed", "built-no-capture"].includes(transition.publicStatus) && compiler.status !== "succeeded") fail("post-compile paused status requires succeeded compilation");
   }
   if (transition.type === "run-terminal") {
     const allowed = workflow === "pico-build-app"
@@ -1360,6 +1392,8 @@ export function parseRunRevision(value: unknown): RunRevisionV1 {
       : ["accepted", "built-needs-look", "budget-exhausted", "failed"];
     if (!allowed.includes(transition.publicStatus)) fail("terminal public status/workflow mismatch");
     if (workflow === "pico-loop" && transition.publicStatus === "failed" && onFail !== "stop") fail("terminal loop failure requires stop policy");
+    if (["built-needs-look", "auto-judged-needs-look", "accepted"].includes(transition.publicStatus) && (compiler.status !== "succeeded" || receiptReferences.length === 0)) fail("successful terminal status requires succeeded compilation and a receipt");
+    if (transition.publicStatus === "auto-judged-needs-look" && autoJudgeEvidence === null) fail("auto-judged terminal status requires auto-judge evidence");
   }
 
   if (attemptTransition) {
@@ -1379,12 +1413,14 @@ export function parseRunRevision(value: unknown): RunRevisionV1 {
     }
   }
   if (compiler.status === "in-doubt" && transition.type !== "attempt-in-doubt") fail("in-doubt compiler requires an in-doubt attempt");
+  const receiptlessCompilerSuccessAllowed = workflow === "pico-build-app" && transition.type === "attempt-paused"
+    && ["built-not-installed", "built-no-capture"].includes(transition.publicStatus);
+  if (compiler.status === "succeeded" && receiptReferences.length === 0 && !receiptlessCompilerSuccessAllowed) fail("succeeded compiler lacks a definite receipt for this transition status");
   const attribution = projectGeneration.lastAttempt?.attribution ?? null;
   if (attribution?.compilerLedger !== null && attribution?.compilerLedger !== undefined) {
     if (compiler.status === "not-run" || compiler.ledger === null || compiler.ledger.sha256 !== attribution.compilerLedger) fail("generation attribution/compiler ledger mismatch");
   }
   if (attribution?.receiptId !== null && attribution?.receiptId !== undefined && !receiptReferences.some((receipt) => receipt.receiptId === attribution.receiptId)) fail("generation attribution lacks matching receipt");
-  if (compiler.status === "succeeded" && receiptReferences.length === 0) fail("succeeded compiler lacks a definite receipt");
   if (revision === 0) {
     if (transition.type !== "created" || lifecycle.status !== "open" || lifecycle.phase !== "ready-to-plan" || lifecycle.publicStatus !== null) fail("revision zero must be the created ready-to-plan state");
     if (projectGeneration.lastAttempt !== null || attemptInputs !== null || compiler.status !== "not-run" || iteration.status !== "not-run") fail("revision zero cannot contain attempt state");
@@ -1406,7 +1442,7 @@ export function parseRunRevision(value: unknown): RunRevisionV1 {
 export function parseRunHead(value: unknown): RunHeadV1 {
   inspectCanonical(value, STRING_MAX_BYTES, "run head");
   const object = record(value, ["kind", "schemaVersion", "runId", "revision", "revisionId", "updatedAt"], "run head");
-  return { kind: literal(object.kind, "pico.workflow-run-head", "head kind"), schemaVersion: literal(object.schemaVersion, 1, "head schemaVersion"), runId: uuidValue(object.runId, "head runId"), revision: integer(object.revision, "head revision", 0, RUN_REVISION_MAX), revisionId: shaValue(object.revisionId, "head revisionId"), updatedAt: timestamp(object.updatedAt, "head updatedAt") };
+  return { kind: literal(object.kind, "pico.workflow-run-head", "head kind"), schemaVersion: literal(object.schemaVersion, 1, "head schemaVersion"), runId: uuidValue(object.runId, "head runId"), revision: integer(object.revision, "head revision", 0, RUN_REVISION_MAX - 1), revisionId: shaValue(object.revisionId, "head revisionId"), updatedAt: timestamp(object.updatedAt, "head updatedAt") };
 }
 
 export function parseRunControlResult(value: unknown): RunControlResultV1 {
@@ -1414,11 +1450,11 @@ export function parseRunControlResult(value: unknown): RunControlResultV1 {
   const object = record(value, ["status", "runId", "revision", "revisionId", "expectedRevision", "actualRevision", "actualRevisionId", "runStateByThisCall", "externalSideEffectsByThisCall", "priorAttemptExternalSideEffects", "activeAttemptExternalSideEffects", "inDoubtAttemptCompletion", "runRevisionCommitted", "runRevisionPublication", "expectedGeneration", "observedGeneration", "historicalResult", "issues", "detail", "fix"], "run control result");
   const status = oneOf(object.status, ["invalid-invocation", "invalid-policy", "invalid-run-id", "run-not-found", "run-busy", "revision-conflict", "intent-conflict", "acceptance-conflict", "spec-conflict", "target-conflict", "recovery-required", "interrupted-in-doubt", "external-state-conflict", "invalid-store", "limit-exceeded", "revision-limit", "state-write-failed"] as const, "run control status");
   const runId = object.runId === null ? null : uuidValue(object.runId, "control runId");
-  const revision = object.revision === null ? null : integer(object.revision, "control revision", 0, RUN_REVISION_MAX);
+  const revision = object.revision === null ? null : integer(object.revision, "control revision", 0, RUN_REVISION_MAX - 1);
   const revisionId = object.revisionId === null ? null : shaValue(object.revisionId, "control revisionId");
   if ([runId, revision, revisionId].filter((item) => item !== null).length % 3 !== 0) fail("control coordinate must be all null or all present");
-  const expectedRevision = object.expectedRevision === null ? null : integer(object.expectedRevision, "expectedRevision", 0, RUN_REVISION_MAX);
-  const actualRevision = object.actualRevision === null ? null : integer(object.actualRevision, "actualRevision", 0, RUN_REVISION_MAX);
+  const expectedRevision = object.expectedRevision === null ? null : integer(object.expectedRevision, "expectedRevision", 0, RUN_REVISION_MAX - 1);
+  const actualRevision = object.actualRevision === null ? null : integer(object.actualRevision, "actualRevision", 0, RUN_REVISION_MAX - 1);
   const actualRevisionId = object.actualRevisionId === null ? null : shaValue(object.actualRevisionId, "actualRevisionId");
   const comparisonCount = [expectedRevision, actualRevision, actualRevisionId].filter((item) => item !== null).length;
   if (comparisonCount !== 0 && comparisonCount !== 3) fail("revision comparison fields must be all null or all present");
