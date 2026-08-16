@@ -376,9 +376,8 @@ if (!doorsSurfaceActive()) {
   registerIblBakeTools(server);
 }
 registerDoorTools(server);
-// Prompts are surface-independent: register them OUTSIDE the full-surface block so a doors user
-// gets the built-in prompts too (they previously got zero).
-registerPrompts(server);
+// First-light is available on both surfaces; advanced prompts are full-only.
+registerPrompts(server, doorsSurfaceActive() ? "doors" : "full");
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
