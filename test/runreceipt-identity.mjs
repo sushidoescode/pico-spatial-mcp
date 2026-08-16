@@ -13,6 +13,7 @@ import {
   effectiveAppSpecIdentity,
   collectGradleInputIdentity,
   collectGuardedGradleInputIdentity,
+  GradleInputContinuityInconclusiveError,
   guardGradleInputGeneration,
 } from "../dist/runreceiptidentity.js";
 
@@ -322,7 +323,7 @@ test("Gradle generation guard fails closed at an explicit directory-depth ceilin
   }
 });
 
-test("Gradle generation guard caps selected watcher diagnostics during an event storm", async (t) => {
+test("Gradle generation guard caps inconclusive watcher diagnostics during an event storm", async (t) => {
   const dir = scratch(t, "pico-gradle-event-cap-");
   const project = createMinimalGradleProject(dir);
   const identity = collectGradleInputIdentity(project);
@@ -345,8 +346,9 @@ test("Gradle generation guard caps selected watcher diagnostics during an event 
     await assert.rejects(
       guard.assertUnchanged(),
       (error) => {
-        assert.match(error.message, /additional selected path mutations omitted/i);
-        assert.ok((error.message.match(/selected path mutation observed/g) ?? []).length <= 2);
+        assert.ok(error instanceof GradleInputContinuityInconclusiveError);
+        assert.match(error.message, /additional uncorroborated watcher callbacks omitted/i);
+        assert.ok((error.message.match(/watcher callback without exact selected-path corroboration/g) ?? []).length <= 2);
         return true;
       },
     );

@@ -561,7 +561,7 @@ test("producer rejects an oversized effective AppSpec before Gradle or live runn
   assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
 });
 
-test("producer detects a late selected file changed and restored between collection and guard establishment", async (t) => {
+test("producer discards a late setup callback and records only a freshly guarded second build", async (t) => {
   const fixture = await createProducerFixture(t);
   const projectRealDir = fs.realpathSync(fixture.projectDir);
   const lateSelectedPath = writeFile(projectRealDir, "gradlew.bat", "@echo off\r\n");
@@ -618,14 +618,10 @@ test("producer detects a late selected file changed and restored between collect
   }
 
   assert.equal(mutated, true);
-  assert.equal(out.status, "failed");
-  assert.equal(out.stage, "build-input-continuity");
-  assert.equal(out.built, false);
-  assert.equal(out.installed, false);
-  assert.match(out.reason, /Gradle input|generation|changed|continuity/i);
-  assert.equal(fixture.events.filter((event) => event.command.endsWith("/gradlew")).length, 1);
-  assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
-  assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+  assert.equal(out.status, "recorded", JSON.stringify(out, null, 2));
+  assert.equal(fixture.events.filter((event) => event.command.endsWith("/gradlew")).length, 2);
+  assert.ok(out.completedStages.includes("build-input-continuity:first-attempt-inconclusive"));
+  assert.ok(out.completedStages.includes("build-input-continuity:second-attempt-proved"));
 });
 
 test("producer binds one unchanged Gradle input generation across the awaited build", async (t) => {
@@ -751,6 +747,45 @@ test("producer discards one inconclusive excluded-output build and records only 
   assert.deepEqual(fake.watchers.map((watcher) => watcher.closeCalls), fake.watchers.map(() => 1));
 });
 
+test("producer discards mixed coalesced callbacks and records only a freshly guarded second build", { timeout: 5_000 }, async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "gradle-excluded-output-mutations" });
+  const fake = installFakeWatch();
+  const originalRunText = fixture.deps.runText;
+  let gradleAttempt = 0;
+  fixture.deps.runText = async (...args) => {
+    const result = await originalRunText(...args);
+    if (args[0].endsWith("/gradlew")) {
+      gradleAttempt += 1;
+      if (gradleAttempt === 1) {
+        const projectDirectory = fs.realpathSync(fixture.projectDir);
+        const appDirectory = fs.realpathSync(path.join(fixture.projectDir, "app"));
+        const projectWatcher = fake.watchers.find((watcher) => watcher.directory === projectDirectory && !watcher.closed);
+        const appWatcher = fake.watchers.find((watcher) => watcher.directory === appDirectory && !watcher.closed);
+        assert.ok(projectWatcher, "first project-root guard must still be live after Gradle");
+        assert.ok(appWatcher, "first app guard must still be live after Gradle");
+        for (const filename of ["settings.gradle.kts", "build.gradle.kts", "gradlew", "app", ".gradle", "README.md"]) {
+          projectWatcher.callback("rename", filename);
+        }
+        for (const filename of ["build.gradle.kts", "src", "build"]) {
+          appWatcher.callback("rename", filename);
+        }
+      }
+    }
+    return result;
+  };
+  let out;
+  try {
+    out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  } finally {
+    fake.restore();
+  }
+  assert.equal(out.status, "recorded", JSON.stringify(out, null, 2));
+  assert.equal(gradleAttempt, 2);
+  assert.ok(out.completedStages.includes("build-input-continuity:first-attempt-inconclusive"));
+  assert.ok(out.completedStages.includes("build-input-continuity:second-attempt-proved"));
+  assert.deepEqual(fake.watchers.map((watcher) => watcher.closeCalls), fake.watchers.map(() => 1));
+});
+
 test("an excluded callback cannot mask a dropped selected transient on the discarded first build", { timeout: 5_000 }, async (t) => {
   const fixture = await createProducerFixture(t, { kind: "gradle-excluded-plus-dropped-selected-first" });
   const fake = installFakeWatch();
@@ -782,14 +817,19 @@ test("an excluded callback cannot mask a dropped selected transient on the disca
   assert.deepEqual(fake.watchers.map((watcher) => watcher.closeCalls), fake.watchers.map(() => 1));
 });
 
-test("producer drains a late coalesced selected callback before accepting continuity", { timeout: 4_000 }, async (t) => {
+test("producer fails closed when an uncorroborated selected-looking callback repeats on both guarded builds", { timeout: 4_000 }, async (t) => {
   const fixture = await createProducerFixture(t);
   const fake = installFakeWatch();
   const originalRunText = fixture.deps.runText;
+  let gradleAttempt = 0;
   fixture.deps.runText = async (...args) => {
     const result = await originalRunText(...args);
     if (args[0].endsWith("/gradlew")) {
-      setImmediate(() => setImmediate(() => fake.watchers[0].callback("rename", null)));
+      gradleAttempt += 1;
+      const projectDirectory = fs.realpathSync(fixture.projectDir);
+      const projectWatcher = fake.watchers.find((watcher) => watcher.directory === projectDirectory && !watcher.closed);
+      assert.ok(projectWatcher, `guard for Gradle attempt ${gradleAttempt} must still be live after Gradle`);
+      setImmediate(() => setImmediate(() => projectWatcher.callback("rename", "app")));
     }
     return result;
   };
@@ -803,8 +843,12 @@ test("producer drains a late coalesced selected callback before accepting contin
   assert.equal(out.stage, "build-input-continuity");
   assert.equal(out.built, false);
   assert.equal(out.installed, false);
+  assert.equal(gradleAttempt, 2);
+  assert.match(out.reason, /inconclusive/i);
+  assert.ok(out.completedStages.includes("build-input-continuity:first-attempt-inconclusive"));
+  assert.equal(out.completedStages.includes("build-input-continuity:second-attempt-proved"), false);
   assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
-  assert.ok(fake.watchers.length >= 2);
+  assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
   assert.deepEqual(fake.watchers.map((watcher) => watcher.closeCalls), fake.watchers.map(() => 1));
 });
 
@@ -831,6 +875,7 @@ test("producer converts a watcher error into one bounded continuity failure and 
   assert.equal(out.installed, false);
   assert.match(out.reason, /watcher-error|watcher failure/i);
   assert.ok(out.reason.length < 2_000, `watcher failure must stay bounded: ${out.reason.length}`);
+  assert.equal(fixture.events.filter((event) => event.command.endsWith("/gradlew")).length, 1);
   assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
   assert.ok(fake.watchers.length >= 2);
   assert.deepEqual(fake.watchers.map((watcher) => watcher.closeCalls), fake.watchers.map(() => 1));
@@ -862,6 +907,7 @@ test("producer converts a watcher close error into a bounded failure without ret
   assert.equal(out.stage, "build-input-continuity");
   assert.match(out.reason, /watcher-close-error|watcher close failure/i);
   assert.ok(out.reason.length < 2_000, `watcher close failure must stay bounded: ${out.reason.length}`);
+  assert.equal(fixture.events.filter((event) => event.command.endsWith("/gradlew")).length, 1);
   assert.equal(fixture.events.some((event) => event.command === "/fixture/adb"), false);
   assert.deepEqual(fake.watchers.map((watcher) => watcher.closeCalls), fake.watchers.map(() => 1));
 });

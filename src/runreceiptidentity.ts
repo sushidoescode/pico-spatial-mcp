@@ -308,8 +308,10 @@ type GuardState = {
   trackedDirectories: Map<string, StableStat>;
   watchers: fs.FSWatcher[];
   parentGenerations: Map<string, ParentGeneration>;
-  eventSamples: string[];
-  eventsOmitted: boolean;
+  inconclusiveEventSamples: string[];
+  definiteEventSamples: string[];
+  inconclusiveEventsOmitted: boolean;
+  definiteEventsOmitted: boolean;
   eventRevision: number;
   watchersClosed: boolean;
   closed: boolean;
@@ -336,15 +338,23 @@ function rememberGuardEvent(
   parent: ParentGeneration,
   classification: "selected" | "excluded" | "ambiguous",
   event: string,
+  certainty: "inconclusive" | "definite" = "inconclusive",
 ): void {
   if (classification === "selected") parent.selectedObserved = true;
   else if (classification === "excluded") parent.excludedObserved = true;
   else parent.ambiguousObserved = true;
   state.eventRevision += 1;
-  if (state.eventSamples.length < state.limits.maxEventSamples) {
-    if (classification !== "excluded") state.eventSamples.push(event.slice(0, GRADLE_INPUT_EVENT_SAMPLE_MAX_CHARS));
+  if (classification === "excluded") return;
+  // Directory-watch filenames may be coalesced or attributed to a selected-looking sibling.
+  // They invalidate this build attempt, but only retained identity checks or watcher failures
+  // are definite enough to prevent the one bounded fresh-build retry.
+  const samples = certainty === "definite" ? state.definiteEventSamples : state.inconclusiveEventSamples;
+  if (samples.length < state.limits.maxEventSamples) {
+    samples.push(event.slice(0, GRADLE_INPUT_EVENT_SAMPLE_MAX_CHARS));
+  } else if (certainty === "definite") {
+    state.definiteEventsOmitted = true;
   } else {
-    state.eventsOmitted = true;
+    state.inconclusiveEventsOmitted = true;
   }
 }
 
@@ -362,6 +372,7 @@ function closeWatchers(state: GuardState, recordErrors: boolean): void {
           parent,
           "ambiguous",
           `watcher-close-error:${error instanceof Error ? error.message : String(error)}`,
+          "definite",
         );
       }
     }
@@ -398,7 +409,13 @@ function watchDirectChildren(
     rememberGuardEvent(state, parent, classification, `${eventType}:${directName || "unknown"}`);
   });
   state.watchers.push(watcher);
-  watcher.on("error", (error) => rememberGuardEvent(state, parent, "ambiguous", `watcher-error:${error.message}`));
+  watcher.on("error", (error) => rememberGuardEvent(
+    state,
+    parent,
+    "ambiguous",
+    `watcher-error:${error.message}`,
+    "definite",
+  ));
   if (!sameStableStat(parent.before, lstatStable(realDirectory))) {
     rememberGuardEvent(state, parent, "ambiguous", "watcher-setup-parent-generation-changed");
   }
@@ -412,8 +429,10 @@ function createGuardState(projectDir: string, options: GradleInputGuardOptions):
     trackedDirectories: new Map(),
     watchers: [],
     parentGenerations: new Map(),
-    eventSamples: [],
-    eventsOmitted: false,
+    inconclusiveEventSamples: [],
+    definiteEventSamples: [],
+    inconclusiveEventsOmitted: false,
+    definiteEventsOmitted: false,
     eventRevision: 0,
     watchersClosed: false,
     closed: false,
@@ -668,8 +687,12 @@ function generationGuard(state: GuardState): GradleInputGenerationGuard {
         if (issues.length < GRADLE_INPUT_MAX_EVENT_SAMPLES) issues.push(issue);
         else issuesOmitted = true;
       };
-      for (const event of state.eventSamples) addIssue(`selected path mutation observed (${event})`);
-      if (state.eventsOmitted) addIssue("additional selected path mutations omitted");
+      for (const event of state.definiteEventSamples) addIssue(`watcher integrity failure (${event})`);
+      if (state.definiteEventsOmitted) addIssue("additional watcher integrity failures omitted");
+      if (state.inconclusiveEventsOmitted) inconclusive.push("additional uncorroborated watcher callbacks omitted");
+      for (const event of state.inconclusiveEventSamples) {
+        inconclusive.push(`watcher callback without exact selected-path corroboration (${event})`);
+      }
       for (const file of state.trackedFiles) {
         try {
           const after = stableStat(fs.fstatSync(file.descriptor, { bigint: true }));
@@ -695,11 +718,7 @@ function generationGuard(state: GuardState): GradleInputGenerationGuard {
         try {
           if (!sameStableStat(parent.before, lstatStable(directory))) {
             const relativePath = path.relative(state.projectDir, directory).split(path.sep).join("/") || ".";
-            if (parent.selectedObserved || parent.ambiguousObserved) {
-              addIssue(`watched parent generation changed: ${relativePath}`);
-            } else {
-              inconclusive.push(`watched parent generation changed without definite selected evidence: ${relativePath}`);
-            }
+            inconclusive.push(`watched parent generation changed without exact selected-path corroboration: ${relativePath}`);
           }
         } catch (error) {
           addIssue(`watched parent continuity could not be checked: ${error instanceof Error ? error.message : String(error)}`);
