@@ -63,7 +63,7 @@
     "test:docsmeta": "node test/docsmeta.mjs",
     "test:picocli": "node test/picocli.mjs && node --test test/picocli-autoinstall.mjs test/picocli-sweep.mjs",
     "test:runreceipt": "node --test test/runreceipt-identity.mjs test/runreceipt-store.mjs test/nativefleetreceipt.mjs test/fleetreceipt.mjs test/runreceipt-ledger.mjs test/runreceipt-ship.mjs",
-    "test:runrevision": "node --test test/runrevision-contracts.mjs test/runrevision-store.mjs test/runrevision-locator.mjs",
+    "test:runrevision": "node --test test/runrevision-contracts.mjs test/runrevision-store.mjs test/runrevision-locator.mjs test/runrevision-locks.mjs",
     "test:swan": "node test/swan.mjs",
     "test:placeonsurface": "node test/placeonsurface.mjs",
     "test:menuactions": "node test/menuactions.mjs",
