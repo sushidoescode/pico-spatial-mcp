@@ -83,6 +83,57 @@ refer only to the accepted modeled source graph, def-use/effect model, and origi
 Unknown or ambiguous syntax, receiver or return type, member/extension/overload dispatch, callback,
 effect, aliasing, operator, or control flow makes the affected proof false.
 
+### Reviewed Batch 2A follow-up authority
+
+Batch 2B may not widen the Batch 2A snapshot or domain vocabulary under its existing approval. It
+therefore stops at the sanctioned RED and requires a second two-document authority commit whose
+sole parent is `5af6e162d253524b4cc0b06c7ca543eaaee5f024`, whose subject is exactly
+`docs(bench): authorize subset-v1 follow-up repair`, and whose only modified paths are this
+amendment and `docs/superpowers/plans/2026-08-16-spatial-agent-bench.md`. The independently reviewed
+40-hex SHA of that commit becomes `TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA`; it authorizes only a
+separately SHA-frozen, independently approved ignored follow-up brief, not implementation by itself.
+
+That follow-up may repair only anonymous-declaration indexing, exact `if`/`while`
+condition-container recognition, and the dead standard-fixture `fun instance()` collision; add
+only abstract types `immersion`/`modifier`, callback roles `inline_block`/`remembered_factory`,
+invocation model `immediate_inline`, and return-origin-only effect marker `passthrough`; and
+recognize only exact domain-row names in the default-import packages `kotlin`,
+`kotlin.collections`, and `kotlin.ranges`. The allowlist is `kotlin.with`, `kotlin.apply`,
+`kotlin.let`, `kotlin.runCatching`, `kotlin.repeat`; `kotlin.collections.List`,
+`kotlin.collections.emptyList`, `kotlin.collections.toList`, `kotlin.collections.isEmpty`,
+`kotlin.collections.isNotEmpty`, `kotlin.collections.forEach`, `kotlin.collections.filter`,
+`kotlin.collections.maxByOrNull`, `kotlin.collections.firstOrNull`; and
+`kotlin.ranges.until`/`kotlin.ranges.coerceAtLeast`. The audited symbol authority also covers
+`androidx.compose.runtime.remember`, `com.pico.spatial.ui.foundation.dsl.Immersion`,
+`androidx.compose.ui.Modifier`, and `androidx.compose.foundation.layout.fillMaxSize`.
+`passthrough` forwards an equal, non-null-typed modeled receiver. Otherwise it forwards a callback
+result only when `returnAbstractType` is `null` and exactly one immediate-inline callback has one
+non-escaped, unambiguous result. A non-null type mismatch or a missing, multiple, escaped, or
+ambiguous callback result remains unknown. It supplies no execution, mutation, reachability, or
+behavioral fact. `remembered_factory` additionally records that callback-result origin as retained
+without making it a strong state authority.
+
+Default-import recognition is lower precedence than a lexical/source declaration or an explicit
+import/alias and requires a unique audited domain row, a known receiver where applicable, and an
+unambiguous supported overload. It is not wildcard, general Kotlin default-import, or stdlib
+inference; `kotlin.math.*`, `kotlinx.*`, Compose, Android, and PICO names require explicit imports.
+
+The closed vocabulary is mirrored identically in the Java domain loader, JavaScript bridge
+validator, deterministic build validator, and analyzer test's literal registry assertions. It is
+not serialized as new `domain-v1.json` schema keys. The follow-up keeps the canonical domain bytes
+and clone-canary rows unchanged; Batch 2B owns new symbol rows. Its implementation scope is exactly `build-analyzer.mjs`, `PsiIndex.java`,
+`Rules.java`, `kotlin-analysis.mjs`, `test/agentbench-kotlin-analysis.mjs`, and the previously
+untracked `test/helpers/agentbench-fixture.mjs`. The fixture helper is `A` in the follow-up and `M`
+on Batch 2B re-entry; the persistent score RED remains untracked until Batch 2B.
+
+The follow-up succeeds only when the minimally amended raw fixture is accepted with zero claims and
+the persistent thirteen-claim oracle fails solely for absent emitters. It then requires
+clean-build-twice, exact identity re-pinning, the exact implementation subject
+`fix(bench): repair subset-v1 snapshot boundary`, an ignored report, and an independent
+commit-scoped `APPROVED` review. All protocol/subset/domain versions, analyzer name,
+response/rejection schema, `Main.java`, `Protocol.java`, rule/proof/alternative/witness registries,
+limits, the exact three-false oracle vector, and evidence ceilings remain frozen.
+
 Task 3 remains structurally capped. Its result is still exactly `ScoreResultV2` below, including
 `structuralScore`, `buildQualifiedStructuralScore`, submission-test separation, not-run runtime
 protocol defaults, and `visual.status: "not_performed"`. Analyzer protocol, artifact, classpath,

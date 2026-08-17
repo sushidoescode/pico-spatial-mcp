@@ -34,6 +34,173 @@ affected rule false. This remains structural-only evidence and returns the uncha
 `ScoreResultV2`: analyzer identities do not add a result field, rubric point, behavioral score,
 runtime claim, or visual claim.
 
+### Binding Batch 2A follow-up: snapshot repair and minimum vocabulary
+
+Batch 2B stopped after its sanctioned RED, before any Java/domain edit or analyzer rebuild. The
+approved Batch 2A commit `5af6e162d253524b4cc0b06c7ca543eaaee5f024`, report SHA-256
+`058ebb753b878d3a6e1fe787208d3310691e31808646d0ea8994c1993be877a4`, and review SHA-256
+`b5fdd525468fc0a48637052b0c056c949055501d371bc8df0e6022e3a5a4e4db` remain exact historical
+evidence for the bytes they reviewed. This later subsection supersedes only the snapshot and
+closed-vocabulary freezes named below; it does not retroactively relabel Batch 2A or approve Batch
+2B.
+
+From exact `HEAD` `5af6e162d253524b4cc0b06c7ca543eaaee5f024`, first modify only this plan
+and `docs/superpowers/specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md` in one
+direct-child commit with subject:
+
+```text
+docs(bench): authorize subset-v1 follow-up repair
+```
+
+An independent reviewer must approve that exact 40-hex commit before an ignored follow-up brief is
+authored. The brief is then frozen by whole-file SHA-256 and independently reviewed to `APPROVED`
+before any implementation.
+
+The follow-up is limited to these corrections:
+
+- `PsiIndex` excludes anonymous declarations from both declaration insertion and declaration-owner
+  keys by requiring a real name identifier. Genuine duplicate declarations and overloads remain
+  fail-closed. Same-named locals under sibling anonymous lambdas still collide after the anonymous
+  owner is omitted and remain outside the supported subset.
+- `PsiIndex` recognizes an `if`/`while` condition through the PSI condition container only when the
+  enclosing expression's exact condition object is the candidate. This uses the no-new-import form
+  and does not broaden arbitrary grandchildren into condition witnesses.
+- The raw standard fixture removes only its dead duplicate `fun instance()` declaration and retains
+  the strong `val instance` property. The existing raw-oracle exports and persistent RED test are
+  preserved. No other checkpoint correction is pulled forward.
+- The closed abstract-type vocabulary adds exactly `immersion` and `modifier`; callback roles add
+  exactly `inline_block` and `remembered_factory`; invocation models add exactly
+  `immediate_inline`; effects add exactly `passthrough`. `passthrough` is a return-origin-only
+  marker, never execution, mutation, reachability, or behavioral evidence: a modeled row forwards
+  its receiver origin only when its non-null receiver and return abstract types are equal. It
+  forwards a callback-result origin only when `returnAbstractType` is `null` and exactly one
+  `immediate_inline` callback has one non-escaped, unambiguous result. A non-null type mismatch or a
+  missing, multiple, escaped, or ambiguous callback result remains unknown. `remembered_factory`
+  separately marks that callback-result origin retained and never qualifies it as a strong state
+  authority.
+- Default-import resolution is limited to exact domain rows for `kotlin.with`, `kotlin.apply`,
+  `kotlin.let`, `kotlin.runCatching`, `kotlin.repeat`; `kotlin.collections.List`,
+  `kotlin.collections.emptyList`, `kotlin.collections.toList`, `kotlin.collections.isEmpty`,
+  `kotlin.collections.isNotEmpty`, `kotlin.collections.forEach`, `kotlin.collections.filter`,
+  `kotlin.collections.maxByOrNull`, `kotlin.collections.firstOrNull`; and
+  `kotlin.ranges.until`/`kotlin.ranges.coerceAtLeast`. This is an exact name allowlist within only
+  the default-import packages `kotlin`, `kotlin.collections`, and `kotlin.ranges`, not wildcard or
+  general stdlib inference. A lexical/source declaration or explicit import/alias takes precedence;
+  shadowing, ambiguity, unknown receivers, unsupported overloads, and every other implicit name
+  remain false. `kotlin.math.*`, `kotlinx.*`, Compose, Android, and PICO symbols require explicit
+  imports. The follow-up brief must pin audited symbol authority for the four newly surfaced inline
+  callables plus `androidx.compose.runtime.remember`,
+  `com.pico.spatial.ui.foundation.dsl.Immersion`, `androidx.compose.ui.Modifier`, and
+  `androidx.compose.foundation.layout.fillMaxSize`. Schema-valid symbol rows themselves remain
+  Batch 2B data work.
+
+The new vocabulary must be byte-for-byte identical in all three production closed validators:
+`Rules.java`, `kotlin-analysis.mjs`, and `build-analyzer.mjs`, and the literal registry assertions in
+`test/agentbench-kotlin-analysis.mjs` must pin the same values. `domain-v1.json` has no serialized
+vocabulary registry, so the follow-up keeps its exact canonical bytes, schema, three clone-canary
+rows, and SHA-256 `6f2f241af489b70e8dfb036e82c8d33c9aa8b39dc2866f7c9f957c7b1304084a`.
+Batch 2B later adds schema-valid symbol rows and then legitimately changes the domain identity.
+
+The follow-up implementation commit may contain exactly:
+
+```text
+benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/PsiIndex.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Rules.java
+benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs
+test/agentbench-kotlin-analysis.mjs
+test/helpers/agentbench-fixture.mjs
+```
+
+The first five paths are modified and the previously untracked fixture helper is added. The ignored
+follow-up brief freezes the implementation subject
+`fix(bench): repair subset-v1 snapshot boundary`, exact entry/status gates, and every old-to-new
+artifact identity. Its GREEN is snapshot acceptance of the minimally amended raw fixture with
+`analysisStatus:"accepted"` and zero claims. The mandatory thirteen-claim test remains RED only
+because Batch 2B emitters do not yet exist, not because analysis is rejected. After two
+byte-identical clean builds and the complete follow-up gate, an independent commit-scoped
+`APPROVED` review is required before Batch 2B re-entry.
+
+Batch 2B thereafter treats `test/helpers/agentbench-fixture.mjs` as `M`, not `A`; its other
+ownership is unchanged. `test/agentbench-score.mjs` remains the authorized untracked RED evidence
+until Batch 2B adds it. The follow-up brief must restate the exact revised Batch 2B path/status gate
+rather than silently inheriting the obsolete fixture-`A` row.
+
+Protocol, subset, and domain versions remain 1. `analyzerName`, rejection codes, `Main.java`,
+`Protocol.java`, rule order, witness kinds, proof forms, accepted alternatives, clone-canary rows,
+limits, the three sanctioned raw-oracle false IDs, and every structural-only evidence ceiling
+remain unchanged. No Gradle, network, model, MCP, emulator, APK, device, visual, runtime,
+behavioral, compile-qualification, adversarial-completeness, or Task-3-completion claim belongs to
+the authority amendment or follow-up.
+
+The exact post-commit authority gate is:
+
+```bash
+set -euo pipefail
+FOLLOWUP_AUTHORITY_BASE='5af6e162d253524b4cc0b06c7ca543eaaee5f024'
+FOLLOWUP_AUTHORITY_SUBJECT='docs(bench): authorize subset-v1 follow-up repair'
+: "${TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA:?set reviewed authority commit SHA}"
+test "${#TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA}" -eq 40
+case "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA" in
+  *[!0-9a-f]*) exit 1 ;;
+esac
+git cat-file -e "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA^{commit}"
+test "$(git rev-parse HEAD)" = "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA"
+test "$(git rev-parse "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA^")" = "$FOLLOWUP_AUTHORITY_BASE"
+test "$(git rev-list --parents -n 1 "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA" | awk '{print NF}')" = 2
+test "$(git show -s --format=%s "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA")" = "$FOLLOWUP_AUTHORITY_SUBJECT"
+expected_followup_authority_paths='docs/superpowers/plans/2026-08-16-spatial-agent-bench.md
+docs/superpowers/specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md'
+test "$(git diff-tree --no-commit-id --name-only -r "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA" | LC_ALL=C sort)" = "$expected_followup_authority_paths"
+test "$(git diff-tree --no-commit-id --name-status -r "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA" | cut -f1 | LC_ALL=C sort)" = 'M
+M'
+git diff --check "$FOLLOWUP_AUTHORITY_BASE..$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA"
+git diff --quiet
+git diff --cached --quiet
+expected_checkpoint_status='?? benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+?? benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+?? benchmarks/spatial-agent-bench/lib/score.mjs
+?? test/agentbench-fixture-compile.mjs
+?? test/agentbench-score.mjs
+?? test/helpers/agentbench-fixture.mjs
+?? test/helpers/agentbench-junit.mjs'
+test "$(git status --porcelain=v1 --untracked-files=all | LC_ALL=C sort)" = "$expected_checkpoint_status"
+expected_checkpoint_hashes='4b6caa9b5e6616876754177c5762fc13859127c5aa6a6710728d5a24ba0d2f00  benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+eca968dd4a03c43187539c372cf330839cb870f331cfd9e69ad14d97ca44e02a  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+aba2696c4d1d0d3657d96867683c848caac055510e83db52f58a726e35d67513  benchmarks/spatial-agent-bench/lib/score.mjs
+5e2e3a73cf5c0e4782f0fa2a47cb713a14619735187af18042f2d1f9417a1c32  test/agentbench-fixture-compile.mjs
+cc2d3b59135f1b8ca5fbb39efa1abb644955e010391b0faba417c5a7f7221776  test/agentbench-score.mjs
+e781117ec88f0dfba150f3d99fbe16ec35a25c52fbd3230c0e6736a3bc43828c  test/helpers/agentbench-fixture.mjs
+05426449e6401fc8bf6b1f899a8b1d7c13485f5e2492f99f31598e88c938a918  test/helpers/agentbench-junit.mjs'
+test "$(shasum -a 256 \
+  benchmarks/spatial-agent-bench/lib/rules-spatial.mjs \
+  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs \
+  benchmarks/spatial-agent-bench/lib/score.mjs \
+  test/agentbench-fixture-compile.mjs \
+  test/agentbench-score.mjs \
+  test/helpers/agentbench-fixture.mjs \
+  test/helpers/agentbench-junit.mjs)" = "$expected_checkpoint_hashes"
+npm run build
+node --test test/agentbench-source.mjs test/agentbench-contract.mjs
+git diff --quiet
+git diff --cached --quiet
+test "$(git status --porcelain=v1 --untracked-files=all | LC_ALL=C sort)" = "$expected_checkpoint_status"
+test "$(shasum -a 256 \
+  benchmarks/spatial-agent-bench/lib/rules-spatial.mjs \
+  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs \
+  benchmarks/spatial-agent-bench/lib/score.mjs \
+  test/agentbench-fixture-compile.mjs \
+  test/agentbench-score.mjs \
+  test/helpers/agentbench-fixture.mjs \
+  test/helpers/agentbench-junit.mjs)" = "$expected_checkpoint_hashes"
+```
+
+The ignored authority report is
+`.superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-batch-2a-followup-authority-report.md`;
+the independent reviewer records the exact commit, both committed document hashes, authority-report
+hash, and verdict in `task-3-batch-2a-followup-authority-review.md`. Only `APPROVED` releases brief
+authoring; neither the commit nor its document gate approves implementation.
+
 ### Authorized Task 3 files and generated locators
 
 Retain and replace only these seven checkpoint files:
