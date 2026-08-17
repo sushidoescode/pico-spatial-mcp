@@ -25,6 +25,10 @@ public final class Main {
     static final int MAX_PSI_NODES = 500_000;
     static final int MAX_DECLARATIONS = 25_000;
     static final int MAX_CALL_SITES = 100_000;
+    static final int MAX_RESPONSE_NODES = 256;
+    static final int MAX_CLAIMS = 16;
+    static final int MAX_WITNESSES_PER_CLAIM = 32;
+    static final int MAX_TOTAL_WITNESSES = 256;
     private static final Pattern HASH = Pattern.compile("[a-f0-9]{64}");
     private static final Set<String> REQUEST_KEYS = Set.of(
         "protocolVersion", "subsetVersion", "command", "kotlinInputSetSha256", "files");
@@ -80,7 +84,7 @@ public final class Main {
             if (!path.endsWith(".kt")) unsupported = true;
             receipts.add(row("path", path, "bytes", bytes, "sha256", sha256));
             manifest.add(row("path", path, "bytes", bytes, "sha256", sha256));
-            sources.add(new PsiIndex.Source(path, text));
+            sources.add(new PsiIndex.Source(path, sha256, text));
         }
 
         String computedDigest = Protocol.sha256(Protocol.canonicalBytes(manifest));
@@ -89,17 +93,18 @@ public final class Main {
             if (!rawFiles.isEmpty() || !requestDigest.equals(Protocol.sha256(Protocol.canonicalBytes(List.of())))) {
                 throw new IllegalArgumentException("describe requires the empty input set");
             }
-            return response(command, "accepted", null, requestDigest, receipts, constants());
+            return response(command, "accepted", null, requestDigest, receipts, constants(), List.of(), List.of());
         }
-        if (limit) return response(command, "rejected", "limit", requestDigest, receipts, null);
-        if (unsupported) return response(command, "rejected", "unsupported_script", requestDigest, receipts, null);
+        if (limit) return response(command, "rejected", "limit", requestDigest, receipts, null, List.of(), List.of());
+        if (unsupported) return response(command, "rejected", "unsupported_script", requestDigest, receipts, null, List.of(), List.of());
         PsiIndex.Result result = PsiIndex.analyze(sources);
         return response(command, result.rejectionCode() == null ? "accepted" : "rejected",
-            result.rejectionCode(), requestDigest, receipts, null);
+            result.rejectionCode(), requestDigest, receipts, null, result.nodes(), result.claims());
     }
 
     private static Map<String, Object> response(String command, String status, String rejection,
-            String digest, List<Map<String, Object>> files, Map<String, Object> constants) {
+            String digest, List<Map<String, Object>> files, Map<String, Object> constants,
+            List<Map<String, Object>> nodes, List<Map<String, Object>> claims) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("protocolVersion", (long) PROTOCOL_VERSION);
         response.put("subsetVersion", (long) SUBSET_VERSION);
@@ -109,8 +114,8 @@ public final class Main {
         response.put("kotlinInputSetSha256", digest);
         response.put("files", files);
         response.put("constants", constants);
-        response.put("nodes", List.of());
-        response.put("claims", List.of());
+        response.put("nodes", nodes);
+        response.put("claims", claims);
         return response;
     }
 
@@ -132,10 +137,10 @@ public final class Main {
         values.put("MAX_CFG_BLOCKS_PER_CALLABLE", 4_096L);
         values.put("MAX_CALL_DEPTH", 8L);
         values.put("MAX_FIXPOINT_ITERATIONS", 32L);
-        values.put("MAX_RESPONSE_NODES", 256L);
-        values.put("MAX_CLAIMS", 16L);
-        values.put("MAX_WITNESSES_PER_CLAIM", 32L);
-        values.put("MAX_TOTAL_WITNESSES", 256L);
+        values.put("MAX_RESPONSE_NODES", (long) MAX_RESPONSE_NODES);
+        values.put("MAX_CLAIMS", (long) MAX_CLAIMS);
+        values.put("MAX_WITNESSES_PER_CLAIM", (long) MAX_WITNESSES_PER_CLAIM);
+        values.put("MAX_TOTAL_WITNESSES", (long) MAX_TOTAL_WITNESSES);
         values.put("CACHE_MAX_ENTRIES", 32L);
         values.put("CACHE_MAX_ENCODED_BYTES", 16_777_216L);
         values.put("ANALYZER_TIMEOUT_MS", 30_000L);

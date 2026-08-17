@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
@@ -15,10 +16,172 @@ const BUILD = path.join(ROOT, "benchmarks/spatial-agent-bench/analyzer/build-ana
 const ANALYZER_DIR = path.dirname(BUILD);
 const ARTIFACT = path.join(ROOT, "benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/analyzer-v1.jar");
 const RECEIPT = path.join(ROOT, "benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/analyzer-build-receipt-v1.json");
+const DOMAIN = path.join(ANALYZER_DIR, "domain-v1.json");
+const JAVA_ROOT = path.join(ANALYZER_DIR, "src/main/java/com/agentbench/analyzer");
 const ARTIFACTS = path.dirname(path.dirname(ARTIFACT));
 const CLEAN_ENV = ["LANG=C", "LC_ALL=C", "TZ=UTC", "__CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0"];
 const RECEIPT_DOMAIN = Buffer.from("agentbench-analyzer-receipt-v1\0", "utf8");
+const RULE_ORDER = Object.freeze([
+  "spatial.project-entry", "spatial.container-topology", "spatial.entity-content", "spatial.ui-lifecycle",
+  "ecs.component-clone", "ecs.system-query", "ecs.frame-update", "ecs.lifecycle",
+  "state.single-source", "state.typed-handoff", "state.shared-read-write", "state.reopen-wiring",
+  "plane.retry-readiness", "plane.semantic-fallback", "plane.anchor-pose", "plane.cleanup-errors",
+]);
+const WITNESS_KINDS = Object.freeze([
+  "declaration", "callable_reference", "call", "argument", "property_read", "assignment",
+  "condition", "loop", "lambda", "return", "type_reference", "catch",
+]);
+const PROOF_FORMS_BY_RULE = Object.freeze({
+  "ecs.component-clone": ["expression-component-clone", "single-return-block-component-clone"],
+  "ecs.frame-update": ["assign-delta-update", "plus-assign-delta-update"],
+  "ecs.lifecycle": ["paired-system-lifecycle"],
+  "ecs.system-query": ["hoisted-query-scene-update"],
+  "plane.anchor-pose": ["same-anchor-pose-conversion"],
+  "plane.cleanup-errors": ["paired-plane-cleanup-status"],
+  "plane.retry-readiness": ["bounded-retained-load-retry"],
+  "plane.semantic-fallback": ["dominating-semantic-plane-fallback"],
+  "spatial.container-topology": ["direct-mixed-stage-open", "one-helper-mixed-stage-open", "two-helper-mixed-stage-open"],
+  "spatial.entity-content": ["spatial-view-entity-attachment"],
+  "spatial.project-entry": ["application-launch-root"],
+  "spatial.ui-lifecycle": ["themed-window-and-disposable-stage"],
+  "state.reopen-wiring": ["retained-state-close-reopen"],
+  "state.shared-read-write": ["same-authority-read-write"],
+  "state.single-source": ["shared-strong-authority"],
+  "state.typed-handoff": ["typed-bundle-roundtrip"],
+});
+const ACCEPTED_ALTERNATIVES_BY_RULE = Object.freeze({
+  "ecs.component-clone": {
+    "expression-component-clone": ["positional-fields", "named-fields"],
+    "single-return-block-component-clone": ["positional-fields", "named-fields"],
+  },
+  "ecs.frame-update": {
+    "assign-delta-update": ["direct-transform", "pure-helper-transform"],
+    "plus-assign-delta-update": ["direct-transform", "pure-helper-transform"],
+  },
+  "ecs.lifecycle": { "paired-system-lifecycle": ["direct-register-unregister"] },
+  "ecs.system-query": { "hoisted-query-scene-update": ["direct-query-use", "pure-helper-query-use"] },
+  "plane.anchor-pose": { "same-anchor-pose-conversion": ["direct-pose-conversion", "pure-helper-pose-conversion"] },
+  "plane.cleanup-errors": { "paired-plane-cleanup-status": ["direct-cleanup", "unique-helper-cleanup"] },
+  "plane.retry-readiness": { "bounded-retained-load-retry": ["bounded-for", "canonical-bounded-while"] },
+  "plane.semantic-fallback": { "dominating-semantic-plane-fallback": ["inline-selectors", "unique-helper-selectors"] },
+  "spatial.container-topology": {
+    "direct-mixed-stage-open": ["named-literal-stage-id", "named-const-stage-id", "named-source-symbol-stage-id", "positional-literal-stage-id", "positional-const-stage-id", "positional-source-symbol-stage-id"],
+    "one-helper-mixed-stage-open": ["named-literal-stage-id", "named-const-stage-id", "named-source-symbol-stage-id", "positional-literal-stage-id", "positional-const-stage-id", "positional-source-symbol-stage-id"],
+    "two-helper-mixed-stage-open": ["named-literal-stage-id", "named-const-stage-id", "named-source-symbol-stage-id", "positional-literal-stage-id", "positional-const-stage-id", "positional-source-symbol-stage-id"],
+  },
+  "spatial.entity-content": { "spatial-view-entity-attachment": ["direct-initial-entity", "unique-helper-initial-entity"] },
+  "spatial.project-entry": { "application-launch-root": ["direct-launch-import", "aliased-launch-import"] },
+  "spatial.ui-lifecycle": { "themed-window-and-disposable-stage": ["direct-theme-paired-dispose"] },
+  "state.reopen-wiring": { "retained-state-close-reopen": ["standard-store-reopen", "equivalent-repository-reopen"] },
+  "state.shared-read-write": { "same-authority-read-write": ["direct-container-summaries"] },
+  "state.single-source": { "shared-strong-authority": ["top-level-val", "object-singleton", "companion-held-singleton"] },
+  "state.typed-handoff": { "typed-bundle-roundtrip": ["direct-bundle-adapter", "unique-helper-bundle-adapter"] },
+});
+const COMPONENT_CANARY_SYMBOLS = Object.freeze([
+  { arguments: [], callbacks: [], effects: ["construct"], fqn: "com.pico.spatial.core.ecs.Component", kind: "constructor", memberPrecedence: "not_applicable", receiverAbstractType: null, returnAbstractType: "component", signature: "Component()" },
+  { arguments: [], callbacks: [], effects: [], fqn: "com.pico.spatial.core.ecs.Component", kind: "type", memberPrecedence: "not_applicable", receiverAbstractType: null, returnAbstractType: "component", signature: "open class Component" },
+  { arguments: [], callbacks: [], effects: ["construct"], fqn: "com.pico.spatial.core.ecs.Component.clone", kind: "member_function", memberPrecedence: "sdk_member_wins", receiverAbstractType: "component", returnAbstractType: "component", signature: "clone(): Component" },
+]);
+const EXPECTED_JAVA_SOURCES = Object.freeze([
+  "AbstractInterpreter.java", "Main.java", "Protocol.java", "PsiIndex.java", "Rules.java",
+].map((name) => `benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/${name}`));
+const EXPECTED_JAR_ENTRIES = Object.freeze([
+  "com/agentbench/analyzer/AbstractInterpreter.class",
+  "com/agentbench/analyzer/Main.class",
+  "com/agentbench/analyzer/Protocol$Parser.class",
+  "com/agentbench/analyzer/Protocol.class",
+  "com/agentbench/analyzer/PsiIndex$Edge.class",
+  "com/agentbench/analyzer/PsiIndex$EdgeRole.class",
+  "com/agentbench/analyzer/PsiIndex$FileUnit.class",
+  "com/agentbench/analyzer/PsiIndex$ImportEntry.class",
+  "com/agentbench/analyzer/PsiIndex$Node.class",
+  "com/agentbench/analyzer/PsiIndex$NodeFlag.class",
+  "com/agentbench/analyzer/PsiIndex$NodeKind.class",
+  "com/agentbench/analyzer/PsiIndex$Program.class",
+  "com/agentbench/analyzer/PsiIndex$Result.class",
+  "com/agentbench/analyzer/PsiIndex$SnapshotRejected.class",
+  "com/agentbench/analyzer/PsiIndex$Source.class",
+  "com/agentbench/analyzer/PsiIndex$Token.class",
+  "com/agentbench/analyzer/PsiIndex$TokenKind.class",
+  "com/agentbench/analyzer/PsiIndex$WitnessKind.class",
+  "com/agentbench/analyzer/PsiIndex$WitnessNode.class",
+  "com/agentbench/analyzer/PsiIndex.class",
+  "com/agentbench/analyzer/Rules$AlternativeSpec.class",
+  "com/agentbench/analyzer/Rules$Analysis.class",
+  "com/agentbench/analyzer/Rules$ArgumentSpec.class",
+  "com/agentbench/analyzer/Rules$CallbackSpec.class",
+  "com/agentbench/analyzer/Rules$Domain.class",
+  "com/agentbench/analyzer/Rules$RuleSpec.class",
+  "com/agentbench/analyzer/Rules$SymbolSpec.class",
+  "com/agentbench/analyzer/Rules.class",
+  "domain-v1.json",
+]);
+const SYMBOL_KINDS = new Set(["type", "constructor", "top_level_function", "member_function", "extension_function", "member_property"]);
+const MEMBER_PRECEDENCE = new Set(["not_applicable", "sdk_member_wins", "source_extension_if_no_sdk_member"]);
+const CALLBACK_ROLES = new Set([
+  "application_entry", "window_content", "stage_content", "launched_effect", "button_click", "coroutine_body",
+  "disposable_effect", "dispose_cleanup", "spatial_initial", "spatial_attachments", "spatial_update",
+  "collection_element", "collection_predicate", "collection_selector",
+]);
+const INVOCATION_MODELS = new Set([
+  "source_root", "possible_path", "user_action", "launched_path", "acquire_path", "cleanup_path",
+  "element_flow", "predicate_flow", "selector_flow",
+]);
+const EFFECTS = new Set([
+  "read", "mutate", "construct", "replace", "unknown_escape", "open", "close", "acquire", "release",
+  "load", "readiness", "convert", "place", "status_assign",
+]);
+const ABSTRACT_TYPES = new Set([
+  "boolean", "int", "long", "float", "double", "string", "unit", "java_class", "callable",
+  "immutable_iterable", "immutable_list", "integer_range", "coroutine_scope", "android_application",
+  "spatial_launch_activity", "bundle", "spatial_app_scope", "spatial_navigator", "stage_style", "spatial_content",
+  "component", "component_store", "entity", "entity_collection", "entity_query_condition", "ecs_system", "scene",
+  "scene_update_context", "transform_component", "vector3", "quat", "cancellable", "semantic_label", "plane_anchor",
+  "plane_anchor_collection", "plane_geometry", "plane_orientation", "plane_tracking_manager",
+]);
 function hash(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
+function exactKeys(value, keys, label) {
+  assert.equal(value !== null && Object.getPrototypeOf(value) === Object.prototype, true, `${label} must be a plain object`);
+  assert.deepEqual(Object.keys(value).sort(), [...keys].sort(), `${label} keys`);
+}
+function uniqueStrings(values, label) {
+  assert.equal(Array.isArray(values) && values.length > 0, true, `${label} must be a nonempty array`);
+  assert.equal(values.every((value) => typeof value === "string" && value.length > 0), true, `${label} strings`);
+  assert.equal(new Set(values).size, values.length, `${label} uniqueness`);
+}
+function protocolFrame(value) {
+  const bytes = Buffer.from(canonicalJson(value), "utf8");
+  const header = Buffer.alloc(8);
+  header.writeBigUInt64BE(BigInt(bytes.length));
+  return Buffer.concat([header, bytes]);
+}
+function framedResponse(bytes) {
+  assert.equal(Buffer.isBuffer(bytes), true);
+  assert.equal(bytes.length >= 8, true, "response frame header");
+  assert.equal(bytes.readBigUInt64BE(0), BigInt(bytes.length - 8), "response frame length");
+  const text = bytes.subarray(8).toString("utf8");
+  const value = JSON.parse(text);
+  assert.equal(canonicalJson(value), text, "canonical response payload");
+  return value;
+}
+function analyzeRequest(pathName, content) {
+  const bytes = Buffer.from(content, "utf8");
+  const file = { path: pathName, bytes: bytes.length, sha256: hash(bytes), contentBase64: bytes.toString("base64") };
+  const manifest = [{ path: file.path, bytes: file.bytes, sha256: file.sha256 }];
+  return {
+    protocolVersion: 1,
+    subsetVersion: 1,
+    command: "analyze",
+    kotlinInputSetSha256: hash(canonicalJson(manifest)),
+    files: [file],
+  };
+}
+function temporaryDirectory(t, prefix) {
+  const directory = path.join(os.tmpdir(), `${prefix}-${process.pid}-${crypto.randomUUID()}`);
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.mkdirSync(directory, { mode: 0o700 });
+  return directory;
+}
 function mode(stat) { return (stat.mode & 0o777).toString(8).padStart(4, "0"); }
 function treeIdentity(root) {
   const entries = []; const counts = { entries: 0, files: 0, directories: 0, symlinks: 0, fileBytes: 0 };
@@ -45,6 +208,58 @@ function sourceIndex(rows) {
     facts: Object.freeze({ gradle: Object.freeze({}), manifest: Object.freeze({}) }),
     factEvidence: Object.freeze([]),
   });
+}
+const SEMANTIC_FAKE_SOURCE = `package fake.semantic
+
+import com.pico.spatial.core.ecs.Component
+
+class SignalPart(
+    val active: Boolean = true,
+    val phase: Int = 0,
+    val marker: String = "🧭",
+) : Component() {
+    override fun clone(): SignalPart = SignalPart(active, phase, marker)
+}
+`;
+const EXPRESSION_CLONE_SOURCE = `package canary.alpha
+
+import com.pico.spatial.core.ecs.Component
+
+class RelayPart(
+    val active: Boolean = true,
+    val phase: Int = 0,
+    val label: String = "idle",
+) : Component() {
+    override fun clone(): RelayPart = RelayPart(active, phase, label)
+}
+`;
+const BLOCK_CLONE_SOURCE = `package renamed.beta
+
+import com.pico.spatial.core.ecs.Component as SpatialComponent
+
+class TelemetryShard(
+    val ready: Boolean = true,
+    val sweep: Float = 0f,
+) : SpatialComponent() {
+    override fun clone(): TelemetryShard {
+        return TelemetryShard(ready = ready, sweep = sweep)
+    }
+}
+`;
+const DEFAULT_PACKAGE_SOURCE = `class DefaultRoot
+fun answer(): Int = 42
+`;
+function assertCloneResponse(response, proofForm, paths) {
+  assert.equal(response.analysisStatus, "accepted");
+  assert.equal(response.rejectionCode, null);
+  assert.equal(response.claims.length, 1);
+  assert.equal(response.claims[0].ruleId, "ecs.component-clone");
+  assert.equal(response.claims[0].proofForm, proofForm);
+  assert.equal(response.claims[0].witnessNodeIds.length > 0, true);
+  assert.equal(response.nodes.length > 0, true);
+  assert.deepEqual(response.nodes.map((node) => node.nodeId), [...response.claims[0].witnessNodeIds].sort());
+  assert.equal(response.nodes.every((node) => paths.has(node.path)), true);
+  assert.equal(response.nodes.every((node) => node.structuralToken === true || node.kind === "argument"), true);
 }
 async function copiedBridge(t, scenarioRef, calls, artifactRoot = null) {
   const original = fs.readFileSync(BRIDGE, "utf8");
@@ -158,6 +373,1101 @@ function refreshReplicaReceipt(replica) {
 function runScrubbedNode(script, args = []) {
   return spawnSync("/usr/bin/env", ["-i", ...CLEAN_ENV, "/usr/local/bin/node", script, ...args], { encoding: "utf8" });
 }
+test("domain bytes freeze the canonical closed subset-v1 vocabulary and clone canary", () => {
+  const domainBytes = fs.readFileSync(DOMAIN);
+  const domainText = domainBytes.toString("utf8");
+  const domain = JSON.parse(domainText);
+  assert.equal(domainText, canonicalJson(domain), "domain must be canonical UTF-8 JSON with no BOM, whitespace, or trailing LF");
+  exactKeys(domain, new Set([
+    "acceptedAlternativesByRule", "analyzerName", "domainVersion", "proofFormsByRule",
+    "ruleOrder", "symbols", "witnessKinds",
+  ]), "domain");
+  assert.equal(domain.analyzerName, "supported-subset-abstract-interpreter-v1");
+  assert.equal(domain.domainVersion, 1);
+  assert.deepEqual(domain.ruleOrder, RULE_ORDER);
+  assert.deepEqual(domain.witnessKinds, WITNESS_KINDS);
+  const sortedRules = [...RULE_ORDER].sort();
+  assert.deepEqual(Object.keys(domain.proofFormsByRule), sortedRules);
+  assert.deepEqual(Object.keys(domain.acceptedAlternativesByRule), sortedRules);
+  assert.deepEqual(domain.proofFormsByRule, PROOF_FORMS_BY_RULE);
+  assert.deepEqual(domain.acceptedAlternativesByRule, ACCEPTED_ALTERNATIVES_BY_RULE);
+  assert.equal(Object.values(domain.acceptedAlternativesByRule).flatMap((forms) => Object.values(forms)).reduce((sum, alternatives) => sum + alternatives.length, 0), 50);
+  for (const ruleId of RULE_ORDER) {
+    const forms = domain.proofFormsByRule[ruleId];
+    uniqueStrings(forms, `${ruleId} proof forms`);
+    const alternatives = domain.acceptedAlternativesByRule[ruleId];
+    exactKeys(alternatives, new Set(forms), `${ruleId} alternatives`);
+    assert.deepEqual(Object.keys(alternatives), [...forms].sort(), `${ruleId} alternative key order`);
+    for (const proofForm of forms) uniqueStrings(alternatives[proofForm], `${ruleId}/${proofForm} alternatives`);
+  }
+  assert.deepEqual(domain.proofFormsByRule["ecs.component-clone"], [
+    "expression-component-clone", "single-return-block-component-clone",
+  ]);
+  assert.equal(Array.isArray(domain.symbols), true);
+  const symbolIdentities = [];
+  for (const [index, symbol] of domain.symbols.entries()) {
+    exactKeys(symbol, new Set([
+      "arguments", "callbacks", "effects", "fqn", "kind", "memberPrecedence",
+      "receiverAbstractType", "returnAbstractType", "signature",
+    ]), `symbols[${index}]`);
+    assert.equal(typeof symbol.fqn === "string" && symbol.fqn.length > 0, true);
+    assert.equal(typeof symbol.signature === "string" && symbol.signature.length > 0, true);
+    assert.equal(SYMBOL_KINDS.has(symbol.kind), true, `symbols[${index}].kind`);
+    assert.equal(MEMBER_PRECEDENCE.has(symbol.memberPrecedence), true, `symbols[${index}].memberPrecedence`);
+    for (const [label, abstractType] of [["receiver", symbol.receiverAbstractType], ["return", symbol.returnAbstractType]]) {
+      assert.equal(abstractType === null || ABSTRACT_TYPES.has(abstractType), true, `symbols[${index}] ${label} abstract type`);
+    }
+    assert.equal(Array.isArray(symbol.arguments), true);
+    assert.deepEqual(symbol.arguments.map((argument) => argument.position), symbol.arguments.map((_, position) => position));
+    for (const argument of symbol.arguments) {
+      exactKeys(argument, new Set(["abstractType", "name", "position"]), "domain argument");
+      assert.equal(ABSTRACT_TYPES.has(argument.abstractType), true);
+      assert.equal(argument.name === null || (typeof argument.name === "string" && argument.name.length > 0), true);
+    }
+    assert.equal(Array.isArray(symbol.callbacks), true);
+    for (const callback of symbol.callbacks) {
+      exactKeys(callback, new Set(["argumentPosition", "invocationModel", "role"]), "domain callback");
+      assert.equal(Number.isSafeInteger(callback.argumentPosition) && callback.argumentPosition >= 0, true);
+      assert.equal(callback.argumentPosition < symbol.arguments.length, true);
+      assert.equal(CALLBACK_ROLES.has(callback.role), true);
+      assert.equal(INVOCATION_MODELS.has(callback.invocationModel), true);
+    }
+    assert.equal(Array.isArray(symbol.effects), true);
+    assert.equal(new Set(symbol.effects).size, symbol.effects.length);
+    assert.equal(symbol.effects.every((effect) => EFFECTS.has(effect)), true);
+    symbolIdentities.push(canonicalJson({ fqn: symbol.fqn, signature: symbol.signature }));
+  }
+  assert.deepEqual(symbolIdentities, [...new Set(symbolIdentities)].sort(), "canonical unique symbol order");
+  const cloneRows = domain.symbols.filter((symbol) => symbol.fqn === "com.pico.spatial.core.ecs.Component"
+    || symbol.fqn === "com.pico.spatial.core.ecs.Component.clone");
+  assert.deepEqual(cloneRows, COMPONENT_CANARY_SYMBOLS, "clone canary must preserve the three exact audited Component rows");
+});
+test("domain build boundary rejects malformed noncanonical and closed-schema tracked bytes before publication", (t) => {
+  const replica = analyzerReplica(t);
+  const domainPath = path.join(replica.analyzer, "domain-v1.json");
+  const canonical = fs.readFileSync(domainPath);
+  const parsed = JSON.parse(canonical);
+  const beforeJar = fs.readFileSync(path.join(replica.artifact, "analyzer-v1.jar"));
+  const beforeReceipt = fs.readFileSync(path.join(replica.artifact, "analyzer-build-receipt-v1.json"));
+  const withUnknownKey = structuredClone(parsed); withUnknownKey.surprise = true;
+  const missingField = structuredClone(parsed); delete missingField.witnessKinds;
+  const invalidEnum = structuredClone(parsed); invalidEnum.symbols[0].kind = "mystery_constructor";
+  const invalidRegistry = structuredClone(parsed); invalidRegistry.proofFormsByRule["ecs.component-clone"] = ["expression-component-clone"];
+  const attacks = [
+    ["malformed", Buffer.from("{")],
+    ["noncanonical whitespace", Buffer.concat([Buffer.from(" "), canonical])],
+    ["duplicate key", Buffer.from(canonical.toString("utf8").replace('"domainVersion":1', '"domainVersion":1,"domainVersion":1'))],
+    ["unknown field", Buffer.from(canonicalJson(withUnknownKey))],
+    ["missing field", Buffer.from(canonicalJson(missingField))],
+    ["closed enum", Buffer.from(canonicalJson(invalidEnum))],
+    ["registry mismatch", Buffer.from(canonicalJson(invalidRegistry))],
+  ];
+  for (const [label, bytes] of attacks) {
+    fs.writeFileSync(domainPath, bytes);
+    assert.notEqual(runScrubbedNode(replica.build, ["verify"]).status, 0, `${label} verify`);
+    const rejected = runScrubbedNode(replica.build, ["clean-build-twice"]);
+    assert.notEqual(rejected.status, 0, `${label} clean build`);
+    assert.match(rejected.stderr, /domain|canonical|JSON|schema|vocabulary|key|kind/i, label);
+    assert.deepEqual(fs.readFileSync(path.join(replica.artifact, "analyzer-v1.jar")), beforeJar, `${label} JAR publication`);
+    assert.deepEqual(fs.readFileSync(path.join(replica.artifact, "analyzer-build-receipt-v1.json")), beforeReceipt, `${label} receipt publication`);
+    fs.writeFileSync(domainPath, canonical);
+    assert.equal(runScrubbedNode(replica.build, ["verify"]).status, 0, `${label} restored verify`);
+  }
+});
+test("analyzer artifact semantic handoff inventory binds five sources, 29 entries, and actual class references", () => {
+  const receipt = JSON.parse(fs.readFileSync(RECEIPT, "utf8"));
+  const expectedInputs = [
+    "benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs",
+    "benchmarks/spatial-agent-bench/analyzer/dependencies-v1.json",
+    "benchmarks/spatial-agent-bench/analyzer/domain-v1.json",
+    ...EXPECTED_JAVA_SOURCES,
+    "benchmarks/spatial-agent-bench/analyzer/toolchain-v1.json",
+    "benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs",
+  ].sort();
+  assert.deepEqual(receipt.sourceInputs.map((row) => row.path), expectedInputs);
+  assert.deepEqual(receipt.sourceInputs.filter((row) => row.path.endsWith(".java")).map((row) => row.path), EXPECTED_JAVA_SOURCES);
+  for (const relative of EXPECTED_JAVA_SOURCES) assert.equal(fs.existsSync(path.join(ROOT, ...relative.split("/"))), true, relative);
+  assert.deepEqual(receipt.build.jarEntries, EXPECTED_JAR_ENTRIES);
+  assert.equal(Array.isArray(receipt.build.classReferences) && receipt.build.classReferences.length > 0, true);
+  assert.deepEqual(receipt.build.classReferences, [...new Set(receipt.build.classReferences)].sort());
+  assert.equal(hash(fs.readFileSync(path.join(JAVA_ROOT, "Protocol.java"))), "55adda83933f1c17a366689f5e311ef8f596a157f38ea33b1c8cd882e2bf1299");
+});
+test("semantic handoff fake accepts canonical witnesses and describe remains semantically empty", async (t) => {
+  const scenario = { value: "semantic-valid" };
+  const calls = { count: 0 };
+  const bridge = await copiedBridge(t, scenario, calls);
+  const index = sourceIndex([{ path: "src/fake/Semantic.kt", content: SEMANTIC_FAKE_SOURCE }]);
+  const first = bridge.analyzeKotlin(index);
+  assertCloneResponse(first, "expression-component-clone", new Set(["src/fake/Semantic.kt"]));
+  assert.equal(Object.isFrozen(first), true);
+  assert.equal(Object.isFrozen(first.nodes[0]), true);
+  assert.equal(Object.isFrozen(first.claims[0].witnessNodeIds), true);
+  assertCloneResponse(bridge.analyzeKotlin(index), "expression-component-clone", new Set(["src/fake/Semantic.kt"]));
+  assert.equal(calls.count, 1, "validated semantic bytes must be cacheable");
+  scenario.value = "semantic-valid-mixed";
+  const mixedPath = "src/fake/MixedSemantic.kt";
+  const mixedSource = `${SEMANTIC_FAKE_SOURCE}\nfun literalBoundary(): Int = listOf(7).first()\n`;
+  const mixed = bridge.analyzeKotlin(sourceIndex([{ path: mixedPath, content: mixedSource }]));
+  assertCloneResponse(mixed, "expression-component-clone", new Set([mixedPath]));
+  assert.equal(mixed.nodes.some((node) => node.structuralToken === true), true);
+  const literal = mixed.nodes.find((node) => node.structuralToken === false && node.kind === "argument");
+  assert.equal(literal !== undefined, true);
+  assert.equal(mixedSource.slice(literal.startUtf16, literal.endUtf16), "7", "literal witness must be a real call-argument span");
+  scenario.value = "describe-semantic";
+  assert.throws(() => bridge.describeKotlinAnalyzer(), /describe|semantic|nodes/i);
+  assert.equal(calls.count, 3);
+});
+test("semantic handoff validator rejects the full response node claim witness union and cache mutation matrix", async (t) => {
+  const scenario = { value: "semantic-valid" };
+  const calls = { count: 0 };
+  const bridge = await copiedBridge(t, scenario, calls);
+  const faults = [
+    ["semantic-unknown-response-key", /unknown|missing.*key/i],
+    ["semantic-rejected-nodes", /rejected|nodes|semantic/i],
+    ["semantic-rejected-claims", /rejected|claims|semantic/i],
+    ["semantic-unknown-node-key", /node.*key|unknown|missing/i],
+    ["semantic-missing-node-key", /node.*key|unknown|missing/i],
+    ["semantic-unknown-node-kind", /node.*kind|witness.*kind/i],
+    ["semantic-path-unnormalized", /path/i],
+    ["semantic-path-unknown", /path|request file/i],
+    ["semantic-file-hash", /file.*hash|sha256/i],
+    ["semantic-span-negative", /span|offset|start/i],
+    ["semantic-span-reversed", /span|offset|end/i],
+    ["semantic-span-out-of-bounds", /span|bound|offset/i],
+    ["semantic-surrogate-start", /surrogate|boundary/i],
+    ["semantic-surrogate-end", /surrogate|boundary/i],
+    ["semantic-text-hash", /text.*hash|substring/i],
+    ["semantic-node-id", /node.*id|digest/i],
+    ["semantic-node-order", /node.*order|sorted/i],
+    ["semantic-node-duplicate", /node.*duplicate|unique|order/i],
+    ["semantic-node-over-limit", /node.*limit|node.*bound|too many/i],
+    ["semantic-unknown-claim-key", /claim.*key|unknown|missing/i],
+    ["semantic-missing-claim-key", /claim.*key|unknown|missing/i],
+    ["semantic-unknown-rule", /rule/i],
+    ["semantic-unknown-proof", /proof/i],
+    ["semantic-duplicate-claim", /claim.*duplicate|one claim|order/i],
+    ["semantic-claim-order", /claim.*order|rule.*order/i],
+    ["semantic-claim-over-limit", /claim.*limit|claim.*bound|too many/i],
+    ["semantic-empty-witness-empty-catalog", /witness|empty/i],
+    ["semantic-empty-catalog", /catalog|witness|node/i],
+    ["semantic-witness-order", /witness.*order|sorted/i],
+    ["semantic-witness-duplicate", /witness.*duplicate|unique|order/i],
+    ["semantic-witness-unknown", /witness|catalog|node/i],
+    ["semantic-witness-digest", /witness.*digest/i],
+    ["semantic-witness-over-limit", /witness.*limit|witness.*bound|too many/i],
+    ["semantic-total-witness-over-limit", /total.*witness|witness.*limit|too many/i],
+    ["semantic-literal-only", /literal|structural/i],
+    ["semantic-nonstructural-nonargument", /nonstructural|literal|argument/i],
+    ["semantic-structural-type", /structural.*boolean|structural.*type/i],
+    ["semantic-union-orphan", /union|orphan|catalog/i],
+    ["semantic-union-missing", /union|missing|catalog|witness/i],
+  ];
+  for (const [index, [fault, expected]] of faults.entries()) {
+    const project = sourceIndex([{
+      path: `src/fake/Mutation${String(index).padStart(2, "0")}.kt`,
+      content: `${SEMANTIC_FAKE_SOURCE}\n// mutation ${index}\n`,
+    }]);
+    scenario.value = fault;
+    assert.throws(() => bridge.analyzeKotlin(project), expected, fault);
+    scenario.value = "semantic-valid";
+    assertCloneResponse(bridge.analyzeKotlin(project), "expression-component-clone", new Set([project.files[0].path]));
+  }
+  assert.equal(calls.count, faults.length * 2, "invalid semantic bytes must never enter the cache");
+});
+test("semantic handoff real child proves expression and renamed block clone forms all-or-nothing", () => {
+  const expressionPath = "src/canary/alpha/RelayPart.kt";
+  const expression = analyzeKotlin(sourceIndex([{ path: expressionPath, content: EXPRESSION_CLONE_SOURCE }]));
+  assertCloneResponse(expression, "expression-component-clone", new Set([expressionPath]));
+
+  const blockPath = "moved/renamed/beta/TelemetryShard.kt";
+  const block = analyzeKotlin(sourceIndex([{ path: blockPath, content: BLOCK_CLONE_SOURCE }]));
+  assertCloneResponse(block, "single-return-block-component-clone", new Set([blockPath]));
+
+  const expressionZero = analyzeKotlin(sourceIndex([{
+    path: "src/canary/negative/RelayPart.kt",
+    content: EXPRESSION_CLONE_SOURCE.replace("RelayPart(active, phase, label)", "RelayPart()"),
+  }]));
+  assert.equal(expressionZero.analysisStatus, "accepted");
+  assert.deepEqual(expressionZero.nodes, []);
+  assert.deepEqual(expressionZero.claims, []);
+
+  const blockZero = analyzeKotlin(sourceIndex([{
+    path: "moved/renamed/negative/TelemetryShard.kt",
+    content: BLOCK_CLONE_SOURCE.replace("TelemetryShard(ready = ready, sweep = sweep)", "TelemetryShard()"),
+  }]));
+  assert.equal(blockZero.analysisStatus, "accepted");
+  assert.deepEqual(blockZero.nodes, []);
+  assert.deepEqual(blockZero.claims, []);
+
+  const malformed = analyzeKotlin(sourceIndex([
+    { path: expressionPath, content: EXPRESSION_CLONE_SOURCE },
+    { path: "src/canary/Broken.kt", content: "package canary.broken\nfun broken( {\n" },
+  ]));
+  assert.equal(malformed.analysisStatus, "rejected");
+  assert.equal(malformed.rejectionCode, "parse");
+  assert.deepEqual(malformed.nodes, []);
+  assert.deepEqual(malformed.claims, []);
+});
+test("semantic handoff clone canary rejects shadowed, parameterized, spread, and ineligible declarations", () => {
+  const variants = new Map([
+    ["class type parameter shadows imported Component", EXPRESSION_CLONE_SOURCE
+      .replace("class RelayPart(", "class RelayPart<Component>(")],
+    ["clone type parameter shadows RelayPart", EXPRESSION_CLONE_SOURCE
+      .replace("override fun clone(): RelayPart", "override fun <RelayPart> clone(): RelayPart")],
+    ["same-file Component typealias shadows import", EXPRESSION_CLONE_SOURCE
+      .replace("import com.pico.spatial.core.ecs.Component\n", "import com.pico.spatial.core.ecs.Component\n\ntypealias Component = Substitute\n")],
+    ["parameterized Component super call", EXPRESSION_CLONE_SOURCE
+      .replace(": Component()", ": Component<String>()")],
+    ["star-projected Component super call", EXPRESSION_CLONE_SOURCE
+      .replace(": Component()", ": Component<*>()")],
+    ["bare Component super type", EXPRESSION_CLONE_SOURCE
+      .replace(": Component()", ": Component")],
+    ["additional zero-argument super constructor", EXPRESSION_CLONE_SOURCE
+      .replace("import com.pico.spatial.core.ecs.Component\n", "import com.pico.spatial.core.ecs.Component\n\nopen class Other\n")
+      .replace(": Component()", ": Component(), Other()")],
+    ["delegated super type", EXPRESSION_CLONE_SOURCE
+      .replace("import com.pico.spatial.core.ecs.Component\n", "import com.pico.spatial.core.ecs.Component\n\ninterface Marker\nval marker = object : Marker {}\n")
+      .replace(": Component()", ": Component(), Marker by marker")],
+    ["parameterized clone return", EXPRESSION_CLONE_SOURCE
+      .replace("clone(): RelayPart", "clone(): RelayPart<String>")],
+    ["foreign qualified clone return", EXPRESSION_CLONE_SOURCE
+      .replace("clone(): RelayPart", "clone(): foreign.RelayPart")],
+    ["parameterized RelayPart constructor call", EXPRESSION_CLONE_SOURCE
+      .replace("= RelayPart(active, phase, label)", "= RelayPart<String>(active, phase, label)")],
+    ["star-projected RelayPart constructor call", EXPRESSION_CLONE_SOURCE
+      .replace("= RelayPart(active, phase, label)", "= RelayPart<*>(active, phase, label)")],
+    ["spread RelayPart constructor argument", EXPRESSION_CLONE_SOURCE
+      .replace("RelayPart(active, phase, label)", "RelayPart(*active, phase, label)")],
+    ["named spread RelayPart constructor argument", EXPRESSION_CLONE_SOURCE
+      .replace("RelayPart(active, phase, label)", "RelayPart(active = *active, phase = phase, label = label)")],
+    ["abstract candidate class", EXPRESSION_CLONE_SOURCE
+      .replace("class RelayPart(", "abstract class RelayPart(")],
+    ["annotation candidate class", EXPRESSION_CLONE_SOURCE
+      .replace("class RelayPart(", "annotation class RelayPart(")],
+    ["value candidate class", EXPRESSION_CLONE_SOURCE
+      .replace("class RelayPart(", "value class RelayPart(")],
+    ["enum candidate class", EXPRESSION_CLONE_SOURCE
+      .replace("class RelayPart(", "enum class RelayPart(")
+      .replace(") : Component() {", ") : Component() {\n    ;")],
+    ["sealed candidate class", EXPRESSION_CLONE_SOURCE
+      .replace("class RelayPart(", "sealed class RelayPart(")],
+    ["mutating initializer block", EXPRESSION_CLONE_SOURCE
+      .replace(") : Component() {", ") : Component() {\n    init { active = !active }")],
+    ["construction-time body property initializer", EXPRESSION_CLONE_SOURCE
+      .replace(") : Component() {", ") : Component() {\n    val eager = phase.also { phase += 1 }")],
+    ["construction-time delegated body property", EXPRESSION_CLONE_SOURCE
+      .replace(") : Component() {", ") : Component() {\n    val eager by run { phase += 1; lazy { 0 } }")],
+    ["context receiver on candidate class", EXPRESSION_CLONE_SOURCE
+      .replace("class RelayPart(", "context(String)\nclass RelayPart(")],
+    ["context receiver on clone", EXPRESSION_CLONE_SOURCE
+      .replace("    override fun clone(): RelayPart", "    context(String)\n    override fun clone(): RelayPart")],
+    ["suspend clone", EXPRESSION_CLONE_SOURCE
+      .replace("override fun clone()", "override suspend fun clone()")],
+    ["private clone", EXPRESSION_CLONE_SOURCE
+      .replace("override fun clone()", "private override fun clone()")],
+    ["protected clone", EXPRESSION_CLONE_SOURCE
+      .replace("override fun clone()", "protected override fun clone()")],
+    ["internal clone", EXPRESSION_CLONE_SOURCE
+      .replace("override fun clone()", "internal override fun clone()")],
+    ["local nested candidate exclusion", `package canary.alpha
+
+import com.pico.spatial.core.ecs.Component
+
+fun host() {
+    class RelayPart(
+        val active: Boolean = true,
+        val phase: Int = 0,
+        val label: String = "idle",
+    ) : Component() {
+        override fun clone(): RelayPart = RelayPart(active, phase, label)
+    }
+    fun competitor() {
+        val RelayPart: (Boolean, Int, String) -> RelayPart = { active, phase, label ->
+            RelayPart(active, phase, label)
+        }
+        RelayPart(true, 0, "ready")
+    }
+}`],
+    ["wrong-labeled block return", EXPRESSION_CLONE_SOURCE
+      .replace("override fun clone(): RelayPart = RelayPart(active, phase, label)",
+        "override fun clone(): RelayPart {\n        return@wrong RelayPart(active, phase, label)\n    }")],
+  ]);
+  for (const [name, content] of variants) {
+    const response = analyzeKotlin(sourceIndex([{ path: `src/canary/negative/${name.replace(/[^A-Za-z0-9]+/g, "-")}.kt`, content }]));
+    assert.equal(response.analysisStatus, "accepted", name);
+    assert.equal(response.rejectionCode, null, name);
+    assert.deepEqual(response.nodes, [], name);
+    assert.deepEqual(response.claims, [], name);
+  }
+});
+test("semantic handoff real child accepts a complete default-package source without claims", () => {
+  const response = analyzeKotlin(sourceIndex([{
+    path: "src/defaultpkg/DefaultRoot.kt",
+    content: DEFAULT_PACKAGE_SOURCE,
+  }]));
+  assert.equal(response.analysisStatus, "accepted");
+  assert.equal(response.rejectionCode, null);
+  assert.deepEqual(response.nodes, []);
+  assert.deepEqual(response.claims, []);
+});
+test("semantic handoff real analyzer accepts the exact 8388608-byte trivia-heavy boundary", () => {
+  const rows = Array.from({ length: 8 }, (_, index) => {
+    const prefix = `package stress.trivia${index}\n`;
+    return {
+      path: `src/stress/Trivia${index}.kt`,
+      content: `${prefix}//${"x".repeat(1_048_576 - Buffer.byteLength(prefix) - 3)}\n`,
+    };
+  });
+  assert.equal(rows.every((row) => Buffer.byteLength(row.content) === 1_048_576), true);
+  const index = sourceIndex(rows);
+  assert.equal(index.totalBytes, 8_388_608);
+  const response = analyzeKotlin(index);
+  assert.equal(response.analysisStatus, "accepted");
+  assert.equal(response.rejectionCode, null);
+  assert.deepEqual(response.nodes, []);
+  assert.deepEqual(response.claims, []);
+});
+test("semantic handoff CatalogProbe compiles only against the receipt-bound frozen snapshot API", (t) => {
+  const receipt = JSON.parse(fs.readFileSync(RECEIPT, "utf8"));
+  const temporary = temporaryDirectory(t, "agentbench-catalog-probe");
+  const sourceRoot = path.join(temporary, "source");
+  const classes = path.join(temporary, "classes");
+  const home = path.join(temporary, "home");
+  const temporaryFiles = path.join(temporary, "tmp");
+  for (const directory of [sourceRoot, classes, home, temporaryFiles]) fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const catalogKotlin = `package catalog.matrix
+
+import androidx.compose.runtime.Composable
+import kotlin.String as Text
+
+// catalog-trivia-line
+/* catalog-trivia-block */
+annotation class Marker(val name: String)
+sealed interface SealedThing
+open class Base
+object Singleton
+
+@Composable
+fun composed() {
+    targetLambda(1) { number -> number + 1 }
+}
+
+@Marker(name = "box")
+data class Box<T>(
+    val value: Int = 1,
+    var text: Text = "idle",
+) : Base(), Runnable {
+    companion object { const val CONST: Int = 1 }
+    override fun run() {}
+    suspend fun suspending() = target()
+    private fun hidden() {}
+    fun body(arg: Int): Int {
+        var local = arg
+        local = local + 1
+        local += 1
+        val binary = local + 1
+        val prefix = -binary
+        local++
+        val indexed = listOf<Int>(1)[0]
+        val conditional = if (binary > 0) binary else 0
+        val chosen = when (binary) {
+            in 1..2 -> 1
+            is Int -> 2
+            else -> 0
+        }
+        try { target() } catch (error: Exception) { target() }
+        outer@ for (item in listOf(1)) {
+            if (item == 0) continue@outer else break@outer
+        }
+        while (local > 0) { local-- }
+        do { local-- } while (local > 0)
+        val callable = ::target
+        val klass = Box::class
+        val lambda: (Int) -> Int = { number -> number + 1 }
+        val safe = text?.length
+        val qualified = this.text.length
+        val template = "value=$binary"
+        val floating = 1.0f
+        val truth = true
+        val absent: Text? = null
+        val fallback = absent ?: "fallback"
+        val cast = text as Text
+        val named = Box<Int>(value = 1, text = "named")
+        val punctuation = 1; local = punctuation
+        return target()
+    }
+}
+
+fun target(): Int = 1
+`;
+  const probeSource = `package com.agentbench.analyzer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+public final class CatalogProbe {
+  private static final String LIMIT_PACKAGE = "package limits\\n";
+  private static final int PSI_LINE_COMMENTS = 249_996;
+  private static final int DECLARATION_LIMIT = 25_000;
+  private static final int CALL_MAX_ACCEPTED = 71_425;
+  private static final int CALL_LIMIT = 100_000;
+  private static final int MAXIMAL_COMMENTS = 149_996;
+  private static final String CATALOG = ${JSON.stringify(catalogKotlin)};
+  private static final String DEFAULT_PACKAGE = ${JSON.stringify(DEFAULT_PACKAGE_SOURCE)};
+  private CatalogProbe() {}
+
+  private static final class Digest {
+    private final MessageDigest value;
+    Digest(String domain) {
+      try { value = MessageDigest.getInstance("SHA-256"); }
+      catch (NoSuchAlgorithmException error) { throw new IllegalStateException(error); }
+      add(domain);
+    }
+    void add(String field) {
+      if (field == null) { addLength(-1); return; }
+      byte[] bytes = field.getBytes(StandardCharsets.UTF_8);
+      addLength(bytes.length);
+      value.update(bytes);
+    }
+    void add(int field) { add(Integer.toString(field)); }
+    void add(boolean field) { add(Boolean.toString(field)); }
+    private void addLength(int length) {
+      value.update((byte) (length >>> 24)); value.update((byte) (length >>> 16));
+      value.update((byte) (length >>> 8)); value.update((byte) length);
+    }
+    String finish() { return hex(value.digest()); }
+  }
+
+  private static String hex(byte[] bytes) {
+    StringBuilder result = new StringBuilder(bytes.length * 2);
+    for (byte item : bytes) result.append(String.format(Locale.ROOT, "%02x", item & 0xff));
+    return result.toString();
+  }
+
+  private static String sha256(String value) {
+    try {
+      MessageDigest raw = MessageDigest.getInstance("SHA-256");
+      return hex(raw.digest(value.getBytes(StandardCharsets.UTF_8)));
+    } catch (NoSuchAlgorithmException error) { throw new IllegalStateException(error); }
+  }
+
+  private static PsiIndex.Source source(String path, String content) {
+    return new PsiIndex.Source(path, sha256(content), content);
+  }
+
+  private static List<PsiIndex.Source> one(String path, String content) {
+    return List.of(source(path, content));
+  }
+
+  private static String comments(int count) { return LIMIT_PACKAGE + "//\\n".repeat(count); }
+
+  private static String declarations(int count, int comments) {
+    StringBuilder content = new StringBuilder(LIMIT_PACKAGE.length() + count * 14 + comments * 3);
+    content.append(LIMIT_PACKAGE);
+    for (int index = 0; index < count; index++) content.append("val p").append(index).append("=0\\n");
+    content.append("//\\n".repeat(comments));
+    return content.toString();
+  }
+
+  private static String calls(int count) {
+    StringBuilder content = new StringBuilder(LIMIT_PACKAGE.length() + 16 + count * 4);
+    content.append(LIMIT_PACKAGE).append("fun host(){");
+    for (int index = 0; index < count; index++) content.append("f();");
+    return content.append("}\\n").toString();
+  }
+
+  private static int compareEdges(PsiIndex.Edge left, PsiIndex.Edge right) {
+    int order = Integer.compare(left.fromNodeId(), right.fromNodeId());
+    if (order == 0) order = Integer.compare(left.role().ordinal(), right.role().ordinal());
+    if (order == 0) order = Integer.compare(left.ordinal(), right.ordinal());
+    if (order == 0) order = Integer.compare(left.toNodeId(), right.toNodeId());
+    return order;
+  }
+
+  private static <E extends Enum<E>> String observed(E[] values, Set<E> present) {
+    StringBuilder result = new StringBuilder();
+    for (E value : values) {
+      if (!present.contains(value)) continue;
+      if (result.length() != 0) result.append(',');
+      result.append(value.name());
+    }
+    return result.toString();
+  }
+
+  private static String filesHash(PsiIndex.Program program) {
+    Digest digest = new Digest("catalog-files-v1");
+    for (PsiIndex.FileUnit file : program.files()) {
+      digest.add(file.id()); digest.add(file.path()); digest.add(file.sha256()); digest.add(file.utf16Length());
+      digest.add(file.packageName()); digest.add(file.importIds().size());
+      for (int id : file.importIds()) digest.add(id);
+    }
+    return digest.finish();
+  }
+
+  private static String importsHash(PsiIndex.Program program) {
+    Digest digest = new Digest("catalog-imports-v1");
+    for (PsiIndex.ImportEntry entry : program.imports()) {
+      digest.add(entry.id()); digest.add(entry.fileId()); digest.add(entry.fqName()); digest.add(entry.exposedName());
+      digest.add(entry.alias()); digest.add(entry.syntaxNodeId()); digest.add(entry.witnessNodeId());
+    }
+    return digest.finish();
+  }
+
+  private static String tokensHash(PsiIndex.Program program) {
+    Digest digest = new Digest("catalog-tokens-v1");
+    for (PsiIndex.Token token : program.tokens()) {
+      digest.add(token.id()); digest.add(token.fileId()); digest.add(token.startUtf16()); digest.add(token.endUtf16());
+      digest.add(token.kind().name()); digest.add(token.value()); digest.add(token.textSha256()); digest.add(token.structuralToken());
+    }
+    return digest.finish();
+  }
+
+  private static String nodesHash(PsiIndex.Program program) {
+    Digest digest = new Digest("catalog-nodes-v1");
+    for (PsiIndex.Node node : program.nodes()) {
+      digest.add(node.id()); digest.add(node.fileId()); digest.add(node.kind().name()); digest.add(node.startUtf16());
+      digest.add(node.endUtf16()); digest.add(node.firstTokenId()); digest.add(node.tokenCount()); digest.add(node.name());
+      digest.add(node.value()); digest.add(node.flags().size());
+      for (PsiIndex.NodeFlag flag : node.flags()) digest.add(flag.name());
+      digest.add(node.witnessNodeId());
+    }
+    return digest.finish();
+  }
+
+  private static String edgesHash(PsiIndex.Program program) {
+    Digest digest = new Digest("catalog-edges-v1");
+    for (PsiIndex.Edge edge : program.edges()) {
+      digest.add(edge.fromNodeId()); digest.add(edge.role().name()); digest.add(edge.ordinal()); digest.add(edge.toNodeId());
+    }
+    return digest.finish();
+  }
+
+  private static String witnessesHash(PsiIndex.Program program) {
+    Digest digest = new Digest("catalog-witnesses-v1");
+    for (PsiIndex.WitnessNode witness : program.witnesses()) {
+      digest.add(witness.nodeId()); digest.add(witness.fileId()); digest.add(witness.startUtf16()); digest.add(witness.endUtf16());
+      digest.add(witness.kind().name()); digest.add(witness.textSha256()); digest.add(witness.structuralToken());
+    }
+    return digest.finish();
+  }
+
+  private static String witnessIdentity(PsiIndex.WitnessNode witness, PsiIndex.FileUnit file) {
+    String kind = witness.kind().name().toLowerCase(Locale.ROOT);
+    String canonical = "{\\\"endUtf16\\\":" + witness.endUtf16()
+        + ",\\\"fileSha256\\\":\\\"" + file.sha256() + "\\\",\\\"kind\\\":\\\"" + kind
+        + "\\\",\\\"path\\\":\\\"" + file.path() + "\\\",\\\"startUtf16\\\":" + witness.startUtf16()
+        + ",\\\"structuralToken\\\":" + witness.structuralToken()
+        + ",\\\"textSha256\\\":\\\"" + witness.textSha256() + "\\\"}";
+    return sha256(canonical);
+  }
+
+  private static int expectedFirstToken(PsiIndex.Program program, PsiIndex.Node node) {
+    int index = 0;
+    while (index < program.tokens().size()) {
+      PsiIndex.Token token = program.tokens().get(index);
+      if (token.fileId() > node.fileId() || (token.fileId() == node.fileId()
+          && token.startUtf16() >= node.startUtf16())) break;
+      index++;
+    }
+    return index;
+  }
+
+  private static String summarize(PsiIndex.Program program, List<PsiIndex.Source> sources) {
+    int denseErrors = 0, hashErrors = 0, rangeErrors = 0, tokenSliceErrors = 0;
+    int lexicalErrors = 0, edgeErrors = 0, importErrors = 0, witnessErrors = 0, triviaErrors = 0;
+    EnumSet<PsiIndex.NodeKind> nodeKinds = EnumSet.noneOf(PsiIndex.NodeKind.class);
+    EnumSet<PsiIndex.NodeFlag> nodeFlags = EnumSet.noneOf(PsiIndex.NodeFlag.class);
+    EnumSet<PsiIndex.EdgeRole> edgeRoles = EnumSet.noneOf(PsiIndex.EdgeRole.class);
+    EnumSet<PsiIndex.TokenKind> tokenKinds = EnumSet.noneOf(PsiIndex.TokenKind.class);
+    EnumSet<PsiIndex.WitnessKind> witnessKinds = EnumSet.noneOf(PsiIndex.WitnessKind.class);
+    TreeSet<String> operators = new TreeSet<>();
+    Map<String, PsiIndex.Source> sourceByPath = new HashMap<>();
+    for (PsiIndex.Source item : sources) sourceByPath.put(item.path(), item);
+    int sourceBytes = 0, maxSourceBytes = 0;
+    for (PsiIndex.Source item : sources) {
+      int bytes = item.content().getBytes(StandardCharsets.UTF_8).length;
+      sourceBytes += bytes; maxSourceBytes = Math.max(maxSourceBytes, bytes);
+    }
+
+    int expectedImport = 0;
+    for (int index = 0; index < program.files().size(); index++) {
+      PsiIndex.FileUnit file = program.files().get(index);
+      PsiIndex.Source original = sourceByPath.get(file.path());
+      if (file.id() != index) denseErrors++;
+      if (original == null || !original.sha256().equals(file.sha256())
+          || original.content().length() != file.utf16Length()) hashErrors++;
+      for (int importId : file.importIds()) if (importId != expectedImport++) denseErrors++;
+    }
+    if (expectedImport != program.imports().size()) importErrors++;
+
+    for (int index = 0; index < program.imports().size(); index++) {
+      PsiIndex.ImportEntry entry = program.imports().get(index);
+      if (entry.id() != index) denseErrors++;
+      if (entry.fileId() < 0 || entry.fileId() >= program.files().size()
+          || entry.syntaxNodeId() < 0 || entry.syntaxNodeId() >= program.nodes().size()) importErrors++;
+      else {
+        PsiIndex.Node syntax = program.nodes().get(entry.syntaxNodeId());
+        if (syntax.fileId() != entry.fileId() || !entry.witnessNodeId().equals(syntax.witnessNodeId())) importErrors++;
+      }
+    }
+
+    int priorFile = -1, priorEnd = -1;
+    for (int index = 0; index < program.tokens().size(); index++) {
+      PsiIndex.Token token = program.tokens().get(index);
+      tokenKinds.add(token.kind());
+      if (token.id() != index) denseErrors++;
+      if (token.fileId() < 0 || token.fileId() >= program.files().size()) { rangeErrors++; continue; }
+      PsiIndex.Source original = sourceByPath.get(program.files().get(token.fileId()).path());
+      if (token.startUtf16() < 0 || token.endUtf16() <= token.startUtf16()
+          || token.endUtf16() > original.content().length()) { rangeErrors++; continue; }
+      String text = original.content().substring(token.startUtf16(), token.endUtf16());
+      if (!text.equals(token.value()) || !sha256(text).equals(token.textSha256())) hashErrors++;
+      boolean structural = token.kind() == PsiIndex.TokenKind.IDENTIFIER || token.kind() == PsiIndex.TokenKind.KEYWORD
+          || token.kind() == PsiIndex.TokenKind.OPERATOR;
+      if (structural != token.structuralToken()) hashErrors++;
+      if (token.fileId() < priorFile || (token.fileId() == priorFile && token.startUtf16() < priorEnd)) rangeErrors++;
+      priorFile = token.fileId(); priorEnd = token.endUtf16();
+      if (token.value().isBlank() || token.value().contains("catalog-trivia")
+          || (token.kind() != PsiIndex.TokenKind.OPERATOR && token.kind() != PsiIndex.TokenKind.STRING_LITERAL
+          && Set.of("(", ")", "{", "}", "[", "]", ",", ":", ";", ".", "@").contains(token.value()))) triviaErrors++;
+    }
+
+    int[] fileRoots = new int[program.files().size()];
+    int[] lexicalInbound = new int[program.nodes().size()];
+    Set<String> nodeIdentities = new HashSet<>();
+    for (int index = 0; index < program.nodes().size(); index++) {
+      PsiIndex.Node node = program.nodes().get(index);
+      nodeKinds.add(node.kind()); nodeFlags.addAll(node.flags());
+      if (node.kind() == PsiIndex.NodeKind.ASSIGNMENT || node.kind() == PsiIndex.NodeKind.BINARY
+          || node.kind() == PsiIndex.NodeKind.PREFIX || node.kind() == PsiIndex.NodeKind.POSTFIX) operators.add(node.value());
+      if (node.id() != index) denseErrors++;
+      if (node.fileId() < 0 || node.fileId() >= program.files().size()) { rangeErrors++; continue; }
+      PsiIndex.FileUnit file = program.files().get(node.fileId());
+      if (node.startUtf16() < 0 || node.endUtf16() < node.startUtf16() || node.endUtf16() > file.utf16Length()) rangeErrors++;
+      if (!nodeIdentities.add(node.fileId() + ":" + node.startUtf16() + ":" + node.endUtf16() + ":" + node.kind())) denseErrors++;
+      int first = expectedFirstToken(program, node), count = 0;
+      while (first + count < program.tokens().size()) {
+        PsiIndex.Token token = program.tokens().get(first + count);
+        if (token.fileId() != node.fileId() || token.startUtf16() >= node.endUtf16()) break;
+        if (token.startUtf16() < node.startUtf16() || token.endUtf16() > node.endUtf16()) tokenSliceErrors++;
+        count++;
+      }
+      if (node.firstTokenId() != first || node.tokenCount() != count) tokenSliceErrors++;
+      if (node.kind() == PsiIndex.NodeKind.FILE) fileRoots[node.fileId()]++;
+    }
+    for (int roots : fileRoots) if (roots != 1) lexicalErrors++;
+
+    Map<String, Integer> nextOrdinal = new HashMap<>();
+    PsiIndex.Edge prior = null;
+    for (PsiIndex.Edge edge : program.edges()) {
+      edgeRoles.add(edge.role());
+      if (edge.fromNodeId() < 0 || edge.fromNodeId() >= program.nodes().size()
+          || edge.toNodeId() < 0 || edge.toNodeId() >= program.nodes().size()) { edgeErrors++; continue; }
+      if (prior != null && compareEdges(prior, edge) >= 0) edgeErrors++;
+      PsiIndex.Node from = program.nodes().get(edge.fromNodeId()), to = program.nodes().get(edge.toNodeId());
+      if (from.fileId() != to.fileId() || from.startUtf16() > to.startUtf16() || from.endUtf16() < to.endUtf16()) edgeErrors++;
+      String slot = edge.fromNodeId() + ":" + edge.role();
+      int expected = nextOrdinal.getOrDefault(slot, 0);
+      if (edge.ordinal() != expected) edgeErrors++;
+      nextOrdinal.put(slot, expected + 1);
+      if (edge.role() == PsiIndex.EdgeRole.LEXICAL_OWNER) lexicalInbound[edge.toNodeId()]++;
+      prior = edge;
+    }
+    for (PsiIndex.Node node : program.nodes()) {
+      int expected = node.kind() == PsiIndex.NodeKind.FILE ? 0 : 1;
+      if (lexicalInbound[node.id()] != expected) lexicalErrors++;
+    }
+
+    Set<String> witnessIds = new HashSet<>(), nodeWitnessIds = new HashSet<>();
+    String priorWitness = null;
+    for (PsiIndex.WitnessNode witness : program.witnesses()) {
+      witnessKinds.add(witness.kind());
+      if (!witnessIds.add(witness.nodeId()) || (priorWitness != null && priorWitness.compareTo(witness.nodeId()) >= 0)) witnessErrors++;
+      if (witness.fileId() < 0 || witness.fileId() >= program.files().size()) { witnessErrors++; continue; }
+      PsiIndex.FileUnit file = program.files().get(witness.fileId());
+      PsiIndex.Source original = sourceByPath.get(file.path());
+      if (witness.startUtf16() < 0 || witness.endUtf16() > original.content().length()
+          || witness.endUtf16() <= witness.startUtf16()) { witnessErrors++; continue; }
+      String text = original.content().substring(witness.startUtf16(), witness.endUtf16());
+      if (!sha256(text).equals(witness.textSha256()) || !witnessIdentity(witness, file).equals(witness.nodeId())) witnessErrors++;
+      if (!witness.structuralToken() && witness.kind() != PsiIndex.WitnessKind.ARGUMENT) witnessErrors++;
+      priorWitness = witness.nodeId();
+    }
+    for (PsiIndex.Node node : program.nodes()) if (node.witnessNodeId() != null) {
+      if (!nodeWitnessIds.add(node.witnessNodeId()) || !witnessIds.contains(node.witnessNodeId())) witnessErrors++;
+    }
+    if (!nodeWitnessIds.equals(witnessIds)) witnessErrors++;
+
+    String filesHash = filesHash(program), importsHash = importsHash(program), tokensHash = tokensHash(program);
+    String nodesHash = nodesHash(program), edgesHash = edgesHash(program), witnessesHash = witnessesHash(program);
+    Digest whole = new Digest("catalog-program-v1");
+    whole.add(program.psiNodeCount()); whole.add(program.declarationCount()); whole.add(program.callSiteCount());
+    whole.add(filesHash); whole.add(importsHash); whole.add(tokensHash); whole.add(nodesHash); whole.add(edgesHash); whole.add(witnessesHash);
+    StringBuilder importSummary = new StringBuilder();
+    for (PsiIndex.ImportEntry entry : program.imports()) {
+      if (importSummary.length() != 0) importSummary.append(';');
+      importSummary.append(entry.fqName());
+      if (entry.alias() != null) importSummary.append(" as ").append(entry.alias());
+      importSummary.append("->").append(entry.exposedName());
+    }
+    List<String> rows = new ArrayList<>();
+    rows.add("status=accepted"); rows.add("psi=" + program.psiNodeCount());
+    rows.add("declarations=" + program.declarationCount()); rows.add("calls=" + program.callSiteCount());
+    rows.add("files=" + program.files().size()); rows.add("imports=" + program.imports().size());
+    rows.add("tokens=" + program.tokens().size()); rows.add("nodes=" + program.nodes().size());
+    rows.add("edges=" + program.edges().size()); rows.add("witnesses=" + program.witnesses().size());
+    rows.add("sourceFiles=" + sources.size()); rows.add("maxSourceBytes=" + maxSourceBytes); rows.add("sourceBytes=" + sourceBytes);
+    rows.add("nodeKinds=" + observed(PsiIndex.NodeKind.values(), nodeKinds));
+    rows.add("nodeFlags=" + observed(PsiIndex.NodeFlag.values(), nodeFlags));
+    rows.add("edgeRoles=" + observed(PsiIndex.EdgeRole.values(), edgeRoles));
+    rows.add("tokenKinds=" + observed(PsiIndex.TokenKind.values(), tokenKinds));
+    rows.add("witnessKinds=" + observed(PsiIndex.WitnessKind.values(), witnessKinds));
+    rows.add("operatorValues=" + String.join(",", operators)); rows.add("importSummary=" + importSummary);
+    rows.add("closureDense=" + denseErrors); rows.add("closureHash=" + hashErrors); rows.add("closureRange=" + rangeErrors);
+    rows.add("closureTokenSlice=" + tokenSliceErrors); rows.add("closureLexical=" + lexicalErrors);
+    rows.add("closureEdge=" + edgeErrors); rows.add("closureImport=" + importErrors);
+    rows.add("closureWitness=" + witnessErrors); rows.add("closureTrivia=" + triviaErrors);
+    rows.add("filesSha256=" + filesHash); rows.add("importsSha256=" + importsHash); rows.add("tokensSha256=" + tokensHash);
+    rows.add("nodesSha256=" + nodesHash); rows.add("edgesSha256=" + edgesHash); rows.add("witnessesSha256=" + witnessesHash);
+    rows.add("programSha256=" + whole.finish());
+    return String.join("\\n", rows);
+  }
+
+  private static void accepted(String path, String content) {
+    List<PsiIndex.Source> sources = one(path, content);
+    System.out.print(summarize(PsiIndex.snapshot(sources), sources));
+  }
+
+  private static void defaultPackage() {
+    List<PsiIndex.Source> sources = one("src/defaultpkg/DefaultRoot.kt", DEFAULT_PACKAGE);
+    PsiIndex.Program program = PsiIndex.snapshot(sources);
+    if (program.files().size() != 1) throw new IllegalStateException("one default-package file required");
+    System.out.print(summarize(program, sources) + "\\npackageName=" + program.files().get(0).packageName());
+  }
+
+  private static void rejected(String path, String content) {
+    try {
+      PsiIndex.snapshot(one(path, content));
+      System.out.print("status=unexpected-acceptance");
+    } catch (PsiIndex.SnapshotRejected rejected) {
+      System.out.print("status=rejected\\ncode=" + rejected.rejectionCode());
+    }
+  }
+
+  public static void main(String[] args) {
+    if (args.length != 1) throw new IllegalArgumentException("one mode required");
+    switch (args[0]) {
+      case "catalog" -> accepted("src/catalog/Matrix.kt", CATALOG);
+      case "default-package" -> defaultPackage();
+      case "psi-n" -> accepted("src/limits/Psi.kt", comments(PSI_LINE_COMMENTS));
+      case "psi-n-plus-one" -> rejected("src/limits/Psi.kt", comments(PSI_LINE_COMMENTS) + "/*x*/");
+      case "declarations-n" -> accepted("src/limits/Declarations.kt", declarations(DECLARATION_LIMIT, 0));
+      case "declarations-n-plus-one" -> rejected("src/limits/Declarations.kt", declarations(DECLARATION_LIMIT + 1, 0));
+      case "calls-0" -> accepted("src/limits/Calls.kt", calls(0));
+      case "calls-1" -> accepted("src/limits/Calls.kt", calls(1));
+      case "calls-2" -> accepted("src/limits/Calls.kt", calls(2));
+      case "calls-max" -> accepted("src/limits/Calls.kt", calls(CALL_MAX_ACCEPTED));
+      case "calls-max-plus-one" -> rejected("src/limits/Calls.kt", calls(CALL_MAX_ACCEPTED + 1));
+      case "calls-limit" -> rejected("src/limits/Calls.kt", calls(CALL_LIMIT));
+      case "maximal" -> accepted("src/limits/Maximal.kt", declarations(DECLARATION_LIMIT, MAXIMAL_COMMENTS));
+      case "maximal-plus-one" -> rejected("src/limits/Maximal.kt", declarations(DECLARATION_LIMIT, MAXIMAL_COMMENTS) + "/*x*/");
+      default -> throw new IllegalArgumentException("unknown mode");
+    }
+  }
+}
+`;
+  const psiIndexSource = fs.readFileSync(path.join(JAVA_ROOT, "PsiIndex.java"), "utf8");
+  for (const [label, snippet] of [
+    ["Program constructor validates copied catalogs", `            validateProgram(psiNodeCount, declarationCount, callSiteCount,
+                files, imports, tokens, nodes, edges, witnesses);`],
+    ["PSI count covers every value catalog", `        if (psiNodeCount < nodes.size() || psiNodeCount < tokens.size() || psiNodeCount < witnesses.size()) {
+            throw new IllegalArgumentException("program catalogs exceed the PSI count");
+        }`],
+    ["call and declaration counters cover normalized catalogs", `        if (representedCalls != callSiteCount || representedDeclarations > declarationCount) {
+            throw new IllegalArgumentException("program counters do not cover the normalized catalogs");
+        }`],
+    ["every file has exactly one root", `        for (int roots : fileRoots) if (roots != 1) throw new IllegalArgumentException("file root closure is invalid");`],
+  ]) assert.equal(psiIndexSource.includes(snippet), true, label);
+  for (const type of ["FileUnit", "ImportEntry", "Token", "Node", "Edge", "WitnessNode", "Program"]) {
+    assert.equal(probeSource.includes(`new PsiIndex.${type}(`), false, `CatalogProbe must not construct ${type}`);
+  }
+  const probePath = path.join(sourceRoot, "com/agentbench/analyzer/CatalogProbe.java");
+  fs.mkdirSync(path.dirname(probePath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(probePath, probeSource);
+  const classpath = receipt.classpath.map((entry) => path.join(receipt.artifactRoot, ...entry.path.split("/"))).join(path.delimiter);
+  const environment = { JAVA_HOME: receipt.jdk.root, HOME: home, TMPDIR: temporaryFiles, LANG: "C", LC_ALL: "C", TZ: "UTC" };
+  const compiled = spawnSync(path.join(receipt.jdk.root, "bin/javac"), [
+    `-J-Duser.home=${home}`, `-J-Djava.io.tmpdir=${temporaryFiles}`, "--release", "17", "-encoding", "UTF-8",
+    "-g:none", "-proc:none", "-classpath", classpath, "-d", classes, probePath,
+  ], { cwd: sourceRoot, env: environment, shell: false, encoding: "utf8", maxBuffer: 4_194_304 });
+  assert.equal(compiled.status, 0, compiled.stderr);
+  assert.equal(compiled.stdout, "");
+  assert.equal(compiled.stderr, "");
+  const baseRuntimeArgs = receipt.launch.args.map((argument) => argument
+    .replace(/^-Duser\.home=.*/, `-Duser.home=${home}`)
+    .replace(/^-Djava\.io\.tmpdir=.*/, `-Djava.io.tmpdir=${temporaryFiles}`));
+  const cpIndex = baseRuntimeArgs.indexOf("-cp");
+  baseRuntimeArgs[cpIndex + 1] = `${classes}${path.delimiter}${classpath}`;
+  const mainIndex = baseRuntimeArgs.indexOf("com.agentbench.analyzer.Main");
+  baseRuntimeArgs[mainIndex] = "com.agentbench.analyzer.CatalogProbe";
+  function run(mode) {
+    const runtimeArgs = [...baseRuntimeArgs];
+    runtimeArgs[mainIndex + 1] = mode;
+    const executed = spawnSync(receipt.launch.java, runtimeArgs, {
+      cwd: temporary, env: environment, shell: false, encoding: "utf8", timeout: 30_000, maxBuffer: 4_194_304,
+    });
+    assert.equal(executed.status, 0, `${mode}: ${executed.stderr}`);
+    assert.equal(executed.stderr, "", mode);
+    return executed.stdout;
+  }
+  function stable(mode) {
+    const first = run(mode);
+    assert.equal(run(mode), first, `${mode} must be deterministic across fresh production-heap processes`);
+    return first;
+  }
+  const defaultPackageRaw = stable("default-package");
+  const results = {
+    catalog: stable("catalog"),
+    psiN: run("psi-n"),
+    psiNPlusOne: run("psi-n-plus-one"),
+    declarationsN: run("declarations-n"),
+    declarationsNPlusOne: run("declarations-n-plus-one"),
+    calls0: run("calls-0"),
+    calls1: run("calls-1"),
+    calls2: run("calls-2"),
+    callsMax: run("calls-max"),
+    callsMaxPlusOne: run("calls-max-plus-one"),
+    callsLimit: run("calls-limit"),
+    maximal: stable("maximal"),
+    maximalPlusOne: run("maximal-plus-one"),
+  };
+  const fullNodeKinds = "FILE,CLASS_DECL,INTERFACE_DECL,OBJECT_DECL,COMPANION_DECL,FUNCTION_DECL,PROPERTY_DECL,PARAMETER_DECL,TYPE_REF,BLOCK,CALL,ARGUMENT,NAME_REF,THIS_REF,QUALIFIED,SAFE_QUALIFIED,CALLABLE_REF,CLASS_LITERAL,LAMBDA,ASSIGNMENT,BINARY,PREFIX,POSTFIX,INDEX_ACCESS,IF,WHEN,WHEN_ENTRY,TRY,CATCH,RETURN,BREAK,CONTINUE,FOR,WHILE,ANNOTATION,STRING_TEMPLATE,LITERAL";
+  const fullNodeFlags = "DATA,SEALED,CONST,VAL,VAR,SUSPEND,OVERRIDE,PRIVATE,EXPRESSION_BODY,NAMED,SAFE,LABELED";
+  const fullEdgeRoles = "FILE_MEMBER,LEXICAL_OWNER,RECEIVER,CALLEE,ARGUMENT,TYPE_ARGUMENT,PARAMETER,TYPE,ANNOTATION,SUPER_TYPE,DEFAULT_VALUE,INITIALIZER,BODY,CONDITION,THEN_BRANCH,ELSE_BRANCH,SUBJECT,ENTRY,LEFT,RIGHT,OPERAND,TARGET,VALUE,SELECTOR,INDEX,RANGE,LOOP_BODY,TRY_BODY,CATCH_CLAUSE,CATCH_BODY,RETURN_VALUE,LAMBDA_BODY,STRING_EXPRESSION";
+  const fullTokenKinds = "IDENTIFIER,KEYWORD,OPERATOR,STRING_LITERAL,INTEGER_LITERAL,FLOAT_LITERAL,BOOLEAN_LITERAL,NULL_LITERAL";
+  const fullWitnessKinds = "DECLARATION,CALLABLE_REFERENCE,CALL,ARGUMENT,PROPERTY_READ,ASSIGNMENT,CONDITION,LOOP,LAMBDA,RETURN,TYPE_REFERENCE,CATCH";
+  const acceptedKeys = [
+    "status", "psi", "declarations", "calls", "files", "imports", "tokens", "nodes", "edges", "witnesses",
+    "sourceFiles", "maxSourceBytes", "sourceBytes", "nodeKinds", "nodeFlags", "edgeRoles", "tokenKinds",
+    "witnessKinds", "operatorValues", "importSummary", "closureDense", "closureHash", "closureRange",
+    "closureTokenSlice", "closureLexical", "closureEdge", "closureImport", "closureWitness", "closureTrivia",
+    "filesSha256", "importsSha256", "tokensSha256", "nodesSha256", "edgesSha256", "witnessesSha256", "programSha256",
+  ];
+  function summary(value) {
+    return Object.fromEntries(value.split("\n").map((row) => {
+      const separator = row.indexOf("=");
+      return [row.slice(0, separator), row.slice(separator + 1)];
+    }));
+  }
+  const evidenceKeys = [
+    "psi", "declarations", "calls", "files", "imports", "tokens", "nodes", "edges", "witnesses",
+    "sourceFiles", "maxSourceBytes", "sourceBytes", "filesSha256", "importsSha256", "tokensSha256",
+    "nodesSha256", "edgesSha256", "witnessesSha256", "programSha256",
+  ];
+  const measuredEvidence = {
+    catalog: ["1017", "45", "8", "1", "2", "279", "236", "400", "128", "1", "1788", "1788", "35b425dc2a25af007dc253ab3a5e09f24203a4941c6ad6a7ab5cd970ee1caad9", "d9d745f7254c2cb0335c5942b495d34f2bcaa4b455b2c37b8428334dceb7005d", "1f061cb0fdc9863d602aa33f1fdf2f6f62492c613c3b76a494048331a24ce954", "f65a8d54859206fb6522dcefcdaff8b6747b6ef72b43a240af314a3752b7790c", "ffd742d914f70f48096d297a9b3215fcd978db7536f63660b40563673afaabb9", "25d7303dcb3d3566d1e36ab62f9503af78a884878ed3b05428e0817dd79c27e8", "fb05804031e5e536a11328f85187aa39ab4cc03ad6dc7e3c559b5698da6f481d"],
+    psiN: ["500000", "0", "0", "1", "0", "2", "2", "1", "0", "1", "750003", "750003", "f8a8e567964e62f984e013d9460aad5065f4f1f8602fa024e041f5b6d80ef5f7", "3eefab590936f65659f83edf8d10bfd45f2582ff89d3eafb354903d24c0fa988", "96ef13cffa319a66e584668d9cad67a1bba61cc89272c1fa46468dbcd31edd5e", "7303de69faee7dc68d9e96df2948f95b8d8ae508e684a6838644befcfb9bdbb1", "4e3a7b263a1823de738f9f6641261ec18a5f522aa5844b4f6714f089813c74f4", "d027b03b45b6d74e333138bff712d9ae956fea7b06f5e5b389207cf0e259b98c", "2e846a087a8c8a465154097485d5aa8c1413c7e5ae6bd231a18da53b83e20122"],
+    declarationsN: ["200008", "25000", "0", "1", "0", "100002", "50002", "100001", "25000", "1", "313905", "313905", "7d3f06282cef2d78fd72e8abfa35540b2dc510020d2557e4625aa3660994f64f", "3eefab590936f65659f83edf8d10bfd45f2582ff89d3eafb354903d24c0fa988", "21fae2c686cf27e7dec3a8f324f643426724b3feb573192181a26d2bc6b0cce3", "0cf3d417dd39a665d4f626fa80c5de07af566bdd2feeff9b2c759446fb776422", "dee1d9371f36eae9e184d12f6c40a41261d3ce2864cc15ff7fe548af312a4aa4", "2b32c6dabdc0935cf27080b5efbe0e77cc418a60c1b3f6ec86f1edb01b1c7bc7", "142f9c2c7854025e12ca9ecd32a9aec415a0cf096f53e7100fa18105a3ff2a07"],
+    calls0: ["19", "1", "0", "1", "0", "4", "4", "5", "1", "1", "28", "28", "a8498f01b2f5bbf87a3e64a5893cd69e4ef6d8a020c1b2af28ec82926f63fca2", "3eefab590936f65659f83edf8d10bfd45f2582ff89d3eafb354903d24c0fa988", "c1b757e3dcaab87b19f2223e0010b833d2ad0c8d287e2a2c4b5fa18b98342b5e", "4e014270700d35a15a7d1dba3faa0161bc7ec03021e87121aeec8db342ce12e2", "1e24cdb0611630ca9e692baced346bbb4857a38e6f30c7608656d4c6d0a834a8", "a3f84d1106d492fb586bebd50ff191474435f069a7d800adf4bc718b36a05d7b", "66b35eba2b809fd53241f90dd2802c6d7cbdabd04298804ffc1f82396100969e"],
+    calls1: ["26", "1", "1", "1", "0", "5", "6", "8", "3", "1", "32", "32", "be091fa6d3b975857627390a44daf62d8f70f6baf5ce72c92254150a619ef99b", "3eefab590936f65659f83edf8d10bfd45f2582ff89d3eafb354903d24c0fa988", "925ec2f55dce5cf7c09ebaf9c4bfa1989e73b36579b692be392407366fca99dc", "0963f516745bb40d08ee77f938d9a3cad2cecc6d353f79d0e8fc907d58011bc0", "0a8f4e85a903357a40bc539b31a6bf80016ff75075d5c7b14b1d85e525e57494", "e5f5dbf6511068dcba3391e7bb46c81d1d40220d92c4610c026213deecbd7a0c", "bdddf54634c8cbf428ae31092bc367a9293c06a15f1e0c504dc1efa60bb498b5"],
+    calls2: ["33", "1", "2", "1", "0", "6", "8", "11", "5", "1", "36", "36", "3f9a42ed8b4048b186b4d528f649a0090bc4687532a75d9c1d5e5a921ab4ce0c", "3eefab590936f65659f83edf8d10bfd45f2582ff89d3eafb354903d24c0fa988", "a472a49023246d29807e2eaca70b980ce28f7046daa9ff1666070e9bb9597171", "44f9e67db24314f384c33f26ba383031c5752668a46a4f21588f7b6232ebb9a3", "548740838dec9f4ed38fdcc7ef60841af69fe7a3ed46064f432bc852b4f91321", "38662cac6d000dc4b5d2927e9733c7e3a041450098dfd36a2265758ec3be9741", "bc483606cf0bc923ebbe956bc1dc5cdc06060d251272a1a79c8cfda7d1579445"],
+    callsMax: ["499994", "1", "71425", "1", "0", "71429", "142854", "214280", "142851", "1", "285728", "285728", "d6937eec49ed6091c880d255eacf1cf3dc81fcc16bf09c48e4557df83d280e2a", "3eefab590936f65659f83edf8d10bfd45f2582ff89d3eafb354903d24c0fa988", "7f55238e6d51c2ffc9fca22d1cb2c160ff15f5a07adc0e5e279f509537780231", "197ed3fcbaf02a39e33a87aede1532e3865d1b1039b102c09b0b47453ffdcfbb", "537ef41bc32466ccc9ded5438a442437c97cbca0aedbf50aa29ce475eafd0b78", "d3a5dfb8b0fbe5c05e76cd387c95ffd5712f28ba2eb0f2a593ac482c813487d0", "aedae1f34106ec10e589670b8bcabb812b7807fc33afc3f9a258c1dc17ed9fed"],
+    maximal: ["500000", "25000", "0", "1", "0", "100002", "50002", "100001", "25000", "1", "763893", "763893", "b8734d5ae103a29390eff496709d64e63ac85a3b3852d1258257ea38f366288d", "3eefab590936f65659f83edf8d10bfd45f2582ff89d3eafb354903d24c0fa988", "21fae2c686cf27e7dec3a8f324f643426724b3feb573192181a26d2bc6b0cce3", "fc5deab0da19bac91dcb8982b0d1cf69bd7b295e0ed8acacc32ba45e24496d17", "dee1d9371f36eae9e184d12f6c40a41261d3ce2864cc15ff7fe548af312a4aa4", "37abece485ac4ade0f14ece5b452b997d86b689174f676f9353c2a48a1a37318", "5e8c3f7684d60ff05aaacc08a195733e6f6062d50cd4f20b19838c473a39ff3c"],
+  };
+  for (const [label, value] of Object.entries(results)) {
+    if (!value.startsWith("status=accepted")) continue;
+    const item = summary(value);
+    assert.deepEqual(Object.keys(item), acceptedKeys, `${label} exact summary keys/order`);
+    for (const key of ["closureDense", "closureHash", "closureRange", "closureTokenSlice", "closureLexical",
+      "closureEdge", "closureImport", "closureWitness", "closureTrivia"]) assert.equal(item[key], "0", `${label} ${key}`);
+    assert.equal(Number(item.sourceFiles) <= ANALYZER_CONSTANTS.MAX_KOTLIN_FILES, true, `${label} files envelope`);
+    assert.equal(Number(item.maxSourceBytes) <= ANALYZER_CONSTANTS.MAX_KOTLIN_FILE_BYTES, true, `${label} file-byte envelope`);
+    assert.equal(Number(item.sourceBytes) <= ANALYZER_CONSTANTS.MAX_KOTLIN_TOTAL_BYTES, true, `${label} total-byte envelope`);
+    for (const key of ["filesSha256", "importsSha256", "tokensSha256", "nodesSha256", "edgesSha256", "witnessesSha256", "programSha256"]) {
+      assert.match(item[key], /^[a-f0-9]{64}$/, `${label} ${key}`);
+    }
+    assert.deepEqual(evidenceKeys.map((key) => item[key]), measuredEvidence[label], `${label} exact measured evidence`);
+  }
+  const catalog = summary(results.catalog);
+  assert.equal(catalog.nodeKinds, fullNodeKinds);
+  assert.equal(catalog.nodeFlags, fullNodeFlags);
+  assert.equal(catalog.edgeRoles, fullEdgeRoles);
+  assert.equal(catalog.tokenKinds, fullTokenKinds);
+  assert.equal(catalog.witnessKinds, fullWitnessKinds);
+  assert.equal(catalog.importSummary, "androidx.compose.runtime.Composable->Composable;kotlin.String as Text->Text");
+  assert.equal(catalog.operatorValues, "+,++,+=,-,--,..,=,==,>,?:,as");
+  const defaultPackage = summary(defaultPackageRaw);
+  assert.equal(defaultPackage.status, "accepted");
+  assert.equal(defaultPackage.packageName, "");
+  assert.equal(defaultPackage.files, "1");
+  assert.equal(Number(defaultPackage.nodes) > 0, true);
+  assert.equal(defaultPackage.nodeKinds.split(",").includes("FILE"), true);
+  for (const key of ["closureDense", "closureHash", "closureRange", "closureTokenSlice", "closureLexical",
+    "closureEdge", "closureImport", "closureWitness", "closureTrivia"]) assert.equal(defaultPackage[key], "0", `default-package ${key}`);
+  const calls0 = summary(results.calls0);
+  const calls1 = summary(results.calls1);
+  const calls2 = summary(results.calls2);
+  assert.equal(Number(calls1.psi) - Number(calls0.psi), 7, "one fixed f(); row has seven measured PSI rows");
+  assert.equal(Number(calls2.psi) - Number(calls1.psi), 7, "minimal-call PSI delta is deterministic");
+  assert.equal(Number(calls1.calls) - Number(calls0.calls), 1);
+  assert.equal(Number(calls2.calls) - Number(calls1.calls), 1);
+  assert.equal(Number(calls1.declarations), 1);
+  assert.equal(Number(calls2.declarations), 1);
+  assert.equal(71_425 < ANALYZER_CONSTANTS.MAX_CALL_SITES, true);
+  assert.equal(ANALYZER_CONSTANTS.MAX_CALL_SITES * 6 > ANALYZER_CONSTANTS.MAX_PSI_NODES, true,
+    "each minimal f() has disjoint CALL, callee, argument-list, identifier, and two parenthesis PSI rows");
+  assert.equal(Number(summary(results.callsMax).psi) + 7, ANALYZER_CONSTANTS.MAX_PSI_NODES + 1,
+    "the next minimal call reaches the dominating PSI boundary first");
+  assert.equal(71_426 < ANALYZER_CONSTANTS.MAX_CALL_SITES, true, "call counter is structurally shadowed");
+  assert.equal(results.psiNPlusOne, "status=rejected\ncode=limit");
+  assert.equal(results.declarationsNPlusOne, "status=rejected\ncode=limit");
+  assert.equal(results.callsMaxPlusOne, "status=rejected\ncode=limit");
+  assert.equal(results.callsLimit, "status=rejected\ncode=limit");
+  assert.equal(results.maximalPlusOne, "status=rejected\ncode=limit");
+  fs.rmSync(temporary, { recursive: true, force: true });
+  assert.equal(fs.existsSync(probePath), false, "CatalogProbe.java residue");
+  assert.equal(fs.existsSync(path.join(classes, "com/agentbench/analyzer/CatalogProbe.class")), false, "CatalogProbe.class residue");
+});
+test("semantic handoff Program rejects a copied import with a missing witness", (t) => {
+  const receipt = JSON.parse(fs.readFileSync(RECEIPT, "utf8"));
+  const temporary = temporaryDirectory(t, "agentbench-import-witness-probe");
+  const sourceRoot = path.join(temporary, "source");
+  const classes = path.join(temporary, "classes");
+  const home = path.join(temporary, "home");
+  const temporaryFiles = path.join(temporary, "tmp");
+  const probeClass = "com.agentbench.analyzer.ImportWitnessClosureProbe";
+  const probeEntry = "com/agentbench/analyzer/ImportWitnessClosureProbe.class";
+  const probePath = path.join(sourceRoot, "com/agentbench/analyzer/ImportWitnessClosureProbe.java");
+  const compiledProbe = path.join(classes, probeEntry);
+  const artifactBefore = fs.readFileSync(ARTIFACT);
+  assert.equal(receipt.sourceInputs.some((row) => row.path.endsWith("/ImportWitnessClosureProbe.java")), false,
+    "temporary import witness probe source must not be an analyzer input");
+  assert.equal(receipt.build.jarEntries.includes(probeEntry), false,
+    "temporary import witness probe class must not be an analyzer JAR entry");
+  for (const directory of [sourceRoot, classes, home, temporaryFiles]) {
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  }
+  const importedKotlin = `package witness.closure
+
+import kotlin.String
+
+class ImportedRoot(val name: String)
+`;
+  const probeSource = `package com.agentbench.analyzer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.List;
+
+public final class ImportWitnessClosureProbe {
+  private static final String SOURCE = ${JSON.stringify(importedKotlin)};
+
+  private ImportWitnessClosureProbe() {}
+
+  private static String sha256(String value) {
+    try {
+      byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+      StringBuilder result = new StringBuilder(digest.length * 2);
+      for (byte item : digest) result.append(String.format("%02x", item & 0xff));
+      return result.toString();
+    } catch (NoSuchAlgorithmException error) {
+      throw new IllegalStateException(error);
+    }
+  }
+
+  public static void main(String[] arguments) {
+    PsiIndex.Source source = new PsiIndex.Source("src/witness/ImportedRoot.kt", sha256(SOURCE), SOURCE);
+    PsiIndex.Program original = PsiIndex.snapshot(List.of(source));
+    if (original.imports().size() != 1) throw new AssertionError("expected exactly one valid import");
+    PsiIndex.ImportEntry imported = original.imports().get(0);
+    if (imported.witnessNodeId() == null) throw new AssertionError("snapshot omitted the valid import witness");
+    ArrayList<PsiIndex.ImportEntry> malformedImports = new ArrayList<>(original.imports());
+    malformedImports.set(imported.id(), new PsiIndex.ImportEntry(
+        imported.id(), imported.fileId(), imported.fqName(), imported.exposedName(), imported.alias(),
+        imported.syntaxNodeId(), null));
+    try {
+      new PsiIndex.Program(
+          original.psiNodeCount(), original.declarationCount(), original.callSiteCount(),
+          original.files(), malformedImports, original.tokens(), original.nodes(), original.edges(),
+          original.witnesses());
+    } catch (IllegalArgumentException expected) {
+      return;
+    }
+    throw new AssertionError("Program accepted an import whose witnessNodeId is null");
+  }
+}
+`;
+  fs.mkdirSync(path.dirname(probePath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(probePath, probeSource, { encoding: "utf8", mode: 0o600 });
+  const classpath = receipt.classpath.map((entry) => path.join(receipt.artifactRoot, ...entry.path.split("/"))).join(path.delimiter);
+  const environment = { JAVA_HOME: receipt.jdk.root, HOME: home, TMPDIR: temporaryFiles, LANG: "C", LC_ALL: "C", TZ: "UTC" };
+  const compiled = spawnSync(path.join(receipt.jdk.root, "bin/javac"), [
+    `-J-Duser.home=${home}`, `-J-Djava.io.tmpdir=${temporaryFiles}`, "--release", "17", "-encoding", "UTF-8",
+    "-g:none", "-proc:none", "-classpath", classpath, "-d", classes, probePath,
+  ], { cwd: sourceRoot, env: environment, shell: false, encoding: "utf8", maxBuffer: 4_194_304 });
+  assert.equal(compiled.status, 0, compiled.stderr);
+  assert.equal(compiled.stdout, "");
+  assert.equal(compiled.stderr, "");
+  const runtimeArgs = receipt.launch.args.map((argument) => argument
+    .replace(/^-Duser\.home=.*/, `-Duser.home=${home}`)
+    .replace(/^-Djava\.io\.tmpdir=.*/, `-Djava.io.tmpdir=${temporaryFiles}`));
+  const cpIndex = runtimeArgs.indexOf("-cp");
+  runtimeArgs[cpIndex + 1] = `${classes}${path.delimiter}${classpath}`;
+  const mainIndex = runtimeArgs.indexOf("com.agentbench.analyzer.Main");
+  runtimeArgs.splice(mainIndex, runtimeArgs.length - mainIndex, probeClass);
+  const executed = spawnSync(receipt.launch.java, runtimeArgs, {
+    cwd: temporary, env: environment, shell: false, encoding: "utf8", timeout: 30_000, maxBuffer: 4_194_304,
+  });
+  assert.equal(executed.status, 0, executed.stderr);
+  assert.equal(executed.stdout, "");
+  assert.equal(executed.stderr, "");
+  assert.deepEqual(fs.readFileSync(ARTIFACT), artifactBefore, "temporary probe must not mutate the analyzer artifact");
+  fs.rmSync(temporary, { recursive: true, force: true });
+  assert.equal(fs.existsSync(probePath), false, "ImportWitnessClosureProbe.java residue");
+  assert.equal(fs.existsSync(compiledProbe), false, "ImportWitnessClosureProbe.class residue");
+});
+test("domain invalid classpath resource fails closed without publishing or caching an analyzer", (t) => {
+  const receipt = JSON.parse(fs.readFileSync(RECEIPT, "utf8"));
+  const temporary = temporaryDirectory(t, "agentbench-invalid-domain");
+  const resource = path.join(temporary, "resource");
+  const home = path.join(temporary, "home");
+  const temporaryFiles = path.join(temporary, "tmp");
+  for (const directory of [resource, home, temporaryFiles]) fs.mkdirSync(directory, { mode: 0o700 });
+  fs.writeFileSync(path.join(resource, "domain-v1.json"), canonicalJson({
+    analyzerName: "supported-subset-abstract-interpreter-v1", domainVersion: 1,
+  }));
+  const args = receipt.launch.args.map((argument) => argument
+    .replace(/^-Duser\.home=.*/, `-Duser.home=${home}`)
+    .replace(/^-Djava\.io\.tmpdir=.*/, `-Djava.io.tmpdir=${temporaryFiles}`));
+  const cpIndex = args.indexOf("-cp");
+  args[cpIndex + 1] = `${resource}${path.delimiter}${args[cpIndex + 1]}`;
+  const request = analyzeRequest("src/domain/Canary.kt", EXPRESSION_CLONE_SOURCE);
+  const result = spawnSync(receipt.launch.java, args, {
+    cwd: temporary,
+    env: { JAVA_HOME: receipt.jdk.root, HOME: home, TMPDIR: temporaryFiles, LANG: "C", LC_ALL: "C", TZ: "UTC" },
+    shell: false,
+    encoding: null,
+    input: protocolFrame(request),
+    timeout: 30_000,
+    maxBuffer: 4_194_312,
+  });
+  assert.equal(result.status, 0, Buffer.from(result.stderr ?? "").toString("utf8"));
+  assert.deepEqual(result.stderr, Buffer.alloc(0));
+  const response = framedResponse(result.stdout);
+  assert.equal(response.analysisStatus, "rejected");
+  assert.equal(response.rejectionCode, "internal_uncertainty");
+  assert.deepEqual(response.nodes, []);
+  assert.deepEqual(response.claims, []);
+});
 test("analyzer artifact and self-hashed receipt bind the exact PSI toolchain", () => {
   const verified = verifyAnalyzerArtifact();
   assert.equal(fs.statSync(ARTIFACT).size, verified.analyzerJarBytes);
@@ -276,6 +1586,19 @@ test("analyzer artifact rejects false receipt build vectors", async (t) => {
 });
 test("build env verifier rejects noncanonical receipt bytes and forbidden sidecar capabilities", (t) => {
   const replica = analyzerReplica(t);
+  const buildSource = fs.readFileSync(replica.build, "utf8");
+  const reviewedJarStart = buildSource.indexOf("function assertReviewedJar(material, inspection) {");
+  const reviewedJarEnd = buildSource.indexOf("\nfunction cleanBuild(", reviewedJarStart);
+  assert.equal(reviewedJarStart >= 0 && reviewedJarEnd > reviewedJarStart, true, "assertReviewedJar source boundary");
+  const reviewedJarSource = buildSource.slice(reviewedJarStart, reviewedJarEnd);
+  const verifySemanticGuard = `    if ((name === "com/agentbench/analyzer/AbstractInterpreter.class"
+        || name === "com/agentbench/analyzer/Rules.class"
+        || name.startsWith("com/agentbench/analyzer/Rules$"))
+        && (content.includes(Buffer.from("org/jetbrains/kotlin/")) || content.includes(Buffer.from("com/intellij/")))) {
+      fail(\`semantic bytecode \${name} contains a PSI or Kotlin compiler reference\`);
+    }`;
+  assert.equal(reviewedJarSource.includes(verifySemanticGuard), true,
+    "assertReviewedJar verify-only must apply the semantic-class raw-byte PSI/Kotlin compiler guard");
   assert.equal(runScrubbedNode(replica.build, ["verify"]).status, 0, "replica baseline must verify");
   const receiptPath = path.join(replica.artifact, "analyzer-build-receipt-v1.json");
   const canonical = fs.readFileSync(receiptPath, "utf8");
@@ -299,8 +1622,20 @@ test("build env verifier rejects noncanonical receipt bytes and forbidden sideca
     fs.writeFileSync(mainPath, attack);
     const rejected = runScrubbedNode(replica.build, ["clean-build-twice"]);
     assert.notEqual(rejected.status, 0);
-    assert.match(rejected.stderr, /forbidden capability|unreviewed import|class-reference inventory/i);
+    assert.match(rejected.stderr, /forbidden capability|unreviewed import|class-reference (?:inventory|bounds)/i);
   }
+  fs.writeFileSync(mainPath, main);
+  const interpreterPath = path.join(replica.analyzer, "src/main/java/com/agentbench/analyzer/AbstractInterpreter.java");
+  const interpreter = fs.readFileSync(interpreterPath, "utf8");
+  const psiAttack = interpreter.replace(
+    "final class AbstractInterpreter {",
+    "final class AbstractInterpreter {\n    private static final Class<?> FORBIDDEN_PSI = org.jetbrains.kotlin.psi.KtFile.class;",
+  );
+  assert.notEqual(psiAttack, interpreter, "semantic PSI attack seam");
+  fs.writeFileSync(interpreterPath, psiAttack);
+  const semanticRejected = runScrubbedNode(replica.build, ["clean-build-twice"]);
+  assert.notEqual(semanticRejected.status, 0);
+  assert.match(semanticRejected.stderr, /semantic bytecode.*PSI|PSI or Kotlin compiler reference/i);
 });
 test("analyzer artifact verification precedes local all-or-nothing limit rejection", async (t) => {
   const container = fs.realpathSync(fs.mkdtempSync(path.join(ARTIFACTS, ".test-missing-")));

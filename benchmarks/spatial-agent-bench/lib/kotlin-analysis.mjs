@@ -30,20 +30,217 @@ const UTF8 = new TextDecoder("utf-8", { fatal: true });
 const HASH = /^[a-f0-9]{64}$/;
 const RECEIPT_DOMAIN = Buffer.from("agentbench-analyzer-receipt-v1\0", "utf8");
 const EXPECTED_JAR_ENTRIES = Object.freeze([
+  "com/agentbench/analyzer/AbstractInterpreter.class",
   "com/agentbench/analyzer/Main.class",
   "com/agentbench/analyzer/Protocol$Parser.class",
   "com/agentbench/analyzer/Protocol.class",
+  "com/agentbench/analyzer/PsiIndex$Edge.class",
+  "com/agentbench/analyzer/PsiIndex$EdgeRole.class",
+  "com/agentbench/analyzer/PsiIndex$FileUnit.class",
+  "com/agentbench/analyzer/PsiIndex$ImportEntry.class",
+  "com/agentbench/analyzer/PsiIndex$Node.class",
+  "com/agentbench/analyzer/PsiIndex$NodeFlag.class",
+  "com/agentbench/analyzer/PsiIndex$NodeKind.class",
+  "com/agentbench/analyzer/PsiIndex$Program.class",
   "com/agentbench/analyzer/PsiIndex$Result.class",
+  "com/agentbench/analyzer/PsiIndex$SnapshotRejected.class",
   "com/agentbench/analyzer/PsiIndex$Source.class",
+  "com/agentbench/analyzer/PsiIndex$Token.class",
+  "com/agentbench/analyzer/PsiIndex$TokenKind.class",
+  "com/agentbench/analyzer/PsiIndex$WitnessKind.class",
+  "com/agentbench/analyzer/PsiIndex$WitnessNode.class",
   "com/agentbench/analyzer/PsiIndex.class",
+  "com/agentbench/analyzer/Rules$AlternativeSpec.class",
+  "com/agentbench/analyzer/Rules$Analysis.class",
+  "com/agentbench/analyzer/Rules$ArgumentSpec.class",
+  "com/agentbench/analyzer/Rules$CallbackSpec.class",
+  "com/agentbench/analyzer/Rules$Domain.class",
+  "com/agentbench/analyzer/Rules$RuleSpec.class",
+  "com/agentbench/analyzer/Rules$SymbolSpec.class",
+  "com/agentbench/analyzer/Rules.class",
   "domain-v1.json",
 ]);
+const RULE_ORDER = Object.freeze([
+  "spatial.project-entry", "spatial.container-topology", "spatial.entity-content", "spatial.ui-lifecycle",
+  "ecs.component-clone", "ecs.system-query", "ecs.frame-update", "ecs.lifecycle",
+  "state.single-source", "state.typed-handoff", "state.shared-read-write", "state.reopen-wiring",
+  "plane.retry-readiness", "plane.semantic-fallback", "plane.anchor-pose", "plane.cleanup-errors",
+]);
+const WITNESS_KINDS = Object.freeze([
+  "declaration", "callable_reference", "call", "argument", "property_read", "assignment",
+  "condition", "loop", "lambda", "return", "type_reference", "catch",
+]);
+const PROOF_FORMS_BY_RULE = deepFreeze({
+  "ecs.component-clone": ["expression-component-clone", "single-return-block-component-clone"],
+  "ecs.frame-update": ["assign-delta-update", "plus-assign-delta-update"],
+  "ecs.lifecycle": ["paired-system-lifecycle"],
+  "ecs.system-query": ["hoisted-query-scene-update"],
+  "plane.anchor-pose": ["same-anchor-pose-conversion"],
+  "plane.cleanup-errors": ["paired-plane-cleanup-status"],
+  "plane.retry-readiness": ["bounded-retained-load-retry"],
+  "plane.semantic-fallback": ["dominating-semantic-plane-fallback"],
+  "spatial.container-topology": ["direct-mixed-stage-open", "one-helper-mixed-stage-open", "two-helper-mixed-stage-open"],
+  "spatial.entity-content": ["spatial-view-entity-attachment"],
+  "spatial.project-entry": ["application-launch-root"],
+  "spatial.ui-lifecycle": ["themed-window-and-disposable-stage"],
+  "state.reopen-wiring": ["retained-state-close-reopen"],
+  "state.shared-read-write": ["same-authority-read-write"],
+  "state.single-source": ["shared-strong-authority"],
+  "state.typed-handoff": ["typed-bundle-roundtrip"],
+});
+const ACCEPTED_ALTERNATIVES_BY_RULE = deepFreeze({
+  "ecs.component-clone": {
+    "expression-component-clone": ["positional-fields", "named-fields"],
+    "single-return-block-component-clone": ["positional-fields", "named-fields"],
+  },
+  "ecs.frame-update": {
+    "assign-delta-update": ["direct-transform", "pure-helper-transform"],
+    "plus-assign-delta-update": ["direct-transform", "pure-helper-transform"],
+  },
+  "ecs.lifecycle": { "paired-system-lifecycle": ["direct-register-unregister"] },
+  "ecs.system-query": { "hoisted-query-scene-update": ["direct-query-use", "pure-helper-query-use"] },
+  "plane.anchor-pose": { "same-anchor-pose-conversion": ["direct-pose-conversion", "pure-helper-pose-conversion"] },
+  "plane.cleanup-errors": { "paired-plane-cleanup-status": ["direct-cleanup", "unique-helper-cleanup"] },
+  "plane.retry-readiness": { "bounded-retained-load-retry": ["bounded-for", "canonical-bounded-while"] },
+  "plane.semantic-fallback": { "dominating-semantic-plane-fallback": ["inline-selectors", "unique-helper-selectors"] },
+  "spatial.container-topology": {
+    "direct-mixed-stage-open": ["named-literal-stage-id", "named-const-stage-id", "named-source-symbol-stage-id", "positional-literal-stage-id", "positional-const-stage-id", "positional-source-symbol-stage-id"],
+    "one-helper-mixed-stage-open": ["named-literal-stage-id", "named-const-stage-id", "named-source-symbol-stage-id", "positional-literal-stage-id", "positional-const-stage-id", "positional-source-symbol-stage-id"],
+    "two-helper-mixed-stage-open": ["named-literal-stage-id", "named-const-stage-id", "named-source-symbol-stage-id", "positional-literal-stage-id", "positional-const-stage-id", "positional-source-symbol-stage-id"],
+  },
+  "spatial.entity-content": { "spatial-view-entity-attachment": ["direct-initial-entity", "unique-helper-initial-entity"] },
+  "spatial.project-entry": { "application-launch-root": ["direct-launch-import", "aliased-launch-import"] },
+  "spatial.ui-lifecycle": { "themed-window-and-disposable-stage": ["direct-theme-paired-dispose"] },
+  "state.reopen-wiring": { "retained-state-close-reopen": ["standard-store-reopen", "equivalent-repository-reopen"] },
+  "state.shared-read-write": { "same-authority-read-write": ["direct-container-summaries"] },
+  "state.single-source": { "shared-strong-authority": ["top-level-val", "object-singleton", "companion-held-singleton"] },
+  "state.typed-handoff": { "typed-bundle-roundtrip": ["direct-bundle-adapter", "unique-helper-bundle-adapter"] },
+});
+const DOMAIN_KEYS = new Set(["acceptedAlternativesByRule", "analyzerName", "domainVersion", "proofFormsByRule", "ruleOrder", "symbols", "witnessKinds"]);
+const SYMBOL_KEYS = new Set(["arguments", "callbacks", "effects", "fqn", "kind", "memberPrecedence", "receiverAbstractType", "returnAbstractType", "signature"]);
+const ARGUMENT_KEYS = new Set(["abstractType", "name", "position"]);
+const CALLBACK_KEYS = new Set(["argumentPosition", "invocationModel", "role"]);
+const SYMBOL_KINDS = new Set(["type", "constructor", "top_level_function", "member_function", "extension_function", "member_property"]);
+const MEMBER_PRECEDENCE = new Set(["not_applicable", "sdk_member_wins", "source_extension_if_no_sdk_member"]);
+const CALLBACK_ROLES = new Set([
+  "application_entry", "window_content", "stage_content", "launched_effect", "button_click", "coroutine_body",
+  "disposable_effect", "dispose_cleanup", "spatial_initial", "spatial_attachments", "spatial_update",
+  "collection_element", "collection_predicate", "collection_selector",
+]);
+const INVOCATION_MODELS = new Set([
+  "source_root", "possible_path", "user_action", "launched_path", "acquire_path", "cleanup_path",
+  "element_flow", "predicate_flow", "selector_flow",
+]);
+const EFFECTS = new Set([
+  "read", "mutate", "construct", "replace", "unknown_escape", "open", "close", "acquire", "release",
+  "load", "readiness", "convert", "place", "status_assign",
+]);
+const ABSTRACT_TYPES = new Set([
+  "boolean", "int", "long", "float", "double", "string", "unit", "java_class", "callable",
+  "immutable_iterable", "immutable_list", "integer_range", "coroutine_scope", "android_application",
+  "spatial_launch_activity", "bundle", "spatial_app_scope", "spatial_navigator", "stage_style", "spatial_content",
+  "component", "component_store", "entity", "entity_collection", "entity_query_condition", "ecs_system", "scene",
+  "scene_update_context", "transform_component", "vector3", "quat", "cancellable", "semantic_label", "plane_anchor",
+  "plane_anchor_collection", "plane_geometry", "plane_orientation", "plane_tracking_manager",
+]);
+const REQUIRED_COMPONENT_SYMBOLS = deepFreeze([
+  { arguments: [], callbacks: [], effects: ["construct"], fqn: "com.pico.spatial.core.ecs.Component", kind: "constructor", memberPrecedence: "not_applicable", receiverAbstractType: null, returnAbstractType: "component", signature: "Component()" },
+  { arguments: [], callbacks: [], effects: [], fqn: "com.pico.spatial.core.ecs.Component", kind: "type", memberPrecedence: "not_applicable", receiverAbstractType: null, returnAbstractType: "component", signature: "open class Component" },
+  { arguments: [], callbacks: [], effects: ["construct"], fqn: "com.pico.spatial.core.ecs.Component.clone", kind: "member_function", memberPrecedence: "sdk_member_wins", receiverAbstractType: "component", returnAbstractType: "component", signature: "clone(): Component" },
+]);
+const REQUIRED_CLASS_REFERENCES = new Set([
+  "com/agentbench/analyzer/AbstractInterpreter", "com/agentbench/analyzer/Main", "com/agentbench/analyzer/Protocol", "com/agentbench/analyzer/Protocol$Parser",
+  "com/agentbench/analyzer/PsiIndex", "com/agentbench/analyzer/PsiIndex$Edge", "com/agentbench/analyzer/PsiIndex$EdgeRole", "com/agentbench/analyzer/PsiIndex$FileUnit",
+  "com/agentbench/analyzer/PsiIndex$ImportEntry", "com/agentbench/analyzer/PsiIndex$Node", "com/agentbench/analyzer/PsiIndex$NodeFlag", "com/agentbench/analyzer/PsiIndex$NodeKind",
+  "com/agentbench/analyzer/PsiIndex$Program", "com/agentbench/analyzer/PsiIndex$Result", "com/agentbench/analyzer/PsiIndex$SnapshotRejected", "com/agentbench/analyzer/PsiIndex$Source",
+  "com/agentbench/analyzer/PsiIndex$Token", "com/agentbench/analyzer/PsiIndex$TokenKind", "com/agentbench/analyzer/PsiIndex$WitnessKind", "com/agentbench/analyzer/PsiIndex$WitnessNode",
+  "com/agentbench/analyzer/Rules", "com/agentbench/analyzer/Rules$AlternativeSpec", "com/agentbench/analyzer/Rules$Analysis", "com/agentbench/analyzer/Rules$ArgumentSpec",
+  "com/agentbench/analyzer/Rules$CallbackSpec", "com/agentbench/analyzer/Rules$Domain", "com/agentbench/analyzer/Rules$RuleSpec", "com/agentbench/analyzer/Rules$SymbolSpec",
+  "java/lang/Enum",
+  "org/jetbrains/kotlin/cli/jvm/compiler/KotlinCoreEnvironment", "org/jetbrains/kotlin/com/intellij/openapi/util/Disposer",
+  "org/jetbrains/kotlin/psi/KtFile", "org/jetbrains/kotlin/psi/KtPsiFactory",
+]);
 const ALLOWED_CLASS_REFERENCES = new Set([
-  "[B", "[Ljava/lang/String;", "[Lorg/jetbrains/kotlin/com/intellij/psi/PsiElement;", "com/agentbench/analyzer/Main", "com/agentbench/analyzer/Protocol", "com/agentbench/analyzer/Protocol$Parser", "com/agentbench/analyzer/PsiIndex", "com/agentbench/analyzer/PsiIndex$Result", "com/agentbench/analyzer/PsiIndex$Source",
-  "java/io/IOException", "java/io/InputStream", "java/io/OutputStream", "java/io/PrintStream", "java/lang/Boolean", "java/lang/Byte", "java/lang/Character", "java/lang/Class", "java/lang/IllegalArgumentException", "java/lang/IllegalStateException", "java/lang/Integer", "java/lang/Long", "java/lang/Math", "java/lang/Number", "java/lang/NumberFormatException", "java/lang/Object", "java/lang/Record", "java/lang/Short", "java/lang/String", "java/lang/StringBuilder", "java/lang/System", "java/lang/Throwable", "java/lang/invoke/LambdaMetafactory", "java/lang/invoke/MethodHandles", "java/lang/invoke/MethodHandles$Lookup", "java/lang/invoke/StringConcatFactory", "java/lang/runtime/ObjectMethods", "java/nio/ByteBuffer", "java/nio/CharBuffer", "java/nio/charset/CharacterCodingException", "java/nio/charset/Charset", "java/nio/charset/CharsetDecoder", "java/nio/charset/CodingErrorAction", "java/nio/charset/StandardCharsets", "java/security/MessageDigest", "java/security/NoSuchAlgorithmException", "java/util/ArrayDeque", "java/util/ArrayList", "java/util/Base64", "java/util/Base64$Decoder", "java/util/Base64$Encoder", "java/util/Comparator", "java/util/HashMap", "java/util/HexFormat", "java/util/Iterator", "java/util/LinkedHashMap", "java/util/List", "java/util/Map", "java/util/Set", "java/util/regex/Matcher", "java/util/regex/Pattern",
-  "org/jetbrains/kotlin/cli/common/CLIConfigurationKeys", "org/jetbrains/kotlin/cli/common/messages/MessageCollector", "org/jetbrains/kotlin/cli/common/messages/MessageCollector$Companion", "org/jetbrains/kotlin/cli/jvm/compiler/EnvironmentConfigFiles", "org/jetbrains/kotlin/cli/jvm/compiler/KotlinCoreEnvironment", "org/jetbrains/kotlin/com/intellij/openapi/Disposable", "org/jetbrains/kotlin/com/intellij/openapi/util/Disposer", "org/jetbrains/kotlin/com/intellij/psi/PsiElement", "org/jetbrains/kotlin/com/intellij/psi/util/PsiTreeUtil", "org/jetbrains/kotlin/config/CommonConfigurationKeys", "org/jetbrains/kotlin/config/CompilerConfiguration", "org/jetbrains/kotlin/name/FqName", "org/jetbrains/kotlin/name/Name", "org/jetbrains/kotlin/psi/KtCallExpression", "org/jetbrains/kotlin/psi/KtFile", "org/jetbrains/kotlin/psi/KtImportDirective", "org/jetbrains/kotlin/psi/KtNamedDeclaration", "org/jetbrains/kotlin/psi/KtPsiFactory", "org/jetbrains/kotlin/resolve/ImportPath",
+  "[B", "[I", "[Lcom/agentbench/analyzer/PsiIndex$EdgeRole;", "[Lcom/agentbench/analyzer/PsiIndex$NodeFlag;", "[Lcom/agentbench/analyzer/PsiIndex$NodeKind;",
+  "[Lcom/agentbench/analyzer/PsiIndex$TokenKind;", "[Lcom/agentbench/analyzer/PsiIndex$WitnessKind;", "[Ljava/lang/String;", "[Lorg/jetbrains/kotlin/com/intellij/psi/PsiElement;",
+  "[Lorg/jetbrains/kotlin/psi/KtStringTemplateEntry;", "[Lorg/jetbrains/kotlin/psi/KtWhenCondition;",
+  "com/agentbench/analyzer/AbstractInterpreter", "com/agentbench/analyzer/Main", "com/agentbench/analyzer/Protocol", "com/agentbench/analyzer/Protocol$Parser",
+  "com/agentbench/analyzer/PsiIndex", "com/agentbench/analyzer/PsiIndex$Edge", "com/agentbench/analyzer/PsiIndex$EdgeRole", "com/agentbench/analyzer/PsiIndex$FileUnit",
+  "com/agentbench/analyzer/PsiIndex$ImportEntry", "com/agentbench/analyzer/PsiIndex$Node", "com/agentbench/analyzer/PsiIndex$NodeFlag", "com/agentbench/analyzer/PsiIndex$NodeKind",
+  "com/agentbench/analyzer/PsiIndex$Program", "com/agentbench/analyzer/PsiIndex$Result", "com/agentbench/analyzer/PsiIndex$SnapshotRejected", "com/agentbench/analyzer/PsiIndex$Source",
+  "com/agentbench/analyzer/PsiIndex$Token", "com/agentbench/analyzer/PsiIndex$TokenKind", "com/agentbench/analyzer/PsiIndex$WitnessKind", "com/agentbench/analyzer/PsiIndex$WitnessNode",
+  "com/agentbench/analyzer/Rules", "com/agentbench/analyzer/Rules$AlternativeSpec", "com/agentbench/analyzer/Rules$Analysis", "com/agentbench/analyzer/Rules$ArgumentSpec",
+  "com/agentbench/analyzer/Rules$CallbackSpec", "com/agentbench/analyzer/Rules$Domain", "com/agentbench/analyzer/Rules$RuleSpec", "com/agentbench/analyzer/Rules$SymbolSpec",
+  "java/io/IOException", "java/io/InputStream", "java/io/OutputStream", "java/io/PrintStream", "java/lang/Boolean", "java/lang/Byte", "java/lang/Character", "java/lang/Class", "java/lang/Enum", "java/lang/IllegalArgumentException", "java/lang/IllegalStateException", "java/lang/Integer", "java/lang/Long", "java/lang/Math", "java/lang/Number", "java/lang/NumberFormatException", "java/lang/Object", "java/lang/Record", "java/lang/RuntimeException", "java/lang/Short", "java/lang/String", "java/lang/StringBuilder", "java/lang/System", "java/lang/Throwable", "java/lang/invoke/LambdaMetafactory", "java/lang/invoke/MethodHandles", "java/lang/invoke/MethodHandles$Lookup", "java/lang/invoke/StringConcatFactory", "java/lang/runtime/ObjectMethods", "java/nio/ByteBuffer", "java/nio/CharBuffer", "java/nio/charset/CharacterCodingException", "java/nio/charset/Charset", "java/nio/charset/CharsetDecoder", "java/nio/charset/CodingErrorAction", "java/nio/charset/StandardCharsets", "java/security/MessageDigest", "java/security/NoSuchAlgorithmException", "java/util/ArrayDeque", "java/util/ArrayList", "java/util/Base64", "java/util/Base64$Decoder", "java/util/Base64$Encoder", "java/util/Collection", "java/util/Comparator", "java/util/HashMap", "java/util/HashSet", "java/util/HexFormat", "java/util/IdentityHashMap", "java/util/Iterator", "java/util/LinkedHashMap", "java/util/List", "java/util/Map", "java/util/Map$Entry", "java/util/Objects", "java/util/Set", "java/util/regex/Matcher", "java/util/regex/Pattern",
+  "org/jetbrains/kotlin/cli/common/CLIConfigurationKeys", "org/jetbrains/kotlin/cli/common/messages/MessageCollector", "org/jetbrains/kotlin/cli/common/messages/MessageCollector$Companion", "org/jetbrains/kotlin/cli/jvm/compiler/EnvironmentConfigFiles", "org/jetbrains/kotlin/cli/jvm/compiler/KotlinCoreEnvironment",
+  "org/jetbrains/kotlin/com/intellij/lang/ASTNode", "org/jetbrains/kotlin/com/intellij/openapi/Disposable", "org/jetbrains/kotlin/com/intellij/openapi/util/Disposer", "org/jetbrains/kotlin/com/intellij/openapi/util/TextRange", "org/jetbrains/kotlin/com/intellij/psi/PsiElement", "org/jetbrains/kotlin/com/intellij/psi/PsiErrorElement", "org/jetbrains/kotlin/com/intellij/psi/tree/IElementType", "org/jetbrains/kotlin/com/intellij/psi/tree/TokenSet", "org/jetbrains/kotlin/com/intellij/psi/util/PsiTreeUtil",
+  "org/jetbrains/kotlin/config/CommonConfigurationKeys", "org/jetbrains/kotlin/config/CompilerConfiguration", "org/jetbrains/kotlin/lexer/KtTokens", "org/jetbrains/kotlin/name/FqName", "org/jetbrains/kotlin/name/Name",
+  "org/jetbrains/kotlin/psi/KtAnnotated", "org/jetbrains/kotlin/psi/KtAnnotationEntry", "org/jetbrains/kotlin/psi/KtArrayAccessExpression", "org/jetbrains/kotlin/psi/KtBinaryExpression", "org/jetbrains/kotlin/psi/KtBinaryExpressionWithTypeRHS", "org/jetbrains/kotlin/psi/KtBlockExpression", "org/jetbrains/kotlin/psi/KtBreakExpression", "org/jetbrains/kotlin/psi/KtCallExpression", "org/jetbrains/kotlin/psi/KtCallableReferenceExpression", "org/jetbrains/kotlin/psi/KtCatchClause", "org/jetbrains/kotlin/psi/KtClass", "org/jetbrains/kotlin/psi/KtClassLiteralExpression", "org/jetbrains/kotlin/psi/KtClassOrObject", "org/jetbrains/kotlin/psi/KtConstantExpression", "org/jetbrains/kotlin/psi/KtConstructorCalleeExpression", "org/jetbrains/kotlin/psi/KtContinueExpression", "org/jetbrains/kotlin/psi/KtDotQualifiedExpression", "org/jetbrains/kotlin/psi/KtDoubleColonExpression", "org/jetbrains/kotlin/psi/KtExpression", "org/jetbrains/kotlin/psi/KtExpressionWithLabel", "org/jetbrains/kotlin/psi/KtFile", "org/jetbrains/kotlin/psi/KtForExpression", "org/jetbrains/kotlin/psi/KtIfExpression", "org/jetbrains/kotlin/psi/KtImportDirective", "org/jetbrains/kotlin/psi/KtLabeledExpression", "org/jetbrains/kotlin/psi/KtLambdaExpression", "org/jetbrains/kotlin/psi/KtModifierListOwner", "org/jetbrains/kotlin/psi/KtNameReferenceExpression", "org/jetbrains/kotlin/psi/KtNamedDeclaration", "org/jetbrains/kotlin/psi/KtNamedFunction", "org/jetbrains/kotlin/psi/KtNullableType", "org/jetbrains/kotlin/psi/KtObjectDeclaration", "org/jetbrains/kotlin/psi/KtOperationReferenceExpression", "org/jetbrains/kotlin/psi/KtPackageDirective", "org/jetbrains/kotlin/psi/KtParameter", "org/jetbrains/kotlin/psi/KtParenthesizedExpression", "org/jetbrains/kotlin/psi/KtPostfixExpression", "org/jetbrains/kotlin/psi/KtPrefixExpression", "org/jetbrains/kotlin/psi/KtProperty", "org/jetbrains/kotlin/psi/KtPsiFactory", "org/jetbrains/kotlin/psi/KtQualifiedExpression", "org/jetbrains/kotlin/psi/KtReturnExpression", "org/jetbrains/kotlin/psi/KtSafeQualifiedExpression", "org/jetbrains/kotlin/psi/KtSimpleNameExpression", "org/jetbrains/kotlin/psi/KtStringTemplateEntry", "org/jetbrains/kotlin/psi/KtStringTemplateExpression", "org/jetbrains/kotlin/psi/KtSuperTypeCallEntry", "org/jetbrains/kotlin/psi/KtSuperTypeListEntry", "org/jetbrains/kotlin/psi/KtThisExpression", "org/jetbrains/kotlin/psi/KtTryExpression", "org/jetbrains/kotlin/psi/KtTypeElement", "org/jetbrains/kotlin/psi/KtTypeProjection", "org/jetbrains/kotlin/psi/KtTypeReference", "org/jetbrains/kotlin/psi/KtUnaryExpression", "org/jetbrains/kotlin/psi/KtUserType", "org/jetbrains/kotlin/psi/KtValueArgument", "org/jetbrains/kotlin/psi/KtValueArgumentName", "org/jetbrains/kotlin/psi/KtWhenCondition", "org/jetbrains/kotlin/psi/KtWhenConditionInRange", "org/jetbrains/kotlin/psi/KtWhenConditionIsPattern", "org/jetbrains/kotlin/psi/KtWhenConditionWithExpression", "org/jetbrains/kotlin/psi/KtWhenEntry", "org/jetbrains/kotlin/psi/KtWhenExpression", "org/jetbrains/kotlin/psi/KtWhileExpressionBase", "org/jetbrains/kotlin/psi/ValueArgument", "org/jetbrains/kotlin/resolve/ImportPath",
+]);
+const ALLOWED_IMPORTS_BY_SOURCE = new Map([
+  ["AbstractInterpreter.java", new Set([
+    "java.util.ArrayList", "java.util.HashMap", "java.util.List", "java.util.Map",
+  ])],
+  ["Main.java", new Set([
+    "java.nio.ByteBuffer", "java.nio.charset.CharacterCodingException", "java.nio.charset.CodingErrorAction", "java.nio.charset.StandardCharsets",
+    "java.util.ArrayList", "java.util.Base64", "java.util.LinkedHashMap", "java.util.List", "java.util.Map", "java.util.Set", "java.util.regex.Pattern",
+  ])],
+  ["Protocol.java", new Set([
+    "java.io.IOException", "java.io.InputStream", "java.io.OutputStream", "java.nio.ByteBuffer",
+    "java.nio.charset.CharacterCodingException", "java.nio.charset.CodingErrorAction", "java.nio.charset.StandardCharsets",
+    "java.security.MessageDigest", "java.security.NoSuchAlgorithmException", "java.util.ArrayList", "java.util.Arrays",
+    "java.util.Comparator", "java.util.LinkedHashMap", "java.util.List", "java.util.Map",
+  ])],
+  ["PsiIndex.java", new Set([
+    "java.nio.charset.StandardCharsets", "java.util.ArrayDeque", "java.util.ArrayList", "java.util.HashMap", "java.util.HashSet",
+    "java.util.IdentityHashMap", "java.util.List", "java.util.Map", "java.util.Objects", "java.util.Set",
+    "org.jetbrains.kotlin.cli.common.CLIConfigurationKeys", "org.jetbrains.kotlin.cli.common.messages.MessageCollector",
+    "org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles", "org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment",
+    "org.jetbrains.kotlin.com.intellij.openapi.Disposable", "org.jetbrains.kotlin.com.intellij.openapi.util.Disposer",
+    "org.jetbrains.kotlin.com.intellij.openapi.util.TextRange", "org.jetbrains.kotlin.com.intellij.psi.PsiElement",
+    "org.jetbrains.kotlin.com.intellij.psi.PsiErrorElement", "org.jetbrains.kotlin.com.intellij.psi.tree.IElementType",
+    "org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil", "org.jetbrains.kotlin.config.CommonConfigurationKeys",
+    "org.jetbrains.kotlin.config.CompilerConfiguration", "org.jetbrains.kotlin.lexer.KtTokens",
+    "org.jetbrains.kotlin.psi.KtAnnotated", "org.jetbrains.kotlin.psi.KtAnnotationEntry",
+    "org.jetbrains.kotlin.psi.KtArrayAccessExpression", "org.jetbrains.kotlin.psi.KtBinaryExpression",
+    "org.jetbrains.kotlin.psi.KtBinaryExpressionWithTypeRHS", "org.jetbrains.kotlin.psi.KtBlockExpression",
+    "org.jetbrains.kotlin.psi.KtBreakExpression", "org.jetbrains.kotlin.psi.KtCallExpression",
+    "org.jetbrains.kotlin.psi.KtCallableReferenceExpression", "org.jetbrains.kotlin.psi.KtCatchClause",
+    "org.jetbrains.kotlin.psi.KtClass", "org.jetbrains.kotlin.psi.KtClassLiteralExpression",
+    "org.jetbrains.kotlin.psi.KtClassOrObject", "org.jetbrains.kotlin.psi.KtConstantExpression",
+    "org.jetbrains.kotlin.psi.KtConstructorCalleeExpression", "org.jetbrains.kotlin.psi.KtContinueExpression",
+    "org.jetbrains.kotlin.psi.KtDotQualifiedExpression", "org.jetbrains.kotlin.psi.KtDoubleColonExpression",
+    "org.jetbrains.kotlin.psi.KtExpression", "org.jetbrains.kotlin.psi.KtExpressionWithLabel",
+    "org.jetbrains.kotlin.psi.KtFile", "org.jetbrains.kotlin.psi.KtForExpression",
+    "org.jetbrains.kotlin.psi.KtIfExpression", "org.jetbrains.kotlin.psi.KtImportDirective",
+    "org.jetbrains.kotlin.psi.KtLabeledExpression", "org.jetbrains.kotlin.psi.KtLambdaExpression",
+    "org.jetbrains.kotlin.psi.KtModifierListOwner", "org.jetbrains.kotlin.psi.KtNameReferenceExpression",
+    "org.jetbrains.kotlin.psi.KtNamedDeclaration", "org.jetbrains.kotlin.psi.KtNamedFunction",
+    "org.jetbrains.kotlin.psi.KtNullableType", "org.jetbrains.kotlin.psi.KtObjectDeclaration",
+    "org.jetbrains.kotlin.psi.KtPackageDirective", "org.jetbrains.kotlin.psi.KtParameter",
+    "org.jetbrains.kotlin.psi.KtParenthesizedExpression", "org.jetbrains.kotlin.psi.KtPostfixExpression",
+    "org.jetbrains.kotlin.psi.KtPrefixExpression", "org.jetbrains.kotlin.psi.KtProperty",
+    "org.jetbrains.kotlin.psi.KtPsiFactory", "org.jetbrains.kotlin.psi.KtQualifiedExpression",
+    "org.jetbrains.kotlin.psi.KtReturnExpression", "org.jetbrains.kotlin.psi.KtSafeQualifiedExpression",
+    "org.jetbrains.kotlin.psi.KtStringTemplateEntry", "org.jetbrains.kotlin.psi.KtStringTemplateExpression",
+    "org.jetbrains.kotlin.psi.KtSuperTypeCallEntry", "org.jetbrains.kotlin.psi.KtSuperTypeListEntry", "org.jetbrains.kotlin.psi.KtThisExpression",
+    "org.jetbrains.kotlin.psi.KtTryExpression", "org.jetbrains.kotlin.psi.KtTypeElement",
+    "org.jetbrains.kotlin.psi.KtTypeProjection", "org.jetbrains.kotlin.psi.KtTypeReference",
+    "org.jetbrains.kotlin.psi.KtUnaryExpression", "org.jetbrains.kotlin.psi.KtUserType",
+    "org.jetbrains.kotlin.psi.KtValueArgument", "org.jetbrains.kotlin.psi.KtValueArgumentName",
+    "org.jetbrains.kotlin.psi.KtWhenCondition", "org.jetbrains.kotlin.psi.KtWhenConditionInRange",
+    "org.jetbrains.kotlin.psi.KtWhenConditionIsPattern", "org.jetbrains.kotlin.psi.KtWhenConditionWithExpression",
+    "org.jetbrains.kotlin.psi.KtWhenEntry", "org.jetbrains.kotlin.psi.KtWhenExpression",
+    "org.jetbrains.kotlin.psi.KtWhileExpressionBase", "org.jetbrains.kotlin.resolve.ImportPath",
+  ])],
+  ["Rules.java", new Set([
+    "java.io.IOException", "java.io.InputStream", "java.util.ArrayList", "java.util.HashMap",
+    "java.util.LinkedHashMap", "java.util.List", "java.util.Map", "java.util.Set",
+  ])],
 ]);
 const RESPONSE_KEYS = new Set(["protocolVersion", "subsetVersion", "command", "analysisStatus", "rejectionCode", "kotlinInputSetSha256", "files", "constants", "nodes", "claims"]);
+const NODE_KEYS = new Set(["nodeId", "path", "fileSha256", "startUtf16", "endUtf16", "kind", "textSha256", "structuralToken"]);
+const CLAIM_KEYS = new Set(["ruleId", "proofForm", "witnessNodeIds", "witnessDigest"]);
 const REJECTION_CODES = new Set(["parse", "unsupported_script", "ambiguous_index", "incomplete_imports", "limit", "internal_uncertainty"]);
 const CACHE = new Map();
 let cacheBytes = 0;
@@ -146,10 +343,10 @@ class JsonParser {
   take(character) { if (this.source[this.index] === character) { this.index += 1; return true; } return false; }
   require(character) { if (!this.take(character)) fail(`canonical JSON expected ${character}`); }
 }
-function parseCanonicalJson(bytes) {
-  let source; try { source = UTF8.decode(bytes); } catch { fail("response is not valid UTF-8"); }
+function parseCanonicalJson(bytes, label = "response") {
+  let source; try { source = UTF8.decode(bytes); } catch { fail(`${label} is not valid UTF-8`); }
   const parser = new JsonParser(source); const value = parser.value();
-  if (parser.index !== source.length || canonicalJson(value) !== source) fail("response JSON is not canonical");
+  if (parser.index !== source.length || canonicalJson(value) !== source) fail(`${label} JSON is not canonical`);
   return value;
 }
 function sha256(bytes) { return crypto.createHash("sha256").update(bytes).digest("hex"); }
@@ -201,6 +398,102 @@ function jdkTreeIdentity(root) {
   return Object.freeze({ ...counts, sha256: sha256(canonicalJson(entries)) });
 }
 function exact(value, expected, label) { if (canonicalJson(value) !== canonicalJson(expected)) fail(`${label} mismatch`); }
+function nonemptyString(value, label) {
+  if (typeof value !== "string" || value.length === 0) fail(`${label} must be a nonempty string`);
+  return value;
+}
+function uniqueStrings(value, label) {
+  if (!Array.isArray(value) || value.length === 0) fail(`${label} must be a nonempty string array`);
+  const seen = new Set();
+  for (const entry of value) {
+    nonemptyString(entry, label);
+    if (seen.has(entry)) fail(`${label} must be unique`);
+    seen.add(entry);
+  }
+  return value;
+}
+function nullableEnum(value, values, label) {
+  if (value !== null && !values.has(value)) fail(`${label} is outside the closed vocabulary`);
+}
+function validateDomain(material) {
+  const domain = parseCanonicalJson(material.bytes, "analyzer domain");
+  exactKeys(domain, DOMAIN_KEYS, "analyzer domain");
+  if (domain.analyzerName !== "supported-subset-abstract-interpreter-v1" || domain.domainVersion !== 1) fail("analyzer domain identity mismatch");
+  exact(domain.ruleOrder, RULE_ORDER, "analyzer domain ruleOrder");
+  exact(domain.witnessKinds, WITNESS_KINDS, "analyzer domain witnessKinds");
+  exact(domain.proofFormsByRule, PROOF_FORMS_BY_RULE, "analyzer domain proof-form vocabulary");
+  exact(domain.acceptedAlternativesByRule, ACCEPTED_ALTERNATIVES_BY_RULE, "analyzer domain alternative vocabulary");
+  if (!Array.isArray(domain.symbols)) fail("analyzer domain symbols must be an array");
+  const identities = [];
+  const byIdentity = new Map();
+  for (let index = 0; index < domain.symbols.length; index += 1) {
+    const symbol = domain.symbols[index];
+    exactKeys(symbol, SYMBOL_KEYS, `analyzer domain symbol ${index}`);
+    nonemptyString(symbol.fqn, `analyzer domain symbol ${index} fqn`);
+    nonemptyString(symbol.signature, `analyzer domain symbol ${index} signature`);
+    if (!SYMBOL_KINDS.has(symbol.kind)) fail(`analyzer domain symbol ${index} kind is outside the closed vocabulary`);
+    if (!MEMBER_PRECEDENCE.has(symbol.memberPrecedence)) fail(`analyzer domain symbol ${index} memberPrecedence is outside the closed vocabulary`);
+    nullableEnum(symbol.receiverAbstractType, ABSTRACT_TYPES, `analyzer domain symbol ${index} receiverAbstractType`);
+    nullableEnum(symbol.returnAbstractType, ABSTRACT_TYPES, `analyzer domain symbol ${index} returnAbstractType`);
+    if (!Array.isArray(symbol.arguments)) fail(`analyzer domain symbol ${index} arguments must be an array`);
+    for (let position = 0; position < symbol.arguments.length; position += 1) {
+      const argument = symbol.arguments[position];
+      exactKeys(argument, ARGUMENT_KEYS, `analyzer domain symbol ${index} argument ${position}`);
+      if (argument.position !== position) fail(`analyzer domain symbol ${index} argument positions must be dense and zero based`);
+      if (argument.name !== null) nonemptyString(argument.name, `analyzer domain symbol ${index} argument ${position} name`);
+      if (!ABSTRACT_TYPES.has(argument.abstractType)) fail(`analyzer domain symbol ${index} argument ${position} abstractType is outside the closed vocabulary`);
+    }
+    if (!Array.isArray(symbol.callbacks)) fail(`analyzer domain symbol ${index} callbacks must be an array`);
+    const callbackPositions = new Set();
+    for (let callbackIndex = 0; callbackIndex < symbol.callbacks.length; callbackIndex += 1) {
+      const callback = symbol.callbacks[callbackIndex];
+      exactKeys(callback, CALLBACK_KEYS, `analyzer domain symbol ${index} callback ${callbackIndex}`);
+      if (!Number.isSafeInteger(callback.argumentPosition) || callback.argumentPosition < 0 || callback.argumentPosition >= symbol.arguments.length) {
+        fail(`analyzer domain symbol ${index} callback argumentPosition is invalid`);
+      }
+      if (callbackPositions.has(callback.argumentPosition)) fail(`analyzer domain symbol ${index} callback argumentPosition is duplicated`);
+      callbackPositions.add(callback.argumentPosition);
+      if (!CALLBACK_ROLES.has(callback.role)) fail(`analyzer domain symbol ${index} callback role is outside the closed vocabulary`);
+      if (!INVOCATION_MODELS.has(callback.invocationModel)) fail(`analyzer domain symbol ${index} callback invocationModel is outside the closed vocabulary`);
+    }
+    if (!Array.isArray(symbol.effects)) fail(`analyzer domain symbol ${index} effects must be an array`);
+    const effects = new Set();
+    for (const effect of symbol.effects) {
+      if (!EFFECTS.has(effect)) fail(`analyzer domain symbol ${index} effect is outside the closed vocabulary`);
+      if (effects.has(effect)) fail(`analyzer domain symbol ${index} effects must be unique`);
+      effects.add(effect);
+    }
+    const identity = canonicalJson({ fqn: symbol.fqn, signature: symbol.signature });
+    if (identities.length > 0 && Buffer.compare(Buffer.from(identities.at(-1)), Buffer.from(identity)) >= 0) fail("analyzer domain symbols must be UTF-8 sorted and unique");
+    identities.push(identity); byIdentity.set(identity, symbol);
+  }
+  for (const required of REQUIRED_COMPONENT_SYMBOLS) {
+    const identity = canonicalJson({ fqn: required.fqn, signature: required.signature });
+    if (!byIdentity.has(identity) || canonicalJson(byIdentity.get(identity)) !== canonicalJson(required)) fail(`analyzer domain clone-canary symbol mismatch for ${required.fqn} ${required.signature}`);
+  }
+  return deepFreeze(domain);
+}
+function validateJavaSourceCapabilities(javaSources) {
+  const sourceNames = javaSources.map((source) => path.basename(source)).sort(compare);
+  exact(sourceNames, [...ALLOWED_IMPORTS_BY_SOURCE.keys()].sort(compare), "source import policy five-source inventory");
+  const forbiddenText = [
+    "ProcessBuilder", "ProcessHandle", "Runtime.getRuntime", "Runtime.exec", "ClassLoader", "Class.forName",
+    "getClassLoader", "loadClass", "java.net.", "javax.net.", "java.nio.file.", "java.io.File", "java.lang.reflect",
+    "java.lang.invoke", "javax.script", "javax.tools", "kotlin.script", "K2JVMCompiler", "KotlinCompileDaemon",
+  ];
+  for (const source of javaSources) {
+    const text = trustedFile(source, `analyzer source ${path.basename(source)}`).bytes.toString("utf8");
+    const sourceName = path.basename(source); const allowedImports = ALLOWED_IMPORTS_BY_SOURCE.get(sourceName); const imports = [];
+    for (const match of text.matchAll(/^import\s+(static\s+)?([^;]+);$/gm)) {
+      if (match[1] || !allowedImports.has(match[2])) fail(`analyzer source contains unreviewed import ${match[0]}`);
+      imports.push(match[2]);
+    }
+    if (imports.length !== new Set(imports).size) fail(`${sourceName} contains a duplicate import`);
+    if ((sourceName === "AbstractInterpreter.java" || sourceName === "Rules.java")
+        && (text.includes("org.jetbrains.kotlin") || text.includes("com.intellij"))) fail(`${sourceName} contains a PSI or Kotlin compiler reference`);
+    for (const token of forbiddenText) if (text.includes(token)) fail(`analyzer source contains forbidden capability ${token}`);
+  }
+}
 function validateDirectory(directory, empty = false, expectedMode = null) {
   trustedAncestors(directory); const stat = fs.lstatSync(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(directory) !== directory || stat.uid !== process.getuid() || (stat.mode & 0o022) !== 0) fail(`${directory} is not a canonical runner-owned directory`);
@@ -269,14 +562,23 @@ function validateReviewedJar(material, domain) {
   exact(inspection.entries, EXPECTED_JAR_ENTRIES, "reviewed thin JAR entries");
   const embedded = inspection.contents.get("domain-v1.json");
   if (!embedded || !embedded.equals(domain.material.bytes)) fail("embedded analyzer domain mismatch");
-  const forbidden = ["java/lang/ProcessBuilder", "java/lang/ProcessHandle", "java/lang/Runtime", "java/lang/ClassLoader", "java/io/File", "java/nio/file/", "java/net/", "javax/script/", "javax/tools/", "java/lang/reflect/", "kotlin/script", "K2JVMCompiler", "KotlinCompileDaemon", "loadClass", "forName"];
+  const forbidden = ["java/lang/ProcessBuilder", "java/lang/ProcessHandle", "java/lang/ClassLoader", "java/io/File", "java/nio/file/", "java/net/", "javax/net/", "javax/script/", "javax/tools/", "java/lang/reflect/", "kotlin/script", "K2JVMCompiler", "KotlinCompileDaemon", "loadClass", "forName"];
   const references = new Set();
   for (const [name, content] of inspection.contents) if (name.endsWith(".class")) {
     for (const token of forbidden) if (content.includes(Buffer.from(token))) fail(`analyzer bytecode ${name} contains forbidden capability ${token}`);
-    for (const reference of classReferences(content)) references.add(reference);
+    const classNames = classReferences(content);
+    if (classNames.includes("java/lang/Runtime")) fail(`analyzer bytecode ${name} contains forbidden capability java/lang/Runtime`);
+    if ((name === "com/agentbench/analyzer/AbstractInterpreter.class" || name === "com/agentbench/analyzer/Rules.class" || name.startsWith("com/agentbench/analyzer/Rules$"))
+        && ["org/jetbrains/kotlin/", "com/intellij/"].some((token) => content.includes(Buffer.from(token)))) {
+      fail(`semantic analyzer bytecode ${name} references PSI`);
+    }
+    for (const reference of classNames) references.add(reference);
   }
-  exact([...references].sort(compare), [...ALLOWED_CLASS_REFERENCES].sort(compare), "analyzer bytecode class-reference inventory");
-  return inspection;
+  const actual = [...references].sort(compare);
+  const missing = [...REQUIRED_CLASS_REFERENCES].filter((reference) => !references.has(reference));
+  const surplus = actual.filter((reference) => !ALLOWED_CLASS_REFERENCES.has(reference));
+  if (missing.length > 0 || surplus.length > 0) fail(`analyzer bytecode class-reference capability bounds mismatch: missing=${canonicalJson(missing.sort(compare))} surplus=${canonicalJson(surplus)}`);
+  return { ...inspection, classReferences: actual };
 }
 function classReferences(bytes) {
   if (bytes.length < 10 || bytes.readUInt32BE(0) !== 0xcafebabe) fail("invalid analyzer class file");
@@ -309,15 +611,15 @@ function verifyAnalyzerArtifactUnlocked() {
   const withoutHash = { ...receipt };
   delete withoutHash.receiptSha256;
   if (!HASH.test(receiptSha256) || receiptDigest(withoutHash) !== receiptSha256) fail("analyzer receipt self-hash mismatch");
-  const domain = stableJson(DOMAIN_PATH);
+  const domainMaterial = trustedFile(DOMAIN_PATH);
+  const domain = Object.freeze({ value: validateDomain(domainMaterial), material: domainMaterial });
   const dependencies = stableJson(DEPENDENCIES_PATH);
   const toolchain = stableJson(TOOLCHAIN_PATH);
   if (receipt.artifactRoot !== ARTIFACT_ROOT || receipt.analyzerName !== "supported-subset-abstract-interpreter-v1"
       || receipt.protocolVersion !== 1 || receipt.subsetVersion !== 1 || receipt.domainVersion !== 1) fail("receipt version or locator mismatch");
-  const inputPaths = [
-    path.join(JAVA_ROOT, "Main.java"), path.join(JAVA_ROOT, "Protocol.java"), path.join(JAVA_ROOT, "PsiIndex.java"),
-    DOMAIN_PATH, DEPENDENCIES_PATH, TOOLCHAIN_PATH, BUILD_PATH, BRIDGE_PATH,
-  ].sort(compare);
+  const javaSources = [...ALLOWED_IMPORTS_BY_SOURCE.keys()].map((name) => path.join(JAVA_ROOT, name)).sort(compare);
+  validateJavaSourceCapabilities(javaSources);
+  const inputPaths = [...javaSources, DOMAIN_PATH, DEPENDENCIES_PATH, TOOLCHAIN_PATH, BUILD_PATH, BRIDGE_PATH].sort(compare);
   const sourceInputs = inputPaths.map((file) => { const row = trustedFile(file); return { path: repositoryRelative(file), bytes: row.size, sha256: row.sha256 }; });
   exact(receipt.sourceInputs, sourceInputs, "receipt source inputs");
   if (receipt.analyzerSourceSha256 !== sha256(canonicalJson(sourceInputs)) || receipt.domainSha256 !== domain.material.sha256
@@ -364,6 +666,7 @@ function verifyAnalyzerArtifactUnlocked() {
     javacArgs: ["-J-Duser.home=$BUILD_HOME", "-J-Djava.io.tmpdir=$BUILD_TMP", "--release", "17", "-encoding", "UTF-8", "-g:none", "-proc:none", "-classpath", "$ORDERED_SEVEN_JARS", "-d", "$CLASSES", "$SORTED_ABSOLUTE_JAVA_SOURCES"],
     jarArgs: ["-J-Duser.home=$BUILD_HOME", "-J-Djava.io.tmpdir=$BUILD_TMP", "--create", "--no-manifest", "--file", "$ANALYZER_JAR", "--date=1980-01-01T00:00:02Z", "@$SORTED_RELATIVE_ENTRY_FILE"],
     cleanBuildJarSha256: [analyzerJar.sha256, analyzerJar.sha256],
+    classReferences: inspection.classReferences,
     jarEntries: inspection.entries,
   }, "receipt build vectors");
   const runCwd = path.join(ARTIFACT_ROOT, "run-cwd");
@@ -387,7 +690,7 @@ function verifyAnalyzerArtifactUnlocked() {
     classpathSha256: sha256(canonicalJson(classpath)), launch, bounds,
   };
   exact(withoutHash, expectedWithoutHash, "complete receipt");
-  return deepFreeze({ receiptSha256, receiptFileSha256: receiptFile.sha256, analyzerJarBytes: analyzerJar.size, analyzerJarSha256: analyzerJar.sha256, runtime, classpath, classpathSha256: receipt.classpathSha256, jdkTreeSha256: jdkTree.sha256, nodeSha256: platform.node.sha256, domainSha256: domain.material.sha256, bridgeSha256: receipt.bridgeSha256, launch: receipt.launch });
+  return deepFreeze({ receiptSha256, receiptFileSha256: receiptFile.sha256, analyzerJarBytes: analyzerJar.size, analyzerJarSha256: analyzerJar.sha256, runtime, classpath, classpathSha256: receipt.classpathSha256, jdkTreeSha256: jdkTree.sha256, nodeSha256: platform.node.sha256, domainSha256: domain.material.sha256, domain: domain.value, bridgeSha256: receipt.bridgeSha256, launch: receipt.launch });
 }
 function validatePath(value) {
   if (typeof value !== "string" || value.length === 0 || Buffer.byteLength(value) > ANALYZER_CONSTANTS.MAX_PATH_UTF8_BYTES
@@ -417,22 +720,108 @@ function exactKeys(value, keys, label) {
   const actual = Object.keys(value);
   if (actual.length !== keys.size || actual.some((key) => !keys.has(key))) fail(`${label} has an unknown or missing key`);
 }
-function validateResponse(bytes, request) {
-  const response = parseCanonicalJson(bytes);
+function compareUtf8(left, right) { return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8")); }
+function splitSurrogateBoundary(source, offset) {
+  if (offset <= 0 || offset >= source.length) return false;
+  const left = source.charCodeAt(offset - 1); const right = source.charCodeAt(offset);
+  return left >= 0xd800 && left <= 0xdbff && right >= 0xdc00 && right <= 0xdfff;
+}
+function requestSource(request, node) {
+  const matches = request.files.filter((file) => file.path === node.path);
+  if (matches.length !== 1) fail("node path does not resolve to exactly one request file");
+  const file = matches[0];
+  if (node.fileSha256 !== file.sha256) fail("node file sha256 does not match the request file hash");
+  const bytes = Buffer.from(file.contentBase64, "base64");
+  if (bytes.toString("base64") !== file.contentBase64 || bytes.length !== file.bytes || sha256(bytes) !== file.sha256) fail("request file bytes do not match their receipt");
+  let source; try { source = UTF8.decode(bytes); } catch { fail("request file is not valid UTF-8"); }
+  return source;
+}
+function validateNode(node, request, previousNodeId, index) {
+  exactKeys(node, NODE_KEYS, `node ${index}`);
+  if (!HASH.test(node.nodeId)) fail(`node ${index} nodeId is not a lowercase SHA-256 digest`);
+  validatePath(node.path);
+  if (!HASH.test(node.fileSha256)) fail(`node ${index} file sha256 is invalid`);
+  if (!HASH.test(node.textSha256)) fail(`node ${index} text hash is invalid`);
+  if (!WITNESS_KINDS.includes(node.kind)) fail(`node ${index} witness kind is outside the closed vocabulary`);
+  if (typeof node.structuralToken !== "boolean") fail(`node ${index} structuralToken must be a boolean`);
+  if (previousNodeId !== null && compareUtf8(previousNodeId, node.nodeId) >= 0) fail("node catalog must be UTF-8 sorted and unique");
+  const source = requestSource(request, node);
+  if (!Number.isSafeInteger(node.startUtf16) || !Number.isSafeInteger(node.endUtf16)
+      || node.startUtf16 < 0 || node.endUtf16 <= node.startUtf16 || node.endUtf16 > source.length) fail(`node ${index} UTF-16 span is out of bounds or reversed`);
+  if (splitSurrogateBoundary(source, node.startUtf16) || splitSurrogateBoundary(source, node.endUtf16)) fail(`node ${index} UTF-16 span splits a surrogate boundary`);
+  const textSha256 = sha256(Buffer.from(source.slice(node.startUtf16, node.endUtf16), "utf8"));
+  if (textSha256 !== node.textSha256) fail(`node ${index} text hash does not match the exact substring`);
+  const identity = { path: node.path, fileSha256: node.fileSha256, startUtf16: node.startUtf16, endUtf16: node.endUtf16,
+    kind: node.kind, textSha256: node.textSha256, structuralToken: node.structuralToken };
+  if (sha256(Buffer.from(canonicalJson(identity), "utf8")) !== node.nodeId) fail(`node ${index} node ID digest mismatch`);
+  if (!node.structuralToken && node.kind !== "argument") fail(`node ${index} nonstructural literal witness kind must be argument`);
+}
+function validateAcceptedSemantics(response, request, domain) {
+  if (response.nodes.length > ANALYZER_CONSTANTS.MAX_RESPONSE_NODES) fail("response node catalog exceeds the node limit");
+  if (response.claims.length > ANALYZER_CONSTANTS.MAX_CLAIMS) fail("response claim list exceeds the claim limit");
+  let previousNodeId = null;
+  const nodes = new Map();
+  for (let index = 0; index < response.nodes.length; index += 1) {
+    const node = response.nodes[index];
+    validateNode(node, request, previousNodeId, index);
+    previousNodeId = node.nodeId; nodes.set(node.nodeId, node);
+  }
+  let previousRuleIndex = -1; let totalWitnesses = 0;
+  const union = new Set();
+  for (let index = 0; index < response.claims.length; index += 1) {
+    const claim = response.claims[index];
+    exactKeys(claim, CLAIM_KEYS, `claim ${index}`);
+    const ruleIndex = domain.ruleOrder.indexOf(claim.ruleId);
+    if (ruleIndex < 0) fail(`claim ${index} rule is outside the closed domain`);
+    if (ruleIndex <= previousRuleIndex) fail("claims must contain at most one claim per rule in domain rule order");
+    previousRuleIndex = ruleIndex;
+    if (typeof claim.proofForm !== "string" || !domain.proofFormsByRule[claim.ruleId].includes(claim.proofForm)) fail(`claim ${index} proof form is outside the rule domain`);
+    if (!Array.isArray(claim.witnessNodeIds) || claim.witnessNodeIds.length < 1
+        || claim.witnessNodeIds.length > ANALYZER_CONSTANTS.MAX_WITNESSES_PER_CLAIM) fail(`claim ${index} witness list is empty or exceeds the witness limit`);
+    let previousWitness = null; let hasStructural = false;
+    for (const witnessNodeId of claim.witnessNodeIds) {
+      if (!HASH.test(witnessNodeId)) fail(`claim ${index} witness node ID is invalid`);
+      if (previousWitness !== null && compareUtf8(previousWitness, witnessNodeId) >= 0) fail(`claim ${index} witness IDs must be UTF-8 sorted and unique`);
+      previousWitness = witnessNodeId;
+      const node = nodes.get(witnessNodeId);
+      if (!node) fail(`claim ${index} witness does not resolve into the node catalog`);
+      if (node.structuralToken) hasStructural = true;
+      else if (node.kind !== "argument") fail(`claim ${index} nonstructural literal witness must have argument kind`);
+      union.add(witnessNodeId);
+    }
+    if (!hasStructural) fail(`claim ${index} requires at least one structural witness; literal-only claims are invalid`);
+    totalWitnesses += claim.witnessNodeIds.length;
+    if (totalWitnesses > ANALYZER_CONSTANTS.MAX_TOTAL_WITNESSES) fail("total witness reference sum exceeds the witness limit");
+    if (!HASH.test(claim.witnessDigest)) fail(`claim ${index} witness digest is invalid`);
+    const digestMaterial = { ruleId: claim.ruleId, proofForm: claim.proofForm, witnessNodeIds: claim.witnessNodeIds };
+    if (sha256(Buffer.from(canonicalJson(digestMaterial), "utf8")) !== claim.witnessDigest) fail(`claim ${index} witness digest mismatch`);
+  }
+  const expectedCatalog = [...union].sort(compareUtf8);
+  const actualCatalog = response.nodes.map((node) => node.nodeId);
+  if (canonicalJson(actualCatalog) !== canonicalJson(expectedCatalog)) fail("node catalog must equal the exact sorted claim-witness union; orphan or missing catalog node");
+}
+function validateResponse(bytes, request, domain) {
+  const response = parseCanonicalJson(bytes, "response");
   exactKeys(response, RESPONSE_KEYS, "response");
   if (response.protocolVersion !== 1 || response.subsetVersion !== 1 || response.command !== request.command) fail("response protocolVersion/subsetVersion/command mismatch");
   if (response.kotlinInputSetSha256 !== request.kotlinInputSetSha256) fail("response kotlinInputSetSha256 digest mismatch");
   const receipts = request.files.map(({ path, bytes: count, sha256: digest }) => ({ path, bytes: count, sha256: digest }));
   exact(response.files, receipts, "response file receipts");
-  if (!Array.isArray(response.nodes) || !Array.isArray(response.claims) || response.nodes.length !== 0 || response.claims.length !== 0) fail("Batch 1 response must contain no nodes or semantic claims");
+  if (!Array.isArray(response.nodes) || !Array.isArray(response.claims)) fail("response nodes and claims must be arrays");
   if (request.command === "describe") {
     if (response.analysisStatus !== "accepted" || response.rejectionCode !== null) fail("describe response status is impossible");
     exact(response.constants, ANALYZER_CONSTANTS, "describe constants");
+    if (response.nodes.length !== 0 || response.claims.length !== 0) fail("describe response must not contain semantic nodes or claims");
   } else {
     if (response.constants !== null) fail("analyze constants must be null");
-    if (response.analysisStatus === "accepted" && response.rejectionCode !== null) fail("accepted response has a rejection code");
-    if (response.analysisStatus === "rejected" && !REJECTION_CODES.has(response.rejectionCode)) fail("rejected response has an invalid code");
     if (!new Set(["accepted", "rejected"]).has(response.analysisStatus)) fail("response analysisStatus is invalid");
+    if (response.analysisStatus === "accepted") {
+      if (response.rejectionCode !== null) fail("accepted response has a rejection code");
+      validateAcceptedSemantics(response, request, domain);
+    } else {
+      if (!REJECTION_CODES.has(response.rejectionCode)) fail("rejected response has an invalid code");
+      if (response.nodes.length !== 0 || response.claims.length !== 0) fail("rejected response must not contain semantic nodes or claims");
+    }
   }
   return deepFreeze(response);
 }
@@ -462,7 +851,7 @@ function invoke(request, verified) {
   if (length > BigInt(ANALYZER_CONSTANTS.MAX_RESPONSE_JSON_BYTES)) fail("response frame exceeds bound");
   if (BigInt(stdout.length - 8) !== length) fail(BigInt(stdout.length - 8) > length ? "trailing response frame bytes" : "partial response frame payload");
   const json = Buffer.from(stdout.subarray(8));
-  const value = validateResponse(json, request);
+  const value = validateResponse(json, request, verified.domain);
   return { value, json };
 }
 function clearRuntimeDirectories() {
@@ -477,14 +866,22 @@ function cacheKey(parts) {
   for (const part of parts) { const bytes = Buffer.from(String(part)); framed.push(frame(bytes)); }
   return sha256(Buffer.concat(framed));
 }
-function cacheGet(key, request) {
+function cacheGet(key, request, domain) {
   const bytes = CACHE.get(key);
   if (!bytes) return null;
-  CACHE.delete(key); CACHE.set(key, bytes);
-  return validateResponse(Buffer.from(bytes), request);
+  try {
+    const value = validateResponse(Buffer.from(bytes), request, domain);
+    CACHE.delete(key); CACHE.set(key, bytes);
+    return value;
+  } catch (error) {
+    CACHE.delete(key); cacheBytes -= bytes.length;
+    throw error;
+  }
 }
 function cachePut(key, bytes) {
   if (bytes.length > ANALYZER_CONSTANTS.CACHE_MAX_ENCODED_BYTES) return;
+  const prior = CACHE.get(key);
+  if (prior) { CACHE.delete(key); cacheBytes -= prior.length; }
   CACHE.set(key, Buffer.from(bytes)); cacheBytes += bytes.length;
   while (CACHE.size > ANALYZER_CONSTANTS.CACHE_MAX_ENTRIES || cacheBytes > ANALYZER_CONSTANTS.CACHE_MAX_ENCODED_BYTES) {
     const oldest = CACHE.keys().next().value;
@@ -507,7 +904,7 @@ export function analyzeKotlin(index) {
     const anchor = canonicalJson([verified.receiptSha256, verified.jdkTreeSha256, verified.bridgeSha256, 1, 1]);
     if (cacheAnchor !== anchor) { CACHE.clear(); cacheBytes = 0; cacheAnchor = anchor; }
     const key = cacheKey([verified.receiptSha256, verified.analyzerJarSha256, verified.classpathSha256, verified.jdkTreeSha256, verified.domainSha256, verified.bridgeSha256, 1, 1, digest]);
-    const cached = cacheGet(key, request);
+    const cached = cacheGet(key, request, verified.domain);
     if (cached) return cached;
     const analyzed = invoke(request, verified);
     cachePut(key, analyzed.json);

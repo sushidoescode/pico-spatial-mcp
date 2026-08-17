@@ -13,18 +13,216 @@ const REPOSITORY_ROOT = path.resolve(ANALYZER_ROOT, "../../..");
 const ARTIFACTS_ROOT = path.join(ANALYZER_ROOT, ".artifacts");
 const PUBLISHED_ROOT = path.join(ARTIFACTS_ROOT, "v1");
 const BRIDGE = path.join(ANALYZER_ROOT, "../lib/kotlin-analysis.mjs");
-const SOURCE_PATHS = ["Main.java", "Protocol.java", "PsiIndex.java"]
+const SOURCE_PATHS = ["AbstractInterpreter.java", "Main.java", "Protocol.java", "PsiIndex.java", "Rules.java"]
   .map((name) => path.join(ANALYZER_ROOT, "src/main/java/com/agentbench/analyzer", name));
 const CONFIG_PATHS = ["domain-v1.json", "dependencies-v1.json", "toolchain-v1.json"]
   .map((name) => path.join(ANALYZER_ROOT, name));
 const RECEIPT_NAME = "analyzer-build-receipt-v1.json";
 const HASH = /^[a-f0-9]{64}$/;
 const RECEIPT_DOMAIN = Buffer.from("agentbench-analyzer-receipt-v1\0", "utf8");
-const EXPECTED_JAR_ENTRIES = Object.freeze(["com/agentbench/analyzer/Main.class", "com/agentbench/analyzer/Protocol$Parser.class", "com/agentbench/analyzer/Protocol.class", "com/agentbench/analyzer/PsiIndex$Result.class", "com/agentbench/analyzer/PsiIndex$Source.class", "com/agentbench/analyzer/PsiIndex.class", "domain-v1.json"]);
+const EXPECTED_JAR_ENTRIES = Object.freeze([
+  "com/agentbench/analyzer/AbstractInterpreter.class",
+  "com/agentbench/analyzer/Main.class",
+  "com/agentbench/analyzer/Protocol$Parser.class",
+  "com/agentbench/analyzer/Protocol.class",
+  "com/agentbench/analyzer/PsiIndex$Edge.class",
+  "com/agentbench/analyzer/PsiIndex$EdgeRole.class",
+  "com/agentbench/analyzer/PsiIndex$FileUnit.class",
+  "com/agentbench/analyzer/PsiIndex$ImportEntry.class",
+  "com/agentbench/analyzer/PsiIndex$Node.class",
+  "com/agentbench/analyzer/PsiIndex$NodeFlag.class",
+  "com/agentbench/analyzer/PsiIndex$NodeKind.class",
+  "com/agentbench/analyzer/PsiIndex$Program.class",
+  "com/agentbench/analyzer/PsiIndex$Result.class",
+  "com/agentbench/analyzer/PsiIndex$SnapshotRejected.class",
+  "com/agentbench/analyzer/PsiIndex$Source.class",
+  "com/agentbench/analyzer/PsiIndex$Token.class",
+  "com/agentbench/analyzer/PsiIndex$TokenKind.class",
+  "com/agentbench/analyzer/PsiIndex$WitnessKind.class",
+  "com/agentbench/analyzer/PsiIndex$WitnessNode.class",
+  "com/agentbench/analyzer/PsiIndex.class",
+  "com/agentbench/analyzer/Rules$AlternativeSpec.class",
+  "com/agentbench/analyzer/Rules$Analysis.class",
+  "com/agentbench/analyzer/Rules$ArgumentSpec.class",
+  "com/agentbench/analyzer/Rules$CallbackSpec.class",
+  "com/agentbench/analyzer/Rules$Domain.class",
+  "com/agentbench/analyzer/Rules$RuleSpec.class",
+  "com/agentbench/analyzer/Rules$SymbolSpec.class",
+  "com/agentbench/analyzer/Rules.class",
+  "domain-v1.json",
+]);
+const RULE_ORDER = Object.freeze([
+  "spatial.project-entry", "spatial.container-topology", "spatial.entity-content", "spatial.ui-lifecycle",
+  "ecs.component-clone", "ecs.system-query", "ecs.frame-update", "ecs.lifecycle",
+  "state.single-source", "state.typed-handoff", "state.shared-read-write", "state.reopen-wiring",
+  "plane.retry-readiness", "plane.semantic-fallback", "plane.anchor-pose", "plane.cleanup-errors",
+]);
+const WITNESS_KINDS = Object.freeze([
+  "declaration", "callable_reference", "call", "argument", "property_read", "assignment",
+  "condition", "loop", "lambda", "return", "type_reference", "catch",
+]);
+const PROOF_FORMS_BY_RULE = Object.freeze({
+  "ecs.component-clone": ["expression-component-clone", "single-return-block-component-clone"],
+  "ecs.frame-update": ["assign-delta-update", "plus-assign-delta-update"],
+  "ecs.lifecycle": ["paired-system-lifecycle"],
+  "ecs.system-query": ["hoisted-query-scene-update"],
+  "plane.anchor-pose": ["same-anchor-pose-conversion"],
+  "plane.cleanup-errors": ["paired-plane-cleanup-status"],
+  "plane.retry-readiness": ["bounded-retained-load-retry"],
+  "plane.semantic-fallback": ["dominating-semantic-plane-fallback"],
+  "spatial.container-topology": ["direct-mixed-stage-open", "one-helper-mixed-stage-open", "two-helper-mixed-stage-open"],
+  "spatial.entity-content": ["spatial-view-entity-attachment"],
+  "spatial.project-entry": ["application-launch-root"],
+  "spatial.ui-lifecycle": ["themed-window-and-disposable-stage"],
+  "state.reopen-wiring": ["retained-state-close-reopen"],
+  "state.shared-read-write": ["same-authority-read-write"],
+  "state.single-source": ["shared-strong-authority"],
+  "state.typed-handoff": ["typed-bundle-roundtrip"],
+});
+const ACCEPTED_ALTERNATIVES_BY_RULE = Object.freeze({
+  "ecs.component-clone": {
+    "expression-component-clone": ["positional-fields", "named-fields"],
+    "single-return-block-component-clone": ["positional-fields", "named-fields"],
+  },
+  "ecs.frame-update": {
+    "assign-delta-update": ["direct-transform", "pure-helper-transform"],
+    "plus-assign-delta-update": ["direct-transform", "pure-helper-transform"],
+  },
+  "ecs.lifecycle": { "paired-system-lifecycle": ["direct-register-unregister"] },
+  "ecs.system-query": { "hoisted-query-scene-update": ["direct-query-use", "pure-helper-query-use"] },
+  "plane.anchor-pose": { "same-anchor-pose-conversion": ["direct-pose-conversion", "pure-helper-pose-conversion"] },
+  "plane.cleanup-errors": { "paired-plane-cleanup-status": ["direct-cleanup", "unique-helper-cleanup"] },
+  "plane.retry-readiness": { "bounded-retained-load-retry": ["bounded-for", "canonical-bounded-while"] },
+  "plane.semantic-fallback": { "dominating-semantic-plane-fallback": ["inline-selectors", "unique-helper-selectors"] },
+  "spatial.container-topology": {
+    "direct-mixed-stage-open": ["named-literal-stage-id", "named-const-stage-id", "named-source-symbol-stage-id", "positional-literal-stage-id", "positional-const-stage-id", "positional-source-symbol-stage-id"],
+    "one-helper-mixed-stage-open": ["named-literal-stage-id", "named-const-stage-id", "named-source-symbol-stage-id", "positional-literal-stage-id", "positional-const-stage-id", "positional-source-symbol-stage-id"],
+    "two-helper-mixed-stage-open": ["named-literal-stage-id", "named-const-stage-id", "named-source-symbol-stage-id", "positional-literal-stage-id", "positional-const-stage-id", "positional-source-symbol-stage-id"],
+  },
+  "spatial.entity-content": { "spatial-view-entity-attachment": ["direct-initial-entity", "unique-helper-initial-entity"] },
+  "spatial.project-entry": { "application-launch-root": ["direct-launch-import", "aliased-launch-import"] },
+  "spatial.ui-lifecycle": { "themed-window-and-disposable-stage": ["direct-theme-paired-dispose"] },
+  "state.reopen-wiring": { "retained-state-close-reopen": ["standard-store-reopen", "equivalent-repository-reopen"] },
+  "state.shared-read-write": { "same-authority-read-write": ["direct-container-summaries"] },
+  "state.single-source": { "shared-strong-authority": ["top-level-val", "object-singleton", "companion-held-singleton"] },
+  "state.typed-handoff": { "typed-bundle-roundtrip": ["direct-bundle-adapter", "unique-helper-bundle-adapter"] },
+});
+const SYMBOL_KINDS = new Set(["type", "constructor", "top_level_function", "member_function", "extension_function", "member_property"]);
+const MEMBER_PRECEDENCE = new Set(["not_applicable", "sdk_member_wins", "source_extension_if_no_sdk_member"]);
+const CALLBACK_ROLES = new Set([
+  "application_entry", "window_content", "stage_content", "launched_effect", "button_click", "coroutine_body",
+  "disposable_effect", "dispose_cleanup", "spatial_initial", "spatial_attachments", "spatial_update",
+  "collection_element", "collection_predicate", "collection_selector",
+]);
+const INVOCATION_MODELS = new Set([
+  "source_root", "possible_path", "user_action", "launched_path", "acquire_path", "cleanup_path",
+  "element_flow", "predicate_flow", "selector_flow",
+]);
+const EFFECTS = new Set([
+  "read", "mutate", "construct", "replace", "unknown_escape", "open", "close", "acquire", "release",
+  "load", "readiness", "convert", "place", "status_assign",
+]);
+const ABSTRACT_TYPES = new Set([
+  "boolean", "int", "long", "float", "double", "string", "unit", "java_class", "callable",
+  "immutable_iterable", "immutable_list", "integer_range", "coroutine_scope", "android_application",
+  "spatial_launch_activity", "bundle", "spatial_app_scope", "spatial_navigator", "stage_style", "spatial_content",
+  "component", "component_store", "entity", "entity_collection", "entity_query_condition", "ecs_system", "scene",
+  "scene_update_context", "transform_component", "vector3", "quat", "cancellable", "semantic_label", "plane_anchor",
+  "plane_anchor_collection", "plane_geometry", "plane_orientation", "plane_tracking_manager",
+]);
+const CANARY_SYMBOLS = Object.freeze([
+  { arguments: [], callbacks: [], effects: ["construct"], fqn: "com.pico.spatial.core.ecs.Component", kind: "constructor", memberPrecedence: "not_applicable", receiverAbstractType: null, returnAbstractType: "component", signature: "Component()" },
+  { arguments: [], callbacks: [], effects: [], fqn: "com.pico.spatial.core.ecs.Component", kind: "type", memberPrecedence: "not_applicable", receiverAbstractType: null, returnAbstractType: "component", signature: "open class Component" },
+  { arguments: [], callbacks: [], effects: ["construct"], fqn: "com.pico.spatial.core.ecs.Component.clone", kind: "member_function", memberPrecedence: "sdk_member_wins", receiverAbstractType: "component", returnAbstractType: "component", signature: "clone(): Component" },
+]);
+const REQUIRED_CLASS_REFERENCES = new Set([
+  "com/agentbench/analyzer/AbstractInterpreter", "com/agentbench/analyzer/Main", "com/agentbench/analyzer/Protocol", "com/agentbench/analyzer/Protocol$Parser",
+  "com/agentbench/analyzer/PsiIndex", "com/agentbench/analyzer/PsiIndex$Edge", "com/agentbench/analyzer/PsiIndex$EdgeRole", "com/agentbench/analyzer/PsiIndex$FileUnit",
+  "com/agentbench/analyzer/PsiIndex$ImportEntry", "com/agentbench/analyzer/PsiIndex$Node", "com/agentbench/analyzer/PsiIndex$NodeFlag", "com/agentbench/analyzer/PsiIndex$NodeKind",
+  "com/agentbench/analyzer/PsiIndex$Program", "com/agentbench/analyzer/PsiIndex$Result", "com/agentbench/analyzer/PsiIndex$SnapshotRejected", "com/agentbench/analyzer/PsiIndex$Source",
+  "com/agentbench/analyzer/PsiIndex$Token", "com/agentbench/analyzer/PsiIndex$TokenKind", "com/agentbench/analyzer/PsiIndex$WitnessKind", "com/agentbench/analyzer/PsiIndex$WitnessNode",
+  "com/agentbench/analyzer/Rules", "com/agentbench/analyzer/Rules$AlternativeSpec", "com/agentbench/analyzer/Rules$Analysis", "com/agentbench/analyzer/Rules$ArgumentSpec",
+  "com/agentbench/analyzer/Rules$CallbackSpec", "com/agentbench/analyzer/Rules$Domain", "com/agentbench/analyzer/Rules$RuleSpec", "com/agentbench/analyzer/Rules$SymbolSpec",
+  "java/lang/Enum", "org/jetbrains/kotlin/cli/jvm/compiler/KotlinCoreEnvironment", "org/jetbrains/kotlin/com/intellij/openapi/util/Disposer",
+  "org/jetbrains/kotlin/psi/KtFile", "org/jetbrains/kotlin/psi/KtPsiFactory",
+]);
 const ALLOWED_CLASS_REFERENCES = new Set([
-  "[B", "[Ljava/lang/String;", "[Lorg/jetbrains/kotlin/com/intellij/psi/PsiElement;", "com/agentbench/analyzer/Main", "com/agentbench/analyzer/Protocol", "com/agentbench/analyzer/Protocol$Parser", "com/agentbench/analyzer/PsiIndex", "com/agentbench/analyzer/PsiIndex$Result", "com/agentbench/analyzer/PsiIndex$Source",
-  "java/io/IOException", "java/io/InputStream", "java/io/OutputStream", "java/io/PrintStream", "java/lang/Boolean", "java/lang/Byte", "java/lang/Character", "java/lang/Class", "java/lang/IllegalArgumentException", "java/lang/IllegalStateException", "java/lang/Integer", "java/lang/Long", "java/lang/Math", "java/lang/Number", "java/lang/NumberFormatException", "java/lang/Object", "java/lang/Record", "java/lang/Short", "java/lang/String", "java/lang/StringBuilder", "java/lang/System", "java/lang/Throwable", "java/lang/invoke/LambdaMetafactory", "java/lang/invoke/MethodHandles", "java/lang/invoke/MethodHandles$Lookup", "java/lang/invoke/StringConcatFactory", "java/lang/runtime/ObjectMethods", "java/nio/ByteBuffer", "java/nio/CharBuffer", "java/nio/charset/CharacterCodingException", "java/nio/charset/Charset", "java/nio/charset/CharsetDecoder", "java/nio/charset/CodingErrorAction", "java/nio/charset/StandardCharsets", "java/security/MessageDigest", "java/security/NoSuchAlgorithmException", "java/util/ArrayDeque", "java/util/ArrayList", "java/util/Base64", "java/util/Base64$Decoder", "java/util/Base64$Encoder", "java/util/Comparator", "java/util/HashMap", "java/util/HexFormat", "java/util/Iterator", "java/util/LinkedHashMap", "java/util/List", "java/util/Map", "java/util/Set", "java/util/regex/Matcher", "java/util/regex/Pattern",
-  "org/jetbrains/kotlin/cli/common/CLIConfigurationKeys", "org/jetbrains/kotlin/cli/common/messages/MessageCollector", "org/jetbrains/kotlin/cli/common/messages/MessageCollector$Companion", "org/jetbrains/kotlin/cli/jvm/compiler/EnvironmentConfigFiles", "org/jetbrains/kotlin/cli/jvm/compiler/KotlinCoreEnvironment", "org/jetbrains/kotlin/com/intellij/openapi/Disposable", "org/jetbrains/kotlin/com/intellij/openapi/util/Disposer", "org/jetbrains/kotlin/com/intellij/psi/PsiElement", "org/jetbrains/kotlin/com/intellij/psi/util/PsiTreeUtil", "org/jetbrains/kotlin/config/CommonConfigurationKeys", "org/jetbrains/kotlin/config/CompilerConfiguration", "org/jetbrains/kotlin/name/FqName", "org/jetbrains/kotlin/name/Name", "org/jetbrains/kotlin/psi/KtCallExpression", "org/jetbrains/kotlin/psi/KtFile", "org/jetbrains/kotlin/psi/KtImportDirective", "org/jetbrains/kotlin/psi/KtNamedDeclaration", "org/jetbrains/kotlin/psi/KtPsiFactory", "org/jetbrains/kotlin/resolve/ImportPath",
+  "[B", "[I", "[Lcom/agentbench/analyzer/PsiIndex$EdgeRole;", "[Lcom/agentbench/analyzer/PsiIndex$NodeFlag;", "[Lcom/agentbench/analyzer/PsiIndex$NodeKind;",
+  "[Lcom/agentbench/analyzer/PsiIndex$TokenKind;", "[Lcom/agentbench/analyzer/PsiIndex$WitnessKind;", "[Ljava/lang/String;", "[Lorg/jetbrains/kotlin/com/intellij/psi/PsiElement;",
+  "[Lorg/jetbrains/kotlin/psi/KtStringTemplateEntry;", "[Lorg/jetbrains/kotlin/psi/KtWhenCondition;",
+  "com/agentbench/analyzer/AbstractInterpreter", "com/agentbench/analyzer/Main", "com/agentbench/analyzer/Protocol", "com/agentbench/analyzer/Protocol$Parser",
+  "com/agentbench/analyzer/PsiIndex", "com/agentbench/analyzer/PsiIndex$Edge", "com/agentbench/analyzer/PsiIndex$EdgeRole", "com/agentbench/analyzer/PsiIndex$FileUnit",
+  "com/agentbench/analyzer/PsiIndex$ImportEntry", "com/agentbench/analyzer/PsiIndex$Node", "com/agentbench/analyzer/PsiIndex$NodeFlag", "com/agentbench/analyzer/PsiIndex$NodeKind",
+  "com/agentbench/analyzer/PsiIndex$Program", "com/agentbench/analyzer/PsiIndex$Result", "com/agentbench/analyzer/PsiIndex$SnapshotRejected", "com/agentbench/analyzer/PsiIndex$Source",
+  "com/agentbench/analyzer/PsiIndex$Token", "com/agentbench/analyzer/PsiIndex$TokenKind", "com/agentbench/analyzer/PsiIndex$WitnessKind", "com/agentbench/analyzer/PsiIndex$WitnessNode",
+  "com/agentbench/analyzer/Rules", "com/agentbench/analyzer/Rules$AlternativeSpec", "com/agentbench/analyzer/Rules$Analysis", "com/agentbench/analyzer/Rules$ArgumentSpec",
+  "com/agentbench/analyzer/Rules$CallbackSpec", "com/agentbench/analyzer/Rules$Domain", "com/agentbench/analyzer/Rules$RuleSpec", "com/agentbench/analyzer/Rules$SymbolSpec",
+  "java/io/IOException", "java/io/InputStream", "java/io/OutputStream", "java/io/PrintStream", "java/lang/Boolean", "java/lang/Byte", "java/lang/Character", "java/lang/Class", "java/lang/Enum", "java/lang/IllegalArgumentException", "java/lang/IllegalStateException", "java/lang/Integer", "java/lang/Long", "java/lang/Math", "java/lang/Number", "java/lang/NumberFormatException", "java/lang/Object", "java/lang/Record", "java/lang/RuntimeException", "java/lang/Short", "java/lang/String", "java/lang/StringBuilder", "java/lang/System", "java/lang/Throwable", "java/lang/invoke/LambdaMetafactory", "java/lang/invoke/MethodHandles", "java/lang/invoke/MethodHandles$Lookup", "java/lang/invoke/StringConcatFactory", "java/lang/runtime/ObjectMethods", "java/nio/ByteBuffer", "java/nio/CharBuffer", "java/nio/charset/CharacterCodingException", "java/nio/charset/Charset", "java/nio/charset/CharsetDecoder", "java/nio/charset/CodingErrorAction", "java/nio/charset/StandardCharsets", "java/security/MessageDigest", "java/security/NoSuchAlgorithmException", "java/util/ArrayDeque", "java/util/ArrayList", "java/util/Base64", "java/util/Base64$Decoder", "java/util/Base64$Encoder", "java/util/Collection", "java/util/Comparator", "java/util/HashMap", "java/util/HashSet", "java/util/HexFormat", "java/util/IdentityHashMap", "java/util/Iterator", "java/util/LinkedHashMap", "java/util/List", "java/util/Map", "java/util/Map$Entry", "java/util/Objects", "java/util/Set", "java/util/regex/Matcher", "java/util/regex/Pattern",
+  "org/jetbrains/kotlin/cli/common/CLIConfigurationKeys", "org/jetbrains/kotlin/cli/common/messages/MessageCollector", "org/jetbrains/kotlin/cli/common/messages/MessageCollector$Companion", "org/jetbrains/kotlin/cli/jvm/compiler/EnvironmentConfigFiles", "org/jetbrains/kotlin/cli/jvm/compiler/KotlinCoreEnvironment",
+  "org/jetbrains/kotlin/com/intellij/lang/ASTNode", "org/jetbrains/kotlin/com/intellij/openapi/Disposable", "org/jetbrains/kotlin/com/intellij/openapi/util/Disposer", "org/jetbrains/kotlin/com/intellij/openapi/util/TextRange", "org/jetbrains/kotlin/com/intellij/psi/PsiElement", "org/jetbrains/kotlin/com/intellij/psi/PsiErrorElement", "org/jetbrains/kotlin/com/intellij/psi/tree/IElementType", "org/jetbrains/kotlin/com/intellij/psi/tree/TokenSet", "org/jetbrains/kotlin/com/intellij/psi/util/PsiTreeUtil",
+  "org/jetbrains/kotlin/config/CommonConfigurationKeys", "org/jetbrains/kotlin/config/CompilerConfiguration", "org/jetbrains/kotlin/lexer/KtTokens", "org/jetbrains/kotlin/name/FqName", "org/jetbrains/kotlin/name/Name",
+  "org/jetbrains/kotlin/psi/KtAnnotated", "org/jetbrains/kotlin/psi/KtAnnotationEntry", "org/jetbrains/kotlin/psi/KtArrayAccessExpression", "org/jetbrains/kotlin/psi/KtBinaryExpression", "org/jetbrains/kotlin/psi/KtBinaryExpressionWithTypeRHS", "org/jetbrains/kotlin/psi/KtBlockExpression", "org/jetbrains/kotlin/psi/KtBreakExpression", "org/jetbrains/kotlin/psi/KtCallExpression", "org/jetbrains/kotlin/psi/KtCallableReferenceExpression", "org/jetbrains/kotlin/psi/KtCatchClause", "org/jetbrains/kotlin/psi/KtClass", "org/jetbrains/kotlin/psi/KtClassLiteralExpression", "org/jetbrains/kotlin/psi/KtClassOrObject", "org/jetbrains/kotlin/psi/KtConstantExpression", "org/jetbrains/kotlin/psi/KtConstructorCalleeExpression", "org/jetbrains/kotlin/psi/KtContinueExpression", "org/jetbrains/kotlin/psi/KtDotQualifiedExpression", "org/jetbrains/kotlin/psi/KtDoubleColonExpression", "org/jetbrains/kotlin/psi/KtExpression", "org/jetbrains/kotlin/psi/KtExpressionWithLabel", "org/jetbrains/kotlin/psi/KtFile", "org/jetbrains/kotlin/psi/KtForExpression", "org/jetbrains/kotlin/psi/KtIfExpression", "org/jetbrains/kotlin/psi/KtImportDirective", "org/jetbrains/kotlin/psi/KtLabeledExpression", "org/jetbrains/kotlin/psi/KtLambdaExpression", "org/jetbrains/kotlin/psi/KtModifierListOwner", "org/jetbrains/kotlin/psi/KtNameReferenceExpression", "org/jetbrains/kotlin/psi/KtNamedDeclaration", "org/jetbrains/kotlin/psi/KtNamedFunction", "org/jetbrains/kotlin/psi/KtNullableType", "org/jetbrains/kotlin/psi/KtObjectDeclaration", "org/jetbrains/kotlin/psi/KtOperationReferenceExpression", "org/jetbrains/kotlin/psi/KtPackageDirective", "org/jetbrains/kotlin/psi/KtParameter", "org/jetbrains/kotlin/psi/KtParenthesizedExpression", "org/jetbrains/kotlin/psi/KtPostfixExpression", "org/jetbrains/kotlin/psi/KtPrefixExpression", "org/jetbrains/kotlin/psi/KtProperty", "org/jetbrains/kotlin/psi/KtPsiFactory", "org/jetbrains/kotlin/psi/KtQualifiedExpression", "org/jetbrains/kotlin/psi/KtReturnExpression", "org/jetbrains/kotlin/psi/KtSafeQualifiedExpression", "org/jetbrains/kotlin/psi/KtSimpleNameExpression", "org/jetbrains/kotlin/psi/KtStringTemplateEntry", "org/jetbrains/kotlin/psi/KtStringTemplateExpression", "org/jetbrains/kotlin/psi/KtSuperTypeCallEntry", "org/jetbrains/kotlin/psi/KtSuperTypeListEntry", "org/jetbrains/kotlin/psi/KtThisExpression", "org/jetbrains/kotlin/psi/KtTryExpression", "org/jetbrains/kotlin/psi/KtTypeElement", "org/jetbrains/kotlin/psi/KtTypeProjection", "org/jetbrains/kotlin/psi/KtTypeReference", "org/jetbrains/kotlin/psi/KtUnaryExpression", "org/jetbrains/kotlin/psi/KtUserType", "org/jetbrains/kotlin/psi/KtValueArgument", "org/jetbrains/kotlin/psi/KtValueArgumentName", "org/jetbrains/kotlin/psi/KtWhenCondition", "org/jetbrains/kotlin/psi/KtWhenConditionInRange", "org/jetbrains/kotlin/psi/KtWhenConditionIsPattern", "org/jetbrains/kotlin/psi/KtWhenConditionWithExpression", "org/jetbrains/kotlin/psi/KtWhenEntry", "org/jetbrains/kotlin/psi/KtWhenExpression", "org/jetbrains/kotlin/psi/KtWhileExpressionBase", "org/jetbrains/kotlin/psi/ValueArgument", "org/jetbrains/kotlin/resolve/ImportPath",
+]);
+const ALLOWED_IMPORTS_BY_SOURCE = new Map([
+  ["AbstractInterpreter.java", new Set([
+    "java.util.ArrayList", "java.util.HashMap", "java.util.List", "java.util.Map",
+  ])],
+  ["Main.java", new Set([
+    "java.nio.ByteBuffer", "java.nio.charset.CharacterCodingException", "java.nio.charset.CodingErrorAction", "java.nio.charset.StandardCharsets",
+    "java.util.ArrayList", "java.util.Base64", "java.util.LinkedHashMap", "java.util.List", "java.util.Map", "java.util.Set", "java.util.regex.Pattern",
+  ])],
+  ["Protocol.java", new Set([
+    "java.io.IOException", "java.io.InputStream", "java.io.OutputStream", "java.nio.ByteBuffer",
+    "java.nio.charset.CharacterCodingException", "java.nio.charset.CodingErrorAction", "java.nio.charset.StandardCharsets",
+    "java.security.MessageDigest", "java.security.NoSuchAlgorithmException", "java.util.ArrayList", "java.util.Arrays",
+    "java.util.Comparator", "java.util.LinkedHashMap", "java.util.List", "java.util.Map",
+  ])],
+  ["PsiIndex.java", new Set([
+    "java.nio.charset.StandardCharsets", "java.util.ArrayDeque", "java.util.ArrayList", "java.util.HashMap", "java.util.HashSet",
+    "java.util.IdentityHashMap", "java.util.List", "java.util.Map", "java.util.Objects", "java.util.Set",
+    "org.jetbrains.kotlin.cli.common.CLIConfigurationKeys",
+    "org.jetbrains.kotlin.cli.common.messages.MessageCollector", "org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles",
+    "org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment", "org.jetbrains.kotlin.com.intellij.openapi.Disposable",
+    "org.jetbrains.kotlin.com.intellij.openapi.util.Disposer", "org.jetbrains.kotlin.com.intellij.openapi.util.TextRange",
+    "org.jetbrains.kotlin.com.intellij.psi.PsiElement", "org.jetbrains.kotlin.com.intellij.psi.PsiErrorElement",
+    "org.jetbrains.kotlin.com.intellij.psi.tree.IElementType", "org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil",
+    "org.jetbrains.kotlin.config.CommonConfigurationKeys", "org.jetbrains.kotlin.config.CompilerConfiguration", "org.jetbrains.kotlin.lexer.KtTokens",
+    "org.jetbrains.kotlin.psi.KtAnnotated", "org.jetbrains.kotlin.psi.KtAnnotationEntry",
+    "org.jetbrains.kotlin.psi.KtArrayAccessExpression", "org.jetbrains.kotlin.psi.KtBinaryExpression",
+    "org.jetbrains.kotlin.psi.KtBinaryExpressionWithTypeRHS", "org.jetbrains.kotlin.psi.KtBlockExpression",
+    "org.jetbrains.kotlin.psi.KtBreakExpression", "org.jetbrains.kotlin.psi.KtCallExpression",
+    "org.jetbrains.kotlin.psi.KtCallableReferenceExpression", "org.jetbrains.kotlin.psi.KtCatchClause",
+    "org.jetbrains.kotlin.psi.KtClass", "org.jetbrains.kotlin.psi.KtClassLiteralExpression",
+    "org.jetbrains.kotlin.psi.KtClassOrObject", "org.jetbrains.kotlin.psi.KtConstantExpression",
+    "org.jetbrains.kotlin.psi.KtConstructorCalleeExpression", "org.jetbrains.kotlin.psi.KtContinueExpression",
+    "org.jetbrains.kotlin.psi.KtDotQualifiedExpression", "org.jetbrains.kotlin.psi.KtDoubleColonExpression",
+    "org.jetbrains.kotlin.psi.KtExpression", "org.jetbrains.kotlin.psi.KtExpressionWithLabel",
+    "org.jetbrains.kotlin.psi.KtFile", "org.jetbrains.kotlin.psi.KtForExpression",
+    "org.jetbrains.kotlin.psi.KtIfExpression", "org.jetbrains.kotlin.psi.KtImportDirective",
+    "org.jetbrains.kotlin.psi.KtLabeledExpression", "org.jetbrains.kotlin.psi.KtLambdaExpression",
+    "org.jetbrains.kotlin.psi.KtModifierListOwner", "org.jetbrains.kotlin.psi.KtNameReferenceExpression",
+    "org.jetbrains.kotlin.psi.KtNamedDeclaration", "org.jetbrains.kotlin.psi.KtNamedFunction",
+    "org.jetbrains.kotlin.psi.KtNullableType", "org.jetbrains.kotlin.psi.KtObjectDeclaration",
+    "org.jetbrains.kotlin.psi.KtPackageDirective", "org.jetbrains.kotlin.psi.KtParameter",
+    "org.jetbrains.kotlin.psi.KtParenthesizedExpression", "org.jetbrains.kotlin.psi.KtPostfixExpression",
+    "org.jetbrains.kotlin.psi.KtPrefixExpression", "org.jetbrains.kotlin.psi.KtProperty",
+    "org.jetbrains.kotlin.psi.KtPsiFactory", "org.jetbrains.kotlin.psi.KtQualifiedExpression",
+    "org.jetbrains.kotlin.psi.KtReturnExpression", "org.jetbrains.kotlin.psi.KtSafeQualifiedExpression",
+    "org.jetbrains.kotlin.psi.KtStringTemplateEntry", "org.jetbrains.kotlin.psi.KtStringTemplateExpression",
+    "org.jetbrains.kotlin.psi.KtSuperTypeCallEntry", "org.jetbrains.kotlin.psi.KtSuperTypeListEntry", "org.jetbrains.kotlin.psi.KtThisExpression",
+    "org.jetbrains.kotlin.psi.KtTryExpression", "org.jetbrains.kotlin.psi.KtTypeElement",
+    "org.jetbrains.kotlin.psi.KtTypeProjection", "org.jetbrains.kotlin.psi.KtTypeReference",
+    "org.jetbrains.kotlin.psi.KtUnaryExpression", "org.jetbrains.kotlin.psi.KtUserType",
+    "org.jetbrains.kotlin.psi.KtValueArgument", "org.jetbrains.kotlin.psi.KtValueArgumentName",
+    "org.jetbrains.kotlin.psi.KtWhenCondition", "org.jetbrains.kotlin.psi.KtWhenConditionInRange",
+    "org.jetbrains.kotlin.psi.KtWhenConditionIsPattern", "org.jetbrains.kotlin.psi.KtWhenConditionWithExpression",
+    "org.jetbrains.kotlin.psi.KtWhenEntry", "org.jetbrains.kotlin.psi.KtWhenExpression",
+    "org.jetbrains.kotlin.psi.KtWhileExpressionBase", "org.jetbrains.kotlin.resolve.ImportPath",
+  ])],
+  ["Rules.java", new Set([
+    "java.io.IOException", "java.io.InputStream", "java.util.ArrayList", "java.util.HashMap",
+    "java.util.LinkedHashMap", "java.util.List", "java.util.Map", "java.util.Set",
+  ])],
 ]);
 function fail(message) { throw new Error(`analyzer build rejected: ${message}`); }
 function compare(left, right) { return left < right ? -1 : left > right ? 1 : 0; }
@@ -40,6 +238,78 @@ function canonicalJson(value) {
     return `{${Object.keys(value).sort(compare).map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
   }
   fail("receipt contains unsupported data");
+}
+function isPlainObject(value) { return value !== null && Object.getPrototypeOf(value) === Object.prototype; }
+function exactKeys(value, expected, label) {
+  if (!isPlainObject(value) || canonicalJson(Object.keys(value).sort(compare)) !== canonicalJson([...expected].sort(compare))) {
+    fail(`${label} keys mismatch`);
+  }
+}
+function nonemptyString(value, label) {
+  if (typeof value !== "string" || value.length === 0) fail(`${label} must be a nonempty string`);
+}
+function validateUniqueStrings(value, allowlist, label) {
+  if (!Array.isArray(value) || new Set(value).size !== value.length) fail(`${label} must be a unique string array`);
+  for (const entry of value) {
+    nonemptyString(entry, label);
+    if (allowlist && !allowlist.has(entry)) fail(`${label} contains an unknown value`);
+  }
+}
+function validateDomain(domain) {
+  if (!domain.material.bytes.equals(Buffer.from(canonicalJson(domain.value), "utf8"))) {
+    fail("domain-v1.json is not canonical JSON without trailing bytes");
+  }
+  const value = domain.value;
+  exactKeys(value, new Set([
+    "acceptedAlternativesByRule", "analyzerName", "domainVersion", "proofFormsByRule",
+    "ruleOrder", "symbols", "witnessKinds",
+  ]), "domain");
+  if (value.analyzerName !== "supported-subset-abstract-interpreter-v1" || value.domainVersion !== 1) fail("domain identity mismatch");
+  if (canonicalJson(value.ruleOrder) !== canonicalJson(RULE_ORDER)) fail("domain rule order mismatch");
+  if (canonicalJson(value.witnessKinds) !== canonicalJson(WITNESS_KINDS)) fail("domain witness vocabulary mismatch");
+  if (canonicalJson(value.proofFormsByRule) !== canonicalJson(PROOF_FORMS_BY_RULE)) fail("domain proof-form vocabulary mismatch");
+  if (canonicalJson(value.acceptedAlternativesByRule) !== canonicalJson(ACCEPTED_ALTERNATIVES_BY_RULE)) fail("domain alternative vocabulary mismatch");
+  if (!Array.isArray(value.symbols)) fail("domain symbols must be an array");
+  const identities = [];
+  for (const [symbolIndex, symbol] of value.symbols.entries()) {
+    const label = `domain symbols[${symbolIndex}]`;
+    exactKeys(symbol, new Set([
+      "arguments", "callbacks", "effects", "fqn", "kind", "memberPrecedence",
+      "receiverAbstractType", "returnAbstractType", "signature",
+    ]), label);
+    nonemptyString(symbol.fqn, `${label} fqn`);
+    nonemptyString(symbol.signature, `${label} signature`);
+    if (!SYMBOL_KINDS.has(symbol.kind)) fail(`${label} kind is unknown`);
+    if (!MEMBER_PRECEDENCE.has(symbol.memberPrecedence)) fail(`${label} member precedence is unknown`);
+    for (const [typeLabel, abstractType] of [["receiver", symbol.receiverAbstractType], ["return", symbol.returnAbstractType]]) {
+      if (abstractType !== null && !ABSTRACT_TYPES.has(abstractType)) fail(`${label} ${typeLabel} abstract type is unknown`);
+    }
+    if (!Array.isArray(symbol.arguments)) fail(`${label} arguments must be an array`);
+    for (const [argumentIndex, argument] of symbol.arguments.entries()) {
+      exactKeys(argument, new Set(["abstractType", "name", "position"]), `${label} argument`);
+      if (argument.position !== argumentIndex) fail(`${label} argument positions must be dense and ordered`);
+      if (argument.name !== null) nonemptyString(argument.name, `${label} argument name`);
+      if (!ABSTRACT_TYPES.has(argument.abstractType)) fail(`${label} argument abstract type is unknown`);
+    }
+    if (!Array.isArray(symbol.callbacks)) fail(`${label} callbacks must be an array`);
+    const callbackPositions = new Set();
+    for (const callback of symbol.callbacks) {
+      exactKeys(callback, new Set(["argumentPosition", "invocationModel", "role"]), `${label} callback`);
+      if (!Number.isSafeInteger(callback.argumentPosition) || callback.argumentPosition < 0
+          || callback.argumentPosition >= symbol.arguments.length || callbackPositions.has(callback.argumentPosition)) {
+        fail(`${label} callback position is invalid or duplicated`);
+      }
+      callbackPositions.add(callback.argumentPosition);
+      if (!CALLBACK_ROLES.has(callback.role) || !INVOCATION_MODELS.has(callback.invocationModel)) fail(`${label} callback vocabulary is unknown`);
+    }
+    validateUniqueStrings(symbol.effects, EFFECTS, `${label} effects`);
+    identities.push(canonicalJson({ fqn: symbol.fqn, signature: symbol.signature }));
+  }
+  if (canonicalJson(identities) !== canonicalJson([...new Set(identities)].sort(compare))) fail("domain symbols are not sorted uniquely");
+  for (const canary of CANARY_SYMBOLS) {
+    const actual = value.symbols.find((symbol) => symbol.fqn === canary.fqn && symbol.signature === canary.signature);
+    if (!actual || canonicalJson(actual) !== canonicalJson(canary)) fail(`domain clone canary symbol mismatch: ${canary.fqn} ${canary.signature}`);
+  }
 }
 function sha256(bytes) { return crypto.createHash("sha256").update(bytes).digest("hex"); }
 function receiptDigest(value) { return sha256(Buffer.concat([RECEIPT_DOMAIN, Buffer.from(canonicalJson(value), "utf8")])); }
@@ -129,6 +399,7 @@ function platformMaterial(arguments_) {
   const toolchain = loadJson(CONFIG_PATHS[2]);
   const dependencies = loadJson(CONFIG_PATHS[1]);
   const domain = loadJson(CONFIG_PATHS[0]);
+  validateDomain(domain);
   if (toolchain.value.schemaVersion !== 1 || dependencies.value.schemaVersion !== 1 || domain.value.domainVersion !== 1) fail("manifest version mismatch");
   const row = toolchain.value.platforms.find((entry) => entry.platform === process.platform && entry.arch === process.arch && entry.uid === process.getuid());
   if (!row) fail("no reviewed toolchain row for this platform/architecture/uid");
@@ -184,42 +455,44 @@ function listFiles(root, relative = "") {
   return result;
 }
 function scanSourceCapabilities(javaSources) {
-  const allowedImports = new Set([
-    "java.io.IOException", "java.io.InputStream", "java.io.OutputStream", "java.nio.ByteBuffer",
-    "java.nio.charset.CharacterCodingException", "java.nio.charset.CodingErrorAction", "java.nio.charset.StandardCharsets",
-    "java.security.MessageDigest", "java.security.NoSuchAlgorithmException", "java.util.ArrayDeque", "java.util.ArrayList",
-    "java.util.Arrays", "java.util.Base64", "java.util.Comparator", "java.util.HashMap", "java.util.LinkedHashMap",
-    "java.util.List", "java.util.Map", "java.util.Set", "java.util.regex.Pattern",
-    "org.jetbrains.kotlin.cli.common.CLIConfigurationKeys", "org.jetbrains.kotlin.cli.common.messages.MessageCollector",
-    "org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles", "org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment",
-    "org.jetbrains.kotlin.com.intellij.openapi.Disposable", "org.jetbrains.kotlin.com.intellij.openapi.util.Disposer",
-    "org.jetbrains.kotlin.com.intellij.psi.PsiElement", "org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil",
-    "org.jetbrains.kotlin.config.CommonConfigurationKeys", "org.jetbrains.kotlin.config.CompilerConfiguration",
-    "org.jetbrains.kotlin.psi.KtCallExpression", "org.jetbrains.kotlin.psi.KtFile", "org.jetbrains.kotlin.psi.KtImportDirective",
-    "org.jetbrains.kotlin.psi.KtNamedDeclaration", "org.jetbrains.kotlin.psi.KtPsiFactory", "org.jetbrains.kotlin.resolve.ImportPath",
-  ]);
+  const sourceNames = javaSources.map((source) => path.basename(source)).sort(compare);
+  if (canonicalJson(sourceNames) !== canonicalJson([...ALLOWED_IMPORTS_BY_SOURCE.keys()].sort(compare))) fail("source import policy does not cover the exact five-source inventory");
   const forbiddenText = [
     "ProcessBuilder", "ProcessHandle", "Runtime.getRuntime", "Runtime.exec", "ClassLoader", "Class.forName",
-    "getClassLoader", "loadClass", "java.net.", "java.nio.file.", "java.io.File", "java.lang.reflect",
+    "getClassLoader", "loadClass", "java.net.", "javax.net.", "java.nio.file.", "java.io.File", "java.lang.reflect",
     "java.lang.invoke", "javax.script", "javax.tools", "kotlin.script", "K2JVMCompiler", "KotlinCompileDaemon",
   ];
   for (const source of javaSources) {
     const text = stableFile(source).bytes.toString("utf8");
+    const sourceName = path.basename(source);
+    const allowedImports = ALLOWED_IMPORTS_BY_SOURCE.get(sourceName);
+    const imports = [];
     for (const match of text.matchAll(/^import\s+(static\s+)?([^;]+);$/gm)) {
       if (match[1] || !allowedImports.has(match[2])) fail(`sidecar source contains unreviewed import ${match[0]}`);
+      imports.push(match[2]);
     }
+    if (imports.length !== new Set(imports).size) fail(`${sourceName} contains a duplicate import`);
+    if ((sourceName === "AbstractInterpreter.java" || sourceName === "Rules.java")
+        && (text.includes("org.jetbrains.kotlin") || text.includes("com.intellij"))) fail(`${sourceName} contains a PSI or Kotlin compiler reference`);
     for (const token of forbiddenText) if (text.includes(token)) fail(`sidecar source contains forbidden capability ${token}`);
   }
 }
 function scanClassCapabilities(classesRoot) {
   const forbiddenBytes = [
-    "java/lang/ProcessBuilder", "java/lang/ProcessHandle", "java/lang/Runtime", "java/lang/ClassLoader",
+    "java/lang/ProcessBuilder", "java/lang/ProcessHandle", "java/lang/ClassLoader",
     "java/io/File", "java/nio/file/", "java/net/", "javax/net/", "javax/script/", "javax/tools/",
     "java/lang/reflect/", "kotlin/script", "K2JVMCompiler", "KotlinCompileDaemon", "loadClass", "forName",
   ].map((value) => Buffer.from(value));
   for (const relative of listFiles(classesRoot).filter((name) => name.endsWith(".class"))) {
     const bytes = stableFile(path.join(classesRoot, relative)).bytes;
     for (const token of forbiddenBytes) if (bytes.includes(token)) fail(`sidecar bytecode contains forbidden capability ${token}`);
+    if (classReferences(bytes).includes("java/lang/Runtime")) fail("sidecar bytecode contains forbidden capability java/lang/Runtime");
+    if ((relative === "com/agentbench/analyzer/AbstractInterpreter.class"
+        || relative === "com/agentbench/analyzer/Rules.class"
+        || relative.startsWith("com/agentbench/analyzer/Rules$"))
+        && (bytes.includes(Buffer.from("org/jetbrains/kotlin/")) || bytes.includes(Buffer.from("com/intellij/")))) {
+      fail(`semantic bytecode ${relative} contains a PSI or Kotlin compiler reference`);
+    }
   }
 }
 function classReferences(bytes) {
@@ -293,20 +566,32 @@ function inspectJar(bytes) {
   return { entries, contents };
 }
 function assertReviewedJar(material, inspection) {
-  if (canonicalJson(inspection.entries) !== canonicalJson(EXPECTED_JAR_ENTRIES)) fail("thin JAR entries do not match the reviewed Batch 1 inventory");
+  if (canonicalJson(inspection.entries) !== canonicalJson(EXPECTED_JAR_ENTRIES)) fail("thin JAR entries do not match the reviewed Batch2A inventory");
   const embeddedDomain = inspection.contents.get("domain-v1.json");
   if (!embeddedDomain || sha256(embeddedDomain) !== material.domain.material.sha256) fail("thin JAR embedded domain mismatch");
   const references = new Set();
   for (const [name, content] of inspection.contents) {
     if (!name.endsWith(".class")) continue;
-    for (const token of ["java/lang/ProcessBuilder", "java/lang/ProcessHandle", "java/lang/Runtime", "java/lang/ClassLoader", "java/io/File", "java/nio/file/", "java/net/", "javax/script/", "javax/tools/", "java/lang/reflect/", "kotlin/script", "K2JVMCompiler", "KotlinCompileDaemon", "loadClass", "forName"]) {
+    for (const token of ["java/lang/ProcessBuilder", "java/lang/ProcessHandle", "java/lang/ClassLoader", "java/io/File", "java/nio/file/", "java/net/", "javax/net/", "javax/script/", "javax/tools/", "java/lang/reflect/", "kotlin/script", "K2JVMCompiler", "KotlinCompileDaemon", "loadClass", "forName"]) {
       if (content.includes(Buffer.from(token))) fail(`thin JAR bytecode ${name} contains forbidden capability ${token}`);
     }
-    for (const reference of classReferences(content)) references.add(reference);
+    const classNames = classReferences(content);
+    if (classNames.includes("java/lang/Runtime")) fail(`thin JAR bytecode ${name} contains forbidden capability java/lang/Runtime`);
+    if ((name === "com/agentbench/analyzer/AbstractInterpreter.class"
+        || name === "com/agentbench/analyzer/Rules.class"
+        || name.startsWith("com/agentbench/analyzer/Rules$"))
+        && (content.includes(Buffer.from("org/jetbrains/kotlin/")) || content.includes(Buffer.from("com/intellij/")))) {
+      fail(`semantic bytecode ${name} contains a PSI or Kotlin compiler reference`);
+    }
+    for (const reference of classNames) references.add(reference);
   }
   const actual = [...references].sort(compare);
-  const expected = [...ALLOWED_CLASS_REFERENCES].sort(compare);
-  if (canonicalJson(actual) !== canonicalJson(expected)) fail(`thin JAR bytecode class-reference inventory mismatch: ${canonicalJson(actual)}`);
+  const missing = [...REQUIRED_CLASS_REFERENCES].filter((reference) => !references.has(reference)).sort(compare);
+  const surplus = actual.filter((reference) => !ALLOWED_CLASS_REFERENCES.has(reference));
+  if (missing.length !== 0 || surplus.length !== 0) {
+    fail(`thin JAR bytecode class-reference bounds mismatch: missing=${canonicalJson(missing)} surplus=${canonicalJson(surplus)} actual=${canonicalJson(actual)}`);
+  }
+  return Object.freeze(actual);
 }
 function cleanBuild(buildRoot, material) {
   const stagedSource = path.join(buildRoot, "source");
@@ -341,8 +626,8 @@ function cleanBuild(buildRoot, material) {
   ], { cwd: classes, env: environment });
   const identity = stableFile(jar);
   const inspection = inspectJar(identity.bytes);
-  assertReviewedJar(material, inspection);
-  return Object.freeze({ jar, bytes: identity.size, sha256: identity.sha256, entries: inspection.entries });
+  const references = assertReviewedJar(material, inspection);
+  return Object.freeze({ jar, bytes: identity.size, sha256: identity.sha256, entries: inspection.entries, classReferences: references });
 }
 function relativeRepositoryPath(file) {
   const relative = path.relative(REPOSITORY_ROOT, file).split(path.sep).join("/");
@@ -393,6 +678,7 @@ function receiptWithoutHash(material, jar, buildHashes) {
       jarArgs: ["-J-Duser.home=$BUILD_HOME", "-J-Djava.io.tmpdir=$BUILD_TMP", "--create", "--no-manifest", "--file", "$ANALYZER_JAR", "--date=1980-01-01T00:00:02Z", "@$SORTED_RELATIVE_ENTRY_FILE"],
       cleanBuildJarSha256: buildHashes,
       jarEntries: jar.entries,
+      classReferences: jar.classReferences,
     },
     analyzerJar: { path: "analyzer-v1.jar", bytes: jar.bytes, sha256: jar.sha256 },
     runtime,
@@ -464,7 +750,7 @@ function verifyPublished(material) {
   const jarStat = fs.lstatSync(jarPath);
   if (jarStat.uid !== process.getuid() || jarStat.nlink !== 1 || mode(jarStat) !== "0400") fail("analyzer JAR publication metadata mismatch");
   const inspection = inspectJar(jarFile.bytes);
-  assertReviewedJar(material, inspection);
+  const classReferences = assertReviewedJar(material, inspection);
   const receiptPath = path.join(PUBLISHED_ROOT, RECEIPT_NAME);
   const receiptFile = stableFile(receiptPath);
   const receiptStat = fs.lstatSync(receiptPath);
@@ -476,7 +762,7 @@ function verifyPublished(material) {
   if (receiptText !== `${canonicalJson(receipt)}\n`) fail("receipt bytes are not canonical JSON plus one LF");
   const { receiptSha256, ...withoutHash } = receipt;
   if (!HASH.test(receiptSha256) || receiptSha256 !== receiptDigest(withoutHash)) fail("receipt self-hash mismatch");
-  const jar = { bytes: jarFile.size, sha256: jarFile.sha256, entries: inspection.entries };
+  const jar = { bytes: jarFile.size, sha256: jarFile.sha256, entries: inspection.entries, classReferences };
   const expected = receiptWithoutHash(material, jar, [jar.sha256, jar.sha256]);
   if (canonicalJson(withoutHash) !== canonicalJson(expected)) fail("receipt or current analyzer identity mismatch");
   return Object.freeze({ command: "verify", analyzerJarSha256: jar.sha256, receiptSha256, receiptFileSha256: receiptFile.sha256, jdkTreeSha256: material.jdkTree.sha256, classpathSha256: receipt.classpathSha256 });
