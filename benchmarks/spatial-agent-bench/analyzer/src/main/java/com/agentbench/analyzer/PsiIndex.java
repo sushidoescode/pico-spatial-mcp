@@ -346,9 +346,11 @@ final class PsiIndex {
                     }
                     if (element instanceof KtNamedDeclaration named && named.getName() != null) {
                         if (++declarationCount > Main.MAX_DECLARATIONS) throw new SnapshotRejected("limit");
-                        String key = declarationKey(file, named);
-                        if (declarations.putIfAbsent(key, source.path()) != null) {
-                            throw new SnapshotRejected("ambiguous_index");
+                        if (named.getNameIdentifier() != null) {
+                            String key = declarationKey(file, named);
+                            if (declarations.putIfAbsent(key, source.path()) != null) {
+                                throw new SnapshotRejected("ambiguous_index");
+                            }
                         }
                     }
                     NodeKind nodeKind = nodeKind(element);
@@ -468,7 +470,9 @@ final class PsiIndex {
         ArrayDeque<String> owners = new ArrayDeque<>();
         PsiElement parent = declaration.getParent();
         while (parent != null && parent != file) {
-            if (parent instanceof KtNamedDeclaration named && named.getName() != null) owners.push(named.getName());
+            if (parent instanceof KtNamedDeclaration named && named.getNameIdentifier() != null) {
+                owners.push(named.getName());
+            }
             parent = parent.getParent();
         }
         while (!owners.isEmpty()) scope.append('/').append(owners.pop());
@@ -650,6 +654,11 @@ final class PsiIndex {
         PsiElement parent = current.getParent();
         if (parent instanceof KtIfExpression expression) return expression.getCondition() == current;
         if (parent instanceof KtWhileExpressionBase expression) return expression.getCondition() == current;
+        PsiElement grandparent = parent == null ? null : parent.getParent();
+        if (grandparent instanceof KtIfExpression expression
+                && expression.getCondition() == current) return true;
+        if (grandparent instanceof KtWhileExpressionBase expression
+                && expression.getCondition() == current) return true;
         if (parent instanceof KtWhenConditionWithExpression condition) return condition.getExpression() == current;
         if (parent instanceof KtWhenConditionInRange condition) return condition.getRangeExpression() == current;
         if (parent instanceof KtWhenConditionIsPattern condition) return condition.getTypeReference() == current;

@@ -112,15 +112,15 @@ const MEMBER_PRECEDENCE = new Set(["not_applicable", "sdk_member_wins", "source_
 const CALLBACK_ROLES = new Set([
   "application_entry", "window_content", "stage_content", "launched_effect", "button_click", "coroutine_body",
   "disposable_effect", "dispose_cleanup", "spatial_initial", "spatial_attachments", "spatial_update",
-  "collection_element", "collection_predicate", "collection_selector",
+  "collection_element", "collection_predicate", "collection_selector", "inline_block", "remembered_factory",
 ]);
 const INVOCATION_MODELS = new Set([
   "source_root", "possible_path", "user_action", "launched_path", "acquire_path", "cleanup_path",
-  "element_flow", "predicate_flow", "selector_flow",
+  "element_flow", "predicate_flow", "selector_flow", "immediate_inline",
 ]);
 const EFFECTS = new Set([
   "read", "mutate", "construct", "replace", "unknown_escape", "open", "close", "acquire", "release",
-  "load", "readiness", "convert", "place", "status_assign",
+  "load", "readiness", "convert", "place", "status_assign", "passthrough",
 ]);
 const ABSTRACT_TYPES = new Set([
   "boolean", "int", "long", "float", "double", "string", "unit", "java_class", "callable",
@@ -128,7 +128,7 @@ const ABSTRACT_TYPES = new Set([
   "spatial_launch_activity", "bundle", "spatial_app_scope", "spatial_navigator", "stage_style", "spatial_content",
   "component", "component_store", "entity", "entity_collection", "entity_query_condition", "ecs_system", "scene",
   "scene_update_context", "transform_component", "vector3", "quat", "cancellable", "semantic_label", "plane_anchor",
-  "plane_anchor_collection", "plane_geometry", "plane_orientation", "plane_tracking_manager",
+  "plane_anchor_collection", "plane_geometry", "plane_orientation", "plane_tracking_manager", "immersion", "modifier",
 ]);
 const CANARY_SYMBOLS = Object.freeze([
   { arguments: [], callbacks: [], effects: ["construct"], fqn: "com.pico.spatial.core.ecs.Component", kind: "constructor", memberPrecedence: "not_applicable", receiverAbstractType: null, returnAbstractType: "component", signature: "Component()" },

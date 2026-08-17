@@ -25,13 +25,14 @@ final class Rules {
     private static final Set<String> CALLBACK_ROLES = Set.of(
         "application_entry", "window_content", "stage_content", "launched_effect", "button_click",
         "coroutine_body", "disposable_effect", "dispose_cleanup", "spatial_initial", "spatial_attachments",
-        "spatial_update", "collection_element", "collection_predicate", "collection_selector");
+        "spatial_update", "collection_element", "collection_predicate", "collection_selector", "inline_block",
+        "remembered_factory");
     private static final Set<String> INVOCATION_MODELS = Set.of(
         "source_root", "possible_path", "user_action", "launched_path", "acquire_path", "cleanup_path",
-        "element_flow", "predicate_flow", "selector_flow");
+        "element_flow", "predicate_flow", "selector_flow", "immediate_inline");
     private static final Set<String> EFFECTS = Set.of(
         "read", "mutate", "construct", "replace", "unknown_escape", "open", "close", "acquire",
-        "release", "load", "readiness", "convert", "place", "status_assign");
+        "release", "load", "readiness", "convert", "place", "status_assign", "passthrough");
     private static final Set<String> ABSTRACT_TYPES = Set.of(
         "boolean", "int", "long", "float", "double", "string", "unit", "java_class", "callable",
         "immutable_iterable", "immutable_list", "integer_range", "coroutine_scope", "android_application",
@@ -39,7 +40,7 @@ final class Rules {
         "spatial_content", "component", "component_store", "entity", "entity_collection",
         "entity_query_condition", "ecs_system", "scene", "scene_update_context", "transform_component",
         "vector3", "quat", "cancellable", "semantic_label", "plane_anchor", "plane_anchor_collection",
-        "plane_geometry", "plane_orientation", "plane_tracking_manager");
+        "plane_geometry", "plane_orientation", "plane_tracking_manager", "immersion", "modifier");
 
     record Analysis(List<Map<String, Object>> nodes, List<Map<String, Object>> claims) {
         Analysis {

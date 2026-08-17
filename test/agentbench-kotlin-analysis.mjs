@@ -9,7 +9,13 @@ import { pathToFileURL } from "node:url";
 import { canonicalJson } from "../benchmarks/spatial-agent-bench/lib/identity.mjs";
 import { ANALYZER_CONSTANTS, analyzeKotlin, computeKotlinInputSetSha256, computeSelectedInputSetSha256,
   describeKotlinAnalyzer, verifyAnalyzerArtifact } from "../benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs";
+import { loadSubmissionSources } from "../benchmarks/spatial-agent-bench/lib/source.mjs";
 import { spawnFakeAnalyzer } from "./fixtures/agentbench/fake-analyzer.mjs";
+import {
+  UNCORRECTED_CHECKPOINT_EXPECTED_FALSE_RULE_IDS,
+  writeEquivalentReopenProject,
+  writeUncorrectedCheckpointProject,
+} from "./helpers/agentbench-fixture.mjs";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const BRIDGE = path.join(ROOT, "benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs");
 const BUILD = path.join(ROOT, "benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs");
@@ -21,6 +27,7 @@ const JAVA_ROOT = path.join(ANALYZER_DIR, "src/main/java/com/agentbench/analyzer
 const ARTIFACTS = path.dirname(path.dirname(ARTIFACT));
 const CLEAN_ENV = ["LANG=C", "LC_ALL=C", "TZ=UTC", "__CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0"];
 const RECEIPT_DOMAIN = Buffer.from("agentbench-analyzer-receipt-v1\0", "utf8");
+const FOLLOWUP_DOMAIN_SHA256 = "6f2f241af489b70e8dfb036e82c8d33c9aa8b39dc2866f7c9f957c7b1304084a";
 const RULE_ORDER = Object.freeze([
   "spatial.project-entry", "spatial.container-topology", "spatial.entity-content", "spatial.ui-lifecycle",
   "ecs.component-clone", "ecs.system-query", "ecs.frame-update", "ecs.lifecycle",
@@ -121,15 +128,15 @@ const MEMBER_PRECEDENCE = new Set(["not_applicable", "sdk_member_wins", "source_
 const CALLBACK_ROLES = new Set([
   "application_entry", "window_content", "stage_content", "launched_effect", "button_click", "coroutine_body",
   "disposable_effect", "dispose_cleanup", "spatial_initial", "spatial_attachments", "spatial_update",
-  "collection_element", "collection_predicate", "collection_selector",
+  "collection_element", "collection_predicate", "collection_selector", "inline_block", "remembered_factory",
 ]);
 const INVOCATION_MODELS = new Set([
   "source_root", "possible_path", "user_action", "launched_path", "acquire_path", "cleanup_path",
-  "element_flow", "predicate_flow", "selector_flow",
+  "element_flow", "predicate_flow", "selector_flow", "immediate_inline",
 ]);
 const EFFECTS = new Set([
   "read", "mutate", "construct", "replace", "unknown_escape", "open", "close", "acquire", "release",
-  "load", "readiness", "convert", "place", "status_assign",
+  "load", "readiness", "convert", "place", "status_assign", "passthrough",
 ]);
 const ABSTRACT_TYPES = new Set([
   "boolean", "int", "long", "float", "double", "string", "unit", "java_class", "callable",
@@ -137,7 +144,7 @@ const ABSTRACT_TYPES = new Set([
   "spatial_launch_activity", "bundle", "spatial_app_scope", "spatial_navigator", "stage_style", "spatial_content",
   "component", "component_store", "entity", "entity_collection", "entity_query_condition", "ecs_system", "scene",
   "scene_update_context", "transform_component", "vector3", "quat", "cancellable", "semantic_label", "plane_anchor",
-  "plane_anchor_collection", "plane_geometry", "plane_orientation", "plane_tracking_manager",
+  "plane_anchor_collection", "plane_geometry", "plane_orientation", "plane_tracking_manager", "immersion", "modifier",
 ]);
 function hash(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
 function exactKeys(value, keys, label) {
@@ -373,6 +380,198 @@ function refreshReplicaReceipt(replica) {
 function runScrubbedNode(script, args = []) {
   return spawnSync("/usr/bin/env", ["-i", ...CLEAN_ENV, "/usr/local/bin/node", script, ...args], { encoding: "utf8" });
 }
+function countOccurrences(source, needle) {
+  return source.split(needle).length - 1;
+}
+function responseBoundary(response) {
+  return {
+    analysisStatus: response.analysisStatus,
+    rejectionCode: response.rejectionCode,
+    nodes: response.nodes,
+    claims: response.claims,
+  };
+}
+function assertAcceptedEmpty(response, label) {
+  assert.deepEqual(responseBoundary(response), {
+    analysisStatus: "accepted",
+    rejectionCode: null,
+    nodes: [],
+    claims: [],
+  }, label);
+}
+function assertRejectedEmpty(response, rejectionCode, label) {
+  assert.deepEqual(responseBoundary(response), {
+    analysisStatus: "rejected",
+    rejectionCode,
+    nodes: [],
+    claims: [],
+  }, label);
+}
+function extractClosedRegistry(source, name, language, label) {
+  const opener = language === "java"
+    ? `private static final Set<String> ${name} = Set.of(`
+    : `const ${name} = new Set([`;
+  const closer = language === "java" ? ");" : "]);";
+  const start = source.indexOf(opener);
+  assert.notEqual(start, -1, `${label} ${name} opener`);
+  assert.equal(source.indexOf(opener, start + opener.length), -1, `${label} ${name} unique opener`);
+  const bodyStart = start + opener.length;
+  const end = source.indexOf(closer, bodyStart);
+  assert.notEqual(end, -1, `${label} ${name} closer`);
+  const body = source.slice(bodyStart, end);
+  assert.equal(body.replaceAll(/"[a-z][a-z0-9_]*"/g, "").replaceAll(/[\s,]/g, ""), "",
+    `${label} ${name} literal-only body`);
+  return [...body.matchAll(/"([a-z][a-z0-9_]*)"/g)].map((match) => match[1]);
+}
+function runSnapshotBoundaryProbe(t) {
+  const receipt = JSON.parse(fs.readFileSync(RECEIPT, "utf8"));
+  const temporary = temporaryDirectory(t, "agentbench-snapshot-boundary-probe");
+  const sourceRoot = path.join(temporary, "source");
+  const classes = path.join(temporary, "classes");
+  const home = path.join(temporary, "home");
+  const temporaryFiles = path.join(temporary, "tmp");
+  for (const directory of [sourceRoot, classes, home, temporaryFiles]) {
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  }
+  const constructorOne = `package followup.probe
+class Box()
+`;
+  const constructorTwo = `package followup.probe
+class Box() {
+    constructor() : this()
+}
+`;
+  const lambdaOne = `package followup.probe
+fun consume(block: () -> Unit) = Unit
+fun host() {
+    consume { }
+}
+`;
+  const lambdaTwo = `package followup.probe
+fun consume(block: () -> Unit) = Unit
+fun host() {
+    consume { }
+    consume { }
+}
+`;
+  const siblingLocals = `package followup.probe
+fun consume(block: () -> Unit) = Unit
+fun host() {
+    consume { fun duplicate() = Unit }
+    consume { fun duplicate() = Unit }
+}
+`;
+  const constructorOwnerBoundary = `package followup.probe
+class Box {
+    constructor(value: Int) : this() {
+        fun duplicate() = Unit
+    }
+    fun Box() {
+        fun duplicate() = Unit
+    }
+}
+`;
+  const lambdaOwnerBoundary = `package followup.probe
+fun consume(block: () -> Unit) = Unit
+fun host() {
+    fun duplicate() = Unit
+    consume { fun duplicate() = Unit }
+}
+`;
+  const probeSource = `package com.agentbench.analyzer;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+public final class SnapshotBoundaryProbe {
+  private SnapshotBoundaryProbe() {}
+  private static PsiIndex.Source source(String content) {
+    byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+    return new PsiIndex.Source("src/followup/Probe.kt", Protocol.sha256(bytes), content);
+  }
+  private static PsiIndex.Program snapshot(String content) {
+    return PsiIndex.snapshot(List.of(source(content)));
+  }
+  private static String status(String content) {
+    String rejectionCode = PsiIndex.analyze(List.of(source(content))).rejectionCode();
+    return rejectionCode == null ? "accepted" : rejectionCode;
+  }
+  public static void main(String[] ignored) {
+    String constructorOne = ${JSON.stringify(constructorOne)};
+    String constructorTwo = ${JSON.stringify(constructorTwo)};
+    String lambdaOne = ${JSON.stringify(lambdaOne)};
+    String lambdaTwo = ${JSON.stringify(lambdaTwo)};
+    String siblingLocals = ${JSON.stringify(siblingLocals)};
+    String constructorOwnerBoundary = ${JSON.stringify(constructorOwnerBoundary)};
+    String lambdaOwnerBoundary = ${JSON.stringify(lambdaOwnerBoundary)};
+    System.out.print("constructorOne=" + snapshot(constructorOne).declarationCount() + "\\n"
+        + "constructorTwo=" + snapshot(constructorTwo).declarationCount() + "\\n"
+        + "lambdaOne=" + snapshot(lambdaOne).declarationCount() + "\\n"
+        + "lambdaTwo=" + snapshot(lambdaTwo).declarationCount() + "\\n"
+        + "constructorsStatus=" + status(constructorTwo) + "\\n"
+        + "lambdasStatus=" + status(lambdaTwo) + "\\n"
+        + "siblingLocalsStatus=" + status(siblingLocals) + "\\n"
+        + "constructorOwnerStatus=" + status(constructorOwnerBoundary) + "\\n"
+        + "lambdaOwnerStatus=" + status(lambdaOwnerBoundary) + "\\n");
+  }
+}
+`;
+  const probePath = path.join(sourceRoot, "com/agentbench/analyzer/SnapshotBoundaryProbe.java");
+  fs.mkdirSync(path.dirname(probePath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(probePath, probeSource);
+  const classpath = receipt.classpath
+    .map((entry) => path.join(receipt.artifactRoot, ...entry.path.split("/")))
+    .join(path.delimiter);
+  const environment = {
+    JAVA_HOME: receipt.jdk.root,
+    HOME: home,
+    TMPDIR: temporaryFiles,
+    LANG: "C",
+    LC_ALL: "C",
+    TZ: "UTC",
+  };
+  const compiled = spawnSync(path.join(receipt.jdk.root, "bin/javac"), [
+    `-J-Duser.home=${home}`, `-J-Djava.io.tmpdir=${temporaryFiles}`, "--release", "17", "-encoding", "UTF-8",
+    "-g:none", "-proc:none", "-classpath", classpath, "-d", classes, probePath,
+  ], { cwd: sourceRoot, env: environment, shell: false, encoding: "utf8", maxBuffer: 4_194_304 });
+  assert.equal(compiled.status, 0, compiled.stderr);
+  assert.equal(compiled.stdout, "");
+  assert.equal(compiled.stderr, "");
+  const runtimeArgs = receipt.launch.args.map((argument) => argument
+    .replace(/^-Duser\.home=.*/, `-Duser.home=${home}`)
+    .replace(/^-Djava\.io\.tmpdir=.*/, `-Djava.io.tmpdir=${temporaryFiles}`));
+  const cpIndex = runtimeArgs.indexOf("-cp");
+  runtimeArgs[cpIndex + 1] = `${classes}${path.delimiter}${classpath}`;
+  const mainIndex = runtimeArgs.indexOf("com.agentbench.analyzer.Main");
+  runtimeArgs[mainIndex] = "com.agentbench.analyzer.SnapshotBoundaryProbe";
+  const executed = spawnSync(receipt.launch.java, runtimeArgs, {
+    cwd: temporary,
+    env: environment,
+    shell: false,
+    encoding: "utf8",
+    timeout: 30_000,
+    maxBuffer: 4_194_304,
+  });
+  assert.equal(executed.status, 0, executed.stderr);
+  assert.equal(executed.stderr, "");
+  const rows = Object.fromEntries(executed.stdout.trim().split("\n").map((row) => {
+    const separator = row.indexOf("=");
+    assert.equal(separator > 0, true, `probe row ${row}`);
+    return [row.slice(0, separator), row.slice(separator + 1)];
+  }));
+  assert.deepEqual(Object.keys(rows), [
+    "constructorOne", "constructorTwo", "lambdaOne", "lambdaTwo",
+    "constructorsStatus", "lambdasStatus", "siblingLocalsStatus",
+    "constructorOwnerStatus", "lambdaOwnerStatus",
+  ]);
+  assert.equal(Number(rows.constructorTwo) - Number(rows.constructorOne), 1,
+    "the added KtConstructor remains in declarationCount");
+  assert.equal(Number(rows.lambdaTwo) - Number(rows.lambdaOne), 1,
+    "the added KtFunctionLiteral remains in declarationCount");
+  assert.equal(rows.constructorsStatus, "accepted", "constructors do not enter the ambiguity map");
+  assert.equal(rows.lambdasStatus, "accepted", "anonymous functions do not enter the ambiguity map");
+  assert.equal(rows.siblingLocalsStatus, "ambiguous_index", "anonymous functions do not enter owner keys");
+  assert.equal(rows.constructorOwnerStatus, "accepted", "constructors do not enter owner keys");
+  assert.equal(rows.lambdaOwnerStatus, "ambiguous_index", "anonymous functions do not distinguish nested owners");
+}
 test("domain bytes freeze the canonical closed subset-v1 vocabulary and clone canary", () => {
   const domainBytes = fs.readFileSync(DOMAIN);
   const domainText = domainBytes.toString("utf8");
@@ -441,6 +640,223 @@ test("domain bytes freeze the canonical closed subset-v1 vocabulary and clone ca
   const cloneRows = domain.symbols.filter((symbol) => symbol.fqn === "com.pico.spatial.core.ecs.Component"
     || symbol.fqn === "com.pico.spatial.core.ecs.Component.clone");
   assert.deepEqual(cloneRows, COMPONENT_CANARY_SYMBOLS, "clone canary must preserve the three exact audited Component rows");
+});
+test("follow-up vocabulary mirrors the exact reviewed minimum across the domain-row transition", () => {
+  const expectedRegistries = {
+    CALLBACK_ROLES: [...CALLBACK_ROLES],
+    INVOCATION_MODELS: [...INVOCATION_MODELS],
+    EFFECTS: [...EFFECTS],
+    ABSTRACT_TYPES: [...ABSTRACT_TYPES],
+  };
+  const productionSources = [
+    ["Rules.java", fs.readFileSync(path.join(JAVA_ROOT, "Rules.java"), "utf8"), "java"],
+    ["build-analyzer.mjs", fs.readFileSync(BUILD, "utf8"), "javascript"],
+    ["kotlin-analysis.mjs", fs.readFileSync(BRIDGE, "utf8"), "javascript"],
+  ];
+  for (const [name, expected] of Object.entries(expectedRegistries)) {
+    assert.equal(new Set(expected).size, expected.length, `${name} test literal uniqueness`);
+    for (const [label, source, language] of productionSources) {
+      const actual = extractClosedRegistry(source, name, language, label);
+      assert.deepEqual(actual, expected, `${label} ${name} exact source order`);
+      assert.deepEqual(new Set(actual), new Set(expected), `${label} ${name} exact membership`);
+    }
+  }
+
+  const domainBytes = fs.readFileSync(DOMAIN);
+  const domainText = domainBytes.toString("utf8");
+  const domain = JSON.parse(domainText);
+  assert.equal(domainText, canonicalJson(domain), "follow-up domain must remain canonical JSON");
+  exactKeys(domain, new Set([
+    "acceptedAlternativesByRule", "analyzerName", "domainVersion", "proofFormsByRule",
+    "ruleOrder", "symbols", "witnessKinds",
+  ]), "follow-up domain");
+  assert.equal(domain.analyzerName, "supported-subset-abstract-interpreter-v1");
+  assert.equal(domain.domainVersion, 1);
+  const cloneRows = domain.symbols.filter((symbol) => symbol.fqn === "com.pico.spatial.core.ecs.Component"
+    || symbol.fqn === "com.pico.spatial.core.ecs.Component.clone");
+  assert.deepEqual(cloneRows.map(canonicalJson), COMPONENT_CANARY_SYMBOLS.map(canonicalJson),
+    "the exact three clone-canary rows survive every domain phase");
+  if (hash(domainBytes) === FOLLOWUP_DOMAIN_SHA256) {
+    assert.deepEqual(domain.symbols.map(canonicalJson), COMPONENT_CANARY_SYMBOLS.map(canonicalJson),
+      "the follow-up domain identity contains no added symbol row");
+  }
+});
+test("follow-up snapshot excludes anonymous declarations but preserves genuine ambiguity", (t) => {
+  const acceptedCases = new Map([
+    ["one anonymous lambda", `package followup.single
+fun consume(block: () -> Unit) = Unit
+fun host() {
+    consume { }
+}
+`],
+    ["two sibling lambdas", `package followup.siblings
+fun consume(block: () -> Unit) = Unit
+fun host() {
+    consume { }
+    consume { }
+}
+`],
+    ["Button two-callback PSI shape", `package followup.button
+fun Button(onClick: () -> Unit, content: () -> Unit) = Unit
+fun host() {
+    Button(onClick = { }) { }
+}
+`],
+    ["anonymous lambdas under distinct named owners", `package followup.owners
+fun consume(block: () -> Unit) = Unit
+fun first() {
+    consume { }
+}
+fun second() {
+    consume { }
+}
+`],
+    ["multiple constructor declarations", `package followup.constructors
+class Box() {
+    constructor() : this()
+}
+`],
+  ]);
+  for (const [label, content] of acceptedCases) {
+    const fileName = label.replaceAll(/[^A-Za-z0-9]+/g, "-");
+    assertAcceptedEmpty(analyzeKotlin(sourceIndex([{
+      path: `src/followup/accepted/${fileName}.kt`,
+      content,
+    }])), label);
+  }
+
+  const rejectedCases = new Map([
+    ["same-owner function/property collision", `package followup.collision
+fun duplicate() = Unit
+val duplicate = Unit
+`],
+    ["same-owner real-named overload pair", `package followup.overload
+fun pick(value: Int) = value
+fun pick(value: String) = value
+`],
+    ["same-named locals under sibling anonymous lambdas", `package followup.locals
+fun consume(block: () -> Unit) = Unit
+fun host() {
+    consume { fun duplicate() = Unit }
+    consume { fun duplicate() = Unit }
+}
+`],
+  ]);
+  for (const [label, content] of rejectedCases) {
+    const fileName = label.replaceAll(/[^A-Za-z0-9]+/g, "-");
+    assertRejectedEmpty(analyzeKotlin(sourceIndex([{
+      path: `src/followup/rejected/${fileName}.kt`,
+      content,
+    }])), "ambiguous_index", label);
+  }
+
+  const expressionPath = "src/followup/clone/RelayPart.kt";
+  assertCloneResponse(
+    analyzeKotlin(sourceIndex([{ path: expressionPath, content: EXPRESSION_CLONE_SOURCE }])),
+    "expression-component-clone",
+    new Set([expressionPath]),
+  );
+  const blockPath = "src/followup/clone/TelemetryShard.kt";
+  assertCloneResponse(
+    analyzeKotlin(sourceIndex([{ path: blockPath, content: BLOCK_CLONE_SOURCE }])),
+    "single-return-block-component-clone",
+    new Set([blockPath]),
+  );
+
+  const psiIndexSource = fs.readFileSync(path.join(JAVA_ROOT, "PsiIndex.java"), "utf8");
+  assert.equal([...psiIndexSource.matchAll(/named\.getName\(\) != null/g)].length, 1,
+    "exactly one outer getName accounting guard survives");
+  assert.equal([...psiIndexSource.matchAll(/named\.getNameIdentifier\(\) != null/g)].length, 2,
+    "exactly two real-identifier admission/owner guards exist");
+  assert.match(psiIndexSource,
+    /if \(element instanceof KtNamedDeclaration named && named\.getName\(\) != null\) \{\s+if \(\+\+declarationCount > Main\.MAX_DECLARATIONS\) throw new SnapshotRejected\("limit"\);\s+if \(named\.getNameIdentifier\(\) != null\) \{\s+String key = declarationKey\(file, named\);\s+if \(declarations\.putIfAbsent\(key, source\.path\(\)\) != null\) \{\s+throw new SnapshotRejected\("ambiguous_index"\);\s+\}\s+\}\s+\}/,
+    "declarationCount remains outside the nested ambiguity-map admission gate");
+  assert.match(psiIndexSource,
+    /if \(parent instanceof KtNamedDeclaration named && named\.getNameIdentifier\(\) != null\) \{\s+owners\.push\(named\.getName\(\)\);\s+\}/,
+    "only real-identifier declarations enter owner keys");
+  runSnapshotBoundaryProbe(t);
+});
+test("follow-up snapshot recognizes exact if and while condition containers", () => {
+  const controls = new Map([
+    ["if bare name", "if (flag) Unit"],
+    ["if call expression", "if (ready()) Unit"],
+    ["if binary", "if (flag && other) Unit"],
+    ["if qualified", "if (holder.ready) Unit"],
+    ["if parenthesized", "if ((flag)) Unit"],
+    ["while bare name", "while (flag) { break }"],
+    ["while call expression", "while (ready()) { break }"],
+    ["while binary", "while (flag && other) { break }"],
+    ["while qualified", "while (holder.ready) { break }"],
+    ["while parenthesized", "while ((flag)) { break }"],
+  ]);
+  for (const [label, control] of controls) {
+    const content = `package followup.conditions
+class Holder(val ready: Boolean)
+fun ready(): Boolean = true
+fun probe(flag: Boolean, other: Boolean, holder: Holder) {
+    ${control}
+}
+`;
+    assertAcceptedEmpty(analyzeKotlin(sourceIndex([{
+      path: `src/followup/conditions/${label.replaceAll(/[^A-Za-z0-9]+/g, "-")}.kt`,
+      content,
+    }])), label);
+  }
+});
+test("follow-up minimally amended checkpoint stays accepted across the Batch 2B transition", (t) => {
+  const projectDir = writeUncorrectedCheckpointProject(t);
+  const index = loadSubmissionSources(projectDir);
+  const kotlinPaths = index.files.filter((file) => file.kind === "kotlin").map((file) => file.path);
+  assert.deepEqual(kotlinPaths, [
+    "app/src/main/java/com/agentbench/gallery/GalleryBundle.kt",
+    "app/src/main/java/com/agentbench/gallery/GalleryStage.kt",
+    "app/src/main/java/com/agentbench/gallery/GalleryState.kt",
+    "app/src/main/java/com/agentbench/gallery/Main.kt",
+    "app/src/main/java/com/agentbench/gallery/Orbit.kt",
+    "app/src/main/java/com/agentbench/gallery/PlaneSession.kt",
+    "app/src/main/java/com/agentbench/gallery/platform/LaunchActivity.kt",
+    "app/src/main/java/com/agentbench/gallery/platform/SpatialApplication.kt",
+    "app/src/test/java/com/agentbench/gallery/GalleryStateTest.kt",
+  ], "the minimally amended checkpoint retains its exact nine Kotlin paths");
+  const source = (pathName) => {
+    const matches = index.files.filter((file) => file.path === pathName);
+    assert.equal(matches.length, 1, pathName);
+    return matches[0].original;
+  };
+  const state = source("app/src/main/java/com/agentbench/gallery/GalleryState.kt");
+  assert.equal(countOccurrences(state, "val instance: BenchmarkStore get() = retained"), 1,
+    "standard strong property");
+  assert.equal(/\bfun\s+instance\s*\(/.test(state), false, "dead standard function is absent");
+  const main = source("app/src/main/java/com/agentbench/gallery/Main.kt");
+  assert.equal(main.includes('store.select("vase")'), false, "raw shared read/write defect");
+  assert.equal(countOccurrences(main, "closeAndReopen("), 1,
+    "raw close/reopen helper remains unreachable because only its declaration exists");
+  assert.equal(main.includes("navigator.closeAndReopen(store)"), false, "raw reopen call remains absent");
+  const plane = source("app/src/main/java/com/agentbench/gallery/PlaneSession.kt");
+  assert.equal(countOccurrences(plane, "repeat(MAX_ANCHOR_RETRIES)"), 1, "raw retry loop");
+  assert.equal(countOccurrences(plane, "return@repeat"), 1, "raw retry defect");
+  assert.deepEqual(UNCORRECTED_CHECKPOINT_EXPECTED_FALSE_RULE_IDS, [
+    "state.shared-read-write",
+    "state.reopen-wiring",
+    "plane.retry-readiness",
+  ]);
+
+  const equivalent = loadSubmissionSources(writeEquivalentReopenProject(t));
+  const equivalentStates = equivalent.files.filter((file) =>
+    file.path === "app/src/main/java/com/agentbench/gallery/GalleryState.kt");
+  assert.equal(equivalentStates.length, 1);
+  assert.equal(countOccurrences(equivalentStates[0].original,
+    "fun current(): GallerySessionRepository = retained"), 1,
+    "equivalent current() function remains independently named");
+
+  const domainSha256 = hash(fs.readFileSync(DOMAIN));
+  const response = analyzeKotlin(index);
+  assert.equal(response.analysisStatus, "accepted");
+  assert.equal(response.rejectionCode, null);
+  if (domainSha256 === FOLLOWUP_DOMAIN_SHA256) {
+    assert.deepEqual(response.nodes, [], "follow-up domain produces no public witness nodes");
+    assert.deepEqual(response.claims, [], "follow-up domain has no Batch 2B emitters");
+  }
 });
 test("domain build boundary rejects malformed noncanonical and closed-schema tracked bytes before publication", (t) => {
   const replica = analyzerReplica(t);
@@ -1273,7 +1689,7 @@ public final class CatalogProbe {
     "nodesSha256", "edgesSha256", "witnessesSha256", "programSha256",
   ];
   const measuredEvidence = {
-    catalog: ["1017", "45", "8", "1", "2", "279", "236", "400", "128", "1", "1788", "1788", "35b425dc2a25af007dc253ab3a5e09f24203a4941c6ad6a7ab5cd970ee1caad9", "d9d745f7254c2cb0335c5942b495d34f2bcaa4b455b2c37b8428334dceb7005d", "1f061cb0fdc9863d602aa33f1fdf2f6f62492c613c3b76a494048331a24ce954", "f65a8d54859206fb6522dcefcdaff8b6747b6ef72b43a240af314a3752b7790c", "ffd742d914f70f48096d297a9b3215fcd978db7536f63660b40563673afaabb9", "25d7303dcb3d3566d1e36ab62f9503af78a884878ed3b05428e0817dd79c27e8", "fb05804031e5e536a11328f85187aa39ab4cc03ad6dc7e3c559b5698da6f481d"],
+    catalog: ["1017", "45", "8", "1", "2", "279", "236", "400", "132", "1", "1788", "1788", "35b425dc2a25af007dc253ab3a5e09f24203a4941c6ad6a7ab5cd970ee1caad9", "d9d745f7254c2cb0335c5942b495d34f2bcaa4b455b2c37b8428334dceb7005d", "1f061cb0fdc9863d602aa33f1fdf2f6f62492c613c3b76a494048331a24ce954", "033031403a3b76e11ba1f5f9b7a605c44d9d6456ddc1d3e54fbcac94124c721f", "ffd742d914f70f48096d297a9b3215fcd978db7536f63660b40563673afaabb9", "b70c52856f94dae1606095538fa53585d3ef673859ec5abe6f3306f32f0fdc0c", "553a2f2b28f332c7c9496fb394a9103b0e3e1cd811c771ca6eeffa515ef3e769"],
     psiN: ["500000", "0", "0", "1", "0", "2", "2", "1", "0", "1", "750003", "750003", "f8a8e567964e62f984e013d9460aad5065f4f1f8602fa024e041f5b6d80ef5f7", "3eefab590936f65659f83edf8d10bfd45f2582ff89d3eafb354903d24c0fa988", "96ef13cffa319a66e584668d9cad67a1bba61cc89272c1fa46468dbcd31edd5e", "7303de69faee7dc68d9e96df2948f95b8d8ae508e684a6838644befcfb9bdbb1", "4e3a7b263a1823de738f9f6641261ec18a5f522aa5844b4f6714f089813c74f4", "d027b03b45b6d74e333138bff712d9ae956fea7b06f5e5b389207cf0e259b98c", "2e846a087a8c8a465154097485d5aa8c1413c7e5ae6bd231a18da53b83e20122"],
     declarationsN: ["200008", "25000", "0", "1", "0", "100002", "50002", "100001", "25000", "1", "313905", "313905", "7d3f06282cef2d78fd72e8abfa35540b2dc510020d2557e4625aa3660994f64f", "3eefab590936f65659f83edf8d10bfd45f2582ff89d3eafb354903d24c0fa988", "21fae2c686cf27e7dec3a8f324f643426724b3feb573192181a26d2bc6b0cce3", "0cf3d417dd39a665d4f626fa80c5de07af566bdd2feeff9b2c759446fb776422", "dee1d9371f36eae9e184d12f6c40a41261d3ce2864cc15ff7fe548af312a4aa4", "2b32c6dabdc0935cf27080b5efbe0e77cc418a60c1b3f6ec86f1edb01b1c7bc7", "142f9c2c7854025e12ca9ecd32a9aec415a0cf096f53e7100fa18105a3ff2a07"],
     calls0: ["19", "1", "0", "1", "0", "4", "4", "5", "1", "1", "28", "28", "a8498f01b2f5bbf87a3e64a5893cd69e4ef6d8a020c1b2af28ec82926f63fca2", "3eefab590936f65659f83edf8d10bfd45f2582ff89d3eafb354903d24c0fa988", "c1b757e3dcaab87b19f2223e0010b833d2ad0c8d287e2a2c4b5fa18b98342b5e", "4e014270700d35a15a7d1dba3faa0161bc7ec03021e87121aeec8db342ce12e2", "1e24cdb0611630ca9e692baced346bbb4857a38e6f30c7608656d4c6d0a834a8", "a3f84d1106d492fb586bebd50ff191474435f069a7d800adf4bc718b36a05d7b", "66b35eba2b809fd53241f90dd2802c6d7cbdabd04298804ffc1f82396100969e"],
