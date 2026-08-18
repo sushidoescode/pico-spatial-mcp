@@ -44,6 +44,7 @@ const EXPECTED_JAR_ENTRIES = Object.freeze([
   "com/agentbench/analyzer/Rules$AlternativeSpec.class",
   "com/agentbench/analyzer/Rules$Analysis.class",
   "com/agentbench/analyzer/Rules$ArgumentSpec.class",
+  "com/agentbench/analyzer/Rules$CallbackParameterSpec.class",
   "com/agentbench/analyzer/Rules$CallbackSpec.class",
   "com/agentbench/analyzer/Rules$Domain.class",
   "com/agentbench/analyzer/Rules$RuleSpec.class",
@@ -107,12 +108,13 @@ const ACCEPTED_ALTERNATIVES_BY_RULE = Object.freeze({
   "state.single-source": { "shared-strong-authority": ["top-level-val", "object-singleton", "companion-held-singleton"] },
   "state.typed-handoff": { "typed-bundle-roundtrip": ["direct-bundle-adapter", "unique-helper-bundle-adapter"] },
 });
-const SYMBOL_KINDS = new Set(["type", "constructor", "top_level_function", "member_function", "extension_function", "member_property"]);
+const SYMBOL_KINDS = new Set(["type", "constructor", "top_level_function", "member_function", "extension_function", "member_property", "top_level_property"]);
 const MEMBER_PRECEDENCE = new Set(["not_applicable", "sdk_member_wins", "source_extension_if_no_sdk_member"]);
+const RECEIVER_KINDS = new Set(["none", "instance", "declaring_type", "object_instance"]);
 const CALLBACK_ROLES = new Set([
   "application_entry", "window_content", "stage_content", "launched_effect", "button_click", "coroutine_body",
   "disposable_effect", "dispose_cleanup", "spatial_initial", "spatial_attachments", "spatial_update",
-  "collection_element", "collection_predicate", "collection_selector", "inline_block", "remembered_factory",
+  "collection_element", "collection_predicate", "collection_selector", "inline_block", "remembered_factory", "anchor_update",
 ]);
 const INVOCATION_MODELS = new Set([
   "source_root", "possible_path", "user_action", "launched_path", "acquire_path", "cleanup_path",
@@ -129,11 +131,143 @@ const ABSTRACT_TYPES = new Set([
   "component", "component_store", "entity", "entity_collection", "entity_query_condition", "ecs_system", "scene",
   "scene_update_context", "transform_component", "vector3", "quat", "cancellable", "semantic_label", "plane_anchor",
   "plane_anchor_collection", "plane_geometry", "plane_orientation", "plane_tracking_manager", "immersion", "modifier",
+  "opaque", "transform", "vector2", "throwable", "disposable_effect_scope", "composition_local",
+  "spatial_container_scope", "kclass", "row_scope", "attachment_panel_builder", "spatial_view_attachments", "anchor_update",
 ]);
+const RETURN_SOURCES = new Set(["element_of_receiver", "class_of_argument"]);
+const OPERATOR_FORMS = new Set(["index_get", "index_set", "plus_assign", "plus", "iterator", "contains", "invoke", "compare_to", "equals"]);
+const CALLBACK_PARAMETER_SENTINELS = new Set(["element_of_receiver"]);
+const WITNESS_CAPS = Object.freeze([11, 16, 14, 12, 16, 11, 12, 11, 12, 24, 12, 24, 10, 25, 20, 22]);
 const CANARY_SYMBOLS = Object.freeze([
-  { arguments: [], callbacks: [], effects: ["construct"], fqn: "com.pico.spatial.core.ecs.Component", kind: "constructor", memberPrecedence: "not_applicable", receiverAbstractType: null, returnAbstractType: "component", signature: "Component()" },
-  { arguments: [], callbacks: [], effects: [], fqn: "com.pico.spatial.core.ecs.Component", kind: "type", memberPrecedence: "not_applicable", receiverAbstractType: null, returnAbstractType: "component", signature: "open class Component" },
-  { arguments: [], callbacks: [], effects: ["construct"], fqn: "com.pico.spatial.core.ecs.Component.clone", kind: "member_function", memberPrecedence: "sdk_member_wins", receiverAbstractType: "component", returnAbstractType: "component", signature: "clone(): Component" },
+  { arguments: [], callbacks: [], closedMemberSet: false, conformsTo: [], effects: ["construct"], fqn: "com.pico.spatial.core.ecs.Component", kind: "constructor", memberPrecedence: "not_applicable", operatorForm: null, receiverAbstractType: null, receiverKind: "none", returnAbstractType: "component", returnSource: null, signature: "Component()", typeArguments: [] },
+  { arguments: [], callbacks: [], closedMemberSet: false, conformsTo: [], effects: [], fqn: "com.pico.spatial.core.ecs.Component", kind: "type", memberPrecedence: "not_applicable", operatorForm: null, receiverAbstractType: null, receiverKind: "none", returnAbstractType: "component", returnSource: null, signature: "open class Component", typeArguments: [] },
+  { arguments: [], callbacks: [], closedMemberSet: false, conformsTo: [], effects: ["construct"], fqn: "com.pico.spatial.core.ecs.Component.clone", kind: "member_function", memberPrecedence: "sdk_member_wins", operatorForm: null, receiverAbstractType: "component", receiverKind: "instance", returnAbstractType: "component", returnSource: null, signature: "clone(): Component", typeArguments: [] },
+]);
+const SPATIAL_VIEW_FQN = "com.pico.spatial.ui.foundation.content.SpatialView";
+const SPATIAL_VIEW_SIGNATURE = "SpatialView(modifier: Modifier = Modifier, update: ((SpatialViewContent, SpatialViewAttachments) -> Unit)? = null, attachments: (AttachmentPanelBuilder.() -> Unit)? = null, initial: suspend (SpatialViewContent, SpatialViewAttachments) -> Unit): Unit";
+const PLANE_SUBSCRIBE_FQN = "com.pico.spatial.sense.plane.PlaneTrackingManager.subscribeAnchorUpdate";
+const PLANE_SUBSCRIBE_SIGNATURE = "subscribeAnchorUpdate(subscriber: AnchorUpdateSubscriber<PlaneAnchor>): Cancellable";
+const NARROW_COLLECTION_COMPATIBILITY = Object.freeze([{
+  fromAbstractType: "plane_anchor_collection",
+  producerSymbols: [
+    { fqn: "com.pico.spatial.sense.plane.PlaneTrackingManager.loadAllAnchors", signature: "loadAllAnchors(): Array<PlaneAnchor>" },
+    { fqn: "kotlin.collections.toList", signature: "Array<out T>.toList(): List<T>" },
+  ],
+  toAbstractType: "immutable_iterable",
+}]);
+const NULLABLE_RESULT_SYMBOLS = Object.freeze([
+  { fqn: "android.os.BaseBundle.getString", signature: "getString(key: String): String?" },
+  { fqn: "com.pico.spatial.core.ecs.Entity.ComponentSet.get", signature: "get(componentType: Class<T>): T?" },
+  { fqn: "com.pico.spatial.ui.platform.containers.SpatialContainerScope.bundle", signature: "bundle: Bundle?" },
+  { fqn: "kotlin.Throwable.message", signature: "message: String?" },
+  { fqn: "kotlin.collections.firstOrNull", signature: "Iterable<T>.firstOrNull(): T?" },
+  { fqn: "kotlin.collections.maxByOrNull", signature: "Iterable<T>.maxByOrNull(selector: (T) -> R): T?" },
+]);
+const PHYSICAL_OWNER_RELATIONS = Object.freeze([
+  { childTypeFqn: "android.os.Bundle", childTypeSignature: "class Bundle", ownerTypeFqn: "android.os.BaseBundle", ownerTypeSignature: "open class BaseBundle", relationKind: "inherits" },
+  { childTypeFqn: "androidx.compose.runtime.ProvidableCompositionLocal", childTypeSignature: "abstract class ProvidableCompositionLocal<T>", ownerTypeFqn: "androidx.compose.runtime.CompositionLocal", ownerTypeSignature: "abstract class CompositionLocal<T>", relationKind: "inherits" },
+  { childTypeFqn: "com.pico.spatial.core.container.SpatialViewContent", childTypeSignature: "class SpatialViewContent", ownerTypeFqn: "com.pico.spatial.core.container.SpatialViewEntityManager", ownerTypeSignature: "interface SpatialViewEntityManager", relationKind: "delegates" },
+  { childTypeFqn: "com.pico.spatial.core.container.SpatialViewContent", childTypeSignature: "class SpatialViewContent", ownerTypeFqn: "com.pico.spatial.core.container.SpatialViewEventManager", ownerTypeSignature: "interface SpatialViewEventManager", relationKind: "delegates" },
+  { childTypeFqn: "com.pico.spatial.core.container.SpatialViewContent", childTypeSignature: "class SpatialViewContent", ownerTypeFqn: "com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter", ownerTypeSignature: "interface SpatialCoordinateSpaceConverter", relationKind: "delegates" },
+  { childTypeFqn: "com.pico.spatial.ui.platform.containers.StageScope", childTypeSignature: "interface StageScope", ownerTypeFqn: "com.pico.spatial.ui.platform.containers.SpatialContainerScope", ownerTypeSignature: "interface SpatialContainerScope", relationKind: "inherits" },
+  { childTypeFqn: "com.pico.spatial.ui.platform.containers.WindowContainerScope", childTypeSignature: "interface WindowContainerScope", ownerTypeFqn: "com.pico.spatial.ui.platform.containers.SpatialContainerScope", ownerTypeSignature: "interface SpatialContainerScope", relationKind: "inherits" },
+  { childTypeFqn: "kotlin.ranges.IntRange", childTypeSignature: "class IntRange", ownerTypeFqn: "kotlin.ranges.IntProgression", ownerTypeSignature: "open class IntProgression", relationKind: "inherits" },
+]);
+const PHYSICAL_RESULT_TYPES = Object.freeze([
+  { physicalTypeFqn: "android.os.Bundle", physicalTypeSignature: "class Bundle", producerFqn: "android.os.Bundle", producerSignature: "Bundle()", semanticType: "bundle" },
+  { physicalTypeFqn: "androidx.compose.runtime.ProvidableCompositionLocal", physicalTypeSignature: "abstract class ProvidableCompositionLocal<T>", producerFqn: "com.pico.spatial.ui.platform.containers.LocalSpatialNavigator", producerSignature: "val LocalSpatialNavigator: ProvidableCompositionLocal<SpatialNavigator>", semanticType: "composition_local" },
+  { physicalTypeFqn: "android.os.Bundle", physicalTypeSignature: "class Bundle", producerFqn: "com.pico.spatial.ui.platform.containers.SpatialContainerScope.bundle", producerSignature: "bundle: Bundle?", semanticType: "bundle" },
+  { physicalTypeFqn: "kotlin.ranges.IntRange", physicalTypeSignature: "class IntRange", producerFqn: "kotlin.ranges.until", producerSignature: "Int.until(to: Int): IntRange", semanticType: "integer_range" },
+]);
+const PHYSICAL_CALLBACK_PARAMETERS = Object.freeze([
+  { callableFqn: PLANE_SUBSCRIBE_FQN, callableSignature: PLANE_SUBSCRIBE_SIGNATURE, callbackArgumentPosition: 0, callbackParameterPosition: 0, physicalTypeFqn: "com.pico.spatial.sense.base.AnchorUpdate", physicalTypeSignature: "class AnchorUpdate<T : Anchor>", semanticType: "anchor_update" },
+  { callableFqn: SPATIAL_VIEW_FQN, callableSignature: SPATIAL_VIEW_SIGNATURE, callbackArgumentPosition: 1, callbackParameterPosition: 0, physicalTypeFqn: "com.pico.spatial.core.container.SpatialViewContent", physicalTypeSignature: "class SpatialViewContent", semanticType: "spatial_content" },
+  { callableFqn: SPATIAL_VIEW_FQN, callableSignature: SPATIAL_VIEW_SIGNATURE, callbackArgumentPosition: 1, callbackParameterPosition: 1, physicalTypeFqn: "com.pico.spatial.ui.foundation.content.SpatialViewAttachments", physicalTypeSignature: "interface SpatialViewAttachments", semanticType: "spatial_view_attachments" },
+  { callableFqn: SPATIAL_VIEW_FQN, callableSignature: SPATIAL_VIEW_SIGNATURE, callbackArgumentPosition: 3, callbackParameterPosition: 0, physicalTypeFqn: "com.pico.spatial.core.container.SpatialViewContent", physicalTypeSignature: "class SpatialViewContent", semanticType: "spatial_content" },
+  { callableFqn: SPATIAL_VIEW_FQN, callableSignature: SPATIAL_VIEW_SIGNATURE, callbackArgumentPosition: 3, callbackParameterPosition: 1, physicalTypeFqn: "com.pico.spatial.ui.foundation.content.SpatialViewAttachments", physicalTypeSignature: "interface SpatialViewAttachments", semanticType: "spatial_view_attachments" },
+]);
+const PHYSICAL_CALLBACK_RECEIVERS = Object.freeze([
+  { callableFqn: "androidx.compose.runtime.DisposableEffect", callableSignature: "DisposableEffect(key1: Any?, effect: DisposableEffectScope.() -> DisposableEffectResult): Unit", callbackArgumentPosition: 1, physicalTypeFqn: "androidx.compose.runtime.DisposableEffectScope", physicalTypeSignature: "class DisposableEffectScope", semanticType: "disposable_effect_scope" },
+  { callableFqn: "androidx.compose.runtime.DisposableEffect", callableSignature: "DisposableEffect(key1: Any?, key2: Any?, effect: DisposableEffectScope.() -> DisposableEffectResult): Unit", callbackArgumentPosition: 2, physicalTypeFqn: "androidx.compose.runtime.DisposableEffectScope", physicalTypeSignature: "class DisposableEffectScope", semanticType: "disposable_effect_scope" },
+  { callableFqn: "androidx.compose.runtime.DisposableEffect", callableSignature: "DisposableEffect(key1: Any?, key2: Any?, key3: Any?, effect: DisposableEffectScope.() -> DisposableEffectResult): Unit", callbackArgumentPosition: 3, physicalTypeFqn: "androidx.compose.runtime.DisposableEffectScope", physicalTypeSignature: "class DisposableEffectScope", semanticType: "disposable_effect_scope" },
+  { callableFqn: "androidx.compose.runtime.DisposableEffect", callableSignature: "DisposableEffect(vararg keys: Any?, effect: DisposableEffectScope.() -> DisposableEffectResult): Unit", callbackArgumentPosition: 1, physicalTypeFqn: "androidx.compose.runtime.DisposableEffectScope", physicalTypeSignature: "class DisposableEffectScope", semanticType: "disposable_effect_scope" },
+  { callableFqn: "androidx.compose.runtime.LaunchedEffect", callableSignature: "LaunchedEffect(key1: Any?, block: suspend CoroutineScope.() -> Unit): Unit", callbackArgumentPosition: 1, physicalTypeFqn: "kotlinx.coroutines.CoroutineScope", physicalTypeSignature: "interface CoroutineScope", semanticType: "coroutine_scope" },
+  { callableFqn: "androidx.compose.runtime.LaunchedEffect", callableSignature: "LaunchedEffect(key1: Any?, key2: Any?, block: suspend CoroutineScope.() -> Unit): Unit", callbackArgumentPosition: 2, physicalTypeFqn: "kotlinx.coroutines.CoroutineScope", physicalTypeSignature: "interface CoroutineScope", semanticType: "coroutine_scope" },
+  { callableFqn: "androidx.compose.runtime.LaunchedEffect", callableSignature: "LaunchedEffect(key1: Any?, key2: Any?, key3: Any?, block: suspend CoroutineScope.() -> Unit): Unit", callbackArgumentPosition: 3, physicalTypeFqn: "kotlinx.coroutines.CoroutineScope", physicalTypeSignature: "interface CoroutineScope", semanticType: "coroutine_scope" },
+  { callableFqn: "androidx.compose.runtime.LaunchedEffect", callableSignature: "LaunchedEffect(vararg keys: Any?, block: suspend CoroutineScope.() -> Unit): Unit", callbackArgumentPosition: 1, physicalTypeFqn: "kotlinx.coroutines.CoroutineScope", physicalTypeSignature: "interface CoroutineScope", semanticType: "coroutine_scope" },
+  { callableFqn: "com.pico.spatial.ui.design.Button", callableSignature: "Button(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, size: ButtonSize = ButtonDefaults.Regular, colors: ButtonColors = ButtonDefaults.buttonColors(), leadingIcon: (@Composable () -> Unit)? = null, trailingIcon: (@Composable () -> Unit)? = null, contentPadding: PaddingValues = ButtonDefaults.paddingForButtonSize(size, haveIcon = leadingIcon != null || trailingIcon != null), shape: Shape = ButtonDefaults.shapeForButtonSize(size), gap: Dp = ButtonDefaults.gapForButtonSize(size, haveIcon = leadingIcon != null || trailingIcon != null), interactionSource: MutableInteractionSource = remember { MutableInteractionSource() }, content: @Composable RowScope.() -> Unit): Unit", callbackArgumentPosition: 11, physicalTypeFqn: "androidx.compose.foundation.layout.RowScope", physicalTypeSignature: "interface RowScope", semanticType: "row_scope" },
+  { callableFqn: SPATIAL_VIEW_FQN, callableSignature: SPATIAL_VIEW_SIGNATURE, callbackArgumentPosition: 2, physicalTypeFqn: "com.pico.spatial.ui.foundation.content.AttachmentPanelBuilder", physicalTypeSignature: "interface AttachmentPanelBuilder", semanticType: "attachment_panel_builder" },
+  { callableFqn: "com.pico.spatial.ui.foundation.dsl.DefaultWindowContainer", callableSignature: "SpatialAppScope.DefaultWindowContainer(content: @Composable WindowContainerScope.() -> Unit): Unit", callbackArgumentPosition: 0, physicalTypeFqn: "com.pico.spatial.ui.platform.containers.WindowContainerScope", physicalTypeSignature: "interface WindowContainerScope", semanticType: "spatial_container_scope" },
+  { callableFqn: "com.pico.spatial.ui.foundation.dsl.Stage", callableSignature: "SpatialAppScope.Stage(id: String, immersion: Immersion? = null, brightness: Brightness? = null, upperLimbRenderMode: UpperLimbRenderMode? = null, targetActivity: Class<out ComponentActivity>? = null, content: @Composable StageScope.() -> Unit): Unit", callbackArgumentPosition: 5, physicalTypeFqn: "com.pico.spatial.ui.platform.containers.StageScope", physicalTypeSignature: "interface StageScope", semanticType: "spatial_container_scope" },
+  { callableFqn: "com.pico.spatial.ui.foundation.dsl.launch", callableSignature: "Application.launch(block: SpatialAppScope.() -> Unit): Unit", callbackArgumentPosition: 0, physicalTypeFqn: "com.pico.spatial.ui.foundation.dsl.SpatialAppScope", physicalTypeSignature: "interface SpatialAppScope", semanticType: "spatial_app_scope" },
+]);
+const EXCLUSIVE_CALLBACK_ROLES = new Map([
+  [callbackKey(PLANE_SUBSCRIBE_FQN, PLANE_SUBSCRIBE_SIGNATURE, 0), "anchor_update"],
+  [callbackKey(SPATIAL_VIEW_FQN, SPATIAL_VIEW_SIGNATURE, 1), "spatial_update"],
+]);
+const PRIMITIVE_DOCTRINE = Object.freeze([
+  { arity: 2, operandTypes: ["int", "long", "float", "double"], sameType: true, tokens: ["+", "-", "*", "/"], result: "same_numeric" },
+  { arity: 1, operandTypes: ["int", "long", "float", "double"], sameType: true, tokens: ["-"], result: "same_numeric" },
+  { arity: 2, operandTypes: ["int", "long", "float", "double"], sameType: true, tokens: ["<", "<=", ">", ">="], result: "boolean_numeric_compare" },
+  { arity: 2, operandTypes: ["int", "long", "float", "double"], sameType: true, tokens: ["+="], result: "same_numeric_slot_write" },
+  { arity: 2, operandTypes: ["boolean", "int", "long", "float", "double"], sameType: true, tokens: ["==", "!="], result: "boolean_primitive_equality" },
+  { arity: 2, operandTypes: ["boolean"], sameType: true, tokens: ["&&", "||"], result: "boolean_short_circuit" },
+  { arity: 1, operandTypes: ["boolean"], sameType: true, tokens: ["!"], result: "boolean_inverted" },
+]);
+const PROPERTY_NULL_RETURN_EXCEPTIONS = new Set([
+  "com.pico.spatial.core.container.SpatialViewEventManager.filter\0filter: EventSourceFilter",
+  "com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter.localSpatialCoordinateSpace\0localSpatialCoordinateSpace: SpatialCoordinateSpace",
+]);
+const OPERATOR_FORM_BY_IDENTITY = new Map([
+  ["com.pico.spatial.core.ecs.Entity.ComponentSet.get\0get(componentType: Class<T>): T?", "index_get"],
+  ["kotlin.Function0.invoke\0invoke(): R", "invoke"],
+  ["kotlin.ranges.IntProgression.iterator\0iterator(): IntIterator", "iterator"],
+]);
+const RETURN_SOURCE_BY_IDENTITY = new Map([
+  ["com.pico.spatial.core.ecs.Entity.ComponentSet.get\0get(componentType: Class<T>): T?", "class_of_argument"],
+  ["kotlin.collections.firstOrNull\0Iterable<T>.firstOrNull(): T?", "element_of_receiver"],
+  ["kotlin.collections.maxByOrNull\0Iterable<T>.maxByOrNull(selector: (T) -> R): T?", "element_of_receiver"],
+]);
+const NULLABLE_RESULT_IDENTITIES = new Set(NULLABLE_RESULT_SYMBOLS.map(({ fqn, signature }) => symbolKey(fqn, signature)));
+const NULLABLE_SIGNATURE_BY_FQN = new Map(NULLABLE_RESULT_SYMBOLS.map(({ fqn, signature }) => [fqn, signature]));
+const NAVIGATOR_TYPE_KEY = "com.pico.spatial.ui.platform.containers.SpatialNavigator\0interface SpatialNavigator";
+const SPATIAL_VIEW_CONTENT_TYPE_KEY = "com.pico.spatial.core.container.SpatialViewContent\0class SpatialViewContent";
+const CLOSED_MEMBER_MANIFESTS = new Map([
+  [NAVIGATOR_TYPE_KEY, [
+    ["com.pico.spatial.ui.platform.containers.SpatialNavigator.openWindowContainer", "openWindowContainer(id: String, tag: String? = null, bundle: Bundle? = null): Unit"],
+    ["com.pico.spatial.ui.platform.containers.SpatialNavigator.closeWindowContainer", "closeWindowContainer(id: String, tag: String? = null): Unit"],
+    ["com.pico.spatial.ui.platform.containers.SpatialNavigator.closeWindowContainer", "closeWindowContainer(): Unit"],
+    ["com.pico.spatial.ui.platform.containers.SpatialNavigator.minimizeWindowContainer", "minimizeWindowContainer(id: String, tag: String? = null): Boolean"],
+    ["com.pico.spatial.ui.platform.containers.SpatialNavigator.minimizeWindowContainer", "minimizeWindowContainer(): Boolean"],
+    ["com.pico.spatial.ui.platform.containers.SpatialNavigator.restoreWindowContainer", "restoreWindowContainer(id: String, tag: String? = null): Boolean"],
+    ["com.pico.spatial.ui.platform.containers.SpatialNavigator.restoreWindowContainer", "restoreWindowContainer(): Boolean"],
+    ["com.pico.spatial.ui.platform.containers.SpatialNavigator.openStage", "openStage(id: String, style: StageStyle? = null, bundle: Bundle? = null, upperLimbRenderMode: UpperLimbRenderMode = UpperLimbRenderMode.Default): OpenStageResult"],
+    ["com.pico.spatial.ui.platform.containers.SpatialNavigator.closeStage", "closeStage(): Unit"],
+  ].map(([fqn, signature]) => `${fqn}\0${signature}`)],
+  [SPATIAL_VIEW_CONTENT_TYPE_KEY, [
+    ["com.pico.spatial.core.container.SpatialViewEntityManager.entities", "entities: SpatialViewEntityCollection"],
+    ["com.pico.spatial.core.container.SpatialViewEntityManager.addEntity", "addEntity(entity: Entity): Unit"],
+    ["com.pico.spatial.core.container.SpatialViewEntityManager.removeEntity", "removeEntity(entity: Entity): Unit"],
+    ["com.pico.spatial.core.container.SpatialViewEventManager.filter", "filter: EventSourceFilter"],
+    ["com.pico.spatial.core.container.SpatialViewEventManager.subscribe", "subscribe(eventType: Class<T>, on: EventSource? = null, componentType: Class<out Component>? = null, subscriber: EventSubscriber<T>): Cancellable"],
+    ["com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter.localSpatialCoordinateSpace", "localSpatialCoordinateSpace: SpatialCoordinateSpace"],
+    ["com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter.convertPosition", "convertPosition(position: Vector3, from: SpatialCoordinateSpace, to: ViewCoordinateSpace): Vector3"],
+    ["com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter.convertPosition", "convertPosition(position: Vector3, from: ViewCoordinateSpace, to: SpatialCoordinateSpace): Vector3"],
+    ["com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter.convertSize", "convertSize(size: Vector3, from: SpatialCoordinateSpace, to: ViewCoordinateSpace): Vector3"],
+    ["com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter.convertSize", "convertSize(size: Vector3, from: ViewCoordinateSpace, to: SpatialCoordinateSpace): Vector3"],
+    ["com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter.convertRotation", "convertRotation(rotation: Quat, from: SpatialCoordinateSpace, to: ViewCoordinateSpace): Quat"],
+    ["com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter.convertRotation", "convertRotation(rotation: Quat, from: ViewCoordinateSpace, to: SpatialCoordinateSpace): Quat"],
+    ["com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter.convertScale", "convertScale(scale: Vector3, from: SpatialCoordinateSpace, to: ViewCoordinateSpace): Vector3"],
+    ["com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter.convertScale", "convertScale(scale: Vector3, from: ViewCoordinateSpace, to: SpatialCoordinateSpace): Vector3"],
+  ].map(([fqn, signature]) => `${fqn}\0${signature}`)],
+]);
+const CLOSED_MEMBER_PREFIXES = new Map([
+  [NAVIGATOR_TYPE_KEY, ["com.pico.spatial.ui.platform.containers.SpatialNavigator."]],
+  [SPATIAL_VIEW_CONTENT_TYPE_KEY, [
+    "com.pico.spatial.core.container.SpatialViewEntityManager.",
+    "com.pico.spatial.core.container.SpatialViewEventManager.",
+    "com.pico.spatial.core.coordinate.SpatialCoordinateSpaceConverter.",
+  ]],
 ]);
 const REQUIRED_CLASS_REFERENCES = new Set([
   "com/agentbench/analyzer/AbstractInterpreter", "com/agentbench/analyzer/Main", "com/agentbench/analyzer/Protocol", "com/agentbench/analyzer/Protocol$Parser",
@@ -142,7 +276,7 @@ const REQUIRED_CLASS_REFERENCES = new Set([
   "com/agentbench/analyzer/PsiIndex$Program", "com/agentbench/analyzer/PsiIndex$Result", "com/agentbench/analyzer/PsiIndex$SnapshotRejected", "com/agentbench/analyzer/PsiIndex$Source",
   "com/agentbench/analyzer/PsiIndex$Token", "com/agentbench/analyzer/PsiIndex$TokenKind", "com/agentbench/analyzer/PsiIndex$WitnessKind", "com/agentbench/analyzer/PsiIndex$WitnessNode",
   "com/agentbench/analyzer/Rules", "com/agentbench/analyzer/Rules$AlternativeSpec", "com/agentbench/analyzer/Rules$Analysis", "com/agentbench/analyzer/Rules$ArgumentSpec",
-  "com/agentbench/analyzer/Rules$CallbackSpec", "com/agentbench/analyzer/Rules$Domain", "com/agentbench/analyzer/Rules$RuleSpec", "com/agentbench/analyzer/Rules$SymbolSpec",
+  "com/agentbench/analyzer/Rules$CallbackParameterSpec", "com/agentbench/analyzer/Rules$CallbackSpec", "com/agentbench/analyzer/Rules$Domain", "com/agentbench/analyzer/Rules$RuleSpec", "com/agentbench/analyzer/Rules$SymbolSpec",
   "java/lang/Enum", "org/jetbrains/kotlin/cli/jvm/compiler/KotlinCoreEnvironment", "org/jetbrains/kotlin/com/intellij/openapi/util/Disposer",
   "org/jetbrains/kotlin/psi/KtFile", "org/jetbrains/kotlin/psi/KtPsiFactory",
 ]);
@@ -156,7 +290,7 @@ const ALLOWED_CLASS_REFERENCES = new Set([
   "com/agentbench/analyzer/PsiIndex$Program", "com/agentbench/analyzer/PsiIndex$Result", "com/agentbench/analyzer/PsiIndex$SnapshotRejected", "com/agentbench/analyzer/PsiIndex$Source",
   "com/agentbench/analyzer/PsiIndex$Token", "com/agentbench/analyzer/PsiIndex$TokenKind", "com/agentbench/analyzer/PsiIndex$WitnessKind", "com/agentbench/analyzer/PsiIndex$WitnessNode",
   "com/agentbench/analyzer/Rules", "com/agentbench/analyzer/Rules$AlternativeSpec", "com/agentbench/analyzer/Rules$Analysis", "com/agentbench/analyzer/Rules$ArgumentSpec",
-  "com/agentbench/analyzer/Rules$CallbackSpec", "com/agentbench/analyzer/Rules$Domain", "com/agentbench/analyzer/Rules$RuleSpec", "com/agentbench/analyzer/Rules$SymbolSpec",
+  "com/agentbench/analyzer/Rules$CallbackParameterSpec", "com/agentbench/analyzer/Rules$CallbackSpec", "com/agentbench/analyzer/Rules$Domain", "com/agentbench/analyzer/Rules$RuleSpec", "com/agentbench/analyzer/Rules$SymbolSpec",
   "java/io/IOException", "java/io/InputStream", "java/io/OutputStream", "java/io/PrintStream", "java/lang/Boolean", "java/lang/Byte", "java/lang/Character", "java/lang/Class", "java/lang/Enum", "java/lang/IllegalArgumentException", "java/lang/IllegalStateException", "java/lang/Integer", "java/lang/Long", "java/lang/Math", "java/lang/Number", "java/lang/NumberFormatException", "java/lang/Object", "java/lang/Record", "java/lang/RuntimeException", "java/lang/Short", "java/lang/String", "java/lang/StringBuilder", "java/lang/System", "java/lang/Throwable", "java/lang/invoke/LambdaMetafactory", "java/lang/invoke/MethodHandles", "java/lang/invoke/MethodHandles$Lookup", "java/lang/invoke/StringConcatFactory", "java/lang/runtime/ObjectMethods", "java/nio/ByteBuffer", "java/nio/CharBuffer", "java/nio/charset/CharacterCodingException", "java/nio/charset/Charset", "java/nio/charset/CharsetDecoder", "java/nio/charset/CodingErrorAction", "java/nio/charset/StandardCharsets", "java/security/MessageDigest", "java/security/NoSuchAlgorithmException", "java/util/ArrayDeque", "java/util/ArrayList", "java/util/Base64", "java/util/Base64$Decoder", "java/util/Base64$Encoder", "java/util/Collection", "java/util/Comparator", "java/util/HashMap", "java/util/HashSet", "java/util/HexFormat", "java/util/IdentityHashMap", "java/util/Iterator", "java/util/LinkedHashMap", "java/util/List", "java/util/Map", "java/util/Map$Entry", "java/util/Objects", "java/util/Set", "java/util/regex/Matcher", "java/util/regex/Pattern",
   "org/jetbrains/kotlin/cli/common/CLIConfigurationKeys", "org/jetbrains/kotlin/cli/common/messages/MessageCollector", "org/jetbrains/kotlin/cli/common/messages/MessageCollector$Companion", "org/jetbrains/kotlin/cli/jvm/compiler/EnvironmentConfigFiles", "org/jetbrains/kotlin/cli/jvm/compiler/KotlinCoreEnvironment",
   "org/jetbrains/kotlin/com/intellij/lang/ASTNode", "org/jetbrains/kotlin/com/intellij/openapi/Disposable", "org/jetbrains/kotlin/com/intellij/openapi/util/Disposer", "org/jetbrains/kotlin/com/intellij/openapi/util/TextRange", "org/jetbrains/kotlin/com/intellij/psi/PsiElement", "org/jetbrains/kotlin/com/intellij/psi/PsiErrorElement", "org/jetbrains/kotlin/com/intellij/psi/tree/IElementType", "org/jetbrains/kotlin/com/intellij/psi/tree/TokenSet", "org/jetbrains/kotlin/com/intellij/psi/util/PsiTreeUtil",
@@ -255,6 +389,32 @@ function validateUniqueStrings(value, allowlist, label) {
     if (allowlist && !allowlist.has(entry)) fail(`${label} contains an unknown value`);
   }
 }
+function symbolKey(fqn, signature) { return `${fqn}\0${signature}`; }
+function callbackKey(fqn, signature, argumentPosition) { return `${symbolKey(fqn, signature)}\0${argumentPosition}`; }
+function callbackParameterKey(fqn, signature, argumentPosition, parameterPosition) {
+  return `${callbackKey(fqn, signature, argumentPosition)}\0${parameterPosition}`;
+}
+function compareUtf8(left, right) {
+  return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+function argumentSourcePosition(source) {
+  if (typeof source !== "string" || !/^argument:(?:0|[1-9][0-9]*)$/.test(source)) return -1;
+  const position = Number(source.slice("argument:".length));
+  return Number.isSafeInteger(position) ? position : -1;
+}
+function conforms(source, target, graph, visited = new Set(), depth = 0) {
+  if (source === target) return true;
+  if (depth >= 8 || visited.has(source)) return false;
+  visited.add(source);
+  return (graph.get(source) ?? []).some((next) => conforms(next, target, graph, visited, depth + 1));
+}
+function validateConformancePath(type, graph, active = new Set(), depth = 0) {
+  if (depth > 8) fail("conformance path exceeds depth bound");
+  if (active.has(type)) fail("cyclic semantic conformance");
+  active.add(type);
+  for (const target of graph.get(type) ?? []) validateConformancePath(target, graph, active, depth + 1);
+  active.delete(type);
+}
 function validateDomain(domain) {
   if (!domain.material.bytes.equals(Buffer.from(canonicalJson(domain.value), "utf8"))) {
     fail("domain-v1.json is not canonical JSON without trailing bytes");
@@ -269,43 +429,331 @@ function validateDomain(domain) {
   if (canonicalJson(value.witnessKinds) !== canonicalJson(WITNESS_KINDS)) fail("domain witness vocabulary mismatch");
   if (canonicalJson(value.proofFormsByRule) !== canonicalJson(PROOF_FORMS_BY_RULE)) fail("domain proof-form vocabulary mismatch");
   if (canonicalJson(value.acceptedAlternativesByRule) !== canonicalJson(ACCEPTED_ALTERNATIVES_BY_RULE)) fail("domain alternative vocabulary mismatch");
+  if (WITNESS_CAPS.length !== RULE_ORDER.length
+      || WITNESS_CAPS.reduce((sum, cap) => sum + cap, 0) !== 252
+      || Math.max(...WITNESS_CAPS) !== 25
+      || WITNESS_CAPS.some((cap) => !Number.isSafeInteger(cap) || cap < 1 || cap > 32)) {
+    fail("witness cap theorem mismatch");
+  }
   if (!Array.isArray(value.symbols)) fail("domain symbols must be an array");
   const identities = [];
+  const byKey = new Map();
+  const typeByFqn = new Map();
+  const conformance = new Map();
   for (const [symbolIndex, symbol] of value.symbols.entries()) {
     const label = `domain symbols[${symbolIndex}]`;
     exactKeys(symbol, new Set([
-      "arguments", "callbacks", "effects", "fqn", "kind", "memberPrecedence",
-      "receiverAbstractType", "returnAbstractType", "signature",
+      "arguments", "callbacks", "closedMemberSet", "conformsTo", "effects", "fqn", "kind",
+      "memberPrecedence", "operatorForm", "receiverAbstractType", "receiverKind",
+      "returnAbstractType", "returnSource", "signature", "typeArguments",
     ]), label);
     nonemptyString(symbol.fqn, `${label} fqn`);
     nonemptyString(symbol.signature, `${label} signature`);
     if (!SYMBOL_KINDS.has(symbol.kind)) fail(`${label} kind is unknown`);
     if (!MEMBER_PRECEDENCE.has(symbol.memberPrecedence)) fail(`${label} member precedence is unknown`);
+    if (!RECEIVER_KINDS.has(symbol.receiverKind)) fail(`${label} receiver kind is unknown`);
     for (const [typeLabel, abstractType] of [["receiver", symbol.receiverAbstractType], ["return", symbol.returnAbstractType]]) {
-      if (abstractType !== null && !ABSTRACT_TYPES.has(abstractType)) fail(`${label} ${typeLabel} abstract type is unknown`);
+      if (abstractType !== null && (!ABSTRACT_TYPES.has(abstractType) || abstractType === "opaque")) {
+        fail(`${label} ${typeLabel} abstract type is unknown or opaque`);
+      }
     }
-    if (!Array.isArray(symbol.arguments)) fail(`${label} arguments must be an array`);
+    if (symbol.returnSource !== null && !RETURN_SOURCES.has(symbol.returnSource)) fail(`${label} return source is unknown`);
+    if (symbol.operatorForm !== null && !OPERATOR_FORMS.has(symbol.operatorForm)) fail(`${label} operator form is unknown`);
+    if (typeof symbol.closedMemberSet !== "boolean") fail(`${label} closed member set must be a boolean`);
+    if (!Array.isArray(symbol.typeArguments)) fail(`${label} type arguments must be an array`);
+    for (const typeArgument of symbol.typeArguments) {
+      nonemptyString(typeArgument, `${label} type argument`);
+      if (!ABSTRACT_TYPES.has(typeArgument) || typeArgument === "opaque") fail(`${label} type argument is unknown or opaque`);
+    }
+    validateUniqueStrings(symbol.conformsTo, ABSTRACT_TYPES, `${label} conformance`);
+    if (symbol.conformsTo.includes("opaque")) fail(`${label} conformance contains opaque`);
+    for (let index = 1; index < symbol.conformsTo.length; index++) {
+      if (compareUtf8(symbol.conformsTo[index - 1], symbol.conformsTo[index]) >= 0) fail(`${label} conformance is not canonical`);
+    }
+    if (symbol.conformsTo.length > 8) fail(`${label} has too many conformance values`);
+    if (!Array.isArray(symbol.arguments) || symbol.arguments.length > 19) {
+      fail(`${label} arguments must be an array within the physical-arity bound`);
+    }
+    const argumentNames = new Set();
     for (const [argumentIndex, argument] of symbol.arguments.entries()) {
-      exactKeys(argument, new Set(["abstractType", "name", "position"]), `${label} argument`);
+      exactKeys(argument, new Set(["abstractType", "hasDefault", "name", "position", "samInterfaceFqn", "variadic"]), `${label} argument`);
       if (argument.position !== argumentIndex) fail(`${label} argument positions must be dense and ordered`);
-      if (argument.name !== null) nonemptyString(argument.name, `${label} argument name`);
+      if (!Number.isSafeInteger(argument.position) || argument.position < 0) fail(`${label} argument position must be nonnegative`);
+      if (argument.name !== null) {
+        nonemptyString(argument.name, `${label} argument name`);
+        if (argumentNames.has(argument.name)) fail(`${label} argument names must be unique`);
+        argumentNames.add(argument.name);
+      }
       if (!ABSTRACT_TYPES.has(argument.abstractType)) fail(`${label} argument abstract type is unknown`);
+      if (typeof argument.hasDefault !== "boolean" || typeof argument.variadic !== "boolean") fail(`${label} argument flags must be booleans`);
+      if (argument.samInterfaceFqn !== null) {
+        nonemptyString(argument.samInterfaceFqn, `${label} SAM interface FQN`);
+        if (!/^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+$/.test(argument.samInterfaceFqn)) {
+          fail(`${label} SAM interface FQN is not exact`);
+        }
+      }
     }
-    if (!Array.isArray(symbol.callbacks)) fail(`${label} callbacks must be an array`);
+    if (!Array.isArray(symbol.callbacks) || symbol.callbacks.length > 3) {
+      fail(`${label} callbacks must be an array within the physical-arity bound`);
+    }
     const callbackPositions = new Set();
     for (const callback of symbol.callbacks) {
-      exactKeys(callback, new Set(["argumentPosition", "invocationModel", "role"]), `${label} callback`);
+      exactKeys(callback, new Set([
+        "argumentPosition", "invocationModel", "parameters", "receiverAbstractType", "receiverSource", "role",
+      ]), `${label} callback`);
       if (!Number.isSafeInteger(callback.argumentPosition) || callback.argumentPosition < 0
           || callback.argumentPosition >= symbol.arguments.length || callbackPositions.has(callback.argumentPosition)) {
         fail(`${label} callback position is invalid or duplicated`);
       }
       callbackPositions.add(callback.argumentPosition);
       if (!CALLBACK_ROLES.has(callback.role) || !INVOCATION_MODELS.has(callback.invocationModel)) fail(`${label} callback vocabulary is unknown`);
+      if (callback.receiverAbstractType !== null
+          && (!ABSTRACT_TYPES.has(callback.receiverAbstractType) || callback.receiverAbstractType === "opaque")) {
+        fail(`${label} callback receiver type is unknown or opaque`);
+      }
+      if (callback.receiverSource !== null) nonemptyString(callback.receiverSource, `${label} callback receiver source`);
+      if (!Array.isArray(callback.parameters) || callback.parameters.length > 2) {
+        fail(`${label} callback parameters must be an array within the physical-arity bound`);
+      }
+      for (const [parameterIndex, parameter] of callback.parameters.entries()) {
+        exactKeys(parameter, new Set(["abstractType", "position"]), `${label} callback parameter`);
+        if (!Number.isSafeInteger(parameter.position) || parameter.position !== parameterIndex) {
+          fail(`${label} callback parameter positions must be dense and ordered`);
+        }
+        nonemptyString(parameter.abstractType, `${label} callback parameter type`);
+        if ((!ABSTRACT_TYPES.has(parameter.abstractType) && !CALLBACK_PARAMETER_SENTINELS.has(parameter.abstractType))
+            || parameter.abstractType === "opaque") {
+          fail(`${label} callback parameter type is unknown or opaque`);
+        }
+        if (CALLBACK_PARAMETER_SENTINELS.has(parameter.abstractType)
+            && !new Set(["element_flow", "predicate_flow", "selector_flow"]).has(callback.invocationModel)) {
+          fail(`${label} callback element sentinel requires collection flow`);
+        }
+      }
     }
     validateUniqueStrings(symbol.effects, EFFECTS, `${label} effects`);
-    identities.push(canonicalJson({ fqn: symbol.fqn, signature: symbol.signature }));
+    if (symbol.effects.length > 4) fail(`${label} has too many effects`);
+    const identity = canonicalJson({ fqn: symbol.fqn, signature: symbol.signature });
+    if (identities.length > 0 && compareUtf8(identities[identities.length - 1], identity) >= 0) {
+      fail("domain symbols are not sorted uniquely");
+    }
+    identities.push(identity);
+    const key = symbolKey(symbol.fqn, symbol.signature);
+    if (byKey.has(key)) fail("domain symbol identities are duplicated");
+    byKey.set(key, symbol);
+    if (symbol.kind === "type") {
+      const typeRows = typeByFqn.get(symbol.fqn) ?? [];
+      typeRows.push(symbol);
+      typeByFqn.set(symbol.fqn, typeRows);
+      const targets = conformance.get(symbol.returnAbstractType) ?? [];
+      for (const target of symbol.conformsTo) {
+        if (target === symbol.returnAbstractType) fail(`${label} has self semantic conformance`);
+        if (!targets.includes(target)) targets.push(target);
+      }
+      conformance.set(symbol.returnAbstractType, targets);
+    }
   }
-  if (canonicalJson(identities) !== canonicalJson([...new Set(identities)].sort(compare))) fail("domain symbols are not sorted uniquely");
+  for (const source of conformance.keys()) validateConformancePath(source, conformance);
+  const physicalReceiverByKey = new Map(PHYSICAL_CALLBACK_RECEIVERS.map((mapping) => [
+    callbackKey(mapping.callableFqn, mapping.callableSignature, mapping.callbackArgumentPosition), mapping,
+  ]));
+  const physicalParameterByKey = new Map(PHYSICAL_CALLBACK_PARAMETERS.map((mapping) => [
+    callbackParameterKey(mapping.callableFqn, mapping.callableSignature,
+      mapping.callbackArgumentPosition, mapping.callbackParameterPosition), mapping,
+  ]));
+  const validatePhysicalType = (mapping, semanticType, label) => {
+    if (semanticType !== mapping.semanticType) fail(`${label} physical callback semantic type mismatch`);
+    const physical = byKey.get(symbolKey(mapping.physicalTypeFqn, mapping.physicalTypeSignature));
+    if (!physical || physical.kind !== "type" || physical.returnAbstractType !== semanticType) {
+      fail(`${label} physical callback type row is missing`);
+    }
+  };
+  for (const symbol of value.symbols) {
+    const label = `${symbol.fqn} | ${symbol.signature}`;
+    const isFunction = new Set(["top_level_function", "member_function", "extension_function"]).has(symbol.kind);
+    const isProperty = new Set(["member_property", "top_level_property"]).has(symbol.kind);
+    if (symbol.kind !== "type" && (symbol.conformsTo.length !== 0 || symbol.closedMemberSet)) fail(`${label} non-type has type-only fields`);
+    if (symbol.kind === "type") {
+      if (symbol.receiverKind !== "none" || symbol.receiverAbstractType !== null
+          || symbol.returnAbstractType === null || symbol.arguments.length !== 0 || symbol.callbacks.length !== 0
+          || symbol.typeArguments.length !== 0 || symbol.operatorForm !== null || symbol.returnSource !== null
+          || symbol.memberPrecedence !== "not_applicable" || symbol.effects.length !== 0) fail(`${label} invalid type row`);
+    } else if (symbol.kind === "constructor") {
+      const physicalTypes = typeByFqn.get(symbol.fqn) ?? [];
+      if (symbol.receiverKind !== "none" || symbol.receiverAbstractType !== null
+          || symbol.returnAbstractType === null || symbol.callbacks.length !== 0 || symbol.typeArguments.length !== 0
+          || symbol.operatorForm !== null || symbol.returnSource !== null || symbol.memberPrecedence !== "not_applicable"
+          || canonicalJson(symbol.effects) !== canonicalJson(["construct"])
+          || physicalTypes.length !== 1
+          || physicalTypes[0].returnAbstractType !== symbol.returnAbstractType) fail(`${label} invalid constructor row`);
+    } else if (symbol.kind === "member_function" || symbol.kind === "member_property") {
+      const separator = symbol.fqn.lastIndexOf(".");
+      const owners = separator < 0 ? [] : (typeByFqn.get(symbol.fqn.slice(0, separator)) ?? []);
+      if (symbol.receiverKind === "none" || symbol.receiverAbstractType === null
+          || symbol.memberPrecedence !== "sdk_member_wins" || owners.length !== 1
+          || owners[0].returnAbstractType !== symbol.receiverAbstractType) fail(`${label} invalid member receiver, precedence, or owner`);
+    } else if (symbol.kind === "extension_function") {
+      if (symbol.receiverKind !== "instance" || symbol.receiverAbstractType === null
+          || symbol.memberPrecedence !== "sdk_member_wins") fail(`${label} invalid audited extension row`);
+    } else if (symbol.kind === "top_level_function" || symbol.kind === "top_level_property") {
+      if (symbol.receiverKind !== "none" || symbol.receiverAbstractType !== null
+          || symbol.memberPrecedence !== "not_applicable") fail(`${label} invalid top-level row`);
+    }
+    if (!isFunction && symbol.callbacks.length !== 0) fail(`${label} callback on non-function row`);
+    if (!isFunction && symbol.returnSource !== null) fail(`${label} dynamic return on non-function row`);
+    if (symbol.operatorForm !== null && !new Set(["member_function", "extension_function"]).has(symbol.kind)) {
+      fail(`${label} operator form on invalid row kind`);
+    }
+    if (isProperty && (symbol.arguments.length !== 0 || symbol.callbacks.length !== 0
+        || symbol.typeArguments.length !== 0 || symbol.operatorForm !== null || symbol.returnSource !== null)) {
+      fail(`${label} property has callable-only fields`);
+    }
+    if (isProperty && symbol.returnAbstractType === null
+        && !PROPERTY_NULL_RETURN_EXCEPTIONS.has(symbolKey(symbol.fqn, symbol.signature))) {
+      fail(`${label} untyped property is outside the closure exceptions`);
+    }
+    const symbolIdentity = symbolKey(symbol.fqn, symbol.signature);
+    const expectedReturnSource = RETURN_SOURCE_BY_IDENTITY.get(symbolIdentity) ?? null;
+    if (symbol.returnSource !== expectedReturnSource) fail(`${label} return source does not match the exact audited identity`);
+    const expectedOperatorForm = OPERATOR_FORM_BY_IDENTITY.get(symbolIdentity) ?? null;
+    if (symbol.operatorForm !== expectedOperatorForm) fail(`${label} operator form does not match the exact audited identity`);
+    const expectedNullableSignature = NULLABLE_SIGNATURE_BY_FQN.get(symbol.fqn);
+    if ((symbol.signature.endsWith("?") && !NULLABLE_RESULT_IDENTITIES.has(symbolIdentity))
+        || (expectedNullableSignature !== undefined && symbol.signature !== expectedNullableSignature)) {
+      fail(`${label} nullable result signature does not match the exact doctrine`);
+    }
+    const callbackPositions = new Set(symbol.callbacks.map((callback) => callback.argumentPosition));
+    const variadics = symbol.arguments.filter((argument) => argument.variadic);
+    if (variadics.length > 1) fail(`${label} has multiple variadic arguments`);
+    const noncallbackPositions = symbol.arguments
+      .filter((argument) => !callbackPositions.has(argument.position)).map((argument) => argument.position);
+    for (const argument of symbol.arguments) {
+      if (argument.variadic && (argument.hasDefault || callbackPositions.has(argument.position)
+          || argument.position !== Math.max(...noncallbackPositions))) fail(`${label} has an invalid variadic argument`);
+      if (argument.samInterfaceFqn !== null) {
+        const count = symbol.callbacks.filter((callback) => callback.argumentPosition === argument.position).length;
+        if (argument.abstractType !== "callable" || count !== 1) fail(`${label} has an invalid SAM argument`);
+      }
+    }
+    for (const callback of symbol.callbacks) {
+      const callbackLabel = `${label} callback ${callback.argumentPosition}`;
+      if (symbol.arguments[callback.argumentPosition].abstractType !== "callable") fail(`${callbackLabel} argument is not callable`);
+      if (callback.receiverAbstractType === null) {
+        if (callback.receiverSource !== null) fail(`${callbackLabel} receiver source has no type`);
+      } else if (callback.receiverSource !== null) {
+        let sourceType = null;
+        if (callback.receiverSource === "call_receiver") {
+          if (symbol.receiverKind === "none") fail(`${callbackLabel} call receiver source has no receiver`);
+          sourceType = symbol.receiverAbstractType;
+        } else {
+          const position = argumentSourcePosition(callback.receiverSource);
+          if (position < 0 || position >= symbol.arguments.length
+              || symbol.arguments[position].abstractType === "opaque") fail(`${callbackLabel} argument receiver source is invalid`);
+          sourceType = symbol.arguments[position].abstractType;
+        }
+        if (sourceType === null || !conforms(sourceType, callback.receiverAbstractType, conformance)) {
+          fail(`${callbackLabel} receiver source type mismatch`);
+        }
+      }
+      const concreteParameters = callback.parameters.filter((parameter) => ABSTRACT_TYPES.has(parameter.abstractType));
+      if (callback.receiverAbstractType === null && callback.invocationModel === "immediate_inline"
+          && concreteParameters.length === 1 && symbol.receiverAbstractType !== null
+          && !conforms(symbol.receiverAbstractType, concreteParameters[0].abstractType, conformance)) {
+        fail(`${callbackLabel} immediate parameter is incompatible with the call receiver`);
+      }
+      const key = callbackKey(symbol.fqn, symbol.signature, callback.argumentPosition);
+      const expectedRole = EXCLUSIVE_CALLBACK_ROLES.get(key);
+      if ((callback.role === "anchor_update" || callback.role === "spatial_update")
+          && callback.role !== expectedRole) fail(`${callbackLabel} exclusive role is on the wrong identity`);
+      if (expectedRole !== undefined && callback.role !== expectedRole) fail(`${callbackLabel} exclusive identity has the wrong role`);
+      const physicalReceiver = physicalReceiverByKey.get(key);
+      if (physicalReceiver !== undefined) {
+        validatePhysicalType(physicalReceiver, callback.receiverAbstractType, callbackLabel);
+        if (callback.receiverSource !== null) fail(`${callbackLabel} SDK-created receiver has a source`);
+      } else if (callback.receiverAbstractType !== null && callback.receiverSource === null) {
+        fail(`${callbackLabel} SDK-created receiver lacks an exact physical map`);
+      }
+      for (const parameter of callback.parameters) {
+        const physicalParameter = physicalParameterByKey.get(callbackParameterKey(
+          symbol.fqn, symbol.signature, callback.argumentPosition, parameter.position));
+        if (physicalParameter !== undefined) validatePhysicalType(physicalParameter, parameter.abstractType, callbackLabel);
+      }
+      for (const mapping of PHYSICAL_CALLBACK_PARAMETERS) {
+        if (mapping.callableFqn !== symbol.fqn || mapping.callableSignature !== symbol.signature
+            || mapping.callbackArgumentPosition !== callback.argumentPosition) continue;
+        const parameter = callback.parameters[mapping.callbackParameterPosition];
+        if (!parameter || parameter.position !== mapping.callbackParameterPosition) fail(`${callbackLabel} physical parameter is missing`);
+        validatePhysicalType(mapping, parameter.abstractType, callbackLabel);
+      }
+    }
+    for (const [key, role] of EXCLUSIVE_CALLBACK_ROLES) {
+      if (!key.startsWith(`${symbolKey(symbol.fqn, symbol.signature)}\0`)) continue;
+      const position = Number(key.slice(key.lastIndexOf("\0") + 1));
+      if (!symbol.callbacks.some((callback) => callback.argumentPosition === position && callback.role === role)) {
+        fail(`${label} exclusive callback binding is missing`);
+      }
+    }
+    if (symbol.returnSource !== null) {
+      if (symbol.returnAbstractType !== null || symbol.effects.includes("passthrough") || !isFunction) {
+        fail(`${label} has an invalid dynamic return source`);
+      }
+      if (symbol.returnSource === "class_of_argument") {
+        const matches = symbol.arguments.filter((argument) => argument.abstractType === "java_class").length;
+        if (matches !== 1 || symbol.receiverAbstractType === null) fail(`${label} has an invalid class-of-argument source`);
+      }
+    }
+    if (symbol.effects.includes("passthrough")) {
+      if (symbol.returnSource !== null) fail(`${label} passthrough has a return source`);
+      if (symbol.returnAbstractType !== null) {
+        if (symbol.receiverAbstractType === null || symbol.returnAbstractType !== symbol.receiverAbstractType) {
+          fail(`${label} typed passthrough does not preserve receiver type`);
+        }
+      } else if (symbol.callbacks.length !== 1 || symbol.callbacks[0].invocationModel !== "immediate_inline") {
+        fail(`${label} dynamic passthrough callback is invalid`);
+      }
+    }
+    if (symbol.kind !== "type" && symbol.returnAbstractType !== null
+        && symbol.returnAbstractType !== "unit" && symbol.effects.length === 0) {
+      fail(`${label} typed result has no origin effect`);
+    }
+  }
+  for (const mapping of PHYSICAL_CALLBACK_RECEIVERS) {
+    const callable = byKey.get(symbolKey(mapping.callableFqn, mapping.callableSignature));
+    if (!callable) continue;
+    const callback = callable.callbacks.find((candidate) => candidate.argumentPosition === mapping.callbackArgumentPosition);
+    if (!callback) fail(`physical callback receiver binding is missing for ${mapping.callableFqn}`);
+    validatePhysicalType(mapping, callback.receiverAbstractType, mapping.callableFqn);
+  }
+  for (const mapping of PHYSICAL_CALLBACK_PARAMETERS) {
+    const callable = byKey.get(symbolKey(mapping.callableFqn, mapping.callableSignature));
+    if (!callable) continue;
+    const callback = callable.callbacks.find((candidate) => candidate.argumentPosition === mapping.callbackArgumentPosition);
+    const parameter = callback?.parameters[mapping.callbackParameterPosition];
+    if (!parameter || parameter.position !== mapping.callbackParameterPosition) {
+      fail(`physical callback parameter binding is missing for ${mapping.callableFqn}`);
+    }
+    validatePhysicalType(mapping, parameter.abstractType, mapping.callableFqn);
+  }
+  for (const symbol of value.symbols) {
+    if (!symbol.closedMemberSet) continue;
+    const typeKey = symbolKey(symbol.fqn, symbol.signature);
+    const expected = CLOSED_MEMBER_MANIFESTS.get(typeKey);
+    const prefixes = CLOSED_MEMBER_PREFIXES.get(typeKey);
+    if (!expected || !prefixes) fail(`closed member set is not audited for ${typeKey}`);
+    const actual = new Set(value.symbols.filter((candidate) =>
+      (candidate.kind === "member_function" || candidate.kind === "member_property")
+      && prefixes.some((prefix) => candidate.fqn.startsWith(prefix)))
+      .map((candidate) => symbolKey(candidate.fqn, candidate.signature)));
+    if (actual.size !== expected.length || expected.some((memberKey) => !actual.has(memberKey) || !byKey.has(memberKey))) {
+      fail(`closed member manifest mismatch for ${typeKey}`);
+    }
+  }
+  for (const requiredTypeKey of CLOSED_MEMBER_MANIFESTS.keys()) {
+    const requiredType = byKey.get(requiredTypeKey);
+    if (requiredType && !requiredType.closedMemberSet) {
+      fail(`required closed member type is not closed for ${requiredTypeKey}`);
+    }
+  }
   for (const canary of CANARY_SYMBOLS) {
     const actual = value.symbols.find((symbol) => symbol.fqn === canary.fqn && symbol.signature === canary.signature);
     if (!actual || canonicalJson(actual) !== canonicalJson(canary)) fail(`domain clone canary symbol mismatch: ${canary.fqn} ${canary.signature}`);
