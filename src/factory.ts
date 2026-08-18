@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -10,6 +9,7 @@ import { lintSpec, emulatorVsSwanPreview } from "./planner.js";
 import { buildLedger } from "./compiler.js";
 import { computeSuite } from "./eval.js";
 import { classifyBriefExecution } from "./briefroute.js";
+import { isPassingDeviceEvidence, readLedger } from "./ledger.js";
 
 /**
  * factory.ts — v6.0 THE AUTONOMOUS SPATIAL FACTORY: a queue of briefs → verified, ledgered,
@@ -25,17 +25,25 @@ import { classifyBriefExecution } from "./briefroute.js";
  * metric never upgrades any node's evidence class — vision_verified still comes only from the trust ledger.
  */
 
-function ledgerCounts(pkg: string): { visionVerified: number; autoJudged: number; builtForHeadset: number } {
+export function summarizeFactoryLedgerEvidence(entries: any[]): { visionVerified: number; deviceVerified: number; deviceFailed: number; lookedVerified: number; autoJudged: number; builtForHeadset: number } {
+  const visionVerified = entries.filter((entry) => entry?.evidenceType === "vision_verified").length;
+  const deviceVerified = entries.filter(isPassingDeviceEvidence).length;
+  const deviceFailed = entries.filter((entry) => entry?.evidenceType === "device_verified" && entry?.deviceOutcome === "fail" && entry?.deviceLineage?.status === "validated").length;
+  return {
+    visionVerified,
+    deviceVerified,
+    deviceFailed,
+    lookedVerified: visionVerified + deviceVerified,
+    autoJudged: entries.filter((entry) => entry?.evidenceType === "auto_judged").length,
+    builtForHeadset: entries.filter((entry) => entry?.evidenceType === "built_for_headset").length,
+  };
+}
+
+function ledgerCounts(pkg: string): ReturnType<typeof summarizeFactoryLedgerEvidence> {
   try {
-    const arr = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".pico-mcp", "ledgers", `${pkg.replace(/[^A-Za-z0-9._-]/g, "_")}.json`), "utf8"));
-    if (!Array.isArray(arr)) return { visionVerified: 0, autoJudged: 0, builtForHeadset: 0 };
-    return {
-      visionVerified: arr.filter((e: any) => e.evidenceType === "vision_verified").length,
-      autoJudged: arr.filter((e: any) => e.evidenceType === "auto_judged").length,
-      builtForHeadset: arr.filter((e: any) => e.evidenceType === "built_for_headset").length,
-    };
+    return summarizeFactoryLedgerEvidence(readLedger(pkg).effectiveEntries);
   } catch {
-    return { visionVerified: 0, autoJudged: 0, builtForHeadset: 0 };
+    return { visionVerified: 0, deviceVerified: 0, deviceFailed: 0, lookedVerified: 0, autoJudged: 0, builtForHeadset: 0 };
   }
 }
 
@@ -175,6 +183,9 @@ export function registerFactoryTools(server: McpServer) {
         totalEmulatorVerifiableNodes: records.reduce((a, r: any) => a + (r.emulatorVerifiableNodes ?? 0), 0),
         totalBuiltForSwanNodes: records.reduce((a, r: any) => a + (r.builtForSwanNodes ?? 0), 0),
         totalVisionVerifiedInLedger: records.reduce((a, r: any) => a + (r.ledger?.visionVerified ?? 0), 0),
+        totalDeviceVerifiedInLedger: records.reduce((a, r: any) => a + (r.ledger?.deviceVerified ?? 0), 0),
+        totalDeviceFailedInLedger: records.reduce((a, r: any) => a + (r.ledger?.deviceFailed ?? 0), 0),
+        totalLookedVerifiedInLedger: records.reduce((a, r: any) => a + (r.ledger?.lookedVerified ?? 0), 0),
         totalAutoJudgedInLedger: records.reduce((a, r: any) => a + (r.ledger?.autoJudged ?? 0), 0),
         ciScore: ci.status === "ok" ? ci.scorecard.score : null,
       };
@@ -183,7 +194,7 @@ export function registerFactoryTools(server: McpServer) {
         fleetDashboard: dashboard,
         records,
         reflections: reflections.length ? reflections : ["no recurring warnings across the fleet"],
-        note: `Factory processed ${records.length} briefs: ${ready} ready-to-build (=plan+compile OK, NOT built/run), CI score ${dashboard.ciScore}. Drive the per-brief emulator build + vision pass via autonomous_spatial_build_v6; Swan flip via swan_verify_matrix. Reproducible + headless. Evidence counts come only from the trust ledger and stay DISTINCT: vision_verified (human-seen) and auto_judged (calibrated eye, measured) are never merged and never inflated by any fleet metric.`,
+        note: `Factory processed ${records.length} briefs: ${ready} ready-to-build (=plan+compile OK, NOT built/run), CI score ${dashboard.ciScore}. Drive the per-brief emulator build + vision pass via autonomous_spatial_build_v6; Swan flip via swan_verify_matrix. Reproducible + headless. Evidence counts come only from the trust ledger and stay DISTINCT: vision_verified, positive device_verified PASS, looked-at device FAIL findings, their positive lookedVerified sum, and auto_judged are reported separately; FAIL never contributes positive proof and a fleet metric never upgrades evidence.`,
       });
     },
   );

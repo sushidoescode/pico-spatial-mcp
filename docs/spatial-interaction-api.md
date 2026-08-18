@@ -335,7 +335,7 @@ A collider shape resource. Add one (or several) to a CollisionComponent so the e
 
 > ⚠️ javap emits **types only** — the parameter NAMES below were reconstructed, and two were wrong
 > (corrected 2026-07-13 against the agent-vault api-reference + runtime evidence): `createBox` takes
-> **FULL extents** (verified on-device, lint rule `mesh-collider-not-queryable`), and `createCapsule`
+> **FULL extents** (verified on-device, lint rule `mesh-collider-alignment`), and `createCapsule`
 > is **(height, radius)** (vault `@param height: total height incl. spherical caps`; v8.8 pin evidence).
 
 ```

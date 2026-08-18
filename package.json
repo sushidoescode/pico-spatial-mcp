@@ -1,6 +1,6 @@
 {
   "name": "pico-spatial-mcp",
-  "version": "36.6.0",
+  "version": "37.0.0",
   "description": "MCP server for driving PICO XR spatial development: PICO OS6 Emulator lifecycle, adb automation, spatialbundle/Gradle build pipeline, and experimental gRPC XR input injection.",
   "type": "module",
   "bin": {
@@ -27,18 +27,19 @@
     "test:tarball": "node scripts/verify-tarball.mjs",
     "start": "node dist/index.js",
     "smoke": "node test/smoke.mjs",
-    "test:lint": "node test/lint.mjs",
+    "test:lint": "node test/lint.mjs && node --test test/run-battery.mjs",
     "test:projectgen": "node test/projectgen.mjs",
     "test:unitygen": "node test/unitygen.mjs",
     "test:surfaceplace": "node test/surfaceplace.mjs",
     "test:vault": "node test/vault.mjs",
     "test:semantic": "node test/semanticplace.mjs",
     "test:ledger": "node test/ledger.mjs",
-    "test:eye": "node test/eye.mjs",
+    "test:eye": "node test/eye.mjs && node test/usdrender.mjs",
     "test:assetgate": "node test/assetgate.mjs",
     "test:worldenv": "node test/worldenv.mjs",
     "test:referring": "node test/referring.mjs",
     "test:doors": "node test/doors.mjs",
+    "test:prompts": "node --test test/prompts.mjs",
     "test:archetype": "node test/archetype.mjs",
     "test:claims": "node test/claimspage.mjs",
     "test:bench": "node test/spatialbench.mjs",
@@ -61,15 +62,18 @@
     "test:emulator-restart": "node test/restart-emulator.mjs",
     "test:modelmeasure": "node test/modelmeasure.mjs",
     "test:docsmeta": "node test/docsmeta.mjs",
-    "test:picocli": "node test/picocli.mjs && node --test test/picocli-autoinstall.mjs",
+    "test:picocli": "node test/picocli.mjs && node --test test/picocli-autoinstall.mjs test/picocli-sweep.mjs",
+    "test:runreceipt": "node --test test/runreceipt-identity.mjs test/runreceipt-store.mjs test/nativefleetreceipt.mjs test/fleetreceipt.mjs test/runreceipt-ledger.mjs test/runreceipt-ship.mjs",
+    "test:runrevision": "node --test test/runrevision-contracts.mjs test/runrevision-store.mjs test/runrevision-locator.mjs test/runrevision-locks.mjs",
     "test:swan": "node test/swan.mjs",
     "test:placeonsurface": "node test/placeonsurface.mjs",
     "test:menuactions": "node test/menuactions.mjs",
     "test:adoption-safety": "node test/adoption-safety.mjs",
     "test:spatialui-adoption": "node test/spatialui-adoption.mjs",
     "test:distribution-adoption": "node --test test/distribution-adoption.mjs",
+    "test:knowledge-lifecycle": "node --test test/knowledge-lifecycle.mjs",
     "test:conformance": "node test/conformance.mjs",
-    "test:picocli-win": "node --test test/picocli-autoinstall.mjs"
+    "test:picocli-win": "node --test test/picocli-autoinstall.mjs test/buildrun-smoke-fixture.mjs test/run-battery.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -80,6 +84,7 @@
     "@grpc/proto-loader": "^0.7.13",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "cross-spawn": "^7.0.6",
+    "jpeg-js": "^0.4.4",
     "zod": "^3.24.0"
   },
   "devDependencies": {

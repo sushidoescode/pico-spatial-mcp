@@ -3,7 +3,9 @@
 This is the operating manual for an AI agent driving `pico-spatial-mcp`. It pairs with
 [DESIGN.md](DESIGN.md) (how to make it look right) and the built-in `pico_spatial_dev_loop`
 prompt. The goal: take a spec from nothing to a **polished, running, native PICO spatial
-APK**, and — critically — **detect what's wrong and iterate to fix it** without a human.
+APK**, measure what is wrong, apply a retained lesson when one matches, and stop explicitly for
+manual repair when none does. A human or vision-capable agent still must LOOK before any visual
+success claim.
 Apps are **MR-first**: the default stage is Mixed (`1`) — the passthrough home environment
 is the environment and content seats ON the real room; Full Space (`3`) is the explicit,
 fully-supported opt-in for fully-virtual scenes.
@@ -12,12 +14,53 @@ See **ROADMAP.md** in the git repository for where this is going — every line 
 For the ABI, ownership, threading, model-loading, emulator/device, and pico-cli conclusions this
 repository can ground today, see **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWERED_BY_MEASUREMENT.md)**.
 
-## The capability map (a core sampler of the full surface: 249 tools on macOS, 246 on other hosts)
+## Managed pico-cli policy
 
-> **Reference implementations.** PICO's eight official samples build and run on this emulator at
-> **0.13.3** — see [docs/PICO_OFFICIAL_SAMPLES.md](docs/PICO_OFFICIAL_SAMPLES.md) for the download
-> URLs, the build recipe, and the editor/SDK version rule that blocks the 6.0.0 GitHub copies. Read
-> them for idiom; confirm every symbol against a 0.13.3 sources jar (`vault_api`) before emitting it.
+<!-- pico-mcp-managed-cli-policy:start -->
+`managed-latest` is the default. Resolution is lazy on the first real CLI-backed operation.
+Server startup, tool registration and `tools/list`, `preflight_env`, and the default
+`pico_doctor {}` inspect only an existing cache: they make no npm request, provision nothing, and
+write nothing to the managed store. The explicit `pico_doctor {calibrate:true}` exception is
+mutating because it runs the separately documented calibration workflow.
+
+Each exact version is published as an immutable MCP-owned cache entry. The ambient global CLI and
+`PATH` remain untouched. A successful registry lookup reports registry-latest as of `checkedAt`.
+If that lookup fails, a validated cached fallback is labeled `unknown`; if a known-newer install
+fails, it is labeled `outdated`. Neither fallback is ever called latest.
+
+Set `PICO_MCP_CLI_POLICY` only when the default is not appropriate:
+
+- `managed-latest` — lazily resolve and, on first CLI use, provision the exact registry version.
+- `managed-cached` — use only a validated cached version, without registry or install work.
+- `external` — run only the absolute `PICO_MCP_CLI_PATH`; it is never updated by the MCP.
+- `disabled` — turn off CLI-backed operations.
+
+Through 37.x, the deprecated aliases `PICO_MCP_AUTOINSTALL_CLI=1` and
+`PICO_MCP_AUTOUPDATE_CLI=1` map to `managed-latest`; they never install globally and conflict with
+another explicit policy. `ensure_pico_cli` is the force-refresh health path. Its deprecated
+`update` input is inert and accepted only for compatibility.
+
+Package activation and utility setup are separate. Call `ensure_pico_cli`, then manually run its
+returned absolute path with args `["setup"]` if the CLI reports an unprovisioned utility payload.
+The MCP never runs setup. It also never runs `update --check`, because that command writes a local
+update cache; freshness comes from the registry lookup instead.
+
+`0.4.2` was registry latest on 2026-08-14, an observed value rather than a timeless pin. A v1.0
+date supplied by the user/PICO team is planning input, not repository-verified release evidence.
+The compatibility sweep is version-agnostic and covers the complete reachable advertised
+help-only tree except the prohibited top-level setup subtree. It does not establish semantic
+compatibility, hidden-alias longevity, perf provisioning, emulator/device/Windows behavior, or
+visual evidence.
+<!-- pico-mcp-managed-cli-policy:end -->
+
+## The capability map (a core sampler of the full surface: 249 tools on macOS and 246 on Linux are runtime-measured; Windows 246 is source-derived)
+
+> **Reference implementations.** PICO's eight official **0.13.3** source archives are an idiom
+> reference. This repository does not retain a tracked 8/8 or per-sample runtime record. SpatialML
+> needs a local Gradle-wrapper workaround;
+> see [docs/PICO_OFFICIAL_SAMPLES.md](docs/PICO_OFFICIAL_SAMPLES.md) for the download URLs, build
+> recipe, and editor/SDK version rule that blocks the 6.0.0 GitHub copies. Confirm every symbol
+> against a 0.13.3 sources jar (`vault_api`) before emitting it.
 
 
 | Goal | Tools |
@@ -26,7 +69,7 @@ repository can ground today, see **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWER
 | Start a new app | `scaffold_spatial_app` (clone template → rename pkg → buildable) |
 | Author a scene | `compose_scene`, `compose_inspection_scene`, `add_entity`, `import_asset`, `import_environment`, `scene_schemas` |
 | Compile / verify a scene | `pack_bundle`, `inspect_bundle`, `verify_scene`, `build_spatial_project` |
-| Build / run / verify an APK | `build_and_run` (build→install→relaunch→render-check→shot), `gradle_build` |
+| Build / run / verify an APK | `build_and_run` (POSIX hosts only for now: scoped build→install→positive launch/PID→PID-scoped logs→shot), `gradle_build` |
 | Drive the emulator | `emulator_boot/kill/list/status/console`, `snapshot_*` |
 | Observe & control | `screencap`, `logcat`, `ui_dump`, `ui_input`, `adb_shell`, `wait_for_log`, `check_crash`, `screenrecord` |
 | Capture the host GUI window (macOS — XR-runtime immersive apps, editor GUI) | `gui_capture`, `gui_find_window`, `gui_camera`, `gui_permissions` |
@@ -37,7 +80,7 @@ repository can ground today, see **[docs/ANSWERED_BY_MEASUREMENT.md](docs/ANSWER
 ## Persistent spatial-knowledge actions
 
 `knowledge_api` is a flattened action API over one lazy, persistent
-`pico-cli mcp spatial-knowledge` process. Persistence matters: `switch_workspace` affects later
+`pico-cli mcp dev-knowledge` process. Persistence matters: `switch_workspace` affects later
 calls in the same server session. The adapter bounds startup/calls, resets after protocol failures,
 and returns `status: "unavailable"` when pico-cli, transport, or graph data is absent. A valid MCP
 tool-level `isError` result normally returns `status: "error"`; the explicit missing-graph form is
@@ -59,6 +102,31 @@ The graph is broad contextual evidence, not an exact symbol oracle. Use `vault_a
 SDK signatures and file/line citations. `preflight_lint(..., knowledgeSecondOpinion: "...")` opts
 into `query_graph` only; its separate advisory block never changes lint `clean`.
 
+## Digest-bound native run receipt v1
+
+The unattended POSIX/emulator fleet lane publishes one `fleet-native-debug` structural receipt only
+after the exact normalized/effective AppSpec, bounded Gradle inputs, AGP-selected debug APK,
+installed APK bytes, package/session/PID/foreground continuity, and capture CAS all agree.
+`fleet_build` returns `receipt.status`, `receiptId`, `receiptPath`, `capturePath`,
+`sourceCapturePath`, `captureSha256`, `evidenceType: "structural"`, and `lookRequired: true` per
+successful brief. Door 1 exposes the same stable identity as top-level `receiptId`, `receiptPath`,
+and `capture`.
+
+The receipt is not visual evidence. Open the exact returned `capture`, describe only what was
+actually seen, then call `pico_record`/`record_verification` with `artifactPath` set to that capture
+and `runReceiptId` set to the returned receipt ID. Do not substitute a mutable `forward.png`, a
+later capture, or an unlinked historical LOOK. `pico_next` uses the newest valid historical
+receipt to preserve this capture/ID pair.
+
+For native shipping, call `pico_ship` or `ship_checklist` with the same
+`{app,lane:"native",projectDir}`. The checklist uses current-project validation and only reports
+`accepted-current-bytes` when an effective `vision_verified` row or passing `device_verified` row
+matches the receipt ID and both capture hashes. Retractions, broken provenance, device failures,
+and structural/automated/log/USD rows do not count. This clears only the debug-receipt blocker;
+release APK/signing/store readiness remains `NOT READY`. V1 does not cover web/hybrid deployment,
+Swan or other hardware, native Windows, or rendered appearance, and it does not turn receipt
+creation into a ledger row.
+
 ## The build loop
 
 1. **`validate_toolchain`** — fix anything it flags (missing JDK → it auto-detects the
@@ -75,11 +143,14 @@ into `query_graph` only; its separate advisory block never changes lint `clean`.
    `HomeStage.kt` (Compose `AttachmentPanel`s; load the scene by model name).
 4. **`verify_scene`** — geometry/material counts must match intent (e.g. `materialAssets`
    > 0 means real materials, not white `displayColor`).
-5. **`build_and_run`** — read the result: `build/install/launch` ok, `rendered: true`,
-   `crashes: []`. It returns a screenshot.
-6. **`capture_frame`** — look at the real render and compare to intent. adb screencap is the
-   shell composite: the ground truth for native Spatial SDK apps and panels. For XR-runtime
-   immersive apps (Unity), use `gui_capture` instead — screencap is blind to XR-runtime output.
+5. **`build_and_run`** (POSIX hosts only; no native Windows success run has been executed) — read
+   the result: `build/install/launch` status, the `rendered` logcat
+   marker, and `crashes`. `rendered: true` is not a visual-success claim. The tool returns a
+   screenshot for the separate LOOK step.
+6. **`capture_frame`** — look at the rendered frame and compare expected content to pixels. A
+   black adb frame is inconclusive: historical runs showed both shell/XR capture asymmetry and a
+   later non-black immersive adb frame. Collect an alternate host-window capture such as
+   `gui_capture`, LOOK at it, and retain the exact bytes before making a visual claim.
 7. Iterate.
 
 ## Self-diagnosis — the part that matters

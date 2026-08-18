@@ -5,7 +5,14 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadVaultIndex } from "../dist/vault.js";
-import { diffVaultIndexes, listVaultWorkspaces } from "../dist/vaultdiff.js";
+import * as vaultdiff from "../dist/vaultdiff.js";
+
+const {
+  diffVaultIndexes,
+  listVaultWorkspaces,
+  registerVaultDiffTools,
+  vaultWorkspaceNote,
+} = vaultdiff;
 
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
@@ -58,6 +65,32 @@ if (ws.length) {
   else fail(`workspace list looks wrong: ${JSON.stringify(ws)}`);
 } else {
   console.log("  skip no materialized vaults on this machine — workspace assert skipped");
+}
+
+// Public setup guidance must never send an agent through an ambient PATH command. The no/one
+// workspace branch is a pure result contract so this stays hermetic even when the host has several
+// real SDK vaults materialized.
+const registered = {};
+registerVaultDiffTools({ tool(name, description, _schema, handler) {
+  registered[name] = { description, handler };
+} });
+const publicDescription = registered.vault_workspaces?.description ?? "";
+const publicNote = typeof vaultWorkspaceNote === "function" ? vaultWorkspaceNote([]) : "missing formatter export";
+const singletonNote = typeof vaultWorkspaceNote === "function"
+  ? vaultWorkspaceNote([{ version: "fixture", root: "/fixture", mdFiles: 1 }])
+  : "missing formatter export";
+const returnedWorkspaceResult = JSON.parse((await registered.vault_workspaces.handler()).content[0].text);
+const returnedNote = returnedWorkspaceResult.note ?? "";
+if (!/pico-cli\s+setup/i.test(`${publicDescription}\n${publicNote}\n${returnedNote}`)
+    && /no vault is materialized locally/i.test(publicNote)
+    && /only one vault is materialized locally/i.test(singletonNote)
+    && /ensure_pico_cli/i.test(publicNote)
+    && /returned absolute path/i.test(publicNote)
+    && /args \["setup"\]/i.test(publicNote)
+    && returnedNote === vaultWorkspaceNote(returnedWorkspaceResult.workspaces)) {
+  ok("vault_workspaces public schema/result routes setup through the managed absolute path");
+} else {
+  fail(`vault_workspaces exposes bare, inaccurate, or incomplete setup guidance: ${JSON.stringify({ publicDescription, publicNote, singletonNote, returnedNote })}`);
 }
 
 console.log(`\nVault-diff test done. Failures: ${failures}`);

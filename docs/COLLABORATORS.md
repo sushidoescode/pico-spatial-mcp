@@ -9,25 +9,27 @@ this once, then start from the pointers at the bottom.
 - **`src/`** — one TypeScript module per concern (emulator control, bundle/gradle compilation,
   codegen per SDK subsystem, the trust ledger, the doors facade, …). Every module exports a
   `registerXTools(server)` function; `src/index.ts` imports and calls each one to build the full
-  MCP tool surface (249 tools on macOS and 246 on other hosts as of this writing — `npm run smoke`
-  prints the exact registered count). `src/doors.ts` is the intent-level facade described in the
+  MCP tool surface (249 tools on macOS and 246 on Linux are runtime-measured; on Windows, the
+  published 246-tool count is source-derived because no native Windows `tools/list`
+  measurement has run). `src/doors.ts` is the intent-level facade described in the
   README's vocabulary primer.
-- **`test/*.mjs`** — the deterministic gate battery, 45 gate invocations (44 `test:` suites plus `smoke`):
+- **`test/*.mjs`** — the deterministic gate battery, 47 gate invocations (46 `test:` suites plus `smoke`):
   `test:lint`, `test:ledger`, `test:doors`, `test:vault`, `test:occupancy`, `test:affordance`,
   `test:eye`, `test:worldenv`, `test:conformance`, …. All of it runs headless, no emulator boot required. It's mirrored 1:1 in
   `.github/workflows/gates.yml`, which is what actually gates `main` — if a suite isn't in that
   workflow file, it isn't a real gate yet.
-- **[`docs/PICO_OFFICIAL_SAMPLES.md`](PICO_OFFICIAL_SAMPLES.md)** — how to get, build and run PICO's
-  eight official samples at **0.13.3** (the version that matches this toolchain; GitHub publishes
-  6.0.0 only, and PICO's Gradle plugin refuses an editor/SDK version mismatch). All eight verified
-  running on the emulator 2026-08-06. The best reference for PICO's own idiom.
+- **[`docs/PICO_OFFICIAL_SAMPLES.md`](PICO_OFFICIAL_SAMPLES.md)** — how to obtain PICO's eight
+  official samples at **0.13.3** (the version that matches this toolchain; GitHub publishes 6.0.0
+  only, and PICO's Gradle plugin refuses an editor/SDK version mismatch). They are the best
+  reference for PICO's own idiom; this repository does not retain a tracked per-sample runtime
+  record.
 - **`briefs/`** — JSON brief fixtures (`{id, brief, spec}`) used by `fleet_build` and the
   SpatialBench corpus to build a batch of apps unattended.
 - **`golden/`** — golden-file fixtures (a scorecard, a reference capture) that regression tests
   compare against.
 - **`docs/claims/`** — a generated, filterable HTML page (`generate_claims_page`) that renders
-  every trust-ledger entry as a public-style claims page — the same honesty invariant, presented
-  for external review.
+  effective trust-ledger rows plus disclosed provenance failures as a public-style claims page.
+  Retractions remain in append-only ledger history but are not effective proof rows.
 - **`docs/spatialbench/`** — the SpatialBench conformance/perf harness output (`run_spatialbench`):
   a corpus of briefs scored against expected scene content, headless-tier safe (no emulator-axis
   leaks in CI).
@@ -45,10 +47,10 @@ the original author, not something you're missing access to.
 These hold across every change to this repo, not just the docs:
 
 - **Looked-at captures for every visual claim.** No claim reaches `vision_verified` in the trust
-  ledger without a linked capture a human or agent actually looked at — see the honesty invariant
-  in the README.
-- **Small verified commits.** Changes land in small steps, each one verified (build, test, or a
-  looked-at capture) before the next, rather than large unverified batches.
+  ledger without a linked capture and attestation; the governing human/agent contract requires an
+  actual LOOK. Readers re-hash the stored bytes and downgrade broken provenance.
+- **Small, evidence-scoped commits.** Each commit must state the exact checks that actually ran and
+  their outcomes. Starting the aggregate battery is not evidence that every invocation completed.
 - **Every gotcha becomes a lint rule or a lesson.** A discovered failure mode either gets a
   `preflight_lint` regex rule with fixtures, or a `record_lesson` / retained-lessons entry so
   `pico_fix` can match it later — it never just lives in someone's head.

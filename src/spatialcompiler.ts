@@ -144,7 +144,7 @@ export function registerSpatialCompilerTools(server: McpServer) {
         rationale: chosen.rationale,
         plan: chosen.plan,
         evidenceClasses: chosen.evidenceClasses,
-        honesty: "This is a routing PLAN, not a build. Every visual claim in execution needs a looked-at capture (record_verification). Boundless immersion / immersive-frame compositing stay Swan-hardware; the emulator's strength is bounded, eye-level content + floating panels.",
+        honesty: "This is a routing PLAN, not a build. Every visual claim in execution needs a looked-at capture (record_verification). UNVERIFIED / OUT OF SCOPE: room-scale movement, headset depth behavior, immersive-frame compositing, Swan behavior, and hardware safety boundaries remain unverified. Receipt v1 and this routing plan make no hardware-readiness or immersion claim; emulator evidence remains bounded.",
       });
     },
   );

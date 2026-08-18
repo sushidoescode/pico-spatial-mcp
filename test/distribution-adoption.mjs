@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createManagedRuntimeHarness, publishManagedFixtureVersion } from "./helpers/picocli-managed-fixture.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -45,6 +46,185 @@ function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(repoRoot, relativePath), "utf8"));
 }
 
+function installPackedArtifactWithoutNetwork() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico packed adoption "));
+  const packRoot = path.join(root, "packed");
+  const installRoot = path.join(root, "installed");
+  const modulesRoot = path.join(installRoot, "node_modules");
+  const installed = path.join(modulesRoot, "pico-spatial-mcp");
+  fs.mkdirSync(packRoot, { recursive: true });
+  fs.mkdirSync(installed, { recursive: true });
+
+  const pack = spawnSync("npm", ["pack", "--ignore-scripts", "--pack-destination", packRoot], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  assert.equal(pack.status, 0, pack.stderr || pack.stdout);
+  const tarballs = fs.readdirSync(packRoot).filter((file) => file.endsWith(".tgz"));
+  assert.equal(tarballs.length, 1, JSON.stringify(tarballs));
+  const extract = spawnSync("tar", [
+    "-xzf", path.join(packRoot, tarballs[0]), "--strip-components=1", "-C", installed,
+  ], { encoding: "utf8", timeout: 120_000 });
+  assert.equal(extract.status, 0, extract.stderr || extract.stdout);
+
+  // The artifact is installed without `npm install` or network access. Link only the already
+  // installed runtime dependencies; the package bytes themselves all come from the tarball.
+  for (const dependency of Object.keys(readJson("package.json").dependencies)) {
+    const source = path.join(repoRoot, "node_modules", ...dependency.split("/"));
+    const target = path.join(modulesRoot, ...dependency.split("/"));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.symlinkSync(source, target, process.platform === "win32" ? "junction" : "dir");
+  }
+
+  return { root, installRoot, installed, entry: path.join(installed, "dist", "index.js") };
+}
+
+const MANAGED_POLICY_START = "<!-- pico-mcp-managed-cli-policy:start -->";
+const MANAGED_POLICY_END = "<!-- pico-mcp-managed-cli-policy:end -->";
+const CANONICAL_MANAGED_POLICY_BLOCK = `
+\`managed-latest\` is the default. Resolution is lazy on the first real CLI-backed operation.
+Server startup, tool registration and \`tools/list\`, \`preflight_env\`, and the default
+\`pico_doctor {}\` inspect only an existing cache: they make no npm request, provision nothing, and
+write nothing to the managed store. The explicit \`pico_doctor {calibrate:true}\` exception is
+mutating because it runs the separately documented calibration workflow.
+
+Each exact version is published as an immutable MCP-owned cache entry. The ambient global CLI and
+\`PATH\` remain untouched. A successful registry lookup reports registry-latest as of \`checkedAt\`.
+If that lookup fails, a validated cached fallback is labeled \`unknown\`; if a known-newer install
+fails, it is labeled \`outdated\`. Neither fallback is ever called latest.
+
+Set \`PICO_MCP_CLI_POLICY\` only when the default is not appropriate:
+
+- \`managed-latest\` — lazily resolve and, on first CLI use, provision the exact registry version.
+- \`managed-cached\` — use only a validated cached version, without registry or install work.
+- \`external\` — run only the absolute \`PICO_MCP_CLI_PATH\`; it is never updated by the MCP.
+- \`disabled\` — turn off CLI-backed operations.
+
+Through 37.x, the deprecated aliases \`PICO_MCP_AUTOINSTALL_CLI=1\` and
+\`PICO_MCP_AUTOUPDATE_CLI=1\` map to \`managed-latest\`; they never install globally and conflict with
+another explicit policy. \`ensure_pico_cli\` is the force-refresh health path. Its deprecated
+\`update\` input is inert and accepted only for compatibility.
+
+Package activation and utility setup are separate. Call \`ensure_pico_cli\`, then manually run its
+returned absolute path with args \`["setup"]\` if the CLI reports an unprovisioned utility payload.
+The MCP never runs setup. It also never runs \`update --check\`, because that command writes a local
+update cache; freshness comes from the registry lookup instead.
+
+\`0.4.2\` was registry latest on 2026-08-14, an observed value rather than a timeless pin. A v1.0
+date supplied by the user/PICO team is planning input, not repository-verified release evidence.
+The compatibility sweep is version-agnostic and covers the complete reachable advertised
+help-only tree except the prohibited top-level setup subtree. It does not establish semantic
+compatibility, hidden-alias longevity, perf provisioning, emulator/device/Windows behavior, or
+visual evidence.
+`.trim();
+
+function extractManagedPolicyBlock(markdown, file) {
+  const starts = markdown.split(MANAGED_POLICY_START).length - 1;
+  const ends = markdown.split(MANAGED_POLICY_END).length - 1;
+  assert.equal(starts, 1, `${file}: exactly one managed-policy start marker`);
+  assert.equal(ends, 1, `${file}: exactly one managed-policy end marker`);
+  const start = markdown.indexOf(MANAGED_POLICY_START) + MANAGED_POLICY_START.length;
+  const end = markdown.indexOf(MANAGED_POLICY_END, start);
+  assert.ok(end > start, `${file}: managed-policy markers are ordered`);
+  return markdown.slice(start, end).trim();
+}
+
+const contradictoryManagedPolicyPatterns = [
+  /\b(?:the\s+)?(?:mcp|server|plugin|runtime|service|tool)\b[^.\n]{0,100}\b(?:runs?|running|invokes?|invoking|executes?|executing|performs?|performing|launches?|launching|calls?|calling|starts?|starting|triggers?|triggering|handles?|handling)\b[^.\n]{0,60}\b(?:pico-cli\s+)?setup\b/i,
+  /\b(?:the\s+)?(?:mcp|server|plugin|runtime|service|tool)\b[^.\n]{0,100}\b(?:runs?|running|invokes?|invoking|executes?|executing|performs?|performing|launches?|launching|calls?|calling|starts?|starting|triggers?|triggering|handles?|handling)\b[^.\n]{0,60}\b(?:pico-cli\s+)?update\s+--check\b/i,
+  /\b(?:pico-cli\s+)?setup\b[^.\n]{0,80}\b(?:is|gets?|will\s+be|can\s+be)\s+(?:automatically\s+)?(?:run|invoked|executed|performed|launched|called|started|triggered|handled)\b/i,
+  /\b(?:pico-cli\s+)?update\s+--check\b[^.\n]{0,80}\b(?:is|gets?|will\s+be|can\s+be)\s+(?:automatically\s+)?(?:run|invoked|executed|performed|launched|called|started|triggered|handled)\b/i,
+  /\b(?:pico-cli\s+)?(?:setup|update\s+--check)\b[^.\n]{0,60}\b(?:is|becomes?|will\s+be)\s+automatic\b/i,
+  /\bautomatically\b[^.\n]{0,80}\b(?:pico-cli\s+)?(?:setup|update\s+--check)\b/i,
+  /\b(?:pico-cli\s+)?(?:setup|update\s+--check)\b[^.\n]{0,80}\bautomatically\b/i,
+  // Policy-defining vocabulary belongs only to the exact canonical block. Keeping it out of the
+  // surrounding prose makes appended alternate defaults/modes fail closed instead of requiring a
+  // finite list of every possible negation.
+  /\bmanaged-(?:latest|cached)\b/i,
+  /\bPICO_MCP_CLI_(?:POLICY|PATH)\b/i,
+  /\bPICO_MCP_AUTO(?:INSTALL|UPDATE)_CLI\b/i,
+  /\bregistry-latest\b/i,
+  /\b(?:fallback\b[^.\n]{0,100}\blatest|latest\b[^.\n]{0,100}\bfallback)\b/i,
+  /\b(?:mcp|server|plugin|runtime|service|tool)\b[^.\n]{0,100}\b(?:modifies?|changes?|rewrites?|replaces?|exports?|prepends?|appends?|mutates?|updates?)\b[^.\n]{0,60}\bPATH\b/i,
+  /\bPATH\b[^.\n]{0,100}\b(?:is|gets?|will\s+be|can\s+be)?\s*(?:modified|changed|rewritten|replaced|exported|prepended|appended|mutated|updated)\b/i,
+];
+
+const ALTERNATE_CLI_RESOLUTION_TOKENS = new Set(["external", "disabled", "ambient", "global"]);
+const POLICY_CLAIM_CONTEXT_TOKENS = new Set([
+  "default",
+  "defaults",
+  "mode",
+  "modes",
+  "policy",
+  "policies",
+  "resolution",
+  "resolver",
+]);
+
+function alternateManagedPolicyClaims(markdown) {
+  return String(markdown)
+    .replace(/\r\n/g, "\n")
+    .split(/(?:\n[ \t]*){2,}|(?<=[.!?;])(?:[ \t]+|\n+)|\n(?=[ \t]*(?:#{1,6}[ \t]|[-*+][ \t]|\d+\.[ \t]|```|>))/)
+    .map((clause) => ({
+      clause: clause.replace(/\s+/g, " ").trim(),
+      tokens: new Set(clause.toLowerCase().match(/[a-z]+(?:-[a-z]+)*/g) ?? []),
+    }))
+    .filter(({ clause, tokens }) => clause.length > 0
+      && [...ALTERNATE_CLI_RESOLUTION_TOKENS].some((token) => tokens.has(token))
+      && [...POLICY_CLAIM_CONTEXT_TOKENS].some((token) => tokens.has(token)))
+    .map(({ clause }) => clause);
+}
+
+function assertNoAppendedManagedPolicyClaims(markdown, file) {
+  const start = markdown.indexOf(MANAGED_POLICY_START);
+  const end = markdown.indexOf(MANAGED_POLICY_END, start + MANAGED_POLICY_START.length);
+  const outsideCanonical = start >= 0 && end >= 0
+    ? `${markdown.slice(0, start)}\n${markdown.slice(end + MANAGED_POLICY_END.length)}`
+    : markdown;
+  for (const pattern of contradictoryManagedPolicyPatterns) {
+    assert.doesNotMatch(outsideCanonical, pattern, `${file}: contradictory or duplicate managed policy claim outside canonical block`);
+  }
+  assert.deepEqual(
+    alternateManagedPolicyClaims(outsideCanonical),
+    [],
+    `${file}: alternate external/disabled/ambient/global CLI policy claim outside canonical block`,
+  );
+}
+
+function assertCanonicalManagedPolicyDocument(markdown, file) {
+  assert.equal(extractManagedPolicyBlock(markdown, file), CANONICAL_MANAGED_POLICY_BLOCK, `${file}: canonical policy bytes`);
+  assertNoAppendedManagedPolicyClaims(markdown, file);
+}
+
+function assertNoActionableBareSetup(text, label) {
+  const offending = String(text)
+    .split(/(?<=[.!?;])\s+|\n+/)
+    .filter((clause) => /\bpico-cli\s+setup\b/i.test(clause))
+    .filter((clause) => {
+      const negatedActive = /\b(?:never|does\s+not|do\s+not|will\s+not|cannot|can\s+not)\b[^.!?;\n]{0,80}\b(?:runs?|invokes?|executes?|performs?|launches?|calls?|starts?|triggers?)\b[^.!?;\n]{0,20}\bpico-cli\s+setup\b/i.test(clause);
+      const negatedPassive = /\bpico-cli\s+setup\b[^.!?;\n]{0,50}\b(?:is|will\s+be|can\s+be)\s+(?:never|not)\s+(?:run|invoked|executed|performed|launched|called|started|triggered)\b/i.test(clause);
+      const actionableOverride = /\b(?:should|must|please|manually|then)\b[^.!?;\n]{0,40}\b(?:run|invoke|execute|perform|launch|call|start|trigger)\b[^.!?;\n]{0,20}\bpico-cli\s+setup\b/i.test(clause);
+      return (!negatedActive && !negatedPassive) || actionableOverride;
+    });
+  assert.deepEqual(offending, [], `${label}: actionable bare pico-cli setup guidance: ${offending.join(" | ")}`);
+}
+
+function canonicalManagedCliPath(managedRoot, version) {
+  return path.join(
+    managedRoot,
+    "versions",
+    version,
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? "pico-cli.cmd" : "pico-cli",
+  );
+}
+
+function assertCanonicalManagedCliPath(actual, managedRoot, version) {
+  assert.equal(actual, canonicalManagedCliPath(managedRoot, version));
+}
+
 function validateTrackedMarkdownCitation({ link, sourceFile, root, tracked }) {
   const fragmentAt = link.indexOf("#");
   const target = fragmentAt === -1 ? link : link.slice(0, fragmentAt);
@@ -79,6 +259,39 @@ function validateTrackedMarkdownCitation({ link, sourceFile, root, tracked }) {
     const last = Number(range[2] ?? range[1]);
     const lineCount = fs.readFileSync(resolved, "utf8").split(/\r?\n/).length;
     assert.ok(first >= 1 && first <= last && last <= lineCount, `line anchor outside ${relative} (${lineCount} lines): ${link}`);
+  }
+}
+
+function decodePublicEvidenceText(value) {
+  let decoded = value;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    // Decode only path-significant octets. Unlike decodeURIComponent(document), this keeps going
+    // past an unrelated literal/malformed percent and also peels bounded double-encoding.
+    const next = decoded.replace(/%(?:25|2e|2f|5c)/gi, (escape) => String.fromCharCode(Number.parseInt(escape.slice(1), 16)));
+    if (next === decoded) break;
+    decoded = next;
+  }
+  return decoded.replaceAll("\\", "/");
+}
+
+function assertNoPrivateDevCitation(contents, file) {
+  const decoded = decodePublicEvidenceText(contents);
+  assert.doesNotMatch(
+    decoded,
+    /(?:^|[\/\s(`])\.dev(?:[\/\s`)#]|$)/im,
+    `${file} cites ignored .dev evidence`,
+  );
+  // Decode each target independently. A literal/malformed percent elsewhere in the document must
+  // not prevent a later encoded private citation from being recognized.
+  for (const match of contents.matchAll(/!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g)) {
+    const decodedTarget = decodePublicEvidenceText(match[1]);
+    const target = decodedTarget.split("#", 1)[0];
+    const normalized = path.posix.normalize(target);
+    assert.equal(
+      normalized.split("/").some((segment) => segment.toLowerCase() === ".dev"),
+      false,
+      `${file} normalizes to ignored .dev evidence: ${match[1]}`,
+    );
   }
 }
 
@@ -196,6 +409,321 @@ test("all host marketplaces use their exact source descriptor and synchronized m
     assert.equal(plugin.name, pkg.name, expected.file);
     assert.equal(plugin.version, pkg.version, expected.file);
     assert.deepEqual(plugin.source, expected.source, expected.file);
+  }
+});
+
+test("installed tarball keeps default startup, tools/list, and pico_doctor read-only", async () => {
+  const artifact = installPackedArtifactWithoutNetwork();
+  const harness = createManagedRuntimeHarness();
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+  const env = { ...harness.env };
+  delete env.PICO_MCP_SURFACE;
+  delete env.PICO_MCP_OUTER_SURFACE;
+  delete env.PICO_MCP_CLI_POLICY;
+  assert.equal(Object.hasOwn(env, "PICO_MCP_CLI_POLICY"), false, "default-policy child must leave PICO_MCP_CLI_POLICY unset");
+  const beforeHome = fs.readdirSync(harness.home);
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [artifact.entry],
+    cwd: artifact.installRoot,
+    env,
+  });
+  const client = new Client({ name: "packed-managed-policy", version: "0.0.0" });
+
+  try {
+    await client.connect(transport);
+    const listed = await client.listTools();
+    assert.equal(listed.tools.length, 18);
+    assert.equal(harness.calls().some((call) => call.role === "npm"), false, JSON.stringify(harness.calls()));
+    assert.equal(fs.existsSync(harness.managedRoot), false, "tools/list must not create the managed store");
+
+    const doctor = await client.callTool({ name: "pico_doctor", arguments: {} });
+    const payload = JSON.parse(mcpText(doctor));
+    assert.ok(Array.isArray(payload.preflight?.checks) && payload.preflight.checks.length > 0, JSON.stringify(payload));
+    assert.equal(harness.calls().some((call) => call.role === "npm"), false, JSON.stringify(harness.calls()));
+    assert.equal(harness.calls().some((call) => call.role === "managed-cli"), false, JSON.stringify(harness.calls()));
+    assert.equal(fs.existsSync(harness.managedRoot), false, "default pico_doctor must not create the managed store");
+    assert.deepEqual(fs.readdirSync(harness.home), beforeHome, "default pico_doctor must not write the isolated home");
+  } finally {
+    await client.close().catch(() => {});
+    fs.rmSync(harness.root, { recursive: true, force: true });
+    fs.rmSync(artifact.root, { recursive: true, force: true });
+  }
+});
+
+test("installed tarball wrapper lazily uses exact managed latest without touching ambient CLI or PATH", () => {
+  const artifact = installPackedArtifactWithoutNetwork();
+  const harness = createManagedRuntimeHarness({ latestVersion: "0.4.2" });
+  const pathKey = process.platform === "win32"
+    ? (Object.keys(harness.env).find((key) => key.toUpperCase() === "PATH") ?? "Path")
+    : "PATH";
+  const ambientMarker = path.join(harness.root, "ambient-invoked");
+  const ambientCli = path.join(harness.binDir, process.platform === "win32" ? "pico-cli.cmd" : "pico-cli");
+  if (process.platform === "win32") {
+    fs.writeFileSync(ambientCli, `@echo off\r\n>"${ambientMarker}" echo invoked\r\nexit /b 88\r\n`);
+  } else {
+    writeExecutable(ambientCli, `#!/bin/sh\nprintf invoked > ${shellQuote(ambientMarker)}\nexit 88\n`);
+  }
+  const ambientBefore = fs.readFileSync(ambientCli);
+  const childEnv = { ...harness.env };
+  delete childEnv.PICO_MCP_CLI_POLICY;
+  const pathBefore = childEnv[pathKey];
+  assert.equal(Object.hasOwn(childEnv, "PICO_MCP_CLI_POLICY"), false, "wrapper child must resolve the unset default policy");
+  const knowledgeUrl = pathToFileURL(path.join(artifact.installed, "dist", "knowledge.js")).href;
+  const script = `
+const { KnowledgeBridge } = await import(${JSON.stringify(knowledgeUrl)});
+const pathKey = ${JSON.stringify(pathKey)};
+const pathBefore = process.env[pathKey];
+const policyWasSet = Object.hasOwn(process.env, "PICO_MCP_CLI_POLICY");
+const bridge = new KnowledgeBridge({ startupTimeoutMs: 3000, callTimeoutMs: 2000, retirementTimeoutMs: 2000 });
+const result = await bridge.call("graph_stats", {});
+const pathAfter = process.env[pathKey];
+await bridge.close();
+process.stdout.write(JSON.stringify({ result, pathBefore, pathAfter, policyWasSet }));
+`;
+
+  try {
+    const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+      cwd: artifact.installRoot,
+      env: childEnv,
+      encoding: "utf8",
+      timeout: 20_000,
+    });
+    assert.equal(child.status, 0, child.stderr || child.stdout);
+    const out = JSON.parse(child.stdout);
+    assert.equal(out.result.status, "ok", JSON.stringify(out.result));
+    assert.equal(out.result.picoCli.source, "managed");
+    assert.equal(out.result.picoCli.policy, "managed-latest");
+    assert.equal(out.result.picoCli.version, "0.4.2");
+    assert.equal(out.result.picoCli.latestVersion, "0.4.2");
+    assert.equal(out.result.picoCli.freshness, "latest");
+    assert.match(out.result.picoCli.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(path.isAbsolute(out.result.picoCli.path), true);
+    assert.equal(out.policyWasSet, false);
+    assertCanonicalManagedCliPath(out.result.picoCli.path, harness.managedRoot, "0.4.2");
+    assert.throws(
+      () => assertCanonicalManagedCliPath(`${canonicalManagedCliPath(harness.managedRoot, "0.4.2")}-evil`, harness.managedRoot, "0.4.2"),
+      /Expected values to be strictly equal/,
+    );
+    assert.equal(out.pathBefore, pathBefore);
+    assert.equal(out.pathAfter, pathBefore);
+    assert.deepEqual(fs.readFileSync(ambientCli), ambientBefore);
+    assert.equal(fs.existsSync(ambientMarker), false, "ambient pico-cli on PATH must not run");
+
+    const calls = harness.calls();
+    const npmCalls = calls.filter((call) => call.role === "npm");
+    assert.deepEqual(npmCalls[0].args, [
+      "view", "@picoxr/pico-cli@latest", "version", "dist.integrity", "--json",
+    ]);
+    assert.equal(npmCalls.length, 2, JSON.stringify(npmCalls));
+    assert.equal(npmCalls[1].args[0], "install");
+    assert.ok(npmCalls[1].args.includes("--prefix"), JSON.stringify(npmCalls[1]));
+    assert.equal(npmCalls[1].args.at(-1), "@picoxr/pico-cli@0.4.2");
+    const argvLedger = calls.map((call) => call.args.join(" ")).join("\n");
+    assert.doesNotMatch(argvLedger, /(?:^|\s)(?:-g|--global)(?:\s|$)/);
+    assert.doesNotMatch(argvLedger, /(?:^|\s)setup(?:\s|$)/);
+    assert.doesNotMatch(argvLedger, /update\s+--check/);
+    assert.equal(calls.some((call) => call.role === "managed-cli" && call.args.slice(1).join(" ") === "mcp dev-knowledge"), true);
+    assert.equal(fs.existsSync(path.join(harness.managedRoot, "versions", "0.4.2", "install.json")), true);
+  } finally {
+    fs.rmSync(harness.root, { recursive: true, force: true });
+    fs.rmSync(artifact.root, { recursive: true, force: true });
+  }
+});
+
+test("setup-required wrapper results stay source/freshness-neutral and never execute setup", async () => {
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+  const neutralNote = "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry.";
+  const scenarios = [
+    { name: "registry latest", freshness: "latest", configure() {} },
+    {
+      name: "registry unknown cached fallback", freshness: "unknown",
+      configure(harness) {
+        publishManagedFixtureVersion(harness, harness.managedRoot, "0.4.2");
+        harness.env.FAKE_REGISTRY_MODE = "failure";
+      },
+    },
+    {
+      name: "known-newer install failure fallback", freshness: "outdated",
+      configure(harness) {
+        publishManagedFixtureVersion(harness, harness.managedRoot, "0.4.1");
+        publishManagedFixtureVersion(harness, harness.managedRoot, "0.4.2", { packageVersion: "0.4.1" });
+      },
+    },
+    {
+      name: "managed cache-only", freshness: "cached",
+      configure(harness) {
+        publishManagedFixtureVersion(harness, harness.managedRoot, "0.4.2");
+        harness.env.PICO_MCP_CLI_POLICY = "managed-cached";
+      },
+    },
+    {
+      name: "explicit external", freshness: "external",
+      configure(harness) {
+        const marker = path.join(harness.root, "external-setup-was-run");
+        const external = path.join(harness.root, process.platform === "win32" ? "setup-refusing-external.cmd" : "setup-refusing-external");
+        if (process.platform === "win32") {
+          fs.writeFileSync(external, `@echo off\r\nif "%1"=="-v" (echo pico-cli/0.4.2& exit /b 0)\r\nif "%1"=="setup" (>"${marker}" echo ran)\r\n>&2 echo Error: Perf utilities are not installed. Run pico-cli setup.\r\nexit /b 1\r\n`);
+        } else {
+          writeExecutable(external, `#!/bin/sh\nif [ "$1" = "-v" ]; then printf 'pico-cli/0.4.2\\n'; exit 0; fi\nif [ "$1" = "setup" ]; then printf ran > ${shellQuote(marker)}; fi\nprintf 'Error: Perf utilities are not installed. Run pico-cli setup.\\n' >&2\nexit 1\n`);
+        }
+        harness.env.PICO_MCP_CLI_POLICY = "external";
+        harness.env.PICO_MCP_CLI_PATH = external;
+        harness.externalSetupMarker = marker;
+      },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    const harness = createManagedRuntimeHarness({ operationMode: "setup-required" });
+    scenario.configure(harness);
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(repoRoot, "dist", "index.js")],
+      cwd: repoRoot,
+      env: { ...harness.env, PICO_MCP_SURFACE: "full" },
+      stderr: "pipe",
+    });
+    const client = new Client({ name: `neutral-setup-guidance-${scenario.freshness}`, version: "0.0.0" });
+    try {
+      await client.connect(transport);
+      const invocations = [
+        ["perf_diagnose", { packageName: "com.example.fixture", durationSec: 5 }],
+        ["perf_trace", { action: "record", packageName: "com.example.fixture", durationSec: 5, outputPath: path.join(harness.root, "trace.perfetto-trace") }],
+        ["watch_crash", { packageName: "com.example.fixture", durationSec: 5 }],
+        ["capture_record", { durationSec: 1, outputPath: path.join(harness.root, "capture.mp4") }],
+      ];
+      for (const [name, args] of invocations) {
+        const response = await client.callTool({ name, arguments: args });
+        const result = JSON.parse(mcpText(response));
+        assert.equal(result.status, "failed", `${scenario.name}/${name}: ${JSON.stringify(result)}`);
+        assert.equal(result.failureClass, "setup-required", `${scenario.name}/${name}: ${JSON.stringify(result)}`);
+        assert.equal(result.note, neutralNote, `${scenario.name}/${name}: setup note must not infer source or freshness`);
+        assert.deepEqual(result.setupCommand, { path: result.picoCli.path, args: ["setup"] }, `${scenario.name}/${name}`);
+        assert.equal(path.isAbsolute(result.setupCommand.path), true, `${scenario.name}/${name}`);
+        assert.equal(result.picoCli.freshness, scenario.freshness, `${scenario.name}/${name}`);
+        assert.doesNotMatch(result.note, /\b(?:managed|current|latest|cached|external|outdated|unknown)\b/i, `${scenario.name}/${name}`);
+      }
+      const setupCalls = harness.calls().filter((call) => call.role === "managed-cli" && call.args.slice(1).join(" ") === "setup");
+      assert.deepEqual(setupCalls, [], scenario.name);
+      if (harness.externalSetupMarker) assert.equal(fs.existsSync(harness.externalSetupMarker), false, scenario.name);
+    } finally {
+      await client.close().catch(() => {});
+      fs.rmSync(harness.root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("public schemas and missing-vault results route setup through ensure_pico_cli", async () => {
+  const harness = createManagedRuntimeHarness();
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(repoRoot, "dist", "index.js")],
+    cwd: repoRoot,
+    env: {
+      ...harness.env,
+      PICO_MCP_SURFACE: "full",
+      PICO_AGENT_VAULT: path.join(harness.root, "deliberately-missing-vault"),
+    },
+    stderr: "pipe",
+  });
+  const client = new Client({ name: "public-setup-guidance", version: "0.0.0" });
+  const assertManagedSetupGuidance = (text, label) => {
+    assert.doesNotMatch(text, /\bpico-cli\s+setup\b/i, `${label}: no bare ambient setup command`);
+    assert.match(text, /ensure_pico_cli/i, `${label}: resolve the managed CLI first`);
+    assert.match(text, /returned absolute path/i, `${label}: require the resolved absolute path`);
+    assert.match(text, /args \[\"setup\"\]/i, `${label}: preserve setup as argv data`);
+  };
+  try {
+    await client.connect(transport);
+    const listed = await client.listTools();
+    for (const tool of listed.tools) {
+      assertNoActionableBareSetup(JSON.stringify(tool), `${tool.name} public schema`);
+    }
+    const selectedSchemas = listed.tools.filter((tool) => ["preflight_lint", "vault_api", "run_spatialbench"].includes(tool.name));
+    assert.equal(selectedSchemas.length, 3, JSON.stringify(selectedSchemas.map((tool) => tool.name)));
+    assert.doesNotMatch(JSON.stringify(selectedSchemas), /\bpico-cli\s+setup\b/i);
+
+    const lint = JSON.parse(mcpText(await client.callTool({
+      name: "preflight_lint",
+      arguments: { content: "val safe = 1", kind: "kotlin" },
+    })));
+    assert.equal(lint.vault.status, "unavailable", JSON.stringify(lint));
+    assertManagedSetupGuidance(lint.vault.note, "preflight_lint result");
+
+    const vault = JSON.parse(mcpText(await client.callTool({
+      name: "vault_api",
+      arguments: { symbol: "Entity", sdkVersion: `missing-${process.pid}` },
+    })));
+    assert.equal(vault.status, "unavailable", JSON.stringify(vault));
+    assertManagedSetupGuidance(vault.note, "vault_api result");
+
+    const { formatManualPicoCliSetupGuidance } = await import("../dist/doors.js");
+    assertManagedSetupGuidance(formatManualPicoCliSetupGuidance("Perf utilities are unavailable."), "pico_loop fix");
+
+    const missingRoot = path.join(harness.root, "missing-index-root");
+    const script = spawnSync(process.execPath, [path.join(repoRoot, "scripts", "build-vault-index.mjs"), missingRoot], {
+      cwd: repoRoot,
+      env: { ...harness.env },
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    assert.equal(script.status, 1, script.stderr || script.stdout);
+    assertManagedSetupGuidance(script.stderr, "build-vault-index stderr");
+  } finally {
+    await client.close().catch(() => {});
+    fs.rmSync(harness.root, { recursive: true, force: true });
+  }
+});
+
+test("KnowledgeBridge classifies setup refusal anywhere in bounded startup stderr", () => {
+  for (const scenario of [
+    { name: "noise before refusal", before: "noise-before-refusal-".repeat(1_200), after: "", refusalRetained: true },
+    { name: "noise after refusal", before: "", after: "noise-after-refusal-".repeat(1_200), refusalRetained: false },
+  ]) {
+    const harness = createManagedRuntimeHarness();
+    const refusalMarker = "KNOWLEDGE_SETUP_REFUSAL_DO_NOT_INHERIT";
+    const refusingServer = path.join(harness.root, "refusing-knowledge.mjs");
+    fs.writeFileSync(refusingServer, [
+      `process.stderr.write(${JSON.stringify(`${scenario.before}${refusalMarker}: Perf utilities are not installed. Run pico-cli setup.\n${scenario.after}`)});`,
+      "setTimeout(() => process.exit(1), 10);",
+    ].join("\n"));
+    const childEnv = { ...harness.env, FAKE_KNOWLEDGE_SERVER: refusingServer };
+    const knowledgeUrl = pathToFileURL(path.join(repoRoot, "dist", "knowledge.js")).href;
+    const script = `
+const { KnowledgeBridge } = await import(${JSON.stringify(knowledgeUrl)});
+const bridge = new KnowledgeBridge({ startupTimeoutMs: 2000, callTimeoutMs: 1000, retirementTimeoutMs: 1000, maxOutputBytes: 8192 });
+const result = await bridge.call("graph_stats", {});
+await bridge.close();
+process.stdout.write(JSON.stringify(result));
+`;
+    try {
+      const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+        cwd: repoRoot,
+        env: childEnv,
+        encoding: "utf8",
+        timeout: 15_000,
+      });
+      assert.equal(child.status, 0, `${scenario.name}: ${child.stderr || child.stdout}`);
+      assert.doesNotMatch(child.stderr, new RegExp(refusalMarker), `${scenario.name}: child stderr must be captured, not inherited`);
+      const result = JSON.parse(child.stdout);
+      assert.equal(result.status, "unavailable", `${scenario.name}: ${JSON.stringify(result)}`);
+      assert.equal(result.failureClass, "setup-required", `${scenario.name}: ${JSON.stringify(result)}`);
+      assert.equal(result.error, "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry.");
+      if (scenario.refusalRetained) assert.match(result.outputTail, new RegExp(refusalMarker));
+      else assert.doesNotMatch(result.outputTail, new RegExp(refusalMarker), "classification must survive eviction from the retained tail");
+      assert.equal(Buffer.byteLength(result.outputTail, "utf8") <= 16 * 1024, true);
+      assert.equal(result.outputTruncated, true);
+      assert.deepEqual(result.setupCommand, { path: result.picoCli.path, args: ["setup"] });
+      assert.equal(path.isAbsolute(result.setupCommand.path), true);
+      assert.equal(harness.calls().some((call) => call.role === "managed-cli" && call.args.slice(1).join(" ") === "setup"), false);
+    } finally {
+      fs.rmSync(harness.root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -521,7 +1049,7 @@ test("KnowledgeBridge calls every action through one persistent serialized stdio
     DEFAULT_KNOWLEDGE_ARGS,
   } = await import("../dist/knowledge.js");
   assert.equal(DEFAULT_KNOWLEDGE_COMMAND, "pico-cli");
-  assert.deepEqual(DEFAULT_KNOWLEDGE_ARGS, ["mcp", "spatial-knowledge"]);
+  assert.deepEqual(DEFAULT_KNOWLEDGE_ARGS, ["mcp", "dev-knowledge"]);
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico knowledge actions "));
   const logPath = path.join(tempRoot, "server.jsonl");
@@ -841,72 +1369,72 @@ test("KnowledgeBridge reports a missing pico-cli command as unavailable", async 
   await bridge.close();
 });
 
-test("KnowledgeBridge provisions only its production default pico-cli command", { concurrency: false }, async () => {
-  const [{ KnowledgeBridge }, picocli] = await Promise.all([
-    import("../dist/knowledge.js"),
-    import("../dist/picocli.js"),
-  ]);
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico knowledge provision "));
-  const fakeBin = path.join(tempRoot, "bin");
-  const npmLog = path.join(tempRoot, "npm.jsonl");
-  const npmDriver = path.join(tempRoot, "fake-npm.mjs");
+test("KnowledgeBridge custom injected command bypasses managed resolution", async () => {
+  const { KnowledgeBridge } = await import("../dist/knowledge.js");
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico knowledge custom bypass "));
   const knowledgeLog = path.join(tempRoot, "knowledge.jsonl");
-  fs.mkdirSync(fakeBin);
-  fs.writeFileSync(npmDriver, `
-import fs from "node:fs";
-fs.appendFileSync(${JSON.stringify(npmLog)}, JSON.stringify(process.argv.slice(2)) + "\\n");
-process.stderr.write("npm ERR! code ENETUNREACH network request failed\\n");
-process.exit(1);
-`);
-  writeNodeCommand(fakeBin, "npm", npmDriver);
-
-  const pathKey = process.platform === "win32"
-    ? Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "Path"
-    : "PATH";
-  const priorPath = process.env[pathKey];
-  const priorAutoInstall = process.env[picocli.PICO_CLI_AUTOINSTALL_ENV];
-  const priorAutoUpdate = process.env[picocli.PICO_CLI_AUTOUPDATE_ENV];
-  process.env[pathKey] = fakeBin;
-  process.env[picocli.PICO_CLI_AUTOINSTALL_ENV] = "1";
-  delete process.env[picocli.PICO_CLI_AUTOUPDATE_ENV];
-  picocli.probePicoCli(true);
-
-  const production = new KnowledgeBridge({ startupTimeoutMs: 500, callTimeoutMs: 500 });
-  let custom;
+  const custom = new KnowledgeBridge({
+    command: process.execPath,
+    args: [path.join(repoRoot, "test", "fixtures", "fake-knowledge-server.mjs")],
+    cwd: repoRoot,
+    env: { FAKE_KNOWLEDGE_LOG: knowledgeLog, PICO_MCP_CLI_POLICY: "disabled" },
+    startupTimeoutMs: 2_000,
+    callTimeoutMs: 1_000,
+  });
   try {
-    const unavailable = await production.call("graph_stats", {});
-    assert.equal(unavailable.status, "unavailable", JSON.stringify(unavailable));
-    assert.equal(unavailable.failureClass, "network", JSON.stringify(unavailable));
-    assert.equal(unavailable.cliProvisioning?.status, "failed");
-    assert.equal(unavailable.cliProvisioning?.phase, "install");
-    assert.deepEqual(readJsonLines(npmLog).map((entry) => entry), [
-      ["install", "-g", "@picoxr/pico-cli"],
-    ]);
-
-    custom = new KnowledgeBridge({
-      command: process.execPath,
-      args: [path.join(repoRoot, "test", "fixtures", "fake-knowledge-server.mjs")],
-      cwd: repoRoot,
-      env: { FAKE_KNOWLEDGE_LOG: knowledgeLog },
-      startupTimeoutMs: 2_000,
-      callTimeoutMs: 1_000,
-    });
     const customResult = await custom.call("graph_stats", {});
     assert.equal(customResult.status, "ok", JSON.stringify(customResult));
-    assert.equal(Object.hasOwn(customResult, "cliProvisioning"), false);
-    assert.equal(readJsonLines(npmLog).length, 1, "an injected custom command must not provision pico-cli");
+    assert.equal(Object.hasOwn(customResult, "picoCli"), false);
+    assert.equal(readJsonLines(knowledgeLog).filter((event) => event.event === "start").length, 1);
   } finally {
-    await custom?.close();
-    await production.close();
-    if (priorPath === undefined) delete process.env[pathKey];
-    else process.env[pathKey] = priorPath;
-    if (priorAutoInstall === undefined) delete process.env[picocli.PICO_CLI_AUTOINSTALL_ENV];
-    else process.env[picocli.PICO_CLI_AUTOINSTALL_ENV] = priorAutoInstall;
-    if (priorAutoUpdate === undefined) delete process.env[picocli.PICO_CLI_AUTOUPDATE_ENV];
-    else process.env[picocli.PICO_CLI_AUTOUPDATE_ENV] = priorAutoUpdate;
-    picocli.probePicoCli(true);
+    await custom.close();
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("KnowledgeBridge production child follows managed path/version changes and retires on disabled", { concurrency: false }, () => {
+  const harness = createManagedRuntimeHarness({ latestVersion: "0.4.1" });
+  const knowledgeUrl = pathToFileURL(path.join(repoRoot, "dist", "knowledge.js")).href;
+  const picoCliUrl = pathToFileURL(path.join(repoRoot, "dist", "picocli.js")).href;
+  const script = `
+import fs from "node:fs";
+const { KnowledgeBridge } = await import(${JSON.stringify(knowledgeUrl)});
+const { ensurePicoCli } = await import(${JSON.stringify(picoCliUrl)});
+const bridge = new KnowledgeBridge({ startupTimeoutMs: 3000, callTimeoutMs: 2000, retirementTimeoutMs: 2000 });
+const first = await bridge.call("graph_stats", {});
+fs.writeFileSync(process.env.FAKE_LATEST_VERSION_FILE, "0.4.2");
+const activated = await ensurePicoCli({ forceRefresh: true, updateCheckTimeoutMs: 2000, installTimeoutMs: 2000 });
+const second = await bridge.call("graph_stats", {});
+process.env.PICO_MCP_CLI_POLICY = "disabled";
+const disabled = await bridge.call("graph_stats", {});
+const eventsBeforeClose = fs.readFileSync(process.env.FAKE_KNOWLEDGE_LOG, "utf8").split("\\n").filter(Boolean).map(JSON.parse);
+await bridge.close();
+process.stdout.write(JSON.stringify({ first, activated, second, disabled, eventsBeforeClose }));
+`;
+  const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
+    cwd: repoRoot,
+    env: harness.env,
+    encoding: "utf8",
+    timeout: 20_000,
+  });
+  assert.equal(child.status, 0, child.stderr || child.stdout);
+  const out = JSON.parse(child.stdout);
+  assert.equal(out.first.status, "ok", JSON.stringify(out.first));
+  assert.equal(out.first.picoCli.version, "0.4.1");
+  assert.equal(out.activated.version, "0.4.2", JSON.stringify(out.activated));
+  assert.equal(out.second.status, "ok", JSON.stringify(out.second));
+  assert.equal(out.second.picoCli.version, "0.4.2");
+  assert.notEqual(JSON.parse(out.first.text).pid, JSON.parse(out.second.text).pid, "new managed path/version must start a new child");
+  assert.equal(out.disabled.status, "unavailable", JSON.stringify(out.disabled));
+  assert.equal(out.disabled.failureClass, "cli-disabled");
+  const starts = out.eventsBeforeClose.filter((event) => event.event === "start");
+  const exits = out.eventsBeforeClose.filter((event) => event.event === "exit");
+  assert.equal(starts.length, 2, JSON.stringify(out.eventsBeforeClose));
+  assert.equal(exits.length, 2, "disabled resolution must retire the active managed child before returning");
+  const managedStarts = harness.calls().filter((call) => call.role === "managed-cli" && call.args.slice(1).join(" ") === "mcp dev-knowledge");
+  assert.deepEqual(managedStarts.map((call) => call.args[0]), ["0.4.1", "0.4.2"]);
+  assert.equal(harness.calls().some((call) => call.args.includes("spatial-knowledge")), false, JSON.stringify(harness.calls()));
+  fs.rmSync(harness.root, { recursive: true, force: true });
 });
 
 test("registered knowledge_api keeps the flattened union strict", async () => {
@@ -1088,6 +1616,108 @@ test("public adoption docs keep bundle installation, AVD creation, and build too
   }
 });
 
+test("operational docs publish one exact canonical managed CLI policy block", () => {
+  const policyDocs = [
+    "README.md",
+    "GETTING_STARTED.md",
+    "SKILLS.md",
+    "AGENTS.md",
+    "TESTERS.md",
+    "docs/HOSTS.md",
+  ];
+
+  for (const file of policyDocs) {
+    const markdown = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    assertCanonicalManagedPolicyDocument(markdown, file);
+  }
+});
+
+test("managed CLI policy gate rejects alternate modes and automatic mutation claims", () => {
+  const valid = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  const alternateClaims = [
+    "The MCP invokes pico-cli setup.",
+    "The server executes setup.",
+    "The MCP invokes update --check.",
+    "The MCP runs setup.",
+    "The server runs update --check.",
+    "The MCP is running pico-cli setup.",
+    "The server is executing update --check.",
+    "The MCP performs pico-cli setup.",
+    "The plugin performs pico-cli setup.",
+    "The server launches update --check.",
+    "The MCP calls setup for you.",
+    "The runtime calls update --check.",
+    "Pico-cli setup is automatically performed by the server.",
+    "Setup is automatic.",
+    "Setup will be launched automatically.",
+    "Update --check gets invoked by the MCP.",
+    "The server handles setup automatically.",
+    "Managed-latest is not the default.",
+    "External mode is the default.",
+    "External\nis the default mode.",
+    "Disabled policy governs CLI operations.",
+    "Ambient CLI resolution is preferred.",
+    "Global installation is the default.",
+    "The MCP modifies PATH for managed commands.",
+    "A cached fallback is reported as latest.",
+  ];
+  const acceptedClaims = alternateClaims.filter((claim) => {
+    try {
+      assertNoAppendedManagedPolicyClaims(`${valid}\n${claim}`, `alternate claim fixture: ${claim}`);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  assert.deepEqual(acceptedClaims, [], `alternate modes and automatic setup/update claims must be rejected: ${acceptedClaims.join(" | ")}`);
+
+  const mutatedInsideMarker = valid.replace("The MCP never runs setup.", "Setup is performed automatically by the MCP.");
+  assert.throws(() => assertCanonicalManagedPolicyDocument(mutatedInsideMarker, "inside-marker mutation"), /canonical policy bytes/);
+
+  // Dated findings/plans/specs, the measurement answer page, and CHANGELOG entries are evidence or
+  // implementation history, not operational policy. They remain explicitly outside this
+  // exact-block/append scanner so truthful measured/vendor-output quotations are not rewritten as
+  // current ambient-command instructions.
+  for (const historical of [
+    "CHANGELOG.md",
+    "docs/ANSWERED_BY_MEASUREMENT.md",
+    "docs/findings/PICOCLI_042_SWEEP_2026-08-12.md",
+    "docs/findings/PICOCLI_MANAGED_LATEST_2026-08-14.md",
+    "docs/superpowers/plans/2026-08-14-managed-pico-cli.md",
+    "docs/superpowers/specs/2026-08-14-managed-pico-cli-design.md",
+    "docs/superpowers/specs/2026-08-14-pico-evolution-programme-design.md",
+  ]) {
+    assert.equal(fs.existsSync(path.join(repoRoot, historical)), true, historical);
+  }
+});
+
+test("managed CLI policy gate accepts external and global prose that does not define resolution policy", () => {
+  const valid = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  for (const benign of [
+    "External contributors can run these commands locally.",
+    "The external documentation lists CLI commands for troubleshooting.",
+    "Global search indexes installation examples.",
+  ]) {
+    assert.doesNotThrow(
+      () => assertNoAppendedManagedPolicyClaims(`${valid}\n${benign}`, `benign policy fixture: ${benign}`),
+      benign,
+    );
+  }
+});
+
+test("managed-latest finding distinguishes live ledger proof from isolated synthetic battery calls", () => {
+  const finding = fs.readFileSync(path.join(repoRoot, "docs/findings/PICOCLI_MANAGED_LATEST_2026-08-14.md"), "utf8");
+  assert.doesNotMatch(finding, /^No `record_verification` call[^\n]*occurred\./m);
+  assert.match(finding, /no (?:real|live)[^\n]*`record_verification`[^\n]*(?:call|ledger)/i);
+  assert.match(finding, /isolated\s+synthetic fixture[^.]{0,160}`record_verification`/i);
+});
+
+test("managed CLI implementation plan no longer teaches a freshness-overclaiming setup note", () => {
+  const implementationPlan = fs.readFileSync(path.join(repoRoot, "docs/superpowers/plans/2026-08-14-managed-pico-cli.md"), "utf8");
+  assert.doesNotMatch(implementationPlan, /managed CLI is current[^\n]{0,160}utility payload/i);
+  assert.match(implementationPlan, /resolved CLI package is runnable[^\n]{0,160}utility payload/i);
+});
+
 test("answers-by-measurement publishes exactly seven narrow answers backed by tracked citations", () => {
   const answerFile = path.join(repoRoot, "docs", "ANSWERED_BY_MEASUREMENT.md");
   assert.equal(fs.existsSync(answerFile), true, "docs/ANSWERED_BY_MEASUREMENT.md must exist");
@@ -1195,10 +1825,146 @@ test("answers-by-measurement publishes exactly seven narrow answers backed by tr
   }
 });
 
-test("distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and 44 test suites plus smoke", () => {
+test("public docs do not use ignored .dev files as evidence", () => {
+  const trackedMarkdown = spawnSync("git", ["ls-files", "*.md", "llms.txt"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  }).stdout.trim().split("\n").filter(Boolean);
+  const publicMarkdown = trackedMarkdown.filter((file) => !file.startsWith("docs/superpowers/"));
+  assert.ok(publicMarkdown.includes("llms.txt"), "llms.txt must stay inside the public evidence guard");
+  for (const file of publicMarkdown) {
+    let contents = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    if (file === "docs/COLLABORATORS.md") {
+      // This one section explains that .dev is ignored and unavailable to consumers; it is not an
+      // evidence citation. The rest of the public page remains under the same rejection gate.
+      contents = contents.replace(/^## What `\.dev\/` is[\s\S]*?(?=^## )/m, "");
+    }
+    assertNoPrivateDevCitation(contents, file);
+  }
+
+  const acceptedMutations = [];
+  for (const mutation of [
+    "[proof](../.dev/private.md)",
+    "[proof](../../.dev/private.md)",
+    "[proof](../%2Edev/private.md)",
+    "[proof](..%2F%2Edev%2Fprivate.md)",
+    "[proof](../%252Edev/private.md)",
+    "[proof](..\\.DEV\\private.md)",
+    "progress 100%\n[proof](../%2Edev/private.md)",
+    "progress 100%\nevidence: ../%2Edev/private.md",
+  ]) {
+    try {
+      assertNoPrivateDevCitation(mutation, "mutation");
+      acceptedMutations.push(mutation);
+    } catch {
+      // Expected: every spelling of a private citation must fail closed.
+    }
+  }
+  assert.deepEqual(acceptedMutations, [], `public evidence guard accepted: ${acceptedMutations.join(", ")}`);
+});
+
+test("the 47 named gate invocations are assigned to 44 Linux, one native-Windows, and two native-macOS lanes", () => {
+  const pkg = readJson("package.json");
+  const all = ["smoke", ...Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"))];
+  const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
+  const job = (name) => {
+    const start = new RegExp(`^  ${name}:\\n`, "m").exec(workflow);
+    assert.ok(start, `workflow job ${name} must exist`);
+    const bodyStart = start.index + start[0].length;
+    const remainder = workflow.slice(bodyStart);
+    const next = /^  [A-Za-z0-9_-]+:\n/m.exec(remainder);
+    return next ? remainder.slice(0, next.index) : remainder;
+  };
+  const namedCommands = (body) => [...body.matchAll(/^\s+run:\s+npm run (\S+)\s*$/gm)]
+    .map((match) => match[1]).filter((name) => all.includes(name));
+  const assigned = {
+    linux: namedCommands(job("gates")),
+    windows: namedCommands(job("picocli-windows")),
+    macos: namedCommands(job("vcam-native")),
+  };
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(assigned).map(([host, names]) => [host, names.length])),
+    { linux: 44, windows: 1, macos: 2 },
+  );
+  assert.deepEqual([...new Set(Object.values(assigned).flat())].sort(), [...all].sort(), "each named invocation must be assigned to a host lane");
+  assert.equal(Object.values(assigned).flat().length, all.length, "named invocations must not be duplicated across host lanes");
+
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8").replaceAll("\n", " ");
+  assert.match(readme, /47 gate invocations[\s\S]{0,220}44[\s\S]{0,80}Linux[\s\S]{0,120}(?:one|1)[\s\S]{0,80}(?:native )?Windows[\s\S]{0,120}(?:two|2)[\s\S]{0,80}(?:native )?macOS/i);
+});
+
+test("pico-cli 0.4.2 docs state the measured scope and corrected deltas", () => {
+  const answers = fs.readFileSync(path.join(repoRoot, "docs", "ANSWERED_BY_MEASUREMENT.md"), "utf8");
+  const sweep = fs.readFileSync(path.join(repoRoot, "docs", "findings", "PICOCLI_042_SWEEP_2026-08-12.md"), "utf8");
+  const combined = `${answers}\n${sweep}`;
+  for (const page of [answers, sweep]) {
+    assert.match(page, /fifteen (?:named )?`--help` surfaces[\s\S]{0,180}(?:not a complete|does not constitute a complete)/i);
+    assert.match(page, /app launch[\s\S]{0,180}(?:not byte-identical|differed|adds an examples block)/i);
+    assert.doesNotMatch(page, /app launch(?:\/|\|)stop(?:\/|\|)list[^\n]{0,120}byte-identical/i);
+    assert.match(page, /update --check[\s\S]{0,180}(?:writes|write)[\s\S]{0,100}update-check\.json/i);
+  }
+  for (const delta of ["device shell", "beta_cn", "plugin doctor", "project create"]) {
+    assert.match(combined, new RegExp(delta.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), `missing CLI delta: ${delta}`);
+  }
+});
+
+test("the scene-understanding ceiling does not resurrect the superseded zero-mesh claim", () => {
+  const capabilitySource = fs.readFileSync(path.join(repoRoot, "src", "capability.ts"), "utf8");
+  assert.doesNotMatch(capabilitySource, /MESHES remain unresolved|MeshTrackingManager returned 0 in the same probe/i);
+  assert.match(capabilitySource, /42.?44 mesh anchors/i);
+  assert.match(capabilitySource, /poll for non-empty results/i);
+});
+
+test("public guidance does not resurrect refuted capture, scene-understanding, or mesh-collider absolutes", () => {
+  const tracked = execFileSync("git", ["ls-files"], { cwd: repoRoot, encoding: "utf8" })
+    .trim().split("\n").filter(Boolean)
+    .filter((file) => !file.startsWith("docs/claims/") && file !== "CHANGELOG.md");
+  const liveGuidanceFiles = tracked.filter((file) => /^(?:src\/|appskeleton\/|README\.md$|ROADMAP\.md$|docs\/DEVICE_VERIFICATION\.md$)/.test(file));
+  const liveGuidance = liveGuidanceFiles.map((file) => `${file}\n${fs.readFileSync(path.join(repoRoot, file), "utf8")}`).join("\n");
+  assert.doesNotMatch(liveGuidance, /mesh colliders? (?:never|do not|don't|does not)[^\n]{0,80}register/i);
+  assert.doesNotMatch(liveGuidance, /(?:emulator:\s*)?0 planes\s*[—-]\s*no-op/i);
+  assert.doesNotMatch(liveGuidance, /home bedroom is a Unity black box[^\n]{0,120}(?:unmeasurable|impossible|only)/i);
+  assert.doesNotMatch(liveGuidance, /(?:structurally blind to XR-runtime|black (?:adb )?screencap[^\n]{0,100}(?:is|=) (?:a )?capture(?:-path)? artifact[^\n]{0,40}not a failure)/i);
+  assert.doesNotMatch(liveGuidance, /adb[^\n]{0,80}(?:does|is)[^\n]{0,80}composited immersive[^\n]{0,100}(?:byte-deterministic|visual ground truth)/i);
+  assert.doesNotMatch(liveGuidance, /immersive Unity[^\n]{0,100}returns? (?:a )?BLACK screencap/i);
+  assert.doesNotMatch(liveGuidance, /gui_capture[^\n]{0,120}(?:ONLY|REQUIRED)[^\n]{0,80}(?:path|XR-runtime)/i);
+
+  const collider = fs.readFileSync(path.join(repoRoot, "src", "collider.ts"), "utf8");
+  assert.match(collider, /mesh colliders are queryable from a RUNTIME MeshResource AND from a LOADED asset/i);
+  assert.match(collider, /real trap is ALIGNMENT/i);
+  const sense = fs.readFileSync(path.join(repoRoot, "src", "sense.ts"), "utf8");
+  assert.match(sense, /~40 SIMULATED planes/i);
+  assert.match(sense, /44 distinct anchors/i);
+  const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+  assert.match(readme, /(?:black[^\n]{0,120}(?:adb|screencap)[^\n]{0,160}inconclusive|black (?:adb )?frame[^\n]{0,80}inconclusive)/i);
+  assert.match(readme, /alternate capture path[^\n]{0,100}LOOK/i);
+});
+
+test("published schema-token measurements name the tokenizer and context boundary", () => {
+  const changelog = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
+  for (const measurement of ["5,029", "28,208", "86,927", "32.45%"])
+    assert.match(changelog, new RegExp(measurement.replace(/[.%]/g, "\\$&")), measurement);
+  assert.match(changelog, /tiktoken[\s\S]{0,80}o200k_base/i);
+  assert.match(changelog, /`JSON\.stringify\(result\.tools\)`[\s\S]{0,100}`tools\/list`/i);
+  assert.match(changelog, /not (?:the )?total host context/i);
+  assert.match(changelog, /characters?\s*[÷/]\s*4/i);
+});
+
+test("official-samples guidance retracts the untracked 8\/8 runtime claim", () => {
+  for (const file of ["docs/PICO_OFFICIAL_SAMPLES.md", "docs/COLLABORATORS.md", "SKILLS.md"]) {
+    const contents = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    assert.match(contents, /(?:does not retain|retains no) (?:a )?tracked[\s\S]{0,180}(?:8\/8|per-sample)/i, file);
+    assert.doesNotMatch(contents, /All eight[^\n]{0,120}(?:build and run|verified running)/i, file);
+  }
+  const samples = fs.readFileSync(path.join(repoRoot, "docs", "PICO_OFFICIAL_SAMPLES.md"), "utf8");
+  assert.match(samples, /SpatialML does not build as shipped/i);
+  assert.match(samples, /local workaround/i);
+});
+
+test("distribution metadata records platform-exact full surfaces, 18 doors-surface tools, and 46 test suites plus smoke", () => {
   const pkg = readJson("package.json");
   const testScripts = Object.keys(pkg.scripts).filter((name) => name.startsWith("test:"));
-  assert.equal(testScripts.length, 44, testScripts.join("\n"));
+  assert.equal(testScripts.length, 46, testScripts.join("\n"));
   assert.equal(pkg.scripts["test:distribution-adoption"], "node --test test/distribution-adoption.mjs");
 
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
@@ -1214,6 +1980,10 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
   assert.doesNotMatch(tarball, /TOOL_TOLERANCE/);
   assert.match(tarball, /tools\.length === EXPECTED_PLATFORM_TOOLS/);
 
+  const metadataSync = fs.readFileSync(path.join(repoRoot, "scripts", "sync-metadata.mjs"), "utf8");
+  assert.match(metadataSync, /other hosts\|Linux/, "metadata sync must keep the measured Linux count aligned");
+  assert.match(metadataSync, /Windows\\s\+[\s\S]{0,180}source-derived/, "metadata sync must keep the source-derived Windows count aligned");
+
   const agents = fs.readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
   assert.match(agents, /doors surface[\s\S]{0,120}: 18/);
   for (const file of [
@@ -1227,7 +1997,7 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
     "docs/COLLABORATORS.md",
   ]) {
     const prose = fs.readFileSync(path.join(repoRoot, file), "utf8").replaceAll("\n", " ");
-    assert.match(prose, /249(?: tools?)? on macOS[\s\S]{0,160}246(?: tools?)? on other hosts/i, file);
+    assert.match(prose, /249(?: tools?)? on macOS[\s\S]{0,220}246(?: tools?)? on Linux[\s\S]{0,260}Windows[\s\S]{0,100}source-derived/i, file);
     assert.doesNotMatch(prose, /\b249\+(?:[- ]tools?)?/i, file);
   }
 
@@ -1235,6 +2005,6 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
     readJson(".claude-plugin/plugin.json").description,
     readJson(".claude-plugin/marketplace.json").plugins[0].description,
   ]) {
-    assert.match(description, /249 tools on macOS \/ 246 on other hosts/i);
+    assert.match(description, /249 tools on macOS \/ 246 on Linux[\s\S]{0,100}Windows[\s\S]{0,80}source-derived/i);
   }
 });

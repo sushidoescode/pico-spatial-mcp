@@ -21,7 +21,7 @@ jobs:
       - run: npm ci
       - name: Build (Windows pico-cli shim lane)
         run: npm run build
-      - name: Lazy pico-cli provisioning (.cmd execution + bounded tree kill)
+      - name: pico-cli + battery CLI + smoke wrapper selection (no native build_and_run execution)
         run: npm run test:picocli-win
 
   gates:
@@ -41,13 +41,16 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
       - name: Build (tsc)
         run: npm run build
-      # The deterministic headless tiers — exactly what runs before every commit locally.
-      # (Emulator/vision tiers can't run in CI; the regression_gate golden covers plan+compile.)
+      - name: Prompt/tool surface conformance
+        run: npm run test:prompts
+      # The Linux-assigned deterministic/headless tiers. The complete 47-invocation battery also
+      # includes one Windows-assigned and two macOS-assigned native contracts; emulator/LOOK work
+      # cannot run in this CI job.
       - name: Smoke (every tool registers + responds)
         run: npm run smoke
         env:
           SMOKE_SDK_OPTIONAL: "1"
-      - name: Lint fixtures (each retained-lessons rule fires on pos, silent on neg)
+      - name: Lint fixtures + keep-going battery-runner contract
         run: npm run test:lint
       - name: Vault fixtures (agent-vault parser + symbol check; real-vault asserts skip in CI)
         run: npm run test:vault
@@ -115,6 +118,8 @@ jobs:
         run: npm run test:copilot
       - name: Ledger fixtures (over-claims structurally impossible)
         run: npm run test:ledger
+      - name: Digest-bound native run receipt identity, producer, ledger, and ship consumers
+        run: npm run test:runreceipt
       - name: Eye calibration
         run: npm run test:eye
       - name: Asset gate
@@ -127,6 +132,8 @@ jobs:
         run: npm run test:spatialui-adoption
       - name: Distribution adoption (host manifests, bootstrap, knowledge graph, emulator acquisition)
         run: npm run test:distribution-adoption
+      - name: Knowledge child lifecycle (bounded retirement + managed publication guards)
+        run: npm run test:knowledge-lifecycle
       - name: Sample conformance (our codegen vs PICO's eight official Spatial SDK samples)
         run: npm run test:conformance
 

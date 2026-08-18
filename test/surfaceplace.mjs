@@ -38,7 +38,7 @@ assert(/root\.convertPositionFrom\(anchor\.transform\.position, null\)/.test(kt)
 assert(/BASE_LIFT = 0\.4187f/.test(kt),
   "TRAP 4: origin-CENTRE model lifted by half its height (0.8373/2 = 0.4187)");
 assert(/ShapeResource\.createBox/.test(kt) && !/createConvexMesh|createStaticMesh/.test(kt),
-  "TRAP 5: PRIMITIVE box collider only (mesh colliders never register on PICO)");
+  "TRAP 5: predictable primitive proxy avoids mesh local-space alignment/scale traps");
 assert(/PhysicsWorldComponent\(\)/.test(kt),
   "collider carries the REQUIRED PhysicsWorldComponent");
 // TRAP 6 is the one that cost a whole debugging round on 2026-07-29: the table WAS seated, on the

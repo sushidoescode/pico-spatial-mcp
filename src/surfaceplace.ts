@@ -22,9 +22,8 @@ import { okJson } from "./util.js";
  *  4. Generated/downloaded models (Meshy et al.) are usually origin-CENTRED, so seating them at
  *     the surface height buries half the model. Emitted code lifts by half the height unless the
  *     asset is declared bottom-origin.
- *  5. REFUTED 2026-08-06 by measurement (ledger com.picoagent.v35expc#4). This used to read "a
- *     MESH collider never registers in PICO's queryable physics world. Only primitives do."
- *     v35.4 refuted the runtime half; Experiment C-5 has now refuted the loaded half too. A mesh
+ *  5. REFUTED 2026-08-06 by measurement (ledger com.picoagent.v35expc#4). Earlier guidance said
+ *     mesh shapes were not queryable. Experiment C-5 refuted both runtime and loaded-asset forms. A mesh
  *     taken off a LOADED model's ModelComponent answers rayCast through both createStaticMesh and
  *     createConvexMesh, measured against a primitive control in the same cast.
  *     The emitted collider still stays a BOX here — but for a reason that survives the refutation
@@ -232,8 +231,9 @@ export function surfacePlacementKotlin(o: SurfacePlacementOptions): string {
   if (o.collider !== "none") {
     lines.push("");
     lines.push("    /**");
-    lines.push("     * A PRIMITIVE box. Mesh/convex colliders do NOT register in PICO's queryable world,");
-    lines.push("     * so a mesh collider here would silently never raycast.");
+    lines.push("     * A PRIMITIVE box chosen for predictable footprint alignment and query cost.");
+    lines.push("     * Mesh/convex shapes are queryable, but use local vertex coordinates + the collider");
+    lines.push("     * entity transform; a loaded submesh offset/display scale can silently misalign them.");
     lines.push("     */");
     lines.push("    private fun makeCollider(pos: Vector3): Entity {");
     const slab = o.collider === "boxTop";
@@ -287,7 +287,7 @@ export function registerSurfacePlacementTools(server: McpServer) {
     "generate_surface_placement_kotlin",
     {
       description:
-        "Seat a BAKED model on a DETECTED real-world surface (FLOOR/TABLE/WALL/BED/CABINET…) — the MR placement recipe, generated instead of hand-written. Emits a self-contained Kotlin object whose seat(root, add) detects the plane, converts anchor space into the scene root's space, seats the model with the right base lift, and attaches a PRIMITIVE box collider plus the required PhysicsWorldComponent. It bakes in five silent traps measured on 2026-07-29: a one-shot plane query returns 0 (the Stage entry animation is still running — so it POLLS), the emulator's floor is at y=0.40 not 0 (so height comes from the plane, never a constant), anchor space needs root.convertPositionFrom, downloaded/generated models are origin-CENTRED (so half-height lift), and MESH colliders never register in PICO's queryable physics world (so the collider is a box). Pair with bake_textured_model — a raw runtime-loaded GLB renders black. REQUIRES an open Stage — any stage style, Mixed (1) included; a WindowContainer returns 0 planes ('Full Space' in older notes meant open-Stage, not stageStyle 3).",
+        "Seat a BAKED model on a DETECTED real-world surface (FLOOR/TABLE/WALL/BED/CABINET…) — the MR placement recipe, generated instead of hand-written. Emits a self-contained Kotlin object whose seat(root, add) detects the plane, converts anchor space into the scene root's space, seats the model with the right base lift, and attaches a PRIMITIVE box collider plus the required PhysicsWorldComponent. It bakes in five silent traps measured on 2026-07-29/2026-08-06: a one-shot plane query returns 0 while Stage entry is still settling (so it POLLS), floor height comes from the plane, anchor space needs root.convertPositionFrom, downloaded/generated models are origin-CENTRED, and mesh shapes—although queryable from runtime and loaded assets—use local vertex coordinates plus the collider entity transform, so imported node offsets/display scale can misalign them. This generator deliberately uses the declared-footprint box for predictable alignment and lower query cost. Pair with bake_textured_model. REQUIRES an open Stage — any stage style, Mixed (1) included; a WindowContainer returns 0 planes ('Full Space' in older notes meant open-Stage, not stageStyle 3).",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
         objectName: z.string().default("SurfacePlacement").describe("Generated object name (e.g. TablePlacement)."),

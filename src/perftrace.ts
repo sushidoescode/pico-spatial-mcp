@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { okJson, okJsonStructured } from "./util.js";
-import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, cliWrapperContractShape } from "./picocli.js";
+import { ensurePicoCli, picoCliProvenance, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, cliWrapperContractShape, inspectPicoCliArtifact } from "./picocli.js";
 
 /**
  * perftrace.ts — v31 perf_trace: PICO's Perfetto trace pipeline routed through our loop.
@@ -15,9 +15,9 @@ import { ensurePicoCli, picoCliFromEnsure, runPicoCli, classifyPicoCliFailure, c
  * -t duration, -o output, -d device), decode (trace-file, -f json|systrace|ctrace, -o output),
  * load (trace-file, returns a sessionId for trace_processor_shell), query (--session, --sql).
  * `--live` (Ctrl+C-terminated streaming) is deliberately NOT wrapped — every action is bounded.
- * 0.4.2 caveat (measured 2026-08-12): the whole perf family exits 1 with "Perf utilities 0.1.0
- * are not installed. Run `pico-cli setup`" until a one-time setup — classified not-provisioned
- * with that exact remedy. The 0.4.2 trace flag surface BEHIND that gate is unverified (setup
+ * 0.4.2 caveat (measured 2026-08-12): the whole perf family reports its optional utilities are
+ * not installed until a one-time manual setup — classified setup-required with structured
+ * absolute-path guidance. The 0.4.2 trace flag surface BEHIND that gate is unverified (setup
  * mutates the machine; deferred until a provisioned 0.4.x is available here).
  *
  * HONESTY (load-bearing): outputs are pico-cli's own, quoted verbatim (outputTail) plus artifact
@@ -68,9 +68,9 @@ export function registerPerfTraceTools(server: McpServer) {
         "Ctrl+C --live mode is not wrapped) and returns the .perfetto-trace path; 'decode' converts a trace to " +
         "json/systrace/ctrace (may auto-download traceconv on first use); 'load' starts a trace_processor session and " +
         "returns its sessionId (best-effort parse, raw output included); 'query' runs SQL against a loaded session. " +
-        "Uses @picoxr/pico-cli from PATH. Missing defaults to status:'unavailable'; PICO_MCP_AUTOINSTALL_CLI=1 or " +
-        "ensure_pico_cli enables a lazy bounded install and same-call retry. Failures carry an honest provisioning, " +
-        "cli-missing, cli-unusable, flag-or-version-drift, not-provisioned (0.4.x: run `pico-cli setup`), or runtime failureClass with the CLI's own outputTail. " +
+        "Resolves the latest managed @picoxr/pico-cli lazily and runs its absolute path. Failures carry an honest " +
+        "managed policy/freshness, flag-or-version-drift, setup-required (returning an absolute manual setupCommand), " +
+        "or runtime failureClass with the CLI's own outputTail. " +
         "HONESTY: " + HONESTY,
       // Typed contract (2026-07-28 revision lane): the shared CLI-wrapper core + trace fields.
       outputSchema: z.object({
@@ -122,52 +122,42 @@ export function registerPerfTraceTools(server: McpServer) {
       }
 
       const ensured = await ensurePicoCli();
-      const cli = picoCliFromEnsure(ensured);
-      if (!cli) {
-        if (ensured.action === "failed") {
-          return okJsonStructured({
-            status: "unavailable",
-            failureClass: ensured.failureClass,
-            note: ensured.note,
-            ...(ensured.outputTail ? { outputTail: ensured.outputTail } : {}),
-            cliProvisioning: ensured,
-          });
-        }
-        const unavailable = ensured.status === "unavailable" ? ensured : null;
+      if (ensured.status !== "ok") {
         return okJsonStructured({
           status: "unavailable",
-          failureClass: unavailable?.failureClass ?? "cli-missing",
-          note: unavailable?.failureClass === "cli-missing"
-            ? "pico-cli not found on PATH — install with `npm install -g @picoxr/pico-cli`; perf tracing skipped."
-            : unavailable?.note ?? "pico-cli did not become usable.",
+          failureClass: ensured.failureClass,
+          note: ensured.note,
+          ...(ensured.outputTail ? { outputTail: ensured.outputTail } : {}),
         });
       }
-      const provisioning = ensured.action === "present" ? {} : { cliProvisioning: ensured };
+      const cli = picoCliFromEnsure(ensured)!;
+      const provenance = { picoCli: picoCliProvenance(ensured) };
       fs.mkdirSync(outDir, { recursive: true });
 
       const runResult = await runPicoCli(cli, args, { timeoutMs, maxOutputBytes: 32 * 1024 * 1024 });
       const stdout = runResult.stdout;
       const stderr = runResult.stderr;
-      if (runResult.timedOut || runResult.code !== 0) {
+      if (runResult.spawnError || runResult.timedOut || runResult.code !== 0) {
         const stderrText = stderr;
         const stdoutText = stdout;
-        const failureClass = classifyPicoCliFailure(stderrText, stdoutText);
+        const failureClass = runResult.spawnError ? "runtime" : classifyPicoCliFailure(stderrText, stdoutText);
         const failTail = `${stderrText}\n${stdoutText}`.trim().split("\n").slice(-8).join("\n");
         return okJsonStructured({
           status: "failed",
           failureClass,
           note: failureClass === "flag-or-version-drift"
               ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — its trace surface drifted from the 0.3.0 flags this wrapper was verified against; report outputTail upstream instead of retrying.`
-              : failureClass === "not-provisioned"
-                ? `the installed pico-cli (${cli.raw || "unknown"}) gates its perf utilities behind a one-time \`pico-cli setup\` (0.4.x behavior, measured 2026-08-12) — run \`pico-cli setup\` yourself and retry; this wrapper never runs setup (it mutates the machine).`
+              : failureClass === "setup-required"
+                ? "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
                 : "pico-cli perf trace failed at runtime — read outputTail (the CLI's own words) before assuming a cause.",
+          ...(failureClass === "setup-required" ? { setupCommand: { path: cli.path, args: ["setup"] } } : {}),
           command: ["pico-cli", ...args].join(" "),
           error: runResult.spawnError ?? (runResult.timedOut
             ? `pico-cli perf trace exceeded ${timeoutMs}ms and was killed.`
             : `pico-cli perf trace exited with code ${runResult.code}.`),
           ...(failTail ? { outputTail: failTail } : {}),
           ...(runResult.outputTruncated ? { outputTruncated: true } : {}),
-          ...provisioning,
+          ...provenance,
         });
       }
 
@@ -179,17 +169,27 @@ export function registerPerfTraceTools(server: McpServer) {
         ...(tail ? { outputTail: tail } : {}),
         ...(runResult.outputTruncated ? { outputTruncated: true } : {}),
         honesty: HONESTY,
-        ...provisioning,
+        ...provenance,
       };
       if (artifact) {
-        // Exit 0 is not evidence the artifact exists — stat it and say which.
-        const exists = fs.existsSync(artifact);
+        // Exit 0 is not evidence the artifact is a non-empty regular file — stat once and fail closed.
+        const inspection = inspectPicoCliArtifact(artifact);
+        const artifactOk = inspection.exists === true && inspection.regularFile && (inspection.bytes ?? 0) > 0;
+        const artifactFailure = inspection.statError
+          ? `could not be stat-checked: ${inspection.statError}`
+          : inspection.exists === false
+            ? "missing"
+            : !inspection.regularFile
+              ? "not a regular file"
+              : "empty";
         out.artifact = artifact;
-        out.artifactExists = exists;
-        out.artifactBytes = exists ? fs.statSync(artifact).size : null;
-        if (!exists) {
+        if (inspection.exists !== null) out.artifactExists = inspection.exists;
+        out.artifactBytes = inspection.bytes;
+        if (!artifactOk) {
           out.status = "failed";
-          out.note = `pico-cli exited 0 but the expected output file is missing at ${artifact} — treat as failed.`;
+          out.failureClass = "runtime";
+          out.note = `pico-cli exited 0 but the expected output file is ${artifactFailure} at ${artifact} — treat as failed.`;
+          if (inspection.statError) out.error = inspection.statError;
         }
       }
       if (action === "load") {

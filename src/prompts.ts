@@ -1,8 +1,68 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 
-/** A built-in prompt teaching an agent the PICO spatial dev loop with these tools. */
-export function registerPrompts(server: McpServer) {
-  server.registerPrompt(
+export type PromptSurface = "doors" | "full";
+
+export const PROMPT_CONTRACTS = {
+  pico_first_light: {
+    surfaces: ["doors", "full"],
+    requiredTools: [
+      "pico_doctor",
+      "pico_emulator",
+      "pico_build_app",
+      "pico_fix",
+      "pico_look",
+      "pico_record",
+      "pico_next",
+    ],
+  },
+  autonomous_spatial_build: { surfaces: ["full"] },
+  brief_to_app: { surfaces: ["full"] },
+  autonomous_spatial_build_v6: { surfaces: ["full"] },
+  pico_spatial_dev_loop: { surfaces: ["full"] },
+  generative_spatial_build: { surfaces: ["full"] },
+} as const;
+
+type PromptName = keyof typeof PROMPT_CONTRACTS;
+const enabled = (name: PromptName, surface: PromptSurface) =>
+  (PROMPT_CONTRACTS[name].surfaces as readonly PromptSurface[]).includes(surface);
+
+/** Registers prompts available on the requested public tool surface. */
+export function registerPrompts(server: McpServer, surface: PromptSurface): void {
+  if (enabled("pico_first_light", surface)) {
+    server.registerPrompt(
+      "pico_first_light",
+      {
+        description: "Doors-native first-light loop: doctor, two-step AppSpec authoring/build, receipt-bound LOOK, and honest recording using only intent-level tools.",
+        argsSchema: {
+          brief: z.string().min(1).describe("The spatial app to build."),
+        },
+      },
+      ({ brief }) => ({
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: [
+                `Objective: build ${JSON.stringify(brief)} honestly through the doors surface.`,
+                "",
+                "1. Call `pico_doctor` first. Every failed check and its fix blocks progress; apply the named fix before continuing. Use `pico_emulator` only when doctor names an emulator lifecycle action.",
+                "2. Call `pico_build_app` first with exactly {brief}. Require status needs-authoring and the returned scaffold, author that scaffold as draftSpec, then call it with {brief,draftSpec}.",
+                "3. Fail closed after every door call: inspect both status and fix before advancing. Any failure, rejection, or unexpected status stops. Apply a usable returned fix; when none is returned, send the exact non-success response to `pico_fix`. If `pico_fix` itself gives no usable remedy, stop and report the blocker. Retry the originating step only after satisfying the remedy.",
+                "4. For the second pico_build_app call, advance to LOOK only when status is auto-judged-needs-look or built-needs-look and all three are non-null: capture, receiptId, and briefId. The statuses plan-failed, failed, built-not-installed, built-no-capture, and error stop under the fail-closed gate.",
+                "5. LOOK at the exact receipt-bound `pico_build_app.capture`. Black, missing, unreadable, or non-app pixels are inconclusive; do not record a positive visual claim, and stop and report the unmet LOOK obligation as an explicit deferral. `pico_look` is an optional diagnostic recapture only; its new bytes do not replace `pico_build_app.capture` and must never be bound to the earlier receiptId.",
+                "6. Only after you actually LOOKED at the exact frame, call `pico_record`: app: \"com.fleet.\" + briefId, a claim that is precise and bounded to only what is visible in the exact inspected frame, evidenceType: \"vision_verified\", artifactPath: capture, a concrete attestation of what you saw, and runReceiptId: receiptId. Never ask `pico_record` for the producer-only auto_judged tier.",
+                "7. Require `pico_record.status === \"recorded\"` before calling `pico_next` for the next honest step.",
+              ].join("\n"),
+            },
+          },
+        ],
+      }),
+    );
+  }
+
+  if (enabled("autonomous_spatial_build", surface)) server.registerPrompt(
     "autonomous_spatial_build",
     {
       description:
@@ -16,7 +76,7 @@ export function registerPrompts(server: McpServer) {
           content: {
             type: "text",
             text: [
-              "You are an autonomous SPATIAL STUDIO driving pico-spatial-mcp. Take the user's product brief and deliver a native PICO XR spatial app that you have BUILT and VERIFIED end-to-end on the emulator — no headset, no hand-driving the GUI editor. The bar for 'done' is a real capture + a logcat assertion, never a claim. Read SKILLS.md + DESIGN.md first; this prompt is the orchestration spine, `diagnose` is the gotcha encyclopedia.",
+              "You are an autonomous SPATIAL STUDIO driving pico-spatial-mcp. Take the user's product brief and deliver a native PICO XR spatial app that you have BUILT and VERIFIED end-to-end on the emulator — no headset, no hand-driving the GUI editor. The bar for 'done' is a real capture you LOOKED at plus the matching structural assertion, never a claim. Read SKILLS.md + DESIGN.md first; this prompt is the orchestration spine, `diagnose` is the gotcha encyclopedia.",
               "",
               "## The loop (each step ends in a machine-checkable signal — don't advance on assumption)",
               "1. PREFLIGHT — `validate_toolchain`; resolve every `problems` entry before continuing. Confirm a device with `emulator_list` (`emulator_boot` if none).",
@@ -31,8 +91,8 @@ export function registerPrompts(server: McpServer) {
               "5. UI + INTERACTION — for LIVE-TEXT panels (HUD/scoreboard/detail) on the emulator use `generate_panel_compose_kotlin` (a 2D panel ACTIVITY the OS auto-hosts as a floating spatial panel — real runtime text; an immersive app's OWN WindowContainer/attachment panel never opens on the emulator, C4). For an interactive button MENU use `generate_game_menu_kotlin` (the in-world clickable GameMenu, mouse-bridge + broadcast drivable). In-scene 3D labels remain baked textures. Interaction is INTENTIONAL (armed Place→Commit). INJECT `generate_agent_bridge` BY DEFAULT (manifest-merged ContentProvider auto-init + `<pkg>.AGENT_CMD` channel + dump_scene) so the app is headlessly drivable + assertable; call AgentBridge.attachScene(sceneRoot). Drive headlessly via `app_broadcast` (no 6DOF controller/trigger on the emulator). Aim with the HEAD pose.",
               "6. BUILD & RUN — `build_and_run` (auto-detects JAVA_HOME; AUTO-EMITS the honest capability matrix at the end — note it shows 0 visually-verified until YOU look). Require build/install/launch ok, `rendered:true`, `crashes:[]`. Relaunch gotcha: the 1st `am start` after `install -r` can tear the stage down — force-stop, restart `.platform.LaunchActivity`, poll logcat for app-live before capturing.",
               "7. VERIFY — run the `verify` GATE (one call = structural `assert_scene` via the Agent Bridge + visual `verify_visual` orbit-sweep that RETURNS FRAMES) as the mandatory pre-ship check; for regressions use `verify_baseline` (save a fixed-pose baseline, recheck — byte-stable when static; nonzero MAE = changed → LOOK). GROUND-TRUTH RULE: a visual feature is NOT verified until YOU captured a frame and SAW it render. Compiling, `smoke 0`, logcat markers prove EXISTENCE, never APPEARANCE. The signals, in order:",
-              "     a. CAPTURE + LOOK (PRIMARY, the ground truth): `capture_frame` → `adb exec-out screencap`. Headless, needs NO macOS permission, returns the CLEAN composited immersive HMD view, and is byte-STABLE across repeated captures. YOU have vision — READ the returned image and judge it against the DESIGN.md rubric, naming any defect. (`gui_capture` = the macOS host window: adds emulator chrome + can show a DECOUPLED/drifting free camera — use it for the Spatial Editor GUI, which adb can't see, NOT for app content. The old note that 'adb screencap only shows the 2D layer' is WRONG — adb screencap is the real render.)",
-              "     b. VIEWPOINT: `capture_frame` shows the deterministic FORWARD HMD view. The free cam CAN be driven headlessly (`emulator_look` / verify_visual's orbit sweep do scripted GUI drags — the C2 sweep), but it DRIFTS, so the reliable default is to place hero content in the forward FOV (eye level, z≈-2.7…-3.3) and plain-forward-capture. Content off the forward view (a ring around the viewer, or a live-text PANEL — panels spawn at the dock) needs an `emulator_look` sweep to see; 'looks empty' may mean 'looking the wrong way'. Do NOT infer un-seen content 'works' from logcat alone.",
+              "     a. CAPTURE + LOOK (PRIMARY truth step): start with `capture_frame` (`adb exec-out screencap`), then READ the returned image and judge it against DESIGN.md. It is headless and was byte-stable in several measured runs, but it is not universal: some immersive Unity runs were black while a later OpenXR run was not. Black/absent app pixels are inconclusive. Use `gui_capture` as a macOS host-window alternate and LOOK again; that free-cam can drift and adds chrome. Neither tool result is visual proof until you inspect its pixels.",
+              "     b. VIEWPOINT: when `capture_frame` contains the app, it is the forward HMD view. The free cam can be driven with `emulator_look` / verify_visual, but it can drift, so place hero content in the forward FOV (eye level, z≈-2.7…-3.3) for the simplest capture. Off-forward content needs a sweep. 'Looks empty' can mean wrong view or capture-path omission; inspect an alternate path. Never infer unseen content from logcat.",
               "     c. ASSERT (STRUCTURAL, not visual): `assert_logcat(pattern=...)` on YOUR markers ('attached', 'rayCast HIT', 'placed pin #N'), and the injected Agent Bridge `dump_scene` (broadcast `<pkg>.AGENT_CMD cmd=dump_scene`, read AGENTBRIDGE| markers) for the live entity tree. These prove behavior/EXISTENCE — pair them with a capture you LOOKED at; never let them stand in for vision.",
               "     d. GRADE HONESTLY: `capability_report` — only mark `vision_verified`/`rendered_emulator` for what you SAW in a capture; logcat/decoded/compiles go to 'EXISTS, appearance NOT confirmed'; ceiling-gated → 'built for headset'.",
               "8. DIAGNOSE & ITERATE — for any visual FAIL or missing assertion, call `diagnose(symptom=...)` for the verified root cause + exact fix, apply it, GOTO 3–6. The symptom map covers the traps you WILL hit: `emulator_camera_drift` (capture looks wrong → navigate in first), `texture_black` (bake, don't runtime-load), `raycast_no_hit` (PhysicsWorldComponent + primitive collider), `not_rendering`, `falling_out`, `white_geometry`, `dead_buttons`, `random_pins`.",
@@ -57,7 +117,7 @@ export function registerPrompts(server: McpServer) {
     }),
   );
 
-  server.registerPrompt(
+  if (enabled("brief_to_app", surface)) server.registerPrompt(
     "brief_to_app",
     {
       description:
@@ -96,7 +156,7 @@ export function registerPrompts(server: McpServer) {
     }),
   );
 
-  server.registerPrompt(
+  if (enabled("autonomous_spatial_build_v6", surface)) server.registerPrompt(
     "autonomous_spatial_build_v6",
     {
       description:
@@ -132,7 +192,7 @@ export function registerPrompts(server: McpServer) {
     }),
   );
 
-  server.registerPrompt(
+  if (enabled("pico_spatial_dev_loop", surface)) server.registerPrompt(
     "pico_spatial_dev_loop",
     {
       description: "Guidance for an AI agent driving PICO spatial development end-to-end with this server's tools.",
@@ -151,7 +211,7 @@ export function registerPrompts(server: McpServer) {
               "Call `validate_toolchain`. If `problems` is non-empty, stop and report — the user must fix the install/AVD/license before you can proceed.",
               "",
               "## 0a. Read the references",
-              "- SKILLS.md (what you can build + the self-diagnosis decision tree) and DESIGN.md (correctness rules: materials not displayColor, panel sizing, surface placement, intentional interaction, keeping the user enclosed) — they encode the hard-won rules. Verify visually with `capture_frame` (adb screencap = the real shell-composited render; `gui_capture` is for XR-runtime immersive apps and the Spatial Editor GUI) and treat each capture like a code review: name the defect, map it to a DESIGN.md rule, fix, rebuild, re-capture.",
+              "- SKILLS.md and DESIGN.md encode the hard-won rules. Verify visually by LOOKing at `capture_frame`; if intended immersive pixels are black/absent, treat that as inconclusive and LOOK at `gui_capture` when available. The host-window free-cam can drift. Treat the exact frame like a code review: name the observed defect, map it to a rule, fix, rebuild, and capture again.",
               "",
               "## 0b. Start a new project",
               "- To begin a NEW spatial app (any kind, not just ClaimSight), call `scaffold_spatial_app` with a new package and an app name — it generates a fresh, buildable project from the packaged skeleton (no template needed). Then author HomeStage.kt + a scene and `build_and_run`. For interactive apps (controller ray, raycast, selection), the decompiled SDK API is in docs/spatial-interaction-api.md.",
@@ -161,7 +221,7 @@ export function registerPrompts(server: McpServer) {
               "- Author by coordinates; you cannot drag a viewport.",
               "",
               "## 2. Compile + VERIFY (read this carefully)",
-              "- VERIFY spatial scenes VISUALLY with `capture_frame` (adb screencap = the composited immersive forward view, byte-deterministic — the ground truth the whole vision-verified pipeline uses); keep hero content at eye level so the forward capture frames it. `verify_scene` is a STRUCTURAL complement (geometry/mesh/material counts) — use both, but a linked capture is what makes a claim vision_verified.",
+              "- VERIFY spatial scenes VISUALLY by LOOKing at captured pixels. Start with `capture_frame`; keep hero content at eye level, but treat a black/absent immersive view as inconclusive and inspect `gui_capture` when available. `verify_scene` is a STRUCTURAL complement (geometry/mesh/material counts), never a substitute. Only the exact linked frame you looked at can support vision_verified.",
               "- `iterate_scene` packs + inspects + deploys to ScenePreview + screenshots in one call (the screenshot confirms deploy/2D state; trust the geometry counts for 3D).",
               "- For editor-managed projects (components/timelines) prefer `build_spatial_project` (the editor's own headless build) for parity.",
               "",
@@ -183,7 +243,7 @@ export function registerPrompts(server: McpServer) {
               "- `xr_set_options` (passthrough/environment) and `xr_recenter` are accepted; `xr_send_key` drives keys.",
               "",
               "## Principles",
-              "- After every build/deploy, VERIFY with a screenshot or log — never assume success.",
+              "- After every build/deploy, check structural or behavioral claims with the matching log/assertion, and verify appearance only by LOOKing at the exact captured frame; neither substitutes for the other.",
               "- Prefer the orchestration tools (`iterate_scene`, `build_and_run`) over hand-sequencing primitives.",
               "- When something fails, read the returned error/log tail and fix the root cause before retrying; don't loop blindly.",
             ].join("\n"),
@@ -193,7 +253,7 @@ export function registerPrompts(server: McpServer) {
     }),
   );
 
-  server.registerPrompt(
+  if (enabled("generative_spatial_build", surface)) server.registerPrompt(
     "generative_spatial_build",
     {
       description: "v7.0: turn a text idea into a running app with GENERATED 3D assets, under the 3-tier honesty gate (structural → auto_judged → human vision_verified). Generated content is capped at auto_judged until a human signs off on quality.",

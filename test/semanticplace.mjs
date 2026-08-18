@@ -7,8 +7,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveSemanticPlacement, resolveAnchors, labelScore, loadSemanticScene } from "../dist/semanticplace.js";
 import { buildLedger } from "../dist/compiler.js";
-import { planSplatAssets, prepareFleetSemanticAnchors, pushSplatAssets } from "../dist/fleetbuild.js";
+import { planSplatAssets, prepareFleetSemanticAnchors, pushSplatAssets, runFleetReceiptStage } from "../dist/fleetbuild.js";
 import { appSpecSchema } from "../dist/appspec.js";
+import { authoredSpec, effectiveSpec, makePng, sha256 } from "./helpers/runreceipt-fixture.mjs";
 
 let failures = 0;
 const fail = (msg) => { console.log(`  FAIL ${msg}`); failures++; };
@@ -286,11 +287,145 @@ assert(
   semanticGateAt >= 0 && semanticFailureAt > semanticGateAt && ledgerAt > semanticFailureAt,
   "fleet rejects unresolved semantic anchors before code generation/build",
 );
-const installAt = fleetSource.indexOf('"install", "-r", apk');
-const pushAt = fleetSource.indexOf("pushSplatAssets(", installAt);
-const pushFailureAt = fleetSource.indexOf("splat delivery failed", pushAt);
-const launchAt = fleetSource.indexOf("await launchApp()", installAt);
-assert(installAt >= 0 && pushAt > installAt && pushFailureAt > pushAt && launchAt > pushFailureAt, "fleet invokes fail-closed splat delivery after install and before launch");
+
+// Exercise the exported fleet adapter with the real receipt producer. Every external command is
+// injected: this proves the splat hook runs after checked install identity and before launch,
+// without invoking Gradle, adb, an emulator, or a device.
+{
+  const integrationRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pico-semantic-receipt-"));
+  const projectDir = path.join(integrationRoot, "project");
+  const briefPath = path.join(integrationRoot, "brief.json");
+  const captureDir = path.join(integrationRoot, "captures");
+  const receiptRoot = path.join(integrationRoot, "receipts");
+  const ledgerRoot = path.join(integrationRoot, "ledger");
+  const previousReceiptRoot = process.env.PICO_MCP_RUN_RECEIPT_DIR;
+  const previousLedgerRoot = process.env.PICO_MCP_LEDGER_DIR;
+  process.env.PICO_MCP_RUN_RECEIPT_DIR = receiptRoot;
+  process.env.PICO_MCP_LEDGER_DIR = ledgerRoot;
+  const writeProjectFile = (relativePath, contents) => {
+    const target = path.join(projectDir, ...relativePath.split("/"));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, contents);
+    return target;
+  };
+  const integrationPackage = packageName;
+  const component = `${integrationPackage}/.platform.LaunchActivity`;
+  const pid = 5151;
+  const pidStartTicks = "123456";
+  const sessionId = "22222222-3333-4444-8555-666666666666";
+  const textResult = (stdout = "") => ({ code: 0, stdout, stderr: "", timedOut: false });
+  try {
+    writeProjectFile("settings.gradle.kts", "rootProject.name = \"semantic-receipt\"\n");
+    writeProjectFile("build.gradle.kts", "plugins {}\n");
+    writeProjectFile("gradlew", "#!/bin/sh\n");
+    writeProjectFile("app/build.gradle.kts", `android { namespace = "${integrationPackage}" }\n`);
+    writeProjectFile("app/src/main/AndroidManifest.xml", `<manifest package="${integrationPackage}" />\n`);
+    writeProjectFile("app/src/main/java/com/fleet/secondworld/MainActivity.kt", `package ${integrationPackage}\nclass MainActivity\n`);
+    fs.writeFileSync(briefPath, JSON.stringify({ brief: "semantic receipt", spec: authoredSpec(integrationPackage) }));
+    const apkBytes = Buffer.from("PK\u0003\u0004semantic-receipt-apk", "utf8");
+    const apkSha256 = sha256(apkBytes);
+    writeProjectFile("app/build/outputs/apk/debug/app-debug.apk", apkBytes);
+    writeProjectFile("app/build/outputs/apk/debug/output-metadata.json", `${JSON.stringify({
+      version: 3,
+      applicationId: integrationPackage,
+      variantName: "debug",
+      elements: [{ type: "SINGLE", outputFile: "app-debug.apk" }],
+    })}\n`);
+    const expectedApkCas = path.join(receiptRoot, "artifacts", "apk", `${apkSha256}.apk`);
+    const remoteApk = `/data/app/~~semantic/${integrationPackage}/base.apk`;
+    const captureBytes = makePng(73);
+    const producerEvents = [];
+    const runText = async (command, args) => {
+      if (command === fs.realpathSync(path.join(projectDir, "gradlew"))) return textResult("BUILD SUCCESSFUL\n");
+      const key = args.slice(2).join(" ");
+      if (key === `install -r ${expectedApkCas}`) return textResult("Success\n");
+      if (key === `shell pm path ${integrationPackage}`) return textResult(`package:${remoteApk}\n`);
+      if (key === `shell toybox sha256sum ${remoteApk}`) return textResult(`${apkSha256}  ${remoteApk}\n`);
+      if (key === "shell getprop ro.product.model") return textResult("PICO Emulator\n");
+      if (key === "shell getprop ro.build.fingerprint") return textResult("PICO/emulator/semantic:14/test-keys\n");
+      if (key === "shell getprop ro.boot.qemu") return textResult("1\n");
+      if (key === "shell cat /proc/sys/kernel/random/boot_id") return textResult("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\n");
+      if (key === "shell pm list packages com.fleet") return textResult("");
+      if (key === `shell am start -n ${component}`) {
+        producerEvents.push("launch");
+        return textResult(`Starting: Intent { cmp=${component} }\n`);
+      }
+      if (key === `shell pidof ${integrationPackage}`) return textResult(`${pid}\n`);
+      if (key === `shell cat /proc/${pid}/stat`) {
+        return textResult(`${pid} (Semantic stage) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 ${pidStartTicks} 20\n`);
+      }
+      if (key === "shell dumpsys activity activities") {
+        return textResult(`topResumedActivity=ActivityRecord{1a2b3c u0 ${component} t42}\n`);
+      }
+      throw new Error(`unexpected injected producer command ${command} ${key}`);
+    };
+    const nativeRun = {
+      briefPath,
+      effectiveSpec: effectiveSpec(integrationPackage),
+      projectDir,
+      packageName: integrationPackage,
+      task: ":app:assembleDebug",
+      serial: "emulator-5554",
+      component,
+      captureDir,
+      settleMs: 0,
+    };
+    const nativeDeps = {
+      runText,
+      runBinary: async () => ({ code: 0, stdout: captureBytes, stderr: "", timedOut: false }),
+      adbPath: "/fixture/adb",
+      gradleEnv: { JAVA_HOME: "/fixture/jbr" },
+      now: () => new Date("2026-08-14T12:00:00.000Z"),
+      randomUUID: () => sessionId,
+      sleep: async () => {},
+      inspectApk: async () => ({
+        manifestInspection: { status: "inspected", tool: "aapt2", packageName: integrationPackage, versionCode: "1", versionName: "1.0" },
+        signingInspection: { status: "inspected", tool: "apksigner", certificateSha256: [sha256("semantic-certificate")] },
+      }),
+    };
+    const deliver = async (remoteBytes) => {
+      const result = await pushSplatAssets(deliveryPlan.assets, {
+        adbPath: "/fixture/splat-adb",
+        serial: "emulator-5554",
+        runner: async (_command, args) => {
+          producerEvents.push(`delivery:${args.slice(2, 5).join(" ")}`);
+          if (args.includes("stat")) return { stdout: `${remoteBytes}\n`, stderr: "" };
+          if (args.includes("sha256sum")) return { stdout: `${planned.sha256}  ${planned.remotePath}\n`, stderr: "" };
+          return { stdout: "", stderr: "" };
+        },
+      });
+      return result.ok ? { status: "ok" } : { status: "failed", reason: result.errors.join("; ") };
+    };
+
+    const failed = await runFleetReceiptStage(
+      { nativeRun: { ...nativeRun, afterInstall: () => deliver(planned.bytes + 1) }, visualJudgeInput: null },
+      { nativeRun: nativeDeps, visualJudge: async () => { throw new Error("visual judge must not run for panel-style adapter test"); } },
+    );
+    assert(
+      failed.receipt === null && failed.concluded === false && failed.nativeFailure?.stage === "after-install"
+        && !producerEvents.includes("launch"),
+      `failed splat delivery stops at after-install with no receipt or launch (${JSON.stringify(failed)})`,
+    );
+
+    producerEvents.length = 0;
+    const succeeded = await runFleetReceiptStage(
+      { nativeRun: { ...nativeRun, afterInstall: () => deliver(planned.bytes) }, visualJudgeInput: null },
+      { nativeRun: nativeDeps, visualJudge: async () => { throw new Error("visual judge must not run for panel-style adapter test"); } },
+    );
+    const deliveryAt = producerEvents.findIndex((event) => event.startsWith("delivery:"));
+    const launchAt = producerEvents.indexOf("launch");
+    assert(
+      succeeded.receipt?.status === "recorded" && succeeded.concluded === true && deliveryAt >= 0 && launchAt > deliveryAt,
+      `successful splat delivery runs through after-install before launch (${JSON.stringify({ producerEvents, succeeded })})`,
+    );
+  } finally {
+    if (previousReceiptRoot === undefined) delete process.env.PICO_MCP_RUN_RECEIPT_DIR;
+    else process.env.PICO_MCP_RUN_RECEIPT_DIR = previousReceiptRoot;
+    if (previousLedgerRoot === undefined) delete process.env.PICO_MCP_LEDGER_DIR;
+    else process.env.PICO_MCP_LEDGER_DIR = previousLedgerRoot;
+    fs.rmSync(integrationRoot, { recursive: true, force: true });
+  }
+}
 
 const secondWorldEntry = JSON.parse(fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../briefs/stationsemantic.json"), "utf8"));
 const secondWorldParsed = appSpecSchema.safeParse(secondWorldEntry.spec);

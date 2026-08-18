@@ -8,13 +8,14 @@ import { okJson } from "./util.js";
 /**
  * vault.ts — v14.6 the AGENT-VAULT SYMBOL INDEX + the preflight vault check.
  *
- * `pico-cli setup` materializes PICO's authoritative SDK API reference (the "agent-vault") at
+ * The CLI's separately provisioned utility payload materializes PICO's authoritative SDK API
+ * reference (the "agent-vault") at
  * ~/Library/PICO/sdk/0.13/agent-vault/knowledge/api-reference/ — 54 per-package markdown files of
  * pseudo-Kotlin declarations (419 top-level types, SDK 0.13.3). This module parses them into an
  * in-memory symbol index and validates emitted Kotlin against it. Phase 1 scope: TYPE-EXISTENCE
  * for `import com.pico.spatial.*` lines and inline FQN usages, non-ui packages only. Wired into
  * preflight_lint as a separate advisory `vault` block — findings NEVER affect `clean`, and an
- * absent vault degrades to status:"unavailable" (machines without pico-cli setup lose nothing).
+ * absent vault degrades to status:"unavailable" (machines without that payload lose nothing).
  *
  * Format facts the parser relies on (verified across the whole corpus, 2026-07-12 vault audit):
  *  - a block = `# <pkg>` + `# <TypeName>` headers, then `package <pkg> {` ... a column-0 `}`;
@@ -487,7 +488,7 @@ export function loadVaultIndex(vaultRoot?: string): VaultIndex | null {
   } catch {
     index = null;
   }
-  // memoize ONLY successful loads — a server started before `pico-cli setup` must pick the vault
+  // memoize ONLY successful loads — a server started before utility provisioning must pick the vault
   // up once it appears (the retry cost of an absent vault is a single failed readdirSync)
   if (index) memo.set(root, index);
   return index;
@@ -785,11 +786,12 @@ function typeCard(t: VaultType) {
 }
 
 export function registerVaultTools(server: McpServer) {
+  const managedSetupGuidance = "Call ensure_pico_cli, then manually run its returned absolute path with args [\"setup\"]; the MCP never runs setup.";
   server.registerTool(
     "vault_api",
     {
       description:
-        "Look up the EXACT declaration of a PICO Spatial SDK symbol in the agent-vault api-reference (authoritative SDK truth, materialized by pico-cli setup) — constructors with param names/order/defaults, @param unit docs ('measured in degrees'), properties, functions, enum entries, supertypes, and the vault file:line citation. Consult BEFORE emitting Kotlin that calls an SDK API you have not used before — all-Float signatures compile silently with swapped/wrong-unit args (the createCapsule and SpotLightComponent bugs). Accepts a simple name ('RigidBodyComponent'), dotted nested name ('AnchorComponent.TrackingMode'), or full FQN.",
+        "Look up the EXACT declaration of a PICO Spatial SDK symbol in the agent-vault api-reference (authoritative SDK truth, materialized by the CLI's separately provisioned utility payload) — constructors with param names/order/defaults, @param unit docs ('measured in degrees'), properties, functions, enum entries, supertypes, and the vault file:line citation. Consult BEFORE emitting Kotlin that calls an SDK API you have not used before — all-Float signatures compile silently with swapped/wrong-unit args (the createCapsule and SpotLightComponent bugs). Accepts a simple name ('RigidBodyComponent'), dotted nested name ('AnchorComponent.TrackingMode'), or full FQN.",
       inputSchema: {
         symbol: z.string().describe("Type name to look up: simple ('ShapeResource'), nested dotted ('Entity.CloneOptions'), or fully qualified ('com.pico.spatial.core.ecs.RigidBodyComponent')."),
         sdkVersion: z.string().optional().describe("v26: query a specific materialized vault workspace (e.g. '0.13' -> ~/Library/PICO/sdk/0.13/agent-vault; see vault_workspaces). Default: the active vault."),
@@ -799,7 +801,7 @@ export function registerVaultTools(server: McpServer) {
       const root = sdkVersion ? path.join(os.homedir(), "Library", "PICO", "sdk", sdkVersion, "agent-vault") : undefined;
       const index = loadVaultIndex(root);
       if (!index) {
-        return okJson({ status: "unavailable", note: `agent-vault not found (${root ?? `default ${defaultVaultRoot()}`}, override with PICO_AGENT_VAULT; provision via 'pico-cli setup').` });
+        return okJson({ status: "unavailable", note: `agent-vault not found (${root ?? `default ${defaultVaultRoot()}`}, override with PICO_AGENT_VAULT). ${managedSetupGuidance}` });
       }
       const wanted = symbol.trim();
       const matches: VaultType[] = [];

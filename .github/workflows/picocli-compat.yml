@@ -1,0 +1,61 @@
+name: pico-cli compatibility observation
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare-help-surfaces:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Compare complete advertised help-only surfaces
+        id: compare
+        run: |
+          mkdir -p .artifacts
+          node scripts/compare-picocli-surfaces.mjs \
+            --from 0.4.2 \
+            --to latest \
+            --output "$GITHUB_WORKSPACE/.artifacts/picocli-compat.json"
+      - name: Summarize observational evidence
+        if: always()
+        env:
+          COMPARE_OUTCOME: ${{ steps.compare.outcome }}
+        run: |
+          if [ "$COMPARE_OUTCOME" = "success" ] && [ -f .artifacts/picocli-compat.json ]; then
+            node --input-type=module <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          import fs from "node:fs";
+          const report = JSON.parse(fs.readFileSync(".artifacts/picocli-compat.json", "utf8"));
+          console.log("## pico-cli help-surface observation");
+          console.log(`- Complete comparison: yes (${report.from.version} → ${report.to.version})`);
+          console.log(`- Added: ${report.addedCommands.length}; removed: ${report.removedCommands.length}; changed help: ${report.changedHelp.length}`);
+          console.log("- Evidence limit: structural help text from the complete reachable advertised help-only tree, excluding the prohibited top-level setup subtree. This does not prove runtime compatibility, hidden aliases, setup-gated descendants, emulator/device behavior, or Windows behavior.");
+          NODE
+          else
+            {
+              echo "## pico-cli help-surface observation"
+              echo "- Complete comparison: no"
+              echo "- No report artifact was published because registry, install, invocation, traversal, or report generation did not complete."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload complete comparison only
+        if: steps.compare.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: picocli-compat
+          path: .artifacts/picocli-compat.json
+          retention-days: 30
+          if-no-files-found: error

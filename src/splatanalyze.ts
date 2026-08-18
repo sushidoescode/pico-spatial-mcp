@@ -276,7 +276,7 @@ export function registerSplatAnalyzeTools(server: McpServer) {
     "generate_splat_colliders",
     {
       description:
-        "Turn analyze_splat's bounding boxes into the INTERACTIVE collider rig (SplatColliders.kt): a static CollisionComponent box per cluster + a floor slab at floorY — the verified primitive-collider pattern (splats have NO native collision; mesh colliders never register). With this rig, Scene.rayCast hits the splat's structures — pins stick to real splat surfaces, objects rest on splat furniture: 'turn splats into interactive scenes' on the CURRENT toolchain. Optional debugVisuals renders each box as a translucent mesh so the fit is vision-verifiable in-app. RETURNS JSON {kotlin, callSnippet}.",
+        "Turn analyze_splat's bounding boxes into the INTERACTIVE collider rig (SplatColliders.kt): a static CollisionComponent box per cluster + a floor slab at floorY. Splats expose no native collision mesh, so these measured boxes provide a predictable cheap query proxy. PICO mesh/convex colliders are queryable when real mesh data is available, but their local-space alignment and scale must be handled explicitly. With this rig, Scene.rayCast can hit the splat's clustered structures. Optional debugVisuals renders each box so the fit can be LOOKED at. RETURNS JSON {kotlin, callSnippet}.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content"),
         clusters: z.array(z.object({ center: z.array(z.number()).length(3), size: z.array(z.number()).length(3) })).min(1).describe("Cluster boxes from analyze_splat."),

@@ -20,9 +20,9 @@ export const VERIFY_APK_TEARDOWN_MS = 2_000;
  * WITHOUT CRASHING (pidof process-alive + a logcat FATAL/ANR scan), and capture ONE 2D frame — then
  * return an HONEST evidence matrix. We RECORD NOTHING: the caller LOOKS at the artifact and calls
  * record_verification itself. The matrix is structural; the returned pixels support only what the
- * caller actually LOOKS at — through a path that can SEE the app's mode (immersive XR needs gui_capture;
- * adb screencap is black for it — corrected 2026-07-29). Unity immersive pixels were absent on 0.13.1 / OS 6.0
- * emulator, while a 6.1 emulator and hardware remain untested here. Every adb step is wrapped so a
+ * caller actually LOOKS at. This adb path showed black for some immersive Unity runs but a later
+ * same-moment OpenXR run did not reproduce that asymmetry, so black is inconclusive and gui_capture
+ * is an alternate LOOK path, not a universal requirement. Hardware remains untested here. Every adb step is wrapped so a
  * failure becomes a structured field, never a throw.
  */
 export function registerVerifyApkTools(server: McpServer) {
@@ -30,7 +30,7 @@ export function registerVerifyApkTools(server: McpServer) {
     "verify_pico_apk",
     {
       description:
-        "Cross-builder DEPLOY+VERIFY handoff contract: install + launch an ARBITRARY PICO APK (from an external builder, e.g. the user's separate Unity MCP), structurally assert it BOOTS WITHOUT CRASHING (pidof process-alive + a logcat FATAL/ANR scan), and capture ONE 2D frame. HONEST SCOPE: the automatic matrix is STRUCTURAL (installs, launches, process stays alive, no FATAL/ANR) + a 2D screencap — NOT a visual XR claim. The caller must LOOK and record only what the returned pixels prove. NOTE (corrected 2026-07-29): an immersive Unity app returns a BLACK screencap here even while rendering correctly — Unity is presenting to the XR display, not the Android surface; verify those with gui_capture. RECOVERY: if the launch reports success but the process is dead and logcat shows the full-space block (\"current full space don't allow start fullscreen\" / ContainerManager), the incumbent full-space app is force-stopped and the launch retried ONCE (mirroring fleet_build's launch_blocked recovery); what happened lands in recoveryNotes. Records NOTHING itself. Each adb step is caught, so failures become structured fields (installed/launched/processAlive/crashed/logcatMatch/errors), never a throw.",
+        "Cross-builder DEPLOY+VERIFY handoff: install and launch an arbitrary PICO APK, poll pidof, scan logcat for FATAL/ANR, and capture one adb frame. Automatic results are STRUCTURAL, not a visual XR claim. The caller must LOOK and record only what the exact returned pixels prove. Some immersive Unity runs produced black adb frames while a later same-moment OpenXR run did not; black is inconclusive, so inspect gui_capture as an alternate when available before assigning a rendering or capture-path cause. A full-space launch block triggers one explicit incumbent-stop/retry and is disclosed in recoveryNotes. Records nothing itself; step failures are structured.",
       inputSchema: {
         apkPath: z.string().describe("Absolute path to the .apk the external builder emitted."),
         packageName: z.string().describe("Android package id, e.g. com.example.unityxr."),

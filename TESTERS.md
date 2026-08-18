@@ -24,8 +24,8 @@ npm install --omit=dev /path/to/pico-spatial-mcp-<version>.tgz
 That's it. **Do not run `npm run build`** — the tarball ships prebuilt `dist/`, and there is no
 TypeScript source or `tsconfig.json` in it, so `tsc` will just print its help text and exit 1.
 
-Requires **Node ≥ 20**. The MCP package itself installs nothing globally; optional pico-cli
-provisioning is separate and explicit, as described below.
+Requires **Node ≥ 20**. The MCP package itself installs nothing globally; its isolated pico-cli
+policy is described below.
 
 ## Register it with your MCP client
 
@@ -46,31 +46,55 @@ Claude Code (`.mcp.json` in your project, or your user config):
 Any MCP client works — it speaks JSON-RPC over stdio. The `env` block is where `PICO_MCP_SURFACE`
 goes if you want the narrowed surface — see below.
 
-## Optional pico-cli provisioning
+## Managed pico-cli policy
 
-Provisioning is lazy and **off by default**. If pico-cli is missing, CLI-backed tools keep the
-original `status: "unavailable"` response and manual `npm install -g @picoxr/pico-cli` remedy; the
-MCP never installs it at startup.
+<!-- pico-mcp-managed-cli-policy:start -->
+`managed-latest` is the default. Resolution is lazy on the first real CLI-backed operation.
+Server startup, tool registration and `tools/list`, `preflight_env`, and the default
+`pico_doctor {}` inspect only an existing cache: they make no npm request, provision nothing, and
+write nothing to the managed store. The explicit `pico_doctor {calibrate:true}` exception is
+mutating because it runs the separately documented calibration workflow.
 
-Run **`ensure_pico_cli`** to consent explicitly. A present CLI is a fast no-op; a missing one gets a
-bounded, 120-second `npm install -g @picoxr/pico-cli`, an honest failure class on error, and a fresh
-`pico-cli -v` probe so it is immediately usable. The MCP never runs `pico-cli doctor` or
-`pico-cli plugin doctor`, which can hang in pico-cli 0.3.0.
+Each exact version is published as an immutable MCP-owned cache entry. The ambient global CLI and
+`PATH` remain untouched. A successful registry lookup reports registry-latest as of `checkedAt`.
+If that lookup fails, a validated cached fallback is labeled `unknown`; if a known-newer install
+fails, it is labeled `outdated`. Neither fallback is ever called latest.
 
-Set `PICO_MCP_AUTOINSTALL_CLI=1` in the MCP `env` block to let a CLI-backed tool perform that same
-missing-only install when it is invoked. Existing installs are not updated unless you separately set
-`PICO_MCP_AUTOUPDATE_CLI=1` (or call `ensure_pico_cli` with `{update: true}`); that separate update
-consent also repairs an existing executable whose `-v` probe fails, but does not imply consent to a
-first install.
+Set `PICO_MCP_CLI_POLICY` only when the default is not appropriate:
+
+- `managed-latest` — lazily resolve and, on first CLI use, provision the exact registry version.
+- `managed-cached` — use only a validated cached version, without registry or install work.
+- `external` — run only the absolute `PICO_MCP_CLI_PATH`; it is never updated by the MCP.
+- `disabled` — turn off CLI-backed operations.
+
+Through 37.x, the deprecated aliases `PICO_MCP_AUTOINSTALL_CLI=1` and
+`PICO_MCP_AUTOUPDATE_CLI=1` map to `managed-latest`; they never install globally and conflict with
+another explicit policy. `ensure_pico_cli` is the force-refresh health path. Its deprecated
+`update` input is inert and accepted only for compatibility.
+
+Package activation and utility setup are separate. Call `ensure_pico_cli`, then manually run its
+returned absolute path with args `["setup"]` if the CLI reports an unprovisioned utility payload.
+The MCP never runs setup. It also never runs `update --check`, because that command writes a local
+update cache; freshness comes from the registry lookup instead.
+
+`0.4.2` was registry latest on 2026-08-14, an observed value rather than a timeless pin. A v1.0
+date supplied by the user/PICO team is planning input, not repository-verified release evidence.
+The compatibility sweep is version-agnostic and covers the complete reachable advertised
+help-only tree except the prohibited top-level setup subtree. It does not establish semantic
+compatibility, hidden-alias longevity, perf provisioning, emulator/device/Windows behavior, or
+visual evidence.
+<!-- pico-mcp-managed-cli-policy:end -->
 
 ## Check it works
 
-Ask your agent to run **`pico_doctor`** (or **`preflight_env`** on the full surface). It is
-read-only, mutates nothing, and reports what your machine is missing with an exact fix for every
-non-passing check. That is the intended first call.
+Ask your agent to run default **`pico_doctor {}`** (or **`preflight_env`** on the full surface).
+It is read-only, mutates nothing, and reports what your machine is missing with an exact fix for
+every non-passing check. The explicit **`pico_doctor {calibrate:true}`** route is the mutating
+calibration exception. The default call is the intended first call.
 
-Expect the 18-tool doors surface by default; expect 249 tools on macOS and 246 on other hosts on
-the full surface.
+Expect the 18-tool doors surface by default. The full surface has 249 tools on macOS and 246 on
+Linux (runtime-measured); on Windows, the published 246-tool count is source-derived because no
+native Windows `tools/list` measurement has run.
 
 ## Choosing a surface
 
@@ -80,15 +104,17 @@ Set `PICO_MCP_SURFACE` in the `env` block of the config above:
 "env": { "PICO_MCP_SURFACE": "doors" }
 ```
 
-- `full` — **249 tools on macOS; 246 on other hosts.** Everything.
+- `full` — **249 tools on macOS and 246 on Linux are runtime-measured; Windows 246 is
+  source-derived because no native Windows `tools/list` measurement has run.** Everything.
 - unset / `doors` (the default since v36.3) — **18 tools**: `validate_toolchain` `ensure_pico_cli` `pico_build_app`
   `pico_scan_world` `pico_place` `pico_look` `pico_verify_app` `pico_measure` `pico_perf`
   `pico_sdk` `pico_doctor` `pico_ship` `pico_capabilities` `pico_fix` `pico_record`
   `pico_emulator` `pico_next` `pico_loop`.
 
 Start with `doors` — it's the curated path through the same engine, and set
-`PICO_MCP_SURFACE=full` when you want the whole surface (249 tools on macOS, 246 on other
-hosts). Before v36.3 an unset variable served `full`, so keep the explicit `doors` value in
+`PICO_MCP_SURFACE=full` when you want the whole surface (249 tools on macOS and 246 on Linux are
+runtime-measured; on Windows, the published 246-tool count is source-derived because no native
+Windows `tools/list` measurement has run). Before v36.3 an unset variable served `full`, so keep the explicit `doors` value in
 configs that may run older checkouts.
 
 One sharp edge worth knowing up front: **`pico_measure` needs a one-time camera calibration.**

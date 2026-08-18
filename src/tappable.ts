@@ -8,7 +8,8 @@ import { ok } from "./util.js";
  *
  * Composes three individually proven recipes rather than inventing a new one:
  *  - InteractableComponent + PRIMITIVE box CollisionComponent (the 5-arg ctor) — the vault-confirmed
- *    interactable recipe from generate_interaction_kotlin (mesh colliders never register).
+ *    predictable proxy from generate_interaction_kotlin. Mesh shapes are queryable, but require
+ *    explicit local-offset/display-scale alignment that this name-based generator does not know.
  *  - The colour-keyed InteractableRegistry (generate_interactable_registry_kotlin): each item is
  *    add()ed and publish()ed so the INTERACTABLES| marker names every tappable for bridge consumers.
  *  - The HUD live-update channel: the generated wiring routes DEBUG_CMD 'hud:<key>=<value>' to
@@ -31,7 +32,7 @@ export function registerTappableDetailTools(server: McpServer) {
     "generate_tappable_detail_kotlin",
     {
       description:
-        "Emit TappableDetail.kt — make NAMED child entities tappable detail views: each listed entity gets InteractableComponent + a PRIMITIVE box collider (the verified 5-arg CollisionComponent ctor; mesh colliders never register on PICO), is registered in the colour-keyed InteractableRegistry (published as the INTERACTABLES|<json> logcat marker), and select(id) applies a scale-bump highlight (scaleVector — a same-scale highlight is invisible) then fires the proven HUD live-update channel (an in-app DEBUG_CMD broadcast 'hud:<key>=<value>' that the generated wiring routes to HudState.set) so the detail panel expands with the item's text; the panel activity is started FROM the app (adb am start cannot open a 2D task while the Stage holds Full Space — measured, mrtable seq 15). HONEST EVIDENCE: every ingredient is individually emulator-proven (interactable recipe, scaleVector highlight, hud: live text, app-started panel), but THIS composition is new codegen — compiles-against-SDK + broadcast-drivable (adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd select:<id>), not yet vision-verified end-to-end; a real pointer tap is Swan (C3). REQUIRES in the same package: InteractableRegistry.kt (generate_interactable_registry_kotlin) and HudPanel.kt + the hud: route (generate_panel_compose_kotlin + wiring). RETURNS raw Kotlin; route DEBUG_CMD 'select:<id>' to TappableDetail.select.",
+        "Emit TappableDetail.kt — make NAMED child entities tappable detail views: each listed entity gets InteractableComponent + a PRIMITIVE box collider (the verified 5-arg CollisionComponent ctor; chosen because this generator lacks the submesh-local offset/display scale needed to align a queryable mesh shape), is registered in the colour-keyed InteractableRegistry (published as the INTERACTABLES|<json> logcat marker), and select(id) applies a scale-bump highlight then fires the HUD live-update channel. HONEST EVIDENCE: every ingredient is individually emulator-proven, but THIS composition is new codegen—compiles-against-SDK + broadcast-drivable, not yet vision-verified end-to-end; a real pointer tap is Swan (C3). REQUIRES InteractableRegistry.kt and HudPanel.kt plus the hud route in the same package. RETURNS raw Kotlin; route DEBUG_CMD 'select:<id>' to TappableDetail.select.",
       inputSchema: {
         packageName: z.string().describe("Kotlin package, e.g. com.example.app.content (must also hold InteractableRegistry + HudPanel)."),
         items: z

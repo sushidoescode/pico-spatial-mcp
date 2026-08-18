@@ -83,6 +83,7 @@ import { registerSemanticPlaceTools } from "./semanticplace.js";
 import { registerMetricVerifyTools } from "./metricverify.js";
 import { registerCritiqueTools } from "./critique.js";
 import { registerLedgerTools } from "./ledger.js";
+import { validateNativeRunReceiptCaptureBinding } from "./runreceiptstore.js";
 import { registerClaimsPageTools } from "./claimspage.js";
 import { registerSpatialBenchTools } from "./spatialbench.js";
 import { registerAffordanceTools } from "./affordance.js";
@@ -301,7 +302,10 @@ if (!doorsSurfaceActive()) {
   // v5.2 — the self-repair critique (LOOKED-at frame -> defect list -> replan_spec)
   registerCritiqueTools(server);
   // v5.3 — the trust ledger (over-claims structurally impossible) + safe stacked-worktree landing
-  registerLedgerTools(server);
+  registerLedgerTools(server, {
+    resolveRunReceiptBinding: validateNativeRunReceiptCaptureBinding,
+    validateHistoricalRunReceiptBinding: validateNativeRunReceiptCaptureBinding,
+  });
   registerClaimsPageTools(server);
   registerSpatialBenchTools(server);
   registerAffordanceTools(server);
@@ -372,9 +376,8 @@ if (!doorsSurfaceActive()) {
   registerIblBakeTools(server);
 }
 registerDoorTools(server);
-// Prompts are surface-independent: register them OUTSIDE the full-surface block so a doors user
-// gets the built-in prompts too (they previously got zero).
-registerPrompts(server);
+// First-light is available on both surfaces; advanced prompts are full-only.
+registerPrompts(server, doorsSurfaceActive() ? "doors" : "full");
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

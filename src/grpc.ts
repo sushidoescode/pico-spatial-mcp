@@ -54,9 +54,23 @@ function loadProto(toolsVersion?: string): LoadedProto | { error: string } {
   }
 }
 
-function getEndpoint(): { address: string; metadata: grpc.Metadata } | { error: string } {
+function discoverySerial(entry: { entries: Record<string, string> }): string | null {
+  const consolePort = entry.entries["port.serial"];
+  return consolePort && /^\d+$/.test(consolePort) ? `emulator-${consolePort}` : null;
+}
+
+function getEndpoint(serial?: string): { address: string; metadata: grpc.Metadata; serial: string | null } | { error: string } {
   const entries = readDiscovery();
-  const withGrpc = entries.find((e) => e.entries["grpc.port"] || e.entries["grpc.token"]);
+  const grpcEntries = entries.filter((e) => e.entries["grpc.port"] || e.entries["grpc.token"]);
+  const withGrpc = serial
+    ? grpcEntries.find((entry) => discoverySerial(entry) === serial)
+    : grpcEntries.length <= 1 ? grpcEntries[0] : undefined;
+  if (serial && !withGrpc) {
+    return { error: `no gRPC discovery endpoint matches adb serial '${serial}'; refusing to recenter a different emulator` };
+  }
+  if (!serial && grpcEntries.length > 1) {
+    return { error: `multiple emulator gRPC endpoints are running (${grpcEntries.map((entry) => discoverySerial(entry) ?? entry.file).join(", ")}); pass an adb serial so the command cannot target the wrong emulator` };
+  }
   const port = withGrpc?.entries["grpc.port"] ?? "8554";
   const token = withGrpc?.entries["grpc.token"];
   const metadata = new grpc.Metadata();
@@ -65,19 +79,19 @@ function getEndpoint(): { address: string; metadata: grpc.Metadata } | { error: 
     // No discovery file: emulator may be down, or running without -grpc-use-token.
     // We still try the default port with no auth and let the call surface the error.
   }
-  return { address: `127.0.0.1:${port}`, metadata };
+  return { address: `127.0.0.1:${port}`, metadata, serial: withGrpc ? discoverySerial(withGrpc) : null };
 }
 
-export function getClient(toolsVersion?: string): { client: grpc.Client & Record<string, any>; metadata: grpc.Metadata } | { error: string } {
+export function getClient(toolsVersion?: string, serial?: string): { client: grpc.Client & Record<string, any>; metadata: grpc.Metadata; serial: string | null } | { error: string } {
   const p = loadProto(toolsVersion);
   if ("error" in p) return p;
-  const ep = getEndpoint();
+  const ep = getEndpoint(serial);
   if ("error" in ep) return ep;
   // Raise the receive limit: a 2160px display screenshot (PNG or RGBA) exceeds the 4 MB default.
   const client = new p.controllerCtor(ep.address, grpc.credentials.createInsecure(), {
     "grpc.max_receive_message_length": 64 * 1024 * 1024,
   }) as any;
-  return { client, metadata: ep.metadata };
+  return { client, metadata: ep.metadata, serial: ep.serial };
 }
 
 export function unary(client: any, method: string, request: unknown, metadata: grpc.Metadata, timeoutMs = 15_000): Promise<any> {
@@ -129,6 +143,26 @@ function streamInput(client: any, events: unknown[], metadata: grpc.Metadata, ti
     for (const ev of events) call.write(ev);
     call.end();
   });
+}
+
+/** Shared RECENTER primitive for xr_recenter and capture_canonical. Command delivery is testable;
+ * the rendered-pose effect remains unverified on emulator 0.13.1 and is reported as such. */
+export async function sendXrRecenter(
+  toolsVersion?: string,
+  deps: {
+    getClientFn?: typeof getClient;
+    streamInputFn?: (client: any, events: unknown[], metadata: any, timeoutMs?: number) => Promise<void>;
+    serial?: string;
+  } = {},
+): Promise<{ ok: true; accepted: true; effect: "unverified" } | { ok: false; error: string }> {
+  const connection = (deps.getClientFn ?? getClient)(toolsVersion, deps.serial);
+  if ("error" in connection) return { ok: false, error: connection.error };
+  try {
+    await (deps.streamInputFn ?? streamInput)(connection.client, [{ xr_command: { action: "RECENTER" } }], connection.metadata);
+    return { ok: true, accepted: true, effect: "unverified" };
+  } catch (error: any) {
+    return { ok: false, error: error?.message ?? String(error) };
+  }
 }
 
 const versionParam = z.string().optional().describe("Toolchain version to load protos from (default: newest)");
@@ -183,7 +217,7 @@ export function registerGrpcTools(server: McpServer) {
     "xr_screenshot",
     {
       description:
-        "Capture a LIVE screenshot of emulator display 0 via gRPC streamScreenshot (works headless; the unary getScreenshot is CACHED on this build so we stream one frame). NOTE: the guest display screenshot path (equivalently adb exec-out screencap = capture_frame) DOES show the composited immersive forward view and is byte-deterministic — capture_frame / capture_canonical are the recommended visual-verification primitives (this gRPC path is a fallback). Pair with inspect_bundle + runtime logs for structural checks.",
+        "Capture a LIVE screenshot of emulator display 0 via gRPC streamScreenshot (works headless; the unary getScreenshot is CACHED on this build so we stream one frame). This is the same guest-display class as adb screencap: measured runs often produced stable forward pixels, but immersive-route behavior varied. LOOK at the result; a black/absent app view is inconclusive until checked through an alternate host-window path. Pair with inspect_bundle + runtime logs for structural checks.",
       inputSchema: { toolsVersion: versionParam },
     },
     async ({ toolsVersion }) => {
@@ -255,7 +289,7 @@ export function registerGrpcTools(server: McpServer) {
           hand_skeleton: "MediaPipe webcam pipeline runs in the GUI process; no injection API",
         },
         works_headless: {
-          immersive_3d_capture: "adb exec-out screencap (capture_frame / capture_canonical) DOES return the composited immersive forward view, byte-deterministic — the visual ground truth for the whole vision-verified/ledger pipeline (the GUI free-cam is the drifting path)",
+          immersive_3d_capture: "adb exec-out screencap (capture_frame / capture_canonical) often returned stable forward pixels in measured runs, but not for every immersive route/boot; LOOK at it, and treat black/absent content as inconclusive until an alternate host-window capture is LOOKed at (the GUI free-cam can drift)",
           menu_clicks: "the mouse bridge (setup_mouse_bridge) delivers real clicks on the in-world GameMenu; broadcast DEBUG_CMD drives interactions headlessly",
         },
         recommendation:
@@ -272,14 +306,10 @@ export function registerGrpcTools(server: McpServer) {
       inputSchema: { toolsVersion: versionParam },
     },
     async ({ toolsVersion }) => {
-      const c = getClient(toolsVersion);
-      if ("error" in c) return fail(c.error);
-      try {
-        await streamInput(c.client, [{ xr_command: { action: "RECENTER" } }], c.metadata);
-        return ok("RECENTER sent");
-      } catch (e: any) {
-        return fail(`xr_command failed: ${e.message}\nTip: run xr_grpc_describe to check the XrCommand field shape.`);
-      }
+      const result = await sendXrRecenter(toolsVersion);
+      return result.ok
+        ? ok("RECENTER command accepted; rendered-pose effect remains unverified on this emulator build")
+        : fail(`xr_command failed: ${result.error}\nTip: run xr_grpc_describe to check the XrCommand field shape.`);
     },
   );
 

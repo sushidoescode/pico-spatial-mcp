@@ -12,7 +12,8 @@ host-specific behavior. Registration per host: [docs/HOSTS.md](docs/HOSTS.md).)*
   `codex mcp add pico-spatial --env PICO_MCP_SURFACE=doors -- node /abs/path/PICO-MCP/dist/index.js`.
 - **Any MCP host**: plain stdio registration — [docs/HOSTS.md](docs/HOSTS.md) has every snippet.
 
-Start with `pico_doctor` (read-only; names the exact fix for anything missing).
+Start with default `pico_doctor {}` (read-only; names the exact fix for anything missing).
+The explicit `pico_doctor {calibrate:true}` route is the mutating calibration exception.
 
 ## The one rule that is not negotiable
 
@@ -27,14 +28,55 @@ unforgivable failure.
 (`visual_judge` → `auto_judged` evidence — honestly weaker than `vision_verified`), report the
 capture path, and escalate the look to a human or a vision-capable agent.
 
+## Managed pico-cli policy
+
+<!-- pico-mcp-managed-cli-policy:start -->
+`managed-latest` is the default. Resolution is lazy on the first real CLI-backed operation.
+Server startup, tool registration and `tools/list`, `preflight_env`, and the default
+`pico_doctor {}` inspect only an existing cache: they make no npm request, provision nothing, and
+write nothing to the managed store. The explicit `pico_doctor {calibrate:true}` exception is
+mutating because it runs the separately documented calibration workflow.
+
+Each exact version is published as an immutable MCP-owned cache entry. The ambient global CLI and
+`PATH` remain untouched. A successful registry lookup reports registry-latest as of `checkedAt`.
+If that lookup fails, a validated cached fallback is labeled `unknown`; if a known-newer install
+fails, it is labeled `outdated`. Neither fallback is ever called latest.
+
+Set `PICO_MCP_CLI_POLICY` only when the default is not appropriate:
+
+- `managed-latest` — lazily resolve and, on first CLI use, provision the exact registry version.
+- `managed-cached` — use only a validated cached version, without registry or install work.
+- `external` — run only the absolute `PICO_MCP_CLI_PATH`; it is never updated by the MCP.
+- `disabled` — turn off CLI-backed operations.
+
+Through 37.x, the deprecated aliases `PICO_MCP_AUTOINSTALL_CLI=1` and
+`PICO_MCP_AUTOUPDATE_CLI=1` map to `managed-latest`; they never install globally and conflict with
+another explicit policy. `ensure_pico_cli` is the force-refresh health path. Its deprecated
+`update` input is inert and accepted only for compatibility.
+
+Package activation and utility setup are separate. Call `ensure_pico_cli`, then manually run its
+returned absolute path with args `["setup"]` if the CLI reports an unprovisioned utility payload.
+The MCP never runs setup. It also never runs `update --check`, because that command writes a local
+update cache; freshness comes from the registry lookup instead.
+
+`0.4.2` was registry latest on 2026-08-14, an observed value rather than a timeless pin. A v1.0
+date supplied by the user/PICO team is planning input, not repository-verified release evidence.
+The compatibility sweep is version-agnostic and covers the complete reachable advertised
+help-only tree except the prohibited top-level setup subtree. It does not establish semantic
+compatibility, hidden-alias longevity, perf provisioning, emulator/device/Windows behavior, or
+visual evidence.
+<!-- pico-mcp-managed-cli-policy:end -->
+
 ## Session shape
 
-1. **Start with `pico_doctor`** (doors surface) or `preflight_env` (full surface) — read-only;
-   every failing check carries the exact fix command. Never debug the environment by guessing.
+1. **Start with default `pico_doctor {}`** (doors surface) or `preflight_env` (full surface) —
+   read-only; every failing check carries the exact fix command. The explicit
+   `pico_doctor {calibrate:true}` route is mutating. Never debug the environment by guessing.
 2. **Prefer the doors surface for your first sessions** (`PICO_MCP_SURFACE=doors`, and the
    default when the variable is unset since v36.3): 18
    intent-level tools instead of the full surface (`PICO_MCP_SURFACE=full` —
-   249 tools on macOS; 246 on other hosts).
+   249 tools on macOS and 246 on Linux are runtime-measured; on Windows, the published 246-tool
+   count is source-derived because no native Windows `tools/list` measurement has run).
    `pico_build_app` is a TWO-STEP protocol by design —
    a brief-only call returns a scaffold AppSpec for YOU to author; re-call with
    `{brief, draftSpec}` to build.
@@ -49,7 +91,9 @@ capture path, and escalate the look to a human or a vision-capable agent.
    `scripts/restart-emulator.sh`). `pico_doctor` tells you if it isn't.
 6. **Record what you proved**: `record_verification` with the evidence class you actually
    earned (`structural` < `auto_judged` < `vision_verified` < `device_verified`). The full
-   ranking and vocabulary: [README.md](README.md#vocabulary-primer).
+   ranking and vocabulary: [README.md](README.md#vocabulary-primer). `device_verified` is not a
+   label you can assert from strings: supply the attached serial and the server live-probes its
+   identity plus a same-serial screencap, whose bytes must equal the frame you already LOOKED at.
 
 ## What to read next
 

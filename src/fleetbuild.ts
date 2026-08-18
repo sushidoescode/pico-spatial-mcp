@@ -16,6 +16,12 @@ import { startBridgeDetached } from "./mousebridge.js";
 import { classifyBriefExecution } from "./briefroute.js";
 import { fileURLToPath } from "node:url";
 import { findBriefPath, corpusBriefsDir } from "./briefstore.js";
+import {
+  produceNativeFleetReceipt,
+  type NativeFleetFailureStage,
+  type NativeFleetReceiptDependencies,
+  type ProduceNativeFleetReceiptInput,
+} from "./nativefleetreceipt.js";
 
 const run = promisify(execFile);
 
@@ -25,14 +31,13 @@ const run = promisify(execFile);
  * `fleet_build` takes brief ids from briefs/ and, for each (SERIALLY — one emulator):
  * scaffold → execute the compile ledger's generate steps by SELF-DRIVING this same MCP server
  * over stdio (a child `node dist/index.js`) → write emitted files (wiring/panels/menu handled) →
- * gradle assembleDebug → install + launch on the emulator → settle → deterministic forward
- * capture. Stage claims flow to `visual_judge`; panel-only claims flow to structural window
+ * gradle assembleDebug → immutable APK install + launch on the emulator → settle → unique,
+ * receipt-bound forward capture. Stage claims flow to `visual_judge`; panel-only claims flow to structural window
  * discovery instead. A stage PASS records `auto_judged` (NEVER vision_verified — the honesty
  * split holds unattended), while panel readiness never becomes a visual verdict.
  */
 
 const ADB = path.join(os.homedir(), "Library/PICO/sdk/0.13/emulator/system-images/platform-tools/adb");
-const JBR = "/Applications/Android Studio.app/Contents/jbr/Contents/Home";
 // v29.3: apps are GENERATED from the packaged skeleton (src/projectgen.ts / appskeleton/) — the
 // old clone-of-~/AndroidStudioProjects/galleryxr-native path existed only on the author's machine,
 // so every tarball install died at `scaffold failed`. The GameMenu bundle ships in the package too.
@@ -72,6 +77,116 @@ export type FleetSemanticAnchorResult = {
   notes: string[];
   unresolvedObjectIds: string[];
 };
+
+export interface RunFleetReceiptStageInput {
+  nativeRun: ProduceNativeFleetReceiptInput;
+  visualJudgeInput: null | {
+    claim: string;
+    expect: Record<string, unknown>;
+    app: string;
+    record: true;
+    cClass: "C0_emulator";
+  };
+}
+
+export interface RunFleetReceiptStageDependencies {
+  nativeRun: NativeFleetReceiptDependencies;
+  visualJudge: (input: Record<string, unknown>) => Promise<Record<string, any>>;
+}
+
+export interface FleetReceiptStageResult {
+  built: boolean;
+  installed: boolean;
+  concluded: boolean;
+  artifact: string | null;
+  receipt: null | {
+    status: "recorded";
+    receiptId: string;
+    receiptPath: string;
+    capturePath: string;
+    sourceCapturePath: string;
+    captureSha256: string;
+    evidenceType: "structural";
+    lookRequired: true;
+  };
+  verdict: string | null;
+  confidence?: number;
+  visualChecks: unknown[];
+  visualJudgeNote: string | null;
+  visualLedger: unknown | null;
+  visualJudgeArtifact: string | null;
+  nativeFailure?: { stage: NativeFleetFailureStage; reason: string; completedStages: string[] };
+}
+
+/** Convert the fail-closed native producer into fleet's public result shape. Receipt publication
+ * always precedes the optional automated eye, and the eye can receive only the immutable capture
+ * CAS path recorded in that receipt. A judge failure never erases already-published structural
+ * provenance, but it also cannot conclude the visual route. */
+export async function runFleetReceiptStage(
+  input: RunFleetReceiptStageInput,
+  deps: RunFleetReceiptStageDependencies,
+): Promise<FleetReceiptStageResult> {
+  const produced = await produceNativeFleetReceipt(input.nativeRun, deps.nativeRun);
+  if (produced.status === "failed") {
+    return {
+      built: produced.built,
+      installed: produced.installed,
+      concluded: false,
+      artifact: null,
+      receipt: null,
+      verdict: null,
+      visualChecks: [],
+      visualJudgeNote: null,
+      visualLedger: null,
+      visualJudgeArtifact: null,
+      nativeFailure: {
+        stage: produced.stage,
+        reason: produced.reason,
+        completedStages: produced.completedStages,
+      },
+    };
+  }
+
+  const capture = produced.receipt.receipt.capture;
+  const receipt: NonNullable<FleetReceiptStageResult["receipt"]> = {
+    status: "recorded",
+    receiptId: produced.receipt.receiptId,
+    receiptPath: produced.receipt.receiptPath,
+    capturePath: capture.artifactPath,
+    sourceCapturePath: capture.sourcePath,
+    captureSha256: capture.sha256,
+    evidenceType: "structural",
+    lookRequired: true,
+  };
+  const recorded: FleetReceiptStageResult = {
+    built: true,
+    installed: true,
+    concluded: input.visualJudgeInput === null,
+    artifact: receipt.capturePath,
+    receipt,
+    verdict: null,
+    visualChecks: [],
+    visualJudgeNote: null,
+    visualLedger: null,
+    visualJudgeArtifact: null,
+  };
+  if (input.visualJudgeInput === null) return recorded;
+
+  recorded.visualJudgeArtifact = receipt.capturePath;
+  try {
+    const judged = await deps.visualJudge({ ...input.visualJudgeInput, imagePath: receipt.capturePath });
+    recorded.verdict = judged.verdict ?? judged.status ?? "unknown";
+    if (typeof judged.confidence === "number") recorded.confidence = judged.confidence;
+    recorded.visualChecks = Array.isArray(judged.checks) ? judged.checks : [];
+    recorded.visualJudgeNote = typeof judged.note === "string" ? judged.note : null;
+    recorded.visualLedger = judged.ledger ?? null;
+    recorded.concluded = recorded.verdict !== null;
+  } catch (error) {
+    recorded.visualJudgeNote = `visual_judge failed after receipt publication: ${error instanceof Error ? error.message : String(error)}`;
+    recorded.concluded = false;
+  }
+  return recorded;
+}
 
 /** Fleet must not turn a failed authored anchor into assemble.ts's generic fallback pose.
  * Resolve once up front, retain every structural note, and fail closed while any anchor remains
@@ -766,7 +881,7 @@ export function registerFleetBuildTools(server: McpServer) {
     "fleet_build",
     {
       description:
-        "UNATTENDED end-to-end fleet build (P2): for each brief id (briefs/<id>.json), SERIALLY scaffold a fresh app, execute the compile ledger's generate steps (self-driving this MCP over stdio), write emitted Kotlin/wiring/panel/menu files (manifest patched, menu.bundle + items.json provisioned), gradle-build, install + launch on emulator-5554, settle, and take a deterministic forward capture. Stage claims use the calibrated visual_judge; panel-only or panel-target-only specs bypass that stage eye instead of false-failing an empty frame. A target layout is checked against its exact declared count (N means min=max=N), not the historical blanket 2..3; a confident PASS records an `auto_judged` ledger entry — NEVER vision_verified. Each distinct generated panel activity is launched and polled through list_spatial_panels; its caption-backed readiness is returned separately as structural panelEvidence plus an unjudged panel-time capture. Requires the local toolchain + a running emulator. Briefs whose environments need external assets or explicitly declare a hand-authored execution route are skipped honestly.",
+        "UNATTENDED end-to-end fleet build (P2): for each brief id (briefs/<id>.json), SERIALLY scaffold a fresh app, execute the compile ledger's generate steps (self-driving this MCP over stdio), write emitted Kotlin/wiring/panel/menu files, then produce a fail-closed native run receipt for the exact build/install/session and unique immutable capture. The receipt is structural and lookRequired: it never proves what the pixels look like. Stage claims use calibrated visual_judge only on that receipt-bound capture; panel-only or panel-target-only specs bypass the stage eye. A target layout is checked against its exact declared count; a confident PASS may record auto_judged evidence, NEVER vision_verified. Each generated panel activity is launched and polled separately; caption-backed readiness is structural panelEvidence and its later panel-time capture remains unjudged. Requires the local toolchain + a running emulator. Asset-gated or hand-authored routes are skipped honestly.",
       inputSchema: {
         briefIds: z.array(z.string()).min(1).describe("Brief ids from briefs/ (e.g. ['knockdown','studio','console'])."),
         projectsRoot: z.string().optional().describe("Where per-brief projects go (default ~/AndroidStudioProjects). Dir per brief: fleet-<id>-native (reused if present)."),
@@ -782,7 +897,7 @@ export function registerFleetBuildTools(server: McpServer) {
       const { client, call } = await selfClient();
       try {
         for (const id of briefIds) {
-          const rec: any = { id, built: false, installed: false, verdict: null, artifact: null, verificationRoute: null, panelEvidence: null, panelArtifact: null, notes: [] };
+          const rec: any = { id, built: false, installed: false, concluded: false, verdict: null, artifact: null, receipt: null, verificationRoute: null, panelEvidence: null, panelArtifact: null, notes: [] };
           results.push(rec);
           try {
             const briefPath = findBriefPath(id);
@@ -1003,88 +1118,12 @@ export function registerFleetBuildTools(server: McpServer) {
               }
             }
 
-            // 3. build + install + launch
-            const envv = { ...process.env, JAVA_HOME: process.env.JAVA_HOME ?? JBR };
-            await run("./gradlew", [":app:assembleDebug", "-q"], { cwd: projectDir, env: envv, timeout: 480_000, maxBuffer: 32 * 1024 * 1024 });
-            rec.built = true;
-            const apk = path.join(projectDir, "app/build/outputs/apk/debug/app-debug.apk");
-            await run(ADB, ["-s", "emulator-5554", "install", "-r", apk], { timeout: 240_000 });
-            rec.installed = true;
-            const splatDelivery = await pushSplatAssets(splatPlan.assets, {
-              adbPath: process.env.PICO_ADB ?? ADB,
-              serial: "emulator-5554",
-            });
-            if (!splatDelivery.ok) {
-              rec.notes.push(`splat delivery failed after install; launch/capture skipped: ${splatDelivery.errors.join("; ")}`);
-              continue;
-            }
-            rec.splatAssets = splatDelivery.assets;
-            for (const asset of splatDelivery.assets) {
-              rec.notes.push(
-                `splat delivered + remote-verified: ${asset.fileName} (${asset.remoteBytes} bytes, ` +
-                `sha256 ${asset.remoteSha256}, ${asset.serial}:${asset.remotePath})`,
-              );
-            }
-            // v15.1: force-stop → pause → PLAIN start. An immediate `am start -S` intermittently
-            // trips Android's "activity kept for the user" and the app never reaches the stage
-            // (observed live; the paused plain start worked every time).
-            const launchApp = async () => {
-              // v15.1b: sweep ALL fleet apps off the stage first — in corpus runs the previous
-              // brief's app squats the stage and every chained launch needed blocker recovery.
-              try {
-                const pl = await run(ADB, ["-s", "emulator-5554", "shell", "pm", "list", "packages", "com.fleet"], { timeout: 15_000 });
-                for (const m of String(pl.stdout).matchAll(/package:(com\.fleet\.[\w.]+)/g)) {
-                  await run(ADB, ["-s", "emulator-5554", "shell", "am", "force-stop", m[1]], { timeout: 15_000 }).catch(() => {});
-                }
-              } catch { /* sweep is best-effort */ }
-              await new Promise((r) => setTimeout(r, 2000));
-              await run(ADB, ["-s", "emulator-5554", "shell", "am", "start", "-n", `${pkg}/.platform.LaunchActivity`], { timeout: 30_000 });
-            };
-            await launchApp();
-            // v15.1: the stage handoff races a one-shot check (every corpus run escalated on
-            // "not foreground at capture") — POLL for foreground up to 24s instead, and read the
-            // blocker's name from the same dump if one is squatting.
-            const foregroundState = async (): Promise<{ ours: boolean; blocker: string | null }> => {
-              const d = await run(ADB, ["-s", "emulator-5554", "shell", "dumpsys", "activity", "activities"], { timeout: 20_000, maxBuffer: 8 * 1024 * 1024 });
-              const ours = new RegExp(`topResumedActivity=ActivityRecord\\{\\S+ u0 ${pkg.replace(/\./g, "\\.")}[/]`).test(String(d.stdout));
-              const m = String(d.stdout).match(/topResumedActivity=ActivityRecord\{\S+ u0 ([\w.]+)\//);
-              return { ours, blocker: !ours && m && m[1] !== pkg ? m[1] : null };
-            };
-            const waitForeground = async (): Promise<boolean> => {
-              for (let i = 0; i < 12; i++) {
-                if ((await foregroundState()).ours) return true;
-                await new Promise((r) => setTimeout(r, 2000));
-              }
-              return false;
-            };
-            if (!(await waitForeground())) {
-              const { blocker } = await foregroundState();
-              if (blocker) {
-                await run(ADB, ["-s", "emulator-5554", "shell", "am", "force-stop", blocker], { timeout: 15_000 }).catch(() => {});
-                rec.notes.push(`launch_blocked by ${blocker} — force-stopped + relaunched`);
-              }
-              await launchApp();
-              if (!(await waitForeground())) {
-                rec.notes.push("app not foreground at capture time — the frame shows whatever IS on stage");
-              }
-            }
-            // v27.2 baked-in bridge: a menu app is clickable the moment it launches — auto-start
-            // the detached mouse bridge so nobody pastes a pico-bridge command. Best-effort;
-            // idempotent; opt out with PICO_MCP_NO_AUTOBRIDGE=1.
-            const hasMenu = (entry.spec?.interactions ?? []).some((i: any) => i.trigger === "press");
-            if (hasMenu && process.env.PICO_MCP_NO_AUTOBRIDGE !== "1") {
-              const b = await startBridgeDetached().catch((e) => ({ status: "failed", pid: null, note: String(e?.message ?? e) }));
-              rec.notes.push(`mouse bridge: ${b.status}${b.pid ? ` (pid ${b.pid})` : ""}${b.status === "permission-needed" ? ` — ${b.note}` : ""}`);
-            }
-            await new Promise((r) => setTimeout(r, settle));
-
-            // 4. deterministic forward capture + the calibrated eye
+            // 3. Fail-closed build/install/launch/capture receipt, followed by the optional eye.
+            // The producer owns every native observation. Splat delivery is its exact after-install
+            // hook, so a failed delivery cannot launch, capture, judge, or publish a receipt.
             const shotDir = `/tmp/pico-render/fleet/${id}`;
             fs.mkdirSync(shotDir, { recursive: true });
-            const shot = path.join(shotDir, "forward.png");
-            const png = await run(ADB, ["-s", "emulator-5554", "exec-out", "screencap", "-p"], { timeout: 30_000, encoding: "buffer" as any, maxBuffer: 32 * 1024 * 1024 });
-            fs.writeFileSync(shot, png.stdout as any);
-            rec.artifact = shot;
+            let visualJudgeInput: RunFleetReceiptStageInput["visualJudgeInput"] = null;
             if (verificationRoute.mode !== "panel-structural") {
               const verificationNode = verificationRoute.stageEyeClaim;
               const derivedExpectation = deriveVisualExpectation(spec, verificationNode);
@@ -1099,29 +1138,93 @@ export function registerFleetBuildTools(server: McpServer) {
               const measuredClaim = layout && explicitMin == null
                 ? `${layout.count} foreground objects render for layout '${layout.id}'`
                 : `${expectation.minObjects}+ foreground objects render for target '${target}'`;
-              const judged = await call("visual_judge", {
-                imagePath: shot,
+              rec.visualExpectation = expectation;
+              rec.visualClaim = measuredClaim;
+              visualJudgeInput = {
                 // The automated eye measures count + coverage. Do not let it auto-record the
                 // broader brief claim (for example "colored by JSON") when it measured no colors.
                 claim: `[fleet_build unattended] ${measuredClaim}`,
-                expect: expectation,
+                expect: expectation as unknown as Record<string, unknown>,
                 app: pkg,
                 record: true,
                 cClass: "C0_emulator",
-              });
-              rec.verdict = judged.verdict ?? judged.status ?? "unknown";
-              rec.confidence = judged.confidence;
-              rec.visualExpectation = expectation;
-              rec.visualClaim = measuredClaim;
-              if (rec.verdict !== "PASS") rec.notes.push("ESCALATE: a human must LOOK at the artifact");
+              };
             } else {
               rec.visualExpectation = null;
               rec.visualClaim = null;
               rec.notes.push(`stage eye not run: ${verificationRoute.reason}; panel readiness is structural evidence, not a visual verdict`);
             }
 
+            const receiptStage = await runFleetReceiptStage({
+              nativeRun: {
+                briefPath,
+                effectiveSpec: spec,
+                projectDir,
+                packageName: pkg,
+                task: ":app:assembleDebug",
+                serial: "emulator-5554",
+                component: `${pkg}/.platform.LaunchActivity`,
+                captureDir: shotDir,
+                settleMs: settle,
+                afterInstall: async () => {
+                  const delivery = await pushSplatAssets(splatPlan.assets, {
+                    adbPath: process.env.PICO_ADB ?? ADB,
+                    serial: "emulator-5554",
+                  });
+                  if (!delivery.ok) {
+                    return { status: "failed" as const, reason: `splat delivery failed: ${delivery.errors.join("; ")}` };
+                  }
+                  rec.splatAssets = delivery.assets;
+                  for (const asset of delivery.assets) {
+                    rec.notes.push(
+                      `splat delivered + remote-verified: ${asset.fileName} (${asset.remoteBytes} bytes, ` +
+                      `sha256 ${asset.remoteSha256}, ${asset.serial}:${asset.remotePath})`,
+                    );
+                  }
+                  return { status: "ok" as const };
+                },
+              },
+              visualJudgeInput,
+            }, {
+              // Only override the configured adb path. The producer supplies its own correctly
+              // shaped runText/runBinary/Gradle dependencies; fleet's promisified execFile runner
+              // is intentionally not passed through this boundary.
+              nativeRun: { adbPath: process.env.PICO_ADB ?? ADB } as NativeFleetReceiptDependencies,
+              visualJudge: (judgeInput) => call("visual_judge", judgeInput),
+            });
+            rec.built = receiptStage.built;
+            rec.installed = receiptStage.installed;
+            rec.concluded = receiptStage.concluded;
+            rec.artifact = receiptStage.artifact;
+            rec.receipt = receiptStage.receipt;
+            rec.verdict = receiptStage.verdict;
+            if (receiptStage.confidence !== undefined) rec.confidence = receiptStage.confidence;
+            rec.visualChecks = receiptStage.visualChecks;
+            rec.visualJudgeNote = receiptStage.visualJudgeNote;
+            rec.visualLedger = receiptStage.visualLedger;
+            rec.visualJudgeArtifact = receiptStage.visualJudgeArtifact;
+            if (receiptStage.nativeFailure) {
+              rec.nativeFailure = receiptStage.nativeFailure;
+              rec.notes.push(receiptStage.nativeFailure.reason);
+              continue;
+            }
+            if (receiptStage.visualJudgeNote?.startsWith("visual_judge failed")) {
+              rec.notes.push(receiptStage.visualJudgeNote);
+            }
+            if (rec.verdict === "ESCALATE") rec.notes.push("ESCALATE: a human must LOOK at the receipt-bound artifact");
+            else if (rec.verdict === "FAIL") rec.notes.push("calibrated eye measured FAIL; inspect visualChecks before choosing a repair");
+            else if (verificationRoute.mode !== "panel-structural" && rec.verdict !== "PASS") rec.notes.push("visual result unscored: a human must LOOK at the receipt-bound artifact");
+
+            // v27.2 baked-in bridge remains best-effort, but starts only after the immutable
+            // receipt exists. It cannot alter or recapture the receipt-bound frame.
+            const hasMenu = (entry.spec?.interactions ?? []).some((i: any) => i.trigger === "press");
+            if (hasMenu && process.env.PICO_MCP_NO_AUTOBRIDGE !== "1") {
+              const b = await startBridgeDetached().catch((e) => ({ status: "failed", pid: null, note: String(e?.message ?? e) }));
+              rec.notes.push(`mouse bridge: ${b.status}${b.pid ? ` (pid ${b.pid})` : ""}${b.status === "permission-needed" ? ` — ${b.note}` : ""}`);
+            }
+
             // 5. Panels are independent 2D activities, not stage objects. Launch them only AFTER
-            // the deterministic stage capture so their docked windows cannot contaminate its eye
+            // the receipt-bound stage capture so their docked windows cannot contaminate its eye
             // verdict. list_spatial_panels proves WindowManager/container readiness structurally;
             // the later screencap is an unjudged artifact and does not upgrade that evidence.
             const panelPlan = generatedPanels(spec, pkg);
@@ -1210,7 +1313,8 @@ export function registerFleetBuildTools(server: McpServer) {
       } finally {
         await client.close().catch(() => {});
       }
-      const passed = results.filter((r) => r.verdict === "PASS").length;
+      const measuredEyePass = results.filter((r) => r.verdict === "PASS").length;
+      const recordedAutoJudged = results.filter((r) => r.verdict === "PASS" && r.visualLedger?.status === "recorded").length;
       // A brief that never built cannot appear in `escalations`, which filters on r.installed. That
       // let the top level report status "ok" with an empty escalation list while NOTHING was built —
       // the caller had to dig into results[].notes to discover total failure. `status` now reflects
@@ -1223,7 +1327,8 @@ export function registerFleetBuildTools(server: McpServer) {
       // mistake there is — running fleet_build without booting the emulator, which makes adb install
       // throw straight down this path. "ok" must mean every brief reached a real conclusion.
       const isConcluded = (r: any) =>
-        r.built && r.installed && (r.verdict != null || r.verificationRoute?.mode === "panel-structural");
+        r.built && r.installed && r.receipt?.status === "recorded"
+        && (r.verdict != null || r.verificationRoute?.mode === "panel-structural");
       const incomplete = results.filter((r) => !isConcluded(r));
       return okJson({
         status: incomplete.length === 0 ? "ok" : unbuilt.length === results.length ? "failed" : "partial",
@@ -1231,7 +1336,8 @@ export function registerFleetBuildTools(server: McpServer) {
           queued: briefIds.length,
           built: results.filter((r) => r.built).length,
           installed: results.filter((r) => r.installed).length,
-          autoJudgedPass: passed,
+          measuredEyePass,
+          autoJudgedRecorded: recordedAutoJudged,
           panelReadyStructural: results.filter((r) => r.panelEvidence?.expectationMet === true).length,
           notBuilt: unbuilt.map((r) => ({ id: r.id, why: r.notes?.[0] ?? "no reason recorded" })),
           incomplete: incomplete.map((r) => ({
@@ -1246,7 +1352,7 @@ export function registerFleetBuildTools(server: McpServer) {
             .map((r) => r.id),
         },
         results,
-        honesty: "auto_judged is a DISTINCT evidence class — a fleet PASS is the stage eye's count, never human sight. Panel-only routes leave verdict unscored; panelEvidence/panelReadyStructural are WindowManager STRUCTURAL evidence only, and panelArtifact is unjudged. ESCALATEd visuals need a human LOOK.",
+        honesty: "Each recorded receipt is structural provenance for one exact native run and its immutable returned capture; it does not prove what the pixels look like, so that exact capture still requires a LOOK. A fleet PASS is the stage eye's measurement, never human sight, and earns durable auto_judged evidence only when visualLedger.status is recorded. Panel-only routes leave verdict unscored; panelEvidence/panelReadyStructural prove WindowManager structure only, never panel pixels, and panelArtifact remains unjudged.",
       });
     },
   );
