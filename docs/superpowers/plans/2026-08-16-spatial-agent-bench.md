@@ -201,6 +201,295 @@ the independent reviewer records the exact commit, both committed document hashe
 hash, and verdict in `task-3-batch-2a-followup-authority-review.md`. Only `APPROVED` releases brief
 authoring; neither the commit nor its document gate approves implementation.
 
+### Binding Batch 2A follow-up #2: complete subset-v1 schema and doctrine
+
+Follow-up #1 commit `ebae41fc13d1b5752d22646a1e706a271bc53f48`, report SHA-256
+`de8fd6b6d5f0bc1530490112401b3c00fc88e7f3afa143992bd9e74aff68820c`, and review SHA-256
+`346f611d0bfe02f6ae9d03b842c5e04fd3af19e56ca0337862aaea573046518b` remain approved
+historical evidence. Batch 2B stopped again before a Java/domain edit or rebuild because the frozen
+schema cannot truthfully encode the audited corpus. This subsection supersedes only the Batch
+2A/Batch 2B schema, vocabulary, doctrine, canary-discovery, and re-entry freezes named below.
+
+The prerequisite handoff SHA-256 is
+`da4013c1bb71c99222d5893c73eeda954000a2fad0adfdf96bdfd3eec6f8ccf4`; the independently
+audited prerequisite record SHA-256 is
+`d81343f63a5d30762b283fe3b46d64b23256e8587133d7569d289a62bd030a8d`. That record pins
+BOM-resolved Spatial SDK 0.13.3 arities and callback shapes, all 20 requirement rows and 50 exact
+positive tuples, the 100-case minimum under the unchanged 128-case ceiling, receipt-bound PSI
+probes, and the following paper witness result:
+
+```text
+paper maxima: [11,15,14,11,16,11,11,9,10,24,11,24,10,24,20,22] = 243
+hard caps:     [11,16,14,12,16,11,12,11,12,24,12,24,10,25,20,22] = 252
+```
+
+The cap sum leaves four references below `MAX_TOTAL_WITNESSES=256`; every cap is below
+`MAX_WITNESSES_PER_CLAIM=32`, and the catalog union cannot exceed the 252-reference sum, so
+`MAX_RESPONSE_NODES=256`, `Main.java`, and all public evidence ceilings remain unchanged. Public
+witnesses are minimal decisive PSI boundaries, never execution traces. Over-cap emitters omit only
+the affected claim before `Analysis` construction; they never truncate, synthesize evidence, or
+degrade the whole response to `internal_uncertainty`.
+
+The exact 0.13.3 UI audit is binding:
+
+| Callable | Dense physical declaration |
+|---|---|
+| `PicoTheme` | 0 colorScheme D, 1 typography D, 2 content R/callback |
+| `Text(String,...)` | 18 positions: 0 text R, 1-17 D; optional callback at 16 |
+| `Text(AnnotatedString,...)` | 19 positions: 0 text R, 1-18 D; inlineContent 16, optional callback 17 |
+| `Button` | 0 onClick R/callback, 1-10 D, 11 content R/callback with `row_scope` receiver |
+| `SpatialView` | 0 modifier D, 1 update D/callback, 2 attachments D/callback, 3 initial R/callback |
+| `registerSystem` / `unregisterSystem` | zero value arguments and one explicit type argument bounded by `ecs_system` |
+| `DefaultWindowContainer` | 0 content R; callback receiver `spatial_container_scope` |
+| foundation `Application.launch` | 0 block R; callback receiver `spatial_app_scope` |
+| `Stage` | 0 id R, 1-4 D, 5 content R; callback receiver `spatial_container_scope` |
+| `Immersion` | public top-level factory: 0 default R, 1 min D, 2 max D; internal constructor excluded |
+
+`StageScope`, `WindowContainerScope`, and `SpatialContainerScope` use their exact
+`com.pico.spatial.ui.platform.containers` FQNs and map to `spatial_container_scope`; inherited
+`SpatialContainerScope.bundle` keeps its declaring FQN. Optional `Text.onTextLayout` and Button
+leading/trailing callbacks may be defaulted `opaque` positions only when omitted. Supplying an
+unmodeled lambda/callable there makes the affected call unsupported rather than silently ignored.
+The audited source artifacts are exactly the BOM `8aa1f2e5...`, UI design `60a3afc7...`, UI
+foundation `a0bd3d9f...`, UI platform `ecdb5db5...`, core `de171b86...`, and sense
+`89d09216...` rows recorded in the prerequisite audit. Spatial SDK 6.0 is not authority.
+
+From exact `HEAD` `ebae41fc13d1b5752d22646a1e706a271bc53f48`, modify only this plan and
+`docs/superpowers/specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md` in one
+direct-child commit with subject:
+
+```text
+docs(bench): authorize subset-v1 schema completion
+```
+
+An independent reviewer must approve that exact 40-hex commit before the ignored
+`task-3-batch-2a-followup2-brief.md` is authored. Freeze the brief by whole-file SHA-256 and obtain
+a fresh independent literal `APPROVED` review before RED or implementation. The implementation
+subject is `fix(bench): complete subset-v1 semantic schema`. Neither follow-up #1 subject nor either
+reserved Batch 2 subject may be reused.
+
+The follow-up implements all and only these thirteen generic mechanisms:
+
+- **H-A — physical arguments.** Add abstract type `opaque` and add `hasDefault` to
+  `ArgumentSpec` atomically. Every physical declared position remains dense. `opaque` is legal only
+  as `ArgumentSpec.abstractType`; it is never a receiver, return, callback component, type argument,
+  conformance target, proof origin, or member-resolution type. Function syntax supplied to an
+  opaque position is unsupported.
+- **H-B — callback shape.** Add `CallbackParameterSpec(position,abstractType)` and extend
+  `CallbackSpec` with receiver abstract type, receiver source, and dense ordered parameters.
+  Receiver source is only null, `call_receiver`, or `argument:<n>`. The field-specific sentinel
+  `element_of_receiver` is legal only as a callback-parameter type and is not an abstract type.
+  Null type+source means no receiver; nonnull type+null source is an SDK-created receiver;
+  call/argument sources propagate an origin only when it conforms. Concrete callback parameters
+  are fresh typed callback origins by default. The sole concrete parameter of an exact
+  `immediate_inline` callback with no callback receiver inherits a compatible call-receiver origin
+  (`let`); `element_of_receiver` alone derives collection element type+origin through D16. No other
+  callback-parameter origin propagation is inferred.
+- **H-C — explicit type arguments.** Add ordered `SymbolSpec.typeArguments`. Entries are required
+  explicit source type-argument bounds, not declaration generic arity; duplicates are permitted,
+  `opaque` is forbidden, and zero/missing/extra TYPE_ARGUMENT edges do not match.
+- **H-D — receiver category.** Add receiver kind `none | instance | declaring_type |
+  object_instance`; a null instance type is invalid, while declaring-type/object qualifiers require
+  the exact audited type row. Do not overload a null receiver type to mean static or singleton.
+- **H-E — conformance.** Add `conformsTo` only to type rows. Values are sorted, unique, nonopaque,
+  nonself, acyclic, and used only for bounded resolution/overload compatibility. Multiple compatible
+  paths remain ambiguous.
+- **H-F — return origin.** Add only `element_of_receiver` and `class_of_argument` return sources,
+  mutually exclusive with `passthrough`. A nonnull source requires `returnAbstractType:null` and one
+  unambiguous source. `element_of_receiver` derives dynamic type and origin from the receiver's
+  resolved collection abstract type through D16's closed producer-to-element map.
+  `class_of_argument` requires exactly one mapped `java_class`
+  argument, derives the dynamic type from that class identity, and derives the value origin from the
+  exact receiver-store lookup. Null return source keeps
+  only the reviewed equal-receiver and single-immediate-callback `passthrough` cases.
+- **H-G — missing types.** Append, in frozen order, `opaque`, `transform`, `vector2`, `throwable`,
+  `disposable_effect_scope`, `composition_local`, `spatial_container_scope`, `kclass`, `row_scope`,
+  `attachment_panel_builder`, `spatial_view_attachments`, and `anchor_update`. There is no general
+  array type:
+  `plane_anchor_collection` is explicitly narrowed to the exact SDK `Array<PlaneAnchor>` producer
+  and immutable List projection, with exact producing-row FQN/signature controlling resolution.
+  The exact default-import allowlist gains only `kotlin.Throwable` here.
+- **H-H — property kind.** Add `top_level_property` to every closed symbol-kind mirror. Choose the
+  handoff's atomic branch for the exact Kotlin built-in `::class.java` chain: one class-token
+  projection preserves referenced-class identity, so `extension_property`, a generic extension row,
+  another return-source form, and a `kotlin.jvm` default-import expansion are all deliberately absent.
+- **H-I — variadics.** Add `ArgumentSpec.variadic`; at most one `ArgumentSpec` per `SymbolSpec`
+  may be variadic. It is noncallback, nondefaulted, and the highest physical position not referenced
+  by a callback. It binds zero or more remaining eligible arguments, so an empty variadic sequence
+  needs no default.
+- **H-J — operator form.** Add nullable `operatorForm` from the closed set
+  `index_get,index_set,plus_assign,plus,iterator,contains,invoke,compare_to,equals`. Operator/infix
+  syntax outside D12/D19's closed primitive, null, and resolved enum-entry identity built-ins
+  resolves only through an exact audited row; no naming-convention fallback is allowed. `invoke`
+  is valid only for the bounded immutable function-value origin defined by D6.
+- **H-K — closed members.** Add `closedMemberSet` only to type rows. True means the exact pinned SDK
+  inventory contains every public physical member name and overload, including inherited/delegated
+  members. Only such a row proves absence for `source_extension_if_no_sdk_member`; sparse
+  needed-row inventories must remain false.
+- **H-L — SAM identity.** Add nullable `ArgumentSpec.samInterfaceFqn`. A nonnull exact FQN applies
+  only to a callable argument with a matching CallbackSpec and grants no execution or effect fact
+  by itself. The audited plane subscription uses exact
+  `com.pico.spatial.sense.base.AnchorUpdateSubscriber`; callback parameter 0 is exact
+  `AnchorUpdate<PlaneAnchor>` normalized only to `anchor_update`. Append callback role
+  `anchor_update` with invocation model `possible_path` only for that exact subscription symbol;
+  role alone grants no ownership/effect fact, and `spatial_update` remains exclusive to the exact
+  `SpatialView.update` symbol. Permanent cross-role negative microvectors enforce the separation.
+- **H-M — witness protocol.** Mirror the exact 16-entry cap vector above in Java validation/claim
+  construction, the JavaScript bridge, and tests. Emitter/claim assembly omits an oversized
+  affected claim before `Analysis` construction. Java final validation and the JavaScript bridge
+  reject an impossible over-cap object; they never rewrite/drop wire claims or orphan catalog
+  nodes.
+
+Every closed field set, vocabulary sequence, validation rule, and cap is mirrored exactly in
+`Rules.java`, `build-analyzer.mjs`, `kotlin-analysis.mjs`, and test-owned literals. Production must
+not accept a value that either verifier rejects, or vice versa.
+
+The ignored brief freezes the exact closed JSON field sets, Java record signatures, nullability and
+cross-field validation matrices, vocabulary order, one expected new
+`Rules$CallbackParameterSpec.class` inventory entry, doctrine RED/GREEN tests, and the complete
+canonical `FULL_BATCH2B_SYMBOLS` row inventory before implementation. That inventory includes every
+closure row needed by any `closedMemberSet:true` type. A receipt-bound temporary classpath resource
+must make the real Java `Domain` loader accept the candidate; shape-only JavaScript tests are
+insufficient. Any row not covered by H-A-H-M and the prerequisite audit is a stop.
+
+The tracked `domain-v1.json` change in follow-up #2 is a neutral schema migration only. Preserve
+exactly the three logical clone-canary rows and add only mandatory new fields with neutral values.
+No corpus symbol/effect row lands. Before migration, replace structural clone discovery with exact
+lookup of `{fqn:"com.pico.spatial.core.ecs.Component.clone",signature:"clone(): Component"}` and
+retain every existing positive/negative canary. Batch 2B later copies the already reviewed
+`FULL_BATCH2B_SYMBOLS` inventory as one exact data transition; it may not invent or alter a row.
+The permanent analyzer test enforces exactly two phase states: the follow-up #2 domain contains the
+neutral migrated three-canary list, or the later Batch 2B domain contains byte-exact
+`FULL_BATCH2B_SYMBOLS`. No third, partial, or intermediate symbol list is accepted, and both the
+candidate and live transition are validated through the real Java `Domain` loader.
+
+The binding D1-D26 doctrine table appears only in the premeasurement amendment below. In
+particular, its D6 paragraph is the sole normative replacement for
+`task-3-parser-redesign.md:152-153`; this plan points to that paragraph instead of restating the
+lambda rule. The already SHA-reviewed parser redesign and Batch 2 brief remain unmodified
+historical files.
+
+The exact follow-up #2 implementation commit contains six modified paths only:
+
+```text
+benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs
+benchmarks/spatial-agent-bench/analyzer/domain-v1.json
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/AbstractInterpreter.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Rules.java
+benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs
+test/agentbench-kotlin-analysis.mjs
+```
+
+`PsiIndex.java`, tracked `test/helpers/agentbench-fixture.mjs`, untracked
+`test/agentbench-score.mjs`, `Main.java`, and `Protocol.java` remain byte-identical. Follow-up #2
+must capture permanent schema/doctrine RED first, implement the generic mechanisms without the
+sixteen Batch 2B emitters, clean-build-twice, run final verify and the complete analyzer/source/
+contract/containment gates, and re-pin every old-to-new source, domain, JAR, receipt, classpath,
+JAR-entry, class-reference, import, and artifact identity from measured outputs. New record classes
+may change entry/reference inventories; no count or hash may be predicted.
+
+Its GREEN requires `analysisStatus:"accepted"` and `rejectionCode:null` for the corrected checkpoint.
+It does not predict an empty claim list: D2 may expose the preserved clone canary. The persistent
+thirteen-claim oracle remains RED only at exact claim-list equality because Batch 2B emitters are
+missing, never because of `ambiguous_index`, `internal_uncertainty`, or another rejection. Record
+the actual ordered claim list only after rebuilding and require that at least one of the thirteen
+expected claims is still missing. The ignored report is `task-3-batch-2a-followup2-report.md`; the
+independent commit review is `task-3-batch-2a-followup2-review.md`. Only a commit-scoped literal
+`APPROVED` releases Batch 2B.
+
+Batch 2B then re-enters from that exact approved commit with the same six untracked checkpoints,
+the tracked fixture clean, the follow-up #2 artifact verified, and the accepted/missing-emitter RED
+measured. Its six later paths remain domain/AbstractInterpreter/Rules/fixture `M` and score/corpus
+helper `A`. It may add only the brief-frozen row inventory plus emitters, fixture transformations,
+corpus, and score tests; it cannot change the follow-up #2 schema, doctrine, caps, canary key,
+bridge/build validators, or PsiIndex/Main/Protocol. Its reserved subject
+`feat(bench): bind subset-v1 semantic kernel` remains Batch 2B-only.
+
+Protocol, subset, and domain versions remain 1. The analyzer name, response/rejection schema, rule/
+proof/alternative/witness registries, three sanctioned oracle defects, exact three-ID false vector,
+and structural-only evidence ceilings remain frozen. The benchmark stays on Spatial SDK 0.13.3;
+SDK 6.0 and 0.13.3-vs-6.0 comparison are non-goals.
+
+The exact post-commit authority gate is:
+
+```bash
+set -euo pipefail
+BASE='ebae41fc13d1b5752d22646a1e706a271bc53f48'
+SUBJECT='docs(bench): authorize subset-v1 schema completion'
+BRANCH='spatial-agent-bench-2026-08-16'
+: "${TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA:?set reviewed authority commit SHA}"
+test "${#TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA}" -eq 40
+case "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA" in *[!0-9a-f]*) exit 1 ;; esac
+git cat-file -e "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA^{commit}"
+test "$(git rev-parse HEAD)" = "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA"
+test "$(git branch --show-current)" = "$BRANCH"
+test "$(git rev-parse "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA^")" = "$BASE"
+test "$(git rev-list --parents -n 1 "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA" | awk '{print NF}')" = 2
+test "$(git show -s --format=%s "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA")" = "$SUBJECT"
+expected_paths='docs/superpowers/plans/2026-08-16-spatial-agent-bench.md
+docs/superpowers/specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md'
+test "$(git diff-tree --no-commit-id --name-only -r "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA" | LC_ALL=C sort)" = "$expected_paths"
+test "$(git diff-tree --no-commit-id --name-status -r "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA" | cut -f1 | LC_ALL=C sort)" = 'M
+M'
+git diff --check "$BASE..$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA"
+git diff --quiet
+git diff --cached --quiet
+expected_status='?? benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+?? benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+?? benchmarks/spatial-agent-bench/lib/score.mjs
+?? test/agentbench-fixture-compile.mjs
+?? test/agentbench-score.mjs
+?? test/helpers/agentbench-junit.mjs'
+test "$(git status --porcelain=v1 --untracked-files=all | LC_ALL=C sort)" = "$expected_status"
+expected_frozen_hashes='9bc648f8ce6a4d6424c00d5528693f6b040c58dab157b54e07e438993be5d09c  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/PsiIndex.java
+d08363ed2bd49d03adc1459a1fab5af88ddd13ad637e753cddc1eb7eaca1862e  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Main.java
+55adda83933f1c17a366689f5e311ef8f596a157f38ea33b1c8cd882e2bf1299  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Protocol.java
+eac10ae8a3867d0c7d26b4d923d05d0477e80582e8fb5e4ddd1a96e14e7cfcbf  test/helpers/agentbench-fixture.mjs
+4b6caa9b5e6616876754177c5762fc13859127c5aa6a6710728d5a24ba0d2f00  benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+eca968dd4a03c43187539c372cf330839cb870f331cfd9e69ad14d97ca44e02a  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+aba2696c4d1d0d3657d96867683c848caac055510e83db52f58a726e35d67513  benchmarks/spatial-agent-bench/lib/score.mjs
+5e2e3a73cf5c0e4782f0fa2a47cb713a14619735187af18042f2d1f9417a1c32  test/agentbench-fixture-compile.mjs
+07ebad0482ca7a72853a35ad6bf111ff3db25665c7a55501f6d0f2faf1224724  test/agentbench-score.mjs
+05426449e6401fc8bf6b1f899a8b1d7c13485f5e2492f99f31598e88c938a918  test/helpers/agentbench-junit.mjs'
+test "$(shasum -a 256 \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/PsiIndex.java \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Main.java \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Protocol.java \
+  test/helpers/agentbench-fixture.mjs benchmarks/spatial-agent-bench/lib/rules-spatial.mjs \
+  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs benchmarks/spatial-agent-bench/lib/score.mjs \
+  test/agentbench-fixture-compile.mjs test/agentbench-score.mjs test/helpers/agentbench-junit.mjs)" = "$expected_frozen_hashes"
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/handoff-2026-08-17-followup2.md | awk '{print $1}')" = 'da4013c1bb71c99222d5893c73eeda954000a2fad0adfdf96bdfd3eec6f8ccf4'
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-batch-2a-followup2-prerequisite-audit.md | awk '{print $1}')" = 'd81343f63a5d30762b283fe3b46d64b23256e8587133d7569d289a62bd030a8d'
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-parser-redesign.md | awk '{print $1}')" = 'fe5b6533683854e18623d1bd3668ad846e7d7ed7cd20e788e21ea2d5d59c0b28'
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-batch-2-brief.md | awk '{print $1}')" = '9a2b7ecef05051a5d29658f392764e93fa2516f201b98dd19023e39544aaf35d'
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-batch-2a-followup-report.md | awk '{print $1}')" = 'de8fd6b6d5f0bc1530490112401b3c00fc88e7f3afa143992bd9e74aff68820c'
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-batch-2a-followup-review.md | awk '{print $1}')" = '346f611d0bfe02f6ae9d03b842c5e04fd3af19e56ca0337862aaea573046518b'
+test "$(shasum -a 256 benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/analyzer-v1.jar | awk '{print $1}')" = '64213254903e31c63b7bae8db60520d7b394a43cfa24cfa784f8f83b9201edf1'
+test "$(shasum -a 256 benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/analyzer-build-receipt-v1.json | awk '{print $1}')" = '8790762c7dda7e2c02398c0a83000e3bfcd358926a53b3ad33d5298a1494d597'
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs verify
+npm run build
+node --test test/agentbench-source.mjs test/agentbench-contract.mjs
+git diff --quiet
+git diff --cached --quiet
+test "$(git status --porcelain=v1 --untracked-files=all | LC_ALL=C sort)" = "$expected_status"
+test "$(shasum -a 256 \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/PsiIndex.java \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Main.java \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Protocol.java \
+  test/helpers/agentbench-fixture.mjs benchmarks/spatial-agent-bench/lib/rules-spatial.mjs \
+  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs benchmarks/spatial-agent-bench/lib/score.mjs \
+  test/agentbench-fixture-compile.mjs test/agentbench-score.mjs test/helpers/agentbench-junit.mjs)" = "$expected_frozen_hashes"
+```
+
+The ignored authority report is `task-3-batch-2a-followup2-authority-report.md`; the independent
+reviewer records the exact authority commit, sole parent, subject, both committed document hashes,
+authority-report hash, handoff/audit hashes, parser-redesign/Batch-2-brief hashes, prior follow-up
+report/review hashes, score/fixture hashes, fresh gate output, and literal
+`APPROVED` or `CHANGES REQUIRED` in `task-3-batch-2a-followup2-authority-review.md`. Only
+`APPROVED` releases ignored brief authoring; neither this authority commit nor its review approves
+implementation, Batch 2B, compilation, runtime, behavior, visuals, devices, network/model/MCP work,
+or Task 3 completion.
+
 ### Authorized Task 3 files and generated locators
 
 Retain and replace only these seven checkpoint files:

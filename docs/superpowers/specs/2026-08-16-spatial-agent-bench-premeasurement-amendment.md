@@ -134,6 +134,179 @@ commit-scoped `APPROVED` review. All protocol/subset/domain versions, analyzer n
 response/rejection schema, `Main.java`, `Protocol.java`, rule/proof/alternative/witness registries,
 limits, the exact three-false oracle vector, and evidence ceilings remain frozen.
 
+### Reviewed Batch 2A follow-up #2 authority
+
+The approved first follow-up does not authorize the wider schema needed by the frozen Batch 2
+fixture and positive matrix. From sole-parent base
+`ebae41fc13d1b5752d22646a1e706a271bc53f48`, one two-path `M/M` authority commit with exact
+subject `docs(bench): authorize subset-v1 schema completion` modifies only this amendment and the
+implementation plan. Its independently approved 40-hex SHA authorizes only a separately SHA-frozen,
+independently approved ignored follow-up #2 brief. The implementation commit subject is exactly
+`fix(bench): complete subset-v1 semantic schema`; its sole parent is the approved authority commit.
+
+Prerequisite authority is handoff SHA-256
+`da4013c1bb71c99222d5893c73eeda954000a2fad0adfdf96bdfd3eec6f8ccf4` and independently
+audited record SHA-256
+`d81343f63a5d30762b283fe3b46d64b23256e8587133d7569d289a62bd030a8d`. The record pins
+BOM-resolved SDK 0.13.3 UI arities/defaults/callback shapes, all 20 requirement rows and 50 positive
+tuples, and per-rule witness caps
+`[11,16,14,12,16,11,12,11,12,24,12,24,10,25,20,22]` (sum 252). Existing limits remain 32
+per claim, 256 references total, 256 response nodes, and 128 positive cases. SDK 6.0 and any
+0.13.3-vs-6.0 comparison are non-goals.
+
+The widened typed API is bounded to these records; the follow-up brief freezes their exact Java and
+JSON order:
+
+```java
+record ArgumentSpec(int position, String name, String abstractType,
+        boolean hasDefault, boolean variadic, String samInterfaceFqn) {}
+record CallbackParameterSpec(int position, String abstractType) {}
+record CallbackSpec(int argumentPosition, String role, String invocationModel,
+        String receiverAbstractType, String receiverSource,
+        List<CallbackParameterSpec> parameters) {}
+record SymbolSpec(String fqn, String signature, String kind, String receiverKind,
+        String receiverAbstractType, String returnAbstractType, String returnSource,
+        String memberPrecedence, List<String> typeArguments, List<String> conformsTo,
+        boolean closedMemberSet, List<ArgumentSpec> arguments,
+        List<CallbackSpec> callbacks, String operatorForm, List<String> effects) {}
+```
+
+Every new JSON field is mandatory, including neutral false/empty/null values. Nullable fields are
+only `ArgumentSpec.name`, `ArgumentSpec.samInterfaceFqn`, callback receiver type/source, and symbol
+receiver type, return type/source, and operator form. Lists are defensively copied and validated.
+The closed symbol-kind set gains only `top_level_property`; the handoff's alternative
+`extension_property` branch is not selected because `::class.java` is atomic. Receiver kind is
+exactly `none,instance,declaring_type,object_instance`; return source is null,
+`element_of_receiver`, or `class_of_argument`; operator form is null or one of
+`index_get,index_set,plus_assign,plus,iterator,contains,invoke,compare_to,equals`.
+
+The schema implements H-A through H-M exactly as the plan defines them. In particular:
+
+- `opaque` and `hasDefault` land atomically. `opaque` is legal only as a physical argument type and
+  is forbidden in callback components, receiver/return types, type arguments, conformance, origins,
+  and resolution.
+- Callback parameter positions are dense. Their `abstractType` is a field-specific union of the
+  closed semantic types and the sole sentinel `element_of_receiver`; the sentinel is not added to
+  the abstract-type registry. Receiver source is null, `call_receiver`, or `argument:<n>` and must
+  reference a compatible mapped origin. Null source with nonnull receiver type denotes an
+  SDK-created receiver, not no receiver. Every modeled callback argument is physically `callable`.
+  Concrete callback parameters are fresh typed callback origins by default. Only the sole concrete
+  parameter of an exact `immediate_inline` callback with no callback receiver inherits a compatible
+  call-receiver origin (`let`); only `element_of_receiver` derives collection element type+origin
+  through D16. No other callback-parameter origin propagation is inferred.
+- `typeArguments` records required explicit source type-argument bounds in order. Duplicates are
+  permitted; `opaque` and omitted/extra edges are not. It is not declaration generic arity.
+- `conformsTo` and true `closedMemberSet` occur only on `kind:type` rows. Conformance is sorted,
+  unique, nonopaque, nonself, acyclic, and bounded. True closure requires every physical public
+  member name/overload plus inherited/delegated closure for the exact 0.13.3 type; sparse row sets
+  remain false.
+- `receiverKind:instance` requires a nonnull receiver abstract type. `none`, `declaring_type`, and
+  `object_instance` require the exact kind-compatible nullability/qualifier matrix frozen in the
+  brief; declaring/object resolution begins from an exact type row, never a prefix or name guess.
+- Nonnull `returnSource` is mutually exclusive with `passthrough` and requires
+  `returnAbstractType:null`. `element_of_receiver` derives type and origin from the receiver's
+  resolved collection abstract type through D16's closed producer-to-element map;
+  `class_of_argument` requires exactly one mapped `java_class` argument and
+  derives dynamic type from its class identity and value origin from the exact receiver-store
+  lookup. Null source plus `passthrough` keeps only the
+  equal typed receiver or sole immediate-inline callback-result cases already authorized.
+- At most one `ArgumentSpec` per `SymbolSpec` is variadic; it is noncallback, nondefaulted, and the
+  highest physical noncallback position. It binds zero or more remaining eligible arguments,
+  including an empty sequence without a default. `samInterfaceFqn` is an exact nonempty FQN on a callable argument
+  with a matching CallbackSpec and supplies no effect by itself. Plane subscription uses exact
+  `com.pico.spatial.sense.base.AnchorUpdateSubscriber`; callback parameter 0 is exact
+  `AnchorUpdate<PlaneAnchor>` normalized only to `anchor_update`. The callback-role registry appends
+  `anchor_update` with invocation model `possible_path` only on that exact subscription symbol;
+  role alone grants no ownership/effect fact. `spatial_update` remains exclusive to exact
+  `SpatialView.update`, and permanent cross-role negative microvectors enforce both directions.
+- The abstract-type registry appends exactly `opaque,transform,vector2,throwable,
+  disposable_effect_scope,composition_local,spatial_container_scope,kclass,row_scope,
+  attachment_panel_builder,spatial_view_attachments,anchor_update`. The existing
+  `plane_anchor_collection` is
+  explicitly the narrow semantic abstraction for the exact SDK `Array<PlaneAnchor>` producer and
+  its immutable List projection; no generic array type exists. The default-import allowlist gains
+  only `kotlin.Throwable`. Exact `::class.java` is an atomic class-identity projection and needs no
+  extension-property row/default import.
+- The cap vector is mirrored in Java claim construction/final validation, the JavaScript bridge,
+  and tests. Emitter/claim assembly omits a rule before `Analysis` when its proof exceeds that
+  rule's cap. Java final validation and the JavaScript bridge reject any impossible over-cap object;
+  they do not truncate, rewrite/drop wire claims, orphan catalog nodes, or turn an emitter-local
+  omission into a whole-response overflow.
+
+Every closed field set, vocabulary sequence, cross-field validation rule, and cap is identical in
+the Java loader, deterministic builder, JavaScript bridge, and test-owned literals. No production
+surface may accept a value that either verifier rejects, or reject a value the other accepts.
+
+Follow-up #2 neutrally migrates the exact three logical clone-canary rows in `domain-v1.json`; only
+new mandatory fields with neutral values are added. It replaces structural clone discovery with the
+exact key `{fqn:"com.pico.spatial.core.ecs.Component.clone",signature:"clone(): Component"}`.
+No noncanary corpus row lands. The ignored brief freezes the canonical complete
+`FULL_BATCH2B_SYMBOLS` literal, including every H-K closure row, and proves it using the real Java
+Domain loader from a temporary receipt-bound classpath resource. Batch 2B later copies that exact
+reviewed inventory as one data transition and may not invent or alter a row. The permanent analyzer
+test accepts exactly two symbol-list states: the neutral migrated three-canary list during follow-up
+#2, or byte-exact `FULL_BATCH2B_SYMBOLS` during Batch 2B. No third, partial, or intermediate list is
+valid; both the candidate and live transition must load through the real Java `Domain` loader.
+
+The following doctrine table is binding for the generic resolver/dataflow machinery and later
+emitters:
+
+| ID | Frozen subset-v1 decision |
+|---|---|
+| D1 | Getter-only access follows the getter body origin. `get() = retained` may be strong; `get() = BenchmarkStore()` and fresh-construction mutation variants are weak; an initializer-backed companion read is strong. Getter or initializer presence alone never decides strength. |
+| D2 | Remove the global `hasUnmodeledNamedDeclarations() -> emptyAnalysis` short circuit. Unsupported declarations taint only a dependent resolution/effect path; unrelated unique production roots remain analyzable. Genuine snapshot ambiguity still rejects globally. |
+| D3 | Locate the clone canary only by its exact frozen `{fqn,signature}`. Nested types use the written FQN-prefix rule; residual-dot member derivation remains rejected. |
+| D4 | All selected `.kt` files remain parse/index inputs. Only normalized `/src/main/` declarations are production reachability roots or state-authority candidates; `/src/test/`, `/src/androidTest/`, and other nonproduction declarations cannot supply production facts. Tests may still cause genuine whole-index ambiguity/rejection. |
+| D5 | `immediate_inline` executes its modeled callback synchronously once on the feasible path. The exact bounded `repeat` row executes its body under the loop model, but `return@repeat` is continue-like and never a successful loop exit; only a real break or function return can establish retained retry success. |
+| D6 | **This paragraph is the sole document amendment of `task-3-parser-redesign.md:152-153`.** An immutable local `val` or immutable function-typed parameter whose every reaching binding is a lambda literal or uniquely resolved callable reference may be invoked directly or passed to a modeled callback position. Exact `operatorForm:invoke` executes that bound summary and returns its result. Reassignment, mutable capture, merge, escape, ambiguity, unknown binding, or general higher-order flow remains unsupported. The Batch 2 brief's mandated lines 599-623 remain valid. No PsiIndex change or additional schema field follows. |
+| D7 | Resolve explicit receivers first, then the active lexical implicit-receiver stack inner-to-outer: modeled callback receivers, enclosing uniquely typed source-extension receivers, and enclosing uniquely typed source class/object/companion dispatch receivers, with an extension receiver before its same-depth dispatch receiver. An explicit uniquely resolved source class/object/companion qualifier supplies that source declaration's dispatch receiver; this is source-resolver doctrine and requires no fabricated domain row. Missing/ambiguous receivers fail. `SpatialApplication.onCreate` therefore supplies its Application dispatch receiver to imported `Application.launch`, and a helper-internal bare call resolves to its enclosing SpatialNavigator extension receiver. The uncorrected top-level GalleryWindow bare `showMixedContainer(...)` remains unresolved because a local `navigator` value is not an implicit receiver. |
+| D8 | Deduplicate identical ARGUMENT target IDs preserving first occurrence. Map named arguments by exact declared name. Map ordinary positional arguments left-to-right to the next eligible unbound declared positions and establish the positional frontier. A trailing lambda/callable maps to the unique compatible unbound modeled callback position at or after that frontier (the audited Stage/PicoTheme/Button callbacks are their rightmost positions); zero or multiple candidates fail. Every skipped nonvariadic position requires `hasDefault`; the sole eligible variadic position binds zero or more remaining arguments, including an empty sequence without a default. Apply the same algorithm to domain and source callables/constructors. |
+| D9 | `super.onCreate()` is a qualified selector whose `KtSuperExpression` receiver is intentionally unmodeled. It supplies no receiver/effect fact but does not poison an independent sibling launch statement. Receiverless ordinary qualified calls remain unknown, and state-connected unknown calls still taint dependent facts. |
+| D10 | Overload selection requires one exact candidate after receiver kind/type/conformance, concrete-over-opaque arguments, explicit type arguments, defaults/variadic mapping, callback/SAM shape, and operator form. Fixed arity outranks variadic; zero or multiple survivors are unknown. |
+| D11 | Only an exact audited `isNotEmpty` readiness row establishes readiness on its true path. `isEmpty` is readiness-negative; no complementary spelling inference is allowed. |
+| D12 | Exact `x == Entry` / `x != Entry` is a closed no-callable-row builtin only when `x` has a known compatible enum origin and `Entry` resolves to one exact declaring-type/entry row. Names or literals alone do not establish equality, and no generic enum `equals` row is inferred. |
+| D13 | Emit at most one claim per rule. Choose the first proof form in frozen domain order having both a complete proof and at least one accepted alternative validator, then choose its first satisfied alternative in frozen order. An alternative never guides resolution and still does not appear on the wire. |
+| D14 | Abstract type compatibility ignores Kotlin nullable decoration. Literal `null` is legal only through a brief-frozen exact `{fqn,signature,argumentPosition}` allowlist, or against an exactly resolved source parameter/property target whose declared type has an explicit nullable `?` (initializer, argument binding, or assignment); it creates no origin. The allowlist contains physical position 1 for both exact `com.pico.spatial.core.ecs.Entity.convertPositionFrom` and `com.pico.spatial.core.ecs.Entity.convertRotationFrom` rows, and no name/spelling inference is allowed. |
+| D15 | Public witnesses are minimal decisive structural boundaries. Syntax lacking a witness kind (break, index syntax, Elvis, `until`, equality, enum entry) uses its nearest exact witness-bearing owner/dependency. Never invent kinds, include execution traces, or truncate. |
+| D16 | Callback/loop element types and FOR-parameter types come only from the resolved producing row. The closed producer-to-element mapping is exactly `entity_collection -> entity`, `plane_anchor_collection -> plane_anchor`, and `integer_range -> int`; variable spelling and untyped declarations supply nothing. Concrete callback-parameter origins otherwise follow H-B's fresh/default and sole-immediate-inline-receiver rules. |
+| D17 | Distinguish extension receiver and return TYPE edges by token spans relative to the declaration name, not EdgeRole ordinal alone. Keep the frozen PsiIndex API. |
+| D18 | Inherited/delegated members resolve only through audited acyclic conformance/delegation. A unique valid override replaces its inherited slot and is not a lexical shadow; multiple compatible paths are unknown. |
+| D19 | Closed primitive Boolean/numeric built-ins remain limited to known primitive operands; the only null built-ins are exact `x == null` and `x != null` tests on a known nullable origin, with no user `equals` dispatch. Together with D12's exact resolved enum-entry identity, these are the only operator forms not requiring a domain row. All overloaded operator syntax uses exact `operatorForm`; exact audited infix callables such as `until` resolve as call rows. Canonical while increments with primitive `+= 1`, never `++`. `::class.java` is the sole atomic class-token rule. |
+| D20 | The effect semantics map is exactly `read,mutate,construct,replace,unknown_escape,open,close,acquire,release,load,readiness,convert,place,status_assign,passthrough`; only resolved rows or accepted source bodies assign effects, never callable spelling. |
+| D21 | A property reference is a read only from its accepted getter/initializer/body origin. An assignment/setter is a write/mutation; compound assignment is both read and write. |
+| D22 | Source-helper effects are summarized only from reachable accepted bodies and argument/origin flow, never names such as restore, snapshot, select, or setPaused. |
+| D23 | `alternativeId` remains domain/test validation vocabulary only. It does not guide resolution, appear in a claim, or change proof selection. |
+| D24 | An explicit import alias exposes only the alias while retaining its exact target FQN. Original-short-name fallback is forbidden; alias ambiguity fails. |
+| D25 | A valid override is an inherited-slot replacement, not a lexical shadow. Unrelated same-name declarations remain ambiguous. |
+| D26 | `data object` remains OBJECT_DECL without DATA; `sealed interface` is INTERFACE_DECL+SEALED; annotations contribute only existing annotation edges/witnesses and no implicit semantics. |
+
+The D6 row above is the single normative amendment resolving the historical-document contradiction.
+The already SHA-reviewed ignored parser redesign and Batch 2 brief remain unchanged evidence files;
+this later tracked amendment supersedes only their conflicting lambda sentence and preserves every
+other subset rejection.
+
+The exact implementation scope is six `M` paths: `domain-v1.json`, `build-analyzer.mjs`,
+`Rules.java`, `AbstractInterpreter.java`, `lib/kotlin-analysis.mjs`, and
+`test/agentbench-kotlin-analysis.mjs`. `PsiIndex.java`, `Main.java`, `Protocol.java`, the tracked
+fixture, persistent score RED, and all deferred checkpoints remain byte-identical. Any required
+PSI/API/protocol/version/limit/witness-kind/fixture change is a stop. Permanent tests RED first,
+then prove the neutral domain and full candidate with the real Java loader plus bounded doctrine
+microvectors. Follow-up #2 clean-builds twice, verifies, runs complete analyzer/source/contract/
+containment gates, and re-pins every measured identity before its exact-subject commit, ignored
+report, and independent commit-scoped review.
+
+GREEN is accepted analysis with null rejection, not a predicted claim count. The persistent
+thirteen-claim oracle must fail only because its exact expected set remains incomplete; the report
+records the measured ordered claims and excludes `ambiguous_index`, `internal_uncertainty`, and all
+other rejection paths. Only an independent literal `APPROVED` releases Batch 2B.
+
+Batch 2B then owns only the brief-frozen row insertion, sixteen emitters, fixture transformations,
+corpus, and score tests on its six existing paths. It cannot change this schema, doctrine, cap
+vector, canary key, bridge/build validator, or frozen files. Protocol, subset, and domain versions
+remain 1; the analyzer name, wire/rejection schema, rule/proof/alternative/witness registries, exact
+three sanctioned oracle defects and false-ID vector, evidence ceilings, and SDK 0.13.3 corpus remain
+frozen.
+
 Task 3 remains structurally capped. Its result is still exactly `ScoreResultV2` below, including
 `structuralScore`, `buildQualifiedStructuralScore`, submission-test separation, not-run runtime
 protocol defaults, and `visual.status: "not_performed"`. Analyzer protocol, artifact, classpath,
