@@ -27,7 +27,6 @@ const JAVA_ROOT = path.join(ANALYZER_DIR, "src/main/java/com/agentbench/analyzer
 const ARTIFACTS = path.dirname(path.dirname(ARTIFACT));
 const CLEAN_ENV = ["LANG=C", "LC_ALL=C", "TZ=UTC", "__CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0"];
 const RECEIPT_DOMAIN = Buffer.from("agentbench-analyzer-receipt-v1\0", "utf8");
-const FOLLOWUP_DOMAIN_SHA256 = "6f2f241af489b70e8dfb036e82c8d33c9aa8b39dc2866f7c9f957c7b1304084a";
 const RULE_ORDER = Object.freeze([
   "spatial.project-entry", "spatial.container-topology", "spatial.entity-content", "spatial.ui-lifecycle",
   "ecs.component-clone", "ecs.system-query", "ecs.frame-update", "ecs.lifecycle",
@@ -100,6 +99,12 @@ const PHYSICAL_RESULT_TYPES = followup2DeepFreeze([{"physicalTypeFqn":"android.o
 const PHYSICAL_CALLBACK_PARAMETERS = followup2DeepFreeze([{"callableFqn":"com.pico.spatial.sense.plane.PlaneTrackingManager.subscribeAnchorUpdate","callableSignature":"subscribeAnchorUpdate(subscriber: AnchorUpdateSubscriber<PlaneAnchor>): Cancellable","callbackArgumentPosition":0,"callbackParameterPosition":0,"physicalTypeFqn":"com.pico.spatial.sense.base.AnchorUpdate","physicalTypeSignature":"class AnchorUpdate<T : Anchor>","semanticType":"anchor_update"},{"callableFqn":"com.pico.spatial.ui.foundation.content.SpatialView","callableSignature":"SpatialView(modifier: Modifier = Modifier, update: ((SpatialViewContent, SpatialViewAttachments) -> Unit)? = null, attachments: (AttachmentPanelBuilder.() -> Unit)? = null, initial: suspend (SpatialViewContent, SpatialViewAttachments) -> Unit): Unit","callbackArgumentPosition":1,"callbackParameterPosition":0,"physicalTypeFqn":"com.pico.spatial.core.container.SpatialViewContent","physicalTypeSignature":"class SpatialViewContent","semanticType":"spatial_content"},{"callableFqn":"com.pico.spatial.ui.foundation.content.SpatialView","callableSignature":"SpatialView(modifier: Modifier = Modifier, update: ((SpatialViewContent, SpatialViewAttachments) -> Unit)? = null, attachments: (AttachmentPanelBuilder.() -> Unit)? = null, initial: suspend (SpatialViewContent, SpatialViewAttachments) -> Unit): Unit","callbackArgumentPosition":1,"callbackParameterPosition":1,"physicalTypeFqn":"com.pico.spatial.ui.foundation.content.SpatialViewAttachments","physicalTypeSignature":"interface SpatialViewAttachments","semanticType":"spatial_view_attachments"},{"callableFqn":"com.pico.spatial.ui.foundation.content.SpatialView","callableSignature":"SpatialView(modifier: Modifier = Modifier, update: ((SpatialViewContent, SpatialViewAttachments) -> Unit)? = null, attachments: (AttachmentPanelBuilder.() -> Unit)? = null, initial: suspend (SpatialViewContent, SpatialViewAttachments) -> Unit): Unit","callbackArgumentPosition":3,"callbackParameterPosition":0,"physicalTypeFqn":"com.pico.spatial.core.container.SpatialViewContent","physicalTypeSignature":"class SpatialViewContent","semanticType":"spatial_content"},{"callableFqn":"com.pico.spatial.ui.foundation.content.SpatialView","callableSignature":"SpatialView(modifier: Modifier = Modifier, update: ((SpatialViewContent, SpatialViewAttachments) -> Unit)? = null, attachments: (AttachmentPanelBuilder.() -> Unit)? = null, initial: suspend (SpatialViewContent, SpatialViewAttachments) -> Unit): Unit","callbackArgumentPosition":3,"callbackParameterPosition":1,"physicalTypeFqn":"com.pico.spatial.ui.foundation.content.SpatialViewAttachments","physicalTypeSignature":"interface SpatialViewAttachments","semanticType":"spatial_view_attachments"}]);
 const PHYSICAL_CALLBACK_RECEIVERS = followup2DeepFreeze([{"callableFqn":"androidx.compose.runtime.DisposableEffect","callableSignature":"DisposableEffect(key1: Any?, effect: DisposableEffectScope.() -> DisposableEffectResult): Unit","callbackArgumentPosition":1,"physicalTypeFqn":"androidx.compose.runtime.DisposableEffectScope","physicalTypeSignature":"class DisposableEffectScope","semanticType":"disposable_effect_scope"},{"callableFqn":"androidx.compose.runtime.DisposableEffect","callableSignature":"DisposableEffect(key1: Any?, key2: Any?, effect: DisposableEffectScope.() -> DisposableEffectResult): Unit","callbackArgumentPosition":2,"physicalTypeFqn":"androidx.compose.runtime.DisposableEffectScope","physicalTypeSignature":"class DisposableEffectScope","semanticType":"disposable_effect_scope"},{"callableFqn":"androidx.compose.runtime.DisposableEffect","callableSignature":"DisposableEffect(key1: Any?, key2: Any?, key3: Any?, effect: DisposableEffectScope.() -> DisposableEffectResult): Unit","callbackArgumentPosition":3,"physicalTypeFqn":"androidx.compose.runtime.DisposableEffectScope","physicalTypeSignature":"class DisposableEffectScope","semanticType":"disposable_effect_scope"},{"callableFqn":"androidx.compose.runtime.DisposableEffect","callableSignature":"DisposableEffect(vararg keys: Any?, effect: DisposableEffectScope.() -> DisposableEffectResult): Unit","callbackArgumentPosition":1,"physicalTypeFqn":"androidx.compose.runtime.DisposableEffectScope","physicalTypeSignature":"class DisposableEffectScope","semanticType":"disposable_effect_scope"},{"callableFqn":"androidx.compose.runtime.LaunchedEffect","callableSignature":"LaunchedEffect(key1: Any?, block: suspend CoroutineScope.() -> Unit): Unit","callbackArgumentPosition":1,"physicalTypeFqn":"kotlinx.coroutines.CoroutineScope","physicalTypeSignature":"interface CoroutineScope","semanticType":"coroutine_scope"},{"callableFqn":"androidx.compose.runtime.LaunchedEffect","callableSignature":"LaunchedEffect(key1: Any?, key2: Any?, block: suspend CoroutineScope.() -> Unit): Unit","callbackArgumentPosition":2,"physicalTypeFqn":"kotlinx.coroutines.CoroutineScope","physicalTypeSignature":"interface CoroutineScope","semanticType":"coroutine_scope"},{"callableFqn":"androidx.compose.runtime.LaunchedEffect","callableSignature":"LaunchedEffect(key1: Any?, key2: Any?, key3: Any?, block: suspend CoroutineScope.() -> Unit): Unit","callbackArgumentPosition":3,"physicalTypeFqn":"kotlinx.coroutines.CoroutineScope","physicalTypeSignature":"interface CoroutineScope","semanticType":"coroutine_scope"},{"callableFqn":"androidx.compose.runtime.LaunchedEffect","callableSignature":"LaunchedEffect(vararg keys: Any?, block: suspend CoroutineScope.() -> Unit): Unit","callbackArgumentPosition":1,"physicalTypeFqn":"kotlinx.coroutines.CoroutineScope","physicalTypeSignature":"interface CoroutineScope","semanticType":"coroutine_scope"},{"callableFqn":"com.pico.spatial.ui.design.Button","callableSignature":"Button(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, size: ButtonSize = ButtonDefaults.Regular, colors: ButtonColors = ButtonDefaults.buttonColors(), leadingIcon: (@Composable () -> Unit)? = null, trailingIcon: (@Composable () -> Unit)? = null, contentPadding: PaddingValues = ButtonDefaults.paddingForButtonSize(size, haveIcon = leadingIcon != null || trailingIcon != null), shape: Shape = ButtonDefaults.shapeForButtonSize(size), gap: Dp = ButtonDefaults.gapForButtonSize(size, haveIcon = leadingIcon != null || trailingIcon != null), interactionSource: MutableInteractionSource = remember { MutableInteractionSource() }, content: @Composable RowScope.() -> Unit): Unit","callbackArgumentPosition":11,"physicalTypeFqn":"androidx.compose.foundation.layout.RowScope","physicalTypeSignature":"interface RowScope","semanticType":"row_scope"},{"callableFqn":"com.pico.spatial.ui.foundation.content.SpatialView","callableSignature":"SpatialView(modifier: Modifier = Modifier, update: ((SpatialViewContent, SpatialViewAttachments) -> Unit)? = null, attachments: (AttachmentPanelBuilder.() -> Unit)? = null, initial: suspend (SpatialViewContent, SpatialViewAttachments) -> Unit): Unit","callbackArgumentPosition":2,"physicalTypeFqn":"com.pico.spatial.ui.foundation.content.AttachmentPanelBuilder","physicalTypeSignature":"interface AttachmentPanelBuilder","semanticType":"attachment_panel_builder"},{"callableFqn":"com.pico.spatial.ui.foundation.dsl.DefaultWindowContainer","callableSignature":"SpatialAppScope.DefaultWindowContainer(content: @Composable WindowContainerScope.() -> Unit): Unit","callbackArgumentPosition":0,"physicalTypeFqn":"com.pico.spatial.ui.platform.containers.WindowContainerScope","physicalTypeSignature":"interface WindowContainerScope","semanticType":"spatial_container_scope"},{"callableFqn":"com.pico.spatial.ui.foundation.dsl.Stage","callableSignature":"SpatialAppScope.Stage(id: String, immersion: Immersion? = null, brightness: Brightness? = null, upperLimbRenderMode: UpperLimbRenderMode? = null, targetActivity: Class<out ComponentActivity>? = null, content: @Composable StageScope.() -> Unit): Unit","callbackArgumentPosition":5,"physicalTypeFqn":"com.pico.spatial.ui.platform.containers.StageScope","physicalTypeSignature":"interface StageScope","semanticType":"spatial_container_scope"},{"callableFqn":"com.pico.spatial.ui.foundation.dsl.launch","callableSignature":"Application.launch(block: SpatialAppScope.() -> Unit): Unit","callbackArgumentPosition":0,"physicalTypeFqn":"com.pico.spatial.ui.foundation.dsl.SpatialAppScope","physicalTypeSignature":"interface SpatialAppScope","semanticType":"spatial_app_scope"}]);
 const COMPONENT_CANARY_SYMBOLS = MIGRATED_CANARY_SYMBOLS;
+function liveDomainPhase() {
+  const live = canonicalJson(JSON.parse(fs.readFileSync(DOMAIN, "utf8")).symbols);
+  if (live === canonicalJson(MIGRATED_CANARY_SYMBOLS)) return "migrated";
+  if (live === canonicalJson(FULL_BATCH2B_SYMBOLS)) return "full";
+  throw new Error("domain-v1.json is neither the migrated-canary nor the FULL Batch 2B phase");
+}
 const EXPECTED_JAVA_SOURCES = Object.freeze([
   "AbstractInterpreter.java", "Main.java", "Protocol.java", "PsiIndex.java", "Rules.java",
 ].map((name) => `benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/${name}`));
@@ -5808,7 +5813,11 @@ test("follow-up #2 minimally amended checkpoint is accepted with missing Batch 2
   const expected = RULE_ORDER.filter((ruleId) => !UNCORRECTED_CHECKPOINT_EXPECTED_FALSE_RULE_IDS.includes(ruleId));
   assert.deepEqual(actual, actual.toSorted((left, right) => RULE_ORDER.indexOf(left) - RULE_ORDER.indexOf(right)));
   assert.equal(actual.every((ruleId) => expected.includes(ruleId)), true);
-  assert.equal(actual.length < expected.length, true, "Batch 2B emitter set remains incomplete");
+  if (liveDomainPhase() === "migrated") {
+    assert.equal(actual.length < expected.length, true, "Batch 2B emitter set remains incomplete");
+  } else {
+    assert.deepEqual(actual, expected, "the complete Batch 2B emitter set claims every non-defect rule");
+  }
 });
 test("domain bytes freeze the canonical closed subset-v1 vocabulary and clone canary", () => {
   const domainBytes = fs.readFileSync(DOMAIN);
@@ -5941,10 +5950,6 @@ test("follow-up vocabulary mirrors the exact reviewed minimum across the domain-
   assert.equal([MIGRATED_CANARY_SYMBOLS, FULL_BATCH2B_SYMBOLS]
     .some((phase) => canonicalJson(domain.symbols) === canonicalJson(phase)), true,
   "the live domain is exactly one authorized phase");
-  if (hash(domainBytes) === FOLLOWUP_DOMAIN_SHA256) {
-    assert.deepEqual(domain.symbols.map(canonicalJson), COMPONENT_CANARY_SYMBOLS.map(canonicalJson),
-      "the follow-up domain identity contains no added symbol row");
-  }
 });
 test("follow-up snapshot excludes anonymous declarations but preserves genuine ambiguity", (t) => {
   const acceptedCases = new Map([
@@ -6114,14 +6119,20 @@ test("follow-up minimally amended checkpoint stays accepted across the Batch 2B 
     "fun current(): GallerySessionRepository = retained"), 1,
     "equivalent current() function remains independently named");
 
-  const domainSha256 = hash(fs.readFileSync(DOMAIN));
   const response = analyzeKotlin(index);
   assert.equal(response.analysisStatus, "accepted");
   assert.equal(response.rejectionCode, null);
-  if (domainSha256 === FOLLOWUP_DOMAIN_SHA256) {
-    assert.deepEqual(response.nodes, [], "follow-up domain produces no public witness nodes");
-    assert.deepEqual(response.claims, [], "follow-up domain has no Batch 2B emitters");
+  const observedRuleIds = response.claims.map((claim) => claim.ruleId);
+  const completeRuleIds = RULE_ORDER
+    .filter((ruleId) => !UNCORRECTED_CHECKPOINT_EXPECTED_FALSE_RULE_IDS.includes(ruleId));
+  if (liveDomainPhase() === "migrated") {
+    assert.deepEqual(observedRuleIds, ["ecs.component-clone"],
+      "the migrated phase emits exactly the clone canary on the uncorrected checkpoint");
+  } else {
+    assert.deepEqual(observedRuleIds, completeRuleIds,
+      "the FULL phase emits exactly the thirteen non-defect rules on the uncorrected checkpoint");
   }
+  assert.equal(response.nodes.length > 0, true, "an emitted claim carries witness nodes");
 });
 test("domain build boundary rejects malformed noncanonical and closed-schema tracked bytes before publication", (t) => {
   const replica = analyzerReplica(t);
