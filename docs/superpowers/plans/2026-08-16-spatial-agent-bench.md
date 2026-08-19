@@ -490,6 +490,89 @@ report/review hashes, score/fixture hashes, fresh gate output, and literal
 implementation, Batch 2B, compilation, runtime, behavior, visuals, devices, network/model/MCP work,
 or Task 3 completion.
 
+### Binding Batch 2A follow-up #3: domain-phase guard repair
+
+Follow-up #2 commit `95f3ec569798f3375bcca6032ac651e75e4148a2`, report SHA-256
+`b3c73620805c981b881a4ea92c06a723ebacf9a14a450f32d518029c4c6311ac`, and review SHA-256
+`74f40842353fcd1fff9ba40980256f2a8180133e5fd01f3bb074566e2960d6a1` remain approved historical
+evidence. This subsection supersedes nothing in the schema, vocabulary, doctrine, or Batch 2B scope.
+It authorizes one narrow repair to a Batch 2A-frozen protocol test, before Batch 2B begins, and
+nothing else.
+
+**The defect.** `test/agentbench-kotlin-analysis.mjs:30` pins `FOLLOWUP_DOMAIN_SHA256` =
+`6f2f241af489b70e8dfb036e82c8d33c9aa8b39dc2866f7c9f957c7b1304084a`, the tracked `domain-v1.json`
+digest at `5af6e16` only. That file has held exactly three values across its whole history —
+`db21fb4c70340c1d30ebe643a1503c5049c4dd9fdcfc5df3091bd1feafc9b836` at `54c1298`, the pinned value at
+`5af6e16`, and `c42020580ed449a669f5c418d8aae4244b441b2651397639c2eefb64fe965547` at `95f3ec5`. The
+constant's two readers, at `:5944` and `:6121`, are therefore dead at HEAD and **permanently** dead:
+restoring the `5af6e16` rows cannot revive them, because those rows lack `closedMemberSet`,
+`conformsTo`, `operatorForm`, `receiverKind`, `returnSource` and `typeArguments` and would fail the
+phase assertions at `:5801-5802`, `:5897-5898` and `:5941-5943` as well as `Rules.SymbolSpec`
+construction. No state exists in which the suite passes and either guard fires.
+
+**Why it must be repaired before Batch 2B, not during it.** The material loss is at `:6122-6123`.
+Its enclosing test asserts only `analysisStatus === "accepted"` and `rejectionCode === null`, so
+with the guard dead **nothing constrains `nodes` or `claims` on the uncorrected checkpoint**. A
+premature, synthesized, or fixture-matched emitter would produce claims and that test would still
+pass — during exactly the window in which Batch 2B writes sixteen emitters. Stop clause 7 names
+"protocol test" and forbids a same-commit handoff plus kernel/fixture implementation because it
+defeats independent review, and the file is outside Batch 2B's six owned paths, so the repair takes
+the two-commit authorize-then-fix shape used by `ebaf849`/`ebae41f` and `379a563`/`95f3ec5`.
+
+**Authorized scope: two commits.** From sole-parent base `95f3ec569798f3375bcca6032ac651e75e4148a2`,
+one insert-only two-path `M/M` authority commit with exact subject
+`docs(bench): authorize domain phase guard repair` modifies only this plan and the premeasurement
+amendment. Its independently approved successor is one single-path commit with exact subject
+`fix(bench): repair subset-v1 domain phase guards`, whose sole parent is that authority commit and
+whose only path is `test/agentbench-kotlin-analysis.mjs`.
+
+**The repair is exactly six hunks. All coordinates below are pre-edit line numbers in the file as it
+stands at `95f3ec5`; applying the hunks shifts subsequent lines, so each hunk is located by the
+pre-edit coordinate and its quoted content, not by any post-edit number.**
+
+1. Insert a lazy `liveDomainPhase()` discriminator after `:102`. It reads the tracked domain and
+   returns `"migrated"` or `"full"` by comparing canonical `symbols` against the two frozen phases,
+   throwing otherwise. It is a function, never a module-load initializer: an import-time read or
+   throw would convert targeted failures into an import failure of all 37 tests.
+2. Delete `:30`, which is unreferenced once hunks 4 and 6 land.
+3. Replace `:5811` with a two-sided assertion — incompleteness in the migrated phase, the exact
+   thirteen-of-sixteen vector in the FULL phase. A one-sided guard would leave the FULL phase with no
+   completeness check at all.
+4. Delete `:5944-5947` entirely. Its body is subsumed by `:5941-5943`, which already pins
+   `domain.symbols` to exactly one frozen phase in both phases; re-keying it would make the guard
+   condition and the body the same proposition, since `:102` aliases `COMPONENT_CANARY_SYMBOLS` to
+   `MIGRATED_CANARY_SYMBOLS`.
+5. Delete `:6117`, unreferenced once hunk 6 lands.
+6. Replace `:6121-6124` — the guard **and its closing brace** — with a two-sided assertion on the
+   exact claim vector: `["ecs.component-clone"]` in the migrated phase, the thirteen-of-sixteen
+   vector in the FULL phase. The original `claims === []` body is wrong in both phases today,
+   because the checkpoint's single `Component` subclass already yields one clone claim.
+
+No other line of that file may be added, removed, or reordered. Every other phase-dependent
+assertion was swept and explicitly decided as correct in both phases, including the ten
+`nodes`/`claims` empty pairs, `assertCloneResponse` and its nine call sites, `assertRejectedEmpty`
+and its three, and `assertAcceptedEmpty` and its two.
+
+**Constraint carried into Batch 2B.** `assertAcceptedEmpty`'s two call sites remain correct only
+because their sources are written outside `/src/main/` and `isProductionPath` gates on that prefix.
+Every one of Batch 2B's sixteen emitters must therefore honour the production-path gate that
+doctrine item D4 already mandates; an emitter claiming outside `/src/main/` would break them.
+
+**Entry-drift disposition.** The Batch 2B precondition requires the reviewed Batch 2A commit as
+parent, empty tracked/staged diffs, and the same seven untracked checkpoint rows and hashes. Empty
+diffs still hold. The parent is now `95f3ec5` after three approved cycles. The untracked set is six,
+not seven, because approved follow-up #1 `ebae41f` **added** `test/helpers/agentbench-fixture.mjs` to
+git. Five of the seven checkpoint hashes still hold byte-for-byte; the fixture moved for that reason,
+and `test/agentbench-score.mjs` moved for a different one — it was never committed on any ref and its
+current bytes are Batch 2B's own in-flight RED oracle. The Batch 1 artifact identities have advanced
+across the same approved cycles, with the JDK-tree digest unchanged since Batch 1.
+
+**Gate.** The repair changes no analyzer source and no domain row, so the published artifact
+identities must be unchanged after it and the full analyzer suite must pass with the tracked domain
+still at `c42020580ed449a669f5c418d8aae4244b441b2651397639c2eefb64fe965547`, proving the repaired
+branches execute and hold in the migrated phase. An ignored report and an independent commit-scoped
+review record the result; only a literal approving verdict releases Batch 2B.
+
 ### Authorized Task 3 files and generated locators
 
 Retain and replace only these seven checkpoint files:

@@ -313,6 +313,38 @@ protocol defaults, and `visual.status: "not_performed"`. Analyzer protocol, arti
 JDK, receipt, and source-set identities are internal scoring/preflight provenance and do not add a
 rubric point, delivery score, behavioral claim, or new public result field in Task 3.
 
+### Reviewed Batch 2A follow-up #3 authority
+
+The approved follow-up #2 left a Batch 2A-frozen protocol test carrying two permanently unreachable
+domain-phase guards. From sole-parent base `95f3ec569798f3375bcca6032ac651e75e4148a2`, one
+insert-only two-path `M/M` authority commit with exact subject
+`docs(bench): authorize domain phase guard repair` modifies only this amendment and the
+implementation plan. Its independently approved 40-hex SHA authorizes exactly one successor commit,
+subject `fix(bench): repair subset-v1 domain phase guards`, sole parent the authority commit, sole
+path `test/agentbench-kotlin-analysis.mjs`.
+
+`FOLLOWUP_DOMAIN_SHA256` at `:30` pins `6f2f241af489b70e8dfb036e82c8d33c9aa8b39dc2866f7c9f957c7b1304084a`,
+which the tracked domain held only at `5af6e16`; it is now
+`c42020580ed449a669f5c418d8aae4244b441b2651397639c2eefb64fe965547`. Its two readers at `:5944` and
+`:6121` are permanently dead, because the `5af6e16` symbol rows lack the six schema fields added by
+follow-up #2 and cannot satisfy the phase assertions that would have to pass alongside them.
+
+The consequence that makes this repair a prerequisite rather than a cleanup is at `:6122-6123`:
+with its guard dead, nothing in that test constrains `nodes` or `claims` on the uncorrected
+checkpoint, so a premature or fixture-matched emitter would pass unnoticed during precisely the
+window Batch 2B occupies. Stop clause 7 names "protocol test" and forbids folding such a change into
+the Batch 2B commit.
+
+The repair is exactly six hunks, whose coordinates are pre-edit line numbers at `95f3ec5`: insert a
+lazy `liveDomainPhase()` discriminator after `:102`; delete `:30`; replace `:5811` with a two-sided
+completeness assertion; delete `:5944-5947` as subsumed by `:5941-5943`; delete `:6117`; and replace
+`:6121-6124`, brace inclusive, with a two-sided assertion on the exact claim vector. No other line
+may change. Existing limits, vocabularies, caps, schemas, proof forms, alternatives, and the Batch 2B
+six-path boundary are untouched, and Batch 2B remains at four `M`, two `A`, and five `??`.
+
+Batch 2B inherits one constraint from this repair: every emitter must honour the D4 production-path
+gate, because two retained assertions are correct only for sources outside `/src/main/`.
+
 ### Complete Kotlin input and result rule
 
 The bridge transports every selected `SourceIndex` file with `kind === "kotlin"`, both `.kt` and
