@@ -12,6 +12,50 @@ final class AbstractInterpreter {
     private static final String COMPONENT_TYPE_SIGNATURE = "open class Component";
     private static final String COMPONENT_CONSTRUCTOR_SIGNATURE = "Component()";
     private static final String CLONE_RULE_ID = "ecs.component-clone";
+    private static final String WINDOW_FQN = "com.pico.spatial.ui.foundation.dsl.DefaultWindowContainer";
+    private static final String WINDOW_SIGNATURE = "SpatialAppScope.DefaultWindowContainer(content: @Composable WindowContainerScope.() -> Unit): Unit";
+    private static final String THEME_FQN = "com.pico.spatial.ui.design.PicoTheme";
+    private static final String THEME_SIGNATURE = "PicoTheme(colorScheme: ColorScheme = systemColorScheme(LocalContext.current), typography: Typography? = null, content: @Composable () -> Unit): Unit";
+    private static final String STAGE_FQN = "com.pico.spatial.ui.foundation.dsl.Stage";
+    private static final String STAGE_SIGNATURE = "SpatialAppScope.Stage(id: String, immersion: Immersion? = null, brightness: Brightness? = null, upperLimbRenderMode: UpperLimbRenderMode? = null, targetActivity: Class<out ComponentActivity>? = null, content: @Composable StageScope.() -> Unit): Unit";
+    private static final String DISPOSABLE_EFFECT_FQN = "androidx.compose.runtime.DisposableEffect";
+    private static final String DISPOSABLE_EFFECT_SIGNATURE = "DisposableEffect(key1: Any?, effect: DisposableEffectScope.() -> DisposableEffectResult): Unit";
+    private static final String DISPOSABLE_SCOPE_FQN = "androidx.compose.runtime.DisposableEffectScope";
+    private static final String DISPOSABLE_SCOPE_SIGNATURE = "class DisposableEffectScope";
+    private static final String ON_DISPOSE_FQN = "androidx.compose.runtime.DisposableEffectScope.onDispose";
+    private static final String ON_DISPOSE_SIGNATURE = "onDispose(onDisposeEffect: () -> Unit): DisposableEffectResult";
+    private static final String STAGE_SCOPE_FQN = "com.pico.spatial.ui.platform.containers.StageScope";
+    private static final String STAGE_SCOPE_SIGNATURE = "interface StageScope";
+    private static final String WINDOW_SCOPE_FQN = "com.pico.spatial.ui.platform.containers.WindowContainerScope";
+    private static final String WINDOW_SCOPE_SIGNATURE = "interface WindowContainerScope";
+    private static final String APPLICATION_TYPE_FQN = "android.app.Application";
+    private static final String APPLICATION_TYPE_SIGNATURE = "open class Application";
+    private static final String ON_CREATE_FQN = "android.app.Application.onCreate";
+    private static final String ON_CREATE_SIGNATURE = "onCreate(): Unit";
+    private static final String LAUNCH_FQN = "com.pico.spatial.ui.foundation.dsl.launch";
+    private static final String LAUNCH_SIGNATURE = "Application.launch(block: SpatialAppScope.() -> Unit): Unit";
+    private static final String SPATIAL_SCOPE_FQN = "com.pico.spatial.ui.foundation.dsl.SpatialAppScope";
+    private static final String SPATIAL_SCOPE_SIGNATURE = "interface SpatialAppScope";
+    private static final String WITH_FQN = "kotlin.with";
+    private static final String WITH_SIGNATURE = "with(receiver: T, block: T.() -> R): R";
+    private static final String LAUNCHED_EFFECT_FQN = "androidx.compose.runtime.LaunchedEffect";
+    private static final String LAUNCHED_EFFECT_SIGNATURE = "LaunchedEffect(key1: Any?, block: suspend CoroutineScope.() -> Unit): Unit";
+    private static final String OPEN_STAGE_FQN = "com.pico.spatial.ui.platform.containers.SpatialNavigator.openStage";
+    private static final String OPEN_STAGE_SIGNATURE = "openStage(id: String, style: StageStyle? = null, bundle: Bundle? = null, upperLimbRenderMode: UpperLimbRenderMode = UpperLimbRenderMode.Default): OpenStageResult";
+    private static final String MIXED_FQN = "com.pico.spatial.ui.platform.containers.StageStyle.Mixed";
+    private static final String MIXED_SIGNATURE = "Mixed";
+    private static final String BUNDLE_TYPE_FQN = "android.os.Bundle";
+    private static final String BUNDLE_TYPE_SIGNATURE = "class Bundle";
+    private static final String STAGE_BUNDLE_FQN = "com.pico.spatial.ui.platform.containers.SpatialContainerScope.bundle";
+    private static final String STAGE_BUNDLE_SIGNATURE = "bundle: Bundle?";
+    private static final String LOCAL_NAVIGATOR_FQN = "com.pico.spatial.ui.platform.containers.LocalSpatialNavigator";
+    private static final String LOCAL_NAVIGATOR_SIGNATURE = "val LocalSpatialNavigator: ProvidableCompositionLocal<SpatialNavigator>";
+    private static final String CURRENT_FQN = "androidx.compose.runtime.CompositionLocal.current";
+    private static final String CURRENT_SIGNATURE = "current: T";
+    private static final String NAVIGATOR_TYPE_FQN = "com.pico.spatial.ui.platform.containers.SpatialNavigator";
+    private static final String NAVIGATOR_TYPE_SIGNATURE = "interface SpatialNavigator";
+    private static final String ACTIVITY_TYPE_FQN = "com.pico.spatial.ui.platform.stub.SpatialLaunchActivity";
+    private static final String ACTIVITY_TYPE_SIGNATURE = "abstract class SpatialLaunchActivity";
     private static final List<String> FACT_KINDS = List.of(
         "argument_binding", "callback_binding", "callback_parameter", "callback_receiver",
         "call_resolution", "callback_result", "cfg_edge", "closed_member_absence", "condition",
@@ -57,6 +101,7 @@ final class AbstractInterpreter {
     private final Map<Integer, Integer> lexicalOwners;
     private final Map<Integer, List<Integer>> arithmeticInputs;
     private final Map<String, Object> kernel;
+    private final Map<String, String> selectedAlternativesForTest;
 
     AbstractInterpreter(PsiIndex.Program program, Rules.Domain domain) {
         if (program == null || domain == null) throw new IllegalArgumentException("interpreter input is null");
@@ -79,9 +124,36 @@ final class AbstractInterpreter {
         this.lexicalOwners = Map.copyOf(mutableOwners);
         this.arithmeticInputs = new HashMap<>();
         this.kernel = buildKernel();
+        this.selectedAlternativesForTest = new HashMap<>();
     }
 
     Rules.Analysis analyze() {
+        selectedAlternativesForTest.clear();
+        List<Rules.Analysis> parts = new ArrayList<>();
+        parts.add(analyzeProjectEntry());
+        parts.add(analyzeContainerTopology());
+        parts.add(analyzeEntityContent());
+        parts.add(analyzeUiLifecycle());
+        parts.add(analyzeComponentClone());
+        parts.add(analyzeSystemQuery());
+        parts.add(analyzeFrameUpdate());
+        parts.add(analyzeEcsLifecycle());
+        parts.add(analyzeSingleSource());
+        parts.add(analyzeTypedHandoff());
+        parts.add(analyzeSharedReadWrite());
+        parts.add(analyzeReopenWiring());
+        parts.add(analyzeRetryReadiness());
+        parts.add(analyzeSemanticFallback());
+        parts.add(analyzeAnchorPose());
+        parts.add(analyzeCleanupErrors());
+        return Rules.combine(parts);
+    }
+
+    String selectedAlternativeForTest(String ruleId) {
+        return selectedAlternativesForTest.get(ruleId);
+    }
+
+    private Rules.Analysis analyzeComponentClone() {
         Rules.SymbolSpec cloneSymbol = domain.symbol(CLONE_FQN, CLONE_SIGNATURE);
         Rules.SymbolSpec componentType = domain.symbol(COMPONENT_FQN, COMPONENT_TYPE_SIGNATURE);
         Rules.SymbolSpec componentConstructor = domain.symbol(COMPONENT_FQN, COMPONENT_CONSTRUCTOR_SIGNATURE);
@@ -1219,7 +1291,8 @@ final class AbstractInterpreter {
             if (node.kind() == PsiIndex.NodeKind.CALL && !hasCallableAuthority(node)) {
                 PsiIndex.Node escaped = null;
                 for (PsiIndex.Node argument : uniqueTargets(node, PsiIndex.EdgeRole.ARGUMENT)) {
-                    PsiIndex.Node origin = localValueOrigin(argumentValue(argument), facts);
+                    PsiIndex.Node origin = unknownCallEscapeOrigin(
+                        argumentValue(argument), facts);
                     if (origin == null) continue;
                     if (escaped != null && escaped.id() != origin.id()) {
                         escaped = null;
@@ -1253,6 +1326,30 @@ final class AbstractInterpreter {
                     "escape", node, owner, origin, "return", null);
             }
         }
+    }
+
+    private PsiIndex.Node unknownCallEscapeOrigin(PsiIndex.Node value,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node local = localValueOrigin(value, facts);
+        if (local != null) return local;
+        PsiIndex.Node declaration = value;
+        if (value != null && value.kind() == PsiIndex.NodeKind.NAME_REF
+                && value.name() != null) {
+            declaration = relatedNodeForFact(facts, "def_use", value.id());
+            if (declaration == null) {
+                declaration = findLexicalDeclaration(value, value.name());
+            }
+        } else if (value != null && (value.kind() == PsiIndex.NodeKind.QUALIFIED
+                || value.kind() == PsiIndex.NodeKind.SAFE_QUALIFIED)) {
+            declaration = stateQualifiedAuthorityProperty(value, facts);
+        }
+        return declaration != null
+                && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+                && isProductionPath(declaration.fileId())
+                && declaration.flags().contains(PsiIndex.NodeFlag.VAL)
+                && !declaration.flags().contains(PsiIndex.NodeFlag.VAR)
+                && authorityOwner(declaration) != null
+            ? declaration : null;
     }
 
     private boolean hasCallableAuthority(PsiIndex.Node call) {
@@ -1289,6 +1386,67 @@ final class AbstractInterpreter {
             if (((Long) fact.get("relatedNodeId")).intValue() == origin.id()) return origin;
         }
         return null;
+    }
+
+    private boolean exactRetainedReadinessEscape(PsiIndex.Node call,
+            PsiIndex.Node receiver, List<Map<String, Object>> facts) {
+        if (call == null || receiver == null || !"isNotEmpty".equals(call.name())
+                || !uniqueTargets(call, PsiIndex.EdgeRole.ARGUMENT).isEmpty()
+                || receiver.kind() != PsiIndex.NodeKind.NAME_REF) return false;
+        PsiIndex.Node origin = localValueOrigin(receiver, facts);
+        if (origin == null || !origin.flags().contains(PsiIndex.NodeFlag.VAL)
+                || origin.flags().contains(PsiIndex.NodeFlag.VAR)
+                || !"plane_anchor_collection".equals(typeOf(facts, receiver))
+                || exactCollectionProducerOrigin(receiver, facts) == null) return false;
+        PsiIndex.Node branch = conditionOwner(call);
+        PsiIndex.Node loop = null;
+        for (PsiIndex.Node candidate : program.nodes()) {
+            if (candidate.kind() != PsiIndex.NodeKind.FOR
+                    && candidate.kind() != PsiIndex.NodeKind.WHILE
+                    || !isWithin(call, candidate)) continue;
+            if (loop != null && loop.id() != candidate.id()) return false;
+            loop = candidate;
+        }
+        PsiIndex.Node success = loop == null
+            ? null : relatedNodeForFact(facts, "loop_success", loop.id());
+        PsiIndex.Node thenBranch = branch == null
+            ? null : one(branch, PsiIndex.EdgeRole.THEN_BRANCH);
+        if (branch == null || branch.kind() != PsiIndex.NodeKind.IF
+                || success == null || thenBranch == null
+                || success.id() != thenBranch.id() && !isWithin(success, thenBranch)) return false;
+        PsiIndex.Node assignment = null;
+        for (Map<String, Object> fact : facts) {
+            if (!"escape".equals(fact.get("kind"))
+                    || !Long.valueOf(origin.id()).equals(fact.get("relatedNodeId"))) continue;
+            if (!"property".equals(fact.get("value"))) return false;
+            PsiIndex.Node candidate = program.node(
+                ((Long) fact.get("subjectNodeId")).intValue());
+            if (candidate.kind() != PsiIndex.NodeKind.ASSIGNMENT
+                    || assignment != null && assignment.id() != candidate.id()) return false;
+            assignment = candidate;
+        }
+        PsiIndex.Node targetDeclaration = assignment == null
+            ? null : planeAssignmentTargetDeclaration(assignment, facts);
+        PsiIndex.Node value = assignment == null
+            ? null : one(assignment, PsiIndex.EdgeRole.VALUE);
+        PsiIndex.Node retained = loop == null || success == null ? null
+            : planeRetryRetainedExit(loop, success, facts);
+        if (retained == null && loop != null && success != null) {
+            retained = planeRetryRetainedCandidate(loop, success, facts);
+        }
+        if (assignment == null || !isWithin(assignment, loop)
+                || localValueOrigin(value, facts) != origin
+                || targetDeclaration == null
+                || !targetDeclaration.flags().contains(PsiIndex.NodeFlag.PRIVATE)
+                || !targetDeclaration.flags().contains(PsiIndex.NodeFlag.VAR)
+                || !"plane_anchor".equals(
+                    declaredCollectionElementType(targetDeclaration, facts))) return false;
+        PsiIndex.Node callable = enclosingFunctionDeclaration(loop);
+        PsiIndex.Node targetType = enclosingTypeDeclaration(targetDeclaration);
+        return callable != null && targetType != null
+            && enclosingTypeDeclaration(callable) == targetType
+            && retained == assignment
+            && lexicalPredecessor(branch, loop) == assignment;
     }
 
     private void resolveCalls(List<Map<String, Object>> facts, Map<String, Boolean> factKeys,
@@ -1332,7 +1490,13 @@ final class AbstractInterpreter {
             Map<Integer, Boolean> unsupported) {
         PsiIndex.Node explicitReceiver = resolvedReceiver(call);
         PsiIndex.Node callee = one(call, PsiIndex.EdgeRole.CALLEE);
-        if (escapedOrigin(explicitReceiver, facts) != null || escapedOrigin(callee, facts) != null) {
+        PsiIndex.Node receiverEscape = escapedOrigin(explicitReceiver, facts);
+        boolean retainedReadiness = receiverEscape != null
+            && exactRetainedReadinessEscape(call, explicitReceiver, facts);
+        if (retainedReadiness) clearFailureValues(
+            facts, factKeys, multiplicities, unsupported, call, List.of("escape"));
+        if ((receiverEscape != null && !retainedReadiness)
+                || escapedOrigin(callee, facts) != null) {
             unsupported.put(call.id(), Boolean.TRUE);
             PsiIndex.Node owner = enclosingCallable(call);
             addTaint(facts, factKeys, multiplicities, unsupported,
@@ -1619,6 +1783,9 @@ final class AbstractInterpreter {
         String result = declaredSemanticType(declaration);
         if (result != null) addFact(facts, factKeys, multiplicities, unsupported,
             "type", call, owner, declaration, result, typeSymbolByAbstract(result));
+        if (result != null && isNullableFact(facts, declaration)) addFact(
+            facts, factKeys, multiplicities, unsupported,
+            "nullable", call, owner, declaration, "true", null);
         PsiIndex.Node returnOrigin = sourceReturnOrigin(declaration);
         if (returnOrigin != null && result != null) addFact(facts, factKeys, multiplicities, unsupported,
             "return_origin", call, owner, returnOrigin, result, null);
@@ -1783,7 +1950,8 @@ final class AbstractInterpreter {
     private boolean propertyReceiverMatches(PsiIndex.Node qualified, PsiIndex.Node receiver,
             Rules.SymbolSpec symbol, List<Map<String, Object>> facts) {
         if (qualified == null || receiver == null) return false;
-        if (qualified.kind() == PsiIndex.NodeKind.QUALIFIED && isNullableFact(facts, receiver)) return false;
+        if (qualified.kind() == PsiIndex.NodeKind.QUALIFIED
+                && nullableReceiverAtUse(facts, receiver, qualified)) return false;
         if (qualified.kind() == PsiIndex.NodeKind.SAFE_QUALIFIED
                 && (!isNullableFact(facts, receiver)
                     || safeReceiverOriginPathCount(receiver, facts) != 1)) return false;
@@ -1821,7 +1989,8 @@ final class AbstractInterpreter {
             PsiIndex.Node declaration = sourcePropertyDeclaration(sourceType, access.name());
             if (declaration == null) continue;
             PsiIndex.Node owner = enclosingCallable(access);
-            if (qualified.kind() == PsiIndex.NodeKind.QUALIFIED && isNullableFact(facts, receiver)
+            if (qualified.kind() == PsiIndex.NodeKind.QUALIFIED
+                    && nullableReceiverAtUse(facts, receiver, qualified)
                     || qualified.kind() == PsiIndex.NodeKind.SAFE_QUALIFIED
                         && (!isNullableFact(facts, receiver)
                             || safeReceiverOriginPathCount(receiver, facts) != 1)) {
@@ -1988,6 +2157,9 @@ final class AbstractInterpreter {
         if (actual == null && value.kind() == PsiIndex.NodeKind.NAME_REF) {
             PsiIndex.Node declaration = findLexicalDeclaration(value, value.name());
             actual = declaration == null ? null : typeOf(facts, declaration);
+        }
+        if (spec.abstractType().equals("callable") && isCallableValue(value, facts)) {
+            actual = "callable";
         }
         if (spec.abstractType().equals("opaque")) return actual == null || !actual.equals("callable");
         if (actual == null) return allowUnknown;
@@ -2232,6 +2404,30 @@ final class AbstractInterpreter {
             // its exact collection producer.
             if (reachable) applyDomainResult(call, symbol, mapped, receiver,
                 facts, factKeys, multiplicities, unsupported);
+        }
+        propagateInferredTypes(facts, factKeys, multiplicities, unsupported);
+        reconcilePlaneSelectorCallbacks(
+            facts, factKeys, multiplicities, unsupported);
+    }
+
+    private void reconcilePlaneSelectorCallbacks(List<Map<String, Object>> facts,
+            Map<String, Boolean> factKeys, Map<String, Integer> multiplicities,
+            Map<Integer, Boolean> unsupported) {
+        Rules.SymbolSpec filter = domainSymbolOrNull(
+            "kotlin.collections.filter",
+            "Iterable<T>.filter(predicate: (T) -> Boolean): List<T>");
+        Rules.SymbolSpec selector = domainSymbolOrNull(
+            "kotlin.collections.maxByOrNull",
+            "Iterable<T>.maxByOrNull(selector: (T) -> R): T?");
+        if (filter == null || selector == null) return;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL
+                    || !terminalFqnName(selector.fqn()).equals(call.name())) continue;
+            PsiIndex.Node receiver = resolvedReceiver(call);
+            PsiIndex.Node filterCall = directCall(receiver);
+            if (filterCall == null
+                    || !exactDomainResolution(filterCall, filter, facts)) continue;
+            resolveOneCall(call, facts, factKeys, multiplicities, unsupported);
         }
     }
 
@@ -3303,16 +3499,24 @@ final class AbstractInterpreter {
             if (loop.kind() != PsiIndex.NodeKind.FOR && loop.kind() != PsiIndex.NodeKind.WHILE) continue;
             PsiIndex.Node success = relatedNodeForFact(facts, "loop_success", loop.id());
             if (success == null) continue;
-            PsiIndex.Node retained = null;
-            for (PsiIndex.Node candidate : program.nodes()) {
-                if (candidate.kind() != PsiIndex.NodeKind.ASSIGNMENT || !isWithin(candidate, loop)
-                        || candidate.startUtf16() >= success.startUtf16()
-                        || isCanonicalLoopIncrement(loop, candidate, facts)) continue;
-                if (retained == null || candidate.startUtf16() > retained.startUtf16()) retained = candidate;
-            }
+            PsiIndex.Node retained = planeRetryRetainedCandidate(loop, success, facts);
             if (retained != null) addFact(facts, factKeys, multiplicities, unsupported,
                 "retained_exit", retained, loop, success, "", null);
         }
+    }
+
+    private PsiIndex.Node planeRetryRetainedCandidate(PsiIndex.Node loop,
+            PsiIndex.Node success, List<Map<String, Object>> facts) {
+        PsiIndex.Node retained = null;
+        for (PsiIndex.Node candidate : program.nodes()) {
+            if (candidate.kind() != PsiIndex.NodeKind.ASSIGNMENT || !isWithin(candidate, loop)
+                    || candidate.startUtf16() >= success.startUtf16()
+                    || isCanonicalLoopIncrement(loop, candidate, facts)) continue;
+            if (retained == null || candidate.startUtf16() > retained.startUtf16()) {
+                retained = candidate;
+            }
+        }
+        return retained;
     }
 
     private boolean isCanonicalLoopIncrement(PsiIndex.Node loop, PsiIndex.Node assignment,
@@ -3457,6 +3661,8 @@ final class AbstractInterpreter {
                 }
             }
         }
+        seedSourcePredicateDimensions(
+            facts, factKeys, multiplicities, unsupported);
         Map<String, List<PsiIndex.Node>> originGroups = new HashMap<>();
         for (PsiIndex.Node left : semanticSubjects) {
             Rules.SymbolSpec leftSymbol = symbolForFact(facts, "call_resolution", left.id());
@@ -3476,6 +3682,90 @@ final class AbstractInterpreter {
             addFact(facts, factKeys, multiplicities, unsupported,
                 "same_origin", group.get(1), enclosingCallable(group.get(1)), group.get(0), dimension, null);
         }
+    }
+
+    private void seedSourcePredicateDimensions(List<Map<String, Object>> facts,
+            Map<String, Boolean> factKeys, Map<String, Integer> multiplicities,
+            Map<Integer, Boolean> unsupported) {
+        Rules.SymbolSpec filter = domainSymbolOrNull(
+            "kotlin.collections.filter",
+            "Iterable<T>.filter(predicate: (T) -> Boolean): List<T>");
+        Rules.SymbolSpec plane = typeSymbolExact(
+            "com.pico.spatial.sense.plane.PlaneAnchor", "class PlaneAnchor");
+        if (filter == null || plane == null) return;
+        for (PsiIndex.Node invocation : program.nodes()) {
+            if (invocation.kind() != PsiIndex.NodeKind.CALL
+                    || !exactDomainResolution(invocation, filter, facts)) continue;
+            PsiIndex.Node callback = callbackExpressionForCall(invocation, facts);
+            PsiIndex.Node callbackParameter = callbackElementParameter(callback, facts);
+            PsiIndex.Node result = callbackResult(callback);
+            if (callback == null || callback.kind() != PsiIndex.NodeKind.LAMBDA
+                    || callbackParameter == null || result == null
+                    || !"plane_anchor".equals(typeOf(facts, callbackParameter))
+                    || physicalTypeForOrigin(callbackParameter, facts) != plane) continue;
+            for (String dimension : List.of("orientation", "area")) {
+                PsiIndex.Node decisive = null;
+                boolean ambiguous = false;
+                for (PsiIndex.Node call : program.nodes()) {
+                    if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, result)) continue;
+                    PsiIndex.Node helper = exactSourceTarget(call, facts);
+                    PsiIndex.Node helperResult = sourceReturnOrigin(helper);
+                    List<PsiIndex.Node> parameters = helper == null
+                        ? List.of() : targets(helper, PsiIndex.EdgeRole.PARAMETER);
+                    PsiIndex.Node parameter = parameters.size() == 1 ? parameters.get(0) : null;
+                    Map<Integer, List<PsiIndex.Node>> mapping = helper == null
+                        ? null : mapSourceArguments(call, helper, facts);
+                    PsiIndex.Node argument = mappedArgument(mapping, 0);
+                    PsiIndex.Node value = argumentValue(argument);
+                    PsiIndex.Node valueOrigin = representativeOrigin(value, facts);
+                    PsiIndex.Node callbackOrigin = representativeOrigin(callbackParameter, facts);
+                    if (!planePureDimensionHelper(helper, parameter, dimension, plane, facts)
+                            || helperResult == null
+                            || valueOrigin == null || callbackOrigin == null
+                            || valueOrigin.id() != callbackOrigin.id()
+                            || !expressionProvesDimension(
+                                helperResult, dimension, parameter, facts)) continue;
+                    PsiIndex.Node candidate = dimension.equals("orientation")
+                        ? helperResult : enclosingComparison(call);
+                    if (candidate == null || decisive != null && decisive.id() != candidate.id()) {
+                        ambiguous = true;
+                        break;
+                    }
+                    decisive = candidate;
+                }
+                if (!ambiguous && decisive != null) addFact(
+                    facts, factKeys, multiplicities, unsupported,
+                    "same_element", invocation, enclosingCallable(invocation), decisive,
+                    dimension, null);
+            }
+        }
+    }
+
+    private boolean planePureDimensionHelper(PsiIndex.Node helper,
+            PsiIndex.Node parameter, String dimension, Rules.SymbolSpec plane,
+            List<Map<String, Object>> facts) {
+        String expectedResult = dimension.equals("orientation") ? "boolean"
+            : dimension.equals("area") ? "float" : null;
+        if (helper == null || helper.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                || !helper.flags().contains(PsiIndex.NodeFlag.PRIVATE)
+                || !helper.flags().contains(PsiIndex.NodeFlag.EXPRESSION_BODY)
+                || !isProductionPath(helper.fileId()) || hasAnyTaint(helper, facts)
+                || callbackHasUnknownCall(helper, facts)
+                || !expectedResult.equals(declaredSemanticType(helper))
+                || parameter == null || !"plane_anchor".equals(declaredSemanticType(parameter))
+                || typeSymbolForReference(declarationTypeNode(parameter, false)) != plane) return false;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (!isWithin(node, helper)) continue;
+            if (node.kind() == PsiIndex.NodeKind.ASSIGNMENT
+                    || node.kind() == PsiIndex.NodeKind.RETURN
+                    || node.kind() == PsiIndex.NodeKind.IF
+                    || node.kind() == PsiIndex.NodeKind.WHEN
+                    || node.kind() == PsiIndex.NodeKind.FOR
+                    || node.kind() == PsiIndex.NodeKind.WHILE
+                    || node.kind() == PsiIndex.NodeKind.TRY) return false;
+            if (node.kind() == PsiIndex.NodeKind.CALL) return false;
+        }
+        return true;
     }
 
     private List<PsiIndex.Node> identitySubjects(List<Map<String, Object>> facts) {
@@ -3624,9 +3914,12 @@ final class AbstractInterpreter {
     private PsiIndex.Node callbackElementParameter(PsiIndex.Node callback,
             List<Map<String, Object>> facts) {
         if (callback == null) return null;
+        PsiIndex.Node parameterOwner = callback.kind() == PsiIndex.NodeKind.CALLABLE_REF
+            ? uniqueReferencedCallable(callback) : callback;
+        if (parameterOwner == null) return null;
         for (Map<String, Object> fact : facts) {
             if (!fact.get("kind").equals("callback_parameter")
-                    || !fact.get("ownerNodeId").equals((long) callback.id())) continue;
+                    || !fact.get("ownerNodeId").equals((long) parameterOwner.id())) continue;
             long subject = (Long) fact.get("subjectNodeId");
             return program.node((int) subject);
         }
@@ -3867,11 +4160,15 @@ final class AbstractInterpreter {
             List<Map<String, Object>> facts) {
         List<PsiIndex.Node> matches = new ArrayList<>();
         PsiIndex.Node receiver = resolvedReceiver(call);
-        PsiIndex.Node sourceType = sourceTypeForValue(receiver, facts);
-        if (receiver == null || sourceType == null || call.name() == null) return matches;
+        boolean implicitDispatch = receiver == null && qualifiedParent(call) == null;
+        PsiIndex.Node sourceType = implicitDispatch
+            ? enclosingTypeDeclaration(call) : sourceTypeForValue(receiver, facts);
+        if (sourceType == null || call.name() == null) return matches;
         PsiIndex.Node receiverDeclaration = sourceValueDeclaration(receiver, facts);
         List<PsiIndex.Node> containers = new ArrayList<>();
-        if (sourceType.kind() == PsiIndex.NodeKind.OBJECT_DECL) containers.add(sourceType);
+        if (implicitDispatch || sourceType.kind() == PsiIndex.NodeKind.OBJECT_DECL) {
+            containers.add(sourceType);
+        }
         else if (receiverDeclaration != null && isTypeDeclaration(receiverDeclaration)) {
             for (PsiIndex.Node child : lexicalChildren(sourceType)) {
                 if (child.kind() == PsiIndex.NodeKind.COMPANION_DECL) containers.add(child);
@@ -3881,7 +4178,10 @@ final class AbstractInterpreter {
             for (PsiIndex.Node candidate : lexicalChildren(container)) {
                 if (candidate.kind() == PsiIndex.NodeKind.FUNCTION_DECL
                         && call.name().equals(candidate.name())
-                        && !candidate.flags().contains(PsiIndex.NodeFlag.PRIVATE)) matches.add(candidate);
+                        && (implicitDispatch
+                            || !candidate.flags().contains(PsiIndex.NodeFlag.PRIVATE))) {
+                    matches.add(candidate);
+                }
             }
         }
         return matches;
@@ -4147,6 +4447,57 @@ final class AbstractInterpreter {
                             || isNullableFact(facts, selector)) addFact(
                         facts, factKeys, multiplicities, unsupported,
                         "nullable", node, enclosingCallable(node), selector, "true", null);
+                }
+            } else if (node.kind() == PsiIndex.NodeKind.BINARY
+                    && "?:".equals(node.value())) {
+                PsiIndex.Node left = one(node, PsiIndex.EdgeRole.LEFT);
+                PsiIndex.Node right = one(node, PsiIndex.EdgeRole.RIGHT);
+                String leftType = typeOf(facts, left);
+                String rightType = typeOf(facts, right);
+                Rules.SymbolSpec leftPhysical = left == null
+                    ? null : symbolForFact(facts, "type", left.id());
+                if (left != null && right != null && right.kind() == PsiIndex.NodeKind.RETURN
+                        && enclosingCallable(right) == enclosingCallable(node)
+                        && leftType != null && isNullableFact(facts, left)
+                        && factValue(facts, "type", node.id()) == null) {
+                    addFact(facts, factKeys, multiplicities, unsupported,
+                        "type", node, enclosingCallable(node), left, leftType, leftPhysical);
+                    addFact(facts, factKeys, multiplicities, unsupported,
+                        "origin", node, enclosingCallable(node), left, "derived", leftPhysical);
+                    addFact(facts, factKeys, multiplicities, unsupported,
+                        "return_origin", node, enclosingCallable(node), left, leftType, leftPhysical);
+                } else if (left != null && right != null && isNullLiteral(right)
+                        && leftType != null && isNullableFact(facts, left)
+                        && factValue(facts, "type", node.id()) == null) {
+                    addFact(facts, factKeys, multiplicities, unsupported,
+                        "type", node, enclosingCallable(node), left, leftType, leftPhysical);
+                    addFact(facts, factKeys, multiplicities, unsupported,
+                        "nullable", node, enclosingCallable(node), left, "true", leftPhysical);
+                    addFact(facts, factKeys, multiplicities, unsupported,
+                        "origin", node, enclosingCallable(node), left, "derived", leftPhysical);
+                    addFact(facts, factKeys, multiplicities, unsupported,
+                        "return_origin", node, enclosingCallable(node), left, leftType, leftPhysical);
+                } else if (left != null && right != null && leftType != null
+                        && leftType.equals(rightType) && isNullableFact(facts, left)
+                        && isNullableFact(facts, right)
+                        && factValue(facts, "type", node.id()) == null) {
+                    Rules.SymbolSpec rightPhysical = symbolForFact(facts, "type", right.id());
+                    if (leftPhysical == null || leftPhysical != rightPhysical) continue;
+                    addFact(facts, factKeys, multiplicities, unsupported,
+                        "type", node, enclosingCallable(node), left, leftType, leftPhysical);
+                    addFact(facts, factKeys, multiplicities, unsupported,
+                        "nullable", node, enclosingCallable(node), -1, "true", null);
+                    PsiIndex.Node leftOrigin = representativeOrigin(left, facts);
+                    PsiIndex.Node rightOrigin = representativeOrigin(right, facts);
+                    if (leftOrigin != null && rightOrigin != null
+                            && leftOrigin.id() == rightOrigin.id()) {
+                        addFact(facts, factKeys, multiplicities, unsupported,
+                            "origin", node, enclosingCallable(node), leftOrigin,
+                            "derived", leftPhysical);
+                        addFact(facts, factKeys, multiplicities, unsupported,
+                            "return_origin", node, enclosingCallable(node), leftOrigin,
+                            leftType, leftPhysical);
+                    }
                 }
             }
         }
@@ -4456,6 +4807,76 @@ final class AbstractInterpreter {
         return node != null && "true".equals(factValue(facts, "nullable", node.id()));
     }
 
+    private boolean nullableReceiverAtUse(List<Map<String, Object>> facts,
+            PsiIndex.Node receiver, PsiIndex.Node use) {
+        return isNullableFact(facts, receiver)
+            && !hasExactExitingNullGuard(receiver, use, facts);
+    }
+
+    private boolean hasExactExitingNullGuard(PsiIndex.Node receiver, PsiIndex.Node use,
+            List<Map<String, Object>> facts) {
+        if (receiver == null || receiver.kind() != PsiIndex.NodeKind.NAME_REF
+                || receiver.name() == null || use == null) return false;
+        PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", receiver.id());
+        if (declaration == null) {
+            declaration = findLexicalDeclaration(receiver, receiver.name());
+        }
+        PsiIndex.Node callable = enclosingCallable(use);
+        if (declaration == null || declaration.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                || !declaration.flags().contains(PsiIndex.NodeFlag.VAL)
+                || declaration.flags().contains(PsiIndex.NodeFlag.VAR)
+                || enclosingCallable(declaration) != callable) return false;
+        for (PsiIndex.Node guard : program.nodes()) {
+            if (guard.kind() != PsiIndex.NodeKind.IF || enclosingCallable(guard) != callable
+                    || guard.startUtf16() <= declaration.startUtf16()
+                    || guard.startUtf16() >= use.startUtf16()
+                    || one(guard, PsiIndex.EdgeRole.ELSE_BRANCH) != null) continue;
+            PsiIndex.Node condition = one(guard, PsiIndex.EdgeRole.CONDITION);
+            PsiIndex.Node branch = one(guard, PsiIndex.EdgeRole.THEN_BRANCH);
+            PsiIndex.Node tested = condition == null
+                ? null : relatedNodeForFact(facts, "condition", condition.id());
+            PsiIndex.Node testedDeclaration = tested == null ? null
+                : relatedNodeForFact(facts, "def_use", tested.id());
+            if (testedDeclaration == null && tested != null
+                    && tested.kind() == PsiIndex.NodeKind.NAME_REF) {
+                testedDeclaration = findLexicalDeclaration(tested, tested.name());
+            }
+            PsiIndex.Node block = lexicalOwner(guard);
+            PsiIndex.Node useStatement = directChildWithin(use, block);
+            if (condition == null || condition.kind() != PsiIndex.NodeKind.BINARY
+                    || !"==".equals(condition.value())
+                    || !"null".equals(factValue(facts, "condition", condition.id()))
+                    || testedDeclaration != declaration || branch == null
+                    || normalExit(branch) != null || block == null
+                    || block.kind() != PsiIndex.NodeKind.BLOCK
+                    || useStatement == null || useStatement.startUtf16() <= guard.startUtf16()) continue;
+            int returns = 0;
+            for (PsiIndex.Node candidate : program.nodes()) {
+                if (candidate.kind() != PsiIndex.NodeKind.RETURN
+                        || !isWithin(candidate, branch)) continue;
+                if (enclosingCallable(candidate) != callable || candidate.name() != null) {
+                    returns = 2;
+                    break;
+                }
+                returns++;
+            }
+            if (returns == 1) return true;
+        }
+        return false;
+    }
+
+    private PsiIndex.Node directChildWithin(PsiIndex.Node node, PsiIndex.Node ancestor) {
+        if (node == null || ancestor == null) return null;
+        PsiIndex.Node current = node;
+        Integer owner = lexicalOwners.get(current.id());
+        while (owner != null) {
+            if (owner == ancestor.id()) return current;
+            current = program.node(owner);
+            owner = lexicalOwners.get(current.id());
+        }
+        return null;
+    }
+
     private PsiIndex.Node relatedNodeForFact(List<Map<String, Object>> facts, String kind, int subjectId) {
         Integer match = null;
         for (Map<String, Object> fact : facts) {
@@ -4488,7 +4909,9 @@ final class AbstractInterpreter {
 
     private PsiIndex.Node findLexicalDeclaration(PsiIndex.Node use, String name) {
         if (use == null || name == null) return null;
+        if (qualifiedSelectorParent(use) != null) return null;
         PsiIndex.Node callable = enclosingCallable(use);
+        PsiIndex.Node containingType = enclosingTypeDeclaration(use);
         PsiIndex.Node match = null;
         int best = -1;
         for (PsiIndex.Node candidate : program.nodes()) {
@@ -4500,8 +4923,12 @@ final class AbstractInterpreter {
             PsiIndex.Node candidateCallable = enclosingCallable(candidate);
             boolean capturedDeclaration = capturedDeclarationVisible(
                 candidate, use, candidateCallable);
+            PsiIndex.Node candidateOwner = lexicalOwner(candidate);
+            boolean visibleMemberProperty = candidate.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+                && candidateOwner != null && candidateOwner == containingType;
             boolean visible = candidateCallable == callable || capturedDeclaration || isTopLevel(candidate)
-                && program.file(candidate.fileId()).packageName().equals(program.file(use.fileId()).packageName());
+                && program.file(candidate.fileId()).packageName().equals(program.file(use.fileId()).packageName())
+                || visibleMemberProperty;
             if (!visible) continue;
             if (candidate.id() > best) {
                 best = candidate.id();
@@ -4509,6 +4936,21 @@ final class AbstractInterpreter {
             }
         }
         return match;
+    }
+
+    private PsiIndex.Node enclosingTypeDeclaration(PsiIndex.Node node) {
+        Integer ownerId = node == null ? null : lexicalOwners.get(node.id());
+        while (ownerId != null) {
+            PsiIndex.Node owner = program.node(ownerId);
+            if (isTypeDeclaration(owner)) return owner;
+            ownerId = lexicalOwners.get(owner.id());
+        }
+        return null;
+    }
+
+    private PsiIndex.Node lexicalOwner(PsiIndex.Node node) {
+        Integer ownerId = node == null ? null : lexicalOwners.get(node.id());
+        return ownerId == null ? null : program.node(ownerId);
     }
 
     private boolean capturedDeclarationVisible(PsiIndex.Node candidate, PsiIndex.Node use,
@@ -4603,9 +5045,18 @@ final class AbstractInterpreter {
         PsiIndex.Node body = one(declaration, PsiIndex.EdgeRole.BODY);
         if (body == null) return null;
         if (declaration.flags().contains(PsiIndex.NodeFlag.EXPRESSION_BODY)) return body;
-        PsiIndex.Node exit = normalExit(body);
-        return exit != null && exit.kind() == PsiIndex.NodeKind.RETURN
-            ? one(exit, PsiIndex.EdgeRole.RETURN_VALUE) : null;
+        if (body.kind() != PsiIndex.NodeKind.BLOCK) return null;
+        List<PsiIndex.Node> statements = lexicalChildren(body);
+        if (statements.isEmpty()) return null;
+        PsiIndex.Node exit = statements.get(statements.size() - 1);
+        if (exit.kind() != PsiIndex.NodeKind.RETURN
+                || enclosingCallable(exit) != declaration) return null;
+        int returns = 0;
+        for (PsiIndex.Node candidate : program.nodes()) {
+            if (candidate.kind() == PsiIndex.NodeKind.RETURN
+                    && enclosingCallable(candidate) == declaration) returns++;
+        }
+        return returns == 1 ? one(exit, PsiIndex.EdgeRole.RETURN_VALUE) : null;
     }
 
     private PsiIndex.Node callbackResult(PsiIndex.Node callback) {
@@ -4954,7 +5405,7 @@ final class AbstractInterpreter {
         }
         PsiIndex.Node qualified = qualifiedParent(call);
         if (qualified != null && qualified.kind() == PsiIndex.NodeKind.QUALIFIED
-                && isNullableFact(facts, receiver)) return false;
+                && nullableReceiverAtUse(facts, receiver, qualified)) return false;
         if (qualified != null && qualified.kind() == PsiIndex.NodeKind.SAFE_QUALIFIED
                 && (!isNullableFact(facts, receiver)
                     || safeReceiverOriginPathCount(receiver, facts) != 1)) return false;
@@ -4970,6 +5421,8 @@ final class AbstractInterpreter {
             if (declaration == null) declaration = findLexicalDeclaration(receiver, receiver.name());
             if (declaration != null && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL) {
                 PsiIndex.Node initializer = one(declaration, PsiIndex.EdgeRole.INITIALIZER);
+                int retainedPaths = retainedSafeReceiverOriginPathCount(declaration, facts);
+                if (retainedPaths >= 0) return retainedPaths;
                 if (initializer != null) source = initializer;
             }
         }
@@ -4977,6 +5430,33 @@ final class AbstractInterpreter {
         if (!collectSafeReceiverOrigins(
                 source, facts, origins, 0, new HashMap<>())) return 2;
         return Math.min(origins.size(), 2);
+    }
+
+    private int retainedSafeReceiverOriginPathCount(PsiIndex.Node declaration,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node initializer = one(declaration, PsiIndex.EdgeRole.INITIALIZER);
+        PsiIndex.Node declaredType = declarationTypeNode(declaration, false);
+        Rules.SymbolSpec physical = declaredType == null
+            ? null : typeSymbolForReference(declaredType);
+        PsiIndex.Node ownerType = enclosingTypeDeclaration(declaration);
+        if (!declaration.flags().contains(PsiIndex.NodeFlag.PRIVATE)
+                || !declaration.flags().contains(PsiIndex.NodeFlag.VAR)
+                || initializer == null || !isNullLiteral(initializer)
+                || physical == null || ownerType == null) return -1;
+        List<PsiIndex.Node> origins = new ArrayList<>();
+        for (PsiIndex.Node assignment : program.nodes()) {
+            if (assignment.kind() != PsiIndex.NodeKind.ASSIGNMENT
+                    || planeAssignmentTargetDeclaration(assignment, facts) != declaration) continue;
+            PsiIndex.Node value = one(assignment, PsiIndex.EdgeRole.VALUE);
+            if (!"=".equals(assignment.value()) || !isWithin(assignment, ownerType)
+                    || value == null) return 2;
+            if (isNullLiteral(value)) continue;
+            if (physicalTypeForOrigin(value, facts) != physical
+                    || !collectSafeReceiverOrigins(
+                        value, facts, origins, 0, new HashMap<>())) return 2;
+            if (origins.size() > 1) return 2;
+        }
+        return origins.size();
     }
 
     private boolean collectSafeReceiverOrigins(PsiIndex.Node source,
@@ -5057,7 +5537,54 @@ final class AbstractInterpreter {
             : one(declaration, PsiIndex.EdgeRole.INITIALIZER);
         PsiIndex.Node constructed = initializer == null ? null
             : relatedNodeForFact(facts, "call_resolution", initializer.id());
-        return constructed != null && isTypeDeclaration(constructed) ? constructed : null;
+        if (constructed != null && isTypeDeclaration(constructed)) return constructed;
+        PsiIndex.Node componentSource = sourceComponentTypeFromInitializer(initializer, facts);
+        if (componentSource != null) return componentSource;
+        Rules.SymbolSpec producer = initializer == null
+            ? null : symbolForFact(facts, "call_resolution", initializer.id());
+        if (producer == null || !producer.effects().contains("passthrough")
+                || !hasExactTaint(initializer, "unknown_return", facts)) return null;
+        Map<Integer, List<PsiIndex.Node>> mapping = mapDomainArguments(
+            initializer, producer, facts);
+        PsiIndex.Node match = null;
+        for (Rules.CallbackSpec callback : producer.callbacks()) {
+            if (!"remembered_factory".equals(callback.role())) continue;
+            PsiIndex.Node lambda = mappedLambda(mapping, callback.argumentPosition());
+            PsiIndex.Node result = directCall(callbackResult(lambda));
+            PsiIndex.Node candidate = exactSourceTarget(result, facts);
+            if (candidate == null || !isTypeDeclaration(candidate)) continue;
+            if (match != null && match.id() != candidate.id()) return null;
+            match = candidate;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node sourceComponentTypeFromInitializer(PsiIndex.Node initializer,
+            List<Map<String, Object>> facts) {
+        Rules.SymbolSpec get = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Entity.ComponentSet.get",
+            "get(componentType: Class<T>): T?");
+        if (initializer == null || get == null) return null;
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node access : program.nodes()) {
+            if (access.kind() != PsiIndex.NodeKind.INDEX_ACCESS
+                    || !isWithin(access, initializer)
+                    || !exactDomainResolution(access, get, facts)) continue;
+            List<PsiIndex.Node> indices = targets(access, PsiIndex.EdgeRole.INDEX);
+            PsiIndex.Node token = indices.size() == 1 ? indices.get(0) : null;
+            if (!isAtomicClassToken(token)) continue;
+            PsiIndex.Node classLiteral = one(token, PsiIndex.EdgeRole.RECEIVER);
+            PsiIndex.Node typeSource = classLiteral == null
+                ? null : one(classLiteral, PsiIndex.EdgeRole.RECEIVER);
+            PsiIndex.Node candidate = sourceTypeDeclaration(typeSource);
+            Rules.SymbolSpec physical = physicalTypeForOrigin(candidate, facts);
+            if (candidate == null || physical == null
+                    || conformancePathCountFromPhysical(
+                        physical, "component", 0, new HashMap<>()) != 1) continue;
+            if (match != null && match.id() != candidate.id()) return null;
+            match = candidate;
+        }
+        return match;
     }
 
     private int sourceOwnerPathCount(PsiIndex.Node source, Rules.SymbolSpec owner,
@@ -5322,8 +5849,143 @@ final class AbstractInterpreter {
             List<Map<String, Object>> facts) {
         String type = typeOf(facts, producer);
         if ("plane_anchor_collection".equals(type)
-                || exactCollectionProducer(producer, facts) != null) return "plane_anchor";
+                || exactCollectionProducer(producer, facts) != null
+                || exactRetainedMemberCollectionProducer(producer, facts) != null) {
+            return "plane_anchor";
+        }
         return elementType(type);
+    }
+
+    private PsiIndex.Node exactRetainedMemberCollectionProducer(PsiIndex.Node origin,
+            List<Map<String, Object>> facts) {
+        return exactRetainedMemberCollectionProducer(origin, facts, 0);
+    }
+
+    private PsiIndex.Node exactRetainedMemberCollectionProducer(PsiIndex.Node origin,
+            List<Map<String, Object>> facts, int depth) {
+        if (origin == null || depth > 1) return null;
+        Rules.SymbolSpec filter = domainSymbolOrNull(
+            "kotlin.collections.filter",
+            "Iterable<T>.filter(predicate: (T) -> Boolean): List<T>");
+        PsiIndex.Node filterCall = directCall(origin);
+        if (filterCall != null && filter != null
+                && exactDomainResolution(filterCall, filter, facts)) {
+            return depth == 0 ? exactRetainedMemberCollectionProducer(
+                resolvedReceiver(filterCall), facts, depth + 1) : null;
+        }
+        if (origin.kind() != PsiIndex.NodeKind.NAME_REF || origin.name() == null
+                || qualifiedSelectorParent(origin) != null) return null;
+        PsiIndex.Node helper = enclosingFunctionDeclaration(origin);
+        if (helper != null && helper.flags().contains(PsiIndex.NodeFlag.PRIVATE)
+                && isProductionPath(helper.fileId())) {
+            PsiIndex.Node entryCall = null;
+            for (PsiIndex.Node call : program.nodes()) {
+                if (call.kind() != PsiIndex.NodeKind.CALL
+                        || exactSourceTarget(call, facts) != helper) continue;
+                if (entryCall != null) return null;
+                entryCall = call;
+            }
+            PsiIndex.Node fallback = entryCall == null
+                ? null : enclosingBinary(entryCall, "?:");
+            Rules.SymbolSpec load = domainSymbolOrNull(
+                "com.pico.spatial.sense.plane.PlaneTrackingManager.loadAllAnchors",
+                "loadAllAnchors(): Array<PlaneAnchor>");
+            PsiIndex.Node expected = fallback == null || load == null
+                ? null : planeUniqueDomainCallInFile(fallback.fileId(), load, facts);
+            PsiIndex.Node producer = planeExactSelectorCollectionProducer(
+                origin, entryCall, fallback, expected, facts);
+            if (producer != null) return producer;
+        }
+        return planeDirectRetainedMemberCollectionProducer(origin, facts);
+    }
+
+    private PsiIndex.Node planeDirectRetainedMemberCollectionProducer(PsiIndex.Node origin,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", origin.id());
+        if (declaration == null) {
+            declaration = findLexicalDeclaration(origin, origin.name());
+        }
+        PsiIndex.Node caller = enclosingFunctionDeclaration(origin);
+        PsiIndex.Node ownerType = declaration == null
+            ? null : enclosingTypeDeclaration(declaration);
+        if (declaration == null || declaration.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                || !declaration.flags().contains(PsiIndex.NodeFlag.PRIVATE)
+                || !declaration.flags().contains(PsiIndex.NodeFlag.VAR)
+                || !"plane_anchor".equals(declaredCollectionElementType(declaration, facts))
+                || caller == null || ownerType == null
+                || enclosingTypeDeclaration(caller) != ownerType
+                || !isProductionPath(caller.fileId())) return null;
+        PsiIndex.Node assignment = null;
+        for (PsiIndex.Node candidate : program.nodes()) {
+            if (candidate.kind() != PsiIndex.NodeKind.ASSIGNMENT
+                    || !isWithin(candidate, ownerType)
+                    || planeAssignmentTargetDeclaration(candidate, facts) != declaration) continue;
+            if (assignment != null) return null;
+            assignment = candidate;
+        }
+        PsiIndex.Node value = assignment == null
+            ? null : one(assignment, PsiIndex.EdgeRole.VALUE);
+        PsiIndex.Node producer = exactCollectionProducerOrigin(value, facts);
+        Rules.SymbolSpec load = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneTrackingManager.loadAllAnchors",
+            "loadAllAnchors(): Array<PlaneAnchor>");
+        PsiIndex.Node expected = load == null
+            ? null : planeUniqueDomainCallInFile(origin.fileId(), load, facts);
+        return assignment != null && producer != null && expected != null
+                && producer.id() == expected.id()
+                && enclosingFunctionDeclaration(assignment) == caller
+                && planeExactRetainedForProducer(
+                    assignment, producer, origin, caller, facts)
+            ? producer : null;
+    }
+
+    private String declaredCollectionElementType(PsiIndex.Node origin,
+            List<Map<String, Object>> facts) {
+        if (origin == null) return null;
+        if (origin.kind() == PsiIndex.NodeKind.QUALIFIED
+                || origin.kind() == PsiIndex.NodeKind.SAFE_QUALIFIED) {
+            PsiIndex.Node selector = one(origin, PsiIndex.EdgeRole.SELECTOR);
+            if (selector != null && selector.id() != origin.id()) {
+                return declaredCollectionElementType(selector, facts);
+            }
+        }
+        PsiIndex.Node declaration = origin;
+        if (origin.kind() == PsiIndex.NodeKind.NAME_REF && origin.name() != null) {
+            declaration = relatedNodeForFact(facts, "def_use", origin.id());
+            if (declaration == null) declaration = findLexicalDeclaration(origin, origin.name());
+        }
+        if (declaration != null && (declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+                || declaration.kind() == PsiIndex.NodeKind.PARAMETER_DECL)) {
+            PsiIndex.Node declaredType = declarationTypeNode(declaration, false);
+            Rules.SymbolSpec list = declaredType == null ? null : typeSymbolForReference(declaredType);
+            if (list != null && (list.fqn().equals("kotlin.collections.List")
+                    && list.signature().equals("interface List<out E>")
+                    || list.fqn().equals("kotlin.collections.Iterable")
+                    && list.signature().equals("interface Iterable<out T>"))) {
+                Rules.SymbolSpec plane = typeSymbolExact(
+                    "com.pico.spatial.sense.plane.PlaneAnchor", "class PlaneAnchor");
+                PsiIndex.Node match = null;
+                for (PsiIndex.Node child : lexicalChildren(declaredType)) {
+                    if (child.kind() != PsiIndex.NodeKind.TYPE_REF
+                            || typeSymbolForReference(child) != plane) continue;
+                    if (match != null) return null;
+                    match = child;
+                }
+                if (match != null) return "plane_anchor";
+            }
+        }
+        Rules.SymbolSpec filter = symbolForFact(facts, "call_resolution", origin.id());
+        if (filter != null && filter.fqn().equals("kotlin.collections.filter")
+                && filter.signature().equals(
+                    "Iterable<T>.filter(predicate: (T) -> Boolean): List<T>")) {
+            String receiverElement = declaredCollectionElementType(
+                resolvedReceiver(origin), facts);
+            if (receiverElement != null) return receiverElement;
+            PsiIndex.Node callback = callbackExpressionForCall(origin, facts);
+            PsiIndex.Node parameter = callbackElementParameter(callback, facts);
+            if ("plane_anchor".equals(typeOf(facts, parameter))) return "plane_anchor";
+        }
+        return null;
     }
 
     private Rules.SymbolSpec exactCollectionProducer(PsiIndex.Node origin,
@@ -5366,6 +6028,15 @@ final class AbstractInterpreter {
             if (candidate == null || candidate.id() == origin.id()) continue;
             addUniqueNode(candidates, candidate);
         }
+        if (origin.kind() == PsiIndex.NodeKind.PARAMETER_DECL) {
+            for (Map<String, Object> fact : facts) {
+                if (!"argument_binding".equals(fact.get("kind"))
+                        || !Long.valueOf(origin.id()).equals(fact.get("relatedNodeId"))) continue;
+                int argumentId = ((Long) fact.get("subjectNodeId")).intValue();
+                PsiIndex.Node value = argumentValue(program.node(argumentId));
+                if (value != null) addUniqueNode(candidates, value);
+            }
+        }
         if (origin.kind() == PsiIndex.NodeKind.PROPERTY_DECL
                 || origin.kind() == PsiIndex.NodeKind.ASSIGNMENT) {
             PsiIndex.Node structural = origin.kind() == PsiIndex.NodeKind.PROPERTY_DECL
@@ -5374,6 +6045,18 @@ final class AbstractInterpreter {
             if (structural != null && structural.id() != origin.id()) addUniqueNode(candidates, structural);
         }
         return candidates;
+    }
+
+    private PsiIndex.Node enclosingFunctionDeclaration(PsiIndex.Node node) {
+        if (node == null) return null;
+        if (node.kind() == PsiIndex.NodeKind.FUNCTION_DECL) return node;
+        Integer owner = lexicalOwners.get(node.id());
+        while (owner != null) {
+            PsiIndex.Node candidate = program.node(owner);
+            if (candidate.kind() == PsiIndex.NodeKind.FUNCTION_DECL) return candidate;
+            owner = lexicalOwners.get(candidate.id());
+        }
+        return null;
     }
 
     private void addUniqueNode(List<PsiIndex.Node> nodes, PsiIndex.Node candidate) {
@@ -5410,7 +6093,7 @@ final class AbstractInterpreter {
                     value = one(definition, PsiIndex.EdgeRole.INITIALIZER);
                 }
                 if (value != null) return representativeOrigin(value, facts, depth + 1, active);
-                return definition;
+                return representativeOrigin(definition, facts, depth + 1, active);
             }
         }
         PsiIndex.Node related = relatedNodeForFact(facts, "origin", origin.id());
@@ -5747,6 +6430,9 @@ final class AbstractInterpreter {
             if (declaration != null && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL
                     && authorityOwner(declaration) != null) return false;
         }
+        PsiIndex.Node call = directCall(node);
+        PsiIndex.Node target = call == null ? null : exactSourceTarget(call, facts);
+        if (target != null && target.kind() == PsiIndex.NodeKind.CLASS_DECL) return true;
         PsiIndex.Node representative = representativeOrigin(node, facts);
         if (representative == null) representative = node;
         if ("fresh".equals(factValue(facts, "origin", representative.id()))) return true;
@@ -5757,6 +6443,5182 @@ final class AbstractInterpreter {
     private boolean isProductionPath(int fileId) {
         String path = program.file(fileId).path().replace('\\', '/');
         return ("/" + path).contains("/src/main/");
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> kernelFacts() {
+        Object raw = kernel.get("facts");
+        if (!(raw instanceof List<?>)) throw new IllegalArgumentException("kernel facts are absent");
+        return (List<Map<String, Object>>) raw;
+    }
+
+    private boolean exactFact(List<Map<String, Object>> facts, String kind,
+            PsiIndex.Node subject, PsiIndex.Node owner, PsiIndex.Node related,
+            String value, Rules.SymbolSpec symbol) {
+        if (subject == null) return false;
+        long ownerId = owner == null ? -1L : owner.id();
+        long relatedId = related == null ? -1L : related.id();
+        String fqn = symbol == null ? "" : symbol.fqn();
+        String signature = symbol == null ? "" : symbol.signature();
+        int count = 0;
+        for (Map<String, Object> fact : facts) {
+            if (kind.equals(fact.get("kind"))
+                    && Long.valueOf(subject.id()).equals(fact.get("subjectNodeId"))
+                    && Long.valueOf(ownerId).equals(fact.get("ownerNodeId"))
+                    && Long.valueOf(relatedId).equals(fact.get("relatedNodeId"))
+                    && value.equals(fact.get("value"))
+                    && fqn.equals(fact.get("symbolFqn"))
+                    && signature.equals(fact.get("symbolSignature"))) count++;
+        }
+        return count == 1;
+    }
+
+    private boolean exactDomainResolution(PsiIndex.Node call, Rules.SymbolSpec symbol,
+            List<Map<String, Object>> facts) {
+        return exactFact(facts, "call_resolution", call, enclosingCallable(call), null,
+            "domain", symbol);
+    }
+
+    private PsiIndex.Node exactSourceTarget(PsiIndex.Node call,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node target = relatedNodeForFact(facts, "call_resolution", call.id());
+        return target != null && exactFact(facts, "call_resolution", call,
+            enclosingCallable(call), target, "source", null) ? target : null;
+    }
+
+    private boolean hasExactTaint(PsiIndex.Node node, String expected,
+            List<Map<String, Object>> facts) {
+        List<String> values = new ArrayList<>();
+        for (Map<String, Object> fact : facts) {
+            if ("taint".equals(fact.get("kind"))
+                    && Long.valueOf(node.id()).equals(fact.get("subjectNodeId"))) {
+                values.add((String) fact.get("value"));
+            }
+        }
+        return values.equals(List.of(expected));
+    }
+
+    private boolean hasAnyTaint(PsiIndex.Node node, List<Map<String, Object>> facts) {
+        return hasFact(facts, "taint", node.id());
+    }
+
+    private Map<Integer, List<PsiIndex.Node>> reviewedDomainMapping(PsiIndex.Node call,
+            Rules.SymbolSpec symbol, List<Map<String, Object>> facts) {
+        List<Rules.SymbolSpec> candidates = domainCandidates(call, facts);
+        if (candidates.size() != 1 || candidates.get(0) != symbol
+                || !receiverMatches(call, symbol, facts)) return null;
+        Map<Integer, List<PsiIndex.Node>> potential = mapDomainArguments(call, symbol, facts, true);
+        if (potential == null) return null;
+        Map<Integer, List<PsiIndex.Node>> strict = mapDomainArguments(call, symbol, facts);
+        if (strict != null) {
+            return exactDomainResolution(call, symbol, facts) && !hasAnyTaint(call, facts)
+                ? strict : null;
+        }
+        return !hasFact(facts, "call_resolution", call.id())
+                && hasExactTaint(call, "unsupported", facts) ? potential : null;
+    }
+
+    private PsiIndex.Node mappedArgument(Map<Integer, List<PsiIndex.Node>> mapping, int position) {
+        if (mapping == null) return null;
+        List<PsiIndex.Node> values = mapping.get(position);
+        return values != null && values.size() == 1
+                && values.get(0).kind() == PsiIndex.NodeKind.ARGUMENT ? values.get(0) : null;
+    }
+
+    private PsiIndex.Node mappedLambda(Map<Integer, List<PsiIndex.Node>> mapping, int position) {
+        PsiIndex.Node argument = mappedArgument(mapping, position);
+        PsiIndex.Node value = argument == null ? null : one(argument, PsiIndex.EdgeRole.VALUE);
+        return value != null && value.kind() == PsiIndex.NodeKind.LAMBDA ? value : null;
+    }
+
+    private PsiIndex.Node directCall(PsiIndex.Node statement) {
+        if (statement == null) return null;
+        if (statement.kind() == PsiIndex.NodeKind.CALL) return statement;
+        if (statement.kind() != PsiIndex.NodeKind.QUALIFIED) return null;
+        PsiIndex.Node selector = one(statement, PsiIndex.EdgeRole.SELECTOR);
+        return selector != null && selector.kind() == PsiIndex.NodeKind.CALL ? selector : null;
+    }
+
+    private List<PsiIndex.Node> directCalls(PsiIndex.Node callable) {
+        if (callable == null) return null;
+        PsiIndex.Node body = callable.kind() == PsiIndex.NodeKind.LAMBDA
+            ? one(callable, PsiIndex.EdgeRole.LAMBDA_BODY)
+            : one(callable, PsiIndex.EdgeRole.BODY);
+        if (body == null) return null;
+        List<PsiIndex.Node> statements = body.kind() == PsiIndex.NodeKind.BLOCK
+            ? lexicalChildren(body) : List.of(body);
+        List<PsiIndex.Node> calls = new ArrayList<>();
+        for (PsiIndex.Node statement : statements) {
+            PsiIndex.Node call = directCall(statement);
+            if (call == null || enclosingCallable(call) != callable) return null;
+            calls.add(call);
+        }
+        return calls;
+    }
+
+    private List<PsiIndex.Node> directCleanupCalls(PsiIndex.Node callable) {
+        if (callable == null) return null;
+        PsiIndex.Node body = callable.kind() == PsiIndex.NodeKind.LAMBDA
+            ? one(callable, PsiIndex.EdgeRole.LAMBDA_BODY)
+            : one(callable, PsiIndex.EdgeRole.BODY);
+        if (body == null) return null;
+        List<PsiIndex.Node> statements = body.kind() == PsiIndex.NodeKind.BLOCK
+            ? lexicalChildren(body) : List.of(body);
+        List<PsiIndex.Node> calls = new ArrayList<>();
+        for (PsiIndex.Node statement : statements) {
+            PsiIndex.Node call = directCall(statement);
+            if (call != null && enclosingCallable(call) == callable) {
+                calls.add(call);
+                continue;
+            }
+            if (statement.kind() != PsiIndex.NodeKind.NAME_REF
+                    || !"Unit".equals(statement.name())
+                    || statement.value() != null
+                    || findLexicalDeclaration(statement, statement.name()) != null
+                    || cleanupUnitIsShadowed(statement)
+                    || sourceTypeDeclaration(statement) != null
+                    || importedFqn(statement.fileId(), statement.name()) != null
+                    || hasAmbiguousImport(statement.fileId(), statement.name())) return null;
+        }
+        return calls;
+    }
+
+    private boolean cleanupUnitIsShadowed(PsiIndex.Node use) {
+        if (use == null) return false;
+        PsiIndex.Node useType = enclosingTypeDeclaration(use);
+        String usePackage = program.file(use.fileId()).packageName();
+        for (PsiIndex.Node candidate : program.nodes()) {
+            if (candidate.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                    || !"Unit".equals(candidate.name())) continue;
+            if (isTopLevel(candidate)
+                    && usePackage.equals(program.file(candidate.fileId()).packageName())) return true;
+            Integer ownerId = lexicalOwners.get(candidate.id());
+            if (useType != null && ownerId != null && ownerId == useType.id()) return true;
+        }
+        return false;
+    }
+
+    private boolean isDirectStatement(PsiIndex.Node call, PsiIndex.Node callable) {
+        if (call == null || callable == null) return false;
+        PsiIndex.Node body = callable.kind() == PsiIndex.NodeKind.LAMBDA
+            ? one(callable, PsiIndex.EdgeRole.LAMBDA_BODY)
+            : one(callable, PsiIndex.EdgeRole.BODY);
+        if (body == null) return false;
+        for (PsiIndex.Node statement : body.kind() == PsiIndex.NodeKind.BLOCK
+                ? lexicalChildren(body) : List.of(body)) {
+            PsiIndex.Node direct = directCall(statement);
+            if (direct != null && direct.id() == call.id()) return true;
+        }
+        return false;
+    }
+
+    private PsiIndex.Node uniqueDirectResolvedCall(PsiIndex.Node callable,
+            Rules.SymbolSpec symbol, List<Map<String, Object>> facts) {
+        List<PsiIndex.Node> calls = directCalls(callable);
+        if (calls == null) return null;
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node call : calls) {
+            if (!exactDomainResolution(call, symbol, facts)) continue;
+            if (match != null) return null;
+            match = call;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node uniqueDirectSourceCall(PsiIndex.Node callable,
+            List<Map<String, Object>> facts) {
+        List<PsiIndex.Node> calls = directCalls(callable);
+        if (calls == null || calls.size() != 1) return null;
+        PsiIndex.Node call = calls.get(0);
+        PsiIndex.Node target = exactSourceTarget(call, facts);
+        return target != null && isProductionPath(call.fileId())
+                && isProductionPath(target.fileId()) ? call : null;
+    }
+
+    // CP2 spatial/ECS emitter section. These stubs are replaced independently after the
+    // contemporaneous exact-vector RED; keeping the slots live makes every focused probe use the
+    // same sixteen-part combiner topology.
+    private Rules.Analysis analyzeProjectEntry() {
+        Rules.SymbolSpec applicationType = typeSymbolExact(
+            "android.app.Application", "open class Application");
+        Rules.SymbolSpec onCreate = domainSymbolOrNull(
+            "android.app.Application.onCreate", "onCreate(): Unit");
+        Rules.SymbolSpec launch = domainSymbolOrNull(
+            "com.pico.spatial.ui.foundation.dsl.launch",
+            "Application.launch(block: SpatialAppScope.() -> Unit): Unit");
+        Rules.SymbolSpec spatialScope = typeSymbolExact(
+            "com.pico.spatial.ui.foundation.dsl.SpatialAppScope", "interface SpatialAppScope");
+        Rules.SymbolSpec with = domainSymbolOrNull(
+            "kotlin.with", "with(receiver: T, block: T.() -> R): R");
+        Rules.SymbolSpec window = domainSymbolOrNull(
+            "com.pico.spatial.ui.foundation.dsl.DefaultWindowContainer",
+            "SpatialAppScope.DefaultWindowContainer(content: @Composable WindowContainerScope.() -> Unit): Unit");
+        Rules.SymbolSpec activityType = typeSymbolExact(
+            "com.pico.spatial.ui.platform.stub.SpatialLaunchActivity",
+            "abstract class SpatialLaunchActivity");
+        if (applicationType == null || onCreate == null || launch == null
+                || spatialScope == null || with == null || window == null || activityType == null
+                || !callbackShape(launch, 0, "application_entry", "spatial_app_scope")) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        PsiIndex.Node activity = uniqueLaunchActivity(facts, activityType);
+        PsiIndex.Node activitySuper = activity == null
+            ? null : cp2seExactSuperReference(activity, activityType, facts);
+        if (activitySuper == null) return Rules.emptyAnalysis();
+
+        Rules.Analysis match = null;
+        String matchAlternative = null;
+        for (PsiIndex.Node application : program.nodes()) {
+            if (application.kind() != PsiIndex.NodeKind.CLASS_DECL
+                    || !isProductionPath(application.fileId())
+                    || !exactFact(facts, "type", application, null, null,
+                        "android_application", applicationType)) continue;
+            PsiIndex.Node applicationSuper = cp2seExactSuperReference(
+                application, applicationType, facts);
+            PsiIndex.Node entry = cp2seUniqueProductionRoot(application, onCreate, facts);
+            if (applicationSuper == null || entry == null) continue;
+
+            PsiIndex.Node launchCall = null;
+            PsiIndex.Node launchReference = null;
+            PsiIndex.ImportEntry launchImport = null;
+            for (PsiIndex.Node call : directStatementCallsLoose(entry)) {
+                Map<Integer, List<PsiIndex.Node>> mapping =
+                    cp2seReviewedLaunchMapping(call, launch, spatialScope, facts);
+                PsiIndex.Node argument = mappedArgument(mapping, 0);
+                PsiIndex.Node value = argument == null ? null : one(argument, PsiIndex.EdgeRole.VALUE);
+                PsiIndex.ImportEntry imported = cp2seExactImport(call, launch.fqn());
+                if (mapping == null || value == null
+                        || value.kind() != PsiIndex.NodeKind.CALLABLE_REF || imported == null) continue;
+                if (launchCall != null) {
+                    launchCall = null;
+                    launchReference = null;
+                    launchImport = null;
+                    break;
+                }
+                launchCall = call;
+                launchReference = value;
+                launchImport = imported;
+            }
+            PsiIndex.Node root = cp2seReferencedRoot(launchReference, spatialScope, facts);
+            PsiIndex.Node withCall = root == null ? null : one(root, PsiIndex.EdgeRole.BODY);
+            Map<Integer, List<PsiIndex.Node>> withMap = withCall == null
+                || withCall.kind() != PsiIndex.NodeKind.CALL
+                || !exactDomainResolution(withCall, with, facts)
+                ? null : mapDomainArguments(withCall, with, facts);
+            PsiIndex.Node receiverArgument = mappedArgument(withMap, 0);
+            PsiIndex.Node receiverValue = receiverArgument == null
+                ? null : one(receiverArgument, PsiIndex.EdgeRole.VALUE);
+            PsiIndex.Node rootLambda = mappedLambda(withMap, 1);
+            List<PsiIndex.Node> parameters = root == null
+                ? List.of() : targets(root, PsiIndex.EdgeRole.PARAMETER);
+            PsiIndex.Node parameter = parameters.size() == 1 ? parameters.get(0) : null;
+            PsiIndex.Node receiverDeclaration = receiverValue == null
+                ? null : relatedNodeForFact(facts, "def_use", receiverValue.id());
+            PsiIndex.Node windowCall = uniqueDirectResolvedCall(rootLambda, window, facts);
+            if (launchCall == null || root == null || !isTopLevel(root)
+                    || !isProductionPath(root.fileId()) || parameter == null
+                    || receiverDeclaration != parameter || rootLambda == null || windowCall == null
+                    || !exactFact(facts, "type", parameter, root, null,
+                        "spatial_app_scope", spatialScope)) continue;
+
+            String alternative = launchImport.exposedName().equals(terminalFqnName(launch.fqn()))
+                ? "direct-launch-import" : "aliased-launch-import";
+            List<String> witnesses = new ArrayList<>();
+            boolean valid = addWitness(application, witnesses)
+                && addWitness(applicationSuper, witnesses)
+                && addWitness(activity, witnesses)
+                && addWitness(activitySuper, witnesses)
+                && addWitness(launchImport, witnesses)
+                && addWitness(launchCall, witnesses)
+                && addWitness(launchReference, witnesses)
+                && addWitness(root, witnesses)
+                && addWitness(withCall, witnesses)
+                && addWitness(rootLambda, witnesses)
+                && addWitness(windowCall, witnesses);
+            if (!valid) continue;
+            Rules.Analysis candidate = cp2seClaim(
+                "spatial.project-entry", "application-launch-root", alternative, witnesses);
+            if (candidate == null || match != null) return Rules.emptyAnalysis();
+            match = candidate;
+            matchAlternative = alternative;
+        }
+        if (match == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("spatial.project-entry", matchAlternative);
+        return match;
+    }
+    private Rules.Analysis analyzeEntityContent() {
+        Rules.SymbolSpec stage = domainSymbolOrNull(
+            "com.pico.spatial.ui.foundation.dsl.Stage", STAGE_SIGNATURE);
+        Rules.SymbolSpec spatialView = domainSymbolOrNull(
+            "com.pico.spatial.ui.foundation.content.SpatialView",
+            "SpatialView(modifier: Modifier = Modifier, update: ((SpatialViewContent, SpatialViewAttachments) -> Unit)? = null, attachments: (AttachmentPanelBuilder.() -> Unit)? = null, initial: suspend (SpatialViewContent, SpatialViewAttachments) -> Unit): Unit");
+        Rules.SymbolSpec contentType = typeSymbolExact(
+            "com.pico.spatial.core.container.SpatialViewContent", "class SpatialViewContent");
+        Rules.SymbolSpec entityConstructor = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Entity", "Entity()");
+        Rules.SymbolSpec entityType = typeSymbolExact(
+            "com.pico.spatial.core.ecs.Entity", "open class Entity");
+        Rules.SymbolSpec components = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Entity.components", "components: ComponentSet");
+        Rules.SymbolSpec set = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Entity.ComponentSet.set", "set(component: T): Unit");
+        Rules.SymbolSpec transform = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.TransformComponent",
+            "TransformComponent(position: Vector3, rotation: Quat, scale: Vector3)");
+        Rules.SymbolSpec addEntity = domainSymbolOrNull(
+            "com.pico.spatial.core.container.SpatialViewEntityManager.addEntity",
+            "addEntity(entity: Entity): Unit");
+        if (stage == null || spatialView == null || contentType == null
+                || entityConstructor == null || entityType == null || components == null
+                || set == null || transform == null || addEntity == null
+                || !callbackShape(stage, 5, "stage_content", "spatial_container_scope")
+                || !cp2seHasCallback(spatialView, 3, "spatial_initial", null, 2)) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        Rules.Analysis match = null;
+        String matchAlternative = null;
+        for (PsiIndex.Node stageCall : program.nodes()) {
+            if (stageCall.kind() != PsiIndex.NodeKind.CALL
+                    || !isProductionPath(stageCall.fileId())) continue;
+            Map<Integer, List<PsiIndex.Node>> stageMap =
+                reviewedDomainMapping(stageCall, stage, facts);
+            PsiIndex.Node stageLambda = mappedLambda(stageMap, 5);
+            PsiIndex.Node stageContentCall = uniqueDirectSourceCall(stageLambda, facts);
+            PsiIndex.Node stageContent = stageContentCall == null
+                ? null : exactSourceTarget(stageContentCall, facts);
+            if (stageLambda == null || stageContent == null
+                    || stageContent.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || callbackResult(stageLambda) != stageContentCall) continue;
+
+            PsiIndex.Node viewCall = cp2seUniqueDomainCallInCallable(
+                stageContent, spatialView, facts, true);
+            Map<Integer, List<PsiIndex.Node>> viewMap = viewCall == null
+                ? null : mapDomainArguments(viewCall, spatialView, facts);
+            PsiIndex.Node initialArgument = mappedArgument(viewMap, 3);
+            PsiIndex.Node initialLambda = mappedLambda(viewMap, 3);
+            List<PsiIndex.Node> initialParameters = initialLambda == null
+                ? List.of() : targets(initialLambda, PsiIndex.EdgeRole.PARAMETER);
+            PsiIndex.Node content = initialParameters.size() == 2
+                ? initialParameters.get(0) : null;
+            if (initialArgument == null || initialLambda == null || content == null
+                    || !exactFact(facts, "callback_binding", initialLambda, viewCall,
+                        initialArgument, "spatial_initial", spatialView)
+                    || !exactFact(facts, "callback_parameter", content, initialLambda, null,
+                        "spatial_content", contentType)) continue;
+
+            PsiIndex.Node addCall = cp2seUniqueDomainCallInCallable(
+                initialLambda, addEntity, facts, true);
+            Map<Integer, List<PsiIndex.Node>> addMap = addCall == null
+                ? null : mapDomainArguments(addCall, addEntity, facts);
+            PsiIndex.Node attachedArgument = mappedArgument(addMap, 0);
+            PsiIndex.Node attachedValue = attachedArgument == null
+                ? null : one(attachedArgument, PsiIndex.EdgeRole.VALUE);
+            PsiIndex.Node root = cp2seDeclarationForUse(attachedValue, facts);
+            PsiIndex.Node addReceiver = addCall == null ? null : resolvedReceiver(addCall);
+            PsiIndex.Node receiverDeclaration = cp2seDeclarationForUse(addReceiver, facts);
+            if (root == null || root.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                    || !root.flags().contains(PsiIndex.NodeFlag.VAL)
+                    || root.flags().contains(PsiIndex.NodeFlag.VAR)
+                    || enclosingCallable(root) != initialLambda
+                    || receiverDeclaration != content
+                    || !cp2seExactDeclaredEffect(addCall, addEntity, "place", facts)) continue;
+
+            List<PsiIndex.Node> setup = cp2seEntitySetup(root, initialLambda, entityConstructor,
+                entityType, components, set, transform, facts);
+            if (setup == null) continue;
+            String alternative = setup.size() == 4
+                ? "direct-initial-entity" : "unique-helper-initial-entity";
+            List<String> witnesses = new ArrayList<>();
+            boolean valid = addWitness(stageCall, witnesses)
+                && addWitness(stageContentCall, witnesses)
+                && addWitness(viewCall, witnesses)
+                && addWitness(initialArgument, witnesses)
+                && addWitness(initialLambda, witnesses)
+                && addWitness(content, witnesses)
+                && addWitness(root, witnesses)
+                && addWitness(setup.get(1), witnesses)
+                && addWitness(setup.get(2), witnesses)
+                && addWitness(setup.get(3), witnesses)
+                && addWitness(addCall, witnesses)
+                && addWitness(attachedArgument, witnesses);
+            if (setup.size() == 6) {
+                valid &= addWitness(setup.get(4), witnesses)
+                    && addWitness(setup.get(5), witnesses);
+            }
+            if (!valid) continue;
+            Rules.Analysis candidate = cp2seClaim("spatial.entity-content",
+                "spatial-view-entity-attachment", alternative, witnesses);
+            if (candidate == null || match != null) return Rules.emptyAnalysis();
+            match = candidate;
+            matchAlternative = alternative;
+        }
+        if (match == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("spatial.entity-content", matchAlternative);
+        return match;
+    }
+    private Rules.Analysis analyzeSystemQuery() {
+        Rules.SymbolSpec systemType = typeSymbolExact(
+            "com.pico.spatial.core.ecs.System", "abstract class System");
+        Rules.SymbolSpec update = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.System.update",
+            "update(context: SceneUpdateContext): Unit");
+        Rules.SymbolSpec contextType = typeSymbolExact(
+            "com.pico.spatial.core.ecs.SceneUpdateContext", "class SceneUpdateContext");
+        Rules.SymbolSpec sceneType = typeSymbolExact(
+            "com.pico.spatial.core.ecs.Scene", "class Scene");
+        Rules.SymbolSpec sceneProperty = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.SceneUpdateContext.scene", "scene: Scene");
+        Rules.SymbolSpec conditionType = typeSymbolExact(
+            "com.pico.spatial.core.ecs.EntityQueryCondition", "class EntityQueryCondition");
+        Rules.SymbolSpec hasComponent = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.EntityQueryCondition.hasComponent",
+            "hasComponent(componentClass: Class<T>): EntityQueryCondition");
+        Rules.SymbolSpec queryEntity = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Scene.queryEntity",
+            "queryEntity(vararg conditions: EntityQueryCondition): List<Entity>");
+        Rules.SymbolSpec forEach = domainSymbolOrNull(
+            "kotlin.collections.forEach", "Iterable<T>.forEach(action: (T) -> Unit): Unit");
+        if (systemType == null || update == null || contextType == null || sceneType == null
+                || sceneProperty == null || conditionType == null || hasComponent == null
+                || queryEntity == null || forEach == null
+                || !cp2seHasCallback(forEach, 0, "collection_element", null, 1)) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        Rules.Analysis match = null;
+        String matchAlternative = null;
+        for (PsiIndex.Node system : program.nodes()) {
+            if (system.kind() != PsiIndex.NodeKind.CLASS_DECL
+                    || !isProductionPath(system.fileId())
+                    || !exactFact(facts, "type", system, null, null,
+                        "ecs_system", systemType)) continue;
+            PsiIndex.Node systemSuper = cp2seExactSuperReference(system, systemType, facts);
+            PsiIndex.Node updateMethod = cp2seUniqueProductionRoot(system, update, facts);
+            List<PsiIndex.Node> updateParameters = updateMethod == null
+                ? List.of() : targets(updateMethod, PsiIndex.EdgeRole.PARAMETER);
+            PsiIndex.Node context = updateParameters.size() == 1
+                ? updateParameters.get(0) : null;
+            if (systemSuper == null || updateMethod == null || context == null
+                    || !exactFact(facts, "type", context, updateMethod, null,
+                        "scene_update_context", contextType)) continue;
+
+            List<PsiIndex.Node> queryDefinition = cp2seQueryDefinition(
+                system, hasComponent, conditionType, facts);
+            if (queryDefinition == null) continue;
+            PsiIndex.Node queryProperty = queryDefinition.get(0);
+            List<PsiIndex.Node> queryPath = cp2seConsumedQueryPath(updateMethod, context,
+                queryProperty, sceneType, sceneProperty, conditionType, queryEntity, forEach, facts);
+            if (queryPath == null) continue;
+            String alternative = queryPath.size() == 2
+                ? "direct-query-use" : "pure-helper-query-use";
+            List<String> witnesses = new ArrayList<>();
+            boolean valid = addWitness(system, witnesses)
+                && addWitness(systemSuper, witnesses)
+                && addWitness(queryProperty, witnesses)
+                && addWitness(queryDefinition.get(1), witnesses)
+                && addWitness(queryDefinition.get(2), witnesses)
+                && addWitness(updateMethod, witnesses)
+                && addWitness(queryPath.get(0), witnesses)
+                && addWitness(queryPath.get(1), witnesses);
+            if (queryPath.size() == 5) {
+                valid &= addWitness(queryPath.get(2), witnesses)
+                    && addWitness(queryPath.get(3), witnesses)
+                    && addWitness(queryPath.get(4), witnesses);
+            }
+            if (!valid) continue;
+            Rules.Analysis candidate = cp2seClaim("ecs.system-query",
+                "hoisted-query-scene-update", alternative, witnesses);
+            if (candidate == null || match != null) return Rules.emptyAnalysis();
+            match = candidate;
+            matchAlternative = alternative;
+        }
+        if (match == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("ecs.system-query", matchAlternative);
+        return match;
+    }
+    private Rules.Analysis analyzeFrameUpdate() {
+        Rules.SymbolSpec systemType = typeSymbolExact(
+            "com.pico.spatial.core.ecs.System", "abstract class System");
+        Rules.SymbolSpec update = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.System.update",
+            "update(context: SceneUpdateContext): Unit");
+        Rules.SymbolSpec contextType = typeSymbolExact(
+            "com.pico.spatial.core.ecs.SceneUpdateContext", "class SceneUpdateContext");
+        Rules.SymbolSpec sceneType = typeSymbolExact(
+            "com.pico.spatial.core.ecs.Scene", "class Scene");
+        Rules.SymbolSpec sceneProperty = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.SceneUpdateContext.scene", "scene: Scene");
+        Rules.SymbolSpec delta = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.SceneUpdateContext.deltaTime", "deltaTime: Float");
+        Rules.SymbolSpec queryEntity = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Scene.queryEntity",
+            "queryEntity(vararg conditions: EntityQueryCondition): List<Entity>");
+        Rules.SymbolSpec forEach = domainSymbolOrNull(
+            "kotlin.collections.forEach", "Iterable<T>.forEach(action: (T) -> Unit): Unit");
+        Rules.SymbolSpec entityType = typeSymbolExact(
+            "com.pico.spatial.core.ecs.Entity", "open class Entity");
+        Rules.SymbolSpec components = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Entity.components", "components: ComponentSet");
+        Rules.SymbolSpec componentGet = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Entity.ComponentSet.get",
+            "get(componentType: Class<T>): T?");
+        Rules.SymbolSpec transformType = typeSymbolExact(
+            "com.pico.spatial.core.ecs.TransformComponent", "class TransformComponent");
+        Rules.SymbolSpec position = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.TransformComponent.position", "position: Vector3");
+        Rules.SymbolSpec vectorType = typeSymbolExact(
+            "com.pico.spatial.core.math.Vector3", "class Vector3");
+        Rules.SymbolSpec vector = domainSymbolOrNull(
+            "com.pico.spatial.core.math.Vector3",
+            "Vector3(x: Float = 0f, y: Float = 0f, z: Float = 0f)");
+        if (systemType == null || update == null || contextType == null || sceneType == null
+                || sceneProperty == null || delta == null || queryEntity == null || forEach == null
+                || entityType == null || components == null || componentGet == null
+                || transformType == null || position == null || vectorType == null || vector == null
+                || !cp2seHasCallback(forEach, 0, "collection_element", null, 1)) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        Rules.Analysis match = null;
+        String matchAlternative = null;
+        for (PsiIndex.Node system : program.nodes()) {
+            if (system.kind() != PsiIndex.NodeKind.CLASS_DECL
+                    || !isProductionPath(system.fileId())
+                    || !exactFact(facts, "type", system, null, null,
+                        "ecs_system", systemType)) continue;
+            PsiIndex.Node updateMethod = cp2seUniqueProductionRoot(system, update, facts);
+            List<PsiIndex.Node> parameters = updateMethod == null
+                ? List.of() : targets(updateMethod, PsiIndex.EdgeRole.PARAMETER);
+            PsiIndex.Node context = parameters.size() == 1 ? parameters.get(0) : null;
+            if (context == null || !exactFact(facts, "type", context, updateMethod, null,
+                    "scene_update_context", contextType)) continue;
+            List<PsiIndex.Node> frame = cp2seFramePath(updateMethod, context, sceneType,
+                sceneProperty, delta, queryEntity, forEach, entityType, components,
+                componentGet, transformType, position, vectorType, vector, facts);
+            if (frame == null) continue;
+            PsiIndex.Node assignment = frame.get(6);
+            String proofForm = "=".equals(assignment.value())
+                ? "assign-delta-update" : "plus-assign-delta-update";
+            String alternative = frame.size() == 11
+                ? "pure-helper-transform" : "direct-transform";
+            List<String> witnesses = new ArrayList<>();
+            boolean valid = addWitness(updateMethod, witnesses)
+                && addWitness(frame.get(0), witnesses)
+                && addWitness(frame.get(1), witnesses)
+                && addWitness(frame.get(2), witnesses)
+                && addWitness(frame.get(3), witnesses)
+                && addWitness(frame.get(4), witnesses)
+                && addWitness(frame.get(7), witnesses)
+                && addWitness(frame.get(8), witnesses)
+                && addWitness(assignment, witnesses);
+            if (frame.size() == 11) {
+                valid &= addWitness(frame.get(9), witnesses)
+                    && addWitness(frame.get(10), witnesses);
+            }
+            if (!valid) continue;
+            Rules.Analysis candidate = cp2seClaim(
+                "ecs.frame-update", proofForm, alternative, witnesses);
+            if (candidate == null || match != null) return Rules.emptyAnalysis();
+            match = candidate;
+            matchAlternative = alternative;
+        }
+        if (match == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("ecs.frame-update", matchAlternative);
+        return match;
+    }
+    private Rules.Analysis analyzeEcsLifecycle() {
+        Rules.SymbolSpec stage = domainSymbolOrNull(
+            "com.pico.spatial.ui.foundation.dsl.Stage", STAGE_SIGNATURE);
+        Rules.SymbolSpec effect = domainSymbolOrNull(
+            "androidx.compose.runtime.DisposableEffect",
+            "DisposableEffect(key1: Any?, effect: DisposableEffectScope.() -> DisposableEffectResult): Unit");
+        Rules.SymbolSpec disposableScope = typeSymbolExact(
+            "androidx.compose.runtime.DisposableEffectScope", "class DisposableEffectScope");
+        Rules.SymbolSpec dispose = domainSymbolOrNull(
+            "androidx.compose.runtime.DisposableEffectScope.onDispose",
+            "onDispose(onDisposeEffect: () -> Unit): DisposableEffectResult");
+        Rules.SymbolSpec register = domainSymbolOrNull(
+            "com.pico.spatial.ui.foundation.dsl.registerSystem",
+            "registerSystem<T : System>(): Unit");
+        Rules.SymbolSpec unregister = domainSymbolOrNull(
+            "com.pico.spatial.ui.foundation.dsl.unregisterSystem",
+            "unregisterSystem<T : System>(): Unit");
+        Rules.SymbolSpec systemType = typeSymbolExact(
+            "com.pico.spatial.core.ecs.System", "abstract class System");
+        if (stage == null || effect == null || disposableScope == null || dispose == null
+                || register == null || unregister == null || systemType == null
+                || !callbackShape(stage, 5, "stage_content", "spatial_container_scope")
+                || !callbackShape(effect, 1, "disposable_effect", "disposable_effect_scope")
+                || !callbackShape(dispose, 0, "dispose_cleanup", null)) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        Rules.Analysis match = null;
+        for (PsiIndex.Node stageCall : program.nodes()) {
+            if (stageCall.kind() != PsiIndex.NodeKind.CALL
+                    || !isProductionPath(stageCall.fileId())) continue;
+            Map<Integer, List<PsiIndex.Node>> stageMap =
+                reviewedDomainMapping(stageCall, stage, facts);
+            PsiIndex.Node stageLambda = mappedLambda(stageMap, 5);
+            PsiIndex.Node stageContentCall = uniqueDirectSourceCall(stageLambda, facts);
+            PsiIndex.Node stageContent = stageContentCall == null
+                ? null : exactSourceTarget(stageContentCall, facts);
+            if (stageContent == null || callbackResult(stageLambda) != stageContentCall) continue;
+            PsiIndex.Node effectCall = cp2seUniqueDomainCallInCallable(
+                stageContent, effect, facts, true);
+            Map<Integer, List<PsiIndex.Node>> effectMap = effectCall == null
+                ? null : mapDomainArguments(effectCall, effect, facts);
+            PsiIndex.Node effectArgument = mappedArgument(effectMap, 1);
+            PsiIndex.Node effectLambda = mappedLambda(effectMap, 1);
+            if (effectLambda == null || !exactFact(facts, "callback_binding", effectLambda,
+                    effectCall, effectArgument, "disposable_effect", effect)
+                    || !exactFact(facts, "callback_receiver", effectLambda, effectCall, null,
+                        "disposable_effect_scope", disposableScope)) continue;
+
+            List<PsiIndex.Node> effectCalls = directCalls(effectLambda);
+            PsiIndex.Node registerCall = cp2seUniqueResolvedCall(effectCalls, register, facts);
+            PsiIndex.Node disposeCall = callbackResult(effectLambda);
+            if (effectCalls == null || registerCall == null || disposeCall == null
+                    || effectCalls.get(effectCalls.size() - 1) != disposeCall
+                    || !exactDomainResolution(disposeCall, dispose, facts)) continue;
+            Map<Integer, List<PsiIndex.Node>> disposeMap =
+                mapDomainArguments(disposeCall, dispose, facts);
+            PsiIndex.Node cleanupArgument = mappedArgument(disposeMap, 0);
+            PsiIndex.Node cleanupLambda = mappedLambda(disposeMap, 0);
+            List<PsiIndex.Node> cleanupCalls = directCleanupCalls(cleanupLambda);
+            PsiIndex.Node unregisterCall =
+                cp2seUniqueResolvedCall(cleanupCalls, unregister, facts);
+            if (cleanupLambda == null || unregisterCall == null
+                    || !exactFact(facts, "callback_binding", cleanupLambda, disposeCall,
+                        cleanupArgument, "dispose_cleanup", dispose)) continue;
+
+            List<PsiIndex.Node> registerTypes =
+                targets(registerCall, PsiIndex.EdgeRole.TYPE_ARGUMENT);
+            List<PsiIndex.Node> unregisterTypes =
+                targets(unregisterCall, PsiIndex.EdgeRole.TYPE_ARGUMENT);
+            PsiIndex.Node registeredSystem = registerTypes.size() == 1
+                ? sourceTypeDeclaration(registerTypes.get(0)) : null;
+            PsiIndex.Node unregisteredSystem = unregisterTypes.size() == 1
+                ? sourceTypeDeclaration(unregisterTypes.get(0)) : null;
+            PsiIndex.Node systemSuper = registeredSystem == null
+                ? null : cp2seExactSuperReference(registeredSystem, systemType, facts);
+            if (registeredSystem == null || registeredSystem != unregisteredSystem
+                    || !isProductionPath(registeredSystem.fileId()) || systemSuper == null
+                    || !exactFact(facts, "type", registeredSystem, null, null,
+                        "ecs_system", systemType)
+                    || !cp2seExactDeclaredEffect(
+                        registerCall, register, "acquire", facts)
+                    || !cp2seExactDeclaredEffect(
+                        unregisterCall, unregister, "release", facts)) continue;
+
+            List<String> witnesses = new ArrayList<>();
+            boolean valid = addWitness(stageCall, witnesses)
+                && addWitness(effectCall, witnesses)
+                && addWitness(effectLambda, witnesses)
+                && addWitness(registerCall, witnesses)
+                && addWitness(registerTypes.get(0), witnesses)
+                && addWitness(cleanupLambda, witnesses)
+                && addWitness(unregisterCall, witnesses)
+                && addWitness(unregisterTypes.get(0), witnesses)
+                && addWitness(disposeCall, witnesses);
+            if (!valid) continue;
+            Rules.Analysis candidate = cp2seClaim("ecs.lifecycle",
+                "paired-system-lifecycle", "direct-register-unregister", witnesses);
+            if (candidate == null || match != null) return Rules.emptyAnalysis();
+            match = candidate;
+        }
+        if (match == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("ecs.lifecycle", "direct-register-unregister");
+        return match;
+    }
+
+    private Rules.Analysis cp2seClaim(String ruleId, String proofForm,
+            String alternative, List<String> witnesses) {
+        Rules.RuleSpec rule = domain.rule(ruleId);
+        Map<String, Boolean> complete = new HashMap<>();
+        Map<String, List<String>> alternatives = new HashMap<>();
+        for (String candidate : rule.proofForms()) {
+            boolean selected = candidate.equals(proofForm);
+            complete.put(candidate, selected);
+            alternatives.put(candidate, selected ? List.of(alternative) : List.of());
+        }
+        Map<String, String> selected = Rules.selectProof(
+            domain, ruleId, complete, alternatives);
+        if (!proofForm.equals(selected.get("proofForm"))
+                || !alternative.equals(selected.get("alternativeId"))) return null;
+        return Rules.claimOrNull(program, domain, ruleId, proofForm, alternative, witnesses);
+    }
+
+    private boolean cp2seExactDeclaredEffect(PsiIndex.Node call, Rules.SymbolSpec symbol,
+            String effect, List<Map<String, Object>> facts) {
+        return call != null && exactDomainResolution(call, symbol, facts)
+            && !hasAnyTaint(call, facts) && symbol.effects().contains(effect);
+    }
+
+    private PsiIndex.Node cp2seExactSuperReference(PsiIndex.Node declaration,
+            Rules.SymbolSpec type, List<Map<String, Object>> facts) {
+        List<PsiIndex.Node> supers = targets(declaration, PsiIndex.EdgeRole.SUPER_TYPE);
+        if (supers.size() != 1 || typeSymbolForReference(supers.get(0)) != type) return null;
+        return exactFact(facts, "type", supers.get(0), enclosingCallable(supers.get(0)), null,
+            type.returnAbstractType(), type) ? supers.get(0) : null;
+    }
+
+    private PsiIndex.Node cp2seUniqueProductionRoot(PsiIndex.Node owner,
+            Rules.SymbolSpec slot, List<Map<String, Object>> facts) {
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node child : lexicalChildren(owner)) {
+            if (child.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || !exactFact(facts, "production_root", child, owner, null,
+                        "direct", slot)) continue;
+            if (match != null) return null;
+            match = child;
+        }
+        return match;
+    }
+
+    private PsiIndex.ImportEntry cp2seExactImport(PsiIndex.Node call, String fqn) {
+        if (call == null || call.name() == null) return null;
+        PsiIndex.ImportEntry match = null;
+        for (int importId : program.file(call.fileId()).importIds()) {
+            PsiIndex.ImportEntry candidate = program.imports().get(importId);
+            if (!candidate.fqName().equals(fqn)
+                    || !candidate.exposedName().equals(call.name())) continue;
+            if (match != null) return null;
+            match = candidate;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node cp2seReferencedRoot(PsiIndex.Node reference,
+            Rules.SymbolSpec spatialScope, List<Map<String, Object>> facts) {
+        if (reference == null || reference.kind() != PsiIndex.NodeKind.CALLABLE_REF) return null;
+        PsiIndex.Node target = uniqueReferencedCallable(reference);
+        if (target == null) target = importedCallable(reference, spatialScope, facts);
+        if (target == null || target.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                || !isProductionPath(target.fileId()) || !isTopLevel(target)) return null;
+        List<PsiIndex.Node> parameters = targets(target, PsiIndex.EdgeRole.PARAMETER);
+        return parameters.size() == 1 && exactFact(facts, "type", parameters.get(0), target,
+            null, "spatial_app_scope", spatialScope) ? target : null;
+    }
+
+    private Map<Integer, List<PsiIndex.Node>> cp2seReviewedLaunchMapping(PsiIndex.Node call,
+            Rules.SymbolSpec launch, Rules.SymbolSpec spatialScope,
+            List<Map<String, Object>> facts) {
+        Map<Integer, List<PsiIndex.Node>> strict = reviewedDomainMapping(call, launch, facts);
+        if (strict != null) return strict;
+        List<Rules.SymbolSpec> candidates = domainCandidates(call, facts);
+        List<PsiIndex.Node> arguments = uniqueTargets(call, PsiIndex.EdgeRole.ARGUMENT);
+        if (candidates.size() != 1 || candidates.get(0) != launch
+                || !receiverMatches(call, launch, facts)
+                || hasFact(facts, "call_resolution", call.id())
+                || !hasExactTaint(call, "unsupported", facts)
+                || cp2seExactImport(call, launch.fqn()) == null
+                || !callbackShape(launch, 0, "application_entry", "spatial_app_scope")
+                || !targets(call, PsiIndex.EdgeRole.TYPE_ARGUMENT).isEmpty()
+                || arguments.size() != 1) return null;
+        PsiIndex.Node argument = arguments.get(0);
+        PsiIndex.Node value = one(argument, PsiIndex.EdgeRole.VALUE);
+        if (argument.flags().contains(PsiIndex.NodeFlag.NAMED)
+                || value == null || value.kind() != PsiIndex.NodeKind.CALLABLE_REF
+                || !hasFact(facts, "reachable", call.id())
+                || !hasFact(facts, "reachable", value.id())
+                || cp2seReferencedRoot(value, spatialScope, facts) == null) return null;
+        return Map.of(0, List.of(argument));
+    }
+
+    private boolean cp2seHasCallback(Rules.SymbolSpec symbol, int position,
+            String role, String receiverType, int parameterCount) {
+        int matches = 0;
+        for (Rules.CallbackSpec callback : symbol.callbacks()) {
+            if (callback.argumentPosition() != position || !callback.role().equals(role)) continue;
+            boolean receiverMatches = receiverType == null
+                ? callback.receiverAbstractType() == null
+                : receiverType.equals(callback.receiverAbstractType());
+            if (receiverMatches && callback.parameters().size() == parameterCount) matches++;
+        }
+        return matches == 1;
+    }
+
+    private PsiIndex.Node cp2seUniqueDomainCallInCallable(PsiIndex.Node callable,
+            Rules.SymbolSpec symbol, List<Map<String, Object>> facts, boolean direct) {
+        if (callable == null) return null;
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || enclosingCallable(call) != callable
+                    || direct && !isDirectStatement(call, callable)
+                    || !exactDomainResolution(call, symbol, facts)) continue;
+            if (match != null) return null;
+            match = call;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node cp2seUniqueResolvedCall(List<PsiIndex.Node> calls,
+            Rules.SymbolSpec symbol, List<Map<String, Object>> facts) {
+        if (calls == null) return null;
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node call : calls) {
+            if (!exactDomainResolution(call, symbol, facts)) continue;
+            if (match != null) return null;
+            match = call;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node cp2seDeclarationForUse(PsiIndex.Node value,
+            List<Map<String, Object>> facts) {
+        if (value == null || value.kind() != PsiIndex.NodeKind.NAME_REF
+                || value.name() == null || hasAnyTaint(value, facts)) return null;
+        PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", value.id());
+        if (declaration == null) declaration = findLexicalDeclaration(value, value.name());
+        return declaration;
+    }
+
+    private List<PsiIndex.Node> cp2seEntitySetup(PsiIndex.Node root,
+            PsiIndex.Node initialLambda, Rules.SymbolSpec entityConstructor,
+            Rules.SymbolSpec entityType, Rules.SymbolSpec components, Rules.SymbolSpec set,
+            Rules.SymbolSpec transform, List<Map<String, Object>> facts) {
+        PsiIndex.Node initializer = one(root, PsiIndex.EdgeRole.INITIALIZER);
+        PsiIndex.Node initializerCall = directCall(initializer);
+        PsiIndex.Node owner = initialLambda;
+        PsiIndex.Node entity = root;
+        PsiIndex.Node entityCall = null;
+        PsiIndex.Node helper = null;
+        PsiIndex.Node helperCall = null;
+        if (initializerCall != null
+                && exactDomainResolution(initializerCall, entityConstructor, facts)) {
+            entityCall = initializerCall;
+        } else {
+            helperCall = initializerCall;
+            helper = helperCall == null ? null : exactSourceTarget(helperCall, facts);
+            if (helper == null || helper.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || !isProductionPath(helper.fileId()) || !isTopLevel(helper)
+                    || !targets(helper, PsiIndex.EdgeRole.PARAMETER).isEmpty()
+                    || hasAnyTaint(helperCall, facts)
+                    || cp2seSourceCallCount(helper, facts) != 1) return null;
+            PsiIndex.Node declaredType = one(helper, PsiIndex.EdgeRole.TYPE);
+            PsiIndex.Node returned = sourceReturnOrigin(helper);
+            entity = cp2seDeclarationForUse(returned, facts);
+            if (declaredType == null || typeSymbolForReference(declaredType) != entityType
+                    || entity == null || entity.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                    || enclosingCallable(entity) != helper
+                    || !entity.flags().contains(PsiIndex.NodeFlag.VAL)
+                    || entity.flags().contains(PsiIndex.NodeFlag.VAR)
+                    || callbackHasUnknownCall(helper, facts)) return null;
+            entityCall = directCall(one(entity, PsiIndex.EdgeRole.INITIALIZER));
+            owner = helper;
+        }
+        if (entityCall == null || !exactDomainResolution(entityCall, entityConstructor, facts)
+                || !exactFact(facts, "type", entityCall, owner, null,
+                    "entity", entityType)) return null;
+
+        PsiIndex.Node setCall = null;
+        PsiIndex.Node transformCall = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || enclosingCallable(call) != owner
+                    || !isDirectStatement(call, owner)
+                    || !exactDomainResolution(call, set, facts)) continue;
+            PsiIndex.Node componentStore = resolvedReceiver(call);
+            if (propertySymbolForTarget(componentStore, facts) != components) continue;
+            PsiIndex.Node entityReceiver = propertyReceiverForTarget(componentStore);
+            if (cp2seDeclarationForUse(entityReceiver, facts) != entity) continue;
+            Map<Integer, List<PsiIndex.Node>> setMap = mapDomainArguments(call, set, facts);
+            PsiIndex.Node componentArgument = mappedArgument(setMap, 0);
+            PsiIndex.Node componentValue = componentArgument == null
+                ? null : one(componentArgument, PsiIndex.EdgeRole.VALUE);
+            PsiIndex.Node candidateTransform = directCall(componentValue);
+            if (candidateTransform == null
+                    || !exactDomainResolution(candidateTransform, transform, facts)
+                    || !cp2seExactDeclaredEffect(call, set, "replace", facts)) continue;
+            if (setCall != null) return null;
+            setCall = call;
+            transformCall = candidateTransform;
+        }
+        if (setCall == null) return null;
+        List<PsiIndex.Node> result = new ArrayList<>();
+        result.add(entity);
+        result.add(entityCall);
+        result.add(setCall);
+        result.add(transformCall);
+        if (helper != null) {
+            result.add(helper);
+            result.add(helperCall);
+        }
+        return List.copyOf(result);
+    }
+
+    private int cp2seSourceCallCount(PsiIndex.Node target,
+            List<Map<String, Object>> facts) {
+        int count = 0;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() == PsiIndex.NodeKind.CALL
+                    && exactSourceTarget(call, facts) == target) count++;
+        }
+        return count;
+    }
+
+    private List<PsiIndex.Node> cp2seQueryDefinition(PsiIndex.Node system,
+            Rules.SymbolSpec hasComponent, Rules.SymbolSpec conditionType,
+            List<Map<String, Object>> facts) {
+        List<PsiIndex.Node> matches = new ArrayList<>();
+        for (PsiIndex.Node child : lexicalChildren(system)) {
+            if (child.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                    || !child.flags().contains(PsiIndex.NodeFlag.VAL)
+                    || child.flags().contains(PsiIndex.NodeFlag.VAR)) continue;
+            PsiIndex.Node call = directCall(one(child, PsiIndex.EdgeRole.INITIALIZER));
+            Map<Integer, List<PsiIndex.Node>> mapping = call == null
+                || !exactDomainResolution(call, hasComponent, facts)
+                ? null : mapDomainArguments(call, hasComponent, facts);
+            PsiIndex.Node argument = mappedArgument(mapping, 0);
+            PsiIndex.Node classToken = argument == null
+                ? null : one(argument, PsiIndex.EdgeRole.VALUE);
+            PsiIndex.Node classLiteral = classToken == null
+                ? null : one(classToken, PsiIndex.EdgeRole.RECEIVER);
+            Rules.SymbolSpec component = classTokenTargetType(classToken, facts);
+            if (classToken == null || classLiteral == null
+                    || classLiteral.kind() != PsiIndex.NodeKind.CLASS_LITERAL || component == null
+                    || conformancePathCountFromPhysical(
+                        component, "component", 0, new HashMap<>()) != 1
+                    || !exactFact(facts, "type", child, enclosingCallable(child), null,
+                        "entity_query_condition", conditionType)) continue;
+            matches.add(child);
+            matches.add(call);
+            matches.add(classLiteral);
+        }
+        return matches.size() == 3 ? List.copyOf(matches) : null;
+    }
+
+    private List<PsiIndex.Node> cp2seConsumedQueryPath(PsiIndex.Node update,
+            PsiIndex.Node context, PsiIndex.Node queryProperty, Rules.SymbolSpec sceneType,
+            Rules.SymbolSpec sceneProperty, Rules.SymbolSpec conditionType,
+            Rules.SymbolSpec queryEntity, Rules.SymbolSpec forEach,
+            List<Map<String, Object>> facts) {
+        List<List<PsiIndex.Node>> matches = new ArrayList<>();
+        for (PsiIndex.Node terminal : program.nodes()) {
+            if (terminal.kind() != PsiIndex.NodeKind.CALL || enclosingCallable(terminal) != update
+                    || !isDirectStatement(terminal, update)) continue;
+            PsiIndex.Node producerCall = directCall(resolvedReceiver(terminal));
+            Map<Integer, List<PsiIndex.Node>> iterationMap =
+                mapDomainArguments(terminal, forEach, facts);
+            PsiIndex.Node actionArgument = mappedArgument(iterationMap, 0);
+            PsiIndex.Node action = mappedLambda(iterationMap, 0);
+            List<PsiIndex.Node> candidate;
+            if (producerCall != null
+                    && exactDomainResolution(producerCall, queryEntity, facts)) {
+                if (action == null || !exactDomainResolution(terminal, forEach, facts)
+                        || !exactFact(facts, "callback_binding", action, terminal,
+                            actionArgument, "collection_element", forEach)) continue;
+                PsiIndex.Node queryArgument = cp2seExactQueryArgument(
+                    producerCall, queryProperty, queryEntity, facts);
+                if (queryArgument == null || !cp2seExactSceneReceiver(
+                        resolvedReceiver(producerCall), context, sceneType,
+                        sceneProperty, facts)) continue;
+                candidate = List.of(producerCall, queryArgument);
+            } else {
+                candidate = cp2seHelperQueryPath(producerCall, context, queryProperty,
+                    sceneType, sceneProperty, conditionType, queryEntity, facts);
+                if (candidate == null || !cp2seReviewedForEachAfterHelper(
+                        terminal, producerCall, actionArgument, action, forEach, facts)) continue;
+            }
+            matches.add(candidate);
+        }
+        return matches.size() == 1 ? matches.get(0) : null;
+    }
+
+    private boolean cp2seReviewedForEachAfterHelper(PsiIndex.Node terminal,
+            PsiIndex.Node helperCall, PsiIndex.Node actionArgument, PsiIndex.Node action,
+            Rules.SymbolSpec forEach, List<Map<String, Object>> facts) {
+        if (helperCall == null || actionArgument == null || action == null
+                || action.kind() != PsiIndex.NodeKind.LAMBDA
+                || directCall(resolvedReceiver(terminal)) != helperCall
+                || hasFact(facts, "call_resolution", terminal.id())
+                || !hasExactTaint(terminal, "unknown_receiver", facts)
+                || callbackHasUnknownCall(action, facts)) return false;
+        List<Rules.SymbolSpec> candidates = domainCandidates(terminal, facts);
+        if (candidates.size() != 1 || candidates.get(0) != forEach
+                || mapDomainArguments(terminal, forEach, facts) == null) return false;
+        List<PsiIndex.Node> parameters = targets(action, PsiIndex.EdgeRole.PARAMETER);
+        return parameters.size() == 1;
+    }
+
+    private PsiIndex.Node cp2seExactQueryArgument(PsiIndex.Node queryCall,
+            PsiIndex.Node expectedDeclaration, Rules.SymbolSpec queryEntity,
+            List<Map<String, Object>> facts) {
+        Map<Integer, List<PsiIndex.Node>> mapping =
+            mapDomainArguments(queryCall, queryEntity, facts);
+        PsiIndex.Node argument = mappedArgument(mapping, 0);
+        PsiIndex.Node value = argument == null ? null : one(argument, PsiIndex.EdgeRole.VALUE);
+        return cp2seDeclarationForUse(value, facts) == expectedDeclaration ? argument : null;
+    }
+
+    private boolean cp2seExactSceneReceiver(PsiIndex.Node value, PsiIndex.Node context,
+            Rules.SymbolSpec sceneType, Rules.SymbolSpec sceneProperty,
+            List<Map<String, Object>> facts) {
+        if (value == null || propertySymbolForTarget(value, facts) != sceneProperty
+                || !exactFact(facts, "type", value, enclosingCallable(value), null,
+                    "scene", sceneType)) return false;
+        return cp2seDeclarationForUse(propertyReceiverForTarget(value), facts) == context;
+    }
+
+    private List<PsiIndex.Node> cp2seHelperQueryPath(PsiIndex.Node helperCall,
+            PsiIndex.Node context, PsiIndex.Node queryProperty, Rules.SymbolSpec sceneType,
+            Rules.SymbolSpec sceneProperty, Rules.SymbolSpec conditionType,
+            Rules.SymbolSpec queryEntity, List<Map<String, Object>> facts) {
+        PsiIndex.Node helper = cp2seReviewedSceneExtensionTarget(
+            helperCall, sceneType, facts);
+        if (helper == null || helper.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                || !isTopLevel(helper) || !isProductionPath(helper.fileId())
+                || cp2seReviewedSceneExtensionCallCount(helper, sceneType, facts) != 1
+                || callbackHasUnknownCall(helper, facts)) return null;
+        PsiIndex.Node extensionType = declarationTypeNode(helper, true);
+        List<PsiIndex.Node> parameters = targets(helper, PsiIndex.EdgeRole.PARAMETER);
+        if (extensionType == null || typeSymbolForReference(extensionType) != sceneType
+                || parameters.size() != 1
+                || !exactFact(facts, "type", parameters.get(0), helper, null,
+                    "entity_query_condition", conditionType)
+                || !cp2seExactSceneReceiver(resolvedReceiver(helperCall), context,
+                    sceneType, sceneProperty, facts)) return null;
+        Map<Integer, List<PsiIndex.Node>> sourceMap = mapSourceArguments(helperCall, helper, facts);
+        PsiIndex.Node helperArgument = mappedArgument(sourceMap, 0);
+        PsiIndex.Node helperValue = helperArgument == null
+            ? null : one(helperArgument, PsiIndex.EdgeRole.VALUE);
+        if (cp2seDeclarationForUse(helperValue, facts) != queryProperty) return null;
+        PsiIndex.Node queryCall = directCall(sourceReturnOrigin(helper));
+        if (queryCall == null || !exactDomainResolution(queryCall, queryEntity, facts)) return null;
+        PsiIndex.Node queryArgument = cp2seExactQueryArgument(
+            queryCall, parameters.get(0), queryEntity, facts);
+        return queryArgument == null ? null
+            : List.of(queryCall, queryArgument, helper, helperCall, helperArgument);
+    }
+
+    private PsiIndex.Node cp2seReviewedSceneExtensionTarget(PsiIndex.Node call,
+            Rules.SymbolSpec sceneType, List<Map<String, Object>> facts) {
+        if (call == null || call.kind() != PsiIndex.NodeKind.CALL || call.name() == null) return null;
+        PsiIndex.Node resolved = exactSourceTarget(call, facts);
+        if (resolved != null) return resolved;
+        if (hasFact(facts, "call_resolution", call.id())
+                || !hasExactTaint(call, "unknown_receiver", facts)) return null;
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node candidate : sourceCallableCandidates(call, facts)) {
+            PsiIndex.Node extensionType = declarationTypeNode(candidate, true);
+            if (candidate.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || extensionType == null || typeSymbolForReference(extensionType) != sceneType
+                    || mapSourceArguments(call, candidate, facts) == null) continue;
+            if (match != null) return null;
+            match = candidate;
+        }
+        return match;
+    }
+
+    private int cp2seReviewedSceneExtensionCallCount(PsiIndex.Node helper,
+            Rules.SymbolSpec sceneType, List<Map<String, Object>> facts) {
+        int count = 0;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() == PsiIndex.NodeKind.CALL
+                    && cp2seReviewedSceneExtensionTarget(call, sceneType, facts) == helper) count++;
+        }
+        return count;
+    }
+
+    private List<PsiIndex.Node> cp2seFramePath(PsiIndex.Node update,
+            PsiIndex.Node context, Rules.SymbolSpec sceneType, Rules.SymbolSpec sceneProperty,
+            Rules.SymbolSpec delta, Rules.SymbolSpec queryEntity, Rules.SymbolSpec forEach,
+            Rules.SymbolSpec entityType, Rules.SymbolSpec components,
+            Rules.SymbolSpec componentGet, Rules.SymbolSpec transformType,
+            Rules.SymbolSpec position, Rules.SymbolSpec vectorType, Rules.SymbolSpec vector,
+            List<Map<String, Object>> facts) {
+        List<List<PsiIndex.Node>> matches = new ArrayList<>();
+        for (PsiIndex.Node terminal : program.nodes()) {
+            if (terminal.kind() != PsiIndex.NodeKind.CALL || enclosingCallable(terminal) != update
+                    || !isDirectStatement(terminal, update)
+                    || !exactDomainResolution(terminal, forEach, facts)) continue;
+            PsiIndex.Node queryCall = directCall(resolvedReceiver(terminal));
+            Map<Integer, List<PsiIndex.Node>> queryMap = queryCall == null
+                || !exactDomainResolution(queryCall, queryEntity, facts)
+                ? null : mapDomainArguments(queryCall, queryEntity, facts);
+            if (queryMap == null || queryMap.getOrDefault(0, List.of()).isEmpty()
+                    || !cp2seExactSceneReceiver(resolvedReceiver(queryCall), context,
+                        sceneType, sceneProperty, facts)) continue;
+            Map<Integer, List<PsiIndex.Node>> loopMap =
+                mapDomainArguments(terminal, forEach, facts);
+            PsiIndex.Node actionArgument = mappedArgument(loopMap, 0);
+            PsiIndex.Node action = mappedLambda(loopMap, 0);
+            List<PsiIndex.Node> actionParameters = action == null
+                ? List.of() : targets(action, PsiIndex.EdgeRole.PARAMETER);
+            PsiIndex.Node element = actionParameters.size() == 1
+                ? actionParameters.get(0) : null;
+            if (action == null || element == null
+                    || !exactFact(facts, "callback_binding", action, terminal,
+                        actionArgument, "collection_element", forEach)
+                    || !"entity".equals(typeOf(facts, element))
+                    || physicalTypeForOrigin(element, facts) != entityType) continue;
+            List<PsiIndex.Node> retrieval = cp2seTransformRetrieval(action, element,
+                components, componentGet, transformType, facts);
+            if (retrieval == null) continue;
+            PsiIndex.Node transform = retrieval.get(0);
+            PsiIndex.Node assignment = cp2seTransformAssignment(
+                action, transform, position, facts);
+            if (assignment == null) continue;
+            List<PsiIndex.Node> flow = cp2seFrameFlow(action, assignment, transform,
+                context, delta, position, vectorType, vector, facts);
+            if (flow == null) continue;
+            List<PsiIndex.Node> candidate = new ArrayList<>();
+            candidate.add(terminal);
+            candidate.add(action);
+            candidate.add(element);
+            candidate.add(transform);
+            candidate.add(retrieval.get(2));
+            candidate.add(retrieval.get(1));
+            candidate.add(assignment);
+            candidate.addAll(flow);
+            matches.add(List.copyOf(candidate));
+        }
+        return matches.size() == 1 ? matches.get(0) : null;
+    }
+
+    private List<PsiIndex.Node> cp2seTransformRetrieval(PsiIndex.Node action,
+            PsiIndex.Node element, Rules.SymbolSpec components, Rules.SymbolSpec componentGet,
+            Rules.SymbolSpec transformType, List<Map<String, Object>> facts) {
+        List<PsiIndex.Node> match = null;
+        PsiIndex.Node body = one(action, PsiIndex.EdgeRole.LAMBDA_BODY);
+        List<PsiIndex.Node> statements = body != null && body.kind() == PsiIndex.NodeKind.BLOCK
+            ? lexicalChildren(body) : body == null ? List.of() : List.of(body);
+        for (PsiIndex.Node child : statements) {
+            if (child.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                    || !child.flags().contains(PsiIndex.NodeFlag.VAL)
+                    || child.flags().contains(PsiIndex.NodeFlag.VAR)) continue;
+            PsiIndex.Node initializer = one(child, PsiIndex.EdgeRole.INITIALIZER);
+            if (initializer == null || initializer.kind() != PsiIndex.NodeKind.BINARY
+                    || !"?:".equals(initializer.value())) continue;
+            PsiIndex.Node get = null;
+            for (PsiIndex.Node node : program.nodes()) {
+                if (node.kind() != PsiIndex.NodeKind.INDEX_ACCESS
+                        || !isWithin(node, initializer)
+                        || !exactDomainResolution(node, componentGet, facts)) continue;
+                if (get != null) {
+                    get = null;
+                    break;
+                }
+                get = node;
+            }
+            PsiIndex.Node store = get == null ? null : one(get, PsiIndex.EdgeRole.RECEIVER);
+            PsiIndex.Node entity = store == null
+                || propertySymbolForTarget(store, facts) != components
+                ? null : propertyReceiverForTarget(store);
+            List<PsiIndex.Node> indices = get == null
+                ? List.of() : targets(get, PsiIndex.EdgeRole.INDEX);
+            PsiIndex.Node classToken = indices.size() == 1 ? indices.get(0) : null;
+            PsiIndex.Node classLiteral = classToken == null
+                ? null : one(classToken, PsiIndex.EdgeRole.RECEIVER);
+            if (cp2seDeclarationForUse(entity, facts) != element
+                    || classTokenTargetType(classToken, facts) != transformType
+                    || classLiteral == null
+                    || classLiteral.kind() != PsiIndex.NodeKind.CLASS_LITERAL
+                    || !"transform_component".equals(typeOf(facts, child))
+                    || physicalTypeForOrigin(child, facts) != transformType) continue;
+            if (match != null) return null;
+            match = List.of(child, get, classLiteral);
+        }
+        return match;
+    }
+
+    private PsiIndex.Node cp2seTransformAssignment(PsiIndex.Node action,
+            PsiIndex.Node transform, Rules.SymbolSpec position,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (node.kind() != PsiIndex.NodeKind.ASSIGNMENT || enclosingCallable(node) != action
+                    || !("=".equals(node.value()) || "+=".equals(node.value()))) continue;
+            PsiIndex.Node target = one(node, PsiIndex.EdgeRole.TARGET);
+            if (propertySymbolForTarget(target, facts) != position
+                    || cp2seDeclarationForUse(propertyReceiverForTarget(target), facts) != transform
+                    || !hasEffect(facts, node, "mutate")) continue;
+            if (match != null) return null;
+            match = node;
+        }
+        return match;
+    }
+
+    private List<PsiIndex.Node> cp2seFrameFlow(PsiIndex.Node action,
+            PsiIndex.Node assignment, PsiIndex.Node transform, PsiIndex.Node context,
+            Rules.SymbolSpec delta, Rules.SymbolSpec position,
+            Rules.SymbolSpec vectorType, Rules.SymbolSpec vector,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node value = one(assignment, PsiIndex.EdgeRole.VALUE);
+        PsiIndex.Node valueCall = directCall(value);
+        if (valueCall != null && exactDomainResolution(valueCall, vector, facts)) {
+            PsiIndex.Node deltaRead = cp2seUniqueDeltaRead(value, context, delta, facts);
+            if (deltaRead != null && ("+=".equals(assignment.value())
+                    || cp2seContainsDomainMember(value, transform, position, facts))) {
+                return List.of(deltaRead, valueCall);
+            }
+            List<PsiIndex.Node> carried = cp2sePriorDeltaState(
+                action, assignment, value, context, delta, facts);
+            if (carried != null) return carried;
+        }
+        PsiIndex.Node helper = valueCall == null ? null : exactSourceTarget(valueCall, facts);
+        if (helper == null || helper.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                || !isTopLevel(helper) || !isProductionPath(helper.fileId())
+                || cp2seSourceCallCount(helper, facts) != 1 || hasAnyTaint(valueCall, facts)
+                || callbackHasUnknownCall(helper, facts)) return null;
+        PsiIndex.Node declaredType = one(helper, PsiIndex.EdgeRole.TYPE);
+        PsiIndex.Node returned = sourceReturnOrigin(helper);
+        PsiIndex.Node returnedCall = directCall(returned);
+        if (declaredType == null || typeSymbolForReference(declaredType) != vectorType
+                || returnedCall == null || !exactDomainResolution(returnedCall, vector, facts)) return null;
+        List<PsiIndex.Node> parameters = targets(helper, PsiIndex.EdgeRole.PARAMETER);
+        Map<Integer, List<PsiIndex.Node>> sourceMap = mapSourceArguments(valueCall, helper, facts);
+        PsiIndex.Node deltaRead = null;
+        PsiIndex.Node deltaParameter = null;
+        PsiIndex.Node positionParameter = null;
+        for (int index = 0; index < parameters.size(); index++) {
+            PsiIndex.Node argument = mappedArgument(sourceMap, index);
+            PsiIndex.Node argumentValue = argument == null
+                ? null : one(argument, PsiIndex.EdgeRole.VALUE);
+            PsiIndex.Node candidateDelta = cp2seUniqueDeltaRead(
+                argumentValue, context, delta, facts);
+            if (candidateDelta != null) {
+                if (deltaRead != null) return null;
+                deltaRead = candidateDelta;
+                deltaParameter = parameters.get(index);
+            }
+            if (cp2seExactPositionRead(argumentValue, transform, position, facts)) {
+                if (positionParameter != null) return null;
+                positionParameter = parameters.get(index);
+            }
+        }
+        if (deltaRead == null || deltaParameter == null
+                || !cp2seContainsParameter(returned, deltaParameter, facts)
+                || "=".equals(assignment.value()) && (positionParameter == null
+                    || !cp2seContainsParameter(returned, positionParameter, facts))) return null;
+        return List.of(deltaRead, assignment, helper, valueCall);
+    }
+
+    private PsiIndex.Node cp2seUniqueDeltaRead(PsiIndex.Node expression,
+            PsiIndex.Node context, Rules.SymbolSpec delta,
+            List<Map<String, Object>> facts) {
+        if (expression == null) return null;
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (!(node.id() == expression.id() || isWithin(node, expression))
+                    || !exactDomainResolution(node, delta, facts)
+                    || cp2seDeclarationForUse(resolvedReceiver(node), facts) != context) continue;
+            if (match != null) return null;
+            match = node;
+        }
+        return match;
+    }
+
+    private boolean cp2seContainsDomainMember(PsiIndex.Node expression,
+            PsiIndex.Node receiverDeclaration, Rules.SymbolSpec member,
+            List<Map<String, Object>> facts) {
+        for (PsiIndex.Node node : program.nodes()) {
+            if (!(node.id() == expression.id() || isWithin(node, expression))
+                    || propertySymbolForTarget(node, facts) != member) continue;
+            if (cp2seDeclarationForUse(propertyReceiverForTarget(node), facts)
+                    == receiverDeclaration) return true;
+        }
+        return false;
+    }
+
+    private boolean cp2seExactPositionRead(PsiIndex.Node expression,
+            PsiIndex.Node transform, Rules.SymbolSpec position,
+            List<Map<String, Object>> facts) {
+        return expression != null && propertySymbolForTarget(expression, facts) == position
+            && cp2seDeclarationForUse(propertyReceiverForTarget(expression), facts) == transform;
+    }
+
+    private boolean cp2seContainsParameter(PsiIndex.Node expression,
+            PsiIndex.Node parameter, List<Map<String, Object>> facts) {
+        for (PsiIndex.Node node : program.nodes()) {
+            if (!(node.id() == expression.id() || isWithin(node, expression))
+                    || node.kind() != PsiIndex.NodeKind.NAME_REF) continue;
+            if (cp2seDeclarationForUse(node, facts) == parameter) return true;
+        }
+        return false;
+    }
+
+    private List<PsiIndex.Node> cp2sePriorDeltaState(PsiIndex.Node action,
+            PsiIndex.Node transformAssignment, PsiIndex.Node transformValue,
+            PsiIndex.Node context, Rules.SymbolSpec delta,
+            List<Map<String, Object>> facts) {
+        List<PsiIndex.Node> match = null;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (node.kind() != PsiIndex.NodeKind.ASSIGNMENT || enclosingCallable(node) != action
+                    || node.startUtf16() >= transformAssignment.startUtf16()
+                    || !"+=".equals(node.value())) continue;
+            PsiIndex.Node deltaRead = cp2seUniqueDeltaRead(
+                one(node, PsiIndex.EdgeRole.VALUE), context, delta, facts);
+            List<PsiIndex.Node> source = cp2seSourceMemberIdentity(
+                one(node, PsiIndex.EdgeRole.TARGET), facts);
+            if (deltaRead == null || source == null
+                    || !cp2seContainsSourceMember(transformValue, source, facts)) continue;
+            if (match != null) return null;
+            match = List.of(deltaRead, node);
+        }
+        return match;
+    }
+
+    private List<PsiIndex.Node> cp2seSourceMemberIdentity(PsiIndex.Node access,
+            List<Map<String, Object>> facts) {
+        if (access == null || access.kind() != PsiIndex.NodeKind.QUALIFIED) return null;
+        PsiIndex.Node receiver = one(access, PsiIndex.EdgeRole.RECEIVER);
+        PsiIndex.Node selector = one(access, PsiIndex.EdgeRole.SELECTOR);
+        PsiIndex.Node member = selector == null ? null : exactSourceTarget(selector, facts);
+        PsiIndex.Node receiverDeclaration = cp2seDeclarationForUse(receiver, facts);
+        return member == null || receiverDeclaration == null
+            ? null : List.of(member, receiverDeclaration);
+    }
+
+    private boolean cp2seContainsSourceMember(PsiIndex.Node expression,
+            List<PsiIndex.Node> identity, List<Map<String, Object>> facts) {
+        for (PsiIndex.Node node : program.nodes()) {
+            if (!(node.id() == expression.id() || isWithin(node, expression))) continue;
+            List<PsiIndex.Node> candidate = cp2seSourceMemberIdentity(node, facts);
+            if (candidate != null && candidate.get(0) == identity.get(0)
+                    && candidate.get(1) == identity.get(1)) return true;
+        }
+        return false;
+    }
+
+    private boolean callbackShape(Rules.SymbolSpec symbol, int position,
+            String role, String receiverType) {
+        if (symbol == null || symbol.callbacks().size() != 1) return false;
+        Rules.CallbackSpec callback = symbol.callbacks().get(0);
+        return callback.argumentPosition() == position && callback.role().equals(role)
+            && (receiverType == null ? callback.receiverAbstractType() == null
+                : receiverType.equals(callback.receiverAbstractType()))
+            && callback.receiverSource() == null && callback.parameters().isEmpty();
+    }
+
+    private Rules.Analysis analyzeUiLifecycle() {
+        Rules.SymbolSpec windowSymbol = domainSymbolOrNull(WINDOW_FQN, WINDOW_SIGNATURE);
+        Rules.SymbolSpec themeSymbol = domainSymbolOrNull(THEME_FQN, THEME_SIGNATURE);
+        Rules.SymbolSpec stageSymbol = domainSymbolOrNull(STAGE_FQN, STAGE_SIGNATURE);
+        Rules.SymbolSpec effectSymbol = domainSymbolOrNull(DISPOSABLE_EFFECT_FQN, DISPOSABLE_EFFECT_SIGNATURE);
+        Rules.SymbolSpec disposeSymbol = domainSymbolOrNull(ON_DISPOSE_FQN, ON_DISPOSE_SIGNATURE);
+        Rules.SymbolSpec disposableScope = typeSymbolExact(DISPOSABLE_SCOPE_FQN, DISPOSABLE_SCOPE_SIGNATURE);
+        Rules.SymbolSpec windowScope = typeSymbolExact(WINDOW_SCOPE_FQN, WINDOW_SCOPE_SIGNATURE);
+        Rules.SymbolSpec stageScope = typeSymbolExact(STAGE_SCOPE_FQN, STAGE_SCOPE_SIGNATURE);
+        if (windowSymbol == null || themeSymbol == null || stageSymbol == null
+                || effectSymbol == null || disposeSymbol == null || disposableScope == null
+                || windowScope == null || stageScope == null
+                || !callbackShape(windowSymbol, 0, "window_content", "spatial_container_scope")
+                || !callbackShape(themeSymbol, 2, "window_content", null)
+                || !callbackShape(stageSymbol, 5, "stage_content", "spatial_container_scope")
+                || !callbackShape(effectSymbol, 1, "disposable_effect", "disposable_effect_scope")
+                || !callbackShape(disposeSymbol, 0, "dispose_cleanup", null)) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        Rules.Analysis match = null;
+        String matchAlternative = null;
+        for (PsiIndex.Node window : program.nodes()) {
+            if (window.kind() != PsiIndex.NodeKind.CALL || !isProductionPath(window.fileId())
+                    || !exactDomainResolution(window, windowSymbol, facts)) continue;
+            Map<Integer, List<PsiIndex.Node>> windowMap = mapDomainArguments(window, windowSymbol, facts);
+            PsiIndex.Node windowArgument = mappedArgument(windowMap, 0);
+            PsiIndex.Node windowLambda = mappedLambda(windowMap, 0);
+            PsiIndex.Node root = enclosingLambda(window);
+            if (windowLambda == null || root == null
+                    || !exactFact(facts, "callback_binding", windowLambda, window, windowArgument,
+                        "window_content", windowSymbol)
+                    || !exactFact(facts, "callback_receiver", windowLambda, window, null,
+                        "spatial_container_scope", windowScope)
+                    || !exactFact(facts, "implicit_receiver", window, root, root,
+                        "callback", windowSymbol)) continue;
+
+            PsiIndex.Node theme = uniqueDirectResolvedCall(windowLambda, themeSymbol, facts);
+            Map<Integer, List<PsiIndex.Node>> themeMap = theme == null
+                ? null : mapDomainArguments(theme, themeSymbol, facts);
+            PsiIndex.Node themeArgument = mappedArgument(themeMap, 2);
+            PsiIndex.Node themeLambda = mappedLambda(themeMap, 2);
+            if (themeLambda == null || !exactFact(facts, "callback_binding", themeLambda,
+                    theme, themeArgument, "window_content", themeSymbol)) continue;
+            PsiIndex.Node windowContent = uniqueDirectSourceCall(themeLambda, facts);
+            if (windowContent == null || callbackResult(themeLambda) != windowContent) continue;
+
+            PsiIndex.Node stage = null;
+            Map<Integer, List<PsiIndex.Node>> stageMap = null;
+            List<PsiIndex.Node> rootCalls = directCalls(root);
+            if (rootCalls == null) continue;
+            for (PsiIndex.Node call : rootCalls) {
+                Map<Integer, List<PsiIndex.Node>> candidateMap = reviewedDomainMapping(call, stageSymbol, facts);
+                if (candidateMap == null) continue;
+                if (stage != null) {
+                    stage = null;
+                    break;
+                }
+                stage = call;
+                stageMap = candidateMap;
+            }
+            PsiIndex.Node stageLambda = mappedLambda(stageMap, 5);
+            if (stage == null || mappedArgument(stageMap, 0) == null || stageLambda == null) continue;
+            PsiIndex.Node stageContent = uniqueDirectSourceCall(stageLambda, facts);
+            PsiIndex.Node stageOwner = stageContent == null ? null : exactSourceTarget(stageContent, facts);
+            if (stageOwner == null || callbackResult(stageLambda) != stageContent) continue;
+
+            PsiIndex.Node effect = null;
+            for (PsiIndex.Node node : program.nodes()) {
+                if (node.kind() != PsiIndex.NodeKind.CALL || enclosingCallable(node) != stageOwner
+                        || !isDirectStatement(node, stageOwner)
+                        || !exactDomainResolution(node, effectSymbol, facts)) continue;
+                if (effect != null) {
+                    effect = null;
+                    break;
+                }
+                effect = node;
+            }
+            Map<Integer, List<PsiIndex.Node>> effectMap = effect == null
+                ? null : mapDomainArguments(effect, effectSymbol, facts);
+            PsiIndex.Node keyArgument = mappedArgument(effectMap, 0);
+            PsiIndex.Node effectArgument = mappedArgument(effectMap, 1);
+            PsiIndex.Node effectLambda = mappedLambda(effectMap, 1);
+            if (effectLambda == null || keyArgument == null
+                    || !exactFact(facts, "callback_binding", effectLambda, effect, effectArgument,
+                        "disposable_effect", effectSymbol)
+                    || !exactFact(facts, "callback_receiver", effectLambda, effect, null,
+                        "disposable_effect_scope", disposableScope)) continue;
+
+            List<PsiIndex.Node> effectCalls = directStatementCallsLoose(effectLambda);
+            PsiIndex.Node dispose = callbackResult(effectLambda);
+            int disposeCount = 0;
+            if (effectCalls != null) {
+                for (PsiIndex.Node call : effectCalls) {
+                    if (exactDomainResolution(call, disposeSymbol, facts)) disposeCount++;
+                }
+            }
+            if (effectCalls == null || effectCalls.size() < 2 || disposeCount != 1 || dispose == null
+                    || effectCalls.get(effectCalls.size() - 1) != dispose
+                    || !exactDomainResolution(dispose, disposeSymbol, facts)) continue;
+            Map<Integer, List<PsiIndex.Node>> disposeMap = mapDomainArguments(dispose, disposeSymbol, facts);
+            PsiIndex.Node disposeArgument = mappedArgument(disposeMap, 0);
+            PsiIndex.Node cleanupLambda = mappedLambda(disposeMap, 0);
+            List<PsiIndex.Node> cleanupCalls = directCleanupCalls(cleanupLambda);
+            if (cleanupLambda == null || cleanupCalls == null || cleanupCalls.isEmpty()
+                    || !exactFact(facts, "callback_binding", cleanupLambda, dispose, disposeArgument,
+                        "dispose_cleanup", disposeSymbol)
+                    || !exactFact(facts, "implicit_receiver", dispose, effectLambda, effectLambda,
+                        "callback", disposeSymbol)) continue;
+
+            Map<String, Boolean> complete = Map.of(
+                "themed-window-and-disposable-stage", Boolean.TRUE);
+            Map<String, List<String>> alternatives = Map.of(
+                "themed-window-and-disposable-stage", List.of("direct-theme-paired-dispose"));
+            Map<String, String> selected = Rules.selectProof(
+                domain, "spatial.ui-lifecycle", complete, alternatives);
+            List<String> witnesses = new ArrayList<>();
+            boolean valid = addWitness(window, witnesses) && addWitness(theme, witnesses)
+                && addWitness(windowContent, witnesses) && addWitness(stageContent, witnesses)
+                && addWitness(effect, witnesses) && addWitness(keyArgument, witnesses);
+            for (int index = 0; valid && index + 1 < effectCalls.size(); index++) {
+                valid = addWitness(effectCalls.get(index), witnesses);
+            }
+            valid &= addWitness(dispose, witnesses);
+            for (PsiIndex.Node cleanup : cleanupCalls) if (valid) valid = addWitness(cleanup, witnesses);
+            if (!valid) continue;
+            Rules.Analysis candidate = Rules.claimOrNull(program, domain, "spatial.ui-lifecycle",
+                selected.get("proofForm"), selected.get("alternativeId"), witnesses);
+            if (candidate == null || match != null) return Rules.emptyAnalysis();
+            match = candidate;
+            matchAlternative = selected.get("alternativeId");
+        }
+        if (match == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("spatial.ui-lifecycle", matchAlternative);
+        return match;
+    }
+
+    // CP2 state emitter section.
+    private Rules.Analysis analyzeSingleSource() {
+        Rules.SymbolSpec window = domainSymbolOrNull(WINDOW_FQN, WINDOW_SIGNATURE);
+        Rules.SymbolSpec stage = domainSymbolOrNull(STAGE_FQN, STAGE_SIGNATURE);
+        if (window == null || stage == null
+                || !callbackShape(window, 0, "window_content", "spatial_container_scope")
+                || !callbackShape(stage, 5, "stage_content", "spatial_container_scope")) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        List<Map<String, Object>> matches = stateAuthorityContainerMatches(facts, window, stage);
+        if (matches.size() != 1) return Rules.emptyAnalysis();
+        Map<String, Object> match = matches.get(0);
+        String alternative = (String) match.get("alternative");
+        Map<String, Boolean> complete = Map.of("shared-strong-authority", Boolean.TRUE);
+        Map<String, List<String>> alternatives = Map.of(
+            "shared-strong-authority", List.of(alternative));
+        Map<String, String> selected = Rules.selectProof(
+            domain, "state.single-source", complete, alternatives);
+        if (!"shared-strong-authority".equals(selected.get("proofForm"))
+                || !alternative.equals(selected.get("alternativeId"))) {
+            return Rules.emptyAnalysis();
+        }
+
+        List<String> witnesses = new ArrayList<>();
+        boolean valid = addWitness((PsiIndex.Node) match.get("authority"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("originWitness"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("windowContainer"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("windowCall"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("windowArgument"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("windowTarget"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("stageContainer"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("stageCall"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("stageArgument"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("stageTarget"), witnesses);
+        if (!valid) return Rules.emptyAnalysis();
+        Rules.Analysis claim = Rules.claimOrNull(program, domain, "state.single-source",
+            "shared-strong-authority", alternative, witnesses);
+        if (claim == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("state.single-source", alternative);
+        return claim;
+    }
+
+    private List<Map<String, Object>> stateAuthorityContainerMatches(
+            List<Map<String, Object>> facts, Rules.SymbolSpec window, Rules.SymbolSpec stage) {
+        List<Map<String, Object>> matches = new ArrayList<>();
+        for (PsiIndex.Node windowContainer : program.nodes()) {
+            if (windowContainer.kind() != PsiIndex.NodeKind.CALL
+                    || !isProductionPath(windowContainer.fileId())
+                    || !exactDomainResolution(windowContainer, window, facts)) continue;
+            Map<Integer, List<PsiIndex.Node>> windowMap = mapDomainArguments(
+                windowContainer, window, facts);
+            PsiIndex.Node windowLambda = mappedLambda(windowMap, 0);
+            PsiIndex.Node root = enclosingCallable(windowContainer);
+            if (windowLambda == null || root == null) continue;
+            for (PsiIndex.Node stageContainer : program.nodes()) {
+                if (stageContainer.kind() != PsiIndex.NodeKind.CALL
+                        || !isProductionPath(stageContainer.fileId())
+                        || enclosingCallable(stageContainer) != root) continue;
+                Map<Integer, List<PsiIndex.Node>> stageMap = reviewedDomainMapping(
+                    stageContainer, stage, facts);
+                PsiIndex.Node stageLambda = mappedLambda(stageMap, 5);
+                if (stageLambda == null) continue;
+                List<Map<String, Object>> windowUses = stateAuthorityUses(windowLambda, facts);
+                List<Map<String, Object>> stageUses = stateAuthorityUses(stageLambda, facts);
+                for (Map<String, Object> windowUse : windowUses) {
+                    for (Map<String, Object> stageUse : stageUses) {
+                        PsiIndex.Node windowAuthority = (PsiIndex.Node) windowUse.get("authority");
+                        PsiIndex.Node stageAuthority = (PsiIndex.Node) stageUse.get("authority");
+                        String windowAlternative = (String) windowUse.get("alternative");
+                        if (windowAuthority.id() != stageAuthority.id()
+                                || !windowAlternative.equals(stageUse.get("alternative"))) continue;
+                        Map<String, Object> candidate = new HashMap<>();
+                        candidate.putAll(windowUse);
+                        candidate.put("windowContainer", windowContainer);
+                        candidate.put("windowCall", windowUse.get("call"));
+                        candidate.put("windowArgument", windowUse.get("argument"));
+                        candidate.put("windowTarget", windowUse.get("target"));
+                        candidate.put("stageContainer", stageContainer);
+                        candidate.put("stageCall", stageUse.get("call"));
+                        candidate.put("stageArgument", stageUse.get("argument"));
+                        candidate.put("stageTarget", stageUse.get("target"));
+                        matches.add(Map.copyOf(candidate));
+                    }
+                }
+            }
+        }
+        return matches;
+    }
+
+    private List<Map<String, Object>> stateAuthorityUses(PsiIndex.Node containerLambda,
+            List<Map<String, Object>> facts) {
+        List<Map<String, Object>> uses = new ArrayList<>();
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, containerLambda)
+                    || !isProductionPath(call.fileId()) || hasAnyTaint(call, facts)) continue;
+            PsiIndex.Node target = exactSourceTarget(call, facts);
+            if (target == null || target.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || !isProductionPath(target.fileId())) continue;
+            Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(call, target, facts);
+            if (mapping == null) continue;
+            for (Map.Entry<Integer, List<PsiIndex.Node>> entry : mapping.entrySet()) {
+                PsiIndex.Node argument = mappedArgument(mapping, entry.getKey());
+                PsiIndex.Node value = argument == null ? null
+                    : one(argument, PsiIndex.EdgeRole.VALUE);
+                Map<String, Object> authority = stateAuthorityForValue(
+                    value, facts, 0, new HashMap<>());
+                if (authority == null) continue;
+                Map<String, Object> use = new HashMap<>(authority);
+                use.put("call", call);
+                use.put("argument", argument);
+                use.put("target", target);
+                uses.add(Map.copyOf(use));
+            }
+        }
+        return uses;
+    }
+
+    private Map<String, Object> stateAuthorityForValue(PsiIndex.Node value,
+            List<Map<String, Object>> facts, int depth, Map<Integer, Boolean> active) {
+        if (value == null || depth >= 8 || active.put(value.id(), Boolean.TRUE) != null) return null;
+        if (value.kind() == PsiIndex.NodeKind.NAME_REF && value.name() != null) {
+            PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", value.id());
+            if (declaration == null) declaration = findLexicalDeclaration(value, value.name());
+            Map<String, Object> direct = stateAuthorityDeclaration(declaration, facts);
+            if (direct != null) return direct;
+            if (declaration != null && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+                    && declaration.flags().contains(PsiIndex.NodeFlag.VAL)
+                    && !declaration.flags().contains(PsiIndex.NodeFlag.VAR)) {
+                List<PsiIndex.Node> origins = propertyOrigins(declaration);
+                if (origins.size() != 1
+                        || stateAuthorityEscapes(declaration, origins.get(0), facts)) return null;
+                return stateAuthorityForValue(origins.get(0), facts, depth + 1, active);
+            }
+        }
+        if (value.kind() == PsiIndex.NodeKind.QUALIFIED
+                || value.kind() == PsiIndex.NodeKind.SAFE_QUALIFIED) {
+            PsiIndex.Node selector = one(value, PsiIndex.EdgeRole.SELECTOR);
+            PsiIndex.Node property = stateQualifiedAuthorityProperty(value, facts);
+            Map<String, Object> direct = stateAuthorityDeclaration(property, facts);
+            if (direct != null) return direct;
+            if (selector != null) {
+                Map<String, Object> nested = stateAuthorityForValue(
+                    selector, facts, depth + 1, active);
+                if (nested != null) return nested;
+            }
+            return stateAuthorityForValue(one(value, PsiIndex.EdgeRole.RECEIVER),
+                facts, depth + 1, active);
+        }
+        PsiIndex.Node call = directCall(value);
+        if (call != null) {
+            PsiIndex.Node target = exactSourceTarget(call, facts);
+            PsiIndex.Node returned = target == null ? null : sourceReturnOrigin(target);
+            if (returned != null) {
+                Map<String, Object> result = stateAuthorityForValue(
+                    returned, facts, depth + 1, active);
+                if (result != null) return result;
+            }
+        }
+        PsiIndex.Node representative = representativeOrigin(value, facts);
+        return representative != null && representative.id() != value.id()
+            ? stateAuthorityForValue(representative, facts, depth + 1, active) : null;
+    }
+
+    private Map<String, Object> stateAuthorityDeclaration(PsiIndex.Node property,
+            List<Map<String, Object>> facts) {
+        if (property == null || property.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                || !isProductionPath(property.fileId())
+                || !property.flags().contains(PsiIndex.NodeFlag.VAL)
+                || property.flags().contains(PsiIndex.NodeFlag.VAR)) return null;
+        PsiIndex.Node owner = authorityOwner(property);
+        List<PsiIndex.Node> origins = propertyOrigins(property);
+        if (owner == null || origins.size() != 1) return null;
+        PsiIndex.Node origin = origins.get(0);
+        boolean initializer = one(property, PsiIndex.EdgeRole.INITIALIZER) != null;
+        if (!initializer && isFreshConstruction(origin, facts)) return null;
+        String factKind = owner.kind() == PsiIndex.NodeKind.OBJECT_DECL ? "object"
+            : owner.kind() == PsiIndex.NodeKind.COMPANION_DECL ? "companion" : "top_level";
+        String alternative = owner.kind() == PsiIndex.NodeKind.OBJECT_DECL ? "object-singleton"
+            : owner.kind() == PsiIndex.NodeKind.COMPANION_DECL
+                ? "companion-held-singleton" : "top-level-val";
+        boolean exactStrong = exactFact(facts, "strong_authority", property,
+            owner, origin, factKind, null);
+        if (hasFact(facts, "strong_authority", property.id()) && !exactStrong) return null;
+        if (stateAuthorityEscapes(property, origin, facts)) return null;
+        PsiIndex.Node originWitness = origin.witnessNodeId() != null ? origin
+            : origin.kind() == PsiIndex.NodeKind.QUALIFIED
+                ? stateQualifiedAuthorityProperty(origin, facts) : null;
+        if (originWitness == null || originWitness.witnessNodeId() == null) return null;
+        return Map.of(
+            "authority", property,
+            "origin", origin,
+            "originWitness", originWitness,
+            "alternative", alternative);
+    }
+
+    private PsiIndex.Node stateQualifiedAuthorityProperty(PsiIndex.Node qualified,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node selector = one(qualified, PsiIndex.EdgeRole.SELECTOR);
+        if (selector == null || selector.name() == null) return null;
+        PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", selector.id());
+        if (declaration != null && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL) {
+            return declaration;
+        }
+        PsiIndex.Node receiver = one(qualified, PsiIndex.EdgeRole.RECEIVER);
+        PsiIndex.Node container = sourceTypeForValue(receiver, facts);
+        if (container == null && receiver != null) container = sourceTypeDeclaration(receiver);
+        if (container == null) return null;
+        List<PsiIndex.Node> owners = new ArrayList<>();
+        owners.add(container);
+        if (container.kind() == PsiIndex.NodeKind.CLASS_DECL) {
+            for (PsiIndex.Node child : lexicalChildren(container)) {
+                if (child.kind() == PsiIndex.NodeKind.COMPANION_DECL) owners.add(child);
+            }
+        }
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node owner : owners) {
+            for (PsiIndex.Node child : lexicalChildren(owner)) {
+                if (child.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                        || !selector.name().equals(child.name())) continue;
+                if (match != null) return null;
+                match = child;
+            }
+        }
+        return match;
+    }
+
+    private boolean stateAuthorityEscapes(PsiIndex.Node property, PsiIndex.Node origin,
+            List<Map<String, Object>> facts) {
+        for (Map<String, Object> fact : facts) {
+            String kind = (String) fact.get("kind");
+            String value = (String) fact.get("value");
+            if (!"escape".equals(kind) && !("effect".equals(kind)
+                    && ("replace".equals(value) || "unknown_escape".equals(value)))) continue;
+            int subjectId = ((Long) fact.get("subjectNodeId")).intValue();
+            int relatedId = ((Long) fact.get("relatedNodeId")).intValue();
+            if (stateAuthorityEndpoint(subjectId, property, origin, facts)
+                    || stateAuthorityEndpoint(relatedId, property, origin, facts)) return true;
+        }
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL
+                    || !isProductionPath(call.fileId())
+                    || hasCallableAuthority(call)) continue;
+            for (PsiIndex.Node argument : uniqueTargets(call, PsiIndex.EdgeRole.ARGUMENT)) {
+                PsiIndex.Node value = argumentValue(argument);
+                if (value == null) continue;
+                if (stateAuthorityEndpoint(value.id(), property, origin, facts)) return true;
+                PsiIndex.Node declaration = value.kind() == PsiIndex.NodeKind.NAME_REF
+                    ? relatedNodeForFact(facts, "def_use", value.id()) : null;
+                if (declaration == null && value.kind() == PsiIndex.NodeKind.NAME_REF
+                        && value.name() != null) {
+                    declaration = findLexicalDeclaration(value, value.name());
+                }
+                if (declaration != null && declaration.id() == property.id()) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean stateAuthorityEndpoint(int nodeId, PsiIndex.Node property,
+            PsiIndex.Node origin, List<Map<String, Object>> facts) {
+        if (nodeId < 0) return false;
+        if (nodeId == property.id() || nodeId == origin.id()) return true;
+        PsiIndex.Node representative = representativeOrigin(program.node(nodeId), facts);
+        return representative != null && (representative.id() == property.id()
+            || representative.id() == origin.id());
+    }
+
+    private Rules.Analysis analyzeTypedHandoff() {
+        Rules.SymbolSpec bundleType = typeSymbolExact(BUNDLE_TYPE_FQN, BUNDLE_TYPE_SIGNATURE);
+        Rules.SymbolSpec bundleConstructor = domainSymbolOrNull("android.os.Bundle", "Bundle()");
+        Rules.SymbolSpec apply = domainSymbolOrNull(
+            "kotlin.apply", "T.apply(block: T.() -> Unit): T");
+        Rules.SymbolSpec putString = domainSymbolOrNull(
+            "android.os.BaseBundle.putString", "putString(key: String, value: String?): Unit");
+        Rules.SymbolSpec putInt = domainSymbolOrNull(
+            "android.os.BaseBundle.putInt", "putInt(key: String, value: Int): Unit");
+        Rules.SymbolSpec putBoolean = domainSymbolOrNull(
+            "android.os.BaseBundle.putBoolean", "putBoolean(key: String, value: Boolean): Unit");
+        Rules.SymbolSpec getString = domainSymbolOrNull(
+            "android.os.BaseBundle.getString", "getString(key: String): String?");
+        Rules.SymbolSpec getInt = domainSymbolOrNull(
+            "android.os.BaseBundle.getInt", "getInt(key: String): Int");
+        Rules.SymbolSpec getBoolean = domainSymbolOrNull(
+            "android.os.BaseBundle.getBoolean", "getBoolean(key: String): Boolean");
+        Rules.SymbolSpec openStage = domainSymbolOrNull(OPEN_STAGE_FQN, OPEN_STAGE_SIGNATURE);
+        if (bundleType == null || bundleConstructor == null || apply == null
+                || putString == null || putInt == null || putBoolean == null
+                || getString == null || getInt == null || getBoolean == null
+                || openStage == null || !stateTypedApplyShape(apply)) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        List<Map<String, Object>> matches = new ArrayList<>();
+        for (PsiIndex.Node snapshot : program.nodes()) {
+            Map<String, PsiIndex.Node> fields = stateTypedSnapshotFields(snapshot);
+            if (fields == null) continue;
+            List<Map<String, Object>> encoders = stateTypedEncoders(snapshot, fields, facts,
+                bundleType, bundleConstructor, apply, putString, putInt, putBoolean, openStage);
+            List<Map<String, Object>> decoders = stateTypedDecoders(snapshot, fields, facts,
+                bundleType, getString, getInt, getBoolean);
+            for (Map<String, Object> encoder : encoders) {
+                for (Map<String, Object> decoder : decoders) {
+                    if (!stateTypedKeysAgree(encoder, decoder)) continue;
+                    Map<String, Object> match = new HashMap<>();
+                    match.put("snapshot", snapshot);
+                    match.put("selectionField", fields.get("selection"));
+                    match.put("intField", fields.get("int"));
+                    match.put("booleanField", fields.get("boolean"));
+                    match.putAll(encoder);
+                    match.putAll(decoder);
+                    boolean helper = encoder.containsKey("encoderHelper")
+                        || decoder.containsKey("decoderHelper");
+                    match.put("alternative", helper
+                        ? "unique-helper-bundle-adapter" : "direct-bundle-adapter");
+                    matches.add(Map.copyOf(match));
+                }
+            }
+        }
+        if (matches.size() != 1) return Rules.emptyAnalysis();
+        Map<String, Object> match = matches.get(0);
+        String alternative = (String) match.get("alternative");
+        Map<String, String> selected = Rules.selectProof(domain, "state.typed-handoff",
+            Map.of("typed-bundle-roundtrip", Boolean.TRUE),
+            Map.of("typed-bundle-roundtrip", List.of(alternative)));
+        if (!"typed-bundle-roundtrip".equals(selected.get("proofForm"))
+                || !alternative.equals(selected.get("alternativeId"))) {
+            return Rules.emptyAnalysis();
+        }
+        List<String> witnesses = new ArrayList<>();
+        boolean valid = addWitness((PsiIndex.Node) match.get("snapshot"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("selectionField"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("intField"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("booleanField"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("openCall"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("bundleArgument"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("encoder"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("decoder"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("constructor"), witnesses);
+        if (valid && match.containsKey("encoderHelper")) {
+            valid = addWitness((PsiIndex.Node) match.get("encoderHelper"), witnesses);
+        }
+        if (valid && match.containsKey("decoderHelper")) {
+            valid = addWitness((PsiIndex.Node) match.get("decoderHelper"), witnesses);
+        }
+        for (PsiIndex.Node call : stateTypedNodeList(match, "putCalls")) {
+            if (valid) valid = addWitness(call, witnesses);
+        }
+        for (PsiIndex.Node call : stateTypedNodeList(match, "getCalls")) {
+            if (valid) valid = addWitness(call, witnesses);
+        }
+        if (!valid) return Rules.emptyAnalysis();
+        Rules.Analysis claim = Rules.claimOrNull(program, domain, "state.typed-handoff",
+            "typed-bundle-roundtrip", alternative, witnesses);
+        if (claim == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("state.typed-handoff", alternative);
+        return claim;
+    }
+
+    private boolean stateTypedApplyShape(Rules.SymbolSpec apply) {
+        if (apply == null || apply.callbacks().size() != 1) return false;
+        Rules.CallbackSpec callback = apply.callbacks().get(0);
+        return callback.argumentPosition() == 0
+            && "inline_block".equals(callback.role())
+            && "immediate_inline".equals(callback.invocationModel())
+            && "bundle".equals(callback.receiverAbstractType())
+            && "call_receiver".equals(callback.receiverSource())
+            && callback.parameters().isEmpty();
+    }
+
+    private Map<String, PsiIndex.Node> stateTypedSnapshotFields(PsiIndex.Node snapshot) {
+        if (snapshot == null || snapshot.kind() != PsiIndex.NodeKind.CLASS_DECL
+                || !snapshot.flags().contains(PsiIndex.NodeFlag.DATA)
+                || !isProductionPath(snapshot.fileId())) return null;
+        List<PsiIndex.Node> parameters = targets(snapshot, PsiIndex.EdgeRole.PARAMETER);
+        if (parameters.size() != 3) return null;
+        Map<String, PsiIndex.Node> fields = new HashMap<>();
+        for (PsiIndex.Node parameter : parameters) {
+            if (!parameter.flags().contains(PsiIndex.NodeFlag.VAL)
+                    || parameter.flags().contains(PsiIndex.NodeFlag.VAR)) return null;
+            PsiIndex.Node type = one(parameter, PsiIndex.EdgeRole.TYPE);
+            String primitive = primitiveType(type);
+            boolean nullable = isExplicitNullableTarget(parameter, type);
+            String key;
+            if ("int".equals(primitive) && !nullable) key = "int";
+            else if ("boolean".equals(primitive) && !nullable) key = "boolean";
+            else if (primitive == null && nullable
+                    && sourceTypeDeclaration(type) != null) key = "selection";
+            else return null;
+            if (fields.put(key, parameter) != null) return null;
+        }
+        return fields.size() == 3 ? Map.copyOf(fields) : null;
+    }
+
+    private List<Map<String, Object>> stateTypedEncoders(PsiIndex.Node snapshot,
+            Map<String, PsiIndex.Node> fields, List<Map<String, Object>> facts,
+            Rules.SymbolSpec bundleType, Rules.SymbolSpec bundleConstructor,
+            Rules.SymbolSpec apply, Rules.SymbolSpec putString, Rules.SymbolSpec putInt,
+            Rules.SymbolSpec putBoolean, Rules.SymbolSpec openStage) {
+        List<Map<String, Object>> encoders = new ArrayList<>();
+        for (PsiIndex.Node openCall : program.nodes()) {
+            if (openCall.kind() != PsiIndex.NodeKind.CALL || !isProductionPath(openCall.fileId())) continue;
+            Map<Integer, List<PsiIndex.Node>> openMap = reviewedDomainMapping(
+                openCall, openStage, facts);
+            PsiIndex.Node bundleArgument = mappedArgument(openMap, 2);
+            PsiIndex.Node value = bundleArgument == null ? null
+                : one(bundleArgument, PsiIndex.EdgeRole.VALUE);
+            Map<String, Object> encoder = stateTypedEncoderFromValue(value, snapshot, fields,
+                facts, bundleType, bundleConstructor, apply, putString, putInt, putBoolean,
+                0, new HashMap<>());
+            if (encoder == null) continue;
+            Map<String, Object> result = new HashMap<>(encoder);
+            result.put("openCall", openCall);
+            result.put("bundleArgument", bundleArgument);
+            encoders.add(Map.copyOf(result));
+        }
+        return encoders;
+    }
+
+    private Map<String, Object> stateTypedEncoderFromValue(PsiIndex.Node value,
+            PsiIndex.Node snapshot, Map<String, PsiIndex.Node> fields,
+            List<Map<String, Object>> facts, Rules.SymbolSpec bundleType,
+            Rules.SymbolSpec bundleConstructor, Rules.SymbolSpec apply,
+            Rules.SymbolSpec putString, Rules.SymbolSpec putInt, Rules.SymbolSpec putBoolean,
+            int depth, Map<Integer, Boolean> active) {
+        if (value == null || depth > 6 || active.put(value.id(), Boolean.TRUE) != null) return null;
+        if (value.kind() == PsiIndex.NodeKind.NAME_REF && value.name() != null) {
+            PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", value.id());
+            if (declaration == null) declaration = findLexicalDeclaration(value, value.name());
+            if (declaration != null && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+                    && declaration.flags().contains(PsiIndex.NodeFlag.VAL)
+                    && !declaration.flags().contains(PsiIndex.NodeFlag.VAR)) {
+                PsiIndex.Node initializer = one(declaration, PsiIndex.EdgeRole.INITIALIZER);
+                return stateTypedEncoderFromValue(initializer, snapshot, fields, facts,
+                    bundleType, bundleConstructor, apply, putString, putInt, putBoolean,
+                    depth + 1, active);
+            }
+        }
+        PsiIndex.Node call = directCall(value);
+        if (call == null && value.kind() == PsiIndex.NodeKind.CALL) call = value;
+        if (call == null) return null;
+        PsiIndex.Node target = exactSourceTarget(call, facts);
+        if (target != null && target.kind() == PsiIndex.NodeKind.FUNCTION_DECL
+                && isProductionPath(target.fileId())
+                && mapSourceArguments(call, target, facts) != null) {
+            Map<String, Object> encoder = stateTypedEncoderFunction(target, snapshot, fields,
+                facts, bundleType, bundleConstructor, apply, putString, putInt, putBoolean);
+            if (encoder != null) return encoder;
+        }
+        PsiIndex.Node lambda = stateTypedApplyLambda(
+            call, bundleConstructor, apply, facts);
+        if (lambda == null) return null;
+        Map<String, Object> operations = stateTypedPutOperations(lambda, snapshot, fields,
+            facts, putString, putInt, putBoolean);
+        if (operations == null) {
+            operations = stateTypedPutHelper(lambda, snapshot, fields, facts,
+                putString, putInt, putBoolean);
+        }
+        if (operations == null) return null;
+        Map<String, Object> result = new HashMap<>(operations);
+        PsiIndex.Node encoder = enclosingCallable(call);
+        if (encoder == null || !isProductionPath(encoder.fileId())) return null;
+        result.put("encoder", encoder);
+        return Map.copyOf(result);
+    }
+
+    private Map<String, Object> stateTypedEncoderFunction(PsiIndex.Node encoder,
+            PsiIndex.Node snapshot, Map<String, PsiIndex.Node> fields,
+            List<Map<String, Object>> facts, Rules.SymbolSpec bundleType,
+            Rules.SymbolSpec bundleConstructor, Rules.SymbolSpec apply,
+            Rules.SymbolSpec putString, Rules.SymbolSpec putInt, Rules.SymbolSpec putBoolean) {
+        PsiIndex.Node declaredType = one(encoder, PsiIndex.EdgeRole.TYPE);
+        if (declaredType == null || typeSymbolForReference(declaredType) != bundleType
+                || isExplicitNullable(declaredType)) return null;
+        int snapshotParameters = 0;
+        for (PsiIndex.Node parameter : targets(encoder, PsiIndex.EdgeRole.PARAMETER)) {
+            PsiIndex.Node type = one(parameter, PsiIndex.EdgeRole.TYPE);
+            if (sourceTypeDeclaration(type) == snapshot) snapshotParameters++;
+        }
+        if (snapshotParameters != 1) return null;
+        PsiIndex.Node resultValue = sourceReturnOrigin(encoder);
+        PsiIndex.Node applyCall = directCall(resultValue);
+        PsiIndex.Node lambda = stateTypedApplyLambda(
+            applyCall, bundleConstructor, apply, facts);
+        if (lambda == null) return null;
+        Map<String, Object> operations = stateTypedPutOperations(lambda, snapshot, fields,
+            facts, putString, putInt, putBoolean);
+        if (operations == null) {
+            operations = stateTypedPutHelper(lambda, snapshot, fields, facts,
+                putString, putInt, putBoolean);
+        }
+        if (operations == null) return null;
+        Map<String, Object> result = new HashMap<>(operations);
+        result.put("encoder", encoder);
+        return Map.copyOf(result);
+    }
+
+    private PsiIndex.Node stateTypedApplyLambda(PsiIndex.Node applyCall,
+            Rules.SymbolSpec bundleConstructor, Rules.SymbolSpec apply,
+            List<Map<String, Object>> facts) {
+        if (applyCall == null || !exactDomainResolution(applyCall, apply, facts)) return null;
+        PsiIndex.Node receiver = resolvedReceiver(applyCall);
+        PsiIndex.Node constructor = directCall(receiver);
+        if (constructor == null && receiver != null
+                && receiver.kind() == PsiIndex.NodeKind.CALL) constructor = receiver;
+        if (constructor == null || !exactDomainResolution(constructor, bundleConstructor, facts)) return null;
+        Map<Integer, List<PsiIndex.Node>> mapping = mapDomainArguments(applyCall, apply, facts);
+        return mappedLambda(mapping, 0);
+    }
+
+    private Map<String, Object> stateTypedPutOperations(PsiIndex.Node callable,
+            PsiIndex.Node snapshot, Map<String, PsiIndex.Node> fields,
+            List<Map<String, Object>> facts, Rules.SymbolSpec putString,
+            Rules.SymbolSpec putInt, Rules.SymbolSpec putBoolean) {
+        Map<String, Object> result = new HashMap<>();
+        List<PsiIndex.Node> calls = new ArrayList<>();
+        for (String key : List.of("selection", "int", "boolean")) {
+            Rules.SymbolSpec symbol = key.equals("selection") ? putString
+                : key.equals("int") ? putInt : putBoolean;
+            List<PsiIndex.Node> matches = stateTypedDomainCallsWithin(callable, symbol, facts);
+            if (matches.size() != 1) return null;
+            PsiIndex.Node call = matches.get(0);
+            Map<Integer, List<PsiIndex.Node>> mapping =
+                reviewedDomainMapping(call, symbol, facts);
+            PsiIndex.Node keyArgument = mappedArgument(mapping, 0);
+            PsiIndex.Node valueArgument = mappedArgument(mapping, 1);
+            String literal = keyArgument == null ? null
+                : atomicString(one(keyArgument, PsiIndex.EdgeRole.VALUE));
+            PsiIndex.Node value = valueArgument == null ? null
+                : one(valueArgument, PsiIndex.EdgeRole.VALUE);
+            if (literal == null || !stateTypedFieldReferenced(
+                    value, fields.get(key), snapshot, facts)) return null;
+            result.put(key + "Key", literal);
+            calls.add(call);
+        }
+        if (((String) result.get("selectionKey")).equals(result.get("intKey"))
+                || ((String) result.get("selectionKey")).equals(result.get("booleanKey"))
+                || ((String) result.get("intKey")).equals(result.get("booleanKey"))) return null;
+        result.put("putCalls", List.copyOf(calls));
+        return Map.copyOf(result);
+    }
+
+    private Map<String, Object> stateTypedPutHelper(PsiIndex.Node callable,
+            PsiIndex.Node snapshot, Map<String, PsiIndex.Node> fields,
+            List<Map<String, Object>> facts, Rules.SymbolSpec putString,
+            Rules.SymbolSpec putInt, Rules.SymbolSpec putBoolean) {
+        Map<String, Object> match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, callable)
+                    || hasAnyTaint(call, facts)) continue;
+            PsiIndex.Node helper = exactSourceTarget(call, facts);
+            if (helper == null || helper.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || !isProductionPath(helper.fileId())
+                    || mapSourceArguments(call, helper, facts) == null) continue;
+            Map<String, Object> operations = stateTypedPutOperations(helper, snapshot, fields,
+                facts, putString, putInt, putBoolean);
+            if (operations == null || match != null) return null;
+            Map<String, Object> candidate = new HashMap<>(operations);
+            candidate.put("encoderHelper", helper);
+            match = Map.copyOf(candidate);
+        }
+        return match;
+    }
+
+    private List<Map<String, Object>> stateTypedDecoders(PsiIndex.Node snapshot,
+            Map<String, PsiIndex.Node> fields, List<Map<String, Object>> facts,
+            Rules.SymbolSpec bundleType, Rules.SymbolSpec getString,
+            Rules.SymbolSpec getInt, Rules.SymbolSpec getBoolean) {
+        List<Map<String, Object>> decoders = new ArrayList<>();
+        for (PsiIndex.Node decoder : program.nodes()) {
+            if (decoder.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || decoder.flags().contains(PsiIndex.NodeFlag.PRIVATE)
+                    || !isProductionPath(decoder.fileId())) continue;
+            PsiIndex.Node type = one(decoder, PsiIndex.EdgeRole.TYPE);
+            if (sourceTypeDeclaration(type) != snapshot) continue;
+            int bundleParameters = 0;
+            for (PsiIndex.Node parameter : targets(decoder, PsiIndex.EdgeRole.PARAMETER)) {
+                PsiIndex.Node parameterType = one(parameter, PsiIndex.EdgeRole.TYPE);
+                if (typeSymbolForReference(parameterType) == bundleType) bundleParameters++;
+            }
+            if (bundleParameters != 1) continue;
+            Map<String, Object> candidate = stateTypedDecodeResult(sourceReturnOrigin(decoder),
+                decoder, snapshot, fields, facts, getString, getInt, getBoolean, false);
+            if (candidate != null) decoders.add(candidate);
+        }
+        return decoders;
+    }
+
+    private Map<String, Object> stateTypedDecodeResult(PsiIndex.Node resultValue,
+            PsiIndex.Node decoder, PsiIndex.Node snapshot, Map<String, PsiIndex.Node> fields,
+            List<Map<String, Object>> facts, Rules.SymbolSpec getString,
+            Rules.SymbolSpec getInt, Rules.SymbolSpec getBoolean, boolean helperDepth) {
+        PsiIndex.Node call = directCall(resultValue);
+        if (call == null && resultValue != null
+                && resultValue.kind() == PsiIndex.NodeKind.CALL) call = resultValue;
+        if (call == null) return null;
+        PsiIndex.Node target = exactSourceTarget(call, facts);
+        if (target == snapshot) {
+            Map<String, Object> reads = stateTypedReadOperations(call, snapshot, fields,
+                facts, getString, getInt, getBoolean);
+            if (reads == null) return null;
+            Map<String, Object> candidate = new HashMap<>(reads);
+            candidate.put("decoder", decoder);
+            candidate.put("constructor", call);
+            return Map.copyOf(candidate);
+        }
+        if (helperDepth || target == null || target.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                || !isProductionPath(target.fileId())
+                || mapSourceArguments(call, target, facts) == null) return null;
+        PsiIndex.Node type = one(target, PsiIndex.EdgeRole.TYPE);
+        if (sourceTypeDeclaration(type) != snapshot) return null;
+        Map<String, Object> nested = stateTypedDecodeResult(sourceReturnOrigin(target),
+            decoder, snapshot, fields, facts, getString, getInt, getBoolean, true);
+        if (nested == null) return null;
+        Map<String, Object> candidate = new HashMap<>(nested);
+        candidate.put("decoderHelper", target);
+        return Map.copyOf(candidate);
+    }
+
+    private Map<String, Object> stateTypedReadOperations(PsiIndex.Node constructor,
+            PsiIndex.Node snapshot, Map<String, PsiIndex.Node> fields,
+            List<Map<String, Object>> facts, Rules.SymbolSpec getString,
+            Rules.SymbolSpec getInt, Rules.SymbolSpec getBoolean) {
+        Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(
+            constructor, snapshot, facts);
+        if (mapping == null || mapping.size() != 3) return null;
+        Map<String, Object> result = new HashMap<>();
+        List<PsiIndex.Node> calls = new ArrayList<>();
+        List<PsiIndex.Node> parameters = targets(snapshot, PsiIndex.EdgeRole.PARAMETER);
+        for (int position = 0; position < parameters.size(); position++) {
+            PsiIndex.Node field = parameters.get(position);
+            String key = field.id() == fields.get("selection").id() ? "selection"
+                : field.id() == fields.get("int").id() ? "int" : "boolean";
+            Rules.SymbolSpec symbol = key.equals("selection") ? getString
+                : key.equals("int") ? getInt : getBoolean;
+            PsiIndex.Node argument = mappedArgument(mapping, position);
+            PsiIndex.Node value = argument == null ? null
+                : one(argument, PsiIndex.EdgeRole.VALUE);
+            List<PsiIndex.Node> resolved = stateTypedDomainCallsWithin(value, symbol, facts);
+            if (resolved.size() != 1) return null;
+            PsiIndex.Node getCall = resolved.get(0);
+            Map<Integer, List<PsiIndex.Node>> getMap = mapDomainArguments(getCall, symbol, facts);
+            PsiIndex.Node keyArgument = mappedArgument(getMap, 0);
+            String literal = keyArgument == null ? null
+                : atomicString(one(keyArgument, PsiIndex.EdgeRole.VALUE));
+            if (literal == null) return null;
+            result.put(key + "Key", literal);
+            calls.add(getCall);
+        }
+        result.put("getCalls", List.copyOf(calls));
+        return Map.copyOf(result);
+    }
+
+    private List<PsiIndex.Node> stateTypedDomainCallsWithin(PsiIndex.Node owner,
+            Rules.SymbolSpec symbol, List<Map<String, Object>> facts) {
+        List<PsiIndex.Node> calls = new ArrayList<>();
+        if (owner == null) return calls;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (node.kind() != PsiIndex.NodeKind.CALL
+                    || node.id() != owner.id() && !isWithin(node, owner)
+                    || reviewedDomainMapping(node, symbol, facts) == null) continue;
+            calls.add(node);
+        }
+        return calls;
+    }
+
+    private boolean stateTypedFieldReferenced(PsiIndex.Node value, PsiIndex.Node field,
+            PsiIndex.Node snapshot, List<Map<String, Object>> facts) {
+        if (value == null || field == null || field.name() == null) return false;
+        int count = 0;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (node.kind() != PsiIndex.NodeKind.NAME_REF || node.name() == null
+                    || !node.name().equals(field.name())
+                    || node.id() != value.id() && !isWithin(node, value)) continue;
+            PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", node.id());
+            boolean exact = declaration == field;
+            Integer ownerId = lexicalOwners.get(node.id());
+            PsiIndex.Node owner = ownerId == null ? null : program.node(ownerId);
+            if (!exact && owner != null && (owner.kind() == PsiIndex.NodeKind.QUALIFIED
+                    || owner.kind() == PsiIndex.NodeKind.SAFE_QUALIFIED)
+                    && one(owner, PsiIndex.EdgeRole.SELECTOR) == node) {
+                PsiIndex.Node receiver = one(owner, PsiIndex.EdgeRole.RECEIVER);
+                PsiIndex.Node receiverType = sourceTypeForValue(receiver, facts);
+                if (receiverType == null) receiverType = stateTypedBoundResultType(receiver, facts);
+                exact = receiverType == snapshot;
+            }
+            if (exact) count++;
+        }
+        return count == 1;
+    }
+
+    private PsiIndex.Node stateTypedBoundResultType(PsiIndex.Node value,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node call = directCall(value);
+        if (call == null && value != null && value.kind() == PsiIndex.NodeKind.NAME_REF) {
+            PsiIndex.Node declaration = sourceValueDeclaration(value, facts);
+            PsiIndex.Node initializer = declaration == null ? null
+                : one(declaration, PsiIndex.EdgeRole.INITIALIZER);
+            call = directCall(initializer);
+        }
+        if (call == null) return null;
+        PsiIndex.Node target = exactSourceTarget(call, facts);
+        if (target == null) {
+            PsiIndex.Node bound = relatedNodeForFact(facts, "call_resolution", call.id());
+            if (bound != null && exactFact(facts, "call_resolution", call,
+                    enclosingCallable(call), bound, "function_value", null)) target = bound;
+        }
+        return target != null && target.kind() == PsiIndex.NodeKind.FUNCTION_DECL
+            ? sourceTypeDeclaration(one(target, PsiIndex.EdgeRole.TYPE)) : null;
+    }
+
+    private boolean stateTypedKeysAgree(Map<String, Object> encoder,
+            Map<String, Object> decoder) {
+        return encoder.get("selectionKey").equals(decoder.get("selectionKey"))
+            && encoder.get("intKey").equals(decoder.get("intKey"))
+            && encoder.get("booleanKey").equals(decoder.get("booleanKey"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<PsiIndex.Node> stateTypedNodeList(Map<String, Object> match, String key) {
+        Object value = match.get(key);
+        return value instanceof List<?> ? (List<PsiIndex.Node>) value : List.of();
+    }
+
+    private Rules.Analysis analyzeSharedReadWrite() {
+        Rules.SymbolSpec window = domainSymbolOrNull(WINDOW_FQN, WINDOW_SIGNATURE);
+        Rules.SymbolSpec stage = domainSymbolOrNull(STAGE_FQN, STAGE_SIGNATURE);
+        if (window == null || stage == null
+                || !callbackShape(window, 0, "window_content", "spatial_container_scope")
+                || !callbackShape(stage, 5, "stage_content", "spatial_container_scope")) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        List<Map<String, Object>> matches = stateSharedContainerMatches(facts, window, stage);
+        if (matches.size() != 1) return Rules.emptyAnalysis();
+        Map<String, Object> match = matches.get(0);
+        String proofForm = "same-authority-read-write";
+        String alternative = "direct-container-summaries";
+        Map<String, String> selected = Rules.selectProof(domain, "state.shared-read-write",
+            Map.of(proofForm, Boolean.TRUE), Map.of(proofForm, List.of(alternative)));
+        if (!proofForm.equals(selected.get("proofForm"))
+                || !alternative.equals(selected.get("alternativeId"))) {
+            return Rules.emptyAnalysis();
+        }
+        List<String> witnesses = new ArrayList<>();
+        boolean valid = addWitness((PsiIndex.Node) match.get("origin"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("windowContainer"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("windowCall"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("windowTarget"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("windowRead"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("windowWrite"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("stageContainer"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("stageCall"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("stageTarget"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("stageRead"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("stageWrite"), witnesses);
+        if (!valid) return Rules.emptyAnalysis();
+        Rules.Analysis claim = Rules.claimOrNull(program, domain, "state.shared-read-write",
+            proofForm, alternative, witnesses);
+        if (claim == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("state.shared-read-write", alternative);
+        return claim;
+    }
+
+    private List<Map<String, Object>> stateSharedContainerMatches(
+            List<Map<String, Object>> facts, Rules.SymbolSpec window, Rules.SymbolSpec stage) {
+        List<Map<String, Object>> matches = new ArrayList<>();
+        for (PsiIndex.Node windowContainer : program.nodes()) {
+            if (windowContainer.kind() != PsiIndex.NodeKind.CALL
+                    || !isProductionPath(windowContainer.fileId())
+                    || !exactDomainResolution(windowContainer, window, facts)) continue;
+            PsiIndex.Node root = enclosingCallable(windowContainer);
+            PsiIndex.Node windowLambda = mappedLambda(
+                mapDomainArguments(windowContainer, window, facts), 0);
+            if (root == null || windowLambda == null) continue;
+            for (PsiIndex.Node stageContainer : program.nodes()) {
+                if (stageContainer.kind() != PsiIndex.NodeKind.CALL
+                        || enclosingCallable(stageContainer) != root
+                        || !isProductionPath(stageContainer.fileId())) continue;
+                PsiIndex.Node stageLambda = mappedLambda(
+                    reviewedDomainMapping(stageContainer, stage, facts), 5);
+                if (stageLambda == null) continue;
+                List<Map<String, Object>> windowUses = stateSharedUses(windowLambda, facts);
+                List<Map<String, Object>> stageUses = stateSharedUses(stageLambda, facts);
+                for (Map<String, Object> windowUse : windowUses) {
+                    for (Map<String, Object> stageUse : stageUses) {
+                        PsiIndex.Node windowOrigin = (PsiIndex.Node) windowUse.get("origin");
+                        PsiIndex.Node stageOrigin = (PsiIndex.Node) stageUse.get("origin");
+                        PsiIndex.Node windowType = (PsiIndex.Node) windowUse.get("authorityType");
+                        PsiIndex.Node stageType = (PsiIndex.Node) stageUse.get("authorityType");
+                        if (windowOrigin.id() != stageOrigin.id()
+                                || windowType.id() != stageType.id()
+                                || !stateRetainedOriginAccepted(windowOrigin, facts)
+                                || isWithin(windowOrigin, windowLambda)
+                                || isWithin(stageOrigin, stageLambda)
+                                || stateSharedOriginEscapes(windowOrigin, facts)) continue;
+                        Map<String, Object> candidate = new HashMap<>();
+                        candidate.put("origin", windowOrigin);
+                        candidate.put("windowContainer", windowContainer);
+                        candidate.put("windowCall", windowUse.get("call"));
+                        candidate.put("windowTarget", windowUse.get("target"));
+                        candidate.put("windowRead", windowUse.get("read"));
+                        candidate.put("windowWrite", windowUse.get("write"));
+                        candidate.put("stageContainer", stageContainer);
+                        candidate.put("stageCall", stageUse.get("call"));
+                        candidate.put("stageTarget", stageUse.get("target"));
+                        candidate.put("stageRead", stageUse.get("read"));
+                        candidate.put("stageWrite", stageUse.get("write"));
+                        matches.add(Map.copyOf(candidate));
+                    }
+                }
+            }
+        }
+        return matches;
+    }
+
+    private List<Map<String, Object>> stateSharedUses(PsiIndex.Node containerLambda,
+            List<Map<String, Object>> facts) {
+        List<Map<String, Object>> uses = new ArrayList<>();
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, containerLambda)
+                    || !isProductionPath(call.fileId()) || hasAnyTaint(call, facts)) continue;
+            PsiIndex.Node target = exactSourceTarget(call, facts);
+            if (target == null || target.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || !isProductionPath(target.fileId())) continue;
+            Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(call, target, facts);
+            if (mapping == null) continue;
+            List<PsiIndex.Node> parameters = targets(target, PsiIndex.EdgeRole.PARAMETER);
+            for (int position = 0; position < parameters.size(); position++) {
+                PsiIndex.Node parameter = parameters.get(position);
+                PsiIndex.Node authorityType = sourceTypeDeclaration(
+                    one(parameter, PsiIndex.EdgeRole.TYPE));
+                if (authorityType == null || authorityType.kind() != PsiIndex.NodeKind.CLASS_DECL) continue;
+                PsiIndex.Node argument = mappedArgument(mapping, position);
+                PsiIndex.Node value = argument == null ? null
+                    : one(argument, PsiIndex.EdgeRole.VALUE);
+                PsiIndex.Node origin = stateSharedValueOrigin(
+                    value, facts, 0, new HashMap<>());
+                Map<String, PsiIndex.Node> summary = stateSharedSummary(
+                    target, parameter, authorityType, facts);
+                if (origin == null || summary == null) continue;
+                Map<String, Object> use = new HashMap<>();
+                use.put("origin", origin);
+                use.put("authorityType", authorityType);
+                use.put("call", call);
+                use.put("target", target);
+                use.put("read", summary.get("read"));
+                use.put("write", summary.get("write"));
+                uses.add(Map.copyOf(use));
+            }
+        }
+        return uses;
+    }
+
+    private PsiIndex.Node stateSharedValueOrigin(PsiIndex.Node value,
+            List<Map<String, Object>> facts, int depth, Map<Integer, Boolean> active) {
+        if (value == null || depth >= 8 || active.put(value.id(), Boolean.TRUE) != null) return null;
+        if (value.kind() == PsiIndex.NodeKind.NAME_REF && value.name() != null) {
+            PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", value.id());
+            if (declaration == null) declaration = findLexicalDeclaration(value, value.name());
+            if (declaration != null && declaration.kind() == PsiIndex.NodeKind.PARAMETER_DECL) {
+                return declaration;
+            }
+            if (declaration != null && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL) {
+                PsiIndex.Node initializer = one(declaration, PsiIndex.EdgeRole.INITIALIZER);
+                if (stateAuthorityDeclaration(declaration, facts) != null) return declaration;
+                return initializer == null ? null : stateSharedValueOrigin(
+                    initializer, facts, depth + 1, active);
+            }
+        }
+        if (value.kind() == PsiIndex.NodeKind.QUALIFIED
+                || value.kind() == PsiIndex.NodeKind.SAFE_QUALIFIED) {
+            PsiIndex.Node property = stateQualifiedAuthorityProperty(value, facts);
+            if (property != null) return property;
+        }
+        PsiIndex.Node call = directCall(value);
+        if (call != null) {
+            PsiIndex.Node target = exactSourceTarget(call, facts);
+            PsiIndex.Node returned = target == null ? null : sourceReturnOrigin(target);
+            PsiIndex.Node origin = returned == null ? null : stateSharedValueOrigin(
+                returned, facts, depth + 1, active);
+            return origin == null ? call : origin;
+        }
+        PsiIndex.Node representative = representativeOrigin(value, facts);
+        return representative != null && representative.id() != value.id()
+            ? stateSharedValueOrigin(representative, facts, depth + 1, active) : value;
+    }
+
+    private Map<String, PsiIndex.Node> stateSharedSummary(PsiIndex.Node container,
+            PsiIndex.Node authorityParameter, PsiIndex.Node authorityType,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node read = null;
+        PsiIndex.Node write = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, container)
+                    || hasAnyTaint(call, facts)) continue;
+            PsiIndex.Node receiver = resolvedReceiver(call);
+            PsiIndex.Node receiverOrigin = stateSharedValueOrigin(
+                receiver, facts, 0, new HashMap<>());
+            if (receiverOrigin == null || receiverOrigin.id() != authorityParameter.id()) continue;
+            PsiIndex.Node method = exactSourceTarget(call, facts);
+            if (method == null || method.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || stateSharedDeclarationOwner(method) != authorityType) continue;
+            if (read == null && stateSharedMethodHasFact(method, authorityType, facts, "read")) {
+                read = call;
+            }
+            if (write == null && stateSharedMethodHasFact(method, authorityType, facts, "write")) {
+                write = call;
+            }
+        }
+        return read != null && write != null ? Map.of("read", read, "write", write) : null;
+    }
+
+    private boolean stateSharedMethodHasFact(PsiIndex.Node method,
+            PsiIndex.Node authorityType, List<Map<String, Object>> facts, String kind) {
+        for (Map<String, Object> fact : facts) {
+            if (!kind.equals(fact.get("kind"))
+                    || !Long.valueOf(method.id()).equals(fact.get("ownerNodeId"))) continue;
+            int subjectId = ((Long) fact.get("subjectNodeId")).intValue();
+            int relatedId = ((Long) fact.get("relatedNodeId")).intValue();
+            PsiIndex.Node property = stateSharedOwnedProperty(subjectId, authorityType, facts);
+            if (property == null) property = stateSharedOwnedProperty(
+                relatedId, authorityType, facts);
+            if (property != null) return true;
+        }
+        return false;
+    }
+
+    private PsiIndex.Node stateSharedOwnedProperty(int nodeId,
+            PsiIndex.Node authorityType, List<Map<String, Object>> facts) {
+        if (nodeId < 0) return null;
+        PsiIndex.Node node = program.node(nodeId);
+        PsiIndex.Node declaration = node.kind() == PsiIndex.NodeKind.PROPERTY_DECL ? node
+            : node.kind() == PsiIndex.NodeKind.NAME_REF
+                ? relatedNodeForFact(facts, "def_use", node.id()) : null;
+        if (declaration == null && node.kind() == PsiIndex.NodeKind.NAME_REF) {
+            declaration = findLexicalDeclaration(node, node.name());
+        }
+        if (declaration == null && node.kind() == PsiIndex.NodeKind.ASSIGNMENT) {
+            PsiIndex.Node target = one(node, PsiIndex.EdgeRole.TARGET);
+            if (target != null && target.kind() == PsiIndex.NodeKind.NAME_REF) {
+                declaration = relatedNodeForFact(facts, "def_use", target.id());
+                if (declaration == null) {
+                    declaration = findLexicalDeclaration(target, target.name());
+                }
+            }
+        }
+        return declaration != null && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+                && stateSharedDeclarationOwner(declaration) == authorityType
+            ? declaration : null;
+    }
+
+    private PsiIndex.Node stateSharedDeclarationOwner(PsiIndex.Node declaration) {
+        Integer ownerId = declaration == null ? null : lexicalOwners.get(declaration.id());
+        if (ownerId == null) return null;
+        PsiIndex.Node owner = program.node(ownerId);
+        return owner.kind() == PsiIndex.NodeKind.CLASS_DECL
+                || owner.kind() == PsiIndex.NodeKind.OBJECT_DECL
+            ? owner : null;
+    }
+
+    private boolean stateSharedOriginEscapes(PsiIndex.Node origin,
+            List<Map<String, Object>> facts) {
+        for (Map<String, Object> fact : facts) {
+            String kind = (String) fact.get("kind");
+            String value = (String) fact.get("value");
+            if (!"escape".equals(kind) && !("effect".equals(kind)
+                    && ("replace".equals(value) || "unknown_escape".equals(value)))) continue;
+            for (String key : List.of("subjectNodeId", "relatedNodeId")) {
+                int nodeId = ((Long) fact.get(key)).intValue();
+                if (nodeId < 0) continue;
+                PsiIndex.Node representative = stateSharedValueOrigin(
+                    program.node(nodeId), facts, 0, new HashMap<>());
+                if (representative != null && representative.id() == origin.id()) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean stateRetainedOriginAccepted(PsiIndex.Node origin,
+            List<Map<String, Object>> facts) {
+        if (origin == null) return false;
+        if (origin.kind() == PsiIndex.NodeKind.PARAMETER_DECL) return true;
+        if (origin.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+                && authorityOwner(origin) != null) {
+            return stateAuthorityDeclaration(origin, facts) != null;
+        }
+        return origin.kind() == PsiIndex.NodeKind.OBJECT_DECL;
+    }
+
+    private Rules.Analysis analyzeReopenWiring() {
+        Rules.SymbolSpec window = domainSymbolOrNull(WINDOW_FQN, WINDOW_SIGNATURE);
+        Rules.SymbolSpec button = domainSymbolOrNull("com.pico.spatial.ui.design.Button",
+            "Button(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, size: ButtonSize = ButtonDefaults.Regular, colors: ButtonColors = ButtonDefaults.buttonColors(), leadingIcon: (@Composable () -> Unit)? = null, trailingIcon: (@Composable () -> Unit)? = null, contentPadding: PaddingValues = ButtonDefaults.paddingForButtonSize(size, haveIcon = leadingIcon != null || trailingIcon != null), shape: Shape = ButtonDefaults.shapeForButtonSize(size), gap: Dp = ButtonDefaults.gapForButtonSize(size, haveIcon = leadingIcon != null || trailingIcon != null), interactionSource: MutableInteractionSource = remember { MutableInteractionSource() }, content: @Composable RowScope.() -> Unit): Unit");
+        Rules.SymbolSpec rememberScope = domainSymbolOrNull("androidx.compose.runtime.rememberCoroutineScope",
+            "rememberCoroutineScope(getContext: () -> CoroutineContext = default): CoroutineScope");
+        Rules.SymbolSpec coroutineScope = typeSymbolExact(
+            "kotlinx.coroutines.CoroutineScope", "interface CoroutineScope");
+        Rules.SymbolSpec coroutineLaunch = domainSymbolOrNull("kotlinx.coroutines.launch",
+            "CoroutineScope.launch(context: CoroutineContext = EmptyCoroutineContext, start: CoroutineStart = CoroutineStart.DEFAULT, block: suspend CoroutineScope.() -> Unit): Job");
+        Rules.SymbolSpec localNavigator = domainSymbolOrNull(
+            LOCAL_NAVIGATOR_FQN, LOCAL_NAVIGATOR_SIGNATURE);
+        Rules.SymbolSpec current = domainSymbolOrNull(CURRENT_FQN, CURRENT_SIGNATURE);
+        Rules.SymbolSpec navigatorType = typeSymbolExact(
+            NAVIGATOR_TYPE_FQN, NAVIGATOR_TYPE_SIGNATURE);
+        Rules.SymbolSpec closeStage = domainSymbolOrNull(
+            "com.pico.spatial.ui.platform.containers.SpatialNavigator.closeStage", "closeStage(): Unit");
+        Rules.SymbolSpec openStage = domainSymbolOrNull(OPEN_STAGE_FQN, OPEN_STAGE_SIGNATURE);
+        Rules.SymbolSpec putString = domainSymbolOrNull(
+            "android.os.BaseBundle.putString", "putString(key: String, value: String?): Unit");
+        Rules.SymbolSpec putInt = domainSymbolOrNull(
+            "android.os.BaseBundle.putInt", "putInt(key: String, value: Int): Unit");
+        Rules.SymbolSpec putBoolean = domainSymbolOrNull(
+            "android.os.BaseBundle.putBoolean", "putBoolean(key: String, value: Boolean): Unit");
+        if (window == null || button == null || rememberScope == null || coroutineScope == null
+                || coroutineLaunch == null || localNavigator == null || current == null
+                || navigatorType == null || closeStage == null || openStage == null
+                || putString == null || putInt == null || putBoolean == null
+                || !stateReopenButtonShape(button) || coroutineLaunch.callbacks().size() != 1
+                || coroutineLaunch.callbacks().get(0).argumentPosition() != 2
+                || !"coroutine_body".equals(coroutineLaunch.callbacks().get(0).role())
+                || !"launched_path".equals(coroutineLaunch.callbacks().get(0).invocationModel())
+                || !"coroutine_scope".equals(
+                    coroutineLaunch.callbacks().get(0).receiverAbstractType())) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        List<Map<String, Object>> matches = stateReopenMatches(facts, window, button,
+            rememberScope, coroutineScope, coroutineLaunch, localNavigator, current,
+            navigatorType, closeStage, openStage, putString, putInt, putBoolean);
+        if (matches.size() != 1) return Rules.emptyAnalysis();
+        Map<String, Object> match = matches.get(0);
+        String proofForm = "retained-state-close-reopen";
+        String alternative = (String) match.get("alternative");
+        Map<String, String> selected = Rules.selectProof(domain, "state.reopen-wiring",
+            Map.of(proofForm, Boolean.TRUE), Map.of(proofForm, List.of(alternative)));
+        if (!proofForm.equals(selected.get("proofForm"))
+                || !alternative.equals(selected.get("alternativeId"))) {
+            return Rules.emptyAnalysis();
+        }
+        List<String> witnesses = new ArrayList<>();
+        boolean valid = addWitness((PsiIndex.Node) match.get("windowContainer"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("windowCall"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("windowTarget"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("button"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("clickLambda"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("scopeProperty"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("scopeProducer"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("launch"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("launchLambda"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("helperCall"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("helper"), witnesses)
+            && addWitness((PsiIndex.Node) match.get("close"), witnesses);
+        if (valid && Boolean.TRUE.equals(match.get("callbackOnly"))) {
+            valid = addWitness((PsiIndex.Node) match.get("reopenCall"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("reopenTarget"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("seam"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("handoff"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("handoffLocal"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("callbackRestore"), witnesses);
+            PsiIndex.Node bundleCall = (PsiIndex.Node) match.get("bundleCall");
+            if (valid && bundleCall != null) valid = addWitness(bundleCall, witnesses);
+            for (PsiIndex.Node bundleWitness : stateTypedNodeList(match, "bundleWitnesses")) {
+                if (valid) valid = addWitness(bundleWitness, witnesses);
+            }
+            if (valid) valid = addWitness((PsiIndex.Node) match.get("openCall"), witnesses);
+        } else if (valid) {
+            valid = addWitness((PsiIndex.Node) match.get("selectionRead"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("intRead"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("booleanRead"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("restore"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("restoreConstructor"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("reopenCall"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("reopenTarget"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("seam"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("handoff"), witnesses)
+                && addWitness((PsiIndex.Node) match.get("openCall"), witnesses);
+        }
+        if (!valid) return Rules.emptyAnalysis();
+        Rules.Analysis claim = Rules.claimOrNull(program, domain, "state.reopen-wiring",
+            proofForm, alternative, witnesses);
+        if (claim == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("state.reopen-wiring", alternative);
+        return claim;
+    }
+
+    private boolean stateReopenButtonShape(Rules.SymbolSpec button) {
+        if (button == null || button.callbacks().size() != 2) return false;
+        Rules.CallbackSpec click = button.callbacks().get(0);
+        Rules.CallbackSpec content = button.callbacks().get(1);
+        return click.argumentPosition() == 0 && click.role().equals("button_click")
+            && click.invocationModel().equals("user_action")
+            && click.receiverAbstractType() == null && click.receiverSource() == null
+            && click.parameters().isEmpty()
+            && content.argumentPosition() == 11 && content.role().equals("window_content")
+            && content.invocationModel().equals("possible_path")
+            && "row_scope".equals(content.receiverAbstractType())
+            && content.receiverSource() == null && content.parameters().isEmpty();
+    }
+
+    private List<Map<String, Object>> stateReopenMatches(List<Map<String, Object>> facts,
+            Rules.SymbolSpec window, Rules.SymbolSpec button, Rules.SymbolSpec rememberScope,
+            Rules.SymbolSpec coroutineScope, Rules.SymbolSpec coroutineLaunch,
+            Rules.SymbolSpec localNavigator, Rules.SymbolSpec current,
+            Rules.SymbolSpec navigatorType, Rules.SymbolSpec closeStage,
+            Rules.SymbolSpec openStage, Rules.SymbolSpec putString,
+            Rules.SymbolSpec putInt, Rules.SymbolSpec putBoolean) {
+        List<Map<String, Object>> matches = new ArrayList<>();
+        for (PsiIndex.Node windowContainer : program.nodes()) {
+            if (windowContainer.kind() != PsiIndex.NodeKind.CALL
+                    || !isProductionPath(windowContainer.fileId())
+                    || !exactDomainResolution(windowContainer, window, facts)) continue;
+            PsiIndex.Node windowLambda = mappedLambda(
+                mapDomainArguments(windowContainer, window, facts), 0);
+            if (windowLambda == null) continue;
+            for (PsiIndex.Node windowCall : program.nodes()) {
+                if (windowCall.kind() != PsiIndex.NodeKind.CALL || !isWithin(windowCall, windowLambda)
+                        || hasAnyTaint(windowCall, facts)) continue;
+                PsiIndex.Node windowTarget = exactSourceTarget(windowCall, facts);
+                if (windowTarget == null || windowTarget.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                        || !isProductionPath(windowTarget.fileId())) continue;
+                Map<Integer, List<PsiIndex.Node>> windowMap = mapSourceArguments(
+                    windowCall, windowTarget, facts);
+                if (windowMap == null) continue;
+                List<PsiIndex.Node> windowParameters = targets(
+                    windowTarget, PsiIndex.EdgeRole.PARAMETER);
+                for (int position = 0; position < windowParameters.size(); position++) {
+                    PsiIndex.Node windowParameter = windowParameters.get(position);
+                    PsiIndex.Node authorityType = sourceTypeDeclaration(
+                        one(windowParameter, PsiIndex.EdgeRole.TYPE));
+                    if (authorityType == null || authorityType.kind() != PsiIndex.NodeKind.CLASS_DECL) continue;
+                    PsiIndex.Node argument = mappedArgument(windowMap, position);
+                    PsiIndex.Node rootOrigin = argument == null ? null : stateSharedValueOrigin(
+                        one(argument, PsiIndex.EdgeRole.VALUE), facts, 0, new HashMap<>());
+                    if (rootOrigin == null || !stateRetainedOriginAccepted(rootOrigin, facts)
+                            || stateSharedOriginEscapes(rootOrigin, facts)) continue;
+                    List<Map<String, Object>> paths = stateReopenButtonPaths(windowTarget,
+                        windowParameter, rootOrigin, authorityType, facts, button, rememberScope,
+                        coroutineScope, coroutineLaunch, localNavigator, current, navigatorType,
+                        closeStage, openStage, putString, putInt, putBoolean);
+                    for (Map<String, Object> path : paths) {
+                        Map<String, Object> match = new HashMap<>(path);
+                        match.put("windowContainer", windowContainer);
+                        match.put("windowCall", windowCall);
+                        match.put("windowTarget", windowTarget);
+                        matches.add(Map.copyOf(match));
+                    }
+                }
+            }
+        }
+        return matches;
+    }
+
+    private List<Map<String, Object>> stateReopenButtonPaths(PsiIndex.Node windowTarget,
+            PsiIndex.Node windowParameter, PsiIndex.Node rootOrigin,
+            PsiIndex.Node authorityType, List<Map<String, Object>> facts,
+            Rules.SymbolSpec button, Rules.SymbolSpec rememberScope,
+            Rules.SymbolSpec coroutineScope, Rules.SymbolSpec coroutineLaunch,
+            Rules.SymbolSpec localNavigator, Rules.SymbolSpec current,
+            Rules.SymbolSpec navigatorType, Rules.SymbolSpec closeStage,
+            Rules.SymbolSpec openStage, Rules.SymbolSpec putString,
+            Rules.SymbolSpec putInt, Rules.SymbolSpec putBoolean) {
+        List<Map<String, Object>> matches = new ArrayList<>();
+        for (PsiIndex.Node buttonCall : program.nodes()) {
+            if (buttonCall.kind() != PsiIndex.NodeKind.CALL || !isWithin(buttonCall, windowTarget)) continue;
+            Map<Integer, List<PsiIndex.Node>> buttonMap = reviewedDomainMapping(
+                buttonCall, button, facts);
+            PsiIndex.Node clickArgument = mappedArgument(buttonMap, 0);
+            PsiIndex.Node clickLambda = mappedLambda(buttonMap, 0);
+            if (clickLambda == null || !exactFact(facts, "callback_binding", clickLambda,
+                    buttonCall, clickArgument, "button_click", button)) continue;
+            for (PsiIndex.Node launchCall : program.nodes()) {
+                if (launchCall.kind() != PsiIndex.NodeKind.CALL || !isWithin(launchCall, clickLambda)) continue;
+                Map<Integer, List<PsiIndex.Node>> launchMap = reviewedDomainMapping(
+                    launchCall, coroutineLaunch, facts);
+                PsiIndex.Node launchArgument = mappedArgument(launchMap, 2);
+                PsiIndex.Node launchLambda = mappedLambda(launchMap, 2);
+                Map<String, PsiIndex.Node> scope = stateReopenScope(
+                    resolvedReceiver(launchCall), facts, rememberScope, coroutineScope);
+                if (launchLambda == null || scope == null
+                        || !exactFact(facts, "callback_binding", launchLambda, launchCall,
+                            launchArgument, "coroutine_body", coroutineLaunch)) continue;
+                for (PsiIndex.Node helperCall : program.nodes()) {
+                    if (helperCall.kind() != PsiIndex.NodeKind.CALL
+                            || !isWithin(helperCall, launchLambda) || hasAnyTaint(helperCall, facts)) continue;
+                    PsiIndex.Node helper = exactSourceTarget(helperCall, facts);
+                    if (helper == null || helper.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                            || !helper.flags().contains(PsiIndex.NodeFlag.SUSPEND)
+                            || !isProductionPath(helper.fileId())) continue;
+                    PsiIndex.Node extensionType = declarationTypeNode(helper, true);
+                    if (typeSymbolForReference(extensionType) != navigatorType
+                            || stateReopenNavigator(resolvedReceiver(helperCall), facts,
+                                localNavigator, current, navigatorType) == null) continue;
+                    Map<Integer, List<PsiIndex.Node>> helperMap = mapSourceArguments(
+                        helperCall, helper, facts);
+                    if (helperMap == null) continue;
+                    List<PsiIndex.Node> helperParameters = targets(helper, PsiIndex.EdgeRole.PARAMETER);
+                    for (int helperPosition = 0; helperPosition < helperParameters.size(); helperPosition++) {
+                        PsiIndex.Node helperParameter = helperParameters.get(helperPosition);
+                        if (sourceTypeDeclaration(one(helperParameter, PsiIndex.EdgeRole.TYPE))
+                                != authorityType) continue;
+                        PsiIndex.Node mapped = mappedArgument(helperMap, helperPosition);
+                        PsiIndex.Node mappedOrigin = mapped == null ? null : stateSharedValueOrigin(
+                            one(mapped, PsiIndex.EdgeRole.VALUE), facts, 0, new HashMap<>());
+                        if (mappedOrigin == null || mappedOrigin.id() != windowParameter.id()) continue;
+                        Map<String, Object> analysis = stateReopenHelper(helper, helperParameter,
+                            rootOrigin, authorityType, facts, closeStage, openStage,
+                            navigatorType, putString, putInt, putBoolean);
+                        if (analysis == null) continue;
+                        Map<String, Object> match = new HashMap<>(analysis);
+                        match.put("button", buttonCall);
+                        match.put("clickLambda", clickLambda);
+                        match.put("scopeProperty", scope.get("property"));
+                        match.put("scopeProducer", scope.get("producer"));
+                        match.put("launch", launchCall);
+                        match.put("launchLambda", launchLambda);
+                        match.put("helperCall", helperCall);
+                        match.put("helper", helper);
+                        matches.add(Map.copyOf(match));
+                    }
+                }
+            }
+        }
+        return matches;
+    }
+
+    private Map<String, PsiIndex.Node> stateReopenScope(PsiIndex.Node receiver,
+            List<Map<String, Object>> facts, Rules.SymbolSpec rememberScope,
+            Rules.SymbolSpec coroutineScope) {
+        if (receiver == null || receiver.kind() != PsiIndex.NodeKind.NAME_REF) return null;
+        PsiIndex.Node property = relatedNodeForFact(facts, "def_use", receiver.id());
+        if (property == null || property.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                || !property.flags().contains(PsiIndex.NodeFlag.VAL)
+                || property.flags().contains(PsiIndex.NodeFlag.VAR)) return null;
+        PsiIndex.Node producer = one(property, PsiIndex.EdgeRole.INITIALIZER);
+        PsiIndex.Node call = directCall(producer);
+        if (call == null && producer != null && producer.kind() == PsiIndex.NodeKind.CALL) call = producer;
+        if (call == null || !exactDomainResolution(call, rememberScope, facts)
+                || !exactFact(facts, "type", property, enclosingCallable(property), null,
+                    "coroutine_scope", coroutineScope)) return null;
+        return Map.of("property", property, "producer", call);
+    }
+
+    private PsiIndex.Node stateReopenNavigator(PsiIndex.Node receiver,
+            List<Map<String, Object>> facts, Rules.SymbolSpec localNavigator,
+            Rules.SymbolSpec current, Rules.SymbolSpec navigatorType) {
+        if (receiver == null || receiver.kind() != PsiIndex.NodeKind.NAME_REF) return null;
+        PsiIndex.Node property = relatedNodeForFact(facts, "def_use", receiver.id());
+        if (property == null || property.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                || !property.flags().contains(PsiIndex.NodeFlag.VAL)
+                || property.flags().contains(PsiIndex.NodeFlag.VAR)
+                || !exactFact(facts, "type", property, enclosingCallable(property), null,
+                    "spatial_navigator", navigatorType)) return null;
+        PsiIndex.Node initializer = one(property, PsiIndex.EdgeRole.INITIALIZER);
+        if (initializer == null || initializer.kind() != PsiIndex.NodeKind.QUALIFIED) return null;
+        PsiIndex.Node source = one(initializer, PsiIndex.EdgeRole.RECEIVER);
+        return source != null && exactDomainResolution(source, localNavigator, facts)
+                && exactQualifiedResult(initializer, current, "spatial_navigator", facts)
+            ? property : null;
+    }
+
+    private Map<String, Object> stateReopenHelper(PsiIndex.Node helper,
+            PsiIndex.Node authorityParameter, PsiIndex.Node rootOrigin,
+            PsiIndex.Node authorityType, List<Map<String, Object>> facts,
+            Rules.SymbolSpec closeStage, Rules.SymbolSpec openStage,
+            Rules.SymbolSpec navigatorType, Rules.SymbolSpec putString,
+            Rules.SymbolSpec putInt, Rules.SymbolSpec putBoolean) {
+        List<PsiIndex.Node> closes = stateTypedDomainCallsWithin(helper, closeStage, facts);
+        if (closes.size() != 1) return null;
+        PsiIndex.Node close = closes.get(0);
+        Map<String, Object> reads = stateReopenRetainedReads(
+            helper, authorityParameter, rootOrigin, authorityType, facts);
+        if (reads != null) {
+            PsiIndex.Node snapshot = (PsiIndex.Node) reads.get("snapshot");
+            Map<String, PsiIndex.Node> fields = stateReopenSnapshotFields(snapshot);
+            Map<String, Object> restore = stateReopenRestore(helper, authorityParameter,
+                rootOrigin, authorityType, snapshot, fields, reads, facts);
+            PsiIndex.Node restoreCall = restore == null
+                ? null : (PsiIndex.Node) restore.get("restore");
+            Map<String, Object> reopen = restoreCall == null ? null : stateReopenFinalCall(
+                helper, authorityParameter, rootOrigin, authorityType, snapshot, fields,
+                restoreCall, facts, openStage, navigatorType,
+                putString, putInt, putBoolean);
+            if (reopen != null
+                    && close.startUtf16() < ((PsiIndex.Node) reads.get("firstRead")).startUtf16()
+                    && ((PsiIndex.Node) reads.get("lastRead")).startUtf16()
+                        < restoreCall.startUtf16()
+                    && restoreCall.startUtf16()
+                        < ((PsiIndex.Node) reopen.get("reopenCall")).startUtf16()) {
+                Map<String, Object> result = new HashMap<>(reads);
+                result.remove("firstRead");
+                result.remove("lastRead");
+                result.putAll(restore);
+                result.putAll(reopen);
+                result.put("close", close);
+                return Map.copyOf(result);
+            }
+        }
+        Map<String, Object> reopen = stateReopenCallbackOnlyFinalCall(helper,
+            authorityParameter, rootOrigin, authorityType, close, facts,
+            openStage, navigatorType, putString, putInt, putBoolean);
+        if (reopen == null) return null;
+        Map<String, Object> result = new HashMap<>(reopen);
+        result.put("close", close);
+        return Map.copyOf(result);
+    }
+
+    private Map<String, Object> stateReopenCallbackOnlyFinalCall(PsiIndex.Node helper,
+            PsiIndex.Node authorityParameter, PsiIndex.Node rootOrigin,
+            PsiIndex.Node authorityType, PsiIndex.Node close,
+            List<Map<String, Object>> facts, Rules.SymbolSpec openStage,
+            Rules.SymbolSpec navigatorType, Rules.SymbolSpec putString,
+            Rules.SymbolSpec putInt, Rules.SymbolSpec putBoolean) {
+        Map<String, Object> match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, helper)
+                    || call.startUtf16() <= close.startUtf16() || hasAnyTaint(call, facts)) continue;
+            PsiIndex.Node target = stateReopenExtensionTarget(
+                call, helper, navigatorType, facts);
+            if (target == null || target.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || stateSharedDeclarationOwner(target) == authorityType
+                    || typeSymbolForReference(declarationTypeNode(target, true)) != navigatorType) {
+                continue;
+            }
+            PsiIndex.Node openCall = stateReopenUniqueOpenStage(target, openStage, facts);
+            if (openCall == null) continue;
+            Map<String, Object> equivalent = stateReopenEquivalent(call, target,
+                authorityParameter, rootOrigin, authorityType, null, null, facts,
+                openCall, putString, putInt, putBoolean);
+            if (equivalent == null || match != null) return null;
+            Map<String, Object> candidate = new HashMap<>(equivalent);
+            candidate.put("callbackOnly", Boolean.TRUE);
+            match = Map.copyOf(candidate);
+        }
+        return match;
+    }
+
+    private Map<String, PsiIndex.Node> stateReopenSnapshotFields(PsiIndex.Node snapshot) {
+        if (snapshot == null || snapshot.kind() != PsiIndex.NodeKind.CLASS_DECL
+                || !isProductionPath(snapshot.fileId())) return null;
+        List<PsiIndex.Node> parameters = targets(snapshot, PsiIndex.EdgeRole.PARAMETER);
+        if (parameters.size() != 3) return null;
+        Map<String, PsiIndex.Node> fields = new HashMap<>();
+        for (PsiIndex.Node parameter : parameters) {
+            if (!parameter.flags().contains(PsiIndex.NodeFlag.VAL)
+                    || parameter.flags().contains(PsiIndex.NodeFlag.VAR)) return null;
+            PsiIndex.Node type = one(parameter, PsiIndex.EdgeRole.TYPE);
+            String primitive = primitiveType(type);
+            boolean nullable = isExplicitNullableTarget(parameter, type);
+            String key;
+            if ("int".equals(primitive) && !nullable) key = "int";
+            else if ("boolean".equals(primitive) && !nullable) key = "boolean";
+            else if (nullable && ("string".equals(primitive)
+                    || primitive == null && sourceTypeDeclaration(type) != null)) key = "selection";
+            else return null;
+            if (fields.put(key, parameter) != null) return null;
+        }
+        return fields.size() == 3 ? Map.copyOf(fields) : null;
+    }
+
+    private Map<String, Object> stateReopenRetainedReads(PsiIndex.Node helper,
+            PsiIndex.Node authorityParameter, PsiIndex.Node rootOrigin,
+            PsiIndex.Node authorityType, List<Map<String, Object>> facts) {
+        Map<String, Object> result = new HashMap<>();
+        PsiIndex.Node snapshot = null;
+        PsiIndex.Node first = null;
+        PsiIndex.Node last = null;
+        for (PsiIndex.Node local : program.nodes()) {
+            if (local.kind() != PsiIndex.NodeKind.PROPERTY_DECL || !isWithin(local, helper)
+                    || !local.flags().contains(PsiIndex.NodeFlag.VAL)) continue;
+            PsiIndex.Node initializer = one(local, PsiIndex.EdgeRole.INITIALIZER);
+            if (initializer == null) continue;
+            for (PsiIndex.Node readCall : program.nodes()) {
+                if (readCall.kind() != PsiIndex.NodeKind.CALL
+                        || readCall.id() != initializer.id() && !isWithin(readCall, initializer)) continue;
+                PsiIndex.Node method = exactSourceTarget(readCall, facts);
+                if (method == null || method.kind() != PsiIndex.NodeKind.FUNCTION_DECL) continue;
+                if (stateSharedDeclarationOwner(method) != authorityType) continue;
+                if (!stateReopenReceiverMatches(resolvedReceiver(readCall),
+                        authorityParameter, rootOrigin, facts)) continue;
+                if (!stateSharedMethodHasFact(method, authorityType, facts, "read")) continue;
+                PsiIndex.Node candidateSnapshot = sourceTypeDeclaration(
+                    one(method, PsiIndex.EdgeRole.TYPE));
+                Map<String, PsiIndex.Node> fields = stateReopenSnapshotFields(candidateSnapshot);
+                String key = stateReopenFieldKey(initializer, candidateSnapshot, fields, facts);
+                if (key == null || result.containsKey(key + "Read")
+                        || snapshot != null && snapshot.id() != candidateSnapshot.id()) return null;
+                snapshot = candidateSnapshot;
+                result.put(key + "Read", readCall);
+                result.put(key + "Local", local);
+                if (first == null || readCall.startUtf16() < first.startUtf16()) first = readCall;
+                if (last == null || readCall.startUtf16() > last.startUtf16()) last = readCall;
+            }
+        }
+        if (snapshot == null || !result.containsKey("selectionRead")
+                || !result.containsKey("intRead") || !result.containsKey("booleanRead")) return null;
+        result.put("snapshot", snapshot);
+        result.put("firstRead", first);
+        result.put("lastRead", last);
+        return Map.copyOf(result);
+    }
+
+    private String stateReopenFieldKey(PsiIndex.Node value, PsiIndex.Node snapshot,
+            Map<String, PsiIndex.Node> fields, List<Map<String, Object>> facts) {
+        if (value == null || snapshot == null || fields == null) return null;
+        String match = null;
+        for (String key : List.of("selection", "int", "boolean")) {
+            if (!stateTypedFieldReferenced(value, fields.get(key), snapshot, facts)) continue;
+            if (match != null) return null;
+            match = key;
+        }
+        return match;
+    }
+
+    private boolean stateReopenReceiverMatches(PsiIndex.Node receiver,
+            PsiIndex.Node authorityParameter, PsiIndex.Node rootOrigin,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node origin = stateSharedValueOrigin(receiver, facts, 0, new HashMap<>());
+        return origin != null && (origin.id() == authorityParameter.id()
+            || origin.id() == rootOrigin.id());
+    }
+
+    private Map<String, Object> stateReopenRestore(PsiIndex.Node helper,
+            PsiIndex.Node authorityParameter, PsiIndex.Node rootOrigin,
+            PsiIndex.Node authorityType, PsiIndex.Node snapshot,
+            Map<String, PsiIndex.Node> fields, Map<String, Object> reads,
+            List<Map<String, Object>> facts) {
+        Map<String, Object> match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, helper)) continue;
+            PsiIndex.Node method = exactSourceTarget(call, facts);
+            if (method == null || method.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || stateSharedDeclarationOwner(method) != authorityType
+                    || !stateReopenReceiverMatches(resolvedReceiver(call),
+                        authorityParameter, rootOrigin, facts)
+                    || !stateSharedMethodHasFact(method, authorityType, facts, "write")) continue;
+            Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(call, method, facts);
+            if (mapping == null) continue;
+            PsiIndex.Node constructor = null;
+            for (Map.Entry<Integer, List<PsiIndex.Node>> entry : mapping.entrySet()) {
+                PsiIndex.Node argument = mappedArgument(mapping, entry.getKey());
+                PsiIndex.Node value = argument == null ? null : one(argument, PsiIndex.EdgeRole.VALUE);
+                PsiIndex.Node candidate = directCall(value);
+                if (candidate != null && exactSourceTarget(candidate, facts) == snapshot) {
+                    if (constructor != null) constructor = null;
+                    else constructor = candidate;
+                }
+            }
+            if (constructor == null || !stateReopenConstructorUses(
+                    constructor, snapshot, fields, reads, facts)) continue;
+            if (match != null) return null;
+            match = Map.of("restore", call, "restoreConstructor", constructor);
+        }
+        return match;
+    }
+
+    private boolean stateReopenConstructorUses(PsiIndex.Node constructor,
+            PsiIndex.Node snapshot, Map<String, PsiIndex.Node> fields,
+            Map<String, Object> reads, List<Map<String, Object>> facts) {
+        Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(
+            constructor, snapshot, facts);
+        List<PsiIndex.Node> parameters = targets(snapshot, PsiIndex.EdgeRole.PARAMETER);
+        if (mapping == null || mapping.size() != parameters.size()) return false;
+        for (int position = 0; position < parameters.size(); position++) {
+            PsiIndex.Node field = parameters.get(position);
+            String key = field.id() == fields.get("selection").id() ? "selection"
+                : field.id() == fields.get("int").id() ? "int" : "boolean";
+            PsiIndex.Node argument = mappedArgument(mapping, position);
+            PsiIndex.Node value = argument == null ? null : one(argument, PsiIndex.EdgeRole.VALUE);
+            if (!stateReopenRefersTo(value, (PsiIndex.Node) reads.get(key + "Local"), facts)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean stateReopenRefersTo(PsiIndex.Node value, PsiIndex.Node declaration,
+            List<Map<String, Object>> facts) {
+        if (value == null || declaration == null) return false;
+        int count = 0;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (node.kind() != PsiIndex.NodeKind.NAME_REF
+                    || node.id() != value.id() && !isWithin(node, value)) continue;
+            if (relatedNodeForFact(facts, "def_use", node.id()) == declaration) count++;
+        }
+        return count == 1;
+    }
+
+    private Map<String, Object> stateReopenFinalCall(PsiIndex.Node helper,
+            PsiIndex.Node authorityParameter, PsiIndex.Node rootOrigin,
+            PsiIndex.Node authorityType, PsiIndex.Node snapshot,
+            Map<String, PsiIndex.Node> fields, PsiIndex.Node restore,
+            List<Map<String, Object>> facts, Rules.SymbolSpec openStage,
+            Rules.SymbolSpec navigatorType, Rules.SymbolSpec putString,
+            Rules.SymbolSpec putInt, Rules.SymbolSpec putBoolean) {
+        Map<String, Object> match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, helper)
+                    || call.startUtf16() <= restore.startUtf16() || hasAnyTaint(call, facts)) continue;
+            PsiIndex.Node target = stateReopenExtensionTarget(
+                call, helper, navigatorType, facts);
+            if (target == null || target.kind() != PsiIndex.NodeKind.FUNCTION_DECL) continue;
+            if (stateSharedDeclarationOwner(target) == authorityType) continue;
+            if (typeSymbolForReference(declarationTypeNode(target, true)) != navigatorType) continue;
+            if (stateReopenAuthorityWriteBetween(helper, authorityParameter, rootOrigin,
+                    authorityType, restore, call, facts)) continue;
+            PsiIndex.Node openCall = stateReopenUniqueOpenStage(target, openStage, facts);
+            if (openCall == null) continue;
+            Map<String, Object> standard = stateReopenStandard(call, target, authorityParameter,
+                rootOrigin, authorityType, snapshot, facts, openCall);
+            Map<String, Object> equivalent = standard == null ? stateReopenEquivalent(call, target,
+                authorityParameter, rootOrigin, authorityType, snapshot, fields, facts,
+                openCall, putString, putInt, putBoolean) : null;
+            Map<String, Object> candidate = standard == null ? equivalent : standard;
+            if (candidate == null || match != null) return null;
+            match = candidate;
+        }
+        return match;
+    }
+
+    private boolean stateReopenAuthorityWriteBetween(PsiIndex.Node helper,
+            PsiIndex.Node authorityParameter, PsiIndex.Node rootOrigin,
+            PsiIndex.Node authorityType, PsiIndex.Node restore,
+            PsiIndex.Node reopen, List<Map<String, Object>> facts) {
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL
+                    || enclosingCallable(call) != helper
+                    || call.startUtf16() <= restore.startUtf16()
+                    || call.startUtf16() >= reopen.startUtf16()) continue;
+            PsiIndex.Node method = exactSourceTarget(call, facts);
+            if (method == null || method.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || stateSharedDeclarationOwner(method) != authorityType
+                    || !stateReopenReceiverMatches(resolvedReceiver(call),
+                        authorityParameter, rootOrigin, facts)
+                    || !stateSharedMethodHasFact(
+                        method, authorityType, facts, "write")) continue;
+            return true;
+        }
+        return false;
+    }
+
+    private PsiIndex.Node stateReopenExtensionTarget(PsiIndex.Node call,
+            PsiIndex.Node context, Rules.SymbolSpec navigatorType,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node exact = exactSourceTarget(call, facts);
+        if (exact != null) return exact;
+        if (call == null || context == null || navigatorType == null
+                || hasFact(facts, "call_resolution", call.id()) || hasAnyTaint(call, facts)
+                || resolvedReceiver(call) != null || enclosingCallable(call) != context
+                || typeSymbolForReference(declarationTypeNode(context, true)) != navigatorType) {
+            return null;
+        }
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node candidate : sourceCallableCandidates(call, facts)) {
+            if (candidate.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || !isTopLevel(candidate) || !isProductionPath(candidate.fileId())
+                    || typeSymbolForReference(declarationTypeNode(candidate, true)) != navigatorType
+                    || mapSourceArguments(call, candidate, facts) == null) continue;
+            if (match != null) return null;
+            match = candidate;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node stateReopenUniqueOpenStage(PsiIndex.Node target,
+            Rules.SymbolSpec openStage, List<Map<String, Object>> facts) {
+        List<PsiIndex.Node> calls = stateTypedDomainCallsWithin(target, openStage, facts);
+        return calls.size() == 1 ? calls.get(0) : null;
+    }
+
+    private Map<String, Object> stateReopenStandard(PsiIndex.Node reopenCall,
+            PsiIndex.Node target, PsiIndex.Node authorityParameter,
+            PsiIndex.Node rootOrigin, PsiIndex.Node authorityType,
+            PsiIndex.Node snapshot, List<Map<String, Object>> facts,
+            PsiIndex.Node openCall) {
+        List<PsiIndex.Node> parameters = targets(target, PsiIndex.EdgeRole.PARAMETER);
+        PsiIndex.Node booleanParameter = null;
+        PsiIndex.Node targetAuthority = null;
+        PsiIndex.Node targetSnapshot = null;
+        int booleanCount = 0;
+        int authorityCount = 0;
+        int snapshotCount = 0;
+        for (PsiIndex.Node parameter : parameters) {
+            PsiIndex.Node type = one(parameter, PsiIndex.EdgeRole.TYPE);
+            if ("boolean".equals(primitiveType(type))) {
+                booleanCount++;
+                booleanParameter = parameter;
+            } else if (sourceTypeDeclaration(type) == authorityType) {
+                authorityCount++;
+                targetAuthority = parameter;
+            } else if (sourceTypeDeclaration(type) == snapshot) {
+                snapshotCount++;
+                targetSnapshot = parameter;
+            }
+        }
+        if (booleanCount != 1 || authorityCount != 1 || snapshotCount != 1) return null;
+        Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(reopenCall, target, facts);
+        int booleanPosition = parameters.indexOf(booleanParameter);
+        int authorityPosition = parameters.indexOf(targetAuthority);
+        PsiIndex.Node booleanArgument = mappedArgument(mapping, booleanPosition);
+        PsiIndex.Node authorityArgument = mappedArgument(mapping, authorityPosition);
+        PsiIndex.Node authorityOrigin = authorityArgument == null ? null : stateSharedValueOrigin(
+            one(authorityArgument, PsiIndex.EdgeRole.VALUE), facts, 0, new HashMap<>());
+        if (!Boolean.TRUE.equals(stateReopenBoolean(booleanArgument == null ? null
+                : one(booleanArgument, PsiIndex.EdgeRole.VALUE)))
+                || authorityOrigin == null || authorityOrigin.id() != authorityParameter.id()) return null;
+        PsiIndex.Node handoff = null;
+        for (PsiIndex.Node branch : program.nodes()) {
+            if (branch.kind() != PsiIndex.NodeKind.IF || !isWithin(branch, target)) continue;
+            PsiIndex.Node condition = one(branch, PsiIndex.EdgeRole.CONDITION);
+            PsiIndex.Node thenBranch = one(branch, PsiIndex.EdgeRole.THEN_BRANCH);
+            PsiIndex.Node elseBranch = one(branch, PsiIndex.EdgeRole.ELSE_BRANCH);
+            if (!stateReopenRefersTo(condition, booleanParameter, facts)) continue;
+            if (!stateReopenBranchReadsAuthority(thenBranch, targetAuthority,
+                    authorityType, snapshot, facts)) continue;
+            if (!stateReopenRefersTo(elseBranch, targetSnapshot, facts)) continue;
+            if (handoff != null) return null;
+            handoff = branch;
+        }
+        if (handoff == null) return null;
+        PsiIndex.Node handoffLocal = stateReopenLocalInitializedBy(handoff, target);
+        if (handoffLocal == null) return null;
+        return Map.of(
+            "alternative", "standard-store-reopen",
+            "reopenCall", reopenCall,
+            "reopenTarget", target,
+            "seam", booleanArgument,
+            "handoff", handoffLocal,
+            "openCall", openCall);
+    }
+
+    private Boolean stateReopenBoolean(PsiIndex.Node value) {
+        if (value == null || value.kind() != PsiIndex.NodeKind.LITERAL) return null;
+        Boolean result = null;
+        for (int index = value.firstTokenId(); index < value.firstTokenId() + value.tokenCount(); index++) {
+            PsiIndex.Token token = program.tokens().get(index);
+            if (token.kind() != PsiIndex.TokenKind.BOOLEAN_LITERAL) continue;
+            if (result != null) return null;
+            result = Boolean.valueOf(token.value());
+        }
+        return result;
+    }
+
+    private boolean stateReopenBranchReadsAuthority(PsiIndex.Node branch,
+            PsiIndex.Node authorityParameter, PsiIndex.Node authorityType,
+            PsiIndex.Node snapshot, List<Map<String, Object>> facts) {
+        if (branch == null) return false;
+        int count = 0;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL
+                    || call.id() != branch.id() && !isWithin(call, branch)) continue;
+            PsiIndex.Node method = exactSourceTarget(call, facts);
+            if (method == null || stateSharedDeclarationOwner(method) != authorityType
+                    || sourceTypeDeclaration(one(method, PsiIndex.EdgeRole.TYPE)) != snapshot) continue;
+            PsiIndex.Node origin = stateSharedValueOrigin(
+                resolvedReceiver(call), facts, 0, new HashMap<>());
+            if (origin != null && origin.id() == authorityParameter.id()) count++;
+        }
+        return count == 1;
+    }
+
+    private Map<String, Object> stateReopenEquivalent(PsiIndex.Node reopenCall,
+            PsiIndex.Node target, PsiIndex.Node authorityParameter,
+            PsiIndex.Node rootOrigin, PsiIndex.Node authorityType,
+            PsiIndex.Node snapshot, Map<String, PsiIndex.Node> fields,
+            List<Map<String, Object>> facts, PsiIndex.Node openCall,
+            Rules.SymbolSpec putString, Rules.SymbolSpec putInt,
+            Rules.SymbolSpec putBoolean) {
+        List<PsiIndex.Node> parameters = targets(target, PsiIndex.EdgeRole.PARAMETER);
+        PsiIndex.Node callbackParameter = null;
+        PsiIndex.Node targetAuthority = null;
+        int callbackCount = 0;
+        int authorityCount = 0;
+        for (PsiIndex.Node parameter : parameters) {
+            PsiIndex.Node type = one(parameter, PsiIndex.EdgeRole.TYPE);
+            if ("callable".equals(primitiveType(type))) {
+                callbackCount++;
+                callbackParameter = parameter;
+            } else if (sourceTypeDeclaration(type) == authorityType) {
+                authorityCount++;
+                targetAuthority = parameter;
+            }
+        }
+        if (callbackCount != 1 || authorityCount != 1) return null;
+        Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(reopenCall, target, facts);
+        if (mapping == null) return null;
+        PsiIndex.Node callbackArgument = mappedArgument(mapping, parameters.indexOf(callbackParameter));
+        PsiIndex.Node authorityArgument = mappedArgument(mapping, parameters.indexOf(targetAuthority));
+        PsiIndex.Node reference = callbackArgument == null ? null
+            : one(callbackArgument, PsiIndex.EdgeRole.VALUE);
+        PsiIndex.Node boundReceiver = reference == null ? null
+            : one(reference, PsiIndex.EdgeRole.RECEIVER);
+        PsiIndex.Node referenced = reference == null ? null : uniqueReferencedCallable(reference);
+        PsiIndex.Node authorityOrigin = authorityArgument == null ? null : stateSharedValueOrigin(
+            one(authorityArgument, PsiIndex.EdgeRole.VALUE), facts, 0, new HashMap<>());
+        if (reference == null || reference.kind() != PsiIndex.NodeKind.CALLABLE_REF) return null;
+        PsiIndex.Node referencedSnapshot = referenced == null ? null
+            : sourceTypeDeclaration(one(referenced, PsiIndex.EdgeRole.TYPE));
+        if (referenced == null || stateSharedDeclarationOwner(referenced) != authorityType
+                || referencedSnapshot == null) return null;
+        if (snapshot == null) snapshot = referencedSnapshot;
+        else if (referencedSnapshot != snapshot) return null;
+        Map<String, PsiIndex.Node> derivedFields = stateReopenSnapshotFields(snapshot);
+        if (derivedFields == null) return null;
+        if (fields == null) fields = derivedFields;
+        else for (String key : List.of("selection", "int", "boolean")) {
+            if (fields.get(key) != derivedFields.get(key)) return null;
+        }
+        if (authorityOrigin == null || authorityOrigin.id() != authorityParameter.id()) return null;
+        if (!stateReopenReceiverMatches(boundReceiver,
+                authorityParameter, rootOrigin, facts)) return null;
+        PsiIndex.Node invocation = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, target)
+                    || functionValueDeclaration(call, facts) != callbackParameter) continue;
+            if (invocation != null) return null;
+            invocation = call;
+        }
+        PsiIndex.Node handoff = stateReopenLocalInitializedBy(invocation, target);
+        if (handoff == null) return null;
+        PsiIndex.Node callbackRestore = stateReopenCallbackRestore(
+            target, targetAuthority, authorityType, handoff, facts);
+        Map<String, Object> bundle = stateReopenCallbackBundle(
+            target, handoff, snapshot, fields, facts,
+            putString, putInt, putBoolean);
+        PsiIndex.Node bundleFirst = bundle == null
+            ? null : (PsiIndex.Node) bundle.get("bundleFirst");
+        PsiIndex.Node bundleLast = bundle == null
+            ? null : (PsiIndex.Node) bundle.get("bundleLast");
+        if (callbackRestore == null || bundleFirst == null || bundleLast == null
+                || invocation.fileId() != target.fileId()
+                || callbackRestore.fileId() != target.fileId()
+                || bundleFirst.fileId() != target.fileId()
+                || bundleLast.fileId() != target.fileId()
+                || openCall.fileId() != target.fileId()
+                || invocation.startUtf16() >= callbackRestore.startUtf16()
+                || callbackRestore.startUtf16() >= bundleFirst.startUtf16()
+                || bundleLast.startUtf16() >= openCall.startUtf16()) return null;
+        Map<String, Object> result = new HashMap<>(bundle);
+        result.put("alternative", "equivalent-repository-reopen");
+        result.put("reopenCall", reopenCall);
+        result.put("reopenTarget", target);
+        result.put("seam", reference);
+        result.put("handoff", invocation);
+        result.put("handoffLocal", handoff);
+        result.put("callbackRestore", callbackRestore);
+        result.put("openCall", openCall);
+        return Map.copyOf(result);
+    }
+
+    private PsiIndex.Node stateReopenLocalInitializedBy(PsiIndex.Node value,
+            PsiIndex.Node callable) {
+        if (value == null) return null;
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node property : program.nodes()) {
+            if (property.kind() != PsiIndex.NodeKind.PROPERTY_DECL || !isWithin(property, callable)
+                    || !property.flags().contains(PsiIndex.NodeFlag.VAL)) continue;
+            PsiIndex.Node initializer = one(property, PsiIndex.EdgeRole.INITIALIZER);
+            if (initializer == null || initializer.id() != value.id()
+                    && !isWithin(value, initializer)) continue;
+            if (match != null) return null;
+            match = property;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node stateReopenCallbackRestore(PsiIndex.Node target,
+            PsiIndex.Node authorityParameter, PsiIndex.Node authorityType,
+            PsiIndex.Node handoff, List<Map<String, Object>> facts) {
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, target)) continue;
+            PsiIndex.Node method = exactSourceTarget(call, facts);
+            PsiIndex.Node receiver = stateSharedValueOrigin(
+                resolvedReceiver(call), facts, 0, new HashMap<>());
+            if (method == null || stateSharedDeclarationOwner(method) != authorityType
+                    || receiver == null || receiver.id() != authorityParameter.id()
+                    || !stateSharedMethodHasFact(method, authorityType, facts, "write")) continue;
+            Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(call, method, facts);
+            if (mapping == null) continue;
+            boolean uses = false;
+            for (Integer position : mapping.keySet()) {
+                PsiIndex.Node argument = mappedArgument(mapping, position);
+                if (stateReopenRefersTo(argument == null ? null
+                        : one(argument, PsiIndex.EdgeRole.VALUE), handoff, facts)) uses = true;
+            }
+            if (!uses) continue;
+            if (match != null) return null;
+            match = call;
+        }
+        return match;
+    }
+
+    private Map<String, Object> stateReopenCallbackBundle(PsiIndex.Node target,
+            PsiIndex.Node handoff, PsiIndex.Node snapshot,
+            Map<String, PsiIndex.Node> fields, List<Map<String, Object>> facts,
+            Rules.SymbolSpec putString, Rules.SymbolSpec putInt,
+            Rules.SymbolSpec putBoolean) {
+        boolean direct = true;
+        List<PsiIndex.Node> directCalls = new ArrayList<>();
+        for (Map.Entry<String, Rules.SymbolSpec> entry : Map.of(
+                "selection", putString, "int", putInt, "boolean", putBoolean).entrySet()) {
+            List<PsiIndex.Node> calls = stateTypedDomainCallsWithin(target, entry.getValue(), facts);
+            if (calls.size() != 1) {
+                direct = false;
+                break;
+            }
+            Map<Integer, List<PsiIndex.Node>> mapping = reviewedDomainMapping(
+                calls.get(0), entry.getValue(), facts);
+            if (mapping == null) {
+                direct = false;
+                break;
+            }
+            PsiIndex.Node argument = mappedArgument(mapping, 1);
+            PsiIndex.Node value = argument == null ? null : one(argument, PsiIndex.EdgeRole.VALUE);
+            if (!stateReopenRefersTo(value, handoff, facts)) {
+                direct = false;
+                break;
+            }
+            if (!stateTypedFieldReferenced(
+                    value, fields.get(entry.getKey()), snapshot, facts)) {
+                direct = false;
+                break;
+            }
+            directCalls.add(calls.get(0));
+        }
+        if (direct) {
+            directCalls.sort((left, right) -> Integer.compare(
+                left.startUtf16(), right.startUtf16()));
+            return Map.of(
+                "bundleFirst", directCalls.get(0),
+                "bundleLast", directCalls.get(directCalls.size() - 1),
+                "bundleWitnesses", List.copyOf(directCalls));
+        }
+
+        Rules.SymbolSpec bundleType = typeSymbolExact(BUNDLE_TYPE_FQN, BUNDLE_TYPE_SIGNATURE);
+        Rules.SymbolSpec bundleConstructor = domainSymbolOrNull("android.os.Bundle", "Bundle()");
+        Rules.SymbolSpec apply = domainSymbolOrNull(
+            "kotlin.apply", "T.apply(block: T.() -> Unit): T");
+        if (bundleType == null || bundleConstructor == null || apply == null
+                || !stateTypedApplyShape(apply)) return null;
+        Map<String, Object> match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, target)) continue;
+            PsiIndex.Node encoder = exactSourceTarget(call, facts);
+            Map<String, Object> encoderProof = encoder == null
+                ? null : stateTypedEncoderFunction(encoder, snapshot, fields, facts,
+                    bundleType, bundleConstructor, apply,
+                    putString, putInt, putBoolean);
+            if (encoder == null || encoder.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || encoderProof == null) continue;
+            Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(call, encoder, facts);
+            if (mapping == null) continue;
+            List<PsiIndex.Node> parameters = targets(encoder, PsiIndex.EdgeRole.PARAMETER);
+            int snapshotPosition = -1;
+            for (int position = 0; position < parameters.size(); position++) {
+                PsiIndex.Node parameterType = one(parameters.get(position), PsiIndex.EdgeRole.TYPE);
+                if (sourceTypeDeclaration(parameterType) != snapshot) continue;
+                if (snapshotPosition >= 0) {
+                    snapshotPosition = -1;
+                    break;
+                }
+                snapshotPosition = position;
+            }
+            PsiIndex.Node argument = snapshotPosition < 0
+                ? null : mappedArgument(mapping, snapshotPosition);
+            PsiIndex.Node value = argument == null
+                ? null : one(argument, PsiIndex.EdgeRole.VALUE);
+            if (!stateReopenRefersTo(value, handoff, facts)) continue;
+            if (match != null) return null;
+            Map<String, Object> candidate = new HashMap<>();
+            candidate.put("bundleCall", call);
+            candidate.put("bundleFirst", call);
+            candidate.put("bundleLast", call);
+            candidate.put("bundleWitnesses", stateTypedNodeList(
+                encoderProof, "putCalls"));
+            match = Map.copyOf(candidate);
+        }
+        return match;
+    }
+
+    private Rules.Analysis analyzeContainerTopology() {
+        Rules.SymbolSpec applicationType = typeSymbolExact(APPLICATION_TYPE_FQN, APPLICATION_TYPE_SIGNATURE);
+        Rules.SymbolSpec onCreate = domainSymbolOrNull(ON_CREATE_FQN, ON_CREATE_SIGNATURE);
+        Rules.SymbolSpec launch = domainSymbolOrNull(LAUNCH_FQN, LAUNCH_SIGNATURE);
+        Rules.SymbolSpec spatialScope = typeSymbolExact(SPATIAL_SCOPE_FQN, SPATIAL_SCOPE_SIGNATURE);
+        Rules.SymbolSpec with = domainSymbolOrNull(WITH_FQN, WITH_SIGNATURE);
+        Rules.SymbolSpec window = domainSymbolOrNull(WINDOW_FQN, WINDOW_SIGNATURE);
+        Rules.SymbolSpec stage = domainSymbolOrNull(STAGE_FQN, STAGE_SIGNATURE);
+        Rules.SymbolSpec launched = domainSymbolOrNull(LAUNCHED_EFFECT_FQN, LAUNCHED_EFFECT_SIGNATURE);
+        Rules.SymbolSpec openStage = domainSymbolOrNull(OPEN_STAGE_FQN, OPEN_STAGE_SIGNATURE);
+        Rules.SymbolSpec mixed = domainSymbolOrNull(MIXED_FQN, MIXED_SIGNATURE);
+        Rules.SymbolSpec bundleType = typeSymbolExact(BUNDLE_TYPE_FQN, BUNDLE_TYPE_SIGNATURE);
+        Rules.SymbolSpec stageBundle = domainSymbolOrNull(STAGE_BUNDLE_FQN, STAGE_BUNDLE_SIGNATURE);
+        Rules.SymbolSpec localNavigator = domainSymbolOrNull(LOCAL_NAVIGATOR_FQN, LOCAL_NAVIGATOR_SIGNATURE);
+        Rules.SymbolSpec current = domainSymbolOrNull(CURRENT_FQN, CURRENT_SIGNATURE);
+        Rules.SymbolSpec navigatorType = typeSymbolExact(NAVIGATOR_TYPE_FQN, NAVIGATOR_TYPE_SIGNATURE);
+        Rules.SymbolSpec activityType = typeSymbolExact(ACTIVITY_TYPE_FQN, ACTIVITY_TYPE_SIGNATURE);
+        if (applicationType == null || onCreate == null || launch == null || spatialScope == null
+                || with == null || window == null || stage == null || launched == null
+                || openStage == null || mixed == null || bundleType == null || stageBundle == null
+                || localNavigator == null || current == null || navigatorType == null || activityType == null
+                || !callbackShape(stage, 5, "stage_content", "spatial_container_scope")
+                || !callbackShape(launched, 1, "launched_effect", "coroutine_scope")) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        List<PsiIndex.Node> root = topologyRoot(
+            facts, applicationType, onCreate, launch, spatialScope, with, window, stage, activityType);
+        if (root == null) return Rules.emptyAnalysis();
+        PsiIndex.Node windowLambda = root.get(3);
+        PsiIndex.Node stageCall = root.get(4);
+        PsiIndex.Node stageIdArgument = root.get(5);
+        PsiIndex.Node stageLambda = root.get(6);
+        PsiIndex.Node activity = root.get(7);
+
+        List<PsiIndex.Node> launchedCalls = new ArrayList<>();
+        for (PsiIndex.Node node : program.nodes()) {
+            if (node.kind() != PsiIndex.NodeKind.CALL
+                    || !exactDomainResolution(node, launched, facts)) continue;
+            if (compositionReachable(windowLambda, node, facts, new HashMap<>(), 0)
+                    || compositionReachable(stageLambda, node, facts, new HashMap<>(), 0)) {
+                launchedCalls.add(node);
+            }
+        }
+        if (launchedCalls.size() != 1) return Rules.emptyAnalysis();
+        PsiIndex.Node launchedCall = launchedCalls.get(0);
+        Map<Integer, List<PsiIndex.Node>> launchedMap = mapDomainArguments(launchedCall, launched, facts);
+        PsiIndex.Node launchedKey = mappedArgument(launchedMap, 0);
+        PsiIndex.Node launchedArgument = mappedArgument(launchedMap, 1);
+        PsiIndex.Node launchedLambda = mappedLambda(launchedMap, 1);
+        if (launchedKey == null || launchedLambda == null
+                || !exactFact(facts, "callback_binding", launchedLambda, launchedCall, launchedArgument,
+                    "launched_effect", launched)
+                || navigatorOrigin(launchedKey, facts, localNavigator, current, navigatorType) == null) {
+            return Rules.emptyAnalysis();
+        }
+
+        List<Map<String, Object>> paths = new ArrayList<>();
+        collectOpenStagePaths(launchedLambda, openStage, facts, new ArrayList<>(),
+            new ArrayList<>(), new HashMap<>(), paths);
+        if (paths.size() != 1) return Rules.emptyAnalysis();
+        Map<String, Object> path = paths.get(0);
+        PsiIndex.Node openCall = (PsiIndex.Node) path.get("openCall");
+        @SuppressWarnings("unchecked")
+        List<PsiIndex.Node> helperCalls = (List<PsiIndex.Node>) path.get("helperCalls");
+        @SuppressWarnings("unchecked")
+        List<PsiIndex.Node> helperDeclarations = (List<PsiIndex.Node>) path.get("helperDeclarations");
+        @SuppressWarnings("unchecked")
+        Map<Integer, List<PsiIndex.Node>> openMap =
+            (Map<Integer, List<PsiIndex.Node>>) path.get("openMap");
+        if (helperCalls.size() != helperDeclarations.size() || helperCalls.size() > 2
+                || openMap.size() != 3 || !openMap.containsKey(0)
+                || !openMap.containsKey(1) || !openMap.containsKey(2)) {
+            return Rules.emptyAnalysis();
+        }
+        PsiIndex.Node openIdArgument = mappedArgument(openMap, 0);
+        PsiIndex.Node styleArgument = mappedArgument(openMap, 1);
+        PsiIndex.Node bundleArgument = mappedArgument(openMap, 2);
+        PsiIndex.Node styleValue = styleArgument == null ? null : one(styleArgument, PsiIndex.EdgeRole.VALUE);
+        if (openIdArgument == null || styleArgument == null || bundleArgument == null
+                || !exactQualifiedResult(styleValue, mixed, "stage_style", facts)) {
+            return Rules.emptyAnalysis();
+        }
+
+        PsiIndex.Node stageOrigin = traceIdOrigin(
+            one(stageIdArgument, PsiIndex.EdgeRole.VALUE), helperCalls, helperDeclarations, facts, 0);
+        PsiIndex.Node openOrigin = traceIdOrigin(
+            one(openIdArgument, PsiIndex.EdgeRole.VALUE), helperCalls, helperDeclarations, facts, 0);
+        String originKind;
+        String stageLiteral = atomicString(stageOrigin);
+        String openLiteral = atomicString(openOrigin);
+        if (stageLiteral != null && stageLiteral.equals(openLiteral)) {
+            originKind = "literal";
+        } else if (stageOrigin != null && stageOrigin == openOrigin
+                && stageOrigin.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+                && stageOrigin.flags().contains(PsiIndex.NodeFlag.VAL)
+                && !stageOrigin.flags().contains(PsiIndex.NodeFlag.VAR)
+                && atomicString(one(stageOrigin, PsiIndex.EdgeRole.INITIALIZER)) != null) {
+            originKind = stageOrigin.flags().contains(PsiIndex.NodeFlag.CONST) ? "const" : "source-symbol";
+        } else return Rules.emptyAnalysis();
+
+        PsiIndex.Node bundleOrigin = traceBundleOrigin(one(bundleArgument, PsiIndex.EdgeRole.VALUE),
+            helperCalls, helperDeclarations, facts, bundleType, stageBundle, 0);
+        if (bundleOrigin == null) return Rules.emptyAnalysis();
+        String argumentKind;
+        if (stageIdArgument.flags().contains(PsiIndex.NodeFlag.NAMED)
+                && "id".equals(stageIdArgument.name())) argumentKind = "named";
+        else if (!stageIdArgument.flags().contains(PsiIndex.NodeFlag.NAMED)) argumentKind = "positional";
+        else return Rules.emptyAnalysis();
+        String proofForm = switch (helperCalls.size()) {
+            case 0 -> "direct-mixed-stage-open";
+            case 1 -> "one-helper-mixed-stage-open";
+            case 2 -> "two-helper-mixed-stage-open";
+            default -> throw new IllegalArgumentException("topology helper depth");
+        };
+        String alternative = argumentKind + "-" + originKind + "-stage-id";
+        Map<String, Boolean> complete = new HashMap<>();
+        Map<String, List<String>> alternatives = new HashMap<>();
+        for (String form : domain.rule("spatial.container-topology").proofForms()) {
+            boolean selected = form.equals(proofForm);
+            complete.put(form, selected);
+            alternatives.put(form, selected ? List.of(alternative) : List.of());
+        }
+        Map<String, String> selected = Rules.selectProof(
+            domain, "spatial.container-topology", complete, alternatives);
+        if (!proofForm.equals(selected.get("proofForm"))
+                || !alternative.equals(selected.get("alternativeId"))) return Rules.emptyAnalysis();
+
+        List<String> witnesses = new ArrayList<>();
+        boolean valid = addWitness(activity, witnesses) && addWitness(stageCall, witnesses)
+            && addWitness(stageIdArgument, witnesses) && addWitness(stageLambda, witnesses);
+        if (!originKind.equals("literal")) valid &= addWitness(stageOrigin, witnesses);
+        valid &= addWitness(launchedCall, witnesses) && addWitness(openCall, witnesses)
+            && addWitness(openIdArgument, witnesses) && addWitness(styleArgument, witnesses)
+            && addWitness(bundleArgument, witnesses) && addWitness(bundleOrigin, witnesses);
+        for (int index = 0; valid && index < helperCalls.size(); index++) {
+            valid = addWitness(helperCalls.get(index), witnesses)
+                && addWitness(helperDeclarations.get(index), witnesses);
+        }
+        if (!valid) return Rules.emptyAnalysis();
+        Rules.Analysis claim = Rules.claimOrNull(program, domain, "spatial.container-topology",
+            proofForm, alternative, witnesses);
+        if (claim == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("spatial.container-topology", alternative);
+        return claim;
+    }
+
+    private List<PsiIndex.Node> topologyRoot(List<Map<String, Object>> facts,
+            Rules.SymbolSpec applicationType, Rules.SymbolSpec onCreate, Rules.SymbolSpec launch,
+            Rules.SymbolSpec spatialScope, Rules.SymbolSpec with, Rules.SymbolSpec window,
+            Rules.SymbolSpec stage, Rules.SymbolSpec activityType) {
+        List<List<PsiIndex.Node>> roots = new ArrayList<>();
+        for (PsiIndex.Node entry : program.nodes()) {
+            if (entry.kind() != PsiIndex.NodeKind.FUNCTION_DECL || !isProductionPath(entry.fileId())) continue;
+            Integer ownerId = lexicalOwners.get(entry.id());
+            PsiIndex.Node application = ownerId == null ? null : program.node(ownerId);
+            if (application == null || application.kind() != PsiIndex.NodeKind.CLASS_DECL
+                    || !exactFact(facts, "production_root", entry, application, null, "direct", onCreate)
+                    || !exactFact(facts, "type", application, null, null,
+                        "android_application", applicationType)) continue;
+            PsiIndex.Node launchCall = null;
+            PsiIndex.Node reference = null;
+            boolean invalidLaunch = false;
+            for (PsiIndex.Node call : directStatementCallsLoose(entry)) {
+                Map<Integer, List<PsiIndex.Node>> launchMap =
+                    cp2seReviewedLaunchMapping(call, launch, spatialScope, facts);
+                PsiIndex.Node launchArgument = mappedArgument(launchMap, 0);
+                PsiIndex.Node value = launchArgument == null
+                    ? null : one(launchArgument, PsiIndex.EdgeRole.VALUE);
+                if (launchMap == null || !hasFact(facts, "reachable", call.id())) continue;
+                if (value == null || value.kind() != PsiIndex.NodeKind.CALLABLE_REF
+                        || !hasFact(facts, "reachable", value.id()) || launchCall != null) {
+                    launchCall = null;
+                    reference = null;
+                    invalidLaunch = true;
+                    break;
+                }
+                launchCall = call;
+                reference = value;
+            }
+            PsiIndex.Node main = reference == null
+                ? invalidLaunch ? null : canonicalTopologyRoot(spatialScope, facts)
+                : importedCallable(reference, spatialScope, facts);
+            if (main == null) continue;
+            PsiIndex.Node withCall = one(main, PsiIndex.EdgeRole.BODY);
+            if (withCall == null || withCall.kind() != PsiIndex.NodeKind.CALL
+                    || !exactDomainResolution(withCall, with, facts)) continue;
+            Map<Integer, List<PsiIndex.Node>> withMap = mapDomainArguments(withCall, with, facts);
+            PsiIndex.Node receiverArgument = mappedArgument(withMap, 0);
+            PsiIndex.Node receiverValue = receiverArgument == null
+                ? null : one(receiverArgument, PsiIndex.EdgeRole.VALUE);
+            PsiIndex.Node rootLambda = mappedLambda(withMap, 1);
+            List<PsiIndex.Node> parameters = targets(main, PsiIndex.EdgeRole.PARAMETER);
+            PsiIndex.Node parameter = parameters.size() == 1 ? parameters.get(0) : null;
+            PsiIndex.Node receiverDeclaration = receiverValue == null ? null
+                : relatedNodeForFact(facts, "def_use", receiverValue.id());
+            if (rootLambda == null || parameter == null || receiverDeclaration != parameter
+                    || !exactFact(facts, "type", parameter, main, null,
+                        "spatial_app_scope", spatialScope)) continue;
+
+            PsiIndex.Node windowCall = null;
+            PsiIndex.Node windowLambda = null;
+            PsiIndex.Node stageCall = null;
+            PsiIndex.Node stageId = null;
+            PsiIndex.Node stageLambda = null;
+            for (PsiIndex.Node call : directStatementCallsLoose(rootLambda)) {
+                if (exactDomainResolution(call, window, facts)) {
+                    Map<Integer, List<PsiIndex.Node>> mapping = mapDomainArguments(call, window, facts);
+                    PsiIndex.Node candidateLambda = mappedLambda(mapping, 0);
+                    if (candidateLambda == null || windowCall != null) {
+                        windowCall = null;
+                        windowLambda = null;
+                        break;
+                    }
+                    windowCall = call;
+                    windowLambda = candidateLambda;
+                }
+                Map<Integer, List<PsiIndex.Node>> mapping = reviewedDomainMapping(call, stage, facts);
+                if (mapping != null) {
+                    PsiIndex.Node candidateId = mappedArgument(mapping, 0);
+                    PsiIndex.Node candidateLambda = mappedLambda(mapping, 5);
+                    if (candidateId == null || candidateLambda == null || stageCall != null) {
+                        stageCall = null;
+                        stageId = null;
+                        stageLambda = null;
+                        break;
+                    }
+                    stageCall = call;
+                    stageId = candidateId;
+                    stageLambda = candidateLambda;
+                }
+            }
+            PsiIndex.Node activity = uniqueLaunchActivity(facts, activityType);
+            if (windowCall != null && stageCall != null && activity != null) {
+                roots.add(List.of(main, rootLambda, windowCall, windowLambda,
+                    stageCall, stageId, stageLambda, activity));
+            }
+        }
+        return roots.size() == 1 ? roots.get(0) : null;
+    }
+
+    private PsiIndex.Node canonicalTopologyRoot(Rules.SymbolSpec spatialScope,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node candidate : program.nodes()) {
+            if (candidate.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || !"mainApp".equals(candidate.name())
+                    || !isTopLevel(candidate) || !isProductionPath(candidate.fileId())) continue;
+            List<PsiIndex.Node> parameters = targets(candidate, PsiIndex.EdgeRole.PARAMETER);
+            if (parameters.size() != 1 || !exactFact(facts, "type", parameters.get(0), candidate,
+                    null, "spatial_app_scope", spatialScope)) continue;
+            if (match != null) return null;
+            match = candidate;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node importedCallable(PsiIndex.Node reference, Rules.SymbolSpec spatialScope,
+            List<Map<String, Object>> facts) {
+        if (reference.name() == null) return null;
+        PsiIndex.ImportEntry imported = null;
+        for (int importId : program.file(reference.fileId()).importIds()) {
+            PsiIndex.ImportEntry candidate = program.imports().get(importId);
+            if (!candidate.exposedName().equals(reference.name())) continue;
+            if (imported != null) return null;
+            imported = candidate;
+        }
+        if (imported == null) return null;
+        int separator = imported.fqName().lastIndexOf('.');
+        if (separator <= 0 || !imported.fqName().substring(separator + 1).equals(reference.name())) return null;
+        String packageName = imported.fqName().substring(0, separator);
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node candidate : program.nodes()) {
+            if (candidate.kind() != PsiIndex.NodeKind.FUNCTION_DECL || !isTopLevel(candidate)
+                    || !reference.name().equals(candidate.name())
+                    || !packageName.equals(program.file(candidate.fileId()).packageName())
+                    || !isProductionPath(candidate.fileId())) continue;
+            List<PsiIndex.Node> parameters = targets(candidate, PsiIndex.EdgeRole.PARAMETER);
+            if (parameters.size() != 1 || !exactFact(facts, "type", parameters.get(0), candidate,
+                    null, "spatial_app_scope", spatialScope)) continue;
+            if (match != null) return null;
+            match = candidate;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node uniqueLaunchActivity(List<Map<String, Object>> facts,
+            Rules.SymbolSpec activityType) {
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (node.kind() != PsiIndex.NodeKind.CLASS_DECL || !isProductionPath(node.fileId())
+                    || !exactFact(facts, "type", node, null, null,
+                        "spatial_launch_activity", activityType)) continue;
+            if (match != null) return null;
+            match = node;
+        }
+        return match;
+    }
+
+    private List<PsiIndex.Node> directStatementCallsLoose(PsiIndex.Node callable) {
+        if (callable == null) return List.of();
+        PsiIndex.Node body = callable.kind() == PsiIndex.NodeKind.LAMBDA
+            ? one(callable, PsiIndex.EdgeRole.LAMBDA_BODY) : one(callable, PsiIndex.EdgeRole.BODY);
+        if (body == null) return List.of();
+        List<PsiIndex.Node> calls = new ArrayList<>();
+        for (PsiIndex.Node statement : body.kind() == PsiIndex.NodeKind.BLOCK
+                ? lexicalChildren(body) : List.of(body)) {
+            PsiIndex.Node call = directCall(statement);
+            if (call != null && enclosingCallable(call) == callable) calls.add(call);
+        }
+        return calls;
+    }
+
+    private boolean compositionReachable(PsiIndex.Node callable, PsiIndex.Node target,
+            List<Map<String, Object>> facts, Map<Integer, Boolean> visited, int depth) {
+        if (callable == null || target == null || depth > 8
+                || visited.put(callable.id(), Boolean.TRUE) != null) return false;
+        for (PsiIndex.Node call : directStatementCallsLoose(callable)) {
+            if (call.id() == target.id()) return true;
+            PsiIndex.Node source = exactSourceTarget(call, facts);
+            if (source != null && !hasAnyTaint(call, facts)
+                    && compositionReachable(source, target, facts,
+                        new HashMap<>(visited), depth + 1)) return true;
+            Rules.SymbolSpec symbol = symbolForFact(facts, "call_resolution", call.id());
+            if (symbol == null || !exactDomainResolution(call, symbol, facts)) continue;
+            Map<Integer, List<PsiIndex.Node>> mapping = mapDomainArguments(call, symbol, facts);
+            for (Rules.CallbackSpec callback : symbol.callbacks()) {
+                PsiIndex.Node nested = mappedLambda(mapping, callback.argumentPosition());
+                if (nested != null && compositionReachable(nested, target, facts,
+                        new HashMap<>(visited), depth + 1)) return true;
+            }
+        }
+        return false;
+    }
+
+    private PsiIndex.Node navigatorOrigin(PsiIndex.Node keyArgument,
+            List<Map<String, Object>> facts, Rules.SymbolSpec localNavigator,
+            Rules.SymbolSpec current, Rules.SymbolSpec navigatorType) {
+        PsiIndex.Node value = one(keyArgument, PsiIndex.EdgeRole.VALUE);
+        PsiIndex.Node declaration = value == null ? null : relatedNodeForFact(facts, "def_use", value.id());
+        if (declaration == null || declaration.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                || !declaration.flags().contains(PsiIndex.NodeFlag.VAL)
+                || declaration.flags().contains(PsiIndex.NodeFlag.VAR)
+                || !exactFact(facts, "type", declaration, enclosingCallable(declaration), null,
+                    "spatial_navigator", navigatorType)) return null;
+        PsiIndex.Node initializer = one(declaration, PsiIndex.EdgeRole.INITIALIZER);
+        if (initializer == null || initializer.kind() != PsiIndex.NodeKind.QUALIFIED) return null;
+        PsiIndex.Node receiver = one(initializer, PsiIndex.EdgeRole.RECEIVER);
+        return receiver != null && exactDomainResolution(receiver, localNavigator, facts)
+                && exactFact(facts, "origin", receiver, enclosingCallable(receiver), null,
+                    "retained", localNavigator)
+                && exactQualifiedResult(initializer, current, "spatial_navigator", facts)
+            ? declaration : null;
+    }
+
+    private boolean exactQualifiedResult(PsiIndex.Node value, Rules.SymbolSpec symbol,
+            String returnType, List<Map<String, Object>> facts) {
+        if (value == null || value.kind() != PsiIndex.NodeKind.QUALIFIED
+                || hasAnyTaint(value, facts)) return false;
+        PsiIndex.Node receiver = one(value, PsiIndex.EdgeRole.RECEIVER);
+        PsiIndex.Node selector = one(value, PsiIndex.EdgeRole.SELECTOR);
+        return receiver != null && selector != null && !hasAnyTaint(selector, facts)
+            && exactDomainResolution(selector, symbol, facts)
+            && exactFact(facts, "origin", selector, enclosingCallable(selector), receiver,
+                "derived", symbol)
+            && exactFact(facts, "origin", value, enclosingCallable(value), selector,
+                "derived", symbol)
+            && exactFact(facts, "return_origin", value, enclosingCallable(value), selector,
+                returnType, symbol);
+    }
+
+    private void collectOpenStagePaths(PsiIndex.Node callable, Rules.SymbolSpec openStage,
+            List<Map<String, Object>> facts, List<PsiIndex.Node> helperCalls,
+            List<PsiIndex.Node> helperDeclarations, Map<Integer, Boolean> visited,
+            List<Map<String, Object>> matches) {
+        if (callable == null || visited.put(callable.id(), Boolean.TRUE) != null || matches.size() > 1) return;
+        for (PsiIndex.Node call : directStatementCallsLoose(callable)) {
+            Map<Integer, List<PsiIndex.Node>> openMap = reviewedDomainMapping(call, openStage, facts);
+            if (openMap != null) {
+                Map<String, Object> match = new HashMap<>();
+                match.put("helperCalls", List.copyOf(helperCalls));
+                match.put("helperDeclarations", List.copyOf(helperDeclarations));
+                match.put("openCall", call);
+                match.put("openMap", openMap);
+                matches.add(Map.copyOf(match));
+                continue;
+            }
+            if (helperCalls.size() >= 2 || hasAnyTaint(call, facts)) continue;
+            PsiIndex.Node declaration = exactSourceTarget(call, facts);
+            if (declaration == null || declaration.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || !isProductionPath(declaration.fileId())
+                    || mapSourceArguments(call, declaration, facts) == null) continue;
+            List<PsiIndex.Node> nextCalls = new ArrayList<>(helperCalls);
+            List<PsiIndex.Node> nextDeclarations = new ArrayList<>(helperDeclarations);
+            nextCalls.add(call);
+            nextDeclarations.add(declaration);
+            collectOpenStagePaths(declaration, openStage, facts, nextCalls, nextDeclarations,
+                new HashMap<>(visited), matches);
+        }
+    }
+
+    private String atomicString(PsiIndex.Node node) {
+        if (node == null || node.kind() != PsiIndex.NodeKind.STRING_TEMPLATE || node.tokenCount() < 3) return null;
+        StringBuilder raw = new StringBuilder();
+        for (int index = node.firstTokenId(); index < node.firstTokenId() + node.tokenCount(); index++) {
+            PsiIndex.Token token = program.tokens().get(index);
+            if (token.kind() != PsiIndex.TokenKind.STRING_LITERAL) return null;
+            raw.append(token.value());
+        }
+        String text = raw.toString();
+        if (text.length() < 3 || text.charAt(0) != '"' || text.charAt(text.length() - 1) != '"') return null;
+        String value = text.substring(1, text.length() - 1);
+        return value.isEmpty() || value.indexOf('\\') >= 0 || value.indexOf('$') >= 0 ? null : value;
+    }
+
+    private PsiIndex.Node sourceProperty(PsiIndex.Node value,
+            List<Map<String, Object>> facts) {
+        if (value == null) return null;
+        if (value.kind() == PsiIndex.NodeKind.NAME_REF && value.name() != null) {
+            PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", value.id());
+            if (declaration == null) declaration = findLexicalDeclaration(value, value.name());
+            return declaration;
+        }
+        if (value.kind() != PsiIndex.NodeKind.QUALIFIED) return null;
+        PsiIndex.Node receiver = one(value, PsiIndex.EdgeRole.RECEIVER);
+        PsiIndex.Node selector = one(value, PsiIndex.EdgeRole.SELECTOR);
+        if (receiver == null || selector == null || receiver.kind() != PsiIndex.NodeKind.NAME_REF
+                || selector.kind() != PsiIndex.NodeKind.NAME_REF
+                || receiver.name() == null || selector.name() == null) return null;
+        PsiIndex.Node container = null;
+        String packageName = program.file(value.fileId()).packageName();
+        for (PsiIndex.Node candidate : program.nodes()) {
+            if (candidate.kind() != PsiIndex.NodeKind.OBJECT_DECL || !isTopLevel(candidate)
+                    || !receiver.name().equals(candidate.name())
+                    || !packageName.equals(program.file(candidate.fileId()).packageName())) continue;
+            if (container != null) return null;
+            container = candidate;
+        }
+        if (container == null) return null;
+        PsiIndex.Node property = null;
+        for (PsiIndex.Node child : lexicalChildren(container)) {
+            if (child.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                    || !selector.name().equals(child.name())) continue;
+            if (property != null) return null;
+            property = child;
+        }
+        return property;
+    }
+
+    private PsiIndex.Node traceIdOrigin(PsiIndex.Node value, List<PsiIndex.Node> helperCalls,
+            List<PsiIndex.Node> helperDeclarations, List<Map<String, Object>> facts, int depth) {
+        if (value == null || depth > 6) return null;
+        if (atomicString(value) != null) return value;
+        PsiIndex.Node declaration = sourceProperty(value, facts);
+        if (declaration == null) return null;
+        if (declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL) {
+            return declaration.flags().contains(PsiIndex.NodeFlag.VAL)
+                    && !declaration.flags().contains(PsiIndex.NodeFlag.VAR)
+                    && atomicString(one(declaration, PsiIndex.EdgeRole.INITIALIZER)) != null
+                ? declaration : null;
+        }
+        if (declaration.kind() != PsiIndex.NodeKind.PARAMETER_DECL) return null;
+        for (int index = 0; index < helperDeclarations.size(); index++) {
+            PsiIndex.Node helper = helperDeclarations.get(index);
+            List<PsiIndex.Node> parameters = targets(helper, PsiIndex.EdgeRole.PARAMETER);
+            int position = parameters.indexOf(declaration);
+            if (position < 0) continue;
+            Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(helperCalls.get(index), helper, facts);
+            PsiIndex.Node argument = mappedArgument(mapping, position);
+            return argument == null ? null : traceIdOrigin(one(argument, PsiIndex.EdgeRole.VALUE),
+                helperCalls, helperDeclarations, facts, depth + 1);
+        }
+        return null;
+    }
+
+    private PsiIndex.Node traceBundleOrigin(PsiIndex.Node value, List<PsiIndex.Node> helperCalls,
+            List<PsiIndex.Node> helperDeclarations, List<Map<String, Object>> facts,
+            Rules.SymbolSpec bundleType, Rules.SymbolSpec stageBundle, int depth) {
+        if (value == null || depth > 6 || isNullLiteral(value)) return null;
+        if (exactDomainResolution(value, stageBundle, facts)
+                && exactFact(facts, "type", value, enclosingCallable(value), null,
+                    "bundle", bundleType)) return value;
+        PsiIndex.Node declaration = sourceProperty(value, facts);
+        if (declaration == null) return null;
+        if (declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL) {
+            PsiIndex.Node initializer = one(declaration, PsiIndex.EdgeRole.INITIALIZER);
+            if (!declaration.flags().contains(PsiIndex.NodeFlag.VAL)
+                    || declaration.flags().contains(PsiIndex.NodeFlag.VAR)
+                    || initializer == null
+                    || !exactBundleTypeFact(
+                        declaration, enclosingCallable(declaration), facts, bundleType)) return null;
+            PsiIndex.Node traced = traceBundleOrigin(initializer, helperCalls,
+                helperDeclarations, facts, bundleType, stageBundle, depth + 1);
+            return traced != null || exactSourceBundleProducer(initializer, facts, bundleType)
+                ? declaration : null;
+        }
+        if (declaration.kind() != PsiIndex.NodeKind.PARAMETER_DECL) return null;
+        for (int index = 0; index < helperDeclarations.size(); index++) {
+            PsiIndex.Node helper = helperDeclarations.get(index);
+            List<PsiIndex.Node> parameters = targets(helper, PsiIndex.EdgeRole.PARAMETER);
+            int position = parameters.indexOf(declaration);
+            if (position < 0) continue;
+            Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(helperCalls.get(index), helper, facts);
+            PsiIndex.Node argument = mappedArgument(mapping, position);
+            return argument == null ? null : traceBundleOrigin(one(argument, PsiIndex.EdgeRole.VALUE),
+                helperCalls, helperDeclarations, facts, bundleType, stageBundle, depth + 1);
+        }
+        return null;
+    }
+
+    private boolean exactSourceBundleProducer(PsiIndex.Node value,
+            List<Map<String, Object>> facts, Rules.SymbolSpec bundleType) {
+        PsiIndex.Node call = directCall(value);
+        PsiIndex.Node declaration = call == null ? null : exactSourceTarget(call, facts);
+        if (declaration == null || declaration.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                || !isProductionPath(declaration.fileId()) || hasAnyTaint(value, facts)
+                || hasAnyTaint(call, facts)) return false;
+        PsiIndex.Node declaredType = one(declaration, PsiIndex.EdgeRole.TYPE);
+        PsiIndex.Node result = sourceReturnOrigin(declaration);
+        if (declaredType == null || typeSymbolForReference(declaredType) != bundleType
+                || isExplicitNullable(declaredType) || result == null || isNullLiteral(result)
+                || result.kind() == PsiIndex.NodeKind.IF || result.kind() == PsiIndex.NodeKind.WHEN
+                || result.kind() == PsiIndex.NodeKind.TRY || hasAnyTaint(result, facts)
+                || !exactFact(facts, "type", declaration, enclosingCallable(declaration), null,
+                    "bundle", bundleType)
+                || !exactBundleTypeFact(call, enclosingCallable(call), facts, bundleType)
+                || !exactBundleTypeFact(value, enclosingCallable(value), facts, bundleType)
+                || !exactFact(facts, "return_origin", call, enclosingCallable(call), result,
+                    "bundle", null)) return false;
+        return value.id() == call.id() || exactFact(facts, "return_origin", value,
+            enclosingCallable(value), call, "bundle", null);
+    }
+
+    private boolean exactBundleTypeFact(PsiIndex.Node subject, PsiIndex.Node owner,
+            List<Map<String, Object>> facts, Rules.SymbolSpec bundleType) {
+        return exactFact(facts, "type", subject, owner, null, "bundle", bundleType)
+            || exactFact(facts, "type", subject, owner, null, "bundle", null);
+    }
+
+    // CP2 plane emitter section.
+    private Rules.Analysis analyzeRetryReadiness() {
+        Rules.SymbolSpec start = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneTrackingManager.start", "start(): Unit");
+        Rules.SymbolSpec load = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneTrackingManager.loadAllAnchors",
+            "loadAllAnchors(): Array<PlaneAnchor>");
+        Rules.SymbolSpec until = domainSymbolOrNull(
+            "kotlin.ranges.until", "Int.until(to: Int): IntRange");
+        Rules.SymbolSpec ready = domainSymbolOrNull(
+            "kotlin.collections.isNotEmpty", "Collection<T>.isNotEmpty(): Boolean");
+        if (start == null || load == null || until == null || ready == null) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        Rules.Analysis match = null;
+        String matchAlternative = null;
+        for (PsiIndex.Node loop : program.nodes()) {
+            if (!isProductionPath(loop.fileId())
+                    || loop.kind() != PsiIndex.NodeKind.FOR
+                    && loop.kind() != PsiIndex.NodeKind.WHILE) continue;
+            String alternative;
+            PsiIndex.Node head;
+            if (loop.kind() == PsiIndex.NodeKind.FOR) {
+                head = one(loop, PsiIndex.EdgeRole.RANGE);
+                if (head == null || head.kind() != PsiIndex.NodeKind.BINARY
+                        || !exactDomainResolution(head, until, facts)
+                        || !planeRetryZero(one(head, PsiIndex.EdgeRole.LEFT))
+                        || !planeRetryMultipleBound(one(head, PsiIndex.EdgeRole.RIGHT), facts)) continue;
+                alternative = "bounded-for";
+            } else {
+                head = one(loop, PsiIndex.EdgeRole.CONDITION);
+                if (!isCanonicalBoundedWhile(loop, facts)
+                        || !planeRetryMultipleBound(planeRetryComparisonBound(head), facts)) continue;
+                alternative = "canonical-bounded-while";
+            }
+            PsiIndex.Node success = relatedNodeForFact(facts, "loop_success", loop.id());
+            PsiIndex.Node retained = planeRetryRetainedExit(loop, success, facts);
+            PsiIndex.Node retainedValue = retained == null
+                ? null : one(retained, PsiIndex.EdgeRole.VALUE);
+            PsiIndex.Node producer = exactCollectionProducerOrigin(retainedValue, facts);
+            if (success == null || retained == null || producer == null
+                    || !exactDomainResolution(producer, load, facts)) continue;
+
+            PsiIndex.Node readiness = null;
+            PsiIndex.Node readinessBranch = null;
+            for (PsiIndex.Node call : program.nodes()) {
+                if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, loop)
+                        || !exactDomainResolution(call, ready, facts)) continue;
+                PsiIndex.Node branch = conditionOwner(call);
+                PsiIndex.Node receiver = resolvedReceiver(call);
+                PsiIndex.Node readinessProducer = exactCollectionProducerOrigin(receiver, facts);
+                PsiIndex.Node thenBranch = branch == null
+                    ? null : one(branch, PsiIndex.EdgeRole.THEN_BRANCH);
+                if (branch == null || branch.kind() != PsiIndex.NodeKind.IF
+                        || thenBranch == null || success.id() != thenBranch.id()
+                            && !isWithin(success, thenBranch)
+                        || readinessProducer == null
+                        || readinessProducer.id() != producer.id()) continue;
+                if (readiness != null) {
+                    readiness = null;
+                    break;
+                }
+                readiness = call;
+                readinessBranch = branch;
+            }
+            PsiIndex.Node trackingStart = planeUniqueDomainCallInFile(
+                loop.fileId(), start, facts);
+            if (readiness == null || trackingStart == null) continue;
+
+            List<String> witnesses = new ArrayList<>();
+            boolean valid = addWitness(enclosingCallable(loop), witnesses)
+                && addWitness(trackingStart, witnesses)
+                && addWitness(loop, witnesses)
+                && addWitness(retained, witnesses)
+                && addWitness(producer, witnesses)
+                && addWitness(readiness, witnesses)
+                && planeAddProofWitness(readinessBranch, witnesses);
+            if (!valid) continue;
+            Rules.Analysis candidate = planeClaim(
+                "plane.retry-readiness", "bounded-retained-load-retry",
+                alternative, witnesses);
+            if (candidate == null || match != null) return Rules.emptyAnalysis();
+            match = candidate;
+            matchAlternative = alternative;
+        }
+        if (match == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("plane.retry-readiness", matchAlternative);
+        return match;
+    }
+
+    private Rules.Analysis analyzeSemanticFallback() {
+        Rules.SymbolSpec load = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneTrackingManager.loadAllAnchors",
+            "loadAllAnchors(): Array<PlaneAnchor>");
+        Rules.SymbolSpec filter = domainSymbolOrNull(
+            "kotlin.collections.filter",
+            "Iterable<T>.filter(predicate: (T) -> Boolean): List<T>");
+        Rules.SymbolSpec selector = domainSymbolOrNull(
+            "kotlin.collections.maxByOrNull",
+            "Iterable<T>.maxByOrNull(selector: (T) -> R): T?");
+        Rules.SymbolSpec table = domainSymbolOrNull(
+            "com.pico.spatial.sense.base.SemanticLabelType.TABLE", "TABLE");
+        Rules.SymbolSpec floor = domainSymbolOrNull(
+            "com.pico.spatial.sense.base.SemanticLabelType.FLOOR", "FLOOR");
+        Rules.SymbolSpec upward = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneOrientation.HORIZONTAL_UPWARD",
+            "HORIZONTAL_UPWARD");
+        Rules.SymbolSpec downward = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneOrientation.HORIZONTAL_DOWNWARD",
+            "HORIZONTAL_DOWNWARD");
+        if (load == null || filter == null || selector == null || table == null
+                || floor == null || upward == null || downward == null) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        Rules.Analysis match = null;
+        String matchAlternative = null;
+        for (PsiIndex.Node fallback : program.nodes()) {
+            if (fallback.kind() != PsiIndex.NodeKind.BINARY || !"?:".equals(fallback.value())
+                    || !isProductionPath(fallback.fileId())
+                    || !planeFallbackConsumed(fallback, facts)) continue;
+            PsiIndex.Node loaded = planeUniqueDomainCallInFile(fallback.fileId(), load, facts);
+            if (loaded == null) continue;
+            PsiIndex.Node left = one(fallback, PsiIndex.EdgeRole.LEFT);
+            PsiIndex.Node right = one(fallback, PsiIndex.EdgeRole.RIGHT);
+            List<PsiIndex.Node> tablePath = planeSelectorPath(
+                left, fallback, loaded, table, filter, selector, upward, downward, facts);
+            List<PsiIndex.Node> floorPath = planeSelectorPath(
+                right, fallback, loaded, floor, filter, selector, upward, downward, facts);
+            if (tablePath == null || floorPath == null
+                    || tablePath.get(0).id() == floorPath.get(0).id()) continue;
+            boolean inline = tablePath.get(5) == null && floorPath.get(5) == null;
+            boolean helper = tablePath.get(5) != null && floorPath.get(5) != null;
+            if (!inline && !helper) continue;
+            String alternative = inline ? "inline-selectors" : "unique-helper-selectors";
+
+            List<String> witnesses = new ArrayList<>();
+            boolean valid = addWitness(enclosingCallable(fallback), witnesses)
+                && addWitness(loaded, witnesses);
+            for (List<PsiIndex.Node> path : List.of(tablePath, floorPath)) {
+                for (PsiIndex.Node node : path) {
+                    if (valid && node != null) valid = planeAddProofWitness(node, witnesses);
+                }
+            }
+            if (!valid) continue;
+            Rules.Analysis candidate = planeClaim(
+                "plane.semantic-fallback", "dominating-semantic-plane-fallback",
+                alternative, witnesses);
+            if (candidate == null || match != null) return Rules.emptyAnalysis();
+            match = candidate;
+            matchAlternative = alternative;
+        }
+        if (match == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("plane.semantic-fallback", matchAlternative);
+        return match;
+    }
+    private Rules.Analysis analyzeAnchorPose() {
+        Rules.SymbolSpec convertPosition = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Entity.convertPositionFrom",
+            "convertPositionFrom(position: Vector3, baseEntity: Entity?): Vector3");
+        Rules.SymbolSpec convertRotation = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Entity.convertRotationFrom",
+            "convertRotationFrom(rotation: Quat, baseEntity: Entity?): Quat");
+        Rules.SymbolSpec planeTransform = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneAnchor.transform", "transform: Transform");
+        Rules.SymbolSpec transformPosition = domainSymbolOrNull(
+            "com.pico.spatial.core.math.Transform.position", "position: Vector3");
+        Rules.SymbolSpec transformRotation = domainSymbolOrNull(
+            "com.pico.spatial.core.math.Transform.quaternion", "quaternion: Quat");
+        Rules.SymbolSpec geometry = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneAnchor.boundingBoxSize",
+            "boundingBoxSize: Vector2");
+        Rules.SymbolSpec vector = domainSymbolOrNull(
+            "com.pico.spatial.core.math.Vector3",
+            "Vector3(x: Float = 0f, y: Float = 0f, z: Float = 0f)");
+        Rules.SymbolSpec vectorX = domainSymbolOrNull(
+            "com.pico.spatial.core.math.Vector3.x", "x: Float");
+        Rules.SymbolSpec vectorY = domainSymbolOrNull(
+            "com.pico.spatial.core.math.Vector3.y", "y: Float");
+        Rules.SymbolSpec vectorZ = domainSymbolOrNull(
+            "com.pico.spatial.core.math.Vector3.z", "z: Float");
+        Rules.SymbolSpec component = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.TransformComponent",
+            "TransformComponent(position: Vector3, rotation: Quat, scale: Vector3)");
+        Rules.SymbolSpec components = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Entity.components", "components: ComponentSet");
+        Rules.SymbolSpec set = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Entity.ComponentSet.set", "set(component: T): Unit");
+        Rules.SymbolSpec addChild = domainSymbolOrNull(
+            "com.pico.spatial.core.ecs.Entity.addChild", "addChild(entity: Entity): Boolean");
+        if (convertPosition == null || convertRotation == null || planeTransform == null
+                || transformPosition == null || transformRotation == null || geometry == null
+                || vector == null || vectorX == null || vectorY == null || vectorZ == null
+                || component == null || components == null || set == null || addChild == null) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        Rules.Analysis match = null;
+        String matchAlternative = null;
+        for (PsiIndex.Node componentCall : program.nodes()) {
+            if (componentCall.kind() != PsiIndex.NodeKind.CALL
+                    || !isProductionPath(componentCall.fileId())
+                    || !exactDomainResolution(componentCall, component, facts)) continue;
+            PsiIndex.Node owner = enclosingCallable(componentCall);
+            Map<Integer, List<PsiIndex.Node>> componentMap = mapDomainArguments(
+                componentCall, component, facts);
+            PsiIndex.Node positionArgument = mappedArgument(componentMap, 0);
+            PsiIndex.Node rotationArgument = mappedArgument(componentMap, 1);
+            PsiIndex.Node vectorCall = directCall(argumentValue(positionArgument));
+            Map<Integer, List<PsiIndex.Node>> vectorMap = vectorCall == null
+                ? null : mapDomainArguments(vectorCall, vector, facts);
+            if (owner == null || owner.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || owner.flags().contains(PsiIndex.NodeFlag.PRIVATE)
+                    || vectorCall == null || !exactDomainResolution(vectorCall, vector, facts)
+                    || vectorMap == null || rotationArgument == null) continue;
+            PsiIndex.Node xValue = argumentValue(mappedArgument(vectorMap, 0));
+            PsiIndex.Node yValue = argumentValue(mappedArgument(vectorMap, 1));
+            PsiIndex.Node zValue = argumentValue(mappedArgument(vectorMap, 2));
+            PsiIndex.Node xReceiver = planeUniqueMemberReceiver(xValue, vectorX, facts);
+            PsiIndex.Node yReceiver = planeUniqueMemberReceiver(yValue, vectorY, facts);
+            PsiIndex.Node zReceiver = planeUniqueMemberReceiver(zValue, vectorZ, facts);
+            PsiIndex.Node positionResult = planeSameValueDeclaration(
+                xReceiver, yReceiver, zReceiver, facts);
+            PsiIndex.Node rotationResult = planeValueDeclaration(
+                argumentValue(rotationArgument), facts);
+            List<PsiIndex.Node> positionPath = planePoseConversionPath(
+                positionResult, convertPosition, planeTransform, transformPosition, facts);
+            List<PsiIndex.Node> rotationPath = planePoseConversionPath(
+                rotationResult, convertRotation, planeTransform, transformRotation, facts);
+            if (positionPath == null || rotationPath == null
+                    || positionPath.get(3).id() != rotationPath.get(3).id()
+                    || positionPath.get(4).id() != rotationPath.get(4).id()) continue;
+            boolean direct = positionPath.get(2) == null && rotationPath.get(2) == null;
+            boolean helper = positionPath.get(2) != null && rotationPath.get(2) != null
+                && positionPath.get(2).id() != rotationPath.get(2).id();
+            if (!direct && !helper
+                    || !planeExpressionHasMemberFrom(xValue, geometry,
+                        positionPath.get(4), facts, 0)) continue;
+
+            PsiIndex.Node setCall = planeUniqueContainingCall(
+                componentCall, set, owner, facts);
+            PsiIndex.Node addCall = planeUniqueDomainCallInCallable(owner, addChild, facts);
+            PsiIndex.Node placedAtSet = setCall == null ? null
+                : planeMemberReceiver(resolvedReceiver(setCall), components, facts);
+            Map<Integer, List<PsiIndex.Node>> addMap = addCall == null
+                ? null : mapDomainArguments(addCall, addChild, facts);
+            PsiIndex.Node placedAtAdd = argumentValue(mappedArgument(addMap, 0));
+            PsiIndex.Node rootAtAdd = addCall == null ? null : resolvedReceiver(addCall);
+            if (setCall == null || addCall == null || placedAtSet == null || placedAtAdd == null
+                    || !planeSameOrigin(placedAtSet, placedAtAdd, facts)
+                    || !planeSameOrigin(rootAtAdd, positionPath.get(3), facts)) continue;
+
+            String alternative = direct
+                ? "direct-pose-conversion" : "pure-helper-pose-conversion";
+            List<String> witnesses = new ArrayList<>();
+            boolean valid = addWitness(owner, witnesses)
+                && addWitness(positionResult, witnesses)
+                && addWitness(rotationResult, witnesses)
+                && addWitness(positionPath.get(0), witnesses)
+                && addWitness(rotationPath.get(0), witnesses)
+                && planeAddProofWitness(positionPath.get(5), witnesses)
+                && planeAddProofWitness(rotationPath.get(5), witnesses)
+                && planeAddProofWitness(xValue, witnesses)
+                && addWitness(vectorCall, witnesses)
+                && addWitness(componentCall, witnesses)
+                && addWitness(setCall, witnesses)
+                && addWitness(addCall, witnesses);
+            if (helper) {
+                valid &= addWitness(positionPath.get(2), witnesses)
+                    && addWitness(rotationPath.get(2), witnesses);
+            }
+            if (!valid) continue;
+            Rules.Analysis candidate = planeClaim(
+                "plane.anchor-pose", "same-anchor-pose-conversion",
+                alternative, witnesses);
+            if (candidate == null || match != null) return Rules.emptyAnalysis();
+            match = candidate;
+            matchAlternative = alternative;
+        }
+        if (match == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("plane.anchor-pose", matchAlternative);
+        return match;
+    }
+    private Rules.Analysis analyzeCleanupErrors() {
+        Rules.SymbolSpec effect = domainSymbolOrNull(
+            DISPOSABLE_EFFECT_FQN, DISPOSABLE_EFFECT_SIGNATURE);
+        Rules.SymbolSpec dispose = domainSymbolOrNull(ON_DISPOSE_FQN, ON_DISPOSE_SIGNATURE);
+        Rules.SymbolSpec subscribe = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneTrackingManager.subscribeAnchorUpdate",
+            "subscribeAnchorUpdate(subscriber: AnchorUpdateSubscriber<PlaneAnchor>): Cancellable");
+        Rules.SymbolSpec start = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneTrackingManager.start", "start(): Unit");
+        Rules.SymbolSpec cancel = domainSymbolOrNull(
+            "com.pico.spatial.core.lifecycle.Cancellable.cancel", "cancel(): Unit");
+        Rules.SymbolSpec stop = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneTrackingManager.stop", "stop(): Unit");
+        Rules.SymbolSpec runCatching = domainSymbolOrNull(
+            "kotlin.runCatching", "runCatching(block: () -> R): Result<R>");
+        Rules.SymbolSpec disposableScope = typeSymbolExact(
+            DISPOSABLE_SCOPE_FQN, DISPOSABLE_SCOPE_SIGNATURE);
+        if (effect == null || dispose == null || subscribe == null || start == null
+                || cancel == null || stop == null || runCatching == null
+                || disposableScope == null
+                || !callbackShape(effect, 1, "disposable_effect", "disposable_effect_scope")
+                || !callbackShape(dispose, 0, "dispose_cleanup", null)) {
+            return Rules.emptyAnalysis();
+        }
+        List<Map<String, Object>> facts = kernelFacts();
+        Rules.Analysis match = null;
+        String matchAlternative = null;
+        for (PsiIndex.Node effectCall : program.nodes()) {
+            if (effectCall.kind() != PsiIndex.NodeKind.CALL
+                    || !isProductionPath(effectCall.fileId())
+                    || !exactDomainResolution(effectCall, effect, facts)) continue;
+            Map<Integer, List<PsiIndex.Node>> effectMap = mapDomainArguments(
+                effectCall, effect, facts);
+            PsiIndex.Node key = argumentValue(mappedArgument(effectMap, 0));
+            PsiIndex.Node effectArgument = mappedArgument(effectMap, 1);
+            PsiIndex.Node effectLambda = mappedLambda(effectMap, 1);
+            if (effectLambda == null || key == null
+                    || !exactFact(facts, "callback_binding", effectLambda, effectCall,
+                        effectArgument, "disposable_effect", effect)
+                    || !exactFact(facts, "callback_receiver", effectLambda, effectCall,
+                        null, "disposable_effect_scope", disposableScope)) continue;
+            PsiIndex.Node disposeCall = cp2seUniqueResolvedCall(
+                directStatementCallsLoose(effectLambda), dispose, facts);
+            Map<Integer, List<PsiIndex.Node>> disposeMap = disposeCall == null
+                ? null : mapDomainArguments(disposeCall, dispose, facts);
+            PsiIndex.Node disposeArgument = mappedArgument(disposeMap, 0);
+            PsiIndex.Node cleanupLambda = mappedLambda(disposeMap, 0);
+            if (disposeCall == null || cleanupLambda == null
+                    || callbackResult(effectLambda) != disposeCall
+                    || !exactFact(facts, "callback_binding", cleanupLambda, disposeCall,
+                        disposeArgument, "dispose_cleanup", dispose)) continue;
+
+            PsiIndex.Node acquisitionCall = null;
+            PsiIndex.Node acquisition = null;
+            for (PsiIndex.Node call : directStatementCallsLoose(effectLambda)) {
+                PsiIndex.Node target = exactSourceTarget(call, facts);
+                if (target == null
+                        || planeUniqueDomainCallInCallable(target, subscribe, facts) == null
+                        || planeUniqueDomainCallInCallable(target, start, facts) == null) continue;
+                if (acquisitionCall != null) {
+                    acquisitionCall = null;
+                    acquisition = null;
+                    break;
+                }
+                acquisitionCall = call;
+                acquisition = target;
+            }
+            PsiIndex.Node cleanupCall = null;
+            PsiIndex.Node cleanup = null;
+            for (PsiIndex.Node call : directStatementCallsLoose(cleanupLambda)) {
+                PsiIndex.Node target = exactSourceTarget(call, facts);
+                if (target == null) continue;
+                if (cleanupCall != null) {
+                    cleanupCall = null;
+                    cleanup = null;
+                    break;
+                }
+                cleanupCall = call;
+                cleanup = target;
+            }
+            if (acquisitionCall == null || acquisition == null
+                    || cleanupCall == null || cleanup == null
+                    || !planeSameOrigin(key, resolvedReceiver(acquisitionCall), facts)
+                    || !planeSameOrigin(resolvedReceiver(acquisitionCall),
+                        resolvedReceiver(cleanupCall), facts)) continue;
+
+            List<PsiIndex.Node> acquirePath = planeCleanupAcquirePath(
+                acquisition, cleanup, subscribe, start, facts);
+            List<PsiIndex.Node> releasePath = planeCleanupReleasePath(
+                cleanup, cancel, stop, runCatching,
+                acquirePath == null ? null : acquirePath.get(0), facts);
+            if (acquirePath == null || releasePath == null) continue;
+            boolean direct = releasePath.get(4) == null && releasePath.get(5) == null;
+            boolean helper = releasePath.get(4) != null && releasePath.get(5) != null
+                && releasePath.get(4).id() != releasePath.get(5).id();
+            if (!direct && !helper) continue;
+            String alternative = direct ? "direct-cleanup" : "unique-helper-cleanup";
+
+            List<String> witnesses = new ArrayList<>();
+            boolean valid = addWitness(effectCall, witnesses)
+                && addWitness(acquisitionCall, witnesses)
+                && addWitness(acquirePath.get(3), witnesses)
+                && addWitness(acquirePath.get(1), witnesses)
+                && addWitness(acquirePath.get(2), witnesses)
+                && addWitness(acquirePath.get(4), witnesses)
+                && addWitness(disposeCall, witnesses)
+                && addWitness(cleanupCall, witnesses)
+                && addWitness(cleanup, witnesses)
+                && addWitness(releasePath.get(0), witnesses)
+                && addWitness(releasePath.get(2), witnesses)
+                && addWitness(releasePath.get(3), witnesses)
+                && addWitness(releasePath.get(1), witnesses)
+                && addWitness(acquirePath.get(5), witnesses)
+                && addWitness(acquirePath.get(6), witnesses)
+                && addWitness(acquirePath.get(7), witnesses)
+                && addWitness(acquirePath.get(8), witnesses);
+            if (helper) {
+                valid &= addWitness(releasePath.get(4), witnesses)
+                    && addWitness(releasePath.get(5), witnesses)
+                    && addWitness(releasePath.get(6), witnesses)
+                    && addWitness(releasePath.get(7), witnesses);
+            }
+            if (!valid) continue;
+            Rules.Analysis candidate = planeClaim(
+                "plane.cleanup-errors", "paired-plane-cleanup-status",
+                alternative, witnesses);
+            if (candidate == null || match != null) return Rules.emptyAnalysis();
+            match = candidate;
+            matchAlternative = alternative;
+        }
+        if (match == null) return Rules.emptyAnalysis();
+        selectedAlternativesForTest.put("plane.cleanup-errors", matchAlternative);
+        return match;
+    }
+
+    private Rules.Analysis planeClaim(String ruleId, String proofForm,
+            String alternativeId, List<String> witnesses) {
+        Map<String, String> selected = Rules.selectProof(
+            domain, ruleId,
+            Map.of(proofForm, Boolean.TRUE),
+            Map.of(proofForm, List.of(alternativeId)));
+        if (selected.size() != 2) return null;
+        return Rules.claimOrNull(program, domain, ruleId,
+            selected.get("proofForm"), selected.get("alternativeId"), witnesses);
+    }
+
+    private boolean planeAddProofWitness(PsiIndex.Node node,
+            List<String> witnesses) {
+        if (node == null) return false;
+        if (node.witnessNodeId() != null) return addWitness(node, witnesses);
+        for (PsiIndex.Node candidate : program.nodes()) {
+            if (isWithin(candidate, node) && candidate.witnessNodeId() != null) {
+                return addWitness(candidate, witnesses);
+            }
+        }
+        return false;
+    }
+
+    private PsiIndex.Node planeUniqueDomainCallInFile(int fileId,
+            Rules.SymbolSpec symbol, List<Map<String, Object>> facts) {
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (node.fileId() != fileId || node.kind() != PsiIndex.NodeKind.CALL
+                    || !exactDomainResolution(node, symbol, facts)) continue;
+            if (match != null) return null;
+            match = node;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node planeRetryRetainedExit(PsiIndex.Node loop,
+            PsiIndex.Node success, List<Map<String, Object>> facts) {
+        if (success == null) return null;
+        PsiIndex.Node match = null;
+        for (Map<String, Object> fact : facts) {
+            if (!"retained_exit".equals(fact.get("kind"))
+                    || !Long.valueOf(loop.id()).equals(fact.get("ownerNodeId"))
+                    || !Long.valueOf(success.id()).equals(fact.get("relatedNodeId"))
+                    || !"".equals(fact.get("value"))) continue;
+            PsiIndex.Node candidate = program.node(
+                ((Long) fact.get("subjectNodeId")).intValue());
+            if (match != null && match.id() != candidate.id()) return null;
+            match = candidate;
+        }
+        return match;
+    }
+
+    private boolean planeRetryZero(PsiIndex.Node node) {
+        Integer value = planeRetryIntegerLiteral(node);
+        return value != null && value == 0;
+    }
+
+    private boolean planeRetryMultipleBound(PsiIndex.Node node,
+            List<Map<String, Object>> facts) {
+        Integer value = planeRetryIntegerLiteral(node);
+        if (value != null) return value > 1;
+        if (node == null || node.kind() != PsiIndex.NodeKind.NAME_REF) return false;
+        PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", node.id());
+        if (declaration == null) declaration = findLexicalDeclaration(node, node.name());
+        return declaration != null && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+            && declaration.flags().contains(PsiIndex.NodeFlag.CONST)
+            && planeRetryMultipleBound(one(declaration, PsiIndex.EdgeRole.INITIALIZER), facts);
+    }
+
+    private boolean planeRetryPositiveBound(PsiIndex.Node node,
+            List<Map<String, Object>> facts) {
+        Integer value = planeRetryIntegerLiteral(node);
+        if (value != null) return value > 0;
+        if (node == null || node.kind() != PsiIndex.NodeKind.NAME_REF) return false;
+        PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", node.id());
+        if (declaration == null) declaration = findLexicalDeclaration(node, node.name());
+        return declaration != null && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+            && declaration.flags().contains(PsiIndex.NodeFlag.CONST)
+            && planeRetryPositiveBound(one(declaration, PsiIndex.EdgeRole.INITIALIZER), facts);
+    }
+
+    private Integer planeRetryIntegerLiteral(PsiIndex.Node node) {
+        if (node == null || node.kind() != PsiIndex.NodeKind.LITERAL
+                || !"int".equals(literalType(node))) return null;
+        String raw = node.value();
+        if (raw == null) return null;
+        try {
+            return Integer.valueOf(raw.replace("_", ""));
+        } catch (NumberFormatException invalid) {
+            return null;
+        }
+    }
+
+    private PsiIndex.Node planeRetryComparisonBound(PsiIndex.Node comparison) {
+        if (comparison == null || comparison.kind() != PsiIndex.NodeKind.BINARY) return null;
+        PsiIndex.Node left = one(comparison, PsiIndex.EdgeRole.LEFT);
+        PsiIndex.Node right = one(comparison, PsiIndex.EdgeRole.RIGHT);
+        if (left != null && left.kind() == PsiIndex.NodeKind.NAME_REF) return right;
+        if (right != null && right.kind() == PsiIndex.NodeKind.NAME_REF) return left;
+        return null;
+    }
+
+    private List<PsiIndex.Node> planeSelectorPath(PsiIndex.Node expression,
+            PsiIndex.Node fallback, PsiIndex.Node loaded,
+            Rules.SymbolSpec semanticEntry, Rules.SymbolSpec filter,
+            Rules.SymbolSpec selector, Rules.SymbolSpec upward,
+            Rules.SymbolSpec downward, List<Map<String, Object>> facts) {
+        PsiIndex.Node entryCall = directCall(expression);
+        if (entryCall == null || hasAnyTaint(entryCall, facts)) return null;
+        PsiIndex.Node helperCall = null;
+        PsiIndex.Node selectorCall = entryCall;
+        if (!exactDomainResolution(selectorCall, selector, facts)) {
+            PsiIndex.Node helper = exactSourceTarget(entryCall, facts);
+            PsiIndex.Node returned = helper == null ? null : sourceReturnOrigin(helper);
+            selectorCall = directCall(returned);
+            if (helper == null || helper.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || !isProductionPath(helper.fileId()) || selectorCall == null
+                    || hasAnyTaint(helper, facts) || hasAnyTaint(selectorCall, facts)
+                    || !exactDomainResolution(selectorCall, selector, facts)) return null;
+            helperCall = entryCall;
+        }
+        PsiIndex.Node filterCall = exactInitializerCall(resolvedReceiver(selectorCall),
+            filter.fqn(), filter.signature(), facts);
+        PsiIndex.Node collection = filterCall == null
+            ? null : resolvedReceiver(filterCall);
+        if (planeExactSelectorCollectionProducer(
+                collection, entryCall, fallback, loaded, facts) == null) return null;
+        PsiIndex.Node semantic = planeUniqueRelatedFact(
+            filterCall, "same_element", "semantic", facts);
+        PsiIndex.Node orientation = planeUniqueRelatedFact(
+            filterCall, "same_element", "orientation", facts);
+        PsiIndex.Node area = planeUniqueRelatedFact(
+            filterCall, "same_element", "area", facts);
+        PsiIndex.Node selection = planeUniqueRelatedFact(
+            selectorCall, "same_element", "selection", facts);
+        if (filterCall == null || semantic == null || orientation == null || area == null
+                || selection == null
+                || !planeContainsExactSymbol(semantic, semanticEntry, facts)
+                || !planeContainsExactSymbol(orientation, upward, facts)
+                || !planeContainsExactSymbol(orientation, downward, facts)
+                || !planePositiveAreaBoundary(area)) return null;
+        List<PsiIndex.Node> path = new ArrayList<>();
+        path.add(selectorCall);
+        path.add(filterCall);
+        path.add(semantic);
+        path.add(orientation);
+        path.add(area);
+        path.add(helperCall);
+        return path;
+    }
+
+    private PsiIndex.Node planeExactSelectorCollectionProducer(PsiIndex.Node receiver,
+            PsiIndex.Node entryCall, PsiIndex.Node fallback, PsiIndex.Node expected,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node direct = exactCollectionProducerOrigin(receiver, facts);
+        if (direct != null) return expected != null && direct.id() == expected.id()
+            ? direct : null;
+        if (receiver == null || receiver.kind() != PsiIndex.NodeKind.NAME_REF
+                || receiver.name() == null || qualifiedSelectorParent(receiver) != null
+                || entryCall == null || fallback == null || expected == null) return null;
+        PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", receiver.id());
+        if (declaration == null) {
+            declaration = findLexicalDeclaration(receiver, receiver.name());
+        }
+        PsiIndex.Node helper = enclosingFunctionDeclaration(receiver);
+        PsiIndex.Node caller = enclosingFunctionDeclaration(entryCall);
+        PsiIndex.Node ownerType = declaration == null
+            ? null : enclosingTypeDeclaration(declaration);
+        if (declaration == null || declaration.kind() != PsiIndex.NodeKind.PROPERTY_DECL
+                || !declaration.flags().contains(PsiIndex.NodeFlag.PRIVATE)
+                || !declaration.flags().contains(PsiIndex.NodeFlag.VAR)
+                || !"plane_anchor".equals(declaredCollectionElementType(declaration, facts))
+                || helper == null || !helper.flags().contains(PsiIndex.NodeFlag.PRIVATE)
+                || exactSourceTarget(entryCall, facts) != helper
+                || caller == null || ownerType == null
+                || enclosingTypeDeclaration(helper) != ownerType
+                || enclosingTypeDeclaration(caller) != ownerType
+                || !isWithin(entryCall, fallback)) return null;
+        int helperCalls = 0;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() == PsiIndex.NodeKind.CALL
+                    && exactSourceTarget(call, facts) == helper) helperCalls++;
+        }
+        if (helperCalls != 1) return null;
+
+        PsiIndex.Node assignment = null;
+        for (PsiIndex.Node candidate : program.nodes()) {
+            if (candidate.kind() != PsiIndex.NodeKind.ASSIGNMENT
+                    || !isWithin(candidate, ownerType)
+                    || planeAssignmentTargetDeclaration(candidate, facts) != declaration) continue;
+            if (assignment != null) return null;
+            assignment = candidate;
+        }
+        PsiIndex.Node value = assignment == null
+            ? null : one(assignment, PsiIndex.EdgeRole.VALUE);
+        PsiIndex.Node producer = exactCollectionProducerOrigin(value, facts);
+        PsiIndex.Node lambda = assignment == null ? null : enclosingLambda(assignment);
+        PsiIndex.Node repeatCall = lambda == null ? null : callbackInvocation(lambda, facts);
+        Rules.SymbolSpec repeat = domainSymbolOrNull(
+            "kotlin.repeat", "repeat(times: Int, action: (Int) -> Unit): Unit");
+        Map<Integer, List<PsiIndex.Node>> mapping = repeatCall == null || repeat == null
+            ? null : mapDomainArguments(repeatCall, repeat, facts);
+        PsiIndex.Node countArgument = mappedArgument(mapping, 0);
+        PsiIndex.Node repeatLambda = mappedLambda(mapping, 1);
+        PsiIndex.Node body = lambda == null ? null : one(lambda, PsiIndex.EdgeRole.LAMBDA_BODY);
+        PsiIndex.Node predecessor = lexicalPredecessor(fallback, caller);
+        if (assignment == null || producer == null || producer.id() != expected.id()
+                || enclosingFunctionDeclaration(assignment) != caller) return null;
+        if (repeatCall != null && exactDomainResolution(repeatCall, repeat, facts)
+                && repeatLambda == lambda
+                && planeRetryPositiveBound(argumentValue(countArgument), facts)
+                && firstBoundary(body) == assignment
+                && directCall(predecessor) == repeatCall) return producer;
+        return planeExactRetainedForProducer(
+            assignment, producer, fallback, caller, facts) ? producer : null;
+    }
+
+    private boolean planeExactRetainedForProducer(PsiIndex.Node assignment,
+            PsiIndex.Node producer, PsiIndex.Node consumer, PsiIndex.Node caller,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node loop = planeNearestAncestor(assignment, PsiIndex.NodeKind.FOR);
+        Rules.SymbolSpec until = domainSymbolOrNull(
+            "kotlin.ranges.until", "Int.until(to: Int): IntRange");
+        PsiIndex.Node range = loop == null ? null : one(loop, PsiIndex.EdgeRole.RANGE);
+        PsiIndex.Node body = loop == null ? null : one(loop, PsiIndex.EdgeRole.LOOP_BODY);
+        PsiIndex.Node value = one(assignment, PsiIndex.EdgeRole.VALUE);
+        PsiIndex.Node local = localValueOrigin(value, facts);
+        PsiIndex.Node initializer = local == null
+            ? null : one(local, PsiIndex.EdgeRole.INITIALIZER);
+        PsiIndex.Node localProducer = exactCollectionProducerOrigin(initializer, facts);
+        if (loop == null || until == null || range == null
+                || range.kind() != PsiIndex.NodeKind.BINARY
+                || !exactDomainResolution(range, until, facts)
+                || !planeRetryZero(one(range, PsiIndex.EdgeRole.LEFT))
+                || !planeRetryPositiveBound(one(range, PsiIndex.EdgeRole.RIGHT), facts)
+                || enclosingFunctionDeclaration(loop) != caller
+                || !planeEarlierSiblingInCallable(loop, consumer, caller)
+                || body == null || local == null
+                || !local.flags().contains(PsiIndex.NodeFlag.VAL)
+                || local.flags().contains(PsiIndex.NodeFlag.VAR)
+                || !isWithin(local, body)
+                || firstBoundary(body) != local
+                || lexicalPredecessor(assignment, loop) != local
+                || localProducer == null
+                || localProducer.id() != producer.id()) return false;
+        return true;
+    }
+
+    private boolean planeEarlierSiblingInCallable(PsiIndex.Node earlier,
+            PsiIndex.Node nested, PsiIndex.Node callable) {
+        if (earlier == null || nested == null || callable == null
+                || enclosingFunctionDeclaration(earlier) != callable
+                || enclosingFunctionDeclaration(nested) != callable) return false;
+        Integer statementOwnerId = lexicalOwners.get(earlier.id());
+        if (statementOwnerId == null) return false;
+        PsiIndex.Node current = nested;
+        Integer ownerId = lexicalOwners.get(current.id());
+        while (ownerId != null && !ownerId.equals(statementOwnerId)) {
+            PsiIndex.Node owner = program.node(ownerId);
+            if (owner.id() == callable.id()) return false;
+            current = owner;
+            ownerId = lexicalOwners.get(current.id());
+        }
+        if (ownerId == null) return false;
+        List<PsiIndex.Node> siblings = lexicalChildren(program.node(statementOwnerId));
+        int earlierIndex = -1;
+        int nestedIndex = -1;
+        for (int index = 0; index < siblings.size(); index++) {
+            if (siblings.get(index).id() == earlier.id()) earlierIndex = index;
+            if (siblings.get(index).id() == current.id()) nestedIndex = index;
+        }
+        return earlierIndex >= 0 && nestedIndex > earlierIndex;
+    }
+
+    private PsiIndex.Node planeUniqueRelatedFact(PsiIndex.Node subject, String kind,
+            String value, List<Map<String, Object>> facts) {
+        if (subject == null) return null;
+        PsiIndex.Node match = null;
+        for (Map<String, Object> fact : facts) {
+            if (!kind.equals(fact.get("kind")) || !value.equals(fact.get("value"))
+                    || !Long.valueOf(subject.id()).equals(fact.get("subjectNodeId"))) continue;
+            int relatedId = ((Long) fact.get("relatedNodeId")).intValue();
+            if (relatedId < 0) return null;
+            PsiIndex.Node candidate = program.node(relatedId);
+            if (match != null && match.id() != candidate.id()) return null;
+            match = candidate;
+        }
+        return match;
+    }
+
+    private boolean planeContainsExactSymbol(PsiIndex.Node expression,
+            Rules.SymbolSpec symbol, List<Map<String, Object>> facts) {
+        if (expression == null || symbol == null) return false;
+        int matches = 0;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (!(node.id() == expression.id() || isWithin(node, expression))) continue;
+            Rules.SymbolSpec observed = symbolForFact(facts, "call_resolution", node.id());
+            if (observed == symbol) matches++;
+        }
+        return matches == 1;
+    }
+
+    private boolean planePositiveAreaBoundary(PsiIndex.Node boundary) {
+        if (boundary == null || boundary.kind() != PsiIndex.NodeKind.BINARY
+                || !">".equals(boundary.value())) return false;
+        PsiIndex.Node zero = one(boundary, PsiIndex.EdgeRole.RIGHT);
+        if (zero == null || zero.kind() != PsiIndex.NodeKind.LITERAL) return false;
+        String value = zero.value();
+        return "0".equals(value) || "0f".equalsIgnoreCase(value)
+            || "0.0".equals(value) || "0.0f".equalsIgnoreCase(value);
+    }
+
+    private boolean planeFallbackConsumed(PsiIndex.Node fallback,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node owner = enclosingCallable(fallback);
+        if (owner == null || owner.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                || owner.flags().contains(PsiIndex.NodeFlag.PRIVATE)) return false;
+        PsiIndex.Node property = null;
+        Integer ownerId = lexicalOwners.get(fallback.id());
+        while (ownerId != null) {
+            PsiIndex.Node candidate = program.node(ownerId);
+            if (candidate.kind() == PsiIndex.NodeKind.PROPERTY_DECL) {
+                property = candidate;
+                break;
+            }
+            if (candidate.id() == owner.id()) break;
+            ownerId = lexicalOwners.get(candidate.id());
+        }
+        if (property == null) {
+            PsiIndex.Node returned = sourceReturnOrigin(owner);
+            return returned != null && (returned.id() == fallback.id()
+                || isWithin(fallback, returned));
+        }
+        Rules.SymbolSpec transform = domainSymbolOrNull(
+            "com.pico.spatial.sense.plane.PlaneAnchor.transform", "transform: Transform");
+        if (transform == null) return false;
+        for (PsiIndex.Node access : program.nodes()) {
+            if (enclosingCallable(access) != owner
+                    || symbolForFact(facts, "call_resolution", access.id()) != transform) continue;
+            PsiIndex.Node qualified = qualifiedSelectorParent(access);
+            PsiIndex.Node receiver = qualified == null
+                ? null : one(qualified, PsiIndex.EdgeRole.RECEIVER);
+            PsiIndex.Node declaration = receiver == null
+                ? null : relatedNodeForFact(facts, "def_use", receiver.id());
+            if (declaration == null && receiver != null
+                    && receiver.kind() == PsiIndex.NodeKind.NAME_REF) {
+                declaration = findLexicalDeclaration(receiver, receiver.name());
+            }
+            if (declaration != null && declaration.id() == property.id()) return true;
+        }
+        return false;
+    }
+
+    private PsiIndex.Node planeUniqueMemberReceiver(PsiIndex.Node expression,
+            Rules.SymbolSpec member, List<Map<String, Object>> facts) {
+        PsiIndex.Node match = null;
+        if (expression == null) return null;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (!(node.id() == expression.id() || isWithin(node, expression))
+                    || symbolForFact(facts, "call_resolution", node.id()) != member) continue;
+            PsiIndex.Node qualified = qualifiedSelectorParent(node);
+            PsiIndex.Node receiver = qualified == null
+                ? null : one(qualified, PsiIndex.EdgeRole.RECEIVER);
+            if (receiver == null || match != null && match.id() != receiver.id()) return null;
+            match = receiver;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node planeValueDeclaration(PsiIndex.Node value,
+            List<Map<String, Object>> facts) {
+        if (value == null || value.kind() != PsiIndex.NodeKind.NAME_REF) return null;
+        PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", value.id());
+        if (declaration == null) declaration = findLexicalDeclaration(value, value.name());
+        return declaration != null && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+            ? declaration : null;
+    }
+
+    private PsiIndex.Node planeSameValueDeclaration(PsiIndex.Node first,
+            PsiIndex.Node second, PsiIndex.Node third, List<Map<String, Object>> facts) {
+        PsiIndex.Node left = planeValueDeclaration(first, facts);
+        PsiIndex.Node middle = planeValueDeclaration(second, facts);
+        PsiIndex.Node right = planeValueDeclaration(third, facts);
+        return left != null && middle != null && right != null
+                && left.id() == middle.id() && left.id() == right.id() ? left : null;
+    }
+
+    private List<PsiIndex.Node> planePoseConversionPath(PsiIndex.Node result,
+            Rules.SymbolSpec conversion, Rules.SymbolSpec planeTransform,
+            Rules.SymbolSpec terminal, List<Map<String, Object>> facts) {
+        PsiIndex.Node initializer = result == null
+            ? null : one(result, PsiIndex.EdgeRole.INITIALIZER);
+        PsiIndex.Node entry = directCall(initializer);
+        if (entry == null || hasAnyTaint(entry, facts)) return null;
+        PsiIndex.Node conversionCall = entry;
+        PsiIndex.Node helper = null;
+        if (!exactDomainResolution(conversionCall, conversion, facts)) {
+            helper = exactSourceTarget(entry, facts);
+            PsiIndex.Node returned = helper == null ? null : sourceReturnOrigin(helper);
+            conversionCall = directCall(returned);
+            if (helper == null || helper.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                    || !isProductionPath(helper.fileId()) || returned == null
+                    || conversionCall == null || hasAnyTaint(helper, facts)
+                    || hasAnyTaint(conversionCall, facts)
+                    || !exactDomainResolution(conversionCall, conversion, facts)) return null;
+        }
+        Map<Integer, List<PsiIndex.Node>> conversionMap = mapDomainArguments(
+            conversionCall, conversion, facts);
+        PsiIndex.Node sourceArgument = mappedArgument(conversionMap, 0);
+        PsiIndex.Node baseArgument = mappedArgument(conversionMap, 1);
+        PsiIndex.Node sourceValue = argumentValue(sourceArgument);
+        if (sourceArgument == null || baseArgument == null
+                || !isNullLiteral(argumentValue(baseArgument))
+                || !planeContainsExactSymbol(sourceValue, terminal, facts)) return null;
+        PsiIndex.Node transformRead = planeUniqueResolvedNode(
+            sourceValue, planeTransform, facts);
+        PsiIndex.Node transformQualified = transformRead == null
+            ? null : qualifiedSelectorParent(transformRead);
+        PsiIndex.Node anchor = transformQualified == null
+            ? null : one(transformQualified, PsiIndex.EdgeRole.RECEIVER);
+        PsiIndex.Node root = resolvedReceiver(conversionCall);
+        if (anchor == null || root == null) return null;
+        if (helper != null) {
+            root = planeMappedHelperOrigin(root, helper, entry, facts);
+            anchor = planeMappedHelperOrigin(anchor, helper, entry, facts);
+        } else {
+            root = representativeOrigin(root, facts);
+            anchor = representativeOrigin(anchor, facts);
+        }
+        if (root == null || anchor == null) return null;
+        List<PsiIndex.Node> path = new ArrayList<>();
+        path.add(entry);
+        path.add(conversionCall);
+        path.add(helper);
+        path.add(root);
+        path.add(anchor);
+        path.add(transformRead);
+        return path;
+    }
+
+    private PsiIndex.Node planeMappedHelperOrigin(PsiIndex.Node inner,
+            PsiIndex.Node helper, PsiIndex.Node call, List<Map<String, Object>> facts) {
+        if (inner == null || inner.kind() != PsiIndex.NodeKind.NAME_REF) return null;
+        PsiIndex.Node parameter = relatedNodeForFact(facts, "def_use", inner.id());
+        if (parameter == null) parameter = findLexicalDeclaration(inner, inner.name());
+        List<PsiIndex.Node> parameters = targets(helper, PsiIndex.EdgeRole.PARAMETER);
+        int position = parameters.indexOf(parameter);
+        Map<Integer, List<PsiIndex.Node>> mapping = mapSourceArguments(call, helper, facts);
+        PsiIndex.Node argument = position < 0 ? null : mappedArgument(mapping, position);
+        return representativeOrigin(argumentValue(argument), facts);
+    }
+
+    private PsiIndex.Node planeUniqueResolvedNode(PsiIndex.Node expression,
+            Rules.SymbolSpec symbol, List<Map<String, Object>> facts) {
+        if (expression == null) return null;
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (!(node.id() == expression.id() || isWithin(node, expression))
+                    || symbolForFact(facts, "call_resolution", node.id()) != symbol) continue;
+            if (match != null) return null;
+            match = node;
+        }
+        return match;
+    }
+
+    private boolean planeExpressionHasMemberFrom(PsiIndex.Node expression,
+            Rules.SymbolSpec member, PsiIndex.Node expected,
+            List<Map<String, Object>> facts, int depth) {
+        if (expression == null || expected == null || depth > 5) return false;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (!(node.id() == expression.id() || isWithin(node, expression))) continue;
+            if (symbolForFact(facts, "call_resolution", node.id()) == member) {
+                PsiIndex.Node qualified = qualifiedSelectorParent(node);
+                PsiIndex.Node receiver = qualified == null
+                    ? null : one(qualified, PsiIndex.EdgeRole.RECEIVER);
+                if (planeSameOrigin(receiver, expected, facts)) return true;
+            }
+        }
+        for (PsiIndex.Node node : program.nodes()) {
+            if (!(node.id() == expression.id() || isWithin(node, expression))
+                    || node.kind() != PsiIndex.NodeKind.NAME_REF) continue;
+            PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", node.id());
+            if (declaration == null) declaration = findLexicalDeclaration(node, node.name());
+            PsiIndex.Node initializer = declaration == null
+                ? null : one(declaration, PsiIndex.EdgeRole.INITIALIZER);
+            if (initializer != null && planeExpressionHasMemberFrom(
+                    initializer, member, expected, facts, depth + 1)) return true;
+        }
+        return false;
+    }
+
+    private boolean planeSameOrigin(PsiIndex.Node left, PsiIndex.Node right,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node leftOrigin = representativeOrigin(left, facts);
+        PsiIndex.Node rightOrigin = representativeOrigin(right, facts);
+        return leftOrigin != null && rightOrigin != null
+            && leftOrigin.id() == rightOrigin.id();
+    }
+
+    private PsiIndex.Node planeUniqueContainingCall(PsiIndex.Node nested,
+            Rules.SymbolSpec symbol, PsiIndex.Node owner,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || enclosingCallable(call) != owner
+                    || !isWithin(nested, call)
+                    || !exactDomainResolution(call, symbol, facts)) continue;
+            if (match != null) return null;
+            match = call;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node planeUniqueDomainCallInCallable(PsiIndex.Node callable,
+            Rules.SymbolSpec symbol, List<Map<String, Object>> facts) {
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || enclosingCallable(call) != callable
+                    || !exactDomainResolution(call, symbol, facts)) continue;
+            if (match != null) return null;
+            match = call;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node planeMemberReceiver(PsiIndex.Node expression,
+            Rules.SymbolSpec member, List<Map<String, Object>> facts) {
+        PsiIndex.Node access = planeUniqueResolvedNode(expression, member, facts);
+        PsiIndex.Node qualified = access == null ? null : qualifiedSelectorParent(access);
+        return qualified == null ? null : one(qualified, PsiIndex.EdgeRole.RECEIVER);
+    }
+
+    private List<PsiIndex.Node> planeCleanupAcquirePath(PsiIndex.Node acquisition,
+            PsiIndex.Node cleanup, Rules.SymbolSpec subscribe, Rules.SymbolSpec start,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node subscribeCall = planeUniqueDomainCallInCallable(
+            acquisition, subscribe, facts);
+        PsiIndex.Node startCall = planeUniqueDomainCallInCallable(
+            acquisition, start, facts);
+        PsiIndex.Node subscriptionAssignment = planeNearestAncestor(
+            subscribeCall, PsiIndex.NodeKind.ASSIGNMENT);
+        PsiIndex.Node subscriptionProperty = planeAssignmentTargetDeclaration(
+            subscriptionAssignment, facts);
+        Map<Integer, List<PsiIndex.Node>> subscribeMap = subscribeCall == null
+            ? null : mapDomainArguments(subscribeCall, subscribe, facts);
+        PsiIndex.Node subscribeArgument = mappedArgument(subscribeMap, 0);
+        PsiIndex.Node subscribeLambda = mappedLambda(subscribeMap, 0);
+        if (subscribeCall == null || startCall == null || subscriptionAssignment == null
+                || subscriptionProperty == null || subscribeLambda == null
+                || !exactFact(facts, "callback_binding", subscribeLambda, subscribeCall,
+                    subscribeArgument, "anchor_update", subscribe)) return null;
+
+        PsiIndex.Node sessionType = planeEnclosingType(acquisition);
+        List<PsiIndex.Node> status = planeStatusFamily(sessionType, facts);
+        if (status == null) return null;
+        PsiIndex.Node statusProperty = planeStatusProperty(
+            sessionType, status.get(0));
+        if (statusProperty == null) return null;
+        PsiIndex.Node searching = planeStatusAssignment(
+            acquisition, statusProperty, status.get(1), facts);
+        PsiIndex.Node noSurface = planeStatusAssignment(
+            sessionType, statusProperty, status.get(2), facts);
+        PsiIndex.Node placed = planeStatusAssignment(
+            sessionType, statusProperty, status.get(3), facts);
+        PsiIndex.Node startTry = planeNearestAncestor(startCall, PsiIndex.NodeKind.TRY);
+        if (startTry == null) return null;
+        PsiIndex.Node acceptedCatch = null;
+        PsiIndex.Node error = null;
+        for (PsiIndex.Node candidate : targets(startTry, PsiIndex.EdgeRole.CATCH_CLAUSE)) {
+            PsiIndex.Node candidateError = planeStatusAssignment(
+                candidate, statusProperty, status.get(4), facts);
+            PsiIndex.Node catchCleanup = planeUniqueSourceCallTo(candidate, cleanup, facts);
+            if (candidateError == null || catchCleanup == null) continue;
+            if (acceptedCatch != null) return null;
+            acceptedCatch = candidate;
+            error = candidateError;
+        }
+        if (searching == null || noSurface == null || placed == null
+                || acceptedCatch == null || error == null) return null;
+        List<PsiIndex.Node> path = new ArrayList<>();
+        path.add(subscriptionProperty);
+        path.add(subscribeCall);
+        path.add(startCall);
+        path.add(subscriptionAssignment);
+        path.add(acceptedCatch);
+        path.add(searching);
+        path.add(noSurface);
+        path.add(placed);
+        path.add(error);
+        return path;
+    }
+
+    private List<PsiIndex.Node> planeCleanupReleasePath(PsiIndex.Node cleanup,
+            Rules.SymbolSpec cancel, Rules.SymbolSpec stop, Rules.SymbolSpec runCatching,
+            PsiIndex.Node subscriptionProperty, List<Map<String, Object>> facts) {
+        if (cleanup == null || subscriptionProperty == null) return null;
+        PsiIndex.Node cancelCall = planeUniqueDomainCallWithin(cleanup, cancel, facts);
+        PsiIndex.Node stopCall = planeUniqueDomainCallWithin(cleanup, stop, facts);
+        PsiIndex.Node cancelHelper = null;
+        PsiIndex.Node stopHelper = null;
+        PsiIndex.Node cancelHelperCall = null;
+        PsiIndex.Node stopHelperCall = null;
+        if (cancelCall == null || stopCall == null) {
+            for (PsiIndex.Node call : directStatementCallsLoose(cleanup)) {
+                PsiIndex.Node target = exactSourceTarget(call, facts);
+                if (target == null || target.kind() != PsiIndex.NodeKind.FUNCTION_DECL
+                        || !isProductionPath(target.fileId()) || hasAnyTaint(target, facts)) continue;
+                PsiIndex.Node candidateCancel = planeUniqueDomainCallWithin(target, cancel, facts);
+                PsiIndex.Node candidateStop = planeUniqueDomainCallWithin(target, stop, facts);
+                if (candidateCancel != null && candidateStop != null) return null;
+                if (candidateCancel != null) {
+                    if (cancelHelper != null) return null;
+                    cancelHelper = target;
+                    cancelHelperCall = call;
+                    cancelCall = candidateCancel;
+                } else if (candidateStop != null) {
+                    if (stopHelper != null) return null;
+                    stopHelper = target;
+                    stopHelperCall = call;
+                    stopCall = candidateStop;
+                }
+            }
+        }
+        boolean direct = cancelCall != null && stopCall != null
+            && cancelHelper == null && stopHelper == null;
+        boolean helper = cancelCall != null && stopCall != null
+            && cancelHelper != null && stopHelper != null;
+        if (!direct && !helper) return null;
+        PsiIndex.Node cancelOwner = cancelHelper == null ? cleanup : cancelHelper;
+        PsiIndex.Node nullAssignment = planeUniqueNullAssignment(
+            cancelOwner, subscriptionProperty, facts);
+        PsiIndex.Node cancelReceiver = resolvedReceiver(cancelCall);
+        PsiIndex.Node cancelDeclaration = cancelReceiver == null ? null
+            : relatedNodeForFact(facts, "def_use", cancelReceiver.id());
+        if (cancelDeclaration == null && cancelReceiver != null
+                && cancelReceiver.kind() == PsiIndex.NodeKind.NAME_REF) {
+            cancelDeclaration = findLexicalDeclaration(cancelReceiver, cancelReceiver.name());
+        }
+        PsiIndex.Node run = planeUniqueContainingDomainCall(
+            stopCall, runCatching, facts);
+        Map<Integer, List<PsiIndex.Node>> runMap = run == null
+            ? null : mapDomainArguments(run, runCatching, facts);
+        PsiIndex.Node runArgument = mappedArgument(runMap, 0);
+        PsiIndex.Node runLambda = mappedLambda(runMap, 0);
+        if (nullAssignment == null || cancelDeclaration == null
+                || cancelDeclaration.id() != subscriptionProperty.id()
+                || runLambda == null || !isWithin(stopCall, runLambda)
+                || !exactFact(facts, "callback_binding", runLambda, run,
+                    runArgument, "inline_block", runCatching)) return null;
+        List<PsiIndex.Node> path = new ArrayList<>();
+        path.add(cancelCall);
+        path.add(stopCall);
+        path.add(nullAssignment);
+        path.add(run);
+        path.add(cancelHelper);
+        path.add(stopHelper);
+        path.add(cancelHelperCall);
+        path.add(stopHelperCall);
+        return path;
+    }
+
+    private PsiIndex.Node planeUniqueDomainCallWithin(PsiIndex.Node scope,
+            Rules.SymbolSpec symbol, List<Map<String, Object>> facts) {
+        if (scope == null) return null;
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, scope)
+                    || !exactDomainResolution(call, symbol, facts)) continue;
+            if (match != null) return null;
+            match = call;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node planeUniqueContainingDomainCall(PsiIndex.Node nested,
+            Rules.SymbolSpec symbol, List<Map<String, Object>> facts) {
+        if (nested == null) return null;
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(nested, call)
+                    || !exactDomainResolution(call, symbol, facts)) continue;
+            if (match != null) return null;
+            match = call;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node planeNearestAncestor(PsiIndex.Node node,
+            PsiIndex.NodeKind kind) {
+        Integer owner = node == null ? null : lexicalOwners.get(node.id());
+        while (owner != null) {
+            PsiIndex.Node candidate = program.node(owner);
+            if (candidate.kind() == kind) return candidate;
+            if (candidate.kind() == PsiIndex.NodeKind.FUNCTION_DECL) return null;
+            owner = lexicalOwners.get(candidate.id());
+        }
+        return null;
+    }
+
+    private PsiIndex.Node planeAssignmentTargetDeclaration(PsiIndex.Node assignment,
+            List<Map<String, Object>> facts) {
+        PsiIndex.Node target = assignment == null
+            ? null : one(assignment, PsiIndex.EdgeRole.TARGET);
+        if (target == null) return null;
+        PsiIndex.Node receiver = target.kind() == PsiIndex.NodeKind.QUALIFIED
+                || target.kind() == PsiIndex.NodeKind.SAFE_QUALIFIED
+            ? one(target, PsiIndex.EdgeRole.SELECTOR) : target;
+        if (receiver == null || receiver.kind() != PsiIndex.NodeKind.NAME_REF) return null;
+        PsiIndex.Node declaration = relatedNodeForFact(facts, "def_use", receiver.id());
+        if (declaration == null) declaration = findLexicalDeclaration(receiver, receiver.name());
+        return declaration != null && declaration.kind() == PsiIndex.NodeKind.PROPERTY_DECL
+            ? declaration : null;
+    }
+
+    private PsiIndex.Node planeEnclosingType(PsiIndex.Node node) {
+        Integer owner = node == null ? null : lexicalOwners.get(node.id());
+        while (owner != null) {
+            PsiIndex.Node candidate = program.node(owner);
+            if (isTypeDeclaration(candidate)) return candidate;
+            owner = lexicalOwners.get(candidate.id());
+        }
+        return null;
+    }
+
+    private List<PsiIndex.Node> planeStatusFamily(PsiIndex.Node sessionType,
+            List<Map<String, Object>> facts) {
+        if (sessionType == null) return null;
+        List<PsiIndex.Node> match = null;
+        for (PsiIndex.Node status : program.nodes()) {
+            if (status.fileId() != sessionType.fileId()
+                    || status.kind() != PsiIndex.NodeKind.INTERFACE_DECL
+                    || !status.flags().contains(PsiIndex.NodeFlag.SEALED)) continue;
+            List<PsiIndex.Node> current = new ArrayList<>();
+            current.add(status);
+            for (String name : List.of("Searching", "NoSurface", "Placed", "Error")) {
+                PsiIndex.Node member = null;
+                for (PsiIndex.Node child : lexicalChildren(status)) {
+                    if (!name.equals(child.name()) || !isTypeDeclaration(child)
+                            || !planeHasSourceSupertype(child, status)) continue;
+                    if (member != null) {
+                        member = null;
+                        break;
+                    }
+                    member = child;
+                }
+                if (member == null) {
+                    current.clear();
+                    break;
+                }
+                current.add(member);
+            }
+            if (current.size() != 5) continue;
+            if (match != null) return null;
+            match = current;
+        }
+        return match;
+    }
+
+    private boolean planeHasSourceSupertype(PsiIndex.Node member,
+            PsiIndex.Node status) {
+        for (PsiIndex.Node superType : targets(member, PsiIndex.EdgeRole.SUPER_TYPE)) {
+            PsiIndex.Node source = sourceTypeDeclaration(superType);
+            if (source != null && source.id() == status.id()) return true;
+        }
+        return false;
+    }
+
+    private PsiIndex.Node planeStatusProperty(PsiIndex.Node sessionType,
+            PsiIndex.Node status) {
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node child : lexicalChildren(sessionType)) {
+            if (child.kind() != PsiIndex.NodeKind.PROPERTY_DECL) continue;
+            PsiIndex.Node type = declarationTypeNode(child, false);
+            PsiIndex.Node source = type == null ? null : sourceTypeDeclaration(type);
+            if (source == null || source.id() != status.id()) continue;
+            if (match != null) return null;
+            match = child;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node planeStatusAssignment(PsiIndex.Node scope,
+            PsiIndex.Node statusProperty, PsiIndex.Node statusMember,
+            List<Map<String, Object>> facts) {
+        if (scope == null || statusProperty == null || statusMember == null) return null;
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node assignment : program.nodes()) {
+            if (assignment.kind() != PsiIndex.NodeKind.ASSIGNMENT
+                    || !isWithin(assignment, scope)
+                    || planeAssignmentTargetDeclaration(assignment, facts) != statusProperty
+                    || !planeExpressionTargetsSource(
+                        one(assignment, PsiIndex.EdgeRole.VALUE), statusMember, facts)) continue;
+            if (match != null) return null;
+            match = assignment;
+        }
+        return match;
+    }
+
+    private boolean planeExpressionTargetsSource(PsiIndex.Node expression,
+            PsiIndex.Node declaration, List<Map<String, Object>> facts) {
+        if (expression == null) return false;
+        int matches = 0;
+        for (PsiIndex.Node node : program.nodes()) {
+            if (!(node.id() == expression.id() || isWithin(node, expression))) continue;
+            PsiIndex.Node target = relatedNodeForFact(facts, "call_resolution", node.id());
+            if (target != null && target.id() == declaration.id()) matches++;
+        }
+        if (matches == 1) return true;
+        if (matches != 0 || expression.kind() != PsiIndex.NodeKind.QUALIFIED
+                || declaration.name() == null) return false;
+        Integer ownerId = lexicalOwners.get(declaration.id());
+        PsiIndex.Node sourceOwner = ownerId == null ? null : program.node(ownerId);
+        PsiIndex.Node receiver = one(expression, PsiIndex.EdgeRole.RECEIVER);
+        PsiIndex.Node selector = one(expression, PsiIndex.EdgeRole.SELECTOR);
+        if (sourceOwner == null || sourceValueDeclaration(receiver, facts) != sourceOwner
+                || selector == null || !declaration.name().equals(selector.name())
+                || hasFact(facts, "call_resolution", selector.id())
+                || !hasExactTaint(selector, "unknown_receiver", facts)) return false;
+        if (declaration.kind() == PsiIndex.NodeKind.OBJECT_DECL) {
+            return selector.kind() == PsiIndex.NodeKind.NAME_REF;
+        }
+        return declaration.kind() == PsiIndex.NodeKind.CLASS_DECL
+            && selector.kind() == PsiIndex.NodeKind.CALL
+            && mapSourceArguments(selector, declaration, facts) != null;
+    }
+
+    private PsiIndex.Node planeUniqueSourceCallTo(PsiIndex.Node scope,
+            PsiIndex.Node target, List<Map<String, Object>> facts) {
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node call : program.nodes()) {
+            if (call.kind() != PsiIndex.NodeKind.CALL || !isWithin(call, scope)
+                    || exactSourceTarget(call, facts) != target) continue;
+            if (match != null) return null;
+            match = call;
+        }
+        return match;
+    }
+
+    private PsiIndex.Node planeUniqueNullAssignment(PsiIndex.Node scope,
+            PsiIndex.Node property, List<Map<String, Object>> facts) {
+        PsiIndex.Node match = null;
+        for (PsiIndex.Node assignment : program.nodes()) {
+            if (assignment.kind() != PsiIndex.NodeKind.ASSIGNMENT
+                    || !isWithin(assignment, scope)
+                    || planeAssignmentTargetDeclaration(assignment, facts) != property
+                    || !isNullLiteral(one(assignment, PsiIndex.EdgeRole.VALUE))) continue;
+            if (match != null) return null;
+            match = assignment;
+        }
+        return match;
     }
 
     private Rules.Analysis analyzeClass(PsiIndex.Node klass, String componentFqn, String cloneName,
@@ -5864,6 +11726,7 @@ final class AbstractInterpreter {
         }
         Rules.Analysis claim = Rules.claimOrNull(
             program, domain, cloneRule.ruleId(), proofForm, alternative, witnessIds);
+        if (claim != null) selectedAlternativesForTest.put(cloneRule.ruleId(), alternative);
         return claim == null ? Rules.emptyAnalysis() : claim;
     }
 

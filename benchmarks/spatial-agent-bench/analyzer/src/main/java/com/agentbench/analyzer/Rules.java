@@ -466,6 +466,40 @@ final class Rules {
 
     static Analysis emptyAnalysis() { return new Analysis(List.of(), List.of()); }
 
+    static Analysis combine(List<Analysis> parts) {
+        if (parts == null) throw new IllegalArgumentException("analysis parts are null");
+        if (parts.size() != RULE_ORDER.size()) {
+            throw new IllegalArgumentException("analysis part count mismatch");
+        }
+        List<Map<String, Object>> claims = new ArrayList<>();
+        Map<String, Map<String, Object>> nodesById = new HashMap<>();
+        for (int index = 0; index < parts.size(); index++) {
+            Analysis part = parts.get(index);
+            if (part == null) throw new IllegalArgumentException("analysis part is null");
+            if (part.claims().isEmpty()) continue;
+            if (part.claims().size() != 1) {
+                throw new IllegalArgumentException("analysis part claim count mismatch");
+            }
+            Map<String, Object> claim = part.claims().get(0);
+            if (!RULE_ORDER.get(index).equals(claim.get("ruleId"))) {
+                throw new IllegalArgumentException("analysis part rule mismatch");
+            }
+            claims.add(claim);
+            for (Map<String, Object> node : part.nodes()) {
+                String nodeId = (String) node.get("nodeId");
+                Map<String, Object> prior = nodesById.putIfAbsent(nodeId, node);
+                if (prior != null && !prior.equals(node)) {
+                    throw new IllegalArgumentException("analysis node identity mismatch");
+                }
+            }
+        }
+        List<String> nodeIds = new ArrayList<>(nodesById.keySet());
+        nodeIds.sort(Protocol::compareUtf8);
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        for (String nodeId : nodeIds) nodes.add(nodesById.get(nodeId));
+        return new Analysis(nodes, claims);
+    }
+
     static Map<String, String> selectProof(Domain domain, String ruleId,
             Map<String, Boolean> completeByProofForm,
             Map<String, List<String>> satisfiedAlternativeIdsByProofForm) {

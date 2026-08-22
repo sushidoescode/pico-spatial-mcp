@@ -6,21 +6,39 @@ import { fileURLToPath } from "node:url";
 const SKELETON_DIR = fileURLToPath(new URL("../../appskeleton/", import.meta.url));
 const VERSION_CATALOG = fs.readFileSync(path.join(SKELETON_DIR, "gradle/libs.versions.toml"), "utf8");
 
-function replace(from, to) {
+function replacePathOnce(relative, from, to) {
   return (files) => {
-    const matches = Object.values(files).reduce((total, source) => total + source.split(from).length - 1, 0);
-    if (matches !== 1) throw new Error(`fixture replacement expected exactly one occurrence of ${JSON.stringify(from)}, found ${matches}`);
-    return Object.fromEntries(Object.entries(files).map(([name, source]) => [name, source.replace(from, to)]));
+    const target = files[relative];
+    if (typeof target !== "string") throw new Error(`fixture attack target path is absent: ${relative}`);
+    const targetOccurrences = target.split(from).length - 1;
+    const globalOccurrences = Object.values(files)
+      .reduce((total, source) => total + source.split(from).length - 1, 0);
+    if (targetOccurrences !== 1 || globalOccurrences !== 1) {
+      throw new Error(`fixture attack seam must occur exactly once at ${relative}; target=${targetOccurrences} global=${globalOccurrences}`);
+    }
+    return Object.fromEntries(Object.entries(files).map(([name, source]) => [
+      name,
+      name === relative ? source.replace(from, to) : source,
+    ]));
   };
 }
 
-function applicationSource({ equivalent = false } = {}) {
+function replaceSourceOnce(source, from, to, label) {
+  const occurrences = source.split(from).length - 1;
+  if (occurrences !== 1) {
+    throw new Error(`${label} source seam must occur exactly once; found ${occurrences}`);
+  }
+  return source.replace(from, to);
+}
+
+function applicationSource({ equivalent = false, corrected = false } = {}) {
   if (equivalent) {
     return `package com.agentbench.gallery
 
-import android.os.Bundle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import com.pico.spatial.ui.design.Button
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.foundation.dsl.DefaultWindowContainer
@@ -30,6 +48,7 @@ import com.pico.spatial.ui.foundation.dsl.Stage
 import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
 import com.pico.spatial.ui.platform.containers.SpatialNavigator
 import com.pico.spatial.ui.platform.containers.StageStyle
+import kotlinx.coroutines.launch
 
 val museumSessionRepository: GallerySessionRepository = GallerySessionRepository.current()
 
@@ -53,12 +72,18 @@ object SpatialContainers {
 private fun GalleryWindow(stateOwner: GallerySessionRepository) {
     val navigator = LocalSpatialNavigator.current
     val state = stateOwner.currentSnapshot()
+    val actionScope = rememberCoroutineScope()
+    val launchSnapshot: () -> GallerySessionSnapshot = { stateOwner.currentSnapshot() }
     Text("Selected: \${state.selection?.id ?: "none"}; visits: \${state.visitCount}")
+    Button(onClick = { stateOwner.select("vase") }) { Text("Select vase") }
+    Button(onClick = {
+        actionScope.launch { navigator.closeAndReopenEquivalent(stateOwner) }
+    }) { Text("Close and reopen") }
     LaunchedEffect(navigator) {
-        showMixedContainer(
-            initialState = museumSessionRepository.currentSnapshot(),
-            stateOwner = museumSessionRepository,
-            stateOnReentry = museumSessionRepository::currentSnapshot,
+        navigator.showMixedContainer(
+            initialState = launchSnapshot(),
+            stateOwner = stateOwner,
+            stateOnReentry = launchSnapshot,
         )
     }
 }
@@ -70,26 +95,22 @@ private suspend fun SpatialNavigator.showMixedContainer(
 ) {
     val reentry = stateOnReentry()
     stateOwner.restore(reentry)
-    val bundle = Bundle().apply {
-        putString("selection", initialState.selection?.id)
-        putInt("visitCount", initialState.visitCount)
-        putBoolean("paused", initialState.paused)
-    }
+    val bundle = GalleryBundle.encode(reentry)
     openStage(SpatialContainers.ID_GALLERY, StageStyle.Mixed, bundle)
 }
 
 private suspend fun SpatialNavigator.closeAndReopenEquivalent(stateOwner: GallerySessionRepository) {
     closeStage()
-    val selection = museumSessionRepository.currentSnapshot().selection
-    val visitCount = museumSessionRepository.currentSnapshot().visitCount
-    val paused = museumSessionRepository.currentSnapshot().paused
-    stateOwner.restore(GallerySessionSnapshot(selection, visitCount, paused))
-    showMixedContainer(stateOwner.currentSnapshot(), stateOwner, stateOwner::currentSnapshot)
+    showMixedContainer(
+        initialState = GallerySessionSnapshot.empty(),
+        stateOwner = stateOwner,
+        stateOnReentry = museumSessionRepository::currentSnapshot,
+    )
 }
 `;
   }
 
-  return `package com.agentbench.gallery
+  const standard = `package com.agentbench.gallery
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -154,6 +175,84 @@ private suspend fun SpatialNavigator.closeAndReopen(store: BenchmarkStore) {
     openGalleryStage(store.snapshot(), store, true)
 }
 `;
+
+  if (!corrected) return standard;
+  let source = replaceSourceOnce(
+    standard,
+    "import androidx.compose.runtime.LaunchedEffect\n",
+    `import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import com.pico.spatial.ui.design.Button
+`,
+    "standard corrected imports",
+  );
+  source = replaceSourceOnce(
+    source,
+    "import com.pico.spatial.ui.platform.containers.StageStyle\n",
+    `import com.pico.spatial.ui.platform.containers.StageStyle
+import kotlinx.coroutines.launch
+`,
+    "standard corrected coroutine import",
+  );
+  source = replaceSourceOnce(
+    source,
+    `@Composable
+private fun GalleryWindow(store: BenchmarkStore) {
+    val navigator = LocalSpatialNavigator.current
+    val state = store.snapshot()
+    Text("Selected: \${state.selection?.id ?: "none"}; visits: \${state.visitCount}")
+    LaunchedEffect(navigator) {
+        navigator.openGalleryStage(
+            state = sharedStore.snapshot(),
+            store = sharedStore,
+            restoreRetainedState = true,
+        )
+    }
+}`,
+    `@Composable
+private fun GalleryWindow(store: BenchmarkStore) {
+    val navigator = LocalSpatialNavigator.current
+    val state = store.snapshot()
+    val actionScope = rememberCoroutineScope()
+    Text("Selected: \${state.selection?.id ?: "none"}; visits: \${state.visitCount}")
+    Button(onClick = { store.select("vase") }) { Text("Select vase") }
+    Button(onClick = {
+        actionScope.launch { navigator.closeAndReopen(store) }
+    }) { Text("Close and reopen") }
+    LaunchedEffect(navigator) {
+        navigator.openGalleryStage(
+            state = store.snapshot(),
+            store = store,
+            restoreRetainedState = false,
+        )
+    }
+}`,
+    "standard corrected Window",
+  );
+  return replaceSourceOnce(
+    source,
+    `private suspend fun SpatialNavigator.closeAndReopen(store: BenchmarkStore) {
+    closeStage()
+    val selection = sharedStore.snapshot().selection
+    val visitCount = sharedStore.snapshot().visitCount
+    val paused = sharedStore.snapshot().paused
+    store.restore(GallerySnapshot(selection, visitCount, paused))
+    openGalleryStage(store.snapshot(), store, true)
+}`,
+    `private suspend fun SpatialNavigator.closeAndReopen(store: BenchmarkStore) {
+    closeStage()
+    val selection = store.snapshot().selection
+    val visitCount = store.snapshot().visitCount
+    val paused = store.snapshot().paused
+    store.restore(GallerySnapshot(selection, visitCount, paused))
+    openGalleryStage(
+        state = GallerySnapshot.empty(),
+        store = store,
+        restoreRetainedState = true,
+    )
+}`,
+    "standard corrected reopen",
+  );
 }
 
 function stateSource({ equivalent = false } = {}) {
@@ -268,6 +367,16 @@ class OrbitSystem : System() {
     }
 }
 `;
+
+function orbitSource({ corrected = false } = {}) {
+  if (!corrected) return ORBIT_SOURCE;
+  return replaceSourceOnce(
+    ORBIT_SOURCE,
+    "    private val orbitQuery = EntityQueryCondition.hasComponent(OrbitComponent::class.java)\n",
+    "    private val orbitQuery: EntityQueryCondition = EntityQueryCondition.hasComponent(OrbitComponent::class.java)\n",
+    "corrected query declaration",
+  );
+}
 
 function stageSource({ equivalent = false } = {}) {
   const repository = equivalent ? "GallerySessionRepository" : "BenchmarkStore";
@@ -412,6 +521,25 @@ class PlaneSession {
 }
 `;
 
+function planeSource({ corrected = false } = {}) {
+  if (!corrected) return PLANE_SOURCE;
+  const rawRetry = `            repeat(MAX_ANCHOR_RETRIES) {
+                candidates = PlaneTrackingManager.loadAllAnchors().toList()
+                if (candidates.isNotEmpty()) return@repeat
+                delay(25L)
+            }`;
+  const retainedRetry = `            for (attempt in 0 until MAX_ANCHOR_RETRIES) {
+                val loaded = PlaneTrackingManager.loadAllAnchors().toList()
+                candidates = loaded
+                if (loaded.isNotEmpty()) break
+                delay(25L)
+            }`;
+  if (PLANE_SOURCE.split(rawRetry).length - 1 !== 1) {
+    throw new Error("corrected retry source seam must occur exactly once");
+  }
+  return PLANE_SOURCE.replace(rawRetry, retainedRetry);
+}
+
 function modelTestSource({ equivalent = false } = {}) {
   const repository = equivalent ? "GallerySessionRepository" : "BenchmarkStore";
   const singleton = equivalent ? `${repository}.current()` : `${repository}()`;
@@ -548,9 +676,9 @@ function completeFiles(options = {}) {
     "app/src/main/java/com/agentbench/gallery/Main.kt": applicationSource(options),
     "app/src/main/java/com/agentbench/gallery/GalleryState.kt": stateSource(options),
     "app/src/main/java/com/agentbench/gallery/GalleryBundle.kt": galleryBundleSource(options),
-    "app/src/main/java/com/agentbench/gallery/Orbit.kt": ORBIT_SOURCE,
+    "app/src/main/java/com/agentbench/gallery/Orbit.kt": orbitSource(options),
     "app/src/main/java/com/agentbench/gallery/GalleryStage.kt": stageSource(options),
-    "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": PLANE_SOURCE,
+    "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": planeSource(options),
     "app/src/main/java/com/agentbench/gallery/platform/SpatialApplication.kt": APPLICATION_CLASS,
     "app/src/main/java/com/agentbench/gallery/platform/LaunchActivity.kt": ACTIVITY_CLASS,
     "app/src/test/java/com/agentbench/gallery/GalleryStateTest.kt": modelTestSource(options),
@@ -583,12 +711,12 @@ export function writeUncorrectedCheckpointProject(t) {
 }
 
 export function writeCompleteProject(t, mutate = (files) => files) {
-  const files = mutate(completeFiles());
+  const files = mutate(completeFiles({ corrected: true }));
   return installProject(t, files);
 }
 
 export function writeEquivalentReopenProject(t, mutate = (files) => files) {
-  const files = mutate(completeFiles({ equivalent: true }));
+  const files = mutate(completeFiles({ equivalent: true, corrected: true }));
   return installProject(t, files);
 }
 
@@ -611,21 +739,76 @@ class MainActivity : Activity() {
   return installProject(t, files);
 }
 
-export const RULE_MUTATIONS = Object.freeze([
-  { ruleId: "spatial.project-entry", apply: replace("fun mainApp", "fun notMainApp") },
-  { ruleId: "spatial.container-topology", apply: replace("StageStyle.Mixed", "StageStyle.Full") },
-  { ruleId: "spatial.entity-content", apply: replace("SpatialView(", "AndroidView(") },
-  { ruleId: "spatial.ui-lifecycle", apply: replace("DefaultWindowContainer {\n        PicoTheme", "DefaultWindowContainer {\n        MaterialTheme") },
-  { ruleId: "ecs.component-clone", apply: replace("OrbitComponent(enabled, angle)", "OrbitComponent()") },
-  { ruleId: "ecs.system-query", apply: replace("private val orbitQuery = EntityQueryCondition.hasComponent(OrbitComponent::class.java)", "private val orbitQuery = EntityQueryCondition.never()") },
-  { ruleId: "ecs.frame-update", apply: replace("context.deltaTime", "0.016f") },
-  { ruleId: "ecs.lifecycle", apply: replace("unregisterSystem<OrbitSystem>()", "registerSystem<OrbitSystem>()") },
-  { ruleId: "state.single-source", apply: replace("val sharedStore = BenchmarkStore.instance", "val sharedStore = BenchmarkStore()") },
-  { ruleId: "state.typed-handoff", apply: replace("GallerySelection(selectedId)", "selectedId") },
-  { ruleId: "state.shared-read-write", apply: replace("GalleryStage(bundle, sharedStore)", "GalleryStage(bundle, BenchmarkStore())") },
-  { ruleId: "state.reopen-wiring", apply: replace("restoreRetainedState = true", "restoreRetainedState = false") },
-  { ruleId: "plane.retry-readiness", apply: replace("repeat(MAX_ANCHOR_RETRIES)", "repeat(1)") },
-  { ruleId: "plane.semantic-fallback", apply: replace("?: horizontalFloorPlane()", "?: null") },
-  { ruleId: "plane.anchor-pose", apply: replace("root.convertPositionFrom(anchor.transform.position, null)", "Vector3(0f, 1f, 0f)") },
-  { ruleId: "plane.cleanup-errors", apply: replace("planeSession.stopTrackingAndUnsubscribe()", "Unit") },
+function attack(ruleId, expectedFalseRuleIds, relative, from, to) {
+  return Object.freeze({
+    ruleId,
+    expectedFalseRuleIds: Object.freeze(expectedFalseRuleIds),
+    apply: replacePathOnce(relative, from, to),
+  });
+}
+
+export const RULE_ATTACKS = Object.freeze([
+  attack("spatial.project-entry", ["spatial.project-entry"],
+    "app/src/main/java/com/agentbench/gallery/platform/SpatialApplication.kt",
+    "launch(::mainApp)", "Unit"),
+  attack("spatial.container-topology", ["spatial.container-topology"],
+    "app/src/main/java/com/agentbench/gallery/Main.kt",
+    "StageStyle.Mixed", "StageStyle.Full"),
+  attack("spatial.entity-content", ["spatial.entity-content"],
+    "app/src/main/java/com/agentbench/gallery/GalleryStage.kt",
+    "content.addEntity(root)", "content.addEntity(Entity())"),
+  attack("spatial.ui-lifecycle", ["spatial.ui-lifecycle"],
+    "app/src/main/java/com/agentbench/gallery/Main.kt",
+    "PicoTheme { GalleryWindow(sharedStore) }", "GalleryWindow(sharedStore)"),
+  attack("ecs.component-clone", ["ecs.component-clone"],
+    "app/src/main/java/com/agentbench/gallery/Orbit.kt",
+    "OrbitComponent(enabled, angle)", "OrbitComponent()"),
+  attack("ecs.system-query", ["ecs.system-query"],
+    "app/src/main/java/com/agentbench/gallery/Orbit.kt",
+    "EntityQueryCondition.hasComponent(OrbitComponent::class.java)",
+    "EntityQueryCondition.never()"),
+  attack("ecs.frame-update", ["ecs.frame-update"],
+    "app/src/main/java/com/agentbench/gallery/Orbit.kt",
+    "context.deltaTime", "0.016f"),
+  attack("ecs.lifecycle", ["ecs.lifecycle"],
+    "app/src/main/java/com/agentbench/gallery/GalleryStage.kt",
+    "unregisterSystem<OrbitSystem>()", "registerSystem<OrbitSystem>()"),
+  attack("state.single-source", [
+    "state.single-source",
+    "state.shared-read-write",
+    "state.reopen-wiring",
+  ], "app/src/main/java/com/agentbench/gallery/Main.kt",
+  "val sharedStore = BenchmarkStore.instance",
+  "val sharedStore: BenchmarkStore get() = BenchmarkStore()"),
+  attack("state.typed-handoff", ["state.typed-handoff"],
+    "app/src/main/java/com/agentbench/gallery/GalleryState.kt",
+    "data class GallerySnapshot(", "class GallerySnapshot("),
+  attack("state.shared-read-write", ["state.shared-read-write"],
+    "app/src/main/java/com/agentbench/gallery/Main.kt",
+    "store.select(\"vase\")", "Unit"),
+  attack("state.reopen-wiring", ["state.reopen-wiring"],
+    "app/src/main/java/com/agentbench/gallery/Main.kt",
+    "restoreRetainedState = true", "restoreRetainedState = false"),
+  attack("plane.retry-readiness", ["plane.retry-readiness"],
+    "app/src/main/java/com/agentbench/gallery/PlaneSession.kt",
+    "MAX_ANCHOR_RETRIES = 4", "MAX_ANCHOR_RETRIES = 1"),
+  attack("plane.semantic-fallback", ["plane.semantic-fallback"],
+    "app/src/main/java/com/agentbench/gallery/PlaneSession.kt",
+    "?: horizontalFloorPlane()", "?: null"),
+  attack("plane.anchor-pose", ["plane.anchor-pose"],
+    "app/src/main/java/com/agentbench/gallery/PlaneSession.kt",
+    "root.convertPositionFrom(anchor.transform.position, null)", "Vector3(0f, 1f, 0f)"),
+  attack("plane.cleanup-errors", ["plane.cleanup-errors"],
+    "app/src/main/java/com/agentbench/gallery/GalleryStage.kt",
+    "planeSession.stopTrackingAndUnsubscribe()", "Unit"),
 ]);
+
+export const EQUIVALENT_REOPEN_ATTACK = Object.freeze({
+  ruleId: "state.reopen-wiring",
+  expectedFalseRuleIds: Object.freeze(["state.reopen-wiring"]),
+  apply: replacePathOnce(
+    "app/src/main/java/com/agentbench/gallery/Main.kt",
+    "museumSessionRepository::currentSnapshot",
+    "GallerySessionSnapshot::empty",
+  ),
+});
