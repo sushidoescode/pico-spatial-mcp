@@ -5,6 +5,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SKELETON_DIR = fileURLToPath(new URL("../../appskeleton/", import.meta.url));
+const VERSION_CATALOG_RELATIVE_PATH = path.join("gradle", "libs.versions.toml");
+const VERSION_CATALOG_PATH = fileURLToPath(new URL(
+  "../../benchmarks/spatial-agent-bench/fixtures/gradle/libs.versions.toml",
+  import.meta.url,
+));
 const SHARED_TEST_PATH = "app/src/test/java/com/agentbench/corpus/CorpusCompileSmokeTest.kt";
 const SHARED_TEST_SOURCE = `package com.agentbench.corpus
 
@@ -15,6 +20,15 @@ class CorpusCompileSmokeTest {
     fun compiles() = Unit
 }
 `;
+
+function copySkeletonWithoutSharedCatalog(skeletonDir, projectDir) {
+  const sharedCatalogPath = path.resolve(skeletonDir, VERSION_CATALOG_RELATIVE_PATH);
+  fs.cpSync(skeletonDir, projectDir, {
+    recursive: true,
+    dereference: false,
+    filter: (source) => path.resolve(source) !== sharedCatalogPath,
+  });
+}
 
 const TOPOLOGY_PROOFS = Object.freeze([
   Object.freeze(["direct-mixed-stage-open", 0]),
@@ -870,7 +884,7 @@ export const POSITIVE_SUBSET_V1_COMPILE_AGGREGATES = Object.freeze([
   }),
 ]);
 
-function installSources(t, sources, prefix) {
+function installSources(t, sources, prefix, { skeletonDir = SKELETON_DIR } = {}) {
   if (t === null || typeof t !== "object" || typeof t.after !== "function") {
     throw new TypeError("node:test context is required");
   }
@@ -887,7 +901,8 @@ function installSources(t, sources, prefix) {
     }
     fs.rmSync(projectDir, { recursive: true, force: true });
   });
-  fs.cpSync(SKELETON_DIR, projectDir, { recursive: true, dereference: false });
+  copySkeletonWithoutSharedCatalog(skeletonDir, projectDir);
+  fs.copyFileSync(VERSION_CATALOG_PATH, path.join(projectDir, VERSION_CATALOG_RELATIVE_PATH));
   for (const relative of [
     ".gradle", "app/build", "app/src/main/java", "app/src/test/java", "app/src/androidTest/java",
   ]) fs.rmSync(path.join(projectDir, relative), { recursive: true, force: true });
@@ -899,13 +914,13 @@ function installSources(t, sources, prefix) {
   return projectDir;
 }
 
-export function writePositiveSubsetCase(t, id) {
+export function writePositiveSubsetCase(t, id, options) {
   const sources = sourceByCaseId.get(id);
   if (sources === undefined) throw new Error(`unknown positive subset case: ${id}`);
-  return installSources(t, sources, "agentbench-cp1-case-");
+  return installSources(t, sources, "agentbench-cp1-case-", options);
 }
 
-export function writePositiveSubsetCompileAggregate(t, id) {
+export function writePositiveSubsetCompileAggregate(t, id, options) {
   if (id !== "cp1-spatial-emitters") throw new Error(`unknown positive subset aggregate: ${id}`);
-  return installSources(t, aggregateSources, "agentbench-cp1-aggregate-");
+  return installSources(t, aggregateSources, "agentbench-cp1-aggregate-", options);
 }

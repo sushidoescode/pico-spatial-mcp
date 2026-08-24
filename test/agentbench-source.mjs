@@ -386,8 +386,18 @@ test("identical scoped metadata duplicates collapse only in the flattened aggreg
   assert.deepEqual(findFactEvidence(index, { kind: "manifest.metadata", scope: "activity", activityName: ".Main" }).map(({ line }) => line), [2, 3]);
 });
 
-test("tracked appskeleton loads with direct activity-scoped Stage metadata", () => {
-  const index = loadSubmissionSources(path.resolve(import.meta.dirname, "..", "appskeleton"));
+test("tracked appskeleton manifest loads with direct activity-scoped Stage metadata", (t) => {
+  const project = scratch(t, "agentbench-source-appskeleton-manifest-");
+  write(
+    project,
+    "app/src/main/AndroidManifest.xml",
+    fs.readFileSync(path.resolve(
+      import.meta.dirname,
+      "..",
+      "appskeleton/app/src/main/AndroidManifest.xml",
+    ), "utf8"),
+  );
+  const index = loadSubmissionSources(project);
   const stageRows = index.facts.manifest.metadata.filter(({ name }) => name.startsWith("pico.spatial.stage."));
 
   assert.deepEqual(stageRows.map(({ name }) => name), [

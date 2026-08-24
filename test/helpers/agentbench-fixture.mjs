@@ -4,7 +4,20 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SKELETON_DIR = fileURLToPath(new URL("../../appskeleton/", import.meta.url));
-const VERSION_CATALOG = fs.readFileSync(path.join(SKELETON_DIR, "gradle/libs.versions.toml"), "utf8");
+const VERSION_CATALOG_RELATIVE_PATH = path.join("gradle", "libs.versions.toml");
+const VERSION_CATALOG = fs.readFileSync(fileURLToPath(new URL(
+  "../../benchmarks/spatial-agent-bench/fixtures/gradle/libs.versions.toml",
+  import.meta.url,
+)), "utf8");
+
+function copySkeletonWithoutSharedCatalog(skeletonDir, projectDir) {
+  const sharedCatalogPath = path.resolve(skeletonDir, VERSION_CATALOG_RELATIVE_PATH);
+  fs.cpSync(skeletonDir, projectDir, {
+    recursive: true,
+    dereference: false,
+    filter: (source) => path.resolve(source) !== sharedCatalogPath,
+  });
+}
 
 function replacePathOnce(relative, from, to) {
   return (files) => {
@@ -685,10 +698,10 @@ function completeFiles(options = {}) {
   };
 }
 
-function installProject(t, files) {
+function installProject(t, files, { skeletonDir = SKELETON_DIR } = {}) {
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentbench-fixture-"));
   t.after(() => fs.rmSync(projectDir, { recursive: true, force: true }));
-  fs.cpSync(SKELETON_DIR, projectDir, { recursive: true, dereference: false });
+  copySkeletonWithoutSharedCatalog(skeletonDir, projectDir);
   for (const relative of [".gradle", "app/build", "app/src/main/java", "app/src/test/java", "app/src/androidTest/java"]) {
     fs.rmSync(path.join(projectDir, relative), { recursive: true, force: true });
   }
@@ -706,21 +719,21 @@ export const UNCORRECTED_CHECKPOINT_EXPECTED_FALSE_RULE_IDS = Object.freeze([
   "plane.retry-readiness",
 ]);
 
-export function writeUncorrectedCheckpointProject(t) {
-  return installProject(t, completeFiles());
+export function writeUncorrectedCheckpointProject(t, options) {
+  return installProject(t, completeFiles(), options);
 }
 
-export function writeCompleteProject(t, mutate = (files) => files) {
+export function writeCompleteProject(t, mutate = (files) => files, options) {
   const files = mutate(completeFiles({ corrected: true }));
-  return installProject(t, files);
+  return installProject(t, files, options);
 }
 
-export function writeEquivalentReopenProject(t, mutate = (files) => files) {
+export function writeEquivalentReopenProject(t, mutate = (files) => files, options) {
   const files = mutate(completeFiles({ equivalent: true, corrected: true }));
-  return installProject(t, files);
+  return installProject(t, files, options);
 }
 
-export function writeAndroidStyleProject(t) {
+export function writeAndroidStyleProject(t, options) {
   const files = completeFiles();
   files["app/src/main/java/com/agentbench/gallery/Main.kt"] = `package com.agentbench.gallery
 
@@ -736,7 +749,7 @@ class MainActivity : Activity() {
   for (const relative of Object.keys(files)) {
     if (relative.endsWith(".kt") && !relative.endsWith("Main.kt")) delete files[relative];
   }
-  return installProject(t, files);
+  return installProject(t, files, options);
 }
 
 function attack(ruleId, expectedFalseRuleIds, relative, from, to) {

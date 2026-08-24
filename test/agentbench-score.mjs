@@ -331,6 +331,45 @@ function readFixtureProjectFiles(projectDir) {
   ]));
 }
 
+function snapshotFixtureBytes(projectDir) {
+  const rows = [];
+  function walk(relative) {
+    const directory = path.join(projectDir, relative);
+    const entries = fs.readdirSync(directory, { withFileTypes: true })
+      .sort((left, right) => Buffer.compare(Buffer.from(left.name), Buffer.from(right.name)));
+    for (const entry of entries) {
+      const child = relative ? `${relative}/${entry.name}` : entry.name;
+      assert.equal(entry.isSymbolicLink(), false, `${child}: fixture snapshot symlink`);
+      if (entry.isDirectory()) walk(child);
+      else {
+        assert.equal(entry.isFile(), true, `${child}: fixture snapshot special file`);
+        rows.push(Object.freeze({ path: child, bytes: fs.readFileSync(path.join(projectDir, child)) }));
+      }
+    }
+  }
+  walk("");
+  rows.sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
+  return Object.freeze(rows);
+}
+
+function copySharedSkeletonToScratch(t, prefix) {
+  const projectDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  t.after(() => fs.rmSync(projectDir, { recursive: true, force: true }));
+  const sharedSkeletonDir = path.resolve(import.meta.dirname, "..", "appskeleton");
+  const catalogRelativePath = path.join("gradle", "libs.versions.toml");
+  const sharedCatalogPath = path.join(sharedSkeletonDir, catalogRelativePath);
+  fs.cpSync(sharedSkeletonDir, projectDir, {
+    recursive: true,
+    dereference: false,
+    filter: (source) => path.resolve(source) !== sharedCatalogPath,
+  });
+  fs.copyFileSync(
+    path.resolve(import.meta.dirname, "..", "benchmarks/spatial-agent-bench/fixtures/gradle/libs.versions.toml"),
+    path.join(projectDir, catalogRelativePath),
+  );
+  return projectDir;
+}
+
 function replaceFixturePathOnce(relative, from, to) {
   return (files) => {
     assert.equal(Object.hasOwn(files, relative), true, `missing fixture path ${relative}`);
@@ -879,6 +918,77 @@ test("corrected subset forms emit all sixteen claims from the exact standard and
     const { response } = analyzeProject(projectDir);
     assertAcceptedClaimIds(response, RULE_IDS, `${name} corrected fixture`);
   }
+});
+
+test("benchmark fixture output is independent of shared skeleton catalog bytes", async (t) => {
+  const corpus = await loadBatch2bCorpusModule();
+  const writeCase = requireBatch2bExport(corpus, "writePositiveSubsetCase", "function");
+  const writeAggregate = requireBatch2bExport(corpus, "writePositiveSubsetCompileAggregate", "function");
+  const controlSkeleton = copySharedSkeletonToScratch(t, "agentbench-catalog-control-");
+  const mutatedSkeleton = copySharedSkeletonToScratch(t, "agentbench-catalog-mutated-");
+  const canaryPath = "benchmark-skeleton-copy-canary.txt";
+  const canaryBytes = Buffer.from("scratch skeleton override reached\n", "utf8");
+  const mutationTargetPath = "shared-catalog-mutation-target.toml";
+  const mutationTargetBytes = Buffer.from('[versions]\nbom = "6.0.0"\n', "utf8");
+  for (const skeletonDir of [controlSkeleton, mutatedSkeleton]) {
+    fs.writeFileSync(path.join(skeletonDir, canaryPath), canaryBytes);
+    fs.writeFileSync(path.join(skeletonDir, mutationTargetPath), mutationTargetBytes);
+  }
+  fs.rmSync(path.join(mutatedSkeleton, "gradle/libs.versions.toml"));
+  fs.symlinkSync(`../${mutationTargetPath}`, path.join(mutatedSkeleton, "gradle/libs.versions.toml"));
+
+  const identity = (files) => files;
+  const writers = Object.freeze([
+    Object.freeze(["uncorrected", (context, skeletonDir) => writeUncorrectedCheckpointProject(context, { skeletonDir })]),
+    Object.freeze(["complete", (context, skeletonDir) => writeCompleteProject(context, identity, { skeletonDir })]),
+    Object.freeze(["equivalent", (context, skeletonDir) => writeEquivalentReopenProject(context, identity, { skeletonDir })]),
+    Object.freeze(["android-style", (context, skeletonDir) => writeAndroidStyleProject(context, { skeletonDir })]),
+    Object.freeze(["cp1-case", (context, skeletonDir) => writeCase(
+      context,
+      "topology.direct-mixed-stage-open.named-literal-stage-id.alpha",
+      { skeletonDir },
+    )]),
+    Object.freeze(["cp1-aggregate", (context, skeletonDir) => writeAggregate(
+      context,
+      "cp1-spatial-emitters",
+      { skeletonDir },
+    )]),
+  ]);
+  const pairs = writers.map(([name, writeFixture]) => Object.freeze({
+    name,
+    control: snapshotFixtureBytes(writeFixture(t, controlSkeleton)),
+    mutated: snapshotFixtureBytes(writeFixture(t, mutatedSkeleton)),
+  }));
+
+  assert.deepEqual(
+    pairs.map(({ name, control, mutated }) => Object.freeze({
+      name,
+      control: control.find(({ path: relative }) => relative === canaryPath)?.bytes,
+      mutated: mutated.find(({ path: relative }) => relative === canaryPath)?.bytes,
+    })),
+    writers.map(([name]) => Object.freeze({ name, control: canaryBytes, mutated: canaryBytes })),
+    "exact scratch-skeleton override canary vector",
+  );
+  assert.deepEqual(
+    pairs.map(({ name, control, mutated }) => Object.freeze({ name, control, mutated })),
+    pairs.map(({ name, control }) => Object.freeze({ name, control, mutated: control })),
+    "exact sorted fixture path/byte vectors",
+  );
+  assert.deepEqual(
+    pairs.flatMap(({ name, control, mutated }) => [
+      [name, "control", crypto.createHash("sha256").update(
+        control.find(({ path: relative }) => relative === "gradle/libs.versions.toml")?.bytes ?? Buffer.alloc(0),
+      ).digest("hex")],
+      [name, "mutated", crypto.createHash("sha256").update(
+        mutated.find(({ path: relative }) => relative === "gradle/libs.versions.toml")?.bytes ?? Buffer.alloc(0),
+      ).digest("hex")],
+    ]),
+    writers.flatMap(([name]) => [
+      [name, "control", "45f21462ffe2746dac3fff54200a5c995692fc6a481ab3f12dd2a43ab9637cd3"],
+      [name, "mutated", "45f21462ffe2746dac3fff54200a5c995692fc6a481ab3f12dd2a43ab9637cd3"],
+    ]),
+    "exact pinned 0.13.3 catalog hash vector",
+  );
 });
 
 test("subset forms freeze exact RULE_ATTACKS and equivalent reopen path-scoped seams", (t) => {
