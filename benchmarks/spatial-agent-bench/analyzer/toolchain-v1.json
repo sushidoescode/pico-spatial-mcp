@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "platforms": [
+    {
+      "platform": "darwin",
+      "arch": "arm64",
+      "uid": 501,
+      "node": {
+        "path": "/usr/local/bin/node",
+        "version": "v22.14.0",
+        "bytes": 220243216,
+        "sha256": "c583851fc85e4618b2374cda13399d59d373ad7cebfc4b55160820b88dcce67b"
+      },
+      "orchestratorEnvironment": {
+        "LANG": "C",
+        "LC_ALL": "C",
+        "TZ": "UTC",
+        "__CF_USER_TEXT_ENCODING": "0x1F5:0x0:0x0"
+      },
+      "defaultDependencyRoot": "/Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1",
+      "jdk": {
+        "home": "/Applications/Android Studio.app/Contents/jbr/Contents/Home",
+        "version": "21.0.8",
+        "tree": {
+          "entries": 430,
+          "files": 183,
+          "directories": 72,
+          "symlinks": 175,
+          "fileBytes": 100129016,
+          "sha256": "89b10d67dd49a0f809716313416a78734fb3ff466ab7b9a801eabdd1e10109d7"
+        },
+        "diagnostics": [
+          { "path": "release", "bytes": 1040, "sha256": "b99658db6bb33d2e6bc276c61b3a4c32b4a041621ddca27565f17d5a3deba3b2" },
+          { "path": "bin/java", "bytes": 70704, "sha256": "7e056ddcbca2017e574a596a3dea0025750c5b9aa188e1362661c2a84be15099" },
+          { "path": "bin/javac", "bytes": 70736, "sha256": "05add01371c9cadba2f2df0d94c4f47bbff6ac329bd0b5f4494ee783dd1b112b" },
+          { "path": "bin/jar", "bytes": 70736, "sha256": "b12b3b8b95247f0c0a99bbccdd0749a706e75ccbc01ad50a3f56e37ae4905276" },
+          { "path": "lib/modules", "bytes": 51441964, "sha256": "104902874e64833ab492ca3709b0456088f0cbc7f6cd414bc8ac79993f39c3a2" },
+          { "path": "lib/libjava.dylib", "bytes": 188080, "sha256": "caa0bba58915b27ef635536debd12d127ffa60f4a221edaf66666411bf90ac74" },
+          { "path": "lib/libjli.dylib", "bytes": 148160, "sha256": "eaeb739744b5f46c5da633e487ed0c5bbc1a4067b744b974f8171af39593378e" },
+          { "path": "lib/server/libjvm.dylib", "bytes": 16018944, "sha256": "2c4329111e496bd8e3d9fbf3f32a52031f6753f26afac33285171582720a8bfd" }
+        ]
+      }
+    }
+  ]
+}

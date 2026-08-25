@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "dependencies": [
+    {
+      "order": 1,
+      "coordinate": "org.jetbrains.kotlin:kotlin-compiler-embeddable:2.0.0",
+      "relativeCachePath": "org.jetbrains.kotlin/kotlin-compiler-embeddable/2.0.0/1de310de3446414381282ffc46c3ed3919a4d1da/kotlin-compiler-embeddable-2.0.0.jar",
+      "artifactName": "01-kotlin-compiler-embeddable-2.0.0.jar",
+      "bytes": 57192195,
+      "sha256": "eb8ae09df38e212eec3965cafa97ab08112773fe2e870ebeb6131b8f69bfb92e"
+    },
+    {
+      "order": 2,
+      "coordinate": "org.jetbrains.kotlin:kotlin-stdlib:2.0.0",
+      "relativeCachePath": "org.jetbrains.kotlin/kotlin-stdlib/2.0.0/b48df2c4aede9586cc931ead433bc02d6fd7879e/kotlin-stdlib-2.0.0.jar",
+      "artifactName": "02-kotlin-stdlib-2.0.0.jar",
+      "bytes": 1729731,
+      "sha256": "240938c4aab8e73e888703e3e7d3f87383ffe5bd536d6d5e3c100d4cd0379fcf"
+    },
+    {
+      "order": 3,
+      "coordinate": "org.jetbrains.kotlin:kotlin-script-runtime:2.0.0",
+      "relativeCachePath": "org.jetbrains.kotlin/kotlin-script-runtime/2.0.0/fdc27dd047d592fa41d2dfa21e7621287a361612/kotlin-script-runtime-2.0.0.jar",
+      "artifactName": "03-kotlin-script-runtime-2.0.0.jar",
+      "bytes": 43404,
+      "sha256": "b57a14387a504f1d3d8634899a830cb0bc5fe1adb86a62cc65d940fe982b04f9"
+    },
+    {
+      "order": 4,
+      "coordinate": "org.jetbrains.kotlin:kotlin-reflect:1.6.10",
+      "relativeCachePath": "org.jetbrains.kotlin/kotlin-reflect/1.6.10/1cbe9c92c12a94eea200d23c2bbaedaf3daf5132/kotlin-reflect-1.6.10.jar",
+      "artifactName": "04-kotlin-reflect-1.6.10.jar",
+      "bytes": 3038560,
+      "sha256": "3277ac102ae17aad10a55abec75ff5696c8d109790396434b496e75087854203"
+    },
+    {
+      "order": 5,
+      "coordinate": "org.jetbrains.kotlin:kotlin-daemon-embeddable:2.0.0",
+      "relativeCachePath": "org.jetbrains.kotlin/kotlin-daemon-embeddable/2.0.0/b39c612768614c4428c96ee9c65477181fffe9d/kotlin-daemon-embeddable-2.0.0.jar",
+      "artifactName": "05-kotlin-daemon-embeddable-2.0.0.jar",
+      "bytes": 346229,
+      "sha256": "b907a36e9cfa587ca0523793d89eb2ea9bb545456935f180e12422486c14049f"
+    },
+    {
+      "order": 6,
+      "coordinate": "org.jetbrains.intellij.deps:trove4j:1.0.20200330",
+      "relativeCachePath": "org.jetbrains.intellij.deps/trove4j/1.0.20200330/3afb14d5f9ceb459d724e907a21145e8ff394f02/trove4j-1.0.20200330.jar",
+      "artifactName": "06-trove4j-1.0.20200330.jar",
+      "bytes": 572985,
+      "sha256": "c5fd725bffab51846bf3c77db1383c60aaaebfe1b7fe2f00d23fe1b7df0a439d"
+    },
+    {
+      "order": 7,
+      "coordinate": "org.jetbrains:annotations:13.0",
+      "relativeCachePath": "org.jetbrains/annotations/13.0/919f0dfe192fb4e063e7dacadee7f8bb9a2672a9/annotations-13.0.jar",
+      "artifactName": "07-annotations-13.0.jar",
+      "bytes": 17536,
+      "sha256": "ace2a10dc8e2d5fd34925ecac03e4988b2c0f851650c94b8cef49ba1bd111478"
+    }
+  ]
+}

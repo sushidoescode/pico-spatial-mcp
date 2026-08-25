@@ -1,0 +1,2665 @@
+{
+  "version": 1,
+  "encoding": "canonical-json-utf8-no-newline",
+  "maxPayloadBytes": 65536,
+  "unknownItem": "__agentbench_unknown_item__",
+  "responseComparisons": {
+    "state": [
+      "fresh_baseline",
+      "pause_accepted",
+      "paused_baseline",
+      "duplicate_request_id",
+      "invalid_fields",
+      "unknown_item",
+      "resume_accepted",
+      "first_selection",
+      "paused_selection",
+      "close_first",
+      "reopen_first",
+      "first_reopen_snapshot",
+      "resume_second",
+      "second_selection",
+      "close_second",
+      "reopen_second",
+      "final_snapshot"
+    ],
+    "tick": [
+      "tick_select",
+      "running_baseline_one",
+      "running_window_one",
+      "tick_pause",
+      "tick_paused_baseline",
+      "tick_paused_hold",
+      "tick_resume",
+      "running_baseline_two",
+      "running_window_two"
+    ],
+    "surface": [
+      "surface_select",
+      "surface_poll_table",
+      "surface_poll_floor"
+    ]
+  },
+  "responsePolicy": {
+    "common": {
+      "duplicateKeyAware": true,
+      "rejectExtraKeys": true,
+      "requireSafeIntegers": true,
+      "requireFiniteNumbers": true,
+      "requireNonEmptyIdsAndNonces": true,
+      "canonicalPayload": "utf8-canonical-json-no-bom-padding-or-newline",
+      "successfulErrorCode": null,
+      "processInstance": "byte-identical-within-run"
+    },
+    "state": {
+      "baseline": {
+        "step": "fresh-baseline",
+        "selection": null,
+        "visit_count": 0,
+        "paused": false,
+        "stage_open": false,
+        "stage_generation": 0,
+        "surface_status": "idle",
+        "surface_semantic": null,
+        "placement_count": 0
+      },
+      "negative": {
+        "baselineStep": "paused-baseline",
+        "errorSteps": [
+          { "step": "duplicate-id", "status": "error", "errorCode": "duplicate_request_id", "requestId": "state-003" },
+          { "step": "invalid-fields", "status": "error", "errorCode": "invalid_fields", "requestId": "state-004" },
+          { "step": "unknown-item", "status": "error", "errorCode": "unknown_item", "requestId": "state-005" }
+        ],
+        "equalToBaseline": ["selection", "title", "visit_count", "paused", "stage_open", "stage_generation", "tick_count"],
+        "fixedEachResponse": { "surface_status": "idle", "surface_semantic": null, "placement_count": 0 }
+      },
+      "milestones": [
+        { "step": "select-first", "selectionItemIndex": 0, "visit_count": 1, "paused": false, "stage_open": true, "stage_generation": 1 },
+        { "step": "snapshot-first-reopen", "selectionItemIndex": 0, "visit_count": 1, "paused": true, "stage_open": true, "stage_generation": 2 },
+        { "step": "select-second", "selectionItemIndex": 1, "visit_count": 2, "paused": false, "stage_open": true, "stage_generation": 2 },
+        { "step": "final-snapshot", "selectionItemIndex": 1, "visit_count": 2, "paused": false, "stage_open": true, "stage_generation": 3 }
+      ],
+      "titleAfterReopen": "equals-preceding-accepted-selection-title"
+    },
+    "tick": {
+      "counter": "tick_count",
+      "neverDecreases": true,
+      "runningWindows": [
+        { "baselineStep": "running-baseline-one", "firstStep": "running-one-3", "lastStep": "running-one-52", "polls": 50, "intervalMs": 100, "requiresGreaterThanBaseline": true },
+        { "baselineStep": "running-baseline-two", "firstStep": "running-two-58", "lastStep": "running-two-107", "polls": 50, "intervalMs": 100, "requiresGreaterThanBaseline": true }
+      ],
+      "pausedWindow": { "baselineStep": "paused-baseline", "comparisonStep": "paused-hold", "waitMs": 500, "requiresEqual": true }
+    },
+    "surface": {
+      "neverDecreases": ["placement_count", "tick_count"],
+      "searchingBeforeFirstReady": true,
+      "afterFirstReady": { "placement_count": 3 },
+      "runs": [
+        { "run": "table_surface", "semantic": "table", "polls": 60, "intervalMs": 250 },
+        { "run": "floor_surface", "semantic": "floor", "polls": 60, "intervalMs": 250 }
+      ]
+    }
+  },
+  "environmentFailureClassification": {
+    "beforeFixtureReadBack": "blocked_environment",
+    "afterFixtureReadBack": "fail"
+  },
+  "runs": [
+    {
+      "name": "state",
+      "fixtureId": "table-present",
+      "itemIndexes": [
+        0,
+        1
+      ],
+      "resetLifecycle": [
+        "stop_package",
+        "uninstall_package",
+        "reset_world",
+        "load_fixture",
+        "read_back_fixture_identity",
+        "install_receipt_bound_apk",
+        "launch_package",
+        "wait_for_receiver"
+      ],
+      "steps": [
+        {
+          "name": "fresh-baseline",
+          "waitBeforeMs": 0,
+          "comparison": "fresh_baseline",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "state-001"
+          }
+        },
+        {
+          "name": "pause-before-stage",
+          "waitBeforeMs": 0,
+          "comparison": "pause_accepted",
+          "request": {
+            "command": "pause",
+            "protocol_version": 1,
+            "request_id": "state-002"
+          }
+        },
+        {
+          "name": "paused-baseline",
+          "waitBeforeMs": 0,
+          "comparison": "paused_baseline",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "state-003"
+          }
+        },
+        {
+          "name": "duplicate-id",
+          "waitBeforeMs": 0,
+          "comparison": "duplicate_request_id",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "state-003"
+          }
+        },
+        {
+          "name": "invalid-fields",
+          "waitBeforeMs": 0,
+          "comparison": "invalid_fields",
+          "request": {
+            "command": "snapshot",
+            "item": {
+              "variantItemIndex": 0
+            },
+            "protocol_version": 1,
+            "request_id": "state-004"
+          }
+        },
+        {
+          "name": "unknown-item",
+          "waitBeforeMs": 0,
+          "comparison": "unknown_item",
+          "request": {
+            "command": "select",
+            "item": "__agentbench_unknown_item__",
+            "protocol_version": 1,
+            "request_id": "state-005"
+          }
+        },
+        {
+          "name": "resume-before-selection",
+          "waitBeforeMs": 0,
+          "comparison": "resume_accepted",
+          "request": {
+            "command": "resume",
+            "protocol_version": 1,
+            "request_id": "state-006"
+          }
+        },
+        {
+          "name": "select-first",
+          "waitBeforeMs": 0,
+          "comparison": "first_selection",
+          "request": {
+            "command": "select",
+            "item": {
+              "variantItemIndex": 0
+            },
+            "protocol_version": 1,
+            "request_id": "state-007"
+          }
+        },
+        {
+          "name": "pause-retained",
+          "waitBeforeMs": 0,
+          "comparison": "paused_selection",
+          "request": {
+            "command": "pause",
+            "protocol_version": 1,
+            "request_id": "state-008"
+          }
+        },
+        {
+          "name": "close-first",
+          "waitBeforeMs": 0,
+          "comparison": "close_first",
+          "request": {
+            "command": "close_stage",
+            "protocol_version": 1,
+            "request_id": "state-009"
+          }
+        },
+        {
+          "name": "open-first",
+          "waitBeforeMs": 0,
+          "comparison": "reopen_first",
+          "request": {
+            "command": "open_stage",
+            "protocol_version": 1,
+            "request_id": "state-010"
+          }
+        },
+        {
+          "name": "snapshot-first-reopen",
+          "waitBeforeMs": 0,
+          "comparison": "first_reopen_snapshot",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "state-011"
+          }
+        },
+        {
+          "name": "resume-after-first-reopen",
+          "waitBeforeMs": 0,
+          "comparison": "resume_second",
+          "request": {
+            "command": "resume",
+            "protocol_version": 1,
+            "request_id": "state-012"
+          }
+        },
+        {
+          "name": "select-second",
+          "waitBeforeMs": 0,
+          "comparison": "second_selection",
+          "request": {
+            "command": "select",
+            "item": {
+              "variantItemIndex": 1
+            },
+            "protocol_version": 1,
+            "request_id": "state-013"
+          }
+        },
+        {
+          "name": "close-second",
+          "waitBeforeMs": 0,
+          "comparison": "close_second",
+          "request": {
+            "command": "close_stage",
+            "protocol_version": 1,
+            "request_id": "state-014"
+          }
+        },
+        {
+          "name": "open-second",
+          "waitBeforeMs": 0,
+          "comparison": "reopen_second",
+          "request": {
+            "command": "open_stage",
+            "protocol_version": 1,
+            "request_id": "state-015"
+          }
+        },
+        {
+          "name": "final-snapshot",
+          "waitBeforeMs": 0,
+          "comparison": "final_snapshot",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "state-016"
+          }
+        }
+      ]
+    },
+    {
+      "name": "tick",
+      "fixtureId": "table-present",
+      "itemIndexes": [
+        0
+      ],
+      "resetLifecycle": [
+        "stop_package",
+        "uninstall_package",
+        "reset_world",
+        "load_fixture",
+        "read_back_fixture_identity",
+        "install_receipt_bound_apk",
+        "launch_package",
+        "wait_for_receiver"
+      ],
+      "steps": [
+        {
+          "name": "select",
+          "waitBeforeMs": 0,
+          "comparison": "tick_select",
+          "request": {
+            "command": "select",
+            "item": {
+              "variantItemIndex": 0
+            },
+            "protocol_version": 1,
+            "request_id": "tick-001"
+          }
+        },
+        {
+          "name": "running-baseline-one",
+          "waitBeforeMs": 0,
+          "comparison": "running_baseline_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-002"
+          }
+        },
+        {
+          "name": "running-one-3",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-003"
+          }
+        },
+        {
+          "name": "running-one-4",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-004"
+          }
+        },
+        {
+          "name": "running-one-5",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-005"
+          }
+        },
+        {
+          "name": "running-one-6",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-006"
+          }
+        },
+        {
+          "name": "running-one-7",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-007"
+          }
+        },
+        {
+          "name": "running-one-8",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-008"
+          }
+        },
+        {
+          "name": "running-one-9",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-009"
+          }
+        },
+        {
+          "name": "running-one-10",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-010"
+          }
+        },
+        {
+          "name": "running-one-11",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-011"
+          }
+        },
+        {
+          "name": "running-one-12",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-012"
+          }
+        },
+        {
+          "name": "running-one-13",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-013"
+          }
+        },
+        {
+          "name": "running-one-14",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-014"
+          }
+        },
+        {
+          "name": "running-one-15",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-015"
+          }
+        },
+        {
+          "name": "running-one-16",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-016"
+          }
+        },
+        {
+          "name": "running-one-17",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-017"
+          }
+        },
+        {
+          "name": "running-one-18",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-018"
+          }
+        },
+        {
+          "name": "running-one-19",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-019"
+          }
+        },
+        {
+          "name": "running-one-20",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-020"
+          }
+        },
+        {
+          "name": "running-one-21",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-021"
+          }
+        },
+        {
+          "name": "running-one-22",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-022"
+          }
+        },
+        {
+          "name": "running-one-23",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-023"
+          }
+        },
+        {
+          "name": "running-one-24",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-024"
+          }
+        },
+        {
+          "name": "running-one-25",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-025"
+          }
+        },
+        {
+          "name": "running-one-26",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-026"
+          }
+        },
+        {
+          "name": "running-one-27",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-027"
+          }
+        },
+        {
+          "name": "running-one-28",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-028"
+          }
+        },
+        {
+          "name": "running-one-29",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-029"
+          }
+        },
+        {
+          "name": "running-one-30",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-030"
+          }
+        },
+        {
+          "name": "running-one-31",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-031"
+          }
+        },
+        {
+          "name": "running-one-32",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-032"
+          }
+        },
+        {
+          "name": "running-one-33",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-033"
+          }
+        },
+        {
+          "name": "running-one-34",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-034"
+          }
+        },
+        {
+          "name": "running-one-35",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-035"
+          }
+        },
+        {
+          "name": "running-one-36",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-036"
+          }
+        },
+        {
+          "name": "running-one-37",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-037"
+          }
+        },
+        {
+          "name": "running-one-38",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-038"
+          }
+        },
+        {
+          "name": "running-one-39",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-039"
+          }
+        },
+        {
+          "name": "running-one-40",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-040"
+          }
+        },
+        {
+          "name": "running-one-41",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-041"
+          }
+        },
+        {
+          "name": "running-one-42",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-042"
+          }
+        },
+        {
+          "name": "running-one-43",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-043"
+          }
+        },
+        {
+          "name": "running-one-44",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-044"
+          }
+        },
+        {
+          "name": "running-one-45",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-045"
+          }
+        },
+        {
+          "name": "running-one-46",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-046"
+          }
+        },
+        {
+          "name": "running-one-47",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-047"
+          }
+        },
+        {
+          "name": "running-one-48",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-048"
+          }
+        },
+        {
+          "name": "running-one-49",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-049"
+          }
+        },
+        {
+          "name": "running-one-50",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-050"
+          }
+        },
+        {
+          "name": "running-one-51",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-051"
+          }
+        },
+        {
+          "name": "running-one-52",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_one",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-052"
+          }
+        },
+        {
+          "name": "pause",
+          "waitBeforeMs": 0,
+          "comparison": "tick_pause",
+          "request": {
+            "command": "pause",
+            "protocol_version": 1,
+            "request_id": "tick-053"
+          }
+        },
+        {
+          "name": "paused-baseline",
+          "waitBeforeMs": 0,
+          "comparison": "tick_paused_baseline",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-054"
+          }
+        },
+        {
+          "name": "paused-hold",
+          "waitBeforeMs": 500,
+          "comparison": "tick_paused_hold",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-055"
+          }
+        },
+        {
+          "name": "resume",
+          "waitBeforeMs": 0,
+          "comparison": "tick_resume",
+          "request": {
+            "command": "resume",
+            "protocol_version": 1,
+            "request_id": "tick-056"
+          }
+        },
+        {
+          "name": "running-baseline-two",
+          "waitBeforeMs": 0,
+          "comparison": "running_baseline_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-057"
+          }
+        },
+        {
+          "name": "running-two-58",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-058"
+          }
+        },
+        {
+          "name": "running-two-59",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-059"
+          }
+        },
+        {
+          "name": "running-two-60",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-060"
+          }
+        },
+        {
+          "name": "running-two-61",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-061"
+          }
+        },
+        {
+          "name": "running-two-62",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-062"
+          }
+        },
+        {
+          "name": "running-two-63",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-063"
+          }
+        },
+        {
+          "name": "running-two-64",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-064"
+          }
+        },
+        {
+          "name": "running-two-65",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-065"
+          }
+        },
+        {
+          "name": "running-two-66",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-066"
+          }
+        },
+        {
+          "name": "running-two-67",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-067"
+          }
+        },
+        {
+          "name": "running-two-68",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-068"
+          }
+        },
+        {
+          "name": "running-two-69",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-069"
+          }
+        },
+        {
+          "name": "running-two-70",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-070"
+          }
+        },
+        {
+          "name": "running-two-71",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-071"
+          }
+        },
+        {
+          "name": "running-two-72",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-072"
+          }
+        },
+        {
+          "name": "running-two-73",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-073"
+          }
+        },
+        {
+          "name": "running-two-74",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-074"
+          }
+        },
+        {
+          "name": "running-two-75",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-075"
+          }
+        },
+        {
+          "name": "running-two-76",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-076"
+          }
+        },
+        {
+          "name": "running-two-77",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-077"
+          }
+        },
+        {
+          "name": "running-two-78",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-078"
+          }
+        },
+        {
+          "name": "running-two-79",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-079"
+          }
+        },
+        {
+          "name": "running-two-80",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-080"
+          }
+        },
+        {
+          "name": "running-two-81",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-081"
+          }
+        },
+        {
+          "name": "running-two-82",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-082"
+          }
+        },
+        {
+          "name": "running-two-83",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-083"
+          }
+        },
+        {
+          "name": "running-two-84",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-084"
+          }
+        },
+        {
+          "name": "running-two-85",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-085"
+          }
+        },
+        {
+          "name": "running-two-86",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-086"
+          }
+        },
+        {
+          "name": "running-two-87",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-087"
+          }
+        },
+        {
+          "name": "running-two-88",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-088"
+          }
+        },
+        {
+          "name": "running-two-89",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-089"
+          }
+        },
+        {
+          "name": "running-two-90",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-090"
+          }
+        },
+        {
+          "name": "running-two-91",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-091"
+          }
+        },
+        {
+          "name": "running-two-92",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-092"
+          }
+        },
+        {
+          "name": "running-two-93",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-093"
+          }
+        },
+        {
+          "name": "running-two-94",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-094"
+          }
+        },
+        {
+          "name": "running-two-95",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-095"
+          }
+        },
+        {
+          "name": "running-two-96",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-096"
+          }
+        },
+        {
+          "name": "running-two-97",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-097"
+          }
+        },
+        {
+          "name": "running-two-98",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-098"
+          }
+        },
+        {
+          "name": "running-two-99",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-099"
+          }
+        },
+        {
+          "name": "running-two-100",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-100"
+          }
+        },
+        {
+          "name": "running-two-101",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-101"
+          }
+        },
+        {
+          "name": "running-two-102",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-102"
+          }
+        },
+        {
+          "name": "running-two-103",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-103"
+          }
+        },
+        {
+          "name": "running-two-104",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-104"
+          }
+        },
+        {
+          "name": "running-two-105",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-105"
+          }
+        },
+        {
+          "name": "running-two-106",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-106"
+          }
+        },
+        {
+          "name": "running-two-107",
+          "waitBeforeMs": 100,
+          "comparison": "running_window_two",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "tick-107"
+          }
+        }
+      ]
+    },
+    {
+      "name": "table_surface",
+      "fixtureId": "table-present",
+      "itemIndexes": [
+        0
+      ],
+      "resetLifecycle": [
+        "stop_package",
+        "uninstall_package",
+        "reset_world",
+        "load_fixture",
+        "read_back_fixture_identity",
+        "install_receipt_bound_apk",
+        "launch_package",
+        "wait_for_receiver"
+      ],
+      "steps": [
+        {
+          "name": "select",
+          "waitBeforeMs": 0,
+          "comparison": "surface_select",
+          "request": {
+            "command": "select",
+            "item": {
+              "variantItemIndex": 0
+            },
+            "protocol_version": 1,
+            "request_id": "surface-table-001"
+          }
+        },
+        {
+          "name": "poll-2",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-002"
+          }
+        },
+        {
+          "name": "poll-3",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-003"
+          }
+        },
+        {
+          "name": "poll-4",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-004"
+          }
+        },
+        {
+          "name": "poll-5",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-005"
+          }
+        },
+        {
+          "name": "poll-6",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-006"
+          }
+        },
+        {
+          "name": "poll-7",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-007"
+          }
+        },
+        {
+          "name": "poll-8",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-008"
+          }
+        },
+        {
+          "name": "poll-9",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-009"
+          }
+        },
+        {
+          "name": "poll-10",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-010"
+          }
+        },
+        {
+          "name": "poll-11",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-011"
+          }
+        },
+        {
+          "name": "poll-12",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-012"
+          }
+        },
+        {
+          "name": "poll-13",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-013"
+          }
+        },
+        {
+          "name": "poll-14",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-014"
+          }
+        },
+        {
+          "name": "poll-15",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-015"
+          }
+        },
+        {
+          "name": "poll-16",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-016"
+          }
+        },
+        {
+          "name": "poll-17",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-017"
+          }
+        },
+        {
+          "name": "poll-18",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-018"
+          }
+        },
+        {
+          "name": "poll-19",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-019"
+          }
+        },
+        {
+          "name": "poll-20",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-020"
+          }
+        },
+        {
+          "name": "poll-21",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-021"
+          }
+        },
+        {
+          "name": "poll-22",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-022"
+          }
+        },
+        {
+          "name": "poll-23",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-023"
+          }
+        },
+        {
+          "name": "poll-24",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-024"
+          }
+        },
+        {
+          "name": "poll-25",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-025"
+          }
+        },
+        {
+          "name": "poll-26",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-026"
+          }
+        },
+        {
+          "name": "poll-27",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-027"
+          }
+        },
+        {
+          "name": "poll-28",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-028"
+          }
+        },
+        {
+          "name": "poll-29",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-029"
+          }
+        },
+        {
+          "name": "poll-30",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-030"
+          }
+        },
+        {
+          "name": "poll-31",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-031"
+          }
+        },
+        {
+          "name": "poll-32",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-032"
+          }
+        },
+        {
+          "name": "poll-33",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-033"
+          }
+        },
+        {
+          "name": "poll-34",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-034"
+          }
+        },
+        {
+          "name": "poll-35",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-035"
+          }
+        },
+        {
+          "name": "poll-36",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-036"
+          }
+        },
+        {
+          "name": "poll-37",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-037"
+          }
+        },
+        {
+          "name": "poll-38",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-038"
+          }
+        },
+        {
+          "name": "poll-39",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-039"
+          }
+        },
+        {
+          "name": "poll-40",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-040"
+          }
+        },
+        {
+          "name": "poll-41",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-041"
+          }
+        },
+        {
+          "name": "poll-42",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-042"
+          }
+        },
+        {
+          "name": "poll-43",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-043"
+          }
+        },
+        {
+          "name": "poll-44",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-044"
+          }
+        },
+        {
+          "name": "poll-45",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-045"
+          }
+        },
+        {
+          "name": "poll-46",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-046"
+          }
+        },
+        {
+          "name": "poll-47",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-047"
+          }
+        },
+        {
+          "name": "poll-48",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-048"
+          }
+        },
+        {
+          "name": "poll-49",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-049"
+          }
+        },
+        {
+          "name": "poll-50",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-050"
+          }
+        },
+        {
+          "name": "poll-51",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-051"
+          }
+        },
+        {
+          "name": "poll-52",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-052"
+          }
+        },
+        {
+          "name": "poll-53",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-053"
+          }
+        },
+        {
+          "name": "poll-54",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-054"
+          }
+        },
+        {
+          "name": "poll-55",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-055"
+          }
+        },
+        {
+          "name": "poll-56",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-056"
+          }
+        },
+        {
+          "name": "poll-57",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-057"
+          }
+        },
+        {
+          "name": "poll-58",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-058"
+          }
+        },
+        {
+          "name": "poll-59",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-059"
+          }
+        },
+        {
+          "name": "poll-60",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-060"
+          }
+        },
+        {
+          "name": "poll-61",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_table",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-table-061"
+          }
+        }
+      ]
+    },
+    {
+      "name": "floor_surface",
+      "fixtureId": "floor-only",
+      "itemIndexes": [
+        0
+      ],
+      "resetLifecycle": [
+        "stop_package",
+        "uninstall_package",
+        "reset_world",
+        "load_fixture",
+        "read_back_fixture_identity",
+        "install_receipt_bound_apk",
+        "launch_package",
+        "wait_for_receiver"
+      ],
+      "steps": [
+        {
+          "name": "select",
+          "waitBeforeMs": 0,
+          "comparison": "surface_select",
+          "request": {
+            "command": "select",
+            "item": {
+              "variantItemIndex": 0
+            },
+            "protocol_version": 1,
+            "request_id": "surface-floor-001"
+          }
+        },
+        {
+          "name": "poll-2",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-002"
+          }
+        },
+        {
+          "name": "poll-3",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-003"
+          }
+        },
+        {
+          "name": "poll-4",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-004"
+          }
+        },
+        {
+          "name": "poll-5",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-005"
+          }
+        },
+        {
+          "name": "poll-6",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-006"
+          }
+        },
+        {
+          "name": "poll-7",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-007"
+          }
+        },
+        {
+          "name": "poll-8",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-008"
+          }
+        },
+        {
+          "name": "poll-9",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-009"
+          }
+        },
+        {
+          "name": "poll-10",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-010"
+          }
+        },
+        {
+          "name": "poll-11",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-011"
+          }
+        },
+        {
+          "name": "poll-12",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-012"
+          }
+        },
+        {
+          "name": "poll-13",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-013"
+          }
+        },
+        {
+          "name": "poll-14",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-014"
+          }
+        },
+        {
+          "name": "poll-15",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-015"
+          }
+        },
+        {
+          "name": "poll-16",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-016"
+          }
+        },
+        {
+          "name": "poll-17",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-017"
+          }
+        },
+        {
+          "name": "poll-18",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-018"
+          }
+        },
+        {
+          "name": "poll-19",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-019"
+          }
+        },
+        {
+          "name": "poll-20",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-020"
+          }
+        },
+        {
+          "name": "poll-21",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-021"
+          }
+        },
+        {
+          "name": "poll-22",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-022"
+          }
+        },
+        {
+          "name": "poll-23",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-023"
+          }
+        },
+        {
+          "name": "poll-24",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-024"
+          }
+        },
+        {
+          "name": "poll-25",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-025"
+          }
+        },
+        {
+          "name": "poll-26",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-026"
+          }
+        },
+        {
+          "name": "poll-27",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-027"
+          }
+        },
+        {
+          "name": "poll-28",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-028"
+          }
+        },
+        {
+          "name": "poll-29",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-029"
+          }
+        },
+        {
+          "name": "poll-30",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-030"
+          }
+        },
+        {
+          "name": "poll-31",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-031"
+          }
+        },
+        {
+          "name": "poll-32",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-032"
+          }
+        },
+        {
+          "name": "poll-33",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-033"
+          }
+        },
+        {
+          "name": "poll-34",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-034"
+          }
+        },
+        {
+          "name": "poll-35",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-035"
+          }
+        },
+        {
+          "name": "poll-36",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-036"
+          }
+        },
+        {
+          "name": "poll-37",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-037"
+          }
+        },
+        {
+          "name": "poll-38",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-038"
+          }
+        },
+        {
+          "name": "poll-39",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-039"
+          }
+        },
+        {
+          "name": "poll-40",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-040"
+          }
+        },
+        {
+          "name": "poll-41",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-041"
+          }
+        },
+        {
+          "name": "poll-42",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-042"
+          }
+        },
+        {
+          "name": "poll-43",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-043"
+          }
+        },
+        {
+          "name": "poll-44",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-044"
+          }
+        },
+        {
+          "name": "poll-45",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-045"
+          }
+        },
+        {
+          "name": "poll-46",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-046"
+          }
+        },
+        {
+          "name": "poll-47",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-047"
+          }
+        },
+        {
+          "name": "poll-48",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-048"
+          }
+        },
+        {
+          "name": "poll-49",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-049"
+          }
+        },
+        {
+          "name": "poll-50",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-050"
+          }
+        },
+        {
+          "name": "poll-51",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-051"
+          }
+        },
+        {
+          "name": "poll-52",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-052"
+          }
+        },
+        {
+          "name": "poll-53",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-053"
+          }
+        },
+        {
+          "name": "poll-54",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-054"
+          }
+        },
+        {
+          "name": "poll-55",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-055"
+          }
+        },
+        {
+          "name": "poll-56",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-056"
+          }
+        },
+        {
+          "name": "poll-57",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-057"
+          }
+        },
+        {
+          "name": "poll-58",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-058"
+          }
+        },
+        {
+          "name": "poll-59",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-059"
+          }
+        },
+        {
+          "name": "poll-60",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-060"
+          }
+        },
+        {
+          "name": "poll-61",
+          "waitBeforeMs": 250,
+          "comparison": "surface_poll_floor",
+          "request": {
+            "command": "snapshot",
+            "protocol_version": 1,
+            "request_id": "surface-floor-061"
+          }
+        }
+      ]
+    }
+  ]
+}

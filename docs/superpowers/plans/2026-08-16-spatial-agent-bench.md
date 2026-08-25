@@ -8,6 +8,890 @@
 
 **Tech Stack:** Node.js 20/22 ESM, `node:test`, Zod 3, Claude Code 2.1.233 with Claude Max authentication, `@picoxr/pico-cli@0.4.2`, Spatial SDK 0.13.3, Gradle, and the landed digest-bound provenance primitives.
 
+> **Premeasurement amendment (2026-08-16):**
+> [the approved contract correction](../specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md)
+> supersedes this plan's rubric-v1 `state.round-trip`, `deliveryScore`, zero-MCP comparator,
+> runtime/behavior vocabulary, and Tasks 3–9 interfaces. Downstream executable surfaces use only
+> `createStructuralThresholdSchedule`, `runStructuralThresholdCohort`,
+> `--cohort structural-threshold`, `structural_threshold_met`, and
+> `structural_threshold_not_met`; there is no compatibility alias. No measured attempt used the
+> superseded corpus identity, and the original task text remains below as historical rationale.
+
+## Binding Task 3 replacement: supported-subset abstract interpreter v1
+
+This section replaces the historical Task 3 steps below. It also narrows the Task 7 and Task 8
+interfaces where analyzer identity and deterministic restoration are concerned. The binding design
+is the approved `task-3-parser-redesign.md` with SHA-256
+`fe5b6533683854e18623d1bd3668ad846e7d7ed7cd20e788e21ea2d5d59c0b28`.
+
+**Required ancestor:** `258ad3a9968d3a91991b513123e139e1cc60b608`
+
+**Claim boundary:** Kotlin 2.0.0 PSI supplies syntax to the frozen, incomplete
+`supported-subset-abstract-interpreter-v1`. A pass means only a conservative source witness under
+subset v1. Every passing source-rule reason starts `supported-subset-v1 witness:`. Unknown or
+ambiguous syntax, dispatch, type, callback, effect, alias, operator, or control flow makes the
+affected rule false. This remains structural-only evidence and returns the unchanged strict
+`ScoreResultV2`: analyzer identities do not add a result field, rubric point, behavioral score,
+runtime claim, or visual claim.
+
+### Binding Batch 2A follow-up: snapshot repair and minimum vocabulary
+
+Batch 2B stopped after its sanctioned RED, before any Java/domain edit or analyzer rebuild. The
+approved Batch 2A commit `5af6e162d253524b4cc0b06c7ca543eaaee5f024`, report SHA-256
+`058ebb753b878d3a6e1fe787208d3310691e31808646d0ea8994c1993be877a4`, and review SHA-256
+`b5fdd525468fc0a48637052b0c056c949055501d371bc8df0e6022e3a5a4e4db` remain exact historical
+evidence for the bytes they reviewed. This later subsection supersedes only the snapshot and
+closed-vocabulary freezes named below; it does not retroactively relabel Batch 2A or approve Batch
+2B.
+
+From exact `HEAD` `5af6e162d253524b4cc0b06c7ca543eaaee5f024`, first modify only this plan
+and `docs/superpowers/specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md` in one
+direct-child commit with subject:
+
+```text
+docs(bench): authorize subset-v1 follow-up repair
+```
+
+An independent reviewer must approve that exact 40-hex commit before an ignored follow-up brief is
+authored. The brief is then frozen by whole-file SHA-256 and independently reviewed to `APPROVED`
+before any implementation.
+
+The follow-up is limited to these corrections:
+
+- `PsiIndex` excludes anonymous declarations from both declaration insertion and declaration-owner
+  keys by requiring a real name identifier. Genuine duplicate declarations and overloads remain
+  fail-closed. Same-named locals under sibling anonymous lambdas still collide after the anonymous
+  owner is omitted and remain outside the supported subset.
+- `PsiIndex` recognizes an `if`/`while` condition through the PSI condition container only when the
+  enclosing expression's exact condition object is the candidate. This uses the no-new-import form
+  and does not broaden arbitrary grandchildren into condition witnesses.
+- The raw standard fixture removes only its dead duplicate `fun instance()` declaration and retains
+  the strong `val instance` property. The existing raw-oracle exports and persistent RED test are
+  preserved. No other checkpoint correction is pulled forward.
+- The closed abstract-type vocabulary adds exactly `immersion` and `modifier`; callback roles add
+  exactly `inline_block` and `remembered_factory`; invocation models add exactly
+  `immediate_inline`; effects add exactly `passthrough`. `passthrough` is a return-origin-only
+  marker, never execution, mutation, reachability, or behavioral evidence: a modeled row forwards
+  its receiver origin only when its non-null receiver and return abstract types are equal. It
+  forwards a callback-result origin only when `returnAbstractType` is `null` and exactly one
+  `immediate_inline` callback has one non-escaped, unambiguous result. A non-null type mismatch or a
+  missing, multiple, escaped, or ambiguous callback result remains unknown. `remembered_factory`
+  separately marks that callback-result origin retained and never qualifies it as a strong state
+  authority.
+- Default-import resolution is limited to exact domain rows for `kotlin.with`, `kotlin.apply`,
+  `kotlin.let`, `kotlin.runCatching`, `kotlin.repeat`; `kotlin.collections.List`,
+  `kotlin.collections.emptyList`, `kotlin.collections.toList`, `kotlin.collections.isEmpty`,
+  `kotlin.collections.isNotEmpty`, `kotlin.collections.forEach`, `kotlin.collections.filter`,
+  `kotlin.collections.maxByOrNull`, `kotlin.collections.firstOrNull`; and
+  `kotlin.ranges.until`/`kotlin.ranges.coerceAtLeast`. This is an exact name allowlist within only
+  the default-import packages `kotlin`, `kotlin.collections`, and `kotlin.ranges`, not wildcard or
+  general stdlib inference. A lexical/source declaration or explicit import/alias takes precedence;
+  shadowing, ambiguity, unknown receivers, unsupported overloads, and every other implicit name
+  remain false. `kotlin.math.*`, `kotlinx.*`, Compose, Android, and PICO symbols require explicit
+  imports. The follow-up brief must pin audited symbol authority for the four newly surfaced inline
+  callables plus `androidx.compose.runtime.remember`,
+  `com.pico.spatial.ui.foundation.dsl.Immersion`, `androidx.compose.ui.Modifier`, and
+  `androidx.compose.foundation.layout.fillMaxSize`. Schema-valid symbol rows themselves remain
+  Batch 2B data work.
+
+The new vocabulary must be byte-for-byte identical in all three production closed validators:
+`Rules.java`, `kotlin-analysis.mjs`, and `build-analyzer.mjs`, and the literal registry assertions in
+`test/agentbench-kotlin-analysis.mjs` must pin the same values. `domain-v1.json` has no serialized
+vocabulary registry, so the follow-up keeps its exact canonical bytes, schema, three clone-canary
+rows, and SHA-256 `6f2f241af489b70e8dfb036e82c8d33c9aa8b39dc2866f7c9f957c7b1304084a`.
+Batch 2B later adds schema-valid symbol rows and then legitimately changes the domain identity.
+
+The follow-up implementation commit may contain exactly:
+
+```text
+benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/PsiIndex.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Rules.java
+benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs
+test/agentbench-kotlin-analysis.mjs
+test/helpers/agentbench-fixture.mjs
+```
+
+The first five paths are modified and the previously untracked fixture helper is added. The ignored
+follow-up brief freezes the implementation subject
+`fix(bench): repair subset-v1 snapshot boundary`, exact entry/status gates, and every old-to-new
+artifact identity. Its GREEN is snapshot acceptance of the minimally amended raw fixture with
+`analysisStatus:"accepted"` and zero claims. The mandatory thirteen-claim test remains RED only
+because Batch 2B emitters do not yet exist, not because analysis is rejected. After two
+byte-identical clean builds and the complete follow-up gate, an independent commit-scoped
+`APPROVED` review is required before Batch 2B re-entry.
+
+Batch 2B thereafter treats `test/helpers/agentbench-fixture.mjs` as `M`, not `A`; its other
+ownership is unchanged. `test/agentbench-score.mjs` remains the authorized untracked RED evidence
+until Batch 2B adds it. The follow-up brief must restate the exact revised Batch 2B path/status gate
+rather than silently inheriting the obsolete fixture-`A` row.
+
+Protocol, subset, and domain versions remain 1. `analyzerName`, rejection codes, `Main.java`,
+`Protocol.java`, rule order, witness kinds, proof forms, accepted alternatives, clone-canary rows,
+limits, the three sanctioned raw-oracle false IDs, and every structural-only evidence ceiling
+remain unchanged. No Gradle, network, model, MCP, emulator, APK, device, visual, runtime,
+behavioral, compile-qualification, adversarial-completeness, or Task-3-completion claim belongs to
+the authority amendment or follow-up.
+
+The exact post-commit authority gate is:
+
+```bash
+set -euo pipefail
+FOLLOWUP_AUTHORITY_BASE='5af6e162d253524b4cc0b06c7ca543eaaee5f024'
+FOLLOWUP_AUTHORITY_SUBJECT='docs(bench): authorize subset-v1 follow-up repair'
+: "${TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA:?set reviewed authority commit SHA}"
+test "${#TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA}" -eq 40
+case "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA" in
+  *[!0-9a-f]*) exit 1 ;;
+esac
+git cat-file -e "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA^{commit}"
+test "$(git rev-parse HEAD)" = "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA"
+test "$(git rev-parse "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA^")" = "$FOLLOWUP_AUTHORITY_BASE"
+test "$(git rev-list --parents -n 1 "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA" | awk '{print NF}')" = 2
+test "$(git show -s --format=%s "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA")" = "$FOLLOWUP_AUTHORITY_SUBJECT"
+expected_followup_authority_paths='docs/superpowers/plans/2026-08-16-spatial-agent-bench.md
+docs/superpowers/specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md'
+test "$(git diff-tree --no-commit-id --name-only -r "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA" | LC_ALL=C sort)" = "$expected_followup_authority_paths"
+test "$(git diff-tree --no-commit-id --name-status -r "$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA" | cut -f1 | LC_ALL=C sort)" = 'M
+M'
+git diff --check "$FOLLOWUP_AUTHORITY_BASE..$TASK_3_BATCH_2A_FOLLOWUP_AUTHORITY_SHA"
+git diff --quiet
+git diff --cached --quiet
+expected_checkpoint_status='?? benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+?? benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+?? benchmarks/spatial-agent-bench/lib/score.mjs
+?? test/agentbench-fixture-compile.mjs
+?? test/agentbench-score.mjs
+?? test/helpers/agentbench-fixture.mjs
+?? test/helpers/agentbench-junit.mjs'
+test "$(git status --porcelain=v1 --untracked-files=all | LC_ALL=C sort)" = "$expected_checkpoint_status"
+expected_checkpoint_hashes='4b6caa9b5e6616876754177c5762fc13859127c5aa6a6710728d5a24ba0d2f00  benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+eca968dd4a03c43187539c372cf330839cb870f331cfd9e69ad14d97ca44e02a  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+aba2696c4d1d0d3657d96867683c848caac055510e83db52f58a726e35d67513  benchmarks/spatial-agent-bench/lib/score.mjs
+5e2e3a73cf5c0e4782f0fa2a47cb713a14619735187af18042f2d1f9417a1c32  test/agentbench-fixture-compile.mjs
+cc2d3b59135f1b8ca5fbb39efa1abb644955e010391b0faba417c5a7f7221776  test/agentbench-score.mjs
+e781117ec88f0dfba150f3d99fbe16ec35a25c52fbd3230c0e6736a3bc43828c  test/helpers/agentbench-fixture.mjs
+05426449e6401fc8bf6b1f899a8b1d7c13485f5e2492f99f31598e88c938a918  test/helpers/agentbench-junit.mjs'
+test "$(shasum -a 256 \
+  benchmarks/spatial-agent-bench/lib/rules-spatial.mjs \
+  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs \
+  benchmarks/spatial-agent-bench/lib/score.mjs \
+  test/agentbench-fixture-compile.mjs \
+  test/agentbench-score.mjs \
+  test/helpers/agentbench-fixture.mjs \
+  test/helpers/agentbench-junit.mjs)" = "$expected_checkpoint_hashes"
+npm run build
+node --test test/agentbench-source.mjs test/agentbench-contract.mjs
+git diff --quiet
+git diff --cached --quiet
+test "$(git status --porcelain=v1 --untracked-files=all | LC_ALL=C sort)" = "$expected_checkpoint_status"
+test "$(shasum -a 256 \
+  benchmarks/spatial-agent-bench/lib/rules-spatial.mjs \
+  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs \
+  benchmarks/spatial-agent-bench/lib/score.mjs \
+  test/agentbench-fixture-compile.mjs \
+  test/agentbench-score.mjs \
+  test/helpers/agentbench-fixture.mjs \
+  test/helpers/agentbench-junit.mjs)" = "$expected_checkpoint_hashes"
+```
+
+The ignored authority report is
+`.superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-batch-2a-followup-authority-report.md`;
+the independent reviewer records the exact commit, both committed document hashes, authority-report
+hash, and verdict in `task-3-batch-2a-followup-authority-review.md`. Only `APPROVED` releases brief
+authoring; neither the commit nor its document gate approves implementation.
+
+### Binding Batch 2A follow-up #2: complete subset-v1 schema and doctrine
+
+Follow-up #1 commit `ebae41fc13d1b5752d22646a1e706a271bc53f48`, report SHA-256
+`de8fd6b6d5f0bc1530490112401b3c00fc88e7f3afa143992bd9e74aff68820c`, and review SHA-256
+`346f611d0bfe02f6ae9d03b842c5e04fd3af19e56ca0337862aaea573046518b` remain approved
+historical evidence. Batch 2B stopped again before a Java/domain edit or rebuild because the frozen
+schema cannot truthfully encode the audited corpus. This subsection supersedes only the Batch
+2A/Batch 2B schema, vocabulary, doctrine, canary-discovery, and re-entry freezes named below.
+
+The prerequisite handoff SHA-256 is
+`da4013c1bb71c99222d5893c73eeda954000a2fad0adfdf96bdfd3eec6f8ccf4`; the independently
+audited prerequisite record SHA-256 is
+`d81343f63a5d30762b283fe3b46d64b23256e8587133d7569d289a62bd030a8d`. That record pins
+BOM-resolved Spatial SDK 0.13.3 arities and callback shapes, all 20 requirement rows and 50 exact
+positive tuples, the 100-case minimum under the unchanged 128-case ceiling, receipt-bound PSI
+probes, and the following paper witness result:
+
+```text
+paper maxima: [11,15,14,11,16,11,11,9,10,24,11,24,10,24,20,22] = 243
+hard caps:     [11,16,14,12,16,11,12,11,12,24,12,24,10,25,20,22] = 252
+```
+
+The cap sum leaves four references below `MAX_TOTAL_WITNESSES=256`; every cap is below
+`MAX_WITNESSES_PER_CLAIM=32`, and the catalog union cannot exceed the 252-reference sum, so
+`MAX_RESPONSE_NODES=256`, `Main.java`, and all public evidence ceilings remain unchanged. Public
+witnesses are minimal decisive PSI boundaries, never execution traces. Over-cap emitters omit only
+the affected claim before `Analysis` construction; they never truncate, synthesize evidence, or
+degrade the whole response to `internal_uncertainty`.
+
+The exact 0.13.3 UI audit is binding:
+
+| Callable | Dense physical declaration |
+|---|---|
+| `PicoTheme` | 0 colorScheme D, 1 typography D, 2 content R/callback |
+| `Text(String,...)` | 18 positions: 0 text R, 1-17 D; optional callback at 16 |
+| `Text(AnnotatedString,...)` | 19 positions: 0 text R, 1-18 D; inlineContent 16, optional callback 17 |
+| `Button` | 0 onClick R/callback, 1-10 D, 11 content R/callback with `row_scope` receiver |
+| `SpatialView` | 0 modifier D, 1 update D/callback, 2 attachments D/callback, 3 initial R/callback |
+| `registerSystem` / `unregisterSystem` | zero value arguments and one explicit type argument bounded by `ecs_system` |
+| `DefaultWindowContainer` | 0 content R; callback receiver `spatial_container_scope` |
+| foundation `Application.launch` | 0 block R; callback receiver `spatial_app_scope` |
+| `Stage` | 0 id R, 1-4 D, 5 content R; callback receiver `spatial_container_scope` |
+| `Immersion` | public top-level factory: 0 default R, 1 min D, 2 max D; internal constructor excluded |
+
+`StageScope`, `WindowContainerScope`, and `SpatialContainerScope` use their exact
+`com.pico.spatial.ui.platform.containers` FQNs and map to `spatial_container_scope`; inherited
+`SpatialContainerScope.bundle` keeps its declaring FQN. Optional `Text.onTextLayout` and Button
+leading/trailing callbacks may be defaulted `opaque` positions only when omitted. Supplying an
+unmodeled lambda/callable there makes the affected call unsupported rather than silently ignored.
+The audited source artifacts are exactly the BOM `8aa1f2e5...`, UI design `60a3afc7...`, UI
+foundation `a0bd3d9f...`, UI platform `ecdb5db5...`, core `de171b86...`, and sense
+`89d09216...` rows recorded in the prerequisite audit. Spatial SDK 6.0 is not authority.
+
+From exact `HEAD` `ebae41fc13d1b5752d22646a1e706a271bc53f48`, modify only this plan and
+`docs/superpowers/specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md` in one
+direct-child commit with subject:
+
+```text
+docs(bench): authorize subset-v1 schema completion
+```
+
+An independent reviewer must approve that exact 40-hex commit before the ignored
+`task-3-batch-2a-followup2-brief.md` is authored. Freeze the brief by whole-file SHA-256 and obtain
+a fresh independent literal `APPROVED` review before RED or implementation. The implementation
+subject is `fix(bench): complete subset-v1 semantic schema`. Neither follow-up #1 subject nor either
+reserved Batch 2 subject may be reused.
+
+The follow-up implements all and only these thirteen generic mechanisms:
+
+- **H-A — physical arguments.** Add abstract type `opaque` and add `hasDefault` to
+  `ArgumentSpec` atomically. Every physical declared position remains dense. `opaque` is legal only
+  as `ArgumentSpec.abstractType`; it is never a receiver, return, callback component, type argument,
+  conformance target, proof origin, or member-resolution type. Function syntax supplied to an
+  opaque position is unsupported.
+- **H-B — callback shape.** Add `CallbackParameterSpec(position,abstractType)` and extend
+  `CallbackSpec` with receiver abstract type, receiver source, and dense ordered parameters.
+  Receiver source is only null, `call_receiver`, or `argument:<n>`. The field-specific sentinel
+  `element_of_receiver` is legal only as a callback-parameter type and is not an abstract type.
+  Null type+source means no receiver; nonnull type+null source is an SDK-created receiver;
+  call/argument sources propagate an origin only when it conforms. Concrete callback parameters
+  are fresh typed callback origins by default. The sole concrete parameter of an exact
+  `immediate_inline` callback with no callback receiver inherits a compatible call-receiver origin
+  (`let`); `element_of_receiver` alone derives collection element type+origin through D16. No other
+  callback-parameter origin propagation is inferred.
+- **H-C — explicit type arguments.** Add ordered `SymbolSpec.typeArguments`. Entries are required
+  explicit source type-argument bounds, not declaration generic arity; duplicates are permitted,
+  `opaque` is forbidden, and zero/missing/extra TYPE_ARGUMENT edges do not match.
+- **H-D — receiver category.** Add receiver kind `none | instance | declaring_type |
+  object_instance`; a null instance type is invalid, while declaring-type/object qualifiers require
+  the exact audited type row. Do not overload a null receiver type to mean static or singleton.
+- **H-E — conformance.** Add `conformsTo` only to type rows. Values are sorted, unique, nonopaque,
+  nonself, acyclic, and used only for bounded resolution/overload compatibility. Multiple compatible
+  paths remain ambiguous.
+- **H-F — return origin.** Add only `element_of_receiver` and `class_of_argument` return sources,
+  mutually exclusive with `passthrough`. A nonnull source requires `returnAbstractType:null` and one
+  unambiguous source. `element_of_receiver` derives dynamic type and origin from the receiver's
+  resolved collection abstract type through D16's closed producer-to-element map.
+  `class_of_argument` requires exactly one mapped `java_class`
+  argument, derives the dynamic type from that class identity, and derives the value origin from the
+  exact receiver-store lookup. Null return source keeps
+  only the reviewed equal-receiver and single-immediate-callback `passthrough` cases.
+- **H-G — missing types.** Append, in frozen order, `opaque`, `transform`, `vector2`, `throwable`,
+  `disposable_effect_scope`, `composition_local`, `spatial_container_scope`, `kclass`, `row_scope`,
+  `attachment_panel_builder`, `spatial_view_attachments`, and `anchor_update`. There is no general
+  array type:
+  `plane_anchor_collection` is explicitly narrowed to the exact SDK `Array<PlaneAnchor>` producer
+  and immutable List projection, with exact producing-row FQN/signature controlling resolution.
+  The exact default-import allowlist gains only `kotlin.Throwable` here.
+- **H-H — property kind.** Add `top_level_property` to every closed symbol-kind mirror. Choose the
+  handoff's atomic branch for the exact Kotlin built-in `::class.java` chain: one class-token
+  projection preserves referenced-class identity, so `extension_property`, a generic extension row,
+  another return-source form, and a `kotlin.jvm` default-import expansion are all deliberately absent.
+- **H-I — variadics.** Add `ArgumentSpec.variadic`; at most one `ArgumentSpec` per `SymbolSpec`
+  may be variadic. It is noncallback, nondefaulted, and the highest physical position not referenced
+  by a callback. It binds zero or more remaining eligible arguments, so an empty variadic sequence
+  needs no default.
+- **H-J — operator form.** Add nullable `operatorForm` from the closed set
+  `index_get,index_set,plus_assign,plus,iterator,contains,invoke,compare_to,equals`. Operator/infix
+  syntax outside D12/D19's closed primitive, null, and resolved enum-entry identity built-ins
+  resolves only through an exact audited row; no naming-convention fallback is allowed. `invoke`
+  is valid only for the bounded immutable function-value origin defined by D6.
+- **H-K — closed members.** Add `closedMemberSet` only to type rows. True means the exact pinned SDK
+  inventory contains every public physical member name and overload, including inherited/delegated
+  members. Only such a row proves absence for `source_extension_if_no_sdk_member`; sparse
+  needed-row inventories must remain false.
+- **H-L — SAM identity.** Add nullable `ArgumentSpec.samInterfaceFqn`. A nonnull exact FQN applies
+  only to a callable argument with a matching CallbackSpec and grants no execution or effect fact
+  by itself. The audited plane subscription uses exact
+  `com.pico.spatial.sense.base.AnchorUpdateSubscriber`; callback parameter 0 is exact
+  `AnchorUpdate<PlaneAnchor>` normalized only to `anchor_update`. Append callback role
+  `anchor_update` with invocation model `possible_path` only for that exact subscription symbol;
+  role alone grants no ownership/effect fact, and `spatial_update` remains exclusive to the exact
+  `SpatialView.update` symbol. Permanent cross-role negative microvectors enforce the separation.
+- **H-M — witness protocol.** Mirror the exact 16-entry cap vector above in Java validation/claim
+  construction, the JavaScript bridge, and tests. Emitter/claim assembly omits an oversized
+  affected claim before `Analysis` construction. Java final validation and the JavaScript bridge
+  reject an impossible over-cap object; they never rewrite/drop wire claims or orphan catalog
+  nodes.
+
+Every closed field set, vocabulary sequence, validation rule, and cap is mirrored exactly in
+`Rules.java`, `build-analyzer.mjs`, `kotlin-analysis.mjs`, and test-owned literals. Production must
+not accept a value that either verifier rejects, or vice versa.
+
+The ignored brief freezes the exact closed JSON field sets, Java record signatures, nullability and
+cross-field validation matrices, vocabulary order, one expected new
+`Rules$CallbackParameterSpec.class` inventory entry, doctrine RED/GREEN tests, and the complete
+canonical `FULL_BATCH2B_SYMBOLS` row inventory before implementation. That inventory includes every
+closure row needed by any `closedMemberSet:true` type. A receipt-bound temporary classpath resource
+must make the real Java `Domain` loader accept the candidate; shape-only JavaScript tests are
+insufficient. Any row not covered by H-A-H-M and the prerequisite audit is a stop.
+
+The tracked `domain-v1.json` change in follow-up #2 is a neutral schema migration only. Preserve
+exactly the three logical clone-canary rows and add only mandatory new fields with neutral values.
+No corpus symbol/effect row lands. Before migration, replace structural clone discovery with exact
+lookup of `{fqn:"com.pico.spatial.core.ecs.Component.clone",signature:"clone(): Component"}` and
+retain every existing positive/negative canary. Batch 2B later copies the already reviewed
+`FULL_BATCH2B_SYMBOLS` inventory as one exact data transition; it may not invent or alter a row.
+The permanent analyzer test enforces exactly two phase states: the follow-up #2 domain contains the
+neutral migrated three-canary list, or the later Batch 2B domain contains byte-exact
+`FULL_BATCH2B_SYMBOLS`. No third, partial, or intermediate symbol list is accepted, and both the
+candidate and live transition are validated through the real Java `Domain` loader.
+
+The binding D1-D26 doctrine table appears only in the premeasurement amendment below. In
+particular, its D6 paragraph is the sole normative replacement for
+`task-3-parser-redesign.md:152-153`; this plan points to that paragraph instead of restating the
+lambda rule. The already SHA-reviewed parser redesign and Batch 2 brief remain unmodified
+historical files.
+
+The exact follow-up #2 implementation commit contains six modified paths only:
+
+```text
+benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs
+benchmarks/spatial-agent-bench/analyzer/domain-v1.json
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/AbstractInterpreter.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Rules.java
+benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs
+test/agentbench-kotlin-analysis.mjs
+```
+
+`PsiIndex.java`, tracked `test/helpers/agentbench-fixture.mjs`, untracked
+`test/agentbench-score.mjs`, `Main.java`, and `Protocol.java` remain byte-identical. Follow-up #2
+must capture permanent schema/doctrine RED first, implement the generic mechanisms without the
+sixteen Batch 2B emitters, clean-build-twice, run final verify and the complete analyzer/source/
+contract/containment gates, and re-pin every old-to-new source, domain, JAR, receipt, classpath,
+JAR-entry, class-reference, import, and artifact identity from measured outputs. New record classes
+may change entry/reference inventories; no count or hash may be predicted.
+
+Its GREEN requires `analysisStatus:"accepted"` and `rejectionCode:null` for the corrected checkpoint.
+It does not predict an empty claim list: D2 may expose the preserved clone canary. The persistent
+thirteen-claim oracle remains RED only at exact claim-list equality because Batch 2B emitters are
+missing, never because of `ambiguous_index`, `internal_uncertainty`, or another rejection. Record
+the actual ordered claim list only after rebuilding and require that at least one of the thirteen
+expected claims is still missing. The ignored report is `task-3-batch-2a-followup2-report.md`; the
+independent commit review is `task-3-batch-2a-followup2-review.md`. Only a commit-scoped literal
+`APPROVED` releases Batch 2B.
+
+Batch 2B then re-enters from that exact approved commit with the same six untracked checkpoints,
+the tracked fixture clean, the follow-up #2 artifact verified, and the accepted/missing-emitter RED
+measured. Its six later paths remain domain/AbstractInterpreter/Rules/fixture `M` and score/corpus
+helper `A`. It may add only the brief-frozen row inventory plus emitters, fixture transformations,
+corpus, and score tests; it cannot change the follow-up #2 schema, doctrine, caps, canary key,
+bridge/build validators, or PsiIndex/Main/Protocol. Its reserved subject
+`feat(bench): bind subset-v1 semantic kernel` remains Batch 2B-only.
+
+Protocol, subset, and domain versions remain 1. The analyzer name, response/rejection schema, rule/
+proof/alternative/witness registries, three sanctioned oracle defects, exact three-ID false vector,
+and structural-only evidence ceilings remain frozen. The benchmark stays on Spatial SDK 0.13.3;
+SDK 6.0 and 0.13.3-vs-6.0 comparison are non-goals.
+
+The exact post-commit authority gate is:
+
+```bash
+set -euo pipefail
+BASE='ebae41fc13d1b5752d22646a1e706a271bc53f48'
+SUBJECT='docs(bench): authorize subset-v1 schema completion'
+BRANCH='spatial-agent-bench-2026-08-16'
+: "${TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA:?set reviewed authority commit SHA}"
+test "${#TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA}" -eq 40
+case "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA" in *[!0-9a-f]*) exit 1 ;; esac
+git cat-file -e "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA^{commit}"
+test "$(git rev-parse HEAD)" = "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA"
+test "$(git branch --show-current)" = "$BRANCH"
+test "$(git rev-parse "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA^")" = "$BASE"
+test "$(git rev-list --parents -n 1 "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA" | awk '{print NF}')" = 2
+test "$(git show -s --format=%s "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA")" = "$SUBJECT"
+expected_paths='docs/superpowers/plans/2026-08-16-spatial-agent-bench.md
+docs/superpowers/specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md'
+test "$(git diff-tree --no-commit-id --name-only -r "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA" | LC_ALL=C sort)" = "$expected_paths"
+test "$(git diff-tree --no-commit-id --name-status -r "$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA" | cut -f1 | LC_ALL=C sort)" = 'M
+M'
+git diff --check "$BASE..$TASK_3_BATCH_2A_FOLLOWUP2_AUTHORITY_SHA"
+git diff --quiet
+git diff --cached --quiet
+expected_status='?? benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+?? benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+?? benchmarks/spatial-agent-bench/lib/score.mjs
+?? test/agentbench-fixture-compile.mjs
+?? test/agentbench-score.mjs
+?? test/helpers/agentbench-junit.mjs'
+test "$(git status --porcelain=v1 --untracked-files=all | LC_ALL=C sort)" = "$expected_status"
+expected_frozen_hashes='9bc648f8ce6a4d6424c00d5528693f6b040c58dab157b54e07e438993be5d09c  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/PsiIndex.java
+d08363ed2bd49d03adc1459a1fab5af88ddd13ad637e753cddc1eb7eaca1862e  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Main.java
+55adda83933f1c17a366689f5e311ef8f596a157f38ea33b1c8cd882e2bf1299  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Protocol.java
+eac10ae8a3867d0c7d26b4d923d05d0477e80582e8fb5e4ddd1a96e14e7cfcbf  test/helpers/agentbench-fixture.mjs
+4b6caa9b5e6616876754177c5762fc13859127c5aa6a6710728d5a24ba0d2f00  benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+eca968dd4a03c43187539c372cf330839cb870f331cfd9e69ad14d97ca44e02a  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+aba2696c4d1d0d3657d96867683c848caac055510e83db52f58a726e35d67513  benchmarks/spatial-agent-bench/lib/score.mjs
+5e2e3a73cf5c0e4782f0fa2a47cb713a14619735187af18042f2d1f9417a1c32  test/agentbench-fixture-compile.mjs
+07ebad0482ca7a72853a35ad6bf111ff3db25665c7a55501f6d0f2faf1224724  test/agentbench-score.mjs
+05426449e6401fc8bf6b1f899a8b1d7c13485f5e2492f99f31598e88c938a918  test/helpers/agentbench-junit.mjs'
+test "$(shasum -a 256 \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/PsiIndex.java \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Main.java \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Protocol.java \
+  test/helpers/agentbench-fixture.mjs benchmarks/spatial-agent-bench/lib/rules-spatial.mjs \
+  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs benchmarks/spatial-agent-bench/lib/score.mjs \
+  test/agentbench-fixture-compile.mjs test/agentbench-score.mjs test/helpers/agentbench-junit.mjs)" = "$expected_frozen_hashes"
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/handoff-2026-08-17-followup2.md | awk '{print $1}')" = 'da4013c1bb71c99222d5893c73eeda954000a2fad0adfdf96bdfd3eec6f8ccf4'
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-batch-2a-followup2-prerequisite-audit.md | awk '{print $1}')" = 'd81343f63a5d30762b283fe3b46d64b23256e8587133d7569d289a62bd030a8d'
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-parser-redesign.md | awk '{print $1}')" = 'fe5b6533683854e18623d1bd3668ad846e7d7ed7cd20e788e21ea2d5d59c0b28'
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-batch-2-brief.md | awk '{print $1}')" = '9a2b7ecef05051a5d29658f392764e93fa2516f201b98dd19023e39544aaf35d'
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-batch-2a-followup-report.md | awk '{print $1}')" = 'de8fd6b6d5f0bc1530490112401b3c00fc88e7f3afa143992bd9e74aff68820c'
+test "$(shasum -a 256 .superpowers/sdd/2026-08-16-spatial-agent-bench/task-3-batch-2a-followup-review.md | awk '{print $1}')" = '346f611d0bfe02f6ae9d03b842c5e04fd3af19e56ca0337862aaea573046518b'
+test "$(shasum -a 256 benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/analyzer-v1.jar | awk '{print $1}')" = '64213254903e31c63b7bae8db60520d7b394a43cfa24cfa784f8f83b9201edf1'
+test "$(shasum -a 256 benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/analyzer-build-receipt-v1.json | awk '{print $1}')" = '8790762c7dda7e2c02398c0a83000e3bfcd358926a53b3ad33d5298a1494d597'
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs verify
+npm run build
+node --test test/agentbench-source.mjs test/agentbench-contract.mjs
+git diff --quiet
+git diff --cached --quiet
+test "$(git status --porcelain=v1 --untracked-files=all | LC_ALL=C sort)" = "$expected_status"
+test "$(shasum -a 256 \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/PsiIndex.java \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Main.java \
+  benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Protocol.java \
+  test/helpers/agentbench-fixture.mjs benchmarks/spatial-agent-bench/lib/rules-spatial.mjs \
+  benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs benchmarks/spatial-agent-bench/lib/score.mjs \
+  test/agentbench-fixture-compile.mjs test/agentbench-score.mjs test/helpers/agentbench-junit.mjs)" = "$expected_frozen_hashes"
+```
+
+The ignored authority report is `task-3-batch-2a-followup2-authority-report.md`; the independent
+reviewer records the exact authority commit, sole parent, subject, both committed document hashes,
+authority-report hash, handoff/audit hashes, parser-redesign/Batch-2-brief hashes, prior follow-up
+report/review hashes, score/fixture hashes, fresh gate output, and literal
+`APPROVED` or `CHANGES REQUIRED` in `task-3-batch-2a-followup2-authority-review.md`. Only
+`APPROVED` releases ignored brief authoring; neither this authority commit nor its review approves
+implementation, Batch 2B, compilation, runtime, behavior, visuals, devices, network/model/MCP work,
+or Task 3 completion.
+
+### Binding Batch 2A follow-up #3: domain-phase guard repair
+
+Follow-up #2 commit `95f3ec569798f3375bcca6032ac651e75e4148a2`, report SHA-256
+`b3c73620805c981b881a4ea92c06a723ebacf9a14a450f32d518029c4c6311ac`, and review SHA-256
+`74f40842353fcd1fff9ba40980256f2a8180133e5fd01f3bb074566e2960d6a1` remain approved historical
+evidence. This subsection supersedes nothing in the schema, vocabulary, doctrine, or Batch 2B scope.
+It authorizes one narrow repair to a Batch 2A-frozen protocol test, before Batch 2B begins, and
+nothing else.
+
+**The defect.** `test/agentbench-kotlin-analysis.mjs:30` pins `FOLLOWUP_DOMAIN_SHA256` =
+`6f2f241af489b70e8dfb036e82c8d33c9aa8b39dc2866f7c9f957c7b1304084a`, the tracked `domain-v1.json`
+digest at `5af6e16` only. That file has held exactly three values across its whole history —
+`db21fb4c70340c1d30ebe643a1503c5049c4dd9fdcfc5df3091bd1feafc9b836` at `54c1298`, the pinned value at
+`5af6e16`, and `c42020580ed449a669f5c418d8aae4244b441b2651397639c2eefb64fe965547` at `95f3ec5`. The
+constant's two readers, at `:5944` and `:6121`, are therefore dead at HEAD and **permanently** dead:
+restoring the `5af6e16` rows cannot revive them, because those rows lack `closedMemberSet`,
+`conformsTo`, `operatorForm`, `receiverKind`, `returnSource` and `typeArguments` and would fail the
+phase assertions at `:5801-5802`, `:5897-5898` and `:5941-5943` as well as `Rules.SymbolSpec`
+construction. No state exists in which the suite passes and either guard fires.
+
+**Why it must be repaired before Batch 2B, not during it.** The material loss is at `:6122-6123`.
+Its enclosing test asserts only `analysisStatus === "accepted"` and `rejectionCode === null`, so
+with the guard dead **nothing constrains `nodes` or `claims` on the uncorrected checkpoint**. A
+premature, synthesized, or fixture-matched emitter would produce claims and that test would still
+pass — during exactly the window in which Batch 2B writes sixteen emitters. Stop clause 7 names
+"protocol test" and forbids a same-commit handoff plus kernel/fixture implementation because it
+defeats independent review, and the file is outside Batch 2B's six owned paths, so the repair takes
+the two-commit authorize-then-fix shape used by `ebaf849`/`ebae41f` and `379a563`/`95f3ec5`.
+
+**Authorized scope: two commits.** From sole-parent base `95f3ec569798f3375bcca6032ac651e75e4148a2`,
+one insert-only two-path `M/M` authority commit with exact subject
+`docs(bench): authorize domain phase guard repair` modifies only this plan and the premeasurement
+amendment. Its independently approved successor is one single-path commit with exact subject
+`fix(bench): repair subset-v1 domain phase guards`, whose sole parent is that authority commit and
+whose only path is `test/agentbench-kotlin-analysis.mjs`.
+
+**The repair is exactly six hunks. All coordinates below are pre-edit line numbers in the file as it
+stands at `95f3ec5`; applying the hunks shifts subsequent lines, so each hunk is located by the
+pre-edit coordinate and its quoted content, not by any post-edit number.**
+
+1. Insert a lazy `liveDomainPhase()` discriminator after `:102`. It reads the tracked domain and
+   returns `"migrated"` or `"full"` by comparing canonical `symbols` against the two frozen phases,
+   throwing otherwise. It is a function, never a module-load initializer: an import-time read or
+   throw would convert targeted failures into an import failure of all 37 tests.
+2. Delete `:30`, which is unreferenced once hunks 4 and 6 land.
+3. Replace `:5811` with a two-sided assertion — incompleteness in the migrated phase, the exact
+   thirteen-of-sixteen vector in the FULL phase. A one-sided guard would leave the FULL phase with no
+   completeness check at all.
+4. Delete `:5944-5947` entirely. Its body is subsumed by `:5941-5943`, which already pins
+   `domain.symbols` to exactly one frozen phase in both phases; re-keying it would make the guard
+   condition and the body the same proposition, since `:102` aliases `COMPONENT_CANARY_SYMBOLS` to
+   `MIGRATED_CANARY_SYMBOLS`.
+5. Delete `:6117`, unreferenced once hunk 6 lands.
+6. Replace `:6121-6124` — the guard **and its closing brace** — with a two-sided assertion on the
+   exact claim vector: `["ecs.component-clone"]` in the migrated phase, the thirteen-of-sixteen
+   vector in the FULL phase. The original `claims === []` body is wrong in both phases today,
+   because the checkpoint's single `Component` subclass already yields one clone claim.
+
+No other line of that file may be added, removed, or reordered. Every other phase-dependent
+assertion was swept and explicitly decided as correct in both phases, including the ten
+`nodes`/`claims` empty pairs, `assertCloneResponse` and its nine call sites, `assertRejectedEmpty`
+and its three, and `assertAcceptedEmpty` and its two.
+
+**Constraint carried into Batch 2B.** `assertAcceptedEmpty`'s two call sites remain correct only
+because their sources are written outside `/src/main/` and `isProductionPath` gates on that prefix.
+Every one of Batch 2B's sixteen emitters must therefore honour the production-path gate that
+doctrine item D4 already mandates; an emitter claiming outside `/src/main/` would break them.
+
+**Entry-drift disposition.** The Batch 2B precondition requires the reviewed Batch 2A commit as
+parent, empty tracked/staged diffs, and the same seven untracked checkpoint rows and hashes. Empty
+diffs still hold. The parent is now `95f3ec5` after three approved cycles. The untracked set is six,
+not seven, because approved follow-up #1 `ebae41f` **added** `test/helpers/agentbench-fixture.mjs` to
+git. Five of the seven checkpoint hashes still hold byte-for-byte; the fixture moved for that reason,
+and `test/agentbench-score.mjs` moved for a different one — it was never committed on any ref and its
+current bytes are Batch 2B's own in-flight RED oracle. The Batch 1 artifact identities have advanced
+across the same approved cycles, with the JDK-tree digest unchanged since Batch 1.
+
+**Gate.** The repair changes no analyzer source and no domain row, so the published artifact
+identities must be unchanged after it and the full analyzer suite must pass with the tracked domain
+still at `c42020580ed449a669f5c418d8aae4244b441b2651397639c2eefb64fe965547`, proving the repaired
+branches execute and hold in the migrated phase. An ignored report and an independent commit-scoped
+review record the result; only a literal approving verdict releases Batch 2B.
+
+### Authorized Task 3 files and generated locators
+
+Retain and replace only these seven checkpoint files:
+
+```text
+benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+benchmarks/spatial-agent-bench/lib/score.mjs
+test/agentbench-fixture-compile.mjs
+test/agentbench-score.mjs
+test/helpers/agentbench-fixture.mjs
+test/helpers/agentbench-junit.mjs
+```
+
+Add only:
+
+```text
+benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs
+benchmarks/spatial-agent-bench/analyzer/.gitignore
+benchmarks/spatial-agent-bench/analyzer/domain-v1.json
+benchmarks/spatial-agent-bench/analyzer/dependencies-v1.json
+benchmarks/spatial-agent-bench/analyzer/toolchain-v1.json
+benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Main.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Protocol.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/PsiIndex.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/AbstractInterpreter.java
+benchmarks/spatial-agent-bench/analyzer/src/main/java/com/agentbench/analyzer/Rules.java
+test/agentbench-kotlin-analysis.mjs
+test/helpers/agentbench-analyzer-corpus.mjs
+test/helpers/agentbench-gradle-cache.mjs
+test/fixtures/agentbench/fake-analyzer.mjs
+test/fixtures/agentbench/fixture-gradle-cache-v1.json
+```
+
+The analyzer-local `.gitignore` must ignore exactly the generated
+`benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/` tree—including `analyzer-v1.jar`,
+`analyzer-build-receipt-v1.json`, numbered runtime JARs `01` through `07`, `run-cwd/`, `run-home/`,
+and `run-tmp/`—and
+`benchmarks/spatial-agent-bench/analyzer/.artifacts/fixture-gradle-seed-v1/`. These artifacts and
+receipts are never staged and must remain excluded from npm. Task 3 does not modify `source.mjs`,
+`contract.mjs`, corpus inputs, `appskeleton/`, package/CI/root-dependency files, private reports, or
+the Windows lane.
+
+### Frozen analysis, artifact, and fixture contracts
+
+- The bridge includes every selected `kind:"kotlin"` `.kt` and `.kts` in one bounded sorted
+  request and `kotlinInputSetSha256`. The sidecar validates the entire receipt set and digest before
+  PSI creation. Any `.kts`, malformed `.kt`, incomplete or ambiguous whole-program index/import,
+  exceeded limit, or internal uncertainty rejects the whole analysis with no nodes or claims. All
+  sixteen source rules, including both mixed rules, are then false. Protocol/artifact/receipt/
+  digest/launch faults throw; partial scoring is forbidden.
+- `selectedInputSetSha256` separately covers all selected Kotlin, Gradle/catalog, and manifest
+  bytes. It is checked before analysis, immediately before assembly, immediately after assembly,
+  and after JUnit. It is not a complete Gradle-input identity.
+- `build-analyzer.mjs` uses a content-pinned Node process and absolute pinned JBR `javac`/`jar`; it
+  invokes no Gradle and resolves no dependency. The current Darwin entry is launched through
+  `/usr/bin/env -i` with exactly `LANG=C`, `LC_ALL=C`, `TZ=UTC`, and
+  `__CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0`, rejects Node/Java preload options, and confines Java tool
+  properties with receipt-bound `-J-Duser.home=$BUILD_HOME` and
+  `-J-Djava.io.tmpdir=$BUILD_TMP` arguments.
+- Two clean builds in distinct roots must produce an identical deterministic thin JAR containing
+  only analyzer-owned classes and tracked `domain-v1.json`. Runtime classpath order is that JAR,
+  followed by the byte/hash-pinned Kotlin compiler embeddable 2.0.0, stdlib 2.0.0, script runtime
+  2.0.0, reflect 1.6.10, daemon embeddable 2.0.0, trove4j 1.0.20200330, and annotations 13.0
+  JARs. The self-hashed receipt binds all analyzer source/config/build/bridge bytes, ordered
+  classpath, complete allowed JDK tree, artifact, versions, exact launch, and scrubbed build/runtime
+  environments. Verification precedes every scoring spawn and cache lookup.
+- The scorer remains synchronous. `kotlin-analysis.mjs` uses one module-private `spawnSync` seam,
+  direct JVM only, an exact eight-entry classpath, absolute receipt-supplied `java`, no shell, a
+  canonical empty cwd, runner-owned home/tmp, explicit runtime `-Duser.home`/`-Djava.io.tmpdir`,
+  and a scrubbed no-`PATH`/no-proxy/no-tool-options child environment. Missing or changed source,
+  JDK, classpath, domain, bridge, artifact, receipt, cwd, environment, or launch identity fails.
+- `POSITIVE_SUBSET_V1_CASES` has at least two independently named compile-valid examples for every
+  accepted form. Each row has exact source hashes and exactly one of one to eight complete 0.13.3
+  compile aggregates. A bijection proves full coverage with no orphaned source. Every aggregate
+  runs a fresh offline `:app:testDebugUnitTest` pure compile-smoke test and all four selected-input
+  digest checkpoints; PSI-clean examples alone are insufficient.
+- The fixture exports `RULE_ATTACKS`, each with `expectedFalseRuleIds`. Fifteen attacks are
+  exact-one. The weak-getter authority-origin attack has exactly
+  `state.single-source`, `state.shared-read-write`, and `state.reopen-wiring` false and score 13.
+  A top-level constructed strong `val` remains positive. The equivalent fixture scores 16 before
+  its reachable callback attack flips only `state.reopen-wiring`. The uncorrected checkpoint RED
+  vector is exactly `plane.retry-readiness`, `state.shared-read-write`, and
+  `state.reopen-wiring` false, all other rules true, and score 13.
+
+The current `toolchain-v1.json` Darwin row pins Node at `/usr/local/bin/node`, version `v22.14.0`,
+220,243,216 bytes, SHA-256
+`c583851fc85e4618b2374cda13399d59d373ad7cebfc4b55160820b88dcce67b`. The seven ordered
+`dependencies-v1.json` rows are:
+
+| Order and dependency | Bytes | SHA-256 |
+|---|---:|---|
+| `01-kotlin-compiler-embeddable-2.0.0.jar` | 57,192,195 | `eb8ae09df38e212eec3965cafa97ab08112773fe2e870ebeb6131b8f69bfb92e` |
+| `02-kotlin-stdlib-2.0.0.jar` | 1,729,731 | `240938c4aab8e73e888703e3e7d3f87383ffe5bd536d6d5e3c100d4cd0379fcf` |
+| `03-kotlin-script-runtime-2.0.0.jar` | 43,404 | `b57a14387a504f1d3d8634899a830cb0bc5fe1adb86a62cc65d940fe982b04f9` |
+| `04-kotlin-reflect-1.6.10.jar` | 3,038,560 | `3277ac102ae17aad10a55abec75ff5696c8d109790396434b496e75087854203` |
+| `05-kotlin-daemon-embeddable-2.0.0.jar` | 346,229 | `b907a36e9cfa587ca0523793d89eb2ea9bb545456935f180e12422486c14049f` |
+| `06-trove4j-1.0.20200330.jar` | 572,985 | `c5fd725bffab51846bf3c77db1383c60aaaebfe1b7fe2f00d23fe1b7df0a439d` |
+| `07-annotations-13.0.jar` | 17,536 | `ace2a10dc8e2d5fd34925ecac03e4988b2c0f851650c94b8cef49ba1bd111478` |
+
+The allowed JBR 21.0.8 image is the complete normalized 430-entry tree (183 files, 72 directories,
+175 symlinks, 100,129,016 file bytes), SHA-256
+`89b10d67dd49a0f809716313416a78734fb3ff466ab7b9a801eabdd1e10109d7`. Redundant drift
+diagnostics are: `release` `b99658db6bb33d2e6bc276c61b3a4c32b4a041621ddca27565f17d5a3deba3b2`,
+`bin/java` `7e056ddcbca2017e574a596a3dea0025750c5b9aa188e1362661c2a84be15099`,
+`bin/javac` `05add01371c9cadba2f2df0d94c4f47bbff6ac329bd0b5f4494ee783dd1b112b`,
+`bin/jar` `b12b3b8b95247f0c0a99bbccdd0749a706e75ccbc01ad50a3f56e37ae4905276`,
+`lib/modules` `104902874e64833ab492ca3709b0456088f0cbc7f6cd414bc8ac79993f39c3a2`,
+`lib/libjava.dylib` `caa0bba58915b27ef635536debd12d127ffa60f4a221edaf66666411bf90ac74`,
+`lib/libjli.dylib` `eaeb739744b5f46c5da633e487ed0c5bbc1a4067b744b974f8171af39593378e`,
+and `lib/server/libjvm.dylib`
+`2c4329111e496bd8e3d9fbf3f32a52031f6753f26afac33285171582720a8bfd`. These are
+darwin-aarch64 facts only; another platform needs a reviewed allowed row.
+
+With normalized placeholders in its receipt, each fresh build uses exactly:
+
+```text
+$PINNED_JDK/bin/javac
+-J-Duser.home=$BUILD_HOME -J-Djava.io.tmpdir=$BUILD_TMP
+--release 17 -encoding UTF-8 -g:none -proc:none
+-classpath <ordered seven-JAR classpath>
+-d <fresh classes dir>
+<sorted absolute staged Java source paths>
+
+$PINNED_JDK/bin/jar
+-J-Duser.home=$BUILD_HOME -J-Djava.io.tmpdir=$BUILD_TMP
+--create --no-manifest --file <temporary analyzer-v1.jar>
+--date=1980-01-01T00:00:02Z @<sorted relative entry argument file>
+```
+
+The receipt-bound runtime vector is exactly:
+
+```text
+$PINNED_JDK/bin/java
+-Xms32m -Xmx512m
+-Djava.awt.headless=true -Dfile.encoding=UTF-8
+-Duser.language=en -Duser.country=US -Duser.timezone=UTC
+-Duser.home=<run-home> -Djava.io.tmpdir=<run-tmp>
+-Dkotlin.environment.keepalive=false
+-cp <analyzer-v1.jar followed by runtime 01 through 07>
+com.agentbench.analyzer.Main analyze
+```
+
+The separate pinned Gradle 8.13 distribution is a normalized 318-entry tree (313 files, five
+directories, no symlinks, 151,645,130 file bytes), SHA-256
+`9ee05b71d613d47b98f09927f7b652dd1d1e286523b3adf91910c2e4e496d6ac`; no distribution
+ZIP is retained or claimed. `fixture-gradle-cache-v1.json` supplies the exact populated seed-tree
+identity and every cache-relative file identity.
+
+### Batch 0: reviewed authority amendment
+
+From exact `HEAD` `258ad3a9968d3a91991b513123e139e1cc60b608`, modify only this plan and the
+tracked premeasurement amendment, then create one commit with subject:
+
+```text
+docs(bench): bind subset-v1 analyzer boundary
+```
+
+An independent reviewer records that commit's actual 40-hex SHA as
+`TASK_3_ANALYZER_AMENDMENT_SHA`. Before any analyzer file is created, run this complete authority
+gate from the benchmark worktree:
+
+```bash
+set -euo pipefail
+test "${#TASK_3_ANALYZER_AMENDMENT_SHA}" -eq 40
+case "$TASK_3_ANALYZER_AMENDMENT_SHA" in
+  *[!0-9a-f]*) exit 1 ;;
+esac
+git cat-file -e "$TASK_3_ANALYZER_AMENDMENT_SHA^{commit}"
+git merge-base --is-ancestor 258ad3a9968d3a91991b513123e139e1cc60b608 HEAD
+test "$(git rev-parse HEAD)" = "$TASK_3_ANALYZER_AMENDMENT_SHA"
+test "$(git rev-parse "$TASK_3_ANALYZER_AMENDMENT_SHA^")" = "258ad3a9968d3a91991b513123e139e1cc60b608"
+test "$(git show -s --format=%s "$TASK_3_ANALYZER_AMENDMENT_SHA")" = "docs(bench): bind subset-v1 analyzer boundary"
+expected_amendment_paths='docs/superpowers/plans/2026-08-16-spatial-agent-bench.md
+docs/superpowers/specs/2026-08-16-spatial-agent-bench-premeasurement-amendment.md'
+test "$(git diff-tree --no-commit-id --name-only -r "$TASK_3_ANALYZER_AMENDMENT_SHA" | LC_ALL=C sort)" = "$expected_amendment_paths"
+test "$(git diff-tree --no-commit-id --name-status -r "$TASK_3_ANALYZER_AMENDMENT_SHA" | cut -f1 | LC_ALL=C sort)" = 'M
+M'
+git diff --quiet
+git diff --cached --quiet
+expected_checkpoint_status='?? benchmarks/spatial-agent-bench/lib/rules-spatial.mjs
+?? benchmarks/spatial-agent-bench/lib/rules-state-plane.mjs
+?? benchmarks/spatial-agent-bench/lib/score.mjs
+?? test/agentbench-fixture-compile.mjs
+?? test/agentbench-score.mjs
+?? test/helpers/agentbench-fixture.mjs
+?? test/helpers/agentbench-junit.mjs'
+test "$(git status --porcelain=v1 --untracked-files=all | LC_ALL=C sort)" = "$expected_checkpoint_status"
+npm run build
+node --test test/agentbench-source.mjs test/agentbench-contract.mjs
+```
+
+The amendment commit is the exact starting `HEAD`; `258ad3a` remains only its required direct
+ancestor. Batch 0 performs no analyzer implementation.
+
+### Batch 1: Java PSI artifact, receipt, and synchronous protocol
+
+Write focused RED tests for the missing/mismatched artifact or receipt, canonical frame and stream
+bounds, fake-child timeout/overflow/signal/exit/malformed outputs, all-or-nothing malformed and
+`.kts` cases, scrubbed parent/JDK-option injection, copied receipt/JDK cache misses, and every
+protocol/cache identity bound. Then build and verify with:
+
+```bash
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs clean-build-twice
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs verify
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  --test --test-name-pattern='analyzer artifact|build env|protocol|spawnSync|all-or-nothing|cache identity' \
+  test/agentbench-kotlin-analysis.mjs
+```
+
+Require two byte-identical thin JAR builds, a current receipt, rejection before publish under
+forbidden options, whole-analysis script/malformed rejection, and an actual cache miss on a
+receipt/JDK-only identity transition. No Gradle or network operation belongs to this batch.
+
+### Batch 2: subset graph/effect kernel and corrected fixture
+
+First prove the exact uncorrected 13/16 vector. Then apply only the reviewed Button/coroutine roots,
+Window mutation, reachable standard/equivalent reopen seams, and bounded retained-value retry-loop
+corrections. Run:
+
+```bash
+node --test --test-name-pattern='uncorrected fixture|subset forms|round 4|baseline attacks|positive subset' \
+  test/agentbench-kotlin-analysis.mjs test/agentbench-score.mjs
+```
+
+### Batch 3: sixteen adapters and span provenance
+
+Port the rules in rubric order as thin claim/typed-fact adapters; discard all regex, helper-name,
+fixture-name, and fallback recognizers. Run exact rule vectors and all historical/baseline/provenance
+attacks after each axis:
+
+```bash
+node --test --test-name-pattern='exact rule attack|equivalent|round 1|round 2|round 3|round 4|witness provenance' \
+  test/agentbench-kotlin-analysis.mjs test/agentbench-score.mjs
+```
+
+Require both corrected positives at 16, fifteen exact-one attacks, the exact three-rule authority
+attack, and every forged span/node/digest response rejected before public evidence construction.
+
+### Batch 4: compile/JUnit and positive-aggregate qualification
+
+Provision the tracked-manifest-verified populated Gradle seed from an explicitly supplied cache
+before entering the offline compile gate, and then use only fresh writable copies:
+
+```bash
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  test/helpers/agentbench-gradle-cache.mjs provision --source-root /Users/sushantsrikrish/.gradle
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  test/helpers/agentbench-gradle-cache.mjs verify
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  --test test/agentbench-fixture-compile.mjs
+node --test --test-name-pattern='trusted JUnit|stream cap|fresh JUnit|XML boundary' \
+  test/agentbench-score.mjs
+```
+
+Compile corrected standard/equivalent fixtures and every coverage-proven positive aggregate under
+0.13.3; require nonempty APKs, one fresh pure repository-model test for each main fixture, one fresh
+compile-smoke test for every aggregate, zero failure/error/skip, and identical selected-input bytes
+at all four checkpoints.
+
+### Batch 5: final deterministic Task 3 gate
+
+```bash
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs clean-build-twice
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  benchmarks/spatial-agent-bench/analyzer/build-analyzer.mjs verify
+/usr/bin/env -i LANG=C LC_ALL=C TZ=UTC __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 /usr/local/bin/node \
+  test/helpers/agentbench-gradle-cache.mjs verify
+npm run build
+node --test test/agentbench-source.mjs test/agentbench-contract.mjs \
+  test/agentbench-kotlin-analysis.mjs test/agentbench-score.mjs \
+  test/agentbench-fixture-compile.mjs
+npm run test:conformance
+npm run test:runreceipt
+node --input-type=module -e '
+  import { execFileSync } from "node:child_process";
+  const packed = JSON.parse(execFileSync("npm", ["pack", "--json", "--dry-run"], { encoding: "utf8" }));
+  const files = packed[0].files.map((row) => row.path);
+  if (files.some((file) => file.startsWith("benchmarks/") || file.startsWith(".superpowers/") || file.includes("agentbench"))) process.exit(1);
+'
+git check-ignore -q benchmarks/spatial-agent-bench/analyzer/.artifacts/v1/analyzer-v1.jar
+git check-ignore -q benchmarks/spatial-agent-bench/analyzer/.artifacts/fixture-gradle-seed-v1
+test -z "$(git ls-files benchmarks/spatial-agent-bench/analyzer/.artifacts)"
+git diff --check
+git status --short
+```
+
+Completion requires a new adversarial review of subset soundness, effect summaries, positive-form
+bias, process/receipt identity, all-or-nothing parsing, and corrected fixture vectors. Test totals
+or compilation alone never authorize a broader claim.
+
+### Binding Task 7 identity reservation
+
+In addition to the historical runner interface, the preflight manifest strictly carries
+`analyzerProtocolVersion`, `analyzerSubsetVersion`, `analyzerDomainVersion`,
+`analyzerDomainSha256`, `analyzerSourceSha256`, `analyzerBridgeSha256`, `analyzerJarSha256`,
+`analyzerClasspathSha256`, `analyzerJdkTreeSha256`, and `analyzerReceiptSha256`, and reserves
+`kotlinInputSetSha256` and `selectedInputSetSha256` as required per-attempt fields. Preflight
+validates and records the analyzer domain/source/bridge/thin-JAR/ordered-classpath/complete-JDK/
+receipt identities before attempts. Every attempt copies those static values and supplies both
+source-set digests for the immutable bytes scored for its submission. Missing, stale, or mismatched
+identity is a preflight/attempt failure, never an invented preflight digest, omitted field, or cache
+hit.
+
+### Binding Task 8 restoration and fail-closed gate
+
+Before the deterministic no-network gate, CI/reproduction must restore by content identity and
+checksum-verify all seven analyzer runtime dependencies, an allowed complete JDK image, the full
+pinned Gradle distribution, and the populated fixture-Gradle seed described by
+`test/fixtures/agentbench/fixture-gradle-cache-v1.json`. It then runs analyzer
+`clean-build-twice`/`verify`, cache `verify`, the complete analyzer/scorer suite, and every
+positive-aggregate compile test offline. A cache miss or mismatch fails. The gate must not consult
+ambient Gradle/JDK/dependency state, resolve a missing item from the network after the no-network
+boundary, or silently skip analyzer/compile coverage.
+
 ## Global Constraints
 
 - `sushidoescode/pico-spatial-mcp` remains PRIVATE; never change visibility, collaborators, or permissions.
@@ -478,10 +1362,12 @@ Every rule returns exactly:
 ```
 
 Award the first eight points only for the approved conjunctions: 0.13.3 spatial project and one
-`mainApp`; planar WindowContainer plus declared/opened Mixed Stage; SpatialView/PICO entities rather
-than Android substitutes; SpatialUI/PicoTheme lifecycle; defaultable state-bearing Component with
-state-preserving clone; custom System with hoisted query against `context.scene`; delta-time-based
-in-place transform mutation; paired register/unregister in one lifecycle scope.
+`mainApp`; exact activity-owned planar `DefaultWindowContainer` metadata plus a secondary Stage
+declared without a style constructor argument and opened with `StageStyle.Mixed`; SpatialView/PICO
+entities rather than Android substitutes; SpatialUI/PicoTheme lifecycle; defaultable state-bearing
+Component with state-preserving clone; custom System with hoisted query against `context.scene`;
+delta-time-based in-place transform mutation; the same System type/class registered and
+unregistered in one paired lifecycle scope.
 
 - [ ] **Step 4: Implement state and plane rules**
 
@@ -502,13 +1388,13 @@ the upstream audit.
 export function writeCompleteProject(t, mutate = (files) => files) {}
 export const RULE_MUTATIONS = [
   { ruleId: "spatial.project-entry", apply: replace("fun mainApp", "fun notMainApp") },
-  { ruleId: "spatial.container-topology", apply: replace("StageType.Mixed", "StageType.Immersive") },
+  { ruleId: "spatial.container-topology", apply: replace("StageStyle.Mixed", "StageStyle.Full") },
   { ruleId: "spatial.entity-content", apply: replace("SpatialView(entity)", "AndroidView(entity)") },
   { ruleId: "spatial.ui-lifecycle", apply: replace("PicoTheme", "MaterialTheme") },
   { ruleId: "ecs.component-clone", apply: replace("copy(selected = selected)", "CounterComponent()") },
   { ruleId: "ecs.system-query", apply: replace("private val counterQuery = EntityQueryCondition.hasComponent(CounterComponent::class.java)", "// counter query intentionally removed") },
   { ruleId: "ecs.frame-update", apply: replace("context.deltaTime", "0.016f") },
-  { ruleId: "ecs.lifecycle", apply: replace("unregisterSystem(orbitSystem)", "registerSystem(orbitSystem)") },
+  { ruleId: "ecs.lifecycle", apply: replace("unregisterSystem<OrbitSystem>()", "registerSystem<OrbitSystem>()") },
   { ruleId: "state.single-source", apply: replace("val sharedStore = BenchmarkStore.instance", "val sharedStore = BenchmarkStore()") },
   { ruleId: "state.typed-handoff", apply: replace("GallerySelection(selectedId)", "selectedId") },
   { ruleId: "state.shared-read-write", apply: replace("stageStore = sharedStore", "stageStore = BenchmarkStore()") },
@@ -524,6 +1410,10 @@ export function writeAndroidStyleProject(t) {}
 Define `replace(from, to)` as an exact-one-occurrence edit that throws for zero or multiple matches.
 Name the complete fixture declarations to match the literals above, and make each mutation affect
 only its named rule. The test compares the complete sixteen-element boolean vector, not only totals.
+The temporary fixture replaces the copied skeleton's default-Stage metadata with activity-owned
+`pico.spatial.windowcontainer.id`, planar style `1`, and default size `1280x720` metadata for a
+`DefaultWindowContainer` root. It declares the secondary Stage in `mainApp`, supplies no Stage style
+constructor argument or default-Stage metadata, and opens it with `StageStyle.Mixed`.
 
 - [ ] **Step 6: Run scorer and conformance gates**
 
@@ -533,7 +1423,11 @@ temporary directory, installs the complete fixture sources, and runs both
 `./gradlew --no-daemon :app:testDebugUnitTest --console=plain`. Require a non-empty APK and parse
 JUnit XML to prove the named two-selection/retained-counter test executed once with zero failures
 and zero skips; `NO-SOURCE` is a failure. The fixture must use declarations verified in the local
-0.13.3 SDK rather than guessed current-v6 APIs.
+0.13.3 SDK rather than guessed current-v6 APIs. Before either child spawn, the trusted launcher
+resolves and validates a JDK and Android SDK using valid environment values before Android Studio
+bundled defaults, then passes explicit `JAVA_HOME`, `ANDROID_SDK_ROOT`, and `ANDROID_HOME`; it fails
+closed if either dependency is unresolved and accepts no wrapper or submission-controlled child
+environment.
 
 ```bash
 node --test test/agentbench-source.mjs test/agentbench-score.mjs test/agentbench-fixture-compile.mjs
