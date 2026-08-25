@@ -68,6 +68,177 @@ const RULE_ATTACK_SPECS = Object.freeze([
   Object.freeze({ ruleId: "plane.anchor-pose", path: "app/src/main/java/com/agentbench/gallery/PlaneSession.kt", from: "root.convertPositionFrom(anchor.transform.position, null)", to: "Vector3(0f, 1f, 0f)", expectedFalseRuleIds: Object.freeze(["plane.anchor-pose"]) }),
   Object.freeze({ ruleId: "plane.cleanup-errors", path: "app/src/main/java/com/agentbench/gallery/GalleryStage.kt", from: "planeSession.stopTrackingAndUnsubscribe()", to: "Unit", expectedFalseRuleIds: Object.freeze(["plane.cleanup-errors"]) }),
 ]);
+const PUBLIC_BASE_VECTORS = Object.freeze({
+  correctedStandard: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  correctedEquivalent: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  uncorrected: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, false, false,
+    false, true, true, true,
+  ]),
+  authorityGetterAttack: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    false, true, false, false,
+    true, true, true, true,
+  ]),
+  rejected: Object.freeze([
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+  ]),
+  equivalentCallbackAttack: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, false,
+    true, true, true, true,
+  ]),
+});
+const PUBLIC_ATTACK_VECTORS = Object.freeze({
+  "spatial.project-entry": Object.freeze([
+    false, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "spatial.container-topology": Object.freeze([
+    true, false, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "spatial.entity-content": Object.freeze([
+    true, true, false, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "spatial.ui-lifecycle": Object.freeze([
+    true, true, true, false,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "ecs.component-clone": Object.freeze([
+    true, true, true, true,
+    false, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "ecs.system-query": Object.freeze([
+    true, true, true, true,
+    true, false, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "ecs.frame-update": Object.freeze([
+    true, true, true, true,
+    true, true, false, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "ecs.lifecycle": Object.freeze([
+    true, true, true, true,
+    true, true, true, false,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "state.single-source": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    false, true, false, false,
+    true, true, true, true,
+  ]),
+  "state.typed-handoff": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, false, true, true,
+    true, true, true, true,
+  ]),
+  "state.shared-read-write": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, false, true,
+    true, true, true, true,
+  ]),
+  "state.reopen-wiring": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, false,
+    true, true, true, true,
+  ]),
+  "plane.retry-readiness": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    false, true, true, true,
+  ]),
+  "plane.semantic-fallback": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, false, true, true,
+  ]),
+  "plane.anchor-pose": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, false, true,
+  ]),
+  "plane.cleanup-errors": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, false,
+  ]),
+});
+const PROJECTION_BOUNDARY_PATH = "app/src/main/java/com/agentbench/gallery/ProjectionBoundary.kt";
+const PROJECTION_LINE_512 = `val ${"é".repeat(252)} = 1`;
+const PROJECTION_LINE_513 = `val a${"é".repeat(252)} = 1`;
+const PUBLIC_PROJECTION_BOUNDARY_VECTORS = Object.freeze({
+  exact512: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  exact513: Object.freeze([
+    true, true, true, true,
+    false, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+});
+const PUBLIC_ATTACK_EXPECTATIONS = Object.freeze([
+  Object.freeze({ ruleId: "spatial.project-entry", pass: PUBLIC_ATTACK_VECTORS["spatial.project-entry"], falseIds: Object.freeze(["spatial.project-entry"]), axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "spatial.container-topology", pass: PUBLIC_ATTACK_VECTORS["spatial.container-topology"], falseIds: Object.freeze(["spatial.container-topology"]), axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "spatial.entity-content", pass: PUBLIC_ATTACK_VECTORS["spatial.entity-content"], falseIds: Object.freeze(["spatial.entity-content"]), axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "spatial.ui-lifecycle", pass: PUBLIC_ATTACK_VECTORS["spatial.ui-lifecycle"], falseIds: Object.freeze(["spatial.ui-lifecycle"]), axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "ecs.component-clone", pass: PUBLIC_ATTACK_VECTORS["ecs.component-clone"], falseIds: Object.freeze(["ecs.component-clone"]), axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "ecs.system-query", pass: PUBLIC_ATTACK_VECTORS["ecs.system-query"], falseIds: Object.freeze(["ecs.system-query"]), axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "ecs.frame-update", pass: PUBLIC_ATTACK_VECTORS["ecs.frame-update"], falseIds: Object.freeze(["ecs.frame-update"]), axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "ecs.lifecycle", pass: PUBLIC_ATTACK_VECTORS["ecs.lifecycle"], falseIds: Object.freeze(["ecs.lifecycle"]), axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "state.single-source", pass: PUBLIC_ATTACK_VECTORS["state.single-source"], falseIds: Object.freeze(["state.single-source", "state.shared-read-write", "state.reopen-wiring"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 1, planarTracking: 4 }), score: 13 }),
+  Object.freeze({ ruleId: "state.typed-handoff", pass: PUBLIC_ATTACK_VECTORS["state.typed-handoff"], falseIds: Object.freeze(["state.typed-handoff"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 3, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "state.shared-read-write", pass: PUBLIC_ATTACK_VECTORS["state.shared-read-write"], falseIds: Object.freeze(["state.shared-read-write"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 3, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "state.reopen-wiring", pass: PUBLIC_ATTACK_VECTORS["state.reopen-wiring"], falseIds: Object.freeze(["state.reopen-wiring"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 3, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "plane.retry-readiness", pass: PUBLIC_ATTACK_VECTORS["plane.retry-readiness"], falseIds: Object.freeze(["plane.retry-readiness"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 3 }), score: 15 }),
+  Object.freeze({ ruleId: "plane.semantic-fallback", pass: PUBLIC_ATTACK_VECTORS["plane.semantic-fallback"], falseIds: Object.freeze(["plane.semantic-fallback"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 3 }), score: 15 }),
+  Object.freeze({ ruleId: "plane.anchor-pose", pass: PUBLIC_ATTACK_VECTORS["plane.anchor-pose"], falseIds: Object.freeze(["plane.anchor-pose"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 3 }), score: 15 }),
+  Object.freeze({ ruleId: "plane.cleanup-errors", pass: PUBLIC_ATTACK_VECTORS["plane.cleanup-errors"], falseIds: Object.freeze(["plane.cleanup-errors"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 3 }), score: 15 }),
+]);
 const POSITIVE_SUBSET_REQUIREMENTS = Object.freeze([
   ["ecs.component-clone", "expression-component-clone", ["positional-fields", "named-fields"]],
   ["ecs.component-clone", "single-return-block-component-clone", ["positional-fields", "named-fields"]],
@@ -260,6 +431,26 @@ function claimRuleIds(response) {
   assert.equal(response.analysisStatus, "accepted");
   assert.equal(response.rejectionCode, null);
   return response.claims.map((claim) => claim.ruleId);
+}
+
+function analyzerRuleVector(response) {
+  const claimed = new Set(response.claims.map((claim) => claim.ruleId));
+  return RULE_IDS.map((ruleId) => claimed.has(ruleId));
+}
+
+function assertPublicScoreVector(score, expected, label) {
+  assert.deepEqual(score.rules.map((rule) => rule.pass), expected.pass, `${label}: Boolean vector`);
+  assert.deepEqual(score.rules.flatMap((rule) => rule.pass ? [] : [rule.id]), expected.falseIds, `${label}: false-ID vector`);
+  assert.deepEqual(score.structuralAxes, expected.axes, `${label}: axis vector`);
+  assert.equal(score.structuralScore, expected.score, `${label}: structural score`);
+  assert.equal(score.buildQualifiedStructuralScore, expected.score, `${label}: qualified structural score`);
+  if (expected.evidenceLengths !== undefined) {
+    assert.deepEqual(score.rules.map((rule) => rule.evidence.length), expected.evidenceLengths, `${label}: evidence-length vector`);
+  }
+  for (const rule of score.rules) {
+    if (rule.pass) assert.match(rule.reason, /^supported-subset-v1 witness:/, `${label}/${rule.id}: passing reason`);
+    else assert.equal(rule.evidence.length, 0, `${label}/${rule.id}: failed evidence`);
+  }
 }
 
 function mixedTypedConjunctions(index, response) {
@@ -1312,22 +1503,93 @@ test("CP1 positive subset corpus freezes exact closures aggregates and spatial e
   assert.throws(() => writeAggregate(t, "missing-positive-subset-aggregate"), /aggregate|unknown|missing|id/i);
 });
 
-test("perfect structural fixture returns the exact rubric-v2 result contract", (t) => {
+test("complete Kotlin rejection returns the exact all-false public vector", (t) => {
   const projectDir = writeLegacyScoreProject(t);
+  const scriptPath = path.join(projectDir, "app/src/main/java/com/agentbench/gallery/Rejected.kts");
+  fs.writeFileSync(scriptPath, "val rejectedScript = true\n", "utf8");
+  const response = analyzeKotlin(loadSubmissionSources(projectDir));
+  assert.equal(response.analysisStatus, "rejected");
+  assert.equal(response.rejectionCode, "unsupported_script");
+  assert.deepEqual(response.nodes, []);
+  assert.deepEqual(response.claims, []);
+  assert.deepEqual(analyzerRuleVector(response), [
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+  ]);
+
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assert.deepEqual(score.rules.map((rule) => rule.pass), PUBLIC_BASE_VECTORS.rejected);
+  assert.deepEqual(score.rules.flatMap((rule) => rule.pass ? [] : [rule.id]), [
+    "spatial.project-entry", "spatial.container-topology", "spatial.entity-content", "spatial.ui-lifecycle",
+    "ecs.component-clone", "ecs.system-query", "ecs.frame-update", "ecs.lifecycle",
+    "state.single-source", "state.typed-handoff", "state.shared-read-write", "state.reopen-wiring",
+    "plane.retry-readiness", "plane.semantic-fallback", "plane.anchor-pose", "plane.cleanup-errors",
+  ]);
+  assert.deepEqual(score.rules.map((rule) => rule.evidence.length), [
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+  ]);
+  assert.deepEqual(score.structuralAxes, {
+    spatialNative: 0,
+    ecs: 0,
+    statePassing: 0,
+    planarTracking: 0,
+  });
+  assert.equal(score.structuralScore, 0);
+  assert.equal(score.buildQualifiedStructuralScore, 0);
+  for (const rule of score.rules) assert.equal(rule.reason, "supported-subset-v1 rejected: unsupported_script");
+});
+
+test("uncorrected checkpoint returns the exact thirteen-point public vector", (t) => {
+  const projectDir = writeUncorrectedCheckpointProject(t);
+  const response = analyzeKotlin(loadSubmissionSources(projectDir));
+  assert.deepEqual(analyzerRuleVector(response), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, false, false,
+    false, true, true, true,
+  ], "uncorrected checkpoint: independent analyzer vector");
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assertPublicScoreVector(score, {
+    pass: PUBLIC_BASE_VECTORS.uncorrected,
+    falseIds: ["state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"],
+    axes: { spatialNative: 4, ecs: 4, statePassing: 2, planarTracking: 3 },
+    score: 13,
+    evidenceLengths: [12, 15, 7, 9, 6, 4, 5, 5, 8, 13, 0, 0, 0, 8, 6, 15],
+  }, "uncorrected checkpoint");
+});
+
+test("perfect structural fixture returns the exact rubric-v2 result contract", (t) => {
+  const projectDir = writeCompleteProject(t);
 
   const first = scoreSubmission({ projectDir, build: PASSING_BUILD });
   const second = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  const response = analyzeKotlin(loadSubmissionSources(projectDir));
 
   assert.deepEqual(first.rules.map(({ id }) => id), RULE_DEFINITIONS.map(([id]) => id));
-  assert.deepEqual(first.structuralAxes, {
-    spatialNative: 4,
-    ecs: 4,
-    statePassing: 4,
-    planarTracking: 4,
-  });
-  assert.equal(first.structuralScore, 16);
-  assert.equal(first.buildQualifiedStructuralScore, 16);
-  assert.equal(first.rules.every(({ rubricVersion }) => rubricVersion === 2), true);
+  assertPublicScoreVector(first, {
+    pass: PUBLIC_BASE_VECTORS.correctedStandard,
+    falseIds: [],
+    axes: { spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 4 },
+    score: 16,
+    evidenceLengths: [12, 15, 7, 9, 6, 4, 5, 5, 8, 13, 11, 17, 6, 8, 6, 15],
+  }, "corrected standard");
+  assert.deepEqual(analyzerRuleVector(response), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ], "corrected standard: independent analyzer vector");
+  assert.deepEqual(first.rules.map(({ rubricVersion }) => rubricVersion), [
+    2, 2, 2, 2,
+    2, 2, 2, 2,
+    2, 2, 2, 2,
+    2, 2, 2, 2,
+  ]);
   assert.equal(canonicalJson(first), canonicalJson(second));
   assert.deepEqual(first.visual, { status: "not_performed", captureSha256: null });
   assert.equal(first.runtimeProtocolReceipts.runStatus, "not_run");
@@ -1335,7 +1597,7 @@ test("perfect structural fixture returns the exact rubric-v2 result contract", (
 });
 
 test("rule evidence retains exact source and typed-fact provenance without conflating evidence classes", (t) => {
-  const projectDir = writeLegacyScoreProject(t);
+  const projectDir = writeCompleteProject(t);
   const index = loadSubmissionSources(projectDir);
   const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
 
@@ -1370,7 +1632,7 @@ function pathIsRegular(projectDir, relative) {
 }
 
 test("unused 0.13.3 catalog aliases and typed-looking Kotlin prose do not satisfy project entry", (t) => {
-  const projectDir = writeLegacyScoreProject(t, (files) => {
+  const projectDir = writeCompleteProject(t, (files) => {
     const changed = changeOne('bom = "0.13.3"', 'bom = "0.13.2"\nunusedBom = "0.13.3"')(files);
     changed["app/src/main/java/com/agentbench/gallery/Bait.kt"] = `package com.agentbench.gallery
 // implementation(platform("com.pico.spatial:bom:0.13.3"))
@@ -1379,9 +1641,20 @@ val fakeBuildLog = "implementation platform com.pico.spatial:bom:0.13.3 fun main
     return changed;
   });
 
+  assert.deepEqual(analyzerRuleVector(analyzeKotlin(loadSubmissionSources(projectDir))), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ], "BOM fact attack: independent analyzer vector");
   const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
 
-  assert.equal(ruleById(score, "spatial.project-entry").pass, false);
+  assertPublicScoreVector(score, {
+    pass: PUBLIC_ATTACK_VECTORS["spatial.project-entry"],
+    falseIds: ["spatial.project-entry"],
+    axes: { spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 },
+    score: 15,
+  }, "BOM fact attack");
 });
 
 test("application-scoped, wrong-owner, and stale Stage metadata cannot replace launch-activity window facts", async (t) => {
@@ -1408,17 +1681,67 @@ test("application-scoped, wrong-owner, and stale Stage metadata cannot replace l
   ];
 
   for (const [name, alter] of cases) await t.test(name, (t) => {
-    const projectDir = writeLegacyScoreProject(t, (files) => ({
+    const projectDir = writeCompleteProject(t, (files) => ({
       ...files,
       "app/src/main/AndroidManifest.xml": alter(files["app/src/main/AndroidManifest.xml"]),
     }));
+    assert.deepEqual(analyzerRuleVector(analyzeKotlin(loadSubmissionSources(projectDir))), [
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+    ], `${name}: independent analyzer vector`);
     const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
-    assert.equal(ruleById(score, "spatial.container-topology").pass, false);
+    assertPublicScoreVector(score, {
+      pass: PUBLIC_ATTACK_VECTORS["spatial.container-topology"],
+      falseIds: ["spatial.container-topology"],
+      axes: { spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 },
+      score: 15,
+    }, name);
+  });
+});
+
+test("mixed bindings reject unrelated manifest classes and ambiguous valid component tuples", async (t) => {
+  const cases = [
+    ["unrelated component declarations", (manifest) => manifest
+      .replace(".platform.SpatialApplication", ".missing.MissingApplication")
+      .replace(".platform.LaunchActivity", ".missing.MissingActivity")],
+    ["duplicate valid launch activity", (manifest) => manifest.replace(
+      "    </application>",
+      `        <activity android:name=".platform.LaunchActivity" />
+    </application>`,
+    )],
+  ];
+  for (const [name, mutateManifest] of cases) await t.test(name, (t) => {
+    const projectDir = writeCompleteProject(t, (files) => ({
+      ...files,
+      "app/src/main/AndroidManifest.xml": mutateManifest(files["app/src/main/AndroidManifest.xml"]),
+    }));
+    assert.deepEqual(analyzerRuleVector(analyzeKotlin(loadSubmissionSources(projectDir))), [
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+    ], `${name}: independent analyzer vector`);
+    const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assertPublicScoreVector(score, {
+      pass: [
+        false, false, true, true,
+        true, true, true, true,
+        true, true, true, true,
+        true, true, true, true,
+      ],
+      falseIds: ["spatial.project-entry", "spatial.container-topology"],
+      axes: { spatialNative: 2, ecs: 4, statePassing: 4, planarTracking: 4 },
+      score: 14,
+    }, name);
+    assert.equal(ruleById(score, "spatial.project-entry").reason, "supported-subset-v1 typed binding incomplete");
+    assert.equal(ruleById(score, "spatial.container-topology").reason, "supported-subset-v1 typed binding incomplete");
   });
 });
 
 test("conflicting activity metadata fails closed before scoring", (t) => {
-  const projectDir = writeLegacyScoreProject(t, (files) => ({
+  const projectDir = writeCompleteProject(t, (files) => ({
     ...files,
     "app/src/main/AndroidManifest.xml": files["app/src/main/AndroidManifest.xml"].replace(
       '<meta-data android:name="pico.spatial.windowcontainer.style" android:value="1" />',
@@ -1430,50 +1753,66 @@ test("conflicting activity metadata fails closed before scoring", (t) => {
   assert.throws(() => scoreSubmission({ projectDir, build: PASSING_BUILD }), /metadata|conflict|duplicate/i);
 });
 
-test("each legacy fixture mutation flips only its targeted public-score rule", async (t) => {
-  const attacks = [
-    ["spatial.project-entry", changeOne("fun mainApp", "fun notMainApp")],
-    ["spatial.container-topology", changeOne("StageStyle.Mixed", "StageStyle.Full")],
-    ["spatial.entity-content", changeOne("SpatialView(", "AndroidView(")],
-    ["spatial.ui-lifecycle", changeOne("DefaultWindowContainer {\n        PicoTheme", "DefaultWindowContainer {\n        MaterialTheme")],
-    ["ecs.component-clone", changeOne("OrbitComponent(enabled, angle)", "OrbitComponent()")],
-    ["ecs.system-query", changeOne("private val orbitQuery = EntityQueryCondition.hasComponent(OrbitComponent::class.java)", "private val orbitQuery = EntityQueryCondition.never()")],
-    ["ecs.frame-update", changeOne("context.deltaTime", "0.016f")],
-    ["ecs.lifecycle", changeOne("unregisterSystem<OrbitSystem>()", "registerSystem<OrbitSystem>()")],
-    ["state.single-source", changeOne("val sharedStore = BenchmarkStore.instance", "val sharedStore = BenchmarkStore()")],
-    ["state.typed-handoff", changeOne("GallerySelection(selectedId)", "selectedId")],
-    ["state.shared-read-write", changeOne("GalleryStage(bundle, sharedStore)", "GalleryStage(bundle, BenchmarkStore())")],
-    ["state.reopen-wiring", changeOne("restoreRetainedState = true", "restoreRetainedState = false")],
-    ["plane.retry-readiness", changeOne("repeat(MAX_ANCHOR_RETRIES)", "repeat(1)")],
-    ["plane.semantic-fallback", changeOne("?: horizontalFloorPlane()", "?: null")],
-    ["plane.anchor-pose", changeOne("root.convertPositionFrom(anchor.transform.position, null)", "Vector3(0f, 1f, 0f)")],
-    ["plane.cleanup-errors", changeOne("planeSession.stopTrackingAndUnsubscribe()", "Unit")],
-  ];
-  for (const [ruleId, mutate] of attacks) await t.test(ruleId, (t) => {
-    const projectDir = writeLegacyScoreProject(t, mutate);
+test("exact rule attack vectors bind public score to independent analyzer expectations", async (t) => {
+  assertDeepFrozen(PUBLIC_ATTACK_VECTORS);
+  assertDeepFrozen(PUBLIC_ATTACK_EXPECTATIONS);
+  assert.deepEqual(PUBLIC_ATTACK_EXPECTATIONS.map(({ ruleId }) => ruleId), [
+    "spatial.project-entry", "spatial.container-topology", "spatial.entity-content", "spatial.ui-lifecycle",
+    "ecs.component-clone", "ecs.system-query", "ecs.frame-update", "ecs.lifecycle",
+    "state.single-source", "state.typed-handoff", "state.shared-read-write", "state.reopen-wiring",
+    "plane.retry-readiness", "plane.semantic-fallback", "plane.anchor-pose", "plane.cleanup-errors",
+  ]);
+  const attacksById = new Map(batch2bFixture.RULE_ATTACKS.map((attack) => [attack.ruleId, attack]));
+  for (const expected of PUBLIC_ATTACK_EXPECTATIONS) await t.test(expected.ruleId, (t) => {
+    const attack = attacksById.get(expected.ruleId);
+    assert.equal(typeof attack?.apply, "function", `${expected.ruleId}: fixture attack`);
+    const projectDir = writeCompleteProject(t, attack.apply);
+    const response = analyzeKotlin(loadSubmissionSources(projectDir));
     const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
-    const expected = RULE_IDS.map((candidate) => candidate !== ruleId);
-    assert.deepEqual(score.rules.map((rule) => rule.pass), expected);
-    assert.equal(score.structuralScore, 15);
+    assert.deepEqual(analyzerRuleVector(response), expected.pass, `${expected.ruleId}: independent analyzer vector`);
+    assertPublicScoreVector(score, expected, expected.ruleId);
   });
 });
 
 test("independently named typed reentry callback scores sixteen and its callback mutation flips only reopen wiring", (t) => {
-  const positiveDir = writeLegacyEquivalentScoreProject(t);
+  const positiveDir = writeEquivalentReopenProject(t);
   const positive = scoreSubmission({ projectDir: positiveDir, build: PASSING_BUILD });
   const sourceText = positiveDir && fs.readFileSync(`${positiveDir}/app/src/main/java/com/agentbench/gallery/Main.kt`, "utf8");
   assert.equal(sourceText.includes("sharedStore"), false);
   assert.equal(sourceText.includes("openGalleryStage"), false);
   assert.equal(sourceText.includes("restoreRetainedState"), false);
-  assert.equal(positive.structuralScore, 16);
+  assertPublicScoreVector(positive, {
+    pass: PUBLIC_BASE_VECTORS.correctedEquivalent,
+    falseIds: [],
+    axes: { spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 4 },
+    score: 16,
+    evidenceLengths: [12, 15, 7, 9, 6, 4, 5, 5, 7, 13, 11, 18, 6, 8, 6, 15],
+  }, "corrected equivalent");
+  assert.deepEqual(analyzerRuleVector(analyzeKotlin(loadSubmissionSources(positiveDir))), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ], "corrected equivalent: independent analyzer vector");
 
-  const mutatedDir = writeLegacyEquivalentScoreProject(t, changeOne(
+  const mutatedDir = writeEquivalentReopenProject(t, changeOne(
     "museumSessionRepository::currentSnapshot",
     "GallerySessionSnapshot::empty",
   ));
   const mutated = scoreSubmission({ projectDir: mutatedDir, build: PASSING_BUILD });
-  assert.deepEqual(mutated.rules.filter((rule) => !rule.pass).map((rule) => rule.id), ["state.reopen-wiring"]);
-  assert.equal(mutated.structuralScore, 15);
+  assert.deepEqual(analyzerRuleVector(analyzeKotlin(loadSubmissionSources(mutatedDir))), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, false,
+    true, true, true, true,
+  ], "equivalent callback attack: independent analyzer vector");
+  assertPublicScoreVector(mutated, {
+    pass: PUBLIC_BASE_VECTORS.equivalentCallbackAttack,
+    falseIds: ["state.reopen-wiring"],
+    axes: { spatialNative: 4, ecs: 4, statePassing: 3, planarTracking: 4 },
+    score: 15,
+    evidenceLengths: [12, 15, 7, 9, 6, 4, 5, 5, 7, 13, 11, 0, 6, 8, 6, 15],
+  }, "equivalent callback attack");
 });
 
 test("disconnected structural vocabulary cannot satisfy relational rubric conjunctions", async (t) => {
@@ -1608,7 +1947,7 @@ private fun unusedSemanticBait(candidates: List<PlaneAnchor>) {
 });
 
 test("equivalent reopen wiring is independent of callback parameter names", (t) => {
-  const projectDir = writeLegacyEquivalentScoreProject(t, (files) => ({
+  const projectDir = writeEquivalentReopenProject(t, (files) => ({
     ...files,
     "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
       .replaceAll("initialState", "launchSnapshot")
@@ -1645,7 +1984,7 @@ val fakeLog = "fun mainApp launch(::mainApp) Stage openStage StageStyle.Mixed"
 });
 
 test("submission-test outcomes remain separate from structural and runtime evidence", (t) => {
-  const projectDir = writeLegacyScoreProject(t);
+  const projectDir = writeCompleteProject(t);
   const baseline = scoreSubmission({ projectDir, build: PASSING_BUILD });
   for (const status of ["pass", "fail", "execution_failed", "no_source", "not_run"]) {
     const scored = scoreSubmission({
@@ -1664,7 +2003,7 @@ test("submission-test outcomes remain separate from structural and runtime evide
 });
 
 test("failed and unrun builds retain structural diagnostics but qualify them to zero", (t) => {
-  const projectDir = writeLegacyScoreProject(t);
+  const projectDir = writeCompleteProject(t);
   const failed = scoreSubmission({ projectDir, build: { status: "fail", receiptSha256: "e".repeat(64) } });
   assert.equal(failed.structuralScore, 16);
   assert.equal(failed.buildQualifiedStructuralScore, 0);
@@ -1683,7 +2022,7 @@ test("failed and unrun builds retain structural diagnostics but qualify them to 
 });
 
 test("scoring input rejects protocol, runtime, behavior, accessors, symbols, and exotic prototypes", (t) => {
-  const projectDir = writeLegacyScoreProject(t);
+  const projectDir = writeCompleteProject(t);
   for (const key of ["runtimeProtocolReceipts", "runtime", "behavior"]) {
     assert.throws(() => scoreSubmission({ projectDir, build: PASSING_BUILD, [key]: {} }), /unknown|keys/i);
   }
@@ -1701,41 +2040,343 @@ test("scoring input rejects protocol, runtime, behavior, accessors, symbols, and
   assert.throws(() => scoreSubmission(Object.assign(Object.create({}), { projectDir, build: PASSING_BUILD })), /plain object|prototype/i);
 });
 
-async function importForgedScorer(t, injection) {
+async function importForgedScorer(t, injection, { forbidAdaptation = false, poisonProjection = false } = {}) {
   const moduleDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentbench-forged-scorer-"));
   t.after(() => fs.rmSync(moduleDir, { recursive: true, force: true }));
   const libraryDir = path.resolve(import.meta.dirname, "../benchmarks/spatial-agent-bench/lib");
-  for (const name of ["contract.mjs", "source.mjs", "rules-spatial.mjs", "rules-state-plane.mjs"]) {
+  for (const name of ["contract.mjs", "source.mjs"]) {
     fs.copyFileSync(path.join(libraryDir, name), path.join(moduleDir, name));
   }
+  for (const [name, exported] of [["rules-spatial.mjs", "evaluateSpatialRules"], ["rules-state-plane.mjs", "evaluateStatePlaneRules"]]) {
+    if (forbidAdaptation) {
+      fs.writeFileSync(path.join(moduleDir, name), `
+let adaptationCallCount = 0;
+export function ${exported}() {
+  adaptationCallCount += 1;
+  throw new Error("rule adaptation reached forged analyzer response");
+}
+export function getAdaptationCallCount() { return adaptationCallCount; }
+`);
+    } else {
+      fs.copyFileSync(path.join(libraryDir, name), path.join(moduleDir, name));
+    }
+  }
   fs.writeFileSync(path.join(moduleDir, "identity.mjs"), `export { canonicalIdentity, canonicalJson } from ${JSON.stringify(pathToFileURL(path.resolve(libraryDir, "../../../dist/runreceiptidentity.js")).href)};\n`);
-  const scoreSource = fs.readFileSync(path.join(libraryDir, "score.mjs"), "utf8");
-  const seam = "  const byId = new Map(evaluations.map((evaluation) => [evaluation.id, evaluation]));";
-  assert.equal(scoreSource.split(seam).length - 1, 1);
-  fs.writeFileSync(path.join(moduleDir, "score.mjs"), scoreSource.replace(seam, `  ${injection}
-${seam}`));
+  const realAnalyzerUrl = pathToFileURL(path.join(libraryDir, "kotlin-analysis.mjs")).href;
+  fs.writeFileSync(path.join(moduleDir, "kotlin-analysis.mjs"), `
+import crypto from "node:crypto";
+import { canonicalJson } from "./identity.mjs";
+import { ANALYZER_CONSTANTS, analyzeKotlin as analyzeRealKotlin } from ${JSON.stringify(realAnalyzerUrl)};
+export { ANALYZER_CONSTANTS };
+let analyzeCallCount = 0;
+const compareUtf8 = (left, right) => Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+const digest = (value) => crypto.createHash("sha256").update(Buffer.from(canonicalJson(value), "utf8")).digest("hex");
+const textDigest = (value) => crypto.createHash("sha256").update(Buffer.from(value, "utf8")).digest("hex");
+const nodeIdentity = (node) => ({
+  path: node.path,
+  fileSha256: node.fileSha256,
+  startUtf16: node.startUtf16,
+  endUtf16: node.endUtf16,
+  kind: node.kind,
+  textSha256: node.textSha256,
+  structuralToken: node.structuralToken,
+});
+function refreshClaims(response) {
+  for (const claim of response.claims) {
+    claim.witnessNodeIds.sort(compareUtf8);
+    claim.witnessDigest = digest({ ruleId: claim.ruleId, proofForm: claim.proofForm, witnessNodeIds: claim.witnessNodeIds });
+  }
+}
+function retainClaimUnion(response) {
+  const retained = new Set(response.claims.flatMap((claim) => claim.witnessNodeIds));
+  response.nodes = response.nodes.filter((node) => retained.has(node.nodeId)).sort((left, right) => compareUtf8(left.nodeId, right.nodeId));
+}
+function dropClaim(response, ruleId) {
+  response.claims = response.claims.filter((claim) => claim.ruleId !== ruleId);
+  retainClaimUnion(response);
+}
+function rekeyNode(response, nodeIndex, changes) {
+  const node = response.nodes[nodeIndex];
+  const priorId = node.nodeId;
+  Object.assign(node, changes);
+  node.nodeId = digest(nodeIdentity(node));
+  for (const claim of response.claims) claim.witnessNodeIds = claim.witnessNodeIds.map((nodeId) => nodeId === priorId ? node.nodeId : nodeId);
+  refreshClaims(response);
+  response.nodes.sort((left, right) => compareUtf8(left.nodeId, right.nodeId));
+  return node;
+}
+export function analyzeKotlin(index) {
+  analyzeCallCount += 1;
+  const response = structuredClone(analyzeRealKotlin(index));
+  ${injection}
+  return response;
+}
+export function getAnalyzeCallCount() { return analyzeCallCount; }
+`, "utf8");
+  const scoreSource = fs.readFileSync(path.join(libraryDir, "score.mjs"), "utf8")
+    .replace(
+      "function projectedSourceEvidence(witnesses) {",
+      `let projectionCallCount = 0;
+function projectedSourceEvidence(witnesses) {
+  projectionCallCount += 1;
+  ${poisonProjection ? 'throw new Error("public source projection reached poisoned boundary");' : ""}`,
+    );
+  const adaptationExports = forbidAdaptation ? `
+export { getAdaptationCallCount as getSpatialAdaptationCallCount } from "./rules-spatial.mjs";
+export { getAdaptationCallCount as getStatePlaneAdaptationCallCount } from "./rules-state-plane.mjs";
+` : "";
+  fs.writeFileSync(path.join(moduleDir, "score.mjs"), `${scoreSource}
+export { getAnalyzeCallCount } from "./kotlin-analysis.mjs";
+export function getProjectionCallCount() { return projectionCallCount; }
+${adaptationExports}`);
   return import(`${pathToFileURL(path.join(moduleDir, "score.mjs")).href}?${Date.now()}-${Math.random()}`);
 }
 
-test("the scorer provenance join rejects every altered source and typed-fact field before result validation", async (t) => {
-  const projectDir = writeLegacyScoreProject(t);
+test("late catalog union forgery is rejected before public source projection or adaptation", async (t) => {
+  const projectDir = writeCompleteProject(t);
+  const forged = await importForgedScorer(t, `
+    const counts = new Map();
+    for (const claim of response.claims) for (const nodeId of claim.witnessNodeIds) counts.set(nodeId, (counts.get(nodeId) ?? 0) + 1);
+    const orphan = response.nodes.find((node) => counts.get(node.nodeId) === 1);
+    const owner = response.claims.find((claim) => claim.witnessNodeIds.includes(orphan.nodeId));
+    owner.witnessNodeIds = owner.witnessNodeIds.filter((nodeId) => nodeId !== orphan.nodeId);
+    refreshClaims(response);
+  `, { forbidAdaptation: true, poisonProjection: true });
+  assert.throws(
+    () => forged.scoreSubmission({ projectDir, build: PASSING_BUILD }),
+    { name: "Error", message: "public analyzer provenance rejected: node catalog is not the exact claim-witness union" },
+  );
+  assert.equal(forged.getAnalyzeCallCount(), 1);
+  assert.equal(forged.getProjectionCallCount(), 0);
+  assert.equal(forged.getSpatialAdaptationCallCount(), 0);
+  assert.equal(forged.getStatePlaneAdaptationCallCount(), 0);
+});
+
+test("chain-consistent forged proof form is rejected before public source projection or adaptation", async (t) => {
+  const projectDir = writeCompleteProject(t);
+  const forged = await importForgedScorer(t, `
+    response.claims[0].proofForm = "forged-public-proof-form";
+    refreshClaims(response);
+  `, { forbidAdaptation: true, poisonProjection: true });
+  assert.throws(
+    () => forged.scoreSubmission({ projectDir, build: PASSING_BUILD }),
+    { name: "Error", message: "public analyzer provenance rejected: claim 0 proof form is outside the public rule domain" },
+  );
+  assert.equal(forged.getAnalyzeCallCount(), 1);
+  assert.equal(forged.getProjectionCallCount(), 0);
+  assert.equal(forged.getSpatialAdaptationCallCount(), 0);
+  assert.equal(forged.getStatePlaneAdaptationCallCount(), 0);
+});
+
+test("the public scorer calls the analyzer once and never falls back when exact claims are absent", async (t) => {
+  const cases = [
+    ["source claim absent", "spatial.entity-content", 'dropClaim(response, "spatial.entity-content");', [
+      true, true, false, true,
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+    ]],
+    ["typed facts cannot replace claim", "spatial.project-entry", 'dropClaim(response, "spatial.project-entry");', [
+      false, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+    ]],
+  ];
+  for (const [name, ruleId, injection, pass] of cases) await t.test(name, async (t) => {
+    const projectDir = writeCompleteProject(t);
+    const forged = await importForgedScorer(t, injection);
+    const score = forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assert.equal(forged.getAnalyzeCallCount(), 1, `${name}: one analyzer call`);
+    assert.deepEqual(score.rules.map((rule) => rule.pass), pass, `${name}: literal public vector`);
+    assert.equal(ruleById(score, ruleId).reason, "supported-subset-v1 claim absent");
+    assert.deepEqual(ruleById(score, ruleId).evidence, []);
+  });
+});
+
+test("witness provenance rejects forged response receipts spans nodes digests order and catalog before adaptation", async (t) => {
+  const projectDir = writeCompleteProject(t, (files) => ({
+    ...files,
+    "app/src/main/java/com/agentbench/gallery/Surrogate.kt": "package com.agentbench.gallery\nfun surrogateBait() = \"left 😀 right\"\n",
+  }));
   const mutations = [
-    ["source path", 'evaluations[0].evidence[0] = { ...evaluations[0].evidence[0], path: "app/src/main/java/Forged.kt" };'],
-    ["source line", "evaluations[0].evidence[0] = { ...evaluations[0].evidence[0], line: evaluations[0].evidence[0].line + 1 };"],
-    ["source excerpt", 'evaluations[0].evidence[0] = { ...evaluations[0].evidence[0], excerpt: "forged" };'],
-    ["typed path", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], path: "app/build.gradle" };'],
-    ["typed line", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], line: evaluations[0].evidence[r].line + 1 };'],
-    ["typed excerpt", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], excerpt: "forged" };'],
-    ["typed kind", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], kind: "manifest.activity" };'],
-    ["typed scope", 'const rows = evaluations.find((rule) => rule.id === "spatial.container-topology").evidence; const r = rows.findIndex((row) => row.kind === "manifest.metadata"); rows[r] = { ...rows[r], scope: "application" };'],
-    ["typed owner", 'const rows = evaluations.find((rule) => rule.id === "spatial.container-topology").evidence; const r = rows.findIndex((row) => row.kind === "manifest.metadata"); rows[r] = { ...rows[r], activityName: ".ForgedActivity" };'],
-    ["typed value", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], value: "forged" };'],
-    ["nested metadata", 'const rows = evaluations.find((rule) => rule.id === "spatial.container-topology").evidence; const r = rows.findIndex((row) => row.kind === "manifest.metadata"); rows[r] = { ...rows[r], metadata: { ...rows[r].metadata, value: "forged" } };'],
-    ["optional typed field", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], key: "forged" };'],
+    ["response shape", 'response.forged = true;'],
+    ["Kotlin input digest", 'response.kotlinInputSetSha256 = "0".repeat(64);'],
+    ["file receipt", 'response.files[0].sha256 = "0".repeat(64);'],
+    ["node path", 'response.nodes[0].path = "app/src/main/java/Forged.kt";'],
+    ["file hash", 'response.nodes[0].fileSha256 = "0".repeat(64);'],
+    ["UTF-16 bounds", 'response.nodes[0].startUtf16 = -1;'],
+    ["surrogate boundary", `
+      const file = index.files.find((candidate) => candidate.path.endsWith("/Surrogate.kt"));
+      const split = file.original.indexOf("😀") + 1;
+      rekeyNode(response, 0, {
+        path: file.path,
+        fileSha256: textDigest(file.original),
+        startUtf16: split,
+        endUtf16: split + 1,
+        textSha256: textDigest(file.original.slice(split, split + 1)),
+      });
+    `],
+    ["substring hash", 'response.nodes[0].textSha256 = "0".repeat(64);'],
+    ["node ID", 'response.nodes[0].nodeId = "0".repeat(64);'],
+    ["closed witness kind", 'response.nodes[0].kind = "forged_kind";'],
+    ["nonstructural kind", 'const indexOfStructuralKind = response.nodes.findIndex((node) => node.kind !== "argument"); rekeyNode(response, indexOfStructuralKind, { structuralToken: false });'],
+    ["witness reference", 'response.claims[0].witnessNodeIds[0] = "0".repeat(64);'],
+    ["witness digest", 'response.claims[0].witnessDigest = "0".repeat(64);'],
+    ["claim order", 'response.claims = [response.claims[1], response.claims[0], ...response.claims.slice(2)];'],
+    ["orphan catalog node", `
+      const counts = new Map();
+      for (const claim of response.claims) for (const nodeId of claim.witnessNodeIds) counts.set(nodeId, (counts.get(nodeId) ?? 0) + 1);
+      const orphan = response.nodes.find((node) => counts.get(node.nodeId) === 1);
+      const owner = response.claims.find((claim) => claim.witnessNodeIds.includes(orphan.nodeId));
+      owner.witnessNodeIds = owner.witnessNodeIds.filter((nodeId) => nodeId !== orphan.nodeId);
+      refreshClaims(response);
+    `],
   ];
   for (const [name, injection] of mutations) await t.test(name, async (t) => {
-    const forged = await importForgedScorer(t, injection);
-    assert.throws(() => forged.scoreSubmission({ projectDir, build: PASSING_BUILD }), /provenance mismatch/i);
+    const forged = await importForgedScorer(t, injection, { forbidAdaptation: true });
+    assert.throws(
+      () => forged.scoreSubmission({ projectDir, build: PASSING_BUILD }),
+      /public analyzer provenance rejected/,
+      `${name}: validation must precede adapters`,
+    );
+    assert.equal(forged.getAnalyzeCallCount(), 1, `${name}: one analyzer call`);
+  });
+});
+
+test("witness provenance rejects a chain-consistent structural-mask forgery before adaptation", async (t) => {
+  const corpus = await loadBatch2bCorpusModule();
+  const writeCase = requireBatch2bExport(corpus, "writePositiveSubsetCase", "function");
+  const projectDir = writeCase(t, "topology.direct-mixed-stage-open.named-literal-stage-id.alpha");
+  const forged = await importForgedScorer(t, `
+    const literalIndex = response.nodes.findIndex((node) => node.kind === "argument" && node.structuralToken === false);
+    if (literalIndex < 0) throw new Error("missing real nonstructural literal witness");
+    const literal = response.nodes[literalIndex];
+    const file = index.files.find((candidate) => candidate.path === literal.path);
+    const line = file.structural.slice(0, literal.startUtf16).split(/\\r?\\n/).length;
+    if (file.structural.slice(literal.startUtf16, literal.endUtf16).trim() !== "") throw new Error("literal span was not wholly masked");
+    if (file.structural.split(/\\r?\\n/)[line - 1].trim() === "") throw new Error("literal attack line must retain surrounding structural code");
+    rekeyNode(response, literalIndex, { structuralToken: true });
+  `, { forbidAdaptation: true });
+  assert.throws(
+    () => forged.scoreSubmission({ projectDir, build: PASSING_BUILD }),
+    /public analyzer provenance rejected: structural witness span is wholly masked/,
+  );
+  assert.equal(forged.getAnalyzeCallCount(), 1);
+});
+
+test("validated witnesses with an empty public line fail only their unrepresentable claim", async (t) => {
+  const corpus = await loadBatch2bCorpusModule();
+  const writeCase = requireBatch2bExport(corpus, "writePositiveSubsetCase", "function");
+  const projectDir = writeCase(t, "topology.direct-mixed-stage-open.named-literal-stage-id.alpha");
+  const baitPath = path.join(projectDir, "app/src/main/java/com/agentbench/corpus/MaskedBait.kt");
+  fs.mkdirSync(path.dirname(baitPath), { recursive: true });
+  fs.writeFileSync(baitPath, "package com.agentbench.corpus\nfun maskedBait() {\n    \"masked-only\"\n}\n", "utf8");
+  const forged = await importForgedScorer(t, `
+    const literalIndex = response.nodes.findIndex((node) => node.kind === "argument" && node.structuralToken === false);
+    const file = index.files.find((candidate) => candidate.path.endsWith("/MaskedBait.kt"));
+    const startUtf16 = file.original.indexOf("masked-only") - 1;
+    const witnessText = file.original.slice(startUtf16, startUtf16 + 13);
+    rekeyNode(response, literalIndex, {
+      path: file.path,
+      fileSha256: textDigest(file.original),
+      startUtf16,
+      endUtf16: startUtf16 + witnessText.length,
+      textSha256: textDigest(witnessText),
+      structuralToken: false,
+    });
+  `);
+  const score = forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assert.deepEqual(score.rules.map((rule) => rule.pass), [
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+  ]);
+  assert.equal(ruleById(score, "spatial.project-entry").reason, "supported-subset-v1 typed binding incomplete");
+  assert.equal(ruleById(score, "spatial.container-topology").reason, "supported-subset-v1 witness unrepresentable");
+  assert.deepEqual(ruleById(score, "spatial.container-topology").evidence, []);
+  assert.equal(forged.getAnalyzeCallCount(), 1);
+});
+
+test("validated projected structural lines enforce the exact 512-byte UTF-8 boundary", async (t) => {
+  assert.equal(Buffer.byteLength(PROJECTION_LINE_512, "utf8"), 512);
+  assert.equal(Buffer.byteLength(PROJECTION_LINE_513, "utf8"), 513);
+  assertDeepFrozen(PUBLIC_PROJECTION_BOUNDARY_VECTORS);
+  const projectDir = writeCompleteProject(t, (files) => ({
+    ...files,
+    [PROJECTION_BOUNDARY_PATH]: `package com.agentbench.gallery\n${PROJECTION_LINE_512}\n${PROJECTION_LINE_513}\n`,
+  }));
+  const cases = [
+    Object.freeze({
+      name: "exactly 512 bytes",
+      boundaryLine: PROJECTION_LINE_512,
+      pass: PUBLIC_PROJECTION_BOUNDARY_VECTORS.exact512,
+      falseIds: Object.freeze([]),
+      axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 4 }),
+      score: 16,
+      evidenceLengths: Object.freeze([12, 15, 7, 9, 6, 4, 5, 5, 8, 13, 11, 17, 6, 8, 6, 15]),
+      cloneReason: "supported-subset-v1 witness: expression-component-clone",
+      cloneProjection: Object.freeze([Object.freeze({
+        evidenceClass: "source",
+        path: PROJECTION_BOUNDARY_PATH,
+        line: 2,
+        excerpt: PROJECTION_LINE_512,
+      })]),
+    }),
+    Object.freeze({
+      name: "exactly 513 bytes",
+      boundaryLine: PROJECTION_LINE_513,
+      pass: PUBLIC_PROJECTION_BOUNDARY_VECTORS.exact513,
+      falseIds: Object.freeze(["ecs.component-clone"]),
+      axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 4, planarTracking: 4 }),
+      score: 15,
+      evidenceLengths: Object.freeze([12, 15, 7, 9, 0, 4, 5, 5, 8, 13, 11, 17, 6, 8, 6, 15]),
+      cloneReason: "supported-subset-v1 witness unrepresentable",
+      cloneProjection: Object.freeze([]),
+    }),
+  ];
+  for (const boundary of cases) await t.test(boundary.name, async (t) => {
+    const forged = await importForgedScorer(t, `
+      const owner = response.claims.find((claim) => claim.ruleId === "ecs.component-clone");
+      const referenceCounts = new Map();
+      for (const claim of response.claims) for (const nodeId of claim.witnessNodeIds) {
+        referenceCounts.set(nodeId, (referenceCounts.get(nodeId) ?? 0) + 1);
+      }
+      const ownerNodes = owner.witnessNodeIds.map((nodeId) => response.nodes.find((node) => node.nodeId === nodeId));
+      const ownerLineKeys = ownerNodes.map((node) => {
+        const source = index.files.find((file) => file.path === node.path);
+        const line = source.structural.slice(0, node.startUtf16).split(/\\r?\\n/).length;
+        return JSON.stringify([node.path, line]);
+      });
+      const ownerLineCounts = new Map();
+      for (const key of ownerLineKeys) ownerLineCounts.set(key, (ownerLineCounts.get(key) ?? 0) + 1);
+      const candidate = ownerNodes.find((node, nodeIndex) => referenceCounts.get(node.nodeId) === 1 && ownerLineCounts.get(ownerLineKeys[nodeIndex]) === 1);
+      if (!candidate) throw new Error("missing uniquely projected component-clone witness");
+      const file = index.files.find((source) => source.path === ${JSON.stringify(PROJECTION_BOUNDARY_PATH)});
+      const boundaryLine = ${JSON.stringify(boundary.boundaryLine)};
+      const startUtf16 = file.original.indexOf(boundaryLine);
+      if (startUtf16 < 0) throw new Error("missing exact projection boundary line");
+      const nodeIndex = response.nodes.findIndex((node) => node.nodeId === candidate.nodeId);
+      rekeyNode(response, nodeIndex, {
+        path: file.path,
+        fileSha256: textDigest(file.original),
+        startUtf16,
+        endUtf16: startUtf16 + boundaryLine.length,
+        textSha256: textDigest(boundaryLine),
+        structuralToken: true,
+      });
+    `);
+    const score = forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assertPublicScoreVector(score, boundary, boundary.name);
+    const clone = ruleById(score, "ecs.component-clone");
+    assert.equal(clone.reason, boundary.cloneReason);
+    assert.deepEqual(
+      clone.evidence.filter((row) => row.path === PROJECTION_BOUNDARY_PATH),
+      boundary.cloneProjection,
+    );
+    assert.equal(forged.getAnalyzeCallCount(), 1);
+    assert.equal(forged.getProjectionCallCount(), 16);
   });
 });
 

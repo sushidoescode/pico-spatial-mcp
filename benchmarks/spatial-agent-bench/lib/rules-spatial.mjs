@@ -1,355 +1,264 @@
-import { findEvidence, findFactEvidence } from "./source.mjs";
+import { findFactEvidence } from "./source.mjs";
 
-function testPattern(source, pattern) {
-  if (typeof pattern === "string") return source.includes(pattern);
-  return new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, "")).test(source);
+const SOURCE_ONLY_RULE_IDS = Object.freeze([
+  "spatial.entity-content",
+  "spatial.ui-lifecycle",
+  "ecs.component-clone",
+  "ecs.system-query",
+  "ecs.frame-update",
+  "ecs.lifecycle",
+]);
+
+function isIdentifierStart(code) {
+  return code === 95 || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
 }
 
-function matchingFile(index, patterns, pathPattern = /\.kt$/) {
-  return index.files.find((file) => testPattern(file.path, pathPattern) && patterns.every((pattern) => testPattern(file.structural, pattern))) ?? null;
+function isIdentifierPart(code) {
+  return isIdentifierStart(code) || (code >= 48 && code <= 57);
 }
 
-function escaped(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function balanced(source, opening, open = "{", close = "}") {
-  if (opening < 0 || source[opening] !== open) return null;
-  let depth = 0;
-  for (let index = opening; index < source.length; index += 1) {
-    if (source[index] === open) depth += 1;
-    else if (source[index] === close) depth -= 1;
-    if (depth === 0) return source.slice(opening + 1, index);
-  }
-  return null;
-}
-
-function balancedEnd(source, opening, open = "{", close = "}") {
-  if (opening < 0 || source[opening] !== open) return -1;
-  let depth = 0;
-  for (let index = opening; index < source.length; index += 1) {
-    if (source[index] === open) depth += 1;
-    else if (source[index] === close) depth -= 1;
-    if (depth === 0) return index;
-  }
-  return -1;
-}
-
-function containingFunction(source, offset) {
-  let found = null;
-  for (const match of source.matchAll(/\bfun\s+(?:[A-Za-z_]\w*\.)?([A-Za-z_]\w*)\s*\([^)]*\)/g)) {
-    if (match.index > offset) break;
-    const opening = source.indexOf("{", match.index + match[0].length);
-    const end = balancedEnd(source, opening);
-    if (opening >= 0 && opening < offset && offset < end) found = { name: match[1], start: match.index, opening, end };
-  }
-  return found;
-}
-
-function calledOutsideOwnBody(source, owner) {
-  if (!owner) return false;
-  const matcher = new RegExp(`\\b${owner.name}\\s*\\(`, "g");
-  return [...source.matchAll(matcher)].some((match) => match.index < owner.start || match.index > owner.end);
-}
-
-function braceDepth(source, end) {
-  let depth = 0;
-  for (let index = 0; index < end; index += 1) {
-    if (source[index] === "{") depth += 1;
-    else if (source[index] === "}") depth -= 1;
-  }
-  return depth;
-}
-
-function callArguments(source, pattern) {
-  const match = pattern.exec(source);
-  if (!match) return null;
-  const opening = source.indexOf("(", match.index);
-  return balanced(source, opening, "(", ")");
-}
-
-function allCallArguments(source, pattern) {
-  const matcher = new RegExp(pattern.source, pattern.flags.replace(/[gy]/g, "") + "g");
-  const calls = [];
-  for (const match of source.matchAll(matcher)) {
-    const opening = source.indexOf("(", match.index);
-    const argumentsText = balanced(source, opening, "(", ")");
-    if (argumentsText !== null) calls.push({ argumentsText, index: match.index });
-  }
-  return calls;
-}
-
-function topLevelArguments(source) {
-  const parts = [];
-  let start = 0;
-  let depth = 0;
-  for (let index = 0; index < source.length; index += 1) {
-    if ("([{<".includes(source[index])) depth += 1;
-    else if (")]}>".includes(source[index])) depth -= 1;
-    else if (source[index] === "," && depth === 0) {
-      parts.push(source.slice(start, index).trim());
-      start = index + 1;
+function tokenize(source) {
+  const tokens = [];
+  let offset = 0;
+  while (offset < source.length) {
+    const code = source.charCodeAt(offset);
+    if (source[offset] === "\n") {
+      tokens.push({ type: "newline", value: "\n" });
+      offset += 1;
+    } else if (code === 96) {
+      const closing = source.indexOf("`", offset + 1);
+      if (closing < 0 || closing === offset + 1) return null;
+      tokens.push({ type: "identifier", value: source.slice(offset + 1, closing) });
+      offset = closing + 1;
+    } else if (isIdentifierStart(code)) {
+      let end = offset + 1;
+      while (end < source.length && isIdentifierPart(source.charCodeAt(end))) end += 1;
+      tokens.push({ type: "identifier", value: source.slice(offset, end) });
+      offset = end;
+    } else if (code === 13 || code === 9 || code === 32) {
+      offset += 1;
+    } else {
+      tokens.push({ type: "symbol", value: source[offset] });
+      offset += 1;
     }
   }
-  parts.push(source.slice(start).trim());
-  return parts;
+  return tokens;
 }
 
-function kotlinClasses(index, supertype) {
-  const classes = [];
-  for (const file of index.files) {
-    if (!/\.kt$/.test(file.path)) continue;
-    const packageName = /(?:^|\n)\s*package\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)/.exec(file.structural)?.[1] ?? "";
-    const declaration = new RegExp(`class\\s+([A-Za-z_]\\w*)\\s*:\\s*${supertype}\\s*\\(\\s*\\)`).exec(file.structural);
-    if (declaration) classes.push({ file, name: declaration[1], qualifiedName: packageName ? `${packageName}.${declaration[1]}` : declaration[1] });
+function decodePackage(file) {
+  const tokens = tokenize(file.structural);
+  if (!tokens) return null;
+  const packages = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index].type !== "identifier" || tokens[index].value !== "package") continue;
+    const parts = [];
+    let cursor = index + 1;
+    if (tokens[cursor]?.type !== "identifier") continue;
+    parts.push(tokens[cursor].value);
+    cursor += 1;
+    while (tokens[cursor]?.value === "." && tokens[cursor + 1]?.type === "identifier") {
+      parts.push(tokens[cursor + 1].value);
+      cursor += 2;
+    }
+    if (tokens[cursor] && tokens[cursor].type !== "newline" && tokens[cursor].value !== ";") continue;
+    packages.push(parts.join("."));
   }
-  return classes;
+  return packages.length === 1 ? packages[0] : null;
 }
 
-function resolvedManifestName(name, applicationId) {
+function decodeClassHeader(node) {
+  const tokens = tokenize(node.file.structural.slice(node.startUtf16, node.endUtf16));
+  if (!tokens) return null;
+  const classOffsets = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (tokens[index].type === "identifier" && tokens[index].value === "class") classOffsets.push(index);
+  }
+  if (classOffsets.length !== 1) return null;
+  const classOffset = classOffsets[0];
+  const className = tokens[classOffset + 1]?.type === "identifier" ? tokens[classOffset + 1].value : null;
+  if (!className) return null;
+
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let angleDepth = 0;
+  let colonOffset = -1;
+  for (let index = classOffset + 2; index < tokens.length; index += 1) {
+    const value = tokens[index].value;
+    if (value === "(") parenDepth += 1;
+    else if (value === ")") parenDepth -= 1;
+    else if (value === "[") bracketDepth += 1;
+    else if (value === "]") bracketDepth -= 1;
+    else if (value === "<") angleDepth += 1;
+    else if (value === ">") angleDepth -= 1;
+    else if (value === "{" && parenDepth === 0 && bracketDepth === 0 && angleDepth === 0) break;
+    else if (value === ":" && parenDepth === 0 && bracketDepth === 0 && angleDepth === 0) {
+      if (colonOffset >= 0) return null;
+      colonOffset = index;
+    }
+    if (parenDepth < 0 || bracketDepth < 0 || angleDepth < 0) return null;
+  }
+  if (colonOffset < 0) return null;
+
+  const baseParts = [];
+  let cursor = colonOffset + 1;
+  if (tokens[cursor]?.type !== "identifier") return null;
+  baseParts.push(tokens[cursor].value);
+  cursor += 1;
+  while (tokens[cursor]?.value === "." && tokens[cursor + 1]?.type === "identifier") {
+    baseParts.push(tokens[cursor + 1].value);
+    cursor += 2;
+  }
+  if (!["(", "{", "\n"].includes(tokens[cursor]?.value ?? "\n")) return null;
+
+  parenDepth = 0;
+  angleDepth = 0;
+  for (let index = cursor; index < tokens.length; index += 1) {
+    const value = tokens[index].value;
+    if (value === "(") parenDepth += 1;
+    else if (value === ")") parenDepth -= 1;
+    else if (value === "<") angleDepth += 1;
+    else if (value === ">") angleDepth -= 1;
+    else if (value === "," && parenDepth === 0 && angleDepth === 0) return null;
+    else if (value === "{" && parenDepth === 0 && angleDepth === 0) break;
+    if (parenDepth < 0 || angleDepth < 0) return null;
+  }
+  const packageName = decodePackage(node.file);
+  if (packageName === null) return null;
+  return {
+    qualifiedName: `${packageName}.${className}`,
+    baseIdentifier: baseParts.at(-1),
+  };
+}
+
+function declarationsFor(claim) {
+  const declarations = [];
+  for (const node of claim.witnesses) {
+    if (node.kind !== "declaration") continue;
+    const decoded = decodeClassHeader(node);
+    if (decoded) declarations.push({ ...decoded, nodeId: node.nodeId });
+  }
+  return declarations;
+}
+
+function resolveManifestName(name, applicationId) {
   if (name.startsWith(".")) return `${applicationId}${name}`;
   if (name.includes(".")) return name;
   return `${applicationId}.${name}`;
 }
 
-function sourceRows(index, file, patterns) {
-  if (!file) return [];
-  const rows = [];
-  for (const pattern of patterns) {
-    const evidence = findEvidence(index, pattern, { paths: file.path });
-    if (evidence[0]) rows.push({ evidenceClass: "source", ...evidence[0] });
-  }
-  return rows;
+function typedEvidence(rows) {
+  return rows.map((row) => ({ evidenceClass: "typed_fact", ...row }));
 }
 
-function typedRows(facts) {
-  return facts.map((fact) => ({ evidenceClass: "typed_fact", ...fact }));
+function failed(id, reason) {
+  return { id, pass: false, evidence: [], reason };
 }
 
-function passRule(id, pass, evidence, reason) {
-  return { id, pass, evidence: pass ? evidence : [], reason };
+function claimGate(context, id) {
+  if (context.analysisStatus === "rejected") return { failure: failed(id, `supported-subset-v1 rejected: ${context.rejectionCode}`) };
+  const claim = context.claimsById.get(id);
+  if (!claim) return { failure: failed(id, "supported-subset-v1 claim absent") };
+  if (!claim.representable) return { failure: failed(id, "supported-subset-v1 witness unrepresentable") };
+  return { claim };
 }
 
-function componentShape(file) {
-  if (!file) return null;
-  const declaration = /class\s+([A-Za-z_]\w*)\s*\(([\s\S]*?)\)\s*:\s*Component\s*\(\s*\)\s*\{([\s\S]*?)\n\}/m.exec(file.structural);
-  if (!declaration) return null;
-  const [, name, parameters, body] = declaration;
-  const fields = [...parameters.matchAll(/\b(?:var|val)\s+([A-Za-z_]\w*)\s*:[^,=]+=[^,\n]+/g)].map((match) => match[1]);
-  const clone = new RegExp(`override\\s+fun\\s+clone\\s*\\(\\s*\\)\\s*:\\s*${name}\\s*=\\s*${name}\\s*\\(([^)]*)\\)`).exec(body);
-  if (fields.length === 0 || !clone) return null;
-  const argumentsText = clone[1];
-  if (!fields.every((field) => new RegExp(`\\b${field}\\b`).test(argumentsText))) return null;
-  return { name };
-}
-
-function systemShape(file) {
-  if (!file) return null;
-  const declaration = /class\s+([A-Za-z_]\w*)\s*:\s*System\s*\(\s*\)\s*\{([\s\S]*)\n\}/m.exec(file.structural);
-  if (!declaration) return null;
-  const [, type, body] = declaration;
-  const query = /private\s+val\s+([A-Za-z_]\w*)\s*=\s*EntityQueryCondition\.hasComponent\(\s*([A-Za-z_]\w*)::class\.java\s*\)/.exec(body);
-  const updateOffset = body.search(/override\s+fun\s+update\s*\(\s*([A-Za-z_]\w*)\s*:\s*SceneUpdateContext\s*\)/);
-  if (!query || updateOffset < 0 || body.indexOf(query[0]) > updateOffset) return null;
-  const context = /override\s+fun\s+update\s*\(\s*([A-Za-z_]\w*)\s*:\s*SceneUpdateContext\s*\)/.exec(body)[1];
-  const updateOpening = body.indexOf("{", updateOffset);
-  const updateBody = balanced(body, updateOpening);
-  if (!updateBody) return null;
-  if (!new RegExp(`\\b${context}\\.scene\\.queryEntity\\(\\s*${query[1]}\\s*\\)`).test(updateBody)) return null;
-  return { type, body: updateBody, context };
-}
-
-function systemUpdateShape(file) {
-  if (!file) return null;
-  const declaration = /class\s+([A-Za-z_]\w*)\s*:\s*System\s*\(\s*\)\s*\{([\s\S]*)\n\}/m.exec(file.structural);
-  if (!declaration) return null;
-  const update = /override\s+fun\s+update\s*\(\s*([A-Za-z_]\w*)\s*:\s*SceneUpdateContext\s*\)/.exec(declaration[2]);
-  if (!update) return null;
-  const opening = declaration[2].indexOf("{", update.index);
-  const body = balanced(declaration[2], opening);
-  return body ? { type: declaration[1], body, context: update[1] } : null;
-}
-
-function projectEntry(index) {
-  const android = findFactEvidence(index, { kind: "gradle.plugin", value: "com.android.application" });
-  const bom = findFactEvidence(index, { kind: "gradle.dependency", value: "com.pico.spatial:bom", version: "0.13.3" });
-  const spatial = findFactEvidence(index, { kind: "gradle.dependency", value: "com.pico.spatial.ui:foundation" });
+function projectEntry(index, context) {
+  const id = "spatial.project-entry";
+  const gate = claimGate(context, id);
+  if (gate.failure) return gate.failure;
+  const claim = gate.claim;
+  const declarations = declarationsFor(claim);
+  const applicationDeclarations = declarations.filter((row) => row.baseIdentifier === "Application");
+  const activityDeclarations = declarations.filter((row) => row.baseIdentifier === "SpatialLaunchActivity");
+  const plugins = findFactEvidence(index, { kind: "gradle.plugin", value: "com.android.application" });
+  const boms = findFactEvidence(index, { kind: "gradle.dependency", value: "com.pico.spatial:bom", version: "0.13.3" });
+  const foundations = findFactEvidence(index, { kind: "gradle.dependency", value: "com.pico.spatial.ui:foundation" });
   const applicationIds = findFactEvidence(index, { kind: "gradle.applicationId" });
-  const applications = findFactEvidence(index, { kind: "manifest.application" });
+  const manifestApplications = findFactEvidence(index, { kind: "manifest.application" });
+  const manifestActivities = findFactEvidence(index, { kind: "manifest.activity" });
+  const bindings = [];
+  if (plugins.length === 1 && boms.length === 1 && foundations.length === 1) {
+    for (const applicationId of applicationIds) {
+      for (const applicationFact of manifestApplications) {
+        const applicationName = resolveManifestName(applicationFact.value, applicationId.value);
+        for (const applicationDeclaration of applicationDeclarations) {
+          if (applicationDeclaration.qualifiedName !== applicationName) continue;
+          for (const activityFact of manifestActivities) {
+            const activityName = resolveManifestName(activityFact.value, applicationId.value);
+            for (const activityDeclaration of activityDeclarations) {
+              if (activityDeclaration.qualifiedName !== activityName) continue;
+              bindings.push({ typed: [plugins[0], boms[0], foundations[0], applicationId, applicationFact, activityFact] });
+            }
+          }
+        }
+      }
+    }
+  }
+  if (bindings.length !== 1) return failed(id, "supported-subset-v1 typed binding incomplete");
+  return {
+    id,
+    pass: true,
+    evidence: [...claim.sourceEvidence, ...typedEvidence(bindings[0].typed)],
+    reason: `supported-subset-v1 witness: ${claim.proofForm}`,
+  };
+}
+
+function staticMetadata(rows, expectedValue = undefined) {
+  return rows.filter((row) => row.metadata
+    && row.metadata.resource === null
+    && typeof row.metadata.value === "string"
+    && row.metadata.value.length > 0
+    && (expectedValue === undefined || row.metadata.value === expectedValue));
+}
+
+function containerTopology(index, context) {
+  const id = "spatial.container-topology";
+  const gate = claimGate(context, id);
+  if (gate.failure) return gate.failure;
+  const claim = gate.claim;
+  const declarations = declarationsFor(claim).filter((row) => row.baseIdentifier === "SpatialLaunchActivity");
+  const applicationIds = findFactEvidence(index, { kind: "gradle.applicationId" });
   const activities = findFactEvidence(index, { kind: "manifest.activity" });
-  const main = matchingFile(index, [/fun\s+mainApp\s*\(/, /DefaultWindowContainer\s*\{/]);
-  const applicationClasses = kotlinClasses(index, "Application").filter(({ file }) => /launch\s*\(\s*::mainApp\s*\)/.test(file.structural));
-  const activityClasses = kotlinClasses(index, "SpatialLaunchActivity");
-  let bound = null;
+  const bindings = [];
   for (const applicationId of applicationIds) {
-    const application = applicationClasses.find((candidate) => applications.some((fact) => resolvedManifestName(fact.value, applicationId.value) === candidate.qualifiedName));
-    const activity = activityClasses.find((candidate) => activities.some((fact) => resolvedManifestName(fact.value, applicationId.value) === candidate.qualifiedName));
-    if (application && activity) {
-      bound = { applicationId, application, activity, applicationFact: applications.find((fact) => resolvedManifestName(fact.value, applicationId.value) === application.qualifiedName), activityFact: activities.find((fact) => resolvedManifestName(fact.value, applicationId.value) === activity.qualifiedName) };
-      break;
+    for (const activity of activities) {
+      const activityName = resolveManifestName(activity.value, applicationId.value);
+      for (const declaration of declarations) {
+        if (declaration.qualifiedName !== activityName) continue;
+        const baseQuery = { scope: "activity", activityName: activity.value };
+        const ids = staticMetadata(findFactEvidence(index, { kind: "manifest.metadata", value: "pico.spatial.windowcontainer.id", ...baseQuery }));
+        const styles = staticMetadata(findFactEvidence(index, { kind: "manifest.metadata", value: "pico.spatial.windowcontainer.style", ...baseQuery }), "1");
+        const sizes = staticMetadata(findFactEvidence(index, { kind: "manifest.metadata", value: "pico.spatial.windowcontainer.defaultsize", ...baseQuery }), "1280x720");
+        for (const metadataId of ids) for (const style of styles) for (const size of sizes) {
+          bindings.push({ typed: [applicationId, activity, metadataId, style, size] });
+        }
+      }
     }
   }
-  const pass = android.length > 0 && bom.length > 0 && spatial.length > 0 && main && bound;
-  const evidence = [
-    ...sourceRows(index, main, [/fun\s+mainApp\s*\(/]),
-    ...sourceRows(index, bound?.application.file, [/launch\s*\(\s*::mainApp\s*\)/]),
-    ...sourceRows(index, bound?.activity.file, [/SpatialLaunchActivity\s*\(\s*\)/]),
-    ...typedRows([android[0], bom[0], spatial[0], bound?.applicationId, bound?.applicationFact, bound?.activityFact].filter(Boolean)),
-  ];
-  return passRule("spatial.project-entry", Boolean(pass), evidence, pass
-    ? "active Android and PICO 0.13.3 facts are wired through the manifest application and mainApp launch"
-    : "the active Android/PICO 0.13.3 project and manifest-to-mainApp launch conjunction is incomplete");
+  if (bindings.length !== 1) return failed(id, "supported-subset-v1 typed binding incomplete");
+  return {
+    id,
+    pass: true,
+    evidence: [...claim.sourceEvidence, ...typedEvidence(bindings[0].typed)],
+    reason: `supported-subset-v1 witness: ${claim.proofForm}`,
+  };
 }
 
-function containerTopology(index) {
-  let owner = null;
-  let metadata = null;
-  const launchClassNames = new Set(kotlinClasses(index, "SpatialLaunchActivity").map(({ qualifiedName }) => qualifiedName));
-  const applicationIds = findFactEvidence(index, { kind: "gradle.applicationId" }).map((fact) => fact.value);
-  for (const activity of findFactEvidence(index, { kind: "manifest.activity" })) {
-    if (!applicationIds.some((applicationId) => launchClassNames.has(resolvedManifestName(activity.value, applicationId)))) continue;
-    const query = (value) => findFactEvidence(index, {
-      kind: "manifest.metadata",
-      value,
-      scope: "activity",
-      activityName: activity.value,
-    });
-    const id = query("pico.spatial.windowcontainer.id").filter((row) => row.metadata.resource === null && typeof row.metadata.value === "string" && row.metadata.value.length > 0);
-    const style = query("pico.spatial.windowcontainer.style").filter((row) => row.metadata.resource === null && row.metadata.value === "1");
-    const size = query("pico.spatial.windowcontainer.defaultsize").filter((row) => row.metadata.resource === null && row.metadata.value === "1280x720");
-    if (id.length > 0 && style.length > 0 && size.length > 0) {
-      owner = activity;
-      metadata = [id[0], style[0], size[0]];
-      break;
-    }
-  }
-  const main = matchingFile(index, [
-    /DefaultWindowContainer\s*\{/,
-    /Stage\s*\([\s\S]*?\)\s*\{/,
-    /openStage\s*\([\s\S]*?StageStyle\.Mixed\s*,[\s\S]*?\bbundle\b[\s\S]*?\)/,
-  ]);
-  let validStageDeclaration = false;
-  if (main) {
-    const declaredIds = new Set(allCallArguments(main.structural, /\bStage\s*\(/).flatMap(({ argumentsText: declaration }) => {
-      if (/\bstyle\s*=/.test(declaration)) return [];
-      const id = topLevelArguments(declaration).map((argument) => /^id\s*=\s*([\s\S]+)$/.exec(argument)?.[1]?.replace(/\s+/g, "")).find(Boolean);
-      return id ? [id] : [];
-    }));
-    const mixedOpenIds = allCallArguments(main.structural, /\bopenStage\s*\(/).flatMap(({ argumentsText: opened, index: openOffset }) => {
-      const args = topLevelArguments(opened);
-      const ownerFunction = containingFunction(main.structural, openOffset);
-      return args.length >= 3 && /\bStageStyle\.Mixed\b/.test(args[1]) && /\bbundle\b/.test(args.slice(2).join(",")) && calledOutsideOwnBody(main.structural, ownerFunction)
-        ? [args[0].replace(/\s+/g, "")]
-        : [];
-    });
-    validStageDeclaration = mixedOpenIds.some((id) => declaredIds.has(id));
-  }
-  const pass = Boolean(owner && metadata && main && validStageDeclaration);
-  const evidence = [
-    ...sourceRows(index, main, [/DefaultWindowContainer\s*\{/, /\bStage\s*\(/, /openStage\s*\([\s\S]*?StageStyle\.Mixed/]),
-    ...typedRows(metadata ?? []),
-  ];
-  return passRule("spatial.container-topology", pass, evidence, pass
-    ? "the launch activity owns the planar window facts and mainApp declares then opens a secondary Mixed Stage"
-    : "activity-owned planar window facts or the declared-and-opened Mixed Stage relationship is incomplete");
+function claimOnly(context, id) {
+  const gate = claimGate(context, id);
+  if (gate.failure) return gate.failure;
+  return {
+    id,
+    pass: true,
+    evidence: gate.claim.sourceEvidence,
+    reason: `supported-subset-v1 witness: ${gate.claim.proofForm}`,
+  };
 }
 
-function entityContent(index) {
-  const main = matchingFile(index, [/\bStage\s*\([\s\S]*?\)\s*\{[\s\S]*?GalleryStage\s*\(/]);
-  const content = matchingFile(index, [
-    /fun\s+GalleryStage\s*\(/,
-    /SpatialView\s*\(/,
-    /\bEntity\s*\(/,
-    /\.components\.(?:set|get)|components\s*\[/,
-    /(?:addEntity|addChild)\s*\(/,
-  ]);
-  const androidSubstitute = content && /\b(?:Activity|AndroidView|View|Canvas|GLSurfaceView|OpenGL)\b/.test(content.structural);
-  const pass = Boolean(main && content && !androidSubstitute);
-  return passRule("spatial.entity-content", pass, sourceRows(index, content, [/SpatialView\s*\(/, /\bEntity\s*\(/, /\.components\.(?:set|get)|components\s*\[/]), pass
-    ? "secondary Stage content is owned by SpatialView and PICO ECS entities/components"
-    : "secondary Stage content lacks the SpatialView and PICO ECS ownership conjunction");
-}
-
-function uiLifecycle(index) {
-  const main = matchingFile(index, [
-    /DefaultWindowContainer\s*\{\s*PicoTheme\s*\{/,
-    /GalleryWindow\s*\(/,
-  ]);
-  const stage = matchingFile(index, [
-    /fun\s+GalleryStage\s*\(/,
-    /DisposableEffect\s*\(/,
-    /onDispose\s*\{/,
-  ]);
-  const pass = Boolean(main && stage);
-  return passRule("spatial.ui-lifecycle", pass, [
-    ...sourceRows(index, main, [/DefaultWindowContainer\s*\{\s*PicoTheme\s*\{/]),
-    ...sourceRows(index, stage, [/DisposableEffect\s*\(/, /onDispose\s*\{/]),
-  ], pass
-    ? "planar SpatialUI content is under PicoTheme and Stage-owned resources have a paired composition lifecycle"
-    : "the PicoTheme planar root or paired Stage composition lifecycle is incomplete");
-}
-
-function componentClone(index) {
-  const file = index.files.find((candidate) => /\.kt$/.test(candidate.path) && /:\s*Component\s*\(\s*\)/.test(candidate.structural));
-  const shape = componentShape(file);
-  const pass = Boolean(shape);
-  return passRule("ecs.component-clone", pass, sourceRows(index, file, [/class\s+\w+\s*\([\s\S]*?\)\s*:\s*Component/, /override\s+fun\s+clone\s*\(/]), pass
-    ? "a default-constructible state-bearing Component clones all retained constructor state"
-    : "no default-constructible state-bearing Component has a state-preserving clone");
-}
-
-function systemQuery(index) {
-  const file = index.files.find((candidate) => /\.kt$/.test(candidate.path) && /:\s*System\s*\(\s*\)/.test(candidate.structural));
-  const shape = systemShape(file);
-  const pass = Boolean(shape);
-  return passRule("ecs.system-query", pass, sourceRows(index, file, [/EntityQueryCondition\.hasComponent\s*\(/, /context\.scene\.queryEntity\s*\(/]), pass
-    ? "a custom System hoists a component query and applies it to context.scene during update"
-    : "the custom System lacks a hoisted component query against update context.scene");
-}
-
-function frameUpdate(index) {
-  const file = index.files.find((candidate) => /\.kt$/.test(candidate.path) && /:\s*System\s*\(\s*\)/.test(candidate.structural));
-  const shape = systemUpdateShape(file);
-  let pass = false;
-  if (shape) {
-    const component = /val\s+([A-Za-z_]\w*)\s*=\s*\w+\.components\[\s*TransformComponent::class\.java\s*\]/.exec(shape.body);
-    const deltaMutation = new RegExp(`\\b([A-Za-z_]\\w*)\\.([A-Za-z_]\\w*)\\s*(?:\\+=|=)\\s*[^\\n;]*\\b${shape.context}\\.deltaTime\\b`).exec(shape.body);
-    const transformAssignment = component && new RegExp(`\\b${component[1]}\\.(?:position|quaternion|eulerAngles|scaleVector)\\s*=([^\\n;]+)`).exec(shape.body);
-    pass = Boolean(component && deltaMutation && transformAssignment
-      && new RegExp(`\\b${deltaMutation[1]}\\.${deltaMutation[2]}\\b|\\b${shape.context}\\.deltaTime\\b`).test(transformAssignment[1])
-      && !/components\.set\s*\(\s*TransformComponent/.test(shape.body));
-  }
-  return passRule("ecs.frame-update", pass, sourceRows(index, file, [/context\.deltaTime/, /transform\.(?:position|quaternion|eulerAngles|scaleVector)\s*=/]), pass
-    ? "per-frame work scales by context.deltaTime and mutates an existing TransformComponent property"
-    : "per-frame work lacks deltaTime-scaled in-place TransformComponent mutation");
-}
-
-function lifecycle(index) {
-  const file = matchingFile(index, [/DisposableEffect\s*\(/, /registerSystem\s*</]);
-  const effectOpening = file ? file.structural.indexOf("{", file.structural.search(/DisposableEffect\s*\(/)) : -1;
-  const effect = file ? balanced(file.structural, effectOpening) : null;
-  const registered = effect ? /\bregisterSystem\s*<\s*([A-Za-z_]\w*)\s*>\s*\(\s*\)/.exec(effect) : null;
-  const disposeOffset = effect ? effect.search(/onDispose\s*\{/) : -1;
-  const disposeOpening = effect ? effect.indexOf("{", disposeOffset) : -1;
-  const dispose = effect ? balanced(effect, disposeOpening) : null;
-  const unregistered = dispose ? /unregisterSystem\s*<\s*([A-Za-z_]\w*)\s*>\s*\(\s*\)/.exec(dispose) : null;
-  const pass = Boolean(registered && braceDepth(effect, registered.index) === 0
-    && disposeOffset >= 0 && registered.index < disposeOffset
-    && unregistered && registered[1] === unregistered[1]);
-  return passRule("ecs.lifecycle", pass, sourceRows(index, file, [/registerSystem\s*</, /unregisterSystem\s*</]), pass
-    ? "one composition lifecycle registers and unregisters the same concrete System type"
-    : "one paired lifecycle does not register and unregister the same concrete System type");
-}
-
-export function evaluateSpatialRules(index) {
+export function evaluateSpatialRules(index, context) {
   return [
-    projectEntry(index),
-    containerTopology(index),
-    entityContent(index),
-    uiLifecycle(index),
-    componentClone(index),
-    systemQuery(index),
-    frameUpdate(index),
-    lifecycle(index),
+    projectEntry(index, context),
+    containerTopology(index, context),
+    ...SOURCE_ONLY_RULE_IDS.map((id) => claimOnly(context, id)),
   ];
 }
