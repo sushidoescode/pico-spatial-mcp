@@ -255,7 +255,7 @@ printf '%s\\n' "$@" > "${canonicalArgs}"
   check("build matrix extracts literal skeleton facts", () => {
     assert.equal(matrix.observed.minSdk, "35");
     assert.equal(matrix.observed.agp, "8.13.2");
-    assert.equal(matrix.observed.bom, "0.13.3");
+    assert.equal(matrix.observed.bom, "6.0.0");
     assert(matrix.sourceFiles.every((p) => p.includes("appskeleton")));
     assert.equal(matrix.observed.abi, "arm64-v8a");
     assert.equal(matrix.extractionFailures.length, 0);

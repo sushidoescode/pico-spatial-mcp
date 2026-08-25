@@ -26,7 +26,7 @@ function installedVersions(): Record<string, string> {
   try {
     out.editor = fs.readFileSync(path.join(os.homedir(), "Library/PICO/sdk/0.13/editor/Spatial Editor.app/Contents/MacOS/version"), "utf8").match(/[\d.]+/)?.[0] ?? "unknown";
   } catch { out.editor = "unknown"; }
-  out.sdkMaven = "0.13.3"; // the gradle dependency line our scaffolds pin
+  out.sdkMaven = "6.0.0"; // the gradle dependency line our scaffolds pin
   return out;
 }
 
@@ -104,7 +104,7 @@ export function registerToolchainWatchTools(server: McpServer) {
       // 3. verdict — derive from the sdkMap + artifact names (not the schema-dependent revision scan)
       const sdk61 = (result.channel?.sdkMap ?? []).find((m: any) => m.osVersion?.startsWith("6"));
       const staged6 = result.stagedInternal.filter((p: any) => /swan_spaceos|_6\.\d/i.test(p.name));
-      const mavenLatest = result.maven?.latest ?? "0.13.3";
+      const mavenLatest = result.maven?.latest ?? "6.0.0";
       const public61 = result.publicNow.some((p: any) => /swan_spaceos|_6\.\d/i.test(p.name));
       result.verdict = public61
         ? `A newer 6.x runtime is publicly downloadable — install it, then re-run your verification matrix against it.`
