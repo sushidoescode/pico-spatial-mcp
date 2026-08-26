@@ -1,3 +1,4 @@
+import path from "node:path";
 import { findFactEvidence } from "./source.mjs";
 
 const SOURCE_ONLY_RULE_IDS = Object.freeze([
@@ -37,6 +38,9 @@ function tokenize(source) {
       offset = end;
     } else if (code === 13 || code === 9 || code === 32) {
       offset += 1;
+    } else if (source.startsWith("->", offset)) {
+      tokens.push({ type: "symbol", value: "->" });
+      offset += 2;
     } else {
       tokens.push({ type: "symbol", value: source[offset] });
       offset += 1;
@@ -91,8 +95,8 @@ function decodeClassHeader(node) {
     else if (value === ")") parenDepth -= 1;
     else if (value === "[") bracketDepth += 1;
     else if (value === "]") bracketDepth -= 1;
-    else if (value === "<") angleDepth += 1;
-    else if (value === ">") angleDepth -= 1;
+    else if (value === "<" && parenDepth === 0 && bracketDepth === 0) angleDepth += 1;
+    else if (value === ">" && parenDepth === 0 && bracketDepth === 0 && angleDepth > 0) angleDepth -= 1;
     else if (value === "{") braceDepth += 1;
     else if (value === "}") braceDepth -= 1;
     if (parenDepth < 0 || bracketDepth < 0 || angleDepth < 0 || braceDepth < 0) return null;
@@ -113,12 +117,12 @@ function decodeClassHeader(node) {
     else if (value === ")") parenDepth -= 1;
     else if (value === "[") bracketDepth += 1;
     else if (value === "]") bracketDepth -= 1;
-    else if (value === "<") angleDepth += 1;
-    else if (value === ">") angleDepth -= 1;
+    else if (value === "<" && parenDepth === 0 && bracketDepth === 0) angleDepth += 1;
+    else if (value === ">" && parenDepth === 0 && bracketDepth === 0 && angleDepth > 0) angleDepth -= 1;
     else if (value === "{" && parenDepth === 0 && bracketDepth === 0 && angleDepth === 0) break;
     else if (value === ":" && parenDepth === 0 && bracketDepth === 0 && angleDepth === 0) {
-      if (colonOffset >= 0) return null;
       colonOffset = index;
+      break;
     }
     if (parenDepth < 0 || bracketDepth < 0 || angleDepth < 0) return null;
   }
@@ -133,17 +137,30 @@ function decodeClassHeader(node) {
     baseParts.push(tokens[cursor + 1].value);
     cursor += 2;
   }
+  if (tokens[cursor]?.value === "<") {
+    let depth = 0;
+    do {
+      const value = tokens[cursor]?.value;
+      if (value === "<") depth += 1;
+      else if (value === ">" && depth > 0) depth -= 1;
+      cursor += 1;
+    } while (cursor < tokens.length && depth > 0);
+    if (depth !== 0) return null;
+  }
   if (!["(", "{", "\n"].includes(tokens[cursor]?.value ?? "\n")) return null;
 
   parenDepth = 0;
   angleDepth = 0;
+  let whereClause = false;
   for (let index = cursor; index < tokens.length; index += 1) {
-    const value = tokens[index].value;
+    const token = tokens[index];
+    const value = token.value;
     if (value === "(") parenDepth += 1;
     else if (value === ")") parenDepth -= 1;
-    else if (value === "<") angleDepth += 1;
-    else if (value === ">") angleDepth -= 1;
-    else if (value === "," && parenDepth === 0 && angleDepth === 0) return null;
+    else if (value === "<" && parenDepth === 0) angleDepth += 1;
+    else if (value === ">" && parenDepth === 0 && angleDepth > 0) angleDepth -= 1;
+    else if (token.type === "identifier" && value === "where" && parenDepth === 0 && angleDepth === 0) whereClause = true;
+    else if (value === "," && parenDepth === 0 && angleDepth === 0 && !whereClause) return null;
     else if (value === "{" && parenDepth === 0 && angleDepth === 0) break;
     if (parenDepth < 0 || angleDepth < 0) return null;
   }
@@ -171,16 +188,81 @@ function resolveManifestName(name, applicationId) {
   return `${applicationId}.${name}`;
 }
 
+const TYPED_FACT_KEYS = new Set([
+  "kind", "value", "path", "line", "excerpt", "scope", "activityName",
+  "key", "alias", "version", "versionRef", "metadata",
+]);
+const METADATA_KEYS = new Set(["scope", "activityName", "name", "value", "resource"]);
+
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function boundedString(value, maximumBytes, { nullable = false } = {}) {
+  if (nullable && value === null) return true;
+  return typeof value === "string"
+    && value.length > 0
+    && value === value.trim()
+    && !/[\r\n]/.test(value)
+    && Buffer.byteLength(value, "utf8") <= maximumBytes;
+}
+
+function relativeEvidencePath(value) {
+  if (!boundedString(value, 1_024)) return false;
+  if (path.posix.isAbsolute(value) || /^[A-Za-z]:/.test(value) || value.includes("\\")
+      || /[\u0000-\u001f\u007f]/.test(value)) return false;
+  const segments = value.split("/");
+  return !segments.some((segment) => segment === "" || segment === "." || segment === "..")
+    && path.posix.normalize(value) === value;
+}
+
+function representableMetadata(row) {
+  if (!isRecord(row.metadata) || Object.keys(row.metadata).length !== METADATA_KEYS.size
+      || Object.keys(row.metadata).some((key) => !METADATA_KEYS.has(key))) return false;
+  const metadata = row.metadata;
+  if (metadata.scope !== "application" && metadata.scope !== "activity") return false;
+  if (metadata.scope === "application" && metadata.activityName !== null) return false;
+  if (metadata.scope === "activity" && !boundedString(metadata.activityName, 512)) return false;
+  if (!boundedString(metadata.name, 512)
+      || !boundedString(metadata.value, 1_024, { nullable: true })
+      || !boundedString(metadata.resource, 1_024, { nullable: true })
+      || (metadata.value === null) === (metadata.resource === null)) return false;
+  return row.scope === metadata.scope
+    && row.activityName === metadata.activityName
+    && row.value === metadata.name;
+}
+
+export function isRepresentableTypedFact(row) {
+  if (!isRecord(row) || Object.keys(row).some((key) => !TYPED_FACT_KEYS.has(key))) return false;
+  for (const key of ["kind", "value", "path", "line", "excerpt"]) {
+    if (!Object.hasOwn(row, key)) return false;
+  }
+  if (!boundedString(row.kind, 256)
+      || !boundedString(row.value, 1_024)
+      || !relativeEvidencePath(row.path)
+      || !Number.isSafeInteger(row.line) || row.line < 1
+      || !boundedString(row.excerpt, 512)) return false;
+  for (const key of ["key", "alias", "version", "versionRef"]) {
+    if (!Object.hasOwn(row, key)) continue;
+    if (key === "key" && row[key] === null) return false;
+    if (!boundedString(row[key], 1_024, { nullable: key !== "key" })) return false;
+  }
+  const metadataFact = row.kind === "manifest.metadata";
+  for (const key of ["scope", "activityName", "metadata"]) {
+    if (metadataFact !== Object.hasOwn(row, key)) return false;
+  }
+  return !metadataFact || representableMetadata(row);
+}
+
 function typedEvidence(index, rows) {
   const evidence = [];
   for (const row of rows) {
+    if (!isRepresentableTypedFact(row)) return null;
     const files = index.files.filter((file) => file.path === row.path);
-    if (files.length !== 1) throw new Error("typed fact source path must resolve exactly once");
+    if (files.length !== 1) return null;
     const structuralExcerpt = files[0].structural.split("\n")[row.line - 1]?.trim();
-    if (typeof structuralExcerpt !== "string") throw new Error("typed fact source line is out of bounds");
-    if (typeof row.excerpt !== "string") throw new Error("typed fact excerpt must be a string");
-    if (structuralExcerpt.length === 0 || Buffer.byteLength(structuralExcerpt, "utf8") > 512
-        || row.excerpt.length === 0 || Buffer.byteLength(row.excerpt, "utf8") > 512) return null;
+    if (!boundedString(structuralExcerpt, 512)) return null;
     evidence.push({ evidenceClass: "typed_fact", ...row });
   }
   return evidence;

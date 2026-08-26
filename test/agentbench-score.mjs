@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { canonicalJson } from "../benchmarks/spatial-agent-bench/lib/identity.mjs";
 import { RULE_DEFINITIONS, TEST_EXECUTION_STREAM_MAX_BYTES } from "../benchmarks/spatial-agent-bench/lib/contract.mjs";
 import { analyzeKotlin } from "../benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs";
+import { isRepresentableTypedFact } from "../benchmarks/spatial-agent-bench/lib/rules-spatial.mjs";
 import { loadSubmissionSources } from "../benchmarks/spatial-agent-bench/lib/source.mjs";
 import { scoreSubmission } from "../benchmarks/spatial-agent-bench/lib/score.mjs";
 import * as batch2bFixture from "./helpers/agentbench-fixture.mjs";
@@ -229,6 +230,17 @@ const PUBLIC_TYPED_FACT_BOUNDARY_VECTORS = Object.freeze({
     true, true, true, true,
   ]),
 });
+const PUBLIC_TYPED_FACT_FIELD_VECTORS = Object.freeze({
+  exactLimit: PUBLIC_BASE_VECTORS.correctedStandard,
+  projectEntryUnrepresentable: PUBLIC_ATTACK_VECTORS["spatial.project-entry"],
+  containerTopologyUnrepresentable: PUBLIC_ATTACK_VECTORS["spatial.container-topology"],
+  bothMixedRulesUnrepresentable: Object.freeze([
+    false, false, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+});
 const PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS = Object.freeze({
   "spatial.project-entry": Object.freeze({
     pass: Object.freeze([
@@ -284,17 +296,6 @@ const PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS = Object.freeze({
     falseIds: Object.freeze(["ecs.lifecycle", "state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"]),
     axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 2, planarTracking: 3 }),
     score: 12,
-  }),
-  "plane.retry-readiness": Object.freeze({
-    pass: Object.freeze([
-      true, true, true, true,
-      true, true, true, true,
-      true, true, true, true,
-      false, true, true, true,
-    ]),
-    falseIds: Object.freeze(["plane.retry-readiness"]),
-    axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 3 }),
-    score: 15,
   }),
   "plane.retry-readiness.disconnected-load": Object.freeze({
     pass: Object.freeze([
@@ -592,6 +593,21 @@ function assertPublicScoreVector(score, expected, label) {
     if (rule.pass) assert.match(rule.reason, /^supported-subset-v1 witness:/, `${label}/${rule.id}: passing reason`);
     else assert.equal(rule.evidence.length, 0, `${label}/${rule.id}: failed evidence`);
   }
+}
+
+function publicExpectation(pass) {
+  const axes = { spatialNative: 0, ecs: 0, statePassing: 0, planarTracking: 0 };
+  const falseIds = [];
+  for (const [index, [ruleId, axis]] of RULE_DEFINITIONS.entries()) {
+    if (pass[index]) axes[axis] += 1;
+    else falseIds.push(ruleId);
+  }
+  return Object.freeze({
+    pass,
+    falseIds: Object.freeze(falseIds),
+    axes: Object.freeze(axes),
+    score: pass.filter(Boolean).length,
+  });
 }
 
 function mixedTypedConjunctions(index, response) {
@@ -1769,6 +1785,73 @@ test("declaration header decoding ignores class literals in a witnessed class bo
   }, "class-literal body");
 });
 
+test("declaration header decoding covers supported superclass forms and rejects multiple supertypes", async (t) => {
+  const allTrue = PUBLIC_BASE_VECTORS.correctedStandard;
+  const noMixedClaims = PUBLIC_TYPED_FACT_FIELD_VECTORS.bothMixedRulesUnrepresentable;
+  const cases = Object.freeze([
+    Object.freeze({
+      name: "defaulted function-type constructor parameter",
+      header: "class LaunchActivity(private val tick: () -> Unit = {}) : SpatialLaunchActivity()",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
+      name: "defaulted comparison-expression constructor parameter",
+      header: "class LaunchActivity(private val tick: Int = if (1 < 2) 1 else 0) : SpatialLaunchActivity()",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
+      name: "generic direct supertype",
+      header: "class LaunchActivity : SpatialLaunchActivity<Any>()",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
+      name: "where-clause class header",
+      header: "class LaunchActivity<T> : SpatialLaunchActivity() where T : Any",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
+      name: "multiple supertypes remain outside the supported subset",
+      header: "class LaunchActivity : SpatialLaunchActivity(), Runnable { override fun run() = Unit }",
+      analyzer: noMixedClaims,
+      public: noMixedClaims,
+    }),
+  ]);
+  assertDeepFrozen(cases);
+  for (const boundary of cases) await t.test(boundary.name, (t) => {
+    const projectDir = writeCompleteProject(t, replaceFixturePathOnce(
+      "app/src/main/java/com/agentbench/gallery/platform/LaunchActivity.kt",
+      "class LaunchActivity : SpatialLaunchActivity()",
+      boundary.header,
+    ));
+    const response = analyzeKotlin(loadSubmissionSources(projectDir));
+    assert.deepEqual(analyzerRuleVector(response), boundary.analyzer, `${boundary.name}: analyzer vector`);
+    const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assertPublicScoreVector(score, publicExpectation(boundary.public), boundary.name);
+  });
+});
+
+test("interior-newline manifest metadata fails its owning rule closed without throwing", (t) => {
+  const projectDir = writeCompleteProject(t, replaceFixturePathOnce(
+    "app/src/main/AndroidManifest.xml",
+    'android:value="BenchmarkWindow"',
+    'android:value="Benchmark\nWindow"',
+  ));
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assertPublicScoreVector(
+    score,
+    publicExpectation(PUBLIC_TYPED_FACT_FIELD_VECTORS.containerTopologyUnrepresentable),
+    "interior-newline manifest metadata",
+  );
+  assert.equal(
+    ruleById(score, "spatial.container-topology").reason,
+    "supported-subset-v1 typed-fact evidence unrepresentable",
+  );
+});
+
 test("rule evidence retains exact source and typed-fact provenance without conflating evidence classes", (t) => {
   const projectDir = writeCompleteProject(t);
   const index = loadSubmissionSources(projectDir);
@@ -1988,6 +2071,30 @@ test("independently named typed reentry callback scores sixteen and its callback
   }, "equivalent callback attack");
 });
 
+function replacementStateAuthorityAttack(files) {
+  return {
+    ...files,
+    "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
+      .replace("    closeStage()", "    closeStage()\n    val replacementStore = BenchmarkStore()")
+      .replace("val selection = store.snapshot().selection", "val selection = replacementStore.snapshot().selection")
+      .replace("val visitCount = store.snapshot().visitCount", "val visitCount = replacementStore.snapshot().visitCount")
+      .replace("val paused = store.snapshot().paused", "val paused = replacementStore.snapshot().paused")
+      .replace("store.restore(GallerySnapshot(selection, visitCount, paused))", "replacementStore.restore(GallerySnapshot(selection, visitCount, paused))")
+      .replace(
+        `    openGalleryStage(
+        state = GallerySnapshot.empty(),
+        store = store,
+        restoreRetainedState = true,
+    )`,
+        `    openGalleryStage(
+        state = GallerySnapshot.empty(),
+        store = replacementStore,
+        restoreRetainedState = true,
+    )`,
+      ),
+  };
+}
+
 test("disconnected structural vocabulary cannot satisfy relational rubric conjunctions", async (t) => {
   const cases = [
     ["manifest classes do not match implementation", "spatial.project-entry", (files) => ({
@@ -2096,16 +2203,7 @@ private fun unusedSemanticBait(candidates: List<PlaneAnchor>) {
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
         .replace("private fun area(anchor: PlaneAnchor): Float = anchor.boundingBoxSize.x * anchor.boundingBoxSize.y", "private fun area(anchor: PlaneAnchor): Float = 1f\n\n    private fun unusedArea(anchor: PlaneAnchor): Float = anchor.boundingBoxSize.x * anchor.boundingBoxSize.y"),
     })],
-    ["close path constructs a replacement state authority", "state.reopen-wiring", (files) => ({
-      ...files,
-      "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
-        .replace("    closeStage()", "    closeStage()\n    val replacementStore = BenchmarkStore()")
-        .replace("val selection = store.snapshot().selection", "val selection = replacementStore.snapshot().selection")
-        .replace("val visitCount = store.snapshot().visitCount", "val visitCount = replacementStore.snapshot().visitCount")
-        .replace("val paused = store.snapshot().paused", "val paused = replacementStore.snapshot().paused")
-        .replace("store.restore(GallerySnapshot(selection, visitCount, paused))", "replacementStore.restore(GallerySnapshot(selection, visitCount, paused))")
-        .replace("store = store,", "store = replacementStore,"),
-    })],
+    ["close path constructs a replacement state authority", "state.reopen-wiring", replacementStateAuthorityAttack],
     ["retained field reads are outside the close/reopen path", "state.reopen-wiring", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
@@ -2124,6 +2222,11 @@ private fun unusedSemanticBait(candidates: List<PlaneAnchor>) {
   assertDeepFrozen(PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS);
   assertDeepFrozen(PUBLIC_DISCONNECTED_ATTACK_INVENTORY);
   assert.deepEqual(cases.map(([name, ruleId, , expectationKey = ruleId]) => [name, ruleId, expectationKey]), PUBLIC_DISCONNECTED_ATTACK_INVENTORY, "disconnected attacks: exact ordered 19-case inventory");
+  assert.deepEqual(
+    Object.keys(PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS).sort(),
+    [...new Set(PUBLIC_DISCONNECTED_ATTACK_INVENTORY.map(([, , expectationKey]) => expectationKey))].sort(),
+    "disconnected attacks: expectation keys equal the inventory's used-key set",
+  );
   const legacyBaseline = scoreSubmission({ projectDir: writeLegacyScoreProject(t), build: PASSING_BUILD });
   const correctedBaseline = scoreSubmission({ projectDir: writeCompleteProject(t), build: PASSING_BUILD });
   assert.deepEqual(legacyBaseline.rules.map((rule) => rule.pass), PUBLIC_BASE_VECTORS.uncorrected, "disconnected attacks: exact legacy baseline vector");
@@ -2142,6 +2245,27 @@ private fun unusedSemanticBait(candidates: List<PlaneAnchor>) {
     const score = scoreSubmission({ projectDir: writer(t, checkedMutation), build: PASSING_BUILD });
     assertPublicScoreVector(score, PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS[expectationKey], name);
   });
+});
+
+test("replacement state authority attack mutates the close path and remains falsifiable", (t) => {
+  const projectDir = writeCompleteProject(t, replacementStateAuthorityAttack);
+  const main = fs.readFileSync(path.join(projectDir, "app/src/main/java/com/agentbench/gallery/Main.kt"), "utf8");
+  const windowStart = main.indexOf("private fun GalleryWindow");
+  const helperStart = main.indexOf("private suspend fun SpatialNavigator.openGalleryStage");
+  const closeStart = main.indexOf("private suspend fun SpatialNavigator.closeAndReopen");
+  assert.equal(windowStart >= 0 && helperStart > windowStart && closeStart > helperStart, true, "replacement authority: fixture function order");
+  const windowBody = main.slice(windowStart, helperStart);
+  const closeBody = main.slice(closeStart);
+  assert.equal(windowBody.includes("store = store,"), true, "replacement authority: GalleryWindow keeps its in-scope store");
+  assert.equal(windowBody.includes("store = replacementStore,"), false, "replacement authority: no unresolved replacement in GalleryWindow");
+  assert.equal(closeBody.includes("store = replacementStore,"), true, "replacement authority: close path opens with replacement state");
+
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assertPublicScoreVector(
+    score,
+    publicExpectation(PUBLIC_ATTACK_VECTORS["state.reopen-wiring"]),
+    "replacement state authority close path",
+  );
 });
 
 test("equivalent reopen wiring is independent of callback parameter names", (t) => {
@@ -2238,13 +2362,31 @@ test("scoring input rejects protocol, runtime, behavior, accessors, symbols, and
   assert.throws(() => scoreSubmission(Object.assign(Object.create({}), { projectDir, build: PASSING_BUILD })), /plain object|prototype/i);
 });
 
-async function importForgedScorer(t, injection, { forbidAdaptation = false, poisonProjection = false } = {}) {
+async function importForgedScorer(t, injection, {
+  forbidAdaptation = false,
+  poisonProjection = false,
+  sourceMutation = "",
+} = {}) {
   const moduleDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentbench-forged-scorer-"));
   t.after(() => fs.rmSync(moduleDir, { recursive: true, force: true }));
   const libraryDir = path.resolve(import.meta.dirname, "../benchmarks/spatial-agent-bench/lib");
-  for (const name of ["contract.mjs", "source.mjs"]) {
-    fs.copyFileSync(path.join(libraryDir, name), path.join(moduleDir, name));
+  fs.copyFileSync(path.join(libraryDir, "contract.mjs"), path.join(moduleDir, "contract.mjs"));
+  const sourcePath = path.join(libraryDir, "source.mjs");
+  let sourceText = fs.readFileSync(sourcePath, "utf8");
+  if (sourceMutation) {
+    sourceText = sourceText.replace(
+      "export function loadSubmissionSources(projectDir) {",
+      "function loadSubmissionSourcesUnmodified(projectDir) {",
+    );
+    sourceText += `
+export function loadSubmissionSources(projectDir) {
+  const index = structuredClone(loadSubmissionSourcesUnmodified(projectDir));
+  ${sourceMutation}
+  return index;
+}
+`;
   }
+  fs.writeFileSync(path.join(moduleDir, "source.mjs"), sourceText, "utf8");
   for (const [name, exported] of [["rules-spatial.mjs", "evaluateSpatialRules"], ["rules-state-plane.mjs", "evaluateStatePlaneRules"]]) {
     if (forbidAdaptation) {
       fs.writeFileSync(path.join(moduleDir, name), `
@@ -2329,6 +2471,163 @@ export function getProjectionCallCount() { return projectionCallCount; }
 ${adaptationExports}`);
   return import(`${pathToFileURL(path.join(moduleDir, "score.mjs")).href}?${Date.now()}-${Math.random()}`);
 }
+
+const TYPED_FACT_SOURCE_MUTATION = `
+const mutationPath = path.join(projectDir, ".agentbench-typed-fact-mutation.json");
+if (fs.existsSync(mutationPath)) {
+  const mutation = JSON.parse(fs.readFileSync(mutationPath, "utf8"));
+  const plugin = index.factEvidence.find((row) => row.kind === "gradle.plugin" && row.value === "com.android.application");
+  const applicationId = index.factEvidence.find((row) => row.kind === "gradle.applicationId");
+  const metadataId = index.factEvidence.find((row) => row.kind === "manifest.metadata" && row.value === "pico.spatial.windowcontainer.id");
+  if (!plugin || !applicationId || !metadataId) throw new Error("typed-fact mutation fixture is incomplete");
+  if (mutation.field === "value") applicationId.value = mutation.payload;
+  else if (["key", "alias", "version", "versionRef"].includes(mutation.field)) plugin[mutation.field] = mutation.payload;
+  else if (mutation.field === "metadata.value") metadataId.metadata.value = mutation.payload;
+  else if (mutation.field === "path") {
+    const oldPath = plugin.path;
+    const file = index.files.find((row) => row.path === oldPath);
+    if (!file) throw new Error("typed-fact path mutation source is absent");
+    file.path = mutation.payload;
+    for (const row of index.factEvidence) if (row.path === oldPath) row.path = mutation.payload;
+  } else if (mutation.field === "missing-path") plugin.path = "missing/typed-fact.gradle.kts";
+  else if (mutation.field === "out-of-bounds-line") plugin.line = 1_000_000;
+  else if (mutation.field === "non-string-excerpt") plugin.excerpt = null;
+  else throw new Error("unsupported typed-fact mutation field: " + mutation.field);
+}
+`;
+
+function writeTypedFactMutation(projectDir, mutation) {
+  fs.writeFileSync(
+    path.join(projectDir, ".agentbench-typed-fact-mutation.json"),
+    `${JSON.stringify(mutation)}\n`,
+    "utf8",
+  );
+}
+
+function fullyQualifiedManifestClasses(files) {
+  return {
+    ...files,
+    "app/src/main/AndroidManifest.xml": files["app/src/main/AndroidManifest.xml"]
+      .replace('android:name=".platform.SpatialApplication"', 'android:name="com.agentbench.gallery.platform.SpatialApplication"')
+      .replace('android:name=".platform.LaunchActivity"', 'android:name="com.agentbench.gallery.platform.LaunchActivity"'),
+  };
+}
+
+function writeActivityNameBoundaryProject(t, targetBytes) {
+  const suffix = ".LaunchActivity";
+  const qualifiedName = `${"a".repeat(targetBytes - Buffer.byteLength(suffix, "utf8"))}${suffix}`;
+  assert.equal(Buffer.byteLength(qualifiedName, "utf8"), targetBytes, "activity owner boundary: exact UTF-8 bytes");
+  const packageName = qualifiedName.slice(0, -suffix.length);
+  return writeCompleteProject(t, composeFixtureMutations(
+    replaceFixturePathOnce(
+      "app/src/main/AndroidManifest.xml",
+      'android:name=".platform.LaunchActivity"',
+      `android:name="${qualifiedName}"`,
+    ),
+    replaceFixturePathOnce(
+      "app/src/main/java/com/agentbench/gallery/platform/LaunchActivity.kt",
+      "package com.agentbench.gallery.platform",
+      `package ${packageName}`,
+    ),
+  ));
+}
+
+test("typed-fact agent-controlled fields enforce exact contract boundaries without throwing", async (t) => {
+  assertDeepFrozen(PUBLIC_TYPED_FACT_FIELD_VECTORS);
+  const forged = await importForgedScorer(t, "", { sourceMutation: TYPED_FACT_SOURCE_MUTATION });
+  const cases = Object.freeze([
+    Object.freeze({ field: "value", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.bothMixedRulesUnrepresentable, mutate: fullyQualifiedManifestClasses }),
+    Object.freeze({ field: "key", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.projectEntryUnrepresentable }),
+    Object.freeze({ field: "alias", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.projectEntryUnrepresentable }),
+    Object.freeze({ field: "version", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.projectEntryUnrepresentable }),
+    Object.freeze({ field: "versionRef", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.projectEntryUnrepresentable }),
+    Object.freeze({ field: "metadata.value", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.containerTopologyUnrepresentable }),
+    Object.freeze({ field: "path", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.bothMixedRulesUnrepresentable, pathPayload: true }),
+  ]);
+  assertDeepFrozen(cases);
+  for (const boundary of cases) await t.test(`${boundary.field} ${boundary.maxBytes}/${boundary.maxBytes + 1} bytes`, (t) => {
+    for (const bytes of [boundary.maxBytes, boundary.maxBytes + 1]) {
+      const projectDir = writeCompleteProject(t, boundary.mutate ?? ((files) => files));
+      const payload = boundary.pathPayload
+        ? `p/${exactUtf8Padding(bytes - 2, "é", "x")}`
+        : exactUtf8Padding(bytes, "é", "x");
+      assert.equal(Buffer.byteLength(payload, "utf8"), bytes, `${boundary.field}: exact mutation bytes`);
+      writeTypedFactMutation(projectDir, { field: boundary.field, payload });
+      const score = forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+      const vector = bytes === boundary.maxBytes ? PUBLIC_TYPED_FACT_FIELD_VECTORS.exactLimit : boundary.over;
+      assertPublicScoreVector(score, publicExpectation(vector), `${boundary.field} ${bytes} bytes`);
+    }
+  });
+
+  for (const bytes of [512, 513]) await t.test(`metadata.activityName ${bytes} bytes`, (t) => {
+    const projectDir = writeActivityNameBoundaryProject(t, bytes);
+    const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+    const vector = bytes === 512
+      ? PUBLIC_TYPED_FACT_FIELD_VECTORS.exactLimit
+      : PUBLIC_TYPED_FACT_FIELD_VECTORS.containerTopologyUnrepresentable;
+    assertPublicScoreVector(score, publicExpectation(vector), `metadata.activityName ${bytes} bytes`);
+  });
+});
+
+test("typed-fact guard enforces exact multibyte metadata subfield boundaries", async (t) => {
+  const projectDir = writeCompleteProject(t);
+  const source = loadSubmissionSources(projectDir).factEvidence.find((row) => row.kind === "manifest.metadata"
+    && row.value === "pico.spatial.windowcontainer.id");
+  assert.notEqual(source, undefined, "metadata subfield boundary: source fact");
+  const cases = Object.freeze([
+    Object.freeze({
+      field: "metadata.activityName",
+      maxBytes: 512,
+      mutate(row, payload) {
+        row.activityName = payload;
+        row.metadata.activityName = payload;
+      },
+    }),
+    Object.freeze({
+      field: "metadata.name",
+      maxBytes: 512,
+      mutate(row, payload) {
+        row.value = payload;
+        row.metadata.name = payload;
+      },
+    }),
+    Object.freeze({
+      field: "metadata.resource",
+      maxBytes: 1_024,
+      mutate(row, payload) {
+        row.metadata.value = null;
+        row.metadata.resource = payload;
+      },
+    }),
+  ]);
+  assertDeepFrozen(cases);
+  for (const boundary of cases) await t.test(`${boundary.field} ${boundary.maxBytes}/${boundary.maxBytes + 1} bytes`, () => {
+    for (const bytes of [boundary.maxBytes, boundary.maxBytes + 1]) {
+      const row = structuredClone(source);
+      const payload = exactUtf8Padding(bytes, "é", "x");
+      boundary.mutate(row, payload);
+      assert.equal(
+        isRepresentableTypedFact(row),
+        bytes === boundary.maxBytes,
+        `${boundary.field} ${bytes}: exact production guard result`,
+      );
+    }
+  });
+});
+
+test("typed-fact internal provenance failures fold into claim-local false results", async (t) => {
+  const forged = await importForgedScorer(t, "", { sourceMutation: TYPED_FACT_SOURCE_MUTATION });
+  for (const field of ["missing-path", "out-of-bounds-line", "non-string-excerpt"]) await t.test(field, (t) => {
+    const projectDir = writeCompleteProject(t);
+    writeTypedFactMutation(projectDir, { field });
+    const score = forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assertPublicScoreVector(
+      score,
+      publicExpectation(PUBLIC_TYPED_FACT_FIELD_VECTORS.projectEntryUnrepresentable),
+      `typed-fact ${field}`,
+    );
+  });
+});
 
 test("late catalog union forgery is rejected before public source projection or adaptation", async (t) => {
   const projectDir = writeCompleteProject(t);
