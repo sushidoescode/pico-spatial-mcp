@@ -341,6 +341,14 @@ printf '%s\\n' "$@" > "${canonicalArgs}"
     assert.match(payload.error, /BOM version/);
     assert.equal(existsSync(path.join(isolatedRoot, "repro.lock.json")), false);
     assert.equal(existsSync(path.join(isolatedRoot, "golden", "scorecard.json")), false);
+
+    rmSync(catalogPath);
+    response = await handler({ mode: "save", briefsDir: path.join(REPO_ROOT, "briefs") });
+    payload = JSON.parse(response.content[0].text);
+    assert.equal(payload.status, "error");
+    assert.match(payload.error, /BOM version/);
+    assert.equal(existsSync(path.join(isolatedRoot, "repro.lock.json")), false);
+    assert.equal(existsSync(path.join(isolatedRoot, "golden", "scorecard.json")), false);
   });
 
   for (const [name, outcome] of [["success", "operational"], ["partial", "degraded"], ["failed", "failed"]]) {

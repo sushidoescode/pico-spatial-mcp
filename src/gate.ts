@@ -80,7 +80,12 @@ export function registerGateTools(server: McpServer) {
       if (suite.status !== "ok") return okJson({ status: "error", error: suite.error });
 
       if (mode === "save") {
-        const sdkVersion = extractBuildMatrix().observed.bom;
+        let sdkVersion: string | null;
+        try {
+          sdkVersion = extractBuildMatrix().observed.bom;
+        } catch {
+          sdkVersion = null;
+        }
         if (sdkVersion === null) return okJson({ status: "error", error: "could not extract the PICO Spatial BOM version from the scaffold catalog" });
         fs.mkdirSync(path.dirname(goldenScorecardPath()), { recursive: true });
         fs.writeFileSync(goldenScorecardPath(), JSON.stringify({ scorecard: suite.scorecard, rows: suite.rows.map((r: any) => ({ id: r.id, pass: r.pass })) }, null, 2));
