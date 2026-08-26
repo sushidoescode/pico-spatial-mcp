@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { extractBuildMatrix } from "./buildmatrix.js";
 import { okJson, run } from "./util.js";
 import { computeSuite } from "./eval.js";
 
@@ -79,10 +80,12 @@ export function registerGateTools(server: McpServer) {
       if (suite.status !== "ok") return okJson({ status: "error", error: suite.error });
 
       if (mode === "save") {
+        const sdkVersion = extractBuildMatrix().observed.bom;
+        if (sdkVersion === null) return okJson({ status: "error", error: "could not extract the PICO Spatial BOM version from the scaffold catalog" });
         fs.mkdirSync(path.dirname(goldenScorecardPath()), { recursive: true });
         fs.writeFileSync(goldenScorecardPath(), JSON.stringify({ scorecard: suite.scorecard, rows: suite.rows.map((r: any) => ({ id: r.id, pass: r.pass })) }, null, 2));
         const lock = {
-          sdkVersion: "0.13.3",
+          sdkVersion,
           determinism: "generators are analytical (no RNG); plan+compile are byte-reproducible (v5.0 determinism gate).",
           canonicalPose: canonicalPose ?? { yawDeg: 0, pitchDeg: 0 },
           goldenAvdSnapshot: goldenAvdSnapshot ?? null,

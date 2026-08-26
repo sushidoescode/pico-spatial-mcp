@@ -8,7 +8,7 @@ This is a **known-good scaffold matrix, not the support envelope**. It reports c
 | Java / Kotlin JVM target | 11 / 11 | [app build file](../appskeleton/app/build.gradle.kts) |
 | Android Gradle Plugin | 8.13.2 | [version catalog](../appskeleton/gradle/libs.versions.toml) |
 | Kotlin / Compose compiler plugin | 2.0.0 / 2.0.0 | [version catalog](../appskeleton/gradle/libs.versions.toml) |
-| PICO Spatial BOM | 0.13.3 | [version catalog](../appskeleton/gradle/libs.versions.toml) |
+| PICO Spatial BOM | 6.0.0 | [version catalog](../appskeleton/gradle/libs.versions.toml) |
 | ABI | arm64-v8a | [app build file](../appskeleton/app/build.gradle.kts) |
 | Spatial tools version | `not-declared` | no version key in the checked-in catalog |
 
