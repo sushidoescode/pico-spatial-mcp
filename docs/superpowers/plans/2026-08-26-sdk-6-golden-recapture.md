@@ -31,7 +31,7 @@ ledger.
 
 - The supplied briefs directory must be readable. Its sorted `*.json` files form the corpus.
 - Each JSON file is read and parsed, classified, schema-checked, linted, passed to the pure
-  `buildLedger(spec, "/tmp/eval-dummy")` planner, and evaluated by `emulatorVsSwanPreview`.
+  `buildLedger(spec, "/tmp/eval-dummy")` compile step, and evaluated by `emulatorVsSwanPreview`.
 - A malformed individual entry becomes a failed scorecard row; an unreadable briefs directory is
   the suite-level error.
 - Per-app evidence ledgers are optional. A missing or unreadable ledger is caught and contributes
@@ -84,7 +84,7 @@ committed static artifacts cannot establish that machine state.
 | Fresh empty external ledger and receipt directories | reproducible scorecard and parent-server evidence | **UNVERIFIED until created.** Create a session directory with `mktemp -d`; set `PICO_MCP_LEDGER_DIR` and `PICO_MCP_RUN_RECEIPT_DIR` below it before server start. Do not place either in the checkout. Audit the separate `fleet_build` child behavior described below. |
 | No user-store `showcase.json` shadow | corpus-bound visual candidate | **UNVERIFIED and blocking.** `findBriefPath` checks the user store before the committed corpus (`src/briefstore.ts:34-40`). Require the user-store path to be absent; do not rename, delete, or overwrite it as part of recapture. |
 | Fresh generated-project directory below the session root | scaffold provenance | **UNVERIFIED until created.** The session root comes from `mktemp -d`. Require its `projects/fleet-showcase-native` target not to exist, explicitly scaffold it during this session, and byte-compare its catalog with the source catalog before `fleet_build` reuses it (`src/fleetbuild.ts:959-974`). |
-| Readable `briefs/`, scaffold catalog, and app Gradle file; writable `golden/` and repo root | save lane | **UNVERIFIED on the future checkout.** Verify ordinary file access. Missing catalog/BOM must return the clean refusal and write neither output. |
+| Readable `briefs/`, scaffold catalog, and app Gradle file; writable `golden/` and repo root | save lane | **UNVERIFIED on the future checkout.** Verify ordinary file access. A missing or unreadable catalog or app Gradle file, and a readable catalog whose BOM cannot be parsed, must return the same clean build-matrix refusal and write neither output. |
 | Exact regenerated scorecard values for the current 26-file corpus | save lane | **UNVERIFIED.** Do not predict or hand-author them; accept only `computeSuite` output and review every failed/skipped row. |
 | Resolvable Spatial SDK 6.0.0 BOM, the six PICO modules declared by the scaffold, its Android/Compose dependencies, and the Gradle distribution | native build | **UNVERIFIED.** Cached 6.0.0 artifacts are documented, but the repo does not prove that the future machine has the complete cache or network access. The build must show successful resolution and `:app:assembleDebug`. The scaffold declares no PICO-specific Gradle plugin. |
 | PICO emulator payload compatible with the 6.0.0 scaffold, including executable emulator tooling and accepted license | emulator | **UNVERIFIED.** Use read-only `pico_doctor {}` and `validate_toolchain {}` to inspect the relevant fields. Require the selected emulator payload, license, AVD, adb, and JDK checks needed by this route; unrelated warnings do not block it. The catalog version alone does not establish payload compatibility. |
@@ -181,7 +181,7 @@ checkout before any native build:
 ```bash
 cmp "$REPO_ROOT/appskeleton/gradle/libs.versions.toml" \
   "$SESSION_ROOT/projects/fleet-showcase-native/gradle/libs.versions.toml"
-rg -n '^bom = "6\.0\.0"$' \
+grep -E -n '^bom = "6\.0\.0"$' \
   "$SESSION_ROOT/projects/fleet-showcase-native/gradle/libs.versions.toml"
 ```
 
@@ -271,7 +271,9 @@ Under this plan's stricter operator policy, `MISSING` or `UNKNOWN` is a failed c
 blocks baseline saving. The gate implementation does not independently block those two results.
 Before save, also require `status: "ok"`, `blocked: false`, a verdict of `PASS` or visually accepted
 `LOOK`, an empty `scorecard.regressedBriefs`, and `scorecard.scoreDrop: false`. Review any non-null
-`stepDrift`. A `BLOCK` response is never overwritten by save mode.
+`stepDrift`. Under this plan's operator policy, do not call save after a `BLOCK` response. The
+implementation does not retain or enforce a prior `BLOCK`: a later `mode: "save"` call writes both
+baselines whenever `computeSuite` succeeds and a non-null BOM is extracted.
 
 ### 5. Write the two baselines and exercise the derivation
 
