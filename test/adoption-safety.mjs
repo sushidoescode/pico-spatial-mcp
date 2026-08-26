@@ -1,8 +1,9 @@
 // v34.1 adoption safety: project configuration, build truth, and pico-cli structured status.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, chmodSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
@@ -14,6 +15,7 @@ const projectconfig = await import("../dist/projectconfig.js");
 const buildmatrix = await import("../dist/buildmatrix.js");
 const { parsePicoCliEnvelope } = await import("../dist/picocli.js");
 const { picoFixDecision } = await import("../dist/doors.js");
+const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
 
 const MODULES = [
   ["androidx.compose.ui", "ui"],
@@ -300,6 +302,45 @@ printf '%s\\n' "$@" > "${canonicalArgs}"
       assert(Object.hasOwn(returned.observed, field), `description names ${label} but response omits observed.${field}`);
     }
     assert.equal(returned.observed.bom, matrix.observed.bom);
+  });
+  await asyncCheck("regression gate save derives the scaffold BOM from the version catalog", async () => {
+    const isolatedRoot = mkdtempSync(path.join(os.tmpdir(), "pico-regression-gate-")); dirs.push(isolatedRoot);
+    cpSync(path.join(REPO_ROOT, "dist"), path.join(isolatedRoot, "dist"), { recursive: true });
+    symlinkSync(path.join(REPO_ROOT, "node_modules"), path.join(isolatedRoot, "node_modules"), process.platform === "win32" ? "junction" : "dir");
+    mkdirSync(path.join(isolatedRoot, "appskeleton", "gradle"), { recursive: true });
+    mkdirSync(path.join(isolatedRoot, "appskeleton", "app"), { recursive: true });
+    const catalogPath = path.join(isolatedRoot, "appskeleton", "gradle", "libs.versions.toml");
+    const catalog = readFileSync(path.join(REPO_ROOT, "appskeleton", "gradle", "libs.versions.toml"), "utf8");
+    const sentinelSdkVersion = "99.88.77-test";
+    writeFileSync(catalogPath, catalog.replace(/^bom\s*=.*$/m, `bom = "${sentinelSdkVersion}"`));
+    copyFileSync(
+      path.join(REPO_ROOT, "appskeleton", "app", "build.gradle.kts"),
+      path.join(isolatedRoot, "appskeleton", "app", "build.gradle.kts"),
+    );
+
+    const gate = await import(pathToFileURL(path.join(isolatedRoot, "dist", "gate.js")).href);
+    let handler;
+    gate.registerGateTools({
+      registerTool(name, _metadata, candidate) {
+        if (name === "regression_gate") handler = candidate;
+      },
+    });
+    assert.equal(typeof handler, "function");
+    let response = await handler({ mode: "save", briefsDir: path.join(REPO_ROOT, "briefs") });
+    let payload = JSON.parse(response.content[0].text);
+    assert.equal(payload.status, "saved");
+    const lock = JSON.parse(readFileSync(path.join(isolatedRoot, "repro.lock.json"), "utf8"));
+    assert.equal(lock.sdkVersion, sentinelSdkVersion);
+
+    rmSync(path.join(isolatedRoot, "repro.lock.json"));
+    rmSync(path.join(isolatedRoot, "golden"), { recursive: true });
+    writeFileSync(catalogPath, catalog.replace(/^bom\s*=.*\n/m, ""));
+    response = await handler({ mode: "save", briefsDir: path.join(REPO_ROOT, "briefs") });
+    payload = JSON.parse(response.content[0].text);
+    assert.equal(payload.status, "error");
+    assert.match(payload.error, /BOM version/);
+    assert.equal(existsSync(path.join(isolatedRoot, "repro.lock.json")), false);
+    assert.equal(existsSync(path.join(isolatedRoot, "golden", "scorecard.json")), false);
   });
 
   for (const [name, outcome] of [["success", "operational"], ["partial", "degraded"], ["failed", "failed"]]) {
