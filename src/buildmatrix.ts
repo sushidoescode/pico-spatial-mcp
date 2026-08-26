@@ -7,6 +7,7 @@ import { okJson } from "./util.js";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CATALOG = path.join(ROOT, "appskeleton", "gradle", "libs.versions.toml");
 const APP_GRADLE = path.join(ROOT, "appskeleton", "app", "build.gradle.kts");
+export const BUILD_MATRIX_EXTRACTION_ERROR = "could not read or completely extract the scaffold build matrix from the version catalog and app build file";
 
 function value(text: string, pattern: RegExp): string | null { return text.match(pattern)?.[1] ?? null; }
 
@@ -49,5 +50,11 @@ export function registerBuildMatrixTools(server: McpServer): void {
   server.registerTool("build_matrix_report", {
     description: "Return observed compile/min/target SDK, Java and Kotlin JVM targets, Android Gradle Plugin (AGP), Kotlin and Compose compiler plugin, PICO Spatial BOM, ABI, and spatial-tools declaration state from the packaged app skeleton. This is source-grounded configuration evidence, not a build or runtime claim.",
     inputSchema: {},
-  }, async () => okJson(extractBuildMatrix()));
+  }, async () => {
+    try {
+      return okJson(extractBuildMatrix());
+    } catch {
+      return okJson({ status: "error", error: BUILD_MATRIX_EXTRACTION_ERROR });
+    }
+  });
 }

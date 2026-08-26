@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { extractBuildMatrix } from "./buildmatrix.js";
+import { BUILD_MATRIX_EXTRACTION_ERROR, extractBuildMatrix } from "./buildmatrix.js";
 import { okJson, run } from "./util.js";
 import { computeSuite } from "./eval.js";
 
@@ -86,7 +86,7 @@ export function registerGateTools(server: McpServer) {
         } catch {
           sdkVersion = null;
         }
-        if (sdkVersion === null) return okJson({ status: "error", error: "could not extract the PICO Spatial BOM version from the scaffold catalog" });
+        if (sdkVersion === null) return okJson({ status: "error", error: BUILD_MATRIX_EXTRACTION_ERROR });
         fs.mkdirSync(path.dirname(goldenScorecardPath()), { recursive: true });
         fs.writeFileSync(goldenScorecardPath(), JSON.stringify({ scorecard: suite.scorecard, rows: suite.rows.map((r: any) => ({ id: r.id, pass: r.pass })) }, null, 2));
         const lock = {

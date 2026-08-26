@@ -303,6 +303,37 @@ printf '%s\\n' "$@" > "${canonicalArgs}"
     }
     assert.equal(returned.observed.bom, matrix.observed.bom);
   });
+  await asyncCheck("build_matrix_report cleanly refuses either unreadable scaffold matrix input", async () => {
+    const isolatedRoot = mkdtempSync(path.join(os.tmpdir(), "pico-build-matrix-report-")); dirs.push(isolatedRoot);
+    cpSync(path.join(REPO_ROOT, "dist"), path.join(isolatedRoot, "dist"), { recursive: true });
+    symlinkSync(path.join(REPO_ROOT, "node_modules"), path.join(isolatedRoot, "node_modules"), process.platform === "win32" ? "junction" : "dir");
+    mkdirSync(path.join(isolatedRoot, "appskeleton", "gradle"), { recursive: true });
+    mkdirSync(path.join(isolatedRoot, "appskeleton", "app"), { recursive: true });
+    const catalogPath = path.join(isolatedRoot, "appskeleton", "gradle", "libs.versions.toml");
+    const appGradlePath = path.join(isolatedRoot, "appskeleton", "app", "build.gradle.kts");
+    copyFileSync(path.join(REPO_ROOT, "appskeleton", "app", "build.gradle.kts"), appGradlePath);
+
+    const isolatedBuildmatrix = await import(pathToFileURL(path.join(isolatedRoot, "dist", "buildmatrix.js")).href);
+    let handler;
+    isolatedBuildmatrix.registerBuildMatrixTools({
+      registerTool(name, _metadata, candidate) {
+        if (name === "build_matrix_report") handler = candidate;
+      },
+    });
+    assert.equal(typeof handler, "function");
+
+    let response = await handler({});
+    let payload = JSON.parse(response.content[0].text);
+    assert.equal(payload.status, "error");
+    assert.match(payload.error, /version catalog and app build file/);
+
+    copyFileSync(path.join(REPO_ROOT, "appskeleton", "gradle", "libs.versions.toml"), catalogPath);
+    rmSync(appGradlePath);
+    response = await handler({});
+    payload = JSON.parse(response.content[0].text);
+    assert.equal(payload.status, "error");
+    assert.match(payload.error, /version catalog and app build file/);
+  });
   await asyncCheck("regression gate save derives the scaffold BOM from the version catalog", async () => {
     const isolatedRoot = mkdtempSync(path.join(os.tmpdir(), "pico-regression-gate-")); dirs.push(isolatedRoot);
     cpSync(path.join(REPO_ROOT, "dist"), path.join(isolatedRoot, "dist"), { recursive: true });
@@ -338,7 +369,7 @@ printf '%s\\n' "$@" > "${canonicalArgs}"
     response = await handler({ mode: "save", briefsDir: path.join(REPO_ROOT, "briefs") });
     payload = JSON.parse(response.content[0].text);
     assert.equal(payload.status, "error");
-    assert.match(payload.error, /BOM version/);
+    assert.match(payload.error, /version catalog and app build file/);
     assert.equal(existsSync(path.join(isolatedRoot, "repro.lock.json")), false);
     assert.equal(existsSync(path.join(isolatedRoot, "golden", "scorecard.json")), false);
 
@@ -346,7 +377,7 @@ printf '%s\\n' "$@" > "${canonicalArgs}"
     response = await handler({ mode: "save", briefsDir: path.join(REPO_ROOT, "briefs") });
     payload = JSON.parse(response.content[0].text);
     assert.equal(payload.status, "error");
-    assert.match(payload.error, /BOM version/);
+    assert.match(payload.error, /version catalog and app build file/);
     assert.equal(existsSync(path.join(isolatedRoot, "repro.lock.json")), false);
     assert.equal(existsSync(path.join(isolatedRoot, "golden", "scorecard.json")), false);
   });
