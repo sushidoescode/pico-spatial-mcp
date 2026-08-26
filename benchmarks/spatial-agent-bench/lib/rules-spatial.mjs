@@ -67,20 +67,45 @@ function decodePackage(file) {
 }
 
 function decodeClassHeader(node) {
-  const tokens = tokenize(node.file.structural.slice(node.startUtf16, node.endUtf16));
-  if (!tokens) return null;
+  const spanTokens = tokenize(node.file.structural.slice(node.startUtf16, node.endUtf16));
+  if (!spanTokens) return null;
   const classOffsets = [];
-  for (let index = 0; index < tokens.length; index += 1) {
-    if (tokens[index].type === "identifier" && tokens[index].value === "class") classOffsets.push(index);
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let angleDepth = 0;
+  let braceDepth = 0;
+  let headerEnd = spanTokens.length;
+  for (let index = 0; index < spanTokens.length; index += 1) {
+    const token = spanTokens[index];
+    const value = token.value;
+    const topLevel = parenDepth === 0 && bracketDepth === 0 && angleDepth === 0 && braceDepth === 0;
+    if (value === "{" && topLevel) {
+      headerEnd = index;
+      break;
+    }
+    if (topLevel && token.type === "identifier" && value === "class"
+        && spanTokens[index + 1]?.type === "identifier") {
+      classOffsets.push(index);
+    }
+    if (value === "(") parenDepth += 1;
+    else if (value === ")") parenDepth -= 1;
+    else if (value === "[") bracketDepth += 1;
+    else if (value === "]") bracketDepth -= 1;
+    else if (value === "<") angleDepth += 1;
+    else if (value === ">") angleDepth -= 1;
+    else if (value === "{") braceDepth += 1;
+    else if (value === "}") braceDepth -= 1;
+    if (parenDepth < 0 || bracketDepth < 0 || angleDepth < 0 || braceDepth < 0) return null;
   }
   if (classOffsets.length !== 1) return null;
+  const tokens = spanTokens.slice(0, headerEnd);
   const classOffset = classOffsets[0];
   const className = tokens[classOffset + 1]?.type === "identifier" ? tokens[classOffset + 1].value : null;
   if (!className) return null;
 
-  let parenDepth = 0;
-  let bracketDepth = 0;
-  let angleDepth = 0;
+  parenDepth = 0;
+  bracketDepth = 0;
+  angleDepth = 0;
   let colonOffset = -1;
   for (let index = classOffset + 2; index < tokens.length; index += 1) {
     const value = tokens[index].value;
@@ -146,8 +171,19 @@ function resolveManifestName(name, applicationId) {
   return `${applicationId}.${name}`;
 }
 
-function typedEvidence(rows) {
-  return rows.map((row) => ({ evidenceClass: "typed_fact", ...row }));
+function typedEvidence(index, rows) {
+  const evidence = [];
+  for (const row of rows) {
+    const files = index.files.filter((file) => file.path === row.path);
+    if (files.length !== 1) throw new Error("typed fact source path must resolve exactly once");
+    const structuralExcerpt = files[0].structural.split("\n")[row.line - 1]?.trim();
+    if (typeof structuralExcerpt !== "string") throw new Error("typed fact source line is out of bounds");
+    if (typeof row.excerpt !== "string") throw new Error("typed fact excerpt must be a string");
+    if (structuralExcerpt.length === 0 || Buffer.byteLength(structuralExcerpt, "utf8") > 512
+        || row.excerpt.length === 0 || Buffer.byteLength(row.excerpt, "utf8") > 512) return null;
+    evidence.push({ evidenceClass: "typed_fact", ...row });
+  }
+  return evidence;
 }
 
 function failed(id, reason) {
@@ -195,10 +231,12 @@ function projectEntry(index, context) {
     }
   }
   if (bindings.length !== 1) return failed(id, "supported-subset-v1 typed binding incomplete");
+  const facts = typedEvidence(index, bindings[0].typed);
+  if (facts === null) return failed(id, "supported-subset-v1 typed-fact evidence unrepresentable");
   return {
     id,
     pass: true,
-    evidence: [...claim.sourceEvidence, ...typedEvidence(bindings[0].typed)],
+    evidence: [...claim.sourceEvidence, ...facts],
     reason: `supported-subset-v1 witness: ${claim.proofForm}`,
   };
 }
@@ -236,10 +274,12 @@ function containerTopology(index, context) {
     }
   }
   if (bindings.length !== 1) return failed(id, "supported-subset-v1 typed binding incomplete");
+  const facts = typedEvidence(index, bindings[0].typed);
+  if (facts === null) return failed(id, "supported-subset-v1 typed-fact evidence unrepresentable");
   return {
     id,
     pass: true,
-    evidence: [...claim.sourceEvidence, ...typedEvidence(bindings[0].typed)],
+    evidence: [...claim.sourceEvidence, ...facts],
     reason: `supported-subset-v1 witness: ${claim.proofForm}`,
   };
 }

@@ -87,12 +87,6 @@ const PUBLIC_BASE_VECTORS = Object.freeze({
     true, true, false, false,
     false, true, true, true,
   ]),
-  authorityGetterAttack: Object.freeze([
-    true, true, true, true,
-    true, true, true, true,
-    false, true, false, false,
-    true, true, true, true,
-  ]),
   rejected: Object.freeze([
     false, false, false, false,
     false, false, false, false,
@@ -221,6 +215,153 @@ const PUBLIC_PROJECTION_BOUNDARY_VECTORS = Object.freeze({
     true, true, true, true,
   ]),
 });
+const PUBLIC_TYPED_FACT_BOUNDARY_VECTORS = Object.freeze({
+  exact512: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  exact513: Object.freeze([
+    true, false, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+});
+const PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS = Object.freeze({
+  "spatial.project-entry": Object.freeze({
+    pass: Object.freeze([
+      false, false, true, true,
+      true, true, true, true,
+      true, true, false, false,
+      false, true, true, true,
+    ]),
+    falseIds: Object.freeze(["spatial.project-entry", "spatial.container-topology", "state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"]),
+    axes: Object.freeze({ spatialNative: 2, ecs: 4, statePassing: 2, planarTracking: 3 }),
+    score: 11,
+  }),
+  "spatial.container-topology": Object.freeze({
+    pass: Object.freeze([
+      true, false, true, true,
+      true, true, true, true,
+      true, true, false, false,
+      false, true, true, true,
+    ]),
+    falseIds: Object.freeze(["spatial.container-topology", "state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"]),
+    axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 2, planarTracking: 3 }),
+    score: 12,
+  }),
+  "spatial.container-topology.full-decoy": Object.freeze({
+    pass: Object.freeze([
+      true, false, true, true,
+      true, true, true, true,
+      true, false, false, false,
+      false, true, true, true,
+    ]),
+    falseIds: Object.freeze(["spatial.container-topology", "state.typed-handoff", "state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"]),
+    axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 1, planarTracking: 3 }),
+    score: 11,
+  }),
+  "ecs.frame-update": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, false, true,
+      true, true, false, false,
+      false, true, true, true,
+    ]),
+    falseIds: Object.freeze(["ecs.frame-update", "state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 2, planarTracking: 3 }),
+    score: 12,
+  }),
+  "ecs.lifecycle": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, true, false,
+      true, true, false, false,
+      false, true, true, true,
+    ]),
+    falseIds: Object.freeze(["ecs.lifecycle", "state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 2, planarTracking: 3 }),
+    score: 12,
+  }),
+  "plane.retry-readiness": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+      false, true, true, true,
+    ]),
+    falseIds: Object.freeze(["plane.retry-readiness"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 3 }),
+    score: 15,
+  }),
+  "plane.retry-readiness.disconnected-load": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+      false, false, true, true,
+    ]),
+    falseIds: Object.freeze(["plane.retry-readiness", "plane.semantic-fallback"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 2 }),
+    score: 14,
+  }),
+  "plane.semantic-fallback": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, true, true,
+      true, true, false, false,
+      false, false, true, true,
+    ]),
+    falseIds: Object.freeze(["state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness", "plane.semantic-fallback"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 2, planarTracking: 2 }),
+    score: 12,
+  }),
+  "plane.semantic-fallback.placement-bypass": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, true, true,
+      true, true, false, false,
+      false, false, false, true,
+    ]),
+    falseIds: Object.freeze(["state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness", "plane.semantic-fallback", "plane.anchor-pose"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 2, planarTracking: 1 }),
+    score: 11,
+  }),
+  "state.reopen-wiring": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, false,
+      true, true, true, true,
+    ]),
+    falseIds: Object.freeze(["state.reopen-wiring"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 3, planarTracking: 4 }),
+    score: 15,
+  }),
+});
+const PUBLIC_DISCONNECTED_ATTACK_INVENTORY = Object.freeze([
+  Object.freeze(["manifest classes do not match implementation", "spatial.project-entry", "spatial.project-entry"]),
+  Object.freeze(["declared and opened Stage IDs differ", "spatial.container-topology", "spatial.container-topology"]),
+  Object.freeze(["a matching-ID Full decoy cannot hide a wrong-ID Mixed open", "spatial.container-topology", "spatial.container-topology.full-decoy"]),
+  Object.freeze(["an unused correct-ID Mixed helper cannot hide the invoked wrong-ID helper", "spatial.container-topology", "spatial.container-topology"]),
+  Object.freeze(["deltaTime is observed but a fixed timestep drives motion", "ecs.frame-update", "ecs.frame-update"]),
+  Object.freeze(["deltaTime appears only in a helper after the fixed-timestep update", "ecs.frame-update", "ecs.frame-update"]),
+  Object.freeze(["System unregister is outside the owning effect", "ecs.lifecycle", "ecs.lifecycle"]),
+  Object.freeze(["unregister spelling cannot impersonate registration", "ecs.lifecycle", "ecs.lifecycle"]),
+  Object.freeze(["registration hidden inside an uncalled nested lambda", "ecs.lifecycle", "ecs.lifecycle"]),
+  Object.freeze(["anchor loading is outside an empty retry loop", "plane.retry-readiness", "plane.retry-readiness.disconnected-load"]),
+  Object.freeze(["retry readiness tests stale candidates instead of the loaded anchors", "plane.retry-readiness", "plane.retry-readiness.disconnected-load"]),
+  Object.freeze(["loaded anchors are overwritten before the readiness check", "plane.retry-readiness", "plane.retry-readiness.disconnected-load"]),
+  Object.freeze(["TABLE/FLOOR selection is unconstrained while checks live in an unused helper", "plane.semantic-fallback", "plane.semantic-fallback"]),
+  Object.freeze(["placement bypasses otherwise constrained fallback helpers", "plane.semantic-fallback", "plane.semantic-fallback.placement-bypass"]),
+  Object.freeze(["semantic, orientation, and area checks inspect different anchors", "plane.semantic-fallback", "plane.semantic-fallback"]),
+  Object.freeze(["called area helper is constant while multiplication is unused", "plane.semantic-fallback", "plane.semantic-fallback"]),
+  Object.freeze(["close path constructs a replacement state authority", "state.reopen-wiring", "state.reopen-wiring"]),
+  Object.freeze(["retained field reads are outside the close/reopen path", "state.reopen-wiring", "state.reopen-wiring"]),
+  Object.freeze(["retained field reads are ignored by restore", "state.reopen-wiring", "state.reopen-wiring"]),
+]);
 const PUBLIC_ATTACK_EXPECTATIONS = Object.freeze([
   Object.freeze({ ruleId: "spatial.project-entry", pass: PUBLIC_ATTACK_VECTORS["spatial.project-entry"], falseIds: Object.freeze(["spatial.project-entry"]), axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }), score: 15 }),
   Object.freeze({ ruleId: "spatial.container-topology", pass: PUBLIC_ATTACK_VECTORS["spatial.container-topology"], falseIds: Object.freeze(["spatial.container-topology"]), axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }), score: 15 }),
@@ -1570,6 +1711,7 @@ test("perfect structural fixture returns the exact rubric-v2 result contract", (
   const second = scoreSubmission({ projectDir, build: PASSING_BUILD });
   const response = analyzeKotlin(loadSubmissionSources(projectDir));
 
+  assertDeepFrozen(PUBLIC_BASE_VECTORS);
   assert.deepEqual(first.rules.map(({ id }) => id), RULE_DEFINITIONS.map(([id]) => id));
   assertPublicScoreVector(first, {
     pass: PUBLIC_BASE_VECTORS.correctedStandard,
@@ -1594,6 +1736,37 @@ test("perfect structural fixture returns the exact rubric-v2 result contract", (
   assert.deepEqual(first.visual, { status: "not_performed", captureSha256: null });
   assert.equal(first.runtimeProtocolReceipts.runStatus, "not_run");
   assertDeepFrozen(first);
+});
+
+test("declaration header decoding ignores class literals in a witnessed class body", (t) => {
+  const projectDir = writeCompleteProject(t, replaceFixturePathOnce(
+    "app/src/main/java/com/agentbench/gallery/platform/LaunchActivity.kt",
+    "class LaunchActivity : SpatialLaunchActivity()",
+    `class LaunchActivity : SpatialLaunchActivity() {
+    private fun reflectedType() = LaunchActivity::class.java
+    private class NestedMarker
+}`,
+  ));
+  const response = analyzeKotlin(loadSubmissionSources(projectDir));
+  assert.deepEqual(analyzerRuleVector(response), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ], "class-literal body: independent analyzer vector");
+
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assertPublicScoreVector(score, {
+    pass: [
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+    ],
+    falseIds: [],
+    axes: { spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 4 },
+    score: 16,
+  }, "class-literal body");
 });
 
 test("rule evidence retains exact source and typed-fact provenance without conflating evidence classes", (t) => {
@@ -1832,7 +2005,7 @@ test("disconnected structural vocabulary cannot satisfy relational rubric conjun
       ...files,
       "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
         .replace("openStage(SpatialContainers.ID_GALLERY, StageStyle.Mixed, bundle)", "openStage(SpatialContainers.ID_GALLERY, StageStyle.Full, bundle)\n    openStage(\"DifferentStage\", StageStyle.Mixed, bundle)"),
-    })],
+    }), "spatial.container-topology.full-decoy"],
     ["an unused correct-ID Mixed helper cannot hide the invoked wrong-ID helper", "spatial.container-topology", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
@@ -1869,25 +2042,27 @@ test("disconnected structural vocabulary cannot satisfy relational rubric conjun
     ["anchor loading is outside an empty retry loop", "plane.retry-readiness", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
-        .replace(`repeat(MAX_ANCHOR_RETRIES) {
-                candidates = PlaneTrackingManager.loadAllAnchors().toList()
-                if (candidates.isNotEmpty()) return@repeat
+        .replace(`for (attempt in 0 until MAX_ANCHOR_RETRIES) {
+                val loaded = PlaneTrackingManager.loadAllAnchors().toList()
+                candidates = loaded
+                if (loaded.isNotEmpty()) break
                 delay(25L)
-            }`, `repeat(MAX_ANCHOR_RETRIES) { Unit }
-            candidates = PlaneTrackingManager.loadAllAnchors().toList()
-            if (candidates.isNotEmpty()) Unit
+            }`, `for (attempt in 0 until MAX_ANCHOR_RETRIES) { Unit }
+            val loaded = PlaneTrackingManager.loadAllAnchors().toList()
+            candidates = loaded
+            if (loaded.isNotEmpty()) Unit
             delay(25L)`),
-    })],
+    }), "plane.retry-readiness.disconnected-load"],
     ["retry readiness tests stale candidates instead of the loaded anchors", "plane.retry-readiness", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
-        .replace("candidates = PlaneTrackingManager.loadAllAnchors().toList()", "PlaneTrackingManager.loadAllAnchors().toList()"),
-    })],
+        .replace("val loaded = PlaneTrackingManager.loadAllAnchors().toList()", "PlaneTrackingManager.loadAllAnchors().toList()\n                val loaded = candidates"),
+    }), "plane.retry-readiness.disconnected-load"],
     ["loaded anchors are overwritten before the readiness check", "plane.retry-readiness", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
-        .replace("candidates = PlaneTrackingManager.loadAllAnchors().toList()", "candidates = PlaneTrackingManager.loadAllAnchors().toList()\n                candidates = emptyList()"),
-    })],
+        .replace("candidates = loaded\n                if (loaded.isNotEmpty()) break", "candidates = loaded\n                candidates = emptyList()\n                if (candidates.isNotEmpty()) break"),
+    }), "plane.retry-readiness.disconnected-load"],
     ["TABLE/FLOOR selection is unconstrained while checks live in an unused helper", "plane.semantic-fallback", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
@@ -1909,7 +2084,7 @@ private fun unusedSemanticBait(candidates: List<PlaneAnchor>) {
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
         .replace("val anchor = horizontalTablePlane() ?: horizontalFloorPlane()", "val anchor = candidates.firstOrNull()")
         .concat("\nprivate fun unusedFallback(session: PlaneSession) = session.horizontalTablePlane() ?: session.horizontalFloorPlane()\n"),
-    })],
+    }), "plane.semantic-fallback.placement-bypass"],
     ["semantic, orientation, and area checks inspect different anchors", "plane.semantic-fallback", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
@@ -1924,15 +2099,20 @@ private fun unusedSemanticBait(candidates: List<PlaneAnchor>) {
     ["close path constructs a replacement state authority", "state.reopen-wiring", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
-        .replace("    closeStage()", "    closeStage()\n    val replacementStore = BenchmarkStore()"),
+        .replace("    closeStage()", "    closeStage()\n    val replacementStore = BenchmarkStore()")
+        .replace("val selection = store.snapshot().selection", "val selection = replacementStore.snapshot().selection")
+        .replace("val visitCount = store.snapshot().visitCount", "val visitCount = replacementStore.snapshot().visitCount")
+        .replace("val paused = store.snapshot().paused", "val paused = replacementStore.snapshot().paused")
+        .replace("store.restore(GallerySnapshot(selection, visitCount, paused))", "replacementStore.restore(GallerySnapshot(selection, visitCount, paused))")
+        .replace("store = store,", "store = replacementStore,"),
     })],
     ["retained field reads are outside the close/reopen path", "state.reopen-wiring", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
-        .replace("val selection = sharedStore.snapshot().selection", "val selection: GallerySelection? = null")
-        .replace("val visitCount = sharedStore.snapshot().visitCount", "val visitCount = 0")
-        .replace("val paused = sharedStore.snapshot().paused", "val paused = false")
-        .concat("\nprivate fun unrelatedReads() {\n    sharedStore.snapshot().selection\n    sharedStore.snapshot().visitCount\n    sharedStore.snapshot().paused\n}\n"),
+        .replace("val selection = store.snapshot().selection", "val selection: GallerySelection? = null")
+        .replace("val visitCount = store.snapshot().visitCount", "val visitCount = 0")
+        .replace("val paused = store.snapshot().paused", "val paused = false")
+        .concat("\nprivate fun unrelatedReads(store: BenchmarkStore) {\n    store.snapshot().selection\n    store.snapshot().visitCount\n    store.snapshot().paused\n}\n"),
     })],
     ["retained field reads are ignored by restore", "state.reopen-wiring", (files) => ({
       ...files,
@@ -1940,9 +2120,27 @@ private fun unusedSemanticBait(candidates: List<PlaneAnchor>) {
         .replace("store.restore(GallerySnapshot(selection, visitCount, paused))", "store.restore(GallerySnapshot(null, 0, false))"),
     })],
   ];
-  for (const [name, ruleId, mutate] of cases) await t.test(name, (t) => {
-    const score = scoreSubmission({ projectDir: writeLegacyScoreProject(t, mutate), build: PASSING_BUILD });
-    assert.equal(ruleById(score, ruleId).pass, false);
+  const correctedRuleIds = Object.freeze(["plane.retry-readiness", "state.reopen-wiring"]);
+  assertDeepFrozen(PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS);
+  assertDeepFrozen(PUBLIC_DISCONNECTED_ATTACK_INVENTORY);
+  assert.deepEqual(cases.map(([name, ruleId, , expectationKey = ruleId]) => [name, ruleId, expectationKey]), PUBLIC_DISCONNECTED_ATTACK_INVENTORY, "disconnected attacks: exact ordered 19-case inventory");
+  const legacyBaseline = scoreSubmission({ projectDir: writeLegacyScoreProject(t), build: PASSING_BUILD });
+  const correctedBaseline = scoreSubmission({ projectDir: writeCompleteProject(t), build: PASSING_BUILD });
+  assert.deepEqual(legacyBaseline.rules.map((rule) => rule.pass), PUBLIC_BASE_VECTORS.uncorrected, "disconnected attacks: exact legacy baseline vector");
+  assert.deepEqual(correctedBaseline.rules.map((rule) => rule.pass), PUBLIC_BASE_VECTORS.correctedStandard, "disconnected attacks: exact corrected baseline vector");
+  assert.deepEqual(cases.filter(([, ruleId]) => {
+    const baseline = correctedRuleIds.includes(ruleId) ? correctedBaseline : legacyBaseline;
+    return ruleById(baseline, ruleId).pass === false;
+  }).map(([name]) => name), [], "disconnected attacks: exact non-falsifiable case-name vector");
+  for (const [name, ruleId, mutate, expectationKey = ruleId] of cases) await t.test(name, (t) => {
+    const writer = correctedRuleIds.includes(ruleId) ? writeCompleteProject : writeLegacyScoreProject;
+    const checkedMutation = (files) => {
+      const changed = mutate(files);
+      assert.notDeepEqual(changed, files, `${name}: mutation changes fixture bytes`);
+      return changed;
+    };
+    const score = scoreSubmission({ projectDir: writer(t, checkedMutation), build: PASSING_BUILD });
+    assertPublicScoreVector(score, PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS[expectationKey], name);
   });
 });
 
@@ -2377,6 +2575,107 @@ test("validated projected structural lines enforce the exact 512-byte UTF-8 boun
     );
     assert.equal(forged.getAnalyzeCallCount(), 1);
     assert.equal(forged.getProjectionCallCount(), 16);
+  });
+});
+
+function exactUtf8Padding(targetBytes, glyph, remainderCharacter) {
+  const glyphBytes = Buffer.byteLength(glyph, "utf8");
+  assert.equal(glyphBytes > 1, true, "typed-fact boundary: multibyte padding glyph");
+  assert.equal(Buffer.byteLength(remainderCharacter, "utf8"), 1, "typed-fact boundary: one-byte remainder glyph");
+  const padding = `${glyph.repeat(Math.floor(targetBytes / glyphBytes))}${remainderCharacter.repeat(targetBytes % glyphBytes)}`;
+  assert.equal(Buffer.byteLength(padding, "utf8"), targetBytes, "typed-fact boundary: exact multibyte padding bytes");
+  return padding;
+}
+
+function writeTypedFactBoundaryProject(t, targetBytes, { maskedComment = false } = {}) {
+  const projectDir = writeCompleteProject(t);
+  const before = loadSubmissionSources(projectDir);
+  const fact = before.factEvidence.find((row) => row.kind === "manifest.metadata"
+    && row.value === "pico.spatial.windowcontainer.defaultsize");
+  assert.notEqual(fact, undefined, "typed-fact boundary: default-size fact");
+  const file = before.files.find((row) => row.path === fact.path);
+  assert.notEqual(file, undefined, "typed-fact boundary: manifest source");
+  const structuralLine = file.structural.split(/\r?\n/)[fact.line - 1].trim();
+  const baseStructuralBytes = Buffer.byteLength(structuralLine, "utf8");
+  const manifestPath = path.join(projectDir, fact.path);
+  const lines = fs.readFileSync(manifestPath, "utf8").split("\n");
+  const originalLine = lines[fact.line - 1];
+  if (maskedComment) {
+    const commentPayloadBytes = targetBytes - Buffer.byteLength(originalLine.trim(), "utf8") - Buffer.byteLength("<!---->", "utf8");
+    assert.equal(commentPayloadBytes >= 0, true, "typed-fact boundary: nonnegative comment payload");
+    lines[fact.line - 1] = `${originalLine}<!--${exactUtf8Padding(commentPayloadBytes, "é", "x")}-->`;
+  } else {
+    const paddingBytes = targetBytes - Buffer.byteLength(structuralLine, "utf8");
+    assert.equal(paddingBytes >= 0, true, "typed-fact boundary: nonnegative padding");
+    const closeOffset = originalLine.lastIndexOf("/>");
+    assert.equal(closeOffset >= 0, true, "typed-fact boundary: self-closing metadata line");
+    lines[fact.line - 1] = `${originalLine.slice(0, closeOffset)}${exactUtf8Padding(paddingBytes, "\u2003", " ")}${originalLine.slice(closeOffset)}`;
+  }
+  fs.writeFileSync(manifestPath, lines.join("\n"), "utf8");
+
+  const after = loadSubmissionSources(projectDir);
+  const finalFact = after.factEvidence.find((row) => row.kind === "manifest.metadata"
+    && row.value === "pico.spatial.windowcontainer.defaultsize");
+  assert.notEqual(finalFact, undefined, "typed-fact boundary: final default-size fact");
+  const finalFile = after.files.find((row) => row.path === finalFact.path);
+  assert.notEqual(finalFile, undefined, "typed-fact boundary: final manifest source");
+  const finalStructuralExcerpt = finalFile.structural.split(/\r?\n/)[finalFact.line - 1].trim();
+  assert.equal(Buffer.byteLength(finalFact.excerpt, "utf8"), targetBytes, "typed-fact boundary: original excerpt bytes");
+  const structuralBytes = Buffer.byteLength(finalStructuralExcerpt, "utf8");
+  if (maskedComment) assert.equal(structuralBytes, baseStructuralBytes, "typed-fact boundary: comment is absent after masking");
+  else assert.equal(structuralBytes, targetBytes, "typed-fact boundary: masked excerpt bytes");
+  return Object.freeze({ projectDir, fact: finalFact, structuralBytes });
+}
+
+test("typed-fact evidence enforces the exact 512-byte UTF-8 boundary without throwing", async (t) => {
+  assertDeepFrozen(PUBLIC_TYPED_FACT_BOUNDARY_VECTORS);
+  const cases = Object.freeze([
+    Object.freeze({
+      name: "exactly 512 bytes",
+      bytes: 512,
+      pass: PUBLIC_TYPED_FACT_BOUNDARY_VECTORS.exact512,
+      falseIds: Object.freeze([]),
+      axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 4 }),
+      score: 16,
+      reason: "supported-subset-v1 witness: one-helper-mixed-stage-open",
+    }),
+    Object.freeze({
+      name: "exactly 513 structural bytes",
+      bytes: 513,
+      pass: PUBLIC_TYPED_FACT_BOUNDARY_VECTORS.exact513,
+      falseIds: Object.freeze(["spatial.container-topology"]),
+      axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }),
+      score: 15,
+      reason: "supported-subset-v1 typed-fact evidence unrepresentable",
+    }),
+    Object.freeze({
+      name: "exactly 513 public bytes with a masked comment",
+      bytes: 513,
+      maskedComment: true,
+      pass: PUBLIC_TYPED_FACT_BOUNDARY_VECTORS.exact513,
+      falseIds: Object.freeze(["spatial.container-topology"]),
+      axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }),
+      score: 15,
+      reason: "supported-subset-v1 typed-fact evidence unrepresentable",
+    }),
+  ]);
+  assertDeepFrozen(cases);
+  for (const boundary of cases) await t.test(boundary.name, (t) => {
+    const { projectDir, fact } = writeTypedFactBoundaryProject(t, boundary.bytes, { maskedComment: boundary.maskedComment ?? false });
+    const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assertPublicScoreVector(score, boundary, `typed-fact ${boundary.name}`);
+    const topology = ruleById(score, "spatial.container-topology");
+    assert.equal(topology.reason, boundary.reason);
+    if (boundary.bytes === 512) {
+      const row = topology.evidence.find((candidate) => candidate.evidenceClass === "typed_fact"
+        && candidate.kind === "manifest.metadata"
+        && candidate.value === "pico.spatial.windowcontainer.defaultsize");
+      assert.notEqual(row, undefined, "typed-fact 512: exact metadata row");
+      assert.equal(row.excerpt, fact.excerpt, "typed-fact 512: untruncated canonical excerpt");
+      assert.equal(Buffer.byteLength(row.excerpt, "utf8"), 512, "typed-fact 512: public bytes");
+    } else {
+      assert.deepEqual(topology.evidence, [], "typed-fact 513: claim-local empty evidence");
+    }
   });
 });
 
