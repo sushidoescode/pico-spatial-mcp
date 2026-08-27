@@ -22,6 +22,8 @@ const FILE_KEYS = Object.freeze(["bytes", "path", "sha256"]);
 const NODE_KEYS = Object.freeze(["nodeId", "path", "fileSha256", "startUtf16", "endUtf16", "kind", "textSha256", "structuralToken"]);
 const CLAIM_KEYS = Object.freeze(["ruleId", "proofForm", "witnessNodeIds", "witnessDigest"]);
 const RULE_IDS = Object.freeze(RULE_DEFINITIONS.map(([id]) => id));
+const STRUCTURAL_AXES = Object.freeze(["spatialNative", "ecs", "statePassing", "planarTracking"]);
+const UNREPRESENTABLE_EVIDENCE_REASON = "supported-subset-v1 evidence unrepresentable";
 const WITNESS_KINDS = new Set([
   "declaration", "callable_reference", "call", "argument", "property_read", "assignment",
   "condition", "loop", "lambda", "return", "type_reference", "catch",
@@ -295,20 +297,67 @@ function normalizeEvidence(rows) {
   return [...unique.values()].sort((left, right) => compareTuples(evidenceTuple(left), evidenceTuple(right)));
 }
 
-function assertEvidenceProvenance(index, rules) {
+function assertEvidenceProvenance(index, rule) {
   const sourceLines = new Map(index.files.map((file) => [file.path, file.structural.split(/\r?\n/)]));
   const typedFacts = new Set(index.factEvidence.map((fact) => canonicalJson(fact)));
-  for (const rule of rules) {
-    for (const row of rule.evidence) {
-      if (row.evidenceClass === "source") {
-        const lines = sourceLines.get(row.path);
-        if (!lines || lines[row.line - 1]?.trim() !== row.excerpt) throw new Error(`source evidence provenance mismatch for ${rule.id}`);
-      } else {
-        const fact = { ...row };
-        delete fact.evidenceClass;
-        if (!typedFacts.has(canonicalJson(fact))) throw new Error(`typed-fact evidence provenance mismatch for ${rule.id}`);
-      }
+  for (const row of rule.evidence) {
+    if (row.evidenceClass === "source") {
+      const lines = sourceLines.get(row.path);
+      if (!lines || lines[row.line - 1]?.trim() !== row.excerpt) throw new Error(`source evidence provenance mismatch for ${rule.id}`);
+    } else {
+      const fact = { ...row };
+      delete fact.evidenceClass;
+      if (!typedFacts.has(canonicalJson(fact))) throw new Error(`typed-fact evidence provenance mismatch for ${rule.id}`);
     }
+  }
+}
+
+function scoreResultInput(rules, build, submissionTests) {
+  const structuralAxes = Object.fromEntries(STRUCTURAL_AXES.map((axis) => [axis, rules.filter((rule) => rule.axis === axis && rule.pass).length]));
+  const structuralScore = Object.values(structuralAxes).reduce((sum, value) => sum + value, 0);
+  return {
+    resultSchemaVersion: RESULT_SCHEMA_VERSION,
+    rubricVersion: RUBRIC_VERSION,
+    rules,
+    structuralAxes,
+    structuralScore,
+    build,
+    buildQualifiedStructuralScore: build.status === "pass" ? structuralScore : 0,
+    submissionTests,
+    runtimeProtocolReceipts: createDefaultRuntimeProtocolReceipts(build.status),
+    visual: { status: "not_performed", captureSha256: null },
+  };
+}
+
+function admitPassingRule(index, definition, evaluated, build, submissionTests) {
+  const [id, axis, evidenceClass] = definition;
+  const rule = {
+    id,
+    rubricVersion: RUBRIC_VERSION,
+    axis,
+    evidenceClass,
+    pass: evaluated.pass,
+    evidence: [],
+    reason: evaluated.reason,
+  };
+  if (!evaluated.pass) return rule;
+  try {
+    const evidence = normalizeEvidence(evaluated.evidence);
+    const probeRules = RULE_DEFINITIONS.map(([probeId, probeAxis, probeEvidenceClass]) => ({
+      id: probeId,
+      rubricVersion: RUBRIC_VERSION,
+      axis: probeAxis,
+      evidenceClass: probeEvidenceClass,
+      pass: probeId === id,
+      evidence: probeId === id ? evidence : [],
+      reason: probeId === id ? evaluated.reason : "evidence admission probe inactive",
+    }));
+    const probe = validateScoreResultV2(scoreResultInput(probeRules, build, submissionTests));
+    const admitted = probe.rules[RULE_IDS.indexOf(id)];
+    assertEvidenceProvenance(index, admitted);
+    return admitted;
+  } catch {
+    return { ...rule, pass: false, evidence: [], reason: UNREPRESENTABLE_EVIDENCE_REASON };
   }
 }
 
@@ -320,33 +369,11 @@ export function scoreSubmission(input) {
   const evaluations = [...evaluateSpatialRules(index, context), ...evaluateStatePlaneRules(context)];
   const byId = new Map(evaluations.map((evaluation) => [evaluation.id, evaluation]));
   if (evaluations.length !== RULE_DEFINITIONS.length || byId.size !== RULE_DEFINITIONS.length) throw new Error("public rule adapters must produce exactly sixteen unique evaluations");
-  const rules = RULE_DEFINITIONS.map(([id, axis, evidenceClass]) => {
+  const rules = RULE_DEFINITIONS.map((definition) => {
+    const [id] = definition;
     const evaluated = byId.get(id);
     if (!evaluated) throw new Error(`missing rule evaluator for ${id}`);
-    const evidence = evaluated.pass ? normalizeEvidence(evaluated.evidence) : [];
-    return {
-      id,
-      rubricVersion: RUBRIC_VERSION,
-      axis,
-      evidenceClass,
-      pass: evaluated.pass,
-      evidence,
-      reason: evaluated.reason,
-    };
+    return admitPassingRule(index, definition, evaluated, build, submissionTests);
   });
-  assertEvidenceProvenance(index, rules);
-  const structuralAxes = Object.fromEntries(["spatialNative", "ecs", "statePassing", "planarTracking"].map((axis) => [axis, rules.filter((rule) => rule.axis === axis && rule.pass).length]));
-  const structuralScore = Object.values(structuralAxes).reduce((sum, value) => sum + value, 0);
-  return validateScoreResultV2({
-    resultSchemaVersion: RESULT_SCHEMA_VERSION,
-    rubricVersion: RUBRIC_VERSION,
-    rules,
-    structuralAxes,
-    structuralScore,
-    build,
-    buildQualifiedStructuralScore: build.status === "pass" ? structuralScore : 0,
-    submissionTests,
-    runtimeProtocolReceipts: createDefaultRuntimeProtocolReceipts(build.status),
-    visual: { status: "not_performed", captureSha256: null },
-  });
+  return validateScoreResultV2(scoreResultInput(rules, build, submissionTests));
 }

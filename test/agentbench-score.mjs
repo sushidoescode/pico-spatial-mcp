@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { canonicalJson } from "../benchmarks/spatial-agent-bench/lib/identity.mjs";
-import { RULE_DEFINITIONS, TEST_EXECUTION_STREAM_MAX_BYTES } from "../benchmarks/spatial-agent-bench/lib/contract.mjs";
+import { RULE_DEFINITIONS, TEST_EXECUTION_STREAM_MAX_BYTES, validateScoreResultV2 } from "../benchmarks/spatial-agent-bench/lib/contract.mjs";
 import { analyzeKotlin } from "../benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs";
 import { isRepresentableTypedFact } from "../benchmarks/spatial-agent-bench/lib/rules-spatial.mjs";
 import { loadSubmissionSources } from "../benchmarks/spatial-agent-bench/lib/source.mjs";
@@ -1814,6 +1814,18 @@ test("declaration header decoding covers supported superclass forms and rejects 
       public: allTrue,
     }),
     Object.freeze({
+      name: "newline between class name and direct supertype",
+      header: "class LaunchActivity :\n    SpatialLaunchActivity()",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
+      name: "newline between class keyword and name",
+      header: "class\nLaunchActivity : SpatialLaunchActivity()",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
       name: "multiple supertypes remain outside the supported subset",
       header: "class LaunchActivity : SpatialLaunchActivity(), Runnable { override fun run() = Unit }",
       analyzer: noMixedClaims,
@@ -1832,6 +1844,39 @@ test("declaration header decoding covers supported superclass forms and rejects 
     const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
     assertPublicScoreVector(score, publicExpectation(boundary.public), boundary.name);
   });
+});
+
+const GALLERY_STATE_PATH = "app/src/main/java/com/agentbench/gallery/GalleryState.kt";
+const GALLERY_STATE_CONTROL_PATH = "app/src/main/java/com/agentbench/gallery/GalleryState\u0001.kt";
+
+function renameGalleryStateFixture(files, destination = GALLERY_STATE_CONTROL_PATH) {
+  assert.equal(Object.hasOwn(files, GALLERY_STATE_PATH), true, "U+0001 rename: original GalleryState fixture path");
+  const { [GALLERY_STATE_PATH]: galleryState, ...remaining } = files;
+  return { ...remaining, [destination]: galleryState };
+}
+
+test("U+0001 GalleryState source path is rejected claim-locally after an accepted sixteen-claim analysis", (t) => {
+  const projectDir = writeCompleteProject(t, renameGalleryStateFixture);
+  const response = analyzeKotlin(loadSubmissionSources(projectDir));
+  assert.equal(response.analysisStatus, "accepted", "U+0001 rename: analyzer accepts source index");
+  assert.equal(response.rejectionCode, null, "U+0001 rename: analyzer rejection code");
+  assert.deepEqual(analyzerRuleVector(response), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ], "U+0001 rename: exact sixteen-claim analyzer vector");
+
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  validateScoreResultV2(score);
+  assert.deepEqual(score.rules.map((rule) => rule.pass), [
+    true, true, true, true,
+    true, true, true, true,
+    false, false, true, true,
+    true, true, true, true,
+  ], "U+0001 rename: exact public score vector");
+  assert.deepEqual(ruleById(score, "state.single-source").evidence, [], "U+0001 rename: single-source claim-local evidence");
+  assert.deepEqual(ruleById(score, "state.typed-handoff").evidence, [], "U+0001 rename: typed-handoff claim-local evidence");
 });
 
 test("interior-newline manifest metadata fails its owning rule closed without throwing", (t) => {
@@ -2095,8 +2140,8 @@ function replacementStateAuthorityAttack(files) {
   };
 }
 
-test("disconnected structural vocabulary cannot satisfy relational rubric conjunctions", async (t) => {
-  const cases = [
+function disconnectedAttackCases() {
+  return Object.freeze([
     ["manifest classes do not match implementation", "spatial.project-entry", (files) => ({
       ...files,
       "app/src/main/AndroidManifest.xml": files["app/src/main/AndroidManifest.xml"]
@@ -2217,10 +2262,15 @@ private fun unusedSemanticBait(candidates: List<PlaneAnchor>) {
       "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
         .replace("store.restore(GallerySnapshot(selection, visitCount, paused))", "store.restore(GallerySnapshot(null, 0, false))"),
     })],
-  ];
+  ].map((entry) => Object.freeze(entry)));
+}
+
+test("disconnected structural vocabulary cannot satisfy relational rubric conjunctions", async (t) => {
+  const cases = disconnectedAttackCases();
   const correctedRuleIds = Object.freeze(["plane.retry-readiness", "state.reopen-wiring"]);
   assertDeepFrozen(PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS);
   assertDeepFrozen(PUBLIC_DISCONNECTED_ATTACK_INVENTORY);
+  assertDeepFrozen(cases);
   assert.deepEqual(cases.map(([name, ruleId, , expectationKey = ruleId]) => [name, ruleId, expectationKey]), PUBLIC_DISCONNECTED_ATTACK_INVENTORY, "disconnected attacks: exact ordered 19-case inventory");
   assert.deepEqual(
     Object.keys(PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS).sort(),
@@ -2626,6 +2676,135 @@ test("typed-fact internal provenance failures fold into claim-local false result
       publicExpectation(PUBLIC_TYPED_FACT_FIELD_VECTORS.projectEntryUnrepresentable),
       `typed-fact ${field}`,
     );
+  });
+});
+
+function forgeSourcePathMutation(nextPath) {
+  return `
+const source = index.files.find((row) => row.path === ${JSON.stringify(GALLERY_STATE_PATH)});
+if (!source) throw new Error("forged source path fixture is incomplete");
+source.path = ${JSON.stringify(nextPath)};
+`;
+}
+
+function correction3SeventyCaseInventory() {
+  const typedFields = Object.freeze([
+    Object.freeze({ field: "value", mutate: fullyQualifiedManifestClasses }),
+    Object.freeze({ field: "key" }),
+    Object.freeze({ field: "alias" }),
+    Object.freeze({ field: "version" }),
+    Object.freeze({ field: "versionRef" }),
+    Object.freeze({ field: "metadata.value" }),
+    Object.freeze({ field: "path", pathPayload: true }),
+  ]);
+  const correctedDisconnectedRuleIds = new Set(["plane.retry-readiness", "state.reopen-wiring"]);
+  const sourcePath1025 = `p/${"a".repeat(1_023)}`;
+  assert.equal(Buffer.byteLength(sourcePath1025, "utf8"), 1_025, "70-case source path: exact 1025 UTF-8 bytes");
+  const inventory = [
+    ...[...V10_ACCEPTED_EMPTY_FIXTURES, ...V10_REJECTED_EMPTY_FIXTURES].map((fixture) => ({
+      name: `v10/${fixture.id}`,
+      score(t) {
+        return scoreSubmission({ projectDir: writeIsolatedKotlinProject(t, fixture.files, "agentbench-cp2-v10-score-"), build: PASSING_BUILD });
+      },
+    })),
+    ...batch2bFixture.RULE_ATTACKS.map((attack) => ({
+      name: `rule-attack/${attack.ruleId}`,
+      score(t) {
+        return scoreSubmission({ projectDir: writeCompleteProject(t, attack.apply), build: PASSING_BUILD });
+      },
+    })),
+    ...disconnectedAttackCases().map(([name, ruleId, mutate]) => ({
+      name: `disconnected/${name}`,
+      score(t) {
+        const writer = correctedDisconnectedRuleIds.has(ruleId) ? writeCompleteProject : writeLegacyScoreProject;
+        return scoreSubmission({ projectDir: writer(t, mutate), build: PASSING_BUILD });
+      },
+    })),
+    {
+      name: "hostile-source/U+0001-GalleryState-path",
+      score(t) {
+        return scoreSubmission({ projectDir: writeCompleteProject(t, renameGalleryStateFixture), build: PASSING_BUILD });
+      },
+    },
+    {
+      name: "hostile-source/lone-CR-parse-rejected",
+      score(t) {
+        const projectDir = writeCompleteProject(t, replaceFixturePathOnce(
+          GALLERY_STATE_PATH,
+          "package com.agentbench.gallery\n",
+          "package com.agentbench.gallery\r",
+        ));
+        const response = analyzeKotlin(loadSubmissionSources(projectDir));
+        assert.equal(response.analysisStatus, "rejected", "lone CR: analyzer status");
+        assert.equal(response.rejectionCode, "parse", "lone CR: analyzer rejection code");
+        const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+        assert.deepEqual(score.rules.map((rule) => rule.pass), PUBLIC_BASE_VECTORS.rejected, "lone CR: clean all-false score vector");
+        return score;
+      },
+    },
+    {
+      name: "hostile-source/forged-trailing-space-path",
+      async score(t) {
+        const forged = await importForgedScorer(t, "", {
+          sourceMutation: forgeSourcePathMutation(`${GALLERY_STATE_PATH} `),
+        });
+        return forged.scoreSubmission({ projectDir: writeCompleteProject(t), build: PASSING_BUILD });
+      },
+    },
+    {
+      name: "hostile-source/forged-1025-byte-path",
+      async score(t) {
+        const forged = await importForgedScorer(t, "", {
+          sourceMutation: forgeSourcePathMutation(sourcePath1025),
+        });
+        return forged.scoreSubmission({ projectDir: writeCompleteProject(t), build: PASSING_BUILD });
+      },
+    },
+    ...typedFields.map((boundary) => ({
+      name: `hostile-typed/${boundary.field}-1025-bytes`,
+      async score(t) {
+        const forged = await importForgedScorer(t, "", { sourceMutation: TYPED_FACT_SOURCE_MUTATION });
+        const projectDir = writeCompleteProject(t, boundary.mutate ?? ((files) => files));
+        const payload = boundary.pathPayload
+          ? `p/${exactUtf8Padding(1_023, "é", "x")}`
+          : exactUtf8Padding(1_025, "é", "x");
+        assert.equal(Buffer.byteLength(payload, "utf8"), 1_025, `${boundary.field}: exact over-limit UTF-8 bytes`);
+        writeTypedFactMutation(projectDir, { field: boundary.field, payload });
+        return forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+      },
+    })),
+    {
+      name: "hostile-typed/metadata.activityName-513-bytes",
+      score(t) {
+        return scoreSubmission({ projectDir: writeActivityNameBoundaryProject(t, 513), build: PASSING_BUILD });
+      },
+    },
+    ...["missing-path", "out-of-bounds-line", "non-string-excerpt"].map((field) => ({
+      name: `hostile-typed/${field}`,
+      async score(t) {
+        const forged = await importForgedScorer(t, "", { sourceMutation: TYPED_FACT_SOURCE_MUTATION });
+        const projectDir = writeCompleteProject(t);
+        writeTypedFactMutation(projectDir, { field });
+        return forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+      },
+    })),
+  ].map((entry) => Object.freeze(entry));
+  return Object.freeze(inventory);
+}
+
+test("seventy hostile score submissions always return contract-valid results", async (t) => {
+  const inventory = correction3SeventyCaseInventory();
+  assertDeepFrozen(inventory);
+  assert.equal(inventory.length, 70, "exact literal 70-case inventory size");
+  assert.equal(new Set(inventory.map(({ name }) => name)).size, 70, "70-case inventory names are unique");
+  for (const entry of inventory) await t.test(entry.name, async (t) => {
+    let score;
+    try {
+      score = await entry.score(t);
+    } catch (error) {
+      assert.fail(`${entry.name}: scoreSubmission must return (${error.message})`);
+    }
+    assert.doesNotThrow(() => validateScoreResultV2(score), `${entry.name}: returned result independently validates`);
   });
 });
 

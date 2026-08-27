@@ -49,6 +49,11 @@ function tokenize(source) {
   return tokens;
 }
 
+function skipNewlines(tokens, offset) {
+  while (tokens[offset]?.type === "newline") offset += 1;
+  return offset;
+}
+
 function decodePackage(file) {
   const tokens = tokenize(file.structural);
   if (!tokens) return null;
@@ -73,7 +78,7 @@ function decodePackage(file) {
 function decodeClassHeader(node) {
   const spanTokens = tokenize(node.file.structural.slice(node.startUtf16, node.endUtf16));
   if (!spanTokens) return null;
-  const classOffsets = [];
+  const classNameOffsets = [];
   let parenDepth = 0;
   let bracketDepth = 0;
   let angleDepth = 0;
@@ -87,9 +92,9 @@ function decodeClassHeader(node) {
       headerEnd = index;
       break;
     }
-    if (topLevel && token.type === "identifier" && value === "class"
-        && spanTokens[index + 1]?.type === "identifier") {
-      classOffsets.push(index);
+    if (topLevel && token.type === "identifier" && value === "class") {
+      const nameOffset = skipNewlines(spanTokens, index + 1);
+      if (spanTokens[nameOffset]?.type === "identifier") classNameOffsets.push(nameOffset);
     }
     if (value === "(") parenDepth += 1;
     else if (value === ")") parenDepth -= 1;
@@ -101,17 +106,17 @@ function decodeClassHeader(node) {
     else if (value === "}") braceDepth -= 1;
     if (parenDepth < 0 || bracketDepth < 0 || angleDepth < 0 || braceDepth < 0) return null;
   }
-  if (classOffsets.length !== 1) return null;
+  if (classNameOffsets.length !== 1) return null;
   const tokens = spanTokens.slice(0, headerEnd);
-  const classOffset = classOffsets[0];
-  const className = tokens[classOffset + 1]?.type === "identifier" ? tokens[classOffset + 1].value : null;
+  const nameOffset = classNameOffsets[0];
+  const className = tokens[nameOffset]?.type === "identifier" ? tokens[nameOffset].value : null;
   if (!className) return null;
 
   parenDepth = 0;
   bracketDepth = 0;
   angleDepth = 0;
   let colonOffset = -1;
-  for (let index = classOffset + 2; index < tokens.length; index += 1) {
+  for (let index = nameOffset + 1; index < tokens.length; index += 1) {
     const value = tokens[index].value;
     if (value === "(") parenDepth += 1;
     else if (value === ")") parenDepth -= 1;
@@ -129,7 +134,7 @@ function decodeClassHeader(node) {
   if (colonOffset < 0) return null;
 
   const baseParts = [];
-  let cursor = colonOffset + 1;
+  let cursor = skipNewlines(tokens, colonOffset + 1);
   if (tokens[cursor]?.type !== "identifier") return null;
   baseParts.push(tokens[cursor].value);
   cursor += 1;
