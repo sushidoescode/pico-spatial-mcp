@@ -7,8 +7,9 @@ import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { canonicalJson } from "../benchmarks/spatial-agent-bench/lib/identity.mjs";
-import { RULE_DEFINITIONS, TEST_EXECUTION_STREAM_MAX_BYTES } from "../benchmarks/spatial-agent-bench/lib/contract.mjs";
+import { RULE_DEFINITIONS, TEST_EXECUTION_STREAM_MAX_BYTES, validateScoreResultV2 } from "../benchmarks/spatial-agent-bench/lib/contract.mjs";
 import { analyzeKotlin } from "../benchmarks/spatial-agent-bench/lib/kotlin-analysis.mjs";
+import { isRepresentableTypedFact } from "../benchmarks/spatial-agent-bench/lib/rules-spatial.mjs";
 import { loadSubmissionSources } from "../benchmarks/spatial-agent-bench/lib/source.mjs";
 import { scoreSubmission } from "../benchmarks/spatial-agent-bench/lib/score.mjs";
 import * as batch2bFixture from "./helpers/agentbench-fixture.mjs";
@@ -67,6 +68,318 @@ const RULE_ATTACK_SPECS = Object.freeze([
   Object.freeze({ ruleId: "plane.semantic-fallback", path: "app/src/main/java/com/agentbench/gallery/PlaneSession.kt", from: "?: horizontalFloorPlane()", to: "?: null", expectedFalseRuleIds: Object.freeze(["plane.semantic-fallback"]) }),
   Object.freeze({ ruleId: "plane.anchor-pose", path: "app/src/main/java/com/agentbench/gallery/PlaneSession.kt", from: "root.convertPositionFrom(anchor.transform.position, null)", to: "Vector3(0f, 1f, 0f)", expectedFalseRuleIds: Object.freeze(["plane.anchor-pose"]) }),
   Object.freeze({ ruleId: "plane.cleanup-errors", path: "app/src/main/java/com/agentbench/gallery/GalleryStage.kt", from: "planeSession.stopTrackingAndUnsubscribe()", to: "Unit", expectedFalseRuleIds: Object.freeze(["plane.cleanup-errors"]) }),
+]);
+const PUBLIC_BASE_VECTORS = Object.freeze({
+  correctedStandard: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  correctedEquivalent: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  uncorrected: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, false, false,
+    false, true, true, true,
+  ]),
+  rejected: Object.freeze([
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+  ]),
+  equivalentCallbackAttack: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, false,
+    true, true, true, true,
+  ]),
+});
+const PUBLIC_ATTACK_VECTORS = Object.freeze({
+  "spatial.project-entry": Object.freeze([
+    false, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "spatial.container-topology": Object.freeze([
+    true, false, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "spatial.entity-content": Object.freeze([
+    true, true, false, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "spatial.ui-lifecycle": Object.freeze([
+    true, true, true, false,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "ecs.component-clone": Object.freeze([
+    true, true, true, true,
+    false, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "ecs.system-query": Object.freeze([
+    true, true, true, true,
+    true, false, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "ecs.frame-update": Object.freeze([
+    true, true, true, true,
+    true, true, false, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "ecs.lifecycle": Object.freeze([
+    true, true, true, true,
+    true, true, true, false,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  "state.single-source": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    false, true, false, false,
+    true, true, true, true,
+  ]),
+  "state.typed-handoff": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, false, true, true,
+    true, true, true, true,
+  ]),
+  "state.shared-read-write": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, false, true,
+    true, true, true, true,
+  ]),
+  "state.reopen-wiring": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, false,
+    true, true, true, true,
+  ]),
+  "plane.retry-readiness": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    false, true, true, true,
+  ]),
+  "plane.semantic-fallback": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, false, true, true,
+  ]),
+  "plane.anchor-pose": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, false, true,
+  ]),
+  "plane.cleanup-errors": Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, false,
+  ]),
+});
+const PROJECTION_BOUNDARY_PATH = "app/src/main/java/com/agentbench/gallery/ProjectionBoundary.kt";
+const PROJECTION_LINE_512 = `val ${"é".repeat(252)} = 1`;
+const PROJECTION_LINE_513 = `val a${"é".repeat(252)} = 1`;
+const PUBLIC_PROJECTION_BOUNDARY_VECTORS = Object.freeze({
+  exact512: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  exact513: Object.freeze([
+    true, true, true, true,
+    false, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+});
+const PUBLIC_TYPED_FACT_BOUNDARY_VECTORS = Object.freeze({
+  exact512: Object.freeze([
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+  exact513: Object.freeze([
+    true, false, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+});
+const PUBLIC_TYPED_FACT_FIELD_VECTORS = Object.freeze({
+  exactLimit: PUBLIC_BASE_VECTORS.correctedStandard,
+  projectEntryUnrepresentable: PUBLIC_ATTACK_VECTORS["spatial.project-entry"],
+  containerTopologyUnrepresentable: PUBLIC_ATTACK_VECTORS["spatial.container-topology"],
+  bothMixedRulesUnrepresentable: Object.freeze([
+    false, false, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ]),
+});
+const PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS = Object.freeze({
+  "spatial.project-entry": Object.freeze({
+    pass: Object.freeze([
+      false, false, true, true,
+      true, true, true, true,
+      true, true, false, false,
+      false, true, true, true,
+    ]),
+    falseIds: Object.freeze(["spatial.project-entry", "spatial.container-topology", "state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"]),
+    axes: Object.freeze({ spatialNative: 2, ecs: 4, statePassing: 2, planarTracking: 3 }),
+    score: 11,
+  }),
+  "spatial.container-topology": Object.freeze({
+    pass: Object.freeze([
+      true, false, true, true,
+      true, true, true, true,
+      true, true, false, false,
+      false, true, true, true,
+    ]),
+    falseIds: Object.freeze(["spatial.container-topology", "state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"]),
+    axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 2, planarTracking: 3 }),
+    score: 12,
+  }),
+  "spatial.container-topology.full-decoy": Object.freeze({
+    pass: Object.freeze([
+      true, false, true, true,
+      true, true, true, true,
+      true, false, false, false,
+      false, true, true, true,
+    ]),
+    falseIds: Object.freeze(["spatial.container-topology", "state.typed-handoff", "state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"]),
+    axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 1, planarTracking: 3 }),
+    score: 11,
+  }),
+  "ecs.frame-update": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, false, true,
+      true, true, false, false,
+      false, true, true, true,
+    ]),
+    falseIds: Object.freeze(["ecs.frame-update", "state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 2, planarTracking: 3 }),
+    score: 12,
+  }),
+  "ecs.lifecycle": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, true, false,
+      true, true, false, false,
+      false, true, true, true,
+    ]),
+    falseIds: Object.freeze(["ecs.lifecycle", "state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 2, planarTracking: 3 }),
+    score: 12,
+  }),
+  "plane.retry-readiness.disconnected-load": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+      false, false, true, true,
+    ]),
+    falseIds: Object.freeze(["plane.retry-readiness", "plane.semantic-fallback"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 2 }),
+    score: 14,
+  }),
+  "plane.semantic-fallback": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, true, true,
+      true, true, false, false,
+      false, false, true, true,
+    ]),
+    falseIds: Object.freeze(["state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness", "plane.semantic-fallback"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 2, planarTracking: 2 }),
+    score: 12,
+  }),
+  "plane.semantic-fallback.placement-bypass": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, true, true,
+      true, true, false, false,
+      false, false, false, true,
+    ]),
+    falseIds: Object.freeze(["state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness", "plane.semantic-fallback", "plane.anchor-pose"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 2, planarTracking: 1 }),
+    score: 11,
+  }),
+  "state.reopen-wiring": Object.freeze({
+    pass: Object.freeze([
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, false,
+      true, true, true, true,
+    ]),
+    falseIds: Object.freeze(["state.reopen-wiring"]),
+    axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 3, planarTracking: 4 }),
+    score: 15,
+  }),
+});
+const PUBLIC_DISCONNECTED_ATTACK_INVENTORY = Object.freeze([
+  Object.freeze(["manifest classes do not match implementation", "spatial.project-entry", "spatial.project-entry"]),
+  Object.freeze(["declared and opened Stage IDs differ", "spatial.container-topology", "spatial.container-topology"]),
+  Object.freeze(["a matching-ID Full decoy cannot hide a wrong-ID Mixed open", "spatial.container-topology", "spatial.container-topology.full-decoy"]),
+  Object.freeze(["an unused correct-ID Mixed helper cannot hide the invoked wrong-ID helper", "spatial.container-topology", "spatial.container-topology"]),
+  Object.freeze(["deltaTime is observed but a fixed timestep drives motion", "ecs.frame-update", "ecs.frame-update"]),
+  Object.freeze(["deltaTime appears only in a helper after the fixed-timestep update", "ecs.frame-update", "ecs.frame-update"]),
+  Object.freeze(["System unregister is outside the owning effect", "ecs.lifecycle", "ecs.lifecycle"]),
+  Object.freeze(["unregister spelling cannot impersonate registration", "ecs.lifecycle", "ecs.lifecycle"]),
+  Object.freeze(["registration hidden inside an uncalled nested lambda", "ecs.lifecycle", "ecs.lifecycle"]),
+  Object.freeze(["anchor loading is outside an empty retry loop", "plane.retry-readiness", "plane.retry-readiness.disconnected-load"]),
+  Object.freeze(["retry readiness tests stale candidates instead of the loaded anchors", "plane.retry-readiness", "plane.retry-readiness.disconnected-load"]),
+  Object.freeze(["loaded anchors are overwritten before the readiness check", "plane.retry-readiness", "plane.retry-readiness.disconnected-load"]),
+  Object.freeze(["TABLE/FLOOR selection is unconstrained while checks live in an unused helper", "plane.semantic-fallback", "plane.semantic-fallback"]),
+  Object.freeze(["placement bypasses otherwise constrained fallback helpers", "plane.semantic-fallback", "plane.semantic-fallback.placement-bypass"]),
+  Object.freeze(["semantic, orientation, and area checks inspect different anchors", "plane.semantic-fallback", "plane.semantic-fallback"]),
+  Object.freeze(["called area helper is constant while multiplication is unused", "plane.semantic-fallback", "plane.semantic-fallback"]),
+  Object.freeze(["close path constructs a replacement state authority", "state.reopen-wiring", "state.reopen-wiring"]),
+  Object.freeze(["retained field reads are outside the close/reopen path", "state.reopen-wiring", "state.reopen-wiring"]),
+  Object.freeze(["retained field reads are ignored by restore", "state.reopen-wiring", "state.reopen-wiring"]),
+]);
+const PUBLIC_ATTACK_EXPECTATIONS = Object.freeze([
+  Object.freeze({ ruleId: "spatial.project-entry", pass: PUBLIC_ATTACK_VECTORS["spatial.project-entry"], falseIds: Object.freeze(["spatial.project-entry"]), axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "spatial.container-topology", pass: PUBLIC_ATTACK_VECTORS["spatial.container-topology"], falseIds: Object.freeze(["spatial.container-topology"]), axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "spatial.entity-content", pass: PUBLIC_ATTACK_VECTORS["spatial.entity-content"], falseIds: Object.freeze(["spatial.entity-content"]), axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "spatial.ui-lifecycle", pass: PUBLIC_ATTACK_VECTORS["spatial.ui-lifecycle"], falseIds: Object.freeze(["spatial.ui-lifecycle"]), axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "ecs.component-clone", pass: PUBLIC_ATTACK_VECTORS["ecs.component-clone"], falseIds: Object.freeze(["ecs.component-clone"]), axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "ecs.system-query", pass: PUBLIC_ATTACK_VECTORS["ecs.system-query"], falseIds: Object.freeze(["ecs.system-query"]), axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "ecs.frame-update", pass: PUBLIC_ATTACK_VECTORS["ecs.frame-update"], falseIds: Object.freeze(["ecs.frame-update"]), axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "ecs.lifecycle", pass: PUBLIC_ATTACK_VECTORS["ecs.lifecycle"], falseIds: Object.freeze(["ecs.lifecycle"]), axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 4, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "state.single-source", pass: PUBLIC_ATTACK_VECTORS["state.single-source"], falseIds: Object.freeze(["state.single-source", "state.shared-read-write", "state.reopen-wiring"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 1, planarTracking: 4 }), score: 13 }),
+  Object.freeze({ ruleId: "state.typed-handoff", pass: PUBLIC_ATTACK_VECTORS["state.typed-handoff"], falseIds: Object.freeze(["state.typed-handoff"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 3, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "state.shared-read-write", pass: PUBLIC_ATTACK_VECTORS["state.shared-read-write"], falseIds: Object.freeze(["state.shared-read-write"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 3, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "state.reopen-wiring", pass: PUBLIC_ATTACK_VECTORS["state.reopen-wiring"], falseIds: Object.freeze(["state.reopen-wiring"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 3, planarTracking: 4 }), score: 15 }),
+  Object.freeze({ ruleId: "plane.retry-readiness", pass: PUBLIC_ATTACK_VECTORS["plane.retry-readiness"], falseIds: Object.freeze(["plane.retry-readiness"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 3 }), score: 15 }),
+  Object.freeze({ ruleId: "plane.semantic-fallback", pass: PUBLIC_ATTACK_VECTORS["plane.semantic-fallback"], falseIds: Object.freeze(["plane.semantic-fallback"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 3 }), score: 15 }),
+  Object.freeze({ ruleId: "plane.anchor-pose", pass: PUBLIC_ATTACK_VECTORS["plane.anchor-pose"], falseIds: Object.freeze(["plane.anchor-pose"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 3 }), score: 15 }),
+  Object.freeze({ ruleId: "plane.cleanup-errors", pass: PUBLIC_ATTACK_VECTORS["plane.cleanup-errors"], falseIds: Object.freeze(["plane.cleanup-errors"]), axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 3 }), score: 15 }),
 ]);
 const POSITIVE_SUBSET_REQUIREMENTS = Object.freeze([
   ["ecs.component-clone", "expression-component-clone", ["positional-fields", "named-fields"]],
@@ -260,6 +573,41 @@ function claimRuleIds(response) {
   assert.equal(response.analysisStatus, "accepted");
   assert.equal(response.rejectionCode, null);
   return response.claims.map((claim) => claim.ruleId);
+}
+
+function analyzerRuleVector(response) {
+  const claimed = new Set(response.claims.map((claim) => claim.ruleId));
+  return RULE_IDS.map((ruleId) => claimed.has(ruleId));
+}
+
+function assertPublicScoreVector(score, expected, label) {
+  assert.deepEqual(score.rules.map((rule) => rule.pass), expected.pass, `${label}: Boolean vector`);
+  assert.deepEqual(score.rules.flatMap((rule) => rule.pass ? [] : [rule.id]), expected.falseIds, `${label}: false-ID vector`);
+  assert.deepEqual(score.structuralAxes, expected.axes, `${label}: axis vector`);
+  assert.equal(score.structuralScore, expected.score, `${label}: structural score`);
+  assert.equal(score.buildQualifiedStructuralScore, expected.score, `${label}: qualified structural score`);
+  if (expected.evidenceLengths !== undefined) {
+    assert.deepEqual(score.rules.map((rule) => rule.evidence.length), expected.evidenceLengths, `${label}: evidence-length vector`);
+  }
+  for (const rule of score.rules) {
+    if (rule.pass) assert.match(rule.reason, /^supported-subset-v1 witness:/, `${label}/${rule.id}: passing reason`);
+    else assert.equal(rule.evidence.length, 0, `${label}/${rule.id}: failed evidence`);
+  }
+}
+
+function publicExpectation(pass) {
+  const axes = { spatialNative: 0, ecs: 0, statePassing: 0, planarTracking: 0 };
+  const falseIds = [];
+  for (const [index, [ruleId, axis]] of RULE_DEFINITIONS.entries()) {
+    if (pass[index]) axes[axis] += 1;
+    else falseIds.push(ruleId);
+  }
+  return Object.freeze({
+    pass,
+    falseIds: Object.freeze(falseIds),
+    axes: Object.freeze(axes),
+    score: pass.filter(Boolean).length,
+  });
 }
 
 function mixedTypedConjunctions(index, response) {
@@ -1312,30 +1660,245 @@ test("CP1 positive subset corpus freezes exact closures aggregates and spatial e
   assert.throws(() => writeAggregate(t, "missing-positive-subset-aggregate"), /aggregate|unknown|missing|id/i);
 });
 
-test("perfect structural fixture returns the exact rubric-v2 result contract", (t) => {
+test("complete Kotlin rejection returns the exact all-false public vector", (t) => {
   const projectDir = writeLegacyScoreProject(t);
+  const scriptPath = path.join(projectDir, "app/src/main/java/com/agentbench/gallery/Rejected.kts");
+  fs.writeFileSync(scriptPath, "val rejectedScript = true\n", "utf8");
+  const response = analyzeKotlin(loadSubmissionSources(projectDir));
+  assert.equal(response.analysisStatus, "rejected");
+  assert.equal(response.rejectionCode, "unsupported_script");
+  assert.deepEqual(response.nodes, []);
+  assert.deepEqual(response.claims, []);
+  assert.deepEqual(analyzerRuleVector(response), [
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+  ]);
+
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assert.deepEqual(score.rules.map((rule) => rule.pass), PUBLIC_BASE_VECTORS.rejected);
+  assert.deepEqual(score.rules.flatMap((rule) => rule.pass ? [] : [rule.id]), [
+    "spatial.project-entry", "spatial.container-topology", "spatial.entity-content", "spatial.ui-lifecycle",
+    "ecs.component-clone", "ecs.system-query", "ecs.frame-update", "ecs.lifecycle",
+    "state.single-source", "state.typed-handoff", "state.shared-read-write", "state.reopen-wiring",
+    "plane.retry-readiness", "plane.semantic-fallback", "plane.anchor-pose", "plane.cleanup-errors",
+  ]);
+  assert.deepEqual(score.rules.map((rule) => rule.evidence.length), [
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+  ]);
+  assert.deepEqual(score.structuralAxes, {
+    spatialNative: 0,
+    ecs: 0,
+    statePassing: 0,
+    planarTracking: 0,
+  });
+  assert.equal(score.structuralScore, 0);
+  assert.equal(score.buildQualifiedStructuralScore, 0);
+  for (const rule of score.rules) assert.equal(rule.reason, "supported-subset-v1 rejected: unsupported_script");
+});
+
+test("uncorrected checkpoint returns the exact thirteen-point public vector", (t) => {
+  const projectDir = writeUncorrectedCheckpointProject(t);
+  const response = analyzeKotlin(loadSubmissionSources(projectDir));
+  assert.deepEqual(analyzerRuleVector(response), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, false, false,
+    false, true, true, true,
+  ], "uncorrected checkpoint: independent analyzer vector");
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assertPublicScoreVector(score, {
+    pass: PUBLIC_BASE_VECTORS.uncorrected,
+    falseIds: ["state.shared-read-write", "state.reopen-wiring", "plane.retry-readiness"],
+    axes: { spatialNative: 4, ecs: 4, statePassing: 2, planarTracking: 3 },
+    score: 13,
+    evidenceLengths: [12, 15, 7, 9, 6, 4, 5, 5, 8, 13, 0, 0, 0, 8, 6, 15],
+  }, "uncorrected checkpoint");
+});
+
+test("perfect structural fixture returns the exact rubric-v2 result contract", (t) => {
+  const projectDir = writeCompleteProject(t);
 
   const first = scoreSubmission({ projectDir, build: PASSING_BUILD });
   const second = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  const response = analyzeKotlin(loadSubmissionSources(projectDir));
 
+  assertDeepFrozen(PUBLIC_BASE_VECTORS);
   assert.deepEqual(first.rules.map(({ id }) => id), RULE_DEFINITIONS.map(([id]) => id));
-  assert.deepEqual(first.structuralAxes, {
-    spatialNative: 4,
-    ecs: 4,
-    statePassing: 4,
-    planarTracking: 4,
-  });
-  assert.equal(first.structuralScore, 16);
-  assert.equal(first.buildQualifiedStructuralScore, 16);
-  assert.equal(first.rules.every(({ rubricVersion }) => rubricVersion === 2), true);
+  assertPublicScoreVector(first, {
+    pass: PUBLIC_BASE_VECTORS.correctedStandard,
+    falseIds: [],
+    axes: { spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 4 },
+    score: 16,
+    evidenceLengths: [12, 15, 7, 9, 6, 4, 5, 5, 8, 13, 11, 17, 6, 8, 6, 15],
+  }, "corrected standard");
+  assert.deepEqual(analyzerRuleVector(response), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ], "corrected standard: independent analyzer vector");
+  assert.deepEqual(first.rules.map(({ rubricVersion }) => rubricVersion), [
+    2, 2, 2, 2,
+    2, 2, 2, 2,
+    2, 2, 2, 2,
+    2, 2, 2, 2,
+  ]);
   assert.equal(canonicalJson(first), canonicalJson(second));
   assert.deepEqual(first.visual, { status: "not_performed", captureSha256: null });
   assert.equal(first.runtimeProtocolReceipts.runStatus, "not_run");
   assertDeepFrozen(first);
 });
 
+test("declaration header decoding ignores class literals in a witnessed class body", (t) => {
+  const projectDir = writeCompleteProject(t, replaceFixturePathOnce(
+    "app/src/main/java/com/agentbench/gallery/platform/LaunchActivity.kt",
+    "class LaunchActivity : SpatialLaunchActivity()",
+    `class LaunchActivity : SpatialLaunchActivity() {
+    private fun reflectedType() = LaunchActivity::class.java
+    private class NestedMarker
+}`,
+  ));
+  const response = analyzeKotlin(loadSubmissionSources(projectDir));
+  assert.deepEqual(analyzerRuleVector(response), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ], "class-literal body: independent analyzer vector");
+
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assertPublicScoreVector(score, {
+    pass: [
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+    ],
+    falseIds: [],
+    axes: { spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 4 },
+    score: 16,
+  }, "class-literal body");
+});
+
+test("declaration header decoding covers supported superclass forms and rejects multiple supertypes", async (t) => {
+  const allTrue = PUBLIC_BASE_VECTORS.correctedStandard;
+  const noMixedClaims = PUBLIC_TYPED_FACT_FIELD_VECTORS.bothMixedRulesUnrepresentable;
+  const cases = Object.freeze([
+    Object.freeze({
+      name: "defaulted function-type constructor parameter",
+      header: "class LaunchActivity(private val tick: () -> Unit = {}) : SpatialLaunchActivity()",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
+      name: "defaulted comparison-expression constructor parameter",
+      header: "class LaunchActivity(private val tick: Int = if (1 < 2) 1 else 0) : SpatialLaunchActivity()",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
+      name: "generic direct supertype",
+      header: "class LaunchActivity : SpatialLaunchActivity<Any>()",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
+      name: "where-clause class header",
+      header: "class LaunchActivity<T> : SpatialLaunchActivity() where T : Any",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
+      name: "newline between class name and direct supertype",
+      header: "class LaunchActivity :\n    SpatialLaunchActivity()",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
+      name: "newline between class keyword and name",
+      header: "class\nLaunchActivity : SpatialLaunchActivity()",
+      analyzer: allTrue,
+      public: allTrue,
+    }),
+    Object.freeze({
+      name: "multiple supertypes remain outside the supported subset",
+      header: "class LaunchActivity : SpatialLaunchActivity(), Runnable { override fun run() = Unit }",
+      analyzer: noMixedClaims,
+      public: noMixedClaims,
+    }),
+  ]);
+  assertDeepFrozen(cases);
+  for (const boundary of cases) await t.test(boundary.name, (t) => {
+    const projectDir = writeCompleteProject(t, replaceFixturePathOnce(
+      "app/src/main/java/com/agentbench/gallery/platform/LaunchActivity.kt",
+      "class LaunchActivity : SpatialLaunchActivity()",
+      boundary.header,
+    ));
+    const response = analyzeKotlin(loadSubmissionSources(projectDir));
+    assert.deepEqual(analyzerRuleVector(response), boundary.analyzer, `${boundary.name}: analyzer vector`);
+    const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assertPublicScoreVector(score, publicExpectation(boundary.public), boundary.name);
+  });
+});
+
+const GALLERY_STATE_PATH = "app/src/main/java/com/agentbench/gallery/GalleryState.kt";
+const GALLERY_STATE_CONTROL_PATH = "app/src/main/java/com/agentbench/gallery/GalleryState\u0001.kt";
+
+function renameGalleryStateFixture(files, destination = GALLERY_STATE_CONTROL_PATH) {
+  assert.equal(Object.hasOwn(files, GALLERY_STATE_PATH), true, "U+0001 rename: original GalleryState fixture path");
+  const { [GALLERY_STATE_PATH]: galleryState, ...remaining } = files;
+  return { ...remaining, [destination]: galleryState };
+}
+
+test("U+0001 GalleryState source path is rejected claim-locally after an accepted sixteen-claim analysis", (t) => {
+  const projectDir = writeCompleteProject(t, renameGalleryStateFixture);
+  const response = analyzeKotlin(loadSubmissionSources(projectDir));
+  assert.equal(response.analysisStatus, "accepted", "U+0001 rename: analyzer accepts source index");
+  assert.equal(response.rejectionCode, null, "U+0001 rename: analyzer rejection code");
+  assert.deepEqual(analyzerRuleVector(response), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ], "U+0001 rename: exact sixteen-claim analyzer vector");
+
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  validateScoreResultV2(score);
+  assert.deepEqual(score.rules.map((rule) => rule.pass), [
+    true, true, true, true,
+    true, true, true, true,
+    false, false, true, true,
+    true, true, true, true,
+  ], "U+0001 rename: exact public score vector");
+  assert.deepEqual(ruleById(score, "state.single-source").evidence, [], "U+0001 rename: single-source claim-local evidence");
+  assert.deepEqual(ruleById(score, "state.typed-handoff").evidence, [], "U+0001 rename: typed-handoff claim-local evidence");
+});
+
+test("interior-newline manifest metadata fails its owning rule closed without throwing", (t) => {
+  const projectDir = writeCompleteProject(t, replaceFixturePathOnce(
+    "app/src/main/AndroidManifest.xml",
+    'android:value="BenchmarkWindow"',
+    'android:value="Benchmark\nWindow"',
+  ));
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assertPublicScoreVector(
+    score,
+    publicExpectation(PUBLIC_TYPED_FACT_FIELD_VECTORS.containerTopologyUnrepresentable),
+    "interior-newline manifest metadata",
+  );
+  assert.equal(
+    ruleById(score, "spatial.container-topology").reason,
+    "supported-subset-v1 typed-fact evidence unrepresentable",
+  );
+});
+
 test("rule evidence retains exact source and typed-fact provenance without conflating evidence classes", (t) => {
-  const projectDir = writeLegacyScoreProject(t);
+  const projectDir = writeCompleteProject(t);
   const index = loadSubmissionSources(projectDir);
   const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
 
@@ -1370,7 +1933,7 @@ function pathIsRegular(projectDir, relative) {
 }
 
 test("unused 0.13.3 catalog aliases and typed-looking Kotlin prose do not satisfy project entry", (t) => {
-  const projectDir = writeLegacyScoreProject(t, (files) => {
+  const projectDir = writeCompleteProject(t, (files) => {
     const changed = changeOne('bom = "0.13.3"', 'bom = "0.13.2"\nunusedBom = "0.13.3"')(files);
     changed["app/src/main/java/com/agentbench/gallery/Bait.kt"] = `package com.agentbench.gallery
 // implementation(platform("com.pico.spatial:bom:0.13.3"))
@@ -1379,9 +1942,20 @@ val fakeBuildLog = "implementation platform com.pico.spatial:bom:0.13.3 fun main
     return changed;
   });
 
+  assert.deepEqual(analyzerRuleVector(analyzeKotlin(loadSubmissionSources(projectDir))), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ], "BOM fact attack: independent analyzer vector");
   const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
 
-  assert.equal(ruleById(score, "spatial.project-entry").pass, false);
+  assertPublicScoreVector(score, {
+    pass: PUBLIC_ATTACK_VECTORS["spatial.project-entry"],
+    falseIds: ["spatial.project-entry"],
+    axes: { spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 },
+    score: 15,
+  }, "BOM fact attack");
 });
 
 test("application-scoped, wrong-owner, and stale Stage metadata cannot replace launch-activity window facts", async (t) => {
@@ -1408,17 +1982,67 @@ test("application-scoped, wrong-owner, and stale Stage metadata cannot replace l
   ];
 
   for (const [name, alter] of cases) await t.test(name, (t) => {
-    const projectDir = writeLegacyScoreProject(t, (files) => ({
+    const projectDir = writeCompleteProject(t, (files) => ({
       ...files,
       "app/src/main/AndroidManifest.xml": alter(files["app/src/main/AndroidManifest.xml"]),
     }));
+    assert.deepEqual(analyzerRuleVector(analyzeKotlin(loadSubmissionSources(projectDir))), [
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+    ], `${name}: independent analyzer vector`);
     const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
-    assert.equal(ruleById(score, "spatial.container-topology").pass, false);
+    assertPublicScoreVector(score, {
+      pass: PUBLIC_ATTACK_VECTORS["spatial.container-topology"],
+      falseIds: ["spatial.container-topology"],
+      axes: { spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 },
+      score: 15,
+    }, name);
+  });
+});
+
+test("mixed bindings reject unrelated manifest classes and ambiguous valid component tuples", async (t) => {
+  const cases = [
+    ["unrelated component declarations", (manifest) => manifest
+      .replace(".platform.SpatialApplication", ".missing.MissingApplication")
+      .replace(".platform.LaunchActivity", ".missing.MissingActivity")],
+    ["duplicate valid launch activity", (manifest) => manifest.replace(
+      "    </application>",
+      `        <activity android:name=".platform.LaunchActivity" />
+    </application>`,
+    )],
+  ];
+  for (const [name, mutateManifest] of cases) await t.test(name, (t) => {
+    const projectDir = writeCompleteProject(t, (files) => ({
+      ...files,
+      "app/src/main/AndroidManifest.xml": mutateManifest(files["app/src/main/AndroidManifest.xml"]),
+    }));
+    assert.deepEqual(analyzerRuleVector(analyzeKotlin(loadSubmissionSources(projectDir))), [
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+    ], `${name}: independent analyzer vector`);
+    const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assertPublicScoreVector(score, {
+      pass: [
+        false, false, true, true,
+        true, true, true, true,
+        true, true, true, true,
+        true, true, true, true,
+      ],
+      falseIds: ["spatial.project-entry", "spatial.container-topology"],
+      axes: { spatialNative: 2, ecs: 4, statePassing: 4, planarTracking: 4 },
+      score: 14,
+    }, name);
+    assert.equal(ruleById(score, "spatial.project-entry").reason, "supported-subset-v1 typed binding incomplete");
+    assert.equal(ruleById(score, "spatial.container-topology").reason, "supported-subset-v1 typed binding incomplete");
   });
 });
 
 test("conflicting activity metadata fails closed before scoring", (t) => {
-  const projectDir = writeLegacyScoreProject(t, (files) => ({
+  const projectDir = writeCompleteProject(t, (files) => ({
     ...files,
     "app/src/main/AndroidManifest.xml": files["app/src/main/AndroidManifest.xml"].replace(
       '<meta-data android:name="pico.spatial.windowcontainer.style" android:value="1" />',
@@ -1430,54 +2054,94 @@ test("conflicting activity metadata fails closed before scoring", (t) => {
   assert.throws(() => scoreSubmission({ projectDir, build: PASSING_BUILD }), /metadata|conflict|duplicate/i);
 });
 
-test("each legacy fixture mutation flips only its targeted public-score rule", async (t) => {
-  const attacks = [
-    ["spatial.project-entry", changeOne("fun mainApp", "fun notMainApp")],
-    ["spatial.container-topology", changeOne("StageStyle.Mixed", "StageStyle.Full")],
-    ["spatial.entity-content", changeOne("SpatialView(", "AndroidView(")],
-    ["spatial.ui-lifecycle", changeOne("DefaultWindowContainer {\n        PicoTheme", "DefaultWindowContainer {\n        MaterialTheme")],
-    ["ecs.component-clone", changeOne("OrbitComponent(enabled, angle)", "OrbitComponent()")],
-    ["ecs.system-query", changeOne("private val orbitQuery = EntityQueryCondition.hasComponent(OrbitComponent::class.java)", "private val orbitQuery = EntityQueryCondition.never()")],
-    ["ecs.frame-update", changeOne("context.deltaTime", "0.016f")],
-    ["ecs.lifecycle", changeOne("unregisterSystem<OrbitSystem>()", "registerSystem<OrbitSystem>()")],
-    ["state.single-source", changeOne("val sharedStore = BenchmarkStore.instance", "val sharedStore = BenchmarkStore()")],
-    ["state.typed-handoff", changeOne("GallerySelection(selectedId)", "selectedId")],
-    ["state.shared-read-write", changeOne("GalleryStage(bundle, sharedStore)", "GalleryStage(bundle, BenchmarkStore())")],
-    ["state.reopen-wiring", changeOne("restoreRetainedState = true", "restoreRetainedState = false")],
-    ["plane.retry-readiness", changeOne("repeat(MAX_ANCHOR_RETRIES)", "repeat(1)")],
-    ["plane.semantic-fallback", changeOne("?: horizontalFloorPlane()", "?: null")],
-    ["plane.anchor-pose", changeOne("root.convertPositionFrom(anchor.transform.position, null)", "Vector3(0f, 1f, 0f)")],
-    ["plane.cleanup-errors", changeOne("planeSession.stopTrackingAndUnsubscribe()", "Unit")],
-  ];
-  for (const [ruleId, mutate] of attacks) await t.test(ruleId, (t) => {
-    const projectDir = writeLegacyScoreProject(t, mutate);
+test("exact rule attack vectors bind public score to independent analyzer expectations", async (t) => {
+  assertDeepFrozen(PUBLIC_ATTACK_VECTORS);
+  assertDeepFrozen(PUBLIC_ATTACK_EXPECTATIONS);
+  assert.deepEqual(PUBLIC_ATTACK_EXPECTATIONS.map(({ ruleId }) => ruleId), [
+    "spatial.project-entry", "spatial.container-topology", "spatial.entity-content", "spatial.ui-lifecycle",
+    "ecs.component-clone", "ecs.system-query", "ecs.frame-update", "ecs.lifecycle",
+    "state.single-source", "state.typed-handoff", "state.shared-read-write", "state.reopen-wiring",
+    "plane.retry-readiness", "plane.semantic-fallback", "plane.anchor-pose", "plane.cleanup-errors",
+  ]);
+  const attacksById = new Map(batch2bFixture.RULE_ATTACKS.map((attack) => [attack.ruleId, attack]));
+  for (const expected of PUBLIC_ATTACK_EXPECTATIONS) await t.test(expected.ruleId, (t) => {
+    const attack = attacksById.get(expected.ruleId);
+    assert.equal(typeof attack?.apply, "function", `${expected.ruleId}: fixture attack`);
+    const projectDir = writeCompleteProject(t, attack.apply);
+    const response = analyzeKotlin(loadSubmissionSources(projectDir));
     const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
-    const expected = RULE_IDS.map((candidate) => candidate !== ruleId);
-    assert.deepEqual(score.rules.map((rule) => rule.pass), expected);
-    assert.equal(score.structuralScore, 15);
+    assert.deepEqual(analyzerRuleVector(response), expected.pass, `${expected.ruleId}: independent analyzer vector`);
+    assertPublicScoreVector(score, expected, expected.ruleId);
   });
 });
 
 test("independently named typed reentry callback scores sixteen and its callback mutation flips only reopen wiring", (t) => {
-  const positiveDir = writeLegacyEquivalentScoreProject(t);
+  const positiveDir = writeEquivalentReopenProject(t);
   const positive = scoreSubmission({ projectDir: positiveDir, build: PASSING_BUILD });
   const sourceText = positiveDir && fs.readFileSync(`${positiveDir}/app/src/main/java/com/agentbench/gallery/Main.kt`, "utf8");
   assert.equal(sourceText.includes("sharedStore"), false);
   assert.equal(sourceText.includes("openGalleryStage"), false);
   assert.equal(sourceText.includes("restoreRetainedState"), false);
-  assert.equal(positive.structuralScore, 16);
+  assertPublicScoreVector(positive, {
+    pass: PUBLIC_BASE_VECTORS.correctedEquivalent,
+    falseIds: [],
+    axes: { spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 4 },
+    score: 16,
+    evidenceLengths: [12, 15, 7, 9, 6, 4, 5, 5, 7, 13, 11, 18, 6, 8, 6, 15],
+  }, "corrected equivalent");
+  assert.deepEqual(analyzerRuleVector(analyzeKotlin(loadSubmissionSources(positiveDir))), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, true,
+  ], "corrected equivalent: independent analyzer vector");
 
-  const mutatedDir = writeLegacyEquivalentScoreProject(t, changeOne(
+  const mutatedDir = writeEquivalentReopenProject(t, changeOne(
     "museumSessionRepository::currentSnapshot",
     "GallerySessionSnapshot::empty",
   ));
   const mutated = scoreSubmission({ projectDir: mutatedDir, build: PASSING_BUILD });
-  assert.deepEqual(mutated.rules.filter((rule) => !rule.pass).map((rule) => rule.id), ["state.reopen-wiring"]);
-  assert.equal(mutated.structuralScore, 15);
+  assert.deepEqual(analyzerRuleVector(analyzeKotlin(loadSubmissionSources(mutatedDir))), [
+    true, true, true, true,
+    true, true, true, true,
+    true, true, true, false,
+    true, true, true, true,
+  ], "equivalent callback attack: independent analyzer vector");
+  assertPublicScoreVector(mutated, {
+    pass: PUBLIC_BASE_VECTORS.equivalentCallbackAttack,
+    falseIds: ["state.reopen-wiring"],
+    axes: { spatialNative: 4, ecs: 4, statePassing: 3, planarTracking: 4 },
+    score: 15,
+    evidenceLengths: [12, 15, 7, 9, 6, 4, 5, 5, 7, 13, 11, 0, 6, 8, 6, 15],
+  }, "equivalent callback attack");
 });
 
-test("disconnected structural vocabulary cannot satisfy relational rubric conjunctions", async (t) => {
-  const cases = [
+function replacementStateAuthorityAttack(files) {
+  return {
+    ...files,
+    "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
+      .replace("    closeStage()", "    closeStage()\n    val replacementStore = BenchmarkStore()")
+      .replace("val selection = store.snapshot().selection", "val selection = replacementStore.snapshot().selection")
+      .replace("val visitCount = store.snapshot().visitCount", "val visitCount = replacementStore.snapshot().visitCount")
+      .replace("val paused = store.snapshot().paused", "val paused = replacementStore.snapshot().paused")
+      .replace("store.restore(GallerySnapshot(selection, visitCount, paused))", "replacementStore.restore(GallerySnapshot(selection, visitCount, paused))")
+      .replace(
+        `    openGalleryStage(
+        state = GallerySnapshot.empty(),
+        store = store,
+        restoreRetainedState = true,
+    )`,
+        `    openGalleryStage(
+        state = GallerySnapshot.empty(),
+        store = replacementStore,
+        restoreRetainedState = true,
+    )`,
+      ),
+  };
+}
+
+function disconnectedAttackCases() {
+  return Object.freeze([
     ["manifest classes do not match implementation", "spatial.project-entry", (files) => ({
       ...files,
       "app/src/main/AndroidManifest.xml": files["app/src/main/AndroidManifest.xml"]
@@ -1493,7 +2157,7 @@ test("disconnected structural vocabulary cannot satisfy relational rubric conjun
       ...files,
       "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
         .replace("openStage(SpatialContainers.ID_GALLERY, StageStyle.Mixed, bundle)", "openStage(SpatialContainers.ID_GALLERY, StageStyle.Full, bundle)\n    openStage(\"DifferentStage\", StageStyle.Mixed, bundle)"),
-    })],
+    }), "spatial.container-topology.full-decoy"],
     ["an unused correct-ID Mixed helper cannot hide the invoked wrong-ID helper", "spatial.container-topology", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
@@ -1530,25 +2194,27 @@ test("disconnected structural vocabulary cannot satisfy relational rubric conjun
     ["anchor loading is outside an empty retry loop", "plane.retry-readiness", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
-        .replace(`repeat(MAX_ANCHOR_RETRIES) {
-                candidates = PlaneTrackingManager.loadAllAnchors().toList()
-                if (candidates.isNotEmpty()) return@repeat
+        .replace(`for (attempt in 0 until MAX_ANCHOR_RETRIES) {
+                val loaded = PlaneTrackingManager.loadAllAnchors().toList()
+                candidates = loaded
+                if (loaded.isNotEmpty()) break
                 delay(25L)
-            }`, `repeat(MAX_ANCHOR_RETRIES) { Unit }
-            candidates = PlaneTrackingManager.loadAllAnchors().toList()
-            if (candidates.isNotEmpty()) Unit
+            }`, `for (attempt in 0 until MAX_ANCHOR_RETRIES) { Unit }
+            val loaded = PlaneTrackingManager.loadAllAnchors().toList()
+            candidates = loaded
+            if (loaded.isNotEmpty()) Unit
             delay(25L)`),
-    })],
+    }), "plane.retry-readiness.disconnected-load"],
     ["retry readiness tests stale candidates instead of the loaded anchors", "plane.retry-readiness", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
-        .replace("candidates = PlaneTrackingManager.loadAllAnchors().toList()", "PlaneTrackingManager.loadAllAnchors().toList()"),
-    })],
+        .replace("val loaded = PlaneTrackingManager.loadAllAnchors().toList()", "PlaneTrackingManager.loadAllAnchors().toList()\n                val loaded = candidates"),
+    }), "plane.retry-readiness.disconnected-load"],
     ["loaded anchors are overwritten before the readiness check", "plane.retry-readiness", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
-        .replace("candidates = PlaneTrackingManager.loadAllAnchors().toList()", "candidates = PlaneTrackingManager.loadAllAnchors().toList()\n                candidates = emptyList()"),
-    })],
+        .replace("candidates = loaded\n                if (loaded.isNotEmpty()) break", "candidates = loaded\n                candidates = emptyList()\n                if (candidates.isNotEmpty()) break"),
+    }), "plane.retry-readiness.disconnected-load"],
     ["TABLE/FLOOR selection is unconstrained while checks live in an unused helper", "plane.semantic-fallback", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
@@ -1570,7 +2236,7 @@ private fun unusedSemanticBait(candidates: List<PlaneAnchor>) {
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
         .replace("val anchor = horizontalTablePlane() ?: horizontalFloorPlane()", "val anchor = candidates.firstOrNull()")
         .concat("\nprivate fun unusedFallback(session: PlaneSession) = session.horizontalTablePlane() ?: session.horizontalFloorPlane()\n"),
-    })],
+    }), "plane.semantic-fallback.placement-bypass"],
     ["semantic, orientation, and area checks inspect different anchors", "plane.semantic-fallback", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
@@ -1582,33 +2248,78 @@ private fun unusedSemanticBait(candidates: List<PlaneAnchor>) {
       "app/src/main/java/com/agentbench/gallery/PlaneSession.kt": files["app/src/main/java/com/agentbench/gallery/PlaneSession.kt"]
         .replace("private fun area(anchor: PlaneAnchor): Float = anchor.boundingBoxSize.x * anchor.boundingBoxSize.y", "private fun area(anchor: PlaneAnchor): Float = 1f\n\n    private fun unusedArea(anchor: PlaneAnchor): Float = anchor.boundingBoxSize.x * anchor.boundingBoxSize.y"),
     })],
-    ["close path constructs a replacement state authority", "state.reopen-wiring", (files) => ({
-      ...files,
-      "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
-        .replace("    closeStage()", "    closeStage()\n    val replacementStore = BenchmarkStore()"),
-    })],
+    ["close path constructs a replacement state authority", "state.reopen-wiring", replacementStateAuthorityAttack],
     ["retained field reads are outside the close/reopen path", "state.reopen-wiring", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
-        .replace("val selection = sharedStore.snapshot().selection", "val selection: GallerySelection? = null")
-        .replace("val visitCount = sharedStore.snapshot().visitCount", "val visitCount = 0")
-        .replace("val paused = sharedStore.snapshot().paused", "val paused = false")
-        .concat("\nprivate fun unrelatedReads() {\n    sharedStore.snapshot().selection\n    sharedStore.snapshot().visitCount\n    sharedStore.snapshot().paused\n}\n"),
+        .replace("val selection = store.snapshot().selection", "val selection: GallerySelection? = null")
+        .replace("val visitCount = store.snapshot().visitCount", "val visitCount = 0")
+        .replace("val paused = store.snapshot().paused", "val paused = false")
+        .concat("\nprivate fun unrelatedReads(store: BenchmarkStore) {\n    store.snapshot().selection\n    store.snapshot().visitCount\n    store.snapshot().paused\n}\n"),
     })],
     ["retained field reads are ignored by restore", "state.reopen-wiring", (files) => ({
       ...files,
       "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
         .replace("store.restore(GallerySnapshot(selection, visitCount, paused))", "store.restore(GallerySnapshot(null, 0, false))"),
     })],
-  ];
-  for (const [name, ruleId, mutate] of cases) await t.test(name, (t) => {
-    const score = scoreSubmission({ projectDir: writeLegacyScoreProject(t, mutate), build: PASSING_BUILD });
-    assert.equal(ruleById(score, ruleId).pass, false);
+  ].map((entry) => Object.freeze(entry)));
+}
+
+test("disconnected structural vocabulary cannot satisfy relational rubric conjunctions", async (t) => {
+  const cases = disconnectedAttackCases();
+  const correctedRuleIds = Object.freeze(["plane.retry-readiness", "state.reopen-wiring"]);
+  assertDeepFrozen(PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS);
+  assertDeepFrozen(PUBLIC_DISCONNECTED_ATTACK_INVENTORY);
+  assertDeepFrozen(cases);
+  assert.deepEqual(cases.map(([name, ruleId, , expectationKey = ruleId]) => [name, ruleId, expectationKey]), PUBLIC_DISCONNECTED_ATTACK_INVENTORY, "disconnected attacks: exact ordered 19-case inventory");
+  assert.deepEqual(
+    Object.keys(PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS).sort(),
+    [...new Set(PUBLIC_DISCONNECTED_ATTACK_INVENTORY.map(([, , expectationKey]) => expectationKey))].sort(),
+    "disconnected attacks: expectation keys equal the inventory's used-key set",
+  );
+  const legacyBaseline = scoreSubmission({ projectDir: writeLegacyScoreProject(t), build: PASSING_BUILD });
+  const correctedBaseline = scoreSubmission({ projectDir: writeCompleteProject(t), build: PASSING_BUILD });
+  assert.deepEqual(legacyBaseline.rules.map((rule) => rule.pass), PUBLIC_BASE_VECTORS.uncorrected, "disconnected attacks: exact legacy baseline vector");
+  assert.deepEqual(correctedBaseline.rules.map((rule) => rule.pass), PUBLIC_BASE_VECTORS.correctedStandard, "disconnected attacks: exact corrected baseline vector");
+  assert.deepEqual(cases.filter(([, ruleId]) => {
+    const baseline = correctedRuleIds.includes(ruleId) ? correctedBaseline : legacyBaseline;
+    return ruleById(baseline, ruleId).pass === false;
+  }).map(([name]) => name), [], "disconnected attacks: exact non-falsifiable case-name vector");
+  for (const [name, ruleId, mutate, expectationKey = ruleId] of cases) await t.test(name, (t) => {
+    const writer = correctedRuleIds.includes(ruleId) ? writeCompleteProject : writeLegacyScoreProject;
+    const checkedMutation = (files) => {
+      const changed = mutate(files);
+      assert.notDeepEqual(changed, files, `${name}: mutation changes fixture bytes`);
+      return changed;
+    };
+    const score = scoreSubmission({ projectDir: writer(t, checkedMutation), build: PASSING_BUILD });
+    assertPublicScoreVector(score, PUBLIC_DISCONNECTED_ATTACK_EXPECTATIONS[expectationKey], name);
   });
 });
 
+test("replacement state authority attack mutates the close path and remains falsifiable", (t) => {
+  const projectDir = writeCompleteProject(t, replacementStateAuthorityAttack);
+  const main = fs.readFileSync(path.join(projectDir, "app/src/main/java/com/agentbench/gallery/Main.kt"), "utf8");
+  const windowStart = main.indexOf("private fun GalleryWindow");
+  const helperStart = main.indexOf("private suspend fun SpatialNavigator.openGalleryStage");
+  const closeStart = main.indexOf("private suspend fun SpatialNavigator.closeAndReopen");
+  assert.equal(windowStart >= 0 && helperStart > windowStart && closeStart > helperStart, true, "replacement authority: fixture function order");
+  const windowBody = main.slice(windowStart, helperStart);
+  const closeBody = main.slice(closeStart);
+  assert.equal(windowBody.includes("store = store,"), true, "replacement authority: GalleryWindow keeps its in-scope store");
+  assert.equal(windowBody.includes("store = replacementStore,"), false, "replacement authority: no unresolved replacement in GalleryWindow");
+  assert.equal(closeBody.includes("store = replacementStore,"), true, "replacement authority: close path opens with replacement state");
+
+  const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assertPublicScoreVector(
+    score,
+    publicExpectation(PUBLIC_ATTACK_VECTORS["state.reopen-wiring"]),
+    "replacement state authority close path",
+  );
+});
+
 test("equivalent reopen wiring is independent of callback parameter names", (t) => {
-  const projectDir = writeLegacyEquivalentScoreProject(t, (files) => ({
+  const projectDir = writeEquivalentReopenProject(t, (files) => ({
     ...files,
     "app/src/main/java/com/agentbench/gallery/Main.kt": files["app/src/main/java/com/agentbench/gallery/Main.kt"]
       .replaceAll("initialState", "launchSnapshot")
@@ -1645,7 +2356,7 @@ val fakeLog = "fun mainApp launch(::mainApp) Stage openStage StageStyle.Mixed"
 });
 
 test("submission-test outcomes remain separate from structural and runtime evidence", (t) => {
-  const projectDir = writeLegacyScoreProject(t);
+  const projectDir = writeCompleteProject(t);
   const baseline = scoreSubmission({ projectDir, build: PASSING_BUILD });
   for (const status of ["pass", "fail", "execution_failed", "no_source", "not_run"]) {
     const scored = scoreSubmission({
@@ -1664,7 +2375,7 @@ test("submission-test outcomes remain separate from structural and runtime evide
 });
 
 test("failed and unrun builds retain structural diagnostics but qualify them to zero", (t) => {
-  const projectDir = writeLegacyScoreProject(t);
+  const projectDir = writeCompleteProject(t);
   const failed = scoreSubmission({ projectDir, build: { status: "fail", receiptSha256: "e".repeat(64) } });
   assert.equal(failed.structuralScore, 16);
   assert.equal(failed.buildQualifiedStructuralScore, 0);
@@ -1683,7 +2394,7 @@ test("failed and unrun builds retain structural diagnostics but qualify them to 
 });
 
 test("scoring input rejects protocol, runtime, behavior, accessors, symbols, and exotic prototypes", (t) => {
-  const projectDir = writeLegacyScoreProject(t);
+  const projectDir = writeCompleteProject(t);
   for (const key of ["runtimeProtocolReceipts", "runtime", "behavior"]) {
     assert.throws(() => scoreSubmission({ projectDir, build: PASSING_BUILD, [key]: {} }), /unknown|keys/i);
   }
@@ -1701,41 +2412,748 @@ test("scoring input rejects protocol, runtime, behavior, accessors, symbols, and
   assert.throws(() => scoreSubmission(Object.assign(Object.create({}), { projectDir, build: PASSING_BUILD })), /plain object|prototype/i);
 });
 
-async function importForgedScorer(t, injection) {
+async function importForgedScorer(t, injection, {
+  forbidAdaptation = false,
+  poisonProjection = false,
+  sourceMutation = "",
+} = {}) {
   const moduleDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentbench-forged-scorer-"));
   t.after(() => fs.rmSync(moduleDir, { recursive: true, force: true }));
   const libraryDir = path.resolve(import.meta.dirname, "../benchmarks/spatial-agent-bench/lib");
-  for (const name of ["contract.mjs", "source.mjs", "rules-spatial.mjs", "rules-state-plane.mjs"]) {
-    fs.copyFileSync(path.join(libraryDir, name), path.join(moduleDir, name));
+  fs.copyFileSync(path.join(libraryDir, "contract.mjs"), path.join(moduleDir, "contract.mjs"));
+  const sourcePath = path.join(libraryDir, "source.mjs");
+  let sourceText = fs.readFileSync(sourcePath, "utf8");
+  if (sourceMutation) {
+    sourceText = sourceText.replace(
+      "export function loadSubmissionSources(projectDir) {",
+      "function loadSubmissionSourcesUnmodified(projectDir) {",
+    );
+    sourceText += `
+export function loadSubmissionSources(projectDir) {
+  const index = structuredClone(loadSubmissionSourcesUnmodified(projectDir));
+  ${sourceMutation}
+  return index;
+}
+`;
+  }
+  fs.writeFileSync(path.join(moduleDir, "source.mjs"), sourceText, "utf8");
+  for (const [name, exported] of [["rules-spatial.mjs", "evaluateSpatialRules"], ["rules-state-plane.mjs", "evaluateStatePlaneRules"]]) {
+    if (forbidAdaptation) {
+      fs.writeFileSync(path.join(moduleDir, name), `
+let adaptationCallCount = 0;
+export function ${exported}() {
+  adaptationCallCount += 1;
+  throw new Error("rule adaptation reached forged analyzer response");
+}
+export function getAdaptationCallCount() { return adaptationCallCount; }
+`);
+    } else {
+      fs.copyFileSync(path.join(libraryDir, name), path.join(moduleDir, name));
+    }
   }
   fs.writeFileSync(path.join(moduleDir, "identity.mjs"), `export { canonicalIdentity, canonicalJson } from ${JSON.stringify(pathToFileURL(path.resolve(libraryDir, "../../../dist/runreceiptidentity.js")).href)};\n`);
-  const scoreSource = fs.readFileSync(path.join(libraryDir, "score.mjs"), "utf8");
-  const seam = "  const byId = new Map(evaluations.map((evaluation) => [evaluation.id, evaluation]));";
-  assert.equal(scoreSource.split(seam).length - 1, 1);
-  fs.writeFileSync(path.join(moduleDir, "score.mjs"), scoreSource.replace(seam, `  ${injection}
-${seam}`));
+  const realAnalyzerUrl = pathToFileURL(path.join(libraryDir, "kotlin-analysis.mjs")).href;
+  fs.writeFileSync(path.join(moduleDir, "kotlin-analysis.mjs"), `
+import crypto from "node:crypto";
+import { canonicalJson } from "./identity.mjs";
+import { ANALYZER_CONSTANTS, analyzeKotlin as analyzeRealKotlin } from ${JSON.stringify(realAnalyzerUrl)};
+export { ANALYZER_CONSTANTS };
+let analyzeCallCount = 0;
+const compareUtf8 = (left, right) => Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+const digest = (value) => crypto.createHash("sha256").update(Buffer.from(canonicalJson(value), "utf8")).digest("hex");
+const textDigest = (value) => crypto.createHash("sha256").update(Buffer.from(value, "utf8")).digest("hex");
+const nodeIdentity = (node) => ({
+  path: node.path,
+  fileSha256: node.fileSha256,
+  startUtf16: node.startUtf16,
+  endUtf16: node.endUtf16,
+  kind: node.kind,
+  textSha256: node.textSha256,
+  structuralToken: node.structuralToken,
+});
+function refreshClaims(response) {
+  for (const claim of response.claims) {
+    claim.witnessNodeIds.sort(compareUtf8);
+    claim.witnessDigest = digest({ ruleId: claim.ruleId, proofForm: claim.proofForm, witnessNodeIds: claim.witnessNodeIds });
+  }
+}
+function retainClaimUnion(response) {
+  const retained = new Set(response.claims.flatMap((claim) => claim.witnessNodeIds));
+  response.nodes = response.nodes.filter((node) => retained.has(node.nodeId)).sort((left, right) => compareUtf8(left.nodeId, right.nodeId));
+}
+function dropClaim(response, ruleId) {
+  response.claims = response.claims.filter((claim) => claim.ruleId !== ruleId);
+  retainClaimUnion(response);
+}
+function rekeyNode(response, nodeIndex, changes) {
+  const node = response.nodes[nodeIndex];
+  const priorId = node.nodeId;
+  Object.assign(node, changes);
+  node.nodeId = digest(nodeIdentity(node));
+  for (const claim of response.claims) claim.witnessNodeIds = claim.witnessNodeIds.map((nodeId) => nodeId === priorId ? node.nodeId : nodeId);
+  refreshClaims(response);
+  response.nodes.sort((left, right) => compareUtf8(left.nodeId, right.nodeId));
+  return node;
+}
+export function analyzeKotlin(index) {
+  analyzeCallCount += 1;
+  const response = structuredClone(analyzeRealKotlin(index));
+  ${injection}
+  return response;
+}
+export function getAnalyzeCallCount() { return analyzeCallCount; }
+`, "utf8");
+  const scoreSource = fs.readFileSync(path.join(libraryDir, "score.mjs"), "utf8")
+    .replace(
+      "function projectedSourceEvidence(witnesses) {",
+      `let projectionCallCount = 0;
+function projectedSourceEvidence(witnesses) {
+  projectionCallCount += 1;
+  ${poisonProjection ? 'throw new Error("public source projection reached poisoned boundary");' : ""}`,
+    );
+  const adaptationExports = forbidAdaptation ? `
+export { getAdaptationCallCount as getSpatialAdaptationCallCount } from "./rules-spatial.mjs";
+export { getAdaptationCallCount as getStatePlaneAdaptationCallCount } from "./rules-state-plane.mjs";
+` : "";
+  fs.writeFileSync(path.join(moduleDir, "score.mjs"), `${scoreSource}
+export { getAnalyzeCallCount } from "./kotlin-analysis.mjs";
+export function getProjectionCallCount() { return projectionCallCount; }
+${adaptationExports}`);
   return import(`${pathToFileURL(path.join(moduleDir, "score.mjs")).href}?${Date.now()}-${Math.random()}`);
 }
 
-test("the scorer provenance join rejects every altered source and typed-fact field before result validation", async (t) => {
-  const projectDir = writeLegacyScoreProject(t);
+const TYPED_FACT_SOURCE_MUTATION = `
+const mutationPath = path.join(projectDir, ".agentbench-typed-fact-mutation.json");
+if (fs.existsSync(mutationPath)) {
+  const mutation = JSON.parse(fs.readFileSync(mutationPath, "utf8"));
+  const plugin = index.factEvidence.find((row) => row.kind === "gradle.plugin" && row.value === "com.android.application");
+  const applicationId = index.factEvidence.find((row) => row.kind === "gradle.applicationId");
+  const metadataId = index.factEvidence.find((row) => row.kind === "manifest.metadata" && row.value === "pico.spatial.windowcontainer.id");
+  if (!plugin || !applicationId || !metadataId) throw new Error("typed-fact mutation fixture is incomplete");
+  if (mutation.field === "value") applicationId.value = mutation.payload;
+  else if (["key", "alias", "version", "versionRef"].includes(mutation.field)) plugin[mutation.field] = mutation.payload;
+  else if (mutation.field === "metadata.value") metadataId.metadata.value = mutation.payload;
+  else if (mutation.field === "path") {
+    const oldPath = plugin.path;
+    const file = index.files.find((row) => row.path === oldPath);
+    if (!file) throw new Error("typed-fact path mutation source is absent");
+    file.path = mutation.payload;
+    for (const row of index.factEvidence) if (row.path === oldPath) row.path = mutation.payload;
+  } else if (mutation.field === "missing-path") plugin.path = "missing/typed-fact.gradle.kts";
+  else if (mutation.field === "out-of-bounds-line") plugin.line = 1_000_000;
+  else if (mutation.field === "non-string-excerpt") plugin.excerpt = null;
+  else throw new Error("unsupported typed-fact mutation field: " + mutation.field);
+}
+`;
+
+function writeTypedFactMutation(projectDir, mutation) {
+  fs.writeFileSync(
+    path.join(projectDir, ".agentbench-typed-fact-mutation.json"),
+    `${JSON.stringify(mutation)}\n`,
+    "utf8",
+  );
+}
+
+function fullyQualifiedManifestClasses(files) {
+  return {
+    ...files,
+    "app/src/main/AndroidManifest.xml": files["app/src/main/AndroidManifest.xml"]
+      .replace('android:name=".platform.SpatialApplication"', 'android:name="com.agentbench.gallery.platform.SpatialApplication"')
+      .replace('android:name=".platform.LaunchActivity"', 'android:name="com.agentbench.gallery.platform.LaunchActivity"'),
+  };
+}
+
+function writeActivityNameBoundaryProject(t, targetBytes) {
+  const suffix = ".LaunchActivity";
+  const qualifiedName = `${"a".repeat(targetBytes - Buffer.byteLength(suffix, "utf8"))}${suffix}`;
+  assert.equal(Buffer.byteLength(qualifiedName, "utf8"), targetBytes, "activity owner boundary: exact UTF-8 bytes");
+  const packageName = qualifiedName.slice(0, -suffix.length);
+  return writeCompleteProject(t, composeFixtureMutations(
+    replaceFixturePathOnce(
+      "app/src/main/AndroidManifest.xml",
+      'android:name=".platform.LaunchActivity"',
+      `android:name="${qualifiedName}"`,
+    ),
+    replaceFixturePathOnce(
+      "app/src/main/java/com/agentbench/gallery/platform/LaunchActivity.kt",
+      "package com.agentbench.gallery.platform",
+      `package ${packageName}`,
+    ),
+  ));
+}
+
+test("typed-fact agent-controlled fields enforce exact contract boundaries without throwing", async (t) => {
+  assertDeepFrozen(PUBLIC_TYPED_FACT_FIELD_VECTORS);
+  const forged = await importForgedScorer(t, "", { sourceMutation: TYPED_FACT_SOURCE_MUTATION });
+  const cases = Object.freeze([
+    Object.freeze({ field: "value", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.bothMixedRulesUnrepresentable, mutate: fullyQualifiedManifestClasses }),
+    Object.freeze({ field: "key", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.projectEntryUnrepresentable }),
+    Object.freeze({ field: "alias", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.projectEntryUnrepresentable }),
+    Object.freeze({ field: "version", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.projectEntryUnrepresentable }),
+    Object.freeze({ field: "versionRef", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.projectEntryUnrepresentable }),
+    Object.freeze({ field: "metadata.value", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.containerTopologyUnrepresentable }),
+    Object.freeze({ field: "path", maxBytes: 1_024, over: PUBLIC_TYPED_FACT_FIELD_VECTORS.bothMixedRulesUnrepresentable, pathPayload: true }),
+  ]);
+  assertDeepFrozen(cases);
+  for (const boundary of cases) await t.test(`${boundary.field} ${boundary.maxBytes}/${boundary.maxBytes + 1} bytes`, (t) => {
+    for (const bytes of [boundary.maxBytes, boundary.maxBytes + 1]) {
+      const projectDir = writeCompleteProject(t, boundary.mutate ?? ((files) => files));
+      const payload = boundary.pathPayload
+        ? `p/${exactUtf8Padding(bytes - 2, "é", "x")}`
+        : exactUtf8Padding(bytes, "é", "x");
+      assert.equal(Buffer.byteLength(payload, "utf8"), bytes, `${boundary.field}: exact mutation bytes`);
+      writeTypedFactMutation(projectDir, { field: boundary.field, payload });
+      const score = forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+      const vector = bytes === boundary.maxBytes ? PUBLIC_TYPED_FACT_FIELD_VECTORS.exactLimit : boundary.over;
+      assertPublicScoreVector(score, publicExpectation(vector), `${boundary.field} ${bytes} bytes`);
+    }
+  });
+
+  for (const bytes of [512, 513]) await t.test(`metadata.activityName ${bytes} bytes`, (t) => {
+    const projectDir = writeActivityNameBoundaryProject(t, bytes);
+    const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+    const vector = bytes === 512
+      ? PUBLIC_TYPED_FACT_FIELD_VECTORS.exactLimit
+      : PUBLIC_TYPED_FACT_FIELD_VECTORS.containerTopologyUnrepresentable;
+    assertPublicScoreVector(score, publicExpectation(vector), `metadata.activityName ${bytes} bytes`);
+  });
+});
+
+test("typed-fact guard enforces exact multibyte metadata subfield boundaries", async (t) => {
+  const projectDir = writeCompleteProject(t);
+  const source = loadSubmissionSources(projectDir).factEvidence.find((row) => row.kind === "manifest.metadata"
+    && row.value === "pico.spatial.windowcontainer.id");
+  assert.notEqual(source, undefined, "metadata subfield boundary: source fact");
+  const cases = Object.freeze([
+    Object.freeze({
+      field: "metadata.activityName",
+      maxBytes: 512,
+      mutate(row, payload) {
+        row.activityName = payload;
+        row.metadata.activityName = payload;
+      },
+    }),
+    Object.freeze({
+      field: "metadata.name",
+      maxBytes: 512,
+      mutate(row, payload) {
+        row.value = payload;
+        row.metadata.name = payload;
+      },
+    }),
+    Object.freeze({
+      field: "metadata.resource",
+      maxBytes: 1_024,
+      mutate(row, payload) {
+        row.metadata.value = null;
+        row.metadata.resource = payload;
+      },
+    }),
+  ]);
+  assertDeepFrozen(cases);
+  for (const boundary of cases) await t.test(`${boundary.field} ${boundary.maxBytes}/${boundary.maxBytes + 1} bytes`, () => {
+    for (const bytes of [boundary.maxBytes, boundary.maxBytes + 1]) {
+      const row = structuredClone(source);
+      const payload = exactUtf8Padding(bytes, "é", "x");
+      boundary.mutate(row, payload);
+      assert.equal(
+        isRepresentableTypedFact(row),
+        bytes === boundary.maxBytes,
+        `${boundary.field} ${bytes}: exact production guard result`,
+      );
+    }
+  });
+});
+
+test("typed-fact internal provenance failures fold into claim-local false results", async (t) => {
+  const forged = await importForgedScorer(t, "", { sourceMutation: TYPED_FACT_SOURCE_MUTATION });
+  for (const field of ["missing-path", "out-of-bounds-line", "non-string-excerpt"]) await t.test(field, (t) => {
+    const projectDir = writeCompleteProject(t);
+    writeTypedFactMutation(projectDir, { field });
+    const score = forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assertPublicScoreVector(
+      score,
+      publicExpectation(PUBLIC_TYPED_FACT_FIELD_VECTORS.projectEntryUnrepresentable),
+      `typed-fact ${field}`,
+    );
+  });
+});
+
+function forgeSourcePathMutation(nextPath) {
+  return `
+const source = index.files.find((row) => row.path === ${JSON.stringify(GALLERY_STATE_PATH)});
+if (!source) throw new Error("forged source path fixture is incomplete");
+source.path = ${JSON.stringify(nextPath)};
+`;
+}
+
+function correction3SeventyCaseInventory() {
+  const typedFields = Object.freeze([
+    Object.freeze({ field: "value", mutate: fullyQualifiedManifestClasses }),
+    Object.freeze({ field: "key" }),
+    Object.freeze({ field: "alias" }),
+    Object.freeze({ field: "version" }),
+    Object.freeze({ field: "versionRef" }),
+    Object.freeze({ field: "metadata.value" }),
+    Object.freeze({ field: "path", pathPayload: true }),
+  ]);
+  const correctedDisconnectedRuleIds = new Set(["plane.retry-readiness", "state.reopen-wiring"]);
+  const sourcePath1025 = `p/${"a".repeat(1_023)}`;
+  assert.equal(Buffer.byteLength(sourcePath1025, "utf8"), 1_025, "70-case source path: exact 1025 UTF-8 bytes");
+  const inventory = [
+    ...[...V10_ACCEPTED_EMPTY_FIXTURES, ...V10_REJECTED_EMPTY_FIXTURES].map((fixture) => ({
+      name: `v10/${fixture.id}`,
+      score(t) {
+        return scoreSubmission({ projectDir: writeIsolatedKotlinProject(t, fixture.files, "agentbench-cp2-v10-score-"), build: PASSING_BUILD });
+      },
+    })),
+    ...batch2bFixture.RULE_ATTACKS.map((attack) => ({
+      name: `rule-attack/${attack.ruleId}`,
+      score(t) {
+        return scoreSubmission({ projectDir: writeCompleteProject(t, attack.apply), build: PASSING_BUILD });
+      },
+    })),
+    ...disconnectedAttackCases().map(([name, ruleId, mutate]) => ({
+      name: `disconnected/${name}`,
+      score(t) {
+        const writer = correctedDisconnectedRuleIds.has(ruleId) ? writeCompleteProject : writeLegacyScoreProject;
+        return scoreSubmission({ projectDir: writer(t, mutate), build: PASSING_BUILD });
+      },
+    })),
+    {
+      name: "hostile-source/U+0001-GalleryState-path",
+      score(t) {
+        return scoreSubmission({ projectDir: writeCompleteProject(t, renameGalleryStateFixture), build: PASSING_BUILD });
+      },
+    },
+    {
+      name: "hostile-source/lone-CR-parse-rejected",
+      score(t) {
+        const projectDir = writeCompleteProject(t, replaceFixturePathOnce(
+          GALLERY_STATE_PATH,
+          "package com.agentbench.gallery\n",
+          "package com.agentbench.gallery\r",
+        ));
+        const response = analyzeKotlin(loadSubmissionSources(projectDir));
+        assert.equal(response.analysisStatus, "rejected", "lone CR: analyzer status");
+        assert.equal(response.rejectionCode, "parse", "lone CR: analyzer rejection code");
+        const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+        assert.deepEqual(score.rules.map((rule) => rule.pass), PUBLIC_BASE_VECTORS.rejected, "lone CR: clean all-false score vector");
+        return score;
+      },
+    },
+    {
+      name: "hostile-source/forged-trailing-space-path",
+      async score(t) {
+        const forged = await importForgedScorer(t, "", {
+          sourceMutation: forgeSourcePathMutation(`${GALLERY_STATE_PATH} `),
+        });
+        return forged.scoreSubmission({ projectDir: writeCompleteProject(t), build: PASSING_BUILD });
+      },
+    },
+    {
+      name: "hostile-source/forged-1025-byte-path",
+      async score(t) {
+        const forged = await importForgedScorer(t, "", {
+          sourceMutation: forgeSourcePathMutation(sourcePath1025),
+        });
+        return forged.scoreSubmission({ projectDir: writeCompleteProject(t), build: PASSING_BUILD });
+      },
+    },
+    ...typedFields.map((boundary) => ({
+      name: `hostile-typed/${boundary.field}-1025-bytes`,
+      async score(t) {
+        const forged = await importForgedScorer(t, "", { sourceMutation: TYPED_FACT_SOURCE_MUTATION });
+        const projectDir = writeCompleteProject(t, boundary.mutate ?? ((files) => files));
+        const payload = boundary.pathPayload
+          ? `p/${exactUtf8Padding(1_023, "é", "x")}`
+          : exactUtf8Padding(1_025, "é", "x");
+        assert.equal(Buffer.byteLength(payload, "utf8"), 1_025, `${boundary.field}: exact over-limit UTF-8 bytes`);
+        writeTypedFactMutation(projectDir, { field: boundary.field, payload });
+        return forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+      },
+    })),
+    {
+      name: "hostile-typed/metadata.activityName-513-bytes",
+      score(t) {
+        return scoreSubmission({ projectDir: writeActivityNameBoundaryProject(t, 513), build: PASSING_BUILD });
+      },
+    },
+    ...["missing-path", "out-of-bounds-line", "non-string-excerpt"].map((field) => ({
+      name: `hostile-typed/${field}`,
+      async score(t) {
+        const forged = await importForgedScorer(t, "", { sourceMutation: TYPED_FACT_SOURCE_MUTATION });
+        const projectDir = writeCompleteProject(t);
+        writeTypedFactMutation(projectDir, { field });
+        return forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+      },
+    })),
+  ].map((entry) => Object.freeze(entry));
+  return Object.freeze(inventory);
+}
+
+test("seventy hostile score submissions always return contract-valid results", async (t) => {
+  const inventory = correction3SeventyCaseInventory();
+  assertDeepFrozen(inventory);
+  assert.equal(inventory.length, 70, "exact literal 70-case inventory size");
+  assert.equal(new Set(inventory.map(({ name }) => name)).size, 70, "70-case inventory names are unique");
+  for (const entry of inventory) await t.test(entry.name, async (t) => {
+    let score;
+    try {
+      score = await entry.score(t);
+    } catch (error) {
+      assert.fail(`${entry.name}: scoreSubmission must return (${error.message})`);
+    }
+    assert.doesNotThrow(() => validateScoreResultV2(score), `${entry.name}: returned result independently validates`);
+  });
+});
+
+test("late catalog union forgery is rejected before public source projection or adaptation", async (t) => {
+  const projectDir = writeCompleteProject(t);
+  const forged = await importForgedScorer(t, `
+    const counts = new Map();
+    for (const claim of response.claims) for (const nodeId of claim.witnessNodeIds) counts.set(nodeId, (counts.get(nodeId) ?? 0) + 1);
+    const orphan = response.nodes.find((node) => counts.get(node.nodeId) === 1);
+    const owner = response.claims.find((claim) => claim.witnessNodeIds.includes(orphan.nodeId));
+    owner.witnessNodeIds = owner.witnessNodeIds.filter((nodeId) => nodeId !== orphan.nodeId);
+    refreshClaims(response);
+  `, { forbidAdaptation: true, poisonProjection: true });
+  assert.throws(
+    () => forged.scoreSubmission({ projectDir, build: PASSING_BUILD }),
+    { name: "Error", message: "public analyzer provenance rejected: node catalog is not the exact claim-witness union" },
+  );
+  assert.equal(forged.getAnalyzeCallCount(), 1);
+  assert.equal(forged.getProjectionCallCount(), 0);
+  assert.equal(forged.getSpatialAdaptationCallCount(), 0);
+  assert.equal(forged.getStatePlaneAdaptationCallCount(), 0);
+});
+
+test("chain-consistent forged proof form is rejected before public source projection or adaptation", async (t) => {
+  const projectDir = writeCompleteProject(t);
+  const forged = await importForgedScorer(t, `
+    response.claims[0].proofForm = "forged-public-proof-form";
+    refreshClaims(response);
+  `, { forbidAdaptation: true, poisonProjection: true });
+  assert.throws(
+    () => forged.scoreSubmission({ projectDir, build: PASSING_BUILD }),
+    { name: "Error", message: "public analyzer provenance rejected: claim 0 proof form is outside the public rule domain" },
+  );
+  assert.equal(forged.getAnalyzeCallCount(), 1);
+  assert.equal(forged.getProjectionCallCount(), 0);
+  assert.equal(forged.getSpatialAdaptationCallCount(), 0);
+  assert.equal(forged.getStatePlaneAdaptationCallCount(), 0);
+});
+
+test("the public scorer calls the analyzer once and never falls back when exact claims are absent", async (t) => {
+  const cases = [
+    ["source claim absent", "spatial.entity-content", 'dropClaim(response, "spatial.entity-content");', [
+      true, true, false, true,
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+    ]],
+    ["typed facts cannot replace claim", "spatial.project-entry", 'dropClaim(response, "spatial.project-entry");', [
+      false, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+      true, true, true, true,
+    ]],
+  ];
+  for (const [name, ruleId, injection, pass] of cases) await t.test(name, async (t) => {
+    const projectDir = writeCompleteProject(t);
+    const forged = await importForgedScorer(t, injection);
+    const score = forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assert.equal(forged.getAnalyzeCallCount(), 1, `${name}: one analyzer call`);
+    assert.deepEqual(score.rules.map((rule) => rule.pass), pass, `${name}: literal public vector`);
+    assert.equal(ruleById(score, ruleId).reason, "supported-subset-v1 claim absent");
+    assert.deepEqual(ruleById(score, ruleId).evidence, []);
+  });
+});
+
+test("witness provenance rejects forged response receipts spans nodes digests order and catalog before adaptation", async (t) => {
+  const projectDir = writeCompleteProject(t, (files) => ({
+    ...files,
+    "app/src/main/java/com/agentbench/gallery/Surrogate.kt": "package com.agentbench.gallery\nfun surrogateBait() = \"left 😀 right\"\n",
+  }));
   const mutations = [
-    ["source path", 'evaluations[0].evidence[0] = { ...evaluations[0].evidence[0], path: "app/src/main/java/Forged.kt" };'],
-    ["source line", "evaluations[0].evidence[0] = { ...evaluations[0].evidence[0], line: evaluations[0].evidence[0].line + 1 };"],
-    ["source excerpt", 'evaluations[0].evidence[0] = { ...evaluations[0].evidence[0], excerpt: "forged" };'],
-    ["typed path", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], path: "app/build.gradle" };'],
-    ["typed line", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], line: evaluations[0].evidence[r].line + 1 };'],
-    ["typed excerpt", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], excerpt: "forged" };'],
-    ["typed kind", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], kind: "manifest.activity" };'],
-    ["typed scope", 'const rows = evaluations.find((rule) => rule.id === "spatial.container-topology").evidence; const r = rows.findIndex((row) => row.kind === "manifest.metadata"); rows[r] = { ...rows[r], scope: "application" };'],
-    ["typed owner", 'const rows = evaluations.find((rule) => rule.id === "spatial.container-topology").evidence; const r = rows.findIndex((row) => row.kind === "manifest.metadata"); rows[r] = { ...rows[r], activityName: ".ForgedActivity" };'],
-    ["typed value", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], value: "forged" };'],
-    ["nested metadata", 'const rows = evaluations.find((rule) => rule.id === "spatial.container-topology").evidence; const r = rows.findIndex((row) => row.kind === "manifest.metadata"); rows[r] = { ...rows[r], metadata: { ...rows[r].metadata, value: "forged" } };'],
-    ["optional typed field", 'const r = evaluations[0].evidence.findIndex((row) => row.evidenceClass === "typed_fact"); evaluations[0].evidence[r] = { ...evaluations[0].evidence[r], key: "forged" };'],
+    ["response shape", 'response.forged = true;'],
+    ["Kotlin input digest", 'response.kotlinInputSetSha256 = "0".repeat(64);'],
+    ["file receipt", 'response.files[0].sha256 = "0".repeat(64);'],
+    ["node path", 'response.nodes[0].path = "app/src/main/java/Forged.kt";'],
+    ["file hash", 'response.nodes[0].fileSha256 = "0".repeat(64);'],
+    ["UTF-16 bounds", 'response.nodes[0].startUtf16 = -1;'],
+    ["surrogate boundary", `
+      const file = index.files.find((candidate) => candidate.path.endsWith("/Surrogate.kt"));
+      const split = file.original.indexOf("😀") + 1;
+      rekeyNode(response, 0, {
+        path: file.path,
+        fileSha256: textDigest(file.original),
+        startUtf16: split,
+        endUtf16: split + 1,
+        textSha256: textDigest(file.original.slice(split, split + 1)),
+      });
+    `],
+    ["substring hash", 'response.nodes[0].textSha256 = "0".repeat(64);'],
+    ["node ID", 'response.nodes[0].nodeId = "0".repeat(64);'],
+    ["closed witness kind", 'response.nodes[0].kind = "forged_kind";'],
+    ["nonstructural kind", 'const indexOfStructuralKind = response.nodes.findIndex((node) => node.kind !== "argument"); rekeyNode(response, indexOfStructuralKind, { structuralToken: false });'],
+    ["witness reference", 'response.claims[0].witnessNodeIds[0] = "0".repeat(64);'],
+    ["witness digest", 'response.claims[0].witnessDigest = "0".repeat(64);'],
+    ["claim order", 'response.claims = [response.claims[1], response.claims[0], ...response.claims.slice(2)];'],
+    ["orphan catalog node", `
+      const counts = new Map();
+      for (const claim of response.claims) for (const nodeId of claim.witnessNodeIds) counts.set(nodeId, (counts.get(nodeId) ?? 0) + 1);
+      const orphan = response.nodes.find((node) => counts.get(node.nodeId) === 1);
+      const owner = response.claims.find((claim) => claim.witnessNodeIds.includes(orphan.nodeId));
+      owner.witnessNodeIds = owner.witnessNodeIds.filter((nodeId) => nodeId !== orphan.nodeId);
+      refreshClaims(response);
+    `],
   ];
   for (const [name, injection] of mutations) await t.test(name, async (t) => {
-    const forged = await importForgedScorer(t, injection);
-    assert.throws(() => forged.scoreSubmission({ projectDir, build: PASSING_BUILD }), /provenance mismatch/i);
+    const forged = await importForgedScorer(t, injection, { forbidAdaptation: true });
+    assert.throws(
+      () => forged.scoreSubmission({ projectDir, build: PASSING_BUILD }),
+      /public analyzer provenance rejected/,
+      `${name}: validation must precede adapters`,
+    );
+    assert.equal(forged.getAnalyzeCallCount(), 1, `${name}: one analyzer call`);
+  });
+});
+
+test("witness provenance rejects a chain-consistent structural-mask forgery before adaptation", async (t) => {
+  const corpus = await loadBatch2bCorpusModule();
+  const writeCase = requireBatch2bExport(corpus, "writePositiveSubsetCase", "function");
+  const projectDir = writeCase(t, "topology.direct-mixed-stage-open.named-literal-stage-id.alpha");
+  const forged = await importForgedScorer(t, `
+    const literalIndex = response.nodes.findIndex((node) => node.kind === "argument" && node.structuralToken === false);
+    if (literalIndex < 0) throw new Error("missing real nonstructural literal witness");
+    const literal = response.nodes[literalIndex];
+    const file = index.files.find((candidate) => candidate.path === literal.path);
+    const line = file.structural.slice(0, literal.startUtf16).split(/\\r?\\n/).length;
+    if (file.structural.slice(literal.startUtf16, literal.endUtf16).trim() !== "") throw new Error("literal span was not wholly masked");
+    if (file.structural.split(/\\r?\\n/)[line - 1].trim() === "") throw new Error("literal attack line must retain surrounding structural code");
+    rekeyNode(response, literalIndex, { structuralToken: true });
+  `, { forbidAdaptation: true });
+  assert.throws(
+    () => forged.scoreSubmission({ projectDir, build: PASSING_BUILD }),
+    /public analyzer provenance rejected: structural witness span is wholly masked/,
+  );
+  assert.equal(forged.getAnalyzeCallCount(), 1);
+});
+
+test("validated witnesses with an empty public line fail only their unrepresentable claim", async (t) => {
+  const corpus = await loadBatch2bCorpusModule();
+  const writeCase = requireBatch2bExport(corpus, "writePositiveSubsetCase", "function");
+  const projectDir = writeCase(t, "topology.direct-mixed-stage-open.named-literal-stage-id.alpha");
+  const baitPath = path.join(projectDir, "app/src/main/java/com/agentbench/corpus/MaskedBait.kt");
+  fs.mkdirSync(path.dirname(baitPath), { recursive: true });
+  fs.writeFileSync(baitPath, "package com.agentbench.corpus\nfun maskedBait() {\n    \"masked-only\"\n}\n", "utf8");
+  const forged = await importForgedScorer(t, `
+    const literalIndex = response.nodes.findIndex((node) => node.kind === "argument" && node.structuralToken === false);
+    const file = index.files.find((candidate) => candidate.path.endsWith("/MaskedBait.kt"));
+    const startUtf16 = file.original.indexOf("masked-only") - 1;
+    const witnessText = file.original.slice(startUtf16, startUtf16 + 13);
+    rekeyNode(response, literalIndex, {
+      path: file.path,
+      fileSha256: textDigest(file.original),
+      startUtf16,
+      endUtf16: startUtf16 + witnessText.length,
+      textSha256: textDigest(witnessText),
+      structuralToken: false,
+    });
+  `);
+  const score = forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+  assert.deepEqual(score.rules.map((rule) => rule.pass), [
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+    false, false, false, false,
+  ]);
+  assert.equal(ruleById(score, "spatial.project-entry").reason, "supported-subset-v1 typed binding incomplete");
+  assert.equal(ruleById(score, "spatial.container-topology").reason, "supported-subset-v1 witness unrepresentable");
+  assert.deepEqual(ruleById(score, "spatial.container-topology").evidence, []);
+  assert.equal(forged.getAnalyzeCallCount(), 1);
+});
+
+test("validated projected structural lines enforce the exact 512-byte UTF-8 boundary", async (t) => {
+  assert.equal(Buffer.byteLength(PROJECTION_LINE_512, "utf8"), 512);
+  assert.equal(Buffer.byteLength(PROJECTION_LINE_513, "utf8"), 513);
+  assertDeepFrozen(PUBLIC_PROJECTION_BOUNDARY_VECTORS);
+  const projectDir = writeCompleteProject(t, (files) => ({
+    ...files,
+    [PROJECTION_BOUNDARY_PATH]: `package com.agentbench.gallery\n${PROJECTION_LINE_512}\n${PROJECTION_LINE_513}\n`,
+  }));
+  const cases = [
+    Object.freeze({
+      name: "exactly 512 bytes",
+      boundaryLine: PROJECTION_LINE_512,
+      pass: PUBLIC_PROJECTION_BOUNDARY_VECTORS.exact512,
+      falseIds: Object.freeze([]),
+      axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 4 }),
+      score: 16,
+      evidenceLengths: Object.freeze([12, 15, 7, 9, 6, 4, 5, 5, 8, 13, 11, 17, 6, 8, 6, 15]),
+      cloneReason: "supported-subset-v1 witness: expression-component-clone",
+      cloneProjection: Object.freeze([Object.freeze({
+        evidenceClass: "source",
+        path: PROJECTION_BOUNDARY_PATH,
+        line: 2,
+        excerpt: PROJECTION_LINE_512,
+      })]),
+    }),
+    Object.freeze({
+      name: "exactly 513 bytes",
+      boundaryLine: PROJECTION_LINE_513,
+      pass: PUBLIC_PROJECTION_BOUNDARY_VECTORS.exact513,
+      falseIds: Object.freeze(["ecs.component-clone"]),
+      axes: Object.freeze({ spatialNative: 4, ecs: 3, statePassing: 4, planarTracking: 4 }),
+      score: 15,
+      evidenceLengths: Object.freeze([12, 15, 7, 9, 0, 4, 5, 5, 8, 13, 11, 17, 6, 8, 6, 15]),
+      cloneReason: "supported-subset-v1 witness unrepresentable",
+      cloneProjection: Object.freeze([]),
+    }),
+  ];
+  for (const boundary of cases) await t.test(boundary.name, async (t) => {
+    const forged = await importForgedScorer(t, `
+      const owner = response.claims.find((claim) => claim.ruleId === "ecs.component-clone");
+      const referenceCounts = new Map();
+      for (const claim of response.claims) for (const nodeId of claim.witnessNodeIds) {
+        referenceCounts.set(nodeId, (referenceCounts.get(nodeId) ?? 0) + 1);
+      }
+      const ownerNodes = owner.witnessNodeIds.map((nodeId) => response.nodes.find((node) => node.nodeId === nodeId));
+      const ownerLineKeys = ownerNodes.map((node) => {
+        const source = index.files.find((file) => file.path === node.path);
+        const line = source.structural.slice(0, node.startUtf16).split(/\\r?\\n/).length;
+        return JSON.stringify([node.path, line]);
+      });
+      const ownerLineCounts = new Map();
+      for (const key of ownerLineKeys) ownerLineCounts.set(key, (ownerLineCounts.get(key) ?? 0) + 1);
+      const candidate = ownerNodes.find((node, nodeIndex) => referenceCounts.get(node.nodeId) === 1 && ownerLineCounts.get(ownerLineKeys[nodeIndex]) === 1);
+      if (!candidate) throw new Error("missing uniquely projected component-clone witness");
+      const file = index.files.find((source) => source.path === ${JSON.stringify(PROJECTION_BOUNDARY_PATH)});
+      const boundaryLine = ${JSON.stringify(boundary.boundaryLine)};
+      const startUtf16 = file.original.indexOf(boundaryLine);
+      if (startUtf16 < 0) throw new Error("missing exact projection boundary line");
+      const nodeIndex = response.nodes.findIndex((node) => node.nodeId === candidate.nodeId);
+      rekeyNode(response, nodeIndex, {
+        path: file.path,
+        fileSha256: textDigest(file.original),
+        startUtf16,
+        endUtf16: startUtf16 + boundaryLine.length,
+        textSha256: textDigest(boundaryLine),
+        structuralToken: true,
+      });
+    `);
+    const score = forged.scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assertPublicScoreVector(score, boundary, boundary.name);
+    const clone = ruleById(score, "ecs.component-clone");
+    assert.equal(clone.reason, boundary.cloneReason);
+    assert.deepEqual(
+      clone.evidence.filter((row) => row.path === PROJECTION_BOUNDARY_PATH),
+      boundary.cloneProjection,
+    );
+    assert.equal(forged.getAnalyzeCallCount(), 1);
+    assert.equal(forged.getProjectionCallCount(), 16);
+  });
+});
+
+function exactUtf8Padding(targetBytes, glyph, remainderCharacter) {
+  const glyphBytes = Buffer.byteLength(glyph, "utf8");
+  assert.equal(glyphBytes > 1, true, "typed-fact boundary: multibyte padding glyph");
+  assert.equal(Buffer.byteLength(remainderCharacter, "utf8"), 1, "typed-fact boundary: one-byte remainder glyph");
+  const padding = `${glyph.repeat(Math.floor(targetBytes / glyphBytes))}${remainderCharacter.repeat(targetBytes % glyphBytes)}`;
+  assert.equal(Buffer.byteLength(padding, "utf8"), targetBytes, "typed-fact boundary: exact multibyte padding bytes");
+  return padding;
+}
+
+function writeTypedFactBoundaryProject(t, targetBytes, { maskedComment = false } = {}) {
+  const projectDir = writeCompleteProject(t);
+  const before = loadSubmissionSources(projectDir);
+  const fact = before.factEvidence.find((row) => row.kind === "manifest.metadata"
+    && row.value === "pico.spatial.windowcontainer.defaultsize");
+  assert.notEqual(fact, undefined, "typed-fact boundary: default-size fact");
+  const file = before.files.find((row) => row.path === fact.path);
+  assert.notEqual(file, undefined, "typed-fact boundary: manifest source");
+  const structuralLine = file.structural.split(/\r?\n/)[fact.line - 1].trim();
+  const baseStructuralBytes = Buffer.byteLength(structuralLine, "utf8");
+  const manifestPath = path.join(projectDir, fact.path);
+  const lines = fs.readFileSync(manifestPath, "utf8").split("\n");
+  const originalLine = lines[fact.line - 1];
+  if (maskedComment) {
+    const commentPayloadBytes = targetBytes - Buffer.byteLength(originalLine.trim(), "utf8") - Buffer.byteLength("<!---->", "utf8");
+    assert.equal(commentPayloadBytes >= 0, true, "typed-fact boundary: nonnegative comment payload");
+    lines[fact.line - 1] = `${originalLine}<!--${exactUtf8Padding(commentPayloadBytes, "é", "x")}-->`;
+  } else {
+    const paddingBytes = targetBytes - Buffer.byteLength(structuralLine, "utf8");
+    assert.equal(paddingBytes >= 0, true, "typed-fact boundary: nonnegative padding");
+    const closeOffset = originalLine.lastIndexOf("/>");
+    assert.equal(closeOffset >= 0, true, "typed-fact boundary: self-closing metadata line");
+    lines[fact.line - 1] = `${originalLine.slice(0, closeOffset)}${exactUtf8Padding(paddingBytes, "\u2003", " ")}${originalLine.slice(closeOffset)}`;
+  }
+  fs.writeFileSync(manifestPath, lines.join("\n"), "utf8");
+
+  const after = loadSubmissionSources(projectDir);
+  const finalFact = after.factEvidence.find((row) => row.kind === "manifest.metadata"
+    && row.value === "pico.spatial.windowcontainer.defaultsize");
+  assert.notEqual(finalFact, undefined, "typed-fact boundary: final default-size fact");
+  const finalFile = after.files.find((row) => row.path === finalFact.path);
+  assert.notEqual(finalFile, undefined, "typed-fact boundary: final manifest source");
+  const finalStructuralExcerpt = finalFile.structural.split(/\r?\n/)[finalFact.line - 1].trim();
+  assert.equal(Buffer.byteLength(finalFact.excerpt, "utf8"), targetBytes, "typed-fact boundary: original excerpt bytes");
+  const structuralBytes = Buffer.byteLength(finalStructuralExcerpt, "utf8");
+  if (maskedComment) assert.equal(structuralBytes, baseStructuralBytes, "typed-fact boundary: comment is absent after masking");
+  else assert.equal(structuralBytes, targetBytes, "typed-fact boundary: masked excerpt bytes");
+  return Object.freeze({ projectDir, fact: finalFact, structuralBytes });
+}
+
+test("typed-fact evidence enforces the exact 512-byte UTF-8 boundary without throwing", async (t) => {
+  assertDeepFrozen(PUBLIC_TYPED_FACT_BOUNDARY_VECTORS);
+  const cases = Object.freeze([
+    Object.freeze({
+      name: "exactly 512 bytes",
+      bytes: 512,
+      pass: PUBLIC_TYPED_FACT_BOUNDARY_VECTORS.exact512,
+      falseIds: Object.freeze([]),
+      axes: Object.freeze({ spatialNative: 4, ecs: 4, statePassing: 4, planarTracking: 4 }),
+      score: 16,
+      reason: "supported-subset-v1 witness: one-helper-mixed-stage-open",
+    }),
+    Object.freeze({
+      name: "exactly 513 structural bytes",
+      bytes: 513,
+      pass: PUBLIC_TYPED_FACT_BOUNDARY_VECTORS.exact513,
+      falseIds: Object.freeze(["spatial.container-topology"]),
+      axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }),
+      score: 15,
+      reason: "supported-subset-v1 typed-fact evidence unrepresentable",
+    }),
+    Object.freeze({
+      name: "exactly 513 public bytes with a masked comment",
+      bytes: 513,
+      maskedComment: true,
+      pass: PUBLIC_TYPED_FACT_BOUNDARY_VECTORS.exact513,
+      falseIds: Object.freeze(["spatial.container-topology"]),
+      axes: Object.freeze({ spatialNative: 3, ecs: 4, statePassing: 4, planarTracking: 4 }),
+      score: 15,
+      reason: "supported-subset-v1 typed-fact evidence unrepresentable",
+    }),
+  ]);
+  assertDeepFrozen(cases);
+  for (const boundary of cases) await t.test(boundary.name, (t) => {
+    const { projectDir, fact } = writeTypedFactBoundaryProject(t, boundary.bytes, { maskedComment: boundary.maskedComment ?? false });
+    const score = scoreSubmission({ projectDir, build: PASSING_BUILD });
+    assertPublicScoreVector(score, boundary, `typed-fact ${boundary.name}`);
+    const topology = ruleById(score, "spatial.container-topology");
+    assert.equal(topology.reason, boundary.reason);
+    if (boundary.bytes === 512) {
+      const row = topology.evidence.find((candidate) => candidate.evidenceClass === "typed_fact"
+        && candidate.kind === "manifest.metadata"
+        && candidate.value === "pico.spatial.windowcontainer.defaultsize");
+      assert.notEqual(row, undefined, "typed-fact 512: exact metadata row");
+      assert.equal(row.excerpt, fact.excerpt, "typed-fact 512: untruncated canonical excerpt");
+      assert.equal(Buffer.byteLength(row.excerpt, "utf8"), 512, "typed-fact 512: public bytes");
+    } else {
+      assert.deepEqual(topology.evidence, [], "typed-fact 513: claim-local empty evidence");
+    }
   });
 });
 
