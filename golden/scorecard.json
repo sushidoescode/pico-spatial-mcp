@@ -1,14 +1,23 @@
 {
   "scorecard": {
-    "total": 15,
-    "passed": 15,
+    "total": 25,
+    "corpusTotal": 26,
+    "passed": 25,
     "failed": 0,
+    "skipped": 1,
     "planFailures": 0,
-    "totalCompileSteps": 136,
+    "totalCompileSteps": 211,
     "totalVisionVerified": 0,
+    "totalDeviceVerified": 0,
+    "totalDeviceFailed": 0,
+    "totalLookedVerified": 0,
     "score": 1
   },
   "rows": [
+    {
+      "id": "affordance",
+      "pass": true
+    },
     {
       "id": "ambient",
       "pass": true
@@ -20,6 +29,14 @@
     {
       "id": "boutique",
       "pass": true
+    },
+    {
+      "id": "calib",
+      "pass": true
+    },
+    {
+      "id": "camerapeek",
+      "pass": null
     },
     {
       "id": "console",
@@ -46,6 +63,18 @@
       "pass": true
     },
     {
+      "id": "mrknock",
+      "pass": true
+    },
+    {
+      "id": "mrpedestal",
+      "pass": true
+    },
+    {
+      "id": "mrtable",
+      "pass": true
+    },
+    {
       "id": "museum",
       "pass": true
     },
@@ -58,7 +87,27 @@
       "pass": true
     },
     {
+      "id": "ramenlos",
+      "pass": true
+    },
+    {
+      "id": "ramenoccupancy",
+      "pass": true
+    },
+    {
+      "id": "ramenworld",
+      "pass": true
+    },
+    {
       "id": "showcase",
+      "pass": true
+    },
+    {
+      "id": "spotcheck",
+      "pass": true
+    },
+    {
+      "id": "stationsemantic",
       "pass": true
     },
     {
