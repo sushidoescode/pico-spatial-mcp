@@ -53,15 +53,23 @@ export function parseEmulatorDiscoveryRecord(file: string, text: string): Emulat
   return { file, pid, serial, entries };
 }
 
+function discoveryRecordIdentity(record: EmulatorDiscoveryRecord): string {
+  return JSON.stringify([record.file, record.pid, record.serial, record.entries]);
+}
+
 /** Parse the gRPC discovery dir the PICO emulator writes while running (PID/serial/port/token). */
 export function readDiscovery(discoveryDir = DISCOVERY_DIR): EmulatorDiscoveryRecord[] {
   if (!fs.existsSync(discoveryDir)) return [];
   return fs
     .readdirSync(discoveryDir)
     .filter((f) => f.endsWith(".ini"))
-    .map((f) => {
+    .flatMap((f) => {
       const file = path.join(discoveryDir, f);
-      return parseEmulatorDiscoveryRecord(file, fs.readFileSync(file, "utf8"));
+      try {
+        return [parseEmulatorDiscoveryRecord(file, fs.readFileSync(file, "utf8"))];
+      } catch {
+        return [];
+      }
     });
 }
 
@@ -129,7 +137,7 @@ export function registerEmulatorTools(server: McpServer) {
       fs.mkdirSync(LOG_DIR, { recursive: true });
       const logFile = path.join(LOG_DIR, `emulator-${name}-${Date.now()}.log`);
       const fd = fs.openSync(logFile, "w");
-      const discoveryBeforeLaunch = new Set(readDiscovery().map((record) => record.file));
+      const discoveryBeforeLaunch = new Set(readDiscovery().map(discoveryRecordIdentity));
       const child = spawn(sel.emulatorBin, args, {
         detached: true,
         stdio: ["ignore", fd, fd],
@@ -154,7 +162,7 @@ export function registerEmulatorTools(server: McpServer) {
           );
         }
         const discovered = readDiscovery().filter((record) =>
-          record.pid !== null && record.serial !== null && !discoveryBeforeLaunch.has(record.file));
+          record.pid !== null && record.serial !== null && !discoveryBeforeLaunch.has(discoveryRecordIdentity(record)));
         serial = await bootedSerial();
         if (serial) {
           qemu = discovered.find((record) => record.serial === serial) ?? null;
@@ -171,7 +179,7 @@ export function registerEmulatorTools(server: McpServer) {
       if (!serial || !qemu) {
         if (!qemu) {
           const finalDiscovered = readDiscovery().filter((record) =>
-            record.pid !== null && record.serial !== null && !discoveryBeforeLaunch.has(record.file));
+            record.pid !== null && record.serial !== null && !discoveryBeforeLaunch.has(discoveryRecordIdentity(record)));
           qemu = serial
             ? finalDiscovered.find((record) => record.serial === serial) ?? null
             : finalDiscovered.length === 1 ? finalDiscovered[0] : null;
