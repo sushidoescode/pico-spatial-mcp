@@ -23,6 +23,7 @@ import {
 
 const PACKAGE = "com.fleet.receipt";
 const COMPONENT = `${PACKAGE}/.platform.LaunchActivity`;
+const SPATIAL_SHELL_COMPONENT = "com.pxr.scenarioprovider/com.unity3d.player.UnityPlayerActivity";
 const PID = 4242;
 const PID_START_TICKS = "987654";
 const SESSION_ID = "11111111-2222-4333-8444-555555555555";
@@ -101,6 +102,29 @@ function procStat(pid = PID, startTicks = PID_START_TICKS) {
 
 function foregroundOutput(component = COMPONENT) {
   return `Display #0:\n  topResumedActivity=ActivityRecord{1a2b3c u0 ${component} t42}\n`;
+}
+
+function os6ForegroundOutput({
+  includeTarget = true,
+  additionalComponents = [],
+  includeSpatialShell = true,
+} = {}) {
+  const targetLines = includeTarget
+    ? [
+      `  ResumedActivity: ActivityRecord{107623938 u0 ${COMPONENT} t42}`,
+      `  topResumedActivity=ActivityRecord{107623938 u0 ${COMPONENT} t42}`,
+    ]
+    : [];
+  const additionalLines = additionalComponents.map((component, index) =>
+    `  topResumedActivity=ActivityRecord{${107623939 + index} u0 ${component} t${43 + index}}`);
+  const shellLines = includeSpatialShell
+    ? [`  topResumedActivity=ActivityRecord{84026429 u0 ${SPATIAL_SHELL_COMPONENT} t8}`]
+    : [];
+  return `ACTIVITY MANAGER ACTIVITIES (dumpsys activity activities)\n${[
+    ...targetLines,
+    ...additionalLines,
+    ...shellLines,
+  ].join("\n")}\n`;
 }
 
 function receiptFiles(rootDir, packageName = PACKAGE) {
@@ -366,8 +390,16 @@ async function createProducerFixture(t, mutation = {}) {
       if (mutation.kind === "foreground-after" && foregroundCalls === 3) {
         return textResult(foregroundOutput("com.fleet.other/.platform.LaunchActivity"));
       }
-      if (mutation.kind === "foreground-multiple") {
-        return textResult(`${foregroundOutput()}${foregroundOutput("com.fleet.other/.platform.LaunchActivity")}`);
+      if (mutation.kind === "foreground-os6") {
+        return textResult(os6ForegroundOutput());
+      }
+      if (mutation.kind === "foreground-os6-same-package-alternate") {
+        return textResult(os6ForegroundOutput({
+          additionalComponents: [`${PACKAGE}/.OtherActivity`],
+        }));
+      }
+      if (mutation.kind === "foreground-os6-shell-only") {
+        return textResult(os6ForegroundOutput({ includeTarget: false }));
       }
       if (mutation.kind?.startsWith("blocker-recovery") && launchCalls === 1) {
         return textResult(foregroundOutput("com.fleet.blocker/.platform.LaunchActivity"));
@@ -497,8 +529,15 @@ test("pure Android parsers reject ambiguity and preserve exact identities", () =
     parseForegroundActivity(`${foregroundOutput()}${foregroundOutput("com.fleet.other/.platform.LaunchActivity")}`),
     null,
   );
-  assert.equal(parseForegroundActivity(`${foregroundOutput()}${foregroundOutput()}`), null);
   assert.equal(parseForegroundActivity("mCurrentFocus=null\n"), null);
+});
+
+test("foreground parser deduplicates one component repeated across resumed summaries", () => {
+  assert.deepEqual(parseForegroundActivity(os6ForegroundOutput({ includeSpatialShell: false })), {
+    packageName: PACKAGE,
+    component: COMPONENT,
+  });
+  assert.equal(parseForegroundActivity(os6ForegroundOutput()), null);
 });
 
 test("successful producer binds installed bytes and brackets one exact capture", async (t) => {
@@ -939,6 +978,40 @@ test("producer preserves an exact empty ro.boot.qemu observation", async (t) => 
   assert.equal(out.receipt.receipt.runtime.bootQemu, "");
 });
 
+test("OS 6 co-resumed shell does not defeat the exact fleet foreground component", async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "foreground-os6" });
+  const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  assert.equal(out.status, "recorded");
+  assert.equal(out.receipt.receipt.capture.before.foregroundComponent, COMPONENT);
+  assert.equal(out.receipt.receipt.capture.after.foregroundComponent, COMPONENT);
+  const shellStops = fixture.events.filter((event) => event.type === "text"
+    && event.args.slice(2, 5).join(" ") === "shell am force-stop"
+    && event.args[5]?.startsWith("com.pxr."));
+  assert.deepEqual(shellStops, []);
+});
+
+test("a same-package alternate resumed component remains a hard foreground failure", async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "foreground-os6-same-package-alternate" });
+  const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  assert.equal(out.status, "failed");
+  assert.equal(out.stage, "foreground");
+  assert.equal(out.completedStages.some((stage) => stage.startsWith("foreground-recovery:")), false);
+  assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+});
+
+test("an OS 6 shell cannot be force-stopped when the fleet target is absent", async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "foreground-os6-shell-only" });
+  const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  assert.equal(out.status, "failed");
+  assert.equal(out.stage, "foreground");
+  const shellStops = fixture.events.filter((event) => event.type === "text"
+    && event.args.slice(2, 5).join(" ") === "shell am force-stop"
+    && event.args[5]?.startsWith("com.pxr."));
+  assert.deepEqual(shellStops, []);
+  assert.equal(out.completedStages.some((stage) => stage.startsWith("foreground-recovery:")), false);
+  assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+});
+
 test("one foreign foreground blocker can be stopped and relaunched once with disclosure", async (t) => {
   const fixture = await createProducerFixture(t, { kind: "blocker-recovery" });
   const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
@@ -1089,7 +1162,6 @@ test("producer fails closed at every mandatory stage and never publishes a recei
     ["PID restarted before capture", "pid-restarted", "pid", true, true],
     ["foreground package prefix collision", "foreground-prefix-collision", "foreground", true, true],
     ["wrong foreground activity", "foreground-wrong-activity", "foreground", true, true],
-    ["multiple foreground lines", "foreground-multiple", "foreground", true, true],
     ["wrong foreground before capture", "foreground-before", "foreground", true, true],
     ["wrong foreground after capture", "foreground-after", "foreground", true, true],
     ["binary capture command", "capture-command", "capture", true, true],
