@@ -778,7 +778,6 @@ export async function produceNativeFleetReceipt(
         }
         if (classified.requiredActivity) return { activity: classified.requiredActivity, lastResult };
         if (classified.activities.length === 1) lastActivity = classified.activities[0];
-        if (classified.activities.length > 1) break;
         if (attempt + 1 >= PID_FOREGROUND_ATTEMPTS) break;
         const remainingMs = remainingPollMs(deadline);
         const sleepMs = Math.min(POLL_INTERVAL_MS, remainingMs);
