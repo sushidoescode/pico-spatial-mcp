@@ -401,6 +401,14 @@ async function createProducerFixture(t, mutation = {}) {
       if (mutation.kind === "foreground-os6-shell-only") {
         return textResult(os6ForegroundOutput({ includeTarget: false }));
       }
+      if (mutation.kind === "foreground-os6-foreign-then-target") {
+        return textResult(foregroundCalls <= 2
+          ? os6ForegroundOutput({
+            includeTarget: false,
+            additionalComponents: ["com.pxr.systemui/.OverlayActivity"],
+          })
+          : os6ForegroundOutput());
+      }
       if (mutation.kind?.startsWith("blocker-recovery") && launchCalls === 1) {
         return textResult(foregroundOutput("com.fleet.blocker/.platform.LaunchActivity"));
       }
@@ -1010,6 +1018,18 @@ test("an OS 6 shell cannot be force-stopped when the fleet target is absent", as
   assert.deepEqual(shellStops, []);
   assert.equal(out.completedStages.some((stage) => stage.startsWith("foreground-recovery:")), false);
   assert.deepEqual(receiptFiles(fixture.receiptRoot), []);
+});
+
+test("multiple foreign OS 6 activities keep polling until the fleet target appears", async (t) => {
+  const fixture = await createProducerFixture(t, { kind: "foreground-os6-foreign-then-target" });
+  const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+  assert.equal(out.status, "recorded");
+  assert.equal(out.receipt.receipt.capture.before.foregroundComponent, COMPONENT);
+  assert.equal(out.receipt.receipt.capture.after.foregroundComponent, COMPONENT);
+  const probes = fixture.events.filter((event) => event.type === "text"
+    && event.args.slice(2).join(" ") === "shell dumpsys activity activities");
+  assert.equal(probes.length, 5);
+  assert.deepEqual(fixture.sleeps, [2_000, 2_000, 2_000, 2_750]);
 });
 
 test("one foreign foreground blocker can be stopped and relaunched once with disclosure", async (t) => {

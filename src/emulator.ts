@@ -10,6 +10,20 @@ import { adb, resolveSerial } from "./adb.js";
 
 const LOG_DIR = path.join(os.tmpdir(), "pico-mcp");
 
+export function buildEmulatorChildEnv(
+  emulatorBin: string,
+  avdHome: string,
+  inheritedEnv: Readonly<NodeJS.ProcessEnv>,
+): NodeJS.ProcessEnv {
+  const androidSdkRoot = path.join(path.dirname(emulatorBin), "system-images");
+  return {
+    ...inheritedEnv,
+    ANDROID_AVD_HOME: avdHome,
+    ANDROID_HOME: androidSdkRoot,
+    ANDROID_SDK_ROOT: androidSdkRoot,
+  };
+}
+
 export function listAvds(): string[] {
   if (!fs.existsSync(AVD_HOME)) return [];
   return fs
@@ -18,19 +32,44 @@ export function listAvds(): string[] {
     .map((f) => f.replace(/\.ini$/, ""));
 }
 
-/** Parse the gRPC discovery dir the PICO emulator writes while running (port/token). */
-export function readDiscovery(): Array<{ file: string; entries: Record<string, string> }> {
-  if (!fs.existsSync(DISCOVERY_DIR)) return [];
+export interface EmulatorDiscoveryRecord {
+  file: string;
+  pid: number | null;
+  serial: string | null;
+  entries: Record<string, string>;
+}
+
+export function parseEmulatorDiscoveryRecord(file: string, text: string): EmulatorDiscoveryRecord {
+  const entries: Record<string, string> = {};
+  for (const line of text.split("\n")) {
+    const i = line.indexOf("=");
+    if (i > 0) entries[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  }
+  const pidMatch = /^pid_([1-9]\d*)\.ini$/.exec(path.basename(file));
+  const parsedPid = pidMatch ? Number(pidMatch[1]) : Number.NaN;
+  const pid = Number.isSafeInteger(parsedPid) ? parsedPid : null;
+  const portSerial = entries["port.serial"];
+  const serial = portSerial && /^[1-9]\d*$/.test(portSerial) ? `emulator-${portSerial}` : null;
+  return { file, pid, serial, entries };
+}
+
+function discoveryRecordIdentity(record: EmulatorDiscoveryRecord): string {
+  return JSON.stringify([record.file, record.pid, record.serial, record.entries]);
+}
+
+/** Parse the gRPC discovery dir the PICO emulator writes while running (PID/serial/port/token). */
+export function readDiscovery(discoveryDir = DISCOVERY_DIR): EmulatorDiscoveryRecord[] {
+  if (!fs.existsSync(discoveryDir)) return [];
   return fs
-    .readdirSync(DISCOVERY_DIR)
+    .readdirSync(discoveryDir)
     .filter((f) => f.endsWith(".ini"))
-    .map((f) => {
-      const entries: Record<string, string> = {};
-      for (const line of fs.readFileSync(path.join(DISCOVERY_DIR, f), "utf8").split("\n")) {
-        const i = line.indexOf("=");
-        if (i > 0) entries[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    .flatMap((f) => {
+      const file = path.join(discoveryDir, f);
+      try {
+        return [parseEmulatorDiscoveryRecord(file, fs.readFileSync(file, "utf8"))];
+      } catch {
+        return [];
       }
-      return { file: path.join(DISCOVERY_DIR, f), entries };
     });
 }
 
@@ -73,7 +112,7 @@ export function registerEmulatorTools(server: McpServer) {
         wipeData: z.boolean().default(false),
         snapshot: z.string().optional().describe("Boot from a named snapshot"),
         toolsVersion: z.string().optional().describe("Toolchain version (default: newest with an emulator payload)"),
-        bootTimeoutSec: z.number().int().default(240),
+        bootTimeoutSec: z.number().int().default(600),
         extraArgs: z.array(z.string()).default([]).describe("Additional raw emulator CLI flags"),
       },
     },
@@ -98,10 +137,11 @@ export function registerEmulatorTools(server: McpServer) {
       fs.mkdirSync(LOG_DIR, { recursive: true });
       const logFile = path.join(LOG_DIR, `emulator-${name}-${Date.now()}.log`);
       const fd = fs.openSync(logFile, "w");
+      const discoveryBeforeLaunch = new Set(readDiscovery().map(discoveryRecordIdentity));
       const child = spawn(sel.emulatorBin, args, {
         detached: true,
         stdio: ["ignore", fd, fd],
-        env: { ...process.env, ANDROID_AVD_HOME: AVD_HOME },
+        env: buildEmulatorChildEnv(sel.emulatorBin, AVD_HOME, process.env),
         cwd: path.dirname(sel.emulatorBin),
       });
       child.unref();
@@ -109,23 +149,43 @@ export function registerEmulatorTools(server: McpServer) {
 
       const start = Date.now();
       let serial: string | null = null;
+      let qemu: EmulatorDiscoveryRecord | null = null;
       while (Date.now() - start < bootTimeoutSec * 1000) {
-        if (child.exitCode !== null) {
+        if (child.exitCode !== null && child.exitCode !== 0) {
           return fail(
             `Emulator process exited early (code ${child.exitCode}). Log tail:\n${tail(fs.readFileSync(logFile, "utf8"), 40)}`,
           );
         }
+        if (child.signalCode !== null) {
+          return fail(
+            `Emulator process exited early (signal ${child.signalCode}). Log tail:\n${tail(fs.readFileSync(logFile, "utf8"), 40)}`,
+          );
+        }
+        const discovered = readDiscovery().filter((record) =>
+          record.pid !== null && record.serial !== null && !discoveryBeforeLaunch.has(discoveryRecordIdentity(record)));
         serial = await bootedSerial();
         if (serial) {
+          qemu = discovered.find((record) => record.serial === serial) ?? null;
+        } else if (!qemu && discovered.length === 1) {
+          qemu = discovered[0];
+        }
+        if (serial) {
           const b = await adb(["-s", serial, "shell", "getprop", "sys.boot_completed"]).catch(() => null);
-          if (b?.stdout.trim() === "1") break;
+          if (b?.stdout.trim() === "1" && qemu?.serial === serial) break;
           serial = null;
         }
         await sleep(3000);
       }
-      if (!serial) {
+      if (!serial || !qemu) {
+        if (!qemu) {
+          const finalDiscovered = readDiscovery().filter((record) =>
+            record.pid !== null && record.serial !== null && !discoveryBeforeLaunch.has(discoveryRecordIdentity(record)));
+          qemu = serial
+            ? finalDiscovered.find((record) => record.serial === serial) ?? null
+            : finalDiscovered.length === 1 ? finalDiscovered[0] : null;
+        }
         return fail(
-          `Timed out after ${bootTimeoutSec}s waiting for boot. PID ${child.pid}, log: ${logFile}\nLog tail:\n${tail(
+          `Timed out after ${bootTimeoutSec}s waiting for boot. QEMU PID ${qemu?.pid ?? "not discovered"}, launcher PID ${child.pid ?? "unknown"}, log: ${logFile}\nLog tail:\n${tail(
             fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : "",
             40,
           )}`,
@@ -133,7 +193,9 @@ export function registerEmulatorTools(server: McpServer) {
       }
       return okJson({
         serial,
-        pid: child.pid,
+        pid: qemu.pid,
+        qemuPid: qemu.pid,
+        launcherPid: child.pid,
         avd: name,
         emulatorBin: sel.emulatorBin,
         args,
