@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import * as grpc from "@grpc/grpc-js";
@@ -6,7 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { fail, image, ok, okJson } from "./util.js";
 import { emulatorLibDir, pickVersion, resolveToolsRoot } from "./toolchain.js";
-import { readDiscovery } from "./emulator.js";
+import { readDiscovery, type EmulatorDiscoveryRecord } from "./emulator.js";
 
 /**
  * EXPERIMENTAL XR/gRPC layer.
@@ -54,35 +55,89 @@ function loadProto(toolsVersion?: string): LoadedProto | { error: string } {
   }
 }
 
-function discoverySerial(entry: { entries: Record<string, string> }): string | null {
-  const consolePort = entry.entries["port.serial"];
-  return consolePort && /^\d+$/.test(consolePort) ? `emulator-${consolePort}` : null;
+export interface GrpcEndpointBinding {
+  discoveryFile: string;
+  discoveredSerial: string;
+  qemuPid: number | null;
+  address: string;
+  tokenPresent: boolean;
+  tokenFingerprint: string | null;
 }
 
-function getEndpoint(serial?: string): { address: string; metadata: grpc.Metadata; serial: string | null } | { error: string } {
-  const entries = readDiscovery();
-  const grpcEntries = entries.filter((e) => e.entries["grpc.port"] || e.entries["grpc.token"]);
-  const withGrpc = serial
-    ? grpcEntries.find((entry) => discoverySerial(entry) === serial)
-    : grpcEntries.length <= 1 ? grpcEntries[0] : undefined;
-  if (serial && !withGrpc) {
-    return { error: `no gRPC discovery endpoint matches adb serial '${serial}'; refusing to recenter a different emulator` };
+interface EndpointSelection {
+  binding: GrpcEndpointBinding;
+  token: string | null;
+}
+
+function resolveEndpointSelection(
+  entries: EmulatorDiscoveryRecord[],
+  serial?: string,
+): EndpointSelection | { error: string } {
+  const portFor = (entry: EmulatorDiscoveryRecord): number | null => {
+    const raw = entry.entries["grpc.port"] ?? "";
+    if (!/^[1-9]\d*$/.test(raw)) return null;
+    const parsed = Number(raw);
+    return Number.isSafeInteger(parsed) && parsed <= 65_535 ? parsed : null;
+  };
+  const wantedPortSerial = serial && /^emulator-([1-9]\d*)$/.exec(serial)?.[1];
+  const claimed = serial
+    ? entries.filter((entry) => entry.serial === serial || (wantedPortSerial && entry.entries["port.serial"] === wantedPortSerial))
+    : entries;
+  const malformed = claimed.filter((entry) => entry.serial === null || portFor(entry) === null);
+  if (malformed.length) {
+    return {
+      error:
+        `${malformed.length} discovery record(s) in the requested endpoint set have a malformed serial or gRPC port ` +
+        `(${malformed.map((entry) => entry.file).join(", ")}); refusing to discard contradictory discovery state`,
+    };
   }
-  if (!serial && grpcEntries.length > 1) {
-    return { error: `multiple emulator gRPC endpoints are running (${grpcEntries.map((entry) => discoverySerial(entry) ?? entry.file).join(", ")}); pass an adb serial so the command cannot target the wrong emulator` };
+  const valid = claimed.filter((entry) => entry.serial !== null && portFor(entry) !== null);
+  const matches = serial ? valid.filter((entry) => entry.serial === serial) : valid;
+  if (serial && matches.length !== 1) {
+    const detail = matches.length > 1 ? `${matches.length} matching records` : "no matching record";
+    return { error: `${detail} with a valid gRPC port for adb serial '${serial}'; refusing to target a guessed/default endpoint` };
   }
-  const port = withGrpc?.entries["grpc.port"] ?? "8554";
-  const token = withGrpc?.entries["grpc.token"];
+  if (!serial && matches.length !== 1) {
+    return matches.length === 0
+      ? { error: "no valid emulator gRPC discovery endpoint is published; refusing the unauthenticated default-port fallback" }
+      : { error: `multiple emulator gRPC endpoints are running (${matches.map((entry) => entry.serial ?? entry.file).join(", ")}); pass an adb serial so the command cannot target the wrong emulator` };
+  }
+  const selected = matches[0];
+  const token = selected.entries["grpc.token"] || null;
+  const binding: GrpcEndpointBinding = {
+    discoveryFile: selected.file,
+    discoveredSerial: selected.serial!,
+    qemuPid: selected.pid,
+    address: `127.0.0.1:${portFor(selected)!}`,
+    tokenPresent: token !== null,
+    tokenFingerprint: token ? crypto.createHash("sha256").update(token).digest("hex") : null,
+  };
+  return { binding, token };
+}
+
+/** Resolve one discovery-published endpoint while exposing only token presence/fingerprint. */
+export function resolveGrpcEndpointBinding(
+  entries: EmulatorDiscoveryRecord[],
+  serial?: string,
+): GrpcEndpointBinding | { error: string } {
+  const selected = resolveEndpointSelection(entries, serial);
+  return "error" in selected ? selected : selected.binding;
+}
+
+function getEndpoint(serial?: string): { address: string; metadata: grpc.Metadata; serial: string; binding: GrpcEndpointBinding } | { error: string } {
+  const selected = resolveEndpointSelection(readDiscovery(), serial);
+  if ("error" in selected) return selected;
   const metadata = new grpc.Metadata();
-  if (token) metadata.set("authorization", `Bearer ${token}`);
-  if (!withGrpc) {
-    // No discovery file: emulator may be down, or running without -grpc-use-token.
-    // We still try the default port with no auth and let the call surface the error.
-  }
-  return { address: `127.0.0.1:${port}`, metadata, serial: withGrpc ? discoverySerial(withGrpc) : null };
+  if (selected.token) metadata.set("authorization", `Bearer ${selected.token}`);
+  return {
+    address: selected.binding.address,
+    metadata,
+    serial: selected.binding.discoveredSerial,
+    binding: selected.binding,
+  };
 }
 
-export function getClient(toolsVersion?: string, serial?: string): { client: grpc.Client & Record<string, any>; metadata: grpc.Metadata; serial: string | null } | { error: string } {
+export function getClient(toolsVersion?: string, serial?: string): { client: grpc.Client & Record<string, any>; metadata: grpc.Metadata; serial: string; binding: GrpcEndpointBinding } | { error: string } {
   const p = loadProto(toolsVersion);
   if ("error" in p) return p;
   const ep = getEndpoint(serial);
@@ -91,7 +146,7 @@ export function getClient(toolsVersion?: string, serial?: string): { client: grp
   const client = new p.controllerCtor(ep.address, grpc.credentials.createInsecure(), {
     "grpc.max_receive_message_length": 64 * 1024 * 1024,
   }) as any;
-  return { client, metadata: ep.metadata, serial: ep.serial };
+  return { client, metadata: ep.metadata, serial: ep.serial, binding: ep.binding };
 }
 
 export function unary(client: any, method: string, request: unknown, metadata: grpc.Metadata, timeoutMs = 15_000): Promise<any> {

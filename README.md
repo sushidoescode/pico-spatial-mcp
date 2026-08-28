@@ -112,7 +112,7 @@ None of this is PICO Spatial SDK vocabulary — it's this project's own layer on
 | **native run receipt** | A producer-written `fleet-native-debug` v1 record binding normalized/effective AppSpec identities, bounded Gradle inputs, the AGP-selected debug APK, installed bytes, package/session/PID/foreground continuity, and one immutable capture. It is `structural`, never a statement about the pixels. `fleet_build` returns the receipt object; Door 1 returns its `receiptId`, `receiptPath`, and exact `capture`. |
 | **the eye** | The calibrated auto-judge (`visual_judge` / `auto_judged` evidence) that scores a capture against an expected scene. It is a fast pre-check, not a replacement for a human/agent actually looking. |
 | **evidence classes** | Strongest first: **`device_verified`** (LOOKED frame + live PICO identity + exact same-serial screencap match; **none from real hardware yet**) > `vision_verified` (a human/agent LOOKED and intended content is present) > `auto_judged` > `usd_host_render` > `structural` > `built_for_headset`. `auto_judged` and `usd_host_render` can be minted only by their measured producer tools, with a receipt bound to the stored artifact; caller-authored or legacy rows without that receipt read as `structural`. Legacy device rows missing the new lineage read as `vision_verified` at most, if their image provenance is otherwise intact. |
-| **doors** (`PICO_MCP_SURFACE=doors`, and the default when the variable is unset since v36.3) | An intent-level facade of 18 tools (16 intent doors + `validate_toolchain` + `ensure_pico_cli`) over the full surface (249 tools on macOS and 246 on Linux are runtime-measured; on Windows, the published 246-tool count is source-derived because no native Windows `tools/list` measurement has run — the `PICO_MCP_SURFACE=full` opt-in) — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
+| **doors** (`PICO_MCP_SURFACE=doors`, and the default when the variable is unset since v36.3) | An intent-level facade of 18 tools (16 intent doors + `validate_toolchain` + `ensure_pico_cli`) over the full surface (250 tools on macOS and 247 on Linux are runtime-measured; on Windows, the published 247-tool count is source-derived because no native Windows `tools/list` measurement has run — the `PICO_MCP_SURFACE=full` opt-in) — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
 | **gates** | The deterministic test battery (`test/*.mjs`, mirrored in `.github/workflows/gates.yml`) maintainers are required to run before claiming a change is green: lint fixtures, the ledger's over-claim rejection, doors-surface contract tests, occupancy/affordance solvers, the vault symbol checker, and more. The aggregate result—not merely starting the runner—is the evidence. |
 
 ## 15-minute first light
@@ -204,8 +204,8 @@ Run default `pico_doctor {}` (doors surface) or `preflight_env` (full surface) f
 **Without the PICO SDK or emulator** the server still installs and runs: tool listing, `pico_doctor`,
 SDK knowledge lookups (agent-vault), codegen/scaffolding, lint, and all documentation tools work
 anywhere; build/run/capture lanes report exactly which payload is missing and how to get it.
-macOS and Linux have runtime-measured full-surface counts of 249 and 246 respectively. The Windows
-246 count is source-derived: no native Windows `tools/list` measurement has run. The native
+macOS and Linux have runtime-measured full-surface counts of 250 and 247 respectively. The Windows
+247 count is source-derived: no native Windows `tools/list` measurement has run. The native
 host-GUI capture/input lane is macOS-only; a Windows/x64 emulator bundle is source-advertised but
 has not been installed or booted by this repository, so Windows emulator control remains unmeasured.
 
@@ -259,8 +259,8 @@ Or in any MCP client config:
 { "mcpServers": { "pico-spatial": { "command": "node", "args": ["/path/to/PICO-MCP/dist/index.js"] } } }
 ```
 
-**Recommended for a first session — the doors surface** (18 tools instead of 249 on macOS and 246
-on Linux, both runtime-measured; on Windows, the published 246-tool count is source-derived because
+**Recommended for a first session — the doors surface** (18 tools instead of 250 on macOS and 247
+on Linux, both runtime-measured; on Windows, the published 247-tool count is source-derived because
 no native Windows `tools/list` measurement has run. Since v36.3 this is also the
 default when `PICO_MCP_SURFACE` is unset, so the env below simply pins it —
 `PICO_MCP_SURFACE=full` opts into everything):

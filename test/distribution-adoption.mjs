@@ -1974,8 +1974,8 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
   assert.equal((workflow.match(/run: npm run smoke\s/g) ?? []).length, 1);
 
   const tarball = fs.readFileSync(path.join(repoRoot, "scripts", "verify-tarball.mjs"), "utf8");
-  assert.match(tarball, /const EXPECTED_TOOLS = 249;/);
-  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 246;/);
+  assert.match(tarball, /const EXPECTED_TOOLS = 250;/);
+  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 247;/);
   assert.match(tarball, /"ensure_pico_cli"/);
   assert.doesNotMatch(tarball, /TOOL_TOLERANCE/);
   assert.match(tarball, /tools\.length === EXPECTED_PLATFORM_TOOLS/);
@@ -1997,14 +1997,14 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
     "docs/COLLABORATORS.md",
   ]) {
     const prose = fs.readFileSync(path.join(repoRoot, file), "utf8").replaceAll("\n", " ");
-    assert.match(prose, /249(?: tools?)? on macOS[\s\S]{0,220}246(?: tools?)? on Linux[\s\S]{0,260}Windows[\s\S]{0,100}source-derived/i, file);
-    assert.doesNotMatch(prose, /\b249\+(?:[- ]tools?)?/i, file);
+    assert.match(prose, /250(?: tools?)? on macOS[\s\S]{0,220}247(?: tools?)? on Linux[\s\S]{0,260}Windows[\s\S]{0,100}source-derived/i, file);
+    assert.doesNotMatch(prose, /\b250\+(?:[- ]tools?)?/i, file);
   }
 
   for (const description of [
     readJson(".claude-plugin/plugin.json").description,
     readJson(".claude-plugin/marketplace.json").plugins[0].description,
   ]) {
-    assert.match(description, /249 tools on macOS \/ 246 on Linux[\s\S]{0,100}Windows[\s\S]{0,80}source-derived/i);
+    assert.match(description, /250 tools on macOS \/ 247 on Linux[\s\S]{0,100}Windows[\s\S]{0,80}source-derived/i);
   }
 });

@@ -7,8 +7,8 @@ environment and content seats on it; a fully-virtual Full-Space app (stageStyle 
 explicit, fully-supported opt-in.
 
 This is the proven first-run path, on the doors surface (`PICO_MCP_SURFACE=doors` — 18
-intent-level tools instead of the full surface: 249 tools on macOS and 246 on Linux are
-runtime-measured; on Windows, the published 246-tool count is source-derived because no native
+intent-level tools instead of the full surface: 250 tools on macOS and 247 on Linux are
+runtime-measured; on Windows, the published 247-tool count is source-derived because no native
 Windows `tools/list` measurement has run). It's the exact sequence a docs-only run on a fresh clone
 followed on 2026-07-21.
 
@@ -150,8 +150,8 @@ stay PICO Swan / 6.1 territory.
 
 ## The full surface
 
-The doors surface is 18 tools; the full server exposes 249 on macOS and 246 on Linux
-(runtime-measured). On Windows, the published 246-tool count is source-derived because no native
+The doors surface is 18 tools; the full server exposes 250 on macOS and 247 on Linux
+(runtime-measured). On Windows, the published 247-tool count is source-derived because no native
 Windows `tools/list` measurement has run; four macOS host-GUI tools collapse to one
 explanatory stub on non-macOS hosts. `build_and_run` is currently POSIX-host-only; its native
 Windows contract has not been executed or measured. Set `PICO_MCP_SURFACE=full` (or

@@ -3,9 +3,18 @@ import path from "node:path";
 import os from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { run, runBinary, fail, okJson, expandHome, sleep } from "./util.js";
-import { DRAG_SWIFT, resolveAdb } from "./emulatorlook.js";
-import { getClient, unary } from "./grpc.js";
+import { run, fail, okJson, expandHome, sleep } from "./util.js";
+import { resolveAdb } from "./emulatorlook.js";
+import { readDiscovery, type EmulatorDiscoveryRecord } from "./emulator.js";
+import { getClient, resolveGrpcEndpointBinding, unary, type GrpcEndpointBinding } from "./grpc.js";
+import {
+  captureAdbFrame,
+  captureSettledFrames,
+  parseOnlineAdbSerials,
+  sha256Bytes,
+  SETTLE_COMPARISON,
+  type SettledFrameResult,
+} from "./observation.js";
 
 /**
  * cameradrive.ts — capture_orbit / capture_multiview: DRIVE the emulator free camera and
@@ -27,68 +36,313 @@ import { getClient, unary } from "./grpc.js";
 
 const KEYCODES: Record<string, true> = { w: true, a: true, s: true, d: true, q: true, e: true };
 
-async function frontmostQemu(): Promise<string | null> {
+export interface QemuWindowIdentity {
+  windowId: number;
+  ownerPid: number;
+  area: number;
+}
+
+export interface BoundQemuWindow extends GrpcEndpointBinding {
+  onlineEmulatorSerials: string[];
+  qemuWindowOwnerPid: number;
+  qemuWindowId: number;
+  bindingMethod: "discovery-pid-window" | "single-online-serial-plus-matching-discovery-plus-single-window";
+}
+
+export type QemuWindowBindingResult =
+  | { ok: true; binding: BoundQemuWindow }
+  | { ok: false; code: "binding_failed" | "ambiguous_host_window"; detail: string };
+
+/** Pure fail-closed serial -> discovery endpoint -> qemu window correlation. */
+export function selectQemuWindowBinding(
+  serial: string,
+  onlineSerials: string[],
+  discovery: EmulatorDiscoveryRecord[],
+  windows: QemuWindowIdentity[],
+): QemuWindowBindingResult {
+  if (!onlineSerials.includes(serial)) {
+    return { ok: false, code: "binding_failed", detail: `requested adb serial '${serial}' is not online` };
+  }
+  const endpoint = resolveGrpcEndpointBinding(discovery, serial);
+  if ("error" in endpoint) return { ok: false, code: "binding_failed", detail: endpoint.error };
+  const onlineEmulatorSerials = onlineSerials.filter((candidate) => candidate.startsWith("emulator-")).sort();
+  const byPid = endpoint.qemuPid === null ? [] : windows.filter((window) => window.ownerPid === endpoint.qemuPid);
+  if (byPid.length === 1) {
+    return {
+      ok: true,
+      binding: {
+        ...endpoint,
+        onlineEmulatorSerials,
+        qemuWindowOwnerPid: byPid[0].ownerPid,
+        qemuWindowId: byPid[0].windowId,
+        bindingMethod: "discovery-pid-window",
+      },
+    };
+  }
+  if (
+    byPid.length === 0
+    && onlineEmulatorSerials.length === 1
+    && onlineEmulatorSerials[0] === serial
+    && windows.length === 1
+  ) {
+    return {
+      ok: true,
+      binding: {
+        ...endpoint,
+        onlineEmulatorSerials,
+        qemuWindowOwnerPid: windows[0].ownerPid,
+        qemuWindowId: windows[0].windowId,
+        bindingMethod: "single-online-serial-plus-matching-discovery-plus-single-window",
+      },
+    };
+  }
+  return {
+    ok: false,
+    code: "ambiguous_host_window",
+    detail:
+      `cannot bind adb serial '${serial}' to exactly one qemu window: ` +
+      `onlineEmulators=[${onlineEmulatorSerials.join(", ")}], matchingPidWindows=${byPid.length}, eligibleWindows=${windows.length}`,
+  };
+}
+
+const WINDOW_LIST_SWIFT = `import CoreGraphics
+import Foundation
+let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+var rows: [[String: Any]] = []
+if let windows = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] {
+  for window in windows {
+    guard (window[kCGWindowOwnerName as String] as? String) == "qemu-system-aarch64" else { continue }
+    guard let id = window[kCGWindowNumber as String] as? Int,
+          let pid = window[kCGWindowOwnerPID as String] as? Int else { continue }
+    let bounds = window[kCGWindowBounds as String] as? [String: Any] ?? [:]
+    let width = (bounds["Width"] as? Double) ?? 0
+    let height = (bounds["Height"] as? Double) ?? 0
+    if width >= 100 && height >= 100 { rows.append(["windowId": id, "ownerPid": pid, "area": width * height]) }
+  }
+}
+let data = try! JSONSerialization.data(withJSONObject: rows, options: [])
+print(String(data: data, encoding: .utf8)!)
+`;
+
+async function listQemuWindows(): Promise<QemuWindowIdentity[]> {
+  const swiftPath = path.join(os.tmpdir(), "pico-camera-window-list.swift");
+  fs.writeFileSync(swiftPath, WINDOW_LIST_SWIFT);
+  const result = await run("swift", [swiftPath], { timeoutMs: 30_000 });
+  if (result.code !== 0) throw new Error(`qemu window enumeration failed: ${result.stderr || result.stdout}`);
+  const parsed = JSON.parse(result.stdout || "[]");
+  if (!Array.isArray(parsed)) throw new Error("qemu window enumeration returned a non-array payload");
+  return parsed.filter((entry): entry is QemuWindowIdentity =>
+    Number.isInteger(entry?.windowId) && Number.isInteger(entry?.ownerPid) && Number.isFinite(entry?.area));
+}
+
+async function bindMacQemuWindow(adb: string, serial: string): Promise<QemuWindowBindingResult> {
+  const listed = await run(adb, ["devices", "-l"], { timeoutMs: 10_000 });
+  if (listed.code !== 0 || listed.timedOut) {
+    return { ok: false, code: "binding_failed", detail: `adb devices failed: ${listed.stderr || listed.stdout}` };
+  }
+  let windows: QemuWindowIdentity[];
+  try {
+    windows = await listQemuWindows();
+  } catch (error: any) {
+    return { ok: false, code: "ambiguous_host_window", detail: error?.message ?? String(error) };
+  }
+  return selectQemuWindowBinding(serial, parseOnlineAdbSerials(listed.stdout), readDiscovery(), windows);
+}
+
+async function frontmostQemu(binding: BoundQemuWindow | null): Promise<string | null> {
   if (process.platform !== "darwin") return null;
-  const r = await run("osascript", ["-e", 'tell application "System Events" to set frontmost of (first process whose name contains "qemu") to true'], { timeoutMs: 5000 });
+  if (!binding) return "ambiguous_host_window: no serial-bound qemu process is available";
+  const r = await run(
+    "osascript",
+    ["-e", `tell application "System Events" to set frontmost of (first process whose unix id is ${binding.qemuWindowOwnerPid}) to true`],
+    { timeoutMs: 5000 },
+  );
   return r.code === 0 ? null : `osascript frontmost failed: ${r.stderr || r.stdout}`;
 }
 
-async function screencapBuf(adb: string, serial: string): Promise<Buffer | null> {
-  const r = await runBinary(adb, ["-s", serial, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
-  return r.code === 0 && r.stdout.length >= 1000 ? r.stdout : null;
+async function settleCapture(adb: string, serial: string, maxTries = 12, intervalMs = 700): Promise<SettledFrameResult> {
+  return captureSettledFrames(
+    { maxTries, intervalMs, comparison: SETTLE_COMPARISON },
+    { capture: () => captureAdbFrame(adb, serial), sleep, hash: sha256Bytes },
+  );
 }
 
-/** Capture until two consecutive frames are byte-identical (the free-cam has inertia). */
-async function settleCapture(adb: string, serial: string, maxTries = 12, intervalMs = 700): Promise<{ buf: Buffer; settled: boolean } | null> {
-  let prev: Buffer | null = null;
-  for (let i = 0; i < maxTries; i++) {
-    const cur = await screencapBuf(adb, serial);
-    if (!cur) return null;
-    if (prev && cur.equals(prev)) return { buf: cur, settled: true };
-    prev = cur;
-    await sleep(intervalMs);
-  }
-  return prev ? { buf: prev, settled: false } : null;
+export interface CameraActionReceipt {
+  action: "key_hold" | "look_drag";
+  serial: string;
+  status: "applied" | "failed" | "release_uncertain";
+  startedAtMonotonicNs: string;
+  endedAtMonotonicNs: string;
+  ack: Record<string, unknown>;
+  error?: string;
 }
 
-/** gRPC sendKey hold. Starts the emulator's gRPC endpoint via console if it is not up yet. */
-async function keyHold(serial: string, key: string, holdMs: number): Promise<string | null> {
-  let c = getClient();
-  if ("error" in c) return c.error;
-  const tryOnce = async () => {
-    const cc = c as Exclude<typeof c, { error: string }>;
-    await unary(cc.client, "sendKey", { eventType: "keydown", key }, cc.metadata, 6000);
-    await sleep(holdMs);
-    await unary(cc.client, "sendKey", { eventType: "keyup", key }, cc.metadata, 6000);
+interface KeyHoldDependencies {
+  getClient: typeof getClient;
+  unary: typeof unary;
+  sleep: (ms: number) => Promise<void>;
+  monotonicNs: () => bigint;
+}
+
+/** gRPC key hold with exact-serial discovery on initial/reconnect paths and a paired keyup. */
+export async function keyHold(
+  serial: string,
+  key: string,
+  holdMs: number,
+  injected: Partial<KeyHoldDependencies> = {},
+): Promise<CameraActionReceipt> {
+  const deps: KeyHoldDependencies = {
+    getClient: injected.getClient ?? getClient,
+    unary: injected.unary ?? unary,
+    sleep: injected.sleep ?? sleep,
+    monotonicNs: injected.monotonicNs ?? (() => process.hrtime.bigint()),
   };
-  try {
-    await tryOnce();
-    return null;
-  } catch (e: any) {
-    if (/UNAVAILABLE|ECONNREFUSED/i.test(String(e?.message))) {
-      const adb = resolveAdb();
-      await run(adb, ["-s", serial, "emu", "grpc", "8554"], { timeoutMs: 8000 });
-      await sleep(800);
-      c = getClient();
-      if ("error" in c) return c.error;
-      try {
-        await tryOnce();
-        return null;
-      } catch (e2: any) {
-        return `sendKey failed after starting gRPC endpoint: ${e2.message}`;
-      }
+  const startedAtMonotonicNs = deps.monotonicNs().toString();
+  let connection = deps.getClient(undefined, serial);
+  const finish = (
+    status: CameraActionReceipt["status"],
+    ack: Record<string, unknown>,
+    error?: string,
+  ): CameraActionReceipt => ({
+    action: "key_hold",
+    serial,
+    status,
+    startedAtMonotonicNs,
+    endedAtMonotonicNs: deps.monotonicNs().toString(),
+    ack: { key, holdMs, ...ack },
+    ...(error ? { error } : {}),
+  });
+  let connectionAttempts = 1;
+  if ("error" in connection) {
+    const firstError = connection.error;
+    await deps.sleep(800);
+    connection = deps.getClient(undefined, serial);
+    connectionAttempts++;
+    if ("error" in connection) {
+      return finish("failed", {
+        connectionAttempts,
+        keydownAttempted: false,
+        keydownAcknowledged: false,
+        applicationUncertain: false,
+        keyupAcknowledged: false,
+        releaseCertain: true,
+      }, `${firstError}; reconnect failed: ${connection.error}`);
     }
-    return `sendKey failed: ${e.message}`;
   }
+
+  const original = connection;
+  let keydownAcknowledged = false;
+  let keyupAcknowledged = false;
+  let actionError: unknown = null;
+  let releaseError: unknown = null;
+  try {
+    await deps.unary(original.client, "sendKey", { eventType: "keydown", key }, original.metadata, 6000);
+    keydownAcknowledged = true;
+    await deps.sleep(holdMs);
+  } catch (error) {
+    // A transport error can arrive after the guest applied keydown. Never replay the keydown.
+    actionError = error;
+  } finally {
+    // Release is attempted after every keydown RPC invocation, including an unacknowledged one.
+    try {
+      await deps.unary(original.client, "sendKey", { eventType: "keyup", key }, original.metadata, 6000);
+      keyupAcknowledged = true;
+    } catch (error) {
+      releaseError = error;
+    }
+  }
+
+  let releaseRecoveredAfterReconnect = false;
+  let reboundGrpc: GrpcEndpointBinding | null = null;
+  let releaseReconnectBindingMatched: boolean | null = null;
+  if (!keyupAcknowledged) {
+    const rebound = deps.getClient(undefined, serial);
+    connectionAttempts++;
+    if (!("error" in rebound)) reboundGrpc = rebound.binding;
+    const sameBinding = !("error" in rebound)
+      && rebound.binding.discoveryFile === original.binding.discoveryFile
+      && rebound.binding.discoveredSerial === original.binding.discoveredSerial
+      && rebound.binding.qemuPid === original.binding.qemuPid
+      && rebound.binding.address === original.binding.address
+      && rebound.binding.tokenPresent === original.binding.tokenPresent
+      && rebound.binding.tokenFingerprint === original.binding.tokenFingerprint;
+    releaseReconnectBindingMatched = sameBinding;
+    if (sameBinding) {
+      try {
+        await deps.unary(rebound.client, "sendKey", { eventType: "keyup", key }, rebound.metadata, 6000);
+        keyupAcknowledged = true;
+        releaseRecoveredAfterReconnect = true;
+      } catch (error) {
+        releaseError = error;
+      }
+    } else if (!("error" in rebound)) {
+      releaseError = new Error("release reconnect changed discovery endpoint identity; refusing to send keyup to a different runtime");
+    }
+  }
+
+  const applicationUncertain = !keydownAcknowledged;
+  const ack = {
+    connectionAttempts,
+    keydownAttempted: true,
+    keydownAcknowledged,
+    applicationUncertain,
+    keyupAcknowledged,
+    releaseCertain: keyupAcknowledged,
+    releaseRecoveredAfterReconnect,
+    grpc: original.binding,
+    reboundGrpc,
+    releaseReconnectBindingMatched,
+  };
+  if (!keyupAcknowledged) {
+    const detail = (releaseError as any)?.message ?? String(releaseError ?? actionError ?? "keyup was not acknowledged");
+    return finish("release_uncertain", ack, detail);
+  }
+  if (actionError !== null || applicationUncertain) {
+    const detail = (actionError as any)?.message ?? String(actionError ?? "keydown application was not acknowledged");
+    return finish("failed", ack, detail);
+  }
+  return finish("applied", ack);
 }
 
 /** Right-button drag via CGEvents (rotation lane). macOS only. */
-async function rightDrag(dx: number, dy: number): Promise<string | null> {
+async function rightDrag(binding: BoundQemuWindow | null, dx: number, dy: number): Promise<string | null> {
   if (process.platform !== "darwin") return "rotation (dragDx/dragDy) requires macOS CGEvents; on this platform use key moves only";
+  if (!binding) return "ambiguous_host_window: no serial-bound qemu window is available";
   const swiftPath = path.join(os.tmpdir(), "pico-camera-drive.swift");
-  fs.writeFileSync(swiftPath, DRAG_SWIFT);
-  const r = await run("swift", [swiftPath, "right", String(dx), String(dy), "24", "14"], { timeoutMs: 30_000 });
-  if (r.code !== 0 || /NO_QEMU_WINDOW/.test(r.stdout)) {
+  const boundDragSwift = `import CoreGraphics
+import Foundation
+let a = CommandLine.arguments
+let targetWindow = Int(a[1])!, targetPid = Int(a[2])!
+let dx = Double(a[3])!, dy = Double(a[4])!
+let steps = Int(a[5]) ?? 24, delayMs = Double(a[6]) ?? 14
+var cx = 0.0, cy = 0.0, found = false
+let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+if let windows = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] {
+  for window in windows {
+    let id = window[kCGWindowNumber as String] as? Int
+    let pid = window[kCGWindowOwnerPID as String] as? Int
+    if id == targetWindow && pid == targetPid {
+      let bounds = window[kCGWindowBounds as String] as? [String: Any] ?? [:]
+      let x = (bounds["X"] as? Double) ?? 0, y = (bounds["Y"] as? Double) ?? 0
+      let width = (bounds["Width"] as? Double) ?? 0, height = (bounds["Height"] as? Double) ?? 0
+      cx = x + width / 2; cy = y + height / 2; found = width >= 100 && height >= 100
+    }
+  }
+}
+if !found { print("BOUND_QEMU_WINDOW_MISSING"); exit(1) }
+func post(_ type: CGEventType, _ x: Double, _ y: Double) {
+  CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: CGPoint(x: x, y: y), mouseButton: .right)?.post(tap: .cghidEventTap)
+}
+let x2 = cx + dx, y2 = cy + dy
+CGWarpMouseCursorPosition(CGPoint(x: cx, y: cy)); usleep(60000)
+post(.rightMouseDown, cx, cy); usleep(UInt32(delayMs * 1000))
+for i in 1...steps { let t = Double(i) / Double(steps); post(.rightMouseDragged, cx + (x2-cx)*t, cy + (y2-cy)*t); usleep(UInt32(delayMs * 1000)) }
+post(.rightMouseUp, x2, y2)
+print("ok window=\\(targetWindow) pid=\\(targetPid)")
+`;
+  fs.writeFileSync(swiftPath, boundDragSwift);
+  const r = await run("swift", [swiftPath, String(binding.qemuWindowId), String(binding.qemuWindowOwnerPid), String(dx), String(dy), "24", "14"], { timeoutMs: 30_000 });
+  if (r.code !== 0 || /BOUND_QEMU_WINDOW_MISSING/.test(r.stdout)) {
     return `right-drag failed: ${r.stdout || r.stderr}. Emulator window open + Accessibility granted?`;
   }
   return null;
@@ -103,23 +357,46 @@ const moveSchema = z.object({
   dragDy: z.number().optional().describe("Right-drag pixels: dy>0 looks down, dy<0 looks up (macOS only)"),
 });
 
-async function applyMoves(serial: string, moves: Array<z.infer<typeof moveSchema>>): Promise<string | null> {
+async function applyMoves(
+  serial: string,
+  moves: Array<z.infer<typeof moveSchema>>,
+  windowBinding: BoundQemuWindow | null,
+): Promise<{ error: string | null; actionReceipts: CameraActionReceipt[] }> {
+  const actionReceipts: CameraActionReceipt[] = [];
   for (const m of moves) {
     if (m.key) {
-      if (!KEYCODES[m.key]) return `unknown key '${m.key}'`;
+      if (!KEYCODES[m.key]) return { error: `unknown key '${m.key}'`, actionReceipts };
       const n = m.repeat ?? 1;
       for (let i = 0; i < n; i++) {
-        const err = await keyHold(serial, m.key, m.holdMs ?? 600);
-        if (err) return err;
+        const receipt = await keyHold(serial, m.key, m.holdMs ?? 600);
+        receipt.ack.hostWindow = windowBinding;
+        receipt.ack.focusAcknowledged = windowBinding !== null;
+        actionReceipts.push(receipt);
+        if (receipt.status !== "applied") return { error: receipt.error ?? `sendKey ${receipt.status}`, actionReceipts };
         await sleep(150);
       }
     }
     if (m.dragDx != null || m.dragDy != null) {
-      const err = await rightDrag(m.dragDx ?? 0, m.dragDy ?? 0);
-      if (err) return err;
+      const startedAtMonotonicNs = process.hrtime.bigint().toString();
+      const err = await rightDrag(windowBinding, m.dragDx ?? 0, m.dragDy ?? 0);
+      actionReceipts.push({
+        action: "look_drag",
+        serial,
+        status: err ? "failed" : "applied",
+        startedAtMonotonicNs,
+        endedAtMonotonicNs: process.hrtime.bigint().toString(),
+        ack: {
+          requested: { dragDx: m.dragDx ?? 0, dragDy: m.dragDy ?? 0 },
+          cgEventAcknowledged: !err,
+          focusAcknowledged: windowBinding !== null,
+          hostWindow: windowBinding,
+        },
+        ...(err ? { error: err } : {}),
+      });
+      if (err) return { error: err, actionReceipts };
     }
   }
-  return null;
+  return { error: null, actionReceipts };
 }
 
 function writeShrunk(buf: Buffer, outPath: string, maxDim: number): Promise<string> {
@@ -137,7 +414,7 @@ export function registerCameraDriveTools(server: McpServer) {
     "capture_orbit",
     {
       description:
-        "DRIVE the emulator free camera (walk keys + look drags), settle, then capture the HMD frame — the primitive that lets an agent verify 3D placement from angles OTHER than the launch-forward view. Moves run in order: {key:'w'|'a'|'s'|'d'|'q'|'e', holdMs?, repeat?} walks (gRPC sendKey; W fwd/S back/A left/D right/Q down/E up relative to facing), {dragDx, dragDy} rotates the view (right-button CGEvent drag; macOS). The camera has INERTIA: this tool settle-waits until two consecutive captures are byte-identical before returning. The emulator window is brought frontmost first (walks need it). LOOK at the returned frame before claiming anything about the scene.",
+        "DRIVE the emulator free camera (walk keys + look drags), settle, then capture the HMD frame — the primitive that lets an agent verify 3D placement from angles OTHER than the launch-forward view. Moves run in order: {key:'w'|'a'|'s'|'d'|'q'|'e', holdMs?, repeat?} walks (gRPC sendKey; W fwd/S back/A left/D right/Q down/E up relative to facing), {dragDx, dragDy} rotates the view (right-button CGEvent drag). The camera has INERTIA: this tool settle-waits until two consecutive captures are byte-identical before returning. Phase 1 requires the serial-bound macOS qemu-window lane; non-macOS rendered motion remains UNVERIFIED and is refused. LOOK at the returned frame before claiming anything about the scene.",
       inputSchema: {
         moves: z.array(moveSchema).min(1).describe("Sequence of walk/look moves, applied in order"),
         serial: z.string().optional().describe("adb serial (default emulator-5554)"),
@@ -147,17 +424,36 @@ export function registerCameraDriveTools(server: McpServer) {
       },
     },
     async ({ moves, serial, outPath, maxDim, capture }) => {
+      if (process.platform !== "darwin") {
+        return fail(
+          "unsupported_backend: non-macOS gRPC key delivery has no measured focus/rendered-camera binding; " +
+          "the design register marks that effect UNVERIFIED, so capture_orbit refuses motion on this host",
+        );
+      }
       const dev = serial ?? "emulator-5554";
-      const focusErr = await frontmostQemu();
-      if (focusErr) return fail(focusErr);
-      const err = await applyMoves(dev, moves);
-      if (err) return fail(err);
-      if (capture === false) return okJson({ status: "ok", note: "moves applied (no capture requested)" });
       const adb = resolveAdb();
+      const selected = await bindMacQemuWindow(adb, dev);
+      if (!selected.ok) return fail(`${selected.code}: ${selected.detail}`);
+      const windowBinding = selected.binding;
+      const focusErr = await frontmostQemu(windowBinding);
+      if (focusErr) return fail(focusErr);
+      const moved = await applyMoves(dev, moves, windowBinding);
+      if (moved.error) return fail(`${moved.error}\nactionReceipts=${JSON.stringify(moved.actionReceipts)}`);
+      if (capture === false) return okJson({ status: "ok", note: "moves applied (no capture requested)", actionReceipts: moved.actionReceipts });
       const settled = await settleCapture(adb, dev);
-      if (!settled) return fail("screencap failed after moves");
+      const settleReceipt = {
+        status: settled.status,
+        attempts: settled.attempts,
+        settlementSatisfied: settled.settlementSatisfied,
+        sha256: settled.sha256,
+        stablePair: settled.stablePair,
+      };
+      if (!settled.frame) return fail(
+        `screencap failed after moves: ${settled.status === "capture_failed" ? settled.detail : "no valid frame"}` +
+        `\nsettleReceipt=${JSON.stringify(settleReceipt)}\nactionReceipts=${JSON.stringify(moved.actionReceipts)}`,
+      );
       const full = expandHome(outPath ?? "/tmp/pico-render/capture_orbit.png");
-      const smallPath = await writeShrunk(settled.buf, full, maxDim ?? 1200);
+      const smallPath = await writeShrunk(settled.frame.bytes, full, maxDim ?? 1200);
       const b64 = fs.readFileSync(smallPath).toString("base64");
       return {
         content: [
@@ -165,10 +461,12 @@ export function registerCameraDriveTools(server: McpServer) {
           {
             type: "text" as const,
             text:
-              `Applied ${moves.length} move(s), ${settled.settled ? "pose settled" : "POSE MAY STILL BE GLIDING (settle timeout)"} -> ${full}. ` +
-              "LOOK at this frame and judge the scene from THIS angle; call again with more moves to keep exploring.",
+              `Applied ${moves.length} move(s), ${settled.status === "settled" ? "pose settled" : "POSE IS NOT A NAVIGATION WAYPOINT"} -> ${full}. ` +
+              `settleReceipt=${JSON.stringify(settleReceipt)} actionReceipts=${JSON.stringify(moved.actionReceipts)}. ` +
+              "LOOK at this frame and judge only its visible pixels; call again with more moves only after settlement succeeds.",
           },
         ],
+        ...(settled.status === "settled" ? {} : { isError: true }),
       };
     },
   );
@@ -177,7 +475,7 @@ export function registerCameraDriveTools(server: McpServer) {
     "capture_multiview",
     {
       description:
-        "Capture one scene from FOUR viewpoints in a single call — front (current pose), high-angle (fly up + look down), and two side obliques (strafe + re-aim) — then walk the camera back and report whether the round trip closed. This is the multi-angle visual check that placement work MUST pass: a single forward view cannot verify a 3D layout (two sessions were lost to that). Each leg settle-waits out the free-cam inertia. macOS for the look-drags; walks are gRPC. LOOK at every returned frame: check nothing intersects furniture/walls/rug from ANY of the angles.",
+        "Capture one scene from FOUR viewpoints in a single call — front (current pose), high-angle (fly up + look down), and two side obliques (strafe + re-aim) — then walk the camera back and report whether the round trip closed. This is the multi-angle visual check that placement work MUST pass: a single forward view cannot verify a 3D layout (two sessions were lost to that). Each leg settle-waits out the free-cam inertia and aborts before further motion if settlement or an action is uncertain. Phase 1 uses the serial-bound macOS qemu-window lane. LOOK at every returned frame: check nothing intersects furniture/walls/rug from ANY of the angles.",
       inputSchema: {
         serial: z.string().optional().describe("adb serial (default emulator-5554)"),
         outDir: z.string().optional().describe("Directory for the four frames (default /tmp/pico-render/multiview)"),
@@ -202,7 +500,10 @@ export function registerCameraDriveTools(server: McpServer) {
       const dim = maxDim ?? 900;
       const adb = resolveAdb();
 
-      const focusErr = await frontmostQemu();
+      const selected = await bindMacQemuWindow(adb, dev);
+      if (!selected.ok) return fail(`${selected.code}: ${selected.detail}`);
+      const windowBinding = selected.binding;
+      const focusErr = await frontmostQemu(windowBinding);
       if (focusErr) return fail(focusErr);
 
       const legs: Array<{ name: string; go: Array<z.infer<typeof moveSchema>>; back: Array<z.infer<typeof moveSchema>> }> = [
@@ -227,30 +528,68 @@ export function registerCameraDriveTools(server: McpServer) {
       const content: any[] = [];
       const paths: string[] = [];
       const problems: string[] = [];
+      const actionReceipts: CameraActionReceipt[] = [];
+      const settleReceipts: Array<Record<string, unknown>> = [];
       let frontHash: Buffer | null = null;
+
+      const finishFailure = (detail: string) => {
+        problems.push(detail);
+        content.push({
+          type: "text" as const,
+          text:
+            `Frames completed before refusal -> ${paths.join(", ") || "none"}. roundTripClosed=false. ` +
+            `Problems: ${problems.join("; ")}. settleReceipts=${JSON.stringify(settleReceipts)} ` +
+            `actionReceipts=${JSON.stringify(actionReceipts)}. ` +
+            "The last unsettled frame, if returned, is not a navigation waypoint. LOOK only at returned pixels.",
+        });
+        return { content, isError: true };
+      };
 
       for (const leg of legs) {
         if (leg.go.length) {
-          const err = await applyMoves(dev, leg.go);
-          if (err) { problems.push(`${leg.name}: ${err}`); continue; }
+          const moved = await applyMoves(dev, leg.go, windowBinding);
+          actionReceipts.push(...moved.actionReceipts);
+          if (moved.error) return finishFailure(`${leg.name}: ${moved.error}`);
         }
         const settled = await settleCapture(adb, dev);
-        if (!settled) { problems.push(`${leg.name}: screencap failed`); continue; }
-        if (leg.name === "front") frontHash = settled.buf;
-        if (!settled.settled) problems.push(`${leg.name}: settle timeout (frame may be mid-glide)`);
+        const settleReceipt = {
+          leg: leg.name,
+          status: settled.status,
+          attempts: settled.attempts,
+          settlementSatisfied: settled.settlementSatisfied,
+          sha256: settled.sha256,
+          stablePair: settled.stablePair,
+        };
+        settleReceipts.push(settleReceipt);
+        if (!settled.frame) return finishFailure(
+          `${leg.name}: ${settled.status === "capture_failed" ? settled.detail : "screencap produced no valid frame"}`,
+        );
         const full = path.join(dir, `${leg.name}.png`);
-        const smallPath = await writeShrunk(settled.buf, full, dim);
+        const smallPath = await writeShrunk(settled.frame.bytes, full, dim);
         paths.push(full);
         content.push({ type: "image" as const, data: fs.readFileSync(smallPath).toString("base64"), mimeType: "image/png" as const });
+        if (settled.status !== "settled") {
+          return finishFailure(`${leg.name}: ${settled.status}; refusing to use its last frame as a navigation waypoint`);
+        }
+        if (leg.name === "front") frontHash = settled.frame.bytes;
         if (leg.back.length) {
-          const err = await applyMoves(dev, leg.back);
-          if (err) problems.push(`${leg.name} return: ${err}`);
+          const moved = await applyMoves(dev, leg.back, windowBinding);
+          actionReceipts.push(...moved.actionReceipts);
+          if (moved.error) return finishFailure(`${leg.name} return: ${moved.error}`);
         }
       }
 
       const final = await settleCapture(adb, dev);
-      const roundTripClosed = !!(final && frontHash && final.buf.equals(frontHash));
-      if (final) fs.writeFileSync(path.join(dir, "restored.png"), final.buf);
+      settleReceipts.push({
+        leg: "restored",
+        status: final.status,
+        attempts: final.attempts,
+        settlementSatisfied: final.settlementSatisfied,
+        sha256: final.sha256,
+        stablePair: final.stablePair,
+      });
+      const roundTripClosed = final.status === "settled" && !!(final.frame && frontHash && final.frame.bytes.equals(frontHash));
+      if (final.frame) fs.writeFileSync(path.join(dir, "restored.png"), final.frame.bytes);
 
       content.push({
         type: "text" as const,
@@ -258,9 +597,10 @@ export function registerCameraDriveTools(server: McpServer) {
           `Frames (front, high, oblique_left, oblique_right) -> ${paths.join(", ")}. ` +
           `roundTripClosed=${roundTripClosed}${roundTripClosed ? "" : " (free-cam inertia drifts; the camera is NEAR but not exactly at the start pose)"}. ` +
           (problems.length ? `Problems: ${problems.join("; ")}. ` : "") +
+          `settleReceipts=${JSON.stringify(settleReceipts)} actionReceipts=${JSON.stringify(actionReceipts)}. ` +
           "LOOK at every frame: verify from EACH angle that content sits where it should and intersects nothing.",
       });
-      return { content };
+      return { content, ...(roundTripClosed ? {} : { isError: true }) };
     },
   );
 }
