@@ -53,7 +53,7 @@ compatibility, hidden-alias longevity, perf provisioning, emulator/device/Window
 visual evidence.
 <!-- pico-mcp-managed-cli-policy:end -->
 
-## The capability map (a core sampler of the full surface: 250 tools on macOS and 247 on Linux are runtime-measured; Windows 247 is source-derived)
+## The capability map (a core sampler of the full surface: 251 tools on macOS and 248 on Linux are runtime-measured; Windows 248 is source-derived)
 
 > **Reference implementations.** PICO's eight official **0.13.3** source archives are an idiom
 > reference. This repository does not retain a tracked 8/8 or per-sample runtime record. SpatialML

@@ -34,8 +34,8 @@ const publishIdx = process.argv.indexOf("--publish");
 const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
-const EXPECTED_TOOLS = 250; // capture_orbit/capture_multiview + surface-independent ensure_pico_cli + pico_loop (door 16, v36.4)
-const EXPECTED_OTHER_HOST_TOOLS = 247;
+const EXPECTED_TOOLS = 251; // capture_orbit/capture_multiview + surface-independent ensure_pico_cli + pico_loop (door 16, v36.4)
+const EXPECTED_OTHER_HOST_TOOLS = 248;
 // macOS exposes four host-GUI tools; other hosts intentionally expose one explanatory gui_capture
 // stub. Assert the exact platform surface instead of hiding this documented delta in a tolerance.
 const EXPECTED_PLATFORM_TOOLS = process.platform === "darwin" ? EXPECTED_TOOLS : EXPECTED_OTHER_HOST_TOOLS;
@@ -45,7 +45,7 @@ const REQUIRED_TOOLS = [
   "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship",
   "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next", "pico_loop", "ensure_pico_cli",
   // core lanes whose loss a count check would tolerate
-  "emulator_boot", "build_and_run", "capture_frame", "capture_settled", "record_verification", "scaffold_spatial_app",
+  "emulator_boot", "build_and_run", "capture_frame", "capture_settled", "query_scene_anchors", "record_verification", "scaffold_spatial_app",
   "adb_shell", "gradle_build", "preflight_env",
   "verify_gradle_config", "build_matrix_report",
   "generate_subwindow_kotlin", "generate_spatial_gestures_kotlin",

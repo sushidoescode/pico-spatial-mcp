@@ -56,11 +56,11 @@ console.log(`truth: version=${version}  macOS-tools=${TOOLS}  other-host-tools=$
 // Every full-surface count this project has ever published (55/190/214/220/224 have all appeared in
 // docs). Bare "~NNN" and "instead of NNN" forms are only replaced for THESE counts — a generic
 // bare-number rule would eat measurements like "~90 s".
-const PUBLISHED_COUNTS = [55, 190, 214, 220, 224, 233, 234, 238, 249, 246]
+const PUBLISHED_COUNTS = [55, 190, 214, 220, 224, 233, 234, 238, 249, 246, 250, 247]
   .filter((c) => c !== TOOLS && c !== OTHER_HOST_TOOLS);
 
 // The OTHER-HOST count is now published as the Linux measurement plus an explicitly
-// source-derived Windows number. Those figures are often bare ("247 on Linux", "Windows 247 is
+// source-derived Windows number. Those figures are often bare ("248 on Linux", "Windows 248 is
 // source-derived"), so the generic "NNN tools" rule cannot see them. Stamp these shapes first so
 // a future registration-count change cannot leave the provenance-qualified numbers stale.
 const otherHostPhrases = (text) => {
