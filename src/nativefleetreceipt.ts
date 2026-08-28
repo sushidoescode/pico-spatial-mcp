@@ -126,17 +126,40 @@ export function parseProcStartTicks(output: string): string | null {
 }
 
 function foregroundActivities(output: string): ForegroundActivity[] {
-  return [...output.matchAll(
+  const activities: ForegroundActivity[] = [];
+  const seenComponents = new Set<string>();
+  for (const match of output.matchAll(
     /(?:topResumedActivity=|mResumedActivity:\s*|ResumedActivity:\s*)ActivityRecord\{\S+\s+u\d+\s+([A-Za-z][A-Za-z0-9_.]*)\/([A-Za-z0-9_.$]+)/g,
-  )].map((match) => ({
-    packageName: match[1],
-    component: `${match[1]}/${match[2]}`,
-  }));
+  )) {
+    const component = `${match[1]}/${match[2]}`;
+    if (seenComponents.has(component)) continue;
+    seenComponents.add(component);
+    activities.push({ packageName: match[1], component });
+  }
+  return activities;
 }
 
 export function parseForegroundActivity(output: string): ForegroundActivity | null {
   const activities = foregroundActivities(output);
   return activities.length === 1 ? activities[0] : null;
+}
+
+function classifyForegroundActivities(
+  output: string,
+  packageName: string,
+  component: string,
+): {
+  activities: ForegroundActivity[];
+  requiredActivity: ForegroundActivity | null;
+  samePackageMismatch: ForegroundActivity | null;
+} {
+  const activities = foregroundActivities(output);
+  const samePackageMismatch = activities.find((activity) =>
+    activity.packageName === packageName && activity.component !== component) ?? null;
+  const requiredActivity = samePackageMismatch
+    ? null
+    : activities.find((activity) => activity.packageName === packageName && activity.component === component) ?? null;
+  return { activities, requiredActivity, samePackageMismatch };
 }
 
 function boundedTail(output: string): string {
@@ -748,13 +771,14 @@ export async function produceNativeFleetReceipt(
           maxOutputBytes: TEXT_OUTPUT_LIMIT,
         });
         assertTextSuccess("foreground", "foreground probe", resolvedDeps.adbPath, args, lastResult);
-        const activity = parseForegroundActivity(lastResult.stdout);
-        if (activity) lastActivity = activity;
-        if (activity?.packageName === input.packageName && activity.component === input.component) {
-          return { activity, lastResult };
+        const classified = classifyForegroundActivities(lastResult.stdout, input.packageName, input.component);
+        if (classified.samePackageMismatch) {
+          lastActivity = classified.samePackageMismatch;
+          break;
         }
-        if (activity?.packageName === input.packageName && activity.component !== input.component) break;
-        if (foregroundActivities(lastResult.stdout).length > 1) break;
+        if (classified.requiredActivity) return { activity: classified.requiredActivity, lastResult };
+        if (classified.activities.length === 1) lastActivity = classified.activities[0];
+        if (classified.activities.length > 1) break;
         if (attempt + 1 >= PID_FOREGROUND_ATTEMPTS) break;
         const remainingMs = remainingPollMs(deadline);
         const sleepMs = Math.min(POLL_INTERVAL_MS, remainingMs);
@@ -770,7 +794,12 @@ export async function produceNativeFleetReceipt(
     completedStages.push("pid");
     let foreground = await pollForeground(launchIdentity.pollDeadline);
     if (!foreground.activity || foreground.activity.packageName !== input.packageName || foreground.activity.component !== input.component) {
-      const blocker = foreground.activity?.packageName !== input.packageName ? foreground.activity?.packageName : undefined;
+      const observedBlocker = foreground.activity;
+      const blocker = observedBlocker
+        && observedBlocker.packageName !== input.packageName
+        && FLEET_PACKAGE_PATTERN.test(observedBlocker.packageName)
+        ? observedBlocker.packageName
+        : undefined;
       if (blocker) {
         const stopArgs = ["-s", input.serial, "shell", "am", "force-stop", blocker];
         const stopResult = await resolvedDeps.runText(resolvedDeps.adbPath, stopArgs, {
@@ -841,8 +870,12 @@ export async function produceNativeFleetReceipt(
         maxOutputBytes: TEXT_OUTPUT_LIMIT,
       });
       assertTextSuccess("foreground", "capture foreground continuity", resolvedDeps.adbPath, foregroundArgs, foregroundResult);
-      const observedForeground = parseForegroundActivity(foregroundResult.stdout);
-      if (observedForeground?.packageName !== input.packageName || observedForeground.component !== input.component) {
+      const observedForeground = classifyForegroundActivities(
+        foregroundResult.stdout,
+        input.packageName,
+        input.component,
+      ).requiredActivity;
+      if (!observedForeground) {
         throw new StageFailure("foreground", commandFailure(
           "capture foreground continuity",
           resolvedDeps.adbPath,
