@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { appSpecSchema, type AppSpec } from "./appspec.js";
+import { generateMissionTableFiles } from "./missiontable.js";
 
 /**
  * assemble.ts — v6.3 THE WIRING GENERATOR (closes the ledger→running-app gap).
@@ -137,7 +138,9 @@ function hasDataLessLayout(spec: AppSpec): boolean {
 // v7.3: animation — the object's anim ({type:"tween"|"orbit", ...}) plays on each placed entity.
 function animFor(spec: AppSpec, layoutId: string | undefined): { type: string } | null {
   const a: any = objectForLayout(spec, layoutId)?.anim;
-  return a && (a.type === "tween" || a.type === "orbit") ? a : null;
+  // Engine-system motion is attached by its profile/runtime and must never also lower to the
+  // legacy SceneOrbit coroutine merely because both routes use the word "orbit".
+  return a && a.driver !== "system" && (a.type === "tween" || a.type === "orbit") ? a : null;
 }
 function animPlayCall(anim: { type: string } | null): string | null {
   if (!anim) return null;
@@ -199,6 +202,7 @@ function launchVelocityMap(spec: AppSpec): Map<string, { linear: number[]; angul
 
 function genComposition(spec: AppSpec, pkg: string): string {
   const contentPkg = `${pkg}.content`;
+  const roomMission = spec.roomExperience?.kind === "swanMissionTable";
   const multiScene = spec.scenes.length > 1 || spec.navigation.portals.length > 0;
   const hasInteractions = spec.interactions.length > 0;
   // v9.1: select/hover interactions are DATA-backed (showDetail reads SceneDataBinding.byId); a
@@ -266,6 +270,7 @@ function genComposition(spec: AppSpec, pkg: string): string {
 
   // v6.6: light the scene (so PBR content renders lit, not dim) — the rig was generated but never applied.
   if (lighting) for (const lightingCall of lightingApplyCalls(spec)) lines.push(`        ${lightingCall}`);
+  if (roomMission) lines.push(`        MissionTableExperience.build(root)`);
 
   // v9.1: REAL physics — world + bodies (created in ONE batch each at build, per the rulebook).
   if (physics) for (const bl of physicsBodyLines(spec, "        ")) lines.push(bl);
@@ -367,9 +372,11 @@ function genComposition(spec: AppSpec, pkg: string): string {
       if (lighting && sunRig(s)) lines.push(`        props.forEach { SceneLighting.groundShadow(it) }`);
       if (play) lines.push(`        props.forEach { ${play}(it) }`);
       lines.push(`        Log.i(TAG, "placed " + props.size + " procedural props (data-less layout)")`);
-    } else {
+    } else if (!roomMission) {
       if (!physics) lines.push(`        Log.w(TAG, "composition: scene '${s.id}' has no layout to place")`);
       else lines.push(`        Log.i(TAG, "physics scene: " + bodies.size + " bodies")`);
+    } else {
+      lines.push(`        Log.i(TAG, "room-aware mission installation built; TABLE/WALL_ART placement starts after attachment seating")`);
     }
   }
   lines.push(`        Log.i(TAG, "${readyMsg}")`, `    }`);
@@ -437,7 +444,7 @@ function genComposition(spec: AppSpec, pkg: string): string {
 // (launch:* -> start, resetWorld -> reset). Returns [button, kotlinBody] pairs.
 function menuButtons(spec: AppSpec): Array<[string, string]> {
   const out: Array<[string, string]> = [];
-  const panels = ((spec as any).panels ?? []).length > 0;
+  const panels = ((spec as any).panels ?? []).some((panel: any) => panel.placement?.kind !== "scene");
   for (const i of spec.interactions as any[]) {
     if (i.trigger !== "press") continue;
     const a = String(i.action);
@@ -456,6 +463,7 @@ function menuButtons(spec: AppSpec): Array<[string, string]> {
 
 function genHomeStage(spec: AppSpec, pkg: string): string {
   const contentPkg = `${pkg}.content`;
+  const roomMission = spec.roomExperience?.kind === "swanMissionTable";
   const multiScene = spec.scenes.length > 1 || spec.navigation.portals.length > 0;
   const hasSelect = spec.interactions.length > 0 && spec.data.length > 0;
   const menu = menuButtons(spec);
@@ -466,10 +474,13 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
   const hasResetMenu = (spec.interactions as any[]).some((i) => i.trigger === "press" && String(i.action) === "resetWorld");
   const rebuildable = menu.length > 0 && (physics || hasResetMenu);
   const panelDefs = ((spec as any).panels ?? []) as any[];
-  const panels = panelDefs.length > 0;
+  const scenePanelDefs = panelDefs.filter((panel) => panel.placement?.kind === "scene");
+  const dockPanelDefs = panelDefs.filter((panel) => panel.placement?.kind !== "scene");
+  const scenePanels = scenePanelDefs.length > 0;
+  const panels = dockPanelDefs.length > 0;
   // One activity per generated panel host: panelcompose emits HudPanelActivity for hud-style
   // panels and WebPanelActivity for web panels (same content package as this file).
-  const panelActivities = [...new Set(panelDefs.map((p) => (p.kind === "web" ? "WebPanelActivity" : "HudPanelActivity")))];
+  const panelActivities = [...new Set(dockPanelDefs.map((p) => (p.kind === "web" ? "WebPanelActivity" : "HudPanelActivity")))];
   // v31.3: the dispatcher's select/hover whitelist is DERIVED from the spec's actual buttons
   // (builtins always kept) — the hardcoded four made a custom action like 'putt' unreachable by
   // broadcast even though GameMenu carried its row + customActions closure (com.fleet.door671805).
@@ -497,6 +508,11 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
   }
   if (multiScene) dispatch.push(`        cmd.startsWith("navigate:") -> SceneRouter.go(cmd.removePrefix("navigate:"))`);
   if (specHasPhysics(spec) && launchVelocityMap(spec).size) dispatch.push(`        cmd.startsWith("launch:") -> SceneComposition.launchBody(cmd.removePrefix("launch:"))`);
+  if (roomMission) {
+    dispatch.push(`        cmd == "mission:launch" -> MissionTableExperience.launchMission()`);
+    dispatch.push(`        cmd == "mission:pause" -> MissionTableExperience.togglePause()`);
+    dispatch.push(`        cmd == "mission:reset" -> MissionTableExperience.resetMission()`);
+  }
   if (hasSelect) {
     dispatch.push(`        cmd.startsWith("select:") -> SceneComposition.showDetail(rootRef ?: return, cmd.removePrefix("select:")).also { SceneInteraction.select(cmd.removePrefix("select:")) }`);
     dispatch.push(`        cmd.startsWith("hover:") -> SceneInteraction.hover(cmd.removePrefix("hover:"))`);
@@ -507,6 +523,7 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
     `import android.util.Log`,
     `import androidx.compose.foundation.layout.fillMaxSize`,
     `import androidx.compose.runtime.Composable`,
+    ...(roomMission ? [`import androidx.compose.runtime.DisposableEffect`] : []),
     `import androidx.compose.ui.Modifier`,
     `import androidx.compose.ui.platform.LocalContext`,
     `import ${pkg}.agent.AgentBridge`,
@@ -516,6 +533,14 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
     `import com.pico.spatial.core.math.Quat`,
     `import com.pico.spatial.core.math.Vector3`,
     `import com.pico.spatial.ui.foundation.content.SpatialView`,
+    ...(roomMission
+      ? [
+          `import ${contentPkg}.ecs.OrbitSystem`,
+          `import ${contentPkg}.ecs.SpinSystem`,
+          `import com.pico.spatial.ui.foundation.dsl.registerSystem`,
+          `import com.pico.spatial.ui.foundation.dsl.unregisterSystem`,
+        ]
+      : []),
     `import kotlinx.coroutines.Dispatchers`,
     `import kotlinx.coroutines.withContext`,
     ``,
@@ -536,12 +561,28 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
     `    // data loading + splat/mesh environments need an app Context.`,
     `    val appCtx = LocalContext.current.applicationContext`,
     ...(panels ? [`    appCtxRef = appCtx   // panel:show starts the panel activity from this context`] : []),
+    ...(scenePanels ? [`    val panelSizes = rememberAttachmentPanelSizes()`] : []),
+    ...(roomMission
+      ? [
+          `    DisposableEffect(Unit) {`,
+          `        registerSystem<SpinSystem>()`,
+          `        registerSystem<OrbitSystem>()`,
+          `        onDispose {`,
+          `            MissionTableExperience.stop()`,
+          `            unregisterSystem<OrbitSystem>()`,
+          `            unregisterSystem<SpinSystem>()`,
+          `            rootRef?.let { root -> AgentBridge.detachScene(root); root.destroy(true) }`,
+          `            rootRef = null`,
+          `        }`,
+          `    }`,
+        ]
+      : []),
     `    SpatialView(`,
     `        // fillMaxSize: the 3D content is transform-mapped to the SpatialView's 2D node — a small/default`,
     `        // node compresses the scene into a small bounded region (the "blob" you portal in/out of), so fill`,
     `        // the stage to give the content a large, walkable volume.`,
     `        modifier = Modifier.fillMaxSize(),`,
-    `        initial = { content, _ ->`,
+    `        initial = { content, ${scenePanels ? "attachments" : "_"} ->`,
     `            withContext(Dispatchers.Main) {`,
     ...(rebuildable
       ? [
@@ -552,7 +593,8 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
           `                    sceneRoot.components.set(TransformComponent(Vector3(0f, 0f, 0f), Quat.identity(), Vector3(1f, 1f, 1f)))`,
           `                    content.addEntity(sceneRoot)`,
           `                    rootRef = sceneRoot`,
-          `                    AgentBridge.attachScene(sceneRoot)`,
+          `                    ${roomMission ? 'AgentBridge.attachScene(sceneRoot, "stage")' : "AgentBridge.attachScene(sceneRoot)"}`,
+          ...(roomMission ? [`                    SceneUnderstanding.registerAgentBridgeSceneSnapshot()`] : []),
           `                    SceneComposition.build(sceneRoot, appCtx)`,
           `                }`,
           `                rebuildGame = buildGame`,
@@ -564,9 +606,12 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
           `                sceneRoot.components.set(TransformComponent(Vector3(0f, 0f, 0f), Quat.identity(), Vector3(1f, 1f, 1f)))`,
           `                content.addEntity(sceneRoot)`,
           `                rootRef = sceneRoot`,
-          `                AgentBridge.attachScene(sceneRoot)`,
+          `                ${roomMission ? 'AgentBridge.attachScene(sceneRoot, "stage")' : "AgentBridge.attachScene(sceneRoot)"}`,
+          ...(roomMission ? [`                SceneUnderstanding.registerAgentBridgeSceneSnapshot()`] : []),
           `                SceneComposition.build(sceneRoot, appCtx)`,
         ]),
+    ...(scenePanels ? [`                attachments.seatSceneAttachmentPanels(content)`] : []),
+    ...(roomMission ? [`                rootRef?.let { MissionTableExperience.start(it) }`] : []),
     `            }`,
     ...(menu.length
       ? [
@@ -587,7 +632,7 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
       : []),
     `            Log.i(TAG, "HomeStage ready")`,
     `        },`,
-    `        attachments = {},`,
+    `        attachments = { ${scenePanels ? "sceneAttachmentPanels(panelSizes)" : ""} },`,
     `    )`,
     `}`,
     ``,
@@ -615,7 +660,7 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
             ``,
           ]
       : []),
-    `/** Headless command channel: adb shell am broadcast -a ${pkg}.DEBUG_CMD --es cmd <navigate:|select:|hover:|move:|${panels ? "panel:show|panel:hide|" : ""}${menu.length ? menuActions.join("|") + "|" : "start|reset|"}launch:><id> */`,
+    `/** Headless command channel: adb shell am broadcast -a ${pkg}.DEBUG_CMD --es cmd <navigate:|select:|hover:|move:|${panels ? "panel:show|panel:hide|" : ""}${roomMission ? "mission:launch|mission:pause|mission:reset|" : ""}${menu.length ? menuActions.join("|") + "|" : "start|reset|"}launch:><id> */`,
     `internal fun dispatchDebugCommand(cmd: String, arg: Int = 0) {`,
     `    Log.i(TAG, "DEBUG_CMD cmd=" + cmd + " arg=" + arg)`,
     `    when {`,
@@ -636,8 +681,8 @@ function genMain(spec: AppSpec, pkg: string): string {
     `import com.pico.spatial.ui.foundation.dsl.DefaultStage`,
     `import com.pico.spatial.ui.foundation.dsl.SpatialAppScope`,
     ``,
-    `/** GENERATED by generate_app_wiring — app entry. The immersive scene lives in DefaultStage. Live-text`,
-    ` *  panels are separate 2D ACTIVITIES (HudPanelActivity), auto-hosted as floating spatial panels —`,
+    `/** GENERATED by generate_app_wiring — app entry. The immersive scene lives in DefaultStage. Dock`,
+    ` *  panels are separate 2D activities; scene attachments remain inside the SpatialView —`,
     ` *  an app's own WindowContainer opens too, but ONLY if the app calls`,
     ` *  spatialNavigator.openWindowContainer (measured 2026-08-06) — see generate_container_app_kotlin. */`,
     `fun mainApp(scope: SpatialAppScope) = with(scope) {`,
@@ -647,7 +692,7 @@ function genMain(spec: AppSpec, pkg: string): string {
   ].join("\n");
 }
 
-/** Pure: returns the three wiring files (path relative to the content pkg + content string). */
+/** Pure: returns the core wiring plus any typed internal-profile files. */
 export function generateWiring(spec: AppSpec): { path: string; content: string }[] {
   const pkg = spec.meta.packageName;
   const cdir = `app/src/main/java/${pkg.replace(/\./g, "/")}`;
@@ -655,6 +700,7 @@ export function generateWiring(spec: AppSpec): { path: string; content: string }
     { path: `${cdir}/content/SceneComposition.kt`, content: genComposition(spec, pkg) },
     { path: `${cdir}/content/HomeStage.kt`, content: genHomeStage(spec, pkg) },
     { path: `${cdir}/Main.kt`, content: genMain(spec, pkg) },
+    ...generateMissionTableFiles(spec, pkg),
   ];
 }
 

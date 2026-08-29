@@ -28,9 +28,9 @@ const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
 
 const { rows, briefsDir } = headlessRows();
-// v32: the corpus gained the two Mixed-stage MR-tier briefs (mrpedestal, mrknock) — 26 total.
-if (rows.length >= 26) ok(`corpus loads (${rows.length} briefs from ${briefsDir})`);
-else fail(`expected ≥26 corpus briefs, got ${rows.length}`);
+// v37 flagship: Swan Mission Table joins the headless corpus — 27 total.
+if (rows.length >= 27) ok(`corpus loads (${rows.length} briefs from ${briefsDir})`);
+else fail(`expected ≥27 corpus briefs, got ${rows.length}`);
 
 const scoredRows = rows.filter((r) => !r.skipped);
 const skippedRows = rows.filter((r) => r.skipped);
@@ -605,6 +605,22 @@ if (typeof fleetbuild.deriveVerificationRoute !== "function") {
   if (hybridRoute?.mode === "hybrid" && target(hybridRoute?.stageEyeClaim) === "tiles" && panelTargets(hybridRoute).includes("sys"))
     ok("hybrid console routes tiles to the stage eye and sys to panel evidence");
   else fail(`hybrid route must split tiles from sys: ${JSON.stringify(hybridRoute)}`);
+
+  const missionSpec = JSON.parse(fs.readFileSync(path.join(ROOT, "briefs", "swanmissiontable.json"), "utf8")).spec;
+  const missionRoute = fleetbuild.deriveVerificationRoute(missionSpec);
+  const missionPanels = fleetbuild.generatedPanels(missionSpec, "com.fleet.swanmissiontable");
+  const missionRow = rows.find((row) => row.id === "swanmissiontable");
+  if (
+    missionRoute?.mode === "stage-eye" &&
+    target(missionRoute?.stageEyeClaim) === "missionDeck" &&
+    missionRoute?.panelTargetIds?.length === 0 &&
+    missionPanels?.activities?.length === 0 &&
+    missionPanels?.mappings?.length === 0 &&
+    fleetbuild.structuralPanelCount(missionSpec) === 0 &&
+    missionRow?.expectedPanels === 0
+  )
+    ok("scene-attached mission panel remains stage geometry and never becomes HudPanelActivity/panelReady work");
+  else fail(`scene attachment routing leaked into OS-panel evidence: ${JSON.stringify({ missionRoute, missionPanels, missionRow })}`);
 }
 
 const panelClaim = {

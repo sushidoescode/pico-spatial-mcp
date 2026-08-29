@@ -1,0 +1,261 @@
+{
+  "id": "swanmissiontable",
+  "brief": "Swan Mission Table: a Mixed-stage, room-aware lunar exhibit that fits a metre-authored animated diorama to a live TABLE mesh anchor, seats a SpatialUI mission panel on the live WALL_ART band, re-queries both labels across room re-selection without assuming counts, and exposes launch, pause, and reset controls.",
+  "spec": {
+    "meta": {
+      "appName": "SwanMissionTable",
+      "packageName": "com.example.swanmissiontable",
+      "stageStyle": "1",
+      "rootContainer": "stage",
+      "brief": "Swan Mission Table: a Mixed-stage, room-aware lunar exhibit that fits a metre-authored animated diorama to a live TABLE mesh anchor, seats a SpatialUI mission panel on the live WALL_ART band, re-queries both labels across room re-selection without assuming counts, and exposes launch, pause, and reset controls."
+    },
+    "scenes": [
+      {
+        "id": "missionRoom",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "sun"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [],
+    "objects": [
+      {
+        "id": "missionDeck",
+        "sceneId": "missionRoom",
+        "source": "primitive",
+        "material": {
+          "role": "deep-blue metallic mission glass"
+        }
+      },
+      {
+        "id": "launchPad",
+        "sceneId": "missionRoom",
+        "source": "primitive",
+        "material": {
+          "role": "orange-lit launch pad and beacons"
+        }
+      },
+      {
+        "id": "rocket",
+        "sceneId": "missionRoom",
+        "source": "primitive",
+        "material": {
+          "role": "silver capsule rocket with red nose"
+        }
+      },
+      {
+        "id": "earth",
+        "sceneId": "missionRoom",
+        "source": "primitive",
+        "material": {
+          "role": "deep-blue Earth"
+        },
+        "anim": {
+          "driver": "system",
+          "type": "spin"
+        }
+      },
+      {
+        "id": "atmosphere",
+        "sceneId": "missionRoom",
+        "source": "primitive",
+        "material": {
+          "role": "cyan atmosphere shell"
+        }
+      },
+      {
+        "id": "moon",
+        "sceneId": "missionRoom",
+        "source": "primitive",
+        "material": {
+          "role": "lunar sphere"
+        },
+        "anim": {
+          "driver": "system",
+          "type": "orbit"
+        }
+      },
+      {
+        "id": "orbiter",
+        "sceneId": "missionRoom",
+        "source": "primitive",
+        "material": {
+          "role": "orange spacecraft"
+        },
+        "anim": {
+          "driver": "system",
+          "type": "orbit"
+        }
+      },
+      {
+        "id": "orbitPath",
+        "sceneId": "missionRoom",
+        "source": "primitive",
+        "material": {
+          "role": "cyan dotted transfer path"
+        }
+      },
+      {
+        "id": "telemetryPylons",
+        "sceneId": "missionRoom",
+        "source": "primitive",
+        "material": {
+          "role": "teal telemetry pylons"
+        }
+      }
+    ],
+    "data": [],
+    "interactions": [
+      {
+        "id": "missionLaunch",
+        "trigger": "broadcast",
+        "target": "orbiter",
+        "action": "mission:launch",
+        "driveChannel": "broadcast"
+      },
+      {
+        "id": "missionPause",
+        "trigger": "broadcast",
+        "target": "earth",
+        "action": "mission:pause",
+        "driveChannel": "broadcast"
+      },
+      {
+        "id": "missionReset",
+        "trigger": "broadcast",
+        "target": "orbiter",
+        "action": "mission:reset",
+        "driveChannel": "broadcast"
+      }
+    ],
+    "panels": [
+      {
+        "id": "missionControl",
+        "title": "SWAN MISSION CONTROL",
+        "kind": "hud",
+        "fields": [
+          {
+            "key": "phase",
+            "label": "PHASE",
+            "initial": "READY"
+          },
+          {
+            "key": "anchor",
+            "label": "ANCHORS",
+            "initial": "WAITING FOR MESH"
+          },
+          {
+            "key": "surface",
+            "label": "SURFACE",
+            "initial": "TABLE pending"
+          }
+        ],
+        "placement": {
+          "kind": "scene",
+          "position": [
+            0,
+            1.35,
+            -1.6
+          ],
+          "widthDp": 560,
+          "heightDp": 300,
+          "faceViewer": true
+        }
+      }
+    ],
+    "roomExperience": {
+      "kind": "swanMissionTable",
+      "tableLabel": "TABLE",
+      "panelLabel": "WALL_ART",
+      "targetFootprintM": [
+        0.68,
+        0.42
+      ],
+      "maxTableFillFraction": 0.7,
+      "tableExtentRangeM": {
+        "min": [
+          0.25,
+          0.18
+        ],
+        "max": [
+          4,
+          4
+        ]
+      },
+      "wallArtExtentRangeM": {
+        "min": [
+          0.15,
+          0.12
+        ],
+        "max": [
+          5,
+          4
+        ]
+      },
+      "panelOffsetM": 0.06,
+      "requeryMs": 10000,
+      "readinessReads": 2,
+      "readinessRetries": 15,
+      "positionDeadbandM": 0.02,
+      "rotationDeadbandDeg": 2
+    },
+    "navigation": {
+      "startScene": "missionRoom",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "the metre-authored lunar diorama is fitted to a runtime TABLE label-level anchor in the visible Mixed-stage room",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.6
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "missionDeck"
+      },
+      {
+        "claim": "the in-scene PicoTheme mission panel reports its runtime WALL_ART match or an explicit fallback when that label is absent",
+        "method": "capture",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -1.6
+        },
+        "capabilityClass": "C0_emulator",
+        "targetRef": "missionControl"
+      },
+      {
+        "claim": "Earth spin and Moon/orbiter motion use registered engine-ticked ECS systems with paired cleanup",
+        "method": "assert_scene",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "earth"
+      },
+      {
+        "claim": "launch, pause, and reset broadcasts drive the same mission state transitions as the SpatialUI buttons",
+        "method": "assert_scene",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "missionLaunch"
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 0,
+    "objects": 9,
+    "data": 0,
+    "interactions": 3,
+    "panels": 1,
+    "verifiableNowMin": 6,
+    "swanMin": 0
+  }
+}

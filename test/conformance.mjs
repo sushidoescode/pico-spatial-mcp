@@ -906,6 +906,7 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
   }), "utf8");
   assert(exactBytes.length > 16 * 1024, "transport fixture is much larger than a truncation-prone log line");
   const calls = [];
+  let payloadPulls = 0;
   let ticks = 100n;
   const fetched = await bridge.fetchAgentBridgeSceneSnapshot("/fixture/adb", {
     serial: "fixture-serial",
@@ -922,23 +923,60 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     },
     runBytes: async (cmd, args) => {
       calls.push({ kind: "bytes", cmd, args });
-      return { code: 0, stdout: exactBytes, stderr: "", timedOut: false };
+      payloadPulls += 1;
+      if (payloadPulls === 1) {
+        return {
+          code: 0,
+          stdout: Buffer.from([0x00]),
+          stderr: "",
+          timedOut: false,
+        };
+      }
+      return { code: 0, stdout: Buffer.concat([Buffer.from([0x01]), exactBytes]), stderr: "", timedOut: false };
     },
     sleep: async () => {},
   });
   assert(fetched.ok, "file/pull helper accepts an exact app-cache payload");
   assert(fetched.ok && Buffer.compare(fetched.bytes, exactBytes) === 0,
     "file/pull helper returns every payload byte losslessly");
+  assert(payloadPulls === 2 && fetched.ok && fetched.actionReceipts.find((r) => r.action === "bridge_payload_pull")?.ack?.attempts === 2,
+    "the explicit absent-file marker is retried until the payload appears");
   assert(calls.every((c) => c.args[0] === "-s" && c.args[1] === "fixture-serial"),
     "every adb subprocess is pinned to the exact requested serial");
   assert(calls.some((c) => c.args.includes("query_scene_anchors") && c.args.includes("fixture_nonce_20260828")),
     "broadcast carries the static command and transaction requestId");
-  assert(calls.some((c) => c.kind === "bytes" && c.args.join(" ").includes("exec-out run-as com.test.conf cat cache/agentbridge/scene-snapshots/fixture_nonce_20260828.json")),
-    "payload is read as exact bytes through the intended package's run-as path");
+  assert(calls.some((c) => c.kind === "bytes" && c.args.join(" ").includes("exec-out run-as com.test.conf sh -c") &&
+    c.args.at(-1) === "cache/agentbridge/scene-snapshots/fixture_nonce_20260828.json"),
+    "payload is existence-guarded and read as exact bytes through the intended package's run-as path");
   assert(!calls.some((c) => c.args.includes("logcat")), "lossless transport never consults logcat");
   assert(fetched.actionReceipts.map((r) => r.action).join(",") ===
     "bridge_broadcast,bridge_payload_pull,bridge_payload_cleanup",
   "file/pull helper returns broadcast, pull, and cleanup action receipts");
+
+  const malformedBytes = Buffer.from("present, but deliberately not JSON", "utf8");
+  const malformed = await bridge.fetchAgentBridgeSceneSnapshot("/fixture/adb", {
+    serial: "fixture-serial",
+    packageName: "com.test.conf",
+    requestId: "malformed_nonce_20260828",
+    maxRetries: 0,
+    pollMs: 10,
+    stabilityReads: 2,
+  }, {
+    monotonicNs: () => ticks++,
+    runText: async () => ({ code: 0, stdout: "ok", stderr: "", timedOut: false }),
+    runBytes: async () => ({
+      code: 0,
+      stdout: Buffer.concat([Buffer.from([0x01]), malformedBytes]),
+      stderr: "",
+      timedOut: false,
+    }),
+  });
+  const { parseSceneBridgePayload } = await import("../dist/sceneanchors.js");
+  const malformedParsed = malformed.ok ? parseSceneBridgePayload(malformed.bytes) : null;
+  assert(malformed.ok && Buffer.compare(malformed.bytes, malformedBytes) === 0,
+    "transport returns every byte of a present malformed payload without shape-scraping it");
+  assert(malformedParsed?.ok === false,
+    "a present malformed bridge file reaches the versioned host parser and terminates invalid_payload");
 
   let wallMs = 0;
   const unavailable = await bridge.fetchAgentBridgeSceneSnapshot("/fixture/adb", {
@@ -1259,6 +1297,163 @@ console.log("\n§6.6 bundle leases are owner-refcounted, and validity is re-chec
   let threw = false;
   try { generateBundleLeaseKotlin({ packageName: "com.x", bundles: ["furniture.bundle"] }); } catch { threw = true; }
   assert(threw, "a bundle path without a scheme is rejected");
+}
+
+// CP2 flagship — one typed Mixed-stage room experience must lower through existing generators.
+console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, and fleet-writable");
+{
+  const entry = JSON.parse(read("briefs/swanmissiontable.json"));
+  const parsed = appSpecSchema.safeParse(entry.spec);
+  assert(parsed.success, `flagship brief validates${parsed.success ? "" : `: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`}`);
+  if (parsed.success) {
+    const spec = parsed.data;
+    const { buildLedger } = await import("../dist/compiler.js");
+    const ledger = buildLedger(spec, "/tmp/swanmissiontable-conformance");
+    const toolNames = ledger.map((step) => step.tool);
+    const systems = ledger.filter((step) => step.tool === "generate_ecs_system_kotlin");
+    assert(toolNames.includes("generate_scene_understanding_kotlin"), "room profile emits the existing scene-understanding primitive");
+    assert(toolNames.indexOf("generate_scene_understanding_kotlin") < toolNames.indexOf("generate_app_wiring"),
+      "scene bridge/readiness code is generated before app wiring");
+    assert(systems.length === 2 && new Set(systems.map((step) => step.args.kind)).size === 2 && systems.some((step) => step.args.kind === "spin") && systems.some((step) => step.args.kind === "orbit"),
+      "one shared Spin pair and one shared Orbit pair serve all engine-ticked entities");
+    assert(ledger.filter((step) => step.tool === "generate_attachment_panel_kotlin").length === 1,
+      "the WALL_ART companion uses the existing in-scene AttachmentPanel surface");
+
+    const files = generateWiring(spec);
+    const home = files.find((file) => file.path.endsWith("/HomeStage.kt"))?.content ?? "";
+    const mission = files.find((file) => file.path.endsWith("/MissionTableExperience.kt"))?.content ?? "";
+    const panel = files.find((file) => file.path.endsWith("/SceneAttachments.kt"))?.content ?? "";
+    assert(files.length === 5 && mission && panel, "typed wiring emits the core three files plus experience and attachment files");
+    assert(home.includes('AgentBridge.attachScene(sceneRoot, "stage")') && home.includes("SceneUnderstanding.registerAgentBridgeSceneSnapshot()"),
+      "Stage root is identity-bound and registers the revision-41 scene producer");
+    assert(/DisposableEffect\(Unit\)[\s\S]*registerSystem<SpinSystem>\(\)[\s\S]*registerSystem<OrbitSystem>\(\)[\s\S]*onDispose[\s\S]*MissionTableExperience\.stop\(\)[\s\S]*unregisterSystem<OrbitSystem>\(\)[\s\S]*unregisterSystem<SpinSystem>\(\)[\s\S]*AgentBridge\.detachScene\(root\)[\s\S]*root\.destroy\(true\)/.test(home),
+      "composition pairs mesh/job cleanup, ECS unregister, exact bridge detach, and recursive scene teardown");
+    assert(home.includes("attachments = { sceneAttachmentPanels(panelSizes) }") && home.includes("attachments.seatSceneAttachmentPanels(content)"),
+      "scene attachment builder and entity seating are both wired");
+    assert(home.includes('cmd == "mission:launch"') && home.includes('cmd == "mission:pause"') && home.includes('cmd == "mission:reset"'),
+      "broadcast validation routes to the same launch/pause/reset state functions as the panel");
+
+    const readinessAt = mission.indexOf("SceneUnderstanding.awaitUnfilteredMesh");
+    const tableAt = mission.indexOf("SceneUnderstanding.anchorsLabeled(anchors, SemanticLabelType.TABLE)");
+    const artAt = mission.indexOf("SceneUnderstanding.anchorsLabeled(anchors, SemanticLabelType.WALL_ART)");
+    assert(readinessAt >= 0 && readinessAt < tableAt && tableAt < artAt,
+      "every placement pass establishes unfiltered readiness and filters TABLE/WALL_ART from that same snapshot");
+    assert(mission.includes("Channel<Unit>(Channel.CONFLATED)") && mission.includes("signals.trySend(Unit)") && mission.includes("withTimeoutOrNull(REQUERY_MS)") && mission.includes("delay(MIN_REQUERY_GAP_MS)"),
+      "mesh events trigger a conflated, debounced re-query while periodic re-selection remains bounded");
+    assert(mission.includes('MissionTableUi.panelAnchor = "MESH NOT READY — stage fallback"') &&
+      mission.includes('MissionTableUi.surface = "MESH not ready"'),
+      "lost unfiltered readiness clears stale placement claims and restores the explicit stage fallback");
+    assert(mission.indexOf("val art = selectWallArt") < mission.indexOf("if (table == null)") &&
+      mission.includes("table?.transform?.position ?: Vector3.ZERO"),
+      "WALL_ART selection remains live when TABLE is absent instead of falling back early");
+    assert(mission.includes("width in TABLE_MIN_WIDTH_M..TABLE_MAX_WIDTH_M") && mission.includes("depth in TABLE_MIN_DEPTH_M..TABLE_MAX_DEPTH_M") &&
+      mission.includes("width in ART_MIN_WIDTH_M..ART_MAX_WIDTH_M") && mission.includes("height in ART_MIN_HEIGHT_M..ART_MAX_HEIGHT_M"),
+      "TABLE and WALL_ART candidates tolerate declared geometry ranges instead of exact counts");
+    assert(mission.includes("rotateVector(Vector3.UP)") && mission.includes("Vector3.dot(up, Vector3.UP) >= 0.85f") &&
+      mission.includes("finite(bounds)") && mission.includes("finite(pose.quaternion)"),
+      "TABLE selection rejects non-horizontal, down-facing, and non-finite anchors");
+    assert(mission.includes("val height = abs(bounds.z)") && mission.includes("boundingBoxSize.x * it.boundingBoxSize.z"),
+      "WALL_ART selection follows the measured thin-Y/tall-Z anchor convention");
+    assert(mission.includes('entity.setName("TABLE_label_anchor")') && mission.includes('entity.setName("metre_authored_installation")') &&
+      mission.includes("host.convertTransformFrom(anchor.transform, null)") && mission.includes("transform.position = Vector3(0f, topOffset, 0f)"),
+      "exact label pose and local surface-lift/scale live on separate owned roots");
+    assert(mission.indexOf("offsetTowardStageOrigin(art.transform.position)") < mission.indexOf("hostRoot?.convertPositionFrom(stagePosition, null)"),
+      "WALL_ART offset is computed toward Stage origin before conversion into the panel host frame");
+    assert(mission.includes("lastPanelPosition") && mission.includes("sqrt(distanceSquared(position, previous)) <= POSITION_DEADBAND_M"),
+      "WALL_ART panel re-seating applies the same positional deadband as TABLE placement");
+    assert(mission.includes("host.addChild(panelEntity)") && mission.includes("panel?.removeFromParent()") &&
+      !panel.includes("content.addEntity(panel)"),
+      "the attachment has one scene-graph owner and is detached before recursive root teardown");
+    assert(!/candidates\s*\[|anchorsLabeled\([^\n]+\)\s*\[/.test(mission) && !/anchorsLabeled[^\n]*(?:size\s*==|count\s*==)/.test(mission),
+      "runtime selection never indexes an anchor list or asserts a label count");
+    assert(/earth\?\.components.*TransformComponent.*Quat\.identity/.test(mission) &&
+      /spacecraft\?\.components.*OrbitComponent.*SPACECRAFT_START_ANGLE/.test(mission) &&
+      /spacecraft\?\.components.*TransformComponent.*SPACECRAFT_START_POSITION/.test(mission),
+      "RESET restores transforms as well as ECS component phases");
+    assert(mission.includes("angle = SPACECRAFT_START_ANGLE") && mission.includes("angle = 0f"),
+      "Moon and spacecraft retain separate authored orbit phases");
+    assert(mission.includes("accumulatedPauseMs += (now - pausedAtMs).coerceAtLeast(0L)") &&
+      mission.includes("now - missionStartedAtMs - accumulatedPauseMs"),
+      "elapsed mission time excludes paused wall-clock duration");
+    const missionStop = /fun stop\(\) \{[\s\S]*?Log\.i\(TAG, "stopped/.exec(mission)?.[0] ?? "";
+    assert(missionStop.includes("panel?.removeFromParent()") && missionStop.includes("resetSessionState()") &&
+      /missionStarted = false[\s\S]*paused = false[\s\S]*missionStartedAtMs = 0L[\s\S]*MissionTableUi\.phase/.test(mission),
+      "Stage disposal resets runtime clocks and UI before the owned root is destroyed");
+    assert((mission.match(/MeshResource\.createSphere\(/g) ?? []).length === 1 &&
+      mission.includes("primitive(installation, \"orbit_dot_\" + index, unitSphere") && mission.includes("kotlinx.coroutines.yield"),
+      "one shared unit-sphere mesh and cooperative main-loop yields avoid the measured startup ANR");
+    assert(mission.includes("setBlendingMode(BlendingMode.TRANSPARENT)") && mission.includes("setOpacity(opacity)") &&
+      mission.includes("setDepthWrite(false)") && mission.includes("opacity = 0.38f"),
+      "atmosphere explicitly uses transparent PBR blending, opacity, and disabled depth writes");
+    assert(panel.includes("PicoTheme {") && panel.includes("com.pico.spatial.ui.design.Button") && !/androidx\.compose\.material/.test(panel),
+      "mission controls use SpatialUI Button/Text inside PicoTheme with no Material import");
+    const customized = structuredClone(spec);
+    customized.panels[0].id = "mission_wall_panel";
+    customized.panels[0].title = "ROOM-SCALE FLIGHT DIRECTOR";
+    customized.panels[0].placement.position = [0.25, 1.5, -1.25];
+    customized.panels[0].placement.widthDp = 612;
+    customized.panels[0].placement.heightDp = 324;
+    customized.panels[0].fields.find((field) => field.key === "phase").initial = "READY $5";
+    customized.interactions.find((interaction) => interaction.action === "mission:launch").params = { label: "IGNITE" };
+    const customizedPanel = generateWiring(customized).find((file) => file.path.endsWith("/SceneAttachments.kt"))?.content ?? "";
+    const customizedMission = generateWiring(customized).find((file) => file.path.endsWith("/MissionTableExperience.kt"))?.content ?? "";
+    assert(customizedPanel.includes('MISSION_PANEL_ID = "mission_wall_panel"') &&
+      customizedPanel.includes("panelSize(612.dp, 324.dp)") &&
+      customizedPanel.includes("MissionTableExperience.STAGE_FALLBACK_POSITION") &&
+      customizedMission.includes("val STAGE_FALLBACK_POSITION = Vector3(0.25f, 1.5f, -1.25f)") &&
+      (customizedMission.match(/seatPanel\(STAGE_FALLBACK_POSITION\)/g) ?? []).length === 2 &&
+      customizedPanel.includes('Text("ROOM-SCALE FLIGHT DIRECTOR"') && customizedPanel.includes('Text("IGNITE")') &&
+      customizedPanel.includes('mutableStateOf("READY \\$5")'),
+      "mission panel id, dimensions, pose, title, and control labels derive from AppSpec metadata");
+    assert(mission.includes("Per-face semantic alignment is unverified") && !/semanticAssignments|vertices\[|indices\[/.test(mission),
+      "placement remains label-level and does not consume unverified triangle semantics");
+
+    const sense = await import("../dist/sense.js");
+    const senseHandlers = {};
+    sense.registerSenseTools({ registerTool: (name, _meta, handler) => { senseHandlers[name] = handler; } });
+    const senseKt = (await senseHandlers.generate_scene_understanding_kotlin({
+      packageName: "com.test.mission.content",
+      agentBridgePackage: "com.test.mission.agent",
+    })).content[0].text;
+    assert(/private var meshUpdateListener/.test(senseKt) && /startMeshOrThrow\(meshUpdateListener\)/.test(senseKt),
+      "bridge-owned tracker epochs preserve the app's mesh-update listener");
+    assert(/suspend fun awaitUnfilteredMesh[^{]+List<MeshAnchor>\?/.test(senseKt) && /fresh\.isNotEmpty\(\)/.test(senseKt) && /return fresh/.test(senseKt) && !/TrackingState\.RUNNING/.test(/suspend fun awaitUnfilteredMesh[\s\S]*?\n    \}/.exec(senseKt)?.[0] ?? ""),
+      "shared readiness returns the accepted unfiltered snapshot and never trusts RUNNING state");
+    assert(/fun anchorsLabeled\(anchors: List<MeshAnchor>, label: SemanticLabelType\)/.test(senseKt),
+      "shared scene code can label-filter one accepted runtime snapshot without additional geometry loads");
+
+    const fleet = await import("../dist/fleetbuild.js");
+    const normalized = fleet.generatedFileEntries({ files: {
+      "SpinComponent.kt": "package com.test.mission.ecs\nclass SpinComponent",
+      "SpinSystem.kt": "package com.test.mission.ecs\nclass SpinSystem",
+    } }, "app/src/main/java/com/test/mission/ecs/SpinSystem.kt");
+    assert(normalized.length === 2 && normalized.every((file) => file.targetPath.includes("/ecs/")),
+      "fleet writes every record-shaped companion file beside the ledger target");
+    let refusedMixedFiles = false;
+    try {
+      fleet.generatedFileEntries({ files: {
+        "SpinComponent.kt": "package com.test.mission.ecs\nclass SpinComponent",
+        "../SpinSystem.kt": "package com.test.mission.ecs\nclass SpinSystem",
+      } }, "app/src/main/java/com/test/mission/ecs/SpinSystem.kt");
+    } catch { refusedMixedFiles = true; }
+    assert(refusedMixedFiles, "fleet refuses an entire companion-file record when any entry is malformed");
+  }
+
+  const wrongStage = structuredClone(entry.spec);
+  wrongStage.meta.stageStyle = "3";
+  assert(!appSpecSchema.safeParse(wrongStage).success, "room profile refuses a non-Mixed Stage");
+  const noPanel = structuredClone(entry.spec);
+  noPanel.panels = [];
+  assert(!appSpecSchema.safeParse(noPanel).success, "room profile refuses a missing in-scene mission panel");
+  const noSpin = structuredClone(entry.spec);
+  noSpin.objects.forEach((object) => { if (object.anim?.type === "spin") delete object.anim; });
+  assert(!appSpecSchema.safeParse(noSpin).success, "room profile refuses a missing engine-spin lane");
+  const missingControl = structuredClone(entry.spec);
+  missingControl.interactions = missingControl.interactions.filter((interaction) => interaction.action !== "mission:pause");
+  assert(!appSpecSchema.safeParse(missingControl).success, "room profile refuses missing mission control metadata");
+  const ignoredPanelField = structuredClone(entry.spec);
+  ignoredPanelField.panels[0].fields.push({ key: "ignored", label: "IGNORED", initial: "?" });
+  assert(!appSpecSchema.safeParse(ignoredPanelField).success, "room profile refuses panel fields the generator cannot represent");
 }
 
 console.log(`\nSample-conformance gate done. Failures: ${failures}`);

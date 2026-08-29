@@ -7,7 +7,7 @@ import { computeSuite } from "./eval.js";
 import { innerCall } from "./doors.js";
 import { measurePerf, scorePerfAxis } from "./perfprobe.js";
 import { runPerfDiagnose, scorePicoCliPerfAxis } from "./perfcli.js";
-import { deriveVerificationRoute, type VerificationRoute } from "./fleetbuild.js";
+import { deriveVerificationRoute, structuralPanelCount, type VerificationRoute } from "./fleetbuild.js";
 
 /**
  * spatialbench.ts — v23 SPATIALBENCH: the conformance corpus as a SCORED, public harness.
@@ -195,6 +195,12 @@ export function headlessRows(briefIds?: string[]): { rows: BenchRow[]; briefsDir
   const rows: BenchRow[] = suite.rows
     .filter((r: any) => !briefIds?.length || briefIds.includes(r.id))
     .map((r: any) => {
+      let entry: any = null;
+      let expectedPanels = Number(r.counts?.panels ?? 0);
+      try {
+        entry = JSON.parse(fs.readFileSync(path.join(suite.briefsDir, `${r.id}.json`), "utf8"));
+        expectedPanels = structuralPanelCount(entry.spec);
+      } catch { /* malformed rows retain the scoreBrief count; planning already fails closed */ }
       if (typeof r.skipped === "string" && r.skipped) {
         return {
           id: r.id,
@@ -209,15 +215,14 @@ export function headlessRows(briefIds?: string[]): { rows: BenchRow[]; briefsDir
           score: 0,
           max: 0,
           skipped: r.skipped,
-          expectedPanels: Number(r.counts?.panels ?? 0),
+          expectedPanels,
           verificationRoute: null,
           notes: [r.skipped],
         } satisfies BenchRow;
       }
       let verificationRoute: VerificationRoute | null = null;
       try {
-        const entry = JSON.parse(fs.readFileSync(path.join(suite.briefsDir, `${r.id}.json`), "utf8"));
-        verificationRoute = deriveVerificationRoute(entry.spec);
+        verificationRoute = deriveVerificationRoute(entry?.spec);
       } catch { /* malformed rows already fail planned/shape; default runtime scoring stays stage-eye */ }
       return {
         id: r.id,
@@ -232,7 +237,7 @@ export function headlessRows(briefIds?: string[]): { rows: BenchRow[]; briefsDir
         score: 0,
         max: 3,
         skipped: null,
-        expectedPanels: Number(r.counts?.panels ?? 0),
+        expectedPanels,
         verificationRoute,
         notes: [...(r.lintErrors ?? []), ...(r.shapeMismatches ?? [])].slice(0, 3),
       };

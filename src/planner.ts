@@ -118,6 +118,8 @@ export function lintSpec(spec: AppSpec): Lint {
   }
   if (spec.objects.some((o: any) => o.anim?.driver === "system") && !toolExists("generate_ecs_system_kotlin"))
     errors.push("objects[].anim.driver 'system' requires generate_ecs_system_kotlin (missing from manifest)");
+  if ((spec as any).roomExperience && !toolExists("generate_scene_understanding_kotlin"))
+    errors.push("roomExperience requires generate_scene_understanding_kotlin (missing from manifest)");
 
   // C2: every C0/C2 capture claim needs a forward-FOV pose (content outside the forward view can't be captured)
   for (const v of spec.verificationPlan) {
