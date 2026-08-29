@@ -1,12 +1,12 @@
 {
   "scorecard": {
-    "total": 25,
-    "corpusTotal": 26,
-    "passed": 25,
+    "total": 26,
+    "corpusTotal": 27,
+    "passed": 26,
     "failed": 0,
     "skipped": 1,
     "planFailures": 0,
-    "totalCompileSteps": 211,
+    "totalCompileSteps": 221,
     "totalVisionVerified": 0,
     "totalDeviceVerified": 0,
     "totalDeviceFailed": 0,
@@ -112,6 +112,10 @@
     },
     {
       "id": "studio",
+      "pass": true
+    },
+    {
+      "id": "swanmissiontable",
       "pass": true
     },
     {
