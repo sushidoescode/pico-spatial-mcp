@@ -753,8 +753,14 @@ export function deriveVisualExpectation(spec: any, verificationNode: any): Visua
   // frames — the eye filters neutrals and refuses to score < 2 distinct keys, so passing the
   // palette unconditionally is safe for Full-Space briefs too.
   const authoredColors = (spec?.objects ?? [])
-    .filter((o: any) => Array.isArray(o?.body?.color))
-    .map((o: any) => ({ name: o.id, color: o.body.color }));
+    .map((o: any) => ({
+      name: o.id,
+      // roomExperience geometry is authored by its dedicated generator and therefore has no
+      // physics `body`. Its material.color is still a literal generated PBR color and is valid
+      // color-key evidence; do not add phantom physics bodies merely to feed the eye.
+      color: o?.body?.color ?? (spec?.roomExperience ? o?.material?.color : undefined),
+    }))
+    .filter((entry: any) => Array.isArray(entry.color));
   const palette = authoredColors.length ? { authoredColors } : {};
   const count = Number(layout?.count);
   if (Number.isInteger(count) && count >= 0) {

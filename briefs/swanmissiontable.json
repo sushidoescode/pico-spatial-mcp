@@ -1,13 +1,13 @@
 {
   "id": "swanmissiontable",
-  "brief": "Swan Mission Table: a Mixed-stage, room-aware lunar exhibit that fits a metre-authored animated diorama to a live TABLE mesh anchor, seats a SpatialUI mission panel on the live WALL_ART band, re-queries both labels across room re-selection without assuming counts, and exposes launch, pause, and reset controls.",
+  "brief": "Swan Mission Table: a Mixed-stage, room-aware lunar exhibit that prefers a live TABLE mesh anchor and remains visible on a live FLOOR fallback plinth, seats a SpatialUI mission panel on the live WALL_ART band, re-queries all labels across room re-selection without assuming counts, and exposes launch, pause, and reset controls.",
   "spec": {
     "meta": {
       "appName": "SwanMissionTable",
       "packageName": "com.example.swanmissiontable",
       "stageStyle": "1",
       "rootContainer": "stage",
-      "brief": "Swan Mission Table: a Mixed-stage, room-aware lunar exhibit that fits a metre-authored animated diorama to a live TABLE mesh anchor, seats a SpatialUI mission panel on the live WALL_ART band, re-queries both labels across room re-selection without assuming counts, and exposes launch, pause, and reset controls."
+      "brief": "Swan Mission Table: a Mixed-stage, room-aware lunar exhibit that prefers a live TABLE mesh anchor and remains visible on a live FLOOR fallback plinth, seats a SpatialUI mission panel on the live WALL_ART band, re-queries all labels across room re-selection without assuming counts, and exposes launch, pause, and reset controls."
     },
     "scenes": [
       {
@@ -30,32 +30,36 @@
         "id": "missionDeck",
         "sceneId": "missionRoom",
         "source": "primitive",
-        "material": {
-          "role": "deep-blue metallic mission glass"
+      "material": {
+        "role": "deep-blue metallic mission glass",
+        "color": [0.035, 0.1, 0.22]
         }
       },
       {
         "id": "launchPad",
         "sceneId": "missionRoom",
         "source": "primitive",
-        "material": {
-          "role": "orange-lit launch pad and beacons"
+      "material": {
+        "role": "orange-lit launch pad and beacons",
+        "color": [1, 0.34, 0.03]
         }
       },
       {
         "id": "rocket",
         "sceneId": "missionRoom",
         "source": "primitive",
-        "material": {
-          "role": "silver capsule rocket with red nose"
+      "material": {
+        "role": "silver capsule rocket with red nose",
+        "color": [0.95, 0.1, 0.06]
         }
       },
       {
         "id": "earth",
         "sceneId": "missionRoom",
         "source": "primitive",
-        "material": {
-          "role": "deep-blue Earth"
+      "material": {
+        "role": "deep-blue Earth",
+        "color": [0.02, 0.25, 0.88]
         },
         "anim": {
           "driver": "system",
@@ -66,16 +70,18 @@
         "id": "atmosphere",
         "sceneId": "missionRoom",
         "source": "primitive",
-        "material": {
-          "role": "cyan atmosphere shell"
+      "material": {
+        "role": "cyan atmosphere shell",
+        "color": [0.16, 0.72, 1]
         }
       },
       {
         "id": "moon",
         "sceneId": "missionRoom",
         "source": "primitive",
-        "material": {
-          "role": "lunar sphere"
+      "material": {
+        "role": "lunar sphere",
+        "color": [0.76, 0.78, 0.82]
         },
         "anim": {
           "driver": "system",
@@ -86,8 +92,9 @@
         "id": "orbiter",
         "sceneId": "missionRoom",
         "source": "primitive",
-        "material": {
-          "role": "orange spacecraft"
+      "material": {
+        "role": "orange spacecraft",
+        "color": [1, 0.52, 0.03]
         },
         "anim": {
           "driver": "system",
@@ -98,16 +105,18 @@
         "id": "orbitPath",
         "sceneId": "missionRoom",
         "source": "primitive",
-        "material": {
-          "role": "cyan dotted transfer path"
+      "material": {
+        "role": "cyan dotted transfer path",
+        "color": [0.12, 0.72, 1]
         }
       },
       {
         "id": "telemetryPylons",
         "sceneId": "missionRoom",
         "source": "primitive",
-        "material": {
-          "role": "teal telemetry pylons"
+      "material": {
+        "role": "teal telemetry pylons",
+        "color": [0.12, 0.86, 0.72]
         }
       }
     ],
@@ -173,6 +182,7 @@
     "roomExperience": {
       "kind": "swanMissionTable",
       "tableLabel": "TABLE",
+      "fallbackLabel": "FLOOR",
       "panelLabel": "WALL_ART",
       "targetFootprintM": [
         0.68,
@@ -189,6 +199,21 @@
           4
         ]
       },
+      "floorExtentRangeM": {
+        "min": [
+          0.8,
+          0.55
+        ],
+        "max": [
+          30,
+          30
+        ]
+      },
+      "floorFallbackXZ": [
+        0,
+        -1.6
+      ],
+      "floorPlinthHeightM": 0.62,
       "wallArtExtentRangeM": {
         "min": [
           0.15,
@@ -212,7 +237,7 @@
     },
     "verificationPlan": [
       {
-        "claim": "the metre-authored lunar diorama is fitted to a runtime TABLE label-level anchor in the visible Mixed-stage room",
+        "claim": "the metre-authored lunar diorama prefers a runtime TABLE label-level anchor and remains visible on a floor-contacting plinth at the runtime FLOOR label-level fallback",
         "method": "capture",
         "forwardFOVpose": {
           "yawDeg": 0,

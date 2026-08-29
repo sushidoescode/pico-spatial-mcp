@@ -76,7 +76,7 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
       args: { packageName: contentPkg, agentBridgePackage: `${pkg}.agent` },
       targetPath: `${cpath}/SceneUnderstanding.kt`,
       cClass: "C0_emulator",
-      note: "Room placement waits for consecutive UNFILTERED non-empty mesh reads, then re-queries TABLE/WALL_ART by label. The same file registers the pico.agent-bridge.scene-snapshot schemaVersion 1 / bridgeRevision 41 producer for query_scene_anchors.",
+      note: "Room placement waits for consecutive UNFILTERED non-empty mesh reads, then classifies TABLE/FLOOR/WALL_ART by label from one snapshot. TABLE remains preferred; FLOOR is the explicit visible fallback. The same file registers the pico.agent-bridge.scene-snapshot schemaVersion 1 / bridgeRevision 41 producer for query_scene_anchors.",
     });
   }
 

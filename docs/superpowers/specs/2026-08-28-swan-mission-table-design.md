@@ -7,9 +7,10 @@ Stage (`stageStyle: "1"`), leaving the currently selected PICO home environment 
 fits one coherent installation to detected room geometry. The fleet brief id will be
 `swanmissiontable`; fleet build identity will therefore be `com.fleet.swanmissiontable`.
 
-The experience uses exactly two mesh semantic labels:
+The experience uses exactly three mesh semantic labels:
 
 - `SemanticLabelType.TABLE` supports the tabletop exhibit.
+- `SemanticLabelType.FLOOR` supports the explicit visible fallback when TABLE is absent.
 - `SemanticLabelType.WALL_ART` supports the companion mission-control panel.
 
 It never assumes a Museum environment, indexes an anchor list, or asserts an anchor count.
@@ -20,16 +21,19 @@ only; it does not infer a semantic triangle, face normal, or triangle-level spat
 ## The room-aware composition
 
 On Stage entry, the app subscribes for mesh updates before starting mesh tracking. It waits for
-two consecutive unfiltered, non-empty mesh reads before applying label filters, then calls the
-shipped `SceneUnderstanding.anchorsLabeled` primitive independently for `TABLE` and `WALL_ART`.
+two consecutive unfiltered, non-empty mesh reads before applying label filters, then classifies
+`TABLE`, `FLOOR`, and `WALL_ART` from that same snapshot in one off-main pass.
 
 For `TABLE`, it rejects geometrically unusable candidates, prefers the nearest usable horizontal
 support to the Stage origin, and uses a stable bounds-and-pose tie-break rather than list order.
 The installation root inherits that label-level anchor transform. Its base sits at the anchor
 AABB top. A metre-authored mission-glass deck targets a 0.68 m × 0.42 m footprint and uniformly
 scales down only when needed to remain within 70 percent of the detected table bounds; the
-effective size and scale are displayed rather than hidden. If `TABLE` is absent, no exhibit is
-floated in arbitrary space: the app reports `WAITING FOR TABLE` and keeps re-querying.
+effective size and scale are displayed rather than hidden. If `TABLE` is absent but `FLOOR` is
+present, the same installation remains visible at a deterministic forward X/Z target clamped
+inside the live FLOOR bounds, on a 0.62 m floor-contacting plinth. The panel reports
+`TABLE label_absent — FLOOR fallback`, and periodic re-query keeps TABLE preferred if it later
+appears. If neither support label is present, the installation is hidden and continues waiting.
 
 The table becomes a miniature space programme: a deep-blue Earth with a thin atmosphere shell,
 a Moon, a lit orange launch pad, a capsule rocket, a dotted orbital path, and telemetry pylons.

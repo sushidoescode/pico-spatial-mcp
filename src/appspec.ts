@@ -272,6 +272,7 @@ export const panelSchema = z.object({
 export const roomExperienceSchema = z.object({
   kind: z.literal("swanMissionTable"),
   tableLabel: z.literal("TABLE"),
+  fallbackLabel: z.literal("FLOOR"),
   panelLabel: z.literal("WALL_ART"),
   targetFootprintM: vec2.describe("Authored [width, depth] of the tabletop installation in metres."),
   maxTableFillFraction: z.number().min(0.25).max(0.9),
@@ -279,6 +280,12 @@ export const roomExperienceSchema = z.object({
     min: vec2.describe("Minimum accepted TABLE [width, depth] in metres."),
     max: vec2.describe("Maximum accepted TABLE [width, depth] in metres."),
   }).strict(),
+  floorExtentRangeM: z.object({
+    min: vec2.describe("Minimum accepted FLOOR [width, depth] in metres."),
+    max: vec2.describe("Maximum accepted FLOOR [width, depth] in metres."),
+  }).strict(),
+  floorFallbackXZ: vec2.describe("Deterministic forward [x,z] target in Stage metres, clamped inside the selected FLOOR bounds."),
+  floorPlinthHeightM: z.number().min(0.25).max(1.25).describe("Height of the floor-contacting fallback plinth in metres."),
   wallArtExtentRangeM: z.object({
     min: vec2.describe("Minimum accepted WALL_ART [width, height] in metres."),
     max: vec2.describe("Maximum accepted WALL_ART [width, height] in metres."),
@@ -290,7 +297,7 @@ export const roomExperienceSchema = z.object({
   positionDeadbandM: z.number().min(0.001).max(0.25),
   rotationDeadbandDeg: z.number().min(0.1).max(30),
 }).strict().superRefine((profile, ctx) => {
-  for (const [name, range] of [["tableExtentRangeM", profile.tableExtentRangeM], ["wallArtExtentRangeM", profile.wallArtExtentRangeM]] as const) {
+  for (const [name, range] of [["tableExtentRangeM", profile.tableExtentRangeM], ["floorExtentRangeM", profile.floorExtentRangeM], ["wallArtExtentRangeM", profile.wallArtExtentRangeM]] as const) {
     if (range.min.some((value, index) => value <= 0 || value >= range.max[index])) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -324,7 +331,7 @@ const appSpecObjectSchema = z.object({
   data: z.array(dataSchema).default([]),
   interactions: z.array(interactionSchema).default([]),
   panels: z.array(panelSchema).default([]).describe("v9.4 hybrid tier: Compose WindowContainer panels with LIVE runtime text (2D windows composite as floating spatial panels — vision-verified). Spawn at the dock position, off the forward view."),
-  roomExperience: roomExperienceSchema.optional().describe("Runtime room-mesh placement profile. swanMissionTable uses unfiltered mesh readiness followed by TABLE/WALL_ART label matching, periodic re-query, metre-scale fitting, and a scene attachment panel."),
+  roomExperience: roomExperienceSchema.optional().describe("Runtime room-mesh placement profile. swanMissionTable uses unfiltered mesh readiness followed by TABLE/FLOOR/WALL_ART label matching, periodic re-query, metre-scale fitting, and a scene attachment panel."),
   navigation: navigationSchema,
   verificationPlan: z.array(verificationNodeSchema).default([]),
   headsetLayer: z.array(headsetPieceSchema).default([]),

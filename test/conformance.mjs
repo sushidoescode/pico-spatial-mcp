@@ -1326,7 +1326,7 @@ console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, a
     assert(files.length === 5 && mission && panel, "typed wiring emits the core three files plus experience and attachment files");
     assert(home.includes('AgentBridge.attachScene(sceneRoot, "stage")') && home.includes("SceneUnderstanding.registerAgentBridgeSceneSnapshot()"),
       "Stage root is identity-bound and registers the revision-41 scene producer");
-    assert(/DisposableEffect\(Unit\)[\s\S]*registerSystem<SpinSystem>\(\)[\s\S]*registerSystem<OrbitSystem>\(\)[\s\S]*onDispose[\s\S]*MissionTableExperience\.stop\(\)[\s\S]*unregisterSystem<OrbitSystem>\(\)[\s\S]*unregisterSystem<SpinSystem>\(\)[\s\S]*AgentBridge\.detachScene\(root\)[\s\S]*root\.destroy\(true\)/.test(home),
+    assert(/DisposableEffect\(lifecycleOwner\)[\s\S]*registerSystem<SpinSystem>\(\)[\s\S]*registerSystem<OrbitSystem>\(\)[\s\S]*onDispose[\s\S]*MissionTableExperience\.stop\(\)[\s\S]*unregisterSystem<OrbitSystem>\(\)[\s\S]*unregisterSystem<SpinSystem>\(\)[\s\S]*AgentBridge\.detachScene\(root\)[\s\S]*root\.destroy\(true\)/.test(home),
       "composition pairs mesh/job cleanup, ECS unregister, exact bridge detach, and recursive scene teardown");
     assert(home.includes("attachments = { sceneAttachmentPanels(panelSizes) }") && home.includes("attachments.seatSceneAttachmentPanels(content)"),
       "scene attachment builder and entity seating are both wired");
@@ -1334,18 +1334,107 @@ console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, a
       "broadcast validation routes to the same launch/pause/reset state functions as the panel");
 
     const readinessAt = mission.indexOf("SceneUnderstanding.awaitUnfilteredMesh");
-    const tableAt = mission.indexOf("SceneUnderstanding.anchorsLabeled(anchors, SemanticLabelType.TABLE)");
-    const artAt = mission.indexOf("SceneUnderstanding.anchorsLabeled(anchors, SemanticLabelType.WALL_ART)");
-    assert(readinessAt >= 0 && readinessAt < tableAt && tableAt < artAt,
-      "every placement pass establishes unfiltered readiness and filters TABLE/WALL_ART from that same snapshot");
-    assert(mission.includes("Channel<Unit>(Channel.CONFLATED)") && mission.includes("signals.trySend(Unit)") && mission.includes("withTimeoutOrNull(REQUERY_MS)") && mission.includes("delay(MIN_REQUERY_GAP_MS)"),
-      "mesh events trigger a conflated, debounced re-query while periodic re-selection remains bounded");
+    const classifyMatch = /classify(?:Room)?Anchors\(anchors\)/.exec(mission);
+    const classifyAt = classifyMatch?.index ?? -1;
+    const classifier = /private fun classify(?:Room)?Anchors[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    assert(readinessAt >= 0 && readinessAt < classifyAt,
+      "every placement pass establishes unfiltered readiness before classifying labels from that snapshot");
+    assert(classifier.includes("SemanticLabelType.TABLE") && classifier.includes("SemanticLabelType.FLOOR") &&
+      classifier.includes("SemanticLabelType.WALL_ART") && (classifier.match(/anchor\.semantics/g) ?? []).length === 1,
+      "one off-main classifier reads per-face semantics once per anchor for TABLE/FLOOR/WALL_ART");
+    assert(!mission.includes("SceneUnderstanding.anchorsLabeled(anchors,"),
+      "the flagship does not rescan the full per-face semantic stream once per requested label");
+
+    const startTracking = /fun (?:start|resumeTracking)\([^)]*\) \{[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    const requeryLoop = /requeryJob = scope\.launch[\s\S]*?while \(isActive\) \{[\s\S]*?\n            \}/.exec(startTracking)?.[0] ?? "";
+    const awaitNextPass = /private suspend fun awaitNextPass[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    assert(/SupervisorJob\(\) \+ Dispatchers\.Default/.test(startTracking) || /scope\.launch\(Dispatchers\.Default\)/.test(startTracking),
+      "room snapshot loading and semantic classification run off Android Main");
+    const rematchRoom = /private suspend fun rematchRoom[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    const resolveRoomMatch = /private suspend fun resolveRoomMatch[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    const applyRoomMatch = /private fun applyRoomMatch[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    const rematchMainAt = rematchRoom.search(/withContext\(Dispatchers\.Main(?:\.immediate)?\)/);
+    assert(rematchMainAt > rematchRoom.indexOf("resolveRoomMatch()") &&
+      !/MissionTableUi\.|anchorRoot\?\.enabled|seatPanel\(|applyTable\(|applyFloorFallback\(/.test(rematchRoom.slice(0, rematchMainAt)) &&
+      /applyRoomMatch\(match\)/.test(rematchRoom.slice(rematchMainAt)) &&
+      /awaitUnfilteredMesh[\s\S]*classify(?:Room)?Anchors\(anchors\)[\s\S]*return RoomMatch/.test(resolveRoomMatch) &&
+      !/Dispatchers\.Main|MissionTableUi\.|anchorRoot\?\.enabled|seatPanel\(|applyTable\(|applyFloorFallback\(/.test(resolveRoomMatch) &&
+      /MissionTableUi\.|seatPanel\(|applyTable\(|applyFloorFallback\(/.test(applyRoomMatch),
+      "only the compact RoomMatch and its placement/Compose-state decisions cross back to Android Main");
+    assert(requeryLoop.includes("while (isActive)") && requeryLoop.includes("rematchRoom()") &&
+      requeryLoop.includes("awaitNextPass(signals)") && !/\bcontinue\b/.test(requeryLoop),
+      "every re-query iteration reaches one cancellable wait, including label-absent returns");
+    assert(awaitNextPass.includes("withTimeoutOrNull(REQUERY_MS)") && awaitNextPass.includes("signals.receive()") &&
+      awaitNextPass.includes("delay(MIN_REQUERY_GAP_MS)"),
+      "periodic polling sleeps and event storms are debounce-bounded rather than busy-looping");
+    assert(mission.includes("Channel<Unit>(Channel.CONFLATED)") && mission.includes("signals.trySend(Unit)"),
+      "mesh event pressure is conflated before the bounded re-query scheduler");
+    assert(!/\brunBlocking\b|Thread\.sleep|SystemClock\.sleep|while\s*\(\s*true\s*\)/.test(mission),
+      "mission waiting has no blocking sleep, runBlocking, or unbounded bare loop");
+
+    const build = /fun build\([^)]*\) \{[\s\S]*?(?=\n    private suspend fun populateInstallation)/.exec(mission)?.[0] ?? "";
+    const populate = /private suspend fun populateInstallation[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    const primitive = /private fun primitive[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    const prepareResources = /private (?:suspend )?fun (?:prepare|create)Resources[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    const resourceFactory = prepareResources || populate;
+    assert(/SupervisorJob\(\) \+ Dispatchers\.Default/.test(build) ||
+      /withContext\(Dispatchers\.Default\)[\s\S]*(?:prepare|create)Resources\(/.test(populate),
+      "native mesh/resource construction is dispatched away from Android Main");
+    const mainAttachAt = populate.search(/withContext\(Dispatchers\.Main(?:\.immediate)?\)/);
+    assert(mainAttachAt > 0 && /MeshResource\.create/.test(resourceFactory) &&
+      /PhysicallyBasedMaterial\.create/.test(resourceFactory) &&
+      !/MeshResource\.create|PhysicallyBasedMaterial\.create/.test(populate.slice(mainAttachAt)) &&
+      /primitive\(installation/.test(populate.slice(mainAttachAt)),
+      "meshes and materials are prepared off-main before bounded Main-thread entity attachment");
+    assert(!/MeshResource\.create|PhysicallyBasedMaterial\.create/.test(primitive),
+      "the Main-thread primitive helper only creates entities/components from prepared resources");
+    assert(/(?:data )?class PreparedResources/.test(mission) && /private var preparedResources: PreparedResources\?/.test(mission),
+      "all generated meshes/materials have one retained ownership record");
+    const preparedResources = /(?:data )?class PreparedResources[\s\S]*?(?=\n    private (?:var|val|fun|suspend|data|class))/.exec(mission)?.[0] ?? "";
+    assert((preparedResources.match(/MeshResource/g) ?? []).length >= 4 &&
+      preparedResources.includes("PhysicallyBasedMaterial") && /\.close\(\)/.test(preparedResources),
+      "PreparedResources owns the four native meshes plus materials and can close them");
+    assert(/catch \((?:cause|failure): Throwable\)[\s\S]*\.close\(\)[\s\S]*throw (?:cause|failure)/.test(resourceFactory),
+      "partial or cancelled resource preparation closes local ownership before rethrowing");
+
+    for (const event of ["ON_PAUSE", "ON_STOP"]) {
+      assert(new RegExp(`Lifecycle\\.Event\\.${event}[\\s\\S]{0,280}MissionTableExperience\\.pauseTracking\\(\\)`).test(home),
+        `${event} cancels the label wait and stops mesh tracking`);
+    }
+    assert(/Lifecycle\.Event\.ON_(?:START|RESUME)[\s\S]{0,320}MissionTableExperience\.(?:resumeTracking|start)\(/.test(home),
+      "foreground lifecycle resumes room matching against the current Stage root");
+    assert(/lifecycle\.removeObserver\(observer\)[\s\S]*MissionTableExperience\.stop\(\)/.test(home),
+      "composition disposal removes the lifecycle observer before full experience teardown");
+    assert(/MissionTableExperience\.stop\(\)[\s\S]*AgentBridge\.detachScene\(root\)[\s\S]*root\.destroy\(true\)[\s\S]*MissionTableExperience\.releaseResources\(\)/.test(home),
+      "full teardown destroys every referencing entity before closing prepared meshes/materials");
+    const pauseTracking = /fun pauseTracking\(\) \{[\s\S]*?(?=\n    (?:private )?fun )/.exec(mission)?.[0] ?? "";
+    assert(pauseTracking.indexOf("requeryJob?.cancel()") >= 0 &&
+      pauseTracking.indexOf("requeryJob?.cancel()") < pauseTracking.indexOf("ownerScope?.cancel()") &&
+      pauseTracking.indexOf("ownerScope?.cancel()") < pauseTracking.indexOf("meshSignals?.close()") &&
+      pauseTracking.indexOf("meshSignals?.close()") < pauseTracking.indexOf("SceneUnderstanding.stopMesh()"),
+      "pause cancels the job/scope/channel before releasing the mesh tracker");
     assert(mission.includes('MissionTableUi.panelAnchor = "MESH NOT READY — stage fallback"') &&
       mission.includes('MissionTableUi.surface = "MESH not ready"'),
       "lost unfiltered readiness clears stale placement claims and restores the explicit stage fallback");
-    assert(mission.indexOf("val art = selectWallArt") < mission.indexOf("if (table == null)") &&
-      mission.includes("table?.transform?.position ?: Vector3.ZERO"),
+    const supportAt = resolveRoomMatch.indexOf("val supportPosition = table?.transform?.position ?: floor?.transform?.position ?: Vector3(FLOOR_FALLBACK_X_M, 0f, FLOOR_FALLBACK_Z_M)");
+    const artAt = resolveRoomMatch.indexOf("val art = selectWallArt(candidates.wallArts, supportPosition)");
+    assert(supportAt > resolveRoomMatch.indexOf("val floor = selectFloor") && artAt > supportAt &&
+      resolveRoomMatch.indexOf("return RoomMatch(meshReady = true, table = table, floor = floor, wallArt = art)") > artAt &&
+      !/if \(table == null\)[\s\S]*return/.test(resolveRoomMatch.slice(supportAt, artAt)),
       "WALL_ART selection remains live when TABLE is absent instead of falling back early");
+    const floorFallback = /private fun applyFloorFallback[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    assert(/if \(table != null\) \{\s*applyTable\(table\)\s*\} else if \(floor != null\) \{\s*applyFloorFallback\(floor\)/.test(applyRoomMatch),
+      "TABLE wins whenever present, while FLOOR is the explicit label-absent fallback on every re-query");
+    assert(floorFallback.includes("anchorEntity.enabled = true") && floorFallback.includes("fallbackPlinth?.enabled = true") &&
+      floorFallback.includes("FLOOR_FALLBACK_X_M") && floorFallback.includes("FLOOR_FALLBACK_Z_M") &&
+      floorFallback.includes("val source = host.convertTransformFrom(pose, null)") &&
+      floorFallback.includes("transform.position = source.position") &&
+      floorFallback.includes("val topOffset = abs(bounds.y) * 0.5f + FLOOR_PLINTH_HEIGHT_M + 0.008f") &&
+      floorFallback.includes("transform.position = Vector3(localX, topOffset, localZ)") &&
+      (floorFallback.match(/\.coerceIn\(/g) ?? []).length >= 2 && floorFallback.includes("FLOOR fallback"),
+      "FLOOR fallback remains visible at live floor height and clamps a deterministic forward X/Z pose");
+    assert(!/Vector3\(\s*(?:source|floor|surface)[A-Za-z]*\.x[\s\S]{0,160}(?:source|floor|surface)[A-Za-z]*\.z/.test(floorFallback),
+      "FLOOR fallback never inherits the room-sized floor anchor centroid for X/Z");
     assert(mission.includes("width in TABLE_MIN_WIDTH_M..TABLE_MAX_WIDTH_M") && mission.includes("depth in TABLE_MIN_DEPTH_M..TABLE_MAX_DEPTH_M") &&
       mission.includes("width in ART_MIN_WIDTH_M..ART_MAX_WIDTH_M") && mission.includes("height in ART_MIN_HEIGHT_M..ART_MAX_HEIGHT_M"),
       "TABLE and WALL_ART candidates tolerate declared geometry ranges instead of exact counts");
@@ -1354,7 +1443,7 @@ console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, a
       "TABLE selection rejects non-horizontal, down-facing, and non-finite anchors");
     assert(mission.includes("val height = abs(bounds.z)") && mission.includes("boundingBoxSize.x * it.boundingBoxSize.z"),
       "WALL_ART selection follows the measured thin-Y/tall-Z anchor convention");
-    assert(mission.includes('entity.setName("TABLE_label_anchor")') && mission.includes('entity.setName("metre_authored_installation")') &&
+    assert(mission.includes('entity.setName("ROOM_SUPPORT_label_anchor")') && mission.includes('entity.setName("metre_authored_installation")') &&
       mission.includes("host.convertTransformFrom(anchor.transform, null)") && mission.includes("transform.position = Vector3(0f, topOffset, 0f)"),
       "exact label pose and local surface-lift/scale live on separate owned roots");
     assert(mission.indexOf("offsetTowardStageOrigin(art.transform.position)") < mission.indexOf("hostRoot?.convertPositionFrom(stagePosition, null)"),
@@ -1380,8 +1469,8 @@ console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, a
       /missionStarted = false[\s\S]*paused = false[\s\S]*missionStartedAtMs = 0L[\s\S]*MissionTableUi\.phase/.test(mission),
       "Stage disposal resets runtime clocks and UI before the owned root is destroyed");
     assert((mission.match(/MeshResource\.createSphere\(/g) ?? []).length === 1 &&
-      mission.includes("primitive(installation, \"orbit_dot_\" + index, unitSphere") && mission.includes("kotlinx.coroutines.yield"),
-      "one shared unit-sphere mesh and cooperative main-loop yields avoid the measured startup ANR");
+      /primitive\(installation, "orbit_dot_" \+ index, (?:resources\.)?unitSphere/.test(mission),
+      "one shared unit-sphere mesh avoids repeated native construction on the background build lane");
     assert(mission.includes("setBlendingMode(BlendingMode.TRANSPARENT)") && mission.includes("setOpacity(opacity)") &&
       mission.includes("setDepthWrite(false)") && mission.includes("opacity = 0.38f"),
       "atmosphere explicitly uses transparent PBR blending, opacity, and disabled depth writes");
@@ -1401,7 +1490,7 @@ console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, a
       customizedPanel.includes("panelSize(612.dp, 324.dp)") &&
       customizedPanel.includes("MissionTableExperience.STAGE_FALLBACK_POSITION") &&
       customizedMission.includes("val STAGE_FALLBACK_POSITION = Vector3(0.25f, 1.5f, -1.25f)") &&
-      (customizedMission.match(/seatPanel\(STAGE_FALLBACK_POSITION\)/g) ?? []).length === 2 &&
+      (customizedMission.match(/seatPanel\(STAGE_FALLBACK_POSITION\)/g) ?? []).length >= 3 &&
       customizedPanel.includes('Text("ROOM-SCALE FLIGHT DIRECTOR"') && customizedPanel.includes('Text("IGNITE")') &&
       customizedPanel.includes('mutableStateOf("READY \\$5")'),
       "mission panel id, dimensions, pose, title, and control labels derive from AppSpec metadata");
@@ -1419,6 +1508,13 @@ console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, a
       "bridge-owned tracker epochs preserve the app's mesh-update listener");
     assert(/suspend fun awaitUnfilteredMesh[^{]+List<MeshAnchor>\?/.test(senseKt) && /fresh\.isNotEmpty\(\)/.test(senseKt) && /return fresh/.test(senseKt) && !/TrackingState\.RUNNING/.test(/suspend fun awaitUnfilteredMesh[\s\S]*?\n    \}/.exec(senseKt)?.[0] ?? ""),
       "shared readiness returns the accepted unfiltered snapshot and never trusts RUNNING state");
+    const awaitMesh = /suspend fun awaitUnfilteredMesh[\s\S]*?(?=\n    (?:private )?(?:suspend )?fun )/.exec(senseKt)?.[0] ?? "";
+    assert(/CancellationException/.test(awaitMesh) && /throw (?:cause|it)/.test(awaitMesh),
+      "mesh-read error handling rethrows coroutine cancellation instead of turning lifecycle stop into an empty read");
+    assert(/withTimeoutOrNull\(15_000L\)/.test(awaitMesh) && /loaded \?: emptyList\(\)/.test(awaitMesh),
+      "an individual mesh-read timeout remains a retryable empty observation instead of cancelling the lifecycle-owned re-query job");
+    assert(/if \(requeryJob\?\.isActive == true && ownerScope\?\.isActive == true && hostRoot === sceneRoot\) return/.test(mission),
+      "foreground resume restarts a failed or completed re-query job even when its Supervisor scope remains active");
     assert(/fun anchorsLabeled\(anchors: List<MeshAnchor>, label: SemanticLabelType\)/.test(senseKt),
       "shared scene code can label-filter one accepted runtime snapshot without additional geometry loads");
 

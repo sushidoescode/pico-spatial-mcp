@@ -610,6 +610,16 @@ if (typeof fleetbuild.deriveVerificationRoute !== "function") {
   const missionRoute = fleetbuild.deriveVerificationRoute(missionSpec);
   const missionPanels = fleetbuild.generatedPanels(missionSpec, "com.fleet.swanmissiontable");
   const missionRow = rows.find((row) => row.id === "swanmissiontable");
+  const missionExpectation = fleetbuild.deriveVisualExpectation(missionSpec, missionRoute?.stageEyeClaim);
+  const missionPalette = missionExpectation?.authoredColors ?? [];
+  const distinctMissionColors = new Set(missionPalette.map((entry) => JSON.stringify(entry.color))).size;
+  const missionKotlin = generateWiring(appSpecSchema.parse(missionSpec))
+    .find((file) => file.path.endsWith("/MissionTableExperience.kt"))?.content ?? "";
+  const generatedRgb = [...missionKotlin.matchAll(/Color4\((\d+(?:\.\d+)?)f, (\d+(?:\.\d+)?)f, (\d+(?:\.\d+)?)f, 1f\)/g)]
+    .map((match) => match.slice(1, 4).map(Number));
+  const paletteMatchesRuntime = missionPalette.every((entry) =>
+    Array.isArray(entry.color) && entry.color.length === 3 && entry.color.every((channel) => Number.isFinite(channel) && channel >= 0 && channel <= 1) &&
+    generatedRgb.some((generated) => generated.every((channel, index) => Math.abs(channel - entry.color[index]) < 1e-6)));
   if (
     missionRoute?.mode === "stage-eye" &&
     target(missionRoute?.stageEyeClaim) === "missionDeck" &&
@@ -621,6 +631,10 @@ if (typeof fleetbuild.deriveVerificationRoute !== "function") {
   )
     ok("scene-attached mission panel remains stage geometry and never becomes HudPanelActivity/panelReady work");
   else fail(`scene attachment routing leaked into OS-panel evidence: ${JSON.stringify({ missionRoute, missionPanels, missionRow })}`);
+
+  if (missionPalette.length >= 4 && distinctMissionColors >= 4 && paletteMatchesRuntime)
+    ok(`mission eye expectation carries ${missionPalette.length} authored colors that match the generated diorama`);
+  else fail(`mission passthrough eye lacks a distinct runtime-matched authored palette: ${JSON.stringify({ missionPalette, distinctMissionColors, generatedRgb })}`);
 }
 
 const panelClaim = {
