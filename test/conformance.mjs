@@ -790,6 +790,192 @@ console.log("\n§4.1 mesh tracking is emitted, and nothing gates readiness on Tr
   assert(/com\.picoagent\.v35expa#1/.test(src), "the retraction cites its ledger entry");
 }
 
+// CP1B — query_scene_anchors does not use the historic MESH| log lane. The generated app bridge
+// publishes one nonce-addressed file atomically, and the host pulls its exact bytes with run-as on
+// the explicitly named serial. These are source/transport contracts: no adb process is started.
+console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and file-only");
+{
+  const bridge = await import("../dist/agentbridge.js");
+  const bridgeHandlers = {};
+  bridge.registerAgentBridgeTools({ registerTool: (n, _m, f) => { bridgeHandlers[n] = f; } });
+  const generated = JSON.parse((await bridgeHandlers["generate_agent_bridge"]({
+    packageName: "com.test.conf.agent",
+  })).content[0].text);
+  const agentKt = generated.files.find((f) => f.path.endsWith("/AgentBridge.kt"))?.content ?? "";
+  const providerKt = generated.files.find((f) => f.path.endsWith("/AgentBridgeInitProvider.kt"))?.content ?? "";
+
+  assert(bridge.AGENT_BRIDGE_SCENE_PAYLOAD_KIND === "pico.agent-bridge.scene-snapshot",
+    "scene payload kind is a static exported protocol constant");
+  assert(bridge.AGENT_BRIDGE_SCENE_SCHEMA_VERSION === 1,
+    "scene payload schema version is 1");
+  assert(bridge.AGENT_BRIDGE_SCENE_REVISION === 41,
+    "Agent Bridge scene protocol revision is the static revision 41");
+  assert(bridge.AGENT_BRIDGE_SCENE_COORDINATE_FRAME_ID === "bridge-world-41",
+    "scene coordinate-frame ID is pinned to bridge revision 41");
+  assert(generated.sceneSnapshotProtocol.kind === bridge.AGENT_BRIDGE_SCENE_PAYLOAD_KIND &&
+    generated.sceneSnapshotProtocol.schemaVersion === bridge.AGENT_BRIDGE_SCENE_SCHEMA_VERSION &&
+    generated.sceneSnapshotProtocol.bridgeRevision === bridge.AGENT_BRIDGE_SCENE_REVISION,
+  "tool metadata and host exports share one scene protocol version");
+  assert(/SCENE_PAYLOAD_KIND = "pico\.agent-bridge\.scene-snapshot"/.test(agentKt) &&
+    /SCENE_SCHEMA_VERSION = 1/.test(agentKt) && /SCENE_BRIDGE_REVISION = 41/.test(agentKt),
+  "generated AgentBridge embeds the same kind/schema/revision constants");
+  assert(/register\(SCENE_SNAPSHOT_COMMAND\)/.test(agentKt) && /SCENE_SNAPSHOT_COMMAND = "query_scene_anchors"/.test(agentKt),
+    "generated AgentBridge owns one query_scene_anchors command");
+  assert(/SCENE_SNAPSHOT_CACHE_DIRECTORY = "agentbridge\/scene-snapshots"/.test(agentKt) &&
+    /sceneSnapshotTarget\(context: Context, requestId: String\)/.test(agentKt),
+  "scene payload is request-addressed beneath the app cache");
+  assert(/\.tmp-\$\{SystemClock\.elapsedRealtimeNanos\(\)\}/.test(agentKt) &&
+    /Os\.rename\(temp\.absolutePath, target\.absolutePath\)/.test(agentKt),
+  "payload publication is atomic temp-plus-rename on one filesystem");
+  assert(/writer\.flush\(\)[\s\S]*output\.fd\.sync\(\)/.test(agentKt),
+    "payload bytes are flushed and fsynced before publication");
+  assert(/"apk-sha256"/.test(agentKt) && /observedStageStyle/.test(agentKt) &&
+    /rootContainer/.test(agentKt) && /stageOpen/.test(agentKt),
+  "payload envelope carries build, observed stage, root, and stage-open identity");
+  assert(agentKt.includes('writer.name("buildIdentity").nullValue()') &&
+    agentKt.includes('writer.name("observedStageStyle").nullValue()') &&
+    agentKt.includes('writer.name("rootContainer").nullValue()') && agentKt.includes('"binding_failed"'),
+  "unavailable build/stage/root identity is null and fails binding closed");
+  assert(/getLaunchIntentForPackage\(context\.packageName\)/.test(agentKt) &&
+    /getActivityInfo\(component, PackageManager\.GET_META_DATA\)/.test(agentKt),
+  "observed stage style reads the launcher-activity metadata shape emitted by the repo scaffold");
+  assert(/fun detachScene\(root: Entity\? = null\)/.test(agentKt) &&
+    /fun detachSceneProvider\(\)/.test(agentKt) && generated.integration.some((line) => line.includes("detachScene(stageRoot)")),
+  "direct and provider Stage attachments have explicit lifecycle detach wiring");
+  assert(providerKt.indexOf("AgentBridge.initialize(ctx)") >= 0 &&
+    providerKt.indexOf("AgentBridge.initialize(ctx)") < providerKt.indexOf("ctx.registerReceiver"),
+  "provider binds application Context before making the command receiver reachable");
+  assert(/"stage_not_open"/.test(agentKt) && /"bridge_unavailable"/.test(agentKt) && /"invalid_payload"/.test(agentKt),
+    "generated bridge writes typed terminal payloads for missing stage/producer/valid data");
+  assert(!/Log\.[diwev]\([^\n]*(?:vertices|indices|semanticAssignments)/.test(agentKt),
+    "AgentBridge never writes scene geometry to a log line");
+
+  const sense = await import("../dist/sense.js");
+  const senseHandlers = {};
+  sense.registerSenseTools({ registerTool: (n, _m, f) => { senseHandlers[n] = f; } });
+  const senseKt = (await senseHandlers["generate_scene_understanding_kotlin"]({
+    packageName: "com.test.conf.content",
+    agentBridgePackage: "com.test.conf.agent",
+  })).content[0].text;
+  assert(senseKt.includes("import com.test.conf.agent.AgentBridge"),
+    "scene generator imports the explicitly selected Agent Bridge package");
+  assert(/fun registerAgentBridgeSceneSnapshot\(\)/.test(senseKt) && /registerSceneSnapshotProducer/.test(senseKt),
+    "scene generator exposes the one-line lossless producer registration");
+  assert(senseKt.includes('AgentBridge.attachScene(stageRoot, "stage")'),
+    "scene integration names the identity-bearing stage-root overload");
+  const producer = /private suspend fun writeAgentBridgeSceneSnapshot[\s\S]*?private suspend fun captureBridgeRead/.exec(senseKt)?.[0] ?? "";
+  assert(producer.includes("restartMeshForBridgeQuery()") && producer.includes("captureBridgeRead(reads.size,"),
+    "one bridge producer starts a fresh tracking epoch and owns every readiness read");
+  assert(/bridgeQueryMutex\.lock\(\)[\s\S]*writeAgentBridgeSceneSnapshot[\s\S]*finally \{ bridgeQueryMutex\.unlock\(\) \}/.test(senseKt),
+    "concurrent bridge requests serialize their mesh-tracker epochs");
+  assert(/MeshTrackingManager\.start\(\)[\s\S]*meshSub = subscription[\s\S]*catch \(cause: Throwable\)[\s\S]*subscription\.cancel\(\)[\s\S]*meshSub = null[\s\S]*throw cause/.test(senseKt),
+    "a failed tracker start is cleaned up, never retained as a live subscription");
+  const captureRead = /private suspend fun captureBridgeRead[\s\S]*?private fun captureBridgeAnchor/.exec(senseKt)?.[0] ?? "";
+  assert(/withTimeout\(timeoutMs\) \{ MeshTrackingManager\.loadAllAnchors/.test(captureRead),
+    "each callback-based SDK mesh read is bounded by a timeout");
+  assert(/anchors = oneShot\.map/.test(captureRead) && !/subscribed|sourceAnchors|\"subscription\"/.test(captureRead),
+    "retained subscription anchors cannot satisfy a fresh bridge readiness read");
+  assert(/setupFailure[\s\S]*writer\.name\("code"\)\.value\("bridge_unavailable"\)/.test(producer),
+    "tracker setup failure becomes a typed terminal payload");
+  assert(/consecutiveNonEmpty = if \(read\.anchors\.isNotEmpty\(\)\)/.test(producer) &&
+    /consecutiveNonEmpty >= request\.stabilityReads/.test(producer),
+  "readiness requires consecutive unfiltered non-empty mesh reads");
+  assert(!/labels?|semanticAssignments.*(?:filter|any)/.test(producer),
+    "producer performs no label filtering before readiness");
+  for (const field of [
+    "runtimeUuid", "worldFromAnchor", "positionM", "rotationQuaternionXyzw", "boundsM",
+    "vertices", "indices", "semanticAssignments",
+  ]) {
+    assert(senseKt.includes(`writer.name("${field}")`), `lossless producer writes ${field}`);
+  }
+  assert(/transform\.toMatrix4\(\)\.toFloatArray\(\)/.test(senseKt) &&
+    /require\(matrix\.size == 16\)/.test(senseKt),
+  "worldFromAnchor is the full SDK row-major 4x4 matrix");
+  assert(/require\(indices\.size % 3 == 0\)/.test(senseKt) && /require\(vertices\.size % 3 == 0\)/.test(senseKt),
+    "producer refuses malformed triangle/xyz arrays instead of guessing");
+  const rawSemanticWriter = /writer\.name\("semanticAssignments"\)[\s\S]*?writer\.endArray\(\)/.exec(senseKt)?.[0] ?? "";
+  assert(/semanticAssignments\.forEach \{ writer\.value\(it\) \}/.test(rawSemanticWriter) && !/distinct|sorted/.test(rawSemanticWriter),
+    "raw semantic assignments preserve duplicates and SDK order");
+  assert(/queriedAtMonotonicNs/.test(senseKt) && /trackingState/.test(senseKt) &&
+    /anchorCount/.test(senseKt) && /loadError/.test(senseKt),
+  "every producer read carries monotonic time, tracking state, count, and read diagnostics");
+  assert(/MESH\| oneShot=/.test(senseKt), "the old MESH| diagnostic lane remains available for old tools");
+
+  const exactBytes = Buffer.from(JSON.stringify({
+    semanticAssignments: Array.from({ length: 1800 }, (_, i) => i % 2 ? "WALL_ART" : "TABLE"),
+  }), "utf8");
+  assert(exactBytes.length > 16 * 1024, "transport fixture is much larger than a truncation-prone log line");
+  const calls = [];
+  let ticks = 100n;
+  const fetched = await bridge.fetchAgentBridgeSceneSnapshot("/fixture/adb", {
+    serial: "fixture-serial",
+    packageName: "com.test.conf",
+    requestId: "fixture_nonce_20260828",
+    maxRetries: 2,
+    pollMs: 100,
+    stabilityReads: 2,
+  }, {
+    monotonicNs: () => ticks++,
+    runText: async (cmd, args) => {
+      calls.push({ kind: "text", cmd, args });
+      return { code: 0, stdout: "ok", stderr: "", timedOut: false };
+    },
+    runBytes: async (cmd, args) => {
+      calls.push({ kind: "bytes", cmd, args });
+      return { code: 0, stdout: exactBytes, stderr: "", timedOut: false };
+    },
+    sleep: async () => {},
+  });
+  assert(fetched.ok, "file/pull helper accepts an exact app-cache payload");
+  assert(fetched.ok && Buffer.compare(fetched.bytes, exactBytes) === 0,
+    "file/pull helper returns every payload byte losslessly");
+  assert(calls.every((c) => c.args[0] === "-s" && c.args[1] === "fixture-serial"),
+    "every adb subprocess is pinned to the exact requested serial");
+  assert(calls.some((c) => c.args.includes("query_scene_anchors") && c.args.includes("fixture_nonce_20260828")),
+    "broadcast carries the static command and transaction requestId");
+  assert(calls.some((c) => c.kind === "bytes" && c.args.join(" ").includes("exec-out run-as com.test.conf cat cache/agentbridge/scene-snapshots/fixture_nonce_20260828.json")),
+    "payload is read as exact bytes through the intended package's run-as path");
+  assert(!calls.some((c) => c.args.includes("logcat")), "lossless transport never consults logcat");
+  assert(fetched.actionReceipts.map((r) => r.action).join(",") ===
+    "bridge_broadcast,bridge_payload_pull,bridge_payload_cleanup",
+  "file/pull helper returns broadcast, pull, and cleanup action receipts");
+
+  let wallMs = 0;
+  const unavailable = await bridge.fetchAgentBridgeSceneSnapshot("/fixture/adb", {
+    serial: "fixture-serial",
+    packageName: "com.test.conf",
+    requestId: "missing_nonce_20260828",
+    maxRetries: 0,
+    pollMs: 10,
+    stabilityReads: 2,
+  }, {
+    monotonicNs: () => ticks++,
+    wallClockMs: () => wallMs,
+    runText: async () => ({ code: 0, stdout: "ok", stderr: "", timedOut: false }),
+    runBytes: async () => ({ code: 1, stdout: Buffer.alloc(0), stderr: "No such file", timedOut: false }),
+    sleep: async () => { wallMs = 100_000; },
+  });
+  assert(!unavailable.ok && unavailable.code === "bridge_unavailable",
+    "missing terminal file fails as bridge_unavailable");
+  assert(unavailable.actionReceipts.at(-1)?.status === "failed" &&
+    unavailable.actionReceipts.at(-1)?.ack?.outcome === "timeout",
+  "unavailable payload records a failed pull with explicit timeout outcome");
+
+  let invalidSerialCalls = 0;
+  const refused = await bridge.fetchAgentBridgeSceneSnapshot("/fixture/adb", {
+    serial: "two serials",
+    packageName: "com.test.conf",
+    requestId: "refused_nonce_20260828",
+    maxRetries: 0,
+    pollMs: 10,
+    stabilityReads: 2,
+  }, {
+    runText: async () => { invalidSerialCalls++; return { code: 0, stdout: "", stderr: "", timedOut: false }; },
+  });
+  assert(!refused.ok && refused.code === "bridge_unavailable" && invalidSerialCalls === 0,
+    "ambiguous/non-exact serial input is refused before any adb call");
+}
+
 // §2.6 — skeletal animation. The gap that made most downloaded character GLBs un-animatable.
 // The load-bearing rule is PROVENANCE: model-obtained clips are model-lifetime; generated clips are
 // per-use. Getting it backwards either leaks every clip or closes one mid-playback.

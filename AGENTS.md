@@ -75,7 +75,7 @@ visual evidence.
 2. **Prefer the doors surface for your first sessions** (`PICO_MCP_SURFACE=doors`, and the
    default when the variable is unset since v36.3): 18
    intent-level tools instead of the full surface (`PICO_MCP_SURFACE=full` —
-   249 tools on macOS and 246 on Linux are runtime-measured; on Windows, the published 246-tool
+   251 tools on macOS and 248 on Linux are runtime-measured; on Windows, the published 248-tool
    count is source-derived because no native Windows `tools/list` measurement has run).
    `pico_build_app` is a TWO-STEP protocol by design —
    a brief-only call returns a scaffold AppSpec for YOU to author; re-call with

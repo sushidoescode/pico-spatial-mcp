@@ -1,0 +1,727 @@
+{
+  "kind": "pico.sceneanchors.fixture-descriptor",
+  "descriptorVersion": 1,
+  "bridgePayload": {
+    "kind": "pico.agent-bridge.scene-snapshot",
+    "schemaVersion": 1,
+    "geometrySchemaVersion": 1,
+    "units": "metres",
+    "handedness": "sdk-reported"
+  },
+  "countSemantics": {
+    "profileRangesAreTheOnlyDurableExpectations": true,
+    "sampleCountsAreTraceLocalObservations": true,
+    "exactEnvironmentCountAssertionAllowed": false,
+    "notes": "Synthetic fixtures model measured Museum sweep variability. Tests compare each trace-local sample with its profile range and never promote a sample count to an environment invariant."
+  },
+  "semanticSafety": {
+    "reportedDomain": "per_face",
+    "alignment": "unverified",
+    "relationEligible": false,
+    "preserveDuplicatesAndOrder": true,
+    "notes": "The bridge-reported domain is retained losslessly; these fixtures do not prove vertex, index, triangle, face, or region alignment."
+  },
+  "environmentProfiles": {
+    "museum_day": {
+      "totalAnchorCountRange": {
+        "min": 46,
+        "max": 49
+      },
+      "labelCountRanges": {
+        "WALL_ART": {
+          "min": 3,
+          "max": 4
+        },
+        "TABLE": {
+          "min": 1,
+          "max": 2
+        },
+        "FLOOR": {
+          "min": 1,
+          "max": 3
+        }
+      }
+    },
+    "museum_night": {
+      "totalAnchorCountRange": {
+        "min": 38,
+        "max": 44
+      },
+      "labelCountRanges": {
+        "WALL_ART": {
+          "min": 2,
+          "max": 3
+        },
+        "TABLE": {
+          "min": 1,
+          "max": 2
+        },
+        "FLOOR": {
+          "min": 1,
+          "max": 2
+        }
+      }
+    }
+  },
+  "expansionRules": {
+    "population": "Generate deterministic filler anchors in traceId order until observedTotalAnchorCount and observedLabelCounts are reached. Explicit anchors count toward both totals. Filler geometry must be nondegenerate and must not tie an explicit ambiguity score.",
+    "inheritExplicitAnchorsFrom": "Deep-copy explicit anchors from the referenced sample before applying anchorOverrides.",
+    "repeatCycle": "Expand values by concatenating cycle repeatCount times without deduplication, truncation, or reordering."
+  },
+  "cases": [
+    {
+      "id": "mixed-day-reselection-and-wall-art-ambiguity",
+      "environmentProfile": "museum_day",
+      "application": {
+        "packageName": "com.example.sceneanchors.fixture.mixed",
+        "observedStageStyle": "Mixed",
+        "rootContainer": "stage",
+        "stageOpen": true
+      },
+      "queryLabels": [
+        "WALL_ART",
+        "TABLE",
+        "FLOOR"
+      ],
+      "readiness": {
+        "initialUnfilteredEmptyReads": 1,
+        "requiredConsecutiveNonEmptyReads": 2,
+        "trackingState": "RUNNING",
+        "filterOnlyAfterReadiness": true
+      },
+      "samples": [
+        {
+          "sampleId": "day-selection-a",
+          "bridgeRevision": 41,
+          "coordinateFrameId": "bridge-world-41",
+          "observedTotalAnchorCount": 46,
+          "observedLabelCounts": {
+            "WALL_ART": 3,
+            "TABLE": 1,
+            "FLOOR": 2
+          },
+          "expectedCountAssertion": {
+            "kind": "profile_range",
+            "profile": "museum_day"
+          },
+          "explicitAnchors": [
+            {
+              "traceId": "day-art-left",
+              "runtimeUuid": "diagnostic-day-art-left-a",
+              "worldFromAnchor": [
+                1,
+                0,
+                0,
+                -1.25,
+                0,
+                1,
+                0,
+                1.65,
+                0,
+                0,
+                1,
+                -3,
+                0,
+                0,
+                0,
+                1
+              ],
+              "positionM": [-1.25, 1.65, -3],
+              "boundsM": [
+                1.4,
+                0.08,
+                0.9
+              ],
+              "vertices": [
+                [-0.7, -0.45, 0],
+                [0.7, -0.45, 0],
+                [0.7, 0.45, 0],
+                [-0.7, 0.45, 0]
+              ],
+              "indices": [
+                0,
+                1,
+                2,
+                0,
+                2,
+                3
+              ],
+              "semanticAssignments": [
+                "WALL_ART",
+                "WALL_ART"
+              ]
+            },
+            {
+              "traceId": "day-art-right",
+              "runtimeUuid": "diagnostic-day-art-right-a",
+              "worldFromAnchor": [
+                1,
+                0,
+                0,
+                1.25,
+                0,
+                1,
+                0,
+                1.65,
+                0,
+                0,
+                1,
+                -3,
+                0,
+                0,
+                0,
+                1
+              ],
+              "positionM": [1.25, 1.65, -3],
+              "boundsM": [
+                1.4,
+                0.08,
+                0.9
+              ],
+              "vertices": [
+                [-0.7, -0.45, 0],
+                [0.7, -0.45, 0],
+                [0.7, 0.45, 0],
+                [-0.7, 0.45, 0]
+              ],
+              "indices": [
+                0,
+                1,
+                2,
+                0,
+                2,
+                3
+              ],
+              "semanticAssignments": [
+                "WALL_ART",
+                "WALL_ART"
+              ]
+            },
+            {
+              "traceId": "day-table-center",
+              "runtimeUuid": "diagnostic-day-table-center-a",
+              "worldFromAnchor": [
+                1,
+                0,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0.75,
+                0,
+                0,
+                1,
+                -1.5,
+                0,
+                0,
+                0,
+                1
+              ],
+              "positionM": [0, 0.75, -1.5],
+              "boundsM": [
+                1.2,
+                0.7,
+                0.8
+              ],
+              "vertices": [
+                [-0.6, 0, -0.4],
+                [0.6, 0, -0.4],
+                [0.6, 0, 0.4],
+                [-0.6, 0, 0.4]
+              ],
+              "indices": [
+                0,
+                1,
+                2,
+                0,
+                2,
+                3
+              ],
+              "semanticAssignments": [
+                "TABLE",
+                "TABLE"
+              ]
+            },
+            {
+              "traceId": "day-floor-rug",
+              "runtimeUuid": "diagnostic-day-floor-rug-a",
+              "worldFromAnchor": [
+                1,
+                0,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0,
+                0,
+                0,
+                1,
+                -1,
+                0,
+                0,
+                0,
+                1
+              ],
+              "positionM": [0, 0, -1],
+              "boundsM": [
+                3.2,
+                0.04,
+                2.1
+              ],
+              "vertices": [
+                [-1.6, 0, -1.05],
+                [1.6, 0, -1.05],
+                [1.6, 0, 1.05],
+                [-1.6, 0, 1.05]
+              ],
+              "indices": [
+                0,
+                1,
+                2,
+                0,
+                2,
+                3
+              ],
+              "semanticAssignments": [
+                "FLOOR",
+                "FLOOR"
+              ]
+            }
+          ]
+        },
+        {
+          "sampleId": "day-selection-b",
+          "bridgeRevision": 41,
+          "coordinateFrameId": "bridge-world-41",
+          "inheritExplicitAnchorsFrom": "day-selection-a",
+          "observedTotalAnchorCount": 48,
+          "observedLabelCounts": {
+            "WALL_ART": 4,
+            "TABLE": 2,
+            "FLOOR": 1
+          },
+          "expectedCountAssertion": {
+            "kind": "profile_range",
+            "profile": "museum_day"
+          },
+          "anchorOverrides": [
+            {
+              "traceId": "day-floor-rug",
+              "operation": "remove"
+            },
+            {
+              "traceId": "day-floor-slab",
+              "operation": "add",
+              "runtimeUuid": "diagnostic-day-floor-slab-b",
+              "worldFromAnchor": [
+                1,
+                0,
+                0,
+                0,
+                0,
+                1,
+                0,
+                -0.02,
+                0,
+                0,
+                1,
+                -1.2,
+                0,
+                0,
+                0,
+                1
+              ],
+              "positionM": [0, -0.02, -1.2],
+              "boundsM": [
+                6.4,
+                0.05,
+                5.6
+              ],
+              "vertices": [
+                [-3.2, 0, -2.8],
+                [3.2, 0, -2.8],
+                [3.2, 0, 2.8],
+                [-3.2, 0, 2.8]
+              ],
+              "indices": [
+                0,
+                1,
+                2,
+                0,
+                2,
+                3
+              ],
+              "semanticAssignments": [
+                "FLOOR",
+                "FLOOR"
+              ]
+            }
+          ]
+        }
+      ],
+      "ambiguityExpectation": {
+        "queryStatus": "ready",
+        "label": "WALL_ART",
+        "minimumSameLabelCandidates": 2,
+        "selector": {
+          "kind": "closest_to_point",
+          "pointWorldM": [
+            0,
+            1.65,
+            -3
+          ],
+          "maxDistanceM": 2,
+          "minSeparationM": 0.1
+        },
+        "topCandidateMetricSeparation": 0,
+        "selectorOutcome": "ambiguous",
+        "mustReturnAllMatchesBeforeSelection": true
+      }
+    },
+    {
+      "id": "full-night-update-removal-and-policy-drift",
+      "environmentProfile": "museum_night",
+      "application": {
+        "packageName": "com.example.sceneanchors.fixture.full",
+        "observedStageStyle": "Full",
+        "rootContainer": "stage",
+        "stageOpen": true
+      },
+      "queryLabels": [
+        "WALL_ART",
+        "TABLE",
+        "FLOOR"
+      ],
+      "readiness": {
+        "initialUnfilteredEmptyReads": 0,
+        "requiredConsecutiveNonEmptyReads": 2,
+        "trackingState": "RUNNING",
+        "filterOnlyAfterReadiness": true
+      },
+      "sceneDriftPolicy": {
+        "count": "advisory",
+        "maxTransformDeltaM": 0.02,
+        "maxTransformDeltaDeg": 1,
+        "maxExtentDeltaM": 0.03,
+        "topology": "strict"
+      },
+      "samples": [
+        {
+          "sampleId": "night-before",
+          "bridgeRevision": 41,
+          "coordinateFrameId": "bridge-world-41",
+          "observedTotalAnchorCount": 43,
+          "observedLabelCounts": {
+            "WALL_ART": 3,
+            "TABLE": 2,
+            "FLOOR": 1
+          },
+          "expectedCountAssertion": {
+            "kind": "profile_range",
+            "profile": "museum_night"
+          },
+          "explicitAnchors": [
+            {
+              "traceId": "night-art-north",
+              "runtimeUuid": "diagnostic-night-art-north-before",
+              "worldFromAnchor": [
+                1,
+                0,
+                0,
+                0.4,
+                0,
+                1,
+                0,
+                1.5,
+                0,
+                0,
+                1,
+                -2.8,
+                0,
+                0,
+                0,
+                1
+              ],
+              "positionM": [0.4, 1.5, -2.8],
+              "boundsM": [
+                1.2,
+                0.08,
+                0.9
+              ],
+              "vertices": [
+                [-0.6, -0.45, 0],
+                [0.6, -0.45, 0],
+                [0.6, 0.45, 0],
+                [-0.6, 0.45, 0]
+              ],
+              "indices": [
+                0,
+                1,
+                2,
+                0,
+                2,
+                3
+              ],
+              "semanticAssignments": [
+                "WALL_ART",
+                "WALL_ART"
+              ]
+            },
+            {
+              "traceId": "night-table-east",
+              "runtimeUuid": "diagnostic-night-table-east-before",
+              "worldFromAnchor": [
+                1,
+                0,
+                0,
+                1.1,
+                0,
+                1,
+                0,
+                0.72,
+                0,
+                0,
+                1,
+                -1.3,
+                0,
+                0,
+                0,
+                1
+              ],
+              "positionM": [1.1, 0.72, -1.3],
+              "boundsM": [
+                1,
+                0.68,
+                0.7
+              ],
+              "vertices": [
+                [-0.5, 0, -0.35],
+                [0.5, 0, -0.35],
+                [0.5, 0, 0.35],
+                [-0.5, 0, 0.35]
+              ],
+              "indices": [
+                0,
+                1,
+                2,
+                0,
+                2,
+                3
+              ],
+              "semanticAssignments": [
+                "TABLE",
+                "TABLE"
+              ]
+            },
+            {
+              "traceId": "night-floor-main",
+              "runtimeUuid": "diagnostic-night-floor-main-before",
+              "worldFromAnchor": [
+                1,
+                0,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0,
+                0,
+                0,
+                1,
+                -1,
+                0,
+                0,
+                0,
+                1
+              ],
+              "positionM": [0, 0, -1],
+              "boundsM": [
+                5.8,
+                0.05,
+                5.2
+              ],
+              "vertices": [
+                [-2.9, 0, -2.6],
+                [2.9, 0, -2.6],
+                [2.9, 0, 2.6],
+                [-2.9, 0, 2.6]
+              ],
+              "indices": [
+                0,
+                1,
+                2,
+                0,
+                2,
+                3
+              ],
+              "semanticAssignments": [
+                "FLOOR",
+                "FLOOR"
+              ]
+            }
+          ]
+        },
+        {
+          "sampleId": "night-after",
+          "bridgeRevision": 41,
+          "coordinateFrameId": "bridge-world-41",
+          "inheritExplicitAnchorsFrom": "night-before",
+          "observedTotalAnchorCount": 42,
+          "observedLabelCounts": {
+            "WALL_ART": 3,
+            "TABLE": 1,
+            "FLOOR": 1
+          },
+          "expectedCountAssertion": {
+            "kind": "profile_range",
+            "profile": "museum_night"
+          },
+          "anchorOverrides": [
+            {
+              "traceId": "night-art-north",
+              "operation": "update",
+              "replacementTraceId": "night-art-north-after",
+              "runtimeUuid": "diagnostic-night-art-north-after",
+              "worldFromAnchor": [
+                1,
+                0,
+                0,
+                0.412,
+                0,
+                1,
+                0,
+                1.5,
+                0,
+                0,
+                1,
+                -2.8,
+                0,
+                0,
+                0,
+                1
+              ],
+              "positionM": [0.412, 1.5, -2.8],
+              "boundsM": [
+                1.22,
+                0.08,
+                0.9
+              ],
+              "indices": [
+                0,
+                1,
+                2
+              ],
+              "semanticAssignments": [
+                "WALL_ART"
+              ]
+            },
+            {
+              "traceId": "night-table-east",
+              "operation": "remove"
+            }
+          ]
+        }
+      ],
+      "expectedDrift": {
+        "fromSample": "night-before",
+        "toSample": "night-after",
+        "exactChanged": true,
+        "countDelta": -1,
+        "countPolicyOutcome": "advisory_changed",
+        "maxTransformDeltaM": 0.012,
+        "maxTransformDeltaDeg": 0,
+        "maxExtentDeltaM": 0.02,
+        "topologyChanged": true,
+        "geometricMatches": [
+          {
+            "fromTraceId": "night-art-north",
+            "toTraceId": "night-art-north-after"
+          }
+        ],
+        "removedTraceIds": [
+          "night-table-east"
+        ],
+        "withinPolicy": false,
+        "violations": [
+          "topology"
+        ]
+      },
+      "ambiguityExpectation": {
+        "queryStatus": "ready",
+        "label": "WALL_ART",
+        "minimumSameLabelCandidates": 2,
+        "selector": {
+          "kind": "label_only"
+        },
+        "selectorOutcome": "ambiguous",
+        "mustReturnAllMatchesBeforeSelection": true
+      }
+    }
+  ],
+  "stressCases": [
+    {
+      "id": "lossless-semantic-assignments-over-4k",
+      "environmentProfile": "museum_day",
+      "stageStyle": "Mixed",
+      "anchor": {
+        "traceId": "day-art-logline-truncation-trap",
+        "runtimeUuid": "diagnostic-day-art-logline-truncation-trap",
+        "worldFromAnchor": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1.4,
+          0,
+          0,
+          1,
+          -2.6,
+          0,
+          0,
+          0,
+          1
+        ],
+        "positionM": [0, 1.4, -2.6],
+        "boundsM": [
+          2,
+          0.08,
+          1.1
+        ],
+        "verticesDescriptor": {
+          "kind": "deterministic_quad_strip",
+          "faceCount": 2048
+        },
+        "indicesDescriptor": {
+          "kind": "sequential_triangles",
+          "faceCount": 2048
+        },
+        "semanticAssignmentsDescriptor": {
+          "kind": "repeat_cycle",
+          "cycle": [
+            "WALL_ART",
+            "WALL_ART",
+            "WALL",
+            "WALL_ART"
+          ],
+          "repeatCount": 512
+        }
+      },
+      "expected": {
+        "expandedSemanticAssignmentCount": 2048,
+        "serializedSemanticAssignmentsBytesGreaterThan": 4096,
+        "losslessOrderAndDuplicatesRequired": true,
+        "anchorLevelDeduplicatedLabels": [
+          "WALL",
+          "WALL_ART"
+        ],
+        "alignment": "unverified",
+        "relationEligible": false
+      }
+    }
+  ]
+}

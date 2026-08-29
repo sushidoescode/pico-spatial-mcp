@@ -151,6 +151,8 @@ import { registerBuildMatrixTools } from "./buildmatrix.js";
 import { registerVirtualCameraTools } from "./virtualcamera.js";
 import { registerKnowledgeTools } from "./knowledge.js";
 import { registerPicoCliHealthTool } from "./picoclihealth.js";
+import { registerObservationTools } from "./observation.js";
+import { registerSceneAnchorTools } from "./sceneanchors.js";
 
 // The handshake version comes from package.json (dist/ sits one level below it both in the repo
 // and in the installed package) — a hardcoded string here drifted to 6.0.0 while the package
@@ -251,6 +253,8 @@ if (!doorsSurfaceActive()) {
   registerCapabilityTools(server);
   registerAgentBridgeTools(server);
   registerCaptureTools(server);
+  registerObservationTools(server);
+  registerSceneAnchorTools(server);
   registerEmulatorLookTools(server);
   registerCameraDriveTools(server);
   registerEditorComponentTools(server);
