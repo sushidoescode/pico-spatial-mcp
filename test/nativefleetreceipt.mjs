@@ -1090,11 +1090,16 @@ test("PID and foreground polling share one monotonic 24000ms deadline per launch
 });
 
 test("default SDK inspection records available facts and explicit tool absence", async (t) => {
+  const buildToolName = (tool) => process.platform === "win32" ? `${tool}.bat` : tool;
+  const aapt2Name = buildToolName("aapt2");
+  const apksignerName = buildToolName("apksigner");
+
   await t.test("available aapt2 and apksigner", async (child) => {
     const fixture = await createProducerFixture(child);
     const sdkRoot = path.join(fixture.scratch, "android-sdk");
-    writeFile(sdkRoot, "build-tools/35.0.0/aapt2", "fixture tool");
-    writeFile(sdkRoot, "build-tools/35.0.0/apksigner", "fixture tool");
+    const javaHome = path.join(fixture.scratch, "jbr");
+    writeFile(sdkRoot, `build-tools/35.0.0/${aapt2Name}`, "fixture tool");
+    writeFile(sdkRoot, `build-tools/35.0.0/${apksignerName}`, "fixture tool");
     const previousSdkRoot = process.env.ANDROID_SDK_ROOT;
     process.env.ANDROID_SDK_ROOT = sdkRoot;
     child.after(() => {
@@ -1102,13 +1107,14 @@ test("default SDK inspection records available facts and explicit tool absence",
       else process.env.ANDROID_SDK_ROOT = previousSdkRoot;
     });
     const baseRunText = fixture.deps.runText;
+    fixture.deps.gradleEnv = { JAVA_HOME: javaHome };
     fixture.deps.runText = async (command, args, options) => {
-      if (command.endsWith("/aapt2")) {
+      if (path.basename(command) === aapt2Name) {
         return textResult(`package: name='${PACKAGE}' versionCode='7' versionName='7.0'\n`);
       }
-      if (command.endsWith("/apksigner")) {
-        assert.equal(options.env.JAVA_HOME, "/fixture/jbr");
-        assert.ok(options.env.PATH.startsWith(`/fixture/jbr/bin${path.delimiter}`));
+      if (path.basename(command) === apksignerName) {
+        assert.equal(options.env.JAVA_HOME, javaHome);
+        assert.ok(options.env.PATH.startsWith(`${path.join(javaHome, "bin")}${path.delimiter}`));
         return textResult(`Signer #1 certificate SHA-256 digest: ${sha256("default-inspection-certificate")}\n`);
       }
       return baseRunText(command, args, options);
@@ -1154,8 +1160,8 @@ test("default SDK inspection records available facts and explicit tool absence",
   await t.test("apksigner inspection is unavailable when the resolved JDK is absent", async (child) => {
     const fixture = await createProducerFixture(child);
     const sdkRoot = path.join(fixture.scratch, "android-sdk-without-jdk");
-    writeFile(sdkRoot, "build-tools/35.0.0/aapt2", "fixture tool");
-    writeFile(sdkRoot, "build-tools/35.0.0/apksigner", "fixture tool");
+    writeFile(sdkRoot, `build-tools/35.0.0/${aapt2Name}`, "fixture tool");
+    writeFile(sdkRoot, `build-tools/35.0.0/${apksignerName}`, "fixture tool");
     const previousSdkRoot = process.env.ANDROID_SDK_ROOT;
     process.env.ANDROID_SDK_ROOT = sdkRoot;
     child.after(() => {
@@ -1165,10 +1171,10 @@ test("default SDK inspection records available facts and explicit tool absence",
     const baseRunText = fixture.deps.runText;
     fixture.deps.gradleEnv = {};
     fixture.deps.runText = async (command, args, options) => {
-      if (command.endsWith("/aapt2")) {
+      if (path.basename(command) === aapt2Name) {
         return textResult(`package: name='${PACKAGE}' versionCode='7' versionName='7.0'\n`);
       }
-      if (command.endsWith("/apksigner")) {
+      if (path.basename(command) === apksignerName) {
         throw new Error("apksigner must not run when the JDK is unresolved");
       }
       return baseRunText(command, args, options);
