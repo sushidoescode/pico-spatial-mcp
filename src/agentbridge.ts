@@ -120,16 +120,27 @@ export async function fetchAgentBridgeSceneSnapshot(
     attempts += 1;
     const pulled = await execBytes(
       adb,
-      ["-s", input.serial, "exec-out", "run-as", input.packageName, "cat", relativePath],
+      [
+        "-s", input.serial, "exec-out", "run-as", input.packageName,
+        "sh", "-c", 'if test -f "$1"; then printf "\\001"; cat "$1"; else printf "\\000"; fi', "pico-mcp", relativePath,
+      ],
       { timeoutMs: 15_000, maxOutputBytes: 256 * 1024 * 1024 },
     );
-    if (pulled.code === 0 && !pulled.timedOut && pulled.stdout.length > 0) {
+    // Android's adb exec-out can report exit 0 while forwarding a remote `cat: ... No such file`
+    // diagnostic on stdout. The remote shell prefixes its result with an out-of-band existence
+    // byte: 0 means absent, 1 means present. Strip that byte and hand EVERY present file byte to
+    // the versioned host parser. Transport must not decide whether the payload is valid JSON.
+    const existenceByte = pulled.stdout[0];
+    const filePresent = existenceByte === 0x01;
+    const fileAbsent = existenceByte === 0x00 && pulled.stdout.length === 1;
+    if (pulled.code === 0 && !pulled.timedOut && filePresent) {
+      const payload = pulled.stdout.subarray(1);
       actionReceipts.push({
         action: "bridge_payload_pull",
         status: "applied",
         startedAtMonotonicNs: readStart,
         endedAtMonotonicNs: stamp(),
-        ack: { serial: input.serial, packageName: input.packageName, requestId: input.requestId, relativePath, attempts, bytes: pulled.stdout.length, outcome: "completed" },
+        ack: { serial: input.serial, packageName: input.packageName, requestId: input.requestId, relativePath, attempts, bytes: payload.length, outcome: "completed" },
       });
       const cleanupStart = stamp();
       const cleanup = await execText(
@@ -153,11 +164,15 @@ export async function fetchAgentBridgeSceneSnapshot(
           ? undefined
           : (cleanup.timedOut ? "payload cleanup timed out" : (cleanup.stderr || cleanup.stdout || "payload cleanup failed")).slice(-400),
       });
-      return { ok: true, bytes: pulled.stdout, actionReceipts };
+      return { ok: true, bytes: payload, actionReceipts };
     }
     lastDetail = pulled.timedOut
       ? "run-as payload read timed out"
-      : (pulled.stderr || `run-as payload read exited ${pulled.code ?? "without a code"}`).slice(-400);
+      : pulled.code === 0 && fileAbsent
+        ? "payload file has not appeared"
+        : pulled.stdout.length > 0
+          ? `run-as payload existence protocol was invalid: ${pulled.stdout.toString("utf8").slice(-300)}`
+        : (pulled.stderr || `run-as payload read exited ${pulled.code ?? "without a code"}`).slice(-400);
     if (wallClockMs() + readPollMs > deadline) break;
     await wait(readPollMs);
   }
@@ -685,7 +700,7 @@ export function registerAgentBridgeTools(server: McpServer) {
     "generate_agent_bridge",
     {
       description:
-        "Emit an INJECTABLE Kotlin 'Agent Bridge' library that makes a native PICO app headlessly agent-drivable and structurally inspectable. It self-initializes via a manifest-merged ContentProvider and exposes AGENT_CMD broadcasts, structured logcat telemetry, a live scene-graph dump, and the revision-41 query_scene_anchors transport. Scene geometry uses a versioned, lossless, nonce-addressed app-cache JSON file read with explicit-serial run-as; it is never sent through logcat. Those signals prove state, not appearance. Pair them with a capture whose returned app pixels you actually LOOK at; adb capture_frame is often stable for native content, while an alternate host-window capture may be needed when it is black/inconclusive. Returns Kotlin, manifest wiring, and drive examples. APIs are source-confirmed; broadcast/logcat behavior is emulator-measured; the new bridge payload is structurally tested and still needs a bridge-carrying app for live validation.",
+        "Emit an INJECTABLE Kotlin 'Agent Bridge' library that makes a native PICO app headlessly agent-drivable and structurally inspectable. It self-initializes via a manifest-merged ContentProvider and exposes AGENT_CMD broadcasts, structured logcat telemetry, a live scene-graph dump, and the revision-41 query_scene_anchors transport. Scene geometry uses a versioned, lossless, nonce-addressed app-cache JSON file read with explicit-serial run-as; it is never sent through logcat. Those signals prove state, not appearance. Pair them with a capture whose returned app pixels you actually LOOK at; adb capture_frame is often stable for native content, while an alternate host-window capture may be needed when it is black/inconclusive. Returns Kotlin, manifest wiring, and drive examples. APIs are source-confirmed; broadcast/logcat behavior is emulator-measured; revision 41 was live-validated on emulator-5554 with the generated com.fleet.swanmissiontable app. Geometry and labels retain a structural evidence ceiling; rendered pixels require separate visual evidence.",
       inputSchema: {
         packageName: z
           .string()
@@ -736,7 +751,7 @@ export function registerAgentBridgeTools(server: McpServer) {
         },
         builtinCommands: ["ping", "commands", "scene_stats", "dump_scene", AGENT_BRIDGE_SCENE_SNAPSHOT_COMMAND, "spawn", "move", "remove"],
         verification:
-          "The revision-41 source and exact-file transport contract is structurally tested in this package. Live validation still requires building and running a bridge-carrying app; inspect the exact pulled payload, and verify rendered pixels separately from the hidden scene data.",
+          "The revision-41 source and exact-file transport contract is structurally tested and was exercised live on emulator-5554 by com.fleet.swanmissiontable. The pulled geometry and labels remain structural evidence; verify rendered pixels separately from hidden scene data.",
       });
     },
   );

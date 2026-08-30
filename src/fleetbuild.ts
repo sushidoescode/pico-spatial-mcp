@@ -631,6 +631,25 @@ export function provisionIblAssets(
 
 type Step = { order: number; tool: string; args: any; targetPath: string; note?: string };
 
+/** Normalize record-shaped multi-file generator output against its ledger target directory. This
+ * is the shape used by ECS, scene attachments, and container generators. Keep it pure so tests can
+ * prove fleet will not silently drop a required companion file. */
+export function generatedFileEntries(
+  out: any,
+  targetPath: string,
+): { targetPath: string; content: string }[] {
+  if (!out || !out.files || Array.isArray(out.files) || typeof out.files !== "object") return [];
+  const base = path.dirname(targetPath);
+  const rawEntries = Object.entries(out.files);
+  if (rawEntries.length === 0) throw new Error("generator files record is empty");
+  for (const [name, content] of rawEntries) {
+    if (!name || name === "." || name === ".." || path.basename(name) !== name || typeof content !== "string" || !content.includes("package ")) {
+      throw new Error(`generator files record contains invalid companion '${name || "<empty>"}'`);
+    }
+  }
+  return rawEntries.map(([name, content]) => ({ targetPath: path.join(base, name), content: content as string }));
+}
+
 async function selfClient() {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
@@ -734,8 +753,14 @@ export function deriveVisualExpectation(spec: any, verificationNode: any): Visua
   // frames — the eye filters neutrals and refuses to score < 2 distinct keys, so passing the
   // palette unconditionally is safe for Full-Space briefs too.
   const authoredColors = (spec?.objects ?? [])
-    .filter((o: any) => Array.isArray(o?.body?.color))
-    .map((o: any) => ({ name: o.id, color: o.body.color }));
+    .map((o: any) => ({
+      name: o.id,
+      // roomExperience geometry is authored by its dedicated generator and therefore has no
+      // physics `body`. Its material.color is still a literal generated PBR color and is valid
+      // color-key evidence; do not add phantom physics bodies merely to feed the eye.
+      color: o?.body?.color ?? (spec?.roomExperience ? o?.material?.color : undefined),
+    }))
+    .filter((entry: any) => Array.isArray(entry.color));
   const palette = authoredColors.length ? { authoredColors } : {};
   const count = Number(layout?.count);
   if (Number.isInteger(count) && count >= 0) {
@@ -752,13 +777,21 @@ export type VerificationRoute = {
   reason: string;
 };
 
+/** Scene attachments render inside SpatialView and belong to the stage frame. Only dock/world
+ * fallback nodes compile to independent Android activities with WindowManager evidence. */
+export function structuralPanelCount(spec: any): number {
+  return (Array.isArray(spec?.panels) ? spec.panels : [])
+    .filter((panel: any) => panel?.placement?.kind !== "scene").length;
+}
+
 /** Split verification by rendered surface. Spatial panels are separate Android windows, so a
  * panel-only claim must never be sent to the stage-frame eye. Hybrid specs keep the first
  * non-panel claim for the stage eye and verify every declared panel through structural runtime
  * evidence instead. A panel-only spec with no explicit verification node still targets all of its
  * panels; absence of a claim does not justify inventing a foreground-object predicate. */
 export function deriveVerificationRoute(spec: any): VerificationRoute {
-  const panels = Array.isArray(spec?.panels) ? spec.panels : [];
+  const allPanels = Array.isArray(spec?.panels) ? spec.panels : [];
+  const panels = allPanels.filter((panel: any) => panel?.placement?.kind !== "scene");
   const panelIds = new Set(panels.map((panel: any) => String(panel?.id ?? "")).filter(Boolean));
   const plan = Array.isArray(spec?.verificationPlan) ? spec.verificationPlan : [];
   const panelClaims = plan.filter((claim: any) => panelIds.has(String(claim?.targetRef ?? "")));
@@ -783,7 +816,9 @@ export function deriveVerificationRoute(spec: any): VerificationRoute {
           : "verification plan contains only panel targets")
       : mode === "hybrid"
         ? "stage claim and spatial panels are verified on separate surfaces"
-        : "no spatial panels declared",
+        : allPanels.some((panel: any) => panel?.placement?.kind === "scene")
+          ? "scene attachments are stage geometry; no OS-composited panels declared"
+          : "no spatial panels declared",
   };
 }
 
@@ -792,15 +827,17 @@ type GeneratedPanel = { nodeId: string; activity: string; kind: string };
 /** AppSpec panel nodes currently compile to one generated activity per rendering kind. Preserve the
  * node→activity mapping for honesty, but dedupe activities before launching: two HUD nodes do not
  * magically become two OS panels when both map to HudPanelActivity. */
-function generatedPanels(spec: any, pkg: string): { mappings: GeneratedPanel[]; activities: string[] } {
-  const mappings: GeneratedPanel[] = (spec?.panels ?? []).map((panel: any) => {
+export function generatedPanels(spec: any, pkg: string): { mappings: GeneratedPanel[]; activities: string[] } {
+  const mappings: GeneratedPanel[] = (spec?.panels ?? [])
+    .filter((panel: any) => panel?.placement?.kind !== "scene")
+    .map((panel: any) => {
     const web = panel.kind === "web";
     return {
       nodeId: String(panel.id),
       activity: `${pkg}.content.${web ? "WebPanelActivity" : "HudPanelActivity"}`,
       kind: web ? "web" : "hud",
     };
-  });
+    });
   return { mappings, activities: [...new Set(mappings.map((m: GeneratedPanel) => m.activity))] };
 }
 
@@ -881,7 +918,7 @@ export function registerFleetBuildTools(server: McpServer) {
     "fleet_build",
     {
       description:
-        "UNATTENDED end-to-end fleet build (P2): for each brief id (briefs/<id>.json), SERIALLY scaffold a fresh app, execute the compile ledger's generate steps (self-driving this MCP over stdio), write emitted Kotlin/wiring/panel/menu files, then produce a fail-closed native run receipt for the exact build/install/session and unique immutable capture. The receipt is structural and lookRequired: it never proves what the pixels look like. Stage claims use calibrated visual_judge only on that receipt-bound capture; panel-only or panel-target-only specs bypass the stage eye. A target layout is checked against its exact declared count; a confident PASS may record auto_judged evidence, NEVER vision_verified. Each generated panel activity is launched and polled separately; caption-backed readiness is structural panelEvidence and its later panel-time capture remains unjudged. Requires the local toolchain + a running emulator. Asset-gated or hand-authored routes are skipped honestly.",
+        "UNATTENDED end-to-end fleet build (P2): for each brief id (briefs/<id>.json), SERIALLY scaffold a fresh app, execute the compile ledger's generate steps (self-driving this MCP over stdio), write emitted Kotlin/wiring/panel/menu files, then produce a fail-closed native run receipt for the exact build/install/session and unique immutable capture. The receipt is structural and lookRequired: it never proves what the pixels look like. Stage claims use calibrated visual_judge only on that receipt-bound capture; OS-panel-only or OS-panel-target-only specs bypass the stage eye, while placement.kind='scene' attachments remain stage geometry. A target layout is checked against its exact declared count; a confident PASS may record auto_judged evidence, NEVER vision_verified. Each generated OS panel activity is launched and polled separately; caption-backed readiness is structural panelEvidence and its later panel-time capture remains unjudged. Requires the local toolchain + a running emulator. Asset-gated or hand-authored routes are skipped honestly.",
       inputSchema: {
         briefIds: z.array(z.string()).min(1).describe("Brief ids from briefs/ (e.g. ['knockdown','studio','console'])."),
         projectsRoot: z.string().optional().describe("Where per-brief projects go (default ~/AndroidStudioProjects). Dir per brief: fleet-<id>-native (reused if present)."),
@@ -1073,6 +1110,15 @@ export function registerFleetBuildTools(server: McpServer) {
                 fs.mkdirSync(path.dirname(t2), { recursive: true });
                 fs.writeFileSync(t2, kt2);
                 if (fs.existsSync(t2raw) && t2raw !== t2) fs.unlinkSync(t2raw); // stale HomeEnvProxy.kt from the pre-fix run
+                continue;
+              }
+              const generatedFiles = generatedFileEntries(out, st.targetPath);
+              if (generatedFiles.length) {
+                for (const file of generatedFiles) {
+                  const target = file.targetPath.startsWith("/") ? file.targetPath : path.join(projectDir, file.targetPath);
+                  fs.mkdirSync(path.dirname(target), { recursive: true });
+                  fs.writeFileSync(target, file.content);
+                }
                 continue;
               }
               // structured returns carry kotlin under {kotlin} or {file:{content|kotlin}}; plain returns are the Kotlin text

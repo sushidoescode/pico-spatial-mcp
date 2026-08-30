@@ -66,6 +66,20 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
   // 2. agent bridge (headless assert channel) — always
   push({ node: "meta", tool: "generate_agent_bridge", args: { packageName: pkg }, targetPath: `${cpath}/AgentBridge.kt`, cClass: "C0_emulator", note: "SKIP this step if the scaffold template already ships agent/AgentBridge.kt (galleryxr-derived templates do); otherwise inject and call AgentBridge.attachScene(root). The bridge lives under <pkg>.agent." });
 
+  // 2b. The flagship room profile consumes the shipped mesh primitive directly and exposes the
+  // revision-41, lossless scene-snapshot producer through the same generated file. Keep this as an
+  // ordinary existing-tool ledger step: the profile does not register a bespoke MCP surface.
+  if (spec.roomExperience) {
+    push({
+      node: "room-mesh",
+      tool: "generate_scene_understanding_kotlin",
+      args: { packageName: contentPkg, agentBridgePackage: `${pkg}.agent` },
+      targetPath: `${cpath}/SceneUnderstanding.kt`,
+      cClass: "C0_emulator",
+      note: "Room placement waits for consecutive UNFILTERED non-empty mesh reads, then classifies TABLE/FLOOR/WALL_ART by label from one snapshot. TABLE remains preferred; FLOOR is the explicit visible fallback. The same file registers the pico.agent-bridge.scene-snapshot schemaVersion 1 / bridgeRevision 41 producer for query_scene_anchors.",
+    });
+  }
+
   // 3. per-scene: environment → colliders → lighting
   // SceneIBL and SplatEnvironment are app-level objects. appSpecSchema guarantees scenes sharing
   // either singleton have the same effective config, so emit each shared file only once.
@@ -128,6 +142,7 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
     else push({ node: d.id, tool: "generate_data_binding_kotlin", args: { packageName: contentPkg }, targetPath: `${cpath}/SceneDataBinding.kt`, cClass: "C3", note: "gated_api: network-gated; verify with one live call and flag it." });
   }
   // 5b. animation (v7.3) — an object's anim ({type:tween|orbit,...}) → SceneTween/SceneOrbit, played in the wiring
+  const emittedSystemKinds = new Set<string>();
   for (const o of spec.objects) {
     const a: any = o.anim;
     // v35.9: anim.driver 'system' lowers to PICO's OWN per-frame mechanism (Component + System +
@@ -137,6 +152,10 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
     // component, and there is no loop of ours to leak.
     if (a?.driver === "system") {
       const kind = a.type === "orbit" ? "orbit" : a.type === "bob" ? "bob" : a.type === "spin" ? "spin" : "custom";
+      // One generated class pair is shared by every entity using that behaviour. Emitting the same
+      // target twice made fleet overwrite identical files and overstated the compile-step total.
+      if (emittedSystemKinds.has(kind)) continue;
+      emittedSystemKinds.add(kind);
       const base = kind === "custom" ? "Behaviour" : kind[0].toUpperCase() + kind.slice(1);
       push({
         node: o.id,

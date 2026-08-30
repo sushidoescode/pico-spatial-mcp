@@ -37,6 +37,7 @@ export const cameraPoseSchema = z.object({
 export type CameraPose = z.infer<typeof cameraPoseSchema>;
 
 const vec3 = z.array(z.number()).length(3);
+const vec2 = z.array(z.number()).length(2);
 export const captureFrustumSchema = z.object({
   f: z.number().positive().describe("Calibrated focal length in pixels."),
   cx: z.number().describe("Calibrated principal point X in pixels."),
@@ -262,6 +263,54 @@ export const panelSchema = z.object({
     .describe("Where the panel should live (default dock). CORRECTED v35.2: 'world' still compiles to the dock path, because this AppSpec node lowers to an auto-hosted 2D Activity and no public API world-poses one of those — that limit is real. What was WRONG was the implication that in-scene 2D is impossible. It is not: generate_attachment_panel_kotlin places Compose INSIDE the 3D scene (AttachmentPanel + TransformComponent, metres — public in 0.13.3, used by six of eight PICO samples). The ledger note for 'world' now names that route. Even so, scene placement is not world-LOCKING: an anchor fixed to the real room still needs AnchorComponent, which stays honestly deferred."),
 });
 
+/**
+ * A deliberately narrow first room-mesh profile.  This is not a second scene graph: the ordinary
+ * objects remain the descriptive/verification inventory, while generate_app_wiring lowers this
+ * profile into the runtime TABLE/WALL_ART placement controller and companion attachment panel.
+ * Keeping the shape typed prevents a prose flag from silently becoming a fixed-pose demo.
+ */
+export const roomExperienceSchema = z.object({
+  kind: z.literal("swanMissionTable"),
+  tableLabel: z.literal("TABLE"),
+  fallbackLabel: z.literal("FLOOR"),
+  panelLabel: z.literal("WALL_ART"),
+  targetFootprintM: vec2.describe("Authored [width, depth] of the tabletop installation in metres."),
+  maxTableFillFraction: z.number().min(0.25).max(0.9),
+  tableExtentRangeM: z.object({
+    min: vec2.describe("Minimum accepted TABLE [width, depth] in metres."),
+    max: vec2.describe("Maximum accepted TABLE [width, depth] in metres."),
+  }).strict(),
+  floorExtentRangeM: z.object({
+    min: vec2.describe("Minimum accepted FLOOR [width, depth] in metres."),
+    max: vec2.describe("Maximum accepted FLOOR [width, depth] in metres."),
+  }).strict(),
+  floorFallbackXZ: vec2.describe("Deterministic forward [x,z] target in Stage metres, clamped inside the selected FLOOR bounds."),
+  floorPlinthHeightM: z.number().min(0.25).max(1.25).describe("Height of the floor-contacting fallback plinth in metres."),
+  wallArtExtentRangeM: z.object({
+    min: vec2.describe("Minimum accepted WALL_ART [width, height] in metres."),
+    max: vec2.describe("Maximum accepted WALL_ART [width, height] in metres."),
+  }).strict(),
+  panelOffsetM: z.number().min(0.01).max(0.5),
+  requeryMs: z.number().int().min(500).max(10_000),
+  readinessReads: z.number().int().min(2).max(8),
+  readinessRetries: z.number().int().min(1).max(120),
+  positionDeadbandM: z.number().min(0.001).max(0.25),
+  rotationDeadbandDeg: z.number().min(0.1).max(30),
+}).strict().superRefine((profile, ctx) => {
+  for (const [name, range] of [["tableExtentRangeM", profile.tableExtentRangeM], ["floorExtentRangeM", profile.floorExtentRangeM], ["wallArtExtentRangeM", profile.wallArtExtentRangeM]] as const) {
+    if (range.min.some((value, index) => value <= 0 || value >= range.max[index])) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [name],
+        message: "every minimum must be positive and strictly below its matching maximum",
+      });
+    }
+  }
+  if (profile.targetFootprintM.some((value) => value <= 0)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["targetFootprintM"], message: "footprint dimensions must be positive" });
+  }
+});
+
 /** Asset paths are embedded in generated Kotlin and also used as APK-relative filesystem paths.
  * Keep the accepted alphabet deliberately boring: no interpolation/quote escapes, traversal, empty
  * segments, platform separators, or spelling that provisioning would normalize differently. */
@@ -282,6 +331,7 @@ const appSpecObjectSchema = z.object({
   data: z.array(dataSchema).default([]),
   interactions: z.array(interactionSchema).default([]),
   panels: z.array(panelSchema).default([]).describe("v9.4 hybrid tier: Compose WindowContainer panels with LIVE runtime text (2D windows composite as floating spatial panels — vision-verified). Spawn at the dock position, off the forward view."),
+  roomExperience: roomExperienceSchema.optional().describe("Runtime room-mesh placement profile. swanMissionTable uses unfiltered mesh readiness followed by TABLE/FLOOR/WALL_ART label matching, periodic re-query, metre-scale fitting, and a scene attachment panel."),
   navigation: navigationSchema,
   verificationPlan: z.array(verificationNodeSchema).default([]),
   headsetLayer: z.array(headsetPieceSchema).default([]),
@@ -292,6 +342,67 @@ const appSpecObjectSchema = z.object({
  * the same file and silently render earlier scenes with the later scene's settings. Reject those
  * shapes at the IR boundary instead of emitting a plausible but wrong app. */
 export const appSpecSchema = appSpecObjectSchema.superRefine((spec, ctx) => {
+  if (spec.roomExperience) {
+    if (spec.meta.stageStyle !== "1" || spec.meta.rootContainer !== "stage") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["roomExperience"],
+        message: "swanMissionTable requires a Mixed Stage (stageStyle '1', rootContainer 'stage')",
+      });
+    }
+    const scenePanels = spec.panels.filter((panel) => panel.placement?.kind === "scene");
+    if (scenePanels.length !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["panels"],
+        message: "swanMissionTable requires exactly one in-scene attachment panel",
+      });
+    } else {
+      const panel = scenePanels[0];
+      const placement = panel.placement!;
+      if (panel.kind !== "hud" || panel.url !== undefined || panel.html !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["panels"],
+          message: "swanMissionTable requires one native SpatialUI hud panel",
+        });
+      }
+      const requiredFields = ["phase", "anchor", "surface"];
+      const fieldKeys = panel.fields.map((field) => field.key);
+      if (fieldKeys.length !== requiredFields.length || requiredFields.some((key) => fieldKeys.filter((candidate) => candidate === key).length !== 1)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["panels"],
+          message: "swanMissionTable panel fields must be exactly phase, anchor, and surface",
+        });
+      }
+      if ((placement.widthDp !== undefined && (placement.widthDp <= 0 || placement.widthDp > 2048)) ||
+          (placement.heightDp !== undefined && (placement.heightDp <= 0 || placement.heightDp > 2048))) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["panels"],
+          message: "swanMissionTable panel dimensions must be in (0, 2048] dp",
+        });
+      }
+    }
+    for (const action of ["mission:launch", "mission:pause", "mission:reset"]) {
+      if (spec.interactions.filter((interaction) => interaction.action === action).length !== 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["interactions"],
+          message: `swanMissionTable requires exactly one ${action} interaction`,
+        });
+      }
+    }
+    const systemKinds = new Set(spec.objects.map((object) => object.anim).filter((anim: any) => anim?.driver === "system").map((anim: any) => anim.type));
+    if (!systemKinds.has("spin") || !systemKinds.has("orbit")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["objects"],
+        message: "swanMissionTable requires both spin and orbit engine-system objects",
+      });
+    }
+  }
   const iblScenes = spec.scenes.filter((scene) => scene.lighting.rig === "ibl");
   for (const scene of iblScenes) {
     const params = scene.lighting.params ?? {};
