@@ -50,6 +50,22 @@ const makePng = (shade) => {
   for (let y = 0; y < height; y++) rows.fill(shade, y * (width + 1) + 1, (y + 1) * (width + 1));
   return Buffer.concat([signature, pngChunk("IHDR", ihdr), pngChunk("IDAT", zlib.deflateSync(rows)), pngChunk("IEND", Buffer.alloc(0))]);
 };
+const makeRgbPng = (width, height, pixelAt) => {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const rows = Buffer.alloc(height * (width * 3 + 1));
+  for (let y = 0; y < height; y++) {
+    const row = y * (width * 3 + 1);
+    for (let x = 0; x < width; x++) {
+      const [r, g, b] = pixelAt(x, y);
+      rows[row + 1 + x * 3] = r;
+      rows[row + 2 + x * 3] = g;
+      rows[row + 3 + x * 3] = b;
+    }
+  }
+  return Buffer.concat([signature, pngChunk("IHDR", ihdr), pngChunk("IDAT", zlib.deflateSync(rows)), pngChunk("IEND", Buffer.alloc(0))]);
+};
 
 let failures = 0;
 const check = (name, cond) => { if (cond) console.log(`  ok   ${name}`); else { console.log(`  FAIL ${name}`); failures++; } };
@@ -230,6 +246,51 @@ check("passthrough + color-key 3/4 (0.75 < 0.8) → ESCALATE", judgeFrame({ ...p
 check("passthrough + unavailable color-key (all-neutral palette) → ESCALATE, never PASS", judgeFrame({ ...passthru, colorKey: { available: false, expected: [], found: [], missing: [], neutralSkipped: ["x", "y"], error: "no distinct authored colors (all neutral)" } }, { minObjects: 2, notMostlyBlack: true, authoredColors: [{ name: "x", color: [0.5, 0.5, 0.5] }] }).verdict === "ESCALATE");
 check("a single distinct authored color is too weak to auto-judge → ESCALATE", judgeFrame({ ...passthru, colorKey: { available: true, expected: ["a"], found: ["a"], missing: [], neutralSkipped: [] } }, { authoredColors: [palette4[0]] }).verdict === "ESCALATE");
 check("non-passthrough frames keep the legacy lane untouched (6==6 still PASSes at coverage 0.06)", judgeFrame(six, { minObjects: 6, notMostlyBlack: true }).confidence === 1);
+
+// Capture-derived values are deliberately literals rather than a transformation of the authored
+// palette. This fails if two authored keys again collide after PBR rendering and nearest-key routing.
+const SWAN_CAPTURE_RGB = [
+  { name: "launchPad", rgb: [217, 91, 68] },
+  { name: "rocket", rgb: [191, 60, 46] },
+  { name: "earth", rgb: [99, 160, 238] },
+  { name: "atmosphere", rgb: [143, 195, 252] },
+  { name: "orbiter", rgb: [227, 174, 84] },
+  { name: "orbitPath", rgb: [152, 205, 223] },
+  { name: "telemetryPylons", rgb: [134, 203, 187] },
+];
+const swanSpec = JSON.parse(fs.readFileSync(path.join(ROOT, "briefs", "swanmissiontable.json"), "utf8")).spec;
+const swanPalette = (swanSpec.objects ?? [])
+  .map((object) => ({
+    name: object.id,
+    color: object.body?.color ?? (swanSpec.roomExperience ? object.material?.color : undefined),
+  }))
+  .filter((entry) => Array.isArray(entry.color));
+const swanFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), "eye-swan-capture-"));
+const swanFixturePath = path.join(swanFixtureDir, "capture-derived-swatches.png");
+try {
+  const swatchWidth = 12;
+  const swatchX = 32;
+  const swatchY = 64;
+  const swatchGap = 48;
+  fs.writeFileSync(swanFixturePath, makeRgbPng(512, 256, (x, y) => {
+    const index = Math.floor((x - swatchX) / swatchGap);
+    const swatch = SWAN_CAPTURE_RGB[index];
+    return swatch && x >= swatchX + index * swatchGap && x < swatchX + index * swatchGap + swatchWidth && y >= swatchY && y < swatchY + swatchWidth
+      ? swatch.rgb
+      : [96, 96, 96];
+  }));
+  const swanColorKey = await analyzeColorKeys(swanFixturePath, swanPalette);
+  check(
+    `Swan capture-derived swatches find all seven authored color keys (found ${swanColorKey.found.length}: ${swanColorKey.found.join(",")}; missing ${swanColorKey.missing.join(",") || "none"})`,
+    swanColorKey.available
+      && swanColorKey.expected.length === SWAN_CAPTURE_RGB.length
+      && swanColorKey.found.length === SWAN_CAPTURE_RGB.length
+      && SWAN_CAPTURE_RGB.every(({ name }) => swanColorKey.expected.includes(name) && swanColorKey.found.includes(name))
+      && swanColorKey.missing.length === 0,
+  );
+} finally {
+  fs.rmSync(swanFixtureDir, { recursive: true, force: true });
+}
 
 // ── v6.3 MR fixtures: synthesized frames (needs ImageMagick; the color-key path needs the pico venv) ──
 // (a) black-void frame with 4 bright authored-color primitives — the legacy count path must still work.
