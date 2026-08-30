@@ -322,6 +322,7 @@ async function defaultInspectApk(
   apkPath: string,
   projectDir: string,
   runText: typeof run,
+  gradleEnv: Record<string, string | undefined>,
 ): Promise<{
   manifestInspection: NativeRunReceiptPayload["apk"]["manifestInspection"];
   signingInspection: NativeRunReceiptPayload["apk"]["signingInspection"];
@@ -356,17 +357,29 @@ async function defaultInspectApk(
   if (!apksigner) {
     signingInspection = { status: "unavailable", reason: `apksigner was not found below '${path.join(sdkRoot, "build-tools")}'` };
   } else {
-    const args = ["verify", "--print-certs", apkPath];
-    const result = await runText(apksigner, args, { timeoutMs: 30_000, maxOutputBytes: COMMAND_TAIL_BYTES });
-    if (result.code !== 0 || result.timedOut) {
-      signingInspection = { status: "unavailable", reason: commandFailure("apksigner inspection", apksigner, args, result, "inspection did not complete successfully") };
+    const javaHome = gradleEnv.JAVA_HOME;
+    if (!javaHome) {
+      signingInspection = { status: "unavailable", reason: "JDK was not resolved for apksigner inspection" };
     } else {
-      const digests = [...result.stdout.matchAll(/certificate SHA-256 digest:\s*([A-Fa-f0-9:]+)/g)]
-        .map((match) => match[1].replace(/:/g, "").toLowerCase())
-        .filter((digest) => HASH_PATTERN.test(digest));
-      signingInspection = digests.length
-        ? { status: "inspected", tool: "apksigner", certificateSha256: [...new Set(digests)] }
-        : { status: "unavailable", reason: "apksigner completed successfully but returned no SHA-256 certificate digest" };
+      const javaBin = path.join(javaHome, "bin");
+      const env = {
+        JAVA_HOME: javaHome,
+        PATH: process.env.PATH
+          ? `${javaBin}${path.delimiter}${process.env.PATH}`
+          : javaBin,
+      };
+      const args = ["verify", "--print-certs", apkPath];
+      const result = await runText(apksigner, args, { env, timeoutMs: 30_000, maxOutputBytes: COMMAND_TAIL_BYTES });
+      if (result.code !== 0 || result.timedOut) {
+        signingInspection = { status: "unavailable", reason: commandFailure("apksigner inspection", apksigner, args, result, "inspection did not complete successfully") };
+      } else {
+        const digests = [...result.stdout.matchAll(/certificate SHA-256 digest:\s*([A-Fa-f0-9:]+)/g)]
+          .map((match) => match[1].replace(/:/g, "").toLowerCase())
+          .filter((digest) => HASH_PATTERN.test(digest));
+        signingInspection = digests.length
+          ? { status: "inspected", tool: "apksigner", certificateSha256: [...new Set(digests)] }
+          : { status: "unavailable", reason: "apksigner completed successfully but returned no SHA-256 certificate digest" };
+      }
     }
   }
   return { manifestInspection, signingInspection };
@@ -390,16 +403,17 @@ export async function produceNativeFleetReceipt(
   deps?: NativeFleetReceiptDependencies,
 ): Promise<ProduceNativeFleetReceiptResult> {
   const runText = deps?.runText ?? run;
+  const gradleEnv = deps?.gradleEnv ?? defaultGradleEnv();
   const resolvedDeps: NativeFleetReceiptDependencies = {
     runText,
     runBinary: deps?.runBinary ?? runBinary,
     adbPath: deps?.adbPath ?? process.env.PICO_ADB ?? "adb",
-    gradleEnv: deps?.gradleEnv ?? defaultGradleEnv(),
+    gradleEnv,
     now: deps?.now ?? (() => new Date()),
     monotonicNow: deps?.monotonicNow ?? (() => performance.now()),
     randomUUID: deps?.randomUUID ?? (() => crypto.randomUUID()),
     sleep: deps?.sleep ?? defaultSleep,
-    inspectApk: deps?.inspectApk ?? ((apkPath, projectDir) => defaultInspectApk(apkPath, projectDir, runText)),
+    inspectApk: deps?.inspectApk ?? ((apkPath, projectDir) => defaultInspectApk(apkPath, projectDir, runText, gradleEnv)),
   };
   const completedStages: string[] = [];
   let built = false;
