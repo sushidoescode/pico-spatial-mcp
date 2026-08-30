@@ -1107,6 +1107,8 @@ test("default SDK inspection records available facts and explicit tool absence",
         return textResult(`package: name='${PACKAGE}' versionCode='7' versionName='7.0'\n`);
       }
       if (command.endsWith("/apksigner")) {
+        assert.equal(options.env.JAVA_HOME, "/fixture/jbr");
+        assert.ok(options.env.PATH.startsWith(`/fixture/jbr/bin${path.delimiter}`));
         return textResult(`Signer #1 certificate SHA-256 digest: ${sha256("default-inspection-certificate")}\n`);
       }
       return baseRunText(command, args, options);
@@ -1147,6 +1149,36 @@ test("default SDK inspection records available facts and explicit tool absence",
     assert.match(out.receipt.receipt.apk.manifestInspection.reason, /aapt2.*not found/i);
     assert.equal(out.receipt.receipt.apk.signingInspection.status, "unavailable");
     assert.match(out.receipt.receipt.apk.signingInspection.reason, /apksigner.*not found/i);
+  });
+
+  await t.test("apksigner inspection is unavailable when the resolved JDK is absent", async (child) => {
+    const fixture = await createProducerFixture(child);
+    const sdkRoot = path.join(fixture.scratch, "android-sdk-without-jdk");
+    writeFile(sdkRoot, "build-tools/35.0.0/aapt2", "fixture tool");
+    writeFile(sdkRoot, "build-tools/35.0.0/apksigner", "fixture tool");
+    const previousSdkRoot = process.env.ANDROID_SDK_ROOT;
+    process.env.ANDROID_SDK_ROOT = sdkRoot;
+    child.after(() => {
+      if (previousSdkRoot === undefined) delete process.env.ANDROID_SDK_ROOT;
+      else process.env.ANDROID_SDK_ROOT = previousSdkRoot;
+    });
+    const baseRunText = fixture.deps.runText;
+    fixture.deps.gradleEnv = {};
+    fixture.deps.runText = async (command, args, options) => {
+      if (command.endsWith("/aapt2")) {
+        return textResult(`package: name='${PACKAGE}' versionCode='7' versionName='7.0'\n`);
+      }
+      if (command.endsWith("/apksigner")) {
+        throw new Error("apksigner must not run when the JDK is unresolved");
+      }
+      return baseRunText(command, args, options);
+    };
+    delete fixture.deps.inspectApk;
+
+    const out = await produceNativeFleetReceipt(fixture.input, fixture.deps);
+    assert.equal(out.status, "recorded");
+    assert.equal(out.receipt.receipt.apk.signingInspection.status, "unavailable");
+    assert.match(out.receipt.receipt.apk.signingInspection.reason, /JDK.*apksigner inspection/i);
   });
 });
 
