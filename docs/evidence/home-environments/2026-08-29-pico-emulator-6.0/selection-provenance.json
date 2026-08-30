@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Durable per-tile correlation between a guarded host selection and the next WorldSpace scene-context observation.",
+  "runtime": {
+    "serial": "emulator-5554",
+    "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+    "guestProduct": "swan",
+    "guestBuildIncremental": "4399",
+    "qemuPid": 97100,
+    "qemuMainWindowTitle": "PICO Emulator - 6.0.0",
+    "dialogTitle": "Dialog",
+    "dialogLogicalBounds": { "x": 209, "y": 276, "width": 552, "height": 440 }
+  },
+  "method": {
+    "sourceLog": "selection-scene-source.log",
+    "sourceLogSha256": "69b662fc88c785a70031aff5768592e52fc67ffefa0cc71e5bc282d408d99060",
+    "sourceLogBytes": 3142,
+    "guards": [
+      "Accessibility process unix id equals the qemu PID bound to emulator-5554",
+      "main window title is PICO Emulator - 6.0.0",
+      "dialog bounds are 552x440 logical points",
+      "Accessibility exposes Environment Preview and all six expected tile labels"
+    ],
+    "selection": "Make the bound qemu process frontmost, write the named PICOEnvRecon marker to emulator-5554, then issue one CGEvent click at the target center derived from the accessible label layout.",
+    "sceneObservation": "Record the first later WorldSpaceDB getSpace envId line. The separate scene-id-source.log establishes the same-moment DataTracking worktable_status scene field, but the per-tile source excerpt intentionally retains only WorldSpaceDB.",
+    "captureCheck": "Each selected-dialog screenshot reproduced the SHA-256 of that tile's initial recon screenshot; those initial screenshots form all-six-selected-contact-sheet.png."
+  },
+  "observations": [
+    {
+      "tile": "Bedroom Night",
+      "markerEpoch": 1788064659.255,
+      "selectedCaptureSha256": "09a2b0a3486b3d2e9e22822d4f237ba55daff36ed0df4c9237857b9a8803e2e0",
+      "worldSpaceDbEpoch": 1788064692.863,
+      "sceneLatencySeconds": 33.608,
+      "worldSpaceEnvId": "XiataAncientPath",
+      "capabilityEvidence": "bedroom-night-read-1.json",
+      "snapshotId": "e81de1ec6679ec8de4880e67cf01c2f23e7cd80d31b642872fdb0a4394869270"
+    },
+    {
+      "tile": "Livingroom Day",
+      "markerEpoch": 1788064732.906,
+      "selectedCaptureSha256": "97a77c1f9acb7dd7b073bdec1ea8c403ab2fc9bbf337913abd700ad068f274aa",
+      "worldSpaceDbEpoch": 1788064752.864,
+      "sceneLatencySeconds": 19.958,
+      "worldSpaceEnvId": "XiataAncientPath",
+      "capabilityEvidence": "livingroom-day-read-1.json",
+      "snapshotId": "0f51798d3006f07ddfed56fb3e7cb6fda35f82f85e41ddfb895a8ff01e079172"
+    },
+    {
+      "tile": "Livingroom Night",
+      "markerEpoch": 1788064769.128,
+      "selectedCaptureSha256": "1a68fcae893bde67ff841b725456e91016fba56d2eafc7c1784e1873c726c9ff",
+      "worldSpaceDbEpoch": 1788064812.882,
+      "sceneLatencySeconds": 43.754,
+      "worldSpaceEnvId": "XiataAncientPath",
+      "capabilityEvidence": "livingroom-night-read-1.json",
+      "snapshotId": "b0c52e946ea2d4efaad0a550e8355843cec7f76d25850cef1057cd4985a1b1e5"
+    },
+    {
+      "tile": "Mesume Day",
+      "markerEpoch": 1788064831.096,
+      "selectedCaptureSha256": "0c86c381b365f7ce6666cb25993917f17089420f634d5cf508d07ecb4fec7c54",
+      "worldSpaceDbEpoch": 1788064872.889,
+      "sceneLatencySeconds": 41.793,
+      "worldSpaceEnvId": "XiataAncientPath",
+      "capabilityEvidence": "mesume-day-invalid-read.json",
+      "snapshotId": null
+    },
+    {
+      "tile": "Mesume Night",
+      "markerEpoch": 1788064889.878,
+      "selectedCaptureSha256": "fbd567f4af010fd4b191fe550ee59e07e12c3b3f7682cfc0115cc20f52283217",
+      "worldSpaceDbEpoch": 1788064932.892,
+      "sceneLatencySeconds": 43.014,
+      "worldSpaceEnvId": "XiataAncientPath",
+      "capabilityEvidence": "mesume-night-read-1.json",
+      "snapshotId": "fff19245daaa28fe3d9f92943fecc04de3d7d0fe328f0d092753374a716dcfc6"
+    },
+    {
+      "tile": "Bedroom Day",
+      "markerEpoch": 1788064951.47,
+      "selectedCaptureSha256": "a9f4addc52336252f167e62d4edb7a83f33f53a94b79d7ae19eb0cd500a4ed3a",
+      "worldSpaceDbEpoch": 1788064992.893,
+      "sceneLatencySeconds": 41.423,
+      "worldSpaceEnvId": "XiataAncientPath",
+      "capabilityEvidence": "bedroom-day-read-3.json",
+      "snapshotId": "7a8aed94e6765185767d1f701736a325898faad4716ad022efc377018b29a6eb"
+    }
+  ]
+}
