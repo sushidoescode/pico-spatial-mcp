@@ -401,6 +401,79 @@ test("strict portable receipt, manifest, selector, and binding parsers catch ext
   assert.throws(() => parseRunReceiptBinding({ kind: "pico.native-run-receipt", schemaVersion: 1, receiptId: HASH_A, captureSha256: HASH_B, auditId }), /unrecognized|audit/i);
 });
 
+test("portable binding synchronous resolvers preserve exact kind-specific identity and native lineage runtime", async (t) => {
+  const { fixture, published, target, promoted } = await publishPromotion(t, "sync-binding");
+  const portableSelector = {
+    kind: "pico.portable-native-run-receipt",
+    schemaVersion: 1,
+    receiptId: promoted.portableReceiptId,
+    promotionId: promoted.promotionId,
+  };
+  const expectedPortable = {
+    kind: "pico.portable-native-run-receipt",
+    schemaVersion: 1,
+    receiptId: promoted.portableReceiptId,
+    sourceReceiptId: published.receiptId,
+    promotionId: promoted.promotionId,
+    auditId: promoted.auditId,
+    captureSha256: fixture.payload.capture.sha256,
+  };
+  const targetOptions = { rootDir: target.targetReceiptRoot, ledgerDir: target.targetLedgerRoot };
+  const resolvedPortable = portable.resolveRunReceiptCaptureBinding(
+    fixture.payload.app,
+    portableSelector,
+    promoted.captureArtifactPath,
+    targetOptions,
+  );
+  assert.equal(resolvedPortable.status, "valid", resolvedPortable.reason);
+  assert.deepEqual(resolvedPortable.binding, expectedPortable);
+  assert.deepEqual(resolvedPortable.receiptRuntime, {
+    serial: fixture.payload.runtime.serial,
+    model: fixture.payload.runtime.model,
+    fingerprint: fixture.payload.runtime.fingerprint,
+    bootQemu: fixture.payload.runtime.bootQemu,
+  });
+
+  const revalidatedPortable = portable.validateHistoricalRunReceiptCaptureBinding(
+    fixture.payload.app,
+    expectedPortable,
+    promoted.captureArtifactPath,
+    targetOptions,
+  );
+  assert.equal(revalidatedPortable.status, "valid", revalidatedPortable.reason);
+  assert.deepEqual(revalidatedPortable.binding, expectedPortable);
+
+  const wrongAudit = portable.validateHistoricalRunReceiptCaptureBinding(
+    fixture.payload.app,
+    { ...expectedPortable, auditId: HASH_A },
+    promoted.captureArtifactPath,
+    targetOptions,
+  );
+  assert.equal(wrongAudit.status, "invalid");
+
+  const resolvedNative = portable.resolveRunReceiptCaptureBinding(
+    fixture.payload.app,
+    { kind: "pico.native-run-receipt", schemaVersion: 1, receiptId: published.receiptId },
+    fixture.captureSourcePath,
+    fixture.storeOptions,
+  );
+  assert.equal(resolvedNative.status, "valid", resolvedNative.reason);
+  assert.deepEqual(resolvedNative.binding, {
+    kind: "pico.native-run-receipt",
+    schemaVersion: 1,
+    receiptId: published.receiptId,
+    captureSha256: fixture.payload.capture.sha256,
+  });
+  const revalidatedNative = portable.validateHistoricalRunReceiptCaptureBinding(
+    fixture.payload.app,
+    resolvedNative.binding,
+    fixture.captureSourcePath,
+    fixture.storeOptions,
+  );
+  assert.equal(revalidatedNative.status, "valid", revalidatedNative.reason);
+  assert.deepEqual(revalidatedNative.binding, resolvedNative.binding);
+});
+
 test("native lineage validator catches a source-root locator rewrite", async (t) => {
   const fixture = await createRunReceiptFixture(t, store);
   const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);

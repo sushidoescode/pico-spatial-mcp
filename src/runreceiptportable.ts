@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { MAX_CAPTURE_BYTES, validateCaptureBuffer, type CaptureCheck } from "./evidence.js";
+import { MAX_CAPTURE_BYTES, validateCapture, validateCaptureBuffer, type CaptureCheck } from "./evidence.js";
 import { ledgerDirectory } from "./ledger.js";
 import {
   APK_ARTIFACT_DIRECTORY,
@@ -16,8 +16,11 @@ import {
   SPEC_ARTIFACT_DIRECTORY,
   readNativeRunReceipt,
   runReceiptDirectory,
+  validateNativeRunReceiptCaptureBinding,
   validateNativeRunReceiptLineageSnapshot,
   type NativeRunReceipt,
+  type ReceiptCaptureBindingResult as NativeReceiptCaptureBindingResult,
+  type ReceiptRuntimeIdentity,
   type ReceiptStoreOptions,
 } from "./runreceiptstore.js";
 import { canonicalJson } from "./runreceiptidentity.js";
@@ -196,6 +199,9 @@ export type PortableRunReceiptValidation =
     }
   | { status: "invalid"; receiptId: string; promotionId: string; issues: string[] }
   | { status: "unavailable"; reason: string };
+export type RunReceiptCaptureBindingResult =
+  | { status: "valid"; binding: RunReceiptBinding; receiptRuntime: ReceiptRuntimeIdentity }
+  | { status: "invalid"; reason: string };
 
 function domainSeparatedId(domain: string, value: unknown): string {
   return crypto.createHash("sha256")
@@ -447,6 +453,27 @@ function helperRuntime(): { status: "available"; runtime: HelperRuntime } | { st
     : `${PYTHON_OVERRIDE} is not an executable regular file` };
 }
 
+function parseHelperResponse(raw: Buffer, expectedOperation: "promote" | "inspect"): HelperResult {
+  try {
+    const text = raw.toString("utf8");
+    if (!raw.equals(Buffer.from(text, "utf8")) || !text.endsWith("\n") || text.indexOf("\n") !== text.length - 1) {
+      throw new Error("stdout is not one UTF-8 JSON line");
+    }
+    const response = helperResponseSchema.parse(JSON.parse(text));
+    if (!raw.equals(Buffer.from(`${canonicalJson(response)}\n`, "utf8"))) {
+      throw new Error("stdout is not the canonical serialized helper response plus one newline");
+    }
+    if (response.operation !== expectedOperation) throw new Error("helper operation did not match its request");
+    return response.status === "ok"
+      ? { status: "ok", inspection: response.inspection }
+      : response.status === "unavailable"
+        ? { status: "unavailable", reason: response.reason }
+        : { status: "error", reason: response.reason };
+  } catch (error) {
+    return { status: "error", reason: `receipt portability helper returned an invalid response: ${issueText(error)}` };
+  }
+}
+
 async function runHelper(runtime: HelperRuntime, request: unknown, expectedOperation: "promote" | "inspect"): Promise<HelperResult> {
   const input = Buffer.from(JSON.stringify(request), "utf8");
   if (input.length > HELPER_MAX_STDIN_BYTES) return { status: "error", reason: "receipt portability helper request exceeds its bound" };
@@ -491,31 +518,39 @@ async function runHelper(runtime: HelperRuntime, request: unknown, expectedOpera
       if (overflow) return finish({ status: "error", reason: overflow });
       if (signal || code !== 0) return finish({ status: "error", reason: `receipt portability helper terminated with ${signal ?? `exit ${code}`}` });
       if (stderrBytes !== 0) return finish({ status: "error", reason: "receipt portability helper emitted unexpected stderr" });
-      let parsed: unknown;
-      try {
-        const raw = Buffer.concat(stdout);
-        const text = raw.toString("utf8");
-        if (!raw.equals(Buffer.from(text, "utf8")) || !text.endsWith("\n") || text.indexOf("\n") !== text.length - 1) {
-          throw new Error("stdout is not one UTF-8 JSON line");
-        }
-        parsed = JSON.parse(text);
-        const response = helperResponseSchema.parse(parsed);
-        if (!raw.equals(Buffer.from(`${canonicalJson(response)}\n`, "utf8"))) {
-          throw new Error("stdout is not the canonical serialized helper response plus one newline");
-        }
-        if (response.operation !== expectedOperation) throw new Error("helper operation did not match its request");
-        return finish(response.status === "ok"
-          ? { status: "ok", inspection: response.inspection }
-          : response.status === "unavailable"
-            ? { status: "unavailable", reason: response.reason }
-            : { status: "error", reason: response.reason });
-      } catch (error) {
-        return finish({ status: "error", reason: `receipt portability helper returned an invalid response: ${issueText(error)}` });
-      }
+      return finish(parseHelperResponse(Buffer.concat(stdout), expectedOperation));
     });
     child.stdin.on("error", () => { /* close reports the authoritative outcome */ });
     child.stdin.end(input);
   });
+}
+
+function runHelperSync(runtime: HelperRuntime, request: unknown, expectedOperation: "inspect"): HelperResult {
+  const input = Buffer.from(JSON.stringify(request), "utf8");
+  if (input.length > HELPER_MAX_STDIN_BYTES) return { status: "error", reason: "receipt portability helper request exceeds its bound" };
+  const child = spawnSync(runtime.python, ["-I", "-S", "-B", runtime.helper], {
+    shell: false,
+    input,
+    encoding: null,
+    maxBuffer: HELPER_MAX_STDOUT_BYTES,
+    timeout: HELPER_TIMEOUT_MS,
+    killSignal: "SIGKILL",
+  });
+  const stdout = Buffer.isBuffer(child.stdout) ? child.stdout : Buffer.alloc(0);
+  const stderr = Buffer.isBuffer(child.stderr) ? child.stderr : Buffer.alloc(0);
+  if (child.error) {
+    const timedOut = (child.error as NodeJS.ErrnoException).code === "ETIMEDOUT";
+    return { status: "error", reason: timedOut
+      ? `receipt portability helper timed out after ${HELPER_TIMEOUT_MS}ms`
+      : `receipt portability helper could not complete: ${child.error.message}` };
+  }
+  if (stdout.length > HELPER_MAX_STDOUT_BYTES) return { status: "error", reason: "receipt portability helper stdout exceeded its bound" };
+  if (stderr.length > HELPER_MAX_STDERR_BYTES) return { status: "error", reason: "receipt portability helper stderr exceeded its bound" };
+  if (child.signal || child.status !== 0) {
+    return { status: "error", reason: `receipt portability helper terminated with ${child.signal ?? `exit ${child.status}`}` };
+  }
+  if (stderr.length !== 0) return { status: "error", reason: "receipt portability helper emitted unexpected stderr" };
+  return parseHelperResponse(stdout, expectedOperation);
 }
 
 function rootProtocol(identity: RootIdentity): RootIdentity {
@@ -855,4 +890,145 @@ export async function readPortableRunReceipt(
   } catch (error) {
     return { status: "invalid", receiptId, promotionId, issues: [issueText(error)] };
   }
+}
+
+export function readPortableRunReceiptSync(
+  appValue: string,
+  receiptIdValue: string,
+  promotionIdValue: string,
+  optionsValue: ReceiptStoreOptions = {},
+): PortableRunReceiptValidation {
+  const runtime = helperRuntime();
+  if (runtime.status === "unavailable") return runtime;
+  let app: string;
+  let receiptId: string;
+  let promotionId: string;
+  let targetReceipt: RootIdentity;
+  let targetLedger: RootIdentity;
+  try {
+    app = appSchema.parse(appValue);
+    receiptId = sha256Schema.parse(receiptIdValue);
+    promotionId = sha256Schema.parse(promotionIdValue);
+    const options = readOptionsSchema.parse(optionsValue);
+    targetReceipt = rootIdentityAt(options.rootDir ?? runReceiptDirectory(), "target receipt root");
+    targetLedger = rootIdentityAt(options.ledgerDir ?? ledgerDirectory(), "target ledger root");
+  } catch (error) {
+    return { status: "invalid", receiptId: String(receiptIdValue ?? ""), promotionId: String(promotionIdValue ?? ""), issues: [issueText(error)] };
+  }
+  const helper = runHelperSync(runtime.runtime, {
+    protocol: HELPER_PROTOCOL,
+    version: HELPER_PROTOCOL_VERSION,
+    operation: "inspect",
+    app,
+    portableReceiptId: receiptId,
+    promotionId,
+    roots: { targetReceipt: rootProtocol(targetReceipt), targetLedger: rootProtocol(targetLedger) },
+  }, "inspect");
+  if (helper.status === "unavailable") return helper;
+  if (helper.status === "error") return { status: "invalid", receiptId, promotionId, issues: [helper.reason] };
+  try {
+    return validateInspection(helper.inspection, app, receiptId, promotionId, targetReceipt, targetLedger);
+  } catch (error) {
+    return { status: "invalid", receiptId, promotionId, issues: [issueText(error)] };
+  }
+}
+
+function resolvedPortableBinding(
+  binding: PortableLedgerBinding,
+  runtime: ReceiptRuntimeIdentity,
+): Extract<RunReceiptCaptureBindingResult, { status: "valid" }> {
+  const result = {
+    status: "valid",
+    binding: Object.freeze(binding),
+  } as Extract<RunReceiptCaptureBindingResult, { status: "valid" }>;
+  Object.defineProperty(result, "receiptRuntime", {
+    value: Object.freeze({
+      serial: runtime.serial,
+      model: runtime.model,
+      fingerprint: runtime.fingerprint,
+      bootQemu: runtime.bootQemu,
+    }),
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
+  return Object.freeze(result);
+}
+
+export function resolveRunReceiptCaptureBinding(
+  app: string,
+  selectorValue: ReceiptSelector,
+  artifactPath: string,
+  options: ReceiptStoreOptions = {},
+): RunReceiptCaptureBindingResult {
+  let selector: ReceiptSelector;
+  try {
+    selector = parseReceiptSelector(selectorValue);
+  } catch (error) {
+    return { status: "invalid", reason: `run receipt selector is invalid: ${issueText(error)}` };
+  }
+  if (selector.kind === RUN_RECEIPT_KIND) {
+    return validateNativeRunReceiptCaptureBinding(app, selector.receiptId, artifactPath, options) as NativeReceiptCaptureBindingResult;
+  }
+  const inspected = readPortableRunReceiptSync(app, selector.receiptId, selector.promotionId, options);
+  if (inspected.status === "unavailable") return { status: "invalid", reason: inspected.reason };
+  if (inspected.status === "invalid") return { status: "invalid", reason: inspected.issues.join("; ") };
+  const capture = validateCapture(artifactPath);
+  if (!capture.ok) return { status: "invalid", reason: capture.reason ?? "capture could not be validated" };
+  if (capture.sha256 !== inspected.receipt.artifacts.capture.sha256) {
+    return { status: "invalid", reason: "capture sha256 does not match the portable run receipt" };
+  }
+  return resolvedPortableBinding({
+    kind: PORTABLE_RUN_RECEIPT_KIND,
+    schemaVersion: PORTABLE_RUN_RECEIPT_SCHEMA_VERSION,
+    receiptId: inspected.receipt.receiptId,
+    sourceReceiptId: inspected.receipt.sourceReceipt.receiptId,
+    promotionId: inspected.manifest.promotionId,
+    auditId: inspected.manifest.auditId,
+    captureSha256: inspected.receipt.artifacts.capture.sha256,
+  }, inspected.lineageReceipt.runtime);
+}
+
+function sameRunReceiptBinding(left: RunReceiptBinding, right: RunReceiptBinding): boolean {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === RUN_RECEIPT_KIND && right.kind === RUN_RECEIPT_KIND) {
+    return left.schemaVersion === right.schemaVersion
+      && left.receiptId === right.receiptId
+      && left.captureSha256 === right.captureSha256;
+  }
+  return left.kind === PORTABLE_RUN_RECEIPT_KIND
+    && right.kind === PORTABLE_RUN_RECEIPT_KIND
+    && left.schemaVersion === right.schemaVersion
+    && left.receiptId === right.receiptId
+    && left.sourceReceiptId === right.sourceReceiptId
+    && left.promotionId === right.promotionId
+    && left.auditId === right.auditId
+    && left.captureSha256 === right.captureSha256;
+}
+
+export function validateHistoricalRunReceiptCaptureBinding(
+  app: string,
+  claimedBindingValue: RunReceiptBinding,
+  artifactPath: string,
+  options: ReceiptStoreOptions = {},
+): RunReceiptCaptureBindingResult {
+  let claimedBinding: RunReceiptBinding;
+  try {
+    claimedBinding = parseRunReceiptBinding(claimedBindingValue);
+  } catch (error) {
+    return { status: "invalid", reason: `claimed run receipt binding is invalid: ${issueText(error)}` };
+  }
+  const selector: ReceiptSelector = claimedBinding.kind === RUN_RECEIPT_KIND
+    ? { kind: RUN_RECEIPT_KIND, schemaVersion: 1, receiptId: claimedBinding.receiptId }
+    : {
+        kind: PORTABLE_RUN_RECEIPT_KIND,
+        schemaVersion: 1,
+        receiptId: claimedBinding.receiptId,
+        promotionId: claimedBinding.promotionId,
+      };
+  const resolved = resolveRunReceiptCaptureBinding(app, selector, artifactPath, options);
+  if (resolved.status === "invalid") return resolved;
+  return sameRunReceiptBinding(resolved.binding, claimedBinding)
+    ? resolved
+    : { status: "invalid", reason: "historical run receipt validator returned a different kind-specific binding identity" };
 }

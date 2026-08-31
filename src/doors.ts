@@ -7,7 +7,8 @@ import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
 import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, isPassingDeviceEvidenceForReceipt, readLedger } from "./ledger.js";
-import { findHistoricalNativeRunReceipt, validateNativeRunReceiptCaptureBinding } from "./runreceiptstore.js";
+import { findHistoricalNativeRunReceipt } from "./runreceiptstore.js";
+import { validateHistoricalRunReceiptCaptureBinding } from "./runreceiptportable.js";
 
 /**
  * doors.ts — THE DOORS (v21): an intent-level facade over the full tool surface.
@@ -582,16 +583,17 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
 
   door(
     "pico_record",
-    "DOOR 13 — RECORD a caller-attested verification claim AFTER you LOOKED, or append an honest RETRACTION without mutating history. Record and retract fields are mutually exclusive. For a correction set action:'retract', targetSeq, and retractionReason. Image evidence needs a real PNG/JPEG plus attestation. When pico_build_app returned a native-run receipt, LOOK at its exact capture and pass that returned runReceiptId here to bind the row without changing its evidence class. device_verified additionally requires the ledger's live hardware/capture binding plus structured deviceFeature and explicit pass/fail outcome; free-text polarity never closes Swan parity. Producer-only auto_judged/usd_host_render rows come from visual_judge/render_usd_offscreen, not this door.",
+    "DOOR 13 — RECORD a caller-attested verification claim AFTER you LOOKED, append an honest RETRACTION, or explicitly PROMOTE a native receipt into portable one-hop provenance without creating evidence. The three actions are mutually exclusive. Portable record binding requires both runReceiptId and runReceiptPromotionId; native binding omits the promotion ID. Image evidence needs a real PNG/JPEG plus attestation. device_verified additionally requires live hardware/capture binding plus structured deviceFeature and explicit pass/fail outcome.",
     {
       app: z.string().regex(CANONICAL_APP_KEY_PATTERN).describe("Canonical lowercase app/package ledger key: ASCII lowercase letters, digits, dot, underscore, or hyphen; no paths, spaces, or case aliases."),
-      action: z.enum(["record", "retract"]).optional().describe("Default record; retract appends a correction event for targetSeq."),
+      action: z.enum(["record", "retract", "promote"]).optional().describe("Default record; retract appends a correction; promote publishes portable one-hop receipt objects without evidence."),
       claim: z.string().optional().describe("Record action: the claim, e.g. '6 shelf cards render in the forward FOV'."),
       evidenceType: z.enum(["device_verified", "vision_verified", "logcat", "structural", "compiles", "built_for_headset"]).optional().describe("Record action: a caller-recordable evidence tier. vision_verified needs a linked capture + attestation; device_verified additionally uses live device/capture provenance. auto_judged and usd_host_render are producer-only and must come from visual_judge or render_usd_offscreen."),
       artifactPath: z.string().optional().describe("Path to the capture you LOOKED at (REQUIRED for vision_verified)."),
       attestation: z.string().optional().describe("What you saw in the capture (REQUIRED for vision_verified)."),
       cClass: z.enum(["C0_emulator", "C1", "C2", "C3", "C4_headset_only"]).optional().describe("The claim's capability class."),
       runReceiptId: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Record action only: receiptId returned by pico_build_app. Pass it after LOOKING at that receipt's exact capture; it binds provenance without promoting the evidence class."),
+      runReceiptPromotionId: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Record action only: promotionId returned with a portable receipt. Omit it for native receipt binding."),
       deviceSerial: z.string().optional().describe("Attached adb serial (REQUIRED for device_verified; probed live)."),
       deviceModel: z.string().optional().describe("Optional expected model; mismatch with live probe rejects."),
       deviceFingerprint: z.string().optional().describe("Optional expected fingerprint; mismatch with live probe rejects."),
@@ -601,9 +603,17 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       targetSeq: z.number().int().nonnegative().optional().describe("Retract action: sequence number of the claim being corrected."),
       retractionReason: z.string().optional().describe("Retract action: why the earlier claim is withdrawn."),
       retractionNote: z.string().optional().describe("Retract action: optional nuance retained with the correction."),
+      sourceReceiptId: z.string().regex(/^[a-f0-9]{64}$/).optional().describe("Promote action only: exact native source receipt identity."),
+      sourceReceiptRoot: z.string().optional().describe("Promote action only: explicit canonical source receipt-store root."),
+      sourceLedgerRoot: z.string().optional().describe("Promote action only: explicit canonical source ledger-store root."),
+      targetReceiptRoot: z.string().optional().describe("Promote action only: explicit canonical target receipt-store root."),
+      targetLedgerRoot: z.string().optional().describe("Promote action only: explicit canonical target ledger-store root."),
       report: z.boolean().optional().describe("Also return ledger_report's generated capability report for the app."),
     },
-    async ({ app, action, claim, evidenceType, artifactPath, attestation, cClass, runReceiptId, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, targetSeq, retractionReason, retractionNote, report }) => {
+    async ({ app, action, claim, evidenceType, artifactPath, attestation, cClass, runReceiptId, runReceiptPromotionId, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, targetSeq, retractionReason, retractionNote, sourceReceiptId, sourceReceiptRoot, sourceLedgerRoot, targetReceiptRoot, targetLedgerRoot, report }) => {
+      if (action === "promote" && report !== undefined) {
+        return { status: "rejected", reason: "promote accepts only its exact promotion fields; report is record/retract-only and would read the ledger" };
+      }
       const call = await doorCall();
       const recorded = await call("record_verification", {
         app,
@@ -614,6 +624,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
         ...(attestation ? { attestation } : {}),
         ...(cClass ? { cClass } : {}),
         ...(runReceiptId !== undefined ? { runReceiptId } : {}),
+        ...(runReceiptPromotionId !== undefined ? { runReceiptPromotionId } : {}),
         ...(deviceSerial !== undefined ? { deviceSerial } : {}),
         ...(deviceModel !== undefined ? { deviceModel } : {}),
         ...(deviceFingerprint !== undefined ? { deviceFingerprint } : {}),
@@ -623,6 +634,11 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
         ...(targetSeq !== undefined ? { targetSeq } : {}),
         ...(retractionReason !== undefined ? { retractionReason } : {}),
         ...(retractionNote !== undefined ? { retractionNote } : {}),
+        ...(sourceReceiptId !== undefined ? { sourceReceiptId } : {}),
+        ...(sourceReceiptRoot !== undefined ? { sourceReceiptRoot } : {}),
+        ...(sourceLedgerRoot !== undefined ? { sourceLedgerRoot } : {}),
+        ...(targetReceiptRoot !== undefined ? { targetReceiptRoot } : {}),
+        ...(targetLedgerRoot !== undefined ? { targetLedgerRoot } : {}),
       });
       const out: any = typeof recorded === "object" && recorded !== null ? recorded : { status: String(recorded) };
       if (report) out.report = await call("ledger_report", { app });
@@ -667,7 +683,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       // record_verification write (userBriefsDir, ~/.pico-mcp/ledgers, digest-bound run receipts).
       const home = os.homedir();
       const readLedgerEntries = (app: string): any[] => {
-        try { return readLedger(app, validateNativeRunReceiptCaptureBinding).effectiveEntries; } catch { return []; }
+        try { return readLedger(app, validateHistoricalRunReceiptCaptureBinding).effectiveEntries; } catch { return []; }
       };
       let briefFiles: Array<{ id: string; brief: string; mtime: number }> = [];
       try {

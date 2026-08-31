@@ -18,6 +18,12 @@ import {
   type DeviceIdentityProbe,
   type DeviceCaptureProbe,
 } from "./deviceidentity.js";
+import type {
+  PromoteNativeRunReceiptInput,
+  PromotionResult,
+  ReceiptSelector,
+  RunReceiptBinding,
+} from "./runreceiptportable.js";
 
 /**
  * The trust ledger has two independent provenance gates:
@@ -55,12 +61,7 @@ const EVIDENCE_TO_STATUS: Record<string, string> = {
   "provenance-broken": "provenance-broken",
 };
 
-export type ValidatedRunReceiptBinding = {
-  kind: "pico.native-run-receipt";
-  schemaVersion: 1;
-  receiptId: string;
-  captureSha256: string;
-};
+export type ValidatedRunReceiptBinding = RunReceiptBinding;
 
 export type ReceiptRuntimeIdentity = Readonly<{
   serial: string;
@@ -73,15 +74,24 @@ export type ReceiptCaptureBindingResult =
   | { status: "valid"; binding: ValidatedRunReceiptBinding; receiptRuntime: ReceiptRuntimeIdentity }
   | { status: "invalid"; reason: string };
 
-export type HistoricalRunReceiptBindingValidator = (
+export type RecordRunReceiptBindingResolver = (
   app: string,
-  receiptId: string,
+  selector: ReceiptSelector,
   artifactPath: string,
 ) => ReceiptCaptureBindingResult;
 
+export type HistoricalRunReceiptBindingValidator = (
+  app: string,
+  claimedBinding: ValidatedRunReceiptBinding,
+  artifactPath: string,
+) => ReceiptCaptureBindingResult;
+
+export type RunReceiptPromoter = (input: PromoteNativeRunReceiptInput) => Promise<PromotionResult>;
+
 export interface LedgerToolDependencies {
-  resolveRunReceiptBinding?: HistoricalRunReceiptBindingValidator;
+  resolveRunReceiptBinding?: RecordRunReceiptBindingResolver;
   validateHistoricalRunReceiptBinding?: HistoricalRunReceiptBindingValidator;
+  promoteNativeRunReceipt?: RunReceiptPromoter;
 }
 
 export type RegisterLedgerTools = (server: McpServer, deps?: LedgerToolDependencies) => void;
@@ -99,17 +109,25 @@ function validateRunReceiptBinding(
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, reason: "runReceipt binding is not an object" };
   }
-  const fields = Object.keys(value as Record<string, unknown>).sort();
-  const expectedFields = ["captureSha256", "kind", "receiptId", "schemaVersion"];
+  const candidate = value as Record<string, unknown>;
+  const portable = candidate.kind === "pico.portable-native-run-receipt";
+  const expectedFields = portable
+    ? ["auditId", "captureSha256", "kind", "promotionId", "receiptId", "schemaVersion", "sourceReceiptId"]
+    : ["captureSha256", "kind", "receiptId", "schemaVersion"];
+  const fields = Object.keys(candidate).sort();
   if (fields.length !== expectedFields.length || fields.some((field, index) => field !== expectedFields[index])) {
     return { ok: false, reason: "runReceipt binding contains missing or caller-authored fields" };
   }
-  const candidate = value as Record<string, unknown>;
-  if (candidate.kind !== "pico.native-run-receipt" || candidate.schemaVersion !== 1) {
+  if ((candidate.kind !== "pico.native-run-receipt" && !portable) || candidate.schemaVersion !== 1) {
     return { ok: false, reason: "runReceipt binding kind or schemaVersion is invalid" };
   }
-  if (typeof candidate.receiptId !== "string" || !SHA256_PATTERN.test(candidate.receiptId)) {
-    return { ok: false, reason: "runReceipt binding receiptId is not a canonical sha256" };
+  const identityFields = portable
+    ? ["receiptId", "sourceReceiptId", "promotionId", "auditId"] as const
+    : ["receiptId"] as const;
+  for (const field of identityFields) {
+    if (typeof candidate[field] !== "string" || !SHA256_PATTERN.test(candidate[field] as string)) {
+      return { ok: false, reason: `runReceipt binding ${field} is not a canonical sha256` };
+    }
   }
   if (typeof candidate.captureSha256 !== "string" || !SHA256_PATTERN.test(candidate.captureSha256)) {
     return { ok: false, reason: "runReceipt binding captureSha256 is not a canonical sha256" };
@@ -119,13 +137,33 @@ function validateRunReceiptBinding(
   }
   return {
     ok: true,
-    binding: Object.freeze({
-      kind: "pico.native-run-receipt",
-      schemaVersion: 1,
-      receiptId: candidate.receiptId,
-      captureSha256: candidate.captureSha256,
-    }),
+    binding: portable
+      ? Object.freeze({
+          kind: "pico.portable-native-run-receipt",
+          schemaVersion: 1,
+          receiptId: candidate.receiptId as string,
+          sourceReceiptId: candidate.sourceReceiptId as string,
+          promotionId: candidate.promotionId as string,
+          auditId: candidate.auditId as string,
+          captureSha256: candidate.captureSha256,
+        })
+      : Object.freeze({
+          kind: "pico.native-run-receipt",
+          schemaVersion: 1,
+          receiptId: candidate.receiptId as string,
+          captureSha256: candidate.captureSha256,
+        }),
   };
+}
+
+function sameRunReceiptBinding(left: ValidatedRunReceiptBinding, right: ValidatedRunReceiptBinding): boolean {
+  if (left.kind !== right.kind) return false;
+  if (left.receiptId !== right.receiptId || left.captureSha256 !== right.captureSha256) return false;
+  return left.kind === "pico.native-run-receipt"
+    || (right.kind === "pico.portable-native-run-receipt"
+      && left.sourceReceiptId === right.sourceReceiptId
+      && left.promotionId === right.promotionId
+      && left.auditId === right.auditId);
 }
 
 function validateReceiptRuntimeIdentity(
@@ -997,7 +1035,9 @@ export function readLedger(
     if (!Object.prototype.hasOwnProperty.call(entry, "runReceipt")) return;
     const claimedBinding = validateRunReceiptBinding(entry.runReceipt);
     delete entry.claimedRunReceipt;
-    if (claimedBinding.ok) entry.claimedRunReceipt = claimedBinding.binding;
+    if (claimedBinding.ok && claimedBinding.binding.kind === "pico.native-run-receipt") {
+      entry.claimedRunReceipt = claimedBinding.binding;
+    }
     delete entry.runReceipt;
     entry.runReceiptProvenance = { status: "unverifiable", reason };
     runReceiptIssues.push({ seq: entry.seq, claim: entry.claim, reason });
@@ -1022,7 +1062,7 @@ export function readLedger(
     }
     let resolved: ReceiptCaptureBindingResult;
     try {
-      resolved = validateHistoricalRunReceiptBinding(app, binding.binding.receiptId, entry.artifactPath);
+      resolved = validateHistoricalRunReceiptBinding(app, binding.binding, entry.artifactPath);
     } catch (error: any) {
       invalidateRunReceipt(entry, `historical run receipt validation failed: ${error?.message ?? String(error)}`);
       continue;
@@ -1032,9 +1072,8 @@ export function readLedger(
       invalidateRunReceipt(entry, `historical run receipt validation rejected the binding: ${checked.reason}`);
       continue;
     }
-    if (checked.binding.receiptId !== binding.binding.receiptId
-      || checked.binding.captureSha256 !== binding.binding.captureSha256) {
-      invalidateRunReceipt(entry, "historical run receipt validator returned a different receipt or capture identity");
+    if (!sameRunReceiptBinding(checked.binding, binding.binding)) {
+      invalidateRunReceipt(entry, "historical run receipt validator returned a different kind-specific binding identity");
       continue;
     }
     entry.runReceipt = binding.binding;
@@ -1157,10 +1196,10 @@ export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {
     "record_verification",
     {
       description:
-        "Append a verification claim or an append-only retraction event to an app's trust ledger. Record and retract fields are mutually exclusive. For a retraction, explicitly set action:'retract', targetSeq, and retractionReason; the original row remains immutable but is excluded from effective proof. Image evidence needs a structurally complete PNG/JPEG plus attestation and is copied into content-addressed storage. To bind an exact LOOK to native-run provenance, pass the runReceiptId returned by pico_build_app with that receipt's exact capture; the receipt never changes the requested evidence class. device_verified additionally uses live identity + same-serial screencap probes. auto_judged and usd_host_render are producer-only: use visual_judge or render_usd_offscreen. Stored bytes are revalidated on every report read.",
+        "Append a verification claim, append an immutable retraction, or explicitly promote a native run receipt into portable one-hop provenance. Record, retract, and promote fields are mutually exclusive. Promotion publishes receipt objects only and never creates evidence. Image evidence needs a structurally complete PNG/JPEG plus attestation and is copied into content-addressed storage. To bind an exact LOOK, pass runReceiptId and, for a portable receipt, its runReceiptPromotionId; binding never changes the requested evidence class. device_verified additionally uses live identity + same-serial screencap probes. Stored bytes are revalidated on every report read.",
       inputSchema: {
         app: z.string().regex(CANONICAL_APP_KEY_PATTERN).describe("Canonical app/package ledger key: lowercase ASCII letters, digits, dot, underscore, or hyphen; no paths or spaces."),
-        action: z.enum(["record", "retract"]).optional().describe("Default record. Use retract to append a correction that excludes targetSeq without mutating it."),
+        action: z.enum(["record", "retract", "promote"]).optional().describe("Default record. Retract appends a correction; promote publishes a portable one-hop receipt without ledger evidence."),
         claim: z.string().optional().describe("Record action: the claim, e.g. '6 shelf cards render in the forward FOV'."),
         evidenceType: evidenceTypeSchema.optional().describe("Record action: how it was verified. Image-grounded classes require a linked capture + attestation. auto_judged/usd_host_render cannot be minted here; use their producer tools."),
         artifactPath: z.string().optional().describe("Path to the capture that was LOOKED at or measured; copied into immutable ledger-owned storage."),
@@ -1168,6 +1207,7 @@ export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {
         cClass: z.enum(["C0_emulator", "C1", "C2", "C3", "C4_headset_only"]).optional().describe("The node's capability class."),
         reproHash: z.string().optional().describe("Canonical pose + seed hash (v5.5 reproducibility)."),
         runReceiptId: z.string().regex(SHA256_PATTERN).optional().describe("Record action only: receiptId returned by pico_build_app. Pass it only after LOOKING at that receipt's exact capture; binding records provenance and never promotes the evidence class."),
+        runReceiptPromotionId: z.string().regex(SHA256_PATTERN).optional().describe("Record action only: promotionId returned with a portable receipt. Omit it for a native receipt; portable and native kinds never fall back to one another."),
         deviceSerial: z.string().optional().describe("Attached adb serial (REQUIRED for device_verified; the server probes this serial live)."),
         deviceModel: z.string().optional().describe("Optional expected ro.product.model; if supplied it must match the live probe."),
         deviceFingerprint: z.string().optional().describe("Optional expected ro.build.fingerprint; if supplied it must match the live probe."),
@@ -1177,12 +1217,42 @@ export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {
         targetSeq: z.number().int().nonnegative().optional().describe("Retract action: sequence of the earlier claim to correct."),
         retractionReason: z.string().optional().describe("Retract action: why the earlier claim can no longer be relied on."),
         retractionNote: z.string().optional().describe("Retract action: optional nuance retained in history."),
+        sourceReceiptId: z.string().regex(SHA256_PATTERN).optional().describe("Promote action only: exact native source receipt identity."),
+        sourceReceiptRoot: z.string().optional().describe("Promote action only: explicit canonical native receipt-store root."),
+        sourceLedgerRoot: z.string().optional().describe("Promote action only: explicit canonical source ledger-store root."),
+        targetReceiptRoot: z.string().optional().describe("Promote action only: explicit canonical target receipt-store root."),
+        targetLedgerRoot: z.string().optional().describe("Promote action only: explicit canonical target ledger-store root."),
       },
     },
-    async ({ app, action, claim, evidenceType, artifactPath, attestation, cClass, reproHash, runReceiptId, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, targetSeq, retractionReason, retractionNote }) => {
+    async ({ app, action, claim, evidenceType, artifactPath, attestation, cClass, reproHash, runReceiptId, runReceiptPromotionId, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome, targetSeq, retractionReason, retractionNote, sourceReceiptId, sourceReceiptRoot, sourceLedgerRoot, targetReceiptRoot, targetLedgerRoot }) => {
       const mode = action ?? "record";
-      const recordFields = { claim, evidenceType, artifactPath, attestation, cClass, reproHash, runReceiptId, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome };
+      const recordFields = { claim, evidenceType, artifactPath, attestation, cClass, reproHash, runReceiptId, runReceiptPromotionId, deviceSerial, deviceModel, deviceFingerprint, deviceBootQemu, deviceFeature, deviceOutcome };
       const retractionFields = { targetSeq, retractionReason, retractionNote };
+      const promotionFields = { sourceReceiptId, sourceReceiptRoot, sourceLedgerRoot, targetReceiptRoot, targetLedgerRoot };
+      if (mode === "promote") {
+        const mixed = [...Object.entries(recordFields), ...Object.entries(retractionFields)]
+          .filter(([, value]) => value !== undefined)
+          .map(([name]) => name);
+        if (mixed.length) {
+          return okJson({ status: "rejected", reason: `promote is mutually exclusive with record/retract fields; promote action received non-promote field(s): ${mixed.join(", ")}` });
+        }
+        const missing = Object.entries(promotionFields).filter(([, value]) => value === undefined).map(([name]) => name);
+        if (missing.length) {
+          return okJson({ status: "rejected", reason: `promote action requires exact promotion-only field(s): ${missing.join(", ")}` });
+        }
+        if (!deps.promoteNativeRunReceipt) {
+          return okJson({ status: "rejected", reason: "run receipt promoter is not configured" });
+        }
+        try {
+          return okJson(await deps.promoteNativeRunReceipt({ app, ...promotionFields } as PromoteNativeRunReceiptInput));
+        } catch (error: any) {
+          return okJson({ status: "rejected", reason: `run receipt promotion threw before ledger access: ${error?.message ?? String(error)}` });
+        }
+      }
+      const mixedPromotion = Object.entries(promotionFields).filter(([, value]) => value !== undefined).map(([name]) => name);
+      if (mixedPromotion.length) {
+        return okJson({ status: "rejected", app, reason: `record/retract and promote are mutually exclusive; ${mode} action received promotion-only field(s): ${mixedPromotion.join(", ")}` });
+      }
       if (mode === "retract") {
         const mixed = Object.entries(recordFields).filter(([, value]) => value !== undefined).map(([name]) => name);
         if (mixed.length) {
@@ -1201,6 +1271,9 @@ export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {
         return okJson({ status: "rejected", app, reason: "record action requires claim and evidenceType" });
       }
       let runReceiptBinding: TrustedRunReceiptBinding | undefined;
+      if (runReceiptPromotionId !== undefined && runReceiptId === undefined) {
+        return okJson({ status: "rejected", app, reason: "runReceiptPromotionId requires runReceiptId; promotion-only receipt input cannot select a binding" });
+      }
       if (runReceiptId !== undefined) {
         if (!IMAGE_EVIDENCE.has(evidenceType)) {
           return okJson({ status: "rejected", app, reason: "runReceiptId can bind only image-grounded evidence and never promotes structural evidence" });
@@ -1211,9 +1284,17 @@ export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {
         if (!deps.resolveRunReceiptBinding) {
           return okJson({ status: "rejected", app, reason: "run receipt binding resolver is not configured; refusing to record an unbound receipt ID" });
         }
+        const selector: ReceiptSelector = runReceiptPromotionId === undefined
+          ? { kind: "pico.native-run-receipt", schemaVersion: 1, receiptId: runReceiptId }
+          : {
+              kind: "pico.portable-native-run-receipt",
+              schemaVersion: 1,
+              receiptId: runReceiptId,
+              promotionId: runReceiptPromotionId,
+            };
         let resolved: ReceiptCaptureBindingResult;
         try {
-          resolved = deps.resolveRunReceiptBinding(app, runReceiptId, artifactPath);
+          resolved = deps.resolveRunReceiptBinding(app, selector, artifactPath);
         } catch (error: any) {
           return okJson({ status: "rejected", app, reason: `run receipt binding could not be resolved: ${error?.message ?? String(error)}` });
         }
@@ -1221,8 +1302,13 @@ export const registerLedgerTools: RegisterLedgerTools = (server, deps = {}) => {
           return okJson({ status: "rejected", app, reason: `run receipt binding rejected: ${resolved.reason}` });
         }
         const checked = validateResolvedRunReceiptBinding(resolved);
-        if (!checked.ok || checked.binding.receiptId !== runReceiptId) {
-          return okJson({ status: "rejected", app, reason: checked.ok ? "run receipt resolver returned a different receiptId" : `run receipt resolver returned an invalid binding: ${checked.reason}` });
+        const sameSelector = checked.ok
+          && checked.binding.kind === selector.kind
+          && checked.binding.receiptId === selector.receiptId
+          && (selector.kind === "pico.native-run-receipt"
+            || (checked.binding.kind === "pico.portable-native-run-receipt" && checked.binding.promotionId === selector.promotionId));
+        if (!checked.ok || !sameSelector) {
+          return okJson({ status: "rejected", app, reason: checked.ok ? "run receipt resolver returned a different kind-specific selector identity" : `run receipt resolver returned an invalid binding: ${checked.reason}` });
         }
         runReceiptBinding = createTrustedRunReceiptBinding(checked.binding, checked.receiptRuntime);
       }

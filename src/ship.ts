@@ -68,7 +68,12 @@ export function registerShipTools(server: McpServer) {
       // ledger evidence
       let entries: any[] = [];
       let ledgerError: string | null = null;
-      try { entries = readLedger(app, validateNativeRunReceiptCaptureBinding).effectiveEntries; } catch (error: any) { ledgerError = error?.message ?? String(error); }
+      try {
+        entries = readLedger(app, (bindingApp, claimedBinding, artifactPath) =>
+          claimedBinding.kind === "pico.native-run-receipt"
+            ? validateNativeRunReceiptCaptureBinding(bindingApp, claimedBinding.receiptId, artifactPath)
+            : { status: "invalid", reason: "ship_checklist consumes native run receipt bindings only" }).effectiveEntries;
+      } catch (error: any) { ledgerError = error?.message ?? String(error); }
       const byType: Record<string, number> = {};
       for (const e of entries) byType[e.evidenceType] = (byType[e.evidenceType] ?? 0) + 1;
       const vision = entries.filter(isPositiveVisionEvidence).length;
