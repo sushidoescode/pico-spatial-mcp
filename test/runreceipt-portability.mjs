@@ -71,6 +71,135 @@ function promotedPaths(fixture, published, promoted, target) {
   };
 }
 
+function rootIdentityForTest(root) {
+  const realPath = fs.realpathSync(root);
+  const stats = fs.statSync(realPath, { bigint: true });
+  return { realPath, deviceId: stats.dev.toString(), inode: stats.ino.toString() };
+}
+
+function expectedPromotion(fixture, published, target) {
+  const lineageBytes = fs.readFileSync(published.receiptPath);
+  const portablePayload = {
+    kind: "pico.portable-native-run-receipt",
+    schemaVersion: 1,
+    app: fixture.payload.app,
+    sourceReceipt: {
+      kind: "pico.native-run-receipt",
+      schemaVersion: 1,
+      receiptId: published.receiptId,
+      fileSha256: sha256Bytes(lineageBytes),
+    },
+    artifacts: {
+      apk: {
+        store: "receipt",
+        algorithm: "sha256",
+        sha256: fixture.payload.apk.sha256,
+        bytes: fixture.payload.apk.bytes,
+      },
+      effectiveAppSpec: {
+        store: "receipt",
+        algorithm: "sha256",
+        sha256: fixture.payload.source.effectiveAppSpec.sha256,
+        bytes: fixture.payload.source.effectiveAppSpec.bytes,
+      },
+      capture: {
+        store: "ledger",
+        algorithm: "sha256",
+        sha256: fixture.payload.capture.sha256,
+        bytes: fixture.payload.capture.bytes,
+        width: fixture.payload.capture.width,
+        height: fixture.payload.capture.height,
+        format: fixture.payload.capture.format,
+      },
+    },
+  };
+  const portableReceiptId = portableReceiptIdOf(portablePayload);
+  const receipt = parsePortableRunReceipt({ ...portablePayload, receiptId: portableReceiptId });
+  const core = {
+    app: fixture.payload.app,
+    portableReceiptId,
+    sourceReceiptId: published.receiptId,
+    sourceRoots: {
+      receipt: rootIdentityForTest(fixture.rootDir),
+      ledger: rootIdentityForTest(fixture.ledgerDir),
+    },
+    targetRoots: {
+      receipt: rootIdentityForTest(target.targetReceiptRoot),
+      ledger: rootIdentityForTest(target.targetLedgerRoot),
+    },
+    artifacts: receipt.artifacts,
+  };
+  const promotionId = promotionIdOf(core);
+  const paths = promotedPaths(fixture, published, { portableReceiptId, promotionId }, target);
+  return {
+    receipt,
+    core,
+    portableReceiptId,
+    promotionId,
+    paths,
+    bytes: {
+      apk: fs.readFileSync(fixture.payload.apk.artifactPath),
+      effectiveAppSpec: fs.readFileSync(fixture.publishedSpec.artifactPath),
+      capture: fs.readFileSync(fixture.captureArtifactPath),
+      lineage: lineageBytes,
+      portable: Buffer.from(`${canonicalJson(receipt)}\n`, "utf8"),
+    },
+  };
+}
+
+function immutableFileIdentity(file) {
+  const stats = fs.statSync(file, { bigint: true });
+  return {
+    deviceId: stats.dev,
+    inode: stats.ino,
+    mode: stats.mode,
+    size: stats.size,
+    mtimeNs: stats.mtimeNs,
+    sha256: sha256Bytes(fs.readFileSync(file)),
+  };
+}
+
+function createPublicationFaultPython(scratch) {
+  const wrapper = path.join(scratch, "fault-publication-python.py");
+  fs.writeFileSync(wrapper, `#!${resolvedPython3()}
+import importlib.util
+import os
+import sys
+
+helper_path = sys.argv[-1]
+spec = importlib.util.spec_from_file_location("receipt_portability_helper_under_test", helper_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+boundary = os.environ["PICO_RECEIPT_TEST_FAULT_BOUNDARY"]
+original_publish_stream = module.publish_stream
+original_publish_bytes = module.publish_bytes
+
+def faulting_publish_stream(store, parts, source, expected_sha, expected_size, label):
+    result = original_publish_stream(store, parts, source, expected_sha, expected_size, label)
+    if boundary == "apk" and label == "target APK":
+        os._exit(71)
+    return result
+
+def faulting_publish_bytes(store, parts, raw, label, existing_validator=None):
+    result = original_publish_bytes(store, parts, raw, label, existing_validator=existing_validator)
+    labels = {
+        "target effective AppSpec": "effectiveAppSpec",
+        "target capture": "capture",
+        "native lineage receipt": "lineage",
+        "portable receipt": "portable",
+        "promotion manifest": "manifest",
+    }
+    if labels.get(label) == boundary:
+        os._exit(72)
+    return result
+
+module.publish_stream = faulting_publish_stream
+module.publish_bytes = faulting_publish_bytes
+module.main()
+`, { mode: 0o700 });
+  return fs.realpathSync(wrapper);
+}
+
 function hashFiles(paths) {
   return Object.fromEntries(Object.entries(paths).map(([name, file]) => [name, sha256Bytes(fs.readFileSync(file))]));
 }
@@ -417,6 +546,149 @@ test("PROMOTE exact reruns and concurrent publishers reuse the first audit recor
   assert.equal(rerun.auditId, raced[0].auditId);
   assert.deepEqual(temporaryNames(target.targetReceiptRoot), []);
   assert.deepEqual(temporaryNames(target.targetLedgerRoot), []);
+});
+
+test("PROMOTE committed reruns descriptor-rehash every source before trusting the target", async (t) => {
+  await t.test("same-byte source descendant symlink", async (child) => {
+    const promoted = await publishPromotion(child, "rehash-symlink-target");
+    const targetBefore = {
+      receipt: directoryTreeMetadata(promoted.target.targetReceiptRoot),
+      ledger: directoryTreeMetadata(promoted.target.targetLedgerRoot),
+    };
+    const sourceArtifacts = path.join(promoted.fixture.rootDir, "artifacts");
+    const movedArtifacts = path.join(promoted.fixture.scratch, "moved-source-artifacts");
+    fs.renameSync(sourceArtifacts, movedArtifacts);
+    fs.symlinkSync(movedArtifacts, sourceArtifacts);
+
+    const rerun = await portable.promoteNativeRunReceipt(promoted.input);
+    assert.equal(rerun.status, "refused");
+    assert.match(rerun.reason, /symbolic|symlink|no-follow|source|directory/i);
+    assert.deepEqual({
+      receipt: directoryTreeMetadata(promoted.target.targetReceiptRoot),
+      ledger: directoryTreeMetadata(promoted.target.targetLedgerRoot),
+    }, targetBefore, "invalid source traversal must not mutate the committed target");
+
+    const read = await portable.readPortableRunReceipt(
+      promoted.fixture.payload.app,
+      promoted.promoted.portableReceiptId,
+      promoted.promoted.promotionId,
+      { rootDir: promoted.target.targetReceiptRoot, ledgerDir: promoted.target.targetLedgerRoot },
+    );
+    assert.equal(read.status, "valid", read.issues?.join("\n"));
+  });
+
+  await t.test("deleted source object", async (child) => {
+    const promoted = await publishPromotion(child, "rehash-deleted-target");
+    const targetBefore = {
+      receipt: directoryTreeMetadata(promoted.target.targetReceiptRoot),
+      ledger: directoryTreeMetadata(promoted.target.targetLedgerRoot),
+    };
+    fs.unlinkSync(promoted.fixture.payload.apk.artifactPath);
+    const rerun = await portable.promoteNativeRunReceipt(promoted.input);
+    assert.equal(rerun.status, "refused");
+    assert.match(rerun.reason, /APK|source|exist|open|receipt/i);
+    assert.deepEqual({
+      receipt: directoryTreeMetadata(promoted.target.targetReceiptRoot),
+      ledger: directoryTreeMetadata(promoted.target.targetLedgerRoot),
+    }, targetBefore, "a missing source object must not be hidden by a committed manifest");
+  });
+});
+
+test("PROMOTE interruption boundaries preserve manifest-last resumability", async (t) => {
+  const roles = ["apk", "effectiveAppSpec", "capture", "lineage", "portable", "manifest"];
+  const realPython = resolvedPython3();
+  for (const [boundaryIndex, boundary] of roles.entries()) {
+    await t.test(boundary, async (child) => {
+      const fixture = await createPortableFixture(child, { app: `com.example.interrupt_${boundary.toLowerCase()}` });
+      const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+      const target = promotionRoots(fixture, `interrupt-${boundary.toLowerCase()}`);
+      const input = promotionInput(fixture, published, target);
+      const expected = expectedPromotion(fixture, published, target);
+      const faultPython = createPublicationFaultPython(fixture.scratch);
+      const previousPython = process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+      const previousBoundary = process.env.PICO_RECEIPT_TEST_FAULT_BOUNDARY;
+      child.after(() => {
+        if (previousPython === undefined) delete process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+        else process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = previousPython;
+        if (previousBoundary === undefined) delete process.env.PICO_RECEIPT_TEST_FAULT_BOUNDARY;
+        else process.env.PICO_RECEIPT_TEST_FAULT_BOUNDARY = previousBoundary;
+      });
+      let faulted;
+      try {
+        process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = faultPython;
+        process.env.PICO_RECEIPT_TEST_FAULT_BOUNDARY = boundary;
+        faulted = await portable.promoteNativeRunReceipt(input);
+      } finally {
+        process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = realPython;
+        delete process.env.PICO_RECEIPT_TEST_FAULT_BOUNDARY;
+      }
+      assert.equal(faulted.status, "refused");
+      assert.match(faulted.reason, /terminated.*exit 7[12]/i);
+
+      for (const [roleIndex, role] of roles.entries()) {
+        const shouldExist = roleIndex <= boundaryIndex;
+        assert.equal(fs.existsSync(expected.paths[role]), shouldExist,
+          `${role} final existence after ${boundary} boundary`);
+        if (shouldExist && role !== "manifest") {
+          assert.equal(fs.readFileSync(expected.paths[role]).equals(expected.bytes[role]), true,
+            `${role} final must contain the exact validated source/publication bytes`);
+        }
+      }
+
+      let committedManifest;
+      if (boundary === "manifest") {
+        committedManifest = parsePromotionManifest(JSON.parse(fs.readFileSync(expected.paths.manifest, "utf8")));
+        assert.equal(committedManifest.promotionId, expected.promotionId);
+        assert.equal(canonicalJson(committedManifest.core), canonicalJson(expected.core));
+      }
+
+      const ignoredTempDirectory = path.join(target.targetReceiptRoot, "promotions-v1", fixture.payload.app);
+      fs.mkdirSync(ignoredTempDirectory, { recursive: true });
+      const ignoredTemp = path.join(ignoredTempDirectory, `.${expected.promotionId}.json.tmp-test-owned`);
+      fs.writeFileSync(ignoredTemp, "ignored interrupted temp");
+      const beforeRead = await portable.readPortableRunReceipt(
+        fixture.payload.app,
+        expected.portableReceiptId,
+        expected.promotionId,
+        { rootDir: target.targetReceiptRoot, ledgerDir: target.targetLedgerRoot },
+      );
+      assert.equal(beforeRead.status, boundary === "manifest" ? "valid" : "invalid",
+        beforeRead.issues?.join("\n"));
+
+      const publishedBeforeResume = Object.fromEntries(roles
+        .filter((role) => fs.existsSync(expected.paths[role]))
+        .map((role) => [role, immutableFileIdentity(expected.paths[role])]));
+      const committedTargetMetadata = boundary === "manifest" ? {
+        receipt: directoryTreeMetadata(target.targetReceiptRoot),
+        ledger: directoryTreeMetadata(target.targetLedgerRoot),
+      } : undefined;
+
+      const resumed = await portable.promoteNativeRunReceipt(input);
+      assert.equal(resumed.status, "promoted", resumed.reason);
+      assert.equal(resumed.portableReceiptId, expected.portableReceiptId);
+      assert.equal(resumed.promotionId, expected.promotionId);
+      for (const [role, identity] of Object.entries(publishedBeforeResume)) {
+        assert.deepEqual(immutableFileIdentity(expected.paths[role]), identity,
+          `${role} immutable final must be reused after interruption`);
+      }
+      if (committedManifest !== undefined) {
+        assert.equal(resumed.auditId, committedManifest.auditId);
+        assert.equal(resumed.recordedAt, committedManifest.recordedAt);
+        assert.deepEqual({
+          receipt: directoryTreeMetadata(target.targetReceiptRoot),
+          ledger: directoryTreeMetadata(target.targetLedgerRoot),
+        }, committedTargetMetadata, "a committed rerun must rehash without target writes");
+      }
+      assert.equal(fs.existsSync(ignoredTemp), true, "readers and reruns must ignore non-final temp names");
+      const afterRead = await portable.readPortableRunReceipt(
+        fixture.payload.app,
+        expected.portableReceiptId,
+        expected.promotionId,
+        { rootDir: target.targetReceiptRoot, ledgerDir: target.targetLedgerRoot },
+      );
+      assert.equal(afterRead.status, "valid", afterRead.issues?.join("\n"));
+    });
+  }
 });
 
 test("PROMOTE permits only the designed identical source/target receipt-root exception", async (t) => {

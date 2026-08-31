@@ -834,15 +834,6 @@ def do_promote(request):
         if portable["receiptId"] != manifest["core"]["portableReceiptId"]:
             fail("portable publication does not match the manifest")
 
-        manifest_parts = ["promotions-v1", app, manifest["promotionId"] + ".json"]
-        if final_exists(opened["targetReceipt"], manifest_parts, "promotion manifest"):
-            inspection = inspect_targets(opened["targetReceipt"], opened["targetLedger"], app,
-                                         portable["receiptId"], manifest["promotionId"],
-                                         expected_core=manifest["core"])
-            for root in opened.values():
-                root.verify()
-            return inspection
-
         receipt = Snapshot(opened["sourceReceipt"], ["native-v1", app, source_id + ".json"],
                            MAX_RECEIPT_BYTES, "source native receipt", retain_bytes=True)
         source_files.append(receipt)
@@ -872,6 +863,23 @@ def do_promote(request):
             fail("source effective AppSpec canonical identity is mismatched")
         if capture_facts != expected["capture"]:
             fail("source capture facts are mismatched")
+
+        manifest_parts = ["promotions-v1", app, manifest["promotionId"] + ".json"]
+        if final_exists(opened["targetReceipt"], manifest_parts, "promotion manifest"):
+            rehash_snapshot(apk, expected["apk"]["sha256"], expected["apk"]["bytes"],
+                            "committed-rerun APK")
+            for source in source_files:
+                source.verify()
+            for root in opened.values():
+                root.verify()
+            inspection = inspect_targets(opened["targetReceipt"], opened["targetLedger"], app,
+                                         portable["receiptId"], manifest["promotionId"],
+                                         expected_core=manifest["core"])
+            for source in source_files:
+                source.verify()
+            for root in opened.values():
+                root.verify()
+            return inspection
 
         shared_receipt_root = (opened["sourceReceipt"].path == opened["targetReceipt"].path and
                                (os.fstat(opened["sourceReceipt"].fd).st_dev,
