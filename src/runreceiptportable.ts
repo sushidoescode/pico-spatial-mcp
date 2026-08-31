@@ -393,6 +393,17 @@ const helperInspectionSchema = z.object({
     capture: measuredCaptureSchema,
   }).strict(),
 }).strict();
+const helperSourceSchema = z.object({
+  rootIdentities: z.object({ receipt: rootIdentitySchema, ledger: rootIdentitySchema }).strict(),
+  lineageReceiptBase64: base64Schema(RUN_RECEIPT_MAX_BYTES),
+  effectiveAppSpecBase64: base64Schema(EFFECTIVE_APP_SPEC_MAX_BYTES),
+  captureBase64: base64Schema(MAX_CAPTURE_BYTES),
+  artifacts: z.object({
+    apk: measuredApkSchema,
+    effectiveAppSpec: measuredStoredSpecSchema,
+    capture: measuredCaptureSchema,
+  }).strict(),
+}).strict();
 
 const historicalNamespaceSchema = z.union([
   z.literal(NATIVE_RECEIPT_DIRECTORY),
@@ -434,29 +445,38 @@ const helperDiscoveryOkSchema = z.object({
   operation: z.literal("discover"),
   discovery: helperDiscoverySchema,
 }).strict();
+const helperSourceOkSchema = z.object({
+  protocol: z.literal(HELPER_PROTOCOL),
+  version: z.literal(HELPER_PROTOCOL_VERSION),
+  status: z.literal("ok"),
+  operation: z.literal("source-inspect"),
+  source: helperSourceSchema,
+}).strict();
 const helperErrorSchema = z.object({
   protocol: z.literal(HELPER_PROTOCOL),
   version: z.literal(HELPER_PROTOCOL_VERSION),
   status: z.literal("error"),
-  operation: z.union([z.literal("promote"), z.literal("inspect"), z.literal("discover"), z.literal("unknown")]),
+  operation: z.union([z.literal("promote"), z.literal("inspect"), z.literal("discover"), z.literal("source-inspect"), z.literal("unknown")]),
   reason: z.string().min(1).max(4096),
 }).strict();
 const helperUnavailableSchema = z.object({
   protocol: z.literal(HELPER_PROTOCOL),
   version: z.literal(HELPER_PROTOCOL_VERSION),
   status: z.literal("unavailable"),
-  operation: z.union([z.literal("promote"), z.literal("inspect"), z.literal("discover"), z.literal("unknown")]),
+  operation: z.union([z.literal("promote"), z.literal("inspect"), z.literal("discover"), z.literal("source-inspect"), z.literal("unknown")]),
   reason: z.string().min(1).max(4096),
 }).strict();
 const helperResponseSchema = z.union([
   helperInspectionOkSchema,
   helperDiscoveryOkSchema,
+  helperSourceOkSchema,
   helperErrorSchema,
   helperUnavailableSchema,
 ]);
 
 type HelperInspection = z.infer<typeof helperInspectionSchema>;
 type HelperDiscovery = z.infer<typeof helperDiscoverySchema>;
+type HelperSource = z.infer<typeof helperSourceSchema>;
 type HelperFailure =
   | { status: "error"; reason: string }
   | { status: "unavailable"; reason: string };
@@ -465,6 +485,9 @@ type HelperInspectionResult =
   | HelperFailure;
 type HelperDiscoveryResult =
   | { status: "ok"; discovery: HelperDiscovery }
+  | HelperFailure;
+type HelperSourceResult =
+  | { status: "ok"; source: HelperSource }
   | HelperFailure;
 type HelperRuntime = { python: string; helper: string };
 
@@ -489,14 +512,6 @@ function rootIdentityAt(locator: string, label: string): RootIdentity {
 
 function toolVersion(): string {
   return auditValueSchema.shape.toolVersion.parse(packageMetadata.version);
-}
-
-function boundedFile(pathname: string, maximumBytes: number, label: string): Buffer {
-  const stats = fs.statSync(pathname);
-  if (!stats.isFile() || stats.size > maximumBytes) throw new Error(`${label} is not a bounded regular file`);
-  const bytes = fs.readFileSync(pathname);
-  if (bytes.length !== stats.size || bytes.length > maximumBytes) throw new Error(`${label} changed while being read`);
-  return bytes;
 }
 
 function sha256Bytes(bytes: Buffer): string {
@@ -551,8 +566,8 @@ function helperRuntime(): { status: "available"; runtime: HelperRuntime } | { st
 
 function parseHelperResponse(
   raw: Buffer,
-  expectedOperation: "promote" | "inspect" | "discover",
-): HelperInspectionResult | HelperDiscoveryResult {
+  expectedOperation: "promote" | "inspect" | "discover" | "source-inspect",
+): HelperInspectionResult | HelperDiscoveryResult | HelperSourceResult {
   try {
     const text = raw.toString("utf8");
     if (!raw.equals(Buffer.from(text, "utf8")) || !text.endsWith("\n") || text.indexOf("\n") !== text.length - 1) {
@@ -566,6 +581,8 @@ function parseHelperResponse(
     return response.status === "ok"
       ? response.operation === "discover"
         ? { status: "ok", discovery: response.discovery }
+        : response.operation === "source-inspect"
+          ? { status: "ok", source: response.source }
         : { status: "ok", inspection: response.inspection }
       : response.status === "unavailable"
         ? { status: "unavailable", reason: response.reason }
@@ -575,14 +592,16 @@ function parseHelperResponse(
   }
 }
 
+function runHelper(runtime: HelperRuntime, request: unknown, expectedOperation: "source-inspect"): Promise<HelperSourceResult>;
+function runHelper(runtime: HelperRuntime, request: unknown, expectedOperation: "promote" | "inspect"): Promise<HelperInspectionResult>;
 async function runHelper(
   runtime: HelperRuntime,
   request: unknown,
-  expectedOperation: "promote" | "inspect",
-): Promise<HelperInspectionResult> {
+  expectedOperation: "promote" | "inspect" | "source-inspect",
+): Promise<HelperInspectionResult | HelperSourceResult> {
   const input = Buffer.from(JSON.stringify(request), "utf8");
   if (input.length > HELPER_MAX_STDIN_BYTES) return { status: "error", reason: "receipt portability helper request exceeds its bound" };
-  return await new Promise<HelperInspectionResult>((resolve) => {
+  return await new Promise<HelperInspectionResult | HelperSourceResult>((resolve) => {
     const child = spawn(runtime.python, ["-I", "-S", "-B", runtime.helper], {
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
@@ -593,7 +612,7 @@ async function runHelper(
     let stderrBytes = 0;
     let settled = false;
     let overflow: string | undefined;
-    const finish = (result: HelperInspectionResult): void => {
+    const finish = (result: HelperInspectionResult | HelperSourceResult): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -623,7 +642,7 @@ async function runHelper(
       if (overflow) return finish({ status: "error", reason: overflow });
       if (signal || code !== 0) return finish({ status: "error", reason: `receipt portability helper terminated with ${signal ?? `exit ${code}`}` });
       if (stderrBytes !== 0) return finish({ status: "error", reason: "receipt portability helper emitted unexpected stderr" });
-      return finish(parseHelperResponse(Buffer.concat(stdout), expectedOperation) as HelperInspectionResult);
+      return finish(parseHelperResponse(Buffer.concat(stdout), expectedOperation) as HelperInspectionResult | HelperSourceResult);
     });
     child.stdin.on("error", () => { /* close reports the authoritative outcome */ });
     child.stdin.end(input);
@@ -661,7 +680,7 @@ function runHelperSync(
     return { status: "error", reason: `receipt portability helper terminated with ${child.signal ?? `exit ${child.status}`}` };
   }
   if (stderr.length !== 0) return { status: "error", reason: "receipt portability helper emitted unexpected stderr" };
-  return parseHelperResponse(stdout, expectedOperation);
+  return parseHelperResponse(stdout, expectedOperation) as HelperInspectionResult | HelperDiscoveryResult;
 }
 
 function rootProtocol(identity: RootIdentity): RootIdentity {
@@ -670,18 +689,6 @@ function rootProtocol(identity: RootIdentity): RootIdentity {
 
 function canonicalFileBytes(value: unknown): Buffer {
   return Buffer.from(`${canonicalJson(value)}\n`, "utf8");
-}
-
-function portableSourceExists(app: string, receiptId: string, sourceReceiptRoot: string): boolean {
-  try {
-    const candidate = path.join(sourceReceiptRoot, PORTABLE_RECEIPT_DIRECTORY, app, `${receiptId}.json`);
-    const bytes = boundedFile(candidate, PORTABLE_RUN_RECEIPT_MAX_BYTES, "portable source candidate");
-    const raw = JSON.parse(bytes.toString("utf8"));
-    if (!bytes.equals(canonicalFileBytes(raw))) return false;
-    return parsePortableRunReceipt(raw).receiptId === receiptId;
-  } catch {
-    return false;
-  }
 }
 
 function expectedTargetPaths(
@@ -813,6 +820,54 @@ function validateInspection(
   };
 }
 
+function validateSourceInspection(
+  sourceValue: HelperSource,
+  app: string,
+  sourceReceiptId: string,
+  sourceReceipt: RootIdentity,
+  sourceLedger: RootIdentity,
+): {
+  receipt: NativeRunReceipt;
+  receiptFileSha256: string;
+  effectiveAppSpecBytes: Buffer;
+} {
+  const source = helperSourceSchema.parse(sourceValue);
+  if (canonicalJson(source.rootIdentities.receipt) !== canonicalJson(sourceReceipt) ||
+      canonicalJson(source.rootIdentities.ledger) !== canonicalJson(sourceLedger)) {
+    throw new Error("source-inspect root identities do not match the opened source stores");
+  }
+  const lineageBytes = decodeBase64(source.lineageReceiptBase64, RUN_RECEIPT_MAX_BYTES, "source lineage receipt bytes");
+  const specBytes = decodeBase64(source.effectiveAppSpecBase64, EFFECTIVE_APP_SPEC_MAX_BYTES, "source effective AppSpec bytes");
+  const captureBytes = decodeBase64(source.captureBase64, MAX_CAPTURE_BYTES, "source capture bytes");
+  if (source.artifacts.effectiveAppSpec.storedSha256 !== sha256Bytes(specBytes) ||
+      source.artifacts.effectiveAppSpec.storedBytes !== specBytes.length) {
+    throw new Error("source-inspect effective AppSpec measured facts do not match its returned bytes");
+  }
+  const checkedCapture = validateCaptureBuffer(captureBytes, "source-inspect capture");
+  const capture = captureFacts(checkedCapture);
+  if (canonicalJson(capture) !== canonicalJson(source.artifacts.capture)) {
+    throw new Error("source-inspect capture measured facts do not match its returned bytes");
+  }
+  const lineage = validateNativeRunReceiptLineageSnapshot({
+    app,
+    receiptId: sourceReceiptId,
+    receiptBytes: lineageBytes,
+    sourceReceiptRoot: sourceReceipt.realPath,
+    sourceLedgerRoot: sourceLedger.realPath,
+    apk: source.artifacts.apk,
+    effectiveAppSpecBytes: specBytes,
+    capture: checkedCapture,
+  });
+  if (lineage.status === "invalid") {
+    throw new Error(`source-inspect native lineage is invalid: ${lineage.issues.join("; ")}`);
+  }
+  return {
+    receipt: lineage.receipt,
+    receiptFileSha256: lineage.receiptFileSha256,
+    effectiveAppSpecBytes: specBytes,
+  };
+}
+
 export async function promoteNativeRunReceipt(inputValue: PromoteNativeRunReceiptInput): Promise<PromotionResult> {
   const runtime = helperRuntime();
   if (runtime.status === "unavailable") return runtime;
@@ -831,37 +886,27 @@ export async function promoteNativeRunReceipt(inputValue: PromoteNativeRunReceip
     return { status: "refused", reason: issueText(error) };
   }
 
-  const native = readNativeRunReceipt(input.app, input.sourceReceiptId, {
-    rootDir: input.sourceReceiptRoot,
-    ledgerDir: input.sourceLedgerRoot,
-    mode: "historical",
-  });
-  if (native.status === "invalid") {
-    if (portableSourceExists(input.app, input.sourceReceiptId, input.sourceReceiptRoot)) {
-      return { status: "refused", reason: "portable receipts are one-hop lineage projections and cannot be promoted recursively" };
-    }
-    return { status: "refused", reason: `source native receipt is invalid: ${native.issues.join("; ")}` };
-  }
-
   try {
-    const lineageBytes = boundedFile(native.receiptPath, RUN_RECEIPT_MAX_BYTES, "source native receipt");
-    const specBytes = boundedFile(native.receipt.source.effectiveAppSpec.artifactPath, EFFECTIVE_APP_SPEC_MAX_BYTES, "source effective AppSpec");
-    const captureBytes = boundedFile(native.receipt.capture.artifactPath, MAX_CAPTURE_BYTES, "source capture");
-    const exactLineage = validateNativeRunReceiptLineageSnapshot({
+    const sourceHelper = await runHelper(runtime.runtime, {
+      protocol: HELPER_PROTOCOL,
+      version: HELPER_PROTOCOL_VERSION,
+      operation: "source-inspect",
       app: input.app,
-      receiptId: input.sourceReceiptId,
-      receiptBytes: lineageBytes,
-      sourceReceiptRoot: input.sourceReceiptRoot,
-      sourceLedgerRoot: input.sourceLedgerRoot,
-      apk: { sha256: native.receipt.apk.sha256, bytes: native.receipt.apk.bytes },
-      effectiveAppSpecBytes: specBytes,
-      capture: validateCaptureBuffer(captureBytes, "source capture reread"),
-    });
-    if (exactLineage.status === "invalid") {
-      throw new Error(`source lineage reread is invalid: ${exactLineage.issues.join("; ")}`);
-    }
+      sourceReceiptId: input.sourceReceiptId,
+      roots: { sourceReceipt: rootProtocol(sourceReceipt), sourceLedger: rootProtocol(sourceLedger) },
+    }, "source-inspect");
+    if (sourceHelper.status === "unavailable") return sourceHelper;
+    if (sourceHelper.status === "error") return { status: "refused", reason: sourceHelper.reason };
+    const exactLineage = validateSourceInspection(
+      sourceHelper.source,
+      input.app,
+      input.sourceReceiptId,
+      sourceReceipt,
+      sourceLedger,
+    );
     const exactReceipt = exactLineage.receipt;
     const sourceReceiptFileSha256 = exactLineage.receiptFileSha256;
+    const specBytes = exactLineage.effectiveAppSpecBytes;
     const portablePayload = portableRunReceiptPayloadSchema.parse({
       kind: PORTABLE_RUN_RECEIPT_KIND,
       schemaVersion: PORTABLE_RUN_RECEIPT_SCHEMA_VERSION,
@@ -1299,16 +1344,15 @@ export function findHistoricalRunReceipt(
   let targetLedger: RootIdentity;
   try {
     const parsedOptions = readOptionsSchema.parse(options);
-    targetReceipt = rootIdentityAt(
-      fs.realpathSync(parsedOptions.rootDir ?? runReceiptDirectory()),
-      "target receipt root",
-    );
-    targetLedger = rootIdentityAt(
-      fs.realpathSync(parsedOptions.ledgerDir ?? ledgerDirectory()),
-      "target ledger root",
-    );
+    targetReceipt = rootIdentityAt(parsedOptions.rootDir ?? runReceiptDirectory(), "target receipt root");
+    targetLedger = rootIdentityAt(parsedOptions.ledgerDir ?? ledgerDirectory(), "target ledger root");
   } catch (error) {
-    return invalidHistoricalStore([issueText(error)]);
+    const native = nativeOnlyHistoricalSelection(app, options);
+    if (native.status === "valid") return native;
+    return invalidHistoricalStore(
+      [issueText(error)],
+      native.status === "none" ? native.rejectedCandidates : [],
+    );
   }
   const helper = runHelperSync(runtime.runtime, {
     protocol: HELPER_PROTOCOL,

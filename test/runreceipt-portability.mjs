@@ -377,6 +377,68 @@ module.main()
   return fs.realpathSync(fake);
 }
 
+function writeSourceInspectMutationPython(scratch) {
+  const fake = path.join(scratch, "source-inspect-mutation-python.py");
+  fs.writeFileSync(fake, `#!${resolvedPython3()}
+import importlib.util
+import os
+import sys
+
+helper_path = sys.argv[-1]
+spec = importlib.util.spec_from_file_location("receipt_portability_helper_under_test", helper_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+if hasattr(module, "do_source_inspect"):
+    original_source_inspect = module.do_source_inspect
+    def mutating_source_inspect(request):
+        result = original_source_inspect(request)
+        source_path = os.environ["PICO_RECEIPT_TEST_SOURCE_MUTATION_PATH"]
+        with open(source_path, "r+b") as stream:
+            first = stream.read(1)
+            stream.seek(0)
+            stream.write(bytes([first[0] ^ 1]))
+            stream.flush()
+            os.fsync(stream.fileno())
+        return result
+    module.do_source_inspect = mutating_source_inspect
+
+module.main()
+`, { mode: 0o700 });
+  return fs.realpathSync(fake);
+}
+
+function writeSourceInspectResponseMutationPython(scratch, mode) {
+  const fake = path.join(scratch, `source-inspect-response-${mode}.py`);
+  fs.writeFileSync(fake, `#!${resolvedPython3()}
+import importlib.util
+import sys
+
+helper_path = sys.argv[-1]
+spec = importlib.util.spec_from_file_location("receipt_portability_helper_under_test", helper_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+original_emit = module.emit
+mode = ${JSON.stringify(mode)}
+
+def mutating_emit(value):
+    if value.get("operation") == "source-inspect" and value.get("status") == "ok":
+        if mode == "operation":
+            value["operation"] = "inspect"
+        elif mode == "schema":
+            value["source"]["unexpected"] = True
+        elif mode == "root":
+            value["source"]["rootIdentities"]["receipt"]["inode"] = "0"
+        elif mode == "facts":
+            value["source"]["artifacts"]["apk"]["sha256"] = "0" * 64
+    original_emit(value)
+
+module.emit = mutating_emit
+module.main()
+`, { mode: 0o700 });
+  return fs.realpathSync(fake);
+}
+
 async function publishPromotion(t, suffix = "target") {
   const fixture = await createPortableFixture(t);
   const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
@@ -717,6 +779,35 @@ test("PROMOTE publishes independently verifiable immutable objects without a led
   assert.equal(read.manifest.auditId, promoted.auditId);
 });
 
+test("PROMOTE never opens source receipt objects through Node path reads", async (t) => {
+  const fixture = await createPortableFixture(t, { app: "com.example.helper_source_boundary" });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const target = promotionRoots(fixture, "helper-source-boundary");
+  const guarded = new Set([
+    published.receiptPath,
+    fixture.payload.apk.artifactPath,
+    fixture.publishedSpec.artifactPath,
+    fixture.captureArtifactPath,
+  ].map((candidate) => path.resolve(candidate)));
+  const originalStatSync = fs.statSync;
+  const originalReadFileSync = fs.readFileSync;
+  try {
+    fs.statSync = function guardedStatSync(candidate, ...args) {
+      if (guarded.has(path.resolve(String(candidate)))) throw new Error("Node source-object stat was attempted");
+      return Reflect.apply(originalStatSync, fs, [candidate, ...args]);
+    };
+    fs.readFileSync = function guardedReadFileSync(candidate, ...args) {
+      if (guarded.has(path.resolve(String(candidate)))) throw new Error("Node source-object read was attempted");
+      return Reflect.apply(originalReadFileSync, fs, [candidate, ...args]);
+    };
+    const promoted = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+    assert.equal(promoted.status, "promoted", promoted.reason);
+  } finally {
+    fs.statSync = originalStatSync;
+    fs.readFileSync = originalReadFileSync;
+  }
+});
+
 test("PROMOTE exact reruns and concurrent publishers reuse the first audit record", async (t) => {
   const fixture = await createPortableFixture(t);
   const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
@@ -952,6 +1043,41 @@ test("PROMOTE refuses every missing or mismatched source object", async (t) => {
   }
 });
 
+test("PROMOTE refuses source receipt parent/final symlinks and oversize before reading their bytes", async (t) => {
+  for (const mode of ["parent symlink", "final symlink", "oversized"]) {
+    await t.test(mode, async (child) => {
+      const fixture = await createPortableFixture(child, {
+        app: `com.example.source_receipt_${mode.replaceAll(" ", "_")}`,
+      });
+      const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+      const target = promotionRoots(fixture, `source-receipt-${mode.replaceAll(" ", "-")}`);
+      if (mode === "parent symlink") {
+        const nativeNamespace = path.join(fixture.rootDir, "native-v1");
+        const outsideNamespace = path.join(fixture.scratch, "outside-native-v1");
+        fs.renameSync(nativeNamespace, outsideNamespace);
+        fs.writeFileSync(path.join(outsideNamespace, fixture.payload.app, `${published.receiptId}.json`), "{}\n");
+        fs.symlinkSync(outsideNamespace, nativeNamespace);
+      } else if (mode === "final symlink") {
+        const outsideReceipt = path.join(fixture.scratch, "outside-native-receipt.json");
+        fs.renameSync(published.receiptPath, outsideReceipt);
+        fs.writeFileSync(outsideReceipt, "{}\n");
+        fs.symlinkSync(outsideReceipt, published.receiptPath);
+      } else {
+        fs.writeFileSync(published.receiptPath, Buffer.alloc(2 * 1024 * 1024 + 1, 0x20));
+      }
+      const result = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+      assert.equal(result.status, "refused");
+      assert.match(result.reason, mode === "oversized" ? /bound|limit|length|large|size/i : /symbolic|symlink|no-follow|regular|directory/i);
+      if (mode === "parent symlink") {
+        assert.doesNotMatch(result.reason, /schemaVersion|unrecognized|receiptId.*required/i,
+          "an outside marker must not be parsed through a symlinked namespace parent");
+      }
+      assert.deepEqual(fs.readdirSync(target.targetReceiptRoot), []);
+      assert.deepEqual(fs.readdirSync(target.targetLedgerRoot), []);
+    });
+  }
+});
+
 test("PROMOTE refuses source symlinks, target child symlinks, and unsafe root overlap", async (t) => {
   await t.test("source final symlink", async (child) => {
     const fixture = await createPortableFixture(child, { app: "com.example.source_symlink" });
@@ -1050,33 +1176,54 @@ test("portable historical reads and PROMOTE reruns fail closed on every corrupt 
   }
 });
 
-test("PROMOTE validates the exact reread lineage before helper publication", async (t) => {
-  const fixture = await createPortableFixture(t, { app: "com.example.swap_a" });
+test("PROMOTE independently refuses a source mutation between source-inspect and publication", async (t) => {
+  const fixture = await createPortableFixture(t, { app: "com.example.source_inspect_race" });
   const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
-  const target = promotionRoots(fixture);
-  const originalReadFileSync = fs.readFileSync;
-  let swapped = false;
-  fs.readFileSync = function (filename, ...args) {
-    if (!swapped && path.resolve(String(filename)) === path.resolve(published.receiptPath)) {
-      swapped = true;
-      const changed = JSON.parse(originalReadFileSync.call(fs, published.receiptPath, "utf8"));
-      changed.app = "com.example.swap_b";
-      const replacement = Buffer.from(`${canonicalJson(changed)}\n`, "utf8");
-      assert.equal(replacement.length, fs.statSync(published.receiptPath).size, "deterministic swap must preserve the stat-before-read size");
-      fs.writeFileSync(published.receiptPath, replacement);
-    }
-    return originalReadFileSync.call(fs, filename, ...args);
-  };
-  let result;
+  const target = promotionRoots(fixture, "source-inspect-race");
+  const fakePython = writeSourceInspectMutationPython(fixture.scratch);
+  const previousPython = process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+  const previousMutation = process.env.PICO_RECEIPT_TEST_SOURCE_MUTATION_PATH;
   try {
-    result = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+    process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = fakePython;
+    process.env.PICO_RECEIPT_TEST_SOURCE_MUTATION_PATH = fixture.payload.apk.artifactPath;
+    const result = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+    assert.equal(result.status, "refused");
+    assert.match(result.reason, /APK|source|hash|mismatch|changed/i);
   } finally {
-    fs.readFileSync = originalReadFileSync;
+    if (previousPython === undefined) delete process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+    else process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = previousPython;
+    if (previousMutation === undefined) delete process.env.PICO_RECEIPT_TEST_SOURCE_MUTATION_PATH;
+    else process.env.PICO_RECEIPT_TEST_SOURCE_MUTATION_PATH = previousMutation;
   }
-  assert.equal(swapped, true, "test must swap the lineage during the post-validator bounded read");
-  assert.equal(result.status, "refused");
-  assert.match(result.reason, /lineage|receipt|app|recomputed|invalid/i);
-  assert.equal(fs.existsSync(path.join(target.targetReceiptRoot, "promotions-v1")), false, "invalid reread lineage must be refused before a manifest can commit");
+  assert.deepEqual(fs.readdirSync(target.targetReceiptRoot), [], "the second pass must refuse before receipt target writes");
+  assert.deepEqual(fs.readdirSync(target.targetLedgerRoot), [], "the second pass must refuse before ledger target writes");
+});
+
+test("PROMOTE strictly validates source-inspect operation, schema, roots, and measured facts", async (t) => {
+  for (const [mode, expected] of [
+    ["operation", /operation|invalid response/i],
+    ["schema", /unexpected|unrecognized|invalid response/i],
+    ["root", /root.*identit/i],
+    ["facts", /APK|sha256|lineage|mismatch/i],
+  ]) {
+    await t.test(mode, async (child) => {
+      const fixture = await createPortableFixture(child, { app: `com.example.source_response_${mode}` });
+      const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+      const target = promotionRoots(fixture, `source-response-${mode}`);
+      const previous = process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+      try {
+        process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = writeSourceInspectResponseMutationPython(fixture.scratch, mode);
+        const result = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+        assert.equal(result.status, "refused");
+        assert.match(result.reason, expected);
+      } finally {
+        if (previous === undefined) delete process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+        else process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = previous;
+      }
+      assert.deepEqual(fs.readdirSync(target.targetReceiptRoot), []);
+      assert.deepEqual(fs.readdirSync(target.targetLedgerRoot), []);
+    });
+  }
 });
 
 test("PROMOTE never repairs a dependency beneath an existing committed manifest", async (t) => {
@@ -1334,6 +1481,58 @@ test("portable historical selection enforces namespace and aggregate candidate c
       "historical receipt namespaces contain 12289 JSON candidates in total, exceeding the 12288 combined limit",
     ],
   );
+});
+
+test("findHistoricalRunReceipt preserves native-only equal and ancestor receipt/ledger roots", async (t) => {
+  const owned = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pico-native-root-topology-"));
+  t.after(() => fs.rmSync(owned, { recursive: true, force: true }));
+  const topologies = [
+    ["equal", path.join(owned, "equal-store"), path.join(owned, "equal-store")],
+    ["receipt ancestor", path.join(owned, "ancestor-store"), path.join(owned, "ancestor-store", "ledger")],
+  ];
+  for (const [name, rootDir, ledgerDir] of topologies) {
+    await t.test(name, async (child) => {
+      const fixture = await createRunReceiptFixture(child, store, {
+        app: `com.example.native_${String(name).replaceAll(" ", "_")}`,
+        rootDir,
+        ledgerDir,
+      });
+      const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+      const native = store.findHistoricalNativeRunReceipt(fixture.payload.app, fixture.storeOptions);
+      assert.equal(native.status, "valid", native.issues?.join("\n"));
+      const combined = portable.findHistoricalRunReceipt(fixture.payload.app, fixture.storeOptions);
+      assert.equal(combined.status, "valid", combined.issues?.join("\n"));
+      assert.equal(combined.receipt.kind, "pico.native-run-receipt");
+      assert.equal(combined.receipt.receiptId, published.receiptId);
+      assert.equal(combined.receipt.receiptPath, native.receiptPath);
+      assert.deepEqual(combined.receipt.nativeReceipt, native.receipt);
+      assert.deepEqual(combined.rejectedCandidates, native.rejectedCandidates.map((candidate) => ({
+        namespace: "native-v1",
+        receiptId: candidate.receiptId,
+        issues: candidate.issues,
+      })));
+    });
+  }
+});
+
+test("findHistoricalRunReceipt never selects a promoted projection through a symlinked store root", async (t) => {
+  const promoted = await publishPromotion(t, "portable-root-alias");
+  const receiptAlias = path.join(promoted.fixture.scratch, "portable-receipt-alias");
+  fs.symlinkSync(promoted.target.targetReceiptRoot, receiptAlias);
+  const options = { rootDir: receiptAlias, ledgerDir: promoted.target.targetLedgerRoot };
+  const direct = portable.readPortableRunReceiptSync(
+    promoted.fixture.payload.app,
+    promoted.promoted.portableReceiptId,
+    promoted.promoted.promotionId,
+    options,
+  );
+  assert.equal(direct.status, "invalid");
+  assert.match(direct.issues.join("\n"), /resolved|symbolic|symlink|canonical/i);
+
+  const selected = portable.findHistoricalRunReceipt(promoted.fixture.payload.app, options);
+  assert.equal(selected.status, "invalid-store");
+  assert.deepEqual(selected.rejectedCandidates, []);
+  assert.match(selected.issues.join("\n"), /resolved|symbolic|symlink|canonical/i);
 });
 
 test("findHistoricalRunReceipt enforces payload-free namespace and aggregate candidate caps", async (t) => {

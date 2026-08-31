@@ -739,7 +739,6 @@ def do_discover(request):
     try:
         opened["targetReceipt"] = StoreRoot("targetReceipt", request["roots"]["targetReceipt"])
         opened["targetLedger"] = StoreRoot("targetLedger", request["roots"]["targetLedger"])
-        reject_root_overlap(opened)
         target_receipt = opened["targetReceipt"]
         namespace_names = {}
         namespace_fds = {}
@@ -990,6 +989,84 @@ def validate_expected(expected):
         fail("expected capture format must be png")
 
 
+def do_source_inspect(request):
+    exact_keys(request, ["protocol", "version", "operation", "app", "sourceReceiptId", "roots"],
+               "source-inspect request")
+    app = request["app"]
+    source_id = request["sourceReceiptId"]
+    if not isinstance(app, str) or not APP.fullmatch(app):
+        fail("app is not a canonical Android package")
+    valid_sha(source_id, "sourceReceiptId")
+    exact_keys(request["roots"], ["sourceReceipt", "sourceLedger"], "source-inspect roots")
+    enforce_fd_budget(list(request["roots"].values()))
+    opened = {}
+    source_files = []
+    try:
+        opened["sourceReceipt"] = StoreRoot("sourceReceipt", request["roots"]["sourceReceipt"])
+        opened["sourceLedger"] = StoreRoot("sourceLedger", request["roots"]["sourceLedger"])
+        reject_root_overlap(opened)
+        native_parts = ["native-v1", app, source_id + ".json"]
+        if not final_exists(opened["sourceReceipt"], native_parts, "source native receipt"):
+            portable_parts = ["portable-v1", app, source_id + ".json"]
+            if final_exists(opened["sourceReceipt"], portable_parts, "source portable receipt"):
+                fail("portable receipts are one-hop lineage projections and cannot be promoted recursively")
+            fail("source native receipt does not exist")
+
+        receipt = Snapshot(opened["sourceReceipt"], native_parts,
+                           MAX_RECEIPT_BYTES, "source native receipt", retain_bytes=True)
+        source_files.append(receipt)
+        source_receipt = parse_json_bytes(receipt.bytes, MAX_RECEIPT_BYTES,
+                                          "source native receipt", canonical=True)
+        if (not isinstance(source_receipt, dict) or source_receipt.get("receiptId") != source_id or
+                source_receipt.get("app") != app):
+            fail("source native receipt embedded identity/app does not match its namespace")
+        try:
+            apk_sha = source_receipt["apk"]["sha256"]
+            spec_sha = source_receipt["source"]["effectiveAppSpec"]["sha256"]
+            capture_sha = source_receipt["capture"]["sha256"]
+        except (KeyError, TypeError):
+            fail("source native receipt does not contain required artifact digest locators")
+        valid_sha(apk_sha, "source native receipt APK digest locator")
+        valid_sha(spec_sha, "source native receipt effective AppSpec digest locator")
+        valid_sha(capture_sha, "source native receipt capture digest locator")
+
+        apk = Snapshot(opened["sourceReceipt"], ["artifacts", "apk", apk_sha + ".apk"],
+                       MAX_APK_BYTES, "source APK", positive=True, retain_bytes=False)
+        source_files.append(apk)
+        spec = Snapshot(opened["sourceReceipt"], ["artifacts", "spec", spec_sha + ".json"],
+                        MAX_SPEC_BYTES, "source effective AppSpec", retain_bytes=True)
+        source_files.append(spec)
+        capture = Snapshot(opened["sourceLedger"], ["artifacts", capture_sha + ".png"],
+                           MAX_CAPTURE_BYTES, "source capture", retain_bytes=True)
+        source_files.append(capture)
+        parse_json_bytes(spec.bytes, MAX_SPEC_BYTES, "source effective AppSpec", canonical=True)
+        capture_facts = inspect_png(capture.bytes, "source capture")
+
+        for source in source_files:
+            source.verify()
+        for root in opened.values():
+            root.verify()
+        return {
+            "rootIdentities": {
+                "receipt": root_identity(opened["sourceReceipt"].path, os.fstat(opened["sourceReceipt"].fd)),
+                "ledger": root_identity(opened["sourceLedger"].path, os.fstat(opened["sourceLedger"].fd)),
+            },
+            "lineageReceiptBase64": encode_base64(receipt.bytes),
+            "effectiveAppSpecBase64": encode_base64(spec.bytes),
+            "captureBase64": encode_base64(capture.bytes),
+            "artifacts": {
+                "apk": {"sha256": apk.sha256, "bytes": apk.size},
+                "effectiveAppSpec": {"storedSha256": spec.sha256, "storedBytes": spec.size},
+                "capture": capture_facts,
+            },
+        }
+    finally:
+        for source in source_files:
+            source.close()
+        for root in reversed(list(opened.values())):
+            root.close()
+
+
 def do_promote(request):
     exact_keys(request, ["protocol", "version", "operation", "app", "sourceReceiptId", "roots", "expected", "publications"], "promote request")
     app = request["app"]
@@ -1145,7 +1222,7 @@ def read_request():
         fail("helper request must be an object")
     if request.get("protocol") != PROTOCOL or request.get("version") != VERSION:
         fail("unsupported helper protocol/version")
-    if request.get("operation") not in ("promote", "inspect", "discover"):
+    if request.get("operation") not in ("promote", "inspect", "discover", "source-inspect"):
         fail("unsupported helper operation")
     return request
 
@@ -1170,6 +1247,9 @@ def main():
         elif operation == "inspect":
             result_key = "inspection"
             result = do_inspect(request)
+        elif operation == "source-inspect":
+            result_key = "source"
+            result = do_source_inspect(request)
         else:
             result_key = "discovery"
             result = do_discover(request)
