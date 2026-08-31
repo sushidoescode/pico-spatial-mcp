@@ -928,6 +928,13 @@ test("promote action is disjoint on the full surface and Door 13 and never touch
   assertPromotionResult(doorPromoted, doorAction, fixture);
   assert.equal(fs.existsSync(appLedger), false, "Door promotion must not manufacture an evidence row");
 
+  for (const field of ["claim", "artifactPath", "attestation"]) {
+    const emptyRecordField = await doorCall("pico_record", { ...doorAction, [field]: "" });
+    assert.equal(emptyRecordField.status, "rejected", `Door must forward present-but-empty ${field} to the full action boundary`);
+    assert.match(emptyRecordField.reason, new RegExp(field, "i"));
+    assert.equal(fs.existsSync(appLedger), false, `rejected empty ${field} must not manufacture an evidence row`);
+  }
+
   const doorReportMixed = await doorCall("pico_record", { ...doorAction, report: true });
   assert.equal(doorReportMixed.status, "rejected");
   assert.match(doorReportMixed.reason ?? doorReportMixed.error, /report|promote|mutually exclusive/i);

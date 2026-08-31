@@ -617,12 +617,12 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       const call = await doorCall();
       const recorded = await call("record_verification", {
         app,
-        ...(action ? { action } : {}),
-        ...(claim ? { claim } : {}),
-        ...(evidenceType ? { evidenceType } : {}),
-        ...(artifactPath ? { artifactPath } : {}),
-        ...(attestation ? { attestation } : {}),
-        ...(cClass ? { cClass } : {}),
+        ...(action !== undefined ? { action } : {}),
+        ...(claim !== undefined ? { claim } : {}),
+        ...(evidenceType !== undefined ? { evidenceType } : {}),
+        ...(artifactPath !== undefined ? { artifactPath } : {}),
+        ...(attestation !== undefined ? { attestation } : {}),
+        ...(cClass !== undefined ? { cClass } : {}),
         ...(runReceiptId !== undefined ? { runReceiptId } : {}),
         ...(runReceiptPromotionId !== undefined ? { runReceiptPromotionId } : {}),
         ...(deviceSerial !== undefined ? { deviceSerial } : {}),
