@@ -262,7 +262,7 @@ function isWithin(parent: string, candidate: string): boolean {
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
 }
 
-function resolveProspectivePath(candidate: string): string {
+export function resolveProspectivePath(candidate: string): string {
   const absolute = path.resolve(expandHome(candidate));
   let ancestor = path.dirname(absolute);
   while (!fs.existsSync(ancestor)) {

@@ -387,6 +387,30 @@ test("keyHold re-reads discovery with the exact serial before input when initial
   assert.equal(receipt.ack.releaseCertain, true);
 });
 
+test("keyHold reports the bounded no-input diagnostic when initial discovery and reconnect both fail", async () => {
+  const clientCalls = [];
+  let unaryCalls = 0;
+  const receipt = await keyHold("emulator-5554", "w", 100, {
+    getClient: (_version, serial) => {
+      clientCalls.push(serial);
+      return { error: "discovery unavailable" };
+    },
+    unary: async () => { unaryCalls++; throw new Error("must not send input"); },
+    sleep: async () => {},
+    monotonicNs: (() => { let n = 0n; return () => ++n; })(),
+  });
+  assert.equal(receipt.status, "failed");
+  assert.deepEqual(clientCalls, ["emulator-5554", "emulator-5554"]);
+  assert.equal(unaryCalls, 0);
+  assert.equal(receipt.ack.connectionAttempts, 2);
+  assert.equal(receipt.ack.keydownAttempted, false);
+  assert.equal(receipt.ack.keydownAcknowledged, false);
+  assert.equal(receipt.ack.applicationUncertain, false);
+  assert.equal(receipt.ack.keyupAcknowledged, false);
+  assert.equal(receipt.ack.releaseCertain, true);
+  assert.equal("grpc" in receipt.ack, false);
+});
+
 test("keyHold never replays keydown after an ambiguous transport failure", async () => {
   const events = [];
   const receipt = await keyHold("emulator-5554", "w", 100, {

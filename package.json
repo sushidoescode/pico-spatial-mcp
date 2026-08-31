@@ -59,7 +59,7 @@
     "test:vcamtransport-native": "sh scripts/test-cmio-camera-writer.sh",
     "test:vcamreader-native": "sh scripts/test-cmio-camera-reader.sh",
     "test:briefroute": "node test/briefroute.mjs",
-    "test:emulator-restart": "node --test test/emulator.mjs test/restart-emulator.mjs test/observation.mjs",
+    "test:emulator-restart": "node --test test/emulator.mjs test/restart-emulator.mjs test/observation.mjs test/navigation.mjs",
     "test:modelmeasure": "node test/modelmeasure.mjs",
     "test:docsmeta": "node test/docsmeta.mjs",
     "test:picocli": "node test/picocli.mjs && node --test test/picocli-autoinstall.mjs test/picocli-sweep.mjs",
