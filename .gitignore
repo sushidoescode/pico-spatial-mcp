@@ -42,3 +42,4 @@ test/.*.tmp.mjs
 HANDOFF.md
 NEXT-AGENT-PROMPT.md
 evidence-frame-drift-*.png
+.superpowers/

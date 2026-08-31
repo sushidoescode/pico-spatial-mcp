@@ -1,32 +1,89 @@
-# AGENTS.md — how ANY agent should drive pico-spatial-mcp
+# AGENTS.md — pico-spatial-mcp
 
-*(This file is host-neutral: Codex reads it natively; Claude Code, Cursor, Windsurf, Copilot,
-Gemini CLI and any other MCP host get the same contract. The server is plain stdio MCP — no
-host-specific behavior. Registration per host: [docs/HOSTS.md](docs/HOSTS.md).)*
+This repo **is** the MCP server: a plain stdio server that drives PICO Spatial SDK builds,
+emulator work, and verification. Host-neutral — Codex, Cursor and Copilot read this file
+natively; Claude Code loads it through `.claude/CLAUDE.md`. Registration snippets for every
+host: [docs/HOSTS.md](docs/HOSTS.md).
 
-## Register first (any host)
-
-- **Claude Code**: `claude plugin marketplace add sushidoescode/pico-spatial-mcp` then
-  `claude plugin install pico-spatial-mcp@pico-mcp`.
-- **Codex CLI**: clone + `npm ci && npm run build`, then
-  `codex mcp add pico-spatial --env PICO_MCP_SURFACE=doors -- node /abs/path/PICO-MCP/dist/index.js`.
-- **Any MCP host**: plain stdio registration — [docs/HOSTS.md](docs/HOSTS.md) has every snippet.
-
-Start with default `pico_doctor {}` (read-only; names the exact fix for anything missing).
-The explicit `pico_doctor {calibrate:true}` route is the mutating calibration exception.
+Start any session with `pico_doctor {}` (read-only; every failing check names its own fix).
+`pico_doctor {calibrate:true}` is the one mutating exception.
 
 ## The one rule that is not negotiable
 
-**"Verified" means someone LOOKED at a rendered frame.** Never claim a visual result from a
-compile, a log line, or a tool's return value. Every build/verify tool hands you a capture
-path — read that image with your vision capability and judge it before claiming success. The
-trust ledger (`record_verification`) structurally rejects a `vision_verified` entry without a
-linked capture. Honest deferral is always acceptable; a silent over-claim is the one
-unforgivable failure.
+**"Verified" means someone LOOKED at a rendered frame.** Every build/verify tool hands you a
+capture path — read that image and judge it before claiming success. `record_verification`
+structurally rejects a `vision_verified` entry with no linked capture, and `device_verified`
+live-probes the serial and re-captures: the bytes must equal the frame you already looked at.
+If your model cannot see images, use `visual_judge` (`auto_judged`, honestly weaker), report the
+capture path, and escalate the look. Honest deferral is fine; a silent over-claim is not.
 
-**If your model cannot see images**: do not fake the look. Use the calibrated auto-judge
-(`visual_judge` → `auto_judged` evidence — honestly weaker than `vision_verified`), report the
-capture path, and escalate the look to a human or a vision-capable agent.
+Evidence ranking: `structural` < `auto_judged` < `vision_verified` < `device_verified`.
+
+## Gotchas — the expensive ones
+
+**Tests import `dist/`, and nothing rebuilds it.** 51 of 60 files in `test/` import `../dist/*.js`;
+`dist/` is gitignored and there is no `pretest` hook. Edit `src/`, run a test, and you get
+byte-identical output because the test never saw your change. **Run `npm run build` first, every
+time.** Same trap in plugin form: `scripts/plugin-bootstrap.mjs` only builds when `dist/index.js`
+is *absent*, so a host serves a stale server forever across restarts.
+
+**A release is a version bump — there is no `npm publish`.** No publish step and no release
+workflow exists. Hosts install from GitHub, and `/plugin update` keys off the version in the
+manifests, so bumping `package.json` and running `npm run sync:meta` *is* the release. Testers
+get a hand-built `.tgz`.
+
+**`npm run smoke` is not hermetic, and the better your machine is set up, the more it fails.**
+It hardcodes `~/AndroidStudioProjects/claimsight` with no existence guard. CI is green only
+because `gates.yml` sets `SMOKE_SDK_OPTIONAL=1`, which downgrades failures to SKIP *only* while
+the error text still matches "No spatialbundle binary / emulator payload found under". Once a
+real SDK is present that excuse expires and those checks become hard failures.
+
+**`test:runrevision` runs in no workflow, and the meta-gate that should catch that is itself
+red.** `test/distribution-adoption.mjs` asserts every `test:` script appears in `gates.yml`, and
+asserts script counts that no longer match reality — so the guard fails for its own reasons and
+people learn to ignore it. Four revision suites can regress invisibly.
+
+**The pico-cli policy block below is byte-pinned across six files.**
+`test/distribution-adoption.mjs` holds the canonical text inline and asserts an exact match in
+README, GETTING_STARTED, TESTERS, SKILLS, docs/HOSTS and this file. Edit one copy and five suites
+disagree with you. That test *also* rejects the block's distinctive policy vocabulary anywhere
+outside the markers, so summarising or paraphrasing the policy in ordinary prose fails the gate
+too — even a sentence describing the restriction can trip it. Read the pattern list in that test
+before writing about the policy at all.
+
+**Adding a doc link before the file exists breaks the docs gate.** `test/docsmeta.mjs` resolves
+every relative link against the working tree. It also scans a different file set locally than in
+CI, because gitignored root markdown (`CLAUDE.md`, `HANDOFF.md`, the plugin context file) exists
+on your disk and not in a clean checkout.
+
+**`PLUGINS.md` is not about the host plugins.** Despite the name it is an Android Studio /
+Gradle / Spatial Editor surface recon report, unchanged since July. The host-plugin manifests are
+the `.claude-plugin/`, `.cursor-plugin/`, `.codex-plugin/`, `.github/plugin/` and `.agents/` trees.
+
+**The two macOS-native suites pass by doing nothing off-macOS.** `test:vcamtransport-native` and
+`test:vcamreader-native` `exit 0` printing "skipped" when `uname -s` is not Darwin — green, but
+they tested nothing.
+
+## Session shape
+
+1. `pico_doctor {}` (doors) or `preflight_env` (full) — read-only, and every failure names its
+   fix. Never debug the environment by guessing.
+2. **Prefer the doors surface** (`PICO_MCP_SURFACE=doors`, the default since v36.3): 18
+   intent-level tools instead of the full surface (`PICO_MCP_SURFACE=full` —
+   252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run).
+   Note the doors surface does *not* expose `knowledge_api`, `vault_api` or `preflight_lint` —
+   switch to full when you need them. `pico_build_app` is deliberately two-step: a brief-only
+   call returns a scaffold AppSpec for YOU to author, then re-call with `{brief, draftSpec}`.
+3. **On any error, feed the text to `pico_fix`** — it maps free text to verified past failures
+   and returns the known fix. Door errors carry a `fix` field; follow it before improvising.
+4. **Knowledge authority**: `vault_api` is authoritative for exact SDK declarations and
+   file/line citations; `knowledge_api` is broad graph context. `preflight_lint` consults the
+   graph only via explicit `knowledgeSecondOpinion`, and that result is advisory — it never
+   changes `clean`.
+5. **Emulator**: must be running before device work. From the doors surface, boot it with
+   `pico_emulator {action:'boot'}`; `scripts/restart-emulator.sh` is the full-surface route.
+6. **Record what you proved** with `record_verification`, using the evidence class you actually
+   earned.
 
 ## Managed pico-cli policy
 
@@ -67,43 +124,8 @@ compatibility, hidden-alias longevity, perf provisioning, emulator/device/Window
 visual evidence.
 <!-- pico-mcp-managed-cli-policy:end -->
 
-## Session shape
+## Model-capability requirements
 
-1. **Start with default `pico_doctor {}`** (doors surface) or `preflight_env` (full surface) —
-   read-only; every failing check carries the exact fix command. The explicit
-   `pico_doctor {calibrate:true}` route is mutating. Never debug the environment by guessing.
-2. **Prefer the doors surface for your first sessions** (`PICO_MCP_SURFACE=doors`, and the
-   default when the variable is unset since v36.3): 18
-   intent-level tools instead of the full surface (`PICO_MCP_SURFACE=full` —
-   252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run).
-   `pico_build_app` is a TWO-STEP protocol by design —
-   a brief-only call returns a scaffold AppSpec for YOU to author; re-call with
-   `{brief, draftSpec}` to build.
-3. **On any error, feed the text to `pico_fix`** — it maps free text to a knowledge base of
-   verified past failures and returns the known fix. Door errors carry a `fix` field; follow it
-   before improvising.
-4. **Use the right knowledge authority**: `knowledge_api` supplies broad graph context on the full
-   surface; `vault_api` is authoritative for exact SDK declarations and file/line citations.
-   `preflight_lint` queries the graph only through explicit `knowledgeSecondOpinion`, and the result
-   is advisory — it never changes `clean`.
-5. **Emulator pre-condition**: the PICO emulator must be running (Spatial Editor app, or
-   `scripts/restart-emulator.sh`). `pico_doctor` tells you if it isn't.
-6. **Record what you proved**: `record_verification` with the evidence class you actually
-   earned (`structural` < `auto_judged` < `vision_verified` < `device_verified`). The full
-   ranking and vocabulary: [README.md](README.md#vocabulary-primer). `device_verified` is not a
-   label you can assert from strings: supply the attached serial and the server live-probes its
-   identity plus a same-serial screencap, whose bytes must equal the frame you already LOOKED at.
-
-## What to read next
-
-- [QUICKSTART.md](QUICKSTART.md) — the proven 15-minute first-light sequence.
-- [SKILLS.md](SKILLS.md) — the full agent reference for the tool surface.
-- [CAPABILITIES.md](CAPABILITIES.md) — what is proven, with evidence classes.
-- [docs/HOSTS.md](docs/HOSTS.md) — registering this server in your host.
-
-## Known model-capability requirements (honest)
-
-- **Vision** for the LOOK step (see rule one). Everything else — planning, authoring AppSpecs,
-  driving tools, reading logs — is plain text/JSON tool-calling any capable model can do.
-- Long tool timeouts: full builds run minutes; configure your host's MCP timeout ≥ 10 minutes
-  for `pico_build_app`/`fleet_build`.
+Vision is required for the LOOK step above; everything else is plain text/JSON tool-calling.
+Full builds run for minutes — configure your host's MCP timeout to ≥10 minutes for
+`pico_build_app` and `fleet_build`.
