@@ -6,6 +6,11 @@ import {
   resolveProspectivePath,
   type CaptureSettledReceipt,
 } from "./observation.js";
+import {
+  APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS,
+  type ApplicationContinuitySample,
+} from "./runtimecontinuity.js";
+export type { ApplicationContinuitySample, BoundaryProbeEventV1 } from "./runtimecontinuity.js";
 
 export type RelativeCameraAction =
   | { kind: "key_hold"; key: "w" | "a" | "s" | "d" | "q" | "e"; holdMs: number }
@@ -62,27 +67,6 @@ export interface ReservedArtifactSession {
   runId: string;
   absoluteRoot: string;
   ownerNonceHash: string;
-}
-
-export interface ApplicationContinuitySample {
-  observedAtMonotonicNs: string;
-  serial: string;
-  bootId: string;
-  packageName: string;
-  allowedResumedComponents: string[];
-  apkSha256: string;
-  pid: number | null;
-  pidStartTicks: string | null;
-  resumedComponents: string[];
-  foreground: "exact_allowed" | "same_package_unlisted" | "different_package" | "absent" | "unknown";
-  probeEventsSincePrior: unknown[];
-  probeParse: "ok" | "absent" | "malformed" | "truncated";
-  probeSequence: "complete" | "gap" | "wrong_session" | "wrong_generation" | "unknown";
-  watchdog: {
-    status: "advancing" | "stalled" | "absent" | "unparsed";
-    focus?: string;
-    lastRenderTime?: string;
-  };
 }
 
 export type RouteContinuityCapability =
@@ -190,7 +174,6 @@ interface ActionUsage {
 
 const KEY_ACTION_TIMEOUT_RESERVE_MS = 18_800;
 const LOOK_ACTION_TIMEOUT_RESERVE_MS = 30_000;
-const CONTINUITY_SAMPLE_RESERVE_MS = 10_000;
 const ROUTE_FINALIZATION_RESERVE_MS = 10_000;
 const WALK_KEYS = new Set(["w", "a", "s", "d", "q", "e"]);
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -357,7 +340,7 @@ function conservativeWaypointDurationMs(
   ), 0);
   const captureMs = input.capture.maxTries * input.capture.attemptTimeoutMs
     + Math.max(0, input.capture.maxTries - 1) * input.capture.intervalMs;
-  const continuityMs = input.continuity.kind === "required" ? 2 * CONTINUITY_SAMPLE_RESERVE_MS : 0;
+  const continuityMs = input.continuity.kind === "required" ? 2 * APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS : 0;
   return actionMs + captureMs + continuityMs + input.budgets.recoveryReserveMs + ROUTE_FINALIZATION_RESERVE_MS;
 }
 
@@ -658,6 +641,13 @@ export async function executeRelativeCameraRoute(
 
     const continuityBefore = await observeContinuity(input, deps);
     if (!continuityBefore || !continuityBefore.matches) return finish("binding_lost");
+    const elapsedAfterContinuityMs = elapsedMs();
+    if (elapsedAfterContinuityMs === null) return finishWithoutClock("budget_exhausted");
+    const remainingWaypointReserveMs = conservativeWaypointDurationMs(input, decision)
+      - (input.continuity.kind === "required" ? APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS : 0);
+    if (elapsedAfterContinuityMs + remainingWaypointReserveMs > input.budgets.maxDurationMs) {
+      return finish("budget_exhausted");
+    }
 
     let actionReceipts: CameraActionReceipt[];
     try {

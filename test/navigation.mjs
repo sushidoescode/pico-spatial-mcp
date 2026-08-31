@@ -762,6 +762,42 @@ test("required continuity fails closed when missing, mismatched before input, or
   assert.equal(lostAfter.waypoints[0].continuityAfter.kind, "sampled");
 });
 
+test("route rechecks its elapsed deadline after pre-action continuity and refuses late input", async () => {
+  let clockCalls = 0;
+  let samples = 0;
+  let appliedCount = 0;
+  let captureCount = 0;
+  const trace = await executeRelativeCameraRoute(
+    routeInput({
+      continuity: { kind: "required", binding: applicationBinding },
+      budgets: { ...defaultBudgets, maxDurationMs: 60_000 },
+    }),
+    () => [{ kind: "key_hold", key: "w", holdMs: 50 }],
+    dependencies({
+      monotonicNs: () => {
+        clockCalls += 1;
+        return clockCalls <= 2 ? 0n : 100_000_000_000n;
+      },
+      sampleContinuity: async () => {
+        samples += 1;
+        return continuitySample();
+      },
+      applyRelativeAction: async (action) => {
+        appliedCount += 1;
+        return applied(action);
+      },
+      captureSettled: async (capturePath) => {
+        captureCount += 1;
+        return settled(capturePath);
+      },
+    }),
+  );
+  assert.equal(trace.status, "budget_exhausted");
+  assert.equal(samples, 1);
+  assert.equal(appliedCount, 0);
+  assert.equal(captureCount, 0);
+});
+
 test("malformed numeric budgets, capture policies, holds, and drags fail closed before dependencies", async () => {
   const cases = [
     ["fractional max actions", { budgets: { ...defaultBudgets, maxActions: 1.5 } }, [{ kind: "key_hold", key: "w", holdMs: 50 }]],
