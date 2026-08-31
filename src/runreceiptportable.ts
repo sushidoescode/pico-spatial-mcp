@@ -16,6 +16,7 @@ import {
   RUN_RECEIPT_MAX_BYTES,
   RUN_RECEIPT_MAX_PER_APP,
   SPEC_ARTIFACT_DIRECTORY,
+  findHistoricalNativeRunReceipt,
   readNativeRunReceipt,
   runReceiptDirectory,
   validateNativeRunReceiptCaptureBinding,
@@ -252,7 +253,7 @@ export type HistoricalRunReceiptCandidateIssue = {
 export type HistoricalRunReceiptSelection =
   | { status: "valid"; receipt: HistoricalRunReceipt; rejectedCandidates: HistoricalRunReceiptCandidateIssue[] }
   | { status: "none"; rejectedCandidates: HistoricalRunReceiptCandidateIssue[] }
-  | { status: "invalid-store"; issues: string[] };
+  | { status: "invalid-store"; issues: string[]; rejectedCandidates: HistoricalRunReceiptCandidateIssue[] };
 
 function domainSeparatedId(domain: string, value: unknown): string {
   return crypto.createHash("sha256")
@@ -393,34 +394,78 @@ const helperInspectionSchema = z.object({
   }).strict(),
 }).strict();
 
-const helperOkSchema = z.object({
+const historicalNamespaceSchema = z.union([
+  z.literal(NATIVE_RECEIPT_DIRECTORY),
+  z.literal(PORTABLE_RECEIPT_DIRECTORY),
+  z.literal(PROMOTION_DIRECTORY),
+]);
+const helperDiscoveryRejectedCandidateSchema = z.object({
+  namespace: historicalNamespaceSchema,
+  receiptId: z.string().max(255),
+  issues: z.array(z.string().min(1).max(4096)).min(1).max(16),
+}).strict();
+const helperDiscoverySchema = z.object({
+  rootIdentities: z.object({ receipt: rootIdentitySchema, ledger: rootIdentitySchema }).strict(),
+  counts: z.object({
+    native: z.number().int().nonnegative().max(RUN_RECEIPT_MAX_PER_APP),
+    portable: z.number().int().nonnegative().max(PORTABLE_RUN_RECEIPT_MAX_PER_APP),
+    manifests: z.number().int().nonnegative().max(PROMOTION_MANIFEST_MAX_PER_APP),
+  }).strict(),
+  nativeReceiptIds: z.array(sha256Schema).max(RUN_RECEIPT_MAX_PER_APP),
+  portableReceiptIds: z.array(sha256Schema).max(PORTABLE_RUN_RECEIPT_MAX_PER_APP),
+  manifests: z.array(z.object({
+    promotionId: sha256Schema,
+    portableReceiptId: sha256Schema,
+  }).strict()).max(PROMOTION_MANIFEST_MAX_PER_APP),
+  rejectedCandidates: z.array(helperDiscoveryRejectedCandidateSchema).max(HISTORICAL_RUN_RECEIPT_MAX_SCANNED_PER_APP),
+}).strict();
+
+const helperInspectionOkSchema = z.object({
   protocol: z.literal(HELPER_PROTOCOL),
   version: z.literal(HELPER_PROTOCOL_VERSION),
   status: z.literal("ok"),
   operation: z.union([z.literal("promote"), z.literal("inspect")]),
   inspection: helperInspectionSchema,
 }).strict();
+const helperDiscoveryOkSchema = z.object({
+  protocol: z.literal(HELPER_PROTOCOL),
+  version: z.literal(HELPER_PROTOCOL_VERSION),
+  status: z.literal("ok"),
+  operation: z.literal("discover"),
+  discovery: helperDiscoverySchema,
+}).strict();
 const helperErrorSchema = z.object({
   protocol: z.literal(HELPER_PROTOCOL),
   version: z.literal(HELPER_PROTOCOL_VERSION),
   status: z.literal("error"),
-  operation: z.union([z.literal("promote"), z.literal("inspect"), z.literal("unknown")]),
+  operation: z.union([z.literal("promote"), z.literal("inspect"), z.literal("discover"), z.literal("unknown")]),
   reason: z.string().min(1).max(4096),
 }).strict();
 const helperUnavailableSchema = z.object({
   protocol: z.literal(HELPER_PROTOCOL),
   version: z.literal(HELPER_PROTOCOL_VERSION),
   status: z.literal("unavailable"),
-  operation: z.union([z.literal("promote"), z.literal("inspect"), z.literal("unknown")]),
+  operation: z.union([z.literal("promote"), z.literal("inspect"), z.literal("discover"), z.literal("unknown")]),
   reason: z.string().min(1).max(4096),
 }).strict();
-const helperResponseSchema = z.discriminatedUnion("status", [helperOkSchema, helperErrorSchema, helperUnavailableSchema]);
+const helperResponseSchema = z.union([
+  helperInspectionOkSchema,
+  helperDiscoveryOkSchema,
+  helperErrorSchema,
+  helperUnavailableSchema,
+]);
 
 type HelperInspection = z.infer<typeof helperInspectionSchema>;
-type HelperResult =
-  | { status: "ok"; inspection: HelperInspection }
+type HelperDiscovery = z.infer<typeof helperDiscoverySchema>;
+type HelperFailure =
   | { status: "error"; reason: string }
   | { status: "unavailable"; reason: string };
+type HelperInspectionResult =
+  | { status: "ok"; inspection: HelperInspection }
+  | HelperFailure;
+type HelperDiscoveryResult =
+  | { status: "ok"; discovery: HelperDiscovery }
+  | HelperFailure;
 type HelperRuntime = { python: string; helper: string };
 
 function issueText(error: unknown): string {
@@ -504,7 +549,10 @@ function helperRuntime(): { status: "available"; runtime: HelperRuntime } | { st
     : `${PYTHON_OVERRIDE} is not an executable regular file` };
 }
 
-function parseHelperResponse(raw: Buffer, expectedOperation: "promote" | "inspect"): HelperResult {
+function parseHelperResponse(
+  raw: Buffer,
+  expectedOperation: "promote" | "inspect" | "discover",
+): HelperInspectionResult | HelperDiscoveryResult {
   try {
     const text = raw.toString("utf8");
     if (!raw.equals(Buffer.from(text, "utf8")) || !text.endsWith("\n") || text.indexOf("\n") !== text.length - 1) {
@@ -516,7 +564,9 @@ function parseHelperResponse(raw: Buffer, expectedOperation: "promote" | "inspec
     }
     if (response.operation !== expectedOperation) throw new Error("helper operation did not match its request");
     return response.status === "ok"
-      ? { status: "ok", inspection: response.inspection }
+      ? response.operation === "discover"
+        ? { status: "ok", discovery: response.discovery }
+        : { status: "ok", inspection: response.inspection }
       : response.status === "unavailable"
         ? { status: "unavailable", reason: response.reason }
         : { status: "error", reason: response.reason };
@@ -525,10 +575,14 @@ function parseHelperResponse(raw: Buffer, expectedOperation: "promote" | "inspec
   }
 }
 
-async function runHelper(runtime: HelperRuntime, request: unknown, expectedOperation: "promote" | "inspect"): Promise<HelperResult> {
+async function runHelper(
+  runtime: HelperRuntime,
+  request: unknown,
+  expectedOperation: "promote" | "inspect",
+): Promise<HelperInspectionResult> {
   const input = Buffer.from(JSON.stringify(request), "utf8");
   if (input.length > HELPER_MAX_STDIN_BYTES) return { status: "error", reason: "receipt portability helper request exceeds its bound" };
-  return await new Promise<HelperResult>((resolve) => {
+  return await new Promise<HelperInspectionResult>((resolve) => {
     const child = spawn(runtime.python, ["-I", "-S", "-B", runtime.helper], {
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
@@ -539,7 +593,7 @@ async function runHelper(runtime: HelperRuntime, request: unknown, expectedOpera
     let stderrBytes = 0;
     let settled = false;
     let overflow: string | undefined;
-    const finish = (result: HelperResult): void => {
+    const finish = (result: HelperInspectionResult): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -569,14 +623,20 @@ async function runHelper(runtime: HelperRuntime, request: unknown, expectedOpera
       if (overflow) return finish({ status: "error", reason: overflow });
       if (signal || code !== 0) return finish({ status: "error", reason: `receipt portability helper terminated with ${signal ?? `exit ${code}`}` });
       if (stderrBytes !== 0) return finish({ status: "error", reason: "receipt portability helper emitted unexpected stderr" });
-      return finish(parseHelperResponse(Buffer.concat(stdout), expectedOperation));
+      return finish(parseHelperResponse(Buffer.concat(stdout), expectedOperation) as HelperInspectionResult);
     });
     child.stdin.on("error", () => { /* close reports the authoritative outcome */ });
     child.stdin.end(input);
   });
 }
 
-function runHelperSync(runtime: HelperRuntime, request: unknown, expectedOperation: "inspect"): HelperResult {
+function runHelperSync(runtime: HelperRuntime, request: unknown, expectedOperation: "inspect"): HelperInspectionResult;
+function runHelperSync(runtime: HelperRuntime, request: unknown, expectedOperation: "discover"): HelperDiscoveryResult;
+function runHelperSync(
+  runtime: HelperRuntime,
+  request: unknown,
+  expectedOperation: "inspect" | "discover",
+): HelperInspectionResult | HelperDiscoveryResult {
   const input = Buffer.from(JSON.stringify(request), "utf8");
   if (input.length > HELPER_MAX_STDIN_BYTES) return { status: "error", reason: "receipt portability helper request exceeds its bound" };
   const child = spawnSync(runtime.python, ["-I", "-S", "-B", runtime.helper], {
@@ -986,11 +1046,6 @@ export function readPortableRunReceiptSync(
 
 type HistoricalCandidateCounts = { native: number; portable: number; manifests: number };
 type HistoricalNamespace = HistoricalRunReceiptCandidateIssue["namespace"];
-type ScannedNamespace = {
-  namespace: HistoricalNamespace;
-  directory: string;
-  candidates: fs.Dirent[];
-};
 
 /** Pure limit check used after all three namespaces have been counted. Keeping this separate makes
  * the aggregate rule testable without manufacturing twelve thousand artifact-bearing receipts. */
@@ -1050,7 +1105,7 @@ export function selectValidatedHistoricalRunReceiptCandidates(
         .map((candidate) => `${candidate.receiptId}/${candidate.promotionId}`).join(", ")}`);
     }
   }
-  if (ambiguityIssues.length) return { status: "invalid-store", issues: ambiguityIssues };
+  if (ambiguityIssues.length) return { status: "invalid-store", issues: ambiguityIssues, rejectedCandidates };
   winners.sort((left, right) => {
     const created = Date.parse(right.createdAt) - Date.parse(left.createdAt);
     return created || left.sourceReceiptId.localeCompare(right.sourceReceiptId);
@@ -1058,27 +1113,6 @@ export function selectValidatedHistoricalRunReceiptCandidates(
   return winners.length
     ? { status: "valid", receipt: winners[0], rejectedCandidates }
     : { status: "none", rejectedCandidates };
-}
-
-function scanHistoricalNamespace(
-  receiptRoot: string,
-  namespace: HistoricalNamespace,
-  app: string,
-): { scan?: ScannedNamespace; issue?: string } {
-  const directory = path.join(receiptRoot, namespace, app);
-  try {
-    const stats = fs.lstatSync(directory);
-    if (!stats.isDirectory() || stats.isSymbolicLink()) {
-      return { issue: `${namespace} app path '${directory}' is not a no-follow directory` };
-    }
-    const candidates = fs.readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.name.endsWith(".json"))
-      .sort((left, right) => left.name.localeCompare(right.name));
-    return { scan: { namespace, directory, candidates } };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { scan: { namespace, directory, candidates: [] } };
-    return { issue: `${namespace} app directory could not be read: ${issueText(error)}` };
-  }
 }
 
 function candidateIssue(namespace: HistoricalNamespace, receiptId: string, ...issues: string[]): HistoricalRunReceiptCandidateIssue {
@@ -1157,9 +1191,98 @@ function normalizedPortableHistoricalReceipt(
   };
 }
 
-/** Bounded historical discovery. Discovery bytes are untrusted: every portable winner is accepted
- * only after readPortableRunReceiptSync performs descriptor-relative inspection and full target
- * rehash. Recorded source roots are parsed as hash-bound history and are never opened here. */
+function invalidHistoricalStore(
+  issues: string[],
+  rejectedCandidates: HistoricalRunReceiptCandidateIssue[] = [],
+): Extract<HistoricalRunReceiptSelection, { status: "invalid-store" }> {
+  return { status: "invalid-store", issues, rejectedCandidates };
+}
+
+function nativeOnlyHistoricalSelection(app: string, options: ReceiptStoreOptions): HistoricalRunReceiptSelection {
+  const native = findHistoricalNativeRunReceipt(app, options);
+  if (native.status === "invalid-store") return invalidHistoricalStore(native.issues);
+  const rejectedCandidates = native.rejectedCandidates.map((candidate) =>
+    candidateIssue(NATIVE_RECEIPT_DIRECTORY, candidate.receiptId, ...candidate.issues));
+  return native.status === "valid"
+    ? {
+        status: "valid",
+        receipt: normalizedNativeHistoricalReceipt(native.receipt, native.receiptPath),
+        rejectedCandidates,
+      }
+    : { status: "none", rejectedCandidates };
+}
+
+function lexicalCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function assertStrictlySortedUnique(values: string[], label: string): void {
+  for (let index = 1; index < values.length; index += 1) {
+    const order = lexicalCompare(values[index - 1], values[index]);
+    if (order === 0) throw new Error(`${label} contains a duplicate value`);
+    if (order > 0) throw new Error(`${label} is not strictly sorted`);
+  }
+}
+
+function validatedHelperDiscovery(
+  value: HelperDiscovery,
+  targetReceipt: RootIdentity,
+  targetLedger: RootIdentity,
+): HelperDiscovery {
+  const discovery = helperDiscoverySchema.parse(value);
+  if (canonicalJson(discovery.rootIdentities.receipt) !== canonicalJson(targetReceipt) ||
+      canonicalJson(discovery.rootIdentities.ledger) !== canonicalJson(targetLedger)) {
+    throw new Error("historical discovery root identities do not match the opened target stores");
+  }
+  const limitIssues = historicalRunReceiptCandidateLimitIssues(discovery.counts);
+  if (limitIssues.length) throw new Error(limitIssues.join("; "));
+  assertStrictlySortedUnique(discovery.nativeReceiptIds, "historical discovery native receipt IDs");
+  assertStrictlySortedUnique(discovery.portableReceiptIds, "historical discovery portable receipt IDs");
+  assertStrictlySortedUnique(discovery.manifests.map((manifest) => manifest.promotionId),
+    "historical discovery promotion manifest IDs");
+
+  const namespaceOrder: Record<HistoricalNamespace, number> = {
+    [NATIVE_RECEIPT_DIRECTORY]: 0,
+    [PORTABLE_RECEIPT_DIRECTORY]: 1,
+    [PROMOTION_DIRECTORY]: 2,
+  };
+  for (let index = 1; index < discovery.rejectedCandidates.length; index += 1) {
+    const previous = discovery.rejectedCandidates[index - 1];
+    const current = discovery.rejectedCandidates[index];
+    const order = namespaceOrder[previous.namespace] - namespaceOrder[current.namespace]
+      || lexicalCompare(previous.receiptId, current.receiptId);
+    if (order === 0) throw new Error("historical discovery rejected candidates contain a duplicate namespace/identity");
+    if (order > 0) throw new Error("historical discovery rejected candidates are not strictly sorted");
+  }
+
+  const rejectedCounts: HistoricalCandidateCounts = { native: 0, portable: 0, manifests: 0 };
+  const acceptedByNamespace = {
+    [NATIVE_RECEIPT_DIRECTORY]: new Set(discovery.nativeReceiptIds),
+    [PORTABLE_RECEIPT_DIRECTORY]: new Set(discovery.portableReceiptIds),
+    [PROMOTION_DIRECTORY]: new Set(discovery.manifests.map((manifest) => manifest.promotionId)),
+  };
+  for (const candidate of discovery.rejectedCandidates) {
+    const countKey = candidate.namespace === NATIVE_RECEIPT_DIRECTORY
+      ? "native"
+      : candidate.namespace === PORTABLE_RECEIPT_DIRECTORY ? "portable" : "manifests";
+    rejectedCounts[countKey] += 1;
+    if (acceptedByNamespace[candidate.namespace].has(candidate.receiptId)) {
+      throw new Error(`historical discovery ${candidate.namespace} candidate appears in both accepted and rejected output`);
+    }
+  }
+  const measuredCounts: HistoricalCandidateCounts = {
+    native: discovery.nativeReceiptIds.length + rejectedCounts.native,
+    portable: discovery.portableReceiptIds.length + rejectedCounts.portable,
+    manifests: discovery.manifests.length + rejectedCounts.manifests,
+  };
+  if (canonicalJson(measuredCounts) !== canonicalJson(discovery.counts)) {
+    throw new Error("historical discovery candidate counts do not match its accepted and rejected output");
+  }
+  return discovery;
+}
+
+/** Descriptor-relative bounded discovery. The helper returns identifiers and pairing metadata only;
+ * every portable pair still passes the independent inspect operation and full target rehash. */
 export function findHistoricalRunReceipt(
   appValue: string,
   options: ReceiptStoreOptions = {},
@@ -1168,62 +1291,63 @@ export function findHistoricalRunReceipt(
   try {
     app = appSchema.parse(appValue);
   } catch (error) {
-    return { status: "invalid-store", issues: [issueText(error)] };
+    return invalidHistoricalStore([issueText(error)]);
   }
-  const receiptRoot = options.rootDir ? path.resolve(options.rootDir) : runReceiptDirectory();
-  const scans = [NATIVE_RECEIPT_DIRECTORY, PORTABLE_RECEIPT_DIRECTORY, PROMOTION_DIRECTORY]
-    .map((namespace) => scanHistoricalNamespace(receiptRoot, namespace, app));
-  const scanIssues = scans.flatMap((result) => result.issue ? [result.issue] : []);
-  if (scanIssues.length) return { status: "invalid-store", issues: scanIssues };
-  const [nativeScan, portableScan, manifestScan] = scans.map((result) => result.scan as ScannedNamespace);
-  const limitIssues = historicalRunReceiptCandidateLimitIssues({
-    native: nativeScan.candidates.length,
-    portable: portableScan.candidates.length,
-    manifests: manifestScan.candidates.length,
-  });
-  if (limitIssues.length) return { status: "invalid-store", issues: limitIssues };
+  const runtime = helperRuntime();
+  if (runtime.status === "unavailable") return nativeOnlyHistoricalSelection(app, options);
+  let targetReceipt: RootIdentity;
+  let targetLedger: RootIdentity;
+  try {
+    const parsedOptions = readOptionsSchema.parse(options);
+    targetReceipt = rootIdentityAt(
+      fs.realpathSync(parsedOptions.rootDir ?? runReceiptDirectory()),
+      "target receipt root",
+    );
+    targetLedger = rootIdentityAt(
+      fs.realpathSync(parsedOptions.ledgerDir ?? ledgerDirectory()),
+      "target ledger root",
+    );
+  } catch (error) {
+    return invalidHistoricalStore([issueText(error)]);
+  }
+  const helper = runHelperSync(runtime.runtime, {
+    protocol: HELPER_PROTOCOL,
+    version: HELPER_PROTOCOL_VERSION,
+    operation: "discover",
+    app,
+    roots: { targetReceipt: rootProtocol(targetReceipt), targetLedger: rootProtocol(targetLedger) },
+  }, "discover");
+  if (helper.status === "unavailable") return nativeOnlyHistoricalSelection(app, options);
+  if (helper.status === "error") return invalidHistoricalStore(helper.reason.split("\n"));
+  let discovery: HelperDiscovery;
+  try {
+    discovery = validatedHelperDiscovery(helper.discovery, targetReceipt, targetLedger);
+  } catch (error) {
+    return invalidHistoricalStore([issueText(error)]);
+  }
 
-  const rejectedCandidates: HistoricalRunReceiptCandidateIssue[] = [];
+  const rejectedCandidates: HistoricalRunReceiptCandidateIssue[] = discovery.rejectedCandidates.map((candidate) => ({
+    namespace: candidate.namespace,
+    receiptId: candidate.receiptId,
+    issues: [...candidate.issues],
+  }));
   const validCandidates: HistoricalRunReceipt[] = [];
-  for (const candidate of nativeScan.candidates) {
-    const receiptId = candidate.name.slice(0, -".json".length);
-    if (!candidate.isFile() || !SHA256_PATTERN.test(receiptId)) {
-      rejectedCandidates.push(candidateIssue(NATIVE_RECEIPT_DIRECTORY, receiptId, "candidate filename is not a canonical receipt ID JSON file"));
-      continue;
-    }
+  const portableReadOptions: ReceiptStoreOptions = {
+    rootDir: targetReceipt.realPath,
+    ledgerDir: targetLedger.realPath,
+  };
+  for (const receiptId of discovery.nativeReceiptIds) {
     const read = readNativeRunReceipt(app, receiptId, { ...options, mode: "historical" });
     if (read.status === "invalid") rejectedCandidates.push(candidateIssue(NATIVE_RECEIPT_DIRECTORY, receiptId, ...read.issues));
     else validCandidates.push(normalizedNativeHistoricalReceipt(read.receipt, read.receiptPath));
   }
 
-  const portableIds = new Set<string>();
-  for (const candidate of portableScan.candidates) {
-    const receiptId = candidate.name.slice(0, -".json".length);
-    if (!candidate.isFile() || !SHA256_PATTERN.test(receiptId)) {
-      rejectedCandidates.push(candidateIssue(PORTABLE_RECEIPT_DIRECTORY, receiptId, "candidate filename is not a canonical receipt ID JSON file"));
-    } else {
-      portableIds.add(receiptId);
-    }
-  }
-
-  const manifestsByPortableReceipt = new Map<string, PromotionManifest[]>();
-  for (const candidate of manifestScan.candidates) {
-    const promotionId = candidate.name.slice(0, -".json".length);
-    if (!candidate.isFile() || !SHA256_PATTERN.test(promotionId)) {
-      rejectedCandidates.push(candidateIssue(PROMOTION_DIRECTORY, promotionId, "candidate filename is not a canonical promotion ID JSON file"));
-      continue;
-    }
-    try {
-      const bytes = boundedFile(path.join(manifestScan.directory, candidate.name), PROMOTION_MANIFEST_MAX_BYTES, "promotion discovery manifest");
-      const manifest = parsePromotionManifest(jsonCanonicalBytes(bytes, PROMOTION_MANIFEST_MAX_BYTES, "promotion discovery manifest"));
-      if (manifest.promotionId !== promotionId) throw new Error("manifest promotionId does not match its candidate filename");
-      if (manifest.core.app !== app) throw new Error("manifest app does not match its namespace app");
-      const paired = manifestsByPortableReceipt.get(manifest.core.portableReceiptId) ?? [];
-      paired.push(manifest);
-      manifestsByPortableReceipt.set(manifest.core.portableReceiptId, paired);
-    } catch (error) {
-      rejectedCandidates.push(candidateIssue(PROMOTION_DIRECTORY, promotionId, issueText(error)));
-    }
+  const portableIds = new Set(discovery.portableReceiptIds);
+  const manifestsByPortableReceipt = new Map<string, Array<{ promotionId: string; portableReceiptId: string }>>();
+  for (const manifest of discovery.manifests) {
+    const paired = manifestsByPortableReceipt.get(manifest.portableReceiptId) ?? [];
+    paired.push(manifest);
+    manifestsByPortableReceipt.set(manifest.portableReceiptId, paired);
   }
 
   for (const [portableReceiptId, manifests] of [...manifestsByPortableReceipt.entries()].sort(([left], [right]) => left.localeCompare(right))) {
@@ -1241,14 +1365,20 @@ export function findHistoricalRunReceipt(
       rejectedCandidates.push(candidateIssue(PORTABLE_RECEIPT_DIRECTORY, portableReceiptId, "portable receipt has no valid paired promotion manifest commit marker"));
       continue;
     }
+    let validPairs = 0;
     for (const manifest of manifests) {
-      const inspected = readPortableRunReceiptSync(app, portableReceiptId, manifest.promotionId, options);
+      const inspected = readPortableRunReceiptSync(app, portableReceiptId, manifest.promotionId, portableReadOptions);
       if (inspected.status === "valid") {
+        validPairs += 1;
         validCandidates.push(normalizedPortableHistoricalReceipt(inspected));
       } else {
-        rejectedCandidates.push(candidateIssue(PORTABLE_RECEIPT_DIRECTORY, portableReceiptId,
-          `promotion ${manifest.promotionId}: ${inspected.status === "unavailable" ? inspected.reason : inspected.issues.join("; ")}`));
+        rejectedCandidates.push(candidateIssue(PROMOTION_DIRECTORY, manifest.promotionId,
+          `portable receipt ${portableReceiptId}: ${inspected.status === "unavailable" ? inspected.reason : inspected.issues.join("; ")}`));
       }
+    }
+    if (validPairs === 0) {
+      rejectedCandidates.push(candidateIssue(PORTABLE_RECEIPT_DIRECTORY, portableReceiptId,
+        "portable receipt has no valid paired promotion manifest commit marker"));
     }
   }
   return selectValidatedHistoricalRunReceiptCandidates(validCandidates, rejectedCandidates);

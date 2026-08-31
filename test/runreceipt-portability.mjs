@@ -295,6 +295,88 @@ function runHelperProbe(source, args = []) {
   });
 }
 
+function writeFakePythonResponse(scratch, name, response) {
+  const fake = path.join(scratch, `${name}.py`);
+  const encoded = Buffer.from(response, "utf8").toString("base64");
+  fs.writeFileSync(fake, `#!${resolvedPython3()}\nimport base64, sys\nsys.stdin.buffer.read()\nsys.stdout.buffer.write(base64.b64decode("${encoded}"))\n`, { mode: 0o700 });
+  return fs.realpathSync(fake);
+}
+
+function writeStrictDiscoveryErrorPython(scratch) {
+  const fake = path.join(scratch, "strict-discovery-error-python.py");
+  fs.writeFileSync(fake, `#!${resolvedPython3()}
+import json
+import sys
+
+request = json.load(sys.stdin)
+exact = (
+    set(request) == {"protocol", "version", "operation", "app", "roots"}
+    and request.get("protocol") == "pico.receipt-portability-helper"
+    and request.get("version") == 1
+    and request.get("operation") == "discover"
+    and set(request.get("roots", {})) == {"targetReceipt", "targetLedger"}
+)
+reason = "synthetic discover error after exact request" if exact else "discover request shape was not exact"
+response = {
+    "operation": "discover",
+    "protocol": "pico.receipt-portability-helper",
+    "reason": reason,
+    "status": "error",
+    "version": 1,
+}
+sys.stdout.write(json.dumps(response, sort_keys=True, separators=(",", ":")) + "\\n")
+`, { mode: 0o700 });
+  return fs.realpathSync(fake);
+}
+
+function writeDiscoveryRacePython(scratch, mode) {
+  const fake = path.join(scratch, `discovery-${mode}-race-python.py`);
+  fs.writeFileSync(fake, `#!${resolvedPython3()}
+import importlib.util
+import os
+import sys
+
+helper_path = sys.argv[-1]
+spec = importlib.util.spec_from_file_location("receipt_portability_helper_under_test", helper_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+mode = ${JSON.stringify(mode)}
+triggered = False
+if mode == "app":
+    original_listdir = module.os.listdir
+    def replacing_listdir(fd):
+        global triggered
+        names = original_listdir(fd)
+        if not triggered:
+            triggered = True
+            app_path = os.environ["PICO_RECEIPT_TEST_DISCOVERY_APP_PATH"]
+            os.rename(app_path, app_path + ".moved")
+            os.mkdir(app_path)
+        return names
+    module.os.listdir = replacing_listdir
+    module.os.supports_fd = set(module.os.supports_fd)
+    module.os.supports_fd.add(replacing_listdir)
+else:
+    original_read = module.Snapshot._read
+    def replacing_read(self, retain_bytes):
+        global triggered
+        result = original_read(self, retain_bytes)
+        if not triggered and self.label == "promotion discovery manifest":
+            triggered = True
+            manifest_path = os.environ["PICO_RECEIPT_TEST_DISCOVERY_MANIFEST_PATH"]
+            replacement = open(manifest_path, "rb").read()
+            os.rename(manifest_path, manifest_path + ".moved")
+            with open(manifest_path, "wb") as stream:
+                stream.write(replacement)
+        return result
+    module.Snapshot._read = replacing_read
+
+module.main()
+`, { mode: 0o700 });
+  return fs.realpathSync(fake);
+}
+
 async function publishPromotion(t, suffix = "target") {
   const fixture = await createPortableFixture(t);
   const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
@@ -1254,6 +1336,241 @@ test("portable historical selection enforces namespace and aggregate candidate c
   );
 });
 
+test("findHistoricalRunReceipt enforces payload-free namespace and aggregate candidate caps", async (t) => {
+  const app = "com.example.production_caps";
+  const cases = [
+    {
+      name: "native namespace",
+      counts: { "native-v1": 4_097, "portable-v1": 0, "promotions-v1": 0 },
+      expected: [/native-v1.*4097.*4096/i],
+    },
+    {
+      name: "portable namespace",
+      counts: { "native-v1": 0, "portable-v1": 4_097, "promotions-v1": 0 },
+      expected: [/portable-v1.*4097.*4096/i],
+    },
+    {
+      name: "manifest namespace",
+      counts: { "native-v1": 0, "portable-v1": 0, "promotions-v1": 4_097 },
+      expected: [/promotions-v1.*4097.*4096/i],
+    },
+    {
+      name: "combined namespaces",
+      counts: { "native-v1": 4_096, "portable-v1": 4_096, "promotions-v1": 4_097 },
+      expected: [/promotions-v1.*4097.*4096/i, /12289.*12288.*combined/i],
+    },
+  ];
+  for (const fixtureCase of cases) {
+    await t.test(fixtureCase.name, () => {
+      const scratch = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pico-portability-cap-"));
+      t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+      const rootDir = path.join(scratch, "receipt-store");
+      const ledgerDir = path.join(scratch, "ledger-store");
+      fs.mkdirSync(rootDir);
+      fs.mkdirSync(ledgerDir);
+      for (const [namespace, count] of Object.entries(fixtureCase.counts)) {
+        if (count === 0) continue;
+        const directory = path.join(rootDir, namespace, app);
+        fs.mkdirSync(directory, { recursive: true });
+        for (let index = 0; index < count; index += 1) {
+          fs.closeSync(fs.openSync(path.join(directory, `${index.toString(16).padStart(64, "0")}.json`), "wx"));
+        }
+      }
+      const selected = portable.findHistoricalRunReceipt(app, { rootDir, ledgerDir });
+      assert.equal(selected.status, "invalid-store");
+      assert.deepEqual(selected.rejectedCandidates, []);
+      for (const expected of fixtureCase.expected) assert.match(selected.issues.join("\n"), expected);
+      assert.equal(selected.issues.length, fixtureCase.expected.length,
+        "namespace and aggregate cap failures must remain separate diagnostics");
+    });
+  }
+});
+
+test("portable historical discovery refuses a symlinked namespace parent without parsing an outside manifest", (t) => {
+  const scratch = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pico-portability-discovery-symlink-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const rootDir = path.join(scratch, "receipt-store");
+  const ledgerDir = path.join(scratch, "ledger-store");
+  const outsideNamespace = path.join(scratch, "outside-promotions");
+  const app = "com.example.discovery_symlink";
+  const outsidePromotionId = "1".repeat(64);
+  fs.mkdirSync(rootDir);
+  fs.mkdirSync(ledgerDir);
+  fs.mkdirSync(path.join(outsideNamespace, app), { recursive: true });
+  fs.writeFileSync(path.join(outsideNamespace, app, `${outsidePromotionId}.json`), "{}\n");
+  fs.symlinkSync(outsideNamespace, path.join(rootDir, "promotions-v1"));
+
+  const selected = portable.findHistoricalRunReceipt(app, { rootDir, ledgerDir });
+  assert.equal(selected.status, "invalid-store");
+  assert.deepEqual(selected.rejectedCandidates, []);
+  assert.match(selected.issues.join("\n"), /promotions-v1|no-follow|symbolic|directory/i);
+  assert.doesNotMatch(selected.issues.join("\n"), /valid JSON|canonical JSON|promotionId/i,
+    "the outside manifest bytes must never be parsed");
+});
+
+test("portable historical discovery detects app-directory and manifest replacement through retained descriptors", async (t) => {
+  for (const mode of ["app", "manifest"]) {
+    await t.test(mode, () => {
+      const scratch = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `pico-portability-discovery-${mode}-`));
+      t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+      const rootDir = path.join(scratch, "receipt-store");
+      const ledgerDir = path.join(scratch, "ledger-store");
+      const app = `com.example.discovery_${mode}_replacement`;
+      const namespace = mode === "app" ? "native-v1" : "promotions-v1";
+      const appDirectory = path.join(rootDir, namespace, app);
+      fs.mkdirSync(appDirectory, { recursive: true });
+      fs.mkdirSync(ledgerDir);
+      let manifestPath;
+      if (mode === "manifest") {
+        manifestPath = path.join(appDirectory, `${"2".repeat(64)}.json`);
+        fs.writeFileSync(manifestPath, "{}\n");
+      }
+      const fakePython = writeDiscoveryRacePython(scratch, mode);
+      const previousPython = process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+      const previousApp = process.env.PICO_RECEIPT_TEST_DISCOVERY_APP_PATH;
+      const previousManifest = process.env.PICO_RECEIPT_TEST_DISCOVERY_MANIFEST_PATH;
+      try {
+        process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = fakePython;
+        process.env.PICO_RECEIPT_TEST_DISCOVERY_APP_PATH = appDirectory;
+        if (manifestPath) process.env.PICO_RECEIPT_TEST_DISCOVERY_MANIFEST_PATH = manifestPath;
+        const selected = portable.findHistoricalRunReceipt(app, { rootDir, ledgerDir });
+        assert.equal(selected.status, "invalid-store");
+        assert.deepEqual(selected.rejectedCandidates, []);
+        assert.match(selected.issues.join("\n"), /changed|substitut|recheck|retained|helper failure/i);
+      } finally {
+        if (previousPython === undefined) delete process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+        else process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = previousPython;
+        if (previousApp === undefined) delete process.env.PICO_RECEIPT_TEST_DISCOVERY_APP_PATH;
+        else process.env.PICO_RECEIPT_TEST_DISCOVERY_APP_PATH = previousApp;
+        if (previousManifest === undefined) delete process.env.PICO_RECEIPT_TEST_DISCOVERY_MANIFEST_PATH;
+        else process.env.PICO_RECEIPT_TEST_DISCOVERY_MANIFEST_PATH = previousManifest;
+      }
+    });
+  }
+});
+
+test("portable historical discovery never falls back after an exact helper error or malformed response", async (t) => {
+  const fixture = await createPortableFixture(t, { app: "com.example.discovery_failure" });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const exactError = writeStrictDiscoveryErrorPython(fixture.scratch);
+  const malformed = writeFakePythonResponse(fixture.scratch, "malformed-discovery-python", "{}\n");
+  const previous = process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+  try {
+    for (const [name, fakePython, expected] of [
+      ["error", exactError, /synthetic discover error after exact request/i],
+      ["malformed", malformed, /invalid response|discover|schema/i],
+      ["crash", "/usr/bin/false", /terminated.*exit 1/i],
+    ]) {
+      await t.test(name, () => {
+        process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = fakePython;
+        const selected = portable.findHistoricalRunReceipt(fixture.payload.app, fixture.storeOptions);
+        assert.equal(selected.status, "invalid-store", "the valid native receipt must not become an error fallback");
+        assert.deepEqual(selected.rejectedCandidates, []);
+        assert.match(selected.issues.join("\n"), expected);
+        assert.doesNotMatch(selected.issues.join("\n"), new RegExp(published.receiptId));
+      });
+    }
+  } finally {
+    if (previous === undefined) delete process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+    else process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = previous;
+  }
+});
+
+test("portable historical discovery validates response identity, counts, ordering, and duplicates without fallback", async (t) => {
+  const fixture = await createPortableFixture(t, { app: "com.example.discovery_schema" });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const base = {
+    operation: "discover",
+    protocol: "pico.receipt-portability-helper",
+    status: "ok",
+    version: 1,
+    discovery: {
+      rootIdentities: {
+        receipt: rootIdentityForTest(fixture.rootDir),
+        ledger: rootIdentityForTest(fixture.ledgerDir),
+      },
+      counts: { native: 1, portable: 0, manifests: 0 },
+      nativeReceiptIds: [published.receiptId],
+      portableReceiptIds: [],
+      manifests: [],
+      rejectedCandidates: [],
+    },
+  };
+  const cases = [
+    ["root identity", {
+      ...base,
+      discovery: {
+        ...base.discovery,
+        rootIdentities: {
+          ...base.discovery.rootIdentities,
+          receipt: { ...base.discovery.rootIdentities.receipt, inode: "0" },
+        },
+      },
+    }, /root.*identit/i],
+    ["count mismatch", {
+      ...base,
+      discovery: { ...base.discovery, counts: { native: 2, portable: 0, manifests: 0 } },
+    }, /count|native/i],
+    ["ordering", {
+      ...base,
+      discovery: {
+        ...base.discovery,
+        counts: { native: 2, portable: 0, manifests: 0 },
+        nativeReceiptIds: [HASH_B, HASH_A],
+      },
+    }, /sort|order|native/i],
+    ["duplicate", {
+      ...base,
+      discovery: {
+        ...base.discovery,
+        counts: { native: 2, portable: 0, manifests: 0 },
+        nativeReceiptIds: [published.receiptId, published.receiptId],
+      },
+    }, /duplicate|unique|native/i],
+  ];
+  const previous = process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+  try {
+    for (const [name, response, expected] of cases) {
+      await t.test(name, () => {
+        process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = writeFakePythonResponse(
+          fixture.scratch,
+          `invalid-discovery-${String(name).replaceAll(" ", "-")}`,
+          `${canonicalJson(response)}\n`,
+        );
+        const selected = portable.findHistoricalRunReceipt(fixture.payload.app, fixture.storeOptions);
+        assert.equal(selected.status, "invalid-store");
+        assert.deepEqual(selected.rejectedCandidates, []);
+        assert.match(selected.issues.join("\n"), expected);
+      });
+    }
+  } finally {
+    if (previous === undefined) delete process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+    else process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = previous;
+  }
+});
+
+test("portable historical discovery uses unchanged native selection only when the helper is genuinely unavailable", async (t) => {
+  const fixture = await createPortableFixture(t, { app: "com.example.discovery_unavailable" });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const previous = process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+  try {
+    delete process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+    const available = portable.findHistoricalRunReceipt(fixture.payload.app, fixture.storeOptions);
+    assert.equal(available.status, "valid", available.issues?.join("\n"));
+    process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = "relative/missing-python3";
+    const selected = portable.findHistoricalRunReceipt(fixture.payload.app, fixture.storeOptions);
+    assert.equal(selected.status, "valid", selected.issues?.join("\n"));
+    assert.equal(selected.receipt.kind, "pico.native-run-receipt");
+    assert.equal(selected.receipt.receiptId, published.receiptId);
+    assert.equal(selected.receipt.receiptPath, published.receiptPath);
+    assert.deepEqual(selected.receipt, available.receipt, "native normalization must not depend on helper availability");
+    assert.deepEqual(selected.rejectedCandidates, []);
+  } finally {
+    if (previous === undefined) delete process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+    else process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = previous;
+  }
+});
+
 test("portable historical selection groups only validated candidates with native precedence and deterministic ambiguity", () => {
   const sourceReceiptId = "1".repeat(64);
   const native = {
@@ -1295,11 +1612,13 @@ test("portable historical selection groups only validated candidates with native
   assert.equal(newestGroupWins.status, "valid");
   assert.equal(newestGroupWins.receipt, newerSource);
 
-  const ambiguous = portable.selectValidatedHistoricalRunReceiptCandidates([projectionB, projectionA]);
+  const rejectedCandidates = [{ namespace: "promotions-v1", receiptId: "bad", issues: ["malformed"] }];
+  const ambiguous = portable.selectValidatedHistoricalRunReceiptCandidates([projectionB, projectionA], rejectedCandidates);
   assert.equal(ambiguous.status, "invalid-store");
   assert.deepEqual(ambiguous.issues, [
     `source native receipt ${sourceReceiptId} has multiple valid portable projections: ${projectionA.receiptId}/${projectionA.promotionId}, ${projectionB.receiptId}/${projectionB.promotionId}`,
   ]);
+  assert.deepEqual(ambiguous.rejectedCandidates, rejectedCandidates);
 });
 
 test("portable historical selection counts and reports sorted malformed JSON candidates", (t) => {
@@ -1331,6 +1650,13 @@ test("portable historical selection counts and reports sorted malformed JSON can
 
 test("portable historical selection rejects two fully validated manifests for one native lineage", async (t) => {
   const promoted = await publishPromotion(t, "ambiguous-selection");
+  const malformedId = "f".repeat(64);
+  fs.writeFileSync(path.join(
+    promoted.target.targetReceiptRoot,
+    "promotions-v1",
+    promoted.fixture.payload.app,
+    `${malformedId}.json`,
+  ), "{}\n");
   const second = JSON.parse(fs.readFileSync(promoted.paths.manifest, "utf8"));
   second.core.sourceRoots.receipt.inode = second.core.sourceRoots.receipt.inode === "0" ? "1" : "0";
   second.promotionId = promotionIdOf(second.core);
@@ -1355,6 +1681,96 @@ test("portable historical selection rejects two fully validated manifests for on
   assert.match(selected.issues.join("\n"), /multiple valid portable projections/i);
   assert.match(selected.issues.join("\n"), new RegExp(promoted.promoted.promotionId));
   assert.match(selected.issues.join("\n"), new RegExp(second.promotionId));
+  assert.deepEqual(selected.rejectedCandidates.map(({ namespace, receiptId }) => ({ namespace, receiptId })), [
+    { namespace: "promotions-v1", receiptId: malformedId },
+  ]);
+});
+
+test("portable historical selection attributes an invalid manifest to its promotion while retaining a valid pair", async (t) => {
+  const promoted = await publishPromotion(t, "mixed-manifest-selection");
+  const invalid = JSON.parse(fs.readFileSync(promoted.paths.manifest, "utf8"));
+  invalid.core.targetRoots.receipt.inode = invalid.core.targetRoots.receipt.inode === "0" ? "1" : "0";
+  invalid.promotionId = promotionIdOf(invalid.core);
+  invalid.auditId = auditIdOf({
+    promotionId: invalid.promotionId,
+    recordedAt: invalid.recordedAt,
+    toolVersion: invalid.toolVersion,
+  });
+  fs.writeFileSync(path.join(
+    promoted.target.targetReceiptRoot,
+    "promotions-v1",
+    promoted.fixture.payload.app,
+    `${invalid.promotionId}.json`,
+  ), `${canonicalJson(invalid)}\n`);
+
+  const selected = portable.findHistoricalRunReceipt(promoted.fixture.payload.app, {
+    rootDir: promoted.target.targetReceiptRoot,
+    ledgerDir: promoted.target.targetLedgerRoot,
+  });
+  assert.equal(selected.status, "valid", selected.issues?.join("\n"));
+  assert.equal(selected.receipt.promotionId, promoted.promoted.promotionId);
+  assert.deepEqual(selected.rejectedCandidates.map(({ namespace, receiptId }) => ({ namespace, receiptId })), [
+    { namespace: "promotions-v1", receiptId: invalid.promotionId },
+  ]);
+  assert.doesNotMatch(selected.rejectedCandidates.flatMap((candidate) => candidate.issues).join("\n"), /no valid paired promotion manifest/i);
+});
+
+test("portable historical selection adds no-valid-marker only when every paired manifest fails inspection", async (t) => {
+  const promoted = await publishPromotion(t, "invalid-only-manifest-selection");
+  const invalid = JSON.parse(fs.readFileSync(promoted.paths.manifest, "utf8"));
+  fs.unlinkSync(promoted.paths.manifest);
+  invalid.core.targetRoots.ledger.inode = invalid.core.targetRoots.ledger.inode === "0" ? "1" : "0";
+  invalid.promotionId = promotionIdOf(invalid.core);
+  invalid.auditId = auditIdOf({
+    promotionId: invalid.promotionId,
+    recordedAt: invalid.recordedAt,
+    toolVersion: invalid.toolVersion,
+  });
+  fs.writeFileSync(path.join(
+    promoted.target.targetReceiptRoot,
+    "promotions-v1",
+    promoted.fixture.payload.app,
+    `${invalid.promotionId}.json`,
+  ), `${canonicalJson(invalid)}\n`);
+
+  const selected = portable.findHistoricalRunReceipt(promoted.fixture.payload.app, {
+    rootDir: promoted.target.targetReceiptRoot,
+    ledgerDir: promoted.target.targetLedgerRoot,
+  });
+  assert.equal(selected.status, "none");
+  assert.deepEqual(selected.rejectedCandidates.map(({ namespace, receiptId }) => ({ namespace, receiptId })), [
+    { namespace: "promotions-v1", receiptId: invalid.promotionId },
+    { namespace: "portable-v1", receiptId: promoted.promoted.portableReceiptId },
+  ]);
+  assert.match(selected.rejectedCandidates[1].issues.join("\n"), /no valid paired promotion manifest commit marker/i);
+});
+
+test("portable historical discovery reports symlinked and oversized manifests under their promotion IDs", async (t) => {
+  for (const mode of ["symlink", "oversized"]) {
+    await t.test(mode, async (child) => {
+      const promoted = await publishPromotion(child, `manifest-candidate-${mode}`);
+      if (mode === "symlink") {
+        const outside = path.join(promoted.fixture.scratch, "outside-valid-manifest.json");
+        fs.renameSync(promoted.paths.manifest, outside);
+        fs.symlinkSync(outside, promoted.paths.manifest);
+      } else {
+        fs.writeFileSync(promoted.paths.manifest, Buffer.alloc(64 * 1024 + 1, 0x20));
+      }
+      const selected = portable.findHistoricalRunReceipt(promoted.fixture.payload.app, {
+        rootDir: promoted.target.targetReceiptRoot,
+        ledgerDir: promoted.target.targetLedgerRoot,
+      });
+      assert.equal(selected.status, "none");
+      const manifestRejection = selected.rejectedCandidates.find((candidate) =>
+        candidate.namespace === "promotions-v1" && candidate.receiptId === promoted.promoted.promotionId);
+      assert.ok(manifestRejection, JSON.stringify(selected, null, 2));
+      assert.match(manifestRejection.issues.join("\n"), mode === "symlink" ? /regular|symlink|no-follow/i : /bound|limit|65536|regular/i);
+      assert.ok(selected.rejectedCandidates.some((candidate) =>
+        candidate.namespace === "portable-v1"
+        && candidate.receiptId === promoted.promoted.portableReceiptId
+        && /no valid paired promotion manifest/i.test(candidate.issues.join("\n"))));
+    });
+  }
 });
 
 test("golden recapture promotes a session ledger receipt into durable historical-only provenance", async (t) => {
@@ -1366,18 +1782,23 @@ test("golden recapture promotes a session ledger receipt into durable historical
   const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
   const target = promotionRoots(fixture, "golden-durable");
   writePortablePicoNextBrief(fixture, id);
+  const nativeMismatchCall = await startPortableSurface(t, fixture, {
+    targetReceiptRoot: fs.realpathSync(fixture.rootDir),
+    targetLedgerRoot: target.targetLedgerRoot,
+  }, "full");
   const fullCall = await startPortableSurface(t, fixture, target, "full");
 
-  const nativeRecord = await fullCall("record_verification", {
+  const nativeRecord = await nativeMismatchCall("record_verification", {
     app: fixture.payload.app,
     claim: "synthetic original session-root rejection fixture",
     evidenceType: "vision_verified",
-    artifactPath: fixture.captureSourcePath,
+    artifactPath: published.receipt.capture.artifactPath,
     attestation: "Synthetic fixture only; no rendered-frame observation is claimed.",
     runReceiptId: published.receiptId,
   });
   assert.equal(nativeRecord.status, "rejected");
-  assert.match(nativeRecord.reason, /receipt|exist|invalid|candidate|capture/i);
+  assert.match(nativeRecord.reason, /capture artifactPath is not the exact ledger CAS path/i);
+  assert.doesNotMatch(nativeRecord.reason, /receipt file.*(?:could not|missing|exist)/i);
   const targetLedgerPath = path.join(target.targetLedgerRoot, `${fixture.payload.app}.json`);
   assert.equal(fs.existsSync(targetLedgerPath), false, "a rejected native binding must not create a durable ledger");
 

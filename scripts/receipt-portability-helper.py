@@ -31,6 +31,10 @@ MAX_APK_BYTES = 2 * 1024 * 1024 * 1024
 MAX_DECODED_BYTES = 256 * 1024 * 1024
 MAX_ROOT_COMPONENTS = 64
 MAX_RETAINED_DESCENDANTS = 16
+MAX_NATIVE_CANDIDATES = 4096
+MAX_PORTABLE_CANDIDATES = 4096
+MAX_MANIFEST_CANDIDATES = 4096
+MAX_DISCOVERY_CANDIDATES = 12288
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 SHA256 = re.compile(r"^[a-f0-9]{64}$")
 APP = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
@@ -661,6 +665,181 @@ def validate_manifest(raw, expected_core=None, expected_promotion=None):
     return manifest
 
 
+def discovery_rejection(namespace, candidate_id, issue):
+    return {"namespace": namespace, "receiptId": candidate_id, "issues": [str(issue)[:4096]]}
+
+
+def open_discovery_app(store, namespace, app, missing):
+    try:
+        namespace_fd = store.open_dir([namespace], create=False)
+    except FileNotFoundError:
+        missing.append((store.fd, namespace, namespace))
+        return None
+    try:
+        return store.open_dir([namespace, app], create=False)
+    except FileNotFoundError:
+        missing.append((namespace_fd, app, namespace + "/" + app))
+        return None
+
+
+def list_discovery_names(app_fd, namespace):
+    before = directory_identity(os.fstat(app_fd))
+    try:
+        names = os.listdir(app_fd)
+    except OSError as error:
+        fail("%s app directory could not be listed descriptor-relative: %s" % (namespace, error))
+    after = directory_identity(os.fstat(app_fd))
+    if before != after:
+        fail("%s app directory changed while being listed" % namespace)
+    for name in names:
+        if any(0xd800 <= ord(character) <= 0xdfff for character in name):
+            fail("%s app directory contains a filename that is not UTF-8" % namespace)
+    return sorted(name for name in names if name.endswith(".json"))
+
+
+def recheck_missing_discovery_paths(missing):
+    for parent, name, display in missing:
+        try:
+            os.stat(name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            fail("missing discovery path %s could not be rechecked: %s" % (display, error))
+        fail("missing discovery path %s appeared during discovery" % display)
+
+
+def enforce_discovery_limits(counts):
+    issues = []
+    if counts["native"] > MAX_NATIVE_CANDIDATES:
+        issues.append("native-v1 namespace contains %d JSON candidates, exceeding the %d limit" %
+                      (counts["native"], MAX_NATIVE_CANDIDATES))
+    if counts["portable"] > MAX_PORTABLE_CANDIDATES:
+        issues.append("portable-v1 namespace contains %d JSON candidates, exceeding the %d limit" %
+                      (counts["portable"], MAX_PORTABLE_CANDIDATES))
+    if counts["manifests"] > MAX_MANIFEST_CANDIDATES:
+        issues.append("promotions-v1 namespace contains %d JSON candidates, exceeding the %d limit" %
+                      (counts["manifests"], MAX_MANIFEST_CANDIDATES))
+    total = counts["native"] + counts["portable"] + counts["manifests"]
+    if total > MAX_DISCOVERY_CANDIDATES:
+        issues.append("historical receipt namespaces contain %d JSON candidates in total, exceeding the %d combined limit" %
+                      (total, MAX_DISCOVERY_CANDIDATES))
+    if issues:
+        fail("\n".join(issues))
+
+
+def do_discover(request):
+    exact_keys(request, ["protocol", "version", "operation", "app", "roots"], "discover request")
+    app = request["app"]
+    if not isinstance(app, str) or not APP.fullmatch(app):
+        fail("app is not a canonical Android package")
+    exact_keys(request["roots"], ["targetReceipt", "targetLedger"], "discover roots")
+    enforce_fd_budget(list(request["roots"].values()))
+    opened = {}
+    missing = []
+    try:
+        opened["targetReceipt"] = StoreRoot("targetReceipt", request["roots"]["targetReceipt"])
+        opened["targetLedger"] = StoreRoot("targetLedger", request["roots"]["targetLedger"])
+        reject_root_overlap(opened)
+        target_receipt = opened["targetReceipt"]
+        namespace_names = {}
+        namespace_fds = {}
+        for namespace in ("native-v1", "portable-v1", "promotions-v1"):
+            app_fd = open_discovery_app(target_receipt, namespace, app, missing)
+            namespace_fds[namespace] = app_fd
+            namespace_names[namespace] = [] if app_fd is None else list_discovery_names(app_fd, namespace)
+
+        counts = {
+            "native": len(namespace_names["native-v1"]),
+            "portable": len(namespace_names["portable-v1"]),
+            "manifests": len(namespace_names["promotions-v1"]),
+        }
+        enforce_discovery_limits(counts)
+        native_ids = []
+        portable_ids = []
+        manifests = []
+        rejected = []
+        for namespace, output in (("native-v1", native_ids), ("portable-v1", portable_ids)):
+            app_fd = namespace_fds[namespace]
+            if app_fd is None:
+                continue
+            for name in namespace_names[namespace]:
+                candidate_id = name[:-5]
+                try:
+                    entry = os.stat(name, dir_fd=app_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    fail("%s candidate %s disappeared during discovery" % (namespace, name))
+                except OSError as error:
+                    fail("%s candidate %s could not be inspected: %s" % (namespace, name, error))
+                if not stat.S_ISREG(entry.st_mode) or not SHA256.fullmatch(candidate_id):
+                    rejected.append(discovery_rejection(
+                        namespace, candidate_id,
+                        "candidate filename is not a canonical receipt ID JSON regular file"))
+                    continue
+                output.append(candidate_id)
+
+        manifest_fd = namespace_fds["promotions-v1"]
+        if manifest_fd is not None:
+            for name in namespace_names["promotions-v1"]:
+                promotion_id = name[:-5]
+                try:
+                    entry = os.stat(name, dir_fd=manifest_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    fail("promotions-v1 candidate %s disappeared during discovery" % name)
+                except OSError as error:
+                    fail("promotions-v1 candidate %s could not be inspected: %s" % (name, error))
+                if not stat.S_ISREG(entry.st_mode) or not SHA256.fullmatch(promotion_id):
+                    rejected.append(discovery_rejection(
+                        "promotions-v1", promotion_id,
+                        "candidate filename is not a canonical promotion ID JSON regular file"))
+                    continue
+                if entry.st_size > MAX_MANIFEST_BYTES:
+                    rejected.append(discovery_rejection(
+                        "promotions-v1", promotion_id,
+                        "promotion discovery manifest is not a bounded regular file within the 65536-byte limit"))
+                    continue
+                snapshot = Snapshot(
+                    target_receipt, ["promotions-v1", app, name], MAX_MANIFEST_BYTES,
+                    "promotion discovery manifest", retain_bytes=True, final=True)
+                try:
+                    manifest_raw = snapshot.bytes
+                finally:
+                    snapshot.close()
+                try:
+                    manifest = validate_manifest(manifest_raw, expected_promotion=promotion_id)
+                    if manifest["core"]["app"] != app:
+                        fail("promotion manifest app does not match its namespace app")
+                    manifests.append({
+                        "promotionId": promotion_id,
+                        "portableReceiptId": manifest["core"]["portableReceiptId"],
+                    })
+                except PortabilityError as error:
+                    rejected.append(discovery_rejection("promotions-v1", promotion_id, error))
+
+        for namespace, app_fd in namespace_fds.items():
+            if app_fd is not None and list_discovery_names(app_fd, namespace) != namespace_names[namespace]:
+                fail("%s app directory entries changed during discovery" % namespace)
+        recheck_missing_discovery_paths(missing)
+        for root in opened.values():
+            root.verify()
+        namespace_order = {"native-v1": 0, "portable-v1": 1, "promotions-v1": 2}
+        rejected.sort(key=lambda candidate: (namespace_order[candidate["namespace"]], candidate["receiptId"]))
+        manifests.sort(key=lambda manifest: manifest["promotionId"])
+        return {
+            "rootIdentities": {
+                "receipt": root_identity(target_receipt.path, os.fstat(target_receipt.fd)),
+                "ledger": root_identity(opened["targetLedger"].path, os.fstat(opened["targetLedger"].fd)),
+            },
+            "counts": counts,
+            "nativeReceiptIds": native_ids,
+            "portableReceiptIds": portable_ids,
+            "manifests": manifests,
+            "rejectedCandidates": rejected,
+        }
+    finally:
+        for root in reversed(list(opened.values())):
+            root.close()
+
+
 def inspect_targets(target_receipt, target_ledger, app, portable_id, promotion_id, expected_core=None):
     # The manifest is the sole commit marker and must be opened before any dependent target.
     _, _, manifest_raw = read_final(
@@ -754,6 +933,11 @@ def check_platform_apis():
     if (os.link not in os.supports_follow_symlinks or os.stat not in os.supports_follow_symlinks or
             not callable(getattr(os, "fsync", None))):
         unavailable("required create-only hard-link/fsync APIs are unavailable")
+
+
+def check_discovery_platform_apis():
+    if os.listdir not in os.supports_fd:
+        unavailable("descriptor-relative directory listing is unavailable")
 
 
 def enforce_fd_budget(root_values):
@@ -961,7 +1145,7 @@ def read_request():
         fail("helper request must be an object")
     if request.get("protocol") != PROTOCOL or request.get("version") != VERSION:
         fail("unsupported helper protocol/version")
-    if request.get("operation") not in ("promote", "inspect"):
+    if request.get("operation") not in ("promote", "inspect", "discover"):
         fail("unsupported helper operation")
     return request
 
@@ -978,9 +1162,19 @@ def main():
         request = read_request()
         operation = request["operation"]
         check_platform_apis()
-        inspection = do_promote(request) if operation == "promote" else do_inspect(request)
+        if operation == "discover":
+            check_discovery_platform_apis()
+        if operation == "promote":
+            result_key = "inspection"
+            result = do_promote(request)
+        elif operation == "inspect":
+            result_key = "inspection"
+            result = do_inspect(request)
+        else:
+            result_key = "discovery"
+            result = do_discover(request)
         emit({"protocol": PROTOCOL, "version": VERSION, "status": "ok",
-              "operation": operation, "inspection": inspection})
+              "operation": operation, result_key: result})
     except UnsupportedPortabilityError as error:
         emit({"protocol": PROTOCOL, "version": VERSION, "status": "unavailable",
               "operation": operation, "reason": str(error)[:4096]})
