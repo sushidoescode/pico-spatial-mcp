@@ -27,6 +27,7 @@ test/.*.tmp.mjs
 
 # Isolated feature worktrees (never package or commit their contents)
 .worktrees/
+.firecrawl/
 
 # distribution tarballs are built artifacts — hand testers a Release asset, never a committed binary
 *.tgz
