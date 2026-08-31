@@ -234,6 +234,40 @@ module.main()
   return fs.realpathSync(wrapper);
 }
 
+function createPrecommitTargetMutationPython(scratch) {
+  const wrapper = path.join(scratch, "precommit-target-mutation-python.py");
+  fs.writeFileSync(wrapper, `#!${resolvedPython3()}
+import importlib.util
+import os
+import sys
+
+helper_path = sys.argv[-1]
+spec = importlib.util.spec_from_file_location("receipt_portability_helper_under_test", helper_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+target_path = os.environ["PICO_RECEIPT_TEST_PRECOMMIT_MUTATION_PATH"]
+original_publish_bytes = module.publish_bytes
+triggered = False
+
+def mutating_publish_bytes(store, parts, raw, label, existing_validator=None):
+    global triggered
+    result = original_publish_bytes(store, parts, raw, label, existing_validator=existing_validator)
+    if not triggered and label == "portable receipt":
+        triggered = True
+        with open(target_path, "r+b") as stream:
+            first = stream.read(1)
+            stream.seek(0)
+            stream.write(bytes([first[0] ^ 1]))
+            stream.flush()
+            os.fsync(stream.fileno())
+    return result
+
+module.publish_bytes = mutating_publish_bytes
+module.main()
+`, { mode: 0o700 });
+  return fs.realpathSync(wrapper);
+}
+
 function hashFiles(paths) {
   return Object.fromEntries(Object.entries(paths).map(([name, file]) => [name, sha256Bytes(fs.readFileSync(file))]));
 }
@@ -968,6 +1002,46 @@ test("PROMOTE interruption boundaries preserve manifest-last resumability", asyn
       );
       assert.equal(afterRead.status, "valid", afterRead.issues?.join("\n"));
     });
+  }
+});
+
+test("PROMOTE validates every published or reused dependency before linking the manifest", async (t) => {
+  const dependencyRoles = ["apk", "effectiveAppSpec", "capture", "lineage", "portable"];
+  for (const mode of ["published", "reused"]) {
+    for (const role of dependencyRoles) {
+      await t.test(`${mode} ${role}`, async (child) => {
+        const fixture = await createPortableFixture(child, {
+          app: `com.example.precommit_${mode}_${role.toLowerCase()}`,
+        });
+        const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+        const target = promotionRoots(fixture, `precommit-${mode}-${role.toLowerCase()}`);
+        const expected = expectedPromotion(fixture, published, target);
+        if (mode === "reused") {
+          for (const dependency of dependencyRoles) {
+            fs.mkdirSync(path.dirname(expected.paths[dependency]), { recursive: true });
+            fs.writeFileSync(expected.paths[dependency], expected.bytes[dependency]);
+          }
+        }
+        const previousPython = process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+        const previousMutation = process.env.PICO_RECEIPT_TEST_PRECOMMIT_MUTATION_PATH;
+        try {
+          process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = createPrecommitTargetMutationPython(fixture.scratch);
+          process.env.PICO_RECEIPT_TEST_PRECOMMIT_MUTATION_PATH = expected.paths[role];
+          const result = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+          assert.equal(result.status, "refused");
+          assert.match(result.reason, /target|portable|lineage|APK|AppSpec|capture|hash|canonical|mismatch|invalid/i);
+        } finally {
+          if (previousPython === undefined) delete process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+          else process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = previousPython;
+          if (previousMutation === undefined) delete process.env.PICO_RECEIPT_TEST_PRECOMMIT_MUTATION_PATH;
+          else process.env.PICO_RECEIPT_TEST_PRECOMMIT_MUTATION_PATH = previousMutation;
+        }
+        assert.equal(fs.existsSync(expected.paths.manifest), false,
+          `a raced ${mode} ${role} dependency must not gain a commit marker`);
+        assert.equal(fs.readFileSync(expected.paths[role]).equals(expected.bytes[role]), false,
+          "the fault must have changed the selected dependency bytes");
+      });
+    }
   }
 });
 

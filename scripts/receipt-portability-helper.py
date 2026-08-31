@@ -839,15 +839,11 @@ def do_discover(request):
             root.close()
 
 
-def inspect_targets(target_receipt, target_ledger, app, portable_id, promotion_id, expected_core=None):
-    # The manifest is the sole commit marker and must be opened before any dependent target.
-    _, _, manifest_raw = read_final(
-        target_receipt, ["promotions-v1", app, promotion_id + ".json"],
-        MAX_MANIFEST_BYTES, "promotion manifest", retain_bytes=True)
-    manifest = validate_manifest(manifest_raw, expected_core=expected_core, expected_promotion=promotion_id)
+def validate_target_dependencies(target_receipt, target_ledger, app, manifest, expected_portable_raw=None):
     core = manifest["core"]
-    if core["app"] != app or core["portableReceiptId"] != portable_id:
-        fail("promotion manifest app/portable ID does not match the request")
+    portable_id = core["portableReceiptId"]
+    if core["app"] != app:
+        fail("promotion manifest app does not match the request")
     valid_sha(core["sourceReceiptId"], "promotion sourceReceiptId")
     # Recorded source roots were checked lexically by validate_manifest_core.  Never resolve or open
     # either source locator here; target roots are compared only with already-open descriptors.
@@ -856,10 +852,12 @@ def inspect_targets(target_receipt, target_ledger, app, portable_id, promotion_i
     if core["targetRoots"]["ledger"] != root_identity(target_ledger.path, os.fstat(target_ledger.fd)):
         fail("manifest target ledger root identity does not match the opened root")
 
-    _, _, portable_raw = read_final(
+    _, _, target_portable_raw = read_final(
         target_receipt, ["portable-v1", app, portable_id + ".json"],
         MAX_RECEIPT_BYTES, "portable receipt", retain_bytes=True)
-    portable = parse_json_bytes(portable_raw, MAX_RECEIPT_BYTES, "portable receipt", canonical=True)
+    if expected_portable_raw is not None and target_portable_raw != expected_portable_raw:
+        fail("target portable receipt bytes do not match the proposed publication")
+    portable = parse_json_bytes(target_portable_raw, MAX_RECEIPT_BYTES, "portable receipt", canonical=True)
     exact_keys(portable, ["kind", "schemaVersion", "receiptId", "app", "sourceReceipt", "artifacts"], "portable receipt")
     if (portable["kind"] != "pico.portable-native-run-receipt" or portable["schemaVersion"] != 1 or
             portable["receiptId"] != portable_id or portable["app"] != app):
@@ -905,20 +903,34 @@ def inspect_targets(target_receipt, target_ledger, app, portable_id, promotion_i
         fail("target capture facts are mismatched")
 
     return {
-        "rootIdentities": {
-            "receipt": root_identity(target_receipt.path, os.fstat(target_receipt.fd)),
-            "ledger": root_identity(target_ledger.path, os.fstat(target_ledger.fd)),
-        },
         "lineageReceiptBase64": encode_base64(lineage_raw),
         "effectiveAppSpecBase64": encode_base64(spec_raw),
         "captureBase64": encode_base64(capture_raw),
-        "portableReceiptBase64": encode_base64(portable_raw),
-        "manifestBase64": encode_base64(manifest_raw),
+        "portableReceiptBase64": encode_base64(target_portable_raw),
         "artifacts": {
             "apk": {"sha256": apk_sha, "bytes": apk_size},
             "effectiveAppSpec": {"storedSha256": spec_stored_sha, "storedBytes": spec_stored_size},
             "capture": capture,
         },
+    }
+
+
+def inspect_targets(target_receipt, target_ledger, app, portable_id, promotion_id, expected_core=None):
+    # The manifest is the sole commit marker and must be opened before any dependent target.
+    _, _, manifest_raw = read_final(
+        target_receipt, ["promotions-v1", app, promotion_id + ".json"],
+        MAX_MANIFEST_BYTES, "promotion manifest", retain_bytes=True)
+    manifest = validate_manifest(manifest_raw, expected_core=expected_core, expected_promotion=promotion_id)
+    if manifest["core"]["portableReceiptId"] != portable_id:
+        fail("promotion manifest portable ID does not match the request")
+    dependencies = validate_target_dependencies(target_receipt, target_ledger, app, manifest)
+    return {
+        "rootIdentities": {
+            "receipt": root_identity(target_receipt.path, os.fstat(target_receipt.fd)),
+            "ledger": root_identity(target_ledger.path, os.fstat(target_ledger.fd)),
+        },
+        **dependencies,
+        "manifestBase64": encode_base64(manifest_raw),
     }
 
 
@@ -1161,6 +1173,9 @@ def do_promote(request):
                       receipt.bytes, "native lineage receipt")
         publish_bytes(opened["targetReceipt"], ["portable-v1", app, portable["receiptId"] + ".json"],
                       portable_raw, "portable receipt")
+
+        validate_target_dependencies(opened["targetReceipt"], opened["targetLedger"], app, manifest,
+                                     expected_portable_raw=portable_raw)
 
         def validate_manifest_winner(existing, proposed):
             proposed_value = validate_manifest(proposed)
