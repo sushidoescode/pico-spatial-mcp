@@ -323,15 +323,25 @@ export function buildLedger(spec: AppSpec, projectDir: string): LedgerStep[] {
   const rootContainer = (spec as any).meta?.rootContainer ?? "stage";
   const secondaries = (spec as any).meta?.secondaryContainers ?? [];
   if (rootContainer !== "stage" || secondaries.length) {
+    const dynamicBoundary = spec.boundaryLab?.variant === "dynamic_full";
+    const loweredSecondaries = dynamicBoundary
+      ? secondaries.map((container: any) => container.kind === "stage" && container.id === "dynamic-full"
+        ? {
+            ...container,
+            content: "BoundaryFullStage()",
+            contentImport: `${contentPkg}.BoundaryFullStage`,
+          }
+        : container)
+      : secondaries;
     push({
       node: "containers",
       tool: "generate_container_app_kotlin",
       args: {
         packageName: pkg,
         root: rootContainer,
-        rootContent: "HomeStage()",
-        rootContentImport: `${contentPkg}.HomeStage`,
-        ...(secondaries.length ? { containers: secondaries } : {}),
+        rootContent: dynamicBoundary ? "BoundaryProbeRoot()" : "HomeStage()",
+        rootContentImport: dynamicBoundary ? `${contentPkg}.BoundaryProbeRoot` : `${contentPkg}.HomeStage`,
+        ...(loweredSecondaries.length ? { containers: loweredSecondaries } : {}),
       },
       targetPath: `${cpath.replace(/\/content$/, "")}/Main.kt`,
       cClass: "C0_emulator",

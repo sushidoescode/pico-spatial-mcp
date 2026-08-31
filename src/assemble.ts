@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { appSpecSchema, type AppSpec } from "./appspec.js";
+import { generateBoundaryLabFiles } from "./boundaryprobe.js";
 import { generateMissionTableFiles } from "./missiontable.js";
 
 /**
@@ -203,6 +204,7 @@ function launchVelocityMap(spec: AppSpec): Map<string, { linear: number[]; angul
 function genComposition(spec: AppSpec, pkg: string): string {
   const contentPkg = `${pkg}.content`;
   const roomMission = spec.roomExperience?.kind === "swanMissionTable";
+  const boundaryLab = spec.boundaryLab !== undefined;
   const multiScene = spec.scenes.length > 1 || spec.navigation.portals.length > 0;
   const hasInteractions = spec.interactions.length > 0;
   // v9.1: select/hover interactions are DATA-backed (showDetail reads SceneDataBinding.byId); a
@@ -271,6 +273,7 @@ function genComposition(spec: AppSpec, pkg: string): string {
   // v6.6: light the scene (so PBR content renders lit, not dim) — the rig was generated but never applied.
   if (lighting) for (const lightingCall of lightingApplyCalls(spec)) lines.push(`        ${lightingCall}`);
   if (roomMission) lines.push(`        MissionTableExperience.build(root)`);
+  if (boundaryLab) lines.push(`        BoundaryLabScene.build(root)`);
 
   // v9.1: REAL physics — world + bodies (created in ONE batch each at build, per the rulebook).
   if (physics) for (const bl of physicsBodyLines(spec, "        ")) lines.push(bl);
@@ -372,11 +375,13 @@ function genComposition(spec: AppSpec, pkg: string): string {
       if (lighting && sunRig(s)) lines.push(`        props.forEach { SceneLighting.groundShadow(it) }`);
       if (play) lines.push(`        props.forEach { ${play}(it) }`);
       lines.push(`        Log.i(TAG, "placed " + props.size + " procedural props (data-less layout)")`);
-    } else if (!roomMission) {
+    } else if (!roomMission && !boundaryLab) {
       if (!physics) lines.push(`        Log.w(TAG, "composition: scene '${s.id}' has no layout to place")`);
       else lines.push(`        Log.i(TAG, "physics scene: " + bodies.size + " bodies")`);
-    } else {
+    } else if (roomMission) {
       lines.push(`        Log.i(TAG, "room-aware mission installation built; TABLE/WALL_ART placement starts after attachment seating")`);
+    } else {
+      lines.push(`        Log.i(TAG, "Boundary Lab enclosure and four-axis gates scheduled")`);
     }
   }
   lines.push(`        Log.i(TAG, "${readyMsg}")`, `    }`);
@@ -464,6 +469,7 @@ function menuButtons(spec: AppSpec): Array<[string, string]> {
 function genHomeStage(spec: AppSpec, pkg: string): string {
   const contentPkg = `${pkg}.content`;
   const roomMission = spec.roomExperience?.kind === "swanMissionTable";
+  const boundaryLab = spec.boundaryLab !== undefined;
   const multiScene = spec.scenes.length > 1 || spec.navigation.portals.length > 0;
   const hasSelect = spec.interactions.length > 0 && spec.data.length > 0;
   const menu = menuButtons(spec);
@@ -523,7 +529,7 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
     `import android.util.Log`,
     `import androidx.compose.foundation.layout.fillMaxSize`,
     `import androidx.compose.runtime.Composable`,
-    ...(roomMission ? [`import androidx.compose.runtime.DisposableEffect`] : []),
+    ...(roomMission || boundaryLab ? [`import androidx.compose.runtime.DisposableEffect`] : []),
     `import androidx.compose.ui.Modifier`,
     `import androidx.compose.ui.platform.LocalContext`,
     ...(roomMission
@@ -569,6 +575,7 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
     `    val appCtx = LocalContext.current.applicationContext`,
     ...(panels ? [`    appCtxRef = appCtx   // panel:show starts the panel activity from this context`] : []),
     ...(scenePanels ? [`    val panelSizes = rememberAttachmentPanelSizes()`] : []),
+    ...(boundaryLab ? [`    val boundaryPanelSizes = rememberBoundaryPanelSizes()`] : []),
     ...(roomMission
       ? [
           `    val lifecycleOwner = LocalLifecycleOwner.current`,
@@ -595,12 +602,22 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
           `    }`,
         ]
       : []),
+    ...(boundaryLab
+      ? [
+          `    DisposableEffect(Unit) {`,
+          `        onDispose {`,
+          `            rootRef?.let { root -> BoundaryLabScene.release(root) }`,
+          `            rootRef = null`,
+          `        }`,
+          `    }`,
+        ]
+      : []),
     `    SpatialView(`,
     `        // fillMaxSize: the 3D content is transform-mapped to the SpatialView's 2D node — a small/default`,
     `        // node compresses the scene into a small bounded region (the "blob" you portal in/out of), so fill`,
     `        // the stage to give the content a large, walkable volume.`,
     `        modifier = Modifier.fillMaxSize(),`,
-    `        initial = { content, ${scenePanels ? "attachments" : "_"} ->`,
+    `        initial = { content, ${scenePanels || boundaryLab ? "attachments" : "_"} ->`,
     `            withContext(Dispatchers.Main) {`,
     ...(rebuildable
       ? [
@@ -629,6 +646,7 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
           `                SceneComposition.build(sceneRoot, appCtx)`,
         ]),
     ...(scenePanels ? [`                attachments.seatSceneAttachmentPanels(content)`] : []),
+    ...(boundaryLab ? [`                attachments.seatBoundaryLabPanels(content)`] : []),
     ...(roomMission ? [`                rootRef?.let { MissionTableExperience.start(it) }`] : []),
     `            }`,
     ...(menu.length
@@ -650,7 +668,10 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
       : []),
     `            Log.i(TAG, "HomeStage ready")`,
     `        },`,
-    `        attachments = { ${scenePanels ? "sceneAttachmentPanels(panelSizes)" : ""} },`,
+    `        attachments = { ${[
+      ...(scenePanels ? ["sceneAttachmentPanels(panelSizes)"] : []),
+      ...(boundaryLab ? ["boundaryLabPanels(boundaryPanelSizes, BoundaryLabScene.ROOT_SENTINEL)"] : []),
+    ].join("; ")} },`,
     `    )`,
     `}`,
     ``,
@@ -719,6 +740,7 @@ export function generateWiring(spec: AppSpec): { path: string; content: string }
     { path: `${cdir}/content/HomeStage.kt`, content: genHomeStage(spec, pkg) },
     { path: `${cdir}/Main.kt`, content: genMain(spec, pkg) },
     ...generateMissionTableFiles(spec, pkg),
+    ...generateBoundaryLabFiles(spec, pkg),
   ];
 }
 

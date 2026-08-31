@@ -1,0 +1,85 @@
+{
+  "id": "boundarylabmixed",
+  "brief": "Boundary Lab: a deterministic immersive high-contrast enclosure with four-axis metre gates at 1, 2, 4, 8, 16, and 32 metres, plus route-specific sentinels for matched manifest-Mixed, manifest-Full, and dynamic-Full boundary experiments.",
+  "spec": {
+    "meta": {
+      "appName": "FleetBoundarylabmixed",
+      "packageName": "com.fleet.boundarylabmixed",
+      "stageStyle": "1",
+      "brief": "Boundary Lab: a deterministic immersive high-contrast enclosure with four-axis metre gates at 1, 2, 4, 8, 16, and 32 metres, plus route-specific sentinels for matched manifest-Mixed, manifest-Full, and dynamic-Full boundary experiments.",
+      "rootContainer": "stage",
+      "secondaryContainers": []
+    },
+    "scenes": [
+      {
+        "id": "boundaryLab",
+        "environment": {
+          "kind": "procedural"
+        },
+        "lighting": {
+          "rig": "none"
+        },
+        "colliders": {
+          "props": []
+        },
+        "transitions": []
+      }
+    ],
+    "layouts": [],
+    "objects": [],
+    "data": [],
+    "interactions": [],
+    "panels": [],
+    "boundaryLab": {
+      "variant": "manifest_mixed",
+      "gateSequenceM": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        32
+      ],
+      "requiredTraversalM": 32,
+      "axes": [
+        "forward",
+        "backward",
+        "left",
+        "right"
+      ],
+      "sentinels": {
+        "manifestMixedRoot": "MANIFEST MIXED ROOT",
+        "manifestFull": "MANIFEST FULL",
+        "dynamicFull": "DYNAMIC FULL"
+      }
+    },
+    "navigation": {
+      "startScene": "boundaryLab",
+      "portals": []
+    },
+    "verificationPlan": [
+      {
+        "claim": "the route-specific Boundary Lab sentinel and the start of the high-contrast forward gate corridor are rendered in the forward field of view",
+        "method": "capture",
+        "capabilityClass": "C0_emulator",
+        "targetRef": "boundaryLab",
+        "forwardFOVpose": {
+          "yawDeg": 0,
+          "pitchDeg": 0,
+          "targetZ": -2.2
+        }
+      }
+    ],
+    "headsetLayer": []
+  },
+  "expected": {
+    "scenes": 1,
+    "layouts": 0,
+    "objects": 0,
+    "data": 0,
+    "interactions": 0,
+    "panels": 0,
+    "verifiableNowMin": 1,
+    "swanMin": 0
+  }
+}
