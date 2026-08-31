@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -12,6 +13,8 @@ import {
   createRunReceiptFixture,
   makePng,
 } from "./helpers/runreceipt-fixture.mjs";
+import * as ledger from "../dist/ledger.js";
+import * as portable from "../dist/runreceiptportable.js";
 
 const ZERO_HASH = "0".repeat(64);
 const LEDGER_MODULE = pathToFileURL(path.resolve("dist/ledger.js")).href;
@@ -32,16 +35,20 @@ async function startClient(t, args, env) {
 }
 
 async function startFullSurface(t, fixture, extraEnv = {}) {
+  return startSurface(t, fixture, "full", extraEnv);
+}
+
+async function startSurface(t, fixture, surface, extraEnv = {}) {
   return startClient(t, ["dist/index.js"], {
     HOME: fixture.scratch,
-    PICO_MCP_SURFACE: "full",
+    PICO_MCP_SURFACE: surface,
     PICO_MCP_LEDGER_DIR: fixture.ledgerDir,
     PICO_MCP_RUN_RECEIPT_DIR: fixture.rootDir,
     ...extraEnv,
   });
 }
 
-async function startFocusedLedger(t, fixture, resolverSource = "") {
+async function startFocusedLedger(t, fixture, resolverSource = "", extraEnv = {}) {
   const source = `
     import fs from "node:fs";
     import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -51,6 +58,24 @@ async function startFocusedLedger(t, fixture, resolverSource = "") {
     ${resolverSource
       ? `const resolveRunReceiptBinding = ${resolverSource}; registerLedgerTools(server, { resolveRunReceiptBinding });`
       : "registerLedgerTools(server);"}
+    await server.connect(new StdioServerTransport());
+  `;
+  return startClient(t, ["--input-type=module", "--eval", source], {
+    HOME: fixture.scratch,
+    PICO_MCP_LEDGER_DIR: fixture.ledgerDir,
+    PICO_MCP_RUN_RECEIPT_DIR: fixture.rootDir,
+    ...extraEnv,
+  });
+}
+
+async function startFocusedPromoter(t, fixture, promoterSource) {
+  const source = `
+    import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+    import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+    import { registerLedgerTools } from ${JSON.stringify(LEDGER_MODULE)};
+    const promoteNativeRunReceipt = ${promoterSource};
+    const server = new McpServer({ name: "focused-promote-boundary", version: "0.0.0" });
+    registerLedgerTools(server, { promoteNativeRunReceipt });
     await server.connect(new StdioServerTransport());
   `;
   return startClient(t, ["--input-type=module", "--eval", source], {
@@ -67,6 +92,72 @@ function expectedBinding(published, fixture) {
     receiptId: published.receiptId,
     captureSha256: fixture.payload.capture.sha256,
   };
+}
+
+function promotionRoots(fixture, suffix) {
+  const targetReceiptRoot = path.join(fixture.scratch, `${suffix}-receipt-store`);
+  const targetLedgerRoot = path.join(fixture.scratch, `${suffix}-ledger-store`);
+  fs.mkdirSync(targetReceiptRoot);
+  fs.mkdirSync(targetLedgerRoot);
+  return {
+    targetReceiptRoot: fs.realpathSync(targetReceiptRoot),
+    targetLedgerRoot: fs.realpathSync(targetLedgerRoot),
+  };
+}
+
+async function createPortableLedgerFixture(t, options = {}) {
+  const owned = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pico-ledger-portable-roots-"));
+  t.after(() => fs.rmSync(owned, { recursive: true, force: true }));
+  return createRunReceiptFixture(t, store, {
+    ...options,
+    rootDir: path.join(owned, "receipt-store"),
+    ledgerDir: path.join(owned, "ledger-store"),
+  });
+}
+
+function promotionAction(fixture, published, target) {
+  return {
+    app: FIXTURE_APP,
+    action: "promote",
+    sourceReceiptId: published.receiptId,
+    sourceReceiptRoot: fs.realpathSync(fixture.rootDir),
+    sourceLedgerRoot: fs.realpathSync(fixture.ledgerDir),
+    targetReceiptRoot: target.targetReceiptRoot,
+    targetLedgerRoot: target.targetLedgerRoot,
+  };
+}
+
+function expectedPortableBinding(fixture, published, promoted) {
+  return {
+    kind: "pico.portable-native-run-receipt",
+    schemaVersion: 1,
+    receiptId: promoted.portableReceiptId,
+    sourceReceiptId: published.receiptId,
+    promotionId: promoted.promotionId,
+    auditId: promoted.auditId,
+    captureSha256: fixture.payload.capture.sha256,
+  };
+}
+
+function assertPromotionResult(result, action, fixture) {
+  assert.equal(result.status, "promoted", result.reason);
+  for (const identity of ["portableReceiptId", "promotionId", "auditId"]) {
+    assert.match(result[identity], /^[a-f0-9]{64}$/);
+  }
+  assert.equal(result.apkArtifactPath, path.join(action.targetReceiptRoot, "artifacts", "apk", `${fixture.payload.apk.sha256}.apk`));
+  assert.equal(result.effectiveAppSpecArtifactPath, path.join(action.targetReceiptRoot, "artifacts", "spec", `${fixture.payload.source.effectiveAppSpec.sha256}.json`));
+  assert.equal(result.captureArtifactPath, path.join(action.targetLedgerRoot, "artifacts", `${fixture.payload.capture.sha256}.png`));
+  assert.equal(result.lineageReceiptPath, path.join(action.targetReceiptRoot, "portable-lineage-v1", action.app, `${action.sourceReceiptId}.json`));
+  assert.equal(result.portableReceiptPath, path.join(action.targetReceiptRoot, "portable-v1", action.app, `${result.portableReceiptId}.json`));
+  assert.equal(result.promotionManifestPath, path.join(action.targetReceiptRoot, "promotions-v1", action.app, `${result.promotionId}.json`));
+  for (const pathname of [
+    result.apkArtifactPath,
+    result.effectiveAppSpecArtifactPath,
+    result.captureArtifactPath,
+    result.lineageReceiptPath,
+    result.portableReceiptPath,
+    result.promotionManifestPath,
+  ]) assert.equal(fs.statSync(pathname).isFile(), true);
 }
 
 function assertEveryEvidenceBucketEmpty(report) {
@@ -754,4 +845,263 @@ test("the final materialized capture SHA must still equal the resolver binding",
   assert.equal(result.status, "rejected");
   assert.match(result.reason, /materialized|capture|sha256|binding|changed/i);
   assertEveryEvidenceBucketEmpty(await callJson("ledger_report", { app: FIXTURE_APP }));
+});
+
+test("promote action is disjoint on the full surface and Door 13 and never touches the evidence ledger", async (t) => {
+  const fixture = await createPortableLedgerFixture(t);
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const appLedger = ledgerPath(fixture);
+  const poisonedLedger = Buffer.from("{this is deliberately not a ledger\n", "utf8");
+  fs.writeFileSync(appLedger, poisonedLedger);
+
+  const fullTarget = promotionRoots(fixture, "full-action");
+  const fullAction = promotionAction(fixture, published, fullTarget);
+  const fullCall = await startFullSurface(t, fixture);
+  const fullPromoted = await fullCall("record_verification", fullAction);
+  assertPromotionResult(fullPromoted, fullAction, fixture);
+  assert.deepEqual(fs.readFileSync(appLedger), poisonedLedger, "successful promotion must return before loading or appending the ledger");
+
+  const refused = await fullCall("record_verification", { ...fullAction, sourceReceiptId: ZERO_HASH });
+  assert.equal(refused.status, "refused");
+  assert.deepEqual(fs.readFileSync(appLedger), poisonedLedger, "refused promotion must leave an existing ledger byte-identical");
+
+  const unavailableCall = await startFullSurface(t, fixture, {
+    PICO_MCP_RECEIPT_PORTABILITY_PYTHON: path.join(fixture.scratch, "missing-python"),
+  });
+  const unavailable = await unavailableCall("record_verification", fullAction);
+  assert.equal(unavailable.status, "unavailable");
+  assert.deepEqual(fs.readFileSync(appLedger), poisonedLedger, "unavailable promotion must leave an existing ledger byte-identical");
+
+  const throwingCall = await startFocusedPromoter(t, fixture, `async () => { throw new Error("synthetic promoter throw"); }`);
+  const threw = await throwingCall("record_verification", fullAction);
+  assert.equal(threw.status, "rejected");
+  assert.match(threw.reason, /promot|synthetic promoter throw/i);
+  assert.deepEqual(fs.readFileSync(appLedger), poisonedLedger, "a throwing promoter must leave an existing ledger byte-identical");
+
+  const promoteMixed = await fullCall("record_verification", {
+    ...fullAction,
+    claim: "promotion must not accept record fields",
+    evidenceType: "vision_verified",
+    artifactPath: fixture.captureSourcePath,
+    attestation: "Synthetic mutual-exclusion fixture; no rendered LOOK is claimed.",
+    cClass: "C0_emulator",
+    reproHash: "synthetic",
+    runReceiptId: published.receiptId,
+    runReceiptPromotionId: fullPromoted.promotionId,
+    deviceSerial: "fixture",
+    deviceModel: "fixture",
+    deviceFingerprint: "fixture/fingerprint",
+    deviceBootQemu: "1",
+    deviceFeature: "controller_ray",
+    deviceOutcome: "fail",
+    targetSeq: 0,
+    retractionReason: "synthetic mixed action",
+    retractionNote: "synthetic mixed action note",
+  });
+  assert.equal(promoteMixed.status, "rejected");
+  assert.match(promoteMixed.reason, /mutually exclusive|promote-only|record-only|retract/i);
+
+  const recordMixed = await fullCall("record_verification", {
+    ...fullAction,
+    action: "record",
+    claim: "record must reject every promotion-only field",
+    evidenceType: "structural",
+  });
+  assert.equal(recordMixed.status, "rejected");
+  assert.match(recordMixed.reason, /mutually exclusive|promotion-only/i);
+
+  const retractMixed = await fullCall("record_verification", {
+    ...fullAction,
+    action: "retract",
+    targetSeq: 0,
+    retractionReason: "retract must reject every promotion-only field",
+  });
+  assert.equal(retractMixed.status, "rejected");
+  assert.match(retractMixed.reason, /mutually exclusive|promotion-only/i);
+  assert.deepEqual(fs.readFileSync(appLedger), poisonedLedger);
+
+  fs.rmSync(appLedger);
+  const doorTarget = promotionRoots(fixture, "door-action");
+  const doorAction = promotionAction(fixture, published, doorTarget);
+  const doorCall = await startSurface(t, fixture, "doors");
+  const doorPromoted = await doorCall("pico_record", doorAction);
+  assertPromotionResult(doorPromoted, doorAction, fixture);
+  assert.equal(fs.existsSync(appLedger), false, "Door promotion must not manufacture an evidence row");
+
+  for (const field of ["claim", "artifactPath", "attestation"]) {
+    const emptyRecordField = await doorCall("pico_record", { ...doorAction, [field]: "" });
+    assert.equal(emptyRecordField.status, "rejected", `Door must forward present-but-empty ${field} to the full action boundary`);
+    assert.match(emptyRecordField.reason, new RegExp(field, "i"));
+    assert.equal(fs.existsSync(appLedger), false, `rejected empty ${field} must not manufacture an evidence row`);
+  }
+
+  const doorReportMixed = await doorCall("pico_record", { ...doorAction, report: true });
+  assert.equal(doorReportMixed.status, "rejected");
+  assert.match(doorReportMixed.reason ?? doorReportMixed.error, /report|promote|mutually exclusive/i);
+  assert.equal(fs.existsSync(appLedger), false, "Door report:true must reject rather than reading the ledger after promotion");
+});
+
+test("portable binding is an exact seven-field private capability with kind-specific resolution", async (t) => {
+  const fixture = await createPortableLedgerFixture(t);
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const target = promotionRoots(fixture, "portable-binding");
+  const promoted = await portable.promoteNativeRunReceipt({
+    app: FIXTURE_APP,
+    sourceReceiptId: published.receiptId,
+    sourceReceiptRoot: fs.realpathSync(fixture.rootDir),
+    sourceLedgerRoot: fs.realpathSync(fixture.ledgerDir),
+    ...target,
+  });
+  assert.equal(promoted.status, "promoted", promoted.reason);
+  const expected = expectedPortableBinding(fixture, published, promoted);
+  const targetFixture = { ...fixture, rootDir: target.targetReceiptRoot, ledgerDir: target.targetLedgerRoot };
+  const callJson = await startFullSurface(t, targetFixture);
+
+  const recorded = await callJson("record_verification", {
+    app: FIXTURE_APP,
+    claim: "synthetic portable exact-frame receipt-binding contract fixture",
+    evidenceType: "vision_verified",
+    artifactPath: promoted.captureArtifactPath,
+    attestation: "Synthetic portable fixture text only; no rendered LOOK or visual result is claimed.",
+    runReceiptId: promoted.portableReceiptId,
+    runReceiptPromotionId: promoted.promotionId,
+  });
+  assert.equal(recorded.status, "recorded", recorded.reason);
+  assert.deepEqual(recorded.entry.runReceipt, expected);
+  assert.deepEqual(Object.keys(recorded.entry.runReceipt).sort(), [
+    "auditId", "captureSha256", "kind", "promotionId", "receiptId", "schemaVersion", "sourceReceiptId",
+  ]);
+
+  const report = await callJson("ledger_report", { app: FIXTURE_APP });
+  assert.deepEqual(report.ledger[0].runReceipt, expected);
+  assert.deepEqual(report.history[0].runReceipt, expected);
+  assert.equal(report.runReceiptIssues.length, 0);
+  assert.equal(JSON.stringify(report).includes("receiptRuntime"), false);
+
+  const callerMade = ledger.appendLedgerEntry(FIXTURE_APP, {
+    claim: "caller-shaped portable capability must fail",
+    evidenceType: "vision_verified",
+    artifactPath: promoted.captureArtifactPath,
+    attestation: "Synthetic private-capability fixture; no rendered LOOK is claimed.",
+    runReceiptBinding: {
+      binding: expected,
+      receiptRuntime: fixture.payload.runtime,
+    },
+  });
+  assert.equal(callerMade.status, "rejected");
+  assert.match(callerMade.reason, /private|capability|resolver-origin/i);
+
+  const wrongCapture = path.join(fixture.scratch, "portable-wrong-capture.png");
+  fs.writeFileSync(wrongCapture, makePng(231));
+  const rejectedInputs = [
+    {
+      name: "promotion-only input",
+      args: { runReceiptPromotionId: promoted.promotionId, artifactPath: promoted.captureArtifactPath },
+    },
+    {
+      name: "portable receipt without promotion",
+      args: { runReceiptId: promoted.portableReceiptId, artifactPath: promoted.captureArtifactPath },
+    },
+    {
+      name: "native receipt with promotion",
+      args: { runReceiptId: published.receiptId, runReceiptPromotionId: promoted.promotionId, artifactPath: promoted.captureArtifactPath },
+    },
+    {
+      name: "wrong promotion",
+      args: { runReceiptId: promoted.portableReceiptId, runReceiptPromotionId: ZERO_HASH, artifactPath: promoted.captureArtifactPath },
+    },
+    {
+      name: "wrong image",
+      args: { runReceiptId: promoted.portableReceiptId, runReceiptPromotionId: promoted.promotionId, artifactPath: wrongCapture },
+    },
+  ];
+  for (const scenario of rejectedInputs) {
+    const result = await callJson("record_verification", {
+      app: FIXTURE_APP,
+      claim: `synthetic ${scenario.name} portable-binding fixture`,
+      evidenceType: "vision_verified",
+      attestation: "Synthetic rejection fixture text only; no rendered LOOK is claimed.",
+      ...scenario.args,
+    });
+    assert.equal(result.status, "rejected", `${scenario.name}: ${result.reason}`);
+    assert.match(result.reason, /binding|capture|promotion|receipt|selector|requires|invalid|exist/i, scenario.name);
+  }
+
+  const ledgerFile = ledgerPath(targetFixture);
+  const intactLedger = fs.readFileSync(ledgerFile);
+  const noValidatorCall = await startFocusedLedger(t, targetFixture);
+  const stripped = await noValidatorCall("ledger_report", { app: FIXTURE_APP });
+  assert.equal("runReceipt" in stripped.ledger[0], false);
+  assert.equal("runReceipt" in stripped.history[0], false);
+  assert.equal("claimedRunReceipt" in stripped.ledger[0], false);
+  assert.equal("claimedRunReceipt" in stripped.history[0], false);
+  const strippedJson = JSON.stringify(stripped);
+  assert.equal(strippedJson.includes(published.receiptId), false);
+  assert.equal(strippedJson.includes(promoted.promotionId), false);
+  assert.equal(strippedJson.includes(promoted.auditId), false);
+
+  const eventsWithExtra = JSON.parse(intactLedger.toString("utf8"));
+  eventsWithExtra[0].runReceipt.portablePrivateMarker = "must-not-leak";
+  fs.writeFileSync(ledgerFile, `${JSON.stringify(eventsWithExtra, null, 2)}\n`);
+  const strictReport = await callJson("ledger_report", { app: FIXTURE_APP });
+  assert.equal("runReceipt" in strictReport.ledger[0], false);
+  assert.equal("claimedRunReceipt" in strictReport.ledger[0], false);
+  assert.equal(JSON.stringify(strictReport).includes("must-not-leak"), false);
+
+  const eventsWithWrongAudit = JSON.parse(intactLedger.toString("utf8"));
+  eventsWithWrongAudit[0].runReceipt.auditId = ZERO_HASH;
+  fs.writeFileSync(ledgerFile, `${JSON.stringify(eventsWithWrongAudit, null, 2)}\n`);
+  const wrongAuditReport = await callJson("ledger_report", { app: FIXTURE_APP });
+  assert.equal("runReceipt" in wrongAuditReport.ledger[0], false);
+  assert.equal("claimedRunReceipt" in wrongAuditReport.ledger[0], false);
+  assert.equal(wrongAuditReport.runReceiptIssues.length, 1);
+  assert.equal(JSON.stringify(wrongAuditReport).includes(published.receiptId), false);
+  assert.equal(JSON.stringify(wrongAuditReport).includes(promoted.promotionId), false);
+  fs.writeFileSync(ledgerFile, intactLedger);
+
+  const raceCapture = path.join(fixture.scratch, "portable-race-capture.png");
+  fs.copyFileSync(promoted.captureArtifactPath, raceCapture);
+  const raceResolver = `(app, selector, artifactPath) => {
+    fs.copyFileSync(process.env.PICO_WRONG_CAPTURE, artifactPath);
+    return {
+      status: "valid",
+      binding: {
+        kind: "pico.portable-native-run-receipt",
+        schemaVersion: 1,
+        receiptId: process.env.PICO_BINDING_RECEIPT_ID,
+        sourceReceiptId: process.env.PICO_BINDING_SOURCE_RECEIPT_ID,
+        promotionId: process.env.PICO_BINDING_PROMOTION_ID,
+        auditId: process.env.PICO_BINDING_AUDIT_ID,
+        captureSha256: process.env.PICO_BINDING_CAPTURE_SHA256,
+      },
+      receiptRuntime: {
+        serial: "emulator-5554",
+        model: "PICO Emulator",
+        fingerprint: "PICO/PICO_Emulator/PICO_Emulator:14/fixture/test-keys",
+        bootQemu: "1",
+      },
+    };
+  }`;
+  const raceCall = await startFocusedLedger(t, targetFixture, raceResolver, {
+    PICO_WRONG_CAPTURE: wrongCapture,
+    PICO_BINDING_RECEIPT_ID: promoted.portableReceiptId,
+    PICO_BINDING_SOURCE_RECEIPT_ID: published.receiptId,
+    PICO_BINDING_PROMOTION_ID: promoted.promotionId,
+    PICO_BINDING_AUDIT_ID: promoted.auditId,
+    PICO_BINDING_CAPTURE_SHA256: fixture.payload.capture.sha256,
+  });
+  const raced = await raceCall("record_verification", {
+    app: FIXTURE_APP,
+    claim: "portable path replacement between resolver and ledger materialization",
+    evidenceType: "vision_verified",
+    artifactPath: raceCapture,
+    attestation: "Synthetic portable race fixture; no rendered LOOK is claimed.",
+    runReceiptId: promoted.portableReceiptId,
+    runReceiptPromotionId: promoted.promotionId,
+  });
+  assert.equal(raced.status, "rejected");
+  assert.match(raced.reason, /materialized|capture|sha256|binding|changed/i);
+  const afterRace = await callJson("ledger_report", { app: FIXTURE_APP });
+  assert.equal(afterRace.historyEntryCount, 1);
+  assert.deepEqual(afterRace.ledger[0].runReceipt, expected);
 });
