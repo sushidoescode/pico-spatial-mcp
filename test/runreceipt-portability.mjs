@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 import {
   auditIdOf,
   parsePortableRunReceipt,
@@ -121,6 +122,13 @@ test("portable validators catch noncanonical hashes, root locators, timestamps, 
     () => promotionIdOf({ ...core, sourceRoots: { ...core.sourceRoots, receipt: { ...roots.receipt, realPath: "/var/lib/pico/receipts/" } } }),
     /realPath|path|invalid/i,
   );
+  for (const realPath of ["relative/store", "/", "/var/lib/pico/../pico/receipts", "/var/lib/pico\u0000/receipts"]) {
+    assert.throws(
+      () => promotionIdOf({ ...core, sourceRoots: { ...core.sourceRoots, receipt: { ...roots.receipt, realPath } } }),
+      /realPath|path|invalid/i,
+      `noncanonical root locator ${JSON.stringify(realPath)} must be rejected`,
+    );
+  }
   assert.throws(() => auditIdOf({ ...audit, recordedAt: "2026-08-31T12:34:56Z" }), /recordedAt|timestamp|invalid/i);
   assert.throws(() => auditIdOf({ ...audit, toolVersion: "v37.0.0" }), /toolVersion|version|invalid/i);
   assert.throws(() => portableReceiptIdOf({ ...payload, sourceReceipt: { ...payload.sourceReceipt, receiptId: "A".repeat(64) } }), /receiptId|invalid/i);
@@ -173,4 +181,24 @@ test("native lineage validator catches a source-root locator rewrite", async (t)
   });
   assert.equal(rewritten.status, "invalid");
   assert.match(rewritten.issues.join("\n"), /artifactPath|receipt-store|CAS/i);
+
+  for (const sourceReceiptRoot of [
+    path.relative(process.cwd(), fixture.rootDir),
+    "/",
+    `${path.dirname(fixture.rootDir)}/../${path.basename(path.dirname(fixture.rootDir))}/${path.basename(fixture.rootDir)}`,
+    `${fixture.rootDir}\u0000`,
+  ]) {
+    const invalidRoot = store.validateNativeRunReceiptLineageSnapshot({
+      app: fixture.payload.app,
+      receiptId: published.receiptId,
+      receiptBytes,
+      sourceReceiptRoot,
+      sourceLedgerRoot: fixture.ledgerDir,
+      apk: { sha256: fixture.payload.apk.sha256, bytes: fixture.payload.apk.bytes },
+      effectiveAppSpecBytes: fs.readFileSync(fixture.publishedSpec.artifactPath),
+      capture: validateCaptureBuffer(fs.readFileSync(fixture.captureArtifactPath), "fixture capture"),
+    });
+    assert.equal(invalidRoot.status, "invalid", `invalid source root ${JSON.stringify(sourceReceiptRoot)} must fail`);
+    assert.match(invalidRoot.issues.join("\n"), /sourceReceiptRoot.*canonical|source receipt root.*canonical/i);
+  }
 });

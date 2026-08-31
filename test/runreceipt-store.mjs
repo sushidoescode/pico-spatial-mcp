@@ -593,6 +593,29 @@ test("historical validation independently detects receipt and CAS tampering", as
   });
 });
 
+test("historical reader preserves canonicality and later-artifact issues when other native facts are invalid", async (t) => {
+  await withFixture(t, (fixture) => {
+    const noncanonicalPayload = { ...fixture.payload, unexpected: true };
+    const noncanonicalId = sha256(canonicalJson(noncanonicalPayload));
+    const noncanonicalPath = path.join(fixture.rootDir, "native-v1", FIXTURE_APP, `${noncanonicalId}.json`);
+    fs.mkdirSync(path.dirname(noncanonicalPath), { recursive: true });
+    fs.writeFileSync(noncanonicalPath, `${JSON.stringify({ ...noncanonicalPayload, receiptId: noncanonicalId })}\n`);
+    const noncanonical = store.readNativeRunReceipt(FIXTURE_APP, noncanonicalId, fixture.storeOptions);
+    assert.equal(noncanonical.status, "invalid");
+    assert.match(issueText(noncanonical), /canonical JSON plus one newline/i);
+    assert.match(issueText(noncanonical), /unrecognized|unexpected/i);
+
+    const payload = structuredClone(fixture.payload);
+    payload.capture.artifactPath = path.join(fixture.ledgerDir, "wrong-capture-path.png");
+    const written = rawReceipt(fixture, payload);
+    fs.unlinkSync(path.join(fixture.rootDir, "artifacts", "apk", `${fixture.payload.apk.sha256}.apk`));
+    const missingApk = store.readNativeRunReceipt(FIXTURE_APP, written.receiptId, fixture.storeOptions);
+    assert.equal(missingApk.status, "invalid");
+    assert.match(issueText(missingApk), /APK CAS could not be validated/i);
+    assert.match(issueText(missingApk), /capture artifactPath is not the exact ledger CAS path/i);
+  });
+});
+
 test("historical validation rejects package, install, runtime, and capture cross-field disagreement", async (t) => {
   const mutations = [
     ["APK package", (value) => { value.apk.packageName = "com.example.changed"; }],

@@ -32,6 +32,7 @@ const appSchema = z.string().regex(ANDROID_PACKAGE_PATTERN, "must be a canonical
 function isCanonicalStorePath(value: string): boolean {
   return value !== "/"
     && path.posix.isAbsolute(value)
+    && !value.includes("\0")
     && !value.includes("\\")
     && path.posix.normalize(value) === value
     && !value.endsWith("/");

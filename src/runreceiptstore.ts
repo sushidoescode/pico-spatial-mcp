@@ -741,6 +741,16 @@ function validateCrossFieldBindings(receipt: NativeRunReceipt, effectiveSpec: un
   }
 }
 
+function isCanonicalPortableStoreRoot(value: unknown): value is string {
+  return typeof value === "string"
+    && value !== "/"
+    && path.posix.isAbsolute(value)
+    && !value.includes("\0")
+    && !value.includes("\\")
+    && !value.endsWith("/")
+    && path.posix.normalize(value) === value;
+}
+
 export function validateNativeRunReceiptLineageSnapshot(input: NativeRunReceiptLineageSnapshot):
   | { status: "valid"; receipt: NativeRunReceipt; receiptFileSha256: string }
   | { status: "invalid"; receiptId: string; issues: string[] } {
@@ -782,6 +792,13 @@ export function validateNativeRunReceiptLineageSnapshot(input: NativeRunReceiptL
   if (crypto.createHash("sha256").update(canonicalJson(payload)).digest("hex") !== storedReceiptId) {
     issues.push("recomputed receipt ID does not match receipt.receiptId");
   }
+  if (!isCanonicalPortableStoreRoot(input.sourceReceiptRoot)) {
+    issues.push("sourceReceiptRoot must be a resolved absolute non-root canonical POSIX store path");
+  }
+  if (!isCanonicalPortableStoreRoot(input.sourceLedgerRoot)) {
+    issues.push("sourceLedgerRoot must be a resolved absolute non-root canonical POSIX store path");
+  }
+  if (issues.length) return { status: "invalid", receiptId, issues };
 
   const requiredApkPath = path.join(input.sourceReceiptRoot, ...APK_ARTIFACT_DIRECTORY.split("/"), `${receipt.apk.sha256}.apk`);
   if (receipt.apk.artifactPath !== requiredApkPath) issues.push("APK artifactPath is not the exact receipt-store CAS path");
@@ -825,6 +842,7 @@ export function validateNativeRunReceiptLineageSnapshot(input: NativeRunReceiptL
 
 function readHistoricalNativeRunReceipt(app: string, receiptId: string, options: ReceiptStoreOptions): NativeRunReceiptValidation {
   const mode = "historical" as const;
+  const issues: string[] = [];
   try {
     assertCanonicalAppKey(app);
   } catch (error) {
@@ -844,38 +862,62 @@ function readHistoricalNativeRunReceipt(app: string, receiptId: string, options:
   } catch (error) {
     return invalidResult(mode, receiptId, [`receipt is not valid JSON: ${error instanceof Error ? error.message : String(error)}`]);
   }
+  try {
+    if (!file.bytes.equals(Buffer.from(`${canonicalJson(raw)}\n`, "utf8"))) issues.push("receipt file bytes are not canonical JSON plus one newline");
+  } catch (error) {
+    issues.push(`receipt cannot be canonicalized: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const parsed = nativeRunReceiptSchema.safeParse(raw);
-  if (!parsed.success) return invalidResult(mode, receiptId, zodIssues(parsed.error));
+  if (!parsed.success) return invalidResult(mode, receiptId, [...issues, ...zodIssues(parsed.error)]);
   const receipt = parsed.data as NativeRunReceipt;
+  if (receipt.receiptId !== receiptId) issues.push("receipt filename/requested receipt ID does not match receipt.receiptId");
+  if (receipt.app !== app) issues.push("receipt app does not match its canonical app directory");
+  const { receiptId: storedReceiptId, ...payload } = receipt;
+  const recomputedReceiptId = crypto.createHash("sha256").update(canonicalJson(payload)).digest("hex");
+  if (recomputedReceiptId !== storedReceiptId) issues.push("recomputed receipt ID does not match receipt.receiptId");
+
   const requiredApkPath = expectedApkPath(receipt, options);
+  if (receipt.apk.artifactPath !== requiredApkPath) issues.push("APK artifactPath is not the exact receipt-store CAS path");
+  addHashIssues(issues, "APK CAS", requiredApkPath, receipt.apk.sha256, receipt.apk.bytes, APK_MAX_BYTES);
+
   const requiredSpecPath = expectedSpecPath(receipt, options);
+  if (receipt.source.effectiveAppSpec.artifactPath !== requiredSpecPath) issues.push("effective AppSpec artifactPath is not the exact receipt-store CAS path");
+  const specSnapshot = (() => {
+    try {
+      return snapshotFile(requiredSpecPath, EFFECTIVE_APP_SPEC_MAX_BYTES);
+    } catch (error) {
+      issues.push(`effective AppSpec snapshot could not be validated: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
+    }
+  })();
+  let effectiveSpec: unknown;
+  if (specSnapshot) {
+    try {
+      effectiveSpec = JSON.parse(specSnapshot.bytes.toString("utf8"));
+      const canonical = canonicalJson(effectiveSpec);
+      if (!specSnapshot.bytes.equals(Buffer.from(`${canonical}\n`, "utf8"))) issues.push("effective AppSpec snapshot is not canonical JSON plus one newline");
+      const identity = canonicalIdentity(effectiveSpec);
+      if (identity.sha256 !== receipt.source.effectiveAppSpec.sha256) issues.push("effective AppSpec sha256 does not match the receipt");
+      if (identity.bytes !== receipt.source.effectiveAppSpec.bytes) issues.push("effective AppSpec canonical byte length does not match the receipt");
+      if (receipt.source.effectiveAppSpec.algorithm !== "sha256") issues.push("effective AppSpec algorithm is not sha256");
+    } catch (error) {
+      issues.push(`effective AppSpec snapshot is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   const requiredCapturePath = expectedCapturePath(receipt, options);
-  let apk: HashSnapshot;
-  try {
-    apk = hashFile(requiredApkPath, APK_MAX_BYTES);
-  } catch (error) {
-    return invalidResult(mode, receiptId, [`APK CAS could not be validated: ${error instanceof Error ? error.message : String(error)}`]);
-  }
-  let effectiveAppSpecBytes: Buffer;
-  try {
-    effectiveAppSpecBytes = snapshotFile(requiredSpecPath, EFFECTIVE_APP_SPEC_MAX_BYTES).bytes;
-  } catch (error) {
-    return invalidResult(mode, receiptId, [`effective AppSpec snapshot could not be validated: ${error instanceof Error ? error.message : String(error)}`]);
-  }
+  if (receipt.capture.artifactPath !== requiredCapturePath) issues.push("capture artifactPath is not the exact ledger CAS path");
   const capture = validateCapture(requiredCapturePath);
-  const validated = validateNativeRunReceiptLineageSnapshot({
-    app,
-    receiptId,
-    receiptBytes: file.bytes,
-    sourceReceiptRoot: receiptRoot(options),
-    sourceLedgerRoot: receiptLedgerRoot(options),
-    apk: { sha256: apk.sha256, bytes: apk.size },
-    effectiveAppSpecBytes,
-    capture,
-  });
-  return validated.status === "invalid"
-    ? invalidResult(mode, receiptId, validated.issues)
-    : { status: "valid", mode, receipt: validated.receipt, receiptPath };
+  if (!capture.ok) {
+    issues.push(`capture CAS could not be validated: ${capture.reason ?? "unknown capture error"}`);
+  } else {
+    if (capture.format !== receipt.capture.format) issues.push("capture format does not match the receipt");
+    if (capture.sha256 !== receipt.capture.sha256) issues.push("capture sha256 does not match the receipt");
+    if (capture.bytes !== receipt.capture.bytes) issues.push("capture byte length does not match the receipt");
+    if (capture.width !== receipt.capture.width || capture.height !== receipt.capture.height) issues.push("capture dimensions do not match the receipt");
+  }
+  validateCrossFieldBindings(receipt, effectiveSpec, issues);
+  return issues.length ? invalidResult(mode, receiptId, issues) : { status: "valid", mode, receipt, receiptPath };
 }
 
 function canonicalValuesEqual(left: unknown, right: unknown): boolean {
