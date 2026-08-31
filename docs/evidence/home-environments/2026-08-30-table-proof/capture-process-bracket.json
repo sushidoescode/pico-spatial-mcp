@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico.table-proof-capture-process-bracket",
+  "serial": "emulator-5554",
+  "packageName": "com.fleet.swanmissiontable",
+  "component": "com.fleet.swanmissiontable/.platform.LaunchActivity",
+  "receiptId": "e5698c6c3cbc557df7c8b790901c883c655e140b043bffe494c7f05ab41ea743",
+  "before": {
+    "observedAt": "2026-08-31T02:58:46Z",
+    "pid": 21207,
+    "pidStartTicks": "8243193",
+    "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+    "foregroundComponent": "com.fleet.swanmissiontable/.platform.LaunchActivity"
+  },
+  "capture": {
+    "path": "/private/tmp/pico-render/home-environment-table-proof/live4/livingroom-day-table-settled.live4.01.png",
+    "sha256": "17cea46920ee2626fb8810813aebb4efdde0a2592093e293e0e5096310770bf9",
+    "status": "settled",
+    "comparison": "byte_exact",
+    "attempts": 2
+  },
+  "after": {
+    "observedAt": "2026-08-31T02:59:41Z",
+    "pid": 21207,
+    "pidStartTicks": "8243193",
+    "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+    "foregroundComponent": "com.fleet.swanmissiontable/.platform.LaunchActivity"
+  },
+  "continuous": true,
+  "note": "Both brackets used exact-serial Meta VR CLI probes. capture_settled itself also read the attached-device inventory before targeting emulator-5554; it issued no command to the physical serial."
+}

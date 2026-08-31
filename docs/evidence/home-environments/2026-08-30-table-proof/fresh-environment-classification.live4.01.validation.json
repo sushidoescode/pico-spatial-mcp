@@ -1,0 +1,275 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico.task-8-table-proof-fresh-classification",
+  "sessionId": "047391bb-1cdc-4489-b22f-5de75cd5407b",
+  "sourceHead": "7f9be09273954d25e51fabd17d030fd26362fa35",
+  "validatedAt": "2026-08-31T02:57:42.783Z",
+  "queryCall": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/env-fit-selector-2026-08-29/docs/evidence/home-environments/2026-08-30-table-proof/query-scene-anchors.live4.01.call.json",
+    "bytes": 82658,
+    "sha256": "26ee898b4ab817822c15881051ab8e594def365e838e3b3c7e87667f54fe315d"
+  },
+  "classification": {
+    "status": "unique",
+    "environment": {
+      "tile": "Livingroom Day",
+      "sceneId": "XiataAncientPath",
+      "measurementStatus": "ready",
+      "automaticSelectionEligible": true,
+      "exclusionReason": null,
+      "acceptedInstantiations": 5,
+      "totalAnchorCountRange": [
+        51,
+        60
+      ],
+      "histogramRanges": {
+        "CABINET": [
+          3,
+          5
+        ],
+        "CEILING": [
+          0,
+          1
+        ],
+        "CHAIR": [
+          3,
+          4
+        ],
+        "DOOR": [
+          1,
+          2
+        ],
+        "FLOOR": [
+          1,
+          2
+        ],
+        "LAMP": [
+          6,
+          8
+        ],
+        "PLANT": [
+          1,
+          3
+        ],
+        "SCREEN": [
+          0,
+          1
+        ],
+        "SOFA": [
+          0,
+          1
+        ],
+        "TABLE": [
+          1,
+          2
+        ],
+        "UNKNOWN": [
+          26,
+          28
+        ],
+        "WALL": [
+          1,
+          2
+        ],
+        "WALL_ART": [
+          1,
+          3
+        ],
+        "WINDOW": [
+          1,
+          2
+        ]
+      },
+      "surfaces": {
+        "FLOOR": [
+          [
+            2.237663,
+            0.008483,
+            1.502388
+          ],
+          [
+            6.867676,
+            0.0000016,
+            4.439027
+          ]
+        ],
+        "TABLE": [
+          [
+            0.176013,
+            0.174682,
+            0.176883
+          ],
+          [
+            0.782631,
+            0.188127,
+            0.464378
+          ]
+        ]
+      },
+      "guaranteedSurfaces": {
+        "FLOOR": [],
+        "TABLE": []
+      },
+      "extentClusters": {
+        "FLOOR": [
+          {
+            "extentM": [
+              2.237663,
+              0.008483,
+              1.502388
+            ],
+            "presenceCountRange": [
+              0,
+              1
+            ]
+          },
+          {
+            "extentM": [
+              6.867676,
+              0.0000016,
+              4.439027
+            ],
+            "presenceCountRange": [
+              0,
+              1
+            ]
+          }
+        ],
+        "TABLE": [
+          {
+            "extentM": [
+              0.176013,
+              0.174682,
+              0.176883
+            ],
+            "presenceCountRange": [
+              0,
+              1
+            ]
+          },
+          {
+            "extentM": [
+              0.782631,
+              0.188127,
+              0.464378
+            ],
+            "presenceCountRange": [
+              0,
+              1
+            ]
+          }
+        ]
+      },
+      "selectedDialogSha256": "97a77c1f9acb7dd7b073bdec1ea8c403ab2fc9bbf337913abd700ad068f274aa",
+      "measuredClickPoint": [
+        450,
+        121
+      ],
+      "queryEvidence": [
+        "livingroom-day-read-1.json"
+      ]
+    },
+    "histogramMatches": [
+      "Livingroom Day"
+    ],
+    "predicates": {
+      "bridgeStatus": "ready",
+      "missingRequestedLabels": [],
+      "surfaceExtentMultisetsMatch": true,
+      "requirementsFit": true
+    }
+  },
+  "ranking": {
+    "status": "ranked",
+    "datasetId": "pico-emulator-6.0-home-environments-v1",
+    "candidates": [
+      {
+        "tile": "Livingroom Day",
+        "fits": [
+          {
+            "requirement": {
+              "label": "TABLE",
+              "minimumExtentM": [
+                0.25,
+                0.18
+              ]
+            },
+            "surfaceExtentM": [
+              0.782631,
+              0.464378
+            ],
+            "fitRatio": 2.579877777777778
+          }
+        ],
+        "minimumFitRatio": 2.579877777777778,
+        "sumFitRatios": 2.579877777777778,
+        "contentScale": 0.7739633333333333,
+        "tier": "preferred"
+      },
+      {
+        "tile": "Livingroom Night",
+        "fits": [
+          {
+            "requirement": {
+              "label": "TABLE",
+              "minimumExtentM": [
+                0.25,
+                0.18
+              ]
+            },
+            "surfaceExtentM": [
+              0.782631,
+              0.464378
+            ],
+            "fitRatio": 2.579877777777778
+          }
+        ],
+        "minimumFitRatio": 2.579877777777778,
+        "sumFitRatios": 2.579877777777778,
+        "contentScale": 0.7739633333333333,
+        "tier": "preferred"
+      },
+      {
+        "tile": "Mesume Night",
+        "fits": [
+          {
+            "requirement": {
+              "label": "TABLE",
+              "minimumExtentM": [
+                0.25,
+                0.18
+              ]
+            },
+            "surfaceExtentM": [
+              0.579583,
+              0.794646
+            ],
+            "fitRatio": 2.318332
+          }
+        ],
+        "minimumFitRatio": 2.318332,
+        "sumFitRatios": 2.318332,
+        "contentScale": 0.5966295588235293,
+        "tier": "preferred"
+      }
+    ],
+    "selectedTarget": "Livingroom Day"
+  },
+  "measuredPotentialTable": {
+    "datasetExtentM": [
+      0.782631,
+      0.188127,
+      0.464378
+    ],
+    "observedTraceId": "anchor-0016",
+    "observedRuntimeUuid": "98f1d657-442d-42f3-b029-ae4fdce5ba6b",
+    "observedExtentM": [
+      0.7826310396194458,
+      0.18812690675258636,
+      0.4643775224685669
+    ],
+    "toleranceM": 0.01,
+    "rankedContentScale": 0.7739633333333333,
+    "observedContentScale": 0.7739625374476115
+  }
+}

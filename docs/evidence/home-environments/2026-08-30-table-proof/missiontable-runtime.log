@@ -1,0 +1,25 @@
+# Launch-scoped live4 runtime evidence
+launchedAt=2026-08-31T02:52:49.071Z
+serial=emulator-5554
+package=com.fleet.swanmissiontable
+component=com.fleet.swanmissiontable/.platform.LaunchActivity
+pid=21207
+pidStartTicks=8243193
+bootId=c0bd8c41-7928-476a-ae8a-a71d89465686
+
+latest_support="TABLE selected label-level bounds=0.78263104x0.46437752 scale=0.77396256 uuid=98f1d657-442d-42f3-b029-ae4fdce5ba6b"
+panel_anchor_line="ANCHORS TABLE + runtime re-query"
+panel_wall_art_line="WALL_ART NOT PRESENT → TABLE fallback"
+panel_surface_line="SURFACE TABLE 0.78 x 0.46 m | scale 0.77"
+later_floor_fallback_or_waiting=NONE
+
+2026-08-31T02:58:30.168Z SpatialDemo DEBUG_CMD mission:launch
+2026-08-31T02:58:31.381Z SpatialDemo DEBUG_CMD mission:pause
+
+risk_signature="ANR in com.fleet.swanmissiontable" hits=NONE
+risk_signature="FATAL EXCEPTION" hits=NONE
+risk_signature="E/AndroidRuntime" hits=NONE
+risk_signature="Input dispatching timed out" hits=NONE
+risk_signature="Waited 5000ms FocusEvent" hits=NONE
+
+check_crash healthy=true processAlive=true crashCount=0

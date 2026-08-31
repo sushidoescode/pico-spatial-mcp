@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico.record-verification-receipt",
+  "call": {
+    "name": "record_verification",
+    "arguments": {
+      "app": "com.fleet.swanmissiontable",
+      "claim": "Livingroom Day provides a TABLE surface large enough for the mission-table footprint, and the fresh app placed the lunar diorama on that TABLE in the settled emulator frame.",
+      "evidenceType": "vision_verified",
+      "artifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/env-fit-selector-2026-08-29/docs/evidence/home-environments/2026-08-30-table-proof/livingroom-day-table-settled.png",
+      "attestation": "The full-resolution settled frame visibly shows the blue lunar diorama resting on the round dark Livingroom table at a believable tabletop scale; the panel visibly reads `ANCHORS TABLE + runtime re-query` and `SURFACE TABLE 0.78 x 0.46 m | scale 0.77`, with no FLOOR fallback or error dialog obscuring the scene.",
+      "cClass": "C0_emulator"
+    }
+  },
+  "response": {
+    "status": "recorded",
+    "entry": {
+      "seq": 3,
+      "claim": "Livingroom Day provides a TABLE surface large enough for the mission-table footprint, and the fresh app placed the lunar diorama on that TABLE in the settled emulator frame.",
+      "evidenceType": "vision_verified",
+      "artifactPath": "/Users/sushantsrikrish/.pico-mcp/ledgers/artifacts/17cea46920ee2626fb8810813aebb4efdde0a2592093e293e0e5096310770bf9.png",
+      "sourceArtifactPath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/env-fit-selector-2026-08-29/docs/evidence/home-environments/2026-08-30-table-proof/livingroom-day-table-settled.png",
+      "attestation": "The full-resolution settled frame visibly shows the blue lunar diorama resting on the round dark Livingroom table at a believable tabletop scale; the panel visibly reads `ANCHORS TABLE + runtime re-query` and `SURFACE TABLE 0.78 x 0.46 m | scale 0.77`, with no FLOOR fallback or error dialog obscuring the scene.",
+      "cClass": "C0_emulator",
+      "capture": {
+        "sha256": "17cea46920ee2626fb8810813aebb4efdde0a2592093e293e0e5096310770bf9",
+        "width": 2160,
+        "height": 2158,
+        "bytes": 2800528,
+        "format": "png"
+      },
+      "reproHash": null
+    },
+    "totalEntries": 4,
+    "app": "com.fleet.swanmissiontable"
+  },
+  "bindingNote": "runReceiptId is intentionally omitted because this later settled frame is not byte-identical to the native launch receipt capture."
+}

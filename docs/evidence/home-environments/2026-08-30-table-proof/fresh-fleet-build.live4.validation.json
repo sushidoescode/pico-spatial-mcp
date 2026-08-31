@@ -1,0 +1,409 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico.task-8-table-proof-fleet-validation",
+  "sessionId": "047391bb-1cdc-4489-b22f-5de75cd5407b",
+  "sourceHead": "7f9be09273954d25e51fabd17d030fd26362fa35",
+  "selectorSourceHead": "7f9be09273954d25e51fabd17d030fd26362fa35",
+  "validatedAt": "2026-08-31T02:53:06.729Z",
+  "prerequisites": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/env-fit-selector-2026-08-29/docs/evidence/home-environments/2026-08-30-table-proof/task-8-prerequisites.live4.validation.json",
+    "bytes": 22676,
+    "sha256": "98cc382d5650f0ede70afd574b927ee060081c748e7d3947f29baa6b26a75d5d"
+  },
+  "rawCall": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/env-fit-selector-2026-08-29/docs/evidence/home-environments/2026-08-30-table-proof/fresh-fleet-build.live4.call.json",
+    "bytes": 7103,
+    "sha256": "ba88a82df0d3a30d8eade91aaa90ba89669a8fa92dfa9916fdcb619ef0f09f87"
+  },
+  "result": {
+    "status": "ok",
+    "id": "swanmissiontable",
+    "built": true,
+    "installed": true,
+    "nativeFailure": null
+  },
+  "nativeReceipt": {
+    "kind": "pico.native-run-receipt",
+    "schemaVersion": 1,
+    "createdAt": "2026-08-31T02:53:04.488Z",
+    "scope": "fleet-native-debug",
+    "app": "com.fleet.swanmissiontable",
+    "source": {
+      "authoredAppSpec": {
+        "algorithm": "sha256",
+        "sha256": "4de016ddee813edba2d6cc38e2f520090f892e95cfabbbc0c19b88eb36877775",
+        "bytes": 4288,
+        "sourcePath": "/Users/sushantsrikrish/PICO-MCP/.worktrees/env-fit-selector-2026-08-29/briefs/swanmissiontable.json"
+      },
+      "effectiveAppSpec": {
+        "algorithm": "sha256",
+        "sha256": "f73339738fb4131467e0e0875528e1931710785a5e160fac1c860e524cf6d765",
+        "bytes": 4291,
+        "artifactPath": "/Users/sushantsrikrish/.pico-mcp/run-receipts/artifacts/spec/f73339738fb4131467e0e0875528e1931710785a5e160fac1c860e524cf6d765.json"
+      },
+      "gradleInputs": {
+        "schemaVersion": 1,
+        "projectDir": "/Users/sushantsrikrish/AndroidStudioProjects/fleet-swanmissiontable-native",
+        "algorithm": "sha256",
+        "sha256": "e4c30a282e628b4968888e807a6cc884509246481e270d01c580f5e131d37f61",
+        "entryCount": 51,
+        "totalBytes": 689641,
+        "entries": [
+          {
+            "path": "app/build.gradle.kts",
+            "bytes": 1951,
+            "sha256": "31eaa6487fbd856221ccc75e2d65f56205193bcadbab36c61e955f20dc32619f"
+          },
+          {
+            "path": "app/proguard-rules.pro",
+            "bytes": 750,
+            "sha256": "56fd960cf225f6ca40f982b13a5dbb0d8bc3dfde13ff76422825c6070d0a1890"
+          },
+          {
+            "path": "app/src/androidTest/java/com/fleet/swanmissiontable/ExampleInstrumentedTest.kt",
+            "bytes": 679,
+            "sha256": "1aa8b05c74609734e0b1bc1712d7cb0c052fe9196a4d7db79f5a1a310e76c879"
+          },
+          {
+            "path": "app/src/main/AndroidManifest.xml",
+            "bytes": 5592,
+            "sha256": "089af6d2f0f7505a4534255747ac4b9368915352a0a4ac9d3d479f3407c496b1"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/Main.kt",
+            "bytes": 713,
+            "sha256": "3cad1edc7c4755dbfc5bcccfcb30e5b33d1b484ac71551d97f4237f116e5a4e0"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/agent/AgentBridge.kt",
+            "bytes": 21686,
+            "sha256": "e9f69795ced8ab9ebddab65df2190fc3465a5ee84f0b6243e7c96e4a4c728af2"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/agent/AgentBridgeInitProvider.kt",
+            "bytes": 2076,
+            "sha256": "17e090b7d41c302d5922d89db01b003bd38a1581ae1905aaa04f34ef6ae71b14"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/DemoPanel.kt",
+            "bytes": 3742,
+            "sha256": "9e847bc5739193341e9841f6235ce0b0f577cc247463fb5889d80ee497e10189"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/DemoPlacer.kt",
+            "bytes": 5008,
+            "sha256": "a72be665ee9771d66333ae88874a8840ef5a6159df19fdebae9ed146ba5f7f6e"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/HeadsetReadiness.kt",
+            "bytes": 1534,
+            "sha256": "7c3657544bc0352032d8dccef61896d7d943a1422e439f0551a87a419e33a379"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/HomeStage.kt",
+            "bytes": 4307,
+            "sha256": "f93f9ba6d754cc7e86f2fb2faf8fadf171aaa63a804fb54eaccc6f98aeed7bd5"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/MeshEnvironment.kt",
+            "bytes": 2670,
+            "sha256": "abf5ad1d78cc26d1b308c45f9e8635e64a0299eb902bb63d71a183cdd3ca7fd5"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/MissionTableExperience.kt",
+            "bytes": 34036,
+            "sha256": "980c6fb887b66a829715e981d2a3bfc7d4c92f4f490b9f5576496479decae17e"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/SceneAnimation.kt",
+            "bytes": 1598,
+            "sha256": "69a4f0df84295eedfff81d2c90a99a71a97344420b82c9ebbc51a056bc2b555c"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/SceneAttachments.kt",
+            "bytes": 3879,
+            "sha256": "98a41728ad0c5f52c679cbc518094de9831ec61ad9deed27e4f3823b6ecfb922"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/SceneComposition.kt",
+            "bytes": 627,
+            "sha256": "ccdffc1c34a71fb1b6cb74dbdf44da5776d69679cc22f8a83360611b2df6bbd6"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/SceneInteraction.kt",
+            "bytes": 8704,
+            "sha256": "08e59b733afe477400bd4a3e06a05c90c8e21f954231953d8c2ab1020f20b29f"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/SceneLighting.kt",
+            "bytes": 3118,
+            "sha256": "4abb1daa32061d0081c5925ee042865f9c983516cb59bd7ff6d17ef87504dec8"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/SceneLightingRig.kt",
+            "bytes": 2550,
+            "sha256": "52a932816d90cf383b9338cd93f9d1592fd39956e22423c53e656cd70852b651"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/SceneUnderstanding.kt",
+            "bytes": 22728,
+            "sha256": "7542be3d0c311f16e72790109668e9174fbdfab699fa0d4072cd64ec3f4a918f"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/SpatialAudio.kt",
+            "bytes": 1313,
+            "sha256": "e57e93531bffaa866626587b3fa95ebabdc713742793843e357ee8edf21f4032"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/SpatialColliders.kt",
+            "bytes": 5361,
+            "sha256": "fba50de0dcc61da36970a47c3f9c1dc7d00ffd071c4693e0ee3a6bafb984a9c2"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/WorldAnchors.kt",
+            "bytes": 1807,
+            "sha256": "fe6c7b0d73d4af20e88522c8f78e4fa1dc1be26a7d35734cb29a0aacef02d268"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/ecs/OrbitComponent.kt",
+            "bytes": 2032,
+            "sha256": "f920422e017983ca4baff3910cfd91e5ba343abe3319fc20f37a0ed613c77db6"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/ecs/OrbitSystem.kt",
+            "bytes": 2899,
+            "sha256": "bf01f8270eff6be7dbd20475abee9036b67e77f0c3cfb61edc000fedebe5e1f5"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/ecs/SpinComponent.kt",
+            "bytes": 1597,
+            "sha256": "3fe2e4d5a6b37e7b751b91de3e0b380ac086770b250e4b721df4ed15ec6c9dfc"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/content/ecs/SpinSystem.kt",
+            "bytes": 2711,
+            "sha256": "8ab787090a1772f4a828f35106ab56c23c8a8774c8b9840e28732dbe29338c7e"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/platform/LaunchActivity.kt",
+            "bytes": 156,
+            "sha256": "9e3aff1b26eac742a298df3bf90244dc0ed147c7250f1d76cb94b444ab0d874d"
+          },
+          {
+            "path": "app/src/main/java/com/fleet/swanmissiontable/platform/SpatialApplication.kt",
+            "bytes": 1840,
+            "sha256": "3262601e4ceb158bdf6aac9aa0c67712f73b4380892205d36adfd8aa4cec3498"
+          },
+          {
+            "path": "app/src/main/res/drawable/icon_3d_layer_0.png",
+            "bytes": 205189,
+            "sha256": "7b05d2bf2a6ab652b39f34ddd89e834d8c40e1a7d3655ac9fe579e04e4d306f8"
+          },
+          {
+            "path": "app/src/main/res/drawable/icon_3d_layer_1.png",
+            "bytes": 151149,
+            "sha256": "68bf3b1e2c2d8056ba0f6f1eeb99e7b9ebb27e1a99e08cd394667b61fba87fa5"
+          },
+          {
+            "path": "app/src/main/res/drawable/icon_3d_sdf_0.png",
+            "bytes": 96402,
+            "sha256": "595239a6749290bffee0b73a3dca36a8723fc5c3a5013efb69cd461753dff7cd"
+          },
+          {
+            "path": "app/src/main/res/drawable/icon_3d_sdf_1.png",
+            "bytes": 19551,
+            "sha256": "c9e2c136faacc75ea3cf2541a38c77ddbebee590265300264293f1be2a30e769"
+          },
+          {
+            "path": "app/src/main/res/mipmap-xxxhdpi/ic_spatial_launcher.png",
+            "bytes": 5399,
+            "sha256": "64516609828857673e5a4b2ac4ff5f466894f3e47bde024aa6959b4fd6947685"
+          },
+          {
+            "path": "app/src/main/res/values-night/themes.xml",
+            "bytes": 158,
+            "sha256": "10a18264aa89147873fe501384a655ffc56ce5ef600793bfacd7c1afdaf357b9"
+          },
+          {
+            "path": "app/src/main/res/values/colors.xml",
+            "bytes": 378,
+            "sha256": "b5626527d503417f0d8e5b1e08f338de7b31173bf0e122815f03e64932adbd88"
+          },
+          {
+            "path": "app/src/main/res/values/drawables_3d.xml",
+            "bytes": 299,
+            "sha256": "1ecd58a8e004abfa2b011d30f41b11bdd09f8d48f8565c6d1440003c5ad991b3"
+          },
+          {
+            "path": "app/src/main/res/values/strings.xml",
+            "bytes": 241,
+            "sha256": "5813e8675a740950717bc1c341004dfa58185775c818ca41693d641d9f0e64b2"
+          },
+          {
+            "path": "app/src/main/res/values/themes.xml",
+            "bytes": 158,
+            "sha256": "10a18264aa89147873fe501384a655ffc56ce5ef600793bfacd7c1afdaf357b9"
+          },
+          {
+            "path": "app/src/main/res/xml/backup_rules.xml",
+            "bytes": 478,
+            "sha256": "9f7e4c84c8fd2c81478d15962383f47cc6ff55d62abcd40c8ffa6fc08a8c35b7"
+          },
+          {
+            "path": "app/src/main/res/xml/data_extraction_rules.xml",
+            "bytes": 551,
+            "sha256": "cb1fc47ab4a984530ed60e0e6ee638929c3038290e7e7e0b4b03a3a30fbe7381"
+          },
+          {
+            "path": "app/src/main/res/xml/locales_config.xml",
+            "bytes": 166,
+            "sha256": "e5befa0acdc560114d5e2792e2f632e340dff3caa9056d522839990c3581bc27"
+          },
+          {
+            "path": "app/src/test/java/com/fleet/swanmissiontable/ExampleUnitTest.kt",
+            "bytes": 350,
+            "sha256": "f9347514706a5764a8046be6ef198c55e14fd4ad048192ce8becd2cc3c2d6271"
+          },
+          {
+            "path": "build.gradle.kts",
+            "bytes": 303,
+            "sha256": "a7ce03ca512c58ce42570d2411b1fb2b46166269cf6f238599b4bcbcd7734ab8"
+          },
+          {
+            "path": "gradle.properties",
+            "bytes": 1346,
+            "sha256": "51e4b5a131eb01b1cdeb2f6f26aaba69d367a4a9d4ccd10c6d6f6d12fd545b66"
+          },
+          {
+            "path": "gradle/libs.versions.toml",
+            "bytes": 1651,
+            "sha256": "48d92282cb75aa093599a10ba9ae45b5fa6a0a258efdd43fca3bb958fd14c698"
+          },
+          {
+            "path": "gradle/wrapper/gradle-wrapper.jar",
+            "bytes": 45457,
+            "sha256": "76805e32c009c0cf0dd5d206bddc9fb22ea42e84db904b764f3047de095493f3"
+          },
+          {
+            "path": "gradle/wrapper/gradle-wrapper.properties",
+            "bytes": 281,
+            "sha256": "1d54dd90cf4af13eec0ace75b5a1b0c139e20b7b43eb7b31019ec0b6f8880a72"
+          },
+          {
+            "path": "gradlew",
+            "bytes": 8728,
+            "sha256": "3238afb2aed5cb16eb7d6718077e7138059108f007b54179e9cc157c5a6e0e89"
+          },
+          {
+            "path": "gradlew.bat",
+            "bytes": 2937,
+            "sha256": "1d297e00bd21de3ace22b4d7f2de1f9dfa858883d66bbf7c1ccbecccec8f4f3b"
+          },
+          {
+            "path": "settings.gradle.kts",
+            "bytes": 805,
+            "sha256": "61dd8d6b3dc783f1515441e13890aab3c377c5a373ff19d347795b11024e3ce8"
+          }
+        ]
+      }
+    },
+    "build": {
+      "task": ":app:assembleDebug",
+      "outcome": "success",
+      "startedAt": "2026-08-31T02:52:45.761Z",
+      "finishedAt": "2026-08-31T02:52:46.563Z",
+      "outputMetadata": {
+        "path": "/Users/sushantsrikrish/AndroidStudioProjects/fleet-swanmissiontable-native/app/build/outputs/apk/debug/output-metadata.json",
+        "sha256": "e3800720337fb68c091884fd646e167ae699d906453a8d352a6149905f87bc5c",
+        "bytes": 408
+      }
+    },
+    "apk": {
+      "sourcePath": "/Users/sushantsrikrish/AndroidStudioProjects/fleet-swanmissiontable-native/app/build/outputs/apk/debug/app-debug.apk",
+      "artifactPath": "/Users/sushantsrikrish/.pico-mcp/run-receipts/artifacts/apk/67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c.apk",
+      "sha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+      "bytes": 32041124,
+      "packageName": "com.fleet.swanmissiontable",
+      "manifestInspection": {
+        "status": "inspected",
+        "tool": "aapt2",
+        "packageName": "com.fleet.swanmissiontable",
+        "versionCode": "1",
+        "versionName": "1.0"
+      },
+      "signingInspection": {
+        "status": "unavailable",
+        "reason": "apksigner inspection: command=[\"/Users/sushantsrikrish/Library/Android/sdk/build-tools/37.0.0/apksigner\",\"verify\",\"--print-certs\",\"/Users/sushantsrikrish/.pico-mcp/run-receipts/artifacts/apk/67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c.apk\"] exit=1 timedOut=false; inspection did not complete successfully\n\nThe operation couldn’t be completed. Unable to locate a Java Runtime.\nPlease visit http://www.java.com for information on installing Java."
+      }
+    },
+    "install": {
+      "status": "success",
+      "method": "adb-install-replace",
+      "completedAt": "2026-08-31T02:52:46.834Z",
+      "packageName": "com.fleet.swanmissiontable",
+      "remoteApkPath": "/data/app/~~naXTmrr6-RSJYkB3PrxiyQ==/com.fleet.swanmissiontable-Y--YMpEg-z9ZTp7Cf1mJdg==/base.apk",
+      "remoteApkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+      "acknowledgementSha256": "781a31c82430c97897af612ece5e0ca2205e301cb5ff121ce2660541ea5182c7"
+    },
+    "runtime": {
+      "sessionId": "d1498652-27e1-4712-81f8-7fbacdaa6c2b",
+      "serial": "emulator-5554",
+      "model": "swan_arm64",
+      "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4399:user/test-keys",
+      "bootQemu": "1",
+      "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+      "component": "com.fleet.swanmissiontable/.platform.LaunchActivity",
+      "launchedAt": "2026-08-31T02:52:49.071Z",
+      "launchAcknowledgementSha256": "770dcad2064659bc8214810781793c0cd3ebad706c729e62c8e0a6039954462c",
+      "pid": 21207,
+      "pidStartTicks": "8243193"
+    },
+    "capture": {
+      "capturedAt": "2026-08-31T02:53:04.163Z",
+      "sourcePath": "/private/tmp/pico-render/fleet/swanmissiontable/d1498652-27e1-4712-81f8-7fbacdaa6c2b.png",
+      "artifactPath": "/Users/sushantsrikrish/.pico-mcp/ledgers/artifacts/5a0522864e0a134b79b32bec36e458aa3726f28ae6a99390b613b9f6ee77f03b.png",
+      "sha256": "5a0522864e0a134b79b32bec36e458aa3726f28ae6a99390b613b9f6ee77f03b",
+      "bytes": 2800199,
+      "width": 2160,
+      "height": 2158,
+      "format": "png",
+      "before": {
+        "observedAt": "2026-08-31T02:53:03.277Z",
+        "foregroundPackage": "com.fleet.swanmissiontable",
+        "foregroundComponent": "com.fleet.swanmissiontable/.platform.LaunchActivity",
+        "pid": 21207,
+        "pidStartTicks": "8243193"
+      },
+      "after": {
+        "observedAt": "2026-08-31T02:53:04.415Z",
+        "foregroundPackage": "com.fleet.swanmissiontable",
+        "foregroundComponent": "com.fleet.swanmissiontable/.platform.LaunchActivity",
+        "pid": 21207,
+        "pidStartTicks": "8243193"
+      }
+    },
+    "receiptId": "e5698c6c3cbc557df7c8b790901c883c655e140b043bffe494c7f05ab41ea743"
+  },
+  "validatedReceiptPath": "/Users/sushantsrikrish/.pico-mcp/run-receipts/native-v1/com.fleet.swanmissiontable/e5698c6c3cbc557df7c8b790901c883c655e140b043bffe494c7f05ab41ea743.json",
+  "receiptFile": {
+    "path": "/Users/sushantsrikrish/.pico-mcp/run-receipts/native-v1/com.fleet.swanmissiontable/e5698c6c3cbc557df7c8b790901c883c655e140b043bffe494c7f05ab41ea743.json",
+    "bytes": 12145,
+    "sha256": "a803f0f8b36cb27c764c76e77338abf7feff182efbbff1f27ac10d1bd1831601"
+  },
+  "artifactCapture": {
+    "path": "/Users/sushantsrikrish/.pico-mcp/ledgers/artifacts/5a0522864e0a134b79b32bec36e458aa3726f28ae6a99390b613b9f6ee77f03b.png",
+    "bytes": 2800199,
+    "sha256": "5a0522864e0a134b79b32bec36e458aa3726f28ae6a99390b613b9f6ee77f03b"
+  },
+  "sourceCapture": {
+    "path": "/private/tmp/pico-render/fleet/swanmissiontable/d1498652-27e1-4712-81f8-7fbacdaa6c2b.png",
+    "bytes": 2800199,
+    "sha256": "5a0522864e0a134b79b32bec36e458aa3726f28ae6a99390b613b9f6ee77f03b"
+  },
+  "freshness": {
+    "receiptIdAbsentBeforeCall": true,
+    "differsFromSelectorReceipt": true,
+    "pidStartPairDiffersFromSelector": true,
+    "unchangedBootId": "c0bd8c41-7928-476a-ae8a-a71d89465686"
+  }
+}
