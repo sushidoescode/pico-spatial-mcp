@@ -49,7 +49,7 @@
     "test:vaultdiff": "node test/vaultdiff.mjs",
     "test:preflight": "node test/preflight.mjs",
     "test:provision": "node test/provision.mjs",
-    "test:bridge": "node test/mousebridge.mjs && node --test test/sceneanchors.mjs",
+    "test:bridge": "node test/mousebridge.mjs && node --test test/sceneanchors.mjs test/homeenvironmentcatalog.mjs test/homeenvironmenthost.mjs test/homeenvironmentselector.mjs",
     "test:vcam": "node test/vcam.mjs",
     "test:vcamtransport": "node --test test/vcamtransport.mjs",
     "test:vcamboundary": "node --test test/vcamboundary.mjs",

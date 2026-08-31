@@ -1,0 +1,20 @@
+# CP3 fresh-launch dialog/process monitor — authoritative live4 run
+# Exact target only: emulator-5554. HZDB_ADB_PATH=/opt/homebrew/bin/adb metavr --device emulator-5554 ...
+# Package/component: com.fleet.swanmissiontable / com.fleet.swanmissiontable/.platform.LaunchActivity
+# Receipt: e5698c6c3cbc557df7c8b790901c883c655e140b043bffe494c7f05ab41ea743
+# Boot: c0bd8c41-7928-476a-ae8a-a71d89465686
+# PID/start ticks: 21207 / 8243193
+
+PRELIMINARY_REJECTED final_elapsed_seconds=59.999990 reason="strict >=60.0-second requirement was not met"
+
+AUTHORITATIVE_START
+sample=0  observedAt=2026-08-31T02:55:33.959Z elapsedSeconds=0.000008  pid=21207 pidStartTicks=8243193 bootId=c0bd8c41-7928-476a-ae8a-a71d89465686 topResumed=com.fleet.swanmissiontable/.platform.LaunchActivity resumed=com.fleet.swanmissiontable/.platform.LaunchActivity dialogHits=[]
+sample=15 observedAt=2026-08-31T02:55:48.503Z elapsedSeconds=15.001047 pid=21207 pidStartTicks=8243193 bootId=c0bd8c41-7928-476a-ae8a-a71d89465686 topResumed=com.fleet.swanmissiontable/.platform.LaunchActivity resumed=com.fleet.swanmissiontable/.platform.LaunchActivity dialogHits=[]
+sample=30 observedAt=2026-08-31T02:56:06.602Z elapsedSeconds=30.000927 pid=21207 pidStartTicks=8243193 bootId=c0bd8c41-7928-476a-ae8a-a71d89465686 topResumed=com.fleet.swanmissiontable/.platform.LaunchActivity resumed=com.fleet.swanmissiontable/.platform.LaunchActivity dialogHits=[]
+sample=45 observedAt=2026-08-31T02:56:18.727Z elapsedSeconds=45.000683 pid=21207 pidStartTicks=8243193 bootId=c0bd8c41-7928-476a-ae8a-a71d89465686 topResumed=com.fleet.swanmissiontable/.platform.LaunchActivity resumed=com.fleet.swanmissiontable/.platform.LaunchActivity dialogHits=[]
+sample=60 observedAt=2026-08-31T02:56:34.268Z elapsedSeconds=60.501574 pid=21207 pidStartTicks=8243193 bootId=c0bd8c41-7928-476a-ae8a-a71d89465686 topResumed=com.fleet.swanmissiontable/.platform.LaunchActivity resumed=com.fleet.swanmissiontable/.platform.LaunchActivity dialogHits=[]
+AUTHORITATIVE_END scheduled_span_seconds=60.501574 total_including_command_runtime_seconds=67.091616 dialog_absent=true process_continuous=true
+
+# dumpsys window windows did not emit global mCurrentFocus/mFocusedApp fields in these samples.
+# No value is inferred for absent fields; topResumedActivity, ResumedActivity, package windows,
+# exact PID/start ticks, and dialogHits are the retained monitor signals.

@@ -1,0 +1,137 @@
+{
+  "status": "invalid_payload",
+  "snapshotId": null,
+  "applicationRuntimeBinding": {
+    "serial": "emulator-5554",
+    "liveIdentity": {
+      "serial": "emulator-5554",
+      "model": "swan_arm64",
+      "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4399:user/test-keys",
+      "bootQemu": "1",
+      "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+      "observedAt": "2026-08-30T04:15:49.854Z"
+    },
+    "captureSource": "agent-bridge-file-pull",
+    "startedAtMonotonicNs": "276834457523541",
+    "endedAtMonotonicNs": "276834697448583",
+    "packageName": "com.fleet.swanmissiontable",
+    "buildReceiptId": "fcd5d2877dfa8b10ec453a403d0e6c0fb1deff14097f33b7a1be90cd3a8070ce",
+    "buildReceiptPath": "/Users/sushantsrikrish/.pico-mcp/run-receipts/native-v1/com.fleet.swanmissiontable/fcd5d2877dfa8b10ec453a403d0e6c0fb1deff14097f33b7a1be90cd3a8070ce.json",
+    "apkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+    "foregroundProcess": {
+      "packageName": "com.fleet.swanmissiontable",
+      "component": "com.fleet.swanmissiontable/.platform.LaunchActivity",
+      "pid": 4936,
+      "pidStartTicks": "81568"
+    },
+    "requestedStageStyle": "Mixed",
+    "requestedRootContainer": "stage",
+    "effectiveSceneDriftPolicy": {
+      "count": "advisory",
+      "maxTransformDeltaM": 0.01,
+      "maxTransformDeltaDeg": 1,
+      "maxExtentDeltaM": 0.01,
+      "topology": "strict"
+    }
+  },
+  "queriedAtMonotonicNs": null,
+  "trackingState": null,
+  "retries": 0,
+  "totalAnchorCount": 0,
+  "matchedAnchorCount": 0,
+  "geometryRef": null,
+  "anchors": [],
+  "histogram": {},
+  "drift": {
+    "effectivePolicy": {
+      "count": "advisory",
+      "maxTransformDeltaM": 0.01,
+      "maxTransformDeltaDeg": 1,
+      "maxExtentDeltaM": 0.01,
+      "topology": "strict"
+    },
+    "exactSnapshotChanged": false,
+    "withinPolicy": false,
+    "countDelta": 0,
+    "maxTransformDeltaM": 0,
+    "maxTransformDeltaDeg": 0,
+    "maxExtentDeltaM": 0,
+    "labelSetChanges": 0,
+    "topologyChanges": 0,
+    "unmatchedPrevious": 0,
+    "unmatchedCurrent": 0,
+    "ambiguities": [],
+    "deltas": []
+  },
+  "requestedLabels": [
+    "TABLE",
+    "FLOOR"
+  ],
+  "semanticRelationPolicy": {
+    "labelLevelSelection": true,
+    "triangleRelations": "refused",
+    "reason": "semantic_assignment_alignment_unverified"
+  },
+  "actionReceipts": [
+    {
+      "action": "bind_application_runtime",
+      "status": "applied",
+      "startedAtMonotonicNs": "276834457733583",
+      "endedAtMonotonicNs": "276834697448583",
+      "ack": {
+        "serial": "emulator-5554",
+        "packageName": "com.fleet.swanmissiontable",
+        "buildReceiptId": "fcd5d2877dfa8b10ec453a403d0e6c0fb1deff14097f33b7a1be90cd3a8070ce",
+        "apkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+        "pid": 4936,
+        "pidStartTicks": "81568"
+      }
+    },
+    {
+      "action": "bridge_broadcast",
+      "status": "applied",
+      "startedAtMonotonicNs": "276834697742208",
+      "endedAtMonotonicNs": "276834717840958",
+      "ack": {
+        "serial": "emulator-5554",
+        "action": "com.fleet.swanmissiontable.AGENT_CMD",
+        "command": "query_scene_anchors",
+        "requestId": "2fb1e986bcdc440a9e313cb81d449a53",
+        "outcome": "completed"
+      }
+    },
+    {
+      "action": "bridge_payload_pull",
+      "status": "applied",
+      "startedAtMonotonicNs": "276834717860541",
+      "endedAtMonotonicNs": "276840940749250",
+      "ack": {
+        "serial": "emulator-5554",
+        "packageName": "com.fleet.swanmissiontable",
+        "requestId": "2fb1e986bcdc440a9e313cb81d449a53",
+        "relativePath": "cache/agentbridge/scene-snapshots/2fb1e986bcdc440a9e313cb81d449a53.json",
+        "attempts": 23,
+        "bytes": 15696595,
+        "outcome": "completed"
+      }
+    },
+    {
+      "action": "bridge_payload_cleanup",
+      "status": "applied",
+      "startedAtMonotonicNs": "276840940764208",
+      "endedAtMonotonicNs": "276840960433458",
+      "ack": {
+        "serial": "emulator-5554",
+        "packageName": "com.fleet.swanmissiontable",
+        "requestId": "2fb1e986bcdc440a9e313cb81d449a53",
+        "relativePath": "cache/agentbridge/scene-snapshots/2fb1e986bcdc440a9e313cb81d449a53.json",
+        "outcome": "completed"
+      }
+    }
+  ],
+  "error": {
+    "code": "invalid_payload",
+    "detail": "read 1 anchor 33 vertices are not a non-empty flat xyz array"
+  },
+  "evidenceCeiling": "structural"
+}

@@ -1,0 +1,1421 @@
+{
+  "kind": "pico.home-environment-refresh-call",
+  "schemaVersion": 1,
+  "toolsListCount": 252,
+  "timestamps": {
+    "selectedFrameObservedAt": "2026-08-31T00:17:25.127Z",
+    "connectedAt": "2026-08-31T00:17:33.765Z",
+    "queryStartedAt": "2026-08-31T00:17:33.873Z",
+    "queryFinishedAt": "2026-08-31T00:17:39.242Z"
+  },
+  "request": {
+    "serial": "emulator-5554",
+    "scenario": {
+      "packageName": "com.fleet.swanmissiontable",
+      "expectedBuildReceiptId": "4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845",
+      "expectedStageStyle": "Mixed",
+      "expectedRootContainer": "stage",
+      "sceneDriftPolicy": {
+        "count": "advisory",
+        "maxTransformDeltaM": 0.01,
+        "maxTransformDeltaDeg": 1,
+        "maxExtentDeltaM": 0.01,
+        "topology": "strict"
+      }
+    },
+    "labels": [
+      "FLOOR",
+      "TABLE",
+      "WALL_ART"
+    ],
+    "maxRetries": 15,
+    "pollMs": 1000,
+    "includeGeometry": "lossless_external_artifact",
+    "stabilityReads": 2
+  },
+  "response": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"status\": \"ready\",\n  \"snapshotId\": \"8477f0d6b5103bca39922e8b1f32f1c6ae92320698e65324c50f8d7383413468\",\n  \"applicationRuntimeBinding\": {\n    \"serial\": \"emulator-5554\",\n    \"liveIdentity\": {\n      \"serial\": \"emulator-5554\",\n      \"model\": \"swan_arm64\",\n      \"fingerprint\": \"Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4399:user/test-keys\",\n      \"bootQemu\": \"1\",\n      \"bootId\": \"c0bd8c41-7928-476a-ae8a-a71d89465686\",\n      \"observedAt\": \"2026-08-31T00:17:34.124Z\"\n    },\n    \"captureSource\": \"agent-bridge-file-pull\",\n    \"startedAtMonotonicNs\": \"348937917783416\",\n    \"endedAtMonotonicNs\": \"348942390813791\",\n    \"packageName\": \"com.fleet.swanmissiontable\",\n    \"buildReceiptId\": \"4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845\",\n    \"buildReceiptPath\": \"/Users/sushantsrikrish/.pico-mcp/run-receipts/native-v1/com.fleet.swanmissiontable/4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845.json\",\n    \"apkSha256\": \"67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c\",\n    \"foregroundProcess\": {\n      \"packageName\": \"com.fleet.swanmissiontable\",\n      \"component\": \"com.fleet.swanmissiontable/.platform.LaunchActivity\",\n      \"pid\": 4196,\n      \"pidStartTicks\": \"2711055\"\n    },\n    \"requestedStageStyle\": \"Mixed\",\n    \"requestedRootContainer\": \"stage\",\n    \"effectiveSceneDriftPolicy\": {\n      \"count\": \"advisory\",\n      \"maxTransformDeltaM\": 0.01,\n      \"maxTransformDeltaDeg\": 1,\n      \"maxExtentDeltaM\": 0.01,\n      \"topology\": \"strict\"\n    },\n    \"observedStageStyle\": \"Mixed\",\n    \"rootContainer\": \"stage\",\n    \"stageOpen\": true,\n    \"bridgePayloadKind\": \"pico.agent-bridge.scene-snapshot\",\n    \"bridgeSchemaVersion\": 1,\n    \"bridgeRevision\": 41,\n    \"requestId\": \"a8665f908a7141eda63a9358c873b766\"\n  },\n  \"queriedAtMonotonicNs\": \"73119154503698\",\n  \"trackingState\": \"RUNNING\",\n  \"retries\": 2,\n  \"totalAnchorCount\": 52,\n  \"matchedAnchorCount\": 6,\n  \"geometryRef\": {\n    \"path\": \"/private/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-scene-session-LXWMYq/scene-41-a8665f908a7141eda63a9358c873b766.json\",\n    \"sha256\": \"44c7dcaf3a5bd05a8060ab89c9a6fc7055b32bba0af1752c01faccd8d6fb6ccc\",\n    \"bytes\": 8357844,\n    \"schemaVersion\": 1,\n    \"coordinateFrameId\": \"bridge-world-41\",\n    \"units\": \"metres\",\n    \"handedness\": \"sdk-reported\",\n    \"bridgeRevision\": 41\n  },\n  \"anchors\": [\n    {\n      \"traceId\": \"anchor-0004\",\n      \"runtimeUuid\": \"ae4fdce5-ba6b-4861-8647-749d12e3e099\",\n      \"runtimeUuidRole\": \"diagnostic_only\",\n      \"labels\": [\n        \"WALL_ART\"\n      ],\n      \"worldFromAnchor\": [\n        1,\n        0,\n        0,\n        -1.884913444519043,\n        0,\n        1,\n        -7.549789415861596e-8,\n        1.7226563692092896,\n        0,\n        7.549789415861596e-8,\n        1,\n        1.7403044700622559,\n        0,\n        0,\n        0,\n        1\n      ],\n      \"boundsM\": [\n        0.8737062215805054,\n        1.2471245527267456,\n        0.07691740989685059\n      ],\n      \"geometrySlice\": {\n        \"vertexStart\": 16883,\n        \"vertexCount\": 20,\n        \"indexStart\": 67758,\n        \"indexCount\": 30\n      },\n      \"semanticAssignments\": {\n        \"domain\": \"unknown\",\n        \"rawCount\": 20,\n        \"alignment\": \"unverified\",\n        \"relationEligible\": false\n      }\n    },\n    {\n      \"traceId\": \"anchor-0010\",\n      \"runtimeUuid\": \"a754fdf2-43c0-493e-9fec-b54abbd83116\",\n      \"runtimeUuidRole\": \"diagnostic_only\",\n      \"labels\": [\n        \"WALL_ART\"\n      ],\n      \"worldFromAnchor\": [\n        1,\n        0,\n        0,\n        -3.5393028259277344,\n        0,\n        1,\n        -7.549789415861596e-8,\n        2.0943610668182373,\n        0,\n        7.549789415861596e-8,\n        1,\n        -4.301863193511963,\n        0,\n        0,\n        0,\n        1\n      ],\n      \"boundsM\": [\n        0.3575587272644043,\n        0.3575582504272461,\n        0.008718311786651611\n      ],\n      \"geometrySlice\": {\n        \"vertexStart\": 23977,\n        \"vertexCount\": 52,\n        \"indexStart\": 89892,\n        \"indexCount\": 102\n      },\n      \"semanticAssignments\": {\n        \"domain\": \"unknown\",\n        \"rawCount\": 52,\n        \"alignment\": \"unverified\",\n        \"relationEligible\": false\n      }\n    },\n    {\n      \"traceId\": \"anchor-0013\",\n      \"runtimeUuid\": \"1bb891f6-f764-4d82-93d0-c9ceeffc85da\",\n      \"runtimeUuidRole\": \"diagnostic_only\",\n      \"labels\": [\n        \"FLOOR\"\n      ],\n      \"worldFromAnchor\": [\n        1,\n        0,\n        0,\n        0.07083988189697266,\n        0,\n        1,\n        -7.549789415861596e-8,\n        0.15789401531219482,\n        0,\n        7.549789415861596e-8,\n        1,\n        0.14744782447814941,\n        0,\n        0,\n        0,\n        1\n      ],\n      \"boundsM\": [\n        2.2376630306243896,\n        0.00848250463604927,\n        1.5023884773254395\n      ],\n      \"geometrySlice\": {\n        \"vertexStart\": 42976,\n        \"vertexCount\": 348,\n        \"indexStart\": 151395,\n        \"indexCount\": 1848\n      },\n      \"semanticAssignments\": {\n        \"domain\": \"unknown\",\n        \"rawCount\": 348,\n        \"alignment\": \"unverified\",\n        \"relationEligible\": false\n      }\n    },\n    {\n      \"traceId\": \"anchor-0014\",\n      \"runtimeUuid\": \"9fecb54a-bbd8-4116-9784-6da233f069ee\",\n      \"runtimeUuidRole\": \"diagnostic_only\",\n      \"labels\": [\n        \"TABLE\"\n      ],\n      \"worldFromAnchor\": [\n        1,\n        0,\n        0,\n        0.12055432796478271,\n        0,\n        1,\n        -7.549789415861596e-8,\n        0.3542250394821167,\n        0,\n        7.549789415861596e-8,\n        1,\n        -0.41611790657043457,\n        0,\n        0,\n        0,\n        1\n      ],\n      \"boundsM\": [\n        0.7826310396194458,\n        0.18812690675258636,\n        0.4643775224685669\n      ],\n      \"geometrySlice\": {\n        \"vertexStart\": 15961,\n        \"vertexCount\": 922,\n        \"indexStart\": 64089,\n        \"indexCount\": 3669\n      },\n      \"semanticAssignments\": {\n        \"domain\": \"unknown\",\n        \"rawCount\": 922,\n        \"alignment\": \"unverified\",\n        \"relationEligible\": false\n      }\n    },\n    {\n      \"traceId\": \"anchor-0018\",\n      \"runtimeUuid\": \"2320d99e-7f4c-45aa-9b38-117677e44d02\",\n      \"runtimeUuidRole\": \"diagnostic_only\",\n      \"labels\": [\n        \"FLOOR\"\n      ],\n      \"worldFromAnchor\": [\n        1,\n        0,\n        0,\n        2.2463431358337402,\n        0,\n        1,\n        -7.549789415861596e-8,\n        0.1500004529953003,\n        0,\n        7.549789415861596e-8,\n        1,\n        -0.5766071081161499,\n        0,\n        0,\n        0,\n        1\n      ],\n      \"boundsM\": [\n        6.86767578125,\n        0.000001606226533112931,\n        4.439027309417725\n      ],\n      \"geometrySlice\": {\n        \"vertexStart\": 40972,\n        \"vertexCount\": 20,\n        \"indexStart\": 144075,\n        \"indexCount\": 60\n      },\n      \"semanticAssignments\": {\n        \"domain\": \"unknown\",\n        \"rawCount\": 20,\n        \"alignment\": \"unverified\",\n        \"relationEligible\": false\n      }\n    },\n    {\n      \"traceId\": \"anchor-0026\",\n      \"runtimeUuid\": \"df2cf58a-fb18-4156-97c4-ade27330a92e\",\n      \"runtimeUuidRole\": \"diagnostic_only\",\n      \"labels\": [\n        \"WALL_ART\"\n      ],\n      \"worldFromAnchor\": [\n        1,\n        0,\n        0,\n        3.5797677040100098,\n        0,\n        1,\n        -7.549789415861596e-8,\n        1.77861487865448,\n        0,\n        7.549789415861596e-8,\n        1,\n        3.821565628051758,\n        0,\n        0,\n        0,\n        1\n      ],\n      \"boundsM\": [\n        0.3379642367362976,\n        0.3379642367362976,\n        0.008749246597290039\n      ],\n      \"geometrySlice\": {\n        \"vertexStart\": 4861,\n        \"vertexCount\": 44,\n        \"indexStart\": 18075,\n        \"indexCount\": 78\n      },\n      \"semanticAssignments\": {\n        \"domain\": \"unknown\",\n        \"rawCount\": 44,\n        \"alignment\": \"unverified\",\n        \"relationEligible\": false\n      }\n    }\n  ],\n  \"histogram\": {\n    \"UNKNOWN\": 26,\n    \"PLANT\": 1,\n    \"WALL_ART\": 3,\n    \"CHAIR\": 3,\n    \"WINDOW\": 2,\n    \"SOFA\": 1,\n    \"FLOOR\": 2,\n    \"TABLE\": 1,\n    \"WALL\": 2,\n    \"LAMP\": 6,\n    \"CABINET\": 3,\n    \"DOOR\": 2\n  },\n  \"drift\": {\n    \"effectivePolicy\": {\n      \"count\": \"advisory\",\n      \"maxTransformDeltaM\": 0.01,\n      \"maxTransformDeltaDeg\": 1,\n      \"maxExtentDeltaM\": 0.01,\n      \"topology\": \"strict\"\n    },\n    \"exactSnapshotChanged\": false,\n    \"withinPolicy\": true,\n    \"countDelta\": 0,\n    \"maxTransformDeltaM\": 0,\n    \"maxTransformDeltaDeg\": 0,\n    \"maxExtentDeltaM\": 0,\n    \"labelSetChanges\": 0,\n    \"topologyChanges\": 0,\n    \"unmatchedPrevious\": 0,\n    \"unmatchedCurrent\": 0,\n    \"ambiguities\": [],\n    \"deltas\": [\n      {\n        \"metric\": \"anchor_count\",\n        \"value\": 0,\n        \"policy\": \"advisory\",\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 0,\n        \"currentIndex\": 0,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"PLANT\"\n        ],\n        \"currentLabels\": [\n          \"PLANT\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 1,\n        \"currentIndex\": 1,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"LAMP\"\n        ],\n        \"currentLabels\": [\n          \"LAMP\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 2,\n        \"currentIndex\": 2,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 3,\n        \"currentIndex\": 3,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 4,\n        \"currentIndex\": 4,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"WALL_ART\"\n        ],\n        \"currentLabels\": [\n          \"WALL_ART\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 5,\n        \"currentIndex\": 5,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 6,\n        \"currentIndex\": 6,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 7,\n        \"currentIndex\": 7,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 8,\n        \"currentIndex\": 8,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 9,\n        \"currentIndex\": 9,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 10,\n        \"currentIndex\": 10,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 11,\n        \"currentIndex\": 11,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"LAMP\"\n        ],\n        \"currentLabels\": [\n          \"LAMP\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 12,\n        \"currentIndex\": 12,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"SOFA\"\n        ],\n        \"currentLabels\": [\n          \"SOFA\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 13,\n        \"currentIndex\": 13,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"TABLE\"\n        ],\n        \"currentLabels\": [\n          \"TABLE\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 14,\n        \"currentIndex\": 14,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"WALL_ART\"\n        ],\n        \"currentLabels\": [\n          \"WALL_ART\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 15,\n        \"currentIndex\": 15,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"LAMP\"\n        ],\n        \"currentLabels\": [\n          \"LAMP\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 16,\n        \"currentIndex\": 16,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 17,\n        \"currentIndex\": 17,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"DOOR\"\n        ],\n        \"currentLabels\": [\n          \"DOOR\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 18,\n        \"currentIndex\": 18,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 19,\n        \"currentIndex\": 19,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"CHAIR\"\n        ],\n        \"currentLabels\": [\n          \"CHAIR\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 20,\n        \"currentIndex\": 20,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 21,\n        \"currentIndex\": 21,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"WALL\"\n        ],\n        \"currentLabels\": [\n          \"WALL\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 22,\n        \"currentIndex\": 22,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"CABINET\"\n        ],\n        \"currentLabels\": [\n          \"CABINET\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 23,\n        \"currentIndex\": 23,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"LAMP\"\n        ],\n        \"currentLabels\": [\n          \"LAMP\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 24,\n        \"currentIndex\": 24,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"WALL_ART\"\n        ],\n        \"currentLabels\": [\n          \"WALL_ART\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 25,\n        \"currentIndex\": 25,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"CHAIR\"\n        ],\n        \"currentLabels\": [\n          \"CHAIR\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 26,\n        \"currentIndex\": 26,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 27,\n        \"currentIndex\": 27,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"DOOR\"\n        ],\n        \"currentLabels\": [\n          \"DOOR\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 28,\n        \"currentIndex\": 28,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"CABINET\"\n        ],\n        \"currentLabels\": [\n          \"CABINET\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 29,\n        \"currentIndex\": 29,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 30,\n        \"currentIndex\": 30,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 31,\n        \"currentIndex\": 31,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 32,\n        \"currentIndex\": 32,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"CABINET\"\n        ],\n        \"currentLabels\": [\n          \"CABINET\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 33,\n        \"currentIndex\": 33,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"LAMP\"\n        ],\n        \"currentLabels\": [\n          \"LAMP\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 34,\n        \"currentIndex\": 34,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 35,\n        \"currentIndex\": 35,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 36,\n        \"currentIndex\": 36,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 37,\n        \"currentIndex\": 37,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 38,\n        \"currentIndex\": 38,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"WALL\"\n        ],\n        \"currentLabels\": [\n          \"WALL\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 39,\n        \"currentIndex\": 39,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 40,\n        \"currentIndex\": 40,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"WINDOW\"\n        ],\n        \"currentLabels\": [\n          \"WINDOW\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 41,\n        \"currentIndex\": 41,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"WINDOW\"\n        ],\n        \"currentLabels\": [\n          \"WINDOW\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 42,\n        \"currentIndex\": 42,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 43,\n        \"currentIndex\": 43,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"FLOOR\"\n        ],\n        \"currentLabels\": [\n          \"FLOOR\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 44,\n        \"currentIndex\": 44,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"LAMP\"\n        ],\n        \"currentLabels\": [\n          \"LAMP\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 45,\n        \"currentIndex\": 45,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 46,\n        \"currentIndex\": 46,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"FLOOR\"\n        ],\n        \"currentLabels\": [\n          \"FLOOR\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 47,\n        \"currentIndex\": 47,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 48,\n        \"currentIndex\": 48,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 49,\n        \"currentIndex\": 49,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 50,\n        \"currentIndex\": 50,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"currentLabels\": [\n          \"UNKNOWN\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      },\n      {\n        \"metric\": \"anchor\",\n        \"previousIndex\": 51,\n        \"currentIndex\": 51,\n        \"geometricMatchScore\": 0,\n        \"transformDeltaM\": 0,\n        \"transformDeltaDeg\": 0,\n        \"extentDeltaM\": 0,\n        \"labelsChanged\": false,\n        \"previousLabels\": [\n          \"CHAIR\"\n        ],\n        \"currentLabels\": [\n          \"CHAIR\"\n        ],\n        \"topologyChanged\": false,\n        \"withinPolicy\": true\n      }\n    ]\n  },\n  \"requestedLabels\": [\n    \"FLOOR\",\n    \"TABLE\",\n    \"WALL_ART\"\n  ],\n  \"semanticRelationPolicy\": {\n    \"labelLevelSelection\": true,\n    \"triangleRelations\": \"refused\",\n    \"reason\": \"semantic_assignment_alignment_unverified\"\n  },\n  \"actionReceipts\": [\n    {\n      \"action\": \"bind_application_runtime\",\n      \"status\": \"applied\",\n      \"startedAtMonotonicNs\": \"348937917971791\",\n      \"endedAtMonotonicNs\": \"348938168060250\",\n      \"ack\": {\n        \"serial\": \"emulator-5554\",\n        \"packageName\": \"com.fleet.swanmissiontable\",\n        \"buildReceiptId\": \"4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845\",\n        \"apkSha256\": \"67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c\",\n        \"pid\": 4196,\n        \"pidStartTicks\": \"2711055\"\n      }\n    },\n    {\n      \"action\": \"bridge_broadcast\",\n      \"status\": \"applied\",\n      \"startedAtMonotonicNs\": \"348938168381041\",\n      \"endedAtMonotonicNs\": \"348938193064750\",\n      \"ack\": {\n        \"serial\": \"emulator-5554\",\n        \"action\": \"com.fleet.swanmissiontable.AGENT_CMD\",\n        \"command\": \"query_scene_anchors\",\n        \"requestId\": \"a8665f908a7141eda63a9358c873b766\",\n        \"outcome\": \"completed\"\n      }\n    },\n    {\n      \"action\": \"bridge_payload_pull\",\n      \"status\": \"applied\",\n      \"startedAtMonotonicNs\": \"348938193077333\",\n      \"endedAtMonotonicNs\": \"348942152957833\",\n      \"ack\": {\n        \"serial\": \"emulator-5554\",\n        \"packageName\": \"com.fleet.swanmissiontable\",\n        \"requestId\": \"a8665f908a7141eda63a9358c873b766\",\n        \"relativePath\": \"cache/agentbridge/scene-snapshots/a8665f908a7141eda63a9358c873b766.json\",\n        \"attempts\": 15,\n        \"bytes\": 8357844,\n        \"outcome\": \"completed\"\n      }\n    },\n    {\n      \"action\": \"bridge_payload_cleanup\",\n      \"status\": \"applied\",\n      \"startedAtMonotonicNs\": \"348942152968625\",\n      \"endedAtMonotonicNs\": \"348942175613291\",\n      \"ack\": {\n        \"serial\": \"emulator-5554\",\n        \"packageName\": \"com.fleet.swanmissiontable\",\n        \"requestId\": \"a8665f908a7141eda63a9358c873b766\",\n        \"relativePath\": \"cache/agentbridge/scene-snapshots/a8665f908a7141eda63a9358c873b766.json\",\n        \"outcome\": \"completed\"\n      }\n    },\n    {\n      \"action\": \"publish_geometry\",\n      \"status\": \"applied\",\n      \"startedAtMonotonicNs\": \"348942390908291\",\n      \"endedAtMonotonicNs\": \"348942596985416\",\n      \"ack\": {\n        \"path\": \"/private/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-scene-session-LXWMYq/scene-41-a8665f908a7141eda63a9358c873b766.json\",\n        \"sha256\": \"44c7dcaf3a5bd05a8060ab89c9a6fc7055b32bba0af1752c01faccd8d6fb6ccc\",\n        \"bytes\": 8357844\n      }\n    }\n  ],\n  \"error\": null,\n  \"evidenceCeiling\": \"structural\"\n}"
+      }
+    ],
+    "structuredContent": {
+      "status": "ready",
+      "snapshotId": "8477f0d6b5103bca39922e8b1f32f1c6ae92320698e65324c50f8d7383413468",
+      "applicationRuntimeBinding": {
+        "serial": "emulator-5554",
+        "liveIdentity": {
+          "serial": "emulator-5554",
+          "model": "swan_arm64",
+          "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4399:user/test-keys",
+          "bootQemu": "1",
+          "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+          "observedAt": "2026-08-31T00:17:34.124Z"
+        },
+        "captureSource": "agent-bridge-file-pull",
+        "startedAtMonotonicNs": "348937917783416",
+        "endedAtMonotonicNs": "348942390813791",
+        "packageName": "com.fleet.swanmissiontable",
+        "buildReceiptId": "4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845",
+        "buildReceiptPath": "/Users/sushantsrikrish/.pico-mcp/run-receipts/native-v1/com.fleet.swanmissiontable/4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845.json",
+        "apkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+        "foregroundProcess": {
+          "packageName": "com.fleet.swanmissiontable",
+          "component": "com.fleet.swanmissiontable/.platform.LaunchActivity",
+          "pid": 4196,
+          "pidStartTicks": "2711055"
+        },
+        "requestedStageStyle": "Mixed",
+        "requestedRootContainer": "stage",
+        "effectiveSceneDriftPolicy": {
+          "count": "advisory",
+          "maxTransformDeltaM": 0.01,
+          "maxTransformDeltaDeg": 1,
+          "maxExtentDeltaM": 0.01,
+          "topology": "strict"
+        },
+        "observedStageStyle": "Mixed",
+        "rootContainer": "stage",
+        "stageOpen": true,
+        "bridgePayloadKind": "pico.agent-bridge.scene-snapshot",
+        "bridgeSchemaVersion": 1,
+        "bridgeRevision": 41,
+        "requestId": "a8665f908a7141eda63a9358c873b766"
+      },
+      "queriedAtMonotonicNs": "73119154503698",
+      "trackingState": "RUNNING",
+      "retries": 2,
+      "totalAnchorCount": 52,
+      "matchedAnchorCount": 6,
+      "geometryRef": {
+        "path": "/private/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-scene-session-LXWMYq/scene-41-a8665f908a7141eda63a9358c873b766.json",
+        "sha256": "44c7dcaf3a5bd05a8060ab89c9a6fc7055b32bba0af1752c01faccd8d6fb6ccc",
+        "bytes": 8357844,
+        "schemaVersion": 1,
+        "coordinateFrameId": "bridge-world-41",
+        "units": "metres",
+        "handedness": "sdk-reported",
+        "bridgeRevision": 41
+      },
+      "anchors": [
+        {
+          "traceId": "anchor-0004",
+          "runtimeUuid": "ae4fdce5-ba6b-4861-8647-749d12e3e099",
+          "runtimeUuidRole": "diagnostic_only",
+          "labels": [
+            "WALL_ART"
+          ],
+          "worldFromAnchor": [
+            1,
+            0,
+            0,
+            -1.884913444519043,
+            0,
+            1,
+            -7.549789415861596e-8,
+            1.7226563692092896,
+            0,
+            7.549789415861596e-8,
+            1,
+            1.7403044700622559,
+            0,
+            0,
+            0,
+            1
+          ],
+          "boundsM": [
+            0.8737062215805054,
+            1.2471245527267456,
+            0.07691740989685059
+          ],
+          "geometrySlice": {
+            "vertexStart": 16883,
+            "vertexCount": 20,
+            "indexStart": 67758,
+            "indexCount": 30
+          },
+          "semanticAssignments": {
+            "domain": "unknown",
+            "rawCount": 20,
+            "alignment": "unverified",
+            "relationEligible": false
+          }
+        },
+        {
+          "traceId": "anchor-0010",
+          "runtimeUuid": "a754fdf2-43c0-493e-9fec-b54abbd83116",
+          "runtimeUuidRole": "diagnostic_only",
+          "labels": [
+            "WALL_ART"
+          ],
+          "worldFromAnchor": [
+            1,
+            0,
+            0,
+            -3.5393028259277344,
+            0,
+            1,
+            -7.549789415861596e-8,
+            2.0943610668182373,
+            0,
+            7.549789415861596e-8,
+            1,
+            -4.301863193511963,
+            0,
+            0,
+            0,
+            1
+          ],
+          "boundsM": [
+            0.3575587272644043,
+            0.3575582504272461,
+            0.008718311786651611
+          ],
+          "geometrySlice": {
+            "vertexStart": 23977,
+            "vertexCount": 52,
+            "indexStart": 89892,
+            "indexCount": 102
+          },
+          "semanticAssignments": {
+            "domain": "unknown",
+            "rawCount": 52,
+            "alignment": "unverified",
+            "relationEligible": false
+          }
+        },
+        {
+          "traceId": "anchor-0013",
+          "runtimeUuid": "1bb891f6-f764-4d82-93d0-c9ceeffc85da",
+          "runtimeUuidRole": "diagnostic_only",
+          "labels": [
+            "FLOOR"
+          ],
+          "worldFromAnchor": [
+            1,
+            0,
+            0,
+            0.07083988189697266,
+            0,
+            1,
+            -7.549789415861596e-8,
+            0.15789401531219482,
+            0,
+            7.549789415861596e-8,
+            1,
+            0.14744782447814941,
+            0,
+            0,
+            0,
+            1
+          ],
+          "boundsM": [
+            2.2376630306243896,
+            0.00848250463604927,
+            1.5023884773254395
+          ],
+          "geometrySlice": {
+            "vertexStart": 42976,
+            "vertexCount": 348,
+            "indexStart": 151395,
+            "indexCount": 1848
+          },
+          "semanticAssignments": {
+            "domain": "unknown",
+            "rawCount": 348,
+            "alignment": "unverified",
+            "relationEligible": false
+          }
+        },
+        {
+          "traceId": "anchor-0014",
+          "runtimeUuid": "9fecb54a-bbd8-4116-9784-6da233f069ee",
+          "runtimeUuidRole": "diagnostic_only",
+          "labels": [
+            "TABLE"
+          ],
+          "worldFromAnchor": [
+            1,
+            0,
+            0,
+            0.12055432796478271,
+            0,
+            1,
+            -7.549789415861596e-8,
+            0.3542250394821167,
+            0,
+            7.549789415861596e-8,
+            1,
+            -0.41611790657043457,
+            0,
+            0,
+            0,
+            1
+          ],
+          "boundsM": [
+            0.7826310396194458,
+            0.18812690675258636,
+            0.4643775224685669
+          ],
+          "geometrySlice": {
+            "vertexStart": 15961,
+            "vertexCount": 922,
+            "indexStart": 64089,
+            "indexCount": 3669
+          },
+          "semanticAssignments": {
+            "domain": "unknown",
+            "rawCount": 922,
+            "alignment": "unverified",
+            "relationEligible": false
+          }
+        },
+        {
+          "traceId": "anchor-0018",
+          "runtimeUuid": "2320d99e-7f4c-45aa-9b38-117677e44d02",
+          "runtimeUuidRole": "diagnostic_only",
+          "labels": [
+            "FLOOR"
+          ],
+          "worldFromAnchor": [
+            1,
+            0,
+            0,
+            2.2463431358337402,
+            0,
+            1,
+            -7.549789415861596e-8,
+            0.1500004529953003,
+            0,
+            7.549789415861596e-8,
+            1,
+            -0.5766071081161499,
+            0,
+            0,
+            0,
+            1
+          ],
+          "boundsM": [
+            6.86767578125,
+            0.000001606226533112931,
+            4.439027309417725
+          ],
+          "geometrySlice": {
+            "vertexStart": 40972,
+            "vertexCount": 20,
+            "indexStart": 144075,
+            "indexCount": 60
+          },
+          "semanticAssignments": {
+            "domain": "unknown",
+            "rawCount": 20,
+            "alignment": "unverified",
+            "relationEligible": false
+          }
+        },
+        {
+          "traceId": "anchor-0026",
+          "runtimeUuid": "df2cf58a-fb18-4156-97c4-ade27330a92e",
+          "runtimeUuidRole": "diagnostic_only",
+          "labels": [
+            "WALL_ART"
+          ],
+          "worldFromAnchor": [
+            1,
+            0,
+            0,
+            3.5797677040100098,
+            0,
+            1,
+            -7.549789415861596e-8,
+            1.77861487865448,
+            0,
+            7.549789415861596e-8,
+            1,
+            3.821565628051758,
+            0,
+            0,
+            0,
+            1
+          ],
+          "boundsM": [
+            0.3379642367362976,
+            0.3379642367362976,
+            0.008749246597290039
+          ],
+          "geometrySlice": {
+            "vertexStart": 4861,
+            "vertexCount": 44,
+            "indexStart": 18075,
+            "indexCount": 78
+          },
+          "semanticAssignments": {
+            "domain": "unknown",
+            "rawCount": 44,
+            "alignment": "unverified",
+            "relationEligible": false
+          }
+        }
+      ],
+      "histogram": {
+        "UNKNOWN": 26,
+        "PLANT": 1,
+        "WALL_ART": 3,
+        "CHAIR": 3,
+        "WINDOW": 2,
+        "SOFA": 1,
+        "FLOOR": 2,
+        "TABLE": 1,
+        "WALL": 2,
+        "LAMP": 6,
+        "CABINET": 3,
+        "DOOR": 2
+      },
+      "drift": {
+        "effectivePolicy": {
+          "count": "advisory",
+          "maxTransformDeltaM": 0.01,
+          "maxTransformDeltaDeg": 1,
+          "maxExtentDeltaM": 0.01,
+          "topology": "strict"
+        },
+        "exactSnapshotChanged": false,
+        "withinPolicy": true,
+        "countDelta": 0,
+        "maxTransformDeltaM": 0,
+        "maxTransformDeltaDeg": 0,
+        "maxExtentDeltaM": 0,
+        "labelSetChanges": 0,
+        "topologyChanges": 0,
+        "unmatchedPrevious": 0,
+        "unmatchedCurrent": 0,
+        "ambiguities": [],
+        "deltas": [
+          {
+            "metric": "anchor_count",
+            "value": 0,
+            "policy": "advisory",
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 0,
+            "currentIndex": 0,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "PLANT"
+            ],
+            "currentLabels": [
+              "PLANT"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 1,
+            "currentIndex": 1,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "LAMP"
+            ],
+            "currentLabels": [
+              "LAMP"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 2,
+            "currentIndex": 2,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 3,
+            "currentIndex": 3,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 4,
+            "currentIndex": 4,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "WALL_ART"
+            ],
+            "currentLabels": [
+              "WALL_ART"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 5,
+            "currentIndex": 5,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 6,
+            "currentIndex": 6,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 7,
+            "currentIndex": 7,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 8,
+            "currentIndex": 8,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 9,
+            "currentIndex": 9,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 10,
+            "currentIndex": 10,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 11,
+            "currentIndex": 11,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "LAMP"
+            ],
+            "currentLabels": [
+              "LAMP"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 12,
+            "currentIndex": 12,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "SOFA"
+            ],
+            "currentLabels": [
+              "SOFA"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 13,
+            "currentIndex": 13,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "TABLE"
+            ],
+            "currentLabels": [
+              "TABLE"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 14,
+            "currentIndex": 14,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "WALL_ART"
+            ],
+            "currentLabels": [
+              "WALL_ART"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 15,
+            "currentIndex": 15,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "LAMP"
+            ],
+            "currentLabels": [
+              "LAMP"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 16,
+            "currentIndex": 16,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 17,
+            "currentIndex": 17,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "DOOR"
+            ],
+            "currentLabels": [
+              "DOOR"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 18,
+            "currentIndex": 18,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 19,
+            "currentIndex": 19,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "CHAIR"
+            ],
+            "currentLabels": [
+              "CHAIR"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 20,
+            "currentIndex": 20,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 21,
+            "currentIndex": 21,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "WALL"
+            ],
+            "currentLabels": [
+              "WALL"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 22,
+            "currentIndex": 22,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "CABINET"
+            ],
+            "currentLabels": [
+              "CABINET"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 23,
+            "currentIndex": 23,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "LAMP"
+            ],
+            "currentLabels": [
+              "LAMP"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 24,
+            "currentIndex": 24,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "WALL_ART"
+            ],
+            "currentLabels": [
+              "WALL_ART"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 25,
+            "currentIndex": 25,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "CHAIR"
+            ],
+            "currentLabels": [
+              "CHAIR"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 26,
+            "currentIndex": 26,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 27,
+            "currentIndex": 27,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "DOOR"
+            ],
+            "currentLabels": [
+              "DOOR"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 28,
+            "currentIndex": 28,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "CABINET"
+            ],
+            "currentLabels": [
+              "CABINET"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 29,
+            "currentIndex": 29,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 30,
+            "currentIndex": 30,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 31,
+            "currentIndex": 31,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 32,
+            "currentIndex": 32,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "CABINET"
+            ],
+            "currentLabels": [
+              "CABINET"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 33,
+            "currentIndex": 33,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "LAMP"
+            ],
+            "currentLabels": [
+              "LAMP"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 34,
+            "currentIndex": 34,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 35,
+            "currentIndex": 35,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 36,
+            "currentIndex": 36,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 37,
+            "currentIndex": 37,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 38,
+            "currentIndex": 38,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "WALL"
+            ],
+            "currentLabels": [
+              "WALL"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 39,
+            "currentIndex": 39,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 40,
+            "currentIndex": 40,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "WINDOW"
+            ],
+            "currentLabels": [
+              "WINDOW"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 41,
+            "currentIndex": 41,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "WINDOW"
+            ],
+            "currentLabels": [
+              "WINDOW"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 42,
+            "currentIndex": 42,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 43,
+            "currentIndex": 43,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "FLOOR"
+            ],
+            "currentLabels": [
+              "FLOOR"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 44,
+            "currentIndex": 44,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "LAMP"
+            ],
+            "currentLabels": [
+              "LAMP"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 45,
+            "currentIndex": 45,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 46,
+            "currentIndex": 46,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "FLOOR"
+            ],
+            "currentLabels": [
+              "FLOOR"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 47,
+            "currentIndex": 47,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 48,
+            "currentIndex": 48,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 49,
+            "currentIndex": 49,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 50,
+            "currentIndex": 50,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "UNKNOWN"
+            ],
+            "currentLabels": [
+              "UNKNOWN"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          },
+          {
+            "metric": "anchor",
+            "previousIndex": 51,
+            "currentIndex": 51,
+            "geometricMatchScore": 0,
+            "transformDeltaM": 0,
+            "transformDeltaDeg": 0,
+            "extentDeltaM": 0,
+            "labelsChanged": false,
+            "previousLabels": [
+              "CHAIR"
+            ],
+            "currentLabels": [
+              "CHAIR"
+            ],
+            "topologyChanged": false,
+            "withinPolicy": true
+          }
+        ]
+      },
+      "requestedLabels": [
+        "FLOOR",
+        "TABLE",
+        "WALL_ART"
+      ],
+      "semanticRelationPolicy": {
+        "labelLevelSelection": true,
+        "triangleRelations": "refused",
+        "reason": "semantic_assignment_alignment_unverified"
+      },
+      "actionReceipts": [
+        {
+          "action": "bind_application_runtime",
+          "status": "applied",
+          "startedAtMonotonicNs": "348937917971791",
+          "endedAtMonotonicNs": "348938168060250",
+          "ack": {
+            "serial": "emulator-5554",
+            "packageName": "com.fleet.swanmissiontable",
+            "buildReceiptId": "4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845",
+            "apkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+            "pid": 4196,
+            "pidStartTicks": "2711055"
+          }
+        },
+        {
+          "action": "bridge_broadcast",
+          "status": "applied",
+          "startedAtMonotonicNs": "348938168381041",
+          "endedAtMonotonicNs": "348938193064750",
+          "ack": {
+            "serial": "emulator-5554",
+            "action": "com.fleet.swanmissiontable.AGENT_CMD",
+            "command": "query_scene_anchors",
+            "requestId": "a8665f908a7141eda63a9358c873b766",
+            "outcome": "completed"
+          }
+        },
+        {
+          "action": "bridge_payload_pull",
+          "status": "applied",
+          "startedAtMonotonicNs": "348938193077333",
+          "endedAtMonotonicNs": "348942152957833",
+          "ack": {
+            "serial": "emulator-5554",
+            "packageName": "com.fleet.swanmissiontable",
+            "requestId": "a8665f908a7141eda63a9358c873b766",
+            "relativePath": "cache/agentbridge/scene-snapshots/a8665f908a7141eda63a9358c873b766.json",
+            "attempts": 15,
+            "bytes": 8357844,
+            "outcome": "completed"
+          }
+        },
+        {
+          "action": "bridge_payload_cleanup",
+          "status": "applied",
+          "startedAtMonotonicNs": "348942152968625",
+          "endedAtMonotonicNs": "348942175613291",
+          "ack": {
+            "serial": "emulator-5554",
+            "packageName": "com.fleet.swanmissiontable",
+            "requestId": "a8665f908a7141eda63a9358c873b766",
+            "relativePath": "cache/agentbridge/scene-snapshots/a8665f908a7141eda63a9358c873b766.json",
+            "outcome": "completed"
+          }
+        },
+        {
+          "action": "publish_geometry",
+          "status": "applied",
+          "startedAtMonotonicNs": "348942390908291",
+          "endedAtMonotonicNs": "348942596985416",
+          "ack": {
+            "path": "/private/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-scene-session-LXWMYq/scene-41-a8665f908a7141eda63a9358c873b766.json",
+            "sha256": "44c7dcaf3a5bd05a8060ab89c9a6fc7055b32bba0af1752c01faccd8d6fb6ccc",
+            "bytes": 8357844
+          }
+        }
+      ],
+      "error": null,
+      "evidenceCeiling": "structural"
+    }
+  }
+}

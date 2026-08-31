@@ -94,8 +94,7 @@ Any MCP client works — it's JSON-RPC over stdio. Restart your client so it pic
 
 You should now see the **18-tool doors surface** — the default since v36.3 when the `env` block
 sets no surface. Step 5 explains the two surfaces; set `"PICO_MCP_SURFACE": "full"` in that `env`
-block for the full surface (251 tools on macOS and 248 on Linux are runtime-measured; on Windows,
-the published 248-tool count is source-derived because no native Windows `tools/list`
+block for the full surface (252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list`
 measurement has run).
 
 ### Managed pico-cli policy
@@ -234,9 +233,7 @@ back to you as `projectDir`.
 
 ## Choosing a surface
 
-Since v36.3 the curated **18-tool** doors surface is the default. The full surface—251 tools on
-macOS and 248 on Linux are runtime-measured; on Windows, the published 248-tool count is
-source-derived because no native Windows `tools/list` measurement has run—is the power
+Since v36.3 the curated **18-tool** doors surface is the default. The full surface—252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run—is the power
 opt-in for direct access to every lane. Switch in the
 `env` block from step 2:
 
@@ -259,6 +256,98 @@ restart needed (v31). `pico_doctor` reports your calibration state either way.
 
 Calibration also **dies on an emulator cold restart** — the camera's principal point can shift by
 hundreds of pixels. Expect to redo it after rebooting the emulator, and before any measuring session.
+
+---
+
+## Select a measured home environment
+
+`select_home_environment` is available on the full surface only. It ranks the measured PICO Emulator
+6.0 home-environment catalog and can make one guarded host selection; it is deliberately absent from
+the 18-tool doors surface.
+
+Start with a static rank request. Requirements may name `TABLE` and/or `FLOOR` and use X×Z metres:
+
+```json
+{
+  "action": "rank",
+  "requirements": [
+    { "label": "TABLE", "minimumExtentM": [0.7, 0.4] }
+  ]
+}
+```
+
+Static ranking proposes candidates from every refreshed extent-cluster representative measured
+during calibration (or legacy `surfaces` when a v1 entry has no refresh); it does not promise that
+the same surface is present in a later environment instantiation. For the bundled
+`swanmissiontable` brief, Livingroom Day and Livingroom Night have the same measured-potential large
+TABLE and approximately `0.774` scale, so stable dataset order proposes Day first.
+The dataset rejects never-observed clusters and requires the refreshed `surfaces` mirror and the
+positive-minimum recurrence guarantees to remain exact and duplicate-free.
+
+To select the highest-ranked tile, use the same requirements with `action: "switch"` and the live
+app binding. Replace the receipt value with the exact build receipt returned by your app build:
+
+```json
+{
+  "action": "switch",
+  "requirements": [
+    { "label": "TABLE", "minimumExtentM": [0.7, 0.4] }
+  ],
+  "runtime": {
+    "serial": "emulator-5554",
+    "packageName": "com.example.myapp",
+    "expectedBuildReceiptId": "<64-character build receipt SHA-256>",
+    "expectedStageStyle": "Mixed"
+  }
+}
+```
+
+On a host where the guarded picker cannot be used, `switch` returns `manual_switch_required` together
+with a receipt-bound `baseline`. Select the returned `selectedTarget` yourself in the Environment
+Preview dialog, then pass that unchanged baseline to `verify`:
+
+```json
+{
+  "action": "verify",
+  "requirements": [
+    { "label": "TABLE", "minimumExtentM": [0.7, 0.4] }
+  ],
+  "runtime": {
+    "serial": "emulator-5554",
+    "packageName": "com.example.myapp",
+    "expectedBuildReceiptId": "<64-character build receipt SHA-256>",
+    "expectedStageStyle": "Mixed"
+  },
+  "baseline": {
+    "datasetId": "pico-emulator-6.0-home-environments-v1",
+    "datasetContentSha256": "<copy from switch result>",
+    "serial": "emulator-5554",
+    "packageName": "com.example.myapp",
+    "expectedBuildReceiptId": "<the same receipt SHA-256>",
+    "bootId": "<copy from switch result>",
+    "snapshotId": "<copy from switch result>"
+  }
+}
+```
+
+The tool reports every outcome explicitly: `ranked` means it found an ordered target without live
+work; `no_fit` means no eligible measured surface fits; `invalid_request` means the input or baseline
+was rejected; `manual_switch_required` supplies the baseline for the manual flow; `selected_verified`
+means the post-switch mesh uniquely classified as the target; and `verification_failed` records the
+exact failed phase and receipt.
+
+The baseline's `datasetContentSha256` binds the complete canonical dataset, not only its stable v1
+ID and legacy provenance fields. Copy the returned baseline unchanged: an older baseline with no
+digest, or one created from different catalog contents, is rejected before any live dependency.
+
+Treat a scene ID and a picker click as non-identity signals: neither proves which environment is
+active. Only the changed, receipt-bound mesh and its measured `FLOOR`/`TABLE` fingerprint can verify
+the selection. After unique histogram identity, requested-label coverage, and unambiguous cluster
+checks, the live mesh must also meet every simultaneous explicit requirement. A mission request must
+meet the tier chosen by the global static ranking: preferred TABLE is mandatory whenever preferred
+candidates exist, and live FLOOR is accepted only when static ranking selected the fallback tier.
+`WALL_ART` remains advisory, not a fit or identity requirement. Mesume Day remains excluded from
+automatic selection because its public scene payload is invalid.
 
 ---
 

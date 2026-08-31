@@ -1,0 +1,82 @@
+{
+  "kind": "pico.home-environment-holdout-host-selection",
+  "schemaVersion": 1,
+  "serial": "emulator-5554",
+  "targetTile": "Livingroom Day",
+  "selectedFrame": {
+    "path": "docs/evidence/home-environments/2026-08-30-selector-live/holdout-2-livingroom-day-selected.png",
+    "bytes": 661733,
+    "sha256": "c8dab02d14f73efc8ac954d57d8aec38bfa151149799933e6899be799b419a7a",
+    "rawRgbaPixelSha256": "5a860c819aecdd4898973fd2530734e50c3919f8bddc6ca3a6ddfa599a6946b0",
+    "observedAt": "2026-08-31T02:26:41Z",
+    "visionVerdict": "The blue selection outline is visibly around the Livingroom Day tile; no other tile is outlined."
+  },
+  "binding": {
+    "discoveredSerial": "emulator-5554",
+    "qemuPid": 97100,
+    "qemuWindowOwnerPid": 97100,
+    "qemuWindowId": 3998,
+    "bindingMethod": "discovery-pid-window",
+    "mainWindowFrame": {
+      "x": 0,
+      "y": 33,
+      "width": 986,
+      "height": 1013
+    },
+    "dialogWindowId": 5736,
+    "dialogFrame": {
+      "x": 207,
+      "y": 253,
+      "width": 552,
+      "height": 440
+    }
+  },
+  "openMethod": "exact_frame_and_looked_toolbar_pixels_guarded_cgevent",
+  "openAttempts": [
+    {
+      "attempt": 1,
+      "status": "dialog_observation_failed",
+      "detail": "expected one exact picker dialog, found 0",
+      "tileClickReached": false,
+      "failureFrame": {
+        "path": "docs/evidence/home-environments/2026-08-30-selector-live/holdout-2-livingroom-open-timeout-main.png",
+        "bytes": 4104468,
+        "sha256": "c5d8b56845f7c77fb4f4e7b0a883fb41b9a7bb6157089bd0f30e4f57131caae5",
+        "rawRgbaPixelSha256": "8545ee2f4a9f791a9bc99d69e1c72d4a75e62ede1c4b91141027487ca961b1b9",
+        "visionVerdict": "The Bedroom Day room and mission-table FLOOR-fallback diorama are visible; the Environment Preview dialog is absent."
+      }
+    },
+    {
+      "attempt": 2,
+      "status": "selected_capture_ready",
+      "tileClickReached": true
+    }
+  ],
+  "click": {
+    "relativePoint": [
+      450,
+      121
+    ],
+    "absolutePoint": [
+      657,
+      374
+    ],
+    "accessibleTextCenter": [
+      657,
+      432
+    ]
+  },
+  "close": {
+    "recapturedBytes": 661733,
+    "recapturedSha256": "c8dab02d14f73efc8ac954d57d8aec38bfa151149799933e6899be799b419a7a",
+    "method": "exact_frame_and_raw_pixel_guarded_cgevent_close_click",
+    "verifiedAbsent": true
+  },
+  "ordering": {
+    "switchMarkerEpochSeconds": 1788143113.167,
+    "selectedFrameEpochSeconds": 1788143201,
+    "selectedAfterMarker": true
+  },
+  "identityRole": "guarded_host_action_provenance_only",
+  "caveat": "The selected-state frame and click do not identify the active guest environment. Only the subsequent receipt-bound VERIFY mesh classification can establish switch success."
+}

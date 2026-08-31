@@ -26,6 +26,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { rewritePlatformCountClaims } from "./metadata-counts.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CHECK = process.argv.includes("--check");
@@ -56,33 +57,16 @@ console.log(`truth: version=${version}  macOS-tools=${TOOLS}  other-host-tools=$
 // Every full-surface count this project has ever published (55/190/214/220/224 have all appeared in
 // docs). Bare "~NNN" and "instead of NNN" forms are only replaced for THESE counts — a generic
 // bare-number rule would eat measurements like "~90 s".
-const PUBLISHED_COUNTS = [55, 190, 214, 220, 224, 233, 234, 238, 249, 246, 250, 247]
+const PUBLISHED_COUNTS = [55, 190, 214, 220, 224, 233, 234, 238, 249, 246, 250, 247, 251]
   .filter((c) => c !== TOOLS && c !== OTHER_HOST_TOOLS);
 
-// The OTHER-HOST count is now published as the Linux measurement plus an explicitly
-// source-derived Windows number. Those figures are often bare ("248 on Linux", "Windows 248 is
-// source-derived"), so the generic "NNN tools" rule cannot see them. Stamp these shapes first so
-// a future registration-count change cannot leave the provenance-qualified numbers stale.
-const otherHostPhrases = (text) => {
-  let out = text.replace(/\b(\d{2,3})(\+?[- ]tools?)?(\s+on (?:other hosts|Linux))\b/g, (m, d, suffix, tail) => (
-    Number(d) >= 50 ? `${OTHER_HOST_TOOLS}${suffix ?? ""}${tail}` : m
-  ));
-  out = out.replace(/\b(Windows\s+count\s+of\s+)(\d{2,3})(?=\s+(?:is|was)\s+source-derived)/g, (m, prefix, d) => (
-    Number(d) >= 50 ? `${prefix}${OTHER_HOST_TOOLS}` : m
-  ));
-  return out.replace(/\b(Windows\s+)(\d{2,3})(?=(?:[- ]tools?)?(?:\s+count)?\s+(?:is|was)\s+source-derived)/g, (m, prefix, d) => (
-    Number(d) >= 50 ? `${prefix}${OTHER_HOST_TOOLS}` : m
-  ));
-};
-
-/** "NNN tools" / "NNN-tool" phrases: any 2-3 digit count >= 50 that isn't the truth. */
-const countPhrases = (text) =>
-  otherHostPhrases(text).replace(/\b(\d{2,3})(\+?[- ]tools?)\b/g, (m, d, suffix) => (
-    Number(d) >= 50 && ![TOOLS, OTHER_HOST_TOOLS].includes(Number(d)) ? `${TOOLS}${suffix}` : m
-  ));
+const platformCountClaims = (text) => rewritePlatformCountClaims(text, {
+  macTools: TOOLS,
+  otherHostTools: OTHER_HOST_TOOLS,
+});
 
 function stampDocLine(line) {
-  let out = countPhrases(line);
+  let out = line;
   for (const c of PUBLISHED_COUNTS) {
     out = out.replace(new RegExp(`~${c}(?!\\d)`, "g"), `~${TOOLS}`);
     out = out.replace(new RegExp(`instead of ${c}(?!\\d)`, "g"), `instead of ${TOOLS}`);
@@ -96,8 +80,15 @@ function stampDoc(file) {
     warns.push(`${file}: not found — skipped`);
     return;
   }
-  const lines = fs.readFileSync(p, "utf8").split("\n");
+  const before = fs.readFileSync(p, "utf8");
+  const platformStamped = platformCountClaims(before);
+  const lines = platformStamped.split("\n");
   let touched = false;
+  if (platformStamped !== before) {
+    changes++;
+    touched = true;
+    console.log(`  ${CHECK ? "STALE" : "stamp"} ${file}: platform count/provenance claim`);
+  }
   for (let i = 0; i < lines.length; i++) {
     const out = stampDocLine(lines[i]);
     if (out !== lines[i]) {
@@ -138,7 +129,7 @@ function stampManifests() {
     edits.push(`version ${canon.version} -> ${version}`);
     canon.version = version;
   }
-  const desc = countPhrases(canon.description ?? "");
+  const desc = platformCountClaims(canon.description ?? "");
   if (desc !== canon.description) {
     edits.push(`description tool count -> ${TOOLS}`);
     canon.description = desc;
@@ -155,7 +146,7 @@ function stampManifests() {
     rootEdits.push(`version ${rootManifest.version} -> ${version}`);
     rootManifest.version = version;
   }
-  const rootDescription = countPhrases(rootManifest.description ?? "");
+  const rootDescription = platformCountClaims(rootManifest.description ?? "");
   if (rootDescription !== rootManifest.description) {
     rootEdits.push(`description tool count -> ${TOOLS}`);
     rootManifest.description = rootDescription;
@@ -171,7 +162,7 @@ function stampManifests() {
     mp.metadata = { ...(mp.metadata ?? {}), version };
   }
   if (mp.metadata?.description) {
-    const d = countPhrases(mp.metadata.description);
+    const d = platformCountClaims(mp.metadata.description);
     if (d !== mp.metadata.description) {
       mpEdits.push(`metadata.description tool count -> ${TOOLS}`);
       mp.metadata.description = d;
@@ -182,7 +173,7 @@ function stampManifests() {
       mpEdits.push(`plugins[${pl.name}].version ${pl.version} -> ${version}`);
       pl.version = version;
     }
-    const d = countPhrases(pl.description ?? "");
+    const d = platformCountClaims(pl.description ?? "");
     if (d !== pl.description) {
       mpEdits.push(`plugins[${pl.name}].description tool count -> ${TOOLS}`);
       pl.description = d;
@@ -202,7 +193,7 @@ function stampManifests() {
       hostEdits.push(`version ${manifest.version} -> ${version}`);
       manifest.version = version;
     }
-    const hostDescription = countPhrases(manifest.description ?? "");
+    const hostDescription = platformCountClaims(manifest.description ?? "");
     if (hostDescription !== manifest.description) {
       hostEdits.push(`description tool count -> ${TOOLS}`);
       manifest.description = hostDescription;
@@ -223,7 +214,7 @@ function stampManifests() {
       marketplace.metadata.version = version;
     }
     if (marketplace.metadata?.description) {
-      const description = countPhrases(marketplace.metadata.description);
+      const description = platformCountClaims(marketplace.metadata.description);
       if (description !== marketplace.metadata.description) {
         hostEdits.push(`metadata.description tool count -> ${TOOLS}`);
         marketplace.metadata.description = description;
@@ -235,7 +226,7 @@ function stampManifests() {
         plugin.version = version;
       }
       if (typeof plugin.description === "string") {
-        const description = countPhrases(plugin.description);
+        const description = platformCountClaims(plugin.description);
         if (description !== plugin.description) {
           hostEdits.push(`plugins[${plugin.name}].description tool count -> ${TOOLS}`);
           plugin.description = description;

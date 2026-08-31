@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico.task-8-table-proof-check-validation",
+  "sessionId": "d934abc6-bd65-4a43-ba9d-fb26af9af08d",
+  "sourceHead": "7f9be09273954d25e51fabd17d030fd26362fa35",
+  "validatedAt": "2026-08-31T02:46:37.164Z",
+  "rawCall": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/env-fit-selector-2026-08-29/docs/evidence/home-environments/2026-08-30-table-proof/check-crash.live3.01.call.json",
+    "bytes": 891,
+    "sha256": "c018157f74e6a6757c411b6dcfb7ce12d32110c6537181ac03b421b5751153ac"
+  },
+  "receiptBindingLimitation": "check_crash proves only package process presence and package-filtered rows; QUERY and external Meta VR samples bind exact PID/start",
+  "result": {
+    "healthy": true,
+    "processAlive": true,
+    "crashCount": 0,
+    "crashes": []
+  }
+}

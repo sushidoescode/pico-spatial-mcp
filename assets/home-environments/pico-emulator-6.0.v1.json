@@ -1,0 +1,299 @@
+{
+  "schemaVersion": 1,
+  "datasetId": "pico-emulator-6.0-home-environments-v1",
+  "measurement": {
+    "measuredAt": "2026-08-29",
+    "sourceCommit": "467be88516f79d9aced0b81c288c72bef0c2dd5f",
+    "sourcePath": "docs/evidence/home-environments/2026-08-29-pico-emulator-6.0",
+    "capabilitySummarySha256": "9a5160fb72490b9b1cf5ee4e655cbb4e0ae3dcf011e796f7614fbd56fada8857",
+    "selectionProvenanceSha256": "8a4b37b8e512a62f38e41729362a6ab275d2b6813e9863b026f35893afa5a76e",
+    "rangeBasis": "Observed environment instantiations in this session. Equal range endpoints mean that only one accepted instantiation was measured; they are not timeless exact counts.",
+    "refreshProcedure": {
+      "procedureVersion": 1,
+      "requiredRuntime": {
+        "host": "macOS",
+        "emulatorTitle": "PICO Emulator - 6.0.0",
+        "serial": "emulator-5554"
+      },
+      "steps": [
+        "Cold boot emulator-5554 and record the runtime identity before measurement.",
+        "Bind emulator-5554 to one QEMU window, validate the 552x440 Environment Preview dialog, and require all six accessible labels.",
+        "For every tile, click its AX-layout-derived center only after the binding guards pass and capture the selected dialog hash.",
+        "Use a current receipt-bound bridge app to obtain consecutive unfiltered non-empty reads before applying TABLE and FLOOR filters.",
+        "Record complete histogram and total-anchor ranges plus every measured FLOOR and TABLE X/Y/Z extent; exclude invalid public payloads."
+      ]
+    },
+    "refreshProvenance": {
+      "provenanceVersion": 1,
+      "baseDatasetCommit": "7f74b2a0c2ca9aa40b192a93c68b01f04ec94af2",
+      "evidence": [
+        {
+          "tile": "Livingroom Day",
+          "role": "stable_query",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-refresh-call-1.json",
+          "sha256": "7a57010bce2bc1dda41928efb966f8bca33a6d86f4bd5486b02b3e6cec039ef6"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "stable_query",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-refresh-call-2.json",
+          "sha256": "0b71bcd2ea66d4c5ff37e9eaad53e8282d50d04665429f82bd6cd25d1633bd2d"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "stable_query",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-refresh-call-3.json",
+          "sha256": "cd41128e8d4557e59fff3ced0a5eeb3f5f4df70cb0b9ff31ee3adcf83208a7c6"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "stable_query",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-refresh-call-4.json",
+          "sha256": "3134586339a0a1e287e70a46583c9a23b6638c64c0fd9520b01e888ab2f68643"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "stable_query",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-refresh-read-1.json",
+          "sha256": "3861fbb43857aa2dbd43ec847004b671569ce604a550328d64e92100d79ea757"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "stable_query",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-refresh-read-2.json",
+          "sha256": "0387cdcc2cebeee32081ba0b8c0d4117fd2212846a921b94ad169626c79251ef"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "stable_query",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-refresh-read-3.json",
+          "sha256": "4ab2e4116959df546144adb23b3b04a98f771b1fcb26d7912f27829eab86ff7e"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "stable_query",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-refresh-read-4.json",
+          "sha256": "70e72bc15fe9326e4d40e705a3aad35e45d8dacd6f3929dbf162a7a055b61795"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "selected_calibration_provenance",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-selected-2.png",
+          "sha256": "c8dab02d14f73efc8ac954d57d8aec38bfa151149799933e6899be799b419a7a"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "selected_calibration_provenance",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-selected-3.png",
+          "sha256": "c8dab02d14f73efc8ac954d57d8aec38bfa151149799933e6899be799b419a7a"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "selected_calibration_provenance",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-selected-4.png",
+          "sha256": "c8dab02d14f73efc8ac954d57d8aec38bfa151149799933e6899be799b419a7a"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "selected_calibration_provenance",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-selected.png",
+          "sha256": "c8dab02d14f73efc8ac954d57d8aec38bfa151149799933e6899be799b419a7a"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "selected_calibration_provenance",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-selection-provenance-1.json",
+          "sha256": "71e6456024c56eef2cec437b3e3e9a972d5534e792edb1e549273d7f11a6ca63"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "selected_calibration_provenance",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-selection-provenance-2.json",
+          "sha256": "37563a88433473507553b42b747cfb0861c542d606dcf2958a8e38442d8238ff"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "selected_calibration_provenance",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-selection-provenance-3.json",
+          "sha256": "8efecd1cacc64ac9de385b9b2cf1111c4e66490587a6cfccd324c49a6d42378a"
+        },
+        {
+          "tile": "Livingroom Day",
+          "role": "selected_calibration_provenance",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-selection-provenance-4.json",
+          "sha256": "ea393f6232be0b729e7b58fd0e06324cc8f05c07b8f163ca04019f7ff0a18a22"
+        },
+        {
+          "tile": "Livingroom Night",
+          "role": "stable_query",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-night-refresh-call-1.json",
+          "sha256": "754bbdbeefc720e957fadbd92e3b448e173037d490ff9548a58ccbfbe185880c"
+        },
+        {
+          "tile": "Livingroom Night",
+          "role": "stable_query",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-night-refresh-read-1.json",
+          "sha256": "493bb06c0f5384d9ece881074b1e5e4bd989d404b2fc228aa8c0b7a2f4ce2189"
+        },
+        {
+          "tile": "Livingroom Night",
+          "role": "selected_calibration_provenance",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-night-selected.png",
+          "sha256": "36def3b05eb138b108c3b84d0855ea6d8193e0b657d2b2f39d8f079172c49e93"
+        },
+        {
+          "tile": "Livingroom Night",
+          "role": "selected_calibration_provenance",
+          "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-night-selection-provenance-1.json",
+          "sha256": "78529efbc8fffdea642243fae5ce60cab7837e4671eac1033dd738f40b159033"
+        }
+      ]
+    }
+  },
+  "runtime": {
+    "host": "macOS",
+    "emulatorTitle": "PICO Emulator - 6.0.0",
+    "serial": "emulator-5554",
+    "product": "swan",
+    "model": "swan_arm64",
+    "apiLevel": 36,
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4399:user/test-keys",
+    "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686"
+  },
+  "classification": {
+    "extentToleranceM": 0.01,
+    "labels": ["FLOOR", "TABLE"]
+  },
+  "picker": {
+    "dialogTitle": "Environment Preview",
+    "logicalDialogBounds": { "x": 209, "y": 276, "width": 552, "height": 440 },
+    "contactSheet": "all-six-selected-contact-sheet.png",
+    "contactSheetSha256": "402c8c445b8fd1500b5ef5dace36a15b76abcc9be93bcdf643089c6f71592c2c",
+    "selectionLog": "selection-scene-source.log",
+    "selectionLogSha256": "69b662fc88c785a70031aff5768592e52fc67ffefa0cc71e5bc282d408d99060",
+    "accessibleLabels": ["Bedroom Day", "Bedroom Night", "Livingroom Day", "Livingroom Night", "Mesume Day", "Mesume Night"],
+    "measuredTileCenterPoints": {
+      "Bedroom Day": [102, 121],
+      "Bedroom Night": [276, 121],
+      "Livingroom Day": [450, 121],
+      "Livingroom Night": [102, 246],
+      "Mesume Day": [276, 246],
+      "Mesume Night": [450, 246]
+    },
+    "measuredTileCenterPointsProvenance": {
+      "derivation": "derived_from_committed_552x440_dialog_contact_sheet_and_ax_layout",
+      "exactEmittedCgEventCoordinatesSeparatelyRecorded": false,
+      "note": "CP1 recorded that target centers were derived from the AX layout; it did not separately record the exact emitted CGEvent coordinates."
+    }
+  },
+  "environments": [
+    {
+      "tile": "Bedroom Day",
+      "sceneId": "XiataAncientPath",
+      "measurementStatus": "ready",
+      "automaticSelectionEligible": true,
+      "exclusionReason": null,
+      "acceptedInstantiations": 3,
+      "totalAnchorCountRange": [42, 45],
+      "histogramRanges": { "BED": [2, 2], "UNKNOWN": [16, 18], "CHAIR": [0, 1], "CURTAIN": [3, 3], "PLANT": [4, 6], "CABINET": [1, 3], "LAMP": [5, 7], "WINDOW": [1, 2], "WALL": [2, 2], "FLOOR": [1, 1], "TABLE": [0, 0], "WALL_ART": [1, 1], "DOOR": [1, 1] },
+      "surfaces": { "FLOOR": [[5.255133, 0.0000005, 2.964813]], "TABLE": [] },
+      "selectedDialogSha256": "a9f4addc52336252f167e62d4edb7a83f33f53a94b79d7ae19eb0cd500a4ed3a",
+      "measuredClickPoint": [102, 121],
+      "queryEvidence": ["bedroom-day-read-1.json", "bedroom-day-read-2.json", "bedroom-day-read-3.json"]
+    },
+    {
+      "tile": "Bedroom Night",
+      "sceneId": "XiataAncientPath",
+      "measurementStatus": "ready",
+      "automaticSelectionEligible": true,
+      "exclusionReason": null,
+      "acceptedInstantiations": 1,
+      "totalAnchorCountRange": [41, 41],
+      "histogramRanges": { "BED": [2, 2], "UNKNOWN": [17, 17], "CURTAIN": [2, 2], "PLANT": [5, 5], "CABINET": [3, 3], "LAMP": [6, 6], "CHAIR": [1, 1], "WINDOW": [2, 2], "FLOOR": [2, 2], "TABLE": [0, 0], "DOOR": [1, 1] },
+      "surfaces": { "FLOOR": [[5.255133, 0.0000005, 2.964813], [4.911678, 1.701398, 2.866519]], "TABLE": [] },
+      "selectedDialogSha256": "09a2b0a3486b3d2e9e22822d4f237ba55daff36ed0df4c9237857b9a8803e2e0",
+      "measuredClickPoint": [276, 121],
+      "queryEvidence": ["bedroom-night-read-1.json"]
+    },
+    {
+      "tile": "Livingroom Day",
+      "sceneId": "XiataAncientPath",
+      "measurementStatus": "ready",
+      "automaticSelectionEligible": true,
+      "exclusionReason": null,
+      "acceptedInstantiations": 5,
+      "totalAnchorCountRange": [51, 60],
+      "histogramRanges": { "CABINET": [3, 5], "CEILING": [0, 1], "CHAIR": [3, 4], "DOOR": [1, 2], "FLOOR": [1, 2], "LAMP": [6, 8], "PLANT": [1, 3], "SCREEN": [0, 1], "SOFA": [0, 1], "TABLE": [1, 2], "UNKNOWN": [26, 28], "WALL": [1, 2], "WALL_ART": [1, 3], "WINDOW": [1, 2] },
+      "surfaces": { "FLOOR": [[2.237663, 0.008483, 1.502388], [6.867676, 0.0000016, 4.439027]], "TABLE": [[0.176013, 0.174682, 0.176883], [0.782631, 0.188127, 0.464378]] },
+      "guaranteedSurfaces": { "FLOOR": [], "TABLE": [] },
+      "extentClusters": {
+        "FLOOR": [
+          { "extentM": [2.237663, 0.008483, 1.502388], "presenceCountRange": [0, 1] },
+          { "extentM": [6.867676, 0.0000016, 4.439027], "presenceCountRange": [0, 1] }
+        ],
+        "TABLE": [
+          { "extentM": [0.176013, 0.174682, 0.176883], "presenceCountRange": [0, 1] },
+          { "extentM": [0.782631, 0.188127, 0.464378], "presenceCountRange": [0, 1] }
+        ]
+      },
+      "selectedDialogSha256": "97a77c1f9acb7dd7b073bdec1ea8c403ab2fc9bbf337913abd700ad068f274aa",
+      "measuredClickPoint": [450, 121],
+      "queryEvidence": ["livingroom-day-read-1.json"]
+    },
+    {
+      "tile": "Livingroom Night",
+      "sceneId": "XiataAncientPath",
+      "measurementStatus": "ready",
+      "automaticSelectionEligible": true,
+      "exclusionReason": null,
+      "acceptedInstantiations": 2,
+      "totalAnchorCountRange": [55, 56],
+      "histogramRanges": { "CABINET": [3, 3], "CHAIR": [3, 3], "DOOR": [0, 2], "FLOOR": [2, 2], "LAMP": [6, 7], "PLANT": [3, 3], "SCREEN": [0, 1], "SOFA": [1, 1], "TABLE": [1, 2], "UNKNOWN": [25, 26], "WALL": [3, 3], "WALL_ART": [2, 3], "WASHING_MACHINE": [1, 1], "WINDOW": [2, 2] },
+      "surfaces": { "FLOOR": [[2.237663, 0.008483, 1.502388], [6.867676, 0.0000016, 4.439027]], "TABLE": [[0.176013, 0.174682, 0.176883], [0.782631, 0.188127, 0.464378]] },
+      "guaranteedSurfaces": { "FLOOR": [[2.237663, 0.008483, 1.502388], [6.867676, 0.0000016, 4.439027]], "TABLE": [[0.176013, 0.174682, 0.176883]] },
+      "extentClusters": {
+        "FLOOR": [
+          { "extentM": [2.237663, 0.008483, 1.502388], "presenceCountRange": [1, 1] },
+          { "extentM": [6.867676, 0.0000016, 4.439027], "presenceCountRange": [1, 1] }
+        ],
+        "TABLE": [
+          { "extentM": [0.176013, 0.174682, 0.176883], "presenceCountRange": [1, 1] },
+          { "extentM": [0.782631, 0.188127, 0.464378], "presenceCountRange": [0, 1] }
+        ]
+      },
+      "selectedDialogSha256": "1a68fcae893bde67ff841b725456e91016fba56d2eafc7c1784e1873c726c9ff",
+      "measuredClickPoint": [102, 246],
+      "queryEvidence": ["livingroom-night-read-1.json"]
+    },
+    {
+      "tile": "Mesume Day",
+      "sceneId": "XiataAncientPath",
+      "measurementStatus": "invalid_payload",
+      "automaticSelectionEligible": false,
+      "exclusionReason": "public query_scene_anchors invalid_payload: stable anchor 33 has zero vertices and indices",
+      "acceptedInstantiations": 0,
+      "rawDiagnosticInstantiations": 1,
+      "totalAnchorCountRange": [40, 40],
+      "histogramRanges": { "LAMP": [14, 14], "WALL_ART": [2, 2], "TABLE": [2, 2], "UNKNOWN": [10, 10], "CURTAIN": [1, 1], "PLANT": [2, 2], "SOFA": [4, 4], "STAIRWAY": [1, 1], "FLOOR": [1, 1], "CEILING": [1, 1], "WALL": [1, 1], "<empty>": [1, 1] },
+      "surfaces": { "FLOOR": [[2.208697, 0.00971, 3.295405]], "TABLE": [[0.579583, 0.124553, 0.794646], [0.49767, 0.446023, 0.49767]] },
+      "selectedDialogSha256": "0c86c381b365f7ce6666cb25993917f17089420f634d5cf508d07ecb4fec7c54",
+      "measuredClickPoint": [276, 246],
+      "queryEvidence": ["mesume-day-invalid-read.json"],
+      "rawDiagnostic": { "sha256": "09553b9525b67e5e7bbc56fa063406a9a7f0b4c2df3975b0233a4a4c1117f797", "path": "/tmp/pico-env-recon-2026-08-29/mesume-day-raw-bridge.json" }
+    },
+    {
+      "tile": "Mesume Night",
+      "sceneId": "XiataAncientPath",
+      "measurementStatus": "ready",
+      "automaticSelectionEligible": true,
+      "exclusionReason": null,
+      "acceptedInstantiations": 1,
+      "totalAnchorCountRange": [41, 41],
+      "histogramRanges": { "UNKNOWN": [11, 11], "LAMP": [14, 14], "SOFA": [3, 3], "WALL_ART": [3, 3], "STAIRWAY": [1, 1], "WALL": [2, 2], "TABLE": [2, 2], "CURTAIN": [1, 1], "CEILING": [1, 1], "FLOOR": [1, 1], "PLANT": [1, 1], "CHAIR": [1, 1] },
+      "surfaces": { "FLOOR": [[14.274012, 2.648621, 16.299486]], "TABLE": [[0.579583, 0.124553, 0.794646], [0.49767, 0.446023, 0.49767]] },
+      "selectedDialogSha256": "fbd567f4af010fd4b191fe550ee59e07e12c3b3f7682cfc0115cc20f52283217",
+      "measuredClickPoint": [450, 246],
+      "queryEvidence": ["mesume-night-read-1.json"]
+    }
+  ]
+}

@@ -1,0 +1,158 @@
+{
+  "bridge": {
+    "application": {
+      "buildIdentity": {
+        "kind": "apk-sha256",
+        "sha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c"
+      },
+      "observedStageStyle": "Mixed",
+      "packageName": "com.fleet.swanmissiontable",
+      "rootContainer": "stage",
+      "stageOpen": true
+    },
+    "bridgeRevision": 41,
+    "coordinateFrame": {
+      "handedness": "sdk-reported",
+      "id": "bridge-world-41",
+      "units": "metres"
+    },
+    "kind": "pico.agent-bridge.scene-snapshot",
+    "readiness": {
+      "maxRetries": 5,
+      "pollMs": 1000,
+      "retries": 3,
+      "satisfied": true,
+      "stabilityReads": 2
+    },
+    "requestId": "cp1mesumeraw20260829",
+    "schemaVersion": 1
+  },
+  "extractionSchemaVersion": 1,
+  "nonEmptyReads": [
+    {
+      "anchorCount": 40,
+      "histogram": {
+        "<empty>": 1,
+        "CEILING": 1,
+        "CURTAIN": 1,
+        "FLOOR": 1,
+        "LAMP": 14,
+        "PLANT": 2,
+        "SOFA": 4,
+        "STAIRWAY": 1,
+        "TABLE": 2,
+        "UNKNOWN": 10,
+        "WALL": 1,
+        "WALL_ART": 2
+      },
+      "invalidAnchors": [
+        {
+          "boundsM": [0.0, 0.0, 0.0],
+          "indexCount": 0,
+          "labels": [],
+          "positionM": [0.0, 0.6499999761581421, -1.0],
+          "runtimeUuid": "a57a2b88-2146-4734-9dd2-a3a0591effcc",
+          "sourceIndex": 33,
+          "vertexCount": 0
+        }
+      ],
+      "queriedAtMonotonicNs": "1068648722967",
+      "readIndex": 2,
+      "relevantSurfaces": [
+        {
+          "boundsM": [0.579582691192627, 0.12455343455076218, 0.7946457862854004],
+          "indexCount": 174,
+          "labels": ["TABLE"],
+          "positionM": [-14.442209243774414, 0.7855008840560913, 4.011792182922363],
+          "runtimeUuid": "c8618647-749d-42e3-a099-5e3f0c556a5b",
+          "sourceIndex": 3,
+          "vertexCount": 282
+        },
+        {
+          "boundsM": [2.2086968421936035, 0.009710181504487991, 3.2954046726226807],
+          "indexCount": 1512,
+          "labels": ["FLOOR"],
+          "positionM": [-15.045944213867188, 0.6595355272293091, 3.9750289916992188],
+          "runtimeUuid": "dd522320-d99e-4f4c-95aa-9b38117677e4",
+          "sourceIndex": 29,
+          "vertexCount": 810
+        },
+        {
+          "boundsM": [0.49767017364501953, 0.44602346420288086, 0.49766969680786133],
+          "indexCount": 1338,
+          "labels": ["TABLE"],
+          "positionM": [-8.339746475219727, 1.119075059890747, -11.835198402404785],
+          "runtimeUuid": "0dc2d310-090e-4f3c-851a-4b2841e627d4",
+          "sourceIndex": 34,
+          "vertexCount": 969
+        }
+      ],
+      "trackingState": "RUNNING"
+    },
+    {
+      "anchorCount": 40,
+      "histogram": {
+        "<empty>": 1,
+        "CEILING": 1,
+        "CURTAIN": 1,
+        "FLOOR": 1,
+        "LAMP": 14,
+        "PLANT": 2,
+        "SOFA": 4,
+        "STAIRWAY": 1,
+        "TABLE": 2,
+        "UNKNOWN": 10,
+        "WALL": 1,
+        "WALL_ART": 2
+      },
+      "invalidAnchors": [
+        {
+          "boundsM": [0.0, 0.0, 0.0],
+          "indexCount": 0,
+          "labels": [],
+          "positionM": [0.0, 0.6499999761581421, -1.0],
+          "runtimeUuid": "a57a2b88-2146-4734-9dd2-a3a0591effcc",
+          "sourceIndex": 33,
+          "vertexCount": 0
+        }
+      ],
+      "queriedAtMonotonicNs": "1069690053176",
+      "readIndex": 3,
+      "relevantSurfaces": [
+        {
+          "boundsM": [0.579582691192627, 0.12455343455076218, 0.7946457862854004],
+          "indexCount": 174,
+          "labels": ["TABLE"],
+          "positionM": [-14.442209243774414, 0.7855008840560913, 4.011792182922363],
+          "runtimeUuid": "c8618647-749d-42e3-a099-5e3f0c556a5b",
+          "sourceIndex": 3,
+          "vertexCount": 282
+        },
+        {
+          "boundsM": [2.2086968421936035, 0.009710181504487991, 3.2954046726226807],
+          "indexCount": 1512,
+          "labels": ["FLOOR"],
+          "positionM": [-15.045944213867188, 0.6595355272293091, 3.9750289916992188],
+          "runtimeUuid": "dd522320-d99e-4f4c-95aa-9b38117677e4",
+          "sourceIndex": 29,
+          "vertexCount": 810
+        },
+        {
+          "boundsM": [0.49767017364501953, 0.44602346420288086, 0.49766969680786133],
+          "indexCount": 1338,
+          "labels": ["TABLE"],
+          "positionM": [-8.339746475219727, 1.119075059890747, -11.835198402404785],
+          "runtimeUuid": "0dc2d310-090e-4f3c-851a-4b2841e627d4",
+          "sourceIndex": 34,
+          "vertexCount": 969
+        }
+      ],
+      "trackingState": "RUNNING"
+    }
+  ],
+  "source": {
+    "bytes": 10464752,
+    "command": "jq --sort-keys --arg sourceSha 09553b9525b67e5e7bbc56fa063406a9a7f0b4c2df3975b0233a4a4c1117f797 --argjson sourceBytes 10464752 -f mesume-day-diagnostic-extract.jq mesume-day-raw-bridge.json",
+    "sha256": "09553b9525b67e5e7bbc56fa063406a9a7f0b4c2df3975b0233a4a4c1117f797"
+  }
+}

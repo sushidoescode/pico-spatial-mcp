@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico.task-8-table-proof-mcp-call",
+  "phase": "check_crash_1",
+  "sessionId": "047391bb-1cdc-4489-b22f-5de75cd5407b",
+  "sourceHead": "7f9be09273954d25e51fabd17d030fd26362fa35",
+  "selectorSourceHead": "7f9be09273954d25e51fabd17d030fd26362fa35",
+  "surface": "full",
+  "pinnedSerial": "emulator-5554",
+  "callStartedAt": "2026-08-31T02:56:55.907Z",
+  "callReturnedAt": "2026-08-31T02:56:55.986Z",
+  "timeoutMs": 90000,
+  "persistedAt": "2026-08-31T02:56:55.987Z",
+  "request": {
+    "name": "check_crash",
+    "arguments": {
+      "serial": "emulator-5554",
+      "packageName": "com.fleet.swanmissiontable",
+      "lines": 5000
+    }
+  },
+  "response": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\n  \"healthy\": true,\n  \"processAlive\": true,\n  \"crashCount\": 0,\n  \"crashes\": []\n}"
+      }
+    ]
+  },
+  "thrown": null
+}

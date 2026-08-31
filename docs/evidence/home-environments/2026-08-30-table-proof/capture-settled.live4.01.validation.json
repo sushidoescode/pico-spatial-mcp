@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico.task-8-table-proof-capture-validation",
+  "sessionId": "047391bb-1cdc-4489-b22f-5de75cd5407b",
+  "sourceHead": "7f9be09273954d25e51fabd17d030fd26362fa35",
+  "validatedAt": "2026-08-31T02:59:05.085Z",
+  "rawCall": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/env-fit-selector-2026-08-29/docs/evidence/home-environments/2026-08-30-table-proof/capture-settled.live4.01.call.json",
+    "bytes": 1986238,
+    "sha256": "31e605d41d5e765f90dceccc20b20eccbeb219677051ff5a52090f920d8a4b39"
+  },
+  "nativeReceipt": {
+    "status": "external_monitor_required",
+    "runnerMonitorImplementation": "none",
+    "monitorTool": "metavr exact-serial invocations owned by the orchestrator",
+    "minimumContinuousSeconds": 60,
+    "sampleOffsetsSeconds": [
+      0,
+      15,
+      30,
+      45,
+      60
+    ],
+    "serial": "emulator-5554",
+    "packageName": "com.fleet.swanmissiontable",
+    "component": "com.fleet.swanmissiontable/.platform.LaunchActivity",
+    "receiptId": "e5698c6c3cbc557df7c8b790901c883c655e140b043bffe494c7f05ab41ea743",
+    "receiptPath": "/Users/sushantsrikrish/.pico-mcp/run-receipts/native-v1/com.fleet.swanmissiontable/e5698c6c3cbc557df7c8b790901c883c655e140b043bffe494c7f05ab41ea743.json",
+    "pid": 21207,
+    "pidStartTicks": "8243193",
+    "model": "swan_arm64",
+    "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4399:user/test-keys",
+    "bootQemu": "1",
+    "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+    "apkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+    "launchedAt": "2026-08-31T02:52:49.071Z",
+    "capturePath": "/Users/sushantsrikrish/.pico-mcp/ledgers/artifacts/5a0522864e0a134b79b32bec36e458aa3726f28ae6a99390b613b9f6ee77f03b.png",
+    "captureSha256": "5a0522864e0a134b79b32bec36e458aa3726f28ae6a99390b613b9f6ee77f03b",
+    "warning": "check_crash is only a cross-check. It does not replace the five-sample Meta VR dialog/process/log monitor or the before/after capture brackets."
+  },
+  "settledReceipt": {
+    "status": "settled",
+    "serial": "emulator-5554",
+    "path": "/private/tmp/pico-render/home-environment-table-proof/live4/livingroom-day-table-settled.live4.01.png",
+    "sha256": "17cea46920ee2626fb8810813aebb4efdde0a2592093e293e0e5096310770bf9",
+    "attempts": 2,
+    "settlementSatisfied": true,
+    "comparison": "byte_exact",
+    "stablePair": [
+      "17cea46920ee2626fb8810813aebb4efdde0a2592093e293e0e5096310770bf9",
+      "17cea46920ee2626fb8810813aebb4efdde0a2592093e293e0e5096310770bf9"
+    ],
+    "captureRuntimeBinding": {
+      "serial": "emulator-5554",
+      "liveIdentity": {
+        "serial": "emulator-5554",
+        "model": "swan_arm64",
+        "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4399:user/test-keys",
+        "bootQemu": "1",
+        "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+        "observedAt": "2026-08-31T02:59:02.292Z"
+      },
+      "captureSource": "adb-exec-out-screencap",
+      "startedAtMonotonicNs": "358626161332333",
+      "endedAtMonotonicNs": "358628882839833"
+    },
+    "captureRef": {
+      "path": "/private/tmp/pico-render/home-environment-table-proof/live4/livingroom-day-table-settled.live4.01.png",
+      "sha256": "17cea46920ee2626fb8810813aebb4efdde0a2592093e293e0e5096310770bf9",
+      "bytes": 2800528,
+      "width": 2160,
+      "height": 2158,
+      "dimensions": {
+        "width": 2160,
+        "height": 2158
+      },
+      "sourceSerial": "emulator-5554",
+      "capturedAt": "2026-08-31T02:59:04.871Z"
+    },
+    "lastValidCaptureRef": null,
+    "actionReceipts": [],
+    "error": null,
+    "evidenceCeiling": "structural",
+    "lookRequired": true
+  },
+  "externalPng": {
+    "path": "/private/tmp/pico-render/home-environment-table-proof/live4/livingroom-day-table-settled.live4.01.png",
+    "bytes": 2800528,
+    "sha256": "17cea46920ee2626fb8810813aebb4efdde0a2592093e293e0e5096310770bf9"
+  },
+  "limitation": "capture_settled binds serial/boot only; orchestrator-owned exact PID/start/component brackets remain mandatory before and after this call",
+  "visualStatus": "LOOK_REQUIRED_UNVERIFIED"
+}

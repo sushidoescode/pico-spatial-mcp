@@ -1,0 +1,116 @@
+{
+  "kind": "pico.mcp-installed-surface-count-evidence",
+  "schemaVersion": 1,
+  "installedTarballMeasurement": {
+    "startedAt": "2026-08-31T03:13:21Z",
+    "finishedAt": "2026-08-31T03:13:38Z",
+    "command": "npm run build && npm run test:tarball",
+    "hostPlatform": "darwin",
+    "package": "pico-spatial-mcp-37.0.0.tgz",
+    "packedSizeKiB": 1708,
+    "installMode": "clean throwaway directory; npm install --omit=dev --no-audit --no-fund",
+    "fullSurface": {
+      "surfaceEnvironment": "PICO_MCP_SURFACE=full",
+      "observedToolsListCount": 252,
+      "measurementClass": "installed-tarball runtime tools/list",
+      "requiredAnchorToolsPresent": 40,
+      "selectorAnchorPresent": true,
+      "output": "ok   installed server listed exactly 252 tools for darwin (252 on the full macOS surface)"
+    },
+    "doorsSurface": {
+      "surfaceEnvironment": "PICO_MCP_SURFACE=doors",
+      "observedToolsListCount": 18,
+      "measurementClass": "installed-tarball runtime tools/list",
+      "output": "ok   doors surface registered all 18 door tools"
+    },
+    "defaultSurface": {
+      "surfaceEnvironment": "PICO_MCP_SURFACE unset",
+      "observedToolsListCount": 18,
+      "measurementClass": "installed-tarball runtime tools/list",
+      "output": "ok   PICO_MCP_SURFACE unset serves the 18-tool doors surface (full stays explicit opt-in)"
+    },
+    "exitCode": 0,
+    "failures": 0
+  },
+  "otherHostCounts": {
+    "source": {
+      "file": "scripts/verify-tarball.mjs",
+      "macosLiteralLine": 39,
+      "otherHostLiteralLine": 40,
+      "platformExplanationLines": [
+        41,
+        42
+      ]
+    },
+    "macosHostGuiRegistrations": [
+      "gui_find_window",
+      "gui_capture",
+      "gui_camera",
+      "gui_permissions"
+    ],
+    "nonMacosHostGuiRegistrations": [
+      "gui_capture explanatory stub"
+    ],
+    "platformDelta": 3,
+    "derivation": "252 - (4 - 1) = 249",
+    "linux": {
+      "count": 249,
+      "provenance": "source-derived only",
+      "nativeToolsListMeasurement": false
+    },
+    "windows": {
+      "count": 249,
+      "provenance": "source-derived/published only",
+      "nativeToolsListMeasurement": false
+    }
+  },
+  "installedDatasetShipping": {
+    "directoryContents": [
+      "pico-emulator-6.0.v1.json"
+    ],
+    "directoryExact": true,
+    "datasetId": "pico-emulator-6.0-home-environments-v1",
+    "datasetParsedFromInstalledPackage": true,
+    "mesumeDay": {
+      "automaticSelectionEligible": false,
+      "exclusionReason": "public query_scene_anchors invalid_payload: stable anchor 33 has zero vertices and indices"
+    },
+    "output": [
+      "ok   installed home environment dataset directory contains exactly the versioned JSON",
+      "ok   installed home environment dataset bytes match the exact packed source dataset",
+      "ok   home environment dataset ships in the installed package",
+      "ok   installed dataset keeps Mesume Day excluded for its zero-geometry public-parser failure",
+      "ok   installed dataset keeps both Livingroom refresh surface extensions",
+      "ok   installed dataset keeps the evidence-falsified Day guarantees and optional cluster ranges",
+      "ok   installed dataset retains complete one-to-one measured-potential Livingroom ranking inputs",
+      "ok   installed dataset carries only accepted, syntactically pinned refresh evidence",
+      "ok   installed selector ranks complete Day/Night potential and receipts the canonical dataset hash"
+    ]
+  },
+  "metadataChain": {
+    "version": "37.0.0",
+    "versionChanged": false,
+    "macosTools": 252,
+    "otherHostTools": 249,
+    "doorsTools": 18,
+    "publishedCountsAppend": 251,
+    "syncMetadataCheck": {
+      "command": "npm run sync:meta -- --check",
+      "staleSites": 0,
+      "warnings": 0
+    },
+    "stampedHunkReview": {
+      "scope": "nine stamped docs plus host manifest descriptions",
+      "canonicalClaim": "252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta",
+      "reviewed": true,
+      "note": "macOS 252 is installed-tarball runtime-measured; Linux and Windows 249 remain source-derived. No prose claims a native Linux or Windows tools/list measurement."
+    }
+  },
+  "claimBoundary": {
+    "macos252": "runtime-measured from the installed tarball",
+    "doors18": "runtime-measured from the installed tarball",
+    "linux249": "source-derived; not runtime-measured",
+    "windows249": "source-derived; not runtime-measured"
+  },
+  "builtFromHead": "7f9be09273954d25e51fabd17d030fd26362fa35"
+}

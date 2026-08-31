@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico.task-8-table-proof-query-validation",
+  "sessionId": "ddf82f8a-d05e-4aee-9b6b-be679f939ac1",
+  "sourceHead": "7f9be09273954d25e51fabd17d030fd26362fa35",
+  "validatedAt": "2026-08-31T02:37:55.145Z",
+  "rawCall": {
+    "path": "/Users/sushantsrikrish/PICO-MCP/.worktrees/env-fit-selector-2026-08-29/docs/evidence/home-environments/2026-08-30-table-proof/query-scene-anchors.live2.01.call.json",
+    "bytes": 82660,
+    "sha256": "4ff3aed04641dfedc6f243a2bea8b61ff1a481199c6257b4c1a92321db9b187b"
+  },
+  "nativeReceiptId": "5f37b04a7ee91ac3c08586312444122bc7534f17250b46ff997462f73a73e814",
+  "runtimeBinding": {
+    "serial": "emulator-5554",
+    "liveIdentity": {
+      "serial": "emulator-5554",
+      "model": "swan_arm64",
+      "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4399:user/test-keys",
+      "bootQemu": "1",
+      "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+      "observedAt": "2026-08-31T02:37:47.932Z"
+    },
+    "captureSource": "agent-bridge-file-pull",
+    "startedAtMonotonicNs": "357351464667875",
+    "endedAtMonotonicNs": "357357839966541",
+    "packageName": "com.fleet.swanmissiontable",
+    "buildReceiptId": "5f37b04a7ee91ac3c08586312444122bc7534f17250b46ff997462f73a73e814",
+    "buildReceiptPath": "/Users/sushantsrikrish/.pico-mcp/run-receipts/native-v1/com.fleet.swanmissiontable/5f37b04a7ee91ac3c08586312444122bc7534f17250b46ff997462f73a73e814.json",
+    "apkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+    "foregroundProcess": {
+      "packageName": "com.fleet.swanmissiontable",
+      "component": "com.fleet.swanmissiontable/.platform.LaunchActivity",
+      "pid": 17282,
+      "pidStartTicks": "8136948"
+    },
+    "requestedStageStyle": "Mixed",
+    "requestedRootContainer": "stage",
+    "effectiveSceneDriftPolicy": {
+      "count": "advisory",
+      "maxTransformDeltaM": 0.01,
+      "maxTransformDeltaDeg": 1,
+      "maxExtentDeltaM": 0.01,
+      "topology": "strict"
+    },
+    "observedStageStyle": "Mixed",
+    "rootContainer": "stage",
+    "stageOpen": true,
+    "bridgePayloadKind": "pico.agent-bridge.scene-snapshot",
+    "bridgeSchemaVersion": 1,
+    "bridgeRevision": 41,
+    "requestId": "f478342999cc413bbd44269dd471f3f1"
+  },
+  "geometry": {
+    "path": "/private/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-scene-session-PWPGxQ/scene-41-f478342999cc413bbd44269dd471f3f1.json",
+    "bytes": 9305661,
+    "sha256": "5a0e4acffc797f53d5458921f1993b228b50d520890759a97dcc2923c06520c5"
+  },
+  "snapshot": {
+    "snapshotId": "b3bd0b23125c01b732e0c553ca52b6e716de64394fa7327f6699aa9537e8d0d9",
+    "selectorPostSnapshotId": "b3bd0b23125c01b732e0c553ca52b6e716de64394fa7327f6699aa9537e8d0d9",
+    "bridgeRequestId": "f478342999cc413bbd44269dd471f3f1",
+    "priorSelectorRequestIds": [
+      "61c9c37e67704a2e80db4413eabf53f5",
+      "17c47c56c0f74cd4af2523e7e8584b79"
+    ],
+    "freshRequestId": true
+  },
+  "stableReads": {
+    "requested": 2,
+    "driftWithinPolicy": true,
+    "ambiguities": [],
+    "deltaCount": 59
+  }
+}

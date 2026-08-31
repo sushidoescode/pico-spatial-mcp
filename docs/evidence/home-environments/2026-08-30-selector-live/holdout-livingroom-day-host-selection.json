@@ -1,0 +1,43 @@
+{
+  "kind": "pico.home-environment-holdout-host-selection",
+  "schemaVersion": 1,
+  "serial": "emulator-5554",
+  "targetTile": "Livingroom Day",
+  "selectedFrame": {
+    "path": "docs/evidence/home-environments/2026-08-30-selector-live/holdout-livingroom-day-selected.png",
+    "bytes": 661733,
+    "sha256": "c8dab02d14f73efc8ac954d57d8aec38bfa151149799933e6899be799b419a7a",
+    "rawRgbaPixelSha256": "5a860c819aecdd4898973fd2530734e50c3919f8bddc6ca3a6ddfa599a6946b0",
+    "observedAt": "2026-08-31T01:11:42Z",
+    "visionVerdict": "The blue selection outline is visibly around the Livingroom Day tile; no other tile is outlined."
+  },
+  "binding": {
+    "discoveredSerial": "emulator-5554",
+    "qemuPid": 97100,
+    "qemuWindowOwnerPid": 97100,
+    "qemuWindowId": 3998,
+    "bindingMethod": "discovery-pid-window",
+    "mainWindowFrame": { "x": 0, "y": 33, "width": 986, "height": 1013 },
+    "dialogWindowId": 5633,
+    "dialogFrame": { "x": 207, "y": 253, "width": 552, "height": 440 }
+  },
+  "openMethod": "exact_frame_and_looked_toolbar_pixels_guarded_cgevent",
+  "click": {
+    "relativePoint": [450, 121],
+    "absolutePoint": [657, 374],
+    "accessibleTextCenter": [657, 432]
+  },
+  "close": {
+    "recapturedBytes": 661733,
+    "recapturedSha256": "c8dab02d14f73efc8ac954d57d8aec38bfa151149799933e6899be799b419a7a",
+    "method": "exact_frame_and_raw_pixel_guarded_cgevent_close_click",
+    "verifiedAbsent": true
+  },
+  "ordering": {
+    "switchMarkerEpochSeconds": 1788138658.754,
+    "selectedFrameEpochSeconds": 1788138702,
+    "selectedAfterMarker": true
+  },
+  "identityRole": "guarded_host_action_provenance_only",
+  "caveat": "The selected-state frame and click do not identify the active guest environment. Only the subsequent receipt-bound VERIFY mesh classification can establish switch success."
+}

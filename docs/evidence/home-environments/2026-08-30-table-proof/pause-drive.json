@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico.table-proof-animation-settle-drive",
+  "serial": "emulator-5554",
+  "packageName": "com.fleet.swanmissiontable",
+  "component": "com.fleet.swanmissiontable/.platform.LaunchActivity",
+  "pid": 21207,
+  "pidStartTicks": "8243193",
+  "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+  "startedAt": "2026-08-31T02:58:30Z",
+  "returnedAt": "2026-08-31T02:58:32Z",
+  "commands": [
+    {
+      "command": "mission:launch",
+      "broadcastResult": 0,
+      "observedLogAt": "2026-08-31T02:58:30.168Z"
+    },
+    {
+      "command": "mission:pause",
+      "broadcastResult": 0,
+      "observedLogAt": "2026-08-31T02:58:31.381Z"
+    }
+  ],
+  "purpose": "Freeze authored animation so capture_settled can require byte-identical frames; this does not alter the TABLE anchor selection."
+}

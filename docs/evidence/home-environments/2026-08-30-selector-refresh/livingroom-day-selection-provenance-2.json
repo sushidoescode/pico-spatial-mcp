@@ -1,0 +1,39 @@
+{
+  "kind": "pico.home-environment-selection-provenance",
+  "schemaVersion": 1,
+  "tile": "Livingroom Day",
+  "identityRole": "operator_selected_calibration_provenance_only_not_switch_verification",
+  "selectedFrame": {
+    "path": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-selected-2.png",
+    "sha256": "c8dab02d14f73efc8ac954d57d8aec38bfa151149799933e6899be799b419a7a",
+    "rawRgbaPixelSha256": "5a860c819aecdd4898973fd2530734e50c3919f8bddc6ca3a6ddfa599a6946b0",
+    "pixelDimensions": [
+      1104,
+      880
+    ],
+    "observedAt": "2026-08-31T00:17:25.127Z",
+    "visionVerdict": "The blue selection outline is visibly around the Livingroom Day tile; the other Livingroom tile is not outlined.",
+    "cp1PanelRmse": {
+      "livingroomDay": 0.0182875,
+      "livingroomNight": 0.0413654
+    }
+  },
+  "hostBinding": {
+    "serial": "emulator-5554",
+    "qemuPid": 97100,
+    "mainWindowId": 3998,
+    "dialogWindowId": 5346,
+    "dialogFrame": {
+      "x": 207,
+      "y": 253,
+      "width": 552,
+      "height": 440
+    },
+    "bindingMethod": "discovery-pid-window_with_exact_main_window_size_filter_while_dialog_open",
+    "pickerOpenMethod": "exact_frame_and_looked_toolbar_pixels_guarded_cgevent",
+    "closeMethod": "exact_frame_and_looked_dialog_pixels_guarded_cgevent",
+    "closeVerified": true
+  },
+  "queryEvidence": "docs/evidence/home-environments/2026-08-30-selector-refresh/livingroom-day-refresh-read-2.json",
+  "caveat": "This selected-state frame labels a calibration observation. It does not replace receipt-bound mesh classification and does not establish selected_verified."
+}

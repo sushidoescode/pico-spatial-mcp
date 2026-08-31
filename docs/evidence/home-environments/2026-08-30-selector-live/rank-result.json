@@ -1,0 +1,224 @@
+{
+  "kind": "pico.home-environment-selector-live-result",
+  "schemaVersion": 1,
+  "capturedAt": {
+    "startedAt": "2026-08-30T13:08:03.657899000Z",
+    "finishedAt": "2026-08-30T13:08:03.962750000Z"
+  },
+  "transport": {
+    "protocol": "MCP stdio",
+    "serverCommand": "node dist/index.js",
+    "environment": {
+      "PICO_MCP_SURFACE": "full",
+      "ANDROID_SERIAL": "emulator-5554",
+      "HZDB_DEVICE": "emulator-5554",
+      "HZDB_ADB_PATH": "/opt/homebrew/bin/adb"
+    },
+    "tool": "select_home_environment",
+    "registeredToolCountAtFreshDoctor": 252
+  },
+  "request": {
+    "action": "rank",
+    "briefId": "swanmissiontable"
+  },
+  "response": {
+    "isError": false,
+    "textContentMatchedStructuredContent": true,
+    "structuredContent": {
+      "status": "ranked",
+      "action": "rank",
+      "dataset": {
+        "schemaVersion": 1,
+        "datasetId": "pico-emulator-6.0-home-environments-v1",
+        "measuredAt": "2026-08-29",
+        "sourceCommit": "467be88516f79d9aced0b81c288c72bef0c2dd5f",
+        "sourcePath": "docs/evidence/home-environments/2026-08-29-pico-emulator-6.0",
+        "capabilitySummarySha256": "9a5160fb72490b9b1cf5ee4e655cbb4e0ae3dcf011e796f7614fbd56fada8857",
+        "selectionProvenanceSha256": "8a4b37b8e512a62f38e41729362a6ab275d2b6813e9863b026f35893afa5a76e"
+      },
+      "requirements": {
+        "kind": "swanMissionTable",
+        "preferred": {
+          "requirement": {
+            "label": "TABLE",
+            "minimumExtentM": [
+              0.25,
+              0.18
+            ]
+          },
+          "targetFootprintM": [
+            0.68,
+            0.42
+          ],
+          "maxTableFillFraction": 0.7,
+          "maximumExtentM": [
+            4,
+            4
+          ]
+        },
+        "fallback": {
+          "requirement": {
+            "label": "FLOOR",
+            "minimumExtentM": [
+              0.8,
+              0.55
+            ]
+          },
+          "maximumExtentM": [
+            30,
+            30
+          ]
+        },
+        "advisories": [
+          {
+            "label": "WALL_ART",
+            "minimumExtentM": [
+              0.15,
+              0.12
+            ],
+            "maximumExtentM": [
+              5,
+              4
+            ]
+          }
+        ]
+      },
+      "ranking": {
+        "status": "ranked",
+        "datasetId": "pico-emulator-6.0-home-environments-v1",
+        "candidates": [
+          {
+            "tile": "Livingroom Day",
+            "fits": [
+              {
+                "requirement": {
+                  "label": "TABLE",
+                  "minimumExtentM": [
+                    0.25,
+                    0.18
+                  ]
+                },
+                "surfaceExtentM": [
+                  0.782631,
+                  0.464378
+                ],
+                "fitRatio": 2.579877777777778
+              }
+            ],
+            "minimumFitRatio": 2.579877777777778,
+            "sumFitRatios": 2.579877777777778,
+            "contentScale": 0.7739633333333333,
+            "tier": "preferred"
+          },
+          {
+            "tile": "Livingroom Night",
+            "fits": [
+              {
+                "requirement": {
+                  "label": "TABLE",
+                  "minimumExtentM": [
+                    0.25,
+                    0.18
+                  ]
+                },
+                "surfaceExtentM": [
+                  0.782631,
+                  0.464378
+                ],
+                "fitRatio": 2.579877777777778
+              }
+            ],
+            "minimumFitRatio": 2.579877777777778,
+            "sumFitRatios": 2.579877777777778,
+            "contentScale": 0.7739633333333333,
+            "tier": "preferred"
+          },
+          {
+            "tile": "Mesume Night",
+            "fits": [
+              {
+                "requirement": {
+                  "label": "TABLE",
+                  "minimumExtentM": [
+                    0.25,
+                    0.18
+                  ]
+                },
+                "surfaceExtentM": [
+                  0.579583,
+                  0.794646
+                ],
+                "fitRatio": 2.318332
+              }
+            ],
+            "minimumFitRatio": 2.318332,
+            "sumFitRatios": 2.318332,
+            "contentScale": 0.5966295588235293,
+            "tier": "preferred"
+          }
+        ],
+        "selectedTarget": "Livingroom Day"
+      },
+      "selectedTarget": "Livingroom Day",
+      "baseline": null,
+      "hostSelection": null,
+      "verification": null,
+      "failurePhase": null,
+      "error": null,
+      "evidenceCeiling": "structural"
+    }
+  },
+  "checkpointAssessment": {
+    "status": "RANKED",
+    "selectedTarget": "Livingroom Day",
+    "tableExtentM": [
+      0.782631,
+      0.464378
+    ],
+    "contentScale": 0.7739633333333333,
+    "evidenceClass": "structural",
+    "visualClaim": "UNVERIFIED"
+  },
+  "builtFromHead": "b6bc0ef6aa91b42ea9e4da4aa30e28f3b189db18",
+  "runtimeProvenance": {
+    "identityProbeWindow": {
+      "source": "controller-provided mandatory exact-serial Meta VR CLI gate immediately before task handoff",
+      "exactTimestamps": "UNAVAILABLE",
+      "observedBefore": "2026-08-30T13:06:11Z"
+    },
+    "identity": {
+      "selectedTransportId": "emulator-5554",
+      "state": "device",
+      "bootComplete": "1",
+      "product": "swan",
+      "model": "swan_arm64",
+      "incremental": "4399",
+      "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4399:user/test-keys",
+      "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686"
+    },
+    "builtDoctor": {
+      "startedAt": "2026-08-30T13:06:31Z",
+      "finishedAt": "2026-08-30T13:06:35Z",
+      "request": "pico_doctor {}",
+      "registeredToolCount": 252,
+      "mutatingCalibrationCalled": false,
+      "failingCheck": "calibration predates current boot",
+      "accessibilityStatus": "unknown"
+    },
+    "receiptValidation": {
+      "receiptId": "4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845",
+      "currentStoreStatus": "valid",
+      "checkedAt": "2026-08-30T13:07:37Z",
+      "liveBindWindow": {
+        "startedAt": "2026-08-30T13:06:55Z",
+        "finishedAt": "2026-08-30T13:07:40Z"
+      },
+      "foregroundMatched": true,
+      "pid": 4196,
+      "pidStartTicks": "2711055",
+      "apkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+      "bootMatched": true,
+      "fleetRebuildNeeded": false
+    }
+  }
+}
