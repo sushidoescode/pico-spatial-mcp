@@ -220,6 +220,13 @@ test("Boundary Lab codegen emits a batched off-main enclosure and legible four-a
     assert.match(world, /resources\.closeByBuild\(\)/);
     assert.match(world, /resources\.closeBySession\(\)/);
     assert.match(world, /Sparse wire\/grid geometry preserves passthrough pixels/);
+    assert.match(world, /val lineOrdinal = \(index \+ 1\)\.toString\(\)/);
+    assert.match(world, /val cornerOrdinal = \(xIndex \* edges\.size \+ zIndex \+ 1\)\.toString\(\)/);
+    assert.doesNotMatch(
+      world,
+      /HIGH_CONTRAST_ENCLOSURE \+ "_[^"]*" \+ (?:offset|x|z)(?:\s|,|\+)/,
+      "Entity.setName rejects signed/decimal coordinate spellings; names must use safe ordinals",
+    );
     assert.match(world, /GATES\.forEachIndexed \{ index, gateSpec -> add \{ gate\(root, resources, gateSpec, index\) \} \}/);
     assert.doesNotMatch(world, /GATES\.forEachIndexed \{ index, gate -> add \{ gate\(root, resources, gate, index\) \} \}/);
     assert.doesNotMatch(world, /Vector3\(80f, 0\.06f, 80f\)/);
