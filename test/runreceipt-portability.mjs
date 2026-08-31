@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -85,6 +86,50 @@ function temporaryNames(root) {
   };
   visit(root);
   return found;
+}
+
+function directoryMetadata(directory) {
+  const stats = fs.statSync(directory, { bigint: true });
+  return {
+    deviceId: stats.dev,
+    inode: stats.ino,
+    mode: stats.mode,
+    size: stats.size,
+    mtimeNs: stats.mtimeNs,
+    ctimeNs: stats.ctimeNs,
+  };
+}
+
+function directoryTreeMetadata(root) {
+  const records = {};
+  const visit = (directory, relative) => {
+    records[relative || "."] = directoryMetadata(directory);
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) visit(path.join(directory, entry.name), path.join(relative, entry.name));
+    }
+  };
+  visit(root, "");
+  return records;
+}
+
+function resolvedPython3() {
+  for (const component of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (!component || !path.isAbsolute(component)) continue;
+    const candidate = path.join(component, "python3");
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return fs.realpathSync(candidate);
+    } catch {}
+  }
+  throw new Error("test requires python3 on an absolute PATH component");
+}
+
+function runHelperProbe(source, args = []) {
+  const helperPath = fs.realpathSync(path.join(process.cwd(), "scripts", "receipt-portability-helper.py"));
+  return spawnSync(resolvedPython3(), ["-I", "-S", "-B", "-c", source, helperPath, ...args], {
+    encoding: "utf8",
+    timeout: 30_000,
+  });
 }
 
 async function publishPromotion(t, suffix = "target") {
@@ -529,7 +574,7 @@ test("portable historical reads and PROMOTE reruns fail closed on every corrupt 
       fs.writeFileSync(promoted.paths[role], Buffer.from(`corrupt-${role}`, "utf8"));
       const rerun = await portable.promoteNativeRunReceipt(promoted.input);
       assert.equal(rerun.status, "refused");
-      assert.match(rerun.reason, /corrupt|canonical|hash|invalid|mismatch|PNG|manifest|receipt/i);
+      assert.match(rerun.reason, /corrupt|canonical|hash|invalid|mismatch|PNG|manifest|receipt|trailing newline/i);
       const read = await portable.readPortableRunReceipt(
         promoted.fixture.payload.app,
         promoted.promoted.portableReceiptId,
@@ -542,4 +587,268 @@ test("portable historical reads and PROMOTE reruns fail closed on every corrupt 
       assert.deepEqual(temporaryNames(promoted.target.targetLedgerRoot), [], "ordinary refusal must clean ledger-store temporary names");
     });
   }
+});
+
+test("PROMOTE validates the exact reread lineage before helper publication", async (t) => {
+  const fixture = await createPortableFixture(t, { app: "com.example.swap_a" });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const target = promotionRoots(fixture);
+  const originalReadFileSync = fs.readFileSync;
+  let swapped = false;
+  fs.readFileSync = function (filename, ...args) {
+    if (!swapped && path.resolve(String(filename)) === path.resolve(published.receiptPath)) {
+      swapped = true;
+      const changed = JSON.parse(originalReadFileSync.call(fs, published.receiptPath, "utf8"));
+      changed.app = "com.example.swap_b";
+      const replacement = Buffer.from(`${canonicalJson(changed)}\n`, "utf8");
+      assert.equal(replacement.length, fs.statSync(published.receiptPath).size, "deterministic swap must preserve the stat-before-read size");
+      fs.writeFileSync(published.receiptPath, replacement);
+    }
+    return originalReadFileSync.call(fs, filename, ...args);
+  };
+  let result;
+  try {
+    result = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+  assert.equal(swapped, true, "test must swap the lineage during the post-validator bounded read");
+  assert.equal(result.status, "refused");
+  assert.match(result.reason, /lineage|receipt|app|recomputed|invalid/i);
+  assert.equal(fs.existsSync(path.join(target.targetReceiptRoot, "promotions-v1")), false, "invalid reread lineage must be refused before a manifest can commit");
+});
+
+test("PROMOTE never repairs a dependency beneath an existing committed manifest", async (t) => {
+  const cases = [
+    ["apk", (promoted) => fs.unlinkSync(promoted.paths.apk)],
+    ["effectiveAppSpec", (promoted) => fs.unlinkSync(promoted.paths.effectiveAppSpec)],
+    ["capture", (promoted) => fs.unlinkSync(promoted.paths.capture)],
+    ["lineage", (promoted) => fs.unlinkSync(promoted.paths.lineage)],
+    ["portable final-name drift", (promoted) => {
+      const drifted = path.join(path.dirname(promoted.paths.portable), `${HASH_A}.json`);
+      fs.renameSync(promoted.paths.portable, drifted);
+    }],
+  ];
+  for (const [name, removeDependency] of cases) {
+    await t.test(name, async (child) => {
+      const promoted = await publishPromotion(child, `committed-${String(name).toLowerCase().replace(/[^a-z]+/g, "-")}`);
+      removeDependency(promoted);
+      const missingPath = name === "portable final-name drift" ? promoted.paths.portable : promoted.paths[name];
+      const targetMetadata = {
+        receipt: directoryTreeMetadata(promoted.target.targetReceiptRoot),
+        ledger: directoryTreeMetadata(promoted.target.targetLedgerRoot),
+      };
+      const before = await portable.readPortableRunReceipt(
+        promoted.fixture.payload.app,
+        promoted.promoted.portableReceiptId,
+        promoted.promoted.promotionId,
+        { rootDir: promoted.target.targetReceiptRoot, ledgerDir: promoted.target.targetLedgerRoot },
+      );
+      assert.equal(before.status, "invalid");
+      const rerun = await portable.promoteNativeRunReceipt(promoted.input);
+      assert.equal(rerun.status, "refused");
+      assert.match(rerun.reason, /manifest|committed|target|exist|open|missing|receipt|APK|capture|AppSpec/i);
+      assert.equal(fs.existsSync(missingPath), false, "rerun must not recreate a missing committed dependency");
+      assert.deepEqual({
+        receipt: directoryTreeMetadata(promoted.target.targetReceiptRoot),
+        ledger: directoryTreeMetadata(promoted.target.targetLedgerRoot),
+      }, targetMetadata, "committed-state refusal must perform no target directory writes");
+      const after = await portable.readPortableRunReceipt(
+        promoted.fixture.payload.app,
+        promoted.promoted.portableReceiptId,
+        promoted.promoted.promotionId,
+        { rootDir: promoted.target.targetReceiptRoot, ledgerDir: promoted.target.targetLedgerRoot },
+      );
+      assert.equal(after.status, "invalid");
+    });
+  }
+});
+
+test("PROMOTE shared receipt roots leave native APK and spec directories byte-for-byte metadata stable", async (t) => {
+  const fixture = await createPortableFixture(t, { app: "com.example.shared_metadata" });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const apkDirectory = path.dirname(fixture.payload.apk.artifactPath);
+  const specDirectory = path.dirname(fixture.publishedSpec.artifactPath);
+  const oldTime = new Date("2001-01-01T00:00:00.000Z");
+  fs.utimesSync(apkDirectory, oldTime, oldTime);
+  fs.utimesSync(specDirectory, oldTime, oldTime);
+  const before = { apk: directoryMetadata(apkDirectory), spec: directoryMetadata(specDirectory) };
+  const targetLedgerRoot = path.join(fixture.scratch, "shared-metadata-ledger");
+  fs.mkdirSync(targetLedgerRoot);
+  const result = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, {
+    targetReceiptRoot: fs.realpathSync(fixture.rootDir),
+    targetLedgerRoot: fs.realpathSync(targetLedgerRoot),
+  }));
+  assert.equal(result.status, "promoted", result.reason);
+  assert.deepEqual({ apk: directoryMetadata(apkDirectory), spec: directoryMetadata(specDirectory) }, before,
+    "shared-root promotion must not stage, link, or unlink inside native CAS directories");
+  assert.deepEqual(temporaryNames(apkDirectory), []);
+  assert.deepEqual(temporaryNames(specDirectory), []);
+});
+
+test("PROMOTE helper rejects same-path different-inode roots and retained child substitution", (t) => {
+  const scratch = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pico-portability-helper-probe-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const left = path.join(scratch, "left");
+  const right = path.join(scratch, "right");
+  const root = path.join(scratch, "root");
+  fs.mkdirSync(left);
+  fs.mkdirSync(right);
+  fs.mkdirSync(path.join(root, "child"), { recursive: true });
+  const probe = runHelperProbe(String.raw`
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("receipt_helper", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+class FakeRoot:
+    def __init__(self, fd):
+        self.path = "/same/canonical/path"
+        self.fd = fd
+        self.chain_ids = []
+
+left_fd = os.open(sys.argv[2], os.O_RDONLY | os.O_DIRECTORY)
+right_fd = os.open(sys.argv[3], os.O_RDONLY | os.O_DIRECTORY)
+try:
+    try:
+        module.reject_root_overlap({"sourceReceipt": FakeRoot(left_fd), "targetReceipt": FakeRoot(right_fd)})
+    except module.PortabilityError:
+        pass
+    else:
+        raise AssertionError("same locator with different descriptor identities was accepted")
+finally:
+    os.close(left_fd)
+    os.close(right_fd)
+
+root_path = os.path.realpath(sys.argv[4])
+root_stat = os.stat(root_path)
+opened = module.StoreRoot("probeRoot", {
+    "realPath": root_path,
+    "deviceId": str(root_stat.st_dev),
+    "inode": str(root_stat.st_ino),
+})
+try:
+    opened.open_dir(["child"])
+    os.rename(os.path.join(root_path, "child"), os.path.join(root_path, "moved"))
+    os.mkdir(os.path.join(root_path, "child"))
+    try:
+        opened.verify()
+    except module.PortabilityError:
+        pass
+    else:
+        raise AssertionError("retained child substitution was accepted")
+finally:
+    opened.close()
+
+saved_dir_fd = module.os.supports_dir_fd
+try:
+    module.os.supports_dir_fd = set()
+    try:
+        module.check_platform_apis()
+    except module.UnsupportedPortabilityError:
+        pass
+    else:
+        raise AssertionError("missing descriptor APIs were accepted")
+finally:
+    module.os.supports_dir_fd = saved_dir_fd
+`, [left, right, root]);
+  assert.equal(probe.status, 0, `${probe.stdout}\n${probe.stderr}`);
+});
+
+test("PROMOTE helper JSON parser rejects non-finite numbers and lone surrogates recursively", () => {
+  const probe = runHelperProbe(String.raw`
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("receipt_helper", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+cases = [
+    b'{"value":NaN}',
+    b'{"value":Infinity}',
+    b'{"value":-Infinity}',
+    b'{"value":1e9999}',
+    b'{"nested":[{"value":"\\ud800"}]}',
+    b'{"\\udfff":"value"}',
+]
+for raw in cases:
+    try:
+        module.parse_json_bytes(raw, 1024, "probe")
+    except module.PortabilityError:
+        continue
+    raise AssertionError("strict parser accepted %r" % raw)
+`);
+  assert.equal(probe.status, 0, `${probe.stdout}\n${probe.stderr}`);
+});
+
+test("portable historical helper responses require exact canonical stdout bytes", async (t) => {
+  const fixture = await createPortableFixture(t, { app: "com.example.stdout_framing" });
+  const target = promotionRoots(fixture);
+  const responses = [
+    '{ "protocol": "pico.receipt-portability-helper", "version": 1, "status": "error", "operation": "inspect", "reason": "fake helper failure" }\n',
+    '{"operation":"inspect","protocol":"pico.receipt-portability-helper","reason":"first","reason":"duplicate helper failure","status":"error","version":1}\n',
+  ];
+  const previous = process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+  try {
+    for (const [index, response] of responses.entries()) {
+      await t.test(`noncanonical response ${index + 1}`, async () => {
+        const fake = path.join(fixture.scratch, `fake-python-${index}.py`);
+        const encoded = Buffer.from(response, "utf8").toString("base64");
+        fs.writeFileSync(fake, `#!${resolvedPython3()}\nimport base64, sys\nsys.stdin.buffer.read()\nsys.stdout.buffer.write(base64.b64decode("${encoded}"))\n`, { mode: 0o700 });
+        process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = fake;
+        const result = await portable.readPortableRunReceipt(
+          fixture.payload.app,
+          HASH_A,
+          HASH_B,
+          { rootDir: target.targetReceiptRoot, ledgerDir: target.targetLedgerRoot },
+        );
+        assert.equal(result.status, "invalid");
+        assert.match(result.issues.join("\n"), /invalid response|canonical stdout/i);
+      });
+    }
+  } finally {
+    if (previous === undefined) delete process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+    else process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = previous;
+  }
+});
+
+test("PROMOTE accepts a valid committed winner from a different tool version", async (t) => {
+  const promoted = await publishPromotion(t, "different-tool-winner");
+  const manifest = JSON.parse(fs.readFileSync(promoted.paths.manifest, "utf8"));
+  manifest.recordedAt = "2026-08-31T23:59:59.999Z";
+  manifest.toolVersion = "99.1.0";
+  manifest.auditId = auditIdOf({ promotionId: manifest.promotionId, recordedAt: manifest.recordedAt, toolVersion: manifest.toolVersion });
+  fs.writeFileSync(promoted.paths.manifest, `${canonicalJson(manifest)}\n`);
+  const rerun = await portable.promoteNativeRunReceipt(promoted.input);
+  assert.equal(rerun.status, "promoted", rerun.reason);
+  assert.equal(rerun.recordedAt, manifest.recordedAt);
+  assert.equal(rerun.auditId, manifest.auditId);
+});
+
+test("PROMOTE resumes uncommitted dependency publication only while the manifest is absent", async (t) => {
+  const promoted = await publishPromotion(t, "resume-without-manifest");
+  fs.unlinkSync(promoted.paths.manifest);
+  const before = await portable.readPortableRunReceipt(
+    promoted.fixture.payload.app,
+    promoted.promoted.portableReceiptId,
+    promoted.promoted.promotionId,
+    { rootDir: promoted.target.targetReceiptRoot, ledgerDir: promoted.target.targetLedgerRoot },
+  );
+  assert.equal(before.status, "invalid");
+  const resumed = await portable.promoteNativeRunReceipt(promoted.input);
+  assert.equal(resumed.status, "promoted", resumed.reason);
+  assert.equal(fs.existsSync(promoted.paths.manifest), true);
+});
+
+test("portable historical reads reject manifest target-root field drift", async (t) => {
+  const promoted = await publishPromotion(t, "manifest-root-drift");
+  const manifest = JSON.parse(fs.readFileSync(promoted.paths.manifest, "utf8"));
+  manifest.core.targetRoots.receipt.inode = manifest.core.targetRoots.receipt.inode === "0" ? "1" : "0";
+  fs.writeFileSync(promoted.paths.manifest, `${canonicalJson(manifest)}\n`);
+  const read = await portable.readPortableRunReceipt(
+    promoted.fixture.payload.app,
+    promoted.promoted.portableReceiptId,
+    promoted.promoted.promotionId,
+    { rootDir: promoted.target.targetReceiptRoot, ledgerDir: promoted.target.targetLedgerRoot },
+  );
+  assert.equal(read.status, "invalid");
+  assert.match(read.issues.join("\n"), /root|identity|promotion|manifest/i);
 });

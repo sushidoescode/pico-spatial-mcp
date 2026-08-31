@@ -10,6 +10,7 @@ import base64
 import binascii
 import hashlib
 import json
+import math
 import os
 import re
 import resource
@@ -70,6 +71,29 @@ def strict_pairs(label):
     return hook
 
 
+def reject_json_constant(value):
+    fail("non-finite JSON number %s is prohibited" % value)
+
+
+def validate_json_domain(value, label):
+    if isinstance(value, str):
+        if any(0xd800 <= ord(character) <= 0xdfff for character in value):
+            fail("%s contains a lone Unicode surrogate" % label)
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            fail("%s contains a non-finite JSON number" % label)
+        return
+    if isinstance(value, list):
+        for item in value:
+            validate_json_domain(item, label)
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            validate_json_domain(key, label)
+            validate_json_domain(item, label)
+
+
 def parse_json_bytes(raw, maximum, label, canonical=False):
     if len(raw) > maximum:
         fail("%s exceeds the %d-byte limit" % (label, maximum))
@@ -80,11 +104,12 @@ def parse_json_bytes(raw, maximum, label, canonical=False):
     except UnicodeDecodeError:
         fail("%s is not UTF-8" % label)
     try:
-        value = json.loads(text, object_pairs_hook=strict_pairs(label))
+        value = json.loads(text, object_pairs_hook=strict_pairs(label), parse_constant=reject_json_constant)
     except PortabilityError:
         raise
     except Exception as error:
         fail("%s is not valid JSON: %s" % (label, error))
+    validate_json_domain(value, label)
     return value
 
 
@@ -340,6 +365,20 @@ def read_final(store, parts, maximum, label, positive=False, retain_bytes=True):
         snapshot.close()
 
 
+def final_exists(store, parts, label):
+    try:
+        parent = store.open_dir(parts[:-1], create=False)
+    except FileNotFoundError:
+        return False
+    try:
+        entry = os.stat(parts[-1], dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(entry.st_mode):
+        fail("existing %s is not a no-follow regular file" % label)
+    return True
+
+
 def write_all(fd, raw):
     offset = 0
     while offset < len(raw):
@@ -437,6 +476,13 @@ def publish_stream(store, parts, source, expected_sha, expected_size, label):
                 pass
             except OSError as error:
                 fail("temporary name for %s could not be cleaned: %s" % (label, error))
+
+
+def rehash_snapshot(source, expected_sha, expected_size, label):
+    digest, _ = source._read(retain_bytes=False)
+    if digest != expected_sha or source.size != expected_size:
+        fail(label + " source changed during its independent second hash pass")
+    source.verify()
 
 
 def png_expected_bytes(width, height, bits_per_pixel, interlace):
@@ -615,12 +661,12 @@ def validate_manifest(raw, expected_core=None, expected_promotion=None):
     return manifest
 
 
-def inspect_targets(target_receipt, target_ledger, app, portable_id, promotion_id):
+def inspect_targets(target_receipt, target_ledger, app, portable_id, promotion_id, expected_core=None):
     # The manifest is the sole commit marker and must be opened before any dependent target.
     _, _, manifest_raw = read_final(
         target_receipt, ["promotions-v1", app, promotion_id + ".json"],
         MAX_MANIFEST_BYTES, "promotion manifest", retain_bytes=True)
-    manifest = validate_manifest(manifest_raw, expected_promotion=promotion_id)
+    manifest = validate_manifest(manifest_raw, expected_core=expected_core, expected_promotion=promotion_id)
     core = manifest["core"]
     if core["app"] != app or core["portableReceiptId"] != portable_id:
         fail("promotion manifest app/portable ID does not match the request")
@@ -726,9 +772,9 @@ def reject_root_overlap(named_roots):
             same_identity = (os.fstat(left.fd).st_dev, os.fstat(left.fd).st_ino) == (
                 os.fstat(right.fd).st_dev, os.fstat(right.fd).st_ino)
             allowed_equal = {left_name, right_name} == {"sourceReceipt", "targetReceipt"}
-            if same_path and not allowed_equal:
-                fail("store roots %s and %s must be distinct" % (left_name, right_name))
             if same_path:
+                if not allowed_equal or not same_identity:
+                    fail("store roots %s and %s must be distinct opened directories" % (left_name, right_name))
                 continue
             if same_identity:
                 fail("store roots %s and %s are non-identical aliases of one directory" % (left_name, right_name))
@@ -788,6 +834,15 @@ def do_promote(request):
         if portable["receiptId"] != manifest["core"]["portableReceiptId"]:
             fail("portable publication does not match the manifest")
 
+        manifest_parts = ["promotions-v1", app, manifest["promotionId"] + ".json"]
+        if final_exists(opened["targetReceipt"], manifest_parts, "promotion manifest"):
+            inspection = inspect_targets(opened["targetReceipt"], opened["targetLedger"], app,
+                                         portable["receiptId"], manifest["promotionId"],
+                                         expected_core=manifest["core"])
+            for root in opened.values():
+                root.verify()
+            return inspection
+
         receipt = Snapshot(opened["sourceReceipt"], ["native-v1", app, source_id + ".json"],
                            MAX_RECEIPT_BYTES, "source native receipt", retain_bytes=True)
         source_files.append(receipt)
@@ -818,10 +873,19 @@ def do_promote(request):
         if capture_facts != expected["capture"]:
             fail("source capture facts are mismatched")
 
-        publish_stream(opened["targetReceipt"], ["artifacts", "apk", expected["apk"]["sha256"] + ".apk"],
-                       apk, expected["apk"]["sha256"], expected["apk"]["bytes"], "target APK")
-        publish_bytes(opened["targetReceipt"], ["artifacts", "spec", expected["effectiveAppSpec"]["sha256"] + ".json"],
-                      spec.bytes, "target effective AppSpec")
+        shared_receipt_root = (opened["sourceReceipt"].path == opened["targetReceipt"].path and
+                               (os.fstat(opened["sourceReceipt"].fd).st_dev,
+                                os.fstat(opened["sourceReceipt"].fd).st_ino) ==
+                               (os.fstat(opened["targetReceipt"].fd).st_dev,
+                                os.fstat(opened["targetReceipt"].fd).st_ino))
+        if shared_receipt_root:
+            rehash_snapshot(apk, expected["apk"]["sha256"], expected["apk"]["bytes"], "shared-root APK")
+            spec.verify()
+        else:
+            publish_stream(opened["targetReceipt"], ["artifacts", "apk", expected["apk"]["sha256"] + ".apk"],
+                           apk, expected["apk"]["sha256"], expected["apk"]["bytes"], "target APK")
+            publish_bytes(opened["targetReceipt"], ["artifacts", "spec", expected["effectiveAppSpec"]["sha256"] + ".json"],
+                          spec.bytes, "target effective AppSpec")
         publish_bytes(opened["targetLedger"], ["artifacts", expected["capture"]["sha256"] + ".png"],
                       capture.bytes, "target capture")
         publish_bytes(opened["targetReceipt"], ["portable-lineage-v1", app, source_id + ".json"],
@@ -834,7 +898,11 @@ def do_promote(request):
             validate_manifest(existing, expected_core=proposed_value["core"],
                               expected_promotion=proposed_value["promotionId"])
 
-        publish_bytes(opened["targetReceipt"], ["promotions-v1", app, manifest["promotionId"] + ".json"],
+        for source in source_files:
+            source.verify()
+        for root in opened.values():
+            root.verify()
+        publish_bytes(opened["targetReceipt"], manifest_parts,
                       manifest_raw, "promotion manifest", existing_validator=validate_manifest_winner)
         inspection = inspect_targets(opened["targetReceipt"], opened["targetLedger"], app,
                                      portable["receiptId"], manifest["promotionId"])

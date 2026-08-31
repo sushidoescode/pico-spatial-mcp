@@ -500,6 +500,9 @@ async function runHelper(runtime: HelperRuntime, request: unknown, expectedOpera
         }
         parsed = JSON.parse(text);
         const response = helperResponseSchema.parse(parsed);
+        if (!raw.equals(Buffer.from(`${canonicalJson(response)}\n`, "utf8"))) {
+          throw new Error("stdout is not the canonical serialized helper response plus one newline");
+        }
         if (response.operation !== expectedOperation) throw new Error("helper operation did not match its request");
         return finish(response.status === "ok"
           ? { status: "ok", inspection: response.inspection }
@@ -697,7 +700,22 @@ export async function promoteNativeRunReceipt(inputValue: PromoteNativeRunReceip
   try {
     const lineageBytes = boundedFile(native.receiptPath, RUN_RECEIPT_MAX_BYTES, "source native receipt");
     const specBytes = boundedFile(native.receipt.source.effectiveAppSpec.artifactPath, EFFECTIVE_APP_SPEC_MAX_BYTES, "source effective AppSpec");
-    const sourceReceiptFileSha256 = sha256Bytes(lineageBytes);
+    const captureBytes = boundedFile(native.receipt.capture.artifactPath, MAX_CAPTURE_BYTES, "source capture");
+    const exactLineage = validateNativeRunReceiptLineageSnapshot({
+      app: input.app,
+      receiptId: input.sourceReceiptId,
+      receiptBytes: lineageBytes,
+      sourceReceiptRoot: input.sourceReceiptRoot,
+      sourceLedgerRoot: input.sourceLedgerRoot,
+      apk: { sha256: native.receipt.apk.sha256, bytes: native.receipt.apk.bytes },
+      effectiveAppSpecBytes: specBytes,
+      capture: validateCaptureBuffer(captureBytes, "source capture reread"),
+    });
+    if (exactLineage.status === "invalid") {
+      throw new Error(`source lineage reread is invalid: ${exactLineage.issues.join("; ")}`);
+    }
+    const exactReceipt = exactLineage.receipt;
+    const sourceReceiptFileSha256 = exactLineage.receiptFileSha256;
     const portablePayload = portableRunReceiptPayloadSchema.parse({
       kind: PORTABLE_RUN_RECEIPT_KIND,
       schemaVersion: PORTABLE_RUN_RECEIPT_SCHEMA_VERSION,
@@ -709,16 +727,16 @@ export async function promoteNativeRunReceipt(inputValue: PromoteNativeRunReceip
         fileSha256: sourceReceiptFileSha256,
       },
       artifacts: {
-        apk: { store: "receipt", algorithm: "sha256", sha256: native.receipt.apk.sha256, bytes: native.receipt.apk.bytes },
+        apk: { store: "receipt", algorithm: "sha256", sha256: exactReceipt.apk.sha256, bytes: exactReceipt.apk.bytes },
         effectiveAppSpec: {
           store: "receipt", algorithm: "sha256",
-          sha256: native.receipt.source.effectiveAppSpec.sha256,
-          bytes: native.receipt.source.effectiveAppSpec.bytes,
+          sha256: exactReceipt.source.effectiveAppSpec.sha256,
+          bytes: exactReceipt.source.effectiveAppSpec.bytes,
         },
         capture: {
-          store: "ledger", algorithm: "sha256", sha256: native.receipt.capture.sha256,
-          bytes: native.receipt.capture.bytes, width: native.receipt.capture.width,
-          height: native.receipt.capture.height, format: native.receipt.capture.format,
+          store: "ledger", algorithm: "sha256", sha256: exactReceipt.capture.sha256,
+          bytes: exactReceipt.capture.bytes, width: exactReceipt.capture.width,
+          height: exactReceipt.capture.height, format: exactReceipt.capture.format,
         },
       },
     });
