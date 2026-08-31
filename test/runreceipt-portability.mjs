@@ -5,6 +5,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
   auditIdOf,
   parsePortableRunReceipt,
@@ -58,6 +60,38 @@ function promotionInput(fixture, published, target) {
     sourceLedgerRoot: fs.realpathSync(fixture.ledgerDir),
     ...target,
   };
+}
+
+async function startPortableSurface(t, fixture, target, surface) {
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["dist/index.js"],
+    env: {
+      ...process.env,
+      HOME: fixture.scratch,
+      PICO_ADB: "/usr/bin/false",
+      PICO_MCP_CLI_POLICY: "disabled",
+      PICO_MCP_SURFACE: surface,
+      PICO_MCP_LEDGER_DIR: target.targetLedgerRoot,
+      PICO_MCP_RUN_RECEIPT_DIR: target.targetReceiptRoot,
+    },
+  });
+  const client = new Client({ name: `runreceipt-portability-${surface}`, version: "0.0.0" });
+  await client.connect(transport);
+  t.after(async () => client.close());
+  return async (name, args) => {
+    const response = await client.callTool({ name, arguments: args });
+    return JSON.parse(response.content[0].text);
+  };
+}
+
+function writePortablePicoNextBrief(fixture, id) {
+  const briefsDirectory = path.join(fixture.scratch, ".pico-mcp", "briefs");
+  fs.mkdirSync(briefsDirectory, { recursive: true });
+  fs.writeFileSync(path.join(briefsDirectory, `${id}.json`), JSON.stringify({
+    id,
+    brief: `golden recapture portability fixture ${id}`,
+  }));
 }
 
 function promotedPaths(fixture, published, promoted, target) {
@@ -1196,4 +1230,247 @@ test("portable historical reads reject manifest target-root field drift", async 
   );
   assert.equal(read.status, "invalid");
   assert.match(read.issues.join("\n"), /root|identity|promotion|manifest/i);
+});
+
+test("portable historical selection enforces namespace and aggregate candidate caps", () => {
+  assert.deepEqual(
+    portable.historicalRunReceiptCandidateLimitIssues({ native: 4_097, portable: 0, manifests: 0 }),
+    ["native-v1 namespace contains 4097 JSON candidates, exceeding the 4096 limit"],
+  );
+  assert.deepEqual(
+    portable.historicalRunReceiptCandidateLimitIssues({ native: 0, portable: 4_097, manifests: 0 }),
+    ["portable-v1 namespace contains 4097 JSON candidates, exceeding the 4096 limit"],
+  );
+  assert.deepEqual(
+    portable.historicalRunReceiptCandidateLimitIssues({ native: 0, portable: 0, manifests: 4_097 }),
+    ["promotions-v1 namespace contains 4097 JSON candidates, exceeding the 4096 limit"],
+  );
+  assert.deepEqual(
+    portable.historicalRunReceiptCandidateLimitIssues({ native: 4_096, portable: 4_096, manifests: 4_097 }),
+    [
+      "promotions-v1 namespace contains 4097 JSON candidates, exceeding the 4096 limit",
+      "historical receipt namespaces contain 12289 JSON candidates in total, exceeding the 12288 combined limit",
+    ],
+  );
+});
+
+test("portable historical selection groups only validated candidates with native precedence and deterministic ambiguity", () => {
+  const sourceReceiptId = "1".repeat(64);
+  const native = {
+    kind: "pico.native-run-receipt",
+    schemaVersion: 1,
+    receiptId: sourceReceiptId,
+    sourceReceiptId,
+    createdAt: "2026-08-14T12:00:00.000Z",
+  };
+  const projectionA = {
+    kind: "pico.portable-native-run-receipt",
+    schemaVersion: 1,
+    receiptId: "2".repeat(64),
+    sourceReceiptId,
+    promotionId: "3".repeat(64),
+    auditId: "4".repeat(64),
+    createdAt: "2026-08-14T12:00:00.000Z",
+  };
+  const projectionB = {
+    ...projectionA,
+    receiptId: "5".repeat(64),
+    promotionId: "6".repeat(64),
+    auditId: "7".repeat(64),
+  };
+  const newerSource = {
+    ...projectionA,
+    receiptId: "8".repeat(64),
+    sourceReceiptId: "9".repeat(64),
+    promotionId: "a".repeat(64),
+    auditId: "b".repeat(64),
+    createdAt: "2026-08-14T12:00:01.000Z",
+  };
+
+  const nativeWins = portable.selectValidatedHistoricalRunReceiptCandidates([projectionA, native]);
+  assert.equal(nativeWins.status, "valid");
+  assert.equal(nativeWins.receipt, native);
+
+  const newestGroupWins = portable.selectValidatedHistoricalRunReceiptCandidates([native, newerSource]);
+  assert.equal(newestGroupWins.status, "valid");
+  assert.equal(newestGroupWins.receipt, newerSource);
+
+  const ambiguous = portable.selectValidatedHistoricalRunReceiptCandidates([projectionB, projectionA]);
+  assert.equal(ambiguous.status, "invalid-store");
+  assert.deepEqual(ambiguous.issues, [
+    `source native receipt ${sourceReceiptId} has multiple valid portable projections: ${projectionA.receiptId}/${projectionA.promotionId}, ${projectionB.receiptId}/${projectionB.promotionId}`,
+  ]);
+});
+
+test("portable historical selection counts and reports sorted malformed JSON candidates", (t) => {
+  const scratch = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pico-portability-selection-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const rootDir = path.join(scratch, "receipt-store");
+  const ledgerDir = path.join(scratch, "ledger-store");
+  fs.mkdirSync(ledgerDir);
+  const app = "com.example.selection";
+  for (const [namespace, name] of [
+    ["native-v1", "z-native-malformed.json"],
+    ["portable-v1", "a-portable-malformed.json"],
+    ["promotions-v1", "m-promotion-malformed.json"],
+  ]) {
+    const directory = path.join(rootDir, namespace, app);
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, name), "{}\n");
+  }
+
+  const selected = portable.findHistoricalRunReceipt(app, { rootDir, ledgerDir });
+  assert.equal(selected.status, "none");
+  assert.deepEqual(selected.rejectedCandidates.map(({ namespace, receiptId }) => ({ namespace, receiptId })), [
+    { namespace: "native-v1", receiptId: "z-native-malformed" },
+    { namespace: "portable-v1", receiptId: "a-portable-malformed" },
+    { namespace: "promotions-v1", receiptId: "m-promotion-malformed" },
+  ]);
+  assert.ok(selected.rejectedCandidates.every((candidate) => /canonical|filename/i.test(candidate.issues.join("\n"))));
+});
+
+test("portable historical selection rejects two fully validated manifests for one native lineage", async (t) => {
+  const promoted = await publishPromotion(t, "ambiguous-selection");
+  const second = JSON.parse(fs.readFileSync(promoted.paths.manifest, "utf8"));
+  second.core.sourceRoots.receipt.inode = second.core.sourceRoots.receipt.inode === "0" ? "1" : "0";
+  second.promotionId = promotionIdOf(second.core);
+  second.auditId = auditIdOf({
+    promotionId: second.promotionId,
+    recordedAt: second.recordedAt,
+    toolVersion: second.toolVersion,
+  });
+  const secondPath = path.join(
+    promoted.target.targetReceiptRoot,
+    "promotions-v1",
+    promoted.fixture.payload.app,
+    `${second.promotionId}.json`,
+  );
+  fs.writeFileSync(secondPath, `${canonicalJson(second)}\n`);
+
+  const selected = portable.findHistoricalRunReceipt(promoted.fixture.payload.app, {
+    rootDir: promoted.target.targetReceiptRoot,
+    ledgerDir: promoted.target.targetLedgerRoot,
+  });
+  assert.equal(selected.status, "invalid-store");
+  assert.match(selected.issues.join("\n"), /multiple valid portable projections/i);
+  assert.match(selected.issues.join("\n"), new RegExp(promoted.promoted.promotionId));
+  assert.match(selected.issues.join("\n"), new RegExp(second.promotionId));
+});
+
+test("golden recapture promotes a session ledger receipt into durable historical-only provenance", async (t) => {
+  const id = "golden_recap_portable";
+  const fixture = await createPortableFixture(t, {
+    app: `com.fleet.${id}`,
+    projectRelativeDir: `AndroidStudioProjects/fleet-${id}-native`,
+  });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const target = promotionRoots(fixture, "golden-durable");
+  writePortablePicoNextBrief(fixture, id);
+  const fullCall = await startPortableSurface(t, fixture, target, "full");
+
+  const nativeRecord = await fullCall("record_verification", {
+    app: fixture.payload.app,
+    claim: "synthetic original session-root rejection fixture",
+    evidenceType: "vision_verified",
+    artifactPath: fixture.captureSourcePath,
+    attestation: "Synthetic fixture only; no rendered-frame observation is claimed.",
+    runReceiptId: published.receiptId,
+  });
+  assert.equal(nativeRecord.status, "rejected");
+  assert.match(nativeRecord.reason, /receipt|exist|invalid|candidate|capture/i);
+  const targetLedgerPath = path.join(target.targetLedgerRoot, `${fixture.payload.app}.json`);
+  assert.equal(fs.existsSync(targetLedgerPath), false, "a rejected native binding must not create a durable ledger");
+
+  const promoted = await fullCall("record_verification", {
+    action: "promote",
+    ...promotionInput(fixture, published, target),
+  });
+  assert.equal(promoted.status, "promoted", promoted.reason);
+  assert.equal(fs.existsSync(targetLedgerPath), false, "promotion must create neither a ledger row nor a LOOK");
+  assert.equal((await fullCall("ledger_report", { app: fixture.payload.app })).ledger.length, 0);
+
+  const doorCall = await startPortableSurface(t, fixture, target, "doors");
+  const beforeRecord = await doorCall("pico_next", {});
+  const pending = beforeRecord.state.briefs.find((brief) => brief.id === id);
+  assert.equal(pending.state, "built-needs-look");
+  assert.equal(pending.capture, promoted.captureArtifactPath);
+  assert.equal(pending.receiptId, promoted.portableReceiptId);
+  assert.equal(pending.promotionId, promoted.promotionId);
+  const suggestedRecord = [beforeRecord.nextAction, ...beforeRecord.alternatives]
+    .find((action) => action?.door === "pico_record" && action.argsExample?.app === fixture.payload.app);
+  assert.ok(suggestedRecord, JSON.stringify(beforeRecord, null, 2));
+  assert.deepEqual({
+    artifactPath: suggestedRecord.argsExample.artifactPath,
+    runReceiptId: suggestedRecord.argsExample.runReceiptId,
+    runReceiptPromotionId: suggestedRecord.argsExample.runReceiptPromotionId,
+  }, {
+    artifactPath: promoted.captureArtifactPath,
+    runReceiptId: promoted.portableReceiptId,
+    runReceiptPromotionId: promoted.promotionId,
+  });
+
+  const recorded = await fullCall("record_verification", {
+    app: fixture.payload.app,
+    claim: "synthetic durable portable receipt binding fixture",
+    evidenceType: "vision_verified",
+    artifactPath: promoted.captureArtifactPath,
+    attestation: "Synthetic same-byte fixture only; no rendered-frame observation is claimed.",
+    runReceiptId: promoted.portableReceiptId,
+    runReceiptPromotionId: promoted.promotionId,
+  });
+  assert.equal(recorded.status, "recorded", recorded.reason);
+  const expectedBinding = {
+    kind: "pico.portable-native-run-receipt",
+    schemaVersion: 1,
+    receiptId: promoted.portableReceiptId,
+    sourceReceiptId: published.receiptId,
+    promotionId: promoted.promotionId,
+    auditId: promoted.auditId,
+    captureSha256: fixture.payload.capture.sha256,
+  };
+  assert.deepEqual(recorded.entry.runReceipt, expectedBinding);
+  assert.deepEqual((await fullCall("ledger_report", { app: fixture.payload.app })).ledger[0].runReceipt, expectedBinding);
+
+  fs.rmSync(fixture.rootDir, { recursive: true });
+  fs.rmSync(fixture.ledgerDir, { recursive: true });
+  const historicalRead = await portable.readPortableRunReceipt(
+    fixture.payload.app,
+    promoted.portableReceiptId,
+    promoted.promotionId,
+    { rootDir: target.targetReceiptRoot, ledgerDir: target.targetLedgerRoot },
+  );
+  assert.equal(historicalRead.status, "valid", historicalRead.issues?.join("\n"));
+  const selected = portable.findHistoricalRunReceipt(fixture.payload.app, {
+    rootDir: target.targetReceiptRoot,
+    ledgerDir: target.targetLedgerRoot,
+  });
+  assert.equal(selected.status, "valid", selected.issues?.join("\n"));
+  assert.equal(selected.receipt.kind, "pico.portable-native-run-receipt");
+  assert.equal(selected.receipt.receiptId, promoted.portableReceiptId);
+  assert.equal(selected.receipt.promotionId, promoted.promotionId);
+  assert.equal(selected.receipt.captureArtifactPath, promoted.captureArtifactPath);
+  assert.deepEqual((await fullCall("ledger_report", { app: fixture.payload.app })).ledger[0].runReceipt, expectedBinding);
+
+  const afterSourceDeletion = await doorCall("pico_next", {});
+  const recordedState = afterSourceDeletion.state.briefs.find((brief) => brief.id === id);
+  assert.equal(recordedState.state, "vision-recorded");
+  assert.equal(recordedState.capture, promoted.captureArtifactPath);
+  assert.equal(recordedState.receiptId, promoted.portableReceiptId);
+  assert.equal(recordedState.promotionId, promoted.promotionId);
+
+  const current = store.findCurrentNativeRunReceipt(fixture.payload.app, fixture.projectDir, {
+    rootDir: target.targetReceiptRoot,
+    ledgerDir: target.targetLedgerRoot,
+  });
+  assert.deepEqual(current, { status: "none", rejectedCandidates: [] });
+  const ship = await fullCall("ship_checklist", {
+    app: fixture.payload.app,
+    lane: "native",
+    projectDir: fixture.projectDir,
+  });
+  assert.deepEqual(ship.receipt, { status: "no-current-receipt", rejectedCandidates: [] });
+  assert.match(ship.verdict, /^NOT READY/);
+  assert.ok(ship.blockers.some((blocker) => /no verified build receipt/i.test(blocker)));
+  assert.ok(ship.blockers.some((blocker) => /release/i.test(blocker)));
+  assert.ok(ship.blockers.some((blocker) => /sign|store/i.test(blocker)));
 });

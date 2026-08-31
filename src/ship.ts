@@ -6,7 +6,8 @@ import * as os from "node:os";
 import { okJson } from "./util.js";
 import { isPassingDeviceEvidence, isPassingDeviceEvidenceForReceipt, readLedger } from "./ledger.js";
 import { validateCapture } from "./evidence.js";
-import { findCurrentNativeRunReceipt, validateNativeRunReceiptCaptureBinding } from "./runreceiptstore.js";
+import { findCurrentNativeRunReceipt, RUN_RECEIPT_KIND } from "./runreceiptstore.js";
+import { validateHistoricalRunReceiptCaptureBinding } from "./runreceiptportable.js";
 
 export type NativeShipReceiptSummary =
   | {
@@ -69,10 +70,7 @@ export function registerShipTools(server: McpServer) {
       let entries: any[] = [];
       let ledgerError: string | null = null;
       try {
-        entries = readLedger(app, (bindingApp, claimedBinding, artifactPath) =>
-          claimedBinding.kind === "pico.native-run-receipt"
-            ? validateNativeRunReceiptCaptureBinding(bindingApp, claimedBinding.receiptId, artifactPath)
-            : { status: "invalid", reason: "ship_checklist consumes native run receipt bindings only" }).effectiveEntries;
+        entries = readLedger(app, validateHistoricalRunReceiptCaptureBinding).effectiveEntries;
       } catch (error: any) { ledgerError = error?.message ?? String(error); }
       const byType: Record<string, number> = {};
       for (const e of entries) byType[e.evidenceType] = (byType[e.evidenceType] ?? 0) + 1;
@@ -118,6 +116,8 @@ export function registerShipTools(server: McpServer) {
           }
           const linkedLook = entries.find((entry) =>
             (isPositiveVisionEvidence(entry) || isPassingDeviceEvidenceForReceipt(entry, selection.receipt.runtime))
+            && entry.runReceipt?.kind === RUN_RECEIPT_KIND
+            && entry.runReceipt?.schemaVersion === 1
             && entry.runReceipt?.receiptId === selection.receipt.receiptId
             && entry.runReceipt?.captureSha256 === selection.receipt.capture.sha256
             && entry.capture?.sha256 === selection.receipt.capture.sha256,

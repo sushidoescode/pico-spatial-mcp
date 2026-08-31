@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import * as store from "../dist/runreceiptstore.js";
+import * as portable from "../dist/runreceiptportable.js";
 import {
   MANUAL_NON_EMULATOR_RUNTIME,
   createRunReceiptFixture,
@@ -201,6 +203,63 @@ test("native ship has no current receipt when no producer receipt was published"
   const ship = await callJson("ship_checklist", shipArgs(fixture));
 
   assert.deepEqual(ship.receipt, { status: "no-current-receipt", rejectedCandidates: [] });
+  assertReceiptBlocker(ship, true);
+  assertReleaseBoundary(ship);
+});
+
+test("portable provenance remains reportable while ship stays native-current-only", async (t) => {
+  const owned = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pico-portable-ship-roots-"));
+  t.after(() => fs.rmSync(owned, { recursive: true, force: true }));
+  const fixture = await createRunReceiptFixture(t, store, {
+    app: "com.example.portable_ship",
+    rootDir: path.join(owned, "receipt-store"),
+    ledgerDir: path.join(owned, "ledger-store"),
+  });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const targetReceiptPath = path.join(fixture.scratch, "portable-ship-receipts");
+  const targetLedgerPath = path.join(fixture.scratch, "portable-ship-ledger");
+  fs.mkdirSync(targetReceiptPath);
+  fs.mkdirSync(targetLedgerPath);
+  const targetReceiptRoot = fs.realpathSync(targetReceiptPath);
+  const targetLedgerRoot = fs.realpathSync(targetLedgerPath);
+  const promoted = await portable.promoteNativeRunReceipt({
+    app: fixture.payload.app,
+    sourceReceiptId: published.receiptId,
+    sourceReceiptRoot: fs.realpathSync(fixture.rootDir),
+    sourceLedgerRoot: fs.realpathSync(fixture.ledgerDir),
+    targetReceiptRoot,
+    targetLedgerRoot,
+  });
+  assert.equal(promoted.status, "promoted", promoted.reason);
+
+  const targetView = { ...fixture, rootDir: targetReceiptRoot, ledgerDir: targetLedgerRoot };
+  const callJson = await startSurface(t, targetView, "full");
+  const recorded = await callJson("record_verification", {
+    app: fixture.payload.app,
+    claim: "synthetic portable ship-boundary fixture",
+    evidenceType: "vision_verified",
+    artifactPath: promoted.captureArtifactPath,
+    attestation: "Synthetic same-byte fixture only; no rendered-frame observation is claimed.",
+    runReceiptId: promoted.portableReceiptId,
+    runReceiptPromotionId: promoted.promotionId,
+  });
+  assert.equal(recorded.status, "recorded", recorded.reason);
+  fs.rmSync(fixture.rootDir, { recursive: true });
+  fs.rmSync(fixture.ledgerDir, { recursive: true });
+
+  const report = await callJson("ledger_report", { app: fixture.payload.app });
+  assert.deepEqual(report.ledger[0].runReceipt, {
+    kind: "pico.portable-native-run-receipt",
+    schemaVersion: 1,
+    receiptId: promoted.portableReceiptId,
+    sourceReceiptId: published.receiptId,
+    promotionId: promoted.promotionId,
+    auditId: promoted.auditId,
+    captureSha256: fixture.payload.capture.sha256,
+  });
+  const ship = await callJson("ship_checklist", shipArgs(fixture));
+  assert.deepEqual(ship.receipt, { status: "no-current-receipt", rejectedCandidates: [] });
+  assert.equal(ship.evidenceSummary.vision_verified, 1, "historical portable evidence remains honestly reported");
   assertReceiptBlocker(ship, true);
   assertReleaseBoundary(ship);
 });

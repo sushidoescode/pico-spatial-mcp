@@ -11,8 +11,10 @@ import {
   APK_ARTIFACT_DIRECTORY,
   APK_MAX_BYTES,
   EFFECTIVE_APP_SPEC_MAX_BYTES,
+  NATIVE_RECEIPT_DIRECTORY,
   RUN_RECEIPT_KIND,
   RUN_RECEIPT_MAX_BYTES,
+  RUN_RECEIPT_MAX_PER_APP,
   SPEC_ARTIFACT_DIRECTORY,
   readNativeRunReceipt,
   runReceiptDirectory,
@@ -33,6 +35,9 @@ export const PORTABLE_RECEIPT_DIRECTORY = "portable-v1" as const;
 export const PROMOTION_DIRECTORY = "promotions-v1" as const;
 export const PORTABLE_RUN_RECEIPT_MAX_BYTES = RUN_RECEIPT_MAX_BYTES;
 export const PROMOTION_MANIFEST_MAX_BYTES = 64 * 1024;
+export const PORTABLE_RUN_RECEIPT_MAX_PER_APP = 4_096;
+export const PROMOTION_MANIFEST_MAX_PER_APP = 4_096;
+export const HISTORICAL_RUN_RECEIPT_MAX_SCANNED_PER_APP = 12_288;
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const ANDROID_PACKAGE_PATTERN = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/;
@@ -202,6 +207,52 @@ export type PortableRunReceiptValidation =
 export type RunReceiptCaptureBindingResult =
   | { status: "valid"; binding: RunReceiptBinding; receiptRuntime: ReceiptRuntimeIdentity }
   | { status: "invalid"; reason: string };
+export type HistoricalRunReceipt =
+  | {
+      kind: typeof RUN_RECEIPT_KIND;
+      schemaVersion: 1;
+      receiptId: string;
+      sourceReceiptId: string;
+      createdAt: string;
+      receiptPath: string;
+      apkArtifactPath: string;
+      effectiveAppSpecArtifactPath: string;
+      captureArtifactPath: string;
+      captureSha256: string;
+      receiptRuntime: ReceiptRuntimeIdentity;
+      binding: NativeLedgerBinding;
+      nativeReceipt: NativeRunReceipt;
+    }
+  | {
+      kind: typeof PORTABLE_RUN_RECEIPT_KIND;
+      schemaVersion: 1;
+      receiptId: string;
+      sourceReceiptId: string;
+      promotionId: string;
+      auditId: string;
+      createdAt: string;
+      receiptPath: string;
+      lineageReceiptPath: string;
+      promotionManifestPath: string;
+      apkArtifactPath: string;
+      effectiveAppSpecArtifactPath: string;
+      captureArtifactPath: string;
+      captureSha256: string;
+      receiptRuntime: ReceiptRuntimeIdentity;
+      binding: PortableLedgerBinding;
+      portableReceipt: PortableRunReceipt;
+      promotionManifest: PromotionManifest;
+      lineageReceipt: NativeRunReceipt;
+    };
+export type HistoricalRunReceiptCandidateIssue = {
+  namespace: typeof NATIVE_RECEIPT_DIRECTORY | typeof PORTABLE_RECEIPT_DIRECTORY | typeof PROMOTION_DIRECTORY;
+  receiptId: string;
+  issues: string[];
+};
+export type HistoricalRunReceiptSelection =
+  | { status: "valid"; receipt: HistoricalRunReceipt; rejectedCandidates: HistoricalRunReceiptCandidateIssue[] }
+  | { status: "none"; rejectedCandidates: HistoricalRunReceiptCandidateIssue[] }
+  | { status: "invalid-store"; issues: string[] };
 
 function domainSeparatedId(domain: string, value: unknown): string {
   return crypto.createHash("sha256")
@@ -933,6 +984,276 @@ export function readPortableRunReceiptSync(
   }
 }
 
+type HistoricalCandidateCounts = { native: number; portable: number; manifests: number };
+type HistoricalNamespace = HistoricalRunReceiptCandidateIssue["namespace"];
+type ScannedNamespace = {
+  namespace: HistoricalNamespace;
+  directory: string;
+  candidates: fs.Dirent[];
+};
+
+/** Pure limit check used after all three namespaces have been counted. Keeping this separate makes
+ * the aggregate rule testable without manufacturing twelve thousand artifact-bearing receipts. */
+export function historicalRunReceiptCandidateLimitIssues(counts: HistoricalCandidateCounts): string[] {
+  for (const [name, value] of Object.entries(counts)) {
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} historical candidate count must be a non-negative safe integer`);
+  }
+  const issues: string[] = [];
+  if (counts.native > RUN_RECEIPT_MAX_PER_APP) {
+    issues.push(`${NATIVE_RECEIPT_DIRECTORY} namespace contains ${counts.native} JSON candidates, exceeding the ${RUN_RECEIPT_MAX_PER_APP} limit`);
+  }
+  if (counts.portable > PORTABLE_RUN_RECEIPT_MAX_PER_APP) {
+    issues.push(`${PORTABLE_RECEIPT_DIRECTORY} namespace contains ${counts.portable} JSON candidates, exceeding the ${PORTABLE_RUN_RECEIPT_MAX_PER_APP} limit`);
+  }
+  if (counts.manifests > PROMOTION_MANIFEST_MAX_PER_APP) {
+    issues.push(`${PROMOTION_DIRECTORY} namespace contains ${counts.manifests} JSON candidates, exceeding the ${PROMOTION_MANIFEST_MAX_PER_APP} limit`);
+  }
+  const total = counts.native + counts.portable + counts.manifests;
+  if (total > HISTORICAL_RUN_RECEIPT_MAX_SCANNED_PER_APP) {
+    issues.push(`historical receipt namespaces contain ${total} JSON candidates in total, exceeding the ${HISTORICAL_RUN_RECEIPT_MAX_SCANNED_PER_APP} combined limit`);
+  }
+  return issues;
+}
+
+/** Choose only among candidates already accepted by their kind-specific full validator. Native
+ * candidates at these roots win inside their source group; portable-only ambiguity fails closed. */
+export function selectValidatedHistoricalRunReceiptCandidates(
+  candidates: HistoricalRunReceipt[],
+  rejectedCandidates: HistoricalRunReceiptCandidateIssue[] = [],
+): HistoricalRunReceiptSelection {
+  const groups = new Map<string, HistoricalRunReceipt[]>();
+  for (const candidate of candidates) {
+    const group = groups.get(candidate.sourceReceiptId) ?? [];
+    group.push(candidate);
+    groups.set(candidate.sourceReceiptId, group);
+  }
+
+  const winners: HistoricalRunReceipt[] = [];
+  const ambiguityIssues: string[] = [];
+  for (const sourceReceiptId of [...groups.keys()].sort()) {
+    const group = groups.get(sourceReceiptId) ?? [];
+    const native = group
+      .filter((candidate) => candidate.kind === RUN_RECEIPT_KIND)
+      .sort((left, right) => left.receiptId.localeCompare(right.receiptId));
+    if (native.length) {
+      winners.push(native[0]);
+      continue;
+    }
+    const projections = group
+      .filter((candidate): candidate is Extract<HistoricalRunReceipt, { kind: typeof PORTABLE_RUN_RECEIPT_KIND }> =>
+        candidate.kind === PORTABLE_RUN_RECEIPT_KIND)
+      .sort((left, right) => left.receiptId.localeCompare(right.receiptId) || left.promotionId.localeCompare(right.promotionId));
+    if (projections.length === 1) {
+      winners.push(projections[0]);
+    } else if (projections.length > 1) {
+      ambiguityIssues.push(`source native receipt ${sourceReceiptId} has multiple valid portable projections: ${projections
+        .map((candidate) => `${candidate.receiptId}/${candidate.promotionId}`).join(", ")}`);
+    }
+  }
+  if (ambiguityIssues.length) return { status: "invalid-store", issues: ambiguityIssues };
+  winners.sort((left, right) => {
+    const created = Date.parse(right.createdAt) - Date.parse(left.createdAt);
+    return created || left.sourceReceiptId.localeCompare(right.sourceReceiptId);
+  });
+  return winners.length
+    ? { status: "valid", receipt: winners[0], rejectedCandidates }
+    : { status: "none", rejectedCandidates };
+}
+
+function scanHistoricalNamespace(
+  receiptRoot: string,
+  namespace: HistoricalNamespace,
+  app: string,
+): { scan?: ScannedNamespace; issue?: string } {
+  const directory = path.join(receiptRoot, namespace, app);
+  try {
+    const stats = fs.lstatSync(directory);
+    if (!stats.isDirectory() || stats.isSymbolicLink()) {
+      return { issue: `${namespace} app path '${directory}' is not a no-follow directory` };
+    }
+    const candidates = fs.readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => entry.name.endsWith(".json"))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    return { scan: { namespace, directory, candidates } };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { scan: { namespace, directory, candidates: [] } };
+    return { issue: `${namespace} app directory could not be read: ${issueText(error)}` };
+  }
+}
+
+function candidateIssue(namespace: HistoricalNamespace, receiptId: string, ...issues: string[]): HistoricalRunReceiptCandidateIssue {
+  return { namespace, receiptId, issues };
+}
+
+function normalizedNativeHistoricalReceipt(
+  receipt: NativeRunReceipt,
+  receiptPath: string,
+): Extract<HistoricalRunReceipt, { kind: typeof RUN_RECEIPT_KIND }> {
+  const binding: NativeLedgerBinding = {
+    kind: RUN_RECEIPT_KIND,
+    schemaVersion: 1,
+    receiptId: receipt.receiptId,
+    captureSha256: receipt.capture.sha256,
+  };
+  return {
+    kind: RUN_RECEIPT_KIND,
+    schemaVersion: 1,
+    receiptId: receipt.receiptId,
+    sourceReceiptId: receipt.receiptId,
+    createdAt: receipt.createdAt,
+    receiptPath,
+    apkArtifactPath: receipt.apk.artifactPath,
+    effectiveAppSpecArtifactPath: receipt.source.effectiveAppSpec.artifactPath,
+    captureArtifactPath: receipt.capture.artifactPath,
+    captureSha256: receipt.capture.sha256,
+    receiptRuntime: {
+      serial: receipt.runtime.serial,
+      model: receipt.runtime.model,
+      fingerprint: receipt.runtime.fingerprint,
+      bootQemu: receipt.runtime.bootQemu,
+    },
+    binding,
+    nativeReceipt: receipt,
+  };
+}
+
+function normalizedPortableHistoricalReceipt(
+  inspected: Extract<PortableRunReceiptValidation, { status: "valid" }>,
+): Extract<HistoricalRunReceipt, { kind: typeof PORTABLE_RUN_RECEIPT_KIND }> {
+  const binding: PortableLedgerBinding = {
+    kind: PORTABLE_RUN_RECEIPT_KIND,
+    schemaVersion: 1,
+    receiptId: inspected.receipt.receiptId,
+    sourceReceiptId: inspected.receipt.sourceReceipt.receiptId,
+    promotionId: inspected.manifest.promotionId,
+    auditId: inspected.manifest.auditId,
+    captureSha256: inspected.receipt.artifacts.capture.sha256,
+  };
+  return {
+    kind: PORTABLE_RUN_RECEIPT_KIND,
+    schemaVersion: 1,
+    receiptId: inspected.receipt.receiptId,
+    sourceReceiptId: inspected.receipt.sourceReceipt.receiptId,
+    promotionId: inspected.manifest.promotionId,
+    auditId: inspected.manifest.auditId,
+    createdAt: inspected.lineageReceipt.createdAt,
+    receiptPath: inspected.portableReceiptPath,
+    lineageReceiptPath: inspected.lineageReceiptPath,
+    promotionManifestPath: inspected.promotionManifestPath,
+    apkArtifactPath: inspected.apkArtifactPath,
+    effectiveAppSpecArtifactPath: inspected.effectiveAppSpecArtifactPath,
+    captureArtifactPath: inspected.captureArtifactPath,
+    captureSha256: inspected.receipt.artifacts.capture.sha256,
+    receiptRuntime: {
+      serial: inspected.lineageReceipt.runtime.serial,
+      model: inspected.lineageReceipt.runtime.model,
+      fingerprint: inspected.lineageReceipt.runtime.fingerprint,
+      bootQemu: inspected.lineageReceipt.runtime.bootQemu,
+    },
+    binding,
+    portableReceipt: inspected.receipt,
+    promotionManifest: inspected.manifest,
+    lineageReceipt: inspected.lineageReceipt,
+  };
+}
+
+/** Bounded historical discovery. Discovery bytes are untrusted: every portable winner is accepted
+ * only after readPortableRunReceiptSync performs descriptor-relative inspection and full target
+ * rehash. Recorded source roots are parsed as hash-bound history and are never opened here. */
+export function findHistoricalRunReceipt(
+  appValue: string,
+  options: ReceiptStoreOptions = {},
+): HistoricalRunReceiptSelection {
+  let app: string;
+  try {
+    app = appSchema.parse(appValue);
+  } catch (error) {
+    return { status: "invalid-store", issues: [issueText(error)] };
+  }
+  const receiptRoot = options.rootDir ? path.resolve(options.rootDir) : runReceiptDirectory();
+  const scans = [NATIVE_RECEIPT_DIRECTORY, PORTABLE_RECEIPT_DIRECTORY, PROMOTION_DIRECTORY]
+    .map((namespace) => scanHistoricalNamespace(receiptRoot, namespace, app));
+  const scanIssues = scans.flatMap((result) => result.issue ? [result.issue] : []);
+  if (scanIssues.length) return { status: "invalid-store", issues: scanIssues };
+  const [nativeScan, portableScan, manifestScan] = scans.map((result) => result.scan as ScannedNamespace);
+  const limitIssues = historicalRunReceiptCandidateLimitIssues({
+    native: nativeScan.candidates.length,
+    portable: portableScan.candidates.length,
+    manifests: manifestScan.candidates.length,
+  });
+  if (limitIssues.length) return { status: "invalid-store", issues: limitIssues };
+
+  const rejectedCandidates: HistoricalRunReceiptCandidateIssue[] = [];
+  const validCandidates: HistoricalRunReceipt[] = [];
+  for (const candidate of nativeScan.candidates) {
+    const receiptId = candidate.name.slice(0, -".json".length);
+    if (!candidate.isFile() || !SHA256_PATTERN.test(receiptId)) {
+      rejectedCandidates.push(candidateIssue(NATIVE_RECEIPT_DIRECTORY, receiptId, "candidate filename is not a canonical receipt ID JSON file"));
+      continue;
+    }
+    const read = readNativeRunReceipt(app, receiptId, { ...options, mode: "historical" });
+    if (read.status === "invalid") rejectedCandidates.push(candidateIssue(NATIVE_RECEIPT_DIRECTORY, receiptId, ...read.issues));
+    else validCandidates.push(normalizedNativeHistoricalReceipt(read.receipt, read.receiptPath));
+  }
+
+  const portableIds = new Set<string>();
+  for (const candidate of portableScan.candidates) {
+    const receiptId = candidate.name.slice(0, -".json".length);
+    if (!candidate.isFile() || !SHA256_PATTERN.test(receiptId)) {
+      rejectedCandidates.push(candidateIssue(PORTABLE_RECEIPT_DIRECTORY, receiptId, "candidate filename is not a canonical receipt ID JSON file"));
+    } else {
+      portableIds.add(receiptId);
+    }
+  }
+
+  const manifestsByPortableReceipt = new Map<string, PromotionManifest[]>();
+  for (const candidate of manifestScan.candidates) {
+    const promotionId = candidate.name.slice(0, -".json".length);
+    if (!candidate.isFile() || !SHA256_PATTERN.test(promotionId)) {
+      rejectedCandidates.push(candidateIssue(PROMOTION_DIRECTORY, promotionId, "candidate filename is not a canonical promotion ID JSON file"));
+      continue;
+    }
+    try {
+      const bytes = boundedFile(path.join(manifestScan.directory, candidate.name), PROMOTION_MANIFEST_MAX_BYTES, "promotion discovery manifest");
+      const manifest = parsePromotionManifest(jsonCanonicalBytes(bytes, PROMOTION_MANIFEST_MAX_BYTES, "promotion discovery manifest"));
+      if (manifest.promotionId !== promotionId) throw new Error("manifest promotionId does not match its candidate filename");
+      if (manifest.core.app !== app) throw new Error("manifest app does not match its namespace app");
+      const paired = manifestsByPortableReceipt.get(manifest.core.portableReceiptId) ?? [];
+      paired.push(manifest);
+      manifestsByPortableReceipt.set(manifest.core.portableReceiptId, paired);
+    } catch (error) {
+      rejectedCandidates.push(candidateIssue(PROMOTION_DIRECTORY, promotionId, issueText(error)));
+    }
+  }
+
+  for (const [portableReceiptId, manifests] of [...manifestsByPortableReceipt.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    if (!portableIds.has(portableReceiptId)) {
+      for (const manifest of manifests.sort((left, right) => left.promotionId.localeCompare(right.promotionId))) {
+        rejectedCandidates.push(candidateIssue(PROMOTION_DIRECTORY, manifest.promotionId,
+          `promotion manifest references missing portable receipt candidate ${portableReceiptId}`));
+      }
+    }
+  }
+  for (const portableReceiptId of [...portableIds].sort()) {
+    const manifests = (manifestsByPortableReceipt.get(portableReceiptId) ?? [])
+      .sort((left, right) => left.promotionId.localeCompare(right.promotionId));
+    if (!manifests.length) {
+      rejectedCandidates.push(candidateIssue(PORTABLE_RECEIPT_DIRECTORY, portableReceiptId, "portable receipt has no valid paired promotion manifest commit marker"));
+      continue;
+    }
+    for (const manifest of manifests) {
+      const inspected = readPortableRunReceiptSync(app, portableReceiptId, manifest.promotionId, options);
+      if (inspected.status === "valid") {
+        validCandidates.push(normalizedPortableHistoricalReceipt(inspected));
+      } else {
+        rejectedCandidates.push(candidateIssue(PORTABLE_RECEIPT_DIRECTORY, portableReceiptId,
+          `promotion ${manifest.promotionId}: ${inspected.status === "unavailable" ? inspected.reason : inspected.issues.join("; ")}`));
+      }
+    }
+  }
+  return selectValidatedHistoricalRunReceiptCandidates(validCandidates, rejectedCandidates);
+}
+
 function resolvedPortableBinding(
   binding: PortableLedgerBinding,
   runtime: ReceiptRuntimeIdentity,
@@ -989,7 +1310,15 @@ export function resolveRunReceiptCaptureBinding(
   }, inspected.lineageReceipt.runtime);
 }
 
-function sameRunReceiptBinding(left: RunReceiptBinding, right: RunReceiptBinding): boolean {
+export function runReceiptBindingsEqual(leftValue: unknown, rightValue: unknown): boolean {
+  let left: RunReceiptBinding;
+  let right: RunReceiptBinding;
+  try {
+    left = parseRunReceiptBinding(leftValue);
+    right = parseRunReceiptBinding(rightValue);
+  } catch {
+    return false;
+  }
   if (left.kind !== right.kind) return false;
   if (left.kind === RUN_RECEIPT_KIND && right.kind === RUN_RECEIPT_KIND) {
     return left.schemaVersion === right.schemaVersion
@@ -1028,7 +1357,7 @@ export function validateHistoricalRunReceiptCaptureBinding(
       };
   const resolved = resolveRunReceiptCaptureBinding(app, selector, artifactPath, options);
   if (resolved.status === "invalid") return resolved;
-  return sameRunReceiptBinding(resolved.binding, claimedBinding)
+  return runReceiptBindingsEqual(resolved.binding, claimedBinding)
     ? resolved
     : { status: "invalid", reason: "historical run receipt validator returned a different kind-specific binding identity" };
 }
