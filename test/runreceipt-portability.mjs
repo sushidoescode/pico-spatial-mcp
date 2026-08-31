@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   auditIdOf,
@@ -12,6 +13,7 @@ import {
   portableReceiptIdOf,
   promotionIdOf,
 } from "../dist/runreceiptportable.js";
+import * as portable from "../dist/runreceiptportable.js";
 import { canonicalJson } from "../dist/runreceiptidentity.js";
 import * as store from "../dist/runreceiptstore.js";
 import { validateCaptureBuffer } from "../dist/evidence.js";
@@ -21,6 +23,79 @@ const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 const HASH_C = "c".repeat(64);
 const HASH_D = "d".repeat(64);
+
+function sha256Bytes(bytes) {
+  return crypto.createHash("sha256").update(bytes).digest("hex");
+}
+
+function promotionRoots(fixture, suffix = "target") {
+  const targetReceiptRoot = path.join(fixture.scratch, `${suffix}-receipt-store`);
+  const targetLedgerRoot = path.join(fixture.scratch, `${suffix}-ledger-store`);
+  fs.mkdirSync(targetReceiptRoot);
+  fs.mkdirSync(targetLedgerRoot);
+  return {
+    targetReceiptRoot: fs.realpathSync(targetReceiptRoot),
+    targetLedgerRoot: fs.realpathSync(targetLedgerRoot),
+  };
+}
+
+async function createPortableFixture(t, options = {}) {
+  const owned = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pico-portability-roots-"));
+  t.after(() => fs.rmSync(owned, { recursive: true, force: true }));
+  return createRunReceiptFixture(t, store, {
+    ...options,
+    rootDir: path.join(owned, "receipt-store"),
+    ledgerDir: path.join(owned, "ledger-store"),
+  });
+}
+
+function promotionInput(fixture, published, target) {
+  return {
+    app: fixture.payload.app,
+    sourceReceiptId: published.receiptId,
+    sourceReceiptRoot: fs.realpathSync(fixture.rootDir),
+    sourceLedgerRoot: fs.realpathSync(fixture.ledgerDir),
+    ...target,
+  };
+}
+
+function promotedPaths(fixture, published, promoted, target) {
+  return {
+    apk: path.join(target.targetReceiptRoot, "artifacts", "apk", `${fixture.payload.apk.sha256}.apk`),
+    effectiveAppSpec: path.join(target.targetReceiptRoot, "artifacts", "spec", `${fixture.payload.source.effectiveAppSpec.sha256}.json`),
+    capture: path.join(target.targetLedgerRoot, "artifacts", `${fixture.payload.capture.sha256}.png`),
+    lineage: path.join(target.targetReceiptRoot, "portable-lineage-v1", fixture.payload.app, `${published.receiptId}.json`),
+    portable: path.join(target.targetReceiptRoot, "portable-v1", fixture.payload.app, `${promoted.portableReceiptId}.json`),
+    manifest: path.join(target.targetReceiptRoot, "promotions-v1", fixture.payload.app, `${promoted.promotionId}.json`),
+  };
+}
+
+function hashFiles(paths) {
+  return Object.fromEntries(Object.entries(paths).map(([name, file]) => [name, sha256Bytes(fs.readFileSync(file))]));
+}
+
+function temporaryNames(root) {
+  const found = [];
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const candidate = path.join(directory, entry.name);
+      if (entry.name.includes(".tmp-")) found.push(candidate);
+      if (entry.isDirectory()) visit(candidate);
+    }
+  };
+  visit(root);
+  return found;
+}
+
+async function publishPromotion(t, suffix = "target") {
+  const fixture = await createPortableFixture(t);
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const target = promotionRoots(fixture, suffix);
+  const input = promotionInput(fixture, published, target);
+  const promoted = await portable.promoteNativeRunReceipt(input);
+  assert.equal(promoted.status, "promoted", promoted.reason);
+  return { fixture, published, target, input, promoted, paths: promotedPaths(fixture, published, promoted, target) };
+}
 
 const artifacts = {
   apk: { store: "receipt", algorithm: "sha256", sha256: HASH_A, bytes: 4096 },
@@ -200,5 +275,271 @@ test("native lineage validator catches a source-root locator rewrite", async (t)
     });
     assert.equal(invalidRoot.status, "invalid", `invalid source root ${JSON.stringify(sourceReceiptRoot)} must fail`);
     assert.match(invalidRoot.issues.join("\n"), /sourceReceiptRoot.*canonical|source receipt root.*canonical/i);
+  }
+});
+
+test("PROMOTE publishes independently verifiable immutable objects without a ledger row", async (t) => {
+  const fixture = await createPortableFixture(t);
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const target = promotionRoots(fixture);
+  const sourcePaths = {
+    receipt: published.receiptPath,
+    apk: fixture.payload.apk.artifactPath,
+    effectiveAppSpec: fixture.publishedSpec.artifactPath,
+    capture: fixture.captureArtifactPath,
+  };
+  const sourceBefore = hashFiles(sourcePaths);
+
+  const promoted = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+  assert.equal(promoted.status, "promoted", promoted.reason);
+  assert.notEqual(promoted.portableReceiptId, published.receiptId);
+  const paths = promotedPaths(fixture, published, promoted, target);
+  assert.deepEqual({
+    apk: promoted.apkArtifactPath,
+    effectiveAppSpec: promoted.effectiveAppSpecArtifactPath,
+    capture: promoted.captureArtifactPath,
+    lineage: promoted.lineageReceiptPath,
+    portable: promoted.portableReceiptPath,
+    manifest: promoted.promotionManifestPath,
+  }, paths);
+
+  assert.deepEqual(hashFiles(sourcePaths), sourceBefore, "promotion must not modify any source object bytes");
+  assert.equal(sha256Bytes(fs.readFileSync(paths.apk)), fixture.payload.apk.sha256);
+  assert.equal(fs.statSync(paths.apk).size, fixture.payload.apk.bytes);
+  const storedSpecBytes = fs.readFileSync(paths.effectiveAppSpec);
+  const storedSpec = JSON.parse(storedSpecBytes);
+  const canonicalSpec = Buffer.from(canonicalJson(storedSpec));
+  assert.equal(sha256Bytes(canonicalSpec), fixture.payload.source.effectiveAppSpec.sha256);
+  assert.equal(canonicalSpec.length, fixture.payload.source.effectiveAppSpec.bytes);
+  assert.equal(storedSpecBytes.equals(Buffer.from(`${canonicalJson(storedSpec)}\n`)), true);
+  const targetCapture = validateCaptureBuffer(fs.readFileSync(paths.capture), "promoted capture");
+  assert.equal(targetCapture.ok, true);
+  assert.deepEqual({
+    sha256: targetCapture.sha256,
+    bytes: targetCapture.bytes,
+    width: targetCapture.width,
+    height: targetCapture.height,
+    format: targetCapture.format,
+  }, {
+    sha256: fixture.payload.capture.sha256,
+    bytes: fixture.payload.capture.bytes,
+    width: fixture.payload.capture.width,
+    height: fixture.payload.capture.height,
+    format: fixture.payload.capture.format,
+  });
+
+  const lineageBytes = fs.readFileSync(paths.lineage);
+  assert.equal(lineageBytes.equals(fs.readFileSync(published.receiptPath)), true);
+  const portableReceipt = parsePortableRunReceipt(JSON.parse(fs.readFileSync(paths.portable, "utf8")));
+  const manifest = parsePromotionManifest(JSON.parse(fs.readFileSync(paths.manifest, "utf8")));
+  assert.equal(lineageBytes.equals(Buffer.from(`${canonicalJson(JSON.parse(lineageBytes))}\n`)), true);
+  assert.equal(fs.readFileSync(paths.portable).equals(Buffer.from(`${canonicalJson(portableReceipt)}\n`)), true);
+  assert.equal(fs.readFileSync(paths.manifest).equals(Buffer.from(`${canonicalJson(manifest)}\n`)), true);
+  assert.deepEqual(Object.keys(manifest).sort(), ["auditId", "core", "kind", "promotionId", "recordedAt", "schemaVersion", "toolVersion"]);
+  assert.equal(portableReceipt.sourceReceipt.fileSha256, sha256Bytes(lineageBytes));
+  const { receiptId: ignoredReceiptId, ...portablePayload } = portableReceipt;
+  assert.equal(portableReceiptIdOf(portablePayload), promoted.portableReceiptId);
+  assert.equal(promotionIdOf(manifest.core), promoted.promotionId);
+  assert.equal(auditIdOf({ promotionId: manifest.promotionId, recordedAt: manifest.recordedAt, toolVersion: manifest.toolVersion }), promoted.auditId);
+  assert.equal(fs.existsSync(path.join(target.targetLedgerRoot, `${fixture.payload.app}.json`)), false, "promotion must never append a ledger row");
+
+  const read = await portable.readPortableRunReceipt(
+    fixture.payload.app,
+    promoted.portableReceiptId,
+    promoted.promotionId,
+    { rootDir: target.targetReceiptRoot, ledgerDir: target.targetLedgerRoot },
+  );
+  assert.equal(read.status, "valid", read.issues?.join("\n"));
+  assert.equal(read.receipt.receiptId, promoted.portableReceiptId);
+  assert.equal(read.manifest.auditId, promoted.auditId);
+});
+
+test("PROMOTE exact reruns and concurrent publishers reuse the first audit record", async (t) => {
+  const fixture = await createPortableFixture(t);
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const target = promotionRoots(fixture);
+  const input = promotionInput(fixture, published, target);
+  const raced = await Promise.all(Array.from({ length: 4 }, () => portable.promoteNativeRunReceipt(input)));
+  for (const result of raced) assert.equal(result.status, "promoted", result.reason);
+  assert.equal(new Set(raced.map((result) => result.portableReceiptId)).size, 1);
+  assert.equal(new Set(raced.map((result) => result.promotionId)).size, 1);
+  assert.equal(new Set(raced.map((result) => result.auditId)).size, 1);
+  assert.equal(new Set(raced.map((result) => result.recordedAt)).size, 1);
+
+  const rerun = await portable.promoteNativeRunReceipt(input);
+  assert.equal(rerun.status, "promoted", rerun.reason);
+  assert.equal(rerun.recordedAt, raced[0].recordedAt);
+  assert.equal(rerun.auditId, raced[0].auditId);
+  assert.deepEqual(temporaryNames(target.targetReceiptRoot), []);
+  assert.deepEqual(temporaryNames(target.targetLedgerRoot), []);
+});
+
+test("PROMOTE permits only the designed identical source/target receipt-root exception", async (t) => {
+  const fixture = await createPortableFixture(t, { app: "com.example.shared_receipt_root" });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const targetLedgerRoot = path.join(fixture.scratch, "shared-root-target-ledger");
+  fs.mkdirSync(targetLedgerRoot);
+  const promoted = await portable.promoteNativeRunReceipt({
+    ...promotionInput(fixture, published, {
+      targetReceiptRoot: fs.realpathSync(fixture.rootDir),
+      targetLedgerRoot: fs.realpathSync(targetLedgerRoot),
+    }),
+  });
+  assert.equal(promoted.status, "promoted", promoted.reason);
+  assert.equal(fs.existsSync(fixture.payload.apk.artifactPath), true);
+  assert.equal(fs.existsSync(fixture.publishedSpec.artifactPath), true);
+});
+
+test("PROMOTE reports an ambiguous interpreter override unavailable before target writes", async (t) => {
+  const fixture = await createPortableFixture(t, { app: "com.example.unavailable_helper" });
+  const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+  const target = promotionRoots(fixture);
+  const previous = process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+  process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = "relative/python3";
+  t.after(() => {
+    if (previous === undefined) delete process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON;
+    else process.env.PICO_MCP_RECEIPT_PORTABILITY_PYTHON = previous;
+  });
+  const result = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+  assert.equal(result.status, "unavailable");
+  assert.match(result.reason, /absolute.*executable|override|python/i);
+  assert.deepEqual(fs.readdirSync(target.targetReceiptRoot), []);
+  assert.deepEqual(fs.readdirSync(target.targetLedgerRoot), []);
+});
+
+test("PROMOTE refuses a portable receipt as a recursive source", async (t) => {
+  const first = await publishPromotion(t, "first-target");
+  const next = promotionRoots(first.fixture, "second-target");
+  const recursive = await portable.promoteNativeRunReceipt({
+    app: first.fixture.payload.app,
+    sourceReceiptId: first.promoted.portableReceiptId,
+    sourceReceiptRoot: first.target.targetReceiptRoot,
+    sourceLedgerRoot: first.target.targetLedgerRoot,
+    ...next,
+  });
+  assert.equal(recursive.status, "refused");
+  assert.match(recursive.reason, /portable|one-hop|recursive/i);
+});
+
+test("PROMOTE refuses every missing or mismatched source object", async (t) => {
+  const cases = [
+    ["receipt deleted", (fixture, published) => fs.unlinkSync(published.receiptPath)],
+    ["receipt mismatched", (fixture, published) => fs.writeFileSync(published.receiptPath, "{}\n")],
+    ["APK deleted", (fixture) => fs.unlinkSync(fixture.payload.apk.artifactPath)],
+    ["APK mismatched", (fixture) => fs.writeFileSync(fixture.payload.apk.artifactPath, Buffer.from("PK\u0003\u0004wrong-apk"))],
+    ["effective AppSpec deleted", (fixture) => fs.unlinkSync(fixture.publishedSpec.artifactPath)],
+    ["effective AppSpec mismatched", (fixture) => fs.writeFileSync(fixture.publishedSpec.artifactPath, "{}\n")],
+    ["capture deleted", (fixture) => fs.unlinkSync(fixture.captureArtifactPath)],
+    ["capture mismatched", (fixture) => fs.writeFileSync(fixture.captureArtifactPath, Buffer.from("not a png"))],
+  ];
+  for (const [name, mutate] of cases) {
+    await t.test(name, async (child) => {
+      const fixture = await createPortableFixture(child, { app: `com.example.source_${name.replace(/[^a-z]+/gi, "_").toLowerCase()}` });
+      const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+      const target = promotionRoots(fixture);
+      mutate(fixture, published);
+      const result = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+      assert.equal(result.status, "refused");
+      assert.match(result.reason, /receipt|APK|spec|capture|source|valid|exist|hash|canonical/i);
+      assert.equal(fs.existsSync(path.join(target.targetReceiptRoot, "promotions-v1")), false, "no manifest may commit for invalid source bytes");
+    });
+  }
+});
+
+test("PROMOTE refuses source symlinks, target child symlinks, and unsafe root overlap", async (t) => {
+  await t.test("source final symlink", async (child) => {
+    const fixture = await createPortableFixture(child, { app: "com.example.source_symlink" });
+    const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+    const target = promotionRoots(fixture);
+    const realApk = path.join(fixture.scratch, "same-apk-bytes.apk");
+    fs.writeFileSync(realApk, fs.readFileSync(fixture.payload.apk.artifactPath));
+    fs.unlinkSync(fixture.payload.apk.artifactPath);
+    fs.symlinkSync(realApk, fixture.payload.apk.artifactPath);
+    const result = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+    assert.equal(result.status, "refused");
+    assert.match(result.reason, /symbolic|symlink|no-follow|source/i);
+  });
+
+  await t.test("target child symlink", async (child) => {
+    const fixture = await createPortableFixture(child, { app: "com.example.target_symlink" });
+    const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+    const target = promotionRoots(fixture);
+    const outside = path.join(fixture.scratch, "outside-target");
+    fs.mkdirSync(outside);
+    fs.symlinkSync(outside, path.join(target.targetReceiptRoot, "artifacts"));
+    const result = await portable.promoteNativeRunReceipt(promotionInput(fixture, published, target));
+    assert.equal(result.status, "refused");
+    assert.match(result.reason, /symbolic|symlink|no-follow|directory/i);
+    assert.deepEqual(fs.readdirSync(outside), []);
+  });
+
+  await t.test("root alias and overlap", async (child) => {
+    const fixture = await createPortableFixture(child, { app: "com.example.root_overlap" });
+    const published = store.publishNativeRunReceipt(fixture.payload, fixture.storeOptions);
+    const target = promotionRoots(fixture);
+    const alias = path.join(fixture.scratch, "receipt-alias");
+    fs.symlinkSync(fixture.rootDir, alias);
+    const aliased = await portable.promoteNativeRunReceipt({ ...promotionInput(fixture, published, target), sourceReceiptRoot: alias });
+    assert.equal(aliased.status, "refused");
+    assert.match(aliased.reason, /resolved|canonical|symlink|root/i);
+
+    const equalLedger = await portable.promoteNativeRunReceipt({ ...promotionInput(fixture, published, target), targetLedgerRoot: fs.realpathSync(fixture.ledgerDir) });
+    assert.equal(equalLedger.status, "refused");
+    assert.match(equalLedger.reason, /overlap|distinct|root/i);
+
+    const nestedLedger = path.join(target.targetLedgerRoot, "nested");
+    fs.mkdirSync(nestedLedger);
+    const nested = await portable.promoteNativeRunReceipt({ ...promotionInput(fixture, published, target), targetReceiptRoot: nestedLedger });
+    assert.equal(nested.status, "refused");
+    assert.match(nested.reason, /overlap|ancestor|descendant|root/i);
+  });
+});
+
+test("portable historical reads never dereference recorded source roots", async (t) => {
+  const promoted = await publishPromotion(t);
+  fs.rmSync(promoted.fixture.rootDir, { recursive: true });
+  fs.rmSync(promoted.fixture.ledgerDir, { recursive: true });
+  const read = await portable.readPortableRunReceipt(
+    promoted.fixture.payload.app,
+    promoted.promoted.portableReceiptId,
+    promoted.promoted.promotionId,
+    { rootDir: promoted.target.targetReceiptRoot, ledgerDir: promoted.target.targetLedgerRoot },
+  );
+  assert.equal(read.status, "valid", read.issues?.join("\n"));
+});
+
+test("portable historical reader requires the manifest commit marker", async (t) => {
+  const promoted = await publishPromotion(t);
+  fs.unlinkSync(promoted.paths.manifest);
+  assert.equal(fs.existsSync(promoted.paths.portable), true, "portable bytes alone are not a commit");
+  const read = await portable.readPortableRunReceipt(
+    promoted.fixture.payload.app,
+    promoted.promoted.portableReceiptId,
+    promoted.promoted.promotionId,
+    { rootDir: promoted.target.targetReceiptRoot, ledgerDir: promoted.target.targetLedgerRoot },
+  );
+  assert.equal(read.status, "invalid");
+  assert.match(read.issues.join("\n"), /manifest|exist|open/i);
+});
+
+test("portable historical reads and PROMOTE reruns fail closed on every corrupt final object", async (t) => {
+  for (const role of ["apk", "effectiveAppSpec", "capture", "lineage", "portable", "manifest"]) {
+    await t.test(role, async (child) => {
+      const promoted = await publishPromotion(child, `target-${role.toLowerCase()}`);
+      fs.writeFileSync(promoted.paths[role], Buffer.from(`corrupt-${role}`, "utf8"));
+      const rerun = await portable.promoteNativeRunReceipt(promoted.input);
+      assert.equal(rerun.status, "refused");
+      assert.match(rerun.reason, /corrupt|canonical|hash|invalid|mismatch|PNG|manifest|receipt/i);
+      const read = await portable.readPortableRunReceipt(
+        promoted.fixture.payload.app,
+        promoted.promoted.portableReceiptId,
+        promoted.promoted.promotionId,
+        { rootDir: promoted.target.targetReceiptRoot, ledgerDir: promoted.target.targetLedgerRoot },
+      );
+      assert.equal(read.status, "invalid");
+      assert.match(read.issues.join("\n"), /corrupt|canonical|hash|invalid|valid JSON|mismatch|PNG|manifest|receipt|trailing newline/i);
+      assert.deepEqual(temporaryNames(promoted.target.targetReceiptRoot), [], "ordinary refusal must clean receipt-store temporary names");
+      assert.deepEqual(temporaryNames(promoted.target.targetLedgerRoot), [], "ordinary refusal must clean ledger-store temporary names");
+    });
   }
 });
