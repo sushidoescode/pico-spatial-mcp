@@ -390,7 +390,105 @@ test("portable core and host overlays use only their documented MCP contracts", 
   }
 });
 
-test("all host marketplaces use their exact source descriptor and synchronized metadata", () => {
+test("all host marketplaces use their exact source descriptor and synchronized metadata", async () => {
+  const { rewritePlatformCountClaims } = await import("../scripts/metadata-counts.mjs");
+  const counts = { macTools: 252, otherHostTools: 249 };
+  const canonical = "252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta";
+  for (const [label, input, expected] of [
+    [
+      "direct slash claim",
+      "251 tools on macOS / 248 on Linux are runtime-measured; Windows 248 is source-derived",
+      canonical,
+    ],
+    [
+      "paired claim",
+      "251 tools on macOS and 248 on Linux are runtime-measured; on Windows, the published 248-tool count is source-derived",
+      canonical,
+    ],
+    [
+      "split paired claim",
+      "251 tools on macOS and 248 on\nLinux (runtime-measured); on Windows, the published 248-tool\ncount is source-derived",
+      canonical,
+    ],
+    [
+      "deep split paired claim",
+      "251 tools on\nmacOS and 248 on Linux are runtime-measured; on Windows,\nthe published 248-tool count is source-derived",
+      canonical,
+    ],
+    [
+      "blockquote split paired claim",
+      "251 tools on macOS and 248 on Linux are\n> runtime-measured; on Windows, the published 248-tool count is source-derived",
+      canonical,
+    ],
+    [
+      "CRLF blockquote split paired claim",
+      "251 tools on macOS and 248 on Linux are\r\n> runtime-measured; on Windows, the published 248-tool count is source-derived",
+      canonical,
+    ],
+    [
+      "split instead-of claim",
+      "18 tools instead of 251 on macOS and 248\non Linux, both runtime-measured; on Windows, the published 248-tool count is source-derived",
+      `18 tools instead of ${canonical}`,
+    ],
+    [
+      "split exposes claim",
+      "The full server exposes 251 on macOS and 248 on Linux\n(runtime-measured). On Windows, the published 248-tool count is source-derived",
+      `The full server exposes ${canonical}`,
+    ],
+    [
+      "lowercase split exposes claim",
+      "The doors surface is 18 tools; the full server exposes 251 on macOS and 248 on Linux\n(runtime-measured). On Windows, the published 248-tool count is source-derived",
+      `The doors surface is 18 tools; the full server exposes ${canonical}`,
+    ],
+    [
+      "split respectively claim",
+      "macOS and Linux have runtime-measured full-surface counts of 251 and 248 respectively. The Windows\n248 count is source-derived",
+      `The full surface has ${canonical}`,
+    ],
+    [
+      "already canonical claim",
+      "251 tools on macOS (installed-tarball runtime-measured) versus a source-derived 248 on Linux and Windows from the three-tool host-GUI registration delta",
+      canonical,
+    ],
+    [
+      "split native-measurement suffix",
+      "251 tools on macOS and 248 on Linux are runtime-measured; on Windows, the published 248-tool count is source-derived because\nno native Windows tools/list measurement has run",
+      `${canonical} because no native Linux or Windows tools/list measurement has run`,
+    ],
+  ]) {
+    assert.equal(rewritePlatformCountClaims(input, counts), expected, label);
+  }
+  for (const negative of [
+    "counts of 120 and 90 respectively",
+    "generic 120 on macOS",
+    "generic published 120-tool",
+  ]) {
+    assert.equal(rewritePlatformCountClaims(negative, counts), negative, negative);
+  }
+
+  const rewriteUrl = pathToFileURL(path.join(repoRoot, "scripts", "metadata-counts.mjs")).href;
+  const longWhitespaceScript = `
+import { performance } from "node:perf_hooks";
+import { rewritePlatformCountClaims } from ${JSON.stringify(rewriteUrl)};
+const input = "251 tools" + " ".repeat(500) + "not a platform claim";
+const started = performance.now();
+const output = rewritePlatformCountClaims(input, { macTools: 252, otherHostTools: 249 });
+process.stdout.write(JSON.stringify({ elapsedMs: performance.now() - started, unchanged: output === input }));
+`;
+  const longWhitespace = spawnSync(process.execPath, ["--input-type=module", "--eval", longWhitespaceScript], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    timeout: 1_000,
+  });
+  assert.equal(
+    longWhitespace.status,
+    0,
+    `long nonmatching whitespace rewrite exceeded 1s bound: ${longWhitespace.error?.message ?? longWhitespace.stderr}`,
+  );
+  const longWhitespaceResult = JSON.parse(longWhitespace.stdout);
+  assert.equal(longWhitespaceResult.unchanged, true, JSON.stringify(longWhitespaceResult));
+  assert.ok(longWhitespaceResult.elapsedMs < 500, JSON.stringify(longWhitespaceResult));
+
   const pkg = readJson("package.json");
   const marketplaces = [
     { file: ".claude-plugin/marketplace.json", source: "./" },
@@ -409,6 +507,32 @@ test("all host marketplaces use their exact source descriptor and synchronized m
     assert.equal(plugin.name, pkg.name, expected.file);
     assert.equal(plugin.version, pkg.version, expected.file);
     assert.deepEqual(plugin.source, expected.source, expected.file);
+  }
+
+  const honestProvenance = /252 tools on macOS \(installed-tarball runtime-measured\) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta/i;
+  for (const file of [
+    "README.md",
+    "QUICKSTART.md",
+    "GETTING_STARTED.md",
+    "TESTERS.md",
+    "AGENTS.md",
+    "SKILLS.md",
+    "docs/HOSTS.md",
+    "docs/COLLABORATORS.md",
+    "llms.txt",
+  ]) {
+    const prose = fs.readFileSync(path.join(repoRoot, file), "utf8").replaceAll("\n", " ");
+    assert.match(prose, honestProvenance, file);
+    assert.doesNotMatch(prose, /(?:249(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured|macOS and Linux have runtime-measured|249\s+on Linux, both runtime-measured)/i, file);
+    assert.doesNotMatch(prose, /no native Windows\s+`?tools\/list/i, file);
+  }
+  for (const description of [
+    readJson(".claude-plugin/plugin.json").description,
+    readJson(".claude-plugin/marketplace.json").plugins[0].description,
+  ]) {
+    assert.match(description, honestProvenance);
+    assert.doesNotMatch(description, /249(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured/i);
+    assert.doesNotMatch(description, /no native Windows tools\/list/i);
   }
 });
 
@@ -1974,15 +2098,15 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
   assert.equal((workflow.match(/run: npm run smoke\s/g) ?? []).length, 1);
 
   const tarball = fs.readFileSync(path.join(repoRoot, "scripts", "verify-tarball.mjs"), "utf8");
-  assert.match(tarball, /const EXPECTED_TOOLS = 251;/);
-  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 248;/);
+  assert.match(tarball, /const EXPECTED_TOOLS = 252;/);
+  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 249;/);
   assert.match(tarball, /"ensure_pico_cli"/);
   assert.doesNotMatch(tarball, /TOOL_TOLERANCE/);
   assert.match(tarball, /tools\.length === EXPECTED_PLATFORM_TOOLS/);
 
   const metadataSync = fs.readFileSync(path.join(repoRoot, "scripts", "sync-metadata.mjs"), "utf8");
-  assert.match(metadataSync, /other hosts\|Linux/, "metadata sync must keep the measured Linux count aligned");
-  assert.match(metadataSync, /Windows\\s\+[\s\S]{0,180}source-derived/, "metadata sync must keep the source-derived Windows count aligned");
+  assert.match(metadataSync, /rewritePlatformCountClaims/, "metadata sync must use the bounded whole-document count rewriter");
+  assert.doesNotMatch(metadataSync, /const (?:otherHostPhrases|macHostPhrases|countPhrases)/, "metadata sync must not restore context-free numeric fallbacks");
 
   const agents = fs.readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
   assert.match(agents, /doors surface[\s\S]{0,120}: 18/);
@@ -1995,16 +2119,19 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
     "SKILLS.md",
     "docs/HOSTS.md",
     "docs/COLLABORATORS.md",
+    "llms.txt",
   ]) {
     const prose = fs.readFileSync(path.join(repoRoot, file), "utf8").replaceAll("\n", " ");
-    assert.match(prose, /251(?: tools?)? on macOS[\s\S]{0,220}248(?: tools?)? on Linux[\s\S]{0,260}Windows[\s\S]{0,100}source-derived/i, file);
-    assert.doesNotMatch(prose, /\b251\+(?:[- ]tools?)?/i, file);
+    assert.match(prose, /252 tools on macOS \(installed-tarball runtime-measured\) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta/i, file);
+    assert.doesNotMatch(prose, /(?:249(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured|macOS and Linux have runtime-measured|249\s+on Linux, both runtime-measured)/i, file);
+    assert.doesNotMatch(prose, /\b252\+(?:[- ]tools?)?/i, file);
   }
 
   for (const description of [
     readJson(".claude-plugin/plugin.json").description,
     readJson(".claude-plugin/marketplace.json").plugins[0].description,
   ]) {
-    assert.match(description, /251 tools on macOS \/ 248 on Linux[\s\S]{0,100}Windows[\s\S]{0,80}source-derived/i);
+    assert.match(description, /252 tools on macOS \(installed-tarball runtime-measured\) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta/i);
+    assert.doesNotMatch(description, /249(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured/i);
   }
 });

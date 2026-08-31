@@ -20,6 +20,7 @@
  *       npm run test:tarball -- --publish ~/.pico-mcp/dist
  */
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -29,13 +30,14 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures += 1; };
+const sha256File = (filePath) => crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 
 const publishIdx = process.argv.indexOf("--publish");
 const publishDir = publishIdx > -1 ? process.argv[publishIdx + 1] : null;
 
 // [M3] Anchors: a count alone cannot see a rename, and a floor cannot see a whole lane vanishing.
-const EXPECTED_TOOLS = 251; // capture_orbit/capture_multiview + surface-independent ensure_pico_cli + pico_loop (door 16, v36.4)
-const EXPECTED_OTHER_HOST_TOOLS = 248;
+const EXPECTED_TOOLS = 252; // capture_orbit/capture_multiview + ensure_pico_cli + pico_loop + select_home_environment
+const EXPECTED_OTHER_HOST_TOOLS = 249;
 // macOS exposes four host-GUI tools; other hosts intentionally expose one explanatory gui_capture
 // stub. Assert the exact platform surface instead of hiding this documented delta in a tolerance.
 const EXPECTED_PLATFORM_TOOLS = process.platform === "darwin" ? EXPECTED_TOOLS : EXPECTED_OTHER_HOST_TOOLS;
@@ -45,6 +47,7 @@ const REQUIRED_TOOLS = [
   "pico_verify_app", "pico_measure", "pico_perf", "pico_sdk", "pico_doctor", "pico_ship",
   "pico_capabilities", "pico_fix", "pico_record", "pico_emulator", "pico_next", "pico_loop", "ensure_pico_cli",
   // core lanes whose loss a count check would tolerate
+  "select_home_environment",
   "emulator_boot", "build_and_run", "capture_frame", "capture_settled", "query_scene_anchors", "record_verification", "scaffold_spatial_app",
   "adb_shell", "gradle_build", "preflight_env",
   "verify_gradle_config", "build_matrix_report",
@@ -108,6 +111,123 @@ try {
 
   const installed = path.join(sandbox, "node_modules", "pico-spatial-mcp");
   if (!fs.existsSync(installed)) { fail(`package missing at ${installed}`); process.exit(1); }
+
+  const homeEnvironmentDir = path.join(installed, "assets", "home-environments");
+  if (!fs.existsSync(homeEnvironmentDir)) {
+    fail("installed package is missing assets/home-environments");
+  } else {
+    const homeEnvironmentFiles = fs.readdirSync(homeEnvironmentDir).sort();
+    homeEnvironmentFiles.length === 1 && homeEnvironmentFiles[0] === "pico-emulator-6.0.v1.json"
+      ? ok("installed home environment dataset directory contains exactly the versioned JSON")
+      : fail(`installed home environment dataset directory contents are wrong: ${homeEnvironmentFiles.join(", ")}`);
+    if (homeEnvironmentFiles.length === 1 && homeEnvironmentFiles[0] === "pico-emulator-6.0.v1.json") {
+      const installedDatasetPath = path.join(homeEnvironmentDir, homeEnvironmentFiles[0]);
+      const sourceDatasetPath = path.join(repoRoot, "assets", "home-environments", homeEnvironmentFiles[0]);
+      const homeEnvironmentDataset = JSON.parse(fs.readFileSync(installedDatasetPath, "utf8"));
+      sha256File(installedDatasetPath) === sha256File(sourceDatasetPath)
+        ? ok("installed home environment dataset bytes match the exact packed source dataset")
+        : fail("installed home environment dataset bytes diverge from the packed source dataset");
+      homeEnvironmentDataset.datasetId === "pico-emulator-6.0-home-environments-v1"
+        ? ok("home environment dataset ships in the installed package")
+        : fail("installed home environment dataset identity is wrong");
+      const mesumeDay = homeEnvironmentDataset.environments?.find((entry) => entry.tile === "Mesume Day");
+      mesumeDay?.automaticSelectionEligible === false
+        && mesumeDay.exclusionReason === "public query_scene_anchors invalid_payload: stable anchor 33 has zero vertices and indices"
+        ? ok("installed dataset keeps Mesume Day excluded for its zero-geometry public-parser failure")
+        : fail("installed dataset lost the Mesume Day zero-geometry/public-parser exclusion");
+      const livingroomDay = homeEnvironmentDataset.environments?.find((entry) => entry.tile === "Livingroom Day");
+      const livingroomNight = homeEnvironmentDataset.environments?.find((entry) => entry.tile === "Livingroom Night");
+      const carriesRefreshSurfaces = (entry) => entry
+        && Array.isArray(entry.guaranteedSurfaces?.FLOOR)
+        && Array.isArray(entry.guaranteedSurfaces?.TABLE)
+        && Array.isArray(entry.extentClusters?.FLOOR)
+        && entry.extentClusters.FLOOR.length > 0
+        && Array.isArray(entry.extentClusters?.TABLE)
+        && entry.extentClusters.TABLE.length > 0;
+      carriesRefreshSurfaces(livingroomDay) && carriesRefreshSurfaces(livingroomNight)
+        ? ok("installed dataset keeps both Livingroom refresh surface extensions")
+        : fail("installed dataset lost a Livingroom guaranteedSurfaces/extentClusters extension");
+      const largeTable = [0.782631, 0.188127, 0.464378];
+      const largeFloor = [6.867676, 0.0000016, 4.439027];
+      const sameExtent = (left, right) => Array.isArray(left)
+        && left.length === right.length
+        && left.every((value, index) => value === right[index]);
+      const surfacesExactlyMatchClusters = (entry, label) => {
+        const surfaces = entry?.surfaces?.[label] ?? [];
+        const representatives = (entry?.extentClusters?.[label] ?? []).map((cluster) => cluster.extentM);
+        return surfaces.length === representatives.length
+          && surfaces.every((surface) => representatives.filter((candidate) => sameExtent(surface, candidate)).length === 1)
+          && representatives.every((representative) => surfaces.filter((candidate) => sameExtent(representative, candidate)).length === 1);
+      };
+      const guaranteesExactlyMatchRequiredClusters = (entry, label) => {
+        const guaranteed = entry?.guaranteedSurfaces?.[label] ?? [];
+        const required = (entry?.extentClusters?.[label] ?? [])
+          .filter((cluster) => cluster.presenceCountRange?.[0] > 0)
+          .map((cluster) => cluster.extentM);
+        return guaranteed.length === required.length
+          && guaranteed.every((surface) => required.filter((candidate) => sameExtent(surface, candidate)).length === 1)
+          && required.every((representative) => guaranteed.filter((candidate) => sameExtent(representative, candidate)).length === 1);
+      };
+      const dayGuaranteesNothing = livingroomDay?.guaranteedSurfaces?.FLOOR?.length === 0
+        && livingroomDay?.guaranteedSurfaces?.TABLE?.length === 0;
+      const everyDayClusterIsOptional = [
+        ...(livingroomDay?.extentClusters?.FLOOR ?? []),
+        ...(livingroomDay?.extentClusters?.TABLE ?? []),
+      ].every((cluster) => cluster.presenceCountRange?.[0] === 0 && cluster.presenceCountRange?.[1] === 1);
+      dayGuaranteesNothing && everyDayClusterIsOptional
+        ? ok("installed dataset keeps the evidence-falsified Day guarantees and optional cluster ranges")
+        : fail("installed dataset reintroduced an unsupported Livingroom Day surface guarantee");
+      const dayMeasuresLargeFloor = livingroomDay?.extentClusters?.FLOOR?.some((cluster) => sameExtent(cluster.extentM, largeFloor));
+      const dayMeasuresLargeTable = livingroomDay?.extentClusters?.TABLE?.some((cluster) => sameExtent(cluster.extentM, largeTable));
+      const nightMeasuresLargeTable = livingroomNight?.surfaces?.TABLE?.some((extent) => sameExtent(extent, largeTable));
+      const refreshedSurfaceAuthorityIsExact = [livingroomDay, livingroomNight].every((entry) =>
+        ["FLOOR", "TABLE"].every((label) =>
+          surfacesExactlyMatchClusters(entry, label)
+          && guaranteesExactlyMatchRequiredClusters(entry, label)
+          && entry.extentClusters[label].every((cluster) => cluster.presenceCountRange[1] > 0)));
+      dayMeasuresLargeFloor && dayMeasuresLargeTable && nightMeasuresLargeTable && refreshedSurfaceAuthorityIsExact
+        ? ok("installed dataset retains complete one-to-one measured-potential Livingroom ranking inputs")
+        : fail("installed dataset lost or diverged from a measured-potential Livingroom extent cluster");
+      const refreshEvidence = homeEnvironmentDataset.measurement?.refreshProvenance?.evidence ?? [];
+      const refreshEvidencePaths = refreshEvidence.map((entry) => entry.path);
+      refreshEvidence.every((entry) => /^[a-f0-9]{64}$/.test(entry.sha256))
+        && [
+          "livingroom-day-refresh-call-3.json",
+          "livingroom-day-refresh-call-4.json",
+          "livingroom-day-refresh-read-3.json",
+          "livingroom-day-refresh-read-4.json",
+          "livingroom-day-selected-3.png",
+          "livingroom-day-selected-4.png",
+          "livingroom-day-selection-provenance-3.json",
+          "livingroom-day-selection-provenance-4.json",
+        ].every((basename) => refreshEvidencePaths.some((evidencePath) => evidencePath.endsWith(`/${basename}`)))
+        && refreshEvidencePaths.every((evidencePath) => !evidencePath.includes("selector-live") && !/-40(?:\D|$)/.test(evidencePath))
+        ? ok("installed dataset carries only accepted, syntactically pinned refresh evidence")
+        : fail("installed dataset lost or contaminated its accepted refresh evidence pins");
+
+      try {
+        const installedCatalog = await import(pathToFileURL(path.join(installed, "dist", "homeenvironmentcatalog.js")).href);
+        const installedSelector = await import(pathToFileURL(path.join(installed, "dist", "homeenvironmentselector.js")).href);
+        const installedIdentity = await import(pathToFileURL(path.join(installed, "dist", "runreceiptidentity.js")).href);
+        const parsedInstalledDataset = installedCatalog.homeEnvironmentDatasetSchema.parse(homeEnvironmentDataset);
+        const rankReceipt = await installedSelector.executeSelectHomeEnvironment({
+          action: "rank",
+          requirements: [
+            { label: "FLOOR", minimumExtentM: [6, 4] },
+            { label: "TABLE", minimumExtentM: [0.7, 0.4] },
+          ],
+        });
+        const expectedDatasetContentSha256 = installedIdentity.canonicalIdentity(parsedInstalledDataset).sha256;
+        rankReceipt.status === "ranked"
+          && rankReceipt.dataset.datasetContentSha256 === expectedDatasetContentSha256
+          && rankReceipt.ranking.candidates.slice(0, 2).map((candidate) => candidate.tile).join("|") === "Livingroom Day|Livingroom Night"
+          ? ok("installed selector ranks complete Day/Night potential and receipts the canonical dataset hash")
+          : fail("installed selector lost its complete measured-potential rank or canonical dataset receipt");
+      } catch (error) {
+        fail(`installed selector dataset/rank canary failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
 
   // [M1] Every sibling directory the built code reaches for must actually ship.
   const needed = derivedSiblingDirs();

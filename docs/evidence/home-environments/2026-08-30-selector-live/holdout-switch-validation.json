@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico.home-environment-selector-holdout-validation",
+  "phase": "switch",
+  "sessionId": "d2d607d2-ae38-4a0b-8086-2b640610ea60",
+  "sourceHead": "1769453d4466ed3066d32fe051ac9bda386bcda2",
+  "rawCall": {
+    "path": "docs/evidence/home-environments/2026-08-30-selector-live/holdout-switch-call.json",
+    "bytes": 77714,
+    "sha256": "2071ab5e9cf19acb0e6ee0c80f96e1748df9b73bb2ac647dbbcabd92b26b6d8d"
+  },
+  "responseCanonical": {
+    "canonicalization": "recursively-key-sorted-json-utf8-no-trailing-newline",
+    "bytes": 58004,
+    "sha256": "0058af9cc8d0aec251b1d4a9b6b476a719011333bf2a87cd86ae26d28aadd67c"
+  },
+  "priorObservations": {
+    "roots": [
+      "docs/evidence/home-environments",
+      ".superpowers/sdd/2026-08-30-home-environment-fit-selector"
+    ],
+    "parsedJsonFiles": 27,
+    "snapshotIds": {
+      "count": 12,
+      "canonicalization": "recursively-key-sorted-json-utf8-no-trailing-newline",
+      "bytes": 805,
+      "sha256": "26fe7ce26f9574377a0fedf5511922a2cc86cd01d6e31c5d79aac17e745e7f58"
+    },
+    "geometryShas": {
+      "count": 14,
+      "canonicalization": "recursively-key-sorted-json-utf8-no-trailing-newline",
+      "bytes": 939,
+      "sha256": "4f08f55829f68aee3b0566ebc77c65fbca67254b24c78a5c6648eef139d3f3c6"
+    },
+    "requestIds": {
+      "count": 16,
+      "canonicalization": "recursively-key-sorted-json-utf8-no-trailing-newline",
+      "bytes": 549,
+      "sha256": "c1ac823d8b6e37488336653f831847179e20714f11c1b50483264be2470b3349"
+    }
+  },
+  "freshness": {
+    "snapshotId": "7a0f8f9f5188ce332ae697547b033815f318f7b24136d2664d5862d9865bcd2b",
+    "geometrySha256": "afa62afa3a0969ccbf078f1d955413d26c94741aef90b1a90cd58a0e34561cfd",
+    "requestId": "b932881fff0545a28aa85faf0c04e1db",
+    "geometryPath": "/private/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-scene-session-Qmx5bm/scene-41-b932881fff0545a28aa85faf0c04e1db.json",
+    "geometryBytes": 11701594
+  },
+  "criticalSummary": {
+    "terminal": {
+      "status": "manual_switch_required",
+      "action": "switch",
+      "target": "Livingroom Day",
+      "isError": false,
+      "failurePhase": null,
+      "error": null
+    },
+    "responseCanonical": {
+      "canonicalization": "recursively-key-sorted-json-utf8-no-trailing-newline",
+      "bytes": 58004,
+      "sha256": "0058af9cc8d0aec251b1d4a9b6b476a719011333bf2a87cd86ae26d28aadd67c"
+    },
+    "baseline": {
+      "datasetId": "pico-emulator-6.0-home-environments-v1",
+      "serial": "emulator-5554",
+      "packageName": "com.fleet.swanmissiontable",
+      "expectedBuildReceiptId": "4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845",
+      "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+      "snapshotId": "7a0f8f9f5188ce332ae697547b033815f318f7b24136d2664d5862d9865bcd2b"
+    },
+    "durableMarker": {
+      "serial": "emulator-5554",
+      "nonce": "7a0f8f9f5188ce332ae697547b033815f318f7b24136d2664d5862d9865bcd2b",
+      "tag": "PICOHomeEnvironmentSelector",
+      "message": "MARK 7a0f8f9f5188ce332ae697547b033815f318f7b24136d2664d5862d9865bcd2b",
+      "status": "marked",
+      "observedAtEpochSeconds": 1788138658.754,
+      "rawLine": "         1788138658.754  3130  3130 I PICOHomeEnvironmentSelector: MARK 7a0f8f9f5188ce332ae697547b033815f318f7b24136d2664d5862d9865bcd2b"
+    },
+    "preWorldSpace": {
+      "phase": "pre_world_space",
+      "outcome": "observed",
+      "observation": {
+        "observedAtEpochSeconds": 1788138639.468,
+        "spaceId": 1,
+        "spaceName": "Default Space",
+        "isCurrent": true,
+        "sceneId": "XiataAncientPath",
+        "spaceSession": "1_1786961148148_7000",
+        "source": "WorldSpaceDB getSpace",
+        "sceneIdentityRole": "coarse_consistency_only_non_discriminating",
+        "rawLine": "         1788138639.468  1268  1499 I WorldSpace: WorldSpaceDB, getSpace: space=DBSpace(id=1, name=Default Space, isInternal=true, canDelete=false, isCurrent=true, envId=XiataAncientPath, envName=, defaultEnvId=XiataAncientPath, immersive=0.0, thumbnail=scene/XiataAncientPath/xiata.png, recentApps=com.fleet.swanmissiontable, firstChoose=false, isRenamed=false, description=, isBeachFrontCinema=false, spaceProperty=normal, spaceSession=1_1786961148148_7000)"
+      }
+    },
+    "preQuery": {
+      "status": "ready",
+      "error": null,
+      "snapshotId": "7a0f8f9f5188ce332ae697547b033815f318f7b24136d2664d5862d9865bcd2b",
+      "queriedAtMonotonicNs": "76317718527932",
+      "trackingState": "RUNNING",
+      "retries": 2,
+      "totalAnchorCount": 42,
+      "matchedAnchorCount": 1,
+      "requestedLabels": [
+        "FLOOR",
+        "TABLE",
+        "WALL_ART"
+      ],
+      "histogram": {
+        "BED": 2,
+        "UNKNOWN": 15,
+        "CHAIR": 1,
+        "CURTAIN": 3,
+        "PLANT": 5,
+        "CABINET": 3,
+        "LAMP": 7,
+        "WINDOW": 2,
+        "WALL": 2,
+        "FLOOR": 1,
+        "DOOR": 1
+      },
+      "matchedRequestedAnchorsAndExtents": [
+        {
+          "traceId": "anchor-0033",
+          "runtimeUuid": "4079be1f-6c35-4a3b-98b1-961704ed22b3",
+          "labels": [
+            "FLOOR"
+          ],
+          "boundsM": [
+            5.255132675170898,
+            4.76837158203125e-7,
+            2.964813232421875
+          ]
+        }
+      ],
+      "applicationRuntimeBinding": {
+        "serial": "emulator-5554",
+        "liveIdentity": {
+          "serial": "emulator-5554",
+          "model": "swan_arm64",
+          "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4399:user/test-keys",
+          "bootQemu": "1",
+          "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+          "observedAt": "2026-08-31T01:10:52.737Z"
+        },
+        "captureSource": "agent-bridge-file-pull",
+        "startedAtMonotonicNs": "352136424266208",
+        "endedAtMonotonicNs": "352141842819708",
+        "packageName": "com.fleet.swanmissiontable",
+        "buildReceiptId": "4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845",
+        "buildReceiptPath": "/Users/sushantsrikrish/.pico-mcp/run-receipts/native-v1/com.fleet.swanmissiontable/4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845.json",
+        "apkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+        "foregroundProcess": {
+          "packageName": "com.fleet.swanmissiontable",
+          "component": "com.fleet.swanmissiontable/.platform.LaunchActivity",
+          "pid": 4196,
+          "pidStartTicks": "2711055"
+        },
+        "requestedStageStyle": "Mixed",
+        "requestedRootContainer": "stage",
+        "effectiveSceneDriftPolicy": {
+          "count": "advisory",
+          "maxTransformDeltaM": 0.01,
+          "maxTransformDeltaDeg": 1,
+          "maxExtentDeltaM": 0.01,
+          "topology": "strict"
+        },
+        "observedStageStyle": "Mixed",
+        "rootContainer": "stage",
+        "stageOpen": true,
+        "bridgePayloadKind": "pico.agent-bridge.scene-snapshot",
+        "bridgeSchemaVersion": 1,
+        "bridgeRevision": 41,
+        "requestId": "b932881fff0545a28aa85faf0c04e1db"
+      },
+      "geometryRef": {
+        "path": "/private/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-scene-session-Qmx5bm/scene-41-b932881fff0545a28aa85faf0c04e1db.json",
+        "sha256": "afa62afa3a0969ccbf078f1d955413d26c94741aef90b1a90cd58a0e34561cfd",
+        "bytes": 11701594,
+        "schemaVersion": 1,
+        "coordinateFrameId": "bridge-world-41",
+        "units": "metres",
+        "handedness": "sdk-reported",
+        "bridgeRevision": 41
+      },
+      "actionReceipts": [
+        {
+          "action": "bind_application_runtime",
+          "status": "applied",
+          "startedAtMonotonicNs": "352136424477833",
+          "endedAtMonotonicNs": "352136716633875",
+          "ack": {
+            "serial": "emulator-5554",
+            "packageName": "com.fleet.swanmissiontable",
+            "buildReceiptId": "4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845",
+            "apkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+            "pid": 4196,
+            "pidStartTicks": "2711055"
+          }
+        },
+        {
+          "action": "bridge_broadcast",
+          "status": "applied",
+          "startedAtMonotonicNs": "352136716895041",
+          "endedAtMonotonicNs": "352136743425833",
+          "ack": {
+            "serial": "emulator-5554",
+            "action": "com.fleet.swanmissiontable.AGENT_CMD",
+            "command": "query_scene_anchors",
+            "requestId": "b932881fff0545a28aa85faf0c04e1db",
+            "outcome": "completed"
+          }
+        },
+        {
+          "action": "bridge_payload_pull",
+          "status": "applied",
+          "startedAtMonotonicNs": "352136743442458",
+          "endedAtMonotonicNs": "352141484514416",
+          "ack": {
+            "serial": "emulator-5554",
+            "packageName": "com.fleet.swanmissiontable",
+            "requestId": "b932881fff0545a28aa85faf0c04e1db",
+            "relativePath": "cache/agentbridge/scene-snapshots/b932881fff0545a28aa85faf0c04e1db.json",
+            "attempts": 17,
+            "bytes": 11701594,
+            "outcome": "completed"
+          }
+        },
+        {
+          "action": "bridge_payload_cleanup",
+          "status": "applied",
+          "startedAtMonotonicNs": "352141484535333",
+          "endedAtMonotonicNs": "352141507853000",
+          "ack": {
+            "serial": "emulator-5554",
+            "packageName": "com.fleet.swanmissiontable",
+            "requestId": "b932881fff0545a28aa85faf0c04e1db",
+            "relativePath": "cache/agentbridge/scene-snapshots/b932881fff0545a28aa85faf0c04e1db.json",
+            "outcome": "completed"
+          }
+        },
+        {
+          "action": "publish_geometry",
+          "status": "applied",
+          "startedAtMonotonicNs": "352141842910750",
+          "endedAtMonotonicNs": "352142149284208",
+          "ack": {
+            "path": "/private/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-scene-session-Qmx5bm/scene-41-b932881fff0545a28aa85faf0c04e1db.json",
+            "sha256": "afa62afa3a0969ccbf078f1d955413d26c94741aef90b1a90cd58a0e34561cfd",
+            "bytes": 11701594
+          }
+        }
+      ],
+      "drift": {
+        "effectivePolicy": {
+          "count": "advisory",
+          "maxTransformDeltaM": 0.01,
+          "maxTransformDeltaDeg": 1,
+          "maxExtentDeltaM": 0.01,
+          "topology": "strict"
+        },
+        "exactSnapshotChanged": false,
+        "withinPolicy": true,
+        "countDelta": 0,
+        "maxTransformDeltaM": 0,
+        "maxTransformDeltaDeg": 0,
+        "maxExtentDeltaM": 0,
+        "labelSetChanges": 0,
+        "topologyChanges": 0,
+        "unmatchedPrevious": 0,
+        "unmatchedCurrent": 0,
+        "ambiguities": [],
+        "deltaCount": 43,
+        "everyDeltaWithinPolicy": true
+      }
+    },
+    "hostSelection": {
+      "status": "manual_switch_required",
+      "targetTile": "Livingroom Day",
+      "detail": "select_scene_button was not found",
+      "baselineSafe": true
+    }
+  },
+  "validatedAt": "2026-08-31T01:11:00.913Z"
+}

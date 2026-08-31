@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -438,4 +439,128 @@ test("keyHold reports uncertain release and never repeats an accepted keydown", 
   assert.equal(events.filter((event) => event === "keydown").length, 1);
   assert.equal(receipt.ack.releaseCertain, false);
   assert.equal(receipt.ack.releaseReconnectBindingMatched, false);
+});
+
+test("frontmostQemu refuses a successful focus request when fresh frontmost-PID readback disagrees", { skip: process.platform !== "darwin" }, () => {
+  const utilUrl = new URL("../dist/util.js", import.meta.url).href;
+  const cameradriveUrl = new URL("../dist/cameradrive.js", import.meta.url).href;
+  const script = String.raw`
+    import assert from "node:assert/strict";
+    import { mock } from "node:test";
+
+    const calls = [];
+    let responses = [];
+    const nextRun = async (cmd, args, options) => {
+      calls.push({ cmd, args, options });
+      const response = responses.shift();
+      assert.ok(response, "unexpected command execution");
+      return response;
+    };
+    mock.module(${JSON.stringify(utilUrl)}, {
+      namedExports: {
+        run: nextRun,
+        runBinary: async () => { throw new Error("unexpected binary command execution"); },
+        expandHome: (value) => value,
+        sleep: async () => {},
+        tail: (value) => value,
+        ok: (text) => ({ content: [{ type: "text", text }] }),
+        okJson: (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] }),
+        okJsonStructured: (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value }),
+        fail: (text) => ({ content: [{ type: "text", text }], isError: true }),
+        image: (data, mimeType) => ({ content: [{ type: "image", data, mimeType }] }),
+      },
+    });
+    const { frontmostQemu } = await import(${JSON.stringify(cameradriveUrl)});
+    const binding = {
+      discoveryFile: "/tmp/pico-emulator/pid_93013.ini",
+      discoveredSerial: "emulator-5554",
+      qemuPid: 93013,
+      address: "127.0.0.1:8554",
+      tokenPresent: true,
+      tokenFingerprint: "a".repeat(64),
+      onlineEmulatorSerials: ["emulator-5554"],
+      qemuWindowOwnerPid: 93013,
+      qemuWindowId: 7,
+      bindingMethod: "discovery-pid-window",
+    };
+    const success = { code: 0, stdout: "", stderr: "", timedOut: false };
+
+    responses = [success, { code: 0, stdout: "416\n", stderr: "", timedOut: false }];
+    assert.equal(
+      await frontmostQemu(binding),
+      "frontmost PID readback mismatch: expected 93013, observed 416",
+    );
+
+    responses = [success, { code: 0, stdout: "not-a-pid\n", stderr: "", timedOut: false }];
+    assert.equal(
+      await frontmostQemu(binding),
+      "frontmost PID readback malformed: expected one positive integer",
+    );
+
+    responses = [success, { code: 1, stdout: "", stderr: "permission denied", timedOut: false }];
+    assert.equal(
+      await frontmostQemu(binding),
+      "frontmost PID readback failed: command exited 1",
+    );
+
+    responses = [success, { code: 0, stdout: "93013\n", stderr: "", timedOut: false }];
+    assert.equal(await frontmostQemu(binding), null);
+
+    responses = [{ code: 1, stdout: "", stderr: "not permitted", timedOut: false }];
+    assert.equal(await frontmostQemu(binding), "osascript frontmost failed: not permitted");
+    assert.equal(responses.length, 0);
+    assert.equal(calls.filter(({ cmd }) => cmd === "osascript").length, 5);
+    assert.equal(calls.filter(({ cmd }) => cmd === "swift").length, 4);
+  `;
+  execFileSync(process.execPath, ["--experimental-test-module-mocks", "--input-type=module", "--eval", script], {
+    cwd: process.cwd(),
+    stdio: "pipe",
+  });
+});
+
+test("frontmostQemu returns null without command execution off Darwin", { skip: process.platform === "darwin" }, () => {
+  const utilUrl = new URL("../dist/util.js", import.meta.url).href;
+  const cameradriveUrl = new URL("../dist/cameradrive.js", import.meta.url).href;
+  const script = String.raw`
+    import assert from "node:assert/strict";
+    import { mock } from "node:test";
+
+    const calls = [];
+    mock.module(${JSON.stringify(utilUrl)}, {
+      namedExports: {
+        run: async (...args) => {
+          calls.push(args);
+          throw new Error("frontmostQemu must not execute commands off Darwin");
+        },
+        runBinary: async () => { throw new Error("unexpected binary command execution"); },
+        expandHome: (value) => value,
+        sleep: async () => {},
+        tail: (value) => value,
+        ok: (text) => ({ content: [{ type: "text", text }] }),
+        okJson: (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] }),
+        okJsonStructured: (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value }),
+        fail: (text) => ({ content: [{ type: "text", text }], isError: true }),
+        image: (data, mimeType) => ({ content: [{ type: "image", data, mimeType }] }),
+      },
+    });
+    const { frontmostQemu } = await import(${JSON.stringify(cameradriveUrl)});
+    const result = await frontmostQemu({
+      discoveryFile: "/tmp/pico-emulator/pid_93013.ini",
+      discoveredSerial: "emulator-5554",
+      qemuPid: 93013,
+      address: "127.0.0.1:8554",
+      tokenPresent: true,
+      tokenFingerprint: "a".repeat(64),
+      onlineEmulatorSerials: ["emulator-5554"],
+      qemuWindowOwnerPid: 93013,
+      qemuWindowId: 7,
+      bindingMethod: "discovery-pid-window",
+    });
+    assert.equal(result, null);
+    assert.equal(calls.length, 0);
+  `;
+  execFileSync(process.execPath, ["--experimental-test-module-mocks", "--input-type=module", "--eval", script], {
+    cwd: process.cwd(),
+    stdio: "pipe",
+  });
 });

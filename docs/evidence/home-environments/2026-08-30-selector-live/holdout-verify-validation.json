@@ -1,0 +1,350 @@
+{
+  "schemaVersion": 1,
+  "kind": "pico.home-environment-selector-holdout-validation",
+  "phase": "verify",
+  "sessionId": "d2d607d2-ae38-4a0b-8086-2b640610ea60",
+  "sourceHead": "1769453d4466ed3066d32fe051ac9bda386bcda2",
+  "rawCall": {
+    "path": "docs/evidence/home-environments/2026-08-30-selector-live/holdout-verify-call.json",
+    "bytes": 108583,
+    "sha256": "0178b0db5888e23c6518c26af4efcee746f9d7fe6fb32a9e774e688843a066d2"
+  },
+  "responseCanonical": {
+    "canonicalization": "recursively-key-sorted-json-utf8-no-trailing-newline",
+    "bytes": 79537,
+    "sha256": "c78e24fa475674fc67e71bc346d91aaea1578d6b042702bb4b6d4d6f8dcf5be9"
+  },
+  "priorObservations": {
+    "roots": [
+      "docs/evidence/home-environments",
+      ".superpowers/sdd/2026-08-30-home-environment-fit-selector"
+    ],
+    "parsedJsonFiles": 27,
+    "snapshotIds": {
+      "count": 12,
+      "canonicalization": "recursively-key-sorted-json-utf8-no-trailing-newline",
+      "bytes": 805,
+      "sha256": "26fe7ce26f9574377a0fedf5511922a2cc86cd01d6e31c5d79aac17e745e7f58"
+    },
+    "geometryShas": {
+      "count": 14,
+      "canonicalization": "recursively-key-sorted-json-utf8-no-trailing-newline",
+      "bytes": 939,
+      "sha256": "4f08f55829f68aee3b0566ebc77c65fbca67254b24c78a5c6648eef139d3f3c6"
+    },
+    "requestIds": {
+      "count": 16,
+      "canonicalization": "recursively-key-sorted-json-utf8-no-trailing-newline",
+      "bytes": 549,
+      "sha256": "c1ac823d8b6e37488336653f831847179e20714f11c1b50483264be2470b3349"
+    }
+  },
+  "freshness": {
+    "snapshotId": "d376c65d169c76aa4d5589cb9a84b32dc15f9094023413fe2b6bc1b3e7329102",
+    "geometrySha256": "61541f46d59eecf132d8c82130ca6f2b4f4497c7deea7de2ecc91dcde17f62b9",
+    "requestId": "32a09fbccead4d139036760b80d72fac",
+    "geometryPath": "/private/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-scene-session-Cj8Jxn/scene-41-32a09fbccead4d139036760b80d72fac.json",
+    "geometryBytes": 10855582
+  },
+  "criticalSummary": {
+    "terminal": {
+      "status": "verification_failed",
+      "action": "verify",
+      "target": "Livingroom Day",
+      "isError": true,
+      "failurePhase": "classification",
+      "error": {
+        "code": "classification_extent_mismatch",
+        "detail": "post-switch classification returned extent_mismatch"
+      }
+    },
+    "responseCanonical": {
+      "canonicalization": "recursively-key-sorted-json-utf8-no-trailing-newline",
+      "bytes": 79537,
+      "sha256": "c78e24fa475674fc67e71bc346d91aaea1578d6b042702bb4b6d4d6f8dcf5be9"
+    },
+    "receiptBinding": {
+      "requestUsedExactSwitchObjectReferences": {
+        "runtime": true,
+        "baseline": true,
+        "marker": true
+      },
+      "returnedBaselineExactlyMatches": true,
+      "returnedRuntimeExactlyMatches": true,
+      "returnedMarkerExactlyMatches": true
+    },
+    "postWorldSpace": {
+      "phase": "post_world_space",
+      "outcome": "observed",
+      "observation": {
+        "observedAtEpochSeconds": 1788138699.47,
+        "spaceId": 1,
+        "spaceName": "Default Space",
+        "isCurrent": true,
+        "sceneId": "XiataAncientPath",
+        "spaceSession": "1_1786961148148_7000",
+        "source": "WorldSpaceDB getSpace",
+        "sceneIdentityRole": "coarse_consistency_only_non_discriminating",
+        "rawLine": "         1788138699.470  1268  1499 I WorldSpace: WorldSpaceDB, getSpace: space=DBSpace(id=1, name=Default Space, isInternal=true, canDelete=false, isCurrent=true, envId=XiataAncientPath, envName=, defaultEnvId=XiataAncientPath, immersive=0.0, thumbnail=scene/XiataAncientPath/xiata.png, recentApps=com.fleet.swanmissiontable, firstChoose=false, isRenamed=false, description=, isBeachFrontCinema=false, spaceProperty=normal, spaceSession=1_1786961148148_7000)"
+      }
+    },
+    "snapshot": {
+      "baselineSnapshotId": "7a0f8f9f5188ce332ae697547b033815f318f7b24136d2664d5862d9865bcd2b",
+      "returnedPreSnapshotId": "7a0f8f9f5188ce332ae697547b033815f318f7b24136d2664d5862d9865bcd2b",
+      "returnedPostSnapshotId": "d376c65d169c76aa4d5589cb9a84b32dc15f9094023413fe2b6bc1b3e7329102",
+      "changed": true
+    },
+    "binding": {
+      "serial": "emulator-5554",
+      "liveIdentity": {
+        "serial": "emulator-5554",
+        "model": "swan_arm64",
+        "fingerprint": "Pico/swan/pico_spaceos_emulator_arm64:16/BQ2A.260122.002-BP2A.250705.008/4399:user/test-keys",
+        "bootQemu": "1",
+        "bootId": "c0bd8c41-7928-476a-ae8a-a71d89465686",
+        "observedAt": "2026-08-31T01:12:30.789Z"
+      },
+      "captureSource": "agent-bridge-file-pull",
+      "startedAtMonotonicNs": "352234430805291",
+      "endedAtMonotonicNs": "352243754983166",
+      "packageName": "com.fleet.swanmissiontable",
+      "buildReceiptId": "4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845",
+      "buildReceiptPath": "/Users/sushantsrikrish/.pico-mcp/run-receipts/native-v1/com.fleet.swanmissiontable/4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845.json",
+      "apkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+      "foregroundProcess": {
+        "packageName": "com.fleet.swanmissiontable",
+        "component": "com.fleet.swanmissiontable/.platform.LaunchActivity",
+        "pid": 4196,
+        "pidStartTicks": "2711055"
+      },
+      "requestedStageStyle": "Mixed",
+      "requestedRootContainer": "stage",
+      "effectiveSceneDriftPolicy": {
+        "count": "advisory",
+        "maxTransformDeltaM": 0.01,
+        "maxTransformDeltaDeg": 1,
+        "maxExtentDeltaM": 0.01,
+        "topology": "strict"
+      },
+      "observedStageStyle": "Mixed",
+      "rootContainer": "stage",
+      "stageOpen": true,
+      "bridgePayloadKind": "pico.agent-bridge.scene-snapshot",
+      "bridgeSchemaVersion": 1,
+      "bridgeRevision": 41,
+      "requestId": "32a09fbccead4d139036760b80d72fac"
+    },
+    "postQuery": {
+      "status": "ready",
+      "error": null,
+      "queriedAtMonotonicNs": "76419768403272",
+      "trackingState": "RUNNING",
+      "retries": 6,
+      "totalAnchorCount": 59,
+      "matchedAnchorCount": 5,
+      "requestedLabels": [
+        "FLOOR",
+        "TABLE",
+        "WALL_ART"
+      ],
+      "histogram": {
+        "UNKNOWN": 28,
+        "LAMP": 7,
+        "PLANT": 3,
+        "TABLE": 2,
+        "CHAIR": 4,
+        "WALL_ART": 2,
+        "CABINET": 4,
+        "WINDOW": 2,
+        "SOFA": 1,
+        "CEILING": 1,
+        "FLOOR": 1,
+        "WALL": 2,
+        "DOOR": 2
+      },
+      "matchedRequestedAnchorsAndExtents": [
+        {
+          "traceId": "anchor-0007",
+          "runtimeUuid": "c7f41d92-6360-49de-bf8c-d5eadb7851b6",
+          "labels": [
+            "TABLE"
+          ],
+          "boundsM": [
+            0.17601251602172852,
+            0.17468151450157166,
+            0.17688310146331787
+          ]
+        },
+        {
+          "traceId": "anchor-0014",
+          "runtimeUuid": "69ee8f1c-25fa-4b08-a1c6-87b4dd522320",
+          "labels": [
+            "WALL_ART"
+          ],
+          "boundsM": [
+            0.3575587272644043,
+            0.3575582504272461,
+            0.008718311786651611
+          ]
+        },
+        {
+          "traceId": "anchor-0018",
+          "runtimeUuid": "d99e7f4c-95aa-4b38-9176-77e44d021350",
+          "labels": [
+            "TABLE"
+          ],
+          "boundsM": [
+            0.7826310396194458,
+            0.18812690675258636,
+            0.4643775224685669
+          ]
+        },
+        {
+          "traceId": "anchor-0022",
+          "runtimeUuid": "fc85da0b-e801-46e7-943d-328300397edf",
+          "labels": [
+            "FLOOR"
+          ],
+          "boundsM": [
+            6.86767578125,
+            0.000001606226533112931,
+            4.439027309417725
+          ]
+        },
+        {
+          "traceId": "anchor-0032",
+          "runtimeUuid": "397edf2c-f58a-4b18-b156-d7c4ade27330",
+          "labels": [
+            "WALL_ART"
+          ],
+          "boundsM": [
+            0.3379642367362976,
+            0.3379642367362976,
+            0.008749246597290039
+          ]
+        }
+      ],
+      "geometryRef": {
+        "path": "/private/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-scene-session-Cj8Jxn/scene-41-32a09fbccead4d139036760b80d72fac.json",
+        "sha256": "61541f46d59eecf132d8c82130ca6f2b4f4497c7deea7de2ecc91dcde17f62b9",
+        "bytes": 10855582,
+        "schemaVersion": 1,
+        "coordinateFrameId": "bridge-world-41",
+        "units": "metres",
+        "handedness": "sdk-reported",
+        "bridgeRevision": 41
+      },
+      "actionReceipts": [
+        {
+          "action": "bind_application_runtime",
+          "status": "applied",
+          "startedAtMonotonicNs": "352234430869416",
+          "endedAtMonotonicNs": "352234765878250",
+          "ack": {
+            "serial": "emulator-5554",
+            "packageName": "com.fleet.swanmissiontable",
+            "buildReceiptId": "4b228502cb2506ee9aa5a84f810ac122ac9d4e834f0d6dba6423443599e54845",
+            "apkSha256": "67e01b73b23b5adf1ad8d26a3912167dfd30f49a0cb0ea7a899ec11986173d4c",
+            "pid": 4196,
+            "pidStartTicks": "2711055"
+          }
+        },
+        {
+          "action": "bridge_broadcast",
+          "status": "applied",
+          "startedAtMonotonicNs": "352234765967000",
+          "endedAtMonotonicNs": "352234791612375",
+          "ack": {
+            "serial": "emulator-5554",
+            "action": "com.fleet.swanmissiontable.AGENT_CMD",
+            "command": "query_scene_anchors",
+            "requestId": "32a09fbccead4d139036760b80d72fac",
+            "outcome": "completed"
+          }
+        },
+        {
+          "action": "bridge_payload_pull",
+          "status": "applied",
+          "startedAtMonotonicNs": "352234791626416",
+          "endedAtMonotonicNs": "352243396579000",
+          "ack": {
+            "serial": "emulator-5554",
+            "packageName": "com.fleet.swanmissiontable",
+            "requestId": "32a09fbccead4d139036760b80d72fac",
+            "relativePath": "cache/agentbridge/scene-snapshots/32a09fbccead4d139036760b80d72fac.json",
+            "attempts": 31,
+            "bytes": 10855582,
+            "outcome": "completed"
+          }
+        },
+        {
+          "action": "bridge_payload_cleanup",
+          "status": "applied",
+          "startedAtMonotonicNs": "352243396591458",
+          "endedAtMonotonicNs": "352243423370125",
+          "ack": {
+            "serial": "emulator-5554",
+            "packageName": "com.fleet.swanmissiontable",
+            "requestId": "32a09fbccead4d139036760b80d72fac",
+            "relativePath": "cache/agentbridge/scene-snapshots/32a09fbccead4d139036760b80d72fac.json",
+            "outcome": "completed"
+          }
+        },
+        {
+          "action": "publish_geometry",
+          "status": "applied",
+          "startedAtMonotonicNs": "352243755068875",
+          "endedAtMonotonicNs": "352244041206375",
+          "ack": {
+            "path": "/private/var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico-scene-session-Cj8Jxn/scene-41-32a09fbccead4d139036760b80d72fac.json",
+            "sha256": "61541f46d59eecf132d8c82130ca6f2b4f4497c7deea7de2ecc91dcde17f62b9",
+            "bytes": 10855582
+          }
+        }
+      ],
+      "drift": {
+        "effectivePolicy": {
+          "count": "advisory",
+          "maxTransformDeltaM": 0.01,
+          "maxTransformDeltaDeg": 1,
+          "maxExtentDeltaM": 0.01,
+          "topology": "strict"
+        },
+        "exactSnapshotChanged": false,
+        "withinPolicy": true,
+        "countDelta": 0,
+        "maxTransformDeltaM": 0,
+        "maxTransformDeltaDeg": 0,
+        "maxExtentDeltaM": 0,
+        "labelSetChanges": 0,
+        "topologyChanges": 0,
+        "unmatchedPrevious": 0,
+        "unmatchedCurrent": 0,
+        "ambiguities": [],
+        "deltaCount": 60,
+        "everyDeltaWithinPolicy": true
+      }
+    },
+    "classification": {
+      "status": "extent_mismatch",
+      "environment": null,
+      "histogramMatches": [
+        "Livingroom Day"
+      ],
+      "predicates": {
+        "bridgeStatus": "ready",
+        "missingRequestedLabels": [],
+        "surfaceExtentMultisetsMatch": false,
+        "requirementsFit": true
+      }
+    },
+    "failures": {
+      "failurePhase": "classification",
+      "error": {
+        "code": "classification_extent_mismatch",
+        "detail": "post-switch classification returned extent_mismatch"
+      }
+    }
+  },
+  "validatedAt": "2026-08-31T01:12:41.110Z"
+}

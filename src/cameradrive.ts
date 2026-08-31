@@ -135,7 +135,7 @@ async function listQemuWindows(): Promise<QemuWindowIdentity[]> {
     Number.isInteger(entry?.windowId) && Number.isInteger(entry?.ownerPid) && Number.isFinite(entry?.area));
 }
 
-async function bindMacQemuWindow(adb: string, serial: string): Promise<QemuWindowBindingResult> {
+export async function bindMacQemuWindow(adb: string, serial: string): Promise<QemuWindowBindingResult> {
   const listed = await run(adb, ["devices", "-l"], { timeoutMs: 10_000 });
   if (listed.code !== 0 || listed.timedOut) {
     return { ok: false, code: "binding_failed", detail: `adb devices failed: ${listed.stderr || listed.stdout}` };
@@ -149,7 +149,11 @@ async function bindMacQemuWindow(adb: string, serial: string): Promise<QemuWindo
   return selectQemuWindowBinding(serial, parseOnlineAdbSerials(listed.stdout), readDiscovery(), windows);
 }
 
-async function frontmostQemu(binding: BoundQemuWindow | null): Promise<string | null> {
+const FRONTMOST_PID_SWIFT = `import AppKit
+print(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0)
+`;
+
+export async function frontmostQemu(binding: BoundQemuWindow | null): Promise<string | null> {
   if (process.platform !== "darwin") return null;
   if (!binding) return "ambiguous_host_window: no serial-bound qemu process is available";
   const r = await run(
@@ -157,7 +161,17 @@ async function frontmostQemu(binding: BoundQemuWindow | null): Promise<string | 
     ["-e", `tell application "System Events" to set frontmost of (first process whose unix id is ${binding.qemuWindowOwnerPid}) to true`],
     { timeoutMs: 5000 },
   );
-  return r.code === 0 ? null : `osascript frontmost failed: ${r.stderr || r.stdout}`;
+  if (r.code !== 0) return `osascript frontmost failed: ${r.stderr || r.stdout}`;
+  const readback = await run("swift", ["-e", FRONTMOST_PID_SWIFT], { timeoutMs: 5000 });
+  if (readback.timedOut) return "frontmost PID readback failed: command timed out";
+  if (readback.code !== 0) return `frontmost PID readback failed: command exited ${readback.code ?? "without an exit code"}`;
+  const value = readback.stdout.trim();
+  if (!/^[1-9]\d*$/.test(value)) return "frontmost PID readback malformed: expected one positive integer";
+  const observedPid = Number(value);
+  if (!Number.isSafeInteger(observedPid)) return "frontmost PID readback malformed: expected one positive integer";
+  return observedPid === binding.qemuWindowOwnerPid
+    ? null
+    : `frontmost PID readback mismatch: expected ${binding.qemuWindowOwnerPid}, observed ${observedPid}`;
 }
 
 async function settleCapture(adb: string, serial: string, maxTries = 12, intervalMs = 700): Promise<SettledFrameResult> {

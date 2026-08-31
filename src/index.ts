@@ -63,6 +63,7 @@ import { registerRichnessTools } from "./richness.js";
 import { registerSwanTools } from "./swan.js";
 import { registerDeployTools } from "./deploy.js";
 import { registerHomeEnvProxyTools } from "./homeenv.js";
+import { registerHomeEnvironmentSelectorTools } from "./homeenvironmentselector.js";
 import { registerMediaTools } from "./media.js";
 import { registerAnimTools } from "./anim.js";
 import { registerDisplayTools } from "./display.js";
@@ -271,6 +272,7 @@ if (!doorsSurfaceActive()) {
   registerSwanTools(server);
   registerDeployTools(server);
   registerHomeEnvProxyTools(server);
+  registerHomeEnvironmentSelectorTools(server);
   registerMediaTools(server);
   registerAnimTools(server);
   registerDisplayTools(server);

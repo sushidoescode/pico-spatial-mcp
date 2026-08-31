@@ -440,6 +440,42 @@ function geometricallyMatch(previous: SceneRead, current: SceneRead, policy: Sce
   };
 }
 
+export interface SceneDriftAmbiguity {
+  previousIndex: number;
+  candidateCurrentIndices: number[];
+  score: number;
+}
+
+export type SceneDriftDelta =
+  | { metric: "anchor_count"; value: number; policy: "strict" | "advisory"; withinPolicy: boolean }
+  | {
+    metric: "anchor";
+    previousIndex: number;
+    currentIndex: number;
+    geometricMatchScore: number;
+    transformDeltaM: number;
+    transformDeltaDeg: number;
+    extentDeltaM: number;
+    labelsChanged: boolean;
+    previousLabels: string[];
+    currentLabels: string[];
+    topologyChanged: boolean;
+    withinPolicy: boolean;
+  }
+  | {
+    metric: "unmatched_anchors";
+    previous: number[];
+    current: number[];
+    policy: "strict" | "advisory";
+    withinPolicy: boolean;
+  }
+  | {
+    metric: "geometric_match_ambiguity";
+    candidates: SceneDriftAmbiguity[];
+    policy: "strict" | "advisory";
+    withinPolicy: boolean;
+  };
+
 export interface SceneDriftReport {
   effectivePolicy: SceneDriftPolicy;
   exactSnapshotChanged: boolean;
@@ -452,8 +488,8 @@ export interface SceneDriftReport {
   topologyChanges: number;
   unmatchedPrevious: number;
   unmatchedCurrent: number;
-  ambiguities: Array<{ previousIndex: number; candidateCurrentIndices: number[]; score: number }>;
-  deltas: Array<Record<string, unknown>>;
+  ambiguities: SceneDriftAmbiguity[];
+  deltas: SceneDriftDelta[];
 }
 
 /** Compare consecutive runtime reads by geometry, never UUID or list index. */
@@ -469,7 +505,7 @@ export function computeSceneDrift(
   let maxExtentDeltaM = 0;
   let labelSetChanges = 0;
   let topologyChanges = 0;
-  const deltas: Array<Record<string, unknown>> = [];
+  const deltas: SceneDriftDelta[] = [];
   const countDelta = current.anchors.length - previous.anchors.length;
   const countWithin = countDelta === 0 || policy.count === "advisory";
   deltas.push({ metric: "anchor_count", value: countDelta, policy: policy.count, withinPolicy: countWithin });
@@ -554,6 +590,125 @@ export function computeSceneDrift(
   };
 }
 
+function completeIndexCoverage(total: number, matched: number[], unmatched: number[]): boolean {
+  const covered = [...matched, ...unmatched];
+  return covered.length === total
+    && covered.every((index) => Number.isInteger(index) && index >= 0 && index < total)
+    && new Set(covered).size === total;
+}
+
+/** Validate the self-contained receipt emitted for one transition between exactly two reads. */
+export function isCoherentTwoReadSceneDrift(
+  drift: SceneDriftReport,
+  currentAnchorCount: number,
+): boolean {
+  if (
+    !Number.isInteger(currentAnchorCount)
+    || currentAnchorCount < 0
+    || !Number.isInteger(drift.countDelta)
+  ) return false;
+
+  const countDeltas = drift.deltas.filter((delta) => delta.metric === "anchor_count");
+  const anchorDeltas = drift.deltas.filter((delta) => delta.metric === "anchor");
+  const unmatchedDeltas = drift.deltas.filter((delta) => delta.metric === "unmatched_anchors");
+  const ambiguityDeltas = drift.deltas.filter((delta) => delta.metric === "geometric_match_ambiguity");
+  if (countDeltas.length !== 1 || unmatchedDeltas.length > 1 || ambiguityDeltas.length > 1) return false;
+
+  const countDelta = countDeltas[0];
+  const previousAnchorCount = currentAnchorCount - drift.countDelta;
+  const countWithinPolicy = countDelta.value === 0 || drift.effectivePolicy.count === "advisory";
+  if (
+    !Number.isInteger(previousAnchorCount)
+    || previousAnchorCount < 0
+    || countDelta.value !== drift.countDelta
+    || countDelta.policy !== drift.effectivePolicy.count
+    || countDelta.withinPolicy !== countWithinPolicy
+  ) return false;
+
+  const unmatchedDelta = unmatchedDeltas[0];
+  const unmatchedPrevious = unmatchedDelta?.previous ?? [];
+  const unmatchedCurrent = unmatchedDelta?.current ?? [];
+  if (
+    Boolean(unmatchedDelta) !== (unmatchedPrevious.length + unmatchedCurrent.length > 0)
+    || (unmatchedDelta !== undefined && (
+      unmatchedDelta.policy !== drift.effectivePolicy.topology
+      || unmatchedDelta.withinPolicy !== (drift.effectivePolicy.topology === "advisory")
+    ))
+  ) return false;
+
+  const previousMatches = anchorDeltas.map((delta) => delta.previousIndex);
+  const currentMatches = anchorDeltas.map((delta) => delta.currentIndex);
+  if (
+    !completeIndexCoverage(previousAnchorCount, previousMatches, unmatchedPrevious)
+    || !completeIndexCoverage(currentAnchorCount, currentMatches, unmatchedCurrent)
+  ) return false;
+
+  for (const delta of anchorDeltas) {
+    const numericDeltas = [
+      delta.geometricMatchScore,
+      delta.transformDeltaM,
+      delta.transformDeltaDeg,
+      delta.extentDeltaM,
+    ];
+    if (numericDeltas.some((value) => !Number.isFinite(value) || value < 0)) return false;
+    const labelsChanged = JSON.stringify(delta.previousLabels) !== JSON.stringify(delta.currentLabels);
+    const withinPolicy = delta.transformDeltaM <= drift.effectivePolicy.maxTransformDeltaM
+      && delta.transformDeltaDeg <= drift.effectivePolicy.maxTransformDeltaDeg
+      && delta.extentDeltaM <= drift.effectivePolicy.maxExtentDeltaM
+      && (!(labelsChanged || delta.topologyChanged) || drift.effectivePolicy.topology === "advisory");
+    if (delta.labelsChanged !== labelsChanged || delta.withinPolicy !== withinPolicy) return false;
+  }
+
+  const ambiguityDelta = ambiguityDeltas[0];
+  const ambiguityCandidates = ambiguityDelta?.candidates ?? [];
+  if (
+    Boolean(ambiguityDelta) !== (drift.ambiguities.length > 0)
+    || JSON.stringify(ambiguityCandidates) !== JSON.stringify(drift.ambiguities)
+    || (ambiguityDelta !== undefined && (
+      ambiguityDelta.policy !== drift.effectivePolicy.topology
+      || ambiguityDelta.withinPolicy !== (drift.effectivePolicy.topology === "advisory")
+      || ambiguityCandidates.some((ambiguity) => (
+        !Number.isInteger(ambiguity.previousIndex)
+        || ambiguity.previousIndex < 0
+        || ambiguity.previousIndex >= previousAnchorCount
+        || !Number.isFinite(ambiguity.score)
+        || ambiguity.score < 0
+        || ambiguity.candidateCurrentIndices.some((index) => (
+          !Number.isInteger(index) || index < 0 || index >= currentAnchorCount
+        ))
+        || new Set(ambiguity.candidateCurrentIndices).size !== ambiguity.candidateCurrentIndices.length
+      ))
+    ))
+  ) return false;
+
+  const maxTransformDeltaM = anchorDeltas.reduce((maximum, delta) => Math.max(maximum, delta.transformDeltaM), 0);
+  const maxTransformDeltaDeg = anchorDeltas.reduce((maximum, delta) => Math.max(maximum, delta.transformDeltaDeg), 0);
+  const maxExtentDeltaM = anchorDeltas.reduce((maximum, delta) => Math.max(maximum, delta.extentDeltaM), 0);
+  const labelSetChanges = anchorDeltas.filter((delta) => delta.labelsChanged).length;
+  const topologyChanges = anchorDeltas.filter((delta) => delta.topologyChanged).length
+    + unmatchedPrevious.length
+    + unmatchedCurrent.length;
+  if (
+    drift.maxTransformDeltaM !== maxTransformDeltaM
+    || drift.maxTransformDeltaDeg !== maxTransformDeltaDeg
+    || drift.maxExtentDeltaM !== maxExtentDeltaM
+    || drift.labelSetChanges !== labelSetChanges
+    || drift.topologyChanges !== topologyChanges
+    || drift.unmatchedPrevious !== unmatchedPrevious.length
+    || drift.unmatchedCurrent !== unmatchedCurrent.length
+  ) return false;
+
+  const withinPolicy = countWithinPolicy
+    && maxTransformDeltaM <= drift.effectivePolicy.maxTransformDeltaM
+    && maxTransformDeltaDeg <= drift.effectivePolicy.maxTransformDeltaDeg
+    && maxExtentDeltaM <= drift.effectivePolicy.maxExtentDeltaM
+    && (
+      drift.effectivePolicy.topology === "advisory"
+      || (labelSetChanges === 0 && topologyChanges === 0 && ambiguityCandidates.length === 0)
+    );
+  return drift.withinPolicy === withinPolicy;
+}
+
 /** Aggregate every consecutive transition in the accepted non-empty readiness streak. */
 function computeReadinessStreakDrift(
   reads: SceneRead[],
@@ -562,7 +717,7 @@ function computeReadinessStreakDrift(
 ): SceneDriftReport {
   if (reads.length < 2) throw new Error("readiness drift requires at least two reads");
   const reports = reads.slice(1).map((current, index) => computeSceneDrift(reads[index], current, coordinateFrame, policy));
-  return {
+  const drift = {
     effectivePolicy: { ...policy },
     exactSnapshotChanged: reports.some((report) => report.exactSnapshotChanged),
     withinPolicy: reports.every((report) => report.withinPolicy),
@@ -577,6 +732,10 @@ function computeReadinessStreakDrift(
     ambiguities: reports.flatMap((report) => report.ambiguities),
     deltas: reports.flatMap((report) => report.deltas),
   };
+  if (reads.length === 2 && !isCoherentTwoReadSceneDrift(drift, reads.at(-1)!.anchors.length)) {
+    throw new Error("producer generated an incoherent two-read scene drift receipt");
+  }
+  return drift;
 }
 
 function repositoryRoot(): string {
@@ -585,7 +744,23 @@ function repositoryRoot(): string {
 
 function isWithin(parent: string, candidate: string): boolean {
   const relative = path.relative(parent, candidate);
-  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
+  return relative === ""
+    || (!path.isAbsolute(relative) && !relative.startsWith(`..${path.sep}`) && relative !== "..");
+}
+
+/** Pure structural counterpart to the producer's realpath-enforced external publication boundary. */
+export function isExternalGeometryArtifactPath(
+  candidate: string,
+  bridgeRevision: number,
+  requestId: string,
+): boolean {
+  if (!path.isAbsolute(candidate)) return false;
+  const resolved = path.resolve(candidate);
+  const sessionDirectory = path.basename(path.dirname(resolved));
+  return !isWithin(repositoryRoot(), resolved)
+    && sessionDirectory.startsWith("pico-scene-session-")
+    && sessionDirectory.length > "pico-scene-session-".length
+    && path.basename(resolved) === `scene-${bridgeRevision}-${requestId}.json`;
 }
 
 export function writeExternalGeometryArtifact(
@@ -601,6 +776,9 @@ export function writeExternalGeometryArtifact(
   const realSession = fs.realpathSync(sessionDir);
   if (isWithin(repo, realSession)) throw new Error("geometry session resolved inside the repository");
   const artifactPath = path.join(realSession, `scene-${payload.bridgeRevision}-${payload.requestId}.json`);
+  if (!isExternalGeometryArtifactPath(artifactPath, payload.bridgeRevision, payload.requestId)) {
+    throw new Error("geometry artifact path does not match the external session boundary");
+  }
   const temporary = path.join(realSession, `.scene-${crypto.randomUUID()}.tmp`);
   const reparsed = parseSceneBridgePayload(exactPayloadBytes);
   if (!reparsed.ok || reparsed.payload.requestId !== payload.requestId) {
@@ -1089,6 +1267,11 @@ function defaultDependencies(adb: string): QuerySceneAnchorsDependencies {
   };
 }
 
+/** Live entrypoint shared by public and internal orchestrators. */
+export async function executeLiveQuerySceneAnchors(input: QuerySceneAnchorsInput) {
+  return executeQuerySceneAnchors(input, defaultDependencies(resolveAdb()));
+}
+
 const sceneDriftPolicySchema = z.object({
   count: z.enum(["strict", "advisory"]),
   maxTransformDeltaM: z.number().nonnegative(),
@@ -1280,18 +1463,15 @@ export function registerSceneAnchorTools(server: McpServer) {
       outputSchema: querySceneAnchorsOutputSchema.shape,
     },
     async ({ serial, scenario, labels, maxRetries, pollMs, includeGeometry, stabilityReads }) => {
-      const result = await executeQuerySceneAnchors(
-        {
-          serial,
-          scenario,
-          labels,
-          maxRetries: maxRetries ?? 15,
-          pollMs: pollMs ?? 1000,
-          includeGeometry: includeGeometry ?? "lossless_external_artifact",
-          stabilityReads: stabilityReads ?? 2,
-        },
-        defaultDependencies(resolveAdb()),
-      );
+      const result = await executeLiveQuerySceneAnchors({
+        serial,
+        scenario,
+        labels,
+        maxRetries: maxRetries ?? 15,
+        pollMs: pollMs ?? 1000,
+        includeGeometry: includeGeometry ?? "lossless_external_artifact",
+        stabilityReads: stabilityReads ?? 2,
+      });
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
         structuredContent: result,
