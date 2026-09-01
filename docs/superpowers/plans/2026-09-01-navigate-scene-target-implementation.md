@@ -38,35 +38,35 @@
 - Produces: `measureTwoColorGuide(frame, detections, fiducial)`, `fitThroughOrigin(samples)`, `calibrationQuality(fit, limits)`, `calibrationContextKey(context)`, `validateNavigationCalibration(record, context)`, and `decideNavigationStep(state, observation, calibration)`.
 - Consumes: existing `analyzeColorKeys` output shape and no live dependencies.
 
-- [ ] **Step 1: Write literal fixtures and failing guide-math tests**
+- [x] **Step 1: Write literal fixtures and failing guide-math tests**
 
   The JSON fixture must contain hand-derived frame dimensions, two per-color bounding boxes, combined bbox/center/area fraction, absent/duplicate/non-nested cases, centered/off-band cases, overshoot history, growing/shrinking area sequences, and expected actions/stops. Tests must name the production break they catch and assert literal results rather than values computed by implementation helpers.
 
-- [ ] **Step 2: Build first, run the new test, and verify RED**
+- [x] **Step 2: Build first, run the new test, and verify RED**
 
   Run `npm run build` before `node --test test/navigationtarget.mjs`. Expected failure: imports from `../dist/navigationguide.js` and `../dist/navigationcalibration.js` are missing.
 
-- [ ] **Step 3: Implement minimal pure guide validation and measurement**
+- [x] **Step 3: Implement minimal pure guide validation and measurement**
 
   `measureTwoColorGuide` must reject equal or neutral colors, require both detections, require outer-bbox containment plus bounded center skew for `nested-corners-v1`, union the two boxes, and return exact pixel center/error, bbox, width/height, and area fraction. It must never infer semantic identity from color.
 
-- [ ] **Step 4: Verify guide tests GREEN**
+- [x] **Step 4: Verify guide tests GREEN**
 
   Run `npm run build` then `node --test test/navigationtarget.mjs`.
 
-- [ ] **Step 5: Add failing regression-fit and calibration-validation tests**
+- [x] **Step 5: Add failing regression-fit and calibration-validation tests**
 
   Use hand-computed samples such as `x=[-80,-40,40,80]`, `y=[-8,-4,4,8]` for a `0.1` slope and zero residual, plus noisy samples with literal expected RMSE/max residual. Mutations must cover wrong boot, guest, qemu/window, capture size, camera calibration hash, bridge revision, pattern, and guide dimensions.
 
-- [ ] **Step 6: Implement regression and validation minimally, then verify GREEN**
+- [x] **Step 6: Implement regression and validation minimally, then verify GREEN**
 
   A fit has `{slope, sampleCount, residuals, rmse, maxAbsResidual, rSquared}`. Reject non-finite/degenerate samples, insufficient signed drag trials, non-positive forward displacement, or quality outside declared thresholds. Calibration context keys are SHA-256 of canonical identity fields, not path names or timestamps.
 
-- [ ] **Step 7: Add failing controller-state tests, implement, and verify GREEN**
+- [x] **Step 7: Add failing controller-state tests, implement, and verify GREEN**
 
   Cover absent acquisition, horizontal-only search, center-band success, clamped yaw/pitch action, gain reduction after sign-changing overshoot, pitch guard, calibration-required approach, growing-area forward approach, two shrink observations, disappearance, target-area completion, action/time budget exhaustion, scene drift, and cleanup status. `decideNavigationStep` returns typed intent; it never executes input.
 
-- [ ] **Step 8: Run CP1 gates and commit**
+- [x] **Step 8: Run CP1 gates and commit**
 
   Run fresh build; `test:emulator-restart` including the new file through the existing script value; docsmeta; adoption-safety; distribution-adoption (41/2 known-only); protected diff from `bc2ab58`. Commit source, fixture, test, plan, and the existing-script-value adoption without adding a script key.
 
