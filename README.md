@@ -112,7 +112,7 @@ None of this is PICO Spatial SDK vocabulary — it's this project's own layer on
 | **native run receipt** | A producer-written `fleet-native-debug` v1 record binding normalized/effective AppSpec identities, bounded Gradle inputs, the AGP-selected debug APK, installed bytes, package/session/PID/foreground continuity, and one immutable capture. It is `structural`, never a statement about the pixels. `fleet_build` returns the receipt object; Door 1 returns its `receiptId`, `receiptPath`, and exact `capture`. |
 | **the eye** | The calibrated auto-judge (`visual_judge` / `auto_judged` evidence) that scores a capture against an expected scene. It is a fast pre-check, not a replacement for a human/agent actually looking. |
 | **evidence classes** | Strongest first: **`device_verified`** (LOOKED frame + live PICO identity + exact same-serial screencap match; **none from real hardware yet**) > `vision_verified` (a human/agent LOOKED and intended content is present) > `auto_judged` > `usd_host_render` > `structural` > `built_for_headset`. `auto_judged` and `usd_host_render` can be minted only by their measured producer tools, with a receipt bound to the stored artifact; caller-authored or legacy rows without that receipt read as `structural`. Legacy device rows missing the new lineage read as `vision_verified` at most, if their image provenance is otherwise intact. |
-| **doors** (`PICO_MCP_SURFACE=doors`, and the default when the variable is unset since v36.3) | An intent-level facade of 18 tools (16 intent doors + `validate_toolchain` + `ensure_pico_cli`) over the full surface (253 tools on macOS (installed-tarball runtime-measured) versus a source-derived 250 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run — the `PICO_MCP_SURFACE=full` opt-in) — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
+| **doors** (`PICO_MCP_SURFACE=doors`, and the default when the variable is unset since v36.3) | An intent-level facade of 18 tools (16 intent doors + `validate_toolchain` + `ensure_pico_cli`) over the full surface (254 tools on macOS (installed-tarball runtime-measured) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run — the `PICO_MCP_SURFACE=full` opt-in) — one door per developer intent (`pico_build_app`, `pico_look`, `pico_doctor`, …), each returning a `fix` field on failure. Recommended for a first session; the full surface stays available either way. |
 | **gates** | The deterministic test battery (`test/*.mjs`, mirrored in `.github/workflows/gates.yml`) maintainers are required to run before claiming a change is green: lint fixtures, the ledger's over-claim rejection, doors-surface contract tests, occupancy/affordance solvers, the vault symbol checker, and more. The aggregate result—not merely starting the runner—is the evidence. |
 
 ## 15-minute first light
@@ -210,7 +210,7 @@ Run default `pico_doctor {}` (doors surface) or `preflight_env` (full surface) f
 **Without the PICO SDK or emulator** the server still installs and runs: tool listing, `pico_doctor`,
 SDK knowledge lookups (agent-vault), codegen/scaffolding, lint, and all documentation tools work
 anywhere; build/run/capture lanes report exactly which payload is missing and how to get it.
-The full surface has 253 tools on macOS (installed-tarball runtime-measured) versus a source-derived 250 on Linux and Windows from the three-tool host-GUI registration delta: no native Linux or Windows `tools/list` measurement has run. The native
+The full surface has 254 tools on macOS (installed-tarball runtime-measured) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta: no native Linux or Windows `tools/list` measurement has run. The native
 host-GUI capture/input lane is macOS-only; a Windows/x64 emulator bundle is source-advertised but
 has not been installed or booted by this repository, so Windows emulator control remains unmeasured.
 
@@ -264,7 +264,7 @@ Or in any MCP client config:
 { "mcpServers": { "pico-spatial": { "command": "node", "args": ["/path/to/PICO-MCP/dist/index.js"] } } }
 ```
 
-**Recommended for a first session — the doors surface** (18 tools instead of 253 tools on macOS (installed-tarball runtime-measured) versus a source-derived 250 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run. Since v36.3 this is also the
+**Recommended for a first session — the doors surface** (18 tools instead of 254 tools on macOS (installed-tarball runtime-measured) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run. Since v36.3 this is also the
 default when `PICO_MCP_SURFACE` is unset, so the env below simply pins it —
 `PICO_MCP_SURFACE=full` opts into everything):
 
@@ -283,6 +283,7 @@ Two representative full-surface examples:
 
 - **Inner loop** (fast, scene-only): edit scene text → `iterate_scene` (pack + inspect + preview + capture) → adjust → repeat. These low-level tools require `PICO_MCP_SURFACE=full`.
 - **Full app loop**: `emulator_boot` → `build_and_run` (build + install + launch + crash-check + capture) → drive interactions → `check_crash` / `wait_for_log` → `record_verification` on a frame you looked at. These low-level tools require `PICO_MCP_SURFACE=full`.
+- **Calibrated scene-target loop**: follow [docs/NAVIGATE_SCENE_TARGET.md](docs/NAVIGATE_SCENE_TARGET.md) for the exact `calibrate`/`navigate` requests, same-boot receipt rules, bounded cleanup, and required frame LOOKs.
 
 On the full surface, the tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first
 scene authoring + `spatialbundle`/Gradle compilation, the native + web codegen lanes, and the

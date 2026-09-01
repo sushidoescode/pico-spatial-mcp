@@ -167,19 +167,19 @@
 - Consumes: registered `navigate_to_scene_target`.
 - Produces: exact full counts 254/251/18, tarball-required anchor assertion, and a re-runnable operator calibration guide.
 
-- [ ] **Step 1: Write failing installed-surface/adoption assertions**
+- [x] **Step 1: Write failing installed-surface/adoption assertions**
 
   Change literal expected counts to 254 macOS and 251 other-host source-derived, require `navigate_to_scene_target` in the full installed anchor list, keep both Doors assertions at 18, and update adoption expectations without accepting additional known failures.
 
-- [ ] **Step 2: Verify RED against the unsynchronized chain**
+- [x] **Step 2: Verify RED against the unsynchronized chain**
 
   Run fresh build plus distribution-adoption and `sync:meta --check`; confirm only count/metadata drift caused the new failures.
 
-- [ ] **Step 3: Update the load-bearing count sources and documentation**
+- [x] **Step 3: Update the load-bearing count sources and documentation**
 
   Preserve `const EXPECTED_TOOLS = <digits>` and the exact `// core lanes` comment. Add outgoing 253 to `PUBLISHED_COUNTS`. Document exact `calibrate`/`navigate` calls, validity bindings, residual fields, disabled-until-calibrated refusal, structural ceiling, cleanup, and LOOK obligations. Run `npm run sync:meta`; inspect every rewrite.
 
-- [ ] **Step 4: Run CP3 gates including installed tarball and measured macOS tools/list**
+- [x] **Step 4: Run CP3 gates including installed tarball and measured macOS tools/list**
 
   Fresh build; owning suites; docsmeta 0; adoption-safety 48/0; distribution-adoption 41/2 known-only; `npm run test:tarball` with full 254, source-derived 251, Doors 18, default 18; protected diff; version remains 37.0.0; npm script-key set unchanged.
 

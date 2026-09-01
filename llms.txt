@@ -1,7 +1,7 @@
 # pico-spatial-mcp
 
 > MCP server that builds PICO OS 6 / Spatial SDK apps from natural-language briefs and
-> vision-verifies them on the PICO emulator: 253 tools on macOS (installed-tarball runtime-measured) versus a source-derived 250 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run; a curated
+> vision-verifies them on the PICO emulator: 254 tools on macOS (installed-tarball runtime-measured) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run; a curated
 > 18-tool "doors" surface, a trust ledger where "verified" means a rendered frame was looked at.
 
 ## Start here
