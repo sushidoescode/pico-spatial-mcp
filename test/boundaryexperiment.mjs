@@ -36,7 +36,7 @@ import {
   shouldIncludeDynamicReopen,
   waypointPreflightAllowsMovement,
 } from "../dist/boundaryexperiment.js";
-import { formatBoundaryProbeEventV1 } from "../dist/runtimecontinuity.js";
+import { formatBoundaryProbeEventV1, scanPackageRuntimeHealth } from "../dist/runtimecontinuity.js";
 
 const SERIAL = "emulator-5554";
 const BOOT_ID = "12345678-1234-4234-8234-123456789abc";
@@ -1263,21 +1263,88 @@ function hashOnlyDriftExecution(context, sha256, preflightContinuity, laterConti
   };
 }
 
+function writeFixtureCapture(capturePath, shade, role) {
+  const bytes = makePng(shade);
+  fs.writeFileSync(capturePath, bytes, { mode: 0o600, flag: "wx" });
+  return { bytes, capture: capture(crypto.createHash("sha256").update(bytes).digest("hex"), capturePath, role) };
+}
+
+function writeFixtureHealth(logPath, marker, packageName) {
+  const bytes = Buffer.from(`08-31 12:00:00.000  4242  4242 I BoundaryExperiment: ${marker}\n`, "utf8");
+  fs.writeFileSync(logPath, bytes, { mode: 0o600, flag: "wx" });
+  const receipt = {
+    status: "snapshot_collected",
+    truncated: false,
+    observedBytes: bytes.length,
+    appStartMarker: marker,
+    appStartMarkerObserved: true,
+    rawArtifact: {
+      path: logPath,
+      sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+      bytes: bytes.length,
+    },
+  };
+  return { receipt, health: scanPackageRuntimeHealth(receipt, packageName, [4242]) };
+}
+
 test("a hash-only initial drift pauses once, preserves both attempt artifacts, and resumes the same waypoint", async (t) => {
   const fake = fakeDependencies();
   const attemptContexts = [];
+  const attemptArtifacts = [];
   const normalWaypoint = fakeDependencies().deps.executeWaypoint;
-  const firstCaptureBytes = makePng(96);
-  const driftSha = crypto.createHash("sha256").update(firstCaptureBytes).digest("hex");
+  const collectPreparation = fake.deps.collectPreparation;
+  fake.deps.readReviewImage = readBoundReviewImage;
+  fake.deps.collectPreparation = async (context) => {
+    const prepared = await collectPreparation(context);
+    const home = writeFixtureCapture(context.capturePaths.homeReference, 32, "home_reference");
+    const baseline = writeFixtureCapture(context.capturePaths.appBaseline, 64, "app_baseline");
+    const health = writeFixtureHealth(path.join(context.artifactRoot, "prepare-fixture-log.txt"), "boundary_prepare_fixture", context.input.scenario.packageName);
+    return {
+      ...prepared,
+      homeReference: home.capture,
+      appBaseline: baseline.capture,
+      logArtifact: health.receipt,
+      runtimeHealth: health.health,
+    };
+  };
   fake.deps.executeWaypoint = async (context) => {
     fake.calls.waypoint.push(context);
     attemptContexts.push(context);
+    const marker = `boundary_step_${context.state.runId.slice(0, 12)}_${context.waypoint.seq}_${context.attemptOrdinal}`;
+    const preflightHealth = writeFixtureHealth(context.preflightLogPath, `preflight_${marker}`, context.state.input.scenario.packageName);
+    const stepHealth = writeFixtureHealth(context.stepLogPath, marker, context.state.input.scenario.packageName);
+    const retained = writeFixtureCapture(context.capturePath, 96 + attemptContexts.length * 32, attemptContexts.length === 1 ? "transition" : "waypoint");
+    attemptArtifacts.push({
+      context,
+      marker,
+      retained,
+      reviewItem: { captureSha256: retained.capture.sha256, role: retained.capture.role, settled: true, path: retained.capture.path },
+      preflightHealth,
+      stepHealth,
+    });
     if (attemptContexts.length === 1) {
-      fs.writeFileSync(context.capturePath, firstCaptureBytes, { mode: 0o600, flag: "wx" });
-      return hashOnlyDriftExecution(context, driftSha, continuity());
+      return {
+        ...hashOnlyDriftExecution(context, retained.capture.sha256, continuity()),
+        capture: retained.capture,
+        logArtifact: stepHealth.receipt,
+        preflightLogArtifact: preflightHealth.receipt,
+        preflightRuntimeHealth: preflightHealth.health,
+        runtimeHealth: stepHealth.health,
+      };
     }
-    fs.writeFileSync(context.capturePath, makePng(128 + attemptContexts.length), { mode: 0o600 });
-    return normalWaypoint(context);
+    const normal = await normalWaypoint(context);
+    return {
+      ...normal,
+      capture: retained.capture,
+      routeTrace: {
+        ...normal.routeTrace,
+        waypoints: normal.routeTrace.waypoints.map((waypoint) => ({ ...waypoint, settle: { ...waypoint.settle, sha256: retained.capture.sha256 } })),
+      },
+      logArtifact: stepHealth.receipt,
+      preflightLogArtifact: preflightHealth.receipt,
+      preflightRuntimeHealth: preflightHealth.health,
+      runtimeHealth: stepHealth.health,
+    };
   };
 
   const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
@@ -1287,19 +1354,19 @@ test("a hash-only initial drift pauses once, preserves both attempt artifacts, a
   const paused = await orchestrator.execute({
     action: "step",
     runId: prepared.runId,
-    reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+    reviewedPriorFrame: attestation(prepared.requiredReview.at(-1).captureSha256, "boundarylab_mixed", { witnessedGateM: 0 }),
   });
   assert.equal(paused.status, "needs_baseline_review");
   assert.equal(paused.structuralStop, null);
   assert.equal(paused.rebaselineReason, "reviewed_frame_bytes_changed_without_binding_drift");
-  assert.equal(paused.requiredReview.at(-1).captureSha256, driftSha);
+  assert.equal(paused.requiredReview.at(-1).captureSha256, attemptArtifacts[0].retained.capture.sha256);
   assert.equal(paused.requiredReview.at(-1).role, "transition");
   assert.equal(paused.usage.durationMs, 1);
 
   const resumed = await orchestrator.execute({
     action: "step",
     runId: prepared.runId,
-    reviewedPriorFrame: attestation(driftSha, "boundarylab_mixed", { witnessedGateM: 0 }),
+    reviewedPriorFrame: attestation(attemptArtifacts[0].retained.capture.sha256, "boundarylab_mixed", { witnessedGateM: 0 }),
   });
   assert.equal(resumed.status, "needs_waypoint_review");
   assert.equal(resumed.structuralStop, null);
@@ -1314,8 +1381,14 @@ test("a hash-only initial drift pauses once, preserves both attempt artifacts, a
   assert.match(attemptContexts[1].capturePath, /attempt-2/);
   assert.match(attemptContexts[1].stepLogPath, /attempt-2/);
   assert.match(attemptContexts[1].preflightLogPath, /attempt-2/);
-  assert.deepEqual(fs.readFileSync(attemptContexts[0].capturePath), firstCaptureBytes);
-  assert.equal(crypto.createHash("sha256").update(fs.readFileSync(attemptContexts[0].capturePath)).digest("hex"), driftSha);
+  assert.equal(attemptArtifacts[1].stepHealth.health.marker, attemptArtifacts[1].marker);
+  assert.equal(attemptArtifacts[1].stepHealth.health.markerOccurrences, 1);
+  for (const attempt of attemptArtifacts) {
+    assert.deepEqual(readBoundReviewImage(attempt.reviewItem, prepared.artifactRoot), attempt.retained.bytes);
+    assert.equal(crypto.createHash("sha256").update(fs.readFileSync(attempt.context.capturePath)).digest("hex"), attempt.retained.capture.sha256);
+    assert.equal(crypto.createHash("sha256").update(fs.readFileSync(attempt.context.stepLogPath)).digest("hex"), attempt.stepHealth.receipt.rawArtifact.sha256);
+    assert.equal(crypto.createHash("sha256").update(fs.readFileSync(attempt.context.preflightLogPath)).digest("hex"), attempt.preflightHealth.receipt.rawArtifact.sha256);
+  }
   const secondWaypoint = await orchestrator.execute({
     action: "step",
     runId: prepared.runId,
@@ -1328,11 +1401,25 @@ test("a hash-only initial drift pauses once, preserves both attempt artifacts, a
   assert.doesNotMatch(attemptContexts[2].capturePath, /attempt-/);
   assert.doesNotMatch(attemptContexts[2].stepLogPath, /attempt-/);
   assert.doesNotMatch(attemptContexts[2].preflightLogPath, /attempt-/);
-  assert.deepEqual(fs.readFileSync(attemptContexts[0].capturePath), firstCaptureBytes);
+  for (const attempt of attemptArtifacts.slice(0, 2)) {
+    assert.deepEqual(readBoundReviewImage(attempt.reviewItem, prepared.artifactRoot), attempt.retained.bytes);
+    assert.equal(crypto.createHash("sha256").update(fs.readFileSync(attempt.context.capturePath)).digest("hex"), attempt.retained.capture.sha256);
+  }
   const requiredReview = JSON.parse(fs.readFileSync(path.join(prepared.artifactRoot, "required-review.json"), "utf8"));
-  assert.deepEqual(requiredReview.map((item) => item.captureSha256), ["1".repeat(64), "2".repeat(64), driftSha, "3".repeat(64), "4".repeat(64)]);
+  assert.deepEqual(requiredReview.map((item) => item.captureSha256), [
+    prepared.requiredReview[0].captureSha256,
+    prepared.requiredReview[1].captureSha256,
+    attemptArtifacts[0].retained.capture.sha256,
+    attemptArtifacts[1].retained.capture.sha256,
+    attemptArtifacts[2].retained.capture.sha256,
+  ]);
   assert.deepEqual(requiredReview.slice(2).map((item) => item.path), [attemptContexts[0].capturePath, attemptContexts[1].capturePath, attemptContexts[2].capturePath]);
   assert.equal(JSON.parse(fs.readFileSync(path.join(prepared.artifactRoot, "state.json"), "utf8")).rebaselineOrdinal, 1);
+  fs.writeFileSync(attemptContexts[1].capturePath, makePng(252), { mode: 0o600 });
+  assert.throws(() => readBoundReviewImage(attemptArtifacts[1].reviewItem, prepared.artifactRoot), /sha256|match/i);
+  const tampered = await orchestrator.execute({ action: "adjudicate", runId: prepared.runId, scope: "route", frameAttestations: [] });
+  assert.equal(tampered.status, "adjudication_rejected");
+  assert.match(tampered.reason, /retained byte-exact/i);
 });
 
 test("a second unique initial-frame drift terminalizes after the persisted one-shot rebaseline", async (t) => {
@@ -2093,7 +2180,7 @@ test("the live preflight-drift trace charges elapsed monotonic preflight, health
   assert.equal(trace.preMovementReviewDrift, true);
 });
 
-test("live waypoint coverage markers are unique across a rebaseline retry and leave the next waypoint viable", () => {
+test("live waypoint coverage markers bind a finalized retry health receipt exactly once and leave the next waypoint viable", (t) => {
   assert.equal(typeof boundaryExperiment.waypointCoverageMarker, "function");
   const first = boundaryExperiment.waypointCoverageMarker("a".repeat(64), 1, 1);
   const retry = boundaryExperiment.waypointCoverageMarker("a".repeat(64), 1, 2);
@@ -2102,6 +2189,13 @@ test("live waypoint coverage markers are unique across a rebaseline retry and le
   assert.notEqual(retry, nextWaypoint);
   assert.match(retry, /step_1_2$/);
   assert.match(nextWaypoint, /step_2_1$/);
+  const root = scratch(t);
+  const finalized = writeFixtureHealth(path.join(root, "retry-finalized.log"), retry, PACKAGE);
+  assert.equal(typeof boundaryExperiment.finalizedWaypointRuntimeHealth, "function");
+  const retryHealth = boundaryExperiment.finalizedWaypointRuntimeHealth(finalized.receipt, PACKAGE, [4242], retry);
+  assert.equal(retryHealth.marker, retry);
+  assert.equal(retryHealth.markerOccurrences, 1);
+  assert.equal(retryHealth.status, "no_attributed_failure");
 });
 
 test("adjudicate stores one immutable route result and never promotes its evidence ceiling automatically", async (t) => {

@@ -2736,6 +2736,19 @@ export function waypointCoverageMarker(runId: string, waypointSeq: number, attem
   return `boundary_gap_${runId.slice(0, 12)}_step_${waypointSeq}_${attemptOrdinal}`;
 }
 
+export function finalizedWaypointRuntimeHealth(
+  receipt: Parameters<typeof scanPackageRuntimeHealth>[0],
+  packageName: string,
+  expectedPids: readonly number[],
+  marker: string,
+): PackageRuntimeHealthReceiptV1 {
+  return scanPackageRuntimeHealth({
+    ...receipt,
+    appStartMarker: marker,
+    appStartMarkerObserved: true,
+  }, packageName, expectedPids);
+}
+
 async function dumpRelevantLogLines(
   adb: string,
   serial: string,
@@ -3258,10 +3271,11 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
         return {
           ...finalized.value,
           logArtifact: finalized.logArtifact,
-          runtimeHealth: scanPackageRuntimeHealth(
+          runtimeHealth: finalizedWaypointRuntimeHealth(
             finalized.logArtifact,
             state.input.scenario.packageName,
             [state.preparation.applicationBinding.pid],
+            marker,
           ),
         };
       } catch (error) {
