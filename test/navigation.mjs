@@ -50,6 +50,7 @@ function routeInput(overrides = {}) {
   return {
     runtimeBinding,
     continuity: { kind: "not_requested" },
+    priorCaptureSha256: "c".repeat(64),
     artifactSession: {
       runId: "route-test",
       absoluteRoot: "/tmp/pico-navigation-tests/route-test",
@@ -117,8 +118,7 @@ function noInputKeyFailure(action, ack = {}) {
   };
 }
 
-function settled(path) {
-  const sha256 = "d".repeat(64);
+function settled(path, sha256 = "d".repeat(64)) {
   const captureRef = {
     path,
     sha256,
@@ -137,7 +137,7 @@ function settled(path) {
     attempts: 2,
     settlementSatisfied: true,
     comparison: "byte_exact",
-    stablePair: ["d".repeat(64), "d".repeat(64)],
+    stablePair: [sha256, sha256],
     captureRuntimeBinding: {
       serial: runtimeBinding.serial,
       liveIdentity: {
@@ -199,6 +199,7 @@ function dependencies(overrides = {}) {
   return {
     applyRelativeAction: async (action) => applied(action),
     captureSettled: async (capturePath) => settled(capturePath),
+    sleep: async () => {},
     allocateWaypointPath: (seq) => `/tmp/pico-navigation-tests/route-test/waypoint-${String(seq).padStart(4, "0")}.png`,
     monotonicNs: () => {
       now += 1_000_000n;
@@ -210,6 +211,8 @@ function dependencies(overrides = {}) {
 
 test("route preserves grouped waypoint and action order through injected action, capture, and allocation dependencies", async () => {
   const events = [];
+  let captureSeq = 0;
+  const priorContexts = [];
   const decisions = [
     [
       { kind: "key_hold", key: "w", holdMs: 100 },
@@ -229,14 +232,19 @@ test("route preserves grouped waypoint and action order through injected action,
         events.push(`action:${action.kind}:${action.kind === "key_hold" ? action.key : `${action.dxPx},${action.dyPx}`}`);
         return applied(action);
       },
+      sleep: async (ms) => {
+        events.push(`render-dwell:${ms}`);
+      },
       allocateWaypointPath: (seq) => {
         const capturePath = `/tmp/pico-navigation-tests/route-test/waypoint-${String(seq).padStart(4, "0")}.png`;
         events.push(`allocate:${seq}`);
         return capturePath;
       },
-      captureSettled: async (capturePath) => {
+      captureSettled: async (capturePath, context) => {
         events.push(`capture:${capturePath}`);
-        return settled(capturePath);
+        priorContexts.push(context.priorSha256);
+        captureSeq += 1;
+        return settled(capturePath, captureSeq === 1 ? "d".repeat(64) : "e".repeat(64));
       },
     }),
   );
@@ -247,14 +255,17 @@ test("route preserves grouped waypoint and action order through injected action,
     "allocate:1",
     "action:key_hold:w",
     "action:look_drag:3,4",
+    "render-dwell:10000",
     "capture:/tmp/pico-navigation-tests/route-test/waypoint-0001.png",
     "decide:1",
     "allocate:2",
     "action:key_hold:a",
+    "render-dwell:10000",
     "capture:/tmp/pico-navigation-tests/route-test/waypoint-0002.png",
     "decide:2",
   ]);
   assert.deepEqual(trace.waypoints.map(({ seq }) => seq), [1, 2]);
+  assert.deepEqual(priorContexts, ["c".repeat(64), "d".repeat(64)]);
   assert.deepEqual(trace.waypoints[0].actions, [
     { kind: "key_hold", key: "w", holdMs: 100 },
     { kind: "look_drag", dxPx: 3, dyPx: 4 },
@@ -271,6 +282,76 @@ test("route preserves grouped waypoint and action order through injected action,
     durationMs: trace.usage.durationMs,
   });
   assert.ok(trace.usage.durationMs >= 0);
+});
+
+test("each action group waits once for rendered motion and passes the exact prior capture hash into settlement", async () => {
+  const observed = [];
+  let decisions = 0;
+  const trace = await executeRelativeCameraRoute(
+    routeInput(),
+    () => decisions++ === 0 ? [{ kind: "key_hold", key: "w", holdMs: 444 }] : "stop",
+    dependencies({
+      applyRelativeAction: async (action) => {
+        observed.push("action");
+        return applied(action);
+      },
+      sleep: async (ms) => observed.push(`dwell:${ms}`),
+      captureSettled: async (capturePath, context) => {
+        observed.push(`capture:${context?.priorSha256 ?? "missing"}`);
+        assert.equal(typeof context?.remainingMs, "function");
+        assert.ok(context.remainingMs() > 0);
+        return settled(capturePath);
+      },
+    }),
+  );
+  assert.equal(trace.status, "controller_stop");
+  assert.deepEqual(observed, [
+    "action",
+    "dwell:10000",
+    `capture:${"c".repeat(64)}`,
+  ]);
+});
+
+test("route rejects a dependency that falsely settles on the exact prior capture", async () => {
+  const priorSha256 = "c".repeat(64);
+  const trace = await executeRelativeCameraRoute(
+    routeInput({ priorCaptureSha256: priorSha256 }),
+    (prior) => prior.length === 0 ? [{ kind: "key_hold", key: "w", holdMs: 444 }] : "stop",
+    dependencies({
+      captureSettled: async (capturePath, context) => {
+        assert.equal(context.priorSha256, priorSha256);
+        return settled(capturePath, priorSha256);
+      },
+    }),
+  );
+  assert.equal(trace.status, "route_unsettled");
+  assert.equal(trace.usage.actions, 1);
+  assert.equal(trace.waypoints.length, 1);
+  assert.equal(trace.waypoints[0].settle.sha256, priorSha256);
+});
+
+test("a failed post-action render dwell stops before capture or later movement", async () => {
+  let actions = 0;
+  let captures = 0;
+  const trace = await executeRelativeCameraRoute(
+    routeInput(),
+    () => [{ kind: "key_hold", key: "w", holdMs: 444 }],
+    dependencies({
+      applyRelativeAction: async (action) => {
+        actions++;
+        return applied(action);
+      },
+      sleep: async () => { throw new Error("render dwell interrupted"); },
+      captureSettled: async (capturePath) => {
+        captures++;
+        return settled(capturePath);
+      },
+    }),
+  );
+  assert.equal(trace.status, "route_unsettled");
+  assert.equal(actions, 1);
+  assert.equal(captures, 0);
+  assert.equal(trace.usage.actions, 1);
 });
 
 test("bound action execution is ordered, exact-serial, and stops at the first failed receipt", async () => {
@@ -640,7 +721,7 @@ test("conservative duration preflight reserves capture attempts, intervals, and 
 });
 
 test("a look drag is admitted only when the duration budget covers fresh focus verification and CGEvent delivery", async () => {
-  const exactConservativeMs = 51_210;
+  const exactConservativeMs = 93_210;
 
   for (const [name, maxDurationMs, expectedStatus, expectedActions] of [
     ["exact bound", exactConservativeMs, "controller_stop", 1],
@@ -679,7 +760,7 @@ test("a four-action outer-gate group is admitted only at its exact conservative 
     { kind: "key_hold", key: "s", holdMs: 1_500 },
   ];
   const capture = { maxTries: 4, intervalMs: 500, attemptTimeoutMs: 3_000 };
-  const exactConservativeMs = 659_700;
+  const exactConservativeMs = 701_700;
 
   for (const [name, maxDurationMs, expectedStatus, expectedActions] of [
     ["exact bound", exactConservativeMs, "controller_stop", 4],
@@ -862,7 +943,7 @@ test("route rechecks its elapsed deadline after pre-action continuity and refuse
   const trace = await executeRelativeCameraRoute(
     routeInput({
       continuity: { kind: "required", binding: applicationBinding },
-      budgets: { ...defaultBudgets, maxDurationMs: 60_000 },
+      budgets: { ...defaultBudgets, maxDurationMs: 100_000 },
     }),
     () => [{ kind: "key_hold", key: "w", holdMs: 50 }],
     dependencies({
@@ -890,8 +971,96 @@ test("route rechecks its elapsed deadline after pre-action continuity and refuse
   assert.equal(captureCount, 0);
 });
 
-test("malformed numeric budgets, capture policies, holds, and drags fail closed before dependencies", async () => {
+test("route rechecks its elapsed deadline after the render dwell and refuses a late capture", async () => {
+  let clockCalls = 0;
+  let appliedCount = 0;
+  let captureCount = 0;
+  const trace = await executeRelativeCameraRoute(
+    routeInput({
+      budgets: { ...defaultBudgets, maxDurationMs: 80_000 },
+    }),
+    (prior) => prior.length === 0 ? [{ kind: "key_hold", key: "w", holdMs: 50 }] : "stop",
+    dependencies({
+      monotonicNs: () => {
+        clockCalls += 1;
+        return clockCalls <= 3 ? 0n : 100_000_000_000n;
+      },
+      applyRelativeAction: async (action) => {
+        appliedCount += 1;
+        return applied(action);
+      },
+      captureSettled: async (capturePath) => {
+        captureCount += 1;
+        return settled(capturePath);
+      },
+    }),
+  );
+  assert.equal(trace.status, "budget_exhausted");
+  assert.equal(appliedCount, 1);
+  assert.equal(captureCount, 0);
+  assert.equal(trace.usage.actions, 1);
+});
+
+test("route rechecks its elapsed deadline after capture and preserves post-capture reserves", async () => {
+  let clockCalls = 0;
+  let appliedCount = 0;
+  let captureCount = 0;
+  const trace = await executeRelativeCameraRoute(
+    routeInput({
+      budgets: { ...defaultBudgets, maxDurationMs: 100_000 },
+    }),
+    (prior) => prior.length === 0 ? [{ kind: "key_hold", key: "w", holdMs: 50 }] : "stop",
+    dependencies({
+      monotonicNs: () => {
+        clockCalls += 1;
+        return clockCalls <= 4 ? 0n : 100_000_000_000n;
+      },
+      applyRelativeAction: async (action) => {
+        appliedCount += 1;
+        return applied(action);
+      },
+      captureSettled: async (capturePath, context) => {
+        captureCount += 1;
+        assert.equal(typeof context.remainingMs, "function");
+        return settled(capturePath);
+      },
+    }),
+  );
+  assert.equal(trace.status, "budget_exhausted");
+  assert.equal(appliedCount, 1);
+  assert.equal(captureCount, 1);
+  assert.equal(trace.usage.waypoints, 0);
+});
+
+test("route rechecks its elapsed deadline after final continuity before accepting the waypoint", async () => {
+  let clockCalls = 0;
+  let continuityCount = 0;
+  const trace = await executeRelativeCameraRoute(
+    routeInput({
+      continuity: { kind: "required", binding: applicationBinding },
+      budgets: { ...defaultBudgets, maxDurationMs: 150_000 },
+    }),
+    (prior) => prior.length === 0 ? [{ kind: "key_hold", key: "w", holdMs: 50 }] : "stop",
+    dependencies({
+      monotonicNs: () => {
+        clockCalls += 1;
+        return clockCalls <= 5 ? 0n : 200_000_000_000n;
+      },
+      sampleContinuity: async () => {
+        continuityCount += 1;
+        return continuitySample();
+      },
+    }),
+  );
+  assert.equal(trace.status, "budget_exhausted");
+  assert.equal(continuityCount, 2);
+  assert.equal(trace.usage.actions, 1);
+  assert.equal(trace.usage.waypoints, 1, "completed capture and continuity evidence stays retained");
+});
+
+test("malformed prior capture, numeric budgets, capture policies, holds, and drags fail closed before dependencies", async () => {
   const cases = [
+    ["malformed prior capture", { priorCaptureSha256: "not-a-sha" }, [{ kind: "key_hold", key: "w", holdMs: 50 }]],
     ["fractional max actions", { budgets: { ...defaultBudgets, maxActions: 1.5 } }, [{ kind: "key_hold", key: "w", holdMs: 50 }]],
     ["NaN drag cap", { budgets: { ...defaultBudgets, maxDragPxPerAction: Number.NaN } }, [{ kind: "look_drag", dxPx: 1, dyPx: 1 }]],
     ["infinite cumulative drag", { budgets: { ...defaultBudgets, maxCumulativeDragPx: Number.POSITIVE_INFINITY } }, [{ kind: "look_drag", dxPx: 1, dyPx: 1 }]],

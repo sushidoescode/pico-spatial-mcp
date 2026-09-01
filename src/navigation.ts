@@ -90,6 +90,7 @@ export interface BoundRelativeRouteInput {
   runtimeBinding: RuntimeBindingReceipt;
   continuity: RouteContinuityCapability;
   artifactSession: ReservedArtifactSession;
+  priorCaptureSha256: string;
   budgets: RouteBudgets;
   capture: { maxTries: number; intervalMs: number; attemptTimeoutMs: number };
 }
@@ -97,8 +98,12 @@ export interface BoundRelativeRouteInput {
 export interface RelativeRouteDependencies {
   applyRelativeAction(action: RelativeCameraAction): Promise<CameraActionReceipt>;
   sampleContinuity?: () => Promise<ApplicationContinuitySample>;
-  captureSettled(path: string): Promise<CaptureSettledReceipt>;
+  captureSettled(path: string, context: {
+    priorSha256: string;
+    remainingMs(): number;
+  }): Promise<CaptureSettledReceipt>;
   allocateWaypointPath(seq: number): string;
+  sleep(ms: number): Promise<void>;
   monotonicNs(): bigint;
 }
 
@@ -202,7 +207,12 @@ const KEY_ACTION_TIMEOUT_RESERVE_MS = 18_800;
 // One look action performs two serial focus probes (5 s each) immediately before
 // the bounded 30 s CoreGraphics drag. Keep admission at the full live ceiling.
 const LOOK_ACTION_TIMEOUT_RESERVE_MS = 40_000;
-const ROUTE_FINALIZATION_RESERVE_MS = 10_000;
+export const POST_ACTION_RENDER_DWELL_MS = 10_000;
+// executeCaptureSettled performs adb serial discovery plus pre/post runtime-identity probes around
+// the bounded screencap loop. The deadline-aware live adapter runs each identity group in parallel,
+// leaving three sequential 10 s envelopes in addition to capture attempts and intervals.
+const CAPTURE_BINDING_TIMEOUT_RESERVE_MS = 30_000;
+export const ROUTE_FINALIZATION_RESERVE_MS = 12_000;
 const WALK_KEYS = new Set(["w", "a", "s", "d", "q", "e"]);
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -334,6 +344,7 @@ function validInput(input: BoundRelativeRouteInput): boolean {
   return validStrictRuntimeBinding(input.runtimeBinding)
     && typeof input.artifactSession?.runId === "string" && input.artifactSession.runId.length > 0
     && /^[a-f0-9]{64}$/.test(input.artifactSession?.ownerNonceHash ?? "")
+    && /^[a-f0-9]{64}$/.test(input.priorCaptureSha256 ?? "")
     && path.isAbsolute(artifactRoot)
     && positiveInteger(budgets?.maxActions)
     && positiveInteger(budgets?.maxWaypoints)
@@ -366,10 +377,25 @@ function conservativeWaypointDurationMs(
       ? KEY_ACTION_TIMEOUT_RESERVE_MS + action.holdMs
       : LOOK_ACTION_TIMEOUT_RESERVE_MS
   ), 0);
-  const captureMs = input.capture.maxTries * input.capture.attemptTimeoutMs
-    + Math.max(0, input.capture.maxTries - 1) * input.capture.intervalMs;
+  const captureMs = captureWorkReserveMs(input);
   const continuityMs = input.continuity.kind === "required" ? 2 * APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS : 0;
-  return actionMs + captureMs + continuityMs + input.budgets.recoveryReserveMs + ROUTE_FINALIZATION_RESERVE_MS;
+  return actionMs + POST_ACTION_RENDER_DWELL_MS + captureMs + continuityMs
+    + input.budgets.recoveryReserveMs + ROUTE_FINALIZATION_RESERVE_MS;
+}
+
+function captureWorkReserveMs(input: BoundRelativeRouteInput): number {
+  return CAPTURE_BINDING_TIMEOUT_RESERVE_MS
+    + input.capture.maxTries * input.capture.attemptTimeoutMs
+    + Math.max(0, input.capture.maxTries - 1) * input.capture.intervalMs;
+}
+
+function postCaptureReserveMs(input: BoundRelativeRouteInput): number {
+  const continuityMs = input.continuity.kind === "required" ? APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS : 0;
+  return continuityMs + input.budgets.recoveryReserveMs + ROUTE_FINALIZATION_RESERVE_MS;
+}
+
+function postRenderDwellReserveMs(input: BoundRelativeRouteInput): number {
+  return captureWorkReserveMs(input) + postCaptureReserveMs(input);
 }
 
 function capturePathBelongsToSession(
@@ -570,6 +596,14 @@ export async function executeRelativeCameraRoute(
   const usage = { actions: 0, waypoints: 0, holdMs: 0, dragPx: 0, durationMs: 0 };
   let terminalActionFailure: TerminalCameraActionFailure | undefined;
   if (!validInput(input)) return { status: "budget_exhausted", waypoints, usage };
+  if (!deps
+    || typeof deps.applyRelativeAction !== "function"
+    || typeof deps.captureSettled !== "function"
+    || typeof deps.allocateWaypointPath !== "function"
+    || typeof deps.sleep !== "function"
+    || typeof deps.monotonicNs !== "function") {
+    return { status: "budget_exhausted", waypoints, usage };
+  }
   const canonicalSessionRoot = canonicalExternalSessionRoot(input.artifactSession);
   if (!canonicalSessionRoot) return { status: "budget_exhausted", waypoints, usage };
   let startedAt: bigint;
@@ -618,6 +652,7 @@ export async function executeRelativeCameraRoute(
   };
 
   if (input.continuity.kind === "required" && !deps.sampleContinuity) return finish("binding_lost");
+  let priorCaptureSha256 = input.priorCaptureSha256;
 
   while (true) {
     let decision: RelativeCameraAction[] | "stop";
@@ -712,11 +747,34 @@ export async function executeRelativeCameraRoute(
       return finish("action_failed");
     }
 
-    let settle: CaptureSettledReceipt;
     try {
-      settle = await deps.captureSettled(capturePath);
+      await deps.sleep(POST_ACTION_RENDER_DWELL_MS);
     } catch {
       return finish("route_unsettled");
+    }
+    const elapsedAfterDwellMs = elapsedMs();
+    if (elapsedAfterDwellMs === null) return finishWithoutClock("budget_exhausted");
+    if (elapsedAfterDwellMs + postRenderDwellReserveMs(input) > input.budgets.maxDurationMs) {
+      return finish("budget_exhausted");
+    }
+
+    let settle: CaptureSettledReceipt;
+    try {
+      settle = await deps.captureSettled(capturePath, {
+        priorSha256: priorCaptureSha256,
+        remainingMs: () => {
+          const elapsed = elapsedMs();
+          if (elapsed === null) return 0;
+          return Math.max(0, input.budgets.maxDurationMs - elapsed - postCaptureReserveMs(input));
+        },
+      });
+    } catch {
+      return finish("route_unsettled");
+    }
+    const elapsedAfterCaptureMs = elapsedMs();
+    if (elapsedAfterCaptureMs === null) return finishWithoutClock("budget_exhausted");
+    if (elapsedAfterCaptureMs + postCaptureReserveMs(input) > input.budgets.maxDurationMs) {
+      return finish("budget_exhausted");
     }
     try {
       if (!settledReceiptMatches(capturePath, input, settle)) return finish("route_unsettled");
@@ -735,7 +793,16 @@ export async function executeRelativeCameraRoute(
     });
     usage.waypoints++;
 
-    if (settle.status !== "settled" || !settle.settlementSatisfied) return finish("route_unsettled");
+    if (settle.status !== "settled"
+      || !settle.settlementSatisfied
+      || settle.sha256 === priorCaptureSha256) return finish("route_unsettled");
     if (!continuityAfter.matches) return finish("binding_lost");
+    const elapsedAfterFinalContinuityMs = elapsedMs();
+    if (elapsedAfterFinalContinuityMs === null) return finishWithoutClock("budget_exhausted");
+    if (elapsedAfterFinalContinuityMs + input.budgets.recoveryReserveMs + ROUTE_FINALIZATION_RESERVE_MS
+      > input.budgets.maxDurationMs) {
+      return finish("budget_exhausted");
+    }
+    priorCaptureSha256 = settle.sha256!;
   }
 }

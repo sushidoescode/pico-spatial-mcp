@@ -7,6 +7,7 @@ import { z } from "zod";
 import { bindMacQemuWindow, createBoundCameraActionAdapter, type BoundQemuWindow } from "./cameradrive.js";
 import {
   executeRelativeCameraRoute,
+  ROUTE_FINALIZATION_RESERVE_MS,
   type BoundApplicationIdentity,
   type RelativeCameraAction,
   type RouteBudgets,
@@ -56,6 +57,8 @@ type RecoveryKind = "observe" | "reopen_stage" | "activity_launch" | "force_stop
 type RecoveryAttributionKind = RecoveryKind | "activity_launch_ignored";
 type BoundaryEntryRoute = "manifest_mixed" | "manifest_full" | "dynamic_full" | "editor_manifest_full";
 const LOG_FINALIZATION_RESERVE_MS = 6_500;
+const WAYPOINT_COVERAGE_MARKER_RESERVE_MS = 5_000;
+const WAYPOINT_HEALTH_SNAPSHOT_RESERVE_MS = 12_000;
 // Worst-case post-force-stop command/capture/continuity/marker/log-finalization envelopes. The
 // destructive command is withheld unless the whole compensating relaunch path still fits.
 const FORCE_STOP_STATIC_COMPLETION_RESERVE_MS = 185_000;
@@ -1357,6 +1360,11 @@ function captureToReview(
 
 function budgetProblem(state: ExperimentState, waypoint: BoundaryWaypointPlan): boolean {
   const budgets = state.input.route.budgets;
+  const preflightReserveMs = WAYPOINT_COVERAGE_MARKER_RESERVE_MS
+    + state.input.capture.attemptTimeoutMs
+    + APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS
+    + WAYPOINT_HEALTH_SNAPSHOT_RESERVE_MS
+    + ROUTE_FINALIZATION_RESERVE_MS;
   const groupActions = waypoint.actions.length;
   const groupHold = waypoint.actions.reduce((sum, action) => sum + (action.kind === "key_hold" ? action.holdMs : 0), 0);
   const groupDrag = waypoint.actions.reduce((sum, action) => sum + (action.kind === "look_drag" ? Math.hypot(action.dxPx, action.dyPx) : 0), 0);
@@ -1365,6 +1373,7 @@ function budgetProblem(state: ExperimentState, waypoint: BoundaryWaypointPlan): 
     || state.usage.holdMs + groupHold > budgets.maxCumulativeHoldMs
     || state.usage.dragPx + groupDrag > budgets.maxCumulativeDragPx
     || state.usage.durationMs >= budgets.maxDurationMs - budgets.recoveryReserveMs
+    || state.usage.durationMs + preflightReserveMs > budgets.maxDurationMs - budgets.recoveryReserveMs
     || waypoint.actions.some((action) => action.kind === "key_hold" ? action.holdMs > budgets.maxHoldMsPerAction : Math.hypot(action.dxPx, action.dyPx) > budgets.maxDragPxPerAction);
 }
 
@@ -1709,10 +1718,11 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
             preflightLogPath,
             attemptOrdinal,
             remainingBudgets: remainingBudgets(state),
-            recaptureReviewedFrame: () => dependencies.recaptureReviewedFrame({
+            recaptureReviewedFrame: (limits: Record<string, any> = {}) => dependencies.recaptureReviewedFrame({
               state,
               expectedSha256: state.lastRequiredHash,
               attestation: input.reviewedPriorFrame,
+              ...limits,
             }),
           });
         } catch (error) {
@@ -1762,7 +1772,10 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           scrubRuntime(state);
         }
         if (!executed.capture) {
-          if (!state.structuralStop) state.structuralStop = "route_unsettled";
+          const exhaustedBeforeInput = traceStop === "budget_exhausted"
+            && Number(usage.actions ?? 0) === 0
+            && Number(usage.waypoints ?? 0) === 0;
+          if (!state.structuralStop) state.structuralStop = exhaustedBeforeInput ? "budget_exhausted" : "route_unsettled";
           persistState(state);
           return { ...terminalResponse(state), routeTrace: executed.routeTrace, captureError: executed.captureError ?? "no transition capture was published" };
         }
@@ -2403,9 +2416,13 @@ async function collectRuntimeHealthSnapshot(input: {
   packageName: string;
   expectedPids: readonly number[];
   secrets: readonly string[];
+  timeoutMs?: number;
 }): Promise<{ receipt: RuntimeLogSnapshotReceipt; health: PackageRuntimeHealthReceiptV1 }> {
+  const timeoutMs = input.timeoutMs === undefined
+    ? WAYPOINT_HEALTH_SNAPSHOT_RESERVE_MS
+    : Math.max(1, Math.min(WAYPOINT_HEALTH_SNAPSHOT_RESERVE_MS, Math.floor(input.timeoutMs)));
   const result = await run(input.adb, ["-s", input.serial, "logcat", "-b", "all", "-d", "-v", "threadtime"], {
-    timeoutMs: 12_000,
+    timeoutMs,
     maxOutputBytes: LOG_ARTIFACT_MAX_BYTES,
   });
   if (result.code !== 0 || result.timedOut || result.stderr.includes("output exceeded maxOutputBytes")) {
@@ -2600,6 +2617,7 @@ async function liveCapture(
   outPath: string,
   role: BoundaryCapture["role"],
   remainingMs?: () => number,
+  priorSha256?: string,
 ): Promise<BoundaryCapture> {
   const boundedTimeout = (capMs: number, label: string): number => {
     if (!remainingMs) return capMs;
@@ -2634,6 +2652,7 @@ async function liveCapture(
     maxTries: input.capture.maxTries,
     intervalMs: input.capture.intervalMs,
     comparison: SETTLE_COMPARISON,
+    ...(priorSha256 ? { priorSha256 } : {}),
   }, {
     monotonicNs: () => process.hrtime.bigint(),
     listOnlineSerials: async () => {
@@ -2725,20 +2744,45 @@ export function waypointPreflightAllowsMovement(
     ));
 }
 
-export function chargePreflightDriftDuration(
+export function chargeWaypointElapsedDuration(
   routeTrace: Record<string, any>,
   startedNs: bigint,
   finishedNs: bigint,
 ): Record<string, any> {
-  if (finishedNs < startedNs) throw new Error("monotonic preflight duration cannot be negative");
+  if (finishedNs < startedNs) throw new Error("monotonic waypoint duration cannot be negative");
   const existingDurationMs = Number(routeTrace.usage?.durationMs ?? 0);
-  if (!Number.isFinite(existingDurationMs) || existingDurationMs < 0) throw new Error("preflight drift trace published invalid duration usage");
+  if (!Number.isFinite(existingDurationMs) || existingDurationMs < 0) throw new Error("waypoint trace published invalid duration usage");
   const elapsedNs = finishedNs - startedNs;
   const elapsedMs = elapsedNs === 0n ? 0 : Number((elapsedNs + 999_999n) / 1_000_000n);
   return {
     ...routeTrace,
-    usage: { ...routeTrace.usage, durationMs: existingDurationMs + elapsedMs },
+    usage: { ...routeTrace.usage, durationMs: Math.max(existingDurationMs, elapsedMs) },
   };
+}
+
+export function remainingWaypointOperationMs(
+  deadlineNs: bigint,
+  observedNs: bigint,
+  reserveMs: readonly number[],
+): number {
+  if (typeof deadlineNs !== "bigint" || typeof observedNs !== "bigint" || observedNs < 0n
+    || !Array.isArray(reserveMs)
+    || reserveMs.some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    throw new Error("invalid waypoint deadline or reserve envelope");
+  }
+  if (observedNs >= deadlineNs) return 0;
+  const remainingNs = deadlineNs - observedNs;
+  const remainingMs = Number(remainingNs / 1_000_000n);
+  const reservedMs = reserveMs.reduce((sum, value) => sum + value, 0);
+  return Math.max(0, remainingMs - reservedMs);
+}
+
+export function waypointTransitionCapturePath(waypointCapturePath: string): string {
+  if (!path.isAbsolute(waypointCapturePath) || path.extname(waypointCapturePath) !== ".png") {
+    throw new Error("waypoint capture path must be an absolute PNG path");
+  }
+  const parsed = path.parse(waypointCapturePath);
+  return path.join(parsed.dir, `${parsed.name}-transition.png`);
 }
 
 export function waypointCoverageMarker(runId: string, waypointSeq: number, attemptOrdinal: number): string {
@@ -3102,9 +3146,23 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
     },
     recaptureReviewedFrame: async (context) => {
       const state = context.state as ExperimentState;
-      const frame = await captureAdbFrame(adb, state.input.serial, state.input.capture.attemptTimeoutMs);
+      const remainingMs = typeof context.remainingMs === "function" ? context.remainingMs as () => number : null;
+      const boundedTimeout = (capMs: number, label: string): number => {
+        if (!remainingMs) return capMs;
+        const remaining = Math.floor(remainingMs());
+        if (!Number.isFinite(remaining) || remaining < 1) throw new Error(`${label} refused because the waypoint deadline is exhausted`);
+        return Math.max(1, Math.min(capMs, remaining));
+      };
+      const frame = await captureAdbFrame(
+        adb,
+        state.input.serial,
+        boundedTimeout(state.input.capture.attemptTimeoutMs, "reviewed-frame recapture"),
+      );
       const sha256 = hashBytes(frame.bytes);
       const sampler = (state.preparation.privateRuntime as LiveBoundaryRuntime).sampler;
+      if (remainingMs && remainingMs() < APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS) {
+        throw new Error("reviewed-frame continuity sample refused because the waypoint deadline is exhausted");
+      }
       const continuity = await sampler();
       const coherent = continuity.serial === state.input.serial
         && continuity.bootId === state.preparation.runtimeBinding.bootId
@@ -3114,9 +3172,23 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
       return { matches: sha256 === context.expectedSha256 && coherent, sha256, continuity };
     },
     executeWaypoint: async (context) => {
+      const waypointStartedNs = process.hrtime.bigint();
       const state = context.state as ExperimentState;
       const waypoint = context.waypoint as BoundaryWaypointPlan;
       const live = state.preparation.privateRuntime as LiveBoundaryRuntime;
+      const remainingDurationBudgetMs = Number(context.remainingBudgets.maxDurationMs);
+      const recoveryReserveMs = Number(context.remainingBudgets.recoveryReserveMs);
+      const nonRecoveryBudgetMs = remainingDurationBudgetMs - recoveryReserveMs;
+      if (!Number.isSafeInteger(remainingDurationBudgetMs) || !Number.isSafeInteger(recoveryReserveMs)
+        || nonRecoveryBudgetMs < 1) {
+        throw new Error("waypoint has no positive work deadline outside the protected recovery reserve");
+      }
+      const waypointDeadlineNs = waypointStartedNs + BigInt(nonRecoveryBudgetMs) * 1_000_000n;
+      const remainingWaypointWorkMs = (): number => remainingWaypointOperationMs(
+        waypointDeadlineNs,
+        process.hrtime.bigint(),
+        [],
+      );
       const marker = `boundary_step_${state.runId.slice(0, 12)}_${waypoint.seq}_${context.attemptOrdinal}`;
       const coverageMarker = live.coverageMarker;
       const nextCoverageMarker = waypointCoverageMarker(state.runId, waypoint.seq, context.attemptOrdinal);
@@ -3126,7 +3198,9 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
         serial: state.input.serial,
         artifactPath: logPath,
         appStartMarker: coverageMarker,
-        maxDurationMs: Math.max(1, Math.min(LOG_WINDOW_MAX_DURATION_MS, Number(context.remainingBudgets.maxDurationMs))),
+        maxDurationMs: Math.max(1, Math.min(LOG_WINDOW_MAX_DURATION_MS,
+          remainingWaypointOperationMs(waypointDeadlineNs, process.hrtime.bigint(), [LOG_FINALIZATION_RESERVE_MS]),
+        )),
       });
       type WaypointResult = Awaited<ReturnType<BoundaryExperimentDependencies["executeWaypoint"]>>;
       const retainedHolder: { value: WaypointResult | null } = { value: null };
@@ -3139,7 +3213,22 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
           secrets: () => [live.secret],
           operation: async () => {
             if (!ownedLog.started()) throw new Error(`waypoint ${waypoint.seq} log collector did not own a live child before movement`);
-            checkedAdb(await run(adb, ["-s", state.input.serial, "shell", "log", "-t", "BoundaryExperiment", marker], { timeoutMs: 5_000 }), "waypoint log marker");
+            const initialMarkerTimeoutMs = remainingWaypointOperationMs(
+              waypointDeadlineNs,
+              process.hrtime.bigint(),
+              [
+                state.input.capture.attemptTimeoutMs,
+                APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS,
+                WAYPOINT_HEALTH_SNAPSHOT_RESERVE_MS,
+                ROUTE_FINALIZATION_RESERVE_MS,
+              ],
+            );
+            if (initialMarkerTimeoutMs < 1) throw new Error("waypoint log marker refused because the preflight envelope is exhausted");
+            checkedAdb(await run(
+              adb,
+              ["-s", state.input.serial, "shell", "log", "-t", "BoundaryExperiment", marker],
+              { timeoutMs: Math.min(WAYPOINT_COVERAGE_MARKER_RESERVE_MS, initialMarkerTimeoutMs) },
+            ), "waypoint log marker");
             let preflight: Awaited<ReturnType<BoundaryExperimentDependencies["recaptureReviewedFrame"]>> | null = null;
             let preflightLogArtifact: RuntimeLogSnapshotReceipt | null = null;
             let preflightRuntimeHealth = inconclusiveRuntimeHealth(
@@ -3149,15 +3238,26 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
             );
             let routeTrace: Record<string, any> | null = null;
             let capture: BoundaryCapture | null = null;
+            const movementCaptureHolder: { value: BoundaryCapture | null } = { value: null };
             let captureError: string | undefined;
             let executionError: string | undefined;
             let decided = false;
-            let preflightStartedNs: bigint | null = null;
             try {
-              preflightStartedNs = process.hrtime.bigint();
-              const collectedPreflight = await context.recaptureReviewedFrame() as Awaited<ReturnType<BoundaryExperimentDependencies["recaptureReviewedFrame"]>>;
+              const collectedPreflight = await context.recaptureReviewedFrame({
+                remainingMs: () => remainingWaypointOperationMs(
+                  waypointDeadlineNs,
+                  process.hrtime.bigint(),
+                  [WAYPOINT_HEALTH_SNAPSHOT_RESERVE_MS, ROUTE_FINALIZATION_RESERVE_MS],
+                ),
+              }) as Awaited<ReturnType<BoundaryExperimentDependencies["recaptureReviewedFrame"]>>;
               preflight = collectedPreflight;
               try {
+                const healthTimeoutMs = remainingWaypointOperationMs(
+                  waypointDeadlineNs,
+                  process.hrtime.bigint(),
+                  [ROUTE_FINALIZATION_RESERVE_MS],
+                );
+                if (healthTimeoutMs < 1) throw new Error("runtime-health snapshot refused because the waypoint deadline is exhausted");
                 const snapshot = await collectRuntimeHealthSnapshot({
                   adb,
                   serial: state.input.serial,
@@ -3166,6 +3266,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                   packageName: state.input.scenario.packageName,
                   expectedPids: [state.preparation.applicationBinding.pid, collectedPreflight.continuity.pid ?? 0],
                   secrets: [live.secret],
+                  timeoutMs: healthTimeoutMs,
                 });
                 preflightLogArtifact = snapshot.receipt;
                 preflightRuntimeHealth = snapshot.health;
@@ -3188,11 +3289,16 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                   preflightRuntimeHealth,
                 };
               } else {
+                const routeBudgets = {
+                  ...context.remainingBudgets,
+                  maxDurationMs: Math.max(1, remainingWaypointWorkMs() + recoveryReserveMs),
+                } as RouteBudgets;
                 routeTrace = await executeRelativeCameraRoute({
                   runtimeBinding: state.preparation.runtimeBinding,
                   continuity: { kind: "required", binding: state.preparation.applicationBinding },
                   artifactSession: { runId: state.runId, absoluteRoot: state.artifactRoot, ownerNonceHash: state.ownerNonceHash },
-                  budgets: context.remainingBudgets as RouteBudgets,
+                  priorCaptureSha256: state.lastRequiredHash,
+                  budgets: routeBudgets,
                   capture: state.input.capture,
                 }, () => {
                   if (decided) return "stop";
@@ -3201,11 +3307,20 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                 }, {
                   ...createBoundCameraActionAdapter(state.input.serial, live.window),
                   sampleContinuity: live.sampler,
-                  captureSettled: async (capturePath) => {
-                    const captured = await liveCapture(adb, state.input, capturePath, "waypoint");
+                  captureSettled: async (capturePath, captureContext) => {
+                    const captured = await liveCapture(
+                      adb,
+                      state.input,
+                      capturePath,
+                      "waypoint",
+                      captureContext.remainingMs,
+                      captureContext.priorSha256,
+                    );
+                    movementCaptureHolder.value = captured;
                     return captured.receipt as any;
                   },
                   allocateWaypointPath: () => context.capturePath as string,
+                  sleep,
                   monotonicNs: () => process.hrtime.bigint(),
                 });
               }
@@ -3225,21 +3340,43 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                 settled: completed.settle.status === "settled" && completed.settle.settlementSatisfied,
                 receipt: completed.settle,
               };
+            } else if (movementCaptureHolder.value !== null) {
+              capture = { ...movementCaptureHolder.value, role: "transition" };
             } else {
               try {
-                capture = await liveCapture(adb, state.input, context.capturePath as string, "transition");
+                const remainingTransitionMs = (): number => remainingWaypointOperationMs(
+                  waypointDeadlineNs,
+                  process.hrtime.bigint(),
+                  [
+                    APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS,
+                    WAYPOINT_COVERAGE_MARKER_RESERVE_MS,
+                    LOG_FINALIZATION_RESERVE_MS,
+                  ],
+                );
+                capture = await liveCapture(
+                  adb,
+                  state.input,
+                  waypointTransitionCapturePath(context.capturePath as string),
+                  "transition",
+                  remainingTransitionMs,
+                );
               } catch (error) {
                 captureError = redactSensitiveText(error, [live.secret]);
               }
-            }
-            if (routeTrace?.preMovementReviewDrift && preflightStartedNs !== null) {
-              routeTrace = chargePreflightDriftDuration(routeTrace, preflightStartedNs, process.hrtime.bigint());
             }
             const continuity: ApplicationContinuitySample[] = routeTrace?.waypoints?.flatMap((entry: any) => [entry.continuityBefore, entry.continuityAfter])
               .filter((entry: any) => entry?.kind === "sampled")
               .map((entry: any) => entry.sample) ?? [];
             if (continuity.length === 0) {
               try {
+                const continuityBudgetMs = remainingWaypointOperationMs(
+                  waypointDeadlineNs,
+                  process.hrtime.bigint(),
+                  [WAYPOINT_COVERAGE_MARKER_RESERVE_MS, LOG_FINALIZATION_RESERVE_MS],
+                );
+                if (continuityBudgetMs < APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS) {
+                  throw new Error("fallback continuity refused because the waypoint deadline is exhausted");
+                }
                 continuity.push(await live.sampler());
               } catch (error) {
                 executionError = executionError ?? redactSensitiveText(error, [live.secret]);
@@ -3252,8 +3389,16 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
               terminalDependencyError: executionError ?? "route dependency failed before publishing its trace",
             };
             try {
+              const coverageMarkerTimeoutMs = remainingWaypointOperationMs(
+                waypointDeadlineNs,
+                process.hrtime.bigint(),
+                [LOG_FINALIZATION_RESERVE_MS],
+              );
+              if (coverageMarkerTimeoutMs < 1) throw new Error("waypoint coverage marker refused because the log-finalization reserve is exhausted");
               checkedAdb(
-                await run(adb, ["-s", state.input.serial, "shell", "log", "-t", "BoundaryExperiment", nextCoverageMarker], { timeoutMs: 5_000 }),
+                await run(adb, ["-s", state.input.serial, "shell", "log", "-t", "BoundaryExperiment", nextCoverageMarker], {
+                  timeoutMs: Math.min(WAYPOINT_COVERAGE_MARKER_RESERVE_MS, coverageMarkerTimeoutMs),
+                }),
                 `waypoint ${waypoint.seq} coverage marker`,
               );
               live.coverageMarker = nextCoverageMarker;
@@ -3280,7 +3425,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
             return retainedHolder.value;
           },
         });
-        return {
+        const completed = {
           ...finalized.value,
           logArtifact: finalized.logArtifact,
           runtimeHealth: finalizedWaypointRuntimeHealth(
@@ -3290,11 +3435,25 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
             marker,
           ),
         };
+        const finishedNs = process.hrtime.bigint();
+        const chargedTrace = chargeWaypointElapsedDuration(completed.routeTrace, waypointStartedNs, finishedNs);
+        const deadlineTrace = finishedNs > waypointDeadlineNs
+          ? {
+              ...chargedTrace,
+              status: "budget_exhausted",
+              terminalDependencyError: "waypoint finalization exceeded the absolute non-recovery deadline",
+            }
+          : chargedTrace;
+        return {
+          ...completed,
+          routeTrace: deadlineTrace,
+        };
       } catch (error) {
         const retained = retainedHolder.value;
         if (retained === null) throw error;
         return {
           ...retained,
+          routeTrace: chargeWaypointElapsedDuration(retained.routeTrace, waypointStartedNs, process.hrtime.bigint()),
           logArtifact: null,
           executionError: [retained.executionError, redactSensitiveText(error, [live.secret])].filter(Boolean).join("; "),
         };

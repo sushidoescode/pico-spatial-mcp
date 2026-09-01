@@ -1743,6 +1743,26 @@ test("aggregate route budgets persist across staged step calls and cannot reset 
   assert.equal(fake.calls.waypoint.length, 1);
 });
 
+test("a route with less than the bounded live preflight envelope stops before waypoint dependencies", async (t) => {
+  const fake = fakeDependencies();
+  const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+  const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "run"), {
+    route: {
+      ...route({ kind: "calibration_seed", waypoints: waypoints(1) }),
+      budgets: { ...budgets, maxDurationMs: 560_000 },
+    },
+  }));
+  const stopped = await orchestrator.execute({
+    action: "step",
+    runId: prepared.runId,
+    reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+  });
+  assert.equal(stopped.status, "ready_for_route_adjudication");
+  assert.equal(stopped.structuralStop, "budget_exhausted");
+  assert.equal(fake.calls.recapture.length, 0);
+  assert.equal(fake.calls.waypoint.length, 0);
+});
+
 test("the bounded four-action outer gate remains reachable after five staged waypoint reviews", async (t) => {
   const calibratedWaypoints = waypoints();
   calibratedWaypoints[5] = {
@@ -2187,16 +2207,22 @@ test("recovery candidates require the exact bound process and the exact expected
   assert.equal(recoveryReboundTupleChanged(applicationBinding, { ...applicationBinding, pidStartTicks: "9002" }), true);
 });
 
-test("the live preflight-drift trace charges elapsed monotonic preflight, health, and capture work", () => {
-  assert.equal(typeof boundaryExperiment.chargePreflightDriftDuration, "function");
-  const trace = boundaryExperiment.chargePreflightDriftDuration({
-    status: "binding_lost",
-    waypoints: [],
-    usage: { actions: 0, waypoints: 0, holdMs: 0, dragPx: 0, durationMs: 0 },
-    preMovementReviewDrift: true,
-  }, 1_000_000_000n, 1_001_500_001n);
-  assert.equal(trace.usage.durationMs, 2);
-  assert.equal(trace.preMovementReviewDrift, true);
+test("the live waypoint trace charges complete wall time once across preflight, movement, and finalization", () => {
+  assert.equal(typeof boundaryExperiment.chargeWaypointElapsedDuration, "function");
+  const trace = boundaryExperiment.chargeWaypointElapsedDuration({
+    status: "controller_stop",
+    waypoints: [{}],
+    usage: { actions: 1, waypoints: 1, holdMs: 444, dragPx: 0, durationMs: 25 },
+  }, 1_000_000_000n, 1_100_000_000n);
+  assert.equal(trace.usage.durationMs, 100, "the enclosing wall time replaces, rather than double-counts, route time");
+  assert.equal(trace.status, "controller_stop");
+  assert.equal(typeof boundaryExperiment.remainingWaypointOperationMs, "function");
+  assert.equal(boundaryExperiment.remainingWaypointOperationMs(
+    100_000_000_000n,
+    10_000_000_000n,
+    [10_000, 5_000, 6_500],
+  ), 68_500);
+  assert.equal(boundaryExperiment.remainingWaypointOperationMs(1_000_000n, 2_000_000n, [1]), 0);
 });
 
 test("live waypoint coverage markers bind a finalized retry health receipt exactly once and leave the next waypoint viable", (t) => {
@@ -2907,6 +2933,18 @@ test("the implementation imports the shared CP1 executor and registers exactly o
   assert.match(source, /sampleApplicationContinuity/);
   assert.match(source, /collectLogWindow/);
   assert.match(source, /executeCaptureSettled/);
+  assert.match(source, /priorCaptureSha256: state\.lastRequiredHash/,
+    "live movement must bind settlement to the exact reviewed prior frame");
+  assert.match(source, /captureContext\.priorSha256/,
+    "live capture must receive the shared route's prior-frame guard");
+  assert.match(source, /captureContext\.remainingMs/,
+    "live capture must receive the shared route's remaining capture window");
+  assert.match(source, /movementCaptureHolder\.value = captured/,
+    "a movement capture returned at the deadline must remain surfaced instead of being replaced");
+  assert.match(source, /waypointTransitionCapturePath\(context\.capturePath as string\)/,
+    "a fallback transition must never publish over the movement capture target");
+  assert.match(source, /allocateWaypointPath:[\s\S]*sleep,[\s\S]*monotonicNs/,
+    "live movement must supply the shared route's render dwell dependency");
   assert.equal((source.match(/runWithFinalizedLog\(\{/g) ?? []).length, 3);
   assert.equal((source.match(/const ownedLog = startOwnedLogWindow\(\{/g) ?? []).length, 3);
   assert.equal((source.match(/if \(!ownedLog\.started\(\)\)/g) ?? []).length, 3);
@@ -2917,11 +2955,19 @@ test("the implementation imports the shared CP1 executor and registers exactly o
   assert.match(source, /LOG_FINALIZATION_RESERVE_MS/);
   assert.match(source, /reboundTupleChanged: true/);
   const waypointCollector = source.indexOf("const ownedLog = startOwnedLogWindow({", source.indexOf("executeWaypoint:"));
-  const waypointRecapture = source.indexOf("context.recaptureReviewedFrame()", source.indexOf("executeWaypoint:"));
+  const waypointRecapture = source.indexOf("context.recaptureReviewedFrame(", source.indexOf("executeWaypoint:"));
   const waypointHealthSnapshot = source.indexOf("collectRuntimeHealthSnapshot({", waypointRecapture);
   const waypointMovement = source.indexOf("executeRelativeCameraRoute({", waypointHealthSnapshot);
   assert.ok(waypointCollector >= 0 && waypointCollector < waypointRecapture, "waypoint log child must start before the reviewed-frame recapture");
   assert.ok(waypointRecapture < waypointHealthSnapshot && waypointHealthSnapshot < waypointMovement, "gap crash/ANR snapshot must gate movement after recapture");
+  assert.equal((source.match(/chargeWaypointElapsedDuration\(/g) ?? []).length, 3,
+    "the helper definition and both successful/error waypoint returns must charge complete wall time");
+  assert.equal(source.includes("if (routeTrace?.preMovementReviewDrift && preflightStartedNs !== null)"), false,
+    "normal successful waypoints must not skip persisted preflight time");
+  assert.match(source, /remainingWaypointOperationMs\([\s\S]*APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS[\s\S]*WAYPOINT_COVERAGE_MARKER_RESERVE_MS[\s\S]*LOG_FINALIZATION_RESERVE_MS/,
+    "transition capture must leave continuity, marker, and log-finalization envelopes outside recovery");
+  assert.match(source, /const coverageMarkerTimeoutMs = remainingWaypointOperationMs\([\s\S]{0,300}\[LOG_FINALIZATION_RESERVE_MS\]/,
+    "the coverage marker must be clamped while preserving log finalization");
   const recoveryCollector = source.indexOf("const ownedLog = startOwnedLogWindow({", source.indexOf("executeRecoveryStep:"));
   const recoveryBeforeCapture = source.indexOf("`${prefix}-before.png`", recoveryCollector);
   assert.ok(recoveryCollector >= 0 && recoveryCollector < recoveryBeforeCapture, "recovery log child must start before its intervention pre-frame");
@@ -2934,4 +2980,16 @@ test("the implementation imports the shared CP1 executor and registers exactly o
   assert.equal((source.match(/server\.registerTool\(/g) ?? []).length, 1);
   assert.match(source, /"run_immersive_boundary_experiment"/);
   assert.match(index, /if \(!doorsSurfaceActive\(\)\)[\s\S]*registerBoundaryExperimentTools\(server\)[\s\S]*\}\s*registerDoorTools/);
+});
+
+test("waypoint transition fallbacks use a distinct deterministic capture target", () => {
+  const waypointPath = path.join(os.tmpdir(), "run", "captures", "101-waypoint-1-attempt-2.png");
+  const transitionPath = boundaryExperiment.waypointTransitionCapturePath(waypointPath);
+  assert.equal(
+    transitionPath,
+    path.join(os.tmpdir(), "run", "captures", "101-waypoint-1-attempt-2-transition.png"),
+  );
+  assert.notEqual(transitionPath, waypointPath);
+  assert.throws(() => boundaryExperiment.waypointTransitionCapturePath("relative.png"), /absolute PNG/);
+  assert.throws(() => boundaryExperiment.waypointTransitionCapturePath(path.join(os.tmpdir(), "frame.jpg")), /absolute PNG/);
 });

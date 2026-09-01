@@ -24,6 +24,7 @@ export interface SettlePolicy {
   maxTries: number;
   intervalMs: number;
   comparison: typeof SETTLE_COMPARISON;
+  priorSha256?: string;
 }
 
 export interface SettleDependencies {
@@ -60,15 +61,27 @@ export type SettledFrameResult =
     };
 
 /**
- * Capture until two consecutive frame byte streams are identical. Capture, sleeping, and hashing
- * are injected so the complete settle discipline is deterministic under unit tests and shared by
- * every caller. A failed later capture retains the last valid frame; a timeout never claims that
- * its final frame is a navigation waypoint.
+ * Capture until two consecutive frame byte streams are identical. When priorSha256 is supplied,
+ * the stable pair must also differ from that exact prior frame so a delayed transition cannot
+ * settle on stale pixels. Capture, sleeping, and hashing are injected so the complete discipline
+ * is deterministic under unit tests and shared by every caller. A failed later capture retains the
+ * last valid frame; a timeout never claims that its final frame is a navigation waypoint.
  */
 export async function captureSettledFrames(
   policy: SettlePolicy,
   deps: SettleDependencies,
 ): Promise<SettledFrameResult> {
+  if (policy.priorSha256 !== undefined && !/^[0-9a-f]{64}$/.test(policy.priorSha256)) {
+    return {
+      status: "capture_failed",
+      attempts: 0,
+      settlementSatisfied: false,
+      frame: null,
+      sha256: null,
+      stablePair: null,
+      detail: "priorSha256 must be exactly 64 lowercase hexadecimal characters",
+    };
+  }
   let previous: { frame: CapturedFrame; sha256: string } | null = null;
   for (let attempt = 1; attempt <= policy.maxTries; attempt++) {
     let frame: CapturedFrame;
@@ -86,7 +99,11 @@ export async function captureSettledFrames(
       };
     }
     const sha256 = deps.hash(frame.bytes);
-    if (previous && frame.bytes.equals(previous.frame.bytes)) {
+    if (
+      previous
+      && frame.bytes.equals(previous.frame.bytes)
+      && sha256 !== policy.priorSha256
+    ) {
       return {
         status: "settled",
         attempts: attempt,
@@ -168,6 +185,7 @@ export interface CaptureSettledInput {
   maxTries: number;
   intervalMs: number;
   comparison: typeof SETTLE_COMPARISON;
+  priorSha256?: string;
 }
 
 export interface CaptureSettledDependencies {
@@ -438,7 +456,12 @@ export async function executeCaptureSettled(
   }
 
   const settled = await captureSettledFrames(
-    { maxTries: input.maxTries, intervalMs: input.intervalMs, comparison: input.comparison },
+    {
+      maxTries: input.maxTries,
+      intervalMs: input.intervalMs,
+      comparison: input.comparison,
+      priorSha256: input.priorSha256,
+    },
     { capture: () => deps.capture(input.serial), sleep: deps.sleep, hash: deps.hash },
   );
   let endingIdentity: CaptureLiveIdentity | null = null;
@@ -522,7 +545,12 @@ export async function executeCaptureSettled(
     error: settled.status === "settled"
       ? null
       : settled.status === "timeout"
-        ? { code: "settle_timeout", detail: `no byte-identical consecutive pair within ${settled.attempts} capture attempts` }
+        ? {
+            code: "settle_timeout",
+            detail: input.priorSha256
+              ? `no byte-identical consecutive pair different from the required prior frame within ${settled.attempts} capture attempts`
+              : `no byte-identical consecutive pair within ${settled.attempts} capture attempts`,
+          }
         : { code: "capture_failed", detail: failedDetail! },
     evidenceCeiling: "structural",
     lookRequired: true,

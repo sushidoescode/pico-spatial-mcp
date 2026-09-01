@@ -30,6 +30,7 @@ function settleDeps(sequence) {
   let index = 0;
   return {
     sleeps,
+    get captures() { return index; },
     deps: {
       capture: async () => {
         const next = sequence[index++];
@@ -59,6 +60,53 @@ test("captureSettledFrames waits through changed frames and stops at a delayed i
   assert.equal(result.status, "settled");
   assert.equal(result.attempts, 3);
   assert.deepEqual(fake.sleeps, [11, 11]);
+});
+
+test("captureSettledFrames ignores a stable stale pair matching the required prior SHA", async () => {
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const fake = settleDeps([frame("prior"), frame("prior"), frame("moved"), frame("moved")]);
+  const result = await captureSettledFrames(
+    { maxTries: 4, intervalMs: 11, comparison: SETTLE_COMPARISON, priorSha256 },
+    fake.deps,
+  );
+  assert.equal(result.status, "settled");
+  assert.equal(result.attempts, 4);
+  assert.equal(result.sha256, "5edd1832df25e2f1a72585c0ee55c1e585e7f4902eb1d15f7abf1c71c1b296ae");
+  assert.deepEqual(result.stablePair, [
+    "5edd1832df25e2f1a72585c0ee55c1e585e7f4902eb1d15f7abf1c71c1b296ae",
+    "5edd1832df25e2f1a72585c0ee55c1e585e7f4902eb1d15f7abf1c71c1b296ae",
+  ]);
+  assert.deepEqual(fake.sleeps, [11, 11, 11]);
+});
+
+test("captureSettledFrames times out and retains the last frame when every stable pair matches the required prior SHA", async () => {
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const fake = settleDeps([frame("prior"), frame("prior"), frame("prior")]);
+  const result = await captureSettledFrames(
+    { maxTries: 3, intervalMs: 9, comparison: SETTLE_COMPARISON, priorSha256 },
+    fake.deps,
+  );
+  assert.equal(result.status, "timeout");
+  assert.equal(result.attempts, 3);
+  assert.equal(result.sha256, priorSha256);
+  assert.equal(result.frame.bytes.toString(), "prior");
+  assert.equal(result.stablePair, null);
+  assert.deepEqual(fake.sleeps, [9, 9]);
+});
+
+test("captureSettledFrames fails closed before capture for a malformed required prior SHA", async () => {
+  const fake = settleDeps([frame("must-not-capture"), frame("must-not-capture")]);
+  const result = await captureSettledFrames(
+    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256: "not-a-sha256" },
+    fake.deps,
+  );
+  assert.equal(result.status, "capture_failed");
+  assert.equal(result.attempts, 0);
+  assert.equal(result.frame, null);
+  assert.equal(result.sha256, null);
+  assert.equal(result.stablePair, null);
+  assert.match(result.detail, /priorSha256.*64 lowercase hexadecimal/);
+  assert.equal(fake.captures, 0);
 });
 
 test("captureSettledFrames timeout retains the last valid frame without a stable pair", async () => {
@@ -136,6 +184,49 @@ test("executeCaptureSettled returns every settled contract field and external ca
   assert.equal(receipt.lookRequired, true);
   assert.deepEqual(receipt.actionReceipts, []);
   assert.equal(receipt.error, null);
+});
+
+test("executeCaptureSettled threads the required prior SHA into internal settlement", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-observation-prior-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const outPath = path.join(scratch, "moved.png");
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const { receipt } = await executeCaptureSettled(
+    {
+      serial: "emulator-5554",
+      outPath,
+      maxTries: 4,
+      intervalMs: 0,
+      comparison: SETTLE_COMPARISON,
+      priorSha256,
+    },
+    executionDeps({ sequence: [frame("prior"), frame("prior"), frame("moved"), frame("moved")] }),
+  );
+  assert.equal(receipt.status, "settled");
+  assert.equal(receipt.attempts, 4);
+  assert.equal(receipt.sha256, "5edd1832df25e2f1a72585c0ee55c1e585e7f4902eb1d15f7abf1c71c1b296ae");
+  assert.equal(fs.readFileSync(outPath).toString(), "moved");
+});
+
+test("executeCaptureSettled describes an all-prior timeout without denying the observed stable pairs", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-observation-prior-timeout-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const outPath = path.join(scratch, "prior.png");
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const { receipt } = await executeCaptureSettled(
+    {
+      serial: "emulator-5554",
+      outPath,
+      maxTries: 3,
+      intervalMs: 0,
+      comparison: SETTLE_COMPARISON,
+      priorSha256,
+    },
+    executionDeps({ sequence: [frame("prior"), frame("prior"), frame("prior")] }),
+  );
+  assert.equal(receipt.status, "timeout");
+  assert.match(receipt.error.detail, /no byte-identical consecutive pair different from the required prior frame/);
+  assert.equal(fs.readFileSync(outPath).toString(), "prior");
 });
 
 test("executeCaptureSettled timeout persists and returns only the last valid frame", async (t) => {
