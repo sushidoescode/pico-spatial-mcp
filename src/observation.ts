@@ -211,9 +211,9 @@ export function parseOnlineAdbSerials(output: string): string[] {
     .map((fields) => fields[0]);
 }
 
-export async function captureAdbFrame(adb: string, serial: string): Promise<CapturedFrame> {
+export async function captureAdbFrame(adb: string, serial: string, timeoutMs = 30_000): Promise<CapturedFrame> {
   const result = await runBinary(adb, ["-s", serial, "exec-out", "screencap", "-p"], {
-    timeoutMs: 30_000,
+    timeoutMs,
     maxOutputBytes: 64 * 1024 * 1024,
   });
   if (result.code !== 0 || result.timedOut) {

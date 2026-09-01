@@ -21,6 +21,7 @@ import {
   parseBoundaryProbeEventV1,
   parseBoundaryProbeLogRecordV1,
   parseSpatialRuntimeWatchdog,
+  scanPackageRuntimeHealth,
   sampleApplicationContinuity,
 } from "../dist/runtimecontinuity.js";
 
@@ -63,6 +64,40 @@ function textResult(stdout = "", overrides = {}) {
 
 function threadtime(tag, message, second = "01", pid = 1200) {
   return `08-31 12:34:${second}.123  ${pid}  1300 I ${tag}: ${message}`;
+}
+
+function runtimeHealthFixture(t, body, overrides = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico-runtime-health-test-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const artifactPath = path.join(root, "window.txt");
+  fs.writeFileSync(artifactPath, body, { mode: 0o600 });
+  const bytes = fs.readFileSync(artifactPath);
+  const marker = overrides.marker ?? "boundary_health_marker";
+  return {
+    status: "collected",
+    stopReason: "caller_stop",
+    termination: "sigterm",
+    truncated: false,
+    observedBytes: bytes.length,
+    appStartMarker: marker,
+    appStartMarkerObserved: body.includes(marker),
+    child: {
+      pid: 9191,
+      startedAtMonotonicNs: "1",
+      endedAtMonotonicNs: "2",
+      command: "/absolute/adb",
+      args: [],
+      exitCode: 0,
+      signal: null,
+    },
+    rawArtifact: {
+      path: artifactPath,
+      sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+      bytes: bytes.length,
+    },
+    stderrTail: "",
+    ...overrides,
+  };
 }
 
 test("BoundaryProbe V1 formats and parses every event kind through one exact compact wire prefix", () => {
@@ -724,6 +759,49 @@ test("application continuity does not inspect late logs after timing out during 
   assert.equal(logReads, 0);
 });
 
+test("runtime-health scan is marker-bound, exact-package attributed, and fail-closed on ambiguous evidence", (t) => {
+  const marker = "boundary_health_marker";
+  const markerLine = threadtime("BoundaryExperiment", marker, "01", PID);
+  const quiet = runtimeHealthFixture(t, `${threadtime("AndroidRuntime", "FATAL EXCEPTION: pre-marker", "00", PID)}\nProcess: ${PACKAGE}, PID: ${PID}\n${markerLine}\n${threadtime("BoundaryProbe", "healthy", "02", PID)}\n`);
+  const quietResult = scanPackageRuntimeHealth(quiet, PACKAGE, [PID]);
+  assert.equal(quietResult.status, "no_attributed_failure");
+  assert.equal(quietResult.incidents.length, 0);
+  assert.ok(quietResult.tagInventory.some((entry) => entry.tag === "BoundaryProbe"));
+  const snapshotResult = scanPackageRuntimeHealth({ ...quiet, status: "snapshot_collected" }, PACKAGE, [PID]);
+  assert.equal(snapshotResult.status, "no_attributed_failure");
+  assert.equal(snapshotResult.sourceSha256, quietResult.sourceSha256);
+
+  for (const [label, body, kind] of [
+    ["java", `${markerLine}\n${threadtime("AndroidRuntime", "FATAL EXCEPTION: main", "02", PID)}\nProcess: ${PACKAGE}, PID: ${PID}\n`, "java_crash"],
+    ["anr", `${markerLine}\n${threadtime("ActivityManager", `ANR in ${PACKAGE} (pid ${PID})`, "02", 1000)}\n`, "anr"],
+    ["native", `${markerLine}\n${threadtime("DEBUG", `Fatal signal 11 (SIGSEGV), PID: ${PID} >>> ${PACKAGE} <<<`, "02", PID)}\n`, "native_crash"],
+  ]) {
+    const result = scanPackageRuntimeHealth(runtimeHealthFixture(t, body), PACKAGE, [PID]);
+    assert.equal(result.status, "attributed_failure", label);
+    assert.equal(result.incidents[0].kind, kind);
+  }
+
+  const other = scanPackageRuntimeHealth(runtimeHealthFixture(
+    t,
+    `${markerLine}\n${threadtime("ActivityManager", "ANR in com.fleet.boundarylabdynamicfull2", "02", 1000)}\n`,
+  ), PACKAGE, [PID]);
+  assert.equal(other.status, "no_attributed_failure");
+  assert.equal(other.incidents.length, 0);
+  assert.equal(other.ignoredOtherPackageCount, 1);
+
+  const ambiguous = scanPackageRuntimeHealth(runtimeHealthFixture(
+    t,
+    `${markerLine}\n${threadtime("AndroidRuntime", "FATAL EXCEPTION: unknown owner", "02", 7777)}\n`,
+  ), PACKAGE, [PID]);
+  assert.equal(ambiguous.status, "inconclusive");
+  assert.equal(ambiguous.ambiguousCandidateCount, 1);
+
+  const duplicateMarker = runtimeHealthFixture(t, `${markerLine}\n${markerLine}\n`);
+  assert.equal(scanPackageRuntimeHealth(duplicateMarker, PACKAGE, [PID]).status, "inconclusive");
+  const truncated = runtimeHealthFixture(t, `${markerLine}\n`, { truncated: true });
+  assert.equal(scanPackageRuntimeHealth(truncated, PACKAGE, [PID]).status, "inconclusive");
+});
+
 class FakeLogcatChild extends EventEmitter {
   constructor({ pid = 777, onSignal = () => {} } = {}) {
     super();
@@ -843,6 +921,31 @@ test("log collector owns one exact adb child, ends it gracefully at the time cap
   assertConfirmedChildDetached(child);
 });
 
+test("log collector exposes a synchronous owned-child start barrier and caller-controlled stop receipt", async (t) => {
+  const child = new FakeLogcatChild({
+    onSignal: (signal, instance) => {
+      if (signal === "SIGTERM") queueMicrotask(() => instance.close(0, null));
+    },
+  });
+  const fixture = logCollectorFixture(t, child, [Buffer.from("boundary-start-11111111-2222-4333-8444-555555555555\n")]);
+  fixture.input.maxDurationMs = 500;
+  const controller = new AbortController();
+  let started = false;
+  fixture.input.stopSignal = controller.signal;
+  fixture.input.onStarted = () => {
+    started = true;
+    queueMicrotask(() => controller.abort());
+  };
+  const promise = collectLogWindow(fixture.input, fixture.deps);
+  assert.equal(started, true);
+  const receipt = await promise;
+  assert.equal(receipt.status, "collected");
+  assert.equal(receipt.stopReason, "caller_stop");
+  assert.equal(receipt.appStartMarkerObserved, true);
+  assert.deepEqual(child.signals, ["SIGTERM"]);
+  assertConfirmedChildDetached(child);
+});
+
 test("log publisher neither reads nor unlinks a target replacement swapped in after hard-link publication", async (t) => {
   const child = new FakeLogcatChild();
   const fixture = logCollectorFixture(t, child, [Buffer.from("owned evidence\n")]);
@@ -902,7 +1005,7 @@ test("log publisher rejects a receipt when its temporary hard link cannot be rem
 
   await assert.rejects(
     collectLogWindow(fixture.input, fixture.deps),
-    /temporary unlink failure/i,
+    /raw staging artifact absence could not be proven.*temporary unlink failure/i,
   );
   assert.ok(unlinkAttempts.some((filePath) => path.basename(filePath).endsWith(".tmp")));
   assert.equal(fs.readFileSync(fixture.artifactPath, "utf8"), "cleanup must be confirmed\n");

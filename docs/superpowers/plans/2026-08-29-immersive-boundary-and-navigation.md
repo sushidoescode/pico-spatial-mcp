@@ -683,13 +683,21 @@ Proposed generated-row prepare input:
       "maxCumulativeHoldMs": 60000,
       "maxCumulativeDragPx": 1440,
       "maxDurationMs": 600000,
-      "recoveryReserveMs": 90000
+      "recoveryReserveMs": 525000
     }
   },
   "capture": {"maxTries": 4, "intervalMs": 500, "attemptTimeoutMs": 3000,
               "comparison": "byte_exact"}
 }
 ```
+
+Implementation safety correction (2026-08-31): the original 90,000 ms planning placeholder could
+not reach a force-stop fallback that itself withholds destructive input until its compensating
+relaunch and evidence path fits. The Phase-1 runner therefore partitions the once-only protocol into
+fixed per-step deadlines and cross-validates a 420,000 ms minimum for manifest/editor rows and a
+525,000 ms minimum for the dynamic row. Earlier non-destructive steps cannot spend the final
+force-stop preamble/completion envelope. This is a conservative protocol-budget deviation, not a
+change to the recovery order or evidence requirements in section 8.2.
 
 The first `M0` run supplies `source.kind:"calibration_seed"` with every exact immutable action group;
 the controller may select only the next stored group. Once a looked M0 run attests the 32 m outer
@@ -923,7 +931,9 @@ frame/log/continuity state, and then performs exactly one ordered recovery proto
    `stage_reopened` only after the Full sentinel is LOOKed and application binding remains unchanged.
 3. Send one normal activity launch to an allowed exact component on the already-bound serial, without
    force-stop. Record whether it was accepted, ignored, or blocked and whether the same PID/start ticks
-   survived.
+   survived. Only `accepted` can earn `activity_relaunch`; if Android reports `ignored` but the LOOKed
+   expected state is present, record `recovered_after_ignored_activity_launch` without assigning the
+   recovery causally to that command.
 4. If still unrecovered, call one injected exact-serial operation that force-stops only the bound
    package, waits under a deadline, starts one allowed exact component, and rebinds PID/start ticks.
    It does not reinstall or call `verify_pico_apk`, whose serial is hardcoded

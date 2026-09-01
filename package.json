@@ -72,7 +72,7 @@
     "test:spatialui-adoption": "node test/spatialui-adoption.mjs",
     "test:distribution-adoption": "node --test test/distribution-adoption.mjs",
     "test:knowledge-lifecycle": "node --test test/knowledge-lifecycle.mjs",
-    "test:conformance": "node test/conformance.mjs && node --test test/boundaryprobe.mjs",
+    "test:conformance": "node test/conformance.mjs && node --test test/boundaryprobe.mjs test/boundaryexperiment.mjs",
     "test:picocli-win": "node --test test/picocli-autoinstall.mjs test/buildrun-smoke-fixture.mjs test/run-battery.mjs"
   },
   "engines": {

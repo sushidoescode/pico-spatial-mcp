@@ -57,7 +57,7 @@ console.log(`truth: version=${version}  macOS-tools=${TOOLS}  other-host-tools=$
 // Every full-surface count this project has ever published (55/190/214/220/224 have all appeared in
 // docs). Bare "~NNN" and "instead of NNN" forms are only replaced for THESE counts — a generic
 // bare-number rule would eat measurements like "~90 s".
-const PUBLISHED_COUNTS = [55, 190, 214, 220, 224, 233, 234, 238, 249, 246, 250, 247, 251]
+const PUBLISHED_COUNTS = [55, 190, 214, 220, 224, 233, 234, 238, 249, 246, 250, 247, 251, 252]
   .filter((c) => c !== TOOLS && c !== OTHER_HOST_TOOLS);
 
 const platformCountClaims = (text) => rewritePlatformCountClaims(text, {

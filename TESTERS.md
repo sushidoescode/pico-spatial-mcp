@@ -92,7 +92,7 @@ It is read-only, mutates nothing, and reports what your machine is missing with 
 every non-passing check. The explicit **`pico_doctor {calibrate:true}`** route is the mutating
 calibration exception. The default call is the intended first call.
 
-Expect the 18-tool doors surface by default. The full surface has 252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run.
+Expect the 18-tool doors surface by default. The full surface has 253 tools on macOS (installed-tarball runtime-measured) versus a source-derived 250 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run.
 
 ## Choosing a surface
 
@@ -102,14 +102,14 @@ Set `PICO_MCP_SURFACE` in the `env` block of the config above:
 "env": { "PICO_MCP_SURFACE": "doors" }
 ```
 
-- `full` — **252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run.** Everything.
+- `full` — **253 tools on macOS (installed-tarball runtime-measured) versus a source-derived 250 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run.** Everything.
 - unset / `doors` (the default since v36.3) — **18 tools**: `validate_toolchain` `ensure_pico_cli` `pico_build_app`
   `pico_scan_world` `pico_place` `pico_look` `pico_verify_app` `pico_measure` `pico_perf`
   `pico_sdk` `pico_doctor` `pico_ship` `pico_capabilities` `pico_fix` `pico_record`
   `pico_emulator` `pico_next` `pico_loop`.
 
 Start with `doors` — it's the curated path through the same engine, and set
-`PICO_MCP_SURFACE=full` when you want the whole surface (252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run). Before v36.3 an unset variable served `full`, so keep the explicit `doors` value in
+`PICO_MCP_SURFACE=full` when you want the whole surface (253 tools on macOS (installed-tarball runtime-measured) versus a source-derived 250 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run). Before v36.3 an unset variable served `full`, so keep the explicit `doors` value in
 configs that may run older checkouts.
 
 One sharp edge worth knowing up front: **`pico_measure` needs a one-time camera calibration.**

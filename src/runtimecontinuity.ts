@@ -701,6 +701,8 @@ export interface CollectLogWindowInput {
   maxBytes?: number;
   gracefulTerminationMs?: number;
   forcedTerminationMs?: number;
+  stopSignal?: AbortSignal;
+  onStarted?: () => void;
 }
 
 type LogcatSpawn = (
@@ -752,7 +754,7 @@ export interface LogArtifactRef {
 
 export interface CollectLogWindowReceipt {
   status: "collected" | "spawn_failed" | "teardown_unconfirmed";
-  stopReason: "duration_cap" | "byte_cap" | "child_exit" | "spawn_error";
+  stopReason: "duration_cap" | "caller_stop" | "byte_cap" | "child_exit" | "spawn_error";
   termination: "not_needed" | "sigterm" | "sigkill" | "unconfirmed";
   truncated: boolean;
   observedBytes: number;
@@ -769,6 +771,159 @@ export interface CollectLogWindowReceipt {
   };
   rawArtifact: LogArtifactRef;
   stderrTail: string;
+}
+
+export interface RuntimeLogSnapshotReceipt {
+  status: "snapshot_collected";
+  truncated: boolean;
+  observedBytes: number;
+  appStartMarker: string;
+  appStartMarkerObserved: boolean;
+  rawArtifact: LogArtifactRef;
+}
+
+export interface PackageRuntimeHealthReceiptV1 {
+  schemaVersion: 1;
+  sourceSha256: string | null;
+  packageName: string;
+  expectedPids: number[];
+  marker: string;
+  markerOccurrences: number;
+  status: "no_attributed_failure" | "attributed_failure" | "inconclusive";
+  incidents: Array<{
+    kind: "java_crash" | "native_crash" | "anr";
+    attribution: "exact_package" | "expected_pid";
+    pid: number | null;
+    firstLine: number;
+    evidenceSha256: string;
+  }>;
+  ambiguousCandidateCount: number;
+  ignoredOtherPackageCount: number;
+  scannedBytes: number;
+  tagInventory: Array<{ tag: string; count: number; messages: string[] }>;
+}
+
+function escapedRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function blockHasExactPackage(block: string, packageName: string): boolean {
+  const escaped = escapedRegex(packageName);
+  return new RegExp(`(?:^|[^A-Za-z0-9_.])${escaped}(?::[A-Za-z0-9_.-]+)?(?:$|[^A-Za-z0-9_.:-])`, "m").test(block);
+}
+
+function sourcePidFromThreadtime(line: string): number | null {
+  const match = line.match(/^\d\d-\d\d\s+\d\d:\d\d:\d\d\.\d+\s+(\d+)\s+\d+\s+[VDIWEF]\s+/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function explicitPidFromBlock(block: string): number | null {
+  const matches = [...block.matchAll(/\b(?:PID|pid)\s*[:=]\s*(\d+)\b/g)]
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isSafeInteger(value) && value > 0);
+  return new Set(matches).size === 1 ? matches[0] ?? null : null;
+}
+
+/**
+ * Scan one finalized, marker-bound raw log artifact for package-attributed crash/ANR evidence.
+ * Generic or incompletely attributed candidates are deliberately inconclusive rather than quiet.
+ */
+export function scanPackageRuntimeHealth(
+  receipt: CollectLogWindowReceipt | RuntimeLogSnapshotReceipt,
+  packageName: string,
+  expectedPids: readonly number[],
+): PackageRuntimeHealthReceiptV1 {
+  const normalizedPids = [...new Set(expectedPids.filter((pid) => Number.isSafeInteger(pid) && pid > 0))].sort((left, right) => left - right);
+  if (!/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/.test(packageName)) throw new Error("runtime-health package name is invalid");
+  const artifactPath = assertExternalCapturePath(receipt.rawArtifact.path);
+  const stat = fs.lstatSync(artifactPath);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== receipt.rawArtifact.bytes || stat.size > APPLICATION_CONTINUITY_LOG_MAX_BYTES) {
+    throw new Error("runtime-health source is not the exact bounded regular log artifact");
+  }
+  const bytes = fs.readFileSync(artifactPath);
+  const sourceSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+  if (sourceSha256 !== receipt.rawArtifact.sha256 || bytes.length !== receipt.rawArtifact.bytes) {
+    throw new Error("runtime-health source bytes changed after collector finalization");
+  }
+  const text = bytes.toString("utf8");
+  const markerOccurrences = text.split(receipt.appStartMarker).length - 1;
+  const markerOffset = markerOccurrences === 1 ? text.indexOf(receipt.appStartMarker) : -1;
+  const scoped = markerOffset >= 0 ? text.slice(markerOffset) : "";
+  const allLines = scoped.split(/\r?\n/);
+  const lines = allLines.slice(0, APPLICATION_CONTINUITY_LOG_MAX_LINES);
+  const candidates: Array<{ kind: "java_crash" | "native_crash" | "anr"; line: number }> = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/\bANR in\b|\bam_anr\b/i.test(line)) candidates.push({ kind: "anr", line: index });
+    else if (/Fatal signal|\*\*\* \*\*\*/i.test(line)) candidates.push({ kind: "native_crash", line: index });
+    else if (/FATAL EXCEPTION|\bam_crash\b/i.test(line)) candidates.push({ kind: "java_crash", line: index });
+  }
+  const incidents: PackageRuntimeHealthReceiptV1["incidents"] = [];
+  let ambiguousCandidateCount = 0;
+  let ignoredOtherPackageCount = 0;
+  for (const candidate of candidates) {
+    const first = Math.max(0, candidate.line - 3);
+    const last = Math.min(lines.length, candidate.line + 7);
+    const blockLines = lines.slice(first, last);
+    const block = blockLines.join("\n");
+    const sourcePid = sourcePidFromThreadtime(lines[candidate.line]);
+    const explicitPid = explicitPidFromBlock(block);
+    const pid = explicitPid ?? sourcePid;
+    const exactPackage = blockHasExactPackage(block, packageName);
+    const expectedPid = pid !== null && normalizedPids.includes(pid);
+    if (exactPackage || expectedPid) {
+      incidents.push({
+        kind: candidate.kind,
+        attribution: exactPackage ? "exact_package" : "expected_pid",
+        pid,
+        firstLine: first + 1,
+        evidenceSha256: crypto.createHash("sha256").update(block).digest("hex"),
+      });
+    } else if (/\b(?:Process|ANR in|>>>)[\s:]+[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+/i.test(block)) {
+      ignoredOtherPackageCount += 1;
+    } else {
+      ambiguousCandidateCount += 1;
+    }
+  }
+  const tags = new Map<string, { count: number; messages: string[] }>();
+  for (const line of lines) {
+    const match = line.match(/^\d\d-\d\d\s+\d\d:\d\d:\d\d\.\d+\s+\d+\s+\d+\s+[VDIWEF]\s+([^:]{1,96}):\s?(.*)$/);
+    if (!match) continue;
+    const tag = match[1].trim();
+    if (!tag || tags.size >= 256 && !tags.has(tag)) continue;
+    const current = tags.get(tag) ?? { count: 0, messages: [] };
+    current.count += 1;
+    const message = match[2].slice(0, 256);
+    if (message && current.messages.length < 8 && !current.messages.includes(message)) current.messages.push(message);
+    tags.set(tag, current);
+  }
+  const collectorComplete = (receipt.status === "snapshot_collected"
+    ? !receipt.truncated && receipt.appStartMarkerObserved
+    : receipt.stopReason === "caller_stop" && receipt.termination !== "unconfirmed" && !receipt.truncated && receipt.appStartMarkerObserved)
+    && markerOccurrences === 1
+    && allLines.length <= APPLICATION_CONTINUITY_LOG_MAX_LINES;
+  const status: PackageRuntimeHealthReceiptV1["status"] = incidents.length > 0
+    ? "attributed_failure"
+    : collectorComplete && ambiguousCandidateCount === 0
+      ? "no_attributed_failure"
+      : "inconclusive";
+  return {
+    schemaVersion: 1,
+    sourceSha256,
+    packageName,
+    expectedPids: normalizedPids,
+    marker: receipt.appStartMarker,
+    markerOccurrences,
+    status,
+    incidents,
+    ambiguousCandidateCount,
+    ignoredOtherPackageCount,
+    scannedBytes: bytes.length,
+    tagInventory: [...tags.entries()].sort(([left], [right]) => left.localeCompare(right))
+      .map(([tag, value]) => ({ tag, ...value })),
+  };
 }
 
 function defaultSpawn(command: string, args: string[]): ChildProcess {
@@ -791,13 +946,22 @@ function validLogInput(input: CollectLogWindowInput): boolean {
     && positiveInteger(input.maxDurationMs) && input.maxDurationMs <= 10 * 60_000
     && positiveInteger(maxBytes) && maxBytes <= MAX_LOG_BYTES
     && nonnegativeInteger(graceful) && graceful <= 30_000
-    && positiveInteger(forced) && forced <= 30_000;
+    && positiveInteger(forced) && forced <= 30_000
+    && (input.stopSignal === undefined || (
+      typeof input.stopSignal === "object"
+      && typeof input.stopSignal.addEventListener === "function"
+      && typeof input.stopSignal.removeEventListener === "function"
+      && typeof input.stopSignal.aborted === "boolean"
+    ))
+    && (input.onStarted === undefined || typeof input.onStarted === "function");
 }
 
 interface PrivateArtifactStage {
   target: string;
   temporary: string;
   descriptor: number | null;
+  dev: bigint;
+  ino: bigint;
 }
 
 function preparePrivateArtifact(target: string): PrivateArtifactStage {
@@ -808,30 +972,100 @@ function preparePrivateArtifact(target: string): PrivateArtifactStage {
   const checkedTarget = assertExternalCapturePath(checkedBeforeCreate);
   if (fs.existsSync(checkedTarget)) throw new Error(`log artifact already exists: ${checkedTarget}`);
   const temporary = path.join(parent, `.${path.basename(target)}.${crypto.randomUUID()}.tmp`);
+  const descriptor = fs.openSync(temporary, "wx", 0o600);
+  const identity = fs.fstatSync(descriptor, { bigint: true });
+  if (!identity.isFile() || identity.isSymbolicLink() || identity.nlink !== 1n || (identity.mode & 0o7777n) !== 0o600n) {
+    try { fs.closeSync(descriptor); } finally { fs.unlinkSync(temporary); }
+    throw new Error("new log artifact staging file is not one private regular file");
+  }
   return {
     target: checkedTarget,
     temporary,
-    descriptor: fs.openSync(temporary, "wx", 0o600),
+    descriptor,
+    dev: identity.dev,
+    ino: identity.ino,
   };
 }
 
-function abortPrivateArtifact(stage: PrivateArtifactStage): void {
+interface PrivateArtifactCleanup {
+  absent: boolean;
+  detail?: string;
+}
+
+type PrivateArtifactCleanupFileSystem = Pick<ArtifactPublicationFileSystem, "closeSync" | "lstatSync" | "unlinkSync">;
+
+const DEFAULT_PRIVATE_ARTIFACT_CLEANUP_FS: PrivateArtifactCleanupFileSystem = {
+  closeSync: (descriptor) => fs.closeSync(descriptor),
+  lstatSync: (filePath, options) => fs.lstatSync(filePath, options),
+  unlinkSync: (filePath) => fs.unlinkSync(filePath),
+};
+
+function cleanupPrivateArtifact(
+  stage: PrivateArtifactStage,
+  cleanupFs: PrivateArtifactCleanupFileSystem,
+): PrivateArtifactCleanup {
+  const issues: string[] = [];
   if (stage.descriptor !== null) {
-    try { fs.closeSync(stage.descriptor); } catch { /* preserve the primary collector error */ }
-    stage.descriptor = null;
+    try {
+      cleanupFs.closeSync(stage.descriptor);
+      stage.descriptor = null;
+    } catch (error) {
+      issues.push(`staging descriptor close failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
-  try { if (fs.existsSync(stage.temporary)) fs.unlinkSync(stage.temporary); } catch { /* preserve primary error */ }
+  let present = false;
+  try {
+    const current = cleanupFs.lstatSync(stage.temporary, { bigint: true });
+    present = true;
+    if (!current.isFile() || current.isSymbolicLink() || current.dev !== stage.dev || current.ino !== stage.ino) {
+      issues.push("randomized staging path no longer names the exact owned regular file");
+    } else {
+      try {
+        cleanupFs.unlinkSync(stage.temporary);
+        present = false;
+      } catch (error) {
+        issues.push(`staging unlink failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") issues.push(`staging absence check failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    cleanupFs.lstatSync(stage.temporary, { bigint: true });
+    present = true;
+  } catch (error: any) {
+    if (error?.code === "ENOENT") present = false;
+    else issues.push(`post-cleanup staging absence check failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (present) issues.push("randomized staging path still exists after cleanup");
+  if (stage.descriptor !== null) issues.push("staging descriptor closure could not be proven");
+  return issues.length === 0 && !present
+    ? { absent: true }
+    : { absent: false, detail: [...new Set(issues)].join("; ") };
+}
+
+function collectorFailureAfterCleanup(primary: unknown, cleanup: PrivateArtifactCleanup): Error {
+  const message = primary instanceof Error ? primary.message : String(primary);
+  if (cleanup.absent) return new Error(message);
+  return new Error(`${message}; raw staging artifact absence could not be proven (${cleanup.detail ?? "unknown cleanup failure"})`);
+}
+
+function abortPrivateArtifact(stage: PrivateArtifactStage, primary: unknown): Error {
+  return collectorFailureAfterCleanup(primary, cleanupPrivateArtifact(stage, DEFAULT_PRIVATE_ARTIFACT_CLEANUP_FS));
 }
 
 function abortPrivateArtifactWithPublicationFs(
   stage: PrivateArtifactStage,
   publicationFs: ArtifactPublicationFileSystem,
-): void {
-  if (stage.descriptor !== null) {
-    try { publicationFs.closeSync(stage.descriptor); } catch { /* preserve the primary publication result */ }
-    stage.descriptor = null;
+  primary: unknown,
+  extraIssues: readonly string[] = [],
+): Error {
+  const cleanup = cleanupPrivateArtifact(stage, publicationFs);
+  if (extraIssues.length > 0) {
+    cleanup.absent = false;
+    cleanup.detail = [...extraIssues, cleanup.detail].filter(Boolean).join("; ");
   }
-  try { publicationFs.unlinkSync(stage.temporary); } catch { /* random staging path may already be absent */ }
+  return collectorFailureAfterCleanup(primary, cleanup);
 }
 
 function writePrivateArtifactChunk(stage: PrivateArtifactStage, bytes: Buffer): void {
@@ -849,7 +1083,6 @@ function publishPrivateArtifact(
   publicationFs: ArtifactPublicationFileSystem,
 ): LogArtifactRef {
   let publishedDescriptor: number | null = null;
-  let publicationComplete = false;
   try {
     if (stage.descriptor === null) throw new Error("log artifact staging descriptor is closed");
     publicationFs.fsyncSync(stage.descriptor);
@@ -922,21 +1155,24 @@ function publishPrivateArtifact(
       || finalTarget.mode !== after.mode) {
       throw new Error("final log artifact pathname is not the sole owned private link");
     }
-    publicationComplete = true;
     return {
       path: stage.target,
       sha256: publishedSha256,
       bytes,
     };
-  } finally {
-    if (!publicationComplete) {
-      if (publishedDescriptor !== null) {
-        try { publicationFs.closeSync(publishedDescriptor); } catch { /* preserve the primary publication failure */ }
+  } catch (error) {
+    const closeIssues: string[] = [];
+    if (publishedDescriptor !== null) {
+      try {
+        publicationFs.closeSync(publishedDescriptor);
+        publishedDescriptor = null;
+      } catch (closeError) {
+        closeIssues.push(`published descriptor close failed: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
       }
-      // Never unlink stage.target here: after link publication, its pathname may name replacement
-      // evidence. Keep any target entry for explicit failed-run forensics and remove only our temp.
-      abortPrivateArtifactWithPublicationFs(stage, publicationFs);
     }
+    // Never unlink stage.target here: after link publication, its pathname may name replacement
+    // evidence. Keep any target entry for explicit failed-run forensics and remove only our temp.
+    throw abortPrivateArtifactWithPublicationFs(stage, publicationFs, error, closeIssues);
   }
 }
 
@@ -976,14 +1212,12 @@ export async function collectLogWindow(
   try {
     child = deps.spawn(command, args, options);
   } catch (error) {
-    abortPrivateArtifact(artifactStage);
-    throw new Error(`could not spawn owned logcat child: ${error instanceof Error ? error.message : String(error)}`);
+    throw abortPrivateArtifact(artifactStage, new Error(`could not spawn owned logcat child: ${error instanceof Error ? error.message : String(error)}`));
   }
   if (!child || typeof child.once !== "function" || typeof child.kill !== "function"
     || !child.stdout || !child.stderr) {
     try { child?.kill?.("SIGKILL"); } catch { /* exact invalid child only */ }
-    abortPrivateArtifact(artifactStage);
-    throw new Error("spawn did not return one owned piped logcat child");
+    throw abortPrivateArtifact(artifactStage, new Error("spawn did not return one owned piped logcat child"));
   }
   const ownedChildPid = positiveInteger(child.pid) ? child.pid : null;
   const invalidChildPid = ownedChildPid === null;
@@ -1067,6 +1301,7 @@ export async function collectLogWindow(
     if (stopReason === null) stopReason = spawnError ? "spawn_error" : "child_exit";
     complete();
   };
+  const onCallerStop = () => beginTermination("caller_stop");
   const detachUnconfirmedChild = () => {
     child.stdout!.removeListener("data", onStdoutData);
     child.stderr!.removeListener("data", onStderrData);
@@ -1117,8 +1352,18 @@ export async function collectLogWindow(
   child.stderr.on("error", onOutputStreamError);
   child.once("error", onChildError);
   child.once("close", onChildClose);
+  input.stopSignal?.addEventListener("abort", onCallerStop, { once: true });
   durationTimer = setTimeout(() => beginTermination("duration_cap"), input.maxDurationMs);
   if (invalidChildPid) beginTermination("spawn_error");
+  else {
+    try {
+      input.onStarted?.();
+    } catch (error) {
+      spawnError = error instanceof Error ? error : new Error(String(error));
+      beginTermination("spawn_error");
+    }
+    if (input.stopSignal?.aborted) beginTermination("caller_stop");
+  }
 
   await completion;
   const postCompletionTermination = termination as CollectLogWindowReceipt["termination"];
@@ -1126,16 +1371,15 @@ export async function collectLogWindow(
   if (durationTimer) clearTimeout(durationTimer);
   if (graceTimer) clearTimeout(graceTimer);
   if (forcedTimer) clearTimeout(forcedTimer);
+  input.stopSignal?.removeEventListener("abort", onCallerStop);
   const endedAt = deps.monotonicNs();
   if (typeof endedAt !== "bigint" || endedAt < startedAt) {
-    abortPrivateArtifact(artifactStage);
-    throw new Error("log-window monotonic clock regressed");
+    throw abortPrivateArtifact(artifactStage, new Error("log-window monotonic clock regressed"));
   }
   const effectiveTermination = termination as CollectLogWindowReceipt["termination"];
   const effectiveStreamError = streamError as Error | null;
   if (effectiveStreamError) {
-    abortPrivateArtifact(artifactStage);
-    throw new Error(`log artifact streaming failed: ${effectiveStreamError.message}`);
+    throw abortPrivateArtifact(artifactStage, new Error(`log artifact streaming failed: ${effectiveStreamError.message}`));
   }
   const rawArtifact = publishPrivateArtifact(
     artifactStage,
