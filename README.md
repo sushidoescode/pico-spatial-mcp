@@ -175,8 +175,14 @@ Guardian-boundary issue on hardware (per PICO, fix in progress — reported to u
 us). **Partner-reported workaround (Fabian, 2026-08-12, emulator 6.0.0 + Spatial SDK 6.0.0, an
 editor-authored museum world):** the dynamic Full-stage route walked out, while the same world in a
 manifest-declared `DefaultStage` with `pico.spatial.stage.style=1` stayed visible during extended
-WASD movement. This machine has not replicated that editor-world comparison, and the hardware
-route still requires Safeguard validation. Historical host-window looks recorded full-immersive
+WASD movement. The 2026-09-01 [Phase-1 boundary experiment](docs/evidence/immersive-phase1-2026-08-31/CP3.md)
+did not replicate that same-world dynamic-versus-manifest comparison: its matched generated M0
+manifest-Mixed control retained through the authored 32 m gate, while generated F1 manifest Full
+and Editor-authored Claimsight E1 both yielded to PICO system home by their second replay waypoint.
+F2's authenticated dynamic-Full open returned but failed closed before movement because its looked
+frame was system home and its resumed component changed to an unlisted SDK stub. This is one
+configuration-scoped emulator observation, not repeated causal evidence; physical metres and the
+hardware route still require Safeguard validation. Historical host-window looks recorded full-immersive
 Unity output, but their retained pixel provenance is not uniformly intact today; consult the
 current generated claims snapshot rather than treating that history as current proof. Black adb
 captures are inconclusive and require an alternate capture path plus a LOOK. The 2026-07-02
