@@ -26,7 +26,7 @@ export type GuideMeasurement = {
 };
 export type GuideRejection = {
   status: "rejected";
-  reason: "invalid_frame" | "unsupported_pattern" | "colors_not_distinct" | "missing_detection" | "invalid_bbox" | "duplicate_bbox" | "not_nested" | "center_skew";
+  reason: "invalid_frame" | "unsupported_pattern" | "colors_not_distinct" | "detector_unavailable" | "detector_inconsistent" | "missing_detection" | "invalid_bbox" | "duplicate_bbox" | "not_nested" | "center_skew";
 };
 
 type Bbox = [number, number, number, number];
@@ -64,6 +64,11 @@ function contains(outer: Bbox, inner: Bbox): boolean {
   return outer[0] <= inner[0] && outer[1] <= inner[1] && outer[2] >= inner[2] && outer[3] >= inner[3];
 }
 
+function sameOpaqueKeys(left: string[], right: string[]): boolean {
+  return left.length === right.length && new Set(left).size === left.length && new Set(right).size === right.length
+    && left.every((key) => right.includes(key));
+}
+
 /**
  * Validates a two-key guide purely from the color-key detector's geometry. Detector key names are
  * intentionally opaque: the guide is identified by the supplied saturated colors and geometry,
@@ -82,9 +87,22 @@ export function measureTwoColorGuide(
     return { status: "rejected", reason: "colors_not_distinct" };
   }
 
-  const detected = Object.values(colorKeys?.detections ?? {}).filter((detection): detection is Exclude<GuideDetection, null> => detection !== null);
-  if (detected.length !== 2) return { status: "rejected", reason: "missing_detection" };
-  const boxes = detected.map((detection) => detection.bbox);
+  if (colorKeys?.available !== true) return { status: "rejected", reason: "detector_unavailable" };
+  const expected = colorKeys.expected;
+  const found = colorKeys.found;
+  const missing = colorKeys.missing;
+  const detectionMap = colorKeys.detections;
+  if (!Array.isArray(expected) || !Array.isArray(found) || !Array.isArray(missing) || !detectionMap
+    || expected.length !== 2 || !expected.every((key) => typeof key === "string")) {
+    return { status: "rejected", reason: "detector_inconsistent" };
+  }
+  const detectedNames = Object.entries(detectionMap).filter(([, detection]) => detection !== null).map(([name]) => name);
+  if (detectedNames.length < 2) return { status: "rejected", reason: "missing_detection" };
+  if (missing.length !== 0 || !sameOpaqueKeys(expected, found) || !sameOpaqueKeys(expected, detectedNames)) return { status: "rejected", reason: "detector_inconsistent" };
+  const detected = expected.map((name) => detectionMap[name]);
+  if (detected.some((detection) => detection === null || detection === undefined)) return { status: "rejected", reason: "missing_detection" };
+  const verifiedDetections = detected as Exclude<GuideDetection, null>[];
+  const boxes = verifiedDetections.map((detection) => detection.bbox);
   if (!boxes.every((bbox) => isBbox(bbox, frame))) return { status: "rejected", reason: "invalid_bbox" };
   const [first, second] = boxes;
   if (first.every((value, index) => value === second[index])) return { status: "rejected", reason: "duplicate_bbox" };

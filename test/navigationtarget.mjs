@@ -53,6 +53,13 @@ test("measureTwoColorGuide catches missing, duplicate, non-nested, equal, and ne
   assert.deepEqual(measureTwoColorGuide(fixture.frame, fixture.guide.valid.detections, { ...fixture.fiducial, colors: fixture.guide.neutralColors }), { status: "rejected", reason: "colors_not_distinct" });
 });
 
+test("measureTwoColorGuide catches stale detector availability and contradictory expected/found maps", () => {
+  assert.deepEqual(measureTwoColorGuide(fixture.frame, { ...fixture.guide.valid.detections, available: false }, fixture.fiducial), { status: "rejected", reason: "detector_unavailable" });
+  assert.deepEqual(measureTwoColorGuide(fixture.frame, { ...fixture.guide.valid.detections, found: ["magenta"], missing: [] }, fixture.fiducial), { status: "rejected", reason: "detector_inconsistent" });
+  assert.deepEqual(measureTwoColorGuide(fixture.frame, { ...fixture.guide.valid.detections, expected: ["magenta"], found: ["magenta", "cyan"], missing: [] }, fixture.fiducial), { status: "rejected", reason: "detector_inconsistent" });
+  assert.deepEqual(measureTwoColorGuide(fixture.frame, { ...fixture.guide.valid.detections, missing: ["cyan"] }, fixture.fiducial), { status: "rejected", reason: "detector_inconsistent" });
+});
+
 test("fitThroughOrigin catches an intercept-based drag fit and preserves literal residual evidence", () => {
   assert.deepEqual(fitThroughOrigin(fixture.calibration.linearSamples), {
     slope: 0.1,
@@ -97,13 +104,20 @@ test("calibrationContextKey catches identity changes while ignoring path and tim
   assert.equal(calibrationContextKey({ ...fixture.calibration.context, cameraCalibrationPath: "/different/path.json", at: "2026-09-01T11:00:00.000Z" }), "aa7f0527e087602636e14e49452f3ccedf1ad3c2c994e55dba13e18208d0526d");
   for (const changed of [
     { bootId: "wrong-boot" },
+    { serial: "emulator-5556" },
     { guest: { ...fixture.calibration.context.guest, fingerprint: "wrong-guest" } },
+    { guest: { ...fixture.calibration.context.guest, model: "different-guest-model" } },
+    { qemu: { ...fixture.calibration.context.qemu, pid: 93014 } },
+    { qemu: { ...fixture.calibration.context.qemu, window: { ...fixture.calibration.context.qemu.window, x: 101 } } },
+    { qemu: { ...fixture.calibration.context.qemu, window: { ...fixture.calibration.context.qemu.window, y: 201 } } },
     { qemu: { ...fixture.calibration.context.qemu, window: { ...fixture.calibration.context.qemu.window, width: 1279 } } },
+    { qemu: { ...fixture.calibration.context.qemu, window: { ...fixture.calibration.context.qemu.window, scale: 1 } } },
     { capture: { ...fixture.calibration.context.capture, height: 719 } },
     { cameraCalibrationSha256: "d".repeat(64) },
     { bridgeRevision: 2 },
     { guide: { ...fixture.calibration.context.guide, pattern: "other-pattern" } },
     { guide: { ...fixture.calibration.context.guide, widthM: 2.1 } },
+    { guide: { ...fixture.calibration.context.guide, heightM: 1.3 } },
   ]) assert.notEqual(calibrationContextKey({ ...fixture.calibration.context, ...changed }), "aa7f0527e087602636e14e49452f3ccedf1ad3c2c994e55dba13e18208d0526d");
 });
 
@@ -115,6 +129,10 @@ test("validateNavigationCalibration catches stale identity, unsigned drags, back
   assert.deepEqual(validateNavigationCalibration({ ...record, forward: { ...record.forward, samples: [{ x: 100, y: -0.5 }, { x: 200, y: 1 }, { x: 300, y: 1.5 }, { x: 400, y: 2 }] } }, fixture.calibration.context), { status: "invalid", reason: "non_positive_forward_displacement" });
   assert.deepEqual(validateNavigationCalibration({ ...record, yaw: { ...record.yaw, fit: { ...record.yaw.fit, rmse: 1.1 } } }, fixture.calibration.context), { status: "invalid", reason: "quality_rejected" });
   assert.deepEqual(validateNavigationCalibration({ ...record, yaw: { ...record.yaw, fit: { ...record.yaw.fit, slope: 0.2 } } }, fixture.calibration.context), { status: "invalid", reason: "fit_mismatch" });
+  assert.doesNotThrow(() => validateNavigationCalibration({ ...record, forward: { ...record.forward, fit: undefined } }, fixture.calibration.context));
+  assert.deepEqual(validateNavigationCalibration({ ...record, forward: { ...record.forward, fit: undefined } }, fixture.calibration.context), { status: "invalid", reason: "invalid_record" });
+  assert.deepEqual(validateNavigationCalibration({ ...record, yaw: { ...record.yaw, samples: undefined } }, fixture.calibration.context), { status: "invalid", reason: "invalid_record" });
+  assert.deepEqual(validateNavigationCalibration({ ...record, forward: undefined }, fixture.calibration.context), { status: "invalid", reason: "invalid_record" });
 });
 
 function controllerState(overrides = {}) {
@@ -142,6 +160,18 @@ test("decideNavigationStep catches an acquisition search that includes a vertica
   });
 });
 
+test("decideNavigationStep catches a search drag that exceeds the remaining cumulative drag budget", () => {
+  assert.deepEqual(decideNavigationStep(controllerState({ cumulativeDragPx: 1439 }), { guide: null }, invalidApproachCalibration), {
+    kind: "drag", mode: "search_horizontal", dxPx: 1, dyPx: 0, gain: 1, achievedClaims: [],
+  });
+});
+
+test("decideNavigationStep catches a fractional drag remainder that cannot form a route-valid action", () => {
+  assert.deepEqual(decideNavigationStep(controllerState({ cumulativeDragPx: 1439.5 }), { guide: null }, invalidApproachCalibration), {
+    kind: "stop", reason: "budget_exhausted", achievedClaims: [],
+  });
+});
+
 test("decideNavigationStep catches a center-band target that fails to retain target_centered", () => {
   assert.deepEqual(decideNavigationStep(controllerState(), centeredSmall, invalidApproachCalibration), {
     kind: "calibration_required", reason: "approach_requires_calibration", achievedClaims: ["target_visible", "target_centered"],
@@ -150,7 +180,7 @@ test("decideNavigationStep catches a center-band target that fails to retain tar
 
 test("decideNavigationStep catches unclamped yaw and pitch centering", () => {
   assert.deepEqual(decideNavigationStep(controllerState(), { guide: { status: "measured", error: { x: 400, y: -200 }, areaFraction: 0.05 } }, validApproachCalibration), {
-    kind: "drag", mode: "center", dxPx: 120, dyPx: -120, gain: 1, achievedClaims: ["target_visible"],
+    kind: "drag", mode: "center", dxPx: 107, dyPx: -53, gain: 1, achievedClaims: ["target_visible"],
   });
 });
 
@@ -169,6 +199,18 @@ test("decideNavigationStep catches a pitch-guard violation that issues forward h
 test("decideNavigationStep catches a growing guide that does not approach forward", () => {
   assert.deepEqual(decideNavigationStep(controllerState({ phase: "approach", areaHistory: [0.03, 0.05, 0.07] }), { guide: { status: "measured", error: { x: 0, y: 0 }, areaFraction: 0.07 } }, validApproachCalibration), {
     kind: "hold", key: "w", holdMs: 100, achievedClaims: ["target_visible", "target_centered"],
+  });
+});
+
+test("decideNavigationStep catches a forward hold that exceeds the remaining cumulative hold budget", () => {
+  assert.deepEqual(decideNavigationStep(controllerState({ phase: "approach", cumulativeHoldMs: 2999 }), centeredSmall, validApproachCalibration), {
+    kind: "hold", key: "w", holdMs: 1, achievedClaims: ["target_visible", "target_centered"],
+  });
+});
+
+test("decideNavigationStep catches a fractional hold remainder that cannot form a route-valid action", () => {
+  assert.deepEqual(decideNavigationStep(controllerState({ phase: "approach", cumulativeHoldMs: 2999.5 }), centeredSmall, validApproachCalibration), {
+    kind: "stop", reason: "budget_exhausted", achievedClaims: [],
   });
 });
 

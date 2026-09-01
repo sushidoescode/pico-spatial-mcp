@@ -96,6 +96,18 @@ function positiveForwardSamples(samples: RegressionSample[], minimum: number): b
   return finiteSamples(samples) && samples.length >= minimum && samples.every((sample) => sample.x > 0 && sample.y > 0);
 }
 
+function wellFormedFit(fit: unknown): fit is ThroughOriginFit {
+  const candidate = fit as ThroughOriginFit | null;
+  return !!candidate && typeof candidate === "object" && Number.isFinite(candidate.slope)
+    && Number.isInteger(candidate.sampleCount) && Array.isArray(candidate.residuals)
+    && Number.isFinite(candidate.rmse) && Number.isFinite(candidate.maxAbsResidual) && Number.isFinite(candidate.rSquared);
+}
+
+function wellFormedAxis(axis: unknown): axis is { samples: RegressionSample[]; fit: ThroughOriginFit } {
+  const candidate = axis as { samples?: RegressionSample[]; fit?: ThroughOriginFit } | null;
+  return !!candidate && typeof candidate === "object" && finiteSamples(candidate.samples ?? []) && wellFormedFit(candidate.fit);
+}
+
 function nearlyEqual(left: number, right: number): boolean {
   return Math.abs(left - right) <= 1e-12 * Math.max(1, Math.abs(left), Math.abs(right));
 }
@@ -112,7 +124,8 @@ function fitMatchesSamples(fit: ThroughOriginFit, samples: RegressionSample[]): 
 }
 
 export function validateNavigationCalibration(record: NavigationCalibrationRecord, context: NavigationCalibrationContext): NavigationCalibrationValidation {
-  if (!record || record.version !== 1 || typeof record.contextKey !== "string" || !record.yaw || !record.pitch || !record.forward) return { status: "invalid", reason: "invalid_record" };
+  if (!record || typeof record !== "object" || record.version !== 1 || typeof record.contextKey !== "string"
+    || !wellFormedAxis(record.yaw) || !wellFormedAxis(record.pitch) || !wellFormedAxis(record.forward)) return { status: "invalid", reason: "invalid_record" };
   const contextKey = calibrationContextKey(context);
   if (record.contextKey !== contextKey) return { status: "invalid", reason: "context_mismatch" };
   if (!validLimits(record.limits)) return { status: "invalid", reason: "invalid_record" };
@@ -149,8 +162,14 @@ export type NavigationIntent =
   | { kind: "cleanup"; status: "required"; achievedClaims: [] }
   | { kind: "stop"; reason: "objective_satisfied" | "budget_exhausted" | "scene_drift" | "cleanup_failed"; achievedClaims: ("target_visible" | "target_centered" | "free_camera_approached")[] };
 
-function clamp(value: number, limit: number): number {
-  return Math.max(-limit, Math.min(limit, value));
+function boundedDrag(dxPx: number, dyPx: number, state: NavigationStepState): { dxPx: number; dyPx: number } | null {
+  const remaining = state.motionPolicy.maxCumulativeDragPx - state.cumulativeDragPx;
+  const cap = Math.min(state.motionPolicy.maxDragPxPerAction, remaining);
+  const magnitude = Math.hypot(dxPx, dyPx);
+  if (!Number.isFinite(cap) || cap <= 0 || !Number.isFinite(magnitude) || magnitude <= 0) return null;
+  const scale = Math.min(1, cap / magnitude);
+  const bounded = { dxPx: Math.trunc(dxPx * scale), dyPx: Math.trunc(dyPx * scale) };
+  return bounded.dxPx === 0 && bounded.dyPx === 0 ? null : bounded;
 }
 
 function approachClaims(): ("target_visible" | "target_centered")[] {
@@ -178,7 +197,8 @@ export function decideNavigationStep(state: NavigationStepState, observation: Na
   }
   if (!observation.guide || observation.guide.status !== "measured") {
     if (state.phase === "approach") return { kind: "requery", reason: "guide_disappeared", achievedClaims: approachClaims() };
-    return { kind: "drag", mode: "search_horizontal", dxPx: policy.maxDragPxPerAction, dyPx: 0, gain: 1, achievedClaims: [] };
+    const drag = boundedDrag(policy.maxDragPxPerAction, 0, state);
+    return drag ? { kind: "drag", mode: "search_horizontal", ...drag, gain: 1, achievedClaims: [] } : { kind: "stop", reason: "budget_exhausted", achievedClaims: [] };
   }
 
   const { error, areaFraction } = observation.guide;
@@ -188,11 +208,12 @@ export function decideNavigationStep(state: NavigationStepState, observation: Na
     const overshotX = state.lastError != null && state.lastError.x !== 0 && error.x !== 0 && Math.sign(state.lastError.x) !== Math.sign(error.x);
     const overshotY = state.lastError != null && state.lastError.y !== 0 && error.y !== 0 && Math.sign(state.lastError.y) !== Math.sign(error.y);
     const gain = overshotX || overshotY ? 0.5 : 1;
+    const drag = boundedDrag(inHorizontalBand ? 0 : error.x * gain, inVerticalBand ? 0 : error.y * gain, state);
+    if (!drag) return { kind: "stop", reason: "budget_exhausted", achievedClaims: [] };
     return {
       kind: "drag",
       mode: "center",
-      dxPx: inHorizontalBand ? 0 : clamp(error.x * gain, policy.maxDragPxPerAction),
-      dyPx: inVerticalBand ? 0 : clamp(error.y * gain, policy.maxDragPxPerAction),
+      ...drag,
       gain,
       achievedClaims: ["target_visible"],
     };
@@ -205,5 +226,8 @@ export function decideNavigationStep(state: NavigationStepState, observation: Na
     return { kind: "stop", reason: "objective_satisfied", achievedClaims: ["target_visible", "target_centered", "free_camera_approached"] };
   }
   if (calibration?.status !== "valid") return { kind: "calibration_required", reason: "approach_requires_calibration", achievedClaims: claims };
-  return { kind: "hold", key: "w", holdMs: Math.min(100, policy.maxHoldMsPerAction), achievedClaims: claims };
+  const remainingHoldMs = policy.maxCumulativeHoldMs - state.cumulativeHoldMs;
+  if (!(remainingHoldMs > 0)) return { kind: "stop", reason: "budget_exhausted", achievedClaims: [] };
+  const holdMs = Math.floor(Math.min(100, policy.maxHoldMsPerAction, remainingHoldMs));
+  return holdMs > 0 ? { kind: "hold", key: "w", holdMs, achievedClaims: claims } : { kind: "stop", reason: "budget_exhausted", achievedClaims: [] };
 }
