@@ -116,6 +116,11 @@ const GENERATED_SCENARIOS = {
     effectiveSpecSha256: "f8ffde4140793c953ef73bce6711a41207a4704ad9f50034b4eafa8dfbfca384",
   },
 } as const;
+const BOUNDARY_PREPARATION_OWNED_PACKAGES = new Set([
+  ...Object.values(GENERATED_SCENARIOS).map((scenario) => scenario.packageName),
+  "com.example.claimsight",
+  "com.fleet.calib",
+]);
 
 const hashSchema = z.string().regex(SHA256);
 const packageSchema = z.string().regex(/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/);
@@ -341,6 +346,7 @@ export interface BoundaryCapture {
 export interface BoundaryPreparationResult {
   runtimeBinding: RuntimeBindingReceipt;
   applicationBinding: BoundApplicationIdentity;
+  homeClearance: BoundarySystemHomeReceipt;
   homeReference: BoundaryCapture;
   appBaseline: BoundaryCapture;
   continuity: ApplicationContinuitySample[];
@@ -351,6 +357,7 @@ export interface BoundaryPreparationResult {
 }
 
 export interface BoundaryPreparationFailureEvidence {
+  homeClearance?: BoundarySystemHomeReceipt;
   homeReference?: BoundaryCapture;
   appBaseline?: BoundaryCapture;
   continuity?: ApplicationContinuitySample[];
@@ -1464,6 +1471,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
             routeScriptSha256: routeScript.sha256,
             structuralStop,
             error: failureText,
+            homeClearance: partial.homeClearance ?? null,
             requiredReview,
             logArtifacts,
             runtimeHealth,
@@ -2137,6 +2145,163 @@ function checkedAdb(result: Awaited<ReturnType<typeof run>>, label: string): str
   return result.stdout.trim();
 }
 
+export function parseResumedPackages(output: string): string[] {
+  if (typeof output !== "string") throw new Error("activity state must be text");
+  const indicator = /(?:topResumedActivity=|mResumedActivity:\s*|ResumedActivity:\s*)/;
+  const rows = output.split(/\r?\n/).filter((line) => indicator.test(line));
+  if (!rows.length) {
+    if (/\bmCurrentFocus=null\b/.test(output)) return [];
+    throw new Error("activity state is missing a recognized resumed-activity record");
+  }
+  const packages = rows.map((line) => {
+    if (/(?:topResumedActivity=|mResumedActivity:\s*|ResumedActivity:\s*)null\b/.test(line)) return null;
+    const matched = /(?:topResumedActivity=|mResumedActivity:\s*|ResumedActivity:\s*)ActivityRecord\{\S+\s+u\d+\s+([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)\//.exec(line);
+    if (!matched) throw new Error("resumed activity state is malformed");
+    return matched[1];
+  }).filter((packageName): packageName is string => packageName !== null);
+  return [...new Set(packages)];
+}
+
+export function parseThirdPartyPackages(output: string): Set<string> {
+  if (typeof output !== "string") throw new Error("third-party package list must be text");
+  const packages = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const matched = /^package:([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)$/.exec(line);
+    if (!matched) throw new Error("third-party package list is malformed");
+    return matched[1];
+  });
+  return new Set(packages);
+}
+
+export function classifyBoundaryForegrounds(
+  resumedPackages: string[],
+  thirdPartyPackages: Set<string>,
+  targetPackage: string,
+): Array<{ packageName: string; userInstalled: boolean }> {
+  packageSchema.parse(targetPackage);
+  if (!thirdPartyPackages.has(targetPackage)) {
+    throw new Error(`third-party package inspection is missing target package '${targetPackage}'`);
+  }
+  return resumedPackages.map((packageName) => {
+    packageSchema.parse(packageName);
+    return { packageName, userInstalled: thirdPartyPackages.has(packageName) };
+  });
+}
+
+export interface BoundarySystemHomeAdapter {
+  forceStop(packageName: string): Promise<void>;
+  inspectForegrounds(): Promise<Array<{ packageName: string; userInstalled: boolean }>>;
+  sleep(ms: number): Promise<void>;
+}
+
+export interface BoundarySystemHomeReceipt {
+  status: "cleared" | "failed";
+  attemptedPackages: string[];
+  stoppedPackages: string[];
+  foregroundAfter: string[];
+  classificationSource: "pm_list_packages_-3_exact";
+  error: string | null;
+}
+
+export class BoundarySystemHomeError extends Error {
+  readonly receipt: BoundarySystemHomeReceipt;
+
+  constructor(message: string, receipt: BoundarySystemHomeReceipt) {
+    super(message);
+    this.name = "BoundarySystemHomeError";
+    this.receipt = receipt;
+  }
+}
+
+export async function clearBoundarySystemHome(
+  targetPackage: string,
+  adapter: BoundarySystemHomeAdapter,
+): Promise<BoundarySystemHomeReceipt> {
+  const attemptedPackages: string[] = [];
+  const stoppedPackages: string[] = [];
+  let foregroundAfter: string[] = [];
+  try {
+    packageSchema.parse(targetPackage);
+    attemptedPackages.push(targetPackage);
+    await adapter.forceStop(targetPackage);
+    stoppedPackages.push(targetPackage);
+    await adapter.sleep(2_000);
+    let incumbentStops = 0;
+    while (true) {
+      const inspected = await adapter.inspectForegrounds();
+      const foregrounds = new Map<string, boolean>();
+      for (const foreground of inspected) {
+        packageSchema.parse(foreground.packageName);
+        const prior = foregrounds.get(foreground.packageName);
+        if (prior !== undefined && prior !== foreground.userInstalled) {
+          throw new Error(`foreground classification for '${foreground.packageName}' is contradictory`);
+        }
+        foregrounds.set(foreground.packageName, foreground.userInstalled);
+      }
+      foregroundAfter = [...foregrounds.keys()];
+      const userPackages = [...foregrounds].filter(([, userInstalled]) => userInstalled).map(([packageName]) => packageName);
+      const unowned = userPackages.filter((packageName) => !BOUNDARY_PREPARATION_OWNED_PACKAGES.has(packageName));
+      if (unowned.length) {
+        throw new Error(`refusing to force-stop unowned foreground package(s): ${unowned.join(", ")}`);
+      }
+      if (!userPackages.length) {
+        return {
+          status: "cleared",
+          attemptedPackages,
+          stoppedPackages,
+          foregroundAfter,
+          classificationSource: "pm_list_packages_-3_exact",
+          error: null,
+        };
+      }
+      if (incumbentStops + userPackages.length > 3) {
+        throw new Error(`bounded incumbent teardown did not yield to system home; owned foreground package(s) remain: ${userPackages.join(", ")}`);
+      }
+      for (const packageName of userPackages) {
+        attemptedPackages.push(packageName);
+        await adapter.forceStop(packageName);
+        stoppedPackages.push(packageName);
+        incumbentStops++;
+      }
+      await adapter.sleep(2_000);
+    }
+  } catch (error) {
+    if (error instanceof BoundarySystemHomeError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new BoundarySystemHomeError(message, {
+      status: "failed",
+      attemptedPackages,
+      stoppedPackages,
+      foregroundAfter,
+      classificationSource: "pm_list_packages_-3_exact",
+      error: message,
+    });
+  }
+}
+
+async function clearLiveBoundarySystemHome(adb: string, serial: string, targetPackage: string): Promise<BoundarySystemHomeReceipt> {
+  return clearBoundarySystemHome(targetPackage, {
+    forceStop: async (packageName) => {
+      checkedAdb(
+        await run(adb, ["-s", serial, "shell", "am", "force-stop", packageName], { timeoutMs: 10_000 }),
+        `force-stop ${packageName}`,
+      );
+    },
+    inspectForegrounds: async () => {
+      const activities = checkedAdb(
+        await run(adb, ["-s", serial, "shell", "dumpsys", "activity", "activities"], { timeoutMs: 20_000, maxOutputBytes: 8 * 1024 * 1024 }),
+        "foreground activity inspection",
+      );
+      const resumedPackages = parseResumedPackages(activities);
+      const thirdPartyPackages = parseThirdPartyPackages(checkedAdb(
+        await run(adb, ["-s", serial, "shell", "pm", "list", "packages", "-3"], { timeoutMs: 20_000, maxOutputBytes: 2 * 1024 * 1024 }),
+        "third-party package inspection",
+      ));
+      return classifyBoundaryForegrounds(resumedPackages, thirdPartyPackages, targetPackage);
+    },
+    sleep,
+  });
+}
+
 async function collectRuntimeHealthSnapshot(input: {
   adb: string;
   serial: string;
@@ -2624,10 +2789,21 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
         || selected.binding.qemuWindowOwnerPid !== selected.binding.qemuPid) {
         throw new Error("application-aware boundary preparation requires an exact discovery PID to qemu-window binding");
       }
-      checkedAdb(await run(adb, ["-s", input.serial, "shell", "am", "force-stop", input.scenario.packageName], { timeoutMs: 10_000 }), "exact package stop");
-      checkedAdb(await run(adb, ["-s", input.serial, "shell", "input", "keyevent", "3"], { timeoutMs: 10_000 }), "system home selection");
-      await sleep(1_000);
-      const homeReference = await liveCapture(adb, input, context.capturePaths.homeReference, "home_reference");
+      let homeClearance: BoundarySystemHomeReceipt;
+      try {
+        homeClearance = await clearLiveBoundarySystemHome(adb, input.serial, input.scenario.packageName);
+      } catch (error) {
+        if (error instanceof BoundarySystemHomeError) {
+          throw new BoundaryPreparationFailure(error.message, { homeClearance: error.receipt, structuralStop: "preparation_failed" });
+        }
+        throw new BoundaryPreparationFailure(redactSensitiveText(error, []), { structuralStop: "preparation_failed" });
+      }
+      let homeReference: BoundaryCapture;
+      try {
+        homeReference = await liveCapture(adb, input, context.capturePaths.homeReference, "home_reference");
+      } catch (error) {
+        throw new BoundaryPreparationFailure(redactSensitiveText(error, []), { homeClearance, structuralStop: "preparation_failed" });
+      }
       const marker = `boundary_prepare_${context.runId.slice(0, 16)}`;
       const coverageMarker = `boundary_gap_${context.runId.slice(0, 16)}_prepare`;
       const logPath = path.join(context.artifactRoot, "prepare-logcat-all.txt");
@@ -2637,7 +2813,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
       try {
         checkedAdb(await run(adb, ["-s", input.serial, "logcat", "-b", "all", "-c"], { timeoutMs: 10_000 }), "prepare log reset");
       } catch (error) {
-        throw new BoundaryPreparationFailure(redactSensitiveText(error, [secret]), { homeReference, structuralStop: "preparation_failed" });
+        throw new BoundaryPreparationFailure(redactSensitiveText(error, [secret]), { homeClearance, homeReference, structuralStop: "preparation_failed" });
       }
       const partial: {
         current: Awaited<ReturnType<typeof currentApplicationBinding>> | null;
@@ -2755,6 +2931,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
         throw new BoundaryPreparationFailure(
           [redactSensitiveText(error, [secret]), healthError ? `runtime-health scan: ${healthError}` : null].filter(Boolean).join("; "),
           {
+          homeClearance,
           homeReference,
           ...(partial.appBaseline ? { appBaseline: partial.appBaseline } : {}),
           continuity: partial.continuity,
@@ -2769,6 +2946,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
       return {
         runtimeBinding,
         applicationBinding: current.binding,
+        homeClearance,
         homeReference,
         appBaseline,
         continuity,

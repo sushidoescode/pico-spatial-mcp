@@ -719,6 +719,18 @@ waypoints. All replay rows must copy the exact calibrated M0 budgets, including 
 Preparation, waypoint, and recovery log collectors retain their independent 600,000 ms lifetime
 cap; the larger experiment total is clamped before it reaches each owned log child.
 
+Live preparation correction (2026-08-31): sending Android Home while another Full-space app is
+resumed opens PICO's modal “Back to Home” confirmation instead of establishing a clean reference;
+the modal can then reject the next Full-space launch. Preparation therefore does not synthesize a
+Home key. It force-stops the target, waits two seconds, and inspects every resumed display. A resumed
+third-party package is classified only by an exact `pm list packages -3` match and may be stopped
+only when it is one of the three Boundary Lab packages, exact imported Claimsight package, or the
+MCP-owned calibration app. Teardown is capped at three incumbent stops and fails closed on an
+unowned package, contradictory classification, malformed package output, or a remaining owned
+incumbent. The retained clearance receipt distinguishes attempted and confirmed stops, includes the
+last foreground set and failure text, and survives preparation failure. An already latched system
+modal remains a reset precondition; this change prevents recurrence but does not claim to dismiss it.
+
 The first `M0` run supplies `source.kind:"calibration_seed"` with every exact immutable action group;
 the controller may select only the next stored group. Once a looked M0 run attests the 32 m outer
 gate, route adjudication publishes the resolved groups and canonical route-script hash. Matched `F1`

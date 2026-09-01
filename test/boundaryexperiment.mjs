@@ -9,14 +9,19 @@ import { makePng } from "./helpers/runreceipt-fixture.mjs";
 
 import {
   BoundaryPreparationFailure,
+  BoundarySystemHomeError,
   boundaryExperimentInputSchema,
   canonicalBoundaryRouteScript,
+  classifyBoundaryForegrounds,
+  clearBoundarySystemHome,
   classifyActivityLaunchDisposition,
   createBoundaryExperimentOrchestrator,
   deriveBoundaryRouteOutcome,
   executeBoundaryRecoveryProtocol,
   hasExactDynamicOpenSequence,
   minimumRecoveryReserveMs,
+  parseResumedPackages,
+  parseThirdPartyPackages,
   readBoundReviewImage,
   readReceiptBoundEffectiveAppSpec,
   redactCapabilityFromLogArtifact,
@@ -749,6 +754,136 @@ test("receipt-bound effective AppSpec regular-to-FIFO replacement cannot block b
   assert.equal(child.status, 0, child.stderr);
 });
 
+test("system-home preparation force-stops a user-installed Full-space incumbent without opening the Home dialog", async () => {
+  const calls = [];
+  const foreground = [
+    [
+      { packageName: "com.picoxr.launcher", userInstalled: false },
+      { packageName: "com.fleet.calib", userInstalled: true },
+    ],
+    [{ packageName: "com.picoxr.systemui", userInstalled: false }],
+  ];
+  const result = await clearBoundarySystemHome(PACKAGE, {
+    forceStop: async (packageName) => { calls.push(["forceStop", packageName]); },
+    inspectForegrounds: async () => {
+      calls.push(["inspectForegrounds"]);
+      return foreground.shift() ?? [];
+    },
+    sleep: async (ms) => { calls.push(["sleep", ms]); },
+  });
+
+  assert.deepEqual(calls, [
+    ["forceStop", PACKAGE],
+    ["sleep", 2_000],
+    ["inspectForegrounds"],
+    ["forceStop", "com.fleet.calib"],
+    ["sleep", 2_000],
+    ["inspectForegrounds"],
+  ]);
+  assert.deepEqual(result, {
+    status: "cleared",
+    attemptedPackages: [PACKAGE, "com.fleet.calib"],
+    stoppedPackages: [PACKAGE, "com.fleet.calib"],
+    foregroundAfter: ["com.picoxr.systemui"],
+    classificationSource: "pm_list_packages_-3_exact",
+    error: null,
+  });
+});
+
+test("system-home preparation never force-stops a system foreground and bounds stubborn user-app teardown", async () => {
+  const systemStops = [];
+  const system = await clearBoundarySystemHome(PACKAGE, {
+    forceStop: async (packageName) => { systemStops.push(packageName); },
+    inspectForegrounds: async () => [{ packageName: "com.picoxr.systemui", userInstalled: false }],
+    sleep: async () => {},
+  });
+  assert.deepEqual(systemStops, [PACKAGE]);
+  assert.deepEqual(system.foregroundAfter, ["com.picoxr.systemui"]);
+
+  let stops = 0;
+  await assert.rejects(() => clearBoundarySystemHome(PACKAGE, {
+    forceStop: async () => { stops++; },
+    inspectForegrounds: async () => [{ packageName: "com.fleet.calib", userInstalled: true }],
+    sleep: async () => {},
+  }), (error) => {
+    assert.equal(error instanceof BoundarySystemHomeError, true);
+    assert.equal(error.receipt.status, "failed");
+    assert.equal(error.receipt.attemptedPackages.length, 4);
+    assert.equal(error.receipt.stoppedPackages.length, 4);
+    assert.match(error.receipt.error, /did not yield|bounded/i);
+    return true;
+  });
+  assert.equal(stops, 4, "one target stop plus exactly three bounded incumbent stops");
+});
+
+test("system-home preparation refuses an unowned third-party foreground before stopping it", async () => {
+  const stops = [];
+  await assert.rejects(() => clearBoundarySystemHome(PACKAGE, {
+    forceStop: async (packageName) => { stops.push(packageName); },
+    inspectForegrounds: async () => [{ packageName: "com.example.browser", userInstalled: true }],
+    sleep: async () => {},
+  }), (error) => {
+    assert.equal(error instanceof BoundarySystemHomeError, true);
+    assert.deepEqual(error.receipt.attemptedPackages, [PACKAGE]);
+    assert.deepEqual(error.receipt.stoppedPackages, [PACKAGE]);
+    assert.deepEqual(error.receipt.foregroundAfter, ["com.example.browser"]);
+    assert.match(error.receipt.error, /unowned|refus/i);
+    return true;
+  });
+  assert.deepEqual(stops, [PACKAGE]);
+});
+
+test("system-home preparation distinguishes an attempted stop from a confirmed stop", async () => {
+  await assert.rejects(() => clearBoundarySystemHome(PACKAGE, {
+    forceStop: async () => { throw new Error("adb transport closed"); },
+    inspectForegrounds: async () => [],
+    sleep: async () => {},
+  }), (error) => {
+    assert.equal(error instanceof BoundarySystemHomeError, true);
+    assert.deepEqual(error.receipt.attemptedPackages, [PACKAGE]);
+    assert.deepEqual(error.receipt.stoppedPackages, []);
+    assert.match(error.receipt.error, /transport closed/);
+    return true;
+  });
+});
+
+test("resumed parser preserves legitimate multi-display packages and accepts explicit null state", () => {
+  assert.deepEqual(parseResumedPackages([
+    "Display #0:",
+    "  topResumedActivity=ActivityRecord{aaa u0 com.picoxr.launcher/.MainActivity t3}",
+    "Display #2:",
+    "  topResumedActivity=ActivityRecord{bbb u0 com.fleet.calib/.platform.LaunchActivity t21}",
+    "ResumedActivity: ActivityRecord{aaa u0 com.picoxr.launcher/.MainActivity t3}",
+  ].join("\n")), ["com.picoxr.launcher", "com.fleet.calib"]);
+  assert.deepEqual(parseResumedPackages("topResumedActivity=null\n"), []);
+  assert.deepEqual(parseResumedPackages("ACTIVITY MANAGER ACTIVITIES\n  mCurrentFocus=null\n"), []);
+  assert.throws(() => parseResumedPackages("ACTIVITY MANAGER ACTIVITIES\n"), /missing|resumed/i);
+  assert.throws(() => parseResumedPackages("activity state unavailable\n"), /missing|resumed/i);
+  assert.throws(() => parseResumedPackages("topResumedActivity=ActivityRecord{malformed}"), /malformed/i);
+});
+
+test("third-party package classification is exact and rejects malformed pm output", () => {
+  assert.deepEqual(parseThirdPartyPackages([
+    "package:com.fleet.calib",
+    "package:com.fleet.boundarylabmixed",
+  ].join("\n")), new Set(["com.fleet.calib", "com.fleet.boundarylabmixed"]));
+  assert.equal(parseThirdPartyPackages("package:com.fleet.calib.helper\n").has("com.fleet.calib"), false);
+  assert.throws(() => parseThirdPartyPackages("warning: package list unavailable"), /malformed/i);
+  assert.deepEqual(classifyBoundaryForegrounds(
+    ["com.picoxr.launcher", "com.fleet.calib"],
+    new Set([PACKAGE, "com.fleet.calib"]),
+    PACKAGE,
+  ), [
+    { packageName: "com.picoxr.launcher", userInstalled: false },
+    { packageName: "com.fleet.calib", userInstalled: true },
+  ]);
+  assert.throws(() => classifyBoundaryForegrounds(
+    ["com.picoxr.launcher", "com.fleet.calib"],
+    new Set(),
+    PACKAGE,
+  ), /target package.*missing|third-party.*target/i);
+});
+
 test("prepare reserves one external run, publishes complete baseline review, and performs zero movement", async (t) => {
   const parent = scratch(t);
   const artifactRoot = path.join(parent, "run");
@@ -798,11 +933,20 @@ test("prepare returns retained diagnostic frames and scrubs runtime state when a
 
 test("a thrown live preparation failure returns and indexes every retained diagnostic frame", async (t) => {
   const fake = fakeDependencies();
+  const homeClearance = {
+    status: "failed",
+    attemptedPackages: [PACKAGE, "com.fleet.calib"],
+    stoppedPackages: [PACKAGE, "com.fleet.calib"],
+    foregroundAfter: ["com.example.browser"],
+    classificationSource: "pm_list_packages_-3_exact",
+    error: "refusing to force-stop unowned foreground package(s): com.example.browser",
+  };
   fake.deps.collectPreparation = async (context) => {
     const bytes = makePng(77);
     fs.writeFileSync(context.capturePaths.homeReference, bytes, { mode: 0o600, flag: "wx" });
     const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
     throw new BoundaryPreparationFailure("dynamic open failed after sanitized log finalization", {
+      homeClearance,
       homeReference: {
         role: "home_reference",
         path: context.capturePaths.homeReference,
@@ -820,6 +964,7 @@ test("a thrown live preparation failure returns and indexes every retained diagn
   const result = await orchestrator.execute(prepareInput(path.join(scratch(t), "thrown-prepare")));
   assert.equal(result.status, "preparation_failed");
   assert.equal(result.structuralStop, "terminal_signal_candidate");
+  assert.deepEqual(result.homeClearance, homeClearance);
   assert.equal(result.responseReview.length, 1);
   assert.equal(result.responseReview[0].role, "home_reference");
   assert.equal(fs.existsSync(path.join(result.artifactRoot, "preparation.json")), true);
