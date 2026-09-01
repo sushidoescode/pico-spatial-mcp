@@ -158,6 +158,7 @@ import { registerKnowledgeTools } from "./knowledge.js";
 import { registerPicoCliHealthTool } from "./picoclihealth.js";
 import { registerObservationTools } from "./observation.js";
 import { registerSceneAnchorTools } from "./sceneanchors.js";
+import { registerNavigationTargetTools } from "./navigationtarget.js";
 import { registerBoundaryExperimentTools } from "./boundaryexperiment.js";
 
 // The handshake version comes from package.json (dist/ sits one level below it both in the repo
@@ -261,6 +262,7 @@ if (!doorsSurfaceActive()) {
   registerCaptureTools(server);
   registerObservationTools(server);
   registerSceneAnchorTools(server);
+  registerNavigationTargetTools(server);
   registerEmulatorLookTools(server);
   registerCameraDriveTools(server);
   registerEditorComponentTools(server);

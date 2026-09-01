@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   captureSettledFrames,
   executeCaptureSettled,
+  executeLiveCaptureSettled,
   SETTLE_COMPARISON,
   sha256Bytes,
 } from "../dist/observation.js";
@@ -184,6 +185,20 @@ test("executeCaptureSettled returns every settled contract field and external ca
   assert.equal(receipt.lookRequired, true);
   assert.deepEqual(receipt.actionReceipts, []);
   assert.equal(receipt.error, null);
+});
+
+test("executeLiveCaptureSettled catches an internal caller that forks the public settled-capture implementation", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-observation-live-wrapper-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const outPath = path.join(scratch, "live-wrapper.png");
+  const result = await executeLiveCaptureSettled(
+    { serial: "emulator-5554", outPath, maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON },
+    { dependencies: executionDeps() },
+  );
+  assert.equal(result.receipt.status, "settled");
+  assert.equal(result.receipt.captureRef.path, fs.realpathSync(outPath));
+  assert.equal(result.receipt.sha256, sha256Bytes(Buffer.from("stable")));
+  assert.equal(result.frame.toString("utf8"), "stable");
 });
 
 test("executeCaptureSettled threads the required prior SHA into internal settlement", async (t) => {

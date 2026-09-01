@@ -125,31 +125,31 @@
 - Consumes: Task 1 detector/fit/state interfaces; Task 2 guide bridge; `executeLiveQuerySceneAnchors`; `bindMacQemuWindow`; `createBoundCameraActionAdapter`; `executeRelativeCameraRoute`; `executeCaptureSettled`; application continuity sampling.
 - Produces: `executeNavigateToSceneTarget(input, deps)` and `registerNavigationTargetTools(server)`.
 
-- [ ] **Step 1: Write failing orchestration tests with complete fakes**
+- [x] **Step 1: Write failing orchestration tests with complete fakes**
 
   Fakes mirror complete scene-query, qemu/runtime binding, continuity, action, settle, guide ack, detector, camera-calibration, filesystem, and monotonic-clock structures. Assert refusal before guide or input for scene/binding ambiguity and before approach input for missing/stale calibration; exact capture/action ordering; retained partial evidence; cleanup in every failure; independent achieved claims; structural ceiling; LOOK obligations; and no arrived/pose fields.
 
-- [ ] **Step 2: Build and verify RED**
+- [x] **Step 2: Build and verify RED**
 
   Run fresh build then focused tests. Failure must be absent orchestration/export.
 
-- [ ] **Step 3: Refactor only the shared seams needed by the orchestrator**
+- [x] **Step 3: Refactor only the shared seams needed by the orchestrator**
 
   Permit the existing route controller callback to be async so detector results can drive the next existing waypoint loop. Export a live settled-capture wrapper rather than recreating `defaultDependencies`. Extend qemu binding receipts with measured window bounds/scale needed to invalidate drag calibration. Preserve every current route/orbit/multiview schema and test.
 
-- [ ] **Step 4: Implement the calibration action**
+- [x] **Step 4: Implement the calibration action**
 
   Query/select target, capture guide-off, show/ack guide, settle, acquire if needed, then execute signed yaw/pitch drag trials and paired forward/back translation trials exclusively through the shared route. Derive angles from fresh camera intrinsics and guide center, derive depth/displacement from known guide dimensions, compute fits/residuals, hide guide, settle clean, write an external immutable receipt and the same-boot calibration registry record only when all quality gates pass.
 
-- [ ] **Step 5: Implement the navigate action**
+- [x] **Step 5: Implement the navigate action**
 
   Re-query and geometrically select `largest_horizontal`; enforce ambiguity separation and drift. Capture off/on; run acquire, center, and calibrated approach through async route decisions and shared budgets. Re-observe every settled waypoint. Re-query on divergence/guide loss. Conclude with a final settled diagnostic, hide acknowledgement, settled clean capture without backend input, `sameViewEvidence: "no_backend_action_requested"`, explicit LOOK obligations, and unconditional cleanup reporting.
 
-- [ ] **Step 6: Register one full-only tool and verify owning suites GREEN**
+- [x] **Step 6: Register one full-only tool and verify owning suites GREEN**
 
   The MCP schema is discriminated by `action: "calibrate" | "navigate"`; the navigation branch implements the §4.3 input fields. Register only below `!doorsSurfaceActive()`. Run fresh build, navigation/observation/continuity suites, navigation-target tests, conformance, and Doors exactly 18.
 
-- [ ] **Step 7: Run CP2 gates and commit**
+- [x] **Step 7: Run CP2 gates and commit**
 
   Run all per-checkpoint gates except tarball (count metadata changes in Task 4), then commit protocol/orchestrator/tool registration and tests.
 

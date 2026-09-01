@@ -284,6 +284,59 @@ test("route preserves grouped waypoint and action order through injected action,
   assert.ok(trace.usage.durationMs >= 0);
 });
 
+test("route catches an async controller that is not awaited before allocation and exposes its remaining deadline", async () => {
+  const events = [];
+  let calls = 0;
+  const trace = await executeRelativeCameraRoute(
+    routeInput(),
+    async (waypoints, deadline) => {
+      events.push(`decide-start:${waypoints.length}`);
+      assert.equal(typeof deadline.remainingMs, "function");
+      assert.ok(deadline.remainingMs() > 0);
+      assert.equal(deadline.signal.aborted, false);
+      await Promise.resolve();
+      events.push(`decide-end:${waypoints.length}`);
+      return calls++ === 0 ? [{ kind: "look_drag", dxPx: 4, dyPx: -3 }] : "stop";
+    },
+    dependencies({
+      allocateWaypointPath: (seq) => {
+        events.push(`allocate:${seq}`);
+        return `/tmp/pico-navigation-tests/route-test/waypoint-${String(seq).padStart(4, "0")}.png`;
+      },
+      applyRelativeAction: async (action) => {
+        events.push("action");
+        return applied(action);
+      },
+      sleep: async () => events.push("dwell"),
+      captureSettled: async (capturePath) => {
+        events.push("capture");
+        return settled(capturePath);
+      },
+    }),
+  );
+  assert.equal(trace.status, "controller_stop");
+  assert.deepEqual(events, [
+    "decide-start:0", "decide-end:0", "allocate:1", "action", "dwell", "capture",
+    "decide-start:1", "decide-end:1",
+  ]);
+});
+
+test("route catches an async controller rejection without allocating or applying input", async () => {
+  let allocations = 0;
+  let actions = 0;
+  const trace = await executeRelativeCameraRoute(
+    routeInput(),
+    async () => { await Promise.resolve(); throw new Error("detector deadline failed"); },
+    dependencies({
+      allocateWaypointPath: () => { allocations++; return "/tmp/pico-navigation-tests/route-test/unreachable.png"; },
+      applyRelativeAction: async (action) => { actions++; return applied(action); },
+    }),
+  );
+  assert.equal(trace.status, "action_failed");
+  assert.equal(allocations, 0);
+  assert.equal(actions, 0);
+});
+
 test("each action group waits once for rendered motion and passes the exact prior capture hash into settlement", async () => {
   const observed = [];
   let decisions = 0;
@@ -559,6 +612,76 @@ test("selector-qualified single-window fallbacks retain null or mismatched disco
       `${name} receipt drift`,
     );
   }
+});
+
+test("qemu binding catches geometry or backing-scale drift while legacy id/pid receipts remain accepted", async () => {
+  const selected = selectQemuWindowBinding(
+    runtimeBinding.serial,
+    [runtimeBinding.serial],
+    [{
+      file: runtimeBinding.grpc.discoveryFile,
+      pid: runtimeBinding.grpc.qemuPid,
+      serial: runtimeBinding.serial,
+      entries: { "port.serial": "5554", "grpc.port": "8554", "grpc.token": "geometry-secret" },
+    }],
+    [{ windowId: 7, ownerPid: 93013, x: 101, y: 202, width: 1280, height: 720, scale: 2, area: 921600 }],
+  );
+  assert.equal(selected.ok, true);
+  assert.deepEqual({
+    x: selected.binding.qemuWindowX,
+    y: selected.binding.qemuWindowY,
+    width: selected.binding.qemuWindowWidth,
+    height: selected.binding.qemuWindowHeight,
+    scale: selected.binding.qemuWindowScale,
+  }, { x: 101, y: 202, width: 1280, height: 720, scale: 2 });
+
+  const actionBinding = createCameraActionBindingReceipt(runtimeBinding.serial, selected.binding);
+  assert.deepEqual(actionBinding.qemuWindow, {
+    ownerPid: 93013,
+    windowId: 7,
+    x: 101,
+    y: 202,
+    width: 1280,
+    height: 720,
+    scale: 2,
+  });
+  const strict = { ...actionBinding, bootId: runtimeBinding.bootId };
+  delete strict.bindingMethod;
+  delete strict.onlineEmulatorSerials;
+  const drag = { kind: "look_drag", dxPx: 20, dyPx: 0 };
+  await assert.rejects(
+    executeBoundCameraActions(strict, [drag], {
+      applyRelativeAction: async () => applied(drag, strict.serial, {
+        hostWindow: {
+          qemuWindowOwnerPid: 93013,
+          qemuWindowId: 7,
+          qemuWindowX: 102,
+          qemuWindowY: 202,
+          qemuWindowWidth: 1280,
+          qemuWindowHeight: 720,
+          qemuWindowScale: 2,
+        },
+      }, strict),
+    }),
+    /binding mismatch/,
+  );
+
+  const legacy = selectQemuWindowBinding(
+    runtimeBinding.serial,
+    [runtimeBinding.serial],
+    [{
+      file: runtimeBinding.grpc.discoveryFile,
+      pid: runtimeBinding.grpc.qemuPid,
+      serial: runtimeBinding.serial,
+      entries: { "port.serial": "5554", "grpc.port": "8554" },
+    }],
+    [{ windowId: 7, ownerPid: 93013, area: 921600 }],
+  );
+  assert.equal(legacy.ok, true);
+  assert.deepEqual(createCameraActionBindingReceipt(runtimeBinding.serial, legacy.binding).qemuWindow, {
+    ownerPid: 93013,
+    windowId: 7,
+  });
 });
 
 test("bound action failures retain prior receipts and the terminal attempt", async () => {

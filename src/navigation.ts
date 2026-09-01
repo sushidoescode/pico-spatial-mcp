@@ -35,7 +35,15 @@ interface CameraRuntimeBindingBase {
     address: string;
     tokenFingerprint?: string;
   };
-  qemuWindow: { ownerPid: number; windowId: number } | null;
+  qemuWindow: {
+    ownerPid: number;
+    windowId: number;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    scale?: number;
+  } | null;
 }
 
 /** Selector-qualified compatibility binding used by the lower camera-action core. */
@@ -106,6 +114,16 @@ export interface RelativeRouteDependencies {
   sleep(ms: number): Promise<void>;
   monotonicNs(): bigint;
 }
+
+export interface RelativeRouteDecisionContext {
+  remainingMs(): number;
+  signal: AbortSignal;
+}
+
+export type RelativeRouteDecision = (
+  trace: readonly RelativeRouteWaypoint[],
+  context: RelativeRouteDecisionContext,
+) => RelativeCameraAction[] | "stop" | Promise<RelativeCameraAction[] | "stop">;
 
 export type RelativeRouteStop =
   | "controller_stop"
@@ -232,6 +250,23 @@ function positiveInteger(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0;
 }
 
+function completeWindowGeometry(window: {
+  x?: unknown; y?: unknown; width?: unknown; height?: unknown; scale?: unknown;
+}): { x: number; y: number; width: number; height: number; scale: number } | null {
+  const values = [window.x, window.y, window.width, window.height, window.scale];
+  if (values.every((value) => value === undefined)) return null;
+  if (!values.every((value) => typeof value === "number" && Number.isFinite(value))) return null;
+  const [x, y, width, height, scale] = values as number[];
+  return width >= 100 && height >= 100 && scale > 0 ? { x, y, width, height, scale } : null;
+}
+
+function windowGeometryIsAbsentOrComplete(window: {
+  x?: unknown; y?: unknown; width?: unknown; height?: unknown; scale?: unknown;
+}): boolean {
+  const values = [window.x, window.y, window.width, window.height, window.scale];
+  return values.every((value) => value === undefined) || completeWindowGeometry(window) !== null;
+}
+
 function isStrictDescendant(parent: string, candidate: string): boolean {
   const relative = path.relative(path.resolve(parent), path.resolve(candidate));
   return relative.length > 0
@@ -275,6 +310,7 @@ function validCameraActionBinding(
     !window || typeof window !== "object"
     || !positiveInteger(window.ownerPid)
     || !positiveInteger(window.windowId)
+    || !windowGeometryIsAbsentOrComplete(window)
   )) return false;
   const method = candidate.bindingMethod;
   const online = candidate.onlineEmulatorSerials;
@@ -318,6 +354,7 @@ function validStrictRuntimeBinding(binding: unknown): binding is RuntimeBindingR
     && !!window && typeof window === "object"
     && positiveInteger(window.ownerPid)
     && positiveInteger(window.windowId)
+    && windowGeometryIsAbsentOrComplete(window)
     && window.ownerPid === grpc.qemuPid;
 }
 
@@ -396,6 +433,32 @@ function postCaptureReserveMs(input: BoundRelativeRouteInput): number {
 
 function postRenderDwellReserveMs(input: BoundRelativeRouteInput): number {
   return captureWorkReserveMs(input) + postCaptureReserveMs(input);
+}
+
+/** Conservative whole-route admission estimate for callers with a fixed action schedule. */
+export function estimateRelativeRouteDurationMs(
+  input: BoundRelativeRouteInput,
+  actionGroups: readonly (readonly RelativeCameraAction[])[],
+): number {
+  if (!validInput(input) || !Array.isArray(actionGroups) || actionGroups.length === 0) return Number.POSITIVE_INFINITY;
+  const continuityMs = input.continuity.kind === "required" ? 2 * APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS : 0;
+  let total = input.budgets.recoveryReserveMs + ROUTE_FINALIZATION_RESERVE_MS;
+  for (const group of actionGroups) {
+    if (!Array.isArray(group) || group.length === 0) return Number.POSITIVE_INFINITY;
+    let actionMs = 0;
+    for (const action of group) {
+      const measured = actionUsage(action);
+      if (!measured
+        || measured.holdMs > input.budgets.maxHoldMsPerAction
+        || measured.dragPx > input.budgets.maxDragPxPerAction) return Number.POSITIVE_INFINITY;
+      actionMs += action.kind === "key_hold"
+        ? KEY_ACTION_TIMEOUT_RESERVE_MS + action.holdMs
+        : LOOK_ACTION_TIMEOUT_RESERVE_MS;
+    }
+    total += actionMs + POST_ACTION_RENDER_DWELL_MS + captureWorkReserveMs(input) + continuityMs;
+    if (!Number.isSafeInteger(total)) return Number.POSITIVE_INFINITY;
+  }
+  return total;
 }
 
 function capturePathBelongsToSession(
@@ -538,12 +601,27 @@ export async function executeBoundCameraActions(
       ? {
           ownerPid: hostWindow.qemuWindowOwnerPid ?? hostWindow.ownerPid,
           windowId: hostWindow.qemuWindowId ?? hostWindow.windowId,
+          x: hostWindow.qemuWindowX ?? hostWindow.x,
+          y: hostWindow.qemuWindowY ?? hostWindow.y,
+          width: hostWindow.qemuWindowWidth ?? hostWindow.width,
+          height: hostWindow.qemuWindowHeight ?? hostWindow.height,
+          scale: hostWindow.qemuWindowScale ?? hostWindow.scale,
         }
       : null;
+    const expectedGeometry = expectedWindow ? completeWindowGeometry(expectedWindow) : null;
+    const observedGeometry = observedWindow ? completeWindowGeometry(observedWindow) : null;
     const hostWindowMatches = expectedWindow === null
       ? hostWindow === null
       : observedWindow?.ownerPid === expectedWindow.ownerPid
-        && observedWindow?.windowId === expectedWindow.windowId;
+        && observedWindow?.windowId === expectedWindow.windowId
+        && (expectedGeometry === null || (
+          observedGeometry !== null
+          && observedGeometry.x === expectedGeometry.x
+          && observedGeometry.y === expectedGeometry.y
+          && observedGeometry.width === expectedGeometry.width
+          && observedGeometry.height === expectedGeometry.height
+          && observedGeometry.scale === expectedGeometry.scale
+        ));
     const actionEvidenceMatches = action.kind === "key_hold"
       ? ack?.key === action.key && ack?.holdMs === action.holdMs
       : ack?.requested?.dragDx === action.dxPx && ack?.requested?.dragDy === action.dyPx;
@@ -588,7 +666,7 @@ export async function executeBoundCameraActions(
 
 export async function executeRelativeCameraRoute(
   input: BoundRelativeRouteInput,
-  decide: (trace: readonly RelativeRouteWaypoint[]) => RelativeCameraAction[] | "stop",
+  decide: RelativeRouteDecision,
   deps: RelativeRouteDependencies,
 ): Promise<RelativeRouteTrace> {
   const waypoints: RelativeRouteWaypoint[] = [];
@@ -656,10 +734,37 @@ export async function executeRelativeCameraRoute(
 
   while (true) {
     let decision: RelativeCameraAction[] | "stop";
+    let decisionTimedOut = false;
+    const controller = new AbortController();
+    const decisionRemainingMs = (): number => {
+      const elapsed = elapsedMs();
+      return elapsed === null ? 0 : Math.max(0, input.budgets.maxDurationMs - elapsed);
+    };
+    const lastObservedElapsed = (lastObservedAt - startedAt) / 1_000_000n;
+    const initialDecisionRemainingMs = lastObservedElapsed > BigInt(Number.MAX_SAFE_INTEGER)
+      ? 0
+      : Math.max(0, input.budgets.maxDurationMs - Number(lastObservedElapsed));
+    if (initialDecisionRemainingMs <= 0) return finish("budget_exhausted");
+    let decisionTimer: NodeJS.Timeout | null = null;
     try {
-      decision = decide([...waypoints]);
+      const deadline = new Promise<never>((_resolve, reject) => {
+        decisionTimer = setTimeout(() => {
+          decisionTimedOut = true;
+          controller.abort("relative route decision deadline exhausted");
+          reject(new Error("relative route decision deadline exhausted"));
+        }, Math.max(1, Math.min(initialDecisionRemainingMs, 2_147_483_647)));
+      });
+      decision = await Promise.race([
+        Promise.resolve().then(() => decide([...waypoints], {
+          remainingMs: decisionRemainingMs,
+          signal: controller.signal,
+        })),
+        deadline,
+      ]);
     } catch {
-      return finish("action_failed");
+      return finish(decisionTimedOut ? "budget_exhausted" : "action_failed");
+    } finally {
+      if (decisionTimer) clearTimeout(decisionTimer);
     }
     if (decision === "stop") return finish("controller_stop");
     if (!Array.isArray(decision) || decision.length === 0) return finish("budget_exhausted");
