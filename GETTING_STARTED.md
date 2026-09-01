@@ -94,7 +94,7 @@ Any MCP client works — it's JSON-RPC over stdio. Restart your client so it pic
 
 You should now see the **18-tool doors surface** — the default since v36.3 when the `env` block
 sets no surface. Step 5 explains the two surfaces; set `"PICO_MCP_SURFACE": "full"` in that `env`
-block for the full surface (252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list`
+block for the full surface (253 tools on macOS (installed-tarball runtime-measured) versus a source-derived 250 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list`
 measurement has run).
 
 ### Managed pico-cli policy
@@ -233,7 +233,7 @@ back to you as `projectDir`.
 
 ## Choosing a surface
 
-Since v36.3 the curated **18-tool** doors surface is the default. The full surface—252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run—is the power
+Since v36.3 the curated **18-tool** doors surface is the default. The full surface—253 tools on macOS (installed-tarball runtime-measured) versus a source-derived 250 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run—is the power
 opt-in for direct access to every lane. Switch in the
 `env` block from step 2:
 

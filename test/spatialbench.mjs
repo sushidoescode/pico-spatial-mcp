@@ -28,9 +28,9 @@ const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
 
 const { rows, briefsDir } = headlessRows();
-// v37 flagship: Swan Mission Table joins the headless corpus — 27 total.
-if (rows.length >= 27) ok(`corpus loads (${rows.length} briefs from ${briefsDir})`);
-else fail(`expected ≥27 corpus briefs, got ${rows.length}`);
+// Phase-1 immersive matrix: the canonical Boundary Lab source joins the 27-row corpus.
+if (rows.length === 28) ok(`corpus loads exactly 28 briefs from ${briefsDir}`);
+else fail(`expected exactly 28 corpus briefs, got ${rows.length}`);
 
 const scoredRows = rows.filter((r) => !r.skipped);
 const skippedRows = rows.filter((r) => r.skipped);

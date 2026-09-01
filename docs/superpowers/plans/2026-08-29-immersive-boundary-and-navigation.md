@@ -232,6 +232,22 @@ The current free-camera stack has the exact primitives the experiment needs:
   persists an external hash-checked capture, and caps the receipt at structural with LOOK required
   (`src/observation.ts:351-530,579-628`).
 
+Phase-1 execution added one measured correction on 2026-08-31. With macOS reporting the locked
+`loginwindow` as frontmost, an exact serial/discovery/qemu-bound 444 ms `W` RPC changed the canonical
+settled M0 frame to SHA-256 `d2b8af326f7983626807757f3a4cdb12e9601ea761c0cb5a25eb78b3f6e3b8a2`
+(LOOKed 1200 px derivative `a78bbfc0649da0afe3433b662a365f763b3685ff793d2e4f33925f4b538367f6`);
+the matching `S` RPC restored the prior canonical frame byte-for-byte at SHA-256
+`3dde24ba8ccdaa677a72c058d3df400b36ede059eefb90ccd111e71c4cb43771`
+(LOOKed derivative `dc8f91048994e762f760671495ce23b62754d78b26d415b82f10c302f76f7c1f`). The retained probe is under
+`/private/tmp/pico-immersive-phase1/cp3/probes/`. Therefore exact-bound gRPC key translation does not
+require host focus on this measured macOS lane, while CoreGraphics look-drag still fails closed
+without acknowledged qemu focus. Action RPC receipts remain structural; the settled LOOK supplies
+the rendered-effect judgment. Every CoreGraphics look action re-checks exact-bound focus at the
+moment of delivery, and route admission reserves the full 10-second focus-verification ceiling plus
+the 30-second drag ceiling; boundary execution has no second, unmetered focus preflight. A normally
+returned failed or release-uncertain action also becomes the trace's terminal failure, retaining
+all earlier receipts plus the terminal receipt when partial movement preceded the stop.
+
 The original MR navigation roadmap ranked `capture_settled` as Phase 1A and semantic snapshots as
 Phase 1B; both are now present. Its deferred Phase 1 item 3 is the bounded target-acquisition
 controller `navigate_to_scene_target` (`docs/superpowers/plans/2026-08-28-mr-agent-navigation-and-scene-understanding.md:901-918,957-970`).
@@ -630,7 +646,7 @@ type BoundaryExperimentInput =
   | { action: "step"; runId: string; reviewedPriorFrame: VisualFrameAttestation }
   | { action: "adjudicate"; runId: string; scope: "route" | "recovery";
       frameAttestations: VisualFrameAttestation[] }
-  | { action: "recover"; runId: string };
+  | { action: "recover"; runId: string; reviewedPriorFrame?: VisualFrameAttestation };
 ```
 
 Proposed generated-row prepare input:
@@ -682,14 +698,54 @@ Proposed generated-row prepare input:
       "maxDragPxPerAction": 360,
       "maxCumulativeHoldMs": 60000,
       "maxCumulativeDragPx": 1440,
-      "maxDurationMs": 600000,
-      "recoveryReserveMs": 90000
+      "maxDurationMs": 1080000,
+      "recoveryReserveMs": 525000
     }
   },
   "capture": {"maxTries": 4, "intervalMs": 500, "attemptTimeoutMs": 3000,
               "comparison": "byte_exact"}
 }
 ```
+
+Implementation safety correction (2026-08-31): the original 90,000 ms planning placeholder could
+not reach a force-stop fallback that itself withholds destructive input until its compensating
+relaunch and evidence path fits. The Phase-1 runner therefore partitions the once-only protocol into
+fixed per-step deadlines and cross-validates a 420,000 ms minimum for manifest/editor rows and a
+525,000 ms minimum for the dynamic row. Earlier non-destructive steps cannot spend the final
+force-stop preamble/completion envelope. This is a conservative protocol-budget deviation, not a
+change to the recovery order or evidence requirements in section 8.2.
+
+Live calibration correction (2026-08-31): the installed 0.13/6.0 emulator movement implementation
+advances at about 1.125 m/s, so the required 32 m forward witness needs roughly 28.4 seconds of held
+input. The shared route executor also reserves bounded key acknowledgement, two continuity samples,
+settled capture, and finalization before each waypoint. A 600,000 ms total cap minus the dynamic
+row's mandatory 525,000 ms recovery envelope therefore cannot admit an honest six-waypoint 32 m
+seed. A first 900,000 ms correction admitted the outer group after ordinary prior timings, but an
+independent audit found that it remained below the complete seed's conservative sum: a ten-key
+variant with 29.9 seconds of held input, six capture/continuity/finalization windows, and recovery
+reserves about 1,004,000 ms. Phase 1 therefore raises only the experiment total-duration ceiling to
+1,080,000 ms, leaving about 76 seconds of bounded margin. The recovery reserve, four-action waypoint
+cap, per-action five-second cap, cumulative budgets, ordered fallbacks, and evidence requirements
+remain unchanged. The runner also removes an implementation-only aggregate five-second hold limit
+on each whole waypoint, which contradicted the plan's bounded multi-action groups and made the
+16→32 m leg impossible to author. The shared executor still preflights only the next immutable group
+against the remaining duration, while the orchestrator persists actual elapsed usage across LOOK-
+gated calls; owning regressions exercise both that exact per-group threshold and all six staged
+waypoints. All replay rows must copy the exact calibrated M0 budgets, including this total envelope.
+Preparation, waypoint, and recovery log collectors retain their independent 600,000 ms lifetime
+cap; the larger experiment total is clamped before it reaches each owned log child.
+
+Live preparation correction (2026-08-31): sending Android Home while another Full-space app is
+resumed opens PICO's modal “Back to Home” confirmation instead of establishing a clean reference;
+the modal can then reject the next Full-space launch. Preparation therefore does not synthesize a
+Home key. It force-stops the target, waits two seconds, and inspects every resumed display. A resumed
+third-party package is classified only by an exact `pm list packages -3` match and may be stopped
+only when it is one of the three Boundary Lab packages, exact imported Claimsight package, or the
+MCP-owned calibration app. Teardown is capped at three incumbent stops and fails closed on an
+unowned package, contradictory classification, malformed package output, or a remaining owned
+incumbent. The retained clearance receipt distinguishes attempted and confirmed stops, includes the
+last foreground set and failure text, and survives preparation failure. An already latched system
+modal remains a reset precondition; this change prevents recurrence but does not claim to dismiss it.
 
 The first `M0` run supplies `source.kind:"calibration_seed"` with every exact immutable action group;
 the controller may select only the next stored group. Once a looked M0 run attests the 32 m outer
@@ -923,7 +979,9 @@ frame/log/continuity state, and then performs exactly one ordered recovery proto
    `stage_reopened` only after the Full sentinel is LOOKed and application binding remains unchanged.
 3. Send one normal activity launch to an allowed exact component on the already-bound serial, without
    force-stop. Record whether it was accepted, ignored, or blocked and whether the same PID/start ticks
-   survived.
+   survived. Only `accepted` can earn `activity_relaunch`; if Android reports `ignored` but the LOOKed
+   expected state is present, record `recovered_after_ignored_activity_launch` without assigning the
+   recovery causally to that command.
 4. If still unrecovered, call one injected exact-serial operation that force-stops only the bound
    package, waits under a deadline, starts one allowed exact component, and rebinds PID/start ticks.
    It does not reinstall or call `verify_pico_apk`, whose serial is hardcoded

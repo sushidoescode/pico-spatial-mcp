@@ -79,7 +79,7 @@ export type ProduceNativeFleetReceiptResult =
   | { status: "recorded"; built: true; installed: true; receipt: PublishedNativeRunReceipt; completedStages: string[] }
   | { status: "failed"; stage: NativeFleetFailureStage; built: boolean; installed: boolean; reason: string; completedStages: string[] };
 
-type ForegroundActivity = { packageName: string; component: string };
+export type ForegroundActivity = { packageName: string; component: string };
 type RemoteDigestLine = { sha256: string; path: string };
 
 class StageFailure extends Error {
@@ -125,7 +125,11 @@ export function parseProcStartTicks(output: string): string | null {
   return fields[19];
 }
 
-function foregroundActivities(output: string): ForegroundActivity[] {
+/**
+ * Parse every distinct resumed activity reported by dumpsys. Native receipt callers deliberately
+ * apply their stricter exact-component policy after this shared lossless parse.
+ */
+export function parseForegroundActivities(output: string): ForegroundActivity[] {
   const activities: ForegroundActivity[] = [];
   const seenComponents = new Set<string>();
   for (const match of output.matchAll(
@@ -140,7 +144,7 @@ function foregroundActivities(output: string): ForegroundActivity[] {
 }
 
 export function parseForegroundActivity(output: string): ForegroundActivity | null {
-  const activities = foregroundActivities(output);
+  const activities = parseForegroundActivities(output);
   return activities.length === 1 ? activities[0] : null;
 }
 
@@ -153,7 +157,7 @@ function classifyForegroundActivities(
   requiredActivity: ForegroundActivity | null;
   samePackageMismatch: ForegroundActivity | null;
 } {
-  const activities = foregroundActivities(output);
+  const activities = parseForegroundActivities(output);
   const samePackageMismatch = activities.find((activity) =>
     activity.packageName === packageName && activity.component !== component) ?? null;
   const requiredActivity = samePackageMismatch

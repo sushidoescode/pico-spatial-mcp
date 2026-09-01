@@ -124,11 +124,18 @@ and structural records exercise collider/ray placement against them. A historica
 attestation says app content was seated in the simulated room, but its retained capture provenance
 is currently broken, so it is not current visual proof. Controller-ray and head-tracked-depth rows
 remain deferred, and there is no effective real-hardware `device_verified` entry. The Full-Space
-Guardian issue is a partner statement, not a measurement made by this repository.
+Guardian issue remains a partner statement rather than a hardware measurement made by this
+repository. A 2026-09-01 emulator experiment did observe two manifest-Full apps yielding to PICO
+system home by their second replay waypoint while a manifest-Mixed control retained through its
+authored 32 m gate. The dynamic-Full row failed closed before movement, so this is not a completed
+dynamic-versus-manifest comparison or a Guardian cause measurement.
 
 ### Evidence
 
 Evidence type/class: `logcat` + `structural` + `partner-stated`.
+
+The new route frames were individually LOOKed, but the staged experiment records their ceiling as
+`vision_verified_eligible`; it does not silently promote them into the trust ledger.
 
 The historical visual attestation is retained only with `provenance-broken` status.
 
@@ -141,12 +148,14 @@ controller-ray and head-tracked depth deferred ([capability boundary](../CAPABIL
 while the hardware protocol says there is no effective real-hardware device proof and no Swan run
 ([hardware boundary](DEVICE_VERIFICATION.md#L1-L18)). The stage schema labels the Guardian caveat
 as partner-stated and unmeasured ([stage contract](../src/appspec.ts#L49-L54)).
+The staged M0/F1/F2/E1 receipts, every retained frame digest, recovery sequence, and configuration
+limits are in the [Phase-1 boundary report](evidence/immersive-phase1-2026-08-31/CP3.md).
 
 ### Does not prove
 
 Emulator planes are not evidence of real-hardware scene understanding. These facts do not establish
-complete emulator/device parity, an exhaustive unsupported-feature list, Guardian behavior, or any
-Swan result.
+complete emulator/device parity, an exhaustive unsupported-feature list, Guardian behavior, a
+dynamic-entry cause, calibrated physical distance, or any Swan result.
 
 ## Q36 — What was actually proved about `pico-cli project create`?
 

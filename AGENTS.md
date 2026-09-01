@@ -70,7 +70,7 @@ they tested nothing.
    fix. Never debug the environment by guessing.
 2. **Prefer the doors surface** (`PICO_MCP_SURFACE=doors`, the default since v36.3): 18
    intent-level tools instead of the full surface (`PICO_MCP_SURFACE=full` —
-   252 tools on macOS (installed-tarball runtime-measured) versus a source-derived 249 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run).
+   253 tools on macOS (installed-tarball runtime-measured) versus a source-derived 250 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run).
    Note the doors surface does *not* expose `knowledge_api`, `vault_api` or `preflight_lint` —
    switch to full when you need them. `pico_build_app` is deliberately two-step: a brief-only
    call returns a scaffold AppSpec for YOU to author, then re-call with `{brief, draftSpec}`.

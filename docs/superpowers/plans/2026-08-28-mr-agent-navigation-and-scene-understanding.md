@@ -307,9 +307,11 @@ interface ObservationBackend {
   (`src/cameradrive.ts:30-33`; `src/emulatorlook.ts:29-49`). The trace records serial, endpoint, host
   process/window identity, online-emulator set, and binding method.
 - `emulator_keys_only`: candidate adb capture + discovery-selected gRPC keys, without autonomous
-  rotation. Off-macOS focus delivery and rendered translation are **UNVERIFIED** because the measured
-  motion requires the emulator window frontmost while the focus helper is a no-op off Darwin
-  (`src/cameradrive.ts:15-25,30-33`).
+  rotation. Off-macOS rendered translation remains **UNVERIFIED**. A 2026-08-31 macOS locked-console
+  probe subsequently showed an exact-bound `W` hold change the settled rendered frame and the exact
+  inverse `S` hold restore the prior resized PNG byte-for-byte, so this key-only lane does not depend
+  on host-window focus. RPC acknowledgement alone is still not rendered proof: every result must
+  settle and be LOOKed at. CoreGraphics rotation retains the strict focus requirement.
 - `pico_device_guided`: adb capture + scene query + user-positioned head; no
   `applyRelativeAction`.
 

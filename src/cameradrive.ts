@@ -15,6 +15,12 @@ import {
   SETTLE_COMPARISON,
   type SettledFrameResult,
 } from "./observation.js";
+import {
+  CameraActionExecutionError,
+  executeBoundCameraActions,
+  type CameraActionBindingReceipt,
+  type RelativeCameraAction,
+} from "./navigation.js";
 
 /**
  * cameradrive.ts — capture_orbit / capture_multiview: DRIVE the emulator free camera and
@@ -24,8 +30,8 @@ import {
  * Mechanism (settled empirically 2026-08-08 after a two-session goose chase):
  *  - TRANSLATION: gRPC EmulatorController.sendKey keydown/keyup with 'w','a','s','d','q','e'
  *    drives the GUI free-cam walk (W fwd / S back / A left / D right / Q down / E up, relative
- *    to current facing). Applies within ~0.5 s WHEN THE EMULATOR WINDOW IS FRONTMOST, with a
- *    smoothing/inertia tail of up to several seconds.
+ *    to current facing). A 2026-08-31 locked-console probe measured an exact-bound W move and
+ *    byte-exact S inverse without host focus; rendered effect still requires settled LOOK.
  *  - ROTATION: only a RIGHT-button mouse drag on the GL surface rotates (same lane as
  *    emulator_look). gRPC sendMouse does NOT rotate; xr_head_* InputEvents do NOT move the
  *    view. So rotation posts CGEvents (macOS + Accessibility); translation is plain gRPC.
@@ -172,6 +178,18 @@ export async function frontmostQemu(binding: BoundQemuWindow | null): Promise<st
   return observedPid === binding.qemuWindowOwnerPid
     ? null
     : `frontmost PID readback mismatch: expected ${binding.qemuWindowOwnerPid}, observed ${observedPid}`;
+}
+
+/**
+ * Exact-bound gRPC key injection targets the selected emulator endpoint directly. Only the
+ * CoreGraphics drag lane depends on the qemu window being the active host application.
+ */
+export async function focusQemuForActions(
+  actions: readonly RelativeCameraAction[],
+  binding: BoundQemuWindow | null,
+  focus: (candidate: BoundQemuWindow | null) => Promise<string | null> = frontmostQemu,
+): Promise<string | null> {
+  return actions.some((action) => action.kind === "look_drag") ? focus(binding) : null;
 }
 
 async function settleCapture(adb: string, serial: string, maxTries = 12, intervalMs = 700): Promise<SettledFrameResult> {
@@ -371,46 +389,119 @@ const moveSchema = z.object({
   dragDy: z.number().optional().describe("Right-drag pixels: dy>0 looks down, dy<0 looks up (macOS only)"),
 });
 
-async function applyMoves(
+export function createCameraActionBindingReceipt(
   serial: string,
-  moves: Array<z.infer<typeof moveSchema>>,
+  windowBinding: BoundQemuWindow,
+): CameraActionBindingReceipt {
+  return {
+    serial,
+    grpc: {
+      discoveryFile: windowBinding.discoveryFile,
+      qemuPid: windowBinding.qemuPid,
+      address: windowBinding.address,
+      ...(windowBinding.tokenFingerprint ? { tokenFingerprint: windowBinding.tokenFingerprint } : {}),
+    },
+    qemuWindow: { ownerPid: windowBinding.qemuWindowOwnerPid, windowId: windowBinding.qemuWindowId },
+    bindingMethod: windowBinding.bindingMethod,
+    onlineEmulatorSerials: [...windowBinding.onlineEmulatorSerials],
+  };
+}
+
+export function createBoundCameraActionAdapter(
+  serial: string,
   windowBinding: BoundQemuWindow | null,
-): Promise<{ error: string | null; actionReceipts: CameraActionReceipt[] }> {
-  const actionReceipts: CameraActionReceipt[] = [];
-  for (const m of moves) {
-    if (m.key) {
-      if (!KEYCODES[m.key]) return { error: `unknown key '${m.key}'`, actionReceipts };
-      const n = m.repeat ?? 1;
-      for (let i = 0; i < n; i++) {
-        const receipt = await keyHold(serial, m.key, m.holdMs ?? 600);
+  options: {
+    focusQemu?: typeof frontmostQemu;
+    keyHold?: typeof keyHold;
+    rightDrag?: typeof rightDrag;
+  } = {},
+): { applyRelativeAction(action: RelativeCameraAction): Promise<CameraActionReceipt> } {
+  return {
+    applyRelativeAction: async (action) => {
+      if (action.kind === "key_hold") {
+        const receipt = await (options.keyHold ?? keyHold)(serial, action.key, action.holdMs);
         receipt.ack.hostWindow = windowBinding;
-        receipt.ack.focusAcknowledged = windowBinding !== null;
-        actionReceipts.push(receipt);
-        if (receipt.status !== "applied") return { error: receipt.error ?? `sendKey ${receipt.status}`, actionReceipts };
-        await sleep(150);
+        receipt.ack.hostFocusRequired = false;
+        receipt.ack.hostFocusAttempted = false;
+        receipt.ack.focusAcknowledged = false;
+        if (receipt.status === "applied") await sleep(150);
+        return receipt;
       }
-    }
-    if (m.dragDx != null || m.dragDy != null) {
       const startedAtMonotonicNs = process.hrtime.bigint().toString();
-      const err = await rightDrag(windowBinding, m.dragDx ?? 0, m.dragDy ?? 0);
-      actionReceipts.push({
+      let focusError: string | null;
+      try {
+        focusError = await (options.focusQemu ?? frontmostQemu)(windowBinding);
+      } catch (error: any) {
+        focusError = `focus verification failed: ${error?.message ?? String(error)}`;
+      }
+      const err = focusError
+        ? `look-drag requires acknowledged bound qemu host focus: ${focusError}`
+        : await (options.rightDrag ?? rightDrag)(windowBinding, action.dxPx, action.dyPx);
+      const focusAcknowledged = focusError === null;
+      return {
         action: "look_drag",
         serial,
         status: err ? "failed" : "applied",
         startedAtMonotonicNs,
         endedAtMonotonicNs: process.hrtime.bigint().toString(),
         ack: {
-          requested: { dragDx: m.dragDx ?? 0, dragDy: m.dragDy ?? 0 },
+          requested: { dragDx: action.dxPx, dragDy: action.dyPx },
           cgEventAcknowledged: !err,
-          focusAcknowledged: windowBinding !== null,
+          hostFocusRequired: true,
+          hostFocusAttempted: true,
+          focusAcknowledged,
           hostWindow: windowBinding,
         },
         ...(err ? { error: err } : {}),
-      });
-      if (err) return { error: err, actionReceipts };
+      };
+    },
+  };
+}
+
+function expandMoves(moves: Array<z.infer<typeof moveSchema>>): RelativeCameraAction[] {
+  const actions: RelativeCameraAction[] = [];
+  for (const move of moves) {
+    if (move.key) {
+      if (!KEYCODES[move.key]) continue;
+      for (let index = 0; index < (move.repeat ?? 1); index++) {
+        actions.push({ kind: "key_hold", key: move.key, holdMs: move.holdMs ?? 600 });
+      }
+    }
+    if (move.dragDx != null || move.dragDy != null) {
+      actions.push({ kind: "look_drag", dxPx: move.dragDx ?? 0, dyPx: move.dragDy ?? 0 });
     }
   }
-  return { error: null, actionReceipts };
+  return actions;
+}
+
+async function applyMoves(
+  serial: string,
+  moves: Array<z.infer<typeof moveSchema>>,
+  windowBinding: BoundQemuWindow | null,
+): Promise<{ error: string | null; actionReceipts: CameraActionReceipt[] }> {
+  if (!windowBinding) return { error: "ambiguous_host_window: no serial-bound qemu window is available", actionReceipts: [] };
+  const actions = expandMoves(moves);
+  try {
+    const actionReceipts = await executeBoundCameraActions(
+      createCameraActionBindingReceipt(serial, windowBinding),
+      actions,
+      createBoundCameraActionAdapter(serial, windowBinding),
+    );
+    const refused = actionReceipts.find((receipt) =>
+      receipt.status !== "applied"
+      || (receipt.action === "key_hold" && receipt.ack.releaseCertain !== true));
+    return {
+      error: refused
+        ? refused.error ?? (refused.action === "key_hold" ? `sendKey ${refused.status}` : `${refused.action} ${refused.status}`)
+        : null,
+      actionReceipts,
+    };
+  } catch (error: any) {
+    return {
+      error: error?.message ?? String(error),
+      actionReceipts: error instanceof CameraActionExecutionError ? error.retainedReceipts : [],
+    };
+  }
 }
 
 function writeShrunk(buf: Buffer, outPath: string, maxDim: number): Promise<string> {
@@ -449,7 +540,8 @@ export function registerCameraDriveTools(server: McpServer) {
       const selected = await bindMacQemuWindow(adb, dev);
       if (!selected.ok) return fail(`${selected.code}: ${selected.detail}`);
       const windowBinding = selected.binding;
-      const focusErr = await frontmostQemu(windowBinding);
+      const actions = expandMoves(moves);
+      const focusErr = await focusQemuForActions(actions, windowBinding);
       if (focusErr) return fail(focusErr);
       const moved = await applyMoves(dev, moves, windowBinding);
       if (moved.error) return fail(`${moved.error}\nactionReceipts=${JSON.stringify(moved.actionReceipts)}`);

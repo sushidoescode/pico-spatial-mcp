@@ -10,7 +10,12 @@ import {
   SETTLE_COMPARISON,
   sha256Bytes,
 } from "../dist/observation.js";
-import { keyHold, selectQemuWindowBinding } from "../dist/cameradrive.js";
+import {
+  createBoundCameraActionAdapter,
+  focusQemuForActions,
+  keyHold,
+  selectQemuWindowBinding,
+} from "../dist/cameradrive.js";
 import { resolveGrpcEndpointBinding } from "../dist/grpc.js";
 
 const frame = (value, capturedAt = "2026-08-28T12:00:00.000Z") => ({
@@ -25,6 +30,7 @@ function settleDeps(sequence) {
   let index = 0;
   return {
     sleeps,
+    get captures() { return index; },
     deps: {
       capture: async () => {
         const next = sequence[index++];
@@ -54,6 +60,53 @@ test("captureSettledFrames waits through changed frames and stops at a delayed i
   assert.equal(result.status, "settled");
   assert.equal(result.attempts, 3);
   assert.deepEqual(fake.sleeps, [11, 11]);
+});
+
+test("captureSettledFrames ignores a stable stale pair matching the required prior SHA", async () => {
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const fake = settleDeps([frame("prior"), frame("prior"), frame("moved"), frame("moved")]);
+  const result = await captureSettledFrames(
+    { maxTries: 4, intervalMs: 11, comparison: SETTLE_COMPARISON, priorSha256 },
+    fake.deps,
+  );
+  assert.equal(result.status, "settled");
+  assert.equal(result.attempts, 4);
+  assert.equal(result.sha256, "5edd1832df25e2f1a72585c0ee55c1e585e7f4902eb1d15f7abf1c71c1b296ae");
+  assert.deepEqual(result.stablePair, [
+    "5edd1832df25e2f1a72585c0ee55c1e585e7f4902eb1d15f7abf1c71c1b296ae",
+    "5edd1832df25e2f1a72585c0ee55c1e585e7f4902eb1d15f7abf1c71c1b296ae",
+  ]);
+  assert.deepEqual(fake.sleeps, [11, 11, 11]);
+});
+
+test("captureSettledFrames times out and retains the last frame when every stable pair matches the required prior SHA", async () => {
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const fake = settleDeps([frame("prior"), frame("prior"), frame("prior")]);
+  const result = await captureSettledFrames(
+    { maxTries: 3, intervalMs: 9, comparison: SETTLE_COMPARISON, priorSha256 },
+    fake.deps,
+  );
+  assert.equal(result.status, "timeout");
+  assert.equal(result.attempts, 3);
+  assert.equal(result.sha256, priorSha256);
+  assert.equal(result.frame.bytes.toString(), "prior");
+  assert.equal(result.stablePair, null);
+  assert.deepEqual(fake.sleeps, [9, 9]);
+});
+
+test("captureSettledFrames fails closed before capture for a malformed required prior SHA", async () => {
+  const fake = settleDeps([frame("must-not-capture"), frame("must-not-capture")]);
+  const result = await captureSettledFrames(
+    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256: "not-a-sha256" },
+    fake.deps,
+  );
+  assert.equal(result.status, "capture_failed");
+  assert.equal(result.attempts, 0);
+  assert.equal(result.frame, null);
+  assert.equal(result.sha256, null);
+  assert.equal(result.stablePair, null);
+  assert.match(result.detail, /priorSha256.*64 lowercase hexadecimal/);
+  assert.equal(fake.captures, 0);
 });
 
 test("captureSettledFrames timeout retains the last valid frame without a stable pair", async () => {
@@ -131,6 +184,49 @@ test("executeCaptureSettled returns every settled contract field and external ca
   assert.equal(receipt.lookRequired, true);
   assert.deepEqual(receipt.actionReceipts, []);
   assert.equal(receipt.error, null);
+});
+
+test("executeCaptureSettled threads the required prior SHA into internal settlement", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-observation-prior-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const outPath = path.join(scratch, "moved.png");
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const { receipt } = await executeCaptureSettled(
+    {
+      serial: "emulator-5554",
+      outPath,
+      maxTries: 4,
+      intervalMs: 0,
+      comparison: SETTLE_COMPARISON,
+      priorSha256,
+    },
+    executionDeps({ sequence: [frame("prior"), frame("prior"), frame("moved"), frame("moved")] }),
+  );
+  assert.equal(receipt.status, "settled");
+  assert.equal(receipt.attempts, 4);
+  assert.equal(receipt.sha256, "5edd1832df25e2f1a72585c0ee55c1e585e7f4902eb1d15f7abf1c71c1b296ae");
+  assert.equal(fs.readFileSync(outPath).toString(), "moved");
+});
+
+test("executeCaptureSettled describes an all-prior timeout without denying the observed stable pairs", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-observation-prior-timeout-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const outPath = path.join(scratch, "prior.png");
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const { receipt } = await executeCaptureSettled(
+    {
+      serial: "emulator-5554",
+      outPath,
+      maxTries: 3,
+      intervalMs: 0,
+      comparison: SETTLE_COMPARISON,
+      priorSha256,
+    },
+    executionDeps({ sequence: [frame("prior"), frame("prior"), frame("prior")] }),
+  );
+  assert.equal(receipt.status, "timeout");
+  assert.match(receipt.error.detail, /no byte-identical consecutive pair different from the required prior frame/);
+  assert.equal(fs.readFileSync(outPath).toString(), "prior");
 });
 
 test("executeCaptureSettled timeout persists and returns only the last valid frame", async (t) => {
@@ -387,6 +483,30 @@ test("keyHold re-reads discovery with the exact serial before input when initial
   assert.equal(receipt.ack.releaseCertain, true);
 });
 
+test("keyHold reports the bounded no-input diagnostic when initial discovery and reconnect both fail", async () => {
+  const clientCalls = [];
+  let unaryCalls = 0;
+  const receipt = await keyHold("emulator-5554", "w", 100, {
+    getClient: (_version, serial) => {
+      clientCalls.push(serial);
+      return { error: "discovery unavailable" };
+    },
+    unary: async () => { unaryCalls++; throw new Error("must not send input"); },
+    sleep: async () => {},
+    monotonicNs: (() => { let n = 0n; return () => ++n; })(),
+  });
+  assert.equal(receipt.status, "failed");
+  assert.deepEqual(clientCalls, ["emulator-5554", "emulator-5554"]);
+  assert.equal(unaryCalls, 0);
+  assert.equal(receipt.ack.connectionAttempts, 2);
+  assert.equal(receipt.ack.keydownAttempted, false);
+  assert.equal(receipt.ack.keydownAcknowledged, false);
+  assert.equal(receipt.ack.applicationUncertain, false);
+  assert.equal(receipt.ack.keyupAcknowledged, false);
+  assert.equal(receipt.ack.releaseCertain, true);
+  assert.equal("grpc" in receipt.ack, false);
+});
+
 test("keyHold never replays keydown after an ambiguous transport failure", async () => {
   const events = [];
   const receipt = await keyHold("emulator-5554", "w", 100, {
@@ -439,6 +559,103 @@ test("keyHold reports uncertain release and never repeats an accepted keydown", 
   assert.equal(events.filter((event) => event === "keydown").length, 1);
   assert.equal(receipt.ack.releaseCertain, false);
   assert.equal(receipt.ack.releaseReconnectBindingMatched, false);
+});
+
+test("host focus is required only for CGEvent look actions, not exact-bound gRPC keys", async () => {
+  const binding = {
+    discoveryFile: "/tmp/pico_running/pid_93013.ini",
+    discoveredSerial: "emulator-5554",
+    qemuPid: 93013,
+    address: "127.0.0.1:8554",
+    tokenPresent: true,
+    tokenFingerprint: "a".repeat(64),
+    onlineEmulatorSerials: ["emulator-5554"],
+    qemuWindowOwnerPid: 93013,
+    qemuWindowId: 601,
+    bindingMethod: "discovery-pid-window",
+  };
+  const calls = [];
+  const focus = async (received) => {
+    calls.push(received);
+    return "frontmost PID readback mismatch";
+  };
+
+  assert.equal(await focusQemuForActions([
+    { kind: "key_hold", key: "w", holdMs: 444 },
+    { kind: "key_hold", key: "w", holdMs: 889 },
+  ], binding, focus), null);
+  assert.deepEqual(calls, []);
+
+  assert.equal(await focusQemuForActions([
+    { kind: "key_hold", key: "w", holdMs: 444 },
+    { kind: "look_drag", dxPx: 20, dyPx: 0 },
+  ], binding, focus), "frontmost PID readback mismatch");
+  assert.deepEqual(calls, [binding]);
+});
+
+test("bound action receipts distinguish focus-independent gRPC keys from acknowledged CGEvent focus", async () => {
+  const binding = {
+    discoveryFile: "/tmp/pico_running/pid_93013.ini",
+    discoveredSerial: "emulator-5554",
+    qemuPid: 93013,
+    address: "127.0.0.1:8554",
+    tokenPresent: true,
+    tokenFingerprint: "a".repeat(64),
+    onlineEmulatorSerials: ["emulator-5554"],
+    qemuWindowOwnerPid: 93013,
+    qemuWindowId: 601,
+    bindingMethod: "discovery-pid-window",
+  };
+  let dragCalls = 0;
+  let focusCalls = 0;
+  const keyReceipt = await createBoundCameraActionAdapter("emulator-5554", binding, {
+    keyHold: async () => ({
+      action: "key_hold",
+      serial: "emulator-5554",
+      status: "applied",
+      startedAtMonotonicNs: "1",
+      endedAtMonotonicNs: "2",
+      ack: { releaseCertain: true },
+    }),
+    rightDrag: async () => { dragCalls++; return null; },
+    focusQemu: async () => { focusCalls++; return null; },
+  }).applyRelativeAction({ kind: "key_hold", key: "w", holdMs: 444 });
+  assert.equal(keyReceipt.ack.hostFocusRequired, false);
+  assert.equal(keyReceipt.ack.hostFocusAttempted, false);
+  assert.equal(keyReceipt.ack.focusAcknowledged, false);
+  assert.equal(focusCalls, 0);
+
+  const refusedDrag = await createBoundCameraActionAdapter("emulator-5554", binding, {
+    keyHold: async () => { throw new Error("not reached"); },
+    rightDrag: async () => { dragCalls++; return null; },
+    focusQemu: async (received) => {
+      focusCalls++;
+      assert.equal(received, binding);
+      return "frontmost PID readback mismatch";
+    },
+  }).applyRelativeAction({ kind: "look_drag", dxPx: 20, dyPx: 0 });
+  assert.equal(refusedDrag.status, "failed");
+  assert.equal(refusedDrag.ack.hostFocusRequired, true);
+  assert.equal(refusedDrag.ack.hostFocusAttempted, true);
+  assert.equal(refusedDrag.ack.focusAcknowledged, false);
+  assert.equal(dragCalls, 0);
+  assert.equal(focusCalls, 1);
+
+  const appliedDrag = await createBoundCameraActionAdapter("emulator-5554", binding, {
+    keyHold: async () => { throw new Error("not reached"); },
+    rightDrag: async () => { dragCalls++; return null; },
+    focusQemu: async (received) => {
+      focusCalls++;
+      assert.equal(received, binding);
+      return null;
+    },
+  }).applyRelativeAction({ kind: "look_drag", dxPx: 20, dyPx: 0 });
+  assert.equal(appliedDrag.status, "applied");
+  assert.equal(appliedDrag.ack.hostFocusRequired, true);
+  assert.equal(appliedDrag.ack.hostFocusAttempted, true);
+  assert.equal(appliedDrag.ack.focusAcknowledged, true);
+  assert.equal(dragCalls, 1);
+  assert.equal(focusCalls, 2);
 });
 
 test("frontmostQemu refuses a successful focus request when fresh frontmost-PID readback disagrees", { skip: process.platform !== "darwin" }, () => {

@@ -311,6 +311,35 @@ export const roomExperienceSchema = z.object({
   }
 });
 
+/**
+ * One deterministic Boundary Lab content profile.  The profile deliberately keeps route choice
+ * separate from scene content: the matrix materializer changes only `variant` plus the matching
+ * launcher/container metadata, while every gate, axis, and visible sentinel remains byte-identical.
+ */
+export const boundaryLabSchema = z.object({
+  variant: z.enum(["manifest_mixed", "manifest_full", "dynamic_full"]),
+  gateSequenceM: z.tuple([
+    z.literal(1),
+    z.literal(2),
+    z.literal(4),
+    z.literal(8),
+    z.literal(16),
+    z.literal(32),
+  ]),
+  requiredTraversalM: z.literal(32),
+  axes: z.tuple([
+    z.literal("forward"),
+    z.literal("backward"),
+    z.literal("left"),
+    z.literal("right"),
+  ]),
+  sentinels: z.object({
+    manifestMixedRoot: z.literal("MANIFEST MIXED ROOT"),
+    manifestFull: z.literal("MANIFEST FULL"),
+    dynamicFull: z.literal("DYNAMIC FULL"),
+  }).strict(),
+}).strict();
+
 /** Asset paths are embedded in generated Kotlin and also used as APK-relative filesystem paths.
  * Keep the accepted alphabet deliberately boring: no interpolation/quote escapes, traversal, empty
  * segments, platform separators, or spelling that provisioning would normalize differently. */
@@ -332,6 +361,7 @@ const appSpecObjectSchema = z.object({
   interactions: z.array(interactionSchema).default([]),
   panels: z.array(panelSchema).default([]).describe("v9.4 hybrid tier: Compose WindowContainer panels with LIVE runtime text (2D windows composite as floating spatial panels — vision-verified). Spawn at the dock position, off the forward view."),
   roomExperience: roomExperienceSchema.optional().describe("Runtime room-mesh placement profile. swanMissionTable uses unfiltered mesh readiness followed by TABLE/FLOOR/WALL_ART label matching, periodic re-query, metre-scale fitting, and a scene attachment panel."),
+  boundaryLab: boundaryLabSchema.optional().describe("Matched immersive boundary profile. Content is fixed; variant selects manifest Mixed, manifest Full, or the authenticated debug-only dynamic Full route."),
   navigation: navigationSchema,
   verificationPlan: z.array(verificationNodeSchema).default([]),
   headsetLayer: z.array(headsetPieceSchema).default([]),
@@ -342,6 +372,40 @@ const appSpecObjectSchema = z.object({
  * the same file and silently render earlier scenes with the later scene's settings. Reject those
  * shapes at the IR boundary instead of emitting a plausible but wrong app. */
 export const appSpecSchema = appSpecObjectSchema.superRefine((spec, ctx) => {
+  if (spec.boundaryLab) {
+    if (spec.roomExperience) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["boundaryLab"],
+        message: "boundaryLab and roomExperience are mutually exclusive internal runtime profiles",
+      });
+    }
+    if (spec.meta.rootContainer !== "stage") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["meta", "rootContainer"],
+        message: "boundaryLab requires rootContainer 'stage'",
+      });
+    }
+    const secondaries = spec.meta.secondaryContainers;
+    const exactDynamicStage = secondaries.length === 1
+      && secondaries[0].kind === "stage"
+      && secondaries[0].id === "dynamic-full"
+      && secondaries[0].style === "Full"
+      && Object.keys(secondaries[0]).sort().join(",") === "id,kind,style";
+    const routeMatches = spec.boundaryLab.variant === "manifest_mixed"
+      ? spec.meta.stageStyle === "1" && secondaries.length === 0
+      : spec.boundaryLab.variant === "manifest_full"
+        ? spec.meta.stageStyle === "3" && secondaries.length === 0
+        : spec.meta.stageStyle === "1" && exactDynamicStage;
+    if (!routeMatches) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["boundaryLab", "variant"],
+        message: "boundaryLab route contradicts launcher style/containers: manifest_mixed is Mixed with none, manifest_full is Full with none, and dynamic_full is Mixed with exactly stage dynamic-full/Full",
+      });
+    }
+  }
   if (spec.roomExperience) {
     if (spec.meta.stageStyle !== "1" || spec.meta.rootContainer !== "stage") {
       ctx.addIssue({

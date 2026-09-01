@@ -158,6 +158,7 @@ import { registerKnowledgeTools } from "./knowledge.js";
 import { registerPicoCliHealthTool } from "./picoclihealth.js";
 import { registerObservationTools } from "./observation.js";
 import { registerSceneAnchorTools } from "./sceneanchors.js";
+import { registerBoundaryExperimentTools } from "./boundaryexperiment.js";
 
 // The handshake version comes from package.json (dist/ sits one level below it both in the repo
 // and in the installed package) — a hardcoded string here drifted to 6.0.0 while the package
@@ -385,6 +386,7 @@ if (!doorsSurfaceActive()) {
   registerWorldEnvTools(server);
   registerUsdRenderTools(server);
   registerIblBakeTools(server);
+  registerBoundaryExperimentTools(server);
 }
 registerDoorTools(server);
 // First-light is available on both surfaces; advanced prompts are full-only.

@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { appSpecSchema } from "../dist/appspec.js";
 import {
   canonicalIdentity,
@@ -74,6 +75,30 @@ function maxGradleEntries() {
   }
   return entries;
 }
+
+test("native receipt FIFO leaves fail closed without blocking the first snapshot open", (t) => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "pico-runreceipt-fifo-"));
+  t.after(() => fs.rmSync(rootDir, { recursive: true, force: true }));
+  const receiptPath = path.join(rootDir, "native-v1", FIXTURE_APP, `${ZERO_HASH}.json`);
+  fs.mkdirSync(path.dirname(receiptPath), { recursive: true });
+  const fifo = spawnSync("mkfifo", [receiptPath], { encoding: "utf8" });
+  assert.equal(fifo.status, 0, fifo.stderr);
+  const moduleUrl = new URL("../dist/runreceiptstore.js", import.meta.url).href;
+  const script = `
+    import { readNativeRunReceipt } from ${JSON.stringify(moduleUrl)};
+    const result = readNativeRunReceipt(process.argv[1], process.argv[2], { rootDir: process.argv[3] });
+    if (result.status === "invalid" && /regular|snapshot|read/i.test(result.issues.join(" "))) process.exitCode = 0;
+    else { console.error(JSON.stringify(result)); process.exitCode = 2; }
+  `;
+  const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script, FIXTURE_APP, ZERO_HASH, rootDir], {
+    encoding: "utf8",
+    timeout: 1_200,
+    killSignal: "SIGTERM",
+  });
+  assert.equal(child.error, undefined, child.error?.message);
+  assert.equal(child.signal, null, `child signal: ${child.signal}\n${child.stderr}`);
+  assert.equal(child.status, 0, child.stderr);
+});
 
 function maxGradleByteEntries() {
   return [
