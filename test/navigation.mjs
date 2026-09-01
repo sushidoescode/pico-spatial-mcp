@@ -638,6 +638,60 @@ test("conservative duration preflight reserves capture attempts, intervals, and 
   assert.equal(captureCount, 0);
 });
 
+test("a four-action outer-gate group is admitted only at its exact conservative live-duration bound", async () => {
+  const actions = [
+    { kind: "key_hold", key: "w", holdMs: 5_000 },
+    { kind: "key_hold", key: "w", holdMs: 5_000 },
+    { kind: "key_hold", key: "w", holdMs: 4_500 },
+    { kind: "key_hold", key: "s", holdMs: 1_500 },
+  ];
+  const capture = { maxTries: 4, intervalMs: 500, attemptTimeoutMs: 3_000 };
+  const exactConservativeMs = 659_700;
+
+  for (const [name, maxDurationMs, expectedStatus, expectedActions] of [
+    ["exact bound", exactConservativeMs, "controller_stop", 4],
+    ["one millisecond short", exactConservativeMs - 1, "budget_exhausted", 0],
+  ]) {
+    let appliedCount = 0;
+    let captureCount = 0;
+    let continuityCount = 0;
+    const trace = await executeRelativeCameraRoute(
+      routeInput({
+        continuity: { kind: "required", binding: applicationBinding },
+        budgets: {
+          ...defaultBudgets,
+          maxActions: 4,
+          maxWaypoints: 1,
+          maxCumulativeHoldMs: 16_000,
+          maxDurationMs,
+          recoveryReserveMs: 525_000,
+        },
+        capture,
+      }),
+      (prior) => prior.length === 0 ? actions : "stop",
+      dependencies({
+        monotonicNs: () => 0n,
+        sampleContinuity: async () => {
+          continuityCount++;
+          return continuitySample();
+        },
+        applyRelativeAction: async (action) => {
+          appliedCount++;
+          return applied(action);
+        },
+        captureSettled: async (capturePath) => {
+          captureCount++;
+          return settled(capturePath);
+        },
+      }),
+    );
+    assert.equal(trace.status, expectedStatus, name);
+    assert.equal(appliedCount, expectedActions, `${name} action count`);
+    assert.equal(captureCount, expectedActions === 0 ? 0 : 1, `${name} capture count`);
+    assert.equal(continuityCount, expectedActions === 0 ? 0 : 2, `${name} continuity count`);
+  }
+});
+
 test("controller stop returns without sampling, input, allocation, or capture", async () => {
   let dependencyCalls = 0;
   const trace = await executeRelativeCameraRoute(routeInput(), () => "stop", dependencies({

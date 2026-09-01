@@ -49,6 +49,8 @@ const APK_ARTIFACT_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 const REVIEW_IMAGE_MAX_BYTES = 64 * 1024 * 1024;
 const MAX_ACTIVE_RUNS = 32;
 const RUN_TTL_MS = 6 * 60 * 60 * 1_000;
+const MAX_EXPERIMENT_DURATION_MS = 18 * 60_000;
+const LOG_WINDOW_MAX_DURATION_MS = 10 * 60_000;
 type RecoveryKind = "observe" | "reopen_stage" | "activity_launch" | "force_stop_relaunch";
 type RecoveryAttributionKind = RecoveryKind | "activity_launch_ignored";
 type BoundaryEntryRoute = "manifest_mixed" | "manifest_full" | "dynamic_full" | "editor_manifest_full";
@@ -126,12 +128,7 @@ const waypointSchema = z.object({
   seq: z.number().int().positive(),
   targetGateM: z.union(GATES.map((gate) => z.literal(gate)) as [z.ZodLiteral<1>, z.ZodLiteral<2>, z.ZodLiteral<4>, z.ZodLiteral<8>, z.ZodLiteral<16>, z.ZodLiteral<32>]),
   actions: z.array(actionSchema).min(1).max(4),
-}).strict().superRefine((value, context) => {
-  const holdMs = value.actions.reduce((total, action) => total + (action.kind === "key_hold" ? action.holdMs : 0), 0);
-  if (holdMs > 5_000) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["actions"], message: "one waypoint may hold keys for at most 5000 ms so its evidence window stays bounded" });
-  }
-});
+}).strict();
 const replayRefSchema = z.object({
   absolutePath: z.string().min(1),
   routeScriptSha256: hashSchema,
@@ -149,7 +146,7 @@ const budgetsSchema = z.object({
   maxDragPxPerAction: z.number().int().positive().max(2_048),
   maxCumulativeHoldMs: z.number().int().positive().max(300_000),
   maxCumulativeDragPx: z.number().int().positive().max(32_768),
-  maxDurationMs: z.number().int().positive().max(10 * 60_000),
+  maxDurationMs: z.number().int().positive().max(MAX_EXPERIMENT_DURATION_MS),
   recoveryReserveMs: z.number().int().nonnegative().max(10 * 60_000),
 }).strict().superRefine((value, context) => {
   if (value.recoveryReserveMs > value.maxDurationMs) {
@@ -2621,7 +2618,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
         serial: input.serial,
         artifactPath: logPath,
         appStartMarker: marker,
-        maxDurationMs: input.route.budgets.maxDurationMs,
+        maxDurationMs: Math.max(1, Math.min(LOG_WINDOW_MAX_DURATION_MS, input.route.budgets.maxDurationMs)),
       });
       let finalized: Awaited<ReturnType<typeof runWithFinalizedLog<{
         current: Awaited<ReturnType<typeof currentApplicationBinding>>;
@@ -2787,7 +2784,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
         serial: state.input.serial,
         artifactPath: logPath,
         appStartMarker: coverageMarker,
-        maxDurationMs: Math.max(1, Math.min(10 * 60_000, Number(context.remainingBudgets.maxDurationMs))),
+        maxDurationMs: Math.max(1, Math.min(LOG_WINDOW_MAX_DURATION_MS, Number(context.remainingBudgets.maxDurationMs))),
       });
       type WaypointResult = Awaited<ReturnType<BoundaryExperimentDependencies["executeWaypoint"]>>;
       const retainedHolder: { value: WaypointResult | null } = { value: null };
@@ -3063,7 +3060,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
           serial: state.input.serial,
           artifactPath: logPath,
           appStartMarker: coverageMarker,
-          maxDurationMs: Math.max(1, Math.min(10 * 60_000, Math.floor(remainingRecoveryMs() - 6_000))),
+          maxDurationMs: Math.max(1, Math.min(LOG_WINDOW_MAX_DURATION_MS, Math.floor(remainingRecoveryMs() - 6_000))),
         });
         try {
           const finalized = await runWithFinalizedLog({

@@ -630,7 +630,7 @@ type BoundaryExperimentInput =
   | { action: "step"; runId: string; reviewedPriorFrame: VisualFrameAttestation }
   | { action: "adjudicate"; runId: string; scope: "route" | "recovery";
       frameAttestations: VisualFrameAttestation[] }
-  | { action: "recover"; runId: string };
+  | { action: "recover"; runId: string; reviewedPriorFrame?: VisualFrameAttestation };
 ```
 
 Proposed generated-row prepare input:
@@ -682,7 +682,7 @@ Proposed generated-row prepare input:
       "maxDragPxPerAction": 360,
       "maxCumulativeHoldMs": 60000,
       "maxCumulativeDragPx": 1440,
-      "maxDurationMs": 600000,
+      "maxDurationMs": 1080000,
       "recoveryReserveMs": 525000
     }
   },
@@ -698,6 +698,26 @@ fixed per-step deadlines and cross-validates a 420,000 ms minimum for manifest/e
 525,000 ms minimum for the dynamic row. Earlier non-destructive steps cannot spend the final
 force-stop preamble/completion envelope. This is a conservative protocol-budget deviation, not a
 change to the recovery order or evidence requirements in section 8.2.
+
+Live calibration correction (2026-08-31): the installed 0.13/6.0 emulator movement implementation
+advances at about 1.125 m/s, so the required 32 m forward witness needs roughly 28.4 seconds of held
+input. The shared route executor also reserves bounded key acknowledgement, two continuity samples,
+settled capture, and finalization before each waypoint. A 600,000 ms total cap minus the dynamic
+row's mandatory 525,000 ms recovery envelope therefore cannot admit an honest six-waypoint 32 m
+seed. A first 900,000 ms correction admitted the outer group after ordinary prior timings, but an
+independent audit found that it remained below the complete seed's conservative sum: a ten-key
+variant with 29.9 seconds of held input, six capture/continuity/finalization windows, and recovery
+reserves about 1,004,000 ms. Phase 1 therefore raises only the experiment total-duration ceiling to
+1,080,000 ms, leaving about 76 seconds of bounded margin. The recovery reserve, four-action waypoint
+cap, per-action five-second cap, cumulative budgets, ordered fallbacks, and evidence requirements
+remain unchanged. The runner also removes an implementation-only aggregate five-second hold limit
+on each whole waypoint, which contradicted the plan's bounded multi-action groups and made the
+16→32 m leg impossible to author. The shared executor still preflights only the next immutable group
+against the remaining duration, while the orchestrator persists actual elapsed usage across LOOK-
+gated calls; owning regressions exercise both that exact per-group threshold and all six staged
+waypoints. All replay rows must copy the exact calibrated M0 budgets, including this total envelope.
+Preparation, waypoint, and recovery log collectors retain their independent 600,000 ms lifetime
+cap; the larger experiment total is clamped before it reaches each owned log child.
 
 The first `M0` run supplies `source.kind:"calibration_seed"` with every exact immutable action group;
 the controller may select only the next stored group. Once a looked M0 run attests the 32 m outer

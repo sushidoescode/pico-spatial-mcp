@@ -651,6 +651,35 @@ test("all four action schemas are strict and relational route/style contradictio
     scenario: scenario("dynamic_full"),
     route: { ...dynamicRoute, budgets: { ...budgets, recoveryReserveMs: 525_000 } },
   })).success, true);
+  assert.equal(boundaryExperimentInputSchema.safeParse(prepareInput(root, {
+    route: { ...route(), budgets: { ...budgets, maxDurationMs: 1_080_000 } },
+  })).success, true, "18-minute total envelope conservatively admits the bounded six-gate seed beside dynamic recovery");
+  assert.equal(boundaryExperimentInputSchema.safeParse(prepareInput(root, {
+    route: { ...route(), budgets: { ...budgets, maxDurationMs: 1_080_001 } },
+  })).success, false, "Phase-1 total envelope remains bounded at 18 minutes");
+  const multiActionOuterGate = waypoints();
+  multiActionOuterGate[5] = {
+    ...multiActionOuterGate[5],
+    actions: [
+      { kind: "key_hold", key: "w", holdMs: 5_000 },
+      { kind: "key_hold", key: "w", holdMs: 5_000 },
+      { kind: "key_hold", key: "w", holdMs: 4_500 },
+      { kind: "key_hold", key: "s", holdMs: 1_500 },
+    ],
+  };
+  assert.equal(boundaryExperimentInputSchema.safeParse(prepareInput(root, {
+    route: {
+      ...route({ kind: "calibration_seed", waypoints: multiActionOuterGate }),
+      budgets: { ...budgets, maxActions: 64, maxWaypoints: 10, maxCumulativeHoldMs: 60_000, maxDurationMs: 1_080_000 },
+    },
+  })).success, true, "one bounded waypoint may compose up to four individually capped actions");
+  multiActionOuterGate[5].actions.push({ kind: "key_hold", key: "s", holdMs: 50 });
+  assert.equal(boundaryExperimentInputSchema.safeParse(prepareInput(root, {
+    route: {
+      ...route({ kind: "calibration_seed", waypoints: multiActionOuterGate }),
+      budgets: { ...budgets, maxActions: 64, maxWaypoints: 10, maxCumulativeHoldMs: 60_000, maxDurationMs: 1_080_000 },
+    },
+  })).success, false, "one waypoint still refuses a fifth action");
 });
 
 test("prepare reserves one external run, publishes complete baseline review, and performs zero movement", async (t) => {
@@ -1161,6 +1190,61 @@ test("aggregate route budgets persist across staged step calls and cannot reset 
   assert.equal(second.status, "ready_for_route_adjudication");
   assert.equal(second.structuralStop, "budget_exhausted");
   assert.equal(fake.calls.waypoint.length, 1);
+});
+
+test("the bounded four-action outer gate remains reachable after five staged waypoint reviews", async (t) => {
+  const calibratedWaypoints = waypoints();
+  calibratedWaypoints[5] = {
+    ...calibratedWaypoints[5],
+    actions: [
+      { kind: "key_hold", key: "w", holdMs: 5_000 },
+      { kind: "key_hold", key: "w", holdMs: 5_000 },
+      { kind: "key_hold", key: "w", holdMs: 4_500 },
+      { kind: "key_hold", key: "s", holdMs: 1_500 },
+    ],
+  };
+  const fake = fakeDependencies();
+  const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+  const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "run"), {
+    route: {
+      ...route({ kind: "calibration_seed", waypoints: calibratedWaypoints }),
+      budgets: {
+        ...budgets,
+        maxActions: 64,
+        maxWaypoints: 10,
+        maxCumulativeHoldMs: 60_000,
+        maxCumulativeDragPx: 1_440,
+        maxDurationMs: 1_080_000,
+      },
+    },
+  }));
+
+  let priorHash = "2".repeat(64);
+  let priorGate = 0;
+  let stepped;
+  for (let index = 0; index < calibratedWaypoints.length; index++) {
+    stepped = await orchestrator.execute({
+      action: "step",
+      runId: prepared.runId,
+      reviewedPriorFrame: attestation(priorHash, "boundarylab_mixed", { witnessedGateM: priorGate }),
+    });
+    assert.equal(stepped.status, "needs_waypoint_review", `waypoint ${index + 1}`);
+    priorHash = stepped.requiredReview.at(-1).captureSha256;
+    priorGate = GATES[index];
+  }
+
+  assert.equal(fake.calls.waypoint.length, 6);
+  assert.deepEqual(fake.calls.waypoint.at(-1).waypoint.actions, calibratedWaypoints[5].actions);
+  assert.equal(stepped.usage.actions, 9);
+  assert.equal(stepped.usage.holdMs, 17_500);
+  assert.equal(stepped.usage.durationMs, 600);
+  const ready = await orchestrator.execute({
+    action: "step",
+    runId: prepared.runId,
+    reviewedPriorFrame: attestation(priorHash, "boundarylab_mixed", { witnessedGateM: 32 }),
+  });
+  assert.equal(ready.status, "ready_for_route_adjudication");
+  assert.equal(ready.structuralStop, "reviewed_terminal_or_outer_gate");
 });
 
 test("a same-process transition to system home remains an ejection candidate instead of becoming a binding mismatch", async (t) => {
@@ -2241,6 +2325,8 @@ test("the implementation imports the shared CP1 executor and registers exactly o
   assert.equal((source.match(/runWithFinalizedLog\(\{/g) ?? []).length, 3);
   assert.equal((source.match(/const ownedLog = startOwnedLogWindow\(\{/g) ?? []).length, 3);
   assert.equal((source.match(/if \(!ownedLog\.started\(\)\)/g) ?? []).length, 3);
+  assert.equal((source.match(/Math\.min\(LOG_WINDOW_MAX_DURATION_MS,/g) ?? []).length, 3,
+    "prepare, waypoint, and recovery collectors must independently clamp their owned log lifetime");
   assert.equal(source.includes("collect: () =>"), false);
   assert.match(source, /executeRecoveryStep/);
   assert.match(source, /LOG_FINALIZATION_RESERVE_MS/);
