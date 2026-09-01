@@ -155,7 +155,7 @@ export type NavigationTargetStopReason =
   | "cleanup_failed";
 export type NavigationTargetClaim = "target_visible" | "target_centered" | "free_camera_approached";
 export type NavigationCalibrationStatus = "not_attempted" | "missing" | "stale" | "quality_rejected" | "valid" | "written";
-export type NavigationRefusalReason = "insufficient_budget" | "missing" | "stale" | "quality_rejected" | null;
+export type NavigationRefusalReason = "insufficient_budget" | "missing" | "stale" | "quality_rejected" | "projection_divergence" | null;
 
 export interface NavigationArtifactRef {
   path: string;
@@ -201,10 +201,13 @@ const ROUTE_CAPTURE = { maxTries: 2, intervalMs: 0, attemptTimeoutMs: 30_000 } a
 const GUIDE_MAX_POLLS = 3;
 const GUIDE_TRANSACTION_RESERVE_MS = 80_000;
 const DIRECT_SETTLED_CAPTURE_RESERVE_MS = 90_000;
-const CLEANUP_RESERVE_MS = 180_000;
+const INVERSE_RECOVERY_RESERVE_MS = 180_000;
 const INITIAL_GUIDE_DELTA_RESERVE_MS = 2 * DIRECT_SETTLED_CAPTURE_RESERVE_MS + GUIDE_TRANSACTION_RESERVE_MS;
 const REACQUIRED_GUIDE_DELTA_RESERVE_MS = 2 * DIRECT_SETTLED_CAPTURE_RESERVE_MS + 2 * GUIDE_TRANSACTION_RESERVE_MS;
-const CALIBRATION_NON_ROUTE_RESERVE_MS = INITIAL_GUIDE_DELTA_RESERVE_MS + REACQUIRED_GUIDE_DELTA_RESERVE_MS;
+const FINAL_GUIDE_CLEANUP_RESERVE_MS = 2 * DIRECT_SETTLED_CAPTURE_RESERVE_MS + GUIDE_TRANSACTION_RESERVE_MS;
+const NAVIGATION_NON_ROUTE_RESERVE_MS = INITIAL_GUIDE_DELTA_RESERVE_MS + FINAL_GUIDE_CLEANUP_RESERVE_MS;
+const CALIBRATION_NON_ROUTE_RESERVE_MS = INITIAL_GUIDE_DELTA_RESERVE_MS
+  + REACQUIRED_GUIDE_DELTA_RESERVE_MS + FINAL_GUIDE_CLEANUP_RESERVE_MS;
 const CALIBRATION_LIMITS = { minSamples: 4, maxRmse: 0.5, maxAbsResidual: 1, minRSquared: 0.95 } as const;
 const MIN_ANGULAR_SLOPE_DEG_PER_PX = 0.01;
 const MIN_FORWARD_SLOPE_M_PER_MS = 0.0005;
@@ -458,6 +461,12 @@ async function queryAndSelectScene(
   };
   if (!top) {
     const stop = new NavigationTargetStop("label_absent", `no '${input.target.label}' candidate meets the horizontal up-axis gate`);
+    (stop as any).selectorReceipt = selectorReceipt;
+    (stop as any).output = output;
+    throw stop;
+  }
+  if (!(top.horizontalAreaM2 > 0)) {
+    const stop = new NavigationTargetStop("ambiguous_target", "largest horizontal target has no positive-area geometry");
     (stop as any).selectorReceipt = selectorReceipt;
     (stop as any).output = output;
     throw stop;
@@ -784,6 +793,7 @@ function newResult(input: NavigateToSceneTargetInput) {
       "Open the final clean frame and confirm the guide is absent before recording vision_verified evidence.",
     ],
     error: null as { code: string; detail: string } | null,
+    primaryError: null as { code: "unexpected_exception"; detail: string } | null,
   };
 }
 
@@ -819,7 +829,7 @@ function routeInput(
       maxCumulativeHoldMs: input.motionPolicy.maxCumulativeHoldMs,
       maxCumulativeDragPx: input.motionPolicy.maxCumulativeDragPx,
       maxDurationMs,
-      recoveryReserveMs: Math.min(CLEANUP_RESERVE_MS, maxDurationMs),
+      recoveryReserveMs: Math.min(INVERSE_RECOVERY_RESERVE_MS, maxDurationMs),
     },
     capture: { ...ROUTE_CAPTURE },
   };
@@ -1114,6 +1124,27 @@ export async function executeNavigateToSceneTarget(
         result.refusalReason = "insufficient_budget";
         throw new NavigationTargetStop("budget_exhausted", "calibration budget cannot admit guide work, acquisition, 24 trial/restore waypoints, and cleanup");
       }
+    } else {
+      const preflight = routeInput(input, initialScene, qemu, prospective, "0".repeat(64), maximumDurationMs);
+      const dragEstimate = estimateRelativeRouteDurationMs(preflight, [[{
+        kind: "look_drag",
+        dxPx: input.motionPolicy.maxDragPxPerAction,
+        dyPx: 0,
+      }]]);
+      const keyEstimate = estimateRelativeRouteDurationMs(preflight, [[{
+        kind: "key_hold",
+        key: "w",
+        holdMs: input.motionPolicy.maxHoldMsPerAction,
+      }]]);
+      const estimatedWaypoint = Math.max(dragEstimate, keyEstimate);
+      if (!Number.isFinite(estimatedWaypoint)
+        || elapsedMs() + estimatedWaypoint + NAVIGATION_NON_ROUTE_RESERVE_MS > maximumDurationMs) {
+        result.refusalReason = "insufficient_budget";
+        throw new NavigationTargetStop(
+          "budget_exhausted",
+          "navigation budget cannot admit guide-off/SHOW/on, one settled route waypoint, and final guide cleanup",
+        );
+      }
     }
     session = await deps.reserveArtifactSession(prospective.absoluteRoot, prospective.runId, ownerNonceHash);
     if (session.runId !== prospective.runId || session.ownerNonceHash !== ownerNonceHash
@@ -1191,8 +1222,8 @@ export async function executeNavigateToSceneTarget(
       }
     }
 
-    const remainingRouteMs = maximumDurationMs - elapsedMs() - CLEANUP_RESERVE_MS;
-    if (remainingRouteMs <= CLEANUP_RESERVE_MS) throw new NavigationTargetStop("budget_exhausted", "whole-action deadline leaves no route, recovery, and cleanup budget");
+    const remainingRouteMs = maximumDurationMs - elapsedMs() - FINAL_GUIDE_CLEANUP_RESERVE_MS;
+    if (remainingRouteMs <= INVERSE_RECOVERY_RESERVE_MS) throw new NavigationTargetStop("budget_exhausted", "whole-action deadline leaves no route, recovery, and cleanup budget");
     const boundRoute = routeInput(input, scene!, qemu, session, guideOn.sha256!, remainingRouteMs);
     const adapter = deps.createActionAdapter(input.serial, qemu);
     let waypointSequence = 0;
@@ -1289,7 +1320,7 @@ export async function executeNavigateToSceneTarget(
     let repeatedAfterAcquisition = false;
     const repeatGuideDelta = async (priorVisible: CaptureSettledReceipt) => {
       if (!scene || !execution) throw new NavigationTargetStop("binding_failed", "route/scene disappeared before rebaseline");
-      if (maximumDurationMs - elapsedMs() < REACQUIRED_GUIDE_DELTA_RESERVE_MS + CLEANUP_RESERVE_MS) {
+      if (maximumDurationMs - elapsedMs() < REACQUIRED_GUIDE_DELTA_RESERVE_MS + FINAL_GUIDE_CLEANUP_RESERVE_MS) {
         throw new NavigationTargetStop("budget_exhausted", "deadline cannot admit same-view rebaseline and cleanup");
       }
       result.cleanup.hideTransactions++;
@@ -1450,7 +1481,6 @@ export async function executeNavigateToSceneTarget(
           if (claim !== "free_camera_approached" || approachProven) claims.add(claim);
         }
         if (measured.guide) {
-          controllerState.areaHistory.push(measured.guide.areaFraction);
           controllerState.lastError = measured.guide.error;
         }
         let action: RelativeCameraAction;
@@ -1511,7 +1541,19 @@ export async function executeNavigateToSceneTarget(
         } else if (intent.kind === "calibration_required") {
           throw new NavigationTargetStop("unsupported_backend", "approach is disabled until exact-context calibration is valid");
         } else if (intent.kind === "requery") {
-          throw new NavigationTargetStop(intent.reason === "guide_disappeared" ? "guide_not_acquired" : "scene_drift", `navigation controller requested re-query: ${intent.reason}`);
+          const refreshed = await queryAndSelectScene(input, deps, scene!);
+          rememberScene(refreshed);
+          if (!refreshed.crossQueryDrift?.withinPolicy) {
+            throw new NavigationTargetStop("scene_drift", `scene geometry drifted while checking ${intent.reason}`);
+          }
+          if (intent.reason === "guide_disappeared") {
+            throw new NavigationTargetStop("guide_not_acquired", "guide disappeared while scene geometry remained stable");
+          }
+          result.refusalReason = "projection_divergence";
+          throw new NavigationTargetStop(
+            "unsupported_backend",
+            `guide projection diverged while scene geometry remained stable: ${intent.reason}`,
+          );
         } else if (intent.kind === "stop") {
           if (intent.reason !== "objective_satisfied") throw new NavigationTargetStop(intent.reason, `navigation controller stopped: ${intent.reason}`);
           break;
@@ -1520,6 +1562,7 @@ export async function executeNavigateToSceneTarget(
         }
         const step = await execution.executeStep([action]);
         measured = await observeStep(step, action, false);
+        if (measured.guide) controllerState.areaHistory.push(measured.guide.areaFraction);
         if (action.kind === "key_hold" && action.key === "w") {
           const projection = measured.guide ? projectGuide(measured.guide, cameraProof.proof.calibration) : null;
           if (approachCalibration.status === "valid" && step.actionReceipts[0]?.status === "applied" && pendingApproach
@@ -1548,7 +1591,9 @@ export async function executeNavigateToSceneTarget(
       }
     } else {
       result.executionStatus = "error";
-      setTerminal("binding_failed", error?.message ?? String(error));
+      const detail = error?.message ?? String(error);
+      result.primaryError = { code: "unexpected_exception", detail };
+      setTerminal("binding_failed", detail);
     }
   } finally {
     if (guideMayHaveApplied) {

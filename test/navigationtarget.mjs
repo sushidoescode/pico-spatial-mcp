@@ -1474,7 +1474,10 @@ function targetFake(input, options = {}) {
       stored.registry = { contextKey, record: structuredClone(record), receiptRef: structuredClone(receiptRef), path: `/tmp/registry/${contextKey}.json` };
       return { path: stored.registry.path, contextKey };
     },
-    createActionAdapter: () => ({ applyRelativeAction: applyAction }),
+    createActionAdapter: () => {
+      if (options.createActionAdapterThrows) throw new Error("fixture unexpected action-adapter exception");
+      return { applyRelativeAction: applyAction };
+    },
     sampleContinuity: async () => {
       events.push("continuity");
       continuityCount++;
@@ -1576,6 +1579,20 @@ test("largest-horizontal ambiguity uses the exact bounds product without decimal
   assert.equal(result.target.selectorReceipt.selectedRawIndex, 0);
   assert.ok(result.target.selectorReceipt.areaSeparation > input.target.selector.ambiguity.minSeparation);
   assert.deepEqual(fake.events.slice(-1), ["bind-qemu"]);
+});
+
+test("largest-horizontal selection rejects a sole zero-area candidate before qemu or guide work", async () => {
+  const input = targetInput("navigate");
+  const fake = targetFake(input, {
+    sceneOptions: [{ anchors: [rawTableAnchor({ boundsM: [0, 0.1, 0.8] })] }],
+  });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "ambiguous_target");
+  assert.equal(result.target.selectorReceipt.candidates[0].horizontalAreaM2, 0);
+  assert.deepEqual(fake.events, ["query", "read:geometry-scene_query_0001.json"]);
+  assert.equal(fake.actionCount, 0);
+  assert.equal(fake.hideCalls, 0);
 });
 
 test("navigate orchestration catches a row-major non-horizontal target before qemu or guide work", async () => {
@@ -1934,27 +1951,41 @@ test("navigate orchestration re-queries after a settled waypoint and catches cro
   assert.equal(fake.hideCalls, 1);
 });
 
-test("navigate orchestration catches action and duration exhaustion without claiming a waypoint that was not admitted", async () => {
-  for (const [name, motionPolicy] of [
-    ["action", targetMotionPolicy({ maxActions: 1, maxDurationSec: 5000 })],
-    ["duration", targetMotionPolicy({ maxActions: 32, maxDurationSec: 180 })],
-  ]) {
-    const input = targetInput("navigate", { motionPolicy });
-    const fake = targetFake(input, { initialDepthM: 5 });
-    const result = await executeNavigateToSceneTarget(input, fake.deps);
-    assert.equal(result.executionStatus, "stopped", name);
-    assert.equal(result.stopReason, "budget_exhausted", name);
-    assert.ok(fake.actionCount <= 1, name);
-    assert.equal(fake.hideCalls, 1, name);
-    assert.equal(result.evidenceCeiling, "structural", name);
-  }
+test("navigate orchestration catches action exhaustion without claiming an unadmitted waypoint", async () => {
+  const input = targetInput("navigate", {
+    motionPolicy: targetMotionPolicy({ maxActions: 1, maxDurationSec: 5000 }),
+  });
+  const fake = targetFake(input, { initialDepthM: 5 });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "budget_exhausted");
+  assert.equal(fake.actionCount, 1);
+  assert.equal(fake.hideCalls, 1);
+  assert.equal(result.evidenceCeiling, "structural");
+});
+
+test("navigate refuses an impossible 180-second schedule before reserve, capture, SHOW, or camera input", async () => {
+  const input = targetInput("navigate", {
+    motionPolicy: targetMotionPolicy({ maxActions: 32, maxDurationSec: 180 }),
+  });
+  const fake = targetFake(input, { initialDepthM: 5 });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "budget_exhausted");
+  assert.equal(result.refusalReason, "insufficient_budget");
+  assert.deepEqual(fake.events, ["query", "read:geometry-scene_query_0001.json", "bind-qemu"]);
+  assert.equal(fake.actionCount, 0);
+  assert.equal(fake.hideCalls, 0);
+  assert.equal(fake.guideMayHaveApplied, false);
+  assert.equal(result.cleanup.attempted, false);
+  assert.equal(result.captures.guideOff, null);
 });
 
 test("navigate orchestration re-queries a guide lost after approach and never compounds W input", async () => {
   const input = targetInput("navigate");
   const fake = targetFake(input, { initialDepthM: 2.2, guideLossAfterAction: 1 });
   const result = await executeNavigateToSceneTarget(input, fake.deps);
-  assert.equal(fake.queryCount, 2);
+  assert.equal(fake.queryCount, 3, "guide disappearance is followed by one explicit scene re-query before classification");
   assert.equal(result.executionStatus, "stopped");
   assert.equal(result.stopReason, "guide_not_acquired");
   assert.deepEqual(result.achievedClaims, ["target_visible", "target_centered"]);
@@ -1962,6 +1993,25 @@ test("navigate orchestration re-queries a guide lost after approach and never co
   assert.equal(result.captures.finalDiagnostic, null,
     "guide loss after the last action cannot pair a pre-action frame with final cleanup");
   assert.equal(fake.hideCalls, 1);
+});
+
+test("stable scene geometry classifies shrinking or excessive guide projection as projection_divergence", async () => {
+  for (const [name, options, wantActions, wantQueries] of [
+    ["shrinks twice", { initialDepthM: 2.2, forwardSlope: -0.001 }, 2, 4],
+    ["area already excessive", { initialDepthM: 1 }, 0, 2],
+  ]) {
+    const input = targetInput("navigate");
+    const fake = targetFake(input, options);
+    const result = await executeNavigateToSceneTarget(input, fake.deps);
+    assert.equal(result.executionStatus, "stopped", name);
+    assert.equal(result.stopReason, "unsupported_backend", name);
+    assert.equal(result.refusalReason, "projection_divergence", name);
+    assert.equal(fake.events.filter((event) => event.startsWith("action:hold:w")).length, wantActions, name);
+    assert.equal(fake.queryCount, wantQueries, name);
+    assert.ok(result.sceneQueries.at(-1).crossQueryDrift.withinPolicy, name);
+    assert.equal(fake.hideCalls, 1, name);
+    assertNoForbiddenNavigationClaims(result);
+  }
 });
 
 test("calibration refuses a 24-action or 180-second budget before the first motion and writes no valid registry", async () => {
@@ -2074,7 +2124,7 @@ test("calibration rejects inconsistent viewer-facing depth/aspect or restore clo
 
 test("calibration restores an applied outbound once through recovery after an active-deadline clock jump", async () => {
   const input = targetInput("calibrate");
-  const fake = targetFake(input, { clockJumpAfterContinuity: 2, clockJumpMs: 4_625_000 });
+  const fake = targetFake(input, { clockJumpAfterContinuity: 2, clockJumpMs: 4_520_000 });
   const result = await executeNavigateToSceneTarget(input, fake.deps);
   assert.equal(result.executionStatus, "stopped");
   assert.equal(result.stopReason, "budget_exhausted");
@@ -2165,6 +2215,47 @@ test("cleanup failure remains terminal without erasing achieved claims, final di
   assert.ok(result.captures.finalClean, "clean settlement is attempted even after a failed hide acknowledgement");
   assert.equal(result.sameViewEvidence, null);
   assert.equal(fake.hideCalls, 1);
+});
+
+test("unexpected orchestration errors remain executionStatus:error and retain their primary error through cleanup failure", async () => {
+  const input = targetInput("navigate");
+  const fake = targetFake(input, {
+    initialDepthM: 2.2,
+    createActionAdapterThrows: true,
+    hideFailure: true,
+  });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.executionStatus, "error");
+  assert.equal(result.stopReason, "cleanup_failed");
+  assert.equal(result.error.code, "cleanup_failed");
+  assert.deepEqual(result.primaryError, {
+    code: "unexpected_exception",
+    detail: "fixture unexpected action-adapter exception",
+  });
+  assert.equal(fake.actionCount, 0);
+  assert.equal(fake.hideCalls, 1);
+  assert.equal(result.cleanup.finalCleanAttempted, true);
+  assert.equal(result.captures.finalClean.status, "settled");
+  assert.equal(result.sameViewEvidence, null);
+  assertNoForbiddenNavigationClaims(result);
+});
+
+test("navigation outputs use only the authoritative stop enum and structural non-pose claim surface", async () => {
+  const allowed = new Set([
+    "objective_satisfied", "ambiguous_target", "label_absent", "guide_not_acquired", "unsettled",
+    "scene_drift", "budget_exhausted", "ambiguous_host_window", "unsupported_backend", "input_failed",
+    "binding_failed", "cleanup_failed",
+  ]);
+  for (const [name, options] of [
+    ["completed", { initialDepthM: 2 }],
+    ["input failed", { initialDepthM: 2.2, actionFailureAt: 1 }],
+    ["cleanup failed", { initialDepthM: 2.2, hideFailure: true }],
+  ]) {
+    const result = await executeNavigateToSceneTarget(targetInput("navigate"), targetFake(targetInput("navigate"), options).deps);
+    assert.ok(allowed.has(result.stopReason), name);
+    assert.equal(result.evidenceCeiling, "structural", name);
+    assertNoForbiddenNavigationClaims(result);
+  }
 });
 
 test("fresh camera-calibration proof catches stale boots and hashes exact bytes rather than a path assertion", async () => {
