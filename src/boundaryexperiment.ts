@@ -439,6 +439,7 @@ interface ExperimentState {
   nextWaypoint: number;
   usage: Usage;
   lastRequiredHash: string;
+  rebaselineOrdinal: number;
   structuralStop: string | null;
   routeAttempted: boolean;
   inputReleaseCertain: boolean;
@@ -1146,6 +1147,7 @@ function publicState(state: ExperimentState): Record<string, unknown> {
     usage: state.usage,
     routeAttempted: state.routeAttempted,
     lastRequiredHash: state.lastRequiredHash,
+    rebaselineOrdinal: state.rebaselineOrdinal,
     structuralStop: state.structuralStop,
     inputReleaseCertain: state.inputReleaseCertain,
     processAlive: state.processAlive,
@@ -1289,10 +1291,35 @@ function aggregateContinuity(state: ExperimentState, samples: ApplicationContinu
     for (const event of sample.probeEventsSincePrior) {
       state.probeEvents.push(event.kind);
       state.probeEventRecords.push(event);
+      if (event.kind === "explicit_close_requested" || event.kind === "explicit_close_returned") {
+        state.probeIssues.push(`event:${event.kind}`);
+      }
     }
     state.probeIssues = [...new Set(state.probeIssues)];
     assertOwnedRunRoot(state);
   }
+}
+
+function preflightHasExactBoundIdentity(state: ExperimentState, sample: ApplicationContinuitySample): boolean {
+  const application = state.preparation.applicationBinding;
+  return sample.serial === state.preparation.runtimeBinding.serial
+    && sample.bootId === state.preparation.runtimeBinding.bootId
+    && sample.packageName === application.packageName
+    && sample.apkSha256 === application.apkSha256
+    && sample.pid === application.pid
+    && sample.pidStartTicks === application.pidStartTicks
+    && canonicalJson(sample.allowedResumedComponents) === canonicalJson(application.allowedResumedComponents)
+    && sample.resumedComponents.some((component) => application.allowedResumedComponents.includes(component))
+    && sample.foreground === "exact_allowed";
+}
+
+function dynamicPreflightProbeAllowsMovement(state: ExperimentState, sample: ApplicationContinuitySample): boolean {
+  return state.input.scenario.entryRoute !== "dynamic_full"
+    || (sample.probeParse === "ok"
+      && sample.probeSequence === "complete"
+      && state.probeIssues.length === 0
+      && !sample.probeEventsSincePrior.some((event) =>
+        event.kind === "explicit_close_requested" || event.kind === "explicit_close_returned"));
 }
 
 function recordRecoveryContinuity(state: ExperimentState, samples: ApplicationContinuitySample[]): void {
@@ -1515,6 +1542,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           nextWaypoint: 0,
           usage: { actions: 0, waypoints: 0, holdMs: 0, dragPx: 0, durationMs: 0 },
           lastRequiredHash: preparation.appBaseline.sha256,
+          rebaselineOrdinal: 0,
           structuralStop: null,
           routeAttempted: false,
           inputReleaseCertain: true,
@@ -1654,7 +1682,11 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           persistState(state);
           return terminalResponse(state);
         }
-        const capturePath = path.join(state.artifactRoot, "captures", `${100 + waypoint.seq}-waypoint-${waypoint.seq}.png`);
+        const attemptOrdinal = state.rebaselineOrdinal + 1;
+        const attemptSuffix = attemptOrdinal === 1 ? "" : `-attempt-${attemptOrdinal}`;
+        const capturePath = path.join(state.artifactRoot, "captures", `${100 + waypoint.seq}-waypoint-${waypoint.seq}${attemptSuffix}.png`);
+        const stepLogPath = path.join(state.artifactRoot, `step-${100 + waypoint.seq}${attemptSuffix}-logcat-all.txt`);
+        const preflightLogPath = path.join(state.artifactRoot, `step-${100 + waypoint.seq}${attemptSuffix}-preflight-logcat-all.txt`);
         state.routeAttempted = true;
         persistState(state);
         let executed: Awaited<ReturnType<BoundaryExperimentDependencies["executeWaypoint"]>>;
@@ -1663,6 +1695,9 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
             state,
             waypoint: structuredClone(waypoint),
             capturePath,
+            stepLogPath,
+            preflightLogPath,
+            attemptOrdinal,
             remainingBudgets: remainingBudgets(state),
             recaptureReviewedFrame: () => dependencies.recaptureReviewedFrame({
               state,
@@ -1734,6 +1769,54 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           state.lastRequiredHash = item.captureSha256;
         }
         if (completedWaypoint) state.nextWaypoint += 1;
+        const hashOnlyReviewedFrameDrift = traceStop === "binding_lost"
+          && executed.routeTrace.preMovementReviewDrift === true
+          && validPreflight
+          && executed.preflight!.matches === false
+          && executed.preflight!.sha256 !== priorItem.captureSha256
+          && executed.preflight!.sha256 === item.captureSha256
+          && state.nextWaypoint === 0
+          && state.rebaselineOrdinal === 0
+          && state.usage.actions === 0
+          && state.usage.waypoints === 0
+          && state.usage.holdMs === 0
+          && state.usage.dragPx === 0
+          && Number(usage.actions ?? 0) === 0
+          && Number(usage.waypoints ?? 0) === 0
+          && Number(usage.holdMs ?? 0) === 0
+          && Number(usage.dragPx ?? 0) === 0
+          && Array.isArray(executed.routeTrace.waypoints)
+          && executed.routeTrace.waypoints.length === 0
+          && item.role === "transition"
+          && item.settled
+          && !duplicate
+          && !executed.executionError
+          && state.inputReleaseCertain
+          && state.processAlive
+          && state.bindingCoherent
+          && !state.runtimeHealthFailure
+          && !state.runtimeHealthInconclusive
+          && executed.preflightRuntimeHealth?.status === "no_attributed_failure"
+          && executed.runtimeHealth.status === "no_attributed_failure"
+          && preflightHasExactBoundIdentity(state, executed.preflight!.continuity)
+          && dynamicPreflightProbeAllowsMovement(state, executed.preflight!.continuity);
+        if (hashOnlyReviewedFrameDrift) {
+          state.rebaselineOrdinal = 1;
+          state.structuralStop = null;
+          persistState(state);
+          return {
+            status: "needs_baseline_review",
+            runId: state.runId,
+            artifactRoot: state.artifactRoot,
+            structuralStop: null,
+            rebaselineReason: "reviewed_frame_bytes_changed_without_binding_drift",
+            usage: state.usage,
+            routeTrace: executed.routeTrace,
+            requiredReview: state.requiredReview,
+            responseReview: [item],
+            visualReviewRequired: true,
+          };
+        }
         if (traceStop === "input_release_uncertain") {
           state.inputReleaseCertain = false;
           state.structuralStop = "input_release_uncertain";
@@ -2985,10 +3068,10 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
       const state = context.state as ExperimentState;
       const waypoint = context.waypoint as BoundaryWaypointPlan;
       const live = state.preparation.privateRuntime as LiveBoundaryRuntime;
-      const marker = `boundary_step_${state.runId.slice(0, 12)}_${waypoint.seq}`;
+      const marker = `boundary_step_${state.runId.slice(0, 12)}_${waypoint.seq}_${context.attemptOrdinal}`;
       const coverageMarker = live.coverageMarker;
       const nextCoverageMarker = `boundary_gap_${state.runId.slice(0, 12)}_step_${waypoint.seq}`;
-      const logPath = path.join(state.artifactRoot, `step-${100 + waypoint.seq}-logcat-all.txt`);
+      const logPath = context.stepLogPath as string;
       const ownedLog = startOwnedLogWindow({
         adbPath: adb,
         serial: state.input.serial,
@@ -3027,7 +3110,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                 const snapshot = await collectRuntimeHealthSnapshot({
                   adb,
                   serial: state.input.serial,
-                  artifactPath: path.join(state.artifactRoot, `step-${100 + waypoint.seq}-preflight-logcat-all.txt`),
+                  artifactPath: context.preflightLogPath as string,
                   marker: coverageMarker,
                   packageName: state.input.scenario.packageName,
                   expectedPids: [state.preparation.applicationBinding.pid, collectedPreflight.continuity.pid ?? 0],

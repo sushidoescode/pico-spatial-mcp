@@ -1240,6 +1240,179 @@ test("marker-window prior-frame drift retains a transition and executes zero mov
   assert.equal(fake.calls.waypoint.length, 1);
 });
 
+function hashOnlyDriftExecution(context, sha256, preflightContinuity, laterContinuity = []) {
+  const preflightLogSha = "4".repeat(64);
+  const stepLogSha = "5".repeat(64);
+  const stepLogPath = context.stepLogPath ?? path.join(context.state.artifactRoot, "test-step-log.txt");
+  const preflightLogPath = context.preflightLogPath ?? path.join(context.state.artifactRoot, "test-preflight-log.txt");
+  return {
+    preflight: { matches: false, sha256, continuity: preflightContinuity },
+    routeTrace: {
+      status: "binding_lost",
+      waypoints: [],
+      usage: { actions: 0, waypoints: 0, holdMs: 0, dragPx: 0, durationMs: 1 },
+      preMovementReviewDrift: true,
+    },
+    capture: capture(sha256, context.capturePath, "transition"),
+    continuity: laterContinuity,
+    logArtifact: { rawArtifact: { path: stepLogPath, sha256: stepLogSha, bytes: 1 } },
+    preflightLogArtifact: { rawArtifact: { path: preflightLogPath, sha256: preflightLogSha, bytes: 1 } },
+    preflightRuntimeHealth: quietRuntimeHealth(context.state.input.scenario.packageName, preflightLogSha),
+    runtimeHealth: quietRuntimeHealth(context.state.input.scenario.packageName, stepLogSha),
+  };
+}
+
+test("a hash-only initial drift pauses once, preserves both attempt artifacts, and resumes the same waypoint", async (t) => {
+  const fake = fakeDependencies();
+  const attemptContexts = [];
+  const normalWaypoint = fakeDependencies().deps.executeWaypoint;
+  fake.deps.executeWaypoint = async (context) => {
+    fake.calls.waypoint.push(context);
+    attemptContexts.push(context);
+    if (attemptContexts.length === 1) return hashOnlyDriftExecution(context, "7".repeat(64), continuity());
+    return normalWaypoint(context);
+  };
+
+  const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+  const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "hash-only-drift"), {
+    route: route({ kind: "calibration_seed", waypoints: waypoints(1) }),
+  }));
+  const paused = await orchestrator.execute({
+    action: "step",
+    runId: prepared.runId,
+    reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+  });
+  assert.equal(paused.status, "needs_baseline_review");
+  assert.equal(paused.structuralStop, null);
+  assert.equal(paused.rebaselineReason, "reviewed_frame_bytes_changed_without_binding_drift");
+  assert.equal(paused.requiredReview.at(-1).captureSha256, "7".repeat(64));
+  assert.equal(paused.requiredReview.at(-1).role, "transition");
+  assert.equal(paused.usage.durationMs, 1);
+
+  const resumed = await orchestrator.execute({
+    action: "step",
+    runId: prepared.runId,
+    reviewedPriorFrame: attestation("7".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+  });
+  assert.equal(resumed.status, "needs_waypoint_review");
+  assert.equal(resumed.structuralStop, null);
+  assert.equal(resumed.usage.actions, 1);
+  assert.equal(resumed.usage.waypoints, 1);
+  assert.equal(attemptContexts.length, 2);
+  assert.equal(attemptContexts[0].attemptOrdinal, 1);
+  assert.equal(attemptContexts[1].attemptOrdinal, 2);
+  assert.notEqual(attemptContexts[0].capturePath, attemptContexts[1].capturePath);
+  assert.notEqual(attemptContexts[0].stepLogPath, attemptContexts[1].stepLogPath);
+  assert.notEqual(attemptContexts[0].preflightLogPath, attemptContexts[1].preflightLogPath);
+  assert.match(attemptContexts[1].capturePath, /attempt-2/);
+  assert.match(attemptContexts[1].stepLogPath, /attempt-2/);
+  assert.match(attemptContexts[1].preflightLogPath, /attempt-2/);
+  const requiredReview = JSON.parse(fs.readFileSync(path.join(prepared.artifactRoot, "required-review.json"), "utf8"));
+  assert.deepEqual(requiredReview.map((item) => item.captureSha256), ["1".repeat(64), "2".repeat(64), "7".repeat(64), "3".repeat(64)]);
+  assert.deepEqual(requiredReview.slice(2).map((item) => item.path), [attemptContexts[0].capturePath, attemptContexts[1].capturePath]);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(prepared.artifactRoot, "state.json"), "utf8")).rebaselineOrdinal, 1);
+});
+
+test("a second unique initial-frame drift terminalizes after the persisted one-shot rebaseline", async (t) => {
+  const fake = fakeDependencies();
+  let attempt = 0;
+  fake.deps.executeWaypoint = async (context) => {
+    fake.calls.waypoint.push(context);
+    attempt += 1;
+    return hashOnlyDriftExecution(context, `${attempt + 6}`.repeat(64), continuity());
+  };
+  const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+  const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "second-drift"), {
+    route: route({ kind: "calibration_seed", waypoints: waypoints(1) }),
+  }));
+  const paused = await orchestrator.execute({
+    action: "step", runId: prepared.runId,
+    reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+  });
+  assert.equal(paused.status, "needs_baseline_review");
+  const terminal = await orchestrator.execute({
+    action: "step", runId: prepared.runId,
+    reviewedPriorFrame: attestation("7".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+  });
+  assert.equal(terminal.status, "needs_waypoint_review");
+  assert.equal(terminal.structuralStop, "binding_lost");
+  assert.equal(terminal.requiredReview.at(-1).captureSha256, "8".repeat(64));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(prepared.artifactRoot, "state.json"), "utf8")).rebaselineOrdinal, 1);
+});
+
+test("a bad preflight foreground cannot rebaseline even if a later sample is clean", async (t) => {
+  const fake = fakeDependencies();
+  fake.deps.executeWaypoint = async (context) => {
+    fake.calls.waypoint.push(context);
+    return hashOnlyDriftExecution(context, "7".repeat(64), continuity({ foreground: "different_package" }), [continuity()]);
+  };
+  const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+  const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "bad-preflight-foreground"), {
+    route: route({ kind: "calibration_seed", waypoints: waypoints(1) }),
+  }));
+  const result = await orchestrator.execute({
+    action: "step", runId: prepared.runId,
+    reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+  });
+  assert.equal(result.status, "needs_waypoint_review");
+  assert.notEqual(result.structuralStop, null);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(prepared.artifactRoot, "state.json"), "utf8")).rebaselineOrdinal, 0);
+});
+
+test("a dynamic explicit-close probe event cannot rebaseline a hash-only frame drift", async (t) => {
+  const root = scratch(t);
+  const dynamicScenario = scenario("dynamic_full");
+  const dynamicContinuity = (overrides = {}) => continuity({
+    packageName: dynamicScenario.packageName,
+    allowedResumedComponents: dynamicScenario.allowedResumedComponents,
+    resumedComponents: dynamicScenario.allowedResumedComponents,
+    probeParse: "ok",
+    probeSequence: "complete",
+    ...overrides,
+  });
+  const fake = fakeDependencies();
+  fake.deps.executeWaypoint = async (context) => {
+    fake.calls.waypoint.push(context);
+    return hashOnlyDriftExecution(context, "7".repeat(64), dynamicContinuity({
+      probeEventsSincePrior: [{ kind: "explicit_close_returned" }],
+    }));
+  };
+  const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+  const prepared = await orchestrator.execute(prepareInput(path.join(root, "dynamic-close"), {
+    scenario: dynamicScenario,
+    route: route(writeLookedM0Replay(root, waypoints(1))),
+  }));
+  const result = await orchestrator.execute({
+    action: "step", runId: prepared.runId,
+    reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_dynamic_full", { sentinels: ["DYNAMIC FULL"], witnessedGateM: 0 }),
+  });
+  assert.equal(result.status, "needs_waypoint_review");
+  assert.notEqual(result.structuralStop, null);
+  const state = JSON.parse(fs.readFileSync(path.join(prepared.artifactRoot, "state.json"), "utf8"));
+  assert.equal(state.rebaselineOrdinal, 0);
+  assert.deepEqual(state.probeIssues, ["event:explicit_close_returned"]);
+});
+
+test("a non-dynamic truncated probe diagnostic does not block an otherwise exact hash-only rebaseline", async (t) => {
+  const fake = fakeDependencies();
+  fake.deps.executeWaypoint = async (context) => {
+    fake.calls.waypoint.push(context);
+    return hashOnlyDriftExecution(context, "7".repeat(64), continuity({ probeParse: "truncated" }));
+  };
+  const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+  const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "non-dynamic-truncated"), {
+    route: route({ kind: "calibration_seed", waypoints: waypoints(1) }),
+  }));
+  const result = await orchestrator.execute({
+    action: "step", runId: prepared.runId,
+    reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+  });
+  assert.equal(result.status, "needs_baseline_review");
+  const state = JSON.parse(fs.readFileSync(path.join(prepared.artifactRoot, "state.json"), "utf8"));
+  assert.equal(state.rebaselineOrdinal, 1);
+  assert.deepEqual(state.probeIssues, ["parse:truncated"]);
+});
+
 test("zero-waypoint input uncertainty and action failure retain a transition frame, stop permanently, and cannot retry", async (t) => {
   for (const traceStatus of ["input_release_uncertain", "action_failed"]) {
     const expectedStop = traceStatus === "action_failed" ? "route_unsettled" : traceStatus;
