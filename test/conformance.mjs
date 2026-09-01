@@ -812,15 +812,65 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     "Agent Bridge scene protocol revision is the static revision 41");
   assert(bridge.AGENT_BRIDGE_SCENE_COORDINATE_FRAME_ID === "bridge-world-41",
     "scene coordinate-frame ID is pinned to bridge revision 41");
+  assert(bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_PAYLOAD_KIND === "pico.agent-bridge.navigation-guide" &&
+    bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_SCHEMA_VERSION === 1 &&
+    bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION === 1,
+  "navigation guide owns a separate static revision-1 protocol");
+  assert(bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND === "navigation_guide" &&
+    bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_CACHE_DIRECTORY === "agentbridge/navigation-guides" &&
+    bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND !== bridge.AGENT_BRIDGE_SCENE_SNAPSHOT_COMMAND,
+  "navigation guide owns a separate command and nonce cache directory");
+  assert(JSON.stringify(bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COLORS) === JSON.stringify([[255, 0, 255], [0, 255, 255]]) &&
+    bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL === "viewer-facing-planar-v1" &&
+    bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_WIDTH_M === 0.74 &&
+    bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_HEIGHT_M === 0.44,
+  "the first producer protocol pins saturated magenta/cyan and its support-fitting 0.74m by 0.44m outer frame");
   assert(generated.sceneSnapshotProtocol.kind === bridge.AGENT_BRIDGE_SCENE_PAYLOAD_KIND &&
     generated.sceneSnapshotProtocol.schemaVersion === bridge.AGENT_BRIDGE_SCENE_SCHEMA_VERSION &&
     generated.sceneSnapshotProtocol.bridgeRevision === bridge.AGENT_BRIDGE_SCENE_REVISION,
   "tool metadata and host exports share one scene protocol version");
+  assert(generated.navigationGuideProtocol?.kind === bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_PAYLOAD_KIND &&
+    generated.navigationGuideProtocol?.schemaVersion === bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_SCHEMA_VERSION &&
+    generated.navigationGuideProtocol?.bridgeRevision === bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION &&
+    generated.navigationGuideProtocol?.command === bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND,
+  "tool metadata and host exports share one navigation-guide protocol version");
   assert(/SCENE_PAYLOAD_KIND = "pico\.agent-bridge\.scene-snapshot"/.test(agentKt) &&
     /SCENE_SCHEMA_VERSION = 1/.test(agentKt) && /SCENE_BRIDGE_REVISION = 41/.test(agentKt),
   "generated AgentBridge embeds the same kind/schema/revision constants");
   assert(/register\(SCENE_SNAPSHOT_COMMAND\)/.test(agentKt) && /SCENE_SNAPSHOT_COMMAND = "query_scene_anchors"/.test(agentKt),
     "generated AgentBridge owns one query_scene_anchors command");
+  assert(/NAVIGATION_GUIDE_PAYLOAD_KIND = "pico\.agent-bridge\.navigation-guide"/.test(agentKt) &&
+    /NAVIGATION_GUIDE_SCHEMA_VERSION = 1/.test(agentKt) && /NAVIGATION_GUIDE_BRIDGE_REVISION = 1/.test(agentKt) &&
+    /NAVIGATION_GUIDE_COMMAND = "navigation_guide"/.test(agentKt) &&
+    /NAVIGATION_GUIDE_PROJECTION_MODEL = "viewer-facing-planar-v1"/.test(agentKt),
+  "generated AgentBridge embeds the distinct guide kind/schema/revision/command");
+  assert(/data class NavigationGuideRequest\(/.test(agentKt) && /data class NavigationGuideResult\(/.test(agentKt) &&
+    /registerNavigationGuideProducer/.test(agentKt) && /unregisterNavigationGuideProducer/.test(agentKt),
+  "generated AgentBridge exposes a separate typed navigation-guide producer lifecycle");
+  assert(/ApplicationInfo\.FLAG_DEBUGGABLE/.test(agentKt) &&
+    /fun navigationGuideCommandsEnabled\(\): Boolean/.test(agentKt) &&
+    /if \(navigationGuideCommandsEnabled\(\)\) registerNavigationGuideBuiltin\(\)/.test(agentKt) &&
+    /private fun registerNavigationGuideBuiltin\(\)[\s\S]*register\(NAVIGATION_GUIDE_COMMAND\)/.test(agentKt),
+  "the exported guide command is authenticated by the installed app's debuggable flag");
+  assert((agentKt.match(/register\(NAVIGATION_GUIDE_COMMAND\)/g) ?? []).length === 1,
+    "release initialization has no second unconditional navigation_guide registration");
+  for (const field of [
+    "kind", "schemaVersion", "bridgeRevision", "requestId", "mode", "sceneSnapshotId",
+    "targetTraceId", "targetRuntimeUuid", "pattern", "projectionModel", "colors", "widthM", "heightM",
+    "outcome", "guideState", "cleanupState", "error",
+  ]) assert(agentKt.includes(`writer.name("${field}")`), `guide terminal ack writes ${field}`);
+  assert(/NAVIGATION_GUIDE_CACHE_DIRECTORY = "agentbridge\/navigation-guides"/.test(agentKt) &&
+    /navigationGuideTarget\(context: Context, requestId: String\)/.test(agentKt) &&
+    /writeNavigationGuideAckAtomically/.test(agentKt) && /Os\.rename\(temp\.absolutePath, target\.absolutePath\)/.test(agentKt),
+  "guide acknowledgements publish atomically to their own nonce-addressed app-cache file");
+  assert(/writer\.name\("widthM"\)\.value\(BigDecimal\(request\.widthM\.toString\(\)\)\)/.test(agentKt) &&
+    /writer\.name\("heightM"\)\.value\(BigDecimal\(request\.heightM\.toString\(\)\)\)/.test(agentKt),
+  "guide acknowledgement serializes the exact producer decimal dimensions instead of Float-to-Double noise");
+  assert(/validateNavigationGuideRequest[\s\S]*NAVIGATION_GUIDE_PAYLOAD_KIND[\s\S]*NAVIGATION_GUIDE_PATTERN[\s\S]*NAVIGATION_GUIDE_PROJECTION_MODEL/.test(agentKt) &&
+    /cleanupNavigationGuideAfterRejection/.test(agentKt),
+  "guest protocol rejects substituted identity/fiducial fields and requests stale-guide cleanup");
+  assert(!/Log\.[diwev]\([^\n]*(?:sceneSnapshotId|targetTraceId|targetRuntimeUuid|widthM|heightM)/.test(agentKt),
+    "navigation-guide binding and acknowledgement data never fall back to logcat");
   assert(/SCENE_SNAPSHOT_CACHE_DIRECTORY = "agentbridge\/scene-snapshots"/.test(agentKt) &&
     /sceneSnapshotTarget\(context: Context, requestId: String\)/.test(agentKt),
   "scene payload is request-addressed beneath the app cache");
@@ -849,6 +899,12 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     "generated bridge writes typed terminal payloads for missing stage/producer/valid data");
   assert(!/Log\.[diwev]\([^\n]*(?:vertices|indices|semanticAssignments)/.test(agentKt),
     "AgentBridge never writes scene geometry to a log line");
+
+  const generatedSkeleton = JSON.parse((await bridgeHandlers["generate_agent_bridge"]({
+    packageName: "com.example.spatialapp.agent",
+  })).content[0].text).files.find((file) => file.path.endsWith("/AgentBridge.kt"))?.content ?? "";
+  assert(read("appskeleton/app/src/main/java/com/example/spatialapp/agent/AgentBridge.kt") === generatedSkeleton,
+    "the packaged AgentBridge skeleton is byte-identical to the generated default bridge");
 
   const sense = await import("../dist/sense.js");
   const senseHandlers = {};
@@ -1320,9 +1376,12 @@ console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, a
       "the WALL_ART companion uses the existing in-scene AttachmentPanel surface");
 
     const files = generateWiring(spec);
+    const repeatedFiles = generateWiring(spec);
     const home = files.find((file) => file.path.endsWith("/HomeStage.kt"))?.content ?? "";
     const mission = files.find((file) => file.path.endsWith("/MissionTableExperience.kt"))?.content ?? "";
     const panel = files.find((file) => file.path.endsWith("/SceneAttachments.kt"))?.content ?? "";
+    assert(JSON.stringify(files) === JSON.stringify(repeatedFiles),
+      "Swan mission-table wiring is byte-identical across repeated generation");
     assert(files.length === 5 && mission && panel, "typed wiring emits the core three files plus experience and attachment files");
     assert(home.includes('AgentBridge.attachScene(sceneRoot, "stage")') && home.includes("SceneUnderstanding.registerAgentBridgeSceneSnapshot()"),
       "Stage root is identity-bound and registers the revision-41 scene producer");
@@ -1332,6 +1391,58 @@ console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, a
       "scene attachment builder and entity seating are both wired");
     assert(home.includes('cmd == "mission:launch"') && home.includes('cmd == "mission:pause"') && home.includes('cmd == "mission:reset"'),
       "broadcast validation routes to the same launch/pause/reset state functions as the panel");
+    assert(/if \(AgentBridge\.navigationGuideCommandsEnabled\(\)\) \{[\s\S]*MissionTableExperience\.registerNavigationGuideProducer\(\)[\s\S]*\}/.test(home) &&
+      !home.includes('cmd == "navigation_guide"'),
+    "only the debuggable Agent Bridge path registers the guide producer; public DEBUG_CMD routing cannot reach it");
+    assert(/MissionTableExperience\.stop\(\)[\s\S]*AgentBridge\.unregisterNavigationGuideProducer\(\)[\s\S]*AgentBridge\.detachScene\(root\)[\s\S]*root\.destroy\(true\)[\s\S]*MissionTableExperience\.releaseResources\(\)/.test(home),
+      "scene disposal disables the guide, unregisters its producer, destroys entities, then releases resources");
+    assert(mission.includes("private const val NAVIGATION_GUIDE_WIDTH_M = 0.74f") &&
+      mission.includes("private const val NAVIGATION_GUIDE_HEIGHT_M = 0.44f") &&
+      mission.includes("private const val NAVIGATION_GUIDE_INNER_WIDTH_M = 0.62f") &&
+      mission.includes("private const val NAVIGATION_GUIDE_INNER_HEIGHT_M = 0.32f"),
+    "mission guide dimensions surround the 0.68m by 0.42m authored footprint while fitting the measured Livingroom TABLE");
+    assert(mission.includes("Color4(1f, 0f, 1f, 1f)") && mission.includes("Color4(0f, 1f, 1f, 1f)") &&
+      mission.includes("setEmissiveColor(Color4(1f, 0f, 1f, 1f))") && mission.includes("setEmissiveColor(Color4(0f, 1f, 1f, 1f))") &&
+      /val navigationGuideMagenta: PhysicallyBasedMaterial/.test(mission) && /val navigationGuideCyan: PhysicallyBasedMaterial/.test(mission),
+    "guide resources own opaque emissive pure saturated magenta and cyan materials");
+    assert(mission.includes('entity.setName("navigation_guide_root")') &&
+      /navigationGuideRoot = guide[\s\S]*guide\.enabled = false/.test(mission) &&
+      mission.includes("import com.pico.spatial.core.ecs.LookAtForwardDirection") &&
+      /guide\.components\.set\(LookAtComponent\(\)\.apply \{[\s\S]*lookAtForwardDirection = LookAtForwardDirection\.NEGATIVE_Z[\s\S]*alignLocalUpToWorldUp = true[\s\S]*setViewerAsTarget\(\)[\s\S]*\}\)/.test(mission) &&
+      /navigationGuideFrame\(guide, "outer_magenta", resources\.navigationGuideMagenta, NAVIGATION_GUIDE_WIDTH_M, NAVIGATION_GUIDE_HEIGHT_M\)/.test(mission) &&
+      /navigationGuideFrame\(guide, "inner_cyan", resources\.navigationGuideCyan, NAVIGATION_GUIDE_INNER_WIDTH_M, NAVIGATION_GUIDE_INNER_HEIGHT_M\)/.test(mission),
+    "two connected nested rectangular color frames are generated default-hidden on a viewer-facing named guide root");
+    const guideFrame = /private fun navigationGuideFrame[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    assert((guideFrame.match(/primitive\(root, prefix \+/g) ?? []).length === 4 &&
+      guideFrame.includes('"_top"') && guideFrame.includes('"_bottom"') && guideFrame.includes('"_left"') && guideFrame.includes('"_right"'),
+    "each color frame is one four-edge connected component with deterministic entity names");
+    assert(/Vector3\([^,]+, [^,]+, NAVIGATION_GUIDE_DEPTH_M\)/.test(guideFrame) &&
+      !/Vector3\([^,]+, NAVIGATION_GUIDE_DEPTH_M, [^)]+\)/.test(guideFrame),
+    "guide bars lie in stable local X/Y with Z depth for the viewer-facing planar projection model");
+    const guideHandler = /private suspend fun handleNavigationGuide[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
+    assert(/withContext\(Dispatchers\.Main\.immediate\)/.test(guideHandler) &&
+      !guideHandler.includes("transform.quaternion") &&
+      /request\.targetRuntimeUuid != selectedTableRuntimeUuid/.test(guideHandler) &&
+      /request\.sceneSnapshotId\.matches/.test(guideHandler) && /request\.targetTraceId\.matches/.test(guideHandler) &&
+      /selectedTableWidthM < NAVIGATION_GUIDE_WIDTH_M|selectedTableDepthM < NAVIGATION_GUIDE_HEIGHT_M/.test(guideHandler),
+    "show validation stays on Main and fails closed on stale target binding, malformed trace identity, or undersized TABLE support");
+    assert(/request\.pattern != AgentBridge\.NAVIGATION_GUIDE_PATTERN/.test(guideHandler) &&
+      /request\.projectionModel != AgentBridge\.NAVIGATION_GUIDE_PROJECTION_MODEL/.test(guideHandler) &&
+      /request\.color0\.contentEquals\(AgentBridge\.NAVIGATION_GUIDE_COLOR_0\)/.test(guideHandler) &&
+      /request\.color1\.contentEquals\(AgentBridge\.NAVIGATION_GUIDE_COLOR_1\)/.test(guideHandler) &&
+      /request\.widthM != NAVIGATION_GUIDE_WIDTH_M|request\.heightM != NAVIGATION_GUIDE_HEIGHT_M/.test(guideHandler),
+    "mission producer independently rejects any palette, pattern, or dimension substitution");
+    assert(/request\.mode == "hide"[\s\S]*hideNavigationGuide\("explicit_hide"\)/.test(guideHandler) &&
+      /catch \(cause: Throwable\)[\s\S]*hideNavigationGuide\("request_failed"\)/.test(guideHandler),
+    "explicit hide and failed requests both disable stale guide state before acknowledging");
+    assert((mission.match(/hideNavigationGuide\("target_drift"\)/g) ?? []).length >= 2 &&
+      /fun pauseTracking\(\)[\s\S]*hideNavigationGuide\("tracking_stopped"\)/.test(mission) &&
+      /fun stop\(\)[\s\S]*hideNavigationGuide\("scene_disposal"\)/.test(mission),
+    "lost/rematched TABLE support, lifecycle stop, and scene disposal all disable the guide");
+    const preparedGuideResources = /data class PreparedResources[\s\S]*?(?=\n    private (?:var|val|fun|suspend|data|class))/.exec(mission)?.[0] ?? "";
+    assert(preparedGuideResources.includes("navigationGuideMagenta") && preparedGuideResources.includes("navigationGuideCyan") &&
+      /listOf\([^)]*navigationGuideMagenta, navigationGuideCyan[^)]*\)[\s\S]*\.asReversed\(\)\.forEach \{ material -> runCatching \{ material\.close\(\) \} \}/.test(preparedGuideResources),
+    "guide materials share the existing reverse-order resource owner and close only after guide entities are destroyed");
 
     const readinessAt = mission.indexOf("SceneUnderstanding.awaitUnfilteredMesh");
     const classifyMatch = /classify(?:Room)?Anchors\(anchors\)/.exec(mission);

@@ -593,6 +593,7 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
           `        onDispose {`,
           `            lifecycleOwner.lifecycle.removeObserver(observer)`,
           `            MissionTableExperience.stop()`,
+          `            AgentBridge.unregisterNavigationGuideProducer()`,
           `            unregisterSystem<OrbitSystem>()`,
           `            unregisterSystem<SpinSystem>()`,
           `            rootRef?.let { root -> AgentBridge.detachScene(root); root.destroy(true) }`,
@@ -631,6 +632,13 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
           `                    ${roomMission ? 'AgentBridge.attachScene(sceneRoot, "stage")' : "AgentBridge.attachScene(sceneRoot)"}`,
           ...(roomMission ? [`                    SceneUnderstanding.registerAgentBridgeSceneSnapshot()`] : []),
           `                    SceneComposition.build(sceneRoot, appCtx)`,
+          ...(roomMission
+            ? [
+                `                    if (AgentBridge.navigationGuideCommandsEnabled()) {`,
+                `                        MissionTableExperience.registerNavigationGuideProducer()`,
+                `                    }`,
+              ]
+            : []),
           `                }`,
           `                rebuildGame = buildGame`,
           `                buildGame()`,
@@ -644,6 +652,13 @@ function genHomeStage(spec: AppSpec, pkg: string): string {
           `                ${roomMission ? 'AgentBridge.attachScene(sceneRoot, "stage")' : "AgentBridge.attachScene(sceneRoot)"}`,
           ...(roomMission ? [`                SceneUnderstanding.registerAgentBridgeSceneSnapshot()`] : []),
           `                SceneComposition.build(sceneRoot, appCtx)`,
+          ...(roomMission
+            ? [
+                `                if (AgentBridge.navigationGuideCommandsEnabled()) {`,
+                `                    MissionTableExperience.registerNavigationGuideProducer()`,
+                `                }`,
+              ]
+            : []),
         ]),
     ...(scenePanels ? [`                attachments.seatSceneAttachmentPanels(content)`] : []),
     ...(boundaryLab ? [`                attachments.seatBoundaryLabPanels(content)`] : []),

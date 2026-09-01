@@ -13,6 +13,8 @@ import {
   validateNavigationCalibration,
 } from "../dist/navigationcalibration.js";
 
+const agentBridge = await import("../dist/agentbridge.js");
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = JSON.parse(fs.readFileSync(path.join(here, "fixtures/navigation/guide-controller.v1.json"), "utf8"));
 
@@ -235,4 +237,299 @@ test("decideNavigationStep catches target-area completion, action/time exhaustio
   assert.deepEqual(decideNavigationStep(controllerState(), { ...centeredSmall, sceneDrift: true }, validApproachCalibration), { kind: "stop", reason: "scene_drift", achievedClaims: [] });
   assert.deepEqual(decideNavigationStep(controllerState({ cleanup: "required" }), centeredSmall, invalidApproachCalibration), { kind: "cleanup", status: "required", achievedClaims: [] });
   assert.deepEqual(decideNavigationStep(controllerState({ cleanup: "failed" }), centeredSmall, invalidApproachCalibration), { kind: "stop", reason: "cleanup_failed", achievedClaims: [] });
+});
+
+const GUIDE_KIND = "pico.agent-bridge.navigation-guide";
+const GUIDE_COLORS = [[255, 0, 255], [0, 255, 255]];
+const GUIDE_PROJECTION_MODEL = "viewer-facing-planar-v1";
+
+function guideRequest(overrides = {}) {
+  return {
+    serial: "emulator-5554",
+    packageName: "com.fleet.swanmissiontable",
+    requestId: "guide_nonce_20260901",
+    mode: "show",
+    sceneSnapshotId: "a".repeat(64),
+    targetTraceId: "anchor-0007",
+    targetRuntimeUuid: "70dc90a0-8873-42de-b006-20c021381ecd",
+    pattern: "nested-corners-v1",
+    projectionModel: GUIDE_PROJECTION_MODEL,
+    colors: structuredClone(GUIDE_COLORS),
+    widthM: 0.74,
+    heightM: 0.44,
+    maxPolls: 3,
+    pollMs: 10,
+    stabilityReads: 2,
+    ...overrides,
+  };
+}
+
+function guideAck(request, overrides = {}) {
+  return {
+    kind: GUIDE_KIND,
+    schemaVersion: 1,
+    bridgeRevision: 1,
+    requestId: request.requestId,
+    application: { packageName: request.packageName },
+    mode: request.mode,
+    sceneSnapshotId: request.sceneSnapshotId,
+    targetTraceId: request.targetTraceId,
+    targetRuntimeUuid: request.targetRuntimeUuid,
+    pattern: request.pattern,
+    projectionModel: request.projectionModel,
+    colors: structuredClone(request.colors),
+    widthM: request.widthM,
+    heightM: request.heightM,
+    outcome: request.mode === "show" ? "shown" : "hidden",
+    guideState: request.mode === "show" ? "visible" : "hidden",
+    cleanupState: request.mode === "show" ? "not_required" : "completed",
+    error: null,
+    ...overrides,
+  };
+}
+
+function successfulGuideTransport(ack, options = {}) {
+  const calls = [];
+  const ackBytes = Buffer.from(JSON.stringify(ack), "utf8");
+  let ticks = 500n;
+  return {
+    calls,
+    deps: {
+      monotonicNs: () => ticks++,
+      runText: async (cmd, args) => {
+        calls.push({ kind: "text", cmd, args });
+        if (args.includes("rm")) {
+          return options.cleanupFailure
+            ? { code: 1, stdout: "", stderr: "permission denied", timedOut: false }
+            : { code: 0, stdout: "", stderr: "", timedOut: false };
+        }
+        return { code: 0, stdout: "Broadcast completed: result=0", stderr: "", timedOut: false };
+      },
+      runBytes: async (cmd, args) => {
+        calls.push({ kind: "bytes", cmd, args });
+        return { code: 0, stdout: Buffer.concat([Buffer.from([0x01]), ackBytes]), stderr: "", timedOut: false };
+      },
+      sleep: async () => {},
+    },
+  };
+}
+
+function guideAdapter() {
+  assert.equal(typeof agentBridge.requestAgentBridgeNavigationGuide, "function", "navigation-guide host adapter must be exported");
+  return agentBridge.requestAgentBridgeNavigationGuide;
+}
+
+test("navigation-guide transport catches a broadcast that omits an identity or fiducial field", async () => {
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_PAYLOAD_KIND, GUIDE_KIND);
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_SCHEMA_VERSION, 1);
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION, 1);
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND, "navigation_guide");
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_CACHE_DIRECTORY, "agentbridge/navigation-guides");
+  assert.deepEqual(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COLORS, GUIDE_COLORS);
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL, GUIDE_PROJECTION_MODEL);
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_WIDTH_M, 0.74);
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_HEIGHT_M, 0.44);
+
+  const request = guideRequest();
+  const expectedAck = guideAck(request);
+  const fake = successfulGuideTransport(expectedAck);
+  const result = await guideAdapter()("/fixture/adb", request, fake.deps);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.evidenceCeiling, "structural");
+  assert.deepEqual(result.ack, expectedAck);
+  assert.deepEqual(fake.calls[0], {
+    kind: "text",
+    cmd: "/fixture/adb",
+    args: [
+      "-s", "emulator-5554", "shell", "am", "broadcast",
+      "-a", "com.fleet.swanmissiontable.AGENT_CMD", "-p", "com.fleet.swanmissiontable",
+      "--es", "cmd", "navigation_guide",
+      "--es", "kind", GUIDE_KIND,
+      "--ei", "schemaVersion", "1",
+      "--ei", "bridgeRevision", "1",
+      "--es", "requestId", "guide_nonce_20260901",
+      "--es", "mode", "show",
+      "--es", "sceneSnapshotId", "a".repeat(64),
+      "--es", "targetTraceId", "anchor-0007",
+      "--es", "targetRuntimeUuid", "70dc90a0-8873-42de-b006-20c021381ecd",
+      "--es", "pattern", "nested-corners-v1",
+      "--es", "projectionModel", GUIDE_PROJECTION_MODEL,
+      "--es", "color0", "255,0,255",
+      "--es", "color1", "0,255,255",
+      "--ef", "widthM", "0.74",
+      "--ef", "heightM", "0.44",
+    ],
+  });
+  const privatePath = "cache/agentbridge/navigation-guides/guide_nonce_20260901.json";
+  assert.equal(fake.calls.filter((call) => call.kind === "bytes").length, 2, "two byte-identical reads make the atomic ack stable");
+  assert.ok(fake.calls.filter((call) => call.kind === "bytes").every((call) =>
+    call.args[0] === "-s" && call.args[1] === request.serial
+    && call.args.join(" ").includes("exec-out run-as com.fleet.swanmissiontable sh -c")
+    && call.args.at(-1) === privatePath));
+  assert.deepEqual(fake.calls.at(-1), {
+    kind: "text",
+    cmd: "/fixture/adb",
+    args: ["-s", request.serial, "shell", "run-as", request.packageName, "rm", "-f", privatePath],
+  });
+  assert.deepEqual(result.actionReceipts.map((receipt) => [receipt.action, receipt.status]), [
+    ["navigation_guide_broadcast", "applied"],
+    ["navigation_guide_ack_pull", "applied"],
+    ["navigation_guide_ack_cleanup", "applied"],
+  ]);
+  assert.equal(result.actionReceipts[1].ack.stabilityReads, 2);
+  assert.equal(result.actionReceipts[2].ack.relativePath, privatePath);
+  assert.ok(result.actionReceipts.every((receipt) => /^\d+$/.test(receipt.startedAtMonotonicNs) && /^\d+$/.test(receipt.endedAtMonotonicNs)));
+  assert.equal(fake.calls.some((call) => call.args.includes("logcat")), false);
+});
+
+test("navigation-guide transport accepts an exact hide acknowledgement", async () => {
+  const request = guideRequest({ mode: "hide" });
+  const expectedAck = guideAck(request);
+  const fake = successfulGuideTransport(expectedAck);
+  const result = await guideAdapter()("/fixture/adb", request, fake.deps);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.ack, expectedAck);
+  assert.equal(result.ack.outcome, "hidden");
+  assert.equal(result.ack.guideState, "hidden");
+  assert.equal(result.ack.cleanupState, "completed");
+  const broadcastArgs = fake.calls[0].args;
+  assert.ok(broadcastArgs.some((arg, index) => arg === "mode" && broadcastArgs[index + 1] === "hide"));
+  assert.deepEqual(result.actionReceipts.map((receipt) => [receipt.action, receipt.status]), [
+    ["navigation_guide_broadcast", "applied"],
+    ["navigation_guide_ack_pull", "applied"],
+    ["navigation_guide_ack_cleanup", "applied"],
+  ]);
+});
+
+test("navigation-guide transport rejects unsupported producer inputs before broadcast", async (t) => {
+  const invalidRequests = [
+    ["pattern", { pattern: "solid-box-v1" }],
+    ["projection model", { projectionModel: "table-plane-v1" }],
+    ["palette", { colors: [[0, 255, 255], [255, 0, 255]] }],
+    ["width", { widthM: 0.73 }],
+    ["height", { heightM: 0.43 }],
+  ];
+  for (const [name, overrides] of invalidRequests) {
+    await t.test(name, async () => {
+      let transportCalls = 0;
+      const request = guideRequest(overrides);
+      const result = await guideAdapter()("/fixture/adb", request, {
+        runText: async () => { transportCalls++; throw new Error("must not broadcast"); },
+        runBytes: async () => { transportCalls++; throw new Error("must not pull"); },
+        sleep: async () => { transportCalls++; },
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.code, "bridge_unavailable");
+      assert.equal(result.evidenceCeiling, "structural");
+      assert.deepEqual(result.actionReceipts, []);
+      assert.equal(transportCalls, 0);
+    });
+  }
+});
+
+test("navigation-guide transport catches malformed, stale, contradictory, partial, or substituted terminal acks", async (t) => {
+  const request = guideRequest();
+  const mutations = [
+    ["malformed JSON", null],
+    ["extra field", (ack) => { ack.untrusted = true; }],
+    ["wrong kind", (ack) => { ack.kind = "pico.agent-bridge.scene-snapshot"; }],
+    ["wrong schema", (ack) => { ack.schemaVersion = 2; }],
+    ["wrong revision", (ack) => { ack.bridgeRevision = 41; }],
+    ["wrong request", (ack) => { ack.requestId = "guide_nonce_stale_20260901"; }],
+    ["wrong package", (ack) => { ack.application.packageName = "com.attacker.other"; }],
+    ["wrong mode", (ack) => { ack.mode = "hide"; }],
+    ["stale snapshot", (ack) => { ack.sceneSnapshotId = "b".repeat(64); }],
+    ["wrong trace", (ack) => { ack.targetTraceId = "anchor-0008"; }],
+    ["wrong runtime UUID", (ack) => { ack.targetRuntimeUuid = "807c3532-b135-45aa-a181-34d6c7612ab6"; }],
+    ["wrong pattern", (ack) => { ack.pattern = "solid-box-v1"; }],
+    ["wrong projection model", (ack) => { ack.projectionModel = "table-plane-v1"; }],
+    ["wrong color order", (ack) => { ack.colors.reverse(); }],
+    ["wrong width", (ack) => { ack.widthM = 0.73; }],
+    ["wrong height", (ack) => { ack.heightM = 0.43; }],
+    ["contradictory shown state", (ack) => { ack.guideState = "hidden"; ack.cleanupState = "completed"; }],
+    ["partial", (ack) => { delete ack.targetTraceId; }],
+  ];
+  for (const [name, mutate] of mutations) {
+    await t.test(name, async () => {
+      const ack = guideAck(request);
+      if (mutate) mutate(ack);
+      const fake = successfulGuideTransport(ack);
+      if (!mutate) {
+        const bytes = Buffer.from("AGENTBRIDGE| event=navigation_guide_ack outcome=shown", "utf8");
+        fake.deps.runBytes = async (cmd, args) => {
+          fake.calls.push({ kind: "bytes", cmd, args });
+          return { code: 0, stdout: Buffer.concat([Buffer.from([0x01]), bytes]), stderr: "", timedOut: false };
+        };
+      }
+      const result = await guideAdapter()("/fixture/adb", request, fake.deps);
+      assert.equal(result.ok, false);
+      assert.equal(result.code, "invalid_ack");
+      assert.equal(result.actionReceipts.at(-1)?.action, "navigation_guide_ack_cleanup");
+      assert.equal(result.actionReceipts.at(-1)?.status, "applied");
+    });
+  }
+});
+
+test("navigation-guide transport catches guest rejection and host cleanup loss without erasing evidence", async () => {
+  const request = guideRequest();
+  const rejectedAck = guideAck(request, {
+    outcome: "rejected",
+    guideState: "hidden",
+    cleanupState: "completed",
+    error: { code: "target_drift", detail: "selected TABLE runtime UUID changed" },
+  });
+  const rejectedFake = successfulGuideTransport(rejectedAck);
+  const rejected = await guideAdapter()("/fixture/adb", request, rejectedFake.deps);
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.code, "guest_rejected");
+  assert.deepEqual(rejected.ack, rejectedAck);
+  assert.deepEqual(rejected.actionReceipts.map((receipt) => receipt.action), [
+    "navigation_guide_broadcast", "navigation_guide_ack_pull", "navigation_guide_ack_cleanup",
+  ]);
+
+  const acceptedAck = guideAck(request);
+  const cleanupFake = successfulGuideTransport(acceptedAck, { cleanupFailure: true });
+  const cleanupFailed = await guideAdapter()("/fixture/adb", request, cleanupFake.deps);
+  assert.equal(cleanupFailed.ok, false);
+  assert.equal(cleanupFailed.code, "cleanup_failed");
+  assert.deepEqual(cleanupFailed.ack, acceptedAck);
+  assert.equal(cleanupFailed.actionReceipts.at(-1)?.action, "navigation_guide_ack_cleanup");
+  assert.equal(cleanupFailed.actionReceipts.at(-1)?.status, "failed");
+  assert.match(cleanupFailed.actionReceipts.at(-1)?.error ?? "", /permission denied/);
+});
+
+test("navigation-guide transport catches an unbounded poll or logcat-shaped fallback", async () => {
+  const request = guideRequest({ maxPolls: 3 });
+  const calls = [];
+  let pulls = 0;
+  let sleeps = 0;
+  const result = await guideAdapter()("/fixture/adb", request, {
+    runText: async (cmd, args) => {
+      calls.push({ kind: "text", cmd, args });
+      return {
+        code: 0,
+        stdout: `AGENTBRIDGE| event=navigation_guide_ack requestId=${request.requestId} outcome=shown`,
+        stderr: "",
+        timedOut: false,
+      };
+    },
+    runBytes: async (cmd, args) => {
+      calls.push({ kind: "bytes", cmd, args });
+      pulls++;
+      return { code: 0, stdout: Buffer.from([0x00]), stderr: "", timedOut: false };
+    },
+    sleep: async () => { sleeps++; },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "bridge_unavailable");
+  assert.equal(pulls, 3);
+  assert.equal(sleeps, 2);
+  assert.equal(calls.some((call) => call.args.includes("logcat")), false);
+  assert.deepEqual(result.actionReceipts.map((receipt) => [receipt.action, receipt.status]), [
+    ["navigation_guide_broadcast", "applied"],
+    ["navigation_guide_ack_pull", "failed"],
+    ["navigation_guide_ack_cleanup", "applied"],
+  ]);
 });

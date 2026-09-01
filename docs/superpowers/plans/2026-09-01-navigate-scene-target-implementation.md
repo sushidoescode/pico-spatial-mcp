@@ -85,27 +85,27 @@
 - Consumes: Task 1 fiducial validation rules.
 - Produces: versioned `navigation_guide` Agent Bridge request/ack transport and a mission-table producer that shows/hides a trace-local `nested-corners-v1` guide around the currently selected TABLE support.
 
-- [ ] **Step 1: Write failing bridge transport and code-generation tests**
+- [x] **Step 1: Write failing bridge transport and code-generation tests**
 
   Tests exercise a real fake adb transport: exact serial/package/request ID arguments, nonce-addressed app-private ack file, request/response echo of snapshot ID, target trace ID/runtime UUID, bridge revision, two colors, dimensions, pattern and mode, cleanup receipt, malformed/stale ack rejection, and no logcat geometry/ack fallback. Generator tests require guide code only in debug output and exact guide cleanup on hide/disposal.
 
-- [ ] **Step 2: Build and verify RED**
+- [x] **Step 2: Build and verify RED**
 
   Run fresh build and the focused scene-anchor/conformance/navigation-target tests. Failure must be missing protocol behavior, not syntax.
 
-- [ ] **Step 3: Implement Agent Bridge request/ack transport**
+- [x] **Step 3: Implement Agent Bridge request/ack transport**
 
   Add a bounded file protocol parallel to scene snapshots. The app producer validates request identity, emits a strict JSON ack, and never treats an echoed snapshot ID as independent scene proof. The host adapter pulls through exact-serial `run-as`, validates every echoed field and bridge revision, cleans its own nonce file, and retains all action receipts.
 
-- [ ] **Step 4: Implement mission-table guide producer**
+- [x] **Step 4: Implement mission-table guide producer**
 
   Add two connected nested rectangular guide frames from existing generated mesh/material primitives. Bind the request to the active TABLE anchor UUID and current support state, keep it disabled by default, update ECS only on the main dispatcher, and destroy/disable it on hide, target drift, stop, and scene disposal. The release build must exclude the authenticated debug command path.
 
-- [ ] **Step 5: Verify focused suites GREEN**
+- [x] **Step 5: Verify focused suites GREEN**
 
   Run fresh build and `node --test test/navigationtarget.mjs test/sceneanchors.mjs`; run `npm run test:conformance`.
 
-- [ ] **Step 6: Self-review generated Kotlin and commit**
+- [x] **Step 6: Self-review generated Kotlin and commit**
 
   Generate Swan wiring twice and require byte-identical outputs. Confirm exact PICO entity-name grammar, resource close order, and absence of guide protocol from release output.
 
