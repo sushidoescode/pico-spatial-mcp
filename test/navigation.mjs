@@ -808,6 +808,91 @@ test("qemu binding catches geometry or backing-scale drift while legacy id/pid r
   });
 });
 
+test("bound action adapter freshly revalidates every endpoint and exact window field before each input", async () => {
+  const selected = selectQemuWindowBinding(
+    runtimeBinding.serial,
+    [runtimeBinding.serial],
+    [{
+      file: runtimeBinding.grpc.discoveryFile,
+      pid: runtimeBinding.grpc.qemuPid,
+      serial: runtimeBinding.serial,
+      entries: { "port.serial": "5554", "grpc.port": "8554", "grpc.token": "geometry-secret" },
+    }],
+    [{ windowId: 7, ownerPid: 93013, x: 101, y: 202, width: 1280, height: 720, scale: 2, area: 921600 }],
+  );
+  assert.equal(selected.ok, true);
+
+  const mutations = [
+    ["discovery file", { discoveryFile: "/tmp/pico-emulator/pid_93014.ini" }],
+    ["discovered serial", { discoveredSerial: "emulator-5556" }],
+    ["endpoint pid", { qemuPid: 93014 }],
+    ["endpoint address", { address: "127.0.0.1:8555" }],
+    ["endpoint token presence", { tokenPresent: false }],
+    ["endpoint token", { tokenFingerprint: "f".repeat(64) }],
+    ["online serial set", { onlineEmulatorSerials: [runtimeBinding.serial, "emulator-5556"] }],
+    ["binding method", { bindingMethod: "single-online-serial-plus-matching-discovery-plus-single-window" }],
+    ["window owner", { qemuWindowOwnerPid: 93014 }],
+    ["window id", { qemuWindowId: 8 }],
+    ["window x", { qemuWindowX: 102 }],
+    ["window y", { qemuWindowY: 203 }],
+    ["window width", { qemuWindowWidth: 1279 }],
+    ["window height", { qemuWindowHeight: 719 }],
+    ["window scale", { qemuWindowScale: 1 }],
+  ];
+  for (const [name, mutation] of mutations) {
+    let revalidations = 0;
+    let drags = 0;
+    const changed = { ...selected.binding, ...mutation };
+    const adapter = createBoundCameraActionAdapter(runtimeBinding.serial, selected.binding, {
+      revalidateWindow: async () => ({
+        ok: true,
+        binding: structuredClone(revalidations++ === 0 ? selected.binding : changed),
+      }),
+      focusQemu: async () => null,
+      rightDrag: async () => { drags++; return null; },
+    });
+    const action = { kind: "look_drag", dxPx: 20, dyPx: 0 };
+    const first = await adapter.applyRelativeAction(action);
+    const second = await adapter.applyRelativeAction(action);
+    assert.equal(first.status, "applied", name);
+    assert.equal(second.status, "failed", name);
+    assert.equal(second.ack.bindingRevalidation.status, "mismatch", name);
+    assert.deepEqual(second.ack.bindingRevalidation.observed, changed, name);
+    assert.equal(revalidations, 2, name);
+    assert.equal(drags, 1, name);
+  }
+
+  let keyCalls = 0;
+  let keyRevalidations = 0;
+  const moved = { ...selected.binding, qemuWindowX: selected.binding.qemuWindowX + 1 };
+  const keyAdapter = createBoundCameraActionAdapter(runtimeBinding.serial, selected.binding, {
+    revalidateWindow: async () => ({
+      ok: true,
+      binding: structuredClone(keyRevalidations++ === 0 ? selected.binding : moved),
+    }),
+    keyHold: async (serial, key, holdMs) => {
+      keyCalls++;
+      return applied({ kind: "key_hold", key, holdMs }, serial, {}, createCameraActionBindingReceipt(serial, selected.binding));
+    },
+  });
+  const keyAction = { kind: "key_hold", key: "w", holdMs: 50 };
+  assert.equal((await keyAdapter.applyRelativeAction(keyAction)).status, "applied");
+  const refusedKey = await keyAdapter.applyRelativeAction(keyAction);
+  assert.equal(refusedKey.status, "failed");
+  assert.equal(refusedKey.ack.connectionAttempts, 0, "window revalidation does not pretend to attempt gRPC discovery");
+  assert.equal(refusedKey.ack.keydownAttempted, false);
+  assert.equal(keyCalls, 1);
+  const strict = { ...createCameraActionBindingReceipt(runtimeBinding.serial, selected.binding), bootId: runtimeBinding.bootId };
+  delete strict.bindingMethod;
+  delete strict.onlineEmulatorSerials;
+  await assert.doesNotReject(async () => {
+    const receipts = await executeBoundCameraActions(strict, [keyAction], {
+      applyRelativeAction: async () => refusedKey,
+    });
+    assert.deepEqual(receipts, [refusedKey]);
+  });
+});
+
 test("bound action failures retain prior receipts and the terminal attempt", async () => {
   const actions = [
     { kind: "key_hold", key: "w", holdMs: 50 },

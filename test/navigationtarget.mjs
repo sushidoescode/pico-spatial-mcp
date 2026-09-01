@@ -18,6 +18,7 @@ import {
   executeNavigateToSceneTarget,
   registerNavigationTargetTools,
 } from "../dist/navigationtarget.js";
+const navigationTargetModule = await import("../dist/navigationtarget.js");
 import { readFreshCameraCalibrationProof } from "../dist/metricverify.js";
 
 const agentBridge = await import("../dist/agentbridge.js");
@@ -125,6 +126,8 @@ test("calibrationContextKey catches identity changes while ignoring path and tim
     { cameraCalibrationSha256: "d".repeat(64) },
     { bridgeRevision: 2 },
     { guide: { ...fixture.calibration.context.guide, pattern: "other-pattern" } },
+    { guide: { ...fixture.calibration.context.guide, projectionModel: "other-projection" } },
+    { guide: { ...fixture.calibration.context.guide, colors: [[1, 2, 3], [4, 5, 6]] } },
     { guide: { ...fixture.calibration.context.guide, widthM: 2.1 } },
     { guide: { ...fixture.calibration.context.guide, heightM: 1.3 } },
   ]) assert.notEqual(calibrationContextKey({ ...fixture.calibration.context, ...changed }), "aa7f0527e087602636e14e49452f3ccedf1ad3c2c994e55dba13e18208d0526d");
@@ -956,8 +959,122 @@ function expectedCalibrationContext() {
     capture: { width: 1280, height: 720 },
     cameraCalibrationSha256: TARGET_CAMERA_SHA,
     bridgeRevision: 1,
-    guide: { pattern: "nested-corners-v1", widthM: 0.74, heightM: 0.44 },
+    guide: {
+      pattern: "nested-corners-v1",
+      projectionModel: GUIDE_PROJECTION_MODEL,
+      colors: structuredClone(GUIDE_COLORS),
+      widthM: 0.74,
+      heightM: 0.44,
+    },
   };
+}
+
+function calibrationScheduleFixture() {
+  const schedule = [];
+  for (const [sampleIndex, pixels] of [40, -40, 80, -80].entries()) {
+    schedule.push(
+      { axis: "yaw", kind: "trial", sampleIndex, action: { kind: "look_drag", dxPx: pixels, dyPx: 0 } },
+      { axis: "yaw", kind: "restore", sampleIndex, action: { kind: "look_drag", dxPx: -pixels, dyPx: 0 } },
+    );
+  }
+  for (const [sampleIndex, pixels] of [40, -40, 80, -80].entries()) {
+    schedule.push(
+      { axis: "pitch", kind: "trial", sampleIndex, action: { kind: "look_drag", dxPx: 0, dyPx: pixels } },
+      { axis: "pitch", kind: "restore", sampleIndex, action: { kind: "look_drag", dxPx: 0, dyPx: -pixels } },
+    );
+  }
+  for (const [sampleIndex, holdMs] of [50, 100, 150, 200].entries()) {
+    schedule.push(
+      { axis: "forward", kind: "trial", sampleIndex, action: { kind: "key_hold", key: "w", holdMs } },
+      { axis: "forward", kind: "restore", sampleIndex, action: { kind: "key_hold", key: "s", holdMs } },
+    );
+  }
+  return schedule;
+}
+
+function calibrationProfileFixture() {
+  return {
+    version: 1,
+    schedule: calibrationScheduleFixture(),
+    limits: { minSamples: 4, maxRmse: 0.5, maxAbsResidual: 1, minRSquared: 0.95 },
+    minimumSlopes: { angularDegPerPx: 0.01, forwardMPerMs: 0.0005 },
+    projection: { model: GUIDE_PROJECTION_MODEL, maxRelativeError: 0.12 },
+    closure: {
+      perPairAngularDeg: 0.5,
+      perPairForwardM: 0.05,
+      finalYawDeg: 0.5,
+      finalPitchDeg: 0.5,
+      finalDepthM: 0.05,
+    },
+  };
+}
+
+function storedCalibrationFixture(overrides = {}) {
+  const context = structuredClone(overrides.context ?? expectedCalibrationContext());
+  const record = structuredClone(overrides.record ?? validTargetCalibrationRecord(context));
+  const calibration = {
+    context,
+    record,
+    profile: structuredClone(overrides.profile ?? calibrationProfileFixture()),
+    quality: {
+      status: "accepted",
+      reasons: [],
+      axes: {
+        yaw: { status: "accepted", reasons: [] },
+        pitch: { status: "accepted", reasons: [] },
+        forward: { status: "accepted", reasons: [] },
+      },
+    },
+    projectionQuality: {
+      status: "accepted",
+      reasons: [],
+      samples: Array.from({ length: 25 }, () => ({
+        status: "accepted",
+        depthM: 5,
+        widthDepthM: 5,
+        heightDepthM: 5,
+        depthRelativeError: 0,
+        aspectRelativeError: 0,
+        clipped: false,
+      })),
+    },
+    restoreClosure: { yaw: [0, 0, 0, 0], pitch: [0, 0, 0, 0], forward: [0, 0, 0, 0] },
+    finalClosure: { yawDeg: 0, pitchDeg: 0, depthM: 0 },
+    guideDelta: { initialOffSha256: "1".repeat(64), initialOnSha256: "2".repeat(64), repeatedAfterAcquisition: false },
+    cameraCalibrationProof: { sha256: TARGET_CAMERA_SHA, bytes: TARGET_CAMERA_BYTES.length },
+    ...(overrides.calibration ?? {}),
+  };
+  const receipt = {
+    kind: "pico.navigation-calibration-receipt",
+    schemaVersion: 1,
+    createdAt: "2026-09-01T12:00:30.000Z",
+    calibration,
+    actions: [],
+    captures: {},
+    sceneQueries: [],
+    evidenceCeiling: "structural",
+  };
+  const receiptBytes = Buffer.from(JSON.stringify(receipt), "utf8");
+  const receiptRef = {
+    path: overrides.receiptPath ?? `/tmp/pico-navigationtarget-tests/calibration-${record.contextKey}.json`,
+    sha256: crypto.createHash("sha256").update(receiptBytes).digest("hex"),
+    bytes: receiptBytes.length,
+    ...(overrides.receiptRef ?? {}),
+  };
+  return {
+    envelope: { schemaVersion: 1, contextKey: record.contextKey, record, receiptRef },
+    receipt,
+    receiptBytes,
+  };
+}
+
+function mutateStoredReceipt(stored, mutate) {
+  const next = structuredClone(stored);
+  mutate(next.receipt);
+  next.receiptBytes = Buffer.from(JSON.stringify(next.receipt), "utf8");
+  next.envelope.receiptRef.sha256 = crypto.createHash("sha256").update(next.receiptBytes).digest("hex");
+  next.envelope.receiptRef.bytes = next.receiptBytes.length;
+  return next;
 }
 
 function validTargetCalibrationRecord(context = expectedCalibrationContext()) {
@@ -1055,6 +1172,14 @@ function settledCaptureReceipt(outPath, bytes, capturedAt = "2026-09-01T12:00:30
 function targetFake(input, options = {}) {
   const events = [];
   const artifacts = new Map();
+  const effectiveStoredCalibration = options.storedCalibration
+    ?? (!Object.prototype.hasOwnProperty.call(options, "calibrationRecord") ? storedCalibrationFixture() : null);
+  if (effectiveStoredCalibration && options.storedCalibrationBytes !== false) {
+    artifacts.set(
+      effectiveStoredCalibration.envelope.receiptRef.path,
+      Buffer.from(effectiveStoredCalibration.receiptBytes),
+    );
+  }
   const sceneOptions = options.sceneOptions ?? [{}];
   const sceneQueries = sceneOptions.map((scene, index) => makeSceneQuery(artifacts, input, {
     requestId: `scene_query_${String(index + 1).padStart(4, "0")}`,
@@ -1072,9 +1197,16 @@ function targetFake(input, options = {}) {
   let actionCount = 0;
   let hideCalls = 0;
   let captureCount = 0;
+  let clockJumped = false;
+  let calibrationReceiptReads = 0;
+  let continuityCount = 0;
   let randomCount = 0;
   let nowNs = 1_000_000_000n;
-  const pose = { yawDeg: 0, pitchDeg: 0, depthM: options.initialDepthM ?? 5 };
+  const pose = {
+    yawDeg: options.initialYawDeg ?? 0,
+    pitchDeg: options.initialPitchDeg ?? 0,
+    depthM: options.initialDepthM ?? 5,
+  };
   const stored = { receipt: null, registry: null };
   const qemuBinding = {
     discoveryFile: "/tmp/pico-emulator/pid_93013.ini",
@@ -1147,6 +1279,9 @@ function targetFake(input, options = {}) {
     } else if (action.key === "w") pose.depthM -= action.holdMs * (options.forwardSlope ?? 0.005);
     else if (action.key === "s") pose.depthM += action.holdMs * (options.forwardSlope ?? 0.005);
     if (options.restoreDriftAtAction === actionCount) pose.yawDeg += 1;
+    if (options.cumulativeYawRestoreDrift && [2, 4, 6, 8].includes(actionCount)) {
+      pose.yawDeg += options.cumulativeYawRestoreDrift;
+    }
     return {
       action: action.kind,
       serial: TARGET_SERIAL,
@@ -1173,6 +1308,18 @@ function targetFake(input, options = {}) {
       },
     };
   };
+  const readFixtureArtifact = async (artifactPath) => {
+    events.push(`read:${path.basename(artifactPath)}`);
+    const bytes = artifacts.get(artifactPath);
+    if (!bytes) throw new Error(`missing fixture artifact ${artifactPath}`);
+    if (effectiveStoredCalibration?.envelope.receiptRef.path === artifactPath) {
+      calibrationReceiptReads++;
+      if (options.mutateReceiptAfterFirstRead && calibrationReceiptReads === 1) {
+        artifacts.set(artifactPath, Buffer.from("receipt changed after initial validation", "utf8"));
+      }
+    }
+    return Buffer.from(bytes);
+  };
   const deps = {
     querySceneAnchors: async () => {
       events.push("query");
@@ -1180,12 +1327,8 @@ function targetFake(input, options = {}) {
       queryIndex++;
       return structuredClone(result);
     },
-    readArtifact: async (artifactPath) => {
-      events.push(`read:${path.basename(artifactPath)}`);
-      const bytes = artifacts.get(artifactPath);
-      if (!bytes) throw new Error(`missing fixture artifact ${artifactPath}`);
-      return Buffer.from(bytes);
-    },
+    readArtifact: readFixtureArtifact,
+    readCalibrationReceipt: (ref) => readFixtureArtifact(ref.path),
     bindQemuWindow: async () => {
       events.push("bind-qemu");
       return options.bindingResult ?? { ok: true, binding: structuredClone(qemuBinding) };
@@ -1223,6 +1366,10 @@ function targetFake(input, options = {}) {
           };
       const bytes = Buffer.from(JSON.stringify(snapshot), "utf8");
       artifacts.set(captureInput.outPath, bytes);
+      if (!clockJumped && options.clockJumpAfterAction === actionCount && actionCount > 0) {
+        clockJumped = true;
+        nowNs += BigInt(options.clockJumpMs ?? 4_640_000) * 1_000_000n;
+      }
       return { receipt: settledCaptureReceipt(captureInput.outPath, bytes), frame: Buffer.from(bytes) };
     },
     requestGuide: async (request) => {
@@ -1311,8 +1458,9 @@ function targetFake(input, options = {}) {
     },
     readCalibrationRecord: async () => {
       events.push("read-calibration-registry");
+      if (effectiveStoredCalibration) return structuredClone(effectiveStoredCalibration.envelope);
       if (Object.prototype.hasOwnProperty.call(options, "calibrationRecord")) return options.calibrationRecord;
-      return validTargetCalibrationRecord();
+      return null;
     },
     writeImmutableJson: async (artifactPath, payload) => {
       events.push(`write-receipt:${path.basename(artifactPath)}`);
@@ -1329,6 +1477,11 @@ function targetFake(input, options = {}) {
     createActionAdapter: () => ({ applyRelativeAction: applyAction }),
     sampleContinuity: async () => {
       events.push("continuity");
+      continuityCount++;
+      if (!clockJumped && options.clockJumpAfterContinuity === continuityCount) {
+        clockJumped = true;
+        nowNs += BigInt(options.clockJumpMs ?? 4_640_000) * 1_000_000n;
+      }
       return structuredClone(continuity);
     },
     sleep: async (ms) => {
@@ -1352,6 +1505,7 @@ function targetFake(input, options = {}) {
     get hideCalls() { return hideCalls; },
     get guideMayHaveApplied() { return guideMayHaveApplied; },
     get queryCount() { return queryIndex; },
+    get calibrationReceiptReads() { return calibrationReceiptReads; },
     repeatedShowStarted,
     releaseRepeatedShow() { releaseRepeatedShow?.(); },
     get guideVisible() { return guideVisible; },
@@ -1498,6 +1652,89 @@ for (const [name, calibrationRecord, wantStatus] of [
   });
 }
 
+test("navigate consumes only a strict receipt-linked exact-context calibration and re-reads it immediately before W", async () => {
+  const input = targetInput("navigate");
+  const storedCalibration = storedCalibrationFixture();
+  const fake = targetFake(input, { initialDepthM: 2.2, storedCalibration });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.executionStatus, "completed");
+  assert.equal(result.stopReason, "objective_satisfied");
+  assert.equal(result.calibrationStatus, "valid");
+  assert.ok(fake.calibrationReceiptReads >= 2, "receipt bytes are validated on load and re-read before W");
+  assert.equal(result.actions.length, 1);
+  assert.equal(result.actions[0].request.kind, "key_hold");
+  assert.equal(result.actions[0].request.key, "w");
+  assert.ok(result.actions[0].request.holdMs > 0 && result.actions[0].request.holdMs < 100,
+    "the accepted forward fit must replace the fixed 100ms hold");
+  const audit = result.actions[0].controlAudit;
+  assert.deepEqual(Object.keys(audit).sort(), ["applied", "gain", "policyLimits", "rawDesired", "wasClamped"]);
+  assert.ok(audit.rawDesired.holdMs > 0);
+  assert.ok(audit.applied.holdMs <= audit.rawDesired.holdMs);
+});
+
+test("navigate catches a receipt changed after initial validation immediately before W", async () => {
+  const input = targetInput("navigate");
+  const storedCalibration = storedCalibrationFixture();
+  const fake = targetFake(input, {
+    initialDepthM: 2.2,
+    storedCalibration,
+    mutateReceiptAfterFirstRead: true,
+  });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "unsupported_backend");
+  assert.equal(result.calibrationStatus, "stale");
+  assert.equal(result.refusalReason, "stale");
+  assert.equal(fake.calibrationReceiptReads, 2);
+  assert.equal(fake.events.some((event) => event.startsWith("action:hold:w")), false);
+});
+
+test("navigate rejects missing, tampered, orphaned, weakened-profile, weakened-limit, and tiny-slope calibration receipts before W", async () => {
+  const context = expectedCalibrationContext();
+  const tinyYaw = validTargetCalibrationRecord(context);
+  tinyYaw.yaw.samples = tinyYaw.yaw.samples.map(({ x }) => ({ x, y: x * 0.001 }));
+  tinyYaw.yaw.fit = fitThroughOrigin(tinyYaw.yaw.samples);
+  const weakLimits = validTargetCalibrationRecord(context);
+  weakLimits.limits = { ...weakLimits.limits, minSamples: 1 };
+  const orphaned = mutateStoredReceipt(storedCalibrationFixture(), (receipt) => {
+    receipt.calibration.record.contextKey = "f".repeat(64);
+  });
+  const cases = [
+    ["deleted receipt", storedCalibrationFixture(), { storedCalibrationBytes: false }, "stale"],
+    ["tampered receipt ref", storedCalibrationFixture({ receiptRef: { sha256: "f".repeat(64) } }), {}, "stale"],
+    ["orphaned receipt", orphaned, {}, "stale"],
+    ["weakened profile", storedCalibrationFixture({
+      profile: { ...calibrationProfileFixture(), limits: { ...calibrationProfileFixture().limits, minSamples: 1 } },
+    }), {}, "quality_rejected"],
+    ["weakened record limits", storedCalibrationFixture({ record: weakLimits }), {}, "quality_rejected"],
+    ["tiny accepted yaw slope", storedCalibrationFixture({ record: tinyYaw }), {}, "quality_rejected"],
+  ];
+  for (const [name, storedCalibration, extra, wantStatus] of cases) {
+    const inputCase = targetInput("navigate");
+    const fake = targetFake(inputCase, { initialDepthM: 2.2, storedCalibration, ...extra });
+    const result = await executeNavigateToSceneTarget(inputCase, fake.deps);
+    assert.equal(result.executionStatus, "stopped", name);
+    assert.equal(result.stopReason, "unsupported_backend", name);
+    assert.equal(result.calibrationStatus, wantStatus, name);
+    assert.equal(result.refusalReason, wantStatus, name);
+    assert.equal(fake.events.some((event) => event.startsWith("action:hold:w")), false, name);
+  }
+});
+
+test("navigate converts fresh angular guide error through accepted yaw and pitch fits", async () => {
+  const input = targetInput("navigate");
+  const storedCalibration = storedCalibrationFixture();
+  const fake = targetFake(input, { initialDepthM: 2, initialYawDeg: 6, storedCalibration });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.executionStatus, "completed");
+  assert.equal(result.actions.length, 1);
+  assert.deepEqual(result.actions[0].request, { kind: "look_drag", dxPx: -60, dyPx: 0 });
+  assert.ok(Math.abs(result.actions[0].controlAudit.rawDesired.dxPx + 60) < 1e-9);
+  assert.equal(result.actions[0].controlAudit.gain, 1);
+  assert.deepEqual(result.actions[0].controlAudit.applied, { dxPx: -60, dyPx: 0 });
+  assert.equal(result.actions[0].controlAudit.wasClamped, false);
+});
+
 test("navigate orchestration never forwards an initial in-band free-camera claim without an acknowledged W plus growing projection trend", async () => {
   for (const [name, calibrationRecord] of [
     ["valid calibration", validTargetCalibrationRecord()],
@@ -1596,7 +1833,8 @@ test("navigate orchestration catches reordered capture/input/cleanup and retains
   assert.deepEqual(result.achievedClaims, ["target_visible", "target_centered", "free_camera_approached"]);
   assert.equal(result.calibrationStatus, "valid");
   assert.equal(result.actions.length, 1);
-  assert.deepEqual(result.actions[0].request, { kind: "key_hold", key: "w", holdMs: 100 });
+  assert.deepEqual(result.actions[0].request, { kind: "key_hold", key: "w", holdMs: 20 });
+  assert.deepEqual(result.actions[0].controlAudit.applied, { key: "w", holdMs: 20 });
   assert.equal(result.actions[0].settle.status, "settled");
   assert.notEqual(result.captures.finalDiagnostic.sha256, result.actions[0].settle.sha256,
     "the final diagnostic must be a fresh post-action settled capture");
@@ -1612,14 +1850,14 @@ test("navigate orchestration catches reordered capture/input/cleanup and retains
   assert.ok(first("detect:guide-off") < first("guide:show"));
   assert.ok(first("guide:show") < first("capture:guide-on"));
   assert.ok(first("capture:guide-on") < first("detect:guide-on"));
-  assert.ok(first("read-calibration-registry") < first("action:hold:w:100"));
-  assert.ok(first("action:hold:w:100") < first("capture:waypoint-0001"));
+  assert.ok(first("read-calibration-registry") < first("action:hold:w:20"));
+  assert.ok(first("action:hold:w:20") < first("capture:waypoint-0001"));
   assert.ok(first("capture:waypoint-0001") < first("capture:final-diagnostic"));
   assert.ok(first("capture:final-diagnostic") < fake.events.lastIndexOf("guide:hide"));
   assert.ok(fake.events.lastIndexOf("guide:hide") < first("capture:final-clean"));
   assert.equal(fake.events[first("capture:final-diagnostic")], "capture:final-diagnostic.png:none");
   assert.equal(fake.events[first("capture:final-clean")], `capture:final-clean.png:${result.captures.finalDiagnostic.sha256}`);
-  const actionIndex = first("action:hold:w:100");
+  const actionIndex = first("action:hold:w:20");
   assert.equal(fake.events.slice(actionIndex + 1).find((event) => event.startsWith("action:")), undefined,
     "the only state-changing action is settled before any later action");
   assert.equal(fake.hideCalls, 1);
@@ -1755,6 +1993,15 @@ test("calibration catches missing signed magnitudes, restore settlement, project
   assert.equal(result.routeTraces.length, 1, "the full calibration operation uses one shared route invocation");
   assert.equal(fake.actionCount, 24);
   assert.equal(result.actions.length, 24);
+  assert.deepEqual(result.actions.map((action) => action.routeMeta?.pairRole),
+    Array.from({ length: 12 }, () => ["outbound", "restore"]).flat());
+  for (let index = 0; index < result.actions.length; index += 2) {
+    assert.equal(result.actions[index].routeMeta.pairId, result.actions[index + 1].routeMeta.pairId);
+    assert.deepEqual(Object.keys(result.actions[index].controlAudit).sort(),
+      ["applied", "gain", "policyLimits", "rawDesired", "wasClamped"]);
+    assert.deepEqual(Object.keys(result.actions[index + 1].controlAudit).sort(),
+      ["applied", "gain", "policyLimits", "rawDesired", "wasClamped"]);
+  }
   assert.deepEqual(result.calibration.record.yaw.samples.map((sample) => sample.x), [40, -40, 80, -80]);
   assert.deepEqual(result.calibration.record.pitch.samples.map((sample) => sample.x), [40, -40, 80, -80]);
   assert.deepEqual(result.calibration.record.forward.samples.map((sample) => sample.x), [50, 100, 150, 200]);
@@ -1774,6 +2021,8 @@ test("calibration catches missing signed magnitudes, restore settlement, project
   assert.ok(result.calibration.restoreClosure.yaw.every((residual) => Math.abs(residual) < 1e-10));
   assert.ok(result.calibration.restoreClosure.pitch.every((residual) => Math.abs(residual) < 1e-10));
   assert.ok(result.calibration.restoreClosure.forward.every((residual) => Math.abs(residual) < 1e-10));
+  assert.deepEqual(result.calibration.finalClosure, { yawDeg: 0, pitchDeg: 0, depthM: 0 });
+  assert.deepEqual(result.calibration.profile, calibrationProfileFixture());
   assert.equal(validateNavigationCalibration(result.calibration.record, expectedCalibrationContext()).status, "valid");
 
   const actions = fake.events.filter((event) => event.startsWith("action:"));
@@ -1821,6 +2070,40 @@ test("calibration rejects inconsistent viewer-facing depth/aspect or restore clo
     assert.equal(fake.hideCalls, 1, name);
     assert.equal(result.captures.finalClean.status, "settled", name);
   }
+});
+
+test("calibration restores an applied outbound once through recovery after an active-deadline clock jump", async () => {
+  const input = targetInput("calibrate");
+  const fake = targetFake(input, { clockJumpAfterContinuity: 2, clockJumpMs: 4_625_000 });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "budget_exhausted");
+  assert.equal(fake.actionCount, 2, "the exact inverse is the only action admitted after the clock jump");
+  assert.deepEqual(fake.events.filter((event) => event.startsWith("action:")), [
+    "action:drag:40,0",
+    "action:drag:-40,0",
+  ]);
+  assert.deepEqual(result.routeTraces[0].waypoints.map((waypoint) => waypoint.meta), [
+    { lane: "active", pairId: "yaw-0", pairRole: "outbound" },
+    { lane: "recovery", pairId: "yaw-0", pairRole: "restore" },
+  ]);
+  assert.equal(fake.stored.receipt, null);
+  assert.equal(fake.stored.registry, null);
+  assert.equal(fake.hideCalls, 1);
+});
+
+test("calibration rejects individually acceptable restore residuals that accumulate against the original pose", async () => {
+  const input = targetInput("calibrate");
+  const fake = targetFake(input, { cumulativeYawRestoreDrift: 0.2 });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "unsupported_backend");
+  assert.equal(result.calibrationStatus, "quality_rejected");
+  assert.ok(result.calibration.restoreClosure.yaw.every((residual) => Math.abs(residual) <= 0.5));
+  assert.ok(Math.abs(result.calibration.finalClosure.yawDeg) > 0.5);
+  assert.ok(result.calibration.quality.reasons.includes("final_yaw_closure"));
+  assert.equal(fake.stored.receipt, null);
+  assert.equal(fake.stored.registry, null);
 });
 
 test("calibration reacquisition repeats a same-view guide off/on delta before all 24 trials", async () => {
@@ -1923,6 +2206,32 @@ test("fresh camera-calibration proof catches stale boots and hashes exact bytes 
   assert.equal(stale.ok, false);
   assert.equal(stale.code, "stale");
   assert.match(stale.detail, /boot/i);
+});
+
+test("navigation calibration receipt proof reads exact regular-file bytes and rejects symlinks or substitution", async () => {
+  assert.equal(typeof navigationTargetModule.readNavigationCalibrationReceiptBytes, "function");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico-navigation-receipt-proof-"));
+  try {
+    const receiptPath = path.join(root, "receipt.json");
+    const bytes = Buffer.from('{"kind":"fixture"}\n', "utf8");
+    fs.writeFileSync(receiptPath, bytes);
+    const ref = {
+      path: receiptPath,
+      sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+      bytes: bytes.length,
+    };
+    assert.deepEqual(await navigationTargetModule.readNavigationCalibrationReceiptBytes(ref), bytes);
+    fs.writeFileSync(receiptPath, Buffer.from("substituted", "utf8"));
+    await assert.rejects(navigationTargetModule.readNavigationCalibrationReceiptBytes(ref), /bytes|SHA|size/i);
+
+    const targetPath = path.join(root, "target.json");
+    fs.writeFileSync(targetPath, bytes);
+    const symlinkPath = path.join(root, "symlink.json");
+    fs.symlinkSync(targetPath, symlinkPath);
+    await assert.rejects(navigationTargetModule.readNavigationCalibrationReceiptBytes({ ...ref, path: symlinkPath }), /regular|symlink/i);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("registerNavigationTargetTools registers one strict discriminated full-surface contract", () => {

@@ -484,20 +484,99 @@ export function createBoundCameraActionAdapter(
     focusQemu?: typeof frontmostQemu;
     keyHold?: typeof keyHold;
     rightDrag?: typeof rightDrag;
+    revalidateWindow?: () => Promise<QemuWindowBindingResult>;
   } = {},
 ): { applyRelativeAction(action: RelativeCameraAction): Promise<CameraActionReceipt> } {
+  const exactBindingMatch = (observed: BoundQemuWindow): boolean => !!windowBinding
+    && observed.discoveryFile === windowBinding.discoveryFile
+    && observed.discoveredSerial === windowBinding.discoveredSerial
+    && observed.qemuPid === windowBinding.qemuPid
+    && observed.address === windowBinding.address
+    && observed.tokenPresent === windowBinding.tokenPresent
+    && (observed.tokenFingerprint ?? null) === (windowBinding.tokenFingerprint ?? null)
+    && JSON.stringify(observed.onlineEmulatorSerials) === JSON.stringify(windowBinding.onlineEmulatorSerials)
+    && observed.bindingMethod === windowBinding.bindingMethod
+    && observed.qemuWindowOwnerPid === windowBinding.qemuWindowOwnerPid
+    && observed.qemuWindowId === windowBinding.qemuWindowId
+    && observed.qemuWindowX === windowBinding.qemuWindowX
+    && observed.qemuWindowY === windowBinding.qemuWindowY
+    && observed.qemuWindowWidth === windowBinding.qemuWindowWidth
+    && observed.qemuWindowHeight === windowBinding.qemuWindowHeight
+    && observed.qemuWindowScale === windowBinding.qemuWindowScale;
+  const revalidationFailure = (
+    action: RelativeCameraAction,
+    observed: QemuWindowBindingResult,
+    startedAtMonotonicNs: string,
+  ): CameraActionReceipt => {
+    const bindingRevalidation = observed.ok
+      ? { status: "mismatch" as const, expected: windowBinding, observed: observed.binding }
+      : { status: "failed" as const, expected: windowBinding, observed: null, failure: observed };
+    const base = {
+      action: action.kind,
+      serial,
+      status: "failed" as const,
+      startedAtMonotonicNs,
+      endedAtMonotonicNs: process.hrtime.bigint().toString(),
+      error: observed.ok
+        ? "camera action refused because the freshly observed qemu endpoint/window changed"
+        : `camera action refused because qemu endpoint/window revalidation failed: ${observed.detail}`,
+    };
+    if (action.kind === "key_hold") {
+      return {
+        ...base,
+        ack: {
+          key: action.key,
+          holdMs: action.holdMs,
+          hostWindow: windowBinding,
+          connectionAttempts: 0,
+          keydownAttempted: false,
+          keydownAcknowledged: false,
+          applicationUncertain: false,
+          keyupAcknowledged: false,
+          releaseCertain: true,
+          bindingRevalidation,
+        },
+      };
+    }
+    return {
+      ...base,
+      ack: {
+        requested: { dragDx: action.dxPx, dragDy: action.dyPx },
+        hostWindow: windowBinding,
+        cgEventAcknowledged: false,
+        hostFocusRequired: true,
+        hostFocusAttempted: false,
+        focusAcknowledged: false,
+        bindingRevalidation,
+      },
+    };
+  };
   return {
     applyRelativeAction: async (action) => {
+      const startedAtMonotonicNs = process.hrtime.bigint().toString();
+      let revalidatedBinding: BoundQemuWindow | null = null;
+      if (options.revalidateWindow) {
+        let observed: QemuWindowBindingResult;
+        try {
+          observed = await options.revalidateWindow();
+        } catch (error: any) {
+          observed = { ok: false, code: "binding_failed", detail: error?.message ?? String(error) };
+        }
+        if (!observed.ok || !exactBindingMatch(observed.binding)) {
+          return revalidationFailure(action, observed, startedAtMonotonicNs);
+        }
+        revalidatedBinding = observed.binding;
+      }
       if (action.kind === "key_hold") {
         const receipt = await (options.keyHold ?? keyHold)(serial, action.key, action.holdMs);
         receipt.ack.hostWindow = windowBinding;
+        if (revalidatedBinding) receipt.ack.bindingRevalidation = { status: "matched", expected: windowBinding, observed: revalidatedBinding };
         receipt.ack.hostFocusRequired = false;
         receipt.ack.hostFocusAttempted = false;
         receipt.ack.focusAcknowledged = false;
         if (receipt.status === "applied") await sleep(150);
         return receipt;
       }
-      const startedAtMonotonicNs = process.hrtime.bigint().toString();
       let focusError: string | null;
       try {
         focusError = await (options.focusQemu ?? frontmostQemu)(windowBinding);
@@ -521,6 +600,9 @@ export function createBoundCameraActionAdapter(
           hostFocusAttempted: true,
           focusAcknowledged,
           hostWindow: windowBinding,
+          ...(revalidatedBinding
+            ? { bindingRevalidation: { status: "matched", expected: windowBinding, observed: revalidatedBinding } }
+            : {}),
         },
         ...(err ? { error: err } : {}),
       };

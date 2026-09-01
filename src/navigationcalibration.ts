@@ -12,7 +12,13 @@ export type NavigationCalibrationContext = {
   capture: { width: number; height: number };
   cameraCalibrationSha256: string;
   bridgeRevision: number;
-  guide: { pattern: string; widthM: number; heightM: number };
+  guide: {
+    pattern: string;
+    projectionModel: string;
+    colors: [[number, number, number], [number, number, number]];
+    widthM: number;
+    heightM: number;
+  };
 };
 export type NavigationCalibrationRecord = {
   version: number;
@@ -79,7 +85,13 @@ function calibrationIdentity(context: NavigationCalibrationContext): Record<stri
     capture: { width: context.capture?.width, height: context.capture?.height },
     cameraCalibrationSha256: context.cameraCalibrationSha256,
     bridgeRevision: context.bridgeRevision,
-    guide: { pattern: context.guide?.pattern, widthM: context.guide?.widthM, heightM: context.guide?.heightM },
+    guide: {
+      pattern: context.guide?.pattern,
+      projectionModel: context.guide?.projectionModel,
+      colors: context.guide?.colors,
+      widthM: context.guide?.widthM,
+      heightM: context.guide?.heightM,
+    },
   };
 }
 

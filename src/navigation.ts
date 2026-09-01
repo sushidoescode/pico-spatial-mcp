@@ -681,11 +681,22 @@ export async function executeBoundCameraActions(
       && ack?.keyupAcknowledged === false
       && ack?.releaseCertain === true
       && !Object.prototype.hasOwnProperty.call(ack, "grpc");
+    const provenBindingRevalidationFailure = action.kind === "key_hold"
+      && receipt?.status === "failed"
+      && typeof receipt.error === "string" && receipt.error.length > 0
+      && ack?.connectionAttempts === 0
+      && ack?.keydownAttempted === false
+      && ack?.keydownAcknowledged === false
+      && ack?.applicationUncertain === false
+      && ack?.keyupAcknowledged === false
+      && ack?.releaseCertain === true
+      && (ack?.bindingRevalidation?.status === "mismatch" || ack?.bindingRevalidation?.status === "failed")
+      && !Object.prototype.hasOwnProperty.call(ack, "grpc");
     if (receipt?.serial !== binding.serial
       || receipt?.action !== expectedKind
       || !hostWindowMatches
       || !actionEvidenceMatches
-      || (!grpcMatches && !provenNoInputKeyFailure)) {
+      || (!grpcMatches && !provenNoInputKeyFailure && !provenBindingRevalidationFailure)) {
       throw new CameraActionExecutionError({
         kind: "receipt_binding_mismatch",
         receiptsSoFar: receipts,
