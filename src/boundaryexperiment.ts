@@ -20,6 +20,7 @@ import {
   resolveProspectivePath,
   SETTLE_COMPARISON,
   sha256Bytes,
+  type CaptureLiveIdentity,
 } from "./observation.js";
 import { validateCaptureBuffer } from "./evidence.js";
 import {
@@ -2611,6 +2612,39 @@ function startOwnedLogWindow(input: Omit<Parameters<typeof collectLogWindow>[0],
   };
 }
 
+type CheckedAdbRunner = (args: string[], timeoutMs: number, label: string) => Promise<string>;
+
+export async function probeBoundedCaptureIdentity(
+  serial: string,
+  boundedTimeout: (capMs: number, label: string) => number,
+  checkedRun: CheckedAdbRunner,
+): Promise<CaptureLiveIdentity> {
+  const prop = async (name: string, label: string): Promise<string> => checkedRun(
+    ["-s", serial, "shell", "getprop", name],
+    boundedTimeout(10_000, label),
+    label,
+  );
+  const bootId = async (): Promise<string> => checkedRun(
+    ["-s", serial, "shell", "cat", "/proc/sys/kernel/random/boot_id"],
+    boundedTimeout(10_000, "bounded boot identity probe"),
+    "bounded boot identity probe",
+  );
+  const results = await Promise.allSettled([
+    prop("ro.product.model", "bounded model identity probe"),
+    prop("ro.build.fingerprint", "bounded fingerprint identity probe"),
+    prop("ro.boot.qemu", "bounded qemu identity probe"),
+    bootId(),
+  ]);
+  for (const result of results) {
+    if (result.status === "rejected") throw result.reason;
+  }
+  const [model, fingerprint, bootQemu, boot] = results.map((result) => {
+    if (result.status !== "fulfilled") throw new Error("bounded identity probe settlement is inconsistent");
+    return result.value;
+  });
+  return { serial, model, fingerprint, bootQemu, bootId: boot, observedAt: new Date().toISOString() };
+}
+
 async function liveCapture(
   adb: string,
   input: PrepareInput,
@@ -2631,20 +2665,10 @@ async function liveCapture(
       const bootId = checkedAdb(await run(adb, ["-s", serial, "shell", "cat", "/proc/sys/kernel/random/boot_id"], { timeoutMs: 10_000 }), "boot identity probe");
       return { ...probed, bootId, observedAt: new Date().toISOString() };
     }
-    const prop = async (name: string, label: string): Promise<string> => checkedAdb(await run(
-      adb,
-      ["-s", serial, "shell", "getprop", name],
-      { timeoutMs: boundedTimeout(10_000, label) },
-    ), label);
-    const [model, fingerprint, bootQemu, bootId] = await Promise.all([
-      prop("ro.product.model", "bounded model identity probe"),
-      prop("ro.build.fingerprint", "bounded fingerprint identity probe"),
-      prop("ro.boot.qemu", "bounded qemu identity probe"),
-      checkedAdb(await run(adb, ["-s", serial, "shell", "cat", "/proc/sys/kernel/random/boot_id"], {
-        timeoutMs: boundedTimeout(10_000, "bounded boot identity probe"),
-      }), "bounded boot identity probe"),
-    ]);
-    return { serial, model, fingerprint, bootQemu, bootId, observedAt: new Date().toISOString() };
+    return probeBoundedCaptureIdentity(serial, boundedTimeout, async (args, timeoutMs, label) => checkedAdb(
+      await run(adb, args, { timeoutMs }),
+      label,
+    ));
   };
   const captured = await executeCaptureSettled({
     serial: input.serial,
@@ -2681,8 +2705,6 @@ async function liveCapture(
     receipt: captured.receipt,
   };
 }
-
-type CheckedAdbRunner = (args: string[], timeoutMs: number, label: string) => Promise<string>;
 
 async function currentApplicationBinding(
   adb: string,

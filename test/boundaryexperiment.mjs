@@ -2225,6 +2225,57 @@ test("the live waypoint trace charges complete wall time once across preflight, 
   assert.equal(boundaryExperiment.remainingWaypointOperationMs(1_000_000n, 2_000_000n, [1]), 0);
 });
 
+test("bounded capture identity attaches every handler, drains all probes, and rejects deterministically", () => {
+  const moduleUrl = new URL("../dist/boundaryexperiment.js", import.meta.url).href;
+  const script = String.raw`
+    import { setTimeout as delay } from "node:timers/promises";
+    const { probeBoundedCaptureIdentity } = await import(${JSON.stringify(moduleUrl)});
+    const started = [];
+    let inFlight = 0;
+    let caught = null;
+    const runner = async (_args, _timeoutMs, label) => {
+      started.push(label);
+      inFlight += 1;
+      try {
+        if (label === "bounded boot identity probe") {
+          await delay(80);
+          return "12345678-1234-4234-8234-123456789abc";
+        }
+        await delay(label === "bounded qemu identity probe" ? 5 : 15);
+        throw new Error(label);
+      } finally {
+        inFlight -= 1;
+      }
+    };
+    try {
+      await probeBoundedCaptureIdentity("emulator-5554", () => 10_000, runner);
+    } catch (error) {
+      caught = error.message;
+    }
+    if (JSON.stringify(started) !== JSON.stringify([
+      "bounded model identity probe",
+      "bounded fingerprint identity probe",
+      "bounded qemu identity probe",
+      "bounded boot identity probe",
+    ])) {
+      throw new Error("not every bounded identity probe started: " + JSON.stringify(started));
+    }
+    if (caught !== "bounded model identity probe") {
+      throw new Error("first input-ordered identity rejection was not propagated: " + caught);
+    }
+    if (inFlight !== 0) {
+      throw new Error("bounded identity helper settled with probes still in flight: " + inFlight);
+    }
+  `;
+  const child = spawnSync(process.execPath, [
+    "--unhandled-rejections=strict",
+    "--input-type=module",
+    "--eval",
+    script,
+  ], { encoding: "utf8", timeout: 5_000 });
+  assert.equal(child.status, 0, `strict child failed\nstdout:\n${child.stdout}\nstderr:\n${child.stderr}`);
+});
+
 test("live waypoint coverage markers bind a finalized retry health receipt exactly once and leave the next waypoint viable", (t) => {
   assert.equal(typeof boundaryExperiment.waypointCoverageMarker, "function");
   const first = boundaryExperiment.waypointCoverageMarker("a".repeat(64), 1, 1);

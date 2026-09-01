@@ -22,6 +22,7 @@ export const APPLICATION_CONTINUITY_LOG_READ_TIMEOUT_MS = 8_000;
 export const APPLICATION_CONTINUITY_WORK_BUDGET_MS = 9_000;
 export const APPLICATION_CONTINUITY_LOG_MAX_LINES = 65_536;
 export const APPLICATION_CONTINUITY_LOG_MAX_BYTES = 64 * 1024 * 1024;
+export const APPLICATION_CONTINUITY_HEALTH_MAX_CANDIDATES = 4_096;
 
 const BOUNDARY_EVENT_KINDS = new Set([
   "command_received",
@@ -851,17 +852,29 @@ export function scanPackageRuntimeHealth(
   const markerOccurrences = text.split(receipt.appStartMarker).length - 1;
   const markerOffset = markerOccurrences === 1 ? text.indexOf(receipt.appStartMarker) : -1;
   const scoped = markerOffset >= 0 ? text.slice(markerOffset) : "";
-  const allLines = scoped.split(/\r?\n/);
-  const lines = allLines.slice(0, APPLICATION_CONTINUITY_LOG_MAX_LINES);
+  const lines = scoped.split(/\r?\n/);
   const candidates: Array<{ kind: "java_crash" | "native_crash" | "anr"; line: number }> = [];
+  let candidateOverflowCount = 0;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (/\bANR in\b|\bam_anr\b/i.test(line)) candidates.push({ kind: "anr", line: index });
-    else if (/Fatal signal|\*\*\* \*\*\*/i.test(line)) candidates.push({ kind: "native_crash", line: index });
-    else if (/FATAL EXCEPTION|\bam_crash\b/i.test(line)) candidates.push({ kind: "java_crash", line: index });
+    const kind = /\bANR in\b|\bam_anr\b/i.test(line)
+      ? "anr"
+      : /Fatal signal|\*\*\* \*\*\*/i.test(line)
+        ? "native_crash"
+        : /FATAL EXCEPTION|\bam_crash\b/i.test(line)
+          ? "java_crash"
+          : null;
+    if (kind === null) continue;
+    if (candidates.length < APPLICATION_CONTINUITY_HEALTH_MAX_CANDIDATES) {
+      candidates.push({ kind, line: index });
+    } else {
+      // Keep scanning the complete byte-bounded artifact, but never amplify hostile/noisy
+      // input into an unbounded incident receipt. Uninspected candidates are ambiguous.
+      candidateOverflowCount += 1;
+    }
   }
   const incidents: PackageRuntimeHealthReceiptV1["incidents"] = [];
-  let ambiguousCandidateCount = 0;
+  let ambiguousCandidateCount = candidateOverflowCount;
   let ignoredOtherPackageCount = 0;
   for (const candidate of candidates) {
     const first = Math.max(0, candidate.line - 3);
@@ -902,8 +915,7 @@ export function scanPackageRuntimeHealth(
   const collectorComplete = (receipt.status === "snapshot_collected"
     ? !receipt.truncated && receipt.appStartMarkerObserved
     : receipt.stopReason === "caller_stop" && receipt.termination !== "unconfirmed" && !receipt.truncated && receipt.appStartMarkerObserved)
-    && markerOccurrences === 1
-    && allLines.length <= APPLICATION_CONTINUITY_LOG_MAX_LINES;
+    && markerOccurrences === 1;
   const status: PackageRuntimeHealthReceiptV1["status"] = incidents.length > 0
     ? "attributed_failure"
     : collectorComplete && ambiguousCandidateCount === 0

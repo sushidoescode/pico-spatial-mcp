@@ -9,6 +9,8 @@ import test from "node:test";
 
 import {
   APPLICATION_CONTINUITY_ADB_PROBE_TIMEOUT_MS,
+  APPLICATION_CONTINUITY_HEALTH_MAX_CANDIDATES,
+  APPLICATION_CONTINUITY_LOG_MAX_LINES,
   APPLICATION_CONTINUITY_LOG_READ_TIMEOUT_MS,
   APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS,
   APPLICATION_CONTINUITY_WORK_BUDGET_MS,
@@ -800,6 +802,44 @@ test("runtime-health scan is marker-bound, exact-package attributed, and fail-cl
   assert.equal(scanPackageRuntimeHealth(duplicateMarker, PACKAGE, [PID]).status, "inconclusive");
   const truncated = runtimeHealthFixture(t, `${markerLine}\n`, { truncated: true });
   assert.equal(scanPackageRuntimeHealth(truncated, PACKAGE, [PID]).status, "inconclusive");
+});
+
+test("runtime-health scans every line in a complete 64-MiB-bounded artifact", (t) => {
+  const marker = "boundary_health_marker";
+  const markerLine = threadtime("BoundaryExperiment", marker, "01", PID);
+  const filler = new Array(APPLICATION_CONTINUITY_LOG_MAX_LINES).fill(
+    threadtime("SpatialRuntimeService", "Watchdog: healthy", "02", 1200),
+  );
+  const quiet = runtimeHealthFixture(t, `${markerLine}\n${filler.join("\n")}\n`);
+  assert.equal(scanPackageRuntimeHealth(quiet, PACKAGE, [PID]).status, "no_attributed_failure");
+
+  const crash = runtimeHealthFixture(
+    t,
+    `${markerLine}\n${filler.join("\n")}\n${threadtime("AndroidRuntime", "FATAL EXCEPTION: main", "03", PID)}\nProcess: ${PACKAGE}, PID: ${PID}\n`,
+  );
+  const result = scanPackageRuntimeHealth(crash, PACKAGE, [PID]);
+  assert.equal(result.status, "attributed_failure");
+  assert.equal(result.incidents[0]?.kind, "java_crash");
+});
+
+test("runtime-health bounds retained candidates and fails closed when the full scan overflows", (t) => {
+  const marker = "boundary_health_marker";
+  const otherPackageCandidates = new Array(APPLICATION_CONTINUITY_HEALTH_MAX_CANDIDATES).fill(
+    threadtime("ActivityManager", "ANR in com.other.application", "04", 2200),
+  );
+  const targetBeyondRetention = [
+    ...new Array(10).fill(threadtime("SpatialRuntimeService", "Watchdog: healthy", "05", 1200)),
+    threadtime("AndroidRuntime", "FATAL EXCEPTION: main", "06", PID),
+    `Process: ${PACKAGE}, PID: ${PID}`,
+  ];
+  const result = scanPackageRuntimeHealth(runtimeHealthFixture(
+    t,
+    `${threadtime("BoundaryExperiment", marker, "01", PID)}\n${[...otherPackageCandidates, ...targetBeyondRetention].join("\n")}\n`,
+  ), PACKAGE, [PID]);
+  assert.equal(result.status, "inconclusive");
+  assert.equal(result.incidents.length, 0);
+  assert.equal(result.ignoredOtherPackageCount, APPLICATION_CONTINUITY_HEALTH_MAX_CANDIDATES);
+  assert.equal(result.ambiguousCandidateCount, 1);
 });
 
 class FakeLogcatChild extends EventEmitter {
