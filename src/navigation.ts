@@ -92,6 +92,13 @@ export interface RelativeRouteWaypoint {
   continuityBefore: RouteContinuityObservation;
   settle: CaptureSettledReceipt;
   continuityAfter: RouteContinuityObservation;
+  meta?: RelativeRouteWaypointMeta;
+}
+
+export interface RelativeRouteWaypointMeta {
+  lane: "active" | "recovery";
+  pairId?: string;
+  pairRole?: "outbound" | "restore";
 }
 
 export interface BoundRelativeRouteInput {
@@ -139,6 +146,36 @@ export interface RelativeRouteTrace {
   waypoints: RelativeRouteWaypoint[];
   usage: { actions: number; waypoints: number; holdMs: number; dragPx: number; durationMs: number };
   terminalActionFailure?: TerminalCameraActionFailure;
+}
+
+export interface RelativeRouteStepOutcome {
+  status: "settled" | Exclude<RelativeRouteStop, "controller_stop" | "terminal_signal_candidate">;
+  waypoint: RelativeRouteWaypoint | null;
+  actionReceipts: CameraActionReceipt[];
+  actionApplied: boolean;
+  terminalActionFailure?: TerminalCameraActionFailure;
+}
+
+export interface RelativeRoutePairedStepOutcome {
+  primaryStatus: RelativeRouteStepOutcome["status"];
+  outbound: RelativeRouteStepOutcome;
+  restore: RelativeRouteStepOutcome | null;
+  recoveryUsed: boolean;
+}
+
+export interface RelativeRouteExecution {
+  activeRemainingMs(observeClock?: boolean): number;
+  executeStep(
+    actions: readonly RelativeCameraAction[],
+    meta?: Omit<RelativeRouteWaypointMeta, "lane">,
+  ): Promise<RelativeRouteStepOutcome>;
+  adoptSettledBaseline(receipt: CaptureSettledReceipt): boolean;
+  executePairedStep(
+    outbound: RelativeCameraAction,
+    inverse: RelativeCameraAction,
+    meta: { pairId: string },
+  ): Promise<RelativeRoutePairedStepOutcome>;
+  finish(status: RelativeRouteStop): RelativeRouteTrace;
 }
 
 export type CameraActionFailureKind =
@@ -664,37 +701,57 @@ export async function executeBoundCameraActions(
   return receipts;
 }
 
-export async function executeRelativeCameraRoute(
+function inverseActionsMatch(outbound: RelativeCameraAction, inverse: RelativeCameraAction): boolean {
+  if (outbound.kind === "look_drag" && inverse.kind === "look_drag") {
+    return inverse.dxPx === -outbound.dxPx && inverse.dyPx === -outbound.dyPx;
+  }
+  if (outbound.kind !== "key_hold" || inverse.kind !== "key_hold" || outbound.holdMs !== inverse.holdMs) return false;
+  const inverseKey: Record<Extract<RelativeCameraAction, { kind: "key_hold" }>["key"], string> = {
+    w: "s", s: "w", a: "d", d: "a", q: "e", e: "q",
+  };
+  return inverse.key === inverseKey[outbound.key];
+}
+
+export function createRelativeRouteExecution(
   input: BoundRelativeRouteInput,
-  decide: RelativeRouteDecision,
   deps: RelativeRouteDependencies,
-): Promise<RelativeRouteTrace> {
+): RelativeRouteExecution {
   const waypoints: RelativeRouteWaypoint[] = [];
   const allocatedPaths = new Set<string>();
   const usage = { actions: 0, waypoints: 0, holdMs: 0, dragPx: 0, durationMs: 0 };
   let terminalActionFailure: TerminalCameraActionFailure | undefined;
-  if (!validInput(input)) return { status: "budget_exhausted", waypoints, usage };
-  if (!deps
+  let priorCaptureSha256 = input?.priorCaptureSha256;
+  let canonicalSessionRoot: string | null = null;
+  let startedAt: bigint | null = null;
+  let lastObservedAt: bigint | null = null;
+  let clockFailed = false;
+  let initializationStatus: RelativeRouteStop | null = null;
+
+  if (!validInput(input)
+    || !deps
     || typeof deps.applyRelativeAction !== "function"
     || typeof deps.captureSettled !== "function"
     || typeof deps.allocateWaypointPath !== "function"
     || typeof deps.sleep !== "function"
     || typeof deps.monotonicNs !== "function") {
-    return { status: "budget_exhausted", waypoints, usage };
+    initializationStatus = "budget_exhausted";
+  } else {
+    canonicalSessionRoot = canonicalExternalSessionRoot(input.artifactSession);
+    if (!canonicalSessionRoot) initializationStatus = "budget_exhausted";
+    else if (input.continuity.kind === "required" && !deps.sampleContinuity) initializationStatus = "binding_lost";
+    else {
+      try {
+        startedAt = deps.monotonicNs();
+        if (typeof startedAt !== "bigint") throw new Error("monotonic clock did not return bigint");
+        lastObservedAt = startedAt;
+      } catch {
+        initializationStatus = "budget_exhausted";
+      }
+    }
   }
-  const canonicalSessionRoot = canonicalExternalSessionRoot(input.artifactSession);
-  if (!canonicalSessionRoot) return { status: "budget_exhausted", waypoints, usage };
-  let startedAt: bigint;
-  try {
-    startedAt = deps.monotonicNs();
-    if (typeof startedAt !== "bigint") throw new Error("monotonic clock did not return bigint");
-  } catch {
-    return { status: "budget_exhausted", waypoints, usage };
-  }
-  let lastObservedAt = startedAt;
-  let clockFailed = false;
+
   const elapsedMs = (): number | null => {
-    if (clockFailed) return null;
+    if (clockFailed || initializationStatus || startedAt === null || lastObservedAt === null) return null;
     try {
       const observed = deps.monotonicNs();
       if (typeof observed !== "bigint" || observed < lastObservedAt) {
@@ -713,154 +770,152 @@ export async function executeRelativeCameraRoute(
       return null;
     }
   };
-  const finishWithoutClock = (status: RelativeRouteStop): RelativeRouteTrace => {
-    const trace: RelativeRouteTrace = {
-      status,
-      waypoints: [...waypoints],
-      usage: { ...usage },
-    };
+  const traceWithoutClock = (status: RelativeRouteStop): RelativeRouteTrace => {
+    const trace: RelativeRouteTrace = { status, waypoints: [...waypoints], usage: { ...usage } };
     if (terminalActionFailure) trace.terminalActionFailure = terminalActionFailure;
     return trace;
   };
   const finish = (status: RelativeRouteStop): RelativeRouteTrace => {
+    if (initializationStatus) return traceWithoutClock(initializationStatus);
     const durationMs = elapsedMs();
-    if (durationMs === null) return finishWithoutClock("budget_exhausted");
+    if (durationMs === null) return traceWithoutClock("budget_exhausted");
     usage.durationMs = durationMs;
-    return finishWithoutClock(status);
+    return traceWithoutClock(status);
   };
-
-  if (input.continuity.kind === "required" && !deps.sampleContinuity) return finish("binding_lost");
-  let priorCaptureSha256 = input.priorCaptureSha256;
-
-  while (true) {
-    let decision: RelativeCameraAction[] | "stop";
-    let decisionTimedOut = false;
-    const controller = new AbortController();
-    const decisionRemainingMs = (): number => {
-      const elapsed = elapsedMs();
-      return elapsed === null ? 0 : Math.max(0, input.budgets.maxDurationMs - elapsed);
-    };
-    const lastObservedElapsed = (lastObservedAt - startedAt) / 1_000_000n;
-    const initialDecisionRemainingMs = lastObservedElapsed > BigInt(Number.MAX_SAFE_INTEGER)
+  const outcome = (
+    status: RelativeRouteStepOutcome["status"],
+    waypoint: RelativeRouteWaypoint | null = null,
+    actionReceipts: CameraActionReceipt[] = [],
+    actionApplied = false,
+  ): RelativeRouteStepOutcome => {
+    const result: RelativeRouteStepOutcome = { status, waypoint, actionReceipts, actionApplied };
+    if (terminalActionFailure) result.terminalActionFailure = terminalActionFailure;
+    return result;
+  };
+  const reserveForLane = (lane: RelativeRouteWaypointMeta["lane"]): number =>
+    lane === "active" ? input.budgets.recoveryReserveMs : 0;
+  const waypointDurationForLane = (
+    actions: readonly RelativeCameraAction[],
+    lane: RelativeRouteWaypointMeta["lane"],
+  ): number => conservativeWaypointDurationMs(input, actions) - input.budgets.recoveryReserveMs + reserveForLane(lane);
+  const postCaptureForLane = (lane: RelativeRouteWaypointMeta["lane"]): number =>
+    postCaptureReserveMs(input) - input.budgets.recoveryReserveMs + reserveForLane(lane);
+  const postRenderForLane = (lane: RelativeRouteWaypointMeta["lane"]): number =>
+    postRenderDwellReserveMs(input) - input.budgets.recoveryReserveMs + reserveForLane(lane);
+  const activeRemainingMs = (observeClock = true): number => {
+    const elapsed = observeClock
+      ? elapsedMs()
+      : startedAt !== null && lastObservedAt !== null
+        ? Number((lastObservedAt - startedAt) / 1_000_000n)
+        : null;
+    return elapsed === null
       ? 0
-      : Math.max(0, input.budgets.maxDurationMs - Number(lastObservedElapsed));
-    if (initialDecisionRemainingMs <= 0) return finish("budget_exhausted");
-    let decisionTimer: NodeJS.Timeout | null = null;
-    try {
-      const deadline = new Promise<never>((_resolve, reject) => {
-        decisionTimer = setTimeout(() => {
-          decisionTimedOut = true;
-          controller.abort("relative route decision deadline exhausted");
-          reject(new Error("relative route decision deadline exhausted"));
-        }, Math.max(1, Math.min(initialDecisionRemainingMs, 2_147_483_647)));
-      });
-      decision = await Promise.race([
-        Promise.resolve().then(() => decide([...waypoints], {
-          remainingMs: decisionRemainingMs,
-          signal: controller.signal,
-        })),
-        deadline,
-      ]);
-    } catch {
-      return finish(decisionTimedOut ? "budget_exhausted" : "action_failed");
-    } finally {
-      if (decisionTimer) clearTimeout(decisionTimer);
-    }
-    if (decision === "stop") return finish("controller_stop");
-    if (!Array.isArray(decision) || decision.length === 0) return finish("budget_exhausted");
-    if (usage.waypoints >= input.budgets.maxWaypoints) return finish("budget_exhausted");
-
-    const groupUsage: ActionUsage[] = [];
-    for (const action of decision) {
-      const measured = actionUsage(action);
-      if (!measured
-        || measured.holdMs > input.budgets.maxHoldMsPerAction
-        || measured.dragPx > input.budgets.maxDragPxPerAction) {
-        return finish("budget_exhausted");
-      }
-      groupUsage.push(measured);
-    }
-    const groupActions = groupUsage.length;
-    const groupHoldMs = groupUsage.reduce((sum, measured) => sum + measured.holdMs, 0);
-    const groupDragPx = groupUsage.reduce((sum, measured) => sum + measured.dragPx, 0);
-    if (usage.actions + groupActions > input.budgets.maxActions
-      || usage.holdMs + groupHoldMs > input.budgets.maxCumulativeHoldMs
-      || usage.dragPx + groupDragPx > input.budgets.maxCumulativeDragPx) {
-      return finish("budget_exhausted");
-    }
-    const elapsedBeforeWaypointMs = elapsedMs();
-    if (elapsedBeforeWaypointMs === null) return finishWithoutClock("budget_exhausted");
-    if (elapsedBeforeWaypointMs + conservativeWaypointDurationMs(input, decision) > input.budgets.maxDurationMs) {
-      return finish("budget_exhausted");
-    }
-
-    const seq = usage.waypoints + 1;
+      : Math.max(0, input.budgets.maxDurationMs - elapsed
+        - input.budgets.recoveryReserveMs - ROUTE_FINALIZATION_RESERVE_MS);
+  };
+  const reservePath = (seq: number): string | null => {
+    if (!canonicalSessionRoot) return null;
     let capturePath: string;
     try {
       capturePath = deps.allocateWaypointPath(seq);
     } catch {
-      return finish("route_unsettled");
+      return null;
     }
     if (allocatedPaths.has(capturePath)
-      || !capturePathBelongsToSession(input.artifactSession, canonicalSessionRoot, capturePath)) {
-      return finish("route_unsettled");
-    }
+      || !capturePathBelongsToSession(input.artifactSession, canonicalSessionRoot, capturePath)) return null;
     allocatedPaths.add(capturePath);
+    return capturePath;
+  };
+
+  const executeStepInternal = async (
+    requested: readonly RelativeCameraAction[],
+    lane: RelativeRouteWaypointMeta["lane"],
+    meta?: Omit<RelativeRouteWaypointMeta, "lane">,
+    reservedPath?: string,
+  ): Promise<RelativeRouteStepOutcome> => {
+    terminalActionFailure = undefined;
+    if (initializationStatus) return outcome(initializationStatus === "binding_lost" ? "binding_lost" : "budget_exhausted");
+    if (!Array.isArray(requested) || requested.length === 0 || usage.waypoints >= input.budgets.maxWaypoints) {
+      return outcome("budget_exhausted");
+    }
+    const actions = [...requested];
+    const groupUsage: ActionUsage[] = [];
+    for (const action of actions) {
+      const measured = actionUsage(action);
+      if (!measured
+        || measured.holdMs > input.budgets.maxHoldMsPerAction
+        || measured.dragPx > input.budgets.maxDragPxPerAction) return outcome("budget_exhausted");
+      groupUsage.push(measured);
+    }
+    const groupHoldMs = groupUsage.reduce((sum, measured) => sum + measured.holdMs, 0);
+    const groupDragPx = groupUsage.reduce((sum, measured) => sum + measured.dragPx, 0);
+    if (usage.actions + actions.length > input.budgets.maxActions
+      || usage.holdMs + groupHoldMs > input.budgets.maxCumulativeHoldMs
+      || usage.dragPx + groupDragPx > input.budgets.maxCumulativeDragPx) return outcome("budget_exhausted");
+
+    const elapsedBeforeWaypointMs = elapsedMs();
+    if (elapsedBeforeWaypointMs === null
+      || elapsedBeforeWaypointMs + waypointDurationForLane(actions, lane) > input.budgets.maxDurationMs) {
+      return outcome("budget_exhausted");
+    }
+    const seq = usage.waypoints + 1;
+    const capturePath = reservedPath ?? reservePath(seq);
+    if (!capturePath) return outcome("route_unsettled");
 
     const continuityBefore = await observeContinuity(input, deps);
-    if (!continuityBefore || !continuityBefore.matches) return finish("binding_lost");
+    if (!continuityBefore || !continuityBefore.matches) return outcome("binding_lost");
     const elapsedAfterContinuityMs = elapsedMs();
-    if (elapsedAfterContinuityMs === null) return finishWithoutClock("budget_exhausted");
-    const remainingWaypointReserveMs = conservativeWaypointDurationMs(input, decision)
+    const remainingWaypointReserveMs = waypointDurationForLane(actions, lane)
       - (input.continuity.kind === "required" ? APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS : 0);
-    if (elapsedAfterContinuityMs + remainingWaypointReserveMs > input.budgets.maxDurationMs) {
-      return finish("budget_exhausted");
+    if (elapsedAfterContinuityMs === null
+      || elapsedAfterContinuityMs + remainingWaypointReserveMs > input.budgets.maxDurationMs) {
+      return outcome("budget_exhausted");
     }
 
     let actionReceipts: CameraActionReceipt[];
     try {
-      actionReceipts = await executeBoundCameraActions(input.runtimeBinding, decision, deps);
+      actionReceipts = await executeBoundCameraActions(input.runtimeBinding, actions, deps);
     } catch (error) {
       if (error instanceof CameraActionExecutionError) {
         for (let index = 0; index < error.attemptedCount; index++) {
           usage.actions++;
-          usage.holdMs += groupUsage[index].holdMs;
-          usage.dragPx += groupUsage[index].dragPx;
+          usage.holdMs += groupUsage[index]?.holdMs ?? 0;
+          usage.dragPx += groupUsage[index]?.dragPx ?? 0;
         }
         terminalActionFailure = error.toTerminalFailure();
+        return outcome("action_failed", null, error.retainedReceipts, false);
       }
-      return finish("action_failed");
+      return outcome("action_failed");
     }
     for (let index = 0; index < actionReceipts.length; index++) {
       usage.actions++;
-      usage.holdMs += groupUsage[index].holdMs;
-      usage.dragPx += groupUsage[index].dragPx;
+      usage.holdMs += groupUsage[index]?.holdMs ?? 0;
+      usage.dragPx += groupUsage[index]?.dragPx ?? 0;
     }
     const uncertainIndex = actionReceipts.findIndex((receipt, index) =>
       receipt.status === "release_uncertain"
-      || (decision[index]?.kind === "key_hold" && receipt.ack.releaseCertain !== true));
+      || (actions[index]?.kind === "key_hold" && receipt.ack.releaseCertain !== true));
     if (uncertainIndex >= 0) {
-      terminalActionFailure = failureFromReturnedReceipt("release_uncertain", decision, actionReceipts, uncertainIndex);
-      return finish("input_release_uncertain");
+      terminalActionFailure = failureFromReturnedReceipt("release_uncertain", actions, actionReceipts, uncertainIndex);
+      return outcome("input_release_uncertain", null, actionReceipts, false);
     }
     const failedIndex = actionReceipts.findIndex((receipt) => receipt.status !== "applied");
     if (failedIndex >= 0) {
-      terminalActionFailure = failureFromReturnedReceipt("reported_action_failure", decision, actionReceipts, failedIndex);
-      return finish("action_failed");
+      terminalActionFailure = failureFromReturnedReceipt("reported_action_failure", actions, actionReceipts, failedIndex);
+      return outcome("action_failed", null, actionReceipts, false);
     }
-    if (actionReceipts.length !== decision.length) {
-      return finish("action_failed");
-    }
+    if (actionReceipts.length !== actions.length) return outcome("action_failed", null, actionReceipts, false);
+    const actionApplied = true;
 
     try {
       await deps.sleep(POST_ACTION_RENDER_DWELL_MS);
     } catch {
-      return finish("route_unsettled");
+      return outcome("route_unsettled", null, actionReceipts, actionApplied);
     }
     const elapsedAfterDwellMs = elapsedMs();
-    if (elapsedAfterDwellMs === null) return finishWithoutClock("budget_exhausted");
-    if (elapsedAfterDwellMs + postRenderDwellReserveMs(input) > input.budgets.maxDurationMs) {
-      return finish("budget_exhausted");
+    if (elapsedAfterDwellMs === null
+      || elapsedAfterDwellMs + postRenderForLane(lane) > input.budgets.maxDurationMs) {
+      return outcome("budget_exhausted", null, actionReceipts, actionApplied);
     }
 
     let settle: CaptureSettledReceipt;
@@ -869,45 +924,185 @@ export async function executeRelativeCameraRoute(
         priorSha256: priorCaptureSha256,
         remainingMs: () => {
           const elapsed = elapsedMs();
-          if (elapsed === null) return 0;
-          return Math.max(0, input.budgets.maxDurationMs - elapsed - postCaptureReserveMs(input));
+          return elapsed === null ? 0 : Math.max(0, input.budgets.maxDurationMs - elapsed - postCaptureForLane(lane));
         },
       });
     } catch {
-      return finish("route_unsettled");
+      return outcome("route_unsettled", null, actionReceipts, actionApplied);
     }
     const elapsedAfterCaptureMs = elapsedMs();
-    if (elapsedAfterCaptureMs === null) return finishWithoutClock("budget_exhausted");
-    if (elapsedAfterCaptureMs + postCaptureReserveMs(input) > input.budgets.maxDurationMs) {
-      return finish("budget_exhausted");
+    if (elapsedAfterCaptureMs === null
+      || elapsedAfterCaptureMs + postCaptureForLane(lane) > input.budgets.maxDurationMs) {
+      return outcome("budget_exhausted", null, actionReceipts, actionApplied);
     }
     try {
-      if (!settledReceiptMatches(capturePath, input, settle)) return finish("route_unsettled");
+      if (!settledReceiptMatches(capturePath, input, settle)) {
+        return outcome("route_unsettled", null, actionReceipts, actionApplied);
+      }
     } catch {
-      return finish("route_unsettled");
+      return outcome("route_unsettled", null, actionReceipts, actionApplied);
     }
     const continuityAfter = await observeContinuity(input, deps);
-    if (!continuityAfter) return finish("binding_lost");
-    waypoints.push({
+    if (!continuityAfter) return outcome("binding_lost", null, actionReceipts, actionApplied);
+    const waypoint: RelativeRouteWaypoint = {
       seq,
-      actions: [...decision],
+      actions,
       actionReceipts,
       continuityBefore: continuityBefore.observation,
       settle,
       continuityAfter: continuityAfter.observation,
-    });
+      ...(meta ? { meta: { lane, ...meta } } : {}),
+    };
+    waypoints.push(waypoint);
     usage.waypoints++;
-
-    if (settle.status !== "settled"
-      || !settle.settlementSatisfied
-      || settle.sha256 === priorCaptureSha256) return finish("route_unsettled");
-    if (!continuityAfter.matches) return finish("binding_lost");
+    if (settle.status !== "settled" || !settle.settlementSatisfied || settle.sha256 === priorCaptureSha256) {
+      return outcome("route_unsettled", waypoint, actionReceipts, actionApplied);
+    }
+    if (!continuityAfter.matches) return outcome("binding_lost", waypoint, actionReceipts, actionApplied);
     const elapsedAfterFinalContinuityMs = elapsedMs();
-    if (elapsedAfterFinalContinuityMs === null) return finishWithoutClock("budget_exhausted");
-    if (elapsedAfterFinalContinuityMs + input.budgets.recoveryReserveMs + ROUTE_FINALIZATION_RESERVE_MS
-      > input.budgets.maxDurationMs) {
-      return finish("budget_exhausted");
+    if (elapsedAfterFinalContinuityMs === null
+      || elapsedAfterFinalContinuityMs + reserveForLane(lane) + ROUTE_FINALIZATION_RESERVE_MS
+        > input.budgets.maxDurationMs) {
+      return outcome("budget_exhausted", waypoint, actionReceipts, actionApplied);
     }
     priorCaptureSha256 = settle.sha256!;
+    return outcome("settled", waypoint, actionReceipts, actionApplied);
+  };
+
+  const executeStep: RelativeRouteExecution["executeStep"] = (actions, meta) =>
+    executeStepInternal(actions, "active", meta);
+
+  const adoptSettledBaseline = (receipt: CaptureSettledReceipt): boolean => {
+    if (initializationStatus || !canonicalSessionRoot || !receipt?.path || allocatedPaths.has(receipt.path)) return false;
+    try {
+      if (!capturePathBelongsToSession(input.artifactSession, canonicalSessionRoot, receipt.path)
+        || !settledReceiptMatches(receipt.path, input, receipt)
+        || receipt.status !== "settled"
+        || !receipt.settlementSatisfied
+        || !receipt.sha256
+        || receipt.sha256 === priorCaptureSha256) return false;
+    } catch {
+      return false;
+    }
+    allocatedPaths.add(receipt.path);
+    priorCaptureSha256 = receipt.sha256;
+    return true;
+  };
+
+  const executePairedStep: RelativeRouteExecution["executePairedStep"] = async (outbound, inverse, meta) => {
+    const refused = (status: RelativeRouteStepOutcome["status"]): RelativeRoutePairedStepOutcome => {
+      const outboundResult = outcome(status);
+      return { primaryStatus: status, outbound: outboundResult, restore: null, recoveryUsed: false };
+    };
+    if (initializationStatus || typeof meta?.pairId !== "string" || meta.pairId.length === 0
+      || !inverseActionsMatch(outbound, inverse)) return refused("budget_exhausted");
+    const measured = [actionUsage(outbound), actionUsage(inverse)];
+    if (measured.some((candidate) => !candidate)
+      || measured.some((candidate) => candidate!.holdMs > input.budgets.maxHoldMsPerAction
+        || candidate!.dragPx > input.budgets.maxDragPxPerAction)) return refused("budget_exhausted");
+    const combinedHold = measured.reduce((sum, candidate) => sum + candidate!.holdMs, 0);
+    const combinedDrag = measured.reduce((sum, candidate) => sum + candidate!.dragPx, 0);
+    const recoveryDuration = waypointDurationForLane([inverse], "recovery");
+    const elapsed = elapsedMs();
+    if (usage.actions + 2 > input.budgets.maxActions
+      || usage.waypoints + 2 > input.budgets.maxWaypoints
+      || usage.holdMs + combinedHold > input.budgets.maxCumulativeHoldMs
+      || usage.dragPx + combinedDrag > input.budgets.maxCumulativeDragPx
+      || recoveryDuration > input.budgets.recoveryReserveMs
+      || elapsed === null
+      || elapsed + waypointDurationForLane([outbound], "active") > input.budgets.maxDurationMs) {
+      return refused("budget_exhausted");
+    }
+    const outboundPath = reservePath(usage.waypoints + 1);
+    const restorePath = outboundPath ? reservePath(usage.waypoints + 2) : null;
+    if (!outboundPath || !restorePath) return refused("route_unsettled");
+
+    const outboundResult = await executeStepInternal(
+      [outbound],
+      "active",
+      { pairId: meta.pairId, pairRole: "outbound" },
+      outboundPath,
+    );
+    if (!outboundResult.actionApplied) {
+      return {
+        primaryStatus: outboundResult.status,
+        outbound: outboundResult,
+        restore: null,
+        recoveryUsed: false,
+      };
+    }
+    if (outboundResult.waypoint?.settle.status === "settled"
+      && outboundResult.waypoint.settle.settlementSatisfied
+      && outboundResult.waypoint.settle.sha256
+      && outboundResult.waypoint.settle.sha256 !== priorCaptureSha256) {
+      priorCaptureSha256 = outboundResult.waypoint.settle.sha256;
+    }
+    const beforeRestore = elapsedMs();
+    const activeRestoreFits = beforeRestore !== null
+      && beforeRestore + waypointDurationForLane([inverse], "active") <= input.budgets.maxDurationMs;
+    const recoveryUsed = !activeRestoreFits;
+    const restore = await executeStepInternal(
+      [inverse],
+      recoveryUsed ? "recovery" : "active",
+      { pairId: meta.pairId, pairRole: "restore" },
+      restorePath,
+    );
+    return {
+      primaryStatus: outboundResult.status,
+      outbound: outboundResult,
+      restore,
+      recoveryUsed,
+    };
+  };
+
+  return { activeRemainingMs, executeStep, adoptSettledBaseline, executePairedStep, finish };
+}
+
+export async function executeRelativeCameraRoute(
+  input: BoundRelativeRouteInput,
+  decide: RelativeRouteDecision,
+  deps: RelativeRouteDependencies,
+): Promise<RelativeRouteTrace> {
+  const execution = createRelativeRouteExecution(input, deps);
+  const decisionWaypoints: RelativeRouteWaypoint[] = [];
+  while (true) {
+    const initialDecisionRemainingMs = execution.activeRemainingMs(false);
+    if (initialDecisionRemainingMs <= 0) return execution.finish("budget_exhausted");
+    let decision: RelativeCameraAction[] | "stop";
+    let decisionTimedOut = false;
+    const controller = new AbortController();
+    let decisionTimer: NodeJS.Timeout | null = null;
+    let decisionPromise: Promise<RelativeCameraAction[] | "stop"> | null = null;
+    try {
+      const deadline = new Promise<never>((_resolve, reject) => {
+        decisionTimer = setTimeout(() => {
+          decisionTimedOut = true;
+          controller.abort("relative route decision deadline exhausted");
+          reject(new Error("relative route decision deadline exhausted"));
+        }, Math.max(1, Math.min(initialDecisionRemainingMs, 2_147_483_647)));
+      });
+      decisionPromise = Promise.resolve().then(() => decide([...decisionWaypoints], {
+        remainingMs: execution.activeRemainingMs,
+        signal: controller.signal,
+      }));
+      decision = await Promise.race([decisionPromise, deadline]);
+    } catch {
+      controller.abort("relative route decision failed or exceeded its deadline");
+      if (decisionPromise) {
+        try {
+          await decisionPromise;
+        } catch {
+          // The compatibility wrapper never returns while an async decision can still mutate state.
+        }
+      }
+      return execution.finish(decisionTimedOut ? "budget_exhausted" : "action_failed");
+    } finally {
+      if (decisionTimer) clearTimeout(decisionTimer);
+    }
+    if (decision === "stop") return execution.finish("controller_stop");
+    if (!Array.isArray(decision) || decision.length === 0) return execution.finish("budget_exhausted");
+    const step = await execution.executeStep(decision);
+    if (step.waypoint) decisionWaypoints.push(step.waypoint);
+    if (step.status !== "settled") return execution.finish(step.status);
   }
 }

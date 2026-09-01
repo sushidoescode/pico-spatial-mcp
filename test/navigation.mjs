@@ -9,6 +9,7 @@ import {
   executeBoundCameraActions,
   executeRelativeCameraRoute,
 } from "../dist/navigation.js";
+import * as navigation from "../dist/navigation.js";
 import {
   createBoundCameraActionAdapter,
   createCameraActionBindingReceipt,
@@ -335,6 +336,129 @@ test("route catches an async controller rejection without allocating or applying
   assert.equal(trace.status, "action_failed");
   assert.equal(allocations, 0);
   assert.equal(actions, 0);
+});
+
+test("persistent route execution carries its original budgets, sequence, paths, and adopted settled baseline across continuations", async () => {
+  assert.equal(typeof navigation.createRelativeRouteExecution, "function");
+  const priors = [];
+  let captureIndex = 0;
+  const execution = navigation.createRelativeRouteExecution(
+    routeInput({ budgets: { ...defaultBudgets, maxActions: 2, maxWaypoints: 2 } }),
+    dependencies({
+      captureSettled: async (capturePath, context) => {
+        priors.push(context.priorSha256);
+        return settled(capturePath, captureIndex++ === 0 ? "d".repeat(64) : "f".repeat(64));
+      },
+    }),
+  );
+
+  const first = await execution.executeStep([{ kind: "look_drag", dxPx: 10, dyPx: 0 }]);
+  assert.equal(first.status, "settled");
+  const adopted = settled(
+    "/tmp/pico-navigation-tests/route-test/guide-on-rebaseline.png",
+    "e".repeat(64),
+  );
+  assert.equal(execution.adoptSettledBaseline(adopted), true);
+  const second = await execution.executeStep([{ kind: "look_drag", dxPx: -10, dyPx: 0 }]);
+  assert.equal(second.status, "settled");
+  const exhausted = await execution.executeStep([{ kind: "look_drag", dxPx: 1, dyPx: 0 }]);
+  assert.equal(exhausted.status, "budget_exhausted");
+
+  const trace = execution.finish("controller_stop");
+  assert.deepEqual(trace.waypoints.map((waypoint) => waypoint.seq), [1, 2]);
+  assert.deepEqual(priors, ["c".repeat(64), "e".repeat(64)]);
+  assert.deepEqual(trace.usage.actions, 2);
+  assert.deepEqual(trace.usage.waypoints, 2);
+});
+
+test("paired route step restores an applied outbound exactly once through the paid recovery lane after active time is consumed", async () => {
+  assert.equal(typeof navigation.createRelativeRouteExecution, "function");
+  const actions = [];
+  let captures = 0;
+  let continuitySamples = 0;
+  let now = 0n;
+  const execution = navigation.createRelativeRouteExecution(
+    routeInput({
+      continuity: { kind: "required", binding: applicationBinding },
+      budgets: {
+        ...defaultBudgets,
+        maxActions: 2,
+        maxWaypoints: 2,
+        maxDurationMs: 400_000,
+        recoveryReserveMs: 180_000,
+      },
+      capture: { maxTries: 2, intervalMs: 10, attemptTimeoutMs: 100 },
+    }),
+    dependencies({
+      monotonicNs: () => now,
+      sampleContinuity: async () => {
+        continuitySamples++;
+        if (continuitySamples === 2) now = 250_000_000_000n;
+        return continuitySample();
+      },
+      applyRelativeAction: async (action) => {
+        actions.push(action);
+        return applied(action);
+      },
+      captureSettled: async (capturePath) => {
+        captures++;
+        return settled(capturePath, captures === 1 ? "d".repeat(64) : "e".repeat(64));
+      },
+    }),
+  );
+
+  const pair = await execution.executePairedStep(
+    { kind: "look_drag", dxPx: 40, dyPx: 0 },
+    { kind: "look_drag", dxPx: -40, dyPx: 0 },
+    { pairId: "yaw-positive-40" },
+  );
+  assert.equal(pair.primaryStatus, "budget_exhausted");
+  assert.equal(pair.restore?.status, "settled");
+  assert.equal(pair.recoveryUsed, true);
+  assert.deepEqual(actions, [
+    { kind: "look_drag", dxPx: 40, dyPx: 0 },
+    { kind: "look_drag", dxPx: -40, dyPx: 0 },
+  ]);
+  const trace = execution.finish("controller_stop");
+  assert.deepEqual(trace.waypoints.map((waypoint) => waypoint.meta), [
+    { lane: "active", pairId: "yaw-positive-40", pairRole: "outbound" },
+    { lane: "recovery", pairId: "yaw-positive-40", pairRole: "restore" },
+  ]);
+});
+
+test("paired route step refuses before outbound when the exact inverse cannot fit the recovery reserve", async () => {
+  assert.equal(typeof navigation.createRelativeRouteExecution, "function");
+  let actions = 0;
+  let allocations = 0;
+  const execution = navigation.createRelativeRouteExecution(
+    routeInput({
+      continuity: { kind: "required", binding: applicationBinding },
+      budgets: {
+        ...defaultBudgets,
+        maxActions: 2,
+        maxWaypoints: 2,
+        maxDurationMs: 400_000,
+        recoveryReserveMs: 171_999,
+      },
+      capture: { maxTries: 4, intervalMs: 0, attemptTimeoutMs: 15_000 },
+    }),
+    dependencies({
+      allocateWaypointPath: (seq) => {
+        allocations++;
+        return `/tmp/pico-navigation-tests/route-test/waypoint-${String(seq).padStart(4, "0")}.png`;
+      },
+      applyRelativeAction: async (action) => { actions++; return applied(action); },
+    }),
+  );
+  const pair = await execution.executePairedStep(
+    { kind: "look_drag", dxPx: 40, dyPx: 0 },
+    { kind: "look_drag", dxPx: -40, dyPx: 0 },
+    { pairId: "yaw-positive-40" },
+  );
+  assert.equal(pair.primaryStatus, "budget_exhausted");
+  assert.equal(pair.restore, null);
+  assert.equal(actions, 0);
+  assert.equal(allocations, 0);
 });
 
 test("each action group waits once for rendered motion and passes the exact prior capture hash into settlement", async () => {

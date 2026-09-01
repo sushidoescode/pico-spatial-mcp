@@ -28,11 +28,13 @@ import {
   type FreshCameraCalibrationProofResult,
 } from "./metricverify.js";
 import {
+  createRelativeRouteExecution,
   estimateRelativeRouteDurationMs,
-  executeRelativeCameraRoute,
   type BoundApplicationIdentity,
   type BoundRelativeRouteInput,
   type RelativeCameraAction,
+  type RelativeRouteExecution,
+  type RelativeRouteStepOutcome,
   type RelativeRouteTrace,
   type ReservedArtifactSession,
   type RuntimeBindingReceipt,
@@ -837,18 +839,29 @@ export async function executeNavigateToSceneTarget(
   const input = navigateToSceneTargetInputSchema.parse(rawInput);
   const result = newResult(input);
   const claims = new Set<NavigationTargetClaim>();
-  const operationStartedAt = deps.monotonicNs();
+  const startedAt = deps.monotonicNs();
+  const maximumDurationMs = input.motionPolicy.maxDurationSec * 1000;
   let scene: SelectedScene | null = null;
   let qemu: BoundQemuWindow | null = null;
   let session: ReservedArtifactSession | null = null;
+  let execution: RelativeRouteExecution | null = null;
+  let routeStatus: RelativeRouteTrace["status"] = "controller_stop";
+  let routeSealed = false;
   let guideMayHaveApplied = false;
-  let guideCompensated = false;
   let finalHideNeeded = false;
-  let lastVisibleCapture: CaptureSettledReceipt | null = null;
-  let publishCalibration: { record: NavigationCalibrationRecord; payload: Record<string, any> } | null = null;
+  let hiddenProof: AgentBridgeNavigationGuideRequestResult | null = null;
+  let attemptedGeneration = 0;
+  let settledGeneration = 0;
   let terminalReason: NavigationTargetStopReason | null = null;
   let terminalDetail: string | null = null;
+  let publishCalibration: { record: NavigationCalibrationRecord; payload: Record<string, any> } | null = null;
 
+  const elapsedMs = () => {
+    const observed = deps.monotonicNs();
+    if (observed < startedAt) return maximumDurationMs;
+    const elapsed = Number((observed - startedAt) / 1_000_000n);
+    return Number.isSafeInteger(elapsed) ? elapsed : maximumDurationMs;
+  };
   const rememberScene = (selected: SelectedScene) => {
     scene = selected;
     result.applicationRuntimeBinding = selected.output.applicationRuntimeBinding as ApplicationRuntimeBinding;
@@ -868,17 +881,17 @@ export async function executeNavigateToSceneTarget(
       crossQueryDrift: selected.crossQueryDrift,
     });
   };
-  const operationElapsedMs = () => {
-    const now = deps.monotonicNs();
-    if (now < operationStartedAt) return input.motionPolicy.maxDurationSec * 1000;
-    return Number((now - operationStartedAt) / 1_000_000n);
+  const setTerminal = (reason: NavigationTargetStopReason, detail: string) => {
+    if (terminalReason === null || reason === "cleanup_failed") {
+      terminalReason = reason;
+      terminalDetail = detail;
+    }
   };
   const capture = async (name: string, priorSha256?: string): Promise<CaptureSettledReceipt> => {
     if (!session) throw new NavigationTargetStop("binding_failed", "artifact session was not reserved");
-    const outPath = path.join(session.absoluteRoot, `${name}.png`);
     const captured = await deps.captureSettled({
       serial: input.serial,
-      outPath,
+      outPath: path.join(session.absoluteRoot, `${name}.png`),
       maxTries: ROUTE_CAPTURE.maxTries,
       intervalMs: ROUTE_CAPTURE.intervalMs,
       comparison: SETTLE_COMPARISON,
@@ -890,105 +903,93 @@ export async function executeNavigateToSceneTarget(
     }
     return receipt;
   };
-  const setTerminal = (reason: NavigationTargetStopReason, detail: string) => {
-    if (terminalReason === null || reason === "cleanup_failed") {
-      terminalReason = reason;
-      terminalDetail = detail;
-    }
+  const sealRoute = () => {
+    if (!execution || routeSealed) return;
+    routeSealed = true;
+    const trace = execution.finish(routeStatus);
+    result.routeTraces = [trace];
+    result.actions = trace.waypoints.flatMap((waypoint) => waypoint.actions.map((request, index) => ({
+      seq: waypoint.seq,
+      request,
+      ack: waypoint.actionReceipts[index],
+      settle: waypoint.settle,
+      ...(waypoint.meta ? { routeMeta: waypoint.meta } : {}),
+    })));
+  };
+  const failStep = (step: RelativeRouteStepOutcome): never => {
+    routeStatus = step.status === "settled" ? "controller_stop" : step.status;
+    const trace = { status: routeStatus, waypoints: [], usage: { actions: 0, waypoints: 0, holdMs: 0, dragPx: 0, durationMs: 0 } } as RelativeRouteTrace;
+    throw new NavigationTargetStop(routeStopReason(trace), `shared camera route stopped with ${step.status}`);
   };
 
   try {
     const initialScene = await queryAndSelectScene(input, deps, null);
     rememberScene(initialScene);
-
     const bound = await deps.bindQemuWindow(input.serial);
     if (!bound.ok) throw new NavigationTargetStop(bound.code, bound.detail);
     qemu = bound.binding;
-    if (!exactQemuGeometry(qemu)) {
-      throw new NavigationTargetStop("binding_failed", "qemu binding lacks exact measured x/y/width/height/scale geometry");
-    }
+    if (!exactQemuGeometry(qemu)) throw new NavigationTargetStop("binding_failed", "qemu binding lacks exact measured x/y/width/height/scale geometry");
     result.qemuBinding = qemu;
 
     const ownerNonceHash = crypto.createHash("sha256").update(deps.randomId()).digest("hex");
-    const prospectiveSession: ReservedArtifactSession = {
+    const prospective: ReservedArtifactSession = {
       runId: deps.randomId(),
       absoluteRoot: assertExternalCapturePath(input.outDir),
       ownerNonceHash,
     };
     if (input.action === "calibrate") {
-      const preflightInput = routeInput(
-        input,
-        initialScene,
-        qemu,
-        prospectiveSession,
-        "0".repeat(64),
-        input.motionPolicy.maxDurationSec * 1000,
-      );
-      const worstCaseGroups = [
+      const preflight = routeInput(input, initialScene, qemu, prospective, "0".repeat(64), maximumDurationMs);
+      const groups = [
         [{ kind: "look_drag", dxPx: input.motionPolicy.maxDragPxPerAction, dyPx: 0 } as RelativeCameraAction],
         ...CALIBRATION_SCHEDULE.map((step) => [step.action]),
       ];
-      const estimatedRouteMs = estimateRelativeRouteDurationMs(preflightInput, worstCaseGroups);
-      if (!calibrationScheduleFitsPolicy(input)
-        || !Number.isFinite(estimatedRouteMs)
-        || operationElapsedMs() + estimatedRouteMs + CALIBRATION_NON_ROUTE_RESERVE_MS
-          > input.motionPolicy.maxDurationSec * 1000) {
+      const estimated = estimateRelativeRouteDurationMs(preflight, groups);
+      if (!calibrationScheduleFitsPolicy(input) || !Number.isFinite(estimated)
+        || elapsedMs() + estimated + CALIBRATION_NON_ROUTE_RESERVE_MS > maximumDurationMs) {
         result.refusalReason = "insufficient_budget";
-        throw new NavigationTargetStop(
-          "budget_exhausted",
-          "calibration budget cannot admit guide off/on, acquisition rebaseline, 24 settled trial/restore waypoints, and cleanup",
-        );
+        throw new NavigationTargetStop("budget_exhausted", "calibration budget cannot admit guide work, acquisition, 24 trial/restore waypoints, and cleanup");
       }
     }
-
-    session = await deps.reserveArtifactSession(prospectiveSession.absoluteRoot, prospectiveSession.runId, ownerNonceHash);
-    if (session.runId !== prospectiveSession.runId || session.ownerNonceHash !== ownerNonceHash
-      || path.resolve(session.absoluteRoot) !== path.resolve(prospectiveSession.absoluteRoot)) {
-      throw new NavigationTargetStop("binding_failed", "reserved artifact session does not match the requested external session identity");
+    session = await deps.reserveArtifactSession(prospective.absoluteRoot, prospective.runId, ownerNonceHash);
+    if (session.runId !== prospective.runId || session.ownerNonceHash !== ownerNonceHash
+      || path.resolve(session.absoluteRoot) !== path.resolve(prospective.absoluteRoot)) {
+      throw new NavigationTargetStop("binding_failed", "reserved artifact session does not match the requested identity");
     }
 
     const guideOff = await capture("guide-off");
     result.captures.guideOff = guideOff;
-    const offMeasured = await immutableGuideMeasurement(guideOff, input, deps);
-    if (!guideIsAbsent(offMeasured)) {
-      throw new NavigationTargetStop("guide_not_acquired", "guide-off frame contains one or more authored guide colors");
+    if (!guideIsAbsent(await immutableGuideMeasurement(guideOff, input, deps))) {
+      throw new NavigationTargetStop("guide_not_acquired", "guide-off frame contains authored guide colors");
     }
-
-    const showRequestId = deps.randomId();
+    finalHideNeeded = true;
     guideMayHaveApplied = true;
-    const show = await deps.requestGuide(guideRequestFor(input, scene!, showRequestId, "show"));
+    const show = await deps.requestGuide(guideRequestFor(input, scene!, deps.randomId(), "show"));
     result.guideTransitions.show = show;
     result.guideTransitions.transactions.push(show);
     if (!show.ok) {
-      guideCompensated = show.actionReceipts.some((receipt) =>
-        receipt.action === "navigation_guide_invalidation_broadcast" && receipt.status === "applied");
-      if (guideCompensated) {
-        result.cleanup.hideTransactions++;
+      if (show.cleanupProven && show.terminalGuideState === "hidden") {
         finalHideNeeded = false;
-      } else {
-        finalHideNeeded = true;
+        hiddenProof = show;
+        result.cleanup.guideHide = show;
+        result.cleanup.hideTransactions++;
       }
       throw new NavigationTargetStop("guide_not_acquired", show.detail);
     }
-    finalHideNeeded = true;
 
-    let guideOn = await capture("guide-on", guideOff.sha256!);
+    // Equal bytes are valid settled evidence when both detectors say the guide is absent.
+    let guideOn = await capture("guide-on");
     result.captures.guideOn = guideOn;
     let measured = await immutableGuideMeasurement(guideOn, input, deps);
-    if (measured.guide) lastVisibleCapture = guideOn;
-    if (guideOn.sha256 === guideOff.sha256) {
-      throw new NavigationTargetStop("guide_not_acquired", "guide SHOW produced no exact off/on frame delta");
+    if (measured.guide && guideOn.sha256 === guideOff.sha256) {
+      throw new NavigationTargetStop("guide_not_acquired", "guide detector contradicted byte-identical off/on frames");
     }
 
     const application = scene!.output.applicationRuntimeBinding as ApplicationRuntimeBinding;
     const cameraProof = await deps.readCameraCalibrationProof(input.serial, application.liveIdentity.bootId);
     if (!cameraProof.ok) {
-      result.calibrationStatus = cameraProof.code === "missing"
-        ? "missing"
-        : cameraProof.code === "stale" ? "stale" : "quality_rejected";
+      result.calibrationStatus = cameraProof.code === "missing" ? "missing" : cameraProof.code === "stale" ? "stale" : "quality_rejected";
       result.refusalReason = result.calibrationStatus === "missing" || result.calibrationStatus === "stale"
-        ? result.calibrationStatus
-        : "quality_rejected";
+        ? result.calibrationStatus : "quality_rejected";
       throw new NavigationTargetStop("unsupported_backend", `fresh camera calibration is unavailable: ${cameraProof.detail}`);
     }
     const context = calibrationContext(scene!, qemu, guideOn, cameraProof.proof);
@@ -999,308 +1000,21 @@ export async function executeNavigateToSceneTarget(
       if (!stored) {
         result.calibrationStatus = "missing";
         result.refusalReason = "missing";
+      } else if (validateNavigationCalibration(stored, context).status === "valid") {
+        result.calibrationStatus = "valid";
+        approachCalibration = { status: "valid" };
       } else {
-        const validation = validateNavigationCalibration(stored, context);
-        if (validation.status === "valid") {
-          result.calibrationStatus = "valid";
-          approachCalibration = { status: "valid" };
-        } else {
-          result.calibrationStatus = "stale";
-          result.refusalReason = "stale";
-        }
+        result.calibrationStatus = "stale";
+        result.refusalReason = "stale";
       }
     }
 
-    const maximumDurationMs = input.motionPolicy.maxDurationSec * 1000;
-    const remainingForRoute = maximumDurationMs - operationElapsedMs();
-    if (remainingForRoute <= CLEANUP_RESERVE_MS) {
-      throw new NavigationTargetStop("budget_exhausted", "whole-action deadline leaves no route plus cleanup budget");
-    }
-    const boundRouteInput = routeInput(input, scene!, qemu, session, guideOn.sha256!, remainingForRoute);
-    if (input.action === "calibrate") {
-      const remainingSchedule = [
-        ...(measured.guide ? [] : [[{
-          kind: "look_drag",
-          dxPx: input.motionPolicy.maxDragPxPerAction,
-          dyPx: 0,
-        } as RelativeCameraAction]]),
-        ...CALIBRATION_SCHEDULE.map((step) => [step.action]),
-      ];
-      const scheduleEstimateMs = estimateRelativeRouteDurationMs(boundRouteInput, remainingSchedule)
-        + (measured.guide ? 0 : REACQUIRED_GUIDE_DELTA_RESERVE_MS);
-      if (!Number.isFinite(scheduleEstimateMs) || scheduleEstimateMs > remainingForRoute) {
-        result.refusalReason = "insufficient_budget";
-        throw new NavigationTargetStop(
-          "budget_exhausted",
-          "remaining whole-action budget cannot safely admit the calibration route and acquisition rebaseline",
-        );
-      }
-    }
+    const remainingRouteMs = maximumDurationMs - elapsedMs() - CLEANUP_RESERVE_MS;
+    if (remainingRouteMs <= CLEANUP_RESERVE_MS) throw new NavigationTargetStop("budget_exhausted", "whole-action deadline leaves no route, recovery, and cleanup budget");
+    const boundRoute = routeInput(input, scene!, qemu, session, guideOn.sha256!, remainingRouteMs);
     const adapter = deps.createActionAdapter(input.serial, qemu);
-    let processedWaypointCount = 0;
-    let waypointFileSequence = 0;
-    let controllerReason: NavigationTargetStopReason | null = null;
-    let controllerDetail = "controller stopped";
-    let acquisitionPending = measured.guide === null;
-    let repeatedAfterAcquisition = false;
-    let calibrationStepIndex = 0;
-    let approachProven = false;
-    let pendingApproachBaseline: { areaFraction: number; depthM: number } | null = null;
-    const samples: Record<CalibrationAxis, RegressionSample[]> = { yaw: [], pitch: [], forward: [] };
-    const closure: Record<CalibrationAxis, number[]> = { yaw: [], pitch: [], forward: [] };
-    const projections: ProjectionMeasurement[] = [];
-    const measurePose = (frame: MeasuredGuideFrame) => {
-      if (!frame.guide) return null;
-      const projection = projectGuide(frame.guide, cameraProof.proof.calibration);
-      projections.push(projection);
-      return { ...angularObservation(frame.guide, cameraProof.proof.calibration), depthM: projection.depthM };
-    };
-    let baseline = measurePose(measured);
-    const controllerState: NavigationStepState = {
-      centerBandPx: input.centerBandPx,
-      targetAreaFraction: input.targetAreaFraction,
-      motionPolicy: input.motionPolicy,
-      actionCount: 0,
-      elapsedMs: operationElapsedMs(),
-      cumulativeDragPx: 0,
-      cumulativeHoldMs: 0,
-      phase: acquisitionPending ? "acquire" : "center",
-      areaHistory: measured.guide ? [measured.guide.areaFraction] : [],
-    };
-
-    const repeatGuideDelta = async (
-      priorVisible: CaptureSettledReceipt,
-      decisionContext: { remainingMs(): number; signal: AbortSignal },
-    ) => {
-      if (!scene) throw new NavigationTargetStop("binding_failed", "scene binding disappeared before guide rebaseline");
-      if (decisionContext.signal.aborted || decisionContext.remainingMs() < REACQUIRED_GUIDE_DELTA_RESERVE_MS) {
-        throw new NavigationTargetStop("budget_exhausted", "whole-action deadline cannot admit the same-view guide rebaseline");
-      }
-      const intermediateHide = await deps.requestGuide(guideRequestFor(input, scene, deps.randomId(), "hide"));
-      if (decisionContext.signal.aborted) throw new NavigationTargetStop("budget_exhausted", "guide rebaseline HIDE exceeded the route deadline");
-      result.guideTransitions.transactions.push(intermediateHide);
-      result.cleanup.hideTransactions++;
-      if (!intermediateHide.ok) throw new NavigationTargetStop("cleanup_failed", intermediateHide.detail);
-      finalHideNeeded = false;
-      const rebaselineOff = await capture("guide-off-rebaseline", priorVisible.sha256!);
-      if (decisionContext.signal.aborted) throw new NavigationTargetStop("budget_exhausted", "guide-off rebaseline capture exceeded the route deadline");
-      result.captures.guideOffRebaseline = rebaselineOff;
-      const rebaselineOffMeasured = await immutableGuideMeasurement(rebaselineOff, input, deps);
-      if (!guideIsAbsent(rebaselineOffMeasured)) throw new NavigationTargetStop("guide_not_acquired", "guide persisted after rebaseline HIDE");
-      const repeatedShow = await deps.requestGuide(guideRequestFor(input, scene, deps.randomId(), "show"));
-      if (decisionContext.signal.aborted) throw new NavigationTargetStop("budget_exhausted", "repeated guide SHOW exceeded the route deadline");
-      result.guideTransitions.transactions.push(repeatedShow);
-      guideMayHaveApplied = true;
-      if (!repeatedShow.ok) {
-        guideCompensated = repeatedShow.actionReceipts.some((receipt) =>
-          receipt.action === "navigation_guide_invalidation_broadcast" && receipt.status === "applied");
-        if (guideCompensated) result.cleanup.hideTransactions++;
-        else finalHideNeeded = true;
-        throw new NavigationTargetStop("guide_not_acquired", repeatedShow.detail);
-      }
-      finalHideNeeded = true;
-      const rebaselineOn = await capture("guide-on-rebaseline", rebaselineOff.sha256!);
-      if (decisionContext.signal.aborted) throw new NavigationTargetStop("budget_exhausted", "guide-on rebaseline capture exceeded the route deadline");
-      result.captures.guideOnRebaseline = rebaselineOn;
-      const remeasured = await immutableGuideMeasurement(rebaselineOn, input, deps);
-      if (!remeasured.guide || rebaselineOn.sha256 === rebaselineOff.sha256) {
-        throw new NavigationTargetStop("guide_not_acquired", "repeated same-view guide off/on delta was not proven");
-      }
-      repeatedAfterAcquisition = true;
-      guideOn = rebaselineOn;
-      lastVisibleCapture = rebaselineOn;
-      measured = remeasured;
-      baseline = measurePose(measured);
-    };
-
-    const decide = async (waypoints: readonly any[], decisionContext: { remainingMs(): number; signal: AbortSignal }) => {
-      try {
-        if (decisionContext.signal.aborted) {
-          controllerReason = "budget_exhausted";
-          controllerDetail = "route decision deadline was aborted";
-          return "stop" as const;
-        }
-        if (waypoints.length > processedWaypointCount) {
-          const waypoint = waypoints.at(-1)!;
-          const wasAcquisitionPending = acquisitionPending;
-          processedWaypointCount = waypoints.length;
-          const observed = await immutableGuideMeasurement(waypoint.settle, input, deps);
-          measured = observed;
-          if (observed.guide) lastVisibleCapture = waypoint.settle;
-          if (wasAcquisitionPending) result.captures.acquisition.push(waypoint.settle);
-          const previousScene = scene!;
-          const refreshed = await queryAndSelectScene(input, deps, previousScene);
-          rememberScene(refreshed);
-          if (!refreshed.crossQueryDrift?.withinPolicy) {
-            controllerReason = "scene_drift";
-            controllerDetail = "scene geometry exceeded the cross-query drift policy";
-            return "stop" as const;
-          }
-
-          if (input.action === "navigate"
-            && waypoint.actions.length === 1
-            && waypoint.actions[0].kind === "key_hold"
-            && waypoint.actions[0].key === "w") {
-            const receipt = waypoint.actionReceipts[0];
-            const afterProjection = measured.guide
-              ? projectGuide(measured.guide, cameraProof.proof.calibration)
-              : null;
-            if (approachCalibration.status === "valid"
-              && receipt?.status === "applied"
-              && pendingApproachBaseline
-              && measured.guide
-              && afterProjection?.status === "accepted"
-              && measured.guide.areaFraction > pendingApproachBaseline.areaFraction
-              && afterProjection.depthM < pendingApproachBaseline.depthM) {
-              approachProven = true;
-            }
-            pendingApproachBaseline = null;
-          }
-
-          if (acquisitionPending) {
-            if (!measured.guide) {
-              controllerReason = "guide_not_acquired";
-              controllerDetail = "guide was still absent after the bounded acquisition waypoint";
-              return "stop" as const;
-            }
-            await repeatGuideDelta(waypoint.settle, decisionContext);
-            acquisitionPending = false;
-            controllerState.phase = "center";
-          } else if (input.action === "calibrate") {
-            const step = CALIBRATION_SCHEDULE[calibrationStepIndex - 1];
-            if (!step || !measured.guide || !baseline) {
-              controllerReason = "guide_not_acquired";
-              controllerDetail = "calibration guide was lost at a settled waypoint";
-              return "stop" as const;
-            }
-            const observedPose = measurePose(measured)!;
-            if (step.kind === "trial") {
-              const x = step.action.kind === "look_drag"
-                ? step.axis === "yaw" ? step.action.dxPx : step.action.dyPx
-                : step.action.holdMs;
-              const y = step.axis === "yaw"
-                ? observedPose.yawDeg - baseline.yawDeg
-                : step.axis === "pitch"
-                  ? observedPose.pitchDeg - baseline.pitchDeg
-                  : baseline.depthM - observedPose.depthM;
-              samples[step.axis].push({ x, y });
-            } else {
-              const residual = step.axis === "yaw"
-                ? observedPose.yawDeg - baseline.yawDeg
-                : step.axis === "pitch"
-                  ? observedPose.pitchDeg - baseline.pitchDeg
-                  : observedPose.depthM - baseline.depthM;
-              closure[step.axis].push(residual);
-              baseline = observedPose;
-            }
-          }
-
-          controllerState.actionCount = waypoint.seq;
-          controllerState.cumulativeDragPx = waypoints.reduce((sum: number, candidate: any) => sum
-            + candidate.actions.reduce((inner: number, action: RelativeCameraAction) => inner
-              + (action.kind === "look_drag" ? Math.hypot(action.dxPx, action.dyPx) : 0), 0), 0);
-          controllerState.cumulativeHoldMs = waypoints.reduce((sum: number, candidate: any) => sum
-            + candidate.actions.reduce((inner: number, action: RelativeCameraAction) => inner
-              + (action.kind === "key_hold" ? action.holdMs : 0), 0), 0);
-          controllerState.elapsedMs = maximumDurationMs - Math.max(0, decisionContext.remainingMs());
-        }
-
-        if (input.action === "calibrate") {
-          if (acquisitionPending) {
-            const intent = decideNavigationStep(controllerState, { guide: null }, { status: "invalid" });
-            if (intent.kind !== "drag") {
-              controllerReason = intent.kind === "stop" ? intent.reason : "guide_not_acquired";
-              controllerDetail = "calibration acquisition could not admit a search action";
-              return "stop" as const;
-            }
-            return [{ kind: "look_drag", dxPx: intent.dxPx, dyPx: intent.dyPx } as RelativeCameraAction];
-          }
-          if (calibrationStepIndex >= CALIBRATION_SCHEDULE.length) return "stop" as const;
-          return [CALIBRATION_SCHEDULE[calibrationStepIndex++].action];
-        }
-
-        const intent = decideNavigationStep(
-          controllerState,
-          { guide: measured.guide },
-          approachCalibration,
-        );
-        for (const claim of intent.achievedClaims) {
-          if (claim !== "free_camera_approached" || approachProven) claims.add(claim);
-        }
-        if (measured.guide) {
-          controllerState.areaHistory.push(measured.guide.areaFraction);
-          controllerState.lastError = measured.guide.error;
-        }
-        const admitNavigationAction = (action: RelativeCameraAction): RelativeCameraAction[] | "stop" => {
-          const actionGroups = [
-            ...waypoints.map((waypoint: any) => waypoint.actions as RelativeCameraAction[]),
-            [action],
-          ];
-          const nonRouteReserveMs = acquisitionPending ? REACQUIRED_GUIDE_DELTA_RESERVE_MS : 0;
-          if (estimateRelativeRouteDurationMs(boundRouteInput, actionGroups) + nonRouteReserveMs
-            > boundRouteInput.budgets.maxDurationMs) {
-            controllerReason = "budget_exhausted";
-            controllerDetail = "conservative whole-route estimate cannot admit another settled waypoint";
-            return "stop";
-          }
-          return [action];
-        };
-        if (intent.kind === "drag") {
-          controllerState.phase = intent.mode === "search_horizontal" ? "acquire" : "center";
-          return admitNavigationAction({ kind: "look_drag", dxPx: intent.dxPx, dyPx: intent.dyPx });
-        }
-        if (intent.kind === "hold") {
-          if (approachCalibration.status !== "valid") {
-            controllerReason = "unsupported_backend";
-            controllerDetail = "approach is disabled until exact-context calibration is valid";
-            return "stop" as const;
-          }
-          controllerState.phase = "approach";
-          const beforeProjection = measured.guide
-            ? projectGuide(measured.guide, cameraProof.proof.calibration)
-            : null;
-          if (!measured.guide || beforeProjection?.status !== "accepted") {
-            controllerReason = "guide_not_acquired";
-            controllerDetail = "approach refused because the guide projection was invalid before W input";
-            return "stop" as const;
-          }
-          pendingApproachBaseline = {
-            areaFraction: measured.guide.areaFraction,
-            depthM: beforeProjection.depthM,
-          };
-          return admitNavigationAction({ kind: "key_hold", key: "w", holdMs: intent.holdMs });
-        }
-        if (intent.kind === "calibration_required") {
-          controllerReason = "unsupported_backend";
-          controllerDetail = "approach is disabled until exact-context calibration is valid";
-          return "stop" as const;
-        }
-        if (intent.kind === "requery") {
-          controllerReason = intent.reason === "guide_disappeared" ? "guide_not_acquired" : "scene_drift";
-          controllerDetail = `navigation controller requested re-query: ${intent.reason}`;
-          return "stop" as const;
-        }
-        if (intent.kind === "stop") {
-          controllerReason = intent.reason;
-          controllerDetail = `navigation controller stopped: ${intent.reason}`;
-          return "stop" as const;
-        }
-        controllerReason = "cleanup_failed";
-        controllerDetail = "navigation controller entered cleanup state before terminal settlement";
-        return "stop" as const;
-      } catch (error: any) {
-        if (error instanceof NavigationTargetStop) {
-          controllerReason = error.reason;
-          controllerDetail = error.message;
-          return "stop" as const;
-        }
-        controllerReason = "binding_failed";
-        controllerDetail = error?.message ?? String(error);
-        return "stop" as const;
-      }
-    };
-
-    const trace = await executeRelativeCameraRoute(boundRouteInput, decide, {
+    let waypointSequence = 0;
+    execution = createRelativeRouteExecution(boundRoute, {
       applyRelativeAction: adapter.applyRelativeAction,
       sampleContinuity: () => deps.sampleContinuity({
         serial: application.serial,
@@ -1311,40 +1025,137 @@ export async function executeNavigateToSceneTarget(
         pidStartTicks: application.foregroundProcess.pidStartTicks,
         allowedResumedComponents: [application.foregroundProcess.component],
       }),
-      captureSettled: async (capturePath, context) => {
-        if (context.remainingMs() <= 0) throw new Error("route capture deadline exhausted");
-        const captured = await deps.captureSettled({
+      captureSettled: async (capturePath, deadline) => {
+        if (deadline.remainingMs() <= 0) throw new Error("route capture deadline exhausted");
+        return (await deps.captureSettled({
           serial: input.serial,
           outPath: capturePath,
           maxTries: ROUTE_CAPTURE.maxTries,
           intervalMs: ROUTE_CAPTURE.intervalMs,
           comparison: SETTLE_COMPARISON,
-          priorSha256: context.priorSha256,
-        });
-        return captured.receipt;
+          priorSha256: deadline.priorSha256,
+        })).receipt;
       },
-      allocateWaypointPath: () => path.join(session!.absoluteRoot, `waypoint-${String(++waypointFileSequence).padStart(4, "0")}.png`),
+      allocateWaypointPath: () => path.join(session!.absoluteRoot, `waypoint-${String(++waypointSequence).padStart(4, "0")}.png`),
       sleep: deps.sleep,
       monotonicNs: deps.monotonicNs,
     });
-    result.routeTraces.push(trace);
-    result.actions = trace.waypoints.flatMap((waypoint) => waypoint.actions.map((request, index) => ({
-      seq: waypoint.seq,
-      request,
-      ack: waypoint.actionReceipts[index],
-      settle: waypoint.settle,
-    })));
-    if (trace.status !== "controller_stop") {
-      throw new NavigationTargetStop(routeStopReason(trace), `shared camera route stopped with ${trace.status}`);
-    }
-    if (controllerReason && controllerReason !== "objective_satisfied") {
-      throw new NavigationTargetStop(controllerReason, controllerDetail);
-    }
 
-    if (input.action === "navigate") {
-      result.stopReason = "objective_satisfied";
-      result.executionStatus = "completed";
-    } else {
+    const controllerState: NavigationStepState = {
+      centerBandPx: input.centerBandPx,
+      targetAreaFraction: input.targetAreaFraction,
+      motionPolicy: input.motionPolicy,
+      actionCount: 0,
+      elapsedMs: elapsedMs(),
+      cumulativeDragPx: 0,
+      cumulativeHoldMs: 0,
+      phase: measured.guide ? "center" : "acquire",
+      areaHistory: measured.guide ? [measured.guide.areaFraction] : [],
+    };
+    const observeStep = async (step: RelativeRouteStepOutcome, action: RelativeCameraAction, acquisition: boolean) => {
+      const attempts = Math.max(step.actionReceipts.length, step.terminalActionFailure?.attemptedCount ?? 0, step.actionApplied ? 1 : 0);
+      attemptedGeneration += attempts;
+      if (step.status !== "settled" || !step.waypoint) failStep(step);
+      const waypoint = step.waypoint!;
+      settledGeneration = attemptedGeneration;
+      controllerState.actionCount++;
+      if (action.kind === "look_drag") controllerState.cumulativeDragPx += Math.hypot(action.dxPx, action.dyPx);
+      else controllerState.cumulativeHoldMs += action.holdMs;
+      controllerState.elapsedMs = elapsedMs();
+      const observed = await immutableGuideMeasurement(waypoint.settle, input, deps);
+      if (acquisition) result.captures.acquisition.push(waypoint.settle);
+      const refreshed = await queryAndSelectScene(input, deps, scene!);
+      rememberScene(refreshed);
+      if (!refreshed.crossQueryDrift?.withinPolicy) throw new NavigationTargetStop("scene_drift", "scene geometry exceeded cross-query drift policy");
+      return observed;
+    };
+
+    let repeatedAfterAcquisition = false;
+    const repeatGuideDelta = async (priorVisible: CaptureSettledReceipt) => {
+      if (!scene || !execution) throw new NavigationTargetStop("binding_failed", "route/scene disappeared before rebaseline");
+      if (maximumDurationMs - elapsedMs() < REACQUIRED_GUIDE_DELTA_RESERVE_MS + CLEANUP_RESERVE_MS) {
+        throw new NavigationTargetStop("budget_exhausted", "deadline cannot admit same-view rebaseline and cleanup");
+      }
+      result.cleanup.hideTransactions++;
+      const hide = await deps.requestGuide(guideRequestFor(input, scene, deps.randomId(), "hide"));
+      result.guideTransitions.transactions.push(hide);
+      if (!hide.cleanupProven || hide.terminalGuideState !== "hidden") {
+        finalHideNeeded = true;
+        throw new NavigationTargetStop("cleanup_failed", hide.ok ? "rebaseline HIDE lacked hidden cleanup proof" : hide.detail);
+      }
+      finalHideNeeded = false;
+      hiddenProof = hide;
+      const off = await capture("guide-off-rebaseline", priorVisible.sha256!);
+      result.captures.guideOffRebaseline = off;
+      if (!guideIsAbsent(await immutableGuideMeasurement(off, input, deps))) {
+        throw new NavigationTargetStop("guide_not_acquired", "guide persisted after rebaseline HIDE");
+      }
+      finalHideNeeded = true;
+      guideMayHaveApplied = true;
+      const repeatedShow = await deps.requestGuide(guideRequestFor(input, scene, deps.randomId(), "show"));
+      result.guideTransitions.transactions.push(repeatedShow);
+      if (!repeatedShow.ok) {
+        if (repeatedShow.cleanupProven && repeatedShow.terminalGuideState === "hidden") {
+          finalHideNeeded = false;
+          hiddenProof = repeatedShow;
+          result.cleanup.hideTransactions++;
+        }
+        throw new NavigationTargetStop("guide_not_acquired", repeatedShow.detail);
+      }
+      const on = await capture("guide-on-rebaseline", off.sha256!);
+      result.captures.guideOnRebaseline = on;
+      const onMeasured = await immutableGuideMeasurement(on, input, deps);
+      if (!onMeasured.guide || on.sha256 === off.sha256) throw new NavigationTargetStop("guide_not_acquired", "repeated same-view delta was not proven");
+      if (!execution.adoptSettledBaseline(on)) throw new NavigationTargetStop("binding_failed", "route rejected exact rebaseline capture");
+      repeatedAfterAcquisition = true;
+      guideOn = on;
+      measured = onMeasured;
+    };
+
+    while (!measured.guide) {
+      controllerState.phase = "acquire";
+      const intent = decideNavigationStep(controllerState, { guide: null }, { status: "invalid" });
+      if (intent.kind !== "drag") {
+        throw new NavigationTargetStop(intent.kind === "stop" ? intent.reason : "guide_not_acquired", "bounded horizontal acquisition exhausted");
+      }
+      const action: RelativeCameraAction = { kind: "look_drag", dxPx: intent.dxPx, dyPx: intent.dyPx };
+      measured = await observeStep(await execution.executeStep([action]), action, true);
+    }
+    if (result.captures.acquisition.length) await repeatGuideDelta(result.captures.acquisition.at(-1)!);
+
+    const samples: Record<CalibrationAxis, RegressionSample[]> = { yaw: [], pitch: [], forward: [] };
+    const closure: Record<CalibrationAxis, number[]> = { yaw: [], pitch: [], forward: [] };
+    const projections: ProjectionMeasurement[] = [];
+    const measurePose = (frame: MeasuredGuideFrame) => {
+      if (!frame.guide) return null;
+      const projection = projectGuide(frame.guide, cameraProof.proof.calibration);
+      projections.push(projection);
+      return { ...angularObservation(frame.guide, cameraProof.proof.calibration), depthM: projection.depthM };
+    };
+    let baseline = measurePose(measured);
+
+    if (input.action === "calibrate") {
+      for (const scheduled of CALIBRATION_SCHEDULE) {
+        measured = await observeStep(await execution.executeStep([scheduled.action]), scheduled.action, false);
+        if (!measured.guide || !baseline) throw new NavigationTargetStop("guide_not_acquired", "calibration guide was lost at a settled waypoint");
+        const observed = measurePose(measured)!;
+        if (scheduled.kind === "trial") {
+          const x = scheduled.action.kind === "look_drag"
+            ? scheduled.axis === "yaw" ? scheduled.action.dxPx : scheduled.action.dyPx
+            : scheduled.action.holdMs;
+          const y = scheduled.axis === "yaw" ? observed.yawDeg - baseline.yawDeg
+            : scheduled.axis === "pitch" ? observed.pitchDeg - baseline.pitchDeg
+              : baseline.depthM - observed.depthM;
+          samples[scheduled.axis].push({ x, y });
+        } else {
+          const residual = scheduled.axis === "yaw" ? observed.yawDeg - baseline.yawDeg
+            : scheduled.axis === "pitch" ? observed.pitchDeg - baseline.pitchDeg
+              : observed.depthM - baseline.depthM;
+          closure[scheduled.axis].push(residual);
+          baseline = observed;
+        }
+      }
+      sealRoute();
       const record: NavigationCalibrationRecord = {
         version: 1,
         contextKey,
@@ -1375,8 +1186,61 @@ export async function executeNavigateToSceneTarget(
       publishCalibration = { record, payload: result.calibration };
       result.stopReason = "objective_satisfied";
       result.executionStatus = "completed";
+    } else {
+      let approachProven = false;
+      let pendingApproach: { areaFraction: number; depthM: number } | null = null;
+      while (true) {
+        const intent = decideNavigationStep(controllerState, { guide: measured.guide }, approachCalibration);
+        for (const claim of intent.achievedClaims) {
+          if (claim !== "free_camera_approached" || approachProven) claims.add(claim);
+        }
+        if (measured.guide) {
+          controllerState.areaHistory.push(measured.guide.areaFraction);
+          controllerState.lastError = measured.guide.error;
+        }
+        let action: RelativeCameraAction;
+        if (intent.kind === "drag") {
+          controllerState.phase = intent.mode === "search_horizontal" ? "acquire" : "center";
+          action = { kind: "look_drag", dxPx: intent.dxPx, dyPx: intent.dyPx };
+        } else if (intent.kind === "hold") {
+          if (approachCalibration.status !== "valid") {
+            throw new NavigationTargetStop("unsupported_backend", "approach is disabled until exact-context calibration is valid");
+          }
+          controllerState.phase = "approach";
+          const projection = measured.guide ? projectGuide(measured.guide, cameraProof.proof.calibration) : null;
+          if (!measured.guide || projection?.status !== "accepted") {
+            throw new NavigationTargetStop("guide_not_acquired", "guide projection was invalid before W input");
+          }
+          pendingApproach = { areaFraction: measured.guide.areaFraction, depthM: projection.depthM };
+          action = { kind: "key_hold", key: "w", holdMs: intent.holdMs };
+        } else if (intent.kind === "calibration_required") {
+          throw new NavigationTargetStop("unsupported_backend", "approach is disabled until exact-context calibration is valid");
+        } else if (intent.kind === "requery") {
+          throw new NavigationTargetStop(intent.reason === "guide_disappeared" ? "guide_not_acquired" : "scene_drift", `navigation controller requested re-query: ${intent.reason}`);
+        } else if (intent.kind === "stop") {
+          if (intent.reason !== "objective_satisfied") throw new NavigationTargetStop(intent.reason, `navigation controller stopped: ${intent.reason}`);
+          break;
+        } else {
+          throw new NavigationTargetStop("cleanup_failed", "navigation controller entered cleanup before terminal settlement");
+        }
+        const step = await execution.executeStep([action]);
+        measured = await observeStep(step, action, false);
+        if (action.kind === "key_hold" && action.key === "w") {
+          const projection = measured.guide ? projectGuide(measured.guide, cameraProof.proof.calibration) : null;
+          if (approachCalibration.status === "valid" && step.actionReceipts[0]?.status === "applied" && pendingApproach
+            && measured.guide && projection?.status === "accepted"
+            && measured.guide.areaFraction > pendingApproach.areaFraction && projection.depthM < pendingApproach.depthM) {
+            approachProven = true;
+          }
+          pendingApproach = null;
+        }
+      }
+      sealRoute();
+      result.stopReason = "objective_satisfied";
+      result.executionStatus = "completed";
     }
   } catch (error: any) {
+    sealRoute();
     if (error instanceof NavigationTargetStop) {
       setTerminal(error.reason, error.message);
       if ((error as any).selectorReceipt) {
@@ -1394,38 +1258,52 @@ export async function executeNavigateToSceneTarget(
   } finally {
     if (guideMayHaveApplied) {
       result.cleanup.attempted = true;
-      result.captures.finalDiagnostic = lastVisibleCapture;
+      if (session && scene && finalHideNeeded) {
+        try {
+          const diagnostic = await capture("final-diagnostic");
+          const observed = await immutableGuideMeasurement(diagnostic, input, deps);
+          if (observed.guide && attemptedGeneration === settledGeneration) {
+            result.captures.finalDiagnostic = diagnostic;
+          } else if (terminalReason === null) {
+            setTerminal("guide_not_acquired", observed.guide
+              ? "last action did not have a settled post-action diagnostic generation"
+              : "fresh final diagnostic did not contain a valid guide");
+          }
+        } catch (error: any) {
+          if (terminalReason === null) {
+            setTerminal(error instanceof NavigationTargetStop ? error.reason : "unsettled", error?.message ?? String(error));
+          }
+        }
+      }
       if (finalHideNeeded && scene) {
         try {
+          result.cleanup.hideTransactions++;
           const hide = await deps.requestGuide(guideRequestFor(input, scene, deps.randomId(), "hide"));
           result.guideTransitions.hide = hide;
           result.guideTransitions.transactions.push(hide);
           result.cleanup.guideHide = hide;
-          result.cleanup.hideTransactions++;
-          finalHideNeeded = false;
-          if (!hide.ok) setTerminal("cleanup_failed", hide.detail);
+          if (hide.cleanupProven && hide.terminalGuideState === "hidden") {
+            finalHideNeeded = false;
+            hiddenProof = hide;
+          } else {
+            setTerminal("cleanup_failed", hide.ok ? "guide HIDE lacked exact hidden cleanup proof" : hide.detail);
+          }
         } catch (error: any) {
           setTerminal("cleanup_failed", `guide HIDE transaction failed: ${error?.message ?? String(error)}`);
         }
-      } else if (guideCompensated) {
-        result.cleanup.guideHide = {
-          ok: true,
-          ack: undefined,
-          actionReceipts: result.guideTransitions.show?.actionReceipts ?? [],
-          evidenceCeiling: "structural",
-          compensated: true,
-        } as any;
+      } else if (hiddenProof) {
+        result.cleanup.guideHide = hiddenProof;
       }
       if (session && scene) {
         result.cleanup.finalCleanAttempted = true;
         try {
-          const prior = lastVisibleCapture?.sha256 ?? result.captures.guideOff?.sha256 ?? undefined;
-          result.captures.finalClean = await capture("final-clean", prior ?? undefined);
+          result.captures.finalClean = await capture("final-clean", result.captures.finalDiagnostic?.sha256 ?? undefined);
         } catch (error: any) {
           setTerminal("cleanup_failed", error instanceof Error ? error.message : String(error));
         }
       }
-      if (result.cleanup.guideHide?.ok === true
+      if (result.cleanup.guideHide?.cleanupProven === true
+        && result.cleanup.guideHide.terminalGuideState === "hidden"
         && result.captures.finalDiagnostic?.status === "settled"
         && result.captures.finalClean?.status === "settled") {
         result.sameViewEvidence = "no_backend_action_requested";
@@ -1434,12 +1312,11 @@ export async function executeNavigateToSceneTarget(
   }
 
   if (terminalReason) {
-    result.executionStatus = "stopped";
+    if (result.executionStatus !== "error") result.executionStatus = "stopped";
     result.stopReason = terminalReason;
     result.error = { code: terminalReason, detail: terminalDetail ?? terminalReason };
   }
   result.achievedClaims = claimOrder(claims);
-
   if (!terminalReason && publishCalibration && session) {
     try {
       const receiptPath = path.join(session.absoluteRoot, `navigation-calibration-${publishCalibration.record.contextKey}.json`);
@@ -1453,11 +1330,7 @@ export async function executeNavigateToSceneTarget(
         sceneQueries: result.sceneQueries,
         evidenceCeiling: "structural",
       });
-      const registry = await deps.writeCalibrationRecord(
-        publishCalibration.record.contextKey,
-        publishCalibration.record,
-        receiptRef,
-      );
+      const registry = await deps.writeCalibrationRecord(publishCalibration.record.contextKey, publishCalibration.record, receiptRef);
       result.calibration!.receiptRef = receiptRef;
       result.calibration!.registry = registry;
       result.calibrationStatus = "written";

@@ -90,6 +90,8 @@ export type AgentBridgeNavigationGuideRequestResult =
   | {
       ok: true;
       ack: AgentBridgeNavigationGuideAck;
+      terminalGuideState: "visible" | "hidden";
+      cleanupProven: boolean;
       actionReceipts: AgentBridgeNavigationGuideActionReceipt[];
       evidenceCeiling: "structural";
     }
@@ -98,6 +100,8 @@ export type AgentBridgeNavigationGuideRequestResult =
       code: "bridge_unavailable" | "invalid_ack" | "guest_rejected" | "cleanup_failed";
       detail: string;
       ack?: AgentBridgeNavigationGuideAck;
+      terminalGuideState: "hidden" | "unknown";
+      cleanupProven: boolean;
       actionReceipts: AgentBridgeNavigationGuideActionReceipt[];
       evidenceCeiling: "structural";
     };
@@ -417,13 +421,25 @@ export async function requestAgentBridgeNavigationGuide(
     sleep: injected.sleep ?? sleep,
     monotonicNs: injected.monotonicNs ?? (() => process.hrtime.bigint()),
   };
-  const finish = (result: NavigationGuideTransactionResult): AgentBridgeNavigationGuideRequestResult => result.ok
-    ? { ok: true, ack: result.ack, actionReceipts, evidenceCeiling }
+  const finish = (
+    result: NavigationGuideTransactionResult,
+    provenHidden = trustedNavigationGuideHidden(result),
+  ): AgentBridgeNavigationGuideRequestResult => result.ok
+    ? {
+        ok: true,
+        ack: result.ack,
+        terminalGuideState: result.ack.guideState === "hidden" ? "hidden" : "visible",
+        cleanupProven: result.ack.guideState === "hidden" && result.ack.cleanupState === "completed",
+        actionReceipts,
+        evidenceCeiling,
+      }
     : {
         ok: false,
         code: result.code,
         detail: result.detail,
         ...(result.ack ? { ack: result.ack } : {}),
+        terminalGuideState: provenHidden ? "hidden" : "unknown",
+        cleanupProven: provenHidden,
         actionReceipts,
         evidenceCeiling,
       };
@@ -433,6 +449,8 @@ export async function requestAgentBridgeNavigationGuide(
     ok: false,
     code: "bridge_unavailable",
     detail: inputError,
+    terminalGuideState: "unknown",
+    cleanupProven: false,
     actionReceipts,
     evidenceCeiling,
   };
@@ -486,11 +504,13 @@ export async function requestAgentBridgeNavigationGuide(
       code: "cleanup_failed",
       detail: `${primary.code}: ${primary.detail}; navigation-guide invalidation did not prove bounded hidden cleanup`,
       ...(primary.ack ? { ack: primary.ack } : {}),
+      terminalGuideState: "unknown",
+      cleanupProven: false,
       actionReceipts,
       evidenceCeiling,
     };
   }
-  return finish(primary);
+  return finish(primary, true);
 }
 
 export interface AgentBridgeSceneSnapshotFetchInput {

@@ -367,6 +367,8 @@ test("navigation-guide transport catches a broadcast that omits an identity or f
 
   assert.equal(result.ok, true);
   assert.equal(result.evidenceCeiling, "structural");
+  assert.equal(result.terminalGuideState, "visible");
+  assert.equal(result.cleanupProven, false);
   assert.deepEqual(result.ack, expectedAck);
   assert.deepEqual(fake.calls[0], {
     kind: "text",
@@ -420,6 +422,8 @@ test("navigation-guide transport accepts an exact hide acknowledgement", async (
   const result = await guideAdapter()("/fixture/adb", request, fake.deps);
 
   assert.equal(result.ok, true);
+  assert.equal(result.terminalGuideState, "hidden");
+  assert.equal(result.cleanupProven, true);
   assert.deepEqual(result.ack, expectedAck);
   assert.equal(result.ack.outcome, "hidden");
   assert.equal(result.ack.guideState, "hidden");
@@ -590,6 +594,8 @@ test("navigation-guide transport orders a newer hide after a delayed show timeou
 
   assert.equal(result.ok, false);
   assert.equal(result.code, "bridge_unavailable", "a successful invalidation cannot erase the timed-out show result");
+  assert.equal(result.terminalGuideState, "hidden");
+  assert.equal(result.cleanupProven, true);
   const broadcasts = calls.filter((call) => call.kind === "text" && call.args.includes("broadcast"));
   assert.equal(broadcasts.length, 2, "one failed show triggers exactly one non-recursive hide");
   assert.ok(broadcasts[0].args.some((arg, index) => arg === "mode" && broadcasts[0].args[index + 1] === "show"));
@@ -667,6 +673,8 @@ test("navigation-guide transport keeps invalidation ack cleanup failure terminal
   const result = await guideAdapter()("/fixture/adb", request, fake.deps);
   assert.equal(result.ok, false);
   assert.equal(result.code, "cleanup_failed");
+  assert.equal(result.terminalGuideState, "unknown");
+  assert.equal(result.cleanupProven, false);
   assert.deepEqual(result.actionReceipts.slice(3).map((receipt) => [receipt.action, receipt.status]), [
     ["navigation_guide_invalidation_broadcast", "applied"],
     ["navigation_guide_invalidation_ack_pull", "applied"],
@@ -700,6 +708,8 @@ test("navigation-guide transport catches an unbounded poll or logcat-shaped fall
   });
   assert.equal(result.ok, false);
   assert.equal(result.code, "cleanup_failed");
+  assert.equal(result.terminalGuideState, "unknown");
+  assert.equal(result.cleanupProven, false);
   assert.equal(pulls, 6, "the original and one compensating transaction each keep the three-poll bound");
   assert.equal(sleeps, 4);
   assert.equal(calls.some((call) => call.args.includes("logcat")), false);
@@ -1055,6 +1065,10 @@ function targetFake(input, options = {}) {
   let guideVisible = false;
   let guideMayHaveApplied = false;
   let acquired = options.initialGuideAbsent !== true;
+  let showCalls = 0;
+  let releaseRepeatedShow;
+  let markRepeatedShowStarted;
+  const repeatedShowStarted = new Promise((resolve) => { markRepeatedShowStarted = resolve; });
   let actionCount = 0;
   let hideCalls = 0;
   let captureCount = 0;
@@ -1129,7 +1143,7 @@ function targetFake(input, options = {}) {
     if (action.kind === "look_drag") {
       pose.yawDeg += action.dxPx * (options.yawSlope ?? 0.1);
       pose.pitchDeg += action.dyPx * (options.pitchSlope ?? 0.1);
-      if (options.initialGuideAbsent) acquired = true;
+      if (options.initialGuideAbsent && actionCount >= (options.acquireAfterActions ?? 1)) acquired = true;
     } else if (action.key === "w") pose.depthM -= action.holdMs * (options.forwardSlope ?? 0.005);
     else if (action.key === "s") pose.depthM += action.holdMs * (options.forwardSlope ?? 0.005);
     if (options.restoreDriftAtAction === actionCount) pose.yawDeg += 1;
@@ -1197,14 +1211,16 @@ function targetFake(input, options = {}) {
           frame: Buffer.from("failed"),
         };
       }
-      const snapshot = {
-        captureCount,
-        guideVisible,
-        acquired,
-        yawDeg: pose.yawDeg,
-        pitchDeg: pose.pitchDeg,
-        depthM: pose.depthM,
-      };
+      const snapshot = options.staticInitialGuideFrames && captureCount <= 2
+        ? { guideVisible: false, acquired: false, yawDeg: 0, pitchDeg: 0, depthM: pose.depthM }
+        : {
+            captureCount,
+            guideVisible,
+            acquired,
+            yawDeg: pose.yawDeg,
+            pitchDeg: pose.pitchDeg,
+            depthM: pose.depthM,
+          };
       const bytes = Buffer.from(JSON.stringify(snapshot), "utf8");
       artifacts.set(captureInput.outPath, bytes);
       return { receipt: settledCaptureReceipt(captureInput.outPath, bytes), frame: Buffer.from(bytes) };
@@ -1215,6 +1231,12 @@ function targetFake(input, options = {}) {
       assert.equal(request.pollMs, 100);
       assert.equal(request.stabilityReads, 2);
       if (request.mode === "show") {
+        showCalls++;
+        if (options.delayRepeatedShow && showCalls === 2) {
+          markRepeatedShowStarted();
+          await new Promise((resolve) => { releaseRepeatedShow = resolve; });
+          events.push("guide:show:released");
+        }
         guideMayHaveApplied = true;
         guideVisible = true;
         if (options.showFailure) {
@@ -1223,6 +1245,8 @@ function targetFake(input, options = {}) {
             ok: false,
             code: options.showFailureCompensated === false ? "bridge_unavailable" : "invalid_ack",
             detail: "fixture show failed",
+            terminalGuideState: "unknown",
+            cleanupProven: false,
             actionReceipts: options.showFailureCompensated === false ? [] : [{
               action: "navigation_guide_invalidation_broadcast",
               status: "applied",
@@ -1240,11 +1264,20 @@ function targetFake(input, options = {}) {
           ok: false,
           code: "cleanup_failed",
           detail: "fixture hide failed",
+          terminalGuideState: "unknown",
+          cleanupProven: false,
           actionReceipts: [],
           evidenceCeiling: "structural",
         };
       }
-      return { ok: true, ack: guideAck(request), actionReceipts: [], evidenceCeiling: "structural" };
+      return {
+        ok: true,
+        ack: guideAck(request),
+        terminalGuideState: request.mode === "show" ? "visible" : "hidden",
+        cleanupProven: request.mode === "hide",
+        actionReceipts: [],
+        evidenceCeiling: "structural",
+      };
     },
     detectColorKeys: async (imagePath) => {
       events.push(`detect:${path.basename(imagePath)}`);
@@ -1319,6 +1352,9 @@ function targetFake(input, options = {}) {
     get hideCalls() { return hideCalls; },
     get guideMayHaveApplied() { return guideMayHaveApplied; },
     get queryCount() { return queryIndex; },
+    repeatedShowStarted,
+    releaseRepeatedShow() { releaseRepeatedShow?.(); },
+    get guideVisible() { return guideVisible; },
   };
 }
 
@@ -1480,6 +1516,77 @@ test("navigate orchestration never forwards an initial in-band free-camera claim
   }
 });
 
+test("byte-identical absent guide-off/on frames run a bounded horizontal acquisition series and then repeat the same-view delta", async () => {
+  const input = targetInput("navigate");
+  const fake = targetFake(input, {
+    initialDepthM: 2,
+    initialGuideAbsent: true,
+    staticInitialGuideFrames: true,
+    acquireAfterActions: 3,
+    yawSlope: 0,
+  });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+  assert.equal(result.executionStatus, "completed");
+  assert.equal(result.stopReason, "objective_satisfied");
+  assert.equal(result.captures.guideOff.sha256, result.captures.guideOn.sha256,
+    "byte identity is detector evidence, not an automatic acquisition failure");
+  assert.equal(result.captures.acquisition.length, 3);
+  assert.equal(fake.actionCount, 3);
+  assert.deepEqual(fake.events.filter((event) => event.startsWith("action:")), [
+    "action:drag:120,0",
+    "action:drag:120,0",
+    "action:drag:120,0",
+  ]);
+  assert.deepEqual(fake.events.filter((event) => event === "guide:show" || event === "guide:hide"), [
+    "guide:show", "guide:hide", "guide:show", "guide:hide",
+  ]);
+  const acquired = fake.events.findIndex((event) => event.startsWith("capture:waypoint-0003"));
+  const rebaselineOff = fake.events.findIndex((event) => event.startsWith("capture:guide-off-rebaseline"));
+  const repeatedShow = fake.events.indexOf("guide:show", fake.events.indexOf("guide:show") + 1);
+  const rebaselineOn = fake.events.findIndex((event) => event.startsWith("capture:guide-on-rebaseline"));
+  assert.ok(acquired < rebaselineOff && rebaselineOff < repeatedShow && repeatedShow < rebaselineOn);
+});
+
+test("a timed-out repeated SHOW is drained before result cleanup and cannot mutate guide or input afterward", async () => {
+  const input = targetInput("navigate");
+  const fake = targetFake(input, {
+    initialDepthM: 2,
+    initialGuideAbsent: true,
+    yawSlope: 0,
+    delayRepeatedShow: true,
+  });
+  const originalSetTimeout = globalThis.setTimeout;
+  let operationSettled = false;
+  let result;
+  try {
+    globalThis.setTimeout = (callback, delay, ...args) => originalSetTimeout(
+      callback,
+      typeof delay === "number" && delay > 1_000 ? 1 : delay,
+      ...args,
+    );
+    const operation = executeNavigateToSceneTarget(input, fake.deps);
+    operation.then(() => { operationSettled = true; }, () => { operationSettled = true; });
+    await fake.repeatedShowStarted;
+    await new Promise((resolve) => originalSetTimeout(resolve, 20));
+    const settledBeforeRelease = operationSettled;
+    fake.releaseRepeatedShow();
+    result = await operation;
+    await new Promise((resolve) => originalSetTimeout(resolve, 20));
+    assert.equal(settledBeforeRelease, false, "the operation must drain an in-flight SHOW before it returns");
+  } finally {
+    fake.releaseRepeatedShow();
+    globalThis.setTimeout = originalSetTimeout;
+  }
+
+  assert.equal(fake.guideVisible, false, "cleanup must run after any SHOW that actually applied");
+  const releaseIndex = fake.events.indexOf("guide:show:released");
+  const finalHideIndex = fake.events.lastIndexOf("guide:hide");
+  assert.ok(releaseIndex >= 0 && releaseIndex < finalHideIndex);
+  assert.equal(fake.events.slice(finalHideIndex + 1).some((event) => event.startsWith("action:")), false);
+  assert.equal(result.cleanup.guideHide.cleanupProven, true);
+});
+
 test("navigate orchestration catches reordered capture/input/cleanup and retains independent achieved claims", async () => {
   const input = targetInput("navigate");
   const fake = targetFake(input, { initialDepthM: 2.2 });
@@ -1491,7 +1598,8 @@ test("navigate orchestration catches reordered capture/input/cleanup and retains
   assert.equal(result.actions.length, 1);
   assert.deepEqual(result.actions[0].request, { kind: "key_hold", key: "w", holdMs: 100 });
   assert.equal(result.actions[0].settle.status, "settled");
-  assert.equal(result.captures.finalDiagnostic.sha256, result.actions[0].settle.sha256);
+  assert.notEqual(result.captures.finalDiagnostic.sha256, result.actions[0].settle.sha256,
+    "the final diagnostic must be a fresh post-action settled capture");
   assert.equal(result.captures.finalClean.status, "settled");
   assert.equal(result.sameViewEvidence, "no_backend_action_requested");
   assert.equal(result.evidenceCeiling, "structural");
@@ -1506,8 +1614,11 @@ test("navigate orchestration catches reordered capture/input/cleanup and retains
   assert.ok(first("capture:guide-on") < first("detect:guide-on"));
   assert.ok(first("read-calibration-registry") < first("action:hold:w:100"));
   assert.ok(first("action:hold:w:100") < first("capture:waypoint-0001"));
-  assert.ok(first("capture:waypoint-0001") < fake.events.lastIndexOf("guide:hide"));
+  assert.ok(first("capture:waypoint-0001") < first("capture:final-diagnostic"));
+  assert.ok(first("capture:final-diagnostic") < fake.events.lastIndexOf("guide:hide"));
   assert.ok(fake.events.lastIndexOf("guide:hide") < first("capture:final-clean"));
+  assert.equal(fake.events[first("capture:final-diagnostic")], "capture:final-diagnostic.png:none");
+  assert.equal(fake.events[first("capture:final-clean")], `capture:final-clean.png:${result.captures.finalDiagnostic.sha256}`);
   const actionIndex = first("action:hold:w:100");
   assert.equal(fake.events.slice(actionIndex + 1).find((event) => event.startsWith("action:")), undefined,
     "the only state-changing action is settled before any later action");
@@ -1540,6 +1651,9 @@ test("navigate orchestration retains an unsettled guide-on receipt and still hid
   assert.equal(fake.hideCalls, 1);
   assert.equal(result.cleanup.attempted, true);
   assert.equal(result.captures.finalClean.status, "settled");
+  assert.equal(result.captures.finalDiagnostic.status, "settled",
+    "cleanup may establish a new valid visible diagnostic after the failed initial settle");
+  assert.ok(fake.events.includes(`capture:final-clean.png:${result.captures.finalDiagnostic.sha256}`));
 });
 
 test("navigate orchestration catches input failure without erasing pre-action claims or terminal receipt evidence", async () => {
@@ -1552,8 +1666,11 @@ test("navigate orchestration catches input failure without erasing pre-action cl
   assert.equal(result.routeTraces[0].status, "action_failed");
   assert.equal(result.routeTraces[0].terminalActionFailure.terminalReceipt.status, "failed");
   assert.match(result.routeTraces[0].terminalActionFailure.terminalError, /fixture input failure/);
+  assert.equal(result.captures.finalDiagnostic, null,
+    "a failed action cannot reuse its pre-action guide frame as a terminal diagnostic");
   assert.equal(fake.hideCalls, 1);
   assert.equal(result.captures.finalClean.status, "settled");
+  assert.ok(fake.events.includes("capture:final-clean.png:none"));
 });
 
 test("navigate orchestration re-queries after a settled waypoint and catches cross-query scene drift", async () => {
@@ -1604,6 +1721,8 @@ test("navigate orchestration re-queries a guide lost after approach and never co
   assert.equal(result.stopReason, "guide_not_acquired");
   assert.deepEqual(result.achievedClaims, ["target_visible", "target_centered"]);
   assert.equal(fake.events.filter((event) => event.startsWith("action:hold:w")).length, 1);
+  assert.equal(result.captures.finalDiagnostic, null,
+    "guide loss after the last action cannot pair a pre-action frame with final cleanup");
   assert.equal(fake.hideCalls, 1);
 });
 
@@ -1722,17 +1841,22 @@ test("calibration reacquisition repeats a same-view guide off/on delta before al
   assert.equal(result.calibration.guideDelta.repeatedAfterAcquisition, true);
 });
 
-test("orchestration counts a Task 2 compensating HIDE exactly once and does not send a second cleanup HIDE", async () => {
+test("an applied invalidation broadcast without a validated hidden ack still requires one explicit cleanup HIDE", async () => {
   const input = targetInput("navigate");
   const fake = targetFake(input, { showFailure: true, showFailureCompensated: true });
   const result = await executeNavigateToSceneTarget(input, fake.deps);
   assert.equal(result.executionStatus, "stopped");
   assert.equal(result.stopReason, "guide_not_acquired");
   assert.equal(fake.guideMayHaveApplied, true);
-  assert.equal(fake.hideCalls, 0, "the adapter's one invalidation HIDE is the cleanup transaction");
+  assert.equal(fake.hideCalls, 1, "an applied broadcast alone is not proof that the guide is hidden");
   assert.equal(result.cleanup.hideTransactions, 1);
   assert.equal(result.cleanup.attempted, true);
+  assert.equal(result.cleanup.guideHide.cleanupProven, true);
+  assert.equal(result.sameViewEvidence, null);
   assert.equal(result.captures.finalClean.status, "settled");
+  assert.equal(result.captures.finalDiagnostic, null);
+  assert.ok(fake.events.includes("capture:final-clean.png:none"),
+    "an unproven internal invalidation cannot promote guide-off into a visible prior");
 });
 
 test("orchestration sends one explicit HIDE after an uncompensated SHOW failure and retains final-clean evidence", async () => {
