@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { makePng } from "./helpers/runreceipt-fixture.mjs";
+import * as boundaryExperiment from "../dist/boundaryexperiment.js";
 
 import {
   BoundaryPreparationFailure,
@@ -1266,16 +1267,22 @@ test("a hash-only initial drift pauses once, preserves both attempt artifacts, a
   const fake = fakeDependencies();
   const attemptContexts = [];
   const normalWaypoint = fakeDependencies().deps.executeWaypoint;
+  const firstCaptureBytes = makePng(96);
+  const driftSha = crypto.createHash("sha256").update(firstCaptureBytes).digest("hex");
   fake.deps.executeWaypoint = async (context) => {
     fake.calls.waypoint.push(context);
     attemptContexts.push(context);
-    if (attemptContexts.length === 1) return hashOnlyDriftExecution(context, "7".repeat(64), continuity());
+    if (attemptContexts.length === 1) {
+      fs.writeFileSync(context.capturePath, firstCaptureBytes, { mode: 0o600, flag: "wx" });
+      return hashOnlyDriftExecution(context, driftSha, continuity());
+    }
+    fs.writeFileSync(context.capturePath, makePng(128 + attemptContexts.length), { mode: 0o600 });
     return normalWaypoint(context);
   };
 
   const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
   const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "hash-only-drift"), {
-    route: route({ kind: "calibration_seed", waypoints: waypoints(1) }),
+    route: route({ kind: "calibration_seed", waypoints: waypoints(2) }),
   }));
   const paused = await orchestrator.execute({
     action: "step",
@@ -1285,14 +1292,14 @@ test("a hash-only initial drift pauses once, preserves both attempt artifacts, a
   assert.equal(paused.status, "needs_baseline_review");
   assert.equal(paused.structuralStop, null);
   assert.equal(paused.rebaselineReason, "reviewed_frame_bytes_changed_without_binding_drift");
-  assert.equal(paused.requiredReview.at(-1).captureSha256, "7".repeat(64));
+  assert.equal(paused.requiredReview.at(-1).captureSha256, driftSha);
   assert.equal(paused.requiredReview.at(-1).role, "transition");
   assert.equal(paused.usage.durationMs, 1);
 
   const resumed = await orchestrator.execute({
     action: "step",
     runId: prepared.runId,
-    reviewedPriorFrame: attestation("7".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+    reviewedPriorFrame: attestation(driftSha, "boundarylab_mixed", { witnessedGateM: 0 }),
   });
   assert.equal(resumed.status, "needs_waypoint_review");
   assert.equal(resumed.structuralStop, null);
@@ -1307,9 +1314,24 @@ test("a hash-only initial drift pauses once, preserves both attempt artifacts, a
   assert.match(attemptContexts[1].capturePath, /attempt-2/);
   assert.match(attemptContexts[1].stepLogPath, /attempt-2/);
   assert.match(attemptContexts[1].preflightLogPath, /attempt-2/);
+  assert.deepEqual(fs.readFileSync(attemptContexts[0].capturePath), firstCaptureBytes);
+  assert.equal(crypto.createHash("sha256").update(fs.readFileSync(attemptContexts[0].capturePath)).digest("hex"), driftSha);
+  const secondWaypoint = await orchestrator.execute({
+    action: "step",
+    runId: prepared.runId,
+    reviewedPriorFrame: attestation(resumed.requiredReview.at(-1).captureSha256, "boundarylab_mixed", { witnessedGateM: 0 }),
+  });
+  assert.equal(secondWaypoint.status, "needs_waypoint_review");
+  assert.equal(secondWaypoint.usage.waypoints, 2);
+  assert.equal(attemptContexts.length, 3);
+  assert.equal(attemptContexts[2].attemptOrdinal, 1);
+  assert.doesNotMatch(attemptContexts[2].capturePath, /attempt-/);
+  assert.doesNotMatch(attemptContexts[2].stepLogPath, /attempt-/);
+  assert.doesNotMatch(attemptContexts[2].preflightLogPath, /attempt-/);
+  assert.deepEqual(fs.readFileSync(attemptContexts[0].capturePath), firstCaptureBytes);
   const requiredReview = JSON.parse(fs.readFileSync(path.join(prepared.artifactRoot, "required-review.json"), "utf8"));
-  assert.deepEqual(requiredReview.map((item) => item.captureSha256), ["1".repeat(64), "2".repeat(64), "7".repeat(64), "3".repeat(64)]);
-  assert.deepEqual(requiredReview.slice(2).map((item) => item.path), [attemptContexts[0].capturePath, attemptContexts[1].capturePath]);
+  assert.deepEqual(requiredReview.map((item) => item.captureSha256), ["1".repeat(64), "2".repeat(64), driftSha, "3".repeat(64), "4".repeat(64)]);
+  assert.deepEqual(requiredReview.slice(2).map((item) => item.path), [attemptContexts[0].capturePath, attemptContexts[1].capturePath, attemptContexts[2].capturePath]);
   assert.equal(JSON.parse(fs.readFileSync(path.join(prepared.artifactRoot, "state.json"), "utf8")).rebaselineOrdinal, 1);
 });
 
@@ -1393,11 +1415,28 @@ test("a dynamic explicit-close probe event cannot rebaseline a hash-only frame d
   assert.deepEqual(state.probeIssues, ["event:explicit_close_returned"]);
 });
 
-test("a non-dynamic truncated probe diagnostic does not block an otherwise exact hash-only rebaseline", async (t) => {
+test("a non-dynamic truncated probe diagnostic resumes through the live movement predicate after hash-only rebaseline", async (t) => {
   const fake = fakeDependencies();
+  const normalWaypoint = fakeDependencies().deps.executeWaypoint;
+  let execution = 0;
   fake.deps.executeWaypoint = async (context) => {
     fake.calls.waypoint.push(context);
-    return hashOnlyDriftExecution(context, "7".repeat(64), continuity({ probeParse: "truncated" }));
+    execution += 1;
+    if (execution === 1) return hashOnlyDriftExecution(context, "7".repeat(64), continuity({ probeParse: "truncated" }));
+    const preflight = {
+      matches: true,
+      sha256: context.state.lastRequiredHash,
+      continuity: continuity({ probeParse: "truncated" }),
+    };
+    const permitted = waypointPreflightAllowsMovement(
+      preflight,
+      context.state.lastRequiredHash,
+      context.state.preparation.runtimeBinding,
+      context.state.preparation.applicationBinding,
+      context.state.input.scenario.entryRoute,
+    );
+    if (!permitted) return hashOnlyDriftExecution(context, "8".repeat(64), preflight.continuity);
+    return { ...(await normalWaypoint(context)), preflight, continuity: [preflight.continuity] };
   };
   const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
   const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "non-dynamic-truncated"), {
@@ -1411,6 +1450,13 @@ test("a non-dynamic truncated probe diagnostic does not block an otherwise exact
   const state = JSON.parse(fs.readFileSync(path.join(prepared.artifactRoot, "state.json"), "utf8"));
   assert.equal(state.rebaselineOrdinal, 1);
   assert.deepEqual(state.probeIssues, ["parse:truncated"]);
+  const resumed = await orchestrator.execute({
+    action: "step", runId: prepared.runId,
+    reviewedPriorFrame: attestation("7".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+  });
+  assert.equal(resumed.status, "needs_waypoint_review");
+  assert.equal(resumed.usage.waypoints, 1);
+  assert.equal(resumed.structuralStop, null);
 });
 
 test("zero-waypoint input uncertainty and action failure retain a transition frame, stop permanently, and cannot retry", async (t) => {
@@ -2007,6 +2053,10 @@ test("recovery candidates require the exact bound process and the exact expected
     ...exactPreflight,
     continuity: continuity({ probeParse: "truncated" }),
   }, "1".repeat(64), runtimeBinding, applicationBinding), false);
+  assert.equal(waypointPreflightAllowsMovement({
+    ...exactPreflight,
+    continuity: continuity({ probeParse: "truncated" }),
+  }, "1".repeat(64), runtimeBinding, applicationBinding, "manifest_mixed"), true);
 
   const dynamic = scenario("dynamic_full");
   assert.equal(recoveryFrameMatchesExpected(dynamic, attestation("a".repeat(64), "boundarylab_mixed")), false);
@@ -2029,6 +2079,29 @@ test("recovery candidates require the exact bound process and the exact expected
   assert.equal(recoveryReboundTupleChanged(applicationBinding, applicationBinding), false);
   assert.equal(recoveryReboundTupleChanged(applicationBinding, { ...applicationBinding, pid: 4343 }), true);
   assert.equal(recoveryReboundTupleChanged(applicationBinding, { ...applicationBinding, pidStartTicks: "9002" }), true);
+});
+
+test("the live preflight-drift trace charges elapsed monotonic preflight, health, and capture work", () => {
+  assert.equal(typeof boundaryExperiment.chargePreflightDriftDuration, "function");
+  const trace = boundaryExperiment.chargePreflightDriftDuration({
+    status: "binding_lost",
+    waypoints: [],
+    usage: { actions: 0, waypoints: 0, holdMs: 0, dragPx: 0, durationMs: 0 },
+    preMovementReviewDrift: true,
+  }, 1_000_000_000n, 1_001_500_001n);
+  assert.equal(trace.usage.durationMs, 2);
+  assert.equal(trace.preMovementReviewDrift, true);
+});
+
+test("live waypoint coverage markers are unique across a rebaseline retry and leave the next waypoint viable", () => {
+  assert.equal(typeof boundaryExperiment.waypointCoverageMarker, "function");
+  const first = boundaryExperiment.waypointCoverageMarker("a".repeat(64), 1, 1);
+  const retry = boundaryExperiment.waypointCoverageMarker("a".repeat(64), 1, 2);
+  const nextWaypoint = boundaryExperiment.waypointCoverageMarker("a".repeat(64), 2, 1);
+  assert.notEqual(first, retry);
+  assert.notEqual(retry, nextWaypoint);
+  assert.match(retry, /step_1_2$/);
+  assert.match(nextWaypoint, /step_2_1$/);
 });
 
 test("adjudicate stores one immutable route result and never promotes its evidence ceiling automatically", async (t) => {

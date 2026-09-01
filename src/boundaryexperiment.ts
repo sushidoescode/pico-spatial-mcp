@@ -1682,7 +1682,8 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           persistState(state);
           return terminalResponse(state);
         }
-        const attemptOrdinal = state.rebaselineOrdinal + 1;
+        const retryingInitialWaypoint = state.nextWaypoint === 0 && state.rebaselineOrdinal > 0;
+        const attemptOrdinal = retryingInitialWaypoint ? state.rebaselineOrdinal + 1 : 1;
         const attemptSuffix = attemptOrdinal === 1 ? "" : `-attempt-${attemptOrdinal}`;
         const capturePath = path.join(state.artifactRoot, "captures", `${100 + waypoint.seq}-waypoint-${waypoint.seq}${attemptSuffix}.png`);
         const stepLogPath = path.join(state.artifactRoot, `step-${100 + waypoint.seq}${attemptSuffix}-logcat-all.txt`);
@@ -2702,14 +2703,37 @@ export function waypointPreflightAllowsMovement(
   expectedSha256: string,
   runtimeBinding: RuntimeBindingReceipt,
   applicationBinding: BoundApplicationIdentity,
+  entryRoute: BoundaryScenario["entryRoute"] = "dynamic_full",
 ): boolean {
   return preflight.matches
     && preflight.sha256 === expectedSha256
     && recoveryContinuityMatchesBinding(preflight.continuity, runtimeBinding, applicationBinding)
-    && !["malformed", "truncated"].includes(preflight.continuity.probeParse)
-    && !["gap", "wrong_session", "wrong_generation"].includes(preflight.continuity.probeSequence)
-    && !preflight.continuity.probeEventsSincePrior.some((event) =>
-      event.kind === "explicit_close_requested" || event.kind === "explicit_close_returned");
+    && (entryRoute !== "dynamic_full" || (
+      !["malformed", "truncated"].includes(preflight.continuity.probeParse)
+      && !["gap", "wrong_session", "wrong_generation"].includes(preflight.continuity.probeSequence)
+      && !preflight.continuity.probeEventsSincePrior.some((event) =>
+        event.kind === "explicit_close_requested" || event.kind === "explicit_close_returned")
+    ));
+}
+
+export function chargePreflightDriftDuration(
+  routeTrace: Record<string, any>,
+  startedNs: bigint,
+  finishedNs: bigint,
+): Record<string, any> {
+  if (finishedNs < startedNs) throw new Error("monotonic preflight duration cannot be negative");
+  const existingDurationMs = Number(routeTrace.usage?.durationMs ?? 0);
+  if (!Number.isFinite(existingDurationMs) || existingDurationMs < 0) throw new Error("preflight drift trace published invalid duration usage");
+  const elapsedNs = finishedNs - startedNs;
+  const elapsedMs = elapsedNs === 0n ? 0 : Number((elapsedNs + 999_999n) / 1_000_000n);
+  return {
+    ...routeTrace,
+    usage: { ...routeTrace.usage, durationMs: existingDurationMs + elapsedMs },
+  };
+}
+
+export function waypointCoverageMarker(runId: string, waypointSeq: number, attemptOrdinal: number): string {
+  return `boundary_gap_${runId.slice(0, 12)}_step_${waypointSeq}_${attemptOrdinal}`;
 }
 
 async function dumpRelevantLogLines(
@@ -3070,7 +3094,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
       const live = state.preparation.privateRuntime as LiveBoundaryRuntime;
       const marker = `boundary_step_${state.runId.slice(0, 12)}_${waypoint.seq}_${context.attemptOrdinal}`;
       const coverageMarker = live.coverageMarker;
-      const nextCoverageMarker = `boundary_gap_${state.runId.slice(0, 12)}_step_${waypoint.seq}`;
+      const nextCoverageMarker = waypointCoverageMarker(state.runId, waypoint.seq, context.attemptOrdinal);
       const logPath = context.stepLogPath as string;
       const ownedLog = startOwnedLogWindow({
         adbPath: adb,
@@ -3103,7 +3127,9 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
             let captureError: string | undefined;
             let executionError: string | undefined;
             let decided = false;
+            let preflightStartedNs: bigint | null = null;
             try {
+              preflightStartedNs = process.hrtime.bigint();
               const collectedPreflight = await context.recaptureReviewedFrame() as Awaited<ReturnType<BoundaryExperimentDependencies["recaptureReviewedFrame"]>>;
               preflight = collectedPreflight;
               try {
@@ -3126,6 +3152,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                 state.lastRequiredHash,
                 state.preparation.runtimeBinding,
                 state.preparation.applicationBinding,
+                state.input.scenario.entryRoute,
               ) && preflightRuntimeHealth.status === "no_attributed_failure";
               if (!preflightExact) {
                 routeTrace = {
@@ -3179,6 +3206,9 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
               } catch (error) {
                 captureError = redactSensitiveText(error, [live.secret]);
               }
+            }
+            if (routeTrace?.preMovementReviewDrift && preflightStartedNs !== null) {
+              routeTrace = chargePreflightDriftDuration(routeTrace, preflightStartedNs, process.hrtime.bigint());
             }
             const continuity: ApplicationContinuitySample[] = routeTrace?.waypoints?.flatMap((entry: any) => [entry.continuityBefore, entry.continuityAfter])
               .filter((entry: any) => entry?.kind === "sampled")
