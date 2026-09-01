@@ -600,6 +600,66 @@ test("paired route attempt ledger retains the outbound and a failed inverse with
   assert.deepEqual(trace.terminalActionFailure, trace.terminalActionFailures[0]);
 });
 
+test("route attempt ledger classifies applied receipts with invalid binding evidence as failed terminal attempts", async () => {
+  const drag = { kind: "look_drag", dxPx: 40, dyPx: 0 };
+  const hold = { kind: "key_hold", key: "w", holdMs: 50 };
+  const cases = [
+    ["serial", drag, applied(drag, "emulator-5556")],
+    ["action kind", drag, { ...applied(drag), action: "key_hold" }],
+    ["window", drag, applied(drag, runtimeBinding.serial, {
+      hostWindow: { qemuWindowOwnerPid: 93014, qemuWindowId: runtimeBinding.qemuWindow.windowId },
+    })],
+    ["runtime", hold, applied(hold, runtimeBinding.serial, {
+      grpc: { ...applied(hold).ack.grpc, address: "127.0.0.1:9999" },
+    })],
+  ];
+
+  for (const [name, request, rawReceipt] of cases) {
+    let captures = 0;
+    const execution = navigation.createRelativeRouteExecution(
+      routeInput({ budgets: { ...defaultBudgets, maxActions: 1, maxWaypoints: 1 } }),
+      dependencies({
+        applyRelativeAction: async () => rawReceipt,
+        captureSettled: async (capturePath) => {
+          captures++;
+          return settled(capturePath);
+        },
+      }),
+    );
+
+    const step = await execution.executeStep([request]);
+    const trace = execution.finish("action_failed");
+
+    assert.equal(step.status, "action_failed", name);
+    assert.equal(step.actionApplied, false, name);
+    assert.equal(step.actionAttempts.length, 1, name);
+    const attempt = step.actionAttempts[0];
+    assert.deepEqual(attempt.identity, { executionId: "route-test", stepSeq: 1, actionIndex: 0 }, name);
+    assert.deepEqual(attempt.request, request, name);
+    assert.equal(attempt.action.status, "failed", name);
+    assert.deepEqual(attempt.action.evidence, rawReceipt, name);
+    assert.equal(attempt.action.evidence.status, "applied", name);
+    assert.match(attempt.action.detail, /action receipt binding mismatch/, name);
+    assert.deepEqual(attempt.settle, {
+      status: "not_reached",
+      evidence: null,
+      detail: "settlement was not reached",
+    }, name);
+    assert.equal(attempt.continuityAfter.status, "not_reached", name);
+    assert.equal(attempt.continuityAfter.evidence, null, name);
+    assert.equal(trace.usage.actions, 1, name);
+    assert.equal(trace.usage.waypoints, 0, name);
+    assert.equal(trace.actionAttempts.length, 1, name);
+    assert.deepEqual(trace.actionAttempts[0].identity, attempt.identity, name);
+    assert.equal(trace.terminalActionFailures.length, 1, name);
+    assert.equal(trace.terminalActionFailures[0].kind, "receipt_binding_mismatch", name);
+    assert.deepEqual(trace.terminalActionFailures[0].attemptIdentity, attempt.identity, name);
+    assert.deepEqual(trace.terminalActionFailures[0].terminalReceipt, rawReceipt, name);
+    assert.deepEqual(trace.terminalActionFailure, trace.terminalActionFailures[0], name);
+    assert.equal(captures, 0, name);
+  }
+});
+
 test("paired route step refuses before outbound when the exact inverse cannot fit the recovery reserve", async () => {
   assert.equal(typeof navigation.createRelativeRouteExecution, "function");
   let actions = 0;

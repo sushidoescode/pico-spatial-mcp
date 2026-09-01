@@ -943,7 +943,8 @@ export function createRelativeRouteExecution(
       const request = actions[actionIndex];
       if (!request) break;
       const receipt = receipts[actionIndex] ?? null;
-      const actionSucceeded = receipt?.status === "applied"
+      const terminalFailureAttempt = terminalFailure !== undefined && actionIndex === attemptedCount - 1;
+      const actionSucceeded = !terminalFailureAttempt && receipt?.status === "applied"
         && (request.kind !== "key_hold" || receipt.ack.releaseCertain === true);
       const detail = actionSucceeded
         ? null
