@@ -232,6 +232,22 @@ The current free-camera stack has the exact primitives the experiment needs:
   persists an external hash-checked capture, and caps the receipt at structural with LOOK required
   (`src/observation.ts:351-530,579-628`).
 
+Phase-1 execution added one measured correction on 2026-08-31. With macOS reporting the locked
+`loginwindow` as frontmost, an exact serial/discovery/qemu-bound 444 ms `W` RPC changed the canonical
+settled M0 frame to SHA-256 `d2b8af326f7983626807757f3a4cdb12e9601ea761c0cb5a25eb78b3f6e3b8a2`
+(LOOKed 1200 px derivative `a78bbfc0649da0afe3433b662a365f763b3685ff793d2e4f33925f4b538367f6`);
+the matching `S` RPC restored the prior canonical frame byte-for-byte at SHA-256
+`3dde24ba8ccdaa677a72c058d3df400b36ede059eefb90ccd111e71c4cb43771`
+(LOOKed derivative `dc8f91048994e762f760671495ce23b62754d78b26d415b82f10c302f76f7c1f`). The retained probe is under
+`/private/tmp/pico-immersive-phase1/cp3/probes/`. Therefore exact-bound gRPC key translation does not
+require host focus on this measured macOS lane, while CoreGraphics look-drag still fails closed
+without acknowledged qemu focus. Action RPC receipts remain structural; the settled LOOK supplies
+the rendered-effect judgment. Every CoreGraphics look action re-checks exact-bound focus at the
+moment of delivery, and route admission reserves the full 10-second focus-verification ceiling plus
+the 30-second drag ceiling; boundary execution has no second, unmetered focus preflight. A normally
+returned failed or release-uncertain action also becomes the trace's terminal failure, retaining
+all earlier receipts plus the terminal receipt when partial movement preceded the stop.
+
 The original MR navigation roadmap ranked `capture_settled` as Phase 1A and semantic snapshots as
 Phase 1B; both are now present. Its deferred Phase 1 item 3 is the bounded target-acquisition
 controller `navigate_to_scene_target` (`docs/superpowers/plans/2026-08-28-mr-agent-navigation-and-scene-understanding.md:901-918,957-970`).

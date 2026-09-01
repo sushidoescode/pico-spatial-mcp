@@ -118,7 +118,11 @@ export interface RelativeRouteTrace {
   terminalActionFailure?: TerminalCameraActionFailure;
 }
 
-export type CameraActionFailureKind = "adapter_exception" | "receipt_binding_mismatch";
+export type CameraActionFailureKind =
+  | "adapter_exception"
+  | "receipt_binding_mismatch"
+  | "reported_action_failure"
+  | "release_uncertain";
 
 export interface TerminalCameraActionFailure {
   kind: CameraActionFailureKind;
@@ -167,13 +171,37 @@ export class CameraActionExecutionError extends Error implements TerminalCameraA
   }
 }
 
+function failureFromReturnedReceipt(
+  kind: Extract<CameraActionFailureKind, "reported_action_failure" | "release_uncertain">,
+  actions: readonly RelativeCameraAction[],
+  receipts: readonly CameraActionReceipt[],
+  terminalIndex: number,
+): TerminalCameraActionFailure {
+  const terminalReceipt = receipts[terminalIndex];
+  const detail = typeof terminalReceipt.error === "string" && terminalReceipt.error.length > 0
+    ? terminalReceipt.error
+    : kind === "release_uncertain"
+      ? `camera action key release was not proven certain at index ${terminalIndex}`
+      : `camera action receipt reported status ${terminalReceipt.status} at index ${terminalIndex}`;
+  return {
+    kind,
+    receiptsSoFar: receipts.slice(0, terminalIndex),
+    terminalReceipt,
+    terminalError: detail,
+    attemptedCount: terminalIndex + 1,
+    attemptedAction: actions[terminalIndex],
+  };
+}
+
 interface ActionUsage {
   holdMs: number;
   dragPx: number;
 }
 
 const KEY_ACTION_TIMEOUT_RESERVE_MS = 18_800;
-const LOOK_ACTION_TIMEOUT_RESERVE_MS = 30_000;
+// One look action performs two serial focus probes (5 s each) immediately before
+// the bounded 30 s CoreGraphics drag. Keep admission at the full live ceiling.
+const LOOK_ACTION_TIMEOUT_RESERVE_MS = 40_000;
 const ROUTE_FINALIZATION_RESERVE_MS = 10_000;
 const WALK_KEYS = new Set(["w", "a", "s", "d", "q", "e"]);
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -668,11 +696,19 @@ export async function executeRelativeCameraRoute(
       usage.holdMs += groupUsage[index].holdMs;
       usage.dragPx += groupUsage[index].dragPx;
     }
-    const uncertain = actionReceipts.find((receipt, index) =>
+    const uncertainIndex = actionReceipts.findIndex((receipt, index) =>
       receipt.status === "release_uncertain"
       || (decision[index]?.kind === "key_hold" && receipt.ack.releaseCertain !== true));
-    if (uncertain) return finish("input_release_uncertain");
-    if (actionReceipts.length !== decision.length || actionReceipts.some((receipt) => receipt.status !== "applied")) {
+    if (uncertainIndex >= 0) {
+      terminalActionFailure = failureFromReturnedReceipt("release_uncertain", decision, actionReceipts, uncertainIndex);
+      return finish("input_release_uncertain");
+    }
+    const failedIndex = actionReceipts.findIndex((receipt) => receipt.status !== "applied");
+    if (failedIndex >= 0) {
+      terminalActionFailure = failureFromReturnedReceipt("reported_action_failure", decision, actionReceipts, failedIndex);
+      return finish("action_failed");
+    }
+    if (actionReceipts.length !== decision.length) {
       return finish("action_failed");
     }
 

@@ -334,7 +334,7 @@ export function registerGrpcTools(server: McpServer) {
         works: {
           screenshots: "streamScreenshot (live); display 0 = home env + 2D panels only",
           sensors: "setSensor / setPhysicalModel (accelerometer/gyro/etc.)",
-          keys_touch: "sendKey / sendTouch / sendMouse (drive 2D UI and keyboard-mapped controller buttons). CORRECTION 2026-08-08: sendKey w/a/s/d/q/e holds ALSO drive the free-cam WALK (translation) when the emulator window is frontmost — applies in ~0.5s plus an inertia tail, so settle-wait before judging captures. Rotation still needs the right-drag CGEvent lane (sendMouse does NOT rotate). See capture_orbit / capture_multiview.",
+          keys_touch: "sendKey / sendTouch / sendMouse (drive 2D UI and keyboard-mapped controller buttons). CORRECTION 2026-08-31: a locked-console W/S round trip established focus independence for the exact-bound gRPC key lane; A/D/Q/E share that endpoint-bound lane, while each rendered effect still requires a settled LOOK. Rotation needs acknowledged qemu focus plus the right-drag CGEvent lane (sendMouse does NOT rotate). See capture_orbit / capture_multiview.",
           xr_options: "setXrOptions / getXrOptions (passthrough coefficient, environment)",
           recenter: "xr_command RECENTER (accepted; effect unverified)",
         },

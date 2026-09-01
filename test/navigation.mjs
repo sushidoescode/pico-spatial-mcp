@@ -10,6 +10,7 @@ import {
   executeRelativeCameraRoute,
 } from "../dist/navigation.js";
 import {
+  createBoundCameraActionAdapter,
   createCameraActionBindingReceipt,
   selectQemuWindowBinding,
 } from "../dist/cameradrive.js";
@@ -638,6 +639,38 @@ test("conservative duration preflight reserves capture attempts, intervals, and 
   assert.equal(captureCount, 0);
 });
 
+test("a look drag is admitted only when the duration budget covers fresh focus verification and CGEvent delivery", async () => {
+  const exactConservativeMs = 51_210;
+
+  for (const [name, maxDurationMs, expectedStatus, expectedActions] of [
+    ["exact bound", exactConservativeMs, "controller_stop", 1],
+    ["one millisecond short", exactConservativeMs - 1, "budget_exhausted", 0],
+  ]) {
+    let appliedCount = 0;
+    let captureCount = 0;
+    const trace = await executeRelativeCameraRoute(
+      routeInput({
+        budgets: { ...defaultBudgets, maxDurationMs },
+      }),
+      (prior) => prior.length === 0 ? [{ kind: "look_drag", dxPx: 20, dyPx: 0 }] : "stop",
+      dependencies({
+        monotonicNs: () => 0n,
+        applyRelativeAction: async (action) => {
+          appliedCount++;
+          return applied(action);
+        },
+        captureSettled: async (capturePath) => {
+          captureCount++;
+          return settled(capturePath);
+        },
+      }),
+    );
+    assert.equal(trace.status, expectedStatus, name);
+    assert.equal(appliedCount, expectedActions, `${name} action count`);
+    assert.equal(captureCount, expectedActions, `${name} capture count`);
+  }
+});
+
 test("a four-action outer-gate group is admitted only at its exact conservative live-duration bound", async () => {
   const actions = [
     { kind: "key_hold", key: "w", holdMs: 5_000 },
@@ -733,6 +766,11 @@ test("uncertain paired release stops before settlement and no later recovery-lik
   assert.deepEqual(attemptedKeys, ["w"]);
   assert.equal(decisions, 1);
   assert.equal(captures, 0);
+  assert.equal(trace.terminalActionFailure.kind, "release_uncertain");
+  assert.deepEqual(trace.terminalActionFailure.receiptsSoFar, []);
+  assert.equal(trace.terminalActionFailure.terminalReceipt.status, "applied");
+  assert.equal(trace.terminalActionFailure.terminalReceipt.ack.releaseCertain, false);
+  assert.equal(trace.terminalActionFailure.attemptedCount, 1);
 });
 
 test("an unsettled capture is retained in the trace but stops every later action", async () => {
@@ -1244,6 +1282,55 @@ test("route accounts for every attempted action and exposes retained evidence on
   assert.deepEqual(trace.terminalActionFailure.receiptsSoFar, [firstReceipt]);
   assert.equal(trace.terminalActionFailure.terminalReceipt, null);
   assert.match(trace.terminalActionFailure.terminalError, /adapter exploded after first receipt/);
+});
+
+test("route retains an applied key and the terminal focus-refused drag receipt from a mixed group", async () => {
+  const actions = [
+    { kind: "key_hold", key: "w", holdMs: 50 },
+    { kind: "look_drag", dxPx: 20, dyPx: 0 },
+  ];
+  const windowBinding = {
+    discoveryFile: runtimeBinding.grpc.discoveryFile,
+    discoveredSerial: runtimeBinding.serial,
+    qemuPid: runtimeBinding.grpc.qemuPid,
+    address: runtimeBinding.grpc.address,
+    tokenPresent: true,
+    tokenFingerprint: runtimeBinding.grpc.tokenFingerprint,
+    onlineEmulatorSerials: [runtimeBinding.serial],
+    qemuWindowOwnerPid: runtimeBinding.qemuWindow.ownerPid,
+    qemuWindowId: runtimeBinding.qemuWindow.windowId,
+    bindingMethod: "discovery-pid-window",
+  };
+  let captures = 0;
+  let dragCalls = 0;
+  const adapter = createBoundCameraActionAdapter(runtimeBinding.serial, windowBinding, {
+    keyHold: async () => applied(actions[0]),
+    focusQemu: async () => "frontmost PID readback mismatch: expected 93013, observed 416",
+    rightDrag: async () => { dragCalls++; return null; },
+  });
+  const trace = await executeRelativeCameraRoute(
+    routeInput(),
+    () => actions,
+    dependencies({
+      ...adapter,
+      captureSettled: async (capturePath) => { captures++; return settled(capturePath); },
+    }),
+  );
+
+  assert.equal(trace.status, "action_failed");
+  assert.equal(captures, 0);
+  assert.equal(dragCalls, 0);
+  assert.equal(trace.usage.actions, 2);
+  assert.equal(trace.usage.holdMs, 50);
+  assert.equal(trace.usage.dragPx, 20);
+  assert.equal(trace.terminalActionFailure.kind, "reported_action_failure");
+  assert.equal(trace.terminalActionFailure.attemptedCount, 2);
+  assert.deepEqual(trace.terminalActionFailure.attemptedAction, actions[1]);
+  assert.equal(trace.terminalActionFailure.receiptsSoFar.length, 1);
+  assert.equal(trace.terminalActionFailure.receiptsSoFar[0].status, "applied");
+  assert.equal(trace.terminalActionFailure.terminalReceipt.status, "failed");
+  assert.equal(trace.terminalActionFailure.terminalReceipt.ack.focusAcknowledged, false);
+  assert.match(trace.terminalActionFailure.terminalError, /frontmost PID readback mismatch/);
 });
 
 test("bound action execution rejects serial and action-kind receipt mismatches", async () => {

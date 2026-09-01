@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { bindMacQemuWindow, createBoundCameraActionAdapter, frontmostQemu, type BoundQemuWindow } from "./cameradrive.js";
+import { bindMacQemuWindow, createBoundCameraActionAdapter, type BoundQemuWindow } from "./cameradrive.js";
 import {
   executeRelativeCameraRoute,
   type BoundApplicationIdentity,
@@ -2985,8 +2985,6 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
       const state = context.state as ExperimentState;
       const waypoint = context.waypoint as BoundaryWaypointPlan;
       const live = state.preparation.privateRuntime as LiveBoundaryRuntime;
-      const focusProblem = await frontmostQemu(live.window);
-      if (focusProblem) throw new Error(`bound qemu focus failed before waypoint ${waypoint.seq}: ${focusProblem}`);
       const marker = `boundary_step_${state.runId.slice(0, 12)}_${waypoint.seq}`;
       const coverageMarker = live.coverageMarker;
       const nextCoverageMarker = `boundary_gap_${state.runId.slice(0, 12)}_step_${waypoint.seq}`;

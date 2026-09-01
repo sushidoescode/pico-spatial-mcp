@@ -1243,6 +1243,14 @@ test("marker-window prior-frame drift retains a transition and executes zero mov
 test("zero-waypoint input uncertainty and action failure retain a transition frame, stop permanently, and cannot retry", async (t) => {
   for (const traceStatus of ["input_release_uncertain", "action_failed"]) {
     const expectedStop = traceStatus === "action_failed" ? "route_unsettled" : traceStatus;
+    const retainedFailure = traceStatus === "action_failed" ? {
+      kind: "reported_action_failure",
+      receiptsSoFar: [{ action: "key_hold", status: "applied" }],
+      terminalReceipt: { action: "look_drag", status: "failed", error: "focus mismatch" },
+      terminalError: "focus mismatch",
+      attemptedCount: 2,
+      attemptedAction: { kind: "look_drag", dxPx: 20, dyPx: 0 },
+    } : undefined;
     const fake = fakeDependencies();
     let preparationRef;
     if (traceStatus === "input_release_uncertain") {
@@ -1262,6 +1270,7 @@ test("zero-waypoint input uncertainty and action failure retain a transition fra
           status: traceStatus,
           waypoints: [],
           usage: { actions: 0, waypoints: 0, holdMs: 0, dragPx: 0, durationMs: 75 },
+          ...(retainedFailure ? { terminalActionFailure: retainedFailure } : {}),
         },
         capture: capture("3".repeat(64), context.capturePath, "transition"),
         continuity: [continuity()],
@@ -1286,6 +1295,11 @@ test("zero-waypoint input uncertainty and action failure retain a transition fra
     const diskState = JSON.parse(fs.readFileSync(path.join(stopped.artifactRoot, "state.json"), "utf8"));
     assert.equal(diskState.nextWaypoint, 0);
     assert.equal(diskState.structuralStop, expectedStop);
+    if (retainedFailure) {
+      assert.deepEqual(stopped.routeTrace.terminalActionFailure, retainedFailure);
+      const actionRecord = JSON.parse(fs.readFileSync(path.join(stopped.artifactRoot, "actions.jsonl"), "utf8").trim());
+      assert.deepEqual(actionRecord.routeTrace.terminalActionFailure, retainedFailure);
+    }
     if (traceStatus === "input_release_uncertain") {
       assert.equal(diskState.inputReleaseCertain, false);
       assert.equal(preparationRef.privateRuntime, undefined);

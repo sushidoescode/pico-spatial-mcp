@@ -10,7 +10,12 @@ import {
   SETTLE_COMPARISON,
   sha256Bytes,
 } from "../dist/observation.js";
-import { keyHold, selectQemuWindowBinding } from "../dist/cameradrive.js";
+import {
+  createBoundCameraActionAdapter,
+  focusQemuForActions,
+  keyHold,
+  selectQemuWindowBinding,
+} from "../dist/cameradrive.js";
 import { resolveGrpcEndpointBinding } from "../dist/grpc.js";
 
 const frame = (value, capturedAt = "2026-08-28T12:00:00.000Z") => ({
@@ -463,6 +468,103 @@ test("keyHold reports uncertain release and never repeats an accepted keydown", 
   assert.equal(events.filter((event) => event === "keydown").length, 1);
   assert.equal(receipt.ack.releaseCertain, false);
   assert.equal(receipt.ack.releaseReconnectBindingMatched, false);
+});
+
+test("host focus is required only for CGEvent look actions, not exact-bound gRPC keys", async () => {
+  const binding = {
+    discoveryFile: "/tmp/pico_running/pid_93013.ini",
+    discoveredSerial: "emulator-5554",
+    qemuPid: 93013,
+    address: "127.0.0.1:8554",
+    tokenPresent: true,
+    tokenFingerprint: "a".repeat(64),
+    onlineEmulatorSerials: ["emulator-5554"],
+    qemuWindowOwnerPid: 93013,
+    qemuWindowId: 601,
+    bindingMethod: "discovery-pid-window",
+  };
+  const calls = [];
+  const focus = async (received) => {
+    calls.push(received);
+    return "frontmost PID readback mismatch";
+  };
+
+  assert.equal(await focusQemuForActions([
+    { kind: "key_hold", key: "w", holdMs: 444 },
+    { kind: "key_hold", key: "w", holdMs: 889 },
+  ], binding, focus), null);
+  assert.deepEqual(calls, []);
+
+  assert.equal(await focusQemuForActions([
+    { kind: "key_hold", key: "w", holdMs: 444 },
+    { kind: "look_drag", dxPx: 20, dyPx: 0 },
+  ], binding, focus), "frontmost PID readback mismatch");
+  assert.deepEqual(calls, [binding]);
+});
+
+test("bound action receipts distinguish focus-independent gRPC keys from acknowledged CGEvent focus", async () => {
+  const binding = {
+    discoveryFile: "/tmp/pico_running/pid_93013.ini",
+    discoveredSerial: "emulator-5554",
+    qemuPid: 93013,
+    address: "127.0.0.1:8554",
+    tokenPresent: true,
+    tokenFingerprint: "a".repeat(64),
+    onlineEmulatorSerials: ["emulator-5554"],
+    qemuWindowOwnerPid: 93013,
+    qemuWindowId: 601,
+    bindingMethod: "discovery-pid-window",
+  };
+  let dragCalls = 0;
+  let focusCalls = 0;
+  const keyReceipt = await createBoundCameraActionAdapter("emulator-5554", binding, {
+    keyHold: async () => ({
+      action: "key_hold",
+      serial: "emulator-5554",
+      status: "applied",
+      startedAtMonotonicNs: "1",
+      endedAtMonotonicNs: "2",
+      ack: { releaseCertain: true },
+    }),
+    rightDrag: async () => { dragCalls++; return null; },
+    focusQemu: async () => { focusCalls++; return null; },
+  }).applyRelativeAction({ kind: "key_hold", key: "w", holdMs: 444 });
+  assert.equal(keyReceipt.ack.hostFocusRequired, false);
+  assert.equal(keyReceipt.ack.hostFocusAttempted, false);
+  assert.equal(keyReceipt.ack.focusAcknowledged, false);
+  assert.equal(focusCalls, 0);
+
+  const refusedDrag = await createBoundCameraActionAdapter("emulator-5554", binding, {
+    keyHold: async () => { throw new Error("not reached"); },
+    rightDrag: async () => { dragCalls++; return null; },
+    focusQemu: async (received) => {
+      focusCalls++;
+      assert.equal(received, binding);
+      return "frontmost PID readback mismatch";
+    },
+  }).applyRelativeAction({ kind: "look_drag", dxPx: 20, dyPx: 0 });
+  assert.equal(refusedDrag.status, "failed");
+  assert.equal(refusedDrag.ack.hostFocusRequired, true);
+  assert.equal(refusedDrag.ack.hostFocusAttempted, true);
+  assert.equal(refusedDrag.ack.focusAcknowledged, false);
+  assert.equal(dragCalls, 0);
+  assert.equal(focusCalls, 1);
+
+  const appliedDrag = await createBoundCameraActionAdapter("emulator-5554", binding, {
+    keyHold: async () => { throw new Error("not reached"); },
+    rightDrag: async () => { dragCalls++; return null; },
+    focusQemu: async (received) => {
+      focusCalls++;
+      assert.equal(received, binding);
+      return null;
+    },
+  }).applyRelativeAction({ kind: "look_drag", dxPx: 20, dyPx: 0 });
+  assert.equal(appliedDrag.status, "applied");
+  assert.equal(appliedDrag.ack.hostFocusRequired, true);
+  assert.equal(appliedDrag.ack.hostFocusAttempted, true);
+  assert.equal(appliedDrag.ack.focusAcknowledged, true);
+  assert.equal(dragCalls, 1);
+  assert.equal(focusCalls, 2);
 });
 
 test("frontmostQemu refuses a successful focus request when fresh frontmost-PID readback disagrees", { skip: process.platform !== "darwin" }, () => {
