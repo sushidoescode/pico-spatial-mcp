@@ -1168,20 +1168,6 @@ object AgentBridge {
         else -> "producer returned an unknown outcome"
     }
 
-    private suspend fun staleNavigationGuideResult(
-        detail: String,
-        cleanup: (suspend () -> Boolean)?,
-    ): NavigationGuideResult {
-        val cleaned = cleanupNavigationGuideAfterRejection(cleanup)
-        return NavigationGuideResult(
-            outcome = "failed",
-            guideState = if (cleaned) "hidden" else "unknown",
-            cleanupState = if (cleaned) "completed" else "failed",
-            errorCode = "stale_request",
-            errorDetail = detail,
-        )
-    }
-
     private fun publishNavigationGuideAckIfCurrent(
         context: Context,
         request: NavigationGuideRequest,
@@ -1198,13 +1184,12 @@ object AgentBridge {
         val target = navigationGuideTarget(context, request.requestId)
         navigationGuideMutex.lock()
         try {
-            val validationError = validateNavigationGuideRequest(request)
             val binding = navigationGuideProducerBinding(request.generation)
+            if (!binding.generationIsCurrent) {
+                return
+            }
+            val validationError = validateNavigationGuideRequest(request)
             var result = when {
-                !binding.generationIsCurrent -> staleNavigationGuideResult(
-                    "a newer navigation-guide request was dispatched before producer execution",
-                    binding.cleanup,
-                )
                 validationError != null -> {
                     val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
                     NavigationGuideResult(
@@ -1239,10 +1224,8 @@ object AgentBridge {
                 }
             }
             if (!navigationGuideRequestIsCurrent(request.generation)) {
-                result = staleNavigationGuideResult(
-                    "a newer navigation-guide request was dispatched during producer execution",
-                    binding.cleanup,
-                )
+                cleanupNavigationGuideAfterRejection(binding.cleanup)
+                return
             }
             val resultError = validateNavigationGuideResult(request, result)
             if (resultError != null) {
@@ -1256,18 +1239,13 @@ object AgentBridge {
                 )
             }
             if (!navigationGuideRequestIsCurrent(request.generation)) {
-                result = staleNavigationGuideResult(
-                    "a newer navigation-guide request was dispatched before acknowledgement publication",
-                    binding.cleanup,
-                )
+                cleanupNavigationGuideAfterRejection(binding.cleanup)
+                return
             }
             try {
                 if (!publishNavigationGuideAckIfCurrent(context, request, target, result)) {
-                    result = staleNavigationGuideResult(
-                        "a newer navigation-guide request won acknowledgement publication",
-                        binding.cleanup,
-                    )
-                    writeNavigationGuideAckAtomically(context, request, target, result)
+                    cleanupNavigationGuideAfterRejection(binding.cleanup)
+                    return
                 }
                 event(
                     "navigation_guide_ack_written",

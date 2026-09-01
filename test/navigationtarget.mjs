@@ -330,6 +330,18 @@ function guideAdapter() {
   return agentBridge.requestAgentBridgeNavigationGuide;
 }
 
+async function generatedAgentBridgeKotlin() {
+  let handler;
+  agentBridge.registerAgentBridgeTools({
+    registerTool: (name, _meta, candidate) => {
+      if (name === "generate_agent_bridge") handler = candidate;
+    },
+  });
+  assert.equal(typeof handler, "function");
+  const payload = JSON.parse((await handler({ packageName: "com.test.navigation.agent" })).content[0].text);
+  return payload.files.find((file) => file.path.endsWith("/AgentBridge.kt"))?.content ?? "";
+}
+
 test("navigation-guide transport catches a broadcast that omits an identity or fiducial field", async () => {
   assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_PAYLOAD_KIND, GUIDE_KIND);
   assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_SCHEMA_VERSION, 1);
@@ -598,6 +610,44 @@ test("navigation-guide transport orders a newer hide after a delayed show timeou
     { target: originalPath, existed: true },
   ], "the post-hide sweep removes an original ack that arrived after the first cleanup");
   assert.equal(files.size, 0);
+});
+
+test("generated guest drops a SHOW that first reaches the mutex after HIDE acknowledgement and host sweep", async () => {
+  const kotlin = await generatedAgentBridgeKotlin();
+  const writer = /private suspend fun writeNavigationGuideAck[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(kotlin)?.[0] ?? "";
+  const initialStaleBranch = /val binding = navigationGuideProducerBinding\(request\.generation\)[\s\S]*?if \(!binding\.generationIsCurrent\) \{([\s\S]*?)\n            \}/.exec(writer)?.[1] ?? "";
+
+  // Deterministic inverted acquisition: SHOW(g1) is launched but paused before Mutex.lock; HIDE(g2)
+  // locks, hides, acks, and both nonce files are swept. SHOW(g3) is then acknowledged visible before
+  // the paused g1 coroutine is released. Interpreting the generated g1 pre-producer branch must leave
+  // that current visible state and both swept nonce paths untouched.
+  const files = new Set();
+  const effects = { producerMutations: 0, cleanups: 0, obsoleteAcks: 0 };
+  let guideState = "hidden";
+  guideState = "hidden"; // HIDE(g2) producer mutation.
+  files.add("hide-g2.json");
+  files.delete("hide-g2.json");
+  files.delete("show-g1.json"); // Host post-HIDE sweep while g1 has still not reached the mutex.
+  guideState = "visible"; // A later SHOW(g3) has acquired, published, and been acknowledged.
+  files.add("show-g3.json");
+  files.delete("show-g3.json");
+
+  const staleReturnsBeforeSideEffects = /\breturn\b/.test(initialStaleBranch) &&
+    !/cleanupNavigationGuideAfterRejection|binding\.producer|writeNavigationGuideAckAtomically/.test(initialStaleBranch);
+  if (!staleReturnsBeforeSideEffects) {
+    if (/!binding\.generationIsCurrent[\s\S]*staleNavigationGuideResult/.test(writer)) {
+      effects.cleanups++;
+      guideState = "hidden";
+    }
+    if (/writeNavigationGuideAckAtomically\(context, request, target, result\)/.test(writer)) {
+      effects.obsoleteAcks++;
+      files.add("show-g1.json");
+    }
+  }
+
+  assert.deepEqual(effects, { producerMutations: 0, cleanups: 0, obsoleteAcks: 0 });
+  assert.equal(guideState, "visible", "releasing stale g1 cannot hide the acknowledged g3 SHOW");
+  assert.deepEqual([...files], [], "releasing stale g1 cannot recreate its already-swept nonce");
 });
 
 test("navigation-guide transport keeps invalidation ack cleanup failure terminal", async () => {

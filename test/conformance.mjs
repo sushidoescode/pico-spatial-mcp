@@ -857,9 +857,19 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
   assert(/navigationGuideMutex\.lock\(\)/.test(guideWriter) &&
     /finally\s*\{\s*navigationGuideMutex\.unlock\(\)\s*\}/.test(guideWriter) &&
     (guideWriter.match(/navigationGuideRequestIsCurrent\(request\.generation\)/g) ?? []).length >= 2 &&
-    /publishNavigationGuideAckIfCurrent/.test(guideWriter) &&
-    /staleNavigationGuideResult/.test(guideWriter),
+    /publishNavigationGuideAckIfCurrent/.test(guideWriter),
   "guest guide requests serialize and check dispatch currency before/after producer mutation and before current ack publication");
+  const staleBeforeProducer = /val binding = navigationGuideProducerBinding\(request\.generation\)[\s\S]*?if \(!binding\.generationIsCurrent\) \{([\s\S]*?)\n            \}/.exec(guideWriter)?.[1] ?? "";
+  const postProducerCurrencyLosses = [...guideWriter.matchAll(/if \(!navigationGuideRequestIsCurrent\(request\.generation\)\) \{([\s\S]*?)\n            \}/g)]
+    .map((match) => match[1]);
+  const publicationCurrencyLoss = /if \(!publishNavigationGuideAckIfCurrent\(context, request, target, result\)\) \{([\s\S]*?)\n                \}/.exec(guideWriter)?.[1] ?? "";
+  assert(/\breturn\b/.test(staleBeforeProducer) &&
+    !/cleanupNavigationGuideAfterRejection|binding\.producer|writeNavigationGuideAckAtomically/.test(staleBeforeProducer) &&
+    postProducerCurrencyLosses.length >= 2 && postProducerCurrencyLosses.every((body) =>
+      /cleanupNavigationGuideAfterRejection\(binding\.cleanup\)/.test(body) && /\breturn\b/.test(body)) &&
+    /cleanupNavigationGuideAfterRejection\(binding\.cleanup\)/.test(publicationCurrencyLoss) && /\breturn\b/.test(publicationCurrencyLoss) &&
+    !guideWriter.includes("writeNavigationGuideAckAtomically") && !guideWriter.includes("staleNavigationGuideResult"),
+  "a pre-mutex stale request is a no-op, while currency lost after producer entry cleans once and never publishes an obsolete ack");
   assert(/data class NavigationGuideProducerBinding/.test(agentKt) &&
     /navigationGuideProducerBinding\(request\.generation\)/.test(guideWriter) &&
     (guideWriter.match(/binding\.cleanup/g) ?? []).length >= 3 &&
