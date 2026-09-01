@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { makePng } from "./helpers/runreceipt-fixture.mjs";
 
@@ -17,6 +18,7 @@ import {
   hasExactDynamicOpenSequence,
   minimumRecoveryReserveMs,
   readBoundReviewImage,
+  readReceiptBoundEffectiveAppSpec,
   redactCapabilityFromLogArtifact,
   recoveryContinuityMatchesBinding,
   recoveryFrameMatchesExpected,
@@ -680,6 +682,71 @@ test("all four action schemas are strict and relational route/style contradictio
       budgets: { ...budgets, maxActions: 64, maxWaypoints: 10, maxCumulativeHoldMs: 60_000, maxDurationMs: 1_080_000 },
     },
   })).success, false, "one waypoint still refuses a fifth action");
+});
+
+test("receipt-bound effective AppSpec recheck hashes canonical JSON beneath its required storage newline", (t) => {
+  const root = scratch(t);
+  const artifactPath = path.join(root, "effective-spec.json");
+  const canonical = '{"a":1,"b":[2,3]}';
+  const identity = {
+    sha256: crypto.createHash("sha256").update(canonical).digest("hex"),
+    bytes: Buffer.byteLength(canonical),
+  };
+  fs.writeFileSync(artifactPath, `${canonical}\n`, { mode: 0o600 });
+  assert.deepEqual(readReceiptBoundEffectiveAppSpec(artifactPath, identity), { a: 1, b: [2, 3] });
+
+  for (const [name, bytes] of [
+    ["missing storage newline", canonical],
+    ["extra storage newline", `${canonical}\n\n`],
+    ["non-canonical key order", '{"b":[2,3],"a":1}\n'],
+    ["changed canonical payload", '{"a":1,"b":[2,4]}\n'],
+  ]) {
+    fs.writeFileSync(artifactPath, bytes, { mode: 0o600 });
+    assert.throws(() => readReceiptBoundEffectiveAppSpec(artifactPath, identity), /effective AppSpec|canonical|changed|identity/i, name);
+  }
+});
+
+test("receipt-bound effective AppSpec regular-to-FIFO replacement cannot block before authoritative fstat", (t) => {
+  const root = scratch(t);
+  const artifactPath = path.join(root, "effective-spec.json");
+  const canonical = '{"a":1}';
+  fs.writeFileSync(artifactPath, `${canonical}\n`, { mode: 0o600 });
+  const moduleUrl = new URL("../dist/boundaryexperiment.js", import.meta.url).href;
+  const script = `
+    import fs from "node:fs";
+    import { spawnSync } from "node:child_process";
+    import { readReceiptBoundEffectiveAppSpec } from ${JSON.stringify(moduleUrl)};
+    const artifactPath = process.argv[1];
+    const identity = JSON.parse(process.argv[2]);
+    let swapped = false;
+    try {
+      readReceiptBoundEffectiveAppSpec(artifactPath, identity, {
+        onBeforeOpen(filePath) {
+          if (swapped) return;
+          swapped = true;
+          fs.unlinkSync(filePath);
+          const fifo = spawnSync("mkfifo", [filePath], { encoding: "utf8" });
+          if (fifo.status !== 0) throw new Error(fifo.stderr || "mkfifo failed");
+        },
+      });
+      process.exitCode = 2;
+    } catch (error) {
+      if (swapped && /regular|changed|FIFO|special/i.test(String(error))) process.exitCode = 0;
+      else { console.error(error); process.exitCode = 3; }
+    }
+  `;
+  const identity = {
+    sha256: crypto.createHash("sha256").update(canonical).digest("hex"),
+    bytes: Buffer.byteLength(canonical),
+  };
+  const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script, artifactPath, JSON.stringify(identity)], {
+    encoding: "utf8",
+    timeout: 1_200,
+    killSignal: "SIGTERM",
+  });
+  assert.equal(child.error, undefined, child.error?.message);
+  assert.equal(child.signal, null, `child signal: ${child.signal}\n${child.stderr}`);
+  assert.equal(child.status, 0, child.stderr);
 });
 
 test("prepare reserves one external run, publishes complete baseline review, and performs zero movement", async (t) => {

@@ -494,6 +494,7 @@ function hashBytes(bytes: Buffer | string): string {
 }
 
 const NOFOLLOW = fs.constants.O_NOFOLLOW ?? 0;
+const NONBLOCK = fs.constants.O_NONBLOCK ?? 0;
 
 function writeAll(descriptor: number, bytes: Buffer): void {
   let offset = 0;
@@ -599,13 +600,19 @@ function assertOwnedRunRoot(state: ExperimentState): void {
   assertOwnedRootValues(state);
 }
 
-function regularExternalFile(filePath: string, label: string, maxBytes = JSON_ARTIFACT_MAX_BYTES): Buffer {
+function regularExternalFile(
+  filePath: string,
+  label: string,
+  maxBytes = JSON_ARTIFACT_MAX_BYTES,
+  testHooks: { onBeforeOpen?: (filePath: string) => void } = {},
+): Buffer {
   if (!path.isAbsolute(filePath)) throw new Error(`${label} must be an absolute external path`);
   const stat = fs.lstatSync(filePath, { bigint: true });
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > BigInt(maxBytes)) throw new Error(`${label} must be a bounded regular non-symlink file`);
   const real = fs.realpathSync(filePath);
   assertExternalCapturePath(real);
-  const descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | NOFOLLOW);
+  testHooks.onBeforeOpen?.(filePath);
+  const descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | NOFOLLOW | NONBLOCK);
   try {
     const opened = fs.fstatSync(descriptor, { bigint: true });
     if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino || opened.size > BigInt(maxBytes)) {
@@ -635,7 +642,7 @@ function hashRegularExternalFile(filePath: string, label: string, maxBytes: numb
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > BigInt(maxBytes)) throw new Error(`${label} must be a bounded regular non-symlink file`);
   const real = fs.realpathSync(filePath);
   assertExternalCapturePath(real);
-  const descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | NOFOLLOW);
+  const descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | NOFOLLOW | NONBLOCK);
   try {
     const opened = fs.fstatSync(descriptor, { bigint: true });
     if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino || opened.size > BigInt(maxBytes)) throw new Error(`${label} changed while it was opened`);
@@ -710,6 +717,32 @@ function parseJsonArtifact(bytes: Buffer, label: string): any {
   } catch (error) {
     throw new Error(`${label} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+export function readReceiptBoundEffectiveAppSpec(
+  artifactPath: string,
+  identity: { sha256: string; bytes: number },
+  testHooks: { onBeforeOpen?: (filePath: string) => void } = {},
+): any {
+  if (!SHA256.test(identity?.sha256 ?? "") || !Number.isSafeInteger(identity?.bytes) || identity.bytes < 1) {
+    throw new Error("effective AppSpec receipt identity is invalid");
+  }
+  const storedBytes = regularExternalFile(artifactPath, "effective AppSpec", JSON_ARTIFACT_MAX_BYTES, testHooks);
+  const spec = parseJsonArtifact(storedBytes, "effective AppSpec");
+  let canonical: string;
+  try {
+    canonical = canonicalJson(spec);
+  } catch (error) {
+    throw new Error(`effective AppSpec cannot be canonicalized: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const canonicalBytes = Buffer.from(canonical, "utf8");
+  const expectedStoredBytes = Buffer.from(`${canonical}\n`, "utf8");
+  if (!storedBytes.equals(expectedStoredBytes)
+    || canonicalBytes.length !== identity.bytes
+    || hashBytes(canonicalBytes) !== identity.sha256) {
+    throw new Error("effective AppSpec artifact changed after receipt validation");
+  }
+  return spec;
 }
 
 interface ResolvedCalibrationRoute {
@@ -2570,9 +2603,10 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
         if (receipt.receipt.source.effectiveAppSpec.sha256 !== expected.effectiveSpecSha256) {
           throw new Error("native run receipt does not bind the CP2-qualified effective Boundary Lab AppSpec");
         }
-        const specBytes = regularExternalFile(receipt.receipt.source.effectiveAppSpec.artifactPath, "effective AppSpec", JSON_ARTIFACT_MAX_BYTES);
-        if (hashBytes(specBytes) !== receipt.receipt.source.effectiveAppSpec.sha256) throw new Error("effective AppSpec artifact changed after receipt validation");
-        const spec = parseJsonArtifact(specBytes, "effective AppSpec");
+        const spec = readReceiptBoundEffectiveAppSpec(
+          receipt.receipt.source.effectiveAppSpec.artifactPath,
+          receipt.receipt.source.effectiveAppSpec,
+        );
         if (spec?.meta?.packageName !== expected.packageName
           || spec?.meta?.stageStyle !== expected.stageStyle
           || spec?.boundaryLab?.variant !== expected.variant

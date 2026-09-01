@@ -433,7 +433,10 @@ function sameDescriptor(left: fs.BigIntStats, right: fs.BigIntStats): boolean {
 }
 
 function openReadOnlyNoFollow(filePath: string): number {
-  return fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  return fs.openSync(
+    filePath,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | (fs.constants.O_NONBLOCK ?? 0),
+  );
 }
 
 function snapshotFile(filePath: string, maxBytes: number): FileSnapshot {
