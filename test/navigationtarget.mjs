@@ -291,6 +291,9 @@ function guideAck(request, overrides = {}) {
 function successfulGuideTransport(ack, options = {}) {
   const calls = [];
   const ackBytes = Buffer.from(JSON.stringify(ack), "utf8");
+  let activeRequestId = ack.requestId;
+  let activeMode = ack.mode;
+  let cleanupAttempts = 0;
   let ticks = 500n;
   return {
     calls,
@@ -299,15 +302,23 @@ function successfulGuideTransport(ack, options = {}) {
       runText: async (cmd, args) => {
         calls.push({ kind: "text", cmd, args });
         if (args.includes("rm")) {
-          return options.cleanupFailure
+          cleanupAttempts++;
+          return (options.cleanupFailure && cleanupAttempts === 1) || options.cleanupFailureAt === cleanupAttempts
             ? { code: 1, stdout: "", stderr: "permission denied", timedOut: false }
             : { code: 0, stdout: "", stderr: "", timedOut: false };
         }
+        const requestIndex = args.findIndex((arg, index) => arg === "requestId" && args[index - 1] === "--es");
+        const modeIndex = args.findIndex((arg, index) => arg === "mode" && args[index - 1] === "--es");
+        if (requestIndex >= 0) activeRequestId = args[requestIndex + 1];
+        if (modeIndex >= 0) activeMode = args[modeIndex + 1];
         return { code: 0, stdout: "Broadcast completed: result=0", stderr: "", timedOut: false };
       },
       runBytes: async (cmd, args) => {
         calls.push({ kind: "bytes", cmd, args });
-        return { code: 0, stdout: Buffer.concat([Buffer.from([0x01]), ackBytes]), stderr: "", timedOut: false };
+        const bytes = activeMode === "hide" && options.invalidationBase
+          ? Buffer.from(JSON.stringify(guideAck({ ...options.invalidationBase, requestId: activeRequestId, mode: "hide" })), "utf8")
+          : ackBytes;
+        return { code: 0, stdout: Buffer.concat([Buffer.from([0x01]), bytes]), stderr: "", timedOut: false };
       },
       sleep: async () => {},
     },
@@ -455,10 +466,14 @@ test("navigation-guide transport catches malformed, stale, contradictory, partia
     await t.test(name, async () => {
       const ack = guideAck(request);
       if (mutate) mutate(ack);
-      const fake = successfulGuideTransport(ack);
+      const fake = successfulGuideTransport(ack, { invalidationBase: request });
       if (!mutate) {
         const bytes = Buffer.from("AGENTBRIDGE| event=navigation_guide_ack outcome=shown", "utf8");
+        const invalidationRunBytes = fake.deps.runBytes;
         fake.deps.runBytes = async (cmd, args) => {
+          if (args.at(-1) !== `cache/agentbridge/navigation-guides/${request.requestId}.json`) {
+            return invalidationRunBytes(cmd, args);
+          }
           fake.calls.push({ kind: "bytes", cmd, args });
           return { code: 0, stdout: Buffer.concat([Buffer.from([0x01]), bytes]), stderr: "", timedOut: false };
         };
@@ -466,7 +481,15 @@ test("navigation-guide transport catches malformed, stale, contradictory, partia
       const result = await guideAdapter()("/fixture/adb", request, fake.deps);
       assert.equal(result.ok, false);
       assert.equal(result.code, "invalid_ack");
-      assert.equal(result.actionReceipts.at(-1)?.action, "navigation_guide_ack_cleanup");
+      assert.deepEqual(result.actionReceipts.map((receipt) => receipt.action), [
+        "navigation_guide_broadcast",
+        "navigation_guide_ack_pull",
+        "navigation_guide_ack_cleanup",
+        "navigation_guide_invalidation_broadcast",
+        "navigation_guide_invalidation_ack_pull",
+        "navigation_guide_invalidation_ack_cleanup",
+        "navigation_guide_late_ack_cleanup",
+      ]);
       assert.equal(result.actionReceipts.at(-1)?.status, "applied");
     });
   }
@@ -490,14 +513,110 @@ test("navigation-guide transport catches guest rejection and host cleanup loss w
   ]);
 
   const acceptedAck = guideAck(request);
-  const cleanupFake = successfulGuideTransport(acceptedAck, { cleanupFailure: true });
+  const cleanupFake = successfulGuideTransport(acceptedAck, { cleanupFailure: true, invalidationBase: request });
   const cleanupFailed = await guideAdapter()("/fixture/adb", request, cleanupFake.deps);
   assert.equal(cleanupFailed.ok, false);
   assert.equal(cleanupFailed.code, "cleanup_failed");
   assert.deepEqual(cleanupFailed.ack, acceptedAck);
-  assert.equal(cleanupFailed.actionReceipts.at(-1)?.action, "navigation_guide_ack_cleanup");
-  assert.equal(cleanupFailed.actionReceipts.at(-1)?.status, "failed");
-  assert.match(cleanupFailed.actionReceipts.at(-1)?.error ?? "", /permission denied/);
+  assert.equal(cleanupFailed.actionReceipts[2]?.action, "navigation_guide_ack_cleanup");
+  assert.equal(cleanupFailed.actionReceipts[2]?.status, "failed");
+  assert.match(cleanupFailed.actionReceipts[2]?.error ?? "", /permission denied/);
+  assert.deepEqual(cleanupFailed.actionReceipts.slice(3).map((receipt) => [receipt.action, receipt.status]), [
+    ["navigation_guide_invalidation_broadcast", "applied"],
+    ["navigation_guide_invalidation_ack_pull", "applied"],
+    ["navigation_guide_invalidation_ack_cleanup", "applied"],
+    ["navigation_guide_late_ack_cleanup", "applied"],
+  ]);
+});
+
+test("navigation-guide transport orders a newer hide after a delayed show timeout and sweeps its late ack", async () => {
+  const request = guideRequest({ maxPolls: 2 });
+  const originalPath = "cache/agentbridge/navigation-guides/guide_nonce_20260901.json";
+  const invalidationRequestId = "navigation_guide_hide_0c21bb6fc0256852d5a82fc5f1ad122f";
+  const invalidationPath = `cache/agentbridge/navigation-guides/${invalidationRequestId}.json`;
+  const files = new Map();
+  const calls = [];
+  const removals = [];
+  let ticks = 900n;
+
+  const result = await guideAdapter()("/fixture/adb", request, {
+    monotonicNs: () => ticks++,
+    runText: async (cmd, args) => {
+      calls.push({ kind: "text", cmd, args: [...args] });
+      if (args.includes("rm")) {
+        const target = args.at(-1);
+        removals.push({ target, existed: files.delete(target) });
+        return { code: 0, stdout: "", stderr: "", timedOut: false };
+      }
+      const modeIndex = args.findIndex((arg, index) => arg === "mode" && args[index - 1] === "--es");
+      const requestIndex = args.findIndex((arg, index) => arg === "requestId" && args[index - 1] === "--es");
+      const mode = args[modeIndex + 1];
+      const requestId = args[requestIndex + 1];
+      if (mode === "hide") {
+        assert.equal(requestId, invalidationRequestId, "the compensating hide uses its own deterministic safe nonce");
+        files.set(originalPath, Buffer.from(JSON.stringify(guideAck(request)), "utf8"));
+        files.set(invalidationPath, Buffer.from(JSON.stringify(guideAck({ ...request, requestId, mode: "hide" })), "utf8"));
+      }
+      return { code: 0, stdout: "Broadcast completed: result=0", stderr: "", timedOut: false };
+    },
+    runBytes: async (cmd, args) => {
+      calls.push({ kind: "bytes", cmd, args: [...args] });
+      const bytes = files.get(args.at(-1));
+      return bytes
+        ? { code: 0, stdout: Buffer.concat([Buffer.from([0x01]), bytes]), stderr: "", timedOut: false }
+        : { code: 0, stdout: Buffer.from([0x00]), stderr: "", timedOut: false };
+    },
+    sleep: async () => {},
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "bridge_unavailable", "a successful invalidation cannot erase the timed-out show result");
+  const broadcasts = calls.filter((call) => call.kind === "text" && call.args.includes("broadcast"));
+  assert.equal(broadcasts.length, 2, "one failed show triggers exactly one non-recursive hide");
+  assert.ok(broadcasts[0].args.some((arg, index) => arg === "mode" && broadcasts[0].args[index + 1] === "show"));
+  assert.ok(broadcasts[1].args.some((arg, index) => arg === "mode" && broadcasts[1].args[index + 1] === "hide"));
+  for (const field of [
+    "kind", "schemaVersion", "bridgeRevision", "sceneSnapshotId", "targetTraceId",
+    "targetRuntimeUuid", "pattern", "projectionModel", "color0", "color1", "widthM", "heightM",
+  ]) {
+    const originalIndex = broadcasts[0].args.indexOf(field);
+    const hideIndex = broadcasts[1].args.indexOf(field);
+    assert.equal(broadcasts[1].args[hideIndex + 1], broadcasts[0].args[originalIndex + 1], `hide retains ${field}`);
+  }
+  assert.deepEqual(result.actionReceipts.map((receipt) => [receipt.action, receipt.status]), [
+    ["navigation_guide_broadcast", "applied"],
+    ["navigation_guide_ack_pull", "failed"],
+    ["navigation_guide_ack_cleanup", "applied"],
+    ["navigation_guide_invalidation_broadcast", "applied"],
+    ["navigation_guide_invalidation_ack_pull", "applied"],
+    ["navigation_guide_invalidation_ack_cleanup", "applied"],
+    ["navigation_guide_late_ack_cleanup", "applied"],
+  ]);
+  assert.deepEqual(removals, [
+    { target: originalPath, existed: false },
+    { target: invalidationPath, existed: true },
+    { target: originalPath, existed: true },
+  ], "the post-hide sweep removes an original ack that arrived after the first cleanup");
+  assert.equal(files.size, 0);
+});
+
+test("navigation-guide transport keeps invalidation ack cleanup failure terminal", async () => {
+  const request = guideRequest();
+  const malformedShowAck = guideAck(request, { projectionModel: "horizontal-plane-v1" });
+  const fake = successfulGuideTransport(malformedShowAck, {
+    cleanupFailureAt: 2,
+    invalidationBase: request,
+  });
+  const result = await guideAdapter()("/fixture/adb", request, fake.deps);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "cleanup_failed");
+  assert.deepEqual(result.actionReceipts.slice(3).map((receipt) => [receipt.action, receipt.status]), [
+    ["navigation_guide_invalidation_broadcast", "applied"],
+    ["navigation_guide_invalidation_ack_pull", "applied"],
+    ["navigation_guide_invalidation_ack_cleanup", "failed"],
+    ["navigation_guide_late_ack_cleanup", "applied"],
+  ]);
+  assert.match(result.actionReceipts[5]?.error ?? "", /permission denied/);
 });
 
 test("navigation-guide transport catches an unbounded poll or logcat-shaped fallback", async () => {
@@ -523,13 +642,19 @@ test("navigation-guide transport catches an unbounded poll or logcat-shaped fall
     sleep: async () => { sleeps++; },
   });
   assert.equal(result.ok, false);
-  assert.equal(result.code, "bridge_unavailable");
-  assert.equal(pulls, 3);
-  assert.equal(sleeps, 2);
+  assert.equal(result.code, "cleanup_failed");
+  assert.equal(pulls, 6, "the original and one compensating transaction each keep the three-poll bound");
+  assert.equal(sleeps, 4);
   assert.equal(calls.some((call) => call.args.includes("logcat")), false);
   assert.deepEqual(result.actionReceipts.map((receipt) => [receipt.action, receipt.status]), [
     ["navigation_guide_broadcast", "applied"],
     ["navigation_guide_ack_pull", "failed"],
     ["navigation_guide_ack_cleanup", "applied"],
+    ["navigation_guide_invalidation_broadcast", "applied"],
+    ["navigation_guide_invalidation_ack_pull", "failed"],
+    ["navigation_guide_invalidation_ack_cleanup", "applied"],
+    ["navigation_guide_late_ack_cleanup", "applied"],
   ]);
+  assert.equal(calls.filter((call) => call.kind === "text" && call.args.includes("broadcast")).length, 2,
+    "a failed compensating hide never recursively schedules another hide");
 });

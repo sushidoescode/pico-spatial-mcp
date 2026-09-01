@@ -847,6 +847,30 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
   assert(/data class NavigationGuideRequest\(/.test(agentKt) && /data class NavigationGuideResult\(/.test(agentKt) &&
     /registerNavigationGuideProducer/.test(agentKt) && /unregisterNavigationGuideProducer/.test(agentKt),
   "generated AgentBridge exposes a separate typed navigation-guide producer lifecycle");
+  assert(/val generation: Long/.test(agentKt) &&
+    /private val navigationGuideMutex = Mutex\(\)/.test(agentKt) &&
+    /private val navigationGuideGenerationLock = Any\(\)/.test(agentKt) &&
+    /private var navigationGuideGeneration = 0L/.test(agentKt) &&
+    /generation = nextNavigationGuideGeneration\(\)/.test(agentKt),
+  "each guest request receives a monotonic dispatch generation before its serialized coroutine runs");
+  const guideWriter = /private suspend fun writeNavigationGuideAck[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  assert(/navigationGuideMutex\.lock\(\)/.test(guideWriter) &&
+    /finally\s*\{\s*navigationGuideMutex\.unlock\(\)\s*\}/.test(guideWriter) &&
+    (guideWriter.match(/navigationGuideRequestIsCurrent\(request\.generation\)/g) ?? []).length >= 2 &&
+    /publishNavigationGuideAckIfCurrent/.test(guideWriter) &&
+    /staleNavigationGuideResult/.test(guideWriter),
+  "guest guide requests serialize and check dispatch currency before/after producer mutation and before current ack publication");
+  assert(/data class NavigationGuideProducerBinding/.test(agentKt) &&
+    /navigationGuideProducerBinding\(request\.generation\)/.test(guideWriter) &&
+    (guideWriter.match(/binding\.cleanup/g) ?? []).length >= 3 &&
+    /synchronized\(navigationGuideGenerationLock\)[\s\S]*navigationGuideProducer = producer[\s\S]*navigationGuideCleanup = cleanup/.test(agentKt),
+  "a request retains its generation-matched producer cleanup while registration invalidates state atomically");
+  const rgbParser = /private fun parseNavigationGuideRgb[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  assert(/tokens\.size != 3/.test(rgbParser) &&
+    /toIntOrNull\(\) \?: return/.test(rgbParser) &&
+    /channel !in 0\.\.255/.test(rgbParser) &&
+    !rgbParser.includes("mapNotNull"),
+  "guest RGB parsing rejects missing or non-numeric tokens instead of compacting them into a valid palette");
   assert(/ApplicationInfo\.FLAG_DEBUGGABLE/.test(agentKt) &&
     /fun navigationGuideCommandsEnabled\(\): Boolean/.test(agentKt) &&
     /if \(navigationGuideCommandsEnabled\(\)\) registerNavigationGuideBuiltin\(\)/.test(agentKt) &&
@@ -1405,13 +1429,15 @@ console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, a
       mission.includes("setEmissiveColor(Color4(1f, 0f, 1f, 1f))") && mission.includes("setEmissiveColor(Color4(0f, 1f, 1f, 1f))") &&
       /val navigationGuideMagenta: PhysicallyBasedMaterial/.test(mission) && /val navigationGuideCyan: PhysicallyBasedMaterial/.test(mission),
     "guide resources own opaque emissive pure saturated magenta and cyan materials");
+    const guideConstruction = /val guide = Entity\(\)\.also[\s\S]*?navigationGuideRoot = guide/.exec(mission)?.[0] ?? "";
     assert(mission.includes('entity.setName("navigation_guide_root")') &&
-      /navigationGuideRoot = guide[\s\S]*guide\.enabled = false/.test(mission) &&
+      /entity\.enabled = false[\s\S]*guideParent\.addChild\(entity\)/.test(guideConstruction) &&
+      guideConstruction.indexOf("entity.enabled = false") < guideConstruction.indexOf("navigationGuideFrame(guide") &&
       mission.includes("import com.pico.spatial.core.ecs.LookAtForwardDirection") &&
       /guide\.components\.set\(LookAtComponent\(\)\.apply \{[\s\S]*lookAtForwardDirection = LookAtForwardDirection\.NEGATIVE_Z[\s\S]*alignLocalUpToWorldUp = true[\s\S]*setViewerAsTarget\(\)[\s\S]*\}\)/.test(mission) &&
       /navigationGuideFrame\(guide, "outer_magenta", resources\.navigationGuideMagenta, NAVIGATION_GUIDE_WIDTH_M, NAVIGATION_GUIDE_HEIGHT_M\)/.test(mission) &&
       /navigationGuideFrame\(guide, "inner_cyan", resources\.navigationGuideCyan, NAVIGATION_GUIDE_INNER_WIDTH_M, NAVIGATION_GUIDE_INNER_HEIGHT_M\)/.test(mission),
-    "two connected nested rectangular color frames are generated default-hidden on a viewer-facing named guide root");
+    "the viewer-facing guide root is disabled before attachment or child creation, then receives two connected nested frames");
     const guideFrame = /private fun navigationGuideFrame[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
     assert((guideFrame.match(/primitive\(root, prefix \+/g) ?? []).length === 4 &&
       guideFrame.includes('"_top"') && guideFrame.includes('"_bottom"') && guideFrame.includes('"_left"') && guideFrame.includes('"_right"'),
@@ -1421,11 +1447,13 @@ console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, a
     "guide bars lie in stable local X/Y with Z depth for the viewer-facing planar projection model");
     const guideHandler = /private suspend fun handleNavigationGuide[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(mission)?.[0] ?? "";
     assert(/withContext\(Dispatchers\.Main\.immediate\)/.test(guideHandler) &&
+      (guideHandler.match(/AgentBridge\.navigationGuideRequestIsCurrent\(request\.generation\)/g) ?? []).length >= 2 &&
+      /stale_navigation_guide_request/.test(guideHandler) &&
       !guideHandler.includes("transform.quaternion") &&
       /request\.targetRuntimeUuid != selectedTableRuntimeUuid/.test(guideHandler) &&
       /request\.sceneSnapshotId\.matches/.test(guideHandler) && /request\.targetTraceId\.matches/.test(guideHandler) &&
       /selectedTableWidthM < NAVIGATION_GUIDE_WIDTH_M|selectedTableDepthM < NAVIGATION_GUIDE_HEIGHT_M/.test(guideHandler),
-    "show validation stays on Main and fails closed on stale target binding, malformed trace identity, or undersized TABLE support");
+    "show validation stays on Main, checks generation before and after mutation, and fails closed on stale target binding or undersized TABLE support");
     assert(/request\.pattern != AgentBridge\.NAVIGATION_GUIDE_PATTERN/.test(guideHandler) &&
       /request\.projectionModel != AgentBridge\.NAVIGATION_GUIDE_PROJECTION_MODEL/.test(guideHandler) &&
       /request\.color0\.contentEquals\(AgentBridge\.NAVIGATION_GUIDE_COLOR_0\)/.test(guideHandler) &&

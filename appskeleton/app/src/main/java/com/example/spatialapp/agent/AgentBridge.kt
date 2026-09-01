@@ -26,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * AgentBridge — an injectable headless control + verification surface for an AI agent.
@@ -69,6 +70,7 @@ object AgentBridge {
     )
 
     data class NavigationGuideRequest(
+        val generation: Long,
         val kind: String,
         val schemaVersion: Int,
         val bridgeRevision: Int,
@@ -93,10 +95,19 @@ object AgentBridge {
         val errorDetail: String? = null,
     )
 
+    private data class NavigationGuideProducerBinding(
+        val generationIsCurrent: Boolean,
+        val producer: (suspend (NavigationGuideRequest) -> NavigationGuideResult)?,
+        val cleanup: (suspend () -> Boolean)?,
+    )
+
     private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestIdPattern = Regex("^[A-Za-z0-9_-]{8,96}$")
     private val sceneSnapshotIdPattern = Regex("^[a-f0-9]{64}$")
     private val targetTraceIdPattern = Regex("^anchor-[0-9]{4}$")
+    private val navigationGuideMutex = Mutex()
+    private val navigationGuideGenerationLock = Any()
+    private var navigationGuideGeneration = 0L
 
     @Volatile private var applicationContext: Context? = null
     @Volatile private var sceneRoot: Entity? = null
@@ -182,21 +193,48 @@ object AgentBridge {
         producer: suspend (NavigationGuideRequest) -> NavigationGuideResult,
         cleanup: suspend () -> Boolean,
     ) {
-        if (!navigationGuideCommandsEnabled()) {
-            navigationGuideProducer = null
-            navigationGuideCleanup = null
-            return
+        val enabled = navigationGuideCommandsEnabled()
+        synchronized(navigationGuideGenerationLock) {
+            nextNavigationGuideGeneration()
+            if (enabled) {
+                navigationGuideProducer = producer
+                navigationGuideCleanup = cleanup
+            } else {
+                navigationGuideProducer = null
+                navigationGuideCleanup = null
+            }
         }
-        navigationGuideProducer = producer
-        navigationGuideCleanup = cleanup
+        if (!enabled) return
         event("navigation_guide_producer_registered", "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION)
     }
 
     fun unregisterNavigationGuideProducer() {
-        navigationGuideProducer = null
-        navigationGuideCleanup = null
+        synchronized(navigationGuideGenerationLock) {
+            nextNavigationGuideGeneration()
+            navigationGuideProducer = null
+            navigationGuideCleanup = null
+        }
         event("navigation_guide_producer_unregistered", "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION)
     }
+
+    private fun nextNavigationGuideGeneration(): Long = synchronized(navigationGuideGenerationLock) {
+        check(navigationGuideGeneration < Long.MAX_VALUE) { "navigation-guide generation exhausted" }
+        navigationGuideGeneration += 1L
+        navigationGuideGeneration
+    }
+
+    fun navigationGuideRequestIsCurrent(generation: Long): Boolean = synchronized(navigationGuideGenerationLock) {
+        generation == navigationGuideGeneration
+    }
+
+    private fun navigationGuideProducerBinding(generation: Long): NavigationGuideProducerBinding =
+        synchronized(navigationGuideGenerationLock) {
+            NavigationGuideProducerBinding(
+                generationIsCurrent = generation == navigationGuideGeneration,
+                producer = navigationGuideProducer,
+                cleanup = navigationGuideCleanup,
+            )
+        }
 
     private fun root(): Entity? = sceneRoot ?: sceneProvider?.invoke()
 
@@ -235,12 +273,14 @@ object AgentBridge {
                 event("navigation_guide_failed", "requestId" to requestId, "msg" to "bridge_not_initialized")
                 return@register
             }
+            val generation = nextNavigationGuideGeneration()
             val target = navigationGuideTarget(context, requestId)
             if (target.exists() && !target.delete()) {
                 event("navigation_guide_failed", "requestId" to requestId, "msg" to "stale_ack_not_removed")
                 return@register
             }
             val request = NavigationGuideRequest(
+                generation = generation,
                 kind = extras.getString("kind") ?: "",
                 schemaVersion = extras.getInt("schemaVersion", -1),
                 bridgeRevision = extras.getInt("bridgeRevision", -1),
@@ -381,11 +421,16 @@ object AgentBridge {
     }
 
     private fun parseNavigationGuideRgb(value: String?): IntArray {
-        val channels = value?.split(",")?.mapNotNull { token -> token.trim().toIntOrNull() }
-        if (channels == null || channels.size != 3 || channels.any { it !in 0..255 }) {
-            return intArrayOf(-1, -1, -1)
+        val invalid = intArrayOf(-1, -1, -1)
+        val tokens = value?.split(",") ?: return invalid
+        if (tokens.size != 3) return invalid
+        val channels = IntArray(3)
+        tokens.forEachIndexed { index, token ->
+            val channel = token.trim().toIntOrNull() ?: return invalid
+            if (channel !in 0..255) return invalid
+            channels[index] = channel
         }
-        return channels.toIntArray()
+        return channels
     }
 
     private fun validateNavigationGuideRequest(request: NavigationGuideRequest): String? = when {
@@ -406,9 +451,11 @@ object AgentBridge {
         else -> null
     }
 
-    private suspend fun cleanupNavigationGuideAfterRejection(): Boolean {
-        val cleanup = navigationGuideCleanup ?: return true
-        return runCatching { cleanup() }.getOrDefault(false)
+    private suspend fun cleanupNavigationGuideAfterRejection(
+        cleanup: (suspend () -> Boolean)? = navigationGuideCleanup,
+    ): Boolean {
+        val callback = cleanup ?: return true
+        return runCatching { callback() }.getOrDefault(false)
     }
 
     private fun validateNavigationGuideResult(
@@ -430,35 +477,67 @@ object AgentBridge {
         else -> "producer returned an unknown outcome"
     }
 
+    private suspend fun staleNavigationGuideResult(
+        detail: String,
+        cleanup: (suspend () -> Boolean)?,
+    ): NavigationGuideResult {
+        val cleaned = cleanupNavigationGuideAfterRejection(cleanup)
+        return NavigationGuideResult(
+            outcome = "failed",
+            guideState = if (cleaned) "hidden" else "unknown",
+            cleanupState = if (cleaned) "completed" else "failed",
+            errorCode = "stale_request",
+            errorDetail = detail,
+        )
+    }
+
+    private fun publishNavigationGuideAckIfCurrent(
+        context: Context,
+        request: NavigationGuideRequest,
+        target: File,
+        result: NavigationGuideResult,
+    ): Boolean = synchronized(navigationGuideGenerationLock) {
+        if (request.generation != navigationGuideGeneration) return@synchronized false
+        writeNavigationGuideAckAtomically(context, request, target, result)
+        true
+    }
+
     private suspend fun writeNavigationGuideAck(request: NavigationGuideRequest) {
         val context = applicationContext ?: return
         val target = navigationGuideTarget(context, request.requestId)
-        val validationError = validateNavigationGuideRequest(request)
-        var result = if (validationError != null) {
-            val cleaned = cleanupNavigationGuideAfterRejection()
-            NavigationGuideResult(
-                outcome = "rejected",
-                guideState = if (cleaned) "hidden" else "unknown",
-                cleanupState = if (cleaned) "completed" else "failed",
-                errorCode = "invalid_request",
-                errorDetail = validationError,
-            )
-        } else {
-            val producer = navigationGuideProducer
-            if (producer == null) {
-                val cleaned = cleanupNavigationGuideAfterRejection()
-                NavigationGuideResult(
-                    outcome = "failed",
-                    guideState = if (cleaned) "hidden" else "unknown",
-                    cleanupState = if (cleaned) "completed" else "failed",
-                    errorCode = "bridge_unavailable",
-                    errorDetail = "no navigation-guide producer is registered",
+        navigationGuideMutex.lock()
+        try {
+            val validationError = validateNavigationGuideRequest(request)
+            val binding = navigationGuideProducerBinding(request.generation)
+            var result = when {
+                !binding.generationIsCurrent -> staleNavigationGuideResult(
+                    "a newer navigation-guide request was dispatched before producer execution",
+                    binding.cleanup,
                 )
-            } else {
-                try {
-                    producer(request)
+                validationError != null -> {
+                    val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
+                    NavigationGuideResult(
+                        outcome = "rejected",
+                        guideState = if (cleaned) "hidden" else "unknown",
+                        cleanupState = if (cleaned) "completed" else "failed",
+                        errorCode = "invalid_request",
+                        errorDetail = validationError,
+                    )
+                }
+                binding.producer == null -> {
+                    val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
+                    NavigationGuideResult(
+                        outcome = "failed",
+                        guideState = if (cleaned) "hidden" else "unknown",
+                        cleanupState = if (cleaned) "completed" else "failed",
+                        errorCode = "bridge_unavailable",
+                        errorDetail = "no navigation-guide producer is registered",
+                    )
+                }
+                else -> try {
+                    binding.producer.invoke(request)
                 } catch (cause: Throwable) {
-                    val cleaned = cleanupNavigationGuideAfterRejection()
+                    val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
                     NavigationGuideResult(
                         outcome = "failed",
                         guideState = if (cleaned) "hidden" else "unknown",
@@ -468,34 +547,54 @@ object AgentBridge {
                     )
                 }
             }
-        }
-        val resultError = validateNavigationGuideResult(request, result)
-        if (resultError != null) {
-            val cleaned = cleanupNavigationGuideAfterRejection()
-            result = NavigationGuideResult(
-                outcome = "failed",
-                guideState = if (cleaned) "hidden" else "unknown",
-                cleanupState = if (cleaned) "completed" else "failed",
-                errorCode = "invalid_producer_result",
-                errorDetail = resultError,
-            )
-        }
-        try {
-            writeNavigationGuideAckAtomically(context, request, target, result)
-            event(
-                "navigation_guide_ack_written",
-                "requestId" to request.requestId,
-                "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION,
-                "outcome" to result.outcome,
-            )
-        } catch (cause: Throwable) {
-            cleanupNavigationGuideAfterRejection()
-            event(
-                "navigation_guide_ack_failed",
-                "requestId" to request.requestId,
-                "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION,
-                "msg" to (cause.message ?: cause.javaClass.simpleName).take(300),
-            )
+            if (!navigationGuideRequestIsCurrent(request.generation)) {
+                result = staleNavigationGuideResult(
+                    "a newer navigation-guide request was dispatched during producer execution",
+                    binding.cleanup,
+                )
+            }
+            val resultError = validateNavigationGuideResult(request, result)
+            if (resultError != null) {
+                val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
+                result = NavigationGuideResult(
+                    outcome = "failed",
+                    guideState = if (cleaned) "hidden" else "unknown",
+                    cleanupState = if (cleaned) "completed" else "failed",
+                    errorCode = "invalid_producer_result",
+                    errorDetail = resultError,
+                )
+            }
+            if (!navigationGuideRequestIsCurrent(request.generation)) {
+                result = staleNavigationGuideResult(
+                    "a newer navigation-guide request was dispatched before acknowledgement publication",
+                    binding.cleanup,
+                )
+            }
+            try {
+                if (!publishNavigationGuideAckIfCurrent(context, request, target, result)) {
+                    result = staleNavigationGuideResult(
+                        "a newer navigation-guide request won acknowledgement publication",
+                        binding.cleanup,
+                    )
+                    writeNavigationGuideAckAtomically(context, request, target, result)
+                }
+                event(
+                    "navigation_guide_ack_written",
+                    "requestId" to request.requestId,
+                    "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION,
+                    "outcome" to result.outcome,
+                )
+            } catch (cause: Throwable) {
+                cleanupNavigationGuideAfterRejection(binding.cleanup)
+                event(
+                    "navigation_guide_ack_failed",
+                    "requestId" to request.requestId,
+                    "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION,
+                    "msg" to (cause.message ?: cause.javaClass.simpleName).take(300),
+                )
+            }
+        } finally {
+            navigationGuideMutex.unlock()
         }
     }
 
