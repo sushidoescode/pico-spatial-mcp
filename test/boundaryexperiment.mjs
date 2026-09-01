@@ -12,6 +12,7 @@ import {
   BoundaryPreparationFailure,
   BoundarySystemHomeError,
   boundaryExperimentInputSchema,
+  captureAfterPreparationVisualSettle,
   canonicalBoundaryRouteScript,
   classifyBoundaryForegrounds,
   clearBoundarySystemHome,
@@ -491,6 +492,24 @@ test("recovery envelopes reserve every ordered fallback and keep force-stop comp
     recoveryStepExecutionBudgetMs("dynamic_full", "activity_launch"),
     recoveryStepExecutionBudgetMs("dynamic_full", "force_stop_relaunch"),
   ], [60_000, 75_000, 100_000, 290_000]);
+});
+
+test("preparation waits eight seconds before both transition captures", async () => {
+  const events = [];
+  const pause = async (ms) => events.push(`settle:${ms}`);
+  const capture = async (phase) => {
+    events.push(`${phase}:capture`);
+    return phase;
+  };
+
+  assert.equal(await captureAfterPreparationVisualSettle(() => capture("system-home"), pause), "system-home");
+  assert.equal(await captureAfterPreparationVisualSettle(() => capture("app-open"), pause), "app-open");
+  assert.deepEqual(events, [
+    "settle:8000",
+    "system-home:capture",
+    "settle:8000",
+    "app-open:capture",
+  ]);
 });
 
 test("continuity log scope discards pre-cursor generations but retains post-cursor faults", () => {

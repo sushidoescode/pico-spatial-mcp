@@ -51,6 +51,7 @@ const MAX_ACTIVE_RUNS = 32;
 const RUN_TTL_MS = 6 * 60 * 60 * 1_000;
 const MAX_EXPERIMENT_DURATION_MS = 18 * 60_000;
 const LOG_WINDOW_MAX_DURATION_MS = 10 * 60_000;
+const PREPARATION_VISUAL_SETTLE_MS = 8_000;
 type RecoveryKind = "observe" | "reopen_stage" | "activity_launch" | "force_stop_relaunch";
 type RecoveryAttributionKind = RecoveryKind | "activity_launch_ignored";
 type BoundaryEntryRoute = "manifest_mixed" | "manifest_full" | "dynamic_full" | "editor_manifest_full";
@@ -90,6 +91,14 @@ function recoveryEnvelopeOrder(entryRoute: BoundaryEntryRoute): RecoveryKind[] {
 export function minimumRecoveryReserveMs(entryRoute: BoundaryEntryRoute): number {
   return recoveryEnvelopeOrder(entryRoute)
     .reduce((total, kind) => total + recoveryStepExecutionBudgetMs(entryRoute, kind), 0);
+}
+
+export async function captureAfterPreparationVisualSettle<T>(
+  capture: () => Promise<T>,
+  pause: (ms: number) => Promise<void> = sleep,
+): Promise<T> {
+  await pause(PREPARATION_VISUAL_SETTLE_MS);
+  return capture();
 }
 
 const MIN_RECOVERY_RESERVE_MS = minimumRecoveryReserveMs("manifest_mixed");
@@ -2920,7 +2929,9 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
       }
       let homeReference: BoundaryCapture;
       try {
-        homeReference = await liveCapture(adb, input, context.capturePaths.homeReference, "home_reference");
+        homeReference = await captureAfterPreparationVisualSettle(
+          () => liveCapture(adb, input, context.capturePaths.homeReference, "home_reference"),
+        );
       } catch (error) {
         throw new BoundaryPreparationFailure(redactSensitiveText(error, []), { homeClearance, structuralStop: "preparation_failed" });
       }
@@ -2986,8 +2997,9 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
               "--es", "pico.boundary.stage", dynamic.stageId,
             ], { timeoutMs: 30_000 }), "dynamic Full open command");
           }
-          await sleep(input.scenario.entryRoute === "dynamic_full" ? 4_000 : 2_000);
-          const appBaseline = await liveCapture(adb, input, context.capturePaths.appBaseline, "app_baseline");
+          const appBaseline = await captureAfterPreparationVisualSettle(
+            () => liveCapture(adb, input, context.capturePaths.appBaseline, "app_baseline"),
+          );
           partial.appBaseline = appBaseline;
           const current = await currentApplicationBinding(adb, input);
           partial.current = current;
