@@ -338,6 +338,56 @@ test("route catches an async controller rejection without allocating or applying
   assert.equal(actions, 0);
 });
 
+test("compatibility route returns at its deadline when a controller promise never settles", async () => {
+  let dependencyCalls = 0;
+  const route = executeRelativeCameraRoute(
+    routeInput({ budgets: { ...defaultBudgets, maxDurationMs: 12_005, recoveryReserveMs: 0 } }),
+    () => new Promise(() => {}),
+    dependencies({
+      allocateWaypointPath: () => { dependencyCalls++; throw new Error("must not allocate"); },
+      applyRelativeAction: async () => { dependencyCalls++; throw new Error("must not apply"); },
+      captureSettled: async () => { dependencyCalls++; throw new Error("must not capture"); },
+    }),
+  );
+  const result = await Promise.race([
+    route,
+    new Promise((resolve) => setTimeout(() => resolve("test_timeout"), 100)),
+  ]);
+  assert.notEqual(result, "test_timeout", "the compatibility wrapper must not drain an untrusted async loser");
+  assert.equal(result.status, "budget_exhausted");
+  assert.equal(dependencyCalls, 0);
+});
+
+test("a late compatibility decision cannot schedule route work after the deadline result", async () => {
+  let releaseDecision;
+  let returned = false;
+  const events = [];
+  const routePromise = executeRelativeCameraRoute(
+    routeInput({ budgets: { ...defaultBudgets, maxDurationMs: 12_005, recoveryReserveMs: 0 } }),
+    () => new Promise((resolve) => { releaseDecision = resolve; }),
+    dependencies({
+      allocateWaypointPath: () => { events.push("allocate"); return "/tmp/pico-navigation-tests/route-test/late.png"; },
+      applyRelativeAction: async (action) => { events.push("action"); return applied(action); },
+      captureSettled: async (capturePath) => { events.push("capture"); return settled(capturePath); },
+    }),
+  ).then((trace) => {
+    returned = true;
+    return trace;
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const returnedBeforeRelease = returned;
+  releaseDecision([{ kind: "look_drag", dxPx: 10, dyPx: 0 }]);
+  const trace = await routePromise;
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(returnedBeforeRelease, true, "deadline return must not wait for a late decision");
+  assert.equal(trace.status, "budget_exhausted");
+  assert.deepEqual(events, []);
+  assert.deepEqual(trace.waypoints, []);
+  assert.equal(trace.usage.actions, 0);
+});
+
 test("persistent route execution carries its original budgets, sequence, paths, and adopted settled baseline across continuations", async () => {
   assert.equal(typeof navigation.createRelativeRouteExecution, "function");
   const priors = [];
@@ -424,6 +474,130 @@ test("paired route step restores an applied outbound exactly once through the pa
     { lane: "active", pairId: "yaw-positive-40", pairRole: "outbound" },
     { lane: "recovery", pairId: "yaw-positive-40", pairRole: "restore" },
   ]);
+});
+
+test("paired route attempt ledger retains an applied outbound capture failure before its successful inverse", async () => {
+  const requests = [
+    { kind: "look_drag", dxPx: 40, dyPx: 0 },
+    { kind: "look_drag", dxPx: -40, dyPx: 0 },
+  ];
+  for (const [name, firstCapture, evidenceStatus, detailPattern, continuityStatus, waypointSeqs] of [
+    ["throw", async () => { throw new Error("fixture outbound capture threw"); }, null, /outbound capture threw/, "not_reached", [2]],
+    ["timeout", async (capturePath) => timeout(capturePath), "timeout", /fresh baseline/, "succeeded", [1, 2]],
+    ["invalid receipt", async (capturePath) => ({ ...settled(capturePath), path: `${capturePath}.wrong` }), "settled", /exact binding/, "not_reached", [2]],
+  ]) {
+    let captureCalls = 0;
+    const execution = navigation.createRelativeRouteExecution(
+      routeInput({
+        budgets: {
+          ...defaultBudgets,
+          maxActions: 2,
+          maxWaypoints: 2,
+          maxDurationMs: 400_000,
+          recoveryReserveMs: 180_000,
+        },
+      }),
+      dependencies({
+        captureSettled: async (capturePath) => {
+          captureCalls++;
+          if (captureCalls === 1) return firstCapture(capturePath);
+          return settled(capturePath, "e".repeat(64));
+        },
+      }),
+    );
+
+    const pair = await execution.executePairedStep(requests[0], requests[1], { pairId: "yaw-positive-40" });
+    assert.equal(pair.primaryStatus, "route_unsettled", name);
+    assert.equal(pair.restore?.status, "settled", name);
+    const trace = execution.finish("route_unsettled");
+
+    assert.equal(trace.usage.actions, 2, name);
+    assert.equal(trace.actionAttempts.length, 2, name);
+    assert.deepEqual(trace.actionAttempts.map((attempt) => ({
+      identity: attempt.identity,
+      order: attempt.order,
+      request: attempt.request,
+      lane: attempt.lane,
+      recoveryLane: attempt.recoveryLane,
+      pairId: attempt.pairId,
+      pairRole: attempt.pairRole,
+    })), [
+      {
+        identity: { executionId: "route-test", stepSeq: 1, actionIndex: 0 },
+        order: 1,
+        request: requests[0],
+        lane: "active",
+        recoveryLane: false,
+        pairId: "yaw-positive-40",
+        pairRole: "outbound",
+      },
+      {
+        identity: { executionId: "route-test", stepSeq: 2, actionIndex: 0 },
+        order: 2,
+        request: requests[1],
+        lane: "active",
+        recoveryLane: false,
+        pairId: "yaw-positive-40",
+        pairRole: "restore",
+      },
+    ], name);
+    assert.equal(trace.actionAttempts[0].action.status, "succeeded", name);
+    assert.equal(trace.actionAttempts[0].action.evidence.status, "applied", name);
+    assert.equal(trace.actionAttempts[0].settle.status, "failed", name);
+    assert.equal(trace.actionAttempts[0].settle.evidence?.status ?? null, evidenceStatus, name);
+    assert.match(trace.actionAttempts[0].settle.detail, detailPattern, name);
+    assert.equal(trace.actionAttempts[0].continuityAfter.status, continuityStatus, name);
+    assert.equal(trace.actionAttempts[1].action.status, "succeeded", name);
+    assert.equal(trace.actionAttempts[1].settle.status, "succeeded", name);
+    assert.equal(trace.actionAttempts[1].continuityAfter.status, "succeeded", name);
+    assert.deepEqual(trace.waypoints.map((waypoint) => waypoint.seq), waypointSeqs, name);
+  }
+});
+
+test("paired route attempt ledger retains the outbound and a failed inverse without overwriting either", async () => {
+  const requests = [
+    { kind: "look_drag", dxPx: 40, dyPx: 0 },
+    { kind: "look_drag", dxPx: -40, dyPx: 0 },
+  ];
+  let actions = 0;
+  const execution = navigation.createRelativeRouteExecution(
+    routeInput({
+      budgets: {
+        ...defaultBudgets,
+        maxActions: 2,
+        maxWaypoints: 2,
+        maxDurationMs: 400_000,
+        recoveryReserveMs: 180_000,
+      },
+    }),
+    dependencies({
+      applyRelativeAction: async (action) => {
+        actions++;
+        return actions === 1
+          ? applied(action)
+          : { ...applied(action), status: "failed", error: "fixture inverse application failed" };
+      },
+    }),
+  );
+
+  const pair = await execution.executePairedStep(requests[0], requests[1], { pairId: "yaw-positive-40" });
+  assert.equal(pair.primaryStatus, "settled");
+  assert.equal(pair.restore?.status, "action_failed");
+  const trace = execution.finish("action_failed");
+
+  assert.equal(trace.usage.actions, 2);
+  assert.deepEqual(trace.actionAttempts.map((attempt) => attempt.request), requests);
+  assert.deepEqual(trace.actionAttempts.map((attempt) => attempt.identity.stepSeq), [1, 2]);
+  assert.equal(trace.actionAttempts[0].settle.status, "succeeded");
+  assert.equal(trace.actionAttempts[1].action.status, "failed");
+  assert.equal(trace.actionAttempts[1].action.evidence.status, "failed");
+  assert.match(trace.actionAttempts[1].action.detail, /fixture inverse application failed/);
+  assert.equal(trace.actionAttempts[1].settle.status, "not_reached");
+  assert.equal(trace.terminalActionFailures.length, 1);
+  assert.deepEqual(trace.terminalActionFailures[0].attemptIdentity,
+    { executionId: "route-test", stepSeq: 2, actionIndex: 0 });
+  assert.match(trace.terminalActionFailures[0].terminalError, /fixture inverse application failed/);
+  assert.deepEqual(trace.terminalActionFailure, trace.terminalActionFailures[0]);
 });
 
 test("paired route step refuses before outbound when the exact inverse cannot fit the recovery reserve", async () => {

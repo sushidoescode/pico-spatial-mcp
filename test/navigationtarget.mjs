@@ -1244,6 +1244,9 @@ function targetFake(input, options = {}) {
   const applyAction = async (action) => {
     actionCount++;
     events.push(`action:${action.kind === "look_drag" ? `drag:${action.dxPx},${action.dyPx}` : `hold:${action.key}:${action.holdMs}`}`);
+    if (options.actionThrowAt === actionCount) {
+      throw new Error(`fixture action adapter threw at ${actionCount}`);
+    }
     if (options.actionFailureAt === actionCount) {
       return {
         action: action.kind,
@@ -1341,6 +1344,9 @@ function targetFake(input, options = {}) {
       captureCount++;
       const base = path.basename(captureInput.outPath);
       events.push(`capture:${base}:${captureInput.priorSha256 ?? "none"}`);
+      if (options.captureThrowAt === captureCount) {
+        throw new Error(`fixture capture threw at ${captureCount}`);
+      }
       if (options.captureFailureAt === captureCount) {
         return {
           receipt: {
@@ -2137,6 +2143,111 @@ test("calibration restores an applied outbound once through recovery after an ac
     { lane: "active", pairId: "yaw-0", pairRole: "outbound" },
     { lane: "recovery", pairId: "yaw-0", pairRole: "restore" },
   ]);
+  assert.equal(fake.stored.receipt, null);
+  assert.equal(fake.stored.registry, null);
+  assert.equal(fake.hideCalls, 1);
+});
+
+test("calibration retains ordered outbound-settle failure and successful inverse attempts with identity-bound audits", async () => {
+  const input = targetInput("calibrate");
+  const fake = targetFake(input, { captureThrowAt: 3 });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "unsettled");
+  assert.equal(fake.actionCount, 2);
+  assert.equal(result.routeTraces[0].usage.actions, 2);
+  assert.equal(result.routeTraces[0].actionAttempts.length, 2);
+  assert.deepEqual(result.routeTraces[0].actionAttempts.map((attempt) => ({
+    stepSeq: attempt.identity.stepSeq,
+    pairRole: attempt.pairRole,
+    request: attempt.request,
+    actionStatus: attempt.action.status,
+    settleStatus: attempt.settle.status,
+  })), [
+    {
+      stepSeq: 1,
+      pairRole: "outbound",
+      request: { kind: "look_drag", dxPx: 40, dyPx: 0 },
+      actionStatus: "succeeded",
+      settleStatus: "failed",
+    },
+    {
+      stepSeq: 2,
+      pairRole: "restore",
+      request: { kind: "look_drag", dxPx: -40, dyPx: 0 },
+      actionStatus: "succeeded",
+      settleStatus: "succeeded",
+    },
+  ]);
+  assert.equal(result.routeTraces[0].actionAttempts[0].settle.evidence, null);
+  assert.match(result.routeTraces[0].actionAttempts[0].settle.detail, /fixture capture threw at 3/);
+  assert.equal(result.actions.length, 2);
+  assert.deepEqual(result.actions.map((entry) => entry.attempt.identity),
+    result.routeTraces[0].actionAttempts.map((attempt) => attempt.identity));
+  assert.equal(result.actions[0].ack?.status, "applied");
+  assert.equal(result.actions[0].settle, null);
+  assert.equal(result.actions[1].ack?.status, "applied");
+  assert.equal(result.actions[1].settle?.status, "settled");
+  assert.deepEqual(result.actions.map((entry) => entry.controlAudit.applied), [
+    { dxPx: 40, dyPx: 0 },
+    { dxPx: -40, dyPx: 0 },
+  ]);
+  assert.equal(fake.stored.receipt, null);
+  assert.equal(fake.stored.registry, null);
+  assert.equal(fake.hideCalls, 1);
+});
+
+test("calibration exposes nullable action-receipt evidence for a thrown inverse without losing its audit identity", async () => {
+  const input = targetInput("calibrate");
+  const fake = targetFake(input, { actionThrowAt: 2 });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "cleanup_failed");
+  assert.equal(result.routeTraces[0].usage.actions, 2);
+  assert.equal(result.routeTraces[0].actionAttempts.length, 2);
+  const inverse = result.routeTraces[0].actionAttempts[1];
+  assert.equal(inverse.pairRole, "restore");
+  assert.equal(inverse.action.status, "failed");
+  assert.equal(inverse.action.evidence, null);
+  assert.match(inverse.action.detail, /fixture action adapter threw at 2/);
+  assert.equal(inverse.settle.status, "not_reached");
+  assert.equal(inverse.settle.evidence, null);
+  assert.equal(result.actions.length, 2);
+  assert.deepEqual(result.actions[1].attempt.identity, inverse.identity);
+  assert.equal(result.actions[1].ack, null);
+  assert.equal(result.actions[1].settle, null);
+  assert.deepEqual(result.actions[1].controlAudit.applied, { dxPx: -40, dyPx: 0 });
+  assert.equal(fake.stored.receipt, null);
+  assert.equal(fake.stored.registry, null);
+});
+
+test("calibration retains ordered outbound and failed inverse attempts without positional audit reassignment", async () => {
+  const input = targetInput("calibrate");
+  const fake = targetFake(input, { actionFailureAt: 2 });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "cleanup_failed");
+  assert.equal(fake.actionCount, 2);
+  assert.equal(result.routeTraces[0].usage.actions, 2);
+  assert.equal(result.routeTraces[0].actionAttempts.length, 2);
+  assert.deepEqual(result.routeTraces[0].actionAttempts.map((attempt) => attempt.pairRole), ["outbound", "restore"]);
+  assert.equal(result.routeTraces[0].actionAttempts[0].settle.status, "succeeded");
+  assert.equal(result.routeTraces[0].actionAttempts[1].action.status, "failed");
+  assert.equal(result.routeTraces[0].actionAttempts[1].action.evidence.status, "failed");
+  assert.equal(result.routeTraces[0].actionAttempts[1].settle.status, "not_reached");
+  assert.equal(result.routeTraces[0].terminalActionFailures.length, 1);
+  assert.deepEqual(result.routeTraces[0].terminalActionFailures[0].attemptIdentity,
+    result.routeTraces[0].actionAttempts[1].identity);
+  assert.equal(result.actions.length, 2);
+  assert.deepEqual(result.actions.map((entry) => entry.controlAudit.applied), [
+    { dxPx: 40, dyPx: 0 },
+    { dxPx: -40, dyPx: 0 },
+  ]);
+  assert.deepEqual(result.actions.map((entry) => entry.attempt.identity),
+    result.routeTraces[0].actionAttempts.map((attempt) => attempt.identity));
   assert.equal(fake.stored.receipt, null);
   assert.equal(fake.stored.registry, null);
   assert.equal(fake.hideCalls, 1);

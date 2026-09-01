@@ -33,6 +33,7 @@ import {
   type BoundApplicationIdentity,
   type BoundRelativeRouteInput,
   type RelativeCameraAction,
+  type RelativeRouteActionAttempt,
   type RelativeRouteExecution,
   type RelativeRouteStepOutcome,
   type RelativeRouteTrace,
@@ -765,9 +766,12 @@ function newResult(input: NavigateToSceneTargetInput) {
     routeTraces: [] as RelativeRouteTrace[],
     actions: [] as Array<{
       seq: number;
+      actionIndex: number;
       request: RelativeCameraAction;
-      ack: unknown;
-      settle: CaptureSettledReceipt;
+      ack: unknown | null;
+      settle: CaptureSettledReceipt | null;
+      attempt: RelativeRouteActionAttempt;
+      routeMeta?: { lane: "active" | "recovery"; pairId?: string; pairRole?: "outbound" | "restore" };
       controlAudit?: NavigationControlAudit;
     }>,
     captures: {
@@ -997,9 +1001,9 @@ async function validateStoredCalibrationReceipt(
 }
 
 /**
- * Complete fakeable target-navigation action. Motion is admitted and executed exclusively by one
- * executeRelativeCameraRoute invocation; its async controller consumes the preceding settled
- * waypoint, immutable detector result, and fresh scene re-query before choosing another action.
+ * Complete fakeable target-navigation action. Motion is admitted and executed by one persistent
+ * RelativeRouteExecution; immutable detector work and fresh scene queries run only between explicit
+ * shared steps, while the route session owns every action, settle, recovery, and cumulative budget.
  */
 export async function executeNavigateToSceneTarget(
   rawInput: NavigateToSceneTargetInput,
@@ -1024,7 +1028,10 @@ export async function executeNavigateToSceneTarget(
   let terminalReason: NavigationTargetStopReason | null = null;
   let terminalDetail: string | null = null;
   let publishCalibration: { record: NavigationCalibrationRecord; payload: Record<string, any> } | null = null;
-  const controlAudits: NavigationControlAudit[] = [];
+  const controlAudits = new Map<string, NavigationControlAudit>();
+  const accountedAttempts = new Set<string>();
+  const attemptKey = (attempt: Pick<RelativeRouteActionAttempt, "identity">) =>
+    `${attempt.identity.executionId}:${attempt.identity.stepSeq}:${attempt.identity.actionIndex}`;
 
   const elapsedMs = () => {
     const observed = deps.monotonicNs();
@@ -1078,22 +1085,49 @@ export async function executeNavigateToSceneTarget(
     routeSealed = true;
     const trace = execution.finish(routeStatus);
     result.routeTraces = [trace];
-    let actionIndex = 0;
-    result.actions = trace.waypoints.flatMap((waypoint) => waypoint.actions.map((request, index) => {
-      const controlAudit = controlAudits[actionIndex++];
+    result.actions = trace.actionAttempts.map((attempt) => {
+      const controlAudit = controlAudits.get(attemptKey(attempt));
+      const routeMeta = attempt.pairId || attempt.pairRole || attempt.recoveryLane
+        ? {
+            lane: attempt.lane,
+            ...(attempt.pairId ? { pairId: attempt.pairId } : {}),
+            ...(attempt.pairRole ? { pairRole: attempt.pairRole } : {}),
+          }
+        : null;
       return {
-        seq: waypoint.seq,
-        request,
-        ack: waypoint.actionReceipts[index],
-        settle: waypoint.settle,
-        ...(waypoint.meta ? { routeMeta: waypoint.meta } : {}),
+        seq: attempt.identity.stepSeq,
+        actionIndex: attempt.identity.actionIndex,
+        request: attempt.request,
+        ack: attempt.action.evidence,
+        settle: attempt.settle.evidence,
+        attempt,
+        ...(routeMeta ? { routeMeta } : {}),
         ...(controlAudit ? { controlAudit } : {}),
       };
-    }));
+    });
+  };
+  const accountStepAttempts = (step: RelativeRouteStepOutcome) => {
+    for (const attempt of step.actionAttempts) {
+      const key = attemptKey(attempt);
+      if (accountedAttempts.has(key)) continue;
+      accountedAttempts.add(key);
+      attemptedGeneration = Math.max(attemptedGeneration, attempt.order);
+    }
+    if (step.waypoint?.settle.status === "settled" && step.waypoint.settle.settlementSatisfied) {
+      const settledOrder = step.actionAttempts.at(-1)?.order;
+      if (settledOrder !== undefined) settledGeneration = Math.max(settledGeneration, settledOrder);
+    }
   };
   const failStep = (step: RelativeRouteStepOutcome): never => {
+    accountStepAttempts(step);
     routeStatus = step.status === "settled" ? "controller_stop" : step.status;
-    const trace = { status: routeStatus, waypoints: [], usage: { actions: 0, waypoints: 0, holdMs: 0, dragPx: 0, durationMs: 0 } } as RelativeRouteTrace;
+    const trace: RelativeRouteTrace = {
+      status: routeStatus,
+      waypoints: [],
+      actionAttempts: [],
+      terminalActionFailures: [],
+      usage: { actions: 0, waypoints: 0, holdMs: 0, dragPx: 0, durationMs: 0 },
+    };
     throw new NavigationTargetStop(routeStopReason(trace), `shared camera route stopped with ${step.status}`);
   };
 
@@ -1269,30 +1303,42 @@ export async function executeNavigateToSceneTarget(
       rawDesired: Record<string, number | string>,
       gain: number,
       action: RelativeCameraAction,
-    ) => {
+      usageOffset: { actions?: number; dragPx?: number; holdMs?: number } = {},
+    ): NavigationControlAudit => {
       const applied: Record<string, number | string> = action.kind === "look_drag"
         ? { dxPx: action.dxPx, dyPx: action.dyPx }
         : { key: action.key, holdMs: action.holdMs };
       const rawDx = typeof rawDesired.dxPx === "number" ? rawDesired.dxPx : null;
       const rawDy = typeof rawDesired.dyPx === "number" ? rawDesired.dyPx : null;
       const rawHold = typeof rawDesired.holdMs === "number" ? rawDesired.holdMs : null;
-      controlAudits.push({
+      return {
         rawDesired,
         gain,
         applied,
         policyLimits: {
           maxDragPxPerAction: input.motionPolicy.maxDragPxPerAction,
-          remainingCumulativeDragPx: Math.max(0, input.motionPolicy.maxCumulativeDragPx - controllerState.cumulativeDragPx),
+          remainingCumulativeDragPx: Math.max(0, input.motionPolicy.maxCumulativeDragPx
+            - controllerState.cumulativeDragPx - (usageOffset.dragPx ?? 0)),
           maxHoldMsPerAction: input.motionPolicy.maxHoldMsPerAction,
-          remainingCumulativeHoldMs: Math.max(0, input.motionPolicy.maxCumulativeHoldMs - controllerState.cumulativeHoldMs),
-          remainingActions: Math.max(0, input.motionPolicy.maxActions - controllerState.actionCount),
+          remainingCumulativeHoldMs: Math.max(0, input.motionPolicy.maxCumulativeHoldMs
+            - controllerState.cumulativeHoldMs - (usageOffset.holdMs ?? 0)),
+          remainingActions: Math.max(0, input.motionPolicy.maxActions
+            - controllerState.actionCount - (usageOffset.actions ?? 0)),
         },
         wasClamped: action.kind === "look_drag"
           ? rawDx === null || rawDy === null
             || Math.abs(rawDx * gain - action.dxPx) > 1e-9
             || Math.abs(rawDy * gain - action.dyPx) > 1e-9
           : rawHold === null || Math.abs(rawHold * gain - action.holdMs) > 1e-9,
-      });
+      };
+    };
+    const bindControlAudit = (
+      step: RelativeRouteStepOutcome,
+      audits: readonly NavigationControlAudit[],
+    ) => {
+      for (let index = 0; index < step.actionAttempts.length && index < audits.length; index++) {
+        controlAudits.set(attemptKey(step.actionAttempts[index]), audits[index]);
+      }
     };
     const observeStep = async (
       step: RelativeRouteStepOutcome,
@@ -1300,11 +1346,9 @@ export async function executeNavigateToSceneTarget(
       acquisition: boolean,
       acceptTerminalSettledWaypoint = false,
     ) => {
-      const attempts = Math.max(step.actionReceipts.length, step.terminalActionFailure?.attemptedCount ?? 0, step.actionApplied ? 1 : 0);
-      attemptedGeneration += attempts;
+      accountStepAttempts(step);
       if (!step.waypoint || (step.status !== "settled" && !acceptTerminalSettledWaypoint)) failStep(step);
       const waypoint = step.waypoint!;
-      settledGeneration = attemptedGeneration;
       controllerState.actionCount++;
       if (action.kind === "look_drag") controllerState.cumulativeDragPx += Math.hypot(action.dxPx, action.dyPx);
       else controllerState.cumulativeHoldMs += action.holdMs;
@@ -1366,8 +1410,10 @@ export async function executeNavigateToSceneTarget(
         throw new NavigationTargetStop(intent.kind === "stop" ? intent.reason : "guide_not_acquired", "bounded horizontal acquisition exhausted");
       }
       const action: RelativeCameraAction = { kind: "look_drag", dxPx: intent.dxPx, dyPx: intent.dyPx };
-      auditAction({ dxPx: intent.dxPx, dyPx: intent.dyPx }, intent.gain, action);
-      measured = await observeStep(await execution.executeStep([action]), action, true);
+      const audit = auditAction({ dxPx: intent.dxPx, dyPx: intent.dyPx }, intent.gain, action);
+      const step = await execution.executeStep([action]);
+      bindControlAudit(step, [audit]);
+      measured = await observeStep(step, action, true);
     }
     if (result.captures.acquisition.length) await repeatGuideDelta(result.captures.acquisition.at(-1)!);
 
@@ -1388,27 +1434,37 @@ export async function executeNavigateToSceneTarget(
         const outbound = CALIBRATION_SCHEDULE[index];
         const restore = CALIBRATION_SCHEDULE[index + 1];
         const pairId = `${outbound.axis}-${outbound.sampleIndex}`;
-        auditAction(
+        const outboundAudit = auditAction(
           outbound.action.kind === "look_drag"
             ? { dxPx: outbound.action.dxPx, dyPx: outbound.action.dyPx }
             : { key: outbound.action.key, holdMs: outbound.action.holdMs },
           1,
           outbound.action,
         );
+        const outboundUsage = outbound.action.kind === "look_drag"
+          ? { actions: 1, dragPx: Math.hypot(outbound.action.dxPx, outbound.action.dyPx) }
+          : { actions: 1, holdMs: outbound.action.holdMs };
+        const restoreAudit = auditAction(
+          restore.action.kind === "look_drag"
+            ? { dxPx: restore.action.dxPx, dyPx: restore.action.dyPx }
+            : { key: restore.action.key, holdMs: restore.action.holdMs },
+          1,
+          restore.action,
+          outboundUsage,
+        );
         const pair = await execution.executePairedStep(outbound.action, restore.action, { pairId });
+        bindControlAudit(pair.outbound, [outboundAudit]);
+        accountStepAttempts(pair.outbound);
+        if (pair.restore) {
+          bindControlAudit(pair.restore, [restoreAudit]);
+          accountStepAttempts(pair.restore);
+        }
         if (!pair.outbound.waypoint) failStep(pair.outbound);
         const outboundFrame = await observeStep(pair.outbound, outbound.action, false, true);
         if (!outboundFrame.guide || !baseline) {
           throw new NavigationTargetStop("guide_not_acquired", "calibration guide was lost after an outbound trial");
         }
         const outboundPose = measurePose(outboundFrame)!;
-        auditAction(
-          restore.action.kind === "look_drag"
-            ? { dxPx: restore.action.dxPx, dyPx: restore.action.dyPx }
-            : { key: restore.action.key, holdMs: restore.action.holdMs },
-          1,
-          restore.action,
-        );
         if (!pair.restore || pair.restore.status !== "settled" || !pair.restore.waypoint) {
           routeStatus = pair.restore && pair.restore.status !== "settled"
             ? pair.restore.status
@@ -1484,6 +1540,7 @@ export async function executeNavigateToSceneTarget(
           controllerState.lastError = measured.guide.error;
         }
         let action: RelativeCameraAction;
+        let actionAudit: NavigationControlAudit;
         if (intent.kind === "drag") {
           controllerState.phase = intent.mode === "search_horizontal" ? "acquire" : "center";
           if (intent.mode === "center" && acceptedCalibrationRecord && measured.guide) {
@@ -1506,10 +1563,14 @@ export async function executeNavigateToSceneTarget(
             const dyPx = roundedDy === 0 ? 0 : roundedDy;
             if (dxPx === 0 && dyPx === 0) throw new NavigationTargetStop("budget_exhausted", "calibrated centering rounded to zero");
             action = { kind: "look_drag", dxPx, dyPx };
-            auditAction(raw, intent.gain, action);
+            actionAudit = auditAction(raw, intent.gain, action);
           } else {
             action = { kind: "look_drag", dxPx: intent.dxPx, dyPx: intent.dyPx };
-            auditAction({ dxPx: intent.dxPx / intent.gain, dyPx: intent.dyPx / intent.gain }, intent.gain, action);
+            actionAudit = auditAction(
+              { dxPx: intent.dxPx / intent.gain, dyPx: intent.dyPx / intent.gain },
+              intent.gain,
+              action,
+            );
           }
         } else if (intent.kind === "hold") {
           if (approachCalibration.status !== "valid" || !acceptedCalibrationRecord || !storedCalibration) {
@@ -1537,7 +1598,7 @@ export async function executeNavigateToSceneTarget(
           const appliedHoldMs = Math.floor(Math.min(rawHoldMs, input.motionPolicy.maxHoldMsPerAction, remaining));
           if (!(appliedHoldMs > 0)) throw new NavigationTargetStop("budget_exhausted", "calibrated approach cannot form a bounded W hold");
           action = { kind: "key_hold", key: "w", holdMs: appliedHoldMs };
-          auditAction({ key: "w", holdMs: rawHoldMs }, 1, action);
+          actionAudit = auditAction({ key: "w", holdMs: rawHoldMs }, 1, action);
         } else if (intent.kind === "calibration_required") {
           throw new NavigationTargetStop("unsupported_backend", "approach is disabled until exact-context calibration is valid");
         } else if (intent.kind === "requery") {
@@ -1561,6 +1622,7 @@ export async function executeNavigateToSceneTarget(
           throw new NavigationTargetStop("cleanup_failed", "navigation controller entered cleanup before terminal settlement");
         }
         const step = await execution.executeStep([action]);
+        bindControlAudit(step, [actionAudit]);
         measured = await observeStep(step, action, false);
         if (measured.guide) controllerState.areaHistory.push(measured.guide.areaFraction);
         if (action.kind === "key_hold" && action.key === "w") {

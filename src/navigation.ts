@@ -127,10 +127,15 @@ export interface RelativeRouteDecisionContext {
   signal: AbortSignal;
 }
 
+/**
+ * Compatibility-loop decisions are synchronous and side-effect-free. Stateful or asynchronous
+ * observation belongs between explicit `RelativeRouteExecution` steps, never in this callback.
+ * The runtime still fails closed on a JavaScript caller that returns a thenable.
+ */
 export type RelativeRouteDecision = (
   trace: readonly RelativeRouteWaypoint[],
   context: RelativeRouteDecisionContext,
-) => RelativeCameraAction[] | "stop" | Promise<RelativeCameraAction[] | "stop">;
+) => RelativeCameraAction[] | "stop";
 
 export type RelativeRouteStop =
   | "controller_stop"
@@ -141,11 +146,43 @@ export type RelativeRouteStop =
   | "binding_lost"
   | "budget_exhausted";
 
+export interface RelativeRouteActionAttemptIdentity {
+  executionId: string;
+  stepSeq: number;
+  actionIndex: number;
+}
+
+export interface RelativeRouteAttemptOutcome<T> {
+  status: "succeeded" | "failed" | "not_reached";
+  evidence: T | null;
+  detail: string | null;
+}
+
+export interface RelativeRouteActionAttempt {
+  identity: RelativeRouteActionAttemptIdentity;
+  order: number;
+  request: RelativeCameraAction;
+  lane: RelativeRouteWaypointMeta["lane"];
+  recoveryLane: boolean;
+  pairId?: string;
+  pairRole?: "outbound" | "restore";
+  continuityBefore: RelativeRouteAttemptOutcome<RouteContinuityObservation>;
+  action: RelativeRouteAttemptOutcome<CameraActionReceipt>;
+  settle: RelativeRouteAttemptOutcome<CaptureSettledReceipt>;
+  continuityAfter: RelativeRouteAttemptOutcome<RouteContinuityObservation>;
+}
+
+export interface OrderedTerminalCameraActionFailure extends TerminalCameraActionFailure {
+  attemptIdentity: RelativeRouteActionAttemptIdentity;
+}
+
 export interface RelativeRouteTrace {
   status: RelativeRouteStop;
   waypoints: RelativeRouteWaypoint[];
+  actionAttempts: RelativeRouteActionAttempt[];
+  terminalActionFailures: OrderedTerminalCameraActionFailure[];
   usage: { actions: number; waypoints: number; holdMs: number; dragPx: number; durationMs: number };
-  terminalActionFailure?: TerminalCameraActionFailure;
+  terminalActionFailure?: OrderedTerminalCameraActionFailure;
 }
 
 export interface RelativeRouteStepOutcome {
@@ -153,7 +190,8 @@ export interface RelativeRouteStepOutcome {
   waypoint: RelativeRouteWaypoint | null;
   actionReceipts: CameraActionReceipt[];
   actionApplied: boolean;
-  terminalActionFailure?: TerminalCameraActionFailure;
+  actionAttempts: RelativeRouteActionAttempt[];
+  terminalActionFailure?: OrderedTerminalCameraActionFailure;
 }
 
 export interface RelativeRoutePairedStepOutcome {
@@ -728,9 +766,12 @@ export function createRelativeRouteExecution(
   deps: RelativeRouteDependencies,
 ): RelativeRouteExecution {
   const waypoints: RelativeRouteWaypoint[] = [];
+  const actionAttempts: RelativeRouteActionAttempt[] = [];
+  const terminalActionFailures: OrderedTerminalCameraActionFailure[] = [];
   const allocatedPaths = new Set<string>();
   const usage = { actions: 0, waypoints: 0, holdMs: 0, dragPx: 0, durationMs: 0 };
-  let terminalActionFailure: TerminalCameraActionFailure | undefined;
+  let nextStepSeq = 1;
+  let nextAttemptOrder = 1;
   let priorCaptureSha256 = input?.priorCaptureSha256;
   let canonicalSessionRoot: string | null = null;
   let startedAt: bigint | null = null;
@@ -781,9 +822,36 @@ export function createRelativeRouteExecution(
       return null;
     }
   };
+  const copyOutcome = <T>(candidate: RelativeRouteAttemptOutcome<T>): RelativeRouteAttemptOutcome<T> => ({
+    status: candidate.status,
+    evidence: candidate.evidence,
+    detail: candidate.detail,
+  });
+  const copyAttempt = (attempt: RelativeRouteActionAttempt): RelativeRouteActionAttempt => ({
+    ...attempt,
+    identity: { ...attempt.identity },
+    request: { ...attempt.request } as RelativeCameraAction,
+    continuityBefore: copyOutcome(attempt.continuityBefore),
+    action: copyOutcome(attempt.action),
+    settle: copyOutcome(attempt.settle),
+    continuityAfter: copyOutcome(attempt.continuityAfter),
+  });
+  const copyFailure = (failure: OrderedTerminalCameraActionFailure): OrderedTerminalCameraActionFailure => ({
+    ...failure,
+    attemptIdentity: { ...failure.attemptIdentity },
+    receiptsSoFar: [...failure.receiptsSoFar],
+    attemptedAction: { ...failure.attemptedAction } as RelativeCameraAction,
+  });
   const traceWithoutClock = (status: RelativeRouteStop): RelativeRouteTrace => {
-    const trace: RelativeRouteTrace = { status, waypoints: [...waypoints], usage: { ...usage } };
-    if (terminalActionFailure) trace.terminalActionFailure = terminalActionFailure;
+    const orderedFailures = terminalActionFailures.map(copyFailure);
+    const trace: RelativeRouteTrace = {
+      status,
+      waypoints: [...waypoints],
+      actionAttempts: actionAttempts.map(copyAttempt),
+      terminalActionFailures: orderedFailures,
+      usage: { ...usage },
+    };
+    if (orderedFailures.length) trace.terminalActionFailure = orderedFailures.at(-1)!;
     return trace;
   };
   const finish = (status: RelativeRouteStop): RelativeRouteTrace => {
@@ -798,8 +866,16 @@ export function createRelativeRouteExecution(
     waypoint: RelativeRouteWaypoint | null = null,
     actionReceipts: CameraActionReceipt[] = [],
     actionApplied = false,
+    stepAttempts: RelativeRouteActionAttempt[] = [],
+    terminalActionFailure?: OrderedTerminalCameraActionFailure,
   ): RelativeRouteStepOutcome => {
-    const result: RelativeRouteStepOutcome = { status, waypoint, actionReceipts, actionApplied };
+    const result: RelativeRouteStepOutcome = {
+      status,
+      waypoint,
+      actionReceipts,
+      actionApplied,
+      actionAttempts: stepAttempts.map(copyAttempt),
+    };
     if (terminalActionFailure) result.terminalActionFailure = terminalActionFailure;
     return result;
   };
@@ -837,16 +913,98 @@ export function createRelativeRouteExecution(
     allocatedPaths.add(capturePath);
     return capturePath;
   };
+  const notReached = <T>(detail: string): RelativeRouteAttemptOutcome<T> => ({
+    status: "not_reached",
+    evidence: null,
+    detail,
+  });
+  const succeeded = <T>(evidence: T): RelativeRouteAttemptOutcome<T> => ({
+    status: "succeeded",
+    evidence,
+    detail: null,
+  });
+  const failed = <T>(detail: string, evidence: T | null = null): RelativeRouteAttemptOutcome<T> => ({
+    status: "failed",
+    evidence,
+    detail,
+  });
+  const createActionAttempts = (
+    actions: readonly RelativeCameraAction[],
+    attemptedCount: number,
+    receipts: readonly CameraActionReceipt[],
+    continuityBefore: RouteContinuityObservation,
+    seq: number,
+    lane: RelativeRouteWaypointMeta["lane"],
+    meta: Omit<RelativeRouteWaypointMeta, "lane"> | undefined,
+    terminalFailure?: TerminalCameraActionFailure,
+  ): RelativeRouteActionAttempt[] => {
+    const created: RelativeRouteActionAttempt[] = [];
+    for (let actionIndex = 0; actionIndex < attemptedCount; actionIndex++) {
+      const request = actions[actionIndex];
+      if (!request) break;
+      const receipt = receipts[actionIndex] ?? null;
+      const actionSucceeded = receipt?.status === "applied"
+        && (request.kind !== "key_hold" || receipt.ack.releaseCertain === true);
+      const detail = actionSucceeded
+        ? null
+        : actionIndex === attemptedCount - 1 && terminalFailure
+          ? terminalFailure.terminalError
+          : receipt?.error ?? (receipt ? `camera action returned ${receipt.status}` : "camera action produced no receipt");
+      const attempt: RelativeRouteActionAttempt = {
+        identity: { executionId: input.artifactSession.runId, stepSeq: seq, actionIndex },
+        order: nextAttemptOrder++,
+        request,
+        lane,
+        recoveryLane: lane === "recovery",
+        ...(meta?.pairId ? { pairId: meta.pairId } : {}),
+        ...(meta?.pairRole ? { pairRole: meta.pairRole } : {}),
+        continuityBefore: succeeded(continuityBefore),
+        action: actionSucceeded ? succeeded(receipt!) : failed(detail ?? "camera action failed", receipt),
+        settle: notReached("settlement was not reached"),
+        continuityAfter: notReached("post-action continuity was not reached"),
+      };
+      actionAttempts.push(attempt);
+      created.push(attempt);
+    }
+    return created;
+  };
+  const retainTerminalActionFailure = (
+    failure: TerminalCameraActionFailure,
+    stepAttempts: readonly RelativeRouteActionAttempt[],
+  ): OrderedTerminalCameraActionFailure | undefined => {
+    const terminalAttempt = stepAttempts.at(-1);
+    if (!terminalAttempt) return undefined;
+    const ordered: OrderedTerminalCameraActionFailure = {
+      ...failure,
+      attemptIdentity: { ...terminalAttempt.identity },
+      receiptsSoFar: [...failure.receiptsSoFar],
+      attemptedAction: { ...failure.attemptedAction } as RelativeCameraAction,
+    };
+    terminalActionFailures.push(ordered);
+    return ordered;
+  };
+  const setSettleOutcome = (
+    stepAttempts: readonly RelativeRouteActionAttempt[],
+    settle: RelativeRouteAttemptOutcome<CaptureSettledReceipt>,
+  ) => {
+    for (const attempt of stepAttempts) attempt.settle = copyOutcome(settle);
+  };
+  const setContinuityAfter = (
+    stepAttempts: readonly RelativeRouteActionAttempt[],
+    continuityAfter: RelativeRouteAttemptOutcome<RouteContinuityObservation>,
+  ) => {
+    for (const attempt of stepAttempts) attempt.continuityAfter = copyOutcome(continuityAfter);
+  };
 
   const executeStepInternal = async (
     requested: readonly RelativeCameraAction[],
     lane: RelativeRouteWaypointMeta["lane"],
     meta?: Omit<RelativeRouteWaypointMeta, "lane">,
-    reservedPath?: string,
+    reservedStep?: { seq: number; capturePath: string },
   ): Promise<RelativeRouteStepOutcome> => {
-    terminalActionFailure = undefined;
     if (initializationStatus) return outcome(initializationStatus === "binding_lost" ? "binding_lost" : "budget_exhausted");
-    if (!Array.isArray(requested) || requested.length === 0 || usage.waypoints >= input.budgets.maxWaypoints) {
+    if (!Array.isArray(requested) || requested.length === 0
+      || (!reservedStep && nextStepSeq > input.budgets.maxWaypoints)) {
       return outcome("budget_exhausted");
     }
     const actions = [...requested];
@@ -869,8 +1027,8 @@ export function createRelativeRouteExecution(
       || elapsedBeforeWaypointMs + waypointDurationForLane(actions, lane) > input.budgets.maxDurationMs) {
       return outcome("budget_exhausted");
     }
-    const seq = usage.waypoints + 1;
-    const capturePath = reservedPath ?? reservePath(seq);
+    const seq = reservedStep?.seq ?? nextStepSeq++;
+    const capturePath = reservedStep?.capturePath ?? reservePath(seq);
     if (!capturePath) return outcome("route_unsettled");
 
     const continuityBefore = await observeContinuity(input, deps);
@@ -884,6 +1042,7 @@ export function createRelativeRouteExecution(
     }
 
     let actionReceipts: CameraActionReceipt[];
+    let stepAttempts: RelativeRouteActionAttempt[] = [];
     try {
       actionReceipts = await executeBoundCameraActions(input.runtimeBinding, actions, deps);
     } catch (error) {
@@ -893,8 +1052,19 @@ export function createRelativeRouteExecution(
           usage.holdMs += groupUsage[index]?.holdMs ?? 0;
           usage.dragPx += groupUsage[index]?.dragPx ?? 0;
         }
-        terminalActionFailure = error.toTerminalFailure();
-        return outcome("action_failed", null, error.retainedReceipts, false);
+        const failure = error.toTerminalFailure();
+        stepAttempts = createActionAttempts(
+          actions,
+          error.attemptedCount,
+          error.retainedReceipts,
+          continuityBefore.observation,
+          seq,
+          lane,
+          meta,
+          failure,
+        );
+        const orderedFailure = retainTerminalActionFailure(failure, stepAttempts);
+        return outcome("action_failed", null, error.retainedReceipts, false, stepAttempts, orderedFailure);
       }
       return outcome("action_failed");
     }
@@ -907,26 +1077,62 @@ export function createRelativeRouteExecution(
       receipt.status === "release_uncertain"
       || (actions[index]?.kind === "key_hold" && receipt.ack.releaseCertain !== true));
     if (uncertainIndex >= 0) {
-      terminalActionFailure = failureFromReturnedReceipt("release_uncertain", actions, actionReceipts, uncertainIndex);
-      return outcome("input_release_uncertain", null, actionReceipts, false);
+      const failure = failureFromReturnedReceipt("release_uncertain", actions, actionReceipts, uncertainIndex);
+      stepAttempts = createActionAttempts(
+        actions,
+        actionReceipts.length,
+        actionReceipts,
+        continuityBefore.observation,
+        seq,
+        lane,
+        meta,
+        failure,
+      );
+      const orderedFailure = retainTerminalActionFailure(failure, stepAttempts);
+      return outcome("input_release_uncertain", null, actionReceipts, false, stepAttempts, orderedFailure);
     }
     const failedIndex = actionReceipts.findIndex((receipt) => receipt.status !== "applied");
     if (failedIndex >= 0) {
-      terminalActionFailure = failureFromReturnedReceipt("reported_action_failure", actions, actionReceipts, failedIndex);
-      return outcome("action_failed", null, actionReceipts, false);
+      const failure = failureFromReturnedReceipt("reported_action_failure", actions, actionReceipts, failedIndex);
+      stepAttempts = createActionAttempts(
+        actions,
+        actionReceipts.length,
+        actionReceipts,
+        continuityBefore.observation,
+        seq,
+        lane,
+        meta,
+        failure,
+      );
+      const orderedFailure = retainTerminalActionFailure(failure, stepAttempts);
+      return outcome("action_failed", null, actionReceipts, false, stepAttempts, orderedFailure);
     }
-    if (actionReceipts.length !== actions.length) return outcome("action_failed", null, actionReceipts, false);
+    stepAttempts = createActionAttempts(
+      actions,
+      actionReceipts.length,
+      actionReceipts,
+      continuityBefore.observation,
+      seq,
+      lane,
+      meta,
+    );
+    if (actionReceipts.length !== actions.length) {
+      return outcome("action_failed", null, actionReceipts, false, stepAttempts);
+    }
     const actionApplied = true;
 
     try {
       await deps.sleep(POST_ACTION_RENDER_DWELL_MS);
-    } catch {
-      return outcome("route_unsettled", null, actionReceipts, actionApplied);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setSettleOutcome(stepAttempts, failed(`post-action render dwell failed: ${detail}`));
+      return outcome("route_unsettled", null, actionReceipts, actionApplied, stepAttempts);
     }
     const elapsedAfterDwellMs = elapsedMs();
     if (elapsedAfterDwellMs === null
       || elapsedAfterDwellMs + postRenderForLane(lane) > input.budgets.maxDurationMs) {
-      return outcome("budget_exhausted", null, actionReceipts, actionApplied);
+      setSettleOutcome(stepAttempts, failed("deadline exhausted after post-action render dwell"));
+      return outcome("budget_exhausted", null, actionReceipts, actionApplied, stepAttempts);
     }
 
     let settle: CaptureSettledReceipt;
@@ -938,23 +1144,36 @@ export function createRelativeRouteExecution(
           return elapsed === null ? 0 : Math.max(0, input.budgets.maxDurationMs - elapsed - postCaptureForLane(lane));
         },
       });
-    } catch {
-      return outcome("route_unsettled", null, actionReceipts, actionApplied);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setSettleOutcome(stepAttempts, failed(`settled capture failed: ${detail}`));
+      return outcome("route_unsettled", null, actionReceipts, actionApplied, stepAttempts);
     }
     const elapsedAfterCaptureMs = elapsedMs();
     if (elapsedAfterCaptureMs === null
       || elapsedAfterCaptureMs + postCaptureForLane(lane) > input.budgets.maxDurationMs) {
-      return outcome("budget_exhausted", null, actionReceipts, actionApplied);
+      setSettleOutcome(stepAttempts, failed("deadline exhausted after settled capture", settle));
+      return outcome("budget_exhausted", null, actionReceipts, actionApplied, stepAttempts);
     }
     try {
       if (!settledReceiptMatches(capturePath, input, settle)) {
-        return outcome("route_unsettled", null, actionReceipts, actionApplied);
+        setSettleOutcome(stepAttempts, failed("settled capture receipt failed exact binding validation", settle));
+        return outcome("route_unsettled", null, actionReceipts, actionApplied, stepAttempts);
       }
-    } catch {
-      return outcome("route_unsettled", null, actionReceipts, actionApplied);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setSettleOutcome(stepAttempts, failed(`settled capture receipt validation failed: ${detail}`, settle));
+      return outcome("route_unsettled", null, actionReceipts, actionApplied, stepAttempts);
     }
     const continuityAfter = await observeContinuity(input, deps);
-    if (!continuityAfter) return outcome("binding_lost", null, actionReceipts, actionApplied);
+    if (!continuityAfter) {
+      setSettleOutcome(stepAttempts, settle.status === "settled" && settle.settlementSatisfied
+        && settle.sha256 !== priorCaptureSha256
+        ? succeeded(settle)
+        : failed("settled capture did not establish a fresh baseline", settle));
+      setContinuityAfter(stepAttempts, failed("post-action continuity could not be sampled"));
+      return outcome("binding_lost", null, actionReceipts, actionApplied, stepAttempts);
+    }
     const waypoint: RelativeRouteWaypoint = {
       seq,
       actions,
@@ -967,17 +1186,26 @@ export function createRelativeRouteExecution(
     waypoints.push(waypoint);
     usage.waypoints++;
     if (settle.status !== "settled" || !settle.settlementSatisfied || settle.sha256 === priorCaptureSha256) {
-      return outcome("route_unsettled", waypoint, actionReceipts, actionApplied);
+      setSettleOutcome(stepAttempts, failed("settled capture did not establish a fresh baseline", settle));
+      setContinuityAfter(stepAttempts, continuityAfter.matches
+        ? succeeded(continuityAfter.observation)
+        : failed("post-action continuity no longer matches the bound runtime", continuityAfter.observation));
+      return outcome("route_unsettled", waypoint, actionReceipts, actionApplied, stepAttempts);
     }
-    if (!continuityAfter.matches) return outcome("binding_lost", waypoint, actionReceipts, actionApplied);
+    setSettleOutcome(stepAttempts, succeeded(settle));
+    if (!continuityAfter.matches) {
+      setContinuityAfter(stepAttempts, failed("post-action continuity no longer matches the bound runtime", continuityAfter.observation));
+      return outcome("binding_lost", waypoint, actionReceipts, actionApplied, stepAttempts);
+    }
+    setContinuityAfter(stepAttempts, succeeded(continuityAfter.observation));
     const elapsedAfterFinalContinuityMs = elapsedMs();
     if (elapsedAfterFinalContinuityMs === null
       || elapsedAfterFinalContinuityMs + reserveForLane(lane) + ROUTE_FINALIZATION_RESERVE_MS
         > input.budgets.maxDurationMs) {
-      return outcome("budget_exhausted", waypoint, actionReceipts, actionApplied);
+      return outcome("budget_exhausted", waypoint, actionReceipts, actionApplied, stepAttempts);
     }
     priorCaptureSha256 = settle.sha256!;
-    return outcome("settled", waypoint, actionReceipts, actionApplied);
+    return outcome("settled", waypoint, actionReceipts, actionApplied, stepAttempts);
   };
 
   const executeStep: RelativeRouteExecution["executeStep"] = (actions, meta) =>
@@ -1016,7 +1244,7 @@ export function createRelativeRouteExecution(
     const recoveryDuration = waypointDurationForLane([inverse], "recovery");
     const elapsed = elapsedMs();
     if (usage.actions + 2 > input.budgets.maxActions
-      || usage.waypoints + 2 > input.budgets.maxWaypoints
+      || nextStepSeq + 1 > input.budgets.maxWaypoints
       || usage.holdMs + combinedHold > input.budgets.maxCumulativeHoldMs
       || usage.dragPx + combinedDrag > input.budgets.maxCumulativeDragPx
       || recoveryDuration > input.budgets.recoveryReserveMs
@@ -1024,15 +1252,18 @@ export function createRelativeRouteExecution(
       || elapsed + waypointDurationForLane([outbound], "active") > input.budgets.maxDurationMs) {
       return refused("budget_exhausted");
     }
-    const outboundPath = reservePath(usage.waypoints + 1);
-    const restorePath = outboundPath ? reservePath(usage.waypoints + 2) : null;
+    const outboundSeq = nextStepSeq;
+    const restoreSeq = nextStepSeq + 1;
+    const outboundPath = reservePath(outboundSeq);
+    const restorePath = outboundPath ? reservePath(restoreSeq) : null;
     if (!outboundPath || !restorePath) return refused("route_unsettled");
+    nextStepSeq += 2;
 
     const outboundResult = await executeStepInternal(
       [outbound],
       "active",
       { pairId: meta.pairId, pairRole: "outbound" },
-      outboundPath,
+      { seq: outboundSeq, capturePath: outboundPath },
     );
     if (!outboundResult.actionApplied) {
       return {
@@ -1056,7 +1287,7 @@ export function createRelativeRouteExecution(
       [inverse],
       recoveryUsed ? "recovery" : "active",
       { pairId: meta.pairId, pairRole: "restore" },
-      restorePath,
+      { seq: restoreSeq, capturePath: restorePath },
     );
     return {
       primaryStatus: outboundResult.status,
@@ -1100,11 +1331,10 @@ export async function executeRelativeCameraRoute(
     } catch {
       controller.abort("relative route decision failed or exceeded its deadline");
       if (decisionPromise) {
-        try {
-          await decisionPromise;
-        } catch {
-          // The compatibility wrapper never returns while an async decision can still mutate state.
-        }
+        // JavaScript callers can still violate the synchronous/pure controller type. Observe a late
+        // rejection without draining the loser; only explicit RelativeRouteExecution steps can mutate
+        // route state, so a late decision can never allocate, apply input, or capture through this loop.
+        void decisionPromise.catch(() => undefined);
       }
       return execution.finish(decisionTimedOut ? "budget_exhausted" : "action_failed");
     } finally {
