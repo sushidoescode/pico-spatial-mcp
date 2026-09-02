@@ -558,16 +558,37 @@ export async function executeCaptureSettled(
   return { receipt, frame: published.bytes };
 }
 
-function defaultDependencies(adb: string): CaptureSettledDependencies {
+function defaultDependencies(adb: string, attemptTimeoutMs = 30_000): CaptureSettledDependencies {
   return {
     monotonicNs: () => process.hrtime.bigint(),
     listOnlineSerials: () => defaultOnlineSerials(adb),
     probeIdentity: (serial) => defaultIdentity(adb, serial),
-    capture: (serial) => captureAdbFrame(adb, serial),
+    capture: (serial) => captureAdbFrame(adb, serial, attemptTimeoutMs),
     sleep,
     hash: sha256Bytes,
     writeFrame: (absolutePath, bytes) => fs.writeFileSync(absolutePath, bytes),
   };
+}
+
+export interface ExecuteLiveCaptureSettledOptions {
+  adbPath?: string;
+  attemptTimeoutMs?: number;
+  dependencies?: CaptureSettledDependencies;
+}
+
+/** Shared live entrypoint used by both the MCP handler and internal bounded route orchestrators. */
+export async function executeLiveCaptureSettled(
+  input: CaptureSettledInput,
+  options: ExecuteLiveCaptureSettledOptions = {},
+): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }> {
+  const attemptTimeoutMs = options.attemptTimeoutMs ?? 30_000;
+  if (!Number.isSafeInteger(attemptTimeoutMs) || attemptTimeoutMs <= 0) {
+    throw new Error("attemptTimeoutMs must be a positive safe integer");
+  }
+  return executeCaptureSettled(
+    input,
+    options.dependencies ?? defaultDependencies(options.adbPath ?? resolveAdb(), attemptTimeoutMs),
+  );
 }
 
 async function responsePreview(fullPath: string, maxDim: number): Promise<string> {
@@ -635,7 +656,7 @@ export function registerObservationTools(server: McpServer) {
       },
     },
     async ({ serial, outPath, maxDim, maxTries, intervalMs, comparison }) => {
-      const result = await executeCaptureSettled(
+      const result = await executeLiveCaptureSettled(
         {
           serial,
           outPath: outPath ?? path.join(os.tmpdir(), "pico-render", `capture_settled-${crypto.randomUUID()}.png`),
@@ -643,7 +664,6 @@ export function registerObservationTools(server: McpServer) {
           intervalMs: intervalMs ?? 700,
           comparison: comparison ?? SETTLE_COMPARISON,
         },
-        defaultDependencies(resolveAdb()),
       );
       const content: Array<{ type: "image"; data: string; mimeType: string } | { type: "text"; text: string }> = [];
       if (result.frame && result.receipt.path) {

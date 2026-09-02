@@ -46,18 +46,51 @@ export interface QemuWindowIdentity {
   windowId: number;
   ownerPid: number;
   area: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  scale?: number;
 }
 
 export interface BoundQemuWindow extends GrpcEndpointBinding {
   onlineEmulatorSerials: string[];
   qemuWindowOwnerPid: number;
   qemuWindowId: number;
+  qemuWindowX?: number;
+  qemuWindowY?: number;
+  qemuWindowWidth?: number;
+  qemuWindowHeight?: number;
+  qemuWindowScale?: number;
   bindingMethod: "discovery-pid-window" | "single-online-serial-plus-matching-discovery-plus-single-window";
 }
 
 export type QemuWindowBindingResult =
   | { ok: true; binding: BoundQemuWindow }
   | { ok: false; code: "binding_failed" | "ambiguous_host_window"; detail: string };
+
+function measuredWindowGeometry(window: QemuWindowIdentity): {
+  qemuWindowX: number;
+  qemuWindowY: number;
+  qemuWindowWidth: number;
+  qemuWindowHeight: number;
+  qemuWindowScale: number;
+} | null {
+  const values = [window.x, window.y, window.width, window.height, window.scale];
+  if (!values.every((value) => typeof value === "number" && Number.isFinite(value))) return null;
+  const [x, y, width, height, scale] = values as number[];
+  return width >= 100 && height >= 100 && scale > 0
+    ? { qemuWindowX: x, qemuWindowY: y, qemuWindowWidth: width, qemuWindowHeight: height, qemuWindowScale: scale }
+    : null;
+}
+
+function boundWindowFields(window: QemuWindowIdentity) {
+  return {
+    qemuWindowOwnerPid: window.ownerPid,
+    qemuWindowId: window.windowId,
+    ...(measuredWindowGeometry(window) ?? {}),
+  };
+}
 
 /** Pure fail-closed serial -> discovery endpoint -> qemu window correlation. */
 export function selectQemuWindowBinding(
@@ -79,8 +112,7 @@ export function selectQemuWindowBinding(
       binding: {
         ...endpoint,
         onlineEmulatorSerials,
-        qemuWindowOwnerPid: byPid[0].ownerPid,
-        qemuWindowId: byPid[0].windowId,
+        ...boundWindowFields(byPid[0]),
         bindingMethod: "discovery-pid-window",
       },
     };
@@ -96,8 +128,7 @@ export function selectQemuWindowBinding(
       binding: {
         ...endpoint,
         onlineEmulatorSerials,
-        qemuWindowOwnerPid: windows[0].ownerPid,
-        qemuWindowId: windows[0].windowId,
+        ...boundWindowFields(windows[0]),
         bindingMethod: "single-online-serial-plus-matching-discovery-plus-single-window",
       },
     };
@@ -121,9 +152,25 @@ if let windows = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String:
     guard let id = window[kCGWindowNumber as String] as? Int,
           let pid = window[kCGWindowOwnerPID as String] as? Int else { continue }
     let bounds = window[kCGWindowBounds as String] as? [String: Any] ?? [:]
+    let x = (bounds["X"] as? Double) ?? 0
+    let y = (bounds["Y"] as? Double) ?? 0
     let width = (bounds["Width"] as? Double) ?? 0
     let height = (bounds["Height"] as? Double) ?? 0
-    if width >= 100 && height >= 100 { rows.append(["windowId": id, "ownerPid": pid, "area": width * height]) }
+    let center = CGPoint(x: x + width / 2, y: y + height / 2)
+    var displayCount: UInt32 = 0
+    CGGetDisplaysWithPoint(center, 0, nil, &displayCount)
+    var scale = 0.0
+    if displayCount > 0 {
+      var displays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
+      CGGetDisplaysWithPoint(center, displayCount, &displays, &displayCount)
+      if let display = displays.first, let mode = CGDisplayCopyDisplayMode(display) {
+        let displayWidth = CGDisplayBounds(display).width
+        if displayWidth > 0 { scale = Double(mode.pixelWidth) / Double(displayWidth) }
+      }
+    }
+    if width >= 100 && height >= 100 && scale > 0 {
+      rows.append(["windowId": id, "ownerPid": pid, "x": x, "y": y, "width": width, "height": height, "scale": scale, "area": width * height])
+    }
   }
 }
 let data = try! JSONSerialization.data(withJSONObject: rows, options: [])
@@ -138,7 +185,11 @@ async function listQemuWindows(): Promise<QemuWindowIdentity[]> {
   const parsed = JSON.parse(result.stdout || "[]");
   if (!Array.isArray(parsed)) throw new Error("qemu window enumeration returned a non-array payload");
   return parsed.filter((entry): entry is QemuWindowIdentity =>
-    Number.isInteger(entry?.windowId) && Number.isInteger(entry?.ownerPid) && Number.isFinite(entry?.area));
+    Number.isInteger(entry?.windowId) && Number.isInteger(entry?.ownerPid) && Number.isFinite(entry?.area)
+    && Number.isFinite(entry?.x) && Number.isFinite(entry?.y)
+    && Number.isFinite(entry?.width) && entry.width >= 100
+    && Number.isFinite(entry?.height) && entry.height >= 100
+    && Number.isFinite(entry?.scale) && entry.scale > 0);
 }
 
 export async function bindMacQemuWindow(adb: string, serial: string): Promise<QemuWindowBindingResult> {
@@ -393,6 +444,21 @@ export function createCameraActionBindingReceipt(
   serial: string,
   windowBinding: BoundQemuWindow,
 ): CameraActionBindingReceipt {
+  const geometry = [
+    windowBinding.qemuWindowX,
+    windowBinding.qemuWindowY,
+    windowBinding.qemuWindowWidth,
+    windowBinding.qemuWindowHeight,
+    windowBinding.qemuWindowScale,
+  ].every((value) => typeof value === "number" && Number.isFinite(value))
+    ? {
+        x: windowBinding.qemuWindowX!,
+        y: windowBinding.qemuWindowY!,
+        width: windowBinding.qemuWindowWidth!,
+        height: windowBinding.qemuWindowHeight!,
+        scale: windowBinding.qemuWindowScale!,
+      }
+    : {};
   return {
     serial,
     grpc: {
@@ -401,7 +467,11 @@ export function createCameraActionBindingReceipt(
       address: windowBinding.address,
       ...(windowBinding.tokenFingerprint ? { tokenFingerprint: windowBinding.tokenFingerprint } : {}),
     },
-    qemuWindow: { ownerPid: windowBinding.qemuWindowOwnerPid, windowId: windowBinding.qemuWindowId },
+    qemuWindow: {
+      ownerPid: windowBinding.qemuWindowOwnerPid,
+      windowId: windowBinding.qemuWindowId,
+      ...geometry,
+    },
     bindingMethod: windowBinding.bindingMethod,
     onlineEmulatorSerials: [...windowBinding.onlineEmulatorSerials],
   };
@@ -414,20 +484,99 @@ export function createBoundCameraActionAdapter(
     focusQemu?: typeof frontmostQemu;
     keyHold?: typeof keyHold;
     rightDrag?: typeof rightDrag;
+    revalidateWindow?: () => Promise<QemuWindowBindingResult>;
   } = {},
 ): { applyRelativeAction(action: RelativeCameraAction): Promise<CameraActionReceipt> } {
+  const exactBindingMatch = (observed: BoundQemuWindow): boolean => !!windowBinding
+    && observed.discoveryFile === windowBinding.discoveryFile
+    && observed.discoveredSerial === windowBinding.discoveredSerial
+    && observed.qemuPid === windowBinding.qemuPid
+    && observed.address === windowBinding.address
+    && observed.tokenPresent === windowBinding.tokenPresent
+    && (observed.tokenFingerprint ?? null) === (windowBinding.tokenFingerprint ?? null)
+    && JSON.stringify(observed.onlineEmulatorSerials) === JSON.stringify(windowBinding.onlineEmulatorSerials)
+    && observed.bindingMethod === windowBinding.bindingMethod
+    && observed.qemuWindowOwnerPid === windowBinding.qemuWindowOwnerPid
+    && observed.qemuWindowId === windowBinding.qemuWindowId
+    && observed.qemuWindowX === windowBinding.qemuWindowX
+    && observed.qemuWindowY === windowBinding.qemuWindowY
+    && observed.qemuWindowWidth === windowBinding.qemuWindowWidth
+    && observed.qemuWindowHeight === windowBinding.qemuWindowHeight
+    && observed.qemuWindowScale === windowBinding.qemuWindowScale;
+  const revalidationFailure = (
+    action: RelativeCameraAction,
+    observed: QemuWindowBindingResult,
+    startedAtMonotonicNs: string,
+  ): CameraActionReceipt => {
+    const bindingRevalidation = observed.ok
+      ? { status: "mismatch" as const, expected: windowBinding, observed: observed.binding }
+      : { status: "failed" as const, expected: windowBinding, observed: null, failure: observed };
+    const base = {
+      action: action.kind,
+      serial,
+      status: "failed" as const,
+      startedAtMonotonicNs,
+      endedAtMonotonicNs: process.hrtime.bigint().toString(),
+      error: observed.ok
+        ? "camera action refused because the freshly observed qemu endpoint/window changed"
+        : `camera action refused because qemu endpoint/window revalidation failed: ${observed.detail}`,
+    };
+    if (action.kind === "key_hold") {
+      return {
+        ...base,
+        ack: {
+          key: action.key,
+          holdMs: action.holdMs,
+          hostWindow: windowBinding,
+          connectionAttempts: 0,
+          keydownAttempted: false,
+          keydownAcknowledged: false,
+          applicationUncertain: false,
+          keyupAcknowledged: false,
+          releaseCertain: true,
+          bindingRevalidation,
+        },
+      };
+    }
+    return {
+      ...base,
+      ack: {
+        requested: { dragDx: action.dxPx, dragDy: action.dyPx },
+        hostWindow: windowBinding,
+        cgEventAcknowledged: false,
+        hostFocusRequired: true,
+        hostFocusAttempted: false,
+        focusAcknowledged: false,
+        bindingRevalidation,
+      },
+    };
+  };
   return {
     applyRelativeAction: async (action) => {
+      const startedAtMonotonicNs = process.hrtime.bigint().toString();
+      let revalidatedBinding: BoundQemuWindow | null = null;
+      if (options.revalidateWindow) {
+        let observed: QemuWindowBindingResult;
+        try {
+          observed = await options.revalidateWindow();
+        } catch (error: any) {
+          observed = { ok: false, code: "binding_failed", detail: error?.message ?? String(error) };
+        }
+        if (!observed.ok || !exactBindingMatch(observed.binding)) {
+          return revalidationFailure(action, observed, startedAtMonotonicNs);
+        }
+        revalidatedBinding = observed.binding;
+      }
       if (action.kind === "key_hold") {
         const receipt = await (options.keyHold ?? keyHold)(serial, action.key, action.holdMs);
         receipt.ack.hostWindow = windowBinding;
+        if (revalidatedBinding) receipt.ack.bindingRevalidation = { status: "matched", expected: windowBinding, observed: revalidatedBinding };
         receipt.ack.hostFocusRequired = false;
         receipt.ack.hostFocusAttempted = false;
         receipt.ack.focusAcknowledged = false;
         if (receipt.status === "applied") await sleep(150);
         return receipt;
       }
-      const startedAtMonotonicNs = process.hrtime.bigint().toString();
       let focusError: string | null;
       try {
         focusError = await (options.focusQemu ?? frontmostQemu)(windowBinding);
@@ -451,6 +600,9 @@ export function createBoundCameraActionAdapter(
           hostFocusAttempted: true,
           focusAcknowledged,
           hostWindow: windowBinding,
+          ...(revalidatedBinding
+            ? { bindingRevalidation: { status: "matched", expected: windowBinding, observed: revalidatedBinding } }
+            : {}),
         },
         ...(err ? { error: err } : {}),
       };

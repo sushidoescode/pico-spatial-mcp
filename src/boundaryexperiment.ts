@@ -3323,6 +3323,8 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                   budgets: routeBudgets,
                   capture: state.input.capture,
                 }, () => {
+                  // Compatibility decisions are synchronous and pure; all input/capture mutation is
+                  // owned by executeRelativeCameraRoute after this literal action selection returns.
                   if (decided) return "stop";
                   decided = true;
                   return waypoint.actions as RelativeCameraAction[];

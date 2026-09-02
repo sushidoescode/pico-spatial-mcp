@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { okJson, run, runBinary, sleep } from "./util.js";
 
@@ -9,8 +10,520 @@ export const AGENT_BRIDGE_SCENE_COORDINATE_FRAME_ID = `bridge-world-${AGENT_BRID
 export const AGENT_BRIDGE_SCENE_SNAPSHOT_COMMAND = "query_scene_anchors" as const;
 export const AGENT_BRIDGE_SCENE_SNAPSHOT_CACHE_DIRECTORY = "agentbridge/scene-snapshots" as const;
 
+export const AGENT_BRIDGE_NAVIGATION_GUIDE_PAYLOAD_KIND = "pico.agent-bridge.navigation-guide" as const;
+export const AGENT_BRIDGE_NAVIGATION_GUIDE_SCHEMA_VERSION = 1 as const;
+export const AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION = 1 as const;
+export const AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND = "navigation_guide" as const;
+export const AGENT_BRIDGE_NAVIGATION_GUIDE_CACHE_DIRECTORY = "agentbridge/navigation-guides" as const;
+export const AGENT_BRIDGE_NAVIGATION_GUIDE_PATTERN = "nested-corners-v1" as const;
+export const AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL = "viewer-facing-planar-v1" as const;
+export const AGENT_BRIDGE_NAVIGATION_GUIDE_COLORS = [[255, 0, 255], [0, 255, 255]] as const;
+// Producer-owned outer frame: the 0.68m x 0.42m mission footprint plus a small visible margin,
+// while remaining inside the measured 0.782631m x 0.464378m Livingroom TABLE support.
+export const AGENT_BRIDGE_NAVIGATION_GUIDE_WIDTH_M = 0.74 as const;
+export const AGENT_BRIDGE_NAVIGATION_GUIDE_HEIGHT_M = 0.44 as const;
+
 const SCENE_SNAPSHOT_REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{8,96}$/;
 const ANDROID_PACKAGE_PATTERN = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/;
+const NAVIGATION_GUIDE_SNAPSHOT_ID_PATTERN = /^[a-f0-9]{64}$/;
+const NAVIGATION_GUIDE_TRACE_ID_PATTERN = /^anchor-\d{4}$/;
+const PRINTABLE_ID_PATTERN = /^[\x21-\x7e]{1,256}$/;
+
+export type AgentBridgeNavigationGuideMode = "show" | "hide";
+
+export interface AgentBridgeNavigationGuideRequestInput {
+  serial: string;
+  packageName: string;
+  requestId: string;
+  mode: AgentBridgeNavigationGuideMode;
+  sceneSnapshotId: string;
+  targetTraceId: string;
+  targetRuntimeUuid: string;
+  pattern: typeof AGENT_BRIDGE_NAVIGATION_GUIDE_PATTERN;
+  projectionModel: typeof AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL;
+  colors: [number[], number[]] | readonly [readonly number[], readonly number[]];
+  widthM: number;
+  heightM: number;
+  maxPolls?: number;
+  pollMs?: number;
+  stabilityReads?: number;
+  ackReadTimeoutMs?: number;
+  controlTimeoutMs?: number;
+}
+
+export interface AgentBridgeNavigationGuideAck {
+  kind: typeof AGENT_BRIDGE_NAVIGATION_GUIDE_PAYLOAD_KIND;
+  schemaVersion: typeof AGENT_BRIDGE_NAVIGATION_GUIDE_SCHEMA_VERSION;
+  bridgeRevision: typeof AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION;
+  requestId: string;
+  application: { packageName: string };
+  mode: AgentBridgeNavigationGuideMode;
+  sceneSnapshotId: string;
+  targetTraceId: string;
+  targetRuntimeUuid: string;
+  pattern: typeof AGENT_BRIDGE_NAVIGATION_GUIDE_PATTERN;
+  projectionModel: typeof AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL;
+  colors: [[255, 0, 255], [0, 255, 255]];
+  widthM: number;
+  heightM: number;
+  outcome: "shown" | "hidden" | "rejected" | "failed";
+  guideState: "visible" | "hidden" | "unknown";
+  cleanupState: "not_required" | "completed" | "failed";
+  error: { code: string; detail: string } | null;
+}
+
+export interface AgentBridgeNavigationGuideActionReceipt {
+  action:
+    | "navigation_guide_broadcast"
+    | "navigation_guide_ack_pull"
+    | "navigation_guide_ack_cleanup"
+    | "navigation_guide_invalidation_broadcast"
+    | "navigation_guide_invalidation_ack_pull"
+    | "navigation_guide_invalidation_ack_cleanup"
+    | "navigation_guide_late_ack_cleanup";
+  status: "applied" | "failed";
+  startedAtMonotonicNs: string;
+  endedAtMonotonicNs: string;
+  ack: Record<string, unknown>;
+  error?: string;
+}
+
+export type AgentBridgeNavigationGuideRequestResult =
+  | {
+      ok: true;
+      ack: AgentBridgeNavigationGuideAck;
+      terminalGuideState: "visible" | "hidden";
+      cleanupProven: boolean;
+      actionReceipts: AgentBridgeNavigationGuideActionReceipt[];
+      evidenceCeiling: "structural";
+    }
+  | {
+      ok: false;
+      code: "bridge_unavailable" | "invalid_ack" | "guest_rejected" | "cleanup_failed";
+      detail: string;
+      ack?: AgentBridgeNavigationGuideAck;
+      terminalGuideState: "hidden" | "unknown";
+      cleanupProven: boolean;
+      actionReceipts: AgentBridgeNavigationGuideActionReceipt[];
+      evidenceCeiling: "structural";
+    };
+
+interface NavigationGuideRequestDeps {
+  runText?: typeof run;
+  runBytes?: typeof runBinary;
+  sleep?: typeof sleep;
+  monotonicNs?: () => bigint;
+}
+
+const navigationGuideAckSchema = z.object({
+  kind: z.literal(AGENT_BRIDGE_NAVIGATION_GUIDE_PAYLOAD_KIND),
+  schemaVersion: z.literal(AGENT_BRIDGE_NAVIGATION_GUIDE_SCHEMA_VERSION),
+  bridgeRevision: z.literal(AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION),
+  requestId: z.string().regex(SCENE_SNAPSHOT_REQUEST_ID_PATTERN),
+  application: z.object({ packageName: z.string().regex(ANDROID_PACKAGE_PATTERN) }).strict(),
+  mode: z.enum(["show", "hide"]),
+  sceneSnapshotId: z.string().regex(NAVIGATION_GUIDE_SNAPSHOT_ID_PATTERN),
+  targetTraceId: z.string().regex(NAVIGATION_GUIDE_TRACE_ID_PATTERN),
+  targetRuntimeUuid: z.string().regex(PRINTABLE_ID_PATTERN),
+  pattern: z.literal(AGENT_BRIDGE_NAVIGATION_GUIDE_PATTERN),
+  projectionModel: z.literal(AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL),
+  colors: z.tuple([
+    z.tuple([z.literal(255), z.literal(0), z.literal(255)]),
+    z.tuple([z.literal(0), z.literal(255), z.literal(255)]),
+  ]),
+  widthM: z.number().finite(),
+  heightM: z.number().finite(),
+  outcome: z.enum(["shown", "hidden", "rejected", "failed"]),
+  guideState: z.enum(["visible", "hidden", "unknown"]),
+  cleanupState: z.enum(["not_required", "completed", "failed"]),
+  error: z.object({ code: z.string().min(1).max(120), detail: z.string().min(1).max(500) }).strict().nullable(),
+}).strict();
+
+function sameGuideColors(colors: AgentBridgeNavigationGuideRequestInput["colors"]): boolean {
+  return Array.isArray(colors) && colors.length === 2
+    && colors.every((color) => Array.isArray(color) && color.length === 3 && color.every(Number.isInteger))
+    && colors[0].every((channel, index) => channel === AGENT_BRIDGE_NAVIGATION_GUIDE_COLORS[0][index])
+    && colors[1].every((channel, index) => channel === AGENT_BRIDGE_NAVIGATION_GUIDE_COLORS[1][index]);
+}
+
+function navigationGuideInputError(adb: string, input: AgentBridgeNavigationGuideRequestInput): string | null {
+  if (!adb) return "adb executable path is empty";
+  if (!/^[\x21-\x7e]+$/.test(input.serial)) return "an exact printable adb serial is required";
+  if (!ANDROID_PACKAGE_PATTERN.test(input.packageName)) return "packageName is not a valid Android package name";
+  if (!SCENE_SNAPSHOT_REQUEST_ID_PATTERN.test(input.requestId)) return "requestId is not safe for the bridge cache path";
+  if (input.mode !== "show" && input.mode !== "hide") return "mode must be show or hide";
+  if (!NAVIGATION_GUIDE_SNAPSHOT_ID_PATTERN.test(input.sceneSnapshotId)) return "sceneSnapshotId must be a lowercase SHA-256";
+  if (!NAVIGATION_GUIDE_TRACE_ID_PATTERN.test(input.targetTraceId)) return "targetTraceId must be a trace-local anchor ID";
+  if (!PRINTABLE_ID_PATTERN.test(input.targetRuntimeUuid)) return "targetRuntimeUuid must be a non-empty printable runtime identity";
+  if (input.pattern !== AGENT_BRIDGE_NAVIGATION_GUIDE_PATTERN) return "unsupported navigation-guide pattern";
+  if (input.projectionModel !== AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL) return "unsupported navigation-guide projection model";
+  if (!sameGuideColors(input.colors)) return "unsupported navigation-guide palette";
+  if (input.widthM !== AGENT_BRIDGE_NAVIGATION_GUIDE_WIDTH_M || input.heightM !== AGENT_BRIDGE_NAVIGATION_GUIDE_HEIGHT_M) {
+    return "unsupported navigation-guide dimensions";
+  }
+  const maxPolls = input.maxPolls ?? 30;
+  const pollMs = input.pollMs ?? 100;
+  const stabilityReads = input.stabilityReads ?? 2;
+  const ackReadTimeoutMs = input.ackReadTimeoutMs ?? 15_000;
+  const controlTimeoutMs = input.controlTimeoutMs ?? 15_000;
+  if (!Number.isInteger(maxPolls) || maxPolls < 1 || maxPolls > 120) return "maxPolls must be an integer from 1 through 120";
+  if (!Number.isInteger(pollMs) || pollMs < 10 || pollMs > 60_000) return "pollMs must be an integer from 10 through 60000";
+  if (!Number.isInteger(stabilityReads) || stabilityReads < 2 || stabilityReads > 8) return "stabilityReads must be an integer from 2 through 8";
+  if (!Number.isInteger(ackReadTimeoutMs) || ackReadTimeoutMs < 250 || ackReadTimeoutMs > 15_000) {
+    return "ackReadTimeoutMs must be an integer from 250 through 15000";
+  }
+  if (!Number.isInteger(controlTimeoutMs) || controlTimeoutMs < 1_000 || controlTimeoutMs > 15_000) {
+    return "controlTimeoutMs must be an integer from 1000 through 15000";
+  }
+  return null;
+}
+
+function navigationGuideAckError(ack: AgentBridgeNavigationGuideAck, input: AgentBridgeNavigationGuideRequestInput): string | null {
+  if (ack.requestId !== input.requestId) return "ack requestId does not match the request";
+  if (ack.application.packageName !== input.packageName) return "ack packageName does not match the request";
+  if (ack.mode !== input.mode) return "ack mode does not match the request";
+  if (ack.sceneSnapshotId !== input.sceneSnapshotId) return "ack sceneSnapshotId does not match the request";
+  if (ack.targetTraceId !== input.targetTraceId) return "ack targetTraceId does not match the request";
+  if (ack.targetRuntimeUuid !== input.targetRuntimeUuid) return "ack targetRuntimeUuid does not match the request";
+  if (ack.pattern !== input.pattern || ack.projectionModel !== input.projectionModel || !sameGuideColors(ack.colors)) {
+    return "ack fiducial does not match the request";
+  }
+  if (ack.widthM !== input.widthM || ack.heightM !== input.heightM) return "ack guide dimensions do not match the request";
+  if (ack.outcome === "shown") {
+    if (input.mode !== "show" || ack.guideState !== "visible" || ack.cleanupState !== "not_required" || ack.error !== null) {
+      return "shown ack has contradictory mode, guide, cleanup, or error state";
+    }
+  } else if (ack.outcome === "hidden") {
+    if (input.mode !== "hide" || ack.guideState !== "hidden" || ack.cleanupState !== "completed" || ack.error !== null) {
+      return "hidden ack has contradictory mode, guide, cleanup, or error state";
+    }
+  } else if (ack.error === null || ack.cleanupState === "not_required" || ack.guideState === "visible") {
+    return "rejected/failed ack does not retain a cleanup/error terminal state";
+  }
+  return null;
+}
+
+type NavigationGuideFailureCode = "bridge_unavailable" | "invalid_ack" | "guest_rejected" | "cleanup_failed";
+
+type NavigationGuideTransactionResult =
+  | { ok: true; ack: AgentBridgeNavigationGuideAck; ackValidated: true }
+  | { ok: false; code: NavigationGuideFailureCode; detail: string; ack?: AgentBridgeNavigationGuideAck; ackValidated: boolean };
+
+interface NavigationGuideTransactionActions {
+  broadcast: AgentBridgeNavigationGuideActionReceipt["action"];
+  pull: AgentBridgeNavigationGuideActionReceipt["action"];
+  cleanup: AgentBridgeNavigationGuideActionReceipt["action"];
+}
+
+const primaryNavigationGuideActions: NavigationGuideTransactionActions = {
+  broadcast: "navigation_guide_broadcast",
+  pull: "navigation_guide_ack_pull",
+  cleanup: "navigation_guide_ack_cleanup",
+};
+
+const invalidationNavigationGuideActions: NavigationGuideTransactionActions = {
+  broadcast: "navigation_guide_invalidation_broadcast",
+  pull: "navigation_guide_invalidation_ack_pull",
+  cleanup: "navigation_guide_invalidation_ack_cleanup",
+};
+
+function navigationGuideRelativePath(requestId: string): string {
+  return `cache/${AGENT_BRIDGE_NAVIGATION_GUIDE_CACHE_DIRECTORY}/${requestId}.json`;
+}
+
+function navigationGuideInvalidationRequestId(input: AgentBridgeNavigationGuideRequestInput): string {
+  const digest = createHash("sha256").update(`${input.packageName}\0${input.requestId}`, "utf8").digest("hex");
+  return `navigation_guide_hide_${digest.slice(0, 32)}`;
+}
+
+function trustedNavigationGuideHidden(result: NavigationGuideTransactionResult): boolean {
+  return !result.ok && result.code !== "cleanup_failed" && result.ackValidated === true && result.ack?.guideState === "hidden"
+    && result.ack.cleanupState === "completed";
+}
+
+async function executeNavigationGuideTransaction(
+  adb: string,
+  input: AgentBridgeNavigationGuideRequestInput,
+  actionReceipts: AgentBridgeNavigationGuideActionReceipt[],
+  actions: NavigationGuideTransactionActions,
+  deps: Required<NavigationGuideRequestDeps>,
+): Promise<NavigationGuideTransactionResult> {
+  const stamp = () => deps.monotonicNs().toString();
+  const fail = (
+    code: NavigationGuideFailureCode,
+    detail: string,
+    ack?: AgentBridgeNavigationGuideAck,
+    ackValidated = false,
+  ): NavigationGuideTransactionResult => ({ ok: false, code, detail, ...(ack ? { ack } : {}), ackValidated });
+  const maxPolls = input.maxPolls ?? 30;
+  const pollMs = input.pollMs ?? 100;
+  const stabilityReads = input.stabilityReads ?? 2;
+  const ackReadTimeoutMs = input.ackReadTimeoutMs ?? 15_000;
+  const controlTimeoutMs = input.controlTimeoutMs ?? 15_000;
+  const relativePath = navigationGuideRelativePath(input.requestId);
+
+  const broadcastStartedAt = stamp();
+  const broadcast = await deps.runText(adb, [
+    "-s", input.serial, "shell", "am", "broadcast",
+    "-a", `${input.packageName}.AGENT_CMD`, "-p", input.packageName,
+    "--es", "cmd", AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND,
+    "--es", "kind", AGENT_BRIDGE_NAVIGATION_GUIDE_PAYLOAD_KIND,
+    "--ei", "schemaVersion", String(AGENT_BRIDGE_NAVIGATION_GUIDE_SCHEMA_VERSION),
+    "--ei", "bridgeRevision", String(AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION),
+    "--es", "requestId", input.requestId,
+    "--es", "mode", input.mode,
+    "--es", "sceneSnapshotId", input.sceneSnapshotId,
+    "--es", "targetTraceId", input.targetTraceId,
+    "--es", "targetRuntimeUuid", input.targetRuntimeUuid,
+    "--es", "pattern", input.pattern,
+    "--es", "projectionModel", input.projectionModel,
+    "--es", "color0", input.colors[0].join(","),
+    "--es", "color1", input.colors[1].join(","),
+    "--ef", "widthM", String(input.widthM),
+    "--ef", "heightM", String(input.heightM),
+  ], { timeoutMs: controlTimeoutMs, maxOutputBytes: 64 * 1024 });
+  const broadcastApplied = broadcast.code === 0 && !broadcast.timedOut;
+  actionReceipts.push({
+    action: actions.broadcast,
+    status: broadcastApplied ? "applied" : "failed",
+    startedAtMonotonicNs: broadcastStartedAt,
+    endedAtMonotonicNs: stamp(),
+    ack: {
+      serial: input.serial,
+      packageName: input.packageName,
+      action: `${input.packageName}.AGENT_CMD`,
+      command: AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND,
+      requestId: input.requestId,
+      mode: input.mode,
+      outcome: broadcastApplied ? "completed" : broadcast.timedOut ? "timeout" : "failed",
+    },
+    error: broadcastApplied ? undefined
+      : (broadcast.timedOut ? "broadcast timed out" : (broadcast.stderr || broadcast.stdout || "broadcast failed")).slice(-400),
+  });
+
+  let stablePayload: Buffer | null = null;
+  let stableCount = 0;
+  let attempts = 0;
+  let pullDetail = broadcastApplied ? "ack file has not appeared" : "broadcast failed before ack polling";
+  const pullStartedAt = stamp();
+  if (broadcastApplied) {
+    for (let poll = 0; poll < maxPolls; poll++) {
+      attempts++;
+      const pulled = await deps.runBytes(adb, [
+        "-s", input.serial, "exec-out", "run-as", input.packageName,
+        "sh", "-c", 'if test -f "$1"; then printf "\\001"; cat "$1"; else printf "\\000"; fi', "pico-mcp", relativePath,
+      ], { timeoutMs: ackReadTimeoutMs, maxOutputBytes: 1024 * 1024 });
+      const existenceByte = pulled.stdout[0];
+      const filePresent = existenceByte === 0x01;
+      const fileAbsent = existenceByte === 0x00 && pulled.stdout.length === 1;
+      if (pulled.code === 0 && !pulled.timedOut && filePresent) {
+        const bytes = pulled.stdout.subarray(1);
+        if (stablePayload !== null && stablePayload.equals(bytes)) stableCount++;
+        else {
+          stablePayload = Buffer.from(bytes);
+          stableCount = 1;
+        }
+        pullDetail = stableCount >= stabilityReads ? "ack bytes stabilized" : "awaiting a second byte-identical ack read";
+        if (stableCount >= stabilityReads) break;
+      } else {
+        stablePayload = null;
+        stableCount = 0;
+        pullDetail = pulled.timedOut
+          ? "run-as ack read timed out"
+          : pulled.code === 0 && fileAbsent
+            ? "ack file has not appeared"
+            : pulled.stdout.length > 0
+              ? `run-as ack existence protocol was invalid: ${pulled.stdout.toString("utf8").slice(-300)}`
+              : (pulled.stderr || `run-as ack read exited ${pulled.code ?? "without a code"}`).slice(-400);
+      }
+      if (poll + 1 < maxPolls) await deps.sleep(pollMs);
+    }
+  }
+  const pulledSuccessfully = stablePayload !== null && stableCount >= stabilityReads;
+  actionReceipts.push({
+    action: actions.pull,
+    status: pulledSuccessfully ? "applied" : "failed",
+    startedAtMonotonicNs: pullStartedAt,
+    endedAtMonotonicNs: stamp(),
+    ack: {
+      serial: input.serial,
+      packageName: input.packageName,
+      requestId: input.requestId,
+      mode: input.mode,
+      relativePath,
+      attempts,
+      stabilityReads: stableCount,
+      ...(pulledSuccessfully ? { bytes: stablePayload!.length, outcome: "completed" } : { outcome: "timeout" }),
+    },
+    error: pulledSuccessfully ? undefined : pullDetail,
+  });
+
+  let parsedAck: AgentBridgeNavigationGuideAck | undefined;
+  let parsedAckError: string | null = null;
+  if (pulledSuccessfully) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(stablePayload!.toString("utf8"));
+    } catch (error: any) {
+      parsedAckError = `navigation-guide acknowledgement is not valid JSON: ${error?.message ?? String(error)}`;
+    }
+    if (parsedAckError === null) {
+      const parsed = navigationGuideAckSchema.safeParse(raw);
+      if (!parsed.success) {
+        parsedAckError = `navigation-guide acknowledgement schema mismatch: ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ").slice(0, 700)}`;
+      } else {
+        parsedAck = parsed.data as AgentBridgeNavigationGuideAck;
+        parsedAckError = navigationGuideAckError(parsedAck, input);
+      }
+    }
+  }
+  const ackValidated = parsedAck !== undefined && parsedAckError === null;
+
+  const cleanupStartedAt = stamp();
+  const cleanup = await deps.runText(
+    adb,
+    ["-s", input.serial, "shell", "run-as", input.packageName, "rm", "-f", relativePath],
+    { timeoutMs: controlTimeoutMs, maxOutputBytes: 64 * 1024 },
+  );
+  const cleanupApplied = cleanup.code === 0 && !cleanup.timedOut;
+  actionReceipts.push({
+    action: actions.cleanup,
+    status: cleanupApplied ? "applied" : "failed",
+    startedAtMonotonicNs: cleanupStartedAt,
+    endedAtMonotonicNs: stamp(),
+    ack: {
+      serial: input.serial,
+      packageName: input.packageName,
+      requestId: input.requestId,
+      mode: input.mode,
+      relativePath,
+      outcome: cleanupApplied ? "completed" : cleanup.timedOut ? "timeout" : "failed",
+    },
+    error: cleanupApplied ? undefined
+      : (cleanup.timedOut ? "ack cleanup timed out" : (cleanup.stderr || cleanup.stdout || "ack cleanup failed")).slice(-400),
+  });
+
+  if (!cleanupApplied) return fail("cleanup_failed", "navigation-guide acknowledgement cleanup failed", parsedAck, ackValidated);
+  if (!broadcastApplied) return fail("bridge_unavailable", "Agent Bridge navigation-guide broadcast failed");
+  if (!pulledSuccessfully) return fail("bridge_unavailable", `No stable terminal Agent Bridge guide acknowledgement appeared at ${relativePath}: ${pullDetail}`);
+  if (parsedAckError !== null) return fail("invalid_ack", parsedAckError, parsedAck);
+  const ack = parsedAck!;
+  if (ack.outcome === "rejected" || ack.outcome === "failed") {
+    return fail("guest_rejected", `${ack.error!.code}: ${ack.error!.detail}`, ack, true);
+  }
+  return { ok: true, ack, ackValidated: true };
+}
+
+/**
+ * Requests one trace-local guide transition through an exact-serial, exact-package Agent Bridge.
+ * The acknowledgement is accepted only from two consecutive byte-identical app-private file reads;
+ * broadcast/logcat text is never parsed. A failed SHOW whose terminal hidden state is not trusted
+ * sends exactly one bounded HIDE transaction, then sweeps the original nonce again for a late ack.
+ */
+export async function requestAgentBridgeNavigationGuide(
+  adb: string,
+  input: AgentBridgeNavigationGuideRequestInput,
+  injected: NavigationGuideRequestDeps = {},
+): Promise<AgentBridgeNavigationGuideRequestResult> {
+  const actionReceipts: AgentBridgeNavigationGuideActionReceipt[] = [];
+  const evidenceCeiling = "structural" as const;
+  const deps: Required<NavigationGuideRequestDeps> = {
+    runText: injected.runText ?? run,
+    runBytes: injected.runBytes ?? runBinary,
+    sleep: injected.sleep ?? sleep,
+    monotonicNs: injected.monotonicNs ?? (() => process.hrtime.bigint()),
+  };
+  const finish = (
+    result: NavigationGuideTransactionResult,
+    provenHidden = trustedNavigationGuideHidden(result),
+  ): AgentBridgeNavigationGuideRequestResult => result.ok
+    ? {
+        ok: true,
+        ack: result.ack,
+        terminalGuideState: result.ack.guideState === "hidden" ? "hidden" : "visible",
+        cleanupProven: result.ack.guideState === "hidden" && result.ack.cleanupState === "completed",
+        actionReceipts,
+        evidenceCeiling,
+      }
+    : {
+        ok: false,
+        code: result.code,
+        detail: result.detail,
+        ...(result.ack ? { ack: result.ack } : {}),
+        terminalGuideState: provenHidden ? "hidden" : "unknown",
+        cleanupProven: provenHidden,
+        actionReceipts,
+        evidenceCeiling,
+      };
+
+  const inputError = navigationGuideInputError(adb, input);
+  if (inputError) return {
+    ok: false,
+    code: "bridge_unavailable",
+    detail: inputError,
+    terminalGuideState: "unknown",
+    cleanupProven: false,
+    actionReceipts,
+    evidenceCeiling,
+  };
+
+  const primary = await executeNavigationGuideTransaction(adb, input, actionReceipts, primaryNavigationGuideActions, deps);
+  if (input.mode === "hide" || primary.ok || trustedNavigationGuideHidden(primary)) return finish(primary);
+
+  // This helper executes the transaction primitive directly. A failed compensating HIDE therefore
+  // returns evidence to this call and can never recursively schedule another invalidation.
+  const invalidationInput: AgentBridgeNavigationGuideRequestInput = {
+    ...input,
+    requestId: navigationGuideInvalidationRequestId(input),
+    mode: "hide",
+  };
+  const invalidation = await executeNavigationGuideTransaction(
+    adb,
+    invalidationInput,
+    actionReceipts,
+    invalidationNavigationGuideActions,
+    deps,
+  );
+
+  const originalRelativePath = navigationGuideRelativePath(input.requestId);
+  const lateCleanupStartedAt = deps.monotonicNs().toString();
+  const lateCleanup = await deps.runText(
+    adb,
+    ["-s", input.serial, "shell", "run-as", input.packageName, "rm", "-f", originalRelativePath],
+    { timeoutMs: input.controlTimeoutMs ?? 15_000, maxOutputBytes: 64 * 1024 },
+  );
+  const lateCleanupApplied = lateCleanup.code === 0 && !lateCleanup.timedOut;
+  actionReceipts.push({
+    action: "navigation_guide_late_ack_cleanup",
+    status: lateCleanupApplied ? "applied" : "failed",
+    startedAtMonotonicNs: lateCleanupStartedAt,
+    endedAtMonotonicNs: deps.monotonicNs().toString(),
+    ack: {
+      serial: input.serial,
+      packageName: input.packageName,
+      requestId: input.requestId,
+      relativePath: originalRelativePath,
+      outcome: lateCleanupApplied ? "completed" : lateCleanup.timedOut ? "timeout" : "failed",
+    },
+    error: lateCleanupApplied ? undefined
+      : (lateCleanup.timedOut ? "late acknowledgement cleanup timed out" : (lateCleanup.stderr || lateCleanup.stdout || "late acknowledgement cleanup failed")).slice(-400),
+  });
+
+  const invalidationClean = invalidation.ok || trustedNavigationGuideHidden(invalidation);
+  if (!invalidationClean || !lateCleanupApplied) {
+    return {
+      ok: false,
+      code: "cleanup_failed",
+      detail: `${primary.code}: ${primary.detail}; navigation-guide invalidation did not prove bounded hidden cleanup`,
+      ...(primary.ack ? { ack: primary.ack } : {}),
+      terminalGuideState: "unknown",
+      cleanupProven: false,
+      actionReceipts,
+      evidenceCeiling,
+    };
+  }
+  return finish(primary, true);
+}
 
 export interface AgentBridgeSceneSnapshotFetchInput {
   serial: string;
@@ -211,6 +724,7 @@ function agentBridgeKt(pkg: string, tag: string): string {
   return `package ${pkg}
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.SystemClock
@@ -229,11 +743,13 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.OutputStreamWriter
+import java.math.BigDecimal
 import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * AgentBridge — an injectable headless control + verification surface for an AI agent.
@@ -257,6 +773,17 @@ object AgentBridge {
     const val SCENE_BRIDGE_REVISION = ${AGENT_BRIDGE_SCENE_REVISION}
     const val SCENE_SNAPSHOT_COMMAND = "${AGENT_BRIDGE_SCENE_SNAPSHOT_COMMAND}"
     const val SCENE_SNAPSHOT_CACHE_DIRECTORY = "${AGENT_BRIDGE_SCENE_SNAPSHOT_CACHE_DIRECTORY}"
+    const val NAVIGATION_GUIDE_PAYLOAD_KIND = "${AGENT_BRIDGE_NAVIGATION_GUIDE_PAYLOAD_KIND}"
+    const val NAVIGATION_GUIDE_SCHEMA_VERSION = ${AGENT_BRIDGE_NAVIGATION_GUIDE_SCHEMA_VERSION}
+    const val NAVIGATION_GUIDE_BRIDGE_REVISION = ${AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION}
+    const val NAVIGATION_GUIDE_COMMAND = "${AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND}"
+    const val NAVIGATION_GUIDE_CACHE_DIRECTORY = "${AGENT_BRIDGE_NAVIGATION_GUIDE_CACHE_DIRECTORY}"
+    const val NAVIGATION_GUIDE_PATTERN = "${AGENT_BRIDGE_NAVIGATION_GUIDE_PATTERN}"
+    const val NAVIGATION_GUIDE_PROJECTION_MODEL = "${AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL}"
+    val NAVIGATION_GUIDE_COLOR_0 = intArrayOf(255, 0, 255)
+    val NAVIGATION_GUIDE_COLOR_1 = intArrayOf(0, 255, 255)
+    const val NAVIGATION_GUIDE_WIDTH_M = ${AGENT_BRIDGE_NAVIGATION_GUIDE_WIDTH_M}f
+    const val NAVIGATION_GUIDE_HEIGHT_M = ${AGENT_BRIDGE_NAVIGATION_GUIDE_HEIGHT_M}f
 
     data class SceneSnapshotRequest(
         val requestId: String,
@@ -265,21 +792,70 @@ object AgentBridge {
         val stabilityReads: Int,
     )
 
+    data class NavigationGuideRequest(
+        val generation: Long,
+        val kind: String,
+        val schemaVersion: Int,
+        val bridgeRevision: Int,
+        val requestId: String,
+        val mode: String,
+        val sceneSnapshotId: String,
+        val targetTraceId: String,
+        val targetRuntimeUuid: String,
+        val pattern: String,
+        val projectionModel: String,
+        val color0: IntArray,
+        val color1: IntArray,
+        val widthM: Float,
+        val heightM: Float,
+    )
+
+    data class NavigationGuideResult(
+        val outcome: String,
+        val guideState: String,
+        val cleanupState: String,
+        val errorCode: String? = null,
+        val errorDetail: String? = null,
+    )
+
+    private data class NavigationGuideProducerBinding(
+        val generationIsCurrent: Boolean,
+        val producer: (suspend (NavigationGuideRequest) -> NavigationGuideResult)?,
+        val cleanup: (suspend () -> Boolean)?,
+    )
+
     private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestIdPattern = Regex("^[A-Za-z0-9_-]{8,96}$")
+    private val sceneSnapshotIdPattern = Regex("^[a-f0-9]{64}$")
+    private val targetTraceIdPattern = Regex("^anchor-[0-9]{4}$")
+    private val navigationGuideMutex = Mutex()
+    private val navigationGuideGenerationLock = Any()
+    private var navigationGuideGeneration = 0L
 
     @Volatile private var applicationContext: Context? = null
     @Volatile private var sceneRoot: Entity? = null
     @Volatile private var sceneProvider: (() -> Entity?)? = null
     @Volatile private var rootContainer: String? = null
     @Volatile private var sceneSnapshotProducer: (suspend (SceneSnapshotRequest, JsonWriter) -> Unit)? = null
+    @Volatile private var navigationGuideProducer: (suspend (NavigationGuideRequest) -> NavigationGuideResult)? = null
+    @Volatile private var navigationGuideCleanup: (suspend () -> Boolean)? = null
+    @Volatile private var navigationGuideBuiltinRegistered = false
     @Volatile private var cachedApkSha256: String? = null
     private val handlers = LinkedHashMap<String, (Bundle) -> Unit>()
 
     init { registerBuiltins() }
 
     /** Called by AgentBridgeInitProvider before the receiver becomes reachable. */
-    fun initialize(context: Context) { applicationContext = context.applicationContext }
+    fun initialize(context: Context) {
+        applicationContext = context.applicationContext
+        if (navigationGuideCommandsEnabled()) registerNavigationGuideBuiltin()
+    }
+
+    /** The navigation guide is an authenticated debug feature and is unreachable in release APKs. */
+    fun navigationGuideCommandsEnabled(): Boolean {
+        val context = applicationContext ?: return false
+        return context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    }
 
     /** Attach the live scene root so dump_scene/scene_stats can introspect it. */
     fun attachScene(root: Entity) { attachSceneInternal(root, null) }
@@ -335,6 +911,54 @@ object AgentBridge {
         event("scene_snapshot_producer_registered", "revision" to SCENE_BRIDGE_REVISION)
     }
 
+    /** Register the guide producer separately from the revision-41 scene-snapshot producer. */
+    fun registerNavigationGuideProducer(
+        producer: suspend (NavigationGuideRequest) -> NavigationGuideResult,
+        cleanup: suspend () -> Boolean,
+    ) {
+        val enabled = navigationGuideCommandsEnabled()
+        synchronized(navigationGuideGenerationLock) {
+            nextNavigationGuideGeneration()
+            if (enabled) {
+                navigationGuideProducer = producer
+                navigationGuideCleanup = cleanup
+            } else {
+                navigationGuideProducer = null
+                navigationGuideCleanup = null
+            }
+        }
+        if (!enabled) return
+        event("navigation_guide_producer_registered", "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION)
+    }
+
+    fun unregisterNavigationGuideProducer() {
+        synchronized(navigationGuideGenerationLock) {
+            nextNavigationGuideGeneration()
+            navigationGuideProducer = null
+            navigationGuideCleanup = null
+        }
+        event("navigation_guide_producer_unregistered", "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION)
+    }
+
+    private fun nextNavigationGuideGeneration(): Long = synchronized(navigationGuideGenerationLock) {
+        check(navigationGuideGeneration < Long.MAX_VALUE) { "navigation-guide generation exhausted" }
+        navigationGuideGeneration += 1L
+        navigationGuideGeneration
+    }
+
+    fun navigationGuideRequestIsCurrent(generation: Long): Boolean = synchronized(navigationGuideGenerationLock) {
+        generation == navigationGuideGeneration
+    }
+
+    private fun navigationGuideProducerBinding(generation: Long): NavigationGuideProducerBinding =
+        synchronized(navigationGuideGenerationLock) {
+            NavigationGuideProducerBinding(
+                generationIsCurrent = generation == navigationGuideGeneration,
+                producer = navigationGuideProducer,
+                cleanup = navigationGuideCleanup,
+            )
+        }
+
     private fun root(): Entity? = sceneRoot ?: sceneProvider?.invoke()
 
     /** Register or override a command. The handler receives the broadcast extras. */
@@ -356,6 +980,54 @@ object AgentBridge {
     }
 
     private fun fmt(v: Any?): String = if (v == null) "null" else v.toString().replace('\\n', ' ').replace(' ', '_')
+
+    @Synchronized
+    private fun registerNavigationGuideBuiltin() {
+        if (navigationGuideBuiltinRegistered || !navigationGuideCommandsEnabled()) return
+        navigationGuideBuiltinRegistered = true
+        register(NAVIGATION_GUIDE_COMMAND) { extras ->
+            val requestId = extras.getString("requestId")
+            if (requestId == null || !requestIdPattern.matches(requestId)) {
+                event("navigation_guide_rejected", "msg" to "invalid_request_id")
+                return@register
+            }
+            val context = applicationContext
+            if (context == null) {
+                event("navigation_guide_failed", "requestId" to requestId, "msg" to "bridge_not_initialized")
+                return@register
+            }
+            val generation = nextNavigationGuideGeneration()
+            val target = navigationGuideTarget(context, requestId)
+            if (target.exists() && !target.delete()) {
+                event("navigation_guide_failed", "requestId" to requestId, "msg" to "stale_ack_not_removed")
+                return@register
+            }
+            val request = NavigationGuideRequest(
+                generation = generation,
+                kind = extras.getString("kind") ?: "",
+                schemaVersion = extras.getInt("schemaVersion", -1),
+                bridgeRevision = extras.getInt("bridgeRevision", -1),
+                requestId = requestId,
+                mode = extras.getString("mode") ?: "",
+                sceneSnapshotId = extras.getString("sceneSnapshotId") ?: "",
+                targetTraceId = extras.getString("targetTraceId") ?: "",
+                targetRuntimeUuid = extras.getString("targetRuntimeUuid") ?: "",
+                pattern = extras.getString("pattern") ?: "",
+                projectionModel = extras.getString("projectionModel") ?: "",
+                color0 = parseNavigationGuideRgb(extras.getString("color0")),
+                color1 = parseNavigationGuideRgb(extras.getString("color1")),
+                widthM = extras.getFloat("widthM", -1f),
+                heightM = extras.getFloat("heightM", -1f),
+            )
+            bridgeScope.launch { writeNavigationGuideAck(request) }
+            event(
+                "navigation_guide_requested",
+                "requestId" to requestId,
+                "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION,
+                "mode" to request.mode,
+            )
+        }
+    }
 
     private fun registerBuiltins() {
         register("ping") { event("pong") }
@@ -468,6 +1140,225 @@ object AgentBridge {
             runCatching { e.destroy() }
                 .onSuccess { event("removed", "tag" to tg, "id" to id) }
                 .onFailure { event("remove_failed", "tag" to tg, "id" to id, "msg" to (it.message ?: "destroy_failed")) }
+        }
+    }
+
+    private fun parseNavigationGuideRgb(value: String?): IntArray {
+        val invalid = intArrayOf(-1, -1, -1)
+        val tokens = value?.split(",") ?: return invalid
+        if (tokens.size != 3) return invalid
+        val channels = IntArray(3)
+        tokens.forEachIndexed { index, token ->
+            val channel = token.trim().toIntOrNull() ?: return invalid
+            if (channel !in 0..255) return invalid
+            channels[index] = channel
+        }
+        return channels
+    }
+
+    private fun validateNavigationGuideRequest(request: NavigationGuideRequest): String? = when {
+        request.kind != NAVIGATION_GUIDE_PAYLOAD_KIND -> "kind does not match the navigation-guide protocol"
+        request.schemaVersion != NAVIGATION_GUIDE_SCHEMA_VERSION -> "schemaVersion does not match the navigation-guide protocol"
+        request.bridgeRevision != NAVIGATION_GUIDE_BRIDGE_REVISION -> "bridgeRevision does not match the navigation-guide protocol"
+        request.mode != "show" && request.mode != "hide" -> "mode must be show or hide"
+        !sceneSnapshotIdPattern.matches(request.sceneSnapshotId) -> "sceneSnapshotId must be a lowercase SHA-256"
+        !targetTraceIdPattern.matches(request.targetTraceId) -> "targetTraceId must be a trace-local anchor ID"
+        request.targetRuntimeUuid.length !in 1..256 || request.targetRuntimeUuid.any { it.code !in 0x21..0x7e } ->
+            "targetRuntimeUuid must be a non-empty printable runtime identity"
+        request.pattern != NAVIGATION_GUIDE_PATTERN -> "unsupported navigation-guide pattern"
+        request.projectionModel != NAVIGATION_GUIDE_PROJECTION_MODEL -> "unsupported navigation-guide projection model"
+        !request.color0.contentEquals(NAVIGATION_GUIDE_COLOR_0) || !request.color1.contentEquals(NAVIGATION_GUIDE_COLOR_1) ->
+            "unsupported navigation-guide palette"
+        request.widthM != NAVIGATION_GUIDE_WIDTH_M || request.heightM != NAVIGATION_GUIDE_HEIGHT_M ->
+            "unsupported navigation-guide dimensions"
+        else -> null
+    }
+
+    private suspend fun cleanupNavigationGuideAfterRejection(
+        cleanup: (suspend () -> Boolean)? = navigationGuideCleanup,
+    ): Boolean {
+        val callback = cleanup ?: return true
+        return runCatching { callback() }.getOrDefault(false)
+    }
+
+    private fun validateNavigationGuideResult(
+        request: NavigationGuideRequest,
+        result: NavigationGuideResult,
+    ): String? = when (result.outcome) {
+        "shown" -> if (
+            request.mode == "show" && result.guideState == "visible" &&
+            result.cleanupState == "not_required" && result.errorCode == null && result.errorDetail == null
+        ) null else "shown producer result is contradictory"
+        "hidden" -> if (
+            request.mode == "hide" && result.guideState == "hidden" &&
+            result.cleanupState == "completed" && result.errorCode == null && result.errorDetail == null
+        ) null else "hidden producer result is contradictory"
+        "rejected", "failed" -> if (
+            result.guideState != "visible" && result.cleanupState != "not_required" &&
+            !result.errorCode.isNullOrBlank() && !result.errorDetail.isNullOrBlank()
+        ) null else "rejected/failed producer result is contradictory"
+        else -> "producer returned an unknown outcome"
+    }
+
+    private fun publishNavigationGuideAckIfCurrent(
+        context: Context,
+        request: NavigationGuideRequest,
+        target: File,
+        result: NavigationGuideResult,
+    ): Boolean = synchronized(navigationGuideGenerationLock) {
+        if (request.generation != navigationGuideGeneration) return@synchronized false
+        writeNavigationGuideAckAtomically(context, request, target, result)
+        true
+    }
+
+    private suspend fun writeNavigationGuideAck(request: NavigationGuideRequest) {
+        val context = applicationContext ?: return
+        val target = navigationGuideTarget(context, request.requestId)
+        navigationGuideMutex.lock()
+        try {
+            val binding = navigationGuideProducerBinding(request.generation)
+            if (!binding.generationIsCurrent) {
+                return
+            }
+            val validationError = validateNavigationGuideRequest(request)
+            var result = when {
+                validationError != null -> {
+                    val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
+                    NavigationGuideResult(
+                        outcome = "rejected",
+                        guideState = if (cleaned) "hidden" else "unknown",
+                        cleanupState = if (cleaned) "completed" else "failed",
+                        errorCode = "invalid_request",
+                        errorDetail = validationError,
+                    )
+                }
+                binding.producer == null -> {
+                    val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
+                    NavigationGuideResult(
+                        outcome = "failed",
+                        guideState = if (cleaned) "hidden" else "unknown",
+                        cleanupState = if (cleaned) "completed" else "failed",
+                        errorCode = "bridge_unavailable",
+                        errorDetail = "no navigation-guide producer is registered",
+                    )
+                }
+                else -> try {
+                    binding.producer.invoke(request)
+                } catch (cause: Throwable) {
+                    val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
+                    NavigationGuideResult(
+                        outcome = "failed",
+                        guideState = if (cleaned) "hidden" else "unknown",
+                        cleanupState = if (cleaned) "completed" else "failed",
+                        errorCode = "producer_failed",
+                        errorDetail = (cause.message ?: cause.javaClass.simpleName).take(500),
+                    )
+                }
+            }
+            if (!navigationGuideRequestIsCurrent(request.generation)) {
+                cleanupNavigationGuideAfterRejection(binding.cleanup)
+                return
+            }
+            val resultError = validateNavigationGuideResult(request, result)
+            if (resultError != null) {
+                val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
+                result = NavigationGuideResult(
+                    outcome = "failed",
+                    guideState = if (cleaned) "hidden" else "unknown",
+                    cleanupState = if (cleaned) "completed" else "failed",
+                    errorCode = "invalid_producer_result",
+                    errorDetail = resultError,
+                )
+            }
+            if (!navigationGuideRequestIsCurrent(request.generation)) {
+                cleanupNavigationGuideAfterRejection(binding.cleanup)
+                return
+            }
+            try {
+                if (!publishNavigationGuideAckIfCurrent(context, request, target, result)) {
+                    cleanupNavigationGuideAfterRejection(binding.cleanup)
+                    return
+                }
+                event(
+                    "navigation_guide_ack_written",
+                    "requestId" to request.requestId,
+                    "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION,
+                    "outcome" to result.outcome,
+                )
+            } catch (cause: Throwable) {
+                cleanupNavigationGuideAfterRejection(binding.cleanup)
+                event(
+                    "navigation_guide_ack_failed",
+                    "requestId" to request.requestId,
+                    "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION,
+                    "msg" to (cause.message ?: cause.javaClass.simpleName).take(300),
+                )
+            }
+        } finally {
+            navigationGuideMutex.unlock()
+        }
+    }
+
+    private fun writeNavigationGuideAckAtomically(
+        context: Context,
+        request: NavigationGuideRequest,
+        target: File,
+        result: NavigationGuideResult,
+    ) {
+        val directory = target.parentFile ?: throw IllegalStateException("navigation-guide cache has no parent")
+        if (!directory.exists() && !directory.mkdirs()) throw IllegalStateException("could not create navigation-guide cache")
+        val temp = File(directory, ".\${request.requestId}.tmp-\${SystemClock.elapsedRealtimeNanos()}")
+        val output = FileOutputStream(temp)
+        try {
+            val writer = JsonWriter(OutputStreamWriter(output, Charsets.UTF_8))
+            writer.beginObject()
+            writer.name("kind").value(NAVIGATION_GUIDE_PAYLOAD_KIND)
+            writer.name("schemaVersion").value(NAVIGATION_GUIDE_SCHEMA_VERSION.toLong())
+            writer.name("bridgeRevision").value(NAVIGATION_GUIDE_BRIDGE_REVISION.toLong())
+            writer.name("requestId").value(request.requestId)
+            writer.name("application").beginObject()
+            writer.name("packageName").value(context.packageName)
+            writer.endObject()
+            writer.name("mode").value(request.mode)
+            writer.name("sceneSnapshotId").value(request.sceneSnapshotId)
+            writer.name("targetTraceId").value(request.targetTraceId)
+            writer.name("targetRuntimeUuid").value(request.targetRuntimeUuid)
+            writer.name("pattern").value(request.pattern)
+            writer.name("projectionModel").value(request.projectionModel)
+            writer.name("colors").beginArray()
+            writer.beginArray(); request.color0.forEach { writer.value(it.toLong()) }; writer.endArray()
+            writer.beginArray(); request.color1.forEach { writer.value(it.toLong()) }; writer.endArray()
+            writer.endArray()
+            // Float.toString() returns the shortest exact source decimal ("0.74"/"0.44");
+            // BigDecimal preserves it in JSON instead of widening to 0.7400000095367432.
+            writer.name("widthM").value(BigDecimal(request.widthM.toString()))
+            writer.name("heightM").value(BigDecimal(request.heightM.toString()))
+            writer.name("outcome").value(result.outcome)
+            writer.name("guideState").value(result.guideState)
+            writer.name("cleanupState").value(result.cleanupState)
+            writer.name("error")
+            if (result.errorCode == null || result.errorDetail == null) {
+                writer.nullValue()
+            } else {
+                writer.beginObject()
+                writer.name("code").value(result.errorCode.take(120))
+                writer.name("detail").value(result.errorDetail.take(500))
+                writer.endObject()
+            }
+            writer.endObject()
+            writer.flush()
+            output.fd.sync()
+        } catch (cause: Throwable) {
+            temp.delete()
+            throw cause
+        } finally {
+            runCatching { output.close() }
+        }
+        try {
+            Os.rename(temp.absolutePath, target.absolutePath)
+        } catch (cause: Throwable) {
+            temp.delete()
+            throw cause
         }
     }
 
@@ -621,6 +1512,9 @@ object AgentBridge {
     private fun sceneSnapshotTarget(context: Context, requestId: String): File =
         File(File(context.cacheDir, SCENE_SNAPSHOT_CACHE_DIRECTORY), "$requestId.json")
 
+    private fun navigationGuideTarget(context: Context, requestId: String): File =
+        File(File(context.cacheDir, NAVIGATION_GUIDE_CACHE_DIRECTORY), "$requestId.json")
+
     private fun find(root: Entity, name: String): Entity? {
         var found: Entity? = null
         walk(root, 0, Int.MAX_VALUE) { e, _ -> if (found == null && e.getName() == name) found = e }
@@ -749,7 +1643,21 @@ export function registerAgentBridgeTools(server: McpServer) {
           command: AGENT_BRIDGE_SCENE_SNAPSHOT_COMMAND,
           cacheDirectory: AGENT_BRIDGE_SCENE_SNAPSHOT_CACHE_DIRECTORY,
         },
+        navigationGuideProtocol: {
+          kind: AGENT_BRIDGE_NAVIGATION_GUIDE_PAYLOAD_KIND,
+          schemaVersion: AGENT_BRIDGE_NAVIGATION_GUIDE_SCHEMA_VERSION,
+          bridgeRevision: AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION,
+          command: AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND,
+          cacheDirectory: AGENT_BRIDGE_NAVIGATION_GUIDE_CACHE_DIRECTORY,
+          pattern: AGENT_BRIDGE_NAVIGATION_GUIDE_PATTERN,
+          projectionModel: AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL,
+          colors: AGENT_BRIDGE_NAVIGATION_GUIDE_COLORS,
+          widthM: AGENT_BRIDGE_NAVIGATION_GUIDE_WIDTH_M,
+          heightM: AGENT_BRIDGE_NAVIGATION_GUIDE_HEIGHT_M,
+          evidenceCeiling: "structural",
+        },
         builtinCommands: ["ping", "commands", "scene_stats", "dump_scene", AGENT_BRIDGE_SCENE_SNAPSHOT_COMMAND, "spawn", "move", "remove"],
+        debugCommands: [AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND],
         verification:
           "The revision-41 source and exact-file transport contract is structurally tested and was exercised live on emulator-5554 by com.fleet.swanmissiontable. The pulled geometry and labels remain structural evidence; verify rendered pixels separately from hidden scene data.",
       });

@@ -13,6 +13,8 @@ import {
   writeExternalGeometryArtifact,
 } from "../dist/sceneanchors.js";
 
+const agentBridge = await import("../dist/agentbridge.js");
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixturePath = path.join(repoRoot, "test", "fixtures", "sceneanchors", "museum-sweeps.v1.json");
 const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
@@ -27,6 +29,20 @@ const defaultPolicy = {
   maxExtentDeltaM: 0.03,
   topology: "strict",
 };
+
+test("navigation-guide revision catches an accidental scene-snapshot revision bump or overload", () => {
+  assert.equal(agentBridge.AGENT_BRIDGE_SCENE_PAYLOAD_KIND, "pico.agent-bridge.scene-snapshot");
+  assert.equal(agentBridge.AGENT_BRIDGE_SCENE_SCHEMA_VERSION, 1);
+  assert.equal(agentBridge.AGENT_BRIDGE_SCENE_REVISION, 41);
+  assert.equal(agentBridge.AGENT_BRIDGE_SCENE_SNAPSHOT_COMMAND, "query_scene_anchors");
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_PAYLOAD_KIND, "pico.agent-bridge.navigation-guide");
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_SCHEMA_VERSION, 1);
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION, 1);
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND, "navigation_guide");
+  assert.equal(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL, "viewer-facing-planar-v1");
+  assert.notEqual(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND, agentBridge.AGENT_BRIDGE_SCENE_SNAPSHOT_COMMAND);
+  assert.notEqual(agentBridge.AGENT_BRIDGE_NAVIGATION_GUIDE_CACHE_DIRECTORY, agentBridge.AGENT_BRIDGE_SCENE_SNAPSHOT_CACHE_DIRECTORY);
+});
 
 async function executeQuerySceneAnchors(...args) {
   const result = await executeQuerySceneAnchorsRaw(...args);

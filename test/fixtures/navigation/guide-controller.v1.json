@@ -1,0 +1,137 @@
+{
+  "frame": { "width": 1280, "height": 720 },
+  "fiducial": {
+    "colors": [[255, 0, 255], [0, 255, 255]],
+    "pattern": "nested-corners-v1",
+    "maxCenterSkewFraction": 0.1
+  },
+  "guide": {
+    "valid": {
+      "detections": {
+        "available": true,
+        "expected": ["magenta", "cyan"],
+        "found": ["magenta", "cyan"],
+        "missing": [],
+        "neutralSkipped": [],
+        "detections": {
+          "magenta": { "pixels": 8400, "bbox": [420, 180, 860, 540] },
+          "cyan": { "pixels": 5500, "bbox": [500, 240, 780, 480] }
+        }
+      },
+      "want": {
+        "bbox": [420, 180, 860, 540],
+        "center": { "x": 640, "y": 360 },
+        "error": { "x": 0, "y": 0 },
+        "width": 440,
+        "height": 360,
+        "areaFraction": 0.171875
+      }
+    },
+    "offBand": {
+      "detections": {
+        "available": true,
+        "expected": ["magenta", "cyan"],
+        "found": ["magenta", "cyan"],
+        "missing": [],
+        "neutralSkipped": [],
+        "detections": {
+          "magenta": { "pixels": 8400, "bbox": [550, 200, 990, 560] },
+          "cyan": { "pixels": 5500, "bbox": [630, 260, 910, 500] }
+        }
+      },
+      "want": { "center": { "x": 770, "y": 380 }, "error": { "x": 130, "y": 20 } }
+    },
+    "absent": {
+      "detections": {
+        "available": true,
+        "expected": ["magenta", "cyan"],
+        "found": ["magenta"],
+        "missing": ["cyan"],
+        "neutralSkipped": [],
+        "detections": { "magenta": { "pixels": 8400, "bbox": [420, 180, 860, 540] }, "cyan": null }
+      }
+    },
+    "duplicate": {
+      "detections": {
+        "available": true,
+        "expected": ["magenta", "cyan"],
+        "found": ["magenta", "cyan"],
+        "missing": [],
+        "neutralSkipped": [],
+        "detections": {
+          "magenta": { "pixels": 8400, "bbox": [420, 180, 860, 540] },
+          "cyan": { "pixels": 5500, "bbox": [420, 180, 860, 540] }
+        }
+      }
+    },
+    "nonNested": {
+      "detections": {
+        "available": true,
+        "expected": ["magenta", "cyan"],
+        "found": ["magenta", "cyan"],
+        "missing": [],
+        "neutralSkipped": [],
+        "detections": {
+          "magenta": { "pixels": 8400, "bbox": [420, 180, 860, 540] },
+          "cyan": { "pixels": 5500, "bbox": [900, 240, 1180, 480] }
+        }
+      }
+    },
+    "skewedNested": {
+      "detections": {
+        "available": true,
+        "expected": ["magenta", "cyan"],
+        "found": ["magenta", "cyan"],
+        "missing": [],
+        "neutralSkipped": [],
+        "detections": {
+          "magenta": { "pixels": 8400, "bbox": [420, 180, 860, 540] },
+          "cyan": { "pixels": 5500, "bbox": [420, 180, 500, 260] }
+        }
+      }
+    },
+    "neutralColors": [[120, 123, 125], [0, 255, 255]],
+    "equalColors": [[255, 0, 255], [255, 0, 255]]
+  },
+  "calibration": {
+    "linearSamples": [{ "x": -80, "y": -8 }, { "x": -40, "y": -4 }, { "x": 40, "y": 4 }, { "x": 80, "y": 8 }],
+    "noisySamples": [{ "x": -80, "y": -7 }, { "x": -40, "y": -5 }, { "x": 40, "y": 3 }, { "x": 80, "y": 9 }],
+    "wantLinear": { "slope": 0.1, "sampleCount": 4, "residuals": [0, 0, 0, 0], "rmse": 0, "maxAbsResidual": 0, "rSquared": 1 },
+    "wantNoisy": { "slope": 0.1, "sampleCount": 4, "residuals": [1, -1, -1, 1], "rmse": 1, "maxAbsResidual": 1, "rSquared": 0.975609756097561 },
+    "forwardSamples": [{ "x": 100, "y": 0.5 }, { "x": 200, "y": 1 }, { "x": 300, "y": 1.5 }, { "x": 400, "y": 2 }],
+    "wantForward": { "slope": 0.005, "sampleCount": 4, "residuals": [0, 0, 0, 0], "rmse": 0, "maxAbsResidual": 0, "rSquared": 1 },
+    "limits": { "minSamples": 4, "maxNormalizedRmse": 0.2, "maxNormalizedAbsResidual": 0.25, "minRSquared": 0.95 },
+    "context": {
+      "serial": "emulator-5554",
+      "guest": { "fingerprint": "guest-fingerprint-v1", "model": "PICO Emulator 6" },
+      "bootId": "boot-12345678",
+      "qemu": { "pid": 93013, "window": { "id": 44, "x": 100, "y": 200, "width": 1280, "height": 720, "scale": 2 } },
+      "capture": { "width": 1280, "height": 720 },
+      "cameraCalibrationSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "bridgeRevision": 1,
+      "guide": { "pattern": "nested-corners-v1", "widthM": 2, "heightM": 1.2 },
+      "cameraCalibrationPath": "/private/tmp/calibration.json",
+      "at": "2026-09-01T10:00:00.000Z"
+    }
+  },
+  "controller": {
+    "centerBandPx": { "x": 90, "y": 70 },
+    "targetAreaFraction": { "min": 0.08, "max": 0.25 },
+    "motionPolicy": { "maxDragPxPerAction": 120, "maxCumulativeDragPx": 1440, "maxHoldMsPerAction": 250, "maxCumulativeHoldMs": 3000, "maxActions": 24, "maxDurationSec": 180 },
+    "centered": { "error": { "x": 0, "y": 0 }, "areaFraction": 0.1 },
+    "offBand": { "error": { "x": 130, "y": 20 }, "areaFraction": 0.05 },
+    "overshootHistory": [{ "error": { "x": 100, "y": 0 } }, { "error": { "x": -40, "y": 0 } }],
+    "growingAreas": [0.05, 0.07, 0.1],
+    "shrinkingAreas": [0.12, 0.1, 0.08],
+    "expected": {
+      "absent": "search_horizontal",
+      "centered": "target_centered",
+      "approach": "hold_forward",
+      "shrinkingTwice": "requery",
+      "targetArea": "objective_satisfied",
+      "budget": "budget_exhausted",
+      "sceneDrift": "scene_drift",
+      "cleanup": "cleanup_required"
+    }
+  }
+}

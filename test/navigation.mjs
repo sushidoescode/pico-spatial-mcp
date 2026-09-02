@@ -9,6 +9,7 @@ import {
   executeBoundCameraActions,
   executeRelativeCameraRoute,
 } from "../dist/navigation.js";
+import * as navigation from "../dist/navigation.js";
 import {
   createBoundCameraActionAdapter,
   createCameraActionBindingReceipt,
@@ -282,6 +283,417 @@ test("route preserves grouped waypoint and action order through injected action,
     durationMs: trace.usage.durationMs,
   });
   assert.ok(trace.usage.durationMs >= 0);
+});
+
+test("route catches an async controller that is not awaited before allocation and exposes its remaining deadline", async () => {
+  const events = [];
+  let calls = 0;
+  const trace = await executeRelativeCameraRoute(
+    routeInput(),
+    async (waypoints, deadline) => {
+      events.push(`decide-start:${waypoints.length}`);
+      assert.equal(typeof deadline.remainingMs, "function");
+      assert.ok(deadline.remainingMs() > 0);
+      assert.equal(deadline.signal.aborted, false);
+      await Promise.resolve();
+      events.push(`decide-end:${waypoints.length}`);
+      return calls++ === 0 ? [{ kind: "look_drag", dxPx: 4, dyPx: -3 }] : "stop";
+    },
+    dependencies({
+      allocateWaypointPath: (seq) => {
+        events.push(`allocate:${seq}`);
+        return `/tmp/pico-navigation-tests/route-test/waypoint-${String(seq).padStart(4, "0")}.png`;
+      },
+      applyRelativeAction: async (action) => {
+        events.push("action");
+        return applied(action);
+      },
+      sleep: async () => events.push("dwell"),
+      captureSettled: async (capturePath) => {
+        events.push("capture");
+        return settled(capturePath);
+      },
+    }),
+  );
+  assert.equal(trace.status, "controller_stop");
+  assert.deepEqual(events, [
+    "decide-start:0", "decide-end:0", "allocate:1", "action", "dwell", "capture",
+    "decide-start:1", "decide-end:1",
+  ]);
+});
+
+test("route catches an async controller rejection without allocating or applying input", async () => {
+  let allocations = 0;
+  let actions = 0;
+  const trace = await executeRelativeCameraRoute(
+    routeInput(),
+    async () => { await Promise.resolve(); throw new Error("detector deadline failed"); },
+    dependencies({
+      allocateWaypointPath: () => { allocations++; return "/tmp/pico-navigation-tests/route-test/unreachable.png"; },
+      applyRelativeAction: async (action) => { actions++; return applied(action); },
+    }),
+  );
+  assert.equal(trace.status, "action_failed");
+  assert.equal(allocations, 0);
+  assert.equal(actions, 0);
+});
+
+test("compatibility route returns at its deadline when a controller promise never settles", async () => {
+  let dependencyCalls = 0;
+  const route = executeRelativeCameraRoute(
+    routeInput({ budgets: { ...defaultBudgets, maxDurationMs: 12_005, recoveryReserveMs: 0 } }),
+    () => new Promise(() => {}),
+    dependencies({
+      allocateWaypointPath: () => { dependencyCalls++; throw new Error("must not allocate"); },
+      applyRelativeAction: async () => { dependencyCalls++; throw new Error("must not apply"); },
+      captureSettled: async () => { dependencyCalls++; throw new Error("must not capture"); },
+    }),
+  );
+  const result = await Promise.race([
+    route,
+    new Promise((resolve) => setTimeout(() => resolve("test_timeout"), 100)),
+  ]);
+  assert.notEqual(result, "test_timeout", "the compatibility wrapper must not drain an untrusted async loser");
+  assert.equal(result.status, "budget_exhausted");
+  assert.equal(dependencyCalls, 0);
+});
+
+test("a late compatibility decision cannot schedule route work after the deadline result", async () => {
+  let releaseDecision;
+  let returned = false;
+  const events = [];
+  const routePromise = executeRelativeCameraRoute(
+    routeInput({ budgets: { ...defaultBudgets, maxDurationMs: 12_005, recoveryReserveMs: 0 } }),
+    () => new Promise((resolve) => { releaseDecision = resolve; }),
+    dependencies({
+      allocateWaypointPath: () => { events.push("allocate"); return "/tmp/pico-navigation-tests/route-test/late.png"; },
+      applyRelativeAction: async (action) => { events.push("action"); return applied(action); },
+      captureSettled: async (capturePath) => { events.push("capture"); return settled(capturePath); },
+    }),
+  ).then((trace) => {
+    returned = true;
+    return trace;
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const returnedBeforeRelease = returned;
+  releaseDecision([{ kind: "look_drag", dxPx: 10, dyPx: 0 }]);
+  const trace = await routePromise;
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(returnedBeforeRelease, true, "deadline return must not wait for a late decision");
+  assert.equal(trace.status, "budget_exhausted");
+  assert.deepEqual(events, []);
+  assert.deepEqual(trace.waypoints, []);
+  assert.equal(trace.usage.actions, 0);
+});
+
+test("persistent route execution carries its original budgets, sequence, paths, and adopted settled baseline across continuations", async () => {
+  assert.equal(typeof navigation.createRelativeRouteExecution, "function");
+  const priors = [];
+  let captureIndex = 0;
+  const execution = navigation.createRelativeRouteExecution(
+    routeInput({ budgets: { ...defaultBudgets, maxActions: 2, maxWaypoints: 2 } }),
+    dependencies({
+      captureSettled: async (capturePath, context) => {
+        priors.push(context.priorSha256);
+        return settled(capturePath, captureIndex++ === 0 ? "d".repeat(64) : "f".repeat(64));
+      },
+    }),
+  );
+
+  const first = await execution.executeStep([{ kind: "look_drag", dxPx: 10, dyPx: 0 }]);
+  assert.equal(first.status, "settled");
+  const adopted = settled(
+    "/tmp/pico-navigation-tests/route-test/guide-on-rebaseline.png",
+    "d".repeat(64),
+  );
+  assert.equal(execution.adoptSettledBaseline(adopted), true,
+    "a distinct settled rebaseline path may preserve byte-identical static-scene evidence");
+  const second = await execution.executeStep([{ kind: "look_drag", dxPx: -10, dyPx: 0 }]);
+  assert.equal(second.status, "settled");
+  const exhausted = await execution.executeStep([{ kind: "look_drag", dxPx: 1, dyPx: 0 }]);
+  assert.equal(exhausted.status, "budget_exhausted");
+
+  const trace = execution.finish("controller_stop");
+  assert.deepEqual(trace.waypoints.map((waypoint) => waypoint.seq), [1, 2]);
+  assert.deepEqual(priors, ["c".repeat(64), "d".repeat(64)]);
+  assert.deepEqual(trace.usage.actions, 2);
+  assert.deepEqual(trace.usage.waypoints, 2);
+});
+
+test("paired route step restores an applied outbound exactly once through the paid recovery lane after active time is consumed", async () => {
+  assert.equal(typeof navigation.createRelativeRouteExecution, "function");
+  const actions = [];
+  let captures = 0;
+  let continuitySamples = 0;
+  let now = 0n;
+  const execution = navigation.createRelativeRouteExecution(
+    routeInput({
+      continuity: { kind: "required", binding: applicationBinding },
+      budgets: {
+        ...defaultBudgets,
+        maxActions: 2,
+        maxWaypoints: 2,
+        maxDurationMs: 400_000,
+        recoveryReserveMs: 180_000,
+      },
+      capture: { maxTries: 2, intervalMs: 10, attemptTimeoutMs: 100 },
+    }),
+    dependencies({
+      monotonicNs: () => now,
+      sampleContinuity: async () => {
+        continuitySamples++;
+        if (continuitySamples === 2) now = 250_000_000_000n;
+        return continuitySample();
+      },
+      applyRelativeAction: async (action) => {
+        actions.push(action);
+        return applied(action);
+      },
+      captureSettled: async (capturePath) => {
+        captures++;
+        return settled(capturePath, captures === 1 ? "d".repeat(64) : "e".repeat(64));
+      },
+    }),
+  );
+
+  const pair = await execution.executePairedStep(
+    { kind: "look_drag", dxPx: 40, dyPx: 0 },
+    { kind: "look_drag", dxPx: -40, dyPx: 0 },
+    { pairId: "yaw-positive-40" },
+  );
+  assert.equal(pair.primaryStatus, "budget_exhausted");
+  assert.equal(pair.restore?.status, "settled");
+  assert.equal(pair.recoveryUsed, true);
+  assert.deepEqual(actions, [
+    { kind: "look_drag", dxPx: 40, dyPx: 0 },
+    { kind: "look_drag", dxPx: -40, dyPx: 0 },
+  ]);
+  const trace = execution.finish("controller_stop");
+  assert.deepEqual(trace.waypoints.map((waypoint) => waypoint.meta), [
+    { lane: "active", pairId: "yaw-positive-40", pairRole: "outbound" },
+    { lane: "recovery", pairId: "yaw-positive-40", pairRole: "restore" },
+  ]);
+});
+
+test("paired route attempt ledger retains an applied outbound capture failure before its successful inverse", async () => {
+  const requests = [
+    { kind: "look_drag", dxPx: 40, dyPx: 0 },
+    { kind: "look_drag", dxPx: -40, dyPx: 0 },
+  ];
+  for (const [name, firstCapture, evidenceStatus, detailPattern, continuityStatus, waypointSeqs] of [
+    ["throw", async () => { throw new Error("fixture outbound capture threw"); }, null, /outbound capture threw/, "not_reached", [2]],
+    ["timeout", async (capturePath) => timeout(capturePath), "timeout", /fresh baseline/, "succeeded", [1, 2]],
+    ["invalid receipt", async (capturePath) => ({ ...settled(capturePath), path: `${capturePath}.wrong` }), "settled", /exact binding/, "not_reached", [2]],
+  ]) {
+    let captureCalls = 0;
+    const execution = navigation.createRelativeRouteExecution(
+      routeInput({
+        budgets: {
+          ...defaultBudgets,
+          maxActions: 2,
+          maxWaypoints: 2,
+          maxDurationMs: 400_000,
+          recoveryReserveMs: 180_000,
+        },
+      }),
+      dependencies({
+        captureSettled: async (capturePath) => {
+          captureCalls++;
+          if (captureCalls === 1) return firstCapture(capturePath);
+          return settled(capturePath, "e".repeat(64));
+        },
+      }),
+    );
+
+    const pair = await execution.executePairedStep(requests[0], requests[1], { pairId: "yaw-positive-40" });
+    assert.equal(pair.primaryStatus, "route_unsettled", name);
+    assert.equal(pair.restore?.status, "settled", name);
+    const trace = execution.finish("route_unsettled");
+
+    assert.equal(trace.usage.actions, 2, name);
+    assert.equal(trace.actionAttempts.length, 2, name);
+    assert.deepEqual(trace.actionAttempts.map((attempt) => ({
+      identity: attempt.identity,
+      order: attempt.order,
+      request: attempt.request,
+      lane: attempt.lane,
+      recoveryLane: attempt.recoveryLane,
+      pairId: attempt.pairId,
+      pairRole: attempt.pairRole,
+    })), [
+      {
+        identity: { executionId: "route-test", stepSeq: 1, actionIndex: 0 },
+        order: 1,
+        request: requests[0],
+        lane: "active",
+        recoveryLane: false,
+        pairId: "yaw-positive-40",
+        pairRole: "outbound",
+      },
+      {
+        identity: { executionId: "route-test", stepSeq: 2, actionIndex: 0 },
+        order: 2,
+        request: requests[1],
+        lane: "active",
+        recoveryLane: false,
+        pairId: "yaw-positive-40",
+        pairRole: "restore",
+      },
+    ], name);
+    assert.equal(trace.actionAttempts[0].action.status, "succeeded", name);
+    assert.equal(trace.actionAttempts[0].action.evidence.status, "applied", name);
+    assert.equal(trace.actionAttempts[0].settle.status, "failed", name);
+    assert.equal(trace.actionAttempts[0].settle.evidence?.status ?? null, evidenceStatus, name);
+    assert.match(trace.actionAttempts[0].settle.detail, detailPattern, name);
+    assert.equal(trace.actionAttempts[0].continuityAfter.status, continuityStatus, name);
+    assert.equal(trace.actionAttempts[1].action.status, "succeeded", name);
+    assert.equal(trace.actionAttempts[1].settle.status, "succeeded", name);
+    assert.equal(trace.actionAttempts[1].continuityAfter.status, "succeeded", name);
+    assert.deepEqual(trace.waypoints.map((waypoint) => waypoint.seq), waypointSeqs, name);
+  }
+});
+
+test("paired route attempt ledger retains the outbound and a failed inverse without overwriting either", async () => {
+  const requests = [
+    { kind: "look_drag", dxPx: 40, dyPx: 0 },
+    { kind: "look_drag", dxPx: -40, dyPx: 0 },
+  ];
+  let actions = 0;
+  const execution = navigation.createRelativeRouteExecution(
+    routeInput({
+      budgets: {
+        ...defaultBudgets,
+        maxActions: 2,
+        maxWaypoints: 2,
+        maxDurationMs: 400_000,
+        recoveryReserveMs: 180_000,
+      },
+    }),
+    dependencies({
+      applyRelativeAction: async (action) => {
+        actions++;
+        return actions === 1
+          ? applied(action)
+          : { ...applied(action), status: "failed", error: "fixture inverse application failed" };
+      },
+    }),
+  );
+
+  const pair = await execution.executePairedStep(requests[0], requests[1], { pairId: "yaw-positive-40" });
+  assert.equal(pair.primaryStatus, "settled");
+  assert.equal(pair.restore?.status, "action_failed");
+  const trace = execution.finish("action_failed");
+
+  assert.equal(trace.usage.actions, 2);
+  assert.deepEqual(trace.actionAttempts.map((attempt) => attempt.request), requests);
+  assert.deepEqual(trace.actionAttempts.map((attempt) => attempt.identity.stepSeq), [1, 2]);
+  assert.equal(trace.actionAttempts[0].settle.status, "succeeded");
+  assert.equal(trace.actionAttempts[1].action.status, "failed");
+  assert.equal(trace.actionAttempts[1].action.evidence.status, "failed");
+  assert.match(trace.actionAttempts[1].action.detail, /fixture inverse application failed/);
+  assert.equal(trace.actionAttempts[1].settle.status, "not_reached");
+  assert.equal(trace.terminalActionFailures.length, 1);
+  assert.deepEqual(trace.terminalActionFailures[0].attemptIdentity,
+    { executionId: "route-test", stepSeq: 2, actionIndex: 0 });
+  assert.match(trace.terminalActionFailures[0].terminalError, /fixture inverse application failed/);
+  assert.deepEqual(trace.terminalActionFailure, trace.terminalActionFailures[0]);
+});
+
+test("route attempt ledger classifies applied receipts with invalid binding evidence as failed terminal attempts", async () => {
+  const drag = { kind: "look_drag", dxPx: 40, dyPx: 0 };
+  const hold = { kind: "key_hold", key: "w", holdMs: 50 };
+  const cases = [
+    ["serial", drag, applied(drag, "emulator-5556")],
+    ["action kind", drag, { ...applied(drag), action: "key_hold" }],
+    ["window", drag, applied(drag, runtimeBinding.serial, {
+      hostWindow: { qemuWindowOwnerPid: 93014, qemuWindowId: runtimeBinding.qemuWindow.windowId },
+    })],
+    ["runtime", hold, applied(hold, runtimeBinding.serial, {
+      grpc: { ...applied(hold).ack.grpc, address: "127.0.0.1:9999" },
+    })],
+  ];
+
+  for (const [name, request, rawReceipt] of cases) {
+    let captures = 0;
+    const execution = navigation.createRelativeRouteExecution(
+      routeInput({ budgets: { ...defaultBudgets, maxActions: 1, maxWaypoints: 1 } }),
+      dependencies({
+        applyRelativeAction: async () => rawReceipt,
+        captureSettled: async (capturePath) => {
+          captures++;
+          return settled(capturePath);
+        },
+      }),
+    );
+
+    const step = await execution.executeStep([request]);
+    const trace = execution.finish("action_failed");
+
+    assert.equal(step.status, "action_failed", name);
+    assert.equal(step.actionApplied, false, name);
+    assert.equal(step.actionAttempts.length, 1, name);
+    const attempt = step.actionAttempts[0];
+    assert.deepEqual(attempt.identity, { executionId: "route-test", stepSeq: 1, actionIndex: 0 }, name);
+    assert.deepEqual(attempt.request, request, name);
+    assert.equal(attempt.action.status, "failed", name);
+    assert.deepEqual(attempt.action.evidence, rawReceipt, name);
+    assert.equal(attempt.action.evidence.status, "applied", name);
+    assert.match(attempt.action.detail, /action receipt binding mismatch/, name);
+    assert.deepEqual(attempt.settle, {
+      status: "not_reached",
+      evidence: null,
+      detail: "settlement was not reached",
+    }, name);
+    assert.equal(attempt.continuityAfter.status, "not_reached", name);
+    assert.equal(attempt.continuityAfter.evidence, null, name);
+    assert.equal(trace.usage.actions, 1, name);
+    assert.equal(trace.usage.waypoints, 0, name);
+    assert.equal(trace.actionAttempts.length, 1, name);
+    assert.deepEqual(trace.actionAttempts[0].identity, attempt.identity, name);
+    assert.equal(trace.terminalActionFailures.length, 1, name);
+    assert.equal(trace.terminalActionFailures[0].kind, "receipt_binding_mismatch", name);
+    assert.deepEqual(trace.terminalActionFailures[0].attemptIdentity, attempt.identity, name);
+    assert.deepEqual(trace.terminalActionFailures[0].terminalReceipt, rawReceipt, name);
+    assert.deepEqual(trace.terminalActionFailure, trace.terminalActionFailures[0], name);
+    assert.equal(captures, 0, name);
+  }
+});
+
+test("paired route step refuses before outbound when the exact inverse cannot fit the recovery reserve", async () => {
+  assert.equal(typeof navigation.createRelativeRouteExecution, "function");
+  let actions = 0;
+  let allocations = 0;
+  const execution = navigation.createRelativeRouteExecution(
+    routeInput({
+      continuity: { kind: "required", binding: applicationBinding },
+      budgets: {
+        ...defaultBudgets,
+        maxActions: 2,
+        maxWaypoints: 2,
+        maxDurationMs: 400_000,
+        recoveryReserveMs: 171_999,
+      },
+      capture: { maxTries: 4, intervalMs: 0, attemptTimeoutMs: 15_000 },
+    }),
+    dependencies({
+      allocateWaypointPath: (seq) => {
+        allocations++;
+        return `/tmp/pico-navigation-tests/route-test/waypoint-${String(seq).padStart(4, "0")}.png`;
+      },
+      applyRelativeAction: async (action) => { actions++; return applied(action); },
+    }),
+  );
+  const pair = await execution.executePairedStep(
+    { kind: "look_drag", dxPx: 40, dyPx: 0 },
+    { kind: "look_drag", dxPx: -40, dyPx: 0 },
+    { pairId: "yaw-positive-40" },
+  );
+  assert.equal(pair.primaryStatus, "budget_exhausted");
+  assert.equal(pair.restore, null);
+  assert.equal(actions, 0);
+  assert.equal(allocations, 0);
 });
 
 test("each action group waits once for rendered motion and passes the exact prior capture hash into settlement", async () => {
@@ -559,6 +971,161 @@ test("selector-qualified single-window fallbacks retain null or mismatched disco
       `${name} receipt drift`,
     );
   }
+});
+
+test("qemu binding catches geometry or backing-scale drift while legacy id/pid receipts remain accepted", async () => {
+  const selected = selectQemuWindowBinding(
+    runtimeBinding.serial,
+    [runtimeBinding.serial],
+    [{
+      file: runtimeBinding.grpc.discoveryFile,
+      pid: runtimeBinding.grpc.qemuPid,
+      serial: runtimeBinding.serial,
+      entries: { "port.serial": "5554", "grpc.port": "8554", "grpc.token": "geometry-secret" },
+    }],
+    [{ windowId: 7, ownerPid: 93013, x: 101, y: 202, width: 1280, height: 720, scale: 2, area: 921600 }],
+  );
+  assert.equal(selected.ok, true);
+  assert.deepEqual({
+    x: selected.binding.qemuWindowX,
+    y: selected.binding.qemuWindowY,
+    width: selected.binding.qemuWindowWidth,
+    height: selected.binding.qemuWindowHeight,
+    scale: selected.binding.qemuWindowScale,
+  }, { x: 101, y: 202, width: 1280, height: 720, scale: 2 });
+
+  const actionBinding = createCameraActionBindingReceipt(runtimeBinding.serial, selected.binding);
+  assert.deepEqual(actionBinding.qemuWindow, {
+    ownerPid: 93013,
+    windowId: 7,
+    x: 101,
+    y: 202,
+    width: 1280,
+    height: 720,
+    scale: 2,
+  });
+  const strict = { ...actionBinding, bootId: runtimeBinding.bootId };
+  delete strict.bindingMethod;
+  delete strict.onlineEmulatorSerials;
+  const drag = { kind: "look_drag", dxPx: 20, dyPx: 0 };
+  await assert.rejects(
+    executeBoundCameraActions(strict, [drag], {
+      applyRelativeAction: async () => applied(drag, strict.serial, {
+        hostWindow: {
+          qemuWindowOwnerPid: 93013,
+          qemuWindowId: 7,
+          qemuWindowX: 102,
+          qemuWindowY: 202,
+          qemuWindowWidth: 1280,
+          qemuWindowHeight: 720,
+          qemuWindowScale: 2,
+        },
+      }, strict),
+    }),
+    /binding mismatch/,
+  );
+
+  const legacy = selectQemuWindowBinding(
+    runtimeBinding.serial,
+    [runtimeBinding.serial],
+    [{
+      file: runtimeBinding.grpc.discoveryFile,
+      pid: runtimeBinding.grpc.qemuPid,
+      serial: runtimeBinding.serial,
+      entries: { "port.serial": "5554", "grpc.port": "8554" },
+    }],
+    [{ windowId: 7, ownerPid: 93013, area: 921600 }],
+  );
+  assert.equal(legacy.ok, true);
+  assert.deepEqual(createCameraActionBindingReceipt(runtimeBinding.serial, legacy.binding).qemuWindow, {
+    ownerPid: 93013,
+    windowId: 7,
+  });
+});
+
+test("bound action adapter freshly revalidates every endpoint and exact window field before each input", async () => {
+  const selected = selectQemuWindowBinding(
+    runtimeBinding.serial,
+    [runtimeBinding.serial],
+    [{
+      file: runtimeBinding.grpc.discoveryFile,
+      pid: runtimeBinding.grpc.qemuPid,
+      serial: runtimeBinding.serial,
+      entries: { "port.serial": "5554", "grpc.port": "8554", "grpc.token": "geometry-secret" },
+    }],
+    [{ windowId: 7, ownerPid: 93013, x: 101, y: 202, width: 1280, height: 720, scale: 2, area: 921600 }],
+  );
+  assert.equal(selected.ok, true);
+
+  const mutations = [
+    ["discovery file", { discoveryFile: "/tmp/pico-emulator/pid_93014.ini" }],
+    ["discovered serial", { discoveredSerial: "emulator-5556" }],
+    ["endpoint pid", { qemuPid: 93014 }],
+    ["endpoint address", { address: "127.0.0.1:8555" }],
+    ["endpoint token presence", { tokenPresent: false }],
+    ["endpoint token", { tokenFingerprint: "f".repeat(64) }],
+    ["online serial set", { onlineEmulatorSerials: [runtimeBinding.serial, "emulator-5556"] }],
+    ["binding method", { bindingMethod: "single-online-serial-plus-matching-discovery-plus-single-window" }],
+    ["window owner", { qemuWindowOwnerPid: 93014 }],
+    ["window id", { qemuWindowId: 8 }],
+    ["window x", { qemuWindowX: 102 }],
+    ["window y", { qemuWindowY: 203 }],
+    ["window width", { qemuWindowWidth: 1279 }],
+    ["window height", { qemuWindowHeight: 719 }],
+    ["window scale", { qemuWindowScale: 1 }],
+  ];
+  for (const [name, mutation] of mutations) {
+    let revalidations = 0;
+    let drags = 0;
+    const changed = { ...selected.binding, ...mutation };
+    const adapter = createBoundCameraActionAdapter(runtimeBinding.serial, selected.binding, {
+      revalidateWindow: async () => ({
+        ok: true,
+        binding: structuredClone(revalidations++ === 0 ? selected.binding : changed),
+      }),
+      focusQemu: async () => null,
+      rightDrag: async () => { drags++; return null; },
+    });
+    const action = { kind: "look_drag", dxPx: 20, dyPx: 0 };
+    const first = await adapter.applyRelativeAction(action);
+    const second = await adapter.applyRelativeAction(action);
+    assert.equal(first.status, "applied", name);
+    assert.equal(second.status, "failed", name);
+    assert.equal(second.ack.bindingRevalidation.status, "mismatch", name);
+    assert.deepEqual(second.ack.bindingRevalidation.observed, changed, name);
+    assert.equal(revalidations, 2, name);
+    assert.equal(drags, 1, name);
+  }
+
+  let keyCalls = 0;
+  let keyRevalidations = 0;
+  const moved = { ...selected.binding, qemuWindowX: selected.binding.qemuWindowX + 1 };
+  const keyAdapter = createBoundCameraActionAdapter(runtimeBinding.serial, selected.binding, {
+    revalidateWindow: async () => ({
+      ok: true,
+      binding: structuredClone(keyRevalidations++ === 0 ? selected.binding : moved),
+    }),
+    keyHold: async (serial, key, holdMs) => {
+      keyCalls++;
+      return applied({ kind: "key_hold", key, holdMs }, serial, {}, createCameraActionBindingReceipt(serial, selected.binding));
+    },
+  });
+  const keyAction = { kind: "key_hold", key: "w", holdMs: 50 };
+  assert.equal((await keyAdapter.applyRelativeAction(keyAction)).status, "applied");
+  const refusedKey = await keyAdapter.applyRelativeAction(keyAction);
+  assert.equal(refusedKey.status, "failed");
+  assert.equal(refusedKey.ack.connectionAttempts, 0, "window revalidation does not pretend to attempt gRPC discovery");
+  assert.equal(refusedKey.ack.keydownAttempted, false);
+  assert.equal(keyCalls, 1);
+  const strict = { ...createCameraActionBindingReceipt(runtimeBinding.serial, selected.binding), bootId: runtimeBinding.bootId };
+  delete strict.bindingMethod;
+  delete strict.onlineEmulatorSerials;
+  await assert.doesNotReject(async () => {
+    const receipts = await executeBoundCameraActions(strict, [keyAction], {
+      applyRelativeAction: async () => refusedKey,
+    });
+    assert.deepEqual(receipts, [refusedKey]);
+  });
 });
 
 test("bound action failures retain prior receipts and the terminal attempt", async () => {

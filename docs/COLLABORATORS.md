@@ -9,7 +9,7 @@ this once, then start from the pointers at the bottom.
 - **`src/`** — one TypeScript module per concern (emulator control, bundle/gradle compilation,
   codegen per SDK subsystem, the trust ledger, the doors facade, …). Every module exports a
   `registerXTools(server)` function; `src/index.ts` imports and calls each one to build the full
-  MCP tool surface (253 tools on macOS (installed-tarball runtime-measured) versus a source-derived 250 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list`
+  MCP tool surface (254 tools on macOS (installed-tarball runtime-measured) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list`
   measurement has run). `src/doors.ts` is the intent-level facade described in the
   README's vocabulary primer.
 - **`test/*.mjs`** — the deterministic gate battery, 47 gate invocations (46 `test:` suites plus `smoke`):

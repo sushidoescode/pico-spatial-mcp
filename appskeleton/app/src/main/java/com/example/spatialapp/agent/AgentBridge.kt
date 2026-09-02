@@ -1,9 +1,32 @@
 package com.example.spatialapp.agent
 
+import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.SystemClock
+import android.system.Os
+import android.util.JsonWriter
 import android.util.Log
 import com.pico.spatial.core.ecs.Entity
+import com.pico.spatial.core.ecs.ModelComponent
 import com.pico.spatial.core.ecs.TransformComponent
+import com.pico.spatial.core.ecs.resource.MeshResource
+import com.pico.spatial.core.ecs.resource.PhysicallyBasedMaterial
+import com.pico.spatial.core.math.Color4
+import com.pico.spatial.core.math.Quat
+import com.pico.spatial.core.math.Vector3
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.OutputStreamWriter
+import java.math.BigDecimal
+import java.security.MessageDigest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * AgentBridge — an injectable headless control + verification surface for an AI agent.
@@ -12,25 +35,206 @@ import com.pico.spatial.core.ecs.TransformComponent
  * Drive it headlessly:   adb shell am broadcast -a <applicationId>.AGENT_CMD --es cmd dump_scene
  * Read it headlessly:    adb logcat -s AgentBridge:V
  *
- * Built-in commands: ping | commands | scene_stats | dump_scene (extra --ei depth N).
+ * Built-in commands: ping | commands | scene_stats | dump_scene (extra --ei depth N)
+ *   + query_scene_anchors (versioned, lossless, nonce-addressed app-cache JSON; never logcat)
+ *   + LIVE EDITS (v25): spawn | move | remove — each echoes your --es tag in its ack event.
  * Extend with your own: AgentBridge.register("arm") { _ -> placer.toggleArmed() }.
  * ONE-LINE GLUE (optional, for scene introspection): AgentBridge.attachScene(sceneRoot).
+ * query_scene_anchors requires explicit identity: AgentBridge.attachScene(stageRoot, "stage").
  */
 object AgentBridge {
     const val TAG = "AgentBridge"
     const val ACTION_SUFFIX = ".AGENT_CMD"
+    const val SCENE_PAYLOAD_KIND = "pico.agent-bridge.scene-snapshot"
+    const val SCENE_SCHEMA_VERSION = 1
+    const val SCENE_BRIDGE_REVISION = 41
+    const val SCENE_SNAPSHOT_COMMAND = "query_scene_anchors"
+    const val SCENE_SNAPSHOT_CACHE_DIRECTORY = "agentbridge/scene-snapshots"
+    const val NAVIGATION_GUIDE_PAYLOAD_KIND = "pico.agent-bridge.navigation-guide"
+    const val NAVIGATION_GUIDE_SCHEMA_VERSION = 1
+    const val NAVIGATION_GUIDE_BRIDGE_REVISION = 1
+    const val NAVIGATION_GUIDE_COMMAND = "navigation_guide"
+    const val NAVIGATION_GUIDE_CACHE_DIRECTORY = "agentbridge/navigation-guides"
+    const val NAVIGATION_GUIDE_PATTERN = "nested-corners-v1"
+    const val NAVIGATION_GUIDE_PROJECTION_MODEL = "viewer-facing-planar-v1"
+    val NAVIGATION_GUIDE_COLOR_0 = intArrayOf(255, 0, 255)
+    val NAVIGATION_GUIDE_COLOR_1 = intArrayOf(0, 255, 255)
+    const val NAVIGATION_GUIDE_WIDTH_M = 0.74f
+    const val NAVIGATION_GUIDE_HEIGHT_M = 0.44f
 
+    data class SceneSnapshotRequest(
+        val requestId: String,
+        val maxRetries: Int,
+        val pollMs: Long,
+        val stabilityReads: Int,
+    )
+
+    data class NavigationGuideRequest(
+        val generation: Long,
+        val kind: String,
+        val schemaVersion: Int,
+        val bridgeRevision: Int,
+        val requestId: String,
+        val mode: String,
+        val sceneSnapshotId: String,
+        val targetTraceId: String,
+        val targetRuntimeUuid: String,
+        val pattern: String,
+        val projectionModel: String,
+        val color0: IntArray,
+        val color1: IntArray,
+        val widthM: Float,
+        val heightM: Float,
+    )
+
+    data class NavigationGuideResult(
+        val outcome: String,
+        val guideState: String,
+        val cleanupState: String,
+        val errorCode: String? = null,
+        val errorDetail: String? = null,
+    )
+
+    private data class NavigationGuideProducerBinding(
+        val generationIsCurrent: Boolean,
+        val producer: (suspend (NavigationGuideRequest) -> NavigationGuideResult)?,
+        val cleanup: (suspend () -> Boolean)?,
+    )
+
+    private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val requestIdPattern = Regex("^[A-Za-z0-9_-]{8,96}$")
+    private val sceneSnapshotIdPattern = Regex("^[a-f0-9]{64}$")
+    private val targetTraceIdPattern = Regex("^anchor-[0-9]{4}$")
+    private val navigationGuideMutex = Mutex()
+    private val navigationGuideGenerationLock = Any()
+    private var navigationGuideGeneration = 0L
+
+    @Volatile private var applicationContext: Context? = null
     @Volatile private var sceneRoot: Entity? = null
     @Volatile private var sceneProvider: (() -> Entity?)? = null
+    @Volatile private var rootContainer: String? = null
+    @Volatile private var sceneSnapshotProducer: (suspend (SceneSnapshotRequest, JsonWriter) -> Unit)? = null
+    @Volatile private var navigationGuideProducer: (suspend (NavigationGuideRequest) -> NavigationGuideResult)? = null
+    @Volatile private var navigationGuideCleanup: (suspend () -> Boolean)? = null
+    @Volatile private var navigationGuideBuiltinRegistered = false
+    @Volatile private var cachedApkSha256: String? = null
     private val handlers = LinkedHashMap<String, (Bundle) -> Unit>()
 
     init { registerBuiltins() }
 
+    /** Called by AgentBridgeInitProvider before the receiver becomes reachable. */
+    fun initialize(context: Context) {
+        applicationContext = context.applicationContext
+        if (navigationGuideCommandsEnabled()) registerNavigationGuideBuiltin()
+    }
+
+    /** The navigation guide is an authenticated debug feature and is unreachable in release APKs. */
+    fun navigationGuideCommandsEnabled(): Boolean {
+        val context = applicationContext ?: return false
+        return context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    }
+
     /** Attach the live scene root so dump_scene/scene_stats can introspect it. */
-    fun attachScene(root: Entity) { sceneRoot = root; event("scene_attached", "name" to root.getName()) }
+    fun attachScene(root: Entity) { attachSceneInternal(root, null) }
+
+    /** Explicit container identity is required by query_scene_anchors runtime binding. */
+    fun attachScene(root: Entity, container: String) { attachSceneInternal(root, container) }
+
+    private fun attachSceneInternal(root: Entity, container: String?) {
+        sceneRoot = root
+        sceneProvider = null
+        rootContainer = container
+        event("scene_attached", "name" to root.getName(), "container" to (container ?: "unreported"))
+    }
+
+    /** Pair direct attachScene(...) with this from Stage disposal/closure. */
+    fun detachScene(root: Entity? = null) {
+        if (root != null && sceneRoot !== root) {
+            event("scene_detach_ignored", "msg" to "root_mismatch")
+            return
+        }
+        sceneRoot = null
+        // Retain the reported container identity: a closed known Stage is stage_not_open, while a
+        // never-identified root remains binding_failed.
+        event("scene_detached", "container" to (rootContainer ?: "unreported"))
+    }
 
     /** Attach a provider instead, if the root is rebuilt over time. */
-    fun attachSceneProvider(provider: () -> Entity?) { sceneProvider = provider; event("scene_provider_attached") }
+    fun attachSceneProvider(provider: () -> Entity?) { attachSceneProviderInternal(null, provider) }
+
+    /** Explicit container identity is required by query_scene_anchors runtime binding. */
+    fun attachSceneProvider(container: String, provider: () -> Entity?) { attachSceneProviderInternal(container, provider) }
+
+    private fun attachSceneProviderInternal(container: String?, provider: () -> Entity?) {
+        sceneRoot = null
+        sceneProvider = provider
+        rootContainer = container
+        event("scene_provider_attached", "container" to (container ?: "unreported"))
+    }
+
+    /** Pair attachSceneProvider(...) with this when the provider lifecycle ends. */
+    fun detachSceneProvider() {
+        sceneProvider = null
+        event("scene_provider_detached", "container" to (rootContainer ?: "unreported"))
+    }
+
+    /**
+     * Register the sole producer for query_scene_anchors. The producer writes only the readiness,
+     * reads, and optional error members into an already-open versioned envelope. Geometry remains
+     * in the app-private file and is never emitted through event()/logcat.
+     */
+    fun registerSceneSnapshotProducer(producer: suspend (SceneSnapshotRequest, JsonWriter) -> Unit) {
+        sceneSnapshotProducer = producer
+        event("scene_snapshot_producer_registered", "revision" to SCENE_BRIDGE_REVISION)
+    }
+
+    /** Register the guide producer separately from the revision-41 scene-snapshot producer. */
+    fun registerNavigationGuideProducer(
+        producer: suspend (NavigationGuideRequest) -> NavigationGuideResult,
+        cleanup: suspend () -> Boolean,
+    ) {
+        val enabled = navigationGuideCommandsEnabled()
+        synchronized(navigationGuideGenerationLock) {
+            nextNavigationGuideGeneration()
+            if (enabled) {
+                navigationGuideProducer = producer
+                navigationGuideCleanup = cleanup
+            } else {
+                navigationGuideProducer = null
+                navigationGuideCleanup = null
+            }
+        }
+        if (!enabled) return
+        event("navigation_guide_producer_registered", "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION)
+    }
+
+    fun unregisterNavigationGuideProducer() {
+        synchronized(navigationGuideGenerationLock) {
+            nextNavigationGuideGeneration()
+            navigationGuideProducer = null
+            navigationGuideCleanup = null
+        }
+        event("navigation_guide_producer_unregistered", "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION)
+    }
+
+    private fun nextNavigationGuideGeneration(): Long = synchronized(navigationGuideGenerationLock) {
+        check(navigationGuideGeneration < Long.MAX_VALUE) { "navigation-guide generation exhausted" }
+        navigationGuideGeneration += 1L
+        navigationGuideGeneration
+    }
+
+    fun navigationGuideRequestIsCurrent(generation: Long): Boolean = synchronized(navigationGuideGenerationLock) {
+        generation == navigationGuideGeneration
+    }
+
+    private fun navigationGuideProducerBinding(generation: Long): NavigationGuideProducerBinding =
+        synchronized(navigationGuideGenerationLock) {
+            NavigationGuideProducerBinding(
+                generationIsCurrent = generation == navigationGuideGeneration,
+                producer = navigationGuideProducer,
+                cleanup = navigationGuideCleanup,
+            )
+        }
 
     private fun root(): Entity? = sceneRoot ?: sceneProvider?.invoke()
 
@@ -53,6 +257,54 @@ object AgentBridge {
     }
 
     private fun fmt(v: Any?): String = if (v == null) "null" else v.toString().replace('\n', ' ').replace(' ', '_')
+
+    @Synchronized
+    private fun registerNavigationGuideBuiltin() {
+        if (navigationGuideBuiltinRegistered || !navigationGuideCommandsEnabled()) return
+        navigationGuideBuiltinRegistered = true
+        register(NAVIGATION_GUIDE_COMMAND) { extras ->
+            val requestId = extras.getString("requestId")
+            if (requestId == null || !requestIdPattern.matches(requestId)) {
+                event("navigation_guide_rejected", "msg" to "invalid_request_id")
+                return@register
+            }
+            val context = applicationContext
+            if (context == null) {
+                event("navigation_guide_failed", "requestId" to requestId, "msg" to "bridge_not_initialized")
+                return@register
+            }
+            val generation = nextNavigationGuideGeneration()
+            val target = navigationGuideTarget(context, requestId)
+            if (target.exists() && !target.delete()) {
+                event("navigation_guide_failed", "requestId" to requestId, "msg" to "stale_ack_not_removed")
+                return@register
+            }
+            val request = NavigationGuideRequest(
+                generation = generation,
+                kind = extras.getString("kind") ?: "",
+                schemaVersion = extras.getInt("schemaVersion", -1),
+                bridgeRevision = extras.getInt("bridgeRevision", -1),
+                requestId = requestId,
+                mode = extras.getString("mode") ?: "",
+                sceneSnapshotId = extras.getString("sceneSnapshotId") ?: "",
+                targetTraceId = extras.getString("targetTraceId") ?: "",
+                targetRuntimeUuid = extras.getString("targetRuntimeUuid") ?: "",
+                pattern = extras.getString("pattern") ?: "",
+                projectionModel = extras.getString("projectionModel") ?: "",
+                color0 = parseNavigationGuideRgb(extras.getString("color0")),
+                color1 = parseNavigationGuideRgb(extras.getString("color1")),
+                widthM = extras.getFloat("widthM", -1f),
+                heightM = extras.getFloat("heightM", -1f),
+            )
+            bridgeScope.launch { writeNavigationGuideAck(request) }
+            event(
+                "navigation_guide_requested",
+                "requestId" to requestId,
+                "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION,
+                "mode" to request.mode,
+            )
+        }
+    }
 
     private fun registerBuiltins() {
         register("ping") { event("pong") }
@@ -84,6 +336,473 @@ object AgentBridge {
             }
             event("dump_end", "entities" to n)
         }
+        register(SCENE_SNAPSHOT_COMMAND) { extras ->
+            val requestId = extras.getString("requestId")
+            if (requestId == null || !requestIdPattern.matches(requestId)) {
+                event("scene_snapshot_rejected", "msg" to "invalid_request_id")
+                return@register
+            }
+            val request = SceneSnapshotRequest(
+                requestId = requestId,
+                maxRetries = extras.getInt("maxRetries", 15),
+                pollMs = extras.getInt("pollMs", 1000).toLong(),
+                stabilityReads = extras.getInt("stabilityReads", 2),
+            )
+            val validationError = when {
+                request.maxRetries !in 0..120 -> "maxRetries must be in 0..120"
+                request.pollMs !in 10L..60_000L -> "pollMs must be in 10..60000"
+                request.stabilityReads !in 2..8 -> "stabilityReads must be in 2..8"
+                else -> null
+            }
+            val ctx = applicationContext
+            if (ctx == null) {
+                event("scene_snapshot_failed", "requestId" to requestId, "msg" to "bridge_not_initialized")
+                return@register
+            }
+            val target = sceneSnapshotTarget(ctx, requestId)
+            if (target.exists() && !target.delete()) {
+                event("scene_snapshot_failed", "requestId" to requestId, "msg" to "stale_payload_not_removed")
+                return@register
+            }
+            bridgeScope.launch {
+                if (validationError == null) writeSceneSnapshot(request)
+                else writeTerminalSnapshot(request, "invalid_payload", validationError)
+            }
+            event(
+                "scene_snapshot_requested",
+                "requestId" to requestId,
+                "revision" to SCENE_BRIDGE_REVISION,
+                "maxRetries" to request.maxRetries,
+                "stabilityReads" to request.stabilityReads,
+            )
+        }
+        // v25 LIVE EDITS: an agent talks to the RUNNING scene. Each ack echoes the caller's tag so
+        // the host can await its own command. Spawned entities are visual-only (no RigidBody) —
+        // live physics mutation stays out per the physics adapter rules.
+        register("spawn") { ex ->
+            val tg = ex.getString("tag") ?: ""
+            val r = root()
+            if (r == null) { event("spawn_failed", "tag" to tg, "msg" to "no_scene_root"); return@register }
+            val id = ex.getString("id")
+            if (id == null) { event("spawn_failed", "tag" to tg, "msg" to "missing_id"); return@register }
+            if (find(r, id) != null) { event("spawn_failed", "tag" to tg, "id" to id, "msg" to "name_exists"); return@register }
+            val pos = vec3(ex.getString("pos"), Vector3(0f, 1f, -2f))
+            val dims = vec3(ex.getString("dims"), Vector3(0.3f, 0.3f, 0.3f))
+            val c = vec3(ex.getString("color"), Vector3(0.2f, 0.9f, 0.9f))
+            val mesh = if (ex.getString("shape") == "sphere") MeshResource.createSphere(dims.x) else MeshResource.createBox(dims)
+            val e = Entity()
+            e.setName(id)
+            e.components.set(TransformComponent(pos, Quat.identity(), Vector3(1f, 1f, 1f)))
+            val mat = PhysicallyBasedMaterial.create().apply { setBaseColor(Color4(c.x, c.y, c.z, 1f)); setMetallic(0.1f); setRoughness(0.4f) }
+            e.components.set(ModelComponent(mesh, mat))
+            r.addChild(e)
+            event("spawned", "tag" to tg, "id" to id, "pos" to "${pos.x},${pos.y},${pos.z}")
+        }
+        register("move") { ex ->
+            val tg = ex.getString("tag") ?: ""
+            val r = root(); val id = ex.getString("id")
+            val e = if (r != null && id != null) find(r, id) else null
+            if (e == null) { event("move_failed", "tag" to tg, "id" to (id ?: "null"), "msg" to "not_found"); return@register }
+            val t = e.components[TransformComponent::class.java]
+            if (t == null) { event("move_failed", "tag" to tg, "id" to id, "msg" to "no_transform"); return@register }
+            val pos = vec3(ex.getString("pos"), t.position)
+            e.components.set(TransformComponent(pos, t.quaternion, t.scaleVector))
+            event("moved", "tag" to tg, "id" to id, "pos" to "${pos.x},${pos.y},${pos.z}")
+        }
+        register("remove") { ex ->
+            val tg = ex.getString("tag") ?: ""
+            val r = root(); val id = ex.getString("id")
+            val e = if (r != null && id != null) find(r, id) else null
+            if (e == null) { event("remove_failed", "tag" to tg, "id" to (id ?: "null"), "msg" to "not_found"); return@register }
+            runCatching { e.destroy() }
+                .onSuccess { event("removed", "tag" to tg, "id" to id) }
+                .onFailure { event("remove_failed", "tag" to tg, "id" to id, "msg" to (it.message ?: "destroy_failed")) }
+        }
+    }
+
+    private fun parseNavigationGuideRgb(value: String?): IntArray {
+        val invalid = intArrayOf(-1, -1, -1)
+        val tokens = value?.split(",") ?: return invalid
+        if (tokens.size != 3) return invalid
+        val channels = IntArray(3)
+        tokens.forEachIndexed { index, token ->
+            val channel = token.trim().toIntOrNull() ?: return invalid
+            if (channel !in 0..255) return invalid
+            channels[index] = channel
+        }
+        return channels
+    }
+
+    private fun validateNavigationGuideRequest(request: NavigationGuideRequest): String? = when {
+        request.kind != NAVIGATION_GUIDE_PAYLOAD_KIND -> "kind does not match the navigation-guide protocol"
+        request.schemaVersion != NAVIGATION_GUIDE_SCHEMA_VERSION -> "schemaVersion does not match the navigation-guide protocol"
+        request.bridgeRevision != NAVIGATION_GUIDE_BRIDGE_REVISION -> "bridgeRevision does not match the navigation-guide protocol"
+        request.mode != "show" && request.mode != "hide" -> "mode must be show or hide"
+        !sceneSnapshotIdPattern.matches(request.sceneSnapshotId) -> "sceneSnapshotId must be a lowercase SHA-256"
+        !targetTraceIdPattern.matches(request.targetTraceId) -> "targetTraceId must be a trace-local anchor ID"
+        request.targetRuntimeUuid.length !in 1..256 || request.targetRuntimeUuid.any { it.code !in 0x21..0x7e } ->
+            "targetRuntimeUuid must be a non-empty printable runtime identity"
+        request.pattern != NAVIGATION_GUIDE_PATTERN -> "unsupported navigation-guide pattern"
+        request.projectionModel != NAVIGATION_GUIDE_PROJECTION_MODEL -> "unsupported navigation-guide projection model"
+        !request.color0.contentEquals(NAVIGATION_GUIDE_COLOR_0) || !request.color1.contentEquals(NAVIGATION_GUIDE_COLOR_1) ->
+            "unsupported navigation-guide palette"
+        request.widthM != NAVIGATION_GUIDE_WIDTH_M || request.heightM != NAVIGATION_GUIDE_HEIGHT_M ->
+            "unsupported navigation-guide dimensions"
+        else -> null
+    }
+
+    private suspend fun cleanupNavigationGuideAfterRejection(
+        cleanup: (suspend () -> Boolean)? = navigationGuideCleanup,
+    ): Boolean {
+        val callback = cleanup ?: return true
+        return runCatching { callback() }.getOrDefault(false)
+    }
+
+    private fun validateNavigationGuideResult(
+        request: NavigationGuideRequest,
+        result: NavigationGuideResult,
+    ): String? = when (result.outcome) {
+        "shown" -> if (
+            request.mode == "show" && result.guideState == "visible" &&
+            result.cleanupState == "not_required" && result.errorCode == null && result.errorDetail == null
+        ) null else "shown producer result is contradictory"
+        "hidden" -> if (
+            request.mode == "hide" && result.guideState == "hidden" &&
+            result.cleanupState == "completed" && result.errorCode == null && result.errorDetail == null
+        ) null else "hidden producer result is contradictory"
+        "rejected", "failed" -> if (
+            result.guideState != "visible" && result.cleanupState != "not_required" &&
+            !result.errorCode.isNullOrBlank() && !result.errorDetail.isNullOrBlank()
+        ) null else "rejected/failed producer result is contradictory"
+        else -> "producer returned an unknown outcome"
+    }
+
+    private fun publishNavigationGuideAckIfCurrent(
+        context: Context,
+        request: NavigationGuideRequest,
+        target: File,
+        result: NavigationGuideResult,
+    ): Boolean = synchronized(navigationGuideGenerationLock) {
+        if (request.generation != navigationGuideGeneration) return@synchronized false
+        writeNavigationGuideAckAtomically(context, request, target, result)
+        true
+    }
+
+    private suspend fun writeNavigationGuideAck(request: NavigationGuideRequest) {
+        val context = applicationContext ?: return
+        val target = navigationGuideTarget(context, request.requestId)
+        navigationGuideMutex.lock()
+        try {
+            val binding = navigationGuideProducerBinding(request.generation)
+            if (!binding.generationIsCurrent) {
+                return
+            }
+            val validationError = validateNavigationGuideRequest(request)
+            var result = when {
+                validationError != null -> {
+                    val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
+                    NavigationGuideResult(
+                        outcome = "rejected",
+                        guideState = if (cleaned) "hidden" else "unknown",
+                        cleanupState = if (cleaned) "completed" else "failed",
+                        errorCode = "invalid_request",
+                        errorDetail = validationError,
+                    )
+                }
+                binding.producer == null -> {
+                    val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
+                    NavigationGuideResult(
+                        outcome = "failed",
+                        guideState = if (cleaned) "hidden" else "unknown",
+                        cleanupState = if (cleaned) "completed" else "failed",
+                        errorCode = "bridge_unavailable",
+                        errorDetail = "no navigation-guide producer is registered",
+                    )
+                }
+                else -> try {
+                    binding.producer.invoke(request)
+                } catch (cause: Throwable) {
+                    val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
+                    NavigationGuideResult(
+                        outcome = "failed",
+                        guideState = if (cleaned) "hidden" else "unknown",
+                        cleanupState = if (cleaned) "completed" else "failed",
+                        errorCode = "producer_failed",
+                        errorDetail = (cause.message ?: cause.javaClass.simpleName).take(500),
+                    )
+                }
+            }
+            if (!navigationGuideRequestIsCurrent(request.generation)) {
+                cleanupNavigationGuideAfterRejection(binding.cleanup)
+                return
+            }
+            val resultError = validateNavigationGuideResult(request, result)
+            if (resultError != null) {
+                val cleaned = cleanupNavigationGuideAfterRejection(binding.cleanup)
+                result = NavigationGuideResult(
+                    outcome = "failed",
+                    guideState = if (cleaned) "hidden" else "unknown",
+                    cleanupState = if (cleaned) "completed" else "failed",
+                    errorCode = "invalid_producer_result",
+                    errorDetail = resultError,
+                )
+            }
+            if (!navigationGuideRequestIsCurrent(request.generation)) {
+                cleanupNavigationGuideAfterRejection(binding.cleanup)
+                return
+            }
+            try {
+                if (!publishNavigationGuideAckIfCurrent(context, request, target, result)) {
+                    cleanupNavigationGuideAfterRejection(binding.cleanup)
+                    return
+                }
+                event(
+                    "navigation_guide_ack_written",
+                    "requestId" to request.requestId,
+                    "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION,
+                    "outcome" to result.outcome,
+                )
+            } catch (cause: Throwable) {
+                cleanupNavigationGuideAfterRejection(binding.cleanup)
+                event(
+                    "navigation_guide_ack_failed",
+                    "requestId" to request.requestId,
+                    "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION,
+                    "msg" to (cause.message ?: cause.javaClass.simpleName).take(300),
+                )
+            }
+        } finally {
+            navigationGuideMutex.unlock()
+        }
+    }
+
+    private fun writeNavigationGuideAckAtomically(
+        context: Context,
+        request: NavigationGuideRequest,
+        target: File,
+        result: NavigationGuideResult,
+    ) {
+        val directory = target.parentFile ?: throw IllegalStateException("navigation-guide cache has no parent")
+        if (!directory.exists() && !directory.mkdirs()) throw IllegalStateException("could not create navigation-guide cache")
+        val temp = File(directory, ".${request.requestId}.tmp-${SystemClock.elapsedRealtimeNanos()}")
+        val output = FileOutputStream(temp)
+        try {
+            val writer = JsonWriter(OutputStreamWriter(output, Charsets.UTF_8))
+            writer.beginObject()
+            writer.name("kind").value(NAVIGATION_GUIDE_PAYLOAD_KIND)
+            writer.name("schemaVersion").value(NAVIGATION_GUIDE_SCHEMA_VERSION.toLong())
+            writer.name("bridgeRevision").value(NAVIGATION_GUIDE_BRIDGE_REVISION.toLong())
+            writer.name("requestId").value(request.requestId)
+            writer.name("application").beginObject()
+            writer.name("packageName").value(context.packageName)
+            writer.endObject()
+            writer.name("mode").value(request.mode)
+            writer.name("sceneSnapshotId").value(request.sceneSnapshotId)
+            writer.name("targetTraceId").value(request.targetTraceId)
+            writer.name("targetRuntimeUuid").value(request.targetRuntimeUuid)
+            writer.name("pattern").value(request.pattern)
+            writer.name("projectionModel").value(request.projectionModel)
+            writer.name("colors").beginArray()
+            writer.beginArray(); request.color0.forEach { writer.value(it.toLong()) }; writer.endArray()
+            writer.beginArray(); request.color1.forEach { writer.value(it.toLong()) }; writer.endArray()
+            writer.endArray()
+            // Float.toString() returns the shortest exact source decimal ("0.74"/"0.44");
+            // BigDecimal preserves it in JSON instead of widening to 0.7400000095367432.
+            writer.name("widthM").value(BigDecimal(request.widthM.toString()))
+            writer.name("heightM").value(BigDecimal(request.heightM.toString()))
+            writer.name("outcome").value(result.outcome)
+            writer.name("guideState").value(result.guideState)
+            writer.name("cleanupState").value(result.cleanupState)
+            writer.name("error")
+            if (result.errorCode == null || result.errorDetail == null) {
+                writer.nullValue()
+            } else {
+                writer.beginObject()
+                writer.name("code").value(result.errorCode.take(120))
+                writer.name("detail").value(result.errorDetail.take(500))
+                writer.endObject()
+            }
+            writer.endObject()
+            writer.flush()
+            output.fd.sync()
+        } catch (cause: Throwable) {
+            temp.delete()
+            throw cause
+        } finally {
+            runCatching { output.close() }
+        }
+        try {
+            Os.rename(temp.absolutePath, target.absolutePath)
+        } catch (cause: Throwable) {
+            temp.delete()
+            throw cause
+        }
+    }
+
+    private suspend fun writeSceneSnapshot(request: SceneSnapshotRequest) {
+        val producer = sceneSnapshotProducer
+        val stageOpen = rootContainer == "stage" && runCatching { root() != null }.getOrDefault(false)
+        when {
+            rootContainer == null -> writeTerminalSnapshot(request, "binding_failed", "root container identity was not reported")
+            !stageOpen -> writeTerminalSnapshot(request, "stage_not_open", "an attached stage root is required")
+            producer == null -> writeTerminalSnapshot(request, "bridge_unavailable", "no scene snapshot producer is registered")
+            else -> {
+                val ctx = applicationContext ?: return
+                val target = sceneSnapshotTarget(ctx, request.requestId)
+                try {
+                    writeSnapshotAtomically(ctx, request, target) { writer -> producer(request, writer) }
+                    event(
+                        "scene_snapshot_written",
+                        "requestId" to request.requestId,
+                        "revision" to SCENE_BRIDGE_REVISION,
+                        "bytes" to target.length(),
+                    )
+                } catch (cause: Throwable) {
+                    val detail = (cause.message ?: cause.javaClass.simpleName).take(500)
+                    runCatching { writeTerminalSnapshot(request, "invalid_payload", detail) }
+                    event("scene_snapshot_failed", "requestId" to request.requestId, "msg" to detail)
+                }
+            }
+        }
+    }
+
+    private suspend fun writeTerminalSnapshot(request: SceneSnapshotRequest, code: String, detail: String) {
+        val ctx = applicationContext ?: return
+        val target = sceneSnapshotTarget(ctx, request.requestId)
+        writeSnapshotAtomically(ctx, request, target) { writer ->
+            writer.name("readiness").beginObject()
+            writer.name("maxRetries").value(request.maxRetries.toLong())
+            writer.name("pollMs").value(request.pollMs)
+            writer.name("stabilityReads").value(request.stabilityReads.toLong())
+            writer.name("retries").value(0L)
+            writer.name("satisfied").value(false)
+            writer.endObject()
+            writer.name("reads").beginArray().endArray()
+            writer.name("error").beginObject()
+            writer.name("code").value(code)
+            writer.name("detail").value(detail.take(500))
+            writer.endObject()
+        }
+        event("scene_snapshot_written", "requestId" to request.requestId, "terminal" to code, "bytes" to target.length())
+    }
+
+    private suspend fun writeSnapshotAtomically(
+        context: Context,
+        request: SceneSnapshotRequest,
+        target: File,
+        writeBody: suspend (JsonWriter) -> Unit,
+    ) {
+        val directory = target.parentFile ?: throw IllegalStateException("scene snapshot cache has no parent")
+        if (!directory.exists() && !directory.mkdirs()) throw IllegalStateException("could not create scene snapshot cache")
+        val temp = File(directory, ".${request.requestId}.tmp-${SystemClock.elapsedRealtimeNanos()}")
+        val output = FileOutputStream(temp)
+        try {
+            val writer = JsonWriter(OutputStreamWriter(output, Charsets.UTF_8))
+            writer.beginObject()
+            writeEnvelopeHeader(writer, context, request)
+            writeBody(writer)
+            writer.endObject()
+            writer.flush()
+            output.fd.sync()
+        } catch (cause: Throwable) {
+            temp.delete()
+            throw cause
+        } finally {
+            runCatching { output.close() }
+        }
+        try {
+            // POSIX rename on the same app-cache filesystem publishes either all exact bytes or none.
+            Os.rename(temp.absolutePath, target.absolutePath)
+        } catch (cause: Throwable) {
+            temp.delete()
+            throw cause
+        }
+    }
+
+    private fun writeEnvelopeHeader(writer: JsonWriter, context: Context, request: SceneSnapshotRequest) {
+        writer.name("kind").value(SCENE_PAYLOAD_KIND)
+        writer.name("schemaVersion").value(SCENE_SCHEMA_VERSION.toLong())
+        writer.name("bridgeRevision").value(SCENE_BRIDGE_REVISION.toLong())
+        writer.name("requestId").value(request.requestId)
+        writer.name("application").beginObject()
+        writer.name("packageName").value(context.packageName)
+        val buildSha256 = runCatching { apkSha256(context) }.getOrNull()
+        if (buildSha256 == null) {
+            writer.name("buildIdentity").nullValue()
+        } else {
+            writer.name("buildIdentity").beginObject()
+            writer.name("kind").value("apk-sha256")
+            writer.name("sha256").value(buildSha256)
+            writer.endObject()
+        }
+        val stageStyle = observedStageStyle(context)
+        if (stageStyle == null) writer.name("observedStageStyle").nullValue()
+        else writer.name("observedStageStyle").value(stageStyle)
+        if (rootContainer == null) writer.name("rootContainer").nullValue()
+        else writer.name("rootContainer").value(rootContainer)
+        writer.name("stageOpen").value(rootContainer == "stage" && runCatching { root() != null }.getOrDefault(false))
+        writer.endObject()
+        writer.name("coordinateFrame").beginObject()
+        writer.name("id").value("bridge-world-41")
+        writer.name("units").value("metres")
+        writer.name("handedness").value("sdk-reported")
+        writer.endObject()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun observedStageStyle(context: Context): String? {
+        val packageManager = context.packageManager
+        val launcher = runCatching { packageManager.getLaunchIntentForPackage(context.packageName)?.component }.getOrNull()
+        val activityRaw = launcher?.let { component ->
+            runCatching { packageManager.getActivityInfo(component, PackageManager.GET_META_DATA).metaData?.get("pico.spatial.stage.style") }.getOrNull()
+        }
+        val applicationRaw = runCatching {
+            packageManager.getApplicationInfo(context.packageName, PackageManager.GET_META_DATA)
+                .metaData?.get("pico.spatial.stage.style")
+        }.getOrNull()
+        // The repo scaffold follows PICO's manifest shape and declares this on the launcher
+        // activity. Application metadata is accepted only as a compatibility fallback.
+        val raw = activityRaw ?: applicationRaw
+        return when (raw?.toString()?.trim()) {
+            "1", "Mixed", "mixed" -> "Mixed"
+            "3", "Full", "full" -> "Full"
+            else -> null
+        }
+    }
+
+    private fun apkSha256(context: Context): String {
+        cachedApkSha256?.let { return it }
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(context.applicationInfo.sourceDir).use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (count > 0) digest.update(buffer, 0, count)
+            }
+        }
+        val value = digest.digest().joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+        cachedApkSha256 = value
+        return value
+    }
+
+    private fun sceneSnapshotTarget(context: Context, requestId: String): File =
+        File(File(context.cacheDir, SCENE_SNAPSHOT_CACHE_DIRECTORY), "$requestId.json")
+
+    private fun navigationGuideTarget(context: Context, requestId: String): File =
+        File(File(context.cacheDir, NAVIGATION_GUIDE_CACHE_DIRECTORY), "$requestId.json")
+
+    private fun find(root: Entity, name: String): Entity? {
+        var found: Entity? = null
+        walk(root, 0, Int.MAX_VALUE) { e, _ -> if (found == null && e.getName() == name) found = e }
+        return found
+    }
+
+    private fun vec3(s: String?, def: Vector3): Vector3 {
+        if (s == null) return def
+        val p = s.split(",")
+        if (p.size != 3) return def
+        return runCatching { Vector3(p[0].trim().toFloat(), p[1].trim().toFloat(), p[2].trim().toFloat()) }.getOrDefault(def)
     }
 
     private fun walk(e: Entity, depth: Int, maxDepth: Int, visit: (Entity, Int) -> Unit) {

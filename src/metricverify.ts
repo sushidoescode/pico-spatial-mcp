@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +8,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
+import { run as runCommand, type RunResult } from "./util.js";
 
 const run = promisify(execFile);
 
@@ -52,7 +54,7 @@ async function detect(capturePath: string, keys: Record<string, [number, number,
 
 const to255 = (c: number[]) => c.map((v) => (v <= 1 ? Math.round(v * 255) : Math.round(v))) as [number, number, number];
 
-interface Calib { f: number; eyeHeight: number; cx: number; cy: number; width: number; height: number; residualPx: number; solvedFrom: string; at: string; }
+export interface Calib { f: number; eyeHeight: number; cx: number; cy: number; width: number; height: number; residualPx: number; solvedFrom: string; at: string; }
 
 export function loadCalibration(): Calib | null {
   try {
@@ -60,6 +62,127 @@ export function loadCalibration(): Calib | null {
   } catch {
     return null;
   }
+}
+
+export interface FreshCameraCalibrationProof {
+  path: string;
+  sha256: string;
+  bytes: number;
+  calibration: Calib;
+  observedBootId: string;
+  bootStartedAt: string;
+  verifiedAt: string;
+}
+
+export type FreshCameraCalibrationProofResult =
+  | { ok: true; proof: FreshCameraCalibrationProof }
+  | { ok: false; code: "missing" | "stale" | "invalid" | "probe_failed"; detail: string };
+
+export interface FreshCameraCalibrationProofInput {
+  adbPath: string;
+  serial: string;
+  expectedBootId: string;
+  calibrationPath?: string;
+}
+
+export interface FreshCameraCalibrationProofDependencies {
+  readFile(path: string): Buffer;
+  stat(path: string): { isFile(): boolean; mtimeMs: number };
+  runText: typeof runCommand;
+  nowMs(): number;
+}
+
+function validCameraCalibration(candidate: unknown): candidate is Calib {
+  const value = candidate as Partial<Calib> | null;
+  return !!value && typeof value === "object"
+    && Number.isFinite(value.f) && value.f! > 0
+    && Number.isFinite(value.eyeHeight)
+    && Number.isFinite(value.cx) && Number.isFinite(value.cy)
+    && Number.isSafeInteger(value.width) && value.width! > 0
+    && Number.isSafeInteger(value.height) && value.height! > 0
+    && Number.isFinite(value.residualPx) && value.residualPx! >= 0
+    && typeof value.solvedFrom === "string" && value.solvedFrom.length > 0
+    && typeof value.at === "string" && Number.isFinite(Date.parse(value.at));
+}
+
+function successfulCommand(result: RunResult): boolean {
+  return result.code === 0 && result.timedOut === false;
+}
+
+/**
+ * Reads and hashes the exact calibration bytes, then proves both their timestamp and file mtime
+ * occur after the currently bound emulator boot observed from the exact adb serial.
+ */
+export async function readFreshCameraCalibrationProof(
+  input: FreshCameraCalibrationProofInput,
+  injected: Partial<FreshCameraCalibrationProofDependencies> = {},
+): Promise<FreshCameraCalibrationProofResult> {
+  const calibrationPath = input.calibrationPath ?? CALIB_PATH;
+  if (!path.isAbsolute(input.adbPath) || !path.isAbsolute(calibrationPath)
+    || !/^[A-Za-z0-9._:-]+$/.test(input.serial) || !input.expectedBootId.trim()) {
+    return { ok: false, code: "invalid", detail: "fresh camera-calibration proof requires absolute paths and exact serial/boot identity" };
+  }
+  const deps: FreshCameraCalibrationProofDependencies = {
+    readFile: injected.readFile ?? ((candidate) => fs.readFileSync(candidate)),
+    stat: injected.stat ?? ((candidate) => fs.statSync(candidate)),
+    runText: injected.runText ?? runCommand,
+    nowMs: injected.nowMs ?? (() => Date.now()),
+  };
+  let exact: Buffer;
+  let calibrationStat: { isFile(): boolean; mtimeMs: number };
+  try {
+    exact = deps.readFile(calibrationPath);
+    calibrationStat = deps.stat(calibrationPath);
+  } catch (error: any) {
+    return { ok: false, code: error?.code === "ENOENT" ? "missing" : "invalid", detail: error?.message ?? String(error) };
+  }
+  if (!Buffer.isBuffer(exact) || exact.length === 0 || !calibrationStat.isFile()) {
+    return { ok: false, code: "invalid", detail: "camera calibration is not a non-empty regular file" };
+  }
+  const text = exact.toString("utf8");
+  if (!Buffer.from(text, "utf8").equals(exact)) return { ok: false, code: "invalid", detail: "camera calibration bytes are not lossless UTF-8" };
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(text);
+  } catch (error: any) {
+    return { ok: false, code: "invalid", detail: `camera calibration is not valid JSON: ${error?.message ?? String(error)}` };
+  }
+  if (!validCameraCalibration(decoded)) return { ok: false, code: "invalid", detail: "camera calibration fields are incomplete, non-finite, or invalid" };
+
+  const [boot, uptime] = await Promise.all([
+    deps.runText(input.adbPath, ["-s", input.serial, "shell", "cat", "/proc/sys/kernel/random/boot_id"], { timeoutMs: 10_000, maxOutputBytes: 64 * 1024 }),
+    deps.runText(input.adbPath, ["-s", input.serial, "shell", "cat", "/proc/uptime"], { timeoutMs: 10_000, maxOutputBytes: 64 * 1024 }),
+  ]);
+  if (!successfulCommand(boot) || !successfulCommand(uptime)) {
+    return { ok: false, code: "probe_failed", detail: "exact-serial boot identity or uptime probe failed" };
+  }
+  const observedBootId = boot.stdout.trim();
+  if (observedBootId !== input.expectedBootId) {
+    return { ok: false, code: "stale", detail: `camera calibration boot mismatch: expected '${input.expectedBootId}', observed '${observedBootId || "empty"}'` };
+  }
+  const uptimeSeconds = Number(uptime.stdout.trim().split(/\s+/)[0]);
+  const verifiedAtMs = deps.nowMs();
+  if (!Number.isFinite(uptimeSeconds) || uptimeSeconds < 0 || !Number.isFinite(verifiedAtMs)) {
+    return { ok: false, code: "probe_failed", detail: "emulator uptime or proof wall clock was invalid" };
+  }
+  const bootStartedAtMs = verifiedAtMs - uptimeSeconds * 1000;
+  const calibratedAtMs = Date.parse(decoded.at);
+  if (calibratedAtMs < bootStartedAtMs || calibrationStat.mtimeMs < bootStartedAtMs
+    || calibratedAtMs > verifiedAtMs + 60_000 || calibrationStat.mtimeMs > verifiedAtMs + 60_000) {
+    return { ok: false, code: "stale", detail: "camera calibration bytes were not produced during the current boot" };
+  }
+  return {
+    ok: true,
+    proof: {
+      path: calibrationPath,
+      sha256: crypto.createHash("sha256").update(exact).digest("hex"),
+      bytes: exact.length,
+      calibration: decoded,
+      observedBootId,
+      bootStartedAt: new Date(bootStartedAtMs).toISOString(),
+      verifiedAt: new Date(verifiedAtMs).toISOString(),
+    },
+  };
 }
 
 /** Project a world point through the calibrated forward camera. Returns null behind the eye. */

@@ -21,6 +21,7 @@ import android.os.Bundle
 class AgentBridgeInitProvider : ContentProvider() {
     override fun onCreate(): Boolean {
         val ctx = context?.applicationContext ?: return false
+        AgentBridge.initialize(ctx)
         val action = ctx.packageName + AgentBridge.ACTION_SUFFIX
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, intent: Intent?) {
