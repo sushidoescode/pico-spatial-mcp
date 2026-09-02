@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { measureTwoColorGuide } from "../dist/navigationguide.js";
 import {
+  calibrationClosureQuality,
   calibrationContextKey,
   calibrationQuality,
   decideNavigationStep,
@@ -93,14 +94,30 @@ test("fitThroughOrigin catches an intercept-based drag fit and preserves literal
 
 test("calibrationQuality catches residual and explained-variance gates", () => {
   const noisy = fitThroughOrigin(fixture.calibration.noisySamples);
-  assert.deepEqual(calibrationQuality(noisy, fixture.calibration.limits), { status: "accepted", reasons: [] });
-  assert.deepEqual(calibrationQuality(noisy, { ...fixture.calibration.limits, maxRmse: 0.9 }), { status: "rejected", reasons: ["rmse"] });
-  assert.deepEqual(calibrationQuality(noisy, { ...fixture.calibration.limits, minRSquared: 0.98 }), { status: "rejected", reasons: ["r_squared"] });
+  assert.deepEqual(calibrationQuality(fixture.calibration.noisySamples, noisy, fixture.calibration.limits), {
+    status: "accepted",
+    reasons: [],
+    normalizedResiduals: [0.125, -0.25, -0.25, 0.125],
+    normalizedRmse: 0.19764235376052372,
+    normalizedMaxAbsResidual: 0.25,
+  });
+  assert.deepEqual(
+    calibrationQuality(fixture.calibration.noisySamples, noisy, { ...fixture.calibration.limits, maxNormalizedRmse: 0.19 }).reasons,
+    ["normalized_rmse"],
+  );
+  assert.deepEqual(
+    calibrationQuality(fixture.calibration.noisySamples, noisy, { ...fixture.calibration.limits, maxNormalizedAbsResidual: 0.24 }).reasons,
+    ["normalized_max_abs_residual"],
+  );
+  assert.deepEqual(
+    calibrationQuality(fixture.calibration.noisySamples, noisy, { ...fixture.calibration.limits, minRSquared: 0.98 }).reasons,
+    ["r_squared"],
+  );
 });
 
 function calibrationRecord() {
   return {
-    version: 1,
+    version: 2,
     contextKey: "aa7f0527e087602636e14e49452f3ccedf1ad3c2c994e55dba13e18208d0526d",
     yaw: { samples: fixture.calibration.linearSamples, fit: fixture.calibration.wantLinear },
     pitch: { samples: fixture.calibration.linearSamples, fit: fixture.calibration.wantLinear },
@@ -139,7 +156,11 @@ test("validateNavigationCalibration catches stale identity, unsigned drags, back
   assert.deepEqual(validateNavigationCalibration(record, { ...fixture.calibration.context, bootId: "wrong-boot" }), { status: "invalid", reason: "context_mismatch" });
   assert.deepEqual(validateNavigationCalibration({ ...record, yaw: { ...record.yaw, samples: [{ x: 40, y: 4 }, { x: 80, y: 8 }, { x: 120, y: 12 }, { x: 160, y: 16 }] } }, fixture.calibration.context), { status: "invalid", reason: "insufficient_signed_drag_trials" });
   assert.deepEqual(validateNavigationCalibration({ ...record, forward: { ...record.forward, samples: [{ x: 100, y: -0.5 }, { x: 200, y: 1 }, { x: 300, y: 1.5 }, { x: 400, y: 2 }] } }, fixture.calibration.context), { status: "invalid", reason: "non_positive_forward_displacement" });
-  assert.deepEqual(validateNavigationCalibration({ ...record, yaw: { ...record.yaw, fit: { ...record.yaw.fit, rmse: 1.1 } } }, fixture.calibration.context), { status: "invalid", reason: "quality_rejected" });
+  assert.deepEqual(validateNavigationCalibration({
+    ...record,
+    yaw: { samples: fixture.calibration.noisySamples, fit: fixture.calibration.wantNoisy },
+    limits: { ...record.limits, maxNormalizedRmse: 0.19 },
+  }, fixture.calibration.context), { status: "invalid", reason: "quality_rejected" });
   assert.deepEqual(validateNavigationCalibration({ ...record, yaw: { ...record.yaw, fit: { ...record.yaw.fit, slope: 0.2 } } }, fixture.calibration.context), { status: "invalid", reason: "fit_mismatch" });
   assert.doesNotThrow(() => validateNavigationCalibration({ ...record, forward: { ...record.forward, fit: undefined } }, fixture.calibration.context));
   assert.deepEqual(validateNavigationCalibration({ ...record, forward: { ...record.forward, fit: undefined } }, fixture.calibration.context), { status: "invalid", reason: "invalid_record" });
@@ -440,6 +461,43 @@ test("navigation-guide transport accepts an exact hide acknowledgement", async (
   ]);
 });
 
+test("navigation-guide transport accepts an acknowledgement that appears after the old three-poll window", async () => {
+  const request = guideRequest({ maxPolls: 30, pollMs: 100, ackReadTimeoutMs: 1_000, controlTimeoutMs: 10_000 });
+  const expectedAck = guideAck(request);
+  const bytes = Buffer.from(JSON.stringify(expectedAck), "utf8");
+  let pulls = 0;
+  let sleeps = 0;
+  const pullTimeouts = [];
+  const controlTimeouts = [];
+  const result = await guideAdapter()("/fixture/adb", request, {
+    monotonicNs: (() => { let tick = 1_000n; return () => tick++; })(),
+    runText: async (_cmd, args, options) => {
+      controlTimeouts.push(options.timeoutMs);
+      return {
+        code: 0,
+        stdout: args.includes("rm") ? "" : "Broadcast completed: result=0",
+        stderr: "",
+        timedOut: false,
+      };
+    },
+    runBytes: async (_cmd, _args, options) => {
+      pulls++;
+      pullTimeouts.push(options.timeoutMs);
+      return pulls <= 4
+        ? { code: 0, stdout: Buffer.from([0x00]), stderr: "", timedOut: false }
+        : { code: 0, stdout: Buffer.concat([Buffer.from([0x01]), bytes]), stderr: "", timedOut: false };
+    },
+    sleep: async () => { sleeps++; },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(pulls, 6, "four absent polls plus two stable byte-identical reads are admitted");
+  assert.equal(sleeps, 5);
+  assert.deepEqual(pullTimeouts, Array(6).fill(1_000), "each ack read retains the bounded command timeout used by admission");
+  assert.deepEqual(controlTimeouts, [10_000, 10_000], "broadcast and ack cleanup retain their bounded control timeout");
+  assert.equal(result.actionReceipts[1].ack.attempts, 6);
+});
+
 test("navigation-guide transport rejects unsupported producer inputs before broadcast", async (t) => {
   const invalidRequests = [
     ["pattern", { pattern: "solid-box-v1" }],
@@ -447,6 +505,7 @@ test("navigation-guide transport rejects unsupported producer inputs before broa
     ["palette", { colors: [[0, 255, 255], [255, 0, 255]] }],
     ["width", { widthM: 0.73 }],
     ["height", { heightM: 0.43 }],
+    ["ack read timeout", { ackReadTimeoutMs: 15_001 }],
   ];
   for (const [name, overrides] of invalidRequests) {
     await t.test(name, async () => {
@@ -736,18 +795,29 @@ const TARGET_APK_SHA = "b".repeat(64);
 const TARGET_BUILD_RECEIPT = "e".repeat(64);
 const TARGET_WINDOW = { id: 7, x: 101, y: 202, width: 1280, height: 720, scale: 2 };
 const TARGET_CAMERA = {
-  f: 1000,
-  eyeHeight: 1.65,
-  cx: 640,
-  cy: 360,
-  width: 1280,
-  height: 720,
-  residualPx: 0.5,
-  solvedFrom: "fixture-camera-calibration",
+  f: 1489,
+  eyeHeight: 1.81,
+  cx: 1102.2,
+  cy: 961.5,
+  width: 2160,
+  height: 2158,
+  residualPx: 7.2,
+  solvedFrom: "live-emulator-camera-calibration",
   at: "2026-09-01T12:00:10.000Z",
 };
-const TARGET_CAMERA_BYTES = Buffer.from(JSON.stringify(TARGET_CAMERA), "utf8");
-const TARGET_CAMERA_SHA = crypto.createHash("sha256").update(TARGET_CAMERA_BYTES).digest("hex");
+const CENTERED_TARGET_CAMERA = {
+  ...TARGET_CAMERA,
+  cx: TARGET_CAMERA.width / 2,
+  cy: TARGET_CAMERA.height / 2,
+  solvedFrom: "centered-camera-regression-fixture",
+};
+
+function cameraProofMaterial(camera) {
+  const bytes = Buffer.from(JSON.stringify(camera), "utf8");
+  return { bytes, sha256: crypto.createHash("sha256").update(bytes).digest("hex") };
+}
+
+const { bytes: TARGET_CAMERA_BYTES, sha256: TARGET_CAMERA_SHA } = cameraProofMaterial(TARGET_CAMERA);
 
 function targetMotionPolicy(overrides = {}) {
   return {
@@ -947,7 +1017,8 @@ function makeSceneQuery(artifacts, input, options = {}) {
   };
 }
 
-function expectedCalibrationContext() {
+function expectedCalibrationContext(camera = TARGET_CAMERA) {
+  const cameraMaterial = cameraProofMaterial(camera);
   return {
     serial: TARGET_SERIAL,
     guest: {
@@ -956,8 +1027,8 @@ function expectedCalibrationContext() {
     },
     bootId: TARGET_BOOT,
     qemu: { pid: 93013, window: structuredClone(TARGET_WINDOW) },
-    capture: { width: 1280, height: 720 },
-    cameraCalibrationSha256: TARGET_CAMERA_SHA,
+    capture: { width: camera.width, height: camera.height },
+    cameraCalibrationSha256: cameraMaterial.sha256,
     bridgeRevision: 1,
     guide: {
       pattern: "nested-corners-v1",
@@ -994,23 +1065,23 @@ function calibrationScheduleFixture() {
 
 function calibrationProfileFixture() {
   return {
-    version: 1,
+    version: 2,
     schedule: calibrationScheduleFixture(),
-    limits: { minSamples: 4, maxRmse: 0.5, maxAbsResidual: 1, minRSquared: 0.95 },
+    limits: { minSamples: 4, maxNormalizedRmse: 0.2, maxNormalizedAbsResidual: 0.25, minRSquared: 0.95 },
     minimumSlopes: { angularDegPerPx: 0.01, forwardMPerMs: 0.0005 },
     projection: { model: GUIDE_PROJECTION_MODEL, maxRelativeError: 0.12 },
     closure: {
-      perPairAngularDeg: 0.5,
-      perPairForwardM: 0.05,
-      finalYawDeg: 0.5,
-      finalPitchDeg: 0.5,
-      finalDepthM: 0.05,
+      normalization: "pair=restore-residual/abs(fitted-slope*trial); final=final-residual/min-abs-fitted-trial",
+      maxPairFraction: 0.25,
+      maxFinalFraction: 0.125,
     },
   };
 }
 
 function storedCalibrationFixture(overrides = {}) {
-  const context = structuredClone(overrides.context ?? expectedCalibrationContext());
+  const camera = overrides.camera ?? TARGET_CAMERA;
+  const cameraMaterial = cameraProofMaterial(camera);
+  const context = structuredClone(overrides.context ?? expectedCalibrationContext(camera));
   const record = structuredClone(overrides.record ?? validTargetCalibrationRecord(context));
   const calibration = {
     context,
@@ -1020,9 +1091,9 @@ function storedCalibrationFixture(overrides = {}) {
       status: "accepted",
       reasons: [],
       axes: {
-        yaw: { status: "accepted", reasons: [] },
-        pitch: { status: "accepted", reasons: [] },
-        forward: { status: "accepted", reasons: [] },
+        yaw: { status: "accepted", reasons: [], normalizedResiduals: [0, 0, 0, 0], normalizedRmse: 0, normalizedMaxAbsResidual: 0 },
+        pitch: { status: "accepted", reasons: [], normalizedResiduals: [0, 0, 0, 0], normalizedRmse: 0, normalizedMaxAbsResidual: 0 },
+        forward: { status: "accepted", reasons: [], normalizedResiduals: [0, 0, 0, 0], normalizedRmse: 0, normalizedMaxAbsResidual: 0 },
       },
     },
     projectionQuality: {
@@ -1039,9 +1110,14 @@ function storedCalibrationFixture(overrides = {}) {
       })),
     },
     restoreClosure: { yaw: [0, 0, 0, 0], pitch: [0, 0, 0, 0], forward: [0, 0, 0, 0] },
+    restoreClosureQuality: {
+      yaw: { status: "accepted", reasons: [], pairNormalizedResiduals: [0, 0, 0, 0], finalNormalizedResidual: 0, minimumPredictedResponse: 4 },
+      pitch: { status: "accepted", reasons: [], pairNormalizedResiduals: [0, 0, 0, 0], finalNormalizedResidual: 0, minimumPredictedResponse: 4 },
+      forward: { status: "accepted", reasons: [], pairNormalizedResiduals: [0, 0, 0, 0], finalNormalizedResidual: 0, minimumPredictedResponse: 0.25 },
+    },
     finalClosure: { yawDeg: 0, pitchDeg: 0, depthM: 0 },
     guideDelta: { initialOffSha256: "1".repeat(64), initialOnSha256: "2".repeat(64), repeatedAfterAcquisition: false },
-    cameraCalibrationProof: { sha256: TARGET_CAMERA_SHA, bytes: TARGET_CAMERA_BYTES.length },
+    cameraCalibrationProof: { sha256: cameraMaterial.sha256, bytes: cameraMaterial.bytes.length },
     ...(overrides.calibration ?? {}),
   };
   const receipt = {
@@ -1082,13 +1158,35 @@ function validTargetCalibrationRecord(context = expectedCalibrationContext()) {
   const pitchSamples = [{ x: -80, y: -8 }, { x: -40, y: -4 }, { x: 40, y: 4 }, { x: 80, y: 8 }];
   const forwardSamples = [{ x: 50, y: 0.25 }, { x: 100, y: 0.5 }, { x: 150, y: 0.75 }, { x: 200, y: 1 }];
   return {
-    version: 1,
+    version: 2,
     contextKey: calibrationContextKey(context),
     yaw: { samples: yawSamples, fit: fitThroughOrigin(yawSamples) },
     pitch: { samples: pitchSamples, fit: fitThroughOrigin(pitchSamples) },
     forward: { samples: forwardSamples, fit: fitThroughOrigin(forwardSamples) },
+    limits: { minSamples: 4, maxNormalizedRmse: 0.2, maxNormalizedAbsResidual: 0.25, minRSquared: 0.95 },
+  };
+}
+
+function legacyStoredCalibrationFixture() {
+  const context = expectedCalibrationContext();
+  const record = {
+    ...validTargetCalibrationRecord(context),
+    version: 1,
     limits: { minSamples: 4, maxRmse: 0.5, maxAbsResidual: 1, minRSquared: 0.95 },
   };
+  const profile = {
+    ...calibrationProfileFixture(),
+    version: 1,
+    limits: structuredClone(record.limits),
+    closure: {
+      perPairAngularDeg: 0.5,
+      perPairForwardM: 0.05,
+      finalYawDeg: 0.5,
+      finalPitchDeg: 0.5,
+      finalDepthM: 0.05,
+    },
+  };
+  return storedCalibrationFixture({ context, record, profile });
 }
 
 function absentGuideDetections() {
@@ -1103,13 +1201,14 @@ function absentGuideDetections() {
 }
 
 function measuredGuideDetections(snapshot, options = {}) {
-  const f = TARGET_CAMERA.f;
+  const camera = options.camera ?? TARGET_CAMERA;
+  const f = camera.f;
   const width = f * 0.74 / snapshot.depthM;
   const height = options.badProjection ? width : f * 0.44 / snapshot.depthM;
   const centerX = options.clippedProjection
     ? width / 2
-    : TARGET_CAMERA.cx + f * Math.tan((snapshot.yawDeg * Math.PI) / 180);
-  const centerY = TARGET_CAMERA.cy - f * Math.tan((snapshot.pitchDeg * Math.PI) / 180);
+    : camera.cx + f * Math.tan((snapshot.yawDeg * Math.PI) / 180);
+  const centerY = camera.cy - f * Math.tan((snapshot.pitchDeg * Math.PI) / 180);
   const outer = [centerX - width / 2, centerY - height / 2, centerX + width / 2, centerY + height / 2];
   const inner = [centerX - width * 0.38, centerY - height * 0.38, centerX + width * 0.38, centerY + height * 0.38];
   return {
@@ -1125,15 +1224,15 @@ function measuredGuideDetections(snapshot, options = {}) {
   };
 }
 
-function settledCaptureReceipt(outPath, bytes, capturedAt = "2026-09-01T12:00:30.000Z") {
+function settledCaptureReceipt(outPath, bytes, capturedAt = "2026-09-01T12:00:30.000Z", camera = TARGET_CAMERA) {
   const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
   const captureRef = {
     path: outPath,
     sha256,
     bytes: bytes.length,
-    width: 1280,
-    height: 720,
-    dimensions: { width: 1280, height: 720 },
+    width: camera.width,
+    height: camera.height,
+    dimensions: { width: camera.width, height: camera.height },
     sourceSerial: TARGET_SERIAL,
     capturedAt,
   };
@@ -1172,8 +1271,10 @@ function settledCaptureReceipt(outPath, bytes, capturedAt = "2026-09-01T12:00:30
 function targetFake(input, options = {}) {
   const events = [];
   const artifacts = new Map();
+  const camera = options.camera ?? TARGET_CAMERA;
+  const cameraMaterial = cameraProofMaterial(camera);
   const effectiveStoredCalibration = options.storedCalibration
-    ?? (!Object.prototype.hasOwnProperty.call(options, "calibrationRecord") ? storedCalibrationFixture() : null);
+    ?? (!Object.prototype.hasOwnProperty.call(options, "calibrationRecord") ? storedCalibrationFixture({ camera }) : null);
   if (effectiveStoredCalibration && options.storedCalibrationBytes !== false) {
     artifacts.set(
       effectiveStoredCalibration.envelope.receiptRef.path,
@@ -1201,6 +1302,7 @@ function targetFake(input, options = {}) {
   let calibrationReceiptReads = 0;
   let continuityCount = 0;
   let randomCount = 0;
+  let lastWaypointBytes = null;
   let nowNs = 1_000_000_000n;
   const pose = {
     yawDeg: options.initialYawDeg ?? 0,
@@ -1276,8 +1378,10 @@ function targetFake(input, options = {}) {
       };
     }
     if (action.kind === "look_drag") {
-      pose.yawDeg += action.dxPx * (options.yawSlope ?? 0.1);
-      pose.pitchDeg += action.dyPx * (options.pitchSlope ?? 0.1);
+      if (options.noOpRestoreAtAction !== actionCount) {
+        pose.yawDeg += action.dxPx * (options.yawSlope ?? 0.1);
+        pose.pitchDeg += action.dyPx * (options.pitchSlope ?? 0.1);
+      }
       if (options.initialGuideAbsent && actionCount >= (options.acquireAfterActions ?? 1)) acquired = true;
     } else if (action.key === "w") pose.depthM -= action.holdMs * (options.forwardSlope ?? 0.005);
     else if (action.key === "s") pose.depthM += action.holdMs * (options.forwardSlope ?? 0.005);
@@ -1350,11 +1454,11 @@ function targetFake(input, options = {}) {
       if (options.captureFailureAt === captureCount) {
         return {
           receipt: {
-            ...settledCaptureReceipt(captureInput.outPath, Buffer.from("failed")),
+            ...settledCaptureReceipt(captureInput.outPath, Buffer.from("failed"), undefined, camera),
             status: "timeout",
             settlementSatisfied: false,
             stablePair: null,
-            lastValidCaptureRef: settledCaptureReceipt(captureInput.outPath, Buffer.from("failed")).captureRef,
+            lastValidCaptureRef: settledCaptureReceipt(captureInput.outPath, Buffer.from("failed"), undefined, camera).captureRef,
             error: { code: "settle_timeout", detail: "fixture never settled" },
           },
           frame: Buffer.from("failed"),
@@ -1370,19 +1474,36 @@ function targetFake(input, options = {}) {
             pitchDeg: pose.pitchDeg,
             depthM: pose.depthM,
           };
-      const bytes = Buffer.from(JSON.stringify(snapshot), "utf8");
+      const bytes = options.byteIdenticalRebaseline && base === "guide-on-rebaseline.png" && lastWaypointBytes
+        ? Buffer.from(lastWaypointBytes)
+        : Buffer.from(JSON.stringify(snapshot), "utf8");
+      if (/^waypoint-\d+\.png$/.test(base)) lastWaypointBytes = Buffer.from(bytes);
       artifacts.set(captureInput.outPath, bytes);
       if (!clockJumped && options.clockJumpAfterAction === actionCount && actionCount > 0) {
         clockJumped = true;
         nowNs += BigInt(options.clockJumpMs ?? 4_640_000) * 1_000_000n;
       }
-      return { receipt: settledCaptureReceipt(captureInput.outPath, bytes), frame: Buffer.from(bytes) };
+      return { receipt: settledCaptureReceipt(captureInput.outPath, bytes, undefined, camera), frame: Buffer.from(bytes) };
     },
     requestGuide: async (request) => {
       events.push(`guide:${request.mode}`);
-      assert.equal(request.maxPolls, 3, "orchestration guide polls must remain bounded");
+      assert.equal(request.maxPolls, 30, "orchestration guide polls must remain bounded and admit a degraded guest");
       assert.equal(request.pollMs, 100);
+      assert.equal(request.ackReadTimeoutMs, 1_000, "orchestration must bind the per-poll subprocess budget");
+      assert.equal(request.controlTimeoutMs, 10_000, "orchestration must bind broadcast and cleanup subprocess budgets");
       assert.equal(request.stabilityReads, 2);
+      if (request.mode === "hide" && showCalls === 0 && options.preflightUnavailable) {
+        hideCalls++;
+        return {
+          ok: false,
+          code: "bridge_unavailable",
+          detail: "legacy bridge did not acknowledge navigation-guide HIDE",
+          terminalGuideState: "unknown",
+          cleanupProven: false,
+          actionReceipts: [],
+          evidenceCeiling: "structural",
+        };
+      }
       if (request.mode === "show") {
         showCalls++;
         if (options.delayRepeatedShow && showCalls === 2) {
@@ -1412,8 +1533,9 @@ function targetFake(input, options = {}) {
         }
       } else {
         hideCalls++;
-        if (!options.hideFailure) guideVisible = false;
-        if (options.hideFailure) return {
+        const hideFailed = options.hideFailure && hideCalls === (options.hideFailureAt ?? 2);
+        if (!hideFailed) guideVisible = false;
+        if (hideFailed) return {
           ok: false,
           code: "cleanup_failed",
           detail: "fixture hide failed",
@@ -1443,6 +1565,7 @@ function targetFake(input, options = {}) {
       const lost = options.guideLossAfterAction != null && actionCount >= options.guideLossAfterAction;
       if (!snapshot.guideVisible || !snapshot.acquired || lost) return absentGuideDetections();
       return measuredGuideDetections(snapshot, {
+        camera,
         badProjection: options.badProjection,
         clippedProjection: options.clippedProjection,
       });
@@ -1453,9 +1576,9 @@ function targetFake(input, options = {}) {
         ok: true,
         proof: {
           path: "/tmp/camera-calibration.json",
-          bytes: TARGET_CAMERA_BYTES.length,
-          sha256: TARGET_CAMERA_SHA,
-          calibration: structuredClone(TARGET_CAMERA),
+          bytes: cameraMaterial.bytes.length,
+          sha256: cameraMaterial.sha256,
+          calibration: structuredClone(camera),
           observedBootId: TARGET_BOOT,
           bootStartedAt: "2026-09-01T12:00:00.000Z",
           verifiedAt: "2026-09-01T12:00:20.000Z",
@@ -1536,6 +1659,54 @@ function assertNoForbiddenNavigationClaims(result) {
     assert.equal(keys.includes(forbidden), false, `forbidden navigation claim field '${forbidden}' escaped`);
   }
 }
+
+test("navigate accepts the camera-proof principal point under the off-center default camera", async () => {
+  const input = targetInput("navigate");
+  assert.ok(Math.abs(TARGET_CAMERA.cx - TARGET_CAMERA.width / 2) < input.centerBandPx.x);
+  assert.ok(Math.abs(TARGET_CAMERA.cy - TARGET_CAMERA.height / 2) > input.centerBandPx.y,
+    "the default camera must stay far enough off frame center to expose a split controller fixed-point");
+  const fake = targetFake(input, { initialDepthM: 1.3 });
+
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+  assert.equal(result.executionStatus, "completed");
+  assert.equal(result.stopReason, "objective_satisfied");
+  assert.deepEqual(result.achievedClaims, ["target_visible", "target_centered"],
+    "an already-close target is centered without inventing a free-camera-approach claim");
+  assert.deepEqual(fake.events.filter((event) => event.startsWith("action:")), [],
+    "a guide already at the principal point needs no corrective camera input");
+});
+
+test("navigate keeps the centered-camera orchestration fixture as a secondary principal-point case", async () => {
+  const input = targetInput("navigate");
+  assert.equal(CENTERED_TARGET_CAMERA.cx, CENTERED_TARGET_CAMERA.width / 2);
+  assert.equal(CENTERED_TARGET_CAMERA.cy, CENTERED_TARGET_CAMERA.height / 2);
+  const fake = targetFake(input, { camera: CENTERED_TARGET_CAMERA, initialDepthM: 1.3 });
+
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+  assert.equal(result.executionStatus, "completed");
+  assert.equal(result.stopReason, "objective_satisfied");
+  assert.equal(result.calibrationStatus, "valid");
+  assert.deepEqual(result.achievedClaims, ["target_visible", "target_centered"]);
+  assert.deepEqual(fake.events.filter((event) => event.startsWith("action:")), []);
+});
+
+test("navigation-guide capability preflight refuses a legacy bridge before capture or camera input", async () => {
+  const input = targetInput("navigate");
+  const fake = targetFake(input, { preflightUnavailable: true });
+
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "guide_not_acquired");
+  assert.match(result.error.detail, /capability preflight.*legacy bridge did not acknowledge/);
+  assert.deepEqual(fake.events.filter((event) => event.startsWith("guide:")), ["guide:hide"]);
+  assert.equal(fake.events.some((event) => event.startsWith("capture:")), false);
+  assert.equal(fake.events.some((event) => event.startsWith("action:")), false);
+  assert.equal(result.cleanup.attempted, false);
+  assert.equal(result.cleanup.finalCleanAttempted, false);
+});
 
 test("navigate orchestration catches normalized largest-horizontal ambiguity before qemu, guide, capture, or input", async () => {
   const input = targetInput("navigate");
@@ -1665,7 +1836,7 @@ for (const [name, calibrationRecord, wantStatus] of [
     assert.deepEqual(result.achievedClaims, ["target_visible", "target_centered"]);
     assert.equal(fake.events.some((event) => event.startsWith("action:hold:w")), false);
     assert.equal(fake.actionCount, 0);
-    assert.equal(fake.hideCalls, 1);
+    assert.equal(fake.hideCalls, 2);
     assert.equal(result.cleanup.guideHide.ok, true);
     assert.equal(result.captures.finalClean.status, "settled");
     assert.equal(result.sameViewEvidence, "no_backend_action_requested");
@@ -1687,8 +1858,9 @@ test("navigate consumes only a strict receipt-linked exact-context calibration a
   assert.equal(result.actions.length, 1);
   assert.equal(result.actions[0].request.kind, "key_hold");
   assert.equal(result.actions[0].request.key, "w");
-  assert.ok(result.actions[0].request.holdMs > 0 && result.actions[0].request.holdMs < 100,
-    "the accepted forward fit must replace the fixed 100ms hold");
+  assert.equal(result.actions[0].request.holdMs, 162,
+    "the accepted forward fit must derive the hold from the real-camera projection");
+  assert.ok(result.actions[0].request.holdMs <= input.motionPolicy.maxHoldMsPerAction);
   const audit = result.actions[0].controlAudit;
   assert.deepEqual(Object.keys(audit).sort(), ["applied", "gain", "policyLimits", "rawDesired", "wasClamped"]);
   assert.ok(audit.rawDesired.holdMs > 0);
@@ -1712,7 +1884,7 @@ test("navigate catches a receipt changed after initial validation immediately be
   assert.equal(fake.events.some((event) => event.startsWith("action:hold:w")), false);
 });
 
-test("navigate rejects missing, tampered, orphaned, weakened-profile, weakened-limit, and tiny-slope calibration receipts before W", async () => {
+test("navigate rejects missing, tampered, orphaned, weakened-policy, tiny-slope, and normalized-closure calibration receipts before W", async () => {
   const context = expectedCalibrationContext();
   const tinyYaw = validTargetCalibrationRecord(context);
   tinyYaw.yaw.samples = tinyYaw.yaw.samples.map(({ x }) => ({ x, y: x * 0.001 }));
@@ -1721,6 +1893,16 @@ test("navigate rejects missing, tampered, orphaned, weakened-profile, weakened-l
   weakLimits.limits = { ...weakLimits.limits, minSamples: 1 };
   const orphaned = mutateStoredReceipt(storedCalibrationFixture(), (receipt) => {
     receipt.calibration.record.contextKey = "f".repeat(64);
+  });
+  const excessiveNormalizedClosure = mutateStoredReceipt(storedCalibrationFixture(), (receipt) => {
+    receipt.calibration.restoreClosure.yaw = [0, 0, 0, 2.4];
+    receipt.calibration.restoreClosureQuality.yaw = calibrationClosureQuality(
+      receipt.calibration.record.yaw.samples,
+      receipt.calibration.record.yaw.fit,
+      receipt.calibration.restoreClosure.yaw,
+      receipt.calibration.finalClosure.yawDeg,
+      receipt.calibration.profile.closure,
+    );
   });
   const cases = [
     ["deleted receipt", storedCalibrationFixture(), { storedCalibrationBytes: false }, "stale"],
@@ -1731,6 +1913,7 @@ test("navigate rejects missing, tampered, orphaned, weakened-profile, weakened-l
     }), {}, "quality_rejected"],
     ["weakened record limits", storedCalibrationFixture({ record: weakLimits }), {}, "quality_rejected"],
     ["tiny accepted yaw slope", storedCalibrationFixture({ record: tinyYaw }), {}, "quality_rejected"],
+    ["excessive normalized restore closure", excessiveNormalizedClosure, {}, "quality_rejected"],
   ];
   for (const [name, storedCalibration, extra, wantStatus] of cases) {
     const inputCase = targetInput("navigate");
@@ -1747,7 +1930,7 @@ test("navigate rejects missing, tampered, orphaned, weakened-profile, weakened-l
 test("navigate converts fresh angular guide error through accepted yaw and pitch fits", async () => {
   const input = targetInput("navigate");
   const storedCalibration = storedCalibrationFixture();
-  const fake = targetFake(input, { initialDepthM: 2, initialYawDeg: 6, storedCalibration });
+  const fake = targetFake(input, { initialDepthM: 1.3, initialYawDeg: 6, storedCalibration });
   const result = await executeNavigateToSceneTarget(input, fake.deps);
   assert.equal(result.executionStatus, "completed");
   assert.equal(result.actions.length, 1);
@@ -1764,7 +1947,7 @@ test("navigate orchestration never forwards an initial in-band free-camera claim
     ["missing calibration", null],
   ]) {
     const input = targetInput("navigate");
-    const fake = targetFake(input, { initialDepthM: 2, calibrationRecord });
+    const fake = targetFake(input, { initialDepthM: 1.3, calibrationRecord });
     const result = await executeNavigateToSceneTarget(input, fake.deps);
     assert.equal(result.executionStatus, "completed", name);
     assert.equal(result.stopReason, "objective_satisfied", name);
@@ -1772,18 +1955,19 @@ test("navigate orchestration never forwards an initial in-band free-camera claim
     assert.equal(result.achievedClaims.includes("free_camera_approached"), false, name);
     assert.equal(fake.actionCount, 0, name);
     assert.equal(fake.events.some((event) => event.startsWith("action:hold:w")), false, name);
-    assert.equal(fake.hideCalls, 1, name);
+    assert.equal(fake.hideCalls, 2, name);
   }
 });
 
 test("byte-identical absent guide-off/on frames run a bounded horizontal acquisition series and then repeat the same-view delta", async () => {
   const input = targetInput("navigate");
   const fake = targetFake(input, {
-    initialDepthM: 2,
+    initialDepthM: 1.3,
     initialGuideAbsent: true,
     staticInitialGuideFrames: true,
     acquireAfterActions: 3,
     yawSlope: 0,
+    byteIdenticalRebaseline: true,
   });
   const result = await executeNavigateToSceneTarget(input, fake.deps);
 
@@ -1799,13 +1983,15 @@ test("byte-identical absent guide-off/on frames run a bounded horizontal acquisi
     "action:drag:120,0",
   ]);
   assert.deepEqual(fake.events.filter((event) => event === "guide:show" || event === "guide:hide"), [
-    "guide:show", "guide:hide", "guide:show", "guide:hide",
+    "guide:hide", "guide:show", "guide:hide", "guide:show", "guide:hide",
   ]);
   const acquired = fake.events.findIndex((event) => event.startsWith("capture:waypoint-0003"));
   const rebaselineOff = fake.events.findIndex((event) => event.startsWith("capture:guide-off-rebaseline"));
   const repeatedShow = fake.events.indexOf("guide:show", fake.events.indexOf("guide:show") + 1);
   const rebaselineOn = fake.events.findIndex((event) => event.startsWith("capture:guide-on-rebaseline"));
   assert.ok(acquired < rebaselineOff && rebaselineOff < repeatedShow && repeatedShow < rebaselineOn);
+  assert.equal(result.captures.guideOnRebaseline.sha256, result.captures.acquisition.at(-1).sha256,
+    "static same-pose rebaseline bytes stay valid when their capture path and receipt identity are distinct");
 });
 
 test("a timed-out repeated SHOW is drained before result cleanup and cannot mutate guide or input afterward", async () => {
@@ -1856,8 +2042,8 @@ test("navigate orchestration catches reordered capture/input/cleanup and retains
   assert.deepEqual(result.achievedClaims, ["target_visible", "target_centered", "free_camera_approached"]);
   assert.equal(result.calibrationStatus, "valid");
   assert.equal(result.actions.length, 1);
-  assert.deepEqual(result.actions[0].request, { kind: "key_hold", key: "w", holdMs: 20 });
-  assert.deepEqual(result.actions[0].controlAudit.applied, { key: "w", holdMs: 20 });
+  assert.deepEqual(result.actions[0].request, { kind: "key_hold", key: "w", holdMs: 162 });
+  assert.deepEqual(result.actions[0].controlAudit.applied, { key: "w", holdMs: 162 });
   assert.equal(result.actions[0].settle.status, "settled");
   assert.notEqual(result.captures.finalDiagnostic.sha256, result.actions[0].settle.sha256,
     "the final diagnostic must be a fresh post-action settled capture");
@@ -1873,17 +2059,17 @@ test("navigate orchestration catches reordered capture/input/cleanup and retains
   assert.ok(first("detect:guide-off") < first("guide:show"));
   assert.ok(first("guide:show") < first("capture:guide-on"));
   assert.ok(first("capture:guide-on") < first("detect:guide-on"));
-  assert.ok(first("read-calibration-registry") < first("action:hold:w:20"));
-  assert.ok(first("action:hold:w:20") < first("capture:waypoint-0001"));
+  assert.ok(first("read-calibration-registry") < first("action:hold:w:162"));
+  assert.ok(first("action:hold:w:162") < first("capture:waypoint-0001"));
   assert.ok(first("capture:waypoint-0001") < first("capture:final-diagnostic"));
   assert.ok(first("capture:final-diagnostic") < fake.events.lastIndexOf("guide:hide"));
   assert.ok(fake.events.lastIndexOf("guide:hide") < first("capture:final-clean"));
   assert.equal(fake.events[first("capture:final-diagnostic")], "capture:final-diagnostic.png:none");
   assert.equal(fake.events[first("capture:final-clean")], `capture:final-clean.png:${result.captures.finalDiagnostic.sha256}`);
-  const actionIndex = first("action:hold:w:20");
+  const actionIndex = first("action:hold:w:162");
   assert.equal(fake.events.slice(actionIndex + 1).find((event) => event.startsWith("action:")), undefined,
     "the only state-changing action is settled before any later action");
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
   assertNoForbiddenNavigationClaims(result);
 });
 
@@ -1895,7 +2081,7 @@ test("navigate orchestration catches detector bytes mutated during path-based an
   assert.equal(result.stopReason, "guide_not_acquired");
   assert.match(result.error.detail, /changed|immutable|sha/i);
   assert.equal(fake.actionCount, 0);
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
   assert.equal(result.cleanup.attempted, true);
   assert.equal(result.captures.finalClean.status, "settled");
   assert.equal(result.evidenceCeiling, "structural");
@@ -1909,7 +2095,7 @@ test("navigate orchestration retains an unsettled guide-on receipt and still hid
   assert.equal(result.stopReason, "unsettled");
   assert.equal(result.captures.guideOn, null);
   assert.equal(fake.actionCount, 0);
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
   assert.equal(result.cleanup.attempted, true);
   assert.equal(result.captures.finalClean.status, "settled");
   assert.equal(result.captures.finalDiagnostic.status, "settled",
@@ -1929,7 +2115,7 @@ test("navigate orchestration catches input failure without erasing pre-action cl
   assert.match(result.routeTraces[0].terminalActionFailure.terminalError, /fixture input failure/);
   assert.equal(result.captures.finalDiagnostic, null,
     "a failed action cannot reuse its pre-action guide frame as a terminal diagnostic");
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
   assert.equal(result.captures.finalClean.status, "settled");
   assert.ok(fake.events.includes("capture:final-clean.png:none"));
 });
@@ -1954,7 +2140,7 @@ test("navigate orchestration re-queries after a settled waypoint and catches cro
   assert.equal(result.sceneQueries[1].crossQueryDrift.withinPolicy, false);
   assert.equal(fake.events.filter((event) => event.startsWith("read:geometry-")).length, 2,
     "every re-query geometryRef is independently read and SHA-verified");
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
 });
 
 test("navigate orchestration catches action exhaustion without claiming an unadmitted waypoint", async () => {
@@ -1966,7 +2152,7 @@ test("navigate orchestration catches action exhaustion without claiming an unadm
   assert.equal(result.executionStatus, "stopped");
   assert.equal(result.stopReason, "budget_exhausted");
   assert.equal(fake.actionCount, 1);
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
   assert.equal(result.evidenceCeiling, "structural");
 });
 
@@ -1987,6 +2173,24 @@ test("navigate refuses an impossible 180-second schedule before reserve, capture
   assert.equal(result.captures.guideOff, null);
 });
 
+test("navigate reserves the bounded 30-poll guide transactions before any camera or guide mutation", async () => {
+  const input = targetInput("navigate", {
+    motionPolicy: targetMotionPolicy({ maxActions: 32, maxDurationSec: 930 }),
+  });
+  const fake = targetFake(input, { initialDepthM: 5 });
+
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "budget_exhausted");
+  assert.equal(result.refusalReason, "insufficient_budget");
+  assert.deepEqual(fake.events, ["query", "read:geometry-scene_query_0001.json", "bind-qemu"]);
+  assert.equal(fake.actionCount, 0);
+  assert.equal(fake.hideCalls, 0);
+  assert.equal(fake.guideMayHaveApplied, false);
+  assert.equal(result.cleanup.attempted, false);
+});
+
 test("navigate orchestration re-queries a guide lost after approach and never compounds W input", async () => {
   const input = targetInput("navigate");
   const fake = targetFake(input, { initialDepthM: 2.2, guideLossAfterAction: 1 });
@@ -1998,13 +2202,13 @@ test("navigate orchestration re-queries a guide lost after approach and never co
   assert.equal(fake.events.filter((event) => event.startsWith("action:hold:w")).length, 1);
   assert.equal(result.captures.finalDiagnostic, null,
     "guide loss after the last action cannot pair a pre-action frame with final cleanup");
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
 });
 
 test("stable scene geometry classifies shrinking or excessive guide projection as projection_divergence", async () => {
   for (const [name, options, wantActions, wantQueries] of [
     ["shrinks twice", { initialDepthM: 2.2, forwardSlope: -0.001 }, 2, 4],
-    ["area already excessive", { initialDepthM: 1 }, 0, 2],
+    ["area already excessive", { initialDepthM: 0.7 }, 0, 2],
   ]) {
     const input = targetInput("navigate");
     const fake = targetFake(input, options);
@@ -2015,7 +2219,7 @@ test("stable scene geometry classifies shrinking or excessive guide projection a
     assert.equal(fake.events.filter((event) => event.startsWith("action:hold:w")).length, wantActions, name);
     assert.equal(fake.queryCount, wantQueries, name);
     assert.ok(result.sceneQueries.at(-1).crossQueryDrift.withinPolicy, name);
-    assert.equal(fake.hideCalls, 1, name);
+    assert.equal(fake.hideCalls, 2, name);
     assertNoForbiddenNavigationClaims(result);
   }
 });
@@ -2101,7 +2305,7 @@ test("calibration catches missing signed magnitudes, restore settlement, project
   const receiptIndex = fake.events.findIndex((event) => event.startsWith("write-receipt:"));
   const registryIndex = fake.events.indexOf("write-calibration-registry");
   assert.ok(hideIndex < cleanIndex && cleanIndex < receiptIndex && receiptIndex < registryIndex);
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
   assert.equal(result.sameViewEvidence, "no_backend_action_requested");
   assert.equal(result.evidenceCeiling, "structural");
   assertNoForbiddenNavigationClaims(result);
@@ -2123,9 +2327,52 @@ test("calibration rejects inconsistent viewer-facing depth/aspect or restore clo
     assert.equal(result.refusalReason, "quality_rejected", name);
     assert.equal(fake.stored.receipt, null, name);
     assert.equal(fake.stored.registry, null, name);
-    assert.equal(fake.hideCalls, 1, name);
+    assert.equal(fake.hideCalls, 2, name);
     assert.equal(result.captures.finalClean.status, "settled", name);
   }
+});
+
+test("low-slope calibration rejects a no-op restore while accepting the exact inverse", async (t) => {
+  await t.test("no-op restore is rejected", async () => {
+    const input = targetInput("calibrate");
+    const fake = targetFake(input, { yawSlope: 0.011, pitchSlope: 0.011, noOpRestoreAtAction: 2 });
+
+    const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+    assert.equal(result.executionStatus, "stopped");
+    assert.equal(result.stopReason, "unsupported_backend");
+    assert.equal(result.calibrationStatus, "quality_rejected");
+    assert.ok(result.calibration.quality.reasons.includes("yaw_restore_closure"));
+    assert.equal(fake.stored.receipt, null);
+    assert.equal(fake.stored.registry, null);
+  });
+
+  await t.test("exact restore is accepted", async () => {
+    const input = targetInput("calibrate");
+    const fake = targetFake(input, { yawSlope: 0.011, pitchSlope: 0.011 });
+
+    const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+    assert.equal(result.executionStatus, "completed");
+    assert.equal(result.calibrationStatus, "written");
+    assert.equal(result.calibration.quality.status, "accepted");
+    assert.ok(Math.abs(result.calibration.record.yaw.fit.slope - 0.011) < 1e-12);
+  });
+});
+
+test("navigate rejects a version-1 calibration receipt with an explicit policy-version reason", async () => {
+  const input = targetInput("navigate");
+  const fake = targetFake(input, { initialDepthM: 2.2, storedCalibration: legacyStoredCalibrationFixture() });
+
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "unsupported_backend");
+  assert.equal(result.calibrationStatus, "quality_rejected");
+  assert.equal(result.refusalReason, "quality_rejected");
+  assert.equal(result.calibrationReasonCode, "calibration_policy_version_mismatch");
+  assert.match(result.error.detail, /calibration_policy_version_mismatch:.*required profile\/record version 2/);
+  assert.equal(fake.events.some((event) => event.startsWith("action:hold:w")), false);
 });
 
 test("calibration restores an applied outbound once through recovery after an active-deadline clock jump", async () => {
@@ -2145,7 +2392,7 @@ test("calibration restores an applied outbound once through recovery after an ac
   ]);
   assert.equal(fake.stored.receipt, null);
   assert.equal(fake.stored.registry, null);
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
 });
 
 test("calibration retains ordered outbound-settle failure and successful inverse attempts with identity-bound audits", async () => {
@@ -2195,7 +2442,7 @@ test("calibration retains ordered outbound-settle failure and successful inverse
   ]);
   assert.equal(fake.stored.receipt, null);
   assert.equal(fake.stored.registry, null);
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
 });
 
 test("calibration exposes nullable action-receipt evidence for a thrown inverse without losing its audit identity", async () => {
@@ -2250,7 +2497,7 @@ test("calibration retains ordered outbound and failed inverse attempts without p
     result.routeTraces[0].actionAttempts.map((attempt) => attempt.identity));
   assert.equal(fake.stored.receipt, null);
   assert.equal(fake.stored.registry, null);
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
 });
 
 test("calibration rejects individually acceptable restore residuals that accumulate against the original pose", async () => {
@@ -2275,7 +2522,7 @@ test("calibration reacquisition repeats a same-view guide off/on delta before al
   assert.equal(result.calibrationStatus, "written");
   assert.equal(fake.actionCount, 25, "one bounded acquisition action precedes the 24 trials");
   assert.deepEqual(fake.events.filter((event) => event.startsWith("guide:")), [
-    "guide:show", "guide:hide", "guide:show", "guide:hide",
+    "guide:hide", "guide:show", "guide:hide", "guide:show", "guide:hide",
   ]);
   const rebaselineOff = fake.events.findIndex((event) => event.startsWith("capture:guide-off-rebaseline"));
   const secondShow = fake.events.indexOf("guide:show", fake.events.indexOf("guide:show") + 1);
@@ -2292,8 +2539,9 @@ test("an applied invalidation broadcast without a validated hidden ack still req
   assert.equal(result.executionStatus, "stopped");
   assert.equal(result.stopReason, "guide_not_acquired");
   assert.equal(fake.guideMayHaveApplied, true);
-  assert.equal(fake.hideCalls, 1, "an applied broadcast alone is not proof that the guide is hidden");
-  assert.equal(result.cleanup.hideTransactions, 1);
+  assert.equal(fake.hideCalls, 2, "one preflight and one explicit cleanup HIDE are both acknowledged");
+  assert.equal(result.cleanup.hideTransactions, 2,
+    "the result accounts for both the capability preflight and terminal cleanup HIDE transactions");
   assert.equal(result.cleanup.attempted, true);
   assert.equal(result.cleanup.guideHide.cleanupProven, true);
   assert.equal(result.sameViewEvidence, null);
@@ -2309,8 +2557,8 @@ test("orchestration sends one explicit HIDE after an uncompensated SHOW failure 
   const result = await executeNavigateToSceneTarget(input, fake.deps);
   assert.equal(result.executionStatus, "stopped");
   assert.equal(result.stopReason, "guide_not_acquired");
-  assert.equal(fake.hideCalls, 1);
-  assert.equal(result.cleanup.hideTransactions, 1);
+  assert.equal(fake.hideCalls, 2);
+  assert.equal(result.cleanup.hideTransactions, 2);
   assert.equal(result.captures.finalClean.status, "settled");
 });
 
@@ -2325,7 +2573,7 @@ test("cleanup failure remains terminal without erasing achieved claims, final di
   assert.equal(result.cleanup.guideHide.ok, false);
   assert.ok(result.captures.finalClean, "clean settlement is attempted even after a failed hide acknowledgement");
   assert.equal(result.sameViewEvidence, null);
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
 });
 
 test("unexpected orchestration errors remain executionStatus:error and retain their primary error through cleanup failure", async () => {
@@ -2344,7 +2592,7 @@ test("unexpected orchestration errors remain executionStatus:error and retain th
     detail: "fixture unexpected action-adapter exception",
   });
   assert.equal(fake.actionCount, 0);
-  assert.equal(fake.hideCalls, 1);
+  assert.equal(fake.hideCalls, 2);
   assert.equal(result.cleanup.finalCleanAttempted, true);
   assert.equal(result.captures.finalClean.status, "settled");
   assert.equal(result.sameViewEvidence, null);

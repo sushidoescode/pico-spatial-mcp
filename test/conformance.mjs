@@ -934,11 +934,15 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
   assert(!/Log\.[diwev]\([^\n]*(?:vertices|indices|semanticAssignments)/.test(agentKt),
     "AgentBridge never writes scene geometry to a log line");
 
-  const generatedSkeleton = JSON.parse((await bridgeHandlers["generate_agent_bridge"]({
+  const generatedSkeletonFiles = JSON.parse((await bridgeHandlers["generate_agent_bridge"]({
     packageName: "com.example.spatialapp.agent",
-  })).content[0].text).files.find((file) => file.path.endsWith("/AgentBridge.kt"))?.content ?? "";
+  })).content[0].text).files;
+  const generatedSkeleton = generatedSkeletonFiles.find((file) => file.path.endsWith("/AgentBridge.kt"))?.content ?? "";
+  const generatedSkeletonProvider = generatedSkeletonFiles.find((file) => file.path.endsWith("/AgentBridgeInitProvider.kt"))?.content ?? "";
   assert(read("appskeleton/app/src/main/java/com/example/spatialapp/agent/AgentBridge.kt") === generatedSkeleton,
     "the packaged AgentBridge skeleton is byte-identical to the generated default bridge");
+  assert(read("appskeleton/app/src/main/java/com/example/spatialapp/agent/AgentBridgeInitProvider.kt") === generatedSkeletonProvider,
+    "the packaged AgentBridgeInitProvider skeleton is byte-identical to the generated default provider");
 
   const sense = await import("../dist/sense.js");
   const senseHandlers = {};

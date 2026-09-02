@@ -109,7 +109,7 @@ route reserves. It is a bound, not a prediction that the run will take 5000 seco
 }
 ```
 
-The code-owned version-1 schedule is fixed and re-runnable:
+The code-owned version-2 profile has a fixed, re-runnable schedule:
 
 - Four yaw trials at signed drag magnitudes `[40,-40,80,-80]`, each immediately followed by its
   exact inverse drag.
@@ -185,12 +185,20 @@ cleanup, so it refuses before any mutation. A larger admitted budget still remai
 controller stops rather than exceeding action, drag, hold, or duration limits.
 
 The controller first acquires both guide colors, centers the nested guide, and only then considers
-approach. Centering converts fresh angular error through the accepted yaw/pitch fits and clamps the
-result to the supplied drag limits. Approach derives a desired displacement from the viewer-facing
-guide projection, converts it through the accepted forward fit, and admits a bounded `w` hold only
-after re-reading and revalidating the receipt. Growing guide area and decreasing projected depth
-must follow an acknowledged `w` action before `free_camera_approached` can be reported. Guide loss,
-two shrinking observations, projection divergence, scene drift, or exhaustion stops the loop.
+approach. Detector receipts remain raw, frame-relative observations: their `error` is measured from
+the frame center. The controller does not use that field as its fixed point. For every guide-position
+decision in acquire, center, and approach, including band acceptance, overshoot history, and
+calibrated drag, it recomputes error as `guide.center - (cx, cy)`, where `(cx, cy)` is the principal
+point from the fresh camera proof bound into this exact receipt identity. It never substitutes the
+frame dimensions for that principal point.
+
+Centering converts that principal-point angular error through the accepted yaw/pitch fits and clamps
+the result to the supplied drag limits. Approach derives a desired displacement from the
+viewer-facing guide projection, converts it through the accepted forward fit, and admits a bounded
+`w` hold only after re-reading and revalidating the receipt. Growing guide area and decreasing
+projected depth must follow an acknowledged `w` action before `free_camera_approached` can be
+reported. Guide loss, two shrinking observations, projection divergence, scene drift, or exhaustion
+stops the loop.
 
 ## Calibration identity, receipt, and replay
 
@@ -224,12 +232,20 @@ An accepted result contains:
 - the exact code-owned profile, guide delta hashes, and camera-calibration proof;
 - `receiptRef.{path,sha256,bytes}` and `registry.{path,contextKey}` after publication.
 
-The current quality profile requires four samples per axis, RMSE at most 0.5, maximum absolute
-residual at most 1, and R-squared at least 0.95. Angular slope magnitude must be at least
-0.01 degrees per pixel; forward slope must be at least 0.0005 metres per millisecond. Every
-projection depth/aspect relative error must be at most 0.12 and the guide may not be clipped.
-Per-pair angular closure is at most 0.5 degrees, per-pair forward closure at most 0.05 m, and final
-yaw/pitch/depth closure uses the same respective limits.
+The calibration profile and calibration record are both version 2. Its dimensionless quality gates
+require four samples per axis, normalized RMSE at most 20%, maximum absolute normalized residual at
+most 25%, and R-squared at least 0.95. Each fit residual is normalized by the absolute response
+predicted for that trial, `abs(fitted slope * trial input)`, before RMSE and maximum residual are
+evaluated. Angular slope magnitude must be at least 0.01 degrees per pixel; forward slope must be at
+least 0.0005 metres per millisecond. Every projection depth/aspect relative error must be at most
+12% and the guide may not be clipped.
+
+Restore closure is dimensionless too. Each paired restore residual may be at most 25% of that
+trial's absolute fitted response. Final yaw, pitch, or depth residual may be at most 12.5% of the
+smallest absolute fitted response for that axis's calibration trials. The 20%, 25%, 25%, and 12.5%
+values are initial empirical thresholds recorded in the version-2 profile, not principled physical
+constants. Receipt publication and replay use the same fit, projection, and closure computations and
+gates.
 
 Only an accepted run writes the immutable external
 `navigation-calibration-<contextKey>.json` receipt and then atomically publishes its exact-context
@@ -237,7 +253,10 @@ registry envelope under `~/.pico-mcp/navigation-calibrations/v1/<contextKey>.jso
 the envelope's exact keys, an absolute regular non-symlink receipt, unchanged byte count and
 SHA-256, canonical context/record equality, the exact current profile, recomputed fits, accepted
 projection/closure evidence, and the camera-proof SHA. The receipt is read once when navigation
-loads it and again immediately before every forward hold.
+loads it and again immediately before every forward hold. A version-1 profile or record fails closed
+on replay as `quality_rejected`, with
+`calibrationReasonCode: "calibration_policy_version_mismatch"` and matching diagnostic detail; it is
+never silently interpreted as version 2.
 
 Missing context records produce `calibrationStatus: "missing"`; unreadable, malformed, orphaned,
 or changed receipt bindings produce `"stale"`; weakened profiles, poor fits, projection failures,
@@ -250,10 +269,23 @@ The normal order is:
 
 1. Query fresh scene anchors, verify geometry bytes, select an unambiguous largest horizontal
    target, and bind the exact application/qemu window.
-2. Admit the whole-action budget, reserve the external session, capture a settled guide-off frame,
-   and prove both colors absent.
-3. SHOW through the file-acknowledged bridge, capture a settled guide-on frame, and require both
-   colors plus a byte delta from guide-off.
+2. Admit the whole-action budget and reserve the external session. Before SHOW or any camera input,
+   request an idempotent HIDE and require an acknowledgement with exact hidden cleanup proof. This
+   is the navigation-guide capability preflight: a legacy bridge fails cleanly with
+   `guide_not_acquired` instead of entering the motion loop.
+3. Capture a settled guide-off frame and prove both colors absent, then SHOW through the
+   file-acknowledged bridge and capture a settled guide-on frame. If both colors are immediately
+   detected, that frame must differ byte-for-byte from guide-off. If the guide remains absent and
+   the bytes are identical, the controller may enter its bounded acquisition series; after
+   acquisition, a repeated same-view HIDE/off/SHOW/on sequence must prove both colors and an off/on
+   byte delta. The distinct, identity-valid guide-on rebaseline capture may reuse the last
+   acquisition waypoint SHA; only post-action waypoints require a fresh SHA. Each guide request
+   allows 30 polls at 100 ms and requires two stable reads;
+   the current acknowledgement budget floor is therefore 30-by-100 ms rather than three polls.
+   Each `run-as` acknowledgement read is itself capped at 1 second; broadcasts and cleanup commands
+   are capped at 10 seconds. The code reserves 55 seconds for HIDE and 120 seconds for SHOW,
+   conservatively covering a failed SHOW, its one compensating HIDE, both sets of bounded reads and
+   cleanup, and the final late-ack sweep.
 4. Execute every acquire, center, calibration, restore, or approach action through the shared route;
    every action must have an applied acknowledgement and its own settled capture.
 5. Capture a fresh final diagnostic while the guide is visible, acknowledge HIDE, then capture a

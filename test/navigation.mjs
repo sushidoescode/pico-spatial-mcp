@@ -406,9 +406,10 @@ test("persistent route execution carries its original budgets, sequence, paths, 
   assert.equal(first.status, "settled");
   const adopted = settled(
     "/tmp/pico-navigation-tests/route-test/guide-on-rebaseline.png",
-    "e".repeat(64),
+    "d".repeat(64),
   );
-  assert.equal(execution.adoptSettledBaseline(adopted), true);
+  assert.equal(execution.adoptSettledBaseline(adopted), true,
+    "a distinct settled rebaseline path may preserve byte-identical static-scene evidence");
   const second = await execution.executeStep([{ kind: "look_drag", dxPx: -10, dyPx: 0 }]);
   assert.equal(second.status, "settled");
   const exhausted = await execution.executeStep([{ kind: "look_drag", dxPx: 1, dyPx: 0 }]);
@@ -416,7 +417,7 @@ test("persistent route execution carries its original budgets, sequence, paths, 
 
   const trace = execution.finish("controller_stop");
   assert.deepEqual(trace.waypoints.map((waypoint) => waypoint.seq), [1, 2]);
-  assert.deepEqual(priors, ["c".repeat(64), "e".repeat(64)]);
+  assert.deepEqual(priors, ["c".repeat(64), "d".repeat(64)]);
   assert.deepEqual(trace.usage.actions, 2);
   assert.deepEqual(trace.usage.waypoints, 2);
 });

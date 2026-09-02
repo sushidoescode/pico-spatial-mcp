@@ -2,8 +2,22 @@ import crypto from "node:crypto";
 
 export type RegressionSample = { x: number; y: number };
 export type ThroughOriginFit = { slope: number; sampleCount: number; residuals: number[]; rmse: number; maxAbsResidual: number; rSquared: number };
-export type CalibrationLimits = { minSamples: number; maxRmse: number; maxAbsResidual: number; minRSquared: number };
-export type CalibrationQuality = { status: "accepted" | "rejected"; reasons: ("sample_count" | "rmse" | "max_abs_residual" | "r_squared" | "invalid_fit" | "invalid_limits")[] };
+export type CalibrationLimits = { minSamples: number; maxNormalizedRmse: number; maxNormalizedAbsResidual: number; minRSquared: number };
+export type CalibrationQuality = {
+  status: "accepted" | "rejected";
+  reasons: ("sample_count" | "normalized_rmse" | "normalized_max_abs_residual" | "r_squared" | "invalid_fit" | "invalid_limits")[];
+  normalizedResiduals: number[];
+  normalizedRmse: number | null;
+  normalizedMaxAbsResidual: number | null;
+};
+export type CalibrationClosureLimits = { maxPairFraction: number; maxFinalFraction: number };
+export type CalibrationClosureQuality = {
+  status: "accepted" | "rejected";
+  reasons: ("pair_closure" | "final_closure" | "invalid_closure")[];
+  pairNormalizedResiduals: number[];
+  finalNormalizedResidual: number | null;
+  minimumPredictedResponse: number | null;
+};
 export type NavigationCalibrationContext = {
   serial: string;
   guest: { fingerprint: string; model: string };
@@ -52,22 +66,83 @@ export function fitThroughOrigin(samples: RegressionSample[]): ThroughOriginFit 
 
 function validLimits(limits: CalibrationLimits): boolean {
   return Number.isInteger(limits?.minSamples) && limits.minSamples > 0
-    && Number.isFinite(limits.maxRmse) && limits.maxRmse >= 0
-    && Number.isFinite(limits.maxAbsResidual) && limits.maxAbsResidual >= 0
+    && Number.isFinite(limits.maxNormalizedRmse) && limits.maxNormalizedRmse >= 0
+    && Number.isFinite(limits.maxNormalizedAbsResidual) && limits.maxNormalizedAbsResidual >= 0
     && Number.isFinite(limits.minRSquared) && limits.minRSquared >= -1 && limits.minRSquared <= 1;
 }
 
-export function calibrationQuality(fit: ThroughOriginFit, limits: CalibrationLimits): CalibrationQuality {
-  if (!validLimits(limits)) return { status: "rejected", reasons: ["invalid_limits"] };
+export function calibrationQuality(
+  samples: RegressionSample[],
+  fit: ThroughOriginFit,
+  limits: CalibrationLimits,
+): CalibrationQuality {
+  const reject = (reason: CalibrationQuality["reasons"][number]): CalibrationQuality => ({
+    status: "rejected",
+    reasons: [reason],
+    normalizedResiduals: [],
+    normalizedRmse: null,
+    normalizedMaxAbsResidual: null,
+  });
+  if (!validLimits(limits)) return reject("invalid_limits");
   if (!fit || !Number.isFinite(fit.slope) || !Number.isInteger(fit.sampleCount) || fit.sampleCount < 1
     || !Array.isArray(fit.residuals) || fit.residuals.length !== fit.sampleCount || !fit.residuals.every(Number.isFinite)
-    || !Number.isFinite(fit.rmse) || !Number.isFinite(fit.maxAbsResidual) || !Number.isFinite(fit.rSquared)) return { status: "rejected", reasons: ["invalid_fit"] };
+    || !Number.isFinite(fit.rmse) || !Number.isFinite(fit.maxAbsResidual) || !Number.isFinite(fit.rSquared)
+    || !finiteSamples(samples) || samples.length !== fit.sampleCount) return reject("invalid_fit");
+  const predictedResponses = samples.map((sample) => Math.abs(fit.slope * sample.x));
+  if (predictedResponses.some((response) => !Number.isFinite(response) || response <= 0)) return reject("invalid_fit");
+  const normalizedResiduals = fit.residuals.map((residual, index) => residual / predictedResponses[index]);
+  if (!normalizedResiduals.every(Number.isFinite)) return reject("invalid_fit");
+  const normalizedRmse = Math.sqrt(normalizedResiduals.reduce((sum, residual) => sum + residual * residual, 0) / normalizedResiduals.length);
+  const normalizedMaxAbsResidual = Math.max(...normalizedResiduals.map(Math.abs));
   const reasons: CalibrationQuality["reasons"] = [];
   if (fit.sampleCount < limits.minSamples) reasons.push("sample_count");
-  if (fit.rmse > limits.maxRmse) reasons.push("rmse");
-  if (fit.maxAbsResidual > limits.maxAbsResidual) reasons.push("max_abs_residual");
+  if (normalizedRmse > limits.maxNormalizedRmse) reasons.push("normalized_rmse");
+  if (normalizedMaxAbsResidual > limits.maxNormalizedAbsResidual) reasons.push("normalized_max_abs_residual");
   if (fit.rSquared < limits.minRSquared) reasons.push("r_squared");
-  return reasons.length ? { status: "rejected", reasons } : { status: "accepted", reasons };
+  return {
+    status: reasons.length ? "rejected" : "accepted",
+    reasons,
+    normalizedResiduals,
+    normalizedRmse,
+    normalizedMaxAbsResidual,
+  };
+}
+
+export function calibrationClosureQuality(
+  samples: RegressionSample[],
+  fit: ThroughOriginFit,
+  pairResiduals: number[],
+  finalResidual: number,
+  limits: CalibrationClosureLimits,
+): CalibrationClosureQuality {
+  const invalid: CalibrationClosureQuality = {
+    status: "rejected",
+    reasons: ["invalid_closure"],
+    pairNormalizedResiduals: [],
+    finalNormalizedResidual: null,
+    minimumPredictedResponse: null,
+  };
+  if (!Number.isFinite(limits?.maxPairFraction) || limits.maxPairFraction < 0
+    || !Number.isFinite(limits?.maxFinalFraction) || limits.maxFinalFraction < 0
+    || !finiteSamples(samples) || !fit || !Number.isFinite(fit.slope)
+    || !Array.isArray(pairResiduals) || pairResiduals.length !== samples.length
+    || !pairResiduals.every(Number.isFinite) || !Number.isFinite(finalResidual)) return invalid;
+  const predictedResponses = samples.map((sample) => Math.abs(fit.slope * sample.x));
+  if (predictedResponses.some((response) => !Number.isFinite(response) || response <= 0)) return invalid;
+  const pairNormalizedResiduals = pairResiduals.map((residual, index) => residual / predictedResponses[index]);
+  const minimumPredictedResponse = Math.min(...predictedResponses);
+  const finalNormalizedResidual = finalResidual / minimumPredictedResponse;
+  if (!pairNormalizedResiduals.every(Number.isFinite) || !Number.isFinite(finalNormalizedResidual)) return invalid;
+  const reasons: CalibrationClosureQuality["reasons"] = [];
+  if (pairNormalizedResiduals.some((residual) => Math.abs(residual) > limits.maxPairFraction)) reasons.push("pair_closure");
+  if (Math.abs(finalNormalizedResidual) > limits.maxFinalFraction) reasons.push("final_closure");
+  return {
+    status: reasons.length ? "rejected" : "accepted",
+    reasons,
+    pairNormalizedResiduals,
+    finalNormalizedResidual,
+    minimumPredictedResponse,
+  };
 }
 
 function canonicalize(value: unknown): unknown {
@@ -136,14 +211,15 @@ function fitMatchesSamples(fit: ThroughOriginFit, samples: RegressionSample[]): 
 }
 
 export function validateNavigationCalibration(record: NavigationCalibrationRecord, context: NavigationCalibrationContext): NavigationCalibrationValidation {
-  if (!record || typeof record !== "object" || record.version !== 1 || typeof record.contextKey !== "string"
+  if (!record || typeof record !== "object" || record.version !== 2 || typeof record.contextKey !== "string"
     || !wellFormedAxis(record.yaw) || !wellFormedAxis(record.pitch) || !wellFormedAxis(record.forward)) return { status: "invalid", reason: "invalid_record" };
   const contextKey = calibrationContextKey(context);
   if (record.contextKey !== contextKey) return { status: "invalid", reason: "context_mismatch" };
   if (!validLimits(record.limits)) return { status: "invalid", reason: "invalid_record" };
   if (!hasSignedTrials(record.yaw.samples, record.limits.minSamples) || !hasSignedTrials(record.pitch.samples, record.limits.minSamples)) return { status: "invalid", reason: "insufficient_signed_drag_trials" };
   if (!positiveForwardSamples(record.forward.samples, record.limits.minSamples) || record.forward.fit.slope <= 0) return { status: "invalid", reason: "non_positive_forward_displacement" };
-  if ([record.yaw.fit, record.pitch.fit, record.forward.fit].some((fit) => calibrationQuality(fit, record.limits).status !== "accepted")) return { status: "invalid", reason: "quality_rejected" };
+  if ([record.yaw, record.pitch, record.forward]
+    .some((axis) => calibrationQuality(axis.samples, axis.fit, record.limits).status !== "accepted")) return { status: "invalid", reason: "quality_rejected" };
   if (!fitMatchesSamples(record.yaw.fit, record.yaw.samples) || !fitMatchesSamples(record.pitch.fit, record.pitch.samples) || !fitMatchesSamples(record.forward.fit, record.forward.samples)) return { status: "invalid", reason: "fit_mismatch" };
   return { status: "valid", contextKey };
 }

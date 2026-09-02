@@ -97,10 +97,10 @@
     "linearSamples": [{ "x": -80, "y": -8 }, { "x": -40, "y": -4 }, { "x": 40, "y": 4 }, { "x": 80, "y": 8 }],
     "noisySamples": [{ "x": -80, "y": -7 }, { "x": -40, "y": -5 }, { "x": 40, "y": 3 }, { "x": 80, "y": 9 }],
     "wantLinear": { "slope": 0.1, "sampleCount": 4, "residuals": [0, 0, 0, 0], "rmse": 0, "maxAbsResidual": 0, "rSquared": 1 },
-    "wantNoisy": { "slope": 0.1, "residuals": [1, -1, -1, 1], "rmse": 1, "maxAbsResidual": 1, "rSquared": 0.975609756097561 },
+    "wantNoisy": { "slope": 0.1, "sampleCount": 4, "residuals": [1, -1, -1, 1], "rmse": 1, "maxAbsResidual": 1, "rSquared": 0.975609756097561 },
     "forwardSamples": [{ "x": 100, "y": 0.5 }, { "x": 200, "y": 1 }, { "x": 300, "y": 1.5 }, { "x": 400, "y": 2 }],
     "wantForward": { "slope": 0.005, "sampleCount": 4, "residuals": [0, 0, 0, 0], "rmse": 0, "maxAbsResidual": 0, "rSquared": 1 },
-    "limits": { "minSamples": 4, "maxRmse": 1, "maxAbsResidual": 1, "minRSquared": 0.95 },
+    "limits": { "minSamples": 4, "maxNormalizedRmse": 0.2, "maxNormalizedAbsResidual": 0.25, "minRSquared": 0.95 },
     "context": {
       "serial": "emulator-5554",
       "guest": { "fingerprint": "guest-fingerprint-v1", "model": "PICO Emulator 6" },

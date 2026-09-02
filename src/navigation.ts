@@ -1219,8 +1219,7 @@ export function createRelativeRouteExecution(
         || !settledReceiptMatches(receipt.path, input, receipt)
         || receipt.status !== "settled"
         || !receipt.settlementSatisfied
-        || !receipt.sha256
-        || receipt.sha256 === priorCaptureSha256) return false;
+        || !receipt.sha256) return false;
     } catch {
       return false;
     }

@@ -41,6 +41,7 @@ import {
   type RuntimeBindingReceipt,
 } from "./navigation.js";
 import {
+  calibrationClosureQuality,
   calibrationContextKey,
   calibrationQuality,
   decideNavigationStep,
@@ -157,6 +158,7 @@ export type NavigationTargetStopReason =
 export type NavigationTargetClaim = "target_visible" | "target_centered" | "free_camera_approached";
 export type NavigationCalibrationStatus = "not_attempted" | "missing" | "stale" | "quality_rejected" | "valid" | "written";
 export type NavigationRefusalReason = "insufficient_budget" | "missing" | "stale" | "quality_rejected" | "projection_divergence" | null;
+export type NavigationCalibrationReasonCode = "calibration_policy_version_mismatch";
 
 export interface NavigationArtifactRef {
   path: string;
@@ -199,22 +201,34 @@ export interface NavigationTargetDependencies {
 }
 
 const ROUTE_CAPTURE = { maxTries: 2, intervalMs: 0, attemptTimeoutMs: 30_000 } as const;
-const GUIDE_MAX_POLLS = 3;
-const GUIDE_TRANSACTION_RESERVE_MS = 80_000;
+const GUIDE_MAX_POLLS = 30;
+const GUIDE_ACK_READ_TIMEOUT_MS = 1_000;
+const GUIDE_CONTROL_TIMEOUT_MS = 10_000;
+// HIDE: 10s broadcast + 30 * 1s reads + 29 * 100ms sleeps + 10s cleanup < 55s.
+// Failed SHOW: two such transactions plus one final 10s late-ack cleanup < 120s.
+const GUIDE_HIDE_TRANSACTION_RESERVE_MS = 55_000;
+const GUIDE_SHOW_TRANSACTION_RESERVE_MS = 120_000;
 const DIRECT_SETTLED_CAPTURE_RESERVE_MS = 90_000;
 const INVERSE_RECOVERY_RESERVE_MS = 180_000;
-const INITIAL_GUIDE_DELTA_RESERVE_MS = 2 * DIRECT_SETTLED_CAPTURE_RESERVE_MS + GUIDE_TRANSACTION_RESERVE_MS;
-const REACQUIRED_GUIDE_DELTA_RESERVE_MS = 2 * DIRECT_SETTLED_CAPTURE_RESERVE_MS + 2 * GUIDE_TRANSACTION_RESERVE_MS;
-const FINAL_GUIDE_CLEANUP_RESERVE_MS = 2 * DIRECT_SETTLED_CAPTURE_RESERVE_MS + GUIDE_TRANSACTION_RESERVE_MS;
+const INITIAL_GUIDE_DELTA_RESERVE_MS = 2 * DIRECT_SETTLED_CAPTURE_RESERVE_MS
+  + GUIDE_HIDE_TRANSACTION_RESERVE_MS + GUIDE_SHOW_TRANSACTION_RESERVE_MS;
+const REACQUIRED_GUIDE_DELTA_RESERVE_MS = 2 * DIRECT_SETTLED_CAPTURE_RESERVE_MS
+  + GUIDE_HIDE_TRANSACTION_RESERVE_MS + GUIDE_SHOW_TRANSACTION_RESERVE_MS;
+const FINAL_GUIDE_CLEANUP_RESERVE_MS = 2 * DIRECT_SETTLED_CAPTURE_RESERVE_MS
+  + GUIDE_HIDE_TRANSACTION_RESERVE_MS;
 const NAVIGATION_NON_ROUTE_RESERVE_MS = INITIAL_GUIDE_DELTA_RESERVE_MS + FINAL_GUIDE_CLEANUP_RESERVE_MS;
 const CALIBRATION_NON_ROUTE_RESERVE_MS = INITIAL_GUIDE_DELTA_RESERVE_MS
   + REACQUIRED_GUIDE_DELTA_RESERVE_MS + FINAL_GUIDE_CLEANUP_RESERVE_MS;
-const CALIBRATION_LIMITS = { minSamples: 4, maxRmse: 0.5, maxAbsResidual: 1, minRSquared: 0.95 } as const;
+const CALIBRATION_LIMITS = {
+  minSamples: 4,
+  maxNormalizedRmse: 0.20,
+  maxNormalizedAbsResidual: 0.25,
+  minRSquared: 0.95,
+} as const;
+const CALIBRATION_CLOSURE_LIMITS = { maxPairFraction: 0.25, maxFinalFraction: 0.125 } as const;
 const MIN_ANGULAR_SLOPE_DEG_PER_PX = 0.01;
 const MIN_FORWARD_SLOPE_M_PER_MS = 0.0005;
 const MAX_PROJECTION_RELATIVE_ERROR = 0.12;
-const MAX_ANGULAR_RESTORE_RESIDUAL_DEG = 0.5;
-const MAX_FORWARD_RESTORE_RESIDUAL_M = 0.05;
 const GUIDE_AUTHORED_COLORS: AuthoredColor[] = [
   { name: "outer", color: [...AGENT_BRIDGE_NAVIGATION_GUIDE_COLORS[0]] },
   { name: "inner", color: [...AGENT_BRIDGE_NAVIGATION_GUIDE_COLORS[1]] },
@@ -254,7 +268,7 @@ function calibrationSchedule(): CalibrationStep[] {
 const CALIBRATION_SCHEDULE = calibrationSchedule();
 
 export const NAVIGATION_CALIBRATION_PROFILE = Object.freeze({
-  version: 1,
+  version: 2,
   schedule: Object.freeze(CALIBRATION_SCHEDULE.map((step) => Object.freeze({
     ...step,
     action: Object.freeze({ ...step.action }),
@@ -269,11 +283,8 @@ export const NAVIGATION_CALIBRATION_PROFILE = Object.freeze({
     maxRelativeError: MAX_PROJECTION_RELATIVE_ERROR,
   }),
   closure: Object.freeze({
-    perPairAngularDeg: MAX_ANGULAR_RESTORE_RESIDUAL_DEG,
-    perPairForwardM: MAX_FORWARD_RESTORE_RESIDUAL_M,
-    finalYawDeg: MAX_ANGULAR_RESTORE_RESIDUAL_DEG,
-    finalPitchDeg: MAX_ANGULAR_RESTORE_RESIDUAL_DEG,
-    finalDepthM: MAX_FORWARD_RESTORE_RESIDUAL_M,
+    normalization: "pair=restore-residual/abs(fitted-slope*trial); final=final-residual/min-abs-fitted-trial",
+    ...CALIBRATION_CLOSURE_LIMITS,
   }),
 });
 
@@ -592,10 +603,25 @@ function angularObservation(
   guide: GuideMeasurement,
   calibration: { f: number; cx: number; cy: number },
 ): { yawDeg: number; pitchDeg: number } {
+  const error = principalPointError(guide, calibration);
   return {
-    yawDeg: Math.atan((guide.center.x - calibration.cx) / calibration.f) * 180 / Math.PI,
-    pitchDeg: Math.atan((calibration.cy - guide.center.y) / calibration.f) * 180 / Math.PI,
+    yawDeg: Math.atan(error.x / calibration.f) * 180 / Math.PI,
+    pitchDeg: Math.atan(-error.y / calibration.f) * 180 / Math.PI,
   };
+}
+
+function principalPointError(
+  guide: GuideMeasurement,
+  calibration: { cx: number; cy: number },
+): { x: number; y: number } {
+  return { x: guide.center.x - calibration.cx, y: guide.center.y - calibration.cy };
+}
+
+function controllerGuide(
+  guide: GuideMeasurement | null,
+  calibration: { cx: number; cy: number },
+): GuideMeasurement | null {
+  return guide ? { ...guide, error: principalPointError(guide, calibration) } : null;
 }
 
 function guideRequestFor(
@@ -620,6 +646,8 @@ function guideRequestFor(
     maxPolls: GUIDE_MAX_POLLS,
     pollMs: 100,
     stabilityReads: 2,
+    ackReadTimeoutMs: GUIDE_ACK_READ_TIMEOUT_MS,
+    controlTimeoutMs: GUIDE_CONTROL_TIMEOUT_MS,
   };
 }
 
@@ -748,6 +776,7 @@ function newResult(input: NavigateToSceneTargetInput) {
     achievedClaims: [] as NavigationTargetClaim[],
     stopReason: null as NavigationTargetStopReason | null,
     calibrationStatus: "not_attempted" as NavigationCalibrationStatus,
+    calibrationReasonCode: null as NavigationCalibrationReasonCode | null,
     refusalReason: null as NavigationRefusalReason,
     applicationRuntimeBinding: null as ApplicationRuntimeBinding | null,
     target: {
@@ -759,6 +788,7 @@ function newResult(input: NavigateToSceneTargetInput) {
     qemuBinding: null as BoundQemuWindow | null,
     sceneQueries: [] as Record<string, any>[],
     guideTransitions: {
+      preflightHide: null as AgentBridgeNavigationGuideRequestResult | null,
       show: null as AgentBridgeNavigationGuideRequestResult | null,
       hide: null as AgentBridgeNavigationGuideRequestResult | null,
       transactions: [] as AgentBridgeNavigationGuideRequestResult[],
@@ -869,9 +899,23 @@ function aggregateCalibrationQuality(
   finalClosure?: { yawDeg: number; pitchDeg: number; depthM: number },
 ) {
   const axes = {
-    yaw: calibrationQuality(record.yaw.fit, record.limits),
-    pitch: calibrationQuality(record.pitch.fit, record.limits),
-    forward: calibrationQuality(record.forward.fit, record.limits),
+    yaw: calibrationQuality(record.yaw.samples, record.yaw.fit, record.limits),
+    pitch: calibrationQuality(record.pitch.samples, record.pitch.fit, record.limits),
+    forward: calibrationQuality(record.forward.samples, record.forward.fit, record.limits),
+  };
+  const closureQuality = {
+    yaw: calibrationClosureQuality(
+      record.yaw.samples, record.yaw.fit, closure.yaw,
+      finalClosure?.yawDeg ?? Number.POSITIVE_INFINITY, CALIBRATION_CLOSURE_LIMITS,
+    ),
+    pitch: calibrationClosureQuality(
+      record.pitch.samples, record.pitch.fit, closure.pitch,
+      finalClosure?.pitchDeg ?? Number.POSITIVE_INFINITY, CALIBRATION_CLOSURE_LIMITS,
+    ),
+    forward: calibrationClosureQuality(
+      record.forward.samples, record.forward.fit, closure.forward,
+      finalClosure?.depthM ?? Number.POSITIVE_INFINITY, CALIBRATION_CLOSURE_LIMITS,
+    ),
   };
   const reasons: string[] = [];
   for (const [axis, quality] of Object.entries(axes)) {
@@ -882,23 +926,28 @@ function aggregateCalibrationQuality(
   if (record.forward.fit.slope < MIN_FORWARD_SLOPE_M_PER_MS) reasons.push("forward_slope_too_small");
   const projected = projectionQuality(projections);
   if (projected.status !== "accepted") reasons.push(...projected.reasons);
-  if (closure.yaw.some((value) => Math.abs(value) > MAX_ANGULAR_RESTORE_RESIDUAL_DEG)) reasons.push("yaw_restore_closure");
-  if (closure.pitch.some((value) => Math.abs(value) > MAX_ANGULAR_RESTORE_RESIDUAL_DEG)) reasons.push("pitch_restore_closure");
-  if (closure.forward.some((value) => Math.abs(value) > MAX_FORWARD_RESTORE_RESIDUAL_M)) reasons.push("forward_restore_closure");
-  if (!finalClosure || Math.abs(finalClosure.yawDeg) > MAX_ANGULAR_RESTORE_RESIDUAL_DEG) reasons.push("final_yaw_closure");
-  if (!finalClosure || Math.abs(finalClosure.pitchDeg) > MAX_ANGULAR_RESTORE_RESIDUAL_DEG) reasons.push("final_pitch_closure");
-  if (!finalClosure || Math.abs(finalClosure.depthM) > MAX_FORWARD_RESTORE_RESIDUAL_M) reasons.push("final_depth_closure");
+  if (closureQuality.yaw.reasons.includes("pair_closure") || closureQuality.yaw.reasons.includes("invalid_closure")) reasons.push("yaw_restore_closure");
+  if (closureQuality.pitch.reasons.includes("pair_closure") || closureQuality.pitch.reasons.includes("invalid_closure")) reasons.push("pitch_restore_closure");
+  if (closureQuality.forward.reasons.includes("pair_closure") || closureQuality.forward.reasons.includes("invalid_closure")) reasons.push("forward_restore_closure");
+  if (closureQuality.yaw.reasons.includes("final_closure") || closureQuality.yaw.reasons.includes("invalid_closure")) reasons.push("final_yaw_closure");
+  if (closureQuality.pitch.reasons.includes("final_closure") || closureQuality.pitch.reasons.includes("invalid_closure")) reasons.push("final_pitch_closure");
+  if (closureQuality.forward.reasons.includes("final_closure") || closureQuality.forward.reasons.includes("invalid_closure")) reasons.push("final_depth_closure");
   return {
     status: reasons.length ? "rejected" as const : "accepted" as const,
     reasons,
     axes,
     projection: projected,
+    closure: closureQuality,
   };
 }
 
 type StoredCalibrationValidation =
   | { status: "valid"; envelope: NavigationCalibrationRegistryEnvelope; record: NavigationCalibrationRecord }
-  | { status: "stale" | "quality_rejected"; detail: string };
+  | {
+      status: "stale" | "quality_rejected";
+      detail: string;
+      reasonCode?: NavigationCalibrationReasonCode;
+    };
 
 function exactKeys(value: unknown, keys: string[]): boolean {
   return !!value && typeof value === "object" && !Array.isArray(value)
@@ -907,11 +956,6 @@ function exactKeys(value: unknown, keys: string[]): boolean {
 
 function canonicalEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
-}
-
-function finiteClosure(values: unknown, maximum: number): boolean {
-  return Array.isArray(values) && values.length === 4
-    && values.every((value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= maximum);
 }
 
 async function validateStoredCalibrationReceipt(
@@ -955,6 +999,16 @@ async function validateStoredCalibrationReceipt(
     || receipt.calibration.cameraCalibrationProof?.sha256 !== context.cameraCalibrationSha256) {
     return { status: "stale", detail: "calibration receipt is orphaned from its registry/context record" };
   }
+  const observedProfileVersion = receipt.calibration.profile?.version;
+  const observedRecordVersion = candidate.record?.version;
+  if (observedProfileVersion !== NAVIGATION_CALIBRATION_PROFILE.version
+    || observedRecordVersion !== NAVIGATION_CALIBRATION_PROFILE.version) {
+    return {
+      status: "quality_rejected",
+      reasonCode: "calibration_policy_version_mismatch",
+      detail: `calibration_policy_version_mismatch: observed profile version ${String(observedProfileVersion)} and record version ${String(observedRecordVersion)}; required profile/record version ${NAVIGATION_CALIBRATION_PROFILE.version}`,
+    };
+  }
   if (!canonicalEqual(receipt.calibration.profile, NAVIGATION_CALIBRATION_PROFILE)
     || !canonicalEqual(candidate.record.limits, CALIBRATION_LIMITS)) {
     return { status: "quality_rejected", detail: "calibration policy does not match the code-owned profile" };
@@ -973,9 +1027,14 @@ async function validateStoredCalibrationReceipt(
     return { status: "quality_rejected", detail: "calibration slope is below the code-owned minimum" };
   }
   const quality = receipt.calibration.quality;
+  const recomputedAxes = {
+    yaw: calibrationQuality(candidate.record.yaw.samples, candidate.record.yaw.fit, candidate.record.limits),
+    pitch: calibrationQuality(candidate.record.pitch.samples, candidate.record.pitch.fit, candidate.record.limits),
+    forward: calibrationQuality(candidate.record.forward.samples, candidate.record.forward.fit, candidate.record.limits),
+  };
   if (quality?.status !== "accepted" || !Array.isArray(quality.reasons) || quality.reasons.length !== 0
-    || [quality.axes?.yaw, quality.axes?.pitch, quality.axes?.forward]
-      .some((axis) => axis?.status !== "accepted" || !Array.isArray(axis.reasons) || axis.reasons.length !== 0)) {
+    || Object.values(recomputedAxes).some((axis) => axis.status !== "accepted")
+    || !canonicalEqual(quality.axes, recomputedAxes)) {
     return { status: "quality_rejected", detail: "calibration receipt fit quality was not accepted" };
   }
   const projected = receipt.calibration.projectionQuality;
@@ -988,13 +1047,22 @@ async function validateStoredCalibrationReceipt(
   }
   const closure = receipt.calibration.restoreClosure;
   const finalClosure = receipt.calibration.finalClosure;
-  if (!finiteClosure(closure?.yaw, MAX_ANGULAR_RESTORE_RESIDUAL_DEG)
-    || !finiteClosure(closure?.pitch, MAX_ANGULAR_RESTORE_RESIDUAL_DEG)
-    || !finiteClosure(closure?.forward, MAX_FORWARD_RESTORE_RESIDUAL_M)
-    || !exactKeys(finalClosure, ["yawDeg", "pitchDeg", "depthM"])
-    || !Number.isFinite(finalClosure.yawDeg) || Math.abs(finalClosure.yawDeg) > MAX_ANGULAR_RESTORE_RESIDUAL_DEG
-    || !Number.isFinite(finalClosure.pitchDeg) || Math.abs(finalClosure.pitchDeg) > MAX_ANGULAR_RESTORE_RESIDUAL_DEG
-    || !Number.isFinite(finalClosure.depthM) || Math.abs(finalClosure.depthM) > MAX_FORWARD_RESTORE_RESIDUAL_M) {
+  const recomputedClosure = exactKeys(finalClosure, ["yawDeg", "pitchDeg", "depthM"]) ? {
+    yaw: calibrationClosureQuality(
+      candidate.record.yaw.samples, candidate.record.yaw.fit, closure?.yaw,
+      finalClosure.yawDeg, CALIBRATION_CLOSURE_LIMITS,
+    ),
+    pitch: calibrationClosureQuality(
+      candidate.record.pitch.samples, candidate.record.pitch.fit, closure?.pitch,
+      finalClosure.pitchDeg, CALIBRATION_CLOSURE_LIMITS,
+    ),
+    forward: calibrationClosureQuality(
+      candidate.record.forward.samples, candidate.record.forward.fit, closure?.forward,
+      finalClosure.depthM, CALIBRATION_CLOSURE_LIMITS,
+    ),
+  } : null;
+  if (!recomputedClosure || Object.values(recomputedClosure).some((axis) => axis.status !== "accepted")
+    || !canonicalEqual(receipt.calibration.restoreClosureQuality, recomputedClosure)) {
     return { status: "quality_rejected", detail: "calibration restore closure exceeds the code-owned profile" };
   }
   return { status: "valid", envelope: candidate, record: candidate.record };
@@ -1176,7 +1244,7 @@ export async function executeNavigateToSceneTarget(
         result.refusalReason = "insufficient_budget";
         throw new NavigationTargetStop(
           "budget_exhausted",
-          "navigation budget cannot admit guide-off/SHOW/on, one settled route waypoint, and final guide cleanup",
+          "navigation budget cannot admit preflight HIDE, guide-off/SHOW/on, one settled route waypoint, and final guide cleanup",
         );
       }
     }
@@ -1185,6 +1253,18 @@ export async function executeNavigateToSceneTarget(
       || path.resolve(session.absoluteRoot) !== path.resolve(prospective.absoluteRoot)) {
       throw new NavigationTargetStop("binding_failed", "reserved artifact session does not match the requested identity");
     }
+
+    result.cleanup.hideTransactions++;
+    const preflightHide = await deps.requestGuide(guideRequestFor(input, scene!, deps.randomId(), "hide"));
+    result.guideTransitions.preflightHide = preflightHide;
+    result.guideTransitions.transactions.push(preflightHide);
+    if (!preflightHide.ok || !preflightHide.cleanupProven || preflightHide.terminalGuideState !== "hidden") {
+      throw new NavigationTargetStop(
+        "guide_not_acquired",
+        `navigation-guide capability preflight failed: ${preflightHide.ok ? "HIDE lacked exact hidden cleanup proof" : preflightHide.detail}`,
+      );
+    }
+    hiddenProof = preflightHide;
 
     const guideOff = await capture("guide-off");
     result.captures.guideOff = guideOff;
@@ -1225,6 +1305,7 @@ export async function executeNavigateToSceneTarget(
     const context = calibrationContext(scene!, qemu, guideOn, cameraProof.proof);
     const contextKey = calibrationContextKey(context);
     let approachCalibration: { status: "valid" | "invalid" } = { status: "invalid" };
+    let approachCalibrationDetail: string | null = null;
     let storedCalibration: NavigationCalibrationRegistryEnvelope | null = null;
     let acceptedCalibrationRecord: NavigationCalibrationRecord | null = null;
     if (input.action === "navigate") {
@@ -1247,7 +1328,9 @@ export async function executeNavigateToSceneTarget(
           approachCalibration = { status: "valid" };
         } else {
           result.calibrationStatus = validation.status;
+          result.calibrationReasonCode = validation.reasonCode ?? null;
           result.refusalReason = validation.status;
+          approachCalibrationDetail = validation.detail;
         }
       }
       if (acceptedCalibrationRecord) {
@@ -1497,7 +1580,7 @@ export async function executeNavigateToSceneTarget(
         depthM: baseline.depthM - originalBaseline.depthM,
       } : { yawDeg: Number.POSITIVE_INFINITY, pitchDeg: Number.POSITIVE_INFINITY, depthM: Number.POSITIVE_INFINITY };
       const record: NavigationCalibrationRecord = {
-        version: 1,
+        version: 2,
         contextKey,
         yaw: { samples: samples.yaw, fit: fitThroughOrigin(samples.yaw) },
         pitch: { samples: samples.pitch, fit: fitThroughOrigin(samples.pitch) },
@@ -1512,6 +1595,7 @@ export async function executeNavigateToSceneTarget(
         quality: { status: quality.status, reasons: quality.reasons, axes: quality.axes },
         projectionQuality: quality.projection,
         restoreClosure: closure,
+        restoreClosureQuality: quality.closure,
         finalClosure,
         guideDelta: {
           initialOffSha256: guideOff.sha256,
@@ -1532,12 +1616,13 @@ export async function executeNavigateToSceneTarget(
       let approachProven = false;
       let pendingApproach: { areaFraction: number; depthM: number } | null = null;
       while (true) {
-        const intent = decideNavigationStep(controllerState, { guide: measured.guide }, approachCalibration);
+        const observedGuide = controllerGuide(measured.guide, cameraProof.proof.calibration);
+        const intent = decideNavigationStep(controllerState, { guide: observedGuide }, approachCalibration);
         for (const claim of intent.achievedClaims) {
           if (claim !== "free_camera_approached" || approachProven) claims.add(claim);
         }
-        if (measured.guide) {
-          controllerState.lastError = measured.guide.error;
+        if (observedGuide) {
+          controllerState.lastError = observedGuide.error;
         }
         let action: RelativeCameraAction;
         let actionAudit: NavigationControlAudit;
@@ -1579,6 +1664,7 @@ export async function executeNavigateToSceneTarget(
           const replay = await validateStoredCalibrationReceipt(storedCalibration, context, deps);
           if (replay.status !== "valid") {
             result.calibrationStatus = replay.status;
+            result.calibrationReasonCode = replay.reasonCode ?? null;
             result.refusalReason = replay.status;
             approachCalibration = { status: "invalid" };
             throw new NavigationTargetStop("unsupported_backend", `approach calibration became ${replay.status}: ${replay.detail}`);
@@ -1600,7 +1686,10 @@ export async function executeNavigateToSceneTarget(
           action = { kind: "key_hold", key: "w", holdMs: appliedHoldMs };
           actionAudit = auditAction({ key: "w", holdMs: rawHoldMs }, 1, action);
         } else if (intent.kind === "calibration_required") {
-          throw new NavigationTargetStop("unsupported_backend", "approach is disabled until exact-context calibration is valid");
+          throw new NavigationTargetStop(
+            "unsupported_backend",
+            approachCalibrationDetail ?? "approach is disabled until exact-context calibration is valid",
+          );
         } else if (intent.kind === "requery") {
           const refreshed = await queryAndSelectScene(input, deps, scene!);
           rememberScene(refreshed);

@@ -47,6 +47,8 @@ export interface AgentBridgeNavigationGuideRequestInput {
   maxPolls?: number;
   pollMs?: number;
   stabilityReads?: number;
+  ackReadTimeoutMs?: number;
+  controlTimeoutMs?: number;
 }
 
 export interface AgentBridgeNavigationGuideAck {
@@ -162,9 +164,17 @@ function navigationGuideInputError(adb: string, input: AgentBridgeNavigationGuid
   const maxPolls = input.maxPolls ?? 30;
   const pollMs = input.pollMs ?? 100;
   const stabilityReads = input.stabilityReads ?? 2;
+  const ackReadTimeoutMs = input.ackReadTimeoutMs ?? 15_000;
+  const controlTimeoutMs = input.controlTimeoutMs ?? 15_000;
   if (!Number.isInteger(maxPolls) || maxPolls < 1 || maxPolls > 120) return "maxPolls must be an integer from 1 through 120";
   if (!Number.isInteger(pollMs) || pollMs < 10 || pollMs > 60_000) return "pollMs must be an integer from 10 through 60000";
   if (!Number.isInteger(stabilityReads) || stabilityReads < 2 || stabilityReads > 8) return "stabilityReads must be an integer from 2 through 8";
+  if (!Number.isInteger(ackReadTimeoutMs) || ackReadTimeoutMs < 250 || ackReadTimeoutMs > 15_000) {
+    return "ackReadTimeoutMs must be an integer from 250 through 15000";
+  }
+  if (!Number.isInteger(controlTimeoutMs) || controlTimeoutMs < 1_000 || controlTimeoutMs > 15_000) {
+    return "controlTimeoutMs must be an integer from 1000 through 15000";
+  }
   return null;
 }
 
@@ -248,6 +258,8 @@ async function executeNavigationGuideTransaction(
   const maxPolls = input.maxPolls ?? 30;
   const pollMs = input.pollMs ?? 100;
   const stabilityReads = input.stabilityReads ?? 2;
+  const ackReadTimeoutMs = input.ackReadTimeoutMs ?? 15_000;
+  const controlTimeoutMs = input.controlTimeoutMs ?? 15_000;
   const relativePath = navigationGuideRelativePath(input.requestId);
 
   const broadcastStartedAt = stamp();
@@ -269,7 +281,7 @@ async function executeNavigationGuideTransaction(
     "--es", "color1", input.colors[1].join(","),
     "--ef", "widthM", String(input.widthM),
     "--ef", "heightM", String(input.heightM),
-  ], { timeoutMs: 15_000, maxOutputBytes: 64 * 1024 });
+  ], { timeoutMs: controlTimeoutMs, maxOutputBytes: 64 * 1024 });
   const broadcastApplied = broadcast.code === 0 && !broadcast.timedOut;
   actionReceipts.push({
     action: actions.broadcast,
@@ -300,7 +312,7 @@ async function executeNavigationGuideTransaction(
       const pulled = await deps.runBytes(adb, [
         "-s", input.serial, "exec-out", "run-as", input.packageName,
         "sh", "-c", 'if test -f "$1"; then printf "\\001"; cat "$1"; else printf "\\000"; fi', "pico-mcp", relativePath,
-      ], { timeoutMs: 15_000, maxOutputBytes: 1024 * 1024 });
+      ], { timeoutMs: ackReadTimeoutMs, maxOutputBytes: 1024 * 1024 });
       const existenceByte = pulled.stdout[0];
       const filePresent = existenceByte === 0x01;
       const fileAbsent = existenceByte === 0x00 && pulled.stdout.length === 1;
@@ -371,7 +383,7 @@ async function executeNavigationGuideTransaction(
   const cleanup = await deps.runText(
     adb,
     ["-s", input.serial, "shell", "run-as", input.packageName, "rm", "-f", relativePath],
-    { timeoutMs: 15_000, maxOutputBytes: 64 * 1024 },
+    { timeoutMs: controlTimeoutMs, maxOutputBytes: 64 * 1024 },
   );
   const cleanupApplied = cleanup.code === 0 && !cleanup.timedOut;
   actionReceipts.push({
@@ -478,7 +490,7 @@ export async function requestAgentBridgeNavigationGuide(
   const lateCleanup = await deps.runText(
     adb,
     ["-s", input.serial, "shell", "run-as", input.packageName, "rm", "-f", originalRelativePath],
-    { timeoutMs: 15_000, maxOutputBytes: 64 * 1024 },
+    { timeoutMs: input.controlTimeoutMs ?? 15_000, maxOutputBytes: 64 * 1024 },
   );
   const lateCleanupApplied = lateCleanup.code === 0 && !lateCleanup.timedOut;
   actionReceipts.push({
