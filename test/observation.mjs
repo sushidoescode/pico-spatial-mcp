@@ -9,6 +9,7 @@ import {
   executeCaptureSettled,
   executeLiveCaptureSettled,
   SETTLE_COMPARISON,
+  SETTLE_MODES,
   sha256Bytes,
 } from "../dist/observation.js";
 import {
@@ -43,6 +44,129 @@ function settleDeps(sequence) {
     },
   };
 }
+
+function timedSettleDeps(sequence, { startMs = 0, captureCostMs = 0, sleepCostMs = 0 } = {}) {
+  const captures = [];
+  const sleeps = [];
+  let index = 0;
+  let nowMs = startMs;
+  return {
+    captures,
+    sleeps,
+    deps: {
+      monotonicNs: () => BigInt(nowMs) * 1_000_000n,
+      capture: async (timeoutMs) => {
+        captures.push(timeoutMs);
+        nowMs += captureCostMs;
+        const next = sequence[index++];
+        if (next instanceof Error) throw next;
+        return next;
+      },
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        nowMs += sleepCostMs ?? ms;
+      },
+      hash: sha256Bytes,
+    },
+  };
+}
+
+test("captureSettledFrames defaults to stable mode and records its byte-exact trace", async () => {
+  // Catches a production mutation that changes the no-prior compatibility default or drops trace evidence.
+  const fake = timedSettleDeps([frame("same"), frame("same")]);
+  const result = await captureSettledFrames(
+    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, deadlineMs: 100, attemptTimeoutMs: 40 },
+    fake.deps,
+  );
+  assert.deepEqual(SETTLE_MODES, ["stable", "transition_then_stable"]);
+  assert.equal(result.status, "settled");
+  assert.equal(result.mode, "stable");
+  assert.equal(result.timeoutPhase, null);
+  assert.equal(result.timeoutCause, null);
+  assert.deepEqual(result.trace.map((entry) => entry.relation), ["candidate", "stable"]);
+  assert.deepEqual(fake.captures, [40, 40]);
+});
+
+test("captureSettledFrames rejects explicit transition mode without a prior SHA before capture", async () => {
+  // Catches a production mutation that accepts stale prior pixels without an identity to reject them against.
+  const fake = timedSettleDeps([frame("must-not-capture")]);
+  const result = await captureSettledFrames(
+    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, mode: "transition_then_stable", deadlineMs: 100 },
+    fake.deps,
+  );
+  assert.equal(result.status, "capture_failed");
+  assert.equal(result.mode, "transition_then_stable");
+  assert.match(result.detail, /transition_then_stable.*priorSha256/);
+  assert.deepEqual(fake.captures, []);
+});
+
+test("captureSettledFrames requires a changed frame followed by its identical successor", async () => {
+  // Catches a production mutation that accepts one changed frame as settled.
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const fake = timedSettleDeps([frame("prior"), frame("changed"), frame("changed")]);
+  const result = await captureSettledFrames(
+    { maxTries: 3, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 100 },
+    fake.deps,
+  );
+  assert.equal(result.status, "settled");
+  assert.equal(result.mode, "transition_then_stable");
+  assert.deepEqual(result.trace.map((entry) => entry.relation), ["prior", "candidate", "stable"]);
+  assert.equal(result.attempts, 3);
+});
+
+test("captureSettledFrames clears a changed candidate when pixels return to the prior frame", async () => {
+  // Catches a production mutation that retains a stale candidate across a return to prior pixels.
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const fake = timedSettleDeps([frame("changed"), frame("prior"), frame("changed"), frame("changed")]);
+  const result = await captureSettledFrames(
+    { maxTries: 4, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 100 },
+    fake.deps,
+  );
+  assert.equal(result.status, "settled");
+  assert.equal(result.attempts, 4);
+  assert.deepEqual(result.trace.map((entry) => entry.relation), ["candidate", "prior", "candidate", "stable"]);
+});
+
+test("captureSettledFrames distinguishes stability exhaustion from transition exhaustion", async () => {
+  // Catches a production mutation that conflates the timeout phase after a transition has occurred.
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const fake = timedSettleDeps([frame("prior"), frame("changed")]);
+  const result = await captureSettledFrames(
+    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 100 },
+    fake.deps,
+  );
+  assert.equal(result.status, "timeout");
+  assert.equal(result.timeoutPhase, "awaiting_stability");
+  assert.equal(result.timeoutCause, "max_tries");
+  assert.equal(result.frame.bytes.toString(), "changed");
+});
+
+test("captureSettledFrames stops at its monotonic deadline before another capture", async () => {
+  // Catches a production mutation that starts capture work after the configured deadline.
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const fake = timedSettleDeps([frame("prior"), frame("must-not-capture")], { sleepCostMs: 10 });
+  const result = await captureSettledFrames(
+    { maxTries: 3, intervalMs: 99, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 10, attemptTimeoutMs: 50 },
+    fake.deps,
+  );
+  assert.equal(result.status, "timeout");
+  assert.equal(result.timeoutPhase, "awaiting_transition");
+  assert.equal(result.timeoutCause, "deadline");
+  assert.deepEqual(fake.captures, [10]);
+  assert.deepEqual(fake.sleeps, [10]);
+});
+
+test("captureSettledFrames clamps every capture timeout to its remaining deadline", async () => {
+  // Catches a production mutation that lets one capture overrun the shared deadline budget.
+  const fake = timedSettleDeps([frame("a"), frame("b"), frame("b")], { captureCostMs: 10, sleepCostMs: 5 });
+  const result = await captureSettledFrames(
+    { maxTries: 3, intervalMs: 5, comparison: SETTLE_COMPARISON, deadlineMs: 50, attemptTimeoutMs: 100 },
+    fake.deps,
+  );
+  assert.equal(result.status, "settled");
+  assert.deepEqual(fake.captures, [50, 35, 20]);
+  assert.deepEqual(fake.sleeps, [5, 5]);
+});
 
 test("captureSettledFrames succeeds on the first identical pair", async () => {
   const a = frame("same");
@@ -154,8 +278,8 @@ function executionDeps({
       ...identity,
       ...(identities?.[Math.min(identityIndex++, identities.length - 1)] ?? {}),
     }),
-    capture: async () => {
-      onCapture?.();
+    capture: async (_serial, timeoutMs) => {
+      onCapture?.(timeoutMs);
       const next = sequence[index++];
       if (next instanceof Error) throw next;
       return next;
@@ -221,6 +345,65 @@ test("executeCaptureSettled threads the required prior SHA into internal settlem
   assert.equal(receipt.attempts, 4);
   assert.equal(receipt.sha256, "5edd1832df25e2f1a72585c0ee55c1e585e7f4902eb1d15f7abf1c71c1b296ae");
   assert.equal(fs.readFileSync(outPath).toString(), "moved");
+});
+
+test("executeCaptureSettled returns transition timeout evidence and the diagnostic last frame", async (t) => {
+  // Catches a production mutation that collapses transition exhaustion into the old generic timeout receipt.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-observation-transition-receipt-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const captureTimeouts = [];
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const { receipt } = await executeCaptureSettled(
+    {
+      serial: "emulator-5554",
+      outPath: path.join(scratch, "prior.png"),
+      maxTries: 2,
+      intervalMs: 0,
+      comparison: SETTLE_COMPARISON,
+      priorSha256,
+      deadlineMs: 100,
+      attemptTimeoutMs: 17,
+    },
+    executionDeps({ sequence: [frame("prior"), frame("prior")], onCapture: (timeoutMs) => captureTimeouts.push(timeoutMs) }),
+  );
+  assert.equal(receipt.status, "timeout");
+  assert.equal(receipt.mode, "transition_then_stable");
+  assert.equal(receipt.deadlineMs, 100);
+  assert.equal(receipt.attemptTimeoutMs, 17);
+  assert.deepEqual(receipt.trace.map((entry) => entry.relation), ["prior", "prior"]);
+  assert.equal(receipt.timeoutPhase, "awaiting_transition");
+  assert.equal(receipt.timeoutCause, "max_tries");
+  assert.equal(receipt.error.code, "transition_timeout");
+  assert.equal(receipt.lastValidCaptureRef.sha256, priorSha256);
+  assert.equal(receipt.evidenceCeiling, "structural");
+  assert.equal(receipt.lookRequired, true);
+  assert.deepEqual(captureTimeouts, [17, 17]);
+});
+
+test("executeCaptureSettled returns stability timeout evidence after the transition", async (t) => {
+  // Catches a production mutation that conflates the stability phase with transition timeout handling.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-observation-stability-receipt-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const { receipt } = await executeCaptureSettled(
+    {
+      serial: "emulator-5554",
+      outPath: path.join(scratch, "changed.png"),
+      maxTries: 2,
+      intervalMs: 0,
+      comparison: SETTLE_COMPARISON,
+      mode: "transition_then_stable",
+      priorSha256,
+      deadlineMs: 100,
+      attemptTimeoutMs: 17,
+    },
+    executionDeps({ sequence: [frame("prior"), frame("changed")] }),
+  );
+  assert.equal(receipt.status, "timeout");
+  assert.equal(receipt.timeoutPhase, "awaiting_stability");
+  assert.equal(receipt.timeoutCause, "max_tries");
+  assert.equal(receipt.error.code, "stability_timeout");
+  assert.equal(receipt.lastValidCaptureRef.sha256, sha256Bytes(Buffer.from("changed")));
 });
 
 test("executeCaptureSettled describes an all-prior timeout without denying the observed stable pairs", async (t) => {

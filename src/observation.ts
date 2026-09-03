@@ -12,6 +12,14 @@ import { expandHome, run, runBinary, sleep } from "./util.js";
 
 export const SETTLE_COMPARISON = "byte_exact" as const;
 export const CAPTURE_SOURCE = "adb-exec-out-screencap" as const;
+export const SETTLE_MODES = ["stable", "transition_then_stable"] as const;
+export type SettleMode = typeof SETTLE_MODES[number];
+export type SettleTimeoutPhase = "awaiting_transition" | "awaiting_stability";
+export type SettleTimeoutCause = "max_tries" | "deadline";
+export type SettleTraceRelation = "prior" | "candidate" | "stable";
+
+const NS_PER_MS = 1_000_000n;
+const DEFAULT_ATTEMPT_TIMEOUT_MS = 30_000;
 
 export interface CapturedFrame {
   bytes: Buffer;
@@ -25,15 +33,36 @@ export interface SettlePolicy {
   intervalMs: number;
   comparison: typeof SETTLE_COMPARISON;
   priorSha256?: string;
+  mode?: SettleMode;
+  deadlineMs?: number;
+  attemptTimeoutMs?: number;
 }
 
 export interface SettleDependencies {
-  capture: () => Promise<CapturedFrame>;
+  capture: (timeoutMs?: number) => Promise<CapturedFrame>;
   sleep: (ms: number) => Promise<void>;
   hash: (bytes: Buffer) => string;
+  monotonicNs?: () => bigint;
 }
 
-export type SettledFrameResult =
+export interface SettleTraceEntry {
+  attempt: number;
+  capturedAtMonotonicNs: string;
+  sha256: string;
+  relation: SettleTraceRelation;
+}
+
+interface SettledFrameBase {
+  mode: SettleMode;
+  deadlineMs: number;
+  attemptTimeoutMs: number;
+  deadlineMonotonicNs: string;
+  trace: SettleTraceEntry[];
+  timeoutPhase: SettleTimeoutPhase | null;
+  timeoutCause: SettleTimeoutCause | null;
+}
+
+export type SettledFrameResult = SettledFrameBase & (
   | {
       status: "settled";
       attempts: number;
@@ -46,8 +75,8 @@ export type SettledFrameResult =
       status: "timeout";
       attempts: number;
       settlementSatisfied: false;
-      frame: CapturedFrame;
-      sha256: string;
+      frame: CapturedFrame | null;
+      sha256: string | null;
       stablePair: null;
     }
   | {
@@ -58,7 +87,45 @@ export type SettledFrameResult =
       sha256: string | null;
       stablePair: null;
       detail: string;
-    };
+    }
+);
+
+interface NormalizedSettlePolicy {
+  mode: SettleMode;
+  priorSha256?: string;
+  deadlineMs: number;
+  attemptTimeoutMs: number;
+}
+
+function validPositiveSafeInteger(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
+function resolvedDeadlineMs(policy: SettlePolicy, attemptTimeoutMs: number): number {
+  if (policy.deadlineMs !== undefined) return policy.deadlineMs;
+  const captures = Math.max(1, policy.maxTries);
+  const sleeps = Math.max(0, policy.maxTries - 1);
+  return captures * attemptTimeoutMs + sleeps * Math.max(0, policy.intervalMs);
+}
+
+function normalizeSettlePolicy(policy: SettlePolicy): { value: NormalizedSettlePolicy } | { error: string; mode: SettleMode } {
+  const mode = policy.mode ?? (policy.priorSha256 === undefined ? "stable" : "transition_then_stable");
+  if (mode === "stable" && policy.priorSha256 !== undefined) {
+    return { mode, error: "stable mode does not accept priorSha256; omit mode to retain prior-only transition compatibility" };
+  }
+  if (mode === "transition_then_stable" && !/^[0-9a-f]{64}$/.test(policy.priorSha256 ?? "")) {
+    return { mode, error: "transition_then_stable mode requires priorSha256 to be exactly 64 lowercase hexadecimal characters" };
+  }
+  const attemptTimeoutMs = policy.attemptTimeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS;
+  if (!validPositiveSafeInteger(attemptTimeoutMs)) {
+    return { mode, error: "attemptTimeoutMs must be a positive safe integer" };
+  }
+  const deadlineMs = resolvedDeadlineMs(policy, attemptTimeoutMs);
+  if (!validPositiveSafeInteger(deadlineMs)) {
+    return { mode, error: "deadlineMs must be a positive safe integer" };
+  }
+  return { value: { mode, priorSha256: policy.priorSha256, deadlineMs, attemptTimeoutMs } };
+}
 
 /**
  * Capture until two consecutive frame byte streams are identical. When priorSha256 is supplied,
@@ -71,24 +138,63 @@ export async function captureSettledFrames(
   policy: SettlePolicy,
   deps: SettleDependencies,
 ): Promise<SettledFrameResult> {
-  if (policy.priorSha256 !== undefined && !/^[0-9a-f]{64}$/.test(policy.priorSha256)) {
+  const normalized = normalizeSettlePolicy(policy);
+  const monotonicNs = deps.monotonicNs ?? (() => process.hrtime.bigint());
+  const startedAtNs = monotonicNs();
+  const deadlineMs = "value" in normalized ? normalized.value.deadlineMs : (policy.deadlineMs ?? 0);
+  const attemptTimeoutMs = "value" in normalized ? normalized.value.attemptTimeoutMs : (policy.attemptTimeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS);
+  const mode = "value" in normalized ? normalized.value.mode : normalized.mode;
+  const deadlineNs = startedAtNs + BigInt(Math.max(0, deadlineMs)) * NS_PER_MS;
+  const trace: SettleTraceEntry[] = [];
+  const base = (timeoutPhase: SettleTimeoutPhase | null, timeoutCause: SettleTimeoutCause | null): SettledFrameBase => ({
+    mode,
+    deadlineMs,
+    attemptTimeoutMs,
+    deadlineMonotonicNs: deadlineNs.toString(),
+    trace,
+    timeoutPhase,
+    timeoutCause,
+  });
+  if ("error" in normalized) {
     return {
+      ...base(null, null),
       status: "capture_failed",
       attempts: 0,
       settlementSatisfied: false,
       frame: null,
       sha256: null,
       stablePair: null,
-      detail: "priorSha256 must be exactly 64 lowercase hexadecimal characters",
+      detail: normalized.error,
     };
   }
   let previous: { frame: CapturedFrame; sha256: string } | null = null;
+  let candidate: { frame: CapturedFrame; sha256: string } | null = null;
+  const timeoutPhase = (): SettleTimeoutPhase => (
+    normalized.value.mode === "transition_then_stable" && candidate === null
+      ? "awaiting_transition"
+      : "awaiting_stability"
+  );
+  const timeout = (cause: SettleTimeoutCause): SettledFrameResult => ({
+    ...base(timeoutPhase(), cause),
+    status: "timeout",
+    attempts: trace.length,
+    settlementSatisfied: false,
+    frame: previous?.frame ?? null,
+    sha256: previous?.sha256 ?? null,
+    stablePair: null,
+  });
   for (let attempt = 1; attempt <= policy.maxTries; attempt++) {
+    const remainingNs = deadlineNs - monotonicNs();
+    if (remainingNs <= 0n) return timeout("deadline");
+    const remainingMs = Number(remainingNs / NS_PER_MS);
+    if (remainingMs <= 0) return timeout("deadline");
+    const captureTimeoutMs = Math.min(normalized.value.attemptTimeoutMs, remainingMs);
     let frame: CapturedFrame;
     try {
-      frame = await deps.capture();
+      frame = await deps.capture(captureTimeoutMs);
     } catch (error: any) {
       return {
+        ...base(timeoutPhase(), null),
         status: "capture_failed",
         attempts: attempt,
         settlementSatisfied: false,
@@ -99,42 +205,38 @@ export async function captureSettledFrames(
       };
     }
     const sha256 = deps.hash(frame.bytes);
-    if (
-      previous
-      && frame.bytes.equals(previous.frame.bytes)
-      && sha256 !== policy.priorSha256
-    ) {
+    let relation: SettleTraceRelation;
+    if (normalized.value.mode === "transition_then_stable" && sha256 === normalized.value.priorSha256) {
+      candidate = null;
+      relation = "prior";
+    } else if (candidate && frame.bytes.equals(candidate.frame.bytes) && sha256 === candidate.sha256) {
+      relation = "stable";
+    } else {
+      candidate = { frame, sha256 };
+      relation = "candidate";
+    }
+    trace.push({ attempt, capturedAtMonotonicNs: monotonicNs().toString(), sha256, relation });
+    if (relation === "stable") {
       return {
+        ...base(null, null),
         status: "settled",
         attempts: attempt,
         settlementSatisfied: true,
         frame,
         sha256,
-        stablePair: [previous.sha256, sha256],
+        stablePair: [sha256, sha256],
       };
     }
     previous = { frame, sha256 };
-    if (attempt < policy.maxTries) await deps.sleep(policy.intervalMs);
+    if (attempt < policy.maxTries && policy.intervalMs > 0) {
+      const sleepRemainingNs = deadlineNs - monotonicNs();
+      if (sleepRemainingNs <= 0n) return timeout("deadline");
+      const sleepRemainingMs = Number(sleepRemainingNs / NS_PER_MS);
+      if (sleepRemainingMs <= 0) return timeout("deadline");
+      await deps.sleep(Math.min(policy.intervalMs, sleepRemainingMs));
+    }
   }
-  if (!previous) {
-    return {
-      status: "capture_failed",
-      attempts: 0,
-      settlementSatisfied: false,
-      frame: null,
-      sha256: null,
-      stablePair: null,
-      detail: "capture budget contained no attempts",
-    };
-  }
-  return {
-    status: "timeout",
-    attempts: policy.maxTries,
-    settlementSatisfied: false,
-    frame: previous.frame,
-    sha256: previous.sha256,
-    stablePair: null,
-  };
+  return timeout("max_tries");
 }
 
 export interface CaptureLiveIdentity extends ProbedDeviceIdentity {
@@ -170,6 +272,13 @@ export interface CaptureSettledReceipt {
   settlementSatisfied: boolean;
   comparison: typeof SETTLE_COMPARISON;
   stablePair: [string, string] | null;
+  mode: SettleMode;
+  deadlineMs: number;
+  attemptTimeoutMs: number;
+  deadlineMonotonicNs: string | null;
+  trace: SettleTraceEntry[];
+  timeoutPhase: SettleTimeoutPhase | null;
+  timeoutCause: SettleTimeoutCause | null;
   captureRuntimeBinding: CaptureRuntimeBinding | null;
   captureRef: CaptureRef | null;
   lastValidCaptureRef: CaptureRef | null;
@@ -186,13 +295,16 @@ export interface CaptureSettledInput {
   intervalMs: number;
   comparison: typeof SETTLE_COMPARISON;
   priorSha256?: string;
+  mode?: SettleMode;
+  deadlineMs?: number;
+  attemptTimeoutMs?: number;
 }
 
 export interface CaptureSettledDependencies {
   monotonicNs: () => bigint;
   listOnlineSerials: () => Promise<string[]>;
   probeIdentity: (serial: string) => Promise<CaptureLiveIdentity>;
-  capture: (serial: string) => Promise<CapturedFrame>;
+  capture: (serial: string, timeoutMs?: number) => Promise<CapturedFrame>;
   sleep: (ms: number) => Promise<void>;
   hash: (bytes: Buffer) => string;
   writeFrame: (absolutePath: string, bytes: Buffer) => void;
@@ -356,6 +468,13 @@ function emptyReceipt(
     settlementSatisfied: false,
     comparison: SETTLE_COMPARISON,
     stablePair: null,
+    mode: "stable",
+    deadlineMs: 0,
+    attemptTimeoutMs: 0,
+    deadlineMonotonicNs: null,
+    trace: [],
+    timeoutPhase: null,
+    timeoutCause: null,
     captureRuntimeBinding: binding,
     captureRef: null,
     lastValidCaptureRef: null,
@@ -461,8 +580,16 @@ export async function executeCaptureSettled(
       intervalMs: input.intervalMs,
       comparison: input.comparison,
       priorSha256: input.priorSha256,
+      mode: input.mode,
+      deadlineMs: input.deadlineMs,
+      attemptTimeoutMs: input.attemptTimeoutMs,
     },
-    { capture: () => deps.capture(input.serial), sleep: deps.sleep, hash: deps.hash },
+    {
+      capture: (timeoutMs) => deps.capture(input.serial, timeoutMs),
+      sleep: deps.sleep,
+      hash: deps.hash,
+      monotonicNs: deps.monotonicNs,
+    },
   );
   let endingIdentity: CaptureLiveIdentity | null = null;
   let runtimeChanged: string | null = null;
@@ -538,6 +665,13 @@ export async function executeCaptureSettled(
     settlementSatisfied: settled.settlementSatisfied,
     comparison: SETTLE_COMPARISON,
     stablePair: settled.stablePair,
+    mode: settled.mode,
+    deadlineMs: settled.deadlineMs,
+    attemptTimeoutMs: settled.attemptTimeoutMs,
+    deadlineMonotonicNs: settled.deadlineMonotonicNs,
+    trace: settled.trace,
+    timeoutPhase: settled.timeoutPhase,
+    timeoutCause: settled.timeoutCause,
     captureRuntimeBinding: binding,
     captureRef,
     lastValidCaptureRef: settled.status === "settled" ? null : captureRef,
@@ -546,7 +680,11 @@ export async function executeCaptureSettled(
       ? null
       : settled.status === "timeout"
         ? {
-            code: "settle_timeout",
+            code: settled.mode !== "transition_then_stable"
+              ? "settle_timeout"
+              : settled.timeoutPhase === "awaiting_transition"
+                ? "transition_timeout"
+                : "stability_timeout",
             detail: input.priorSha256
               ? `no byte-identical consecutive pair different from the required prior frame within ${settled.attempts} capture attempts`
               : `no byte-identical consecutive pair within ${settled.attempts} capture attempts`,
@@ -558,12 +696,12 @@ export async function executeCaptureSettled(
   return { receipt, frame: published.bytes };
 }
 
-function defaultDependencies(adb: string, attemptTimeoutMs = 30_000): CaptureSettledDependencies {
+function defaultDependencies(adb: string): CaptureSettledDependencies {
   return {
     monotonicNs: () => process.hrtime.bigint(),
     listOnlineSerials: () => defaultOnlineSerials(adb),
     probeIdentity: (serial) => defaultIdentity(adb, serial),
-    capture: (serial) => captureAdbFrame(adb, serial, attemptTimeoutMs),
+    capture: (serial, timeoutMs) => captureAdbFrame(adb, serial, timeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS),
     sleep,
     hash: sha256Bytes,
     writeFrame: (absolutePath, bytes) => fs.writeFileSync(absolutePath, bytes),
@@ -581,13 +719,13 @@ export async function executeLiveCaptureSettled(
   input: CaptureSettledInput,
   options: ExecuteLiveCaptureSettledOptions = {},
 ): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }> {
-  const attemptTimeoutMs = options.attemptTimeoutMs ?? 30_000;
+  const attemptTimeoutMs = input.attemptTimeoutMs ?? options.attemptTimeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS;
   if (!Number.isSafeInteger(attemptTimeoutMs) || attemptTimeoutMs <= 0) {
     throw new Error("attemptTimeoutMs must be a positive safe integer");
   }
   return executeCaptureSettled(
-    input,
-    options.dependencies ?? defaultDependencies(options.adbPath ?? resolveAdb(), attemptTimeoutMs),
+    { ...input, attemptTimeoutMs },
+    options.dependencies ?? defaultDependencies(options.adbPath ?? resolveAdb()),
   );
 }
 
@@ -636,6 +774,10 @@ export function registerObservationTools(server: McpServer) {
         maxTries: z.number().int().min(2).max(100).optional().describe("Maximum capture attempts (default 12)."),
         intervalMs: z.number().int().min(0).max(60_000).optional().describe("Delay between captures in milliseconds (default 700)."),
         comparison: z.literal(SETTLE_COMPARISON).optional().describe("Phase-1 comparison policy; only byte_exact is supported."),
+        priorSha256: z.string().optional().describe("Prior reviewed frame SHA-256; omitting mode with this field selects transition_then_stable."),
+        mode: z.enum(SETTLE_MODES).optional().describe("Settlement mode; transition_then_stable requires priorSha256."),
+        deadlineMs: z.number().int().positive().max(3_600_000).optional().describe("Single monotonic settlement deadline budget in milliseconds."),
+        attemptTimeoutMs: z.number().int().positive().max(300_000).optional().describe("Per-screencap timeout, clamped to the remaining deadline."),
       },
       outputSchema: {
         status: z.enum(["settled", "timeout", "capture_failed"]),
@@ -646,6 +788,18 @@ export function registerObservationTools(server: McpServer) {
         settlementSatisfied: z.boolean(),
         comparison: z.literal(SETTLE_COMPARISON),
         stablePair: z.tuple([z.string(), z.string()]).nullable(),
+        mode: z.enum(SETTLE_MODES),
+        deadlineMs: z.number().int().nonnegative(),
+        attemptTimeoutMs: z.number().int().nonnegative(),
+        deadlineMonotonicNs: z.string().nullable(),
+        trace: z.array(z.object({
+          attempt: z.number().int().positive(),
+          capturedAtMonotonicNs: z.string(),
+          sha256: z.string(),
+          relation: z.enum(["prior", "candidate", "stable"]),
+        })),
+        timeoutPhase: z.enum(["awaiting_transition", "awaiting_stability"]).nullable(),
+        timeoutCause: z.enum(["max_tries", "deadline"]).nullable(),
         captureRuntimeBinding: runtimeBindingSchema.nullable(),
         captureRef: captureRefSchema.nullable(),
         lastValidCaptureRef: captureRefSchema.nullable(),
@@ -655,7 +809,7 @@ export function registerObservationTools(server: McpServer) {
         lookRequired: z.literal(true),
       },
     },
-    async ({ serial, outPath, maxDim, maxTries, intervalMs, comparison }) => {
+    async ({ serial, outPath, maxDim, maxTries, intervalMs, comparison, priorSha256, mode, deadlineMs, attemptTimeoutMs }) => {
       const result = await executeLiveCaptureSettled(
         {
           serial,
@@ -663,6 +817,10 @@ export function registerObservationTools(server: McpServer) {
           maxTries: maxTries ?? 12,
           intervalMs: intervalMs ?? 700,
           comparison: comparison ?? SETTLE_COMPARISON,
+          priorSha256,
+          mode,
+          deadlineMs,
+          attemptTimeoutMs,
         },
       );
       const content: Array<{ type: "image"; data: string; mimeType: string } | { type: "text"; text: string }> = [];

@@ -246,7 +246,12 @@ export async function focusQemuForActions(
 async function settleCapture(adb: string, serial: string, maxTries = 12, intervalMs = 700): Promise<SettledFrameResult> {
   return captureSettledFrames(
     { maxTries, intervalMs, comparison: SETTLE_COMPARISON },
-    { capture: () => captureAdbFrame(adb, serial), sleep, hash: sha256Bytes },
+    {
+      capture: (timeoutMs) => captureAdbFrame(adb, serial, timeoutMs),
+      sleep,
+      hash: sha256Bytes,
+      monotonicNs: () => process.hrtime.bigint(),
+    },
   );
 }
 
