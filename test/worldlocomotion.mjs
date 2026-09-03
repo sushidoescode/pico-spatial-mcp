@@ -3244,6 +3244,69 @@ test("AgentBridge clock failure after guest-visible execute starts no strict eff
   assert.equal(calls.filter((call) => call.kind === "rm").length, 0);
 });
 
+test("AgentBridge clock failure after non-mutating broadcast starts no pull or acknowledgement cleanup", async () => {
+  for (const [label, request] of [
+    ["capability", (deps) => probeAgentBridgeLocomotionCapability(adb, {
+      ...baseInput,
+      deadlineMonotonicNs: "20000000000",
+    }, deps)],
+    ["HMD", (deps) => requestAgentBridgeHmdPose(adb, {
+      ...baseInput,
+      deadlineMonotonicNs: "20000000000",
+    }, deps)],
+  ]) {
+    let clockBroken = false;
+    const calls = [];
+    const deps = {
+      monotonicNs: () => {
+        if (clockBroken) throw new Error(`${label} post-broadcast clock fault`);
+        return 100n;
+      },
+      sleep: async () => { throw new Error("sleep must not run after a clock fault"); },
+      runBytes: async () => {
+        calls.push({ kind: "pull" });
+        throw new Error("pull must not run after a clock fault");
+      },
+      runText: async (_cmd, args, options) => {
+        const kind = args.includes("rm") ? "cleanup" : "broadcast";
+        calls.push({ kind, options });
+        if (kind === "broadcast") clockBroken = true;
+        return kind === "cleanup" ? cleanupOk : textOk;
+      },
+    };
+
+    const result = await request(deps);
+
+    assert.equal(result.ok, false, label);
+    assert.match(`${result.primaryError} ${result.cleanupError}`, /post-broadcast clock fault/i, label);
+    assert.deepEqual(calls.map((call) => call.kind), ["broadcast"],
+      `${label} must not start another strict effect after its absolute deadline clock becomes unavailable`);
+  }
+});
+
+test("AgentBridge deadline admission clock failure is transport-free", async () => {
+  const calls = [];
+  const result = await probeAgentBridgeLocomotionCapability(adb, {
+    ...baseInput,
+    deadlineMonotonicNs: "20000000000",
+  }, {
+    monotonicNs: () => { throw new Error("admission clock fault"); },
+    sleep: async () => { calls.push("sleep"); },
+    runBytes: async () => {
+      calls.push("pull");
+      return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
+    },
+    runText: async (_cmd, args) => {
+      calls.push(args.includes("rm") ? "cleanup" : "broadcast");
+      return args.includes("rm") ? cleanupOk : textOk;
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(`${result.primaryError} ${result.cleanupError}`, /admission clock fault/i);
+  assert.deepEqual(calls, [], "an unavailable deadline clock cannot authorize broadcast, polling, sleep, or cleanup");
+});
+
 test("legacy commands acknowledgement without capability revision is capability_unavailable and cleaned", async () => {
   const legacy = availableAck();
   delete legacy.capabilityRevision;

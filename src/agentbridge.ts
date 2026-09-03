@@ -1080,9 +1080,7 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
       && spec.input.controlTimeoutMs! >= 1_000 && spec.input.controlTimeoutMs! <= 15_000
       ? spec.input.controlTimeoutMs!
       : 1_000;
-    const cleanupTimeoutMs = clockError === null
-      ? boundedTimeout(requestedCleanupTimeoutMs, 1_000, 0)
-      : requestedCleanupTimeoutMs;
+    const cleanupTimeoutMs = boundedTimeout(requestedCleanupTimeoutMs, 1_000, 0);
     let cleanupThrown: string | null = null;
     const cleanup = cleanupTimeoutMs === null ? null : await deps.runText(
       adb,
@@ -1446,7 +1444,7 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
   } : undefined;
   const cleanupStartedAt = stamp();
   const cleanupTimeoutMs = routeOwnsCleanup ? null
-    : clockError === null ? boundedTimeout(controlTimeoutMs, 1_000, 0) : controlTimeoutMs;
+    : boundedTimeout(controlTimeoutMs, 1_000, 0);
   let cleanupThrown: string | null = null;
   const cleanup = routeOwnsCleanup ? null : cleanupTimeoutMs === null ? null : await deps.runText(
     adb,
