@@ -121,7 +121,21 @@ object AgentBridge {
         val tag: String,
         val mode: String,
         val target: Vector3,
-        val targetComplete: Boolean,
+        val absolute: Boolean,
+        val glideDurationMs: Int,
+        val physicalWalk: Boolean,
+        val rootGenerationBefore: Long,
+    )
+
+    private data class LocomotionFileRequest(
+        val generation: Long,
+        val kind: String,
+        val schemaVersion: Int,
+        val capabilityRevision: Int,
+        val requestId: String,
+        val tag: String,
+        val mode: String,
+        val target: Vector3?,
         val absolute: Boolean,
         val glideDurationMs: Int,
         val physicalWalk: Boolean,
@@ -293,6 +307,8 @@ object AgentBridge {
         locomotionBinding?.generation == generation
     }
 
+    private fun currentLocomotionGeneration(): Long = synchronized(locomotionGenerationLock) { locomotionGeneration }
+
     private fun currentLocomotionBinding(): LocomotionProducerBinding? = synchronized(locomotionGenerationLock) {
         locomotionBinding
     }
@@ -425,18 +441,16 @@ object AgentBridge {
             event("locomotion_failed", "operation" to operation, "requestId" to requestId, "msg" to "stale_ack_not_removed")
             return
         }
-        val binding = currentLocomotionBinding()
         val parsedTarget = parseRequiredFiniteVector3(extras)
-        val request = LocomotionRequest(
-            generation = binding?.generation ?: -1L,
+        val request = LocomotionFileRequest(
+            generation = currentLocomotionGeneration(),
             kind = extras.getString("kind") ?: "",
             schemaVersion = extras.getInt("schemaVersion", -1),
             capabilityRevision = extras.getInt("capabilityRevision", -1),
             requestId = requestId,
             tag = tag,
             mode = extras.getString("mode") ?: "",
-            target = parsedTarget ?: Vector3(Float.NaN, Float.NaN, Float.NaN),
-            targetComplete = parsedTarget != null,
+            target = parsedTarget,
             absolute = extras.getBoolean("absolute", false),
             glideDurationMs = extras.getInt("glideDurationMs", -1),
             physicalWalk = extras.getBoolean("physicalWalk", true),
@@ -576,7 +590,7 @@ object AgentBridge {
         return Vector3(x, y, z)
     }
 
-    private fun validateLocomotionEnvelope(request: LocomotionRequest): String? = when {
+    private fun validateLocomotionEnvelope(request: LocomotionFileRequest): String? = when {
         request.kind != LOCOMOTION_PAYLOAD_KIND -> "kind does not match the locomotion protocol"
         request.schemaVersion != LOCOMOTION_SCHEMA_VERSION -> "schemaVersion does not match the locomotion protocol"
         request.capabilityRevision != LOCOMOTION_CAPABILITY_REVISION -> "capabilityRevision does not match the locomotion protocol"
@@ -592,7 +606,7 @@ object AgentBridge {
         else -> null
     }
 
-    private suspend fun writeCommandsAck(context: Context, request: LocomotionRequest, target: File) {
+    private suspend fun writeCommandsAck(context: Context, request: LocomotionFileRequest, target: File) {
         locomotionMutex.lock()
         try {
             val binding = currentLocomotionBinding()
@@ -628,7 +642,7 @@ object AgentBridge {
         }
     }
 
-    private suspend fun writeHmdPoseAck(context: Context, request: LocomotionRequest, target: File) {
+    private suspend fun writeHmdPoseAck(context: Context, request: LocomotionFileRequest, target: File) {
         locomotionMutex.lock()
         try {
             val binding = currentLocomotionBinding()
@@ -658,14 +672,14 @@ object AgentBridge {
         }
     }
 
-    private suspend fun writeLocomotionAck(context: Context, request: LocomotionRequest, target: File) {
+    private suspend fun writeLocomotionAck(context: Context, request: LocomotionFileRequest, target: File) {
         locomotionMutex.lock()
         try {
             val binding = currentLocomotionBinding()
-            var primaryError = validateLocomotionEnvelope(request) ?: locomotionUnavailableReason(context, binding)
+            var primaryError = validateLocomotionEnvelope(request)
             primaryError = primaryError ?: when {
                 request.mode != "direct" && request.mode != "replacement" -> "mode_must_be_direct_or_replacement"
-                !request.targetComplete || !request.target.x.isFinite() || !request.target.y.isFinite() || !request.target.z.isFinite() ->
+                request.target == null || !request.target.x.isFinite() || !request.target.y.isFinite() || !request.target.z.isFinite() ->
                     "finite_absolute_target_required"
                 !request.absolute -> "absolute_target_required"
                 request.glideDurationMs !in 0..10_000 -> "glide_duration_out_of_range"
@@ -675,8 +689,23 @@ object AgentBridge {
                 !locomotionRequestIsCurrent(request.generation) -> "stale_generation"
                 else -> null
             }
-            var result = if (primaryError == null) {
-                runCatching { binding!!.producer(request) }.getOrElse { cause ->
+            primaryError = primaryError ?: locomotionUnavailableReason(context, binding)
+            val producerRequest = if (primaryError == null) LocomotionRequest(
+                generation = request.generation,
+                kind = request.kind,
+                schemaVersion = request.schemaVersion,
+                capabilityRevision = request.capabilityRevision,
+                requestId = request.requestId,
+                tag = request.tag,
+                mode = request.mode,
+                target = request.target!!,
+                absolute = request.absolute,
+                glideDurationMs = request.glideDurationMs,
+                physicalWalk = request.physicalWalk,
+                rootGenerationBefore = request.rootGenerationBefore,
+            ) else null
+            var result = if (producerRequest != null) {
+                runCatching { binding!!.producer(producerRequest) }.getOrElse { cause ->
                     AgentLocomotionResult("failed", null, cause.message ?: cause.javaClass.simpleName)
                 }
             } else {
@@ -690,7 +719,7 @@ object AgentBridge {
             }
             if (primaryError == null && !locomotionRequestIsCurrent(request.generation)) return
             if (primaryError == null) {
-                val resultError = validateLocomotionResult(request, result)
+                val resultError = validateLocomotionResult(producerRequest!!, result)
                 if (resultError != null) result = AgentLocomotionResult("failed", null, resultError, result.cleanupError)
             }
             if (result.outcome == "completed") {
@@ -701,10 +730,13 @@ object AgentBridge {
             writeLocomotionAckAtomically(context, request, target, LOCOMOTE_COMMAND) { writer ->
                 writer.name("outcome").value(result.outcome)
                 writer.name("mode").value(request.mode)
-                writer.name("target").beginObject()
-                writer.name("absolute").value(true)
-                writePositionMembers(writer, request.target)
-                writer.endObject()
+                writer.name("target")
+                if (request.target == null) writer.nullValue() else {
+                    writer.beginObject()
+                    writer.name("absolute").value(true)
+                    writePositionMembers(writer, request.target)
+                    writer.endObject()
+                }
                 writer.name("glideDurationMs").value(request.glideDurationMs.toLong())
                 writer.name("rootGenerationBefore").value(request.rootGenerationBefore)
                 writer.name("pose")
@@ -781,9 +813,19 @@ object AgentBridge {
         writer.name("cleanupError"); if (cleanupError == null) writer.nullValue() else writer.value(cleanupError.take(500))
     }
 
+    private fun publishLocomotionAckIfCurrent(
+        request: LocomotionFileRequest,
+        temp: File,
+        target: File,
+    ): Boolean = synchronized(locomotionGenerationLock) {
+        if (locomotionGeneration != request.generation) return@synchronized false
+        Os.rename(temp.absolutePath, target.absolutePath)
+        true
+    }
+
     private suspend fun writeLocomotionAckAtomically(
         context: Context,
-        request: LocomotionRequest,
+        request: LocomotionFileRequest,
         target: File,
         operation: String,
         writeBody: suspend (JsonWriter) -> Unit,
@@ -814,7 +856,7 @@ object AgentBridge {
             runCatching { output.close() }
         }
         try {
-            Os.rename(temp.absolutePath, target.absolutePath)
+            if (!publishLocomotionAckIfCurrent(request, temp, target)) temp.delete()
         } catch (cause: Throwable) {
             temp.delete()
             throw cause

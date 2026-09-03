@@ -200,6 +200,47 @@ test("commands capability success is nonce/package/operation/root bound and uses
   ]) assert.ok(broadcast.args.includes(value), `broadcast omitted ${value}`);
   assert.ok(fake.calls.filter((call) => call.kind === "bytes").every((call) =>
     call.args.at(-1) === `cache/${AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY}/${baseInput.requestId}.json`));
+  assert.equal(fake.calls.filter((call) => call.kind === "bytes").length, 2,
+    "success requires two byte-identical reads rather than accepting the first present file");
+  assertExactCleanup(fake.calls);
+});
+
+test("one present acknowledgement read is insufficient for stability and still cleans", async () => {
+  const ack = availableAck();
+  const fake = fakeTransaction([ack]);
+
+  const result = await probeAgentBridgeLocomotionCapability(adb, { ...baseInput, maxPolls: 1 }, fake.deps);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "capability_unavailable");
+  assert.equal(fake.calls.filter((call) => call.kind === "bytes").length, 1);
+  assertExactCleanup(fake.calls);
+});
+
+test("changed acknowledgement bytes reset stability before an identical pair succeeds", async () => {
+  const first = availableAck({ root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 6 } });
+  const final = availableAck();
+  const fake = fakeTransaction([first, final, final]);
+
+  const result = await probeAgentBridgeLocomotionCapability(adb, { ...baseInput, maxPolls: 3 }, fake.deps);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ack.root.generation, 7);
+  assert.equal(fake.calls.filter((call) => call.kind === "bytes").length, 3);
+  assertExactCleanup(fake.calls);
+});
+
+test("broadcast failure retains the primary error and attempts exact cleanup once", async () => {
+  const fake = fakeTransaction([], {
+    broadcastResult: { code: 1, stdout: "", stderr: "receiver unavailable", timedOut: false },
+  });
+
+  const result = await requestAgentBridgeHmdPose(adb, baseInput, fake.deps);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "bridge_unavailable");
+  assert.match(result.primaryError, /broadcast failed/i);
+  assert.equal(fake.calls.filter((call) => call.kind === "bytes").length, 0);
   assertExactCleanup(fake.calls);
 });
 
@@ -225,6 +266,23 @@ test("locomotion success binds mode, absolute target, glide budget, and root-gen
   const broadcast = fake.calls.find((call) => call.kind === "text" && call.args.includes("broadcast"));
   for (const value of ["direct", "2", "0", "-4", "7", "500", "false"])
     assert.ok(broadcast.args.includes(value), `locomote broadcast omitted ${value}`);
+  assertExactCleanup(fake.calls);
+});
+
+test("locomotion canonicalizes a finite JavaScript target to its exact Float32 transport value", async () => {
+  const input = { ...locomotionInput, target: { x: 0.10000000000000002, y: 0, z: -4 } };
+  const ack = locomotionAck({
+    target: { absolute: true, x: 0.1, y: 0, z: -4 },
+    pose: { rootGeneration: 7, position: { x: 0.1, y: 0, z: -4 } },
+  });
+  const fake = fakeTransaction([ack, ack]);
+
+  const result = await requestAgentBridgeLocomotion(adb, input, fake.deps);
+
+  assert.equal(result.ok, true);
+  const broadcast = fake.calls.find((call) => call.kind === "text" && call.args.includes("broadcast"));
+  assert.equal(broadcast.args[broadcast.args.indexOf("x") + 1], "0.1");
+  assert.deepEqual(result.ack.target, { absolute: true, x: 0.1, y: 0, z: -4 });
   assertExactCleanup(fake.calls);
 });
 
@@ -300,6 +358,22 @@ test("guest cleanup failure remains visible when exact acknowledgement-file clea
   assertExactCleanup(fake.calls);
 });
 
+test("failed HMD and locomotion acknowledgements carrying success payloads are invalid", async () => {
+  const failedHmd = hmdAck({ outcome: "failed", primaryError: "provider_failed" });
+  const hmdFake = fakeTransaction([failedHmd, failedHmd]);
+  const hmdResult = await requestAgentBridgeHmdPose(adb, baseInput, hmdFake.deps);
+  assert.equal(hmdResult.ok, false);
+  assert.equal(hmdResult.code, "invalid_ack");
+  assertExactCleanup(hmdFake.calls);
+
+  const failedLocomotion = locomotionAck({ outcome: "failed", primaryError: "producer_failed" });
+  const locomotionFake = fakeTransaction([failedLocomotion, failedLocomotion]);
+  const locomotionResult = await requestAgentBridgeLocomotion(adb, locomotionInput, locomotionFake.deps);
+  assert.equal(locomotionResult.ok, false);
+  assert.equal(locomotionResult.code, "invalid_ack");
+  assertExactCleanup(locomotionFake.calls);
+});
+
 test("cleanup-only host failure has no invented primary failure", async () => {
   const ack = hmdAck();
   const fake = fakeTransaction([ack, ack], {
@@ -321,6 +395,37 @@ test("locomotion rejects incomplete, non-finite, implicit-mode, or physical-walk
     { ...locomotionInput, target: { x: Number.NaN, y: 0, z: -4 } },
     { ...locomotionInput, mode: undefined },
     { ...locomotionInput, physicalWalk: true },
+  ]) {
+    const fake = fakeTransaction([]);
+    const result = await requestAgentBridgeLocomotion(adb, input, fake.deps);
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "invalid_request");
+    assert.equal(fake.calls.filter((call) => call.kind === "bytes").length, 0);
+    assert.equal(fake.calls.filter((call) => call.kind === "text" && call.args.includes("broadcast")).length, 0);
+    assertExactCleanup(fake.calls);
+  }
+});
+
+test("finite doubles outside the Float32 transport domain are refused with exact cleanup before broadcast", async () => {
+  const fake = fakeTransaction([]);
+
+  const result = await requestAgentBridgeLocomotion(adb, {
+    ...locomotionInput,
+    target: { x: Number.MAX_VALUE, y: 0, z: -4 },
+  }, fake.deps);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "invalid_request");
+  assert.match(result.primaryError, /Float32/i);
+  assert.equal(fake.calls.filter((call) => call.kind === "text" && call.args.includes("broadcast")).length, 0);
+  assertExactCleanup(fake.calls);
+});
+
+test("unsafe serial, package, or nonce remains fully transport-free", async () => {
+  for (const input of [
+    { ...locomotionInput, serial: "two serials" },
+    { ...locomotionInput, packageName: "../unsafe" },
+    { ...locomotionInput, requestId: "../unsafe" },
   ]) {
     const fake = fakeTransaction([]);
     const result = await requestAgentBridgeLocomotion(adb, input, fake.deps);

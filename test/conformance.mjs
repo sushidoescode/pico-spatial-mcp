@@ -897,15 +897,29 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     (locomoteWriter.match(/locomotionRequestIsCurrent\(request\.generation\)/g) ?? []).length >= 2 &&
     /rootGenerationBefore/.test(locomoteWriter) && /glideDurationMs/.test(locomoteWriter),
   "locomotion serializes producer calls, carries bounded direct-glide metadata, and rejects invalidated generations before and after mutation");
+  const locomotionPublisher = /private fun publishLocomotionAckIfCurrent[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  assert(/synchronized\(locomotionGenerationLock\)/.test(locomotionPublisher) &&
+    /locomotionGeneration != request\.generation/.test(locomotionPublisher) &&
+    /Os\.rename\(temp\.absolutePath, target\.absolutePath\)/.test(locomotionPublisher) &&
+    /if \(!publishLocomotionAckIfCurrent\(request, temp, target\)\)/.test(agentKt),
+  "final locomotion acknowledgement publication atomically checks lifecycle generation with rename");
+  assert(/generation = currentLocomotionGeneration\(\)/.test(agentKt) &&
+    !/locomotionMutex\.lock\(\)[\s\S]*fun unregisterLocomotionProducer/.test(agentKt),
+  "capability snapshots capture lifecycle generation while unregister remains independent of a long producer mutex");
   const moveBlock = /register\("move"\)[\s\S]*?(?=\n        register\("remove"\))/.exec(agentKt)?.[0] ?? "";
   const removeBlock = /register\("remove"\)[\s\S]*?(?=\n    \})/.exec(agentKt)?.[0] ?? "";
   assert(/e === registeredLocomotionRoot\(\)/.test(moveBlock) && /reserved_root/.test(moveBlock) &&
     /e === registeredLocomotionRoot\(\)/.test(removeBlock) && /reserved_root/.test(removeBlock) &&
     !/getName\(\) == AGENT_WORLD_ROOT_ID/.test(moveBlock + removeBlock),
   "generic move/remove reserve only the currently registered root by referential identity, never by name");
-  assert(/private fun parseRequiredFiniteVector3/.test(agentKt) && !/getOrDefault\(Vector3/.test(locomotionBuiltins) &&
+  assert(/private data class LocomotionFileRequest\([\s\S]*val target: Vector3\?/.test(agentKt) &&
+    /private fun parseRequiredFiniteVector3/.test(agentKt) && !/getOrDefault\(Vector3/.test(locomotionBuiltins) &&
+    /writer\.name\("target"\)[\s\S]*if \(request\.target == null\) writer\.nullValue\(\)/.test(agentKt) &&
     /writeLocomotionAckAtomically/.test(agentKt) && /Os\.rename\(temp\.absolutePath, target\.absolutePath\)/.test(agentKt),
-  "locomotion rejects malformed targets rather than defaulting and publishes only atomic nonce-addressed acknowledgements");
+  "locomotion rejects malformed targets with nullable evidence rather than NaN/invented coordinates and publishes atomically");
+  assert(locomoteWriter.indexOf('request.target == null') >= 0 &&
+    locomoteWriter.indexOf('request.target == null') < locomoteWriter.indexOf('locomotionUnavailableReason(context, binding)'),
+  "malformed locomotion targets are rejected before capability availability is considered");
   for (const field of [
     "kind", "schemaVersion", "capabilityRevision", "requestId", "tag", "application", "operation",
     "mode", "target", "absolute", "glideDurationMs", "physicalWalk", "rootGenerationBefore", "pose",

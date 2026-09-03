@@ -751,17 +751,22 @@ interface LocomotionTransactionSpec<Ack extends AnyLocomotionAck> {
   schema: z.ZodType<Ack>;
   validateAck: (ack: Ack) => string | null;
   missingAckCode: "bridge_unavailable" | "capability_unavailable";
+  preflightError?: string | null;
 }
 
 function locomotionTag(input: AgentBridgeLocomotionTransactionInput): string {
   return input.tag ?? input.requestId;
 }
 
-function locomotionInputError(adb: string, input: AgentBridgeLocomotionTransactionInput): string | null {
+function locomotionUnsafeIdentityError(adb: string, input: AgentBridgeLocomotionTransactionInput): string | null {
   if (!adb) return "adb executable path is empty";
   if (!/^[\x21-\x7e]+$/.test(input.serial)) return "an exact printable adb serial is required";
   if (!ANDROID_PACKAGE_PATTERN.test(input.packageName)) return "packageName is not a valid Android package name";
   if (!SCENE_SNAPSHOT_REQUEST_ID_PATTERN.test(input.requestId)) return "requestId is not safe for the bridge cache path";
+  return null;
+}
+
+function locomotionPayloadInputError(input: AgentBridgeLocomotionTransactionInput): string | null {
   if (!LOCOMOTION_TAG_PATTERN.test(locomotionTag(input))) return "tag must be a non-empty printable identifier";
   const maxPolls = input.maxPolls ?? 30;
   const pollMs = input.pollMs ?? 100;
@@ -778,6 +783,28 @@ function locomotionInputError(adb: string, input: AgentBridgeLocomotionTransacti
     return "controlTimeoutMs must be an integer from 1000 through 15000";
   }
   return null;
+}
+
+function canonicalFloat32Number(value: number): number | null {
+  if (!Number.isFinite(value)) return null;
+  const rounded = Math.fround(value);
+  if (!Number.isFinite(rounded)) return null;
+  if (rounded === 0) return 0;
+  for (let precision = 1; precision <= 9; precision++) {
+    const candidate = Number(rounded.toPrecision(precision));
+    if (Number.isFinite(candidate) && Math.fround(candidate) === rounded) return candidate;
+  }
+  return null;
+}
+
+function canonicalLocomotionTarget(target: unknown): AgentBridgePosition | null {
+  if (target === null || typeof target !== "object") return null;
+  const value = target as Record<string, unknown>;
+  if (typeof value.x !== "number" || typeof value.y !== "number" || typeof value.z !== "number") return null;
+  const x = canonicalFloat32Number(value.x);
+  const y = canonicalFloat32Number(value.y);
+  const z = canonicalFloat32Number(value.z);
+  return x === null || y === null || z === null ? null : { x, y, z };
 }
 
 function locomotionEnvelopeAckError(
@@ -837,14 +864,46 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
     evidenceCeiling,
   });
 
-  const invalid = locomotionInputError(adb, spec.input);
-  if (invalid !== null) return fail("invalid_request", invalid, null);
+  const unsafeIdentity = locomotionUnsafeIdentityError(adb, spec.input);
+  if (unsafeIdentity !== null) return fail("invalid_request", unsafeIdentity, null);
+  const relativePath = locomotionRelativePath(spec.input.requestId);
+  const payloadInvalid = locomotionPayloadInputError(spec.input) ?? spec.preflightError ?? null;
+  if (payloadInvalid !== null) {
+    const cleanupStartedAt = stamp();
+    const cleanupTimeoutMs = Number.isInteger(spec.input.controlTimeoutMs)
+      && spec.input.controlTimeoutMs! >= 1_000 && spec.input.controlTimeoutMs! <= 15_000
+      ? spec.input.controlTimeoutMs!
+      : 15_000;
+    const cleanup = await deps.runText(
+      adb,
+      ["-s", spec.input.serial, "shell", "run-as", spec.input.packageName, "rm", "-f", relativePath],
+      { timeoutMs: cleanupTimeoutMs, maxOutputBytes: 64 * 1024 },
+    );
+    const cleanupApplied = cleanup.code === 0 && !cleanup.timedOut;
+    const cleanupError = cleanupApplied ? null
+      : (cleanup.timedOut ? "acknowledgement cleanup timed out" : (cleanup.stderr || cleanup.stdout || "acknowledgement cleanup failed")).slice(-400);
+    actionReceipts.push({
+      action: "locomotion_ack_cleanup",
+      status: cleanupApplied ? "applied" : "failed",
+      startedAtMonotonicNs: cleanupStartedAt,
+      endedAtMonotonicNs: stamp(),
+      ack: {
+        serial: spec.input.serial,
+        packageName: spec.input.packageName,
+        operation: spec.operation,
+        requestId: spec.input.requestId,
+        relativePath,
+        outcome: cleanupApplied ? "completed" : cleanup.timedOut ? "timeout" : "failed",
+      },
+      error: cleanupError ?? undefined,
+    });
+    return fail("invalid_request", payloadInvalid, cleanupError);
+  }
   const maxPolls = spec.input.maxPolls ?? 30;
   const pollMs = spec.input.pollMs ?? 100;
   const stabilityReads = spec.input.stabilityReads ?? 2;
   const ackReadTimeoutMs = spec.input.ackReadTimeoutMs ?? 15_000;
   const controlTimeoutMs = spec.input.controlTimeoutMs ?? 15_000;
-  const relativePath = locomotionRelativePath(spec.input.requestId);
 
   const broadcastStartedAt = stamp();
   const broadcast = await deps.runText(adb, [
@@ -1055,17 +1114,6 @@ export async function requestAgentBridgeHmdPose(
 ): Promise<AgentBridgeLocomotionRequestResult<AgentBridgeHmdPoseAck>> {
   const invalidGeneration = input.expectedRootGeneration !== undefined
     && (!Number.isSafeInteger(input.expectedRootGeneration) || input.expectedRootGeneration < 1);
-  if (invalidGeneration) {
-    return {
-      ok: false,
-      code: "invalid_request",
-      detail: "expectedRootGeneration must be a positive safe integer",
-      primaryError: "expectedRootGeneration must be a positive safe integer",
-      cleanupError: null,
-      actionReceipts: [],
-      evidenceCeiling: "structural",
-    };
-  }
   return executeLocomotionTransaction(adb, {
     operation: AGENT_BRIDGE_HMD_POSE_COMMAND,
     input,
@@ -1074,8 +1122,11 @@ export async function requestAgentBridgeHmdPose(
       : ["--el", "rootGeneration", String(input.expectedRootGeneration)],
     schema: locomotionHmdAckSchema,
     missingAckCode: "bridge_unavailable",
+    preflightError: invalidGeneration ? "expectedRootGeneration must be a positive safe integer" : null,
     validateAck: (ack) => {
-      if (ack.outcome !== "sampled") return null;
+      if (ack.outcome !== "sampled") return ack.hmdPose === null
+        ? null
+        : "failed acknowledgement contains an HMD pose";
       if (ack.root === null || ack.hmdPose === null) return "sampled acknowledgement omitted root or HMD pose";
       if (input.expectedRootGeneration !== undefined && ack.root.generation !== input.expectedRootGeneration) {
         return "acknowledgement root generation does not match the request";
@@ -1090,11 +1141,9 @@ export async function requestAgentBridgeLocomotion(
   input: AgentBridgeLocomotionRequestInput,
   deps: AgentBridgeLocomotionDeps = {},
 ): Promise<AgentBridgeLocomotionRequestResult<AgentBridgeLocomotionAck>> {
-  const invalid = locomotionInputError(adb, input)
-    ?? (input.mode !== "direct" && input.mode !== "replacement" ? "mode must be direct or replacement" : null)
-    ?? (input.target === null || typeof input.target !== "object"
-      || !Number.isFinite(input.target.x) || !Number.isFinite(input.target.y) || !Number.isFinite(input.target.z)
-      ? "target must contain finite absolute x, y, and z values" : null)
+  const canonicalTarget = canonicalLocomotionTarget(input.target);
+  const invalid = (input.mode !== "direct" && input.mode !== "replacement" ? "mode must be direct or replacement" : null)
+    ?? (canonicalTarget === null ? "target must contain finite values in the Android Float32 transport domain" : null)
     ?? (!Number.isSafeInteger(input.rootGeneration) || input.rootGeneration < 1
       ? "rootGeneration must be a positive safe integer" : null)
     ?? (!Number.isInteger(input.glideDurationMs) || input.glideDurationMs < 0 || input.glideDurationMs > 10_000
@@ -1103,25 +1152,18 @@ export async function requestAgentBridgeLocomotion(
       ? "replacement mode requires glideDurationMs 0" : null)
     ?? ((input as { physicalWalk?: unknown }).physicalWalk !== undefined
       && (input as { physicalWalk?: unknown }).physicalWalk !== false ? "physicalWalk must be false" : null);
-  if (invalid !== null) {
-    return {
-      ok: false,
-      code: "invalid_request",
-      detail: invalid,
-      primaryError: invalid,
-      cleanupError: null,
-      actionReceipts: [],
-      evidenceCeiling: "structural",
-    };
-  }
+  const transactionInput: AgentBridgeLocomotionRequestInput = canonicalTarget === null
+    ? input
+    : { ...input, target: canonicalTarget };
   return executeLocomotionTransaction(adb, {
     operation: AGENT_BRIDGE_LOCOMOTE_COMMAND,
-    input,
-    extraBroadcastArgs: [
+    input: transactionInput,
+    preflightError: invalid,
+    extraBroadcastArgs: canonicalTarget === null ? [] : [
       "--es", "mode", input.mode,
-      "--ef", "x", String(input.target.x),
-      "--ef", "y", String(input.target.y),
-      "--ef", "z", String(input.target.z),
+      "--ef", "x", String(canonicalTarget.x),
+      "--ef", "y", String(canonicalTarget.y),
+      "--ef", "z", String(canonicalTarget.z),
       "--ez", "absolute", "true",
       "--ei", "glideDurationMs", String(input.glideDurationMs),
       "--el", "rootGeneration", String(input.rootGeneration),
@@ -1130,15 +1172,18 @@ export async function requestAgentBridgeLocomotion(
     schema: locomotionActionAckSchema,
     missingAckCode: "bridge_unavailable",
     validateAck: (ack) => {
+      if (canonicalTarget === null) return "request target was unavailable after preflight";
       if (ack.mode !== input.mode) return "acknowledgement mode does not match the request";
-      if (ack.target.x !== input.target.x || ack.target.y !== input.target.y || ack.target.z !== input.target.z) {
+      if (ack.target.x !== canonicalTarget.x || ack.target.y !== canonicalTarget.y || ack.target.z !== canonicalTarget.z) {
         return "acknowledgement absolute target does not match the request";
       }
       if (ack.glideDurationMs !== input.glideDurationMs) return "acknowledgement glide duration does not match the request";
       if (ack.rootGenerationBefore !== input.rootGeneration) return "acknowledgement prior root generation does not match the request";
-      if (ack.outcome !== "completed") return null;
+      if (ack.outcome !== "completed") return ack.pose === null
+        ? null
+        : "failed acknowledgement contains a world-root pose";
       if (ack.pose === null) return "completed acknowledgement omitted its world-root pose";
-      if (ack.pose.position.x !== input.target.x || ack.pose.position.y !== input.target.y || ack.pose.position.z !== input.target.z) {
+      if (ack.pose.position.x !== canonicalTarget.x || ack.pose.position.y !== canonicalTarget.y || ack.pose.position.z !== canonicalTarget.z) {
         return "acknowledgement readback position does not match the absolute target";
       }
       const expectedGeneration = input.mode === "direct" ? input.rootGeneration : input.rootGeneration + 1;
@@ -1467,7 +1512,21 @@ object AgentBridge {
         val tag: String,
         val mode: String,
         val target: Vector3,
-        val targetComplete: Boolean,
+        val absolute: Boolean,
+        val glideDurationMs: Int,
+        val physicalWalk: Boolean,
+        val rootGenerationBefore: Long,
+    )
+
+    private data class LocomotionFileRequest(
+        val generation: Long,
+        val kind: String,
+        val schemaVersion: Int,
+        val capabilityRevision: Int,
+        val requestId: String,
+        val tag: String,
+        val mode: String,
+        val target: Vector3?,
         val absolute: Boolean,
         val glideDurationMs: Int,
         val physicalWalk: Boolean,
@@ -1639,6 +1698,8 @@ object AgentBridge {
         locomotionBinding?.generation == generation
     }
 
+    private fun currentLocomotionGeneration(): Long = synchronized(locomotionGenerationLock) { locomotionGeneration }
+
     private fun currentLocomotionBinding(): LocomotionProducerBinding? = synchronized(locomotionGenerationLock) {
         locomotionBinding
     }
@@ -1771,18 +1832,16 @@ object AgentBridge {
             event("locomotion_failed", "operation" to operation, "requestId" to requestId, "msg" to "stale_ack_not_removed")
             return
         }
-        val binding = currentLocomotionBinding()
         val parsedTarget = parseRequiredFiniteVector3(extras)
-        val request = LocomotionRequest(
-            generation = binding?.generation ?: -1L,
+        val request = LocomotionFileRequest(
+            generation = currentLocomotionGeneration(),
             kind = extras.getString("kind") ?: "",
             schemaVersion = extras.getInt("schemaVersion", -1),
             capabilityRevision = extras.getInt("capabilityRevision", -1),
             requestId = requestId,
             tag = tag,
             mode = extras.getString("mode") ?: "",
-            target = parsedTarget ?: Vector3(Float.NaN, Float.NaN, Float.NaN),
-            targetComplete = parsedTarget != null,
+            target = parsedTarget,
             absolute = extras.getBoolean("absolute", false),
             glideDurationMs = extras.getInt("glideDurationMs", -1),
             physicalWalk = extras.getBoolean("physicalWalk", true),
@@ -1922,7 +1981,7 @@ object AgentBridge {
         return Vector3(x, y, z)
     }
 
-    private fun validateLocomotionEnvelope(request: LocomotionRequest): String? = when {
+    private fun validateLocomotionEnvelope(request: LocomotionFileRequest): String? = when {
         request.kind != LOCOMOTION_PAYLOAD_KIND -> "kind does not match the locomotion protocol"
         request.schemaVersion != LOCOMOTION_SCHEMA_VERSION -> "schemaVersion does not match the locomotion protocol"
         request.capabilityRevision != LOCOMOTION_CAPABILITY_REVISION -> "capabilityRevision does not match the locomotion protocol"
@@ -1938,7 +1997,7 @@ object AgentBridge {
         else -> null
     }
 
-    private suspend fun writeCommandsAck(context: Context, request: LocomotionRequest, target: File) {
+    private suspend fun writeCommandsAck(context: Context, request: LocomotionFileRequest, target: File) {
         locomotionMutex.lock()
         try {
             val binding = currentLocomotionBinding()
@@ -1974,7 +2033,7 @@ object AgentBridge {
         }
     }
 
-    private suspend fun writeHmdPoseAck(context: Context, request: LocomotionRequest, target: File) {
+    private suspend fun writeHmdPoseAck(context: Context, request: LocomotionFileRequest, target: File) {
         locomotionMutex.lock()
         try {
             val binding = currentLocomotionBinding()
@@ -2004,14 +2063,14 @@ object AgentBridge {
         }
     }
 
-    private suspend fun writeLocomotionAck(context: Context, request: LocomotionRequest, target: File) {
+    private suspend fun writeLocomotionAck(context: Context, request: LocomotionFileRequest, target: File) {
         locomotionMutex.lock()
         try {
             val binding = currentLocomotionBinding()
-            var primaryError = validateLocomotionEnvelope(request) ?: locomotionUnavailableReason(context, binding)
+            var primaryError = validateLocomotionEnvelope(request)
             primaryError = primaryError ?: when {
                 request.mode != "direct" && request.mode != "replacement" -> "mode_must_be_direct_or_replacement"
-                !request.targetComplete || !request.target.x.isFinite() || !request.target.y.isFinite() || !request.target.z.isFinite() ->
+                request.target == null || !request.target.x.isFinite() || !request.target.y.isFinite() || !request.target.z.isFinite() ->
                     "finite_absolute_target_required"
                 !request.absolute -> "absolute_target_required"
                 request.glideDurationMs !in 0..10_000 -> "glide_duration_out_of_range"
@@ -2021,8 +2080,23 @@ object AgentBridge {
                 !locomotionRequestIsCurrent(request.generation) -> "stale_generation"
                 else -> null
             }
-            var result = if (primaryError == null) {
-                runCatching { binding!!.producer(request) }.getOrElse { cause ->
+            primaryError = primaryError ?: locomotionUnavailableReason(context, binding)
+            val producerRequest = if (primaryError == null) LocomotionRequest(
+                generation = request.generation,
+                kind = request.kind,
+                schemaVersion = request.schemaVersion,
+                capabilityRevision = request.capabilityRevision,
+                requestId = request.requestId,
+                tag = request.tag,
+                mode = request.mode,
+                target = request.target!!,
+                absolute = request.absolute,
+                glideDurationMs = request.glideDurationMs,
+                physicalWalk = request.physicalWalk,
+                rootGenerationBefore = request.rootGenerationBefore,
+            ) else null
+            var result = if (producerRequest != null) {
+                runCatching { binding!!.producer(producerRequest) }.getOrElse { cause ->
                     AgentLocomotionResult("failed", null, cause.message ?: cause.javaClass.simpleName)
                 }
             } else {
@@ -2036,7 +2110,7 @@ object AgentBridge {
             }
             if (primaryError == null && !locomotionRequestIsCurrent(request.generation)) return
             if (primaryError == null) {
-                val resultError = validateLocomotionResult(request, result)
+                val resultError = validateLocomotionResult(producerRequest!!, result)
                 if (resultError != null) result = AgentLocomotionResult("failed", null, resultError, result.cleanupError)
             }
             if (result.outcome == "completed") {
@@ -2047,10 +2121,13 @@ object AgentBridge {
             writeLocomotionAckAtomically(context, request, target, LOCOMOTE_COMMAND) { writer ->
                 writer.name("outcome").value(result.outcome)
                 writer.name("mode").value(request.mode)
-                writer.name("target").beginObject()
-                writer.name("absolute").value(true)
-                writePositionMembers(writer, request.target)
-                writer.endObject()
+                writer.name("target")
+                if (request.target == null) writer.nullValue() else {
+                    writer.beginObject()
+                    writer.name("absolute").value(true)
+                    writePositionMembers(writer, request.target)
+                    writer.endObject()
+                }
                 writer.name("glideDurationMs").value(request.glideDurationMs.toLong())
                 writer.name("rootGenerationBefore").value(request.rootGenerationBefore)
                 writer.name("pose")
@@ -2127,9 +2204,19 @@ object AgentBridge {
         writer.name("cleanupError"); if (cleanupError == null) writer.nullValue() else writer.value(cleanupError.take(500))
     }
 
+    private fun publishLocomotionAckIfCurrent(
+        request: LocomotionFileRequest,
+        temp: File,
+        target: File,
+    ): Boolean = synchronized(locomotionGenerationLock) {
+        if (locomotionGeneration != request.generation) return@synchronized false
+        Os.rename(temp.absolutePath, target.absolutePath)
+        true
+    }
+
     private suspend fun writeLocomotionAckAtomically(
         context: Context,
-        request: LocomotionRequest,
+        request: LocomotionFileRequest,
         target: File,
         operation: String,
         writeBody: suspend (JsonWriter) -> Unit,
@@ -2160,7 +2247,7 @@ object AgentBridge {
             runCatching { output.close() }
         }
         try {
-            Os.rename(temp.absolutePath, target.absolutePath)
+            if (!publishLocomotionAckIfCurrent(request, temp, target)) temp.delete()
         } catch (cause: Throwable) {
             temp.delete()
             throw cause
