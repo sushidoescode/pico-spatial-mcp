@@ -286,6 +286,39 @@ test("locomotion canonicalizes a finite JavaScript target to its exact Float32 t
   assertExactCleanup(fake.calls);
 });
 
+test("locomotion acknowledgement binding compares exact Float32 values and normalizes signed zero", async () => {
+  const smallestSubnormal = 2 ** -149;
+  const largestFinite = Math.fround(3.4028234663852886e38);
+  const cases = [
+    {
+      input: { x: smallestSubnormal, y: -smallestSubnormal, z: -0 },
+      acknowledged: { x: 1.4e-45, y: -1.4e-45, z: 0 },
+      broadcast: ["1e-45", "-1e-45", "0"],
+    },
+    {
+      input: { x: largestFinite, y: 2 ** -126, z: 0 },
+      acknowledged: { x: 3.4028235e38, y: 1.1754944e-38, z: -0 },
+      broadcast: ["3.4028235e+38", "1.1754944e-38", "0"],
+    },
+  ];
+
+  for (const edge of cases) {
+    const input = { ...locomotionInput, target: edge.input };
+    const ack = locomotionAck({
+      target: { absolute: true, ...edge.acknowledged },
+      pose: { rootGeneration: 7, position: edge.acknowledged },
+    });
+    const fake = fakeTransaction([ack, ack]);
+
+    const result = await requestAgentBridgeLocomotion(adb, input, fake.deps);
+
+    assert.equal(result.ok, true);
+    const args = fake.calls.find((call) => call.kind === "text" && call.args.includes("broadcast")).args;
+    assert.deepEqual(["x", "y", "z"].map((axis) => args[args.indexOf(axis) + 1]), edge.broadcast);
+    assertExactCleanup(fake.calls);
+  }
+});
+
 test("replacement success requires the next root generation and never accepts direct readback", async () => {
   const input = { ...locomotionInput, mode: "replacement", glideDurationMs: 0 };
   const ack = locomotionAck({

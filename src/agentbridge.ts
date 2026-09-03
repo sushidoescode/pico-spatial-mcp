@@ -789,12 +789,28 @@ function canonicalFloat32Number(value: number): number | null {
   if (!Number.isFinite(value)) return null;
   const rounded = Math.fround(value);
   if (!Number.isFinite(rounded)) return null;
+  // Locomotion treats both IEEE-754 zero signs as the same world coordinate and emits +0.
   if (rounded === 0) return 0;
   for (let precision = 1; precision <= 9; precision++) {
     const candidate = Number(rounded.toPrecision(precision));
     if (Number.isFinite(candidate) && Math.fround(candidate) === rounded) return candidate;
   }
   return null;
+}
+
+function sameFloat32TransportValue(left: number, right: number): boolean {
+  const leftFloat = Math.fround(left);
+  const rightFloat = Math.fround(right);
+  if (!Number.isFinite(leftFloat) || !Number.isFinite(rightFloat)) return false;
+  // Match the canonicalization policy: +0 and -0 are one locomotion coordinate.
+  if (leftFloat === 0 && rightFloat === 0) return true;
+  return Object.is(leftFloat, rightFloat);
+}
+
+function sameFloat32TransportPosition(left: AgentBridgePosition, right: AgentBridgePosition): boolean {
+  return sameFloat32TransportValue(left.x, right.x)
+    && sameFloat32TransportValue(left.y, right.y)
+    && sameFloat32TransportValue(left.z, right.z);
 }
 
 function canonicalLocomotionTarget(target: unknown): AgentBridgePosition | null {
@@ -1174,7 +1190,7 @@ export async function requestAgentBridgeLocomotion(
     validateAck: (ack) => {
       if (canonicalTarget === null) return "request target was unavailable after preflight";
       if (ack.mode !== input.mode) return "acknowledgement mode does not match the request";
-      if (ack.target.x !== canonicalTarget.x || ack.target.y !== canonicalTarget.y || ack.target.z !== canonicalTarget.z) {
+      if (!sameFloat32TransportPosition(ack.target, canonicalTarget)) {
         return "acknowledgement absolute target does not match the request";
       }
       if (ack.glideDurationMs !== input.glideDurationMs) return "acknowledgement glide duration does not match the request";
@@ -1183,7 +1199,7 @@ export async function requestAgentBridgeLocomotion(
         ? null
         : "failed acknowledgement contains a world-root pose";
       if (ack.pose === null) return "completed acknowledgement omitted its world-root pose";
-      if (ack.pose.position.x !== canonicalTarget.x || ack.pose.position.y !== canonicalTarget.y || ack.pose.position.z !== canonicalTarget.z) {
+      if (!sameFloat32TransportPosition(ack.pose.position, canonicalTarget)) {
         return "acknowledgement readback position does not match the absolute target";
       }
       const expectedGeneration = input.mode === "direct" ? input.rootGeneration : input.rootGeneration + 1;
