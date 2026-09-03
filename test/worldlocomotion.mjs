@@ -3083,6 +3083,7 @@ const locomotionInput = {
   rootGeneration: 7,
   rootIncarnation: ROOT_INCARNATION,
   glideDurationMs: 500,
+  deferNonceCleanup: true,
 };
 
 const locomotionAck = (overrides = {}) => envelope(AGENT_BRIDGE_LOCOMOTE_COMMAND, {
@@ -3189,6 +3190,18 @@ function assertExactCleanup(calls, requestId = baseInput.requestId) {
   ]);
 }
 
+function assertRouteOwnedCleanup(result, calls, status = "route_owned") {
+  assert.deepEqual(result.nonceCleanup, {
+    status,
+    requestId: baseInput.requestId,
+    relativePath: `cache/${AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY}/${baseInput.requestId}.json`,
+    attempts: 0,
+  });
+  assert.equal(calls.filter((call) => Array.isArray(call.args) && call.args.includes("rm")).length, 0);
+  assert.equal(calls.filter((call) => Array.isArray(call.args)
+    && call.args.includes("requestControl") && call.args.includes("finalize")).length, 0);
+}
+
 function cancelAckFor(input, outcome = "cancelled") {
   return {
     kind: AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND,
@@ -3227,10 +3240,8 @@ function finalizeAckFor(input) {
   };
 }
 
-test("maximum direct glide remains inside the terminal host window and exact cleanup", async () => {
+test("maximum direct glide remains inside the terminal host window and transfers nonce cleanup", async () => {
   let nowNs = 0n;
-  let finalized = false;
-  let removed = false;
   const calls = [];
   const input = {
     ...locomotionInput,
@@ -3244,7 +3255,6 @@ test("maximum direct glide remains inside the terminal host window and exact cle
     requestControl: "execute",
     executionLeaseMs: 12_000,
   });
-  const finalAck = Buffer.from(JSON.stringify(finalizeAckFor(input)));
   const deps = {
     monotonicNs: () => nowNs,
     sleep: async (durationMs) => {
@@ -3252,16 +3262,12 @@ test("maximum direct glide remains inside the terminal host window and exact cle
       nowNs += BigInt(durationMs) * 1_000_000n;
     },
     runText: async (_cmd, args, options) => {
-      const kind = args.includes("rm") ? "rm" : args.includes("finalize") ? "finalize" : "broadcast";
+      const kind = args.includes("cancel") ? "cancel" : "broadcast";
       calls.push({ kind, args, options, startedAt: nowNs });
-      if (kind === "finalize") finalized = true;
-      if (kind === "rm") removed = true;
-      return kind === "rm" ? cleanupOk : textOk;
+      return textOk;
     },
     runBytes: async (_cmd, args, options) => {
-      calls.push({ kind: removed ? "absence" : finalized ? "finalize-read" : "pull", args, options, startedAt: nowNs });
-      if (removed) return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
-      if (finalized) return { code: 0, stdout: Buffer.concat([Buffer.from([1]), finalAck]), stderr: "", timedOut: false };
+      calls.push({ kind: "pull", args, options, startedAt: nowNs });
       return nowNs < 10_000_000_000n
         ? { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false }
         : { code: 0, stdout: Buffer.concat([Buffer.from([1]), Buffer.from(JSON.stringify(ack))]), stderr: "", timedOut: false };
@@ -3278,16 +3284,12 @@ test("maximum direct glide remains inside the terminal host window and exact cle
   ]);
   assert.ok(execute.args.includes("executionLeaseMs"));
   assert.equal(calls.filter((call) => call.kind === "broadcast" && call.args.includes("cancel")).length, 0);
-  assert.equal(calls.filter((call) => call.kind === "finalize").length, 1);
-  assert.equal(calls.filter((call) => call.kind === "rm").length, 1);
-  assert.equal(calls.filter((call) => call.kind === "absence").length, 1);
+  assertRouteOwnedCleanup(result, calls);
 });
 
-test("locomotion timeout obtains a guest cancel barrier before one exact nonce removal", async () => {
+test("locomotion timeout obtains a guest cancel barrier before transferring nonce cleanup", async () => {
   let nowNs = 0n;
   let cancelled = false;
-  let finalized = false;
-  let removed = false;
   let cancelPulls = 0;
   let mutated = false;
   const calls = [];
@@ -3299,23 +3301,16 @@ test("locomotion timeout obtains a guest cancel barrier before one exact nonce r
     deadlineMonotonicNs: "16300000000",
   };
   const cancelAck = Buffer.from(JSON.stringify(cancelAckFor(input)));
-  const finalAck = Buffer.from(JSON.stringify(finalizeAckFor(input)));
   const deps = {
     monotonicNs: () => nowNs,
     sleep: async (durationMs) => { nowNs += BigInt(durationMs) * 1_000_000n; },
     runText: async (_cmd, args, options) => {
-      const isRm = args.includes("rm");
       const isCancel = args.includes("requestControl") && args.includes("cancel");
-      const isFinalize = args.includes("requestControl") && args.includes("finalize");
-      calls.push({ kind: isRm ? "rm" : isCancel ? "cancel" : isFinalize ? "finalize" : "execute", args, options });
+      calls.push({ kind: isCancel ? "cancel" : "execute", args, options });
       if (isCancel) cancelled = true;
-      if (isFinalize) finalized = true;
-      if (isRm) removed = true;
-      return isRm ? cleanupOk : textOk;
+      return textOk;
     },
     runBytes: async () => {
-      if (removed) return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
-      if (finalized) return { code: 0, stdout: Buffer.concat([Buffer.from([1]), finalAck]), stderr: "", timedOut: false };
       if (!cancelled || cancelPulls++ === 0)
         return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
       return { code: 0, stdout: Buffer.concat([Buffer.from([1]), cancelAck]), stderr: "", timedOut: false };
@@ -3331,8 +3326,7 @@ test("locomotion timeout obtains a guest cancel barrier before one exact nonce r
   assert.equal(mutated, false, "a timed-out producer must not retain authority to mutate later");
   assert.equal(calls.filter((call) => call.kind === "cancel").length, 1);
   assert.equal(cancelPulls, 3, "cancel polling must allow appearance followed by a stable pair");
-  assert.equal(calls.filter((call) => call.kind === "finalize").length, 1);
-  assert.equal(calls.filter((call) => call.kind === "rm").length, 1);
+  assertRouteOwnedCleanup(result, calls);
 });
 
 test("AgentBridge clock failure after guest-visible execute starts no strict effect and defers stop-first cleanup", async () => {
@@ -3533,6 +3527,21 @@ test("changed acknowledgement bytes reset stability before an identical pair suc
   assertExactCleanup(fake.calls);
 });
 
+test("stable stale or malformed acknowledgement bytes never outrun a later exact stable pair", async () => {
+  const good = hmdAck();
+  const stale = hmdAck({ requestId: "substituted_nonce_9999" });
+  for (const [label, invalid] of [["stale", stale], ["malformed", "{not-json"]]) {
+    const fake = fakeTransaction([invalid, invalid, good, good]);
+
+    const result = await requestAgentBridgeHmdPose(adb, { ...baseInput, maxPolls: 4 }, fake.deps);
+
+    assert.equal(result.ok, true, label);
+    assert.deepEqual(result.ack, good, label);
+    assert.equal(fake.calls.filter((call) => call.kind === "bytes").length, 4, label);
+    assertExactCleanup(fake.calls);
+  }
+});
+
 test("broadcast failure retains the primary error and attempts exact cleanup once", async () => {
   const fake = fakeTransaction([], {
     broadcastResult: { code: 1, stdout: "", stderr: "receiver unavailable", timedOut: false },
@@ -3569,7 +3578,21 @@ test("locomotion success binds mode, absolute target, glide budget, and root-gen
   const broadcast = fake.calls.find((call) => call.kind === "text" && call.args.includes("broadcast"));
   for (const value of ["direct", "2", "0", "-4", "7", "500", "false"])
     assert.ok(broadcast.args.includes(value), `locomote broadcast omitted ${value}`);
-  assertExactCleanup(fake.calls);
+  assertRouteOwnedCleanup(result, fake.calls);
+});
+
+test("locomotion requires an explicit route-owned nonce disposition before any transport", async () => {
+  for (const deferNonceCleanup of [undefined, false]) {
+    const input = { ...locomotionInput, deferNonceCleanup };
+    const fake = fakeTransaction([locomotionAck(), locomotionAck()]);
+
+    const result = await requestAgentBridgeLocomotion(adb, input, fake.deps);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "invalid_request");
+    assert.match(result.primaryError, /deferNonceCleanup|route.*cleanup|ownership/i);
+    assert.equal(fake.calls.length, 0);
+  }
 });
 
 test("locomotion canonicalizes a finite JavaScript target to its exact Float32 transport value", async () => {
@@ -3586,7 +3609,7 @@ test("locomotion canonicalizes a finite JavaScript target to its exact Float32 t
   const broadcast = fake.calls.find((call) => call.kind === "text" && call.args.includes("broadcast"));
   assert.equal(broadcast.args[broadcast.args.indexOf("x") + 1], "0.1");
   assert.deepEqual(result.ack.target, { absolute: true, x: 0.1, y: 0, z: -4 });
-  assertExactCleanup(fake.calls);
+  assertRouteOwnedCleanup(result, fake.calls);
 });
 
 test("locomotion acknowledgement binding compares exact Float32 values and normalizes signed zero", async () => {
@@ -3618,7 +3641,7 @@ test("locomotion acknowledgement binding compares exact Float32 values and norma
     assert.equal(result.ok, true);
     const args = fake.calls.find((call) => call.kind === "text" && call.args.includes("broadcast")).args;
     assert.deepEqual(["x", "y", "z"].map((axis) => args[args.indexOf(axis) + 1]), edge.broadcast);
-    assertExactCleanup(fake.calls);
+    assertRouteOwnedCleanup(result, fake.calls);
   }
 });
 
@@ -3636,7 +3659,7 @@ test("replacement success requires the next root generation and never accepts di
 
   assert.equal(result.ok, true);
   assert.equal(result.ack.pose.rootGeneration, 8);
-  assertExactCleanup(fake.calls);
+  assertRouteOwnedCleanup(result, fake.calls);
 });
 
 for (const [name, mutate] of [
@@ -3648,7 +3671,7 @@ for (const [name, mutate] of [
   ["prior root generation", (ack) => { ack.rootGenerationBefore = 6; }],
   ["direct result generation", (ack) => { ack.pose.rootGeneration = 8; }],
 ]) {
-  test(`locomotion rejects substituted or stale ${name} acknowledgement and cleans it`, async () => {
+  test(`locomotion rejects substituted or stale ${name} acknowledgement and defers its cleanup`, async () => {
     const ack = locomotionAck();
     mutate(ack);
     const fake = fakeTransaction([ack, ack]);
@@ -3658,26 +3681,24 @@ for (const [name, mutate] of [
     assert.equal(result.ok, false);
     assert.equal(result.code, "invalid_ack");
     assert.match(result.primaryError, /acknowledgement|ack/i);
-    assertExactCleanup(fake.calls);
+    assertRouteOwnedCleanup(result, fake.calls);
   });
 }
 
-test("a rejected guest result is distinct from an acknowledgement cleanup failure", async () => {
+test("a rejected guest result retains its primary failure and transfers nonce cleanup", async () => {
   const rejected = locomotionAck({ outcome: "rejected", pose: null, primaryError: "stale_generation" });
-  const fake = fakeTransaction([rejected, rejected], {
-    cleanupResult: { code: 1, stdout: "", stderr: "permission denied", timedOut: false },
-  });
+  const fake = fakeTransaction([rejected, rejected]);
 
   const result = await requestAgentBridgeLocomotion(adb, locomotionInput, fake.deps);
 
   assert.equal(result.ok, false);
   assert.equal(result.code, "guest_rejected");
   assert.equal(result.primaryError, "stale_generation");
-  assert.match(result.cleanupError, /permission denied/i);
-  assertExactCleanup(fake.calls);
+  assert.equal(result.cleanupError, null);
+  assertRouteOwnedCleanup(result, fake.calls);
 });
 
-test("guest cleanup failure remains visible when exact acknowledgement-file cleanup succeeds", async () => {
+test("guest cleanup failure remains visible while nonce cleanup stays route-owned", async () => {
   const rejected = locomotionAck({
     outcome: "failed",
     pose: null,
@@ -3692,7 +3713,7 @@ test("guest cleanup failure remains visible when exact acknowledgement-file clea
   assert.equal(result.code, "guest_rejected");
   assert.equal(result.primaryError, "replacement_publish_failed");
   assert.equal(result.cleanupError, "candidate_root_destroy_failed");
-  assertExactCleanup(fake.calls);
+  assertRouteOwnedCleanup(result, fake.calls);
 });
 
 test("failed HMD and locomotion acknowledgements carrying success payloads are invalid", async () => {
@@ -3708,7 +3729,7 @@ test("failed HMD and locomotion acknowledgements carrying success payloads are i
   const locomotionResult = await requestAgentBridgeLocomotion(adb, locomotionInput, locomotionFake.deps);
   assert.equal(locomotionResult.ok, false);
   assert.equal(locomotionResult.code, "invalid_ack");
-  assertExactCleanup(locomotionFake.calls);
+  assertRouteOwnedCleanup(locomotionResult, locomotionFake.calls);
 });
 
 test("cleanup-only host failure has no invented primary failure", async () => {
@@ -3740,11 +3761,11 @@ test("locomotion rejects incomplete, non-finite, implicit-mode, or physical-walk
     assert.equal(result.code, "invalid_request");
     assert.equal(fake.calls.filter((call) => call.kind === "bytes").length, 0);
     assert.equal(fake.calls.filter((call) => call.kind === "text" && call.args.includes("broadcast")).length, 0);
-    assertExactCleanup(fake.calls);
+    assertRouteOwnedCleanup(result, fake.calls);
   }
 });
 
-test("finite doubles outside the Float32 transport domain are refused with exact cleanup before broadcast", async () => {
+test("finite doubles outside the Float32 transport domain are refused with route-owned cleanup before broadcast", async () => {
   const fake = fakeTransaction([]);
 
   const result = await requestAgentBridgeLocomotion(adb, {
@@ -3756,7 +3777,7 @@ test("finite doubles outside the Float32 transport domain are refused with exact
   assert.equal(result.code, "invalid_request");
   assert.match(result.primaryError, /Float32/i);
   assert.equal(fake.calls.filter((call) => call.kind === "text" && call.args.includes("broadcast")).length, 0);
-  assertExactCleanup(fake.calls);
+  assertRouteOwnedCleanup(result, fake.calls);
 });
 
 test("unsafe serial, package, or nonce remains fully transport-free", async () => {
@@ -4464,52 +4485,17 @@ test("cancel polling ignores stable stale execute bytes until an exact cancel ba
   assert.equal(result.nonceCleanup.status, "route_owned");
 });
 
-test("default locomotion cleanup finalizes before one removal and rejects late cancel resurrection", async () => {
-  const executeAck = Buffer.from(JSON.stringify(locomotionAck()), "utf8");
-  const finalAck = Buffer.from(JSON.stringify(finalizeAckFor(locomotionInput)), "utf8");
-  const calls = [];
-  let guestState = "EXECUTE_TERMINAL";
-  let publishedBytes = executeAck;
+test("locomotion request transfers the nonce without finalizing or removing it", async () => {
+  const ack = locomotionAck();
+  const fake = fakeTransaction([ack, ack]);
 
-  const result = await requestAgentBridgeLocomotion(adb, locomotionInput, {
-    monotonicNs: (() => { let tick = 1n; return () => tick++; })(),
-    sleep: async () => {},
-    runText: async (_cmd, args, options) => {
-      const kind = args.includes("rm")
-        ? "rm"
-        : args.includes("requestControl") && args.includes("finalize")
-          ? "finalize"
-          : "execute";
-      calls.push({ kind, args, options });
-      if (kind === "finalize") {
-        assert.equal(guestState, "EXECUTE_TERMINAL");
-        guestState = "FINALIZED";
-        publishedBytes = finalAck;
-      } else if (kind === "rm") {
-        assert.equal(guestState, "FINALIZED", "the guest fence must precede the sole removal");
-        publishedBytes = null;
-      }
-      return kind === "rm" ? cleanupOk : textOk;
-    },
-    runBytes: async (_cmd, _args, options) => {
-      const kind = publishedBytes === null ? "absence" : guestState === "FINALIZED" ? "finalize-read" : "execute-read";
-      calls.push({ kind, options });
-      return publishedBytes === null
-        ? { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false }
-        : { code: 0, stdout: Buffer.concat([Buffer.from([1]), publishedBytes]), stderr: "", timedOut: false };
-    },
-  });
+  const result = await requestAgentBridgeLocomotion(adb, locomotionInput, fake.deps);
 
   assert.equal(result.ok, true);
-  assert.equal(result.nonceCleanup.status, "removed_and_absent");
-  assert.deepEqual(calls.map((call) => call.kind), [
-    "execute", "execute-read", "execute-read", "finalize", "finalize-read", "finalize-read", "rm", "absence",
+  assertRouteOwnedCleanup(result, fake.calls);
+  assert.deepEqual(result.actionReceipts.map((receipt) => receipt.action), [
+    "locomotion_broadcast", "locomotion_ack_pull",
   ]);
-  const deliverLateCancel = () => {
-    if (guestState !== "FINALIZED") publishedBytes = Buffer.from("late-cancel");
-  };
-  deliverLateCancel();
-  assert.equal(publishedBytes, null, "the process-lifetime finalization fence must reject a later exact cancel writer");
 });
 
 test("unproven cancellation defers final nonce removal until an owned stop", async () => {
@@ -4530,8 +4516,8 @@ test("unproven cancellation defers final nonce removal until an owned stop", asy
   assert.equal(calls.filter((call) => call.args.includes("rm")).length, 0);
 });
 
-test("default locomotion cleanup never removes an unquiesced nonce ahead of a delayed cancel writer", async () => {
-  const input = { ...locomotionInput, maxPolls: 2, pollMs: 10 };
+test("route-owned locomotion never removes an unquiesced nonce ahead of a delayed cancel writer", async () => {
+  const input = { ...locomotionInput, maxPolls: 2, pollMs: 10, deferNonceCleanup: true };
   const calls = [];
   const result = await requestAgentBridgeLocomotion(adb, input, {
     monotonicNs: (() => { let tick = 1n; return () => tick++; })(),
@@ -4702,6 +4688,30 @@ test("strict nonce cleanup starts no removal when its deadline cannot also reser
     assert.match(error.message, /cannot fit|preserving.*proof/i);
     return true;
   });
+  assert.deepEqual(calls, []);
+});
+
+test("cleanup-only nonce recovery requires a proven process stop before any transport", async () => {
+  const calls = [];
+  await assert.rejects(agentBridge.cleanupAgentBridgeLocomotionNonce(adb, {
+    serial: baseInput.serial,
+    packageName: baseInput.packageName,
+    requestId: baseInput.requestId,
+    tag: baseInput.tag,
+    rootGeneration: 7,
+    rootIncarnation: ROOT_INCARNATION,
+    controlTimeoutMs: 1_000,
+    ackReadTimeoutMs: 250,
+    pollMs: 1,
+    stabilityReads: 2,
+    deadlineMonotonicNs: "4000000000",
+    cleanupOnly: true,
+  }, {
+    monotonicNs: () => { calls.push("clock"); return 0n; },
+    sleep: async () => { calls.push("sleep"); },
+    runText: async () => { calls.push("text"); return textOk; },
+    runBytes: async () => { calls.push("bytes"); return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false }; },
+  }), /cleanupOnly.*processStopped|processStopped.*cleanupOnly/i);
   assert.deepEqual(calls, []);
 });
 

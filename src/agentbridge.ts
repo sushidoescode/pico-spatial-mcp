@@ -593,7 +593,7 @@ export interface AgentBridgeLocomotionRequestInput extends AgentBridgeLocomotion
   glideDurationMs: number;
   physicalWalk?: false;
   /** Host-only ownership transfer: the route removes the nonce after quiescence or owned stop. */
-  deferNonceCleanup?: true;
+  deferNonceCleanup: true;
 }
 
 export interface AgentBridgeLocomotionNonceCleanupReceipt {
@@ -1176,8 +1176,54 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
     }
   }
 
+  type SemanticAckCandidate =
+    | { admissible: true; ack?: Ack; legacyCommands: boolean }
+    | { admissible: false; detail: string };
+  const semanticAckCandidate = (bytes: Buffer): SemanticAckCandidate => {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(bytes.toString("utf8"));
+    } catch (error) {
+      return {
+        admissible: false,
+        detail: `Agent Bridge ${spec.operation} acknowledgement is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    const rawRecord = raw !== null && typeof raw === "object" ? raw as Record<string, unknown> : null;
+    const rawApplication = rawRecord?.application !== null && typeof rawRecord?.application === "object"
+      ? rawRecord.application as Record<string, unknown>
+      : null;
+    const legacyCommands = spec.operation === AGENT_BRIDGE_COMMANDS_COMMAND && rawRecord !== null
+      && !("capabilityRevision" in rawRecord)
+      && rawRecord.kind === AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND
+      && rawRecord.schemaVersion === AGENT_BRIDGE_LOCOMOTION_SCHEMA_VERSION
+      && rawRecord.requestId === spec.input.requestId
+      && rawRecord.tag === locomotionTag(spec.input)
+      && rawApplication?.packageName === spec.input.packageName
+      && rawRecord.operation === AGENT_BRIDGE_COMMANDS_COMMAND
+      && rawRecord.physicalWalk === false;
+    if (legacyCommands) return { admissible: true, legacyCommands: true };
+    const parsed = spec.schema.safeParse(raw);
+    if (!parsed.success) {
+      return {
+        admissible: false,
+        detail: `Agent Bridge ${spec.operation} acknowledgement schema mismatch: ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ").slice(0, 700)}`,
+      };
+    }
+    const semanticError = locomotionEnvelopeAckError(parsed.data, spec.operation, spec.input)
+      ?? terminalLocomotionAckError(parsed.data)
+      ?? spec.validateAck(parsed.data);
+    return semanticError === null
+      ? { admissible: true, ack: parsed.data, legacyCommands: false }
+      : { admissible: false, detail: semanticError };
+  };
+
   let stablePayload: Buffer | null = null;
+  let stableAck: Ack | undefined;
+  let stableLegacyCommands = false;
   let stableCount = 0;
+  let sawSemanticallyAdmissibleCandidate = false;
+  let lastInvalidAckDetail: string | null = null;
   let attempts = 0;
   let pullDetail = readyToPoll ? "acknowledgement file has not appeared"
     : executionWaitError ?? (broadcastApplied ? "acknowledgement polling did not start" : "broadcast failed before acknowledgement polling");
@@ -1204,17 +1250,32 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
       const fileAbsent = pulled.stdout[0] === 0x00 && pulled.stdout.length === 1;
       if (pulled.code === 0 && !pulled.timedOut && filePresent) {
         const bytes = pulled.stdout.subarray(1);
-        if (stablePayload !== null && stablePayload.equals(bytes)) stableCount++;
-        else {
-          stablePayload = Buffer.from(bytes);
-          stableCount = 1;
+        const candidate = semanticAckCandidate(bytes);
+        if (candidate.admissible) {
+          sawSemanticallyAdmissibleCandidate = true;
+          if (stablePayload !== null && stablePayload.equals(bytes)) stableCount++;
+          else {
+            stablePayload = Buffer.from(bytes);
+            stableCount = 1;
+          }
+          stableAck = candidate.ack;
+          stableLegacyCommands = candidate.legacyCommands;
+          pullDetail = stableCount >= stabilityReads
+            ? "semantically admissible acknowledgement bytes stabilized"
+            : "awaiting another byte-identical semantically admissible acknowledgement read";
+          if (stableCount >= stabilityReads) break;
+        } else {
+          stablePayload = null;
+          stableAck = undefined;
+          stableLegacyCommands = false;
+          stableCount = 0;
+          lastInvalidAckDetail = candidate.detail;
+          pullDetail = candidate.detail;
         }
-        pullDetail = stableCount >= stabilityReads
-          ? "acknowledgement bytes stabilized"
-          : "awaiting another byte-identical acknowledgement read";
-        if (stableCount >= stabilityReads) break;
       } else {
         stablePayload = null;
+        stableAck = undefined;
+        stableLegacyCommands = false;
         stableCount = 0;
         pullDetail = pulled.timedOut
           ? "run-as acknowledgement read timed out"
@@ -1260,7 +1321,7 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
     error: pulledSuccessfully ? undefined : pullDetail,
   });
 
-  let ack: Ack | undefined;
+  let ack: Ack | undefined = pulledSuccessfully ? stableAck : undefined;
   let terminalAckValidated = false;
   let primaryCode: Exclude<AgentBridgeLocomotionRequestResult<Ack>, { ok: true }>["code"] | null = null;
   let primaryError: string | null = null;
@@ -1270,55 +1331,28 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
       ? "Agent Bridge transaction deadline exhausted before broadcast"
       : broadcast.timedOut ? "Agent Bridge broadcast timed out" : "Agent Bridge broadcast failed";
   } else if (!pulledSuccessfully) {
-    primaryCode = spec.missingAckCode;
-    primaryError = `No stable terminal Agent Bridge ${spec.operation} acknowledgement appeared at ${relativePath}: ${pullDetail}`;
-  } else {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(stablePayload!.toString("utf8"));
-    } catch (error: any) {
+    if (!sawSemanticallyAdmissibleCandidate && lastInvalidAckDetail !== null) {
       primaryCode = "invalid_ack";
-      primaryError = `Agent Bridge ${spec.operation} acknowledgement is not valid JSON: ${error?.message ?? String(error)}`;
+      primaryError = lastInvalidAckDetail;
+    } else {
+      primaryCode = spec.missingAckCode;
+      primaryError = `No stable terminal Agent Bridge ${spec.operation} acknowledgement appeared at ${relativePath}: ${pullDetail}`;
     }
-    if (primaryError === null) {
-      const rawRecord = raw !== null && typeof raw === "object" ? raw as Record<string, unknown> : null;
-      const rawApplication = rawRecord?.application !== null && typeof rawRecord?.application === "object"
-        ? rawRecord.application as Record<string, unknown>
-        : null;
-      const legacyCommands = spec.operation === AGENT_BRIDGE_COMMANDS_COMMAND && rawRecord !== null
-        && !("capabilityRevision" in rawRecord)
-        && rawRecord.kind === AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND
-        && rawRecord.schemaVersion === AGENT_BRIDGE_LOCOMOTION_SCHEMA_VERSION
-        && rawRecord.requestId === spec.input.requestId
-        && rawRecord.tag === locomotionTag(spec.input)
-        && rawApplication?.packageName === spec.input.packageName
-        && rawRecord.operation === AGENT_BRIDGE_COMMANDS_COMMAND
-        && rawRecord.physicalWalk === false;
-      if (legacyCommands) {
+  } else if (stableLegacyCommands) {
+    primaryCode = "capability_unavailable";
+    primaryError = "Agent Bridge commands acknowledgement has no locomotion capability revision";
+  } else {
+    if (ack === undefined) {
+      primaryCode = "invalid_ack";
+      primaryError = `Stable Agent Bridge ${spec.operation} acknowledgement lost its validated semantic candidate`;
+    } else {
+      terminalAckValidated = true;
+      if (ack.outcome === "capability_unavailable") {
         primaryCode = "capability_unavailable";
-        primaryError = "Agent Bridge commands acknowledgement has no locomotion capability revision";
-      } else {
-        const parsed = spec.schema.safeParse(raw);
-        if (!parsed.success) {
-          primaryCode = "invalid_ack";
-          primaryError = `Agent Bridge ${spec.operation} acknowledgement schema mismatch: ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ").slice(0, 700)}`;
-        } else {
-          ack = parsed.data;
-          primaryError = locomotionEnvelopeAckError(ack, spec.operation, spec.input)
-            ?? terminalLocomotionAckError(ack)
-            ?? spec.validateAck(ack);
-          if (primaryError !== null) primaryCode = "invalid_ack";
-          else {
-            terminalAckValidated = true;
-          }
-          if (primaryError === null && ack.outcome === "capability_unavailable") {
-            primaryCode = "capability_unavailable";
-            primaryError = ack.primaryError!;
-          } else if (primaryError === null && (ack.outcome === "rejected" || ack.outcome === "failed")) {
-            primaryCode = "guest_rejected";
-            primaryError = ack.primaryError!;
-          }
-        }
+        primaryError = ack.primaryError!;
+      } else if (ack.outcome === "rejected" || ack.outcome === "failed") {
+        primaryCode = "guest_rejected";
+        primaryError = ack.primaryError!;
       }
     }
   }
@@ -1579,11 +1613,13 @@ export async function requestAgentBridgeLocomotion(
     ?? (input.mode === "replacement" && input.glideDurationMs !== 0
       ? "replacement mode requires glideDurationMs 0" : null)
     ?? ((input as { physicalWalk?: unknown }).physicalWalk !== undefined
-      && (input as { physicalWalk?: unknown }).physicalWalk !== false ? "physicalWalk must be false" : null);
+      && (input as { physicalWalk?: unknown }).physicalWalk !== false ? "physicalWalk must be false" : null)
+    ?? ((input as { deferNonceCleanup?: unknown }).deferNonceCleanup !== true
+      ? "deferNonceCleanup must be true so the route owns final nonce cleanup" : null);
   const transactionInput: AgentBridgeLocomotionRequestInput = canonicalTarget === null
     ? input
     : { ...input, target: canonicalTarget };
-  const result = await executeLocomotionTransaction(adb, {
+  return executeLocomotionTransaction(adb, {
     operation: AGENT_BRIDGE_LOCOMOTE_COMMAND,
     input: transactionInput,
     preflightError: invalid,
@@ -1593,10 +1629,9 @@ export async function requestAgentBridgeLocomotion(
       rootGeneration: input.rootGeneration,
       rootIncarnation: input.rootIncarnation,
     },
-    // A locomote nonce may only be removed after a serialized guest finalization
-    // fence (or an owned process stop).  The public wrapper either transfers that
-    // ownership to the route or completes the same fence below.
-    deferNonceCleanup: invalid === null || input.deferNonceCleanup === true,
+    // Locomotion always transfers nonce ownership to the four-stage route.  Only
+    // cleanupAgentBridgeLocomotionNonce may finalize and remove an admitted nonce.
+    deferNonceCleanup: true,
     extraBroadcastArgs: canonicalTarget === null ? [] : [
       "--es", "requestControl", "execute",
       "--ei", "executionLeaseMs", String(executionLeaseMs),
@@ -1640,76 +1675,6 @@ export async function requestAgentBridgeLocomotion(
       return null;
     },
   }, deps);
-  if (input.deferNonceCleanup === true || invalid !== null
-    || result.nonceCleanup?.status !== "route_owned" || !result.motionQuiesced
-    || !result.actionReceipts.some((receipt) => receipt.action === "locomotion_broadcast")) {
-    return result;
-  }
-
-  const failCleanup = (problem: string): AgentBridgeLocomotionRequestResult<AgentBridgeLocomotionAck> => {
-    const cleanupError = result.cleanupError === null ? problem : `${result.cleanupError}; ${problem}`;
-    if (result.ok) {
-      return {
-        ok: false,
-        code: "cleanup_failed",
-        detail: cleanupError,
-        primaryError: null,
-        cleanupError,
-        ack: result.ack,
-        motionQuiesced: true,
-        nonceCleanup: result.nonceCleanup,
-        actionReceipts: result.actionReceipts,
-        evidenceCeiling: result.evidenceCeiling,
-      };
-    }
-    return {
-      ...result,
-      detail: result.primaryError === null
-        ? cleanupError
-        : `${result.primaryError}; acknowledgement cleanup also failed: ${cleanupError}`,
-      cleanupError,
-    };
-  };
-
-  let cleanupDeadlineMonotonicNs = input.deadlineMonotonicNs;
-  if (cleanupDeadlineMonotonicNs === undefined) {
-    try {
-      const now = (deps.monotonicNs ?? (() => process.hrtime.bigint()))();
-      if (typeof now !== "bigint" || now < 0n) throw new Error("locomotion cleanup monotonic clock is invalid");
-      const stabilityReads = input.stabilityReads ?? 2;
-      const pollMs = input.pollMs ?? 100;
-      const cleanupEnvelopeMs = 1_000 + stabilityReads * 250
-        + Math.max(0, stabilityReads - 1) * pollMs + 1_000 + 250 + 2;
-      cleanupDeadlineMonotonicNs = (now + BigInt(cleanupEnvelopeMs) * 1_000_000n).toString();
-    } catch (error) {
-      return failCleanup(`locomotion acknowledgement cleanup clock: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  try {
-    const nonceCleanup = await cleanupAgentBridgeLocomotionNonce(adb, {
-      serial: input.serial,
-      packageName: input.packageName,
-      requestId: input.requestId,
-      tag: locomotionTag(input),
-      rootGeneration: input.rootGeneration,
-      rootIncarnation: input.rootIncarnation,
-      controlTimeoutMs: input.controlTimeoutMs,
-      ackReadTimeoutMs: input.ackReadTimeoutMs,
-      pollMs: input.pollMs,
-      stabilityReads: input.stabilityReads,
-      deadlineMonotonicNs: cleanupDeadlineMonotonicNs,
-    }, deps);
-    if (nonceCleanup.removalError !== undefined) {
-      return {
-        ...failCleanup(`locomotion acknowledgement cleanup: ${nonceCleanup.removalError}`),
-        nonceCleanup,
-      };
-    }
-    return { ...result, nonceCleanup };
-  } catch (error) {
-    return failCleanup(`locomotion acknowledgement cleanup: ${error instanceof Error ? error.message : String(error)}`);
-  }
 }
 
 export async function cleanupAgentBridgeLocomotionNonce(
@@ -1722,6 +1687,9 @@ export async function cleanupAgentBridgeLocomotionNonce(
   if (!LOCOMOTION_TAG_PATTERN.test(input.tag) || !Number.isSafeInteger(input.rootGeneration) || input.rootGeneration < 1
     || !LOCOMOTION_INCARNATION_PATTERN.test(input.rootIncarnation)) {
     throw new Error("locomotion nonce cleanup rejected: finalization identity is invalid");
+  }
+  if (input.cleanupOnly === true && input.processStopped !== true) {
+    throw new Error("locomotion nonce cleanup rejected: cleanupOnly requires processStopped true");
   }
   const controlTimeoutMs = input.controlTimeoutMs ?? 5_000;
   const ackReadTimeoutMs = input.ackReadTimeoutMs ?? Math.min(controlTimeoutMs, 5_000);
