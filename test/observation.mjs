@@ -156,6 +156,59 @@ test("captureSettledFrames stops at its monotonic deadline before another captur
   assert.deepEqual(fake.sleeps, [10]);
 });
 
+test("captureSettledFrames classifies a capture that returns after its deadline as a stability timeout", async () => {
+  // Catches a production mutation that accepts an in-flight capture after the shared deadline.
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  const fake = timedSettleDeps([frame("changed")], { captureCostMs: 10 });
+  const result = await captureSettledFrames(
+    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 5, attemptTimeoutMs: 5 },
+    fake.deps,
+  );
+  assert.equal(result.status, "timeout");
+  assert.equal(result.timeoutPhase, "awaiting_stability");
+  assert.equal(result.timeoutCause, "deadline");
+  assert.equal(result.frame.bytes.toString(), "changed");
+  assert.deepEqual(result.trace.map((entry) => entry.relation), ["candidate"]);
+});
+
+test("captureSettledFrames classifies a capture failure after its deadline in the stability phase", async () => {
+  // Catches a production mutation that reports an expired in-flight capture rejection as capture_failed.
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  let nowMs = 0;
+  let captures = 0;
+  const result = await captureSettledFrames(
+    { maxTries: 3, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 5, attemptTimeoutMs: 5 },
+    {
+      monotonicNs: () => BigInt(nowMs) * 1_000_000n,
+      capture: async () => {
+        captures++;
+        if (captures === 1) return frame("changed");
+        nowMs = 5;
+        throw new Error("expired screencap");
+      },
+      sleep: async () => {},
+      hash: sha256Bytes,
+    },
+  );
+  assert.equal(result.status, "timeout");
+  assert.equal(result.timeoutPhase, "awaiting_stability");
+  assert.equal(result.timeoutCause, "deadline");
+  assert.equal(result.frame.bytes.toString(), "changed");
+  assert.deepEqual(result.trace.map((entry) => entry.relation), ["candidate"]);
+});
+
+test("captureSettledFrames returns a closed result for a fractional deadline", async () => {
+  // Catches a production mutation that calls BigInt on an invalid deadline while constructing validation output.
+  const fake = timedSettleDeps([frame("must-not-capture")]);
+  const result = await captureSettledFrames(
+    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, deadlineMs: 1.5 },
+    fake.deps,
+  );
+  assert.equal(result.status, "capture_failed");
+  assert.match(result.detail, /deadlineMs.*positive safe integer/);
+  assert.deepEqual(fake.captures, []);
+});
+
 test("captureSettledFrames clamps every capture timeout to its remaining deadline", async () => {
   // Catches a production mutation that lets one capture overrun the shared deadline budget.
   const fake = timedSettleDeps([frame("a"), frame("b"), frame("b")], { captureCostMs: 10, sleepCostMs: 5 });
@@ -259,6 +312,7 @@ function executionDeps({
   online = ["emulator-5554"],
   identity = {},
   identities,
+  clock,
   onCapture,
   writeFrame,
 } = {}) {
@@ -266,7 +320,7 @@ function executionDeps({
   let index = 0;
   let identityIndex = 0;
   return {
-    monotonicNs: () => ++monotonic,
+    monotonicNs: clock ?? (() => ++monotonic),
     listOnlineSerials: async () => online,
     probeIdentity: async (serial) => ({
       serial,
@@ -404,6 +458,63 @@ test("executeCaptureSettled returns stability timeout evidence after the transit
   assert.equal(receipt.timeoutCause, "max_tries");
   assert.equal(receipt.error.code, "stability_timeout");
   assert.equal(receipt.lastValidCaptureRef.sha256, sha256Bytes(Buffer.from("changed")));
+});
+
+test("executeCaptureSettled preserves explicit transition validation evidence without a frame", async (t) => {
+  // Catches a production mutation that replaces core validation evidence with a stable empty receipt.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-observation-missing-prior-receipt-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const { receipt } = await executeCaptureSettled(
+    {
+      serial: "emulator-5554",
+      outPath: path.join(scratch, "absent.png"),
+      maxTries: 2,
+      intervalMs: 0,
+      comparison: SETTLE_COMPARISON,
+      mode: "transition_then_stable",
+      deadlineMs: 100,
+      attemptTimeoutMs: 17,
+    },
+    executionDeps(),
+  );
+  assert.equal(receipt.status, "capture_failed");
+  assert.equal(receipt.mode, "transition_then_stable");
+  assert.equal(receipt.deadlineMs, 100);
+  assert.equal(receipt.attemptTimeoutMs, 17);
+  assert.deepEqual(receipt.trace, []);
+  assert.equal(receipt.timeoutPhase, null);
+  assert.equal(receipt.timeoutCause, null);
+  assert.match(receipt.error.detail, /transition_then_stable.*priorSha256/);
+});
+
+test("executeCaptureSettled preserves a pre-capture deadline timeout receipt", async (t) => {
+  // Catches a production mutation that relabels a no-frame deadline timeout as generic capture_failed.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-observation-pre-capture-deadline-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const priorSha256 = sha256Bytes(Buffer.from("prior"));
+  let clockCalls = 0;
+  const { receipt } = await executeCaptureSettled(
+    {
+      serial: "emulator-5554",
+      outPath: path.join(scratch, "absent.png"),
+      maxTries: 2,
+      intervalMs: 0,
+      comparison: SETTLE_COMPARISON,
+      priorSha256,
+      deadlineMs: 1,
+      attemptTimeoutMs: 1,
+    },
+    executionDeps({ clock: () => (clockCalls++ < 2 ? 0n : 1_000_000n) }),
+  );
+  assert.equal(receipt.status, "timeout");
+  assert.equal(receipt.mode, "transition_then_stable");
+  assert.equal(receipt.deadlineMs, 1);
+  assert.equal(receipt.attemptTimeoutMs, 1);
+  assert.deepEqual(receipt.trace, []);
+  assert.equal(receipt.timeoutPhase, "awaiting_transition");
+  assert.equal(receipt.timeoutCause, "deadline");
+  assert.equal(receipt.error.code, "transition_timeout");
+  assert.equal(receipt.captureRef, null);
 });
 
 test("executeCaptureSettled describes an all-prior timeout without denying the observed stable pairs", async (t) => {

@@ -141,8 +141,16 @@ export async function captureSettledFrames(
   const normalized = normalizeSettlePolicy(policy);
   const monotonicNs = deps.monotonicNs ?? (() => process.hrtime.bigint());
   const startedAtNs = monotonicNs();
-  const deadlineMs = "value" in normalized ? normalized.value.deadlineMs : (policy.deadlineMs ?? 0);
-  const attemptTimeoutMs = "value" in normalized ? normalized.value.attemptTimeoutMs : (policy.attemptTimeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS);
+  const deadlineMs = "value" in normalized
+    ? normalized.value.deadlineMs
+    : validPositiveSafeInteger(policy.deadlineMs ?? 0)
+      ? policy.deadlineMs!
+      : 0;
+  const attemptTimeoutMs = "value" in normalized
+    ? normalized.value.attemptTimeoutMs
+    : validPositiveSafeInteger(policy.attemptTimeoutMs ?? 0)
+      ? policy.attemptTimeoutMs!
+      : DEFAULT_ATTEMPT_TIMEOUT_MS;
   const mode = "value" in normalized ? normalized.value.mode : normalized.mode;
   const deadlineNs = startedAtNs + BigInt(Math.max(0, deadlineMs)) * NS_PER_MS;
   const trace: SettleTraceEntry[] = [];
@@ -193,6 +201,7 @@ export async function captureSettledFrames(
     try {
       frame = await deps.capture(captureTimeoutMs);
     } catch (error: any) {
+      if (monotonicNs() >= deadlineNs) return timeout("deadline");
       return {
         ...base(timeoutPhase(), null),
         status: "capture_failed",
@@ -215,7 +224,10 @@ export async function captureSettledFrames(
       candidate = { frame, sha256 };
       relation = "candidate";
     }
-    trace.push({ attempt, capturedAtMonotonicNs: monotonicNs().toString(), sha256, relation });
+    const capturedAtNs = monotonicNs();
+    trace.push({ attempt, capturedAtMonotonicNs: capturedAtNs.toString(), sha256, relation });
+    previous = { frame, sha256 };
+    if (capturedAtNs >= deadlineNs) return timeout("deadline");
     if (relation === "stable") {
       return {
         ...base(null, null),
@@ -227,7 +239,6 @@ export async function captureSettledFrames(
         stablePair: [sha256, sha256],
       };
     }
-    previous = { frame, sha256 };
     if (attempt < policy.maxTries && policy.intervalMs > 0) {
       const sleepRemainingNs = deadlineNs - monotonicNs();
       if (sleepRemainingNs <= 0n) return timeout("deadline");
@@ -485,6 +496,52 @@ function emptyReceipt(
   };
 }
 
+function settledError(input: CaptureSettledInput, settled: SettledFrameResult): { code: string; detail: string } | null {
+  if (settled.status === "settled") return null;
+  if (settled.status === "capture_failed") return { code: "capture_failed", detail: settled.detail };
+  return {
+    code: settled.mode !== "transition_then_stable"
+      ? "settle_timeout"
+      : settled.timeoutPhase === "awaiting_transition"
+        ? "transition_timeout"
+        : "stability_timeout",
+    detail: input.priorSha256
+      ? `no byte-identical consecutive pair different from the required prior frame within ${settled.attempts} capture attempts`
+      : `no byte-identical consecutive pair within ${settled.attempts} capture attempts`,
+  };
+}
+
+function receiptWithoutFrame(
+  input: CaptureSettledInput,
+  settled: SettledFrameResult,
+  binding: CaptureRuntimeBinding,
+): CaptureSettledReceipt {
+  return {
+    status: settled.status,
+    serial: input.serial,
+    path: null,
+    sha256: null,
+    attempts: settled.attempts,
+    settlementSatisfied: settled.settlementSatisfied,
+    comparison: SETTLE_COMPARISON,
+    stablePair: settled.stablePair,
+    mode: settled.mode,
+    deadlineMs: settled.deadlineMs,
+    attemptTimeoutMs: settled.attemptTimeoutMs,
+    deadlineMonotonicNs: settled.deadlineMonotonicNs,
+    trace: settled.trace,
+    timeoutPhase: settled.timeoutPhase,
+    timeoutCause: settled.timeoutCause,
+    captureRuntimeBinding: binding,
+    captureRef: null,
+    lastValidCaptureRef: null,
+    actionReceipts: [],
+    error: settledError(input, settled),
+    evidenceCeiling: "structural",
+    lookRequired: true,
+  };
+}
+
 export async function executeCaptureSettled(
   input: CaptureSettledInput,
   deps: CaptureSettledDependencies,
@@ -591,6 +648,9 @@ export async function executeCaptureSettled(
       monotonicNs: deps.monotonicNs,
     },
   );
+  if (!settled.frame || !settled.sha256) {
+    return { receipt: receiptWithoutFrame(input, settled, closeBinding()), frame: null };
+  }
   let endingIdentity: CaptureLiveIdentity | null = null;
   let runtimeChanged: string | null = null;
   try {
@@ -606,17 +666,6 @@ export async function executeCaptureSettled(
     );
   }
   const binding = closeBinding();
-  if (!settled.frame || !settled.sha256) {
-    return {
-      receipt: emptyReceipt(
-        input.serial,
-        { code: "capture_failed", detail: settled.status === "capture_failed" ? settled.detail : "capture produced no valid frame" },
-        settled.attempts,
-        binding,
-      ),
-      frame: null,
-    };
-  }
 
   let published: { path: string; bytes: Buffer; sha256: string };
   try {
@@ -655,7 +704,6 @@ export async function executeCaptureSettled(
       frame: published.bytes,
     };
   }
-  const failedDetail = settled.status === "capture_failed" ? settled.detail : null;
   const receipt: CaptureSettledReceipt = {
     status: settled.status,
     serial: input.serial,
@@ -676,20 +724,7 @@ export async function executeCaptureSettled(
     captureRef,
     lastValidCaptureRef: settled.status === "settled" ? null : captureRef,
     actionReceipts: [],
-    error: settled.status === "settled"
-      ? null
-      : settled.status === "timeout"
-        ? {
-            code: settled.mode !== "transition_then_stable"
-              ? "settle_timeout"
-              : settled.timeoutPhase === "awaiting_transition"
-                ? "transition_timeout"
-                : "stability_timeout",
-            detail: input.priorSha256
-              ? `no byte-identical consecutive pair different from the required prior frame within ${settled.attempts} capture attempts`
-              : `no byte-identical consecutive pair within ${settled.attempts} capture attempts`,
-          }
-        : { code: "capture_failed", detail: failedDetail! },
+    error: settledError(input, settled),
     evidenceCeiling: "structural",
     lookRequired: true,
   };
