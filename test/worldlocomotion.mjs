@@ -223,6 +223,25 @@ function successCapture(input, shade = 48) {
   };
 }
 
+function routeOwnedNonceDisposition(input) {
+  return {
+    status: "route_owned",
+    requestId: input.requestId,
+    relativePath: `cache/${AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY}/${input.requestId}.json`,
+    attempts: 0,
+  };
+}
+
+function successfulNonceCleanupReceipt(context) {
+  return {
+    status: "removed_and_absent",
+    requestId: context.requestId,
+    relativePath: `cache/${AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY}/${context.requestId}.json`,
+    attempts: 1,
+    ...(context.processStopped === true ? {} : { finalizationSha256: "d".repeat(64) }),
+  };
+}
+
 async function createPreparedFixture(t, options = {}) {
   const input = prepareRouteInput(t, options.inputOverrides ?? {});
   const receiptFixture = await createRunReceiptFixture(t, receiptStore, { app: input.scenario.packageName });
@@ -609,6 +628,7 @@ async function createPreparedFixture(t, options = {}) {
         primaryError: null,
         cleanupError: null,
         motionQuiesced: true,
+        nonceCleanup: routeOwnedNonceDisposition(bridgeInput),
         actionReceipts: [],
         evidenceCeiling: "structural",
       };
@@ -616,7 +636,7 @@ async function createPreparedFixture(t, options = {}) {
     cleanupLocomotionNonce: async (context) => {
       calls.push({ kind: "nonceCleanup", context });
       if (options.nonceCleanupError) throw new Error(options.nonceCleanupError);
-      return { status: "removed_and_absent", requestId: context.requestId, attempts: 1 };
+      return successfulNonceCleanupReceipt(context);
     },
     emitMarker: async (context) => {
       calls.push({ kind: "marker", context });
@@ -866,11 +886,11 @@ test("step follows the exact BEGIN-to-END evidence order and consumes one select
   assert.equal(result.evidenceCeiling, "structural");
   assert.equal(result.lookRequired, true);
   assert.deepEqual(fixture.calls.map((call) => call.kind), [
-    "readReview", "readReceipt", "readSpec", "marker", "safety", "continuity", "hmd", "locomote", "capture",
+    "readReview", "readReceipt", "readSpec", "marker", "safety", "continuity", "hmd", "locomote", "nonceCleanup", "capture",
     "hmd", "safety", "continuity", "marker", "logs", "readReview",
   ]);
   assert.match(fixture.calls[3].context.marker, /_BEGIN$/);
-  assert.match(fixture.calls[12].context.marker, /_END$/);
+  assert.match(fixture.calls[13].context.marker, /_END$/);
   const locomote = fixture.calls.find((call) => call.kind === "locomote").input;
   assert.equal(locomote.mode, "direct");
   assert.deepEqual(locomote.target, { x: 1, y: 0, z: -2 });
@@ -892,6 +912,9 @@ test("step follows the exact BEGIN-to-END evidence order and consumes one select
   assert.equal(stepAction.pre.continuity.pid, fixture.applicationBinding.pid);
   assert.deepEqual(stepAction.pre.hmdPose.position, fixture.pose.position);
   assert.equal(stepAction.locomotion.ack.mode, "direct");
+  assert.deepEqual(stepAction.locomotionNonceCleanup, successfulNonceCleanupReceipt(
+    fixture.calls.find((call) => call.kind === "nonceCleanup").context,
+  ));
   assert.equal(stepAction.captureReceipt.mode, "transition_then_stable");
   assert.deepEqual(stepAction.post.hmdPose.position, fixture.pose.position);
   assert.equal(stepAction.post.safety.safeguard, "1");
@@ -1032,6 +1055,7 @@ function completedMovementResult(input, { cleanupOnly = false } = {}) {
         primaryError: null,
         cleanupError: "acknowledgement rm failed",
         motionQuiesced: true,
+        nonceCleanup: routeOwnedNonceDisposition(input),
         actionReceipts: [],
         evidenceCeiling: "structural",
       }
@@ -1041,6 +1065,7 @@ function completedMovementResult(input, { cleanupOnly = false } = {}) {
         primaryError: null,
         cleanupError: null,
         motionQuiesced: true,
+        nonceCleanup: routeOwnedNonceDisposition(input),
         actionReceipts: [],
         evidenceCeiling: "structural",
       };
@@ -1242,7 +1267,8 @@ test("concurrent step mutation is rejected while the first selected locomotion i
         root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: input.rootGeneration, incarnation: input.rootIncarnation },
         pose: { rootGeneration: input.rootGeneration, position: target }, hmdPose: null,
       },
-      primaryError: null, cleanupError: null, motionQuiesced: true, actionReceipts: [], evidenceCeiling: "structural",
+      primaryError: null, cleanupError: null, motionQuiesced: true,
+      nonceCleanup: routeOwnedNonceDisposition(input), actionReceipts: [], evidenceCeiling: "structural",
     };
   } });
   const first = fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
@@ -1297,7 +1323,7 @@ test("restore is available from prepared, stepped, and stopped and selects captu
       assert.equal(restored.requiredReview.length, 1);
       assert.equal(restored.requiredReview[0].role, "recovery");
       assert.deepEqual(fixture.calls.map((call) => call.kind), [
-        "readReview", "readReceipt", "readSpec", "continuity", "capability", "locomote", "capture", "readReview", "stop", "finalProcess", "safety",
+        "readReview", "readReceipt", "readSpec", "continuity", "capability", "locomote", "nonceCleanup", "capture", "readReview", "stop", "finalProcess", "safety",
       ]);
       const move = fixture.calls.find((call) => call.kind === "locomote").input;
       assert.equal(move.mode, fixture.input.mechanism);
@@ -1324,6 +1350,9 @@ test("restore is available from prepared, stepped, and stopped and selects captu
       const restoreAction = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
         .trim().split("\n").map(JSON.parse).at(-1);
       assert.deepEqual(restoreAction.locomotion.ack.target, { absolute: true, x: 0, y: 0, z: 0 });
+      assert.deepEqual(restoreAction.locomotionNonceCleanup, successfulNonceCleanupReceipt(
+        fixture.calls.find((call) => call.kind === "nonceCleanup").context,
+      ));
       assert.equal(restoreAction.captureReceipt.mode, reviewedMovedFrame ? "transition_then_stable" : "stable");
       assert.equal(restoreAction.postStopSafety.guardian, "1");
     });
@@ -2617,6 +2646,53 @@ test("clock faults do not consume waypoints, mask primary errors, or bypass rest
   });
 });
 
+test("a successful receipt-bound incumbent stop is recorded stale before a post-await clock fault", async (t) => {
+  const component = "com.prior.receipted/.MainActivity";
+  const fixture = await createPreparedFixture(t, {
+    inputOverrides: { priorForeground: { kind: "receipt_bound", component, receiptId: "c".repeat(64) } },
+    priorSnapshot: { component, packageName: "com.prior.receipted", userInstalled: true },
+  });
+  let clockBroken = false;
+  let tick = 80_000_000_000n;
+  fixture.dependencies.monotonicNs = () => {
+    if (clockBroken) throw new Error("post-incumbent-stop clock fault");
+    return ++tick;
+  };
+  const originalStop = fixture.dependencies.stopPackage;
+  fixture.dependencies.stopPackage = async (context) => {
+    const receipt = await originalStop(context);
+    if (context.reason === "prepare_declared_incumbent_clearance") clockBroken = true;
+    return receipt;
+  };
+
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+  assert.equal(result.status, "preparation_failed");
+  assert.match(result.primaryError, /post-incumbent-stop clock fault/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "relaunchPrior"), false);
+  const action = JSON.parse(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim());
+  assert.equal(action.priorForeground.receiptFreshness, "known_stale");
+  assert.equal(action.priorForeground.relaunchDisposition, "withheld_receipt_bound");
+});
+
+test("fixed phase deadline rejects an operation that completes exactly one nanosecond late", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  let nowNs = 0n;
+  fixture.dependencies.monotonicNs = () => nowNs;
+  fixture.dependencies.snapshotPriorForeground = async (context) => {
+    fixture.calls.push({ kind: "snapshotPrior", context });
+    nowNs = BigInt(context.deadlineMonotonicNs) + 1n;
+    return { component: null, packageName: null, userInstalled: false };
+  };
+
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+  assert.equal(result.status, "preparation_failed");
+  assert.match(result.primaryError, /prior foreground snapshot exceeded its fixed phase deadline/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "marker"), false,
+    "no later strict effect may be admitted after the one-nanosecond overrun");
+});
+
 test("action ledger staging failures are atomic and cannot strand movement cleanup", async (t) => {
   for (const [label, hook] of [
     ["partial write", {
@@ -2879,6 +2955,10 @@ test("an unproven guest cancellation force-stops once before step returns and re
       primaryError: "terminal locomotion acknowledgement timed out",
       cleanupError: "guest cancellation acknowledgement did not stabilize",
       motionQuiesced: false,
+      nonceCleanup: {
+        ...routeOwnedNonceDisposition(input),
+        status: "deferred_until_stop",
+      },
       actionReceipts: [],
       evidenceCeiling: "structural",
     }),
@@ -3904,14 +3984,161 @@ function deferredUnquiescedResult(input, detail = "guest cancellation barrier wa
 function routeOwnedCompletedResult(input) {
   return {
     ...completedMovementResult(input),
-    nonceCleanup: {
-      status: "route_owned",
-      requestId: input.requestId,
-      relativePath: `cache/${AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY}/${input.requestId}.json`,
-      attempts: 0,
-    },
+    nonceCleanup: routeOwnedNonceDisposition(input),
   };
 }
+
+test("every deferred locomote result must transfer the exact nonce disposition before route progress", async (t) => {
+  assert.equal(AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY, "agentbridge/locomotion");
+  const cases = [
+    ["omitted", (input) => {
+      const result = completedMovementResult(input);
+      delete result.nonceCleanup;
+      return result;
+    }],
+    ["wrong status", (input) => ({
+      ...completedMovementResult(input),
+      nonceCleanup: { ...routeOwnedNonceDisposition(input), status: "removed_and_absent" },
+    })],
+    ["wrong request", (input) => ({
+      ...completedMovementResult(input),
+      nonceCleanup: { ...routeOwnedNonceDisposition(input), requestId: `wrong_${input.requestId}` },
+    })],
+    ["wrong path", (input) => ({
+      ...completedMovementResult(input),
+      nonceCleanup: { ...routeOwnedNonceDisposition(input), relativePath: `cache/pico-agent-locomotion/${input.requestId}.json` },
+    })],
+    ["wrong attempts", (input) => ({
+      ...completedMovementResult(input),
+      nonceCleanup: { ...routeOwnedNonceDisposition(input), attempts: 1 },
+    })],
+  ];
+  for (const [label, locomotionResult] of cases) {
+    await t.test(label, async (t) => {
+      const fixture = await prepareForSteps(t, { locomotionResult });
+      fixture.calls.length = 0;
+
+      const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+      assert.equal(stopped.status, "stopped");
+      assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /nonce|cleanup|ownership|disposition/i);
+      assert.equal(fixture.calls.some((call) => call.kind === "capture"), false);
+      const effects = fixture.calls.filter((call) => ["locomote", "stop", "nonceCleanup"].includes(call.kind));
+      assert.deepEqual(effects.map((call) => call.kind), ["locomote", "stop", "nonceCleanup"]);
+      assert.equal(effects[1].context.reason, "step_unquiesced_locomotion");
+      assert.equal(effects[2].context.processStopped, true);
+      assert.equal(effects[2].context.probeOnly, undefined);
+      const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+        .trim().split("\n").map(JSON.parse).at(-1);
+      assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(effects[2].context));
+    });
+  }
+});
+
+test("live nonce cleanup must prove exact one-removal absence and finalization before pending ownership clears", async (t) => {
+  const cases = [
+    ["wrong status", (receipt) => ({ ...receipt, status: "route_owned" })],
+    ["wrong request", (receipt) => ({ ...receipt, requestId: `wrong_${receipt.requestId}` })],
+    ["wrong path", (receipt) => ({ ...receipt, relativePath: `cache/pico-agent-locomotion/${receipt.requestId}.json` })],
+    ["zero attempts", (receipt) => ({ ...receipt, attempts: 0 })],
+    ["two attempts", (receipt) => ({ ...receipt, attempts: 2 })],
+    ["missing finalization", (receipt) => {
+      const malformed = { ...receipt };
+      delete malformed.finalizationSha256;
+      return malformed;
+    }],
+    ["non-lowercase finalization", (receipt) => ({ ...receipt, finalizationSha256: "D".repeat(64) })],
+  ];
+  for (const [label, mutate] of cases) {
+    await t.test(label, async (t) => {
+      const fixture = await prepareForSteps(t, { locomotionResult: routeOwnedCompletedResult });
+      let cleanupCalls = 0;
+      fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+        fixture.calls.push({ kind: "nonceCleanup", context });
+        cleanupCalls++;
+        const valid = successfulNonceCleanupReceipt(context);
+        return cleanupCalls === 1 ? mutate(valid) : valid;
+      };
+      fixture.calls.length = 0;
+
+      const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+      assert.equal(stopped.status, "stopped");
+      assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /nonce|cleanup|finalization|absence|attempt/i);
+      assert.equal(fixture.calls.some((call) => call.kind === "capture"), false);
+      const cleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
+      assert.equal(cleanups.length, 2);
+      assert.equal(cleanups[0].context.processStopped, undefined);
+      assert.equal(cleanups[1].context.processStopped, true);
+      assert.equal(cleanups[1].context.probeOnly, true, "an invoked cleanup may never authorize a second removal");
+      assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+      const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+        .trim().split("\n").map(JSON.parse).at(-1);
+      assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(cleanups[1].context));
+      assert.equal("finalizationSha256" in action.locomotionNonceCleanup, false,
+        "a proven process stop replaces live guest finalization");
+    });
+  }
+});
+
+test("restore retains nonce ownership when its deferred disposition is omitted", async (t) => {
+  const fixture = await prepareForSteps(t);
+  fixture.dependencies.requestLocomotion = async (input) => {
+    fixture.calls.push({ kind: "locomote", input });
+    const result = completedMovementResult(input);
+    delete result.nonceCleanup;
+    return result;
+  };
+  fixture.calls.length = 0;
+
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  });
+
+  assert.equal(restored.status, "restore_failed");
+  assert.match(restored.primaryError, /nonce|cleanup|ownership|disposition/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "capture"), false);
+  const effects = fixture.calls.filter((call) => ["locomote", "stop", "nonceCleanup"].includes(call.kind));
+  assert.deepEqual(effects.map((call) => call.kind), ["locomote", "stop", "nonceCleanup"]);
+  assert.equal(effects[2].context.processStopped, true);
+  assert.equal(effects[2].context.probeOnly, undefined);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(effects[2].context));
+});
+
+test("restore keeps malformed live cleanup owned and recovers only by a post-stop absence probe", async (t) => {
+  const fixture = await prepareForSteps(t, { locomotionResult: routeOwnedCompletedResult });
+  let cleanupCalls = 0;
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    fixture.calls.push({ kind: "nonceCleanup", context });
+    cleanupCalls++;
+    const receipt = successfulNonceCleanupReceipt(context);
+    if (cleanupCalls === 1) delete receipt.finalizationSha256;
+    return receipt;
+  };
+  fixture.calls.length = 0;
+
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  });
+
+  assert.equal(restored.status, "restore_failed");
+  assert.match(restored.primaryError, /finalization|nonce|cleanup/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "capture"), false);
+  const cleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
+  assert.equal(cleanups.length, 2);
+  assert.equal(cleanups[0].context.processStopped, undefined);
+  assert.equal(cleanups[1].context.processStopped, true);
+  assert.equal(cleanups[1].context.probeOnly, true);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(cleanups[1].context));
+});
 
 test("launch-handoff observation owns every blocking preflight and the HMD-to-monitor-sample-zero handoff", async (t) => {
   for (const phase of ["runtime", "capability", "monitor_handoff"]) {
@@ -4012,7 +4239,7 @@ test("a pre-removal finalization failure stops the target before the route perfo
     }
     assert.equal(context.probeOnly, undefined);
     removalAttempts++;
-    return { status: "removed_and_absent", requestId: context.requestId, relativePath: context.relativePath, attempts: 1 };
+    return successfulNonceCleanupReceipt(context);
   };
   fixture.calls.length = 0;
   const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
@@ -4043,7 +4270,7 @@ test("a started removal with an unproven absence gets probe-only recovery and ne
           absenceProven: false,
         });
       }
-      return { status: "removed_and_absent", requestId: context.requestId, relativePath: context.relativePath, attempts: 1 };
+      return successfulNonceCleanupReceipt(context);
     }
     removalAttempts++;
     throw Object.assign(new Error("injected post-rm absence failure"), {
@@ -4652,6 +4879,70 @@ test("every post-link ledger maintenance fault preserves the one committed prepa
       assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"), payloadLines);
     });
   }
+});
+
+test("two real post-link staging unlink failures are bound and repaired on the next authoritative replay", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  const recordsRoot = path.join(fixture.input.artifactRoot, "action-records");
+  const originalUnlinkSync = fs.unlinkSync;
+  let injectedFailures = 0;
+  let ownedStagingPath = null;
+  fs.unlinkSync = function injectedActionStageUnlink(candidate) {
+    const candidatePath = String(candidate);
+    if (candidatePath.includes(`${path.sep}action-records${path.sep}.000001.`)
+      && /^\.000001\.[a-f0-9]{32}\.tmp$/.test(path.basename(candidatePath))
+      && injectedFailures < 2) {
+      injectedFailures++;
+      ownedStagingPath = candidatePath;
+      throw Object.assign(new Error(`injected real action-stage unlink failure ${injectedFailures}`), { code: "EIO" });
+    }
+    return originalUnlinkSync.apply(this, arguments);
+  };
+  let prepared;
+  try {
+    const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
+    prepared = await orchestrator.execute(fixture.input);
+    assert.equal(prepared.status, "needs_baseline_review");
+    assert.equal(injectedFailures, 2);
+    assert.ok(ownedStagingPath);
+    assert.equal(fs.existsSync(ownedStagingPath), true, "the twice-failed owned stage remains for later repair");
+    assert.equal(prepared.actionAuditMaintenance.status, "repair_pending");
+
+    const restored = await orchestrator.execute({
+      action: "restore",
+      runId: prepared.runId,
+      reviewedPriorFrame: reviewFor(prepared.requiredReview[0]),
+    });
+    assert.equal(restored.status, "restored_needs_review");
+    assert.equal(fs.existsSync(ownedStagingPath), false);
+    assert.deepEqual(fs.readdirSync(recordsRoot).sort(), ["000001.json", "000002.json"]);
+    const payloadLines = ["000001.json", "000002.json"]
+      .map((name) => canonicalJson(JSON.parse(fs.readFileSync(path.join(recordsRoot, name), "utf8")).payload))
+      .join("\n") + "\n";
+    assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"), payloadLines);
+    assert.equal(restored.actionAuditMaintenance.status, "current");
+  } finally {
+    fs.unlinkSync = originalUnlinkSync;
+  }
+});
+
+test("action replay repairs only bound owned stages and still rejects a foreign staging entry", async (t) => {
+  const fixture = await prepareForSteps(t);
+  const recordsRoot = path.join(fixture.input.artifactRoot, "action-records");
+  const foreignPath = path.join(recordsRoot, ".000002.foreign.tmp");
+  fs.writeFileSync(foreignPath, "foreign staging bytes\n", { flag: "wx", mode: 0o600 });
+  fixture.calls.length = 0;
+
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(fixture.prepared.requiredReview[0]),
+  });
+
+  assert.equal(restored.status, "restore_failed");
+  assert.match(`${restored.primaryError} ${restored.cleanupError}`, /action record|authoritative|slot|staging|changed/i);
+  assert.equal(fs.existsSync(foreignPath), true, "foreign bytes must never be deleted as owned maintenance");
+  assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
 });
 
 test("monitor sample zero must be descriptor-retained and cross-bound to the launch observer handoff", async (t) => {

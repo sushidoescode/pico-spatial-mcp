@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
+  AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY,
   AGENT_BRIDGE_LOCOMOTION_ROOT_ID,
   agentBridgeLocomotionMinimumEnvelopeMs,
   probeAgentBridgeLocomotionCapability,
@@ -631,6 +632,11 @@ interface ActionRecordBinding {
   identity: ArtifactFileIdentity;
 }
 
+interface OwnedActionStagingBinding {
+  path: string;
+  identity: ArtifactFileIdentity;
+}
+
 interface OwnedArtifactBinding extends ReservedArtifactSession {
   rootDev: number;
   rootIno: number;
@@ -645,6 +651,7 @@ interface OwnedArtifactBinding extends ReservedArtifactSession {
   routeManifest: ArtifactFileIdentity;
   actionLog: ArtifactFileIdentity;
   actionRecords: ActionRecordBinding[];
+  pendingActionStages: OwnedActionStagingBinding[];
   actionViewDirty: boolean;
   actionDurabilityPending: boolean;
   actionMaintenanceErrors: string[];
@@ -722,6 +729,52 @@ function nonceCleanupFailureDisposition(error: unknown): {
   }
   // An untyped dependency failure cannot prove that the sole rm never began.
   return { finalizationProven: false, removalStarted: true, absenceProven: false };
+}
+
+function locomotionNonceRelativePath(requestId: string): string {
+  return `cache/${AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY}/${requestId}.json`;
+}
+
+function validateDeferredLocomotionNonceDisposition(
+  result: LocomotionResult,
+  pending: NonNullable<LocomotionState["pendingLocomotionNonce"]>,
+): AgentBridgeLocomotionNonceCleanupReceipt {
+  const receipt = result.nonceCleanup;
+  const expectedStatus = result.motionQuiesced ? "route_owned" : "deferred_until_stop";
+  if (receipt === undefined
+    || receipt.status !== expectedStatus
+    || receipt.requestId !== pending.requestId
+    || receipt.relativePath !== pending.relativePath
+    || receipt.attempts !== 0) {
+    throw new LocomotionStageError(
+      "cleanup_failed",
+      `deferred locomotion did not transfer the exact ${expectedStatus} nonce ownership disposition`,
+    );
+  }
+  return receipt;
+}
+
+function validateLocomotionNonceCleanupReceipt(
+  receipt: AgentBridgeLocomotionNonceCleanupReceipt,
+  pending: NonNullable<LocomotionState["pendingLocomotionNonce"]>,
+  processStopped: boolean,
+): AgentBridgeLocomotionNonceCleanupReceipt {
+  const finalizationValid = receipt.finalizationSha256 === undefined
+    ? processStopped
+    : SHA256.test(receipt.finalizationSha256);
+  if (receipt.status !== "removed_and_absent"
+    || receipt.requestId !== pending.requestId
+    || receipt.relativePath !== pending.relativePath
+    || receipt.attempts !== 1
+    || !finalizationValid) {
+    throw new LocomotionStageError(
+      "cleanup_failed",
+      processStopped
+        ? "locomotion nonce cleanup did not prove the exact one-removal pathname absence disposition"
+        : "locomotion nonce cleanup did not prove exact live finalization and one-removal pathname absence",
+    );
+  }
+  return receipt;
 }
 
 function checkedNow(dependencies: InAppLocomotionDependencies): string {
@@ -878,6 +931,31 @@ function actionOperationId(value: unknown): string {
   return `${action}:terminal`;
 }
 
+function removeOwnedActionStage(
+  binding: OwnedArtifactBinding,
+  owned: OwnedActionStagingBinding,
+): void {
+  const index = binding.pendingActionStages.indexOf(owned);
+  if (index < 0) return;
+  if (fs.existsSync(owned.path)) {
+    unlinkExactArtifact(owned.path, owned.identity, "owned staged immutable action record", 16 * 1024 * 1024);
+  }
+  binding.pendingActionStages.splice(index, 1);
+}
+
+function reconcileOwnedActionStages(binding: OwnedArtifactBinding): void {
+  if (binding.pendingActionStages.length === 0) return;
+  const recordsRoot = path.join(binding.absoluteRoot, "action-records");
+  for (const owned of [...binding.pendingActionStages]) removeOwnedActionStage(binding, owned);
+  try {
+    fsyncDirectory(recordsRoot);
+    binding.actionDurabilityPending = false;
+  } catch (error) {
+    binding.actionDurabilityPending = true;
+    noteActionMaintenance(binding, "owned staged action-record cleanup durability", error);
+  }
+}
+
 function replayActionRecords(binding: OwnedArtifactBinding, hooks: InAppLocomotionArtifactHooks): Buffer[] {
   sameDirectory(
     path.join(binding.absoluteRoot, "action-records"),
@@ -948,7 +1026,8 @@ function materializeActionView(binding: OwnedArtifactBinding, payloads: Buffer[]
 function actionAuditMaintenance(binding: OwnedArtifactBinding): LocomotionActionAuditMaintenance {
   return {
     authoritative: "committed",
-    status: binding.actionViewDirty || binding.actionDurabilityPending ? "repair_pending" : "current",
+    status: binding.actionViewDirty || binding.actionDurabilityPending || binding.pendingActionStages.length > 0
+      ? "repair_pending" : "current",
     errors: [...binding.actionMaintenanceErrors],
   };
 }
@@ -1035,6 +1114,8 @@ function appendAction(
     binding.actionRecords.push({ sequence, operationId, previousRecordSha256, payloadSha256, recordSha256, identity });
     binding.actionViewDirty = true;
     authoritativeCommit = true;
+    const ownedStage: OwnedActionStagingBinding = { path: stagedPath, identity: staged };
+    binding.pendingActionStages.push(ownedStage);
     // The hard link (or byte-identical EEXIST) is the semantic commit fence.
     // Everything below is repairable maintenance and must never reverse the
     // exact payload now stored in the immutable hash chain.
@@ -1050,7 +1131,7 @@ function appendAction(
       noteActionMaintenance(binding, "authoritative action-record directory durability", error);
     }
     try {
-      if (fs.existsSync(stagedPath)) fs.unlinkSync(stagedPath);
+      removeOwnedActionStage(binding, ownedStage);
       hooks.afterActionStageUnlink?.({ action, status, recordPath, stagedPath });
     } catch (error) {
       noteActionMaintenance(binding, "staged action-record cleanup", error);
@@ -1062,21 +1143,28 @@ function appendAction(
     try { hooks.afterActionRecordAdoption?.({ action, status, recordPath, stagedPath }); } catch (error) {
       noteActionMaintenance(binding, "post-adoption action maintenance", error);
     }
-    try {
-      materializeActionView(binding, replayActionRecords(binding, hooks), hooks);
-    } catch (error) {
-      binding.actionViewDirty = true;
-      noteActionMaintenance(binding, "derived action JSONL materialization", error);
+    if (binding.pendingActionStages.length === 0) {
+      try {
+        materializeActionView(binding, replayActionRecords(binding, hooks), hooks);
+      } catch (error) {
+        binding.actionViewDirty = true;
+        noteActionMaintenance(binding, "derived action JSONL materialization", error);
+      }
+    } else {
+      noteActionMaintenance(binding, "derived action JSONL materialization", "deferred until owned action staging cleanup");
     }
     try { hooks.afterActionViewMaterialization?.({ action, status, path: target }); } catch (error) {
       noteActionMaintenance(binding, "post-materialization action maintenance", error);
     }
   } finally {
-    if (fs.existsSync(stagedPath)) {
-      try { fs.unlinkSync(stagedPath); } catch (error) {
+    const ownedStage = binding.pendingActionStages.find((candidate) => candidate.path === stagedPath);
+    if (ownedStage) {
+      try { removeOwnedActionStage(binding, ownedStage); } catch (error) {
         if (!authoritativeCommit) throw error;
         noteActionMaintenance(binding, "staged action-record final cleanup", error);
       }
+    } else if (!authoritativeCommit && fs.existsSync(stagedPath)) {
+      fs.unlinkSync(stagedPath);
     }
   }
   return actionAuditMaintenance(binding);
@@ -1102,6 +1190,7 @@ function assertOwnedArtifacts(binding: OwnedArtifactBinding, hooks: InAppLocomot
   sameDirectory(path.join(binding.absoluteRoot, "action-records"), {
     dev: binding.actionRecordsDev, ino: binding.actionRecordsIno,
   }, "action record directory");
+  reconcileOwnedActionStages(binding);
   const ownerBytes = readSameArtifactFile(
     path.join(binding.absoluteRoot, ".owner.json"),
     binding.ownerFile,
@@ -1205,6 +1294,7 @@ function reserveArtifacts(input: InAppLocomotionPrepareInput, dependencies: InAp
     routeManifest: artifactFileIdentity(path.join(physical, "route.json"), "route manifest", 1024 * 1024),
     actionLog: artifactFileIdentity(path.join(physical, "actions.jsonl"), "action JSONL", 16 * 1024 * 1024),
     actionRecords: [],
+    pendingActionStages: [],
     actionViewDirty: false,
     actionDurabilityPending: false,
     actionMaintenanceErrors: [],
@@ -1755,7 +1845,9 @@ function earlierDeadline(left: bigint, right: bigint): bigint {
 }
 
 function remainingUntilMs(deadlineNs: bigint, dependencies: InAppLocomotionDependencies): number {
-  return Math.floor(Number((deadlineNs - checkedMonotonic(dependencies)) / 1_000_000n));
+  const deltaNs = deadlineNs - checkedMonotonic(dependencies);
+  if (deltaNs >= 0n) return Number(deltaNs / 1_000_000n);
+  return -Number((-deltaNs + 999_999n) / 1_000_000n);
 }
 
 async function withinDeadline<T>(
@@ -1764,10 +1856,14 @@ async function withinDeadline<T>(
   label: string,
   operation: (remainingMs: number) => Promise<T>,
 ): Promise<T> {
-  const before = remainingUntilMs(deadlineNs, dependencies);
+  const admittedAtNs = checkedMonotonic(dependencies);
+  if (admittedAtNs >= deadlineNs) {
+    throw new LocomotionStageError("budget_exhausted", `${label} cannot begin at or after its fixed phase deadline`);
+  }
+  const before = Number((deadlineNs - admittedAtNs) / 1_000_000n);
   if (before < 1) throw new LocomotionStageError("budget_exhausted", `${label} cannot begin at or after its fixed phase deadline`);
   const value = await operation(before);
-  if (remainingUntilMs(deadlineNs, dependencies) < 0) {
+  if (checkedMonotonic(dependencies) > deadlineNs) {
     throw new LocomotionStageError("budget_exhausted", `${label} exceeded its fixed phase deadline`);
   }
   return value;
@@ -2000,24 +2096,30 @@ export function createInAppLocomotionOrchestrator(
         deadlineMonotonicNs: prepareDeadlineNs!.toString(),
       }));
       if (prior.packageName === input.scenario.packageName) priorStopMayHaveApplied = true;
-      await withinDeadline(prepareDeadlineNs, dependencies, "target clearance", (timeoutMs) => dependencies.stopPackage({
-        serial: input.serial,
-        packageName: input.scenario.packageName,
-        reason: "prepare_target_clearance",
-        timeoutMs,
-        deadlineMonotonicNs: prepareDeadlineNs!.toString(),
-      }));
-      if (prior.packageName === input.scenario.packageName) priorTerminatedByRun = true;
-      if (prior.packageName && prior.packageName !== input.scenario.packageName) {
-        priorStopMayHaveApplied = true;
-        await withinDeadline(prepareDeadlineNs, dependencies, "declared incumbent clearance", (timeoutMs) => dependencies.stopPackage({
+      await withinDeadline(prepareDeadlineNs, dependencies, "target clearance", async (timeoutMs) => {
+        const stopped = await dependencies.stopPackage({
           serial: input.serial,
-          packageName: prior.packageName!,
-          reason: "prepare_declared_incumbent_clearance",
+          packageName: input.scenario.packageName,
+          reason: "prepare_target_clearance",
           timeoutMs,
           deadlineMonotonicNs: prepareDeadlineNs!.toString(),
-        }));
-        priorTerminatedByRun = true;
+        });
+        if (prior.packageName === input.scenario.packageName) priorTerminatedByRun = true;
+        return stopped;
+      });
+      if (prior.packageName && prior.packageName !== input.scenario.packageName) {
+        priorStopMayHaveApplied = true;
+        await withinDeadline(prepareDeadlineNs, dependencies, "declared incumbent clearance", async (timeoutMs) => {
+          const stopped = await dependencies.stopPackage({
+            serial: input.serial,
+            packageName: prior.packageName!,
+            reason: "prepare_declared_incumbent_clearance",
+            timeoutMs,
+            deadlineMonotonicNs: prepareDeadlineNs!.toString(),
+          });
+          priorTerminatedByRun = true;
+          return stopped;
+        });
       }
       runOwnedTarget = true;
       const launch = await withinDeadline(prepareDeadlineNs, dependencies, "target launch", (timeoutMs) => dependencies.launchTarget({
@@ -2473,6 +2575,7 @@ export function createInAppLocomotionOrchestrator(
     let postHmd: AgentBridgeHmdPose | null = null;
     let postSafety: LocomotionSafetySnapshot | null = null;
     let postContinuity: ApplicationContinuitySample | null = null;
+    let locomotionNonceCleanup: AgentBridgeLocomotionNonceCleanupReceipt | null = null;
     try {
       const initialRemainingMs = remainingUntilMs(stepDeadlineNs, dependencies);
       if (initialRemainingMs <= state.input.capture.deadlineMs) {
@@ -2524,7 +2627,7 @@ export function createInAppLocomotionOrchestrator(
       pendingNonceRequestId = locomotionRequestId;
       state.pendingLocomotionNonce = {
         requestId: locomotionRequestId,
-        relativePath: `cache/agentbridge/locomotion/${locomotionRequestId}.json`,
+        relativePath: locomotionNonceRelativePath(locomotionRequestId),
         tag: `step-${waypoint.seq}`,
         rootGeneration: rootBefore,
         rootIncarnation: state.rootIncarnation,
@@ -2546,10 +2649,7 @@ export function createInAppLocomotionOrchestrator(
           ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
         });
         locomotion = retained;
-        if (retained.nonceCleanup === undefined && retained.motionQuiesced === true) {
-          pendingNonceRequestId = null;
-          state.pendingLocomotionNonce = null;
-        }
+        validateDeferredLocomotionNonceDisposition(retained, state.pendingLocomotionNonce!);
         return retained;
       });
       const retainedLocomotion = locomotion as LocomotionResult | null;
@@ -2568,7 +2668,11 @@ export function createInAppLocomotionOrchestrator(
               timeoutMs,
               deadlineMonotonicNs: stepDeadlineNs.toString(),
             });
-            pending.attempts = receipt.attempts > 0 ? 1 : 0;
+            // Once a cleanup dependency resolves, its removal effect may have
+            // started even when its receipt is malformed. Recovery is therefore
+            // probe-only until exact absence is proven.
+            pending.attempts = 1;
+            locomotionNonceCleanup = validateLocomotionNonceCleanupReceipt(receipt, pending, false);
             pendingNonceRequestId = null;
             state.pendingLocomotionNonce = null;
             if (receipt.removalError) cleanupErrors.push(`locomotion nonce removal warning: ${receipt.removalError}`);
@@ -2696,7 +2800,7 @@ export function createInAppLocomotionOrchestrator(
           cleanupErrors.push(`step emergency target stop: ${emergencyStop.error}`);
           state.unquiescedLocomotion = pendingNonceRequestId === null ? null : {
             requestId: pendingNonceRequestId,
-            relativePath: `cache/agentbridge/locomotion/${pendingNonceRequestId}.json`,
+            relativePath: locomotionNonceRelativePath(pendingNonceRequestId),
           };
           const lease = serialOwners.get(state.input.serial);
           if (lease?.runId === state.artifact.runId) {
@@ -2722,7 +2826,8 @@ export function createInAppLocomotionOrchestrator(
             ...(pending.attempts === 1 ? { probeOnly: true as const } : {}),
             ...stepRecoveryBudget(),
           });
-          pending.attempts = receipt.attempts > 0 ? 1 : 0;
+          pending.attempts = 1;
+          locomotionNonceCleanup = validateLocomotionNonceCleanupReceipt(receipt, pending, true);
           if (state.pendingLocomotionNonce === pending) state.pendingLocomotionNonce = null;
           if (pendingNonceRequestId === pending.requestId) pendingNonceRequestId = null;
           if (receipt.removalError) cleanupErrors.push(`step locomotion nonce removal warning: ${receipt.removalError}`);
@@ -2827,6 +2932,7 @@ export function createInAppLocomotionOrchestrator(
         usage: publishedUsage,
         pre: { safety: preSafety, continuity: preContinuity, hmdPose: preHmd },
         locomotion,
+        locomotionNonceCleanup,
         emergencyStop,
         captureReceipt,
         post: { hmdPose: postHmd, safety: postSafety, continuity: postContinuity },
@@ -2902,6 +3008,7 @@ export function createInAppLocomotionOrchestrator(
     let finalProcessProven = false;
     let finalSafetyProven = false;
     let currentReviewTrusted = true;
+    let locomotionNonceCleanup: AgentBridgeLocomotionNonceCleanupReceipt | null = null;
     const priorDisposition = priorForegroundDisposition(state);
     try {
       restoreStartedNs = checkedMonotonic(dependencies);
@@ -2977,7 +3084,7 @@ export function createInAppLocomotionOrchestrator(
       restorationMayHaveApplied = true;
       state.pendingLocomotionNonce = {
         requestId: restoreRequestId,
-        relativePath: `cache/agentbridge/locomotion/${restoreRequestId}.json`,
+        relativePath: locomotionNonceRelativePath(restoreRequestId),
         tag: "restore",
         rootGeneration: rootBefore,
         rootIncarnation: state.rootIncarnation,
@@ -2999,7 +3106,7 @@ export function createInAppLocomotionOrchestrator(
           ...bridgeBudgetFields(timeoutMs, mutationDeadlineNs),
         });
         locomotion = retained;
-        if (retained.nonceCleanup === undefined && retained.motionQuiesced === true) state.pendingLocomotionNonce = null;
+        validateDeferredLocomotionNonceDisposition(retained, state.pendingLocomotionNonce!);
         return retained;
       });
       const retainedLocomotion = locomotion as LocomotionResult | null;
@@ -3018,7 +3125,8 @@ export function createInAppLocomotionOrchestrator(
               timeoutMs,
               deadlineMonotonicNs: mutationDeadlineNs.toString(),
             });
-            pending.attempts = receipt.attempts > 0 ? 1 : 0;
+            pending.attempts = 1;
+            locomotionNonceCleanup = validateLocomotionNonceCleanupReceipt(receipt, pending, false);
             state.pendingLocomotionNonce = null;
             if (receipt.removalError) cleanupErrors.push(`restore locomotion nonce removal warning: ${receipt.removalError}`);
             return receipt;
@@ -3134,7 +3242,8 @@ export function createInAppLocomotionOrchestrator(
             ...(pending.attempts === 1 ? { probeOnly: true as const } : {}),
             ...cleanupBudget("locomotion nonce cleanup"),
           });
-          pending.attempts = receipt.attempts > 0 ? 1 : 0;
+          pending.attempts = 1;
+          locomotionNonceCleanup = validateLocomotionNonceCleanupReceipt(receipt, pending, true);
           state.pendingLocomotionNonce = null;
           state.unquiescedLocomotion = null;
           if (receipt.removalError) cleanupErrors.push(`locomotion nonce removal warning: ${receipt.removalError}`);
@@ -3206,6 +3315,7 @@ export function createInAppLocomotionOrchestrator(
         captureSha256: restoredReview?.captureSha256 ?? null,
         captureMode: reviewedMovedFrame ? "transition_then_stable" : "stable",
         locomotion,
+        locomotionNonceCleanup,
         captureReceipt,
         preRestoreContinuity,
         preRestoreCapability,
