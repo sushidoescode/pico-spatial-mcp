@@ -820,6 +820,16 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_CACHE_DIRECTORY === "agentbridge/navigation-guides" &&
     bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND !== bridge.AGENT_BRIDGE_SCENE_SNAPSHOT_COMMAND,
   "navigation guide owns a separate command and nonce cache directory");
+  assert(bridge.AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND === "pico.agent-bridge.locomotion" &&
+    bridge.AGENT_BRIDGE_LOCOMOTION_SCHEMA_VERSION === 1 &&
+    bridge.AGENT_BRIDGE_LOCOMOTION_CAPABILITY_REVISION === 1,
+  "world locomotion owns a separate additive revision-1 capability without changing scene 41 or guide 1");
+  assert(bridge.AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY === "agentbridge/locomotion" &&
+    bridge.AGENT_BRIDGE_LOCOMOTION_ROOT_ID === "AgentWorldRoot" &&
+    bridge.AGENT_BRIDGE_COMMANDS_COMMAND === "commands" &&
+    bridge.AGENT_BRIDGE_HMD_POSE_COMMAND === "hmd_pose" &&
+    bridge.AGENT_BRIDGE_LOCOMOTE_COMMAND === "locomote",
+  "locomotion exports its nonce cache, reserved root telemetry ID, and three exact commands");
   assert(JSON.stringify(bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COLORS) === JSON.stringify([[255, 0, 255], [0, 255, 255]]) &&
     bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL === "viewer-facing-planar-v1" &&
     bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_WIDTH_M === 0.74 &&
@@ -834,6 +844,12 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     generated.navigationGuideProtocol?.bridgeRevision === bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION &&
     generated.navigationGuideProtocol?.command === bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND,
   "tool metadata and host exports share one navigation-guide protocol version");
+  assert(generated.locomotionProtocol?.kind === bridge.AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND &&
+    generated.locomotionProtocol?.schemaVersion === bridge.AGENT_BRIDGE_LOCOMOTION_SCHEMA_VERSION &&
+    generated.locomotionProtocol?.capabilityRevision === bridge.AGENT_BRIDGE_LOCOMOTION_CAPABILITY_REVISION &&
+    generated.locomotionProtocol?.cacheDirectory === bridge.AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY &&
+    JSON.stringify(generated.locomotionProtocol?.commands) === JSON.stringify(["commands", "hmd_pose", "locomote"]),
+  "tool metadata and host exports share the independent locomotion protocol and discovery commands");
   assert(/SCENE_PAYLOAD_KIND = "pico\.agent-bridge\.scene-snapshot"/.test(agentKt) &&
     /SCENE_SCHEMA_VERSION = 1/.test(agentKt) && /SCENE_BRIDGE_REVISION = 41/.test(agentKt),
   "generated AgentBridge embeds the same kind/schema/revision constants");
@@ -847,6 +863,54 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
   assert(/data class NavigationGuideRequest\(/.test(agentKt) && /data class NavigationGuideResult\(/.test(agentKt) &&
     /registerNavigationGuideProducer/.test(agentKt) && /unregisterNavigationGuideProducer/.test(agentKt),
   "generated AgentBridge exposes a separate typed navigation-guide producer lifecycle");
+  assert(/LOCOMOTION_PAYLOAD_KIND = "pico\.agent-bridge\.locomotion"/.test(agentKt) &&
+    /LOCOMOTION_SCHEMA_VERSION = 1/.test(agentKt) && /LOCOMOTION_CAPABILITY_REVISION = 1/.test(agentKt) &&
+    /LOCOMOTION_CACHE_DIRECTORY = "agentbridge\/locomotion"/.test(agentKt) &&
+    /AGENT_WORLD_ROOT_ID = "AgentWorldRoot"/.test(agentKt) &&
+    /HMD_POSE_COMMAND = "hmd_pose"/.test(agentKt) && /LOCOMOTE_COMMAND = "locomote"/.test(agentKt),
+  "generated AgentBridge embeds the independent locomotion constants without revising scene or guide protocols");
+  assert(/data class AgentWorldPose\(val rootGeneration: Long, val position: Vector3\)/.test(agentKt) &&
+    /data class AgentHmdPose\(val readAtMonotonicNs: Long, val position: Vector3, val rotation: Quat\)/.test(agentKt) &&
+    /data class AgentLocomotionResult\([\s\S]*val outcome: String,[\s\S]*val pose: AgentWorldPose\?,[\s\S]*val primaryError: String\? = null,[\s\S]*val cleanupError: String\? = null/.test(agentKt),
+  "the locomotion binding exposes data-only world, HMD, and result producer types");
+  assert(/fun registerLocomotionProducer\([\s\S]*rootProvider: \(\) -> Entity\?,[\s\S]*hmdProducer: \(\) -> AgentHmdPose\?,[\s\S]*producer: suspend \(LocomotionRequest\) -> AgentLocomotionResult,[\s\S]*\): Long/.test(agentKt) &&
+    /fun unregisterLocomotionProducer\(generation: Long\)/.test(agentKt) &&
+    /private var locomotionGeneration = 0L/.test(agentKt) &&
+    /private val locomotionMutex = Mutex\(\)/.test(agentKt),
+  "registration owns an identity-root/HMD/locomotion binding under a generation token and serialized requests");
+  const locomotionBuiltins = /private fun registerLocomotionBuiltins[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  assert(/register\(COMMANDS_COMMAND\)/.test(locomotionBuiltins) &&
+    /register\(HMD_POSE_COMMAND\)/.test(locomotionBuiltins) && /register\(LOCOMOTE_COMMAND\)/.test(locomotionBuiltins) &&
+    /extras\.getString\("tag"\)/.test(agentKt) && /extras\.getString\("requestId"\)/.test(agentKt),
+  "commands, hmd_pose, and locomote are discoverable nonce-file operations that echo tag and request identity");
+  assert(/ApplicationInfo\.FLAG_DEBUGGABLE/.test(agentKt) && /observedStageStyle\(context\) != "Full"/.test(agentKt) &&
+    /rootContainer != "stage"/.test(agentKt) && /rootProvider/.test(agentKt) && /hmdProducer/.test(agentKt) &&
+    /capability_unavailable/.test(agentKt),
+  "raw, release, non-Full, non-stage, rootless, and HMD-less bridge states fail locomotion capability closed");
+  const locomoteWriter = /private suspend fun writeLocomotionAck[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  assert(/request\.mode != "direct" && request\.mode != "replacement"/.test(locomoteWriter) &&
+    /request\.target\.x\.isFinite\(\)/.test(locomoteWriter) && /request\.target\.y\.isFinite\(\)/.test(locomoteWriter) &&
+    /request\.target\.z\.isFinite\(\)/.test(locomoteWriter) && /request\.physicalWalk/.test(locomoteWriter) &&
+    /request\.capabilityRevision != LOCOMOTION_CAPABILITY_REVISION/.test(agentKt),
+  "locomote requires an exact revision, explicit mechanism, complete finite absolute target, and physicalWalk=false");
+  assert(/locomotionMutex\.lock\(\)/.test(locomoteWriter) && /finally\s*\{\s*locomotionMutex\.unlock\(\)\s*\}/.test(locomoteWriter) &&
+    (locomoteWriter.match(/locomotionRequestIsCurrent\(request\.generation\)/g) ?? []).length >= 2 &&
+    /rootGenerationBefore/.test(locomoteWriter) && /glideDurationMs/.test(locomoteWriter),
+  "locomotion serializes producer calls, carries bounded direct-glide metadata, and rejects invalidated generations before and after mutation");
+  const moveBlock = /register\("move"\)[\s\S]*?(?=\n        register\("remove"\))/.exec(agentKt)?.[0] ?? "";
+  const removeBlock = /register\("remove"\)[\s\S]*?(?=\n    \})/.exec(agentKt)?.[0] ?? "";
+  assert(/e === registeredLocomotionRoot\(\)/.test(moveBlock) && /reserved_root/.test(moveBlock) &&
+    /e === registeredLocomotionRoot\(\)/.test(removeBlock) && /reserved_root/.test(removeBlock) &&
+    !/getName\(\) == AGENT_WORLD_ROOT_ID/.test(moveBlock + removeBlock),
+  "generic move/remove reserve only the currently registered root by referential identity, never by name");
+  assert(/private fun parseRequiredFiniteVector3/.test(agentKt) && !/getOrDefault\(Vector3/.test(locomotionBuiltins) &&
+    /writeLocomotionAckAtomically/.test(agentKt) && /Os\.rename\(temp\.absolutePath, target\.absolutePath\)/.test(agentKt),
+  "locomotion rejects malformed targets rather than defaulting and publishes only atomic nonce-addressed acknowledgements");
+  for (const field of [
+    "kind", "schemaVersion", "capabilityRevision", "requestId", "tag", "application", "operation",
+    "mode", "target", "absolute", "glideDurationMs", "physicalWalk", "rootGenerationBefore", "pose",
+    "hmdPose", "outcome", "primaryError", "cleanupError",
+  ]) assert(agentKt.includes(`writer.name("${field}")`), `locomotion terminal acknowledgements write ${field}`);
   assert(/val generation: Long/.test(agentKt) &&
     /private val navigationGuideMutex = Mutex\(\)/.test(agentKt) &&
     /private val navigationGuideGenerationLock = Any\(\)/.test(agentKt) &&
