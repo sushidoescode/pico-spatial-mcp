@@ -921,6 +921,8 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
       locomotionPublisher.indexOf("locomotionLeases[request.requestId]"),
   "commands and HMD acknowledgements remain generation-bound without requiring an execute/cancel lease");
   const locomotionDispatcher = /private fun dispatchLocomotionFileRequest[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  const locomotionObservationAdmission = /private fun admitLocomotionObservationRequest[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  const locomotionExecutionAdmission = /private fun registerLocomotionLease[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
   const cancelDelivery = /fun dispatchLocomotionCancellation[\s\S]*?(?=\n    (?:private |fun ))/.exec(agentKt)?.[0] ?? "";
   const finalizeDelivery = /fun dispatchLocomotionFinalization[\s\S]*?(?=\n    (?:private |fun ))/.exec(agentKt)?.[0] ?? "";
   const leasePruner = /private fun pruneTerminalLocomotionLeasesLocked[\s\S]*?(?=\n    private fun )/.exec(agentKt)?.[0] ?? "";
@@ -931,11 +933,24 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     /cachedCancelOutcome/.test(agentKt) &&
     !/locomotionLeases\.clear\(\)/.test(agentKt),
   "locomotion retains identity-keyed terminal tombstones and one cached repeat-cancel outcome across producer replacement");
-  assert(locomotionDispatcher.indexOf("registerLocomotionLease") >= 0 &&
-    locomotionDispatcher.indexOf("registerLocomotionLease") < locomotionDispatcher.indexOf("targetFile.exists()") &&
+  assert(/synchronized\(locomotionLeaseLock\)/.test(locomotionExecutionAdmission) &&
+    locomotionExecutionAdmission.indexOf("locomotionLeases.containsKey(request.requestId)") >= 0 &&
+    locomotionExecutionAdmission.indexOf("locomotionLeases.containsKey(request.requestId)") <
+      locomotionExecutionAdmission.indexOf("target.exists()") &&
     /existing\.generation/.test(locomotionCanceller) &&
     locomotionCanceller.indexOf("existing.generation") < locomotionCanceller.indexOf("currentLocomotionBinding"),
   "execute admission is lease-linearized before pathname deletion and an existing lease's original tuple wins over mutable binding");
+  assert(/synchronized\(locomotionLeaseLock\)/.test(locomotionObservationAdmission) &&
+    /LocomotionLeaseState\.FINALIZING/.test(locomotionObservationAdmission) &&
+    /LocomotionLeaseState\.FINALIZED/.test(locomotionObservationAdmission) &&
+    locomotionObservationAdmission.indexOf("LocomotionLeaseState.FINALIZING") <
+      locomotionObservationAdmission.indexOf("target.exists()") &&
+    locomotionObservationAdmission.indexOf("LocomotionLeaseState.FINALIZED") <
+      locomotionObservationAdmission.indexOf("target.exists()") &&
+    /admitLocomotionObservationRequest\(request, targetFile\)/.test(locomotionDispatcher) &&
+    !/targetFile\.(?:exists|delete)\(\)/.test(locomotionDispatcher) &&
+    /LocomotionLeaseState\.FINALIZING[\s\S]*LocomotionLeaseState\.FINALIZED/.test(locomotionPublisher),
+  "commands and HMD admission cannot remove or republish a nonce once finalization starts");
   assert(/goAsync\(\)/.test(providerKt) && /dispatchLocomotionCancellation/.test(providerKt) &&
     /pending\.finish\(\)/.test(providerKt) &&
     /withTimeout/.test(cancelDelivery) && /job\.join\(\)/.test(cancelDelivery) &&
@@ -955,8 +970,7 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
       locomotionPublisher.indexOf('request.requestControl == "finalize"') &&
     locomotionPublisher.indexOf("Os.rename(temp.absolutePath, target.absolutePath)",
       locomotionPublisher.indexOf("lease.state = LocomotionLeaseState.FINALIZED")) >
-      locomotionPublisher.indexOf("lease.state = LocomotionLeaseState.FINALIZED") &&
-    locomotionDispatcher.indexOf("registerLocomotionLease") < locomotionDispatcher.indexOf("targetFile.exists()"),
+      locomotionPublisher.indexOf("lease.state = LocomotionLeaseState.FINALIZED"),
   "finalization joins every prior nonce writer, atomically publishes one original-tuple fence, and permanently suppresses execute/cancel resurrection");
   assert(/generation = currentLocomotionGeneration\(\)/.test(agentKt) &&
     !/locomotionMutex\.lock\(\)[\s\S]*fun unregisterLocomotionProducer/.test(agentKt),

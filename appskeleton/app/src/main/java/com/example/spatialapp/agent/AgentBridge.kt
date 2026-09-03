@@ -595,6 +595,16 @@ object AgentBridge {
         )
     }
 
+    private fun admitLocomotionObservationRequest(request: LocomotionFileRequest, target: File): String? =
+        synchronized(locomotionLeaseLock) {
+            val leaseState = locomotionLeases[request.requestId]?.state
+            if (leaseState == LocomotionLeaseState.FINALIZING ||
+                leaseState == LocomotionLeaseState.FINALIZED
+            ) return@synchronized "locomotion_nonce_finalization_started"
+            if (target.exists() && !target.delete()) return@synchronized "stale_ack_not_removed"
+            null
+        }
+
     private fun dispatchLocomotionFileRequest(operation: String, extras: Bundle) {
         val request = parseLocomotionFileRequest(operation, extras)
         if (request == null) {
@@ -623,8 +633,9 @@ object AgentBridge {
             }
             job.start()
         } else {
-            if (targetFile.exists() && !targetFile.delete()) {
-                event("locomotion_failed", "operation" to operation, "requestId" to request.requestId, "msg" to "stale_ack_not_removed")
+            val admissionError = admitLocomotionObservationRequest(request, targetFile)
+            if (admissionError != null) {
+                event("locomotion_failed", "operation" to operation, "requestId" to request.requestId, "msg" to admissionError)
                 return
             }
             bridgeScope.launch {
@@ -1200,7 +1211,10 @@ object AgentBridge {
             request.requestControl != "finalize"
         ) {
             return synchronized(locomotionLeaseLock) {
-                if (locomotionLeases[request.requestId]?.state == LocomotionLeaseState.FINALIZED) return@synchronized false
+                val leaseState = locomotionLeases[request.requestId]?.state
+                if (leaseState == LocomotionLeaseState.FINALIZING ||
+                    leaseState == LocomotionLeaseState.FINALIZED
+                ) return@synchronized false
                 synchronized(locomotionGenerationLock) {
                     if (locomotionGeneration != request.generation) return@synchronized false
                     Os.rename(temp.absolutePath, target.absolutePath)
