@@ -1508,14 +1508,23 @@ console.log("\nCP1 generated Full-stage world roots are movable without changing
   const mixed = homeFor(mixedSpec);
   const nonStageFull = homeFor(nonStageFullSpec);
 
-  const hostAt = full.indexOf('setName("AgentSpatialViewHost")');
-  const worldAt = full.indexOf('setName("AgentWorldRoot")');
+  const hierarchySetup = /fun createAndMountHierarchy\(content: SpatialViewContent\): Entity \{[\s\S]*?(?=\n    fun activate)/.exec(full)?.[0] ?? "";
+  const hostAt = hierarchySetup.indexOf('setName("AgentSpatialViewHost")');
+  const worldAt = hierarchySetup.indexOf('setName("AgentWorldRoot")');
   const authoredAt = full.indexOf('setName("SceneRoot")');
-  assert(hostAt >= 0 && worldAt > hostAt && authoredAt > worldAt &&
-    /content\.addEntity\(spatialViewHost\)[\s\S]*spatialViewHost\.addChild\(worldRoot\)[\s\S]*(?:worldRoot|worldParent)\.addChild\(sceneRoot\)/.test(full),
+  assert(hostAt >= 0 && worldAt > hostAt && authoredAt >= 0 &&
+    /val worldRoot = fullStageLifecycle\.createAndMountHierarchy\(content\)[\s\S]*(?:worldRoot|worldParent)\.addChild\(sceneRoot\)/.test(full),
   "Full-stage output mounts fixed AgentSpatialViewHost -> mutable AgentWorldRoot -> authored SceneRoot, including physics worlds");
-  assert(/content\.addEntity\(spatialViewHost\)[\s\S]*spatialViewHost\.addChild\(worldRoot\)[\s\S]*fullStageLifecycle\.mount\(spatialViewHost, worldRoot\)[\s\S]*setName\("SceneRoot"\)/.test(full),
-    "Full-stage lifecycle adopts and registers its hierarchy before fallible authored-world construction");
+  const hostAdoptAt = hierarchySetup.indexOf("spatialViewHostRef = it");
+  const hostConfigureAt = hierarchySetup.indexOf('spatialViewHost.setName("AgentSpatialViewHost")');
+  const worldAdoptAt = hierarchySetup.indexOf("worldRootRef = it");
+  const worldConfigureAt = hierarchySetup.indexOf('worldRoot.setName("AgentWorldRoot")');
+  const contentAttachAt = hierarchySetup.indexOf("content.addEntity(spatialViewHost)");
+  const parentAttachAt = hierarchySetup.indexOf("spatialViewHost.addChild(worldRoot)");
+  assert([hostAdoptAt, hostConfigureAt, worldAdoptAt, worldConfigureAt, contentAttachAt, parentAttachAt].every((at) => at >= 0) &&
+    hostAdoptAt < hostConfigureAt && worldAdoptAt < worldConfigureAt && worldConfigureAt < contentAttachAt && contentAttachAt < parentAttachAt &&
+    /catch \(cause: Throwable\)[\s\S]*dispose\(\)[\s\S]*retainCleanup\(cause, cleanupError\)[\s\S]*throw cause/.test(hierarchySetup),
+  "Full-stage hierarchy adopts each created entity before fallible configuration/parenting and transactionally disposes setup failure");
   assert(full.includes('AgentBridge.attachSceneProvider("stage")') && full.includes("{ currentWorldRoot("),
     "Full-stage scene binding is a dynamic stage provider for the replaceable world root");
   assert(full.includes("HMDTrackingProvider()") && /hmdTrackingProvider\.start\(\)[\s\S]*hmdTrackingProvider\.stop\(\)/.test(full) &&
@@ -1535,25 +1544,28 @@ console.log("\nCP1 generated Full-stage world roots are movable without changing
   assert(full.includes("attachments.seatSceneAttachmentPanels(worldRoot)") &&
     /val menuParent = fullStageLifecycle\.currentWorldRoot\([\s\S]*menuParent\.addChild\(menuRoot\)/.test(full),
   "Full-stage scene attachments and menu roots are parented beneath the current AgentWorldRoot");
-  assert((full.match(/content\.addEntity\(/g) ?? []).length === 1 && full.includes("content.addEntity(spatialViewHost)"),
+  assert((full.match(/content\.addEntity\(/g) ?? []).length === 1 && hierarchySetup.includes("content.addEntity(spatialViewHost)"),
     "Full-stage output adds only its fixed host directly to SpatialViewContent");
 
   const rawScaffoldHome = read("appskeleton/app/src/main/java/com/example/spatialapp/content/HomeStage.kt");
   assert(!/AgentWorldRoot|registerLocomotionProducer|HMDTrackingProvider/.test(rawScaffoldHome),
     "the unassembled style-3-capable scaffold remains honestly unregistered");
 
-  const dispose = /fun dispose\([^)]*\) \{[\s\S]*?\n    \}/.exec(full)?.[0] ?? "";
+  const dispose = /fun dispose\(\): String\? \{[\s\S]*?\n    \}/.exec(full)?.[0] ?? "";
   const orderedCleanup = [
     "disposed = true",
-    "directGlideJob?.cancel",
-    "unregisterLocomotionProducer(registrationToken)",
-    "detachSceneProvider()",
-    "hmdTrackingProvider.stop()",
-    "ownedHierarchy?.destroy(true)",
+    'cleanup("direct_glide_cancel")',
+    'cleanup("producer_unregister")',
+    'cleanup("scene_provider_detach")',
+    'cleanup("hmd_stop")',
+    'cleanup("hierarchy_destroy")',
   ].map((needle) => dispose.indexOf(needle));
-  assert(dispose.includes("if (disposed) return") &&
+  assert(dispose.includes("if (disposed) return null") &&
     orderedCleanup.every((at) => at >= 0) && orderedCleanup.every((at, index) => index === 0 || orderedCleanup[index - 1] < at),
   "Full-stage disposal is idempotent and orders invalidation/glide cancel, exact unregister, provider detach, HMD stop, then one hierarchy destroy");
+  assert(/spatialViewHost = spatialViewHostRef[\s\S]*worldRoot = worldRootRef[\s\S]*worldRootAttachedToHost = worldRootAttachedToHost/.test(dispose) &&
+    /if \(!disposal\.worldRootAttachedToHost && worldRoot != null\)[\s\S]*cleanup\("unparented_world_root_destroy"\)[\s\S]*if \(spatialViewHost != null\)[\s\S]*cleanup\("hierarchy_destroy"\)[\s\S]*if \(disposal\.worldRootAttachedToHost && !hierarchyDestroyed && worldRoot != null\)[\s\S]*cleanup\("world_root_destroy_after_hierarchy_failure"\)/.test(dispose),
+  "Full-stage disposal owns both initial entities before parenting and tears down unparented or recursively parented hierarchy states");
 
   const forbiddenMarkers = [
     "AgentSpatialViewHost", "AgentWorldRoot", "FullStageWorldLifecycle", "HMDTrackingProvider",
@@ -1587,42 +1599,63 @@ console.log("\nCP1 generated Full-stage world roots are movable without changing
     /fun SpatialViewAttachments\.seatBoundaryLabPanels\(content: SpatialViewContent\)[\s\S]*content\.addEntity\(panel\)/.test(boundaryKt),
   "Full boundary panels gain Entity parenting while Mixed boundary seating keeps its existing call shape");
 
-  // Failure-path contract. A registration can become stale between the bridge call and local
-  // publication; a replacement can fail before or after moving children. Both paths must clean
-  // only what this lifecycle owns and must retain cleanup evidence without overwriting the cause.
-  const mount = /fun mount\([^)]*\) \{[\s\S]*?(?=\n    fun currentWorldRoot)/.exec(full)?.[0] ?? "";
-  assert(/var registeredToken: Long\? = null[\s\S]*val registrationToken = AgentBridge\.registerLocomotionProducer[\s\S]*registeredToken = registrationToken[\s\S]*catch \(cause: Throwable\)[\s\S]*AgentBridge\.unregisterLocomotionProducer\(staleToken\)[\s\S]*throw cause/.test(mount),
-    "a registration invalidated before local publication unregisters its returned stale token before retaining the mount failure");
+  // Failure-path contract. Hierarchy creation is adopted before fallible setup, capability
+  // activation is delayed until every generated world child is ready, cancellation joins the
+  // independently-scoped glide, and no cleanup exception can replace its primary.
+  const activation = /fun activate\(\) \{[\s\S]*?(?=\n    fun currentWorldRoot)/.exec(full)?.[0] ?? "";
+  const activateCallAt = full.lastIndexOf("fullStageLifecycle.activate()");
+  const sceneSeatAt = full.lastIndexOf("attachments.seatSceneAttachmentPanels(worldRoot)");
+  const menuSeatAt = full.lastIndexOf("menuParent.addChild(menuRoot)");
+  assert(activateCallAt > sceneSeatAt && activateCallAt > menuSeatAt &&
+    !/fullStageLifecycle\.activate\(\)[\s\S]*setName\("SceneRoot"\)/.test(full),
+  "Full-stage capability activation occurs only after authored scene, attachments, and menu setup finish");
+  assert(/var registeredToken: Long\? = null[\s\S]*var providerAttachedHere = false[\s\S]*attachSceneProvider\("stage"\)[\s\S]*providerAttachedHere = true[\s\S]*val registrationToken = AgentBridge\.registerLocomotionProducer[\s\S]*registeredToken = registrationToken/.test(activation) &&
+    /catch \(cause: Throwable\)[\s\S]*compensateActivation\(registeredToken, providerAttachedHere\)[\s\S]*dispose\(\)[\s\S]*retainCleanup\(cause, cleanupError\)[\s\S]*throw cause/.test(activation),
+  "activation failure invalidates and immediately compensates its exact token/provider before retaining primary plus teardown evidence");
+  const activationCompensation = /private fun compensateActivation\([\s\S]*?(?=\n    fun currentWorldRoot)/.exec(full)?.[0] ?? "";
+  assert(/lifecycleGeneration \+= 1L[\s\S]*locomotionRegistrationToken = null[\s\S]*worldRootGeneration = 0L[\s\S]*activated = false[\s\S]*sceneProviderAttached = false[\s\S]*cleanup\("producer_unregister"\)[\s\S]*unregisterLocomotionProducer\(registeredToken\)[\s\S]*cleanup\("scene_provider_detach"\)[\s\S]*detachSceneProvider\(\)[\s\S]*boundedCleanupError\(failures\)/.test(activationCompensation),
+    "activation compensation invalidates first, guards every teardown action, and returns bounded cleanup evidence");
 
   const replacement = /private suspend fun replacement\([\s\S]*?(?=\n    private fun rollbackReplacement)/.exec(full)?.[0] ?? "";
-  const rollback = /private fun rollbackReplacement\([\s\S]*?(?=\n    private fun failureText)/.exec(full)?.[0] ?? "";
-  assert(replacement.includes("rollbackReplacement(") &&
-    /movedChildren\.asReversed\(\)\.forEach[\s\S]*candidate\.removeChild\(child\)[\s\S]*oldRoot\.addChild\(child\)/.test(rollback) &&
+  const rollback = /private fun rollbackReplacement\([\s\S]*?(?=\n    private fun failureText|\n    private fun cleanupFailure)/.exec(full)?.[0] ?? "";
+  assert(/val cleanupError = candidate\?\.let \{ failedCandidate ->[\s\S]*try \{[\s\S]*rollbackReplacement\([\s\S]*catch \(rollbackCause: Throwable\)[\s\S]*cleanupFailure\("rollback_helper", rollbackCause\)/.test(replacement) &&
+    !/candidate\?\.let \{ failedCandidate ->\s*rollbackReplacement\(/.test(replacement),
+  "replacement contains the whole rollback helper so no rollback exception can replace the mutation primary");
+  assert(/cleanup\("old_root_reattach"\) \{[\s\S]*oldRoot\.getParent\(\)/.test(rollback) &&
+    /movedChildren\.asReversed\(\)\.forEach[\s\S]*cleanup\("candidate_child_detach"\)[\s\S]*candidate\.removeChild\(child\)[\s\S]*cleanup\("old_child_restore"\)[\s\S]*oldRoot\.addChild\(child\)/.test(rollback) &&
     /if \(published\)[\s\S]*worldRootRef = oldRoot[\s\S]*worldRootGeneration = oldGeneration/.test(rollback) &&
-    /candidate\.removeFromParent\(\)[\s\S]*candidate\.destroy\(false\)/.test(rollback),
-  "one rollback path handles replacement failure both before and after stable-child transfer/publication");
+    /cleanup\("candidate_detach"\)[\s\S]*candidate\.getParent\(\)[\s\S]*candidate\.removeFromParent\(\)[\s\S]*cleanup\("candidate_destroy"\)[\s\S]*candidate\.getChildrenCount\(\)[\s\S]*candidate\.destroy\(false\)[\s\S]*boundedCleanupError\(failures\)/.test(rollback) &&
+    !/fun cleanup\([\s\S]*?\n        \}\n        if \(oldRoot\.getParent\(\)/.test(rollback),
+  "one rollback path guards every fallible probe/action before returning bounded cleanup evidence");
   assert(/val applied = created\.components\.get<TransformComponent>\(\)\?\.position[\s\S]*AgentWorldPose\(nextGeneration, applied\)/.test(replacement),
     "replacement completion reports structural TransformComponent readback rather than echoing the request");
   assert(replacement.indexOf("val applied = created.components.get<TransformComponent>()?.position") <
     replacement.indexOf("oldRoot.destroy(false)"),
   "replacement obtains fallible structural readback before irreversible old-root retirement");
 
-  assert(/catch \(cause: CancellationException\) \{\s*throw cause\s*\}[\s\S]*finally \{[\s\S]*directGlideJob === glide/.test(direct) &&
-    dispose.indexOf("directGlideJob?.cancel") < dispose.indexOf("unregisterLocomotionProducer"),
-  "direct cancellation propagates while clearing job ownership, and disposal cancels it before bridge unregister");
-  assert((dispose.match(/if \(disposed\) return/g) ?? []).length === 1 &&
+  assert(/catch \(cause: CancellationException\) \{[\s\S]*withContext\(NonCancellable\)[\s\S]*glide\.cancelAndJoin\(\)[\s\S]*throw cause[\s\S]*finally \{[\s\S]*directGlideJob === glide/.test(direct) &&
+    !/catch \(cause: CancellationException\) \{\s*throw cause/.test(direct) &&
+    direct.indexOf("glide.cancelAndJoin()") < direct.indexOf("directGlideJob === glide") &&
+    /glideJob = directGlideJob/.test(dispose) && dispose.indexOf('cleanup("direct_glide_cancel")') < dispose.indexOf('cleanup("producer_unregister")'),
+  "caller cancellation non-cancellably cancels/joins the owned glide before clearing/rethrow, while disposal cancels the same handle");
+  assert((dispose.match(/if \(disposed\) return null/g) ?? []).length === 1 &&
     (dispose.match(/unregisterLocomotionProducer\(registrationToken\)/g) ?? []).length === 1 &&
     (dispose.match(/detachSceneProvider\(\)/g) ?? []).length === 1 &&
     (dispose.match(/hmdTrackingProvider\.stop\(\)/g) ?? []).length === 1 &&
-    (dispose.match(/ownedHierarchy\?\.destroy\(true\)/g) ?? []).length === 1,
+    (dispose.match(/cleanup\("hierarchy_destroy"\)/g) ?? []).length === 1,
   "double disposal is a no-op after one token/provider/HMD/hierarchy ownership snapshot is consumed");
-  assert(/val cleanupError = candidate\?\.let[\s\S]*rollbackReplacement\([\s\S]*AgentLocomotionResult\("failed", null, failureText\(cause\), cleanupError\)/.test(replacement),
+  assert(/AgentLocomotionResult\("failed", null, failureText\(cause\), cleanupError\)/.test(replacement),
     "replacement retains the primary mutation failure when rollback also reports a cleanup failure");
+  assert(/val failures = mutableListOf<String>\(\)[\s\S]*fun cleanup\(label: String, action: \(\) -> Unit\)[\s\S]*cleanup\("producer_unregister"\)[\s\S]*cleanup\("scene_provider_detach"\)[\s\S]*cleanup\("hmd_stop"\)[\s\S]*cleanup\("hierarchy_destroy"\)[\s\S]*val cleanupError = boundedCleanupError\(failures\)[\s\S]*disposalCleanupError = cleanupError[\s\S]*return cleanupError/.test(dispose) &&
+    !/^\s*runCatching \{/m.test(dispose) &&
+    /onDispose \{[\s\S]*fullStageLifecycle\.dispose\(\)\?\.let \{ cleanupError ->[\s\S]*Log\.e\(TAG, "Full Stage cleanup failed: " \+ cleanupError\)/.test(full),
+  "disposal guards every step, aggregates/stores bounded errors, and makes them visible from onDispose");
 
-  const boundaryDispose = /fun dispose\([^)]*\) \{[\s\S]*?\n    \}/.exec(boundaryHome)?.[0] ?? "";
+  const boundaryDispose = /fun dispose\(\): String\? \{[\s\S]*?\n    \}/.exec(boundaryHome)?.[0] ?? "";
   assert((boundaryHome.match(/DisposableEffect\(/g) ?? []).length === 1 &&
-    boundaryDispose.indexOf("BoundaryLabScene.release(root)") > boundaryDispose.indexOf("unregisterLocomotionProducer") &&
-    boundaryDispose.indexOf("BoundaryLabScene.release(root)") < boundaryDispose.indexOf("detachSceneProvider()"),
+    boundaryHome.lastIndexOf("fullStageLifecycle.activate()") > boundaryHome.lastIndexOf("attachments.seatBoundaryLabPanels(worldRoot)") &&
+    boundaryDispose.indexOf("BoundaryLabScene.release(root)") > boundaryDispose.indexOf('cleanup("producer_unregister")') &&
+    boundaryDispose.indexOf("BoundaryLabScene.release(root)") < boundaryDispose.indexOf('cleanup("scene_provider_detach")'),
   "Full Boundary Lab cleanup is consolidated into the one Full lifecycle without refactoring Mixed cleanup");
 }
 
