@@ -910,13 +910,34 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
   const locomotionCanceller = /private fun cancelLocomotionRequest[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
   assert(/synchronized\(locomotionLeaseLock\)/.test(locomotionPublisher) &&
     /request\.requestControl == "execute"/.test(locomotionPublisher) &&
-    /LocomotionLeaseState\.TERMINAL/.test(locomotionPublisher) &&
+    /LocomotionLeaseState\.EXECUTE_TERMINAL/.test(locomotionPublisher) &&
     /synchronized\(locomotionGenerationLock\)/.test(locomotionPublisher) &&
     /locomotionGeneration != request\.generation/.test(locomotionPublisher) &&
     /Os\.rename\(temp\.absolutePath, target\.absolutePath\)/.test(locomotionPublisher) &&
-    locomotionCanceller.indexOf("job.join()") < locomotionCanceller.indexOf("writeLocomotionAckAtomically") &&
     /if \(!publishLocomotionAckIfCurrent\(request, temp, target\)\)/.test(agentKt),
-  "execute/cancel acknowledgement publication shares the lease lock, joins cancellation, and cannot resurrect a removed nonce");
+  "execute/cancel acknowledgement publication shares the lease lock and cannot resurrect a removed nonce");
+  assert(/request\.requestControl != "execute" && request\.requestControl != "cancel"/.test(locomotionPublisher) &&
+    locomotionPublisher.indexOf('request.requestControl != "execute"') <
+      locomotionPublisher.indexOf("locomotionLeases[request.requestId]"),
+  "commands and HMD acknowledgements remain generation-bound without requiring an execute/cancel lease");
+  const locomotionDispatcher = /private fun dispatchLocomotionFileRequest[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  const cancelDelivery = /fun dispatchLocomotionCancellation[\s\S]*?(?=\n    (?:private |fun ))/.exec(agentKt)?.[0] ?? "";
+  assert(/LocomotionLeaseState\.CANCELLING/.test(agentKt) &&
+    /LocomotionLeaseState\.CANCEL_TERMINAL/.test(agentKt) &&
+    /LocomotionLeaseState\.EXECUTE_TERMINAL/.test(agentKt) &&
+    /cachedCancelOutcome/.test(agentKt) &&
+    !/locomotionLeases\.clear\(\)/.test(agentKt),
+  "locomotion retains identity-keyed terminal tombstones and one cached repeat-cancel outcome across producer replacement");
+  assert(locomotionDispatcher.indexOf("registerLocomotionLease") >= 0 &&
+    locomotionDispatcher.indexOf("registerLocomotionLease") < locomotionDispatcher.indexOf("targetFile.exists()") &&
+    /existing\.generation/.test(locomotionCanceller) &&
+    locomotionCanceller.indexOf("existing.generation") < locomotionCanceller.indexOf("currentLocomotionBinding"),
+  "execute admission is lease-linearized before pathname deletion and an existing lease's original tuple wins over mutable binding");
+  assert(/goAsync\(\)/.test(providerKt) && /dispatchLocomotionCancellation/.test(providerKt) &&
+    /pending\.finish\(\)/.test(providerKt) &&
+    /withTimeout/.test(cancelDelivery) && /job\.join\(\)/.test(cancelDelivery) &&
+    cancelDelivery.indexOf("job.join()") < cancelDelivery.indexOf("writeLocomotionCancelAck"),
+  "cancel broadcast completion is a bounded asynchronous barrier that joins the exact producer before durable acknowledgement and finishes once");
   assert(/generation = currentLocomotionGeneration\(\)/.test(agentKt) &&
     !/locomotionMutex\.lock\(\)[\s\S]*fun unregisterLocomotionProducer/.test(agentKt),
   "capability snapshots capture lifecycle generation while unregister remains independent of a long producer mutex");

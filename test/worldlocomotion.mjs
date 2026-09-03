@@ -17,6 +17,7 @@ import {
   requestAgentBridgeHmdPose,
   requestAgentBridgeLocomotion,
 } from "../dist/agentbridge.js";
+import * as agentBridge from "../dist/agentbridge.js";
 import {
   createInAppLocomotionOrchestrator,
   inAppLocomotionInputSchema,
@@ -303,8 +304,18 @@ async function createPreparedFixture(t, options = {}) {
   let hmdIndex = 0;
   let safetyIndex = 0;
   let continuityIndex = 0;
+  let handoffObservationStarted = false;
+  let handoffPhase = null;
+  const observedHandoffPhases = new Set();
   const healthLogs = [];
   const windowDumps = [];
+  const waitImmediate = () => new Promise((resolve) => setImmediate(resolve));
+  const holdHandoffPhase = async (phase) => {
+    if (options.handoffDialogDuring !== phase || !handoffObservationStarted) return;
+    handoffPhase = phase;
+    for (let tries = 0; tries < 100 && !observedHandoffPhases.has(phase); tries++) await waitImmediate();
+    handoffPhase = null;
+  };
   const dependencies = {
     randomBytes: (size) => {
       calls.push({ kind: "randomBytes", size });
@@ -348,8 +359,58 @@ async function createPreparedFixture(t, options = {}) {
         rawWindowDump: { path: fs.realpathSync(dumpPath), sha256: sha256(bytes), bytes: bytes.length },
       };
     },
+    observeLaunchHandoff: async (context) => {
+      calls.push({ kind: "launchObservation", context });
+      handoffObservationStarted = true;
+      const samples = [];
+      const rawWindowDumps = [];
+      let elapsedMs = 0;
+      const capture = () => {
+        const observedTimestampOffsetMs = samples.length === 0
+          ? 0
+          : (options.handoffObservationTimestampOffsetAfterFirstMs ?? 0);
+        const phase = handoffPhase;
+        const text = phase === null
+          ? `WINDOW MANAGER WINDOWS handoff ${samples.length}\n`
+          : `WINDOW MANAGER WINDOWS handoff ${samples.length}\nmCurrentFocus=Application Error: com.test.fullworld during ${phase}\n`;
+        const bytes = Buffer.from(text, "utf8");
+        const dumpPath = path.join(context.artifactRoot, "logs", `launch-handoff-${String(samples.length).padStart(3, "0")}.txt`);
+        fs.writeFileSync(dumpPath, bytes, { flag: "wx", mode: 0o600 });
+        const rawWindowDump = { path: fs.realpathSync(dumpPath), sha256: sha256(bytes), bytes: bytes.length };
+        const dialogs = phase === null ? [] : [`Application Error: com.test.fullworld during ${phase}`];
+        samples.push({
+          elapsedMs,
+          observedAtMonotonicNs: String(
+            10_000_000n + BigInt(elapsedMs + observedTimestampOffsetMs) * 1_000_000n,
+          ),
+          dialogs,
+          rawWindowDump,
+        });
+        rawWindowDumps.push(rawWindowDump);
+        if (phase !== null) observedHandoffPhases.add(phase);
+        elapsedMs += 5;
+      };
+      capture();
+      while (!context.signal.aborted) {
+        await waitImmediate();
+        capture();
+      }
+      capture();
+      return {
+        claim: "no_blocking_dialog_at_retained_samples",
+        maxSampleGapMs: 10,
+        startedAtMonotonicNs: "10000000",
+        endedAtMonotonicNs: String(
+          10_000_000n + BigInt(elapsedMs + (options.handoffObservationTimestampOffsetAfterFirstMs ?? 0)) * 1_000_000n,
+        ),
+        samples,
+        rawWindowDumps,
+        dialogs: [...new Set(samples.flatMap((sample) => sample.dialogs))],
+      };
+    },
     probeRuntimeBinding: async (context) => {
       calls.push({ kind: "probeRuntime", context });
+      await holdHandoffPhase("runtime");
       if (options.bindingError) throw options.bindingError;
       return {
         liveIdentity: {
@@ -366,22 +427,26 @@ async function createPreparedFixture(t, options = {}) {
     },
     sampleSafety: async (context) => {
       calls.push({ kind: "safety", context });
+      await holdHandoffPhase("safety");
       if (options.safetySequence) return options.safetySequence[Math.min(safetyIndex++, options.safetySequence.length - 1)];
       return options.safety ?? { ...cleanSafety };
     },
     probeCapability: async (bridgeInput) => {
       calls.push({ kind: "capability", input: bridgeInput });
+      await holdHandoffPhase("capability");
       return options.capability ?? {
         ok: true,
         ack: capabilityAck,
         primaryError: null,
         cleanupError: null,
+        motionQuiesced: true,
         actionReceipts: [],
         evidenceCeiling: "structural",
       };
     },
     requestHmdPose: async (bridgeInput) => {
       calls.push({ kind: "hmd", input: bridgeInput });
+      await holdHandoffPhase("hmd");
       if (options.hmdSequence) return options.hmdSequence[Math.min(hmdIndex++, options.hmdSequence.length - 1)];
       if (options.hmd) return options.hmd;
       return {
@@ -396,6 +461,7 @@ async function createPreparedFixture(t, options = {}) {
         },
         primaryError: null,
         cleanupError: null,
+        motionQuiesced: true,
         actionReceipts: [],
         evidenceCeiling: "structural",
       };
@@ -404,6 +470,16 @@ async function createPreparedFixture(t, options = {}) {
       calls.push({ kind: "monitor", context });
       const marker = context.healthBoundaryMarker ?? `PICO_LOCOMOTION_${context.runId.slice(0, 16)}_PREPARE_BEGIN`;
       const elapsedValues = [0, 15_000, 30_000, 45_000, 60_000];
+      const rawWindowDumps = elapsedValues.map((_, sampleIndex) => {
+        const bytes = Buffer.from(`WINDOW MANAGER WINDOWS sample ${sampleIndex}\n`, "utf8");
+        const dumpPath = path.join(context.artifactRoot, "logs", `fresh-launch-window-${String(sampleIndex).padStart(2, "0")}.txt`);
+        fs.writeFileSync(dumpPath, bytes, { flag: "wx", mode: 0o600 });
+        const evidence = { path: fs.realpathSync(dumpPath), sha256: sha256(bytes), bytes: bytes.length };
+        windowDumps.push(evidence);
+        return evidence;
+      });
+      await holdHandoffPhase("monitor_handoff");
+      await context.onFirstWindowSample();
       const rawHealthLogs = elapsedValues.map((_, sampleIndex) => {
         const body = options.monitorLogBodyFactory?.(marker, sampleIndex)
           ?? options.monitorLogBodies?.[sampleIndex]
@@ -413,14 +489,6 @@ async function createPreparedFixture(t, options = {}) {
         fs.writeFileSync(logPath, bytes, { flag: "wx", mode: 0o600 });
         const evidence = { path: fs.realpathSync(logPath), sha256: sha256(bytes), bytes: bytes.length };
         healthLogs.push(evidence);
-        return evidence;
-      });
-      const rawWindowDumps = elapsedValues.map((_, sampleIndex) => {
-        const bytes = Buffer.from(`WINDOW MANAGER WINDOWS sample ${sampleIndex}\n`, "utf8");
-        const dumpPath = path.join(context.artifactRoot, "logs", `fresh-launch-window-${String(sampleIndex).padStart(2, "0")}.txt`);
-        fs.writeFileSync(dumpPath, bytes, { flag: "wx", mode: 0o600 });
-        const evidence = { path: fs.realpathSync(dumpPath), sha256: sha256(bytes), bytes: bytes.length };
-        windowDumps.push(evidence);
         return evidence;
       });
       const samples = elapsedValues.map((elapsedMs, sampleIndex) => ({
@@ -502,9 +570,15 @@ async function createPreparedFixture(t, options = {}) {
         },
         primaryError: null,
         cleanupError: null,
+        motionQuiesced: true,
         actionReceipts: [],
         evidenceCeiling: "structural",
       };
+    },
+    cleanupLocomotionNonce: async (context) => {
+      calls.push({ kind: "nonceCleanup", context });
+      if (options.nonceCleanupError) throw new Error(options.nonceCleanupError);
+      return { status: "removed_and_absent", requestId: context.requestId, attempts: 1 };
     },
     emitMarker: async (context) => {
       calls.push({ kind: "marker", context });
@@ -587,7 +661,7 @@ test("prepare binds the receipt/runtime in order, proves 60-second health, and r
   assert.equal(result.requiredReview[0].role, "app_baseline");
   assert.equal(result.rootGeneration, 7);
   assert.deepEqual(fixture.calls.map((call) => call.kind), [
-    "readReceipt", "readSpec", "randomBytes", "snapshotPrior", "marker", "stop", "launch", "launchWindow", "probeRuntime",
+    "readReceipt", "readSpec", "randomBytes", "snapshotPrior", "marker", "stop", "launch", "launchObservation", "launchWindow", "probeRuntime",
     "safety", "capability", "hmd", "monitor", "capture", "readReview", "marker", "logs",
   ]);
   const capabilityCall = fixture.calls.find((call) => call.kind === "capability").input;
@@ -919,6 +993,7 @@ function completedMovementResult(input, { cleanupOnly = false } = {}) {
         ack,
         primaryError: null,
         cleanupError: "acknowledgement rm failed",
+        motionQuiesced: true,
         actionReceipts: [],
         evidenceCeiling: "structural",
       }
@@ -927,6 +1002,7 @@ function completedMovementResult(input, { cleanupOnly = false } = {}) {
         ack,
         primaryError: null,
         cleanupError: null,
+        motionQuiesced: true,
         actionReceipts: [],
         evidenceCeiling: "structural",
       };
@@ -1030,7 +1106,7 @@ test("step failures stop structurally, retain usage, and never try another mecha
           root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: input.rootGeneration, incarnation: input.rootIncarnation },
           pose: { rootGeneration: input.rootGeneration + 9, position: input.target }, hmdPose: null,
         },
-        primaryError: null, cleanupError: null, actionReceipts: [], evidenceCeiling: "structural",
+        primaryError: null, cleanupError: null, motionQuiesced: true, actionReceipts: [], evidenceCeiling: "structural",
       }),
     }],
     ["transition timeout", { captureResult: (input) => input.mode === "stable" ? successCapture(input, 48) : failedCapture(input, "transition_timeout") }],
@@ -1128,7 +1204,7 @@ test("concurrent step mutation is rejected while the first selected locomotion i
         root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: input.rootGeneration, incarnation: input.rootIncarnation },
         pose: { rootGeneration: input.rootGeneration, position: target }, hmdPose: null,
       },
-      primaryError: null, cleanupError: null, actionReceipts: [], evidenceCeiling: "structural",
+      primaryError: null, cleanupError: null, motionQuiesced: true, actionReceipts: [], evidenceCeiling: "structural",
     };
   } });
   const first = fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
@@ -1216,7 +1292,7 @@ test("restore is available from prepared, stepped, and stopped and selects captu
   }
 });
 
-test("restore rejects a wrong or changed current review before any mutation and is once-only after an attempt", async (t) => {
+test("restore rejects a wrong caller SHA without effects and cleans once when the exact expected image changed", async (t) => {
   const wrong = await prepareForSteps(t);
   const wrongResult = await wrong.orchestrator.execute({
     action: "restore",
@@ -1233,8 +1309,17 @@ test("restore rejects a wrong or changed current review before any mutation and 
     runId: tampered.prepared.runId,
     reviewedPriorFrame: reviewFor(tampered.baselineReview),
   });
-  assert.equal(tamperedResult.status, "review_rejected");
-  assert.deepEqual(tampered.calls.map((call) => call.kind), ["readReview"]);
+  assert.equal(tamperedResult.status, "restore_failed");
+  assert.match(tamperedResult.primaryError, /retained image|sha256|immutable/i);
+  assert.deepEqual(tamperedResult.requiredReview, []);
+  assert.deepEqual(tampered.calls.map((call) => call.kind), ["readReview", "stop", "finalProcess", "safety"]);
+  const tamperedCallCount = tampered.calls.length;
+  await assert.rejects(tampered.orchestrator.execute({
+    action: "restore",
+    runId: tampered.prepared.runId,
+    reviewedPriorFrame: reviewFor(tampered.baselineReview),
+  }), /once|already|out of order/i);
+  assert.equal(tampered.calls.length, tamperedCallCount);
 
   const once = await prepareForSteps(t);
   await once.orchestrator.execute({
@@ -1836,7 +1921,7 @@ test("action append validates the opened descriptor identity before writing subs
   ));
 
   assert.equal(result.status, "stopped");
-  assert.match(result.primaryError, /action.*identity|descriptor|substitut/i);
+  assert.match(result.primaryError, /action.*(?:identity|changed)|descriptor|substitut/i);
   assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"), "");
   assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl.original"), "utf8").trim().split("\n").length, 1);
 });
@@ -2408,15 +2493,19 @@ test("clock faults do not consume waypoints, mask primary errors, or bypass rest
     assert.equal(stepActions.length, 1);
   });
 
-  await t.test("restore start clock is retryable before once-only cleanup ownership advances", async (t) => {
+  await t.test("restore entry clock fault still consumes once-only cleanup ownership", async (t) => {
     const fixture = await prepareForSteps(t);
     fixture.dependencies.monotonicNs = () => { throw new Error("restore start clock fault"); };
     const request = { action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview) };
-    await assert.rejects(fixture.orchestrator.execute(request), /clock fault/i);
-    let tick = 30_000_000_000n;
-    fixture.dependencies.monotonicNs = () => ++tick;
     const restored = await fixture.orchestrator.execute(request);
-    assert.equal(restored.status, "restored_needs_review");
+    assert.equal(restored.status, "restore_failed");
+    assert.match(`${restored.primaryError} ${restored.cleanupError}`, /clock fault/i);
+    assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+    assert.equal(fixture.calls.filter((call) => call.kind === "finalProcess").length, 1);
+    assert.equal(fixture.calls.filter((call) => call.kind === "safety").length, 1);
+    const callCount = fixture.calls.length;
+    await assert.rejects(fixture.orchestrator.execute(request), /once|already|out of order/i);
+    assert.equal(fixture.calls.length, callCount);
   });
 
   await t.test("restore clock fault after transaction start still performs one cleanup and ledger", async (t) => {
@@ -2585,7 +2674,8 @@ test("post-launch window evidence is captured before runtime probes and rejects 
   assert.equal(result.status, "preparation_failed");
   assert.match(result.primaryError, /dialog|window|handoff/i);
   const kinds = fixture.calls.map((call) => call.kind);
-  assert.ok(kinds.indexOf("launchWindow") === kinds.indexOf("launch") + 1);
+  assert.ok(kinds.indexOf("launchObservation") === kinds.indexOf("launch") + 1);
+  assert.ok(kinds.indexOf("launchWindow") === kinds.indexOf("launchObservation") + 1);
   assert.equal(kinds.includes("probeRuntime"), false, "dialog proof must gate later multi-command preflights");
   assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "prepare_failure_cleanup").length, 1);
 });
@@ -3576,4 +3666,402 @@ test("production locomotion composites recompute one injected absolute deadline 
   }), /deadline|budget|60/i);
   assert.ok(effects.every((effect) => effect.startedAt < 5_000_000_000n));
   assert.ok(effects.filter((effect) => effect.kind === "sleep").every((effect) => effect.durationMs <= 5_000));
+});
+
+function deferredUnquiescedResult(input, detail = "guest cancellation barrier was not proven") {
+  return {
+    ok: false,
+    code: "bridge_unavailable",
+    detail,
+    primaryError: detail,
+    cleanupError: "locomotion nonce cleanup is deferred until the owned target is stopped",
+    motionQuiesced: false,
+    nonceCleanup: {
+      status: "deferred_until_stop",
+      requestId: input.requestId,
+      relativePath: `cache/${AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY}/${input.requestId}.json`,
+      attempts: 0,
+    },
+    actionReceipts: [],
+    evidenceCeiling: "structural",
+  };
+}
+
+function routeOwnedCompletedResult(input) {
+  return {
+    ...completedMovementResult(input),
+    nonceCleanup: {
+      status: "route_owned",
+      requestId: input.requestId,
+      relativePath: `cache/${AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY}/${input.requestId}.json`,
+      attempts: 0,
+    },
+  };
+}
+
+test("launch-handoff observation owns every blocking preflight and the HMD-to-monitor-sample-zero handoff", async (t) => {
+  for (const phase of ["runtime", "capability", "monitor_handoff"]) {
+    await t.test(phase, async (t) => {
+      const fixture = await createPreparedFixture(t, { handoffDialogDuring: phase });
+      const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+      assert.equal(result.status, "preparation_failed");
+      assert.match(`${result.primaryError} ${result.cleanupError}`, /dialog|handoff|window/i);
+      const kinds = fixture.calls.map((call) => call.kind);
+      assert.ok(kinds.indexOf("launchObservation") > kinds.indexOf("launch"));
+      assert.ok(kinds.indexOf("launchObservation") < kinds.indexOf("probeRuntime"));
+      assert.equal(kinds.filter((kind) => kind === "monitor").length, 1, "monitor sample zero owns the observer handoff");
+      assert.equal(kinds.includes("capture"), false, "a sampled handoff dialog must stop before baseline capture");
+      assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "prepare_failure_cleanup").length, 1);
+    });
+  }
+});
+
+test("launch-handoff cadence is reproduced from monotonic sample timestamps, not a claimed elapsed counter", async (t) => {
+  const fixture = await createPreparedFixture(t, { handoffObservationTimestampOffsetAfterFirstMs: 20 });
+
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+  assert.equal(result.status, "preparation_failed");
+  assert.match(`${result.primaryError} ${result.cleanupError}`, /maximum sample gap|cadence/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "capture"), false);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "prepare_failure_cleanup").length, 1);
+});
+
+test("post-request deadline failure retains unquiesced evidence and stops before the sole nonce cleanup", async (t) => {
+  const fixture = await prepareForSteps(t);
+  let clockBroken = false;
+  let tick = 50_000_000_000n;
+  fixture.dependencies.monotonicNs = () => {
+    if (clockBroken) throw new Error("post-request route clock failed");
+    return ++tick;
+  };
+  fixture.dependencies.requestLocomotion = async (input) => {
+    fixture.calls.push({ kind: "locomote", input });
+    const result = deferredUnquiescedResult(input);
+    clockBroken = true;
+    return result;
+  };
+  fixture.calls.length = 0;
+
+  const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+  assert.equal(stopped.status, "stopped");
+  assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /clock|barrier|deferred/i);
+  const effects = fixture.calls.filter((call) => call.kind === "locomote" || call.kind === "stop" || call.kind === "nonceCleanup");
+  assert.deepEqual(effects.map((call) => call.kind), ["locomote", "stop", "nonceCleanup"]);
+  assert.equal(effects[1].context.reason, "step_unquiesced_locomotion");
+  assert.equal(effects[2].context.requestId, effects[0].input.requestId);
+  assert.equal(effects[2].context.cleanupOnly, true);
+});
+
+test("post-request clock failure still removes a proven-quiescent route-owned nonce exactly once", async (t) => {
+  const fixture = await prepareForSteps(t);
+  let clockBroken = false;
+  let tick = 60_000_000_000n;
+  fixture.dependencies.monotonicNs = () => {
+    if (clockBroken) throw new Error("post-quiescence route clock failed");
+    return ++tick;
+  };
+  fixture.dependencies.requestLocomotion = async (input) => {
+    fixture.calls.push({ kind: "locomote", input });
+    const result = routeOwnedCompletedResult(input);
+    clockBroken = true;
+    return result;
+  };
+  fixture.calls.length = 0;
+
+  const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+  assert.equal(stopped.status, "stopped");
+  assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /post-quiescence route clock failed/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "stop"), false);
+  const cleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
+  assert.equal(cleanups.length, 1);
+  assert.equal(cleanups[0].context.cleanupOnly, true);
+  assert.equal(cleanups[0].context.requestId, fixture.calls.find((call) => call.kind === "locomote").input.requestId);
+});
+
+test("a quiesced nonce-cleanup failure is attempted once, quarantines separately, and restore never removes it again", async (t) => {
+  const fixture = await prepareForSteps(t, {
+    locomotionResult: routeOwnedCompletedResult,
+    nonceCleanupError: "injected sole nonce removal failure",
+  });
+  fixture.calls.length = 0;
+  const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(stopped.status, "stopped");
+  assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /sole nonce removal failure/i);
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 1);
+  assert.equal(fixture.calls.some((call) => call.kind === "stop"), false, "quiesced motion is distinct from nonce cleanup failure");
+
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restore_failed");
+  assert.match(`${restored.primaryError} ${restored.cleanupError}`, /already attempted|absence proof/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "capability" || call.kind === "hmd" || call.kind === "locomote"), false);
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 0);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+});
+
+test("nonce cleanup disposition is retained inside the deadline callback before a post-await clock fault", async (t) => {
+  const fixture = await prepareForSteps(t, { locomotionResult: routeOwnedCompletedResult });
+  let clockBroken = false;
+  let tick = 70_000_000_000n;
+  fixture.dependencies.monotonicNs = () => {
+    if (clockBroken) throw new Error("post-cleanup route clock failed");
+    return ++tick;
+  };
+  const originalCleanup = fixture.dependencies.cleanupLocomotionNonce;
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    const receipt = await originalCleanup(context);
+    if (context.requestId.startsWith("step_")) clockBroken = true;
+    return receipt;
+  };
+  fixture.calls.length = 0;
+  const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(stopped.status, "stopped");
+  assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /post-cleanup route clock failed/i);
+  const stepRequestId = fixture.calls.find((call) => call.kind === "locomote").input.requestId;
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup" && call.context.requestId === stepRequestId).length, 1);
+
+  clockBroken = false;
+  fixture.calls.length = 0;
+  await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup" && call.context.requestId === stepRequestId).length, 0);
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 1, "restore owns only its distinct nonce");
+});
+
+test("failed emergency stop persists unquiesced ownership and restore is cleanup-only", async (t) => {
+  const fixture = await prepareForSteps(t);
+  fixture.dependencies.requestLocomotion = async (input) => {
+    fixture.calls.push({ kind: "locomote", input });
+    return deferredUnquiescedResult(input);
+  };
+  let failedOnce = false;
+  fixture.dependencies.stopPackage = async (context) => {
+    fixture.calls.push({ kind: "stop", context });
+    if (context.reason === "step_unquiesced_locomotion" && !failedOnce) {
+      failedOnce = true;
+      throw new Error("injected emergency stop failure");
+    }
+    return { status: "stopped", packageName: context.packageName };
+  };
+  const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(stopped.status, "stopped");
+  assert.match(stopped.cleanupError, /emergency stop failure/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "nonceCleanup"), false, "nonce must remain while a guest writer may live");
+
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restore_failed");
+  assert.equal(fixture.calls.some((call) => call.kind === "capability" || call.kind === "hmd" || call.kind === "locomote"), false);
+  assert.deepEqual(
+    fixture.calls.filter((call) => ["stop", "nonceCleanup", "finalProcess", "safety"].includes(call.kind)).map((call) => call.kind),
+    ["stop", "nonceCleanup", "finalProcess", "safety"],
+  );
+  assert.equal(fixture.calls.find((call) => call.kind === "stop").context.reason, "restore_unquiesced_target");
+});
+
+test("restore owns cleanup before a permanently failing entry clock", async (t) => {
+  const fixture = await prepareForSteps(t);
+  const stepped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(stepped.status, "needs_waypoint_review");
+  const adbEffects = [];
+  const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+    resolveAdb: () => "/fixture/injected-adb",
+    monotonicNs: () => { throw new Error("permanent restore entry clock fault"); },
+    sleep: async () => {},
+    runText: async (_cmd, args, options) => {
+      adbEffects.push({ args, options });
+      return { code: 0, stdout: "", stderr: "", timedOut: false };
+    },
+    runBytes: async () => { throw new Error("binary runner is unused"); },
+  });
+  fixture.dependencies.monotonicNs = () => { throw new Error("permanent restore entry clock fault"); };
+  fixture.dependencies.stopPackage = live.stopPackage;
+  fixture.calls.length = 0;
+
+  const restored = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(stepped.requiredReview[0]),
+  });
+
+  assert.equal(restored.status, "restore_failed");
+  assert.match(restored.primaryError, /entry clock fault/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "capability" || call.kind === "locomote" || call.kind === "capture"), false);
+  assert.equal(adbEffects.filter((effect) => effect.args.includes("force-stop")).length, 1);
+  assert.equal(fixture.calls.filter((call) => call.kind === "finalProcess").length, 1);
+  assert.equal(fixture.calls.filter((call) => call.kind === "safety").length, 1);
+});
+
+test("exact zero-baseline image corruption is a once-only cleanup action; only wrong caller SHA is retryable", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  fixture.orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
+  fixture.prepared = await fixture.orchestrator.execute(fixture.input);
+  const baseline = fixture.prepared.requiredReview[0];
+  fs.writeFileSync(baseline.path, makePng(126));
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(baseline),
+  });
+  assert.equal(restored.status, "restore_failed");
+  assert.deepEqual(restored.requiredReview, []);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+  assert.equal(fixture.calls.filter((call) => call.kind === "finalProcess").length, 1);
+  await assert.rejects(fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(baseline),
+  }), /once|already|out of order/i);
+});
+
+test("cancel polling ignores stable stale execute bytes until an exact cancel barrier", async () => {
+  const input = {
+    ...locomotionInput,
+    glideDurationMs: 0,
+    maxPolls: 2,
+    pollMs: 10,
+    deferNonceCleanup: true,
+  };
+  const staleExecute = Buffer.from(JSON.stringify(locomotionAck({
+    requestId: input.requestId,
+    tag: input.tag,
+    glideDurationMs: 0,
+    executionLeaseMs: 2_000,
+  })));
+  const cancel = Buffer.from(JSON.stringify(cancelAckFor(input)));
+  let cancelSeen = false;
+  let executePulls = 0;
+  let cancelPulls = 0;
+  const calls = [];
+  const result = await requestAgentBridgeLocomotion(adb, input, {
+    monotonicNs: (() => { let tick = 0n; return () => ++tick; })(),
+    sleep: async () => {},
+    runText: async (_cmd, args, options) => {
+      const kind = args.includes("rm") ? "rm" : args.includes("cancel") ? "cancel" : "execute";
+      calls.push({ kind, args, options });
+      if (kind === "cancel") cancelSeen = true;
+      return kind === "rm" ? cleanupOk : textOk;
+    },
+    runBytes: async () => {
+      if (!cancelSeen) {
+        executePulls += 1;
+        return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
+      }
+      const payload = cancelPulls++ < 2 ? staleExecute : cancel;
+      return { code: 0, stdout: Buffer.concat([Buffer.from([1]), payload]), stderr: "", timedOut: false };
+    },
+  });
+  assert.equal(result.motionQuiesced, true);
+  assert.equal(executePulls, 2);
+  assert.equal(cancelPulls, 4);
+  assert.equal(calls.filter((call) => call.kind === "rm").length, 0, "route owns the final locomote nonce cleanup");
+  assert.equal(result.nonceCleanup.status, "route_owned");
+});
+
+test("unproven cancellation defers final nonce removal until an owned stop", async () => {
+  const input = { ...locomotionInput, maxPolls: 2, pollMs: 10, deferNonceCleanup: true };
+  const calls = [];
+  const result = await requestAgentBridgeLocomotion(adb, input, {
+    monotonicNs: (() => { let tick = 0n; return () => ++tick; })(),
+    sleep: async () => {},
+    runText: async (_cmd, args, options) => {
+      calls.push({ args, options });
+      return args.includes("rm") ? cleanupOk : textOk;
+    },
+    runBytes: async () => ({ code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false }),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.motionQuiesced, false);
+  assert.equal(result.nonceCleanup.status, "deferred_until_stop");
+  assert.equal(calls.filter((call) => call.args.includes("rm")).length, 0);
+});
+
+test("a deferred locomote preflight failure remains route-owned and transport-free", async () => {
+  const calls = [];
+  const result = await requestAgentBridgeLocomotion(adb, {
+    ...locomotionInput,
+    target: { x: Number.MAX_VALUE, y: 0, z: 0 },
+    deferNonceCleanup: true,
+  }, {
+    monotonicNs: () => 1n,
+    sleep: async () => { throw new Error("sleep must not run"); },
+    runText: async (_cmd, args) => { calls.push({ kind: "text", args }); return cleanupOk; },
+    runBytes: async (_cmd, args) => { calls.push({ kind: "bytes", args }); return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false }; },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "invalid_request");
+  assert.equal(result.motionQuiesced, true);
+  assert.equal(result.nonceCleanup.status, "route_owned");
+  assert.equal(calls.length, 0);
+});
+
+test("exact locomotion nonce cleanup removes once then proves pathname absence", async () => {
+  const calls = [];
+  const result = await agentBridge.cleanupAgentBridgeLocomotionNonce(adb, {
+    serial: baseInput.serial,
+    packageName: baseInput.packageName,
+    requestId: baseInput.requestId,
+    controlTimeoutMs: 1_000,
+  }, {
+    runText: async (_cmd, args, options) => {
+      calls.push({ kind: "rm", args, options });
+      return cleanupOk;
+    },
+    runBytes: async (_cmd, args, options) => {
+      calls.push({ kind: "verify", args, options });
+      return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
+    },
+  });
+  assert.equal(result.status, "removed_and_absent");
+  assert.deepEqual(calls.map((call) => call.kind), ["rm", "verify"]);
+  assert.equal(calls.filter((call) => call.kind === "rm").length, 1);
+});
+
+test("immutable action records form the authoritative hash chain behind the JSONL view", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(result.status, "needs_baseline_review");
+  const recordsRoot = path.join(fixture.input.artifactRoot, "action-records");
+  const names = fs.readdirSync(recordsRoot).sort();
+  assert.deepEqual(names, ["000001.json"]);
+  const record = JSON.parse(fs.readFileSync(path.join(recordsRoot, names[0]), "utf8"));
+  assert.equal(record.sequence, 1);
+  assert.equal(record.previousRecordSha256, "0".repeat(64));
+  assert.equal(record.payload.action, "prepare");
+  assert.equal(canonicalJson(record.payload) + "\n", fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"));
+});
+
+test("an O_EXCL action-record commit conflict cannot erase an intervening writer and movement cleanup stays reachable", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  const conflictBytes = Buffer.from('{"external":"commit-boundary-writer"}\n', "utf8");
+  let conflictPath = null;
+  const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+    beforeActionRecordCommit({ action, recordPath }) {
+      if (action !== "step" || conflictPath !== null) return;
+      conflictPath = recordPath;
+      fs.writeFileSync(recordPath, conflictBytes, { flag: "wx", mode: 0o600 });
+    },
+  });
+  const prepared = await orchestrator.execute(fixture.input);
+  const stopped = await orchestrator.execute(stepRequest({ ...fixture, orchestrator, prepared }, reviewFor(prepared.requiredReview[0])));
+  assert.equal(stopped.status, "stopped");
+  assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /action|record|exist|conflict/i);
+  assert.deepEqual(fs.readFileSync(conflictPath), conflictBytes);
+
+  fixture.calls.length = 0;
+  const restored = await orchestrator.execute({
+    action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restore_failed");
+  assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
 });

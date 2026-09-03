@@ -9,6 +9,7 @@ import {
   probeAgentBridgeLocomotionCapability,
   requestAgentBridgeHmdPose,
   requestAgentBridgeLocomotion,
+  cleanupAgentBridgeLocomotionNonce,
   type AgentBridgeHmdPose,
   type AgentBridgeHmdPoseRequestInput,
   type AgentBridgeLocomotionAck,
@@ -319,6 +320,23 @@ export interface FreshLaunchHandoffReceipt {
   rawWindowDump: LocomotionRawLogEvidence;
 }
 
+export interface FreshLaunchHandoffObservationSample {
+  elapsedMs: number;
+  observedAtMonotonicNs: string;
+  dialogs: string[];
+  rawWindowDump: LocomotionRawLogEvidence;
+}
+
+export interface FreshLaunchHandoffObservationReceipt {
+  claim: "no_blocking_dialog_at_retained_samples";
+  maxSampleGapMs: number;
+  startedAtMonotonicNs: string;
+  endedAtMonotonicNs: string;
+  samples: FreshLaunchHandoffObservationSample[];
+  rawWindowDumps: LocomotionRawLogEvidence[];
+  dialogs: string[];
+}
+
 export interface LocomotionRawLogEvidence {
   path: string;
   sha256: string;
@@ -471,6 +489,7 @@ export interface InAppLocomotionArtifactHooks {
   }): boolean | void;
   beforeActionStageFsync?(context: { action: string; status: string | null; path: string }): void;
   beforeActionPublish?(context: { action: string; status: string | null; path: string; stagedPath: string }): void;
+  beforeActionRecordCommit?(context: { action: string; status: string | null; recordPath: string; stagedPath: string }): void;
   afterArtifactReadBeforePathRecheck?(context: { path: string; label: string }): void;
 }
 
@@ -501,6 +520,13 @@ export interface InAppLocomotionDependencies {
     artifactRoot: string;
     packageName: string;
   } & LocomotionEffectBudget): Promise<FreshLaunchHandoffReceipt>;
+  observeLaunchHandoff(context: {
+    serial: string;
+    runId: string;
+    artifactRoot: string;
+    packageName: string;
+    signal: AbortSignal;
+  } & LocomotionEffectBudget): Promise<FreshLaunchHandoffObservationReceipt>;
   probeRuntimeBinding(context: {
     serial: string;
     scenario: InAppLocomotionPrepareInput["scenario"];
@@ -516,6 +542,7 @@ export interface InAppLocomotionDependencies {
     minimumDurationMs: 60_000;
     healthBoundaryMarker: string;
     runtime: LocomotionRuntimeBinding;
+    onFirstWindowSample(): Promise<void>;
   } & LocomotionEffectBudget): Promise<FreshLaunchMonitorReceipt>;
   captureSettled(input: CaptureSettledInput): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }>;
   readReviewImage(item: LocomotionReviewItem, artifactRoot: string): Buffer;
@@ -526,6 +553,11 @@ export interface InAppLocomotionDependencies {
     artifactRoot: string;
   } & LocomotionEffectBudget): Promise<ApplicationContinuitySample>;
   requestLocomotion(input: AgentBridgeLocomotionRequestInput): Promise<LocomotionResult>;
+  cleanupLocomotionNonce(context: {
+    serial: string;
+    packageName: string;
+    requestId: string;
+  } & LocomotionEffectBudget): Promise<unknown>;
   emitMarker(context: { serial: string; marker: string } & LocomotionEffectBudget): Promise<void>;
   collectStepLogs(context: {
     serial: string;
@@ -551,6 +583,15 @@ interface ArtifactFileIdentity {
   sha256: string;
 }
 
+interface ActionRecordBinding {
+  sequence: number;
+  operationId: string;
+  previousRecordSha256: string;
+  payloadSha256: string;
+  recordSha256: string;
+  identity: ArtifactFileIdentity;
+}
+
 interface OwnedArtifactBinding extends ReservedArtifactSession {
   rootDev: number;
   rootIno: number;
@@ -558,10 +599,13 @@ interface OwnedArtifactBinding extends ReservedArtifactSession {
   capturesIno: number;
   logsDev: number;
   logsIno: number;
+  actionRecordsDev: number;
+  actionRecordsIno: number;
   ownerFile: ArtifactFileIdentity;
   runManifest: ArtifactFileIdentity;
   routeManifest: ArtifactFileIdentity;
   actionLog: ArtifactFileIdentity;
+  actionRecords: ActionRecordBinding[];
 }
 
 interface LocomotionState {
@@ -589,6 +633,9 @@ interface LocomotionState {
   restoreCompleted: boolean;
   adjudicated: boolean;
   currentReviewReflectsNonzeroMutation: boolean;
+  unquiescedLocomotion: { requestId: string; relativePath: string } | null;
+  pendingLocomotionNonce: { requestId: string; relativePath: string; attempts: 0 | 1 } | null;
+  actionAuditConflict: boolean;
 }
 
 interface SerialLease {
@@ -749,51 +796,140 @@ function descriptorBytes(descriptor: number, size: number, label: string): Buffe
   return bytes;
 }
 
+function fsyncDirectory(directory: string): void {
+  const descriptor = fs.openSync(directory, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
+}
+
+function actionOperationId(value: unknown): string {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return "unknown:terminal";
+  const record = value as Record<string, unknown>;
+  const action = String(record.action ?? "unknown");
+  if (action === "step") return `step:${String(record.waypointSeq ?? "unknown")}:terminal`;
+  return `${action}:terminal`;
+}
+
+function replayActionRecords(binding: OwnedArtifactBinding, hooks: InAppLocomotionArtifactHooks): Buffer[] {
+  sameDirectory(
+    path.join(binding.absoluteRoot, "action-records"),
+    { dev: binding.actionRecordsDev, ino: binding.actionRecordsIno },
+    "action record directory",
+  );
+  const entries = fs.readdirSync(path.join(binding.absoluteRoot, "action-records")).sort();
+  const expectedNames = binding.actionRecords.map((record) => `${String(record.sequence).padStart(6, "0")}.json`);
+  if (canonicalJson(entries) !== canonicalJson(expectedNames)) throw new Error("authoritative action record slots changed after publication");
+  let previous = "0".repeat(64);
+  const payloads: Buffer[] = [];
+  for (const bound of binding.actionRecords) {
+    const recordPath = path.join(binding.absoluteRoot, "action-records", `${String(bound.sequence).padStart(6, "0")}.json`);
+    const bytes = readSameArtifactFile(recordPath, bound.identity, `action record ${bound.sequence}`, 16 * 1024 * 1024, hooks);
+    if (sha256Bytes(bytes) !== bound.recordSha256) throw new Error(`action record ${bound.sequence} hash changed`);
+    let envelope: any;
+    try { envelope = JSON.parse(bytes.toString("utf8")); } catch (error) {
+      throw new Error(`action record ${bound.sequence} is invalid JSON: ${errorText(error)}`);
+    }
+    const payloadBytes = Buffer.from(`${canonicalJson(envelope.payload)}\n`, "utf8");
+    if (envelope.schemaVersion !== 1 || envelope.runId !== binding.runId || envelope.sequence !== bound.sequence
+      || envelope.operationId !== bound.operationId || envelope.previousRecordSha256 !== previous
+      || envelope.previousRecordSha256 !== bound.previousRecordSha256
+      || envelope.payloadSha256 !== sha256Bytes(Buffer.from(canonicalJson(envelope.payload), "utf8"))
+      || envelope.payloadSha256 !== bound.payloadSha256) {
+      throw new Error(`action record ${bound.sequence} lost its exact run/sequence/hash-chain binding`);
+    }
+    previous = bound.recordSha256;
+    payloads.push(payloadBytes);
+  }
+  if (payloads.reduce((total, bytes) => total + bytes.length, 0) > 16 * 1024 * 1024) {
+    throw new Error("derived action JSONL exceeds its bounded publication limit");
+  }
+  return payloads;
+}
+
+function materializeActionView(binding: OwnedArtifactBinding, payloads: Buffer[], hooks: InAppLocomotionArtifactHooks): void {
+  const target = path.join(binding.absoluteRoot, "actions.jsonl");
+  const intended = Buffer.concat(payloads);
+  const stagedPath = path.join(binding.absoluteRoot, `.actions.view.${crypto.randomBytes(16).toString("hex")}.tmp`);
+  try {
+    privateWrite(stagedPath, intended);
+    const staged = artifactFileIdentity(stagedPath, "staged action JSONL", 16 * 1024 * 1024, hooks);
+    if (staged.bytes !== intended.length || staged.sha256 !== sha256Bytes(intended)) {
+      throw new Error("derived action JSONL staging lost exact bytes");
+    }
+    assertSameArtifactFile(target, binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks);
+    fs.renameSync(stagedPath, target);
+    fsyncDirectory(binding.absoluteRoot);
+    binding.actionLog = artifactFileIdentity(target, "action JSONL", 16 * 1024 * 1024, hooks);
+  } finally {
+    if (fs.existsSync(stagedPath)) fs.unlinkSync(stagedPath);
+  }
+}
+
 function appendAction(binding: OwnedArtifactBinding, value: unknown, hooks: InAppLocomotionArtifactHooks): void {
   assertOwnedArtifacts(binding, hooks);
   const target = path.join(binding.absoluteRoot, "actions.jsonl");
   const action = value && typeof value === "object" && !Array.isArray(value)
-    ? String((value as Record<string, unknown>).action ?? "unknown")
-    : "unknown";
+    ? String((value as Record<string, unknown>).action ?? "unknown") : "unknown";
   const status = value && typeof value === "object" && !Array.isArray(value)
-    ? typeof (value as Record<string, unknown>).status === "string" ? String((value as Record<string, unknown>).status) : null
-    : null;
+    && typeof (value as Record<string, unknown>).status === "string"
+    ? String((value as Record<string, unknown>).status) : null;
+  const operationId = actionOperationId(value);
+  const payloadCanonical = canonicalJson(value);
+  const payloadSha256 = sha256Bytes(Buffer.from(payloadCanonical, "utf8"));
+  const existing = binding.actionRecords.find((record) => record.operationId === operationId);
+  if (existing) {
+    if (existing.payloadSha256 !== payloadSha256) throw new Error(`action operation '${operationId}' was already committed with different bytes`);
+    materializeActionView(binding, replayActionRecords(binding, hooks), hooks);
+    return;
+  }
   hooks.beforeActionAppendOpen?.({ action, status, path: target });
-  const priorBytes = readSameArtifactFile(target, binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks);
-  const appended = Buffer.concat([priorBytes, Buffer.from(`${canonicalJson(value)}\n`, "utf8")]);
-  if (appended.length > 16 * 1024 * 1024) throw new Error("action JSONL exceeds its bounded publication limit");
-  const stagedPath = path.join(binding.absoluteRoot, `.actions.jsonl.${crypto.randomBytes(16).toString("hex")}.tmp`);
+  const sequence = binding.actionRecords.length + 1;
+  const previousRecordSha256 = binding.actionRecords.at(-1)?.recordSha256 ?? "0".repeat(64);
+  const envelope = {
+    schemaVersion: 1,
+    runId: binding.runId,
+    sequence,
+    operationId,
+    previousRecordSha256,
+    payloadSha256,
+    payload: value,
+  };
+  const recordBytes = Buffer.from(`${canonicalJson(envelope)}\n`, "utf8");
+  const recordsRoot = path.join(binding.absoluteRoot, "action-records");
+  const recordPath = path.join(recordsRoot, `${String(sequence).padStart(6, "0")}.json`);
+  const stagedPath = path.join(recordsRoot, `.${String(sequence).padStart(6, "0")}.${crypto.randomBytes(16).toString("hex")}.tmp`);
   try {
     const descriptor = fs.openSync(stagedPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
     try {
-      const handled = hooks.writeActionStage?.({ action, status, path: target, descriptor, bytes: appended }) === true;
+      const handled = hooks.writeActionStage?.({ action, status, path: target, descriptor, bytes: recordBytes }) === true;
       if (!handled) {
         let offset = 0;
-        while (offset < appended.length) offset += fs.writeSync(descriptor, appended, offset, appended.length - offset, offset);
+        while (offset < recordBytes.length) offset += fs.writeSync(descriptor, recordBytes, offset, recordBytes.length - offset, offset);
       }
       hooks.beforeActionStageFsync?.({ action, status, path: target });
       fs.fsyncSync(descriptor);
-    } finally {
-      fs.closeSync(descriptor);
-    }
-    const staged = artifactFileIdentity(stagedPath, "staged action JSONL", 16 * 1024 * 1024, hooks);
-    if (staged.bytes !== appended.length || staged.sha256 !== sha256Bytes(appended)) {
-      throw new Error("staged action JSONL bytes did not match the complete intended ledger");
+    } finally { fs.closeSync(descriptor); }
+    const staged = artifactFileIdentity(stagedPath, "staged immutable action record", 16 * 1024 * 1024, hooks);
+    const recordSha256 = sha256Bytes(recordBytes);
+    if (staged.bytes !== recordBytes.length || staged.sha256 !== recordSha256) {
+      throw new Error("staged immutable action record bytes were incomplete");
     }
     hooks.beforeActionPublish?.({ action, status, path: target, stagedPath });
-    assertSameArtifactFile(target, binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks);
-    fs.renameSync(stagedPath, target);
-    const published = artifactFileIdentity(target, "action JSONL", 16 * 1024 * 1024, hooks);
-    if (published.bytes !== appended.length || published.sha256 !== sha256Bytes(appended)) {
-      throw new Error("action JSONL atomic publication did not retain the complete staged ledger");
+    hooks.beforeActionRecordCommit?.({ action, status, recordPath, stagedPath });
+    try { fs.linkSync(stagedPath, recordPath); } catch (error: any) {
+      if (error?.code !== "EEXIST") throw error;
+      const actual = artifactFileIdentity(recordPath, `competing action record ${sequence}`, 16 * 1024 * 1024, hooks);
+      const actualBytes = readSameArtifactFile(recordPath, actual, `competing action record ${sequence}`, 16 * 1024 * 1024, hooks);
+      if (!actualBytes.equals(recordBytes)) throw new Error(`action record ${sequence} publication conflict`);
     }
-    binding.actionLog = published;
-    const directoryDescriptor = fs.openSync(binding.absoluteRoot, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-    try {
-      fs.fsyncSync(directoryDescriptor);
-    } finally {
-      fs.closeSync(directoryDescriptor);
+    fsyncDirectory(recordsRoot);
+    fs.unlinkSync(stagedPath);
+    fsyncDirectory(recordsRoot);
+    const identity = artifactFileIdentity(recordPath, `action record ${sequence}`, 16 * 1024 * 1024, hooks);
+    if (identity.sha256 !== recordSha256 || identity.bytes !== recordBytes.length) {
+      throw new Error(`action record ${sequence} publication did not retain exact bytes`);
     }
+    binding.actionRecords.push({ sequence, operationId, previousRecordSha256, payloadSha256, recordSha256, identity });
+    materializeActionView(binding, replayActionRecords(binding, hooks), hooks);
   } finally {
     if (fs.existsSync(stagedPath)) fs.unlinkSync(stagedPath);
   }
@@ -816,6 +952,9 @@ function assertOwnedArtifacts(binding: OwnedArtifactBinding, hooks: InAppLocomot
   sameDirectory(binding.absoluteRoot, { dev: binding.rootDev, ino: binding.rootIno }, "artifact root");
   sameDirectory(path.join(binding.absoluteRoot, "captures"), { dev: binding.capturesDev, ino: binding.capturesIno }, "capture directory");
   sameDirectory(path.join(binding.absoluteRoot, "logs"), { dev: binding.logsDev, ino: binding.logsIno }, "log directory");
+  sameDirectory(path.join(binding.absoluteRoot, "action-records"), {
+    dev: binding.actionRecordsDev, ino: binding.actionRecordsIno,
+  }, "action record directory");
   const ownerBytes = readSameArtifactFile(
     path.join(binding.absoluteRoot, ".owner.json"),
     binding.ownerFile,
@@ -825,7 +964,11 @@ function assertOwnedArtifacts(binding: OwnedArtifactBinding, hooks: InAppLocomot
   );
   assertSameArtifactFile(path.join(binding.absoluteRoot, "run.json"), binding.runManifest, "run manifest", 1024 * 1024, hooks);
   assertSameArtifactFile(path.join(binding.absoluteRoot, "route.json"), binding.routeManifest, "route manifest", 1024 * 1024, hooks);
-  assertSameArtifactFile(path.join(binding.absoluteRoot, "actions.jsonl"), binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks);
+  const payloads = replayActionRecords(binding, hooks);
+  const viewBytes = readSameArtifactFile(
+    path.join(binding.absoluteRoot, "actions.jsonl"), binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks,
+  );
+  if (!viewBytes.equals(Buffer.concat(payloads))) throw new Error("derived action JSONL does not reproduce the authoritative action records");
   const owner = JSON.parse(ownerBytes.toString("utf8"));
   if (owner.schemaVersion !== 1 || owner.runId !== binding.runId || owner.ownerNonceHash !== binding.ownerNonceHash) {
     throw new Error("artifact ownership record changed after reservation");
@@ -848,9 +991,11 @@ function reserveArtifacts(input: InAppLocomotionPrepareInput, dependencies: InAp
   fs.mkdirSync(physical, { recursive: false, mode: 0o700 });
   fs.mkdirSync(path.join(physical, "captures"), { recursive: false, mode: 0o700 });
   fs.mkdirSync(path.join(physical, "logs"), { recursive: false, mode: 0o700 });
+  fs.mkdirSync(path.join(physical, "action-records"), { recursive: false, mode: 0o700 });
   const root = directoryIdentity(physical, "artifact root");
   const captures = directoryIdentity(path.join(physical, "captures"), "capture directory");
   const logs = directoryIdentity(path.join(physical, "logs"), "log directory");
+  const actionRecords = directoryIdentity(path.join(physical, "action-records"), "action record directory");
   privateJson(path.join(physical, ".owner.json"), { schemaVersion: 1, runId, ownerNonceHash });
   privateJson(path.join(physical, "run.json"), {
     schemaVersion: 1,
@@ -885,10 +1030,13 @@ function reserveArtifacts(input: InAppLocomotionPrepareInput, dependencies: InAp
     capturesIno: captures.ino,
     logsDev: logs.dev,
     logsIno: logs.ino,
+    actionRecordsDev: actionRecords.dev,
+    actionRecordsIno: actionRecords.ino,
     ownerFile: artifactFileIdentity(path.join(physical, ".owner.json"), "artifact ownership manifest", 64 * 1024),
     runManifest: artifactFileIdentity(path.join(physical, "run.json"), "run manifest", 1024 * 1024),
     routeManifest: artifactFileIdentity(path.join(physical, "route.json"), "route manifest", 1024 * 1024),
     actionLog: artifactFileIdentity(path.join(physical, "actions.jsonl"), "action JSONL", 16 * 1024 * 1024),
+    actionRecords: [],
   };
   assertOwnedArtifacts(binding);
   return { binding, createdAt, startedAtNs };
@@ -1076,6 +1224,70 @@ function checkedRawLogEvidence(value: LocomotionRawLogEvidence, artifactRoot: st
     throw new Error(`${label} bytes do not match the published runtime-health reference`);
   }
   return { path: value.path, identity, label };
+}
+
+function checkedLaunchHandoffObservation(
+  receipt: FreshLaunchHandoffObservationReceipt,
+  artifactRoot: string,
+  hooks: InAppLocomotionArtifactHooks,
+): Array<{ path: string; identity: ArtifactFileIdentity; label: string }> {
+  if (!Number.isSafeInteger(receipt?.maxSampleGapMs) || receipt.maxSampleGapMs < 1 || receipt.maxSampleGapMs > 10_000) {
+    throw new Error("launch-handoff observation omitted one explicit bounded sampling cadence");
+  }
+  if (receipt.claim !== "no_blocking_dialog_at_retained_samples") {
+    throw new Error("launch-handoff observation made an unsupported interval claim");
+  }
+  if (!/^(?:0|[1-9]\d*)$/.test(receipt.startedAtMonotonicNs)
+    || !/^(?:0|[1-9]\d*)$/.test(receipt.endedAtMonotonicNs)
+    || BigInt(receipt.endedAtMonotonicNs) < BigInt(receipt.startedAtMonotonicNs)
+    || !Array.isArray(receipt.samples) || receipt.samples.length < 2
+    || !Array.isArray(receipt.rawWindowDumps) || receipt.rawWindowDumps.length !== receipt.samples.length) {
+    throw new Error("launch-handoff observation interval/sample receipt is incomplete");
+  }
+  const startedNs = BigInt(receipt.startedAtMonotonicNs);
+  const maxSampleGapNs = BigInt(receipt.maxSampleGapMs) * 1_000_000n;
+  const retained: Array<{ path: string; identity: ArtifactFileIdentity; label: string }> = [];
+  const allDialogs: string[] = [];
+  let priorElapsed = -1;
+  let priorObserved = -1n;
+  for (const [index, sample] of receipt.samples.entries()) {
+    const observedNs = /^(?:0|[1-9]\d*)$/.test(sample.observedAtMonotonicNs)
+      ? BigInt(sample.observedAtMonotonicNs)
+      : -1n;
+    const observedGapNs = index === 0 ? observedNs - startedNs : observedNs - priorObserved;
+    if (!Number.isSafeInteger(sample.elapsedMs) || sample.elapsedMs < 0 || sample.elapsedMs <= priorElapsed
+      || (index > 0 && sample.elapsedMs - priorElapsed > receipt.maxSampleGapMs)
+      || observedNs < startedNs || observedNs <= priorObserved || observedGapNs > maxSampleGapNs
+      || BigInt(sample.elapsedMs) !== (observedNs - startedNs) / 1_000_000n) {
+      throw new Error("launch-handoff observation exceeded its declared maximum sample gap or lost monotonic ordering");
+    }
+    if (canonicalJson(sample.rawWindowDump) !== canonicalJson(receipt.rawWindowDumps[index])) {
+      throw new Error("launch-handoff observation raw-window index binding changed");
+    }
+    const item = checkedRawLogEvidence(sample.rawWindowDump, artifactRoot, `launch-handoff observation sample ${index}`);
+    const dialogs = freshLaunchDialogs(readSameArtifactFile(
+      item.path, item.identity, item.label, 64 * 1024 * 1024, hooks,
+    ).toString("utf8"));
+    if (canonicalJson(dialogs) !== canonicalJson(sample.dialogs)) {
+      throw new Error("launch-handoff observation dialog claim does not reproduce from descriptor bytes");
+    }
+    allDialogs.push(...dialogs);
+    retained.push(item);
+    priorElapsed = sample.elapsedMs;
+    priorObserved = observedNs;
+  }
+  if (new Set(retained.map((item) => `${item.identity.dev}:${item.identity.ino}`)).size !== retained.length) {
+    throw new Error("launch-handoff observation samples must be unique exact files");
+  }
+  if (canonicalJson([...new Set(allDialogs)]) !== canonicalJson(receipt.dialogs)) {
+    throw new Error("launch-handoff observation aggregate dialog claim changed");
+  }
+  const endedNs = BigInt(receipt.endedAtMonotonicNs);
+  if (priorObserved > endedNs || endedNs - priorObserved > maxSampleGapNs) {
+    throw new Error("launch-handoff observation end is not bound to its final retained sample");
+  }
+  if (allDialogs.length > 0) throw new LocomotionStageError("launch_dialog", "launch-handoff observation sampled a blocking dialog");
+  return retained;
 }
 
 function captureReview(captured: Awaited<ReturnType<InAppLocomotionDependencies["captureSettled"]>>, expectedPath: string, role: LocomotionReviewItem["role"], waypointSeq?: number): LocomotionReviewItem {
@@ -1456,7 +1668,22 @@ export function createInAppLocomotionOrchestrator(
     let freshLaunchMonitor: FreshLaunchMonitorReceipt | null = null;
     let launchHandoffWindow: FreshLaunchHandoffReceipt | null = null;
     let retainedLaunchHandoff: { path: string; identity: ArtifactFileIdentity; label: string } | null = null;
+    let launchHandoffObservation: FreshLaunchHandoffObservationReceipt | null = null;
+    let retainedHandoffObservation: Array<{ path: string; identity: ArtifactFileIdentity; label: string }> = [];
+    let launchHandoffController: AbortController | null = null;
+    let launchHandoffPromise: Promise<FreshLaunchHandoffObservationReceipt> | null = null;
     let healthBoundaryMarker: string | null = null;
+
+    const finishLaunchHandoffObservation = async (): Promise<void> => {
+      const pending = launchHandoffPromise;
+      if (pending === null) return;
+      launchHandoffPromise = null;
+      launchHandoffController?.abort();
+      launchHandoffController = null;
+      launchHandoffObservation = await pending;
+      if (!artifact) throw new Error("launch-handoff observation lost its owned artifact session");
+      retainedHandoffObservation = checkedLaunchHandoffObservation(launchHandoffObservation, artifact.absoluteRoot, hooks);
+    };
 
     const finalizePreparationBracket = async (strictDeadline: boolean): Promise<LocomotionLogEvidence | null> => {
       if (!artifact || !preparationBegan || preparationFinalizationAttempted) return preparationLogEvidence;
@@ -1559,6 +1786,17 @@ export function createInAppLocomotionOrchestrator(
       if (launch.disposition !== "accepted" || launch.component !== input.scenario.launchComponent || !SHA256.test(launch.outputSha256)) {
         throw new LocomotionStageError("launch_failed", "target launch did not return one exact accepted component acknowledgement");
       }
+      launchHandoffController = new AbortController();
+      launchHandoffPromise = dependencies.observeLaunchHandoff({
+        serial: input.serial,
+        runId: artifact.runId,
+        artifactRoot: artifact.absoluteRoot,
+        packageName: input.scenario.packageName,
+        signal: launchHandoffController.signal,
+        timeoutMs: Math.max(1, remainingUntilMs(prepareDeadlineNs, dependencies)),
+        deadlineMonotonicNs: prepareDeadlineNs.toString(),
+      });
+      void launchHandoffPromise.catch(() => undefined);
       launchHandoffWindow = await withinDeadline(prepareDeadlineNs, dependencies, "post-launch window handoff", (timeoutMs) =>
         dependencies.captureLaunchHandoffWindow({
           serial: input.serial,
@@ -1633,6 +1871,7 @@ export function createInAppLocomotionOrchestrator(
         minimumDurationMs: 60_000,
         healthBoundaryMarker: healthBoundaryMarker!,
         runtime,
+        onFirstWindowSample: finishLaunchHandoffObservation,
         timeoutMs,
         deadlineMonotonicNs: prepareDeadlineNs!.toString(),
       }));
@@ -1644,7 +1883,7 @@ export function createInAppLocomotionOrchestrator(
       if (new Set(retainedHealthLogs.map((log) => `${log.identity.dev}:${log.identity.ino}`)).size !== retainedHealthLogs.length) {
         throw new Error("fresh-launch monitor raw runtime-health logs must be unique exact files");
       }
-      const allMonitorArtifacts = [retainedLaunchHandoff, ...retainedHealthLogs, ...retainedWindowDumps];
+      const allMonitorArtifacts = [retainedLaunchHandoff, ...retainedHandoffObservation, ...retainedHealthLogs, ...retainedWindowDumps];
       if (new Set(allMonitorArtifacts.map((log) => `${log.identity.dev}:${log.identity.ino}`)).size !== allMonitorArtifacts.length) {
         throw new Error("fresh-launch raw health/window evidence must be unique exact files");
       }
@@ -1719,7 +1958,7 @@ export function createInAppLocomotionOrchestrator(
           path: preparationLog.path,
           identity: artifactFileIdentity(preparationLog.path, "retained preparation log", 64 * 1024 * 1024, hooks),
           label: "retained preparation log",
-        }, retainedLaunchHandoff, ...retainedHealthLogs, ...retainedWindowDumps],
+        }, retainedLaunchHandoff, ...retainedHandoffObservation, ...retainedHealthLogs, ...retainedWindowDumps],
         nextWaypoint: 0,
         startedAtNs: reserved.startedAtNs,
         deadlineNs,
@@ -1728,6 +1967,9 @@ export function createInAppLocomotionOrchestrator(
         restoreCompleted: false,
         adjudicated: false,
         currentReviewReflectsNonzeroMutation: false,
+        unquiescedLocomotion: null,
+        pendingLocomotionNonce: null,
+        actionAuditConflict: false,
       };
       if (runs.has(artifact.runId)) throw new Error("run identifier collision");
       appendAction(artifact, {
@@ -1744,6 +1986,7 @@ export function createInAppLocomotionOrchestrator(
         hmdBaseline: hmd,
         freshLaunchMonitor,
         launchHandoffWindow,
+        launchHandoffObservation,
         preparationLogEvidence: preparationLog,
         captureReceipt: captured.receipt,
         observedPriorForeground: prior,
@@ -1769,6 +2012,11 @@ export function createInAppLocomotionOrchestrator(
       };
     } catch (error) {
       const cleanupErrors: string[] = [];
+      if (launchHandoffPromise !== null) {
+        try { await finishLaunchHandoffObservation(); } catch (handoffError) {
+          cleanupErrors.push(`launch-handoff observation finalization: ${errorText(handoffError)}`);
+        }
+      }
       const compensation: Record<string, unknown> = {
         targetStop: { status: runOwnedTarget ? "not_attempted" : "not_required" },
         priorRelaunch: { status: "not_required" },
@@ -1900,6 +2148,7 @@ export function createInAppLocomotionOrchestrator(
             preparationLogEvidence,
             freshLaunchMonitor,
             launchHandoffWindow,
+            launchHandoffObservation,
           }, hooks);
           failureAuditProven = true;
         } catch (auditError) {
@@ -1965,6 +2214,8 @@ export function createInAppLocomotionOrchestrator(
     let preContinuity: ApplicationContinuitySample | null = null;
     let preHmd: AgentBridgeHmdPose | null = null;
     let locomotion: LocomotionResult | null = null;
+    let locomotionMayHaveApplied = false;
+    let pendingNonceRequestId: string | null = null;
     let emergencyStop: { attempted: boolean; proven: boolean; error: string | null } | null = null;
     let captureReceipt: CaptureSettledReceipt | null = null;
     let postHmd: AgentBridgeHmdPose | null = null;
@@ -2016,29 +2267,63 @@ export function createInAppLocomotionOrchestrator(
         throw new LocomotionStageError("budget_exhausted", "route budget was exhausted before locomotion mutation");
       }
       const rootBefore = state.rootGeneration;
-      locomotion = await withinDeadline(stepDeadlineNs, dependencies, "selected locomotion", (timeoutMs) => dependencies.requestLocomotion({
-        serial: state.input.serial,
-        packageName: state.input.scenario.packageName,
-        requestId: `step_${waypoint.seq}_move_${state.artifact.runId.slice(0, 20)}`,
-        tag: `step-${waypoint.seq}`,
-        mode: state.input.mechanism,
-        target: { x: waypoint.target.x, y: waypoint.target.y, z: waypoint.target.z },
-        rootGeneration: rootBefore,
-        rootIncarnation: state.rootIncarnation,
-        glideDurationMs: state.input.route.glideDurationMs,
-        physicalWalk: false,
-        ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
-      }));
-      const ack = completedLocomotionAck(locomotion);
+      const locomotionRequestId = `step_${waypoint.seq}_move_${state.artifact.runId.slice(0, 20)}`;
+      locomotionMayHaveApplied = true;
+      pendingNonceRequestId = locomotionRequestId;
+      state.pendingLocomotionNonce = {
+        requestId: locomotionRequestId,
+        relativePath: `cache/agentbridge/locomotion/${locomotionRequestId}.json`,
+        attempts: 0,
+      };
+      await withinDeadline(stepDeadlineNs, dependencies, "selected locomotion", async (timeoutMs) => {
+        const retained = await dependencies.requestLocomotion({
+          serial: state.input.serial,
+          packageName: state.input.scenario.packageName,
+          requestId: locomotionRequestId,
+          tag: `step-${waypoint.seq}`,
+          mode: state.input.mechanism,
+          target: { x: waypoint.target.x, y: waypoint.target.y, z: waypoint.target.z },
+          rootGeneration: rootBefore,
+          rootIncarnation: state.rootIncarnation,
+          glideDurationMs: state.input.route.glideDurationMs,
+          physicalWalk: false,
+          deferNonceCleanup: true,
+          ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
+        });
+        locomotion = retained;
+        if (retained.nonceCleanup === undefined) {
+          pendingNonceRequestId = null;
+          state.pendingLocomotionNonce = null;
+        }
+        return retained;
+      });
+      const retainedLocomotion = locomotion as LocomotionResult | null;
+      if (retainedLocomotion === null) throw new Error("selected locomotion returned without a retained result");
+      if (retainedLocomotion.motionQuiesced && pendingNonceRequestId !== null) {
+        await withinDeadline(stepDeadlineNs, dependencies, "locomotion nonce cleanup", async (timeoutMs) => {
+          if (state.pendingLocomotionNonce) state.pendingLocomotionNonce.attempts = 1;
+          const receipt = await dependencies.cleanupLocomotionNonce({
+            serial: state.input.serial,
+            packageName: state.input.scenario.packageName,
+            requestId: pendingNonceRequestId!,
+            timeoutMs,
+            deadlineMonotonicNs: stepDeadlineNs.toString(),
+          });
+          pendingNonceRequestId = null;
+          state.pendingLocomotionNonce = null;
+          return receipt;
+        });
+      }
+      const ack = completedLocomotionAck(retainedLocomotion);
       if (!ack) {
-        if (!locomotion.ok) {
-          if (locomotion.cleanupError) cleanupErrors.push(`locomotion acknowledgement cleanup: ${locomotion.cleanupError}`);
-          throw new LocomotionStageError(locomotion.code, locomotion.primaryError ?? locomotion.detail);
+        if (!retainedLocomotion.ok) {
+          if (retainedLocomotion.cleanupError) cleanupErrors.push(`locomotion acknowledgement cleanup: ${retainedLocomotion.cleanupError}`);
+          throw new LocomotionStageError(retainedLocomotion.code, retainedLocomotion.primaryError ?? retainedLocomotion.detail);
         }
         throw new LocomotionStageError("root_readback_mismatch", "successful locomotion omitted its completed acknowledgement");
       }
-      if (!locomotion.ok) {
-        if (locomotion.cleanupError) cleanupErrors.push(`locomotion acknowledgement cleanup: ${locomotion.cleanupError}`);
+      if (!retainedLocomotion.ok) {
+        if (retainedLocomotion.cleanupError) cleanupErrors.push(`locomotion acknowledgement cleanup: ${retainedLocomotion.cleanupError}`);
         primaryCode = "cleanup_failed";
       }
       const expectedGeneration = state.input.mechanism === "replacement" ? rootBefore + 1 : rootBefore;
@@ -2108,42 +2393,77 @@ export function createInAppLocomotionOrchestrator(
       if (error instanceof LocomotionStageError && error.cleanupError) {
         cleanupErrors.push(`bridge acknowledgement cleanup: ${error.cleanupError}`);
       }
-      if (locomotion !== null && !locomotion.ok && locomotion.motionQuiesced === false && state.targetOwned) {
-        emergencyStop = { attempted: true, proven: false, error: null };
-        let stopBudget: LocomotionEffectBudget;
+      let recoveryBudget: LocomotionEffectBudget | null = null;
+      const stepRecoveryBudget = (): LocomotionEffectBudget => {
+        if (recoveryBudget !== null) return recoveryBudget;
         try {
           const remaining = remainingUntilMs(stepDeadlineNs, dependencies);
           if (remaining < 1) throw new Error("step recovery reached the fixed route deadline");
-          stopBudget = {
+          recoveryBudget = {
             timeoutMs: Math.min(5_000, remaining),
             deadlineMonotonicNs: stepDeadlineNs.toString(),
           };
         } catch (clockError) {
-          cleanupErrors.push(`step emergency-stop budget clock: ${errorText(clockError)}`);
-          stopBudget = {
+          cleanupErrors.push(`step recovery budget clock: ${errorText(clockError)}`);
+          recoveryBudget = {
             timeoutMs: 5_000,
             deadlineMonotonicNs: stepDeadlineNs.toString(),
             cleanupOnly: true,
           };
         }
+        return recoveryBudget;
+      };
+      if (locomotionMayHaveApplied && (locomotion as LocomotionResult | null)?.motionQuiesced !== true && state.targetOwned) {
+        emergencyStop = { attempted: true, proven: false, error: null };
         try {
           await dependencies.stopPackage({
             serial: state.input.serial,
             packageName: state.input.scenario.packageName,
             reason: "step_unquiesced_locomotion",
-            ...stopBudget,
+            ...stepRecoveryBudget(),
           });
           state.targetOwned = false;
           emergencyStop.proven = true;
+          state.unquiescedLocomotion = null;
         } catch (stopError) {
           emergencyStop.error = errorText(stopError);
           cleanupErrors.push(`step emergency target stop: ${emergencyStop.error}`);
+          state.unquiescedLocomotion = pendingNonceRequestId === null ? null : {
+            requestId: pendingNonceRequestId,
+            relativePath: `cache/agentbridge/locomotion/${pendingNonceRequestId}.json`,
+          };
           const lease = serialOwners.get(state.input.serial);
           if (lease?.runId === state.artifact.runId) {
             serialOwners.set(state.input.serial, {
               runId: state.artifact.runId,
               status: "quarantined",
               reason: "unquiesced locomotion and emergency target stop remain unproven",
+            });
+          }
+        }
+      }
+      const retainedMotionQuiesced = (locomotion as LocomotionResult | null)?.motionQuiesced === true;
+      if (locomotionMayHaveApplied && (retainedMotionQuiesced || !state.targetOwned)
+        && state.pendingLocomotionNonce?.attempts === 0) {
+        const pending = state.pendingLocomotionNonce;
+        pending.attempts = 1;
+        try {
+          await dependencies.cleanupLocomotionNonce({
+            serial: state.input.serial,
+            packageName: state.input.scenario.packageName,
+            requestId: pending.requestId,
+            ...stepRecoveryBudget(),
+          });
+          if (state.pendingLocomotionNonce === pending) state.pendingLocomotionNonce = null;
+          if (pendingNonceRequestId === pending.requestId) pendingNonceRequestId = null;
+        } catch (cleanupError) {
+          cleanupErrors.push(`step locomotion nonce cleanup: ${errorText(cleanupError)}`);
+          const lease = serialOwners.get(state.input.serial);
+          if (lease?.runId === state.artifact.runId) {
+            serialOwners.set(state.input.serial, {
+              runId: state.artifact.runId,
+              status: "quarantined",
+              reason: "locomotion nonce cleanup remains unproven after quiescence or a proven target stop",
             });
           }
         }
@@ -2242,6 +2562,9 @@ export function createInAppLocomotionOrchestrator(
         logEvidence,
       }, hooks);
     } catch (auditError) {
+      if (/conflict|changed after immutable publication|authoritative action record|derived action JSONL/i.test(errorText(auditError))) {
+        state.actionAuditConflict = true;
+      }
       if (primaryError === null) {
         primaryError = `step action audit: ${errorText(auditError)}`;
         primaryCode = "action_audit_failed";
@@ -2287,25 +2610,16 @@ export function createInAppLocomotionOrchestrator(
       return restoreReviewFailure(state, "reviewed capture SHA does not match the exact current required frame");
     }
     const reviewedMovedFrame = state.currentReviewReflectsNonzeroMutation;
-    if (!reviewedMovedFrame) {
-      try {
-        dependencies.readReviewImage(state.currentReview, state.artifact.absoluteRoot);
-      } catch (error) {
-        return restoreReviewFailure(state, `reviewed retained image failed its immutable sha256 check: ${errorText(error)}`);
-      }
-    }
-    const restoreStartedNs = checkedMonotonic(dependencies);
-    const restoreDeadlineNs = earlierDeadline(
-      state.deadlineNs,
-      restoreStartedNs + BigInt(state.input.budgets.restorationReserveMs) * 1_000_000n,
-    );
-    const mutationDeadlineNs = restoreDeadlineNs - 5_000_000_000n;
     state.restoreAttempted = true;
+    let restoreStartedNs = state.startedAtNs;
+    let restoreDeadlineNs = state.deadlineNs;
+    let mutationDeadlineNs = restoreDeadlineNs - 5_000_000_000n;
     let primaryError: string | null = null;
     let primaryCode: string | null = null;
     const cleanupErrors: string[] = [];
     let restoredReview: LocomotionReviewItem | null = null;
     let locomotion: LocomotionResult | null = null;
+    let restorationMayHaveApplied = false;
     let captureReceipt: CaptureSettledReceipt | null = null;
     let postStopSafety: LocomotionSafetySnapshot | null = null;
     let preRestoreContinuity: ApplicationContinuitySample | null = null;
@@ -2316,16 +2630,33 @@ export function createInAppLocomotionOrchestrator(
     let currentReviewTrusted = true;
     const priorDisposition = priorForegroundDisposition(state);
     try {
-      if (reviewedMovedFrame) {
-        try {
-          dependencies.readReviewImage(state.currentReview, state.artifact.absoluteRoot);
-        } catch (error) {
-          currentReviewTrusted = false;
-          throw new LocomotionStageError(
-            "review_artifact_failed",
-            `reviewed moved-state image failed its immutable sha256 check: ${errorText(error)}`,
-          );
-        }
+      restoreStartedNs = checkedMonotonic(dependencies);
+      restoreDeadlineNs = earlierDeadline(
+        state.deadlineNs,
+        restoreStartedNs + BigInt(state.input.budgets.restorationReserveMs) * 1_000_000n,
+      );
+      mutationDeadlineNs = restoreDeadlineNs - 5_000_000_000n;
+      if (state.unquiescedLocomotion !== null || state.actionAuditConflict
+        || state.pendingLocomotionNonce !== null) {
+        throw new LocomotionStageError(
+          "cleanup_only_restore",
+          state.actionAuditConflict
+            ? "action publication conflict requires cleanup-only restore"
+            : state.pendingLocomotionNonce !== null
+              ? state.pendingLocomotionNonce.attempts === 1
+                ? "locomotion nonce cleanup was already attempted without exact absence proof"
+                : "pending locomotion nonce requires cleanup-only restore"
+              : "unquiesced locomotion requires cleanup-only restore",
+        );
+      }
+      try {
+        dependencies.readReviewImage(state.currentReview, state.artifact.absoluteRoot);
+      } catch (error) {
+        currentReviewTrusted = false;
+        throw new LocomotionStageError(
+          "review_artifact_failed",
+          `reviewed retained image failed its immutable sha256 check: ${errorText(error)}`,
+        );
       }
       if (!state.targetOwned) {
         throw new LocomotionStageError("target_already_stopped", "run-owned target was already stopped after an unquiesced locomotion failure");
@@ -2368,29 +2699,59 @@ export function createInAppLocomotionOrchestrator(
         throw new LocomotionStageError("budget_exhausted", "restoration deadline cannot fit the required settled capture");
       }
       const rootBefore = state.rootGeneration;
-      locomotion = await withinDeadline(mutationDeadlineNs, dependencies, "zero-offset restoration", (timeoutMs) => dependencies.requestLocomotion({
-        serial: state.input.serial,
-        packageName: state.input.scenario.packageName,
-        requestId: `restore_move_${state.artifact.runId.slice(0, 20)}`,
-        tag: "restore",
-        mode: state.input.mechanism,
-        target: { x: 0, y: 0, z: 0 },
-        rootGeneration: rootBefore,
-        rootIncarnation: state.rootIncarnation,
-        glideDurationMs: state.input.route.glideDurationMs,
-        physicalWalk: false,
-        ...bridgeBudgetFields(timeoutMs, mutationDeadlineNs),
-      }));
-      const ack = completedLocomotionAck(locomotion);
+      const restoreRequestId = `restore_move_${state.artifact.runId.slice(0, 20)}`;
+      restorationMayHaveApplied = true;
+      state.pendingLocomotionNonce = {
+        requestId: restoreRequestId,
+        relativePath: `cache/agentbridge/locomotion/${restoreRequestId}.json`,
+        attempts: 0,
+      };
+      await withinDeadline(mutationDeadlineNs, dependencies, "zero-offset restoration", async (timeoutMs) => {
+        const retained = await dependencies.requestLocomotion({
+          serial: state.input.serial,
+          packageName: state.input.scenario.packageName,
+          requestId: restoreRequestId,
+          tag: "restore",
+          mode: state.input.mechanism,
+          target: { x: 0, y: 0, z: 0 },
+          rootGeneration: rootBefore,
+          rootIncarnation: state.rootIncarnation,
+          glideDurationMs: state.input.route.glideDurationMs,
+          physicalWalk: false,
+          deferNonceCleanup: true,
+          ...bridgeBudgetFields(timeoutMs, mutationDeadlineNs),
+        });
+        locomotion = retained;
+        if (retained.nonceCleanup === undefined) state.pendingLocomotionNonce = null;
+        return retained;
+      });
+      const retainedLocomotion = locomotion as LocomotionResult | null;
+      if (retainedLocomotion === null) throw new Error("zero-offset restoration returned without a retained result");
+      if (retainedLocomotion.motionQuiesced && state.pendingLocomotionNonce?.attempts === 0) {
+        await withinDeadline(mutationDeadlineNs, dependencies, "restore locomotion nonce cleanup", async (timeoutMs) => {
+          const pending = state.pendingLocomotionNonce!;
+          pending.attempts = 1;
+          const receipt = await dependencies.cleanupLocomotionNonce({
+            serial: state.input.serial,
+            packageName: state.input.scenario.packageName,
+            requestId: pending.requestId,
+            timeoutMs,
+            deadlineMonotonicNs: mutationDeadlineNs.toString(),
+          });
+          state.pendingLocomotionNonce = null;
+          return receipt;
+        });
+      }
+      const ack = completedLocomotionAck(retainedLocomotion);
       if (!ack) {
-        if (!locomotion.ok) {
-          if (locomotion.cleanupError) cleanupErrors.push(`locomotion acknowledgement cleanup: ${locomotion.cleanupError}`);
-          throw new LocomotionStageError(locomotion.code, locomotion.primaryError ?? locomotion.detail);
+        if (!retainedLocomotion.ok) {
+          if (retainedLocomotion.cleanupError) cleanupErrors.push(`locomotion acknowledgement cleanup: ${retainedLocomotion.cleanupError}`);
+          throw new LocomotionStageError(retainedLocomotion.code, retainedLocomotion.primaryError ?? retainedLocomotion.detail);
         }
         throw new LocomotionStageError("root_readback_mismatch", "successful restore omitted its completed acknowledgement");
       }
-      if (!locomotion.ok) {
-        if (locomotion.cleanupError) cleanupErrors.push(`locomotion acknowledgement cleanup: ${locomotion.cleanupError}`);
+      if (!retainedLocomotion.ok) {
+        if (retainedLocomotion.cleanupError) cleanupErrors.push(`locomotion acknowledgement cleanup: ${retainedLocomotion.cleanupError}`);
         primaryCode = "cleanup_failed";
       }
       const expectedGeneration = state.input.mechanism === "replacement" ? rootBefore + 1 : rootBefore;
@@ -2433,6 +2794,12 @@ export function createInAppLocomotionOrchestrator(
     } catch (error) {
       primaryError = errorText(error);
       primaryCode = error instanceof LocomotionStageError ? error.code : "restore_failed";
+      if (restorationMayHaveApplied && (locomotion as LocomotionResult | null)?.motionQuiesced !== true && state.pendingLocomotionNonce !== null) {
+        state.unquiescedLocomotion = {
+          requestId: state.pendingLocomotionNonce.requestId,
+          relativePath: state.pendingLocomotionNonce.relativePath,
+        };
+      }
       if (error instanceof LocomotionStageError && error.cleanupError) {
         cleanupErrors.push(`bridge acknowledgement cleanup: ${error.cleanupError}`);
       }
@@ -2459,13 +2826,31 @@ export function createInAppLocomotionOrchestrator(
           await dependencies.stopPackage({
             serial: state.input.serial,
             packageName: state.input.scenario.packageName,
-            reason: "restore_run_owned_target",
+            reason: state.unquiescedLocomotion === null ? "restore_run_owned_target" : "restore_unquiesced_target",
             ...cleanupBudget("owned target stop"),
           });
           state.targetOwned = false;
         } catch (error) {
           cleanupErrors.push(`owned target stop: ${errorText(error)}`);
         }
+      }
+      if (!state.targetOwned && state.pendingLocomotionNonce?.attempts === 0) {
+        const pending = state.pendingLocomotionNonce;
+        pending.attempts = 1;
+        try {
+          await dependencies.cleanupLocomotionNonce({
+            serial: state.input.serial,
+            packageName: state.input.scenario.packageName,
+            requestId: pending.requestId,
+            ...cleanupBudget("locomotion nonce cleanup"),
+          });
+          state.pendingLocomotionNonce = null;
+          state.unquiescedLocomotion = null;
+        } catch (error) {
+          cleanupErrors.push(`locomotion nonce cleanup: ${errorText(error)}`);
+        }
+      } else if (!state.targetOwned && state.pendingLocomotionNonce?.attempts === 1) {
+        cleanupErrors.push("locomotion nonce cleanup was already attempted once without an exact absence proof");
       }
       if (state.input.priorForeground.kind === "non_receipt_bound" && state.priorTerminatedByRun) {
         try {
@@ -3133,6 +3518,61 @@ export function createLiveInAppLocomotionDependencies(
         rawWindowDump: { path: fs.realpathSync(artifactPath), sha256: identity.sha256, bytes: identity.bytes },
       };
     },
+    observeLaunchHandoff: async (context) => {
+      const maxSampleGapMs = 2_000;
+      const startedAt = clockNs();
+      const samples: FreshLaunchHandoffObservationSample[] = [];
+      const rawWindowDumps: LocomotionRawLogEvidence[] = [];
+      const sample = async () => {
+        const sampleStarted = clockNs();
+        if (samples.length > 0) {
+          const prior = BigInt(samples.at(-1)!.observedAtMonotonicNs);
+          if (sampleStarted - prior > BigInt(maxSampleGapMs) * 1_000_000n) {
+            throw new Error("launch-handoff observation exceeded its declared maximum sampling cadence");
+          }
+        }
+        const result = await runBounded(
+          context.serial,
+          ["shell", "dumpsys", "window", "windows"],
+          "launch-handoff observation window sample",
+          { ...context, timeoutMs: Math.min(context.timeoutMs, 1_000) },
+          1_000,
+        );
+        checkedLiveAdbResult(result, "launch-handoff observation window sample");
+        const observedAt = clockNs();
+        const artifactPath = path.join(
+          context.artifactRoot,
+          "logs",
+          `fresh-launch-handoff-observation-${String(samples.length).padStart(3, "0")}.txt`,
+        );
+        privateWrite(artifactPath, result.stdout);
+        const identity = artifactFileIdentity(artifactPath, "launch-handoff observation raw window", 64 * 1024 * 1024);
+        const bytes = readSameArtifactFile(artifactPath, identity, "launch-handoff observation raw window", 64 * 1024 * 1024);
+        const rawWindowDump = { path: fs.realpathSync(artifactPath), sha256: identity.sha256, bytes: identity.bytes };
+        rawWindowDumps.push(rawWindowDump);
+        samples.push({
+          elapsedMs: Number((observedAt - startedAt) / 1_000_000n),
+          observedAtMonotonicNs: observedAt.toString(),
+          dialogs: freshLaunchDialogs(bytes.toString("utf8")),
+          rawWindowDump,
+        });
+      };
+      await sample();
+      while (!context.signal.aborted) {
+        await sleepWithin(context, 250, "launch-handoff observation cadence");
+        if (!context.signal.aborted) await sample();
+      }
+      await sample();
+      return {
+        claim: "no_blocking_dialog_at_retained_samples",
+        maxSampleGapMs,
+        startedAtMonotonicNs: startedAt.toString(),
+        endedAtMonotonicNs: clockNs().toString(),
+        samples,
+        rawWindowDumps,
+        dialogs: [...new Set(samples.flatMap((entry) => entry.dialogs))],
+      };
+    },
     probeRuntimeBinding: async (context) => {
       const { serial, scenario } = context;
       const cap = (requested: number, label: string) => boundedTimeout(context, requested, label);
@@ -3214,6 +3654,7 @@ export function createLiveInAppLocomotionDependencies(
         const windowBytes = readSameArtifactFile(windowPath, windowIdentity, "fresh-launch raw window dump", 64 * 1024 * 1024);
         rawWindowDumps.push({ path: fs.realpathSync(windowPath), sha256: windowIdentity.sha256, bytes: windowIdentity.bytes });
         const dialogs = freshLaunchDialogs(windowBytes.toString("utf8"));
+        if (sampleIndex === 0) await context.onFirstWindowSample();
         const safety = await sampleSafetyLive({
           serial: context.serial,
           phase: `fresh_launch_${sampleIndex}`,
@@ -3258,6 +3699,12 @@ export function createLiveInAppLocomotionDependencies(
       sleep: liveSleep,
       monotonicNs: clockNs,
     }),
+    cleanupLocomotionNonce: (context) => cleanupAgentBridgeLocomotionNonce(adb, {
+      serial: context.serial,
+      packageName: context.packageName,
+      requestId: context.requestId,
+      controlTimeoutMs: Math.max(1_000, Math.min(15_000, context.timeoutMs)),
+    }, { runText: liveRunText, runBytes: liveRunBytes }),
     emitMarker: async (context) => {
       const { serial, marker } = context;
       await checked(serial, ["shell", "log", "-t", "WorldLocomotion", marker], `locomotion marker ${marker}`, context, 5_000, 64 * 1024);

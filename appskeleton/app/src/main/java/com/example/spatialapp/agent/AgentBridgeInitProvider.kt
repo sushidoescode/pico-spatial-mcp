@@ -26,7 +26,17 @@ class AgentBridgeInitProvider : ContentProvider() {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, intent: Intent?) {
                 if (intent == null) return
-                AgentBridge.dispatch(intent.getStringExtra("cmd"), intent.extras ?: Bundle())
+                val cmd = intent.getStringExtra("cmd")
+                val extras = intent.extras ?: Bundle()
+                if (cmd == AgentBridge.LOCOMOTE_COMMAND && extras.getString("requestControl") == "cancel") {
+                    val pending = goAsync()
+                    val callbackOwned = runCatching {
+                        AgentBridge.dispatchLocomotionCancellation(extras) { pending.finish() }
+                    }.getOrDefault(false)
+                    if (!callbackOwned) pending.finish()
+                    return
+                }
+                AgentBridge.dispatch(cmd, extras)
             }
         }
         val filter = IntentFilter(action)
