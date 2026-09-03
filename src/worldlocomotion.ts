@@ -48,13 +48,18 @@ import {
   type PackageRuntimeHealthReceiptV1,
   type RuntimeLogSnapshotReceipt,
 } from "./runtimecontinuity.js";
-import { okJson, run, sleep } from "./util.js";
+import { okJson, run, runBinary, sleep } from "./util.js";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const EMULATOR_SERIAL = /^emulator-[1-9][0-9]*$/;
 const PACKAGE = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/;
 const COMPONENT = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\/[A-Za-z0-9_.$]+$/;
+const ROOT_INCARNATION = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const BRIDGE_MAX_POLLS = 10;
+const BRIDGE_POLL_MS = 100;
+const BRIDGE_MIN_TRANSACTION_MS = 1_000 + BRIDGE_MAX_POLLS * 250 + (BRIDGE_MAX_POLLS - 1) * BRIDGE_POLL_MS + 1_000;
+const FINAL_RECOVERY_RESERVE_MS = 5_000;
 
 const hashSchema = z.string().regex(SHA256);
 const componentSchema = z.string().regex(COMPONENT);
@@ -194,11 +199,11 @@ const prepareSchema = z.object({
   const prepareBudgetMs = value.budgets.maxDurationMs
     - value.budgets.routeReserveMs
     - value.budgets.restorationReserveMs;
-  if (prepareBudgetMs <= 60_000 + value.capture.deadlineMs) {
+  if (prepareBudgetMs <= 60_000 + value.capture.deadlineMs + 2 * BRIDGE_MIN_TRANSACTION_MS) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["budgets", "maxDurationMs"],
-      message: "prepare budget cannot fit the mandatory >=60 second monitor and baseline capture before route/restoration reserves",
+      message: "prepare budget cannot fit bounded capability/HMD transactions, the mandatory >=60 second monitor, and baseline capture before reserves",
     });
   }
   if (value.budgets.routeReserveMs <= value.capture.deadlineMs) {
@@ -208,11 +213,25 @@ const prepareSchema = z.object({
       message: "route reserve must exceed one complete settled-capture deadline",
     });
   }
+  if (value.budgets.routeReserveMs <= value.capture.deadlineMs + 3 * BRIDGE_MIN_TRANSACTION_MS) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["budgets", "routeReserveMs"],
+      message: "route reserve cannot fit three bounded bridge transactions plus one complete settled capture",
+    });
+  }
   if (value.budgets.restorationReserveMs <= value.capture.deadlineMs) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["budgets", "restorationReserveMs"],
       message: "restoration reserve must exceed one complete settled-capture deadline",
+    });
+  }
+  if (value.budgets.restorationReserveMs <= value.capture.deadlineMs + 2 * BRIDGE_MIN_TRANSACTION_MS + FINAL_RECOVERY_RESERVE_MS) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["budgets", "restorationReserveMs"],
+      message: "restoration reserve cannot fit capability, locomotion, settled capture, and final recovery proof",
     });
   }
 });
@@ -288,8 +307,10 @@ export interface FreshLaunchMonitorSample {
 
 export interface FreshLaunchMonitorReceipt {
   durationMs: number;
+  healthBoundaryMarker: string;
   samples: FreshLaunchMonitorSample[];
   rawHealthLogs: LocomotionRawLogEvidence[];
+  rawWindowDumps: LocomotionRawLogEvidence[];
 }
 
 export interface LocomotionRawLogEvidence {
@@ -334,6 +355,7 @@ export interface LocomotionPrepareReceipt {
   lookRequired: true;
   requiredReview: LocomotionReviewItem[];
   rootGeneration?: number;
+  rootIncarnation?: string;
   applicationBinding?: BoundApplicationIdentity;
 }
 
@@ -363,6 +385,7 @@ export interface LocomotionStepReceipt {
   artifactRoot: string;
   waypointSeq?: number;
   rootGeneration: number;
+  rootIncarnation: string;
   structuralStop: string | null;
   primaryError: string | null;
   cleanupError: string | null;
@@ -387,6 +410,7 @@ export interface LocomotionRestoreReceipt {
   runId: string;
   artifactRoot: string;
   rootGeneration: number;
+  rootIncarnation: string;
   structuralStop: string | null;
   primaryError: string | null;
   cleanupError: string | null;
@@ -418,12 +442,30 @@ export interface PriorRelaunchReceipt {
   resumedComponents: string[];
 }
 
+export interface FinalProcessActivityReceipt {
+  serial: string;
+  targetPackage: string;
+  targetPids: number[];
+  resumedComponents: string[];
+  rawProbe: LocomotionRawLogEvidence;
+}
+
 export interface InAppLocomotionArtifactHooks {
   beforeActionAppendOpen?(context: {
     action: string;
     status: string | null;
     path: string;
   }): void;
+  writeActionStage?(context: {
+    action: string;
+    status: string | null;
+    path: string;
+    descriptor: number;
+    bytes: Buffer;
+  }): boolean | void;
+  beforeActionStageFsync?(context: { action: string; status: string | null; path: string }): void;
+  beforeActionPublish?(context: { action: string; status: string | null; path: string; stagedPath: string }): void;
+  afterArtifactReadBeforePathRecheck?(context: { path: string; label: string }): void;
 }
 
 type ReceiptValidation = ReturnType<typeof readNativeRunReceipt>;
@@ -437,16 +479,17 @@ export interface InAppLocomotionDependencies {
   monotonicNs(): bigint;
   readNativeRunReceipt(app: string, receiptId: string): ReceiptValidation;
   readEffectiveAppSpec(artifactPath: string, identity: { sha256: string; bytes: number }): unknown;
-  snapshotPriorForeground(context: { serial: string; targetPackage: string; timeoutMs: number }): Promise<LocomotionPriorForegroundSnapshot>;
-  stopPackage(context: { serial: string; packageName: string; reason: string; timeoutMs: number }): Promise<unknown>;
-  launchTarget(context: { serial: string; component: string; timeoutMs: number }): Promise<{ disposition: "accepted" | "ignored" | "blocked"; component: string; outputSha256: string }>;
+  snapshotPriorForeground(context: { serial: string; targetPackage: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<LocomotionPriorForegroundSnapshot>;
+  stopPackage(context: { serial: string; packageName: string; reason: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<unknown>;
+  launchTarget(context: { serial: string; component: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<{ disposition: "accepted" | "ignored" | "blocked"; component: string; outputSha256: string }>;
   probeRuntimeBinding(context: {
     serial: string;
     scenario: InAppLocomotionPrepareInput["scenario"];
     expectedApkSha256: string;
     timeoutMs: number;
+    deadlineMonotonicNs: string;
   }): Promise<LocomotionRuntimeBinding>;
-  sampleSafety(context: { serial: string; phase: string; timeoutMs: number }): Promise<LocomotionSafetySnapshot>;
+  sampleSafety(context: { serial: string; phase: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<LocomotionSafetySnapshot>;
   probeCapability(input: AgentBridgeLocomotionTransactionInput): Promise<CapabilityResult>;
   requestHmdPose(input: AgentBridgeHmdPoseRequestInput): Promise<HmdResult>;
   monitorFreshLaunch(context: {
@@ -454,8 +497,10 @@ export interface InAppLocomotionDependencies {
     runId: string;
     artifactRoot: string;
     minimumDurationMs: 60_000;
+    healthBoundaryMarker: string;
     runtime: LocomotionRuntimeBinding;
     timeoutMs: number;
+    deadlineMonotonicNs: string;
   }): Promise<FreshLaunchMonitorReceipt>;
   captureSettled(input: CaptureSettledInput): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }>;
   readReviewImage(item: LocomotionReviewItem, artifactRoot: string): Buffer;
@@ -465,9 +510,10 @@ export interface InAppLocomotionDependencies {
     runtime: LocomotionRuntimeBinding;
     artifactRoot: string;
     timeoutMs: number;
+    deadlineMonotonicNs: string;
   }): Promise<ApplicationContinuitySample>;
   requestLocomotion(input: AgentBridgeLocomotionRequestInput): Promise<LocomotionResult>;
-  emitMarker(context: { serial: string; marker: string; timeoutMs: number }): Promise<void>;
+  emitMarker(context: { serial: string; marker: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<void>;
   collectStepLogs(context: {
     serial: string;
     packageName: string;
@@ -476,8 +522,17 @@ export interface InAppLocomotionDependencies {
     endMarker: string;
     path: string;
     timeoutMs: number;
+    deadlineMonotonicNs: string;
   }): Promise<LocomotionLogEvidence>;
-  relaunchPrior(context: { serial: string; component: string; timeoutMs: number }): Promise<PriorRelaunchReceipt>;
+  relaunchPrior(context: { serial: string; component: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<PriorRelaunchReceipt>;
+  probeFinalProcessState(context: {
+    serial: string;
+    targetPackage: string;
+    artifactRoot: string;
+    priorForeground: InAppLocomotionPrepareInput["priorForeground"];
+    timeoutMs: number;
+    deadlineMonotonicNs: string;
+  }): Promise<FinalProcessActivityReceipt>;
 }
 
 interface ArtifactFileIdentity {
@@ -512,6 +567,7 @@ interface LocomotionState {
   priorTerminatedByRun: boolean;
   targetOwned: boolean;
   rootGeneration: number;
+  rootIncarnation: string;
   baselineHmd: AgentBridgeHmdPose;
   currentReview: LocomotionReviewItem;
   requiredReview: LocomotionReviewItem[];
@@ -524,6 +580,12 @@ interface LocomotionState {
   restoreCompleted: boolean;
   adjudicated: boolean;
   currentReviewReflectsNonzeroMutation: boolean;
+}
+
+interface SerialLease {
+  runId: string;
+  status: "active" | "quarantined";
+  reason: string;
 }
 
 class LocomotionStageError extends Error {
@@ -565,7 +627,12 @@ function privateJson(filePath: string, value: unknown): void {
   privateWrite(filePath, `${canonicalJson(value)}\n`);
 }
 
-function artifactFileIdentity(filePath: string, label: string, maxBytes: number): ArtifactFileIdentity {
+function artifactFileIdentity(
+  filePath: string,
+  label: string,
+  maxBytes: number,
+  hooks: InAppLocomotionArtifactHooks = {},
+): ArtifactFileIdentity {
   let descriptor: number | undefined;
   try {
     descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
@@ -584,16 +651,61 @@ function artifactFileIdentity(filePath: string, label: string, maxBytes: number)
     if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
       throw new Error(`${label} changed while its immutable identity was read`);
     }
+    hooks.afterArtifactReadBeforePathRecheck?.({ path: filePath, label });
+    const published = fs.lstatSync(filePath);
+    if (!published.isFile() || published.isSymbolicLink() || fs.realpathSync(filePath) !== filePath
+      || published.dev !== after.dev || published.ino !== after.ino || published.size !== after.size) {
+      throw new Error(`${label} pathname identity changed after its descriptor bytes were read`);
+    }
     return { dev: after.dev, ino: after.ino, bytes: bytes.length, sha256: sha256Bytes(bytes) };
   } finally {
     if (descriptor !== undefined) fs.closeSync(descriptor);
   }
 }
 
-function assertSameArtifactFile(filePath: string, expected: ArtifactFileIdentity, label: string, maxBytes: number): void {
-  const actual = artifactFileIdentity(filePath, label, maxBytes);
+function assertSameArtifactFile(
+  filePath: string,
+  expected: ArtifactFileIdentity,
+  label: string,
+  maxBytes: number,
+  hooks: InAppLocomotionArtifactHooks = {},
+): void {
+  const actual = artifactFileIdentity(filePath, label, maxBytes, hooks);
   if (actual.dev !== expected.dev || actual.ino !== expected.ino || actual.bytes !== expected.bytes || actual.sha256 !== expected.sha256) {
     throw new Error(`${label} changed after immutable publication`);
+  }
+}
+
+function readSameArtifactFile(
+  filePath: string,
+  expected: ArtifactFileIdentity,
+  label: string,
+  maxBytes: number,
+  hooks: InAppLocomotionArtifactHooks = {},
+): Buffer {
+  let descriptor: number | undefined;
+  try {
+    descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    const before = fs.fstatSync(descriptor);
+    if (!before.isFile() || before.dev !== expected.dev || before.ino !== expected.ino
+      || before.size !== expected.bytes || before.size > maxBytes) {
+      throw new Error(`${label} opened descriptor identity changed after immutable publication`);
+    }
+    const bytes = descriptorBytes(descriptor, before.size, label);
+    const after = fs.fstatSync(descriptor);
+    if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size
+      || after.mtimeMs !== before.mtimeMs || sha256Bytes(bytes) !== expected.sha256) {
+      throw new Error(`${label} descriptor bytes changed after immutable publication`);
+    }
+    hooks.afterArtifactReadBeforePathRecheck?.({ path: filePath, label });
+    const published = fs.lstatSync(filePath);
+    if (!published.isFile() || published.isSymbolicLink() || fs.realpathSync(filePath) !== filePath
+      || published.dev !== after.dev || published.ino !== after.ino || published.size !== after.size) {
+      throw new Error(`${label} pathname identity changed after its descriptor bytes were read`);
+    }
+    return bytes;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
   }
 }
 
@@ -615,7 +727,7 @@ function descriptorBytes(descriptor: number, size: number, label: string): Buffe
 }
 
 function appendAction(binding: OwnedArtifactBinding, value: unknown, hooks: InAppLocomotionArtifactHooks): void {
-  assertOwnedArtifacts(binding);
+  assertOwnedArtifacts(binding, hooks);
   const target = path.join(binding.absoluteRoot, "actions.jsonl");
   const action = value && typeof value === "object" && !Array.isArray(value)
     ? String((value as Record<string, unknown>).action ?? "unknown")
@@ -624,34 +736,43 @@ function appendAction(binding: OwnedArtifactBinding, value: unknown, hooks: InAp
     ? typeof (value as Record<string, unknown>).status === "string" ? String((value as Record<string, unknown>).status) : null
     : null;
   hooks.beforeActionAppendOpen?.({ action, status, path: target });
-  const descriptor = fs.openSync(target, fs.constants.O_RDWR | fs.constants.O_APPEND | fs.constants.O_NOFOLLOW);
+  const priorBytes = readSameArtifactFile(target, binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks);
+  const appended = Buffer.concat([priorBytes, Buffer.from(`${canonicalJson(value)}\n`, "utf8")]);
+  if (appended.length > 16 * 1024 * 1024) throw new Error("action JSONL exceeds its bounded publication limit");
+  const stagedPath = path.join(binding.absoluteRoot, `.actions.jsonl.${crypto.randomBytes(16).toString("hex")}.tmp`);
   try {
-    const before = fs.fstatSync(descriptor);
-    const bytes = Buffer.from(`${canonicalJson(value)}\n`, "utf8");
-    if (!before.isFile() || before.dev !== binding.actionLog.dev || before.ino !== binding.actionLog.ino
-      || before.size !== binding.actionLog.bytes || before.size + bytes.length > 16 * 1024 * 1024) {
-      throw new Error("action JSONL opened descriptor identity does not match the expected owned log");
+    const descriptor = fs.openSync(stagedPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
+    try {
+      const handled = hooks.writeActionStage?.({ action, status, path: target, descriptor, bytes: appended }) === true;
+      if (!handled) {
+        let offset = 0;
+        while (offset < appended.length) offset += fs.writeSync(descriptor, appended, offset, appended.length - offset, offset);
+      }
+      hooks.beforeActionStageFsync?.({ action, status, path: target });
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
     }
-    const priorBytes = descriptorBytes(descriptor, before.size, "action JSONL");
-    if (sha256Bytes(priorBytes) !== binding.actionLog.sha256) {
-      throw new Error("action JSONL opened descriptor bytes do not match the expected owned log");
+    const staged = artifactFileIdentity(stagedPath, "staged action JSONL", 16 * 1024 * 1024, hooks);
+    if (staged.bytes !== appended.length || staged.sha256 !== sha256Bytes(appended)) {
+      throw new Error("staged action JSONL bytes did not match the complete intended ledger");
     }
-    let offset = 0;
-    while (offset < bytes.length) offset += fs.writeSync(descriptor, bytes, offset, bytes.length - offset);
-    fs.fsyncSync(descriptor);
-    const after = fs.fstatSync(descriptor);
-    if (!after.isFile() || after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size + bytes.length) {
-      throw new Error("action JSONL descriptor changed during append");
+    hooks.beforeActionPublish?.({ action, status, path: target, stagedPath });
+    assertSameArtifactFile(target, binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks);
+    fs.renameSync(stagedPath, target);
+    const published = artifactFileIdentity(target, "action JSONL", 16 * 1024 * 1024, hooks);
+    if (published.bytes !== appended.length || published.sha256 !== sha256Bytes(appended)) {
+      throw new Error("action JSONL atomic publication did not retain the complete staged ledger");
     }
-    const appendedBytes = descriptorBytes(descriptor, after.size, "action JSONL");
-    binding.actionLog = { dev: after.dev, ino: after.ino, bytes: after.size, sha256: sha256Bytes(appendedBytes) };
+    binding.actionLog = published;
+    const directoryDescriptor = fs.openSync(binding.absoluteRoot, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    try {
+      fs.fsyncSync(directoryDescriptor);
+    } finally {
+      fs.closeSync(directoryDescriptor);
+    }
   } finally {
-    fs.closeSync(descriptor);
-  }
-  const published = artifactFileIdentity(target, "action JSONL", 16 * 1024 * 1024);
-  if (published.dev !== binding.actionLog.dev || published.ino !== binding.actionLog.ino
-    || published.bytes !== binding.actionLog.bytes || published.sha256 !== binding.actionLog.sha256) {
-    throw new Error("action JSONL path identity changed during append publication");
+    if (fs.existsSync(stagedPath)) fs.unlinkSync(stagedPath);
   }
 }
 
@@ -668,15 +789,21 @@ function sameDirectory(directory: string, identity: { dev: number; ino: number }
   if (actual.dev !== identity.dev || actual.ino !== identity.ino) throw new Error(`${label} identity changed after reservation`);
 }
 
-function assertOwnedArtifacts(binding: OwnedArtifactBinding): void {
+function assertOwnedArtifacts(binding: OwnedArtifactBinding, hooks: InAppLocomotionArtifactHooks = {}): void {
   sameDirectory(binding.absoluteRoot, { dev: binding.rootDev, ino: binding.rootIno }, "artifact root");
   sameDirectory(path.join(binding.absoluteRoot, "captures"), { dev: binding.capturesDev, ino: binding.capturesIno }, "capture directory");
   sameDirectory(path.join(binding.absoluteRoot, "logs"), { dev: binding.logsDev, ino: binding.logsIno }, "log directory");
-  assertSameArtifactFile(path.join(binding.absoluteRoot, ".owner.json"), binding.ownerFile, "artifact ownership manifest", 64 * 1024);
-  assertSameArtifactFile(path.join(binding.absoluteRoot, "run.json"), binding.runManifest, "run manifest", 1024 * 1024);
-  assertSameArtifactFile(path.join(binding.absoluteRoot, "route.json"), binding.routeManifest, "route manifest", 1024 * 1024);
-  assertSameArtifactFile(path.join(binding.absoluteRoot, "actions.jsonl"), binding.actionLog, "action JSONL", 16 * 1024 * 1024);
-  const owner = JSON.parse(fs.readFileSync(path.join(binding.absoluteRoot, ".owner.json"), "utf8"));
+  const ownerBytes = readSameArtifactFile(
+    path.join(binding.absoluteRoot, ".owner.json"),
+    binding.ownerFile,
+    "artifact ownership manifest",
+    64 * 1024,
+    hooks,
+  );
+  assertSameArtifactFile(path.join(binding.absoluteRoot, "run.json"), binding.runManifest, "run manifest", 1024 * 1024, hooks);
+  assertSameArtifactFile(path.join(binding.absoluteRoot, "route.json"), binding.routeManifest, "route manifest", 1024 * 1024, hooks);
+  assertSameArtifactFile(path.join(binding.absoluteRoot, "actions.jsonl"), binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks);
+  const owner = JSON.parse(ownerBytes.toString("utf8"));
   if (owner.schemaVersion !== 1 || owner.runId !== binding.runId || owner.ownerNonceHash !== binding.ownerNonceHash) {
     throw new Error("artifact ownership record changed after reservation");
   }
@@ -835,11 +962,12 @@ function continuityProblem(sample: ApplicationContinuitySample, runtime: Locomot
   return null;
 }
 
-function hmdPoseFrom(result: HmdResult, expectedGeneration: number): AgentBridgeHmdPose {
+function hmdPoseFrom(result: HmdResult, expectedGeneration: number, expectedIncarnation: string): AgentBridgeHmdPose {
   if (!result.ok) throw new LocomotionStageError(result.code, result.primaryError ?? result.detail, result.cleanupError);
   const pose = result.ack.hmdPose;
-  if (result.ack.root?.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID || result.ack.root.generation !== expectedGeneration || pose === null) {
-    throw new Error("HMD result lost the exact root generation binding");
+  if (result.ack.root?.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID || result.ack.root.generation !== expectedGeneration
+    || result.ack.root.incarnation !== expectedIncarnation || pose === null) {
+    throw new Error("HMD result lost the exact root generation/incarnation binding");
   }
   const values = [pose.position.x, pose.position.y, pose.position.z, pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w];
   if (!values.every(Number.isFinite) || !/^(?:0|[1-9][0-9]*)$/.test(pose.readAtMonotonicNs)) throw new Error("HMD pose is missing finite position/quaternion telemetry");
@@ -863,7 +991,16 @@ function validateRuntime(input: InAppLocomotionPrepareInput, receipt: Extract<Re
   }
 }
 
-function validateMonitor(monitor: FreshLaunchMonitorReceipt, runtime: LocomotionRuntimeBinding): void {
+function freshLaunchDialogs(output: string): string[] {
+  return output.split(/\r?\n/).map((line) => line.trim()).filter((line) =>
+    /Application Error|isn't responding|has stopped|(?:^|\s)ANR(?:\s|$)|mCurrentFocus=.*(?:Dialog|Error)/i.test(line));
+}
+
+function validateMonitor(
+  monitor: FreshLaunchMonitorReceipt,
+  runtime: LocomotionRuntimeBinding,
+  expectedBoundaryMarker: string,
+): void {
   if (!Number.isFinite(monitor.durationMs) || monitor.durationMs < 60_000 || !Array.isArray(monitor.samples) || monitor.samples.length < 2) {
     throw new Error("fresh-launch monitor did not retain multiple samples through at least 60 seconds");
   }
@@ -875,9 +1012,22 @@ function validateMonitor(monitor: FreshLaunchMonitorReceipt, runtime: Locomotion
   if (!Array.isArray(monitor.rawHealthLogs) || monitor.rawHealthLogs.length !== monitor.samples.length) {
     throw new Error("fresh-launch monitor did not retain one exact raw runtime-health log per sample");
   }
-  for (const sample of monitor.samples) {
+  if (monitor.healthBoundaryMarker !== expectedBoundaryMarker) {
+    throw new Error("fresh-launch monitor did not use the authenticated preparation BEGIN boundary");
+  }
+  if (!Array.isArray(monitor.rawWindowDumps) || monitor.rawWindowDumps.length !== monitor.samples.length) {
+    throw new Error("fresh-launch monitor did not retain one exact raw window dump per sample");
+  }
+  for (const [index, sample] of monitor.samples.entries()) {
     if (!Array.isArray(sample.dialogs) || sample.dialogs.length > 0) throw new Error("fresh-launch dialog monitor observed a blocking dialog");
-    if (sample.runtimeHealth?.status !== "no_attributed_failure" || !Array.isArray(sample.runtimeHealth.incidents) || sample.runtimeHealth.incidents.length > 0) {
+    const health = sample.runtimeHealth;
+    if (health?.schemaVersion !== 1 || health.sourceSha256 !== monitor.rawHealthLogs[index].sha256
+      || health.marker !== expectedBoundaryMarker || health.markerOccurrences !== 1
+      || health.packageName !== runtime.applicationBinding.packageName
+      || canonicalJson(health.expectedPids) !== canonicalJson([runtime.applicationBinding.pid])) {
+      throw new Error("fresh-launch runtime-health receipt lost exact source SHA/marker/package/PID binding");
+    }
+    if (health.status !== "no_attributed_failure" || !Array.isArray(health.incidents) || health.incidents.length > 0) {
       throw new Error("fresh-launch runtime-health monitor found an attributed failure or inconclusive sample");
     }
     const unsafe = safetyProblem(sample.safety);
@@ -892,10 +1042,11 @@ function checkedRawLogEvidence(value: LocomotionRawLogEvidence, artifactRoot: st
   identity: ArtifactFileIdentity;
   label: string;
 } {
-  if (!value || typeof value.path !== "string" || !isWithin(path.join(artifactRoot, "logs"), value.path)
-    || !SHA256.test(value.sha256) || !Number.isSafeInteger(value.bytes) || value.bytes < 0
-    || value.bytes > 64 * 1024 * 1024) {
-    throw new Error(`${label} is not one exact bounded owned raw log reference`);
+  if (!value || typeof value.path !== "string") throw new Error(`${label} omitted its exact raw log path`);
+  if (!isWithin(path.join(artifactRoot, "logs"), value.path)) throw new Error(`${label} path is outside the owned logs directory`);
+  if (!SHA256.test(value.sha256)) throw new Error(`${label} omitted its exact raw log SHA-256`);
+  if (!Number.isSafeInteger(value.bytes) || value.bytes < 0 || value.bytes > 64 * 1024 * 1024) {
+    throw new Error(`${label} byte length is invalid or exceeds its bound`);
   }
   const identity = artifactFileIdentity(value.path, label, 64 * 1024 * 1024);
   if (identity.bytes !== value.bytes || identity.sha256 !== value.sha256) {
@@ -996,36 +1147,42 @@ function driftReceipt(baseline: AgentBridgeHmdPose, pre: AgentBridgeHmdPose, pos
   };
 }
 
-function checkedLogEvidence(value: LocomotionLogEvidence, expectedPath: string): LocomotionLogEvidence {
+function checkedLogEvidence(
+  value: LocomotionLogEvidence,
+  expectedPath: string,
+  hooks: InAppLocomotionArtifactHooks = {},
+): LocomotionLogEvidence {
   if (value.path !== expectedPath || !SHA256.test(value.sha256) || !Number.isSafeInteger(value.bytes) || value.bytes < 1
     || value.bytes > 64 * 1024 * 1024 || value.truncated || value.beginCount !== 1 || value.endCount !== 1
     || Object.values(value.boundarySignals).some((count) => !Number.isSafeInteger(count) || count !== 0)) {
     throw new Error("step log evidence is not one complete bounded BEGIN/END window with zero container/boundary transitions");
   }
-  const stat = fs.lstatSync(expectedPath);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== value.bytes) throw new Error("step log evidence path is not the exact bounded regular file");
-  const bytes = fs.readFileSync(expectedPath);
-  if (sha256Bytes(bytes) !== value.sha256) throw new Error("step log evidence bytes changed after collection");
+  const identity = artifactFileIdentity(expectedPath, "retained step log", 64 * 1024 * 1024, hooks);
+  if (identity.bytes !== value.bytes || identity.sha256 !== value.sha256) throw new Error("step log evidence bytes changed after collection");
   return value;
 }
 
-function checkedPreparationLogEvidence(value: LocomotionLogEvidence, expectedPath: string): LocomotionLogEvidence {
+function checkedPreparationLogEvidence(
+  value: LocomotionLogEvidence,
+  expectedPath: string,
+  hooks: InAppLocomotionArtifactHooks = {},
+): LocomotionLogEvidence {
   if (value.path !== expectedPath || !SHA256.test(value.sha256) || !Number.isSafeInteger(value.bytes) || value.bytes < 1
     || value.bytes > 64 * 1024 * 1024 || value.truncated || value.beginCount !== 1 || value.endCount !== 1
     || Object.values(value.boundarySignals).some((count) => !Number.isSafeInteger(count) || count < 0)) {
     throw new Error("preparation log evidence is not one complete bounded BEGIN/END launch-handoff window");
   }
-  const identity = artifactFileIdentity(expectedPath, "retained preparation log", 64 * 1024 * 1024);
+  const identity = artifactFileIdentity(expectedPath, "retained preparation log", 64 * 1024 * 1024, hooks);
   if (identity.bytes !== value.bytes || identity.sha256 !== value.sha256) {
     throw new Error("preparation log evidence bytes changed after collection");
   }
   return value;
 }
 
-function assertStateArtifacts(state: LocomotionState): void {
-  assertOwnedArtifacts(state.artifact);
+function assertStateArtifacts(state: LocomotionState, hooks: InAppLocomotionArtifactHooks = {}): void {
+  assertOwnedArtifacts(state.artifact, hooks);
   for (const [index, retained] of state.retainedLogs.entries()) {
-    assertSameArtifactFile(retained.path, retained.identity, retained.label || `retained evidence log ${index + 1}`, 64 * 1024 * 1024);
+    assertSameArtifactFile(retained.path, retained.identity, retained.label || `retained evidence log ${index + 1}`, 64 * 1024 * 1024, hooks);
   }
 }
 
@@ -1035,6 +1192,7 @@ function stepReviewFailure(state: LocomotionState, detail: string): LocomotionSt
     runId: state.artifact.runId,
     artifactRoot: state.artifact.absoluteRoot,
     rootGeneration: state.rootGeneration,
+    rootIncarnation: state.rootIncarnation,
     structuralStop: null,
     primaryError: detail,
     cleanupError: null,
@@ -1089,6 +1247,7 @@ function restoreReviewFailure(state: LocomotionState, detail: string): Locomotio
     runId: state.artifact.runId,
     artifactRoot: state.artifact.absoluteRoot,
     rootGeneration: state.rootGeneration,
+    rootIncarnation: state.rootIncarnation,
     structuralStop: null,
     primaryError: detail,
     cleanupError: null,
@@ -1122,6 +1281,26 @@ async function withinDeadline<T>(
   return value;
 }
 
+function bridgeBudgetFields(remainingMs: number, deadlineNs: bigint): Pick<
+  AgentBridgeLocomotionTransactionInput,
+  "maxPolls" | "pollMs" | "stabilityReads" | "controlTimeoutMs" | "ackReadTimeoutMs" | "deadlineMonotonicNs"
+> {
+  if (remainingMs < BRIDGE_MIN_TRANSACTION_MS) {
+    throw new LocomotionStageError(
+      "budget_exhausted",
+      `remaining phase budget cannot fit the ${BRIDGE_MIN_TRANSACTION_MS}ms minimum AgentBridge transaction envelope`,
+    );
+  }
+  return {
+    maxPolls: BRIDGE_MAX_POLLS,
+    pollMs: BRIDGE_POLL_MS,
+    stabilityReads: 2,
+    controlTimeoutMs: Math.min(15_000, remainingMs),
+    ackReadTimeoutMs: Math.min(2_000, remainingMs),
+    deadlineMonotonicNs: deadlineNs.toString(),
+  };
+}
+
 function completedLocomotionAck(result: LocomotionResult): AgentBridgeLocomotionAck | null {
   if (result.ok) return result.ack;
   if (result.code === "cleanup_failed" && result.primaryError === null && result.ack?.outcome === "completed") {
@@ -1143,6 +1322,56 @@ function validatePriorRelaunchReceipt(receipt: PriorRelaunchReceipt, component: 
   return null;
 }
 
+function checkedFinalProcessProof(
+  receipt: FinalProcessActivityReceipt,
+  input: InAppLocomotionPrepareInput,
+  artifactRoot: string,
+): { retained: { path: string; identity: ArtifactFileIdentity; label: string }; problem: string | null } {
+  if (receipt?.serial !== input.serial || receipt.targetPackage !== input.scenario.packageName
+    || !Array.isArray(receipt.targetPids) || receipt.targetPids.some((pid) => !Number.isSafeInteger(pid) || pid < 1)
+    || new Set(receipt.targetPids).size !== receipt.targetPids.length
+    || !Array.isArray(receipt.resumedComponents) || receipt.resumedComponents.some((component) => !COMPONENT.test(component))
+    || new Set(receipt.resumedComponents).size !== receipt.resumedComponents.length) {
+    throw new Error("final process/activity proof is malformed or lost exact serial/target identity");
+  }
+  const retained = checkedRawLogEvidence(receipt.rawProbe, artifactRoot, "final process/activity raw probe");
+  const rawBytes = readSameArtifactFile(
+    retained.path,
+    retained.identity,
+    retained.label,
+    64 * 1024 * 1024,
+  );
+  let raw: unknown;
+  try {
+    raw = JSON.parse(rawBytes.toString("utf8"));
+  } catch {
+    throw new Error("final process/activity raw probe is not valid JSON");
+  }
+  const record = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
+  const pidofOutput = typeof record?.pidofOutput === "string" ? record.pidofOutput : null;
+  const activityOutput = typeof record?.activityOutput === "string" ? record.activityOutput : null;
+  const rawTargetPids = Array.isArray(record?.targetPids) ? record.targetPids : null;
+  const rawResumedComponents = Array.isArray(record?.resumedComponents) ? record.resumedComponents : null;
+  const parsedTargetPids = pidofOutput === null ? null : pidofOutput.trim() === "" ? [] : pidofOutput.trim().split(/\s+/).map(Number);
+  const parsedResumedComponents = activityOutput === null ? null
+    : parseForegroundActivities(activityOutput).map((activity) => activity.component);
+  if (pidofOutput === null || activityOutput === null
+    || canonicalJson(rawTargetPids) !== canonicalJson(receipt.targetPids)
+    || canonicalJson(rawResumedComponents) !== canonicalJson(receipt.resumedComponents)
+    || canonicalJson(parsedTargetPids) !== canonicalJson(receipt.targetPids)
+    || canonicalJson(parsedResumedComponents) !== canonicalJson(receipt.resumedComponents)) {
+    throw new Error("final process/activity fields do not reproduce from the retained exact command outputs");
+  }
+  let problem: string | null = null;
+  if (receipt.targetPids.length > 0 || receipt.resumedComponents.some((component) => component.startsWith(`${input.scenario.packageName}/`))) {
+    problem = "final process/activity proof shows the run-owned target still running or resumed";
+  } else if (input.priorForeground.kind === "non_receipt_bound"
+    && (receipt.resumedComponents.length !== 1 || receipt.resumedComponents[0] !== input.priorForeground.component)) {
+    problem = "final process/activity proof did not show the one exact relaunched non-receipt prior component";
+  }
+  return { retained, problem };
+}
+
 export function createInAppLocomotionOrchestrator(
   dependencies: InAppLocomotionDependencies,
   hooks: InAppLocomotionArtifactHooks = {},
@@ -1150,7 +1379,7 @@ export function createInAppLocomotionOrchestrator(
   const runs = new Map<string, LocomotionState>();
   const busyRuns = new Set<string>();
   const busySerials = new Set<string>();
-  const serialOwners = new Map<string, string>();
+  const serialOwners = new Map<string, SerialLease>();
   const preparingRoots = new Set<string>();
 
   const executePrepare = async (input: InAppLocomotionPrepareInput): Promise<LocomotionPrepareReceipt> => {
@@ -1168,10 +1397,13 @@ export function createInAppLocomotionOrchestrator(
     let priorTerminatedByRun = false;
     let priorStopMayHaveApplied = false;
     let prepareDeadlineNs: bigint | null = null;
+    let recoveryDeadlineNs: bigint | null = null;
+    let leaseAcquired = false;
     let preparationBegan = false;
     let preparationFinalizationAttempted = false;
     let preparationLogEvidence: LocomotionLogEvidence | null = null;
     let freshLaunchMonitor: FreshLaunchMonitorReceipt | null = null;
+    let healthBoundaryMarker: string | null = null;
 
     const finalizePreparationBracket = async (strictDeadline: boolean): Promise<LocomotionLogEvidence | null> => {
       if (!artifact || !preparationBegan || preparationFinalizationAttempted) return preparationLogEvidence;
@@ -1184,9 +1416,15 @@ export function createInAppLocomotionOrchestrator(
           serial: input.serial,
           marker: endMarker,
           timeoutMs,
+          deadlineMonotonicNs: prepareDeadlineNs!.toString(),
         }));
       } else {
-        await dependencies.emitMarker({ serial: input.serial, marker: endMarker, timeoutMs: remaining() });
+        await dependencies.emitMarker({
+          serial: input.serial,
+          marker: endMarker,
+          timeoutMs: remaining(),
+          deadlineMonotonicNs: (recoveryDeadlineNs ?? prepareDeadlineNs ?? 0n).toString(),
+        });
       }
       const logPath = path.join(artifact.absoluteRoot, "logs", "000-prepare.log");
       const collect = (timeoutMs: number) => dependencies.collectStepLogs({
@@ -1197,28 +1435,39 @@ export function createInAppLocomotionOrchestrator(
         endMarker,
         path: logPath,
         timeoutMs: Math.max(1, Math.min(10_000, timeoutMs)),
+        deadlineMonotonicNs: (strictDeadline ? prepareDeadlineNs : recoveryDeadlineNs ?? prepareDeadlineNs ?? 0n)!.toString(),
       });
       const collected = strictDeadline && prepareDeadlineNs !== null
         ? await withinDeadline(prepareDeadlineNs, dependencies, "prepare bounded log", collect)
         : await collect(remaining());
-      preparationLogEvidence = checkedPreparationLogEvidence(collected, logPath);
+      preparationLogEvidence = checkedPreparationLogEvidence(collected, logPath, hooks);
       return preparationLogEvidence;
     };
 
     try {
       const reserved = reserveArtifacts(input, dependencies);
       artifact = reserved.binding;
+      healthBoundaryMarker = `PICO_LOCOMOTION_${artifact.runId.slice(0, 16)}_PREPARE_BEGIN`;
       const deadlineNs = reserved.startedAtNs + BigInt(input.budgets.maxDurationMs) * 1_000_000n;
+      recoveryDeadlineNs = deadlineNs;
+      serialOwners.set(input.serial, { runId: artifact.runId, status: "active", reason: "prepare lifecycle active" });
+      leaseAcquired = true;
       prepareDeadlineNs = deadlineNs
         - BigInt(input.budgets.routeReserveMs + input.budgets.restorationReserveMs) * 1_000_000n;
       prior = await withinDeadline(prepareDeadlineNs, dependencies, "prior foreground snapshot", (timeoutMs) =>
-        dependencies.snapshotPriorForeground({ serial: input.serial, targetPackage: input.scenario.packageName, timeoutMs }));
+        dependencies.snapshotPriorForeground({
+          serial: input.serial,
+          targetPackage: input.scenario.packageName,
+          timeoutMs,
+          deadlineMonotonicNs: prepareDeadlineNs!.toString(),
+        }));
       expectedPrior(input, prior);
       preparationBegan = true;
       await withinDeadline(prepareDeadlineNs, dependencies, "prepare BEGIN marker", (timeoutMs) => dependencies.emitMarker({
         serial: input.serial,
-        marker: `PICO_LOCOMOTION_${artifact!.runId.slice(0, 16)}_PREPARE_BEGIN`,
+        marker: healthBoundaryMarker!,
         timeoutMs,
+        deadlineMonotonicNs: prepareDeadlineNs!.toString(),
       }));
       if (prior.packageName === input.scenario.packageName) priorStopMayHaveApplied = true;
       await withinDeadline(prepareDeadlineNs, dependencies, "target clearance", (timeoutMs) => dependencies.stopPackage({
@@ -1226,6 +1475,7 @@ export function createInAppLocomotionOrchestrator(
         packageName: input.scenario.packageName,
         reason: "prepare_target_clearance",
         timeoutMs,
+        deadlineMonotonicNs: prepareDeadlineNs!.toString(),
       }));
       if (prior.packageName === input.scenario.packageName) priorTerminatedByRun = true;
       if (prior.packageName && prior.packageName !== input.scenario.packageName) {
@@ -1235,6 +1485,7 @@ export function createInAppLocomotionOrchestrator(
           packageName: prior.packageName!,
           reason: "prepare_declared_incumbent_clearance",
           timeoutMs,
+          deadlineMonotonicNs: prepareDeadlineNs!.toString(),
         }));
         priorTerminatedByRun = true;
       }
@@ -1243,6 +1494,7 @@ export function createInAppLocomotionOrchestrator(
         serial: input.serial,
         component: input.scenario.launchComponent,
         timeoutMs,
+        deadlineMonotonicNs: prepareDeadlineNs!.toString(),
       }));
       if (launch.disposition !== "accepted" || launch.component !== input.scenario.launchComponent || !SHA256.test(launch.outputSha256)) {
         throw new LocomotionStageError("launch_failed", "target launch did not return one exact accepted component acknowledgement");
@@ -1252,10 +1504,16 @@ export function createInAppLocomotionOrchestrator(
         scenario: input.scenario,
         expectedApkSha256: input.provenance.apkSha256,
         timeoutMs,
+        deadlineMonotonicNs: prepareDeadlineNs!.toString(),
       }));
       validateRuntime(input, authority.validation.receipt, runtime);
       const safety = await withinDeadline(prepareDeadlineNs, dependencies, "prepare Full-stage safety", (timeoutMs) =>
-        dependencies.sampleSafety({ serial: input.serial, phase: "prepare_baseline", timeoutMs }));
+        dependencies.sampleSafety({
+          serial: input.serial,
+          phase: "prepare_baseline",
+          timeoutMs,
+          deadlineMonotonicNs: prepareDeadlineNs!.toString(),
+        }));
       const unsafe = safetyProblem(safety);
       if (unsafe) throw new LocomotionStageError("safety_baseline_failed", `unsafe Full-stage baseline: ${unsafe}`);
       const capability = await withinDeadline(prepareDeadlineNs, dependencies, "AgentBridge capability", (timeoutMs) => dependencies.probeCapability({
@@ -1263,13 +1521,13 @@ export function createInAppLocomotionOrchestrator(
         packageName: input.scenario.packageName,
         requestId: `prepare_capability_${artifact!.runId.slice(0, 24)}`,
         tag: "prepare",
-        controlTimeoutMs: Math.max(1, Math.min(15_000, timeoutMs)),
-        ackReadTimeoutMs: Math.max(1, Math.min(2_000, timeoutMs)),
+        ...bridgeBudgetFields(timeoutMs, prepareDeadlineNs!),
       }));
       if (!capability.ok) throw new LocomotionStageError(capability.code, capability.primaryError ?? capability.detail, capability.cleanupError);
       const root = capability.ack.root;
-      if (!root || root.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID || !Number.isSafeInteger(root.generation) || root.generation < 1) {
-        throw new LocomotionStageError("capability_unavailable", "commands preflight did not bind one registered AgentWorldRoot generation");
+      if (!root || root.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID || !Number.isSafeInteger(root.generation) || root.generation < 1
+        || !ROOT_INCARNATION.test(root.incarnation)) {
+        throw new LocomotionStageError("capability_unavailable", "commands preflight did not bind one registered AgentWorldRoot generation/incarnation");
       }
       const hmd = hmdPoseFrom(await withinDeadline(prepareDeadlineNs, dependencies, "baseline HMD pose", (timeoutMs) => dependencies.requestHmdPose({
         serial: input.serial,
@@ -1277,9 +1535,9 @@ export function createInAppLocomotionOrchestrator(
         requestId: `prepare_hmd_pose_${artifact!.runId.slice(0, 24)}`,
         tag: "prepare",
         expectedRootGeneration: root.generation,
-        controlTimeoutMs: Math.max(1, Math.min(15_000, timeoutMs)),
-        ackReadTimeoutMs: Math.max(1, Math.min(2_000, timeoutMs)),
-      })), root.generation);
+        expectedRootIncarnation: root.incarnation,
+        ...bridgeBudgetFields(timeoutMs, prepareDeadlineNs!),
+      })), root.generation, root.incarnation);
       if (remainingUntilMs(prepareDeadlineNs, dependencies) < 60_001) {
         throw new LocomotionStageError("budget_exhausted", "prepare phase cannot preserve the mandatory >=60 second monitor plus baseline capture");
       }
@@ -1288,14 +1546,34 @@ export function createInAppLocomotionOrchestrator(
         runId: artifact!.runId,
         artifactRoot: artifact!.absoluteRoot,
         minimumDurationMs: 60_000,
+        healthBoundaryMarker: healthBoundaryMarker!,
         runtime,
         timeoutMs,
+        deadlineMonotonicNs: prepareDeadlineNs!.toString(),
       }));
-      validateMonitor(freshLaunchMonitor, runtime);
+      validateMonitor(freshLaunchMonitor, runtime, healthBoundaryMarker);
       const retainedHealthLogs = freshLaunchMonitor.rawHealthLogs.map((log, index) =>
         checkedRawLogEvidence(log, artifact!.absoluteRoot, `fresh-launch runtime-health log ${index + 1}`));
+      const retainedWindowDumps = freshLaunchMonitor.rawWindowDumps.map((dump, index) =>
+        checkedRawLogEvidence(dump, artifact!.absoluteRoot, `fresh-launch raw window dump ${index + 1}`));
       if (new Set(retainedHealthLogs.map((log) => `${log.identity.dev}:${log.identity.ino}`)).size !== retainedHealthLogs.length) {
         throw new Error("fresh-launch monitor raw runtime-health logs must be unique exact files");
+      }
+      const allMonitorArtifacts = [...retainedHealthLogs, ...retainedWindowDumps];
+      if (new Set(allMonitorArtifacts.map((log) => `${log.identity.dev}:${log.identity.ino}`)).size !== allMonitorArtifacts.length) {
+        throw new Error("fresh-launch raw health/window evidence must be unique exact files");
+      }
+      for (const [index, retained] of retainedWindowDumps.entries()) {
+        const observedDialogs = freshLaunchDialogs(readSameArtifactFile(
+          retained.path,
+          retained.identity,
+          retained.label,
+          64 * 1024 * 1024,
+          hooks,
+        ).toString("utf8"));
+        if (canonicalJson(observedDialogs) !== canonicalJson(freshLaunchMonitor.samples[index].dialogs)) {
+          throw new Error("fresh-launch dialog result does not reproduce from its retained raw window dump");
+        }
       }
       const baselinePath = path.join(artifact.absoluteRoot, "captures", "000-app-baseline.png");
       const captured = await withinDeadline(prepareDeadlineNs, dependencies, "baseline settled capture", (remainingMs) => dependencies.captureSettled({
@@ -1324,14 +1602,15 @@ export function createInAppLocomotionOrchestrator(
         priorTerminatedByRun,
         targetOwned: true,
         rootGeneration: root.generation,
+        rootIncarnation: root.incarnation,
         baselineHmd: hmd,
         currentReview: review,
         requiredReview: [review],
         retainedLogs: [{
           path: preparationLog.path,
-          identity: artifactFileIdentity(preparationLog.path, "retained preparation log", 64 * 1024 * 1024),
+          identity: artifactFileIdentity(preparationLog.path, "retained preparation log", 64 * 1024 * 1024, hooks),
           label: "retained preparation log",
-        }, ...retainedHealthLogs],
+        }, ...retainedHealthLogs, ...retainedWindowDumps],
         nextWaypoint: 0,
         startedAtNs: reserved.startedAtNs,
         deadlineNs,
@@ -1357,11 +1636,13 @@ export function createInAppLocomotionOrchestrator(
         freshLaunchMonitor,
         preparationLogEvidence: preparationLog,
         captureReceipt: captured.receipt,
+        observedPriorForeground: prior,
+        serialLease: { status: "active", reason: "reviewed route requires restore" },
         rootGeneration: root.generation,
+        rootIncarnation: root.incarnation,
         captureSha256: review.captureSha256,
       }, hooks);
       runs.set(artifact.runId, state);
-      serialOwners.set(input.serial, artifact.runId);
       return {
         status: "needs_baseline_review",
         runId: artifact.runId,
@@ -1373,20 +1654,48 @@ export function createInAppLocomotionOrchestrator(
         lookRequired: true,
         requiredReview: [review],
         rootGeneration: root.generation,
+        rootIncarnation: root.incarnation,
         applicationBinding: runtime.applicationBinding,
       };
     } catch (error) {
       const cleanupErrors: string[] = [];
+      const compensation: Record<string, unknown> = {
+        targetStop: { status: runOwnedTarget ? "not_attempted" : "not_required" },
+        priorRelaunch: { status: "not_required" },
+        finalProcessProof: null,
+        globalSafety: null,
+      };
+      let targetCleanupProven = !runOwnedTarget;
+      let priorDispositionProven = !(input.priorForeground.kind === "non_receipt_bound" && priorStopMayHaveApplied);
+      let finalProcessProven = !leaseAcquired;
+      let finalSafetyProven = !leaseAcquired;
+      let failureAuditProven = false;
       if (error instanceof LocomotionStageError && error.cleanupError) cleanupErrors.push(error.cleanupError);
+      const recoveryTimeout = (label: string): number => {
+        if (recoveryDeadlineNs === null) return 5_000;
+        try {
+          const remaining = remainingUntilMs(recoveryDeadlineNs, dependencies);
+          if (remaining < 1_000) throw new Error(`${label} cannot begin within the reserved recovery deadline`);
+          return Math.min(10_000, remaining);
+        } catch (clockError) {
+          cleanupErrors.push(`${label} budget clock: ${errorText(clockError)}`);
+          return 5_000;
+        }
+      };
+      const recoveryDeadline = () => (recoveryDeadlineNs ?? 5_000_000_000n).toString();
       if (runOwnedTarget) {
         try {
-          await dependencies.stopPackage({
+          const receipt = await dependencies.stopPackage({
             serial: input.serial,
             packageName: input.scenario.packageName,
             reason: "prepare_failure_cleanup",
-            timeoutMs: prepareDeadlineNs === null ? 1 : Math.max(1, remainingUntilMs(prepareDeadlineNs, dependencies)),
+            timeoutMs: recoveryTimeout("prepare target cleanup"),
+            deadlineMonotonicNs: recoveryDeadline(),
           });
+          compensation.targetStop = receipt;
+          targetCleanupProven = true;
         } catch (cleanup) {
+          compensation.targetStop = { status: "failed", error: errorText(cleanup) };
           cleanupErrors.push(errorText(cleanup));
         }
       }
@@ -1396,16 +1705,20 @@ export function createInAppLocomotionOrchestrator(
           const relaunched = await dependencies.relaunchPrior({
             serial: input.serial,
             component: input.priorForeground.component,
-            timeoutMs: prepareDeadlineNs === null ? 1 : Math.max(1, remainingUntilMs(prepareDeadlineNs, dependencies)),
+            timeoutMs: recoveryTimeout("prepare prior relaunch"),
+            deadlineMonotonicNs: recoveryDeadline(),
           });
+          compensation.priorRelaunch = relaunched;
           const problem = validatePriorRelaunchReceipt(relaunched, input.priorForeground.component);
           if (problem) {
             priorDisposition.relaunchDisposition = relaunched.disposition === "accepted" ? "attempt_failed" : relaunched.disposition;
             cleanupErrors.push(problem);
           } else {
             priorDisposition.relaunchDisposition = "accepted";
+            priorDispositionProven = true;
           }
         } catch (cleanup) {
+          compensation.priorRelaunch = { status: "failed", error: errorText(cleanup) };
           priorDisposition.relaunchDisposition = "attempt_failed";
           cleanupErrors.push(`prior relaunch: ${errorText(cleanup)}`);
         }
@@ -1417,7 +1730,42 @@ export function createInAppLocomotionOrchestrator(
           cleanupErrors.push(`preparation bracket finalization: ${errorText(cleanup)}`);
         }
       }
+      if (artifact && leaseAcquired) {
+        try {
+          const finalProof = await dependencies.probeFinalProcessState({
+            serial: input.serial,
+            targetPackage: input.scenario.packageName,
+            artifactRoot: artifact.absoluteRoot,
+            priorForeground: input.priorForeground,
+            timeoutMs: recoveryTimeout("prepare final process/activity proof"),
+            deadlineMonotonicNs: recoveryDeadline(),
+          });
+          compensation.finalProcessProof = finalProof;
+          const checked = checkedFinalProcessProof(finalProof, input, artifact.absoluteRoot);
+          if (checked.problem) cleanupErrors.push(checked.problem);
+          else finalProcessProven = true;
+        } catch (cleanup) {
+          compensation.finalProcessProof = { status: "failed", error: errorText(cleanup) };
+          cleanupErrors.push(`final process/activity proof: ${errorText(cleanup)}`);
+        }
+        try {
+          const safety = await dependencies.sampleSafety({
+            serial: input.serial,
+            phase: "prepare_failure_after_prior_disposition",
+            timeoutMs: recoveryTimeout("prepare final global safety"),
+            deadlineMonotonicNs: recoveryDeadline(),
+          });
+          compensation.globalSafety = safety;
+          const problem = finalGlobalSafetyProblem(safety);
+          if (problem) cleanupErrors.push(`prepare final global safety: ${problem}`);
+          else finalSafetyProven = true;
+        } catch (cleanup) {
+          compensation.globalSafety = { status: "failed", error: errorText(cleanup) };
+          cleanupErrors.push(`prepare final global safety: ${errorText(cleanup)}`);
+        }
+      }
       const code = error instanceof LocomotionStageError ? error.code : "preparation_failed";
+      const compensationProven = targetCleanupProven && priorDispositionProven && finalProcessProven && finalSafetyProven;
       if (artifact) {
         try {
           appendAction(artifact, {
@@ -1426,14 +1774,29 @@ export function createInAppLocomotionOrchestrator(
             structuralStop: code,
             primaryError: errorText(error),
             cleanupError: cleanupErrors.length ? cleanupErrors.join("; ") : null,
+            observedPriorForeground: prior,
             priorForeground: priorDisposition,
+            compensation,
+            serialLease: {
+              status: compensationProven ? "released" : "quarantined",
+              reason: compensationProven ? "compensation and final proof completed" : "prepare compensation remains unproven",
+            },
             preparationLogEvidence,
             freshLaunchMonitor,
           }, hooks);
+          failureAuditProven = true;
         } catch (auditError) {
           cleanupErrors.push(`failed action audit: ${errorText(auditError)}`);
         }
-        if (serialOwners.get(input.serial) === artifact.runId) serialOwners.delete(input.serial);
+        const lease = serialOwners.get(input.serial);
+        if (lease?.runId === artifact.runId) {
+          if (compensationProven && failureAuditProven) serialOwners.delete(input.serial);
+          else serialOwners.set(input.serial, {
+            runId: artifact.runId,
+            status: "quarantined",
+            reason: failureAuditProven ? "prepare compensation remains unproven" : "prepare failure audit is unproven",
+          });
+        }
       }
       const cleanupError = cleanupErrors.length ? cleanupErrors.join("; ") : null;
       return preparationFailure(code, error, artifact?.runId ?? null, artifact?.absoluteRoot ?? null, cleanupError);
@@ -1460,11 +1823,11 @@ export function createInAppLocomotionOrchestrator(
     } catch (error) {
       return stepReviewFailure(state, `reviewed retained image failed its immutable sha256 check: ${errorText(error)}`);
     }
-    assertStateArtifacts(state);
+    assertStateArtifacts(state, hooks);
     assertCurrentReceiptAndSpec(state, dependencies);
+    const operationStarted = checkedMonotonic(dependencies);
     state.nextWaypoint += 1;
     state.usage.waypointAttempts += 1;
-    const operationStarted = checkedMonotonic(dependencies);
     const routeRemainingMs = state.input.budgets.routeReserveMs - state.usage.routeDurationMs;
     const beforeRestoreDeadlineNs = state.deadlineNs - BigInt(state.input.budgets.restorationReserveMs) * 1_000_000n;
     const stepDeadlineNs = earlierDeadline(
@@ -1499,11 +1862,13 @@ export function createInAppLocomotionOrchestrator(
         serial: state.input.serial,
         marker: beginMarker,
         timeoutMs,
+        deadlineMonotonicNs: stepDeadlineNs.toString(),
       }));
       preSafety = await withinDeadline(stepDeadlineNs, dependencies, "pre-step safety", (timeoutMs) => dependencies.sampleSafety({
         serial: state.input.serial,
         phase: `step_${waypoint.seq}_pre`,
         timeoutMs,
+        deadlineMonotonicNs: stepDeadlineNs.toString(),
       }));
       const preSafetyProblem = safetyProblem(preSafety);
       if (preSafetyProblem) throw new LocomotionStageError("safety_drift", `pre-step safety drift: ${preSafetyProblem}`);
@@ -1513,6 +1878,7 @@ export function createInAppLocomotionOrchestrator(
         runtime: state.runtime,
         artifactRoot: state.artifact.absoluteRoot,
         timeoutMs,
+        deadlineMonotonicNs: stepDeadlineNs.toString(),
       }));
       const preContinuityProblem = continuityProblem(preContinuity, state.runtime);
       if (preContinuityProblem) throw new LocomotionStageError("binding_lost", preContinuityProblem);
@@ -1522,9 +1888,9 @@ export function createInAppLocomotionOrchestrator(
         requestId: `step_${waypoint.seq}_pre_${state.artifact.runId.slice(0, 20)}`,
         tag: `step-${waypoint.seq}-pre`,
         expectedRootGeneration: state.rootGeneration,
-        controlTimeoutMs: Math.max(1, Math.min(15_000, timeoutMs)),
-        ackReadTimeoutMs: Math.max(1, Math.min(2_000, timeoutMs)),
-      })), state.rootGeneration);
+        expectedRootIncarnation: state.rootIncarnation,
+        ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
+      })), state.rootGeneration, state.rootIncarnation);
       if (translationDistance(state.baselineHmd.position, preHmd.position) > 0.02) {
         throw new LocomotionStageError("hmd_translation_drift", "pre-step Euclidean HMD translation drift exceeded exactly 0.02 m");
       }
@@ -1540,10 +1906,10 @@ export function createInAppLocomotionOrchestrator(
         mode: state.input.mechanism,
         target: { x: waypoint.target.x, y: waypoint.target.y, z: waypoint.target.z },
         rootGeneration: rootBefore,
+        rootIncarnation: state.rootIncarnation,
         glideDurationMs: state.input.route.glideDurationMs,
         physicalWalk: false,
-        controlTimeoutMs: Math.max(1, Math.min(15_000, timeoutMs)),
-        ackReadTimeoutMs: Math.max(1, Math.min(2_000, timeoutMs)),
+        ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
       }));
       const ack = completedLocomotionAck(locomotion);
       if (!ack) {
@@ -1559,7 +1925,9 @@ export function createInAppLocomotionOrchestrator(
       }
       const expectedGeneration = state.input.mechanism === "replacement" ? rootBefore + 1 : rootBefore;
       if (ack.mode !== state.input.mechanism || ack.target.absolute !== true || !samePosition(ack.target, waypoint.target)
-        || ack.rootGenerationBefore !== rootBefore || ack.pose === null || ack.pose.rootGeneration !== expectedGeneration
+        || ack.rootGenerationBefore !== rootBefore || ack.root?.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID
+        || ack.root.generation !== rootBefore || ack.root.incarnation !== state.rootIncarnation
+        || ack.pose === null || ack.pose.rootGeneration !== expectedGeneration
         || !samePosition(ack.pose.position, waypoint.target) || ack.physicalWalk !== false) {
         throw new LocomotionStageError("root_readback_mismatch", "locomotion acknowledgement lost exact mechanism/target/root-generation readback binding");
       }
@@ -1589,14 +1957,15 @@ export function createInAppLocomotionOrchestrator(
         requestId: `step_${waypoint.seq}_post_${state.artifact.runId.slice(0, 20)}`,
         tag: `step-${waypoint.seq}-post`,
         expectedRootGeneration: state.rootGeneration,
-        controlTimeoutMs: Math.max(1, Math.min(15_000, timeoutMs)),
-        ackReadTimeoutMs: Math.max(1, Math.min(2_000, timeoutMs)),
-      })), state.rootGeneration);
+        expectedRootIncarnation: state.rootIncarnation,
+        ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
+      })), state.rootGeneration, state.rootIncarnation);
       drift = driftReceipt(state.baselineHmd, preHmd, postHmd);
       postSafety = await withinDeadline(stepDeadlineNs, dependencies, "post-step safety", (timeoutMs) => dependencies.sampleSafety({
         serial: state.input.serial,
         phase: `step_${waypoint.seq}_post`,
         timeoutMs,
+        deadlineMonotonicNs: stepDeadlineNs.toString(),
       }));
       const postSafetyProblem = safetyProblem(postSafety);
       if (postSafetyProblem) throw new LocomotionStageError("safety_drift", `post-step safety drift: ${postSafetyProblem}`);
@@ -1606,6 +1975,7 @@ export function createInAppLocomotionOrchestrator(
         runtime: state.runtime,
         artifactRoot: state.artifact.absoluteRoot,
         timeoutMs,
+        deadlineMonotonicNs: stepDeadlineNs.toString(),
       }));
       const postContinuityProblem = continuityProblem(postContinuity, state.runtime);
       if (postContinuityProblem) throw new LocomotionStageError("binding_lost", postContinuityProblem);
@@ -1625,6 +1995,7 @@ export function createInAppLocomotionOrchestrator(
             serial: state.input.serial,
             marker: endMarker,
             timeoutMs: Math.max(1, remainingUntilMs(stepDeadlineNs, dependencies)),
+            deadlineMonotonicNs: stepDeadlineNs.toString(),
           });
         } catch (error) {
           cleanupErrors.push(`END marker: ${errorText(error)}`);
@@ -1638,7 +2009,8 @@ export function createInAppLocomotionOrchestrator(
             endMarker,
             path: logPath,
             timeoutMs: Math.max(1, Math.min(10_000, remainingUntilMs(stepDeadlineNs, dependencies))),
-          }), logPath);
+            deadlineMonotonicNs: stepDeadlineNs.toString(),
+          }), logPath, hooks);
           const identity = artifactFileIdentity(collectedLog.path, "retained step log", 64 * 1024 * 1024);
           state.retainedLogs.push({ path: collectedLog.path, identity, label: `retained step ${waypoint.seq} log` });
           logEvidence = collectedLog;
@@ -1662,7 +2034,18 @@ export function createInAppLocomotionOrchestrator(
         }
       }
     }
-    const operationEnded = checkedMonotonic(dependencies);
+    let operationEnded = operationStarted;
+    try {
+      operationEnded = checkedMonotonic(dependencies);
+    } catch (clockError) {
+      const detail = `step end clock: ${errorText(clockError)}`;
+      if (primaryError === null) {
+        primaryError = detail;
+        primaryCode = "clock_failed";
+      } else {
+        cleanupErrors.push(detail);
+      }
+    }
     const durationMs = Math.max(0, Number((operationEnded - operationStarted) / 1_000_000n));
     state.usage.routeDurationMs += durationMs;
     if (capturedReview && capturedReviewValidated) {
@@ -1686,6 +2069,7 @@ export function createInAppLocomotionOrchestrator(
         primaryError,
         cleanupError: cleanupErrors.length ? cleanupErrors.join("; ") : null,
         rootGeneration: state.rootGeneration,
+        rootIncarnation: state.rootIncarnation,
         captureSha256: capturedReview?.captureSha256 ?? null,
         waypointAttempts: state.usage.waypointAttempts,
         usage: publishedUsage,
@@ -1720,6 +2104,7 @@ export function createInAppLocomotionOrchestrator(
       artifactRoot: state.artifact.absoluteRoot,
       waypointSeq: waypoint.seq,
       rootGeneration: state.rootGeneration,
+      rootIncarnation: state.rootIncarnation,
       structuralStop,
       primaryError,
       cleanupError: cleanupErrors.length ? cleanupErrors.join("; ") : null,
@@ -1745,14 +2130,13 @@ export function createInAppLocomotionOrchestrator(
     } catch (error) {
       return restoreReviewFailure(state, `reviewed retained image failed its immutable sha256 check: ${errorText(error)}`);
     }
-    assertStateArtifacts(state);
-    assertCurrentReceiptAndSpec(state, dependencies);
-    state.restoreAttempted = true;
     const restoreStartedNs = checkedMonotonic(dependencies);
     const restoreDeadlineNs = earlierDeadline(
       state.deadlineNs,
       restoreStartedNs + BigInt(state.input.budgets.restorationReserveMs) * 1_000_000n,
     );
+    const mutationDeadlineNs = restoreDeadlineNs - 5_000_000_000n;
+    state.restoreAttempted = true;
     let primaryError: string | null = null;
     let primaryCode: string | null = null;
     const cleanupErrors: string[] = [];
@@ -1760,15 +2144,53 @@ export function createInAppLocomotionOrchestrator(
     let locomotion: LocomotionResult | null = null;
     let captureReceipt: CaptureSettledReceipt | null = null;
     let postStopSafety: LocomotionSafetySnapshot | null = null;
+    let preRestoreContinuity: ApplicationContinuitySample | null = null;
+    let preRestoreCapability: CapabilityResult | null = null;
+    let finalProcessProof: FinalProcessActivityReceipt | null = null;
+    let finalProcessProven = false;
+    let finalSafetyProven = false;
     const priorDisposition = priorForegroundDisposition(state);
     const reviewedMovedFrame = state.currentReviewReflectsNonzeroMutation;
     try {
-      const remainingMs = remainingUntilMs(restoreDeadlineNs, dependencies);
+      assertStateArtifacts(state, hooks);
+      assertCurrentReceiptAndSpec(state, dependencies);
+      preRestoreContinuity = await withinDeadline(mutationDeadlineNs, dependencies, "pre-restore live continuity", (timeoutMs) =>
+        dependencies.sampleContinuity({
+          serial: state.input.serial,
+          phase: "restore_pre",
+          runtime: state.runtime,
+          artifactRoot: state.artifact.absoluteRoot,
+          timeoutMs,
+          deadlineMonotonicNs: mutationDeadlineNs.toString(),
+        }));
+      const continuity = continuityProblem(preRestoreContinuity, state.runtime);
+      if (continuity) throw new LocomotionStageError("binding_lost", continuity);
+      preRestoreCapability = await withinDeadline(mutationDeadlineNs, dependencies, "pre-restore root capability", (timeoutMs) =>
+        dependencies.probeCapability({
+          serial: state.input.serial,
+          packageName: state.input.scenario.packageName,
+          requestId: `restore_capability_${state.artifact.runId.slice(0, 20)}`,
+          tag: "restore-pre",
+          ...bridgeBudgetFields(timeoutMs, mutationDeadlineNs),
+        }));
+      if (!preRestoreCapability.ok) {
+        throw new LocomotionStageError(
+          preRestoreCapability.code,
+          preRestoreCapability.primaryError ?? preRestoreCapability.detail,
+          preRestoreCapability.cleanupError,
+        );
+      }
+      const liveRoot = preRestoreCapability.ack.root;
+      if (!liveRoot || liveRoot.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID
+        || liveRoot.generation !== state.rootGeneration || liveRoot.incarnation !== state.rootIncarnation) {
+        throw new LocomotionStageError("binding_lost", "pre-restore root capability lost the exact generation/incarnation producer identity");
+      }
+      const remainingMs = remainingUntilMs(mutationDeadlineNs, dependencies);
       if (remainingMs <= state.input.capture.deadlineMs) {
         throw new LocomotionStageError("budget_exhausted", "restoration deadline cannot fit the required settled capture");
       }
       const rootBefore = state.rootGeneration;
-      locomotion = await withinDeadline(restoreDeadlineNs, dependencies, "zero-offset restoration", (timeoutMs) => dependencies.requestLocomotion({
+      locomotion = await withinDeadline(mutationDeadlineNs, dependencies, "zero-offset restoration", (timeoutMs) => dependencies.requestLocomotion({
         serial: state.input.serial,
         packageName: state.input.scenario.packageName,
         requestId: `restore_move_${state.artifact.runId.slice(0, 20)}`,
@@ -1776,10 +2198,10 @@ export function createInAppLocomotionOrchestrator(
         mode: state.input.mechanism,
         target: { x: 0, y: 0, z: 0 },
         rootGeneration: rootBefore,
+        rootIncarnation: state.rootIncarnation,
         glideDurationMs: state.input.route.glideDurationMs,
         physicalWalk: false,
-        controlTimeoutMs: Math.max(1, Math.min(15_000, timeoutMs)),
-        ackReadTimeoutMs: Math.max(1, Math.min(2_000, timeoutMs)),
+        ...bridgeBudgetFields(timeoutMs, mutationDeadlineNs),
       }));
       const ack = completedLocomotionAck(locomotion);
       if (!ack) {
@@ -1796,17 +2218,18 @@ export function createInAppLocomotionOrchestrator(
       const expectedGeneration = state.input.mechanism === "replacement" ? rootBefore + 1 : rootBefore;
       if (ack.mode !== state.input.mechanism || ack.target.absolute !== true
         || !samePosition(ack.target, state.input.route.restoreTarget)
-        || ack.rootGenerationBefore !== rootBefore || ack.pose === null
+        || ack.rootGenerationBefore !== rootBefore || ack.root?.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID
+        || ack.root.generation !== rootBefore || ack.root.incarnation !== state.rootIncarnation || ack.pose === null
         || ack.pose.rootGeneration !== expectedGeneration
         || !samePosition(ack.pose.position, state.input.route.restoreTarget)
         || ack.physicalWalk !== false) {
         throw new LocomotionStageError("root_readback_mismatch", "restore acknowledgement lost exact mechanism/zero-target/root-generation readback binding");
       }
       state.rootGeneration = expectedGeneration;
-      const captureRemainingMs = remainingUntilMs(restoreDeadlineNs, dependencies);
+      const captureRemainingMs = remainingUntilMs(mutationDeadlineNs, dependencies);
       if (captureRemainingMs < 1) throw new LocomotionStageError("budget_exhausted", "restoration deadline expired before capture");
       const capturePath = path.join(state.artifact.absoluteRoot, "captures", "999-restored.png");
-      const captured = await withinDeadline(restoreDeadlineNs, dependencies, "restoration settled capture", (remainingCaptureMs) => dependencies.captureSettled({
+      const captured = await withinDeadline(mutationDeadlineNs, dependencies, "restoration settled capture", (remainingCaptureMs) => dependencies.captureSettled({
         serial: state.input.serial,
         outPath: capturePath,
         maxTries: state.input.capture.maxTries,
@@ -1834,13 +2257,24 @@ export function createInAppLocomotionOrchestrator(
         cleanupErrors.push(`bridge acknowledgement cleanup: ${error.cleanupError}`);
       }
     } finally {
+      const cleanupTimeout = (label: string): number => {
+        try {
+          const remaining = remainingUntilMs(restoreDeadlineNs, dependencies);
+          if (remaining < 1) throw new Error(`${label} reached the fixed restoration deadline`);
+          return Math.min(10_000, remaining);
+        } catch (clockError) {
+          cleanupErrors.push(`${label} budget clock: ${errorText(clockError)}`);
+          return 5_000;
+        }
+      };
       if (state.targetOwned) {
         try {
           await dependencies.stopPackage({
             serial: state.input.serial,
             packageName: state.input.scenario.packageName,
             reason: "restore_run_owned_target",
-            timeoutMs: Math.max(1, remainingUntilMs(restoreDeadlineNs, dependencies)),
+            timeoutMs: cleanupTimeout("owned target stop"),
+            deadlineMonotonicNs: restoreDeadlineNs.toString(),
           });
           state.targetOwned = false;
         } catch (error) {
@@ -1852,7 +2286,8 @@ export function createInAppLocomotionOrchestrator(
           const relaunched = await dependencies.relaunchPrior({
             serial: state.input.serial,
             component: state.input.priorForeground.component,
-            timeoutMs: Math.max(1, remainingUntilMs(restoreDeadlineNs, dependencies)),
+            timeoutMs: cleanupTimeout("prior relaunch"),
+            deadlineMonotonicNs: restoreDeadlineNs.toString(),
           });
           const problem = validatePriorRelaunchReceipt(relaunched, state.input.priorForeground.component);
           if (problem) {
@@ -1867,18 +2302,37 @@ export function createInAppLocomotionOrchestrator(
         }
       }
       try {
+        finalProcessProof = await dependencies.probeFinalProcessState({
+          serial: state.input.serial,
+          targetPackage: state.input.scenario.packageName,
+          artifactRoot: state.artifact.absoluteRoot,
+          priorForeground: state.input.priorForeground,
+          timeoutMs: cleanupTimeout("final process/activity proof"),
+          deadlineMonotonicNs: restoreDeadlineNs.toString(),
+        });
+        const checked = checkedFinalProcessProof(finalProcessProof, state.input, state.artifact.absoluteRoot);
+        state.retainedLogs.push(checked.retained);
+        if (checked.problem) cleanupErrors.push(checked.problem);
+        else finalProcessProven = true;
+      } catch (error) {
+        cleanupErrors.push(`final process/activity proof: ${errorText(error)}`);
+      }
+      try {
         postStopSafety = await dependencies.sampleSafety({
           serial: state.input.serial,
           phase: "restore_after_prior_disposition",
-          timeoutMs: Math.max(1, remainingUntilMs(restoreDeadlineNs, dependencies)),
+          timeoutMs: cleanupTimeout("post-restore global safety"),
+          deadlineMonotonicNs: restoreDeadlineNs.toString(),
         });
         const unsafe = finalGlobalSafetyProblem(postStopSafety);
         if (unsafe) cleanupErrors.push(`post-restore global safety: ${unsafe}`);
+        else finalSafetyProven = true;
       } catch (error) {
         cleanupErrors.push(`post-restore global safety: ${errorText(error)}`);
       }
     }
-    let completed = primaryError === null && cleanupErrors.length === 0 && restoredReview !== null && !state.targetOwned;
+    let completed = primaryError === null && cleanupErrors.length === 0 && restoredReview !== null
+      && !state.targetOwned && finalProcessProven && finalSafetyProven;
     let structuralStop = completed ? null : primaryCode ?? "restore_cleanup_failed";
     try {
       appendAction(state.artifact, {
@@ -1888,10 +2342,14 @@ export function createInAppLocomotionOrchestrator(
         primaryError,
         cleanupError: cleanupErrors.length ? cleanupErrors.join("; ") : null,
         rootGeneration: state.rootGeneration,
+        rootIncarnation: state.rootIncarnation,
         captureSha256: restoredReview?.captureSha256 ?? null,
         captureMode: reviewedMovedFrame ? "transition_then_stable" : "stable",
         locomotion,
         captureReceipt,
+        preRestoreContinuity,
+        preRestoreCapability,
+        finalProcessProof,
         postStopSafety,
         priorForeground: priorDisposition,
       }, hooks);
@@ -1907,14 +2365,21 @@ export function createInAppLocomotionOrchestrator(
     }
     state.restoreCompleted = completed;
     state.status = completed ? "restored" : "stopped";
-    if (completed && serialOwners.get(state.input.serial) === state.artifact.runId) {
+    if (completed && serialOwners.get(state.input.serial)?.runId === state.artifact.runId) {
       serialOwners.delete(state.input.serial);
+    } else if (serialOwners.get(state.input.serial)?.runId === state.artifact.runId) {
+      serialOwners.set(state.input.serial, {
+        runId: state.artifact.runId,
+        status: "quarantined",
+        reason: "restore cleanup, final proof, safety, or audit remains unproven",
+      });
     }
     return {
       status: completed ? "restored_needs_review" : "restore_failed",
       runId: state.artifact.runId,
       artifactRoot: state.artifact.absoluteRoot,
       rootGeneration: state.rootGeneration,
+      rootIncarnation: state.rootIncarnation,
       structuralStop,
       primaryError,
       cleanupError: cleanupErrors.length ? cleanupErrors.join("; ") : null,
@@ -1958,7 +2423,7 @@ export function createInAppLocomotionOrchestrator(
     if (canonicalJson(expectedSet) !== canonicalJson(suppliedSet)) {
       return adjudicationRejected(state, "frame attestations are not the complete exact retained capture-hash set (missing or extra hash)");
     }
-    assertStateArtifacts(state);
+    assertStateArtifacts(state, hooks);
     const immutableErrors: string[] = [];
     for (const item of state.requiredReview) {
       try {
@@ -2023,8 +2488,9 @@ export function createInAppLocomotionOrchestrator(
   const execute = async (rawInput: InAppLocomotionInput): Promise<Record<string, any>> => {
     const input = inAppLocomotionInputSchema.parse(rawInput);
     if (input.action === "prepare") {
-      if (serialOwners.has(input.serial)) {
-        throw new Error(`exact serial '${input.serial}' is owned by an active route until safely completed restore`);
+      const lease = serialOwners.get(input.serial);
+      if (lease) {
+        throw new Error(`exact serial '${input.serial}' is ${lease.status} by run '${lease.runId}' until safe recovery: ${lease.reason}`);
       }
       if (busySerials.has(input.serial)) throw new Error(`a mutation is already in progress for exact serial '${input.serial}'`);
       busySerials.add(input.serial);
@@ -2038,7 +2504,7 @@ export function createInAppLocomotionOrchestrator(
     if (!state) throw new Error("unknown in-app locomotion runId");
     if (busyRuns.has(input.runId)) throw new Error("a mutation is already in progress for this run");
     const mutatesSerial = input.action !== "adjudicate";
-    if (mutatesSerial && serialOwners.get(state.input.serial) !== input.runId) {
+    if (mutatesSerial && serialOwners.get(state.input.serial)?.runId !== input.runId) {
       throw new Error(`run '${input.runId}' does not own exact serial '${state.input.serial}'`);
     }
     if (mutatesSerial && busySerials.has(state.input.serial)) throw new Error(`a mutation is already in progress for exact serial '${state.input.serial}'`);
@@ -2189,35 +2655,104 @@ export function buildPriorRelaunchCommandArgs(serial: string, component: string)
  * Construct the production device adapter. Merely importing this module is inert: adb resolution
  * happens only when a caller explicitly requests live dependencies (or registers without fakes).
  */
-export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependencies {
-  const adb = resolveAdb();
+export interface LiveInAppLocomotionOptions {
+  resolveAdb?: () => string;
+  runText?: typeof run;
+  runBytes?: typeof runBinary;
+  sleep?: typeof sleep;
+  monotonicNs?: () => bigint;
+}
+
+export function createLiveInAppLocomotionDependencies(
+  options: LiveInAppLocomotionOptions = {},
+): InAppLocomotionDependencies {
+  const adb = (options.resolveAdb ?? resolveAdb)();
+  const liveRunText = options.runText ?? run;
+  const liveRunBytes = options.runBytes ?? runBinary;
+  const liveSleep = options.sleep ?? sleep;
+  const liveClock = options.monotonicNs ?? (() => process.hrtime.bigint());
+
+  const clockNs = (): bigint => {
+    const value = liveClock();
+    if (typeof value !== "bigint" || value < 0n) throw new Error("live in-app locomotion monotonic clock is invalid");
+    return value;
+  };
+  const deadlineNs = (value: string, label: string): bigint => {
+    if (!/^[1-9][0-9]*$/.test(value)) throw new Error(`${label} requires one positive absolute monotonic deadline`);
+    return BigInt(value);
+  };
+  const boundedTimeout = (
+    context: { timeoutMs: number; deadlineMonotonicNs: string },
+    desiredMs: number,
+    label: string,
+    minimumMs = 1,
+  ): number => {
+    const deadline = deadlineNs(context.deadlineMonotonicNs, label);
+    const remainingNs = deadline - clockNs();
+    const remainingMs = remainingNs <= 0n ? 0 : Number(remainingNs / 1_000_000n);
+    const available = Math.min(context.timeoutMs, remainingMs);
+    if (!Number.isSafeInteger(context.timeoutMs) || context.timeoutMs < minimumMs
+      || !Number.isSafeInteger(desiredMs) || desiredMs < minimumMs || available < minimumMs) {
+      throw new Error(`${label} refused because the absolute deadline has less than ${minimumMs}ms remaining`);
+    }
+    return Math.min(desiredMs, available);
+  };
+  const sleepWithin = async (
+    context: { timeoutMs: number; deadlineMonotonicNs: string },
+    durationMs: number,
+    label: string,
+  ): Promise<void> => {
+    if (!Number.isSafeInteger(durationMs) || durationMs < 0) throw new Error(`${label} sleep duration is invalid`);
+    if (durationMs === 0) return;
+    const timeoutMs = boundedTimeout(context, durationMs, label);
+    if (timeoutMs !== durationMs) throw new Error(`${label} would exceed the absolute deadline`);
+    await liveSleep(durationMs);
+  };
+  const runBounded = async (
+    serial: string,
+    args: string[],
+    label: string,
+    context: { timeoutMs: number; deadlineMonotonicNs: string },
+    desiredMs: number,
+    maxOutputBytes = 8 * 1024 * 1024,
+  ): Promise<Awaited<ReturnType<typeof run>>> => {
+    requireExactLiveSerial(serial);
+    const timeoutMs = boundedTimeout(context, desiredMs, label);
+    return liveRunText(adb, ["-s", serial, ...args], { timeoutMs, maxOutputBytes });
+  };
   const checked = async (
     serial: string,
     args: string[],
     label: string,
-    timeoutMs = 15_000,
+    context: { timeoutMs: number; deadlineMonotonicNs: string },
+    desiredMs: number,
     maxOutputBytes = 8 * 1024 * 1024,
   ): Promise<string> => {
-    requireExactLiveSerial(serial);
-    return checkedLiveAdbResult(await run(adb, ["-s", serial, ...args], { timeoutMs, maxOutputBytes }), label);
+    return checkedLiveAdbResult(await runBounded(serial, args, label, context, desiredMs, maxOutputBytes), label);
   };
   const checkedAlreadySerialized = async (
     serial: string,
     args: string[],
-    timeoutMs: number,
+    requestedTimeoutMs: number,
     label: string,
+    context: { timeoutMs: number; deadlineMonotonicNs: string },
   ): Promise<string> => {
     requireExactLiveSerial(serial);
     if (args[0] !== "-s" || args[1] !== serial) throw new Error(`${label} lost exact serial qualification`);
-    return checkedLiveAdbResult(await run(adb, args, { timeoutMs, maxOutputBytes: 8 * 1024 * 1024 }), label);
+    const timeoutMs = boundedTimeout(context, requestedTimeoutMs, label);
+    return checkedLiveAdbResult(await liveRunText(adb, args, { timeoutMs, maxOutputBytes: 8 * 1024 * 1024 }), label);
   };
 
-  const sampleSafetyLive = async (context: { serial: string; phase: string; timeoutMs: number }): Promise<LocomotionSafetySnapshot> => {
-    const cap = (requested: number) => Math.max(1, Math.min(requested, context.timeoutMs));
-    const guardian = await checked(context.serial, ["shell", "getprop", "sys.guardian.vst.status"], `${context.phase} Guardian probe`, cap(10_000), 64 * 1024);
-    const vstComponent = await checked(context.serial, ["shell", "getprop", "sys.pxr.vst.comp.state"], `${context.phase} VST component probe`, cap(10_000), 64 * 1024);
-    const vstDebug = await checked(context.serial, ["shell", "getprop", "persist.pxr.see.vst.debug.enable"], `${context.phase} VST debug probe`, cap(10_000), 64 * 1024);
-    const configuration = await checked(context.serial, ["shell", "dumpsys", "ConfigurationService"], `${context.phase} spatial configuration probe`, cap(15_000));
+  const sampleSafetyLive = async (context: {
+    serial: string;
+    phase: string;
+    timeoutMs: number;
+    deadlineMonotonicNs: string;
+  }): Promise<LocomotionSafetySnapshot> => {
+    const guardian = await checked(context.serial, ["shell", "getprop", "sys.guardian.vst.status"], `${context.phase} Guardian probe`, context, 10_000, 64 * 1024);
+    const vstComponent = await checked(context.serial, ["shell", "getprop", "sys.pxr.vst.comp.state"], `${context.phase} VST component probe`, context, 10_000, 64 * 1024);
+    const vstDebug = await checked(context.serial, ["shell", "getprop", "persist.pxr.see.vst.debug.enable"], `${context.phase} VST debug probe`, context, 10_000, 64 * 1024);
+    const configuration = await checked(context.serial, ["shell", "dumpsys", "ConfigurationService"], `${context.phase} spatial configuration probe`, context, 15_000);
     const values = parseConfigurationServiceValues(configuration, [
       "spatial_stage_style",
       "spatial_safeguard_enable",
@@ -2241,17 +2776,18 @@ export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependen
     runtime: LocomotionRuntimeBinding;
     artifactRoot: string;
     timeoutMs: number;
+    deadlineMonotonicNs: string;
   }): Promise<ApplicationContinuitySample> => {
     requireExactLiveSerial(context.serial);
     if (context.runtime.liveIdentity.serial !== context.serial) throw new Error("continuity runtime is bound to another serial");
     const binding = context.runtime.applicationBinding;
-    const cap = (requested: number) => Math.max(1, Math.min(requested, context.timeoutMs));
-    const bootId = await checked(context.serial, ["shell", "cat", "/proc/sys/kernel/random/boot_id"], `${context.phase} boot identity`, cap(10_000));
+    const bootId = await checked(context.serial, ["shell", "cat", "/proc/sys/kernel/random/boot_id"], `${context.phase} boot identity`, context, 10_000);
     const installedPath = parseInstalledApkPath(await checked(
       context.serial,
       ["shell", "pm", "path", binding.packageName],
       `${context.phase} installed APK path`,
-      cap(10_000),
+      context,
+      10_000,
     ));
     let apkSha256 = "";
     if (installedPath) {
@@ -2259,21 +2795,24 @@ export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependen
         context.serial,
         ["shell", "toybox", "sha256sum", installedPath],
         `${context.phase} installed APK digest`,
-        cap(10_000),
+        context,
+        10_000,
       )) ?? "";
     }
-    const pid = parsePid(await checked(context.serial, ["shell", "pidof", binding.packageName], `${context.phase} PID`, cap(10_000)));
+    const pid = parsePid(await checked(context.serial, ["shell", "pidof", binding.packageName], `${context.phase} PID`, context, 10_000));
     const pidStartTicks = pid === null ? null : parseProcStartTicks(await checked(
       context.serial,
       ["shell", "cat", `/proc/${pid}/stat`],
       `${context.phase} process start ticks`,
-      cap(10_000),
+      context,
+      10_000,
     ));
     const activities = parseForegroundActivities(await checked(
       context.serial,
       ["shell", "dumpsys", "activity", "activities"],
       `${context.phase} foreground activities`,
-      cap(20_000),
+      context,
+      20_000,
     ));
     const resumedComponents = activities.map((activity) => activity.component);
     const packageActivities = activities.filter((activity) => activity.packageName === binding.packageName);
@@ -2287,7 +2826,7 @@ export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependen
           ? "exact_allowed"
           : "same_package_unlisted";
     return {
-      observedAtMonotonicNs: process.hrtime.bigint().toString(),
+      observedAtMonotonicNs: clockNs().toString(),
       serial: context.serial,
       bootId,
       packageName: binding.packageName,
@@ -2312,24 +2851,29 @@ export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependen
     packageName: string;
     pid: number;
     timeoutMs: number;
+    deadlineMonotonicNs: string;
   }): Promise<{ health: PackageRuntimeHealthReceiptV1; rawArtifact: LocomotionRawLogEvidence }> => {
-    const output = await checked(
+    const result = await runBounded(
       context.serial,
       ["logcat", "-b", "all", "-d", "-v", "threadtime"],
       "fresh-launch runtime-health snapshot",
-      Math.max(1, Math.min(10_000, context.timeoutMs)),
+      context,
+      10_000,
       64 * 1024 * 1024,
     );
+    checkedLiveAdbResult(result, "fresh-launch runtime-health snapshot");
+    const output = result.stdout;
     const artifactPath = path.join(context.artifactRoot, "logs", `fresh-launch-${String(context.sampleIndex).padStart(2, "0")}.log`);
-    privateWrite(artifactPath, output.length ? `${output}\n` : "");
-    const bytes = fs.readFileSync(artifactPath);
+    privateWrite(artifactPath, output);
+    const identity = artifactFileIdentity(artifactPath, "fresh-launch runtime-health raw log", 64 * 1024 * 1024);
+    const bytes = readSameArtifactFile(artifactPath, identity, "fresh-launch runtime-health raw log", 64 * 1024 * 1024);
     const receipt: RuntimeLogSnapshotReceipt = {
       status: "snapshot_collected",
       truncated: false,
       observedBytes: bytes.length,
       appStartMarker: context.marker,
       appStartMarkerObserved: bytes.includes(Buffer.from(context.marker, "utf8")),
-      rawArtifact: { path: fs.realpathSync(artifactPath), sha256: sha256Bytes(bytes), bytes: bytes.length },
+      rawArtifact: { path: fs.realpathSync(artifactPath), sha256: identity.sha256, bytes: identity.bytes },
     };
     return {
       health: scanPackageRuntimeHealth(receipt, context.packageName, [context.pid]),
@@ -2340,18 +2884,19 @@ export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependen
   return {
     randomBytes: (size) => crypto.randomBytes(size),
     now: () => new Date().toISOString(),
-    monotonicNs: () => process.hrtime.bigint(),
+    monotonicNs: clockNs,
     readNativeRunReceipt,
     readEffectiveAppSpec: readReceiptBoundEffectiveAppSpec,
-    snapshotPriorForeground: async ({ serial, timeoutMs }) => {
-      const cap = (requested: number) => Math.max(1, Math.min(requested, timeoutMs));
-      const activityOutput = await checked(serial, ["shell", "dumpsys", "activity", "activities"], "prior foreground activity snapshot", cap(20_000));
+    snapshotPriorForeground: async (context) => {
+      const { serial } = context;
+      const activityOutput = await checked(serial, ["shell", "dumpsys", "activity", "activities"], "prior foreground activity snapshot", context, 20_000);
       const resumedPackages = parseResumedPackages(activityOutput);
       const thirdPartyPackages = parseThirdPartyPackages(await checked(
         serial,
         ["shell", "pm", "list", "packages", "-3"],
         "prior foreground third-party inventory",
-        cap(20_000),
+        context,
+        20_000,
         2 * 1024 * 1024,
       ));
       const activities = parseForegroundActivities(activityOutput);
@@ -2364,13 +2909,15 @@ export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependen
       }
       return { component: unique[0].component, packageName: unique[0].packageName, userInstalled: true };
     },
-    stopPackage: async ({ serial, packageName, reason, timeoutMs }) => {
-      await checked(serial, ["shell", "am", "force-stop", packageName], `${reason} force-stop ${packageName}`, Math.max(1, Math.min(10_000, timeoutMs)), 64 * 1024);
+    stopPackage: async (context) => {
+      const { serial, packageName, reason } = context;
+      await checked(serial, ["shell", "am", "force-stop", packageName], `${reason} force-stop ${packageName}`, context, 10_000, 64 * 1024);
       return { status: "stop_command_completed", serial, packageName, reason };
     },
-    launchTarget: async ({ serial, component, timeoutMs }) => {
+    launchTarget: async (context) => {
+      const { serial, component } = context;
       requireExactLiveSerial(serial);
-      const result = await run(adb, ["-s", serial, "shell", "am", "start", "-W", "-n", component], { timeoutMs: Math.max(1, Math.min(30_000, timeoutMs)), maxOutputBytes: 1024 * 1024 });
+      const result = await runBounded(serial, ["shell", "am", "start", "-W", "-n", component], "target launch", context, 30_000, 1024 * 1024);
       const output = `${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}`.trim();
       return {
         disposition: classifyActivityLaunchDisposition(output, result.code === 0 && !result.timedOut),
@@ -2378,26 +2925,27 @@ export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependen
         outputSha256: sha256Bytes(Buffer.from(output, "utf8")),
       };
     },
-    probeRuntimeBinding: async ({ serial, scenario, timeoutMs }) => {
-      const cap = (requested: number) => Math.max(1, Math.min(requested, timeoutMs));
+    probeRuntimeBinding: async (context) => {
+      const { serial, scenario } = context;
+      const cap = (requested: number, label: string) => boundedTimeout(context, requested, label);
       const liveIdentity = await probeBoundedCaptureIdentity(
         serial,
-        (capMs) => cap(capMs),
-        (args, timeoutMs, label) => checkedAlreadySerialized(serial, args, timeoutMs, label),
+        cap,
+        (args, timeoutMs, label) => checkedAlreadySerialized(serial, args, timeoutMs, label, context),
       );
-      const installedPath = parseInstalledApkPath(await checked(serial, ["shell", "pm", "path", scenario.packageName], "installed APK path", cap(10_000)));
+      const installedPath = parseInstalledApkPath(await checked(serial, ["shell", "pm", "path", scenario.packageName], "installed APK path", context, 10_000));
       if (!installedPath) throw new Error("installed APK path is missing or ambiguous");
-      const digestOutput = await checked(serial, ["shell", "toybox", "sha256sum", installedPath], "installed APK sha256", cap(10_000));
+      const digestOutput = await checked(serial, ["shell", "toybox", "sha256sum", installedPath], "installed APK sha256", context, 10_000);
       const digestLines = digestOutput.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
       const apkSha256 = parseRemoteSha256(digestOutput);
       if (!apkSha256 || digestLines.length !== 1 || !digestLines[0].endsWith(` ${installedPath}`)) {
         throw new Error("installed APK digest did not bind the exact installed path");
       }
-      const pid = parsePid(await checked(serial, ["shell", "pidof", scenario.packageName], "target PID", cap(10_000)));
+      const pid = parsePid(await checked(serial, ["shell", "pidof", scenario.packageName], "target PID", context, 10_000));
       if (pid === null) throw new Error("target PID is missing or ambiguous");
-      const pidStartTicks = parseProcStartTicks(await checked(serial, ["shell", "cat", `/proc/${pid}/stat`], "target process start ticks", cap(10_000)));
+      const pidStartTicks = parseProcStartTicks(await checked(serial, ["shell", "cat", `/proc/${pid}/stat`], "target process start ticks", context, 10_000));
       if (pidStartTicks === null) throw new Error("target process start ticks are missing");
-      const activities = parseForegroundActivities(await checked(serial, ["shell", "dumpsys", "activity", "activities"], "target foreground binding", cap(20_000)));
+      const activities = parseForegroundActivities(await checked(serial, ["shell", "dumpsys", "activity", "activities"], "target foreground binding", context, 20_000));
       const targetComponents = [...new Set(activities.filter((activity) => activity.packageName === scenario.packageName).map((activity) => activity.component))];
       if (targetComponents.length !== 1 || !scenario.allowedResumedComponents.includes(targetComponents[0])) {
         throw new Error("target foreground activity is absent, ambiguous, or outside the allowed component set");
@@ -2415,29 +2963,62 @@ export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependen
       };
     },
     sampleSafety: sampleSafetyLive,
-    probeCapability: (input) => probeAgentBridgeLocomotionCapability(adb, input),
-    requestHmdPose: (input) => requestAgentBridgeHmdPose(adb, input),
+    probeCapability: (input) => probeAgentBridgeLocomotionCapability(adb, input, {
+      runText: liveRunText,
+      runBytes: liveRunBytes,
+      sleep: liveSleep,
+      monotonicNs: clockNs,
+    }),
+    requestHmdPose: (input) => requestAgentBridgeHmdPose(adb, input, {
+      runText: liveRunText,
+      runBytes: liveRunBytes,
+      sleep: liveSleep,
+      monotonicNs: clockNs,
+    }),
     monitorFreshLaunch: async (context) => {
-      const marker = `PICO_LOCOMOTION_${context.runId.slice(0, 16)}_FRESH_LAUNCH`;
-      const cap = (requested: number) => Math.max(1, Math.min(requested, context.timeoutMs));
-      await checked(context.serial, ["shell", "log", "-t", "WorldLocomotion", marker], "fresh-launch monitor marker", cap(5_000), 64 * 1024);
-      const startedNs = process.hrtime.bigint();
+      const initialRemainingMs = Number((deadlineNs(context.deadlineMonotonicNs, "fresh-launch monitor") - clockNs()) / 1_000_000n);
+      if (initialRemainingMs < context.minimumDurationMs + 1) {
+        throw new Error("fresh-launch monitor absolute deadline cannot cover the mandatory 60-second window");
+      }
+      const marker = context.healthBoundaryMarker;
+      const startedNs = clockNs();
       const samples: FreshLaunchMonitorSample[] = [];
       const rawHealthLogs: LocomotionRawLogEvidence[] = [];
+      const rawWindowDumps: LocomotionRawLogEvidence[] = [];
       for (const [sampleIndex, targetElapsedMs] of [0, 15_000, 30_000, 45_000, 60_000].entries()) {
-        const beforeSleepMs = Number((process.hrtime.bigint() - startedNs) / 1_000_000n);
-        if (beforeSleepMs < targetElapsedMs) await sleep(targetElapsedMs - beforeSleepMs);
-        const elapsedMs = Number((process.hrtime.bigint() - startedNs) / 1_000_000n);
-        const windowState = await checked(context.serial, ["shell", "dumpsys", "window", "windows"], "fresh-launch dialog probe", cap(10_000));
-        const dialogs = windowState.split(/\r?\n/).map((line) => line.trim()).filter((line) =>
-          /Application Error|isn't responding|has stopped|(?:^|\s)ANR(?:\s|$)|mCurrentFocus=.*(?:Dialog|Error)/i.test(line));
-        const safety = await sampleSafetyLive({ serial: context.serial, phase: `fresh_launch_${sampleIndex}`, timeoutMs: cap(45_000) });
+        const beforeSleepMs = Number((clockNs() - startedNs) / 1_000_000n);
+        if (beforeSleepMs < targetElapsedMs) {
+          await sleepWithin(context, targetElapsedMs - beforeSleepMs, `fresh-launch sample ${sampleIndex} delay`);
+        }
+        const elapsedMs = Number((clockNs() - startedNs) / 1_000_000n);
+        const windowResult = await runBounded(
+          context.serial,
+          ["shell", "dumpsys", "window", "windows"],
+          "fresh-launch dialog probe",
+          context,
+          10_000,
+        );
+        checkedLiveAdbResult(windowResult, "fresh-launch dialog probe");
+        const windowState = windowResult.stdout;
+        const windowPath = path.join(context.artifactRoot, "logs", `fresh-launch-window-${String(sampleIndex).padStart(2, "0")}.txt`);
+        privateWrite(windowPath, windowState);
+        const windowIdentity = artifactFileIdentity(windowPath, "fresh-launch raw window dump", 64 * 1024 * 1024);
+        const windowBytes = readSameArtifactFile(windowPath, windowIdentity, "fresh-launch raw window dump", 64 * 1024 * 1024);
+        rawWindowDumps.push({ path: fs.realpathSync(windowPath), sha256: windowIdentity.sha256, bytes: windowIdentity.bytes });
+        const dialogs = freshLaunchDialogs(windowBytes.toString("utf8"));
+        const safety = await sampleSafetyLive({
+          serial: context.serial,
+          phase: `fresh_launch_${sampleIndex}`,
+          timeoutMs: context.timeoutMs,
+          deadlineMonotonicNs: context.deadlineMonotonicNs,
+        });
         const continuity = await sampleContinuityLive({
           serial: context.serial,
           phase: `fresh_launch_${sampleIndex}`,
           runtime: context.runtime,
           artifactRoot: context.artifactRoot,
-          timeoutMs: cap(60_000),
+          timeoutMs: context.timeoutMs,
+          deadlineMonotonicNs: context.deadlineMonotonicNs,
         });
         const runtimeHealth = await runtimeHealthSnapshot({
           serial: context.serial,
@@ -2446,26 +3027,43 @@ export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependen
           sampleIndex,
           packageName: context.runtime.applicationBinding.packageName,
           pid: context.runtime.applicationBinding.pid,
-          timeoutMs: cap(10_000),
+          timeoutMs: context.timeoutMs,
+          deadlineMonotonicNs: context.deadlineMonotonicNs,
         });
         rawHealthLogs.push(runtimeHealth.rawArtifact);
         samples.push({ elapsedMs, dialogs, safety, continuity, runtimeHealth: runtimeHealth.health });
       }
-      return { durationMs: Number((process.hrtime.bigint() - startedNs) / 1_000_000n), samples, rawHealthLogs };
+      return {
+        durationMs: Number((clockNs() - startedNs) / 1_000_000n),
+        healthBoundaryMarker: marker,
+        samples,
+        rawHealthLogs,
+        rawWindowDumps,
+      };
     },
     captureSettled: (input) => executeLiveCaptureSettled(input, { adbPath: adb }),
     readReviewImage: readBoundReviewImage,
     sampleContinuity: sampleContinuityLive,
-    requestLocomotion: (input) => requestAgentBridgeLocomotion(adb, input),
-    emitMarker: async ({ serial, marker, timeoutMs }) => {
-      await checked(serial, ["shell", "log", "-t", "WorldLocomotion", marker], `locomotion marker ${marker}`, Math.max(1, Math.min(5_000, timeoutMs)), 64 * 1024);
+    requestLocomotion: (input) => requestAgentBridgeLocomotion(adb, input, {
+      runText: liveRunText,
+      runBytes: liveRunBytes,
+      sleep: liveSleep,
+      monotonicNs: clockNs,
+    }),
+    emitMarker: async (context) => {
+      const { serial, marker } = context;
+      await checked(serial, ["shell", "log", "-t", "WorldLocomotion", marker], `locomotion marker ${marker}`, context, 5_000, 64 * 1024);
     },
     collectStepLogs: async (context) => {
       requireExactLiveSerial(context.serial);
-      const result = await run(adb, ["-s", context.serial, "logcat", "-b", "all", "-d", "-v", "threadtime"], {
-        timeoutMs: context.timeoutMs,
-        maxOutputBytes: 64 * 1024 * 1024,
-      });
+      const result = await runBounded(
+        context.serial,
+        ["logcat", "-b", "all", "-d", "-v", "threadtime"],
+        "locomotion bracket log",
+        context,
+        context.timeoutMs,
+        64 * 1024 * 1024,
+      );
       const allLines = result.stdout.split(/\r?\n/).filter(Boolean);
       const beginIndexes = allLines.flatMap((line, index) => line.includes(context.beginMarker) ? [index] : []);
       const endIndexes = allLines.flatMap((line, index) => line.includes(context.endMarker) ? [index] : []);
@@ -2473,7 +3071,8 @@ export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependen
       const selectedLines = completeWindow ? allLines.slice(beginIndexes[0], endIndexes[0] + 1) : allLines;
       const bytes = Buffer.from(selectedLines.length ? `${selectedLines.join("\n")}\n` : "", "utf8");
       privateWrite(context.path, bytes);
-      const retained = fs.readFileSync(context.path);
+      const identity = artifactFileIdentity(context.path, "locomotion bracket log", 64 * 1024 * 1024);
+      const retained = readSameArtifactFile(context.path, identity, "locomotion bracket log", 64 * 1024 * 1024);
       const text = retained.toString("utf8");
       return {
         path: fs.realpathSync(context.path),
@@ -2488,25 +3087,71 @@ export function createLiveInAppLocomotionDependencies(): InAppLocomotionDependen
         }),
       };
     },
-    relaunchPrior: async ({ serial, component, timeoutMs }) => {
+    relaunchPrior: async (context) => {
+      const { serial, component } = context;
       requireExactLiveSerial(serial);
-      const result = await run(adb, buildPriorRelaunchCommandArgs(serial, component), {
-        timeoutMs: Math.max(1, Math.min(30_000, timeoutMs)),
+      const timeoutMs = boundedTimeout(context, 30_000, "prior relaunch");
+      const result = await liveRunText(adb, buildPriorRelaunchCommandArgs(serial, component), {
+        timeoutMs,
         maxOutputBytes: 1024 * 1024,
       });
       const output = `${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}`.trim();
-      const activityOutput = await checked(
+      const activityResult = await runBounded(
         serial,
         ["shell", "dumpsys", "activity", "activities"],
         "prior relaunch exact resumed-component probe",
-        Math.max(1, Math.min(20_000, timeoutMs)),
+        context,
+        20_000,
       );
+      checkedLiveAdbResult(activityResult, "prior relaunch exact resumed-component probe");
+      const activityOutput = activityResult.stdout;
       return {
         disposition: classifyActivityLaunchDisposition(output, result.code === 0 && !result.timedOut),
         component,
         outputSha256: sha256Bytes(Buffer.from(output, "utf8")),
         activityProbeSha256: sha256Bytes(Buffer.from(activityOutput, "utf8")),
         resumedComponents: parseForegroundActivities(activityOutput).map((activity) => activity.component),
+      };
+    },
+    probeFinalProcessState: async (context) => {
+      const pidResult = await runBounded(
+        context.serial,
+        ["shell", "pidof", context.targetPackage],
+        "final target PID probe",
+        context,
+        10_000,
+        64 * 1024,
+      );
+      if (pidResult.timedOut || (pidResult.code !== 0 && pidResult.code !== 1)) {
+        throw new Error(`final target PID probe failed: ${pidResult.stderr.trim() || pidResult.stdout.trim() || `exit ${String(pidResult.code)}`}`);
+      }
+      const pidofOutput = pidResult.stdout;
+      const normalizedPidOutput = pidofOutput.trim();
+      const targetPids = normalizedPidOutput === "" ? [] : normalizedPidOutput.split(/\s+/).map((value) => Number(value));
+      if (targetPids.some((pid) => !Number.isSafeInteger(pid) || pid < 1) || new Set(targetPids).size !== targetPids.length) {
+        throw new Error("final target PID probe returned malformed or duplicate process identities");
+      }
+      const activityResult = await runBounded(
+        context.serial,
+        ["shell", "dumpsys", "activity", "activities"],
+        "final foreground activity probe",
+        context,
+        20_000,
+        8 * 1024 * 1024,
+      );
+      checkedLiveAdbResult(activityResult, "final foreground activity probe");
+      const activityOutput = activityResult.stdout;
+      const resumedComponents = parseForegroundActivities(activityOutput).map((activity) => activity.component);
+      const rawBytes = Buffer.from(`${canonicalJson({ pidofOutput, activityOutput, targetPids, resumedComponents })}\n`, "utf8");
+      const artifactPath = path.join(context.artifactRoot, "logs", "999-final-process-activity.json");
+      privateWrite(artifactPath, rawBytes);
+      const identity = artifactFileIdentity(artifactPath, "final process/activity raw probe", 64 * 1024 * 1024);
+      return {
+        serial: context.serial,
+        targetPackage: context.targetPackage,
+        targetPids,
+        resumedComponents,
+        rawProbe: { path: fs.realpathSync(artifactPath), sha256: identity.sha256, bytes: identity.bytes },
       };
     },
   };

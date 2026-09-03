@@ -22,6 +22,7 @@ import java.io.FileOutputStream
 import java.io.OutputStreamWriter
 import java.math.BigDecimal
 import java.security.MessageDigest
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -125,6 +126,7 @@ object AgentBridge {
         val glideDurationMs: Int,
         val physicalWalk: Boolean,
         val rootGenerationBefore: Long,
+        val rootIncarnation: String,
     )
 
     private data class LocomotionFileRequest(
@@ -140,11 +142,13 @@ object AgentBridge {
         val glideDurationMs: Int,
         val physicalWalk: Boolean,
         val rootGenerationBefore: Long,
+        val rootIncarnation: String,
     )
 
     private data class LocomotionProducerBinding(
         val generation: Long,
         val rootGeneration: Long,
+        val rootIncarnation: String,
         val rootProvider: () -> Entity?,
         val hmdProducer: () -> AgentHmdPose?,
         val producer: suspend (LocomotionRequest) -> AgentLocomotionResult,
@@ -158,6 +162,7 @@ object AgentBridge {
 
     private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestIdPattern = Regex("^[A-Za-z0-9_-]{8,96}$")
+    private val locomotionIncarnationPattern = Regex("^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$")
     private val sceneSnapshotIdPattern = Regex("^[a-f0-9]{64}$")
     private val targetTraceIdPattern = Regex("^anchor-[0-9]{4}$")
     private val navigationGuideMutex = Mutex()
@@ -283,7 +288,7 @@ object AgentBridge {
         producer: suspend (LocomotionRequest) -> AgentLocomotionResult,
     ): Long = synchronized(locomotionGenerationLock) {
         val generation = nextLocomotionGeneration()
-        locomotionBinding = LocomotionProducerBinding(generation, generation, rootProvider, hmdProducer, producer)
+        locomotionBinding = LocomotionProducerBinding(generation, generation, UUID.randomUUID().toString(), rootProvider, hmdProducer, producer)
         event("locomotion_producer_registered", "revision" to LOCOMOTION_CAPABILITY_REVISION, "generation" to generation)
         generation
     }
@@ -455,6 +460,7 @@ object AgentBridge {
             glideDurationMs = extras.getInt("glideDurationMs", -1),
             physicalWalk = extras.getBoolean("physicalWalk", true),
             rootGenerationBefore = extras.getLong("rootGeneration", -1L),
+            rootIncarnation = extras.getString("rootIncarnation") ?: "",
         )
         bridgeScope.launch {
             when (operation) {
@@ -634,7 +640,7 @@ object AgentBridge {
                 writer.endObject()
                 writer.name("root")
                 if (binding == null || runCatching { binding.rootProvider() }.getOrNull() == null) writer.nullValue()
-                else writeLocomotionRoot(writer, binding.rootGeneration)
+                else writeLocomotionRoot(writer, binding.rootGeneration, binding.rootIncarnation)
                 writeLocomotionErrors(writer, primaryError, null)
             }
         } finally {
@@ -646,7 +652,14 @@ object AgentBridge {
         locomotionMutex.lock()
         try {
             val binding = currentLocomotionBinding()
-            var primaryError = validateLocomotionEnvelope(request) ?: locomotionUnavailableReason(context, binding)
+            var primaryError = validateLocomotionEnvelope(request)
+            if (primaryError == null && !locomotionIncarnationPattern.matches(request.rootIncarnation)) {
+                primaryError = "root_incarnation_required"
+            }
+            if (primaryError == null && binding != null && binding.rootIncarnation != request.rootIncarnation) {
+                primaryError = "stale_root_incarnation"
+            }
+            primaryError = primaryError ?: locomotionUnavailableReason(context, binding)
             if (primaryError == null && request.rootGenerationBefore > 0L && binding!!.rootGeneration != request.rootGenerationBefore) {
                 primaryError = "stale_root_generation"
             }
@@ -662,7 +675,7 @@ object AgentBridge {
                         primaryError == "stage_container_required" || primaryError == "locomotion_producer_unregistered" ||
                         primaryError == "agent_world_root_unavailable") "capability_unavailable" else "rejected")
                 writer.name("root")
-                if (binding == null) writer.nullValue() else writeLocomotionRoot(writer, binding.rootGeneration)
+                if (binding == null) writer.nullValue() else writeLocomotionRoot(writer, binding.rootGeneration, binding.rootIncarnation)
                 writer.name("hmdPose")
                 if (pose == null || primaryError != null) writer.nullValue() else writeHmdPose(writer, pose)
                 writeLocomotionErrors(writer, primaryError, null)
@@ -685,7 +698,9 @@ object AgentBridge {
                 request.glideDurationMs !in 0..10_000 -> "glide_duration_out_of_range"
                 request.mode == "replacement" && request.glideDurationMs != 0 -> "replacement_glide_must_be_zero"
                 request.physicalWalk -> "physical_walk_refused"
+                !locomotionIncarnationPattern.matches(request.rootIncarnation) -> "root_incarnation_required"
                 binding != null && request.rootGenerationBefore != binding.rootGeneration -> "stale_root_generation"
+                binding != null && request.rootIncarnation != binding.rootIncarnation -> "stale_root_incarnation"
                 !locomotionRequestIsCurrent(request.generation) -> "stale_generation"
                 else -> null
             }
@@ -703,6 +718,7 @@ object AgentBridge {
                 glideDurationMs = request.glideDurationMs,
                 physicalWalk = request.physicalWalk,
                 rootGenerationBefore = request.rootGenerationBefore,
+                rootIncarnation = request.rootIncarnation,
             ) else null
             var result = if (producerRequest != null) {
                 runCatching { binding!!.producer(producerRequest) }.getOrElse { cause ->
@@ -739,6 +755,8 @@ object AgentBridge {
                 }
                 writer.name("glideDurationMs").value(request.glideDurationMs.toLong())
                 writer.name("rootGenerationBefore").value(request.rootGenerationBefore)
+                writer.name("root")
+                if (binding == null) writer.nullValue() else writeLocomotionRoot(writer, request.rootGenerationBefore, binding.rootIncarnation)
                 writer.name("pose")
                 if (result.pose == null) writer.nullValue() else writeWorldPose(writer, result.pose)
                 writer.name("hmdPose").nullValue()
@@ -775,10 +793,11 @@ object AgentBridge {
         pose.position.x.isFinite() && pose.position.y.isFinite() && pose.position.z.isFinite() &&
         pose.rotation.x.isFinite() && pose.rotation.y.isFinite() && pose.rotation.z.isFinite() && pose.rotation.w.isFinite()
 
-    private fun writeLocomotionRoot(writer: JsonWriter, generation: Long) {
+    private fun writeLocomotionRoot(writer: JsonWriter, generation: Long, incarnation: String) {
         writer.beginObject()
         writer.name("id").value(AGENT_WORLD_ROOT_ID)
         writer.name("generation").value(generation)
+        writer.name("incarnation").value(incarnation)
         writer.endObject()
     }
 

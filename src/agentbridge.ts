@@ -43,6 +43,7 @@ const NAVIGATION_GUIDE_SNAPSHOT_ID_PATTERN = /^[a-f0-9]{64}$/;
 const NAVIGATION_GUIDE_TRACE_ID_PATTERN = /^anchor-\d{4}$/;
 const PRINTABLE_ID_PATTERN = /^[\x21-\x7e]{1,256}$/;
 const LOCOMOTION_TAG_PATTERN = /^[\x21-\x7e]{1,120}$/;
+const LOCOMOTION_INCARNATION_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 
 export type AgentBridgeNavigationGuideMode = "show" | "hide";
 
@@ -550,10 +551,13 @@ export interface AgentBridgeLocomotionTransactionInput {
   stabilityReads?: number;
   ackReadTimeoutMs?: number;
   controlTimeoutMs?: number;
+  /** Host-only absolute transaction deadline. It is never sent as guest wire payload. */
+  deadlineMonotonicNs?: string;
 }
 
 export interface AgentBridgeHmdPoseRequestInput extends AgentBridgeLocomotionTransactionInput {
   expectedRootGeneration?: number;
+  expectedRootIncarnation: string;
 }
 
 export type AgentBridgeLocomotionMode = "direct" | "replacement";
@@ -562,6 +566,7 @@ export interface AgentBridgeLocomotionRequestInput extends AgentBridgeLocomotion
   mode: AgentBridgeLocomotionMode;
   target: { x: number; y: number; z: number };
   rootGeneration: number;
+  rootIncarnation: string;
   glideDurationMs: number;
   physicalWalk?: false;
 }
@@ -607,13 +612,13 @@ export interface AgentBridgeLocomotionCapabilityAck extends AgentBridgeLocomotio
     hmdAvailable: boolean;
     locomotionAvailable: boolean;
   };
-  root: { id: typeof AGENT_BRIDGE_LOCOMOTION_ROOT_ID; generation: number } | null;
+  root: { id: typeof AGENT_BRIDGE_LOCOMOTION_ROOT_ID; generation: number; incarnation: string } | null;
 }
 
 export interface AgentBridgeHmdPoseAck extends AgentBridgeLocomotionAckBase {
   operation: typeof AGENT_BRIDGE_HMD_POSE_COMMAND;
   outcome: "sampled" | "capability_unavailable" | "rejected" | "failed";
-  root: { id: typeof AGENT_BRIDGE_LOCOMOTION_ROOT_ID; generation: number } | null;
+  root: { id: typeof AGENT_BRIDGE_LOCOMOTION_ROOT_ID; generation: number; incarnation: string } | null;
   hmdPose: AgentBridgeHmdPose | null;
 }
 
@@ -624,6 +629,7 @@ export interface AgentBridgeLocomotionAck extends AgentBridgeLocomotionAckBase {
   target: AgentBridgePosition & { absolute: true };
   glideDurationMs: number;
   rootGenerationBefore: number;
+  root: { id: typeof AGENT_BRIDGE_LOCOMOTION_ROOT_ID; generation: number; incarnation: string } | null;
   pose: AgentBridgeWorldPose | null;
   hmdPose: null;
 }
@@ -717,6 +723,7 @@ const locomotionCapabilityAckSchema = locomotionAckBaseSchema.extend({
   root: z.object({
     id: z.literal(AGENT_BRIDGE_LOCOMOTION_ROOT_ID),
     generation: z.number().int().safe().positive(),
+    incarnation: z.string().regex(LOCOMOTION_INCARNATION_PATTERN),
   }).strict().nullable(),
 }).strict();
 
@@ -726,6 +733,7 @@ const locomotionHmdAckSchema = locomotionAckBaseSchema.extend({
   root: z.object({
     id: z.literal(AGENT_BRIDGE_LOCOMOTION_ROOT_ID),
     generation: z.number().int().safe().positive(),
+    incarnation: z.string().regex(LOCOMOTION_INCARNATION_PATTERN),
   }).strict().nullable(),
   hmdPose: locomotionHmdPoseSchema.nullable(),
 }).strict();
@@ -737,6 +745,11 @@ const locomotionActionAckSchema = locomotionAckBaseSchema.extend({
   target: locomotionPositionSchema.extend({ absolute: z.literal(true) }).strict(),
   glideDurationMs: z.number().int().min(0).max(10_000),
   rootGenerationBefore: z.number().int().safe().positive(),
+  root: z.object({
+    id: z.literal(AGENT_BRIDGE_LOCOMOTION_ROOT_ID),
+    generation: z.number().int().safe().positive(),
+    incarnation: z.string().regex(LOCOMOTION_INCARNATION_PATTERN),
+  }).strict().nullable(),
   pose: locomotionWorldPoseSchema.nullable(),
   hmdPose: z.null(),
 }).strict();
@@ -781,6 +794,9 @@ function locomotionPayloadInputError(input: AgentBridgeLocomotionTransactionInpu
   }
   if (!Number.isInteger(controlTimeoutMs) || controlTimeoutMs < 1_000 || controlTimeoutMs > 15_000) {
     return "controlTimeoutMs must be an integer from 1000 through 15000";
+  }
+  if (input.deadlineMonotonicNs !== undefined && !/^[1-9][0-9]*$/.test(input.deadlineMonotonicNs)) {
+    return "deadlineMonotonicNs must be one positive absolute monotonic nanosecond value";
   }
   return null;
 }
@@ -861,7 +877,12 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
     sleep: injected.sleep ?? sleep,
     monotonicNs: injected.monotonicNs ?? (() => process.hrtime.bigint()),
   };
-  const stamp = () => deps.monotonicNs().toString();
+  const clockNs = (): bigint => {
+    const value = deps.monotonicNs();
+    if (typeof value !== "bigint" || value < 0n) throw new Error("locomotion transaction monotonic clock is invalid");
+    return value;
+  };
+  const stamp = () => clockNs().toString();
   const fail = (
     code: Exclude<AgentBridgeLocomotionRequestResult<Ack>, { ok: true }>["code"],
     primaryError: string | null,
@@ -883,20 +904,49 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
   const unsafeIdentity = locomotionUnsafeIdentityError(adb, spec.input);
   if (unsafeIdentity !== null) return fail("invalid_request", unsafeIdentity, null);
   const relativePath = locomotionRelativePath(spec.input.requestId);
-  const payloadInvalid = locomotionPayloadInputError(spec.input) ?? spec.preflightError ?? null;
+  const maxPolls = spec.input.maxPolls ?? 30;
+  const pollMs = spec.input.pollMs ?? 100;
+  const stabilityReads = spec.input.stabilityReads ?? 2;
+  const ackReadTimeoutMs = spec.input.ackReadTimeoutMs ?? 15_000;
+  const controlTimeoutMs = spec.input.controlTimeoutMs ?? 15_000;
+  const deadlineNs = spec.input.deadlineMonotonicNs === undefined
+    || !/^[1-9][0-9]*$/.test(spec.input.deadlineMonotonicNs)
+    ? null
+    : BigInt(spec.input.deadlineMonotonicNs);
+  const remainingMs = (): number => {
+    if (deadlineNs === null) return Number.MAX_SAFE_INTEGER;
+    const remaining = (deadlineNs - clockNs()) / 1_000_000n;
+    if (remaining > BigInt(Number.MAX_SAFE_INTEGER)) return Number.MAX_SAFE_INTEGER;
+    if (remaining < BigInt(Number.MIN_SAFE_INTEGER)) return Number.MIN_SAFE_INTEGER;
+    return Number(remaining);
+  };
+  const boundedTimeout = (desiredMs: number, minimumMs: number, reserveAfterMs: number): number | null => {
+    if (deadlineNs === null) return desiredMs;
+    const available = remainingMs() - reserveAfterMs;
+    if (available < minimumMs) return null;
+    return Math.min(desiredMs, available);
+  };
+  const minimumEnvelopeMs = 1_000 + maxPolls * 250 + Math.max(0, maxPolls - 1) * pollMs + 1_000;
+  const payloadProblem = locomotionPayloadInputError(spec.input) ?? spec.preflightError ?? null;
+  const deadlineProblem = payloadProblem === null && deadlineNs !== null && remainingMs() < minimumEnvelopeMs
+    ? `transaction deadline cannot fit the ${minimumEnvelopeMs}ms minimum broadcast/poll/cleanup envelope`
+    : null;
+  const payloadInvalid = payloadProblem ?? deadlineProblem;
   if (payloadInvalid !== null) {
     const cleanupStartedAt = stamp();
-    const cleanupTimeoutMs = Number.isInteger(spec.input.controlTimeoutMs)
+    const requestedCleanupTimeoutMs = Number.isInteger(spec.input.controlTimeoutMs)
       && spec.input.controlTimeoutMs! >= 1_000 && spec.input.controlTimeoutMs! <= 15_000
       ? spec.input.controlTimeoutMs!
-      : 15_000;
-    const cleanup = await deps.runText(
+      : 1_000;
+    const cleanupTimeoutMs = boundedTimeout(requestedCleanupTimeoutMs, 1_000, 0);
+    const cleanup = cleanupTimeoutMs === null ? null : await deps.runText(
       adb,
       ["-s", spec.input.serial, "shell", "run-as", spec.input.packageName, "rm", "-f", relativePath],
       { timeoutMs: cleanupTimeoutMs, maxOutputBytes: 64 * 1024 },
     );
-    const cleanupApplied = cleanup.code === 0 && !cleanup.timedOut;
-    const cleanupError = cleanupApplied ? null
+    const cleanupApplied = cleanup !== null && cleanup.code === 0 && !cleanup.timedOut;
+    const cleanupError = cleanupApplied ? null : cleanup === null
+      ? "transaction deadline left less than the valid 1000ms acknowledgement cleanup minimum"
       : (cleanup.timedOut ? "acknowledgement cleanup timed out" : (cleanup.stderr || cleanup.stdout || "acknowledgement cleanup failed")).slice(-400);
     actionReceipts.push({
       action: "locomotion_ack_cleanup",
@@ -909,31 +959,31 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
         operation: spec.operation,
         requestId: spec.input.requestId,
         relativePath,
-        outcome: cleanupApplied ? "completed" : cleanup.timedOut ? "timeout" : "failed",
+        outcome: cleanupApplied ? "completed" : cleanup?.timedOut ? "timeout" : "failed",
       },
       error: cleanupError ?? undefined,
     });
     return fail("invalid_request", payloadInvalid, cleanupError);
   }
-  const maxPolls = spec.input.maxPolls ?? 30;
-  const pollMs = spec.input.pollMs ?? 100;
-  const stabilityReads = spec.input.stabilityReads ?? 2;
-  const ackReadTimeoutMs = spec.input.ackReadTimeoutMs ?? 15_000;
-  const controlTimeoutMs = spec.input.controlTimeoutMs ?? 15_000;
 
   const broadcastStartedAt = stamp();
-  const broadcast = await deps.runText(adb, [
-    "-s", spec.input.serial, "shell", "am", "broadcast",
-    "-a", `${spec.input.packageName}.AGENT_CMD`, "-p", spec.input.packageName,
-    "--es", "cmd", spec.operation,
-    "--es", "kind", AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND,
-    "--ei", "schemaVersion", String(AGENT_BRIDGE_LOCOMOTION_SCHEMA_VERSION),
-    "--ei", "capabilityRevision", String(AGENT_BRIDGE_LOCOMOTION_CAPABILITY_REVISION),
-    "--es", "requestId", spec.input.requestId,
-    "--es", "tag", locomotionTag(spec.input),
-    ...spec.extraBroadcastArgs,
-  ], { timeoutMs: controlTimeoutMs, maxOutputBytes: 64 * 1024 });
-  const broadcastApplied = broadcast.code === 0 && !broadcast.timedOut;
+  const afterBroadcastReserveMs = maxPolls * 250 + Math.max(0, maxPolls - 1) * pollMs + 1_000;
+  const broadcastTimeoutMs = boundedTimeout(controlTimeoutMs, 1_000, afterBroadcastReserveMs);
+  const broadcast = broadcastTimeoutMs === null ? null : await deps.runText(adb, [
+      "-s", spec.input.serial, "shell", "am", "broadcast",
+      "-a", `${spec.input.packageName}.AGENT_CMD`, "-p", spec.input.packageName,
+      "--es", "cmd", spec.operation,
+      "--es", "kind", AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND,
+      "--ei", "schemaVersion", String(AGENT_BRIDGE_LOCOMOTION_SCHEMA_VERSION),
+      "--ei", "capabilityRevision", String(AGENT_BRIDGE_LOCOMOTION_CAPABILITY_REVISION),
+      "--es", "requestId", spec.input.requestId,
+      "--es", "tag", locomotionTag(spec.input),
+      ...spec.extraBroadcastArgs,
+    ], { timeoutMs: broadcastTimeoutMs, maxOutputBytes: 64 * 1024 });
+  const broadcastApplied = broadcast !== null && broadcast.code === 0 && !broadcast.timedOut;
+  const broadcastFailure = broadcast === null
+    ? "transaction deadline exhausted before a valid broadcast timeout"
+    : broadcast.timedOut ? "broadcast timed out" : (broadcast.stderr || broadcast.stdout || "broadcast failed").slice(-400);
   actionReceipts.push({
     action: "locomotion_broadcast",
     status: broadcastApplied ? "applied" : "failed",
@@ -945,10 +995,9 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
       operation: spec.operation,
       requestId: spec.input.requestId,
       tag: locomotionTag(spec.input),
-      outcome: broadcastApplied ? "completed" : broadcast.timedOut ? "timeout" : "failed",
+      outcome: broadcastApplied ? "completed" : broadcast?.timedOut ? "timeout" : "failed",
     },
-    error: broadcastApplied ? undefined
-      : (broadcast.timedOut ? "broadcast timed out" : (broadcast.stderr || broadcast.stdout || "broadcast failed")).slice(-400),
+    error: broadcastApplied ? undefined : broadcastFailure,
   });
 
   let stablePayload: Buffer | null = null;
@@ -958,11 +1007,18 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
   const pullStartedAt = stamp();
   if (broadcastApplied) {
     for (let poll = 0; poll < maxPolls; poll++) {
+      const remainingPolls = maxPolls - poll - 1;
+      const reserveAfterPullMs = remainingPolls * 250 + remainingPolls * pollMs + 1_000;
+      const pullTimeoutMs = boundedTimeout(ackReadTimeoutMs, 250, reserveAfterPullMs);
+      if (pullTimeoutMs === null) {
+        pullDetail = "transaction deadline exhausted before another valid acknowledgement read while preserving cleanup";
+        break;
+      }
       attempts++;
       const pulled = await deps.runBytes(adb, [
         "-s", spec.input.serial, "exec-out", "run-as", spec.input.packageName,
         "sh", "-c", 'if test -f "$1"; then printf "\\001"; cat "$1"; else printf "\\000"; fi', "pico-mcp", relativePath,
-      ], { timeoutMs: ackReadTimeoutMs, maxOutputBytes: 1024 * 1024 });
+      ], { timeoutMs: pullTimeoutMs, maxOutputBytes: 1024 * 1024 });
       const filePresent = pulled.stdout[0] === 0x01;
       const fileAbsent = pulled.stdout[0] === 0x00 && pulled.stdout.length === 1;
       if (pulled.code === 0 && !pulled.timedOut && filePresent) {
@@ -987,7 +1043,15 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
               ? `run-as acknowledgement existence protocol was invalid: ${pulled.stdout.toString("utf8").slice(-300)}`
               : (pulled.stderr || `run-as acknowledgement read exited ${pulled.code ?? "without a code"}`).slice(-400);
       }
-      if (poll + 1 < maxPolls) await deps.sleep(pollMs);
+      if (poll + 1 < maxPolls) {
+        const pollsAfterSleep = maxPolls - poll - 1;
+        const reserveAfterSleepMs = pollsAfterSleep * 250 + Math.max(0, pollsAfterSleep - 1) * pollMs + 1_000;
+        if (deadlineNs !== null && remainingMs() < pollMs + reserveAfterSleepMs) {
+          pullDetail = "transaction deadline exhausted before polling sleep while preserving cleanup";
+          break;
+        }
+        await deps.sleep(pollMs);
+      }
     }
   }
   const pulledSuccessfully = stablePayload !== null && stableCount >= stabilityReads;
@@ -1014,7 +1078,9 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
   let primaryError: string | null = null;
   if (!broadcastApplied) {
     primaryCode = "bridge_unavailable";
-    primaryError = broadcast.timedOut ? "Agent Bridge broadcast timed out" : "Agent Bridge broadcast failed";
+    primaryError = broadcast === null
+      ? "Agent Bridge transaction deadline exhausted before broadcast"
+      : broadcast.timedOut ? "Agent Bridge broadcast timed out" : "Agent Bridge broadcast failed";
   } else if (!pulledSuccessfully) {
     primaryCode = spec.missingAckCode;
     primaryError = `No stable terminal Agent Bridge ${spec.operation} acknowledgement appeared at ${relativePath}: ${pullDetail}`;
@@ -1067,13 +1133,15 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
   }
 
   const cleanupStartedAt = stamp();
-  const cleanup = await deps.runText(
+  const cleanupTimeoutMs = boundedTimeout(controlTimeoutMs, 1_000, 0);
+  const cleanup = cleanupTimeoutMs === null ? null : await deps.runText(
     adb,
     ["-s", spec.input.serial, "shell", "run-as", spec.input.packageName, "rm", "-f", relativePath],
-    { timeoutMs: controlTimeoutMs, maxOutputBytes: 64 * 1024 },
+    { timeoutMs: cleanupTimeoutMs, maxOutputBytes: 64 * 1024 },
   );
-  const cleanupApplied = cleanup.code === 0 && !cleanup.timedOut;
-  const cleanupError = cleanupApplied ? null
+  const cleanupApplied = cleanup !== null && cleanup.code === 0 && !cleanup.timedOut;
+  const cleanupError = cleanupApplied ? null : cleanup === null
+    ? "transaction deadline left less than the valid 1000ms acknowledgement cleanup minimum"
     : (cleanup.timedOut ? "acknowledgement cleanup timed out" : (cleanup.stderr || cleanup.stdout || "acknowledgement cleanup failed")).slice(-400);
   actionReceipts.push({
     action: "locomotion_ack_cleanup",
@@ -1086,7 +1154,7 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
       operation: spec.operation,
       requestId: spec.input.requestId,
       relativePath,
-      outcome: cleanupApplied ? "completed" : cleanup.timedOut ? "timeout" : "failed",
+      outcome: cleanupApplied ? "completed" : cleanup?.timedOut ? "timeout" : "failed",
     },
     error: cleanupError ?? undefined,
   });
@@ -1130,15 +1198,23 @@ export async function requestAgentBridgeHmdPose(
 ): Promise<AgentBridgeLocomotionRequestResult<AgentBridgeHmdPoseAck>> {
   const invalidGeneration = input.expectedRootGeneration !== undefined
     && (!Number.isSafeInteger(input.expectedRootGeneration) || input.expectedRootGeneration < 1);
+  const invalidIncarnation = !LOCOMOTION_INCARNATION_PATTERN.test(input.expectedRootIncarnation);
   return executeLocomotionTransaction(adb, {
     operation: AGENT_BRIDGE_HMD_POSE_COMMAND,
     input,
-    extraBroadcastArgs: input.expectedRootGeneration === undefined
-      ? []
-      : ["--el", "rootGeneration", String(input.expectedRootGeneration)],
+    extraBroadcastArgs: [
+      ...(input.expectedRootGeneration === undefined
+        ? []
+        : ["--el", "rootGeneration", String(input.expectedRootGeneration)]),
+      "--es", "rootIncarnation", input.expectedRootIncarnation,
+    ],
     schema: locomotionHmdAckSchema,
     missingAckCode: "bridge_unavailable",
-    preflightError: invalidGeneration ? "expectedRootGeneration must be a positive safe integer" : null,
+    preflightError: invalidGeneration
+      ? "expectedRootGeneration must be a positive safe integer"
+      : invalidIncarnation
+        ? "expectedRootIncarnation must be one exact UUID producer identity"
+        : null,
     validateAck: (ack) => {
       if (ack.outcome !== "sampled") return ack.hmdPose === null
         ? null
@@ -1146,6 +1222,9 @@ export async function requestAgentBridgeHmdPose(
       if (ack.root === null || ack.hmdPose === null) return "sampled acknowledgement omitted root or HMD pose";
       if (input.expectedRootGeneration !== undefined && ack.root.generation !== input.expectedRootGeneration) {
         return "acknowledgement root generation does not match the request";
+      }
+      if (ack.root.incarnation !== input.expectedRootIncarnation) {
+        return "acknowledgement root incarnation does not match the request";
       }
       return null;
     },
@@ -1162,6 +1241,8 @@ export async function requestAgentBridgeLocomotion(
     ?? (canonicalTarget === null ? "target must contain finite values in the Android Float32 transport domain" : null)
     ?? (!Number.isSafeInteger(input.rootGeneration) || input.rootGeneration < 1
       ? "rootGeneration must be a positive safe integer" : null)
+    ?? (!LOCOMOTION_INCARNATION_PATTERN.test(input.rootIncarnation)
+      ? "rootIncarnation must be one exact UUID producer identity" : null)
     ?? (!Number.isInteger(input.glideDurationMs) || input.glideDurationMs < 0 || input.glideDurationMs > 10_000
       ? "glideDurationMs must be an integer from 0 through 10000" : null)
     ?? (input.mode === "replacement" && input.glideDurationMs !== 0
@@ -1183,6 +1264,7 @@ export async function requestAgentBridgeLocomotion(
       "--ez", "absolute", "true",
       "--ei", "glideDurationMs", String(input.glideDurationMs),
       "--el", "rootGeneration", String(input.rootGeneration),
+      "--es", "rootIncarnation", input.rootIncarnation,
       "--ez", "physicalWalk", "false",
     ],
     schema: locomotionActionAckSchema,
@@ -1199,6 +1281,11 @@ export async function requestAgentBridgeLocomotion(
         ? null
         : "failed acknowledgement contains a world-root pose";
       if (ack.pose === null) return "completed acknowledgement omitted its world-root pose";
+      if (ack.root === null || ack.root.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID
+        || ack.root.generation !== input.rootGeneration
+        || ack.root.incarnation !== input.rootIncarnation) {
+        return "acknowledgement root incarnation/readback does not match the request";
+      }
       if (!sameFloat32TransportPosition(ack.pose.position, canonicalTarget)) {
         return "acknowledgement readback position does not match the absolute target";
       }
@@ -1429,6 +1516,7 @@ import java.io.FileOutputStream
 import java.io.OutputStreamWriter
 import java.math.BigDecimal
 import java.security.MessageDigest
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -1532,6 +1620,7 @@ object AgentBridge {
         val glideDurationMs: Int,
         val physicalWalk: Boolean,
         val rootGenerationBefore: Long,
+        val rootIncarnation: String,
     )
 
     private data class LocomotionFileRequest(
@@ -1547,11 +1636,13 @@ object AgentBridge {
         val glideDurationMs: Int,
         val physicalWalk: Boolean,
         val rootGenerationBefore: Long,
+        val rootIncarnation: String,
     )
 
     private data class LocomotionProducerBinding(
         val generation: Long,
         val rootGeneration: Long,
+        val rootIncarnation: String,
         val rootProvider: () -> Entity?,
         val hmdProducer: () -> AgentHmdPose?,
         val producer: suspend (LocomotionRequest) -> AgentLocomotionResult,
@@ -1565,6 +1656,7 @@ object AgentBridge {
 
     private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestIdPattern = Regex("^[A-Za-z0-9_-]{8,96}$")
+    private val locomotionIncarnationPattern = Regex("^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$")
     private val sceneSnapshotIdPattern = Regex("^[a-f0-9]{64}$")
     private val targetTraceIdPattern = Regex("^anchor-[0-9]{4}$")
     private val navigationGuideMutex = Mutex()
@@ -1690,7 +1782,7 @@ object AgentBridge {
         producer: suspend (LocomotionRequest) -> AgentLocomotionResult,
     ): Long = synchronized(locomotionGenerationLock) {
         val generation = nextLocomotionGeneration()
-        locomotionBinding = LocomotionProducerBinding(generation, generation, rootProvider, hmdProducer, producer)
+        locomotionBinding = LocomotionProducerBinding(generation, generation, UUID.randomUUID().toString(), rootProvider, hmdProducer, producer)
         event("locomotion_producer_registered", "revision" to LOCOMOTION_CAPABILITY_REVISION, "generation" to generation)
         generation
     }
@@ -1862,6 +1954,7 @@ object AgentBridge {
             glideDurationMs = extras.getInt("glideDurationMs", -1),
             physicalWalk = extras.getBoolean("physicalWalk", true),
             rootGenerationBefore = extras.getLong("rootGeneration", -1L),
+            rootIncarnation = extras.getString("rootIncarnation") ?: "",
         )
         bridgeScope.launch {
             when (operation) {
@@ -2041,7 +2134,7 @@ object AgentBridge {
                 writer.endObject()
                 writer.name("root")
                 if (binding == null || runCatching { binding.rootProvider() }.getOrNull() == null) writer.nullValue()
-                else writeLocomotionRoot(writer, binding.rootGeneration)
+                else writeLocomotionRoot(writer, binding.rootGeneration, binding.rootIncarnation)
                 writeLocomotionErrors(writer, primaryError, null)
             }
         } finally {
@@ -2053,7 +2146,14 @@ object AgentBridge {
         locomotionMutex.lock()
         try {
             val binding = currentLocomotionBinding()
-            var primaryError = validateLocomotionEnvelope(request) ?: locomotionUnavailableReason(context, binding)
+            var primaryError = validateLocomotionEnvelope(request)
+            if (primaryError == null && !locomotionIncarnationPattern.matches(request.rootIncarnation)) {
+                primaryError = "root_incarnation_required"
+            }
+            if (primaryError == null && binding != null && binding.rootIncarnation != request.rootIncarnation) {
+                primaryError = "stale_root_incarnation"
+            }
+            primaryError = primaryError ?: locomotionUnavailableReason(context, binding)
             if (primaryError == null && request.rootGenerationBefore > 0L && binding!!.rootGeneration != request.rootGenerationBefore) {
                 primaryError = "stale_root_generation"
             }
@@ -2069,7 +2169,7 @@ object AgentBridge {
                         primaryError == "stage_container_required" || primaryError == "locomotion_producer_unregistered" ||
                         primaryError == "agent_world_root_unavailable") "capability_unavailable" else "rejected")
                 writer.name("root")
-                if (binding == null) writer.nullValue() else writeLocomotionRoot(writer, binding.rootGeneration)
+                if (binding == null) writer.nullValue() else writeLocomotionRoot(writer, binding.rootGeneration, binding.rootIncarnation)
                 writer.name("hmdPose")
                 if (pose == null || primaryError != null) writer.nullValue() else writeHmdPose(writer, pose)
                 writeLocomotionErrors(writer, primaryError, null)
@@ -2092,7 +2192,9 @@ object AgentBridge {
                 request.glideDurationMs !in 0..10_000 -> "glide_duration_out_of_range"
                 request.mode == "replacement" && request.glideDurationMs != 0 -> "replacement_glide_must_be_zero"
                 request.physicalWalk -> "physical_walk_refused"
+                !locomotionIncarnationPattern.matches(request.rootIncarnation) -> "root_incarnation_required"
                 binding != null && request.rootGenerationBefore != binding.rootGeneration -> "stale_root_generation"
+                binding != null && request.rootIncarnation != binding.rootIncarnation -> "stale_root_incarnation"
                 !locomotionRequestIsCurrent(request.generation) -> "stale_generation"
                 else -> null
             }
@@ -2110,6 +2212,7 @@ object AgentBridge {
                 glideDurationMs = request.glideDurationMs,
                 physicalWalk = request.physicalWalk,
                 rootGenerationBefore = request.rootGenerationBefore,
+                rootIncarnation = request.rootIncarnation,
             ) else null
             var result = if (producerRequest != null) {
                 runCatching { binding!!.producer(producerRequest) }.getOrElse { cause ->
@@ -2146,6 +2249,8 @@ object AgentBridge {
                 }
                 writer.name("glideDurationMs").value(request.glideDurationMs.toLong())
                 writer.name("rootGenerationBefore").value(request.rootGenerationBefore)
+                writer.name("root")
+                if (binding == null) writer.nullValue() else writeLocomotionRoot(writer, request.rootGenerationBefore, binding.rootIncarnation)
                 writer.name("pose")
                 if (result.pose == null) writer.nullValue() else writeWorldPose(writer, result.pose)
                 writer.name("hmdPose").nullValue()
@@ -2182,10 +2287,11 @@ object AgentBridge {
         pose.position.x.isFinite() && pose.position.y.isFinite() && pose.position.z.isFinite() &&
         pose.rotation.x.isFinite() && pose.rotation.y.isFinite() && pose.rotation.z.isFinite() && pose.rotation.w.isFinite()
 
-    private fun writeLocomotionRoot(writer: JsonWriter, generation: Long) {
+    private fun writeLocomotionRoot(writer: JsonWriter, generation: Long, incarnation: String) {
         writer.beginObject()
         writer.name("id").value(AGENT_WORLD_ROOT_ID)
         writer.name("generation").value(generation)
+        writer.name("incarnation").value(incarnation)
         writer.endObject()
     }
 

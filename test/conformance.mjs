@@ -878,6 +878,10 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     /private var locomotionGeneration = 0L/.test(agentKt) &&
     /private val locomotionMutex = Mutex\(\)/.test(agentKt),
   "registration owns an identity-root/HMD/locomotion binding under a generation token and serialized requests");
+  assert(/import java\.util\.UUID/.test(agentKt) &&
+    /LocomotionProducerBinding\(generation, generation, UUID\.randomUUID\(\)\.toString\(\), rootProvider, hmdProducer, producer\)/.test(agentKt) &&
+    /binding\.copy\(rootGeneration = rootGeneration\)/.test(agentKt),
+  "every producer registration mints one lowercase RFC-4122 v4 incarnation and root replacement preserves it");
   const locomotionBuiltins = /private fun registerLocomotionBuiltins[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
   assert(/register\(COMMANDS_COMMAND\)/.test(locomotionBuiltins) &&
     /register\(HMD_POSE_COMMAND\)/.test(locomotionBuiltins) && /register\(LOCOMOTE_COMMAND\)/.test(locomotionBuiltins) &&
@@ -888,6 +892,7 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     /capability_unavailable/.test(agentKt),
   "raw, release, non-Full, non-stage, rootless, and HMD-less bridge states fail locomotion capability closed");
   const locomoteWriter = /private suspend fun writeLocomotionAck[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  const hmdWriter = /private suspend fun writeHmdPoseAck[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
   assert(/request\.mode != "direct" && request\.mode != "replacement"/.test(locomoteWriter) &&
     /request\.target\.x\.isFinite\(\)/.test(locomoteWriter) && /request\.target\.y\.isFinite\(\)/.test(locomoteWriter) &&
     /request\.target\.z\.isFinite\(\)/.test(locomoteWriter) && /request\.physicalWalk/.test(locomoteWriter) &&
@@ -920,9 +925,15 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
   assert(locomoteWriter.indexOf('request.target == null') >= 0 &&
     locomoteWriter.indexOf('request.target == null') < locomoteWriter.indexOf('locomotionUnavailableReason(context, binding)'),
   "malformed locomotion targets are rejected before capability availability is considered");
+  assert(/locomotionIncarnationPattern\.matches\(request\.rootIncarnation\)/.test(hmdWriter) &&
+    hmdWriter.indexOf("locomotionIncarnationPattern.matches(request.rootIncarnation)") < hmdWriter.indexOf("binding!!.hmdProducer()") &&
+    /binding\.rootIncarnation != request\.rootIncarnation/.test(hmdWriter) &&
+    /locomotionIncarnationPattern\.matches\(request\.rootIncarnation\)/.test(locomoteWriter) &&
+    locomoteWriter.indexOf("locomotionIncarnationPattern.matches(request.rootIncarnation)") < locomoteWriter.indexOf("binding!!.producer(producerRequest)"),
+  "HMD and locomotion reject malformed or stale incarnation before invoking root/HMD/movement producers");
   for (const field of [
     "kind", "schemaVersion", "capabilityRevision", "requestId", "tag", "application", "operation",
-    "mode", "target", "absolute", "glideDurationMs", "physicalWalk", "rootGenerationBefore", "pose",
+    "mode", "target", "absolute", "glideDurationMs", "physicalWalk", "rootGenerationBefore", "root", "incarnation", "pose",
     "hmdPose", "outcome", "primaryError", "cleanupError",
   ]) assert(agentKt.includes(`writer.name("${field}")`), `locomotion terminal acknowledgements write ${field}`);
   assert(/val generation: Long/.test(agentKt) &&

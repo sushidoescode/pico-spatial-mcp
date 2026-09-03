@@ -29,6 +29,8 @@ import * as receiptStore from "../dist/runreceiptstore.js";
 import { createRunReceiptFixture, makePng, sha256 } from "./helpers/runreceipt-fixture.mjs";
 
 const HASH = "a".repeat(64);
+const ROOT_INCARNATION = "11111111-1111-4111-8111-111111111111";
+const REPLACEMENT_INCARNATION = "22222222-2222-4222-8222-222222222222";
 
 function externalArtifactRoot(t, label = "run") {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), "pico-worldlocomotion-test-"));
@@ -276,7 +278,7 @@ async function createPreparedFixture(t, options = {}) {
       hmdAvailable: true,
       locomotionAvailable: true,
     },
-    root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7 },
+    root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: ROOT_INCARNATION },
   };
   const pose = {
     readAtMonotonicNs: "2000000",
@@ -290,7 +292,7 @@ async function createPreparedFixture(t, options = {}) {
     outcome: "sampled",
     commands: undefined,
     availability: undefined,
-    root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7 },
+    root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: ROOT_INCARNATION },
     hmdPose: pose,
   };
   delete hmdPoseAck.commands;
@@ -302,6 +304,7 @@ async function createPreparedFixture(t, options = {}) {
   let safetyIndex = 0;
   let continuityIndex = 0;
   const healthLogs = [];
+  const windowDumps = [];
   const dependencies = {
     randomBytes: (size) => {
       calls.push({ kind: "randomBytes", size });
@@ -375,7 +378,11 @@ async function createPreparedFixture(t, options = {}) {
         ok: true,
         ack: {
           ...hmdPoseAck,
-          root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: bridgeInput.expectedRootGeneration },
+          root: {
+            id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID,
+            generation: bridgeInput.expectedRootGeneration,
+            incarnation: bridgeInput.expectedRootIncarnation,
+          },
         },
         primaryError: null,
         cleanupError: null,
@@ -385,25 +392,50 @@ async function createPreparedFixture(t, options = {}) {
     },
     monitorFreshLaunch: async (context) => {
       calls.push({ kind: "monitor", context });
-      const sample = (elapsedMs) => ({
-        elapsedMs,
-        dialogs: [],
-        safety: { ...cleanSafety },
-        continuity: exactContinuity(input, applicationBinding, bootId, String(3_000_000 + elapsedMs)),
-        runtimeHealth: { status: "no_attributed_failure", incidents: [] },
-      });
-      const rawHealthLogs = [0, 1, 2, 3, 4].map((sampleIndex) => {
-        const bytes = Buffer.from(`fresh launch sample ${sampleIndex}\n`, "utf8");
+      const marker = context.healthBoundaryMarker ?? `PICO_LOCOMOTION_${context.runId.slice(0, 16)}_PREPARE_BEGIN`;
+      const elapsedValues = [0, 15_000, 30_000, 45_000, 60_000];
+      const rawHealthLogs = elapsedValues.map((_, sampleIndex) => {
+        const bytes = Buffer.from(`${marker}\nfresh launch sample ${sampleIndex}\n`, "utf8");
         const logPath = path.join(context.artifactRoot, "logs", `fresh-launch-${String(sampleIndex).padStart(2, "0")}.log`);
         fs.writeFileSync(logPath, bytes, { flag: "wx", mode: 0o600 });
         const evidence = { path: fs.realpathSync(logPath), sha256: sha256(bytes), bytes: bytes.length };
         healthLogs.push(evidence);
         return evidence;
       });
+      const rawWindowDumps = elapsedValues.map((_, sampleIndex) => {
+        const bytes = Buffer.from(`WINDOW MANAGER WINDOWS sample ${sampleIndex}\n`, "utf8");
+        const dumpPath = path.join(context.artifactRoot, "logs", `fresh-launch-window-${String(sampleIndex).padStart(2, "0")}.txt`);
+        fs.writeFileSync(dumpPath, bytes, { flag: "wx", mode: 0o600 });
+        const evidence = { path: fs.realpathSync(dumpPath), sha256: sha256(bytes), bytes: bytes.length };
+        windowDumps.push(evidence);
+        return evidence;
+      });
+      const samples = elapsedValues.map((elapsedMs, sampleIndex) => ({
+        elapsedMs,
+        dialogs: [],
+        safety: { ...cleanSafety },
+        continuity: exactContinuity(input, applicationBinding, bootId, String(3_000_000 + elapsedMs)),
+        runtimeHealth: {
+          schemaVersion: 1,
+          sourceSha256: rawHealthLogs[sampleIndex].sha256,
+          packageName: input.scenario.packageName,
+          expectedPids: [applicationBinding.pid],
+          marker,
+          markerOccurrences: 1,
+          status: "no_attributed_failure",
+          incidents: [],
+          ambiguousCandidateCount: 0,
+          ignoredOtherPackageCount: 0,
+          scannedBytes: rawHealthLogs[sampleIndex].bytes,
+          tagInventory: [],
+        },
+      }));
       const receipt = options.monitor ?? {
         durationMs: 60_000,
-        samples: [sample(0), sample(15_000), sample(30_000), sample(45_000), sample(60_000)],
+        healthBoundaryMarker: marker,
+        samples,
         rawHealthLogs,
+        rawWindowDumps,
       };
       options.afterMonitor?.(receipt);
       return receipt;
@@ -449,6 +481,7 @@ async function createPreparedFixture(t, options = {}) {
           target: { absolute: true, ...target },
           glideDurationMs: bridgeInput.glideDurationMs,
           rootGenerationBefore: bridgeInput.rootGeneration,
+          root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: bridgeInput.rootGeneration, incarnation: bridgeInput.rootIncarnation },
           pose: { rootGeneration: resultGeneration, position: target },
           hmdPose: null,
         },
@@ -496,8 +529,29 @@ async function createPreparedFixture(t, options = {}) {
         resumedComponents: [context.component],
       };
     },
+    probeFinalProcessState: async (context) => {
+      calls.push({ kind: "finalProcess", context });
+      const targetPids = options.finalTargetPresent ? [applicationBinding.pid] : [];
+      const resumedComponents = options.finalResumedComponents ?? (options.finalTargetPresent
+        ? [input.scenario.launchComponent]
+        : input.priorForeground.kind === "non_receipt_bound"
+          ? [input.priorForeground.component]
+          : ["com.picoxr.launcher/.Launcher"]);
+      const pidofOutput = targetPids.join(" ");
+      const activityOutput = resumedComponents.map((component) => `mResumedActivity: ActivityRecord{fixture u0 ${component} t1}`).join("\n");
+      const bytes = Buffer.from(JSON.stringify({ pidofOutput, activityOutput, targetPids, resumedComponents }) + "\n", "utf8");
+      const probePath = path.join(context.artifactRoot, "logs", "999-final-process-activity.json");
+      fs.writeFileSync(probePath, bytes, { flag: "wx", mode: 0o600 });
+      return {
+        serial: input.serial,
+        targetPackage: input.scenario.packageName,
+        targetPids,
+        resumedComponents,
+        rawProbe: { path: fs.realpathSync(probePath), sha256: sha256(bytes), bytes: bytes.length },
+      };
+    },
   };
-  return { input, dependencies, calls, healthLogs, applicationBinding, bootId, pose, capabilityAck, publishedReceipt, effectiveSpec };
+  return { input, dependencies, calls, healthLogs, windowDumps, applicationBinding, bootId, pose, capabilityAck, publishedReceipt, effectiveSpec };
 }
 
 test("prepare binds the receipt/runtime in order, proves 60-second health, and returns one structural baseline review", async (t) => {
@@ -621,14 +675,19 @@ test("binding, safety, dialog, and runtime-health failures all stop before route
   const cases = [
     ["binding", { bindingError: new Error("PID start identity changed") }],
     ["safety", { safety: { ...cleanSafety, guardian: "0" } }],
-    ["dialog", { monitor: { durationMs: 60_000, samples: [{ elapsedMs: 60_000, dialogs: ["Application Error"], safety: cleanSafety, continuity: {}, runtimeHealth: { status: "no_attributed_failure", incidents: [] } }] } }],
-    ["health", { monitor: { durationMs: 60_000, samples: [{ elapsedMs: 60_000, dialogs: [], safety: cleanSafety, continuity: {}, runtimeHealth: { status: "attributed_failure", incidents: [{ kind: "anr" }] } }] } }],
+    ["dialog", { afterMonitor(receipt) { receipt.samples[0].dialogs = ["Application Error"]; } }],
+    ["health", { afterMonitor(receipt) {
+      receipt.samples[0].runtimeHealth.status = "attributed_failure";
+      receipt.samples[0].runtimeHealth.incidents = [{ kind: "anr" }];
+    } }],
   ];
   for (const [label, options] of cases) {
     await t.test(label, async (t) => {
       const fixture = await createPreparedFixture(t, options);
       const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
       assert.equal(result.status, "preparation_failed");
+      if (label === "dialog") assert.match(result.primaryError, /dialog/i);
+      if (label === "health") assert.match(result.primaryError, /health|failure|incident/i);
       assert.equal(fixture.calls.filter((call) => call.kind === "locomote").length, 0);
       assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "prepare_failure_cleanup").length, 1);
     });
@@ -822,6 +881,7 @@ function completedMovementResult(input, { cleanupOnly = false } = {}) {
     target: { absolute: true, ...target },
     glideDurationMs: input.glideDurationMs,
     rootGenerationBefore: input.rootGeneration,
+    root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: input.rootGeneration, incarnation: input.rootIncarnation },
     pose: { rootGeneration: resultGeneration, position: target },
     hmdPose: null,
   };
@@ -878,6 +938,17 @@ test("cleanup-only completed step adopts direct/replacement readback, captures e
         fixture.calls.push({ kind: "locomote", input });
         return completedMovementResult(input);
       };
+      fixture.dependencies.probeCapability = async (input) => {
+        fixture.calls.push({ kind: "capability", input });
+        return {
+          ok: true,
+          ack: { ...fixture.capabilityAck, requestId: input.requestId, root: { ...fixture.capabilityAck.root, generation: expectedGeneration } },
+          primaryError: null,
+          cleanupError: null,
+          actionReceipts: [],
+          evidenceCeiling: "structural",
+        };
+      };
       fixture.calls.length = 0;
       const restored = await fixture.orchestrator.execute({
         action: "restore",
@@ -928,7 +999,9 @@ test("step failures stop structurally, retain usage, and never try another mecha
           requestId: input.requestId, tag: input.tag, application: { packageName: input.packageName },
           operation: AGENT_BRIDGE_LOCOMOTE_COMMAND, physicalWalk: false, primaryError: null, cleanupError: null,
           outcome: "completed", mode: input.mode, target: { absolute: true, ...input.target }, glideDurationMs: input.glideDurationMs,
-          rootGenerationBefore: input.rootGeneration, pose: { rootGeneration: input.rootGeneration + 9, position: input.target }, hmdPose: null,
+          rootGenerationBefore: input.rootGeneration,
+          root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: input.rootGeneration, incarnation: input.rootIncarnation },
+          pose: { rootGeneration: input.rootGeneration + 9, position: input.target }, hmdPose: null,
         },
         primaryError: null, cleanupError: null, actionReceipts: [], evidenceCeiling: "structural",
       }),
@@ -974,7 +1047,7 @@ test("step gates safety, continuity, finite HMD telemetry, 0.02m Euclidean drift
       kind: AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND, schemaVersion: 1, capabilityRevision: 1,
       requestId: input.requestId, tag: input.tag, application: { packageName: input.packageName },
       operation: AGENT_BRIDGE_HMD_POSE_COMMAND, physicalWalk: false, primaryError: null, cleanupError: null,
-      outcome: "sampled", root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7 },
+      outcome: "sampled", root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: input.expectedRootIncarnation },
       hmdPose: { readAtMonotonicNs: "4000000", position, rotation: { x: 0, y: 0, z: 0, w: 1 } },
     },
     primaryError: null, cleanupError: null, actionReceipts: [], evidenceCeiling: "structural",
@@ -1024,6 +1097,7 @@ test("concurrent step mutation is rejected while the first selected locomotion i
         requestId: input.requestId, tag: input.tag, application: { packageName: input.packageName }, operation: AGENT_BRIDGE_LOCOMOTE_COMMAND,
         physicalWalk: false, primaryError: null, cleanupError: null, outcome: "completed", mode: input.mode,
         target: { absolute: true, ...target }, glideDurationMs: input.glideDurationMs, rootGenerationBefore: input.rootGeneration,
+        root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: input.rootGeneration, incarnation: input.rootIncarnation },
         pose: { rootGeneration: input.rootGeneration, position: target }, hmdPose: null,
       },
       primaryError: null, cleanupError: null, actionReceipts: [], evidenceCeiling: "structural",
@@ -1081,7 +1155,7 @@ test("restore is available from prepared, stepped, and stopped and selects captu
       assert.equal(restored.requiredReview.length, 1);
       assert.equal(restored.requiredReview[0].role, "recovery");
       assert.deepEqual(fixture.calls.map((call) => call.kind), [
-        "readReview", "readReceipt", "readSpec", "locomote", "capture", "readReview", "stop", "safety",
+        "readReview", "readReceipt", "readSpec", "continuity", "capability", "locomote", "capture", "readReview", "stop", "finalProcess", "safety",
       ]);
       const move = fixture.calls.find((call) => call.kind === "locomote").input;
       assert.equal(move.mode, fixture.input.mechanism);
@@ -1391,12 +1465,15 @@ test("step and restore re-read authoritative receipt/AppSpec bytes before any co
 
   const restoreFixture = await prepareForSteps(t);
   fs.unlinkSync(restoreFixture.publishedReceipt.receipt.source.effectiveAppSpec.artifactPath);
-  await assert.rejects(restoreFixture.orchestrator.execute({
+  const failedRestore = await restoreFixture.orchestrator.execute({
     action: "restore",
     runId: restoreFixture.prepared.runId,
     reviewedPriorFrame: reviewFor(restoreFixture.baselineReview),
-  }), /AppSpec|spec|ENOENT|receipt|artifact/i);
-  assert.equal(restoreFixture.calls.some((call) => call.kind === "locomote" || call.kind === "stop"), false);
+  });
+  assert.equal(failedRestore.status, "restore_failed");
+  assert.match(failedRestore.primaryError, /AppSpec|spec|ENOENT|receipt|artifact/i);
+  assert.equal(restoreFixture.calls.some((call) => call.kind === "locomote"), false);
+  assert.equal(restoreFixture.calls.filter((call) => call.kind === "stop").length, 1);
 });
 
 test("a substituted still-valid receipt object cannot change the cached prepare binding", async (t) => {
@@ -1428,15 +1505,15 @@ test("retained bounded step logs are re-hashed before a later restoration mutati
   fs.writeFileSync(stepped.logEvidence.path, "substituted log bytes\n");
   fixture.calls.length = 0;
 
-  await assert.rejects(
-    fixture.orchestrator.execute({
-      action: "restore",
-      runId: fixture.prepared.runId,
-      reviewedPriorFrame: reviewFor(stepped.requiredReview[0]),
-    }),
-    /log.*(?:changed|immutable)|immutable.*log/i,
-  );
-  assert.deepEqual(fixture.calls.map((call) => call.kind), ["readReview"]);
+  const failedRestore = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stepped.requiredReview[0]),
+  });
+  assert.equal(failedRestore.status, "restore_failed");
+  assert.match(failedRestore.primaryError, /log.*(?:changed|immutable)|immutable.*log/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
 });
 
 test("concurrent mutations on one exact serial are rejected even across distinct artifact roots", async (t) => {
@@ -1462,7 +1539,7 @@ test("concurrent mutations on one exact serial are rejected even across distinct
   await firstEntered;
   let rejectionAssertion;
   try {
-    await assert.rejects(orchestrator.execute(secondInput), /serial.*(?:progress|mutation)|mutation.*serial/i);
+    await assert.rejects(orchestrator.execute(secondInput), /serial.*(?:progress|mutation|active|owned)|(?:mutation|active|owned).*serial/i);
   } catch (error) {
     rejectionAssertion = error;
   } finally {
@@ -1903,8 +1980,11 @@ test("restoration reserve is one fixed absolute deadline and does not reset afte
     runId: fixture.prepared.runId,
     reviewedPriorFrame: reviewFor(fixture.baselineReview),
   });
-  assert.equal(restored.status, "restored_needs_review");
-  assert.equal(fixture.calls.find((call) => call.kind === "capture").input.deadlineMs, 5_000);
+  assert.equal(restored.status, "restore_failed");
+  assert.match(restored.primaryError, /deadline|reserve|budget/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "capture"), false);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+  assert.equal(fixture.calls.filter((call) => call.kind === "finalProcess").length, 1);
 });
 
 test("fresh-launch raw health logs are retained and re-hashed before mutation and adjudication", async (t) => {
@@ -1943,6 +2023,419 @@ test("prepare rejects duplicate raw health-log references before publishing run 
   }), /unknown.*run/i);
 });
 
+test("failed prepare compensation owns or releases the serial only after auditable proof", async (t) => {
+  const capabilityFailure = {
+    ok: false,
+    code: "capability_unavailable",
+    detail: "capability stage fault",
+    primaryError: "capability stage fault",
+    cleanupError: null,
+    actionReceipts: [],
+    evidenceCeiling: "structural",
+  };
+
+  await t.test("target cleanup failure quarantines sequential prepare", async (t) => {
+    const fixture = await createPreparedFixture(t, {
+      capability: capabilityFailure,
+      stopError: { reason: "prepare_failure_cleanup", message: "force-stop cleanup fault" },
+    });
+    const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
+    const failed = await orchestrator.execute(fixture.input);
+    assert.equal(failed.status, "preparation_failed");
+    assert.match(failed.cleanupError, /force-stop cleanup fault/i);
+    const action = JSON.parse(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim());
+    assert.deepEqual(action.observedPriorForeground, { component: null, packageName: null, userInstalled: false });
+    assert.equal(action.compensation.targetStop.status, "failed");
+    assert.equal(action.serialLease.status, "quarantined");
+    await assert.rejects(orchestrator.execute({
+      ...fixture.input,
+      artifactRoot: externalArtifactRoot(t, "target-cleanup-quarantine"),
+    }), /serial.*(?:quarantin|owned|recovery)|(?:quarantin|owned|recovery).*serial/i);
+  });
+
+  await t.test("required prior relaunch failure quarantines sequential prepare", async (t) => {
+    const component = "com.prior.unbound/.MainActivity";
+    const fixture = await createPreparedFixture(t, {
+      inputOverrides: { priorForeground: { kind: "non_receipt_bound", component } },
+      priorSnapshot: { component, packageName: "com.prior.unbound", userInstalled: true },
+      capability: capabilityFailure,
+      relaunchResult: {
+        disposition: "accepted",
+        component,
+        outputSha256: sha256("Status: ok\n"),
+        activityProbeSha256: sha256("topResumedActivity=com.other/.Main\n"),
+        resumedComponents: ["com.other/.Main"],
+      },
+    });
+    const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
+    const failed = await orchestrator.execute(fixture.input);
+    assert.equal(failed.status, "preparation_failed");
+    assert.match(failed.cleanupError, /relaunch|resumed|component/i);
+    const action = JSON.parse(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim());
+    assert.equal(action.compensation.priorRelaunch.disposition, "accepted");
+    assert.equal(action.serialLease.status, "quarantined");
+    await assert.rejects(orchestrator.execute({
+      ...fixture.input,
+      artifactRoot: externalArtifactRoot(t, "prior-relaunch-quarantine"),
+    }), /serial.*(?:quarantin|owned|recovery)|(?:quarantin|owned|recovery).*serial/i);
+  });
+
+  await t.test("failure audit fault quarantines even after otherwise successful compensation", async (t) => {
+    const fixture = await createPreparedFixture(t, { capability: capabilityFailure });
+    const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+      beforeActionAppendOpen({ action, status }) {
+        if (action === "prepare" && status === "failed") throw new Error("failure audit unavailable");
+      },
+    });
+    const failed = await orchestrator.execute(fixture.input);
+    assert.equal(failed.status, "preparation_failed");
+    assert.match(failed.cleanupError, /failure audit unavailable/i);
+    await assert.rejects(orchestrator.execute({
+      ...fixture.input,
+      artifactRoot: externalArtifactRoot(t, "failure-audit-quarantine"),
+    }), /serial.*(?:quarantin|owned|audit)|(?:quarantin|owned|audit).*serial/i);
+  });
+
+  await t.test("bracket failure records compensation and releases only after complete proof", async (t) => {
+    const fixture = await createPreparedFixture(t);
+    const originalLogs = fixture.dependencies.collectStepLogs;
+    let failOnce = true;
+    fixture.dependencies.collectStepLogs = async (context) => {
+      if (failOnce && context.beginMarker.endsWith("_PREPARE_BEGIN")) {
+        failOnce = false;
+        throw new Error("prepare bracket collection fault");
+      }
+      return originalLogs(context);
+    };
+    const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
+    const failed = await orchestrator.execute(fixture.input);
+    assert.equal(failed.status, "preparation_failed");
+    const action = JSON.parse(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim());
+    assert.equal(action.compensation.targetStop.status, "stopped");
+    assert.equal(action.compensation.finalProcessProof.targetPids.length, 0);
+    assert.equal(action.serialLease.status, "released");
+    const retry = await orchestrator.execute({
+      ...fixture.input,
+      artifactRoot: externalArtifactRoot(t, "bracket-compensated-retry"),
+    });
+    assert.equal(retry.status, "needs_baseline_review");
+  });
+});
+
+test("prepare failure cleanup spends the reserved recovery envelope instead of an expired prepare deadline", async (t) => {
+  let nowNs = 0n;
+  const fixture = await createPreparedFixture(t, { monotonicNs: () => nowNs });
+  fixture.dependencies.probeCapability = async (input) => {
+    fixture.calls.push({ kind: "capability", input });
+    nowNs = 91_000_000_000n;
+    return {
+      ok: false, code: "capability_unavailable", detail: "late capability failure", primaryError: "late capability failure",
+      cleanupError: null, actionReceipts: [], evidenceCeiling: "structural",
+    };
+  };
+  const failed = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(failed.status, "preparation_failed");
+  const cleanup = fixture.calls.find((call) => call.kind === "stop" && call.context.reason === "prepare_failure_cleanup");
+  assert.ok(cleanup.context.timeoutMs >= 1_000, `cleanup timeout was ${cleanup.context.timeoutMs}`);
+  assert.ok(cleanup.context.timeoutMs <= 89_000);
+});
+
+test("restore revalidates live continuity and capability before any zero-offset mutation", async (t) => {
+  const cases = [
+    ["boot", (sample) => ({ ...sample, bootId: "ffffffff-ffff-4fff-8fff-ffffffffffff" })],
+    ["PID start", (sample) => ({ ...sample, pid: sample.pid + 1, pidStartTicks: "999999999" })],
+    ["foreground", (sample) => ({ ...sample, resumedComponents: ["com.picoxr.launcher/.Launcher"], foreground: "different_package" })],
+  ];
+  for (const [label, mutate] of cases) {
+    await t.test(label, async (t) => {
+      const fixture = await prepareForSteps(t);
+      fixture.dependencies.sampleContinuity = async (context) => {
+        fixture.calls.push({ kind: "continuity", context });
+        return mutate(exactContinuity(fixture.input, fixture.applicationBinding, fixture.bootId));
+      };
+      fixture.calls.length = 0;
+      const restored = await fixture.orchestrator.execute({
+        action: "restore",
+        runId: fixture.prepared.runId,
+        reviewedPriorFrame: reviewFor(fixture.baselineReview),
+      });
+      assert.equal(restored.status, "restore_failed");
+      assert.match(restored.primaryError, /binding|continuity|boot|PID|foreground/i);
+      assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
+      assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
+    });
+  }
+});
+
+test("a same-generation replacement process/root incarnation is rejected in step and restore", async (t) => {
+  const stepFixture = await prepareForSteps(t);
+  const originalHmd = stepFixture.dependencies.requestHmdPose;
+  stepFixture.dependencies.requestHmdPose = async (input) => {
+    const result = await originalHmd(input);
+    return result.ok ? { ...result, ack: { ...result.ack, root: { ...result.ack.root, incarnation: REPLACEMENT_INCARNATION } } } : result;
+  };
+  const stepped = await stepFixture.orchestrator.execute(stepRequest(stepFixture, reviewFor(stepFixture.baselineReview)));
+  assert.equal(stepped.status, "stopped");
+  assert.match(stepped.primaryError, /incarnation|producer identity/i);
+  assert.equal(stepFixture.calls.some((call) => call.kind === "locomote"), false);
+
+  const restoreFixture = await prepareForSteps(t);
+  restoreFixture.dependencies.probeCapability = async (input) => {
+    restoreFixture.calls.push({ kind: "capability", input });
+    return {
+      ok: true,
+      ack: {
+        ...restoreFixture.capabilityAck,
+        requestId: input.requestId,
+        tag: input.tag,
+        root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: REPLACEMENT_INCARNATION },
+      },
+      primaryError: null,
+      cleanupError: null,
+      actionReceipts: [],
+      evidenceCeiling: "structural",
+    };
+  };
+  restoreFixture.calls.length = 0;
+  const restored = await restoreFixture.orchestrator.execute({
+    action: "restore",
+    runId: restoreFixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(restoreFixture.baselineReview),
+  });
+  assert.equal(restored.status, "restore_failed");
+  assert.match(restored.primaryError, /incarnation|producer identity/i);
+  assert.equal(restoreFixture.calls.some((call) => call.kind === "locomote"), false);
+});
+
+test("fresh-launch evidence uses PREPARE_BEGIN and binds every raw health/window artifact", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  const prepared = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(prepared.status, "needs_baseline_review");
+  const marker = fixture.calls.find((call) => call.kind === "marker").context.marker;
+  const monitorContext = fixture.calls.find((call) => call.kind === "monitor").context;
+  assert.equal(monitorContext.healthBoundaryMarker, marker);
+  const action = JSON.parse(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim());
+  assert.equal(action.freshLaunchMonitor.healthBoundaryMarker, marker);
+  assert.equal(action.freshLaunchMonitor.rawWindowDumps.length, action.freshLaunchMonitor.samples.length);
+  action.freshLaunchMonitor.samples.forEach((sample, index) => {
+    assert.equal(sample.runtimeHealth.sourceSha256, action.freshLaunchMonitor.rawHealthLogs[index].sha256);
+    assert.equal(sample.runtimeHealth.marker, marker);
+    assert.equal(sample.runtimeHealth.packageName, fixture.input.scenario.packageName);
+    assert.deepEqual(sample.runtimeHealth.expectedPids, [fixture.applicationBinding.pid]);
+  });
+});
+
+test("fresh-launch source substitution and later raw-window tampering fail before mutation", async (t) => {
+  const substituted = await createPreparedFixture(t, {
+    afterMonitor(receipt) {
+      receipt.samples[0].runtimeHealth.sourceSha256 = "f".repeat(64);
+    },
+  });
+  const rejected = await createInAppLocomotionOrchestrator(substituted.dependencies).execute(substituted.input);
+  assert.equal(rejected.status, "preparation_failed");
+  assert.match(rejected.primaryError, /source|health|sha|binding/i);
+
+  const tampered = await prepareForSteps(t);
+  fs.writeFileSync(tampered.windowDumps[0].path, "substituted window bytes\n");
+  tampered.calls.length = 0;
+  await assert.rejects(tampered.orchestrator.execute(stepRequest(
+    tampered,
+    reviewFor(tampered.baselineReview),
+  )), /window|dialog|immutable|changed|evidence/i);
+  assert.equal(tampered.calls.some((call) => call.kind === "marker" || call.kind === "locomote"), false);
+});
+
+test("universal final process/activity proof blocks lease release after false-success stop", async (t) => {
+  const policies = [
+    ["none", { kind: "none" }, undefined],
+    ["receipt-bound", { kind: "receipt_bound", component: "com.prior.receipted/.MainActivity", receiptId: "c".repeat(64) }, { component: "com.prior.receipted/.MainActivity", packageName: "com.prior.receipted", userInstalled: true }],
+    ["non-receipt", { kind: "non_receipt_bound", component: "com.prior.unbound/.MainActivity" }, { component: "com.prior.unbound/.MainActivity", packageName: "com.prior.unbound", userInstalled: true }],
+  ];
+  for (const [label, priorForeground, priorSnapshot] of policies) {
+    await t.test(label, async (t) => {
+      const fixture = await prepareForSteps(t, {
+        inputOverrides: { priorForeground },
+        ...(priorSnapshot ? { priorSnapshot } : {}),
+        finalTargetPresent: true,
+      });
+      fixture.calls.length = 0;
+      const restored = await fixture.orchestrator.execute({
+        action: "restore",
+        runId: fixture.prepared.runId,
+        reviewedPriorFrame: reviewFor(fixture.baselineReview),
+      });
+      assert.equal(restored.status, "restore_failed");
+      assert.match(restored.cleanupError, /target.*(?:present|running|resumed)|final.*proof/i);
+      assert.equal(fixture.calls.filter((call) => call.kind === "finalProcess").length, 1);
+      const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
+      assert.deepEqual(action.finalProcessProof.targetPids, [fixture.applicationBinding.pid]);
+      await assert.rejects(fixture.orchestrator.execute({
+        ...fixture.input,
+        artifactRoot: externalArtifactRoot(t, `false-stop-${label}`),
+      }), /serial.*(?:owned|quarantin|restore)|(?:owned|quarantin|restore).*serial/i);
+    });
+  }
+});
+
+test("clock faults do not consume waypoints, mask primary errors, or bypass restore cleanup", async (t) => {
+  await t.test("step start clock is retryable without consuming the waypoint", async (t) => {
+    const fixture = await prepareForSteps(t);
+    fixture.dependencies.monotonicNs = () => { throw new Error("step start clock fault"); };
+    await assert.rejects(fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview))), /clock fault/i);
+    let tick = 10_000_000_000n;
+    fixture.dependencies.monotonicNs = () => ++tick;
+    const retried = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+    assert.equal(retried.waypointSeq, 1);
+    assert.equal(retried.usage.waypointAttempts, 1);
+  });
+
+  await t.test("step end clock retains the earlier safety primary and writes one stopped ledger entry", async (t) => {
+    const fixture = await prepareForSteps(t);
+    fixture.dependencies.sampleSafety = async (context) => {
+      fixture.calls.push({ kind: "safety", context });
+      return { ...cleanSafety, guardian: "0" };
+    };
+    const originalLogs = fixture.dependencies.collectStepLogs;
+    let failClock = false;
+    fixture.dependencies.collectStepLogs = async (context) => {
+      const value = await originalLogs(context);
+      if (!context.beginMarker.endsWith("_PREPARE_BEGIN")) failClock = true;
+      return value;
+    };
+    let tick = 20_000_000_000n;
+    fixture.dependencies.monotonicNs = () => {
+      if (failClock) throw new Error("step end clock fault");
+      return ++tick;
+    };
+    const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+    assert.equal(stopped.status, "stopped");
+    assert.match(stopped.primaryError, /Guardian|safety/i);
+    assert.match(stopped.cleanupError, /clock fault/i);
+    const stepActions = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+      .trim().split("\n").map(JSON.parse).filter((entry) => entry.action === "step");
+    assert.equal(stepActions.length, 1);
+  });
+
+  await t.test("restore start clock is retryable before once-only cleanup ownership advances", async (t) => {
+    const fixture = await prepareForSteps(t);
+    fixture.dependencies.monotonicNs = () => { throw new Error("restore start clock fault"); };
+    const request = { action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview) };
+    await assert.rejects(fixture.orchestrator.execute(request), /clock fault/i);
+    let tick = 30_000_000_000n;
+    fixture.dependencies.monotonicNs = () => ++tick;
+    const restored = await fixture.orchestrator.execute(request);
+    assert.equal(restored.status, "restored_needs_review");
+  });
+
+  await t.test("restore clock fault after transaction start still performs one cleanup and ledger", async (t) => {
+    const fixture = await prepareForSteps(t);
+    let failClock = false;
+    fixture.dependencies.sampleContinuity = async (context) => {
+      fixture.calls.push({ kind: "continuity", context });
+      failClock = true;
+      return exactContinuity(fixture.input, fixture.applicationBinding, fixture.bootId);
+    };
+    let tick = 40_000_000_000n;
+    fixture.dependencies.monotonicNs = () => {
+      if (failClock) throw new Error("restore transaction clock fault");
+      return ++tick;
+    };
+    fixture.calls.length = 0;
+    const restored = await fixture.orchestrator.execute({
+      action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview),
+    });
+    assert.equal(restored.status, "restore_failed");
+    assert.match(restored.primaryError, /clock fault/i);
+    assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
+    assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
+    const restoreActions = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+      .trim().split("\n").map(JSON.parse).filter((entry) => entry.action === "restore");
+    assert.equal(restoreActions.length, 1);
+  });
+});
+
+test("action ledger staging failures are atomic and cannot strand movement cleanup", async (t) => {
+  for (const [label, hook] of [
+    ["partial write", {
+      writeActionStage({ action, descriptor, bytes }) {
+        if (action !== "step") return false;
+        fs.writeSync(descriptor, bytes, 0, Math.max(1, Math.floor(bytes.length / 2)), 0);
+        throw new Error("injected partial stage write");
+      },
+    }],
+    ["fsync", {
+      beforeActionStageFsync({ action }) {
+        if (action === "step") throw new Error("injected stage fsync fault");
+      },
+    }],
+  ]) {
+    await t.test(label, async (t) => {
+      const fixture = await createPreparedFixture(t);
+      const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, hook);
+      const prepared = await orchestrator.execute(fixture.input);
+      const before = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"));
+      const stopped = await orchestrator.execute(stepRequest({ ...fixture, prepared }, reviewFor(prepared.requiredReview[0])));
+      assert.equal(stopped.status, "stopped");
+      assert.match(stopped.primaryError, /partial stage write|stage fsync fault/i);
+      assert.deepEqual(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl")), before);
+      const restored = await orchestrator.execute({
+        action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+      });
+      assert.equal(restored.status, "restored_needs_review");
+      assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
+    });
+  }
+});
+
+test("shared artifact identity rejects a pathname swap after descriptor bytes were read", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  let armed = false;
+  let swapped = false;
+  const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+    afterArtifactReadBeforePathRecheck({ path: artifactPath, label }) {
+      if (!armed || swapped || label !== "run manifest") return;
+      swapped = true;
+      const replacement = fs.readFileSync(artifactPath);
+      fs.renameSync(artifactPath, `${artifactPath}.opened-original`);
+      fs.writeFileSync(artifactPath, replacement, { flag: "wx", mode: 0o600 });
+    },
+  });
+  const prepared = await orchestrator.execute(fixture.input);
+  armed = true;
+  fixture.calls.length = 0;
+  await assert.rejects(orchestrator.execute(stepRequest(
+    { ...fixture, prepared },
+    reviewFor(prepared.requiredReview[0]),
+  )), /path|identity|changed|manifest/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "marker" || call.kind === "locomote"), false);
+});
+
+test("a post-stage action pathname swap quarantines audit but restore still reaches bounded target cleanup", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  let swapped = false;
+  const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+    beforeActionPublish({ action, path: actionPath }) {
+      if (action !== "step" || swapped) return;
+      swapped = true;
+      const bytes = fs.readFileSync(actionPath);
+      fs.renameSync(actionPath, `${actionPath}.publication-original`);
+      fs.writeFileSync(actionPath, bytes, { flag: "wx", mode: 0o600 });
+    },
+  });
+  const prepared = await orchestrator.execute(fixture.input);
+  const stopped = await orchestrator.execute(stepRequest({ ...fixture, prepared }, reviewFor(prepared.requiredReview[0])));
+  assert.equal(stopped.status, "stopped");
+  assert.match(stopped.primaryError, /action|publish|identity|path/i);
+  fixture.calls.length = 0;
+  const restored = await orchestrator.execute({
+    action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restore_failed");
+  assert.match(`${restored.primaryError} ${restored.cleanupError}`, /audit|artifact|identity|path/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
+});
+
 const adb = "/fixture/adb";
 const baseInput = {
   serial: "fixture-serial",
@@ -1954,6 +2447,7 @@ const baseInput = {
   stabilityReads: 2,
   ackReadTimeoutMs: 250,
   controlTimeoutMs: 1_000,
+  expectedRootIncarnation: ROOT_INCARNATION,
 };
 
 const envelope = (operation, overrides = {}) => ({
@@ -1981,13 +2475,13 @@ const availableAck = (overrides = {}) => envelope(AGENT_BRIDGE_COMMANDS_COMMAND,
     hmdAvailable: true,
     locomotionAvailable: true,
   },
-  root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7 },
+  root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: ROOT_INCARNATION },
   ...overrides,
 });
 
 const hmdAck = (overrides = {}) => envelope(AGENT_BRIDGE_HMD_POSE_COMMAND, {
   outcome: "sampled",
-  root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7 },
+  root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: ROOT_INCARNATION },
   hmdPose: {
     readAtMonotonicNs: "9876543210",
     position: { x: 0.1, y: 1.62, z: -0.2 },
@@ -2001,6 +2495,7 @@ const locomotionInput = {
   mode: "direct",
   target: { x: 2, y: 0, z: -4 },
   rootGeneration: 7,
+  rootIncarnation: ROOT_INCARNATION,
   glideDurationMs: 500,
 };
 
@@ -2010,6 +2505,7 @@ const locomotionAck = (overrides = {}) => envelope(AGENT_BRIDGE_LOCOMOTE_COMMAND
   target: { absolute: true, x: 2, y: 0, z: -4 },
   glideDurationMs: 500,
   rootGenerationBefore: 7,
+  root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: ROOT_INCARNATION },
   pose: { rootGeneration: 7, position: { x: 2, y: 0, z: -4 } },
   hmdPose: null,
   ...overrides,
@@ -2146,7 +2642,7 @@ test("one present acknowledgement read is insufficient for stability and still c
 });
 
 test("changed acknowledgement bytes reset stability before an identical pair succeeds", async () => {
-  const first = availableAck({ root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 6 } });
+  const first = availableAck({ root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 6, incarnation: ROOT_INCARNATION } });
   const final = availableAck();
   const fake = fakeTransaction([first, final, final]);
 
@@ -2355,6 +2851,7 @@ test("locomotion rejects incomplete, non-finite, implicit-mode, or physical-walk
     { ...locomotionInput, target: { x: 2, y: 0 } },
     { ...locomotionInput, target: { x: Number.NaN, y: 0, z: -4 } },
     { ...locomotionInput, mode: undefined },
+    { ...locomotionInput, rootIncarnation: "11111111-1111-1111-8111-111111111111" },
     { ...locomotionInput, physicalWalk: true },
   ]) {
     const fake = fakeTransaction([]);
@@ -2394,4 +2891,193 @@ test("unsafe serial, package, or nonce remains fully transport-free", async () =
     assert.equal(result.code, "invalid_request");
     assert.equal(fake.calls.length, 0);
   }
+});
+
+test("locomotion revision 1 binds one exact producer incarnation across capability, HMD, and locomotion", async () => {
+  const capability = availableAck({
+    root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: ROOT_INCARNATION },
+  });
+  const capabilityFake = fakeTransaction([capability, capability]);
+  const capabilityResult = await probeAgentBridgeLocomotionCapability(adb, baseInput, capabilityFake.deps);
+  assert.equal(capabilityResult.ok, true);
+  assert.equal(capabilityResult.ack.root.incarnation, ROOT_INCARNATION);
+
+  const sampled = hmdAck({
+    root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: ROOT_INCARNATION },
+  });
+  const hmdFake = fakeTransaction([sampled, sampled]);
+  const hmdResult = await requestAgentBridgeHmdPose(adb, {
+    ...baseInput,
+    expectedRootGeneration: 7,
+    expectedRootIncarnation: ROOT_INCARNATION,
+  }, hmdFake.deps);
+  assert.equal(hmdResult.ok, true);
+  const hmdBroadcast = hmdFake.calls.find((call) => call.kind === "text" && call.args.includes("broadcast"));
+  assert.deepEqual(hmdBroadcast.args.slice(hmdBroadcast.args.indexOf("rootIncarnation") - 1, hmdBroadcast.args.indexOf("rootIncarnation") + 2), [
+    "--es", "rootIncarnation", ROOT_INCARNATION,
+  ]);
+
+  const moved = locomotionAck({
+    root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: ROOT_INCARNATION },
+  });
+  const locomotionFake = fakeTransaction([moved, moved]);
+  const locomotionResult = await requestAgentBridgeLocomotion(adb, {
+    ...locomotionInput,
+    rootIncarnation: ROOT_INCARNATION,
+  }, locomotionFake.deps);
+  assert.equal(locomotionResult.ok, true);
+  const moveBroadcast = locomotionFake.calls.find((call) => call.kind === "text" && call.args.includes("broadcast"));
+  assert.deepEqual(moveBroadcast.args.slice(moveBroadcast.args.indexOf("rootIncarnation") - 1, moveBroadcast.args.indexOf("rootIncarnation") + 2), [
+    "--es", "rootIncarnation", ROOT_INCARNATION,
+  ]);
+});
+
+test("HMD rejects a non-v4 producer identity before broadcast", async () => {
+  const fake = fakeTransaction([]);
+  const result = await requestAgentBridgeHmdPose(adb, {
+    ...baseInput,
+    expectedRootGeneration: 7,
+    expectedRootIncarnation: "11111111-1111-1111-8111-111111111111",
+  }, fake.deps);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "invalid_request");
+  assert.match(result.primaryError, /UUID|identity|incarnation/i);
+  assert.equal(fake.calls.filter((call) => call.kind === "text" && call.args.includes("broadcast")).length, 0);
+  assertExactCleanup(fake.calls);
+});
+
+test("HMD and locomotion reject a same-generation acknowledgement from another producer incarnation", async () => {
+  const sampled = hmdAck({
+    root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: REPLACEMENT_INCARNATION },
+  });
+  const hmdFake = fakeTransaction([sampled, sampled]);
+  const hmdResult = await requestAgentBridgeHmdPose(adb, {
+    ...baseInput,
+    expectedRootGeneration: 7,
+    expectedRootIncarnation: ROOT_INCARNATION,
+  }, hmdFake.deps);
+  assert.equal(hmdResult.ok, false);
+  assert.equal(hmdResult.code, "invalid_ack");
+  assert.match(hmdResult.primaryError, /incarnation/i);
+
+  const moved = locomotionAck({
+    root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: REPLACEMENT_INCARNATION },
+  });
+  const moveFake = fakeTransaction([moved, moved]);
+  const moveResult = await requestAgentBridgeLocomotion(adb, {
+    ...locomotionInput,
+    rootIncarnation: ROOT_INCARNATION,
+  }, moveFake.deps);
+  assert.equal(moveResult.ok, false);
+  assert.equal(moveResult.code, "invalid_ack");
+  assert.match(moveResult.primaryError, /incarnation/i);
+});
+
+test("AgentBridge transaction deadline reserves valid cleanup and starts no later non-cleanup effect", async () => {
+  let nowNs = 0n;
+  const calls = [];
+  const deps = {
+    monotonicNs: () => nowNs,
+    sleep: async (durationMs) => {
+      calls.push({ kind: "sleep", startedAt: nowNs, durationMs });
+      nowNs += BigInt(durationMs) * 1_000_000n;
+    },
+    runText: async (_cmd, args, options) => {
+      const cleanup = args.includes("rm");
+      calls.push({ kind: cleanup ? "cleanup" : "broadcast", startedAt: nowNs, options });
+      if (!cleanup) nowNs += 2_000_000_000n;
+      return cleanup ? cleanupOk : textOk;
+    },
+    runBytes: async (_cmd, _args, options) => {
+      calls.push({ kind: "pull", startedAt: nowNs, options });
+      return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
+    },
+  };
+  const result = await requestAgentBridgeHmdPose(adb, {
+    ...baseInput,
+    deadlineMonotonicNs: "3000000000",
+  }, deps);
+  assert.equal(result.ok, false);
+  assert.equal(calls.filter((call) => call.kind === "pull").length, 0);
+  assert.equal(calls.filter((call) => call.kind === "cleanup").length, 1);
+  assert.ok(calls.filter((call) => call.kind !== "cleanup").every((call) => call.startedAt < 3_000_000_000n));
+  assert.ok(calls.every((call) => call.kind === "sleep" || (call.options.timeoutMs >= (call.kind === "pull" ? 250 : 1_000)
+    && call.options.timeoutMs <= Number((3_000_000_000n - call.startedAt) / 1_000_000n))));
+});
+
+test("AgentBridge refuses an impossible deadline envelope before broadcast and never uses a 15s invalid fallback", async () => {
+  for (const input of [
+    { ...baseInput, deadlineMonotonicNs: "2000000000" },
+    { ...baseInput, controlTimeoutMs: 999, deadlineMonotonicNs: "2000000000" },
+  ]) {
+    let nowNs = 0n;
+    const calls = [];
+    const deps = {
+      monotonicNs: () => nowNs,
+      sleep: async () => { throw new Error("sleep must not run"); },
+      runBytes: async () => { throw new Error("pull must not run"); },
+      runText: async (_cmd, args, options) => {
+        calls.push({ args, options, startedAt: nowNs });
+        return cleanupOk;
+      },
+    };
+    const result = await probeAgentBridgeLocomotionCapability(adb, input, deps);
+    assert.equal(result.ok, false);
+    assert.equal(calls.some((call) => call.args.includes("broadcast")), false);
+    assert.equal(calls.filter((call) => call.args.includes("rm")).length, 1);
+    assert.ok(calls[0].options.timeoutMs >= 1_000 && calls[0].options.timeoutMs <= 2_000);
+    assert.notEqual(calls[0].options.timeoutMs, 15_000);
+  }
+});
+
+test("production locomotion composites recompute one injected absolute deadline before every spawn and sleep", async (t) => {
+  let resolverCalls = 0;
+  let nowNs = 0n;
+  const effects = [];
+  const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+    resolveAdb: () => { resolverCalls += 1; return "/fixture/injected-adb"; },
+    monotonicNs: () => nowNs,
+    sleep: async (durationMs) => {
+      effects.push({ kind: "sleep", startedAt: nowNs, durationMs });
+      nowNs += BigInt(durationMs) * 1_000_000n;
+    },
+    runText: async (_cmd, args, options) => {
+      effects.push({ kind: "run", args, options, startedAt: nowNs });
+      nowNs += 600_000_000n;
+      return { code: 0, stdout: args.includes("ConfigurationService")
+        ? '[{"keyName":"spatial_stage_style","keyValue":"3"},{"keyName":"spatial_safeguard_enable","keyValue":"1"},{"keyName":"spatial_safeguard_center","keyValue":"0,0,0"},{"keyName":"spatial_virtual_content_detected","keyValue":"1"}]'
+        : "1", stderr: "", timedOut: false };
+    },
+    runBytes: async () => { throw new Error("binary runner must not be used by safety sample"); },
+  });
+  assert.equal(resolverCalls, 1, "the injected adapter must resolve no ambient adb path");
+  await assert.rejects(live.sampleSafety({
+    serial: "emulator-5554",
+    phase: "deadline_fixture",
+    timeoutMs: 1_500,
+    deadlineMonotonicNs: "1500000000",
+  }), /deadline|budget|remaining/i);
+  assert.ok(effects.length > 0);
+  assert.ok(effects.every((effect) => effect.startedAt < 1_500_000_000n));
+  assert.ok(effects.filter((effect) => effect.kind === "run").every((effect) =>
+    effect.options.timeoutMs <= Number((1_500_000_000n - effect.startedAt) / 1_000_000n)));
+
+  effects.length = 0;
+  nowNs = 0n;
+  await assert.rejects(live.monitorFreshLaunch({
+    serial: "emulator-5554",
+    runId: HASH,
+    artifactRoot: externalArtifactRoot(t, "live-monitor-deadline"),
+    minimumDurationMs: 60_000,
+    healthBoundaryMarker: "PICO_LOCOMOTION_FIXTURE_PREPARE_BEGIN",
+    runtime: {
+      liveIdentity: { serial: "emulator-5554", model: "PICO", fingerprint: "fixture", bootQemu: "1", bootId: "boot", observedAt: "2026-09-02T12:00:00.000Z" },
+      applicationBinding: { packageName: "com.test.fullworld", apkSha256: "b".repeat(64), allowedResumedComponents: ["com.test.fullworld/.platform.LaunchActivity"], pid: 5151, pidStartTicks: "123" },
+      foregroundComponent: "com.test.fullworld/.platform.LaunchActivity",
+    },
+    timeoutMs: 5_000,
+    deadlineMonotonicNs: "5000000000",
+  }), /deadline|budget|60/i);
+  assert.ok(effects.every((effect) => effect.startedAt < 5_000_000_000n));
+  assert.ok(effects.filter((effect) => effect.kind === "sleep").every((effect) => effect.durationMs <= 5_000));
 });
