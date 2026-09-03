@@ -1612,6 +1612,19 @@ console.log("\nCP1 generated Full-stage world roots are movable without changing
   assert(/var registeredToken: Long\? = null[\s\S]*var providerAttachedHere = false[\s\S]*attachSceneProvider\("stage"\)[\s\S]*providerAttachedHere = true[\s\S]*val registrationToken = AgentBridge\.registerLocomotionProducer[\s\S]*registeredToken = registrationToken/.test(activation) &&
     /catch \(cause: Throwable\)[\s\S]*compensateActivation\(registeredToken, providerAttachedHere\)[\s\S]*dispose\(\)[\s\S]*retainCleanup\(cause, cleanupError\)[\s\S]*throw cause/.test(activation),
   "activation failure invalidates and immediately compensates its exact token/provider before retaining primary plus teardown evidence");
+  const ownershipCommit = /synchronized\(lifecycleLock\) \{\n                check\(!disposed && lifecycleGeneration == generation\) \{ "Full Stage lifecycle changed during registration" \}[\s\S]*?\n            \}/.exec(activation)?.[0] ?? "";
+  const ownershipCommitAt = activation.indexOf(ownershipCommit);
+  const beforeOwnershipCommit = ownershipCommitAt > 0 ? activation.slice(0, ownershipCommitAt) : "";
+  const activationCatchAt = activation.indexOf("        } catch (cause: Throwable) {", ownershipCommitAt);
+  const afterOwnershipCommit = ownershipCommitAt >= 0 && activationCatchAt > ownershipCommitAt
+    ? activation.slice(ownershipCommitAt + ownershipCommit.length, activationCatchAt).trim()
+    : "";
+  assert(/sceneProviderAttached = providerAttachedHere[\s\S]*locomotionRegistrationToken = registrationToken[\s\S]*worldRootGeneration = registrationToken[\s\S]*activated = true[\s\S]*providerAttachedHere = false[\s\S]*registeredToken = null/.test(ownershipCommit) &&
+    activation.indexOf("registeredToken = registrationToken") < ownershipCommitAt &&
+    afterOwnershipCommit === "return" &&
+    !/^\s*(?:sceneProviderAttached|locomotionRegistrationToken)\s*=(?!=)/m.test(beforeOwnershipCommit) &&
+    !/providerAttachedHere = true[\s\S]*sceneProviderAttached = true[\s\S]*val registrationToken = AgentBridge\.registerLocomotionProducer/.test(activation),
+  "activation keeps provider/token ownership local until one atomic commit clears both claims, with no fallible post-transfer work");
   const activationCompensation = /private fun compensateActivation\([\s\S]*?(?=\n    fun currentWorldRoot)/.exec(full)?.[0] ?? "";
   assert(/lifecycleGeneration \+= 1L[\s\S]*locomotionRegistrationToken = null[\s\S]*worldRootGeneration = 0L[\s\S]*activated = false[\s\S]*sceneProviderAttached = false[\s\S]*cleanup\("producer_unregister"\)[\s\S]*unregisterLocomotionProducer\(registeredToken\)[\s\S]*cleanup\("scene_provider_detach"\)[\s\S]*detachSceneProvider\(\)[\s\S]*boundedCleanupError\(failures\)/.test(activationCompensation),
     "activation compensation invalidates first, guards every teardown action, and returns bounded cleanup evidence");
