@@ -452,7 +452,9 @@ test("assembly adds Boundary Lab files and hooks without changing unrelated wiri
     assert.match(composition, /BoundaryLabScene\.build\(root\)/);
     assert.match(home, /rememberBoundaryPanelSizes\(\)/);
     assert.match(home, /boundaryLabPanels\(boundaryPanelSizes/);
-    assert.match(home, /attachments\.seatBoundaryLabPanels\(content\)/);
+    assert.match(home, candidate.variant === "manifest_full"
+      ? /attachments\.seatBoundaryLabPanels\(worldRoot\)/
+      : /attachments\.seatBoundaryLabPanels\(content\)/);
     assert.ok(files.some((file) => file.path.endsWith("/content/BoundaryLabScene.kt")));
   }
   assert.match(generateWiring(mixed.spec).find((file) => file.path.endsWith("/content/BoundaryLabScene.kt")).content, /ROOT_SENTINEL = "MANIFEST MIXED ROOT"/);

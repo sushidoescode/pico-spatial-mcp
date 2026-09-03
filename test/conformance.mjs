@@ -1471,6 +1471,161 @@ console.log("\n§6.6 bundle leases are owner-refcounted, and validity is re-chec
   assert(threw, "a bundle path without a scheme is rejected");
 }
 
+// CP1 Task 3 — generated Full-stage worlds own a movable world root beneath one fixed
+// SpatialView host. The otherwise-identical Mixed output must retain its established direct
+// SpatialViewContent parenting and must not acquire any locomotion/HMD lifecycle.
+console.log("\nCP1 generated Full-stage world roots are movable without changing Mixed wiring");
+{
+  const raw = {
+    meta: {
+      appName: "LocomotionTwin",
+      packageName: "com.test.locomotiontwin",
+      stageStyle: "3",
+      rootContainer: "stage",
+      brief: "a physics-bearing Full-stage locomotion fixture",
+    },
+    navigation: { startScene: "main", portals: [] },
+    scenes: [{ id: "main", environment: { kind: "procedural" }, lighting: { rig: "sun" }, physics: {} }],
+    objects: [{
+      id: "ball",
+      sceneId: "main",
+      source: "primitive",
+      transform: { position: [0, 1, -2] },
+      body: { mode: "dynamic", shape: "sphere", dims: [0.1], mass: 1 },
+    }],
+    interactions: [{ id: "reset", trigger: "press", target: "ball", action: "resetWorld", params: { button: "reset" } }],
+    panels: [{
+      id: "status",
+      title: "STATUS",
+      placement: { kind: "scene", position: [0, 1.5, -1.8], widthDp: 360, heightDp: 160 },
+    }],
+  };
+  const fullSpec = appSpecSchema.parse(raw);
+  const mixedSpec = appSpecSchema.parse({ ...structuredClone(raw), meta: { ...raw.meta, stageStyle: "1" } });
+  const nonStageFullSpec = appSpecSchema.parse({ ...structuredClone(raw), meta: { ...raw.meta, rootContainer: "windowContainer" } });
+  const homeFor = (spec) => generateWiring(spec).find((file) => file.path.endsWith("/HomeStage.kt"))?.content ?? "";
+  const full = homeFor(fullSpec);
+  const mixed = homeFor(mixedSpec);
+  const nonStageFull = homeFor(nonStageFullSpec);
+
+  const hostAt = full.indexOf('setName("AgentSpatialViewHost")');
+  const worldAt = full.indexOf('setName("AgentWorldRoot")');
+  const authoredAt = full.indexOf('setName("SceneRoot")');
+  assert(hostAt >= 0 && worldAt > hostAt && authoredAt > worldAt &&
+    /content\.addEntity\(spatialViewHost\)[\s\S]*spatialViewHost\.addChild\(worldRoot\)[\s\S]*(?:worldRoot|worldParent)\.addChild\(sceneRoot\)/.test(full),
+  "Full-stage output mounts fixed AgentSpatialViewHost -> mutable AgentWorldRoot -> authored SceneRoot, including physics worlds");
+  assert(/content\.addEntity\(spatialViewHost\)[\s\S]*spatialViewHost\.addChild\(worldRoot\)[\s\S]*fullStageLifecycle\.mount\(spatialViewHost, worldRoot\)[\s\S]*setName\("SceneRoot"\)/.test(full),
+    "Full-stage lifecycle adopts and registers its hierarchy before fallible authored-world construction");
+  assert(full.includes('AgentBridge.attachSceneProvider("stage")') && full.includes("{ currentWorldRoot("),
+    "Full-stage scene binding is a dynamic stage provider for the replaceable world root");
+  assert(full.includes("HMDTrackingProvider()") && /hmdTrackingProvider\.start\(\)[\s\S]*hmdTrackingProvider\.stop\(\)/.test(full) &&
+    full.includes("SystemClock.elapsedRealtimeNanos()") && full.includes("latestData.hmdPose"),
+  "Full-stage output owns raw HMD start/sample/stop with a monotonic read time");
+  assert(/val registrationToken = AgentBridge\.registerLocomotionProducer\([\s\S]*locomotionRegistrationToken = registrationToken/.test(full) &&
+    /AgentBridge\.unregisterLocomotionProducer\(registrationToken\)/.test(full),
+  "Full-stage output retains the bridge generation token and unregisters that exact token");
+  const direct = /private suspend fun direct\([\s\S]*?(?=\n    private suspend fun replacement)/.exec(full)?.[0] ?? "";
+  assert(/request\.mode[\s\S]*"direct"/.test(full) && full.includes("directGlideJob: Job?") &&
+    full.includes("lifecycleScope: CoroutineScope? = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)") &&
+    direct.includes("delay(16L)") && direct.includes("transform.setPosition(") &&
+    !/KeyEvent|InputManager|injectInputEvent|ControllerTrackingProvider/.test(full),
+  "direct mode is an explicit cancellable per-frame root glide on Main and never invokes input APIs");
+  assert(/"replacement"[\s\S]*getChildren\(\)[\s\S]*movedChildren[\s\S]*worldRootRef = created[\s\S]*worldRootGeneration = nextGeneration[\s\S]*oldRoot\.destroy\(false\)/.test(full),
+    "replacement mode transfers every stable child, publishes the fresh absolute root/generation, then retires the empty old root");
+  assert(full.includes("attachments.seatSceneAttachmentPanels(worldRoot)") &&
+    /val menuParent = fullStageLifecycle\.currentWorldRoot\([\s\S]*menuParent\.addChild\(menuRoot\)/.test(full),
+  "Full-stage scene attachments and menu roots are parented beneath the current AgentWorldRoot");
+  assert((full.match(/content\.addEntity\(/g) ?? []).length === 1 && full.includes("content.addEntity(spatialViewHost)"),
+    "Full-stage output adds only its fixed host directly to SpatialViewContent");
+
+  const rawScaffoldHome = read("appskeleton/app/src/main/java/com/example/spatialapp/content/HomeStage.kt");
+  assert(!/AgentWorldRoot|registerLocomotionProducer|HMDTrackingProvider/.test(rawScaffoldHome),
+    "the unassembled style-3-capable scaffold remains honestly unregistered");
+
+  const dispose = /fun dispose\([^)]*\) \{[\s\S]*?\n    \}/.exec(full)?.[0] ?? "";
+  const orderedCleanup = [
+    "disposed = true",
+    "directGlideJob?.cancel",
+    "unregisterLocomotionProducer(registrationToken)",
+    "detachSceneProvider()",
+    "hmdTrackingProvider.stop()",
+    "ownedHierarchy?.destroy(true)",
+  ].map((needle) => dispose.indexOf(needle));
+  assert(dispose.includes("if (disposed) return") &&
+    orderedCleanup.every((at) => at >= 0) && orderedCleanup.every((at, index) => index === 0 || orderedCleanup[index - 1] < at),
+  "Full-stage disposal is idempotent and orders invalidation/glide cancel, exact unregister, provider detach, HMD stop, then one hierarchy destroy");
+
+  const forbiddenMarkers = [
+    "AgentSpatialViewHost", "AgentWorldRoot", "FullStageWorldLifecycle", "HMDTrackingProvider",
+    "registerLocomotionProducer", "unregisterLocomotionProducer", "attachSceneProvider", "detachSceneProvider",
+  ];
+  for (const [label, output] of [["Mixed", mixed], ["non-stage Full", nonStageFull]]) {
+    const leaked = forbiddenMarkers.filter((marker) => output.includes(marker));
+    assert(leaked.length === 0, `${label} output carries no Full-stage locomotion/root/HMD symbols${leaked.length ? `: ${leaked.join(", ")}` : ""}`);
+    assert(output.includes("content.addEntity(sceneRoot)"), `${label} output retains direct content.addEntity(sceneRoot) parenting`);
+    assert(output.includes("attachments.seatSceneAttachmentPanels(content)"), `${label} output retains the existing attachment call shape`);
+    assert(output.includes("content.addEntity(menuRoot)"), `${label} output retains the existing menu-root call shape`);
+  }
+
+  const { generateAttachmentPanelFiles } = await import("../dist/attachmentpanel.js");
+  const attachmentKt = generateAttachmentPanelFiles({
+    packageName: "com.test.locomotiontwin.content",
+    panels: [{ id: "status", position: [0, 1.5, -1.8] }],
+  }).files["SceneAttachments.kt"];
+  assert(/fun SpatialViewAttachments\.seatSceneAttachmentPanels\(worldRoot: Entity\)[\s\S]*check\(worldRoot\.addChild\(panel\)\)/.test(attachmentKt) &&
+    /fun SpatialViewAttachments\.seatSceneAttachmentPanels\(content: SpatialViewContent\)[\s\S]*content\.addEntity\(panel\)/.test(attachmentKt),
+  "attachment generation adds a Full Entity-parent overload without changing the Mixed SpatialViewContent overload");
+
+  const { buildBoundaryMatrix } = await import("../dist/boundarymatrix.js");
+  const boundaryFull = buildBoundaryMatrix(JSON.parse(read("briefs/boundarylabmixed.json")))
+    .find((candidate) => candidate.variant === "manifest_full")?.spec;
+  const boundaryFiles = boundaryFull ? generateWiring(boundaryFull) : [];
+  const boundaryHome = boundaryFiles.find((file) => file.path.endsWith("/HomeStage.kt"))?.content ?? "";
+  const boundaryKt = boundaryFiles.find((file) => file.path.endsWith("/BoundaryLabScene.kt"))?.content ?? "";
+  assert(boundaryHome.includes("attachments.seatBoundaryLabPanels(worldRoot)") &&
+    /fun SpatialViewAttachments\.seatBoundaryLabPanels\(worldRoot: Entity\)[\s\S]*check\(worldRoot\.addChild\(panel\)\)/.test(boundaryKt) &&
+    /fun SpatialViewAttachments\.seatBoundaryLabPanels\(content: SpatialViewContent\)[\s\S]*content\.addEntity\(panel\)/.test(boundaryKt),
+  "Full boundary panels gain Entity parenting while Mixed boundary seating keeps its existing call shape");
+
+  // Failure-path contract. A registration can become stale between the bridge call and local
+  // publication; a replacement can fail before or after moving children. Both paths must clean
+  // only what this lifecycle owns and must retain cleanup evidence without overwriting the cause.
+  const mount = /fun mount\([^)]*\) \{[\s\S]*?(?=\n    fun currentWorldRoot)/.exec(full)?.[0] ?? "";
+  assert(/var registeredToken: Long\? = null[\s\S]*val registrationToken = AgentBridge\.registerLocomotionProducer[\s\S]*registeredToken = registrationToken[\s\S]*catch \(cause: Throwable\)[\s\S]*AgentBridge\.unregisterLocomotionProducer\(staleToken\)[\s\S]*throw cause/.test(mount),
+    "a registration invalidated before local publication unregisters its returned stale token before retaining the mount failure");
+
+  const replacement = /private suspend fun replacement\([\s\S]*?(?=\n    private fun rollbackReplacement)/.exec(full)?.[0] ?? "";
+  const rollback = /private fun rollbackReplacement\([\s\S]*?(?=\n    private fun failureText)/.exec(full)?.[0] ?? "";
+  assert(replacement.includes("rollbackReplacement(") &&
+    /movedChildren\.asReversed\(\)\.forEach[\s\S]*candidate\.removeChild\(child\)[\s\S]*oldRoot\.addChild\(child\)/.test(rollback) &&
+    /if \(published\)[\s\S]*worldRootRef = oldRoot[\s\S]*worldRootGeneration = oldGeneration/.test(rollback) &&
+    /candidate\.removeFromParent\(\)[\s\S]*candidate\.destroy\(false\)/.test(rollback),
+  "one rollback path handles replacement failure both before and after stable-child transfer/publication");
+  assert(/val applied = created\.components\.get<TransformComponent>\(\)\?\.position[\s\S]*AgentWorldPose\(nextGeneration, applied\)/.test(replacement),
+    "replacement completion reports structural TransformComponent readback rather than echoing the request");
+  assert(replacement.indexOf("val applied = created.components.get<TransformComponent>()?.position") <
+    replacement.indexOf("oldRoot.destroy(false)"),
+  "replacement obtains fallible structural readback before irreversible old-root retirement");
+
+  assert(/catch \(cause: CancellationException\) \{\s*throw cause\s*\}[\s\S]*finally \{[\s\S]*directGlideJob === glide/.test(direct) &&
+    dispose.indexOf("directGlideJob?.cancel") < dispose.indexOf("unregisterLocomotionProducer"),
+  "direct cancellation propagates while clearing job ownership, and disposal cancels it before bridge unregister");
+  assert((dispose.match(/if \(disposed\) return/g) ?? []).length === 1 &&
+    (dispose.match(/unregisterLocomotionProducer\(registrationToken\)/g) ?? []).length === 1 &&
+    (dispose.match(/detachSceneProvider\(\)/g) ?? []).length === 1 &&
+    (dispose.match(/hmdTrackingProvider\.stop\(\)/g) ?? []).length === 1 &&
+    (dispose.match(/ownedHierarchy\?\.destroy\(true\)/g) ?? []).length === 1,
+  "double disposal is a no-op after one token/provider/HMD/hierarchy ownership snapshot is consumed");
+  assert(/val cleanupError = candidate\?\.let[\s\S]*rollbackReplacement\([\s\S]*AgentLocomotionResult\("failed", null, failureText\(cause\), cleanupError\)/.test(replacement),
+    "replacement retains the primary mutation failure when rollback also reports a cleanup failure");
+
+  const boundaryDispose = /fun dispose\([^)]*\) \{[\s\S]*?\n    \}/.exec(boundaryHome)?.[0] ?? "";
+  assert((boundaryHome.match(/DisposableEffect\(/g) ?? []).length === 1 &&
+    boundaryDispose.indexOf("BoundaryLabScene.release(root)") > boundaryDispose.indexOf("unregisterLocomotionProducer") &&
+    boundaryDispose.indexOf("BoundaryLabScene.release(root)") < boundaryDispose.indexOf("detachSceneProvider()"),
+  "Full Boundary Lab cleanup is consolidated into the one Full lifecycle without refactoring Mixed cleanup");
+}
+
 // CP2 flagship — one typed Mixed-stage room experience must lower through existing generators.
 console.log("\nCP2 Swan Mission Table profile is room-aware, lifecycle-paired, and fleet-writable");
 {
