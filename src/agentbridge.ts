@@ -1583,7 +1583,7 @@ export async function requestAgentBridgeLocomotion(
   const transactionInput: AgentBridgeLocomotionRequestInput = canonicalTarget === null
     ? input
     : { ...input, target: canonicalTarget };
-  return executeLocomotionTransaction(adb, {
+  const result = await executeLocomotionTransaction(adb, {
     operation: AGENT_BRIDGE_LOCOMOTE_COMMAND,
     input: transactionInput,
     preflightError: invalid,
@@ -1593,7 +1593,10 @@ export async function requestAgentBridgeLocomotion(
       rootGeneration: input.rootGeneration,
       rootIncarnation: input.rootIncarnation,
     },
-    deferNonceCleanup: input.deferNonceCleanup === true,
+    // A locomote nonce may only be removed after a serialized guest finalization
+    // fence (or an owned process stop).  The public wrapper either transfers that
+    // ownership to the route or completes the same fence below.
+    deferNonceCleanup: invalid === null || input.deferNonceCleanup === true,
     extraBroadcastArgs: canonicalTarget === null ? [] : [
       "--es", "requestControl", "execute",
       "--ei", "executionLeaseMs", String(executionLeaseMs),
@@ -1637,6 +1640,76 @@ export async function requestAgentBridgeLocomotion(
       return null;
     },
   }, deps);
+  if (input.deferNonceCleanup === true || invalid !== null
+    || result.nonceCleanup?.status !== "route_owned" || !result.motionQuiesced
+    || !result.actionReceipts.some((receipt) => receipt.action === "locomotion_broadcast")) {
+    return result;
+  }
+
+  const failCleanup = (problem: string): AgentBridgeLocomotionRequestResult<AgentBridgeLocomotionAck> => {
+    const cleanupError = result.cleanupError === null ? problem : `${result.cleanupError}; ${problem}`;
+    if (result.ok) {
+      return {
+        ok: false,
+        code: "cleanup_failed",
+        detail: cleanupError,
+        primaryError: null,
+        cleanupError,
+        ack: result.ack,
+        motionQuiesced: true,
+        nonceCleanup: result.nonceCleanup,
+        actionReceipts: result.actionReceipts,
+        evidenceCeiling: result.evidenceCeiling,
+      };
+    }
+    return {
+      ...result,
+      detail: result.primaryError === null
+        ? cleanupError
+        : `${result.primaryError}; acknowledgement cleanup also failed: ${cleanupError}`,
+      cleanupError,
+    };
+  };
+
+  let cleanupDeadlineMonotonicNs = input.deadlineMonotonicNs;
+  if (cleanupDeadlineMonotonicNs === undefined) {
+    try {
+      const now = (deps.monotonicNs ?? (() => process.hrtime.bigint()))();
+      if (typeof now !== "bigint" || now < 0n) throw new Error("locomotion cleanup monotonic clock is invalid");
+      const stabilityReads = input.stabilityReads ?? 2;
+      const pollMs = input.pollMs ?? 100;
+      const cleanupEnvelopeMs = 1_000 + stabilityReads * 250
+        + Math.max(0, stabilityReads - 1) * pollMs + 1_000 + 250 + 2;
+      cleanupDeadlineMonotonicNs = (now + BigInt(cleanupEnvelopeMs) * 1_000_000n).toString();
+    } catch (error) {
+      return failCleanup(`locomotion acknowledgement cleanup clock: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  try {
+    const nonceCleanup = await cleanupAgentBridgeLocomotionNonce(adb, {
+      serial: input.serial,
+      packageName: input.packageName,
+      requestId: input.requestId,
+      tag: locomotionTag(input),
+      rootGeneration: input.rootGeneration,
+      rootIncarnation: input.rootIncarnation,
+      controlTimeoutMs: input.controlTimeoutMs,
+      ackReadTimeoutMs: input.ackReadTimeoutMs,
+      pollMs: input.pollMs,
+      stabilityReads: input.stabilityReads,
+      deadlineMonotonicNs: cleanupDeadlineMonotonicNs,
+    }, deps);
+    if (nonceCleanup.removalError !== undefined) {
+      return {
+        ...failCleanup(`locomotion acknowledgement cleanup: ${nonceCleanup.removalError}`),
+        nonceCleanup,
+      };
+    }
+    return { ...result, nonceCleanup };
+  } catch (error) {
+    return failCleanup(`locomotion acknowledgement cleanup: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 export async function cleanupAgentBridgeLocomotionNonce(

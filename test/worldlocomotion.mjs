@@ -3026,6 +3026,8 @@ function fakeTransaction(payloads, options = {}) {
   const calls = [];
   let pull = 0;
   let cancellationInput = null;
+  let finalizationInput = null;
+  let nonceRemoved = false;
   const bytes = payloads.map((payload) => Buffer.from(
     typeof payload === "string" ? payload : JSON.stringify(payload),
     "utf8",
@@ -3037,9 +3039,23 @@ function fakeTransaction(payloads, options = {}) {
       sleep: async () => {},
       runText: async (cmd, args, runOptions) => {
         calls.push({ kind: "text", cmd, args, options: runOptions });
-        if (args.includes("rm")) return options.cleanupResult ?? cleanupOk;
+        if (args.includes("rm")) {
+          const cleanupResult = options.cleanupResult ?? cleanupOk;
+          nonceRemoved = cleanupResult.code === 0 && !cleanupResult.timedOut;
+          return cleanupResult;
+        }
+        const valueAfter = (name) => args[args.indexOf(name) + 1];
+        if (args.includes("requestControl") && args.includes("finalize")) {
+          finalizationInput = {
+            serial: baseInput.serial,
+            packageName: baseInput.packageName,
+            requestId: valueAfter("requestId"),
+            tag: valueAfter("tag"),
+            rootGeneration: Number(valueAfter("rootGeneration")),
+            rootIncarnation: valueAfter("rootIncarnation"),
+          };
+        }
         if (args.includes("requestControl") && args.includes("cancel")) {
-          const valueAfter = (name) => args[args.indexOf(name) + 1];
           cancellationInput = {
             serial: baseInput.serial,
             packageName: baseInput.packageName,
@@ -3053,6 +3069,17 @@ function fakeTransaction(payloads, options = {}) {
       },
       runBytes: async (cmd, args, runOptions) => {
         calls.push({ kind: "bytes", cmd, args, options: runOptions });
+        if (nonceRemoved) {
+          return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
+        }
+        if (finalizationInput) {
+          return {
+            code: 0,
+            stdout: Buffer.concat([Buffer.from([1]), Buffer.from(JSON.stringify(finalizeAckFor(finalizationInput)))]),
+            stderr: "",
+            timedOut: false,
+          };
+        }
         if (cancellationInput && !options.disableAutomaticCancelAck) {
           return {
             code: 0,
@@ -3122,6 +3149,8 @@ function finalizeAckFor(input) {
 
 test("maximum direct glide remains inside the terminal host window and exact cleanup", async () => {
   let nowNs = 0n;
+  let finalized = false;
+  let removed = false;
   const calls = [];
   const input = {
     ...locomotionInput,
@@ -3135,6 +3164,7 @@ test("maximum direct glide remains inside the terminal host window and exact cle
     requestControl: "execute",
     executionLeaseMs: 12_000,
   });
+  const finalAck = Buffer.from(JSON.stringify(finalizeAckFor(input)));
   const deps = {
     monotonicNs: () => nowNs,
     sleep: async (durationMs) => {
@@ -3142,11 +3172,16 @@ test("maximum direct glide remains inside the terminal host window and exact cle
       nowNs += BigInt(durationMs) * 1_000_000n;
     },
     runText: async (_cmd, args, options) => {
-      calls.push({ kind: args.includes("rm") ? "rm" : "broadcast", args, options, startedAt: nowNs });
-      return args.includes("rm") ? cleanupOk : textOk;
+      const kind = args.includes("rm") ? "rm" : args.includes("finalize") ? "finalize" : "broadcast";
+      calls.push({ kind, args, options, startedAt: nowNs });
+      if (kind === "finalize") finalized = true;
+      if (kind === "rm") removed = true;
+      return kind === "rm" ? cleanupOk : textOk;
     },
     runBytes: async (_cmd, args, options) => {
-      calls.push({ kind: "pull", args, options, startedAt: nowNs });
+      calls.push({ kind: removed ? "absence" : finalized ? "finalize-read" : "pull", args, options, startedAt: nowNs });
+      if (removed) return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
+      if (finalized) return { code: 0, stdout: Buffer.concat([Buffer.from([1]), finalAck]), stderr: "", timedOut: false };
       return nowNs < 10_000_000_000n
         ? { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false }
         : { code: 0, stdout: Buffer.concat([Buffer.from([1]), Buffer.from(JSON.stringify(ack))]), stderr: "", timedOut: false };
@@ -3163,12 +3198,16 @@ test("maximum direct glide remains inside the terminal host window and exact cle
   ]);
   assert.ok(execute.args.includes("executionLeaseMs"));
   assert.equal(calls.filter((call) => call.kind === "broadcast" && call.args.includes("cancel")).length, 0);
+  assert.equal(calls.filter((call) => call.kind === "finalize").length, 1);
   assert.equal(calls.filter((call) => call.kind === "rm").length, 1);
+  assert.equal(calls.filter((call) => call.kind === "absence").length, 1);
 });
 
 test("locomotion timeout obtains a guest cancel barrier before one exact nonce removal", async () => {
   let nowNs = 0n;
   let cancelled = false;
+  let finalized = false;
+  let removed = false;
   let cancelPulls = 0;
   let mutated = false;
   const calls = [];
@@ -3180,17 +3219,23 @@ test("locomotion timeout obtains a guest cancel barrier before one exact nonce r
     deadlineMonotonicNs: "16300000000",
   };
   const cancelAck = Buffer.from(JSON.stringify(cancelAckFor(input)));
+  const finalAck = Buffer.from(JSON.stringify(finalizeAckFor(input)));
   const deps = {
     monotonicNs: () => nowNs,
     sleep: async (durationMs) => { nowNs += BigInt(durationMs) * 1_000_000n; },
     runText: async (_cmd, args, options) => {
       const isRm = args.includes("rm");
       const isCancel = args.includes("requestControl") && args.includes("cancel");
-      calls.push({ kind: isRm ? "rm" : isCancel ? "cancel" : "execute", args, options });
+      const isFinalize = args.includes("requestControl") && args.includes("finalize");
+      calls.push({ kind: isRm ? "rm" : isCancel ? "cancel" : isFinalize ? "finalize" : "execute", args, options });
       if (isCancel) cancelled = true;
+      if (isFinalize) finalized = true;
+      if (isRm) removed = true;
       return isRm ? cleanupOk : textOk;
     },
     runBytes: async () => {
+      if (removed) return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
+      if (finalized) return { code: 0, stdout: Buffer.concat([Buffer.from([1]), finalAck]), stderr: "", timedOut: false };
       if (!cancelled || cancelPulls++ === 0)
         return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
       return { code: 0, stdout: Buffer.concat([Buffer.from([1]), cancelAck]), stderr: "", timedOut: false };
@@ -3206,6 +3251,7 @@ test("locomotion timeout obtains a guest cancel barrier before one exact nonce r
   assert.equal(mutated, false, "a timed-out producer must not retain authority to mutate later");
   assert.equal(calls.filter((call) => call.kind === "cancel").length, 1);
   assert.equal(cancelPulls, 3, "cancel polling must allow appearance followed by a stable pair");
+  assert.equal(calls.filter((call) => call.kind === "finalize").length, 1);
   assert.equal(calls.filter((call) => call.kind === "rm").length, 1);
 });
 
@@ -4191,6 +4237,54 @@ test("cancel polling ignores stable stale execute bytes until an exact cancel ba
   assert.equal(result.nonceCleanup.status, "route_owned");
 });
 
+test("default locomotion cleanup finalizes before one removal and rejects late cancel resurrection", async () => {
+  const executeAck = Buffer.from(JSON.stringify(locomotionAck()), "utf8");
+  const finalAck = Buffer.from(JSON.stringify(finalizeAckFor(locomotionInput)), "utf8");
+  const calls = [];
+  let guestState = "EXECUTE_TERMINAL";
+  let publishedBytes = executeAck;
+
+  const result = await requestAgentBridgeLocomotion(adb, locomotionInput, {
+    monotonicNs: (() => { let tick = 1n; return () => tick++; })(),
+    sleep: async () => {},
+    runText: async (_cmd, args, options) => {
+      const kind = args.includes("rm")
+        ? "rm"
+        : args.includes("requestControl") && args.includes("finalize")
+          ? "finalize"
+          : "execute";
+      calls.push({ kind, args, options });
+      if (kind === "finalize") {
+        assert.equal(guestState, "EXECUTE_TERMINAL");
+        guestState = "FINALIZED";
+        publishedBytes = finalAck;
+      } else if (kind === "rm") {
+        assert.equal(guestState, "FINALIZED", "the guest fence must precede the sole removal");
+        publishedBytes = null;
+      }
+      return kind === "rm" ? cleanupOk : textOk;
+    },
+    runBytes: async (_cmd, _args, options) => {
+      const kind = publishedBytes === null ? "absence" : guestState === "FINALIZED" ? "finalize-read" : "execute-read";
+      calls.push({ kind, options });
+      return publishedBytes === null
+        ? { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false }
+        : { code: 0, stdout: Buffer.concat([Buffer.from([1]), publishedBytes]), stderr: "", timedOut: false };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.nonceCleanup.status, "removed_and_absent");
+  assert.deepEqual(calls.map((call) => call.kind), [
+    "execute", "execute-read", "execute-read", "finalize", "finalize-read", "finalize-read", "rm", "absence",
+  ]);
+  const deliverLateCancel = () => {
+    if (guestState !== "FINALIZED") publishedBytes = Buffer.from("late-cancel");
+  };
+  deliverLateCancel();
+  assert.equal(publishedBytes, null, "the process-lifetime finalization fence must reject a later exact cancel writer");
+});
+
 test("unproven cancellation defers final nonce removal until an owned stop", async () => {
   const input = { ...locomotionInput, maxPolls: 2, pollMs: 10, deferNonceCleanup: true };
   const calls = [];
@@ -4207,6 +4301,27 @@ test("unproven cancellation defers final nonce removal until an owned stop", asy
   assert.equal(result.motionQuiesced, false);
   assert.equal(result.nonceCleanup.status, "deferred_until_stop");
   assert.equal(calls.filter((call) => call.args.includes("rm")).length, 0);
+});
+
+test("default locomotion cleanup never removes an unquiesced nonce ahead of a delayed cancel writer", async () => {
+  const input = { ...locomotionInput, maxPolls: 2, pollMs: 10 };
+  const calls = [];
+  const result = await requestAgentBridgeLocomotion(adb, input, {
+    monotonicNs: (() => { let tick = 1n; return () => tick++; })(),
+    sleep: async () => {},
+    runText: async (_cmd, args, options) => {
+      const kind = args.includes("rm") ? "rm" : args.includes("cancel") ? "cancel" : "execute";
+      calls.push({ kind, args, options });
+      return kind === "rm" ? cleanupOk : textOk;
+    },
+    runBytes: async () => ({ code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false }),
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.motionQuiesced, false);
+  assert.equal(result.nonceCleanup.status, "deferred_until_stop");
+  assert.equal(calls.filter((call) => call.kind === "rm").length, 0,
+    "only a proven guest fence or owned process stop may precede the sole removal");
 });
 
 test("a deferred locomote preflight failure remains route-owned and transport-free", async () => {
