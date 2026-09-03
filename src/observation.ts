@@ -733,9 +733,12 @@ export async function executeCaptureSettled(
   return { receipt, frame: published.bytes };
 }
 
-function defaultDependencies(adb: string): CaptureSettledDependencies {
+function defaultDependencies(
+  adb: string,
+  monotonicNs: () => bigint = () => process.hrtime.bigint(),
+): CaptureSettledDependencies {
   return {
-    monotonicNs: () => process.hrtime.bigint(),
+    monotonicNs,
     listOnlineSerials: () => defaultOnlineSerials(adb),
     probeIdentity: (serial) => defaultIdentity(adb, serial),
     capture: (serial, timeoutMs) => captureAdbFrame(adb, serial, timeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS),
@@ -749,6 +752,7 @@ export interface ExecuteLiveCaptureSettledOptions {
   adbPath?: string;
   attemptTimeoutMs?: number;
   dependencies?: CaptureSettledDependencies;
+  monotonicNs?: () => bigint;
 }
 
 /** Shared live entrypoint used by both the MCP handler and internal bounded route orchestrators. */
@@ -760,9 +764,14 @@ export async function executeLiveCaptureSettled(
   if (!Number.isSafeInteger(attemptTimeoutMs) || attemptTimeoutMs <= 0) {
     throw new Error("attemptTimeoutMs must be a positive safe integer");
   }
+  const baseDependencies = options.dependencies
+    ?? defaultDependencies(options.adbPath ?? resolveAdb(), options.monotonicNs);
+  const dependencies = options.monotonicNs === undefined
+    ? baseDependencies
+    : { ...baseDependencies, monotonicNs: options.monotonicNs };
   return executeCaptureSettled(
     { ...input, attemptTimeoutMs },
-    options.dependencies ?? defaultDependencies(options.adbPath ?? resolveAdb()),
+    dependencies,
   );
 }
 

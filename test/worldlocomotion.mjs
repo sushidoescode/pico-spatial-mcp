@@ -73,7 +73,7 @@ function prepareRouteInput(t, overrides = {}) {
     budgets: {
       maxDurationMs: 220_000,
       routeReserveMs: 60_000,
-      restorationReserveMs: 45_000,
+      restorationReserveMs: 50_000,
     },
     priorForeground: { kind: "none" },
     artifactRoot: externalArtifactRoot(t),
@@ -182,10 +182,17 @@ function exactContinuity(input, applicationBinding, bootId, observedAtMonotonicN
   };
 }
 
-function successCapture(input, shade = 48) {
+function successCapture(input, shade = 48, monotonicNs = undefined) {
+  assert.equal(typeof monotonicNs, "function", "capture fixtures must share the route monotonic clock");
   const bytes = makePng(shade);
   fs.writeFileSync(input.outPath, bytes, { flag: "wx", mode: 0o600 });
   const digest = sha256(bytes);
+  const captureStartedNs = monotonicNs();
+  const settleStartedNs = monotonicNs();
+  const firstCapturedNs = monotonicNs();
+  const secondCapturedNs = monotonicNs();
+  const captureEndedNs = monotonicNs();
+  const deadlineMonotonicNs = settleStartedNs + BigInt(input.deadlineMs) * 1_000_000n;
   const captureRef = {
     path: fs.realpathSync(input.outPath),
     sha256: digest,
@@ -209,10 +216,10 @@ function successCapture(input, shade = 48) {
       mode: input.mode ?? "stable",
       deadlineMs: input.deadlineMs,
       attemptTimeoutMs: input.attemptTimeoutMs,
-      deadlineMonotonicNs: "9000000000",
+      deadlineMonotonicNs: deadlineMonotonicNs.toString(),
       trace: [
-        { attempt: 1, capturedAtMonotonicNs: "8000000001", sha256: digest, relation: "candidate" },
-        { attempt: 2, capturedAtMonotonicNs: "8000000002", sha256: digest, relation: "stable" },
+        { attempt: 1, capturedAtMonotonicNs: firstCapturedNs.toString(), sha256: digest, relation: "candidate" },
+        { attempt: 2, capturedAtMonotonicNs: secondCapturedNs.toString(), sha256: digest, relation: "stable" },
       ],
       timeoutPhase: null,
       timeoutCause: null,
@@ -227,8 +234,8 @@ function successCapture(input, shade = 48) {
           observedAt: "2026-09-02T12:01:01.000Z",
         },
         captureSource: "adb-exec-out-screencap",
-        startedAtMonotonicNs: "8000000000",
-        endedAtMonotonicNs: "8000000003",
+        startedAtMonotonicNs: captureStartedNs.toString(),
+        endedAtMonotonicNs: captureEndedNs.toString(),
       },
       captureRef,
       lastValidCaptureRef: null,
@@ -239,6 +246,42 @@ function successCapture(input, shade = 48) {
     },
     frame: bytes,
   };
+}
+
+function shiftCaptureTimeline(result, deltaNs) {
+  const shift = (value) => (BigInt(value) + deltaNs).toString();
+  result.receipt.deadlineMonotonicNs = shift(result.receipt.deadlineMonotonicNs);
+  result.receipt.captureRuntimeBinding.startedAtMonotonicNs = shift(
+    result.receipt.captureRuntimeBinding.startedAtMonotonicNs,
+  );
+  result.receipt.captureRuntimeBinding.endedAtMonotonicNs = shift(
+    result.receipt.captureRuntimeBinding.endedAtMonotonicNs,
+  );
+  for (const entry of result.receipt.trace) {
+    entry.capturedAtMonotonicNs = shift(entry.capturedAtMonotonicNs);
+  }
+}
+
+function assertCaptureInvocation(action) {
+  const fence = action.captureInvocation;
+  assert.ok(fence, "the action must retain its exact capture invocation fence");
+  const phaseStartedNs = BigInt(fence.phaseStartedAtMonotonicNs);
+  const admittedNs = BigInt(fence.admittedAtMonotonicNs);
+  const completedNs = BigInt(fence.completedAtMonotonicNs);
+  const phaseDeadlineNs = BigInt(fence.phaseDeadlineMonotonicNs);
+  const bindingStartedNs = BigInt(action.captureReceipt.captureRuntimeBinding.startedAtMonotonicNs);
+  const bindingEndedNs = BigInt(action.captureReceipt.captureRuntimeBinding.endedAtMonotonicNs);
+  const settleDeadlineNs = BigInt(action.captureReceipt.deadlineMonotonicNs);
+  const settleStartedNs = settleDeadlineNs - BigInt(action.captureReceipt.deadlineMs) * 1_000_000n;
+  const traceNs = action.captureReceipt.trace.map((entry) => BigInt(entry.capturedAtMonotonicNs));
+  assert.ok(phaseStartedNs <= admittedNs);
+  assert.ok(admittedNs <= bindingStartedNs);
+  assert.ok(bindingStartedNs <= settleStartedNs);
+  assert.ok(settleStartedNs <= traceNs[0]);
+  assert.ok(traceNs.at(-1) <= bindingEndedNs);
+  assert.ok(bindingEndedNs <= completedNs);
+  assert.ok(completedNs <= phaseDeadlineNs);
+  assert.ok(settleDeadlineNs <= phaseDeadlineNs);
 }
 
 function routeOwnedNonceDisposition(input) {
@@ -337,6 +380,7 @@ async function createPreparedFixture(t, options = {}) {
   delete hmdPoseAck.availability;
 
   let monotonicTick = 1_000_000_000n;
+  let lastMonotonicNs = -1n;
   let captureShade = 48;
   let hmdIndex = 0;
   let safetyIndex = 0;
@@ -360,9 +404,9 @@ async function createPreparedFixture(t, options = {}) {
     },
     now: () => "2026-09-02T12:00:00.000Z",
     monotonicNs: () => {
-      if (options.monotonicNs) return options.monotonicNs();
-      monotonicTick += 1_000_000n;
-      return monotonicTick;
+      const observed = options.monotonicNs ? options.monotonicNs() : ++monotonicTick;
+      lastMonotonicNs = observed > lastMonotonicNs ? observed : lastMonotonicNs + 1n;
+      return lastMonotonicNs;
     },
     readNativeRunReceipt: (app, receiptId) => {
       calls.push({ kind: "readReceipt", app, receiptId });
@@ -480,12 +524,17 @@ async function createPreparedFixture(t, options = {}) {
         actionReceipts: [],
         evidenceCeiling: "structural",
       };
-      if (bridgeInput.tag !== "prepare-post-capture" || !result.ok || !options.postCaptureRoot) return result;
+      const changedRoot = bridgeInput.tag === "prepare-post-capture"
+        ? options.postCaptureRoot
+        : bridgeInput.tag === "restore-post-capture"
+          ? options.restorePostCaptureRoot
+          : undefined;
+      if (!result.ok || !changedRoot) return result;
       return {
         ...result,
         ack: {
           ...result.ack,
-          root: { ...result.ack.root, ...options.postCaptureRoot },
+          root: { ...result.ack.root, ...changedRoot },
         },
       };
     },
@@ -606,8 +655,8 @@ async function createPreparedFixture(t, options = {}) {
     },
     captureSettled: async (captureInput) => {
       calls.push({ kind: "capture", input: captureInput });
-      if (options.captureResult) return options.captureResult(captureInput);
-      const result = successCapture(captureInput, captureShade);
+      if (options.captureResult) return options.captureResult(captureInput, dependencies.monotonicNs);
+      const result = successCapture(captureInput, captureShade, dependencies.monotonicNs);
       captureShade += 1;
       return result;
     },
@@ -619,6 +668,7 @@ async function createPreparedFixture(t, options = {}) {
       calls.push({ kind: "continuity", context });
       const exact = exactContinuity(input, applicationBinding, bootId);
       if (context.phase === "prepare_post_capture") return { ...exact, ...(options.preparePostCaptureContinuity ?? {}) };
+      if (context.phase === "restore_post_capture") return { ...exact, ...(options.restorePostCaptureContinuity ?? {}) };
       if (options.continuitySequence) return { ...exact, ...options.continuitySequence[Math.min(continuityIndex++, options.continuitySequence.length - 1)] };
       return exact;
     },
@@ -768,6 +818,7 @@ test("prepare binds the receipt/runtime in order, proves 60-second health, and r
   assert.deepEqual(prepareAction.hmdBaseline.position, fixture.pose.position);
   assert.ok(prepareAction.freshLaunchMonitor.samples.at(-1).elapsedMs >= 60_000);
   assert.equal(prepareAction.captureReceipt.status, "settled");
+  assertCaptureInvocation(prepareAction);
   assert.equal(prepareAction.postCaptureContinuity.pid, fixture.applicationBinding.pid);
   assert.deepEqual(prepareAction.postCaptureCapability.ack.root, fixture.capabilityAck.root);
   assert.equal(prepareAction.preparationLogEvidence.beginCount, 1);
@@ -792,7 +843,20 @@ test("prepare rejects any capture receipt that is not exact evidence for the req
     ["runtime boot-qemu", (result) => { result.receipt.captureRuntimeBinding.liveIdentity.bootQemu = "0"; }],
     ["runtime boot ID", (result) => { result.receipt.captureRuntimeBinding.liveIdentity.bootId = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"; }],
     ["runtime capture source", (result) => { result.receipt.captureRuntimeBinding.captureSource = "forged-source"; }],
-    ["runtime interval", (result) => { result.receipt.captureRuntimeBinding.endedAtMonotonicNs = "7999999999"; }],
+    ["replayed same-boot runtime interval", (result) => { shiftCaptureTimeline(result, -100_000_000n); }],
+    ["future same-boot runtime interval", (result) => { shiftCaptureTimeline(result, 100_000_000n); }],
+    ["settle start before runtime binding", (result) => {
+      result.receipt.deadlineMonotonicNs = (
+        BigInt(result.receipt.captureRuntimeBinding.startedAtMonotonicNs)
+        + BigInt(result.receipt.deadlineMs) * 1_000_000n
+        - 1n
+      ).toString();
+    }],
+    ["runtime interval", (result) => {
+      result.receipt.captureRuntimeBinding.endedAtMonotonicNs = (
+        BigInt(result.receipt.captureRuntimeBinding.startedAtMonotonicNs) - 1n
+      ).toString();
+    }],
     ["trace length", (result) => { result.receipt.attempts = 3; }],
     ["attempts exceed request maximum", (result) => {
       const digest = result.receipt.sha256;
@@ -817,7 +881,9 @@ test("prepare rejects any capture receipt that is not exact evidence for the req
         { attempt: 3, capturedAtMonotonicNs: "8000000003", sha256: digest, relation: "stable" },
       ];
     }],
-    ["trace outside runtime binding", (result) => { result.receipt.captureRuntimeBinding.endedAtMonotonicNs = "8000000001"; }],
+    ["trace outside runtime binding", (result) => {
+      result.receipt.captureRuntimeBinding.endedAtMonotonicNs = result.receipt.trace[0].capturedAtMonotonicNs;
+    }],
     ["trace final relation", (result) => { result.receipt.trace[1].relation = "candidate"; }],
     ["settle deadline duration", (result) => { result.receipt.deadlineMs += 1; }],
     ["attempt timeout duration", (result) => { result.receipt.attemptTimeoutMs += 1; }],
@@ -829,8 +895,8 @@ test("prepare rejects any capture receipt that is not exact evidence for the req
   for (const [label, corrupt] of corruptions) {
     await t.test(label, async (t) => {
       const fixture = await createPreparedFixture(t, {
-        captureResult(captureInput) {
-          const result = successCapture(captureInput);
+        captureResult(captureInput, monotonicNs) {
+          const result = successCapture(captureInput, 48, monotonicNs);
           corrupt(result);
           return result;
         },
@@ -1038,6 +1104,7 @@ test("step follows the exact BEGIN-to-END evidence order and consumes one select
     fixture.calls.find((call) => call.kind === "nonceCleanup").context,
   ));
   assert.equal(stepAction.captureReceipt.mode, "transition_then_stable");
+  assertCaptureInvocation(stepAction);
   assert.deepEqual(stepAction.post.hmdPose.position, fixture.pose.position);
   assert.equal(stepAction.post.safety.safeguard, "1");
   assert.equal(stepAction.post.continuity.foreground, "exact_allowed");
@@ -1045,7 +1112,7 @@ test("step follows the exact BEGIN-to-END evidence order and consumes one select
 
 test("step rejects a settled pair whose final SHA never transitioned from the exact prior frame", async (t) => {
   const fixture = await prepareForSteps(t, {
-    captureResult: (captureInput) => successCapture(captureInput, 48),
+    captureResult: (captureInput, monotonicNs) => successCapture(captureInput, 48, monotonicNs),
   });
 
   const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
@@ -1239,9 +1306,12 @@ test("cleanup-only completed step adopts direct/replacement readback, captures e
       };
       fixture.dependencies.probeCapability = async (input) => {
         fixture.calls.push({ kind: "capability", input });
+        const generation = input.tag === "restore-post-capture" && mechanism === "replacement"
+          ? expectedGeneration + 1
+          : expectedGeneration;
         return {
           ok: true,
-          ack: { ...fixture.capabilityAck, requestId: input.requestId, root: { ...fixture.capabilityAck.root, generation: expectedGeneration } },
+          ack: { ...fixture.capabilityAck, requestId: input.requestId, root: { ...fixture.capabilityAck.root, generation } },
           primaryError: null,
           cleanupError: null,
           actionReceipts: [],
@@ -1274,6 +1344,7 @@ test("cleanup-only completed restore keeps primary null while adopting replaceme
       },
     },
     locomotionResult: (input) => completedMovementResult(input, { cleanupOnly: true }),
+    restorePostCaptureRoot: { generation: 8 },
   });
   const restored = await fixture.orchestrator.execute({
     action: "restore",
@@ -1306,8 +1377,8 @@ test("step failures stop structurally, retain usage, and never try another mecha
         primaryError: null, cleanupError: null, motionQuiesced: true, actionReceipts: [], evidenceCeiling: "structural",
       }),
     }],
-    ["transition timeout", { captureResult: (input) => input.mode === "stable" ? successCapture(input, 48) : failedCapture(input, "transition_timeout") }],
-    ["stability timeout", { captureResult: (input) => input.mode === "stable" ? successCapture(input, 48) : failedCapture(input, "stability_timeout") }],
+    ["transition timeout", { captureResult: (input, monotonicNs) => input.mode === "stable" ? successCapture(input, 48, monotonicNs) : failedCapture(input, "transition_timeout") }],
+    ["stability timeout", { captureResult: (input, monotonicNs) => input.mode === "stable" ? successCapture(input, 48, monotonicNs) : failedCapture(input, "stability_timeout") }],
   ];
   for (const [label, options] of cases) {
     await t.test(label, async (t) => {
@@ -1457,7 +1528,8 @@ test("restore is available from prepared, stepped, and stopped and selects captu
       assert.equal(restored.requiredReview.length, 1);
       assert.equal(restored.requiredReview[0].role, "recovery");
       assert.deepEqual(fixture.calls.map((call) => call.kind), [
-        "readReview", "readReceipt", "readSpec", "continuity", "capability", "locomote", "nonceCleanup", "capture", "readReview", "stop", "finalProcess", "safety",
+        "readReview", "readReceipt", "readSpec", "continuity", "capability", "locomote", "nonceCleanup", "capture", "readReview",
+        "continuity", "capability", "stop", "finalProcess", "safety",
       ]);
       const move = fixture.calls.find((call) => call.kind === "locomote").input;
       assert.equal(move.mode, fixture.input.mechanism);
@@ -1488,7 +1560,56 @@ test("restore is available from prepared, stepped, and stopped and selects captu
         fixture.calls.find((call) => call.kind === "nonceCleanup").context,
       ));
       assert.equal(restoreAction.captureReceipt.mode, reviewedMovedFrame ? "transition_then_stable" : "stable");
+      assertCaptureInvocation(restoreAction);
+      assert.equal(restoreAction.postCaptureContinuity.pid, fixture.applicationBinding.pid);
+      assert.deepEqual(restoreAction.postCaptureCapability.ack.root, {
+        id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID,
+        generation: restored.rootGeneration,
+        incarnation: restored.rootIncarnation,
+      });
       assert.equal(restoreAction.postStopSafety.guardian, "1");
+    });
+  }
+});
+
+test("restore rechecks exact application and root continuity after recovery capture before adopting or stopping", async (t) => {
+  const cases = [
+    ["target exited", { restorePostCaptureContinuity: { foreground: "missing", resumedComponents: [] } }],
+    ["target restarted", { restorePostCaptureContinuity: { pid: 6161, pidStartTicks: "987654321" } }],
+    ["root re-registered in the same process", {
+      restorePostCaptureRoot: { generation: 8, incarnation: REPLACEMENT_INCARNATION },
+    }],
+  ];
+  for (const [label, options] of cases) {
+    await t.test(label, async (t) => {
+      const fixture = await prepareForSteps(t, options);
+      fixture.calls.length = 0;
+
+      const restored = await fixture.orchestrator.execute({
+        action: "restore",
+        runId: fixture.prepared.runId,
+        reviewedPriorFrame: reviewFor(fixture.baselineReview),
+      });
+
+      assert.equal(restored.status, "restore_failed");
+      assert.match(restored.primaryError, /binding|continuity|root|generation|incarnation/i);
+      assert.equal(restored.requiredReview[0].captureSha256, fixture.baselineReview.captureSha256,
+        "an unbound recovery frame must not replace the reviewed prior frame");
+      const captureIndex = fixture.calls.findIndex((call) => call.kind === "capture");
+      const reviewIndex = fixture.calls.findIndex((call) => call.kind === "readReview" && call.item.role === "recovery");
+      const continuityIndex = fixture.calls.findIndex((call) => call.kind === "continuity" && call.context.phase === "restore_post_capture");
+      const postCapabilityIndex = fixture.calls.findIndex((call) => call.kind === "capability" && call.input.tag === "restore-post-capture");
+      const stopIndex = fixture.calls.findIndex((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target");
+      assert.ok(captureIndex >= 0 && reviewIndex > captureIndex && continuityIndex > reviewIndex && stopIndex > continuityIndex);
+      if (label.includes("root")) assert.ok(postCapabilityIndex > continuityIndex && stopIndex > postCapabilityIndex);
+      const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+        .trim().split("\n").map(JSON.parse).at(-1);
+      assert.equal(action.status, "failed");
+      assertCaptureInvocation(action);
+      assert.equal(action.postCaptureContinuity.pid,
+        options.restorePostCaptureContinuity?.pid ?? fixture.applicationBinding.pid);
+      if (label.includes("root")) assert.equal(action.postCaptureCapability.ack.root.generation, 8);
+      assert.equal(action.captureSha256, null);
     });
   }
 });
@@ -1979,7 +2100,7 @@ test("route schema shares the exact rev-1 locomotion cancellation and finalizati
   });
   const exactRouteFloor = valid.capture.deadlineMs + valid.route.glideDurationMs + 3 * minimumBridgeEnvelopeMs;
   const exactRestorationFloor = valid.capture.deadlineMs + valid.route.glideDurationMs
-    + 2 * minimumBridgeEnvelopeMs + 5_000;
+    + 3 * minimumBridgeEnvelopeMs + 5_000;
 
   assert.equal(inAppLocomotionInputSchema.safeParse({
     ...valid,
@@ -2002,7 +2123,7 @@ test("route schema shares the exact rev-1 locomotion cancellation and finalizati
 test("a maximum direct glide still completes all post-step evidence and the reviewed restore path", async (t) => {
   const fixture = await prepareForSteps(t, {
     inputOverrides: {
-      budgets: { maxDurationMs: 220_000, routeReserveMs: 60_000, restorationReserveMs: 46_301 },
+      budgets: { maxDurationMs: 230_000, routeReserveMs: 60_000, restorationReserveMs: 57_951 },
       route: {
         waypoints: [
           { seq: 1, target: { absolute: true, x: 1, y: 0, z: -2 } },
@@ -2366,19 +2487,19 @@ test("prepare uses one fixed phase deadline, clamps baseline capture, and stops 
   let nowNs = 0n;
   const clamped = await createPreparedFixture(t, {
     monotonicNs: () => nowNs,
-    afterMonitor: () => { nowNs = 99_349_000_000n; },
+    afterMonitor: () => { nowNs = 94_349_000_000n; },
   });
   const prepared = await createInAppLocomotionOrchestrator(clamped.dependencies).execute(clamped.input);
   assert.equal(prepared.status, "needs_baseline_review");
   const clampedCapture = clamped.calls.find((call) => call.kind === "capture").input;
-  assert.equal(clampedCapture.deadlineMs, 4_000);
+  assert.equal(clampedCapture.deadlineMs, 3_999);
   assert.equal(clampedCapture.attemptTimeoutMs, 1_000);
 
   nowNs = 0n;
   const overrun = await createPreparedFixture(t, {
     inputOverrides: { artifactRoot: externalArtifactRoot(t, "prepare-overrun") },
     monotonicNs: () => nowNs,
-    afterMonitor: () => { nowNs = 116_000_000_000n; },
+    afterMonitor: () => { nowNs = 111_000_000_000n; },
   });
   const failed = await createInAppLocomotionOrchestrator(overrun.dependencies).execute(overrun.input);
   assert.equal(failed.status, "preparation_failed");
@@ -2825,6 +2946,31 @@ test("fixed phase deadline rejects an operation that completes exactly one nanos
   assert.match(result.primaryError, /prior foreground snapshot exceeded its fixed phase deadline/i);
   assert.equal(fixture.calls.some((call) => call.kind === "marker"), false,
     "no later strict effect may be admitted after the one-nanosecond overrun");
+});
+
+test("capture completion one nanosecond past its route phase retains the returned receipt and fence but cannot publish it", async (t) => {
+  let nowNs = 0n;
+  const fixture = await createPreparedFixture(t, { monotonicNs: () => nowNs });
+  const originalCapture = fixture.dependencies.captureSettled;
+  fixture.dependencies.captureSettled = async (input) => {
+    const captured = await originalCapture(input);
+    const phaseDeadline = fixture.calls.find((call) => call.kind === "monitor").context.deadlineMonotonicNs;
+    nowNs = BigInt(phaseDeadline) + 1n;
+    return captured;
+  };
+
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+  assert.equal(result.status, "preparation_failed");
+  assert.match(result.primaryError, /baseline settled capture exceeded its fixed phase deadline/i);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.equal(action.captureReceipt.status, "settled");
+  assert.equal(
+    BigInt(action.captureInvocation.completedAtMonotonicNs),
+    BigInt(action.captureInvocation.phaseDeadlineMonotonicNs) + 1n,
+  );
+  assert.deepEqual(result.requiredReview, []);
 });
 
 test("action ledger staging failures are atomic and cannot strand movement cleanup", async (t) => {

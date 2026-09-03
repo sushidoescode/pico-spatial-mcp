@@ -241,11 +241,11 @@ const prepareSchema = z.object({
     });
   }
   if (value.budgets.restorationReserveMs <= value.capture.deadlineMs + value.route.glideDurationMs
-    + 2 * BRIDGE_MIN_TRANSACTION_MS + FINAL_RECOVERY_RESERVE_MS) {
+    + 3 * BRIDGE_MIN_TRANSACTION_MS + FINAL_RECOVERY_RESERVE_MS) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["budgets", "restorationReserveMs"],
-      message: "restoration reserve cannot fit capability, admitted glide, locomotion, settled capture, and final recovery proof",
+      message: "restoration reserve cannot fit pre/post-capture capability, admitted glide, locomotion, settled capture, and final recovery proof",
     });
   }
 });
@@ -1602,6 +1602,7 @@ function checkedLaunchHandoffObservation(
 
 interface CaptureReviewExpectation {
   captureInput: CaptureSettledInput;
+  captureInvocation: CaptureInvocationFence;
   phaseDeadlineNs: bigint;
   role: LocomotionReviewItem["role"];
   runtime: LocomotionRuntimeBinding;
@@ -1714,11 +1715,32 @@ function captureReview(
   }
   const captureStartedNs = BigInt(binding!.startedAtMonotonicNs);
   const captureEndedNs = BigInt(binding!.endedAtMonotonicNs);
+  const invocation = expectation.captureInvocation;
+  if (!/^(?:0|[1-9][0-9]*)$/.test(invocation.phaseStartedAtMonotonicNs)
+    || !/^(?:0|[1-9][0-9]*)$/.test(invocation.admittedAtMonotonicNs)
+    || !/^(?:0|[1-9][0-9]*)$/.test(invocation.completedAtMonotonicNs)
+    || !/^(?:0|[1-9][0-9]*)$/.test(invocation.phaseDeadlineMonotonicNs)) {
+    fail("route capture invocation fence is not an exact monotonic interval");
+  }
+  const phaseStartedNs = BigInt(invocation.phaseStartedAtMonotonicNs);
+  const admittedAtNs = BigInt(invocation.admittedAtMonotonicNs);
+  const completedAtNs = BigInt(invocation.completedAtMonotonicNs);
+  const invocationDeadlineNs = BigInt(invocation.phaseDeadlineMonotonicNs);
+  const requestedDurationNs = BigInt(captureInput.deadlineMs!) * 1_000_000n;
+  if (receiptDeadlineNs < requestedDurationNs) fail("settlement deadline cannot encode its exact requested duration");
+  const settleStartedNs = receiptDeadlineNs - requestedDurationNs;
+  if (invocationDeadlineNs !== expectation.phaseDeadlineNs
+    || phaseStartedNs > admittedAtNs || admittedAtNs >= invocationDeadlineNs
+    || completedAtNs < admittedAtNs || completedAtNs > invocationDeadlineNs
+    || captureStartedNs < admittedAtNs || captureEndedNs > completedAtNs
+    || settleStartedNs < captureStartedNs) {
+    fail("capture runtime and settlement are outside the exact route invocation/phase fence");
+  }
   if (receipt.trace.some((entry) => {
     const observedNs = BigInt(entry.capturedAtMonotonicNs);
-    return observedNs < captureStartedNs || observedNs > captureEndedNs;
+    return observedNs < captureStartedNs || observedNs < settleStartedNs || observedNs > captureEndedNs;
   })) {
-    fail("settlement trace falls outside the exact capture runtime interval");
+    fail("settlement trace falls outside the exact capture runtime/settle interval");
   }
   const frame = captured.frame;
   if (!Buffer.isBuffer(frame)) fail("settled receipt omitted its returned frame bytes");
@@ -2001,6 +2023,74 @@ async function withinDeadline<T>(
   return value;
 }
 
+interface CaptureInvocationFence {
+  phaseStartedAtMonotonicNs: string;
+  admittedAtMonotonicNs: string;
+  completedAtMonotonicNs: string;
+  phaseDeadlineMonotonicNs: string;
+}
+
+interface CaptureInvocationState {
+  captureInput: CaptureSettledInput | null;
+  fence: CaptureInvocationFence | null;
+  receipt: CaptureSettledReceipt | null;
+}
+
+async function captureWithinDeadline(
+  phaseStartedNs: bigint,
+  phaseDeadlineNs: bigint,
+  dependencies: InAppLocomotionDependencies,
+  label: string,
+  state: CaptureInvocationState,
+  buildInput: (remainingMs: number) => CaptureSettledInput,
+): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }> {
+  const admittedAtNs = checkedMonotonic(dependencies);
+  if (admittedAtNs < phaseStartedNs) {
+    throw new LocomotionStageError("clock_failed", `${label} route clock regressed before capture admission`);
+  }
+  if (admittedAtNs >= phaseDeadlineNs) {
+    throw new LocomotionStageError("budget_exhausted", `${label} cannot begin at or after its fixed phase deadline`);
+  }
+  const remainingMs = Number((phaseDeadlineNs - admittedAtNs) / 1_000_000n);
+  if (remainingMs < 1) {
+    throw new LocomotionStageError("budget_exhausted", `${label} cannot begin at or after its fixed phase deadline`);
+  }
+  state.captureInput = buildInput(remainingMs);
+  let captured: { receipt: CaptureSettledReceipt; frame: Buffer | null };
+  try {
+    captured = await dependencies.captureSettled(state.captureInput);
+  } catch (error) {
+    try {
+      const completedAtNs = checkedMonotonic(dependencies);
+      state.fence = {
+        phaseStartedAtMonotonicNs: phaseStartedNs.toString(),
+        admittedAtMonotonicNs: admittedAtNs.toString(),
+        completedAtMonotonicNs: completedAtNs.toString(),
+        phaseDeadlineMonotonicNs: phaseDeadlineNs.toString(),
+      };
+    } catch {
+      // The capture dependency's primary failure remains authoritative when the
+      // completion-clock probe also fails.
+    }
+    throw error;
+  }
+  state.receipt = captured.receipt;
+  const completedAtNs = checkedMonotonic(dependencies);
+  state.fence = {
+    phaseStartedAtMonotonicNs: phaseStartedNs.toString(),
+    admittedAtMonotonicNs: admittedAtNs.toString(),
+    completedAtMonotonicNs: completedAtNs.toString(),
+    phaseDeadlineMonotonicNs: phaseDeadlineNs.toString(),
+  };
+  if (completedAtNs < admittedAtNs) {
+    throw new LocomotionStageError("clock_failed", `${label} route clock regressed across capture completion`);
+  }
+  if (completedAtNs > phaseDeadlineNs) {
+    throw new LocomotionStageError("budget_exhausted", `${label} exceeded its fixed phase deadline`);
+  }
+  return captured;
+}
+
 function bridgeBudgetFields(remainingMs: number, deadlineNs: bigint): Pick<
   AgentBridgeLocomotionTransactionInput,
   "maxPolls" | "pollMs" | "stabilityReads" | "controlTimeoutMs" | "ackReadTimeoutMs" | "deadlineMonotonicNs"
@@ -2132,6 +2222,7 @@ export function createInAppLocomotionOrchestrator(
     let monitorHandoff: FreshLaunchMonitorHandoff | null = null;
     let healthBoundaryMarker: string | null = null;
     let baselineCaptureReceipt: CaptureSettledReceipt | null = null;
+    const baselineCaptureInvocation: CaptureInvocationState = { captureInput: null, fence: null, receipt: null };
     let postCaptureContinuity: ApplicationContinuitySample | null = null;
     let postCaptureCapability: CapabilityResult | null = null;
 
@@ -2407,27 +2498,34 @@ export function createInAppLocomotionOrchestrator(
         }
       }
       const baselinePath = path.join(artifact.absoluteRoot, "captures", "000-app-baseline.png");
-      const baselineCaptureRequest: { value?: CaptureSettledInput } = {};
-      const captured = await withinDeadline(prepareDeadlineNs, dependencies, "baseline settled capture", (remainingMs) => {
-        const captureBudgetMs = remainingMs - BRIDGE_MIN_TRANSACTION_MS - 1;
-        if (captureBudgetMs < 1) throw new LocomotionStageError("budget_exhausted", "baseline capture cannot fit strictly before the prepare deadline");
-        baselineCaptureRequest.value = {
-          serial: input.serial,
-          outPath: baselinePath,
-          maxTries: input.capture.maxTries,
-          intervalMs: input.capture.intervalMs,
-          attemptTimeoutMs: Math.min(input.capture.attemptTimeoutMs, captureBudgetMs),
-          deadlineMs: Math.min(input.capture.deadlineMs, captureBudgetMs),
-          comparison: "byte_exact",
-          mode: "stable",
-        };
-        return dependencies.captureSettled(baselineCaptureRequest.value);
-      });
-      const baselineCaptureInput = baselineCaptureRequest.value;
-      if (!baselineCaptureInput) throw new Error("baseline capture request was not retained");
+      const captured = await captureWithinDeadline(
+        reserved.startedAtNs,
+        prepareDeadlineNs,
+        dependencies,
+        "baseline settled capture",
+        baselineCaptureInvocation,
+        (remainingMs) => {
+          const captureBudgetMs = remainingMs - BRIDGE_MIN_TRANSACTION_MS - 1;
+          if (captureBudgetMs < 1) throw new LocomotionStageError("budget_exhausted", "baseline capture cannot fit strictly before the prepare deadline");
+          return {
+            serial: input.serial,
+            outPath: baselinePath,
+            maxTries: input.capture.maxTries,
+            intervalMs: input.capture.intervalMs,
+            attemptTimeoutMs: Math.min(input.capture.attemptTimeoutMs, captureBudgetMs),
+            deadlineMs: Math.min(input.capture.deadlineMs, captureBudgetMs),
+            comparison: "byte_exact",
+            mode: "stable",
+          };
+        },
+      );
+      const baselineCaptureInput = baselineCaptureInvocation.captureInput;
+      const baselineCaptureFence = baselineCaptureInvocation.fence;
+      if (!baselineCaptureInput || !baselineCaptureFence) throw new Error("baseline capture request/invocation was not retained");
       baselineCaptureReceipt = captured.receipt;
       const review = captureReview(captured, {
         captureInput: baselineCaptureInput,
+        captureInvocation: baselineCaptureFence,
         phaseDeadlineNs: prepareDeadlineNs,
         role: "app_baseline",
         runtime,
@@ -2520,6 +2618,7 @@ export function createInAppLocomotionOrchestrator(
         launchHandoffObservation,
         preparationLogEvidence: preparationLog,
         captureReceipt: baselineCaptureReceipt,
+        captureInvocation: baselineCaptureInvocation.fence,
         postCaptureContinuity,
         postCaptureCapability,
         observedPriorForeground: prior,
@@ -2684,7 +2783,8 @@ export function createInAppLocomotionOrchestrator(
             freshLaunchMonitor,
             launchHandoffWindow,
             launchHandoffObservation,
-            captureReceipt: baselineCaptureReceipt,
+            captureReceipt: baselineCaptureReceipt ?? baselineCaptureInvocation.receipt,
+            captureInvocation: baselineCaptureInvocation.fence,
             postCaptureContinuity,
             postCaptureCapability,
           }, hooks);
@@ -2763,6 +2863,7 @@ export function createInAppLocomotionOrchestrator(
     let pendingNonceRequestId: string | null = null;
     let emergencyStop: { attempted: boolean; proven: boolean; error: string | null } | null = null;
     let captureReceipt: CaptureSettledReceipt | null = null;
+    const captureInvocation: CaptureInvocationState = { captureInput: null, fence: null, receipt: null };
     let capturedFrame: Buffer | null = null;
     let postHmd: AgentBridgeHmdPose | null = null;
     let postSafety: LocomotionSafetySnapshot | null = null;
@@ -2901,25 +3002,31 @@ export function createInAppLocomotionOrchestrator(
       const captureRemainingMs = remainingUntilMs(stepDeadlineNs, dependencies);
       if (captureRemainingMs < 2) throw new LocomotionStageError("budget_exhausted", "route budget was exhausted before transition capture");
       const capturePath = path.join(state.artifact.absoluteRoot, "captures", `${String(waypoint.seq).padStart(3, "0")}-waypoint.png`);
-      const waypointCaptureRequest: { value?: CaptureSettledInput } = {};
-      const captured = await withinDeadline(stepDeadlineNs, dependencies, "waypoint transition-stable capture", (remainingMs) => {
-        const captureBudgetMs = remainingMs - 1;
-        if (captureBudgetMs < 1) throw new LocomotionStageError("budget_exhausted", "transition capture cannot fit strictly before the route deadline");
-        waypointCaptureRequest.value = {
-          serial: state.input.serial,
-          outPath: capturePath,
-          maxTries: state.input.capture.maxTries,
-          intervalMs: state.input.capture.intervalMs,
-          attemptTimeoutMs: Math.min(state.input.capture.attemptTimeoutMs, captureBudgetMs),
-          deadlineMs: Math.min(state.input.capture.deadlineMs, captureBudgetMs),
-          comparison: "byte_exact",
-          mode: "transition_then_stable",
-          priorSha256: state.currentReview.captureSha256,
-        };
-        return dependencies.captureSettled(waypointCaptureRequest.value);
-      });
-      const waypointCaptureInput = waypointCaptureRequest.value;
-      if (!waypointCaptureInput) throw new Error("waypoint capture request was not retained");
+      const captured = await captureWithinDeadline(
+        operationStarted,
+        stepDeadlineNs,
+        dependencies,
+        "waypoint transition-stable capture",
+        captureInvocation,
+        (remainingMs) => {
+          const captureBudgetMs = remainingMs - 1;
+          if (captureBudgetMs < 1) throw new LocomotionStageError("budget_exhausted", "transition capture cannot fit strictly before the route deadline");
+          return {
+            serial: state.input.serial,
+            outPath: capturePath,
+            maxTries: state.input.capture.maxTries,
+            intervalMs: state.input.capture.intervalMs,
+            attemptTimeoutMs: Math.min(state.input.capture.attemptTimeoutMs, captureBudgetMs),
+            deadlineMs: Math.min(state.input.capture.deadlineMs, captureBudgetMs),
+            comparison: "byte_exact",
+            mode: "transition_then_stable",
+            priorSha256: state.currentReview.captureSha256,
+          };
+        },
+      );
+      const waypointCaptureInput = captureInvocation.captureInput;
+      const waypointCaptureFence = captureInvocation.fence;
+      if (!waypointCaptureInput || !waypointCaptureFence) throw new Error("waypoint capture request/invocation was not retained");
       captureReceipt = captured.receipt;
       capturedFrame = captured.frame;
       if (captured.receipt.status !== "settled") {
@@ -2927,6 +3034,7 @@ export function createInAppLocomotionOrchestrator(
       }
       capturedReview = captureReview(captured, {
         captureInput: waypointCaptureInput,
+        captureInvocation: waypointCaptureFence,
         phaseDeadlineNs: stepDeadlineNs,
         role: "waypoint",
         runtime: state.runtime,
@@ -3142,7 +3250,8 @@ export function createInAppLocomotionOrchestrator(
         locomotion,
         locomotionNonceCleanup,
         emergencyStop,
-        captureReceipt,
+        captureReceipt: captureReceipt ?? captureInvocation.receipt,
+        captureInvocation: captureInvocation.fence,
         post: { hmdPose: postHmd, safety: postSafety, continuity: postContinuity },
         hmdDrift: drift,
         logEvidence,
@@ -3209,9 +3318,12 @@ export function createInAppLocomotionOrchestrator(
     let locomotion: LocomotionResult | null = null;
     let restorationMayHaveApplied = false;
     let captureReceipt: CaptureSettledReceipt | null = null;
+    const captureInvocation: CaptureInvocationState = { captureInput: null, fence: null, receipt: null };
     let postStopSafety: LocomotionSafetySnapshot | null = null;
     let preRestoreContinuity: ApplicationContinuitySample | null = null;
     let preRestoreCapability: CapabilityResult | null = null;
+    let postCaptureContinuity: ApplicationContinuitySample | null = null;
+    let postCaptureCapability: CapabilityResult | null = null;
     let finalProcessProof: FinalProcessActivityReceipt | null = null;
     let finalProcessProven = false;
     let finalSafetyProven = false;
@@ -3284,8 +3396,11 @@ export function createInAppLocomotionOrchestrator(
         throw new LocomotionStageError("binding_lost", "pre-restore root capability lost the exact generation/incarnation producer identity");
       }
       const remainingMs = remainingUntilMs(mutationDeadlineNs, dependencies);
-      if (remainingMs <= state.input.capture.deadlineMs) {
-        throw new LocomotionStageError("budget_exhausted", "restoration deadline cannot fit the required settled capture");
+      if (remainingMs <= state.input.capture.deadlineMs + BRIDGE_MIN_TRANSACTION_MS) {
+        throw new LocomotionStageError(
+          "budget_exhausted",
+          "restoration deadline cannot fit the required settled capture and post-capture capability recheck",
+        );
       }
       const rootBefore = state.rootGeneration;
       const restoreRequestId = `restore_move_${state.artifact.runId.slice(0, 20)}`;
@@ -3370,38 +3485,91 @@ export function createInAppLocomotionOrchestrator(
       }
       state.rootGeneration = expectedGeneration;
       const captureRemainingMs = remainingUntilMs(mutationDeadlineNs, dependencies);
-      if (captureRemainingMs < 2) throw new LocomotionStageError("budget_exhausted", "restoration deadline expired before capture");
+      if (captureRemainingMs < BRIDGE_MIN_TRANSACTION_MS + 2) {
+        throw new LocomotionStageError("budget_exhausted", "restoration deadline expired before capture and post-capture binding checks");
+      }
       const capturePath = path.join(state.artifact.absoluteRoot, "captures", "999-restored.png");
-      const restoreCaptureRequest: { value?: CaptureSettledInput } = {};
-      const captured = await withinDeadline(mutationDeadlineNs, dependencies, "restoration settled capture", (remainingCaptureMs) => {
-        const captureBudgetMs = remainingCaptureMs - 1;
-        if (captureBudgetMs < 1) throw new LocomotionStageError("budget_exhausted", "restoration capture cannot fit strictly before its mutation deadline");
-        restoreCaptureRequest.value = {
-          serial: state.input.serial,
-          outPath: capturePath,
-          maxTries: state.input.capture.maxTries,
-          intervalMs: state.input.capture.intervalMs,
-          attemptTimeoutMs: Math.min(state.input.capture.attemptTimeoutMs, captureBudgetMs),
-          deadlineMs: Math.min(state.input.capture.deadlineMs, captureBudgetMs),
-          comparison: "byte_exact",
-          mode: reviewedMovedFrame ? "transition_then_stable" : "stable",
-          ...(reviewedMovedFrame ? { priorSha256: state.currentReview.captureSha256 } : {}),
-        };
-        return dependencies.captureSettled(restoreCaptureRequest.value);
-      });
-      const restoreCaptureInput = restoreCaptureRequest.value;
-      if (!restoreCaptureInput) throw new Error("restore capture request was not retained");
+      const captured = await captureWithinDeadline(
+        restoreStartedNs,
+        mutationDeadlineNs,
+        dependencies,
+        "restoration settled capture",
+        captureInvocation,
+        (remainingCaptureMs) => {
+          const captureBudgetMs = remainingCaptureMs - BRIDGE_MIN_TRANSACTION_MS - 1;
+          if (captureBudgetMs < 1) throw new LocomotionStageError("budget_exhausted", "restoration capture cannot fit strictly before its mutation deadline");
+          return {
+            serial: state.input.serial,
+            outPath: capturePath,
+            maxTries: state.input.capture.maxTries,
+            intervalMs: state.input.capture.intervalMs,
+            attemptTimeoutMs: Math.min(state.input.capture.attemptTimeoutMs, captureBudgetMs),
+            deadlineMs: Math.min(state.input.capture.deadlineMs, captureBudgetMs),
+            comparison: "byte_exact",
+            mode: reviewedMovedFrame ? "transition_then_stable" : "stable",
+            ...(reviewedMovedFrame ? { priorSha256: state.currentReview.captureSha256 } : {}),
+          };
+        },
+      );
+      const restoreCaptureInput = captureInvocation.captureInput;
+      const restoreCaptureFence = captureInvocation.fence;
+      if (!restoreCaptureInput || !restoreCaptureFence) throw new Error("restore capture request/invocation was not retained");
       captureReceipt = captured.receipt;
       if (captured.receipt.status !== "settled") {
         throw new LocomotionStageError(captured.receipt.error?.code ?? "restoration_unsettled", captured.receipt.error?.detail ?? "restoration capture did not settle");
       }
       const candidateReview = captureReview(captured, {
         captureInput: restoreCaptureInput,
+        captureInvocation: restoreCaptureFence,
         phaseDeadlineNs: mutationDeadlineNs,
         role: "recovery",
         runtime: state.runtime,
       });
       validateRetainedCaptureFrame(captured, dependencies.readReviewImage(candidateReview, state.artifact.absoluteRoot), "recovery");
+      const continuityDeadlineNs = mutationDeadlineNs - BigInt(BRIDGE_MIN_TRANSACTION_MS) * 1_000_000n;
+      postCaptureContinuity = await withinDeadline(
+        continuityDeadlineNs,
+        dependencies,
+        "post-restoration-capture continuity",
+        (timeoutMs) => dependencies.sampleContinuity({
+          serial: state.input.serial,
+          phase: "restore_post_capture",
+          runtime: state.runtime,
+          artifactRoot: state.artifact.absoluteRoot,
+          timeoutMs,
+          deadlineMonotonicNs: continuityDeadlineNs.toString(),
+        }),
+      );
+      const postCaptureContinuityProblem = continuityProblem(postCaptureContinuity, state.runtime);
+      if (postCaptureContinuityProblem) throw new LocomotionStageError("binding_lost", postCaptureContinuityProblem);
+      postCaptureCapability = await withinDeadline(
+        mutationDeadlineNs,
+        dependencies,
+        "post-restoration-capture root capability",
+        (timeoutMs) => dependencies.probeCapability({
+          serial: state.input.serial,
+          packageName: state.input.scenario.packageName,
+          requestId: `restore_post_capture_${state.artifact.runId.slice(0, 20)}`,
+          tag: "restore-post-capture",
+          ...bridgeBudgetFields(timeoutMs, mutationDeadlineNs),
+        }),
+      );
+      if (!postCaptureCapability.ok) {
+        throw new LocomotionStageError(
+          postCaptureCapability.code,
+          postCaptureCapability.primaryError ?? postCaptureCapability.detail,
+          postCaptureCapability.cleanupError,
+        );
+      }
+      const postCaptureRoot = postCaptureCapability.ack.root;
+      if (!postCaptureRoot || postCaptureRoot.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID
+        || postCaptureRoot.generation !== state.rootGeneration
+        || postCaptureRoot.incarnation !== state.rootIncarnation) {
+        throw new LocomotionStageError(
+          "binding_lost",
+          "post-restoration-capture root capability lost the exact generation/incarnation producer identity",
+        );
+      }
       restoredReview = candidateReview;
       state.currentReview = candidateReview;
       state.requiredReview.push(candidateReview);
@@ -3537,9 +3705,12 @@ export function createInAppLocomotionOrchestrator(
         captureMode: reviewedMovedFrame ? "transition_then_stable" : "stable",
         locomotion,
         locomotionNonceCleanup,
-        captureReceipt,
+        captureReceipt: captureReceipt ?? captureInvocation.receipt,
+        captureInvocation: captureInvocation.fence,
         preRestoreContinuity,
         preRestoreCapability,
+        postCaptureContinuity,
+        postCaptureCapability,
         finalProcessProof,
         postStopSafety,
         priorForeground: priorDisposition,
@@ -4341,7 +4512,7 @@ export function createLiveInAppLocomotionDependencies(
         rawWindowDumps,
       };
     },
-    captureSettled: (input) => executeLiveCaptureSettled(input, { adbPath: adb }),
+    captureSettled: (input) => executeLiveCaptureSettled(input, { adbPath: adb, monotonicNs: clockNs }),
     readReviewImage: readBoundReviewImage,
     sampleContinuity: sampleContinuityLive,
     requestLocomotion: (input) => requestAgentBridgeLocomotion(adb, input, {

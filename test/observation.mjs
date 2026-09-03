@@ -402,6 +402,34 @@ test("executeLiveCaptureSettled catches an internal caller that forks the public
   assert.equal(result.frame.toString("utf8"), "stable");
 });
 
+test("executeLiveCaptureSettled uses one explicitly injected monotonic clock for its complete runtime and settlement", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-observation-live-clock-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  let nowNs = 10_000n;
+  const result = await executeLiveCaptureSettled(
+    {
+      serial: "emulator-5554",
+      outPath: path.join(scratch, "live-clock.png"),
+      maxTries: 2,
+      intervalMs: 0,
+      deadlineMs: 100,
+      comparison: SETTLE_COMPARISON,
+    },
+    {
+      dependencies: executionDeps({
+        clock: () => { throw new Error("the dependency clock must be replaced by the live clock override"); },
+      }),
+      monotonicNs: () => ++nowNs,
+    },
+  );
+
+  assert.equal(result.receipt.status, "settled");
+  assert.equal(result.receipt.captureRuntimeBinding.startedAtMonotonicNs, "10001");
+  assert.equal(result.receipt.deadlineMonotonicNs, "100010002");
+  assert.deepEqual(result.receipt.trace.map((entry) => entry.capturedAtMonotonicNs), ["10004", "10006"]);
+  assert.equal(result.receipt.captureRuntimeBinding.endedAtMonotonicNs, "10007");
+});
+
 test("executeCaptureSettled threads the required prior SHA into internal settlement", async (t) => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-observation-prior-"));
   t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
