@@ -197,6 +197,29 @@ test("captureSettledFrames classifies a capture failure after its deadline in th
   assert.deepEqual(result.trace.map((entry) => entry.relation), ["candidate"]);
 });
 
+test("captureSettledFrames counts a first capture rejection at its deadline without adding a frame trace", async () => {
+  // Catches a production mutation that derives timeout attempts from successful trace entries instead of launched captures.
+  let nowMs = 0;
+  const result = await captureSettledFrames(
+    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, deadlineMs: 5, attemptTimeoutMs: 5 },
+    {
+      monotonicNs: () => BigInt(nowMs) * 1_000_000n,
+      capture: async () => {
+        nowMs = 5;
+        throw new Error("expired first screencap");
+      },
+      sleep: async () => {},
+      hash: sha256Bytes,
+    },
+  );
+  assert.equal(result.status, "timeout");
+  assert.equal(result.attempts, 1);
+  assert.equal(result.timeoutPhase, "awaiting_stability");
+  assert.equal(result.timeoutCause, "deadline");
+  assert.equal(result.frame, null);
+  assert.deepEqual(result.trace, []);
+});
+
 test("captureSettledFrames returns a closed result for a fractional deadline", async () => {
   // Catches a production mutation that calls BigInt on an invalid deadline while constructing validation output.
   const fake = timedSettleDeps([frame("must-not-capture")]);

@@ -177,6 +177,7 @@ export async function captureSettledFrames(
   }
   let previous: { frame: CapturedFrame; sha256: string } | null = null;
   let candidate: { frame: CapturedFrame; sha256: string } | null = null;
+  let launchedAttempts = 0;
   const timeoutPhase = (): SettleTimeoutPhase => (
     normalized.value.mode === "transition_then_stable" && candidate === null
       ? "awaiting_transition"
@@ -185,7 +186,7 @@ export async function captureSettledFrames(
   const timeout = (cause: SettleTimeoutCause): SettledFrameResult => ({
     ...base(timeoutPhase(), cause),
     status: "timeout",
-    attempts: trace.length,
+    attempts: launchedAttempts,
     settlementSatisfied: false,
     frame: previous?.frame ?? null,
     sha256: previous?.sha256 ?? null,
@@ -199,6 +200,7 @@ export async function captureSettledFrames(
     const captureTimeoutMs = Math.min(normalized.value.attemptTimeoutMs, remainingMs);
     let frame: CapturedFrame;
     try {
+      launchedAttempts++;
       frame = await deps.capture(captureTimeoutMs);
     } catch (error: any) {
       if (monotonicNs() >= deadlineNs) return timeout("deadline");
