@@ -555,6 +555,29 @@ export interface AgentBridgeLocomotionTransactionInput {
   deadlineMonotonicNs?: string;
 }
 
+export interface AgentBridgeLocomotionMinimumEnvelopeInput {
+  maxPolls: number;
+  pollMs: number;
+  stabilityReads: number;
+  executionDelayMs: number;
+}
+
+/**
+ * Smallest host deadline envelope admitted for one rev-1 locomotion request.
+ * Callers add any evidence/capture work that follows the transaction itself.
+ */
+export function agentBridgeLocomotionMinimumEnvelopeMs(
+  input: AgentBridgeLocomotionMinimumEnvelopeInput,
+): number {
+  const cancellationPolls = Math.max(input.stabilityReads + 2, Math.min(input.maxPolls, 10));
+  const finalizationCleanupReserveMs = 1_000 + input.stabilityReads * 250
+    + Math.max(0, input.stabilityReads - 1) * input.pollMs + 1_000 + 250;
+  const cancellationReserveMs = 1_000 + cancellationPolls * 250
+    + Math.max(0, cancellationPolls - 1) * input.pollMs + finalizationCleanupReserveMs;
+  return 1_000 + input.executionDelayMs + input.maxPolls * 250
+    + Math.max(0, input.maxPolls - 1) * input.pollMs + cancellationReserveMs;
+}
+
 export interface AgentBridgeHmdPoseRequestInput extends AgentBridgeLocomotionTransactionInput {
   expectedRootGeneration?: number;
   expectedRootIncarnation: string;
@@ -578,6 +601,44 @@ export interface AgentBridgeLocomotionNonceCleanupReceipt {
   requestId: string;
   relativePath: string;
   attempts: number;
+  finalizationSha256?: string;
+  removalError?: string;
+}
+
+export interface AgentBridgeLocomotionNonceCleanupInput {
+  serial: string;
+  packageName: string;
+  requestId: string;
+  tag: string;
+  rootGeneration: number;
+  rootIncarnation: string;
+  controlTimeoutMs?: number;
+  ackReadTimeoutMs?: number;
+  pollMs?: number;
+  stabilityReads?: number;
+  deadlineMonotonicNs: string;
+  /** Recovery after a proven process stop; no guest writer remains to finalize. */
+  processStopped?: true;
+  /** The sole removal already started; recovery may only re-probe pathname absence. */
+  probeOnly?: true;
+  /** Recovery-only bounded effects when the injected strict clock is unavailable. */
+  cleanupOnly?: true;
+}
+
+export class AgentBridgeLocomotionNonceCleanupError extends Error {
+  readonly finalizationProven: boolean;
+  readonly removalStarted: boolean;
+  readonly absenceProven = false;
+
+  constructor(
+    message: string,
+    disposition: { finalizationProven: boolean; removalStarted: boolean },
+  ) {
+    super(message);
+    this.name = "AgentBridgeLocomotionNonceCleanupError";
+    this.finalizationProven = disposition.finalizationProven;
+    this.removalStarted = disposition.removalStarted;
+  }
 }
 
 export interface AgentBridgePosition {
@@ -783,6 +844,18 @@ const locomotionCancelAckSchema = locomotionAckBaseSchema.extend({
   }).strict(),
 }).strict();
 
+const locomotionFinalizeAckSchema = locomotionAckBaseSchema.extend({
+  operation: z.literal(AGENT_BRIDGE_LOCOMOTE_COMMAND),
+  requestControl: z.literal("finalize"),
+  outcome: z.literal("finalized"),
+  rootGenerationBefore: z.number().int().safe().positive(),
+  root: z.object({
+    id: z.literal(AGENT_BRIDGE_LOCOMOTION_ROOT_ID),
+    generation: z.number().int().safe().positive(),
+    incarnation: z.string().regex(LOCOMOTION_INCARNATION_PATTERN),
+  }).strict(),
+}).strict();
+
 type LocomotionOperation = typeof AGENT_BRIDGE_LOCOMOTION_COMMANDS[number];
 type AnyLocomotionAck = AgentBridgeLocomotionCapabilityAck | AgentBridgeHmdPoseAck | AgentBridgeLocomotionAck;
 
@@ -960,7 +1033,9 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
     : BigInt(spec.input.deadlineMonotonicNs);
   const remainingMs = (): number => {
     if (deadlineNs === null) return Number.MAX_SAFE_INTEGER;
-    const remaining = (deadlineNs - clockNs()) / 1_000_000n;
+    const current = clockNs();
+    if (clockError !== null) return Number.MIN_SAFE_INTEGER;
+    const remaining = (deadlineNs - current) / 1_000_000n;
     if (remaining > BigInt(Number.MAX_SAFE_INTEGER)) return Number.MAX_SAFE_INTEGER;
     if (remaining < BigInt(Number.MIN_SAFE_INTEGER)) return Number.MIN_SAFE_INTEGER;
     return Number(remaining);
@@ -969,12 +1044,22 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
     if (clockError !== null) return null;
     if (deadlineNs === null) return desiredMs;
     const available = remainingMs() - reserveAfterMs;
+    if (clockError !== null) return null;
     if (available < minimumMs) return null;
     return Math.min(desiredMs, available);
   };
   const executionDelayMs = spec.executionDelayMs ?? 0;
-  const minimumEnvelopeMs = 1_000 + executionDelayMs + maxPolls * 250
-    + Math.max(0, maxPolls - 1) * pollMs + 1_000;
+  const cancellationPolls = Math.max(stabilityReads + 2, Math.min(maxPolls, 10));
+  const finalizationCleanupReserveMs = 1_000 + stabilityReads * 250
+    + Math.max(0, stabilityReads - 1) * pollMs + 1_000 + 250;
+  const cancellationReserveMs = spec.operation === AGENT_BRIDGE_LOCOMOTE_COMMAND
+    ? 1_000 + cancellationPolls * 250 + Math.max(0, cancellationPolls - 1) * pollMs
+      + finalizationCleanupReserveMs
+    : 1_000;
+  const minimumEnvelopeMs = spec.operation === AGENT_BRIDGE_LOCOMOTE_COMMAND
+    ? agentBridgeLocomotionMinimumEnvelopeMs({ maxPolls, pollMs, stabilityReads, executionDelayMs })
+    : 1_000 + executionDelayMs + maxPolls * 250
+      + Math.max(0, maxPolls - 1) * pollMs + cancellationReserveMs;
   const payloadProblem = locomotionPayloadInputError(spec.input) ?? spec.preflightError ?? null;
   const deadlineProblem = payloadProblem === null && deadlineNs !== null && remainingMs() < minimumEnvelopeMs
     ? `transaction deadline cannot fit the ${minimumEnvelopeMs}ms minimum broadcast/glide/poll/cleanup envelope`
@@ -1033,7 +1118,8 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
 
   let executeMayHaveApplied = false;
   const broadcastStartedAt = stamp();
-  const afterBroadcastReserveMs = executionDelayMs + maxPolls * 250 + Math.max(0, maxPolls - 1) * pollMs + 1_000;
+  const afterBroadcastReserveMs = executionDelayMs + maxPolls * 250
+    + Math.max(0, maxPolls - 1) * pollMs + cancellationReserveMs;
   const broadcastTimeoutMs = boundedTimeout(controlTimeoutMs, 1_000, afterBroadcastReserveMs);
   let broadcastThrown: string | null = null;
   if (broadcastTimeoutMs !== null && spec.operation === AGENT_BRIDGE_LOCOMOTE_COMMAND) executeMayHaveApplied = true;
@@ -1074,7 +1160,7 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
   let readyToPoll = broadcastApplied;
   let executionWaitError: string | null = null;
   if (readyToPoll && executionDelayMs > 0) {
-    const afterDelayReserveMs = maxPolls * 250 + Math.max(0, maxPolls - 1) * pollMs + 1_000;
+    const afterDelayReserveMs = maxPolls * 250 + Math.max(0, maxPolls - 1) * pollMs + cancellationReserveMs;
     if (clockError !== null || (deadlineNs !== null && remainingMs() < executionDelayMs + afterDelayReserveMs)) {
       executionWaitError = clockError ?? "transaction deadline exhausted before the admitted glide wait while preserving acknowledgement cleanup";
       readyToPoll = false;
@@ -1101,7 +1187,7 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
   if (readyToPoll) {
     for (let poll = 0; poll < maxPolls; poll++) {
       const remainingPolls = maxPolls - poll - 1;
-      const reserveAfterPullMs = remainingPolls * 250 + remainingPolls * pollMs + 1_000;
+      const reserveAfterPullMs = remainingPolls * 250 + remainingPolls * pollMs + cancellationReserveMs;
       const pullTimeoutMs = boundedTimeout(ackReadTimeoutMs, 250, reserveAfterPullMs);
       if (pullTimeoutMs === null) {
         pullDetail = "transaction deadline exhausted before another valid acknowledgement read while preserving cleanup";
@@ -1142,7 +1228,8 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
       }
       if (poll + 1 < maxPolls) {
         const pollsAfterSleep = maxPolls - poll - 1;
-        const reserveAfterSleepMs = pollsAfterSleep * 250 + Math.max(0, pollsAfterSleep - 1) * pollMs + 1_000;
+        const reserveAfterSleepMs = pollsAfterSleep * 250
+          + Math.max(0, pollsAfterSleep - 1) * pollMs + cancellationReserveMs;
         if (deadlineNs !== null && remainingMs() < pollMs + reserveAfterSleepMs) {
           pullDetail = "transaction deadline exhausted before polling sleep while preserving cleanup";
           break;
@@ -1244,7 +1331,12 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
     const cancelStartedAt = stamp();
     const identity = spec.cancelIdentity;
     let cancelBroadcastThrown: string | null = null;
-    const cancelBroadcast = identity === undefined ? null : await deps.runText(adb, [
+    const cancelStableFloorMs = cancellationPolls * 250
+      + Math.max(0, cancellationPolls - 1) * pollMs + finalizationCleanupReserveMs;
+    const cancelBroadcastTimeoutMs = identity === undefined
+      ? null
+      : boundedTimeout(controlTimeoutMs, 1_000, cancelStableFloorMs);
+    const cancelBroadcast = cancelBroadcastTimeoutMs === null ? null : await deps.runText(adb, [
       "-s", spec.input.serial, "shell", "am", "broadcast",
       "-a", `${spec.input.packageName}.AGENT_CMD`, "-p", spec.input.packageName,
       "--es", "cmd", AGENT_BRIDGE_LOCOMOTE_COMMAND,
@@ -1254,9 +1346,9 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
       "--es", "requestId", spec.input.requestId,
       "--es", "tag", locomotionTag(spec.input),
       "--es", "requestControl", "cancel",
-      "--el", "rootGeneration", String(identity.rootGeneration),
-      "--es", "rootIncarnation", identity.rootIncarnation,
-    ], { timeoutMs: controlTimeoutMs, maxOutputBytes: 64 * 1024 }).catch((error) => {
+      "--el", "rootGeneration", String(identity!.rootGeneration),
+      "--es", "rootIncarnation", identity!.rootIncarnation,
+    ], { timeoutMs: cancelBroadcastTimeoutMs, maxOutputBytes: 64 * 1024 }).catch((error) => {
       cancelBroadcastThrown = error instanceof Error ? error.message : String(error);
       return null;
     });
@@ -1265,12 +1357,19 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
     let stableCancelCount = 0;
     let lastCancelProblem: string | null = null;
     if (cancelBroadcastApplied) {
-      const cancellationPolls = Math.max(stabilityReads + 2, Math.min(maxPolls, 10));
       for (let poll = 0; poll < cancellationPolls; poll++) {
+        const remainingCancellationPolls = cancellationPolls - poll - 1;
+        const reserveAfterCancelReadMs = remainingCancellationPolls * 250
+          + remainingCancellationPolls * pollMs + finalizationCleanupReserveMs;
+        const cancelReadTimeoutMs = boundedTimeout(ackReadTimeoutMs, 250, reserveAfterCancelReadMs);
+        if (cancelReadTimeoutMs === null) {
+          lastCancelProblem = clockError ?? "absolute transaction deadline exhausted before cancellation acknowledgement read";
+          break;
+        }
         const pulled = await deps.runBytes(adb, [
           "-s", spec.input.serial, "exec-out", "run-as", spec.input.packageName,
           "sh", "-c", 'if test -f "$1"; then printf "\\001"; cat "$1"; else printf "\\000"; fi', "pico-mcp", relativePath,
-        ], { timeoutMs: ackReadTimeoutMs, maxOutputBytes: 1024 * 1024 }).catch(() => ({
+        ], { timeoutMs: cancelReadTimeoutMs, maxOutputBytes: 1024 * 1024 }).catch(() => ({
           code: null, stdout: Buffer.alloc(0), stderr: "cancel acknowledgement read failed", timedOut: false,
         }));
         if (pulled.code === 0 && !pulled.timedOut && pulled.stdout[0] === 0x01 && identity !== undefined) {
@@ -1299,7 +1398,15 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
           stableCancelCount = 0;
         }
         if (poll + 1 < cancellationPolls) {
-          try { await deps.sleep(pollMs); } catch { break; }
+          const pollsAfterSleep = cancellationPolls - poll - 1;
+          const reserveAfterCancelSleepMs = pollsAfterSleep * 250
+            + Math.max(0, pollsAfterSleep - 1) * pollMs + finalizationCleanupReserveMs;
+          const cancelSleepMs = boundedTimeout(pollMs, 1, reserveAfterCancelSleepMs);
+          if (cancelSleepMs === null) {
+            lastCancelProblem = clockError ?? "absolute transaction deadline exhausted before cancellation polling sleep";
+            break;
+          }
+          try { await deps.sleep(cancelSleepMs); } catch { break; }
         }
       }
     }
@@ -1308,6 +1415,8 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
     } else {
       cancelError = identity === undefined
         ? "locomotion cancellation omitted its exact root identity"
+        : cancelBroadcastTimeoutMs === null
+          ? clockError ?? "absolute transaction deadline could not fit the cancellation barrier"
         : cancelBroadcastThrown ?? (cancelBroadcast?.timedOut
           ? "locomotion cancellation broadcast timed out"
           : cancelBroadcastApplied ? `locomotion cancellation acknowledgement did not stabilize${lastCancelProblem ? `: ${lastCancelProblem}` : ""}`
@@ -1534,34 +1643,171 @@ export async function requestAgentBridgeLocomotion(
 
 export async function cleanupAgentBridgeLocomotionNonce(
   adb: string,
-  input: Pick<AgentBridgeLocomotionTransactionInput, "serial" | "packageName" | "requestId" | "controlTimeoutMs">,
-  injected: Pick<AgentBridgeLocomotionDeps, "runText" | "runBytes"> = {},
+  input: AgentBridgeLocomotionNonceCleanupInput,
+  injected: AgentBridgeLocomotionDeps = {},
 ): Promise<AgentBridgeLocomotionNonceCleanupReceipt> {
   const unsafe = locomotionUnsafeIdentityError(adb, input);
   if (unsafe !== null) throw new Error(`locomotion nonce cleanup rejected: ${unsafe}`);
-  const timeoutMs = input.controlTimeoutMs ?? 5_000;
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 15_000) {
+  if (!LOCOMOTION_TAG_PATTERN.test(input.tag) || !Number.isSafeInteger(input.rootGeneration) || input.rootGeneration < 1
+    || !LOCOMOTION_INCARNATION_PATTERN.test(input.rootIncarnation)) {
+    throw new Error("locomotion nonce cleanup rejected: finalization identity is invalid");
+  }
+  const controlTimeoutMs = input.controlTimeoutMs ?? 5_000;
+  const ackReadTimeoutMs = input.ackReadTimeoutMs ?? Math.min(controlTimeoutMs, 5_000);
+  const pollMs = input.pollMs ?? 100;
+  const stabilityReads = input.stabilityReads ?? 2;
+  if (!Number.isInteger(controlTimeoutMs) || controlTimeoutMs < 1_000 || controlTimeoutMs > 15_000) {
     throw new Error("locomotion nonce cleanup controlTimeoutMs must be an integer from 1000 through 15000");
+  }
+  if (!Number.isInteger(ackReadTimeoutMs) || ackReadTimeoutMs < 250 || ackReadTimeoutMs > 15_000
+    || !Number.isInteger(pollMs) || pollMs < 1 || pollMs > 2_000
+    || !Number.isInteger(stabilityReads) || stabilityReads < 2 || stabilityReads > 5
+    || !/^[1-9][0-9]*$/.test(input.deadlineMonotonicNs)
+    || (input.probeOnly === true && input.processStopped !== true)) {
+    throw new Error("locomotion nonce cleanup polling/deadline inputs are invalid");
   }
   const runText = injected.runText ?? run;
   const runBytes = injected.runBytes ?? runBinary;
+  const wait = injected.sleep ?? sleep;
+  const monotonicNs = injected.monotonicNs ?? (() => process.hrtime.bigint());
+  const deadline = BigInt(input.deadlineMonotonicNs);
+  const now = (): bigint => {
+    try {
+      const value = monotonicNs();
+      if (typeof value !== "bigint" || value < 0n) throw new Error("invalid monotonic value");
+      return value;
+    } catch (error) {
+      if (input.cleanupOnly === true) return 0n;
+      throw new Error(`locomotion nonce cleanup monotonic clock failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  const fit = (desiredMs: number, minimumMs: number, reserveAfterMs: number, label: string): number => {
+    if (input.cleanupOnly === true) return desiredMs;
+    const current = now();
+    if (current >= deadline) throw new Error(`${label} cannot start at or after the absolute locomotion deadline`);
+    const remaining = Number((deadline - current) / 1_000_000n);
+    const available = remaining - reserveAfterMs;
+    if (available < minimumMs) throw new Error(`${label} cannot fit its minimum while preserving later nonce cleanup proof`);
+    return Math.min(desiredMs, available);
+  };
   const relativePath = locomotionRelativePath(input.requestId);
-  const removed = await runText(adb, [
-    "-s", input.serial, "shell", "run-as", input.packageName, "rm", "-f", relativePath,
-  ], { timeoutMs, maxOutputBytes: 64 * 1024 });
-  if (removed.code !== 0 || removed.timedOut) {
-    throw new Error(removed.timedOut
-      ? "locomotion nonce cleanup timed out"
-      : `locomotion nonce cleanup failed: ${(removed.stderr || removed.stdout || `exit ${removed.code}`).slice(-400)}`);
+  let finalizationProven = input.processStopped === true;
+  let removalStarted = input.probeOnly === true;
+  try {
+    let finalizationSha256: string | undefined;
+    if (input.processStopped !== true) {
+    const cleanupFloorMs = 1_000 + 250;
+    const stableFloorMs = stabilityReads * 250 + Math.max(0, stabilityReads - 1) * pollMs;
+    const finalizeTimeoutMs = fit(controlTimeoutMs, 1_000, stableFloorMs + cleanupFloorMs, "locomotion finalization broadcast");
+    const finalized = await runText(adb, [
+      "-s", input.serial, "shell", "am", "broadcast",
+      "-a", `${input.packageName}.AGENT_CMD`, "-p", input.packageName,
+      "--es", "cmd", AGENT_BRIDGE_LOCOMOTE_COMMAND,
+      "--es", "kind", AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND,
+      "--ei", "schemaVersion", String(AGENT_BRIDGE_LOCOMOTION_SCHEMA_VERSION),
+      "--ei", "capabilityRevision", String(AGENT_BRIDGE_LOCOMOTION_CAPABILITY_REVISION),
+      "--es", "requestId", input.requestId,
+      "--es", "tag", input.tag,
+      "--es", "requestControl", "finalize",
+      "--el", "rootGeneration", String(input.rootGeneration),
+      "--es", "rootIncarnation", input.rootIncarnation,
+    ], { timeoutMs: finalizeTimeoutMs, maxOutputBytes: 64 * 1024 });
+    if (finalized.code !== 0 || finalized.timedOut) {
+      throw new Error(finalized.timedOut ? "locomotion finalization broadcast timed out" : "locomotion finalization broadcast failed");
+    }
+    let stable: Buffer | null = null;
+    let stableCount = 0;
+    const maxPolls = stabilityReads + 3;
+    for (let attempt = 0; attempt < maxPolls && stableCount < stabilityReads; attempt++) {
+      const neededReads = stabilityReads - stableCount;
+      const reserveAfterRead = Math.max(0, neededReads - 1) * 250
+        + Math.max(0, neededReads - 1) * pollMs + cleanupFloorMs;
+      let readTimeoutMs: number;
+      try {
+        readTimeoutMs = fit(ackReadTimeoutMs, 250, reserveAfterRead, "locomotion finalization acknowledgement read");
+      } catch {
+        break;
+      }
+      const pulled = await runBytes(adb, [
+        "-s", input.serial, "exec-out", "run-as", input.packageName,
+        "sh", "-c", 'if test -f "$1"; then printf "\\001"; cat "$1"; else printf "\\000"; fi', "pico-mcp", relativePath,
+      ], { timeoutMs: readTimeoutMs, maxOutputBytes: 1024 * 1024 }).catch(() => null);
+      let validBytes: Buffer | null = null;
+      if (pulled !== null && pulled.code === 0 && !pulled.timedOut && pulled.stdout[0] === 0x01) {
+        const bytes = pulled.stdout.subarray(1);
+        try {
+          const parsed = locomotionFinalizeAckSchema.parse(JSON.parse(bytes.toString("utf8")));
+          if (parsed.requestId === input.requestId && parsed.tag === input.tag
+            && parsed.application.packageName === input.packageName
+            && parsed.rootGenerationBefore === input.rootGeneration
+            && parsed.root.generation === input.rootGeneration
+            && parsed.root.incarnation === input.rootIncarnation
+            && parsed.primaryError === null && parsed.cleanupError === null) validBytes = bytes;
+        } catch { /* stale or malformed bytes never contribute to stability */ }
+      }
+      if (validBytes !== null) {
+        if (stable !== null && stable.equals(validBytes)) stableCount++;
+        else { stable = Buffer.from(validBytes); stableCount = 1; }
+      } else {
+        stable = null;
+        stableCount = 0;
+      }
+      if (stableCount >= stabilityReads) break;
+      if (attempt + 1 < maxPolls) {
+        const neededAfterSleep = stabilityReads - stableCount;
+        const reserveAfterSleep = neededAfterSleep * 250
+          + Math.max(0, neededAfterSleep - 1) * pollMs + cleanupFloorMs;
+        let sleepDuration: number;
+        try { sleepDuration = fit(pollMs, 1, reserveAfterSleep, "locomotion finalization polling sleep"); }
+        catch { break; }
+        await wait(sleepDuration);
+      }
+    }
+    if (stable === null || stableCount < stabilityReads) {
+      throw new Error("locomotion finalization acknowledgement did not stabilize before nonce cleanup");
+    }
+      finalizationSha256 = createHash("sha256").update(stable).digest("hex");
+      finalizationProven = true;
+    }
+    let removalError: string | null = null;
+    if (input.probeOnly !== true) {
+      const removeTimeoutMs = fit(controlTimeoutMs, 1_000, 250, "locomotion nonce removal");
+      let removalThrown: string | null = null;
+      removalStarted = true;
+      const removed = await runText(adb, [
+        "-s", input.serial, "shell", "run-as", input.packageName, "rm", "-f", relativePath,
+      ], { timeoutMs: removeTimeoutMs, maxOutputBytes: 64 * 1024 }).catch((error) => {
+        removalThrown = error instanceof Error ? error.message : String(error);
+        return null;
+      });
+      removalError = removed !== null && removed.code === 0 && !removed.timedOut ? null
+        : removalThrown ?? (removed?.timedOut
+          ? "locomotion nonce cleanup timed out"
+          : `locomotion nonce cleanup failed: ${(removed?.stderr || removed?.stdout || `exit ${removed?.code ?? "unknown"}`).slice(-400)}`);
+    }
+    const absenceTimeoutMs = fit(ackReadTimeoutMs, 250, 0, "locomotion nonce absence proof");
+    const absent = await runBytes(adb, [
+      "-s", input.serial, "exec-out", "run-as", input.packageName,
+      "sh", "-c", 'if test -e "$1"; then printf "\\001"; else printf "\\000"; fi', "pico-mcp", relativePath,
+    ], { timeoutMs: absenceTimeoutMs, maxOutputBytes: 64 * 1024 });
+    if (absent.code !== 0 || absent.timedOut || absent.stdout.length !== 1 || absent.stdout[0] !== 0x00) {
+      throw new Error(`${removalError ? `${removalError}; ` : ""}locomotion nonce pathname absence was not proven after the sole exact cleanup attempt`);
+    }
+    return {
+      status: "removed_and_absent",
+      requestId: input.requestId,
+      relativePath,
+      attempts: 1,
+      ...(finalizationSha256 === undefined ? {} : { finalizationSha256 }),
+      ...(removalError === null ? {} : { removalError }),
+    };
+  } catch (error) {
+    if (error instanceof AgentBridgeLocomotionNonceCleanupError) throw error;
+    throw new AgentBridgeLocomotionNonceCleanupError(
+      error instanceof Error ? error.message : String(error),
+      { finalizationProven, removalStarted },
+    );
   }
-  const absent = await runBytes(adb, [
-    "-s", input.serial, "exec-out", "run-as", input.packageName,
-    "sh", "-c", 'if test -e "$1"; then printf "\\001"; else printf "\\000"; fi', "pico-mcp", relativePath,
-  ], { timeoutMs, maxOutputBytes: 64 * 1024 });
-  if (absent.code !== 0 || absent.timedOut || absent.stdout.length !== 1 || absent.stdout[0] !== 0x00) {
-    throw new Error("locomotion nonce pathname absence was not proven after exact cleanup");
-  }
-  return { status: "removed_and_absent", requestId: input.requestId, relativePath, attempts: 1 };
 }
 
 export interface AgentBridgeSceneSnapshotFetchInput {
@@ -1926,7 +2172,9 @@ object AgentBridge {
         val producer: suspend (LocomotionRequest) -> AgentLocomotionResult,
     )
 
-    private enum class LocomotionLeaseState { ACTIVE, CANCELLING, CANCEL_TERMINAL, EXECUTE_TERMINAL, EXPIRED }
+    private enum class LocomotionLeaseState {
+        ACTIVE, CANCELLING, CANCEL_TERMINAL, EXECUTE_TERMINAL, EXPIRED, FINALIZING, FINALIZED
+    }
 
     private data class LocomotionExecutionLease(
         val generation: Long,
@@ -1938,6 +2186,7 @@ object AgentBridge {
         var job: Job?,
         var cachedCancelOutcome: String?,
         var cancelWriter: Job?,
+        var finalizeWriter: Job?,
     )
 
     private data class LocomotionCancellationPlan(
@@ -1946,6 +2195,13 @@ object AgentBridge {
         val outcome: String,
         val barrierJob: Job?,
         val cancelProducer: Boolean,
+    )
+
+    private data class LocomotionFinalizationPlan(
+        val request: LocomotionFileRequest,
+        val lease: LocomotionExecutionLease,
+        val producerJob: Job?,
+        val cancelWriter: Job?,
     )
 
     private data class NavigationGuideProducerBinding(
@@ -2165,7 +2421,7 @@ object AgentBridge {
             if (target.exists() && !target.delete()) return@synchronized "stale_ack_not_removed"
             locomotionLeases[request.requestId] = LocomotionExecutionLease(
                 request.generation, request.rootGenerationBefore, request.rootIncarnation, request.tag,
-                expiresAt, LocomotionLeaseState.ACTIVE, job, null, null,
+                expiresAt, LocomotionLeaseState.ACTIVE, job, null, null, null,
             )
             null
         }
@@ -2358,8 +2614,10 @@ object AgentBridge {
             event("locomotion_failed", "operation" to operation, "requestId" to request.requestId, "msg" to "bridge_not_initialized")
             return
         }
-        if (operation == LOCOMOTE_COMMAND && request.requestControl == "cancel") {
-            event("locomotion_rejected", "operation" to operation, "requestId" to request.requestId, "msg" to "cancel_requires_async_receiver")
+        if (operation == LOCOMOTE_COMMAND &&
+            (request.requestControl == "cancel" || request.requestControl == "finalize")
+        ) {
+            event("locomotion_rejected", "operation" to operation, "requestId" to request.requestId, "msg" to "control_requires_async_receiver")
             return
         }
         val targetFile = locomotionTarget(context, request.requestId)
@@ -2399,9 +2657,11 @@ object AgentBridge {
                 ) return@synchronized null
                 val exactRequest = request.copy(generation = existing.generation)
                 return@synchronized when (existing.state) {
-                    LocomotionLeaseState.EXECUTE_TERMINAL -> LocomotionCancellationPlan(
-                        exactRequest, existing, "already_terminal", existing.job, false,
-                    )
+                    LocomotionLeaseState.EXECUTE_TERMINAL -> {
+                        existing.state = LocomotionLeaseState.CANCELLING
+                        existing.cachedCancelOutcome = "already_terminal"
+                        LocomotionCancellationPlan(exactRequest, existing, "already_terminal", existing.job, false)
+                    }
                     LocomotionLeaseState.CANCEL_TERMINAL -> LocomotionCancellationPlan(
                         exactRequest, existing, existing.cachedCancelOutcome ?: "cancelled", existing.job, false,
                     )
@@ -2411,8 +2671,11 @@ object AgentBridge {
                     }
                     LocomotionLeaseState.CANCELLING, LocomotionLeaseState.EXPIRED -> {
                         existing.state = LocomotionLeaseState.CANCELLING
-                        LocomotionCancellationPlan(exactRequest, existing, "cancelled", existing.job, true)
+                        LocomotionCancellationPlan(
+                            exactRequest, existing, existing.cachedCancelOutcome ?: "cancelled", existing.job, true,
+                        )
                     }
+                    LocomotionLeaseState.FINALIZING, LocomotionLeaseState.FINALIZED -> null
                 }
             }
             val binding = currentLocomotionBinding()
@@ -2422,7 +2685,7 @@ object AgentBridge {
             ) return@synchronized null
             val tombstone = LocomotionExecutionLease(
                 request.generation, request.rootGenerationBefore, request.rootIncarnation, request.tag,
-                Long.MAX_VALUE, LocomotionLeaseState.CANCEL_TERMINAL, null, "cancelled", null,
+                Long.MAX_VALUE, LocomotionLeaseState.CANCELLING, null, "cancelled", null, null,
             )
             locomotionLeases[request.requestId] = tombstone
             LocomotionCancellationPlan(request, tombstone, "cancelled", null, false)
@@ -2443,6 +2706,7 @@ object AgentBridge {
                 plan.outcome
             }
             LocomotionLeaseState.ACTIVE -> null
+            LocomotionLeaseState.FINALIZING, LocomotionLeaseState.FINALIZED -> null
         }
     }
 
@@ -2465,15 +2729,10 @@ object AgentBridge {
                 event("locomotion_cancel_timeout", "requestId" to plan.request.requestId)
             } catch (cause: Throwable) {
                 event("locomotion_cancel_failed", "requestId" to plan.request.requestId, "msg" to (cause.message ?: cause.javaClass.simpleName))
-            } finally {
-                val self = currentCoroutineContext()[Job]
-                synchronized(locomotionLeaseLock) {
-                    if (plan.lease.cancelWriter === self) plan.lease.cancelWriter = null
-                }
-            }
+            } finally { /* completed writer remains the immutable repeat-cancel barrier */ }
         }
         val writer = synchronized(locomotionLeaseLock) {
-            plan.lease.cancelWriter?.takeIf { !it.isCompleted } ?: candidate.also { plan.lease.cancelWriter = it }
+            plan.lease.cancelWriter ?: candidate.also { plan.lease.cancelWriter = it }
         }
         if (writer !== candidate) candidate.cancel(CancellationException("shared cancel writer already owns this nonce"))
         writer.invokeOnCompletion { runCatching { finished() } }
@@ -2491,6 +2750,72 @@ object AgentBridge {
         writeLocomotionAckAtomically(context, request, target, LOCOMOTE_COMMAND) { writer ->
             writer.name("requestControl").value("cancel")
             writer.name("outcome").value(outcome)
+            writer.name("rootGenerationBefore").value(request.rootGenerationBefore)
+            writer.name("root"); writeLocomotionRoot(writer, request.rootGenerationBefore, request.rootIncarnation)
+            writeLocomotionErrors(writer, null, null)
+        }
+    }
+
+    private fun finalizeLocomotionRequest(request: LocomotionFileRequest): LocomotionFinalizationPlan? =
+        synchronized(locomotionLeaseLock) {
+            if (validateLocomotionEnvelope(request) != null || request.requestControl != "finalize" ||
+                !locomotionIncarnationPattern.matches(request.rootIncarnation)
+            ) return@synchronized null
+            val existing = locomotionLeases[request.requestId] ?: return@synchronized null
+            if (existing.generation <= 0L || existing.rootGeneration != request.rootGenerationBefore ||
+                existing.rootIncarnation != request.rootIncarnation || existing.tag != request.tag
+            ) return@synchronized null
+            val exactRequest = request.copy(generation = existing.generation)
+            when (existing.state) {
+                LocomotionLeaseState.EXECUTE_TERMINAL, LocomotionLeaseState.CANCEL_TERMINAL -> {
+                    existing.state = LocomotionLeaseState.FINALIZING
+                    LocomotionFinalizationPlan(exactRequest, existing, existing.job, existing.cancelWriter)
+                }
+                LocomotionLeaseState.FINALIZING -> LocomotionFinalizationPlan(
+                    exactRequest, existing, existing.job, existing.cancelWriter,
+                )
+                LocomotionLeaseState.FINALIZED -> null
+                else -> null
+            }
+        }
+
+    fun dispatchLocomotionFinalization(extras: Bundle, finished: () -> Unit): Boolean {
+        val context = applicationContext ?: return false
+        val request = parseLocomotionFileRequest(LOCOMOTE_COMMAND, extras) ?: return false
+        val plan = finalizeLocomotionRequest(request) ?: return false
+        val candidate = bridgeScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                withTimeout(LOCOMOTION_CANCEL_BARRIER_TIMEOUT_MS) {
+                    plan.producerJob?.join()
+                    plan.cancelWriter?.join()
+                    writeLocomotionFinalizeAck(
+                        context, plan.request, locomotionTarget(context, plan.request.requestId),
+                    )
+                }
+            } catch (_: TimeoutCancellationException) {
+                event("locomotion_finalize_timeout", "requestId" to plan.request.requestId)
+            } catch (cause: Throwable) {
+                event("locomotion_finalize_failed", "requestId" to plan.request.requestId, "msg" to (cause.message ?: cause.javaClass.simpleName))
+            }
+        }
+        val writer = synchronized(locomotionLeaseLock) {
+            plan.lease.finalizeWriter ?: candidate.also { plan.lease.finalizeWriter = it }
+        }
+        if (writer !== candidate) candidate.cancel(CancellationException("shared finalization writer already owns this nonce"))
+        writer.invokeOnCompletion { runCatching { finished() } }
+        writer.start()
+        runCatching { event("locomotion_finalize_requested", "requestId" to request.requestId, "tag" to request.tag) }
+        return true
+    }
+
+    private suspend fun writeLocomotionFinalizeAck(
+        context: Context,
+        request: LocomotionFileRequest,
+        target: File,
+    ) {
+        writeLocomotionAckAtomically(context, request, target, LOCOMOTE_COMMAND) { writer ->
+            writer.name("requestControl").value("finalize")
+            writer.name("outcome").value("finalized")
             writer.name("rootGenerationBefore").value(request.rootGenerationBefore)
             writer.name("root"); writeLocomotionRoot(writer, request.rootGenerationBefore, request.rootIncarnation)
             writeLocomotionErrors(writer, null, null)
@@ -2879,11 +3204,16 @@ object AgentBridge {
         temp: File,
         target: File,
     ): Boolean {
-        if (request.requestControl != "execute" && request.requestControl != "cancel") {
-            return synchronized(locomotionGenerationLock) {
-                if (locomotionGeneration != request.generation) return@synchronized false
-                Os.rename(temp.absolutePath, target.absolutePath)
-                true
+        if (request.requestControl != "execute" && request.requestControl != "cancel" &&
+            request.requestControl != "finalize"
+        ) {
+            return synchronized(locomotionLeaseLock) {
+                if (locomotionLeases[request.requestId]?.state == LocomotionLeaseState.FINALIZED) return@synchronized false
+                synchronized(locomotionGenerationLock) {
+                    if (locomotionGeneration != request.generation) return@synchronized false
+                    Os.rename(temp.absolutePath, target.absolutePath)
+                    true
+                }
             }
         }
         return synchronized(locomotionLeaseLock) {
@@ -2898,6 +3228,17 @@ object AgentBridge {
                     Os.rename(temp.absolutePath, target.absolutePath)
                     true
                 }
+            }
+            if (request.requestControl == "finalize") {
+                if (lease.state != LocomotionLeaseState.FINALIZING) {
+                    return@synchronized false
+                }
+                // The process-lifetime fence is visible before the rename.  A
+                // readable finalize ack therefore implies that every prior
+                // writer was joined and no later writer can publish this ID.
+                lease.state = LocomotionLeaseState.FINALIZED
+                Os.rename(temp.absolutePath, target.absolutePath)
+                return@synchronized true
             }
             if (lease.state != LocomotionLeaseState.CANCEL_TERMINAL &&
                 lease.state != LocomotionLeaseState.EXECUTE_TERMINAL
@@ -3376,10 +3717,17 @@ class AgentBridgeInitProvider : ContentProvider() {
                 if (intent == null) return
                 val cmd = intent.getStringExtra("cmd")
                 val extras = intent.extras ?: Bundle()
-                if (cmd == AgentBridge.LOCOMOTE_COMMAND && extras.getString("requestControl") == "cancel") {
+                val requestControl = extras.getString("requestControl")
+                if (cmd == AgentBridge.LOCOMOTE_COMMAND &&
+                    (requestControl == "cancel" || requestControl == "finalize")
+                ) {
                     val pending = goAsync()
                     val callbackOwned = runCatching {
-                        AgentBridge.dispatchLocomotionCancellation(extras) { pending.finish() }
+                        if (requestControl == "cancel") {
+                            AgentBridge.dispatchLocomotionCancellation(extras) { pending.finish() }
+                        } else {
+                            AgentBridge.dispatchLocomotionFinalization(extras) { pending.finish() }
+                        }
                     }.getOrDefault(false)
                     if (!callbackOwned) pending.finish()
                     return

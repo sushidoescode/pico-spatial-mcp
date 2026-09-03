@@ -28,10 +28,17 @@ class AgentBridgeInitProvider : ContentProvider() {
                 if (intent == null) return
                 val cmd = intent.getStringExtra("cmd")
                 val extras = intent.extras ?: Bundle()
-                if (cmd == AgentBridge.LOCOMOTE_COMMAND && extras.getString("requestControl") == "cancel") {
+                val requestControl = extras.getString("requestControl")
+                if (cmd == AgentBridge.LOCOMOTE_COMMAND &&
+                    (requestControl == "cancel" || requestControl == "finalize")
+                ) {
                     val pending = goAsync()
                     val callbackOwned = runCatching {
-                        AgentBridge.dispatchLocomotionCancellation(extras) { pending.finish() }
+                        if (requestControl == "cancel") {
+                            AgentBridge.dispatchLocomotionCancellation(extras) { pending.finish() }
+                        } else {
+                            AgentBridge.dispatchLocomotionFinalization(extras) { pending.finish() }
+                        }
                     }.getOrDefault(false)
                     if (!callbackOwned) pending.finish()
                     return

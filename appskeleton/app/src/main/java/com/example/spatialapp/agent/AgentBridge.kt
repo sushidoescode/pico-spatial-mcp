@@ -164,7 +164,9 @@ object AgentBridge {
         val producer: suspend (LocomotionRequest) -> AgentLocomotionResult,
     )
 
-    private enum class LocomotionLeaseState { ACTIVE, CANCELLING, CANCEL_TERMINAL, EXECUTE_TERMINAL, EXPIRED }
+    private enum class LocomotionLeaseState {
+        ACTIVE, CANCELLING, CANCEL_TERMINAL, EXECUTE_TERMINAL, EXPIRED, FINALIZING, FINALIZED
+    }
 
     private data class LocomotionExecutionLease(
         val generation: Long,
@@ -176,6 +178,7 @@ object AgentBridge {
         var job: Job?,
         var cachedCancelOutcome: String?,
         var cancelWriter: Job?,
+        var finalizeWriter: Job?,
     )
 
     private data class LocomotionCancellationPlan(
@@ -184,6 +187,13 @@ object AgentBridge {
         val outcome: String,
         val barrierJob: Job?,
         val cancelProducer: Boolean,
+    )
+
+    private data class LocomotionFinalizationPlan(
+        val request: LocomotionFileRequest,
+        val lease: LocomotionExecutionLease,
+        val producerJob: Job?,
+        val cancelWriter: Job?,
     )
 
     private data class NavigationGuideProducerBinding(
@@ -403,7 +413,7 @@ object AgentBridge {
             if (target.exists() && !target.delete()) return@synchronized "stale_ack_not_removed"
             locomotionLeases[request.requestId] = LocomotionExecutionLease(
                 request.generation, request.rootGenerationBefore, request.rootIncarnation, request.tag,
-                expiresAt, LocomotionLeaseState.ACTIVE, job, null, null,
+                expiresAt, LocomotionLeaseState.ACTIVE, job, null, null, null,
             )
             null
         }
@@ -596,8 +606,10 @@ object AgentBridge {
             event("locomotion_failed", "operation" to operation, "requestId" to request.requestId, "msg" to "bridge_not_initialized")
             return
         }
-        if (operation == LOCOMOTE_COMMAND && request.requestControl == "cancel") {
-            event("locomotion_rejected", "operation" to operation, "requestId" to request.requestId, "msg" to "cancel_requires_async_receiver")
+        if (operation == LOCOMOTE_COMMAND &&
+            (request.requestControl == "cancel" || request.requestControl == "finalize")
+        ) {
+            event("locomotion_rejected", "operation" to operation, "requestId" to request.requestId, "msg" to "control_requires_async_receiver")
             return
         }
         val targetFile = locomotionTarget(context, request.requestId)
@@ -637,9 +649,11 @@ object AgentBridge {
                 ) return@synchronized null
                 val exactRequest = request.copy(generation = existing.generation)
                 return@synchronized when (existing.state) {
-                    LocomotionLeaseState.EXECUTE_TERMINAL -> LocomotionCancellationPlan(
-                        exactRequest, existing, "already_terminal", existing.job, false,
-                    )
+                    LocomotionLeaseState.EXECUTE_TERMINAL -> {
+                        existing.state = LocomotionLeaseState.CANCELLING
+                        existing.cachedCancelOutcome = "already_terminal"
+                        LocomotionCancellationPlan(exactRequest, existing, "already_terminal", existing.job, false)
+                    }
                     LocomotionLeaseState.CANCEL_TERMINAL -> LocomotionCancellationPlan(
                         exactRequest, existing, existing.cachedCancelOutcome ?: "cancelled", existing.job, false,
                     )
@@ -649,8 +663,11 @@ object AgentBridge {
                     }
                     LocomotionLeaseState.CANCELLING, LocomotionLeaseState.EXPIRED -> {
                         existing.state = LocomotionLeaseState.CANCELLING
-                        LocomotionCancellationPlan(exactRequest, existing, "cancelled", existing.job, true)
+                        LocomotionCancellationPlan(
+                            exactRequest, existing, existing.cachedCancelOutcome ?: "cancelled", existing.job, true,
+                        )
                     }
+                    LocomotionLeaseState.FINALIZING, LocomotionLeaseState.FINALIZED -> null
                 }
             }
             val binding = currentLocomotionBinding()
@@ -660,7 +677,7 @@ object AgentBridge {
             ) return@synchronized null
             val tombstone = LocomotionExecutionLease(
                 request.generation, request.rootGenerationBefore, request.rootIncarnation, request.tag,
-                Long.MAX_VALUE, LocomotionLeaseState.CANCEL_TERMINAL, null, "cancelled", null,
+                Long.MAX_VALUE, LocomotionLeaseState.CANCELLING, null, "cancelled", null, null,
             )
             locomotionLeases[request.requestId] = tombstone
             LocomotionCancellationPlan(request, tombstone, "cancelled", null, false)
@@ -681,6 +698,7 @@ object AgentBridge {
                 plan.outcome
             }
             LocomotionLeaseState.ACTIVE -> null
+            LocomotionLeaseState.FINALIZING, LocomotionLeaseState.FINALIZED -> null
         }
     }
 
@@ -703,15 +721,10 @@ object AgentBridge {
                 event("locomotion_cancel_timeout", "requestId" to plan.request.requestId)
             } catch (cause: Throwable) {
                 event("locomotion_cancel_failed", "requestId" to plan.request.requestId, "msg" to (cause.message ?: cause.javaClass.simpleName))
-            } finally {
-                val self = currentCoroutineContext()[Job]
-                synchronized(locomotionLeaseLock) {
-                    if (plan.lease.cancelWriter === self) plan.lease.cancelWriter = null
-                }
-            }
+            } finally { /* completed writer remains the immutable repeat-cancel barrier */ }
         }
         val writer = synchronized(locomotionLeaseLock) {
-            plan.lease.cancelWriter?.takeIf { !it.isCompleted } ?: candidate.also { plan.lease.cancelWriter = it }
+            plan.lease.cancelWriter ?: candidate.also { plan.lease.cancelWriter = it }
         }
         if (writer !== candidate) candidate.cancel(CancellationException("shared cancel writer already owns this nonce"))
         writer.invokeOnCompletion { runCatching { finished() } }
@@ -729,6 +742,72 @@ object AgentBridge {
         writeLocomotionAckAtomically(context, request, target, LOCOMOTE_COMMAND) { writer ->
             writer.name("requestControl").value("cancel")
             writer.name("outcome").value(outcome)
+            writer.name("rootGenerationBefore").value(request.rootGenerationBefore)
+            writer.name("root"); writeLocomotionRoot(writer, request.rootGenerationBefore, request.rootIncarnation)
+            writeLocomotionErrors(writer, null, null)
+        }
+    }
+
+    private fun finalizeLocomotionRequest(request: LocomotionFileRequest): LocomotionFinalizationPlan? =
+        synchronized(locomotionLeaseLock) {
+            if (validateLocomotionEnvelope(request) != null || request.requestControl != "finalize" ||
+                !locomotionIncarnationPattern.matches(request.rootIncarnation)
+            ) return@synchronized null
+            val existing = locomotionLeases[request.requestId] ?: return@synchronized null
+            if (existing.generation <= 0L || existing.rootGeneration != request.rootGenerationBefore ||
+                existing.rootIncarnation != request.rootIncarnation || existing.tag != request.tag
+            ) return@synchronized null
+            val exactRequest = request.copy(generation = existing.generation)
+            when (existing.state) {
+                LocomotionLeaseState.EXECUTE_TERMINAL, LocomotionLeaseState.CANCEL_TERMINAL -> {
+                    existing.state = LocomotionLeaseState.FINALIZING
+                    LocomotionFinalizationPlan(exactRequest, existing, existing.job, existing.cancelWriter)
+                }
+                LocomotionLeaseState.FINALIZING -> LocomotionFinalizationPlan(
+                    exactRequest, existing, existing.job, existing.cancelWriter,
+                )
+                LocomotionLeaseState.FINALIZED -> null
+                else -> null
+            }
+        }
+
+    fun dispatchLocomotionFinalization(extras: Bundle, finished: () -> Unit): Boolean {
+        val context = applicationContext ?: return false
+        val request = parseLocomotionFileRequest(LOCOMOTE_COMMAND, extras) ?: return false
+        val plan = finalizeLocomotionRequest(request) ?: return false
+        val candidate = bridgeScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                withTimeout(LOCOMOTION_CANCEL_BARRIER_TIMEOUT_MS) {
+                    plan.producerJob?.join()
+                    plan.cancelWriter?.join()
+                    writeLocomotionFinalizeAck(
+                        context, plan.request, locomotionTarget(context, plan.request.requestId),
+                    )
+                }
+            } catch (_: TimeoutCancellationException) {
+                event("locomotion_finalize_timeout", "requestId" to plan.request.requestId)
+            } catch (cause: Throwable) {
+                event("locomotion_finalize_failed", "requestId" to plan.request.requestId, "msg" to (cause.message ?: cause.javaClass.simpleName))
+            }
+        }
+        val writer = synchronized(locomotionLeaseLock) {
+            plan.lease.finalizeWriter ?: candidate.also { plan.lease.finalizeWriter = it }
+        }
+        if (writer !== candidate) candidate.cancel(CancellationException("shared finalization writer already owns this nonce"))
+        writer.invokeOnCompletion { runCatching { finished() } }
+        writer.start()
+        runCatching { event("locomotion_finalize_requested", "requestId" to request.requestId, "tag" to request.tag) }
+        return true
+    }
+
+    private suspend fun writeLocomotionFinalizeAck(
+        context: Context,
+        request: LocomotionFileRequest,
+        target: File,
+    ) {
+        writeLocomotionAckAtomically(context, request, target, LOCOMOTE_COMMAND) { writer ->
+            writer.name("requestControl").value("finalize")
+            writer.name("outcome").value("finalized")
             writer.name("rootGenerationBefore").value(request.rootGenerationBefore)
             writer.name("root"); writeLocomotionRoot(writer, request.rootGenerationBefore, request.rootIncarnation)
             writeLocomotionErrors(writer, null, null)
@@ -1117,11 +1196,16 @@ object AgentBridge {
         temp: File,
         target: File,
     ): Boolean {
-        if (request.requestControl != "execute" && request.requestControl != "cancel") {
-            return synchronized(locomotionGenerationLock) {
-                if (locomotionGeneration != request.generation) return@synchronized false
-                Os.rename(temp.absolutePath, target.absolutePath)
-                true
+        if (request.requestControl != "execute" && request.requestControl != "cancel" &&
+            request.requestControl != "finalize"
+        ) {
+            return synchronized(locomotionLeaseLock) {
+                if (locomotionLeases[request.requestId]?.state == LocomotionLeaseState.FINALIZED) return@synchronized false
+                synchronized(locomotionGenerationLock) {
+                    if (locomotionGeneration != request.generation) return@synchronized false
+                    Os.rename(temp.absolutePath, target.absolutePath)
+                    true
+                }
             }
         }
         return synchronized(locomotionLeaseLock) {
@@ -1136,6 +1220,17 @@ object AgentBridge {
                     Os.rename(temp.absolutePath, target.absolutePath)
                     true
                 }
+            }
+            if (request.requestControl == "finalize") {
+                if (lease.state != LocomotionLeaseState.FINALIZING) {
+                    return@synchronized false
+                }
+                // The process-lifetime fence is visible before the rename.  A
+                // readable finalize ack therefore implies that every prior
+                // writer was joined and no later writer can publish this ID.
+                lease.state = LocomotionLeaseState.FINALIZED
+                Os.rename(temp.absolutePath, target.absolutePath)
+                return@synchronized true
             }
             if (lease.state != LocomotionLeaseState.CANCEL_TERMINAL &&
                 lease.state != LocomotionLeaseState.EXECUTE_TERMINAL

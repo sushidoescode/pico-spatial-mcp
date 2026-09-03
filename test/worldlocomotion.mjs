@@ -70,9 +70,9 @@ function prepareRouteInput(t, overrides = {}) {
       comparison: "byte_exact",
     },
     budgets: {
-      maxDurationMs: 180_000,
+      maxDurationMs: 200_000,
       routeReserveMs: 60_000,
-      restorationReserveMs: 30_000,
+      restorationReserveMs: 45_000,
     },
     priorForeground: { kind: "none" },
     artifactRoot: externalArtifactRoot(t),
@@ -479,7 +479,33 @@ async function createPreparedFixture(t, options = {}) {
         return evidence;
       });
       await holdHandoffPhase("monitor_handoff");
-      await context.onFirstWindowSample();
+      const sampleZeroProbeStartedAtMonotonicNs = options.monitorSampleZeroProbeStartedAtMonotonicNs ?? "9000000";
+      const sampleZeroRetainedAtMonotonicNs = options.monitorSampleZeroRetainedAtMonotonicNs ?? "10000000";
+      const sampleZeroHandoffToken = sha256(canonicalJson({
+        runId: context.runId,
+        rawWindowSha256: rawWindowDumps[0].sha256,
+        probeStartedAtMonotonicNs: sampleZeroProbeStartedAtMonotonicNs,
+        retainedAtMonotonicNs: sampleZeroRetainedAtMonotonicNs,
+      }));
+      const callbackWindow = options.monitorCallbackForgedWindow === true
+        ? { ...rawWindowDumps[0], sha256: "f".repeat(64) }
+        : rawWindowDumps[0];
+      if (options.monitorCallbackBeforeRetention === true) fs.unlinkSync(rawWindowDumps[0].path);
+      let callbackError = null;
+      try {
+        await context.onFirstWindowSample({
+          rawWindowDump: callbackWindow,
+          probeStartedAtMonotonicNs: sampleZeroProbeStartedAtMonotonicNs,
+          retainedAtMonotonicNs: sampleZeroRetainedAtMonotonicNs,
+          handoffToken: sampleZeroHandoffToken,
+        });
+      } catch (error) {
+        callbackError = error;
+      }
+      if (options.monitorCallbackBeforeRetention === true) {
+        fs.writeFileSync(rawWindowDumps[0].path, Buffer.from("WINDOW MANAGER WINDOWS sample 0\n", "utf8"), { flag: "wx", mode: 0o600 });
+      }
+      if (callbackError !== null) throw callbackError;
       const rawHealthLogs = elapsedValues.map((_, sampleIndex) => {
         const body = options.monitorLogBodyFactory?.(marker, sampleIndex)
           ?? options.monitorLogBodies?.[sampleIndex]
@@ -493,6 +519,18 @@ async function createPreparedFixture(t, options = {}) {
       });
       const samples = elapsedValues.map((elapsedMs, sampleIndex) => ({
         elapsedMs,
+        windowProbeStartedAtMonotonicNs: sampleIndex === 0
+          ? sampleZeroProbeStartedAtMonotonicNs
+          : String(20_000_000n + BigInt(sampleIndex * 15_000) * 1_000_000n),
+        windowRetainedAtMonotonicNs: sampleIndex === 0
+          ? sampleZeroRetainedAtMonotonicNs
+          : String(21_000_000n + BigInt(sampleIndex * 15_000) * 1_000_000n),
+        windowHandoffToken: sampleIndex === 0 ? sampleZeroHandoffToken : sha256(canonicalJson({
+          runId: context.runId,
+          rawWindowSha256: rawWindowDumps[sampleIndex].sha256,
+          probeStartedAtMonotonicNs: String(20_000_000n + BigInt(sampleIndex * 15_000) * 1_000_000n),
+          retainedAtMonotonicNs: String(21_000_000n + BigInt(sampleIndex * 15_000) * 1_000_000n),
+        })),
         dialogs: [],
         safety: { ...cleanSafety },
         continuity: exactContinuity(input, applicationBinding, bootId, String(3_000_000 + elapsedMs)),
@@ -1759,10 +1797,49 @@ test("route and restoration admission reserve the full direct glide before any d
   assert.equal(dependencyReads, 0);
 });
 
+test("route schema shares the exact rev-1 locomotion cancellation and finalization envelope", (t) => {
+  const minimumBridgeEnvelopeMs = agentBridge.agentBridgeLocomotionMinimumEnvelopeMs({
+    maxPolls: 10,
+    pollMs: 100,
+    stabilityReads: 2,
+    executionDelayMs: 0,
+  });
+  assert.equal(minimumBridgeEnvelopeMs, 11_650);
+
+  const valid = prepareRouteInput(t, {
+    route: {
+      waypoints: [{ seq: 1, target: { absolute: true, x: 1, y: 0, z: -2 } }],
+      restoreTarget: { absolute: true, x: 0, y: 0, z: 0 },
+      glideDurationMs: 500,
+    },
+    budgets: { maxDurationMs: 250_000, routeReserveMs: 60_000, restorationReserveMs: 60_000 },
+  });
+  const exactRouteFloor = valid.capture.deadlineMs + valid.route.glideDurationMs + 3 * minimumBridgeEnvelopeMs;
+  const exactRestorationFloor = valid.capture.deadlineMs + valid.route.glideDurationMs
+    + 2 * minimumBridgeEnvelopeMs + 5_000;
+
+  assert.equal(inAppLocomotionInputSchema.safeParse({
+    ...valid,
+    budgets: { ...valid.budgets, routeReserveMs: exactRouteFloor },
+  }).success, false);
+  assert.equal(inAppLocomotionInputSchema.safeParse({
+    ...valid,
+    budgets: { ...valid.budgets, routeReserveMs: exactRouteFloor + 1 },
+  }).success, true);
+  assert.equal(inAppLocomotionInputSchema.safeParse({
+    ...valid,
+    budgets: { ...valid.budgets, restorationReserveMs: exactRestorationFloor },
+  }).success, false);
+  assert.equal(inAppLocomotionInputSchema.safeParse({
+    ...valid,
+    budgets: { ...valid.budgets, restorationReserveMs: exactRestorationFloor + 1 },
+  }).success, true);
+});
+
 test("a maximum direct glide still completes all post-step evidence and the reviewed restore path", async (t) => {
   const fixture = await prepareForSteps(t, {
     inputOverrides: {
-      budgets: { maxDurationMs: 220_000, routeReserveMs: 60_000, restorationReserveMs: 45_000 },
+      budgets: { maxDurationMs: 220_000, routeReserveMs: 60_000, restorationReserveMs: 46_301 },
       route: {
         waypoints: [
           { seq: 1, target: { absolute: true, x: 1, y: 0, z: -2 } },
@@ -1901,7 +1978,7 @@ test("one serial remains owned after prepare and is released only by a safely co
   assert.equal(second.status, "needs_baseline_review");
 });
 
-test("action append validates the opened descriptor identity before writing substituted bytes", async (t) => {
+test("a substituted derived action view is rebuilt from the immutable committed record", async (t) => {
   const fixture = await createPreparedFixture(t);
   let swapped = false;
   const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
@@ -1920,10 +1997,15 @@ test("action append validates the opened descriptor identity before writing subs
     reviewFor(prepared.requiredReview[0]),
   ));
 
-  assert.equal(result.status, "stopped");
-  assert.match(result.primaryError, /action.*(?:identity|changed)|descriptor|substitut/i);
-  assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"), "");
+  assert.equal(result.status, "needs_waypoint_review");
+  assert.equal(result.primaryError, null);
+  assert.equal(result.actionAuditMaintenance.status, "current");
+  assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").length, 2);
   assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl.original"), "utf8").trim().split("\n").length, 1);
+  const restored = await orchestrator.execute({
+    action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(result.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restored_needs_review");
 });
 
 test("prepare publishes its success audit before state and contains failure-audit errors", async (t) => {
@@ -2121,7 +2203,7 @@ test("prepare uses one fixed phase deadline, clamps baseline capture, and stops 
   let nowNs = 0n;
   const clamped = await createPreparedFixture(t, {
     monotonicNs: () => nowNs,
-    afterMonitor: () => { nowNs = 86_000_000_000n; },
+    afterMonitor: () => { nowNs = 91_000_000_000n; },
   });
   const prepared = await createInAppLocomotionOrchestrator(clamped.dependencies).execute(clamped.input);
   assert.equal(prepared.status, "needs_baseline_review");
@@ -2133,7 +2215,7 @@ test("prepare uses one fixed phase deadline, clamps baseline capture, and stops 
   const overrun = await createPreparedFixture(t, {
     inputOverrides: { artifactRoot: externalArtifactRoot(t, "prepare-overrun") },
     monotonicNs: () => nowNs,
-    afterMonitor: () => { nowNs = 91_000_000_000n; },
+    afterMonitor: () => { nowNs = 96_000_000_000n; },
   });
   const failed = await createInAppLocomotionOrchestrator(overrun.dependencies).execute(overrun.input);
   assert.equal(failed.status, "preparation_failed");
@@ -2148,7 +2230,7 @@ test("restoration reserve is one fixed absolute deadline and does not reset afte
   const originalLocomotion = fixture.dependencies.requestLocomotion;
   fixture.dependencies.requestLocomotion = async (input) => {
     const result = await originalLocomotion(input);
-    nowNs = 25_000_000_000n;
+    nowNs = 40_000_000_000n;
     return result;
   };
   fixture.calls.length = 0;
@@ -2591,7 +2673,7 @@ test("shared artifact identity rejects a pathname swap after descriptor bytes we
   assert.equal(fixture.calls.some((call) => call.kind === "marker" || call.kind === "locomote"), false);
 });
 
-test("a post-stage action pathname swap quarantines audit but restore still reaches bounded target cleanup", async (t) => {
+test("a post-stage derived-view pathname swap is atomically repaired without reversing the committed step", async (t) => {
   const fixture = await createPreparedFixture(t);
   let swapped = false;
   const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
@@ -2605,15 +2687,15 @@ test("a post-stage action pathname swap quarantines audit but restore still reac
   });
   const prepared = await orchestrator.execute(fixture.input);
   const stopped = await orchestrator.execute(stepRequest({ ...fixture, prepared }, reviewFor(prepared.requiredReview[0])));
-  assert.equal(stopped.status, "stopped");
-  assert.match(stopped.primaryError, /action|publish|identity|path/i);
+  assert.equal(stopped.status, "needs_waypoint_review");
+  assert.equal(stopped.primaryError, null);
+  assert.equal(stopped.actionAuditMaintenance.status, "current");
   fixture.calls.length = 0;
   const restored = await orchestrator.execute({
     action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
-  assert.equal(restored.status, "restore_failed");
-  assert.match(`${restored.primaryError} ${restored.cleanupError}`, /audit|artifact|identity|path/i);
-  assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
+  assert.equal(restored.status, "restored_needs_review");
+  assert.equal(restored.primaryError, null);
   assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
 });
 
@@ -2755,7 +2837,7 @@ test("descriptor evidence resampling rejects same-inode same-length rewrites bef
   }
 });
 
-test("same-inode action rewrite after movement is detected and restore still performs cleanup", async (t) => {
+test("same-inode derived-view rewrite is reported, repaired, and keeps committed movement reachable", async (t) => {
   const fixture = await createPreparedFixture(t);
   let actionAppend = false;
   let rewritten = false;
@@ -2774,14 +2856,17 @@ test("same-inode action rewrite after movement is detected and restore still per
     { ...fixture, prepared },
     reviewFor(prepared.requiredReview[0]),
   ));
-  assert.equal(stopped.status, "stopped");
-  assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /action|descriptor|bytes|identity|changed/i);
+  assert.equal(stopped.status, "needs_waypoint_review");
+  assert.equal(stopped.primaryError, null);
+  assert.equal(stopped.actionAuditMaintenance.status, "repair_pending");
+  assert.match(stopped.actionAuditMaintenance.errors.join(" "), /action|descriptor|bytes|identity|changed/i);
   fixture.calls.length = 0;
   const restored = await orchestrator.execute({
     action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
-  assert.equal(restored.status, "restore_failed");
-  assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
+  assert.equal(restored.status, "restored_needs_review");
+  assert.equal(restored.actionAuditMaintenance.status, "current");
+  assert.match(restored.actionAuditMaintenance.errors.join(" "), /action|descriptor|bytes|identity|changed/i);
   assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
 });
 
@@ -3016,6 +3101,25 @@ function cancelAckFor(input, outcome = "cancelled") {
   };
 }
 
+function finalizeAckFor(input) {
+  return {
+    kind: AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND,
+    schemaVersion: AGENT_BRIDGE_LOCOMOTION_SCHEMA_VERSION,
+    capabilityRevision: AGENT_BRIDGE_LOCOMOTION_CAPABILITY_REVISION,
+    requestId: input.requestId,
+    tag: input.tag ?? input.requestId,
+    application: { packageName: input.packageName },
+    operation: AGENT_BRIDGE_LOCOMOTE_COMMAND,
+    physicalWalk: false,
+    primaryError: null,
+    cleanupError: null,
+    requestControl: "finalize",
+    outcome: "finalized",
+    rootGenerationBefore: input.rootGeneration,
+    root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: input.rootGeneration, incarnation: input.rootIncarnation },
+  };
+}
+
 test("maximum direct glide remains inside the terminal host window and exact cleanup", async () => {
   let nowNs = 0n;
   const calls = [];
@@ -3024,7 +3128,7 @@ test("maximum direct glide remains inside the terminal host window and exact cle
     glideDurationMs: 10_000,
     maxPolls: 10,
     pollMs: 100,
-    deadlineMonotonicNs: "20000000000",
+    deadlineMonotonicNs: "21650000000",
   };
   const ack = locomotionAck({
     glideDurationMs: 10_000,
@@ -3073,7 +3177,7 @@ test("locomotion timeout obtains a guest cancel barrier before one exact nonce r
     glideDurationMs: 10_000,
     maxPolls: 2,
     pollMs: 10,
-    deadlineMonotonicNs: "16000000000",
+    deadlineMonotonicNs: "16300000000",
   };
   const cancelAck = Buffer.from(JSON.stringify(cancelAckFor(input)));
   const deps = {
@@ -3105,11 +3209,11 @@ test("locomotion timeout obtains a guest cancel barrier before one exact nonce r
   assert.equal(calls.filter((call) => call.kind === "rm").length, 1);
 });
 
-test("AgentBridge clock failure after guest-visible execute still cancels and removes the nonce exactly once", async () => {
+test("AgentBridge clock failure after guest-visible execute starts no strict effect and defers stop-first cleanup", async () => {
   let clockBroken = false;
   let cancelSeen = false;
   const calls = [];
-  const input = { ...locomotionInput, deadlineMonotonicNs: "20000000000" };
+  const input = { ...locomotionInput, deadlineMonotonicNs: "20000000000", deferNonceCleanup: true };
   const cancelAck = Buffer.from(JSON.stringify(cancelAckFor(input)));
   const deps = {
     monotonicNs: () => {
@@ -3134,9 +3238,10 @@ test("AgentBridge clock failure after guest-visible execute still cancels and re
 
   assert.equal(result.ok, false);
   assert.match(`${result.primaryError} ${result.cleanupError}`, /clock fault/i);
-  assert.equal(result.motionQuiesced, true);
-  assert.equal(calls.filter((call) => call.kind === "cancel").length, 1);
-  assert.equal(calls.filter((call) => call.kind === "rm").length, 1);
+  assert.equal(result.motionQuiesced, false);
+  assert.equal(result.nonceCleanup.status, "deferred_until_stop");
+  assert.equal(calls.filter((call) => call.kind === "cancel").length, 0);
+  assert.equal(calls.filter((call) => call.kind === "rm").length, 0);
 });
 
 test("legacy commands acknowledgement without capability revision is capability_unavailable and cleaned", async () => {
@@ -3754,7 +3859,7 @@ test("post-request deadline failure retains unquiesced evidence and stops before
   assert.equal(effects[2].context.cleanupOnly, true);
 });
 
-test("post-request clock failure still removes a proven-quiescent route-owned nonce exactly once", async (t) => {
+test("post-request clock failure stops before cleaning a terminal but not-yet-finalized route-owned nonce", async (t) => {
   const fixture = await prepareForSteps(t);
   let clockBroken = false;
   let tick = 60_000_000_000n;
@@ -3774,24 +3879,78 @@ test("post-request clock failure still removes a proven-quiescent route-owned no
 
   assert.equal(stopped.status, "stopped");
   assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /post-quiescence route clock failed/i);
-  assert.equal(fixture.calls.some((call) => call.kind === "stop"), false);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
   const cleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
   assert.equal(cleanups.length, 1);
   assert.equal(cleanups[0].context.cleanupOnly, true);
+  assert.equal(cleanups[0].context.processStopped, true);
   assert.equal(cleanups[0].context.requestId, fixture.calls.find((call) => call.kind === "locomote").input.requestId);
 });
 
-test("a quiesced nonce-cleanup failure is attempted once, quarantines separately, and restore never removes it again", async (t) => {
+test("a pre-removal finalization failure stops the target before the route performs its sole removal", async (t) => {
   const fixture = await prepareForSteps(t, {
     locomotionResult: routeOwnedCompletedResult,
-    nonceCleanupError: "injected sole nonce removal failure",
   });
+  let removalAttempts = 0;
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    fixture.calls.push({ kind: "nonceCleanup", context });
+    if (context.processStopped !== true) {
+      throw Object.assign(new Error("injected finalization barrier failure before removal"), {
+        finalizationProven: false,
+        removalStarted: false,
+        absenceProven: false,
+      });
+    }
+    assert.equal(context.probeOnly, undefined);
+    removalAttempts++;
+    return { status: "removed_and_absent", requestId: context.requestId, relativePath: context.relativePath, attempts: 1 };
+  };
   fixture.calls.length = 0;
   const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
   assert.equal(stopped.status, "stopped");
-  assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /sole nonce removal failure/i);
-  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 1);
-  assert.equal(fixture.calls.some((call) => call.kind === "stop"), false, "quiesced motion is distinct from nonce cleanup failure");
+  assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /finalization barrier failure/i);
+  assert.deepEqual(
+    fixture.calls.filter((call) => ["locomote", "nonceCleanup", "stop"].includes(call.kind)).map((call) => call.kind),
+    ["locomote", "nonceCleanup", "stop", "nonceCleanup"],
+  );
+  assert.equal(removalAttempts, 1, "failure before removal preserves one stop-first removal owner");
+  const cleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
+  assert.equal(cleanups[1].context.processStopped, true);
+  assert.equal(cleanups[1].context.probeOnly, undefined);
+});
+
+test("a started removal with an unproven absence gets probe-only recovery and never a second rm", async (t) => {
+  const fixture = await prepareForSteps(t, { locomotionResult: routeOwnedCompletedResult });
+  let removalAttempts = 0;
+  let probeOnlyAttempts = 0;
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    fixture.calls.push({ kind: "nonceCleanup", context });
+    if (context.probeOnly === true) {
+      probeOnlyAttempts++;
+      if (probeOnlyAttempts === 1) {
+        throw Object.assign(new Error("injected absence probe remained ambiguous"), {
+          finalizationProven: true,
+          removalStarted: true,
+          absenceProven: false,
+        });
+      }
+      return { status: "removed_and_absent", requestId: context.requestId, relativePath: context.relativePath, attempts: 1 };
+    }
+    removalAttempts++;
+    throw Object.assign(new Error("injected post-rm absence failure"), {
+      finalizationProven: true,
+      removalStarted: true,
+      absenceProven: false,
+    });
+  };
+  fixture.calls.length = 0;
+  const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(stopped.status, "stopped");
+  assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /post-rm|absence/i);
+  assert.equal(removalAttempts, 1);
+  assert.equal(probeOnlyAttempts, 1);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup")[1].context.probeOnly, true);
 
   fixture.calls.length = 0;
   const restored = await fixture.orchestrator.execute({
@@ -3800,10 +3959,12 @@ test("a quiesced nonce-cleanup failure is attempted once, quarantines separately
     reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
   assert.equal(restored.status, "restore_failed");
-  assert.match(`${restored.primaryError} ${restored.cleanupError}`, /already attempted|absence proof/i);
+  assert.match(`${restored.primaryError} ${restored.cleanupError}`, /already attempted|absence proof|cleanup-only/i);
   assert.equal(fixture.calls.some((call) => call.kind === "capability" || call.kind === "hmd" || call.kind === "locomote"), false);
-  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 0);
-  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 1);
+  assert.equal(fixture.calls.find((call) => call.kind === "nonceCleanup").context.probeOnly, true);
+  assert.equal(removalAttempts, 1, "restore must not issue a second removal");
+  assert.equal(probeOnlyAttempts, 2);
 });
 
 test("nonce cleanup disposition is retained inside the deadline callback before a post-await clock fault", async (t) => {
@@ -4004,26 +4165,230 @@ test("a deferred locomote preflight failure remains route-owned and transport-fr
   assert.equal(calls.length, 0);
 });
 
-test("exact locomotion nonce cleanup removes once then proves pathname absence", async () => {
+test("exact locomotion nonce cleanup finalizes the original tuple before one removal and absence proof", async () => {
+  const calls = [];
+  const finalAck = Buffer.from(JSON.stringify(finalizeAckFor({
+    ...baseInput,
+    rootGeneration: 7,
+    rootIncarnation: ROOT_INCARNATION,
+  })), "utf8");
+  let finalReads = 0;
+  let guestState = "EXECUTE_TERMINAL";
+  let publishedBytes = Buffer.from(JSON.stringify(locomotionAck()), "utf8");
+  let guestWriterPublications = 0;
+  const result = await agentBridge.cleanupAgentBridgeLocomotionNonce(adb, {
+    serial: baseInput.serial,
+    packageName: baseInput.packageName,
+    requestId: baseInput.requestId,
+    tag: baseInput.tag,
+    rootGeneration: 7,
+    rootIncarnation: ROOT_INCARNATION,
+    controlTimeoutMs: 1_000,
+    ackReadTimeoutMs: 250,
+    pollMs: 1,
+    stabilityReads: 2,
+    deadlineMonotonicNs: "10000000000",
+  }, {
+    monotonicNs: (() => { let tick = 1n; return () => tick++; })(),
+    sleep: async () => {},
+    runText: async (_cmd, args, options) => {
+      const kind = args.includes("requestControl") ? "finalize" : "rm";
+      calls.push({ kind, args, options });
+      if (kind === "finalize") {
+        assert.equal(guestState, "EXECUTE_TERMINAL");
+        guestState = "FINALIZED"; // Installed before final bytes become visible.
+        publishedBytes = finalAck;
+        guestWriterPublications++;
+      } else {
+        assert.equal(guestState, "FINALIZED", "host removal must follow the serialized final fence");
+        publishedBytes = null;
+      }
+      return cleanupOk;
+    },
+    runBytes: async (_cmd, args, options) => {
+      const kind = finalReads < 2 ? "finalize-read" : "verify";
+      calls.push({ kind, args, options });
+      if (finalReads++ < 2) {
+        return { code: 0, stdout: Buffer.concat([Buffer.from([1]), publishedBytes]), stderr: "", timedOut: false };
+      }
+      return publishedBytes === null
+        ? { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false }
+        : { code: 0, stdout: Buffer.concat([Buffer.from([1]), publishedBytes]), stderr: "", timedOut: false };
+    },
+  });
+  assert.equal(result.status, "removed_and_absent");
+  assert.deepEqual(calls.map((call) => call.kind), ["finalize", "finalize-read", "finalize-read", "rm", "verify"]);
+  assert.equal(calls.filter((call) => call.kind === "rm").length, 1);
+  const finalize = calls[0].args;
+  assert.ok(finalize.includes("finalize"));
+  assert.ok(finalize.includes(ROOT_INCARNATION));
+  const deliverAfterFinalization = (requestControl) => {
+    assert.equal(guestState, "FINALIZED");
+    assert.ok(["execute", "cancel", "finalize"].includes(requestControl));
+    // The process-lifetime FINALIZED tombstone rejects every later delivery
+    // before deletion/writer admission, including the exact repeated cancel.
+  };
+  deliverAfterFinalization("cancel");
+  deliverAfterFinalization("finalize");
+  deliverAfterFinalization("execute");
+  assert.equal(publishedBytes, null, "no exact replay may resurrect the cleaned pathname");
+  assert.equal(guestWriterPublications, 1, "the finalization writer is the last guest publication");
+});
+
+test("a failed sole removal still performs and retains the authoritative absence proof", async () => {
+  let nowNs = 0n;
   const calls = [];
   const result = await agentBridge.cleanupAgentBridgeLocomotionNonce(adb, {
     serial: baseInput.serial,
     packageName: baseInput.packageName,
     requestId: baseInput.requestId,
+    tag: baseInput.tag,
+    rootGeneration: 7,
+    rootIncarnation: ROOT_INCARNATION,
     controlTimeoutMs: 1_000,
+    ackReadTimeoutMs: 250,
+    pollMs: 1,
+    stabilityReads: 2,
+    deadlineMonotonicNs: "1250000000",
+    processStopped: true,
   }, {
-    runText: async (_cmd, args, options) => {
-      calls.push({ kind: "rm", args, options });
-      return cleanupOk;
+    monotonicNs: () => nowNs,
+    sleep: async () => {},
+    runText: async (_cmd, _args, options) => {
+      calls.push({ kind: "rm", startedAt: nowNs, options });
+      nowNs += BigInt(options.timeoutMs) * 1_000_000n;
+      return { code: 1, stdout: "", stderr: "injected rm error", timedOut: false };
     },
-    runBytes: async (_cmd, args, options) => {
-      calls.push({ kind: "verify", args, options });
+    runBytes: async (_cmd, _args, options) => {
+      calls.push({ kind: "absence", startedAt: nowNs, options });
+      nowNs += BigInt(options.timeoutMs) * 1_000_000n;
       return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
     },
   });
   assert.equal(result.status, "removed_and_absent");
-  assert.deepEqual(calls.map((call) => call.kind), ["rm", "verify"]);
-  assert.equal(calls.filter((call) => call.kind === "rm").length, 1);
+  assert.match(result.removalError, /rm error|cleanup failed/i);
+  assert.deepEqual(calls.map((call) => call.kind), ["rm", "absence"]);
+  assert.equal(calls[0].startedAt, 0n);
+  assert.equal(calls[1].startedAt, 1_000_000_000n);
+});
+
+test("strict nonce cleanup starts no removal when its deadline cannot also reserve an absence probe", async () => {
+  const calls = [];
+  await assert.rejects(agentBridge.cleanupAgentBridgeLocomotionNonce(adb, {
+    serial: baseInput.serial,
+    packageName: baseInput.packageName,
+    requestId: baseInput.requestId,
+    tag: baseInput.tag,
+    rootGeneration: 7,
+    rootIncarnation: ROOT_INCARNATION,
+    controlTimeoutMs: 1_000,
+    ackReadTimeoutMs: 250,
+    pollMs: 1,
+    stabilityReads: 2,
+    deadlineMonotonicNs: "1249000000",
+    processStopped: true,
+  }, {
+    monotonicNs: () => 0n,
+    sleep: async () => { calls.push("sleep"); },
+    runText: async () => { calls.push("rm"); return cleanupOk; },
+    runBytes: async () => { calls.push("absence"); return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false }; },
+  }), (error) => {
+    assert.equal(error.removalStarted, false);
+    assert.match(error.message, /cannot fit|preserving.*proof/i);
+    return true;
+  });
+  assert.deepEqual(calls, []);
+});
+
+test("worst-case cancellation and final cleanup never start an effect at or after their absolute deadlines", async () => {
+  let nowNs = 0n;
+  const deadlineNs = 6_800_000_000n;
+  const calls = [];
+  const advance = (options) => { nowNs += BigInt(options.timeoutMs) * 1_000_000n; };
+  const result = await requestAgentBridgeLocomotion(adb, {
+    ...locomotionInput,
+    maxPolls: 2,
+    pollMs: 10,
+    stabilityReads: 2,
+    ackReadTimeoutMs: 250,
+    controlTimeoutMs: 1_000,
+    deadlineMonotonicNs: deadlineNs.toString(),
+    deferNonceCleanup: true,
+  }, {
+    monotonicNs: () => nowNs,
+    sleep: async (durationMs) => {
+      calls.push({ kind: "sleep", startedAt: nowNs, durationMs });
+      nowNs += BigInt(durationMs) * 1_000_000n;
+    },
+    runText: async (_cmd, args, options) => {
+      calls.push({ kind: args.includes("cancel") ? "cancel" : "execute", startedAt: nowNs, options });
+      advance(options);
+      return textOk;
+    },
+    runBytes: async (_cmd, _args, options) => {
+      calls.push({ kind: "read", startedAt: nowNs, options });
+      advance(options);
+      return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.motionQuiesced, false);
+  assert.equal(result.nonceCleanup.status, "deferred_until_stop");
+  assert.ok(calls.length > 0);
+  for (const call of calls) {
+    assert.ok(call.startedAt < deadlineNs, `${call.kind} started at/after ${deadlineNs}: ${call.startedAt}`);
+    if (call.options) {
+      assert.ok(call.startedAt + BigInt(call.options.timeoutMs) * 1_000_000n <= deadlineNs,
+        `${call.kind} timeout escaped ${deadlineNs}: ${call.startedAt}+${call.options.timeoutMs}`);
+    } else {
+      assert.ok(call.startedAt + BigInt(call.durationMs) * 1_000_000n <= deadlineNs,
+        `${call.kind} sleep escaped ${deadlineNs}: ${call.startedAt}+${call.durationMs}`);
+    }
+  }
+
+  nowNs = 0n;
+  const cleanupDeadlineNs = 4_000_000_000n;
+  const cleanupCalls = [];
+  const finalAck = Buffer.from(JSON.stringify(finalizeAckFor({
+    ...baseInput, rootGeneration: 7, rootIncarnation: ROOT_INCARNATION,
+  })), "utf8");
+  let reads = 0;
+  await agentBridge.cleanupAgentBridgeLocomotionNonce(adb, {
+    serial: baseInput.serial,
+    packageName: baseInput.packageName,
+    requestId: baseInput.requestId,
+    tag: baseInput.tag,
+    rootGeneration: 7,
+    rootIncarnation: ROOT_INCARNATION,
+    controlTimeoutMs: 1_000,
+    ackReadTimeoutMs: 250,
+    pollMs: 10,
+    stabilityReads: 2,
+    deadlineMonotonicNs: cleanupDeadlineNs.toString(),
+  }, {
+    monotonicNs: () => nowNs,
+    sleep: async (durationMs) => {
+      cleanupCalls.push({ kind: "sleep", startedAt: nowNs, durationMs });
+      nowNs += BigInt(durationMs) * 1_000_000n;
+    },
+    runText: async (_cmd, args, options) => {
+      cleanupCalls.push({ kind: args.includes("requestControl") ? "finalize" : "rm", startedAt: nowNs, options });
+      advance(options);
+      return cleanupOk;
+    },
+    runBytes: async (_cmd, _args, options) => {
+      cleanupCalls.push({ kind: reads < 2 ? "finalize-read" : "absence", startedAt: nowNs, options });
+      advance(options);
+      if (reads++ < 2) return { code: 0, stdout: Buffer.concat([Buffer.from([1]), finalAck]), stderr: "", timedOut: false };
+      return { code: 0, stdout: Buffer.from([0]), stderr: "", timedOut: false };
+    },
+  });
+  for (const call of cleanupCalls) {
+    assert.ok(call.startedAt < cleanupDeadlineNs, `${call.kind} started at/after cleanup deadline`);
+    const durationMs = call.options?.timeoutMs ?? call.durationMs;
+    assert.ok(call.startedAt + BigInt(durationMs) * 1_000_000n <= cleanupDeadlineNs,
+      `${call.kind} escaped cleanup deadline`);
+  }
 });
 
 test("immutable action records form the authoritative hash chain behind the JSONL view", async (t) => {
@@ -4064,4 +4429,67 @@ test("an O_EXCL action-record commit conflict cannot erase an intervening writer
   assert.equal(restored.status, "restore_failed");
   assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
   assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+});
+
+test("every post-link ledger maintenance fault preserves the one committed prepare outcome and reachable restore", async (t) => {
+  for (const hookName of [
+    "afterActionRecordLink",
+    "afterActionFirstDirectoryFsync",
+    "afterActionStageUnlink",
+    "afterActionRecordAdoption",
+    "afterActionViewMaterialization",
+  ]) {
+    await t.test(hookName, async (t) => {
+      const fixture = await createPreparedFixture(t);
+      let injected = false;
+      const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+        [hookName](context) {
+          if (context.action !== "prepare" || injected) return;
+          injected = true;
+          throw new Error(`injected ${hookName}`);
+        },
+      });
+      const prepared = await orchestrator.execute(fixture.input);
+      assert.equal(injected, true, `${hookName} did not reach the intended committed boundary`);
+      assert.equal(prepared.status, "needs_baseline_review");
+      assert.match(prepared.actionAuditMaintenance.errors.join(" "), new RegExp(hookName, "i"));
+      assert.ok(["current", "repair_pending"].includes(prepared.actionAuditMaintenance.status));
+      const recordsRoot = path.join(fixture.input.artifactRoot, "action-records");
+      assert.deepEqual(fs.readdirSync(recordsRoot).filter((name) => /^\d{6}\.json$/.test(name)), ["000001.json"]);
+      const record = JSON.parse(fs.readFileSync(path.join(recordsRoot, "000001.json"), "utf8"));
+      assert.equal(record.operationId, "prepare:terminal");
+      assert.equal(record.payload.status, "completed");
+      assert.equal(record.recordSha256, undefined);
+      const restored = await orchestrator.execute({
+        action: "restore",
+        runId: prepared.runId,
+        reviewedPriorFrame: reviewFor(prepared.requiredReview[0]),
+      });
+      assert.equal(restored.status, "restored_needs_review");
+      assert.equal(restored.actionAuditMaintenance.status, "current", "the next action must repair any pending derived/durability maintenance");
+      assert.match(restored.actionAuditMaintenance.errors.join(" "), new RegExp(hookName, "i"));
+      const records = fs.readdirSync(recordsRoot).filter((name) => /^\d{6}\.json$/.test(name)).sort();
+      assert.deepEqual(records, ["000001.json", "000002.json"]);
+      const payloadLines = records.map((name) => canonicalJson(JSON.parse(fs.readFileSync(path.join(recordsRoot, name), "utf8")).payload)).join("\n") + "\n";
+      assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"), payloadLines);
+    });
+  }
+});
+
+test("monitor sample zero must be descriptor-retained and cross-bound to the launch observer handoff", async (t) => {
+  for (const [label, options, pattern] of [
+    ["callback before retention", { monitorCallbackBeforeRetention: true }, /sample zero|handoff|raw window|retain|exist|ENOENT|file/i],
+    ["forged callback descriptor", { monitorCallbackForgedWindow: true }, /sample zero|handoff|raw window|SHA/i],
+    ["forged callback timing", {
+      monitorSampleZeroProbeStartedAtMonotonicNs: "22000000",
+      monitorSampleZeroRetainedAtMonotonicNs: "21000000",
+    }, /sample zero|handoff|monotonic|timing|retain/i],
+  ]) {
+    await t.test(label, async (t) => {
+      const fixture = await createPreparedFixture(t, options);
+      const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+      assert.equal(result.status, "preparation_failed");
+      assert.match(`${result.primaryError} ${result.cleanupError}`, pattern);
+    });
+  }
 });

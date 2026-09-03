@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   AGENT_BRIDGE_LOCOMOTION_ROOT_ID,
+  agentBridgeLocomotionMinimumEnvelopeMs,
   probeAgentBridgeLocomotionCapability,
   requestAgentBridgeHmdPose,
   requestAgentBridgeLocomotion,
@@ -13,6 +14,7 @@ import {
   type AgentBridgeHmdPose,
   type AgentBridgeHmdPoseRequestInput,
   type AgentBridgeLocomotionAck,
+  type AgentBridgeLocomotionNonceCleanupReceipt,
   type AgentBridgeLocomotionRequestInput,
   type AgentBridgeLocomotionTransactionInput,
 } from "./agentbridge.js";
@@ -59,7 +61,13 @@ const ROOT_INCARNATION = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BRIDGE_MAX_POLLS = 10;
 const BRIDGE_POLL_MS = 100;
-const BRIDGE_MIN_TRANSACTION_MS = 1_000 + BRIDGE_MAX_POLLS * 250 + (BRIDGE_MAX_POLLS - 1) * BRIDGE_POLL_MS + 1_000;
+const BRIDGE_STABILITY_READS = 2;
+const BRIDGE_MIN_TRANSACTION_MS = agentBridgeLocomotionMinimumEnvelopeMs({
+  maxPolls: BRIDGE_MAX_POLLS,
+  pollMs: BRIDGE_POLL_MS,
+  stabilityReads: BRIDGE_STABILITY_READS,
+  executionDelayMs: 0,
+});
 const FINAL_RECOVERY_RESERVE_MS = 5_000;
 
 const hashSchema = z.string().regex(SHA256);
@@ -301,6 +309,9 @@ export interface LocomotionRuntimeBinding {
 
 export interface FreshLaunchMonitorSample {
   elapsedMs: number;
+  windowProbeStartedAtMonotonicNs: string;
+  windowRetainedAtMonotonicNs: string;
+  windowHandoffToken: string;
   dialogs: string[];
   safety: LocomotionSafetySnapshot;
   continuity: ApplicationContinuitySample;
@@ -318,6 +329,13 @@ export interface FreshLaunchMonitorReceipt {
 export interface FreshLaunchHandoffReceipt {
   dialogs: string[];
   rawWindowDump: LocomotionRawLogEvidence;
+}
+
+export interface FreshLaunchMonitorHandoff {
+  rawWindowDump: LocomotionRawLogEvidence;
+  probeStartedAtMonotonicNs: string;
+  retainedAtMonotonicNs: string;
+  handoffToken: string;
 }
 
 export interface FreshLaunchHandoffObservationSample {
@@ -368,6 +386,13 @@ export interface LocomotionCaptureReceipt {
   receipt: CaptureSettledReceipt;
 }
 
+export interface LocomotionActionAuditMaintenance {
+  /** Immutable action-record authority is committed even when its derived view needs repair. */
+  authoritative: "committed";
+  status: "current" | "repair_pending";
+  errors: string[];
+}
+
 export interface LocomotionPrepareReceipt {
   status: "needs_baseline_review" | "preflight_rejected" | "preparation_failed";
   runId: string | null;
@@ -381,6 +406,7 @@ export interface LocomotionPrepareReceipt {
   rootGeneration?: number;
   rootIncarnation?: string;
   applicationBinding?: BoundApplicationIdentity;
+  actionAuditMaintenance?: LocomotionActionAuditMaintenance;
 }
 
 export interface LocomotionHmdDriftReceipt {
@@ -419,6 +445,7 @@ export interface LocomotionStepReceipt {
   hmdDrift: LocomotionHmdDriftReceipt | null;
   logEvidence: LocomotionLogEvidence | null;
   usage: { waypointAttempts: number; successfulWaypoints: number; routeDurationMs: number };
+  actionAuditMaintenance?: LocomotionActionAuditMaintenance;
 }
 
 export interface LocomotionPriorForegroundDisposition {
@@ -442,6 +469,7 @@ export interface LocomotionRestoreReceipt {
   lookRequired: true;
   requiredReview: LocomotionReviewItem[];
   priorForeground: LocomotionPriorForegroundDisposition;
+  actionAuditMaintenance?: LocomotionActionAuditMaintenance;
 }
 
 export interface LocomotionAdjudicateReceipt {
@@ -456,6 +484,7 @@ export interface LocomotionAdjudicateReceipt {
   captureCount: number;
   primaryError: string | null;
   cleanupError: string | null;
+  actionAuditMaintenance?: LocomotionActionAuditMaintenance;
 }
 
 export interface PriorRelaunchReceipt {
@@ -490,6 +519,11 @@ export interface InAppLocomotionArtifactHooks {
   beforeActionStageFsync?(context: { action: string; status: string | null; path: string }): void;
   beforeActionPublish?(context: { action: string; status: string | null; path: string; stagedPath: string }): void;
   beforeActionRecordCommit?(context: { action: string; status: string | null; recordPath: string; stagedPath: string }): void;
+  afterActionRecordLink?(context: { action: string; status: string | null; recordPath: string; stagedPath: string }): void;
+  afterActionFirstDirectoryFsync?(context: { action: string; status: string | null; recordPath: string; stagedPath: string }): void;
+  afterActionStageUnlink?(context: { action: string; status: string | null; recordPath: string; stagedPath: string }): void;
+  afterActionRecordAdoption?(context: { action: string; status: string | null; recordPath: string; stagedPath: string }): void;
+  afterActionViewMaterialization?(context: { action: string; status: string | null; path: string }): void;
   afterArtifactReadBeforePathRecheck?(context: { path: string; label: string }): void;
 }
 
@@ -542,7 +576,7 @@ export interface InAppLocomotionDependencies {
     minimumDurationMs: 60_000;
     healthBoundaryMarker: string;
     runtime: LocomotionRuntimeBinding;
-    onFirstWindowSample(): Promise<void>;
+    onFirstWindowSample(sample: FreshLaunchMonitorHandoff): Promise<void>;
   } & LocomotionEffectBudget): Promise<FreshLaunchMonitorReceipt>;
   captureSettled(input: CaptureSettledInput): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }>;
   readReviewImage(item: LocomotionReviewItem, artifactRoot: string): Buffer;
@@ -557,7 +591,12 @@ export interface InAppLocomotionDependencies {
     serial: string;
     packageName: string;
     requestId: string;
-  } & LocomotionEffectBudget): Promise<unknown>;
+    tag: string;
+    rootGeneration: number;
+    rootIncarnation: string;
+    processStopped?: true;
+    probeOnly?: true;
+  } & LocomotionEffectBudget): Promise<AgentBridgeLocomotionNonceCleanupReceipt>;
   emitMarker(context: { serial: string; marker: string } & LocomotionEffectBudget): Promise<void>;
   collectStepLogs(context: {
     serial: string;
@@ -606,6 +645,9 @@ interface OwnedArtifactBinding extends ReservedArtifactSession {
   routeManifest: ArtifactFileIdentity;
   actionLog: ArtifactFileIdentity;
   actionRecords: ActionRecordBinding[];
+  actionViewDirty: boolean;
+  actionDurabilityPending: boolean;
+  actionMaintenanceErrors: string[];
 }
 
 interface LocomotionState {
@@ -634,7 +676,14 @@ interface LocomotionState {
   adjudicated: boolean;
   currentReviewReflectsNonzeroMutation: boolean;
   unquiescedLocomotion: { requestId: string; relativePath: string } | null;
-  pendingLocomotionNonce: { requestId: string; relativePath: string; attempts: 0 | 1 } | null;
+  pendingLocomotionNonce: {
+    requestId: string;
+    relativePath: string;
+    tag: string;
+    rootGeneration: number;
+    rootIncarnation: string;
+    attempts: 0 | 1;
+  } | null;
   actionAuditConflict: boolean;
 }
 
@@ -653,6 +702,26 @@ class LocomotionStageError extends Error {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function nonceCleanupFailureDisposition(error: unknown): {
+  finalizationProven: boolean;
+  removalStarted: boolean;
+  absenceProven: boolean;
+} {
+  if (error !== null && typeof error === "object") {
+    const value = error as Record<string, unknown>;
+    if (typeof value.finalizationProven === "boolean" && typeof value.removalStarted === "boolean"
+      && value.absenceProven === false) {
+      return {
+        finalizationProven: value.finalizationProven,
+        removalStarted: value.removalStarted,
+        absenceProven: false,
+      };
+    }
+  }
+  // An untyped dependency failure cannot prove that the sole rm never began.
+  return { finalizationProven: false, removalStarted: true, absenceProven: false };
 }
 
 function checkedNow(dependencies: InAppLocomotionDependencies): string {
@@ -855,16 +924,44 @@ function materializeActionView(binding: OwnedArtifactBinding, payloads: Buffer[]
     if (staged.bytes !== intended.length || staged.sha256 !== sha256Bytes(intended)) {
       throw new Error("derived action JSONL staging lost exact bytes");
     }
-    assertSameArtifactFile(target, binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks);
+    // actions.jsonl is a replaceable derived view.  Its immutable action-record
+    // chain is the authority, so a damaged/substituted view must not prevent a
+    // descriptor-derived repair.
     fs.renameSync(stagedPath, target);
+    // rename preserves the already verified staged inode.  Adopt it before any
+    // fallible durability/re-stat work so a committed derived view remains
+    // repairable instead of making its former pathname identity authoritative.
+    binding.actionLog = staged;
     fsyncDirectory(binding.absoluteRoot);
-    binding.actionLog = artifactFileIdentity(target, "action JSONL", 16 * 1024 * 1024, hooks);
+    const published = artifactFileIdentity(target, "action JSONL", 16 * 1024 * 1024, hooks);
+    if (published.dev !== staged.dev || published.ino !== staged.ino
+      || published.bytes !== staged.bytes || published.sha256 !== staged.sha256) {
+      throw new Error("derived action JSONL publication changed its verified staged identity");
+    }
+    binding.actionLog = published;
+    binding.actionViewDirty = false;
   } finally {
     if (fs.existsSync(stagedPath)) fs.unlinkSync(stagedPath);
   }
 }
 
-function appendAction(binding: OwnedArtifactBinding, value: unknown, hooks: InAppLocomotionArtifactHooks): void {
+function actionAuditMaintenance(binding: OwnedArtifactBinding): LocomotionActionAuditMaintenance {
+  return {
+    authoritative: "committed",
+    status: binding.actionViewDirty || binding.actionDurabilityPending ? "repair_pending" : "current",
+    errors: [...binding.actionMaintenanceErrors],
+  };
+}
+
+function noteActionMaintenance(binding: OwnedArtifactBinding, phase: string, error: unknown): void {
+  binding.actionMaintenanceErrors.push(`${phase}: ${errorText(error)}`);
+}
+
+function appendAction(
+  binding: OwnedArtifactBinding,
+  value: unknown,
+  hooks: InAppLocomotionArtifactHooks,
+): LocomotionActionAuditMaintenance {
   assertOwnedArtifacts(binding, hooks);
   const target = path.join(binding.absoluteRoot, "actions.jsonl");
   const action = value && typeof value === "object" && !Array.isArray(value)
@@ -878,8 +975,13 @@ function appendAction(binding: OwnedArtifactBinding, value: unknown, hooks: InAp
   const existing = binding.actionRecords.find((record) => record.operationId === operationId);
   if (existing) {
     if (existing.payloadSha256 !== payloadSha256) throw new Error(`action operation '${operationId}' was already committed with different bytes`);
-    materializeActionView(binding, replayActionRecords(binding, hooks), hooks);
-    return;
+    try {
+      materializeActionView(binding, replayActionRecords(binding, hooks), hooks);
+    } catch (error) {
+      binding.actionViewDirty = true;
+      noteActionMaintenance(binding, "derived action JSONL repair after identical committed operation", error);
+    }
+    return actionAuditMaintenance(binding);
   }
   hooks.beforeActionAppendOpen?.({ action, status, path: target });
   const sequence = binding.actionRecords.length + 1;
@@ -897,6 +999,7 @@ function appendAction(binding: OwnedArtifactBinding, value: unknown, hooks: InAp
   const recordsRoot = path.join(binding.absoluteRoot, "action-records");
   const recordPath = path.join(recordsRoot, `${String(sequence).padStart(6, "0")}.json`);
   const stagedPath = path.join(recordsRoot, `.${String(sequence).padStart(6, "0")}.${crypto.randomBytes(16).toString("hex")}.tmp`);
+  let authoritativeCommit = false;
   try {
     const descriptor = fs.openSync(stagedPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
     try {
@@ -915,24 +1018,68 @@ function appendAction(binding: OwnedArtifactBinding, value: unknown, hooks: InAp
     }
     hooks.beforeActionPublish?.({ action, status, path: target, stagedPath });
     hooks.beforeActionRecordCommit?.({ action, status, recordPath, stagedPath });
-    try { fs.linkSync(stagedPath, recordPath); } catch (error: any) {
+    let identity: ArtifactFileIdentity;
+    try {
+      fs.linkSync(stagedPath, recordPath);
+      identity = { ...staged };
+    } catch (error: any) {
       if (error?.code !== "EEXIST") throw error;
       const actual = artifactFileIdentity(recordPath, `competing action record ${sequence}`, 16 * 1024 * 1024, hooks);
       const actualBytes = readSameArtifactFile(recordPath, actual, `competing action record ${sequence}`, 16 * 1024 * 1024, hooks);
       if (!actualBytes.equals(recordBytes)) throw new Error(`action record ${sequence} publication conflict`);
+      identity = actual;
     }
-    fsyncDirectory(recordsRoot);
-    fs.unlinkSync(stagedPath);
-    fsyncDirectory(recordsRoot);
-    const identity = artifactFileIdentity(recordPath, `action record ${sequence}`, 16 * 1024 * 1024, hooks);
     if (identity.sha256 !== recordSha256 || identity.bytes !== recordBytes.length) {
       throw new Error(`action record ${sequence} publication did not retain exact bytes`);
     }
     binding.actionRecords.push({ sequence, operationId, previousRecordSha256, payloadSha256, recordSha256, identity });
-    materializeActionView(binding, replayActionRecords(binding, hooks), hooks);
+    binding.actionViewDirty = true;
+    authoritativeCommit = true;
+    // The hard link (or byte-identical EEXIST) is the semantic commit fence.
+    // Everything below is repairable maintenance and must never reverse the
+    // exact payload now stored in the immutable hash chain.
+    try { hooks.afterActionRecordLink?.({ action, status, recordPath, stagedPath }); } catch (error) {
+      noteActionMaintenance(binding, "post-link action maintenance", error);
+    }
+    try {
+      fsyncDirectory(recordsRoot);
+      binding.actionDurabilityPending = false;
+      hooks.afterActionFirstDirectoryFsync?.({ action, status, recordPath, stagedPath });
+    } catch (error) {
+      binding.actionDurabilityPending = true;
+      noteActionMaintenance(binding, "authoritative action-record directory durability", error);
+    }
+    try {
+      if (fs.existsSync(stagedPath)) fs.unlinkSync(stagedPath);
+      hooks.afterActionStageUnlink?.({ action, status, recordPath, stagedPath });
+    } catch (error) {
+      noteActionMaintenance(binding, "staged action-record cleanup", error);
+    }
+    try { fsyncDirectory(recordsRoot); } catch (error) {
+      binding.actionDurabilityPending = true;
+      noteActionMaintenance(binding, "post-stage action-record directory durability", error);
+    }
+    try { hooks.afterActionRecordAdoption?.({ action, status, recordPath, stagedPath }); } catch (error) {
+      noteActionMaintenance(binding, "post-adoption action maintenance", error);
+    }
+    try {
+      materializeActionView(binding, replayActionRecords(binding, hooks), hooks);
+    } catch (error) {
+      binding.actionViewDirty = true;
+      noteActionMaintenance(binding, "derived action JSONL materialization", error);
+    }
+    try { hooks.afterActionViewMaterialization?.({ action, status, path: target }); } catch (error) {
+      noteActionMaintenance(binding, "post-materialization action maintenance", error);
+    }
   } finally {
-    if (fs.existsSync(stagedPath)) fs.unlinkSync(stagedPath);
+    if (fs.existsSync(stagedPath)) {
+      try { fs.unlinkSync(stagedPath); } catch (error) {
+        if (!authoritativeCommit) throw error;
+        noteActionMaintenance(binding, "staged action-record final cleanup", error);
+      }
+    }
   }
+  return actionAuditMaintenance(binding);
 }
 
 function directoryIdentity(directory: string, label: string): { dev: number; ino: number } {
@@ -964,11 +1111,32 @@ function assertOwnedArtifacts(binding: OwnedArtifactBinding, hooks: InAppLocomot
   );
   assertSameArtifactFile(path.join(binding.absoluteRoot, "run.json"), binding.runManifest, "run manifest", 1024 * 1024, hooks);
   assertSameArtifactFile(path.join(binding.absoluteRoot, "route.json"), binding.routeManifest, "route manifest", 1024 * 1024, hooks);
+  if (binding.actionDurabilityPending) {
+    try {
+      fsyncDirectory(path.join(binding.absoluteRoot, "action-records"));
+      binding.actionDurabilityPending = false;
+    } catch (error) {
+      noteActionMaintenance(binding, "authoritative action-record directory durability repair", error);
+    }
+  }
   const payloads = replayActionRecords(binding, hooks);
-  const viewBytes = readSameArtifactFile(
-    path.join(binding.absoluteRoot, "actions.jsonl"), binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks,
-  );
-  if (!viewBytes.equals(Buffer.concat(payloads))) throw new Error("derived action JSONL does not reproduce the authoritative action records");
+  let viewBytes: Buffer | null = null;
+  try {
+    viewBytes = readSameArtifactFile(
+      path.join(binding.absoluteRoot, "actions.jsonl"), binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks,
+    );
+  } catch (error) {
+    binding.actionViewDirty = true;
+    noteActionMaintenance(binding, "derived action JSONL validation", error);
+  }
+  const authoritativeView = Buffer.concat(payloads);
+  if (binding.actionViewDirty || viewBytes === null || !viewBytes.equals(authoritativeView)) {
+    materializeActionView(binding, payloads, hooks);
+    viewBytes = readSameArtifactFile(
+      path.join(binding.absoluteRoot, "actions.jsonl"), binding.actionLog, "repaired action JSONL", 16 * 1024 * 1024, hooks,
+    );
+  }
+  if (!viewBytes.equals(authoritativeView)) throw new Error("derived action JSONL does not reproduce the authoritative action records");
   const owner = JSON.parse(ownerBytes.toString("utf8"));
   if (owner.schemaVersion !== 1 || owner.runId !== binding.runId || owner.ownerNonceHash !== binding.ownerNonceHash) {
     throw new Error("artifact ownership record changed after reservation");
@@ -1037,6 +1205,9 @@ function reserveArtifacts(input: InAppLocomotionPrepareInput, dependencies: InAp
     routeManifest: artifactFileIdentity(path.join(physical, "route.json"), "route manifest", 1024 * 1024),
     actionLog: artifactFileIdentity(path.join(physical, "actions.jsonl"), "action JSONL", 16 * 1024 * 1024),
     actionRecords: [],
+    actionViewDirty: false,
+    actionDurabilityPending: false,
+    actionMaintenanceErrors: [],
   };
   assertOwnedArtifacts(binding);
   return { binding, createdAt, startedAtNs };
@@ -1167,10 +1338,45 @@ function freshLaunchDialogs(output: string): string[] {
     /Application Error|isn't responding|has stopped|(?:^|\s)ANR(?:\s|$)|mCurrentFocus=.*(?:Dialog|Error)/i.test(line));
 }
 
+function freshLaunchMonitorHandoffToken(runId: string, value: Omit<FreshLaunchMonitorHandoff, "handoffToken">): string {
+  return sha256Bytes(Buffer.from(canonicalJson({
+    runId,
+    rawWindowSha256: value.rawWindowDump.sha256,
+    probeStartedAtMonotonicNs: value.probeStartedAtMonotonicNs,
+    retainedAtMonotonicNs: value.retainedAtMonotonicNs,
+  }), "utf8"));
+}
+
+function validateFreshLaunchMonitorHandoff(
+  value: FreshLaunchMonitorHandoff,
+  runId: string,
+  artifactRoot: string,
+  hooks: InAppLocomotionArtifactHooks,
+): { value: FreshLaunchMonitorHandoff; retained: { path: string; identity: ArtifactFileIdentity; label: string } } {
+  if (!value || !/^(?:0|[1-9]\d*)$/.test(value.probeStartedAtMonotonicNs)
+    || !/^(?:0|[1-9]\d*)$/.test(value.retainedAtMonotonicNs)
+    || BigInt(value.retainedAtMonotonicNs) < BigInt(value.probeStartedAtMonotonicNs)) {
+    throw new Error("fresh-launch monitor sample zero lost its post-retention monotonic handoff timing");
+  }
+  const retained = checkedRawLogEvidence(value.rawWindowDump, artifactRoot, "fresh-launch monitor sample zero handoff");
+  readSameArtifactFile(retained.path, retained.identity, retained.label, 64 * 1024 * 1024, hooks);
+  const expectedToken = freshLaunchMonitorHandoffToken(runId, {
+    rawWindowDump: value.rawWindowDump,
+    probeStartedAtMonotonicNs: value.probeStartedAtMonotonicNs,
+    retainedAtMonotonicNs: value.retainedAtMonotonicNs,
+  });
+  if (value.handoffToken !== expectedToken) {
+    throw new Error("fresh-launch monitor sample zero handoff token lost its descriptor/timing binding");
+  }
+  return { value: JSON.parse(canonicalJson(value)), retained };
+}
+
 function validateMonitor(
   monitor: FreshLaunchMonitorReceipt,
   runtime: LocomotionRuntimeBinding,
   expectedBoundaryMarker: string,
+  runId: string,
+  offeredHandoff: FreshLaunchMonitorHandoff | null,
 ): void {
   if (!Number.isFinite(monitor.durationMs) || monitor.durationMs < 60_000 || !Array.isArray(monitor.samples) || monitor.samples.length < 2) {
     throw new Error("fresh-launch monitor did not retain multiple samples through at least 60 seconds");
@@ -1188,6 +1394,19 @@ function validateMonitor(
   }
   if (!Array.isArray(monitor.rawWindowDumps) || monitor.rawWindowDumps.length !== monitor.samples.length) {
     throw new Error("fresh-launch monitor did not retain one exact raw window dump per sample");
+  }
+  const sampleZero = monitor.samples[0];
+  if (offeredHandoff === null
+    || canonicalJson(monitor.rawWindowDumps[0]) !== canonicalJson(offeredHandoff.rawWindowDump)
+    || sampleZero.windowProbeStartedAtMonotonicNs !== offeredHandoff.probeStartedAtMonotonicNs
+    || sampleZero.windowRetainedAtMonotonicNs !== offeredHandoff.retainedAtMonotonicNs
+    || sampleZero.windowHandoffToken !== offeredHandoff.handoffToken
+    || freshLaunchMonitorHandoffToken(runId, {
+      rawWindowDump: monitor.rawWindowDumps[0],
+      probeStartedAtMonotonicNs: sampleZero.windowProbeStartedAtMonotonicNs,
+      retainedAtMonotonicNs: sampleZero.windowRetainedAtMonotonicNs,
+    }) !== sampleZero.windowHandoffToken) {
+    throw new Error("fresh-launch monitor sample zero receipt does not reproduce the descriptor-bound observer handoff");
   }
   for (const [index, sample] of monitor.samples.entries()) {
     if (!Array.isArray(sample.dialogs) || sample.dialogs.length > 0) throw new Error("fresh-launch dialog monitor observed a blocking dialog");
@@ -1306,7 +1525,14 @@ function captureReview(captured: Awaited<ReturnType<InAppLocomotionDependencies[
   };
 }
 
-function preparationFailure(code: string, error: unknown, runId: string | null, artifactRoot: string | null, cleanupError: string | null): LocomotionPrepareReceipt {
+function preparationFailure(
+  code: string,
+  error: unknown,
+  runId: string | null,
+  artifactRoot: string | null,
+  cleanupError: string | null,
+  actionMaintenance?: LocomotionActionAuditMaintenance,
+): LocomotionPrepareReceipt {
   return {
     status: runId === null ? "preflight_rejected" : "preparation_failed",
     runId,
@@ -1317,6 +1543,7 @@ function preparationFailure(code: string, error: unknown, runId: string | null, 
     evidenceCeiling: "structural",
     lookRequired: true,
     requiredReview: [],
+    ...(actionMaintenance === undefined ? {} : { actionAuditMaintenance: actionMaintenance }),
   };
 }
 
@@ -1465,6 +1692,7 @@ function stepReviewFailure(state: LocomotionState, detail: string): LocomotionSt
     hmdDrift: null,
     logEvidence: null,
     usage: { ...state.usage },
+    actionAuditMaintenance: actionAuditMaintenance(state.artifact),
   };
 }
 
@@ -1518,6 +1746,7 @@ function restoreReviewFailure(state: LocomotionState, detail: string): Locomotio
     lookRequired: true,
     requiredReview: [state.currentReview],
     priorForeground: priorForegroundDisposition(state),
+    actionAuditMaintenance: actionAuditMaintenance(state.artifact),
   };
 }
 
@@ -1557,7 +1786,7 @@ function bridgeBudgetFields(remainingMs: number, deadlineNs: bigint): Pick<
   return {
     maxPolls: BRIDGE_MAX_POLLS,
     pollMs: BRIDGE_POLL_MS,
-    stabilityReads: 2,
+    stabilityReads: BRIDGE_STABILITY_READS,
     controlTimeoutMs: Math.min(15_000, remainingMs),
     ackReadTimeoutMs: Math.min(2_000, remainingMs),
     deadlineMonotonicNs: deadlineNs.toString(),
@@ -1672,9 +1901,15 @@ export function createInAppLocomotionOrchestrator(
     let retainedHandoffObservation: Array<{ path: string; identity: ArtifactFileIdentity; label: string }> = [];
     let launchHandoffController: AbortController | null = null;
     let launchHandoffPromise: Promise<FreshLaunchHandoffObservationReceipt> | null = null;
+    let monitorHandoff: FreshLaunchMonitorHandoff | null = null;
     let healthBoundaryMarker: string | null = null;
 
-    const finishLaunchHandoffObservation = async (): Promise<void> => {
+    const finishLaunchHandoffObservation = async (offered?: FreshLaunchMonitorHandoff): Promise<void> => {
+      if (offered !== undefined) {
+        if (!artifact) throw new Error("fresh-launch monitor sample zero handoff lost its owned artifact session");
+        if (monitorHandoff !== null) throw new Error("fresh-launch monitor sample zero handoff callback ran more than once");
+        monitorHandoff = validateFreshLaunchMonitorHandoff(offered, artifact.runId, artifact.absoluteRoot, hooks).value;
+      }
       const pending = launchHandoffPromise;
       if (pending === null) return;
       launchHandoffPromise = null;
@@ -1683,6 +1918,14 @@ export function createInAppLocomotionOrchestrator(
       launchHandoffObservation = await pending;
       if (!artifact) throw new Error("launch-handoff observation lost its owned artifact session");
       retainedHandoffObservation = checkedLaunchHandoffObservation(launchHandoffObservation, artifact.absoluteRoot, hooks);
+      if (offered !== undefined) {
+        const finalObservedNs = BigInt(launchHandoffObservation.samples.at(-1)!.observedAtMonotonicNs);
+        const retainedNs = BigInt(offered.retainedAtMonotonicNs);
+        const maxGapNs = BigInt(launchHandoffObservation.maxSampleGapMs) * 1_000_000n;
+        if (finalObservedNs < retainedNs || finalObservedNs - retainedNs > maxGapNs) {
+          throw new Error("launch-handoff observer final retained sample did not cover monitor sample zero retention within its declared cadence");
+        }
+      }
     };
 
     const finalizePreparationBracket = async (strictDeadline: boolean): Promise<LocomotionLogEvidence | null> => {
@@ -1875,7 +2118,7 @@ export function createInAppLocomotionOrchestrator(
         timeoutMs,
         deadlineMonotonicNs: prepareDeadlineNs!.toString(),
       }));
-      validateMonitor(freshLaunchMonitor, runtime, healthBoundaryMarker);
+      validateMonitor(freshLaunchMonitor, runtime, healthBoundaryMarker, artifact.runId, monitorHandoff);
       const retainedHealthLogs = freshLaunchMonitor.rawHealthLogs.map((log, index) =>
         checkedRawLogEvidence(log, artifact!.absoluteRoot, `fresh-launch runtime-health log ${index + 1}`));
       const retainedWindowDumps = freshLaunchMonitor.rawWindowDumps.map((dump, index) =>
@@ -1972,7 +2215,7 @@ export function createInAppLocomotionOrchestrator(
         actionAuditConflict: false,
       };
       if (runs.has(artifact.runId)) throw new Error("run identifier collision");
-      appendAction(artifact, {
+      const actionAudit = appendAction(artifact, {
         action: "prepare",
         status: "completed",
         runtime,
@@ -2009,6 +2252,7 @@ export function createInAppLocomotionOrchestrator(
         rootGeneration: root.generation,
         rootIncarnation: root.incarnation,
         applicationBinding: runtime.applicationBinding,
+        actionAuditMaintenance: actionAudit,
       };
     } catch (error) {
       const cleanupErrors: string[] = [];
@@ -2130,9 +2374,10 @@ export function createInAppLocomotionOrchestrator(
       }
       const code = error instanceof LocomotionStageError ? error.code : "preparation_failed";
       const compensationProven = targetCleanupProven && priorDispositionProven && finalProcessProven && finalSafetyProven;
+      let failureActionMaintenance: LocomotionActionAuditMaintenance | undefined;
       if (artifact) {
         try {
-          appendAction(artifact, {
+          failureActionMaintenance = appendAction(artifact, {
             action: "prepare",
             status: "failed",
             structuralStop: code,
@@ -2165,7 +2410,14 @@ export function createInAppLocomotionOrchestrator(
         }
       }
       const cleanupError = cleanupErrors.length ? cleanupErrors.join("; ") : null;
-      return preparationFailure(code, error, artifact?.runId ?? null, artifact?.absoluteRoot ?? null, cleanupError);
+      return preparationFailure(
+        code,
+        error,
+        artifact?.runId ?? null,
+        artifact?.absoluteRoot ?? null,
+        cleanupError,
+        failureActionMaintenance,
+      );
     } finally {
       preparingRoots.delete(input.artifactRoot);
     }
@@ -2273,6 +2525,9 @@ export function createInAppLocomotionOrchestrator(
       state.pendingLocomotionNonce = {
         requestId: locomotionRequestId,
         relativePath: `cache/agentbridge/locomotion/${locomotionRequestId}.json`,
+        tag: `step-${waypoint.seq}`,
+        rootGeneration: rootBefore,
+        rootIncarnation: state.rootIncarnation,
         attempts: 0,
       };
       await withinDeadline(stepDeadlineNs, dependencies, "selected locomotion", async (timeoutMs) => {
@@ -2291,7 +2546,7 @@ export function createInAppLocomotionOrchestrator(
           ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
         });
         locomotion = retained;
-        if (retained.nonceCleanup === undefined) {
+        if (retained.nonceCleanup === undefined && retained.motionQuiesced === true) {
           pendingNonceRequestId = null;
           state.pendingLocomotionNonce = null;
         }
@@ -2301,17 +2556,27 @@ export function createInAppLocomotionOrchestrator(
       if (retainedLocomotion === null) throw new Error("selected locomotion returned without a retained result");
       if (retainedLocomotion.motionQuiesced && pendingNonceRequestId !== null) {
         await withinDeadline(stepDeadlineNs, dependencies, "locomotion nonce cleanup", async (timeoutMs) => {
-          if (state.pendingLocomotionNonce) state.pendingLocomotionNonce.attempts = 1;
-          const receipt = await dependencies.cleanupLocomotionNonce({
-            serial: state.input.serial,
-            packageName: state.input.scenario.packageName,
-            requestId: pendingNonceRequestId!,
-            timeoutMs,
-            deadlineMonotonicNs: stepDeadlineNs.toString(),
-          });
-          pendingNonceRequestId = null;
-          state.pendingLocomotionNonce = null;
-          return receipt;
+          const pending = state.pendingLocomotionNonce!;
+          try {
+            const receipt = await dependencies.cleanupLocomotionNonce({
+              serial: state.input.serial,
+              packageName: state.input.scenario.packageName,
+              requestId: pendingNonceRequestId!,
+              tag: pending.tag,
+              rootGeneration: pending.rootGeneration,
+              rootIncarnation: pending.rootIncarnation,
+              timeoutMs,
+              deadlineMonotonicNs: stepDeadlineNs.toString(),
+            });
+            pending.attempts = receipt.attempts > 0 ? 1 : 0;
+            pendingNonceRequestId = null;
+            state.pendingLocomotionNonce = null;
+            if (receipt.removalError) cleanupErrors.push(`locomotion nonce removal warning: ${receipt.removalError}`);
+            return receipt;
+          } catch (error) {
+            pending.attempts = nonceCleanupFailureDisposition(error).removalStarted ? 1 : 0;
+            throw error;
+          }
         });
       }
       const ack = completedLocomotionAck(retainedLocomotion);
@@ -2413,7 +2678,8 @@ export function createInAppLocomotionOrchestrator(
         }
         return recoveryBudget;
       };
-      if (locomotionMayHaveApplied && (locomotion as LocomotionResult | null)?.motionQuiesced !== true && state.targetOwned) {
+      if (locomotionMayHaveApplied && state.targetOwned
+        && ((locomotion as LocomotionResult | null)?.motionQuiesced !== true || state.pendingLocomotionNonce !== null)) {
         emergencyStop = { attempted: true, proven: false, error: null };
         try {
           await dependencies.stopPackage({
@@ -2442,21 +2708,26 @@ export function createInAppLocomotionOrchestrator(
           }
         }
       }
-      const retainedMotionQuiesced = (locomotion as LocomotionResult | null)?.motionQuiesced === true;
-      if (locomotionMayHaveApplied && (retainedMotionQuiesced || !state.targetOwned)
-        && state.pendingLocomotionNonce?.attempts === 0) {
+      if (locomotionMayHaveApplied && !state.targetOwned && state.pendingLocomotionNonce !== null) {
         const pending = state.pendingLocomotionNonce;
-        pending.attempts = 1;
         try {
-          await dependencies.cleanupLocomotionNonce({
+          const receipt = await dependencies.cleanupLocomotionNonce({
             serial: state.input.serial,
             packageName: state.input.scenario.packageName,
             requestId: pending.requestId,
+            tag: pending.tag,
+            rootGeneration: pending.rootGeneration,
+            rootIncarnation: pending.rootIncarnation,
+            processStopped: true,
+            ...(pending.attempts === 1 ? { probeOnly: true as const } : {}),
             ...stepRecoveryBudget(),
           });
+          pending.attempts = receipt.attempts > 0 ? 1 : 0;
           if (state.pendingLocomotionNonce === pending) state.pendingLocomotionNonce = null;
           if (pendingNonceRequestId === pending.requestId) pendingNonceRequestId = null;
+          if (receipt.removalError) cleanupErrors.push(`step locomotion nonce removal warning: ${receipt.removalError}`);
         } catch (cleanupError) {
+          pending.attempts = nonceCleanupFailureDisposition(cleanupError).removalStarted ? 1 : pending.attempts;
           cleanupErrors.push(`step locomotion nonce cleanup: ${errorText(cleanupError)}`);
           const lease = serialOwners.get(state.input.serial);
           if (lease?.runId === state.artifact.runId) {
@@ -2539,8 +2810,9 @@ export function createInAppLocomotionOrchestrator(
       successfulWaypoints: state.usage.successfulWaypoints + (succeeded ? 1 : 0),
     };
     let structuralStop = succeeded ? null : primaryCode ?? "step_cleanup_failed";
+    let actionAudit = actionAuditMaintenance(state.artifact);
     try {
-      appendAction(state.artifact, {
+      actionAudit = appendAction(state.artifact, {
         action: "step",
         waypointSeq: waypoint.seq,
         waypoint: input.waypoint,
@@ -2560,6 +2832,7 @@ export function createInAppLocomotionOrchestrator(
         post: { hmdPose: postHmd, safety: postSafety, continuity: postContinuity },
         hmdDrift: drift,
         logEvidence,
+        priorActionAuditMaintenance: actionAuditMaintenance(state.artifact),
       }, hooks);
     } catch (auditError) {
       if (/conflict|changed after immutable publication|authoritative action record|derived action JSONL/i.test(errorText(auditError))) {
@@ -2598,6 +2871,7 @@ export function createInAppLocomotionOrchestrator(
       hmdDrift: drift,
       logEvidence,
       usage: { ...state.usage },
+      actionAuditMaintenance: actionAudit,
     };
   };
 
@@ -2704,6 +2978,9 @@ export function createInAppLocomotionOrchestrator(
       state.pendingLocomotionNonce = {
         requestId: restoreRequestId,
         relativePath: `cache/agentbridge/locomotion/${restoreRequestId}.json`,
+        tag: "restore",
+        rootGeneration: rootBefore,
+        rootIncarnation: state.rootIncarnation,
         attempts: 0,
       };
       await withinDeadline(mutationDeadlineNs, dependencies, "zero-offset restoration", async (timeoutMs) => {
@@ -2722,7 +2999,7 @@ export function createInAppLocomotionOrchestrator(
           ...bridgeBudgetFields(timeoutMs, mutationDeadlineNs),
         });
         locomotion = retained;
-        if (retained.nonceCleanup === undefined) state.pendingLocomotionNonce = null;
+        if (retained.nonceCleanup === undefined && retained.motionQuiesced === true) state.pendingLocomotionNonce = null;
         return retained;
       });
       const retainedLocomotion = locomotion as LocomotionResult | null;
@@ -2730,16 +3007,25 @@ export function createInAppLocomotionOrchestrator(
       if (retainedLocomotion.motionQuiesced && state.pendingLocomotionNonce?.attempts === 0) {
         await withinDeadline(mutationDeadlineNs, dependencies, "restore locomotion nonce cleanup", async (timeoutMs) => {
           const pending = state.pendingLocomotionNonce!;
-          pending.attempts = 1;
-          const receipt = await dependencies.cleanupLocomotionNonce({
-            serial: state.input.serial,
-            packageName: state.input.scenario.packageName,
-            requestId: pending.requestId,
-            timeoutMs,
-            deadlineMonotonicNs: mutationDeadlineNs.toString(),
-          });
-          state.pendingLocomotionNonce = null;
-          return receipt;
+          try {
+            const receipt = await dependencies.cleanupLocomotionNonce({
+              serial: state.input.serial,
+              packageName: state.input.scenario.packageName,
+              requestId: pending.requestId,
+              tag: pending.tag,
+              rootGeneration: pending.rootGeneration,
+              rootIncarnation: pending.rootIncarnation,
+              timeoutMs,
+              deadlineMonotonicNs: mutationDeadlineNs.toString(),
+            });
+            pending.attempts = receipt.attempts > 0 ? 1 : 0;
+            state.pendingLocomotionNonce = null;
+            if (receipt.removalError) cleanupErrors.push(`restore locomotion nonce removal warning: ${receipt.removalError}`);
+            return receipt;
+          } catch (error) {
+            pending.attempts = nonceCleanupFailureDisposition(error).removalStarted ? 1 : 0;
+            throw error;
+          }
         });
       }
       const ack = completedLocomotionAck(retainedLocomotion);
@@ -2834,23 +3120,28 @@ export function createInAppLocomotionOrchestrator(
           cleanupErrors.push(`owned target stop: ${errorText(error)}`);
         }
       }
-      if (!state.targetOwned && state.pendingLocomotionNonce?.attempts === 0) {
+      if (!state.targetOwned && state.pendingLocomotionNonce !== null) {
         const pending = state.pendingLocomotionNonce;
-        pending.attempts = 1;
         try {
-          await dependencies.cleanupLocomotionNonce({
+          const receipt = await dependencies.cleanupLocomotionNonce({
             serial: state.input.serial,
             packageName: state.input.scenario.packageName,
             requestId: pending.requestId,
+            tag: pending.tag,
+            rootGeneration: pending.rootGeneration,
+            rootIncarnation: pending.rootIncarnation,
+            processStopped: true,
+            ...(pending.attempts === 1 ? { probeOnly: true as const } : {}),
             ...cleanupBudget("locomotion nonce cleanup"),
           });
+          pending.attempts = receipt.attempts > 0 ? 1 : 0;
           state.pendingLocomotionNonce = null;
           state.unquiescedLocomotion = null;
+          if (receipt.removalError) cleanupErrors.push(`locomotion nonce removal warning: ${receipt.removalError}`);
         } catch (error) {
+          pending.attempts = nonceCleanupFailureDisposition(error).removalStarted ? 1 : pending.attempts;
           cleanupErrors.push(`locomotion nonce cleanup: ${errorText(error)}`);
         }
-      } else if (!state.targetOwned && state.pendingLocomotionNonce?.attempts === 1) {
-        cleanupErrors.push("locomotion nonce cleanup was already attempted once without an exact absence proof");
       }
       if (state.input.priorForeground.kind === "non_receipt_bound" && state.priorTerminatedByRun) {
         try {
@@ -2902,8 +3193,9 @@ export function createInAppLocomotionOrchestrator(
     let completed = primaryError === null && cleanupErrors.length === 0 && restoredReview !== null
       && !state.targetOwned && finalProcessProven && finalSafetyProven;
     let structuralStop = completed ? null : primaryCode ?? "restore_cleanup_failed";
+    let actionAudit = actionAuditMaintenance(state.artifact);
     try {
-      appendAction(state.artifact, {
+      actionAudit = appendAction(state.artifact, {
         action: "restore",
         status: completed ? "completed" : "failed",
         structuralStop,
@@ -2920,6 +3212,7 @@ export function createInAppLocomotionOrchestrator(
         finalProcessProof,
         postStopSafety,
         priorForeground: priorDisposition,
+        priorActionAuditMaintenance: actionAuditMaintenance(state.artifact),
       }, hooks);
     } catch (auditError) {
       if (primaryError === null) {
@@ -2955,6 +3248,7 @@ export function createInAppLocomotionOrchestrator(
       lookRequired: true,
       requiredReview: restoredReview ? [restoredReview] : currentReviewTrusted ? [state.currentReview] : [],
       priorForeground: priorDisposition,
+      actionAuditMaintenance: actionAudit,
     };
   };
 
@@ -2974,6 +3268,7 @@ export function createInAppLocomotionOrchestrator(
     captureCount: state.requiredReview.length,
     primaryError: detail,
     cleanupError,
+    actionAuditMaintenance: actionAuditMaintenance(state.artifact),
   });
 
   const executeAdjudicate = async (input: InAppLocomotionAdjudicateInput, state: LocomotionState): Promise<LocomotionAdjudicateReceipt> => {
@@ -3018,14 +3313,16 @@ export function createInAppLocomotionOrchestrator(
     };
     privateJson(artifactPath, aggregate);
     const adjudicationIdentity = artifactFileIdentity(artifactPath, "adjudication artifact", 16 * 1024 * 1024);
+    let actionAudit = actionAuditMaintenance(state.artifact);
     try {
-      appendAction(state.artifact, {
+      actionAudit = appendAction(state.artifact, {
         action: "adjudicate",
         status: "structural_complete",
         captureCount: frames.length,
         captureSha256: frames.map((frame) => frame.captureSha256),
         evidenceCeiling: "structural",
         reviewDisposition: "eligible_for_external_vision_adjudication",
+        priorActionAuditMaintenance: actionAuditMaintenance(state.artifact),
       }, hooks);
     } catch (auditError) {
       let cleanupError: string | null = null;
@@ -3050,6 +3347,7 @@ export function createInAppLocomotionOrchestrator(
       captureCount: frames.length,
       primaryError: null,
       cleanupError: null,
+      actionAuditMaintenance: actionAudit,
     };
   };
 
@@ -3539,7 +3837,6 @@ export function createLiveInAppLocomotionDependencies(
           1_000,
         );
         checkedLiveAdbResult(result, "launch-handoff observation window sample");
-        const observedAt = clockNs();
         const artifactPath = path.join(
           context.artifactRoot,
           "logs",
@@ -3548,6 +3845,7 @@ export function createLiveInAppLocomotionDependencies(
         privateWrite(artifactPath, result.stdout);
         const identity = artifactFileIdentity(artifactPath, "launch-handoff observation raw window", 64 * 1024 * 1024);
         const bytes = readSameArtifactFile(artifactPath, identity, "launch-handoff observation raw window", 64 * 1024 * 1024);
+        const observedAt = clockNs();
         const rawWindowDump = { path: fs.realpathSync(artifactPath), sha256: identity.sha256, bytes: identity.bytes };
         rawWindowDumps.push(rawWindowDump);
         samples.push({
@@ -3639,6 +3937,7 @@ export function createLiveInAppLocomotionDependencies(
           await sleepWithin(context, targetElapsedMs - beforeSleepMs, `fresh-launch sample ${sampleIndex} delay`);
         }
         const elapsedMs = Number((clockNs() - startedNs) / 1_000_000n);
+        const windowProbeStartedAt = clockNs();
         const windowResult = await runBounded(
           context.serial,
           ["shell", "dumpsys", "window", "windows"],
@@ -3652,9 +3951,21 @@ export function createLiveInAppLocomotionDependencies(
         privateWrite(windowPath, windowState);
         const windowIdentity = artifactFileIdentity(windowPath, "fresh-launch raw window dump", 64 * 1024 * 1024);
         const windowBytes = readSameArtifactFile(windowPath, windowIdentity, "fresh-launch raw window dump", 64 * 1024 * 1024);
-        rawWindowDumps.push({ path: fs.realpathSync(windowPath), sha256: windowIdentity.sha256, bytes: windowIdentity.bytes });
+        const rawWindowDump = { path: fs.realpathSync(windowPath), sha256: windowIdentity.sha256, bytes: windowIdentity.bytes };
+        rawWindowDumps.push(rawWindowDump);
         const dialogs = freshLaunchDialogs(windowBytes.toString("utf8"));
-        if (sampleIndex === 0) await context.onFirstWindowSample();
+        const windowRetainedAt = clockNs();
+        const windowHandoffToken = freshLaunchMonitorHandoffToken(context.runId, {
+          rawWindowDump,
+          probeStartedAtMonotonicNs: windowProbeStartedAt.toString(),
+          retainedAtMonotonicNs: windowRetainedAt.toString(),
+        });
+        if (sampleIndex === 0) await context.onFirstWindowSample({
+          rawWindowDump,
+          probeStartedAtMonotonicNs: windowProbeStartedAt.toString(),
+          retainedAtMonotonicNs: windowRetainedAt.toString(),
+          handoffToken: windowHandoffToken,
+        });
         const safety = await sampleSafetyLive({
           serial: context.serial,
           phase: `fresh_launch_${sampleIndex}`,
@@ -3680,7 +3991,16 @@ export function createLiveInAppLocomotionDependencies(
           deadlineMonotonicNs: context.deadlineMonotonicNs,
         });
         rawHealthLogs.push(runtimeHealth.rawArtifact);
-        samples.push({ elapsedMs, dialogs, safety, continuity, runtimeHealth: runtimeHealth.health });
+        samples.push({
+          elapsedMs,
+          windowProbeStartedAtMonotonicNs: windowProbeStartedAt.toString(),
+          windowRetainedAtMonotonicNs: windowRetainedAt.toString(),
+          windowHandoffToken,
+          dialogs,
+          safety,
+          continuity,
+          runtimeHealth: runtimeHealth.health,
+        });
       }
       return {
         durationMs: Number((clockNs() - startedNs) / 1_000_000n),
@@ -3703,8 +4023,18 @@ export function createLiveInAppLocomotionDependencies(
       serial: context.serial,
       packageName: context.packageName,
       requestId: context.requestId,
+      tag: context.tag,
+      rootGeneration: context.rootGeneration,
+      rootIncarnation: context.rootIncarnation,
       controlTimeoutMs: Math.max(1_000, Math.min(15_000, context.timeoutMs)),
-    }, { runText: liveRunText, runBytes: liveRunBytes }),
+      ackReadTimeoutMs: Math.max(250, Math.min(15_000, context.timeoutMs)),
+      pollMs: 100,
+      stabilityReads: 2,
+      deadlineMonotonicNs: context.deadlineMonotonicNs,
+      ...(context.processStopped ? { processStopped: true as const } : {}),
+      ...(context.probeOnly ? { probeOnly: true as const } : {}),
+      ...(context.cleanupOnly ? { cleanupOnly: true as const } : {}),
+    }, { runText: liveRunText, runBytes: liveRunBytes, sleep: liveSleep, monotonicNs: clockNs }),
     emitMarker: async (context) => {
       const { serial, marker } = context;
       await checked(serial, ["shell", "log", "-t", "WorldLocomotion", marker], `locomotion marker ${marker}`, context, 5_000, 64 * 1024);

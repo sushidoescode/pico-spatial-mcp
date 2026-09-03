@@ -922,6 +922,9 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
   "commands and HMD acknowledgements remain generation-bound without requiring an execute/cancel lease");
   const locomotionDispatcher = /private fun dispatchLocomotionFileRequest[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
   const cancelDelivery = /fun dispatchLocomotionCancellation[\s\S]*?(?=\n    (?:private |fun ))/.exec(agentKt)?.[0] ?? "";
+  const finalizeDelivery = /fun dispatchLocomotionFinalization[\s\S]*?(?=\n    (?:private |fun ))/.exec(agentKt)?.[0] ?? "";
+  const leasePruner = /private fun pruneTerminalLocomotionLeasesLocked[\s\S]*?(?=\n    private fun )/.exec(agentKt)?.[0] ?? "";
+  const finalizationPlanner = /private fun finalizeLocomotionRequest[\s\S]*?(?=\n    fun dispatchLocomotionFinalization)/.exec(agentKt)?.[0] ?? "";
   assert(/LocomotionLeaseState\.CANCELLING/.test(agentKt) &&
     /LocomotionLeaseState\.CANCEL_TERMINAL/.test(agentKt) &&
     /LocomotionLeaseState\.EXECUTE_TERMINAL/.test(agentKt) &&
@@ -938,6 +941,23 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     /withTimeout/.test(cancelDelivery) && /job\.join\(\)/.test(cancelDelivery) &&
     cancelDelivery.indexOf("job.join()") < cancelDelivery.indexOf("writeLocomotionCancelAck"),
   "cancel broadcast completion is a bounded asynchronous barrier that joins the exact producer before durable acknowledgement and finishes once");
+  assert(/LocomotionLeaseState\.FINALIZING/.test(agentKt) && /LocomotionLeaseState\.FINALIZED/.test(agentKt) &&
+    /dispatchLocomotionFinalization/.test(providerKt) && /goAsync\(\)/.test(providerKt) &&
+    /producerJob\?\.join\(\)/.test(finalizeDelivery) && /cancelWriter\?\.join\(\)/.test(finalizeDelivery) &&
+    finalizeDelivery.indexOf("join()") < finalizeDelivery.indexOf("writeLocomotionFinalizeAck") &&
+    /request\.requestControl == "finalize"/.test(locomotionPublisher) &&
+    /lease\.state = LocomotionLeaseState\.FINALIZED/.test(locomotionPublisher) &&
+    /LocomotionLeaseState\.FINALIZED -> null/.test(locomotionCanceller) &&
+    /LocomotionLeaseState\.FINALIZED -> null/.test(finalizationPlanner) &&
+    !/FINALIZED/.test(leasePruner) &&
+    !/cancelWriter\s*=\s*null/.test(cancelDelivery) && !/finalizeWriter\s*=\s*null/.test(finalizeDelivery) &&
+    locomotionPublisher.indexOf("lease.state = LocomotionLeaseState.FINALIZED") >
+      locomotionPublisher.indexOf('request.requestControl == "finalize"') &&
+    locomotionPublisher.indexOf("Os.rename(temp.absolutePath, target.absolutePath)",
+      locomotionPublisher.indexOf("lease.state = LocomotionLeaseState.FINALIZED")) >
+      locomotionPublisher.indexOf("lease.state = LocomotionLeaseState.FINALIZED") &&
+    locomotionDispatcher.indexOf("registerLocomotionLease") < locomotionDispatcher.indexOf("targetFile.exists()"),
+  "finalization joins every prior nonce writer, atomically publishes one original-tuple fence, and permanently suppresses execute/cancel resurrection");
   assert(/generation = currentLocomotionGeneration\(\)/.test(agentKt) &&
     !/locomotionMutex\.lock\(\)[\s\S]*fun unregisterLocomotionProducer/.test(agentKt),
   "capability snapshots capture lifecycle generation while unregister remains independent of a long producer mutex");
