@@ -213,11 +213,11 @@ const prepareSchema = z.object({
       message: "route reserve must exceed one complete settled-capture deadline",
     });
   }
-  if (value.budgets.routeReserveMs <= value.capture.deadlineMs + 3 * BRIDGE_MIN_TRANSACTION_MS) {
+  if (value.budgets.routeReserveMs <= value.capture.deadlineMs + value.route.glideDurationMs + 3 * BRIDGE_MIN_TRANSACTION_MS) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["budgets", "routeReserveMs"],
-      message: "route reserve cannot fit three bounded bridge transactions plus one complete settled capture",
+      message: "route reserve cannot fit the admitted glide, three bounded bridge transactions, and one complete settled capture",
     });
   }
   if (value.budgets.restorationReserveMs <= value.capture.deadlineMs) {
@@ -227,11 +227,12 @@ const prepareSchema = z.object({
       message: "restoration reserve must exceed one complete settled-capture deadline",
     });
   }
-  if (value.budgets.restorationReserveMs <= value.capture.deadlineMs + 2 * BRIDGE_MIN_TRANSACTION_MS + FINAL_RECOVERY_RESERVE_MS) {
+  if (value.budgets.restorationReserveMs <= value.capture.deadlineMs + value.route.glideDurationMs
+    + 2 * BRIDGE_MIN_TRANSACTION_MS + FINAL_RECOVERY_RESERVE_MS) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["budgets", "restorationReserveMs"],
-      message: "restoration reserve cannot fit capability, locomotion, settled capture, and final recovery proof",
+      message: "restoration reserve cannot fit capability, admitted glide, locomotion, settled capture, and final recovery proof",
     });
   }
 });
@@ -311,6 +312,11 @@ export interface FreshLaunchMonitorReceipt {
   samples: FreshLaunchMonitorSample[];
   rawHealthLogs: LocomotionRawLogEvidence[];
   rawWindowDumps: LocomotionRawLogEvidence[];
+}
+
+export interface FreshLaunchHandoffReceipt {
+  dialogs: string[];
+  rawWindowDump: LocomotionRawLogEvidence;
 }
 
 export interface LocomotionRawLogEvidence {
@@ -473,23 +479,34 @@ type CapabilityResult = Awaited<ReturnType<typeof probeAgentBridgeLocomotionCapa
 type HmdResult = Awaited<ReturnType<typeof requestAgentBridgeHmdPose>>;
 type LocomotionResult = Awaited<ReturnType<typeof requestAgentBridgeLocomotion>>;
 
+interface LocomotionEffectBudget {
+  timeoutMs: number;
+  deadlineMonotonicNs: string;
+  /** Recovery-only fallback: use the already bounded timeout without consulting a failed clock. */
+  cleanupOnly?: true;
+}
+
 export interface InAppLocomotionDependencies {
   randomBytes(size: number): Buffer;
   now(): string;
   monotonicNs(): bigint;
   readNativeRunReceipt(app: string, receiptId: string): ReceiptValidation;
   readEffectiveAppSpec(artifactPath: string, identity: { sha256: string; bytes: number }): unknown;
-  snapshotPriorForeground(context: { serial: string; targetPackage: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<LocomotionPriorForegroundSnapshot>;
-  stopPackage(context: { serial: string; packageName: string; reason: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<unknown>;
-  launchTarget(context: { serial: string; component: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<{ disposition: "accepted" | "ignored" | "blocked"; component: string; outputSha256: string }>;
+  snapshotPriorForeground(context: { serial: string; targetPackage: string } & LocomotionEffectBudget): Promise<LocomotionPriorForegroundSnapshot>;
+  stopPackage(context: { serial: string; packageName: string; reason: string } & LocomotionEffectBudget): Promise<unknown>;
+  launchTarget(context: { serial: string; component: string } & LocomotionEffectBudget): Promise<{ disposition: "accepted" | "ignored" | "blocked"; component: string; outputSha256: string }>;
+  captureLaunchHandoffWindow(context: {
+    serial: string;
+    runId: string;
+    artifactRoot: string;
+    packageName: string;
+  } & LocomotionEffectBudget): Promise<FreshLaunchHandoffReceipt>;
   probeRuntimeBinding(context: {
     serial: string;
     scenario: InAppLocomotionPrepareInput["scenario"];
     expectedApkSha256: string;
-    timeoutMs: number;
-    deadlineMonotonicNs: string;
-  }): Promise<LocomotionRuntimeBinding>;
-  sampleSafety(context: { serial: string; phase: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<LocomotionSafetySnapshot>;
+  } & LocomotionEffectBudget): Promise<LocomotionRuntimeBinding>;
+  sampleSafety(context: { serial: string; phase: string } & LocomotionEffectBudget): Promise<LocomotionSafetySnapshot>;
   probeCapability(input: AgentBridgeLocomotionTransactionInput): Promise<CapabilityResult>;
   requestHmdPose(input: AgentBridgeHmdPoseRequestInput): Promise<HmdResult>;
   monitorFreshLaunch(context: {
@@ -499,9 +516,7 @@ export interface InAppLocomotionDependencies {
     minimumDurationMs: 60_000;
     healthBoundaryMarker: string;
     runtime: LocomotionRuntimeBinding;
-    timeoutMs: number;
-    deadlineMonotonicNs: string;
-  }): Promise<FreshLaunchMonitorReceipt>;
+  } & LocomotionEffectBudget): Promise<FreshLaunchMonitorReceipt>;
   captureSettled(input: CaptureSettledInput): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }>;
   readReviewImage(item: LocomotionReviewItem, artifactRoot: string): Buffer;
   sampleContinuity(context: {
@@ -509,11 +524,9 @@ export interface InAppLocomotionDependencies {
     phase: string;
     runtime: LocomotionRuntimeBinding;
     artifactRoot: string;
-    timeoutMs: number;
-    deadlineMonotonicNs: string;
-  }): Promise<ApplicationContinuitySample>;
+  } & LocomotionEffectBudget): Promise<ApplicationContinuitySample>;
   requestLocomotion(input: AgentBridgeLocomotionRequestInput): Promise<LocomotionResult>;
-  emitMarker(context: { serial: string; marker: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<void>;
+  emitMarker(context: { serial: string; marker: string } & LocomotionEffectBudget): Promise<void>;
   collectStepLogs(context: {
     serial: string;
     packageName: string;
@@ -521,18 +534,14 @@ export interface InAppLocomotionDependencies {
     beginMarker: string;
     endMarker: string;
     path: string;
-    timeoutMs: number;
-    deadlineMonotonicNs: string;
-  }): Promise<LocomotionLogEvidence>;
-  relaunchPrior(context: { serial: string; component: string; timeoutMs: number; deadlineMonotonicNs: string }): Promise<PriorRelaunchReceipt>;
+  } & LocomotionEffectBudget): Promise<LocomotionLogEvidence>;
+  relaunchPrior(context: { serial: string; component: string } & LocomotionEffectBudget): Promise<PriorRelaunchReceipt>;
   probeFinalProcessState(context: {
     serial: string;
     targetPackage: string;
     artifactRoot: string;
     priorForeground: InAppLocomotionPrepareInput["priorForeground"];
-    timeoutMs: number;
-    deadlineMonotonicNs: string;
-  }): Promise<FinalProcessActivityReceipt>;
+  } & LocomotionEffectBudget): Promise<FinalProcessActivityReceipt>;
 }
 
 interface ArtifactFileIdentity {
@@ -648,7 +657,8 @@ function artifactFileIdentity(
       offset += count;
     }
     const after = fs.fstatSync(descriptor);
-    if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
+    if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size
+      || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
       throw new Error(`${label} changed while its immutable identity was read`);
     }
     hooks.afterArtifactReadBeforePathRecheck?.({ path: filePath, label });
@@ -657,7 +667,13 @@ function artifactFileIdentity(
       || published.dev !== after.dev || published.ino !== after.ino || published.size !== after.size) {
       throw new Error(`${label} pathname identity changed after its descriptor bytes were read`);
     }
-    return { dev: after.dev, ino: after.ino, bytes: bytes.length, sha256: sha256Bytes(bytes) };
+    const finalBytes = descriptorBytes(descriptor, after.size, label);
+    const final = fs.fstatSync(descriptor);
+    if (final.dev !== after.dev || final.ino !== after.ino || final.size !== after.size
+      || final.mtimeMs !== after.mtimeMs || final.ctimeMs !== after.ctimeMs || !finalBytes.equals(bytes)) {
+      throw new Error(`${label} descriptor bytes changed after pathname identity recheck`);
+    }
+    return { dev: final.dev, ino: final.ino, bytes: finalBytes.length, sha256: sha256Bytes(finalBytes) };
   } finally {
     if (descriptor !== undefined) fs.closeSync(descriptor);
   }
@@ -694,7 +710,7 @@ function readSameArtifactFile(
     const bytes = descriptorBytes(descriptor, before.size, label);
     const after = fs.fstatSync(descriptor);
     if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size
-      || after.mtimeMs !== before.mtimeMs || sha256Bytes(bytes) !== expected.sha256) {
+      || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs || sha256Bytes(bytes) !== expected.sha256) {
       throw new Error(`${label} descriptor bytes changed after immutable publication`);
     }
     hooks.afterArtifactReadBeforePathRecheck?.({ path: filePath, label });
@@ -703,7 +719,14 @@ function readSameArtifactFile(
       || published.dev !== after.dev || published.ino !== after.ino || published.size !== after.size) {
       throw new Error(`${label} pathname identity changed after its descriptor bytes were read`);
     }
-    return bytes;
+    const finalBytes = descriptorBytes(descriptor, after.size, label);
+    const final = fs.fstatSync(descriptor);
+    if (final.dev !== after.dev || final.ino !== after.ino || final.size !== after.size
+      || final.mtimeMs !== after.mtimeMs || final.ctimeMs !== after.ctimeMs
+      || !finalBytes.equals(bytes) || sha256Bytes(finalBytes) !== expected.sha256) {
+      throw new Error(`${label} descriptor bytes changed after pathname identity recheck`);
+    }
+    return finalBytes;
   } finally {
     if (descriptor !== undefined) fs.closeSync(descriptor);
   }
@@ -1150,6 +1173,9 @@ function driftReceipt(baseline: AgentBridgeHmdPose, pre: AgentBridgeHmdPose, pos
 function checkedLogEvidence(
   value: LocomotionLogEvidence,
   expectedPath: string,
+  packageName: string,
+  beginMarker: string,
+  endMarker: string,
   hooks: InAppLocomotionArtifactHooks = {},
 ): LocomotionLogEvidence {
   if (value.path !== expectedPath || !SHA256.test(value.sha256) || !Number.isSafeInteger(value.bytes) || value.bytes < 1
@@ -1159,12 +1185,26 @@ function checkedLogEvidence(
   }
   const identity = artifactFileIdentity(expectedPath, "retained step log", 64 * 1024 * 1024, hooks);
   if (identity.bytes !== value.bytes || identity.sha256 !== value.sha256) throw new Error("step log evidence bytes changed after collection");
+  const bytes = readSameArtifactFile(expectedPath, identity, "retained step log", 64 * 1024 * 1024, hooks);
+  const text = bytes.toString("utf8");
+  const replayed = {
+    beginCount: text.split(beginMarker).length - 1,
+    endCount: text.split(endMarker).length - 1,
+    boundarySignals: parseLocomotionBracketSignals(text, packageName, { beginMarker, endMarker }),
+  };
+  if (replayed.beginCount !== value.beginCount || replayed.endCount !== value.endCount
+    || canonicalJson(replayed.boundarySignals) !== canonicalJson(value.boundarySignals)) {
+    throw new Error("step log marker/boundary claims do not reproduce from retained descriptor bytes");
+  }
   return value;
 }
 
 function checkedPreparationLogEvidence(
   value: LocomotionLogEvidence,
   expectedPath: string,
+  packageName: string,
+  beginMarker: string,
+  endMarker: string,
   hooks: InAppLocomotionArtifactHooks = {},
 ): LocomotionLogEvidence {
   if (value.path !== expectedPath || !SHA256.test(value.sha256) || !Number.isSafeInteger(value.bytes) || value.bytes < 1
@@ -1175,6 +1215,17 @@ function checkedPreparationLogEvidence(
   const identity = artifactFileIdentity(expectedPath, "retained preparation log", 64 * 1024 * 1024, hooks);
   if (identity.bytes !== value.bytes || identity.sha256 !== value.sha256) {
     throw new Error("preparation log evidence bytes changed after collection");
+  }
+  const bytes = readSameArtifactFile(expectedPath, identity, "retained preparation log", 64 * 1024 * 1024, hooks);
+  const text = bytes.toString("utf8");
+  const replayed = {
+    beginCount: text.split(beginMarker).length - 1,
+    endCount: text.split(endMarker).length - 1,
+    boundarySignals: parseLocomotionBracketSignals(text, packageName, { beginMarker, endMarker }),
+  };
+  if (replayed.beginCount !== value.beginCount || replayed.endCount !== value.endCount
+    || canonicalJson(replayed.boundarySignals) !== canonicalJson(value.boundarySignals)) {
+    throw new Error("preparation log marker/boundary claims do not reproduce from retained descriptor bytes");
   }
   return value;
 }
@@ -1403,6 +1454,8 @@ export function createInAppLocomotionOrchestrator(
     let preparationFinalizationAttempted = false;
     let preparationLogEvidence: LocomotionLogEvidence | null = null;
     let freshLaunchMonitor: FreshLaunchMonitorReceipt | null = null;
+    let launchHandoffWindow: FreshLaunchHandoffReceipt | null = null;
+    let retainedLaunchHandoff: { path: string; identity: ArtifactFileIdentity; label: string } | null = null;
     let healthBoundaryMarker: string | null = null;
 
     const finalizePreparationBracket = async (strictDeadline: boolean): Promise<LocomotionLogEvidence | null> => {
@@ -1440,7 +1493,14 @@ export function createInAppLocomotionOrchestrator(
       const collected = strictDeadline && prepareDeadlineNs !== null
         ? await withinDeadline(prepareDeadlineNs, dependencies, "prepare bounded log", collect)
         : await collect(remaining());
-      preparationLogEvidence = checkedPreparationLogEvidence(collected, logPath, hooks);
+      preparationLogEvidence = checkedPreparationLogEvidence(
+        collected,
+        logPath,
+        input.scenario.packageName,
+        beginMarker,
+        endMarker,
+        hooks,
+      );
       return preparationLogEvidence;
     };
 
@@ -1499,6 +1559,31 @@ export function createInAppLocomotionOrchestrator(
       if (launch.disposition !== "accepted" || launch.component !== input.scenario.launchComponent || !SHA256.test(launch.outputSha256)) {
         throw new LocomotionStageError("launch_failed", "target launch did not return one exact accepted component acknowledgement");
       }
+      launchHandoffWindow = await withinDeadline(prepareDeadlineNs, dependencies, "post-launch window handoff", (timeoutMs) =>
+        dependencies.captureLaunchHandoffWindow({
+          serial: input.serial,
+          runId: artifact!.runId,
+          artifactRoot: artifact!.absoluteRoot,
+          packageName: input.scenario.packageName,
+          timeoutMs,
+          deadlineMonotonicNs: prepareDeadlineNs!.toString(),
+        }));
+      retainedLaunchHandoff = checkedRawLogEvidence(
+        launchHandoffWindow.rawWindowDump,
+        artifact.absoluteRoot,
+        "post-launch raw window handoff",
+      );
+      const handoffDialogs = freshLaunchDialogs(readSameArtifactFile(
+        retainedLaunchHandoff.path,
+        retainedLaunchHandoff.identity,
+        retainedLaunchHandoff.label,
+        64 * 1024 * 1024,
+        hooks,
+      ).toString("utf8"));
+      if (canonicalJson(handoffDialogs) !== canonicalJson(launchHandoffWindow.dialogs)) {
+        throw new Error("post-launch dialog claim does not reproduce from its retained raw window handoff");
+      }
+      if (handoffDialogs.length > 0) throw new LocomotionStageError("launch_dialog", "post-launch window handoff observed a blocking dialog");
       const runtime = await withinDeadline(prepareDeadlineNs, dependencies, "runtime binding probe", (timeoutMs) => dependencies.probeRuntimeBinding({
         serial: input.serial,
         scenario: input.scenario,
@@ -1559,9 +1644,33 @@ export function createInAppLocomotionOrchestrator(
       if (new Set(retainedHealthLogs.map((log) => `${log.identity.dev}:${log.identity.ino}`)).size !== retainedHealthLogs.length) {
         throw new Error("fresh-launch monitor raw runtime-health logs must be unique exact files");
       }
-      const allMonitorArtifacts = [...retainedHealthLogs, ...retainedWindowDumps];
+      const allMonitorArtifacts = [retainedLaunchHandoff, ...retainedHealthLogs, ...retainedWindowDumps];
       if (new Set(allMonitorArtifacts.map((log) => `${log.identity.dev}:${log.identity.ino}`)).size !== allMonitorArtifacts.length) {
         throw new Error("fresh-launch raw health/window evidence must be unique exact files");
+      }
+      for (const [index, retained] of retainedHealthLogs.entries()) {
+        const sourceBytes = readSameArtifactFile(
+          retained.path,
+          retained.identity,
+          retained.label,
+          64 * 1024 * 1024,
+          hooks,
+        );
+        const replayed = scanPackageRuntimeHealth({
+          status: "snapshot_collected",
+          truncated: false,
+          observedBytes: sourceBytes.length,
+          appStartMarker: healthBoundaryMarker,
+          appStartMarkerObserved: sourceBytes.includes(Buffer.from(healthBoundaryMarker, "utf8")),
+          rawArtifact: {
+            path: retained.path,
+            sha256: retained.identity.sha256,
+            bytes: retained.identity.bytes,
+          },
+        }, runtime.applicationBinding.packageName, [runtime.applicationBinding.pid], sourceBytes);
+        if (canonicalJson(replayed) !== canonicalJson(freshLaunchMonitor.samples[index].runtimeHealth)) {
+          throw new Error("fresh-launch runtime-health claim does not reproduce from its retained descriptor bytes");
+        }
       }
       for (const [index, retained] of retainedWindowDumps.entries()) {
         const observedDialogs = freshLaunchDialogs(readSameArtifactFile(
@@ -1610,7 +1719,7 @@ export function createInAppLocomotionOrchestrator(
           path: preparationLog.path,
           identity: artifactFileIdentity(preparationLog.path, "retained preparation log", 64 * 1024 * 1024, hooks),
           label: "retained preparation log",
-        }, ...retainedHealthLogs, ...retainedWindowDumps],
+        }, retainedLaunchHandoff, ...retainedHealthLogs, ...retainedWindowDumps],
         nextWaypoint: 0,
         startedAtNs: reserved.startedAtNs,
         deadlineNs,
@@ -1634,6 +1743,7 @@ export function createInAppLocomotionOrchestrator(
         capability,
         hmdBaseline: hmd,
         freshLaunchMonitor,
+        launchHandoffWindow,
         preparationLogEvidence: preparationLog,
         captureReceipt: captured.receipt,
         observedPriorForeground: prior,
@@ -1671,26 +1781,35 @@ export function createInAppLocomotionOrchestrator(
       let finalSafetyProven = !leaseAcquired;
       let failureAuditProven = false;
       if (error instanceof LocomotionStageError && error.cleanupError) cleanupErrors.push(error.cleanupError);
-      const recoveryTimeout = (label: string): number => {
-        if (recoveryDeadlineNs === null) return 5_000;
+      const recoveryBudget = (label: string): LocomotionEffectBudget => {
+        if (recoveryDeadlineNs === null) return {
+          timeoutMs: 5_000,
+          deadlineMonotonicNs: "5000000000",
+          cleanupOnly: true,
+        };
         try {
           const remaining = remainingUntilMs(recoveryDeadlineNs, dependencies);
           if (remaining < 1_000) throw new Error(`${label} cannot begin within the reserved recovery deadline`);
-          return Math.min(10_000, remaining);
+          return {
+            timeoutMs: Math.min(10_000, remaining),
+            deadlineMonotonicNs: recoveryDeadlineNs.toString(),
+          };
         } catch (clockError) {
           cleanupErrors.push(`${label} budget clock: ${errorText(clockError)}`);
-          return 5_000;
+          return {
+            timeoutMs: 5_000,
+            deadlineMonotonicNs: recoveryDeadlineNs.toString(),
+            cleanupOnly: true,
+          };
         }
       };
-      const recoveryDeadline = () => (recoveryDeadlineNs ?? 5_000_000_000n).toString();
       if (runOwnedTarget) {
         try {
           const receipt = await dependencies.stopPackage({
             serial: input.serial,
             packageName: input.scenario.packageName,
             reason: "prepare_failure_cleanup",
-            timeoutMs: recoveryTimeout("prepare target cleanup"),
-            deadlineMonotonicNs: recoveryDeadline(),
+            ...recoveryBudget("prepare target cleanup"),
           });
           compensation.targetStop = receipt;
           targetCleanupProven = true;
@@ -1705,8 +1824,7 @@ export function createInAppLocomotionOrchestrator(
           const relaunched = await dependencies.relaunchPrior({
             serial: input.serial,
             component: input.priorForeground.component,
-            timeoutMs: recoveryTimeout("prepare prior relaunch"),
-            deadlineMonotonicNs: recoveryDeadline(),
+            ...recoveryBudget("prepare prior relaunch"),
           });
           compensation.priorRelaunch = relaunched;
           const problem = validatePriorRelaunchReceipt(relaunched, input.priorForeground.component);
@@ -1737,8 +1855,7 @@ export function createInAppLocomotionOrchestrator(
             targetPackage: input.scenario.packageName,
             artifactRoot: artifact.absoluteRoot,
             priorForeground: input.priorForeground,
-            timeoutMs: recoveryTimeout("prepare final process/activity proof"),
-            deadlineMonotonicNs: recoveryDeadline(),
+            ...recoveryBudget("prepare final process/activity proof"),
           });
           compensation.finalProcessProof = finalProof;
           const checked = checkedFinalProcessProof(finalProof, input, artifact.absoluteRoot);
@@ -1752,8 +1869,7 @@ export function createInAppLocomotionOrchestrator(
           const safety = await dependencies.sampleSafety({
             serial: input.serial,
             phase: "prepare_failure_after_prior_disposition",
-            timeoutMs: recoveryTimeout("prepare final global safety"),
-            deadlineMonotonicNs: recoveryDeadline(),
+            ...recoveryBudget("prepare final global safety"),
           });
           compensation.globalSafety = safety;
           const problem = finalGlobalSafetyProblem(safety);
@@ -1783,6 +1899,7 @@ export function createInAppLocomotionOrchestrator(
             },
             preparationLogEvidence,
             freshLaunchMonitor,
+            launchHandoffWindow,
           }, hooks);
           failureAuditProven = true;
         } catch (auditError) {
@@ -1848,6 +1965,7 @@ export function createInAppLocomotionOrchestrator(
     let preContinuity: ApplicationContinuitySample | null = null;
     let preHmd: AgentBridgeHmdPose | null = null;
     let locomotion: LocomotionResult | null = null;
+    let emergencyStop: { attempted: boolean; proven: boolean; error: string | null } | null = null;
     let captureReceipt: CaptureSettledReceipt | null = null;
     let postHmd: AgentBridgeHmdPose | null = null;
     let postSafety: LocomotionSafetySnapshot | null = null;
@@ -1925,6 +2043,8 @@ export function createInAppLocomotionOrchestrator(
       }
       const expectedGeneration = state.input.mechanism === "replacement" ? rootBefore + 1 : rootBefore;
       if (ack.mode !== state.input.mechanism || ack.target.absolute !== true || !samePosition(ack.target, waypoint.target)
+        || ack.requestControl !== "execute" || ack.executionLeaseMs !== state.input.route.glideDurationMs + 2_000
+        || ack.glideDurationMs !== state.input.route.glideDurationMs
         || ack.rootGenerationBefore !== rootBefore || ack.root?.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID
         || ack.root.generation !== rootBefore || ack.root.incarnation !== state.rootIncarnation
         || ack.pose === null || ack.pose.rootGeneration !== expectedGeneration
@@ -1988,6 +2108,46 @@ export function createInAppLocomotionOrchestrator(
       if (error instanceof LocomotionStageError && error.cleanupError) {
         cleanupErrors.push(`bridge acknowledgement cleanup: ${error.cleanupError}`);
       }
+      if (locomotion !== null && !locomotion.ok && locomotion.motionQuiesced === false && state.targetOwned) {
+        emergencyStop = { attempted: true, proven: false, error: null };
+        let stopBudget: LocomotionEffectBudget;
+        try {
+          const remaining = remainingUntilMs(stepDeadlineNs, dependencies);
+          if (remaining < 1) throw new Error("step recovery reached the fixed route deadline");
+          stopBudget = {
+            timeoutMs: Math.min(5_000, remaining),
+            deadlineMonotonicNs: stepDeadlineNs.toString(),
+          };
+        } catch (clockError) {
+          cleanupErrors.push(`step emergency-stop budget clock: ${errorText(clockError)}`);
+          stopBudget = {
+            timeoutMs: 5_000,
+            deadlineMonotonicNs: stepDeadlineNs.toString(),
+            cleanupOnly: true,
+          };
+        }
+        try {
+          await dependencies.stopPackage({
+            serial: state.input.serial,
+            packageName: state.input.scenario.packageName,
+            reason: "step_unquiesced_locomotion",
+            ...stopBudget,
+          });
+          state.targetOwned = false;
+          emergencyStop.proven = true;
+        } catch (stopError) {
+          emergencyStop.error = errorText(stopError);
+          cleanupErrors.push(`step emergency target stop: ${emergencyStop.error}`);
+          const lease = serialOwners.get(state.input.serial);
+          if (lease?.runId === state.artifact.runId) {
+            serialOwners.set(state.input.serial, {
+              runId: state.artifact.runId,
+              status: "quarantined",
+              reason: "unquiesced locomotion and emergency target stop remain unproven",
+            });
+          }
+        }
+      }
     } finally {
       if (began) {
         try {
@@ -2010,7 +2170,7 @@ export function createInAppLocomotionOrchestrator(
             path: logPath,
             timeoutMs: Math.max(1, Math.min(10_000, remainingUntilMs(stepDeadlineNs, dependencies))),
             deadlineMonotonicNs: stepDeadlineNs.toString(),
-          }), logPath, hooks);
+          }), logPath, state.input.scenario.packageName, beginMarker, endMarker, hooks);
           const identity = artifactFileIdentity(collectedLog.path, "retained step log", 64 * 1024 * 1024);
           state.retainedLogs.push({ path: collectedLog.path, identity, label: `retained step ${waypoint.seq} log` });
           logEvidence = collectedLog;
@@ -2075,6 +2235,7 @@ export function createInAppLocomotionOrchestrator(
         usage: publishedUsage,
         pre: { safety: preSafety, continuity: preContinuity, hmdPose: preHmd },
         locomotion,
+        emergencyStop,
         captureReceipt,
         post: { hmdPose: postHmd, safety: postSafety, continuity: postContinuity },
         hmdDrift: drift,
@@ -2125,10 +2286,13 @@ export function createInAppLocomotionOrchestrator(
     if (input.reviewedPriorFrame.captureSha256 !== state.currentReview.captureSha256) {
       return restoreReviewFailure(state, "reviewed capture SHA does not match the exact current required frame");
     }
-    try {
-      dependencies.readReviewImage(state.currentReview, state.artifact.absoluteRoot);
-    } catch (error) {
-      return restoreReviewFailure(state, `reviewed retained image failed its immutable sha256 check: ${errorText(error)}`);
+    const reviewedMovedFrame = state.currentReviewReflectsNonzeroMutation;
+    if (!reviewedMovedFrame) {
+      try {
+        dependencies.readReviewImage(state.currentReview, state.artifact.absoluteRoot);
+      } catch (error) {
+        return restoreReviewFailure(state, `reviewed retained image failed its immutable sha256 check: ${errorText(error)}`);
+      }
     }
     const restoreStartedNs = checkedMonotonic(dependencies);
     const restoreDeadlineNs = earlierDeadline(
@@ -2149,9 +2313,23 @@ export function createInAppLocomotionOrchestrator(
     let finalProcessProof: FinalProcessActivityReceipt | null = null;
     let finalProcessProven = false;
     let finalSafetyProven = false;
+    let currentReviewTrusted = true;
     const priorDisposition = priorForegroundDisposition(state);
-    const reviewedMovedFrame = state.currentReviewReflectsNonzeroMutation;
     try {
+      if (reviewedMovedFrame) {
+        try {
+          dependencies.readReviewImage(state.currentReview, state.artifact.absoluteRoot);
+        } catch (error) {
+          currentReviewTrusted = false;
+          throw new LocomotionStageError(
+            "review_artifact_failed",
+            `reviewed moved-state image failed its immutable sha256 check: ${errorText(error)}`,
+          );
+        }
+      }
+      if (!state.targetOwned) {
+        throw new LocomotionStageError("target_already_stopped", "run-owned target was already stopped after an unquiesced locomotion failure");
+      }
       assertStateArtifacts(state, hooks);
       assertCurrentReceiptAndSpec(state, dependencies);
       preRestoreContinuity = await withinDeadline(mutationDeadlineNs, dependencies, "pre-restore live continuity", (timeoutMs) =>
@@ -2218,6 +2396,8 @@ export function createInAppLocomotionOrchestrator(
       const expectedGeneration = state.input.mechanism === "replacement" ? rootBefore + 1 : rootBefore;
       if (ack.mode !== state.input.mechanism || ack.target.absolute !== true
         || !samePosition(ack.target, state.input.route.restoreTarget)
+        || ack.requestControl !== "execute" || ack.executionLeaseMs !== state.input.route.glideDurationMs + 2_000
+        || ack.glideDurationMs !== state.input.route.glideDurationMs
         || ack.rootGenerationBefore !== rootBefore || ack.root?.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID
         || ack.root.generation !== rootBefore || ack.root.incarnation !== state.rootIncarnation || ack.pose === null
         || ack.pose.rootGeneration !== expectedGeneration
@@ -2257,14 +2437,21 @@ export function createInAppLocomotionOrchestrator(
         cleanupErrors.push(`bridge acknowledgement cleanup: ${error.cleanupError}`);
       }
     } finally {
-      const cleanupTimeout = (label: string): number => {
+      const cleanupBudget = (label: string): LocomotionEffectBudget => {
         try {
           const remaining = remainingUntilMs(restoreDeadlineNs, dependencies);
           if (remaining < 1) throw new Error(`${label} reached the fixed restoration deadline`);
-          return Math.min(10_000, remaining);
+          return {
+            timeoutMs: Math.min(10_000, remaining),
+            deadlineMonotonicNs: restoreDeadlineNs.toString(),
+          };
         } catch (clockError) {
           cleanupErrors.push(`${label} budget clock: ${errorText(clockError)}`);
-          return 5_000;
+          return {
+            timeoutMs: 5_000,
+            deadlineMonotonicNs: restoreDeadlineNs.toString(),
+            cleanupOnly: true,
+          };
         }
       };
       if (state.targetOwned) {
@@ -2273,8 +2460,7 @@ export function createInAppLocomotionOrchestrator(
             serial: state.input.serial,
             packageName: state.input.scenario.packageName,
             reason: "restore_run_owned_target",
-            timeoutMs: cleanupTimeout("owned target stop"),
-            deadlineMonotonicNs: restoreDeadlineNs.toString(),
+            ...cleanupBudget("owned target stop"),
           });
           state.targetOwned = false;
         } catch (error) {
@@ -2286,8 +2472,7 @@ export function createInAppLocomotionOrchestrator(
           const relaunched = await dependencies.relaunchPrior({
             serial: state.input.serial,
             component: state.input.priorForeground.component,
-            timeoutMs: cleanupTimeout("prior relaunch"),
-            deadlineMonotonicNs: restoreDeadlineNs.toString(),
+            ...cleanupBudget("prior relaunch"),
           });
           const problem = validatePriorRelaunchReceipt(relaunched, state.input.priorForeground.component);
           if (problem) {
@@ -2307,8 +2492,7 @@ export function createInAppLocomotionOrchestrator(
           targetPackage: state.input.scenario.packageName,
           artifactRoot: state.artifact.absoluteRoot,
           priorForeground: state.input.priorForeground,
-          timeoutMs: cleanupTimeout("final process/activity proof"),
-          deadlineMonotonicNs: restoreDeadlineNs.toString(),
+          ...cleanupBudget("final process/activity proof"),
         });
         const checked = checkedFinalProcessProof(finalProcessProof, state.input, state.artifact.absoluteRoot);
         state.retainedLogs.push(checked.retained);
@@ -2321,8 +2505,7 @@ export function createInAppLocomotionOrchestrator(
         postStopSafety = await dependencies.sampleSafety({
           serial: state.input.serial,
           phase: "restore_after_prior_disposition",
-          timeoutMs: cleanupTimeout("post-restore global safety"),
-          deadlineMonotonicNs: restoreDeadlineNs.toString(),
+          ...cleanupBudget("post-restore global safety"),
         });
         const unsafe = finalGlobalSafetyProblem(postStopSafety);
         if (unsafe) cleanupErrors.push(`post-restore global safety: ${unsafe}`);
@@ -2385,7 +2568,7 @@ export function createInAppLocomotionOrchestrator(
       cleanupError: cleanupErrors.length ? cleanupErrors.join("; ") : null,
       evidenceCeiling: "structural",
       lookRequired: true,
-      requiredReview: restoredReview ? [restoredReview] : [state.currentReview],
+      requiredReview: restoredReview ? [restoredReview] : currentReviewTrusted ? [state.currentReview] : [],
       priorForeground: priorDisposition,
     };
   };
@@ -2682,11 +2865,18 @@ export function createLiveInAppLocomotionDependencies(
     return BigInt(value);
   };
   const boundedTimeout = (
-    context: { timeoutMs: number; deadlineMonotonicNs: string },
+    context: LocomotionEffectBudget,
     desiredMs: number,
     label: string,
     minimumMs = 1,
   ): number => {
+    if (context.cleanupOnly === true) {
+      if (!Number.isSafeInteger(context.timeoutMs) || context.timeoutMs < minimumMs
+        || !Number.isSafeInteger(desiredMs) || desiredMs < minimumMs) {
+        throw new Error(`${label} refused an invalid cleanup-only timeout`);
+      }
+      return Math.min(desiredMs, context.timeoutMs);
+    }
     const deadline = deadlineNs(context.deadlineMonotonicNs, label);
     const remainingNs = deadline - clockNs();
     const remainingMs = remainingNs <= 0n ? 0 : Number(remainingNs / 1_000_000n);
@@ -2698,7 +2888,7 @@ export function createLiveInAppLocomotionDependencies(
     return Math.min(desiredMs, available);
   };
   const sleepWithin = async (
-    context: { timeoutMs: number; deadlineMonotonicNs: string },
+    context: LocomotionEffectBudget,
     durationMs: number,
     label: string,
   ): Promise<void> => {
@@ -2712,7 +2902,7 @@ export function createLiveInAppLocomotionDependencies(
     serial: string,
     args: string[],
     label: string,
-    context: { timeoutMs: number; deadlineMonotonicNs: string },
+    context: LocomotionEffectBudget,
     desiredMs: number,
     maxOutputBytes = 8 * 1024 * 1024,
   ): Promise<Awaited<ReturnType<typeof run>>> => {
@@ -2724,7 +2914,7 @@ export function createLiveInAppLocomotionDependencies(
     serial: string,
     args: string[],
     label: string,
-    context: { timeoutMs: number; deadlineMonotonicNs: string },
+    context: LocomotionEffectBudget,
     desiredMs: number,
     maxOutputBytes = 8 * 1024 * 1024,
   ): Promise<string> => {
@@ -2923,6 +3113,24 @@ export function createLiveInAppLocomotionDependencies(
         disposition: classifyActivityLaunchDisposition(output, result.code === 0 && !result.timedOut),
         component,
         outputSha256: sha256Bytes(Buffer.from(output, "utf8")),
+      };
+    },
+    captureLaunchHandoffWindow: async (context) => {
+      const result = await runBounded(
+        context.serial,
+        ["shell", "dumpsys", "window", "windows"],
+        "post-launch window handoff",
+        context,
+        10_000,
+      );
+      checkedLiveAdbResult(result, "post-launch window handoff");
+      const artifactPath = path.join(context.artifactRoot, "logs", "fresh-launch-window-handoff.txt");
+      privateWrite(artifactPath, result.stdout);
+      const identity = artifactFileIdentity(artifactPath, "post-launch raw window handoff", 64 * 1024 * 1024);
+      const bytes = readSameArtifactFile(artifactPath, identity, "post-launch raw window handoff", 64 * 1024 * 1024);
+      return {
+        dialogs: freshLaunchDialogs(bytes.toString("utf8")),
+        rawWindowDump: { path: fs.realpathSync(artifactPath), sha256: identity.sha256, bytes: identity.bytes },
       };
     },
     probeRuntimeBinding: async (context) => {

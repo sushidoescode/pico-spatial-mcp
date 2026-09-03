@@ -835,15 +835,24 @@ export function scanPackageRuntimeHealth(
   receipt: CollectLogWindowReceipt | RuntimeLogSnapshotReceipt,
   packageName: string,
   expectedPids: readonly number[],
+  authenticatedBytes?: Buffer,
 ): PackageRuntimeHealthReceiptV1 {
   const normalizedPids = [...new Set(expectedPids.filter((pid) => Number.isSafeInteger(pid) && pid > 0))].sort((left, right) => left - right);
   if (!/^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/.test(packageName)) throw new Error("runtime-health package name is invalid");
-  const artifactPath = assertExternalCapturePath(receipt.rawArtifact.path);
-  const stat = fs.lstatSync(artifactPath);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== receipt.rawArtifact.bytes || stat.size > APPLICATION_CONTINUITY_LOG_MAX_BYTES) {
-    throw new Error("runtime-health source is not the exact bounded regular log artifact");
+  let bytes: Buffer;
+  if (authenticatedBytes === undefined) {
+    const artifactPath = assertExternalCapturePath(receipt.rawArtifact.path);
+    const stat = fs.lstatSync(artifactPath);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== receipt.rawArtifact.bytes || stat.size > APPLICATION_CONTINUITY_LOG_MAX_BYTES) {
+      throw new Error("runtime-health source is not the exact bounded regular log artifact");
+    }
+    bytes = fs.readFileSync(artifactPath);
+  } else {
+    if (!Buffer.isBuffer(authenticatedBytes) || authenticatedBytes.length > APPLICATION_CONTINUITY_LOG_MAX_BYTES) {
+      throw new Error("runtime-health authenticated bytes are not one bounded Buffer");
+    }
+    bytes = authenticatedBytes;
   }
-  const bytes = fs.readFileSync(artifactPath);
   const sourceSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
   if (sourceSha256 !== receipt.rawArtifact.sha256 || bytes.length !== receipt.rawArtifact.bytes) {
     throw new Error("runtime-health source bytes changed after collector finalization");

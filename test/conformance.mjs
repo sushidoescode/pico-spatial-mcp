@@ -902,12 +902,21 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     (locomoteWriter.match(/locomotionRequestIsCurrent\(request\.generation\)/g) ?? []).length >= 2 &&
     /rootGenerationBefore/.test(locomoteWriter) && /glideDurationMs/.test(locomoteWriter),
   "locomotion serializes producer calls, carries bounded direct-glide metadata, and rejects invalidated generations before and after mutation");
+  assert(/requestControl/.test(agentKt) && /executionLeaseMs/.test(agentKt) &&
+    /cancelLocomotionRequest/.test(agentKt) && /withTimeout/.test(locomoteWriter) &&
+    /locomotionRequestIsActive/.test(locomoteWriter),
+  "locomotion revision 1 couples execute to a guest lease and a mutex-independent cancellation barrier");
   const locomotionPublisher = /private fun publishLocomotionAckIfCurrent[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
-  assert(/synchronized\(locomotionGenerationLock\)/.test(locomotionPublisher) &&
+  const locomotionCanceller = /private fun cancelLocomotionRequest[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  assert(/synchronized\(locomotionLeaseLock\)/.test(locomotionPublisher) &&
+    /request\.requestControl == "execute"/.test(locomotionPublisher) &&
+    /LocomotionLeaseState\.TERMINAL/.test(locomotionPublisher) &&
+    /synchronized\(locomotionGenerationLock\)/.test(locomotionPublisher) &&
     /locomotionGeneration != request\.generation/.test(locomotionPublisher) &&
     /Os\.rename\(temp\.absolutePath, target\.absolutePath\)/.test(locomotionPublisher) &&
+    locomotionCanceller.indexOf("job.join()") < locomotionCanceller.indexOf("writeLocomotionAckAtomically") &&
     /if \(!publishLocomotionAckIfCurrent\(request, temp, target\)\)/.test(agentKt),
-  "final locomotion acknowledgement publication atomically checks lifecycle generation with rename");
+  "execute/cancel acknowledgement publication shares the lease lock, joins cancellation, and cannot resurrect a removed nonce");
   assert(/generation = currentLocomotionGeneration\(\)/.test(agentKt) &&
     !/locomotionMutex\.lock\(\)[\s\S]*fun unregisterLocomotionProducer/.test(agentKt),
   "capability snapshots capture lifecycle generation while unregister remains independent of a long producer mutex");
@@ -933,7 +942,7 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
   "HMD and locomotion reject malformed or stale incarnation before invoking root/HMD/movement producers");
   for (const field of [
     "kind", "schemaVersion", "capabilityRevision", "requestId", "tag", "application", "operation",
-    "mode", "target", "absolute", "glideDurationMs", "physicalWalk", "rootGenerationBefore", "root", "incarnation", "pose",
+    "requestControl", "executionLeaseMs", "mode", "target", "absolute", "glideDurationMs", "physicalWalk", "rootGenerationBefore", "root", "incarnation", "pose",
     "hmdPose", "outcome", "primaryError", "cleanupError",
   ]) assert(agentKt.includes(`writer.name("${field}")`), `locomotion terminal acknowledgements write ${field}`);
   assert(/val generation: Long/.test(agentKt) &&
