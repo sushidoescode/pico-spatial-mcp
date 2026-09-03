@@ -7,6 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY,
   AGENT_BRIDGE_LOCOMOTION_ROOT_ID,
+  AgentBridgeLocomotionNonceCleanupError,
   agentBridgeLocomotionMinimumEnvelopeMs,
   probeAgentBridgeLocomotionCapability,
   requestAgentBridgeHmdPose,
@@ -716,16 +717,12 @@ function nonceCleanupFailureDisposition(error: unknown): {
   removalStarted: boolean;
   absenceProven: boolean;
 } {
-  if (error !== null && typeof error === "object") {
-    const value = error as Record<string, unknown>;
-    if (typeof value.finalizationProven === "boolean" && typeof value.removalStarted === "boolean"
-      && value.absenceProven === false) {
-      return {
-        finalizationProven: value.finalizationProven,
-        removalStarted: value.removalStarted,
-        absenceProven: false,
-      };
-    }
+  if (error instanceof AgentBridgeLocomotionNonceCleanupError) {
+    return {
+      finalizationProven: error.finalizationProven,
+      removalStarted: error.removalStarted,
+      absenceProven: false,
+    };
   }
   // An untyped dependency failure cannot prove that the sole rm never began.
   return { finalizationProven: false, removalStarted: true, absenceProven: false };
@@ -745,7 +742,9 @@ function validateDeferredLocomotionNonceDisposition(
     || receipt.status !== expectedStatus
     || receipt.requestId !== pending.requestId
     || receipt.relativePath !== pending.relativePath
-    || receipt.attempts !== 0) {
+    || receipt.attempts !== 0
+    || receipt.finalizationSha256 !== undefined
+    || receipt.removalError !== undefined) {
     throw new LocomotionStageError(
       "cleanup_failed",
       `deferred locomotion did not transfer the exact ${expectedStatus} nonce ownership disposition`,
@@ -759,9 +758,9 @@ function validateLocomotionNonceCleanupReceipt(
   pending: NonNullable<LocomotionState["pendingLocomotionNonce"]>,
   processStopped: boolean,
 ): AgentBridgeLocomotionNonceCleanupReceipt {
-  const finalizationValid = receipt.finalizationSha256 === undefined
-    ? processStopped
-    : SHA256.test(receipt.finalizationSha256);
+  const finalizationValid = processStopped
+    ? receipt.finalizationSha256 === undefined
+    : receipt.finalizationSha256 !== undefined && SHA256.test(receipt.finalizationSha256);
   if (receipt.status !== "removed_and_absent"
     || receipt.requestId !== pending.requestId
     || receipt.relativePath !== pending.relativePath

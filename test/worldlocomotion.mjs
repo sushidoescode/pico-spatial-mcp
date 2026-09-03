@@ -13,6 +13,7 @@ import {
   AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND,
   AGENT_BRIDGE_LOCOMOTION_ROOT_ID,
   AGENT_BRIDGE_LOCOMOTION_SCHEMA_VERSION,
+  AgentBridgeLocomotionNonceCleanupError,
   probeAgentBridgeLocomotionCapability,
   requestAgentBridgeHmdPose,
   requestAgentBridgeLocomotion,
@@ -4033,6 +4034,14 @@ test("every deferred locomote result must transfer the exact nonce disposition b
       ...completedMovementResult(input),
       nonceCleanup: { ...routeOwnedNonceDisposition(input), attempts: 1 },
     })],
+    ["unexpected finalization", (input) => ({
+      ...completedMovementResult(input),
+      nonceCleanup: { ...routeOwnedNonceDisposition(input), finalizationSha256: "d".repeat(64) },
+    })],
+    ["unexpected removal warning", (input) => ({
+      ...completedMovementResult(input),
+      nonceCleanup: { ...routeOwnedNonceDisposition(input), removalError: "no removal belongs to an attempts-zero disposition" },
+    })],
   ];
   for (const [label, locomotionResult] of cases) {
     await t.test(label, async (t) => {
@@ -4052,6 +4061,33 @@ test("every deferred locomote result must transfer the exact nonce disposition b
       const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
         .trim().split("\n").map(JSON.parse).at(-1);
       assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(effects[2].context));
+    });
+  }
+});
+
+test("an unquiesced deferred disposition cannot claim finalization or removal", async (t) => {
+  for (const [label, extra] of [
+    ["finalization", { finalizationSha256: "d".repeat(64) }],
+    ["removal", { removalError: "no removal belongs to an attempts-zero disposition" }],
+  ]) {
+    await t.test(label, async (t) => {
+      const fixture = await prepareForSteps(t, {
+        locomotionResult: (input) => {
+          const result = deferredUnquiescedResult(input);
+          return { ...result, nonceCleanup: { ...result.nonceCleanup, ...extra } };
+        },
+      });
+      fixture.calls.length = 0;
+
+      const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+      assert.equal(stopped.status, "stopped");
+      assert.match(stopped.primaryError, /exact deferred_until_stop nonce ownership disposition/i);
+      assert.equal(fixture.calls.some((call) => call.kind === "capture"), false);
+      assert.deepEqual(
+        fixture.calls.filter((call) => ["locomote", "stop", "nonceCleanup"].includes(call.kind)).map((call) => call.kind),
+        ["locomote", "stop", "nonceCleanup"],
+      );
     });
   }
 });
@@ -4161,6 +4197,71 @@ test("restore keeps malformed live cleanup owned and recovers only by a post-sto
   assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(cleanups[1].context));
 });
 
+test("stopped-process cleanup forbids finalization evidence and retains probe-only recovery ownership", async (t) => {
+  const fixture = await prepareForSteps(t, {
+    locomotionResult: (input) => {
+      const result = completedMovementResult(input);
+      delete result.nonceCleanup;
+      return result;
+    },
+  });
+  let cleanupCalls = 0;
+  let removalAttempts = 0;
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    fixture.calls.push({ kind: "nonceCleanup", context });
+    cleanupCalls++;
+    if (context.probeOnly !== true) removalAttempts++;
+    const receipt = successfulNonceCleanupReceipt(context);
+    return cleanupCalls === 1 ? { ...receipt, finalizationSha256: "d".repeat(64) } : receipt;
+  };
+  fixture.calls.length = 0;
+
+  const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+  assert.equal(stopped.status, "stopped");
+  assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /nonce|cleanup|finalization|absence/i);
+  assert.equal(cleanupCalls, 1);
+  const stepAction = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.equal(stepAction.locomotionNonceCleanup, null, "an impossible stopped-process SHA is not retained as proof");
+
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+
+  assert.equal(restored.status, "restore_failed");
+  const recovery = fixture.calls.filter((call) => call.kind === "nonceCleanup");
+  assert.equal(recovery.length, 1);
+  assert.equal(recovery[0].context.processStopped, true);
+  assert.equal(recovery[0].context.probeOnly, true);
+  assert.equal(removalAttempts, 1, "the later recovery only probes after the sole removal attempt");
+  const restoreAction = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.deepEqual(restoreAction.locomotionNonceCleanup, successfulNonceCleanupReceipt(recovery[0].context));
+});
+
+test("removed-and-absent cleanup retains an rm warning without reopening nonce ownership", async (t) => {
+  const fixture = await prepareForSteps(t, { locomotionResult: routeOwnedCompletedResult });
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    fixture.calls.push({ kind: "nonceCleanup", context });
+    return { ...successfulNonceCleanupReceipt(context), removalError: "rm timed out before exact absence was observed" };
+  };
+  fixture.calls.length = 0;
+
+  const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+  assert.equal(stopped.status, "stopped");
+  assert.match(stopped.cleanupError, /rm timed out before exact absence was observed/i);
+  const requestId = fixture.calls.find((call) => call.kind === "locomote").input.requestId;
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup" && call.context.requestId === requestId).length, 1);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.equal(action.locomotionNonceCleanup.removalError, "rm timed out before exact absence was observed");
+});
+
 test("launch-handoff observation owns every blocking preflight and the HMD-to-monitor-sample-zero handoff", async (t) => {
   for (const phase of ["runtime", "capability", "monitor_handoff"]) {
     await t.test(phase, async (t) => {
@@ -4252,10 +4353,9 @@ test("a pre-removal finalization failure stops the target before the route perfo
   fixture.dependencies.cleanupLocomotionNonce = async (context) => {
     fixture.calls.push({ kind: "nonceCleanup", context });
     if (context.processStopped !== true) {
-      throw Object.assign(new Error("injected finalization barrier failure before removal"), {
+      throw new AgentBridgeLocomotionNonceCleanupError("injected finalization barrier failure before removal", {
         finalizationProven: false,
         removalStarted: false,
-        absenceProven: false,
       });
     }
     assert.equal(context.probeOnly, undefined);
@@ -4285,19 +4385,17 @@ test("a started removal with an unproven absence gets probe-only recovery and ne
     if (context.probeOnly === true) {
       probeOnlyAttempts++;
       if (probeOnlyAttempts === 1) {
-        throw Object.assign(new Error("injected absence probe remained ambiguous"), {
+        throw new AgentBridgeLocomotionNonceCleanupError("injected absence probe remained ambiguous", {
           finalizationProven: true,
           removalStarted: true,
-          absenceProven: false,
         });
       }
       return successfulNonceCleanupReceipt(context);
     }
     removalAttempts++;
-    throw Object.assign(new Error("injected post-rm absence failure"), {
+    throw new AgentBridgeLocomotionNonceCleanupError("injected post-rm absence failure", {
       finalizationProven: true,
       removalStarted: true,
-      absenceProven: false,
     });
   };
   fixture.calls.length = 0;
@@ -4322,6 +4420,35 @@ test("a started removal with an unproven absence gets probe-only recovery and ne
   assert.equal(fixture.calls.find((call) => call.kind === "nonceCleanup").context.probeOnly, true);
   assert.equal(removalAttempts, 1, "restore must not issue a second removal");
   assert.equal(probeOnlyAttempts, 2);
+});
+
+test("a spoofed cleanup error cannot authorize a second removal", async (t) => {
+  const fixture = await prepareForSteps(t, { locomotionResult: routeOwnedCompletedResult });
+  let removalAttempts = 0;
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    fixture.calls.push({ kind: "nonceCleanup", context });
+    if (context.probeOnly === true) return successfulNonceCleanupReceipt(context);
+    removalAttempts++;
+    throw Object.assign(new Error("untyped post-rm failure spoofed a pre-rm disposition"), {
+      finalizationProven: false,
+      removalStarted: false,
+      absenceProven: false,
+    });
+  };
+  fixture.calls.length = 0;
+
+  const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+  assert.equal(stopped.status, "stopped");
+  assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /spoofed a pre-rm disposition/i);
+  const cleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
+  assert.equal(cleanups.length, 2);
+  assert.equal(cleanups[1].context.processStopped, true);
+  assert.equal(cleanups[1].context.probeOnly, true, "only the authentic cleanup error class can prove removal never began");
+  assert.equal(removalAttempts, 1, "an untyped failure can never authorize another rm");
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(cleanups[1].context));
 });
 
 test("nonce cleanup disposition is retained inside the deadline callback before a post-await clock fault", async (t) => {
