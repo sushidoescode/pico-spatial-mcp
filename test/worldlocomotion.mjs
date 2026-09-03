@@ -71,7 +71,7 @@ function prepareRouteInput(t, overrides = {}) {
       comparison: "byte_exact",
     },
     budgets: {
-      maxDurationMs: 200_000,
+      maxDurationMs: 220_000,
       routeReserveMs: 60_000,
       restorationReserveMs: 45_000,
     },
@@ -119,6 +119,7 @@ test("prepare schema pins a Full stage, absolute finite contiguous route, zero r
     { ...valid, translationDriftThresholdM: 0.021 },
     { ...valid, capture: { ...valid.capture, deadlineMs: 0 } },
     { ...valid, budgets: { ...valid.budgets, restorationReserveMs: valid.budgets.maxDurationMs } },
+    { ...valid, budgets: { ...valid.budgets, maxDurationMs: 200_000 } },
     { ...valid, budgets: { maxDurationMs: 97_999, routeReserveMs: 20_000, restorationReserveMs: 10_000 } },
     { ...valid, budgets: { maxDurationMs: 98_000, routeReserveMs: 20_000, restorationReserveMs: 10_000 } },
     { ...valid, budgets: { ...valid.budgets, routeReserveMs: valid.capture.deadlineMs } },
@@ -209,10 +210,26 @@ function successCapture(input, shade = 48) {
       deadlineMs: input.deadlineMs,
       attemptTimeoutMs: input.attemptTimeoutMs,
       deadlineMonotonicNs: "9000000000",
-      trace: [],
+      trace: [
+        { attempt: 1, capturedAtMonotonicNs: "8000000001", sha256: digest, relation: "candidate" },
+        { attempt: 2, capturedAtMonotonicNs: "8000000002", sha256: digest, relation: "stable" },
+      ],
       timeoutPhase: null,
       timeoutCause: null,
-      captureRuntimeBinding: null,
+      captureRuntimeBinding: {
+        serial: input.serial,
+        liveIdentity: {
+          serial: input.serial,
+          model: "PICO Emulator",
+          fingerprint: "PICO/PICO_Emulator/PICO_Emulator:14/fixture/test-keys",
+          bootQemu: "1",
+          bootId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+          observedAt: "2026-09-02T12:01:01.000Z",
+        },
+        captureSource: "adb-exec-out-screencap",
+        startedAtMonotonicNs: "8000000000",
+        endedAtMonotonicNs: "8000000003",
+      },
       captureRef,
       lastValidCaptureRef: null,
       actionReceipts: [],
@@ -454,7 +471,7 @@ async function createPreparedFixture(t, options = {}) {
     probeCapability: async (bridgeInput) => {
       calls.push({ kind: "capability", input: bridgeInput });
       await holdHandoffPhase("capability");
-      return options.capability ?? {
+      const result = options.capability ?? {
         ok: true,
         ack: capabilityAck,
         primaryError: null,
@@ -462,6 +479,14 @@ async function createPreparedFixture(t, options = {}) {
         motionQuiesced: true,
         actionReceipts: [],
         evidenceCeiling: "structural",
+      };
+      if (bridgeInput.tag !== "prepare-post-capture" || !result.ok || !options.postCaptureRoot) return result;
+      return {
+        ...result,
+        ack: {
+          ...result.ack,
+          root: { ...result.ack.root, ...options.postCaptureRoot },
+        },
       };
     },
     requestHmdPose: async (bridgeInput) => {
@@ -593,6 +618,7 @@ async function createPreparedFixture(t, options = {}) {
     sampleContinuity: async (context) => {
       calls.push({ kind: "continuity", context });
       const exact = exactContinuity(input, applicationBinding, bootId);
+      if (context.phase === "prepare_post_capture") return { ...exact, ...(options.preparePostCaptureContinuity ?? {}) };
       if (options.continuitySequence) return { ...exact, ...options.continuitySequence[Math.min(continuityIndex++, options.continuitySequence.length - 1)] };
       return exact;
     },
@@ -721,7 +747,7 @@ test("prepare binds the receipt/runtime in order, proves 60-second health, and r
   assert.equal(result.rootGeneration, 7);
   assert.deepEqual(fixture.calls.map((call) => call.kind), [
     "readReceipt", "readSpec", "randomBytes", "snapshotPrior", "marker", "stop", "launch", "launchObservation", "launchWindow", "probeRuntime",
-    "safety", "capability", "hmd", "monitor", "capture", "readReview", "marker", "logs",
+    "safety", "capability", "hmd", "monitor", "capture", "readReview", "continuity", "capability", "marker", "logs",
   ]);
   const capabilityCall = fixture.calls.find((call) => call.kind === "capability").input;
   assert.equal(capabilityCall.serial, fixture.input.serial);
@@ -742,9 +768,104 @@ test("prepare binds the receipt/runtime in order, proves 60-second health, and r
   assert.deepEqual(prepareAction.hmdBaseline.position, fixture.pose.position);
   assert.ok(prepareAction.freshLaunchMonitor.samples.at(-1).elapsedMs >= 60_000);
   assert.equal(prepareAction.captureReceipt.status, "settled");
+  assert.equal(prepareAction.postCaptureContinuity.pid, fixture.applicationBinding.pid);
+  assert.deepEqual(prepareAction.postCaptureCapability.ack.root, fixture.capabilityAck.root);
   assert.equal(prepareAction.preparationLogEvidence.beginCount, 1);
   assert.equal(prepareAction.preparationLogEvidence.endCount, 1);
   assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
+});
+
+test("prepare rejects any capture receipt that is not exact evidence for the requested stable frame", async (t) => {
+  const corruptions = [
+    ["resolved mode", (result) => { result.receipt.mode = "transition_then_stable"; }],
+    ["stable pair", (result) => { result.receipt.stablePair[0] = "f".repeat(64); }],
+    ["receipt path", (result) => { result.receipt.path = `${result.receipt.path}.other`; }],
+    ["receipt serial", (result) => { result.receipt.serial = "emulator-5556"; }],
+    ["capture-ref path", (result) => { result.receipt.captureRef.path = `${result.receipt.captureRef.path}.other`; }],
+    ["capture-ref source serial", (result) => { result.receipt.captureRef.sourceSerial = "emulator-5556"; }],
+    ["capture-ref byte count", (result) => { result.receipt.captureRef.bytes += 1; }],
+    ["capture-ref dimensions", (result) => { result.receipt.captureRef.dimensions.width += 1; }],
+    ["runtime serial", (result) => { result.receipt.captureRuntimeBinding.serial = "emulator-5556"; }],
+    ["runtime live serial", (result) => { result.receipt.captureRuntimeBinding.liveIdentity.serial = "emulator-5556"; }],
+    ["runtime model", (result) => { result.receipt.captureRuntimeBinding.liveIdentity.model = "different model"; }],
+    ["runtime fingerprint", (result) => { result.receipt.captureRuntimeBinding.liveIdentity.fingerprint = "different/fingerprint"; }],
+    ["runtime boot-qemu", (result) => { result.receipt.captureRuntimeBinding.liveIdentity.bootQemu = "0"; }],
+    ["runtime boot ID", (result) => { result.receipt.captureRuntimeBinding.liveIdentity.bootId = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"; }],
+    ["runtime capture source", (result) => { result.receipt.captureRuntimeBinding.captureSource = "forged-source"; }],
+    ["runtime interval", (result) => { result.receipt.captureRuntimeBinding.endedAtMonotonicNs = "7999999999"; }],
+    ["trace length", (result) => { result.receipt.attempts = 3; }],
+    ["attempts exceed request maximum", (result) => {
+      const digest = result.receipt.sha256;
+      result.receipt.attempts = 5;
+      result.receipt.trace = [
+        { attempt: 1, capturedAtMonotonicNs: "8000000001", sha256: "b".repeat(64), relation: "candidate" },
+        { attempt: 2, capturedAtMonotonicNs: "8000000002", sha256: "c".repeat(64), relation: "candidate" },
+        { attempt: 3, capturedAtMonotonicNs: "8000000003", sha256: "d".repeat(64), relation: "candidate" },
+        { attempt: 4, capturedAtMonotonicNs: "8000000004", sha256: digest, relation: "candidate" },
+        { attempt: 5, capturedAtMonotonicNs: "8000000005", sha256: digest, relation: "stable" },
+      ];
+    }],
+    ["trace sequence", (result) => { result.receipt.trace[1].attempt = 3; }],
+    ["trace relation vocabulary", (result) => { result.receipt.trace[0].relation = "forged"; }],
+    ["trace monotonic order", (result) => { result.receipt.trace[1].capturedAtMonotonicNs = "8000000000"; }],
+    ["early stable relation", (result) => {
+      const digest = result.receipt.sha256;
+      result.receipt.attempts = 3;
+      result.receipt.trace = [
+        { attempt: 1, capturedAtMonotonicNs: "8000000001", sha256: "b".repeat(64), relation: "stable" },
+        { attempt: 2, capturedAtMonotonicNs: "8000000002", sha256: digest, relation: "candidate" },
+        { attempt: 3, capturedAtMonotonicNs: "8000000003", sha256: digest, relation: "stable" },
+      ];
+    }],
+    ["trace outside runtime binding", (result) => { result.receipt.captureRuntimeBinding.endedAtMonotonicNs = "8000000001"; }],
+    ["trace final relation", (result) => { result.receipt.trace[1].relation = "candidate"; }],
+    ["settle deadline duration", (result) => { result.receipt.deadlineMs += 1; }],
+    ["attempt timeout duration", (result) => { result.receipt.attemptTimeoutMs += 1; }],
+    ["settle deadline outside phase", (result) => { result.receipt.deadlineMonotonicNs = "999999999999999999"; }],
+    ["settled timeout residue", (result) => { result.receipt.timeoutPhase = "awaiting_stability"; }],
+    ["settled error residue", (result) => { result.receipt.error = { code: "forged", detail: "not settled" }; }],
+    ["returned frame bytes", (result) => { result.frame = makePng(99); }],
+  ];
+  for (const [label, corrupt] of corruptions) {
+    await t.test(label, async (t) => {
+      const fixture = await createPreparedFixture(t, {
+        captureResult(captureInput) {
+          const result = successCapture(captureInput);
+          corrupt(result);
+          return result;
+        },
+      });
+      const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+      assert.equal(result.status, "preparation_failed");
+      assert.match(result.primaryError, /capture|frame|runtime|trace|settle|serial|path|identity/i);
+      assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "prepare_failure_cleanup").length, 1);
+    });
+  }
+});
+
+test("prepare rechecks exact application and root continuity after the baseline capture before publishing state", async (t) => {
+  const cases = [
+    ["target exited", { preparePostCaptureContinuity: { foreground: "missing", resumedComponents: [] } }],
+    ["target restarted", { preparePostCaptureContinuity: { pid: 6161, pidStartTicks: "987654321" } }],
+    ["root re-registered in the same process", { postCaptureRoot: { generation: 8, incarnation: REPLACEMENT_INCARNATION } }],
+  ];
+  for (const [label, options] of cases) {
+    await t.test(label, async (t) => {
+      const fixture = await createPreparedFixture(t, options);
+      const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+      assert.equal(result.status, "preparation_failed");
+      assert.match(result.primaryError, /binding|continuity|root|generation|incarnation/i);
+      const captureIndex = fixture.calls.findIndex((call) => call.kind === "capture");
+      const continuityIndex = fixture.calls.findIndex((call) => call.kind === "continuity" && call.context.phase === "prepare_post_capture");
+      assert.ok(captureIndex >= 0 && continuityIndex > captureIndex);
+      const actions = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+      const failedAction = actions.at(-1);
+      assert.equal(failedAction.status, "failed");
+      assert.equal(failedAction.postCaptureContinuity.pid, options.preparePostCaptureContinuity?.pid ?? fixture.applicationBinding.pid);
+      if (label.includes("root")) assert.equal(failedAction.postCaptureCapability.ack.root.generation, 8);
+      assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "prepare_failure_cleanup").length, 1);
+    });
+  }
 });
 
 test("prepare brackets and retains launch-handoff boundary evidence without applying the step zero-signal gate", async (t) => {
@@ -920,6 +1041,18 @@ test("step follows the exact BEGIN-to-END evidence order and consumes one select
   assert.deepEqual(stepAction.post.hmdPose.position, fixture.pose.position);
   assert.equal(stepAction.post.safety.safeguard, "1");
   assert.equal(stepAction.post.continuity.foreground, "exact_allowed");
+});
+
+test("step rejects a settled pair whose final SHA never transitioned from the exact prior frame", async (t) => {
+  const fixture = await prepareForSteps(t, {
+    captureResult: (captureInput) => successCapture(captureInput, 48),
+  });
+
+  const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+  assert.equal(result.status, "stopped");
+  assert.match(result.primaryError, /transition|prior|unchanged/i);
+  assert.equal(result.requiredReview[0].captureSha256, fixture.baselineReview.captureSha256);
 });
 
 test("step refuses a wrong or byte-changed reviewed SHA before BEGIN or locomotion", async (t) => {
@@ -2233,7 +2366,7 @@ test("prepare uses one fixed phase deadline, clamps baseline capture, and stops 
   let nowNs = 0n;
   const clamped = await createPreparedFixture(t, {
     monotonicNs: () => nowNs,
-    afterMonitor: () => { nowNs = 91_000_000_000n; },
+    afterMonitor: () => { nowNs = 99_349_000_000n; },
   });
   const prepared = await createInAppLocomotionOrchestrator(clamped.dependencies).execute(clamped.input);
   assert.equal(prepared.status, "needs_baseline_review");
@@ -2245,7 +2378,7 @@ test("prepare uses one fixed phase deadline, clamps baseline capture, and stops 
   const overrun = await createPreparedFixture(t, {
     inputOverrides: { artifactRoot: externalArtifactRoot(t, "prepare-overrun") },
     monotonicNs: () => nowNs,
-    afterMonitor: () => { nowNs = 96_000_000_000n; },
+    afterMonitor: () => { nowNs = 116_000_000_000n; },
   });
   const failed = await createInAppLocomotionOrchestrator(overrun.dependencies).execute(overrun.input);
   assert.equal(failed.status, "preparation_failed");

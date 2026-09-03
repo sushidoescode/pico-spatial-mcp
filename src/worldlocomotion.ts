@@ -39,12 +39,14 @@ import {
 } from "./nativefleetreceipt.js";
 import type { BoundApplicationIdentity, ReservedArtifactSession } from "./navigation.js";
 import {
+  CAPTURE_SOURCE,
   executeLiveCaptureSettled,
   resolveProspectivePath,
   sha256Bytes,
   type CaptureSettledInput,
   type CaptureSettledReceipt,
 } from "./observation.js";
+import { validateCaptureBuffer } from "./evidence.js";
 import { canonicalJson } from "./runreceiptidentity.js";
 import { readNativeRunReceipt } from "./runreceiptstore.js";
 import {
@@ -210,11 +212,11 @@ const prepareSchema = z.object({
   const prepareBudgetMs = value.budgets.maxDurationMs
     - value.budgets.routeReserveMs
     - value.budgets.restorationReserveMs;
-  if (prepareBudgetMs <= 60_000 + value.capture.deadlineMs + 2 * BRIDGE_MIN_TRANSACTION_MS) {
+  if (prepareBudgetMs <= 60_000 + value.capture.deadlineMs + 3 * BRIDGE_MIN_TRANSACTION_MS) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["budgets", "maxDurationMs"],
-      message: "prepare budget cannot fit bounded capability/HMD transactions, the mandatory >=60 second monitor, and baseline capture before reserves",
+      message: "prepare budget cannot fit bounded capability/HMD/post-capture-capability transactions, the mandatory >=60 second monitor, and baseline capture before reserves",
     });
   }
   if (value.budgets.routeReserveMs <= value.capture.deadlineMs) {
@@ -1598,20 +1600,151 @@ function checkedLaunchHandoffObservation(
   return retained;
 }
 
-function captureReview(captured: Awaited<ReturnType<InAppLocomotionDependencies["captureSettled"]>>, expectedPath: string, role: LocomotionReviewItem["role"], waypointSeq?: number): LocomotionReviewItem {
+interface CaptureReviewExpectation {
+  captureInput: CaptureSettledInput;
+  phaseDeadlineNs: bigint;
+  role: LocomotionReviewItem["role"];
+  runtime: LocomotionRuntimeBinding;
+  waypointSeq?: number;
+}
+
+function captureReview(
+  captured: Awaited<ReturnType<InAppLocomotionDependencies["captureSettled"]>>,
+  expectation: CaptureReviewExpectation,
+): LocomotionReviewItem {
   const receipt = captured.receipt;
-  if (receipt.status !== "settled" || !receipt.settlementSatisfied || receipt.evidenceCeiling !== "structural"
-    || receipt.lookRequired !== true || !receipt.path || !receipt.sha256 || receipt.path !== expectedPath
-    || receipt.captureRef?.sha256 !== receipt.sha256) {
-    throw new Error(`${role} capture did not return one settled structural LOOK-required retained PNG`);
+  const captureInput = expectation.captureInput;
+  const expectedPath = captureInput.outPath;
+  const expectedMode = captureInput.mode ?? (captureInput.priorSha256 === undefined ? "stable" : "transition_then_stable");
+  const fail = (detail: string): never => {
+    throw new Error(`${expectation.role} capture receipt is not exact settled-frame evidence: ${detail}`);
+  };
+  if (receipt.status !== "settled" || receipt.settlementSatisfied !== true
+    || receipt.evidenceCeiling !== "structural" || receipt.lookRequired !== true
+    || receipt.error !== null || receipt.timeoutPhase !== null || receipt.timeoutCause !== null
+    || receipt.lastValidCaptureRef !== null || receipt.actionReceipts.length !== 0) {
+    fail("status, settlement, timeout, error, or structural LOOK fields are inconsistent");
+  }
+  if (receipt.comparison !== captureInput.comparison || receipt.mode !== expectedMode) {
+    fail(`resolved mode/comparison does not match requested ${expectedMode}/${captureInput.comparison} policy`);
+  }
+  if (receipt.deadlineMs !== captureInput.deadlineMs || receipt.attemptTimeoutMs !== captureInput.attemptTimeoutMs
+    || !/^[1-9][0-9]*$/.test(receipt.deadlineMonotonicNs ?? "")) {
+    fail("settlement deadlines do not exactly match the capture request");
+  }
+  const receiptDeadlineNs = BigInt(receipt.deadlineMonotonicNs!);
+  if (receiptDeadlineNs > expectation.phaseDeadlineNs) {
+    fail("settlement deadline exceeds the enclosing route phase deadline");
+  }
+  if (!SHA256.test(receipt.sha256 ?? "") || receipt.path !== expectedPath
+    || receipt.serial !== expectation.runtime.liveIdentity.serial) {
+    fail("final SHA, output path, or route serial changed");
+  }
+  const finalSha256 = receipt.sha256!;
+  if (expectedMode === "transition_then_stable") {
+    if (!SHA256.test(captureInput.priorSha256 ?? "")) fail("transition mode lacks its exact prior SHA");
+    if (finalSha256 === captureInput.priorSha256) fail("transition result SHA is unchanged from the exact prior frame");
+  } else if (captureInput.priorSha256 !== undefined) {
+    fail("stable baseline unexpectedly supplied a prior SHA");
+  }
+  if (!receipt.stablePair || receipt.stablePair.length !== 2
+    || receipt.stablePair[0] !== finalSha256 || receipt.stablePair[1] !== finalSha256) {
+    fail("stablePair is not the exact adjacent final SHA pair");
+  }
+  if (!Number.isSafeInteger(receipt.attempts) || receipt.attempts < 2 || receipt.attempts > captureInput.maxTries
+    || !Array.isArray(receipt.trace) || receipt.attempts !== receipt.trace.length) {
+    fail("attempt count does not exactly bind the settlement trace");
+  }
+  let priorTraceNs: bigint | null = null;
+  for (const [index, entry] of receipt.trace.entries()) {
+    if (entry.attempt !== index + 1 || !/^(?:0|[1-9][0-9]*)$/.test(entry.capturedAtMonotonicNs)
+      || !SHA256.test(entry.sha256)) {
+      fail("trace attempts are not sequential valid frame observations");
+    }
+    if (entry.relation !== "prior" && entry.relation !== "candidate" && entry.relation !== "stable") {
+      fail("trace contains an unknown settlement relation");
+    }
+    if (entry.relation === "stable" && index !== receipt.trace.length - 1) {
+      fail("trace claims stability before its final observation");
+    }
+    const traceNs = BigInt(entry.capturedAtMonotonicNs);
+    if ((priorTraceNs !== null && traceNs <= priorTraceNs) || traceNs >= receiptDeadlineNs) {
+      fail("trace timestamps are not strictly increasing observations before the settlement deadline");
+    }
+    priorTraceNs = traceNs;
+    if (entry.relation === "prior") {
+      if (expectedMode !== "transition_then_stable" || entry.sha256 !== captureInput.priorSha256) {
+        fail("trace prior relation is not bound to the exact requested prior SHA");
+      }
+    } else if (expectedMode === "transition_then_stable" && entry.sha256 === captureInput.priorSha256) {
+      fail("trace labels the exact prior SHA as a transition candidate");
+    }
+  }
+  const candidate = receipt.trace.at(-2)!;
+  const stable = receipt.trace.at(-1)!;
+  if (candidate.sha256 !== finalSha256 || candidate.relation !== "candidate"
+    || stable.sha256 !== finalSha256 || stable.relation !== "stable") {
+    fail("final trace entries are not the exact candidate/stable SHA pair");
+  }
+  const captureRef = receipt.captureRef;
+  if (!captureRef) fail("settled receipt omitted captureRef");
+  const exactCaptureRef = captureRef!;
+  if (exactCaptureRef.path !== expectedPath || exactCaptureRef.path !== receipt.path
+    || exactCaptureRef.sha256 !== finalSha256 || exactCaptureRef.sourceSerial !== expectation.runtime.liveIdentity.serial
+    || !Number.isSafeInteger(exactCaptureRef.bytes) || exactCaptureRef.bytes < 1
+    || !Number.isSafeInteger(exactCaptureRef.width) || exactCaptureRef.width < 1
+    || !Number.isSafeInteger(exactCaptureRef.height) || exactCaptureRef.height < 1
+    || exactCaptureRef.dimensions.width !== exactCaptureRef.width || exactCaptureRef.dimensions.height !== exactCaptureRef.height
+    || !Number.isFinite(Date.parse(exactCaptureRef.capturedAt))) {
+    fail("captureRef path/SHA/bytes/dimensions/source/timestamp is not exact");
+  }
+  const binding = receipt.captureRuntimeBinding;
+  const routeIdentity = expectation.runtime.liveIdentity;
+  if (!binding || binding.serial !== routeIdentity.serial || binding.captureSource !== CAPTURE_SOURCE
+    || binding.liveIdentity.serial !== routeIdentity.serial
+    || binding.liveIdentity.model !== routeIdentity.model
+    || binding.liveIdentity.fingerprint !== routeIdentity.fingerprint
+    || binding.liveIdentity.bootQemu !== routeIdentity.bootQemu
+    || binding.liveIdentity.bootId !== routeIdentity.bootId
+    || !Number.isFinite(Date.parse(binding.liveIdentity.observedAt))
+    || !/^(?:0|[1-9][0-9]*)$/.test(binding.startedAtMonotonicNs)
+    || !/^(?:0|[1-9][0-9]*)$/.test(binding.endedAtMonotonicNs)
+    || BigInt(binding.endedAtMonotonicNs) < BigInt(binding.startedAtMonotonicNs)) {
+    fail("capture runtime is not bound to the route serial/model/fingerprint/qemu/boot identity");
+  }
+  const captureStartedNs = BigInt(binding!.startedAtMonotonicNs);
+  const captureEndedNs = BigInt(binding!.endedAtMonotonicNs);
+  if (receipt.trace.some((entry) => {
+    const observedNs = BigInt(entry.capturedAtMonotonicNs);
+    return observedNs < captureStartedNs || observedNs > captureEndedNs;
+  })) {
+    fail("settlement trace falls outside the exact capture runtime interval");
+  }
+  const frame = captured.frame;
+  if (!Buffer.isBuffer(frame)) fail("settled receipt omitted its returned frame bytes");
+  const validatedFrame = validateCaptureBuffer(frame!, expectedPath);
+  if (!validatedFrame.ok || validatedFrame.format !== "png"
+    || validatedFrame.sha256 !== finalSha256 || validatedFrame.bytes !== exactCaptureRef.bytes
+    || validatedFrame.width !== exactCaptureRef.width || validatedFrame.height !== exactCaptureRef.height) {
+    fail(validatedFrame.ok ? "returned frame bytes do not match captureRef" : validatedFrame.reason ?? "returned frame is invalid");
   }
   return {
-    captureSha256: receipt.sha256,
-    role,
-    ...(waypointSeq === undefined ? {} : { waypointSeq }),
+    captureSha256: finalSha256,
+    role: expectation.role,
+    ...(expectation.waypointSeq === undefined ? {} : { waypointSeq: expectation.waypointSeq }),
     settled: true,
-    path: receipt.path,
+    path: expectedPath,
   };
+}
+
+function validateRetainedCaptureFrame(
+  captured: Awaited<ReturnType<InAppLocomotionDependencies["captureSettled"]>>,
+  retained: Buffer,
+  role: LocomotionReviewItem["role"],
+): void {
+  if (!Buffer.isBuffer(captured.frame) || !Buffer.isBuffer(retained) || !captured.frame.equals(retained)) {
+    throw new Error(`${role} retained capture bytes differ from the exact settled frame returned by the capture primitive`);
+  }
 }
 
 function preparationFailure(
@@ -1998,6 +2131,9 @@ export function createInAppLocomotionOrchestrator(
     let launchHandoffPromise: Promise<FreshLaunchHandoffObservationReceipt> | null = null;
     let monitorHandoff: FreshLaunchMonitorHandoff | null = null;
     let healthBoundaryMarker: string | null = null;
+    let baselineCaptureReceipt: CaptureSettledReceipt | null = null;
+    let postCaptureContinuity: ApplicationContinuitySample | null = null;
+    let postCaptureCapability: CapabilityResult | null = null;
 
     const finishLaunchHandoffObservation = async (offered?: FreshLaunchMonitorHandoff): Promise<void> => {
       if (offered !== undefined) {
@@ -2205,8 +2341,11 @@ export function createInAppLocomotionOrchestrator(
         expectedRootIncarnation: root.incarnation,
         ...bridgeBudgetFields(timeoutMs, prepareDeadlineNs!),
       })), root.generation, root.incarnation);
-      if (remainingUntilMs(prepareDeadlineNs, dependencies) < 60_001) {
-        throw new LocomotionStageError("budget_exhausted", "prepare phase cannot preserve the mandatory >=60 second monitor plus baseline capture");
+      if (remainingUntilMs(prepareDeadlineNs, dependencies) < 60_001 + input.capture.deadlineMs + BRIDGE_MIN_TRANSACTION_MS) {
+        throw new LocomotionStageError(
+          "budget_exhausted",
+          "prepare phase cannot preserve the mandatory >=60 second monitor, baseline capture, and post-capture capability recheck",
+        );
       }
       freshLaunchMonitor = await withinDeadline(prepareDeadlineNs, dependencies, "fresh-launch monitor", (timeoutMs) => dependencies.monitorFreshLaunch({
         serial: input.serial,
@@ -2268,18 +2407,66 @@ export function createInAppLocomotionOrchestrator(
         }
       }
       const baselinePath = path.join(artifact.absoluteRoot, "captures", "000-app-baseline.png");
-      const captured = await withinDeadline(prepareDeadlineNs, dependencies, "baseline settled capture", (remainingMs) => dependencies.captureSettled({
-        serial: input.serial,
-        outPath: baselinePath,
-        maxTries: input.capture.maxTries,
-        intervalMs: input.capture.intervalMs,
-        attemptTimeoutMs: Math.max(1, Math.min(input.capture.attemptTimeoutMs, remainingMs)),
-        deadlineMs: Math.max(1, Math.min(input.capture.deadlineMs, remainingMs)),
-        comparison: "byte_exact",
-        mode: "stable",
-      }));
-      const review = captureReview(captured, baselinePath, "app_baseline");
-      dependencies.readReviewImage(review, artifact.absoluteRoot);
+      const baselineCaptureRequest: { value?: CaptureSettledInput } = {};
+      const captured = await withinDeadline(prepareDeadlineNs, dependencies, "baseline settled capture", (remainingMs) => {
+        const captureBudgetMs = remainingMs - BRIDGE_MIN_TRANSACTION_MS - 1;
+        if (captureBudgetMs < 1) throw new LocomotionStageError("budget_exhausted", "baseline capture cannot fit strictly before the prepare deadline");
+        baselineCaptureRequest.value = {
+          serial: input.serial,
+          outPath: baselinePath,
+          maxTries: input.capture.maxTries,
+          intervalMs: input.capture.intervalMs,
+          attemptTimeoutMs: Math.min(input.capture.attemptTimeoutMs, captureBudgetMs),
+          deadlineMs: Math.min(input.capture.deadlineMs, captureBudgetMs),
+          comparison: "byte_exact",
+          mode: "stable",
+        };
+        return dependencies.captureSettled(baselineCaptureRequest.value);
+      });
+      const baselineCaptureInput = baselineCaptureRequest.value;
+      if (!baselineCaptureInput) throw new Error("baseline capture request was not retained");
+      baselineCaptureReceipt = captured.receipt;
+      const review = captureReview(captured, {
+        captureInput: baselineCaptureInput,
+        phaseDeadlineNs: prepareDeadlineNs,
+        role: "app_baseline",
+        runtime,
+      });
+      validateRetainedCaptureFrame(captured, dependencies.readReviewImage(review, artifact.absoluteRoot), "app_baseline");
+      postCaptureContinuity = await withinDeadline(prepareDeadlineNs, dependencies, "post-baseline-capture continuity", (timeoutMs) =>
+        dependencies.sampleContinuity({
+          serial: input.serial,
+          phase: "prepare_post_capture",
+          runtime,
+          artifactRoot: artifact!.absoluteRoot,
+          timeoutMs,
+          deadlineMonotonicNs: prepareDeadlineNs!.toString(),
+        }));
+      const postCaptureContinuityProblem = continuityProblem(postCaptureContinuity, runtime);
+      if (postCaptureContinuityProblem) throw new LocomotionStageError("binding_lost", postCaptureContinuityProblem);
+      postCaptureCapability = await withinDeadline(prepareDeadlineNs, dependencies, "post-baseline-capture root capability", (timeoutMs) =>
+        dependencies.probeCapability({
+          serial: input.serial,
+          packageName: input.scenario.packageName,
+          requestId: `prepare_post_capture_${artifact!.runId.slice(0, 20)}`,
+          tag: "prepare-post-capture",
+          ...bridgeBudgetFields(timeoutMs, prepareDeadlineNs!),
+        }));
+      if (!postCaptureCapability.ok) {
+        throw new LocomotionStageError(
+          postCaptureCapability.code,
+          postCaptureCapability.primaryError ?? postCaptureCapability.detail,
+          postCaptureCapability.cleanupError,
+        );
+      }
+      const postCaptureRoot = postCaptureCapability.ack.root;
+      if (!postCaptureRoot || postCaptureRoot.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID
+        || postCaptureRoot.generation !== root.generation || postCaptureRoot.incarnation !== root.incarnation) {
+        throw new LocomotionStageError(
+          "binding_lost",
+          "post-baseline-capture root capability lost the exact generation/incarnation producer identity",
+        );
+      }
       const preparationLog = await finalizePreparationBracket(true);
       if (!preparationLog) throw new Error("preparation launch-handoff bracket was not retained");
       const state: LocomotionState = {
@@ -2332,7 +2519,9 @@ export function createInAppLocomotionOrchestrator(
         launchHandoffWindow,
         launchHandoffObservation,
         preparationLogEvidence: preparationLog,
-        captureReceipt: captured.receipt,
+        captureReceipt: baselineCaptureReceipt,
+        postCaptureContinuity,
+        postCaptureCapability,
         observedPriorForeground: prior,
         serialLease: { status: "active", reason: "reviewed route requires restore" },
         rootGeneration: root.generation,
@@ -2495,6 +2684,9 @@ export function createInAppLocomotionOrchestrator(
             freshLaunchMonitor,
             launchHandoffWindow,
             launchHandoffObservation,
+            captureReceipt: baselineCaptureReceipt,
+            postCaptureContinuity,
+            postCaptureCapability,
           }, hooks);
           failureAuditProven = true;
         } catch (auditError) {
@@ -2571,6 +2763,7 @@ export function createInAppLocomotionOrchestrator(
     let pendingNonceRequestId: string | null = null;
     let emergencyStop: { attempted: boolean; proven: boolean; error: string | null } | null = null;
     let captureReceipt: CaptureSettledReceipt | null = null;
+    let capturedFrame: Buffer | null = null;
     let postHmd: AgentBridgeHmdPose | null = null;
     let postSafety: LocomotionSafetySnapshot | null = null;
     let postContinuity: ApplicationContinuitySample | null = null;
@@ -2706,24 +2899,39 @@ export function createInAppLocomotionOrchestrator(
       }
       state.rootGeneration = expectedGeneration;
       const captureRemainingMs = remainingUntilMs(stepDeadlineNs, dependencies);
-      if (captureRemainingMs < 1) throw new LocomotionStageError("budget_exhausted", "route budget was exhausted before transition capture");
+      if (captureRemainingMs < 2) throw new LocomotionStageError("budget_exhausted", "route budget was exhausted before transition capture");
       const capturePath = path.join(state.artifact.absoluteRoot, "captures", `${String(waypoint.seq).padStart(3, "0")}-waypoint.png`);
-      const captured = await withinDeadline(stepDeadlineNs, dependencies, "waypoint transition-stable capture", (remainingMs) => dependencies.captureSettled({
-        serial: state.input.serial,
-        outPath: capturePath,
-        maxTries: state.input.capture.maxTries,
-        intervalMs: state.input.capture.intervalMs,
-        attemptTimeoutMs: Math.max(1, Math.min(state.input.capture.attemptTimeoutMs, remainingMs)),
-        deadlineMs: Math.max(1, Math.min(state.input.capture.deadlineMs, remainingMs)),
-        comparison: "byte_exact",
-        mode: "transition_then_stable",
-        priorSha256: state.currentReview.captureSha256,
-      }));
+      const waypointCaptureRequest: { value?: CaptureSettledInput } = {};
+      const captured = await withinDeadline(stepDeadlineNs, dependencies, "waypoint transition-stable capture", (remainingMs) => {
+        const captureBudgetMs = remainingMs - 1;
+        if (captureBudgetMs < 1) throw new LocomotionStageError("budget_exhausted", "transition capture cannot fit strictly before the route deadline");
+        waypointCaptureRequest.value = {
+          serial: state.input.serial,
+          outPath: capturePath,
+          maxTries: state.input.capture.maxTries,
+          intervalMs: state.input.capture.intervalMs,
+          attemptTimeoutMs: Math.min(state.input.capture.attemptTimeoutMs, captureBudgetMs),
+          deadlineMs: Math.min(state.input.capture.deadlineMs, captureBudgetMs),
+          comparison: "byte_exact",
+          mode: "transition_then_stable",
+          priorSha256: state.currentReview.captureSha256,
+        };
+        return dependencies.captureSettled(waypointCaptureRequest.value);
+      });
+      const waypointCaptureInput = waypointCaptureRequest.value;
+      if (!waypointCaptureInput) throw new Error("waypoint capture request was not retained");
       captureReceipt = captured.receipt;
+      capturedFrame = captured.frame;
       if (captured.receipt.status !== "settled") {
         throw new LocomotionStageError(captured.receipt.error?.code ?? "route_unsettled", captured.receipt.error?.detail ?? "transition capture did not settle");
       }
-      capturedReview = captureReview(captured, capturePath, "waypoint", waypoint.seq);
+      capturedReview = captureReview(captured, {
+        captureInput: waypointCaptureInput,
+        phaseDeadlineNs: stepDeadlineNs,
+        role: "waypoint",
+        runtime: state.runtime,
+        waypointSeq: waypoint.seq,
+      });
       postHmd = hmdPoseFrom(await withinDeadline(stepDeadlineNs, dependencies, "post-step HMD pose", (timeoutMs) => dependencies.requestHmdPose({
         serial: state.input.serial,
         packageName: state.input.scenario.packageName,
@@ -2877,7 +3085,8 @@ export function createInAppLocomotionOrchestrator(
     let capturedReviewValidated = false;
     if (capturedReview) {
       try {
-        dependencies.readReviewImage(capturedReview, state.artifact.absoluteRoot);
+        const retained = dependencies.readReviewImage(capturedReview, state.artifact.absoluteRoot);
+        validateRetainedCaptureFrame({ receipt: captureReceipt!, frame: capturedFrame }, retained, "waypoint");
         capturedReviewValidated = true;
       } catch (error) {
         const detail = `new waypoint image failed retained-byte validation: ${errorText(error)}`;
@@ -3161,25 +3370,38 @@ export function createInAppLocomotionOrchestrator(
       }
       state.rootGeneration = expectedGeneration;
       const captureRemainingMs = remainingUntilMs(mutationDeadlineNs, dependencies);
-      if (captureRemainingMs < 1) throw new LocomotionStageError("budget_exhausted", "restoration deadline expired before capture");
+      if (captureRemainingMs < 2) throw new LocomotionStageError("budget_exhausted", "restoration deadline expired before capture");
       const capturePath = path.join(state.artifact.absoluteRoot, "captures", "999-restored.png");
-      const captured = await withinDeadline(mutationDeadlineNs, dependencies, "restoration settled capture", (remainingCaptureMs) => dependencies.captureSettled({
-        serial: state.input.serial,
-        outPath: capturePath,
-        maxTries: state.input.capture.maxTries,
-        intervalMs: state.input.capture.intervalMs,
-        attemptTimeoutMs: Math.max(1, Math.min(state.input.capture.attemptTimeoutMs, remainingCaptureMs)),
-        deadlineMs: Math.max(1, Math.min(state.input.capture.deadlineMs, remainingCaptureMs)),
-        comparison: "byte_exact",
-        mode: reviewedMovedFrame ? "transition_then_stable" : "stable",
-        ...(reviewedMovedFrame ? { priorSha256: state.currentReview.captureSha256 } : {}),
-      }));
+      const restoreCaptureRequest: { value?: CaptureSettledInput } = {};
+      const captured = await withinDeadline(mutationDeadlineNs, dependencies, "restoration settled capture", (remainingCaptureMs) => {
+        const captureBudgetMs = remainingCaptureMs - 1;
+        if (captureBudgetMs < 1) throw new LocomotionStageError("budget_exhausted", "restoration capture cannot fit strictly before its mutation deadline");
+        restoreCaptureRequest.value = {
+          serial: state.input.serial,
+          outPath: capturePath,
+          maxTries: state.input.capture.maxTries,
+          intervalMs: state.input.capture.intervalMs,
+          attemptTimeoutMs: Math.min(state.input.capture.attemptTimeoutMs, captureBudgetMs),
+          deadlineMs: Math.min(state.input.capture.deadlineMs, captureBudgetMs),
+          comparison: "byte_exact",
+          mode: reviewedMovedFrame ? "transition_then_stable" : "stable",
+          ...(reviewedMovedFrame ? { priorSha256: state.currentReview.captureSha256 } : {}),
+        };
+        return dependencies.captureSettled(restoreCaptureRequest.value);
+      });
+      const restoreCaptureInput = restoreCaptureRequest.value;
+      if (!restoreCaptureInput) throw new Error("restore capture request was not retained");
       captureReceipt = captured.receipt;
       if (captured.receipt.status !== "settled") {
         throw new LocomotionStageError(captured.receipt.error?.code ?? "restoration_unsettled", captured.receipt.error?.detail ?? "restoration capture did not settle");
       }
-      const candidateReview = captureReview(captured, capturePath, "recovery");
-      dependencies.readReviewImage(candidateReview, state.artifact.absoluteRoot);
+      const candidateReview = captureReview(captured, {
+        captureInput: restoreCaptureInput,
+        phaseDeadlineNs: mutationDeadlineNs,
+        role: "recovery",
+        runtime: state.runtime,
+      });
+      validateRetainedCaptureFrame(captured, dependencies.readReviewImage(candidateReview, state.artifact.absoluteRoot), "recovery");
       restoredReview = candidateReview;
       state.currentReview = candidateReview;
       state.requiredReview.push(candidateReview);
