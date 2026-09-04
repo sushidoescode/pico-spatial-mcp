@@ -279,11 +279,12 @@ doctor → two-step AppSpec authoring/build → inspect the exact receipt-bound 
 → record only what was actually seen. The full surface additionally exposes the five advanced orchestration
 prompts, including `pico_spatial_dev_loop`.
 
-Two representative full-surface examples:
+Four representative full-surface examples:
 
 - **Inner loop** (fast, scene-only): edit scene text → `iterate_scene` (pack + inspect + preview + capture) → adjust → repeat. These low-level tools require `PICO_MCP_SURFACE=full`.
 - **Full app loop**: `emulator_boot` → `build_and_run` (build + install + launch + crash-check + capture) → drive interactions → `check_crash` / `wait_for_log` → `record_verification` on a frame you looked at. These low-level tools require `PICO_MCP_SURFACE=full`.
 - **Calibrated scene-target loop**: follow [docs/NAVIGATE_SCENE_TARGET.md](docs/NAVIGATE_SCENE_TARGET.md) for the exact `calibrate`/`navigate` requests, same-boot receipt rules, bounded cleanup, and required frame LOOKs.
+- **Receipt-bound in-app locomotion route (CP1 contract)**: follow [docs/IN_APP_LOCOMOTION.md](docs/IN_APP_LOCOMOTION.md) for the exact `prepare`/reviewed `step`/`restore`/`adjudicate` sequence, mechanism choice, and evidence boundaries. This is Full-only; CP2 has not run and there is no productized live proof.
 
 On the full surface, the tools span emulator control (lifecycle, adb, snapshots, gRPC), text-first
 scene authoring + `spatialbundle`/Gradle compilation, the native + web codegen lanes, and the

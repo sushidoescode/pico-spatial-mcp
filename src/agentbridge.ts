@@ -653,6 +653,11 @@ export interface AgentBridgeWorldPose {
 }
 
 export interface AgentBridgeHmdPose {
+  /** Per-provider listener callback sequence, serialized as decimal to retain Kotlin Long precision. */
+  sampleSequence: string;
+  /** Guest monotonic time when the listener observed this sample; never compared with the host clock. */
+  sampleObservedAtMonotonicNs: string;
+  /** Guest monotonic time when the acknowledgement read the retained listener sample. */
   readAtMonotonicNs: string;
   position: AgentBridgePosition;
   rotation: { x: number; y: number; z: number; w: number };
@@ -758,6 +763,8 @@ const locomotionWorldPoseSchema = z.object({
 }).strict();
 
 const locomotionHmdPoseSchema = z.object({
+  sampleSequence: z.string().regex(/^[1-9]\d*$/),
+  sampleObservedAtMonotonicNs: z.string().regex(/^(?:0|[1-9]\d*)$/),
   readAtMonotonicNs: z.string().regex(/^(?:0|[1-9]\d*)$/),
   position: locomotionPositionSchema,
   rotation: z.object({
@@ -766,7 +773,15 @@ const locomotionHmdPoseSchema = z.object({
     z: z.number().finite(),
     w: z.number().finite(),
   }).strict(),
-}).strict();
+}).strict().superRefine((pose, context) => {
+  if (BigInt(pose.sampleObservedAtMonotonicNs) > BigInt(pose.readAtMonotonicNs)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sampleObservedAtMonotonicNs"],
+      message: "HMD sample observation time cannot be later than its acknowledgement read time",
+    });
+  }
+});
 
 const locomotionAckBaseSchema = z.object({
   kind: z.literal(AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND),
@@ -2159,7 +2174,13 @@ object AgentBridge {
     )
 
     data class AgentWorldPose(val rootGeneration: Long, val position: Vector3)
-    data class AgentHmdPose(val readAtMonotonicNs: Long, val position: Vector3, val rotation: Quat)
+    data class AgentHmdPose(
+        val sampleSequence: Long,
+        val sampleObservedAtMonotonicNs: Long,
+        val readAtMonotonicNs: Long,
+        val position: Vector3,
+        val rotation: Quat,
+    )
     data class AgentLocomotionResult(
         val outcome: String,
         val pose: AgentWorldPose?,
@@ -2513,8 +2534,9 @@ object AgentBridge {
         return runCatching { provider() }.getOrNull()
     }
 
-    private fun publishLocomotionRootGeneration(generation: Long, rootGeneration: Long): Boolean =
+    fun reconcileLocomotionRootGeneration(generation: Long, rootGeneration: Long): Boolean =
         synchronized(locomotionGenerationLock) {
+            if (rootGeneration <= 0L) return@synchronized false
             val binding = locomotionBinding
             if (binding?.generation != generation) return@synchronized false
             locomotionBinding = binding.copy(rootGeneration = rootGeneration)
@@ -3145,19 +3167,17 @@ object AgentBridge {
                     primaryError,
                 )
             }
-            if (primaryError == null && !locomotionRequestIsActive(producerRequest!!)) return
             if (primaryError == null) {
                 val resultError = validateLocomotionResult(producerRequest!!, result)
                 if (resultError != null) result = AgentLocomotionResult("failed", null, resultError, result.cleanupError)
             }
             if (result.outcome == "completed") {
                 val pose = result.pose!!
-                if (!completeLocomotionLease(request)) return
-                if (!publishLocomotionRootGeneration(request.generation, pose.rootGeneration)) return
-                if (!locomotionRequestIsCurrent(request.generation)) return
-            } else if (!completeLocomotionLease(request)) {
-                return
+                if (!reconcileLocomotionRootGeneration(request.generation, pose.rootGeneration)) return
             }
+            if (primaryError == null && !locomotionRequestIsActive(producerRequest!!)) return
+            if (!completeLocomotionLease(request)) return
+            if (result.outcome == "completed" && !locomotionRequestIsCurrent(request.generation)) return
             writeLocomotionAckAtomically(context, request, target, LOCOMOTE_COMMAND) { writer ->
                 writer.name("requestControl").value("execute")
                 writer.name("executionLeaseMs").value(request.executionLeaseMs.toLong())
@@ -3206,7 +3226,8 @@ object AgentBridge {
     private fun validWorldPose(pose: AgentWorldPose): Boolean =
         pose.rootGeneration > 0L && pose.position.x.isFinite() && pose.position.y.isFinite() && pose.position.z.isFinite()
 
-    private fun validHmdPose(pose: AgentHmdPose): Boolean = pose.readAtMonotonicNs >= 0L &&
+    private fun validHmdPose(pose: AgentHmdPose): Boolean = pose.sampleSequence > 0L &&
+        pose.sampleObservedAtMonotonicNs >= 0L && pose.readAtMonotonicNs >= pose.sampleObservedAtMonotonicNs &&
         pose.position.x.isFinite() && pose.position.y.isFinite() && pose.position.z.isFinite() &&
         pose.rotation.x.isFinite() && pose.rotation.y.isFinite() && pose.rotation.z.isFinite() && pose.rotation.w.isFinite()
 
@@ -3233,6 +3254,8 @@ object AgentBridge {
 
     private fun writeHmdPose(writer: JsonWriter, pose: AgentHmdPose) {
         writer.beginObject()
+        writer.name("sampleSequence").value(pose.sampleSequence.toString())
+        writer.name("sampleObservedAtMonotonicNs").value(pose.sampleObservedAtMonotonicNs.toString())
         writer.name("readAtMonotonicNs").value(pose.readAtMonotonicNs.toString())
         writer.name("position").beginObject(); writePositionMembers(writer, pose.position); writer.endObject()
         writer.name("rotation").beginObject()

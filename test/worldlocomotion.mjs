@@ -34,6 +34,15 @@ const HASH = "a".repeat(64);
 const ROOT_INCARNATION = "11111111-1111-4111-8111-111111111111";
 const REPLACEMENT_INCARNATION = "22222222-2222-4222-8222-222222222222";
 
+function completedStopReceipt(context) {
+  return {
+    status: "stop_command_completed",
+    serial: context.serial,
+    packageName: context.packageName,
+    reason: context.reason,
+  };
+}
+
 function externalArtifactRoot(t, label = "run") {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), "pico-worldlocomotion-test-"));
   t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
@@ -362,6 +371,8 @@ async function createPreparedFixture(t, options = {}) {
     root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: ROOT_INCARNATION },
   };
   const pose = {
+    sampleSequence: "1",
+    sampleObservedAtMonotonicNs: "1000000",
     readAtMonotonicNs: "2000000",
     position: { x: 0.1, y: 1.62, z: -0.2 },
     rotation: { x: 0, y: 0, z: 0, w: 1 },
@@ -423,7 +434,7 @@ async function createPreparedFixture(t, options = {}) {
     stopPackage: async (context) => {
       calls.push({ kind: "stop", context });
       if (options.stopError && context.reason === options.stopError.reason) throw new Error(options.stopError.message);
-      return { status: "stopped", packageName: context.packageName };
+      return completedStopReceipt(context);
     },
     launchTarget: async (context) => {
       calls.push({ kind: "launch", context });
@@ -543,6 +554,14 @@ async function createPreparedFixture(t, options = {}) {
       await holdHandoffPhase("hmd");
       if (options.hmdSequence) return options.hmdSequence[Math.min(hmdIndex++, options.hmdSequence.length - 1)];
       if (options.hmd) return options.hmd;
+      const sequenceOffset = BigInt(hmdIndex++);
+      const sampleObservedAtMonotonicNs = BigInt(pose.sampleObservedAtMonotonicNs) + sequenceOffset * 1_000_000n;
+      const freshPose = {
+        ...pose,
+        sampleSequence: (BigInt(pose.sampleSequence) + sequenceOffset).toString(),
+        sampleObservedAtMonotonicNs: sampleObservedAtMonotonicNs.toString(),
+        readAtMonotonicNs: (sampleObservedAtMonotonicNs + 1_000_000n).toString(),
+      };
       return {
         ok: true,
         ack: {
@@ -552,6 +571,7 @@ async function createPreparedFixture(t, options = {}) {
             generation: bridgeInput.expectedRootGeneration,
             incarnation: bridgeInput.expectedRootIncarnation,
           },
+          hmdPose: freshPose,
         },
         primaryError: null,
         cleanupError: null,
@@ -761,15 +781,18 @@ async function createPreparedFixture(t, options = {}) {
     probeFinalProcessState: async (context) => {
       calls.push({ kind: "finalProcess", context });
       const targetPids = options.finalTargetPresent ? [applicationBinding.pid] : [];
+      const priorRelaunchAttempted = calls.some((call) => call.kind === "relaunchPrior");
       const resumedComponents = options.finalResumedComponents ?? (options.finalTargetPresent
         ? [input.scenario.launchComponent]
         : input.priorForeground.kind === "non_receipt_bound"
-          ? [input.priorForeground.component]
+          ? priorRelaunchAttempted
+            ? [input.priorForeground.component]
+            : ["com.picoxr.launcher/.Launcher"]
           : ["com.picoxr.launcher/.Launcher"]);
       const pidofOutput = targetPids.join(" ");
       const activityOutput = resumedComponents.map((component) => `mResumedActivity: ActivityRecord{fixture u0 ${component} t1}`).join("\n");
       const bytes = Buffer.from(JSON.stringify({ pidofOutput, activityOutput, targetPids, resumedComponents }) + "\n", "utf8");
-      const probePath = path.join(context.artifactRoot, "logs", "999-final-process-activity.json");
+      const probePath = path.join(context.artifactRoot, "logs", `999-final-process-activity-${context.evidenceId}.json`);
       fs.writeFileSync(probePath, bytes, { flag: "wx", mode: 0o600 });
       return {
         serial: input.serial,
@@ -1090,6 +1113,17 @@ test("step follows the exact BEGIN-to-END evidence order and consumes one select
   assert.equal(capture.priorSha256, fixture.baselineReview.captureSha256);
   assert.equal(result.hmdDrift.translation.thresholdM, 0.02);
   assert.equal(result.hmdDrift.translation.pass, true);
+  assert.deepEqual(result.hmdDrift.freshness, {
+    method: "guest_listener_arrival_age_and_strict_sequence_and_time",
+    maximumSampleAgeMs: 250,
+    baseline: { sampleSequence: "1", sampleObservedAtMonotonicNs: "1000000", readAtMonotonicNs: "2000000", sampleAgeMs: 1 },
+    pre: { sampleSequence: "2", sampleObservedAtMonotonicNs: "2000000", readAtMonotonicNs: "3000000", sampleAgeMs: 1 },
+    post: { sampleSequence: "3", sampleObservedAtMonotonicNs: "3000000", readAtMonotonicNs: "4000000", sampleAgeMs: 1 },
+    sequencesStrictlyIncreasing: true,
+    observationTimesStrictlyIncreasing: true,
+    readTimesStrictlyIncreasing: true,
+    pass: true,
+  });
   assert.equal(result.hmdDrift.quaternion.method, "2*acos(abs(normalized_dot))");
   assert.equal("threshold" in result.hmdDrift.quaternion, false);
   assert.equal(fs.existsSync(result.logEvidence.path), true);
@@ -1411,15 +1445,47 @@ test("one verified boundary phrase inside a step bracket structurally stops the 
   assert.match(result.cleanupError, /boundary|container|log/i);
 });
 
-test("step gates safety, continuity, finite HMD telemetry, 0.02m Euclidean drift, and route budget", async (t) => {
-  const makeHmd = (input, position) => ({
+test("prepare rejects an HMD listener sample older than the experiment freshness threshold", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  const originalHmd = fixture.dependencies.requestHmdPose;
+  fixture.dependencies.requestHmdPose = async (input) => {
+    const result = await originalHmd(input);
+    return {
+      ...result,
+      ack: {
+        ...result.ack,
+        hmdPose: {
+          ...result.ack.hmdPose,
+          sampleSequence: "1",
+          sampleObservedAtMonotonicNs: "1000000",
+          readAtMonotonicNs: "252000000",
+        },
+      },
+    };
+  };
+
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+  assert.equal(result.status, "preparation_failed");
+  assert.match(result.primaryError, /HMD|fresh|age|250/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "monitor" || call.kind === "capture"), false);
+});
+
+test("step gates safety, continuity, fresh finite HMD telemetry, 0.02m Euclidean drift, and route budget", async (t) => {
+  const makeHmd = (input, position, metadata = {}) => ({
     ok: true,
     ack: {
       kind: AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND, schemaVersion: 1, capabilityRevision: 1,
       requestId: input.requestId, tag: input.tag, application: { packageName: input.packageName },
       operation: AGENT_BRIDGE_HMD_POSE_COMMAND, physicalWalk: false, primaryError: null, cleanupError: null,
       outcome: "sampled", root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: input.expectedRootIncarnation },
-      hmdPose: { readAtMonotonicNs: "4000000", position, rotation: { x: 0, y: 0, z: 0, w: 1 } },
+      hmdPose: {
+        sampleSequence: metadata.sampleSequence ?? "2",
+        sampleObservedAtMonotonicNs: metadata.sampleObservedAtMonotonicNs ?? "3000000",
+        readAtMonotonicNs: metadata.readAtMonotonicNs ?? "4000000",
+        position,
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
     },
     primaryError: null, cleanupError: null, actionReceipts: [], evidenceCeiling: "structural",
   });
@@ -1427,6 +1493,10 @@ test("step gates safety, continuity, finite HMD telemetry, 0.02m Euclidean drift
     ["safety", { safetySequence: [cleanSafety, cleanSafety, { ...cleanSafety, safeguard: "0" }] }],
     ["continuity", { continuitySequence: [{ foreground: "different_package" }] }],
     ["nonfinite HMD", {}],
+    ["stale HMD", {}],
+    ["stale post HMD", {}],
+    ["identical HMD timestamps", {}],
+    ["aged HMD", {}],
     ["translation drift", {}],
     ["budget", { afterPrepare: (fixture) => { fixture.dependencies.monotonicNs = () => 9_000_000_000_000_000n; } }],
   ];
@@ -1443,14 +1513,64 @@ test("step gates safety, continuity, finite HMD telemetry, 0.02m Euclidean drift
         fixture.dependencies.requestHmdPose = async (input) => {
           const index = fixture.calls.filter((call) => call.kind === "hmd").length;
           fixture.calls.push({ kind: "hmd", input });
-          return makeHmd(input, index === 0 ? fixture.pose.position : { ...fixture.pose.position, x: fixture.pose.position.x + 0.0201 });
+          return makeHmd(
+            input,
+            index === 0 ? fixture.pose.position : { ...fixture.pose.position, x: fixture.pose.position.x + 0.0201 },
+            {
+              sampleSequence: String(2 + index),
+              sampleObservedAtMonotonicNs: String(3_000_000 + index * 2_000_000),
+              readAtMonotonicNs: String(4_000_000 + index * 2_000_000),
+            },
+          );
+        };
+      }
+      if (label === "stale HMD") {
+        fixture.dependencies.requestHmdPose = async (input) => {
+          fixture.calls.push({ kind: "hmd", input });
+          return makeHmd(input, fixture.pose.position, {
+            sampleSequence: fixture.pose.sampleSequence,
+            sampleObservedAtMonotonicNs: fixture.pose.sampleObservedAtMonotonicNs,
+            readAtMonotonicNs: fixture.pose.readAtMonotonicNs,
+          });
+        };
+      }
+      if (label === "stale post HMD") {
+        fixture.dependencies.requestHmdPose = async (input) => {
+          fixture.calls.push({ kind: "hmd", input });
+          return makeHmd(input, fixture.pose.position, {
+            sampleSequence: "2",
+            sampleObservedAtMonotonicNs: "3000000",
+            readAtMonotonicNs: "4000000",
+          });
+        };
+      }
+      if (label === "identical HMD timestamps") {
+        fixture.dependencies.requestHmdPose = async (input) => {
+          const index = fixture.calls.filter((call) => call.kind === "hmd").length;
+          fixture.calls.push({ kind: "hmd", input });
+          return makeHmd(input, fixture.pose.position, {
+            sampleSequence: String(2 + index),
+            sampleObservedAtMonotonicNs: fixture.pose.sampleObservedAtMonotonicNs,
+            readAtMonotonicNs: fixture.pose.readAtMonotonicNs,
+          });
+        };
+      }
+      if (label === "aged HMD") {
+        fixture.dependencies.requestHmdPose = async (input) => {
+          fixture.calls.push({ kind: "hmd", input });
+          return makeHmd(input, fixture.pose.position, {
+            sampleSequence: "2",
+            sampleObservedAtMonotonicNs: "1000000",
+            readAtMonotonicNs: "252000000",
+          });
         };
       }
       options.afterPrepare?.(fixture);
       const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
       assert.equal(result.status, "stopped");
-      assert.match(result.primaryError, label === "translation drift" ? /0\.02|drift/i : /safety|continuity|HMD|budget|deadline|binding/i);
+      assert.match(result.primaryError, label === "translation drift" ? /0\.02|drift/i : /safety|continuity|HMD|fresh|stale|budget|deadline|binding/i);
       assert.equal(fixture.calls.filter((call) => call.kind === "locomote" && call.input.mode !== fixture.input.mechanism).length, 0);
+      if (label === "stale post HMD") assert.equal(fixture.calls.filter((call) => call.kind === "locomote").length, 1);
     });
   }
 });
@@ -1614,7 +1734,35 @@ test("restore rechecks exact application and root continuity after recovery capt
   }
 });
 
-test("restore rejects a wrong caller SHA without effects and cleans once when the exact expected image changed", async (t) => {
+test("a stopped retry cannot relabel a moved frame as zero after an unbound recovery capture", async (t) => {
+  const fixtureOptions = {
+    restorePostCaptureContinuity: { foreground: "missing", resumedComponents: [] },
+  };
+  const fixture = await prepareForSteps(t, fixtureOptions);
+  const stepped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(stepped.status, "needs_waypoint_review");
+  const movedReview = stepped.requiredReview[0];
+
+  const failed = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(movedReview),
+  });
+  assert.equal(failed.status, "restore_failed");
+  assert.match(failed.primaryError, /binding|continuity/i);
+  assert.equal(failed.requiredReview[0].captureSha256, movedReview.captureSha256);
+
+  fixtureOptions.restorePostCaptureContinuity = {};
+  fixture.calls.length = 0;
+  const retried = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(movedReview),
+  });
+  assert.equal(retried.status, "restore_failed");
+  assert.match(retried.primaryError, /zero|restoration.*unproven|moved.*frame/i);
+  assert.equal(retried.requiredReview[0].captureSha256, movedReview.captureSha256);
+  assert.equal(retried.requiredReview[0].role, "waypoint");
+  assert.equal(fixture.calls.some((call) => call.kind === "locomote" || call.kind === "capture"), false);
+});
+
+test("restore rejects a wrong caller SHA without effects and retries after the exact expected image is repaired", async (t) => {
   const wrong = await prepareForSteps(t);
   const wrongResult = await wrong.orchestrator.execute({
     action: "restore",
@@ -1625,6 +1773,7 @@ test("restore rejects a wrong caller SHA without effects and cleans once when th
   assert.equal(wrong.calls.length, 0);
 
   const tampered = await prepareForSteps(t);
+  const originalBaseline = fs.readFileSync(tampered.baselineReview.path);
   fs.writeFileSync(tampered.baselineReview.path, makePng(99));
   const tamperedResult = await tampered.orchestrator.execute({
     action: "restore",
@@ -1636,28 +1785,35 @@ test("restore rejects a wrong caller SHA without effects and cleans once when th
   assert.deepEqual(tamperedResult.requiredReview, []);
   assert.deepEqual(tampered.calls.map((call) => call.kind), ["readReview", "stop", "finalProcess", "safety"]);
   const tamperedCallCount = tampered.calls.length;
-  await assert.rejects(tampered.orchestrator.execute({
+  const repeatedFailure = await tampered.orchestrator.execute({
     action: "restore",
     runId: tampered.prepared.runId,
     reviewedPriorFrame: reviewFor(tampered.baselineReview),
-  }), /once|already|out of order/i);
-  assert.equal(tampered.calls.length, tamperedCallCount);
+  });
+  assert.equal(repeatedFailure.status, "restore_failed");
+  assert.match(repeatedFailure.primaryError, /retained image|sha256|immutable/i);
+  assert.equal(tampered.calls.filter((call) => call.kind === "stop").length, 1,
+    "a failed retry must not repeat a stop already proven by the first attempt");
+  assert.ok(tampered.calls.length > tamperedCallCount, "a failed restore remains safely retryable");
+  fs.writeFileSync(tampered.baselineReview.path, originalBaseline);
+  const recovered = await tampered.orchestrator.execute({
+    action: "restore",
+    runId: tampered.prepared.runId,
+    reviewedPriorFrame: reviewFor(tampered.baselineReview),
+  });
+  assert.equal(recovered.status, "restored_needs_review");
+  assert.equal(recovered.primaryError, null);
 
   const once = await prepareForSteps(t);
-  await once.orchestrator.execute({
+  const request = {
     action: "restore",
     runId: once.prepared.runId,
     reviewedPriorFrame: reviewFor(once.baselineReview),
-  });
+  };
+  const first = await once.orchestrator.execute(request);
   const callCount = once.calls.length;
-  await assert.rejects(
-    once.orchestrator.execute({
-      action: "restore",
-      runId: once.prepared.runId,
-      reviewedPriorFrame: reviewFor(once.baselineReview),
-    }),
-    /once|already|out of order|does not own/i,
-  );
+  const replayed = await once.orchestrator.execute(request);
+  assert.deepEqual(replayed, first);
   assert.equal(once.calls.length, callCount);
 });
 
@@ -1719,7 +1875,7 @@ test("restore may relaunch one explicitly declared non-receipt-bound prior compo
 });
 
 test("restore retains the primary restoration failure separately from exactly-once cleanup failures", async (t) => {
-  const fixture = await prepareForSteps(t);
+  const fixture = await prepareForSteps(t, { finalTargetPresent: true });
   fixture.dependencies.requestLocomotion = async (input) => {
     fixture.calls.push({ kind: "locomote", input });
     throw new Error("restore locomotion transport failed");
@@ -1743,6 +1899,351 @@ test("restore retains the primary restoration failure separately from exactly-on
   assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
   assert.equal(fixture.calls.filter((call) => call.kind === "safety").length, 1);
   assert.equal(fixture.calls.filter((call) => call.kind === "capture").length, 0);
+});
+
+test("restore retries a transient owned-target stop failure and converges on an idempotent result", async (t) => {
+  const fixtureOptions = { finalTargetPresent: true };
+  const fixture = await prepareForSteps(t, fixtureOptions);
+  let stopAttempts = 0;
+  fixture.dependencies.stopPackage = async (context) => {
+    fixture.calls.push({ kind: "stop", context });
+    stopAttempts++;
+    if (stopAttempts === 1) return { status: "failed", error: "transient owned target stop failure" };
+    return completedStopReceipt(context);
+  };
+  fixture.calls.length = 0;
+  const request = {
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  };
+
+  const failed = await fixture.orchestrator.execute(request);
+  assert.equal(failed.status, "restore_failed");
+  assert.match(failed.cleanupError, /transient owned target stop failure/i);
+  await assert.rejects(fixture.orchestrator.execute({
+    ...fixture.input,
+    artifactRoot: externalArtifactRoot(t, "quarantine-reason"),
+  }), /target.*stop|stop.*target/i);
+  const retryRequest = {
+    ...request,
+    reviewedPriorFrame: reviewFor(failed.requiredReview[0]),
+  };
+
+  fixtureOptions.finalTargetPresent = false;
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute(retryRequest);
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  assert.equal(restored.primaryError, null);
+  assert.equal(restored.cleanupError, null);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+  assert.equal(fixture.calls.some((call) => call.kind === "locomote" || call.kind === "capture"), false,
+    "a retry must retain the already-validated zero-offset recovery instead of moving or capturing again");
+  const replayCallCount = fixture.calls.length;
+  const replayed = await fixture.orchestrator.execute(retryRequest);
+  assert.deepEqual(replayed, restored);
+  assert.equal(fixture.calls.length, replayCallCount);
+});
+
+test("restore retry accepts the validated zero-offset recovery frame after a transient final-proof failure", async (t) => {
+  const fixture = await prepareForSteps(t);
+  const stepped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(stepped.status, "needs_waypoint_review");
+  const movedReview = stepped.requiredReview[0];
+  const originalFinalProcess = fixture.dependencies.probeFinalProcessState;
+  let finalProcessAttempts = 0;
+  fixture.dependencies.probeFinalProcessState = async (context) => {
+    finalProcessAttempts += 1;
+    if (finalProcessAttempts === 1) {
+      fixture.calls.push({ kind: "finalProcess", context });
+      throw new Error("transient final process proof failure");
+    }
+    return originalFinalProcess(context);
+  };
+  fixture.calls.length = 0;
+
+  const failed = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(movedReview),
+  });
+  assert.equal(failed.status, "restore_failed");
+  assert.match(failed.cleanupError, /transient final process proof failure/i);
+  assert.equal(failed.requiredReview.length, 1);
+  assert.notEqual(failed.requiredReview[0].captureSha256, movedReview.captureSha256,
+    "the validated zero-offset recovery frame must replace the moved current frame");
+
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(failed.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  assert.equal(restored.requiredReview[0].captureSha256, failed.requiredReview[0].captureSha256);
+  assert.equal(fixture.calls.some((call) => call.kind === "locomote" || call.kind === "capture"), false,
+    "retry retains the validated zero-offset frame without repeating movement or capture");
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1,
+    "a failed authoritative final probe keeps target absence unproven and re-arms a safe stop");
+});
+
+test("cleanup-only restore retries receive a fresh bounded recovery deadline after the original run deadline", async (t) => {
+  const fixtureOptions = { finalTargetPresent: true };
+  const fixture = await prepareForSteps(t, fixtureOptions);
+  let stopAttempts = 0;
+  fixture.dependencies.stopPackage = async (context) => {
+    fixture.calls.push({ kind: "stop", context });
+    stopAttempts += 1;
+    if (stopAttempts === 1) throw new Error("transient stop before deadline rollover");
+    return completedStopReceipt(context);
+  };
+  const first = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  });
+  assert.equal(first.status, "restore_failed");
+  fixtureOptions.finalTargetPresent = false;
+  let lateNowNs = 9_000_000_000_000_000n;
+  fixture.dependencies.monotonicNs = () => ++lateNowNs;
+  fixture.calls.length = 0;
+
+  const retried = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(first.requiredReview[0]),
+  });
+  assert.equal(retried.status, "restored_needs_review", JSON.stringify(retried));
+  assert.equal(retried.primaryError, null);
+  assert.equal(retried.cleanupError, null);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+  assert.equal(fixture.calls.some((call) => call.kind === "locomote" || call.kind === "capture"), false);
+});
+
+test("restore never relaunches a non-receipt prior until target shutdown is proven", async (t) => {
+  const component = "com.prior.unbound/.MainActivity";
+  const fixtureOptions = {
+    inputOverrides: { priorForeground: { kind: "non_receipt_bound", component } },
+    priorSnapshot: { component, packageName: "com.prior.unbound", userInstalled: true },
+    finalTargetPresent: true,
+    safetySequence: [cleanSafety, cleanMixedSafety, cleanMixedSafety],
+  };
+  const fixture = await prepareForSteps(t, fixtureOptions);
+  let stopAttempts = 0;
+  fixture.dependencies.stopPackage = async (context) => {
+    fixture.calls.push({ kind: "stop", context });
+    stopAttempts += 1;
+    if (stopAttempts === 1) throw new Error("transient target stop failure");
+    return completedStopReceipt(context);
+  };
+  fixture.calls.length = 0;
+
+  const failed = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  });
+  assert.equal(failed.status, "restore_failed");
+  assert.equal(failed.priorForeground.relaunchDisposition, "blocked");
+  assert.equal(fixture.calls.some((call) => call.kind === "relaunchPrior"), false);
+  const failedAction = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.deepEqual(failedAction.priorRelaunch, {
+    status: "blocked",
+    reason: "target_absence_unproven",
+  });
+
+  fixtureOptions.finalTargetPresent = false;
+  fixtureOptions.finalResumedComponents = [component];
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(failed.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  assert.equal(restored.priorForeground.relaunchDisposition, "state_proven_without_attempt");
+  assert.equal(fixture.calls.filter((call) => call.kind === "relaunchPrior").length, 0,
+    "the exact pre-relaunch process proof already showed the requested prior activity");
+});
+
+test("authoritative target absence supersedes a failed stop transport and completes without a redundant retry", async (t) => {
+  const fixture = await prepareForSteps(t);
+  fixture.dependencies.stopPackage = async (context) => {
+    fixture.calls.push({ kind: "stop", context });
+    throw new Error("stop transport failed after the process exited");
+  };
+  fixture.calls.length = 0;
+  const request = {
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  };
+
+  const restored = await fixture.orchestrator.execute(request);
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  assert.equal(restored.primaryError, null);
+  assert.equal(restored.cleanupError, null);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+  assert.equal(fixture.calls.filter((call) => call.kind === "finalProcess").length, 1);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.match(action.targetStop.error, /stop transport failed after the process exited/);
+  assert.deepEqual(action.finalProcessProof.targetPids, []);
+
+  const effectCount = fixture.calls.length;
+  const replayed = await fixture.orchestrator.execute(request);
+  assert.deepEqual(replayed, restored);
+  assert.equal(fixture.calls.length, effectCount);
+});
+
+test("authoritative prior activity supersedes a failed relaunch transport after target absence is proven", async (t) => {
+  const component = "com.prior.unbound/.MainActivity";
+  const fixtureOptions = {
+    inputOverrides: { priorForeground: { kind: "non_receipt_bound", component } },
+    priorSnapshot: { component, packageName: "com.prior.unbound", userInstalled: true },
+    finalResumedComponents: ["com.picoxr.launcher/.Launcher"],
+    safetySequence: [cleanSafety, cleanMixedSafety],
+  };
+  const fixture = await prepareForSteps(t, fixtureOptions);
+  fixture.dependencies.relaunchPrior = async (context) => {
+    fixture.calls.push({ kind: "relaunchPrior", context });
+    fixtureOptions.finalResumedComponents = [component];
+    throw new Error("relaunch transport failed after activity resumed");
+  };
+  fixture.calls.length = 0;
+
+  const restored = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  });
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  assert.equal(restored.primaryError, null);
+  assert.equal(restored.cleanupError, null);
+  assert.equal(restored.priorForeground.relaunchDisposition, "state_proven_after_attempt_error");
+  const firstProbe = fixture.calls.findIndex((call) => call.kind === "finalProcess");
+  const relaunch = fixture.calls.findIndex((call) => call.kind === "relaunchPrior");
+  const lastProbe = fixture.calls.findLastIndex((call) => call.kind === "finalProcess");
+  assert.ok(firstProbe >= 0 && firstProbe < relaunch && relaunch < lastProbe,
+    "target absence must be proven before relaunch and prior activity must be proven afterward");
+});
+
+test("restore preserves final-state proof provenance across a later safety retry", async (t) => {
+  const component = "com.prior.unbound/.MainActivity";
+  const fixtureOptions = {
+    inputOverrides: { priorForeground: { kind: "non_receipt_bound", component } },
+    priorSnapshot: { component, packageName: "com.prior.unbound", userInstalled: true },
+    finalResumedComponents: ["com.picoxr.launcher/.Launcher"],
+    safetySequence: [
+      cleanSafety,
+      { ...cleanMixedSafety, guardian: "0" },
+      cleanMixedSafety,
+    ],
+  };
+  const fixture = await prepareForSteps(t, fixtureOptions);
+  fixture.dependencies.relaunchPrior = async (context) => {
+    fixture.calls.push({ kind: "relaunchPrior", context });
+    fixtureOptions.finalResumedComponents = [component];
+    throw new Error("relaunch response lost after exact prior resumed");
+  };
+
+  const first = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  });
+  assert.equal(first.status, "restore_failed");
+  assert.match(first.cleanupError, /guardian/i);
+  assert.equal(first.priorForeground.relaunchDisposition, "state_proven_after_attempt_error");
+
+  fixture.calls.length = 0;
+  const retried = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(first.requiredReview[0]),
+  });
+  assert.equal(retried.status, "restored_needs_review", JSON.stringify(retried));
+  assert.equal(retried.priorForeground.relaunchDisposition, "state_proven_after_attempt_error");
+  assert.equal(fixture.calls.some((call) => call.kind === "relaunchPrior"), false);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.deepEqual(action.priorRelaunch, {
+    status: "not_attempted",
+    reason: "prior_state_already_proven",
+  });
+  assert.equal(action.priorForeground.relaunchDisposition, "state_proven_after_attempt_error");
+});
+
+test("restore retries a prior relaunch when authoritative final proof contradicts its immediate receipt", async (t) => {
+  const component = "com.prior.unbound/.MainActivity";
+  const fixtureOptions = {
+    inputOverrides: { priorForeground: { kind: "non_receipt_bound", component } },
+    priorSnapshot: { component, packageName: "com.prior.unbound", userInstalled: true },
+    finalResumedComponents: ["com.picoxr.launcher/.Launcher"],
+    safetySequence: [cleanSafety, cleanMixedSafety, cleanMixedSafety],
+  };
+  const fixture = await prepareForSteps(t, fixtureOptions);
+  fixture.calls.length = 0;
+  const first = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  });
+  assert.equal(first.status, "restore_failed");
+  assert.match(first.cleanupError, /exact relaunched|prior component|final process/i);
+  assert.equal(fixture.calls.filter((call) => call.kind === "relaunchPrior").length, 1);
+
+  fixtureOptions.finalResumedComponents = [component];
+  fixture.calls.length = 0;
+  const retried = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(first.requiredReview[0]),
+  });
+  assert.equal(retried.status, "restored_needs_review", JSON.stringify(retried));
+  assert.equal(retried.priorForeground.relaunchDisposition, "state_proven_without_attempt");
+  assert.equal(fixture.calls.filter((call) => call.kind === "relaunchPrior").length, 0,
+    "the retry's exact pre-relaunch proof makes another launch unnecessary");
+});
+
+test("proven nonce absence with an rm warning does not quarantine an otherwise complete restore", async (t) => {
+  const fixture = await prepareForSteps(t, { locomotionResult: routeOwnedCompletedResult });
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    fixture.calls.push({ kind: "nonceCleanup", context });
+    return { ...successfulNonceCleanupReceipt(context), removalError: "rm transport warning after exact absence" };
+  };
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  });
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  assert.equal(restored.primaryError, null);
+  assert.equal(restored.cleanupError, null);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.equal(action.locomotionNonceCleanup.removalError, "rm transport warning after exact absence");
+});
+
+test("a resolved failed target-stop receipt never proves prepare clearance or emergency quiescence", async (t) => {
+  const preparing = await createPreparedFixture(t);
+  preparing.dependencies.stopPackage = async (context) => {
+    preparing.calls.push({ kind: "stop", context });
+    return { status: "failed", error: "target stop was not accepted" };
+  };
+  const preparation = await createInAppLocomotionOrchestrator(preparing.dependencies).execute(preparing.input);
+  assert.equal(preparation.status, "preparation_failed");
+  assert.match(`${preparation.primaryError} ${preparation.cleanupError}`, /stop|accepted|receipt/i);
+  assert.equal(preparing.calls.some((call) => call.kind === "launch"), false);
+
+  const stepping = await prepareForSteps(t);
+  stepping.dependencies.requestLocomotion = async (input) => {
+    stepping.calls.push({ kind: "locomote", input });
+    return deferredUnquiescedResult(input);
+  };
+  stepping.dependencies.stopPackage = async (context) => {
+    stepping.calls.push({ kind: "stop", context });
+    return { status: "failed", error: "emergency target stop was not accepted" };
+  };
+  stepping.calls.length = 0;
+  const stopped = await stepping.orchestrator.execute(stepRequest(stepping, reviewFor(stepping.baselineReview)));
+  assert.equal(stopped.status, "stopped");
+  assert.match(stopped.cleanupError, /stop|accepted|receipt/i);
+  assert.equal(stepping.calls.some((call) => call.kind === "nonceCleanup"), false);
+  const action = fs.readFileSync(path.join(stepping.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.deepEqual(action.emergencyStop, {
+    attempted: true,
+    proven: false,
+    error: action.emergencyStop.error,
+  });
+  assert.match(action.emergencyStop.error, /stop|accepted|receipt/i);
 });
 
 async function prepareAndRestoreForAdjudication(t, { step = true } = {}) {
@@ -1869,6 +2370,11 @@ test("registration adds one named tool and executes entirely through supplied fa
   assert.equal(registrations.length, 1);
   assert.equal(registrations[0].name, "run_in_app_locomotion_route");
   assert.equal(registrations[0].definition.inputSchema, inAppLocomotionInputSchema);
+  assert.match(registrations[0].definition.description, /receipt-bound.*(?:withheld|not relaunch)|(?:withheld|not relaunch).*receipt-bound/i);
+  const prepareArm = inAppLocomotionInputSchema.options
+    .map((option) => option._def?.schema ?? option)
+    .find((option) => option.shape.action.value === "prepare");
+  assert.match(prepareArm.shape.priorForeground.description, /receipt-bound.*(?:withheld|not relaunch)|(?:withheld|not relaunch).*receipt-bound/i);
   assert.equal(fixture.calls.length, 0, "registration must not construct or touch live adb dependencies");
   const response = await registrations[0].handler(fixture.input);
   assert.equal(response.content.filter((item) => item.type === "image").length, 1);
@@ -2155,7 +2661,7 @@ test("a maximum direct glide still completes all post-step evidence and the revi
   assert.equal(fixture.calls.some((call) => call.kind === "safety"), true);
 });
 
-test("ConfigurationService parser accepts the observed embedded keyName/keyValue JSON and rejects ambiguity", () => {
+test("ConfigurationService parser accepts embedded keyName/keyValue JSON and rejects ambiguity", () => {
   assert.equal(typeof worldLocomotion.parseConfigurationServiceValues, "function");
   const output = `ConfigurationService state:\n  values=[{"keyName":"spatial_stage_style","keyValue":"3"},{"keyName":"spatial_safeguard_enable","keyValue":"1"},{"keyName":"spatial_safeguard_center","keyValue":"0,0,0"},{"keyName":"spatial_virtual_content_detected","keyValue":"1"}]\nend`;
   assert.deepEqual(worldLocomotion.parseConfigurationServiceValues(output, [
@@ -2445,7 +2951,7 @@ test("prepare failure never relaunches a receipt-bound prior and records known-s
   assert.equal(action.priorForeground.relaunchDisposition, "withheld_receipt_bound");
 });
 
-test("accepted prior launch output is insufficient without one exact resumed-component re-probe", async (t) => {
+test("an exact final resumed-component proof can supersede an invalid prior relaunch acknowledgement", async (t) => {
   const component = "com.prior.unbound/.MainActivity";
   const fixture = await prepareForSteps(t, {
     inputOverrides: { priorForeground: { kind: "non_receipt_bound", component } },
@@ -2464,9 +2970,9 @@ test("accepted prior launch output is insufficient without one exact resumed-com
     runId: fixture.prepared.runId,
     reviewedPriorFrame: reviewFor(fixture.baselineReview),
   });
-  assert.equal(result.status, "restore_failed");
-  assert.match(result.cleanupError, /exact resumed|relaunch.*component|probe/i);
-  assert.equal(result.priorForeground.relaunchDisposition, "attempt_failed");
+  assert.equal(result.status, "restored_needs_review", JSON.stringify(result));
+  assert.equal(result.cleanupError, null);
+  assert.equal(result.priorForeground.relaunchDisposition, "state_proven_after_attempt_error");
   assert.equal(fixture.calls.filter((call) => call.kind === "relaunchPrior").length, 1);
   assert.ok(fixture.calls.findIndex((call) => call.kind === "relaunchPrior") < fixture.calls.findIndex((call) => call.kind === "safety"));
 });
@@ -2654,7 +3160,7 @@ test("failed prepare compensation owns or releases the serial only after auditab
     const failed = await orchestrator.execute(fixture.input);
     assert.equal(failed.status, "preparation_failed");
     const action = JSON.parse(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim());
-    assert.equal(action.compensation.targetStop.status, "stopped");
+    assert.equal(action.compensation.targetStop.status, "stop_command_completed");
     assert.equal(action.compensation.finalProcessProof.targetPids.length, 0);
     assert.equal(action.serialLease.status, "released");
     const retry = await orchestrator.execute({
@@ -2796,11 +3302,12 @@ test("universal final process/activity proof blocks lease release after false-su
   ];
   for (const [label, priorForeground, priorSnapshot] of policies) {
     await t.test(label, async (t) => {
-      const fixture = await prepareForSteps(t, {
+      const fixtureOptions = {
         inputOverrides: { priorForeground },
         ...(priorSnapshot ? { priorSnapshot } : {}),
         finalTargetPresent: true,
-      });
+      };
+      const fixture = await prepareForSteps(t, fixtureOptions);
       fixture.calls.length = 0;
       const restored = await fixture.orchestrator.execute({
         action: "restore",
@@ -2810,12 +3317,30 @@ test("universal final process/activity proof blocks lease release after false-su
       assert.equal(restored.status, "restore_failed");
       assert.match(restored.cleanupError, /target.*(?:present|running|resumed)|final.*proof/i);
       assert.equal(fixture.calls.filter((call) => call.kind === "finalProcess").length, 1);
+      if (label === "non-receipt") {
+        assert.equal(fixture.calls.some((call) => call.kind === "relaunchPrior"), false,
+          "a command-completed stop receipt cannot authorize prior relaunch before target absence is observed");
+      }
       const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
       assert.deepEqual(action.finalProcessProof.targetPids, [fixture.applicationBinding.pid]);
       await assert.rejects(fixture.orchestrator.execute({
         ...fixture.input,
         artifactRoot: externalArtifactRoot(t, `false-stop-${label}`),
       }), /serial.*(?:owned|quarantin|restore)|(?:owned|quarantin|restore).*serial/i);
+
+      fixtureOptions.finalTargetPresent = false;
+      fixtureOptions.finalResumedComponents = priorForeground.kind === "non_receipt_bound"
+        ? [priorForeground.component]
+        : ["com.picoxr.launcher/.Launcher"];
+      fixture.calls.length = 0;
+      const retried = await fixture.orchestrator.execute({
+        action: "restore",
+        runId: fixture.prepared.runId,
+        reviewedPriorFrame: reviewFor(restored.requiredReview[0]),
+      });
+      assert.equal(retried.status, "restored_needs_review", JSON.stringify(retried));
+      assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1,
+        "authoritative target-presence proof must re-arm an exact stop on retry");
     });
   }
 });
@@ -2859,9 +3384,14 @@ test("clock faults do not consume waypoints, mask primary errors, or bypass rest
     assert.equal(stepActions.length, 1);
   });
 
-  await t.test("restore entry clock fault still consumes once-only cleanup ownership", async (t) => {
+  await t.test("restore entry clock fault leaves retryable cleanup ownership", async (t) => {
     const fixture = await prepareForSteps(t);
-    fixture.dependencies.monotonicNs = () => { throw new Error("restore start clock fault"); };
+    let clockFails = true;
+    let tick = 30_000_000_000n;
+    fixture.dependencies.monotonicNs = () => {
+      if (clockFails) throw new Error("restore start clock fault");
+      return ++tick;
+    };
     const request = { action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview) };
     const restored = await fixture.orchestrator.execute(request);
     assert.equal(restored.status, "restore_failed");
@@ -2869,9 +3399,13 @@ test("clock faults do not consume waypoints, mask primary errors, or bypass rest
     assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
     assert.equal(fixture.calls.filter((call) => call.kind === "finalProcess").length, 1);
     assert.equal(fixture.calls.filter((call) => call.kind === "safety").length, 1);
-    const callCount = fixture.calls.length;
-    await assert.rejects(fixture.orchestrator.execute(request), /once|already|out of order/i);
-    assert.equal(fixture.calls.length, callCount);
+    clockFails = false;
+    fixture.calls.length = 0;
+    const retried = await fixture.orchestrator.execute(request);
+    assert.equal(retried.status, "restored_needs_review");
+    assert.equal(retried.primaryError, null);
+    assert.equal(fixture.calls.some((call) => call.kind === "stop"), false,
+      "retry must retain the first attempt's proven target stop");
   });
 
   await t.test("restore clock fault after transaction start still performs one cleanup and ledger", async (t) => {
@@ -3055,7 +3589,7 @@ test("a post-stage derived-view pathname swap is atomically repaired without rev
   assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
 });
 
-test("expected moved-frame corruption enters once-only restore cleanup without embedding corrupt bytes", async (t) => {
+test("expected moved-frame corruption cannot be relabeled restored after cleanup stops the target", async (t) => {
   for (const [mechanism, damage] of [
     ["direct", "corrupt"],
     ["replacement", "delete"],
@@ -3077,6 +3611,7 @@ test("expected moved-frame corruption enters once-only restore cleanup without e
       const stepped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
       assert.equal(stepped.status, "needs_waypoint_review");
       const moved = stepped.requiredReview[0];
+      const originalMoved = fs.readFileSync(moved.path);
       if (damage === "corrupt") fs.writeFileSync(moved.path, makePng(117));
       else fs.unlinkSync(moved.path);
       fixture.calls.length = 0;
@@ -3094,11 +3629,19 @@ test("expected moved-frame corruption enters once-only restore cleanup without e
       assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
       assert.equal(fixture.calls.filter((call) => call.kind === "finalProcess").length, 1);
       assert.equal(fixture.calls.filter((call) => call.kind === "safety").length, 1);
-      await assert.rejects(fixture.orchestrator.execute({
+      fs.writeFileSync(moved.path, originalMoved);
+      fixture.calls.length = 0;
+      const retried = await fixture.orchestrator.execute({
         action: "restore",
         runId: fixture.prepared.runId,
         reviewedPriorFrame: reviewFor(moved),
-      }), /once|already|out of order|does not own/i);
+      });
+      assert.equal(retried.status, "restore_failed");
+      assert.match(retried.primaryError, /zero|restoration.*unproven|moved.*frame/i);
+      assert.equal(retried.requiredReview[0].captureSha256, moved.captureSha256);
+      assert.equal(retried.requiredReview[0].role, "waypoint");
+      assert.equal(fixture.calls.some((call) => call.kind === "locomote" || call.kind === "stop"), false,
+        "retry stays cleanup-only without inventing a zero-offset mutation");
     });
   }
 });
@@ -3226,7 +3769,7 @@ test("same-inode derived-view rewrite is reported, repaired, and keeps committed
   assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
 });
 
-test("an unproven guest cancellation force-stops once before step returns and restore never addresses the stopped target", async (t) => {
+test("a proven emergency stop is a successful restore precondition without another target command", async (t) => {
   const fixture = await prepareForSteps(t, {
     locomotionResult: (input) => ({
       ok: false,
@@ -3255,7 +3798,9 @@ test("an unproven guest cancellation force-stops once before step returns and re
     runId: fixture.prepared.runId,
     reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
-  assert.equal(restored.status, "restore_failed");
+  assert.equal(restored.status, "restored_needs_review");
+  assert.equal(restored.primaryError, null);
+  assert.equal(restored.cleanupError, null);
   assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
   assert.equal(fixture.calls.some((call) => call.kind === "stop"), false);
   assert.equal(fixture.calls.some((call) => call.kind === "finalProcess"), true);
@@ -3300,6 +3845,63 @@ test("persistent restore clock failure reaches the production cleanup-only force
   const forceStops = adbEffects.filter((effect) => effect.args.join(" ").includes("am force-stop com.test.fullworld"));
   assert.equal(forceStops.length, 1);
   assert.ok(forceStops[0].options.timeoutMs >= 1 && forceStops[0].options.timeoutMs <= 5_000);
+});
+
+test("the live final PID probe accepts only clean pidof exit 1 as target absence", async (t) => {
+  const contextFor = (label) => {
+    const artifactRoot = externalArtifactRoot(t, label);
+    fs.mkdirSync(path.join(artifactRoot, "logs"), { recursive: true });
+    return {
+      serial: "emulator-5554",
+      targetPackage: "com.test.fullworld",
+      artifactRoot: fs.realpathSync(artifactRoot),
+      evidenceId: label,
+      priorForeground: { kind: "none" },
+      timeoutMs: 10_000,
+      deadlineMonotonicNs: "10000000000",
+    };
+  };
+  const makeLive = (pidResult, calls) => {
+    let nowNs = 1_000_000_000n;
+    return worldLocomotion.createLiveInAppLocomotionDependencies({
+      resolveAdb: () => "/fixture/injected-adb",
+      monotonicNs: () => ++nowNs,
+      sleep: async () => {},
+      runText: async (_cmd, args) => {
+        calls.push(args);
+        if (args.includes("pidof")) return pidResult;
+        return {
+          code: 0,
+          stdout: "mResumedActivity: ActivityRecord{fixture u0 com.picoxr.launcher/.Launcher t1}\n",
+          stderr: "",
+          timedOut: false,
+        };
+      },
+      runBytes: async () => { throw new Error("binary runner is unused"); },
+    });
+  };
+
+  const offlineCalls = [];
+  const offline = makeLive({ code: 1, stdout: "", stderr: "adb: device offline", timedOut: false }, offlineCalls);
+  await assert.rejects(offline.probeFinalProcessState(contextFor("pid-offline")), /PID probe.*device offline/i);
+  assert.equal(offlineCalls.filter((args) => args.includes("dumpsys")).length, 0);
+
+  for (const [label, pidResult] of [
+    ["pid-zero-empty", { code: 0, stdout: "", stderr: "", timedOut: false }],
+    ["pid-zero-stderr", { code: 0, stdout: "5151\n", stderr: "adb transport warning", timedOut: false }],
+  ]) {
+    const calls = [];
+    const live = makeLive(pidResult, calls);
+    await assert.rejects(live.probeFinalProcessState(contextFor(label)), /final target PID probe failed/i);
+    assert.equal(calls.filter((args) => args.includes("dumpsys")).length, 0);
+  }
+
+  const absentCalls = [];
+  const absent = makeLive({ code: 1, stdout: "", stderr: "", timedOut: false }, absentCalls);
+  const receipt = await absent.probeFinalProcessState(contextFor("pid-clean-absent"));
+  assert.deepEqual(receipt.targetPids, []);
+  assert.deepEqual(receipt.resumedComponents, ["com.picoxr.launcher/.Launcher"]);
+  assert.equal(absentCalls.filter((args) => args.includes("dumpsys")).length, 1);
 });
 
 const adb = "/fixture/adb";
@@ -3349,6 +3951,8 @@ const hmdAck = (overrides = {}) => envelope(AGENT_BRIDGE_HMD_POSE_COMMAND, {
   outcome: "sampled",
   root: { id: AGENT_BRIDGE_LOCOMOTION_ROOT_ID, generation: 7, incarnation: ROOT_INCARNATION },
   hmdPose: {
+    sampleSequence: "42",
+    sampleObservedAtMonotonicNs: "9875543210",
     readAtMonotonicNs: "9876543210",
     position: { x: 0.1, y: 1.62, z: -0.2 },
     rotation: { x: 0, y: 0, z: 0, w: 1 },
@@ -3845,6 +4449,27 @@ test("HMD success requires finite position/quaternion and exact root generation"
   assert.equal(result.ok, true);
   assert.deepEqual(result.ack, ack);
   assertExactCleanup(fake.calls);
+});
+
+test("HMD acknowledgement requires listener-derived sequence and ordered guest freshness clocks", async () => {
+  const basePose = hmdAck().hmdPose;
+  const invalidPoses = [
+    { ...basePose, sampleSequence: undefined },
+    { ...basePose, sampleSequence: "0" },
+    { ...basePose, sampleObservedAtMonotonicNs: undefined },
+    { ...basePose, sampleObservedAtMonotonicNs: "9877543210" },
+  ];
+  for (const invalidPose of invalidPoses) {
+    const invalid = hmdAck({ hmdPose: invalidPose });
+    const fake = fakeTransaction([invalid, invalid]);
+
+    const result = await requestAgentBridgeHmdPose(adb, { ...baseInput, expectedRootGeneration: 7 }, fake.deps);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "invalid_ack");
+    assert.match(result.primaryError, /HMD|sample|sequence|monotonic|schema/i);
+    assertExactCleanup(fake.calls);
+  }
 });
 
 test("locomotion success binds mode, absolute target, glide budget, and root-generation transition", async () => {
@@ -4476,7 +5101,7 @@ test("restore keeps malformed live cleanup owned and recovers only by a post-sto
   assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(cleanups[1].context));
 });
 
-test("stopped-process cleanup forbids finalization evidence and retains probe-only recovery ownership", async (t) => {
+test("stopped-process cleanup forbids finalization evidence and converges through probe-only recovery", async (t) => {
   const fixture = await prepareForSteps(t, {
     locomotionResult: (input) => {
       const result = completedMovementResult(input);
@@ -4511,7 +5136,9 @@ test("stopped-process cleanup forbids finalization evidence and retains probe-on
     reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
 
-  assert.equal(restored.status, "restore_failed");
+  assert.equal(restored.status, "restored_needs_review");
+  assert.equal(restored.primaryError, null);
+  assert.equal(restored.cleanupError, null);
   const recovery = fixture.calls.filter((call) => call.kind === "nonceCleanup");
   assert.equal(recovery.length, 1);
   assert.equal(recovery[0].context.processStopped, true);
@@ -4692,8 +5319,9 @@ test("a started removal with an unproven absence gets probe-only recovery and ne
     runId: fixture.prepared.runId,
     reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
-  assert.equal(restored.status, "restore_failed");
-  assert.match(`${restored.primaryError} ${restored.cleanupError}`, /already attempted|absence proof|cleanup-only/i);
+  assert.equal(restored.status, "restored_needs_review");
+  assert.equal(restored.primaryError, null);
+  assert.equal(restored.cleanupError, null);
   assert.equal(fixture.calls.some((call) => call.kind === "capability" || call.kind === "hmd" || call.kind === "locomote"), false);
   assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 1);
   assert.equal(fixture.calls.find((call) => call.kind === "nonceCleanup").context.probeOnly, true);
@@ -4775,7 +5403,7 @@ test("failed emergency stop persists unquiesced ownership and restore is cleanup
       failedOnce = true;
       throw new Error("injected emergency stop failure");
     }
-    return { status: "stopped", packageName: context.packageName };
+    return completedStopReceipt(context);
   };
   const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
   assert.equal(stopped.status, "stopped");
@@ -4788,11 +5416,13 @@ test("failed emergency stop persists unquiesced ownership and restore is cleanup
     runId: fixture.prepared.runId,
     reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
-  assert.equal(restored.status, "restore_failed");
+  assert.equal(restored.status, "restored_needs_review");
+  assert.equal(restored.primaryError, null);
+  assert.equal(restored.cleanupError, null);
   assert.equal(fixture.calls.some((call) => call.kind === "capability" || call.kind === "hmd" || call.kind === "locomote"), false);
   assert.deepEqual(
     fixture.calls.filter((call) => ["stop", "nonceCleanup", "finalProcess", "safety"].includes(call.kind)).map((call) => call.kind),
-    ["stop", "nonceCleanup", "finalProcess", "safety"],
+    ["stop", "finalProcess", "nonceCleanup", "safety"],
   );
   assert.equal(fixture.calls.find((call) => call.kind === "stop").context.reason, "restore_unquiesced_target");
 });
@@ -4828,11 +5458,12 @@ test("restore owns cleanup before a permanently failing entry clock", async (t) 
   assert.equal(fixture.calls.filter((call) => call.kind === "safety").length, 1);
 });
 
-test("exact zero-baseline image corruption is a once-only cleanup action; only wrong caller SHA is retryable", async (t) => {
+test("exact zero-baseline image corruption remains retryable after cleanup", async (t) => {
   const fixture = await createPreparedFixture(t);
   fixture.orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
   fixture.prepared = await fixture.orchestrator.execute(fixture.input);
   const baseline = fixture.prepared.requiredReview[0];
+  const originalBaseline = fs.readFileSync(baseline.path);
   fs.writeFileSync(baseline.path, makePng(126));
   fixture.calls.length = 0;
   const restored = await fixture.orchestrator.execute({
@@ -4842,9 +5473,14 @@ test("exact zero-baseline image corruption is a once-only cleanup action; only w
   assert.deepEqual(restored.requiredReview, []);
   assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
   assert.equal(fixture.calls.filter((call) => call.kind === "finalProcess").length, 1);
-  await assert.rejects(fixture.orchestrator.execute({
+  fs.writeFileSync(baseline.path, originalBaseline);
+  fixture.calls.length = 0;
+  const retried = await fixture.orchestrator.execute({
     action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(baseline),
-  }), /once|already|out of order/i);
+  });
+  assert.equal(retried.status, "restored_needs_review");
+  assert.equal(retried.primaryError, null);
+  assert.equal(fixture.calls.some((call) => call.kind === "stop"), false);
 });
 
 test("cancel polling ignores stable stale execute bytes until an exact cancel barrier", async () => {

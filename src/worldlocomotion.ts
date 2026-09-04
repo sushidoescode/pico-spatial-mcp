@@ -73,6 +73,8 @@ const BRIDGE_MIN_TRANSACTION_MS = agentBridgeLocomotionMinimumEnvelopeMs({
   executionDelayMs: 0,
 });
 const FINAL_RECOVERY_RESERVE_MS = 5_000;
+/** CP2 experiment threshold, not an SDK freshness guarantee. */
+export const IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS = 250 as const;
 
 const hashSchema = z.string().regex(SHA256);
 const componentSchema = z.string().regex(COMPONENT);
@@ -162,7 +164,7 @@ const priorForegroundSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("none") }).strict(),
   z.object({ kind: z.literal("receipt_bound"), component: componentSchema, receiptId: hashSchema }).strict(),
   z.object({ kind: z.literal("non_receipt_bound"), component: componentSchema }).strict(),
-]);
+]).describe("Declare the foreground displaced by prepare. A receipt-bound prior is withheld and is not relaunched because relaunch would orphan its immutable receipt; only a declared non-receipt-bound prior may be relaunched during restore.");
 
 const reviewedFrameSchema = z.object({
   captureSha256: hashSchema,
@@ -414,6 +416,17 @@ export interface LocomotionPrepareReceipt {
 }
 
 export interface LocomotionHmdDriftReceipt {
+  freshness: {
+    method: "guest_listener_arrival_age_and_strict_sequence_and_time";
+    maximumSampleAgeMs: typeof IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS;
+    baseline: { sampleSequence: string; sampleObservedAtMonotonicNs: string; readAtMonotonicNs: string; sampleAgeMs: number };
+    pre: { sampleSequence: string; sampleObservedAtMonotonicNs: string; readAtMonotonicNs: string; sampleAgeMs: number };
+    post: { sampleSequence: string; sampleObservedAtMonotonicNs: string; readAtMonotonicNs: string; sampleAgeMs: number };
+    sequencesStrictlyIncreasing: boolean;
+    observationTimesStrictlyIncreasing: boolean;
+    readTimesStrictlyIncreasing: boolean;
+    pass: boolean;
+  };
   translation: {
     method: "euclidean_3d";
     thresholdM: 0.02;
@@ -457,7 +470,8 @@ export interface LocomotionPriorForegroundDisposition {
   component: string | null;
   receiptId: string | null;
   receiptFreshness: "known_stale" | "not_evaluated_cp1";
-  relaunchDisposition: "not_applicable" | "withheld_receipt_bound" | "accepted" | "ignored" | "blocked" | "attempt_failed";
+  relaunchDisposition: "not_applicable" | "withheld_receipt_bound" | "accepted" | "ignored" | "blocked" | "attempt_failed"
+    | "state_proven_after_attempt_error" | "state_proven_without_attempt";
 }
 
 export interface LocomotionRestoreReceipt {
@@ -543,6 +557,13 @@ interface LocomotionEffectBudget {
   cleanupOnly?: true;
 }
 
+export interface LocomotionTargetStopReceipt {
+  status: "stop_command_completed";
+  serial: string;
+  packageName: string;
+  reason: string;
+}
+
 export interface InAppLocomotionDependencies {
   randomBytes(size: number): Buffer;
   now(): string;
@@ -550,7 +571,7 @@ export interface InAppLocomotionDependencies {
   readNativeRunReceipt(app: string, receiptId: string): ReceiptValidation;
   readEffectiveAppSpec(artifactPath: string, identity: { sha256: string; bytes: number }): unknown;
   snapshotPriorForeground(context: { serial: string; targetPackage: string } & LocomotionEffectBudget): Promise<LocomotionPriorForegroundSnapshot>;
-  stopPackage(context: { serial: string; packageName: string; reason: string } & LocomotionEffectBudget): Promise<unknown>;
+  stopPackage(context: { serial: string; packageName: string; reason: string } & LocomotionEffectBudget): Promise<LocomotionTargetStopReceipt>;
   launchTarget(context: { serial: string; component: string } & LocomotionEffectBudget): Promise<{ disposition: "accepted" | "ignored" | "blocked"; component: string; outputSha256: string }>;
   captureLaunchHandoffWindow(context: {
     serial: string;
@@ -615,6 +636,7 @@ export interface InAppLocomotionDependencies {
     serial: string;
     targetPackage: string;
     artifactRoot: string;
+    evidenceId: string;
     priorForeground: InAppLocomotionPrepareInput["priorForeground"];
   } & LocomotionEffectBudget): Promise<FinalProcessActivityReceipt>;
 }
@@ -674,6 +696,7 @@ interface LocomotionState {
   rootGeneration: number;
   rootIncarnation: string;
   baselineHmd: AgentBridgeHmdPose;
+  lastHmdSample: AgentBridgeHmdPose;
   currentReview: LocomotionReviewItem;
   requiredReview: LocomotionReviewItem[];
   retainedLogs: Array<{ path: string; identity: ArtifactFileIdentity; label: string }>;
@@ -681,8 +704,11 @@ interface LocomotionState {
   startedAtNs: bigint;
   deadlineNs: bigint;
   usage: { waypointAttempts: number; successfulWaypoints: number; routeDurationMs: number };
-  restoreAttempted: boolean;
+  restoreAttempts: number;
   restoreCompleted: boolean;
+  completedRestore: { reviewedPriorSha256: string; receipt: LocomotionRestoreReceipt } | null;
+  priorRestoreProofDisposition: "accepted" | "state_proven_after_attempt_error" | "state_proven_without_attempt" | null;
+  zeroOffsetRecoveryProven: boolean;
   adjudicated: boolean;
   currentReviewReflectsNonzeroMutation: boolean;
   unquiescedLocomotion: { requestId: string; relativePath: string } | null;
@@ -776,6 +802,26 @@ function validateLocomotionNonceCleanupReceipt(
     );
   }
   return receipt;
+}
+
+function checkedTargetStopReceipt(
+  receipt: unknown,
+  expected: { serial: string; packageName: string; reason: string },
+): LocomotionTargetStopReceipt {
+  const record = receipt !== null && typeof receipt === "object" && !Array.isArray(receipt)
+    ? receipt as Record<string, unknown>
+    : null;
+  const exactKeys = record === null ? [] : Object.keys(record).sort();
+  if (record === null
+    || exactKeys.join("\0") !== ["packageName", "reason", "serial", "status"].join("\0")
+    || record.status !== "stop_command_completed"
+    || record.serial !== expected.serial
+    || record.packageName !== expected.packageName
+    || record.reason !== expected.reason) {
+    const detail = record && typeof record.error === "string" ? `: ${record.error}` : "";
+    throw new Error(`target stop did not return the exact command-completed receipt${detail}`);
+  }
+  return record as unknown as LocomotionTargetStopReceipt;
 }
 
 function checkedNow(dependencies: InAppLocomotionDependencies): string {
@@ -929,6 +975,7 @@ function actionOperationId(value: unknown): string {
   const record = value as Record<string, unknown>;
   const action = String(record.action ?? "unknown");
   if (action === "step") return `step:${String(record.waypointSeq ?? "unknown")}:terminal`;
+  if (action === "restore") return `restore:${String(record.restoreAttempt ?? "unknown")}:terminal`;
   return `${action}:terminal`;
 }
 
@@ -1395,7 +1442,19 @@ function continuityProblem(sample: ApplicationContinuitySample, runtime: Locomot
   return null;
 }
 
-function hmdPoseFrom(result: HmdResult, expectedGeneration: number, expectedIncarnation: string): AgentBridgeHmdPose {
+function hmdSampleAgeMs(pose: AgentBridgeHmdPose): number {
+  const observedAt = BigInt(pose.sampleObservedAtMonotonicNs);
+  const readAt = BigInt(pose.readAtMonotonicNs);
+  if (readAt < observedAt) throw new LocomotionStageError("hmd_pose_stale", "HMD listener sample observation time is later than its read time");
+  return Number(readAt - observedAt) / 1_000_000;
+}
+
+function hmdPoseFrom(
+  result: HmdResult,
+  expectedGeneration: number,
+  expectedIncarnation: string,
+  strictlyAfterSample?: AgentBridgeHmdPose,
+): AgentBridgeHmdPose {
   if (!result.ok) throw new LocomotionStageError(result.code, result.primaryError ?? result.detail, result.cleanupError);
   const pose = result.ack.hmdPose;
   if (result.ack.root?.id !== AGENT_BRIDGE_LOCOMOTION_ROOT_ID || result.ack.root.generation !== expectedGeneration
@@ -1403,8 +1462,29 @@ function hmdPoseFrom(result: HmdResult, expectedGeneration: number, expectedInca
     throw new Error("HMD result lost the exact root generation/incarnation binding");
   }
   const values = [pose.position.x, pose.position.y, pose.position.z, pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w];
-  if (!values.every(Number.isFinite) || !/^(?:0|[1-9][0-9]*)$/.test(pose.readAtMonotonicNs)) throw new Error("HMD pose is missing finite position/quaternion telemetry");
+  if (!values.every(Number.isFinite)
+    || !/^[1-9][0-9]*$/.test(pose.sampleSequence)
+    || !/^(?:0|[1-9][0-9]*)$/.test(pose.sampleObservedAtMonotonicNs)
+    || !/^(?:0|[1-9][0-9]*)$/.test(pose.readAtMonotonicNs)) {
+    throw new Error("HMD pose is missing finite position/quaternion/listener freshness telemetry");
+  }
   if (Math.hypot(pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w) === 0) throw new Error("HMD quaternion has zero norm");
+  const sampleAgeMs = hmdSampleAgeMs(pose);
+  if (sampleAgeMs > IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS) {
+    throw new LocomotionStageError(
+      "hmd_pose_stale",
+      `HMD listener sample age ${sampleAgeMs}ms exceeds the ${IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS}ms experiment threshold`,
+    );
+  }
+  if (strictlyAfterSample !== undefined
+    && (BigInt(pose.sampleSequence) <= BigInt(strictlyAfterSample.sampleSequence)
+      || BigInt(pose.sampleObservedAtMonotonicNs) <= BigInt(strictlyAfterSample.sampleObservedAtMonotonicNs)
+      || BigInt(pose.readAtMonotonicNs) <= BigInt(strictlyAfterSample.readAtMonotonicNs))) {
+    throw new LocomotionStageError(
+      "hmd_pose_stale",
+      "HMD listener sequence, observation time, and read time must all advance strictly after the prior accepted sample",
+    );
+  }
   return pose;
 }
 
@@ -1616,7 +1696,7 @@ function captureReview(
   const receipt = captured.receipt;
   const captureInput = expectation.captureInput;
   const expectedPath = captureInput.outPath;
-  const expectedMode = captureInput.mode ?? (captureInput.priorSha256 === undefined ? "stable" : "transition_then_stable");
+  const expectedMode = captureInput.mode ?? "stable";
   const fail = (detail: string): never => {
     throw new Error(`${expectation.role} capture receipt is not exact settled-frame evidence: ${detail}`);
   };
@@ -1832,7 +1912,43 @@ function driftReceipt(baseline: AgentBridgeHmdPose, pre: AgentBridgeHmdPose, pos
   const baselineToPreM = translationDistance(baseline.position, pre.position);
   const baselineToPostM = translationDistance(baseline.position, post.position);
   const preToPostM = translationDistance(pre.position, post.position);
+  const sequencesStrictlyIncreasing = BigInt(baseline.sampleSequence) < BigInt(pre.sampleSequence)
+    && BigInt(pre.sampleSequence) < BigInt(post.sampleSequence);
+  const observationTimesStrictlyIncreasing = BigInt(baseline.sampleObservedAtMonotonicNs) < BigInt(pre.sampleObservedAtMonotonicNs)
+    && BigInt(pre.sampleObservedAtMonotonicNs) < BigInt(post.sampleObservedAtMonotonicNs);
+  const readTimesStrictlyIncreasing = BigInt(baseline.readAtMonotonicNs) < BigInt(pre.readAtMonotonicNs)
+    && BigInt(pre.readAtMonotonicNs) < BigInt(post.readAtMonotonicNs);
+  const baselineAgeMs = hmdSampleAgeMs(baseline);
+  const preAgeMs = hmdSampleAgeMs(pre);
+  const postAgeMs = hmdSampleAgeMs(post);
   return {
+    freshness: {
+      method: "guest_listener_arrival_age_and_strict_sequence_and_time",
+      maximumSampleAgeMs: IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS,
+      baseline: {
+        sampleSequence: baseline.sampleSequence,
+        sampleObservedAtMonotonicNs: baseline.sampleObservedAtMonotonicNs,
+        readAtMonotonicNs: baseline.readAtMonotonicNs,
+        sampleAgeMs: baselineAgeMs,
+      },
+      pre: {
+        sampleSequence: pre.sampleSequence,
+        sampleObservedAtMonotonicNs: pre.sampleObservedAtMonotonicNs,
+        readAtMonotonicNs: pre.readAtMonotonicNs,
+        sampleAgeMs: preAgeMs,
+      },
+      post: {
+        sampleSequence: post.sampleSequence,
+        sampleObservedAtMonotonicNs: post.sampleObservedAtMonotonicNs,
+        readAtMonotonicNs: post.readAtMonotonicNs,
+        sampleAgeMs: postAgeMs,
+      },
+      sequencesStrictlyIncreasing,
+      observationTimesStrictlyIncreasing,
+      readTimesStrictlyIncreasing,
+      pass: sequencesStrictlyIncreasing && observationTimesStrictlyIncreasing && readTimesStrictlyIncreasing
+        && Math.max(baselineAgeMs, preAgeMs, postAgeMs) <= IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS,
+    },
     translation: {
       method: "euclidean_3d",
       thresholdM: 0.02,
@@ -2136,7 +2252,12 @@ function checkedFinalProcessProof(
   receipt: FinalProcessActivityReceipt,
   input: InAppLocomotionPrepareInput,
   artifactRoot: string,
-): { retained: { path: string; identity: ArtifactFileIdentity; label: string }; problem: string | null } {
+): {
+  retained: { path: string; identity: ArtifactFileIdentity; label: string };
+  targetAbsent: boolean;
+  priorForegroundSatisfied: boolean;
+  problem: string | null;
+} {
   if (receipt?.serial !== input.serial || receipt.targetPackage !== input.scenario.packageName
     || !Array.isArray(receipt.targetPids) || receipt.targetPids.some((pid) => !Number.isSafeInteger(pid) || pid < 1)
     || new Set(receipt.targetPids).size !== receipt.targetPids.length
@@ -2172,14 +2293,17 @@ function checkedFinalProcessProof(
     || canonicalJson(parsedResumedComponents) !== canonicalJson(receipt.resumedComponents)) {
     throw new Error("final process/activity fields do not reproduce from the retained exact command outputs");
   }
+  const targetAbsent = receipt.targetPids.length === 0
+    && !receipt.resumedComponents.some((component) => component.startsWith(`${input.scenario.packageName}/`));
+  const priorForegroundSatisfied = input.priorForeground.kind !== "non_receipt_bound"
+    || (receipt.resumedComponents.length === 1 && receipt.resumedComponents[0] === input.priorForeground.component);
   let problem: string | null = null;
-  if (receipt.targetPids.length > 0 || receipt.resumedComponents.some((component) => component.startsWith(`${input.scenario.packageName}/`))) {
+  if (!targetAbsent) {
     problem = "final process/activity proof shows the run-owned target still running or resumed";
-  } else if (input.priorForeground.kind === "non_receipt_bound"
-    && (receipt.resumedComponents.length !== 1 || receipt.resumedComponents[0] !== input.priorForeground.component)) {
+  } else if (!priorForegroundSatisfied) {
     problem = "final process/activity proof did not show the one exact relaunched non-receipt prior component";
   }
-  return { retained, problem };
+  return { retained, targetAbsent, priorForegroundSatisfied, problem };
 }
 
 export function createInAppLocomotionOrchestrator(
@@ -2323,26 +2447,28 @@ export function createInAppLocomotionOrchestrator(
       }));
       if (prior.packageName === input.scenario.packageName) priorStopMayHaveApplied = true;
       await withinDeadline(prepareDeadlineNs, dependencies, "target clearance", async (timeoutMs) => {
-        const stopped = await dependencies.stopPackage({
+        const stopInput = {
           serial: input.serial,
           packageName: input.scenario.packageName,
           reason: "prepare_target_clearance",
           timeoutMs,
           deadlineMonotonicNs: prepareDeadlineNs!.toString(),
-        });
+        };
+        const stopped = checkedTargetStopReceipt(await dependencies.stopPackage(stopInput), stopInput);
         if (prior.packageName === input.scenario.packageName) priorTerminatedByRun = true;
         return stopped;
       });
       if (prior.packageName && prior.packageName !== input.scenario.packageName) {
         priorStopMayHaveApplied = true;
         await withinDeadline(prepareDeadlineNs, dependencies, "declared incumbent clearance", async (timeoutMs) => {
-          const stopped = await dependencies.stopPackage({
+          const stopInput = {
             serial: input.serial,
             packageName: prior.packageName!,
             reason: "prepare_declared_incumbent_clearance",
             timeoutMs,
             deadlineMonotonicNs: prepareDeadlineNs!.toString(),
-          });
+          };
+          const stopped = checkedTargetStopReceipt(await dependencies.stopPackage(stopInput), stopInput);
           priorTerminatedByRun = true;
           return stopped;
         });
@@ -2581,6 +2707,7 @@ export function createInAppLocomotionOrchestrator(
         rootGeneration: root.generation,
         rootIncarnation: root.incarnation,
         baselineHmd: hmd,
+        lastHmdSample: hmd,
         currentReview: review,
         requiredReview: [review],
         retainedLogs: [{
@@ -2592,8 +2719,11 @@ export function createInAppLocomotionOrchestrator(
         startedAtNs: reserved.startedAtNs,
         deadlineNs,
         usage: { waypointAttempts: 0, successfulWaypoints: 0, routeDurationMs: 0 },
-        restoreAttempted: false,
+        restoreAttempts: 0,
         restoreCompleted: false,
+        completedRestore: null,
+        priorRestoreProofDisposition: null,
+        zeroOffsetRecoveryProven: false,
         adjudicated: false,
         currentReviewReflectsNonzeroMutation: false,
         unquiescedLocomotion: null,
@@ -2686,12 +2816,13 @@ export function createInAppLocomotionOrchestrator(
       };
       if (runOwnedTarget) {
         try {
-          const receipt = await dependencies.stopPackage({
+          const stopInput = {
             serial: input.serial,
             packageName: input.scenario.packageName,
             reason: "prepare_failure_cleanup",
             ...recoveryBudget("prepare target cleanup"),
-          });
+          };
+          const receipt = checkedTargetStopReceipt(await dependencies.stopPackage(stopInput), stopInput);
           compensation.targetStop = receipt;
           targetCleanupProven = true;
         } catch (cleanup) {
@@ -2735,6 +2866,7 @@ export function createInAppLocomotionOrchestrator(
             serial: input.serial,
             targetPackage: input.scenario.packageName,
             artifactRoot: artifact.absoluteRoot,
+            evidenceId: "prepare-failure",
             priorForeground: input.priorForeground,
             ...recoveryBudget("prepare final process/activity proof"),
           });
@@ -2907,7 +3039,7 @@ export function createInAppLocomotionOrchestrator(
         expectedRootGeneration: state.rootGeneration,
         expectedRootIncarnation: state.rootIncarnation,
         ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
-      })), state.rootGeneration, state.rootIncarnation);
+      })), state.rootGeneration, state.rootIncarnation, state.lastHmdSample);
       if (translationDistance(state.baselineHmd.position, preHmd.position) > 0.02) {
         throw new LocomotionStageError("hmd_translation_drift", "pre-step Euclidean HMD translation drift exceeded exactly 0.02 m");
       }
@@ -3048,7 +3180,7 @@ export function createInAppLocomotionOrchestrator(
         expectedRootGeneration: state.rootGeneration,
         expectedRootIncarnation: state.rootIncarnation,
         ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
-      })), state.rootGeneration, state.rootIncarnation);
+      })), state.rootGeneration, state.rootIncarnation, preHmd);
       drift = driftReceipt(state.baselineHmd, preHmd, postHmd);
       postSafety = await withinDeadline(stepDeadlineNs, dependencies, "post-step safety", (timeoutMs) => dependencies.sampleSafety({
         serial: state.input.serial,
@@ -3101,12 +3233,13 @@ export function createInAppLocomotionOrchestrator(
         && ((locomotion as LocomotionResult | null)?.motionQuiesced !== true || state.pendingLocomotionNonce !== null)) {
         emergencyStop = { attempted: true, proven: false, error: null };
         try {
-          await dependencies.stopPackage({
+          const stopInput = {
             serial: state.input.serial,
             packageName: state.input.scenario.packageName,
             reason: "step_unquiesced_locomotion",
             ...stepRecoveryBudget(),
-          });
+          };
+          checkedTargetStopReceipt(await dependencies.stopPackage(stopInput), stopInput);
           state.targetOwned = false;
           emergencyStop.proven = true;
           state.unquiescedLocomotion = null;
@@ -3273,6 +3406,7 @@ export function createInAppLocomotionOrchestrator(
     if (succeeded) {
       state.status = "stepped";
       state.usage.successfulWaypoints = publishedUsage.successfulWaypoints;
+      state.lastHmdSample = postHmd!;
     } else {
       state.status = "stopped";
     }
@@ -3299,7 +3433,13 @@ export function createInAppLocomotionOrchestrator(
   };
 
   const executeRestore = async (input: InAppLocomotionRestoreInput, state: LocomotionState): Promise<LocomotionRestoreReceipt> => {
-    if (state.restoreAttempted) throw new Error("restore is once-only and was already attempted for this run");
+    if (state.completedRestore !== null) {
+      if (input.reviewedPriorFrame.captureSha256 !== state.completedRestore.reviewedPriorSha256
+        && input.reviewedPriorFrame.captureSha256 !== state.currentReview.captureSha256) {
+        return restoreReviewFailure(state, "reviewed capture SHA does not match the completed restore request or exact recovery frame");
+      }
+      return state.completedRestore.receipt;
+    }
     if (state.status !== "prepared" && state.status !== "stepped" && state.status !== "stopped") {
       throw new Error(`restore is out of order from state '${state.status}'`);
     }
@@ -3307,7 +3447,7 @@ export function createInAppLocomotionOrchestrator(
       return restoreReviewFailure(state, "reviewed capture SHA does not match the exact current required frame");
     }
     const reviewedMovedFrame = state.currentReviewReflectsNonzeroMutation;
-    state.restoreAttempted = true;
+    const restoreAttempt = ++state.restoreAttempts;
     let restoreStartedNs = state.startedAtNs;
     let restoreDeadlineNs = state.deadlineNs;
     let mutationDeadlineNs = restoreDeadlineNs - 5_000_000_000n;
@@ -3324,30 +3464,34 @@ export function createInAppLocomotionOrchestrator(
     let preRestoreCapability: CapabilityResult | null = null;
     let postCaptureContinuity: ApplicationContinuitySample | null = null;
     let postCaptureCapability: CapabilityResult | null = null;
+    let targetAbsenceProof: FinalProcessActivityReceipt | null = null;
     let finalProcessProof: FinalProcessActivityReceipt | null = null;
     let finalProcessProven = false;
     let finalSafetyProven = false;
     let currentReviewTrusted = true;
     let locomotionNonceCleanup: AgentBridgeLocomotionNonceCleanupReceipt | null = null;
+    let targetStop: LocomotionTargetStopReceipt | { status: "not_attempted"; reason: string }
+      | { status: "failed"; error: string } = {
+      status: "not_attempted",
+      reason: state.targetOwned ? "restore_cleanup_not_started" : "target_previously_proven_absent",
+    };
+    let priorRelaunch: PriorRelaunchReceipt | { status: "not_required" }
+      | { status: "not_attempted" | "blocked"; reason: string } | { status: "failed"; error: string } = {
+      status: "not_required",
+    };
     const priorDisposition = priorForegroundDisposition(state);
     try {
       restoreStartedNs = checkedMonotonic(dependencies);
-      restoreDeadlineNs = earlierDeadline(
-        state.deadlineNs,
-        restoreStartedNs + BigInt(state.input.budgets.restorationReserveMs) * 1_000_000n,
-      );
+      const freshRecoveryDeadlineNs = restoreStartedNs
+        + BigInt(state.input.budgets.restorationReserveMs) * 1_000_000n;
+      restoreDeadlineNs = restoreAttempt > 1 || state.status === "stopped"
+        ? freshRecoveryDeadlineNs
+        : earlierDeadline(state.deadlineNs, freshRecoveryDeadlineNs);
       mutationDeadlineNs = restoreDeadlineNs - 5_000_000_000n;
-      if (state.unquiescedLocomotion !== null || state.actionAuditConflict
-        || state.pendingLocomotionNonce !== null) {
+      if (state.actionAuditConflict) {
         throw new LocomotionStageError(
           "cleanup_only_restore",
-          state.actionAuditConflict
-            ? "action publication conflict requires cleanup-only restore"
-            : state.pendingLocomotionNonce !== null
-              ? state.pendingLocomotionNonce.attempts === 1
-                ? "locomotion nonce cleanup was already attempted without exact absence proof"
-                : "pending locomotion nonce requires cleanup-only restore"
-              : "unquiesced locomotion requires cleanup-only restore",
+          "action publication conflict requires cleanup-only restore",
         );
       }
       try {
@@ -3359,20 +3503,28 @@ export function createInAppLocomotionOrchestrator(
           `reviewed retained image failed its immutable sha256 check: ${errorText(error)}`,
         );
       }
-      if (!state.targetOwned) {
-        throw new LocomotionStageError("target_already_stopped", "run-owned target was already stopped after an unquiesced locomotion failure");
-      }
       assertStateArtifacts(state, hooks);
       assertCurrentReceiptAndSpec(state, dependencies);
-      preRestoreContinuity = await withinDeadline(mutationDeadlineNs, dependencies, "pre-restore live continuity", (timeoutMs) =>
-        dependencies.sampleContinuity({
-          serial: state.input.serial,
-          phase: "restore_pre",
-          runtime: state.runtime,
-          artifactRoot: state.artifact.absoluteRoot,
-          timeoutMs,
-          deadlineMonotonicNs: mutationDeadlineNs.toString(),
-        }));
+      const cleanupOnlyRestore = !state.targetOwned || state.unquiescedLocomotion !== null
+        || state.pendingLocomotionNonce !== null || state.zeroOffsetRecoveryProven;
+      if (cleanupOnlyRestore) {
+        if (state.currentReviewReflectsNonzeroMutation && !state.zeroOffsetRecoveryProven) {
+          throw new LocomotionStageError(
+            "restoration_unproven",
+            "cleanup-only restoration has no bound zero-offset recovery and may not relabel the reviewed moved frame",
+          );
+        }
+        restoredReview = state.currentReview;
+      } else {
+        preRestoreContinuity = await withinDeadline(mutationDeadlineNs, dependencies, "pre-restore live continuity", (timeoutMs) =>
+          dependencies.sampleContinuity({
+            serial: state.input.serial,
+            phase: "restore_pre",
+            runtime: state.runtime,
+            artifactRoot: state.artifact.absoluteRoot,
+            timeoutMs,
+            deadlineMonotonicNs: mutationDeadlineNs.toString(),
+          }));
       const continuity = continuityProblem(preRestoreContinuity, state.runtime);
       if (continuity) throw new LocomotionStageError("binding_lost", continuity);
       preRestoreCapability = await withinDeadline(mutationDeadlineNs, dependencies, "pre-restore root capability", (timeoutMs) =>
@@ -3451,7 +3603,6 @@ export function createInAppLocomotionOrchestrator(
             pending.attempts = 1;
             locomotionNonceCleanup = validateLocomotionNonceCleanupReceipt(receipt, pending, false);
             state.pendingLocomotionNonce = null;
-            if (receipt.removalError) cleanupErrors.push(`restore locomotion nonce removal warning: ${receipt.removalError}`);
             return receipt;
           } catch (error) {
             pending.attempts = nonceCleanupFailureDisposition(error).removalStarted ? 1 : 0;
@@ -3488,7 +3639,11 @@ export function createInAppLocomotionOrchestrator(
       if (captureRemainingMs < BRIDGE_MIN_TRANSACTION_MS + 2) {
         throw new LocomotionStageError("budget_exhausted", "restoration deadline expired before capture and post-capture binding checks");
       }
-      const capturePath = path.join(state.artifact.absoluteRoot, "captures", "999-restored.png");
+      const capturePath = path.join(
+        state.artifact.absoluteRoot,
+        "captures",
+        `999-restored-${String(restoreAttempt).padStart(3, "0")}.png`,
+      );
       const captured = await captureWithinDeadline(
         restoreStartedNs,
         mutationDeadlineNs,
@@ -3570,10 +3725,14 @@ export function createInAppLocomotionOrchestrator(
           "post-restoration-capture root capability lost the exact generation/incarnation producer identity",
         );
       }
-      restoredReview = candidateReview;
-      state.currentReview = candidateReview;
-      state.requiredReview.push(candidateReview);
-      state.currentReviewReflectsNonzeroMutation = false;
+        restoredReview = candidateReview;
+        if (candidateReview.captureSha256 !== state.currentReview.captureSha256) {
+          state.requiredReview.push(candidateReview);
+        }
+        state.currentReview = candidateReview;
+        state.currentReviewReflectsNonzeroMutation = false;
+        state.zeroOffsetRecoveryProven = true;
+      }
     } catch (error) {
       primaryError = errorText(error);
       primaryCode = error instanceof LocomotionStageError ? error.code : "restore_failed";
@@ -3604,20 +3763,62 @@ export function createInAppLocomotionOrchestrator(
           };
         }
       };
+      let targetStopError: string | null = null;
+      let priorRelaunchError: string | null = null;
       if (state.targetOwned) {
         try {
-          await dependencies.stopPackage({
+          const stopInput = {
             serial: state.input.serial,
             packageName: state.input.scenario.packageName,
             reason: state.unquiescedLocomotion === null ? "restore_run_owned_target" : "restore_unquiesced_target",
             ...cleanupBudget("owned target stop"),
-          });
-          state.targetOwned = false;
+          };
+          targetStop = checkedTargetStopReceipt(await dependencies.stopPackage(stopInput), stopInput);
         } catch (error) {
-          cleanupErrors.push(`owned target stop: ${errorText(error)}`);
+          targetStopError = errorText(error);
+          targetStop = { status: "failed", error: targetStopError };
         }
       }
-      if (!state.targetOwned && state.pendingLocomotionNonce !== null) {
+
+      const priorToRelaunch = state.input.priorForeground.kind === "non_receipt_bound"
+        && state.priorTerminatedByRun
+        ? state.input.priorForeground
+        : null;
+      const needsPriorRelaunch = priorToRelaunch !== null;
+      if (needsPriorRelaunch) {
+        priorRelaunch = { status: "not_attempted", reason: "awaiting_target_absence" };
+      }
+      let targetAbsenceChecked: ReturnType<typeof checkedFinalProcessProof> | null = null;
+      try {
+        const proof = await dependencies.probeFinalProcessState({
+          serial: state.input.serial,
+          targetPackage: state.input.scenario.packageName,
+          artifactRoot: state.artifact.absoluteRoot,
+          evidenceId: needsPriorRelaunch
+            ? `restore-${String(restoreAttempt).padStart(3, "0")}-target-absence`
+            : `restore-${String(restoreAttempt).padStart(3, "0")}`,
+          priorForeground: state.input.priorForeground,
+          ...cleanupBudget("target absence proof"),
+        });
+        targetAbsenceChecked = checkedFinalProcessProof(proof, state.input, state.artifact.absoluteRoot);
+        state.retainedLogs.push(targetAbsenceChecked.retained);
+        state.targetOwned = !targetAbsenceChecked.targetAbsent;
+        if (needsPriorRelaunch) targetAbsenceProof = proof;
+        else finalProcessProof = proof;
+        if (!needsPriorRelaunch) {
+          if (targetAbsenceChecked.problem) cleanupErrors.push(targetAbsenceChecked.problem);
+          else finalProcessProven = true;
+        } else if (!targetAbsenceChecked.targetAbsent) {
+          finalProcessProof = proof;
+          cleanupErrors.push(targetAbsenceChecked.problem
+            ?? "target absence proof did not prove the run-owned target absent");
+        }
+      } catch (error) {
+        state.targetOwned = true;
+        cleanupErrors.push(`target absence proof: ${errorText(error)}`);
+      }
+
+      if (targetAbsenceChecked?.targetAbsent === true && state.pendingLocomotionNonce !== null) {
         const pending = state.pendingLocomotionNonce;
         try {
           const receipt = await dependencies.cleanupLocomotionNonce({
@@ -3635,45 +3836,83 @@ export function createInAppLocomotionOrchestrator(
           locomotionNonceCleanup = validateLocomotionNonceCleanupReceipt(receipt, pending, true);
           state.pendingLocomotionNonce = null;
           state.unquiescedLocomotion = null;
-          if (receipt.removalError) cleanupErrors.push(`locomotion nonce removal warning: ${receipt.removalError}`);
         } catch (error) {
           pending.attempts = nonceCleanupFailureDisposition(error).removalStarted ? 1 : pending.attempts;
           cleanupErrors.push(`locomotion nonce cleanup: ${errorText(error)}`);
         }
       }
-      if (state.input.priorForeground.kind === "non_receipt_bound" && state.priorTerminatedByRun) {
-        try {
-          const relaunched = await dependencies.relaunchPrior({
-            serial: state.input.serial,
-            component: state.input.priorForeground.component,
-            ...cleanupBudget("prior relaunch"),
-          });
-          const problem = validatePriorRelaunchReceipt(relaunched, state.input.priorForeground.component);
-          if (problem) {
-            priorDisposition.relaunchDisposition = relaunched.disposition === "accepted" ? "attempt_failed" : relaunched.disposition;
-            cleanupErrors.push(problem);
-          } else {
-            priorDisposition.relaunchDisposition = "accepted";
+
+      if (priorToRelaunch !== null) {
+        if (targetAbsenceChecked?.targetAbsent !== true) {
+          priorDisposition.relaunchDisposition = "blocked";
+          priorRelaunch = { status: "blocked", reason: "target_absence_unproven" };
+        } else if (targetAbsenceChecked.priorForegroundSatisfied) {
+          const disposition = state.priorRestoreProofDisposition ?? "state_proven_without_attempt";
+          state.priorRestoreProofDisposition = disposition;
+          priorDisposition.relaunchDisposition = disposition;
+          priorRelaunch = { status: "not_attempted", reason: "prior_state_already_proven" };
+          finalProcessProof = targetAbsenceProof;
+          finalProcessProven = true;
+        } else {
+          state.priorRestoreProofDisposition = null;
+          try {
+            const relaunched = await dependencies.relaunchPrior({
+              serial: state.input.serial,
+              component: priorToRelaunch.component,
+              ...cleanupBudget("prior relaunch"),
+            });
+            priorRelaunch = relaunched;
+            const problem = validatePriorRelaunchReceipt(relaunched, priorToRelaunch.component);
+            if (problem) {
+              priorDisposition.relaunchDisposition = relaunched.disposition === "accepted" ? "attempt_failed" : relaunched.disposition;
+              priorRelaunchError = problem;
+            } else {
+              priorDisposition.relaunchDisposition = "accepted";
+            }
+          } catch (error) {
+            priorDisposition.relaunchDisposition = "attempt_failed";
+            priorRelaunchError = errorText(error);
+            priorRelaunch = { status: "failed", error: priorRelaunchError };
           }
-        } catch (error) {
-          priorDisposition.relaunchDisposition = "attempt_failed";
-          cleanupErrors.push(`prior relaunch: ${errorText(error)}`);
+
+          try {
+            finalProcessProof = await dependencies.probeFinalProcessState({
+              serial: state.input.serial,
+              targetPackage: state.input.scenario.packageName,
+              artifactRoot: state.artifact.absoluteRoot,
+              evidenceId: `restore-${String(restoreAttempt).padStart(3, "0")}-final`,
+              priorForeground: state.input.priorForeground,
+              ...cleanupBudget("final process/activity proof"),
+            });
+            const checked = checkedFinalProcessProof(finalProcessProof, state.input, state.artifact.absoluteRoot);
+            state.retainedLogs.push(checked.retained);
+            state.targetOwned = !checked.targetAbsent;
+            state.priorRestoreProofDisposition = checked.priorForegroundSatisfied
+              ? priorRelaunchError !== null
+                ? "state_proven_after_attempt_error"
+                : "accepted"
+              : null;
+            if (state.priorRestoreProofDisposition !== null) {
+              priorDisposition.relaunchDisposition = state.priorRestoreProofDisposition;
+            }
+            if (checked.problem) {
+              if (!checked.priorForegroundSatisfied) priorDisposition.relaunchDisposition = "attempt_failed";
+              cleanupErrors.push(checked.problem);
+            } else {
+              finalProcessProven = true;
+            }
+          } catch (error) {
+            state.targetOwned = true;
+            state.priorRestoreProofDisposition = null;
+            cleanupErrors.push(`final process/activity proof: ${errorText(error)}`);
+          }
         }
       }
-      try {
-        finalProcessProof = await dependencies.probeFinalProcessState({
-          serial: state.input.serial,
-          targetPackage: state.input.scenario.packageName,
-          artifactRoot: state.artifact.absoluteRoot,
-          priorForeground: state.input.priorForeground,
-          ...cleanupBudget("final process/activity proof"),
-        });
-        const checked = checkedFinalProcessProof(finalProcessProof, state.input, state.artifact.absoluteRoot);
-        state.retainedLogs.push(checked.retained);
-        if (checked.problem) cleanupErrors.push(checked.problem);
-        else finalProcessProven = true;
-      } catch (error) {
-        cleanupErrors.push(`final process/activity proof: ${errorText(error)}`);
+      if (targetStopError !== null && state.targetOwned) {
+        cleanupErrors.push(`owned target stop: ${targetStopError}`);
+      }
+      if (priorRelaunchError !== null && state.priorRestoreProofDisposition === null) {
+        cleanupErrors.push(`prior relaunch: ${priorRelaunchError}`);
       }
       try {
         postStopSafety = await dependencies.sampleSafety({
@@ -3689,12 +3928,14 @@ export function createInAppLocomotionOrchestrator(
       }
     }
     let completed = primaryError === null && cleanupErrors.length === 0 && restoredReview !== null
-      && !state.targetOwned && finalProcessProven && finalSafetyProven;
+      && !state.targetOwned && finalProcessProven && finalSafetyProven
+      && (!reviewedMovedFrame || state.zeroOffsetRecoveryProven);
     let structuralStop = completed ? null : primaryCode ?? "restore_cleanup_failed";
     let actionAudit = actionAuditMaintenance(state.artifact);
     try {
       actionAudit = appendAction(state.artifact, {
         action: "restore",
+        restoreAttempt,
         status: completed ? "completed" : "failed",
         structuralStop,
         primaryError,
@@ -3711,6 +3952,9 @@ export function createInAppLocomotionOrchestrator(
         preRestoreCapability,
         postCaptureContinuity,
         postCaptureCapability,
+        targetStop,
+        targetAbsenceProof,
+        priorRelaunch,
         finalProcessProof,
         postStopSafety,
         priorForeground: priorDisposition,
@@ -3727,6 +3971,13 @@ export function createInAppLocomotionOrchestrator(
       structuralStop = primaryCode ?? "action_audit_failed";
     }
     state.restoreCompleted = completed;
+    if (completed && restoredReview !== null) {
+      if (restoredReview !== state.currentReview) {
+        state.currentReview = restoredReview;
+        state.requiredReview.push(restoredReview);
+      }
+      state.currentReviewReflectsNonzeroMutation = false;
+    }
     state.status = completed ? "restored" : "stopped";
     if (completed && serialOwners.get(state.input.serial)?.runId === state.artifact.runId) {
       serialOwners.delete(state.input.serial);
@@ -3734,10 +3985,18 @@ export function createInAppLocomotionOrchestrator(
       serialOwners.set(state.input.serial, {
         runId: state.artifact.runId,
         status: "quarantined",
-        reason: "restore cleanup, final proof, safety, or audit remains unproven",
+        reason: [
+          state.targetOwned ? "run-owned target stop remains unproven" : null,
+          state.pendingLocomotionNonce !== null ? "locomotion nonce cleanup remains unproven" : null,
+          !finalProcessProven ? "final process/activity proof remains unproven" : null,
+          !finalSafetyProven ? "post-restore safety remains unproven" : null,
+          restoredReview === null ? "restoration state/review remains unproven" : null,
+          primaryError !== null ? `${primaryCode ?? "restore_failed"}: ${primaryError}` : null,
+          cleanupErrors.length ? `cleanup: ${cleanupErrors.join("; ")}` : null,
+        ].filter((value): value is string => value !== null).join("; "),
       });
     }
-    return {
+    const receipt: LocomotionRestoreReceipt = {
       status: completed ? "restored_needs_review" : "restore_failed",
       runId: state.artifact.runId,
       artifactRoot: state.artifact.absoluteRoot,
@@ -3752,6 +4011,13 @@ export function createInAppLocomotionOrchestrator(
       priorForeground: priorDisposition,
       actionAuditMaintenance: actionAudit,
     };
+    if (completed) {
+      state.completedRestore = {
+        reviewedPriorSha256: input.reviewedPriorFrame.captureSha256,
+        receipt,
+      };
+    }
+    return receipt;
   };
 
   const adjudicationRejected = (
@@ -3871,7 +4137,8 @@ export function createInAppLocomotionOrchestrator(
     const state = runs.get(input.runId);
     if (!state) throw new Error("unknown in-app locomotion runId");
     if (busyRuns.has(input.runId)) throw new Error("a mutation is already in progress for this run");
-    const mutatesSerial = input.action !== "adjudicate";
+    const mutatesSerial = input.action !== "adjudicate"
+      && !(input.action === "restore" && state.completedRestore !== null);
     if (mutatesSerial && serialOwners.get(state.input.serial)?.runId !== input.runId) {
       throw new Error(`run '${input.runId}' does not own exact serial '${state.input.serial}'`);
     }
@@ -4609,11 +4876,14 @@ export function createLiveInAppLocomotionDependencies(
         10_000,
         64 * 1024,
       );
-      if (pidResult.timedOut || (pidResult.code !== 0 && pidResult.code !== 1)) {
+      const normalizedPidOutput = pidResult.stdout.trim();
+      const normalizedPidError = pidResult.stderr.trim();
+      const cleanPresentExit = pidResult.code === 0 && normalizedPidOutput !== "" && normalizedPidError === "";
+      const cleanAbsentExit = pidResult.code === 1 && normalizedPidOutput === "" && normalizedPidError === "";
+      if (pidResult.timedOut || (!cleanPresentExit && !cleanAbsentExit)) {
         throw new Error(`final target PID probe failed: ${pidResult.stderr.trim() || pidResult.stdout.trim() || `exit ${String(pidResult.code)}`}`);
       }
       const pidofOutput = pidResult.stdout;
-      const normalizedPidOutput = pidofOutput.trim();
       const targetPids = normalizedPidOutput === "" ? [] : normalizedPidOutput.split(/\s+/).map((value) => Number(value));
       if (targetPids.some((pid) => !Number.isSafeInteger(pid) || pid < 1) || new Set(targetPids).size !== targetPids.length) {
         throw new Error("final target PID probe returned malformed or duplicate process identities");
@@ -4630,7 +4900,10 @@ export function createLiveInAppLocomotionDependencies(
       const activityOutput = activityResult.stdout;
       const resumedComponents = parseForegroundActivities(activityOutput).map((activity) => activity.component);
       const rawBytes = Buffer.from(`${canonicalJson({ pidofOutput, activityOutput, targetPids, resumedComponents })}\n`, "utf8");
-      const artifactPath = path.join(context.artifactRoot, "logs", "999-final-process-activity.json");
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(context.evidenceId)) {
+        throw new Error("final process/activity evidenceId must be one lowercase dash-delimited identifier");
+      }
+      const artifactPath = path.join(context.artifactRoot, "logs", `999-final-process-activity-${context.evidenceId}.json`);
       privateWrite(artifactPath, rawBytes);
       const identity = artifactFileIdentity(artifactPath, "final process/activity raw probe", 64 * 1024 * 1024);
       return {
@@ -4653,7 +4926,7 @@ export function registerInAppLocomotionTools(
   server.registerTool(
     "run_in_app_locomotion_route",
     {
-      description: "Run one receipt-bound Full-stage in-app world-root route as strict prepare, reviewed step, restore, and structural adjudicate actions. Every mutation uses one explicit direct or replacement mechanism, exact serial and runtime binding, stable captures, safety/continuity evidence, and a caller-reserved external artifact root. Returned captures still require LOOK; the tool does not award visual or device verification.",
+      description: "Run one receipt-bound Full-stage in-app world-root route as strict prepare, reviewed step, restore, and structural adjudicate actions. A receipt-bound prior foreground is withheld and not relaunched because relaunch would orphan its immutable receipt. Every mutation uses one explicit direct or replacement mechanism, exact serial and runtime binding, stable captures, safety/continuity evidence, and a caller-reserved external artifact root. Returned captures still require LOOK; the tool does not award visual or device verification.",
       inputSchema: inAppLocomotionInputSchema,
     },
     async (args) => {

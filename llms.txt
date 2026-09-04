@@ -11,3 +11,4 @@
 - [GETTING_STARTED.md](GETTING_STARTED.md): guided first session (tarball or clone)
 - [QUICKSTART.md](QUICKSTART.md): shortest path to a verified APK
 - [SKILLS.md](SKILLS.md): task-shaped skill guides the server exposes
+- [docs/IN_APP_LOCOMOTION.md](docs/IN_APP_LOCOMOTION.md): CP1 receipt-bound in-app locomotion contract, evidence limits, and Full-stage compatibility boundaries

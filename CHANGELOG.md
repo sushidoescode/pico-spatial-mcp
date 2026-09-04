@@ -2,6 +2,16 @@
 
 Versions here key the plugin manifests (`/plugin update` uses them as its cache key).
 
+## Unreleased
+
+- **Receipt-bound in-app locomotion CP1 contract documented.** Added the Full-stage-only
+  `run_in_app_locomotion_route` sequence, explicit direct/replacement mechanism rule,
+  transition-then-stable settlement semantics, listener-age/sequence/time freshness,
+  re-entrant restoration, 0.02 m translation experiment threshold, quaternion no-gate
+  boundary, and receipt-bound prior-foreground restoration withholding. Primary mechanism
+  selection remains contingent on the same-boot CP2 rendered-frame comparison.
+  CP2 has not run; there is no productized live proof.
+
 ## 37.0.0 — 2026-08-14
 
 - **Managed registry-latest pico-cli is now the default.** The first real CLI-backed operation

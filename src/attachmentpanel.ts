@@ -147,7 +147,6 @@ export function generateAttachmentPanelFiles(args: AttachmentPanelArgs): { files
     `import androidx.compose.ui.unit.dp`,
     `import com.pico.spatial.core.container.SpatialViewContent`,
     `import com.pico.spatial.core.ecs.AttachmentPanelComponent`,
-    `import com.pico.spatial.core.ecs.Entity`,
     ...(anyFaceViewer ? [`import com.pico.spatial.core.ecs.LookAtComponent`] : []),
     `import com.pico.spatial.core.ecs.TransformComponent`,
     `import com.pico.spatial.core.math.Vector3`,
@@ -239,24 +238,6 @@ export function generateAttachmentPanelFiles(args: AttachmentPanelArgs): { files
         : []),
       `        content.addEntity(panel)`,
       `        android.util.Log.i("SceneAttachments", "attachment '${p.id}' seated at " + SceneAttachments.POS_${constName(p.id)}.x + "," + SceneAttachments.POS_${constName(p.id)}.y + "," + SceneAttachments.POS_${constName(p.id)}.z + " (metres, SpatialView-local)")`,
-      `    }`,
-    ]),
-    `}`,
-    ``,
-    `/** Full-stage overload: parent panels beneath the replaceable AgentWorldRoot. */`,
-    `fun SpatialViewAttachments.seatSceneAttachmentPanels(worldRoot: Entity) {`,
-    ...panels.flatMap((p) => [
-      `    val e${constName(p.id)} = entity(SceneAttachments.ID_${constName(p.id)})`,
-      `    android.util.Log.i("SceneAttachments", "attachment '${p.id}' entity=" + (if (e${constName(p.id)} == null) "NULL (never created — is the id identical in the builder and here?)" else "ok"))`,
-      `    e${constName(p.id)}?.let { panel ->`,
-      `        panel.components.get<TransformComponent>()?.setPosition(SceneAttachments.POS_${constName(p.id)})`,
-      ...(p.faceViewer
-        ? [
-            `        panel.components.set(LookAtComponent().apply { setViewerAsTarget() })`,
-          ]
-        : []),
-      `        check(worldRoot.addChild(panel)) { "attachment '${p.id}' could not be parented beneath AgentWorldRoot" }`,
-      `        android.util.Log.i("SceneAttachments", "attachment '${p.id}' seated under AgentWorldRoot")`,
       `    }`,
     ]),
     `}`,

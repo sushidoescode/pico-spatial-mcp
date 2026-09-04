@@ -112,7 +112,13 @@ object AgentBridge {
     )
 
     data class AgentWorldPose(val rootGeneration: Long, val position: Vector3)
-    data class AgentHmdPose(val readAtMonotonicNs: Long, val position: Vector3, val rotation: Quat)
+    data class AgentHmdPose(
+        val sampleSequence: Long,
+        val sampleObservedAtMonotonicNs: Long,
+        val readAtMonotonicNs: Long,
+        val position: Vector3,
+        val rotation: Quat,
+    )
     data class AgentLocomotionResult(
         val outcome: String,
         val pose: AgentWorldPose?,
@@ -466,8 +472,9 @@ object AgentBridge {
         return runCatching { provider() }.getOrNull()
     }
 
-    private fun publishLocomotionRootGeneration(generation: Long, rootGeneration: Long): Boolean =
+    fun reconcileLocomotionRootGeneration(generation: Long, rootGeneration: Long): Boolean =
         synchronized(locomotionGenerationLock) {
+            if (rootGeneration <= 0L) return@synchronized false
             val binding = locomotionBinding
             if (binding?.generation != generation) return@synchronized false
             locomotionBinding = binding.copy(rootGeneration = rootGeneration)
@@ -1098,19 +1105,17 @@ object AgentBridge {
                     primaryError,
                 )
             }
-            if (primaryError == null && !locomotionRequestIsActive(producerRequest!!)) return
             if (primaryError == null) {
                 val resultError = validateLocomotionResult(producerRequest!!, result)
                 if (resultError != null) result = AgentLocomotionResult("failed", null, resultError, result.cleanupError)
             }
             if (result.outcome == "completed") {
                 val pose = result.pose!!
-                if (!completeLocomotionLease(request)) return
-                if (!publishLocomotionRootGeneration(request.generation, pose.rootGeneration)) return
-                if (!locomotionRequestIsCurrent(request.generation)) return
-            } else if (!completeLocomotionLease(request)) {
-                return
+                if (!reconcileLocomotionRootGeneration(request.generation, pose.rootGeneration)) return
             }
+            if (primaryError == null && !locomotionRequestIsActive(producerRequest!!)) return
+            if (!completeLocomotionLease(request)) return
+            if (result.outcome == "completed" && !locomotionRequestIsCurrent(request.generation)) return
             writeLocomotionAckAtomically(context, request, target, LOCOMOTE_COMMAND) { writer ->
                 writer.name("requestControl").value("execute")
                 writer.name("executionLeaseMs").value(request.executionLeaseMs.toLong())
@@ -1159,7 +1164,8 @@ object AgentBridge {
     private fun validWorldPose(pose: AgentWorldPose): Boolean =
         pose.rootGeneration > 0L && pose.position.x.isFinite() && pose.position.y.isFinite() && pose.position.z.isFinite()
 
-    private fun validHmdPose(pose: AgentHmdPose): Boolean = pose.readAtMonotonicNs >= 0L &&
+    private fun validHmdPose(pose: AgentHmdPose): Boolean = pose.sampleSequence > 0L &&
+        pose.sampleObservedAtMonotonicNs >= 0L && pose.readAtMonotonicNs >= pose.sampleObservedAtMonotonicNs &&
         pose.position.x.isFinite() && pose.position.y.isFinite() && pose.position.z.isFinite() &&
         pose.rotation.x.isFinite() && pose.rotation.y.isFinite() && pose.rotation.z.isFinite() && pose.rotation.w.isFinite()
 
@@ -1186,6 +1192,8 @@ object AgentBridge {
 
     private fun writeHmdPose(writer: JsonWriter, pose: AgentHmdPose) {
         writer.beginObject()
+        writer.name("sampleSequence").value(pose.sampleSequence.toString())
+        writer.name("sampleObservedAtMonotonicNs").value(pose.sampleObservedAtMonotonicNs.toString())
         writer.name("readAtMonotonicNs").value(pose.readAtMonotonicNs.toString())
         writer.name("position").beginObject(); writePositionMembers(writer, pose.position); writer.endObject()
         writer.name("rotation").beginObject()
