@@ -105,7 +105,7 @@ test("captureSettledFrames requires a changed frame followed by its identical su
   const priorSha256 = sha256Bytes(Buffer.from("prior"));
   const fake = timedSettleDeps([frame("prior"), frame("changed"), frame("changed")]);
   const result = await captureSettledFrames(
-    { maxTries: 3, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 100 },
+    { maxTries: 3, intervalMs: 0, comparison: SETTLE_COMPARISON, mode: "transition_then_stable", priorSha256, deadlineMs: 100 },
     fake.deps,
   );
   assert.equal(result.status, "settled");
@@ -119,7 +119,7 @@ test("captureSettledFrames clears a changed candidate when pixels return to the 
   const priorSha256 = sha256Bytes(Buffer.from("prior"));
   const fake = timedSettleDeps([frame("changed"), frame("prior"), frame("changed"), frame("changed")]);
   const result = await captureSettledFrames(
-    { maxTries: 4, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 100 },
+    { maxTries: 4, intervalMs: 0, comparison: SETTLE_COMPARISON, mode: "transition_then_stable", priorSha256, deadlineMs: 100 },
     fake.deps,
   );
   assert.equal(result.status, "settled");
@@ -132,7 +132,7 @@ test("captureSettledFrames distinguishes stability exhaustion from transition ex
   const priorSha256 = sha256Bytes(Buffer.from("prior"));
   const fake = timedSettleDeps([frame("prior"), frame("changed")]);
   const result = await captureSettledFrames(
-    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 100 },
+    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, mode: "transition_then_stable", priorSha256, deadlineMs: 100 },
     fake.deps,
   );
   assert.equal(result.status, "timeout");
@@ -146,7 +146,7 @@ test("captureSettledFrames stops at its monotonic deadline before another captur
   const priorSha256 = sha256Bytes(Buffer.from("prior"));
   const fake = timedSettleDeps([frame("prior"), frame("must-not-capture")], { sleepCostMs: 10 });
   const result = await captureSettledFrames(
-    { maxTries: 3, intervalMs: 99, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 10, attemptTimeoutMs: 50 },
+    { maxTries: 3, intervalMs: 99, comparison: SETTLE_COMPARISON, mode: "transition_then_stable", priorSha256, deadlineMs: 10, attemptTimeoutMs: 50 },
     fake.deps,
   );
   assert.equal(result.status, "timeout");
@@ -161,7 +161,7 @@ test("captureSettledFrames classifies a capture that returns after its deadline 
   const priorSha256 = sha256Bytes(Buffer.from("prior"));
   const fake = timedSettleDeps([frame("changed")], { captureCostMs: 10 });
   const result = await captureSettledFrames(
-    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 5, attemptTimeoutMs: 5 },
+    { maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON, mode: "transition_then_stable", priorSha256, deadlineMs: 5, attemptTimeoutMs: 5 },
     fake.deps,
   );
   assert.equal(result.status, "timeout");
@@ -177,7 +177,7 @@ test("captureSettledFrames classifies a capture failure after its deadline in th
   let nowMs = 0;
   let captures = 0;
   const result = await captureSettledFrames(
-    { maxTries: 3, intervalMs: 0, comparison: SETTLE_COMPARISON, priorSha256, deadlineMs: 5, attemptTimeoutMs: 5 },
+    { maxTries: 3, intervalMs: 0, comparison: SETTLE_COMPARISON, mode: "transition_then_stable", priorSha256, deadlineMs: 5, attemptTimeoutMs: 5 },
     {
       monotonicNs: () => BigInt(nowMs) * 1_000_000n,
       capture: async () => {
@@ -271,6 +271,7 @@ test("captureSettledFrames ignores a stable stale pair matching the required pri
     fake.deps,
   );
   assert.equal(result.status, "settled");
+  assert.equal(result.mode, "stable");
   assert.equal(result.attempts, 4);
   assert.equal(result.sha256, "5edd1832df25e2f1a72585c0ee55c1e585e7f4902eb1d15f7abf1c71c1b296ae");
   assert.deepEqual(result.stablePair, [
@@ -288,7 +289,9 @@ test("captureSettledFrames times out and retains the last frame when every stabl
     fake.deps,
   );
   assert.equal(result.status, "timeout");
+  assert.equal(result.mode, "stable");
   assert.equal(result.attempts, 3);
+  assert.equal(result.timeoutPhase, "awaiting_stability");
   assert.equal(result.sha256, priorSha256);
   assert.equal(result.frame.bytes.toString(), "prior");
   assert.equal(result.stablePair, null);
@@ -447,6 +450,7 @@ test("executeCaptureSettled threads the required prior SHA into internal settlem
     executionDeps({ sequence: [frame("prior"), frame("prior"), frame("moved"), frame("moved")] }),
   );
   assert.equal(receipt.status, "settled");
+  assert.equal(receipt.mode, "stable");
   assert.equal(receipt.attempts, 4);
   assert.equal(receipt.sha256, "5edd1832df25e2f1a72585c0ee55c1e585e7f4902eb1d15f7abf1c71c1b296ae");
   assert.equal(fs.readFileSync(outPath).toString(), "moved");
@@ -465,6 +469,7 @@ test("executeCaptureSettled returns transition timeout evidence and the diagnost
       maxTries: 2,
       intervalMs: 0,
       comparison: SETTLE_COMPARISON,
+      mode: "transition_then_stable",
       priorSha256,
       deadlineMs: 100,
       attemptTimeoutMs: 17,
@@ -551,6 +556,7 @@ test("executeCaptureSettled preserves a pre-capture deadline timeout receipt", a
       maxTries: 2,
       intervalMs: 0,
       comparison: SETTLE_COMPARISON,
+      mode: "transition_then_stable",
       priorSha256,
       deadlineMs: 1,
       attemptTimeoutMs: 1,
@@ -585,6 +591,9 @@ test("executeCaptureSettled describes an all-prior timeout without denying the o
     executionDeps({ sequence: [frame("prior"), frame("prior"), frame("prior")] }),
   );
   assert.equal(receipt.status, "timeout");
+  assert.equal(receipt.mode, "stable");
+  assert.equal(receipt.timeoutPhase, "awaiting_stability");
+  assert.equal(receipt.error.code, "settle_timeout");
   assert.match(receipt.error.detail, /no byte-identical consecutive pair different from the required prior frame/);
   assert.equal(fs.readFileSync(outPath).toString(), "prior");
 });

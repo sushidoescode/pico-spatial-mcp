@@ -109,12 +109,12 @@ function resolvedDeadlineMs(policy: SettlePolicy, attemptTimeoutMs: number): num
 }
 
 function normalizeSettlePolicy(policy: SettlePolicy): { value: NormalizedSettlePolicy } | { error: string; mode: SettleMode } {
-  const mode = policy.mode ?? (policy.priorSha256 === undefined ? "stable" : "transition_then_stable");
-  if (mode === "stable" && policy.priorSha256 !== undefined) {
-    return { mode, error: "stable mode does not accept priorSha256; omit mode to retain prior-only transition compatibility" };
-  }
+  const mode = policy.mode ?? "stable";
   if (mode === "transition_then_stable" && !/^[0-9a-f]{64}$/.test(policy.priorSha256 ?? "")) {
     return { mode, error: "transition_then_stable mode requires priorSha256 to be exactly 64 lowercase hexadecimal characters" };
+  }
+  if (policy.priorSha256 !== undefined && !/^[0-9a-f]{64}$/.test(policy.priorSha256)) {
+    return { mode, error: "priorSha256 must be exactly 64 lowercase hexadecimal characters" };
   }
   const attemptTimeoutMs = policy.attemptTimeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS;
   if (!validPositiveSafeInteger(attemptTimeoutMs)) {
@@ -217,7 +217,7 @@ export async function captureSettledFrames(
     }
     const sha256 = deps.hash(frame.bytes);
     let relation: SettleTraceRelation;
-    if (normalized.value.mode === "transition_then_stable" && sha256 === normalized.value.priorSha256) {
+    if (sha256 === normalized.value.priorSha256) {
       candidate = null;
       relation = "prior";
     } else if (candidate && frame.bytes.equals(candidate.frame.bytes) && sha256 === candidate.sha256) {
@@ -820,8 +820,8 @@ export function registerObservationTools(server: McpServer) {
         maxTries: z.number().int().min(2).max(100).optional().describe("Maximum capture attempts (default 12)."),
         intervalMs: z.number().int().min(0).max(60_000).optional().describe("Delay between captures in milliseconds (default 700)."),
         comparison: z.literal(SETTLE_COMPARISON).optional().describe("Phase-1 comparison policy; only byte_exact is supported."),
-        priorSha256: z.string().optional().describe("Prior reviewed frame SHA-256; omitting mode with this field selects transition_then_stable."),
-        mode: z.enum(SETTLE_MODES).optional().describe("Settlement mode; transition_then_stable requires priorSha256."),
+        priorSha256: z.string().optional().describe("Prior reviewed frame SHA-256. In stable mode, a matching pair is ignored for backward compatibility; transition_then_stable additionally labels the transition and stability phases."),
+        mode: z.enum(SETTLE_MODES).optional().describe("Settlement mode (default stable); transition_then_stable requires priorSha256 and must be selected explicitly."),
         deadlineMs: z.number().int().positive().max(3_600_000).optional().describe("Single monotonic settlement deadline budget in milliseconds."),
         attemptTimeoutMs: z.number().int().positive().max(300_000).optional().describe("Per-screencap timeout, clamped to the remaining deadline."),
       },
