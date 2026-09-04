@@ -22,7 +22,8 @@ returned frames before making any statement about their pixels.
 
 ## Exact input schema
 
-Both actions require every field below; the schema supplies no motion-policy defaults.
+Both actions require every field below except `sceneReadiness`, whose bounded defaults are shown in
+the table. The schema supplies no motion-policy defaults.
 
 | Field | Exact contract |
 | --- | --- |
@@ -48,6 +49,8 @@ Both actions require every field below; the schema supplies no motion-policy def
 | `fiducial.requireGuideOffOnDelta` | Exactly `true` |
 | `centerBandPx.x`, `centerBandPx.y` | Finite, nonnegative pixel tolerances |
 | `targetAreaFraction.min`, `.max` | Each greater than 0 and at most 1; `min <= max` |
+| `sceneReadiness.maxRetries` | Integer from 0 through 120; defaults to 15 |
+| `sceneReadiness.pollMs` | Integer from 10 through 60000 milliseconds; defaults to 1000 |
 | `motionPolicy.maxDragPxPerAction` | Positive integer |
 | `motionPolicy.maxCumulativeDragPx` | Positive integer |
 | `motionPolicy.maxHoldMsPerAction` | Positive integer milliseconds |
@@ -58,6 +61,13 @@ Both actions require every field below; the schema supplies no motion-policy def
 
 The `expectedBuildReceiptId` below is a valid-shape placeholder only. Replace all 64 zeroes with
 the exact debug build receipt before calling the tool.
+
+`sceneReadiness` configures the one bounded `query_scene_anchors` operation used for each fresh
+scene read; navigation does not add an outer retry loop. The consecutive-read requirement remains
+code-owned at two. `maxRetries` counts waits after the initial read. The 15-by-1000 ms default
+matches the established scene-query contract and leaves measured headroom over the cold-boot scene
+that became ready at retry 7. Exhaustion stops before qemu binding, guide work, capture, or input as
+`scene_not_ready`; it is not reported as a backend capability failure.
 
 ## Re-runnable calibration call
 
@@ -97,6 +107,7 @@ route reserves. It is a bound, not a prediction that the run will take 5000 seco
   },
   "centerBandPx": { "x": 90, "y": 70 },
   "targetAreaFraction": { "min": 0.08, "max": 0.25 },
+  "sceneReadiness": { "maxRetries": 15, "pollMs": 1000 },
   "motionPolicy": {
     "maxDragPxPerAction": 120,
     "maxCumulativeDragPx": 1440,
@@ -167,6 +178,7 @@ admits a bounded acquire/center/approach loop while remaining below the schema m
   },
   "centerBandPx": { "x": 90, "y": 70 },
   "targetAreaFraction": { "min": 0.08, "max": 0.25 },
+  "sceneReadiness": { "maxRetries": 15, "pollMs": 1000 },
   "motionPolicy": {
     "maxDragPxPerAction": 120,
     "maxCumulativeDragPx": 1440,
@@ -296,8 +308,9 @@ The normal order is:
 Cleanup is attempted whenever SHOW may have applied, including stopped and error paths. Cleanup
 failure is reported rather than hidden. `executionStatus` is `completed`, `stopped`, or `error`;
 `stopReason` is one of `objective_satisfied`, `ambiguous_target`, `label_absent`,
-`guide_not_acquired`, `unsettled`, `scene_drift`, `budget_exhausted`, `ambiguous_host_window`,
-`unsupported_backend`, `input_failed`, `binding_failed`, or `cleanup_failed`. `refusalReason` is
+`guide_not_acquired`, `unsettled`, `scene_drift`, `scene_not_ready`, `budget_exhausted`,
+`ambiguous_host_window`, `unsupported_backend`, `input_failed`, `binding_failed`, or
+`cleanup_failed`. `refusalReason` is
 `insufficient_budget`, `missing`, `stale`, `quality_rejected`, `projection_divergence`, or null.
 
 `achievedClaims` are independent `target_visible`, `target_centered`, and

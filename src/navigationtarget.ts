@@ -123,6 +123,13 @@ const motionPolicySchema = z.object({
   maxActions: z.number().int().positive().max(256),
   maxDurationSec: z.number().int().positive().max(7_200),
 }).strict();
+const DEFAULT_SCENE_READINESS = Object.freeze({ maxRetries: 15, pollMs: 1000 });
+const sceneReadinessSchema = z.object({
+  maxRetries: z.number().int().min(0).max(120)
+    .describe("Unfiltered scene-readiness retry budget (default 15; maximum 120)."),
+  pollMs: z.number().int().min(10).max(60_000)
+    .describe("Scene-readiness polling interval in milliseconds (default 1000; maximum 60000)."),
+}).strict().default(DEFAULT_SCENE_READINESS);
 const sharedInput = {
   serial: z.string().min(1),
   scenario: scenarioSchema,
@@ -132,16 +139,22 @@ const sharedInput = {
   centerBandPx: z.object({ x: finite.nonnegative(), y: finite.nonnegative() }).strict(),
   targetAreaFraction: z.object({ min: finite.positive().max(1), max: finite.positive().max(1) }).strict()
     .refine((value) => value.min <= value.max, "target area min must not exceed max"),
+  sceneReadiness: sceneReadinessSchema,
   motionPolicy: motionPolicySchema,
   outDir: z.string().refine(path.isAbsolute, "outDir must be absolute"),
 };
+const navigationTargetToolInputSchema = z.object({
+  action: z.enum(["calibrate", "navigate"]),
+  ...sharedInput,
+}).strict();
 
 export const navigateToSceneTargetInputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("calibrate"), ...sharedInput }).strict(),
   z.object({ action: z.literal("navigate"), ...sharedInput }).strict(),
 ]);
 
-export type NavigateToSceneTargetInput = z.infer<typeof navigateToSceneTargetInputSchema>;
+export type NavigateToSceneTargetInput = z.input<typeof navigateToSceneTargetInputSchema>;
+type ParsedNavigateToSceneTargetInput = z.output<typeof navigateToSceneTargetInputSchema>;
 export type NavigationTargetStopReason =
   | "objective_satisfied"
   | "ambiguous_target"
@@ -149,6 +162,7 @@ export type NavigationTargetStopReason =
   | "guide_not_acquired"
   | "unsettled"
   | "scene_drift"
+  | "scene_not_ready"
   | "budget_exhausted"
   | "ambiguous_host_window"
   | "unsupported_backend"
@@ -360,13 +374,13 @@ function exactApplicationBinding(
     && left.bridgeRevision === right.bridgeRevision;
 }
 
-function sceneQueryInput(input: NavigateToSceneTargetInput): QuerySceneAnchorsInput {
+function sceneQueryInput(input: ParsedNavigateToSceneTargetInput): QuerySceneAnchorsInput {
   return {
     serial: input.serial,
     scenario: input.scenario,
     labels: [input.target.label],
-    maxRetries: 2,
-    pollMs: 10,
+    maxRetries: input.sceneReadiness.maxRetries,
+    pollMs: input.sceneReadiness.pollMs,
     includeGeometry: "lossless_external_artifact",
     stabilityReads: 2,
   };
@@ -394,7 +408,7 @@ function selectorCandidates(read: SceneRead, label: string, minUpDot: number) {
 }
 
 async function queryAndSelectScene(
-  input: NavigateToSceneTargetInput,
+  input: ParsedNavigateToSceneTargetInput,
   deps: NavigationTargetDependencies,
   previous: SelectedScene | null,
 ): Promise<SelectedScene> {
@@ -415,7 +429,9 @@ async function queryAndSelectScene(
   if (output.status !== "ready" || !output.snapshotId || !output.geometryRef || !output.applicationRuntimeBinding
     || !("bridgeRevision" in output.applicationRuntimeBinding)) {
     throw new NavigationTargetStop(
-      output.status === "binding_failed" ? "binding_failed" : "unsupported_backend",
+      output.status === "not_ready"
+        ? "scene_not_ready"
+        : output.status === "binding_failed" ? "binding_failed" : "unsupported_backend",
       output.error?.detail ?? `scene query stopped with ${output.status}`,
     );
   }
@@ -531,7 +547,7 @@ function settledOrThrow(receipt: CaptureSettledReceipt, label: string): CaptureS
 
 async function immutableGuideMeasurement(
   receipt: CaptureSettledReceipt,
-  input: NavigateToSceneTargetInput,
+  input: ParsedNavigateToSceneTargetInput,
   deps: NavigationTargetDependencies,
 ): Promise<MeasuredGuideFrame> {
   const settled = settledOrThrow(receipt, "guide observation");
@@ -625,7 +641,7 @@ function controllerGuide(
 }
 
 function guideRequestFor(
-  input: NavigateToSceneTargetInput,
+  input: ParsedNavigateToSceneTargetInput,
   scene: SelectedScene,
   requestId: string,
   mode: "show" | "hide",
@@ -769,7 +785,7 @@ function routeStopReason(trace: RelativeRouteTrace): NavigationTargetStopReason 
   }
 }
 
-function newResult(input: NavigateToSceneTargetInput) {
+function newResult(input: ParsedNavigateToSceneTargetInput) {
   return {
     executionStatus: "stopped" as "completed" | "stopped" | "error",
     action: input.action,
@@ -843,7 +859,7 @@ function captureMatchesScene(receipt: CaptureSettledReceipt, scene: SelectedScen
 }
 
 function routeInput(
-  input: NavigateToSceneTargetInput,
+  input: ParsedNavigateToSceneTargetInput,
   scene: SelectedScene,
   qemu: BoundQemuWindow,
   session: ReservedArtifactSession,
@@ -869,7 +885,7 @@ function routeInput(
   };
 }
 
-function calibrationScheduleFitsPolicy(input: NavigateToSceneTargetInput): boolean {
+function calibrationScheduleFitsPolicy(input: ParsedNavigateToSceneTargetInput): boolean {
   const actionCount = CALIBRATION_SCHEDULE.length + 1;
   const dragPx = CALIBRATION_SCHEDULE.reduce((sum, step) => sum + (
     step.action.kind === "look_drag" ? Math.hypot(step.action.dxPx, step.action.dyPx) : 0
@@ -1976,7 +1992,7 @@ export function registerNavigationTargetTools(server: McpServer) {
     {
       description:
         "Select one fresh largest-horizontal scene target, bind its exact runtime and qemu window, and run bounded guide acquisition/calibration/navigation through settled shared camera routes. Output remains structural and every returned diagnostic requires an explicit LOOK.",
-      inputSchema: navigateToSceneTargetInputSchema,
+      inputSchema: navigationTargetToolInputSchema,
     },
     async (candidate: unknown) => {
       const input = navigateToSceneTargetInputSchema.parse(candidate);
