@@ -7,7 +7,7 @@ environment and content seats on it; a fully-virtual Full-Space app (stageStyle 
 explicit, fully-supported opt-in.
 
 This is the proven first-run path, on the doors surface (`PICO_MCP_SURFACE=doors` — 18
-intent-level tools instead of the full surface: 254 tools on macOS (installed-tarball runtime-measured) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run). It's the exact sequence a docs-only run on a fresh clone
+intent-level tools instead of the full surface: 255 tools on macOS (installed-tarball runtime-measured) versus a source-derived 252 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run). It's the exact sequence a docs-only run on a fresh clone
 followed on 2026-07-21.
 
 ## 1. Register (once)
@@ -148,7 +148,7 @@ stay PICO Swan / 6.1 territory.
 
 ## The full surface
 
-The doors surface is 18 tools; the full server exposes 254 tools on macOS (installed-tarball runtime-measured) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run; four macOS host-GUI tools collapse to one
+The doors surface is 18 tools; the full server exposes 255 tools on macOS (installed-tarball runtime-measured) versus a source-derived 252 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run; four macOS host-GUI tools collapse to one
 explanatory stub on non-macOS hosts. `build_and_run` is currently POSIX-host-only; its native
 Windows contract has not been executed or measured. Set `PICO_MCP_SURFACE=full` (or
 just add a full-surface server alongside) to get everything — codegen for every SDK subsystem,

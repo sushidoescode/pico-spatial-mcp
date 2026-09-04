@@ -160,6 +160,7 @@ import { registerObservationTools } from "./observation.js";
 import { registerSceneAnchorTools } from "./sceneanchors.js";
 import { registerNavigationTargetTools } from "./navigationtarget.js";
 import { registerBoundaryExperimentTools } from "./boundaryexperiment.js";
+import { registerInAppLocomotionTools } from "./worldlocomotion.js";
 
 // The handshake version comes from package.json (dist/ sits one level below it both in the repo
 // and in the installed package) — a hardcoded string here drifted to 6.0.0 while the package
@@ -389,6 +390,7 @@ if (!doorsSurfaceActive()) {
   registerUsdRenderTools(server);
   registerIblBakeTools(server);
   registerBoundaryExperimentTools(server);
+  registerInAppLocomotionTools(server);
 }
 registerDoorTools(server);
 // First-light is available on both surfaces; advanced prompts are full-only.
