@@ -33,6 +33,15 @@ import { createRunReceiptFixture, makePng, sha256 } from "./helpers/runreceipt-f
 const HASH = "a".repeat(64);
 const ROOT_INCARNATION = "11111111-1111-4111-8111-111111111111";
 const REPLACEMENT_INCARNATION = "22222222-2222-4222-8222-222222222222";
+const DEVICE_CALL_KINDS = new Set([
+  "snapshotPrior", "stop", "launch", "launchWindow", "launchObservation", "probeRuntime",
+  "safety", "capability", "hmd", "monitor", "capture", "continuity", "locomote",
+  "nonceCleanup", "marker", "logs", "relaunchPrior", "finalProcess",
+]);
+
+function deviceCalls(calls) {
+  return calls.filter((call) => DEVICE_CALL_KINDS.has(call.kind));
+}
 
 function completedStopReceipt(context) {
   return {
@@ -43,10 +52,38 @@ function completedStopReceipt(context) {
   };
 }
 
+function cleanPidAbsenceReceipt(context, overrides = {}) {
+  return {
+    status: "clean_pidof_absence",
+    serial: context.serial,
+    packageName: context.packageName,
+    exitCode: 1,
+    timedOut: false,
+    stdout: "",
+    stderr: "",
+    ...overrides,
+  };
+}
+
+function completedPrepareClearanceReceipt(context, pidOverrides = {}) {
+  return {
+    status: "prepare_clearance_completed",
+    stopReceipt: completedStopReceipt(context),
+    pidAbsence: cleanPidAbsenceReceipt(context, pidOverrides),
+  };
+}
+
 function externalArtifactRoot(t, label = "run") {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), "pico-worldlocomotion-test-"));
   t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
   return path.join(parent, label);
+}
+
+function committedActionPayloads(artifactRoot) {
+  return fs.readdirSync(path.join(artifactRoot, "action-records"))
+    .filter((name) => /^[0-9]{6}\.json$/.test(name))
+    .sort()
+    .map((name) => JSON.parse(fs.readFileSync(path.join(artifactRoot, "action-records", name), "utf8")).payload);
 }
 
 function prepareRouteInput(t, overrides = {}) {
@@ -80,9 +117,9 @@ function prepareRouteInput(t, overrides = {}) {
       comparison: "byte_exact",
     },
     budgets: {
-      maxDurationMs: 220_000,
-      routeReserveMs: 60_000,
-      restorationReserveMs: 50_000,
+      maxDurationMs: 340_000,
+      routeReserveMs: 110_000,
+      restorationReserveMs: 110_000,
     },
     priorForeground: { kind: "none" },
     artifactRoot: externalArtifactRoot(t),
@@ -133,6 +170,7 @@ test("prepare schema pins a Full stage, absolute finite contiguous route, zero r
     { ...valid, budgets: { maxDurationMs: 98_000, routeReserveMs: 20_000, restorationReserveMs: 10_000 } },
     { ...valid, budgets: { ...valid.budgets, routeReserveMs: valid.capture.deadlineMs } },
     { ...valid, budgets: { ...valid.budgets, restorationReserveMs: valid.capture.deadlineMs } },
+    { ...valid, priorForeground: { kind: "non_receipt_bound", component: "com.test.fullworld/.PriorActivity" } },
     { ...valid, artifactRoot: path.join(process.cwd(), "owned-inside-repository") },
   ];
   for (const input of badInputs) assert.equal(inAppLocomotionInputSchema.safeParse(input).success, false);
@@ -152,6 +190,12 @@ test("non-Full and unknown-key prepare requests fail before any injected depende
       scenario: { ...prepareRouteInput(t).scenario, stageStyle: "1" },
       arbitraryEntityId: "AgentWorldRoot",
     })),
+  );
+  await assert.rejects(
+    orchestrator.execute(prepareRouteInput(t, {
+      priorForeground: { kind: "non_receipt_bound", component: "com.test.fullworld/.PriorActivity" },
+    })),
+    /prior|package|same/i,
   );
   assert.equal(dependencyReads, 0);
 });
@@ -435,7 +479,9 @@ async function createPreparedFixture(t, options = {}) {
     stopPackage: async (context) => {
       calls.push({ kind: "stop", context });
       if (options.stopError && context.reason === options.stopError.reason) throw new Error(options.stopError.message);
-      return completedStopReceipt(context);
+      return context.reason === "prepare_target_clearance" || context.reason === "prepare_declared_incumbent_clearance"
+        ? completedPrepareClearanceReceipt(context)
+        : completedStopReceipt(context);
     },
     launchTarget: async (context) => {
       calls.push({ kind: "launch", context });
@@ -1064,7 +1110,7 @@ test("binding, safety, dialog, and runtime-health failures all stop before route
 
 async function prepareForSteps(t, options = {}) {
   const fixture = await createPreparedFixture(t, options);
-  const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
+  const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, options.artifactHooks);
   const prepared = await orchestrator.execute(fixture.input);
   assert.equal(prepared.status, "needs_baseline_review");
   fixture.calls.length = 0;
@@ -1129,8 +1175,7 @@ test("step follows the exact BEGIN-to-END evidence order and consumes one select
   assert.equal("threshold" in result.hmdDrift.quaternion, false);
   assert.equal(fs.existsSync(result.logEvidence.path), true);
   assert.equal(result.usage.waypointAttempts, 1);
-  const stepAction = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
-    .trim().split("\n").map(JSON.parse).at(-1);
+  const stepAction = committedActionPayloads(fixture.input.artifactRoot).at(-1);
   assert.equal(stepAction.pre.safety.guardian, "1");
   assert.equal(stepAction.pre.continuity.pid, fixture.applicationBinding.pid);
   assert.deepEqual(stepAction.pre.hmdPose.position, fixture.pose.position);
@@ -1463,7 +1508,7 @@ test("prepare retries stale HMD ages with unique nonces and retains acquisition 
   const requests = fixture.calls.filter(({ kind }) => kind === "hmd");
   assert.equal(requests.length, 3);
   assert.equal(new Set(requests.map(({ input }) => input.requestId)).size, 3);
-  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
+  const action = committedActionPayloads(fixture.input.artifactRoot).at(-1);
   assert.equal(action.hmdBaselineAcquisition.attemptCount, 3);
   assert.equal(action.hmdBaselineAcquisition.acceptedSampleAgeMs, 250);
   assert.deepEqual(action.hmdBaselineAcquisition.attempts.map(({ sampleAgeMs }) => sampleAgeMs), ages);
@@ -1491,7 +1536,7 @@ test("step HMD retries preserve strict baseline-to-pre-to-post advancement and a
   const requests = fixture.calls.filter(({ kind }) => kind === "hmd");
   assert.equal(requests.length, 4);
   assert.equal(new Set(requests.map(({ input }) => input.requestId)).size, 4);
-  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
+  const action = committedActionPayloads(fixture.input.artifactRoot).at(-1);
   for (const phase of ["pre", "post"]) {
     assert.equal(action[phase].hmdAcquisition.attemptCount, 2);
     assert.equal(action[phase].hmdAcquisition.acceptedSampleAgeMs, 1);
@@ -1614,9 +1659,14 @@ test("HMD acquisition never retries temporal regression, incoherent advancement,
 });
 
 test("prepare and route admission reserve bounded HMD acquisition plus downstream evidence work", (t) => {
-  const tooShortPrepare = prepareRouteInput(t, { budgets: { maxDurationMs: 213_000, routeReserveMs: 60_000, restorationReserveMs: 50_000 } });
-  const tooShortRoute = prepareRouteInput(t, { budgets: { maxDurationMs: 220_000, routeReserveMs: 48_000, restorationReserveMs: 50_000 } });
+  const tooShortPrepare = prepareRouteInput(t, { budgets: { maxDurationMs: 329_452, routeReserveMs: 110_000, restorationReserveMs: 110_000 } });
+  const justLongEnoughPrepare = prepareRouteInput(t, {
+    artifactRoot: externalArtifactRoot(t, "prepare-publication-budget"),
+    budgets: { maxDurationMs: 329_453, routeReserveMs: 110_000, restorationReserveMs: 110_000 },
+  });
+  const tooShortRoute = prepareRouteInput(t, { budgets: { maxDurationMs: 350_000, routeReserveMs: 104_313, restorationReserveMs: 110_000 } });
   assert.equal(inAppLocomotionInputSchema.safeParse(tooShortPrepare).success, false);
+  assert.equal(inAppLocomotionInputSchema.safeParse(justLongEnoughPrepare).success, true);
   assert.equal(inAppLocomotionInputSchema.safeParse(tooShortRoute).success, false);
 });
 
@@ -1658,13 +1708,818 @@ test("step cannot complete when valid END or log evidence finishes after its fix
       };
       const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
       assert.equal(result.status, "stopped");
-      assert.equal(result.structuralStop, priorFailure ? "binding_lost" : "budget_exhausted");
-      assert.match(priorFailure ? result.cleanupError : result.primaryError, /deadline/i);
+      assert.equal(result.structuralStop, priorFailure ? "binding_lost" : phase === "END" ? "step_cleanup_failed" : "budget_exhausted");
+      assert.match(priorFailure || phase === "END" ? result.cleanupError : result.primaryError, /deadline/i);
       const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
       assert.equal(action.status, "stopped");
       assert.ok(action.logEvidence, "late but valid bracket evidence must remain retained");
     });
   }
+});
+
+test("step subdeadlines preserve every post-mutation proof when each stage consumes its admitted window", async (t) => {
+  const fixture = await prepareForSteps(t, {
+    inputOverrides: {
+      budgets: { maxDurationMs: 350_000, routeReserveMs: 104_314, restorationReserveMs: 110_000 },
+    },
+  });
+  let nowNs = 2_000_000_000n;
+  let preHmdBoundaryReads = 0;
+  fixture.dependencies.monotonicNs = () => {
+    const sampled = nowNs;
+    if (preHmdBoundaryReads === 1) {
+      nowNs += 1n;
+      preHmdBoundaryReads = 2;
+    } else if (preHmdBoundaryReads === 2) {
+      // Complete the HMD wrapper one nanosecond before its strict deadline,
+      // then model a sub-millisecond handoff before locomotion admission.
+      nowNs += 2n;
+      preHmdBoundaryReads = 0;
+    } else {
+      nowNs += 1n;
+    }
+    return sampled;
+  };
+  const consumeUntil = (deadline) => {
+    const target = BigInt(deadline) - 1n;
+    if (target > nowNs) nowNs = target;
+  };
+  const originalLocomotion = fixture.dependencies.requestLocomotion;
+  fixture.dependencies.requestLocomotion = async (input) => {
+    const result = await originalLocomotion(input);
+    consumeUntil(input.deadlineMonotonicNs);
+    return result;
+  };
+  const originalNonceCleanup = fixture.dependencies.cleanupLocomotionNonce;
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    const result = await originalNonceCleanup(context);
+    consumeUntil(context.deadlineMonotonicNs);
+    return result;
+  };
+  const originalCapture = fixture.dependencies.captureSettled;
+  fixture.dependencies.captureSettled = async (input) => {
+    const result = await originalCapture(input);
+    assert.equal(input.deadlineMs, fixture.input.capture.deadlineMs,
+      "the settled capture keeps its complete caller-configured deadline");
+    const target = BigInt(result.receipt.deadlineMonotonicNs) - 1n;
+    if (target > nowNs) nowNs = target;
+    return result;
+  };
+  const originalHmd = fixture.dependencies.requestHmdPose;
+  fixture.dependencies.requestHmdPose = async (input) => {
+    const result = await originalHmd(input);
+    if (input.requestId.includes("_pre_")) {
+      const target = BigInt(input.deadlineMonotonicNs) - 2n;
+      if (target > nowNs) nowNs = target;
+      preHmdBoundaryReads = 1;
+    } else if (input.requestId.includes("_post_")) {
+      const target = BigInt(input.deadlineMonotonicNs) - 2n;
+      if (target > nowNs) nowNs = target;
+    }
+    return result;
+  };
+  const originalSafety = fixture.dependencies.sampleSafety;
+  fixture.dependencies.sampleSafety = async (context) => {
+    const result = await originalSafety(context);
+    if (context.phase.endsWith("_pre") || context.phase.endsWith("_post")) consumeUntil(context.deadlineMonotonicNs);
+    return result;
+  };
+  const originalContinuity = fixture.dependencies.sampleContinuity;
+  fixture.dependencies.sampleContinuity = async (context) => {
+    const result = await originalContinuity(context);
+    if (context.phase.endsWith("_pre") || context.phase.endsWith("_post")) consumeUntil(context.deadlineMonotonicNs);
+    return result;
+  };
+  const originalMarker = fixture.dependencies.emitMarker;
+  fixture.dependencies.emitMarker = async (context) => {
+    const result = await originalMarker(context);
+    if (context.marker.endsWith("_BEGIN") || context.marker.endsWith("_END")) consumeUntil(context.deadlineMonotonicNs);
+    return result;
+  };
+  const originalLogs = fixture.dependencies.collectStepLogs;
+  fixture.dependencies.collectStepLogs = async (context) => {
+    const result = await originalLogs(context);
+    const target = BigInt(context.deadlineMonotonicNs) - 2n;
+    if (target > nowNs) nowNs = target;
+    return result;
+  };
+  fixture.calls.length = 0;
+
+  const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+  assert.equal(result.status, "needs_waypoint_review", JSON.stringify(result));
+  const locomotionInput = fixture.calls.find((call) => call.kind === "locomote").input;
+  const beginDeadline = BigInt(fixture.calls.find((call) => call.kind === "marker" && call.context.marker.endsWith("_BEGIN")).context.deadlineMonotonicNs);
+  const preSafetyDeadline = BigInt(fixture.calls.find((call) => call.kind === "safety" && call.context.phase.endsWith("_pre")).context.deadlineMonotonicNs);
+  const preContinuityDeadline = BigInt(fixture.calls.find((call) => call.kind === "continuity" && call.context.phase.endsWith("_pre")).context.deadlineMonotonicNs);
+  const preHmdDeadline = BigInt(fixture.calls.find((call) => call.kind === "hmd" && call.input.requestId.includes("_pre_")).input.deadlineMonotonicNs);
+  const locomotionDeadline = BigInt(locomotionInput.deadlineMonotonicNs);
+  const nonceDeadline = BigInt(fixture.calls.find((call) => call.kind === "nonceCleanup").context.deadlineMonotonicNs);
+  const postHmdDeadline = BigInt(fixture.calls.find((call) => call.kind === "hmd" && call.input.requestId.includes("_post_")).input.deadlineMonotonicNs);
+  const postSafetyDeadline = BigInt(fixture.calls.find((call) => call.kind === "safety" && call.context.phase.endsWith("_post")).context.deadlineMonotonicNs);
+  const postContinuityDeadline = BigInt(fixture.calls.find((call) => call.kind === "continuity" && call.context.phase.endsWith("_post")).context.deadlineMonotonicNs);
+  const endDeadline = BigInt(fixture.calls.find((call) => call.kind === "marker" && call.context.marker.endsWith("_END")).context.deadlineMonotonicNs);
+  const logDeadline = BigInt(fixture.calls.find((call) => call.kind === "logs").context.deadlineMonotonicNs);
+  const action = committedActionPayloads(fixture.input.artifactRoot).at(-1);
+  const captureDeadline = BigInt(action.captureInvocation.phaseDeadlineMonotonicNs);
+  assert.ok(preSafetyDeadline - beginDeadline >= 5_001_000_000n);
+  assert.ok(preContinuityDeadline - preSafetyDeadline >= 10_001_000_000n);
+  assert.ok(preHmdDeadline - preContinuityDeadline >= 13_150_000_000n,
+    "the pre-HMD transaction retains its complete acquisition window after continuity");
+  assert.ok(locomotionDeadline - preHmdDeadline >= 12_151_000_000n);
+  assert.ok(nonceDeadline - locomotionDeadline >= 2_851_000_000n);
+  assert.equal(locomotionInput.controlTimeoutMs, 12_151,
+    "the latest valid pre-HMD completion preserves the complete bridge-plus-glide envelope");
+  assert.ok(captureDeadline - nonceDeadline >= 8_002_000_000n);
+  assert.ok(postSafetyDeadline - captureDeadline >= 18_152_000_000n,
+    "capture phase preserves one full HMD window, its handoff, and the safety window");
+  assert.ok(postSafetyDeadline - postHmdDeadline >= 5_001_000_000n);
+  assert.ok(postContinuityDeadline - postSafetyDeadline >= 10_001_000_000n);
+  assert.ok(endDeadline - postContinuityDeadline >= 5_001_000_000n);
+  assert.ok(logDeadline - endDeadline >= 10_001_000_000n);
+  assert.deepEqual(
+    fixture.calls.filter((call) => ["locomote", "nonceCleanup", "capture", "hmd", "safety", "continuity", "marker", "logs"].includes(call.kind))
+      .slice(-8).map((call) => call.kind),
+    ["locomote", "nonceCleanup", "capture", "hmd", "safety", "continuity", "marker", "logs"],
+  );
+});
+
+test("pre-step continuity completing at its exact boundary starts no HMD read or movement", async (t) => {
+  const fixture = await prepareForSteps(t, {
+    inputOverrides: {
+      budgets: { maxDurationMs: 350_000, routeReserveMs: 104_314, restorationReserveMs: 110_000 },
+    },
+  });
+  let nowNs = 2_000_000_000n;
+  fixture.dependencies.monotonicNs = () => nowNs++;
+  const continuity = fixture.dependencies.sampleContinuity;
+  fixture.dependencies.sampleContinuity = async (context) => {
+    const result = await continuity(context);
+    if (context.phase.endsWith("_pre")) nowNs = BigInt(context.deadlineMonotonicNs);
+    return result;
+  };
+  fixture.calls.length = 0;
+
+  const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+  assert.equal(result.status, "stopped");
+  assert.equal(result.structuralStop, "budget_exhausted");
+  assert.match(result.primaryError, /pre-step continuity.*deadline/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "hmd" || call.kind === "locomote"), false);
+});
+
+test("an operation completing exactly at its subdeadline cannot consume the next proof window", async (t) => {
+  const fixture = await prepareForSteps(t, {
+    inputOverrides: {
+      budgets: { maxDurationMs: 340_000, routeReserveMs: 110_000, restorationReserveMs: 110_000 },
+    },
+  });
+  let nowNs = 2_000_000_000n;
+  fixture.dependencies.monotonicNs = () => nowNs++;
+  const originalCleanup = fixture.dependencies.cleanupLocomotionNonce;
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    const receipt = await originalCleanup(context);
+    nowNs = BigInt(context.deadlineMonotonicNs);
+    return receipt;
+  };
+  let captureCalls = 0;
+  const originalCapture = fixture.dependencies.captureSettled;
+  fixture.dependencies.captureSettled = async (input) => {
+    captureCalls += 1;
+    return originalCapture(input);
+  };
+  fixture.calls.length = 0;
+
+  const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+  assert.equal(result.status, "stopped");
+  assert.equal(result.structuralStop, "budget_exhausted");
+  assert.match(result.primaryError, /nonce cleanup.*deadline/i);
+  assert.equal(captureCalls, 0, "capture cannot inherit time from an exactly exhausted nonce-cleanup window");
+});
+
+test("step action publication cannot consume the protected restoration handoff", async (t) => {
+  const fixture = await createPreparedFixture(t, {
+    inputOverrides: {
+      budgets: { maxDurationMs: 340_000, routeReserveMs: 110_000, restorationReserveMs: 110_000 },
+    },
+  });
+  let nowNs = 2_000_000_000n;
+  fixture.dependencies.monotonicNs = () => nowNs++;
+  let proofDeadlineNs = null;
+  const collectLogs = fixture.dependencies.collectStepLogs;
+  fixture.dependencies.collectStepLogs = async (context) => {
+    proofDeadlineNs = BigInt(context.deadlineMonotonicNs);
+    return collectLogs(context);
+  };
+  const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+    beforeActionRecordCommit({ action }) {
+      if (action === "step") {
+        assert.ok(proofDeadlineNs !== null);
+        nowNs = proofDeadlineNs + 5_001_000_000n;
+      }
+    },
+  });
+  const prepared = await orchestrator.execute(fixture.input);
+  assert.equal(prepared.status, "needs_baseline_review");
+
+  const stepped = await orchestrator.execute(stepRequest(
+    { ...fixture, prepared },
+    reviewFor(prepared.requiredReview[0]),
+  ));
+
+  assert.equal(stepped.status, "stopped");
+  assert.equal(stepped.structuralStop, "action_audit_failed");
+  assert.match(stepped.primaryError, /action.*deadline/i);
+  const recordsBeforeRestore = fs.readdirSync(path.join(fixture.input.artifactRoot, "action-records"))
+    .filter((name) => /^\d{6}\.json$/.test(name));
+  assert.deepEqual(recordsBeforeRestore, ["000001.json"], "late step action bytes cannot cross the commit fence");
+
+  const restored = await orchestrator.execute({
+    action: "restore",
+    runId: prepared.runId,
+    reviewedPriorFrame: reviewFor(stepped.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+});
+
+test("completed step and restore defer every post-commit maintenance hook off their deadline handoffs", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  let nowNs = 2_000_000_000n;
+  fixture.dependencies.monotonicNs = () => nowNs++;
+  let protectedActionDeadlineNs = null;
+  let lateMaintenanceHooks = 0;
+  let sawPendingStepStageAtRestoreEntry = false;
+  const originalLogs = fixture.dependencies.collectStepLogs;
+  fixture.dependencies.collectStepLogs = async (context) => {
+    const receipt = await originalLogs(context);
+    if (!context.beginMarker.endsWith("_PREPARE_BEGIN")) {
+      protectedActionDeadlineNs = BigInt(context.deadlineMonotonicNs) + 5_001_000_000n;
+    }
+    return receipt;
+  };
+  const originalContinuity = fixture.dependencies.sampleContinuity;
+  fixture.dependencies.sampleContinuity = async (context) => {
+    if (context.phase === "restore_pre") {
+      sawPendingStepStageAtRestoreEntry = fs.readdirSync(path.join(fixture.input.artifactRoot, "action-records"))
+        .some((name) => /^\.[0-9]{6}\.[a-f0-9]{32}\.tmp$/.test(name));
+    }
+    return originalContinuity(context);
+  };
+  const advanceIfProtected = ({ action }) => {
+    if (action !== "step" && action !== "restore") return;
+    lateMaintenanceHooks += 1;
+    assert.ok(protectedActionDeadlineNs !== null);
+    nowNs = protectedActionDeadlineNs;
+  };
+  const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+    afterActionRecordLink: advanceIfProtected,
+    afterActionViewMaterialization: advanceIfProtected,
+  });
+  const prepared = await orchestrator.execute(fixture.input);
+  assert.equal(prepared.status, "needs_baseline_review");
+
+  const stepped = await orchestrator.execute(stepRequest(
+    { ...fixture, prepared },
+    reviewFor(prepared.requiredReview[0]),
+  ));
+
+  assert.equal(stepped.status, "needs_waypoint_review", JSON.stringify(stepped));
+  assert.equal(stepped.actionAuditMaintenance.status, "repair_pending");
+  assert.equal(lateMaintenanceHooks, 0, "repair-only post-commit hooks must not run on the protected handoff");
+  assert.equal(committedActionPayloads(fixture.input.artifactRoot).at(-1).status, "completed");
+
+  const restored = await orchestrator.execute({
+    action: "restore",
+    runId: prepared.runId,
+    reviewedPriorFrame: reviewFor(stepped.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  assert.equal(restored.actionAuditMaintenance.status, "repair_pending");
+  assert.equal(sawPendingStepStageAtRestoreEntry, true,
+    "restore entry validates but does not repair the prior committed step outside action-publication time");
+  assert.equal(lateMaintenanceHooks, 0);
+  assert.equal(committedActionPayloads(fixture.input.artifactRoot).at(-1).action, "restore");
+});
+
+test("minimum restoration reserve preserves every mandatory stage under boundary consumption", async (t) => {
+  const priorComponent = "com.prior.unbound/.MainActivity";
+  let nowNs = null;
+  let restoreActionDeadlineNs = null;
+  const fixture = await prepareForSteps(t, {
+    inputOverrides: {
+      budgets: { maxDurationMs: 370_000, routeReserveMs: 110_000, restorationReserveMs: 104_166 },
+      priorForeground: { kind: "non_receipt_bound", component: priorComponent },
+    },
+    priorSnapshot: { component: priorComponent, packageName: "com.prior.unbound", userInstalled: true },
+    artifactHooks: {
+      beforeActionRecordCommit({ action }) {
+        if (action === "restore" && nowNs !== null) {
+          assert.ok(restoreActionDeadlineNs !== null);
+          nowNs = restoreActionDeadlineNs - 2n;
+        }
+      },
+    },
+  });
+  const stepped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(stepped.status, "needs_waypoint_review");
+
+  nowNs = 2_000_000_000n;
+  fixture.dependencies.monotonicNs = () => nowNs++;
+  const finishBefore = (deadline) => {
+    const target = BigInt(deadline) - 1n;
+    if (target > nowNs) nowNs = target;
+  };
+  const continuity = fixture.dependencies.sampleContinuity;
+  fixture.dependencies.sampleContinuity = async (context) => {
+    const result = await continuity(context);
+    if (context.phase === "restore_pre" || context.phase === "restore_post_capture") {
+      finishBefore(context.deadlineMonotonicNs);
+    }
+    return result;
+  };
+  const capability = fixture.dependencies.probeCapability;
+  fixture.dependencies.probeCapability = async (input) => {
+    const result = await capability(input);
+    if (input.tag === "restore-pre" || input.tag === "restore-post-capture") {
+      finishBefore(input.deadlineMonotonicNs);
+    }
+    return result;
+  };
+  const locomote = fixture.dependencies.requestLocomotion;
+  fixture.dependencies.requestLocomotion = async (input) => {
+    const result = await locomote(input);
+    if (input.tag === "restore") finishBefore(input.deadlineMonotonicNs);
+    return result;
+  };
+  const nonceCleanup = fixture.dependencies.cleanupLocomotionNonce;
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    const result = await nonceCleanup(context);
+    if (context.tag === "restore") finishBefore(context.deadlineMonotonicNs);
+    return result;
+  };
+  const capture = fixture.dependencies.captureSettled;
+  fixture.dependencies.captureSettled = async (input) => {
+    const result = await capture(input);
+    if (input.outPath.includes("999-restored")) {
+      assert.equal(input.deadlineMs, fixture.input.capture.deadlineMs,
+        "restoration retains the complete caller-configured capture deadline");
+      finishBefore(result.receipt.deadlineMonotonicNs);
+    }
+    return result;
+  };
+  const stop = fixture.dependencies.stopPackage;
+  fixture.dependencies.stopPackage = async (context) => {
+    const result = await stop(context);
+    if (context.reason === "restore_run_owned_target") finishBefore(context.deadlineMonotonicNs);
+    return result;
+  };
+  const finalProcess = fixture.dependencies.probeFinalProcessState;
+  fixture.dependencies.probeFinalProcessState = async (context) => {
+    const result = await finalProcess(context);
+    finishBefore(context.deadlineMonotonicNs);
+    return result;
+  };
+  const relaunch = fixture.dependencies.relaunchPrior;
+  fixture.dependencies.relaunchPrior = async (context) => {
+    const result = await relaunch(context);
+    finishBefore(context.deadlineMonotonicNs);
+    return result;
+  };
+  const safety = fixture.dependencies.sampleSafety;
+  fixture.dependencies.sampleSafety = async (context) => {
+    const result = await safety(context);
+    if (context.phase === "restore_after_prior_disposition") {
+      finishBefore(context.deadlineMonotonicNs);
+      restoreActionDeadlineNs = BigInt(context.deadlineMonotonicNs) + 5_001_000_000n;
+    }
+    return result;
+  };
+  fixture.calls.length = 0;
+
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stepped.requiredReview[0]),
+  });
+
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  const preContinuityDeadline = BigInt(fixture.calls.find((call) => call.kind === "continuity" && call.context.phase === "restore_pre").context.deadlineMonotonicNs);
+  const preCapabilityDeadline = BigInt(fixture.calls.find((call) => call.kind === "capability" && call.input.tag === "restore-pre").input.deadlineMonotonicNs);
+  const locomotionDeadline = BigInt(fixture.calls.find((call) => call.kind === "locomote" && call.input.tag === "restore").input.deadlineMonotonicNs);
+  const nonceDeadline = BigInt(fixture.calls.find((call) => call.kind === "nonceCleanup" && call.context.tag === "restore").context.deadlineMonotonicNs);
+  const postContinuityDeadline = BigInt(fixture.calls.find((call) => call.kind === "continuity" && call.context.phase === "restore_post_capture").context.deadlineMonotonicNs);
+  const postCapabilityDeadline = BigInt(fixture.calls.find((call) => call.kind === "capability" && call.input.tag === "restore-post-capture").input.deadlineMonotonicNs);
+  const targetStopDeadline = BigInt(fixture.calls.find((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").context.deadlineMonotonicNs);
+  const finalProcessCalls = fixture.calls.filter((call) => call.kind === "finalProcess");
+  assert.equal(finalProcessCalls.length, 2);
+  const targetAbsenceDeadline = BigInt(finalProcessCalls[0].context.deadlineMonotonicNs);
+  const priorRelaunchDeadline = BigInt(fixture.calls.find((call) => call.kind === "relaunchPrior").context.deadlineMonotonicNs);
+  const finalProcessDeadline = BigInt(finalProcessCalls[1].context.deadlineMonotonicNs);
+  const postStopSafetyDeadline = BigInt(fixture.calls.find((call) => call.kind === "safety" && call.context.phase === "restore_after_prior_disposition").context.deadlineMonotonicNs);
+  const restoreAction = committedActionPayloads(fixture.input.artifactRoot).at(-1);
+  const captureDeadline = BigInt(restoreAction.captureInvocation.phaseDeadlineMonotonicNs);
+  assert.ok(preCapabilityDeadline - preContinuityDeadline >= 11_651_000_000n);
+  assert.ok(locomotionDeadline - preCapabilityDeadline >= 12_151_000_000n);
+  assert.ok(nonceDeadline - locomotionDeadline >= 2_851_000_000n);
+  assert.ok(captureDeadline - nonceDeadline >= 8_002_000_000n);
+  assert.ok(postContinuityDeadline - captureDeadline >= 10_001_000_000n);
+  assert.ok(postCapabilityDeadline - postContinuityDeadline >= 11_651_000_000n);
+  assert.ok(targetStopDeadline - postCapabilityDeadline >= 5_001_000_000n);
+  assert.ok(targetAbsenceDeadline - targetStopDeadline >= 5_001_000_000n);
+  assert.ok(priorRelaunchDeadline - targetAbsenceDeadline >= 7_852_000_000n,
+    "a skipped post-stop nonce stage keeps both its 2.851s window and the relaunch handoff");
+  assert.ok(finalProcessDeadline - priorRelaunchDeadline >= 5_001_000_000n);
+  assert.ok(postStopSafetyDeadline - finalProcessDeadline >= 5_001_000_000n);
+  assert.equal(nowNs, restoreActionDeadlineNs,
+    "pre-link and post-link fence samples finish at deadline-minus-two and deadline-minus-one");
+  assert.equal(restored.actionAuditMaintenance.status, "repair_pending");
+});
+
+test("the minimum restoration reserve retains both live and post-stop nonce windows", async (t) => {
+  let nowNs = null;
+  let restoreActionDeadlineNs = null;
+  const fixture = await prepareForSteps(t, {
+    inputOverrides: {
+      budgets: { maxDurationMs: 370_000, routeReserveMs: 110_000, restorationReserveMs: 104_166 },
+    },
+    artifactHooks: {
+      beforeActionRecordCommit({ action }) {
+        if (action === "restore" && nowNs !== null) {
+          assert.ok(restoreActionDeadlineNs !== null);
+          nowNs = restoreActionDeadlineNs - 3n;
+        }
+      },
+    },
+  });
+  nowNs = 2_000_000_000n;
+  fixture.dependencies.monotonicNs = () => nowNs++;
+  const finishBefore = (deadline) => {
+    const target = BigInt(deadline) - 1n;
+    if (target > nowNs) nowNs = target;
+  };
+  const continuity = fixture.dependencies.sampleContinuity;
+  fixture.dependencies.sampleContinuity = async (context) => {
+    const result = await continuity(context);
+    if (context.phase === "restore_pre") finishBefore(context.deadlineMonotonicNs);
+    return result;
+  };
+  const capability = fixture.dependencies.probeCapability;
+  fixture.dependencies.probeCapability = async (input) => {
+    const result = await capability(input);
+    if (input.tag === "restore-pre") finishBefore(input.deadlineMonotonicNs);
+    return result;
+  };
+  const locomote = fixture.dependencies.requestLocomotion;
+  fixture.dependencies.requestLocomotion = async (input) => {
+    const result = await locomote(input);
+    if (input.tag === "restore") finishBefore(input.deadlineMonotonicNs);
+    return result;
+  };
+  const cleanup = fixture.dependencies.cleanupLocomotionNonce;
+  let cleanupCount = 0;
+  fixture.dependencies.cleanupLocomotionNonce = async (context) => {
+    const result = await cleanup(context);
+    finishBefore(context.deadlineMonotonicNs);
+    cleanupCount += 1;
+    if (cleanupCount === 1) delete result.finalizationSha256;
+    return result;
+  };
+  const stop = fixture.dependencies.stopPackage;
+  fixture.dependencies.stopPackage = async (context) => {
+    const result = await stop(context);
+    if (context.reason === "restore_run_owned_target") finishBefore(context.deadlineMonotonicNs);
+    return result;
+  };
+  const finalProcess = fixture.dependencies.probeFinalProcessState;
+  fixture.dependencies.probeFinalProcessState = async (context) => {
+    const result = await finalProcess(context);
+    finishBefore(context.deadlineMonotonicNs);
+    return result;
+  };
+  const safety = fixture.dependencies.sampleSafety;
+  fixture.dependencies.sampleSafety = async (context) => {
+    const result = await safety(context);
+    if (context.phase === "restore_after_prior_disposition") {
+      finishBefore(context.deadlineMonotonicNs);
+      restoreActionDeadlineNs = BigInt(context.deadlineMonotonicNs) + 5_001_000_000n;
+    }
+    return result;
+  };
+  fixture.calls.length = 0;
+
+  const failed = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  });
+
+  assert.equal(failed.status, "restore_failed");
+  assert.match(failed.primaryError, /nonce|finalization/i);
+  const cleanupCalls = fixture.calls.filter((call) => call.kind === "nonceCleanup");
+  assert.equal(cleanupCalls.length, 2);
+  assert.equal(cleanupCalls[0].context.processStopped, undefined);
+  assert.equal(cleanupCalls[1].context.processStopped, true);
+  assert.equal(cleanupCalls[1].context.probeOnly, true);
+  assert.equal(nowNs, restoreActionDeadlineNs);
+  const action = committedActionPayloads(fixture.input.artifactRoot).at(-1);
+  assert.equal(action.status, "failed");
+  assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(cleanupCalls[1].context));
+});
+
+test("restore cannot complete when final safety reaches its exact subdeadline", async (t) => {
+  const fixture = await prepareForSteps(t);
+  const stepped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(stepped.status, "needs_waypoint_review");
+  let nowNs = 2_000_000_000n;
+  fixture.dependencies.monotonicNs = () => nowNs++;
+  const safety = fixture.dependencies.sampleSafety;
+  fixture.dependencies.sampleSafety = async (context) => {
+    const result = await safety(context);
+    if (context.phase === "restore_after_prior_disposition") nowNs = BigInt(context.deadlineMonotonicNs);
+    return result;
+  };
+  fixture.calls.length = 0;
+
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stepped.requiredReview[0]),
+  });
+
+  assert.equal(restored.status, "restore_failed");
+  assert.match(restored.cleanupError, /global safety.*subdeadline/i);
+  assert.notEqual(committedActionPayloads(fixture.input.artifactRoot).at(-1).status, "completed");
+});
+
+test("restore action cannot commit at its exact deadline and a fresh re-entrant attempt converges", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  let nowNs = 2_000_000_000n;
+  fixture.dependencies.monotonicNs = () => nowNs++;
+  let restoreActionDeadlineNs = null;
+  let expireFirstRestoreAction = true;
+  const safety = fixture.dependencies.sampleSafety;
+  fixture.dependencies.sampleSafety = async (context) => {
+    const result = await safety(context);
+    if (context.phase === "restore_after_prior_disposition") {
+      restoreActionDeadlineNs = BigInt(context.deadlineMonotonicNs) + 5_001_000_000n;
+    }
+    return result;
+  };
+  const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+    beforeActionRecordCommit({ action }) {
+      if (action === "restore" && expireFirstRestoreAction) {
+        assert.ok(restoreActionDeadlineNs !== null);
+        nowNs = restoreActionDeadlineNs;
+        expireFirstRestoreAction = false;
+      }
+    },
+  });
+  const prepared = await orchestrator.execute(fixture.input);
+  assert.equal(prepared.status, "needs_baseline_review");
+  const stepped = await orchestrator.execute(stepRequest(
+    { ...fixture, prepared },
+    reviewFor(prepared.requiredReview[0]),
+  ));
+  assert.equal(stepped.status, "needs_waypoint_review");
+
+  const first = await orchestrator.execute({
+    action: "restore",
+    runId: prepared.runId,
+    reviewedPriorFrame: reviewFor(stepped.requiredReview[0]),
+  });
+  assert.equal(first.status, "restore_failed");
+  assert.equal(first.structuralStop, "action_audit_failed");
+  assert.match(first.primaryError, /restore action.*deadline/i);
+  assert.equal(committedActionPayloads(fixture.input.artifactRoot).some((action) => action.action === "restore"), false);
+
+  const retried = await orchestrator.execute({
+    action: "restore",
+    runId: prepared.runId,
+    reviewedPriorFrame: reviewFor(first.requiredReview[0]),
+  });
+  assert.equal(retried.status, "restored_needs_review", JSON.stringify(retried));
+  assert.equal(committedActionPayloads(fixture.input.artifactRoot).at(-1).action, "restore");
+});
+
+test("a semantic action link completing at its deadline is retained but reported as publication-unproven", async (t) => {
+  await t.test("completed step", async (t) => {
+    const fixture = await prepareForSteps(t);
+    let nowNs = 2_000_000_000n;
+    fixture.dependencies.monotonicNs = () => nowNs++;
+    let actionDeadlineNs = null;
+    const logs = fixture.dependencies.collectStepLogs;
+    fixture.dependencies.collectStepLogs = async (context) => {
+      const result = await logs(context);
+      if (!context.beginMarker.endsWith("_PREPARE_BEGIN")) {
+        actionDeadlineNs = BigInt(context.deadlineMonotonicNs) + 5_001_000_000n;
+      }
+      return result;
+    };
+    const originalLinkSync = fs.linkSync;
+    let arm = true;
+    fs.linkSync = function linkThenExpire(source, target) {
+      const result = originalLinkSync.apply(this, arguments);
+      if (arm && path.basename(String(target)) === "000002.json") {
+        arm = false;
+        assert.ok(actionDeadlineNs !== null);
+        nowNs = actionDeadlineNs;
+      }
+      return result;
+    };
+    t.after(() => { fs.linkSync = originalLinkSync; });
+    fixture.calls.length = 0;
+
+    const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+    assert.equal(stopped.status, "stopped");
+    assert.equal(stopped.structuralStop, "action_audit_failed");
+    assert.match(stopped.primaryError, /committed.*publication deadline.*unproven/i);
+    assert.equal(stopped.usage.successfulWaypoints, 1,
+      "the state must retain the physical facts already committed in the immutable completed action");
+    const actions = committedActionPayloads(fixture.input.artifactRoot);
+    assert.equal(actions.filter((entry) => entry.action === "step").length, 1);
+    assert.equal(actions.at(-1).status, "completed");
+    assert.equal(stopped.actionAuditMaintenance.status, "repair_pending");
+    assert.equal(stopped.actionAuditMaintenance.publicationIncidents.at(-1).phase, "after_commit");
+
+    fixture.calls.length = 0;
+    const restored = await fixture.orchestrator.execute({
+      action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+    });
+    assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+    assert.equal(committedActionPayloads(fixture.input.artifactRoot).at(-1)
+      .priorActionAuditMaintenance.publicationIncidents.length, 1);
+  });
+
+  await t.test("completed restore", async (t) => {
+    const fixture = await prepareForSteps(t);
+    let nowNs = 2_000_000_000n;
+    fixture.dependencies.monotonicNs = () => nowNs++;
+    let actionDeadlineNs = null;
+    const safety = fixture.dependencies.sampleSafety;
+    fixture.dependencies.sampleSafety = async (context) => {
+      const result = await safety(context);
+      if (context.phase === "restore_after_prior_disposition") {
+        actionDeadlineNs = BigInt(context.deadlineMonotonicNs) + 5_001_000_000n;
+      }
+      return result;
+    };
+    const originalLinkSync = fs.linkSync;
+    let arm = true;
+    fs.linkSync = function linkThenExpire(source, target) {
+      const result = originalLinkSync.apply(this, arguments);
+      if (arm && path.basename(String(target)) === "000002.json") {
+        arm = false;
+        assert.ok(actionDeadlineNs !== null);
+        nowNs = actionDeadlineNs;
+      }
+      return result;
+    };
+    t.after(() => { fs.linkSync = originalLinkSync; });
+    fixture.calls.length = 0;
+
+    const failed = await fixture.orchestrator.execute({
+      action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview),
+    });
+
+    assert.equal(failed.status, "restore_failed");
+    assert.equal(failed.structuralStop, "action_audit_failed");
+    assert.match(failed.primaryError, /committed.*publication deadline.*unproven/i);
+    assert.equal(committedActionPayloads(fixture.input.artifactRoot).at(-1).status, "completed");
+    assert.equal(failed.actionAuditMaintenance.publicationIncidents.length, 1);
+
+    fixture.calls.length = 0;
+    const retried = await fixture.orchestrator.execute({
+      action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(failed.requiredReview[0]),
+    });
+    assert.equal(retried.status, "restored_needs_review", JSON.stringify(retried));
+    assert.equal(committedActionPayloads(fixture.input.artifactRoot).filter((entry) => entry.action === "restore").length, 2);
+  });
+
+  await t.test("post-link clock unavailable", async (t) => {
+    const fixture = await prepareForSteps(t);
+    let nowNs = 2_000_000_000n;
+    let failClock = false;
+    fixture.dependencies.monotonicNs = () => {
+      if (failClock) throw new Error("post-link clock unavailable");
+      return nowNs++;
+    };
+    const originalLinkSync = fs.linkSync;
+    let arm = true;
+    fs.linkSync = function linkThenBreakClock(source, target) {
+      const result = originalLinkSync.apply(this, arguments);
+      if (arm && path.basename(String(target)) === "000002.json") {
+        arm = false;
+        failClock = true;
+      }
+      return result;
+    };
+    t.after(() => { fs.linkSync = originalLinkSync; });
+
+    const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+    assert.equal(stopped.status, "stopped");
+    assert.match(stopped.primaryError, /committed.*publication deadline.*unproven.*clock unavailable/i);
+    assert.equal(stopped.actionAuditMaintenance.publicationIncidents.at(-1).reason, "clock_unavailable");
+    assert.equal(committedActionPayloads(fixture.input.artifactRoot).at(-1).status, "completed");
+
+    failClock = false;
+    const restored = await fixture.orchestrator.execute({
+      action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+    });
+    assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  });
+});
+
+test("failed step and restore audit records remain inside their fixed publication fences", async (t) => {
+  await t.test("failed step", async (t) => {
+    const fixture = await createPreparedFixture(t);
+    let nowNs = 2_000_000_000n;
+    fixture.dependencies.monotonicNs = () => nowNs++;
+    const safety = fixture.dependencies.sampleSafety;
+    fixture.dependencies.sampleSafety = async (context) => {
+      const result = await safety(context);
+      return context.phase.endsWith("_pre") ? { ...result, guardian: "0" } : result;
+    };
+    let actionDeadlineNs = null;
+    const logs = fixture.dependencies.collectStepLogs;
+    fixture.dependencies.collectStepLogs = async (context) => {
+      const result = await logs(context);
+      if (!context.beginMarker.endsWith("_PREPARE_BEGIN")) {
+        actionDeadlineNs = BigInt(context.deadlineMonotonicNs) + 5_001_000_000n;
+      }
+      return result;
+    };
+    let expire = true;
+    const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+      beforeActionRecordCommit({ action }) {
+        if (action === "step" && expire) {
+          expire = false;
+          assert.ok(actionDeadlineNs !== null);
+          nowNs = actionDeadlineNs;
+        }
+      },
+    });
+    const prepared = await orchestrator.execute(fixture.input);
+    const stopped = await orchestrator.execute(stepRequest(
+      { ...fixture, prepared }, reviewFor(prepared.requiredReview[0]),
+    ));
+    assert.equal(stopped.status, "stopped");
+    assert.equal(stopped.structuralStop, "safety_drift");
+    assert.match(stopped.primaryError, /Guardian/i);
+    assert.match(stopped.cleanupError, /step action publication.*deadline/i);
+    assert.equal(committedActionPayloads(fixture.input.artifactRoot).some((entry) => entry.action === "step"), false);
+
+    fixture.dependencies.sampleSafety = safety;
+    const restored = await orchestrator.execute({
+      action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+    });
+    assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  });
+
+  await t.test("failed restore", async (t) => {
+    const fixture = await createPreparedFixture(t);
+    let nowNs = 2_000_000_000n;
+    fixture.dependencies.monotonicNs = () => nowNs++;
+    let failContinuity = true;
+    const continuity = fixture.dependencies.sampleContinuity;
+    fixture.dependencies.sampleContinuity = async (context) => {
+      const result = await continuity(context);
+      return failContinuity && context.phase === "restore_pre" ? { ...result, foreground: "different_package" } : result;
+    };
+    let actionDeadlineNs = null;
+    const safety = fixture.dependencies.sampleSafety;
+    fixture.dependencies.sampleSafety = async (context) => {
+      const result = await safety(context);
+      if (context.phase === "restore_after_prior_disposition") {
+        actionDeadlineNs = BigInt(context.deadlineMonotonicNs) + 5_001_000_000n;
+      }
+      return result;
+    };
+    let expire = true;
+    const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+      beforeActionRecordCommit({ action }) {
+        if (action === "restore" && expire) {
+          expire = false;
+          assert.ok(actionDeadlineNs !== null);
+          nowNs = actionDeadlineNs;
+        }
+      },
+    });
+    const prepared = await orchestrator.execute(fixture.input);
+    const failed = await orchestrator.execute({
+      action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(prepared.requiredReview[0]),
+    });
+    assert.equal(failed.status, "restore_failed");
+    assert.equal(failed.structuralStop, "binding_lost");
+    assert.match(failed.primaryError, /continuity|foreground/i);
+    assert.match(failed.cleanupError, /restore action publication.*deadline/i);
+    assert.equal(committedActionPayloads(fixture.input.artifactRoot).some((entry) => entry.action === "restore"), false);
+
+    failContinuity = false;
+    const restored = await orchestrator.execute({
+      action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(failed.requiredReview[0]),
+    });
+    assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  });
 });
 
 test("prepare rejects an HMD listener sample older than the experiment freshness threshold", async (t) => {
@@ -1895,8 +2750,7 @@ test("restore is available from prepared, stepped, and stopped and selects captu
       });
       assert.ok(stops[0].context.timeoutMs > 0);
       assert.equal(restored.priorForeground.receiptFreshness, "not_evaluated_cp1");
-      const restoreAction = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
-        .trim().split("\n").map(JSON.parse).at(-1);
+      const restoreAction = committedActionPayloads(fixture.input.artifactRoot).at(-1);
       assert.deepEqual(restoreAction.locomotion.ack.target, { absolute: true, x: 0, y: 0, z: 0 });
       assert.deepEqual(restoreAction.locomotionNonceCleanup, successfulNonceCleanupReceipt(
         fixture.calls.find((call) => call.kind === "nonceCleanup").context,
@@ -2033,10 +2887,11 @@ test("restore rejects a wrong caller SHA without effects and retries after the e
     reviewedPriorFrame: reviewFor(once.baselineReview),
   };
   const first = await once.orchestrator.execute(request);
-  const callCount = once.calls.length;
+  const effectCount = deviceCalls(once.calls).length;
   const replayed = await once.orchestrator.execute(request);
-  assert.deepEqual(replayed, first);
-  assert.equal(once.calls.length, callCount);
+  assert.deepEqual({ ...replayed, actionAuditMaintenance: first.actionAuditMaintenance }, first);
+  assert.equal(replayed.actionAuditMaintenance.status, "current");
+  assert.equal(deviceCalls(once.calls).length, effectCount);
 });
 
 test("restore withholds a receipt-bound prior and records exact known-stale provenance", async (t) => {
@@ -2161,10 +3016,11 @@ test("restore retries a transient owned-target stop failure and converges on an 
   assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
   assert.equal(fixture.calls.some((call) => call.kind === "locomote" || call.kind === "capture"), false,
     "a retry must retain the already-validated zero-offset recovery instead of moving or capturing again");
-  const replayCallCount = fixture.calls.length;
+  const replayEffectCount = deviceCalls(fixture.calls).length;
   const replayed = await fixture.orchestrator.execute(retryRequest);
-  assert.deepEqual(replayed, restored);
-  assert.equal(fixture.calls.length, replayCallCount);
+  assert.deepEqual({ ...replayed, actionAuditMaintenance: restored.actionAuditMaintenance }, restored);
+  assert.equal(replayed.actionAuditMaintenance.status, "current");
+  assert.equal(deviceCalls(fixture.calls).length, replayEffectCount);
 });
 
 test("restore retry accepts the validated zero-offset recovery frame after a transient final-proof failure", async (t) => {
@@ -2242,6 +3098,68 @@ test("cleanup-only restore retries receive a fresh bounded recovery deadline aft
   assert.equal(fixture.calls.some((call) => call.kind === "locomote" || call.kind === "capture"), false);
 });
 
+test("a first restore whose original run deadline expired receives a fresh recovery envelope", async (t) => {
+  const fixture = await prepareForSteps(t);
+  let lateNowNs = 9_000_000_000_000_000n;
+  fixture.dependencies.monotonicNs = () => ++lateNowNs;
+  fixture.calls.length = 0;
+
+  const restored = await fixture.orchestrator.execute({
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  });
+
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  assert.equal(fixture.calls.some((call) => call.kind === "locomote"), true);
+  const action = committedActionPayloads(fixture.input.artifactRoot).at(-1);
+  assert.equal(action.restoreDeadlineSource, "fresh_recovery_deadline");
+});
+
+test("restore entry validation owns a fixed window and expired cleanup stages still execute cleanup-only", async (t) => {
+  for (const [label, validationDelayMs, expectCleanupOnly] of [
+    ["entry boundary", 5_001, false],
+    ["all cleanup subdeadlines", 200_000, true],
+  ]) {
+    await t.test(label, async (t) => {
+      const fixture = await prepareForSteps(t, {
+        inputOverrides: {
+          budgets: { maxDurationMs: 370_000, routeReserveMs: 110_000, restorationReserveMs: 104_166 },
+        },
+      });
+      let nowNs = 9_000_000_000_000_000n;
+      fixture.dependencies.monotonicNs = () => nowNs++;
+      const readReview = fixture.dependencies.readReviewImage;
+      let delayed = false;
+      fixture.dependencies.readReviewImage = (...args) => {
+        const bytes = readReview(...args);
+        if (!delayed) {
+          delayed = true;
+          nowNs += BigInt(validationDelayMs) * 1_000_000n;
+        }
+        return bytes;
+      };
+      fixture.calls.length = 0;
+
+      const failed = await fixture.orchestrator.execute({
+        action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview),
+      });
+
+      assert.equal(failed.status, "restore_failed");
+      assert.match(failed.primaryError, /restore entry validation.*deadline/i);
+      assert.equal(fixture.calls.some((call) => call.kind === "continuity" || call.kind === "locomote" || call.kind === "capture"), false);
+      const stop = fixture.calls.find((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target");
+      const proof = fixture.calls.find((call) => call.kind === "finalProcess");
+      const safety = fixture.calls.find((call) => call.kind === "safety" && call.context.phase === "restore_after_prior_disposition");
+      assert.ok(stop);
+      assert.ok(proof);
+      assert.ok(safety);
+      assert.equal(stop.context.cleanupOnly === true, expectCleanupOnly);
+      assert.equal(proof.context.cleanupOnly === true, expectCleanupOnly);
+      assert.equal(safety.context.cleanupOnly === true, expectCleanupOnly);
+      if (expectCleanupOnly) assert.match(failed.cleanupError, /cannot begin.*subdeadline/i);
+    });
+  }
+});
+
 test("restore never relaunches a non-receipt prior until target shutdown is proven", async (t) => {
   const component = "com.prior.unbound/.MainActivity";
   const fixtureOptions = {
@@ -2285,11 +3203,13 @@ test("restore never relaunches a non-receipt prior until target shutdown is prov
     "the exact pre-relaunch process proof already showed the requested prior activity");
 });
 
-test("authoritative target absence supersedes a failed stop transport and completes without a redundant retry", async (t) => {
+test("target absence cannot supersede a failed stop barrier and a retry converges", async (t) => {
   const fixture = await prepareForSteps(t);
+  let stopFails = true;
   fixture.dependencies.stopPackage = async (context) => {
     fixture.calls.push({ kind: "stop", context });
-    throw new Error("stop transport failed after the process exited");
+    if (stopFails) throw new Error("stop transport failed after the process exited");
+    return completedStopReceipt(context);
   };
   fixture.calls.length = 0;
   const request = {
@@ -2298,21 +3218,68 @@ test("authoritative target absence supersedes a failed stop transport and comple
     reviewedPriorFrame: reviewFor(fixture.baselineReview),
   };
 
-  const restored = await fixture.orchestrator.execute(request);
-  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
-  assert.equal(restored.primaryError, null);
-  assert.equal(restored.cleanupError, null);
+  const failed = await fixture.orchestrator.execute(request);
+  assert.equal(failed.status, "restore_failed");
+  assert.equal(failed.restorationDisposition, "unresolved");
+  assert.equal(failed.primaryError, null);
+  assert.match(failed.cleanupError, /stop transport failed after the process exited/i);
   assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
   assert.equal(fixture.calls.filter((call) => call.kind === "finalProcess").length, 1);
-  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
-    .trim().split("\n").map(JSON.parse).at(-1);
+  const action = committedActionPayloads(fixture.input.artifactRoot).at(-1);
   assert.match(action.targetStop.error, /stop transport failed after the process exited/);
   assert.deepEqual(action.finalProcessProof.targetPids, []);
+  await assert.rejects(fixture.orchestrator.execute({
+    ...fixture.input,
+    artifactRoot: externalArtifactRoot(t, "failed-stop-barrier-quarantine"),
+  }), /serial.*(?:owned|quarantin|restore)|(?:owned|quarantin|restore).*serial/i);
 
-  const effectCount = fixture.calls.length;
-  const replayed = await fixture.orchestrator.execute(request);
-  assert.deepEqual(replayed, restored);
-  assert.equal(fixture.calls.length, effectCount);
+  stopFails = false;
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    ...request,
+    reviewedPriorFrame: reviewFor(failed.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  assert.equal(restored.restorationDisposition, "zero_proven");
+  assert.deepEqual(deviceCalls(fixture.calls).map((call) => call.kind), ["stop", "finalProcess", "safety"]);
+});
+
+test("a stop receipt completing at its exact subdeadline cannot authorize shutdown cleanup", async (t) => {
+  const fixture = await prepareForSteps(t);
+  let nowNs = 2_000_000_000n;
+  let expireStop = true;
+  fixture.dependencies.monotonicNs = () => nowNs++;
+  const originalStop = fixture.dependencies.stopPackage;
+  fixture.dependencies.stopPackage = async (context) => {
+    const result = await originalStop(context);
+    if (expireStop && context.reason === "restore_run_owned_target") {
+      expireStop = false;
+      nowNs = BigInt(context.deadlineMonotonicNs);
+    }
+    return result;
+  };
+  fixture.calls.length = 0;
+  const request = {
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  };
+
+  const failed = await fixture.orchestrator.execute(request);
+  assert.equal(failed.status, "restore_failed");
+  assert.equal(failed.restorationDisposition, "unresolved");
+  assert.match(failed.cleanupError, /owned target stop.*subdeadline/i);
+  assert.deepEqual(committedActionPayloads(fixture.input.artifactRoot).at(-1).finalProcessProof.targetPids, []);
+  assert.equal(fixture.calls.some((call) => call.kind === "nonceCleanup"
+    && call.context.processStopped === true), false);
+
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    ...request,
+    reviewedPriorFrame: reviewFor(failed.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
+  assert.deepEqual(deviceCalls(fixture.calls).map((call) => call.kind), ["stop", "finalProcess", "safety"]);
 });
 
 test("authoritative prior activity supersedes a failed relaunch transport after target absence is proven", async (t) => {
@@ -2378,8 +3345,7 @@ test("restore preserves final-state proof provenance across a later safety retry
   assert.equal(retried.status, "restored_needs_review", JSON.stringify(retried));
   assert.equal(retried.priorForeground.relaunchDisposition, "state_proven_after_attempt_error");
   assert.equal(fixture.calls.some((call) => call.kind === "relaunchPrior"), false);
-  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
-    .trim().split("\n").map(JSON.parse).at(-1);
+  const action = committedActionPayloads(fixture.input.artifactRoot).at(-1);
   assert.deepEqual(action.priorRelaunch, {
     status: "not_attempted",
     reason: "prior_state_already_proven",
@@ -2428,8 +3394,7 @@ test("proven nonce absence with an rm warning does not quarantine an otherwise c
   assert.equal(restored.status, "restored_needs_review", JSON.stringify(restored));
   assert.equal(restored.primaryError, null);
   assert.equal(restored.cleanupError, null);
-  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
-    .trim().split("\n").map(JSON.parse).at(-1);
+  const action = committedActionPayloads(fixture.input.artifactRoot).at(-1);
   assert.equal(action.locomotionNonceCleanup.removalError, "rm transport warning after exact absence");
 });
 
@@ -2449,6 +3414,7 @@ test("a resolved failed target-stop receipt never proves prepare clearance or em
     stepping.calls.push({ kind: "locomote", input });
     return deferredUnquiescedResult(input);
   };
+  const successfulStop = stepping.dependencies.stopPackage;
   stepping.dependencies.stopPackage = async (context) => {
     stepping.calls.push({ kind: "stop", context });
     return { status: "failed", error: "emergency target stop was not accepted" };
@@ -2462,10 +3428,42 @@ test("a resolved failed target-stop receipt never proves prepare clearance or em
     .trim().split("\n").map(JSON.parse).at(-1);
   assert.deepEqual(action.emergencyStop, {
     attempted: true,
-    proven: false,
+    stopCommandReceipt: null,
+    targetAbsenceProven: false,
     error: action.emergencyStop.error,
   });
   assert.match(action.emergencyStop.error, /stop|accepted|receipt/i);
+
+  stepping.calls.length = 0;
+  const restored = await stepping.orchestrator.execute({
+    action: "restore",
+    runId: stepping.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(restored.restorationDisposition, "unresolved");
+  assert.deepEqual(
+    stepping.calls.filter((call) => ["stop", "finalProcess", "nonceCleanup", "safety"].includes(call.kind))
+      .map((call) => call.kind),
+    ["stop", "finalProcess", "safety"],
+  );
+  assert.equal(stepping.calls.some((call) => call.kind === "nonceCleanup"), false);
+
+  stepping.dependencies.stopPackage = successfulStop;
+  stepping.calls.length = 0;
+  const retried = await stepping.orchestrator.execute({
+    action: "restore",
+    runId: stepping.prepared.runId,
+    reviewedPriorFrame: reviewFor(restored.requiredReview[0]),
+  });
+  assert.equal(retried.restorationDisposition, "safe_release_without_zero_proof");
+  assert.deepEqual(
+    stepping.calls.filter((call) => ["stop", "finalProcess", "nonceCleanup", "safety"].includes(call.kind))
+      .map((call) => call.kind),
+    ["stop", "finalProcess", "nonceCleanup", "safety"],
+  );
+  const cleanup = stepping.calls.find((call) => call.kind === "nonceCleanup");
+  assert.equal(cleanup.context.processStopped, true);
+  assert.equal(cleanup.context.probeOnly, undefined);
 });
 
 async function prepareAndRestoreForAdjudication(t, { step = true } = {}) {
@@ -2824,13 +3822,18 @@ test("route schema shares the exact rev-1 locomotion cancellation and finalizati
       restoreTarget: { absolute: true, x: 0, y: 0, z: 0 },
       glideDurationMs: 500,
     },
-    budgets: { maxDurationMs: 250_000, routeReserveMs: 60_000, restorationReserveMs: 60_000 },
+    budgets: { maxDurationMs: 340_000, routeReserveMs: 110_000, restorationReserveMs: 110_000 },
   });
-  // 8s capture + 0.5s glide + 11.65s move + 2.85s nonce cleanup
-  // + two 13.15s HMD acquisitions + 5s failure-safe post-probe allowance.
-  const exactRouteFloor = 54_300;
-  const exactRestorationFloor = valid.capture.deadlineMs + valid.route.glideDurationMs
-    + 3 * minimumBridgeEnvelopeMs + 5_000;
+  // 5s BEGIN + 5s pre-safety + 10s pre-continuity + 8s capture + 0.5s glide
+  // + 11.65s move + 2.85s nonce cleanup + two 13.15s HMD acquisitions
+  // + 5s post-safety + 10s post-continuity + 15s finalization
+  // + 5s action publication + 13ms of capture-completion and inter-stage handoff guards.
+  const exactRouteFloor = 104_313;
+  // 8s capture + 0.5s glide + three 11.65s bridge transactions + two 2.85s nonce-cleanup windows
+  // + two 10s continuity samples + 5s target stop + two 5s process proofs + 5s prior relaunch
+  // + 5s entry validation + 5s final safety + 5s action publication
+  // + 15ms of completion/handoff guards.
+  const exactRestorationFloor = 104_165;
 
   assert.equal(inAppLocomotionInputSchema.safeParse({
     ...valid,
@@ -2850,10 +3853,23 @@ test("route schema shares the exact rev-1 locomotion cancellation and finalizati
   }).success, true);
 });
 
+test("the minimum schema-admitted route reserve remains executable after the entry clock re-read", async (t) => {
+  const fixture = await prepareForSteps(t, {
+    inputOverrides: {
+      budgets: { maxDurationMs: 350_000, routeReserveMs: 104_314, restorationReserveMs: 110_000 },
+    },
+  });
+
+  const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+
+  assert.equal(result.status, "needs_waypoint_review", JSON.stringify(result));
+  assert.equal(result.primaryError, null);
+});
+
 test("a maximum direct glide still completes all post-step evidence and the reviewed restore path", async (t) => {
   const fixture = await prepareForSteps(t, {
     inputOverrides: {
-      budgets: { maxDurationMs: 235_000, routeReserveMs: 65_000, restorationReserveMs: 57_951 },
+      budgets: { maxDurationMs: 380_000, routeReserveMs: 120_000, restorationReserveMs: 120_000 },
       route: {
         waypoints: [
           { seq: 1, target: { absolute: true, x: 1, y: 0, z: -2 } },
@@ -2992,6 +4008,38 @@ test("one serial remains owned after prepare and is released only by a safely co
   assert.equal(second.status, "needs_baseline_review");
 });
 
+test("an idempotent completed restore repairs audit maintenance without device effects and rejects later artifact damage", async (t) => {
+  const fixture = await prepareForSteps(t);
+  const request = {
+    action: "restore", runId: fixture.prepared.runId, reviewedPriorFrame: reviewFor(fixture.baselineReview),
+  };
+  const first = await fixture.orchestrator.execute(request);
+  assert.equal(first.status, "restored_needs_review");
+  assert.equal(first.actionAuditMaintenance.status, "repair_pending");
+  assert.ok(fs.readdirSync(path.join(fixture.input.artifactRoot, "action-records"))
+    .some((name) => /^\.[0-9]{6}\.[a-f0-9]{32}\.tmp$/.test(name)));
+
+  fixture.calls.length = 0;
+  const repeated = await fixture.orchestrator.execute(request);
+  assert.equal(repeated.status, "restored_needs_review");
+  assert.equal(repeated.actionAuditMaintenance.status, "current");
+  assert.equal(deviceCalls(fixture.calls).length, 0,
+    "idempotent maintenance repair performs no device effect or probe");
+  assert.equal(fs.readdirSync(path.join(fixture.input.artifactRoot, "action-records"))
+    .some((name) => /^\.[0-9]{6}\.[a-f0-9]{32}\.tmp$/.test(name)), false);
+  assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"),
+    committedActionPayloads(fixture.input.artifactRoot).map((payload) => canonicalJson(payload)).join("\n") + "\n");
+
+  const committedRecords = fs.readdirSync(path.join(fixture.input.artifactRoot, "action-records"))
+    .filter((name) => /^\d{6}\.json$/.test(name)).sort();
+  fs.appendFileSync(path.join(fixture.input.artifactRoot, "action-records", committedRecords.at(-1)), Buffer.from("damage"));
+  const rejected = await fixture.orchestrator.execute({
+    ...request, reviewedPriorFrame: reviewFor(repeated.requiredReview[0]),
+  });
+  assert.equal(rejected.status, "review_rejected");
+  assert.match(rejected.primaryError, /action|artifact|sha256|changed|immutable/i);
+});
+
 test("a substituted derived action view is rebuilt from the immutable committed record", async (t) => {
   const fixture = await createPreparedFixture(t);
   let swapped = false;
@@ -3013,13 +4061,27 @@ test("a substituted derived action view is rebuilt from the immutable committed 
 
   assert.equal(result.status, "needs_waypoint_review");
   assert.equal(result.primaryError, null);
-  assert.equal(result.actionAuditMaintenance.status, "current");
-  assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").length, 2);
+  assert.equal(result.actionAuditMaintenance.status, "repair_pending");
+  assert.equal(committedActionPayloads(fixture.input.artifactRoot).length, 2);
+  assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"), "");
   assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl.original"), "utf8").trim().split("\n").length, 1);
   const restored = await orchestrator.execute({
     action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(result.requiredReview[0]),
   });
   assert.equal(restored.status, "restored_needs_review");
+  assert.equal(restored.actionAuditMaintenance.status, "repair_pending");
+  assert.equal(committedActionPayloads(fixture.input.artifactRoot).length, 3);
+  assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"),
+    committedActionPayloads(fixture.input.artifactRoot).slice(0, 2).map((payload) => canonicalJson(payload)).join("\n") + "\n");
+  const adjudicated = await orchestrator.execute({
+    action: "adjudicate",
+    runId: prepared.runId,
+    frameAttestations: attestationsFor([
+      prepared.requiredReview[0], result.requiredReview[0], restored.requiredReview[0],
+    ]),
+  });
+  assert.equal(adjudicated.status, "structural_complete");
+  assert.equal(adjudicated.actionAuditMaintenance.status, "current");
 });
 
 test("prepare publishes its success audit before state and contains failure-audit errors", async (t) => {
@@ -3064,6 +4126,149 @@ test("prepare publishes its success audit before state and contains failure-audi
   const retained = await auditFails.execute(primary.input);
   assert.match(retained.primaryError, /capability primary failure/i);
   assert.match(retained.cleanupError, /failed audit append fault/i);
+});
+
+test("prepare success and failure audit publication cannot cross their fixed phase deadlines", async (t) => {
+  await t.test("completed prepare pre-link deadline", async (t) => {
+    let nowNs = 0n;
+    const fixture = await createPreparedFixture(t, { monotonicNs: () => nowNs });
+    const prepareActionDeadlineNs = BigInt(
+      fixture.input.budgets.maxDurationMs
+      - fixture.input.budgets.routeReserveMs
+      - fixture.input.budgets.restorationReserveMs,
+    ) * 1_000_000n;
+    let expire = true;
+    const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+      beforeActionRecordCommit({ action, status }) {
+        if (action === "prepare" && status === "completed" && expire) {
+          expire = false;
+          nowNs = prepareActionDeadlineNs;
+        }
+      },
+    });
+
+    const failed = await orchestrator.execute(fixture.input);
+    assert.equal(failed.status, "preparation_failed");
+    assert.match(failed.primaryError, /prepare action publication.*deadline/i);
+    const actions = committedActionPayloads(fixture.input.artifactRoot);
+    assert.equal(actions.some((action) => action.status === "completed"), false);
+    assert.equal(actions.at(-1).status, "failed");
+
+    const retried = await orchestrator.execute({
+      ...fixture.input,
+      artifactRoot: externalArtifactRoot(t, "prepare-action-pre-link-retry"),
+    });
+    assert.equal(retried.status, "needs_baseline_review", JSON.stringify(retried));
+  });
+
+  await t.test("completed prepare post-link deadline", async (t) => {
+    let nowNs = 0n;
+    const fixture = await createPreparedFixture(t, { monotonicNs: () => nowNs });
+    const prepareActionDeadlineNs = BigInt(
+      fixture.input.budgets.maxDurationMs
+      - fixture.input.budgets.routeReserveMs
+      - fixture.input.budgets.restorationReserveMs,
+    ) * 1_000_000n;
+    const originalLinkSync = fs.linkSync;
+    let expire = true;
+    fs.linkSync = function linkThenExpirePrepare(source, target) {
+      const result = originalLinkSync.apply(this, arguments);
+      if (expire && path.basename(String(target)) === "000001.json") {
+        expire = false;
+        nowNs = prepareActionDeadlineNs;
+      }
+      return result;
+    };
+    t.after(() => { fs.linkSync = originalLinkSync; });
+    const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
+
+    const failed = await orchestrator.execute(fixture.input);
+    assert.equal(failed.status, "preparation_failed");
+    assert.match(failed.primaryError, /committed.*publication deadline.*unproven/i);
+    const actions = committedActionPayloads(fixture.input.artifactRoot);
+    assert.equal(actions.length, 2);
+    assert.equal(actions[0].status, "completed");
+    assert.equal(actions[1].status, "failed");
+    assert.equal(actions[1].compensatesActionOperationId, "prepare:terminal");
+    assert.equal(actions[1].serialLease.status, "release_eligible_after_action_publication");
+    assert.equal(fixture.calls.filter((call) => call.kind === "stop"
+      && call.context.reason === "prepare_failure_cleanup").length, 1);
+    const retried = await orchestrator.execute({
+      ...fixture.input,
+      artifactRoot: externalArtifactRoot(t, "prepare-action-post-link-retry"),
+    });
+    assert.equal(retried.status, "needs_baseline_review", JSON.stringify(retried));
+  });
+
+  await t.test("failed prepare audit deadline", async (t) => {
+    let nowNs = 0n;
+    const capabilityFailure = {
+      ok: false,
+      code: "capability_unavailable",
+      detail: "capability stage fault",
+      primaryError: "capability stage fault",
+      cleanupError: null,
+      actionReceipts: [],
+      evidenceCeiling: "structural",
+    };
+    const fixture = await createPreparedFixture(t, { monotonicNs: () => nowNs, capability: capabilityFailure });
+    const recoveryDeadlineNs = BigInt(fixture.input.budgets.maxDurationMs) * 1_000_000n;
+    const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+      beforeActionRecordCommit({ action, status }) {
+        if (action === "prepare" && status === "failed") nowNs = recoveryDeadlineNs;
+      },
+    });
+
+    const failed = await orchestrator.execute(fixture.input);
+    assert.equal(failed.status, "preparation_failed");
+    assert.match(failed.primaryError, /capability stage fault/i);
+    assert.match(failed.cleanupError, /failed action audit.*publication.*deadline/i);
+    assert.deepEqual(committedActionPayloads(fixture.input.artifactRoot), []);
+    await assert.rejects(orchestrator.execute({
+      ...fixture.input,
+      artifactRoot: externalArtifactRoot(t, "failed-prepare-action-quarantine"),
+    }), /serial.*(?:quarantin|owned|audit)|(?:quarantin|owned|audit).*serial/i);
+  });
+
+  await t.test("failed prepare audit post-link deadline", async (t) => {
+    let nowNs = 0n;
+    const capabilityFailure = {
+      ok: false,
+      code: "capability_unavailable",
+      detail: "capability stage fault",
+      primaryError: "capability stage fault",
+      cleanupError: null,
+      actionReceipts: [],
+      evidenceCeiling: "structural",
+    };
+    const fixture = await createPreparedFixture(t, { monotonicNs: () => nowNs, capability: capabilityFailure });
+    const recoveryDeadlineNs = BigInt(fixture.input.budgets.maxDurationMs) * 1_000_000n;
+    const originalLinkSync = fs.linkSync;
+    let expire = true;
+    fs.linkSync = function linkThenExpireFailedPrepare(source, target) {
+      const result = originalLinkSync.apply(this, arguments);
+      if (expire && path.basename(String(target)) === "000001.json") {
+        expire = false;
+        nowNs = recoveryDeadlineNs;
+      }
+      return result;
+    };
+    t.after(() => { fs.linkSync = originalLinkSync; });
+    const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
+
+    const failed = await orchestrator.execute(fixture.input);
+    assert.equal(failed.status, "preparation_failed");
+    assert.match(failed.primaryError, /capability stage fault/i);
+    assert.match(failed.cleanupError, /committed.*publication deadline.*unproven/i);
+    const actions = committedActionPayloads(fixture.input.artifactRoot);
+    assert.equal(actions.length, 1);
+    assert.equal(actions[0].status, "failed");
+    assert.equal(actions[0].serialLease.status, "release_eligible_after_action_publication");
+    await assert.rejects(orchestrator.execute({
+      ...fixture.input,
+      artifactRoot: externalArtifactRoot(t, "failed-prepare-post-link-quarantine"),
+    }), /serial.*(?:quarantin|owned|audit)|(?:quarantin|owned|audit).*serial/i);
+  });
 });
 
 test("step and restore audit failures return honest stopped state and retain serial ownership", async (t) => {
@@ -3213,11 +4418,37 @@ test("final global safety accepts clean Full-to-Mixed stop state with no prior f
   assert.equal(fixture.calls.some((call) => call.kind === "relaunchPrior"), false);
 });
 
+test("final safeguard-center drift blocks terminal safe release and quarantines the serial", async (t) => {
+  const fixture = await prepareForSteps(t, {
+    locomotionResult: deferredUnquiescedResult,
+    safetySequence: [cleanSafety, cleanSafety, { ...cleanMixedSafety, safeguardCenter: "4,0,0" }],
+  });
+  const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(stopped.status, "stopped");
+
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restore_failed");
+  assert.equal(restored.restorationDisposition, "unresolved");
+  assert.match(restored.cleanupError, /safeguardCenter=4,0,0.*0,0,0/i);
+  await assert.rejects(fixture.orchestrator.execute({
+    ...fixture.input,
+    artifactRoot: externalArtifactRoot(t, "center-drift-quarantine"),
+  }), /serial.*(?:owned|quarantin|restore)|(?:owned|quarantin|restore).*serial/i);
+});
+
 test("prepare uses one fixed phase deadline, clamps baseline capture, and stops before capture after overrun", async (t) => {
   let nowNs = 0n;
   const clamped = await createPreparedFixture(t, {
+    inputOverrides: {
+      budgets: { maxDurationMs: 320_000, routeReserveMs: 105_000, restorationReserveMs: 105_000 },
+    },
     monotonicNs: () => nowNs,
-    afterMonitor: () => { nowNs = 94_349_000_000n; },
+    afterMonitor: () => { nowNs = 89_348_000_000n; },
   });
   const prepared = await createInAppLocomotionOrchestrator(clamped.dependencies).execute(clamped.input);
   assert.equal(prepared.status, "needs_baseline_review");
@@ -3227,7 +4458,10 @@ test("prepare uses one fixed phase deadline, clamps baseline capture, and stops 
 
   nowNs = 0n;
   const overrun = await createPreparedFixture(t, {
-    inputOverrides: { artifactRoot: externalArtifactRoot(t, "prepare-overrun") },
+    inputOverrides: {
+      artifactRoot: externalArtifactRoot(t, "prepare-overrun"),
+      budgets: { maxDurationMs: 320_000, routeReserveMs: 105_000, restorationReserveMs: 105_000 },
+    },
     monotonicNs: () => nowNs,
     afterMonitor: () => { nowNs = 111_000_000_000n; },
   });
@@ -3244,7 +4478,7 @@ test("restoration reserve is one fixed absolute deadline and does not reset afte
   const originalLocomotion = fixture.dependencies.requestLocomotion;
   fixture.dependencies.requestLocomotion = async (input) => {
     const result = await originalLocomotion(input);
-    nowNs = 40_000_000_000n;
+    nowNs = BigInt(input.deadlineMonotonicNs) + 1n;
     return result;
   };
   fixture.calls.length = 0;
@@ -3319,6 +4553,8 @@ test("failed prepare compensation owns or releases the serial only after auditab
     const action = JSON.parse(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim());
     assert.deepEqual(action.observedPriorForeground, { component: null, packageName: null, userInstalled: false });
     assert.equal(action.compensation.targetStop.status, "failed");
+    assert.deepEqual(action.compensation.finalProcessProof.targetPids, [],
+      "an absent snapshot cannot supersede the failed prepare cleanup barrier");
     assert.equal(action.serialLease.status, "quarantined");
     await assert.rejects(orchestrator.execute({
       ...fixture.input,
@@ -3386,7 +4622,7 @@ test("failed prepare compensation owns or releases the serial only after auditab
     const action = JSON.parse(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim());
     assert.equal(action.compensation.targetStop.status, "stop_command_completed");
     assert.equal(action.compensation.finalProcessProof.targetPids.length, 0);
-    assert.equal(action.serialLease.status, "released");
+    assert.equal(action.serialLease.status, "release_eligible_after_action_publication");
     const retry = await orchestrator.execute({
       ...fixture.input,
       artifactRoot: externalArtifactRoot(t, "bracket-compensated-retry"),
@@ -3581,7 +4817,7 @@ test("clock faults do not consume waypoints, mask primary errors, or bypass rest
     assert.equal(retried.usage.waypointAttempts, 1);
   });
 
-  await t.test("step end clock retains the earlier safety primary and writes one stopped ledger entry", async (t) => {
+  await t.test("step end clock retains the earlier safety primary and refuses an unfenced ledger entry", async (t) => {
     const fixture = await prepareForSteps(t);
     fixture.dependencies.sampleSafety = async (context) => {
       fixture.calls.push({ kind: "safety", context });
@@ -3603,9 +4839,8 @@ test("clock faults do not consume waypoints, mask primary errors, or bypass rest
     assert.equal(stopped.status, "stopped");
     assert.match(stopped.primaryError, /Guardian|safety/i);
     assert.match(stopped.cleanupError, /clock fault/i);
-    const stepActions = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
-      .trim().split("\n").map(JSON.parse).filter((entry) => entry.action === "step");
-    assert.equal(stepActions.length, 1);
+    const stepActions = committedActionPayloads(fixture.input.artifactRoot).filter((entry) => entry.action === "step");
+    assert.equal(stepActions.length, 0);
   });
 
   await t.test("restore entry clock fault leaves retryable cleanup ownership", async (t) => {
@@ -3632,7 +4867,7 @@ test("clock faults do not consume waypoints, mask primary errors, or bypass rest
       "retry must retain the first attempt's proven target stop");
   });
 
-  await t.test("restore clock fault after transaction start still performs one cleanup and ledger", async (t) => {
+  await t.test("restore clock fault after transaction start performs cleanup but refuses an unfenced ledger", async (t) => {
     const fixture = await prepareForSteps(t);
     let failClock = false;
     fixture.dependencies.sampleContinuity = async (context) => {
@@ -3653,9 +4888,8 @@ test("clock faults do not consume waypoints, mask primary errors, or bypass rest
     assert.match(restored.primaryError, /clock fault/i);
     assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
     assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
-    const restoreActions = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
-      .trim().split("\n").map(JSON.parse).filter((entry) => entry.action === "restore");
-    assert.equal(restoreActions.length, 1);
+    const restoreActions = committedActionPayloads(fixture.input.artifactRoot).filter((entry) => entry.action === "restore");
+    assert.equal(restoreActions.length, 0);
   });
 });
 
@@ -3665,16 +4899,19 @@ test("a successful receipt-bound incumbent stop is recorded stale before a post-
     inputOverrides: { priorForeground: { kind: "receipt_bound", component, receiptId: "c".repeat(64) } },
     priorSnapshot: { component, packageName: "com.prior.receipted", userInstalled: true },
   });
-  let clockBroken = false;
+  let failNextClock = false;
   let tick = 80_000_000_000n;
   fixture.dependencies.monotonicNs = () => {
-    if (clockBroken) throw new Error("post-incumbent-stop clock fault");
+    if (failNextClock) {
+      failNextClock = false;
+      throw new Error("post-incumbent-stop clock fault");
+    }
     return ++tick;
   };
   const originalStop = fixture.dependencies.stopPackage;
   fixture.dependencies.stopPackage = async (context) => {
     const receipt = await originalStop(context);
-    if (context.reason === "prepare_declared_incumbent_clearance") clockBroken = true;
+    if (context.reason === "prepare_declared_incumbent_clearance") failNextClock = true;
     return receipt;
   };
 
@@ -3803,13 +5040,23 @@ test("a post-stage derived-view pathname swap is atomically repaired without rev
   const stopped = await orchestrator.execute(stepRequest({ ...fixture, prepared }, reviewFor(prepared.requiredReview[0])));
   assert.equal(stopped.status, "needs_waypoint_review");
   assert.equal(stopped.primaryError, null);
-  assert.equal(stopped.actionAuditMaintenance.status, "current");
+  assert.equal(stopped.actionAuditMaintenance.status, "repair_pending");
   fixture.calls.length = 0;
   const restored = await orchestrator.execute({
     action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
   assert.equal(restored.status, "restored_needs_review");
   assert.equal(restored.primaryError, null);
+  assert.equal(restored.actionAuditMaintenance.status, "repair_pending");
+  const adjudicated = await orchestrator.execute({
+    action: "adjudicate",
+    runId: prepared.runId,
+    frameAttestations: attestationsFor([
+      prepared.requiredReview[0], stopped.requiredReview[0], restored.requiredReview[0],
+    ]),
+  });
+  assert.equal(adjudicated.status, "structural_complete");
+  assert.equal(adjudicated.actionAuditMaintenance.status, "current");
   assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
 });
 
@@ -3982,18 +5229,28 @@ test("same-inode derived-view rewrite is reported, repaired, and keeps committed
   assert.equal(stopped.status, "needs_waypoint_review");
   assert.equal(stopped.primaryError, null);
   assert.equal(stopped.actionAuditMaintenance.status, "repair_pending");
-  assert.match(stopped.actionAuditMaintenance.errors.join(" "), /action|descriptor|bytes|identity|changed/i);
+  assert.equal(rewritten, false, "the fenced commit performs no post-link derived-view read");
   fixture.calls.length = 0;
   const restored = await orchestrator.execute({
     action: "restore", runId: prepared.runId, reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
   assert.equal(restored.status, "restored_needs_review");
-  assert.equal(restored.actionAuditMaintenance.status, "current");
+  assert.equal(rewritten, true);
+  assert.equal(restored.actionAuditMaintenance.status, "repair_pending");
   assert.match(restored.actionAuditMaintenance.errors.join(" "), /action|descriptor|bytes|identity|changed/i);
+  const adjudicated = await orchestrator.execute({
+    action: "adjudicate",
+    runId: prepared.runId,
+    frameAttestations: attestationsFor([
+      prepared.requiredReview[0], stopped.requiredReview[0], restored.requiredReview[0],
+    ]),
+  });
+  assert.equal(adjudicated.status, "structural_complete");
+  assert.equal(adjudicated.actionAuditMaintenance.status, "current");
   assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_run_owned_target").length, 1);
 });
 
-test("a proven emergency stop is a successful restore precondition without another target command", async (t) => {
+test("an emergency stop command defers nonce cleanup until restore proves target absence", async (t) => {
   const fixture = await prepareForSteps(t, {
     locomotionResult: (input) => ({
       ok: false,
@@ -4015,6 +5272,20 @@ test("a proven emergency stop is a successful restore precondition without anoth
   assert.match(stopped.primaryError, /acknowledgement timed out/i);
   assert.match(stopped.cleanupError, /cancellation acknowledgement/i);
   assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "step_unquiesced_locomotion").length, 1);
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 0,
+    "a command-completed force-stop is not process-absence proof");
+  const stepAction = committedActionPayloads(fixture.input.artifactRoot).at(-1);
+  assert.deepEqual(stepAction.emergencyStop, {
+    attempted: true,
+    stopCommandReceipt: completedStopReceipt({
+      serial: fixture.input.serial,
+      packageName: fixture.input.scenario.packageName,
+      reason: "step_unquiesced_locomotion",
+    }),
+    targetAbsenceProven: false,
+    error: null,
+  });
+  assert.equal(stepAction.locomotionNonceCleanup, null);
 
   fixture.calls.length = 0;
   const restored = await fixture.orchestrator.execute({
@@ -4022,13 +5293,206 @@ test("a proven emergency stop is a successful restore precondition without anoth
     runId: fixture.prepared.runId,
     reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
-  assert.equal(restored.status, "restored_needs_review");
-  assert.equal(restored.primaryError, null);
+  assert.equal(restored.status, "restore_failed");
+  assert.equal(restored.restorationDisposition, "safe_release_without_zero_proof");
+  assert.match(restored.primaryError, /zero-offset|restoration/i);
   assert.equal(restored.cleanupError, null);
+  assert.deepEqual(restored.requiredReview, [fixture.baselineReview],
+    "the retained baseline remains reviewable but is not relabeled as a post-mutation zero proof");
   assert.equal(fixture.calls.some((call) => call.kind === "locomote"), false);
-  assert.equal(fixture.calls.some((call) => call.kind === "stop"), false);
-  assert.equal(fixture.calls.some((call) => call.kind === "finalProcess"), true);
+  assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "restore_unquiesced_target").length, 1);
+  const finalProcessIndex = fixture.calls.findIndex((call) => call.kind === "finalProcess");
+  const nonceCleanupIndex = fixture.calls.findIndex((call) => call.kind === "nonceCleanup");
+  assert.ok(finalProcessIndex >= 0 && nonceCleanupIndex > finalProcessIndex,
+    "only the authoritative absence proof may authorize stopped-process nonce cleanup");
+  assert.equal(fixture.calls[nonceCleanupIndex].context.processStopped, true);
   assert.equal(fixture.calls.some((call) => call.kind === "safety"), true);
+});
+
+test("a moved emergency stop converges to an idempotent safe release without claiming zero restoration", async (t) => {
+  const fixture = await prepareForSteps(t);
+  const first = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(first.status, "needs_waypoint_review");
+  fixture.dependencies.requestLocomotion = async (input) => {
+    fixture.calls.push({ kind: "locomote", input });
+    return deferredUnquiescedResult(input);
+  };
+  fixture.calls.length = 0;
+
+  const stopped = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(first.requiredReview[0]), 1));
+  assert.equal(stopped.status, "stopped");
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 0);
+
+  fixture.calls.length = 0;
+  const restoreRequest = {
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  };
+  const released = await fixture.orchestrator.execute(restoreRequest);
+  assert.equal(released.status, "restore_failed");
+  assert.equal(released.restorationDisposition, "safe_release_without_zero_proof");
+  assert.match(released.primaryError, /zero-offset|restoration/i);
+  assert.equal(released.cleanupError, null);
+  assert.deepEqual(released.requiredReview, [first.requiredReview[0]],
+    "the moved frame remains the exact review; it is never relabeled as zero");
+  const finalProcessIndex = fixture.calls.findIndex((call) => call.kind === "finalProcess");
+  const nonceCleanupIndex = fixture.calls.findIndex((call) => call.kind === "nonceCleanup");
+  assert.ok(finalProcessIndex >= 0 && nonceCleanupIndex > finalProcessIndex);
+  assert.equal(fixture.calls[nonceCleanupIndex].context.processStopped, true);
+  assert.equal(fixture.calls.some((call) => call.kind === "capture" || call.kind === "locomote"), false);
+
+  const terminalAction = committedActionPayloads(fixture.input.artifactRoot).at(-1);
+  assert.equal(terminalAction.action, "restore");
+  assert.equal(terminalAction.status, "failed");
+  assert.equal(terminalAction.safeReleaseEligibility, "eligible_after_action_publication");
+
+  const secondInput = { ...fixture.input, artifactRoot: externalArtifactRoot(t, "after-safe-release") };
+  const second = await fixture.orchestrator.execute(secondInput);
+  assert.equal(second.status, "needs_baseline_review", "exact serial is released after safe terminal audit publication");
+
+  fixture.calls.length = 0;
+  const repeated = await fixture.orchestrator.execute(restoreRequest);
+  assert.equal(repeated.status, "restore_failed");
+  assert.equal(repeated.restorationDisposition, "safe_release_without_zero_proof");
+  assert.equal(deviceCalls(fixture.calls).length, 0,
+    "terminal safe-release replay validates artifacts but never touches a serial now owned by another run");
+  await assert.rejects(fixture.orchestrator.execute({
+    action: "adjudicate",
+    runId: fixture.prepared.runId,
+    frameAttestations: attestationsFor([first.requiredReview[0]]),
+  }), /completed restore/i);
+});
+
+test("pre-link safe-release audit failure keeps the serial quarantined until a fenced retry", async (t) => {
+  const fixture = await createPreparedFixture(t, { locomotionResult: deferredUnquiescedResult });
+  let nowNs = 2_000_000_000n;
+  fixture.dependencies.monotonicNs = () => nowNs++;
+  let restoreActionDeadlineNs = null;
+  const safety = fixture.dependencies.sampleSafety;
+  fixture.dependencies.sampleSafety = async (context) => {
+    const result = await safety(context);
+    if (context.phase === "restore_after_prior_disposition") {
+      restoreActionDeadlineNs = BigInt(context.deadlineMonotonicNs) + 5_001_000_000n;
+    }
+    return result;
+  };
+  let expireFirstRestore = true;
+  const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies, {
+    beforeActionRecordCommit({ action }) {
+      if (action === "restore" && expireFirstRestore) {
+        assert.ok(restoreActionDeadlineNs !== null);
+        nowNs = restoreActionDeadlineNs;
+        expireFirstRestore = false;
+      }
+    },
+  });
+  const prepared = await orchestrator.execute(fixture.input);
+  const stopped = await orchestrator.execute(stepRequest(
+    { ...fixture, prepared }, reviewFor(prepared.requiredReview[0]),
+  ));
+  assert.equal(stopped.status, "stopped");
+
+  const restoreRequest = {
+    action: "restore",
+    runId: prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  };
+  fixture.calls.length = 0;
+  const first = await orchestrator.execute(restoreRequest);
+  assert.equal(first.status, "restore_failed");
+  assert.equal(first.restorationDisposition, "unresolved");
+  assert.match(first.cleanupError, /restore action.*deadline/i);
+  assert.equal(committedActionPayloads(fixture.input.artifactRoot).some((entry) => entry.action === "restore"), false);
+
+  const secondInput = { ...fixture.input, artifactRoot: externalArtifactRoot(t, "pre-link-safe-release-quarantine") };
+  await assert.rejects(orchestrator.execute(secondInput), /serial.*(?:owned|quarantin|restore)|(?:owned|quarantin|restore).*serial/i);
+
+  fixture.calls.length = 0;
+  const retried = await orchestrator.execute({
+    ...restoreRequest,
+    reviewedPriorFrame: reviewFor(first.requiredReview[0]),
+  });
+  assert.equal(retried.restorationDisposition, "safe_release_without_zero_proof");
+  assert.deepEqual(deviceCalls(fixture.calls).map((call) => call.kind), ["finalProcess", "safety"]);
+  const second = await orchestrator.execute(secondInput);
+  assert.equal(second.status, "needs_baseline_review");
+
+  fixture.calls.length = 0;
+  const replayed = await orchestrator.execute(restoreRequest);
+  assert.equal(replayed.restorationDisposition, "safe_release_without_zero_proof");
+  assert.equal(deviceCalls(fixture.calls).length, 0);
+});
+
+test("post-link safe-release publication failure cannot release before a later fenced action", async (t) => {
+  const fixture = await createPreparedFixture(t, { locomotionResult: deferredUnquiescedResult });
+  let nowNs = 2_000_000_000n;
+  fixture.dependencies.monotonicNs = () => nowNs++;
+  let restoreActionDeadlineNs = null;
+  const safety = fixture.dependencies.sampleSafety;
+  fixture.dependencies.sampleSafety = async (context) => {
+    const result = await safety(context);
+    if (context.phase === "restore_after_prior_disposition") {
+      restoreActionDeadlineNs = BigInt(context.deadlineMonotonicNs) + 5_001_000_000n;
+    }
+    return result;
+  };
+  const originalLinkSync = fs.linkSync;
+  let expireFirstRestore = true;
+  fs.linkSync = function linkThenExpire(source, target) {
+    const result = originalLinkSync.apply(this, arguments);
+    if (expireFirstRestore && path.basename(String(target)) === "000003.json") {
+      assert.ok(restoreActionDeadlineNs !== null);
+      nowNs = restoreActionDeadlineNs;
+      expireFirstRestore = false;
+    }
+    return result;
+  };
+  t.after(() => { fs.linkSync = originalLinkSync; });
+  const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
+  const prepared = await orchestrator.execute(fixture.input);
+  const stopped = await orchestrator.execute(stepRequest(
+    { ...fixture, prepared }, reviewFor(prepared.requiredReview[0]),
+  ));
+  assert.equal(stopped.status, "stopped");
+
+  const restoreRequest = {
+    action: "restore",
+    runId: prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  };
+  fixture.calls.length = 0;
+  const first = await orchestrator.execute(restoreRequest);
+  assert.equal(first.status, "restore_failed");
+  assert.equal(first.restorationDisposition, "unresolved");
+  assert.match(first.cleanupError, /committed.*publication deadline.*unproven/i);
+  const firstRestoreAction = committedActionPayloads(fixture.input.artifactRoot).at(-1);
+  assert.equal(firstRestoreAction.action, "restore");
+  assert.equal(firstRestoreAction.status, "failed");
+  assert.equal(firstRestoreAction.safeReleaseEligibility, "eligible_after_action_publication");
+  assert.equal(first.actionAuditMaintenance.status, "repair_pending");
+  assert.equal(first.actionAuditMaintenance.publicationIncidents.at(-1).phase, "after_commit");
+
+  const secondInput = { ...fixture.input, artifactRoot: externalArtifactRoot(t, "post-link-safe-release-quarantine") };
+  await assert.rejects(orchestrator.execute(secondInput), /serial.*(?:owned|quarantin|restore)|(?:owned|quarantin|restore).*serial/i);
+
+  fixture.calls.length = 0;
+  const retried = await orchestrator.execute({
+    ...restoreRequest,
+    reviewedPriorFrame: reviewFor(first.requiredReview[0]),
+  });
+  assert.equal(retried.restorationDisposition, "safe_release_without_zero_proof");
+  assert.deepEqual(deviceCalls(fixture.calls).map((call) => call.kind), ["finalProcess", "safety"]);
+  const retryAction = committedActionPayloads(fixture.input.artifactRoot).at(-1);
+  assert.equal(retryAction.restoreAttempt, 2);
+  assert.equal(retryAction.priorActionAuditMaintenance.publicationIncidents.length, 1);
+  const second = await orchestrator.execute(secondInput);
+  assert.equal(second.status, "needs_baseline_review");
+
+  fixture.calls.length = 0;
+  const replayed = await orchestrator.execute(restoreRequest);
+  assert.equal(replayed.restorationDisposition, "safe_release_without_zero_proof");
+  assert.equal(deviceCalls(fixture.calls).length, 0);
 });
 
 test("persistent restore clock failure reaches the production cleanup-only force-stop runner", async (t) => {
@@ -4504,7 +5968,20 @@ test("live fresh-launch monitor retains exact target continuity with the spatial
 });
 
 test("live prepare clearance waits for both exact process and foreground absence before launch", async (t) => {
-  for (const priorPackage of ["com.test.fullworld", "com.test.incumbent"]) {
+  await t.test("same-package prior is rejected before live clearance", async (t) => {
+    const component = "com.test.fullworld/.PriorActivity";
+    const fixture = await createPreparedFixture(t, {
+      priorSnapshot: { component, packageName: "com.test.fullworld", userInstalled: true },
+      inputOverrides: { priorForeground: { kind: "non_receipt_bound", component } },
+    });
+    await assert.rejects(
+      createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input),
+      /prior|package|same/i,
+    );
+    assert.equal(deviceCalls(fixture.calls).length, 0);
+  });
+
+  for (const priorPackage of ["com.test.incumbent"]) {
     await t.test(priorPackage, async (t) => {
       const component = `${priorPackage}/.MainActivity`;
       const fixture = await createPreparedFixture(t, {
@@ -4560,6 +6037,8 @@ test("live prepare clearance rejects uncertain PID probes and obeys the absolute
   for (const [label, pidResult, pattern] of [
     ["offline", { code: 1, stdout: "", stderr: "adb: device offline", timedOut: false }, /PID.*offline/i],
     ["empty-success", { code: 0, stdout: "", stderr: "", timedOut: false }, /PID.*failed/i],
+    ["whitespace-stdout", { code: 1, stdout: "\n", stderr: "", timedOut: false }, /PID.*failed/i],
+    ["whitespace-stderr", { code: 1, stdout: "", stderr: " \n", timedOut: false }, /PID.*failed/i],
     ["malformed", { code: 0, stdout: "not-a-pid", stderr: "", timedOut: false }, /PID.*malformed/i],
     ["still-running", { code: 0, stdout: "5151\n", stderr: "", timedOut: false }, /deadline|remaining/i],
   ]) {
@@ -4584,6 +6063,369 @@ test("live prepare clearance rejects uncertain PID probes and obeys the absolute
       assert.equal(effects.filter(({ args }) => args.includes("force-stop")).length, 1);
     });
   }
+});
+
+test("prepare requires a separately receipted clean PID absence before declaring an incumbent stale", async (t) => {
+  const component = "com.test.fullworld/.platform.LaunchActivity";
+  const fixture = await createPreparedFixture(t, {
+    priorSnapshot: { component, packageName: "com.test.fullworld", userInstalled: true },
+    inputOverrides: { priorForeground: { kind: "receipt_bound", component, receiptId: "b".repeat(64) } },
+  });
+  let launchCalled = false;
+  fixture.dependencies.stopPackage = async (context) => {
+    fixture.calls.push({ kind: "stop", context });
+    return completedStopReceipt(context);
+  };
+  fixture.dependencies.launchTarget = async () => {
+    launchCalled = true;
+    throw new Error("launch must not follow an unproven prepare clearance");
+  };
+
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+  assert.equal(result.status, "preparation_failed");
+  assert.match(result.primaryError, /PID-absence.*receipt/i);
+  assert.equal(launchCalled, false);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.equal(action.priorForeground.receiptFreshness, "unknown_after_stop_attempt");
+  assert.deepEqual(action.prepareClearanceEvidence, [{
+    status: "prepare_clearance_incomplete",
+    stopReceipt: completedStopReceipt({
+      serial: fixture.input.serial,
+      packageName: fixture.input.scenario.packageName,
+      reason: "prepare_target_clearance",
+    }),
+    pidAbsence: null,
+  }]);
+});
+
+test("prepare rejects malformed PID-absence receipts without promoting freshness", async (t) => {
+  const malformed = [
+    ["serial", { serial: "emulator-9999" }],
+    ["package", { packageName: "com.test.other" }],
+    ["exit", { exitCode: 0 }],
+    ["timeout", { timedOut: true }],
+    ["stdout", { stdout: "5151\n" }],
+    ["stderr", { stderr: "transport warning" }],
+    ["extra key", { extra: true }],
+  ];
+  for (const [label, pidOverrides] of malformed) {
+    await t.test(label, async (t) => {
+      const component = "com.test.fullworld/.platform.LaunchActivity";
+      const fixture = await createPreparedFixture(t, {
+        priorSnapshot: { component, packageName: "com.test.fullworld", userInstalled: true },
+        inputOverrides: { priorForeground: { kind: "receipt_bound", component, receiptId: "e".repeat(64) } },
+      });
+      fixture.dependencies.stopPackage = async (context) => {
+        fixture.calls.push({ kind: "stop", context });
+        return completedPrepareClearanceReceipt(context, pidOverrides);
+      };
+
+      const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+      assert.equal(result.status, "preparation_failed");
+      assert.match(result.primaryError, /PID-absence.*receipt/i);
+      const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+        .trim().split("\n").map(JSON.parse).at(-1);
+      assert.equal(action.priorForeground.receiptFreshness, "unknown_after_stop_attempt");
+      assert.deepEqual(action.prepareClearanceEvidence, [{
+        status: "prepare_clearance_incomplete",
+        stopReceipt: completedStopReceipt({
+          serial: fixture.input.serial,
+          packageName: fixture.input.scenario.packageName,
+          reason: "prepare_target_clearance",
+        }),
+        pidAbsence: null,
+      }]);
+      assert.equal(fixture.calls.some((call) => call.kind === "launch"), false);
+    });
+  }
+});
+
+test("typed partial clearance retains exact stop evidence when its PID proof is malformed", async (t) => {
+  const component = "com.test.fullworld/.platform.LaunchActivity";
+  const fixture = await createPreparedFixture(t, {
+    priorSnapshot: { component, packageName: "com.test.fullworld", userInstalled: true },
+    inputOverrides: { priorForeground: { kind: "receipt_bound", component, receiptId: "9".repeat(64) } },
+  });
+  fixture.dependencies.stopPackage = async (context) => {
+    fixture.calls.push({ kind: "stop", context });
+    throw new worldLocomotion.LocomotionStopClearanceError(
+      new Error("injected activity-clearance failure"),
+      completedStopReceipt(context),
+      cleanPidAbsenceReceipt({ serial: context.serial, packageName: context.packageName }, { extra: true }),
+    );
+  };
+
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+  assert.equal(result.status, "preparation_failed");
+  assert.match(result.primaryError, /exact clean PID-absence receipt/i);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.equal(action.priorForeground.receiptFreshness, "unknown_after_stop_attempt");
+  assert.deepEqual(action.prepareClearanceEvidence, [{
+    status: "prepare_clearance_incomplete",
+    stopReceipt: completedStopReceipt({
+      serial: fixture.input.serial,
+      packageName: fixture.input.scenario.packageName,
+      reason: "prepare_target_clearance",
+    }),
+    pidAbsence: null,
+  }]);
+  assert.equal(fixture.calls.some((call) => call.kind === "launch"), false);
+});
+
+test("receipt-bound stop failure before command completion remains explicit unknown for either incumbent layout", async (t) => {
+  for (const priorPackage of ["com.test.fullworld", "com.test.incumbent"]) {
+    await t.test(priorPackage, async (t) => {
+      const component = priorPackage === "com.test.fullworld"
+        ? "com.test.fullworld/.platform.LaunchActivity"
+        : "com.test.incumbent/.MainActivity";
+      const fixture = await createPreparedFixture(t, {
+        priorSnapshot: { component, packageName: priorPackage, userInstalled: true },
+        inputOverrides: { priorForeground: { kind: "receipt_bound", component, receiptId: "8".repeat(64) } },
+      });
+      fixture.dependencies.stopPackage = async (context) => {
+        fixture.calls.push({ kind: "stop", context });
+        if (context.packageName === priorPackage) throw new Error("injected force-stop transport failure");
+        return completedPrepareClearanceReceipt(context);
+      };
+
+      const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+      assert.equal(result.status, "preparation_failed");
+      assert.match(result.primaryError, /force-stop transport failure/i);
+      const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+        .trim().split("\n").map(JSON.parse).at(-1);
+      assert.equal(action.priorForeground.receiptFreshness, "unknown_after_stop_attempt");
+      assert.equal(action.priorForeground.relaunchDisposition, "withheld_receipt_bound");
+      assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.packageName === priorPackage).length, 1);
+      assert.equal(fixture.calls.some((call) => call.kind === "launch" || call.kind === "relaunchPrior"), false);
+      assert.deepEqual(
+        action.prepareClearanceEvidence,
+        priorPackage === fixture.input.scenario.packageName
+          ? []
+          : [completedPrepareClearanceReceipt({
+            serial: fixture.input.serial,
+            packageName: fixture.input.scenario.packageName,
+            reason: "prepare_target_clearance",
+          })],
+      );
+    });
+  }
+});
+
+test("separate receipt-bound incumbent stays not-evaluated when target clearance fails first", async (t) => {
+  const component = "com.test.incumbent/.MainActivity";
+  const fixture = await createPreparedFixture(t, {
+    priorSnapshot: { component, packageName: "com.test.incumbent", userInstalled: true },
+    inputOverrides: { priorForeground: { kind: "receipt_bound", component, receiptId: "7".repeat(64) } },
+  });
+  fixture.dependencies.stopPackage = async (context) => {
+    fixture.calls.push({ kind: "stop", context });
+    throw new Error("injected target-clearance transport failure");
+  };
+
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+  assert.equal(result.status, "preparation_failed");
+  assert.match(result.primaryError, /target-clearance transport failure/i);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.equal(action.priorForeground.receiptFreshness, "not_evaluated_cp1");
+  assert.equal(action.priorForeground.relaunchDisposition, "withheld_receipt_bound");
+  assert.deepEqual(action.prepareClearanceEvidence, []);
+  assert.deepEqual(
+    fixture.calls.filter((call) => call.kind === "stop").map((call) => call.context.packageName),
+    [fixture.input.scenario.packageName],
+  );
+  assert.equal(fixture.calls.some((call) => call.kind === "launch" || call.kind === "relaunchPrior"), false);
+});
+
+test("normal prepare clearance persists exact PID-absence evidence for either incumbent layout", async (t) => {
+  for (const priorPackage of ["com.test.fullworld", "com.test.incumbent"]) {
+    await t.test(priorPackage, async (t) => {
+      const component = priorPackage === "com.test.fullworld"
+        ? "com.test.fullworld/.platform.LaunchActivity"
+        : "com.test.incumbent/.MainActivity";
+      const fixture = await createPreparedFixture(t, {
+        priorSnapshot: { component, packageName: priorPackage, userInstalled: true },
+        inputOverrides: { priorForeground: { kind: "receipt_bound", component, receiptId: "f".repeat(64) } },
+      });
+      fixture.dependencies.stopPackage = async (context) => {
+        fixture.calls.push({ kind: "stop", context });
+        return context.reason === "prepare_target_clearance" || context.reason === "prepare_declared_incumbent_clearance"
+          ? completedPrepareClearanceReceipt(context)
+          : completedStopReceipt(context);
+      };
+      fixture.dependencies.launchTarget = async () => {
+        throw new Error("injected post-clearance launch failure");
+      };
+
+      const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+      assert.equal(result.status, "preparation_failed");
+      assert.match(result.primaryError, /post-clearance launch failure/i);
+      const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+        .trim().split("\n").map(JSON.parse).at(-1);
+      assert.equal(action.priorForeground.receiptFreshness, "known_stale");
+      const priorClearance = action.prepareClearanceEvidence.find((item) => item.stopReceipt.packageName === priorPackage);
+      const priorReason = priorPackage === fixture.input.scenario.packageName
+        ? "prepare_target_clearance"
+        : "prepare_declared_incumbent_clearance";
+      assert.deepEqual(priorClearance, completedPrepareClearanceReceipt({
+        serial: fixture.input.serial,
+        packageName: priorPackage,
+        reason: priorReason,
+      }));
+      assert.equal(action.prepareClearanceEvidence.length, priorPackage === fixture.input.scenario.packageName ? 1 : 2);
+    });
+  }
+});
+
+test("receipt-bound prepare failure records known stale when PID absence preceded an activity-probe failure", async (t) => {
+  for (const priorPackage of ["com.test.fullworld", "com.test.incumbent"]) {
+    await t.test(priorPackage, async (t) => {
+      const component = priorPackage === "com.test.fullworld"
+        ? "com.test.fullworld/.platform.LaunchActivity"
+        : "com.test.incumbent/.MainActivity";
+      const fixture = await createPreparedFixture(t, {
+        priorSnapshot: { component, packageName: priorPackage, userInstalled: true },
+        inputOverrides: { priorForeground: { kind: "receipt_bound", component, receiptId: "c".repeat(64) } },
+      });
+      let stoppingPackage = null;
+      const effects = [];
+      const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+        resolveAdb: () => "/fixture/injected-adb",
+        monotonicNs: () => 1_000_000_000n,
+        sleep: async () => {},
+        runText: async (_cmd, args, options) => {
+          effects.push({ args, options });
+          if (args.includes("force-stop")) {
+            stoppingPackage = args.at(-1);
+            return { code: 0, stdout: "", stderr: "", timedOut: false };
+          }
+          if (args.includes("pidof")) {
+            return { code: 1, stdout: "", stderr: "", timedOut: false };
+          }
+          if (args.includes("activities")) {
+            return stoppingPackage === priorPackage
+              ? { code: 1, stdout: "", stderr: "activity manager unavailable", timedOut: false }
+              : { code: 0, stdout: "ACTIVITY MANAGER ACTIVITIES\nmResumedActivity: null\n", stderr: "", timedOut: false };
+          }
+          throw new Error(`unexpected fixture command: ${args.join(" ")}`);
+        },
+      });
+      fixture.dependencies.stopPackage = live.stopPackage;
+
+      const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+      assert.equal(result.status, "preparation_failed");
+      assert.match(result.primaryError, /activity manager unavailable/i);
+      assert.equal(fixture.calls.some((call) => call.kind === "relaunchPrior"), false);
+      const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+        .trim().split("\n").map(JSON.parse).at(-1);
+      assert.equal(action.priorForeground.receiptFreshness, "known_stale");
+      assert.equal(action.priorForeground.relaunchDisposition, "withheld_receipt_bound");
+      assert.deepEqual(
+        action.prepareClearanceEvidence.find((item) => item.stopReceipt.packageName === priorPackage),
+        {
+          status: "prepare_clearance_incomplete",
+          stopReceipt: completedStopReceipt({
+            serial: fixture.input.serial,
+            packageName: priorPackage,
+            reason: priorPackage === fixture.input.scenario.packageName
+              ? "prepare_target_clearance"
+              : "prepare_declared_incumbent_clearance",
+          }),
+          pidAbsence: cleanPidAbsenceReceipt({ serial: fixture.input.serial, packageName: priorPackage }),
+        },
+      );
+      assert.equal(effects.filter(({ args }) => args.includes("force-stop") && args.at(-1) === priorPackage).length, 1);
+      assert.equal(effects.filter(({ args }) => args.includes("pidof") && args.at(-1) === priorPackage).length, 1);
+    });
+  }
+});
+
+test("receipt-bound prepare failure records explicit unknown freshness after a completed stop with uncertain PID state", async (t) => {
+  for (const priorPackage of ["com.test.fullworld", "com.test.incumbent"]) {
+    await t.test(priorPackage, async (t) => {
+      const component = priorPackage === "com.test.fullworld"
+        ? "com.test.fullworld/.platform.LaunchActivity"
+        : "com.test.incumbent/.MainActivity";
+      const fixture = await createPreparedFixture(t, {
+        priorSnapshot: { component, packageName: priorPackage, userInstalled: true },
+        inputOverrides: { priorForeground: { kind: "receipt_bound", component, receiptId: "d".repeat(64) } },
+      });
+      let stoppingPackage = null;
+      const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+        resolveAdb: () => "/fixture/injected-adb",
+        monotonicNs: () => 1_000_000_000n,
+        sleep: async () => {},
+        runText: async (_cmd, args) => {
+          if (args.includes("force-stop")) {
+            stoppingPackage = args.at(-1);
+            return { code: 0, stdout: "", stderr: "", timedOut: false };
+          }
+          if (args.includes("pidof")) {
+            return stoppingPackage === priorPackage
+              ? { code: 1, stdout: "", stderr: "adb: device offline", timedOut: false }
+              : { code: 1, stdout: "", stderr: "", timedOut: false };
+          }
+          if (args.includes("activities")) {
+            return { code: 0, stdout: "ACTIVITY MANAGER ACTIVITIES\nmResumedActivity: null\n", stderr: "", timedOut: false };
+          }
+          throw new Error(`unexpected fixture command: ${args.join(" ")}`);
+        },
+      });
+      fixture.dependencies.stopPackage = live.stopPackage;
+
+      const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+
+      assert.equal(result.status, "preparation_failed");
+      assert.match(result.primaryError, /PID.*offline/i);
+      assert.equal(fixture.calls.some((call) => call.kind === "relaunchPrior"), false);
+      const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+        .trim().split("\n").map(JSON.parse).at(-1);
+      assert.equal(action.priorForeground.receiptFreshness, "unknown_after_stop_attempt");
+      assert.equal(action.priorForeground.relaunchDisposition, "withheld_receipt_bound");
+      assert.deepEqual(
+        action.prepareClearanceEvidence.find((item) => item.stopReceipt.packageName === priorPackage),
+        {
+          status: "prepare_clearance_incomplete",
+          stopReceipt: completedStopReceipt({
+            serial: fixture.input.serial,
+            packageName: priorPackage,
+            reason: priorPackage === fixture.input.scenario.packageName
+              ? "prepare_target_clearance"
+              : "prepare_declared_incumbent_clearance",
+          }),
+          pidAbsence: null,
+        },
+      );
+    });
+  }
+});
+
+test("non-prepare live stops retain the unchanged exact four-key receipt", async () => {
+  const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+    resolveAdb: () => "/fixture/injected-adb",
+    monotonicNs: () => 1_000_000_000n,
+    sleep: async () => {},
+    runText: async () => ({ code: 0, stdout: "", stderr: "", timedOut: false }),
+  });
+  const context = {
+    serial: "emulator-5554",
+    packageName: "com.test.fullworld",
+    reason: "restore_run_owned_target",
+    timeoutMs: 10_000,
+    deadlineMonotonicNs: "11000000000",
+  };
+  const receipt = await live.stopPackage(context);
+  assert.deepEqual(receipt, completedStopReceipt(context));
+  assert.deepEqual(Object.keys(receipt).sort(), ["packageName", "reason", "serial", "status"]);
 });
 
 const baseInput = {
@@ -5710,13 +7552,29 @@ test("every deferred locomote result must transfer the exact nonce disposition b
       assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /nonce|cleanup|ownership|disposition/i);
       assert.equal(fixture.calls.some((call) => call.kind === "capture"), false);
       const effects = fixture.calls.filter((call) => ["locomote", "stop", "nonceCleanup"].includes(call.kind));
-      assert.deepEqual(effects.map((call) => call.kind), ["locomote", "stop", "nonceCleanup"]);
+      assert.deepEqual(effects.map((call) => call.kind), ["locomote", "stop"]);
       assert.equal(effects[1].context.reason, "step_unquiesced_locomotion");
-      assert.equal(effects[2].context.processStopped, true);
-      assert.equal(effects[2].context.probeOnly, undefined);
-      const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+      const stepAction = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
         .trim().split("\n").map(JSON.parse).at(-1);
-      assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(effects[2].context));
+      assert.equal(stepAction.locomotionNonceCleanup, null);
+
+      fixture.calls.length = 0;
+      const restored = await fixture.orchestrator.execute({
+        action: "restore",
+        runId: fixture.prepared.runId,
+        reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+      });
+      assert.equal(restored.status, "restore_failed");
+      assert.equal(restored.restorationDisposition, "safe_release_without_zero_proof");
+      const finalProcessIndex = fixture.calls.findIndex((call) => call.kind === "finalProcess");
+      const nonceCleanupIndex = fixture.calls.findIndex((call) => call.kind === "nonceCleanup");
+      assert.ok(finalProcessIndex >= 0 && nonceCleanupIndex > finalProcessIndex);
+      const cleanup = fixture.calls[nonceCleanupIndex];
+      assert.equal(cleanup.context.processStopped, true);
+      assert.equal(cleanup.context.probeOnly, undefined);
+      const restoreAction = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+        .trim().split("\n").map(JSON.parse).at(-1);
+      assert.deepEqual(restoreAction.locomotionNonceCleanup, successfulNonceCleanupReceipt(cleanup.context));
     });
   }
 });
@@ -5742,8 +7600,20 @@ test("an unquiesced deferred disposition cannot claim finalization or removal", 
       assert.equal(fixture.calls.some((call) => call.kind === "capture"), false);
       assert.deepEqual(
         fixture.calls.filter((call) => ["locomote", "stop", "nonceCleanup"].includes(call.kind)).map((call) => call.kind),
-        ["locomote", "stop", "nonceCleanup"],
+        ["locomote", "stop"],
       );
+
+      fixture.calls.length = 0;
+      const restored = await fixture.orchestrator.execute({
+        action: "restore",
+        runId: fixture.prepared.runId,
+        reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+      });
+      assert.equal(restored.restorationDisposition, "safe_release_without_zero_proof");
+      const finalProcessIndex = fixture.calls.findIndex((call) => call.kind === "finalProcess");
+      const nonceCleanupIndex = fixture.calls.findIndex((call) => call.kind === "nonceCleanup");
+      assert.ok(finalProcessIndex >= 0 && nonceCleanupIndex > finalProcessIndex);
+      assert.equal(fixture.calls[nonceCleanupIndex].context.processStopped, true);
     });
   }
 });
@@ -5779,15 +7649,29 @@ test("live nonce cleanup must prove exact one-removal absence and finalization b
       assert.equal(stopped.status, "stopped");
       assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /nonce|cleanup|finalization|absence|attempt/i);
       assert.equal(fixture.calls.some((call) => call.kind === "capture"), false);
-      const cleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
-      assert.equal(cleanups.length, 2);
-      assert.equal(cleanups[0].context.processStopped, undefined);
-      assert.equal(cleanups[1].context.processStopped, true);
-      assert.equal(cleanups[1].context.probeOnly, true, "an invoked cleanup may never authorize a second removal");
+      const liveCleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
+      assert.equal(liveCleanups.length, 1);
+      assert.equal(liveCleanups[0].context.processStopped, undefined);
       assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
+      const stepAction = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
+        .trim().split("\n").map(JSON.parse).at(-1);
+      assert.equal(stepAction.locomotionNonceCleanup, null);
+
+      fixture.calls.length = 0;
+      const restored = await fixture.orchestrator.execute({
+        action: "restore",
+        runId: fixture.prepared.runId,
+        reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+      });
+      assert.equal(restored.status, "restore_failed");
+      assert.equal(restored.restorationDisposition, "safe_release_without_zero_proof");
+      const recovery = fixture.calls.filter((call) => call.kind === "nonceCleanup");
+      assert.equal(recovery.length, 1);
+      assert.equal(recovery[0].context.processStopped, true);
+      assert.equal(recovery[0].context.probeOnly, true, "an invoked cleanup may never authorize a second removal");
       const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
         .trim().split("\n").map(JSON.parse).at(-1);
-      assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(cleanups[1].context));
+      assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(recovery[0].context));
       assert.equal("finalizationSha256" in action.locomotionNonceCleanup, false,
         "a proven process stop replaces live guest finalization");
     });
@@ -5863,11 +7747,15 @@ test("stopped-process cleanup forbids finalization evidence and converges throug
   });
   let cleanupCalls = 0;
   let removalAttempts = 0;
+  let restoreNowNs = null;
   fixture.dependencies.cleanupLocomotionNonce = async (context) => {
     fixture.calls.push({ kind: "nonceCleanup", context });
     cleanupCalls++;
     if (context.probeOnly !== true) removalAttempts++;
     const receipt = successfulNonceCleanupReceipt(context);
+    if (context.processStopped === true && restoreNowNs !== null) {
+      restoreNowNs = BigInt(context.deadlineMonotonicNs) - 1n;
+    }
     return cleanupCalls === 1 ? { ...receipt, finalizationSha256: "d".repeat(64) } : receipt;
   };
   fixture.calls.length = 0;
@@ -5876,28 +7764,48 @@ test("stopped-process cleanup forbids finalization evidence and converges throug
 
   assert.equal(stopped.status, "stopped");
   assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /nonce|cleanup|finalization|absence/i);
-  assert.equal(cleanupCalls, 1);
+  assert.equal(cleanupCalls, 0, "the step cannot clean until restore proves exact target absence");
   const stepAction = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
     .trim().split("\n").map(JSON.parse).at(-1);
   assert.equal(stepAction.locomotionNonceCleanup, null, "an impossible stopped-process SHA is not retained as proof");
 
   fixture.calls.length = 0;
-  const restored = await fixture.orchestrator.execute({
+  restoreNowNs = 2_000_000_000n;
+  fixture.dependencies.monotonicNs = () => restoreNowNs++;
+  const firstRestore = await fixture.orchestrator.execute({
     action: "restore",
     runId: fixture.prepared.runId,
     reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
 
-  assert.equal(restored.status, "restored_needs_review");
-  assert.equal(restored.primaryError, null);
+  assert.equal(firstRestore.status, "restore_failed");
+  assert.equal(firstRestore.restorationDisposition, "unresolved");
+  assert.match(firstRestore.cleanupError, /nonce|finalization/i);
+  const firstRecovery = fixture.calls.filter((call) => call.kind === "nonceCleanup");
+  assert.equal(firstRecovery.length, 1);
+  assert.equal(firstRecovery[0].context.processStopped, true);
+  assert.equal(firstRecovery[0].context.probeOnly, undefined);
+  assert.equal(removalAttempts, 1, "the first process-stopped cleanup owns the sole removal attempt");
+  const targetAbsenceDeadline = BigInt(fixture.calls.find((call) => call.kind === "finalProcess").context.deadlineMonotonicNs);
+  const stoppedNonceDeadline = BigInt(firstRecovery[0].context.deadlineMonotonicNs);
+  assert.ok(stoppedNonceDeadline - targetAbsenceDeadline >= 2_851_000_000n,
+    "stopped-process nonce recovery owns its complete independent deadline window");
+
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(firstRestore.requiredReview[0]),
+  });
+  assert.equal(restored.status, "restore_failed");
+  assert.equal(restored.restorationDisposition, "safe_release_without_zero_proof");
   assert.equal(restored.cleanupError, null);
   const recovery = fixture.calls.filter((call) => call.kind === "nonceCleanup");
   assert.equal(recovery.length, 1);
   assert.equal(recovery[0].context.processStopped, true);
   assert.equal(recovery[0].context.probeOnly, true);
-  assert.equal(removalAttempts, 1, "the later recovery only probes after the sole removal attempt");
-  const restoreAction = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
-    .trim().split("\n").map(JSON.parse).at(-1);
+  assert.equal(removalAttempts, 1, "the retry only probes after the sole removal attempt");
+  const restoreAction = committedActionPayloads(fixture.input.artifactRoot).at(-1);
   assert.deepEqual(restoreAction.locomotionNonceCleanup, successfulNonceCleanupReceipt(recovery[0].context));
 });
 
@@ -5948,7 +7856,7 @@ test("launch-handoff cadence is reproduced from monotonic sample timestamps, not
   assert.equal(fixture.calls.filter((call) => call.kind === "stop" && call.context.reason === "prepare_failure_cleanup").length, 1);
 });
 
-test("post-request deadline failure retains unquiesced evidence and stops before the sole nonce cleanup", async (t) => {
+test("post-request deadline failure defers nonce cleanup until restore proves target absence", async (t) => {
   const fixture = await prepareForSteps(t);
   let clockBroken = false;
   let tick = 50_000_000_000n;
@@ -5969,13 +7877,24 @@ test("post-request deadline failure retains unquiesced evidence and stops before
   assert.equal(stopped.status, "stopped");
   assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /clock|barrier|deferred/i);
   const effects = fixture.calls.filter((call) => call.kind === "locomote" || call.kind === "stop" || call.kind === "nonceCleanup");
-  assert.deepEqual(effects.map((call) => call.kind), ["locomote", "stop", "nonceCleanup"]);
+  assert.deepEqual(effects.map((call) => call.kind), ["locomote", "stop"]);
   assert.equal(effects[1].context.reason, "step_unquiesced_locomotion");
-  assert.equal(effects[2].context.requestId, effects[0].input.requestId);
-  assert.equal(effects[2].context.cleanupOnly, true);
+
+  clockBroken = false;
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(restored.restorationDisposition, "safe_release_without_zero_proof");
+  const cleanup = fixture.calls.find((call) => call.kind === "nonceCleanup");
+  assert.equal(cleanup.context.requestId, effects[0].input.requestId);
+  assert.equal(cleanup.context.processStopped, true);
+  assert.ok(fixture.calls.indexOf(cleanup) > fixture.calls.findIndex((call) => call.kind === "finalProcess"));
 });
 
-test("post-request clock failure stops before cleaning a terminal but not-yet-finalized route-owned nonce", async (t) => {
+test("post-request clock failure retains a terminal but not-yet-finalized nonce for restore", async (t) => {
   const fixture = await prepareForSteps(t);
   let clockBroken = false;
   let tick = 60_000_000_000n;
@@ -5996,14 +7915,23 @@ test("post-request clock failure stops before cleaning a terminal but not-yet-fi
   assert.equal(stopped.status, "stopped");
   assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /post-quiescence route clock failed/i);
   assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
-  const cleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
-  assert.equal(cleanups.length, 1);
-  assert.equal(cleanups[0].context.cleanupOnly, true);
-  assert.equal(cleanups[0].context.processStopped, true);
-  assert.equal(cleanups[0].context.requestId, fixture.calls.find((call) => call.kind === "locomote").input.requestId);
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 0);
+  const requestId = fixture.calls.find((call) => call.kind === "locomote").input.requestId;
+
+  clockBroken = false;
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(restored.restorationDisposition, "safe_release_without_zero_proof");
+  const cleanup = fixture.calls.find((call) => call.kind === "nonceCleanup");
+  assert.equal(cleanup.context.processStopped, true);
+  assert.equal(cleanup.context.requestId, requestId);
 });
 
-test("a pre-removal finalization failure stops the target before the route performs its sole removal", async (t) => {
+test("a pre-removal finalization failure defers the sole removal until restore proves target absence", async (t) => {
   const fixture = await prepareForSteps(t, {
     locomotionResult: routeOwnedCompletedResult,
   });
@@ -6026,12 +7954,22 @@ test("a pre-removal finalization failure stops the target before the route perfo
   assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /finalization barrier failure/i);
   assert.deepEqual(
     fixture.calls.filter((call) => ["locomote", "nonceCleanup", "stop"].includes(call.kind)).map((call) => call.kind),
-    ["locomote", "nonceCleanup", "stop", "nonceCleanup"],
+    ["locomote", "nonceCleanup", "stop"],
   );
-  assert.equal(removalAttempts, 1, "failure before removal preserves one stop-first removal owner");
-  const cleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
-  assert.equal(cleanups[1].context.processStopped, true);
-  assert.equal(cleanups[1].context.probeOnly, undefined);
+  assert.equal(removalAttempts, 0, "failure before removal preserves one restore-owned removal");
+
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(restored.restorationDisposition, "safe_release_without_zero_proof");
+  const cleanup = fixture.calls.find((call) => call.kind === "nonceCleanup");
+  assert.equal(cleanup.context.processStopped, true);
+  assert.equal(cleanup.context.probeOnly, undefined);
+  assert.ok(fixture.calls.indexOf(cleanup) > fixture.calls.findIndex((call) => call.kind === "finalProcess"));
+  assert.equal(removalAttempts, 1, "restore performs exactly the one preserved removal");
 });
 
 test("a started removal with an unproven absence gets probe-only recovery and never a second rm", async (t) => {
@@ -6061,23 +7999,35 @@ test("a started removal with an unproven absence gets probe-only recovery and ne
   assert.equal(stopped.status, "stopped");
   assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /post-rm|absence/i);
   assert.equal(removalAttempts, 1);
-  assert.equal(probeOnlyAttempts, 1);
+  assert.equal(probeOnlyAttempts, 0);
   assert.equal(fixture.calls.filter((call) => call.kind === "stop").length, 1);
-  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup")[1].context.probeOnly, true);
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 1);
+
+  fixture.calls.length = 0;
+  const firstRestore = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(firstRestore.status, "restore_failed");
+  assert.equal(firstRestore.restorationDisposition, "unresolved");
+  assert.match(firstRestore.cleanupError, /absence probe remained ambiguous/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "capability" || call.kind === "hmd" || call.kind === "locomote"), false);
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 1);
+  assert.equal(fixture.calls.find((call) => call.kind === "nonceCleanup").context.probeOnly, true);
+  assert.equal(removalAttempts, 1, "restore must not issue a second removal");
+  assert.equal(probeOnlyAttempts, 1);
 
   fixture.calls.length = 0;
   const restored = await fixture.orchestrator.execute({
     action: "restore",
     runId: fixture.prepared.runId,
-    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+    reviewedPriorFrame: reviewFor(firstRestore.requiredReview[0]),
   });
-  assert.equal(restored.status, "restored_needs_review");
-  assert.equal(restored.primaryError, null);
-  assert.equal(restored.cleanupError, null);
-  assert.equal(fixture.calls.some((call) => call.kind === "capability" || call.kind === "hmd" || call.kind === "locomote"), false);
+  assert.equal(restored.restorationDisposition, "safe_release_without_zero_proof");
   assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 1);
   assert.equal(fixture.calls.find((call) => call.kind === "nonceCleanup").context.probeOnly, true);
-  assert.equal(removalAttempts, 1, "restore must not issue a second removal");
+  assert.equal(removalAttempts, 1, "retry must not issue a second removal");
   assert.equal(probeOnlyAttempts, 2);
 });
 
@@ -6100,14 +8050,24 @@ test("a spoofed cleanup error cannot authorize a second removal", async (t) => {
 
   assert.equal(stopped.status, "stopped");
   assert.match(`${stopped.primaryError} ${stopped.cleanupError}`, /spoofed a pre-rm disposition/i);
-  const cleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
-  assert.equal(cleanups.length, 2);
-  assert.equal(cleanups[1].context.processStopped, true);
-  assert.equal(cleanups[1].context.probeOnly, true, "only the authentic cleanup error class can prove removal never began");
+  assert.equal(fixture.calls.filter((call) => call.kind === "nonceCleanup").length, 1);
   assert.equal(removalAttempts, 1, "an untyped failure can never authorize another rm");
+
+  fixture.calls.length = 0;
+  const restored = await fixture.orchestrator.execute({
+    action: "restore",
+    runId: fixture.prepared.runId,
+    reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
+  });
+  assert.equal(restored.restorationDisposition, "safe_release_without_zero_proof");
+  const cleanups = fixture.calls.filter((call) => call.kind === "nonceCleanup");
+  assert.equal(cleanups.length, 1);
+  assert.equal(cleanups[0].context.processStopped, true);
+  assert.equal(cleanups[0].context.probeOnly, true, "only the authentic cleanup error class can prove removal never began");
+  assert.equal(removalAttempts, 1, "restore may only probe after the untyped failure");
   const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8")
     .trim().split("\n").map(JSON.parse).at(-1);
-  assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(cleanups[1].context));
+  assert.deepEqual(action.locomotionNonceCleanup, successfulNonceCleanupReceipt(cleanups[0].context));
 });
 
 test("nonce cleanup disposition is retained inside the deadline callback before a post-await clock fault", async (t) => {
@@ -6168,8 +8128,9 @@ test("failed emergency stop persists unquiesced ownership and restore is cleanup
     runId: fixture.prepared.runId,
     reviewedPriorFrame: reviewFor(stopped.requiredReview[0]),
   });
-  assert.equal(restored.status, "restored_needs_review");
-  assert.equal(restored.primaryError, null);
+  assert.equal(restored.status, "restore_failed");
+  assert.equal(restored.restorationDisposition, "safe_release_without_zero_proof");
+  assert.match(restored.primaryError, /zero-offset|restoration/i);
   assert.equal(restored.cleanupError, null);
   assert.equal(fixture.calls.some((call) => call.kind === "capability" || call.kind === "hmd" || call.kind === "locomote"), false);
   assert.deepEqual(
@@ -6675,17 +8636,31 @@ test("every post-link ledger maintenance fault preserves the one committed prepa
         reviewedPriorFrame: reviewFor(prepared.requiredReview[0]),
       });
       assert.equal(restored.status, "restored_needs_review");
-      assert.equal(restored.actionAuditMaintenance.status, "current", "the next action must repair any pending derived/durability maintenance");
+      assert.equal(restored.actionAuditMaintenance.status, "repair_pending",
+        "the prior action is repaired before the completed restore commits its own deferred maintenance");
       assert.match(restored.actionAuditMaintenance.errors.join(" "), new RegExp(hookName, "i"));
       const records = fs.readdirSync(recordsRoot).filter((name) => /^\d{6}\.json$/.test(name)).sort();
       assert.deepEqual(records, ["000001.json", "000002.json"]);
-      const payloadLines = records.map((name) => canonicalJson(JSON.parse(fs.readFileSync(path.join(recordsRoot, name), "utf8")).payload)).join("\n") + "\n";
+      assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"),
+        `${canonicalJson(record.payload)}\n`);
+      const adjudicated = await orchestrator.execute({
+        action: "adjudicate",
+        runId: prepared.runId,
+        frameAttestations: attestationsFor([prepared.requiredReview[0], restored.requiredReview[0]]),
+      });
+      assert.equal(adjudicated.status, "structural_complete");
+      assert.equal(adjudicated.actionAuditMaintenance.status, "current");
+      const finalRecords = fs.readdirSync(recordsRoot).filter((name) => /^\d{6}\.json$/.test(name)).sort();
+      assert.deepEqual(finalRecords, ["000001.json", "000002.json", "000003.json"]);
+      const payloadLines = finalRecords
+        .map((name) => canonicalJson(JSON.parse(fs.readFileSync(path.join(recordsRoot, name), "utf8")).payload))
+        .join("\n") + "\n";
       assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"), payloadLines);
     });
   }
 });
 
-test("two real post-link staging unlink failures are bound and repaired on the next authoritative replay", async (t) => {
+test("a real post-link staging unlink failure is bound and repaired on the next authoritative replay", async (t) => {
   const fixture = await createPreparedFixture(t);
   const recordsRoot = path.join(fixture.input.artifactRoot, "action-records");
   const originalUnlinkSync = fs.unlinkSync;
@@ -6695,7 +8670,7 @@ test("two real post-link staging unlink failures are bound and repaired on the n
     const candidatePath = String(candidate);
     if (candidatePath.includes(`${path.sep}action-records${path.sep}.000001.`)
       && /^\.000001\.[a-f0-9]{32}\.tmp$/.test(path.basename(candidatePath))
-      && injectedFailures < 2) {
+      && injectedFailures < 1) {
       injectedFailures++;
       ownedStagingPath = candidatePath;
       throw Object.assign(new Error(`injected real action-stage unlink failure ${injectedFailures}`), { code: "EIO" });
@@ -6707,9 +8682,9 @@ test("two real post-link staging unlink failures are bound and repaired on the n
     const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
     prepared = await orchestrator.execute(fixture.input);
     assert.equal(prepared.status, "needs_baseline_review");
-    assert.equal(injectedFailures, 2);
+    assert.equal(injectedFailures, 1);
     assert.ok(ownedStagingPath);
-    assert.equal(fs.existsSync(ownedStagingPath), true, "the twice-failed owned stage remains for later repair");
+    assert.equal(fs.existsSync(ownedStagingPath), true, "the failed owned stage remains for later repair");
     assert.equal(prepared.actionAuditMaintenance.status, "repair_pending");
 
     const restored = await orchestrator.execute({
@@ -6719,12 +8694,23 @@ test("two real post-link staging unlink failures are bound and repaired on the n
     });
     assert.equal(restored.status, "restored_needs_review");
     assert.equal(fs.existsSync(ownedStagingPath), false);
-    assert.deepEqual(fs.readdirSync(recordsRoot).sort(), ["000001.json", "000002.json"]);
-    const payloadLines = ["000001.json", "000002.json"]
-      .map((name) => canonicalJson(JSON.parse(fs.readFileSync(path.join(recordsRoot, name), "utf8")).payload))
-      .join("\n") + "\n";
+    assert.deepEqual(fs.readdirSync(recordsRoot).filter((name) => /^\d{6}\.json$/.test(name)).sort(),
+      ["000001.json", "000002.json"]);
+    assert.equal(fs.readdirSync(recordsRoot).filter((name) => /^\.000002\.[a-f0-9]{32}\.tmp$/.test(name)).length, 1);
+    assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"),
+      `${canonicalJson(committedActionPayloads(fixture.input.artifactRoot)[0])}\n`);
+    assert.equal(restored.actionAuditMaintenance.status, "repair_pending");
+    const adjudicated = await orchestrator.execute({
+      action: "adjudicate",
+      runId: prepared.runId,
+      frameAttestations: attestationsFor([prepared.requiredReview[0], restored.requiredReview[0]]),
+    });
+    assert.equal(adjudicated.status, "structural_complete");
+    assert.equal(adjudicated.actionAuditMaintenance.status, "current");
+    assert.deepEqual(fs.readdirSync(recordsRoot).sort(), ["000001.json", "000002.json", "000003.json"]);
+    const payloadLines = committedActionPayloads(fixture.input.artifactRoot)
+      .map((payload) => canonicalJson(payload)).join("\n") + "\n";
     assert.equal(fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8"), payloadLines);
-    assert.equal(restored.actionAuditMaintenance.status, "current");
   } finally {
     fs.unlinkSync = originalUnlinkSync;
   }
