@@ -21,7 +21,7 @@ External evidence root: `/private/tmp/pico-in-app-locomotion-cp2-2026-09-05.lAWE
 
 **Positive product-route evidence, with an entry-chronology caveat.** The repository's full-surface
 `run_in_app_locomotion_route` tool traversed the generated Boundary Lab Full
-world at absolute world-root offsets `0/1/2/4/8/16 m`. Every accepted
+world at protocol-absolute `AgentWorldRoot` targets `0/1/2/4/8/16 m`. Every accepted
 baseline/waypoint HMD sample was `(0,1.65,0)`—`x/z` at tracking origin and
 `y=1.65 m` at the provider's eye height—and every measured translation drift
 was `0 m` against the `0.02 m` experiment threshold. Guardian remained active,
@@ -29,17 +29,20 @@ and the app remained
 immersive beyond the earlier physical-walk experiment's authored route-gate
 labels between 1 m and 2 m. Those labels were not calibrated physical distance.
 
-Both explicitly selected mechanisms passed independent, matched cold-launch
+Both explicitly selected mechanisms traversed independent, matched cold-launch
 routes on the same boot: receipt, APK, absolute targets, budgets, and capture
 policy matched; the explicit mechanism and required glide duration differed.
-The approved selection rule therefore chooses
-**direct transform glide as the default mechanism** and retains
-**root replacement as a rendered-frame-proven fallback**. The tool input still
-requires an explicit mechanism and never silently switches or falls back.
+They rendered byte-identical `1/2/4/8/16 m` waypoint frames. Only direct also
+returned to the byte-exact zero baseline. The replacement acknowledgement read
+back local root position `(0,0,0)`, but its settled restore frame was not the
+baseline. The approved selection rule therefore yields **direct only passes**:
+**direct transform glide is the default mechanism**, while root replacement is
+not a rendered-frame-proven fallback. The tool input still requires an explicit
+mechanism and never silently switches or falls back.
 
-Every retained baseline, waypoint, and restoration PNG from both successful
-runs was opened and LOOKed. The visual verdicts below are grounded in those
-exact bytes. The tool receipts and adjudications remain capped at
+Every retained baseline, waypoint, and restoration PNG from both structurally
+completed runs was opened and LOOKed. The visual verdicts below are grounded in
+those exact bytes. The tool receipts and adjudications remain capped at
 `evidenceCeiling: "structural"`; this report does not relabel them as
 `vision_verified` or `device_verified` and does not turn temporal settlement
 into visual proof.
@@ -47,9 +50,9 @@ into visual proof.
 The retained evidence does not establish that the complete detailed
 released-state probe preceded the earliest build/install mutation. Therefore
 this report does not claim that the exact staged CP2 entry protocol was proved
-end to end. The later same-boot snapshot and each successful product route's
-own clean Full pre-movement safety checks support the route result described
-here; they do not repair the missing earlier chronology.
+end to end. The later same-boot snapshot and each structurally completed
+product route's own clean Full pre-movement safety checks support the route
+result described here; they do not repair the missing earlier chronology.
 
 This is not a Guardian disable and it emits no physical-walk, controller,
 keyboard, or tracked-head movement input. It moves the app-owned world root
@@ -110,12 +113,71 @@ replacement-recovery caveat.
 | 4 m | `replacement-route-r8/captures/003-waypoint.png` / `f34916499dbb4df3e9ee79f9ba0a6ff5b2f8d094da44926f3699da700fb4f54c` | `direct-route-r3/captures/003-waypoint.png` / same SHA | Prior gate has passed; a deeper cyan portal is centered over the shifted grid. |
 | 8 m | `replacement-route-r8/captures/004-waypoint.png` / `71618e11fa1f4b99b69be0af8893eb46b8a153e55e4267c09c3bec7817973381` | `direct-route-r3/captures/004-waypoint.png` / same SHA | Corridor advances again; the smaller cyan portal and center post remain visible, with no Guardian/Home frame. |
 | 16 m | `replacement-route-r8/captures/005-waypoint.png` / `9eb352694fd95654cc6a52298d4ee7988c0bf7360b6d37f579103ea51f198653` | `direct-route-r3/captures/005-waypoint.png` / same SHA | Far cyan gate and post remain centered on the continuing grid; no Home or ejection pixels appear. |
-| restored 0 m command | `replacement-route-r8/captures/999-restored-001.png` / `6db8516889f149d673066132a664c94899ac1d0d7530e793668b79751ed49a5a` | `direct-route-r3/captures/999-restored-001.png` / `4e135c1b4543d60d2283aa4b998ca32d2bdd92925ab77257291a7578c8348585` | Both remain in the Full corridor and both bridge receipts/readbacks report an absolute-zero root. Direct is byte-identical to baseline. Replacement is not: its LOOKed frame is closer and includes yellow/white peripheral geometry, so no pixel-identical replacement-baseline claim is made. |
+| restored 0 m command | `replacement-route-r8/captures/999-restored-001.png` / `6db8516889f149d673066132a664c94899ac1d0d7530e793668b79751ed49a5a` | `direct-route-r3/captures/999-restored-001.png` / `4e135c1b4543d60d2283aa4b998ca32d2bdd92925ab77257291a7578c8348585` | Both remain in the Full corridor and both bridge acknowledgements report local root position `(0,0,0)`. Direct is byte-identical to baseline. Replacement is not: its LOOKed frame shows cyan geometry at a different projection and includes yellow/white side-gate geometry at the frame edges. Rendered-space replacement zero is therefore **UNVERIFIED**. |
 
 The exact numeric offsets are bound by ordered absolute locomotion commands and
 their bridge acknowledgements. The screenshots prove the matching ordered
 perspective changes and uninterrupted Full-world rendering; they do not alone
 encode metric coordinates.
+
+## Replacement restore forensics
+
+The retained evidence establishes only the local-readback half of case (a), not
+its proposed offset-parent cause: the replacement producer read back the new
+`AgentWorldRoot`'s local `TransformComponent.position` as `(0,0,0)`, but the
+renderer did not return to the baseline view.
+[`TransformComponent`](../../spatial-interaction-api.md) is local-space TRS. The locomotion
+acknowledgement contains no host transform, composed/world/origin transform,
+descendant transform, or renderer readback. The explicit generated
+`AgentSpatialViewHost` is authored at zero/identity/unit scale and is never
+mutated by app code, so an app-authored host offset is refuted; a residual
+descendant-reparent, native `SpatialView` origin, or compositor state is
+**UNVERIFIED**. The restore also took no contemporaneous HMD sample, so the
+retained receipt cannot independently exclude a restore-time head-pose change.
+Those limits do not alter the operative result: replacement did not prove
+rendered zero.
+
+Case (b) is not an authored/generated path: the source refutes an intentional
+Boundary Lab subtree outside the replaceable root, and the matched endpoint
+frames provide supporting rendered evidence.
+The manifest-Full hierarchy is `SpatialViewContent -> AgentSpatialViewHost ->
+AgentWorldRoot -> SceneRoot`; `BoundaryLabScene` calls `addChild` for every
+enclosure and gate primitive beneath `SceneRoot`, and Full attachment panels
+use checked additions directly beneath `AgentWorldRoot`. Replacement moves
+every direct old-root child to the candidate before detaching the old root. The yellow/white pair is
+source-consistent with LEFT/RIGHT gate geometry; the four enclosure corner
+posts are yellow only. The primitive helper does not check `addChild`'s Boolean
+return, so the source proves the intended hierarchy rather than an independent
+runtime child census. Actual runtime descendant ancestry and an unexpected
+parenting failure are therefore **UNVERIFIED**. The byte-identical
+replacement/direct frames at all five nonzero offsets are evidence against a
+simple stationary subset, but do not elevate source structure into a runtime
+census.
+
+Case (c), an incompletely loaded baseline, is refuted by retained chronology.
+In the replacement cold launch, the last logged app `ModelComponent` addition
+was at `03:47:49.177`; the baseline was captured at `03:48:58.139`, 68.962
+seconds later. In the direct cold launch, those times were `04:24:09.869` and
+`04:25:16.388`, 66.519 seconds apart. Retained scene/sprite log-tag message
+counts stopped increasing by the 30-second monitor sample and remained
+unchanged at 45 and 60 seconds, and the two independent baselines were
+byte-identical. Direct then returned to the same baseline at `04:31:23.955`,
+more than seven minutes after its last logged launch-time model addition.
+Replacement does not call `BoundaryLabScene.build` during a move; it reparents
+the launch-created top-level children. Visually, the replacement restore also
+shows cyan geometry at a different projection rather than merely adding
+yellow/white objects. The baseline definition therefore does not need a
+scene-load fix on this evidence.
+
+The replacement restore record is
+`replacement-route-r8/action-records/000007.json` (SHA-256
+`c69d5bb81aeac603b9d501b5c579f611c4d8ada4c8c7e4c01b26e6297f711866`).
+It reports generation `6 -> 7` and local pose `(0,0,0)`, then records 12
+distinct candidate hashes before accepting `6db851...49a5a` twice. This stable
+pair proves only short-term byte stability, not equivalence to the intended
+baseline pose. Promotion of replacement to a proven fallback requires new live
+evidence with a contemporaneous fresh HMD sample and rendered/composed zero
+proof; this retained run cannot supply it.
 
 ## Real transition-then-stable behavior
 
@@ -151,8 +213,10 @@ polls were retained as `relation: "prior"` and rejected until a transition.
 Replacement restore changed on its first poll, then produced 12 changing
 candidate hashes before the twelfth candidate repeated on poll 13; its 18.4 s
 stable latency demonstrates why the protocol cannot encode the spike's 10 s
-grace as a guarantee. Direct restore first produced an intermediate candidate,
-then the exact baseline SHA, then its stable match.
+grace as a guarantee. That stable pair was not the zero baseline, demonstrating
+that transition-then-stable detects presentation but does not prove the
+requested rendered pose. Direct restore first produced an intermediate
+candidate, then the exact baseline SHA, then its stable match.
 
 ## Head pose, freshness, and drift
 
@@ -188,7 +252,9 @@ passing the `0.02 m` experiment threshold.
 
 All recorded quaternion deltas were `0 rad`. They are telemetry only; CP2 did
 not invent a quaternion pass threshold. Restore actions do not sample HMD pose,
-so no restore freshness claim is inferred.
+so no restore freshness claim is inferred. In the replacement run, the last
+fresh post-waypoint HMD acquisition completed 52.368 seconds before restore's
+pre-continuity probe; it cannot prove the head pose at the restore frame.
 
 ## Guardian, continuity, and no ejection
 
@@ -227,11 +293,14 @@ kept root generation `1` throughout and used a 500 ms glide. Replacement
 advanced the lifecycle generation at every absolute move and restored
 generation `6 → 7`; generation reconciliation remained successful.
 
-Because both passed, direct glide is the selected default: it is the smaller
-mutation and preserves root identity. Replacement remains an explicitly
-selectable, independently proven fallback. The tool must continue to reject
-legacy capability, stale root generation, or an explicit mechanism failure;
-it must never switch to the fallback silently.
+Applying the approved mechanism rule, direct only passes the complete route:
+it is the selected default, is the smaller mutation, preserves root identity,
+and proved its rendered return to baseline. Replacement proved the five
+nonzero traversal endpoints but not rendered restoration to zero, so it is not
+an independently proven fallback. Its current explicit tool mode is
+experimental evidence surface, not an authorized silent fallback. The tool
+must continue to reject legacy capability, stale root generation, or an
+explicit mechanism failure; it must never switch mechanisms silently.
 
 The direct acknowledgement structurally records completion of the requested
 500 ms interpolation, and the LOOKed captures prove its endpoints. CP2 retained
@@ -240,8 +309,8 @@ is not part of the mechanism-selection claim.
 
 ## Deviations and live hardening
 
-Only the successful `replacement-route-r8` and `direct-route-r3` runs support
-the mechanism conclusion. Earlier replacement attempts exposed bounded
+Only retained `replacement-route-r8` and `direct-route-r3` support the
+mechanism conclusion. Earlier replacement attempts exposed bounded
 prepare/log/readiness issues and were used to add TDD coverage before retrying.
 The first direct prepare exhausted its prepare budget while the emulator's
 safeguard center was nonzero; it never reached capability discovery, HMD
@@ -266,7 +335,7 @@ baseline as replacement, and used the same receipt, APK, targets, budgets, and
 capture policy. The documented control is an emulator viewpoint reset rather
 than app locomotion or physical-walk input.
 
-The successful product runs include the live-discovered, test-first hardening
+The structurally completed product runs include the live-discovered, test-first hardening
 on this branch: bounded prepare clearance and log windows, observed Full-stage
 readiness, retried explicit launch deferrals, spatial-shell-aware continuity,
 fresh HMD acquisition within reserved deadlines, and omission of absent
@@ -333,12 +402,14 @@ the external Polyfork GLB lane, hardware, and arbitrary Full-world reuse remain
 
 ## Restoration and emulator release
 
-Both product routes returned their owned world root to absolute zero and
-proved the target process absent. Replacement restore completed with generation
-`7`; direct restore completed with generation `1`. Both recorded no primary or
-cleanup error, target PID set `[]`, post-stop Guardian/VST/debug `1/1/1`, and
-center `0,0,0`. There was no receipt-bound prior app; no receipt-bound process
-was relaunched.
+Both product restore acknowledgements reported local root position zero, and
+both proved the target process absent. Only direct also proved the zero
+baseline in rendered bytes. Replacement completed structurally with generation
+`7`, but its different settled frame leaves rendered zero **UNVERIFIED**;
+direct completed with generation `1` and returned byte-exactly to baseline.
+Both recorded no primary or cleanup error, target PID set `[]`, post-stop
+Guardian/VST/debug `1/1/1`, and center `0,0,0`. There was no receipt-bound prior
+app; no receipt-bound process was relaunched.
 
 After the final route, `com.fleet.boundarylabmanifestfull` was force-stopped
 again idempotently and SystemUI was explicitly launched. Final read-only probes
@@ -372,12 +443,18 @@ repository. The repository stores only this summary and their hashes.
 | `replacement-route-r8/run.json` | `63c09a820ada5a699bab78fb457e162277ed561d22096b6cbd8fa91f99e1ae90` |
 | `replacement-route-r8/route.json` | `9554da52112958030b2fc11320bdfd91998b6caa3b4f4b3fe589d6c64ec45aa9` |
 | `replacement-route-r8/actions.jsonl` | `d2b75e6460b4a3795df8558943afce46c18b4f25636bdeb283d9289260366ff4` |
+| `replacement-route-r8/action-records/000001.json` | `83194763b294458a8963b47e7bcb0c06b2861037219e2e23671fcc65ef5b6346` |
+| `replacement-route-r8/action-records/000007.json` | `c69d5bb81aeac603b9d501b5c579f611c4d8ada4c8c7e4c01b26e6297f711866` |
+| `replacement-route-r8/logs/000-prepare.log` | `8cab798bede3da52dacd730b69c2cd490f75d7e1877e4d86d15746195cd601a7` |
 | `replacement-route-r8/adjudication.json` | `0176fdd517fdeb9a0fd951707554a786be5d0032d9bd5660f3d02dc5360ce368` |
 | canonical `replacement-route-r8` tree, 50 files / 10,681,371 bytes | `2ae35ff97f7cf72d90175d9e670b3caf6bd8555d5673604cd031003c120722b6` |
 | `mcp-live-r8/008-replacement-adjudicate-r8.json` | `39131428031dfdeb9b4fbed65cfa081eb5d0bc24fb652ddb3901e8b4c7d9bc4e` |
 | `direct-route-r3/run.json` | `9c3c1431893c841442bcef49d059c8fefbd2c63de3eb7c80e0a0c772ef4f0ac5` |
 | `direct-route-r3/route.json` | `eb45fe373614b937d4c5177277b9a47751e55f7f9fb4874d18301d6b7db640c6` |
 | `direct-route-r3/actions.jsonl` | `b3bb9360ff8dd08bbf8d277a50772874ae214151dd8ddabd25fc4e0c13b9e0a8` |
+| `direct-route-r3/action-records/000001.json` | `1556060944044ef017aae4284e673245ca8ebca641dd0ba3c718ec19c7c48822` |
+| `direct-route-r3/action-records/000007.json` | `4107c387d82af5f2cc24793cd778d8fbb12ee6330933bc4b43b495f31cf4d720` |
+| `direct-route-r3/logs/000-prepare.log` | `e9478f9a152e1c285dba5da12a30e730badc17440fb5559500cc2e1706d7ff50` |
 | `direct-route-r3/adjudication.json` | `c1905e423263f513146fbd041985a6dd91333334c7570a05bdda9cc702b65e68` |
 | canonical `direct-route-r3` tree, 47 files / 10,431,845 bytes | `bca14622abc5c8f91afd8ede774c9002d93b4cdde216644366cec77ed2194c2b` |
 | `mcp-live-r9/009-direct-adjudicate-r3.json` | `d5bf8f697ab26839e294b4a5b4bea595fdc3d3597d7b2a918c4e5deab4cd849d` |
@@ -408,7 +485,7 @@ imported the then-current `dist/` output.
 | `node --test test/worldlocomotion.mjs` | PASS: 414/414. |
 | `test:emulator-restart` | PASS: 689 pass / 1 skip / 0 fail across 690 tests. This is the fake suite and did not touch the released emulator. |
 | `test:conformance` | PASS: sample-conformance failures 0; boundary probe/experiment 69/69. |
-| `test:docsmeta` | PASS: 137 links across 66 files, 0 failures; the worktree `.git/config` warning is non-failing. |
+| `test:docsmeta` | PASS: 138 links across 66 files, 0 failures; the worktree `.git/config` warning is non-failing. |
 | `test:adoption-safety` | PASS: 48/0. |
 | `test:distribution-adoption` | Accepted known baseline: 41 pass / exactly 2 known stale failures (Linux gate count 45 versus asserted 44; suite count 48 versus asserted 46). |
 | `test:tarball` | PASS: installed full-surface server returned exactly 255 tools on macOS; Doors and the env-unset default each returned exactly 18. |

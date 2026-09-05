@@ -8,14 +8,20 @@ and external artifact root before it accepts a route.
 
 The [CP2 live regression](evidence/in-app-locomotion-cp2-2026-09-05/CP2.md)
 records positive product-route evidence through a generated Boundary Lab Full
-world at absolute offsets `0/1/2/4/8/16 m` on `emulator-5554`. Every settled
+world at protocol-absolute `AgentWorldRoot` targets `0/1/2/4/8/16 m` on
+`emulator-5554`. Every settled
 frame was LOOKed, every accepted baseline/waypoint HMD sample was
 `(0,1.65,0)`—tracking-origin `x/z` with the provider's `1.65 m` eye-height
 `y`—with `0 m` measured translation drift, Guardian remained active, and no
-ejection occurred. The retained bytes do not prove that the complete detailed
+ejection occurred. Direct glide also returned to the byte-exact zero baseline.
+Replacement matched every nonzero endpoint but its settled restore frame did
+not match baseline despite a local root-position readback of `(0,0,0)`, so
+replacement rendered-zero restoration and fallback status are **UNVERIFIED**. The retained
+bytes do not prove that the complete detailed
 released-state probe preceded the earliest build/install mutation, so the
 strict staged-entry chronology remains **UNVERIFIED**; a later same-boot
-snapshot matched the released state before the successful replacement route,
+snapshot matched the released state before the structurally completed
+replacement route,
 and each product route enforced its own clean Full safety preflight before
 movement. The historical
 [L0 spike](evidence/locomotion-spike-2026-09-02/L0.md) remains the feasibility
@@ -56,14 +62,34 @@ CP2 compared `direct` and `replacement` with matched cold-launch routes on the
 same boot: receipt, APK, absolute targets, budgets, and capture policy matched,
 while the explicit mechanism and its required glide duration differed. Both
 produced the same byte-exact baseline and ordered `1/2/4/8/16 m` waypoint
-frames and passed safety, continuity, HMD freshness/drift, restoration, and
-LOOK review. Direct restoration was byte-identical to baseline; replacement
-restoration was LOOKed and structurally accepted at absolute zero but produced
-a different settled frame, as the live report records.
-Therefore, choose `direct` as the default mechanism: it preserves root identity
-and uses the requested glide duration. `replacement` is a rendered-frame-proven
-fallback. The input remains explicit; the tool never silently switches to the
-fallback if direct fails.
+frames and passed safety, continuity, and waypoint HMD freshness/drift gates;
+every retained frame was LOOKed. Direct restoration was byte-identical to
+baseline. Replacement's
+structural acknowledgement reported local root position `(0,0,0)`, but its
+settled rendered frame differed from baseline.
+
+Applying the approved selection rule, **direct only passes** and is the default:
+it preserves root identity and uses the requested glide duration. Replacement
+is not a rendered-frame-proven fallback. Its explicit mode remains useful as an
+experimental evidence surface, but a route requiring proven zero restoration
+must not select it from this evidence. The input remains explicit; the tool
+never silently switches mechanisms if direct fails.
+
+The CP2 forensics refute an early/incompletely loaded baseline: the last logged
+model addition preceded each of two byte-identical cold baselines by more than
+66 seconds; retained scene/sprite log-tag message counts stopped increasing by
+the 30-second monitor sample and remained unchanged at 45 and 60 seconds;
+direct still returned to that hash more than seven minutes after its last
+logged launch-time model addition; and replacement reparents launch-created
+children rather than rebuilding Boundary Lab. Generated enclosure, gate, and
+panel content is authored beneath `AgentWorldRoot`, refuting an intentional
+out-of-root side-gate path. Runtime descendant ancestry was not independently
+censused. The remaining receipt gap is transform space: the acknowledgement
+reads a local `TransformComponent`; it contains no composed/world-space or
+renderer readback. Restore also sampled no fresh HMD pose. The exact residual
+native/view-origin, descendant-reparent, compositor, runtime-parenting, or
+unobserved head-pose cause is therefore **UNVERIFIED**, while the failed
+rendered-zero proof is definitive.
 
 ## Evidence contract
 
@@ -97,7 +123,10 @@ renderer-delay guarantee. In CP2, waypoint transitions were first observed
 3.265–5.021 seconds after the stable guest acknowledgement and settled in
 4.535–6.302 seconds. One replacement restore began changing within 0.549
 seconds but did not reach a stable pair until 18.407 seconds. No stale prior
-frame settled; see the live report for every per-mutation timing and trace.
+frame settled, but the replacement restore's stable pair was not the baseline.
+Thus settlement proves presentation and short-term byte stability, not the
+requested rendered pose; see the live report for every per-mutation timing and
+trace.
 
 The route reserve must be strictly greater than
 `capture.deadlineMs + route.glideDurationMs + 95,813 ms`. That floor admits the

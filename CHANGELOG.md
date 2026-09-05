@@ -8,11 +8,13 @@ Versions here key the plugin manifests (`/plugin update` uses them as its cache 
   `d1435ef`, CP2 exercised the Full-stage-only `run_in_app_locomotion_route` sequence over
   productized `0/1/2/4/8/16 m` routes with Guardian active and `0 m` measured drift at every
   accepted baseline/waypoint HMD sample. Every settled frame was LOOKed, and matched cold launches
-  compared explicit direct glide with root replacement on one boot. Both mechanisms passed, so
-  direct is the default and replacement is the proven fallback; neither selection silently falls
-  back. Product receipts remain structurally capped. The complete detailed released-state probe
-  is not retained before the earliest build/install mutation, so the exact staged-entry chronology
-  remains unverified; later same-boot and per-route safety evidence is stated separately.
+  compared explicit direct glide with root replacement on one boot. Both mechanisms rendered the
+  same five nonzero endpoints, but only direct returned to the byte-exact zero baseline. Direct is
+  therefore the default; replacement is not a proven fallback, and neither selection silently
+  switches mechanisms. Product receipts remain structurally capped. The complete detailed
+  released-state probe is not retained before the earliest build/install mutation, so the exact
+  staged-entry chronology remains unverified; later same-boot and per-route safety evidence is
+  stated separately.
 - **Later locomotion orchestration hardening is fake-gated, not a second live run.** After CP2
   released the emulator, nested downstream-proof deadlines, strict handoff/completion guards,
   nested restoration-stage fences, pre/post immutable-action publication fences, filesystem-only
