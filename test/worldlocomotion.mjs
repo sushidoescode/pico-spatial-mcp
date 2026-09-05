@@ -3906,6 +3906,91 @@ test("the live final PID probe accepts only clean pidof exit 1 as target absence
 
 const adb = "/fixture/adb";
 
+const keptForUserLaunchOutput = "Starting: Intent { cmp=com.test.fullworld/.platform.LaunchActivity }\n"
+  + "Warning: Activity not started because the  current activity is being kept for the user.\n"
+  + "Status: ok\nLaunchState: UNKNOWN (0)\n";
+
+function liveLaunchRetryFixture(results, onSleep = () => {}) {
+  let nowNs = 0n;
+  let index = 0;
+  const effects = [];
+  const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+    resolveAdb: () => "/fixture/injected-adb",
+    monotonicNs: () => nowNs,
+    sleep: async (ms) => {
+      effects.push({ kind: "sleep", at: nowNs, ms });
+      nowNs += BigInt(ms) * 1_000_000n;
+      onSleep();
+    },
+    runText: async (_cmd, args, options) => {
+      effects.push({ kind: "run", at: nowNs, args, options });
+      nowNs += 50_000_000n;
+      return { code: 0, stdout: "Status: ok\nLaunchState: COLD\n", stderr: "", timedOut: false,
+        ...results[Math.min(index++, results.length - 1)] };
+    },
+  });
+  return { live, effects };
+}
+
+test("live target launch retries only kept-for-user before starting the accepted-launch observer", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  const launch = liveLaunchRetryFixture([{ stdout: keptForUserLaunchOutput }, {}], () => {
+    assert.equal(fixture.calls.some(({ kind }) => ["launchObservation", "launchWindow", "probeRuntime", "capability"].includes(kind)), false);
+  });
+  fixture.dependencies.launchTarget = launch.live.launchTarget;
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(result.status, "needs_baseline_review", result.primaryError);
+  const launches = launch.effects.filter(({ kind }) => kind === "run");
+  assert.equal(launches.length, 2);
+  assert.ok(launches.every(({ args }) => JSON.stringify(args) === JSON.stringify([
+    "-s", fixture.input.serial, "shell", "am", "start", "-W", "-n", fixture.input.scenario.launchComponent,
+  ])));
+  assert.equal(fixture.calls.filter(({ kind }) => kind === "launchObservation").length, 1);
+});
+
+test("live target launch leaves accepted, ambiguous, and failing acknowledgements unretried", async (t) => {
+  for (const [label, result] of [
+    ["accepted", { stdout: "Status: ok\nLaunchState: COLD\n" }],
+    ["other ignored", { stdout: "Warning: Activity not started, intent has been delivered to currently running top-most instance.\nStatus: ok\n" }],
+    ["nonzero", { stdout: keptForUserLaunchOutput, code: 1 }],
+    ["timeout", { stdout: keptForUserLaunchOutput, timedOut: true }],
+    ["stderr", { stdout: keptForUserLaunchOutput, stderr: "adb: transport warning" }],
+    ["missing status", { stdout: keptForUserLaunchOutput.replace("Status: ok\n", "") }],
+    ["conflicting error", { stdout: `${keptForUserLaunchOutput}Error: launch permission denied\n` }],
+    ["conflicting status", { stdout: `${keptForUserLaunchOutput}Status: timeout\n` }],
+    ["conflicting launch state", { stdout: keptForUserLaunchOutput.replace("UNKNOWN (0)", "COLD") }],
+    ["duplicate warning", { stdout: `${keptForUserLaunchOutput}Warning: Activity not started, intent delivered\n` }],
+  ]) {
+    await t.test(label, async () => {
+      const fixture = liveLaunchRetryFixture([result, {}]);
+      await fixture.live.launchTarget({
+        serial: "emulator-5554", component: "com.test.fullworld/.platform.LaunchActivity",
+        timeoutMs: 1_000, deadlineMonotonicNs: "1000000000",
+      });
+      assert.equal(fixture.effects.filter(({ kind }) => kind === "run").length, 1);
+      assert.equal(fixture.effects.filter(({ kind }) => kind === "sleep").length, 0);
+    });
+  }
+});
+
+test("persistent kept-for-user launch stops at its deadline and preserves preparation cleanup", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  const launch = liveLaunchRetryFixture([{ stdout: keptForUserLaunchOutput }]);
+  fixture.dependencies.launchTarget = (context) => launch.live.launchTarget({
+    ...context, timeoutMs: 350, deadlineMonotonicNs: "350000000",
+  });
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(result.status, "preparation_failed");
+  assert.equal(result.structuralStop, "launch_failed");
+  assert.match(result.primaryError, /kept.for.the.user.*(?:deadline|remaining)/i);
+  const runs = launch.effects.filter(({ kind }) => kind === "run");
+  assert.ok(runs.length > 1);
+  assert.ok(runs.every(({ at, options }) => at < 350_000_000n && options.timeoutMs <= Number((350_000_000n - at) / 1_000_000n)));
+  assert.ok(launch.effects.filter(({ kind }) => kind === "sleep").every(({ at, ms }) => at + BigInt(ms) * 1_000_000n <= 350_000_000n));
+  assert.equal(fixture.calls.some(({ kind }) => ["launchObservation", "launchWindow", "probeRuntime", "locomote"].includes(kind)), false);
+  assert.equal(fixture.calls.filter(({ kind, context }) => kind === "stop" && context.reason === "prepare_failure_cleanup").length, 1);
+});
+
 function liveSafetyReadinessFixture(snapshots, onSleep = async () => {}) {
   let nowNs = 0n;
   let sampleIndex = 0;
@@ -4133,6 +4218,23 @@ test("live log bracket extraction can reach BEGIN beyond historical ring output"
   assert.equal(result.beginCount, 1);
   assert.equal(result.endCount, 1);
   assert.equal(fs.readFileSync(result.path, "utf8"), fixture.window);
+});
+
+test("live log marker cursors select an explicit base format despite ambient logcat preferences", async (t) => {
+  const fixture = liveCurrentLogFixture(t);
+  await fixture.live.collectStepLogs(fixture.bracketContext);
+  const query = fixture.effects.find(({ args }) => args.some((arg) => arg.startsWith("--regex")));
+  const formats = query.args.flatMap((arg, index) => arg === "-v" ? [query.args[index + 1]] : []);
+  assert.ok(formats.includes("threadtime"), "cursor lookup must override ANDROID_PRINTF_LOG with an explicit base format");
+  assert.ok(formats.includes("epoch") && formats.includes("usec"));
+});
+
+test("live log snapshots reject exact output-cap bytes even with exit zero and complete markers", async (t) => {
+  const template = liveCurrentLogFixture(t);
+  const capped = template.window + "x".repeat(64 * 1024 * 1024 - Buffer.byteLength(template.window));
+  const fixture = liveCurrentLogFixture(t, { windowOutput: capped });
+  await assert.rejects(fixture.live.collectStepLogs(fixture.bracketContext), /current window.*(?:bound|limit|truncat)/i);
+  assert.equal(fs.existsSync(fixture.bracketContext.path), false);
 });
 
 test("live prepare clearance waits for both exact process and foreground absence before launch", async (t) => {

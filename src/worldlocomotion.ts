@@ -4494,7 +4494,7 @@ export function createLiveInAppLocomotionDependencies(
     // even when the output format is monotonic; preserve microseconds at BEGIN.
     const markerOutput = await checked(
       context.serial,
-      ["logcat", "-b", "all", "-d", "-v", "epoch", "-v", "usec", "--regex", `^${escapedRegex(marker)}$`],
+      ["logcat", "-b", "all", "-d", "-v", "threadtime", "-v", "epoch", "-v", "usec", "--regex", `^${escapedRegex(marker)}$`],
       `${label} BEGIN cursor`, context, 10_000, 64 * 1024,
     );
     const markerLines = markerOutput.split(/\r?\n/).filter((line) => line.includes(marker));
@@ -4508,8 +4508,8 @@ export function createLiveInAppLocomotionDependencies(
       label, context, 10_000, 64 * 1024 * 1024,
     );
     checkedLiveAdbResult(result, label);
-    if (Buffer.byteLength(result.stdout, "utf8") > 64 * 1024 * 1024) {
-      throw new Error(`${label} current window exceeds the bounded log output limit`);
+    if (Buffer.byteLength(result.stdout, "utf8") >= 64 * 1024 * 1024) {
+      throw new Error(`${label} current window reaches the bounded log output limit`);
     }
     return result;
   };
@@ -4601,13 +4601,30 @@ export function createLiveInAppLocomotionDependencies(
     launchTarget: async (context) => {
       const { serial, component } = context;
       requireExactLiveSerial(serial);
-      const result = await runBounded(serial, ["shell", "am", "start", "-W", "-n", component], "target launch", context, 30_000, 1024 * 1024);
-      const output = `${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}`.trim();
-      return {
-        disposition: classifyActivityLaunchDisposition(output, result.code === 0 && !result.timedOut),
-        component,
-        outputSha256: sha256Bytes(Buffer.from(output, "utf8")),
-      };
+      const attempt = () => runBounded(serial, ["shell", "am", "start", "-W", "-n", component], "target launch", context, 30_000, 1024 * 1024);
+      let result = await attempt();
+      for (;;) {
+        const output = `${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}`.trim();
+        const disposition = classifyActivityLaunchDisposition(output, result.code === 0 && !result.timedOut);
+        const lines = output.split(/\r?\n/).map((line) => line.trim());
+        const warnings = lines.filter((line) => /^Warning:/i.test(line));
+        const statuses = lines.filter((line) => /^Status:/i.test(line));
+        const launchStates = lines.filter((line) => /^LaunchState:/i.test(line));
+        const keptForUser = disposition === "ignored" && result.stderr.trim() === ""
+          && warnings.length === 1 && /^Warning:\s*Activity not started because the\s+current activity is being kept for the user\.$/i.test(warnings[0])
+          && statuses.length === 1 && /^Status:\s*ok$/i.test(statuses[0])
+          && (launchStates.length === 0 || (launchStates.length === 1 && /^LaunchState:\s*UNKNOWN\s+\(0\)$/i.test(launchStates[0])))
+          && !lines.some((line) => /^(?:Error\b|\S*Exception\b)/i.test(line));
+        if (!keptForUser) return { disposition, component, outputSha256: sha256Bytes(Buffer.from(output, "utf8")) };
+        // Process clearance does not prove Android has re-enabled app switches.
+        // Retry only this explicit rejection, with an observation cadence and the same deadline.
+        try {
+          await sleepWithin(context, 100, "target kept-for-user launch retry");
+          result = await attempt();
+        } catch (error) {
+          throw new LocomotionStageError("launch_failed", `target launch remained kept for the user: ${errorText(error)}`);
+        }
+      }
     },
     captureLaunchHandoffWindow: async (context) => {
       const result = await runBounded(
