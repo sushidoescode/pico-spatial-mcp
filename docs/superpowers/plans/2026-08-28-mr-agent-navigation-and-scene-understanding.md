@@ -533,6 +533,7 @@ is external evidence and must not be written into the repository.
   },
   "centerBandPx": {"x": 90, "y": 70},
   "targetAreaFraction": {"min": 0.08, "max": 0.25},
+  "sceneReadiness": {"maxRetries": 15, "pollMs": 1000},
   "motionPolicy": {
     "maxDragPxPerAction": 120,
     "maxCumulativeDragPx": 1440,
@@ -570,9 +571,11 @@ Output is a discriminated execution result:
 `executionStatus` is `completed`, `stopped`, or `error`; `achievedClaims` independently retains
 `target_visible`, `target_centered`, and/or `free_camera_approached`. `stopReason` is one of
 `objective_satisfied`, `ambiguous_target`, `label_absent`, `guide_not_acquired`, `unsettled`,
-`scene_drift`, `budget_exhausted`, `ambiguous_host_window`, `unsupported_backend`, `input_failed`,
-`binding_failed`, or `cleanup_failed`. Every action records requested units, clamp applied,
-acknowledged endpoint/window, and settle receipt. No result field is named `arrived`.
+`scene_drift`, `scene_not_ready`, `budget_exhausted`, `ambiguous_host_window`, `unsupported_backend`,
+`input_failed`, `binding_failed`, or `cleanup_failed`. `sceneReadiness` defaults to a single bounded
+15-retry query at 1000 ms with two code-owned consecutive non-empty reads; exhausting it returns
+`scene_not_ready` before qemu, guide, capture, or input work. Every action records requested units,
+clamp applied, acknowledged endpoint/window, and settle receipt. No result field is named `arrived`.
 
 The tool earns `structural` for action and scene-query receipts. If its exact waypoint frames later
 pass a new producer-owned image predicate **and** its MR-diversity calibration, producer receipt,

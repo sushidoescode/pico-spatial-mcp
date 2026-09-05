@@ -913,6 +913,20 @@ function noSceneDrift(policy) {
 function makeSceneQuery(artifacts, input, options = {}) {
   const anchors = options.anchors ?? [rawTableAnchor()];
   const requestId = options.requestId ?? "scene_query_0001";
+  const readiness = options.readiness ?? {
+    maxRetries: 15,
+    pollMs: 1000,
+    stabilityReads: 2,
+    retries: 1,
+    satisfied: true,
+  };
+  const status = options.status
+    ?? (!readiness.satisfied
+      ? "not_ready"
+      : anchors.some((anchor) => anchor.semanticAssignments.includes(input.target.label)) ? "ready" : "label_absent");
+  const readCount = readiness.retries + 1;
+  const nonEmptyReads = readiness.satisfied ? Math.min(readiness.stabilityReads, readCount) : 0;
+  const firstNonEmptyRead = options.firstNonEmptyRead ?? readCount - nonEmptyReads;
   const raw = {
     kind: "pico.agent-bridge.scene-snapshot",
     schemaVersion: 1,
@@ -926,24 +940,28 @@ function makeSceneQuery(artifacts, input, options = {}) {
       stageOpen: true,
     },
     coordinateFrame: { id: "bridge-world-41", units: "metres", handedness: "sdk-reported" },
-    readiness: { maxRetries: 2, pollMs: 10, stabilityReads: 2, retries: 1, satisfied: true },
-    reads: [0, 1].map((readIndex) => ({
-      readIndex,
-      queriedAtMonotonicNs: String(100 + readIndex),
-      trackingState: "RUNNING",
-      source: "loadAllAnchors",
-      loadError: null,
-      anchorCount: anchors.length,
-      anchors: structuredClone(anchors),
-    })),
-    error: null,
+    readiness: structuredClone(readiness),
+    reads: Array.from({ length: readCount }, (_, readIndex) => {
+      const readAnchors = readIndex < firstNonEmptyRead ? [] : anchors;
+      return {
+        readIndex,
+        queriedAtMonotonicNs: String(100 + readIndex),
+        trackingState: "RUNNING",
+        source: "loadAllAnchors",
+        loadError: null,
+        anchorCount: readAnchors.length,
+        anchors: structuredClone(readAnchors),
+      };
+    }),
+    error: status === "not_ready"
+      ? { code: "not_ready", detail: `fixture scene remained not-ready through ${readiness.retries} retries` }
+      : null,
   };
   const bytes = Buffer.from(JSON.stringify(raw), "utf8");
   const artifactPath = options.path ?? `/tmp/pico-navigationtarget-tests/geometry-${requestId}.json`;
   artifacts.set(artifactPath, bytes);
-  const status = options.status ?? (anchors.some((anchor) => anchor.semanticAssignments.includes("TABLE")) ? "ready" : "label_absent");
   const outputAnchors = status === "ready" ? anchors
-    .filter((anchor) => anchor.semanticAssignments.includes("TABLE"))
+    .filter((anchor) => anchor.semanticAssignments.includes(input.target.label))
     .map((anchor, index) => ({
       traceId: `anchor-${String(index + 1).padStart(4, "0")}`,
       runtimeUuid: anchor.runtimeUuid,
@@ -956,7 +974,7 @@ function makeSceneQuery(artifacts, input, options = {}) {
     })) : [];
   return {
     status,
-    snapshotId: options.snapshotId ?? "a".repeat(64),
+    snapshotId: status === "not_ready" ? null : options.snapshotId ?? "a".repeat(64),
     applicationRuntimeBinding: {
       serial: TARGET_SERIAL,
       liveIdentity: {
@@ -993,8 +1011,8 @@ function makeSceneQuery(artifacts, input, options = {}) {
     },
     queriedAtMonotonicNs: "101",
     trackingState: "RUNNING",
-    retries: 0,
-    totalAnchorCount: anchors.length,
+    retries: readiness.retries,
+    totalAnchorCount: raw.reads.at(-1)?.anchorCount ?? 0,
     matchedAnchorCount: outputAnchors.length,
     geometryRef: {
       path: artifactPath,
@@ -1007,12 +1025,19 @@ function makeSceneQuery(artifacts, input, options = {}) {
       bridgeRevision: 41,
     },
     anchors: outputAnchors,
-    histogram: Object.fromEntries([...new Set(anchors.flatMap((anchor) => anchor.semanticAssignments))].map((label) => [label, anchors.filter((anchor) => anchor.semanticAssignments.includes(label)).length])),
-    drift: noSceneDrift(input.scenario.sceneDriftPolicy),
-    requestedLabels: ["TABLE"],
+    histogram: status === "not_ready" ? {} : Object.fromEntries([...new Set(anchors.flatMap((anchor) => anchor.semanticAssignments))].map((label) => [label, anchors.filter((anchor) => anchor.semanticAssignments.includes(label)).length])),
+    drift: status === "not_ready"
+      ? { ...noSceneDrift(input.scenario.sceneDriftPolicy), withinPolicy: false, deltas: [] }
+      : noSceneDrift(input.scenario.sceneDriftPolicy),
+    requestedLabels: [input.target.label],
     semanticRelationPolicy: { labelLevelSelection: true, triangleRelations: "refused", reason: "semantic_assignment_alignment_unverified" },
     actionReceipts: [],
-    error: status === "ready" ? null : { code: status, detail: "ready mesh contains no TABLE anchor" },
+    error: status === "ready" ? null : {
+      code: status,
+      detail: status === "not_ready"
+        ? `fixture scene remained not-ready through ${readiness.retries} retries`
+        : `ready mesh contains no ${input.target.label} anchor`,
+    },
     evidenceCeiling: "structural",
   };
 }
@@ -1287,6 +1312,8 @@ function targetFake(input, options = {}) {
     snapshotId: String.fromCharCode(97 + Math.min(index, 5)).repeat(64),
     ...scene,
   }));
+  const sceneQueryInputs = [];
+  let latestSceneQuery = null;
   let queryIndex = 0;
   let guideVisible = false;
   let guideMayHaveApplied = false;
@@ -1428,9 +1455,30 @@ function targetFake(input, options = {}) {
     return Buffer.from(bytes);
   };
   const deps = {
-    querySceneAnchors: async () => {
+    querySceneAnchors: async (queryInput) => {
       events.push("query");
-      const result = sceneQueries[Math.min(queryIndex, sceneQueries.length - 1)];
+      sceneQueryInputs.push(structuredClone(queryInput));
+      const selectedIndex = Math.min(queryIndex, sceneQueries.length - 1);
+      const scene = sceneOptions[selectedIndex];
+      const readyAfterRetries = options.sceneReadyAfterRetries;
+      const satisfied = readyAfterRetries === undefined || queryInput.maxRetries >= readyAfterRetries;
+      const result = readyAfterRetries === undefined
+        ? sceneQueries[selectedIndex]
+        : makeSceneQuery(artifacts, input, {
+            requestId: `scene_query_${String(selectedIndex + 1).padStart(4, "0")}`,
+            snapshotId: String.fromCharCode(97 + Math.min(selectedIndex, 5)).repeat(64),
+            ...scene,
+            readiness: {
+              maxRetries: queryInput.maxRetries,
+              pollMs: queryInput.pollMs,
+              stabilityReads: queryInput.stabilityReads,
+              retries: satisfied ? readyAfterRetries : queryInput.maxRetries,
+              satisfied,
+            },
+            firstNonEmptyRead: Math.max(0, readyAfterRetries - queryInput.stabilityReads + 1),
+            ...(!satisfied ? { status: "not_ready" } : {}),
+          });
+      latestSceneQuery = structuredClone(result);
       queryIndex++;
       return structuredClone(result);
     },
@@ -1637,6 +1685,8 @@ function targetFake(input, options = {}) {
     get hideCalls() { return hideCalls; },
     get guideMayHaveApplied() { return guideMayHaveApplied; },
     get queryCount() { return queryIndex; },
+    sceneQueryInputs,
+    get latestSceneQuery() { return latestSceneQuery; },
     get calibrationReceiptReads() { return calibrationReceiptReads; },
     repeatedShowStarted,
     releaseRepeatedShow() { releaseRepeatedShow?.(); },
@@ -1659,6 +1709,66 @@ function assertNoForbiddenNavigationClaims(result) {
     assert.equal(keys.includes(forbidden), false, `forbidden navigation claim field '${forbidden}' escaped`);
   }
 }
+
+test("navigate waits through the measured seven-retry scene population delay by default", async () => {
+  const input = targetInput("navigate");
+  const fake = targetFake(input, { sceneReadyAfterRetries: 7, initialDepthM: 1.3 });
+
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+  assert.equal(result.executionStatus, "completed");
+  assert.equal(result.stopReason, "objective_satisfied");
+  assert.equal(fake.queryCount, 1, "query_scene_anchors owns the bounded polling loop");
+  const delayedReceipt = JSON.parse(fake.artifacts.get(result.sceneQueries[0].geometryRef.path).toString("utf8"));
+  assert.deepEqual(delayedReceipt.readiness, {
+    maxRetries: 15,
+    pollMs: 1000,
+    stabilityReads: 2,
+    retries: 7,
+    satisfied: true,
+  });
+  assert.deepEqual(delayedReceipt.reads.map((read) => read.anchorCount), [0, 0, 0, 0, 0, 0, 1, 1]);
+  assert.deepEqual(
+    {
+      maxRetries: fake.sceneQueryInputs[0].maxRetries,
+      pollMs: fake.sceneQueryInputs[0].pollMs,
+      stabilityReads: fake.sceneQueryInputs[0].stabilityReads,
+    },
+    { maxRetries: 15, pollMs: 1000, stabilityReads: 2 },
+  );
+});
+
+test("navigate reports scene_not_ready when the caller-bounded scene readiness budget expires", async () => {
+  const input = targetInput("navigate", {
+    sceneReadiness: { maxRetries: 6, pollMs: 1000 },
+  });
+  const fake = targetFake(input, { sceneReadyAfterRetries: 7 });
+
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(result.stopReason, "scene_not_ready");
+  assert.equal(result.error.code, "scene_not_ready");
+  assert.match(result.error.detail, /not-ready through 6 retries/);
+  assert.deepEqual(fake.events, ["query"]);
+  assert.equal(fake.queryCount, 1, "navigation does not add an unbounded outer retry loop");
+  assert.equal(result.qemuBinding, null);
+  assert.equal(result.captures.guideOff, null);
+  assert.equal(result.cleanup.attempted, false);
+  const exhaustedReceipt = JSON.parse(
+    fake.artifacts.get(fake.latestSceneQuery.geometryRef.path).toString("utf8"),
+  );
+  assert.deepEqual(exhaustedReceipt.reads.map((read) => read.anchorCount), [0, 0, 0, 0, 0, 0, 1]);
+  assert.deepEqual(exhaustedReceipt.readiness, {
+    maxRetries: 6,
+    pollMs: 1000,
+    stabilityReads: 2,
+    retries: 6,
+    satisfied: false,
+  });
+  assert.equal(fake.actionCount, 0);
+  assert.equal(fake.hideCalls, 0);
+});
 
 test("navigate accepts the camera-proof principal point under the off-center default camera", async () => {
   const input = targetInput("navigate");
@@ -2602,7 +2712,7 @@ test("unexpected orchestration errors remain executionStatus:error and retain th
 test("navigation outputs use only the authoritative stop enum and structural non-pose claim surface", async () => {
   const allowed = new Set([
     "objective_satisfied", "ambiguous_target", "label_absent", "guide_not_acquired", "unsettled",
-    "scene_drift", "budget_exhausted", "ambiguous_host_window", "unsupported_backend", "input_failed",
+    "scene_drift", "scene_not_ready", "budget_exhausted", "ambiguous_host_window", "unsupported_backend", "input_failed",
     "binding_failed", "cleanup_failed",
   ]);
   for (const [name, options] of [
@@ -2694,8 +2804,60 @@ test("registerNavigationTargetTools registers one strict discriminated full-surf
   assert.equal(typeof registrations[0].handler, "function");
   assert.equal(registrations[0].definition.inputSchema.parse(targetInput("navigate")).action, "navigate");
   assert.equal(registrations[0].definition.inputSchema.parse(targetInput("calibrate")).action, "calibrate");
+  assert.deepEqual(
+    registrations[0].definition.inputSchema.parse(targetInput("navigate")).sceneReadiness,
+    { maxRetries: 15, pollMs: 1000 },
+  );
+  for (const sceneReadiness of [
+    { maxRetries: 121, pollMs: 1000 },
+    { maxRetries: 15, pollMs: 60_001 },
+  ]) {
+    assert.throws(
+      () => registrations[0].definition.inputSchema.parse({ ...targetInput("navigate"), sceneReadiness }),
+      /less than or equal|too big|maximum|120|60000/i,
+    );
+  }
   assert.throws(
     () => registrations[0].definition.inputSchema.parse({ ...targetInput("navigate"), unknownEscape: true }),
     /unrecognized|unknown/i,
   );
+});
+
+test("registered navigate_to_scene_target publishes the bounded scene readiness contract in tools/list", async () => {
+  const [{ Client }, { McpServer }, { InMemoryTransport }] = await Promise.all([
+    import("@modelcontextprotocol/sdk/client/index.js"),
+    import("@modelcontextprotocol/sdk/server/mcp.js"),
+    import("@modelcontextprotocol/sdk/inMemory.js"),
+  ]);
+  const server = new McpServer({ name: "navigation-target-schema-test", version: "0.0.0" });
+  registerNavigationTargetTools(server);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "navigation-target-schema-test", version: "0.0.0" });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  try {
+    const listed = await client.listTools();
+    const registered = listed.tools.find((tool) => tool.name === "navigate_to_scene_target");
+    assert.ok(registered);
+    assert.deepEqual(registered.inputSchema.properties.action.enum, ["calibrate", "navigate"]);
+    assert.deepEqual(registered.inputSchema.properties.sceneReadiness.default, {
+      maxRetries: 15,
+      pollMs: 1000,
+    });
+    assert.deepEqual(registered.inputSchema.properties.sceneReadiness.properties.maxRetries, {
+      type: "integer",
+      minimum: 0,
+      maximum: 120,
+      description: "Unfiltered scene-readiness retry budget (default 15; maximum 120).",
+    });
+    assert.deepEqual(registered.inputSchema.properties.sceneReadiness.properties.pollMs, {
+      type: "integer",
+      minimum: 10,
+      maximum: 60000,
+      description: "Scene-readiness polling interval in milliseconds (default 1000; maximum 60000).",
+    });
+    assert.equal(registered.inputSchema.required.includes("sceneReadiness"), false);
+  } finally {
+    await client.close();
+  }
 });
