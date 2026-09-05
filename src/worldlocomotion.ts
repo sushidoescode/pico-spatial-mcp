@@ -76,6 +76,15 @@ const BRIDGE_MIN_TRANSACTION_MS = agentBridgeLocomotionMinimumEnvelopeMs({
 const FINAL_RECOVERY_RESERVE_MS = 5_000;
 /** CP2 experiment threshold, not an SDK freshness guarantee. */
 export const IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS = 250 as const;
+const HMD_ACQUISITION_MAX_ATTEMPTS = 12;
+const HMD_ACQUISITION_POLL_MS = 100;
+// Retry cadence and quick completed transactions share 1.5s; the final transaction
+// retains its existing minimum envelope. This is an observation policy, not SDK timing.
+const HMD_ACQUISITION_WINDOW_MS = BRIDGE_MIN_TRANSACTION_MS + 1_500;
+// Failure-safe allowance only: post probes and END/log closure must still complete.
+const POST_HMD_PROBE_RESERVE_MS = 5_000;
+const NONCE_CLEANUP_RESERVE_MS = 1_000 + BRIDGE_STABILITY_READS * 250
+  + (BRIDGE_STABILITY_READS - 1) * BRIDGE_POLL_MS + 1_000 + 250;
 
 const hashSchema = z.string().regex(SHA256);
 const componentSchema = z.string().regex(COMPONENT);
@@ -215,7 +224,7 @@ const prepareSchema = z.object({
   const prepareBudgetMs = value.budgets.maxDurationMs
     - value.budgets.routeReserveMs
     - value.budgets.restorationReserveMs;
-  if (prepareBudgetMs <= 60_000 + value.capture.deadlineMs + 3 * BRIDGE_MIN_TRANSACTION_MS) {
+  if (prepareBudgetMs <= 60_001 + value.capture.deadlineMs + 2 * BRIDGE_MIN_TRANSACTION_MS + HMD_ACQUISITION_WINDOW_MS) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["budgets", "maxDurationMs"],
@@ -229,11 +238,12 @@ const prepareSchema = z.object({
       message: "route reserve must exceed one complete settled-capture deadline",
     });
   }
-  if (value.budgets.routeReserveMs <= value.capture.deadlineMs + value.route.glideDurationMs + 3 * BRIDGE_MIN_TRANSACTION_MS) {
+  if (value.budgets.routeReserveMs <= value.capture.deadlineMs + value.route.glideDurationMs + BRIDGE_MIN_TRANSACTION_MS
+    + NONCE_CLEANUP_RESERVE_MS + 2 * HMD_ACQUISITION_WINDOW_MS + POST_HMD_PROBE_RESERVE_MS) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["budgets", "routeReserveMs"],
-      message: "route reserve cannot fit the admitted glide, three bounded bridge transactions, and one complete settled capture",
+      message: "route reserve cannot fit the admitted glide, bounded HMD acquisitions, nonce cleanup, settled capture, and post probes",
     });
   }
   if (value.budgets.restorationReserveMs <= value.capture.deadlineMs) {
@@ -566,6 +576,7 @@ export interface LocomotionTargetStopReceipt {
 }
 
 export interface InAppLocomotionDependencies {
+  sleep?(durationMs: number): Promise<void>;
   randomBytes(size: number): Buffer;
   now(): string;
   monotonicNs(): bigint;
@@ -1489,6 +1500,145 @@ function hmdPoseFrom(
   return pose;
 }
 
+interface HmdAcquisitionEvidence {
+  attemptCount: number;
+  acceptedSampleAgeMs: number | null;
+  policy: {
+    maxAttempts: number; pollMs: number; maxSampleAgeMs: number; maximumDurationMs: number;
+    minimumTransactionMs: number; reservedAfterMs: number;
+    phaseDeadlineMonotonicNs: string; deadlineMonotonicNs: string;
+  } | null;
+  attempts: Array<{
+    requestId: string;
+    outcome: "accepted" | "hmd_pose_stale" | "failed";
+    sampleAgeMs: number | null;
+    sampleSequence: string | null;
+    sampleObservedAtMonotonicNs: string | null;
+    readAtMonotonicNs: string | null;
+    startedAtMonotonicNs: string | null;
+    completedAtMonotonicNs: string | null;
+    root: AgentBridgeLocomotionAck["root"] | null;
+    retrySubtype: "aged_sample" | "retained_callback" | null;
+    actionReceipts: HmdResult["actionReceipts"];
+    cleanupError: string | null;
+    error: string | null;
+  }>;
+}
+
+function hmdAcquisitionEvidence(): HmdAcquisitionEvidence {
+  return { attemptCount: 0, acceptedSampleAgeMs: null, policy: null, attempts: [] };
+}
+
+function hmdCandidateRelation(pose: AgentBridgeHmdPose, floor: AgentBridgeHmdPose): "advanced" | "retained_callback" | null {
+  const sameCallback = pose.sampleSequence === floor.sampleSequence
+    && pose.sampleObservedAtMonotonicNs === floor.sampleObservedAtMonotonicNs
+    && BigInt(pose.readAtMonotonicNs) >= BigInt(floor.readAtMonotonicNs)
+    && canonicalJson(pose.position) === canonicalJson(floor.position)
+    && canonicalJson(pose.rotation) === canonicalJson(floor.rotation);
+  if (sameCallback) return "retained_callback";
+  if (BigInt(pose.sampleSequence) <= BigInt(floor.sampleSequence)
+    || BigInt(pose.sampleObservedAtMonotonicNs) <= BigInt(floor.sampleObservedAtMonotonicNs)
+    || BigInt(pose.readAtMonotonicNs) <= BigInt(floor.readAtMonotonicNs)) return null;
+  return "advanced";
+}
+
+function retryableHmdFreshness(pose: AgentBridgeHmdPose, floor?: AgentBridgeHmdPose): "aged_sample" | "retained_callback" | null {
+  if (BigInt(pose.readAtMonotonicNs) < BigInt(pose.sampleObservedAtMonotonicNs)) return null;
+  const relation = floor ? hmdCandidateRelation(pose, floor) : "advanced";
+  if (relation === null || relation === "retained_callback") return relation;
+  return hmdSampleAgeMs(pose) > IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS ? "aged_sample" : null;
+}
+
+async function acquireFreshHmdPose(
+  dependencies: InAppLocomotionDependencies,
+  phaseDeadlineNs: bigint,
+  label: string,
+  input: AgentBridgeHmdPoseRequestInput & { expectedRootGeneration: number; expectedRootIncarnation: string },
+  evidence: HmdAcquisitionEvidence,
+  reservedAfterMs: number,
+  strictlyAfterSample?: AgentBridgeHmdPose,
+): Promise<AgentBridgeHmdPose> {
+  const deadlineNs = earlierDeadline(
+    phaseDeadlineNs - BigInt(reservedAfterMs) * 1_000_000n,
+    checkedMonotonic(dependencies) + BigInt(HMD_ACQUISITION_WINDOW_MS) * 1_000_000n,
+  );
+  evidence.policy = {
+    maxAttempts: HMD_ACQUISITION_MAX_ATTEMPTS, pollMs: HMD_ACQUISITION_POLL_MS,
+    maxSampleAgeMs: IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS, maximumDurationMs: HMD_ACQUISITION_WINDOW_MS,
+    minimumTransactionMs: BRIDGE_MIN_TRANSACTION_MS, reservedAfterMs,
+    phaseDeadlineMonotonicNs: phaseDeadlineNs.toString(), deadlineMonotonicNs: deadlineNs.toString(),
+  };
+  let lastSeen: AgentBridgeHmdPose | null = null;
+  for (let index = 0; index < HMD_ACQUISITION_MAX_ATTEMPTS; index += 1) {
+    const attempt: HmdAcquisitionEvidence["attempts"][number] = {
+      requestId: evidence.attemptCount === 0 ? input.requestId : `${input.requestId}_retry_${evidence.attemptCount + 1}`,
+      outcome: "failed", sampleAgeMs: null, sampleSequence: null,
+      sampleObservedAtMonotonicNs: null, readAtMonotonicNs: null, error: null,
+      startedAtMonotonicNs: null, completedAtMonotonicNs: null, root: null,
+      retrySubtype: null, actionReceipts: [], cleanupError: null,
+    };
+    let sampledPose: AgentBridgeHmdPose | null = null;
+    try {
+      const result = await withinDeadline(deadlineNs, dependencies, label, async (timeoutMs) => {
+        const budget = bridgeBudgetFields(timeoutMs, deadlineNs);
+        attempt.startedAtMonotonicNs = checkedMonotonic(dependencies).toString();
+        evidence.attemptCount += 1;
+        evidence.attempts.push(attempt);
+        const result = await dependencies.requestHmdPose({ ...input, ...budget, requestId: attempt.requestId });
+        attempt.actionReceipts = result.actionReceipts ?? [];
+        attempt.cleanupError = result.cleanupError ?? null;
+        const pose = result.ok ? result.ack.hmdPose : null;
+        sampledPose = pose;
+        attempt.root = result.ok ? result.ack.root : null;
+        if (pose) {
+          attempt.sampleSequence = typeof pose.sampleSequence === "string" ? pose.sampleSequence : null;
+          attempt.sampleObservedAtMonotonicNs = typeof pose.sampleObservedAtMonotonicNs === "string" ? pose.sampleObservedAtMonotonicNs : null;
+          attempt.readAtMonotonicNs = typeof pose.readAtMonotonicNs === "string" ? pose.readAtMonotonicNs : null;
+          if (/^[0-9]+$/.test(pose.sampleObservedAtMonotonicNs) && /^[0-9]+$/.test(pose.readAtMonotonicNs)) {
+            const age = Number(BigInt(pose.readAtMonotonicNs) - BigInt(pose.sampleObservedAtMonotonicNs)) / 1_000_000;
+            if (Number.isFinite(age)) attempt.sampleAgeMs = age;
+          }
+        }
+        attempt.completedAtMonotonicNs = checkedMonotonic(dependencies).toString();
+        return result;
+      });
+      const pose = hmdPoseFrom(result, input.expectedRootGeneration, input.expectedRootIncarnation, strictlyAfterSample);
+      if (lastSeen && hmdCandidateRelation(pose, lastSeen) === null) {
+        throw new LocomotionStageError("hmd_pose_stale", "HMD candidate regressed or advanced incoherently after the prior observed candidate");
+      }
+      attempt.outcome = "accepted";
+      evidence.acceptedSampleAgeMs = hmdSampleAgeMs(pose);
+      return pose;
+    } catch (error) {
+      attempt.error = errorText(error);
+      if (!(error instanceof LocomotionStageError) || error.code !== "hmd_pose_stale" || error.cleanupError || sampledPose === null) throw error;
+      if (lastSeen && hmdCandidateRelation(sampledPose, lastSeen) === null) {
+        attempt.error = "HMD candidate regressed or advanced incoherently after the prior observed candidate";
+        throw new LocomotionStageError("hmd_pose_stale", attempt.error);
+      }
+      attempt.retrySubtype = retryableHmdFreshness(sampledPose, strictlyAfterSample);
+      if (attempt.retrySubtype === null) throw error;
+      attempt.outcome = "hmd_pose_stale";
+      lastSeen = sampledPose;
+      if (index + 1 === HMD_ACQUISITION_MAX_ATTEMPTS) {
+        throw new LocomotionStageError("hmd_pose_stale", `${error.message}; HMD acquisition reached its ${HMD_ACQUISITION_MAX_ATTEMPTS}-attempt limit`);
+      }
+      try {
+        // Poll listener freshness, without changing the age/sequence gate or moving the HMD.
+        await withinDeadline(deadlineNs, dependencies, `${label} fresh-sample retry`, async (remainingMs) => {
+          if (remainingMs < HMD_ACQUISITION_POLL_MS + BRIDGE_MIN_TRANSACTION_MS) {
+            throw new Error("remaining phase deadline cannot fit another HMD transaction");
+          }
+          await (dependencies.sleep ?? sleep)(HMD_ACQUISITION_POLL_MS);
+        });
+      } catch (deadlineError) {
+        throw new LocomotionStageError("hmd_pose_stale", `${error.message}; ${errorText(deadlineError)}`);
+      }
+    }
+  }
+  throw new Error("HMD acquisition exhausted without a terminal disposition");
+}
+
 function validateRuntime(input: InAppLocomotionPrepareInput, receipt: Extract<ReceiptValidation, { status: "valid" }>["receipt"], runtime: LocomotionRuntimeBinding): void {
   const binding = runtime.applicationBinding;
   if (runtime.liveIdentity.serial !== input.serial || runtime.liveIdentity.bootQemu !== "1"
@@ -2347,6 +2497,7 @@ export function createInAppLocomotionOrchestrator(
     let monitorHandoff: FreshLaunchMonitorHandoff | null = null;
     let healthBoundaryMarker: string | null = null;
     let baselineCaptureReceipt: CaptureSettledReceipt | null = null;
+    const baselineHmdAcquisition = hmdAcquisitionEvidence();
     const baselineCaptureInvocation: CaptureInvocationState = { captureInput: null, fence: null, receipt: null };
     let postCaptureContinuity: ApplicationContinuitySample | null = null;
     let postCaptureCapability: CapabilityResult | null = null;
@@ -2550,15 +2701,14 @@ export function createInAppLocomotionOrchestrator(
         || !ROOT_INCARNATION.test(root.incarnation)) {
         throw new LocomotionStageError("capability_unavailable", "commands preflight did not bind one registered AgentWorldRoot generation/incarnation");
       }
-      const hmd = hmdPoseFrom(await withinDeadline(prepareDeadlineNs, dependencies, "baseline HMD pose", (timeoutMs) => dependencies.requestHmdPose({
+      const hmd = await acquireFreshHmdPose(dependencies, prepareDeadlineNs, "baseline HMD pose", {
         serial: input.serial,
         packageName: input.scenario.packageName,
         requestId: `prepare_hmd_pose_${artifact!.runId.slice(0, 24)}`,
         tag: "prepare",
         expectedRootGeneration: root.generation,
         expectedRootIncarnation: root.incarnation,
-        ...bridgeBudgetFields(timeoutMs, prepareDeadlineNs!),
-      })), root.generation, root.incarnation);
+      }, baselineHmdAcquisition, 60_001 + input.capture.deadlineMs + BRIDGE_MIN_TRANSACTION_MS);
       if (remainingUntilMs(prepareDeadlineNs, dependencies) < 60_001 + input.capture.deadlineMs + BRIDGE_MIN_TRANSACTION_MS) {
         throw new LocomotionStageError(
           "budget_exhausted",
@@ -2744,6 +2894,7 @@ export function createInAppLocomotionOrchestrator(
         safetyBaseline: safety,
         capability,
         hmdBaseline: hmd,
+        hmdBaselineAcquisition: baselineHmdAcquisition,
         freshLaunchMonitor,
         launchHandoffWindow,
         launchHandoffObservation,
@@ -2916,6 +3067,7 @@ export function createInAppLocomotionOrchestrator(
             freshLaunchMonitor,
             launchHandoffWindow,
             launchHandoffObservation,
+            hmdBaselineAcquisition: baselineHmdAcquisition,
             captureReceipt: baselineCaptureReceipt ?? baselineCaptureInvocation.receipt,
             captureInvocation: baselineCaptureInvocation.fence,
             postCaptureContinuity,
@@ -2991,6 +3143,8 @@ export function createInAppLocomotionOrchestrator(
     let preSafety: LocomotionSafetySnapshot | null = null;
     let preContinuity: ApplicationContinuitySample | null = null;
     let preHmd: AgentBridgeHmdPose | null = null;
+    const preHmdAcquisition = hmdAcquisitionEvidence();
+    const postHmdAcquisition = hmdAcquisitionEvidence();
     let locomotion: LocomotionResult | null = null;
     let locomotionMayHaveApplied = false;
     let pendingNonceRequestId: string | null = null;
@@ -3032,15 +3186,15 @@ export function createInAppLocomotionOrchestrator(
       }));
       const preContinuityProblem = continuityProblem(preContinuity, state.runtime);
       if (preContinuityProblem) throw new LocomotionStageError("binding_lost", preContinuityProblem);
-      preHmd = hmdPoseFrom(await withinDeadline(stepDeadlineNs, dependencies, "pre-step HMD pose", (timeoutMs) => dependencies.requestHmdPose({
+      preHmd = await acquireFreshHmdPose(dependencies, stepDeadlineNs, "pre-step HMD pose", {
         serial: state.input.serial,
         packageName: state.input.scenario.packageName,
         requestId: `step_${waypoint.seq}_pre_${state.artifact.runId.slice(0, 20)}`,
         tag: `step-${waypoint.seq}-pre`,
         expectedRootGeneration: state.rootGeneration,
         expectedRootIncarnation: state.rootIncarnation,
-        ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
-      })), state.rootGeneration, state.rootIncarnation, state.lastHmdSample);
+      }, preHmdAcquisition, BRIDGE_MIN_TRANSACTION_MS + state.input.route.glideDurationMs + NONCE_CLEANUP_RESERVE_MS
+        + state.input.capture.deadlineMs + HMD_ACQUISITION_WINDOW_MS + POST_HMD_PROBE_RESERVE_MS, state.lastHmdSample);
       if (translationDistance(state.baselineHmd.position, preHmd.position) > 0.02) {
         throw new LocomotionStageError("hmd_translation_drift", "pre-step Euclidean HMD translation drift exceeded exactly 0.02 m");
       }
@@ -3173,15 +3327,14 @@ export function createInAppLocomotionOrchestrator(
         runtime: state.runtime,
         waypointSeq: waypoint.seq,
       });
-      postHmd = hmdPoseFrom(await withinDeadline(stepDeadlineNs, dependencies, "post-step HMD pose", (timeoutMs) => dependencies.requestHmdPose({
+      postHmd = await acquireFreshHmdPose(dependencies, stepDeadlineNs, "post-step HMD pose", {
         serial: state.input.serial,
         packageName: state.input.scenario.packageName,
         requestId: `step_${waypoint.seq}_post_${state.artifact.runId.slice(0, 20)}`,
         tag: `step-${waypoint.seq}-post`,
         expectedRootGeneration: state.rootGeneration,
         expectedRootIncarnation: state.rootIncarnation,
-        ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
-      })), state.rootGeneration, state.rootIncarnation, preHmd);
+      }, postHmdAcquisition, POST_HMD_PROBE_RESERVE_MS, preHmd);
       drift = driftReceipt(state.baselineHmd, preHmd, postHmd);
       postSafety = await withinDeadline(stepDeadlineNs, dependencies, "post-step safety", (timeoutMs) => dependencies.sampleSafety({
         serial: state.input.serial,
@@ -3343,6 +3496,13 @@ export function createInAppLocomotionOrchestrator(
     let operationEnded = operationStarted;
     try {
       operationEnded = checkedMonotonic(dependencies);
+      if (operationEnded > stepDeadlineNs) {
+        const detail = "step evidence finalization exceeded its fixed phase deadline";
+        if (primaryError === null) {
+          primaryError = detail;
+          primaryCode = "budget_exhausted";
+        } else cleanupErrors.push(detail);
+      }
     } catch (clockError) {
       const detail = `step end clock: ${errorText(clockError)}`;
       if (primaryError === null) {
@@ -3380,13 +3540,13 @@ export function createInAppLocomotionOrchestrator(
         captureSha256: capturedReview?.captureSha256 ?? null,
         waypointAttempts: state.usage.waypointAttempts,
         usage: publishedUsage,
-        pre: { safety: preSafety, continuity: preContinuity, hmdPose: preHmd },
+        pre: { safety: preSafety, continuity: preContinuity, hmdPose: preHmd, hmdAcquisition: preHmdAcquisition },
         locomotion,
         locomotionNonceCleanup,
         emergencyStop,
         captureReceipt: captureReceipt ?? captureInvocation.receipt,
         captureInvocation: captureInvocation.fence,
-        post: { hmdPose: postHmd, safety: postSafety, continuity: postContinuity },
+        post: { hmdPose: postHmd, hmdAcquisition: postHmdAcquisition, safety: postSafety, continuity: postContinuity },
         hmdDrift: drift,
         logEvidence,
         priorActionAuditMaintenance: actionAuditMaintenance(state.artifact),
@@ -4538,6 +4698,7 @@ export function createLiveInAppLocomotionDependencies(
   };
 
   return {
+    sleep: liveSleep,
     randomBytes: (size) => crypto.randomBytes(size),
     now: () => new Date().toISOString(),
     monotonicNs: clockNs,

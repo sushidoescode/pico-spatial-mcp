@@ -409,6 +409,7 @@ async function createPreparedFixture(t, options = {}) {
     handoffPhase = null;
   };
   const dependencies = {
+    sleep: async (durationMs) => { monotonicTick += BigInt(durationMs) * 1_000_000n; },
     randomBytes: (size) => {
       calls.push({ kind: "randomBytes", size });
       return Buffer.alloc(size, 7);
@@ -1443,6 +1444,227 @@ test("one verified boundary phrase inside a step bracket structurally stops the 
   const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
   assert.equal(result.status, "stopped");
   assert.match(result.cleanupError, /boundary|container|log/i);
+});
+
+test("prepare retries stale HMD ages with unique nonces and retains acquisition evidence", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  const original = fixture.dependencies.requestHmdPose;
+  const ages = [366.425, 305.271, 250];
+  let index = 0;
+  fixture.dependencies.requestHmdPose = async (input) => {
+    const result = await original(input);
+    const ageMs = ages[Math.min(index++, ages.length - 1)];
+    result.ack.hmdPose.sampleObservedAtMonotonicNs = String(BigInt(index) * 1_000_000_000n);
+    result.ack.hmdPose.readAtMonotonicNs = String(BigInt(result.ack.hmdPose.sampleObservedAtMonotonicNs) + BigInt(Math.round(ageMs * 1_000_000)));
+    return result;
+  };
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(result.status, "needs_baseline_review", result.primaryError);
+  const requests = fixture.calls.filter(({ kind }) => kind === "hmd");
+  assert.equal(requests.length, 3);
+  assert.equal(new Set(requests.map(({ input }) => input.requestId)).size, 3);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
+  assert.equal(action.hmdBaselineAcquisition.attemptCount, 3);
+  assert.equal(action.hmdBaselineAcquisition.acceptedSampleAgeMs, 250);
+  assert.deepEqual(action.hmdBaselineAcquisition.attempts.map(({ sampleAgeMs }) => sampleAgeMs), ages);
+  assert.deepEqual(action.hmdBaselineAcquisition.attempts.map(({ outcome }) => outcome), ["hmd_pose_stale", "hmd_pose_stale", "accepted"]);
+  assert.deepEqual(action.hmdBaselineAcquisition.attempts.map(({ requestId }) => requestId), requests.map(({ input }) => input.requestId));
+});
+
+test("step HMD retries preserve strict baseline-to-pre-to-post advancement and action evidence", async (t) => {
+  const fixture = await prepareForSteps(t);
+  const original = fixture.dependencies.requestHmdPose;
+  const attempts = new Map();
+  let acceptedPre;
+  fixture.dependencies.requestHmdPose = async (input) => {
+    const result = await original(input);
+    const attempt = (attempts.get(input.tag) ?? 0) + 1;
+    attempts.set(input.tag, attempt);
+    if (input.tag.endsWith("-pre")) {
+      if (attempt === 1) result.ack.hmdPose = { ...fixture.pose };
+      else acceptedPre = result.ack.hmdPose;
+    } else if (attempt === 1) result.ack.hmdPose = { ...acceptedPre };
+    return result;
+  };
+  const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(result.status, "needs_waypoint_review", result.primaryError);
+  const requests = fixture.calls.filter(({ kind }) => kind === "hmd");
+  assert.equal(requests.length, 4);
+  assert.equal(new Set(requests.map(({ input }) => input.requestId)).size, 4);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
+  for (const phase of ["pre", "post"]) {
+    assert.equal(action[phase].hmdAcquisition.attemptCount, 2);
+    assert.equal(action[phase].hmdAcquisition.acceptedSampleAgeMs, 1);
+    assert.deepEqual(action[phase].hmdAcquisition.attempts.map(({ outcome }) => outcome), ["hmd_pose_stale", "accepted"]);
+  }
+  assert.ok(BigInt(action.pre.hmdPose.sampleSequence) > BigInt(fixture.pose.sampleSequence));
+  assert.ok(BigInt(action.post.hmdPose.sampleSequence) > BigInt(action.pre.hmdPose.sampleSequence));
+  assert.ok(BigInt(action.post.hmdPose.sampleObservedAtMonotonicNs) > BigInt(action.pre.hmdPose.sampleObservedAtMonotonicNs));
+  assert.ok(BigInt(action.post.hmdPose.readAtMonotonicNs) > BigInt(action.pre.hmdPose.readAtMonotonicNs));
+  assert.equal(fixture.calls.filter(({ kind }) => kind === "locomote").length, 1);
+});
+
+test("HMD acquisition does not retry malformed, unbound, or failed transport results", async (t) => {
+  for (const [label, mutate] of [
+    ["nonfinite", (result) => { result.ack.hmdPose.position.x = NaN; return result; }],
+    ["root changed", (result) => { result.ack.root.incarnation = REPLACEMENT_INCARNATION; return result; }],
+    ["bridge failure", () => ({ ok: false, code: "bridge_unavailable", primaryError: "HMD transport unavailable", detail: "HMD transport unavailable", cleanupError: null })],
+    ["stale with cleanup failure", (result) => ({ ...result, ok: false, code: "cleanup_failed", primaryError: null, detail: "HMD sampled but cleanup failed", cleanupError: "nonce removal failed" })],
+  ]) {
+    await t.test(label, async (t) => {
+      const fixture = await createPreparedFixture(t);
+      const original = fixture.dependencies.requestHmdPose;
+      fixture.dependencies.requestHmdPose = async (input) => mutate(await original(input));
+      const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+      assert.equal(result.status, "preparation_failed");
+      assert.equal(fixture.calls.filter(({ kind }) => kind === "hmd").length, 1);
+      if (label === "stale with cleanup failure") assert.match(result.cleanupError, /nonce removal failed/);
+    });
+  }
+});
+
+test("persistent stale HMD retries stop under the phase deadline and retain failed acquisition evidence", async (t) => {
+  let nowNs = 1_000_000_000n;
+  const fixture = await createPreparedFixture(t, { monotonicNs: () => nowNs });
+  fixture.dependencies.sleep = async (ms) => { nowNs += BigInt(ms) * 1_000_000n; };
+  const original = fixture.dependencies.requestHmdPose;
+  const starts = [];
+  fixture.dependencies.requestHmdPose = async (input) => {
+    starts.push({ at: nowNs, deadline: BigInt(input.deadlineMonotonicNs) });
+    nowNs += 100_000_000n;
+    const result = await original(input);
+    result.ack.hmdPose.readAtMonotonicNs = String(BigInt(result.ack.hmdPose.sampleObservedAtMonotonicNs) + 366_425_000n);
+    return result;
+  };
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(result.status, "preparation_failed");
+  assert.ok(starts.length > 1);
+  assert.ok(starts.every(({ at, deadline }) => at < deadline));
+  assert.equal(fixture.calls.some(({ kind }) => kind === "monitor" || kind === "locomote"), false);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
+  assert.equal(action.hmdBaselineAcquisition.attemptCount, starts.length);
+  assert.equal(action.hmdBaselineAcquisition.acceptedSampleAgeMs, null);
+  assert.ok(action.hmdBaselineAcquisition.attempts.some(({ sampleAgeMs }) => sampleAgeMs === 366.425));
+  assert.equal(action.hmdBaselineAcquisition.policy.maxAttempts, 12);
+  assert.equal(action.hmdBaselineAcquisition.policy.pollMs, 100);
+  assert.ok(starts.length <= action.hmdBaselineAcquisition.policy.maxAttempts);
+  assert.equal(action.hmdBaselineAcquisition.policy.reservedAfterMs, 79_651);
+  assert.ok(BigInt(action.hmdBaselineAcquisition.policy.deadlineMonotonicNs) <= 31_349_000_000n);
+});
+
+test("HMD acquisition spans a full callback interval and retains bridge cleanup evidence", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  const original = fixture.dependencies.requestHmdPose;
+  let calls = 0;
+  let waitedMs = 0;
+  const originalSleep = fixture.dependencies.sleep;
+  fixture.dependencies.sleep = async (ms) => { waitedMs += ms; await originalSleep(ms); };
+  fixture.dependencies.requestHmdPose = async (input) => {
+    const result = await original(input);
+    calls += 1;
+    const age = calls < 12 ? 300_000_000n : 250_000_000n;
+    result.ack.hmdPose.sampleObservedAtMonotonicNs = String(BigInt(calls) * 1_000_000_000n);
+    result.ack.hmdPose.readAtMonotonicNs = String(BigInt(result.ack.hmdPose.sampleObservedAtMonotonicNs) + age);
+    result.actionReceipts = [{
+      action: "locomotion_ack_cleanup", status: "applied", startedAtMonotonicNs: "1000000", endedAtMonotonicNs: "2000000",
+      ack: { serial: input.serial, packageName: input.packageName, operation: "hmd_pose", requestId: input.requestId,
+        relativePath: `cache/agentbridge/locomotion/${input.requestId}.json`, outcome: "completed" },
+    }];
+    return result;
+  };
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(result.status, "needs_baseline_review", result.primaryError);
+  assert.ok(waitedMs >= 1_000);
+  const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
+  assert.equal(action.hmdBaselineAcquisition.attemptCount, 12);
+  assert.equal(action.hmdBaselineAcquisition.policy.maxSampleAgeMs, 250);
+  for (const attempt of action.hmdBaselineAcquisition.attempts) {
+    assert.deepEqual(attempt.actionReceipts, [{
+      action: "locomotion_ack_cleanup", status: "applied", startedAtMonotonicNs: "1000000", endedAtMonotonicNs: "2000000",
+      ack: { serial: "emulator-5554", packageName: "com.test.fullworld", operation: "hmd_pose", requestId: attempt.requestId,
+        relativePath: `cache/agentbridge/locomotion/${attempt.requestId}.json`, outcome: "completed" },
+    }]);
+    assert.equal(attempt.cleanupError, null);
+  }
+});
+
+test("HMD acquisition never retries temporal regression, incoherent advancement, or changed duplicate poses", async (t) => {
+  for (const [label, modify] of [
+    ["read before observation", (pose) => ({ ...pose, sampleSequence: "2", readAtMonotonicNs: "0" })],
+    ["observation only advances", (pose) => ({ ...pose, sampleObservedAtMonotonicNs: "2000000", readAtMonotonicNs: "3000000" })],
+    ["sequence only advances", (pose) => ({ ...pose, sampleSequence: "2", readAtMonotonicNs: "3000000" })],
+    ["aged regression", (pose) => ({ ...pose, sampleSequence: "2", sampleObservedAtMonotonicNs: "0", readAtMonotonicNs: "300000000" })],
+    ["duplicate changes pose", (pose) => ({ ...pose, position: { ...pose.position, x: pose.position.x + 0.001 } })],
+  ]) {
+    await t.test(label, async (t) => {
+      const fixture = await prepareForSteps(t);
+      const original = fixture.dependencies.requestHmdPose;
+      let requests = 0;
+      fixture.dependencies.requestHmdPose = async (input) => {
+        const result = await original(input);
+        if (++requests === 1) result.ack.hmdPose = modify(fixture.pose);
+        return result;
+      };
+      const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+      assert.equal(result.status, "stopped");
+      assert.equal(requests, 1);
+      assert.equal(fixture.calls.some(({ kind }) => kind === "locomote"), false);
+    });
+  }
+});
+
+test("prepare and route admission reserve bounded HMD acquisition plus downstream evidence work", (t) => {
+  const tooShortPrepare = prepareRouteInput(t, { budgets: { maxDurationMs: 213_000, routeReserveMs: 60_000, restorationReserveMs: 50_000 } });
+  const tooShortRoute = prepareRouteInput(t, { budgets: { maxDurationMs: 220_000, routeReserveMs: 48_000, restorationReserveMs: 50_000 } });
+  assert.equal(inAppLocomotionInputSchema.safeParse(tooShortPrepare).success, false);
+  assert.equal(inAppLocomotionInputSchema.safeParse(tooShortRoute).success, false);
+});
+
+test("HMD acquisition rejects rollback from an aged candidate without promoting that candidate to the accepted floor", async (t) => {
+  const fixture = await prepareForSteps(t);
+  const original = fixture.dependencies.requestHmdPose;
+  let requests = 0;
+  fixture.dependencies.requestHmdPose = async (input) => {
+    const result = await original(input);
+    result.ack.hmdPose = { ...fixture.pose, ...(requests++ === 0
+      ? { sampleSequence: "100", sampleObservedAtMonotonicNs: "100000000", readAtMonotonicNs: "400000000" }
+      : { sampleSequence: "99", sampleObservedAtMonotonicNs: "200000000", readAtMonotonicNs: "401000000" }) };
+    return result;
+  };
+  const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(result.status, "stopped");
+  assert.equal(requests, 2);
+  assert.equal(fixture.calls.some(({ kind }) => kind === "locomote"), false);
+  assert.match(result.primaryError, /regress|candidate|incoherent/i);
+});
+
+test("step cannot complete when valid END or log evidence finishes after its fixed deadline", async (t) => {
+  for (const [phase, priorFailure] of [["END", false], ["logs", false], ["logs", true]]) {
+    await t.test(`${phase} priorFailure=${priorFailure}`, async (t) => {
+      const fixture = await prepareForSteps(t, priorFailure ? { continuitySequence: [{ foreground: "different_package" }] } : {});
+      let nowNs = 2_000_000_000n;
+      fixture.dependencies.monotonicNs = () => ++nowNs;
+      const emit = fixture.dependencies.emitMarker;
+      const logs = fixture.dependencies.collectStepLogs;
+      fixture.dependencies.emitMarker = async (context) => {
+        const result = await emit(context);
+        if (phase === "END" && context.marker.endsWith("_END")) nowNs = BigInt(context.deadlineMonotonicNs) + 1n;
+        return result;
+      };
+      fixture.dependencies.collectStepLogs = async (context) => {
+        const result = await logs(context);
+        if (phase === "logs") nowNs = BigInt(context.deadlineMonotonicNs) + 1n;
+        return result;
+      };
+      const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+      assert.equal(result.status, "stopped");
+      assert.equal(result.structuralStop, priorFailure ? "binding_lost" : "budget_exhausted");
+      assert.match(priorFailure ? result.cleanupError : result.primaryError, /deadline/i);
+      const action = fs.readFileSync(path.join(fixture.input.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
+      assert.equal(action.status, "stopped");
+      assert.ok(action.logEvidence, "late but valid bracket evidence must remain retained");
+    });
+  }
 });
 
 test("prepare rejects an HMD listener sample older than the experiment freshness threshold", async (t) => {
@@ -2604,7 +2826,9 @@ test("route schema shares the exact rev-1 locomotion cancellation and finalizati
     },
     budgets: { maxDurationMs: 250_000, routeReserveMs: 60_000, restorationReserveMs: 60_000 },
   });
-  const exactRouteFloor = valid.capture.deadlineMs + valid.route.glideDurationMs + 3 * minimumBridgeEnvelopeMs;
+  // 8s capture + 0.5s glide + 11.65s move + 2.85s nonce cleanup
+  // + two 13.15s HMD acquisitions + 5s failure-safe post-probe allowance.
+  const exactRouteFloor = 54_300;
   const exactRestorationFloor = valid.capture.deadlineMs + valid.route.glideDurationMs
     + 3 * minimumBridgeEnvelopeMs + 5_000;
 
@@ -2629,7 +2853,7 @@ test("route schema shares the exact rev-1 locomotion cancellation and finalizati
 test("a maximum direct glide still completes all post-step evidence and the reviewed restore path", async (t) => {
   const fixture = await prepareForSteps(t, {
     inputOverrides: {
-      budgets: { maxDurationMs: 230_000, routeReserveMs: 60_000, restorationReserveMs: 57_951 },
+      budgets: { maxDurationMs: 235_000, routeReserveMs: 65_000, restorationReserveMs: 57_951 },
       route: {
         waypoints: [
           { seq: 1, target: { absolute: true, x: 1, y: 0, z: -2 } },
