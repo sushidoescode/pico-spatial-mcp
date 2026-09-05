@@ -50,6 +50,7 @@ import { validateCaptureBuffer } from "./evidence.js";
 import { canonicalJson } from "./runreceiptidentity.js";
 import { readNativeRunReceipt } from "./runreceiptstore.js";
 import {
+  classifyResumedApplication,
   scanPackageRuntimeHealth,
   type ApplicationContinuitySample,
   type PackageRuntimeHealthReceiptV1,
@@ -4449,24 +4450,16 @@ export function createLiveInAppLocomotionDependencies(
       context,
       10_000,
     ));
-    const activities = parseForegroundActivities(await checked(
+    const activityOutput = await checked(
       context.serial,
       ["shell", "dumpsys", "activity", "activities"],
       `${context.phase} foreground activities`,
       context,
       20_000,
-    ));
-    const resumedComponents = activities.map((activity) => activity.component);
-    const packageActivities = activities.filter((activity) => activity.packageName === binding.packageName);
-    const exactAllowedForeground = activities.length > 0 && activities.every((activity) =>
-      activity.packageName === binding.packageName && binding.allowedResumedComponents.includes(activity.component));
-    const foreground: ApplicationContinuitySample["foreground"] = activities.length === 0
-      ? "absent"
-      : packageActivities.length === 0
-        ? "different_package"
-        : exactAllowedForeground
-          ? "exact_allowed"
-          : "same_package_unlisted";
+    );
+    const { resumedComponents, foreground } = classifyResumedApplication(
+      activityOutput, binding.packageName, binding.allowedResumedComponents,
+    );
     return {
       observedAtMonotonicNs: clockNs().toString(),
       serial: context.serial,

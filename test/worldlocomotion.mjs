@@ -4153,7 +4153,7 @@ function liveCurrentLogFixture(t, overrides = {}) {
       } else if (args.includes("path")) stdout = "package:/data/app/base.apk\n";
       else if (args.includes("sha256sum")) stdout = `${"b".repeat(64)}  /data/app/base.apk\n`;
       else if (args.includes("pidof")) stdout = "5151\n";
-      else if (args.includes("activities")) stdout = "mResumedActivity: ActivityRecord{fixture u0 com.test.fullworld/.MainActivity t1}\n";
+      else if (args.includes("activities")) stdout = overrides.activityOutput ?? "mResumedActivity: ActivityRecord{fixture u0 com.test.fullworld/.MainActivity t1}\n";
       else if (args.includes("windows")) stdout = "WINDOW MANAGER WINDOWS\n";
       return { code: 0, stdout, stderr: "", timedOut: false };
     },
@@ -4235,6 +4235,48 @@ test("live log snapshots reject exact output-cap bytes even with exit zero and c
   const fixture = liveCurrentLogFixture(t, { windowOutput: capped });
   await assert.rejects(fixture.live.collectStepLogs(fixture.bracketContext), /current window.*(?:bound|limit|truncat)/i);
   assert.equal(fs.existsSync(fixture.bracketContext.path), false);
+});
+
+test("live continuity permits only the existing exact spatial-shell companion beside allowed target activities", async (t) => {
+  const target = "com.test.fullworld/.MainActivity";
+  const shell = "com.pxr.scenarioprovider/com.unity3d.player.UnityPlayerActivity";
+  const dump = (components) => components.map((component, index) =>
+    `mResumedActivity: ActivityRecord{fixture${index} u0 ${component} t${index + 1}}\n`).join("");
+  for (const [label, components, foreground] of [
+    ["target alone", [target], "exact_allowed"],
+    ["target and exact shell", [shell, target], "exact_allowed"],
+    ["unlisted target beside shell", [shell, target, "com.test.fullworld/.UnexpectedActivity"], "same_package_unlisted"],
+    ["shell without target", [shell], "different_package"],
+    ["another shell component", [target, "com.pxr.scenarioprovider/.OtherActivity"], "different_package"],
+    ["unrelated resumed app", [target, "com.test.other/.MainActivity"], "different_package"],
+    ["unrelated system activity", [target, "com.android.settings/.Settings"], "different_package"],
+    ["no resumed activity", [], "absent"],
+  ]) {
+    await t.test(label, async (t) => {
+      const fixture = liveCurrentLogFixture(t, { activityOutput: components.length ? dump(components) : "mResumedActivity: null\n" });
+      const sample = await fixture.live.sampleContinuity({ ...fixture.monitorContext, phase: "continuity_fixture" });
+      assert.equal(sample.foreground, foreground);
+      assert.deepEqual(sample.resumedComponents, components, "classification must retain all observed components as evidence");
+      assert.deepEqual(sample.allowedResumedComponents, [target], "system companion must not enter the target allowlist");
+      assert.equal(sample.pid, 5151);
+      assert.equal(sample.apkSha256, "b".repeat(64));
+    });
+  }
+});
+
+test("live fresh-launch monitor retains exact target continuity with the spatial shell resumed", async (t) => {
+  const shell = "com.pxr.scenarioprovider/com.unity3d.player.UnityPlayerActivity";
+  const fixture = liveCurrentLogFixture(t, {
+    activityOutput: "mResumedActivity: ActivityRecord{target u0 com.test.fullworld/.MainActivity t1}\n"
+      + `mResumedActivity: ActivityRecord{shell u0 ${shell} t2}\n`,
+  });
+  const monitor = await fixture.live.monitorFreshLaunch(fixture.monitorContext);
+  assert.equal(monitor.samples.length, 5);
+  assert.ok(monitor.samples.at(-1).elapsedMs >= 60_000);
+  for (const sample of monitor.samples) {
+    assert.equal(sample.continuity.foreground, "exact_allowed");
+    assert.ok(sample.continuity.resumedComponents.includes(shell));
+  }
 });
 
 test("live prepare clearance waits for both exact process and foreground absence before launch", async (t) => {
