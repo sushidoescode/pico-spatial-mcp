@@ -4,6 +4,7 @@
 // Evidence base: .dev/findings/SAMPLES_CONFORMANCE_2026-08-05.md (each § cited per block below).
 // Fully deterministic: dist imports + fake-server tool shims. No emulator, no adb, no server spawn.
 // Run: node test/conformance.mjs
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +16,7 @@ const assert = (c, m) => (c ? ok(m) : fail(m));
 
 const repoRoot = new URL("../", import.meta.url);
 const read = (relative) => fs.readFileSync(new URL(relative, repoRoot), "utf8");
+const sha256Text = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
 const { registerPanelComposeTools } = await import("../dist/panelcompose.js");
 const { generateWiring } = await import("../dist/assemble.js");
@@ -820,6 +822,16 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_CACHE_DIRECTORY === "agentbridge/navigation-guides" &&
     bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND !== bridge.AGENT_BRIDGE_SCENE_SNAPSHOT_COMMAND,
   "navigation guide owns a separate command and nonce cache directory");
+  assert(bridge.AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND === "pico.agent-bridge.locomotion" &&
+    bridge.AGENT_BRIDGE_LOCOMOTION_SCHEMA_VERSION === 1 &&
+    bridge.AGENT_BRIDGE_LOCOMOTION_CAPABILITY_REVISION === 1,
+  "world locomotion owns a separate additive revision-1 capability without changing scene 41 or guide 1");
+  assert(bridge.AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY === "agentbridge/locomotion" &&
+    bridge.AGENT_BRIDGE_LOCOMOTION_ROOT_ID === "AgentWorldRoot" &&
+    bridge.AGENT_BRIDGE_COMMANDS_COMMAND === "commands" &&
+    bridge.AGENT_BRIDGE_HMD_POSE_COMMAND === "hmd_pose" &&
+    bridge.AGENT_BRIDGE_LOCOMOTE_COMMAND === "locomote",
+  "locomotion exports its nonce cache, reserved root telemetry ID, and three exact commands");
   assert(JSON.stringify(bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COLORS) === JSON.stringify([[255, 0, 255], [0, 255, 255]]) &&
     bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_PROJECTION_MODEL === "viewer-facing-planar-v1" &&
     bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_WIDTH_M === 0.74 &&
@@ -834,6 +846,12 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
     generated.navigationGuideProtocol?.bridgeRevision === bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_REVISION &&
     generated.navigationGuideProtocol?.command === bridge.AGENT_BRIDGE_NAVIGATION_GUIDE_COMMAND,
   "tool metadata and host exports share one navigation-guide protocol version");
+  assert(generated.locomotionProtocol?.kind === bridge.AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND &&
+    generated.locomotionProtocol?.schemaVersion === bridge.AGENT_BRIDGE_LOCOMOTION_SCHEMA_VERSION &&
+    generated.locomotionProtocol?.capabilityRevision === bridge.AGENT_BRIDGE_LOCOMOTION_CAPABILITY_REVISION &&
+    generated.locomotionProtocol?.cacheDirectory === bridge.AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY &&
+    JSON.stringify(generated.locomotionProtocol?.commands) === JSON.stringify(["commands", "hmd_pose", "locomote"]),
+  "tool metadata and host exports share the independent locomotion protocol and discovery commands");
   assert(/SCENE_PAYLOAD_KIND = "pico\.agent-bridge\.scene-snapshot"/.test(agentKt) &&
     /SCENE_SCHEMA_VERSION = 1/.test(agentKt) && /SCENE_BRIDGE_REVISION = 41/.test(agentKt),
   "generated AgentBridge embeds the same kind/schema/revision constants");
@@ -847,6 +865,144 @@ console.log("\nCP1B Agent Bridge scene snapshots are versioned, lossless, and fi
   assert(/data class NavigationGuideRequest\(/.test(agentKt) && /data class NavigationGuideResult\(/.test(agentKt) &&
     /registerNavigationGuideProducer/.test(agentKt) && /unregisterNavigationGuideProducer/.test(agentKt),
   "generated AgentBridge exposes a separate typed navigation-guide producer lifecycle");
+  assert(/LOCOMOTION_PAYLOAD_KIND = "pico\.agent-bridge\.locomotion"/.test(agentKt) &&
+    /LOCOMOTION_SCHEMA_VERSION = 1/.test(agentKt) && /LOCOMOTION_CAPABILITY_REVISION = 1/.test(agentKt) &&
+    /LOCOMOTION_CACHE_DIRECTORY = "agentbridge\/locomotion"/.test(agentKt) &&
+    /AGENT_WORLD_ROOT_ID = "AgentWorldRoot"/.test(agentKt) &&
+    /HMD_POSE_COMMAND = "hmd_pose"/.test(agentKt) && /LOCOMOTE_COMMAND = "locomote"/.test(agentKt),
+  "generated AgentBridge embeds the independent locomotion constants without revising scene or guide protocols");
+  assert(/data class AgentWorldPose\(val rootGeneration: Long, val position: Vector3\)/.test(agentKt) &&
+    /data class AgentHmdPose\([\s\S]*val sampleSequence: Long,[\s\S]*val sampleObservedAtMonotonicNs: Long,[\s\S]*val readAtMonotonicNs: Long,[\s\S]*val position: Vector3,[\s\S]*val rotation: Quat/.test(agentKt) &&
+    /writer\.name\("sampleSequence"\)\.value\(pose\.sampleSequence\.toString\(\)\)[\s\S]*writer\.name\("sampleObservedAtMonotonicNs"\)/.test(agentKt) &&
+    /data class AgentLocomotionResult\([\s\S]*val outcome: String,[\s\S]*val pose: AgentWorldPose\?,[\s\S]*val primaryError: String\? = null,[\s\S]*val cleanupError: String\? = null/.test(agentKt),
+  "the locomotion binding exposes data-only world, listener-fresh HMD, and result producer types");
+  assert(/fun registerLocomotionProducer\([\s\S]*rootProvider: \(\) -> Entity\?,[\s\S]*hmdProducer: \(\) -> AgentHmdPose\?,[\s\S]*producer: suspend \(LocomotionRequest\) -> AgentLocomotionResult,[\s\S]*\): Long/.test(agentKt) &&
+    /fun unregisterLocomotionProducer\(generation: Long\)/.test(agentKt) &&
+    /private var locomotionGeneration = 0L/.test(agentKt) &&
+    /private val locomotionMutex = Mutex\(\)/.test(agentKt),
+  "registration owns an identity-root/HMD/locomotion binding under a generation token and serialized requests");
+  assert(/import java\.util\.UUID/.test(agentKt) &&
+    /LocomotionProducerBinding\(generation, generation, UUID\.randomUUID\(\)\.toString\(\), rootProvider, hmdProducer, producer\)/.test(agentKt) &&
+    /binding\.copy\(rootGeneration = rootGeneration\)/.test(agentKt),
+  "every producer registration mints one lowercase RFC-4122 v4 incarnation and root replacement preserves it");
+  const locomotionBuiltins = /private fun registerLocomotionBuiltins[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  assert(/register\(COMMANDS_COMMAND\)/.test(locomotionBuiltins) &&
+    /register\(HMD_POSE_COMMAND\)/.test(locomotionBuiltins) && /register\(LOCOMOTE_COMMAND\)/.test(locomotionBuiltins) &&
+    /extras\.getString\("tag"\)/.test(agentKt) && /extras\.getString\("requestId"\)/.test(agentKt),
+  "commands, hmd_pose, and locomote are discoverable nonce-file operations that echo tag and request identity");
+  assert(/ApplicationInfo\.FLAG_DEBUGGABLE/.test(agentKt) && /observedStageStyle\(context\) != "Full"/.test(agentKt) &&
+    /rootContainer != "stage"/.test(agentKt) && /rootProvider/.test(agentKt) && /hmdProducer/.test(agentKt) &&
+    /capability_unavailable/.test(agentKt),
+  "raw, release, non-Full, non-stage, rootless, and HMD-less bridge states fail locomotion capability closed");
+  const locomoteWriter = /private suspend fun writeLocomotionAck[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  const hmdWriter = /private suspend fun writeHmdPoseAck[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  assert(/request\.mode != "direct" && request\.mode != "replacement"/.test(locomoteWriter) &&
+    /request\.target\.x\.isFinite\(\)/.test(locomoteWriter) && /request\.target\.y\.isFinite\(\)/.test(locomoteWriter) &&
+    /request\.target\.z\.isFinite\(\)/.test(locomoteWriter) && /request\.physicalWalk/.test(locomoteWriter) &&
+    /request\.capabilityRevision != LOCOMOTION_CAPABILITY_REVISION/.test(agentKt),
+  "locomote requires an exact revision, explicit mechanism, complete finite absolute target, and physicalWalk=false");
+  assert(/locomotionMutex\.lock\(\)/.test(locomoteWriter) && /finally\s*\{\s*locomotionMutex\.unlock\(\)\s*\}/.test(locomoteWriter) &&
+    (locomoteWriter.match(/locomotionRequestIsCurrent\(request\.generation\)/g) ?? []).length >= 2 &&
+    /rootGenerationBefore/.test(locomoteWriter) && /glideDurationMs/.test(locomoteWriter),
+  "locomotion serializes producer calls, carries bounded direct-glide metadata, and rejects invalidated generations before and after mutation");
+  assert(/requestControl/.test(agentKt) && /executionLeaseMs/.test(agentKt) &&
+    /cancelLocomotionRequest/.test(agentKt) && /withTimeout/.test(locomoteWriter) &&
+    /locomotionRequestIsActive/.test(locomoteWriter),
+  "locomotion revision 1 couples execute to a guest lease and a mutex-independent cancellation barrier");
+  const locomotionPublisher = /private fun publishLocomotionAckIfCurrent[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  const locomotionCanceller = /private fun cancelLocomotionRequest[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  assert(/synchronized\(locomotionLeaseLock\)/.test(locomotionPublisher) &&
+    /request\.requestControl == "execute"/.test(locomotionPublisher) &&
+    /LocomotionLeaseState\.EXECUTE_TERMINAL/.test(locomotionPublisher) &&
+    /synchronized\(locomotionGenerationLock\)/.test(locomotionPublisher) &&
+    /locomotionGeneration != request\.generation/.test(locomotionPublisher) &&
+    /Os\.rename\(temp\.absolutePath, target\.absolutePath\)/.test(locomotionPublisher) &&
+    /if \(!publishLocomotionAckIfCurrent\(request, temp, target\)\)/.test(agentKt),
+  "execute/cancel acknowledgement publication shares the lease lock and cannot resurrect a removed nonce");
+  assert(/request\.requestControl != "execute" && request\.requestControl != "cancel"/.test(locomotionPublisher) &&
+    locomotionPublisher.indexOf('request.requestControl != "execute"') <
+      locomotionPublisher.indexOf("locomotionLeases[request.requestId]"),
+  "commands and HMD acknowledgements remain generation-bound without requiring an execute/cancel lease");
+  const locomotionDispatcher = /private fun dispatchLocomotionFileRequest[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  const locomotionObservationAdmission = /private fun admitLocomotionObservationRequest[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  const locomotionExecutionAdmission = /private fun registerLocomotionLease[\s\S]*?(?=\n    private (?:suspend )?fun )/.exec(agentKt)?.[0] ?? "";
+  const cancelDelivery = /fun dispatchLocomotionCancellation[\s\S]*?(?=\n    (?:private |fun ))/.exec(agentKt)?.[0] ?? "";
+  const finalizeDelivery = /fun dispatchLocomotionFinalization[\s\S]*?(?=\n    (?:private |fun ))/.exec(agentKt)?.[0] ?? "";
+  const leasePruner = /private fun pruneTerminalLocomotionLeasesLocked[\s\S]*?(?=\n    private fun )/.exec(agentKt)?.[0] ?? "";
+  const finalizationPlanner = /private fun finalizeLocomotionRequest[\s\S]*?(?=\n    fun dispatchLocomotionFinalization)/.exec(agentKt)?.[0] ?? "";
+  assert(/LocomotionLeaseState\.CANCELLING/.test(agentKt) &&
+    /LocomotionLeaseState\.CANCEL_TERMINAL/.test(agentKt) &&
+    /LocomotionLeaseState\.EXECUTE_TERMINAL/.test(agentKt) &&
+    /cachedCancelOutcome/.test(agentKt) &&
+    !/locomotionLeases\.clear\(\)/.test(agentKt),
+  "locomotion retains identity-keyed terminal tombstones and one cached repeat-cancel outcome across producer replacement");
+  assert(/synchronized\(locomotionLeaseLock\)/.test(locomotionExecutionAdmission) &&
+    locomotionExecutionAdmission.indexOf("locomotionLeases.containsKey(request.requestId)") >= 0 &&
+    locomotionExecutionAdmission.indexOf("locomotionLeases.containsKey(request.requestId)") <
+      locomotionExecutionAdmission.indexOf("target.exists()") &&
+    /existing\.generation/.test(locomotionCanceller) &&
+    locomotionCanceller.indexOf("existing.generation") < locomotionCanceller.indexOf("currentLocomotionBinding"),
+  "execute admission is lease-linearized before pathname deletion and an existing lease's original tuple wins over mutable binding");
+  assert(/synchronized\(locomotionLeaseLock\)/.test(locomotionObservationAdmission) &&
+    /LocomotionLeaseState\.FINALIZING/.test(locomotionObservationAdmission) &&
+    /LocomotionLeaseState\.FINALIZED/.test(locomotionObservationAdmission) &&
+    locomotionObservationAdmission.indexOf("LocomotionLeaseState.FINALIZING") <
+      locomotionObservationAdmission.indexOf("target.exists()") &&
+    locomotionObservationAdmission.indexOf("LocomotionLeaseState.FINALIZED") <
+      locomotionObservationAdmission.indexOf("target.exists()") &&
+    /admitLocomotionObservationRequest\(request, targetFile\)/.test(locomotionDispatcher) &&
+    !/targetFile\.(?:exists|delete)\(\)/.test(locomotionDispatcher) &&
+    /LocomotionLeaseState\.FINALIZING[\s\S]*LocomotionLeaseState\.FINALIZED/.test(locomotionPublisher),
+  "commands and HMD admission cannot remove or republish a nonce once finalization starts");
+  assert(/goAsync\(\)/.test(providerKt) && /dispatchLocomotionCancellation/.test(providerKt) &&
+    /pending\.finish\(\)/.test(providerKt) &&
+    /withTimeout/.test(cancelDelivery) && /job\.join\(\)/.test(cancelDelivery) &&
+    cancelDelivery.indexOf("job.join()") < cancelDelivery.indexOf("writeLocomotionCancelAck"),
+  "cancel broadcast completion is a bounded asynchronous barrier that joins the exact producer before durable acknowledgement and finishes once");
+  assert(/LocomotionLeaseState\.FINALIZING/.test(agentKt) && /LocomotionLeaseState\.FINALIZED/.test(agentKt) &&
+    /dispatchLocomotionFinalization/.test(providerKt) && /goAsync\(\)/.test(providerKt) &&
+    /producerJob\?\.join\(\)/.test(finalizeDelivery) && /cancelWriter\?\.join\(\)/.test(finalizeDelivery) &&
+    finalizeDelivery.indexOf("join()") < finalizeDelivery.indexOf("writeLocomotionFinalizeAck") &&
+    /request\.requestControl == "finalize"/.test(locomotionPublisher) &&
+    /lease\.state = LocomotionLeaseState\.FINALIZED/.test(locomotionPublisher) &&
+    /LocomotionLeaseState\.FINALIZED -> null/.test(locomotionCanceller) &&
+    /LocomotionLeaseState\.FINALIZED -> null/.test(finalizationPlanner) &&
+    !/FINALIZED/.test(leasePruner) &&
+    !/cancelWriter\s*=\s*null/.test(cancelDelivery) && !/finalizeWriter\s*=\s*null/.test(finalizeDelivery) &&
+    locomotionPublisher.indexOf("lease.state = LocomotionLeaseState.FINALIZED") >
+      locomotionPublisher.indexOf('request.requestControl == "finalize"') &&
+    locomotionPublisher.indexOf("Os.rename(temp.absolutePath, target.absolutePath)",
+      locomotionPublisher.indexOf("lease.state = LocomotionLeaseState.FINALIZED")) >
+      locomotionPublisher.indexOf("lease.state = LocomotionLeaseState.FINALIZED"),
+  "finalization joins every prior nonce writer, atomically publishes one original-tuple fence, and permanently suppresses execute/cancel resurrection");
+  assert(/generation = currentLocomotionGeneration\(\)/.test(agentKt) &&
+    !/locomotionMutex\.lock\(\)[\s\S]*fun unregisterLocomotionProducer/.test(agentKt),
+  "capability snapshots capture lifecycle generation while unregister remains independent of a long producer mutex");
+  const moveBlock = /register\("move"\)[\s\S]*?(?=\n        register\("remove"\))/.exec(agentKt)?.[0] ?? "";
+  const removeBlock = /register\("remove"\)[\s\S]*?(?=\n    \})/.exec(agentKt)?.[0] ?? "";
+  assert(/e === registeredLocomotionRoot\(\)/.test(moveBlock) && /reserved_root/.test(moveBlock) &&
+    /e === registeredLocomotionRoot\(\)/.test(removeBlock) && /reserved_root/.test(removeBlock) &&
+    !/getName\(\) == AGENT_WORLD_ROOT_ID/.test(moveBlock + removeBlock),
+  "generic move/remove reserve only the currently registered root by referential identity, never by name");
+  assert(/private data class LocomotionFileRequest\([\s\S]*val target: Vector3\?/.test(agentKt) &&
+    /private fun parseRequiredFiniteVector3/.test(agentKt) && !/getOrDefault\(Vector3/.test(locomotionBuiltins) &&
+    /writer\.name\("target"\)[\s\S]*if \(request\.target == null\) writer\.nullValue\(\)/.test(agentKt) &&
+    /writeLocomotionAckAtomically/.test(agentKt) && /Os\.rename\(temp\.absolutePath, target\.absolutePath\)/.test(agentKt),
+  "locomotion rejects malformed targets with nullable evidence rather than NaN/invented coordinates and publishes atomically");
+  assert(locomoteWriter.indexOf('request.target == null') >= 0 &&
+    locomoteWriter.indexOf('request.target == null') < locomoteWriter.indexOf('locomotionUnavailableReason(context, binding)'),
+  "malformed locomotion targets are rejected before capability availability is considered");
+  assert(/locomotionIncarnationPattern\.matches\(request\.rootIncarnation\)/.test(hmdWriter) &&
+    hmdWriter.indexOf("locomotionIncarnationPattern.matches(request.rootIncarnation)") < hmdWriter.indexOf("binding!!.hmdProducer()") &&
+    /binding\.rootIncarnation != request\.rootIncarnation/.test(hmdWriter) &&
+    /locomotionIncarnationPattern\.matches\(request\.rootIncarnation\)/.test(locomoteWriter) &&
+    locomoteWriter.indexOf("locomotionIncarnationPattern.matches(request.rootIncarnation)") < locomoteWriter.indexOf("binding!!.producer(producerRequest)"),
+  "HMD and locomotion reject malformed or stale incarnation before invoking root/HMD/movement producers");
+  for (const field of [
+    "kind", "schemaVersion", "capabilityRevision", "requestId", "tag", "application", "operation",
+    "requestControl", "executionLeaseMs", "mode", "target", "absolute", "glideDurationMs", "physicalWalk", "rootGenerationBefore", "root", "incarnation", "pose",
+    "hmdPose", "outcome", "primaryError", "cleanupError",
+  ]) assert(agentKt.includes(`writer.name("${field}")`), `locomotion terminal acknowledgements write ${field}`);
   assert(/val generation: Long/.test(agentKt) &&
     /private val navigationGuideMutex = Mutex\(\)/.test(agentKt) &&
     /private val navigationGuideGenerationLock = Any\(\)/.test(agentKt) &&
@@ -1391,6 +1547,267 @@ console.log("\n§6.6 bundle leases are owner-refcounted, and validity is re-chec
   let threw = false;
   try { generateBundleLeaseKotlin({ packageName: "com.x", bundles: ["furniture.bundle"] }); } catch { threw = true; }
   assert(threw, "a bundle path without a scheme is rejected");
+}
+
+// CP1 Task 3 — generated Full-stage worlds own a movable world root beneath one fixed
+// SpatialView host. The otherwise-identical Mixed output must retain its established direct
+// SpatialViewContent parenting and must not acquire any locomotion/HMD lifecycle.
+console.log("\nCP1 generated Full-stage world roots are movable without changing Mixed wiring");
+{
+  const raw = {
+    meta: {
+      appName: "LocomotionTwin",
+      packageName: "com.test.locomotiontwin",
+      stageStyle: "3",
+      rootContainer: "stage",
+      brief: "a physics-bearing Full-stage locomotion fixture",
+    },
+    navigation: { startScene: "main", portals: [] },
+    scenes: [{ id: "main", environment: { kind: "procedural" }, lighting: { rig: "sun" }, physics: {} }],
+    objects: [{
+      id: "ball",
+      sceneId: "main",
+      source: "primitive",
+      transform: { position: [0, 1, -2] },
+      body: { mode: "dynamic", shape: "sphere", dims: [0.1], mass: 1 },
+    }],
+    interactions: [{ id: "reset", trigger: "press", target: "ball", action: "resetWorld", params: { button: "reset" } }],
+    panels: [{
+      id: "status",
+      title: "STATUS",
+      placement: { kind: "scene", position: [0, 1.5, -1.8], widthDp: 360, heightDp: 160 },
+    }],
+  };
+  const fullSpec = appSpecSchema.parse(raw);
+  const mixedSpec = appSpecSchema.parse({ ...structuredClone(raw), meta: { ...raw.meta, stageStyle: "1" } });
+  const progressiveSpec = appSpecSchema.parse({ ...structuredClone(raw), meta: { ...raw.meta, stageStyle: "2" } });
+  const nonStageFullSpec = appSpecSchema.parse({ ...structuredClone(raw), meta: { ...raw.meta, rootContainer: "windowContainer" } });
+  const homeFor = (spec) => generateWiring(spec).find((file) => file.path.endsWith("/HomeStage.kt"))?.content ?? "";
+  const full = homeFor(fullSpec);
+  const mixed = homeFor(mixedSpec);
+  const progressive = homeFor(progressiveSpec);
+  const nonStageFull = homeFor(nonStageFullSpec);
+
+  // Independently captured from ce201e4. These hashes deliberately pin the complete world-wiring
+  // generator output; the universal additive AgentBridge is generated by a separate tool and is
+  // outside this byte-identity contract.
+  const baseTwinWiringSha256 = "21a84d44ac3f99c8aecb5bac11439034f226f8196d95e69f5ec45e8d7fbe3b38";
+  assert(sha256Text(JSON.stringify(generateWiring(mixedSpec))) === baseTwinWiringSha256,
+    "Mixed world wiring is byte-identical to ce201e4");
+  assert(sha256Text(JSON.stringify(generateWiring(progressiveSpec))) === baseTwinWiringSha256,
+    "Progressive world wiring is byte-identical to ce201e4");
+
+  const hierarchySetup = /fun createAndMountHierarchy\(content: SpatialViewContent\): Entity \{[\s\S]*?(?=\n    fun activate)/.exec(full)?.[0] ?? "";
+  const hostAt = hierarchySetup.indexOf('setName("AgentSpatialViewHost")');
+  const worldAt = hierarchySetup.indexOf('setName("AgentWorldRoot")');
+  const authoredAt = full.indexOf('setName("SceneRoot")');
+  assert(hostAt >= 0 && worldAt > hostAt && authoredAt >= 0 &&
+    /val worldRoot = fullStageLifecycle\.createAndMountHierarchy\(content\)[\s\S]*(?:worldRoot|worldParent)\.addChild\(sceneRoot\)/.test(full),
+  "Full-stage output mounts fixed AgentSpatialViewHost -> mutable AgentWorldRoot -> authored SceneRoot, including physics worlds");
+  const hostAdoptAt = hierarchySetup.indexOf("spatialViewHostRef = it");
+  const hostConfigureAt = hierarchySetup.indexOf('spatialViewHost.setName("AgentSpatialViewHost")');
+  const worldAdoptAt = hierarchySetup.indexOf("worldRootRef = it");
+  const worldConfigureAt = hierarchySetup.indexOf('worldRoot.setName("AgentWorldRoot")');
+  const contentAttachAt = hierarchySetup.indexOf("content.addEntity(spatialViewHost)");
+  const parentAttachAt = hierarchySetup.indexOf("spatialViewHost.addChild(worldRoot)");
+  assert([hostAdoptAt, hostConfigureAt, worldAdoptAt, worldConfigureAt, contentAttachAt, parentAttachAt].every((at) => at >= 0) &&
+    hostAdoptAt < hostConfigureAt && worldAdoptAt < worldConfigureAt && worldConfigureAt < contentAttachAt && contentAttachAt < parentAttachAt &&
+    /catch \(cause: Throwable\)[\s\S]*dispose\(\)[\s\S]*retainCleanup\(cause, cleanupError\)[\s\S]*throw cause/.test(hierarchySetup),
+  "Full-stage hierarchy adopts each created entity before fallible configuration/parenting and transactionally disposes setup failure");
+  assert(full.includes('AgentBridge.attachSceneProvider("stage")') && full.includes("{ currentWorldRoot("),
+    "Full-stage scene binding is a dynamic stage provider for the replaceable world root");
+  assert(full.includes("HMDTrackingProvider()") && full.includes("DataProvider.DataListener<HMDTrackingData>") &&
+    /hmdTrackingProvider\.start\(\)[\s\S]*hmdTrackingProvider\.addListener\(hmdListener\)/.test(full) &&
+    /hmdTrackingProvider\.removeListener\(hmdListener\)[\s\S]*hmdTrackingProvider\.stop\(\)/.test(full) &&
+    /SystemClock\.elapsedRealtimeNanos\(\)[\s\S]*hmdSampleSequence \+= 1L[\s\S]*AgentHmdPose\([\s\S]*hmdSampleSequence, observedAtMonotonicNs/.test(full) &&
+    !full.includes("latestData.hmdPose"),
+  "Full-stage output samples HMD updates through an owned listener with guest-derived sequence and age clocks");
+  const resumeHmd = /fun resumeHmdTracking\(\) \{[\s\S]*?(?=\n    fun pauseHmdTracking)/.exec(full)?.[0] ?? "";
+  const readHmd = /private fun readHmdPose\(generation: Long\): AgentBridge\.AgentHmdPose\? \{[\s\S]*?\n    \}/.exec(full)?.[0] ?? "";
+  assert(/var providerOwned = ownership\.second[\s\S]*var listenerOwned = ownership\.first/.test(resumeHmd) &&
+    /catch \(cause: Throwable\)[\s\S]*if \(listenerOwned\)[\s\S]*removeListener[\s\S]*if \(providerOwned\)[\s\S]*stop\(\)[\s\S]*hmdListenerRegistered = listenerOwned[\s\S]*hmdProviderStarted = providerOwned/.test(resumeHmd),
+  "HMD resume conservatively retains partial listener/provider ownership when compensating startup fails");
+  assert(readHmd.indexOf("synchronized(lifecycleLock)") >= 0 &&
+    readHmd.indexOf("synchronized(lifecycleLock)") < readHmd.indexOf("SystemClock.elapsedRealtimeNanos()") &&
+    /latestHmdSample\?\.copy\(readAtMonotonicNs = SystemClock\.elapsedRealtimeNanos\(\)\)/.test(readHmd),
+  "HMD acknowledgement timestamps the retained listener sample under the same lock so observedAt cannot overtake readAt");
+  assert(/LifecycleEventObserver[\s\S]*ON_PAUSE, Lifecycle\.Event\.ON_STOP -> \{[\s\S]*fullStageLifecycle\.pauseHmdTracking\(\)[\s\S]*ON_START, Lifecycle\.Event\.ON_RESUME -> \{[\s\S]*fullStageLifecycle\.resumeHmdTracking\(\)/.test(full) &&
+    /lifecycleOwner\.lifecycle\.addObserver\(observer\)[\s\S]*currentState\.isAtLeast\(Lifecycle\.State\.STARTED\)[\s\S]*fullStageLifecycle\.resumeHmdTracking\(\)[\s\S]*else fullStageLifecycle\.pauseHmdTracking\(\)/.test(full) &&
+    /lifecycleOwner\.lifecycle\.removeObserver\(observer\)[\s\S]*fullStageLifecycle\.dispose\(\)/.test(full) &&
+    !/DisposableEffect\(fullStageLifecycle, lifecycleOwner\) \{\s*fullStageLifecycle\.resumeHmdTracking\(\)/.test(full),
+  "Full-stage output starts or pauses HMD from current lifecycle state, observes transitions, and removes its observer before disposal");
+  assert(/val registrationToken = AgentBridge\.registerLocomotionProducer\([\s\S]*locomotionRegistrationToken = registrationToken/.test(full) &&
+    /AgentBridge\.unregisterLocomotionProducer\(registrationToken\)/.test(full),
+  "Full-stage output retains the bridge generation token and unregisters that exact token");
+  const direct = /private suspend fun direct\([\s\S]*?(?=\n    private suspend fun replacement)/.exec(full)?.[0] ?? "";
+  const replacement = /private suspend fun replacement\([\s\S]*?(?=\n    private fun rollbackReplacement)/.exec(full)?.[0] ?? "";
+  assert(/request\.mode[\s\S]*"direct"/.test(full) && full.includes("directGlideJob: Job?") &&
+    full.includes("lifecycleScope: CoroutineScope? = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)") &&
+    direct.includes("delay(16L)") && direct.includes("transform.setPosition(") &&
+    !/KeyEvent|InputManager|injectInputEvent|ControllerTrackingProvider/.test(full),
+  "direct mode is an explicit cancellable per-frame root glide on Main and never invokes input APIs");
+  assert(/"replacement"[\s\S]*getChildren\(\)[\s\S]*movedChildren[\s\S]*worldRootRef = created[\s\S]*worldRootGeneration = nextGeneration[\s\S]*oldRoot\.destroy\(false\)/.test(full),
+    "replacement mode transfers every stable child, publishes the fresh absolute root/generation, then retires the empty old root");
+  assert(/worldRootRef = created[\s\S]*worldRootGeneration = nextGeneration[\s\S]*AgentBridge\.reconcileLocomotionRootGeneration\(request\.generation, nextGeneration\)/.test(replacement) &&
+    /worldRootRef = oldRoot[\s\S]*worldRootGeneration = oldGeneration[\s\S]*AgentBridge\.reconcileLocomotionRootGeneration\(requestGeneration, oldGeneration\)/.test(full),
+  "replacement publication and rollback reconcile bridge root generation at the producer commit boundary");
+  assert(full.includes("attachments.seatSceneAttachmentPanels(worldRoot)") &&
+    /val menuParent = fullStageLifecycle\.currentWorldRoot\([\s\S]*menuParent\.addChild\(menuRoot\)/.test(full),
+  "Full-stage scene attachments and menu roots are parented beneath the current AgentWorldRoot");
+  assert((full.match(/content\.addEntity\(/g) ?? []).length === 1 && hierarchySetup.includes("content.addEntity(spatialViewHost)"),
+    "Full-stage output adds only its fixed host directly to SpatialViewContent");
+  assert(!/ConfigurationService|sys\.guardian|spatial_safeguard|localmode|KeyEvent|InputManager|injectInputEvent|ControllerTrackingProvider|physicalWalk/i.test(full) &&
+    !/spatialViewHost[^\n]*setPosition|host\.components[^\n]*setPosition/.test(direct + replacement),
+  "movable-root code only mutates app ECS content; platform Guardian/Home and physical-walk input remain outside its structural reach");
+
+  const rawScaffoldHome = read("appskeleton/app/src/main/java/com/example/spatialapp/content/HomeStage.kt");
+  assert(!/AgentWorldRoot|registerLocomotionProducer|HMDTrackingProvider/.test(rawScaffoldHome),
+    "the unassembled style-3-capable scaffold remains honestly unregistered");
+
+  const dispose = /fun dispose\(\): String\? \{[\s\S]*?\n    \}/.exec(full)?.[0] ?? "";
+  const orderedCleanup = [
+    "disposed = true",
+    'cleanup("direct_glide_cancel")',
+    'cleanup("producer_unregister")',
+    'cleanup("scene_provider_detach")',
+    'cleanup("hmd_listener_remove")',
+    'cleanup("hmd_stop")',
+    'cleanup("hierarchy_destroy")',
+  ].map((needle) => dispose.indexOf(needle));
+  assert(dispose.includes("if (disposed) return null") &&
+    orderedCleanup.every((at) => at >= 0) && orderedCleanup.every((at, index) => index === 0 || orderedCleanup[index - 1] < at),
+  "Full-stage disposal is idempotent and orders invalidation/glide cancel, exact unregister, provider detach, HMD stop, then one hierarchy destroy");
+  assert(/spatialViewHost = spatialViewHostRef[\s\S]*worldRoot = worldRootRef[\s\S]*worldRootAttachedToHost = worldRootAttachedToHost/.test(dispose) &&
+    /if \(!disposal\.worldRootAttachedToHost && worldRoot != null\)[\s\S]*cleanup\("unparented_world_root_destroy"\)[\s\S]*if \(spatialViewHost != null\)[\s\S]*cleanup\("hierarchy_destroy"\)[\s\S]*if \(disposal\.worldRootAttachedToHost && !hierarchyDestroyed && worldRoot != null\)[\s\S]*cleanup\("world_root_destroy_after_hierarchy_failure"\)/.test(dispose),
+  "Full-stage disposal owns both initial entities before parenting and tears down unparented or recursively parented hierarchy states");
+
+  const forbiddenMarkers = [
+    "AgentSpatialViewHost", "AgentWorldRoot", "FullStageWorldLifecycle", "HMDTrackingProvider",
+    "registerLocomotionProducer", "unregisterLocomotionProducer", "attachSceneProvider", "detachSceneProvider",
+  ];
+  for (const [label, output] of [["Mixed", mixed], ["Progressive", progressive], ["non-stage Full", nonStageFull]]) {
+    const leaked = forbiddenMarkers.filter((marker) => output.includes(marker));
+    assert(leaked.length === 0, `${label} output carries no Full-stage locomotion/root/HMD symbols${leaked.length ? `: ${leaked.join(", ")}` : ""}`);
+    assert(output.includes("content.addEntity(sceneRoot)"), `${label} output retains direct content.addEntity(sceneRoot) parenting`);
+    assert(output.includes("attachments.seatSceneAttachmentPanels(content)"), `${label} output retains the existing attachment call shape`);
+    assert(output.includes("content.addEntity(menuRoot)"), `${label} output retains the existing menu-root call shape`);
+  }
+
+  const { generateAttachmentPanelFiles } = await import("../dist/attachmentpanel.js");
+  const attachmentKt = generateAttachmentPanelFiles({
+    packageName: "com.test.locomotiontwin.content",
+    panels: [{ id: "status", position: [0, 1.5, -1.8] }],
+  }).files["SceneAttachments.kt"];
+  assert(sha256Text(attachmentKt) === "e179b9c9648d2ca0f38b89373b1c165689d43b558dae0e18c48ba9c06821bc29",
+    "default attachment-panel generation is byte-identical to ce201e4");
+  assert(!/seatSceneAttachmentPanels\(worldRoot: Entity\)|AgentWorldRoot/.test(attachmentKt) &&
+    /fun SpatialViewAttachments\.seatSceneAttachmentPanels\(content: SpatialViewContent\)[\s\S]*content\.addEntity\(panel\)/.test(attachmentKt),
+  "stage-neutral attachment generation retains only its ce201e4 SpatialViewContent route");
+  assert(/private fun SpatialViewAttachments\.seatSceneAttachmentPanels\(worldRoot: Entity\)[\s\S]*check\(worldRoot\.addChild\(panel\)\)/.test(full),
+    "eligible Full wiring alone supplies the attachment-to-AgentWorldRoot helper");
+  for (const [label, output] of [
+    ["Mixed", `${mixed}\n${attachmentKt}`],
+    ["Progressive", `${progressive}\n${attachmentKt}`],
+    ["non-stage Full", `${nonStageFull}\n${attachmentKt}`],
+  ]) {
+    const leaked = forbiddenMarkers.filter((marker) => output.includes(marker));
+    assert(leaked.length === 0,
+      `${label} world and attachment outputs carry no Full-stage root/HMD symbols${leaked.length ? `: ${leaked.join(", ")}` : ""}`);
+  }
+
+  const { buildBoundaryMatrix } = await import("../dist/boundarymatrix.js");
+  const boundaryMatrix = buildBoundaryMatrix(JSON.parse(read("briefs/boundarylabmixed.json")));
+  const boundaryFull = boundaryMatrix.find((candidate) => candidate.variant === "manifest_full")?.spec;
+  const boundaryMixed = boundaryMatrix.find((candidate) => candidate.variant === "manifest_mixed")?.spec;
+  const boundaryFiles = boundaryFull ? generateWiring(boundaryFull) : [];
+  const boundaryMixedFiles = boundaryMixed ? generateWiring(boundaryMixed) : [];
+  const boundaryHome = boundaryFiles.find((file) => file.path.endsWith("/HomeStage.kt"))?.content ?? "";
+  const boundaryKt = boundaryFiles.find((file) => file.path.endsWith("/BoundaryLabScene.kt"))?.content ?? "";
+  const boundaryMixedKt = boundaryMixedFiles.find((file) => file.path.endsWith("/BoundaryLabScene.kt"))?.content ?? "";
+  assert(sha256Text(JSON.stringify(boundaryMixedFiles)) === "8a821f67f45228072309b065117286e9954212eed63c9f713dfabecac7fb0b44",
+    "Mixed Boundary Lab generation is byte-identical to ce201e4");
+  assert(boundaryHome.includes("attachments.seatBoundaryLabPanels(worldRoot)") &&
+    /fun SpatialViewAttachments\.seatBoundaryLabPanels\(worldRoot: Entity\)[\s\S]*check\(worldRoot\.addChild\(panel\)\)/.test(boundaryKt) &&
+    /fun SpatialViewAttachments\.seatBoundaryLabPanels\(content: SpatialViewContent\)[\s\S]*content\.addEntity\(panel\)/.test(boundaryKt),
+  "Full boundary panels gain Entity parenting while Mixed boundary seating keeps its existing call shape");
+  assert(!/seatBoundaryLabPanels\(worldRoot: Entity\)|AgentWorldRoot/.test(boundaryMixedKt),
+    "Mixed Boundary Lab output carries no Full-root helper or marker");
+
+  // Failure-path contract. Hierarchy creation is adopted before fallible setup, capability
+  // activation is delayed until every generated world child is ready, cancellation joins the
+  // independently-scoped glide, and no cleanup exception can replace its primary.
+  const activation = /fun activate\(\) \{[\s\S]*?(?=\n    fun currentWorldRoot)/.exec(full)?.[0] ?? "";
+  const activateCallAt = full.lastIndexOf("fullStageLifecycle.activate()");
+  const sceneSeatAt = full.lastIndexOf("attachments.seatSceneAttachmentPanels(worldRoot)");
+  const menuSeatAt = full.lastIndexOf("menuParent.addChild(menuRoot)");
+  assert(activateCallAt > sceneSeatAt && activateCallAt > menuSeatAt &&
+    !/fullStageLifecycle\.activate\(\)[\s\S]*setName\("SceneRoot"\)/.test(full),
+  "Full-stage capability activation occurs only after authored scene, attachments, and menu setup finish");
+  assert(/var registeredToken: Long\? = null[\s\S]*var providerAttachedHere = false[\s\S]*attachSceneProvider\("stage"\)[\s\S]*providerAttachedHere = true[\s\S]*val registrationToken = AgentBridge\.registerLocomotionProducer[\s\S]*registeredToken = registrationToken/.test(activation) &&
+    /catch \(cause: Throwable\)[\s\S]*compensateActivation\(registeredToken, providerAttachedHere\)[\s\S]*dispose\(\)[\s\S]*retainCleanup\(cause, cleanupError\)[\s\S]*throw cause/.test(activation),
+  "activation failure invalidates and immediately compensates its exact token/provider before retaining primary plus teardown evidence");
+  const ownershipCommit = /synchronized\(lifecycleLock\) \{\n                check\(!disposed && lifecycleGeneration == generation\) \{ "Full Stage lifecycle changed during registration" \}[\s\S]*?\n            \}/.exec(activation)?.[0] ?? "";
+  const ownershipCommitAt = activation.indexOf(ownershipCommit);
+  const beforeOwnershipCommit = ownershipCommitAt > 0 ? activation.slice(0, ownershipCommitAt) : "";
+  const activationCatchAt = activation.indexOf("        } catch (cause: Throwable) {", ownershipCommitAt);
+  const afterOwnershipCommit = ownershipCommitAt >= 0 && activationCatchAt > ownershipCommitAt
+    ? activation.slice(ownershipCommitAt + ownershipCommit.length, activationCatchAt).trim()
+    : "";
+  assert(/sceneProviderAttached = providerAttachedHere[\s\S]*locomotionRegistrationToken = registrationToken[\s\S]*worldRootGeneration = registrationToken[\s\S]*activated = true[\s\S]*providerAttachedHere = false[\s\S]*registeredToken = null/.test(ownershipCommit) &&
+    activation.indexOf("registeredToken = registrationToken") < ownershipCommitAt &&
+    afterOwnershipCommit === "return" &&
+    !/^\s*(?:sceneProviderAttached|locomotionRegistrationToken)\s*=(?!=)/m.test(beforeOwnershipCommit) &&
+    !/providerAttachedHere = true[\s\S]*sceneProviderAttached = true[\s\S]*val registrationToken = AgentBridge\.registerLocomotionProducer/.test(activation),
+  "activation keeps provider/token ownership local until one atomic commit clears both claims, with no fallible post-transfer work");
+  const activationCompensation = /private fun compensateActivation\([\s\S]*?(?=\n    fun currentWorldRoot)/.exec(full)?.[0] ?? "";
+  assert(/lifecycleGeneration \+= 1L[\s\S]*locomotionRegistrationToken = null[\s\S]*worldRootGeneration = 0L[\s\S]*activated = false[\s\S]*sceneProviderAttached = false[\s\S]*cleanup\("producer_unregister"\)[\s\S]*unregisterLocomotionProducer\(registeredToken\)[\s\S]*cleanup\("scene_provider_detach"\)[\s\S]*detachSceneProvider\(\)[\s\S]*boundedCleanupError\(failures\)/.test(activationCompensation),
+    "activation compensation invalidates first, guards every teardown action, and returns bounded cleanup evidence");
+
+  const rollback = /private fun rollbackReplacement\([\s\S]*?(?=\n    private fun failureText|\n    private fun cleanupFailure)/.exec(full)?.[0] ?? "";
+  assert(/val cleanupError = candidate\?\.let \{ failedCandidate ->[\s\S]*try \{[\s\S]*rollbackReplacement\([\s\S]*catch \(rollbackCause: Throwable\)[\s\S]*cleanupFailure\("rollback_helper", rollbackCause\)/.test(replacement) &&
+    !/candidate\?\.let \{ failedCandidate ->\s*rollbackReplacement\(/.test(replacement),
+  "replacement contains the whole rollback helper so no rollback exception can replace the mutation primary");
+  assert(/cleanup\("old_root_reattach"\) \{[\s\S]*oldRoot\.getParent\(\)/.test(rollback) &&
+    /movedChildren\.asReversed\(\)\.forEach[\s\S]*cleanup\("candidate_child_detach"\)[\s\S]*candidate\.removeChild\(child\)[\s\S]*cleanup\("old_child_restore"\)[\s\S]*oldRoot\.addChild\(child\)/.test(rollback) &&
+    /if \(published\)[\s\S]*worldRootRef = oldRoot[\s\S]*worldRootGeneration = oldGeneration/.test(rollback) &&
+    /cleanup\("candidate_detach"\)[\s\S]*candidate\.getParent\(\)[\s\S]*candidate\.removeFromParent\(\)[\s\S]*cleanup\("candidate_destroy"\)[\s\S]*candidate\.getChildrenCount\(\)[\s\S]*candidate\.destroy\(false\)[\s\S]*boundedCleanupError\(failures\)/.test(rollback) &&
+    !/fun cleanup\([\s\S]*?\n        \}\n        if \(oldRoot\.getParent\(\)/.test(rollback),
+  "one rollback path guards every fallible probe/action before returning bounded cleanup evidence");
+  assert(/val applied = created\.components\.get<TransformComponent>\(\)\?\.position[\s\S]*AgentWorldPose\(nextGeneration, applied\)/.test(replacement),
+    "replacement completion reports structural TransformComponent readback rather than echoing the request");
+  assert(replacement.indexOf("val applied = created.components.get<TransformComponent>()?.position") <
+    replacement.indexOf("oldRoot.destroy(false)"),
+  "replacement obtains fallible structural readback before irreversible old-root retirement");
+
+  const packagedAgentKt = read("appskeleton/app/src/main/java/com/example/spatialapp/agent/AgentBridge.kt");
+  const writeLocomotionAck = /private suspend fun writeLocomotionAck\([\s\S]*?(?=\n    private fun validateLocomotionResult)/.exec(packagedAgentKt)?.[0] ?? "";
+  assert(/validateLocomotionResult[\s\S]*reconcileLocomotionRootGeneration\(request\.generation, pose\.rootGeneration\)[\s\S]*locomotionRequestIsActive[\s\S]*completeLocomotionLease/.test(writeLocomotionAck),
+    "bridge reconciles a completed producer generation before every post-producer lease-expiry return");
+
+  assert(/catch \(cause: CancellationException\) \{[\s\S]*withContext\(NonCancellable\)[\s\S]*glide\.cancelAndJoin\(\)[\s\S]*throw cause[\s\S]*finally \{[\s\S]*directGlideJob === glide/.test(direct) &&
+    !/catch \(cause: CancellationException\) \{\s*throw cause/.test(direct) &&
+    direct.indexOf("glide.cancelAndJoin()") < direct.indexOf("directGlideJob === glide") &&
+    /glideJob = directGlideJob/.test(dispose) && dispose.indexOf('cleanup("direct_glide_cancel")') < dispose.indexOf('cleanup("producer_unregister")'),
+  "caller cancellation non-cancellably cancels/joins the owned glide before clearing/rethrow, while disposal cancels the same handle");
+  assert((dispose.match(/if \(disposed\) return null/g) ?? []).length === 1 &&
+    (dispose.match(/unregisterLocomotionProducer\(registrationToken\)/g) ?? []).length === 1 &&
+    (dispose.match(/detachSceneProvider\(\)/g) ?? []).length === 1 &&
+    (dispose.match(/hmdTrackingProvider\.stop\(\)/g) ?? []).length === 1 &&
+    (dispose.match(/cleanup\("hierarchy_destroy"\)/g) ?? []).length === 1,
+  "double disposal is a no-op after one token/provider/HMD/hierarchy ownership snapshot is consumed");
+  assert(/AgentLocomotionResult\("failed", null, failureText\(cause\), cleanupError\)/.test(replacement),
+    "replacement retains the primary mutation failure when rollback also reports a cleanup failure");
+  assert(/val failures = mutableListOf<String>\(\)[\s\S]*fun cleanup\(label: String, action: \(\) -> Unit\)[\s\S]*cleanup\("producer_unregister"\)[\s\S]*cleanup\("scene_provider_detach"\)[\s\S]*cleanup\("hmd_stop"\)[\s\S]*cleanup\("hierarchy_destroy"\)[\s\S]*val cleanupError = boundedCleanupError\(failures\)[\s\S]*disposalCleanupError = cleanupError[\s\S]*return cleanupError/.test(dispose) &&
+    !/^\s*runCatching \{/m.test(dispose) &&
+    /onDispose \{[\s\S]*fullStageLifecycle\.dispose\(\)\?\.let \{ cleanupError ->[\s\S]*Log\.e\(TAG, "Full Stage cleanup failed: " \+ cleanupError\)/.test(full),
+  "disposal guards every step, aggregates/stores bounded errors, and makes them visible from onDispose");
+
+  const boundaryDispose = /fun dispose\(\): String\? \{[\s\S]*?\n    \}/.exec(boundaryHome)?.[0] ?? "";
+  assert((boundaryHome.match(/DisposableEffect\(/g) ?? []).length === 1 &&
+    boundaryHome.lastIndexOf("fullStageLifecycle.activate()") > boundaryHome.lastIndexOf("attachments.seatBoundaryLabPanels(worldRoot)") &&
+    boundaryDispose.indexOf("BoundaryLabScene.release(root)") > boundaryDispose.indexOf('cleanup("producer_unregister")') &&
+    boundaryDispose.indexOf("BoundaryLabScene.release(root)") < boundaryDispose.indexOf('cleanup("scene_provider_detach")'),
+  "Full Boundary Lab cleanup is consolidated into the one Full lifecycle without refactoring Mixed cleanup");
 }
 
 // CP2 flagship — one typed Mixed-stage room experience must lower through existing generators.

@@ -22,11 +22,19 @@ import java.io.FileOutputStream
 import java.io.OutputStreamWriter
 import java.math.BigDecimal
 import java.security.MessageDigest
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withTimeout
 
 /**
  * AgentBridge — an injectable headless control + verification surface for an AI agent.
@@ -61,6 +69,14 @@ object AgentBridge {
     val NAVIGATION_GUIDE_COLOR_1 = intArrayOf(0, 255, 255)
     const val NAVIGATION_GUIDE_WIDTH_M = 0.74f
     const val NAVIGATION_GUIDE_HEIGHT_M = 0.44f
+    const val LOCOMOTION_PAYLOAD_KIND = "pico.agent-bridge.locomotion"
+    const val LOCOMOTION_SCHEMA_VERSION = 1
+    const val LOCOMOTION_CAPABILITY_REVISION = 1
+    const val LOCOMOTION_CACHE_DIRECTORY = "agentbridge/locomotion"
+    const val AGENT_WORLD_ROOT_ID = "AgentWorldRoot"
+    const val COMMANDS_COMMAND = "commands"
+    const val HMD_POSE_COMMAND = "hmd_pose"
+    const val LOCOMOTE_COMMAND = "locomote"
 
     data class SceneSnapshotRequest(
         val requestId: String,
@@ -95,6 +111,97 @@ object AgentBridge {
         val errorDetail: String? = null,
     )
 
+    data class AgentWorldPose(val rootGeneration: Long, val position: Vector3)
+    data class AgentHmdPose(
+        val sampleSequence: Long,
+        val sampleObservedAtMonotonicNs: Long,
+        val readAtMonotonicNs: Long,
+        val position: Vector3,
+        val rotation: Quat,
+    )
+    data class AgentLocomotionResult(
+        val outcome: String,
+        val pose: AgentWorldPose?,
+        val primaryError: String? = null,
+        val cleanupError: String? = null,
+    )
+
+    data class LocomotionRequest(
+        val generation: Long,
+        val kind: String,
+        val schemaVersion: Int,
+        val capabilityRevision: Int,
+        val requestId: String,
+        val tag: String,
+        val mode: String,
+        val target: Vector3,
+        val absolute: Boolean,
+        val glideDurationMs: Int,
+        val executionLeaseMs: Int,
+        val physicalWalk: Boolean,
+        val rootGenerationBefore: Long,
+        val rootIncarnation: String,
+    )
+
+    private data class LocomotionFileRequest(
+        val generation: Long,
+        val kind: String,
+        val schemaVersion: Int,
+        val capabilityRevision: Int,
+        val requestId: String,
+        val tag: String,
+        val requestControl: String,
+        val mode: String,
+        val target: Vector3?,
+        val absolute: Boolean,
+        val glideDurationMs: Int,
+        val executionLeaseMs: Int,
+        val physicalWalk: Boolean,
+        val rootGenerationBefore: Long,
+        val rootIncarnation: String,
+    )
+
+    private data class LocomotionProducerBinding(
+        val generation: Long,
+        val rootGeneration: Long,
+        val rootIncarnation: String,
+        val rootProvider: () -> Entity?,
+        val hmdProducer: () -> AgentHmdPose?,
+        val producer: suspend (LocomotionRequest) -> AgentLocomotionResult,
+    )
+
+    private enum class LocomotionLeaseState {
+        ACTIVE, CANCELLING, CANCEL_TERMINAL, EXECUTE_TERMINAL, EXPIRED, FINALIZING, FINALIZED
+    }
+
+    private data class LocomotionExecutionLease(
+        val generation: Long,
+        val rootGeneration: Long,
+        val rootIncarnation: String,
+        val tag: String,
+        val expiresAtMonotonicNs: Long,
+        var state: LocomotionLeaseState,
+        var job: Job?,
+        var cachedCancelOutcome: String?,
+        var cancelWriter: Job?,
+        var finalizeWriter: Job?,
+    )
+
+    private data class LocomotionCancellationPlan(
+        val request: LocomotionFileRequest,
+        val lease: LocomotionExecutionLease,
+        val outcome: String,
+        val barrierJob: Job?,
+        val cancelProducer: Boolean,
+    )
+
+    private data class LocomotionFinalizationPlan(
+        val request: LocomotionFileRequest,
+        val lease: LocomotionExecutionLease,
+        val producerJob: Job?,
+        val cancelWriter: Job?,
+    )
+
     private data class NavigationGuideProducerBinding(
         val generationIsCurrent: Boolean,
         val producer: (suspend (NavigationGuideRequest) -> NavigationGuideResult)?,
@@ -103,11 +210,20 @@ object AgentBridge {
 
     private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestIdPattern = Regex("^[A-Za-z0-9_-]{8,96}$")
+    private val locomotionIncarnationPattern = Regex("^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$")
     private val sceneSnapshotIdPattern = Regex("^[a-f0-9]{64}$")
     private val targetTraceIdPattern = Regex("^anchor-[0-9]{4}$")
     private val navigationGuideMutex = Mutex()
     private val navigationGuideGenerationLock = Any()
     private var navigationGuideGeneration = 0L
+    private val locomotionMutex = Mutex()
+    private val locomotionGenerationLock = Any()
+    private val locomotionLeaseLock = Any()
+    private val locomotionLeases = LinkedHashMap<String, LocomotionExecutionLease>()
+    private const val MAX_RETAINED_LOCOMOTION_LEASES = 256
+    private const val LOCOMOTION_CANCEL_BARRIER_TIMEOUT_MS = 8_000L
+    private var locomotionGeneration = 0L
+    private var locomotionBinding: LocomotionProducerBinding? = null
 
     @Volatile private var applicationContext: Context? = null
     @Volatile private var sceneRoot: Entity? = null
@@ -126,6 +242,7 @@ object AgentBridge {
     fun initialize(context: Context) {
         applicationContext = context.applicationContext
         if (navigationGuideCommandsEnabled()) registerNavigationGuideBuiltin()
+        registerLocomotionBuiltins()
     }
 
     /** The navigation guide is an authenticated debug feature and is unreachable in release APKs. */
@@ -217,6 +334,153 @@ object AgentBridge {
         event("navigation_guide_producer_unregistered", "revision" to NAVIGATION_GUIDE_BRIDGE_REVISION)
     }
 
+    fun registerLocomotionProducer(
+        rootProvider: () -> Entity?,
+        hmdProducer: () -> AgentHmdPose?,
+        producer: suspend (LocomotionRequest) -> AgentLocomotionResult,
+    ): Long {
+        cancelAllLocomotionLeases("locomotion producer replaced")
+        return synchronized(locomotionGenerationLock) {
+            val generation = nextLocomotionGeneration()
+            locomotionBinding = LocomotionProducerBinding(generation, generation, UUID.randomUUID().toString(), rootProvider, hmdProducer, producer)
+            event("locomotion_producer_registered", "revision" to LOCOMOTION_CAPABILITY_REVISION, "generation" to generation)
+            generation
+        }
+    }
+
+    fun unregisterLocomotionProducer(generation: Long) {
+        val removed = synchronized(locomotionGenerationLock) {
+            if (locomotionBinding?.generation != generation) return
+            nextLocomotionGeneration()
+            locomotionBinding = null
+            true
+        }
+        if (removed) cancelAllLocomotionLeases("locomotion producer unregistered")
+        event("locomotion_producer_unregistered", "revision" to LOCOMOTION_CAPABILITY_REVISION, "generation" to generation)
+    }
+
+    private fun cancelAllLocomotionLeases(reason: String) {
+        val jobs = synchronized(locomotionLeaseLock) {
+            val active = locomotionLeases.values.mapNotNull { lease ->
+                if (lease.state == LocomotionLeaseState.ACTIVE || lease.state == LocomotionLeaseState.EXPIRED) {
+                    lease.state = LocomotionLeaseState.CANCELLING
+                    lease.job
+                } else null
+            }
+            active
+        }
+        jobs.forEach { job -> job.cancel(CancellationException(reason)) }
+    }
+
+    private fun nextLocomotionGeneration(): Long {
+        check(locomotionGeneration < Long.MAX_VALUE) { "locomotion generation exhausted" }
+        locomotionGeneration += 1L
+        return locomotionGeneration
+    }
+
+    fun locomotionRequestIsCurrent(generation: Long): Boolean = synchronized(locomotionGenerationLock) {
+        locomotionBinding?.generation == generation
+    }
+
+    fun locomotionRequestIsActive(request: LocomotionRequest): Boolean = synchronized(locomotionLeaseLock) {
+        val lease = locomotionLeases[request.requestId] ?: return@synchronized false
+        if (lease.generation != request.generation || lease.rootGeneration != request.rootGenerationBefore ||
+            lease.rootIncarnation != request.rootIncarnation || lease.tag != request.tag ||
+            lease.state != LocomotionLeaseState.ACTIVE
+        ) return@synchronized false
+        if (SystemClock.elapsedRealtimeNanos() >= lease.expiresAtMonotonicNs) {
+            lease.state = LocomotionLeaseState.EXPIRED
+            return@synchronized false
+        }
+        true
+    }
+
+    private fun pruneTerminalLocomotionLeasesLocked(): Boolean {
+        while (locomotionLeases.size >= MAX_RETAINED_LOCOMOTION_LEASES) {
+            val oldestTerminal = locomotionLeases.entries.firstOrNull { (_, lease) ->
+                lease.state == LocomotionLeaseState.CANCEL_TERMINAL ||
+                    lease.state == LocomotionLeaseState.EXECUTE_TERMINAL
+            } ?: return false
+            locomotionLeases.remove(oldestTerminal.key)
+        }
+        return true
+    }
+
+    private fun registerLocomotionLease(request: LocomotionFileRequest, job: Job, target: File): String? {
+        if (request.requestControl != "execute" || request.executionLeaseMs !in 2_000..12_000 ||
+            request.executionLeaseMs != request.glideDurationMs + 2_000
+        ) return "invalid_or_replayed_execution_lease"
+        val now = SystemClock.elapsedRealtimeNanos()
+        val expiresAt = now + request.executionLeaseMs.toLong() * 1_000_000L
+        return synchronized(locomotionLeaseLock) {
+            if (locomotionLeases.containsKey(request.requestId) || !pruneTerminalLocomotionLeasesLocked()) {
+                return@synchronized "invalid_or_replayed_execution_lease"
+            }
+            if (target.exists() && !target.delete()) return@synchronized "stale_ack_not_removed"
+            locomotionLeases[request.requestId] = LocomotionExecutionLease(
+                request.generation, request.rootGenerationBefore, request.rootIncarnation, request.tag,
+                expiresAt, LocomotionLeaseState.ACTIVE, job, null, null, null,
+            )
+            null
+        }
+    }
+
+    private fun remainingLocomotionLeaseMs(request: LocomotionFileRequest): Long? = synchronized(locomotionLeaseLock) {
+        val lease = locomotionLeases[request.requestId] ?: return@synchronized null
+        if (lease.generation != request.generation || lease.rootGeneration != request.rootGenerationBefore ||
+            lease.rootIncarnation != request.rootIncarnation || lease.tag != request.tag ||
+            lease.state != LocomotionLeaseState.ACTIVE
+        ) return@synchronized null
+        val remainingNs = lease.expiresAtMonotonicNs - SystemClock.elapsedRealtimeNanos()
+        if (remainingNs <= 0L) {
+            lease.state = LocomotionLeaseState.EXPIRED
+            return@synchronized null
+        }
+        (remainingNs + 999_999L) / 1_000_000L
+    }
+
+    private fun completeLocomotionLease(request: LocomotionFileRequest): Boolean = synchronized(locomotionLeaseLock) {
+        val lease = locomotionLeases[request.requestId] ?: return@synchronized false
+        if (lease.generation != request.generation || lease.rootGeneration != request.rootGenerationBefore ||
+            lease.rootIncarnation != request.rootIncarnation || lease.tag != request.tag ||
+            lease.state != LocomotionLeaseState.ACTIVE
+        ) return@synchronized false
+        if (SystemClock.elapsedRealtimeNanos() >= lease.expiresAtMonotonicNs) {
+            lease.state = LocomotionLeaseState.EXPIRED
+            return@synchronized false
+        }
+        lease.state = LocomotionLeaseState.EXECUTE_TERMINAL
+        true
+    }
+
+    private fun expireLocomotionLease(request: LocomotionFileRequest) = synchronized(locomotionLeaseLock) {
+        val lease = locomotionLeases[request.requestId] ?: return@synchronized
+        if (lease.generation == request.generation && lease.rootGeneration == request.rootGenerationBefore &&
+            lease.rootIncarnation == request.rootIncarnation && lease.tag == request.tag &&
+            lease.state == LocomotionLeaseState.ACTIVE
+        ) lease.state = LocomotionLeaseState.EXPIRED
+    }
+
+    private fun currentLocomotionGeneration(): Long = synchronized(locomotionGenerationLock) { locomotionGeneration }
+
+    private fun currentLocomotionBinding(): LocomotionProducerBinding? = synchronized(locomotionGenerationLock) {
+        locomotionBinding
+    }
+
+    private fun registeredLocomotionRoot(): Entity? {
+        val provider = synchronized(locomotionGenerationLock) { locomotionBinding?.rootProvider } ?: return null
+        return runCatching { provider() }.getOrNull()
+    }
+
+    fun reconcileLocomotionRootGeneration(generation: Long, rootGeneration: Long): Boolean =
+        synchronized(locomotionGenerationLock) {
+            if (rootGeneration <= 0L) return@synchronized false
+            val binding = locomotionBinding
+            if (binding?.generation != generation) return@synchronized false
+            locomotionBinding = binding.copy(rootGeneration = rootGeneration)
+            true
+        }
+
     private fun nextNavigationGuideGeneration(): Long = synchronized(navigationGuideGenerationLock) {
         check(navigationGuideGeneration < Long.MAX_VALUE) { "navigation-guide generation exhausted" }
         navigationGuideGeneration += 1L
@@ -306,9 +570,270 @@ object AgentBridge {
         }
     }
 
+    @Synchronized
+    private fun registerLocomotionBuiltins() {
+        register(COMMANDS_COMMAND) { extras -> dispatchLocomotionFileRequest(COMMANDS_COMMAND, extras) }
+        register(HMD_POSE_COMMAND) { extras -> dispatchLocomotionFileRequest(HMD_POSE_COMMAND, extras) }
+        register(LOCOMOTE_COMMAND) { extras -> dispatchLocomotionFileRequest(LOCOMOTE_COMMAND, extras) }
+    }
+
+    private fun parseLocomotionFileRequest(operation: String, extras: Bundle): LocomotionFileRequest? {
+        val requestId = extras.getString("requestId")
+        val tag = extras.getString("tag")
+        if (requestId == null || !requestIdPattern.matches(requestId) ||
+            tag == null || tag.length !in 1..120 || tag.any { it.code !in 0x21..0x7e }
+        ) return null
+        return LocomotionFileRequest(
+            generation = currentLocomotionGeneration(),
+            kind = extras.getString("kind") ?: "",
+            schemaVersion = extras.getInt("schemaVersion", -1),
+            capabilityRevision = extras.getInt("capabilityRevision", -1),
+            requestId = requestId,
+            tag = tag,
+            requestControl = if (operation == LOCOMOTE_COMMAND) extras.getString("requestControl") ?: "" else "",
+            mode = extras.getString("mode") ?: "",
+            target = parseRequiredFiniteVector3(extras),
+            absolute = extras.getBoolean("absolute", false),
+            glideDurationMs = extras.getInt("glideDurationMs", -1),
+            executionLeaseMs = extras.getInt("executionLeaseMs", -1),
+            physicalWalk = extras.getBoolean("physicalWalk", true),
+            rootGenerationBefore = extras.getLong("rootGeneration", -1L),
+            rootIncarnation = extras.getString("rootIncarnation") ?: "",
+        )
+    }
+
+    private fun admitLocomotionObservationRequest(request: LocomotionFileRequest, target: File): String? =
+        synchronized(locomotionLeaseLock) {
+            val leaseState = locomotionLeases[request.requestId]?.state
+            if (leaseState == LocomotionLeaseState.FINALIZING ||
+                leaseState == LocomotionLeaseState.FINALIZED
+            ) return@synchronized "locomotion_nonce_finalization_started"
+            if (target.exists() && !target.delete()) return@synchronized "stale_ack_not_removed"
+            null
+        }
+
+    private fun dispatchLocomotionFileRequest(operation: String, extras: Bundle) {
+        val request = parseLocomotionFileRequest(operation, extras)
+        if (request == null) {
+            event("locomotion_rejected", "operation" to operation, "msg" to "invalid_request_identity")
+            return
+        }
+        val context = applicationContext
+        if (context == null) {
+            event("locomotion_failed", "operation" to operation, "requestId" to request.requestId, "msg" to "bridge_not_initialized")
+            return
+        }
+        if (operation == LOCOMOTE_COMMAND &&
+            (request.requestControl == "cancel" || request.requestControl == "finalize")
+        ) {
+            event("locomotion_rejected", "operation" to operation, "requestId" to request.requestId, "msg" to "control_requires_async_receiver")
+            return
+        }
+        val targetFile = locomotionTarget(context, request.requestId)
+        if (operation == LOCOMOTE_COMMAND) {
+            val job = bridgeScope.launch(start = CoroutineStart.LAZY) { writeLocomotionAck(context, request, targetFile) }
+            val admissionError = registerLocomotionLease(request, job, targetFile)
+            if (admissionError != null) {
+                job.cancel(CancellationException(admissionError))
+                event("locomotion_rejected", "operation" to operation, "requestId" to request.requestId, "msg" to admissionError)
+                return
+            }
+            job.start()
+        } else {
+            val admissionError = admitLocomotionObservationRequest(request, targetFile)
+            if (admissionError != null) {
+                event("locomotion_failed", "operation" to operation, "requestId" to request.requestId, "msg" to admissionError)
+                return
+            }
+            bridgeScope.launch {
+                when (operation) {
+                    COMMANDS_COMMAND -> writeCommandsAck(context, request, targetFile)
+                    HMD_POSE_COMMAND -> writeHmdPoseAck(context, request, targetFile)
+                }
+            }
+        }
+        event("locomotion_requested", "operation" to operation, "requestId" to request.requestId, "tag" to request.tag)
+    }
+
+    private fun cancelLocomotionRequest(request: LocomotionFileRequest): LocomotionCancellationPlan? =
+        synchronized(locomotionLeaseLock) {
+            if (validateLocomotionEnvelope(request) != null || request.requestControl != "cancel" ||
+                !locomotionIncarnationPattern.matches(request.rootIncarnation)
+            ) return@synchronized null
+            val existing = locomotionLeases[request.requestId]
+            if (existing != null) {
+                if (existing.generation <= 0L || existing.rootGeneration != request.rootGenerationBefore ||
+                    existing.rootIncarnation != request.rootIncarnation || existing.tag != request.tag
+                ) return@synchronized null
+                val exactRequest = request.copy(generation = existing.generation)
+                return@synchronized when (existing.state) {
+                    LocomotionLeaseState.EXECUTE_TERMINAL -> {
+                        existing.state = LocomotionLeaseState.CANCELLING
+                        existing.cachedCancelOutcome = "already_terminal"
+                        LocomotionCancellationPlan(exactRequest, existing, "already_terminal", existing.job, false)
+                    }
+                    LocomotionLeaseState.CANCEL_TERMINAL -> LocomotionCancellationPlan(
+                        exactRequest, existing, existing.cachedCancelOutcome ?: "cancelled", existing.job, false,
+                    )
+                    LocomotionLeaseState.ACTIVE -> {
+                        existing.state = LocomotionLeaseState.CANCELLING
+                        LocomotionCancellationPlan(exactRequest, existing, "cancelled", existing.job, true)
+                    }
+                    LocomotionLeaseState.CANCELLING, LocomotionLeaseState.EXPIRED -> {
+                        existing.state = LocomotionLeaseState.CANCELLING
+                        LocomotionCancellationPlan(
+                            exactRequest, existing, existing.cachedCancelOutcome ?: "cancelled", existing.job, true,
+                        )
+                    }
+                    LocomotionLeaseState.FINALIZING, LocomotionLeaseState.FINALIZED -> null
+                }
+            }
+            val binding = currentLocomotionBinding()
+            if (binding == null || request.generation != binding.generation ||
+                request.rootGenerationBefore != binding.rootGeneration || request.rootIncarnation != binding.rootIncarnation ||
+                !pruneTerminalLocomotionLeasesLocked()
+            ) return@synchronized null
+            val tombstone = LocomotionExecutionLease(
+                request.generation, request.rootGenerationBefore, request.rootIncarnation, request.tag,
+                Long.MAX_VALUE, LocomotionLeaseState.CANCELLING, null, "cancelled", null, null,
+            )
+            locomotionLeases[request.requestId] = tombstone
+            LocomotionCancellationPlan(request, tombstone, "cancelled", null, false)
+        }
+
+    private fun terminalCancelOutcome(plan: LocomotionCancellationPlan): String? = synchronized(locomotionLeaseLock) {
+        val existing = locomotionLeases[plan.request.requestId]
+        if (existing !== plan.lease || existing.generation != plan.request.generation ||
+            existing.rootGeneration != plan.request.rootGenerationBefore ||
+            existing.rootIncarnation != plan.request.rootIncarnation || existing.tag != plan.request.tag
+        ) return@synchronized null
+        when (existing.state) {
+            LocomotionLeaseState.EXECUTE_TERMINAL -> "already_terminal"
+            LocomotionLeaseState.CANCEL_TERMINAL -> existing.cachedCancelOutcome ?: plan.outcome
+            LocomotionLeaseState.CANCELLING, LocomotionLeaseState.EXPIRED -> {
+                existing.state = LocomotionLeaseState.CANCEL_TERMINAL
+                existing.cachedCancelOutcome = plan.outcome
+                plan.outcome
+            }
+            LocomotionLeaseState.ACTIVE -> null
+            LocomotionLeaseState.FINALIZING, LocomotionLeaseState.FINALIZED -> null
+        }
+    }
+
+    fun dispatchLocomotionCancellation(extras: Bundle, finished: () -> Unit): Boolean {
+        val context = applicationContext ?: return false
+        val request = parseLocomotionFileRequest(LOCOMOTE_COMMAND, extras) ?: return false
+        val plan = cancelLocomotionRequest(request) ?: return false
+        if (plan.cancelProducer) {
+            plan.barrierJob?.cancel(CancellationException("host cancelled locomotion request"))
+        }
+        val candidate = bridgeScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                withTimeout(LOCOMOTION_CANCEL_BARRIER_TIMEOUT_MS) {
+                    val job = plan.barrierJob
+                    if (job != null) job.join()
+                    val outcome = terminalCancelOutcome(plan) ?: return@withTimeout
+                    writeLocomotionCancelAck(context, plan.request, locomotionTarget(context, plan.request.requestId), outcome)
+                }
+            } catch (_: TimeoutCancellationException) {
+                event("locomotion_cancel_timeout", "requestId" to plan.request.requestId)
+            } catch (cause: Throwable) {
+                event("locomotion_cancel_failed", "requestId" to plan.request.requestId, "msg" to (cause.message ?: cause.javaClass.simpleName))
+            } finally { /* completed writer remains the immutable repeat-cancel barrier */ }
+        }
+        val writer = synchronized(locomotionLeaseLock) {
+            plan.lease.cancelWriter ?: candidate.also { plan.lease.cancelWriter = it }
+        }
+        if (writer !== candidate) candidate.cancel(CancellationException("shared cancel writer already owns this nonce"))
+        writer.invokeOnCompletion { runCatching { finished() } }
+        writer.start()
+        runCatching { event("locomotion_cancel_requested", "requestId" to request.requestId, "tag" to request.tag) }
+        return true
+    }
+
+    private suspend fun writeLocomotionCancelAck(
+        context: Context,
+        request: LocomotionFileRequest,
+        target: File,
+        outcome: String,
+    ) {
+        writeLocomotionAckAtomically(context, request, target, LOCOMOTE_COMMAND) { writer ->
+            writer.name("requestControl").value("cancel")
+            writer.name("outcome").value(outcome)
+            writer.name("rootGenerationBefore").value(request.rootGenerationBefore)
+            writer.name("root"); writeLocomotionRoot(writer, request.rootGenerationBefore, request.rootIncarnation)
+            writeLocomotionErrors(writer, null, null)
+        }
+    }
+
+    private fun finalizeLocomotionRequest(request: LocomotionFileRequest): LocomotionFinalizationPlan? =
+        synchronized(locomotionLeaseLock) {
+            if (validateLocomotionEnvelope(request) != null || request.requestControl != "finalize" ||
+                !locomotionIncarnationPattern.matches(request.rootIncarnation)
+            ) return@synchronized null
+            val existing = locomotionLeases[request.requestId] ?: return@synchronized null
+            if (existing.generation <= 0L || existing.rootGeneration != request.rootGenerationBefore ||
+                existing.rootIncarnation != request.rootIncarnation || existing.tag != request.tag
+            ) return@synchronized null
+            val exactRequest = request.copy(generation = existing.generation)
+            when (existing.state) {
+                LocomotionLeaseState.EXECUTE_TERMINAL, LocomotionLeaseState.CANCEL_TERMINAL -> {
+                    existing.state = LocomotionLeaseState.FINALIZING
+                    LocomotionFinalizationPlan(exactRequest, existing, existing.job, existing.cancelWriter)
+                }
+                LocomotionLeaseState.FINALIZING -> LocomotionFinalizationPlan(
+                    exactRequest, existing, existing.job, existing.cancelWriter,
+                )
+                LocomotionLeaseState.FINALIZED -> null
+                else -> null
+            }
+        }
+
+    fun dispatchLocomotionFinalization(extras: Bundle, finished: () -> Unit): Boolean {
+        val context = applicationContext ?: return false
+        val request = parseLocomotionFileRequest(LOCOMOTE_COMMAND, extras) ?: return false
+        val plan = finalizeLocomotionRequest(request) ?: return false
+        val candidate = bridgeScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                withTimeout(LOCOMOTION_CANCEL_BARRIER_TIMEOUT_MS) {
+                    plan.producerJob?.join()
+                    plan.cancelWriter?.join()
+                    writeLocomotionFinalizeAck(
+                        context, plan.request, locomotionTarget(context, plan.request.requestId),
+                    )
+                }
+            } catch (_: TimeoutCancellationException) {
+                event("locomotion_finalize_timeout", "requestId" to plan.request.requestId)
+            } catch (cause: Throwable) {
+                event("locomotion_finalize_failed", "requestId" to plan.request.requestId, "msg" to (cause.message ?: cause.javaClass.simpleName))
+            }
+        }
+        val writer = synchronized(locomotionLeaseLock) {
+            plan.lease.finalizeWriter ?: candidate.also { plan.lease.finalizeWriter = it }
+        }
+        if (writer !== candidate) candidate.cancel(CancellationException("shared finalization writer already owns this nonce"))
+        writer.invokeOnCompletion { runCatching { finished() } }
+        writer.start()
+        runCatching { event("locomotion_finalize_requested", "requestId" to request.requestId, "tag" to request.tag) }
+        return true
+    }
+
+    private suspend fun writeLocomotionFinalizeAck(
+        context: Context,
+        request: LocomotionFileRequest,
+        target: File,
+    ) {
+        writeLocomotionAckAtomically(context, request, target, LOCOMOTE_COMMAND) { writer ->
+            writer.name("requestControl").value("finalize")
+            writer.name("outcome").value("finalized")
+            writer.name("rootGenerationBefore").value(request.rootGenerationBefore)
+            writer.name("root"); writeLocomotionRoot(writer, request.rootGenerationBefore, request.rootIncarnation)
+            writeLocomotionErrors(writer, null, null)
+        }
+    }
+
     private fun registerBuiltins() {
         register("ping") { event("pong") }
-        register("commands") { event("commands", "list" to handlers.keys.joinToString(",")) }
         register("scene_stats") {
             val r = root()
             if (r == null) { event("scene_stats", "attached" to false); return@register }
@@ -403,6 +928,7 @@ object AgentBridge {
             val r = root(); val id = ex.getString("id")
             val e = if (r != null && id != null) find(r, id) else null
             if (e == null) { event("move_failed", "tag" to tg, "id" to (id ?: "null"), "msg" to "not_found"); return@register }
+            if (e === registeredLocomotionRoot()) { event("move_failed", "tag" to tg, "id" to id, "msg" to "reserved_root"); return@register }
             val t = e.components[TransformComponent::class.java]
             if (t == null) { event("move_failed", "tag" to tg, "id" to id, "msg" to "no_transform"); return@register }
             val pos = vec3(ex.getString("pos"), t.position)
@@ -414,9 +940,366 @@ object AgentBridge {
             val r = root(); val id = ex.getString("id")
             val e = if (r != null && id != null) find(r, id) else null
             if (e == null) { event("remove_failed", "tag" to tg, "id" to (id ?: "null"), "msg" to "not_found"); return@register }
+            if (e === registeredLocomotionRoot()) { event("remove_failed", "tag" to tg, "id" to id, "msg" to "reserved_root"); return@register }
             runCatching { e.destroy() }
                 .onSuccess { event("removed", "tag" to tg, "id" to id) }
                 .onFailure { event("remove_failed", "tag" to tg, "id" to id, "msg" to (it.message ?: "destroy_failed")) }
+        }
+    }
+
+    private fun parseRequiredFiniteVector3(extras: Bundle): Vector3? {
+        if (!extras.containsKey("x") || !extras.containsKey("y") || !extras.containsKey("z")) return null
+        val x = extras.getFloat("x", Float.NaN)
+        val y = extras.getFloat("y", Float.NaN)
+        val z = extras.getFloat("z", Float.NaN)
+        if (!x.isFinite() || !y.isFinite() || !z.isFinite()) return null
+        return Vector3(x, y, z)
+    }
+
+    private fun validateLocomotionEnvelope(request: LocomotionFileRequest): String? = when {
+        request.kind != LOCOMOTION_PAYLOAD_KIND -> "kind does not match the locomotion protocol"
+        request.schemaVersion != LOCOMOTION_SCHEMA_VERSION -> "schemaVersion does not match the locomotion protocol"
+        request.capabilityRevision != LOCOMOTION_CAPABILITY_REVISION -> "capabilityRevision does not match the locomotion protocol"
+        else -> null
+    }
+
+    private fun locomotionUnavailableReason(context: Context, binding: LocomotionProducerBinding?): String? = when {
+        context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0 -> "application_not_debuggable"
+        observedStageStyle(context) != "Full" -> "full_stage_required"
+        rootContainer != "stage" -> "stage_container_required"
+        binding == null -> "locomotion_producer_unregistered"
+        runCatching { binding.rootProvider() }.getOrNull() == null -> "agent_world_root_unavailable"
+        else -> null
+    }
+
+    private suspend fun writeCommandsAck(context: Context, request: LocomotionFileRequest, target: File) {
+        locomotionMutex.lock()
+        try {
+            val binding = currentLocomotionBinding()
+            val envelopeError = validateLocomotionEnvelope(request)
+            val unavailable = locomotionUnavailableReason(context, binding)
+            val primaryError = envelopeError ?: unavailable
+            val outcome = when {
+                envelopeError != null -> "rejected"
+                unavailable != null -> "capability_unavailable"
+                else -> "available"
+            }
+            writeLocomotionAckAtomically(context, request, target, COMMANDS_COMMAND) { writer ->
+                writer.name("outcome").value(outcome)
+                writer.name("commands").beginArray()
+                writer.value(COMMANDS_COMMAND); writer.value(HMD_POSE_COMMAND); writer.value(LOCOMOTE_COMMAND)
+                writer.endArray()
+                writer.name("availability").beginObject()
+                writer.name("debuggable").value(context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
+                val stageStyle = observedStageStyle(context)
+                writer.name("observedStageStyle"); if (stageStyle == null) writer.nullValue() else writer.value(stageStyle)
+                writer.name("rootContainer"); if (rootContainer == null) writer.nullValue() else writer.value(rootContainer)
+                writer.name("rootRegistered").value(binding != null && runCatching { binding.rootProvider() }.getOrNull() != null)
+                writer.name("hmdAvailable").value(binding != null)
+                writer.name("locomotionAvailable").value(binding != null)
+                writer.endObject()
+                writer.name("root")
+                if (binding == null || runCatching { binding.rootProvider() }.getOrNull() == null) writer.nullValue()
+                else writeLocomotionRoot(writer, binding.rootGeneration, binding.rootIncarnation)
+                writeLocomotionErrors(writer, primaryError, null)
+            }
+        } finally {
+            locomotionMutex.unlock()
+        }
+    }
+
+    private suspend fun writeHmdPoseAck(context: Context, request: LocomotionFileRequest, target: File) {
+        locomotionMutex.lock()
+        try {
+            val binding = currentLocomotionBinding()
+            var primaryError = validateLocomotionEnvelope(request)
+            if (primaryError == null && !locomotionIncarnationPattern.matches(request.rootIncarnation)) {
+                primaryError = "root_incarnation_required"
+            }
+            if (primaryError == null && binding != null && binding.rootIncarnation != request.rootIncarnation) {
+                primaryError = "stale_root_incarnation"
+            }
+            primaryError = primaryError ?: locomotionUnavailableReason(context, binding)
+            if (primaryError == null && request.rootGenerationBefore > 0L && binding!!.rootGeneration != request.rootGenerationBefore) {
+                primaryError = "stale_root_generation"
+            }
+            if (primaryError == null && !locomotionRequestIsCurrent(request.generation)) primaryError = "stale_generation"
+            val pose = if (primaryError == null) runCatching { binding!!.hmdProducer() }.getOrNull() else null
+            if (primaryError == null && (pose == null || !validHmdPose(pose))) primaryError = "hmd_pose_unavailable"
+            if (primaryError == null && !locomotionRequestIsCurrent(request.generation)) {
+                return
+            }
+            writeLocomotionAckAtomically(context, request, target, HMD_POSE_COMMAND) { writer ->
+                writer.name("outcome").value(if (primaryError == null) "sampled" else
+                    if (primaryError == "application_not_debuggable" || primaryError == "full_stage_required" ||
+                        primaryError == "stage_container_required" || primaryError == "locomotion_producer_unregistered" ||
+                        primaryError == "agent_world_root_unavailable") "capability_unavailable" else "rejected")
+                writer.name("root")
+                if (binding == null) writer.nullValue() else writeLocomotionRoot(writer, binding.rootGeneration, binding.rootIncarnation)
+                writer.name("hmdPose")
+                if (pose == null || primaryError != null) writer.nullValue() else writeHmdPose(writer, pose)
+                writeLocomotionErrors(writer, primaryError, null)
+            }
+        } finally {
+            locomotionMutex.unlock()
+        }
+    }
+
+    private suspend fun writeLocomotionAck(context: Context, request: LocomotionFileRequest, target: File) {
+        locomotionMutex.lock()
+        try {
+            val binding = currentLocomotionBinding()
+            var primaryError = validateLocomotionEnvelope(request)
+            primaryError = primaryError ?: when {
+                request.requestControl != "execute" -> "request_control_must_be_execute"
+                request.mode != "direct" && request.mode != "replacement" -> "mode_must_be_direct_or_replacement"
+                request.target == null || !request.target.x.isFinite() || !request.target.y.isFinite() || !request.target.z.isFinite() ->
+                    "finite_absolute_target_required"
+                !request.absolute -> "absolute_target_required"
+                request.glideDurationMs !in 0..10_000 -> "glide_duration_out_of_range"
+                request.executionLeaseMs !in 2_000..12_000 || request.executionLeaseMs != request.glideDurationMs + 2_000 ->
+                    "execution_lease_mismatch"
+                request.mode == "replacement" && request.glideDurationMs != 0 -> "replacement_glide_must_be_zero"
+                request.physicalWalk -> "physical_walk_refused"
+                !locomotionIncarnationPattern.matches(request.rootIncarnation) -> "root_incarnation_required"
+                binding != null && request.rootGenerationBefore != binding.rootGeneration -> "stale_root_generation"
+                binding != null && request.rootIncarnation != binding.rootIncarnation -> "stale_root_incarnation"
+                !locomotionRequestIsCurrent(request.generation) -> "stale_generation"
+                else -> null
+            }
+            primaryError = primaryError ?: locomotionUnavailableReason(context, binding)
+            val producerRequest = if (primaryError == null) LocomotionRequest(
+                generation = request.generation,
+                kind = request.kind,
+                schemaVersion = request.schemaVersion,
+                capabilityRevision = request.capabilityRevision,
+                requestId = request.requestId,
+                tag = request.tag,
+                mode = request.mode,
+                target = request.target!!,
+                absolute = request.absolute,
+                glideDurationMs = request.glideDurationMs,
+                executionLeaseMs = request.executionLeaseMs,
+                physicalWalk = request.physicalWalk,
+                rootGenerationBefore = request.rootGenerationBefore,
+                rootIncarnation = request.rootIncarnation,
+            ) else null
+            var result = if (producerRequest != null) {
+                val leaseRemainingMs = remainingLocomotionLeaseMs(request) ?: return
+                try {
+                    withTimeout(leaseRemainingMs) { binding!!.producer(producerRequest) }
+                } catch (_: TimeoutCancellationException) {
+                    expireLocomotionLease(request)
+                    return
+                } catch (_: CancellationException) {
+                    return
+                } catch (cause: Throwable) {
+                    AgentLocomotionResult("failed", null, cause.message ?: cause.javaClass.simpleName)
+                }
+            } else {
+                AgentLocomotionResult(
+                    if (primaryError == "application_not_debuggable" || primaryError == "full_stage_required" ||
+                        primaryError == "stage_container_required" || primaryError == "locomotion_producer_unregistered" ||
+                        primaryError == "agent_world_root_unavailable") "capability_unavailable" else "rejected",
+                    null,
+                    primaryError,
+                )
+            }
+            if (primaryError == null) {
+                val resultError = validateLocomotionResult(producerRequest!!, result)
+                if (resultError != null) result = AgentLocomotionResult("failed", null, resultError, result.cleanupError)
+            }
+            if (result.outcome == "completed") {
+                val pose = result.pose!!
+                if (!reconcileLocomotionRootGeneration(request.generation, pose.rootGeneration)) return
+            }
+            if (primaryError == null && !locomotionRequestIsActive(producerRequest!!)) return
+            if (!completeLocomotionLease(request)) return
+            if (result.outcome == "completed" && !locomotionRequestIsCurrent(request.generation)) return
+            writeLocomotionAckAtomically(context, request, target, LOCOMOTE_COMMAND) { writer ->
+                writer.name("requestControl").value("execute")
+                writer.name("executionLeaseMs").value(request.executionLeaseMs.toLong())
+                writer.name("outcome").value(result.outcome)
+                writer.name("mode").value(request.mode)
+                writer.name("target")
+                if (request.target == null) writer.nullValue() else {
+                    writer.beginObject()
+                    writer.name("absolute").value(true)
+                    writePositionMembers(writer, request.target)
+                    writer.endObject()
+                }
+                writer.name("glideDurationMs").value(request.glideDurationMs.toLong())
+                writer.name("rootGenerationBefore").value(request.rootGenerationBefore)
+                writer.name("root")
+                if (binding == null) writer.nullValue() else writeLocomotionRoot(writer, request.rootGenerationBefore, binding.rootIncarnation)
+                writer.name("pose")
+                if (result.pose == null) writer.nullValue() else writeWorldPose(writer, result.pose)
+                writer.name("hmdPose").nullValue()
+                writeLocomotionErrors(writer, result.primaryError, result.cleanupError)
+            }
+        } finally {
+            locomotionMutex.unlock()
+        }
+    }
+
+    private fun validateLocomotionResult(request: LocomotionRequest, result: AgentLocomotionResult): String? {
+        if (result.outcome == "completed") {
+            val pose = result.pose ?: return "completed_result_missing_pose"
+            if (result.primaryError != null || result.cleanupError != null) return "completed_result_contains_error"
+            if (!validWorldPose(pose)) return "completed_result_pose_not_finite"
+            if (pose.position.x != request.target.x || pose.position.y != request.target.y || pose.position.z != request.target.z) {
+                return "completed_result_target_mismatch"
+            }
+            val expectedGeneration = if (request.mode == "direct") request.rootGenerationBefore else request.rootGenerationBefore + 1L
+            if (pose.rootGeneration != expectedGeneration) return "completed_result_generation_mismatch"
+            return null
+        }
+        if (result.outcome != "rejected" && result.outcome != "failed" && result.outcome != "capability_unavailable") {
+            return "unknown_locomotion_outcome"
+        }
+        if (result.pose != null || result.primaryError.isNullOrBlank()) return "failed_result_is_contradictory"
+        return null
+    }
+
+    private fun validWorldPose(pose: AgentWorldPose): Boolean =
+        pose.rootGeneration > 0L && pose.position.x.isFinite() && pose.position.y.isFinite() && pose.position.z.isFinite()
+
+    private fun validHmdPose(pose: AgentHmdPose): Boolean = pose.sampleSequence > 0L &&
+        pose.sampleObservedAtMonotonicNs >= 0L && pose.readAtMonotonicNs >= pose.sampleObservedAtMonotonicNs &&
+        pose.position.x.isFinite() && pose.position.y.isFinite() && pose.position.z.isFinite() &&
+        pose.rotation.x.isFinite() && pose.rotation.y.isFinite() && pose.rotation.z.isFinite() && pose.rotation.w.isFinite()
+
+    private fun writeLocomotionRoot(writer: JsonWriter, generation: Long, incarnation: String) {
+        writer.beginObject()
+        writer.name("id").value(AGENT_WORLD_ROOT_ID)
+        writer.name("generation").value(generation)
+        writer.name("incarnation").value(incarnation)
+        writer.endObject()
+    }
+
+    private fun writePositionMembers(writer: JsonWriter, position: Vector3) {
+        writer.name("x").value(BigDecimal(position.x.toString()))
+        writer.name("y").value(BigDecimal(position.y.toString()))
+        writer.name("z").value(BigDecimal(position.z.toString()))
+    }
+
+    private fun writeWorldPose(writer: JsonWriter, pose: AgentWorldPose) {
+        writer.beginObject()
+        writer.name("rootGeneration").value(pose.rootGeneration)
+        writer.name("position").beginObject(); writePositionMembers(writer, pose.position); writer.endObject()
+        writer.endObject()
+    }
+
+    private fun writeHmdPose(writer: JsonWriter, pose: AgentHmdPose) {
+        writer.beginObject()
+        writer.name("sampleSequence").value(pose.sampleSequence.toString())
+        writer.name("sampleObservedAtMonotonicNs").value(pose.sampleObservedAtMonotonicNs.toString())
+        writer.name("readAtMonotonicNs").value(pose.readAtMonotonicNs.toString())
+        writer.name("position").beginObject(); writePositionMembers(writer, pose.position); writer.endObject()
+        writer.name("rotation").beginObject()
+        writer.name("x").value(BigDecimal(pose.rotation.x.toString()))
+        writer.name("y").value(BigDecimal(pose.rotation.y.toString()))
+        writer.name("z").value(BigDecimal(pose.rotation.z.toString()))
+        writer.name("w").value(BigDecimal(pose.rotation.w.toString()))
+        writer.endObject()
+        writer.endObject()
+    }
+
+    private fun writeLocomotionErrors(writer: JsonWriter, primaryError: String?, cleanupError: String?) {
+        writer.name("primaryError"); if (primaryError == null) writer.nullValue() else writer.value(primaryError.take(500))
+        writer.name("cleanupError"); if (cleanupError == null) writer.nullValue() else writer.value(cleanupError.take(500))
+    }
+
+    private fun publishLocomotionAckIfCurrent(
+        request: LocomotionFileRequest,
+        temp: File,
+        target: File,
+    ): Boolean {
+        if (request.requestControl != "execute" && request.requestControl != "cancel" &&
+            request.requestControl != "finalize"
+        ) {
+            return synchronized(locomotionLeaseLock) {
+                val leaseState = locomotionLeases[request.requestId]?.state
+                if (leaseState == LocomotionLeaseState.FINALIZING ||
+                    leaseState == LocomotionLeaseState.FINALIZED
+                ) return@synchronized false
+                synchronized(locomotionGenerationLock) {
+                    if (locomotionGeneration != request.generation) return@synchronized false
+                    Os.rename(temp.absolutePath, target.absolutePath)
+                    true
+                }
+            }
+        }
+        return synchronized(locomotionLeaseLock) {
+            val lease = locomotionLeases[request.requestId] ?: return@synchronized false
+            if (lease.generation != request.generation || lease.rootGeneration != request.rootGenerationBefore ||
+                lease.rootIncarnation != request.rootIncarnation || lease.tag != request.tag
+            ) return@synchronized false
+            if (request.requestControl == "execute") {
+                if (lease.state != LocomotionLeaseState.EXECUTE_TERMINAL) return@synchronized false
+                return@synchronized synchronized(locomotionGenerationLock) {
+                    if (locomotionGeneration != request.generation) return@synchronized false
+                    Os.rename(temp.absolutePath, target.absolutePath)
+                    true
+                }
+            }
+            if (request.requestControl == "finalize") {
+                if (lease.state != LocomotionLeaseState.FINALIZING) {
+                    return@synchronized false
+                }
+                // The process-lifetime fence is visible before the rename.  A
+                // readable finalize ack therefore implies that every prior
+                // writer was joined and no later writer can publish this ID.
+                lease.state = LocomotionLeaseState.FINALIZED
+                Os.rename(temp.absolutePath, target.absolutePath)
+                return@synchronized true
+            }
+            if (lease.state != LocomotionLeaseState.CANCEL_TERMINAL &&
+                lease.state != LocomotionLeaseState.EXECUTE_TERMINAL
+            ) return@synchronized false
+            Os.rename(temp.absolutePath, target.absolutePath)
+            true
+        }
+    }
+
+    private suspend fun writeLocomotionAckAtomically(
+        context: Context,
+        request: LocomotionFileRequest,
+        target: File,
+        operation: String,
+        writeBody: suspend (JsonWriter) -> Unit,
+    ) {
+        val directory = target.parentFile ?: throw IllegalStateException("locomotion cache has no parent")
+        if (!directory.exists() && !directory.mkdirs()) throw IllegalStateException("could not create locomotion cache")
+        val temp = File(directory, ".${request.requestId}.tmp-${SystemClock.elapsedRealtimeNanos()}")
+        val output = FileOutputStream(temp)
+        try {
+            val writer = JsonWriter(OutputStreamWriter(output, Charsets.UTF_8))
+            writer.beginObject()
+            writer.name("kind").value(LOCOMOTION_PAYLOAD_KIND)
+            writer.name("schemaVersion").value(LOCOMOTION_SCHEMA_VERSION.toLong())
+            writer.name("capabilityRevision").value(LOCOMOTION_CAPABILITY_REVISION.toLong())
+            writer.name("requestId").value(request.requestId)
+            writer.name("tag").value(request.tag)
+            writer.name("application").beginObject(); writer.name("packageName").value(context.packageName); writer.endObject()
+            writer.name("operation").value(operation)
+            writer.name("physicalWalk").value(false)
+            writeBody(writer)
+            writer.endObject()
+            writer.flush()
+            output.fd.sync()
+        } catch (cause: Throwable) {
+            temp.delete()
+            throw cause
+        } finally {
+            runCatching { output.close() }
+        }
+        try {
+            currentCoroutineContext().ensureActive()
+            if (!publishLocomotionAckIfCurrent(request, temp, target)) temp.delete()
+        } catch (cause: Throwable) {
+            temp.delete()
+            throw cause
         }
     }
 
@@ -791,6 +1674,9 @@ object AgentBridge {
 
     private fun navigationGuideTarget(context: Context, requestId: String): File =
         File(File(context.cacheDir, NAVIGATION_GUIDE_CACHE_DIRECTORY), "$requestId.json")
+
+    private fun locomotionTarget(context: Context, requestId: String): File =
+        File(File(context.cacheDir, LOCOMOTION_CACHE_DIRECTORY), "$requestId.json")
 
     private fun find(root: Entity, name: String): Entity? {
         var found: Entity? = null

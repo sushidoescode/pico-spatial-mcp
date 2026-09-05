@@ -392,8 +392,8 @@ test("portable core and host overlays use only their documented MCP contracts", 
 
 test("all host marketplaces use their exact source descriptor and synchronized metadata", async () => {
   const { rewritePlatformCountClaims } = await import("../scripts/metadata-counts.mjs");
-  const counts = { macTools: 254, otherHostTools: 251 };
-  const canonical = "254 tools on macOS (installed-tarball runtime-measured) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta";
+  const counts = { macTools: 255, otherHostTools: 252 };
+  const canonical = "255 tools on macOS (installed-tarball runtime-measured) versus a source-derived 252 on Linux and Windows from the three-tool host-GUI registration delta";
   for (const [label, input, expected] of [
     [
       "direct slash claim",
@@ -472,7 +472,7 @@ import { performance } from "node:perf_hooks";
 import { rewritePlatformCountClaims } from ${JSON.stringify(rewriteUrl)};
 const input = "251 tools" + " ".repeat(500) + "not a platform claim";
 const started = performance.now();
-const output = rewritePlatformCountClaims(input, { macTools: 254, otherHostTools: 251 });
+const output = rewritePlatformCountClaims(input, { macTools: 255, otherHostTools: 252 });
 process.stdout.write(JSON.stringify({ elapsedMs: performance.now() - started, unchanged: output === input }));
 `;
   const longWhitespace = spawnSync(process.execPath, ["--input-type=module", "--eval", longWhitespaceScript], {
@@ -509,7 +509,7 @@ process.stdout.write(JSON.stringify({ elapsedMs: performance.now() - started, un
     assert.deepEqual(plugin.source, expected.source, expected.file);
   }
 
-  const honestProvenance = /254 tools on macOS \(installed-tarball runtime-measured\) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta/i;
+  const honestProvenance = /255 tools on macOS \(installed-tarball runtime-measured\) versus a source-derived 252 on Linux and Windows from the three-tool host-GUI registration delta/i;
   for (const file of [
     "README.md",
     "QUICKSTART.md",
@@ -523,7 +523,7 @@ process.stdout.write(JSON.stringify({ elapsedMs: performance.now() - started, un
   ]) {
     const prose = fs.readFileSync(path.join(repoRoot, file), "utf8").replaceAll("\n", " ");
     assert.match(prose, honestProvenance, file);
-    assert.doesNotMatch(prose, /(?:251(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured|macOS and Linux have runtime-measured|251\s+on Linux, both runtime-measured)/i, file);
+    assert.doesNotMatch(prose, /(?:252(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured|macOS and Linux have runtime-measured|252\s+on Linux, both runtime-measured)/i, file);
     assert.doesNotMatch(prose, /no native Windows\s+`?tools\/list/i, file);
   }
   for (const description of [
@@ -531,7 +531,7 @@ process.stdout.write(JSON.stringify({ elapsedMs: performance.now() - started, un
     readJson(".claude-plugin/marketplace.json").plugins[0].description,
   ]) {
     assert.match(description, honestProvenance);
-    assert.doesNotMatch(description, /251(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured/i);
+    assert.doesNotMatch(description, /252(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured/i);
     assert.doesNotMatch(description, /no native Windows tools\/list/i);
   }
 });
@@ -2098,13 +2098,27 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
   assert.equal((workflow.match(/run: npm run smoke\s/g) ?? []).length, 1);
 
   const tarball = fs.readFileSync(path.join(repoRoot, "scripts", "verify-tarball.mjs"), "utf8");
-  assert.match(tarball, /const EXPECTED_TOOLS = 254;/);
-  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 251;/);
+  assert.match(tarball, /const EXPECTED_TOOLS = 255;/);
+  assert.match(tarball, /const EXPECTED_OTHER_HOST_TOOLS = 252;/);
   assert.match(tarball, /"navigate_to_scene_target"/);
   assert.match(tarball, /"run_immersive_boundary_experiment"/);
+  assert.equal((tarball.match(/"run_in_app_locomotion_route"/g) ?? []).length, 1);
   assert.match(tarball, /"ensure_pico_cli"/);
   assert.doesNotMatch(tarball, /TOOL_TOLERANCE/);
   assert.match(tarball, /tools\.length === EXPECTED_PLATFORM_TOOLS/);
+  const requiredTools = /const REQUIRED_TOOLS = \[([\s\S]*?)\n\];/.exec(tarball)?.[1];
+  assert.ok(requiredTools, "verify-tarball must retain the literal REQUIRED_TOOLS anchor list");
+  const requiredToolSurfaces = requiredTools.split(/\/\/ core lanes[^\n]*\n/);
+  assert.equal(requiredToolSurfaces.length, 2, "doors/full REQUIRED_TOOLS boundary must remain exact");
+  assert.doesNotMatch(requiredToolSurfaces[0], /"run_in_app_locomotion_route"/);
+  assert.match(requiredToolSurfaces[1], /"run_in_app_locomotion_route"/);
+
+  const indexSource = fs.readFileSync(path.join(repoRoot, "src", "index.ts"), "utf8");
+  assert.equal((indexSource.match(/import \{ registerInAppLocomotionTools \} from "\.\/worldlocomotion\.js";/g) ?? []).length, 1);
+  assert.equal((indexSource.match(/\bregisterInAppLocomotionTools\(server\);/g) ?? []).length, 1);
+  const fullOnlyBlock = /if \(!doorsSurfaceActive\(\)\) \{([\s\S]*?)\n\}\nregisterDoorTools\(server\);/.exec(indexSource)?.[1];
+  assert.ok(fullOnlyBlock, "index must retain one explicit full-only registration block");
+  assert.match(fullOnlyBlock, /\bregisterInAppLocomotionTools\(server\);/);
 
   const metadataSync = fs.readFileSync(path.join(repoRoot, "scripts", "sync-metadata.mjs"), "utf8");
   assert.match(metadataSync, /rewritePlatformCountClaims/, "metadata sync must use the bounded whole-document count rewriter");
@@ -2124,16 +2138,16 @@ test("distribution metadata records platform-exact full surfaces, 18 doors-surfa
     "llms.txt",
   ]) {
     const prose = fs.readFileSync(path.join(repoRoot, file), "utf8").replaceAll("\n", " ");
-    assert.match(prose, /254 tools on macOS \(installed-tarball runtime-measured\) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta/i, file);
-    assert.doesNotMatch(prose, /(?:251(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured|macOS and Linux have runtime-measured|251\s+on Linux, both runtime-measured)/i, file);
-    assert.doesNotMatch(prose, /\b254\+(?:[- ]tools?)?/i, file);
+    assert.match(prose, /255 tools on macOS \(installed-tarball runtime-measured\) versus a source-derived 252 on Linux and Windows from the three-tool host-GUI registration delta/i, file);
+    assert.doesNotMatch(prose, /(?:252(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured|macOS and Linux have runtime-measured|252\s+on Linux, both runtime-measured)/i, file);
+    assert.doesNotMatch(prose, /\b255\+(?:[- ]tools?)?/i, file);
   }
 
   for (const description of [
     readJson(".claude-plugin/plugin.json").description,
     readJson(".claude-plugin/marketplace.json").plugins[0].description,
   ]) {
-    assert.match(description, /254 tools on macOS \(installed-tarball runtime-measured\) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta/i);
-    assert.doesNotMatch(description, /251(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured/i);
+    assert.match(description, /255 tools on macOS \(installed-tarball runtime-measured\) versus a source-derived 252 on Linux and Windows from the three-tool host-GUI registration delta/i);
+    assert.doesNotMatch(description, /252(?: tools?)?\s+on Linux\s+(?:are|\()?runtime-measured/i);
   }
 });

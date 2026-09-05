@@ -16,6 +16,7 @@ function rootSentinel(spec: AppSpec): string {
 function generateWorld(spec: AppSpec, pkg: string): string {
   const profile = spec.boundaryLab!;
   const contentPkg = `${pkg}.content`;
+  const fullStageLocomotion = spec.meta.stageStyle === "3" && spec.meta.rootContainer === "stage";
   const gates = profile.gateSequenceM.flatMap((distance) =>
     ["FORWARD", "BACKWARD", "LEFT", "RIGHT"].map((axis) => `        Gate(${distance}f, Axis.${axis}),`));
   return [
@@ -291,6 +292,26 @@ function generateWorld(spec: AppSpec, pkg: string): string {
     `    }`,
     `}`,
     ``,
+    ...(fullStageLocomotion
+      ? [
+          `/** Full-stage overload: keep every attachment beneath the replaceable AgentWorldRoot. */`,
+          `fun SpatialViewAttachments.seatBoundaryLabPanels(worldRoot: Entity) {`,
+          `    entity(SENTINEL_PANEL_ID)?.let { panel ->`,
+          `        panel.components.get<TransformComponent>()?.setPosition(Vector3(0f, 1.65f, -2.2f))`,
+          `        panel.components.set(LookAtComponent().apply { setViewerAsTarget() })`,
+          `        check(worldRoot.addChild(panel)) { "boundary sentinel panel could not be parented beneath AgentWorldRoot" }`,
+          `    }`,
+          `    BoundaryLabScene.GATES.forEach { gate ->`,
+          `        entity(gate.id)?.let { panel ->`,
+          `            panel.components.get<TransformComponent>()?.setPosition(BoundaryLabScene.gatePanelPosition(gate))`,
+          `            panel.components.set(LookAtComponent().apply { setViewerAsTarget() })`,
+          `            check(worldRoot.addChild(panel)) { "boundary gate panel could not be parented beneath AgentWorldRoot" }`,
+          `        }`,
+          `    }`,
+          `}`,
+          ``,
+        ]
+      : []),
     `@Composable`,
     `private fun BoundarySentinelPanel(sentinel: String) {`,
     `    PicoTheme {`,

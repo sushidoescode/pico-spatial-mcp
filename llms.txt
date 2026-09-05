@@ -1,7 +1,7 @@
 # pico-spatial-mcp
 
 > MCP server that builds PICO OS 6 / Spatial SDK apps from natural-language briefs and
-> vision-verifies them on the PICO emulator: 254 tools on macOS (installed-tarball runtime-measured) versus a source-derived 251 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run; a curated
+> vision-verifies them on the PICO emulator: 255 tools on macOS (installed-tarball runtime-measured) versus a source-derived 252 on Linux and Windows from the three-tool host-GUI registration delta because no native Linux or Windows `tools/list` measurement has run; a curated
 > 18-tool "doors" surface, a trust ledger where "verified" means a rendered frame was looked at.
 
 ## Start here
@@ -11,3 +11,4 @@
 - [GETTING_STARTED.md](GETTING_STARTED.md): guided first session (tarball or clone)
 - [QUICKSTART.md](QUICKSTART.md): shortest path to a verified APK
 - [SKILLS.md](SKILLS.md): task-shaped skill guides the server exposes
+- [docs/IN_APP_LOCOMOTION.md](docs/IN_APP_LOCOMOTION.md): CP1 receipt-bound in-app locomotion contract, evidence limits, and Full-stage compatibility boundaries
