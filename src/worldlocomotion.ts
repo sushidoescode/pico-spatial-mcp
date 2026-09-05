@@ -4485,6 +4485,35 @@ export function createLiveInAppLocomotionDependencies(
     };
   };
 
+  const currentLogWindow = async (
+    context: LocomotionEffectBudget & { serial: string },
+    marker: string,
+    label: string,
+  ): Promise<Awaited<ReturnType<typeof run>>> => {
+    // Filter history on the device before transferring it. -T consumes epoch time,
+    // even when the output format is monotonic; preserve microseconds at BEGIN.
+    const markerOutput = await checked(
+      context.serial,
+      ["logcat", "-b", "all", "-d", "-v", "epoch", "-v", "usec", "--regex", `^${escapedRegex(marker)}$`],
+      `${label} BEGIN cursor`, context, 10_000, 64 * 1024,
+    );
+    const markerLines = markerOutput.split(/\r?\n/).filter((line) => line.includes(marker));
+    const cursor = markerLines.length === 1
+      ? new RegExp(`^\\s*([1-9][0-9]*\\.[0-9]{6})\\s+[0-9]+\\s+[0-9]+\\s+[VDIWEFS]\\s+WorldLocomotion\\s*:\\s*${escapedRegex(marker)}\\s*$`).exec(markerLines[0])?.[1]
+      : undefined;
+    if (!cursor) throw new Error(`${label} requires one exact BEGIN marker with an epoch microsecond cursor`);
+    const result = await runBounded(
+      context.serial,
+      ["logcat", "-b", "all", "-d", "-v", "threadtime", "-T", cursor],
+      label, context, 10_000, 64 * 1024 * 1024,
+    );
+    checkedLiveAdbResult(result, label);
+    if (Buffer.byteLength(result.stdout, "utf8") > 64 * 1024 * 1024) {
+      throw new Error(`${label} current window exceeds the bounded log output limit`);
+    }
+    return result;
+  };
+
   const runtimeHealthSnapshot = async (context: {
     serial: string;
     artifactRoot: string;
@@ -4495,15 +4524,7 @@ export function createLiveInAppLocomotionDependencies(
     timeoutMs: number;
     deadlineMonotonicNs: string;
   }): Promise<{ health: PackageRuntimeHealthReceiptV1; rawArtifact: LocomotionRawLogEvidence }> => {
-    const result = await runBounded(
-      context.serial,
-      ["logcat", "-b", "all", "-d", "-v", "threadtime"],
-      "fresh-launch runtime-health snapshot",
-      context,
-      10_000,
-      64 * 1024 * 1024,
-    );
-    checkedLiveAdbResult(result, "fresh-launch runtime-health snapshot");
+    const result = await currentLogWindow(context, context.marker, "fresh-launch runtime-health snapshot");
     const output = result.stdout;
     const artifactPath = path.join(context.artifactRoot, "logs", `fresh-launch-${String(context.sampleIndex).padStart(2, "0")}.log`);
     privateWrite(artifactPath, output);
@@ -4554,6 +4575,27 @@ export function createLiveInAppLocomotionDependencies(
     stopPackage: async (context) => {
       const { serial, packageName, reason } = context;
       await checked(serial, ["shell", "am", "force-stop", packageName], `${reason} force-stop ${packageName}`, context, 10_000, 64 * 1024);
+      if (reason === "prepare_target_clearance" || reason === "prepare_declared_incumbent_clearance") {
+        // Command completion can precede process/activity teardown. Launch only after an
+        // observed clearance; the interval is polling cadence, not an SDK timing guarantee.
+        for (;;) {
+          const pidResult = await runBounded(serial, ["shell", "pidof", packageName], "prepare clearance PID probe", context, 10_000, 64 * 1024);
+          const output = pidResult.stdout.trim();
+          const absent = pidResult.code === 1 && output === "";
+          if (pidResult.timedOut || pidResult.stderr.trim() !== ""
+            || (!absent && !(pidResult.code === 0 && output !== ""))) {
+            throw new Error(`prepare clearance PID probe failed: ${pidResult.stderr.trim() || output || `exit ${String(pidResult.code)}`}`);
+          }
+          if (!absent && (!/^[1-9][0-9]*(?:\s+[1-9][0-9]*)*$/.test(output)
+            || output.split(/\s+/).some((pid) => !Number.isSafeInteger(Number(pid))))) {
+            throw new Error("prepare clearance PID probe returned malformed process identities");
+          }
+          const activities = await checked(serial, ["shell", "dumpsys", "activity", "activities"], "prepare clearance foreground probe", context, 20_000);
+          if (!activities) throw new Error("prepare clearance foreground probe returned no activity-manager evidence");
+          if (absent && !parseResumedPackages(activities).includes(packageName)) break;
+          await sleepWithin(context, 100, "prepare process/foreground clearance polling");
+        }
+      }
       return { status: "stop_command_completed", serial, packageName, reason };
     },
     launchTarget: async (context) => {
@@ -4810,14 +4852,7 @@ export function createLiveInAppLocomotionDependencies(
     },
     collectStepLogs: async (context) => {
       requireExactLiveSerial(context.serial);
-      const result = await runBounded(
-        context.serial,
-        ["logcat", "-b", "all", "-d", "-v", "threadtime"],
-        "locomotion bracket log",
-        context,
-        context.timeoutMs,
-        64 * 1024 * 1024,
-      );
+      const result = await currentLogWindow(context, context.beginMarker, "locomotion bracket log");
       const allLines = result.stdout.split(/\r?\n/).filter(Boolean);
       const beginIndexes = allLines.flatMap((line, index) => line.includes(context.beginMarker) ? [index] : []);
       const endIndexes = allLines.flatMap((line, index) => line.includes(context.endMarker) ? [index] : []);

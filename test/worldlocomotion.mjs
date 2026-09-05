@@ -3905,6 +3905,206 @@ test("the live final PID probe accepts only clean pidof exit 1 as target absence
 });
 
 const adb = "/fixture/adb";
+
+function liveCurrentLogFixture(t, overrides = {}) {
+  const marker = "PICO_LOCOMOTION_FIXTURE_PREPARE_BEGIN";
+  const endMarker = "PICO_LOCOMOTION_FIXTURE_PREPARE_END";
+  const cursor = "1788599574.657046";
+  const window = `09-05 02:12:54.657  5000  5000 I WorldLocomotion: ${marker}\n`
+    + "09-05 02:12:54.658  5151  5151 I Spatial: setSpatialContainerBoundary\n"
+    + "09-05 02:12:54.659  5000  5000 I ActivityManager: onPause com.test.fullworld/.MainActivity\n"
+    + `09-05 02:12:54.660  5000  5000 I WorldLocomotion: ${endMarker}\n`;
+  const requestedArtifactRoot = externalArtifactRoot(t, "live-current-log");
+  fs.mkdirSync(path.join(requestedArtifactRoot, "logs"), { recursive: true });
+  const artifactRoot = fs.realpathSync(requestedArtifactRoot);
+  let nowNs = 0n;
+  const effects = [];
+  const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+    resolveAdb: () => "/fixture/injected-adb",
+    monotonicNs: () => nowNs,
+    sleep: async (ms) => { nowNs += BigInt(ms) * 1_000_000n; },
+    runText: async (_cmd, args, options) => {
+      effects.push({ args, options, at: nowNs });
+      assert.deepEqual(args.slice(0, 2), ["-s", "emulator-5554"]);
+      let stdout = "1\n";
+      if (args.includes("logcat")) {
+        const regexIndex = args.indexOf("--regex");
+        const regex = regexIndex >= 0 ? args[regexIndex + 1] : args.find((arg) => arg.startsWith("--regex="))?.slice(8);
+        if (regex !== undefined) {
+          assert.ok(new RegExp(regex).test(marker), "cursor query must include the exact requested marker");
+          assert.ok(!new RegExp(regex).test("old-history"), "cursor query must filter unrelated history on device");
+          assert.ok(args.includes("epoch") && args.includes("usec"));
+          stdout = overrides.markerOutput ?? `${cursor} 5000 5000 I WorldLocomotion: ${marker}\n`;
+        } else if (args.includes("-T")) {
+          assert.equal(args[args.indexOf("-T") + 1], cursor);
+          assert.ok(args.includes("threadtime"), "retain scanner-compatible complete threadtime entries");
+          assert.ok(args.includes("all"), "retain every buffer in the current window");
+          stdout = overrides.windowOutput ?? window;
+          if (overrides.windowResult) return { stdout, stderr: "", timedOut: false, code: 0, ...overrides.windowResult };
+        } else {
+          // A long-lived ring fills the bounded transport with history before BEGIN.
+          stdout = "09-03 01:00:00.000  4000  4000 I Historical: old-history\n";
+        }
+      } else if (args.includes("ConfigurationService")) {
+        stdout = JSON.stringify([
+          { keyName: "spatial_stage_style", keyValue: "3" },
+          { keyName: "spatial_safeguard_enable", keyValue: "1" },
+          { keyName: "spatial_safeguard_center", keyValue: "0,0,0" },
+          { keyName: "spatial_virtual_content_detected", keyValue: "1" },
+        ]);
+      } else if (args.includes("path")) stdout = "package:/data/app/base.apk\n";
+      else if (args.includes("sha256sum")) stdout = `${"b".repeat(64)}  /data/app/base.apk\n`;
+      else if (args.includes("pidof")) stdout = "5151\n";
+      else if (args.includes("activities")) stdout = "mResumedActivity: ActivityRecord{fixture u0 com.test.fullworld/.MainActivity t1}\n";
+      else if (args.includes("windows")) stdout = "WINDOW MANAGER WINDOWS\n";
+      return { code: 0, stdout, stderr: "", timedOut: false };
+    },
+  });
+  const budget = { serial: "emulator-5554", timeoutMs: 90_000, deadlineMonotonicNs: "90000000000" };
+  return {
+    live, effects, marker, endMarker, window, artifactRoot,
+    bracketContext: { ...budget, path: path.join(artifactRoot, "logs", "bracket.log"), packageName: "com.test.fullworld", beginMarker: marker, endMarker },
+    monitorContext: {
+      ...budget, runId: HASH, artifactRoot, minimumDurationMs: 60_000, healthBoundaryMarker: marker,
+      onFirstWindowSample: async () => {},
+      runtime: {
+        liveIdentity: { serial: "emulator-5554" },
+        applicationBinding: { packageName: "com.test.fullworld", apkSha256: "b".repeat(64), allowedResumedComponents: ["com.test.fullworld/.MainActivity"], pid: 5151, pidStartTicks: "123" },
+      },
+    },
+  };
+}
+
+test("live log brackets and fresh-launch health retain the complete current device window", async (t) => {
+  const fixture = liveCurrentLogFixture(t);
+  const monitor = await fixture.live.monitorFreshLaunch(fixture.monitorContext);
+  assert.equal(monitor.samples.length, 5);
+  for (const [index, sample] of monitor.samples.entries()) {
+    assert.equal(sample.runtimeHealth.status, "no_attributed_failure");
+    assert.equal(sample.runtimeHealth.markerOccurrences, 1);
+    assert.equal(fs.readFileSync(monitor.rawHealthLogs[index].path, "utf8"), fixture.window);
+  }
+  const bracket = await fixture.live.collectStepLogs(fixture.bracketContext);
+  assert.equal(bracket.truncated, false);
+  assert.equal(bracket.beginCount, 1);
+  assert.equal(bracket.endCount, 1);
+  assert.equal(bracket.boundarySignals.setSpatialContainerBoundary, 1);
+  assert.equal(bracket.boundarySignals.appPauseOrEjection, 1);
+  assert.equal(fs.readFileSync(bracket.path, "utf8"), fixture.window);
+  const logCommands = fixture.effects.filter(({ args }) => args.includes("logcat"));
+  assert.equal(logCommands.filter(({ args }) => args.includes("-T")).length, 6);
+  assert.ok(logCommands.every(({ args }) => args.includes("-T") || args.some((arg) => arg.startsWith("--regex"))));
+  assert.ok(logCommands.every(({ args }) => !args.includes("-c") && !args.includes("--clear")));
+});
+
+test("live log cursor ambiguity and failed snapshots never become complete evidence", async (t) => {
+  for (const [label, overrides, pattern] of [
+    ["missing-marker", { markerOutput: "" }, /marker|cursor/i],
+    ["duplicate-marker", { markerOutput: "1788599574.657046 1 1 I WorldLocomotion: PICO_LOCOMOTION_FIXTURE_PREPARE_BEGIN\n1788599575.657046 1 1 I WorldLocomotion: PICO_LOCOMOTION_FIXTURE_PREPARE_BEGIN\n" }, /marker|cursor/i],
+    ["invalid-cursor", { markerOutput: "not-a-time 1 1 I WorldLocomotion: PICO_LOCOMOTION_FIXTURE_PREPARE_BEGIN\n" }, /marker|cursor/i],
+    ["failed-window", { windowResult: { code: 1, stderr: "transport output limit" } }, /transport output limit/i],
+  ]) {
+    await t.test(label, async (t) => {
+      const fixture = liveCurrentLogFixture(t, overrides);
+      await assert.rejects(fixture.live.collectStepLogs(fixture.bracketContext), pattern);
+      if (label !== "failed-window") assert.equal(fixture.effects.some(({ args }) => args.includes("-T")), false);
+      assert.ok(fixture.effects.every(({ args }) => args.includes("-T") || args.some((arg) => arg.startsWith("--regex"))));
+    });
+  }
+});
+
+test("live log bracket extraction can reach BEGIN beyond historical ring output", async (t) => {
+  const fixture = liveCurrentLogFixture(t);
+  const result = await fixture.live.collectStepLogs(fixture.bracketContext);
+  assert.equal(result.truncated, false);
+  assert.equal(result.beginCount, 1);
+  assert.equal(result.endCount, 1);
+  assert.equal(fs.readFileSync(result.path, "utf8"), fixture.window);
+});
+
+test("live prepare clearance waits for both exact process and foreground absence before launch", async (t) => {
+  for (const priorPackage of ["com.test.fullworld", "com.test.incumbent"]) {
+    await t.test(priorPackage, async (t) => {
+      const component = `${priorPackage}/.MainActivity`;
+      const fixture = await createPreparedFixture(t, {
+        priorSnapshot: { component, packageName: priorPackage, userInstalled: true },
+        inputOverrides: { priorForeground: { kind: "non_receipt_bound", component } },
+      });
+      let nowNs = 1_000_000_000n;
+      let stoppedPackage;
+      let polls = 0;
+      const cleared = new Set();
+      const effects = [];
+      const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+        resolveAdb: () => "/fixture/injected-adb",
+        monotonicNs: () => nowNs,
+        sleep: async (ms) => { nowNs += BigInt(ms) * 1_000_000n; },
+        runText: async (_cmd, args, options) => {
+          effects.push({ args, options, at: nowNs });
+          assert.deepEqual(args.slice(0, 2), ["-s", "emulator-5554"]);
+          if (args.includes("force-stop")) {
+            stoppedPackage = args.at(-1);
+            polls = 0;
+            return { code: 0, stdout: "", stderr: "", timedOut: false };
+          }
+          if (args.includes("pidof")) {
+            assert.equal(args.at(-1), stoppedPackage);
+            polls += 1;
+            return { code: polls < 2 ? 0 : 1, stdout: polls < 2 ? "5151\n" : "", stderr: "", timedOut: false };
+          }
+          if (args.includes("activities")) {
+            // The process disappears before Android removes the resumed activity.
+            if (polls >= 3) cleared.add(stoppedPackage);
+            const foreground = polls < 3 ? stoppedPackage : `${stoppedPackage}.sibling`;
+            return { code: 0, stdout: `mResumedActivity: ActivityRecord{fixture u0 ${foreground}/.MainActivity t1}\n`, stderr: "", timedOut: false };
+          }
+          throw new Error(`unexpected fixture command: ${args.join(" ")}`);
+        },
+      });
+      fixture.dependencies.stopPackage = live.stopPackage;
+      const launch = fixture.dependencies.launchTarget;
+      fixture.dependencies.launchTarget = async (context) => {
+        assert.ok(cleared.has("com.test.fullworld"), "target launch started before process and resumed-activity clearance");
+        assert.ok(cleared.has(priorPackage), "target launch started before declared incumbent clearance");
+        return launch(context);
+      };
+      const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+      assert.equal(result.status, "needs_baseline_review", result.primaryError);
+      assert.ok(effects.filter(({ args }) => args.includes("pidof")).length >= 3);
+    });
+  }
+});
+
+test("live prepare clearance rejects uncertain PID probes and obeys the absolute deadline", async (t) => {
+  for (const [label, pidResult, pattern] of [
+    ["offline", { code: 1, stdout: "", stderr: "adb: device offline", timedOut: false }, /PID.*offline/i],
+    ["empty-success", { code: 0, stdout: "", stderr: "", timedOut: false }, /PID.*failed/i],
+    ["malformed", { code: 0, stdout: "not-a-pid", stderr: "", timedOut: false }, /PID.*malformed/i],
+    ["still-running", { code: 0, stdout: "5151\n", stderr: "", timedOut: false }, /deadline|remaining/i],
+  ]) {
+    await t.test(label, async () => {
+      let nowNs = 0n;
+      const effects = [];
+      const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+        resolveAdb: () => "/fixture/injected-adb",
+        monotonicNs: () => nowNs,
+        sleep: async (ms) => { nowNs += BigInt(ms) * 1_000_000n; },
+        runText: async (_cmd, args, options) => {
+          effects.push({ args, options, at: nowNs });
+          nowNs += 100_000_000n;
+          return args.includes("pidof") ? pidResult : { code: 0, stdout: "mResumedActivity: null\n", stderr: "", timedOut: false };
+        },
+      });
+      await assert.rejects(live.stopPackage({
+        serial: "emulator-5554", packageName: "com.test.fullworld", reason: "prepare_target_clearance",
+        timeoutMs: 900, deadlineMonotonicNs: "900000000",
+      }), pattern);
+      assert.ok(effects.every(({ at, options }) => at < 900_000_000n && options.timeoutMs <= Number((900_000_000n - at) / 1_000_000n)));
+      assert.equal(effects.filter(({ args }) => args.includes("force-stop")).length, 1);
+    });
+  }
+});
+
 const baseInput = {
   serial: "fixture-serial",
   packageName: "com.test.fullworld",
