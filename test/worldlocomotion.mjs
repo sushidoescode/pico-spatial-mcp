@@ -3906,6 +3906,119 @@ test("the live final PID probe accepts only clean pidof exit 1 as target absence
 
 const adb = "/fixture/adb";
 
+function liveSafetyReadinessFixture(snapshots, onSleep = async () => {}) {
+  let nowNs = 0n;
+  let sampleIndex = 0;
+  const effects = [];
+  const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+    resolveAdb: () => "/fixture/injected-adb",
+    monotonicNs: () => nowNs,
+    sleep: async (ms) => {
+      effects.push({ kind: "sleep", at: nowNs, ms });
+      nowNs += BigInt(ms) * 1_000_000n;
+      await onSleep();
+    },
+    runText: async (_cmd, args, options) => {
+      effects.push({ kind: "run", args, options, at: nowNs });
+      nowNs += 10_000_000n;
+      const sample = snapshots[Math.min(sampleIndex, snapshots.length - 1)];
+      const properties = {
+        "sys.guardian.vst.status": sample.guardian,
+        "sys.pxr.vst.comp.state": sample.vstComponent,
+        "persist.pxr.see.vst.debug.enable": sample.vstDebug,
+      };
+      let stdout = properties[args.at(-1)];
+      if (args.includes("ConfigurationService")) {
+        sampleIndex += 1;
+        stdout = JSON.stringify([
+          { keyName: "spatial_stage_style", keyValue: sample.stageStyle },
+          { keyName: "spatial_safeguard_enable", keyValue: sample.safeguard },
+          { keyName: "spatial_safeguard_center", keyValue: sample.safeguardCenter },
+          { keyName: "spatial_virtual_content_detected", keyValue: sample.virtualContent },
+        ]);
+      }
+      assert.equal(typeof stdout, "string", `unexpected safety command: ${args.join(" ")}`);
+      return { code: 0, stdout, stderr: "", timedOut: false };
+    },
+  });
+  return { live, effects };
+}
+
+test("live prepare safety waits for exact Full readiness while the launch observer covers the transition", async (t) => {
+  const fixture = await createPreparedFixture(t, {
+    // Two yielded readiness polls advance the fixture observer by two 5ms samples.
+    monitorSampleZeroProbeStartedAtMonotonicNs: "19000000",
+    monitorSampleZeroRetainedAtMonotonicNs: "20000000",
+  });
+  let observerSignal;
+  let readinessComplete = false;
+  const observe = fixture.dependencies.observeLaunchHandoff;
+  fixture.dependencies.observeLaunchHandoff = (context) => {
+    observerSignal = context.signal;
+    return observe(context);
+  };
+  const safety = liveSafetyReadinessFixture([
+    { ...cleanSafety, stageStyle: "2" },
+    { ...cleanSafety, virtualContent: "0" },
+    cleanSafety,
+  ], async () => {
+    assert.ok(observerSignal && !observerSignal.aborted, "launch observer must remain active during readiness polling");
+    assert.equal(fixture.calls.some(({ kind }) => kind === "capability" || kind === "monitor" || kind === "locomote"), false);
+    await new Promise((resolve) => setImmediate(resolve));
+  });
+  fixture.dependencies.sampleSafety = async (context) => {
+    const result = await safety.live.sampleSafety(context);
+    if (context.phase === "prepare_baseline") {
+      assert.deepEqual(result, cleanSafety);
+      readinessComplete = true;
+    }
+    return result;
+  };
+  const monitor = fixture.dependencies.monitorFreshLaunch;
+  fixture.dependencies.monitorFreshLaunch = async (context) => {
+    assert.ok(readinessComplete);
+    assert.equal(observerSignal.aborted, false);
+    assert.equal(context.minimumDurationMs, 60_000);
+    return monitor(context);
+  };
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(result.status, "needs_baseline_review", result.primaryError);
+  assert.equal(safety.effects.filter(({ kind }) => kind === "sleep").length, 2);
+  assert.ok(safety.effects.filter(({ kind }) => kind === "run").every(({ args }) => args[0] === "-s" && args[1] === fixture.input.serial));
+  assert.equal(observerSignal.aborted, true, "observer hands off only after the monitor retains sample zero");
+});
+
+test("live prepare safety readiness remains deadline bounded and later safety samples never wait", async (t) => {
+  await t.test("persistent non-Full state", async () => {
+    const fixture = liveSafetyReadinessFixture([{ ...cleanSafety, stageStyle: "2" }]);
+    await assert.rejects(fixture.live.sampleSafety({
+      serial: "emulator-5554", phase: "prepare_baseline", timeoutMs: 500, deadlineMonotonicNs: "500000000",
+    }), (error) => {
+      assert.equal(error.code, "safety_baseline_failed");
+      assert.match(error.message, /stageStyle=2.*(?:deadline|remaining)/i);
+      return true;
+    });
+    assert.ok(fixture.effects.filter(({ kind }) => kind === "run").every(({ at, options }) =>
+      at < 500_000_000n && options.timeoutMs <= Number((500_000_000n - at) / 1_000_000n)));
+    assert.ok(fixture.effects.filter(({ kind }) => kind === "sleep").every(({ at, ms }) => at + BigInt(ms) * 1_000_000n <= 500_000_000n));
+  });
+  for (const [label, phase, snapshot] of [
+    ["unsafe Guardian baseline", "prepare_baseline", { ...cleanSafety, guardian: "0" }],
+    ["unsafe VST component baseline", "prepare_baseline", { ...cleanSafety, vstComponent: "0" }],
+    ["unsafe VST debug baseline", "prepare_baseline", { ...cleanSafety, vstDebug: "0" }],
+    ["monitor drift", "fresh_launch_1", { ...cleanSafety, stageStyle: "2" }],
+    ["route drift", "step_baseline", { ...cleanSafety, safeguard: "0" }],
+  ]) {
+    await t.test(label, async () => {
+      const fixture = liveSafetyReadinessFixture([snapshot, cleanSafety]);
+      assert.deepEqual(await fixture.live.sampleSafety({
+        serial: "emulator-5554", phase, timeoutMs: 5_000, deadlineMonotonicNs: "5000000000",
+      }), snapshot);
+      assert.equal(fixture.effects.filter(({ kind }) => kind === "sleep").length, 0);
+    });
+  }
+});
+
 function liveCurrentLogFixture(t, overrides = {}) {
   const marker = "PICO_LOCOMOTION_FIXTURE_PREPARE_BEGIN";
   const endMarker = "PICO_LOCOMOTION_FIXTURE_PREPARE_END";

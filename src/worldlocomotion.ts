@@ -4719,7 +4719,26 @@ export function createLiveInAppLocomotionDependencies(
         foregroundComponent: targetComponents[0],
       };
     },
-    sampleSafety: sampleSafetyLive,
+    sampleSafety: async (context) => {
+      let snapshot = await sampleSafetyLive(context);
+      if (context.phase !== "prepare_baseline") return snapshot;
+      // Cold-launch configuration may still be transitioning after am start returns.
+      // Observe readiness under the caller's deadline; 100ms is sampling cadence,
+      // not a promised SDK transition time. The launch observer remains active.
+      for (;;) {
+        const unsafe = safetyProblem(snapshot);
+        if (!unsafe || finalGlobalSafetyProblem(snapshot)) return snapshot;
+        try {
+          await sleepWithin(context, 100, "prepare Full-stage readiness polling");
+          snapshot = await sampleSafetyLive(context);
+        } catch (error) {
+          throw new LocomotionStageError(
+            "safety_baseline_failed",
+            `unsafe Full-stage baseline: ${unsafe}; readiness observation failed: ${errorText(error)}`,
+          );
+        }
+      }
+    },
     probeCapability: (input) => probeAgentBridgeLocomotionCapability(adb, input, {
       runText: liveRunText,
       runBytes: liveRunBytes,
