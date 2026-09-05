@@ -4767,6 +4767,77 @@ function assertRouteOwnedCleanup(result, calls, status = "route_owned") {
     && call.args.includes("requestControl") && call.args.includes("finalize")).length, 0);
 }
 
+function assertPortableLocomotionActionReceipts(result, label) {
+  assert.doesNotThrow(() => canonicalJson(result), `${label} result must have one portable canonical identity`);
+  for (const receipt of result.actionReceipts) {
+    if (receipt.status === "applied") {
+      assert.equal(Object.hasOwn(receipt, "error"), false, `${label} applied ${receipt.action} must omit an absent error`);
+    } else {
+      assert.equal(Object.hasOwn(receipt, "error"), true, `${label} failed ${receipt.action} must retain its error`);
+      assert.equal(typeof receipt.error, "string", `${label} failed ${receipt.action} error must be concrete`);
+      assert.notEqual(receipt.error.length, 0, `${label} failed ${receipt.action} error must be non-empty`);
+    }
+  }
+}
+
+test("revision-1 capability, HMD, and locomotion successes return portable action receipts", async () => {
+  const capability = availableAck();
+  const sampled = hmdAck();
+  const moved = locomotionAck();
+  const cases = [
+    ["capability", () => {
+      const fake = fakeTransaction([capability, capability]);
+      return probeAgentBridgeLocomotionCapability(adb, baseInput, fake.deps);
+    }],
+    ["HMD", () => {
+      const fake = fakeTransaction([sampled, sampled]);
+      return requestAgentBridgeHmdPose(adb, { ...baseInput, expectedRootGeneration: 7 }, fake.deps);
+    }],
+    ["locomotion", () => {
+      const fake = fakeTransaction([moved, moved]);
+      return requestAgentBridgeLocomotion(adb, locomotionInput, fake.deps);
+    }],
+  ];
+
+  for (const [label, execute] of cases) {
+    const result = await execute();
+    assert.equal(result.ok, true, label);
+    assertPortableLocomotionActionReceipts(result, label);
+  }
+});
+
+test("revision-1 failed action receipts retain concrete errors without making sibling receipts nonportable", async () => {
+  const broadcastFailure = fakeTransaction([], {
+    broadcastResult: { code: 1, stdout: "", stderr: "receiver unavailable", timedOut: false },
+  });
+  const pullFailure = fakeTransaction([]);
+  const cleanupFailure = fakeTransaction([hmdAck(), hmdAck()], {
+    cleanupResult: { code: 1, stdout: "", stderr: "cleanup denied", timedOut: false },
+  });
+  const invalidPreflight = fakeTransaction([]);
+  const cancelledLocomotion = fakeTransaction([]);
+  const cases = [
+    ["broadcast failure", requestAgentBridgeHmdPose(adb, baseInput, broadcastFailure.deps)],
+    ["pull failure", requestAgentBridgeHmdPose(adb, baseInput, pullFailure.deps)],
+    ["cleanup failure", requestAgentBridgeHmdPose(adb, baseInput, cleanupFailure.deps)],
+    ["invalid-preflight cleanup", requestAgentBridgeHmdPose(adb, {
+      ...baseInput,
+      expectedRootIncarnation: "not-a-producer-incarnation",
+    }, invalidPreflight.deps)],
+    ["successful cancellation", requestAgentBridgeLocomotion(adb, {
+      ...locomotionInput,
+      maxPolls: 2,
+      pollMs: 10,
+    }, cancelledLocomotion.deps)],
+  ];
+
+  for (const [label, pending] of cases) {
+    const result = await pending;
+    assert.equal(result.ok, false, label);
+    assertPortableLocomotionActionReceipts(result, label);
+  }
+});
+
 function cancelAckFor(input, outcome = "cancelled") {
   return {
     kind: AGENT_BRIDGE_LOCOMOTION_PAYLOAD_KIND,
