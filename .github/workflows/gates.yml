@@ -146,6 +146,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - run: npm ci
+      - name: Build (macOS scene-picker AX lane)
+        run: npm run build
+      - name: Scene-picker AX matcher (native Swift fake tree + helper typecheck)
+        run: node --test test/homeenvironmenthost.mjs
       - name: Virtual camera native writer (strict compile + pre-CMIO manifest rejection)
         run: npm run test:vcamtransport-native
       - name: Virtual camera native reader (strict compile + signal/stop lifetime + parser rejection)

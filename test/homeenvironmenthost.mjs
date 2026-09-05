@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { executeGuardedHostSelection } from "../dist/homeenvironmenthost.js";
+import * as homeEnvironmentHost from "../dist/homeenvironmenthost.js";
+
+const { executeGuardedHostSelection } = homeEnvironmentHost;
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const selectedPng = Buffer.from("selected-dialog-png");
@@ -95,7 +98,11 @@ function happyDeps(overrides = {}) {
     },
     openPicker: async (bound) => {
       calls.push(`open:${bound.qemuWindowOwnerPid}`);
-      return overrides.openResult ?? { ok: true };
+      return overrides.openResult ?? {
+        ok: true,
+        matchedAttribute: "AXIdentifier",
+        matchedScope: "bound_window_descendants",
+      };
     },
     listPickerDialogs: async (bound) => {
       calls.push(`probe:${bound.qemuWindowOwnerPid}`);
@@ -138,6 +145,155 @@ function happyDeps(overrides = {}) {
 function actionCount(deps, prefix) {
   return deps.calls.filter((entry) => entry.startsWith(prefix)).length;
 }
+
+function runFakeAxTreeMatcher() {
+  const sharedMatcher = homeEnvironmentHost.AX_SCENE_PICKER_MATCHER_SWIFT;
+  assert.equal(typeof sharedMatcher, "string", "production must export the Swift matcher used by the AX helper");
+  const fixture = String.raw`import Foundation
+${sharedMatcher}
+
+struct FakeAxNode {
+  let name: String
+  let attributes: [String: String]
+}
+
+func node(_ name: String, _ attributes: [String: String]) -> FakeAxNode {
+  return FakeAxNode(name: name, attributes: attributes)
+}
+
+func runFixture(_ name: String, _ windowNodes: [FakeAxNode], _ applicationNodes: [FakeAxNode]) -> [String: Any] {
+  var applicationTreeReadCount = 0
+  let scopes: [ScenePickerSearchScope<FakeAxNode>] = [
+    ScenePickerSearchScope(name: "bound_window_descendants", nodes: { windowNodes }),
+    ScenePickerSearchScope(name: "application_tree", nodes: {
+      applicationTreeReadCount += 1
+      return applicationNodes
+    }),
+  ]
+  let matched = exactScenePickerControlMatch(scopes: scopes) { candidate, attribute in
+    candidate.attributes[attribute]
+  }
+  if let matched {
+    return [
+      "name": name,
+      "node": matched.node.name,
+      "matchedAttribute": matched.matchedAttribute,
+      "matchedScope": matched.matchedScope,
+      "applicationTreeReadCount": applicationTreeReadCount,
+    ]
+  }
+  return [
+    "name": name,
+    "node": NSNull(),
+    "matchedAttribute": NSNull(),
+    "matchedScope": NSNull(),
+    "applicationTreeReadCount": applicationTreeReadCount,
+    "detail": scenePickerControlNotFoundDetail,
+  ]
+}
+
+let fixtures: [[String: Any]] = [
+  runFixture("identifier_only", [node("identifier", ["AXIdentifier": "select_scene_button"])], []),
+  runFixture("title_only", [node("title", ["AXTitle": "select_scene_button"])], []),
+  runFixture("description_only", [node("description", ["AXDescription": "PICO OS Emulator Scene"])], []),
+  runFixture("attribute_priority", [
+    node("title-first", ["AXTitle": "select_scene_button"]),
+    node("identifier-second", ["AXIdentifier": "select_scene_button"]),
+  ], []),
+  runFixture("title_over_description", [
+    node("description-first", ["AXDescription": "PICO OS Emulator Scene"]),
+    node("title-second", ["AXTitle": "select_scene_button"]),
+  ], []),
+  runFixture("application_fallback", [node("unrelated", ["AXTitle": "home_button"])], [
+    node("application-title", ["AXTitle": "select_scene_button"]),
+  ]),
+  runFixture("window_scope_priority", [
+    node("window-description", ["AXDescription": "PICO OS Emulator Scene"]),
+  ], [
+    node("application-identifier", ["AXIdentifier": "select_scene_button"]),
+  ]),
+  runFixture("longer_description", [
+    node("longer-description", ["AXDescription": "PICO OS Emulator Scene Preview"]),
+  ], []),
+  runFixture("wrong_description_value", [
+    node("internal-name-description", ["AXDescription": "select_scene_button"]),
+  ], []),
+  runFixture("identifier_and_title_near_matches", [
+    node("identifier-prefix", ["AXIdentifier": "select_scene_button_extended"]),
+    node("title-prefix", ["AXTitle": "select_scene_button (Scene)"]),
+  ], []),
+  runFixture("nowhere", [node("home", ["AXTitle": "home_button"])], [
+    node("settings", ["AXDescription": "Setting"]),
+  ]),
+]
+
+let data = try! JSONSerialization.data(withJSONObject: fixtures, options: [.sortedKeys])
+print(String(data: data, encoding: .utf8)!)
+`;
+  const result = spawnSync("swift", ["-"], {
+    encoding: "utf8",
+    input: fixture,
+    timeout: 30_000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message);
+  return JSON.parse(result.stdout);
+}
+
+test("the shared Swift matcher searches exact AX attributes and bound-window scope in strict order", {
+  skip: process.platform !== "darwin" && "Swift AX matcher regression requires macOS",
+}, () => {
+  const fixtures = Object.fromEntries(runFakeAxTreeMatcher().map((entry) => [entry.name, entry]));
+  assert.deepEqual(fixtures.identifier_only, {
+    name: "identifier_only",
+    node: "identifier",
+    matchedAttribute: "AXIdentifier",
+    matchedScope: "bound_window_descendants",
+    applicationTreeReadCount: 0,
+  });
+  assert.deepEqual(fixtures.title_only, {
+    name: "title_only",
+    node: "title",
+    matchedAttribute: "AXTitle",
+    matchedScope: "bound_window_descendants",
+    applicationTreeReadCount: 0,
+  });
+  assert.deepEqual(fixtures.description_only, {
+    name: "description_only",
+    node: "description",
+    matchedAttribute: "AXDescription",
+    matchedScope: "bound_window_descendants",
+    applicationTreeReadCount: 0,
+  });
+  assert.equal(fixtures.attribute_priority.node, "identifier-second");
+  assert.equal(fixtures.attribute_priority.matchedAttribute, "AXIdentifier");
+  assert.equal(fixtures.title_over_description.node, "title-second");
+  assert.equal(fixtures.title_over_description.matchedAttribute, "AXTitle");
+  assert.equal(fixtures.application_fallback.node, "application-title");
+  assert.equal(fixtures.application_fallback.matchedScope, "application_tree");
+  assert.equal(fixtures.application_fallback.applicationTreeReadCount, 1);
+  assert.equal(fixtures.window_scope_priority.node, "window-description");
+  assert.equal(fixtures.window_scope_priority.matchedAttribute, "AXDescription");
+  assert.equal(fixtures.window_scope_priority.matchedScope, "bound_window_descendants");
+  assert.equal(fixtures.window_scope_priority.applicationTreeReadCount, 0);
+  const expectedNotFoundDetail = "select_scene_button was not found by exact match; searched AXIdentifier, AXTitle, and AXDescription in bound_window_descendants, then application_tree";
+  for (const name of ["longer_description", "wrong_description_value", "identifier_and_title_near_matches", "nowhere"]) {
+    assert.equal(fixtures[name].node, null, `${name} must fail closed`);
+    assert.equal(fixtures[name].detail, expectedNotFoundDetail);
+  }
+});
+
+test("the complete macOS AX helper typechecks with the shared matcher", {
+  skip: process.platform !== "darwin" && "macOS AX helper requires ApplicationServices",
+}, () => {
+  const helperSource = homeEnvironmentHost.AX_SCENE_PICKER_HELPER_SWIFT;
+  assert.equal(typeof helperSource, "string", "production must expose the complete generated AX helper to its native compile gate");
+  const result = spawnSync("swiftc", ["-typecheck", "-"], {
+    encoding: "utf8",
+    input: helperSource,
+    timeout: 30_000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message);
+});
 
 test("non-macOS returns a baseline-safe manual result before any host action", async () => {
   const deps = happyDeps({ platform: "linux" });
@@ -210,15 +366,42 @@ test("single-window fallback is refused even when serial and positive discovery/
 test("Accessibility denial and a missing select_scene_button refuse before dialog probe or click", async (t) => {
   for (const [name, detail] of [
     ["denied", "Accessibility permission denied"],
-    ["missing control", "select_scene_button was not found"],
+    ["missing control", "select_scene_button was not found by exact match; searched AXIdentifier, AXTitle, and AXDescription in bound_window_descendants, then application_tree"],
   ]) {
     await t.test(name, async () => {
       const deps = happyDeps({ openResult: { ok: false, detail } });
       const result = await executeGuardedHostSelection(target, picker, deps);
       assert.equal(result.status, "manual_switch_required");
       assert.equal(result.baselineSafe, true);
+      if (name === "missing control") {
+        assert.match(result.detail, /AXIdentifier/);
+        assert.match(result.detail, /AXTitle/);
+        assert.match(result.detail, /AXDescription/);
+      }
       assert.deepEqual(deps.calls, ["bind:emulator-5554", "focus:93013", "open:93013"]);
       assert.equal(actionCount(deps, "click:"), 0);
+    });
+  }
+});
+
+test("successful picker openings record the exact AX attribute and search scope", async (t) => {
+  for (const [matchedAttribute, matchedScope] of [
+    ["AXIdentifier", "bound_window_descendants"],
+    ["AXTitle", "bound_window_descendants"],
+    ["AXDescription", "application_tree"],
+  ]) {
+    await t.test(`${matchedScope}/${matchedAttribute}`, async () => {
+      const deps = happyDeps({ openResult: { ok: true, matchedAttribute, matchedScope } });
+      const result = await executeGuardedHostSelection(target, picker, deps);
+      assert.equal(result.status, "host_selection_observed");
+      assert.deepEqual(result.receipts.find((receipt) => receipt.action === "open_picker"), {
+        action: "open_picker",
+        status: "ok",
+        detail: `pressed Accessibility select_scene_button via ${matchedAttribute} in ${matchedScope}`,
+      });
+      assert.equal(actionCount(deps, "open:"), 1);
+      assert.equal(actionCount(deps, "click:"), 1);
+      assert.deepEqual(deps.args.click[0].absolutePoint, [659, 397]);
     });
   }
 });
@@ -240,6 +423,22 @@ test("malformed pre-click helper payloads return manual without a click", async 
     assert.equal(actionCount(deps, "probe:"), 0);
     assert.equal(actionCount(deps, "click:"), 0);
   });
+
+  for (const [name, openResult] of [
+    ["successful open missing match provenance", { ok: true }],
+    ["successful open with unknown attribute", { ok: true, matchedAttribute: "AXValue", matchedScope: "bound_window_descendants" }],
+    ["successful open with unknown scope", { ok: true, matchedAttribute: "AXTitle", matchedScope: "menu_bar" }],
+  ]) {
+    await t.test(name, async () => {
+      const deps = happyDeps({ openResult });
+      const result = await executeGuardedHostSelection(target, picker, deps);
+      assert.equal(result.status, "manual_switch_required");
+      assert.equal(result.baselineSafe, true);
+      assert.match(result.detail, /invalid.*picker.*payload/i);
+      assert.equal(actionCount(deps, "probe:"), 0);
+      assert.equal(actionCount(deps, "click:"), 0);
+    });
+  }
 
   await t.test("dialog probe query failure", async () => {
     const deps = happyDeps({ dialogProbeError: new Error("AX windows query failed") });

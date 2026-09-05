@@ -45,6 +45,11 @@ export type HostSelectionTarget = Pick<HomeEnvironment, "tile" | "selectedDialog
 export type HostEnvironmentPicker = HomeEnvironmentDataset["picker"];
 
 type GuardResult = { ok: true } | { ok: false; detail: string };
+export type ScenePickerMatchAttribute = "AXIdentifier" | "AXTitle" | "AXDescription";
+export type ScenePickerMatchScope = "bound_window_descendants" | "application_tree";
+type OpenPickerResult =
+  | { ok: true; matchedAttribute: ScenePickerMatchAttribute; matchedScope: ScenePickerMatchScope }
+  | { ok: false; detail: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -56,6 +61,22 @@ function parseGuardResult(value: unknown): GuardResult {
     return { ok: false, detail: value.detail };
   }
   throw new Error("invalid helper payload: expected {ok:true} or {ok:false,detail:string}");
+}
+
+function parseOpenPickerResult(value: unknown): OpenPickerResult {
+  if (isRecord(value) && value.ok === true
+    && (value.matchedAttribute === "AXIdentifier" || value.matchedAttribute === "AXTitle" || value.matchedAttribute === "AXDescription")
+    && (value.matchedScope === "bound_window_descendants" || value.matchedScope === "application_tree")) {
+    return {
+      ok: true,
+      matchedAttribute: value.matchedAttribute,
+      matchedScope: value.matchedScope,
+    };
+  }
+  if (isRecord(value) && value.ok === false && typeof value.detail === "string" && value.detail.length > 0) {
+    return { ok: false, detail: value.detail };
+  }
+  throw new Error("invalid picker helper payload: expected match attribute and scope on success, or a non-empty failure detail");
 }
 
 function finiteNumber(value: unknown): value is number {
@@ -108,7 +129,7 @@ export interface HomeEnvironmentHostDependencies {
   platform: string;
   bindQemuWindow(serial: string): Promise<QemuWindowBindingResult>;
   focusQemu(binding: BoundQemuWindow): Promise<string | null>;
-  openPicker(binding: BoundQemuWindow): Promise<GuardResult>;
+  openPicker(binding: BoundQemuWindow): Promise<OpenPickerResult>;
   listPickerDialogs(binding: BoundQemuWindow): Promise<HostPickerDialog[]>;
   preflightCapture(dialog: HostPickerDialog): Promise<GuardResult>;
   click(binding: BoundQemuWindow, dialog: HostPickerDialog, absolutePoint: [number, number]): Promise<string | null>;
@@ -268,14 +289,18 @@ export async function executeGuardedHostSelection(
   if (firstFocus) return manual(target.tile, firstFocus);
   receipts.push({ action: "focus", status: "ok", detail: `focused PID ${binding.qemuWindowOwnerPid}` });
 
-  let opened: GuardResult;
+  let opened: OpenPickerResult;
   try {
-    opened = parseGuardResult(await deps.openPicker(binding));
+    opened = parseOpenPickerResult(await deps.openPicker(binding));
   } catch (error: any) {
     opened = { ok: false, detail: error?.message ?? String(error) };
   }
   if (!opened.ok) return manual(target.tile, opened.detail);
-  receipts.push({ action: "open_picker", status: "ok", detail: "pressed Accessibility select_scene_button" });
+  receipts.push({
+    action: "open_picker",
+    status: "ok",
+    detail: `pressed Accessibility select_scene_button via ${opened.matchedAttribute} in ${opened.matchedScope}`,
+  });
 
   let dialogs: HostPickerDialog[];
   try {
@@ -341,9 +366,57 @@ export async function executeGuardedHostSelection(
   };
 }
 
-const AX_HELPER_SWIFT = String.raw`import ApplicationServices
+export const AX_SCENE_PICKER_MATCHER_SWIFT = String.raw`struct ScenePickerAttributeNeedle {
+  let attribute: String
+  let exactValue: String
+}
+
+struct ScenePickerSearchScope<Node> {
+  let name: String
+  let nodes: () -> [Node]
+}
+
+struct ScenePickerControlMatch<Node> {
+  let node: Node
+  let matchedAttribute: String
+  let matchedScope: String
+}
+
+let scenePickerAttributeNeedles = [
+  ScenePickerAttributeNeedle(attribute: "AXIdentifier", exactValue: "select_scene_button"),
+  ScenePickerAttributeNeedle(attribute: "AXTitle", exactValue: "select_scene_button"),
+  ScenePickerAttributeNeedle(attribute: "AXDescription", exactValue: "PICO OS Emulator Scene"),
+]
+
+let scenePickerControlNotFoundDetail = "select_scene_button was not found by exact match; searched AXIdentifier, AXTitle, and AXDescription in bound_window_descendants, then application_tree"
+
+func exactScenePickerControlMatch<Node>(
+  scopes: [ScenePickerSearchScope<Node>],
+  readStringAttribute: (Node, String) -> String?
+) -> ScenePickerControlMatch<Node>? {
+  for scope in scopes {
+    let nodes = scope.nodes()
+    for needle in scenePickerAttributeNeedles {
+      if let node = nodes.first(where: { candidate in
+        guard let value = readStringAttribute(candidate, needle.attribute) else { return false }
+        return value == needle.exactValue
+      }) {
+        return ScenePickerControlMatch(
+          node: node,
+          matchedAttribute: needle.attribute,
+          matchedScope: scope.name)
+      }
+    }
+  }
+  return nil
+}
+`;
+
+export const AX_SCENE_PICKER_HELPER_SWIFT = String.raw`import ApplicationServices
 import CoreGraphics
 import Foundation
+
+${AX_SCENE_PICKER_MATCHER_SWIFT}
 
 let args = CommandLine.arguments
 let action = args[1]
@@ -466,19 +539,36 @@ func matchingCgWindowIds(_ targetFrame: CGRect) -> [Int] {
 let app = AXUIElementCreateApplication(pid)
 
 if action == "open" {
-  let nodes = descendants(app)
+  let boundWindowId = Int(args[3])!
+  let boundWindows = appWindows(app).filter { window in
+    guard let windowFrame = frame(window) else { return false }
+    return matchingCgWindowIds(windowFrame) == [boundWindowId]
+  }
+  let boundWindowNodes = boundWindows.flatMap { descendants($0) }
   exitIfHelperFailed(9)
-  let control = nodes.first { stringAttribute($0, kAXIdentifierAttribute) == "select_scene_button" }
+  let control = exactScenePickerControlMatch(scopes: [
+    ScenePickerSearchScope(name: "bound_window_descendants", nodes: { boundWindowNodes }),
+    ScenePickerSearchScope(name: "application_tree", nodes: { descendants(app) }),
+  ]) { element, attributeName in
+    stringAttribute(element, attributeName)
+  }
   exitIfHelperFailed(9)
   guard let control else {
-    emit(["ok": false, "detail": "select_scene_button was not found"])
+    emit(["ok": false, "detail": scenePickerControlNotFoundDetail])
     exit(3)
   }
-  let result = AXUIElementPerformAction(control, kAXPressAction as CFString)
+  let result = AXUIElementPerformAction(control.node, kAXPressAction as CFString)
   if result == .success {
-    emit(["ok": true])
+    emit([
+      "ok": true,
+      "matchedAttribute": control.matchedAttribute,
+      "matchedScope": control.matchedScope,
+    ] as [String: Any])
   } else {
-    emit(["ok": false, "detail": "AX press select_scene_button failed: \(result.rawValue)"] as [String: Any])
+    emit([
+      "ok": false,
+      "detail": "AX press select_scene_button via \(control.matchedAttribute) in \(control.matchedScope) failed: \(result.rawValue)",
+    ] as [String: Any])
   }
   exit(result == .success ? 0 : 4)
 }
@@ -648,13 +738,17 @@ export function defaultHomeEnvironmentHostDependencies(): HomeEnvironmentHostDep
     bindQemuWindow: (serial) => bindMacQemuWindow(resolveAdb(), serial),
     focusQemu: (binding) => frontmostQemu(binding),
     openPicker: async (binding) => {
-      const result = await runTemporarySwift(AX_HELPER_SWIFT, ["open", String(binding.qemuWindowOwnerPid)]);
-      const parsed = parseGuardResult(parseJsonOutput(result.stdout));
+      const result = await runTemporarySwift(AX_SCENE_PICKER_HELPER_SWIFT, [
+        "open",
+        String(binding.qemuWindowOwnerPid),
+        String(binding.qemuWindowId),
+      ]);
+      const parsed = parseOpenPickerResult(parseJsonOutput(result.stdout));
       return result.code === 0 && parsed.ok ? parsed : { ok: false, detail: !parsed.ok ? parsed.detail : (result.stderr || "Accessibility helper failed") };
     },
     listPickerDialogs: async (binding) => {
       const packaged = (await import("./homeenvironmentcatalog.js")).loadPackagedHomeEnvironmentDataset().picker;
-      const result = await runTemporarySwift(AX_HELPER_SWIFT, [
+      const result = await runTemporarySwift(AX_SCENE_PICKER_HELPER_SWIFT, [
         "list",
         String(binding.qemuWindowOwnerPid),
         packaged.dialogTitle,
@@ -687,12 +781,12 @@ export function defaultHomeEnvironmentHostDependencies(): HomeEnvironmentHostDep
     capture: captureExactWindow,
     hash: (bytes) => createHash("sha256").update(bytes).digest("hex"),
     close: async (binding, dialog) => {
-      const result = await runTemporarySwift(AX_HELPER_SWIFT, ["close", String(binding.qemuWindowOwnerPid), ...dialogArgs(dialog)]);
+      const result = await runTemporarySwift(AX_SCENE_PICKER_HELPER_SWIFT, ["close", String(binding.qemuWindowOwnerPid), ...dialogArgs(dialog)]);
       const parsed = parseGuardResult(parseJsonOutput(result.stdout));
       return result.code === 0 && parsed.ok ? parsed : { ok: false, detail: !parsed.ok ? parsed.detail : (result.stderr || "AX close failed") };
     },
     isDialogPresent: async (binding, dialog) => {
-      const result = await runTemporarySwift(AX_HELPER_SWIFT, ["present", String(binding.qemuWindowOwnerPid), ...dialogArgs(dialog)]);
+      const result = await runTemporarySwift(AX_SCENE_PICKER_HELPER_SWIFT, ["present", String(binding.qemuWindowOwnerPid), ...dialogArgs(dialog)]);
       if (result.code !== 0) throw new Error(result.stderr || result.stdout || "dialog disappearance probe failed");
       return parsePresencePayload(parseJsonOutput(result.stdout));
     },
