@@ -47,6 +47,7 @@ const UNMEASURABLE_ACCEPTANCE_FIX = "A criterion cannot be measured on this mach
 
 export function picoFixDecision(error: string): { symptom: string | null; nextAction: string } {
   const keywords: Array<[RegExp, string, string]> = [
+    [/world[_\s-]*disappears?[_\s-]*on[_\s-]*walk|dynamic\s+full.*(?:safety|disappear)|openStage[\s\S]*StageStyle\.Full/i, "world_disappears_on_walk", "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured."],
     [/androidx\.compose|compose.*(?:exclude|bom|fork)|(?:exclude|bom|fork).*compose/i, "compose_fork_conflict", "Run verify_gradle_config with the project directory; set resolveTransitives:true only if an explicit resolved-graph check is needed."],
     [/Default(?:Stage|WindowContainer)|pico\.spatial\.(?:stage|windowcontainer)|container.*mismatch/i, "container_mode_mismatch", "Run verify_gradle_config and align manifest metadata with the Kotlin container root."],
     [/unresolved reference|gradle|assembledebug|compil|build failed/i, "build_failed", "Read the diagnosis and fix the first concrete build error."],
@@ -464,7 +465,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
 
   door(
     "pico_sdk",
-    "DOOR 8 — Look up the EXACT PICO Spatial SDK declaration (constructors with parameter order and unit docs, properties, enum values) from the official agent-vault before writing SDK code. All-Float signatures compile silently with swapped args — check first.",
+    "DOOR 8 — Look up the EXACT PICO Spatial SDK declaration (constructors with parameter order and unit docs, properties, enum values) from the official 0.13.3 agent-vault before writing SDK code. The app skeleton builds on SDK 6.0.0; consult docs/SDK_6_0_0_DRIFT.md for the measured near-zero public-API drift caveat. All-Float signatures compile silently with swapped args — check first.",
     { symbol: z.string() },
     async (args) => {
       const { call } = await inner();

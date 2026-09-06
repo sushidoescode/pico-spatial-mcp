@@ -2,6 +2,7 @@
 // Fixture-backed (test/fixtures/agent-vault, CI-green without pico-cli) plus assertions against
 // the REAL vault when present (skip-if-absent). Run: npm run test:vault
 import { loadVaultIndex, runVaultCheck, defaultVaultRoot, registerVaultTools } from "../dist/vault.js";
+import { registerDoorTools } from "../dist/doors.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,6 +12,11 @@ const ok = (msg) => console.log(`  ok   ${msg}`);
 const assert = (cond, msg) => (cond ? ok(msg) : fail(msg));
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "agent-vault");
+const assertSdk6Provenance = (result, label) => {
+  assert(result.vaultProvenance?.defaultSdkVersion === "0.13.3", `${label}: names the 0.13.3 default declaration vault`);
+  assert(result.vaultProvenance?.declarationSource === "PICO agent-vault knowledge/api-reference", `${label}: names the declaration source`);
+  assert(result.vaultProvenance?.sdk600DriftDoc === "docs/SDK_6_0_0_DRIFT.md", `${label}: points at the SDK 6.0.0 drift document`);
+};
 
 // Public missing-vault guidance must route through the managed resolver. A bare `pico-cli setup`
 // command could execute an unrelated ambient/global shim and contradict the managed policy.
@@ -28,6 +34,26 @@ const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixture
   assert(/ensure_pico_cli/i.test(missing.note ?? ""), "vault_api missing-vault result starts with ensure_pico_cli");
   assert(/returned absolute path/i.test(missing.note ?? ""), "vault_api missing-vault result requires the returned absolute path");
   assert(/args \[\"setup\"\]/i.test(missing.note ?? ""), "vault_api missing-vault result supplies setup argv structurally");
+  assertSdk6Provenance(missing, "vault_api unavailable result");
+  assert(/0\.13\.3/.test(metadata.description) && /docs\/SDK_6_0_0_DRIFT\.md/.test(metadata.description), "vault_api description discloses the 0.13.3 declaration baseline and SDK 6.0.0 drift caveat");
+
+  const priorVault = process.env.PICO_AGENT_VAULT;
+  process.env.PICO_AGENT_VAULT = FIXTURE;
+  try {
+    const found = JSON.parse((await handlers.vault_api({ symbol: "Entity" })).content[0].text);
+    const notFound = JSON.parse((await handlers.vault_api({ symbol: "DefinitelyMissingSdkType" })).content[0].text);
+    assert(found.status === "ok", `fixture vault_api success response available (got ${found.status})`);
+    assert(notFound.status === "not-found", `fixture vault_api not-found response available (got ${notFound.status})`);
+    assertSdk6Provenance(found, "vault_api success result");
+    assertSdk6Provenance(notFound, "vault_api not-found result");
+  } finally {
+    if (priorVault === undefined) delete process.env.PICO_AGENT_VAULT;
+    else process.env.PICO_AGENT_VAULT = priorVault;
+  }
+
+  const doorMetadata = {};
+  registerDoorTools({ registerTool: (name, toolMetadata) => { doorMetadata[name] = toolMetadata; } });
+  assert(/0\.13\.3/.test(doorMetadata.pico_sdk.description) && /docs\/SDK_6_0_0_DRIFT\.md/.test(doorMetadata.pico_sdk.description), "pico_sdk description discloses the forwarded vault provenance and drift caveat");
 }
 
 // ── 1. Parser over the fixture vault ────────────────────────────────────────────────────────────────────

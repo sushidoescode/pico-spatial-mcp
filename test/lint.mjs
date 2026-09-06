@@ -20,6 +20,26 @@ for (const rule of BUILTIN_RULES) {
   if (posFired && !negFired) console.log(`  ok   ${rule.id} [${rule.severity}]`);
 }
 
+// Space Program retained lessons: both findings are warning-only and carry their own
+// matching/non-matching fixtures. Keep these named assertions in addition to the generic loop so
+// deleting or renaming either rule cannot make the fixture count look green by omission.
+for (const [id, requiredText] of [
+  ["dynamic-full-stage-emulator-safety", ["runtime stage style 2", "safety transition", "manifest-declared style-1 DefaultStage", "hardware", "Safeguard"]],
+  ["defaultstage-windowcontainer-metadata", ["DefaultStage", "pico.spatial.windowcontainer"]],
+]) {
+  const rule = BUILTIN_RULES.find((candidate) => candidate.id === id);
+  if (!rule) { fail(`${id}: requested retained-lesson rule is missing`); continue; }
+  if (rule.severity !== "warn") fail(`${id}: must remain advisory (severity warn)`);
+  const guidance = `${rule.message} ${rule.fix}`;
+  for (const text of requiredText) {
+    if (!guidance.includes(text)) fail(`${id}: guidance is missing ${JSON.stringify(text)}`);
+  }
+  const matching = runLint(rule.positiveFixture, "any", [rule]);
+  const nonMatching = runLint(rule.negativeFixture, "any", [rule]);
+  if (matching.length !== 1) fail(`${id}: matching fixture should emit exactly one warning`);
+  if (nonMatching.length !== 0) fail(`${id}: non-matching fixture must remain clean`);
+}
+
 // A tiny integration check: a multi-gotcha Kotlin blob should surface several errors at once.
 const dirty = [
   'primvars:displayColor = [(1,0,0)]',

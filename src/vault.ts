@@ -772,6 +772,19 @@ export function runVaultCheck(content: string, index: VaultIndex): VaultFinding[
 
 const fmtParam = (p: VaultParam) => `${p.name}: ${p.type}${p.hasDefault ? " = <default>" : ""}${p.doc ? `  // ${p.doc}` : ""}`;
 
+const DEFAULT_VAULT_SDK_VERSION = "0.13.3";
+const SDK_600_DRIFT_DOC = "docs/SDK_6_0_0_DRIFT.md";
+
+function vaultProvenance(index: VaultIndex | null) {
+  return {
+    declarationSource: "PICO agent-vault knowledge/api-reference",
+    defaultSdkVersion: DEFAULT_VAULT_SDK_VERSION,
+    activeSdkVersion: index?.sdkVersion ?? null,
+    sdk600DriftDoc: SDK_600_DRIFT_DOC,
+    note: `Default declarations come from the ${DEFAULT_VAULT_SDK_VERSION} vault; the app skeleton builds on SDK 6.0.0. Consult ${SDK_600_DRIFT_DOC} for the measured near-zero public-API drift caveat.`,
+  };
+}
+
 function typeCard(t: VaultType) {
   return {
     qualifiedName: t.qualifiedName,
@@ -791,7 +804,7 @@ export function registerVaultTools(server: McpServer) {
     "vault_api",
     {
       description:
-        "Look up the EXACT declaration of a PICO Spatial SDK symbol in the agent-vault api-reference (authoritative SDK truth, materialized by the CLI's separately provisioned utility payload) — constructors with param names/order/defaults, @param unit docs ('measured in degrees'), properties, functions, enum entries, supertypes, and the vault file:line citation. Consult BEFORE emitting Kotlin that calls an SDK API you have not used before — all-Float signatures compile silently with swapped/wrong-unit args (the createCapsule and SpotLightComponent bugs). Accepts a simple name ('RigidBodyComponent'), dotted nested name ('AnchorComponent.TrackingMode'), or full FQN.",
+        "Look up the EXACT declaration of a PICO Spatial SDK symbol in the agent-vault api-reference (authoritative SDK truth, materialized by the CLI's separately provisioned utility payload) — constructors with param names/order/defaults, @param unit docs ('measured in degrees'), properties, functions, enum entries, supertypes, and the vault file:line citation. The default declarations come from the 0.13.3 vault; the app skeleton builds on SDK 6.0.0, whose measured near-zero public-API drift caveat is documented in docs/SDK_6_0_0_DRIFT.md. Consult BEFORE emitting Kotlin that calls an SDK API you have not used before — all-Float signatures compile silently with swapped/wrong-unit args (the createCapsule and SpotLightComponent bugs). Accepts a simple name ('RigidBodyComponent'), dotted nested name ('AnchorComponent.TrackingMode'), or full FQN.",
       inputSchema: {
         symbol: z.string().describe("Type name to look up: simple ('ShapeResource'), nested dotted ('Entity.CloneOptions'), or fully qualified ('com.pico.spatial.core.ecs.RigidBodyComponent')."),
         sdkVersion: z.string().optional().describe("v26: query a specific materialized vault workspace (e.g. '0.13' -> ~/Library/PICO/sdk/0.13/agent-vault; see vault_workspaces). Default: the active vault."),
@@ -801,7 +814,7 @@ export function registerVaultTools(server: McpServer) {
       const root = sdkVersion ? path.join(os.homedir(), "Library", "PICO", "sdk", sdkVersion, "agent-vault") : undefined;
       const index = loadVaultIndex(root);
       if (!index) {
-        return okJson({ status: "unavailable", note: `agent-vault not found (${root ?? `default ${defaultVaultRoot()}`}, override with PICO_AGENT_VAULT). ${managedSetupGuidance}` });
+        return okJson({ status: "unavailable", note: `agent-vault not found (${root ?? `default ${defaultVaultRoot()}`}, override with PICO_AGENT_VAULT). ${managedSetupGuidance}`, vaultProvenance: vaultProvenance(null) });
       }
       const wanted = symbol.trim();
       const matches: VaultType[] = [];
@@ -853,16 +866,18 @@ export function registerVaultTools(server: McpServer) {
             status: "documented-only", sdkVersion: index.sdkVersion, symbol: wanted,
             note: "NOT in api-reference/ (which covers the ECS/type surface), but documented in the vault's prose docs — this is the SpatialUI/Compose surface: modifiers, composables and gesture functions. The symbol is REAL; the api-reference simply does not carry it. Read the cited doc for the call shape — do NOT invent parameters it does not show.",
             documentation: docHits,
+            vaultProvenance: vaultProvenance(index),
             ...(near.size ? { similar: [...near].slice(0, 10) } : {}),
           });
         }
         return okJson({
           status: "not-found", sdkVersion: index.sdkVersion, symbol: wanted,
           note: "no vault declaration and no prose-doc mention — either the symbol does not exist in SDK " + (index.sdkVersion ?? "?") + " or it is a vault coverage gap (cf. GaussianSplatting*). Do NOT invent a signature.",
+          vaultProvenance: vaultProvenance(index),
           ...(near.size ? { similar: [...near].slice(0, 10) } : {}),
         });
       }
-      return okJson({ status: "ok", sdkVersion: index.sdkVersion, ...(memberNote ? { note: memberNote } : {}), matches: matches.slice(0, 5).map(typeCard) });
+      return okJson({ status: "ok", sdkVersion: index.sdkVersion, ...(memberNote ? { note: memberNote } : {}), matches: matches.slice(0, 5).map(typeCard), vaultProvenance: vaultProvenance(index) });
     },
   );
 }

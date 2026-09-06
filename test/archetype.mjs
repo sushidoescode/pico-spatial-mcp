@@ -7,6 +7,8 @@
 import { pickArchetype, matchArchetype, archetypeScaffold, SCAFFOLD_STAGE_NOTE } from "../dist/planner.js";
 import { appSpecSchema } from "../dist/appspec.js";
 import { buildTemplateDraft } from "../dist/templates.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
@@ -207,6 +209,57 @@ else fail(`priority broken: "a bowling game dashboard" -> ${mixed}, expected gam
 if (/'1'/.test(SCAFFOLD_STAGE_NOTE) && /Mixed/.test(SCAFFOLD_STAGE_NOTE) && /'3'/.test(SCAFFOLD_STAGE_NOTE) && /opt/i.test(SCAFFOLD_STAGE_NOTE) && /partner-stated/i.test(SCAFFOLD_STAGE_NOTE))
   ok("SCAFFOLD_STAGE_NOTE names Mixed default + the '3' opt-in + the partner-stated caveat");
 else fail(`SCAFFOLD_STAGE_NOTE incomplete: ${SCAFFOLD_STAGE_NOTE}`);
+
+// Aug 9 runbook finding: weak hosts can stringify either the whole MCP arguments record or just
+// its nested AppSpec. Both shapes must fail precisely; neither may be parsed or silently planned.
+{
+  const brief = "three spinning crystals over a stone floor";
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["dist/index.js"],
+    env: { ...process.env, PICO_MCP_SURFACE: "full" },
+  });
+  const client = new Client({ name: "planner-stringified-params-test", version: "1" });
+  try {
+    await client.connect(transport);
+    const scaffoldCall = await client.callTool({ name: "plan_app_spec", arguments: { brief } });
+    const scaffold = JSON.parse(scaffoldCall.content[0].text).scaffold;
+
+    let protocolError = "";
+    try {
+      await client.callTool({ name: "plan_app_spec", arguments: JSON.stringify({ brief }) });
+    } catch (error) {
+      protocolError = error instanceof Error ? error.message : String(error);
+    }
+    if (/params[\s\S]*arguments/.test(protocolError) && /expected record, received string/i.test(protocolError))
+      ok("a stringified MCP arguments record is rejected at the protocol boundary with record/string types");
+    else fail(`stringified MCP arguments rejection was not precise: ${protocolError}`);
+
+    const nestedCall = await client.callTool({
+      name: "plan_app_spec",
+      arguments: { brief, draftSpec: JSON.stringify(scaffold) },
+    });
+    const nested = JSON.parse(nestedCall.content[0].text);
+    const nestedIssue = nested.issues?.[0];
+    if (nested.status === "invalid" && /draftSpec/.test(nested.message ?? "")
+        && /expected object, received string/i.test(nestedIssue?.problem ?? ""))
+      ok("plan_app_spec rejects a stringified draftSpec and names the field plus object/string types");
+    else fail(`plan_app_spec silently planned or imprecisely rejected stringified draftSpec: ${JSON.stringify(nested)}`);
+
+    const doorCall = await client.callTool({
+      name: "pico_build_app",
+      arguments: { brief, draftSpec: JSON.stringify(scaffold) },
+    });
+    const door = JSON.parse(doorCall.content[0].text);
+    const doorIssue = door.detail?.issues?.[0];
+    if (door.status === "plan-failed" && /draftSpec/.test(door.detail?.message ?? "")
+        && /expected object, received string/i.test(doorIssue?.problem ?? ""))
+      ok("pico_build_app stops at planning and preserves the precise stringified-draftSpec error");
+    else fail(`pico_build_app silently planned or imprecisely rejected stringified draftSpec: ${JSON.stringify(door)}`);
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
 
 console.log(`\nArchetype test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

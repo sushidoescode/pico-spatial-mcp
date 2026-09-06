@@ -428,6 +428,17 @@ console.log("\n§3.3 multi-container apps open through the navigator");
   const stageRoot = generateContainerAppFiles({ packageName: "com.test.conf", root: "stage" }).files["Main.kt"];
   assert(!/windowConstraints/.test(stageRoot), "a Stage-rooted app emits no windowConstraints (the scope does not provide it)");
 
+  // Fabian's DefaultStage checklist applies to the generated Kotlin + the real scaffold manifest.
+  const skeletonManifest = read("appskeleton/app/src/main/AndroidManifest.xml");
+  const defaultStageComposition = `${stageRoot}\n${skeletonManifest}`;
+  assert(/\bDefaultStage\s*\{/.test(stageRoot), "a Stage-rooted app emits DefaultStage");
+  assert(/android:name="pico\.spatial\.stage\.id"/.test(defaultStageComposition),
+    "the generated DefaultStage composition carries pico.spatial.stage.id");
+  assert(/android:name="pico\.spatial\.stage\.style"[\s\S]*?android:value="1"/.test(defaultStageComposition),
+    "the generated DefaultStage composition carries pico.spatial.stage.style=1");
+  assert(!/pico\.spatial\.windowcontainer\./.test(defaultStageComposition),
+    "the generated DefaultStage composition carries no windowcontainer metadata");
+
   // A declared container does not open itself.
   assert(/navigator\.openWindowContainer\(SpatialContainers\.ID_DISPLAY_BOX/.test(kt), "an explicit openWindowContainer call is emitted");
   assert(/navigator\.openStage\(SpatialContainers\.ID_ROOM/.test(kt), "an explicit openStage call is emitted");

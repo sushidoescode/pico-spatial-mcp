@@ -15,6 +15,7 @@ const projectconfig = await import("../dist/projectconfig.js");
 const buildmatrix = await import("../dist/buildmatrix.js");
 const { parsePicoCliEnvelope } = await import("../dist/picocli.js");
 const { picoFixDecision } = await import("../dist/doors.js");
+const { registerDiagnoseTools } = await import("../dist/diagnose.js");
 const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
 
 const MODULES = [
@@ -389,9 +390,17 @@ printf '%s\\n' "$@" > "${canonicalArgs}"
   check("malformed envelope is an explicit parse error", () => assert.equal(parsePicoCliEnvelope("{bad").status, "invalid"));
   check("missing tool_status is an explicit parse error", () => assert.equal(parsePicoCliEnvelope('{"data":{}}').status, "invalid"));
   check("envelope preserves bounded full diagnostic payload", () => { const p = parsePicoCliEnvelope('{"tool_status":"FAILED","summary":"no boot","data":{"nextAction":"boot emulator"},"errors":[{"fix":"open editor"}]}'); assert.equal(p.envelope.data.nextAction, "boot emulator"); assert(p.raw.includes("open editor")); });
-  check("pico_fix routes Compose and container failures before generic Gradle", () => {
+  const diagnoseHandlers = {};
+  registerDiagnoseTools({ registerTool: (name, _metadata, handler) => { diagnoseHandlers[name] = handler; } });
+  const disappearedDiagnosis = JSON.parse((await diagnoseHandlers.diagnose({ symptom: "world_disappears_on_walk" })).content[0].text);
+  check("pico_fix routes retained Compose, container, and disappearing-world symptoms", () => {
     assert.equal(picoFixDecision("Gradle found androidx.compose.ui:ui and an exclusion is missing").symptom, "compose_fork_conflict");
     assert.equal(picoFixDecision("DefaultWindowContainer does not match pico.spatial.stage.id").symptom, "container_mode_mismatch");
+    assert.equal(picoFixDecision("world_disappears_on_walk").symptom, "world_disappears_on_walk");
+    const guidance = JSON.stringify(disappearedDiagnosis);
+    for (const text of ["runtime stage style 2", "safety transition", "manifest-declared style-1 DefaultStage", "hardware", "Safeguard"]) {
+      assert(guidance.includes(text), `world_disappears_on_walk diagnosis missing ${text}`);
+    }
   });
 } finally {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
