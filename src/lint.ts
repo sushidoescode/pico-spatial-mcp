@@ -294,7 +294,7 @@ export const BUILTIN_RULES: LintRule[] = [
     severity: "warn",
     kinds: ["kotlin"],
     type: "present",
-    pattern: /\bspatialNavigator\s*\.\s*openStage\s*\([\s\S]{0,400}?\bStageStyle\s*\.\s*Full\b/,
+    pattern: /\bspatialNavigator\s*\.\s*openStage\s*\((?:[^()]|\([^()]*\))*?\bStageStyle\s*\.\s*Full\b/,
     message: "Fabian verified: the dynamic Full route uses runtime stage style 2 and triggers the safety transition on the emulator.",
     fix: "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured.",
     designRule: "Space Program emulator-stage safety finding (Fabian)",

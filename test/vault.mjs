@@ -41,10 +41,13 @@ const assertSdk6Provenance = (result, label) => {
   process.env.PICO_AGENT_VAULT = FIXTURE;
   try {
     const found = JSON.parse((await handlers.vault_api({ symbol: "Entity" })).content[0].text);
+    const documented = JSON.parse((await handlers.vault_api({ symbol: "SpatialModelView" })).content[0].text);
     const notFound = JSON.parse((await handlers.vault_api({ symbol: "DefinitelyMissingSdkType" })).content[0].text);
     assert(found.status === "ok", `fixture vault_api success response available (got ${found.status})`);
+    assert(documented.status === "documented-only", `fixture vault_api documented-only response available (got ${documented.status})`);
     assert(notFound.status === "not-found", `fixture vault_api not-found response available (got ${notFound.status})`);
     assertSdk6Provenance(found, "vault_api success result");
+    assertSdk6Provenance(documented, "vault_api documented-only result");
     assertSdk6Provenance(notFound, "vault_api not-found result");
   } finally {
     if (priorVault === undefined) delete process.env.PICO_AGENT_VAULT;

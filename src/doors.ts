@@ -47,7 +47,7 @@ const UNMEASURABLE_ACCEPTANCE_FIX = "A criterion cannot be measured on this mach
 
 export function picoFixDecision(error: string): { symptom: string | null; nextAction: string } {
   const keywords: Array<[RegExp, string, string]> = [
-    [/world[_\s-]*disappears?[_\s-]*on[_\s-]*walk|dynamic\s+full.*(?:safety|disappear)|openStage[\s\S]*StageStyle\.Full/i, "world_disappears_on_walk", "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured."],
+    [/world[_\s-]*disappears?[_\s-]*on[_\s-]*walk|dynamic\s+full.*(?:safety|disappear)|spatialNavigator\s*\.\s*openStage\s*\((?:[^()]|\([^()]*\))*?\bStageStyle\s*\.\s*Full\b/i, "world_disappears_on_walk", "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured."],
     [/androidx\.compose|compose.*(?:exclude|bom|fork)|(?:exclude|bom|fork).*compose/i, "compose_fork_conflict", "Run verify_gradle_config with the project directory; set resolveTransitives:true only if an explicit resolved-graph check is needed."],
     [/Default(?:Stage|WindowContainer)|pico\.spatial\.(?:stage|windowcontainer)|container.*mismatch/i, "container_mode_mismatch", "Run verify_gradle_config and align manifest metadata with the Kotlin container root."],
     [/unresolved reference|gradle|assembledebug|compil|build failed/i, "build_failed", "Read the diagnosis and fix the first concrete build error."],

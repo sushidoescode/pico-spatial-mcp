@@ -33,8 +33,9 @@ const WATCH_HONESTY =
   "evidence of no DETECTED crash during the window, nothing more. Evidence class: structural.";
 
 const RECORD_HONESTY =
-  "The artifact is a real recording pulled by the official CLI and stat-checked here — but its " +
-  "pixels prove nothing until LOOKED at. Guest-side adb screenrecord and pico-cli capture record " +
+  "The artifact is the file pulled by the official CLI; this tool checks only that it is a " +
+  "nonempty regular file, not that its container is valid. Its pixels prove nothing until LOOKED " +
+  "at. Guest-side adb screenrecord and pico-cli capture record " +
   "yield empty/invalid files on this emulator display; the working macOS host-side recipe is " +
   "screencapture -V -l<windowId>. Evidence class: a capture artifact " +
   "that still requires a LOOK before any visual claim.";

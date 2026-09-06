@@ -38,6 +38,12 @@ for (const [id, requiredText] of [
   const nonMatching = runLint(rule.negativeFixture, "any", [rule]);
   if (matching.length !== 1) fail(`${id}: matching fixture should emit exactly one warning`);
   if (nonMatching.length !== 0) fail(`${id}: non-matching fixture must remain clean`);
+  if (id === "dynamic-full-stage-emulator-safety") {
+    const laterFull = runLint("spatialNavigator.openStage(SpatialContainers.ID_MAIN, StageStyle.Mixed)\nval style = StageStyle.Full", "kotlin", [rule]);
+    if (laterFull.length !== 0) fail(`${id}: StageStyle.Full after the completed call must remain clean`);
+    const nestedMultiline = runLint("spatialNavigator.openStage(\n  resolveStage(SpatialContainers.ID_FULL),\n  StageStyle.Full,\n)", "kotlin", [rule]);
+    if (nestedMultiline.length !== 1) fail(`${id}: nested multiline arguments should emit exactly one warning`);
+  }
 }
 
 // A tiny integration check: a multi-gotcha Kotlin blob should surface several errors at once.
