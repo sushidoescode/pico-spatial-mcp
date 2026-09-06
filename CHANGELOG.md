@@ -4,13 +4,30 @@ Versions here key the plugin manifests (`/plugin update` uses them as its cache 
 
 ## Unreleased
 
-- **Receipt-bound in-app locomotion CP1 contract documented.** Added the Full-stage-only
-  `run_in_app_locomotion_route` sequence, explicit direct/replacement mechanism rule,
-  transition-then-stable settlement semantics, listener-age/sequence/time freshness,
-  re-entrant restoration, 0.02 m translation experiment threshold, quaternion no-gate
-  boundary, and receipt-bound prior-foreground restoration withholding. Primary mechanism
-  selection remains contingent on the same-boot CP2 rendered-frame comparison.
-  CP2 has not run; there is no productized live proof.
+- **Receipt-bound in-app locomotion has positive product-route evidence through 16 m.** At live-tested branch head
+  `d1435ef`, CP2 exercised the Full-stage-only `run_in_app_locomotion_route` sequence over
+  productized `0/1/2/4/8/16 m` routes with Guardian active and `0 m` measured drift at every
+  accepted baseline/waypoint HMD sample. Every settled frame was LOOKed, and matched cold launches
+  compared explicit direct glide with root replacement on one boot. Both mechanisms rendered the
+  same five nonzero endpoints, but only direct returned to the byte-exact zero baseline. Direct is
+  therefore the default; replacement is not a proven fallback, and neither selection silently
+  switches mechanisms. Product receipts remain structurally capped. The complete detailed
+  released-state probe is not retained before the earliest build/install mutation, so the exact
+  staged-entry chronology remains unverified; later same-boot and per-route safety evidence is
+  stated separately.
+- **Later locomotion orchestration hardening is fake-gated, not a second live run.** After CP2
+  released the emulator, nested downstream-proof deadlines, strict handoff/completion guards,
+  nested restoration-stage fences, pre/post immutable-action publication fences, filesystem-only
+  idempotent audit repair, and three-state receipt-bound prior freshness evidence were added and
+  exercised against rebuilt fakes. Post-link timing incidents remain explicit, as do the unclaimed
+  crash-durability interval before directory fsync and the possible aggregate latency of per-process
+  cleanup-only timeouts. No post-live emulator rerun occurred, and this hardening does not broaden
+  the rendered-frame result above. Emergency-stop cleanup now requires an in-deadline successful
+  stop receipt followed by exact target absence before nonce removal, never relabels a potentially
+  moved baseline as zero, and gates terminal safe
+  release on center `0,0,0` plus fenced audit publication. Same-package non-receipt prior relaunch
+  declarations are rejected as non-convergent. The `0.02 m` translation threshold remains
+  experimental, and quaternion telemetry still has no invented gate.
 
 ## 37.0.0 — 2026-08-14
 

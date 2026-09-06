@@ -50,6 +50,8 @@ import { validateCaptureBuffer } from "./evidence.js";
 import { canonicalJson } from "./runreceiptidentity.js";
 import { readNativeRunReceipt } from "./runreceiptstore.js";
 import {
+  APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS,
+  classifyResumedApplication,
   scanPackageRuntimeHealth,
   type ApplicationContinuitySample,
   type PackageRuntimeHealthReceiptV1,
@@ -72,9 +74,69 @@ const BRIDGE_MIN_TRANSACTION_MS = agentBridgeLocomotionMinimumEnvelopeMs({
   stabilityReads: BRIDGE_STABILITY_READS,
   executionDelayMs: 0,
 });
-const FINAL_RECOVERY_RESERVE_MS = 5_000;
+// Bounded host-orchestration windows for final recovery. These are not SDK
+// latency guarantees; each stage owns its window so one slow cleanup cannot
+// consume the proof or action-publication window that follows it.
+const FINAL_TARGET_STOP_RESERVE_MS = 5_000;
+const FINAL_PROCESS_PROOF_RESERVE_MS = 5_000;
+const FINAL_PRIOR_RELAUNCH_RESERVE_MS = 5_000;
+const FINAL_SAFETY_RESERVE_MS = 5_000;
+const FINAL_ACTION_PUBLICATION_RESERVE_MS = 5_000;
+const PREPARE_ACTION_PUBLICATION_RESERVE_MS = 5_000;
 /** CP2 experiment threshold, not an SDK freshness guarantee. */
 export const IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS = 250 as const;
+const HMD_ACQUISITION_MAX_ATTEMPTS = 12;
+const HMD_ACQUISITION_POLL_MS = 100;
+// Retry cadence and quick completed transactions share 1.5s; the final transaction
+// retains its existing minimum envelope. This is an observation policy, not SDK timing.
+const HMD_ACQUISITION_WINDOW_MS = BRIDGE_MIN_TRANSACTION_MS + 1_500;
+// Failure-safe stage allowances, not SDK timing guarantees. They keep each
+// mandatory post-mutation proof independently admissible under one fixed step deadline.
+const POST_HMD_SAFETY_RESERVE_MS = 5_000;
+const STEP_BEGIN_MARKER_RESERVE_MS = 5_000;
+const STEP_PRE_SAFETY_RESERVE_MS = 5_000;
+const STEP_END_MARKER_RESERVE_MS = 5_000;
+const STEP_LOG_FINALIZATION_RESERVE_MS = 10_000;
+const STEP_ACTION_PUBLICATION_RESERVE_MS = 5_000;
+const RESTORE_ENTRY_VALIDATION_RESERVE_MS = 5_000;
+// Keep clock re-sampling/flooring at one stage from consuming the next stage's
+// admitted window. These are host-orchestration guards, not SDK latency claims.
+const STAGE_HANDOFF_GUARD_MS = 1;
+const CAPTURE_COMPLETION_GUARD_MS = 1;
+const STEP_FINALIZATION_RESERVE_MS = STEP_END_MARKER_RESERVE_MS + STAGE_HANDOFF_GUARD_MS
+  + STEP_LOG_FINALIZATION_RESERVE_MS + STAGE_HANDOFF_GUARD_MS;
+const POST_HMD_DOWNSTREAM_RESERVE_MS = POST_HMD_SAFETY_RESERVE_MS + STAGE_HANDOFF_GUARD_MS
+  + APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS + STAGE_HANDOFF_GUARD_MS + STEP_FINALIZATION_RESERVE_MS;
+const NONCE_CLEANUP_RESERVE_MS = 1_000 + BRIDGE_STABILITY_READS * 250
+  + (BRIDGE_STABILITY_READS - 1) * BRIDGE_POLL_MS + 1_000 + 250;
+
+function routeMutationFloorMs(captureDeadlineMs: number, glideDurationMs: number): number {
+  return captureDeadlineMs + glideDurationMs + BRIDGE_MIN_TRANSACTION_MS + NONCE_CLEANUP_RESERVE_MS
+    + 2 * HMD_ACQUISITION_WINDOW_MS + CAPTURE_COMPLETION_GUARD_MS
+    + 4 * STAGE_HANDOFF_GUARD_MS + POST_HMD_DOWNSTREAM_RESERVE_MS;
+}
+
+function routeStepFloorMs(captureDeadlineMs: number, glideDurationMs: number): number {
+  return STEP_BEGIN_MARKER_RESERVE_MS + STAGE_HANDOFF_GUARD_MS
+    + STEP_PRE_SAFETY_RESERVE_MS + STAGE_HANDOFF_GUARD_MS
+    + APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS + STAGE_HANDOFF_GUARD_MS
+    + routeMutationFloorMs(captureDeadlineMs, glideDurationMs)
+    + STEP_ACTION_PUBLICATION_RESERVE_MS + STAGE_HANDOFF_GUARD_MS;
+}
+
+function restorationFloorMs(captureDeadlineMs: number, glideDurationMs: number): number {
+  return RESTORE_ENTRY_VALIDATION_RESERVE_MS + STAGE_HANDOFF_GUARD_MS
+    + captureDeadlineMs + glideDurationMs + 3 * BRIDGE_MIN_TRANSACTION_MS
+    + 2 * NONCE_CLEANUP_RESERVE_MS + 2 * APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS
+    + FINAL_TARGET_STOP_RESERVE_MS + 2 * FINAL_PROCESS_PROOF_RESERVE_MS
+    + FINAL_PRIOR_RELAUNCH_RESERVE_MS + FINAL_SAFETY_RESERVE_MS
+    + FINAL_ACTION_PUBLICATION_RESERVE_MS + CAPTURE_COMPLETION_GUARD_MS
+    + 13 * STAGE_HANDOFF_GUARD_MS;
+}
+
+function postPreHmdReserveMs(captureDeadlineMs: number, glideDurationMs: number): number {
+  return routeMutationFloorMs(captureDeadlineMs, glideDurationMs) - HMD_ACQUISITION_WINDOW_MS;
+}
 
 const hashSchema = z.string().regex(SHA256);
 const componentSchema = z.string().regex(COMPONENT);
@@ -164,7 +226,7 @@ const priorForegroundSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("none") }).strict(),
   z.object({ kind: z.literal("receipt_bound"), component: componentSchema, receiptId: hashSchema }).strict(),
   z.object({ kind: z.literal("non_receipt_bound"), component: componentSchema }).strict(),
-]).describe("Declare the foreground displaced by prepare. A receipt-bound prior is withheld and is not relaunched because relaunch would orphan its immutable receipt; only a declared non-receipt-bound prior may be relaunched during restore.");
+]).describe("Declare the foreground displaced by prepare. A receipt-bound prior is withheld and is not relaunched because relaunch would orphan its immutable receipt; only a declared non-receipt-bound prior from a different package than the run-owned target may be relaunched during restore.");
 
 const reviewedFrameSchema = z.object({
   captureSha256: hashSchema,
@@ -211,14 +273,23 @@ const prepareSchema = z.object({
   if (value.mechanism === "replacement" && value.route.glideDurationMs !== 0) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["route", "glideDurationMs"], message: "replacement requires a zero glide duration" });
   }
+  if (value.priorForeground.kind === "non_receipt_bound"
+    && value.priorForeground.component.startsWith(`${value.scenario.packageName}/`)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["priorForeground", "component"],
+      message: "a non-receipt-bound prior must use a different package from the run-owned target",
+    });
+  }
   const prepareBudgetMs = value.budgets.maxDurationMs
     - value.budgets.routeReserveMs
     - value.budgets.restorationReserveMs;
-  if (prepareBudgetMs <= 60_000 + value.capture.deadlineMs + 3 * BRIDGE_MIN_TRANSACTION_MS) {
+  if (prepareBudgetMs <= 60_001 + value.capture.deadlineMs + 2 * BRIDGE_MIN_TRANSACTION_MS
+    + HMD_ACQUISITION_WINDOW_MS + PREPARE_ACTION_PUBLICATION_RESERVE_MS + STAGE_HANDOFF_GUARD_MS) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["budgets", "maxDurationMs"],
-      message: "prepare budget cannot fit bounded capability/HMD/post-capture-capability transactions, the mandatory >=60 second monitor, and baseline capture before reserves",
+      message: "prepare budget cannot fit bounded capability/HMD/post-capture-capability transactions, the mandatory >=60 second monitor, baseline capture, and action publication before reserves",
     });
   }
   if (value.budgets.routeReserveMs <= value.capture.deadlineMs) {
@@ -228,11 +299,11 @@ const prepareSchema = z.object({
       message: "route reserve must exceed one complete settled-capture deadline",
     });
   }
-  if (value.budgets.routeReserveMs <= value.capture.deadlineMs + value.route.glideDurationMs + 3 * BRIDGE_MIN_TRANSACTION_MS) {
+  if (value.budgets.routeReserveMs <= routeStepFloorMs(value.capture.deadlineMs, value.route.glideDurationMs)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["budgets", "routeReserveMs"],
-      message: "route reserve cannot fit the admitted glide, three bounded bridge transactions, and one complete settled capture",
+      message: "route reserve cannot fit the admitted glide, bounded HMD acquisitions, nonce cleanup, settled capture, post probes, final evidence closure, and action publication",
     });
   }
   if (value.budgets.restorationReserveMs <= value.capture.deadlineMs) {
@@ -242,12 +313,11 @@ const prepareSchema = z.object({
       message: "restoration reserve must exceed one complete settled-capture deadline",
     });
   }
-  if (value.budgets.restorationReserveMs <= value.capture.deadlineMs + value.route.glideDurationMs
-    + 3 * BRIDGE_MIN_TRANSACTION_MS + FINAL_RECOVERY_RESERVE_MS) {
+  if (value.budgets.restorationReserveMs <= restorationFloorMs(value.capture.deadlineMs, value.route.glideDurationMs)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["budgets", "restorationReserveMs"],
-      message: "restoration reserve cannot fit pre/post-capture capability, admitted glide, locomotion, settled capture, and final recovery proof",
+      message: "restoration reserve cannot fit pre/post continuity and capability, admitted glide, locomotion nonce cleanup, settled capture, and final recovery proof",
     });
   }
 });
@@ -397,6 +467,19 @@ export interface LocomotionActionAuditMaintenance {
   authoritative: "committed";
   status: "current" | "repair_pending";
   errors: string[];
+  publicationIncidents: LocomotionActionPublicationIncident[];
+}
+
+export interface LocomotionActionPublicationIncident {
+  action: string;
+  status: string | null;
+  operationId: string;
+  phase: "after_commit";
+  committed: true;
+  reason: "deadline_reached" | "clock_unavailable";
+  deadlineMonotonicNs: string;
+  observedAtMonotonicNs: string | null;
+  clockError: string | null;
 }
 
 export interface LocomotionPrepareReceipt {
@@ -469,7 +552,7 @@ export interface LocomotionPriorForegroundDisposition {
   kind: "none" | "receipt_bound" | "non_receipt_bound";
   component: string | null;
   receiptId: string | null;
-  receiptFreshness: "known_stale" | "not_evaluated_cp1";
+  receiptFreshness: "known_stale" | "unknown_after_stop_attempt" | "not_evaluated_cp1";
   relaunchDisposition: "not_applicable" | "withheld_receipt_bound" | "accepted" | "ignored" | "blocked" | "attempt_failed"
     | "state_proven_after_attempt_error" | "state_proven_without_attempt";
 }
@@ -487,6 +570,7 @@ export interface LocomotionRestoreReceipt {
   lookRequired: true;
   requiredReview: LocomotionReviewItem[];
   priorForeground: LocomotionPriorForegroundDisposition;
+  restorationDisposition: "zero_proven" | "safe_release_without_zero_proof" | "unresolved" | "review_rejected";
   actionAuditMaintenance?: LocomotionActionAuditMaintenance;
 }
 
@@ -564,14 +648,58 @@ export interface LocomotionTargetStopReceipt {
   reason: string;
 }
 
+export interface LocomotionCleanPidAbsenceReceipt {
+  status: "clean_pidof_absence";
+  serial: string;
+  packageName: string;
+  exitCode: 1;
+  timedOut: false;
+  stdout: "";
+  stderr: "";
+}
+
+export interface LocomotionPrepareClearanceReceipt {
+  status: "prepare_clearance_completed";
+  stopReceipt: LocomotionTargetStopReceipt;
+  pidAbsence: LocomotionCleanPidAbsenceReceipt;
+}
+
+export interface LocomotionPrepareClearanceProgress {
+  status: "prepare_clearance_incomplete";
+  stopReceipt: LocomotionTargetStopReceipt;
+  pidAbsence: LocomotionCleanPidAbsenceReceipt | null;
+}
+
+export type LocomotionStopPackageReceipt = LocomotionTargetStopReceipt | LocomotionPrepareClearanceReceipt;
+
+/** Untrusted partial-progress carrier; the orchestrator exact-validates both receipts. */
+export class LocomotionStopClearanceError extends Error {
+  readonly stopReceipt: LocomotionTargetStopReceipt;
+  readonly pidAbsence: LocomotionCleanPidAbsenceReceipt | null;
+  readonly clearanceError: unknown;
+
+  constructor(
+    clearanceError: unknown,
+    stopReceipt: LocomotionTargetStopReceipt,
+    pidAbsence: LocomotionCleanPidAbsenceReceipt | null,
+  ) {
+    super(errorText(clearanceError));
+    this.name = "LocomotionStopClearanceError";
+    this.stopReceipt = stopReceipt;
+    this.pidAbsence = pidAbsence;
+    this.clearanceError = clearanceError;
+  }
+}
+
 export interface InAppLocomotionDependencies {
+  sleep?(durationMs: number): Promise<void>;
   randomBytes(size: number): Buffer;
   now(): string;
   monotonicNs(): bigint;
   readNativeRunReceipt(app: string, receiptId: string): ReceiptValidation;
   readEffectiveAppSpec(artifactPath: string, identity: { sha256: string; bytes: number }): unknown;
   snapshotPriorForeground(context: { serial: string; targetPackage: string } & LocomotionEffectBudget): Promise<LocomotionPriorForegroundSnapshot>;
-  stopPackage(context: { serial: string; packageName: string; reason: string } & LocomotionEffectBudget): Promise<LocomotionTargetStopReceipt>;
+  stopPackage(context: { serial: string; packageName: string; reason: string } & LocomotionEffectBudget): Promise<LocomotionStopPackageReceipt>;
   launchTarget(context: { serial: string; component: string } & LocomotionEffectBudget): Promise<{ disposition: "accepted" | "ignored" | "blocked"; component: string; outputSha256: string }>;
   captureLaunchHandoffWindow(context: {
     serial: string;
@@ -680,6 +808,7 @@ interface OwnedArtifactBinding extends ReservedArtifactSession {
   actionViewDirty: boolean;
   actionDurabilityPending: boolean;
   actionMaintenanceErrors: string[];
+  actionPublicationIncidents: LocomotionActionPublicationIncident[];
 }
 
 interface LocomotionState {
@@ -707,8 +836,10 @@ interface LocomotionState {
   restoreAttempts: number;
   restoreCompleted: boolean;
   completedRestore: { reviewedPriorSha256: string; receipt: LocomotionRestoreReceipt } | null;
+  terminalSafeRelease: { reviewedPriorSha256: string; receipt: LocomotionRestoreReceipt } | null;
   priorRestoreProofDisposition: "accepted" | "state_proven_after_attempt_error" | "state_proven_without_attempt" | null;
   zeroOffsetRecoveryProven: boolean;
+  nonzeroMutationMayHaveApplied: boolean;
   adjudicated: boolean;
   currentReviewReflectsNonzeroMutation: boolean;
   unquiescedLocomotion: { requestId: string; relativePath: string } | null;
@@ -733,6 +864,17 @@ class LocomotionStageError extends Error {
   constructor(readonly code: string, message: string, readonly cleanupError: string | null = null) {
     super(message);
     this.name = "LocomotionStageError";
+  }
+}
+
+class ActionPublicationFenceError extends Error {
+  constructor(
+    message: string,
+    readonly committed: boolean,
+    readonly incident: LocomotionActionPublicationIncident | null,
+  ) {
+    super(message);
+    this.name = "ActionPublicationFenceError";
   }
 }
 
@@ -822,6 +964,46 @@ function checkedTargetStopReceipt(
     throw new Error(`target stop did not return the exact command-completed receipt${detail}`);
   }
   return record as unknown as LocomotionTargetStopReceipt;
+}
+
+function checkedCleanPidAbsenceReceipt(
+  receipt: unknown,
+  expected: { serial: string; packageName: string },
+): LocomotionCleanPidAbsenceReceipt {
+  const record = receipt !== null && typeof receipt === "object" && !Array.isArray(receipt)
+    ? receipt as Record<string, unknown>
+    : null;
+  const exactKeys = record === null ? [] : Object.keys(record).sort();
+  if (record === null
+    || exactKeys.join("\0") !== ["exitCode", "packageName", "serial", "status", "stderr", "stdout", "timedOut"].join("\0")
+    || record.status !== "clean_pidof_absence"
+    || record.serial !== expected.serial
+    || record.packageName !== expected.packageName
+    || record.exitCode !== 1
+    || record.timedOut !== false
+    || record.stdout !== ""
+    || record.stderr !== "") {
+    throw new Error("prepare clearance did not return the exact clean PID-absence receipt");
+  }
+  return record as unknown as LocomotionCleanPidAbsenceReceipt;
+}
+
+function checkedPrepareClearanceReceipt(
+  receipt: unknown,
+  expected: { serial: string; packageName: string; reason: string },
+): LocomotionPrepareClearanceReceipt {
+  const record = receipt !== null && typeof receipt === "object" && !Array.isArray(receipt)
+    ? receipt as Record<string, unknown>
+    : null;
+  const exactKeys = record === null ? [] : Object.keys(record).sort();
+  if (record === null
+    || exactKeys.join("\0") !== ["pidAbsence", "status", "stopReceipt"].join("\0")
+    || record.status !== "prepare_clearance_completed") {
+    throw new Error("prepare clearance did not return the exact clean PID-absence receipt envelope");
+  }
+  const stopReceipt = checkedTargetStopReceipt(record.stopReceipt, expected);
+  const pidAbsence = checkedCleanPidAbsenceReceipt(record.pidAbsence, expected);
+  return { status: "prepare_clearance_completed", stopReceipt, pidAbsence };
 }
 
 function checkedNow(dependencies: InAppLocomotionDependencies): string {
@@ -976,6 +1158,9 @@ function actionOperationId(value: unknown): string {
   const action = String(record.action ?? "unknown");
   if (action === "step") return `step:${String(record.waypointSeq ?? "unknown")}:terminal`;
   if (action === "restore") return `restore:${String(record.restoreAttempt ?? "unknown")}:terminal`;
+  if (action === "prepare" && record.compensatesActionOperationId === "prepare:terminal") {
+    return "prepare:publication-compensation:terminal";
+  }
   return `${action}:terminal`;
 }
 
@@ -1004,14 +1189,42 @@ function reconcileOwnedActionStages(binding: OwnedArtifactBinding): void {
   }
 }
 
-function replayActionRecords(binding: OwnedArtifactBinding, hooks: InAppLocomotionArtifactHooks): Buffer[] {
+function replayActionRecords(
+  binding: OwnedArtifactBinding,
+  hooks: InAppLocomotionArtifactHooks,
+  allowBoundPendingStages = false,
+): Buffer[] {
   sameDirectory(
     path.join(binding.absoluteRoot, "action-records"),
     { dev: binding.actionRecordsDev, ino: binding.actionRecordsIno },
     "action record directory",
   );
-  const entries = fs.readdirSync(path.join(binding.absoluteRoot, "action-records")).sort();
+  const recordsRoot = path.join(binding.absoluteRoot, "action-records");
+  const entries = fs.readdirSync(recordsRoot).sort();
   const expectedNames = binding.actionRecords.map((record) => `${String(record.sequence).padStart(6, "0")}.json`);
+  if (allowBoundPendingStages) {
+    const pendingPaths = new Set<string>();
+    const pendingIdentities = new Set<string>();
+    for (const pending of binding.pendingActionStages) {
+      if (!isWithin(recordsRoot, pending.path)
+        || !/^\.[0-9]{6}\.[a-f0-9]{32}\.tmp$/.test(path.basename(pending.path))
+        || pendingPaths.has(pending.path)
+        || pendingIdentities.has(`${pending.identity.dev}:${pending.identity.ino}`)) {
+        throw new Error("bound pending action stage identity is invalid or duplicated");
+      }
+      pendingPaths.add(pending.path);
+      pendingIdentities.add(`${pending.identity.dev}:${pending.identity.ino}`);
+      assertSameArtifactFile(
+        pending.path,
+        pending.identity,
+        "bound pending immutable action stage",
+        16 * 1024 * 1024,
+        hooks,
+      );
+      expectedNames.push(path.basename(pending.path));
+    }
+  }
+  expectedNames.sort();
   if (canonicalJson(entries) !== canonicalJson(expectedNames)) throw new Error("authoritative action record slots changed after publication");
   let previous = "0".repeat(64);
   const payloads: Buffer[] = [];
@@ -1077,6 +1290,7 @@ function actionAuditMaintenance(binding: OwnedArtifactBinding): LocomotionAction
     status: binding.actionViewDirty || binding.actionDurabilityPending || binding.pendingActionStages.length > 0
       ? "repair_pending" : "current",
     errors: [...binding.actionMaintenanceErrors],
+    publicationIncidents: binding.actionPublicationIncidents.map((incident) => ({ ...incident })),
   };
 }
 
@@ -1088,6 +1302,7 @@ function appendAction(
   binding: OwnedArtifactBinding,
   value: unknown,
   hooks: InAppLocomotionArtifactHooks,
+  commitFence?: { deadlineNs: bigint; monotonicNs: () => bigint; label: string },
 ): LocomotionActionAuditMaintenance {
   assertOwnedArtifacts(binding, hooks);
   const target = path.join(binding.absoluteRoot, "actions.jsonl");
@@ -1145,6 +1360,25 @@ function appendAction(
     }
     hooks.beforeActionPublish?.({ action, status, path: target, stagedPath });
     hooks.beforeActionRecordCommit?.({ action, status, recordPath, stagedPath });
+    if (commitFence) {
+      let admittedAtNs: bigint;
+      try {
+        admittedAtNs = commitFence.monotonicNs();
+      } catch (error) {
+        throw new ActionPublicationFenceError(
+          `${commitFence.label} cannot prove admission before its fixed deadline: ${errorText(error)}`,
+          false,
+          null,
+        );
+      }
+      if (admittedAtNs >= commitFence.deadlineNs) {
+        throw new ActionPublicationFenceError(
+          `${commitFence.label} cannot commit at or after its fixed deadline`,
+          false,
+          null,
+        );
+      }
+    }
     let identity: ArtifactFileIdentity;
     try {
       fs.linkSync(stagedPath, recordPath);
@@ -1167,6 +1401,54 @@ function appendAction(
     // The hard link (or byte-identical EEXIST) is the semantic commit fence.
     // Everything below is repairable maintenance and must never reverse the
     // exact payload now stored in the immutable hash chain.
+    const verifyCommittedFence = (): void => {
+      if (!commitFence) return;
+      let completedAtNs: bigint | null = null;
+      let clockError: string | null = null;
+      try {
+        completedAtNs = commitFence.monotonicNs();
+      } catch (error) {
+        clockError = errorText(error);
+      }
+      if (clockError !== null || completedAtNs! >= commitFence.deadlineNs) {
+        binding.actionDurabilityPending = true;
+        const incident: LocomotionActionPublicationIncident = {
+          action,
+          status,
+          operationId,
+          phase: "after_commit",
+          committed: true,
+          reason: clockError === null ? "deadline_reached" : "clock_unavailable",
+          deadlineMonotonicNs: commitFence.deadlineNs.toString(),
+          observedAtMonotonicNs: completedAtNs?.toString() ?? null,
+          clockError,
+        };
+        binding.actionPublicationIncidents.push(incident);
+        throw new ActionPublicationFenceError(
+          `${commitFence.label} committed but its publication deadline is unproven: ${clockError === null
+            ? "semantic commit completed at or after the fixed deadline"
+            : `post-commit clock unavailable: ${clockError}`}`,
+          true,
+          incident,
+        );
+      }
+    };
+    if (commitFence) {
+      binding.actionDurabilityPending = true;
+      verifyCommittedFence();
+      if (status === "completed" && (action === "step" || action === "restore")) {
+        // A completed route/restore action must hand control back without any
+        // repair-only fsync, staging cleanup, derived-view materialization, or
+        // test hook consuming the protected deadline that follows the commit.
+        // Later state-bound calls validate this exact immutable record before
+        // effects. A later action publication or a no-device terminal replay /
+        // adjudication performs the retained filesystem-only maintenance.
+        return actionAuditMaintenance(binding);
+      }
+      // A stopped/failed result still uses its remaining publication window
+      // to preserve the pre-existing JSONL behavior. A second fence below
+      // makes any maintenance overrun explicit without reversing the record.
+    }
     try { hooks.afterActionRecordLink?.({ action, status, recordPath, stagedPath }); } catch (error) {
       noteActionMaintenance(binding, "post-link action maintenance", error);
     }
@@ -1204,9 +1486,10 @@ function appendAction(
     try { hooks.afterActionViewMaterialization?.({ action, status, path: target }); } catch (error) {
       noteActionMaintenance(binding, "post-materialization action maintenance", error);
     }
+    verifyCommittedFence();
   } finally {
     const ownedStage = binding.pendingActionStages.find((candidate) => candidate.path === stagedPath);
-    if (ownedStage) {
+    if (ownedStage && !(authoritativeCommit && commitFence)) {
       try { removeOwnedActionStage(binding, ownedStage); } catch (error) {
         if (!authoritativeCommit) throw error;
         noteActionMaintenance(binding, "staged action-record final cleanup", error);
@@ -1280,6 +1563,44 @@ function assertOwnedArtifacts(binding: OwnedArtifactBinding, hooks: InAppLocomot
   }
 }
 
+function validateOwnedArtifactsWithoutMaintenance(
+  binding: OwnedArtifactBinding,
+  hooks: InAppLocomotionArtifactHooks = {},
+): void {
+  sameDirectory(binding.absoluteRoot, { dev: binding.rootDev, ino: binding.rootIno }, "artifact root");
+  sameDirectory(path.join(binding.absoluteRoot, "captures"), { dev: binding.capturesDev, ino: binding.capturesIno }, "capture directory");
+  sameDirectory(path.join(binding.absoluteRoot, "logs"), { dev: binding.logsDev, ino: binding.logsIno }, "log directory");
+  sameDirectory(path.join(binding.absoluteRoot, "action-records"), {
+    dev: binding.actionRecordsDev, ino: binding.actionRecordsIno,
+  }, "action record directory");
+  const ownerBytes = readSameArtifactFile(
+    path.join(binding.absoluteRoot, ".owner.json"),
+    binding.ownerFile,
+    "artifact ownership manifest",
+    64 * 1024,
+    hooks,
+  );
+  assertSameArtifactFile(path.join(binding.absoluteRoot, "run.json"), binding.runManifest, "run manifest", 1024 * 1024, hooks);
+  assertSameArtifactFile(path.join(binding.absoluteRoot, "route.json"), binding.routeManifest, "route manifest", 1024 * 1024, hooks);
+  const payloads = replayActionRecords(binding, hooks, true);
+  let viewBytes: Buffer | null = null;
+  try {
+    viewBytes = readSameArtifactFile(
+      path.join(binding.absoluteRoot, "actions.jsonl"), binding.actionLog, "action JSONL", 16 * 1024 * 1024, hooks,
+    );
+  } catch (error) {
+    if (!binding.actionViewDirty) throw error;
+    noteActionMaintenance(binding, "deferred derived action JSONL validation", error);
+  }
+  if (!binding.actionViewDirty && (viewBytes === null || !viewBytes.equals(Buffer.concat(payloads)))) {
+    throw new Error("derived action JSONL diverged from the authoritative action records without retained repair ownership");
+  }
+  const owner = JSON.parse(ownerBytes.toString("utf8"));
+  if (owner.schemaVersion !== 1 || owner.runId !== binding.runId || owner.ownerNonceHash !== binding.ownerNonceHash) {
+    throw new Error("artifact ownership record changed after reservation");
+  }
+}
+
 function reserveArtifacts(input: InAppLocomotionPrepareInput, dependencies: InAppLocomotionDependencies): {
   binding: OwnedArtifactBinding;
   createdAt: string;
@@ -1346,6 +1667,7 @@ function reserveArtifacts(input: InAppLocomotionPrepareInput, dependencies: InAp
     actionViewDirty: false,
     actionDurabilityPending: false,
     actionMaintenanceErrors: [],
+    actionPublicationIncidents: [],
   };
   assertOwnedArtifacts(binding);
   return { binding, createdAt, startedAtNs };
@@ -1423,7 +1745,7 @@ function safetyProblem(value: LocomotionSafetySnapshot): string | null {
 }
 
 function finalGlobalSafetyProblem(value: LocomotionSafetySnapshot): string | null {
-  for (const key of ["guardian", "vstComponent", "vstDebug"] as const) {
+  for (const key of ["guardian", "vstComponent", "vstDebug", "safeguardCenter"] as const) {
     if (value?.[key] !== CLEAN_FULL_SAFETY[key]) return `${key}=${String(value?.[key])}, expected ${CLEAN_FULL_SAFETY[key]}`;
   }
   return null;
@@ -1486,6 +1808,145 @@ function hmdPoseFrom(
     );
   }
   return pose;
+}
+
+interface HmdAcquisitionEvidence {
+  attemptCount: number;
+  acceptedSampleAgeMs: number | null;
+  policy: {
+    maxAttempts: number; pollMs: number; maxSampleAgeMs: number; maximumDurationMs: number;
+    minimumTransactionMs: number; reservedAfterMs: number;
+    phaseDeadlineMonotonicNs: string; deadlineMonotonicNs: string;
+  } | null;
+  attempts: Array<{
+    requestId: string;
+    outcome: "accepted" | "hmd_pose_stale" | "failed";
+    sampleAgeMs: number | null;
+    sampleSequence: string | null;
+    sampleObservedAtMonotonicNs: string | null;
+    readAtMonotonicNs: string | null;
+    startedAtMonotonicNs: string | null;
+    completedAtMonotonicNs: string | null;
+    root: AgentBridgeLocomotionAck["root"] | null;
+    retrySubtype: "aged_sample" | "retained_callback" | null;
+    actionReceipts: HmdResult["actionReceipts"];
+    cleanupError: string | null;
+    error: string | null;
+  }>;
+}
+
+function hmdAcquisitionEvidence(): HmdAcquisitionEvidence {
+  return { attemptCount: 0, acceptedSampleAgeMs: null, policy: null, attempts: [] };
+}
+
+function hmdCandidateRelation(pose: AgentBridgeHmdPose, floor: AgentBridgeHmdPose): "advanced" | "retained_callback" | null {
+  const sameCallback = pose.sampleSequence === floor.sampleSequence
+    && pose.sampleObservedAtMonotonicNs === floor.sampleObservedAtMonotonicNs
+    && BigInt(pose.readAtMonotonicNs) >= BigInt(floor.readAtMonotonicNs)
+    && canonicalJson(pose.position) === canonicalJson(floor.position)
+    && canonicalJson(pose.rotation) === canonicalJson(floor.rotation);
+  if (sameCallback) return "retained_callback";
+  if (BigInt(pose.sampleSequence) <= BigInt(floor.sampleSequence)
+    || BigInt(pose.sampleObservedAtMonotonicNs) <= BigInt(floor.sampleObservedAtMonotonicNs)
+    || BigInt(pose.readAtMonotonicNs) <= BigInt(floor.readAtMonotonicNs)) return null;
+  return "advanced";
+}
+
+function retryableHmdFreshness(pose: AgentBridgeHmdPose, floor?: AgentBridgeHmdPose): "aged_sample" | "retained_callback" | null {
+  if (BigInt(pose.readAtMonotonicNs) < BigInt(pose.sampleObservedAtMonotonicNs)) return null;
+  const relation = floor ? hmdCandidateRelation(pose, floor) : "advanced";
+  if (relation === null || relation === "retained_callback") return relation;
+  return hmdSampleAgeMs(pose) > IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS ? "aged_sample" : null;
+}
+
+async function acquireFreshHmdPose(
+  dependencies: InAppLocomotionDependencies,
+  phaseDeadlineNs: bigint,
+  label: string,
+  input: AgentBridgeHmdPoseRequestInput & { expectedRootGeneration: number; expectedRootIncarnation: string },
+  evidence: HmdAcquisitionEvidence,
+  reservedAfterMs: number,
+  strictlyAfterSample?: AgentBridgeHmdPose,
+): Promise<AgentBridgeHmdPose> {
+  const deadlineNs = earlierDeadline(
+    phaseDeadlineNs - BigInt(reservedAfterMs) * 1_000_000n,
+    checkedMonotonic(dependencies) + BigInt(HMD_ACQUISITION_WINDOW_MS) * 1_000_000n,
+  );
+  evidence.policy = {
+    maxAttempts: HMD_ACQUISITION_MAX_ATTEMPTS, pollMs: HMD_ACQUISITION_POLL_MS,
+    maxSampleAgeMs: IN_APP_LOCOMOTION_HMD_MAX_SAMPLE_AGE_MS, maximumDurationMs: HMD_ACQUISITION_WINDOW_MS,
+    minimumTransactionMs: BRIDGE_MIN_TRANSACTION_MS, reservedAfterMs,
+    phaseDeadlineMonotonicNs: phaseDeadlineNs.toString(), deadlineMonotonicNs: deadlineNs.toString(),
+  };
+  let lastSeen: AgentBridgeHmdPose | null = null;
+  for (let index = 0; index < HMD_ACQUISITION_MAX_ATTEMPTS; index += 1) {
+    const attempt: HmdAcquisitionEvidence["attempts"][number] = {
+      requestId: evidence.attemptCount === 0 ? input.requestId : `${input.requestId}_retry_${evidence.attemptCount + 1}`,
+      outcome: "failed", sampleAgeMs: null, sampleSequence: null,
+      sampleObservedAtMonotonicNs: null, readAtMonotonicNs: null, error: null,
+      startedAtMonotonicNs: null, completedAtMonotonicNs: null, root: null,
+      retrySubtype: null, actionReceipts: [], cleanupError: null,
+    };
+    let sampledPose: AgentBridgeHmdPose | null = null;
+    try {
+      const result = await withinDeadline(deadlineNs, dependencies, label, async (timeoutMs) => {
+        const budget = bridgeBudgetFields(timeoutMs, deadlineNs);
+        attempt.startedAtMonotonicNs = checkedMonotonic(dependencies).toString();
+        evidence.attemptCount += 1;
+        evidence.attempts.push(attempt);
+        const result = await dependencies.requestHmdPose({ ...input, ...budget, requestId: attempt.requestId });
+        attempt.actionReceipts = result.actionReceipts ?? [];
+        attempt.cleanupError = result.cleanupError ?? null;
+        const pose = result.ok ? result.ack.hmdPose : null;
+        sampledPose = pose;
+        attempt.root = result.ok ? result.ack.root : null;
+        if (pose) {
+          attempt.sampleSequence = typeof pose.sampleSequence === "string" ? pose.sampleSequence : null;
+          attempt.sampleObservedAtMonotonicNs = typeof pose.sampleObservedAtMonotonicNs === "string" ? pose.sampleObservedAtMonotonicNs : null;
+          attempt.readAtMonotonicNs = typeof pose.readAtMonotonicNs === "string" ? pose.readAtMonotonicNs : null;
+          if (/^[0-9]+$/.test(pose.sampleObservedAtMonotonicNs) && /^[0-9]+$/.test(pose.readAtMonotonicNs)) {
+            const age = Number(BigInt(pose.readAtMonotonicNs) - BigInt(pose.sampleObservedAtMonotonicNs)) / 1_000_000;
+            if (Number.isFinite(age)) attempt.sampleAgeMs = age;
+          }
+        }
+        attempt.completedAtMonotonicNs = checkedMonotonic(dependencies).toString();
+        return result;
+      });
+      const pose = hmdPoseFrom(result, input.expectedRootGeneration, input.expectedRootIncarnation, strictlyAfterSample);
+      if (lastSeen && hmdCandidateRelation(pose, lastSeen) === null) {
+        throw new LocomotionStageError("hmd_pose_stale", "HMD candidate regressed or advanced incoherently after the prior observed candidate");
+      }
+      attempt.outcome = "accepted";
+      evidence.acceptedSampleAgeMs = hmdSampleAgeMs(pose);
+      return pose;
+    } catch (error) {
+      attempt.error = errorText(error);
+      if (!(error instanceof LocomotionStageError) || error.code !== "hmd_pose_stale" || error.cleanupError || sampledPose === null) throw error;
+      if (lastSeen && hmdCandidateRelation(sampledPose, lastSeen) === null) {
+        attempt.error = "HMD candidate regressed or advanced incoherently after the prior observed candidate";
+        throw new LocomotionStageError("hmd_pose_stale", attempt.error);
+      }
+      attempt.retrySubtype = retryableHmdFreshness(sampledPose, strictlyAfterSample);
+      if (attempt.retrySubtype === null) throw error;
+      attempt.outcome = "hmd_pose_stale";
+      lastSeen = sampledPose;
+      if (index + 1 === HMD_ACQUISITION_MAX_ATTEMPTS) {
+        throw new LocomotionStageError("hmd_pose_stale", `${error.message}; HMD acquisition reached its ${HMD_ACQUISITION_MAX_ATTEMPTS}-attempt limit`);
+      }
+      try {
+        // Poll listener freshness, without changing the age/sequence gate or moving the HMD.
+        await withinDeadline(deadlineNs, dependencies, `${label} fresh-sample retry`, async (remainingMs) => {
+          if (remainingMs < HMD_ACQUISITION_POLL_MS + BRIDGE_MIN_TRANSACTION_MS) {
+            throw new Error("remaining phase deadline cannot fit another HMD transaction");
+          }
+          await (dependencies.sleep ?? sleep)(HMD_ACQUISITION_POLL_MS);
+        });
+      } catch (deadlineError) {
+        throw new LocomotionStageError("hmd_pose_stale", `${error.message}; ${errorText(deadlineError)}`);
+      }
+    }
+  }
+  throw new Error("HMD acquisition exhausted without a terminal disposition");
 }
 
 function validateRuntime(input: InAppLocomotionPrepareInput, receipt: Extract<ReceiptValidation, { status: "valid" }>["receipt"], runtime: LocomotionRuntimeBinding): void {
@@ -1811,7 +2272,7 @@ function captureReview(
   const settleStartedNs = receiptDeadlineNs - requestedDurationNs;
   if (invocationDeadlineNs !== expectation.phaseDeadlineNs
     || phaseStartedNs > admittedAtNs || admittedAtNs >= invocationDeadlineNs
-    || completedAtNs < admittedAtNs || completedAtNs > invocationDeadlineNs
+    || completedAtNs < admittedAtNs || completedAtNs >= invocationDeadlineNs
     || captureStartedNs < admittedAtNs || captureEndedNs > completedAtNs
     || settleStartedNs < captureStartedNs) {
     fail("capture runtime and settlement are outside the exact route invocation/phase fence");
@@ -2036,6 +2497,16 @@ function assertStateArtifacts(state: LocomotionState, hooks: InAppLocomotionArti
   }
 }
 
+function validateStateArtifactsWithoutMaintenance(
+  state: LocomotionState,
+  hooks: InAppLocomotionArtifactHooks = {},
+): void {
+  validateOwnedArtifactsWithoutMaintenance(state.artifact, hooks);
+  for (const [index, retained] of state.retainedLogs.entries()) {
+    assertSameArtifactFile(retained.path, retained.identity, retained.label || `retained evidence log ${index + 1}`, 64 * 1024 * 1024, hooks);
+  }
+}
+
 function stepReviewFailure(state: LocomotionState, detail: string): LocomotionStepReceipt {
   return {
     status: "review_rejected",
@@ -2058,7 +2529,7 @@ function stepReviewFailure(state: LocomotionState, detail: string): LocomotionSt
 
 function priorForegroundDispositionFor(
   input: InAppLocomotionPrepareInput,
-  priorTerminatedByRun: boolean,
+  receiptFreshness: LocomotionPriorForegroundDisposition["receiptFreshness"],
 ): LocomotionPriorForegroundDisposition {
   const declared = input.priorForeground;
   if (declared.kind === "none") {
@@ -2075,7 +2546,7 @@ function priorForegroundDispositionFor(
       kind: "receipt_bound",
       component: declared.component,
       receiptId: declared.receiptId,
-      receiptFreshness: priorTerminatedByRun ? "known_stale" : "not_evaluated_cp1",
+      receiptFreshness,
       relaunchDisposition: "withheld_receipt_bound",
     };
   }
@@ -2089,7 +2560,10 @@ function priorForegroundDispositionFor(
 }
 
 function priorForegroundDisposition(state: LocomotionState): LocomotionPriorForegroundDisposition {
-  return priorForegroundDispositionFor(state.input, state.priorTerminatedByRun);
+  return priorForegroundDispositionFor(
+    state.input,
+    state.priorTerminatedByRun ? "known_stale" : "not_evaluated_cp1",
+  );
 }
 
 function restoreReviewFailure(state: LocomotionState, detail: string): LocomotionRestoreReceipt {
@@ -2106,12 +2580,17 @@ function restoreReviewFailure(state: LocomotionState, detail: string): Locomotio
     lookRequired: true,
     requiredReview: [state.currentReview],
     priorForeground: priorForegroundDisposition(state),
+    restorationDisposition: "review_rejected",
     actionAuditMaintenance: actionAuditMaintenance(state.artifact),
   };
 }
 
 function earlierDeadline(left: bigint, right: bigint): bigint {
   return left < right ? left : right;
+}
+
+function deadlineBefore(deadlineNs: bigint, reserveMs: number): bigint {
+  return deadlineNs - BigInt(reserveMs) * 1_000_000n;
 }
 
 function remainingUntilMs(deadlineNs: bigint, dependencies: InAppLocomotionDependencies): number {
@@ -2133,7 +2612,7 @@ async function withinDeadline<T>(
   const before = Number((deadlineNs - admittedAtNs) / 1_000_000n);
   if (before < 1) throw new LocomotionStageError("budget_exhausted", `${label} cannot begin at or after its fixed phase deadline`);
   const value = await operation(before);
-  if (checkedMonotonic(dependencies) > deadlineNs) {
+  if (checkedMonotonic(dependencies) >= deadlineNs) {
     throw new LocomotionStageError("budget_exhausted", `${label} exceeded its fixed phase deadline`);
   }
   return value;
@@ -2201,7 +2680,7 @@ async function captureWithinDeadline(
   if (completedAtNs < admittedAtNs) {
     throw new LocomotionStageError("clock_failed", `${label} route clock regressed across capture completion`);
   }
-  if (completedAtNs > phaseDeadlineNs) {
+  if (completedAtNs >= phaseDeadlineNs) {
     throw new LocomotionStageError("budget_exhausted", `${label} exceeded its fixed phase deadline`);
   }
   return captured;
@@ -2330,8 +2809,14 @@ export function createInAppLocomotionOrchestrator(
     let prior: LocomotionPriorForegroundSnapshot = { component: null, packageName: null, userInstalled: false };
     let priorTerminatedByRun = false;
     let priorStopMayHaveApplied = false;
+    let priorStopAttemptedByRun = false;
+    let priorStopCommandCompletedByRun = false;
+    let priorPidAbsenceProvenByRun = false;
+    const prepareClearanceEvidence: Array<LocomotionPrepareClearanceReceipt | LocomotionPrepareClearanceProgress> = [];
+    let prepareActionDeadlineNs: bigint | null = null;
     let prepareDeadlineNs: bigint | null = null;
     let recoveryDeadlineNs: bigint | null = null;
+    let recoveryWorkDeadlineNs: bigint | null = null;
     let leaseAcquired = false;
     let preparationBegan = false;
     let preparationFinalizationAttempted = false;
@@ -2346,9 +2831,62 @@ export function createInAppLocomotionOrchestrator(
     let monitorHandoff: FreshLaunchMonitorHandoff | null = null;
     let healthBoundaryMarker: string | null = null;
     let baselineCaptureReceipt: CaptureSettledReceipt | null = null;
+    const baselineHmdAcquisition = hmdAcquisitionEvidence();
     const baselineCaptureInvocation: CaptureInvocationState = { captureInput: null, fence: null, receipt: null };
     let postCaptureContinuity: ApplicationContinuitySample | null = null;
     let postCaptureCapability: CapabilityResult | null = null;
+
+    const stopForPrepareClearance = async (
+      stopInput: { serial: string; packageName: string; reason: string } & LocomotionEffectBudget,
+    ): Promise<LocomotionTargetStopReceipt> => {
+      const stopsObservedPrior = prior.packageName === stopInput.packageName;
+      if (stopsObservedPrior) priorStopAttemptedByRun = true;
+      try {
+        const returned = await dependencies.stopPackage(stopInput);
+        const record = returned !== null && typeof returned === "object" && !Array.isArray(returned)
+          ? returned as unknown as Record<string, unknown>
+          : null;
+        if (record?.status === "stop_command_completed") {
+          const stopReceipt = checkedTargetStopReceipt(returned, stopInput);
+          prepareClearanceEvidence.push({ status: "prepare_clearance_incomplete", stopReceipt, pidAbsence: null });
+          if (stopsObservedPrior) priorStopCommandCompletedByRun = true;
+          throw new Error("prepare clearance omitted the exact clean PID-absence receipt");
+        }
+        const stopReceipt = checkedTargetStopReceipt(record?.stopReceipt, stopInput);
+        if (stopsObservedPrior) priorStopCommandCompletedByRun = true;
+        let stopped: LocomotionPrepareClearanceReceipt;
+        try {
+          stopped = checkedPrepareClearanceReceipt(returned, stopInput);
+        } catch (error) {
+          prepareClearanceEvidence.push({ status: "prepare_clearance_incomplete", stopReceipt, pidAbsence: null });
+          throw error;
+        }
+        prepareClearanceEvidence.push(stopped);
+        if (stopsObservedPrior) {
+          priorStopCommandCompletedByRun = true;
+          priorPidAbsenceProvenByRun = true;
+          priorTerminatedByRun = true;
+        }
+        return stopped.stopReceipt;
+      } catch (error) {
+        if (error instanceof LocomotionStopClearanceError) {
+          const stopReceipt = checkedTargetStopReceipt(error.stopReceipt, stopInput);
+          const progress: LocomotionPrepareClearanceProgress = {
+            status: "prepare_clearance_incomplete",
+            stopReceipt,
+            pidAbsence: null,
+          };
+          prepareClearanceEvidence.push(progress);
+          if (stopsObservedPrior) priorStopCommandCompletedByRun = true;
+          if (error.pidAbsence !== null) {
+            progress.pidAbsence = checkedCleanPidAbsenceReceipt(error.pidAbsence, stopInput);
+            if (stopsObservedPrior) priorPidAbsenceProvenByRun = true;
+          }
+          throw error.clearanceError;
+        }
+        throw error;
+      }
+    };
 
     const finishLaunchHandoffObservation = async (offered?: FreshLaunchMonitorHandoff): Promise<void> => {
       if (offered !== undefined) {
@@ -2379,7 +2917,10 @@ export function createInAppLocomotionOrchestrator(
       preparationFinalizationAttempted = true;
       const beginMarker = `PICO_LOCOMOTION_${artifact.runId.slice(0, 16)}_PREPARE_BEGIN`;
       const endMarker = `PICO_LOCOMOTION_${artifact.runId.slice(0, 16)}_PREPARE_END`;
-      const remaining = () => prepareDeadlineNs === null ? 1 : Math.max(1, remainingUntilMs(prepareDeadlineNs, dependencies));
+      const activeDeadlineNs = strictDeadline
+        ? prepareDeadlineNs
+        : recoveryWorkDeadlineNs ?? recoveryDeadlineNs ?? prepareDeadlineNs;
+      const remaining = () => activeDeadlineNs === null ? 1 : Math.max(1, remainingUntilMs(activeDeadlineNs, dependencies));
       if (strictDeadline && prepareDeadlineNs !== null) {
         await withinDeadline(prepareDeadlineNs, dependencies, "prepare END marker", (timeoutMs) => dependencies.emitMarker({
           serial: input.serial,
@@ -2392,7 +2933,7 @@ export function createInAppLocomotionOrchestrator(
           serial: input.serial,
           marker: endMarker,
           timeoutMs: remaining(),
-          deadlineMonotonicNs: (recoveryDeadlineNs ?? prepareDeadlineNs ?? 0n).toString(),
+          deadlineMonotonicNs: (activeDeadlineNs ?? 0n).toString(),
         });
       }
       const logPath = path.join(artifact.absoluteRoot, "logs", "000-prepare.log");
@@ -2404,7 +2945,7 @@ export function createInAppLocomotionOrchestrator(
         endMarker,
         path: logPath,
         timeoutMs: Math.max(1, Math.min(10_000, timeoutMs)),
-        deadlineMonotonicNs: (strictDeadline ? prepareDeadlineNs : recoveryDeadlineNs ?? prepareDeadlineNs ?? 0n)!.toString(),
+        deadlineMonotonicNs: (activeDeadlineNs ?? 0n).toString(),
       });
       const collected = strictDeadline && prepareDeadlineNs !== null
         ? await withinDeadline(prepareDeadlineNs, dependencies, "prepare bounded log", collect)
@@ -2426,10 +2967,18 @@ export function createInAppLocomotionOrchestrator(
       healthBoundaryMarker = `PICO_LOCOMOTION_${artifact.runId.slice(0, 16)}_PREPARE_BEGIN`;
       const deadlineNs = reserved.startedAtNs + BigInt(input.budgets.maxDurationMs) * 1_000_000n;
       recoveryDeadlineNs = deadlineNs;
+      recoveryWorkDeadlineNs = deadlineBefore(
+        recoveryDeadlineNs,
+        FINAL_ACTION_PUBLICATION_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
       serialOwners.set(input.serial, { runId: artifact.runId, status: "active", reason: "prepare lifecycle active" });
       leaseAcquired = true;
-      prepareDeadlineNs = deadlineNs
+      prepareActionDeadlineNs = deadlineNs
         - BigInt(input.budgets.routeReserveMs + input.budgets.restorationReserveMs) * 1_000_000n;
+      prepareDeadlineNs = deadlineBefore(
+        prepareActionDeadlineNs,
+        PREPARE_ACTION_PUBLICATION_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
       prior = await withinDeadline(prepareDeadlineNs, dependencies, "prior foreground snapshot", (timeoutMs) =>
         dependencies.snapshotPriorForeground({
           serial: input.serial,
@@ -2454,9 +3003,7 @@ export function createInAppLocomotionOrchestrator(
           timeoutMs,
           deadlineMonotonicNs: prepareDeadlineNs!.toString(),
         };
-        const stopped = checkedTargetStopReceipt(await dependencies.stopPackage(stopInput), stopInput);
-        if (prior.packageName === input.scenario.packageName) priorTerminatedByRun = true;
-        return stopped;
+        return stopForPrepareClearance(stopInput);
       });
       if (prior.packageName && prior.packageName !== input.scenario.packageName) {
         priorStopMayHaveApplied = true;
@@ -2468,9 +3015,7 @@ export function createInAppLocomotionOrchestrator(
             timeoutMs,
             deadlineMonotonicNs: prepareDeadlineNs!.toString(),
           };
-          const stopped = checkedTargetStopReceipt(await dependencies.stopPackage(stopInput), stopInput);
-          priorTerminatedByRun = true;
-          return stopped;
+          return stopForPrepareClearance(stopInput);
         });
       }
       runOwnedTarget = true;
@@ -2549,15 +3094,14 @@ export function createInAppLocomotionOrchestrator(
         || !ROOT_INCARNATION.test(root.incarnation)) {
         throw new LocomotionStageError("capability_unavailable", "commands preflight did not bind one registered AgentWorldRoot generation/incarnation");
       }
-      const hmd = hmdPoseFrom(await withinDeadline(prepareDeadlineNs, dependencies, "baseline HMD pose", (timeoutMs) => dependencies.requestHmdPose({
+      const hmd = await acquireFreshHmdPose(dependencies, prepareDeadlineNs, "baseline HMD pose", {
         serial: input.serial,
         packageName: input.scenario.packageName,
         requestId: `prepare_hmd_pose_${artifact!.runId.slice(0, 24)}`,
         tag: "prepare",
         expectedRootGeneration: root.generation,
         expectedRootIncarnation: root.incarnation,
-        ...bridgeBudgetFields(timeoutMs, prepareDeadlineNs!),
-      })), root.generation, root.incarnation);
+      }, baselineHmdAcquisition, 60_001 + input.capture.deadlineMs + BRIDGE_MIN_TRANSACTION_MS);
       if (remainingUntilMs(prepareDeadlineNs, dependencies) < 60_001 + input.capture.deadlineMs + BRIDGE_MIN_TRANSACTION_MS) {
         throw new LocomotionStageError(
           "budget_exhausted",
@@ -2722,8 +3266,10 @@ export function createInAppLocomotionOrchestrator(
         restoreAttempts: 0,
         restoreCompleted: false,
         completedRestore: null,
+        terminalSafeRelease: null,
         priorRestoreProofDisposition: null,
         zeroOffsetRecoveryProven: false,
+        nonzeroMutationMayHaveApplied: false,
         adjudicated: false,
         currentReviewReflectsNonzeroMutation: false,
         unquiescedLocomotion: null,
@@ -2743,6 +3289,7 @@ export function createInAppLocomotionOrchestrator(
         safetyBaseline: safety,
         capability,
         hmdBaseline: hmd,
+        hmdBaselineAcquisition: baselineHmdAcquisition,
         freshLaunchMonitor,
         launchHandoffWindow,
         launchHandoffObservation,
@@ -2752,11 +3299,16 @@ export function createInAppLocomotionOrchestrator(
         postCaptureContinuity,
         postCaptureCapability,
         observedPriorForeground: prior,
+        prepareClearanceEvidence,
         serialLease: { status: "active", reason: "reviewed route requires restore" },
         rootGeneration: root.generation,
         rootIncarnation: root.incarnation,
         captureSha256: review.captureSha256,
-      }, hooks);
+      }, hooks, {
+        deadlineNs: prepareActionDeadlineNs,
+        monotonicNs: () => checkedMonotonic(dependencies),
+        label: "prepare action publication",
+      });
       runs.set(artifact.runId, state);
       return {
         status: "needs_baseline_review",
@@ -2774,6 +3326,7 @@ export function createInAppLocomotionOrchestrator(
         actionAuditMaintenance: actionAudit,
       };
     } catch (error) {
+      const completedPrepareActionCommitted = error instanceof ActionPublicationFenceError && error.committed;
       const cleanupErrors: string[] = [];
       if (launchHandoffPromise !== null) {
         try { await finishLaunchHandoffObservation(); } catch (handoffError) {
@@ -2799,11 +3352,12 @@ export function createInAppLocomotionOrchestrator(
           cleanupOnly: true,
         };
         try {
-          const remaining = remainingUntilMs(recoveryDeadlineNs, dependencies);
+          const deadline = recoveryWorkDeadlineNs ?? recoveryDeadlineNs;
+          const remaining = remainingUntilMs(deadline, dependencies);
           if (remaining < 1_000) throw new Error(`${label} cannot begin within the reserved recovery deadline`);
           return {
             timeoutMs: Math.min(10_000, remaining),
-            deadlineMonotonicNs: recoveryDeadlineNs.toString(),
+            deadlineMonotonicNs: deadline.toString(),
           };
         } catch (clockError) {
           cleanupErrors.push(`${label} budget clock: ${errorText(clockError)}`);
@@ -2830,7 +3384,12 @@ export function createInAppLocomotionOrchestrator(
           cleanupErrors.push(errorText(cleanup));
         }
       }
-      const priorDisposition = priorForegroundDispositionFor(input, priorTerminatedByRun);
+      const priorReceiptFreshness: LocomotionPriorForegroundDisposition["receiptFreshness"] = priorPidAbsenceProvenByRun
+        ? "known_stale"
+        : priorStopAttemptedByRun || priorStopCommandCompletedByRun
+          ? "unknown_after_stop_attempt"
+          : "not_evaluated_cp1";
+      const priorDisposition = priorForegroundDispositionFor(input, priorReceiptFreshness);
       if (input.priorForeground.kind === "non_receipt_bound" && priorStopMayHaveApplied) {
         try {
           const relaunched = await dependencies.relaunchPrior({
@@ -2901,25 +3460,36 @@ export function createInAppLocomotionOrchestrator(
           failureActionMaintenance = appendAction(artifact, {
             action: "prepare",
             status: "failed",
+            ...(completedPrepareActionCommitted
+              ? { compensatesActionOperationId: "prepare:terminal" }
+              : {}),
             structuralStop: code,
             primaryError: errorText(error),
             cleanupError: cleanupErrors.length ? cleanupErrors.join("; ") : null,
             observedPriorForeground: prior,
             priorForeground: priorDisposition,
+            prepareClearanceEvidence,
             compensation,
             serialLease: {
-              status: compensationProven ? "released" : "quarantined",
-              reason: compensationProven ? "compensation and final proof completed" : "prepare compensation remains unproven",
+              status: compensationProven ? "release_eligible_after_action_publication" : "quarantined",
+              reason: compensationProven
+                ? "compensation and final proof completed; release requires this fixed-deadline action publication"
+                : "prepare compensation remains unproven",
             },
             preparationLogEvidence,
             freshLaunchMonitor,
             launchHandoffWindow,
             launchHandoffObservation,
+            hmdBaselineAcquisition: baselineHmdAcquisition,
             captureReceipt: baselineCaptureReceipt ?? baselineCaptureInvocation.receipt,
             captureInvocation: baselineCaptureInvocation.fence,
             postCaptureContinuity,
             postCaptureCapability,
-          }, hooks);
+          }, hooks, {
+            deadlineNs: recoveryDeadlineNs!,
+            monotonicNs: () => checkedMonotonic(dependencies),
+            label: "failed prepare action publication",
+          });
           failureAuditProven = true;
         } catch (auditError) {
           cleanupErrors.push(`failed action audit: ${errorText(auditError)}`);
@@ -2966,16 +3536,65 @@ export function createInAppLocomotionOrchestrator(
     } catch (error) {
       return stepReviewFailure(state, `reviewed retained image failed its immutable sha256 check: ${errorText(error)}`);
     }
-    assertStateArtifacts(state, hooks);
+    validateStateArtifactsWithoutMaintenance(state, hooks);
     assertCurrentReceiptAndSpec(state, dependencies);
     const operationStarted = checkedMonotonic(dependencies);
     state.nextWaypoint += 1;
     state.usage.waypointAttempts += 1;
     const routeRemainingMs = state.input.budgets.routeReserveMs - state.usage.routeDurationMs;
     const beforeRestoreDeadlineNs = state.deadlineNs - BigInt(state.input.budgets.restorationReserveMs) * 1_000_000n;
-    const stepDeadlineNs = earlierDeadline(
+    const actionPublicationDeadlineNs = earlierDeadline(
       beforeRestoreDeadlineNs,
       operationStarted + BigInt(Math.max(0, routeRemainingMs)) * 1_000_000n,
+    );
+    const stepDeadlineNs = deadlineBefore(
+      actionPublicationDeadlineNs,
+      STEP_ACTION_PUBLICATION_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+    );
+    const endMarkerDeadlineNs = deadlineBefore(
+      stepDeadlineNs,
+      STEP_LOG_FINALIZATION_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+    );
+    const nonFinalDeadlineNs = deadlineBefore(
+      endMarkerDeadlineNs,
+      STEP_END_MARKER_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+    );
+    const postContinuityDeadlineNs = nonFinalDeadlineNs;
+    const postSafetyDeadlineNs = deadlineBefore(
+      postContinuityDeadlineNs,
+      APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+    );
+    const postHmdDeadlineNs = deadlineBefore(
+      postSafetyDeadlineNs,
+      POST_HMD_SAFETY_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+    );
+    const captureDeadlineNs = deadlineBefore(
+      postHmdDeadlineNs,
+      HMD_ACQUISITION_WINDOW_MS + STAGE_HANDOFF_GUARD_MS,
+    );
+    const nonceCleanupDeadlineNs = deadlineBefore(
+      captureDeadlineNs,
+      state.input.capture.deadlineMs + CAPTURE_COMPLETION_GUARD_MS + STAGE_HANDOFF_GUARD_MS,
+    );
+    const locomotionDeadlineNs = deadlineBefore(
+      nonceCleanupDeadlineNs,
+      NONCE_CLEANUP_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+    );
+    const preHmdDeadlineNs = deadlineBefore(
+      locomotionDeadlineNs,
+      BRIDGE_MIN_TRANSACTION_MS + state.input.route.glideDurationMs + STAGE_HANDOFF_GUARD_MS,
+    );
+    const preContinuityDeadlineNs = deadlineBefore(
+      preHmdDeadlineNs,
+      HMD_ACQUISITION_WINDOW_MS + STAGE_HANDOFF_GUARD_MS,
+    );
+    const preSafetyDeadlineNs = deadlineBefore(
+      preContinuityDeadlineNs,
+      APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+    );
+    const beginMarkerDeadlineNs = deadlineBefore(
+      preSafetyDeadlineNs,
+      STEP_PRE_SAFETY_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
     );
     const beginMarker = `PICO_LOCOMOTION_${state.artifact.runId.slice(0, 16)}_${waypoint.seq}_BEGIN`;
     const endMarker = `PICO_LOCOMOTION_${state.artifact.runId.slice(0, 16)}_${waypoint.seq}_END`;
@@ -2990,10 +3609,17 @@ export function createInAppLocomotionOrchestrator(
     let preSafety: LocomotionSafetySnapshot | null = null;
     let preContinuity: ApplicationContinuitySample | null = null;
     let preHmd: AgentBridgeHmdPose | null = null;
+    const preHmdAcquisition = hmdAcquisitionEvidence();
+    const postHmdAcquisition = hmdAcquisitionEvidence();
     let locomotion: LocomotionResult | null = null;
     let locomotionMayHaveApplied = false;
     let pendingNonceRequestId: string | null = null;
-    let emergencyStop: { attempted: boolean; proven: boolean; error: string | null } | null = null;
+    let emergencyStop: {
+      attempted: boolean;
+      stopCommandReceipt: LocomotionTargetStopReceipt | null;
+      targetAbsenceProven: false;
+      error: string | null;
+    } | null = null;
     let captureReceipt: CaptureSettledReceipt | null = null;
     const captureInvocation: CaptureInvocationState = { captureInput: null, fence: null, receipt: null };
     let capturedFrame: Buffer | null = null;
@@ -3002,53 +3628,61 @@ export function createInAppLocomotionOrchestrator(
     let postContinuity: ApplicationContinuitySample | null = null;
     let locomotionNonceCleanup: AgentBridgeLocomotionNonceCleanupReceipt | null = null;
     try {
-      const initialRemainingMs = remainingUntilMs(stepDeadlineNs, dependencies);
-      if (initialRemainingMs <= state.input.capture.deadlineMs) {
-        throw new LocomotionStageError("budget_exhausted", "route deadline cannot preserve the capture and restoration reserves");
+      const routeWorkFloorNs = BigInt(routeStepFloorMs(
+        state.input.capture.deadlineMs,
+        state.input.route.glideDurationMs,
+      ) - STEP_ACTION_PUBLICATION_RESERVE_MS - STAGE_HANDOFF_GUARD_MS) * 1_000_000n;
+      const initialRemainingNs = stepDeadlineNs - checkedMonotonic(dependencies);
+      if (initialRemainingNs <= routeWorkFloorNs) {
+        throw new LocomotionStageError("budget_exhausted", "route deadline cannot preserve the complete mutation, evidence, and restoration reserves");
       }
       began = true;
-      await withinDeadline(stepDeadlineNs, dependencies, "step BEGIN marker", (timeoutMs) => dependencies.emitMarker({
+      await withinDeadline(beginMarkerDeadlineNs, dependencies, "step BEGIN marker", (timeoutMs) => dependencies.emitMarker({
         serial: state.input.serial,
         marker: beginMarker,
         timeoutMs,
-        deadlineMonotonicNs: stepDeadlineNs.toString(),
+        deadlineMonotonicNs: beginMarkerDeadlineNs.toString(),
       }));
-      preSafety = await withinDeadline(stepDeadlineNs, dependencies, "pre-step safety", (timeoutMs) => dependencies.sampleSafety({
+      preSafety = await withinDeadline(preSafetyDeadlineNs, dependencies, "pre-step safety", (timeoutMs) => dependencies.sampleSafety({
         serial: state.input.serial,
         phase: `step_${waypoint.seq}_pre`,
         timeoutMs,
-        deadlineMonotonicNs: stepDeadlineNs.toString(),
+        deadlineMonotonicNs: preSafetyDeadlineNs.toString(),
       }));
       const preSafetyProblem = safetyProblem(preSafety);
       if (preSafetyProblem) throw new LocomotionStageError("safety_drift", `pre-step safety drift: ${preSafetyProblem}`);
-      preContinuity = await withinDeadline(stepDeadlineNs, dependencies, "pre-step continuity", (timeoutMs) => dependencies.sampleContinuity({
+      preContinuity = await withinDeadline(preContinuityDeadlineNs, dependencies, "pre-step continuity", (timeoutMs) => dependencies.sampleContinuity({
         serial: state.input.serial,
         phase: `step_${waypoint.seq}_pre`,
         runtime: state.runtime,
         artifactRoot: state.artifact.absoluteRoot,
         timeoutMs,
-        deadlineMonotonicNs: stepDeadlineNs.toString(),
+        deadlineMonotonicNs: preContinuityDeadlineNs.toString(),
       }));
       const preContinuityProblem = continuityProblem(preContinuity, state.runtime);
       if (preContinuityProblem) throw new LocomotionStageError("binding_lost", preContinuityProblem);
-      preHmd = hmdPoseFrom(await withinDeadline(stepDeadlineNs, dependencies, "pre-step HMD pose", (timeoutMs) => dependencies.requestHmdPose({
+      preHmd = await acquireFreshHmdPose(dependencies, stepDeadlineNs, "pre-step HMD pose", {
         serial: state.input.serial,
         packageName: state.input.scenario.packageName,
         requestId: `step_${waypoint.seq}_pre_${state.artifact.runId.slice(0, 20)}`,
         tag: `step-${waypoint.seq}-pre`,
         expectedRootGeneration: state.rootGeneration,
         expectedRootIncarnation: state.rootIncarnation,
-        ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
-      })), state.rootGeneration, state.rootIncarnation, state.lastHmdSample);
+      }, preHmdAcquisition, postPreHmdReserveMs(
+        state.input.capture.deadlineMs,
+        state.input.route.glideDurationMs,
+      ), state.lastHmdSample);
       if (translationDistance(state.baselineHmd.position, preHmd.position) > 0.02) {
         throw new LocomotionStageError("hmd_translation_drift", "pre-step Euclidean HMD translation drift exceeded exactly 0.02 m");
       }
-      if (remainingUntilMs(stepDeadlineNs, dependencies) <= state.input.capture.deadlineMs) {
+      if (remainingUntilMs(locomotionDeadlineNs, dependencies)
+        < BRIDGE_MIN_TRANSACTION_MS + state.input.route.glideDurationMs) {
         throw new LocomotionStageError("budget_exhausted", "route budget was exhausted before locomotion mutation");
       }
       const rootBefore = state.rootGeneration;
       const locomotionRequestId = `step_${waypoint.seq}_move_${state.artifact.runId.slice(0, 20)}`;
       locomotionMayHaveApplied = true;
+      if (nonzeroPosition(waypoint.target)) state.nonzeroMutationMayHaveApplied = true;
       pendingNonceRequestId = locomotionRequestId;
       state.pendingLocomotionNonce = {
         requestId: locomotionRequestId,
@@ -3058,7 +3692,7 @@ export function createInAppLocomotionOrchestrator(
         rootIncarnation: state.rootIncarnation,
         attempts: 0,
       };
-      await withinDeadline(stepDeadlineNs, dependencies, "selected locomotion", async (timeoutMs) => {
+      await withinDeadline(locomotionDeadlineNs, dependencies, "selected locomotion", async (timeoutMs) => {
         const retained = await dependencies.requestLocomotion({
           serial: state.input.serial,
           packageName: state.input.scenario.packageName,
@@ -3071,7 +3705,7 @@ export function createInAppLocomotionOrchestrator(
           glideDurationMs: state.input.route.glideDurationMs,
           physicalWalk: false,
           deferNonceCleanup: true,
-          ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
+          ...bridgeBudgetFields(timeoutMs, locomotionDeadlineNs),
         });
         locomotion = retained;
         validateDeferredLocomotionNonceDisposition(retained, state.pendingLocomotionNonce!);
@@ -3080,7 +3714,7 @@ export function createInAppLocomotionOrchestrator(
       const retainedLocomotion = locomotion as LocomotionResult | null;
       if (retainedLocomotion === null) throw new Error("selected locomotion returned without a retained result");
       if (retainedLocomotion.motionQuiesced && pendingNonceRequestId !== null) {
-        await withinDeadline(stepDeadlineNs, dependencies, "locomotion nonce cleanup", async (timeoutMs) => {
+        await withinDeadline(nonceCleanupDeadlineNs, dependencies, "locomotion nonce cleanup", async (timeoutMs) => {
           const pending = state.pendingLocomotionNonce!;
           try {
             const receipt = await dependencies.cleanupLocomotionNonce({
@@ -3091,7 +3725,7 @@ export function createInAppLocomotionOrchestrator(
               rootGeneration: pending.rootGeneration,
               rootIncarnation: pending.rootIncarnation,
               timeoutMs,
-              deadlineMonotonicNs: stepDeadlineNs.toString(),
+              deadlineMonotonicNs: nonceCleanupDeadlineNs.toString(),
             });
             // Once a cleanup dependency resolves, its removal effect may have
             // started even when its receipt is malformed. Recovery is therefore
@@ -3131,12 +3765,12 @@ export function createInAppLocomotionOrchestrator(
         throw new LocomotionStageError("root_readback_mismatch", "locomotion acknowledgement lost exact mechanism/target/root-generation readback binding");
       }
       state.rootGeneration = expectedGeneration;
-      const captureRemainingMs = remainingUntilMs(stepDeadlineNs, dependencies);
+      const captureRemainingMs = remainingUntilMs(captureDeadlineNs, dependencies);
       if (captureRemainingMs < 2) throw new LocomotionStageError("budget_exhausted", "route budget was exhausted before transition capture");
       const capturePath = path.join(state.artifact.absoluteRoot, "captures", `${String(waypoint.seq).padStart(3, "0")}-waypoint.png`);
       const captured = await captureWithinDeadline(
         operationStarted,
-        stepDeadlineNs,
+        captureDeadlineNs,
         dependencies,
         "waypoint transition-stable capture",
         captureInvocation,
@@ -3167,36 +3801,35 @@ export function createInAppLocomotionOrchestrator(
       capturedReview = captureReview(captured, {
         captureInput: waypointCaptureInput,
         captureInvocation: waypointCaptureFence,
-        phaseDeadlineNs: stepDeadlineNs,
+        phaseDeadlineNs: captureDeadlineNs,
         role: "waypoint",
         runtime: state.runtime,
         waypointSeq: waypoint.seq,
       });
-      postHmd = hmdPoseFrom(await withinDeadline(stepDeadlineNs, dependencies, "post-step HMD pose", (timeoutMs) => dependencies.requestHmdPose({
+      postHmd = await acquireFreshHmdPose(dependencies, stepDeadlineNs, "post-step HMD pose", {
         serial: state.input.serial,
         packageName: state.input.scenario.packageName,
         requestId: `step_${waypoint.seq}_post_${state.artifact.runId.slice(0, 20)}`,
         tag: `step-${waypoint.seq}-post`,
         expectedRootGeneration: state.rootGeneration,
         expectedRootIncarnation: state.rootIncarnation,
-        ...bridgeBudgetFields(timeoutMs, stepDeadlineNs),
-      })), state.rootGeneration, state.rootIncarnation, preHmd);
+      }, postHmdAcquisition, POST_HMD_DOWNSTREAM_RESERVE_MS, preHmd);
       drift = driftReceipt(state.baselineHmd, preHmd, postHmd);
-      postSafety = await withinDeadline(stepDeadlineNs, dependencies, "post-step safety", (timeoutMs) => dependencies.sampleSafety({
+      postSafety = await withinDeadline(postSafetyDeadlineNs, dependencies, "post-step safety", (timeoutMs) => dependencies.sampleSafety({
         serial: state.input.serial,
         phase: `step_${waypoint.seq}_post`,
         timeoutMs,
-        deadlineMonotonicNs: stepDeadlineNs.toString(),
+        deadlineMonotonicNs: postSafetyDeadlineNs.toString(),
       }));
       const postSafetyProblem = safetyProblem(postSafety);
       if (postSafetyProblem) throw new LocomotionStageError("safety_drift", `post-step safety drift: ${postSafetyProblem}`);
-      postContinuity = await withinDeadline(stepDeadlineNs, dependencies, "post-step continuity", (timeoutMs) => dependencies.sampleContinuity({
+      postContinuity = await withinDeadline(postContinuityDeadlineNs, dependencies, "post-step continuity", (timeoutMs) => dependencies.sampleContinuity({
         serial: state.input.serial,
         phase: `step_${waypoint.seq}_post`,
         runtime: state.runtime,
         artifactRoot: state.artifact.absoluteRoot,
         timeoutMs,
-        deadlineMonotonicNs: stepDeadlineNs.toString(),
+        deadlineMonotonicNs: postContinuityDeadlineNs.toString(),
       }));
       const postContinuityProblem = continuityProblem(postContinuity, state.runtime);
       if (postContinuityProblem) throw new LocomotionStageError("binding_lost", postContinuityProblem);
@@ -3213,17 +3846,17 @@ export function createInAppLocomotionOrchestrator(
       const stepRecoveryBudget = (): LocomotionEffectBudget => {
         if (recoveryBudget !== null) return recoveryBudget;
         try {
-          const remaining = remainingUntilMs(stepDeadlineNs, dependencies);
-          if (remaining < 1) throw new Error("step recovery reached the fixed route deadline");
+          const remaining = remainingUntilMs(nonFinalDeadlineNs, dependencies);
+          if (remaining < 1) throw new Error("step recovery reached the fixed non-final route deadline");
           recoveryBudget = {
             timeoutMs: Math.min(5_000, remaining),
-            deadlineMonotonicNs: stepDeadlineNs.toString(),
+            deadlineMonotonicNs: nonFinalDeadlineNs.toString(),
           };
         } catch (clockError) {
           cleanupErrors.push(`step recovery budget clock: ${errorText(clockError)}`);
           recoveryBudget = {
             timeoutMs: 5_000,
-            deadlineMonotonicNs: stepDeadlineNs.toString(),
+            deadlineMonotonicNs: nonFinalDeadlineNs.toString(),
             cleanupOnly: true,
           };
         }
@@ -3231,7 +3864,12 @@ export function createInAppLocomotionOrchestrator(
       };
       if (locomotionMayHaveApplied && state.targetOwned
         && ((locomotion as LocomotionResult | null)?.motionQuiesced !== true || state.pendingLocomotionNonce !== null)) {
-        emergencyStop = { attempted: true, proven: false, error: null };
+        emergencyStop = {
+          attempted: true,
+          stopCommandReceipt: null,
+          targetAbsenceProven: false,
+          error: null,
+        };
         try {
           const stopInput = {
             serial: state.input.serial,
@@ -3239,10 +3877,17 @@ export function createInAppLocomotionOrchestrator(
             reason: "step_unquiesced_locomotion",
             ...stepRecoveryBudget(),
           };
-          checkedTargetStopReceipt(await dependencies.stopPackage(stopInput), stopInput);
-          state.targetOwned = false;
-          emergencyStop.proven = true;
-          state.unquiescedLocomotion = null;
+          emergencyStop.stopCommandReceipt = checkedTargetStopReceipt(
+            await dependencies.stopPackage(stopInput),
+            stopInput,
+          );
+          // A force-stop command receipt is not process-absence proof. Keep the
+          // target, writer, and nonce cleanup owned until restore's exact
+          // PID/activity probe proves that no guest writer remains.
+          state.unquiescedLocomotion = pendingNonceRequestId === null ? null : {
+            requestId: pendingNonceRequestId,
+            relativePath: locomotionNonceRelativePath(pendingNonceRequestId),
+          };
         } catch (stopError) {
           emergencyStop.error = errorText(stopError);
           cleanupErrors.push(`step emergency target stop: ${emergencyStop.error}`);
@@ -3260,51 +3905,27 @@ export function createInAppLocomotionOrchestrator(
           }
         }
       }
-      if (locomotionMayHaveApplied && !state.targetOwned && state.pendingLocomotionNonce !== null) {
-        const pending = state.pendingLocomotionNonce;
-        try {
-          const receipt = await dependencies.cleanupLocomotionNonce({
-            serial: state.input.serial,
-            packageName: state.input.scenario.packageName,
-            requestId: pending.requestId,
-            tag: pending.tag,
-            rootGeneration: pending.rootGeneration,
-            rootIncarnation: pending.rootIncarnation,
-            processStopped: true,
-            ...(pending.attempts === 1 ? { probeOnly: true as const } : {}),
-            ...stepRecoveryBudget(),
-          });
-          pending.attempts = 1;
-          locomotionNonceCleanup = validateLocomotionNonceCleanupReceipt(receipt, pending, true);
-          if (state.pendingLocomotionNonce === pending) state.pendingLocomotionNonce = null;
-          if (pendingNonceRequestId === pending.requestId) pendingNonceRequestId = null;
-          if (receipt.removalError) cleanupErrors.push(`step locomotion nonce removal warning: ${receipt.removalError}`);
-        } catch (cleanupError) {
-          pending.attempts = nonceCleanupFailureDisposition(cleanupError).removalStarted ? 1 : pending.attempts;
-          cleanupErrors.push(`step locomotion nonce cleanup: ${errorText(cleanupError)}`);
-          const lease = serialOwners.get(state.input.serial);
-          if (lease?.runId === state.artifact.runId) {
-            serialOwners.set(state.input.serial, {
-              runId: state.artifact.runId,
-              status: "quarantined",
-              reason: "locomotion nonce cleanup remains unproven after quiescence or a proven target stop",
-            });
-          }
-        }
-      }
     } finally {
       if (began) {
         try {
-          await dependencies.emitMarker({
+          await withinDeadline(endMarkerDeadlineNs, dependencies, "step END marker", (timeoutMs) => dependencies.emitMarker({
             serial: state.input.serial,
             marker: endMarker,
-            timeoutMs: Math.max(1, remainingUntilMs(stepDeadlineNs, dependencies)),
-            deadlineMonotonicNs: stepDeadlineNs.toString(),
-          });
+            timeoutMs,
+            deadlineMonotonicNs: endMarkerDeadlineNs.toString(),
+          }));
         } catch (error) {
           cleanupErrors.push(`END marker: ${errorText(error)}`);
         }
         try {
+          const admittedAtNs = checkedMonotonic(dependencies);
+          if (admittedAtNs >= stepDeadlineNs) {
+            throw new LocomotionStageError("budget_exhausted", "step bounded log finalization cannot begin at or after its fixed phase deadline");
+          }
+          const timeoutMs = Number((stepDeadlineNs - admittedAtNs) / 1_000_000n);
+          if (timeoutMs < 1) {
+            throw new LocomotionStageError("budget_exhausted", "step bounded log finalization cannot begin at or after its fixed phase deadline");
+          }
           const collectedLog = checkedLogEvidence(await dependencies.collectStepLogs({
             serial: state.input.serial,
             packageName: state.input.scenario.packageName,
@@ -3312,12 +3933,15 @@ export function createInAppLocomotionOrchestrator(
             beginMarker,
             endMarker,
             path: logPath,
-            timeoutMs: Math.max(1, Math.min(10_000, remainingUntilMs(stepDeadlineNs, dependencies))),
+            timeoutMs: Math.min(STEP_LOG_FINALIZATION_RESERVE_MS, timeoutMs),
             deadlineMonotonicNs: stepDeadlineNs.toString(),
           }), logPath, state.input.scenario.packageName, beginMarker, endMarker, hooks);
           const identity = artifactFileIdentity(collectedLog.path, "retained step log", 64 * 1024 * 1024);
           state.retainedLogs.push({ path: collectedLog.path, identity, label: `retained step ${waypoint.seq} log` });
           logEvidence = collectedLog;
+          if (checkedMonotonic(dependencies) >= stepDeadlineNs) {
+            throw new LocomotionStageError("budget_exhausted", "step bounded log finalization exceeded its fixed phase deadline");
+          }
         } catch (error) {
           cleanupErrors.push(`bounded log finalization: ${errorText(error)}`);
         }
@@ -3342,6 +3966,13 @@ export function createInAppLocomotionOrchestrator(
     let operationEnded = operationStarted;
     try {
       operationEnded = checkedMonotonic(dependencies);
+      if (operationEnded >= stepDeadlineNs) {
+        const detail = "step evidence finalization exceeded its fixed phase deadline";
+        if (primaryError === null) {
+          primaryError = detail;
+          primaryCode = "budget_exhausted";
+        } else cleanupErrors.push(detail);
+      }
     } catch (clockError) {
       const detail = `step end clock: ${errorText(clockError)}`;
       if (primaryError === null) {
@@ -3363,6 +3994,8 @@ export function createInAppLocomotionOrchestrator(
       ...state.usage,
       successfulWaypoints: state.usage.successfulWaypoints + (succeeded ? 1 : 0),
     };
+    const immutableActionCompleted = succeeded;
+    let committedCompletedAction = false;
     let structuralStop = succeeded ? null : primaryCode ?? "step_cleanup_failed";
     let actionAudit = actionAuditMaintenance(state.artifact);
     try {
@@ -3379,18 +4012,24 @@ export function createInAppLocomotionOrchestrator(
         captureSha256: capturedReview?.captureSha256 ?? null,
         waypointAttempts: state.usage.waypointAttempts,
         usage: publishedUsage,
-        pre: { safety: preSafety, continuity: preContinuity, hmdPose: preHmd },
+        pre: { safety: preSafety, continuity: preContinuity, hmdPose: preHmd, hmdAcquisition: preHmdAcquisition },
         locomotion,
         locomotionNonceCleanup,
         emergencyStop,
         captureReceipt: captureReceipt ?? captureInvocation.receipt,
         captureInvocation: captureInvocation.fence,
-        post: { hmdPose: postHmd, safety: postSafety, continuity: postContinuity },
+        post: { hmdPose: postHmd, hmdAcquisition: postHmdAcquisition, safety: postSafety, continuity: postContinuity },
         hmdDrift: drift,
         logEvidence,
         priorActionAuditMaintenance: actionAuditMaintenance(state.artifact),
-      }, hooks);
+      }, hooks, {
+        deadlineNs: actionPublicationDeadlineNs,
+        monotonicNs: () => checkedMonotonic(dependencies),
+        label: "step action publication",
+      });
     } catch (auditError) {
+      committedCompletedAction = auditError instanceof ActionPublicationFenceError
+        && auditError.committed && immutableActionCompleted;
       if (/conflict|changed after immutable publication|authoritative action record|derived action JSONL/i.test(errorText(auditError))) {
         state.actionAuditConflict = true;
       }
@@ -3402,14 +4041,13 @@ export function createInAppLocomotionOrchestrator(
       }
       succeeded = false;
       structuralStop = primaryCode ?? "action_audit_failed";
+      actionAudit = actionAuditMaintenance(state.artifact);
     }
-    if (succeeded) {
-      state.status = "stepped";
+    if (succeeded || committedCompletedAction) {
       state.usage.successfulWaypoints = publishedUsage.successfulWaypoints;
       state.lastHmdSample = postHmd!;
-    } else {
-      state.status = "stopped";
     }
+    state.status = succeeded ? "stepped" : "stopped";
     return {
       status: succeeded
         ? state.nextWaypoint >= state.input.route.waypoints.length ? "route_complete_needs_restore" : "needs_waypoint_review"
@@ -3433,12 +4071,26 @@ export function createInAppLocomotionOrchestrator(
   };
 
   const executeRestore = async (input: InAppLocomotionRestoreInput, state: LocomotionState): Promise<LocomotionRestoreReceipt> => {
-    if (state.completedRestore !== null) {
-      if (input.reviewedPriorFrame.captureSha256 !== state.completedRestore.reviewedPriorSha256
+    const terminalRestore = state.completedRestore ?? state.terminalSafeRelease;
+    if (terminalRestore !== null) {
+      if (input.reviewedPriorFrame.captureSha256 !== terminalRestore.reviewedPriorSha256
         && input.reviewedPriorFrame.captureSha256 !== state.currentReview.captureSha256) {
-        return restoreReviewFailure(state, "reviewed capture SHA does not match the completed restore request or exact recovery frame");
+        return restoreReviewFailure(state, "reviewed capture SHA does not match the terminal restore request or exact retained frame");
       }
-      return state.completedRestore.receipt;
+      try {
+        assertStateArtifacts(state, hooks);
+        for (const item of state.requiredReview) dependencies.readReviewImage(item, state.artifact.absoluteRoot);
+        assertCurrentReceiptAndSpec(state, dependencies);
+      } catch (error) {
+        return restoreReviewFailure(
+          state,
+          `terminal restore artifact validation failed: ${errorText(error)}`,
+        );
+      }
+      return {
+        ...terminalRestore.receipt,
+        actionAuditMaintenance: actionAuditMaintenance(state.artifact),
+      };
     }
     if (state.status !== "prepared" && state.status !== "stepped" && state.status !== "stopped") {
       throw new Error(`restore is out of order from state '${state.status}'`);
@@ -3450,7 +4102,22 @@ export function createInAppLocomotionOrchestrator(
     const restoreAttempt = ++state.restoreAttempts;
     let restoreStartedNs = state.startedAtNs;
     let restoreDeadlineNs = state.deadlineNs;
-    let mutationDeadlineNs = restoreDeadlineNs - 5_000_000_000n;
+    let restoreDeadlineSource: "original_run_deadline" | "restoration_reserve_cap" | "fresh_recovery_deadline" | "unavailable" = "unavailable";
+    let entryValidationDeadlineNs = restoreDeadlineNs;
+    let preContinuityDeadlineNs = restoreDeadlineNs;
+    let preCapabilityDeadlineNs = restoreDeadlineNs;
+    let locomotionDeadlineNs = restoreDeadlineNs;
+    let nonceCleanupDeadlineNs = restoreDeadlineNs;
+    let captureDeadlineNs = restoreDeadlineNs;
+    let postContinuityDeadlineNs = restoreDeadlineNs;
+    let postCapabilityDeadlineNs = restoreDeadlineNs;
+    let targetStopDeadlineNs = restoreDeadlineNs;
+    let targetAbsenceDeadlineNs = restoreDeadlineNs;
+    let postStopNonceDeadlineNs = restoreDeadlineNs;
+    let priorRelaunchDeadlineNs = restoreDeadlineNs;
+    let finalProcessDeadlineNs = restoreDeadlineNs;
+    let postStopSafetyDeadlineNs = restoreDeadlineNs;
+    let restoreActionDeadlineNs = restoreDeadlineNs;
     let primaryError: string | null = null;
     let primaryCode: string | null = null;
     const cleanupErrors: string[] = [];
@@ -3468,6 +4135,8 @@ export function createInAppLocomotionOrchestrator(
     let finalProcessProof: FinalProcessActivityReceipt | null = null;
     let finalProcessProven = false;
     let finalSafetyProven = false;
+    let targetStopCommandProven = !state.targetOwned;
+    let targetShutdownProven = !state.targetOwned;
     let currentReviewTrusted = true;
     let locomotionNonceCleanup: AgentBridgeLocomotionNonceCleanupReceipt | null = null;
     let targetStop: LocomotionTargetStopReceipt | { status: "not_attempted"; reason: string }
@@ -3482,58 +4151,131 @@ export function createInAppLocomotionOrchestrator(
     const priorDisposition = priorForegroundDisposition(state);
     try {
       restoreStartedNs = checkedMonotonic(dependencies);
+      const restorationFloorNs = BigInt(restorationFloorMs(
+        state.input.capture.deadlineMs,
+        state.input.route.glideDurationMs,
+      )) * 1_000_000n;
       const freshRecoveryDeadlineNs = restoreStartedNs
         + BigInt(state.input.budgets.restorationReserveMs) * 1_000_000n;
-      restoreDeadlineNs = restoreAttempt > 1 || state.status === "stopped"
+      const originalDeadlineCanAdmitRestore = state.deadlineNs - restoreStartedNs > restorationFloorNs;
+      const useFreshRecoveryDeadline = restoreAttempt > 1 || state.status === "stopped" || !originalDeadlineCanAdmitRestore;
+      restoreDeadlineNs = useFreshRecoveryDeadline
         ? freshRecoveryDeadlineNs
         : earlierDeadline(state.deadlineNs, freshRecoveryDeadlineNs);
-      mutationDeadlineNs = restoreDeadlineNs - 5_000_000_000n;
+      restoreDeadlineSource = useFreshRecoveryDeadline
+        ? "fresh_recovery_deadline"
+        : state.deadlineNs <= freshRecoveryDeadlineNs ? "original_run_deadline" : "restoration_reserve_cap";
+      restoreActionDeadlineNs = restoreDeadlineNs;
+      postStopSafetyDeadlineNs = deadlineBefore(
+        restoreActionDeadlineNs,
+        FINAL_ACTION_PUBLICATION_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      finalProcessDeadlineNs = deadlineBefore(
+        postStopSafetyDeadlineNs,
+        FINAL_SAFETY_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      priorRelaunchDeadlineNs = deadlineBefore(
+        finalProcessDeadlineNs,
+        FINAL_PROCESS_PROOF_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      postStopNonceDeadlineNs = deadlineBefore(
+        priorRelaunchDeadlineNs,
+        FINAL_PRIOR_RELAUNCH_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      targetAbsenceDeadlineNs = deadlineBefore(
+        postStopNonceDeadlineNs,
+        NONCE_CLEANUP_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      targetStopDeadlineNs = deadlineBefore(
+        targetAbsenceDeadlineNs,
+        FINAL_PROCESS_PROOF_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      postCapabilityDeadlineNs = deadlineBefore(
+        targetStopDeadlineNs,
+        FINAL_TARGET_STOP_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      postContinuityDeadlineNs = deadlineBefore(
+        postCapabilityDeadlineNs,
+        BRIDGE_MIN_TRANSACTION_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      captureDeadlineNs = deadlineBefore(
+        postContinuityDeadlineNs,
+        APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      nonceCleanupDeadlineNs = deadlineBefore(
+        captureDeadlineNs,
+        state.input.capture.deadlineMs + CAPTURE_COMPLETION_GUARD_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      locomotionDeadlineNs = deadlineBefore(
+        nonceCleanupDeadlineNs,
+        NONCE_CLEANUP_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      preCapabilityDeadlineNs = deadlineBefore(
+        locomotionDeadlineNs,
+        BRIDGE_MIN_TRANSACTION_MS + state.input.route.glideDurationMs + STAGE_HANDOFF_GUARD_MS,
+      );
+      preContinuityDeadlineNs = deadlineBefore(
+        preCapabilityDeadlineNs,
+        BRIDGE_MIN_TRANSACTION_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      entryValidationDeadlineNs = deadlineBefore(
+        preContinuityDeadlineNs,
+        APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS + STAGE_HANDOFF_GUARD_MS,
+      );
+      if (restoreDeadlineNs - checkedMonotonic(dependencies) <= restorationFloorNs) {
+        throw new LocomotionStageError(
+          "budget_exhausted",
+          "restoration deadline cannot preserve every continuity, capability, mutation, capture, nonce-cleanup, and final-recovery stage",
+        );
+      }
       if (state.actionAuditConflict) {
         throw new LocomotionStageError(
           "cleanup_only_restore",
           "action publication conflict requires cleanup-only restore",
         );
       }
-      try {
-        dependencies.readReviewImage(state.currentReview, state.artifact.absoluteRoot);
-      } catch (error) {
-        currentReviewTrusted = false;
-        throw new LocomotionStageError(
-          "review_artifact_failed",
-          `reviewed retained image failed its immutable sha256 check: ${errorText(error)}`,
-        );
-      }
-      assertStateArtifacts(state, hooks);
-      assertCurrentReceiptAndSpec(state, dependencies);
+      await withinDeadline(entryValidationDeadlineNs, dependencies, "restore entry validation", async () => {
+        try {
+          dependencies.readReviewImage(state.currentReview, state.artifact.absoluteRoot);
+        } catch (error) {
+          currentReviewTrusted = false;
+          throw new LocomotionStageError(
+            "review_artifact_failed",
+            `reviewed retained image failed its immutable sha256 check: ${errorText(error)}`,
+          );
+        }
+        validateStateArtifactsWithoutMaintenance(state, hooks);
+        assertCurrentReceiptAndSpec(state, dependencies);
+      });
       const cleanupOnlyRestore = !state.targetOwned || state.unquiescedLocomotion !== null
         || state.pendingLocomotionNonce !== null || state.zeroOffsetRecoveryProven;
       if (cleanupOnlyRestore) {
-        if (state.currentReviewReflectsNonzeroMutation && !state.zeroOffsetRecoveryProven) {
+        if (state.nonzeroMutationMayHaveApplied && !state.zeroOffsetRecoveryProven) {
           throw new LocomotionStageError(
             "restoration_unproven",
-            "cleanup-only restoration has no bound zero-offset recovery and may not relabel the reviewed moved frame",
+            "cleanup-only restoration has no bound zero-offset recovery and may not relabel the retained frame as zero proof",
           );
         }
         restoredReview = state.currentReview;
       } else {
-        preRestoreContinuity = await withinDeadline(mutationDeadlineNs, dependencies, "pre-restore live continuity", (timeoutMs) =>
+        preRestoreContinuity = await withinDeadline(preContinuityDeadlineNs, dependencies, "pre-restore live continuity", (timeoutMs) =>
           dependencies.sampleContinuity({
             serial: state.input.serial,
             phase: "restore_pre",
             runtime: state.runtime,
             artifactRoot: state.artifact.absoluteRoot,
             timeoutMs,
-            deadlineMonotonicNs: mutationDeadlineNs.toString(),
+            deadlineMonotonicNs: preContinuityDeadlineNs.toString(),
           }));
       const continuity = continuityProblem(preRestoreContinuity, state.runtime);
       if (continuity) throw new LocomotionStageError("binding_lost", continuity);
-      preRestoreCapability = await withinDeadline(mutationDeadlineNs, dependencies, "pre-restore root capability", (timeoutMs) =>
+      preRestoreCapability = await withinDeadline(preCapabilityDeadlineNs, dependencies, "pre-restore root capability", (timeoutMs) =>
         dependencies.probeCapability({
           serial: state.input.serial,
           packageName: state.input.scenario.packageName,
           requestId: `restore_capability_${state.artifact.runId.slice(0, 20)}`,
           tag: "restore-pre",
-          ...bridgeBudgetFields(timeoutMs, mutationDeadlineNs),
+          ...bridgeBudgetFields(timeoutMs, preCapabilityDeadlineNs),
         }));
       if (!preRestoreCapability.ok) {
         throw new LocomotionStageError(
@@ -3547,11 +4289,11 @@ export function createInAppLocomotionOrchestrator(
         || liveRoot.generation !== state.rootGeneration || liveRoot.incarnation !== state.rootIncarnation) {
         throw new LocomotionStageError("binding_lost", "pre-restore root capability lost the exact generation/incarnation producer identity");
       }
-      const remainingMs = remainingUntilMs(mutationDeadlineNs, dependencies);
-      if (remainingMs <= state.input.capture.deadlineMs + BRIDGE_MIN_TRANSACTION_MS) {
+      const remainingMs = remainingUntilMs(locomotionDeadlineNs, dependencies);
+      if (remainingMs < BRIDGE_MIN_TRANSACTION_MS + state.input.route.glideDurationMs) {
         throw new LocomotionStageError(
           "budget_exhausted",
-          "restoration deadline cannot fit the required settled capture and post-capture capability recheck",
+          "restoration deadline cannot fit the complete bridge-plus-glide mutation envelope",
         );
       }
       const rootBefore = state.rootGeneration;
@@ -3565,7 +4307,7 @@ export function createInAppLocomotionOrchestrator(
         rootIncarnation: state.rootIncarnation,
         attempts: 0,
       };
-      await withinDeadline(mutationDeadlineNs, dependencies, "zero-offset restoration", async (timeoutMs) => {
+      await withinDeadline(locomotionDeadlineNs, dependencies, "zero-offset restoration", async (timeoutMs) => {
         const retained = await dependencies.requestLocomotion({
           serial: state.input.serial,
           packageName: state.input.scenario.packageName,
@@ -3578,7 +4320,7 @@ export function createInAppLocomotionOrchestrator(
           glideDurationMs: state.input.route.glideDurationMs,
           physicalWalk: false,
           deferNonceCleanup: true,
-          ...bridgeBudgetFields(timeoutMs, mutationDeadlineNs),
+          ...bridgeBudgetFields(timeoutMs, locomotionDeadlineNs),
         });
         locomotion = retained;
         validateDeferredLocomotionNonceDisposition(retained, state.pendingLocomotionNonce!);
@@ -3587,7 +4329,7 @@ export function createInAppLocomotionOrchestrator(
       const retainedLocomotion = locomotion as LocomotionResult | null;
       if (retainedLocomotion === null) throw new Error("zero-offset restoration returned without a retained result");
       if (retainedLocomotion.motionQuiesced && state.pendingLocomotionNonce?.attempts === 0) {
-        await withinDeadline(mutationDeadlineNs, dependencies, "restore locomotion nonce cleanup", async (timeoutMs) => {
+        await withinDeadline(nonceCleanupDeadlineNs, dependencies, "restore locomotion nonce cleanup", async (timeoutMs) => {
           const pending = state.pendingLocomotionNonce!;
           try {
             const receipt = await dependencies.cleanupLocomotionNonce({
@@ -3598,7 +4340,7 @@ export function createInAppLocomotionOrchestrator(
               rootGeneration: pending.rootGeneration,
               rootIncarnation: pending.rootIncarnation,
               timeoutMs,
-              deadlineMonotonicNs: mutationDeadlineNs.toString(),
+              deadlineMonotonicNs: nonceCleanupDeadlineNs.toString(),
             });
             pending.attempts = 1;
             locomotionNonceCleanup = validateLocomotionNonceCleanupReceipt(receipt, pending, false);
@@ -3635,8 +4377,8 @@ export function createInAppLocomotionOrchestrator(
         throw new LocomotionStageError("root_readback_mismatch", "restore acknowledgement lost exact mechanism/zero-target/root-generation readback binding");
       }
       state.rootGeneration = expectedGeneration;
-      const captureRemainingMs = remainingUntilMs(mutationDeadlineNs, dependencies);
-      if (captureRemainingMs < BRIDGE_MIN_TRANSACTION_MS + 2) {
+      const captureRemainingMs = remainingUntilMs(captureDeadlineNs, dependencies);
+      if (captureRemainingMs < 2) {
         throw new LocomotionStageError("budget_exhausted", "restoration deadline expired before capture and post-capture binding checks");
       }
       const capturePath = path.join(
@@ -3646,12 +4388,12 @@ export function createInAppLocomotionOrchestrator(
       );
       const captured = await captureWithinDeadline(
         restoreStartedNs,
-        mutationDeadlineNs,
+        captureDeadlineNs,
         dependencies,
         "restoration settled capture",
         captureInvocation,
         (remainingCaptureMs) => {
-          const captureBudgetMs = remainingCaptureMs - BRIDGE_MIN_TRANSACTION_MS - 1;
+          const captureBudgetMs = remainingCaptureMs - 1;
           if (captureBudgetMs < 1) throw new LocomotionStageError("budget_exhausted", "restoration capture cannot fit strictly before its mutation deadline");
           return {
             serial: state.input.serial,
@@ -3676,14 +4418,13 @@ export function createInAppLocomotionOrchestrator(
       const candidateReview = captureReview(captured, {
         captureInput: restoreCaptureInput,
         captureInvocation: restoreCaptureFence,
-        phaseDeadlineNs: mutationDeadlineNs,
+        phaseDeadlineNs: captureDeadlineNs,
         role: "recovery",
         runtime: state.runtime,
       });
       validateRetainedCaptureFrame(captured, dependencies.readReviewImage(candidateReview, state.artifact.absoluteRoot), "recovery");
-      const continuityDeadlineNs = mutationDeadlineNs - BigInt(BRIDGE_MIN_TRANSACTION_MS) * 1_000_000n;
       postCaptureContinuity = await withinDeadline(
-        continuityDeadlineNs,
+        postContinuityDeadlineNs,
         dependencies,
         "post-restoration-capture continuity",
         (timeoutMs) => dependencies.sampleContinuity({
@@ -3692,13 +4433,13 @@ export function createInAppLocomotionOrchestrator(
           runtime: state.runtime,
           artifactRoot: state.artifact.absoluteRoot,
           timeoutMs,
-          deadlineMonotonicNs: continuityDeadlineNs.toString(),
+          deadlineMonotonicNs: postContinuityDeadlineNs.toString(),
         }),
       );
       const postCaptureContinuityProblem = continuityProblem(postCaptureContinuity, state.runtime);
       if (postCaptureContinuityProblem) throw new LocomotionStageError("binding_lost", postCaptureContinuityProblem);
       postCaptureCapability = await withinDeadline(
-        mutationDeadlineNs,
+        postCapabilityDeadlineNs,
         dependencies,
         "post-restoration-capture root capability",
         (timeoutMs) => dependencies.probeCapability({
@@ -3706,7 +4447,7 @@ export function createInAppLocomotionOrchestrator(
           packageName: state.input.scenario.packageName,
           requestId: `restore_post_capture_${state.artifact.runId.slice(0, 20)}`,
           tag: "restore-post-capture",
-          ...bridgeBudgetFields(timeoutMs, mutationDeadlineNs),
+          ...bridgeBudgetFields(timeoutMs, postCapabilityDeadlineNs),
         }),
       );
       if (!postCaptureCapability.ok) {
@@ -3732,6 +4473,7 @@ export function createInAppLocomotionOrchestrator(
         state.currentReview = candidateReview;
         state.currentReviewReflectsNonzeroMutation = false;
         state.zeroOffsetRecoveryProven = true;
+        state.nonzeroMutationMayHaveApplied = false;
       }
     } catch (error) {
       primaryError = errorText(error);
@@ -3746,34 +4488,67 @@ export function createInAppLocomotionOrchestrator(
         cleanupErrors.push(`bridge acknowledgement cleanup: ${error.cleanupError}`);
       }
     } finally {
-      const cleanupBudget = (label: string): LocomotionEffectBudget => {
+      const runCleanupStage = async <T>(
+        stageDeadlineNs: bigint,
+        stageReserveMs: number,
+        label: string,
+        effect: (budget: LocomotionEffectBudget) => Promise<T>,
+      ): Promise<T> => {
+        let strictClock = true;
+        let budget!: LocomotionEffectBudget;
+        let remaining: number | null = null;
         try {
-          const remaining = remainingUntilMs(restoreDeadlineNs, dependencies);
-          if (remaining < 1) throw new Error(`${label} reached the fixed restoration deadline`);
-          return {
-            timeoutMs: Math.min(10_000, remaining),
-            deadlineMonotonicNs: restoreDeadlineNs.toString(),
-          };
+          remaining = remainingUntilMs(stageDeadlineNs, dependencies);
         } catch (clockError) {
+          strictClock = false;
           cleanupErrors.push(`${label} budget clock: ${errorText(clockError)}`);
-          return {
-            timeoutMs: 5_000,
-            deadlineMonotonicNs: restoreDeadlineNs.toString(),
+          budget = {
+            timeoutMs: stageReserveMs,
+            deadlineMonotonicNs: stageDeadlineNs.toString(),
             cleanupOnly: true,
           };
         }
+        if (remaining !== null) {
+          if (remaining < 1) {
+            strictClock = false;
+            cleanupErrors.push(`${label} budget: ${label} cannot begin at or after its fixed restoration subdeadline`);
+            budget = {
+              timeoutMs: stageReserveMs,
+              deadlineMonotonicNs: stageDeadlineNs.toString(),
+              cleanupOnly: true,
+            };
+          } else {
+            budget = {
+              timeoutMs: Math.min(stageReserveMs, remaining),
+              deadlineMonotonicNs: stageDeadlineNs.toString(),
+            };
+          }
+        }
+        const result = await effect(budget);
+        if (strictClock && checkedMonotonic(dependencies) >= stageDeadlineNs) {
+          throw new Error(`${label} completed at or after its fixed restoration subdeadline`);
+        }
+        return result;
       };
       let targetStopError: string | null = null;
       let priorRelaunchError: string | null = null;
       if (state.targetOwned) {
         try {
-          const stopInput = {
-            serial: state.input.serial,
-            packageName: state.input.scenario.packageName,
-            reason: state.unquiescedLocomotion === null ? "restore_run_owned_target" : "restore_unquiesced_target",
-            ...cleanupBudget("owned target stop"),
-          };
-          targetStop = checkedTargetStopReceipt(await dependencies.stopPackage(stopInput), stopInput);
+          targetStop = await runCleanupStage(
+            targetStopDeadlineNs,
+            FINAL_TARGET_STOP_RESERVE_MS,
+            "owned target stop",
+            async (budget) => {
+              const stopInput = {
+                serial: state.input.serial,
+                packageName: state.input.scenario.packageName,
+                reason: state.unquiescedLocomotion === null ? "restore_run_owned_target" : "restore_unquiesced_target",
+                ...budget,
+              };
+              return checkedTargetStopReceipt(await dependencies.stopPackage(stopInput), stopInput);
+            },
+          );
+          targetStopCommandProven = true;
         } catch (error) {
           targetStopError = errorText(error);
           targetStop = { status: "failed", error: targetStopError };
@@ -3790,50 +4565,72 @@ export function createInAppLocomotionOrchestrator(
       }
       let targetAbsenceChecked: ReturnType<typeof checkedFinalProcessProof> | null = null;
       try {
-        const proof = await dependencies.probeFinalProcessState({
-          serial: state.input.serial,
-          targetPackage: state.input.scenario.packageName,
-          artifactRoot: state.artifact.absoluteRoot,
-          evidenceId: needsPriorRelaunch
-            ? `restore-${String(restoreAttempt).padStart(3, "0")}-target-absence`
-            : `restore-${String(restoreAttempt).padStart(3, "0")}`,
-          priorForeground: state.input.priorForeground,
-          ...cleanupBudget("target absence proof"),
-        });
-        targetAbsenceChecked = checkedFinalProcessProof(proof, state.input, state.artifact.absoluteRoot);
+        const targetProofStage = await runCleanupStage(
+          targetAbsenceDeadlineNs,
+          FINAL_PROCESS_PROOF_RESERVE_MS,
+          "target absence proof",
+          async (budget) => {
+            const proof = await dependencies.probeFinalProcessState({
+              serial: state.input.serial,
+              targetPackage: state.input.scenario.packageName,
+              artifactRoot: state.artifact.absoluteRoot,
+              evidenceId: needsPriorRelaunch
+                ? `restore-${String(restoreAttempt).padStart(3, "0")}-target-absence`
+                : `restore-${String(restoreAttempt).padStart(3, "0")}`,
+              priorForeground: state.input.priorForeground,
+              ...budget,
+            });
+            return {
+              proof,
+              checked: checkedFinalProcessProof(proof, state.input, state.artifact.absoluteRoot),
+            };
+          },
+        );
+        const proof = targetProofStage.proof;
+        targetAbsenceChecked = targetProofStage.checked;
         state.retainedLogs.push(targetAbsenceChecked.retained);
-        state.targetOwned = !targetAbsenceChecked.targetAbsent;
+        targetShutdownProven = targetStopCommandProven && targetAbsenceChecked.targetAbsent;
+        state.targetOwned = !targetShutdownProven;
         if (needsPriorRelaunch) targetAbsenceProof = proof;
         else finalProcessProof = proof;
         if (!needsPriorRelaunch) {
           if (targetAbsenceChecked.problem) cleanupErrors.push(targetAbsenceChecked.problem);
-          else finalProcessProven = true;
-        } else if (!targetAbsenceChecked.targetAbsent) {
+          else if (targetShutdownProven) finalProcessProven = true;
+        } else if (!targetShutdownProven) {
           finalProcessProof = proof;
-          cleanupErrors.push(targetAbsenceChecked.problem
-            ?? "target absence proof did not prove the run-owned target absent");
+          if (targetAbsenceChecked.problem) cleanupErrors.push(targetAbsenceChecked.problem);
         }
       } catch (error) {
+        targetShutdownProven = false;
         state.targetOwned = true;
         cleanupErrors.push(`target absence proof: ${errorText(error)}`);
       }
 
-      if (targetAbsenceChecked?.targetAbsent === true && state.pendingLocomotionNonce !== null) {
+      if (targetShutdownProven && state.pendingLocomotionNonce !== null) {
         const pending = state.pendingLocomotionNonce;
         try {
-          const receipt = await dependencies.cleanupLocomotionNonce({
-            serial: state.input.serial,
-            packageName: state.input.scenario.packageName,
-            requestId: pending.requestId,
-            tag: pending.tag,
-            rootGeneration: pending.rootGeneration,
-            rootIncarnation: pending.rootIncarnation,
-            processStopped: true,
-            ...(pending.attempts === 1 ? { probeOnly: true as const } : {}),
-            ...cleanupBudget("locomotion nonce cleanup"),
-          });
+          const receipt = await runCleanupStage(
+            postStopNonceDeadlineNs,
+            NONCE_CLEANUP_RESERVE_MS,
+            "locomotion nonce cleanup",
+            async (budget) => validateLocomotionNonceCleanupReceipt(
+              await dependencies.cleanupLocomotionNonce({
+                serial: state.input.serial,
+                packageName: state.input.scenario.packageName,
+                requestId: pending.requestId,
+                tag: pending.tag,
+                rootGeneration: pending.rootGeneration,
+                rootIncarnation: pending.rootIncarnation,
+                processStopped: true,
+                ...(pending.attempts === 1 ? { probeOnly: true as const } : {}),
+                ...budget,
+              }),
+              pending,
+              true,
+            ),
+          );
           pending.attempts = 1;
-          locomotionNonceCleanup = validateLocomotionNonceCleanupReceipt(receipt, pending, true);
+          locomotionNonceCleanup = receipt;
           state.pendingLocomotionNonce = null;
           state.unquiescedLocomotion = null;
         } catch (error) {
@@ -3843,10 +4640,10 @@ export function createInAppLocomotionOrchestrator(
       }
 
       if (priorToRelaunch !== null) {
-        if (targetAbsenceChecked?.targetAbsent !== true) {
+        if (!targetShutdownProven) {
           priorDisposition.relaunchDisposition = "blocked";
           priorRelaunch = { status: "blocked", reason: "target_absence_unproven" };
-        } else if (targetAbsenceChecked.priorForegroundSatisfied) {
+        } else if (targetAbsenceChecked?.priorForegroundSatisfied === true) {
           const disposition = state.priorRestoreProofDisposition ?? "state_proven_without_attempt";
           state.priorRestoreProofDisposition = disposition;
           priorDisposition.relaunchDisposition = disposition;
@@ -3856,13 +4653,25 @@ export function createInAppLocomotionOrchestrator(
         } else {
           state.priorRestoreProofDisposition = null;
           try {
-            const relaunched = await dependencies.relaunchPrior({
-              serial: state.input.serial,
-              component: priorToRelaunch.component,
-              ...cleanupBudget("prior relaunch"),
-            });
+            const relaunchStage = await runCleanupStage(
+              priorRelaunchDeadlineNs,
+              FINAL_PRIOR_RELAUNCH_RESERVE_MS,
+              "prior relaunch",
+              async (budget) => {
+                const receipt = await dependencies.relaunchPrior({
+                  serial: state.input.serial,
+                  component: priorToRelaunch.component,
+                  ...budget,
+                });
+                return {
+                  receipt,
+                  problem: validatePriorRelaunchReceipt(receipt, priorToRelaunch.component),
+                };
+              },
+            );
+            const relaunched = relaunchStage.receipt;
             priorRelaunch = relaunched;
-            const problem = validatePriorRelaunchReceipt(relaunched, priorToRelaunch.component);
+            const problem = relaunchStage.problem;
             if (problem) {
               priorDisposition.relaunchDisposition = relaunched.disposition === "accepted" ? "attempt_failed" : relaunched.disposition;
               priorRelaunchError = problem;
@@ -3876,17 +4685,30 @@ export function createInAppLocomotionOrchestrator(
           }
 
           try {
-            finalProcessProof = await dependencies.probeFinalProcessState({
-              serial: state.input.serial,
-              targetPackage: state.input.scenario.packageName,
-              artifactRoot: state.artifact.absoluteRoot,
-              evidenceId: `restore-${String(restoreAttempt).padStart(3, "0")}-final`,
-              priorForeground: state.input.priorForeground,
-              ...cleanupBudget("final process/activity proof"),
-            });
-            const checked = checkedFinalProcessProof(finalProcessProof, state.input, state.artifact.absoluteRoot);
+            const finalProofStage = await runCleanupStage(
+              finalProcessDeadlineNs,
+              FINAL_PROCESS_PROOF_RESERVE_MS,
+              "final process/activity proof",
+              async (budget) => {
+                const proof = await dependencies.probeFinalProcessState({
+                  serial: state.input.serial,
+                  targetPackage: state.input.scenario.packageName,
+                  artifactRoot: state.artifact.absoluteRoot,
+                  evidenceId: `restore-${String(restoreAttempt).padStart(3, "0")}-final`,
+                  priorForeground: state.input.priorForeground,
+                  ...budget,
+                });
+                return {
+                  proof,
+                  checked: checkedFinalProcessProof(proof, state.input, state.artifact.absoluteRoot),
+                };
+              },
+            );
+            finalProcessProof = finalProofStage.proof;
+            const checked = finalProofStage.checked;
             state.retainedLogs.push(checked.retained);
-            state.targetOwned = !checked.targetAbsent;
+            targetShutdownProven = targetStopCommandProven && checked.targetAbsent;
+            state.targetOwned = !targetShutdownProven;
             state.priorRestoreProofDisposition = checked.priorForegroundSatisfied
               ? priorRelaunchError !== null
                 ? "state_proven_after_attempt_error"
@@ -3915,12 +4737,21 @@ export function createInAppLocomotionOrchestrator(
         cleanupErrors.push(`prior relaunch: ${priorRelaunchError}`);
       }
       try {
-        postStopSafety = await dependencies.sampleSafety({
-          serial: state.input.serial,
-          phase: "restore_after_prior_disposition",
-          ...cleanupBudget("post-restore global safety"),
-        });
-        const unsafe = finalGlobalSafetyProblem(postStopSafety);
+        const safetyStage = await runCleanupStage(
+          postStopSafetyDeadlineNs,
+          FINAL_SAFETY_RESERVE_MS,
+          "post-restore global safety",
+          async (budget) => {
+            const snapshot = await dependencies.sampleSafety({
+              serial: state.input.serial,
+              phase: "restore_after_prior_disposition",
+              ...budget,
+            });
+            return { snapshot, unsafe: finalGlobalSafetyProblem(snapshot) };
+          },
+        );
+        postStopSafety = safetyStage.snapshot;
+        const unsafe = safetyStage.unsafe;
         if (unsafe) cleanupErrors.push(`post-restore global safety: ${unsafe}`);
         else finalSafetyProven = true;
       } catch (error) {
@@ -3929,13 +4760,20 @@ export function createInAppLocomotionOrchestrator(
     }
     let completed = primaryError === null && cleanupErrors.length === 0 && restoredReview !== null
       && !state.targetOwned && finalProcessProven && finalSafetyProven
-      && (!reviewedMovedFrame || state.zeroOffsetRecoveryProven);
+      && (!state.nonzeroMutationMayHaveApplied || state.zeroOffsetRecoveryProven);
+    const safeReleaseEligible = !completed && primaryCode === "restoration_unproven"
+      && cleanupErrors.length === 0 && restoredReview === null && currentReviewTrusted
+      && state.nonzeroMutationMayHaveApplied && !state.zeroOffsetRecoveryProven
+      && !state.targetOwned && state.pendingLocomotionNonce === null
+      && state.unquiescedLocomotion === null && finalProcessProven && finalSafetyProven;
+    let safeRelease = false;
     let structuralStop = completed ? null : primaryCode ?? "restore_cleanup_failed";
     let actionAudit = actionAuditMaintenance(state.artifact);
     try {
       actionAudit = appendAction(state.artifact, {
         action: "restore",
         restoreAttempt,
+        restoreDeadlineSource,
         status: completed ? "completed" : "failed",
         structuralStop,
         primaryError,
@@ -3958,8 +4796,14 @@ export function createInAppLocomotionOrchestrator(
         finalProcessProof,
         postStopSafety,
         priorForeground: priorDisposition,
+        safeReleaseEligibility: safeReleaseEligible ? "eligible_after_action_publication" : "not_eligible",
         priorActionAuditMaintenance: actionAuditMaintenance(state.artifact),
-      }, hooks);
+      }, hooks, {
+        deadlineNs: restoreActionDeadlineNs,
+        monotonicNs: () => checkedMonotonic(dependencies),
+        label: "restore action publication",
+      });
+      safeRelease = safeReleaseEligible;
     } catch (auditError) {
       if (primaryError === null) {
         primaryError = `restore action audit: ${errorText(auditError)}`;
@@ -3969,6 +4813,7 @@ export function createInAppLocomotionOrchestrator(
       }
       completed = false;
       structuralStop = primaryCode ?? "action_audit_failed";
+      actionAudit = actionAuditMaintenance(state.artifact);
     }
     state.restoreCompleted = completed;
     if (completed && restoredReview !== null) {
@@ -3979,7 +4824,7 @@ export function createInAppLocomotionOrchestrator(
       state.currentReviewReflectsNonzeroMutation = false;
     }
     state.status = completed ? "restored" : "stopped";
-    if (completed && serialOwners.get(state.input.serial)?.runId === state.artifact.runId) {
+    if ((completed || safeRelease) && serialOwners.get(state.input.serial)?.runId === state.artifact.runId) {
       serialOwners.delete(state.input.serial);
     } else if (serialOwners.get(state.input.serial)?.runId === state.artifact.runId) {
       serialOwners.set(state.input.serial, {
@@ -4009,10 +4854,18 @@ export function createInAppLocomotionOrchestrator(
       lookRequired: true,
       requiredReview: restoredReview ? [restoredReview] : currentReviewTrusted ? [state.currentReview] : [],
       priorForeground: priorDisposition,
+      restorationDisposition: completed
+        ? "zero_proven"
+        : safeRelease ? "safe_release_without_zero_proof" : "unresolved",
       actionAuditMaintenance: actionAudit,
     };
     if (completed) {
       state.completedRestore = {
+        reviewedPriorSha256: input.reviewedPriorFrame.captureSha256,
+        receipt,
+      };
+    } else if (safeRelease) {
+      state.terminalSafeRelease = {
         reviewedPriorSha256: input.reviewedPriorFrame.captureSha256,
         receipt,
       };
@@ -4138,7 +4991,7 @@ export function createInAppLocomotionOrchestrator(
     if (!state) throw new Error("unknown in-app locomotion runId");
     if (busyRuns.has(input.runId)) throw new Error("a mutation is already in progress for this run");
     const mutatesSerial = input.action !== "adjudicate"
-      && !(input.action === "restore" && state.completedRestore !== null);
+      && !(input.action === "restore" && (state.completedRestore !== null || state.terminalSafeRelease !== null));
     if (mutatesSerial && serialOwners.get(state.input.serial)?.runId !== input.runId) {
       throw new Error(`run '${input.runId}' does not own exact serial '${state.input.serial}'`);
     }
@@ -4449,24 +5302,16 @@ export function createLiveInAppLocomotionDependencies(
       context,
       10_000,
     ));
-    const activities = parseForegroundActivities(await checked(
+    const activityOutput = await checked(
       context.serial,
       ["shell", "dumpsys", "activity", "activities"],
       `${context.phase} foreground activities`,
       context,
       20_000,
-    ));
-    const resumedComponents = activities.map((activity) => activity.component);
-    const packageActivities = activities.filter((activity) => activity.packageName === binding.packageName);
-    const exactAllowedForeground = activities.length > 0 && activities.every((activity) =>
-      activity.packageName === binding.packageName && binding.allowedResumedComponents.includes(activity.component));
-    const foreground: ApplicationContinuitySample["foreground"] = activities.length === 0
-      ? "absent"
-      : packageActivities.length === 0
-        ? "different_package"
-        : exactAllowedForeground
-          ? "exact_allowed"
-          : "same_package_unlisted";
+    );
+    const { resumedComponents, foreground } = classifyResumedApplication(
+      activityOutput, binding.packageName, binding.allowedResumedComponents,
+    );
     return {
       observedAtMonotonicNs: clockNs().toString(),
       serial: context.serial,
@@ -4485,6 +5330,35 @@ export function createLiveInAppLocomotionDependencies(
     };
   };
 
+  const currentLogWindow = async (
+    context: LocomotionEffectBudget & { serial: string },
+    marker: string,
+    label: string,
+  ): Promise<Awaited<ReturnType<typeof run>>> => {
+    // Filter history on the device before transferring it. -T consumes epoch time,
+    // even when the output format is monotonic; preserve microseconds at BEGIN.
+    const markerOutput = await checked(
+      context.serial,
+      ["logcat", "-b", "all", "-d", "-v", "threadtime", "-v", "epoch", "-v", "usec", "--regex", `^${escapedRegex(marker)}$`],
+      `${label} BEGIN cursor`, context, 10_000, 64 * 1024,
+    );
+    const markerLines = markerOutput.split(/\r?\n/).filter((line) => line.includes(marker));
+    const cursor = markerLines.length === 1
+      ? new RegExp(`^\\s*([1-9][0-9]*\\.[0-9]{6})\\s+[0-9]+\\s+[0-9]+\\s+[VDIWEFS]\\s+WorldLocomotion\\s*:\\s*${escapedRegex(marker)}\\s*$`).exec(markerLines[0])?.[1]
+      : undefined;
+    if (!cursor) throw new Error(`${label} requires one exact BEGIN marker with an epoch microsecond cursor`);
+    const result = await runBounded(
+      context.serial,
+      ["logcat", "-b", "all", "-d", "-v", "threadtime", "-T", cursor],
+      label, context, 10_000, 64 * 1024 * 1024,
+    );
+    checkedLiveAdbResult(result, label);
+    if (Buffer.byteLength(result.stdout, "utf8") >= 64 * 1024 * 1024) {
+      throw new Error(`${label} current window reaches the bounded log output limit`);
+    }
+    return result;
+  };
+
   const runtimeHealthSnapshot = async (context: {
     serial: string;
     artifactRoot: string;
@@ -4495,15 +5369,7 @@ export function createLiveInAppLocomotionDependencies(
     timeoutMs: number;
     deadlineMonotonicNs: string;
   }): Promise<{ health: PackageRuntimeHealthReceiptV1; rawArtifact: LocomotionRawLogEvidence }> => {
-    const result = await runBounded(
-      context.serial,
-      ["logcat", "-b", "all", "-d", "-v", "threadtime"],
-      "fresh-launch runtime-health snapshot",
-      context,
-      10_000,
-      64 * 1024 * 1024,
-    );
-    checkedLiveAdbResult(result, "fresh-launch runtime-health snapshot");
+    const result = await currentLogWindow(context, context.marker, "fresh-launch runtime-health snapshot");
     const output = result.stdout;
     const artifactPath = path.join(context.artifactRoot, "logs", `fresh-launch-${String(context.sampleIndex).padStart(2, "0")}.log`);
     privateWrite(artifactPath, output);
@@ -4524,6 +5390,7 @@ export function createLiveInAppLocomotionDependencies(
   };
 
   return {
+    sleep: liveSleep,
     randomBytes: (size) => crypto.randomBytes(size),
     now: () => new Date().toISOString(),
     monotonicNs: clockNs,
@@ -4554,18 +5421,76 @@ export function createLiveInAppLocomotionDependencies(
     stopPackage: async (context) => {
       const { serial, packageName, reason } = context;
       await checked(serial, ["shell", "am", "force-stop", packageName], `${reason} force-stop ${packageName}`, context, 10_000, 64 * 1024);
-      return { status: "stop_command_completed", serial, packageName, reason };
+      const stopReceipt: LocomotionTargetStopReceipt = { status: "stop_command_completed", serial, packageName, reason };
+      if (reason === "prepare_target_clearance" || reason === "prepare_declared_incumbent_clearance") {
+        // Command completion can precede process/activity teardown. Launch only after an
+        // observed clearance; the interval is polling cadence, not an SDK timing guarantee.
+        let pidAbsence: LocomotionCleanPidAbsenceReceipt | null = null;
+        try {
+          for (;;) {
+            const pidResult = await runBounded(serial, ["shell", "pidof", packageName], "prepare clearance PID probe", context, 10_000, 64 * 1024);
+            const output = pidResult.stdout.trim();
+            const absent = pidResult.code === 1 && !pidResult.timedOut
+              && pidResult.stdout === "" && pidResult.stderr === "";
+            if (pidResult.timedOut || pidResult.stderr !== ""
+              || (!absent && !(pidResult.code === 0 && output !== ""))) {
+              throw new Error(`prepare clearance PID probe failed: ${pidResult.stderr.trim() || output || `exit ${String(pidResult.code)}`}`);
+            }
+            if (!absent && (!/^[1-9][0-9]*(?:\s+[1-9][0-9]*)*$/.test(output)
+              || output.split(/\s+/).some((pid) => !Number.isSafeInteger(Number(pid))))) {
+              throw new Error("prepare clearance PID probe returned malformed process identities");
+            }
+            if (absent) {
+              pidAbsence = {
+                status: "clean_pidof_absence",
+                serial,
+                packageName,
+                exitCode: 1,
+                timedOut: false,
+                stdout: "",
+                stderr: "",
+              };
+            }
+            const activities = await checked(serial, ["shell", "dumpsys", "activity", "activities"], "prepare clearance foreground probe", context, 20_000);
+            if (!activities) throw new Error("prepare clearance foreground probe returned no activity-manager evidence");
+            if (absent && !parseResumedPackages(activities).includes(packageName)) break;
+            await sleepWithin(context, 100, "prepare process/foreground clearance polling");
+          }
+        } catch (error) {
+          throw new LocomotionStopClearanceError(error, stopReceipt, pidAbsence);
+        }
+        if (pidAbsence === null) throw new Error("prepare clearance completed without an exact clean PID-absence receipt");
+        return { status: "prepare_clearance_completed", stopReceipt, pidAbsence };
+      }
+      return stopReceipt;
     },
     launchTarget: async (context) => {
       const { serial, component } = context;
       requireExactLiveSerial(serial);
-      const result = await runBounded(serial, ["shell", "am", "start", "-W", "-n", component], "target launch", context, 30_000, 1024 * 1024);
-      const output = `${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}`.trim();
-      return {
-        disposition: classifyActivityLaunchDisposition(output, result.code === 0 && !result.timedOut),
-        component,
-        outputSha256: sha256Bytes(Buffer.from(output, "utf8")),
-      };
+      const attempt = () => runBounded(serial, ["shell", "am", "start", "-W", "-n", component], "target launch", context, 30_000, 1024 * 1024);
+      let result = await attempt();
+      for (;;) {
+        const output = `${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}`.trim();
+        const disposition = classifyActivityLaunchDisposition(output, result.code === 0 && !result.timedOut);
+        const lines = output.split(/\r?\n/).map((line) => line.trim());
+        const warnings = lines.filter((line) => /^Warning:/i.test(line));
+        const statuses = lines.filter((line) => /^Status:/i.test(line));
+        const launchStates = lines.filter((line) => /^LaunchState:/i.test(line));
+        const keptForUser = disposition === "ignored" && result.stderr.trim() === ""
+          && warnings.length === 1 && /^Warning:\s*Activity not started because the\s+current activity is being kept for the user\.$/i.test(warnings[0])
+          && statuses.length === 1 && /^Status:\s*ok$/i.test(statuses[0])
+          && (launchStates.length === 0 || (launchStates.length === 1 && /^LaunchState:\s*UNKNOWN\s+\(0\)$/i.test(launchStates[0])))
+          && !lines.some((line) => /^(?:Error\b|\S*Exception\b)/i.test(line));
+        if (!keptForUser) return { disposition, component, outputSha256: sha256Bytes(Buffer.from(output, "utf8")) };
+        // Process clearance does not prove Android has re-enabled app switches.
+        // Retry only this explicit rejection, with an observation cadence and the same deadline.
+        try {
+          await sleepWithin(context, 100, "target kept-for-user launch retry");
+          result = await attempt();
+        } catch (error) {
+          throw new LocomotionStageError("launch_failed", `target launch remained kept for the user: ${errorText(error)}`);
+        }
+      }
     },
     captureLaunchHandoffWindow: async (context) => {
       const result = await runBounded(
@@ -4677,7 +5602,26 @@ export function createLiveInAppLocomotionDependencies(
         foregroundComponent: targetComponents[0],
       };
     },
-    sampleSafety: sampleSafetyLive,
+    sampleSafety: async (context) => {
+      let snapshot = await sampleSafetyLive(context);
+      if (context.phase !== "prepare_baseline") return snapshot;
+      // Cold-launch configuration may still be transitioning after am start returns.
+      // Observe readiness under the caller's deadline; 100ms is sampling cadence,
+      // not a promised SDK transition time. The launch observer remains active.
+      for (;;) {
+        const unsafe = safetyProblem(snapshot);
+        if (!unsafe || finalGlobalSafetyProblem(snapshot)) return snapshot;
+        try {
+          await sleepWithin(context, 100, "prepare Full-stage readiness polling");
+          snapshot = await sampleSafetyLive(context);
+        } catch (error) {
+          throw new LocomotionStageError(
+            "safety_baseline_failed",
+            `unsafe Full-stage baseline: ${unsafe}; readiness observation failed: ${errorText(error)}`,
+          );
+        }
+      }
+    },
     probeCapability: (input) => probeAgentBridgeLocomotionCapability(adb, input, {
       runText: liveRunText,
       runBytes: liveRunBytes,
@@ -4810,14 +5754,7 @@ export function createLiveInAppLocomotionDependencies(
     },
     collectStepLogs: async (context) => {
       requireExactLiveSerial(context.serial);
-      const result = await runBounded(
-        context.serial,
-        ["logcat", "-b", "all", "-d", "-v", "threadtime"],
-        "locomotion bracket log",
-        context,
-        context.timeoutMs,
-        64 * 1024 * 1024,
-      );
+      const result = await currentLogWindow(context, context.beginMarker, "locomotion bracket log");
       const allLines = result.stdout.split(/\r?\n/).filter(Boolean);
       const beginIndexes = allLines.flatMap((line, index) => line.includes(context.beginMarker) ? [index] : []);
       const endIndexes = allLines.flatMap((line, index) => line.includes(context.endMarker) ? [index] : []);

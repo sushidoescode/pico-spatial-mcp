@@ -1122,7 +1122,7 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
         relativePath,
         outcome: cleanupApplied ? "completed" : cleanup?.timedOut ? "timeout" : "failed",
       },
-      error: cleanupError ?? undefined,
+      ...(cleanupError === null ? {} : { error: cleanupError }),
     });
     const retainedCleanup = clockError === null ? cleanupError
       : cleanupError === null ? clockError : `${clockError}; ${cleanupError}`;
@@ -1167,7 +1167,7 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
       tag: locomotionTag(spec.input),
       outcome: broadcastApplied ? "completed" : broadcast?.timedOut ? "timeout" : "failed",
     },
-    error: broadcastApplied ? undefined : broadcastFailure,
+    ...(broadcastApplied ? {} : { error: broadcastFailure }),
   });
 
   let readyToPoll = broadcastApplied;
@@ -1333,7 +1333,7 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
       stabilityReads: stableCount,
       outcome: pulledSuccessfully ? "completed" : "timeout",
     },
-    error: pulledSuccessfully ? undefined : pullDetail,
+    ...(pulledSuccessfully ? {} : { error: pullDetail }),
   });
 
   let ack: Ack | undefined = pulledSuccessfully ? stableAck : undefined;
@@ -1481,7 +1481,7 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
         requestId: spec.input.requestId,
         outcome: motionQuiesced ? "cancelled" : "failed",
       },
-      error: cancelError ?? undefined,
+      ...(cancelError === null ? {} : { error: cancelError }),
     });
   }
 
@@ -1520,7 +1520,7 @@ async function executeLocomotionTransaction<Ack extends AnyLocomotionAck>(
       relativePath,
       outcome: cleanupApplied ? "completed" : cleanup?.timedOut ? "timeout" : "failed",
     },
-    error: cleanupError ?? undefined,
+    ...(cleanupError === null ? {} : { error: cleanupError }),
   });
 
   const cleanupProblems = [ack?.cleanupError ?? null, cancelError, cleanupError].filter((value): value is string => value !== null);
