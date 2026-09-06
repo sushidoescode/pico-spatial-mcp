@@ -399,6 +399,9 @@ printf '%s\\n' "$@" > "${canonicalArgs}"
     assert.equal(picoFixDecision("world_disappears_on_walk").symptom, "world_disappears_on_walk");
     assert.equal(picoFixDecision("spatialNavigator.openStage(SpatialContainers.ID_FULL, StageStyle.Full)").symptom, "world_disappears_on_walk");
     assert.equal(picoFixDecision("spatialNavigator.openStage(\n  resolveStage(containerId(\"full\")),\n  StageStyle.Full,\n)").symptom, "world_disappears_on_walk");
+    assert.equal(picoFixDecision('val docs = "spatialNavigator.openStage(ID, StageStyle.Full)"').symptom, null);
+    assert.equal(picoFixDecision("Couldn't execute spatialNavigator.openStage(ID, StageStyle.Full)").symptom, "world_disappears_on_walk");
+    assert.equal(picoFixDecision("See https://example.invalid/help then spatialNavigator.openStage(ID, StageStyle.Full)").symptom, "world_disappears_on_walk");
     assert.equal(picoFixDecision("spatialNavigator.openStage(SpatialContainers.ID_MAIN, StageStyle.Mixed)\nval fallback = StageStyle.Full").symptom, null);
     assert.equal(picoFixDecision("Unresolved reference in openStage\nrequested enum: StageStyle.Full").symptom, "build_failed");
     const guidance = JSON.stringify(disappearedDiagnosis);

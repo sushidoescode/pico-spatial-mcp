@@ -43,6 +43,14 @@ for (const [id, requiredText] of [
     if (laterFull.length !== 0) fail(`${id}: StageStyle.Full after the completed call must remain clean`);
     const nestedMultiline = runLint("spatialNavigator.openStage(\n  resolveStage(containerId(\"full\")),\n  StageStyle.Full,\n)", "kotlin", [rule]);
     if (nestedMultiline.length !== 1) fail(`${id}: two-level nested multiline arguments should emit exactly one warning`);
+    const quotedCall = runLint('val docs = "spatialNavigator.openStage(ID, StageStyle.Full)"', "kotlin", [rule]);
+    if (quotedCall.length !== 0) fail(`${id}: a quoted call example must remain clean`);
+    const nestedComment = runLint("/* outer comment\n  /* nested comment */\n  spatialNavigator.openStage(ID, StageStyle.Full)\n*/", "kotlin", [rule]);
+    if (nestedComment.length !== 0) fail(`${id}: a call inside a nested block comment must remain clean`);
+    const laterMatchingCall = runLint("spatialNavigator.openStage(SpatialContainers.ID_MAIN, StageStyle.Mixed)\nspatialNavigator.openStage(SpatialContainers.ID_FULL, StageStyle.Full)", "kotlin", [rule]);
+    if (laterMatchingCall.length !== 1 || laterMatchingCall[0].line !== 2 || !laterMatchingCall[0].match?.includes("ID_FULL")) {
+      fail(`${id}: warning location must identify the matching call, not an earlier safe call`);
+    }
   }
 }
 
@@ -58,6 +66,11 @@ for (const id of ["displayColor-flat-white", "collisioncomponent-no-arg", "colli
   if (!found.includes(id)) fail(`integration: expected '${id}' in a dirty blob, got [${found.join(", ")}]`);
 }
 console.log(`\n  ok   integration blob surfaced ${found.length} violations`);
+
+const nestedCommentedGotcha = runLint("/* outer /* nested */ primvars:displayColor */", "kotlin");
+if (nestedCommentedGotcha.some((v) => v.ruleId === "displayColor-flat-white")) {
+  fail("nested Kotlin block comments must not expose a lint token after the inner close");
+}
 
 // --------------------------------------------------------------------------------------------
 // Repo self-consistency lint: the PUBLISHED size of the gate battery must match reality.

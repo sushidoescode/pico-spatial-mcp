@@ -30,11 +30,11 @@ export interface LintRule {
   id: string;
   severity: "error" | "warn";
   kinds: RuleKind[];
-  /** "present": fires if `matches` returns true, otherwise if `pattern` matches.
+  /** "present": fires if `findMatch` returns a source range, otherwise if `pattern` matches.
    * "conditional": fires if `when` matches AND `unless` does NOT. */
   type: "present" | "conditional";
   pattern?: RegExp;
-  matches?: (content: string) => boolean;
+  findMatch?: (content: string) => LintSourceMatch | null;
   when?: RegExp;
   unless?: RegExp;
   message: string;
@@ -45,71 +45,96 @@ export interface LintRule {
   learned?: boolean;
 }
 
-const FULL_STAGE_STYLE = /\bStageStyle\s*\.\s*Full\b/;
+export interface LintSourceMatch {
+  start: number;
+  end: number;
+}
 
-/** Match StageStyle.Full only inside one complete openStage call. Parentheses in nested calls,
- * strings, chars, and comments do not end the call early or leak a later token into it. */
-function balancedOpenStageCallUsesFull(content: string, openingParen: number): boolean {
-  let depth = 1;
-  let i = openingParen + 1;
-  let code = "";
+const FULL_STAGE_STYLE = /\bStageStyle\s*\.\s*Full\b/;
+export type StageCallScanMode = "kotlin" | "diagnostic";
+
+/** Preserve source offsets while hiding quoted tokens; Kotlin mode also hides chars/comments. */
+function maskNonCode(content: string, scanMode: StageCallScanMode): string {
+  let out = "";
+  let i = 0;
   let mode: "code" | "line" | "block" | "string" | "triple" | "char" = "code";
+  let blockDepth = 0;
 
   while (i < content.length) {
     const c = content[i];
     const next = content[i + 1];
 
     if (mode === "line") {
-      if (c === "\n") { mode = "code"; code += c; }
-      else code += " ";
+      if (c === "\n") { mode = "code"; out += c; }
+      else out += " ";
       i++;
       continue;
     }
     if (mode === "block") {
-      if (c === "*" && next === "/") { mode = "code"; code += "  "; i += 2; }
-      else { code += c === "\n" ? c : " "; i++; }
+      if (c === "/" && next === "*") { blockDepth++; out += "  "; i += 2; }
+      else if (c === "*" && next === "/") {
+        blockDepth--;
+        if (blockDepth === 0) mode = "code";
+        out += "  ";
+        i += 2;
+      } else { out += c === "\n" ? c : " "; i++; }
       continue;
     }
     if (mode === "triple") {
-      if (content.startsWith('\"\"\"', i)) { mode = "code"; code += "   "; i += 3; }
-      else { code += c === "\n" ? c : " "; i++; }
+      if (content.startsWith('"""', i)) { mode = "code"; out += "   "; i += 3; }
+      else { out += c === "\n" ? c : " "; i++; }
       continue;
     }
     if (mode === "string" || mode === "char") {
       const quote = mode === "string" ? '"' : "'";
-      if (c === "\\") { code += "  "; i += Math.min(2, content.length - i); continue; }
+      if (c === "\\") {
+        out += " ";
+        i++;
+        if (i < content.length) { out += content[i] === "\n" ? "\n" : " "; i++; }
+        continue;
+      }
       if (c === quote) mode = "code";
-      code += c === "\n" ? c : " ";
+      out += c === "\n" ? c : " ";
       i++;
       continue;
     }
 
-    if (c === "/" && next === "/") { mode = "line"; code += "  "; i += 2; continue; }
-    if (c === "/" && next === "*") { mode = "block"; code += "  "; i += 2; continue; }
-    if (content.startsWith('\"\"\"', i)) { mode = "triple"; code += "   "; i += 3; continue; }
-    if (c === '"') { mode = "string"; code += " "; i++; continue; }
-    if (c === "'") { mode = "char"; code += " "; i++; continue; }
-    if (c === "(") { depth++; code += c; i++; continue; }
-    if (c === ")") {
-      depth--;
-      if (depth === 0) return FULL_STAGE_STYLE.test(code);
-      code += c;
-      i++;
-      continue;
-    }
-    code += c;
+    if (scanMode === "kotlin" && c === "/" && next === "/") { mode = "line"; out += "  "; i += 2; continue; }
+    if (scanMode === "kotlin" && c === "/" && next === "*") { mode = "block"; blockDepth = 1; out += "  "; i += 2; continue; }
+    if (content.startsWith('"""', i)) { mode = "triple"; out += "   "; i += 3; continue; }
+    if (c === '"') { mode = "string"; out += " "; i++; continue; }
+    if (scanMode === "kotlin" && c === "'") { mode = "char"; out += " "; i++; continue; }
+    out += c;
     i++;
   }
-  return false;
+  return out;
 }
 
-export function hasSpatialNavigatorFullStageCall(content: string): boolean {
+export function findSpatialNavigatorFullStageCall(content: string, scanMode: StageCallScanMode = "kotlin"): LintSourceMatch | null {
+  const code = maskNonCode(content, scanMode);
   const call = /\bspatialNavigator\s*\.\s*openStage\s*\(/g;
   let match: RegExpExecArray | null;
-  while ((match = call.exec(content)) !== null) {
-    if (balancedOpenStageCallUsesFull(content, call.lastIndex - 1)) return true;
+  while ((match = call.exec(code)) !== null) {
+    const openingParen = call.lastIndex - 1;
+    let depth = 1;
+    for (let i = openingParen + 1; i < code.length; i++) {
+      if (code[i] === "(") depth++;
+      else if (code[i] === ")") {
+        depth--;
+        if (depth === 0) {
+          if (FULL_STAGE_STYLE.test(code.slice(openingParen + 1, i))) {
+            return { start: match.index, end: i + 1 };
+          }
+          break;
+        }
+      }
+    }
   }
-  return false;
+  return null;
+}
+
+export function hasSpatialNavigatorFullStageCall(content: string, scanMode: StageCallScanMode = "kotlin"): boolean {
+  return findSpatialNavigatorFullStageCall(content, scanMode) !== null;
 }
 
 // ── The built-in rules (one per retained gotcha) ────────────────────────────────────────────────────────
@@ -364,7 +389,7 @@ export const BUILTIN_RULES: LintRule[] = [
     kinds: ["kotlin"],
     type: "present",
     pattern: /\bspatialNavigator\s*\.\s*openStage\s*\(/,
-    matches: hasSpatialNavigatorFullStageCall,
+    findMatch: findSpatialNavigatorFullStageCall,
     message: "Fabian verified: the dynamic Full route uses runtime stage style 2 and triggers the safety transition on the emulator.",
     fix: "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured.",
     designRule: "Space Program emulator-stage safety finding (Fabian)",
@@ -768,12 +793,13 @@ export function stripCommentsForLint(content: string): string {
   let out = "";
   let i = 0;
   let mode: "code" | "line" | "block" | "str" | "char" = "code";
+  let blockDepth = 0;
   while (i < content.length) {
     const c = content[i];
     const n = content[i + 1];
     if (mode === "code") {
       if (c === "/" && n === "/") { mode = "line"; out += "  "; i += 2; continue; }
-      if (c === "/" && n === "*") { mode = "block"; out += "  "; i += 2; continue; }
+      if (c === "/" && n === "*") { mode = "block"; blockDepth = 1; out += "  "; i += 2; continue; }
       if (c === '"') { mode = "str"; out += c; i++; continue; }
       out += c; i++; continue;
     }
@@ -782,7 +808,14 @@ export function stripCommentsForLint(content: string): string {
       out += c === "\n" ? c : " "; i++; continue;
     }
     if (mode === "block") {
-      if (c === "*" && n === "/") { mode = "code"; out += "  "; i += 2; continue; }
+      if (c === "/" && n === "*") { blockDepth++; out += "  "; i += 2; continue; }
+      if (c === "*" && n === "/") {
+        blockDepth--;
+        if (blockDepth === 0) mode = "code";
+        out += "  ";
+        i += 2;
+        continue;
+      }
       out += c === "\n" ? c : " "; i++; continue;
     }
     // inside a string literal: keep it (a rule may legitimately match string content)
@@ -802,8 +835,10 @@ export function runLint(content: string, kind: RuleKind = "any", rules: LintRule
   for (const rule of rules) {
     if (!ruleApplies(rule, kind)) continue;
     let fired = false;
-    if (rule.type === "present" && rule.matches) {
-      fired = rule.matches(probeText);
+    let sourceMatch: LintSourceMatch | null = null;
+    if (rule.type === "present" && rule.findMatch) {
+      sourceMatch = rule.findMatch(content);
+      fired = sourceMatch !== null;
     } else if (rule.type === "present" && rule.pattern) {
       fired = rule.pattern.test(probeText);
     } else if (rule.type === "conditional" && rule.when) {
@@ -813,7 +848,9 @@ export function runLint(content: string, kind: RuleKind = "any", rules: LintRule
     }
     if (!fired) continue;
     const probe = rule.pattern ?? rule.when;
-    const lineIdx = probe ? lines.findIndex((l) => probe.test(l)) : -1;
+    const lineIdx = sourceMatch
+      ? content.slice(0, sourceMatch.start).split("\n").length - 1
+      : probe ? lines.findIndex((l) => probe.test(l)) : -1;
     violations.push({
       ruleId: rule.id,
       severity: rule.severity,

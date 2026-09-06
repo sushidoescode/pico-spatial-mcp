@@ -47,7 +47,7 @@ export function formatManualPicoCliSetupGuidance(context: string): string {
 const UNMEASURABLE_ACCEPTANCE_FIX = "A criterion cannot be measured on this machine (failing[].detail names the missing lane; structural criteria may need generate_agent_bridge injected). Fix the measurement lane or drop the criterion — replanning the app cannot help.";
 
 export function picoFixDecision(error: string): { symptom: string | null; nextAction: string } {
-  if (hasSpatialNavigatorFullStageCall(error)) {
+  if (hasSpatialNavigatorFullStageCall(error, "diagnostic")) {
     return {
       symptom: "world_disappears_on_walk",
       nextAction: "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured.",
