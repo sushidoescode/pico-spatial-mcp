@@ -6,6 +6,7 @@ import { z } from "zod";
 import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
+import { hasSpatialNavigatorFullStageCall } from "./lint.js";
 import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, isPassingDeviceEvidenceForReceipt, readLedger } from "./ledger.js";
 import {
   findHistoricalRunReceipt,
@@ -46,8 +47,14 @@ export function formatManualPicoCliSetupGuidance(context: string): string {
 const UNMEASURABLE_ACCEPTANCE_FIX = "A criterion cannot be measured on this machine (failing[].detail names the missing lane; structural criteria may need generate_agent_bridge injected). Fix the measurement lane or drop the criterion — replanning the app cannot help.";
 
 export function picoFixDecision(error: string): { symptom: string | null; nextAction: string } {
+  if (hasSpatialNavigatorFullStageCall(error)) {
+    return {
+      symptom: "world_disappears_on_walk",
+      nextAction: "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured.",
+    };
+  }
   const keywords: Array<[RegExp, string, string]> = [
-    [/world[_\s-]*disappears?[_\s-]*on[_\s-]*walk|dynamic\s+full.*(?:safety|disappear)|spatialNavigator\s*\.\s*openStage\s*\((?:[^()]|\([^()]*\))*?\bStageStyle\s*\.\s*Full\b/i, "world_disappears_on_walk", "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured."],
+    [/world[_\s-]*disappears?[_\s-]*on[_\s-]*walk|dynamic\s+full.*(?:safety|disappear)/i, "world_disappears_on_walk", "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured."],
     [/androidx\.compose|compose.*(?:exclude|bom|fork)|(?:exclude|bom|fork).*compose/i, "compose_fork_conflict", "Run verify_gradle_config with the project directory; set resolveTransitives:true only if an explicit resolved-graph check is needed."],
     [/Default(?:Stage|WindowContainer)|pico\.spatial\.(?:stage|windowcontainer)|container.*mismatch/i, "container_mode_mismatch", "Run verify_gradle_config and align manifest metadata with the Kotlin container root."],
     [/unresolved reference|gradle|assembledebug|compil|build failed/i, "build_failed", "Read the diagnosis and fix the first concrete build error."],

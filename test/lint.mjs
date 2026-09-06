@@ -41,8 +41,8 @@ for (const [id, requiredText] of [
   if (id === "dynamic-full-stage-emulator-safety") {
     const laterFull = runLint("spatialNavigator.openStage(SpatialContainers.ID_MAIN, StageStyle.Mixed)\nval style = StageStyle.Full", "kotlin", [rule]);
     if (laterFull.length !== 0) fail(`${id}: StageStyle.Full after the completed call must remain clean`);
-    const nestedMultiline = runLint("spatialNavigator.openStage(\n  resolveStage(SpatialContainers.ID_FULL),\n  StageStyle.Full,\n)", "kotlin", [rule]);
-    if (nestedMultiline.length !== 1) fail(`${id}: nested multiline arguments should emit exactly one warning`);
+    const nestedMultiline = runLint("spatialNavigator.openStage(\n  resolveStage(containerId(\"full\")),\n  StageStyle.Full,\n)", "kotlin", [rule]);
+    if (nestedMultiline.length !== 1) fail(`${id}: two-level nested multiline arguments should emit exactly one warning`);
   }
 }
 

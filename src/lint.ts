@@ -30,9 +30,11 @@ export interface LintRule {
   id: string;
   severity: "error" | "warn";
   kinds: RuleKind[];
-  /** "present": fires if `pattern` matches. "conditional": fires if `when` matches AND `unless` does NOT. */
+  /** "present": fires if `matches` returns true, otherwise if `pattern` matches.
+   * "conditional": fires if `when` matches AND `unless` does NOT. */
   type: "present" | "conditional";
   pattern?: RegExp;
+  matches?: (content: string) => boolean;
   when?: RegExp;
   unless?: RegExp;
   message: string;
@@ -41,6 +43,73 @@ export interface LintRule {
   positiveFixture: string; // MUST trigger this rule
   negativeFixture: string; // MUST NOT trigger this rule
   learned?: boolean;
+}
+
+const FULL_STAGE_STYLE = /\bStageStyle\s*\.\s*Full\b/;
+
+/** Match StageStyle.Full only inside one complete openStage call. Parentheses in nested calls,
+ * strings, chars, and comments do not end the call early or leak a later token into it. */
+function balancedOpenStageCallUsesFull(content: string, openingParen: number): boolean {
+  let depth = 1;
+  let i = openingParen + 1;
+  let code = "";
+  let mode: "code" | "line" | "block" | "string" | "triple" | "char" = "code";
+
+  while (i < content.length) {
+    const c = content[i];
+    const next = content[i + 1];
+
+    if (mode === "line") {
+      if (c === "\n") { mode = "code"; code += c; }
+      else code += " ";
+      i++;
+      continue;
+    }
+    if (mode === "block") {
+      if (c === "*" && next === "/") { mode = "code"; code += "  "; i += 2; }
+      else { code += c === "\n" ? c : " "; i++; }
+      continue;
+    }
+    if (mode === "triple") {
+      if (content.startsWith('\"\"\"', i)) { mode = "code"; code += "   "; i += 3; }
+      else { code += c === "\n" ? c : " "; i++; }
+      continue;
+    }
+    if (mode === "string" || mode === "char") {
+      const quote = mode === "string" ? '"' : "'";
+      if (c === "\\") { code += "  "; i += Math.min(2, content.length - i); continue; }
+      if (c === quote) mode = "code";
+      code += c === "\n" ? c : " ";
+      i++;
+      continue;
+    }
+
+    if (c === "/" && next === "/") { mode = "line"; code += "  "; i += 2; continue; }
+    if (c === "/" && next === "*") { mode = "block"; code += "  "; i += 2; continue; }
+    if (content.startsWith('\"\"\"', i)) { mode = "triple"; code += "   "; i += 3; continue; }
+    if (c === '"') { mode = "string"; code += " "; i++; continue; }
+    if (c === "'") { mode = "char"; code += " "; i++; continue; }
+    if (c === "(") { depth++; code += c; i++; continue; }
+    if (c === ")") {
+      depth--;
+      if (depth === 0) return FULL_STAGE_STYLE.test(code);
+      code += c;
+      i++;
+      continue;
+    }
+    code += c;
+    i++;
+  }
+  return false;
+}
+
+export function hasSpatialNavigatorFullStageCall(content: string): boolean {
+  const call = /\bspatialNavigator\s*\.\s*openStage\s*\(/g;
+  let match: RegExpExecArray | null;
+  while ((match = call.exec(content)) !== null) {
+    if (balancedOpenStageCallUsesFull(content, call.lastIndex - 1)) return true;
+  }
+  return false;
 }
 
 // ── The built-in rules (one per retained gotcha) ────────────────────────────────────────────────────────
@@ -294,7 +363,8 @@ export const BUILTIN_RULES: LintRule[] = [
     severity: "warn",
     kinds: ["kotlin"],
     type: "present",
-    pattern: /\bspatialNavigator\s*\.\s*openStage\s*\((?:[^()]|\([^()]*\))*?\bStageStyle\s*\.\s*Full\b/,
+    pattern: /\bspatialNavigator\s*\.\s*openStage\s*\(/,
+    matches: hasSpatialNavigatorFullStageCall,
     message: "Fabian verified: the dynamic Full route uses runtime stage style 2 and triggers the safety transition on the emulator.",
     fix: "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured.",
     designRule: "Space Program emulator-stage safety finding (Fabian)",
@@ -732,7 +802,9 @@ export function runLint(content: string, kind: RuleKind = "any", rules: LintRule
   for (const rule of rules) {
     if (!ruleApplies(rule, kind)) continue;
     let fired = false;
-    if (rule.type === "present" && rule.pattern) {
+    if (rule.type === "present" && rule.matches) {
+      fired = rule.matches(probeText);
+    } else if (rule.type === "present" && rule.pattern) {
       fired = rule.pattern.test(probeText);
     } else if (rule.type === "conditional" && rule.when) {
       // NOTE the asymmetry: `when` matches comment-free text (so prose cannot TRIGGER a rule), but
