@@ -103,6 +103,15 @@ structurally completed route, a `restored_needs_review` result, or an
 `device_verified` evidence. Any visual/device claim must use the repository's
 separate evidence workflow with the exact returned capture.
 
+Two guest-side read commands can supplement that evidence:
+
+- `adb shell getprop sys.guardian.vst.status`
+- `adb shell dumpsys ConfigurationService` — inspect `spatial_stage_style`,
+  `spatial_safeguard_enable`, `spatial_safeguard_center`, and
+  `spatial_virtual_content_detected`.
+
+`spatial_stage_style` reads the SHELL's stage (`2`) unless the app under test is resumed.
+
 The review order is part of the contract:
 
 1. LOOK at the baseline capture returned by `prepare` and submit its exact

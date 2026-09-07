@@ -3,7 +3,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson, expandHome } from "./util.js";
-import { bakeTexturedModel } from "./bundle.js";
+import { BUNDLE_CACHE_NOTE, bakeTexturedModel } from "./bundle.js";
 
 /**
  * catalog.ts — v5.8 `import_model_catalog`: batch-bake N models into N DISTINCT textured bundles.
@@ -19,7 +19,7 @@ export function registerCatalogTools(server: McpServer) {
     "import_model_catalog",
     {
       description:
-        "Batch-bake a catalog of textured models into N distinct .bundles (via spatialbundle) and stage them in an app's assets — so a data-at-scale scene shows real distinct models, not just tinted quads. Give a modelsDir (all GLB/GLTF/USD*) or an explicit models list + the app's assetsDir; each is baked (never runtime-load a raw GLB) and verified (texture+material present). Missing sources return a dry-run PLAN (no fake bakes). Returns per-model {name, bundle, rendersTextured} + a JSON data-node stub keyed to each bundle for generate_data_binding_kotlin.",
+        "Batch-bake a catalog of textured models into N distinct .bundles (via spatialbundle) and stage them in an app's assets — so a data-at-scale scene shows real distinct models, not just tinted quads. Give a modelsDir (all GLB/GLTF/USD*) or an explicit models list + the app's assetsDir; each is baked (never runtime-load a raw GLB) and verified (texture+material present). Missing sources return a dry-run PLAN (no fake bakes). Returns per-model {name, bundle, rendersTextured} + a JSON data-node stub keyed to each bundle for generate_data_binding_kotlin. " + BUNDLE_CACHE_NOTE,
       inputSchema: {
         models: z.array(z.string()).optional().describe("Explicit model paths. Omit to scan modelsDir."),
         modelsDir: z.string().optional().describe("Directory to scan for models (glb/gltf/usd/usda/usdc/usdz)."),
@@ -51,7 +51,7 @@ export function registerCatalogTools(server: McpServer) {
           count: list.length,
           missing,
           plan,
-          note: missing.length ? `${missing.length} source(s) missing — returning the batch PLAN (no fake bakes). Provide the models to bake for real.` : "Dry run: the batch-bake plan.",
+          note: `${missing.length ? `${missing.length} source(s) missing — returning the batch PLAN (no fake bakes). Provide the models to bake for real.` : "Dry run: the batch-bake plan."} ${BUNDLE_CACHE_NOTE}`,
         });
       }
 
@@ -74,7 +74,7 @@ export function registerCatalogTools(server: McpServer) {
         failed: list.length - baked,
         results,
         dataNodeStub: dataItems,
-        note: `Baked ${baked}/${list.length} models into ${assets}. Write dataNodeStub as the scene's JSON catalog (each item carries a 'model' = baked .bundle); set the AppSpec object.source="model" so generate_app_wiring places them with SceneDataBinding.makeModelCard (async Entity.loadSuspend per item). The catalog→app loop is wired (v6.5).`,
+        note: `Baked ${baked}/${list.length} models into ${assets}. Write dataNodeStub as the scene's JSON catalog (each item carries a 'model' = baked .bundle); set the AppSpec object.source="model" so generate_app_wiring places them with SceneDataBinding.makeModelCard (async Entity.loadSuspend per item). The catalog→app loop is wired (v6.5). ${BUNDLE_CACHE_NOTE}`,
       });
     },
   );

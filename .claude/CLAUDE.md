@@ -13,7 +13,6 @@ The root `CLAUDE.md` is written by `pico-cli` as a block-scoped upsert between i
 overwritten without warning.
 
 That imported plugin guidance is written for agents *building spatial apps with the PICO plugin*,
-not for agents developing this server, and it disagrees with this repo in places: it accepts a
-build or test result as "verified", while the rule above does not; and it frames everything as
-PICO OS 6 while this repo's scaffolds still pin Spatial SDK 0.13.3. **Where they differ, this
-repo wins.**
+not for agents developing this server, and it disagrees with this repo in one important place: it
+accepts a build or test result as "verified", while the rule above does not. This repo's app
+skeleton builds on Spatial SDK 6.0.0. **Where they differ, this repo wins.**

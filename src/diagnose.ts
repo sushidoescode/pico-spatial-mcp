@@ -177,6 +177,17 @@ const KB: Record<string, DiagEntry> = {
     relatedTools: ["compose_inspection_scene", "import_environment", "gui_capture", "gui_camera"],
   },
 
+  world_disappears_on_walk: {
+    rootCause:
+      "Under continuity proof on the emulator, a Full stage (runtime style 3, whether manifest-declared or opened dynamically via spatialNavigator.openStage(StageStyle.Full)) is ejected to Home when the user walks beyond the boundary. Fabian's note attributed this to runtime style 2, which our measurement did not reproduce.",
+    fix: [
+      "Use a manifest-declared style-1 DefaultStage.",
+      "Validate the opaque Full route on hardware with Safeguard configured.",
+    ],
+    designRule: "Space Program emulator-stage safety finding (Fabian)",
+    relatedTools: ["preflight_lint", "verify_gradle_config"],
+  },
+
   build_failed: {
     rootCause:
       "The Gradle build failed. A common environment cause is that there is no `java` on PATH, so Gradle cannot find a JDK; other causes are USDA/bundle pack errors or app compile errors.",
@@ -481,6 +492,7 @@ export function registerDiagnoseTools(server: McpServer) {
             "random_pins",
             "pins_hovering",
             "falling_out",
+            "world_disappears_on_walk",
             "build_failed",
             "not_rendering",
             "no_controller_pose",

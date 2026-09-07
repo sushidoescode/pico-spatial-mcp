@@ -55,12 +55,14 @@ visual evidence.
 
 ## The capability map (a core sampler of the full surface: 255 tools on macOS (installed-tarball runtime-measured) versus a source-derived 252 on Linux and Windows from the three-tool host-GUI registration delta)
 
-> **Reference implementations.** PICO's eight official **0.13.3** source archives are an idiom
+> **Reference implementations.** The skeleton builds on Spatial SDK **6.0.0**; the local
+> agent-vault is **0.13.3**, with near-zero public-API drift per
+> [docs/SDK_6_0_0_DRIFT.md](docs/SDK_6_0_0_DRIFT.md). Confirm symbols against that vault
+> (`vault_api`) with this caveat. PICO's eight official **0.13.3** source archives remain an idiom
 > reference. This repository does not retain a tracked 8/8 or per-sample runtime record. SpatialML
-> needs a local Gradle-wrapper workaround;
-> see [docs/PICO_OFFICIAL_SAMPLES.md](docs/PICO_OFFICIAL_SAMPLES.md) for the download URLs, build
-> recipe, and editor/SDK version rule that blocks the 6.0.0 GitHub copies. Confirm every symbol
-> against a 0.13.3 sources jar (`vault_api`) before emitting it.
+> needs a local Gradle-wrapper workaround; see
+> [docs/PICO_OFFICIAL_SAMPLES.md](docs/PICO_OFFICIAL_SAMPLES.md) for the download URLs, build
+> recipe, and editor/SDK version rule that blocks the 6.0.0 GitHub copies.
 
 
 | Goal | Tools |

@@ -6,6 +6,9 @@ import { z } from "zod";
 import { expandHome, fail, ok, okJson, run, tail } from "./util.js";
 import { pickVersion, resolveToolsRoot } from "./toolchain.js";
 
+export const BUNDLE_CACHE_NOTE =
+  "Baking leaves generated assets/BundleCache/ content; exclude BundleCache from APK assets with androidResources.ignoreAssetsPattern and add app/src/main/assets/BundleCache/ to .gitignore.";
+
 function getSpatialbundle(toolsVersion?: string): { bin: string; version: string } | { error: string } {
   const { root } = resolveToolsRoot();
   const sel = pickVersion(root, toolsVersion, "editor");
@@ -51,7 +54,7 @@ export async function bakeTexturedModel(opts: { modelPath: string; outBundle: st
     hasMaterial,
     rendersTextured: hasTexture && hasMaterial,
     loadSnippet: `val bundle = AssetBundle.load("asset://${path.basename(out)}")\nval entity = Entity.loadSuspend("${modelName}", bundle)`,
-    note: hasTexture && hasMaterial ? "Texture + material baked." : "WARNING: no texture/material asset detected — model may have had no material.",
+    note: `${hasTexture && hasMaterial ? "Texture + material baked." : "WARNING: no texture/material asset detected — model may have had no material."} ${BUNDLE_CACHE_NOTE}`,
   };
 }
 
@@ -184,7 +187,7 @@ export function registerBundleTools(server: McpServer) {
     "bake_textured_model",
     {
       description:
-        "Bake a TEXTURED 3D model (GLB/GLTF/USD/USDC/USDZ) into a renderable PICO .bundle via spatialbundle, then verify the texture + material actually baked. This is THE way to import a textured mesh/world (e.g. a World Labs Marble GLB) so it RENDERS in-app: spatialbundle bakes a PHYSICALLY_BASED material + ASTC texture, and you load the BAKED model. (Raw-GLB runtime loading renders BLACK because gltfio's async texture loader is never driven; and you must NEVER `prepend references=@x.glb@` inside a USDA — USD has no glTF plugin, you get an empty bundle. Pass the model path here instead.) Load the result with: AssetBundle.load(\"asset://<bundle>\") then Entity.loadSuspend(\"<modelName>\", bundle).",
+        "Bake a TEXTURED 3D model (GLB/GLTF/USD/USDC/USDZ) into a renderable PICO .bundle via spatialbundle, then verify the texture + material actually baked. This is THE way to import a textured mesh/world (e.g. a World Labs Marble GLB) so it RENDERS in-app: spatialbundle bakes a PHYSICALLY_BASED material + ASTC texture, and you load the BAKED model. (Raw-GLB runtime loading renders BLACK because gltfio's async texture loader is never driven; and you must NEVER `prepend references=@x.glb@` inside a USDA — USD has no glTF plugin, you get an empty bundle. Pass the model path here instead.) Load the result with: AssetBundle.load(\"asset://<bundle>\") then Entity.loadSuspend(\"<modelName>\", bundle). " + BUNDLE_CACHE_NOTE,
       inputSchema: {
         modelPath: z.string().describe("Absolute path to the .glb/.gltf/.usd/.usdc/.usdz model"),
         outBundle: z.string().describe("Output .bundle path (copy into app/src/main/assets to ship it)"),

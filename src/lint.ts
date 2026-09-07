@@ -30,9 +30,11 @@ export interface LintRule {
   id: string;
   severity: "error" | "warn";
   kinds: RuleKind[];
-  /** "present": fires if `pattern` matches. "conditional": fires if `when` matches AND `unless` does NOT. */
+  /** "present": fires if `findMatch` returns a source range, otherwise if `pattern` matches.
+   * "conditional": fires if `when` matches AND `unless` does NOT. */
   type: "present" | "conditional";
   pattern?: RegExp;
+  findMatch?: (content: string) => LintSourceMatch | null;
   when?: RegExp;
   unless?: RegExp;
   message: string;
@@ -41,6 +43,98 @@ export interface LintRule {
   positiveFixture: string; // MUST trigger this rule
   negativeFixture: string; // MUST NOT trigger this rule
   learned?: boolean;
+}
+
+export interface LintSourceMatch {
+  start: number;
+  end: number;
+}
+
+const FULL_STAGE_STYLE = /\bStageStyle\s*\.\s*Full\b/;
+export type StageCallScanMode = "kotlin" | "diagnostic";
+
+/** Preserve source offsets while hiding quoted tokens; Kotlin mode also hides chars/comments. */
+function maskNonCode(content: string, scanMode: StageCallScanMode): string {
+  let out = "";
+  let i = 0;
+  let mode: "code" | "line" | "block" | "string" | "triple" | "char" = "code";
+  let blockDepth = 0;
+
+  while (i < content.length) {
+    const c = content[i];
+    const next = content[i + 1];
+
+    if (mode === "line") {
+      if (c === "\n") { mode = "code"; out += c; }
+      else out += " ";
+      i++;
+      continue;
+    }
+    if (mode === "block") {
+      if (c === "/" && next === "*") { blockDepth++; out += "  "; i += 2; }
+      else if (c === "*" && next === "/") {
+        blockDepth--;
+        if (blockDepth === 0) mode = "code";
+        out += "  ";
+        i += 2;
+      } else { out += c === "\n" ? c : " "; i++; }
+      continue;
+    }
+    if (mode === "triple") {
+      if (content.startsWith('"""', i)) { mode = "code"; out += "   "; i += 3; }
+      else { out += c === "\n" ? c : " "; i++; }
+      continue;
+    }
+    if (mode === "string" || mode === "char") {
+      const quote = mode === "string" ? '"' : "'";
+      if (c === "\\") {
+        out += " ";
+        i++;
+        if (i < content.length) { out += content[i] === "\n" ? "\n" : " "; i++; }
+        continue;
+      }
+      if (c === quote) mode = "code";
+      out += c === "\n" ? c : " ";
+      i++;
+      continue;
+    }
+
+    if (scanMode === "kotlin" && c === "/" && next === "/") { mode = "line"; out += "  "; i += 2; continue; }
+    if (scanMode === "kotlin" && c === "/" && next === "*") { mode = "block"; blockDepth = 1; out += "  "; i += 2; continue; }
+    if (content.startsWith('"""', i)) { mode = "triple"; out += "   "; i += 3; continue; }
+    if (c === '"') { mode = "string"; out += " "; i++; continue; }
+    if (scanMode === "kotlin" && c === "'") { mode = "char"; out += " "; i++; continue; }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+export function findSpatialNavigatorFullStageCall(content: string, scanMode: StageCallScanMode = "kotlin"): LintSourceMatch | null {
+  const code = maskNonCode(content, scanMode);
+  const call = /\bspatialNavigator\s*\.\s*openStage\s*\(/g;
+  let match: RegExpExecArray | null;
+  while ((match = call.exec(code)) !== null) {
+    const openingParen = call.lastIndex - 1;
+    let depth = 1;
+    for (let i = openingParen + 1; i < code.length; i++) {
+      if (code[i] === "(") depth++;
+      else if (code[i] === ")") {
+        depth--;
+        if (depth === 0) {
+          if (FULL_STAGE_STYLE.test(code.slice(openingParen + 1, i))) {
+            return { start: match.index, end: i + 1 };
+          }
+          break;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+export function hasSpatialNavigatorFullStageCall(content: string, scanMode: StageCallScanMode = "kotlin"): boolean {
+  return findSpatialNavigatorFullStageCall(content, scanMode) !== null;
 }
 
 // ── The built-in rules (one per retained gotcha) ────────────────────────────────────────────────────────
@@ -288,6 +382,31 @@ export const BUILTIN_RULES: LintRule[] = [
     fix: "Use it only in FULL/PROGRESSIVE stage, or drive a localized IBL (generate_ibl_kotlin) instead.",
     positiveFixture: "root.components.set(StageEnvironmentLightingComponent(ktx))",
     negativeFixture: "// FULL stage\nroot.components.set(StageEnvironmentLightingComponent(ktx))",
+  },
+  {
+    id: "dynamic-full-stage-emulator-safety",
+    severity: "warn",
+    kinds: ["kotlin"],
+    type: "present",
+    pattern: /\bspatialNavigator\s*\.\s*openStage\s*\(/,
+    findMatch: findSpatialNavigatorFullStageCall,
+    message: "Under continuity proof on the emulator, a Full stage (runtime style 3, whether manifest-declared or opened dynamically via spatialNavigator.openStage(StageStyle.Full)) is ejected to Home when the user walks beyond the boundary. Fabian's note attributed this to runtime style 2, which our measurement did not reproduce.",
+    fix: "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured.",
+    designRule: "Space Program emulator-stage safety finding (Fabian)",
+    positiveFixture: "spatialNavigator.openStage(SpatialContainers.ID_FULL, StageStyle.Full)",
+    negativeFixture: "spatialNavigator.openStage(SpatialContainers.ID_MAIN, StageStyle.Mixed)",
+  },
+  {
+    id: "defaultstage-windowcontainer-metadata",
+    severity: "warn",
+    kinds: ["any"],
+    type: "present",
+    pattern: /^(?=[\s\S]*\bfun\s+mainApp\s*\([^)]*\)[\s\S]*?\bDefaultStage\s*\{)(?=[\s\S]*android:name\s*=\s*["']pico\.spatial\.windowcontainer\.)/,
+    message: "A DefaultStage app still carries pico.spatial.windowcontainer.* manifest metadata; the launch container and manifest family disagree.",
+    fix: "Remove every pico.spatial.windowcontainer.* entry and keep the manifest-declared pico.spatial.stage.id plus pico.spatial.stage.style for DefaultStage.",
+    designRule: "Fabian's DefaultStage manifest checklist",
+    positiveFixture: "fun mainApp(scope: SpatialAppScope) = with(scope) { DefaultStage { HomeStage() } }\n<meta-data android:name=\"pico.spatial.windowcontainer.id\" android:value=\"main\" />",
+    negativeFixture: "fun mainApp(scope: SpatialAppScope) = with(scope) { DefaultStage { HomeStage() } }\n<meta-data android:name=\"pico.spatial.stage.id\" android:value=\"main\" />",
   },
   {
     id: "bundle-md5-diff",
@@ -674,12 +793,13 @@ export function stripCommentsForLint(content: string): string {
   let out = "";
   let i = 0;
   let mode: "code" | "line" | "block" | "str" | "char" = "code";
+  let blockDepth = 0;
   while (i < content.length) {
     const c = content[i];
     const n = content[i + 1];
     if (mode === "code") {
       if (c === "/" && n === "/") { mode = "line"; out += "  "; i += 2; continue; }
-      if (c === "/" && n === "*") { mode = "block"; out += "  "; i += 2; continue; }
+      if (c === "/" && n === "*") { mode = "block"; blockDepth = 1; out += "  "; i += 2; continue; }
       if (c === '"') { mode = "str"; out += c; i++; continue; }
       out += c; i++; continue;
     }
@@ -688,7 +808,14 @@ export function stripCommentsForLint(content: string): string {
       out += c === "\n" ? c : " "; i++; continue;
     }
     if (mode === "block") {
-      if (c === "*" && n === "/") { mode = "code"; out += "  "; i += 2; continue; }
+      if (c === "/" && n === "*") { blockDepth++; out += "  "; i += 2; continue; }
+      if (c === "*" && n === "/") {
+        blockDepth--;
+        if (blockDepth === 0) mode = "code";
+        out += "  ";
+        i += 2;
+        continue;
+      }
       out += c === "\n" ? c : " "; i++; continue;
     }
     // inside a string literal: keep it (a rule may legitimately match string content)
@@ -708,7 +835,11 @@ export function runLint(content: string, kind: RuleKind = "any", rules: LintRule
   for (const rule of rules) {
     if (!ruleApplies(rule, kind)) continue;
     let fired = false;
-    if (rule.type === "present" && rule.pattern) {
+    let sourceMatch: LintSourceMatch | null = null;
+    if (rule.type === "present" && rule.findMatch) {
+      sourceMatch = rule.findMatch(content);
+      fired = sourceMatch !== null;
+    } else if (rule.type === "present" && rule.pattern) {
       fired = rule.pattern.test(probeText);
     } else if (rule.type === "conditional" && rule.when) {
       // NOTE the asymmetry: `when` matches comment-free text (so prose cannot TRIGGER a rule), but
@@ -717,7 +848,9 @@ export function runLint(content: string, kind: RuleKind = "any", rules: LintRule
     }
     if (!fired) continue;
     const probe = rule.pattern ?? rule.when;
-    const lineIdx = probe ? lines.findIndex((l) => probe.test(l)) : -1;
+    const lineIdx = sourceMatch
+      ? content.slice(0, sourceMatch.start).split("\n").length - 1
+      : probe ? lines.findIndex((l) => probe.test(l)) : -1;
     violations.push({
       ruleId: rule.id,
       severity: rule.severity,

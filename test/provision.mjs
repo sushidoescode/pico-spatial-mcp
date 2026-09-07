@@ -15,6 +15,35 @@ const skip = (m) => console.log(`  SKIP ${m}`);
 
 const { matchShapeArchetype } = await import("../dist/fleetbuild.js");
 const { proceduralUsda } = await import("../dist/procedural.js");
+const bundleModule = await import("../dist/bundle.js");
+const { BUNDLE_CACHE_NOTE, registerBundleTools } = bundleModule;
+const { registerCatalogTools } = await import("../dist/catalog.js");
+
+const toolMetadata = {};
+const toolHandlers = {};
+const registrationShim = { registerTool: (name, metadata, handler) => {
+  toolMetadata[name] = metadata;
+  toolHandlers[name] = handler;
+} };
+registerBundleTools(registrationShim);
+registerCatalogTools(registrationShim);
+const bundleCacheTerms = ["assets/BundleCache/", "ignoreAssetsPattern", ".gitignore"];
+for (const tool of ["bake_textured_model", "import_model_catalog"]) {
+  const description = toolMetadata[tool]?.description ?? "";
+  for (const term of bundleCacheTerms) {
+    if (!description.includes(term)) fail(`${tool} description is missing ${term}`);
+  }
+}
+for (const term of bundleCacheTerms) {
+  if (!(BUNDLE_CACHE_NOTE ?? "").includes(term)) fail(`shared bake note is missing ${term}`);
+}
+const missingCatalog = JSON.parse((await toolHandlers.import_model_catalog({
+  models: [path.join(os.tmpdir(), `missing-model-${process.pid}.glb`)],
+  assetsDir: path.join(os.tmpdir(), `missing-assets-${process.pid}`),
+})).content[0].text);
+for (const term of bundleCacheTerms) {
+  if (!(missingCatalog.note ?? "").includes(term)) fail(`import_model_catalog result note is missing ${term}`);
+}
 
 // ── 1. matcher unit tests (always run) ──────────────────────────────────────────────────────────
 const cases = [
@@ -70,6 +99,9 @@ if (!toolsAvailable) {
     const size = fs.statSync(outBundle).size;
     if (size > 1024) ok(`bake smoke: gem0.bundle baked for real (${(size / 1024).toFixed(1)} KB, modelName=${bake.modelName})`);
     else fail(`bake smoke: gem0.bundle is only ${size} bytes (< 1KB) — suspiciously small`);
+    for (const term of bundleCacheTerms) {
+      if (!(bake.note ?? "").includes(term)) fail(`bakeTexturedModel success note is missing ${term}`);
+    }
   }
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
 }

@@ -155,6 +155,14 @@ scanForCrashIndicators("Fatal signal 11 (SIGSEGV), code 1").includes("native-cra
 for (const [name, fn] of [["registerPerfTraceTools", registerPerfTraceTools], ["registerPicoCliTools", registerPicoCliTools], ["registerPerfCliTools", registerPerfCliTools]]) {
   typeof fn === "function" ? ok(`${name} exported`) : fail(`${name} missing`);
 }
+const picoCliToolMetadata = {};
+registerPicoCliTools({ registerTool: (name, metadata) => { picoCliToolMetadata[name] = metadata; } });
+const captureDescription = picoCliToolMetadata.capture_record?.description ?? "";
+for (const required of ["adb screenrecord", "pico-cli capture record", "empty/invalid", "this emulator display", "screencapture -V -l<windowId>"]) {
+  captureDescription.includes(required)
+    ? ok(`capture_record description names ${required}`)
+    : fail(`capture_record description is missing ${required}`);
+}
 
 console.log(`\npico-cli lane test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);
