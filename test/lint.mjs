@@ -24,7 +24,7 @@ for (const rule of BUILTIN_RULES) {
 // matching/non-matching fixtures. Keep these named assertions in addition to the generic loop so
 // deleting or renaming either rule cannot make the fixture count look green by omission.
 for (const [id, requiredText] of [
-  ["dynamic-full-stage-emulator-safety", ["runtime stage style 2", "safety transition", "manifest-declared style-1 DefaultStage", "hardware", "Safeguard"]],
+  ["dynamic-full-stage-emulator-safety", ["runtime style 3", "manifest-declared", "spatialNavigator.openStage(StageStyle.Full)", "ejected to Home", "walks beyond the boundary", "Fabian's note attributed this to runtime style 2", "did not reproduce", "manifest-declared style-1 DefaultStage", "hardware", "Safeguard"]],
   ["defaultstage-windowcontainer-metadata", ["DefaultStage", "pico.spatial.windowcontainer"]],
 ]) {
   const rule = BUILTIN_RULES.find((candidate) => candidate.id === id);

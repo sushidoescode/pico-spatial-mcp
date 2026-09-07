@@ -390,7 +390,7 @@ export const BUILTIN_RULES: LintRule[] = [
     type: "present",
     pattern: /\bspatialNavigator\s*\.\s*openStage\s*\(/,
     findMatch: findSpatialNavigatorFullStageCall,
-    message: "Fabian verified: the dynamic Full route uses runtime stage style 2 and triggers the safety transition on the emulator.",
+    message: "Under continuity proof on the emulator, a Full stage (runtime style 3, whether manifest-declared or opened dynamically via spatialNavigator.openStage(StageStyle.Full)) is ejected to Home when the user walks beyond the boundary. Fabian's note attributed this to runtime style 2, which our measurement did not reproduce.",
     fix: "Use a manifest-declared style-1 DefaultStage, and validate the opaque Full route on hardware with Safeguard configured.",
     designRule: "Space Program emulator-stage safety finding (Fabian)",
     positiveFixture: "spatialNavigator.openStage(SpatialContainers.ID_FULL, StageStyle.Full)",

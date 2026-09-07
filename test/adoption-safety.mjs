@@ -405,7 +405,7 @@ printf '%s\\n' "$@" > "${canonicalArgs}"
     assert.equal(picoFixDecision("spatialNavigator.openStage(SpatialContainers.ID_MAIN, StageStyle.Mixed)\nval fallback = StageStyle.Full").symptom, null);
     assert.equal(picoFixDecision("Unresolved reference in openStage\nrequested enum: StageStyle.Full").symptom, "build_failed");
     const guidance = JSON.stringify(disappearedDiagnosis);
-    for (const text of ["runtime stage style 2", "safety transition", "manifest-declared style-1 DefaultStage", "hardware", "Safeguard"]) {
+    for (const text of ["runtime style 3", "manifest-declared", "spatialNavigator.openStage(StageStyle.Full)", "ejected to Home", "walks beyond the boundary", "Fabian's note attributed this to runtime style 2", "did not reproduce", "manifest-declared style-1 DefaultStage", "hardware", "Safeguard"]) {
       assert(guidance.includes(text), `world_disappears_on_walk diagnosis missing ${text}`);
     }
   });

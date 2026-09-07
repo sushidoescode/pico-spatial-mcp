@@ -179,7 +179,7 @@ const KB: Record<string, DiagEntry> = {
 
   world_disappears_on_walk: {
     rootCause:
-      "Fabian verified: the dynamic Full route uses runtime stage style 2 and triggers the safety transition on the emulator.",
+      "Under continuity proof on the emulator, a Full stage (runtime style 3, whether manifest-declared or opened dynamically via spatialNavigator.openStage(StageStyle.Full)) is ejected to Home when the user walks beyond the boundary. Fabian's note attributed this to runtime style 2, which our measurement did not reproduce.",
     fix: [
       "Use a manifest-declared style-1 DefaultStage.",
       "Validate the opaque Full route on hardware with Safeguard configured.",
