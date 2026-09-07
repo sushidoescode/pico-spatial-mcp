@@ -44,3 +44,7 @@ HANDOFF.md
 NEXT-AGENT-PROMPT.md
 evidence-frame-drift-*.png
 .superpowers/
+
+# pico-cli host wiring written by `pico-cli setup` (machine-local, like the root CLAUDE.md)
+/.cursor/
+/.pico-env.json
