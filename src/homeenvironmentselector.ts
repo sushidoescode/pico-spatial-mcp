@@ -28,6 +28,7 @@ import {
   type SceneDriftPolicy,
 } from "./sceneanchors.js";
 import { run, sleep } from "./util.js";
+import { importedApkProvenanceSchema, validateImportedApk } from "./importedapk.js";
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const packageNameSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/);
@@ -37,9 +38,18 @@ const DISALLOWED_LOGCAT_CONTROL_PATTERN = /[\u0000-\u0008\u000A-\u001F\u007F-\u0
 export const selectorRuntimeInputSchema = z.object({
   serial: z.string().min(1),
   packageName: packageNameSchema,
-  expectedBuildReceiptId: sha256Schema,
+  expectedBuildReceiptId: sha256Schema.optional(),
+  provenance: importedApkProvenanceSchema.optional(),
   expectedStageStyle: z.enum(["Mixed", "Full"]),
-}).strict();
+}).strict().superRefine((value, context) => {
+  if ((value.expectedBuildReceiptId === undefined) === (value.provenance === undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "provide exactly one native build receipt ID or imported APK provenance" });
+  }
+  if (value.provenance && (value.provenance.packageName !== value.packageName
+    || value.provenance.declaredStageStyle !== (value.expectedStageStyle === "Mixed" ? "1" : "3"))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["provenance"], message: "imported APK provenance package and declared stage style must match the runtime request" });
+  }
+});
 export type SelectorRuntimeInput = z.infer<typeof selectorRuntimeInputSchema>;
 
 export const verificationBaselineSchema = z.object({
@@ -47,10 +57,28 @@ export const verificationBaselineSchema = z.object({
   datasetContentSha256: sha256Schema,
   serial: z.string().min(1),
   packageName: packageNameSchema,
-  expectedBuildReceiptId: sha256Schema,
+  expectedBuildReceiptId: sha256Schema.nullable(),
+  provenance: importedApkProvenanceSchema.optional(),
+  applicationIdentity: z.object({
+    apkSha256: sha256Schema,
+    pid: z.number().int().positive(),
+    pidStartTicks: z.string().regex(/^[1-9]\d*$/),
+    component: z.string().min(1),
+  }).strict().optional(),
   bootId: z.string().min(1),
   snapshotId: sha256Schema,
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (value.provenance) {
+    if (value.expectedBuildReceiptId !== null || !value.applicationIdentity
+      || value.provenance.packageName !== value.packageName
+      || value.applicationIdentity.apkSha256 !== value.provenance.apkSha256
+      || !value.applicationIdentity.component.startsWith(`${value.packageName}/`)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "imported APK baseline requires its exact APK/process identity and null native receipt ID" });
+    }
+  } else if (value.expectedBuildReceiptId === null) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "a baseline requires native receipt or imported APK provenance" });
+  }
+});
 export type VerificationBaseline = z.infer<typeof verificationBaselineSchema>;
 
 type ParsedWorldSpaceMarkerLine = {
@@ -355,7 +383,8 @@ function baselineReceiptMatches(result: SelectHomeEnvironmentOutputObject): bool
     && baseline.datasetContentSha256 === result.dataset.datasetContentSha256
     && baseline.serial === verification.runtime.serial
     && baseline.packageName === verification.runtime.packageName
-    && baseline.expectedBuildReceiptId === verification.runtime.expectedBuildReceiptId;
+    && baseline.expectedBuildReceiptId === (verification.runtime.expectedBuildReceiptId ?? null)
+    && canonicalIdentity(baseline.provenance ?? null).sha256 === canonicalIdentity(verification.runtime.provenance ?? null).sha256;
 }
 
 function queryReceiptMatchesSnapshot(query: QueryReceipt | null, snapshotId: string | null): query is QueryReceipt {
@@ -427,6 +456,7 @@ function completePreSnapshot(
     || bindReceipt.ack.serial !== binding.serial
     || bindReceipt.ack.packageName !== binding.packageName
     || bindReceipt.ack.buildReceiptId !== binding.buildReceiptId
+    || (runtime.provenance !== undefined && canonicalIdentity(bindReceipt.ack.provenance ?? null).sha256 !== canonicalIdentity(binding.provenance ?? null).sha256)
     || bindReceipt.ack.apkSha256 !== binding.apkSha256
     || bindReceipt.ack.pid !== binding.foregroundProcess.pid
     || bindReceipt.ack.pidStartTicks !== binding.foregroundProcess.pidStartTicks
@@ -528,6 +558,8 @@ function baselinesExactlyMatch(
     && returned.serial === caller.serial
     && returned.packageName === caller.packageName
     && returned.expectedBuildReceiptId === caller.expectedBuildReceiptId
+    && canonicalIdentity(returned.provenance ?? null).sha256 === canonicalIdentity(caller.provenance ?? null).sha256
+    && canonicalIdentity(returned.applicationIdentity ?? null).sha256 === canonicalIdentity(caller.applicationIdentity ?? null).sha256
     && returned.bootId === caller.bootId
     && returned.snapshotId === caller.snapshotId;
 }
@@ -539,6 +571,7 @@ function runtimesExactlyMatch(
   return returned.serial === caller.serial
     && returned.packageName === caller.packageName
     && returned.expectedBuildReceiptId === caller.expectedBuildReceiptId
+    && canonicalIdentity(returned.provenance ?? null).sha256 === canonicalIdentity(caller.provenance ?? null).sha256
     && returned.expectedStageStyle === caller.expectedStageStyle;
 }
 
@@ -881,6 +914,7 @@ const FAILURE_RECEIPT_MATCHERS: Readonly<Record<string, FailureReceiptMatcher>> 
   identity_drift_serial: identityFailureReceiptMatcher("serial"),
   identity_drift_package: identityFailureReceiptMatcher("package"),
   identity_drift_receipt: identityFailureReceiptMatcher("receipt"),
+  identity_drift_process: identityFailureReceiptMatcher("process"),
   identity_drift_boot: identityFailureReceiptMatcher("boot"),
   identity_drift_stage: identityFailureReceiptMatcher("stage"),
   identity_drift_root: identityFailureReceiptMatcher("root"),
@@ -958,6 +992,7 @@ const FAILURE_CODE_PHASES: Readonly<Record<string, readonly VerificationFailureP
   identity_drift_serial: ["pre_query", "post_query"],
   identity_drift_package: ["pre_query", "post_query"],
   identity_drift_receipt: ["pre_query", "post_query"],
+  identity_drift_process: ["post_query"],
   identity_drift_boot: ["post_query"],
   identity_drift_stage: ["pre_query", "post_query"],
   identity_drift_root: ["pre_query", "post_query"],
@@ -1305,7 +1340,8 @@ function sceneQueryInput(runtime: SelectorRuntimeInput): QuerySceneAnchorsInput 
     serial: runtime.serial,
     scenario: {
       packageName: runtime.packageName,
-      expectedBuildReceiptId: runtime.expectedBuildReceiptId,
+      ...(runtime.expectedBuildReceiptId ? { expectedBuildReceiptId: runtime.expectedBuildReceiptId } : {}),
+      ...(runtime.provenance ? { provenance: runtime.provenance } : {}),
       expectedStageStyle: runtime.expectedStageStyle,
       expectedRootContainer: "stage",
       sceneDriftPolicy: { ...SELECTOR_SCENE_DRIFT_POLICY },
@@ -1331,8 +1367,23 @@ function identityDrift(
     || binding.foregroundProcess.packageName !== runtime.packageName
     || !binding.foregroundProcess.component.startsWith(`${runtime.packageName}/`)
   ) return "package";
-  if (binding.buildReceiptId !== runtime.expectedBuildReceiptId) return "receipt";
+  if (runtime.provenance) {
+    const observed = binding.provenance;
+    if (binding.buildReceiptId !== null || binding.buildReceiptPath !== null || !observed
+      || observed.apkPath !== runtime.provenance.apkPath
+      || observed.apkSha256 !== runtime.provenance.apkSha256
+      || observed.packageName !== runtime.packageName
+      || observed.declaredStageStyle !== runtime.provenance.declaredStageStyle
+      || binding.apkSha256 !== runtime.provenance.apkSha256) return "receipt";
+  } else if (binding.buildReceiptId !== runtime.expectedBuildReceiptId || binding.provenance) return "receipt";
   if (baseline && binding.liveIdentity.bootId !== baseline.bootId) return "boot";
+  if (runtime.provenance && baseline) {
+    const before = baseline.applicationIdentity;
+    if (!before || before.pid !== binding.foregroundProcess.pid
+      || before.pidStartTicks !== binding.foregroundProcess.pidStartTicks
+      || before.component !== binding.foregroundProcess.component
+      || before.apkSha256 !== binding.apkSha256) return "process";
+  }
   if (
     binding.requestedStageStyle !== runtime.expectedStageStyle
     || !("observedStageStyle" in binding)
@@ -1382,14 +1433,24 @@ function baselineMatches(dataset: HomeEnvironmentDataset, runtime: SelectorRunti
     && baseline.datasetContentSha256 === canonicalIdentity(dataset).sha256
     && baseline.serial === runtime.serial
     && baseline.packageName === runtime.packageName
-    && baseline.expectedBuildReceiptId === runtime.expectedBuildReceiptId;
+    && baseline.expectedBuildReceiptId === (runtime.expectedBuildReceiptId ?? null)
+    && canonicalIdentity(baseline.provenance ?? null).sha256 === canonicalIdentity(runtime.provenance ?? null).sha256;
 }
 
 async function validatedQuery(
   deps: HomeEnvironmentSelectorDependencies,
   runtime: SelectorRuntimeInput,
 ): Promise<z.infer<typeof querySceneAnchorsOutputSchema>> {
+  // Check the caller's bytes and compiled manifest before any bridge or picker operation.
+  const imported = runtime.provenance ? await validateImportedApk(runtime.provenance, {
+    packageName: runtime.packageName,
+    declaredStageStyle: runtime.expectedStageStyle === "Mixed" ? "1" : "3",
+  }) : null;
   const query = querySceneAnchorsOutputSchema.parse(await deps.querySceneAnchors(sceneQueryInput(runtime)));
+  if (imported && query.applicationRuntimeBinding?.provenance
+    && canonicalIdentity(imported).sha256 !== canonicalIdentity(query.applicationRuntimeBinding.provenance).sha256) {
+    throw new Error("bridge imported APK provenance does not match the inspected APK manifest");
+  }
   const errorMatchesStatus = query.status === "ready"
     ? query.error === null
     : query.error?.code === query.status;
@@ -1636,7 +1697,16 @@ export async function executeSelectHomeEnvironment(
     datasetContentSha256: canonicalIdentity(dataset).sha256,
     serial: runtime.serial,
     packageName: runtime.packageName,
-    expectedBuildReceiptId: runtime.expectedBuildReceiptId,
+    expectedBuildReceiptId: runtime.expectedBuildReceiptId ?? null,
+    ...(runtime.provenance ? {
+      provenance: runtime.provenance,
+      applicationIdentity: {
+        apkSha256: pre.applicationRuntimeBinding.apkSha256,
+        pid: pre.applicationRuntimeBinding.foregroundProcess.pid,
+        pidStartTicks: pre.applicationRuntimeBinding.foregroundProcess.pidStartTicks,
+        component: pre.applicationRuntimeBinding.foregroundProcess.component,
+      },
+    } : {}),
     bootId: pre.applicationRuntimeBinding.liveIdentity.bootId,
     snapshotId: pre.snapshotId,
   };
@@ -1772,7 +1842,7 @@ export function registerHomeEnvironmentSelectorTools(
     "select_home_environment",
     {
       description:
-        "Rank measured PICO Emulator 6.0 home environments, optionally perform one guarded host selection, and report success only after a changed receipt-bound mesh uniquely classifies as the target. Scene ID and host clicks are non-discriminating; evidence ceiling is structural.",
+        "Rank measured PICO Emulator 6.0 home environments, optionally perform one guarded host selection, and report success only after a changed receipt-bound mesh uniquely classifies as the target. Runtime binding accepts native receipts and inspected imported_apk provenance with APK and process continuity. Scene ID and host clicks are non-discriminating; evidence ceiling is structural.",
       inputSchema: selectHomeEnvironmentInputSchema,
       // SDK 1.30 advertises/validates only a root ZodObject or raw shape here;
       // the handler applies the relational superRefine before publishing content.

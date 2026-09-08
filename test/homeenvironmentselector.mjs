@@ -21,7 +21,9 @@ import {
   rankHomeEnvironments,
 } from "../dist/homeenvironmentcatalog.js";
 import { canonicalIdentity } from "../dist/runreceiptidentity.js";
-import { querySceneAnchorsOutputSchema } from "../dist/sceneanchors.js";
+import { bindSceneApplicationRuntime, querySceneAnchorsOutputSchema } from "../dist/sceneanchors.js";
+import { importedApkFixture, IMPORTED_MANIFEST_DUMP, scopedImportedManifestDump } from "./helpers/imported-apk-fixture.mjs";
+import { parseImportedApkManifestDump } from "../dist/importedapk.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const evidenceRoot = path.join(
@@ -3126,4 +3128,222 @@ test("select_home_environment is registered only on the full surface", async () 
     await fullClient.close();
     await doorsClient.close();
   }
+});
+
+function importedSelectorRuntime(provenance) {
+  return { serial: SERIAL, packageName: PACKAGE_NAME, expectedStageStyle: "Mixed", provenance };
+}
+
+function importedSelectorQuery(source, importedReceipt) {
+  const query = structuredClone(source);
+  const binding = query.applicationRuntimeBinding;
+  binding.buildReceiptId = null;
+  binding.buildReceiptPath = null;
+  binding.apkSha256 = importedReceipt.apkSha256;
+  binding.provenance = importedReceipt;
+  const ack = query.actionReceipts.find((entry) => entry.action === "bind_application_runtime").ack;
+  ack.buildReceiptId = null;
+  ack.apkSha256 = importedReceipt.apkSha256;
+  ack.provenance = importedReceipt;
+  return query;
+}
+
+test("imported APK switch accepts an inspected hand-built APK without inventing a fleet receipt", async (t) => {
+  const fixture = importedApkFixture(t);
+  const runtime = importedSelectorRuntime(fixture.provenance);
+  const deps = selectorDeps({
+    preQuery: importedSelectorQuery(bedroomDayQuery, fixture.receipt),
+    postQuery: importedSelectorQuery(livingroomDayQuery, fixture.receipt),
+  });
+  const result = await execute(switchInput({ runtime }), deps);
+  assert.equal(result.status, "selected_verified", JSON.stringify(result.error));
+  assert.equal(result.evidenceCeiling, "structural");
+  assert.equal(result.verification.postQuery.applicationRuntimeBinding.buildReceiptId, null);
+  assert.equal(result.verification.postQuery.applicationRuntimeBinding.buildReceiptPath, null);
+  assert.equal(result.verification.postQuery.applicationRuntimeBinding.provenance.kind, "imported_apk");
+  assert.equal(result.verification.postQuery.applicationRuntimeBinding.provenance.manifestInspection.declaredStageStyle, "1");
+  assert.equal(result.baseline.expectedBuildReceiptId, null);
+  assert.equal(result.baseline.applicationIdentity.apkSha256, fixture.provenance.apkSha256);
+  assert.deepEqual(deps.queryInputs[0].scenario.provenance, fixture.provenance);
+});
+
+for (const [name, mutate, expectedError] of [
+  ["SHA mismatch", (input) => { input.apkSha256 = "a".repeat(64); }, /sha256/i],
+  ["manifest package mismatch", null, /package/i],
+  ["manifest stage-style mismatch", "style", /stage.style/i],
+]) {
+  test(`imported APK switch rejects ${name} before host selection`, async (t) => {
+    const manifestDump = name.includes("package")
+      ? IMPORTED_MANIFEST_DUMP.replaceAll(PACKAGE_NAME, "com.other.handbuilt")
+      : mutate === "style" ? IMPORTED_MANIFEST_DUMP.replace(/value\(0x01010024\)=1/, "value(0x01010024)=3")
+      : IMPORTED_MANIFEST_DUMP;
+    const fixture = importedApkFixture(t, { manifestDump });
+    const provenance = structuredClone(fixture.provenance);
+    if (typeof mutate === "function") mutate(provenance);
+    const deps = selectorDeps();
+    const result = await execute(switchInput({ runtime: importedSelectorRuntime(provenance) }), deps);
+    assert.equal(result.status, "verification_failed");
+    assert.match(result.error.detail, expectedError);
+    assert.equal(deps.hostInputs.length, 0);
+    assert.equal(deps.queryInputs.length, 0);
+  });
+}
+
+for (const field of ["pid", "pidStartTicks", "component"]) {
+  test(`imported APK switch keeps ${field} continuity across the environment change`, async (t) => {
+    const fixture = importedApkFixture(t);
+    const before = importedSelectorQuery(bedroomDayQuery, fixture.receipt);
+    const after = importedSelectorQuery(livingroomDayQuery, fixture.receipt);
+    const changed = after.applicationRuntimeBinding.foregroundProcess;
+    changed[field] = field === "pid" ? changed.pid + 1 : field === "pidStartTicks" ? "999999" : `${PACKAGE_NAME}/.UnexpectedActivity`;
+    const ack = after.actionReceipts.find((entry) => entry.action === "bind_application_runtime").ack;
+    if (field !== "component") ack[field] = changed[field];
+    const result = await execute(switchInput({ runtime: importedSelectorRuntime(fixture.provenance) }), selectorDeps({ preQuery: before, postQuery: after }));
+    assert.equal(result.status, "verification_failed");
+    assert.equal(result.error.code, "identity_drift_process");
+  });
+}
+
+function importedBindingAdb(fixture, { digest, pidStartTicks = "9001" } = {}) {
+  const adb = path.join(fixture.root, "binding-adb.mjs");
+  const installedPath = "/data/app/hand-built/base.apk";
+  const responses = [
+    [["devices", "-l"], `List of devices attached\n${SERIAL} device product:pico model:pico\n`],
+    [["-s", SERIAL, "shell", "getprop", "ro.product.model"], "PICO Emulator"],
+    [["-s", SERIAL, "shell", "getprop", "ro.build.fingerprint"], "pico/emulator/build"],
+    [["-s", SERIAL, "shell", "getprop", "ro.boot.qemu"], "1"],
+    [["-s", SERIAL, "shell", "cat", "/proc/sys/kernel/random/boot_id"], BOOT_ID],
+    [["-s", SERIAL, "shell", "pm", "path", PACKAGE_NAME], `package:${installedPath}`],
+    [["-s", SERIAL, "shell", "sha256sum", installedPath], digest ?? `${fixture.provenance.apkSha256}  ${installedPath}`],
+    [["-s", SERIAL, "shell", "pidof", PACKAGE_NAME], "4242"],
+    [["-s", SERIAL, "shell", "cat", "/proc/4242/stat"], `4242 (app process) S ${Array(18).fill("0").join(" ")} ${pidStartTicks} 0`],
+    [["-s", SERIAL, "shell", "dumpsys", "activity", "activities"], `mResumedActivity: ActivityRecord{abcd u0 ${PACKAGE_NAME}/.platform.LaunchActivity t7}`],
+  ];
+  fs.writeFileSync(adb, `#!/usr/bin/env node
+const responses = new Map(${JSON.stringify(responses.map(([args, output]) => [JSON.stringify(args), output]))});
+const output = responses.get(JSON.stringify(process.argv.slice(2)));
+if (output === undefined) { process.stderr.write("unexpected adb command"); process.exit(31); }
+process.stdout.write(output);
+`);
+  fs.chmodSync(adb, 0o755);
+  return adb;
+}
+
+function importedBindingInput(provenance) {
+  return {
+    serial: SERIAL,
+    scenario: {
+      packageName: PACKAGE_NAME,
+      provenance,
+      expectedStageStyle: "Mixed",
+      expectedRootContainer: "stage",
+      sceneDriftPolicy: { count: "advisory", maxTransformDeltaM: 0.01, maxTransformDeltaDeg: 1, maxExtentDeltaM: 0.01, topology: "strict" },
+    },
+    labels: ["TABLE", "FLOOR", "WALL_ART"],
+    maxRetries: 15, pollMs: 1000, includeGeometry: "lossless_external_artifact", stabilityReads: 2,
+  };
+}
+
+test("imported APK live scene binding binds installed bytes and process without a native receipt", async (t) => {
+  const fixture = importedApkFixture(t);
+  const result = await bindSceneApplicationRuntime(importedBindingAdb(fixture), importedBindingInput(fixture.provenance), "100");
+  assert.equal(result.ok, true, result.detail);
+  assert.equal(result.binding.buildReceiptId, null);
+  assert.equal(result.binding.buildReceiptPath, null);
+  assert.equal(result.binding.provenance.kind, "imported_apk");
+  assert.equal(result.binding.apkSha256, fixture.provenance.apkSha256);
+  assert.equal(result.binding.foregroundProcess.pid, 4242);
+  assert.equal(result.binding.foregroundProcess.pidStartTicks, "9001");
+  assert.equal(result.binding.liveIdentity.bootId, BOOT_ID);
+});
+
+for (const kind of ["wrong digest path", "multiple digest rows", "different installed bytes", "invalid process start ticks"]) {
+  test(`imported APK live scene binding rejects ${kind}`, async (t) => {
+    const fixture = importedApkFixture(t);
+    const options = kind === "wrong digest path" ? { digest: `${fixture.provenance.apkSha256}  /data/app/some-other/base.apk` }
+      : kind === "multiple digest rows" ? { digest: `${fixture.provenance.apkSha256}  /data/app/hand-built/base.apk\n${fixture.provenance.apkSha256}  /data/app/extra/base.apk` }
+      : kind === "different installed bytes" ? { digest: `${"f".repeat(64)}  /data/app/hand-built/base.apk` }
+      : { pidStartTicks: "not-a-tick" };
+    const result = await bindSceneApplicationRuntime(importedBindingAdb(fixture, options), importedBindingInput(fixture.provenance), "100");
+    assert.equal(result.ok, false);
+    assert.equal(result.binding, null);
+  });
+}
+
+for (const kind of ["missing provenance", "fake native receipt", "mismatched bound APK"]) {
+  test(`imported APK scene receipt schema rejects ${kind}`, (t) => {
+    const fixture = importedApkFixture(t);
+    const query = importedSelectorQuery(bedroomDayQuery, fixture.receipt);
+    if (kind === "missing provenance") delete query.applicationRuntimeBinding.provenance;
+    if (kind === "fake native receipt") {
+      query.applicationRuntimeBinding.buildReceiptId = RECEIPT_ID;
+      query.applicationRuntimeBinding.buildReceiptPath = "/invented/native-receipt.json";
+    }
+    if (kind === "mismatched bound APK") query.applicationRuntimeBinding.apkSha256 = "a".repeat(64);
+    assert.equal(querySceneAnchorsOutputSchema.safeParse(query).success, false);
+  });
+}
+
+test("imported APK manual switch verification retains the caller baseline and process identity", async (t) => {
+  const fixture = importedApkFixture(t);
+  const runtime = importedSelectorRuntime(fixture.provenance);
+  const switched = await execute(switchInput({ runtime }), selectorDeps({
+    preQuery: importedSelectorQuery(bedroomDayQuery, fixture.receipt),
+    hostResult: hostManual(),
+  }));
+  assert.equal(switched.status, "manual_switch_required");
+  const verified = await execute({
+    action: "verify", ...SOURCE, runtime,
+    baseline: switched.baseline, marker: switched.verification.marker,
+  }, selectorDeps({ verifyOnly: true, postQuery: importedSelectorQuery(livingroomDayQuery, fixture.receipt) }));
+  assert.equal(verified.status, "selected_verified");
+  assert.deepEqual(verified.baseline, switched.baseline);
+  assert.equal(verified.hostSelection, null);
+  const missingProcess = structuredClone(switched.baseline);
+  delete missingProcess.applicationIdentity;
+  const rejected = await execute({
+    action: "verify", ...SOURCE, runtime,
+    baseline: missingProcess, marker: switched.verification.marker,
+  }, selectorDeps({ verifyOnly: true }));
+  assert.equal(rejected.status, "invalid_request");
+});
+
+test("imported APK manifest inspection resolves the launcher and its metadata before application fallback", () => {
+  const manifest = parseImportedApkManifestDump(scopedImportedManifestDump({ appStyle: "3", launchStyle: "1", secondaryStyle: "3" }));
+  assert.equal(manifest.declaredStageStyle, "1");
+  assert.equal(manifest.launchComponent, `${PACKAGE_NAME}/.platform.LaunchActivity`);
+  assert.equal(manifest.stageStyleSource, "activity");
+});
+
+for (const [kind, options, pattern] of [
+  ["unrelated activity stage metadata", { secondaryStyle: "1" }, /stage style/i],
+  ["ambiguous launchers", { appStyle: "1", secondLauncher: true }, /ambiguous.*launch/i],
+  ["resource-valued launcher metadata", { appStyle: "1", launchStyle: "@0x7f010001" }, /literal|resource/i],
+  ["resource-backed launcher metadata name", { appStyle: "1", launchStyle: "3", launchNameResource: true }, /literal|resource/i],
+  ["resource attribute overriding literal stage value", { launchStyle: "1", launchResource: true }, /resource/i],
+]) {
+  test(`imported APK switch rejects ${kind}`, async (t) => {
+    const fixture = importedApkFixture(t, { manifestDump: scopedImportedManifestDump(options) });
+    const deps = selectorDeps();
+    const result = await execute(switchInput({ runtime: importedSelectorRuntime(fixture.provenance) }), deps);
+    assert.equal(result.status, "verification_failed");
+    assert.match(result.error.detail, pattern);
+    assert.equal(deps.hostInputs.length, 0);
+    assert.equal(deps.queryInputs.length, 0);
+  });
+}
+
+test("imported APK selector rejects a missing launcher while explicit component inspection remains scoped", async (t) => {
+  const manifestDump = scopedImportedManifestDump({ appStyle: "1", launchStyle: "3", noLauncher: true });
+  const fixture = importedApkFixture(t, { manifestDump });
+  const deps = selectorDeps();
+  const result = await execute(switchInput({ runtime: importedSelectorRuntime(fixture.provenance) }), deps);
+  assert.equal(result.status, "verification_failed");
+  assert.match(result.error.detail, /no.*launch|one.*launch/i);
+  assert.equal(deps.queryInputs.length, 0);
+  assert.equal(deps.hostInputs.length, 0);
+  const explicit = parseImportedApkManifestDump(manifestDump, { launchComponent: `${PACKAGE_NAME}/.platform.LaunchActivity` });
+  assert.equal(explicit.declaredStageStyle, "3");
+  assert.equal(explicit.launchComponent, `${PACKAGE_NAME}/.platform.LaunchActivity`);
+  assert.equal(explicit.stageStyleSource, "activity");
 });

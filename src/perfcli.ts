@@ -12,6 +12,7 @@ import {
   classifyPicoCliFailure,
   type PicoCliFailureClass,
   type PicoCliProvenance,
+  type PicoCliCommandResult,
   cliWrapperContractShape,
 } from "./picocli.js";
 
@@ -22,7 +23,7 @@ export { picoCliPath } from "./picocli.js";
  * (v31: CLI probing moved to the shared picocli.ts module; the diagnose core is exported so
  * SpatialBench's perfSource:'pico-cli' axis reuses it directly instead of round-tripping a tool.)
  *
- * Wraps `pico-cli perf monitor run` (the PICO Spatial Performance Profiler: per-second sampling,
+ * Wraps the detected profiler's bounded run command (the PICO Spatial Performance Profiler: per-second sampling,
  * app/system FPS percentiles, CPU/GPU counters, jank windows, and a DIAGNOSIS engine that
  * attributes the bottleneck — e.g. category "no_3d_frame" with the rule and evidence it fired on).
  * This deliberately builds ON the official toolchain instead of rebuilding it; our own
@@ -41,6 +42,34 @@ const HONESTY =
   "diagnosis block is pico-cli's own rule engine quoted verbatim (rule + evidence included). " +
   "Evidence class: structural — not a substitute for LOOKING at a capture.";
 
+const perfCommandSchema = z.object({ path: z.string(), args: z.array(z.string()) });
+const perfProbeSchema = perfCommandSchema.extend({
+  code: z.number().nullable(),
+  timedOut: z.boolean(),
+  outputTruncated: z.boolean(),
+  outputTail: z.string().optional(),
+  spawnError: z.string().optional(),
+});
+const profilerSchema = z.object({
+  version: z.string().nullable(),
+  identity: z.enum(["profiler-cli", "pico-cli-0.3.0-embedded", "unknown"]),
+  versionProbe: perfProbeSchema,
+  legacyHelpProbe: perfProbeSchema.optional(),
+});
+
+function perfProbeReceipt(cliPath: string, args: string[], result: PicoCliCommandResult): z.infer<typeof perfProbeSchema> {
+  const tail = `${result.stderr}\n${result.stdout}`.trim().split("\n").slice(-6).join("\n");
+  return {
+    path: cliPath, args, code: result.code, timedOut: result.timedOut, outputTruncated: result.outputTruncated,
+    ...(tail ? { outputTail: tail } : {}),
+    ...(result.spawnError ? { spawnError: result.spawnError } : {}),
+  };
+}
+
+function perfProbeSucceeded(result: PicoCliCommandResult): boolean {
+  return result.code === 0 && !result.timedOut && !result.spawnError && !result.outputTruncated;
+}
+
 export type PerfDiagnoseResult = {
   status: "ok" | "unavailable" | "failed";
   failureClass?: PicoCliFailureClass;
@@ -56,6 +85,8 @@ export type PerfDiagnoseResult = {
   jankWindows?: any[];
   honesty?: string;
   picoCli?: PicoCliProvenance;
+  command?: z.infer<typeof perfCommandSchema>;
+  profiler?: z.infer<typeof profilerSchema>;
   setupCommand?: { path: string; args: string[] };
   outputTruncated?: boolean;
 };
@@ -77,17 +108,73 @@ export async function runPerfDiagnose(
   }
   const cli = picoCliFromEnsure(ensured)!;
   const provenance = { picoCli: picoCliProvenance(ensured) };
+  // The helper has its own release version. Read it on every run: utility setup can change it
+  // without changing the pico-cli package or its cached compatibility record.
+  const versionArgs = ["perf", "-V"];
+  const versionResult = await runPicoCli(cli, versionArgs, { timeoutMs: 15_000, maxOutputBytes: 8 * 1024 });
+  const versionText = versionResult.stdout.trim();
+  const version = versionText.match(/^(\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?)$/)?.[1] ?? null;
+  const profiler: z.infer<typeof profilerSchema> = {
+    version,
+    identity: version ? "profiler-cli" : "unknown",
+    versionProbe: perfProbeReceipt(cli.path, versionArgs, versionResult),
+  };
+  let mode: "live" | "monitor" | null = perfProbeSucceeded(versionResult) && version === "0.1.0" ? "live" : null;
+  let refusedProbe = versionResult;
+
+  // The retained legacy evidence is for pico-cli 0.3.0's embedded monitor command, not a
+  // standalone helper version. A reported unsupported helper must never take this fallback.
+  const legacyVersionProbe = !versionResult.timedOut && !versionResult.spawnError && !versionResult.outputTruncated && (
+    (versionResult.code !== 0 && /unknown option\s+['"]-V['"]/.test(`${versionResult.stderr}\n${versionResult.stdout}`)) ||
+    (versionResult.code === 0 && /^pico-cli\/0\.3\.0(?:\s|$)/.test(versionText))
+  );
+  if (!mode && version === null && cli.version === "0.3.0" && legacyVersionProbe) {
+    const helpArgs = ["perf", "monitor", "run", "--help"];
+    const helpResult = await runPicoCli(cli, helpArgs, { timeoutMs: 15_000, maxOutputBytes: 16 * 1024 });
+    profiler.legacyHelpProbe = perfProbeReceipt(cli.path, helpArgs, helpResult);
+    refusedProbe = helpResult;
+    const help = helpResult.stdout;
+    // Some removed commands exit 0 with ROOT help. Confirm the command usage and the flags
+    // needed by the retained invocation; a help exit code alone cannot establish support.
+    if (perfProbeSucceeded(helpResult) && /^\s*Usage:\s+(?:pico-cli\s+)?perf\s+monitor\s+run\s+\[options\]/m.test(help) &&
+        /(?:^|\s)--app\s+</m.test(help) && /(?:^|\s)-d(?:,|\s)/m.test(help) &&
+        /(?:^|\s)--device\s+</m.test(help) && /(?:^|\s)-o(?:,|\s)/m.test(help)) {
+      mode = "monitor";
+      profiler.identity = "pico-cli-0.3.0-embedded";
+    }
+  }
+  if (!mode) {
+    const failureClass = perfProbeSucceeded(refusedProbe)
+      ? "flag-or-version-drift"
+      : classifyPicoCliFailure(refusedProbe.stderr, refusedProbe.stdout);
+    const receipt = profiler.legacyHelpProbe ?? profiler.versionProbe;
+    return {
+      status: "failed",
+      failureClass,
+      note: failureClass === "setup-required"
+        ? "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
+        : `Profiler command selection refused: ${version ? `unsupported profiler-cli ${version}` : "no recognized profiler version or confirmed legacy command"}. No sampling command was run; inspect profiler probe evidence before retrying.`,
+      ...(failureClass === "setup-required" ? { setupCommand: { path: cli.path, args: ["setup"] } } : {}),
+      ...(receipt.outputTail ? { outputTail: receipt.outputTail } : {}),
+      ...(receipt.spawnError ? { error: receipt.spawnError } : {}),
+      ...(receipt.timedOut ? { error: "Profiler command probe timed out after 15s and was killed." } : {}),
+      ...(receipt.outputTruncated ? { outputTruncated: true } : {}),
+      profiler,
+      ...provenance,
+    };
+  }
+
   const sec = Math.min(120, Math.max(5, Math.round(opts.durationSec ?? 15)));
   const serial = opts.device ?? "emulator-5554";
   const outDir = path.join(os.homedir(), ".pico-mcp", "perf");
   fs.mkdirSync(outDir, { recursive: true });
   const reportPath = path.join(outDir, `${packageName}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
 
-  const runResult = await runPicoCli(
-    cli,
-    ["perf", "monitor", "run", "--app", packageName, "-d", String(sec), "--device", serial, "-o", reportPath],
-    { timeoutMs: (sec + 90) * 1000 },
-  );
+  const args = ["perf", mode, "run", "--app", packageName, "-d", String(sec), "--device", serial,
+    ...(mode === "live" ? ["--save"] : []), "-o", reportPath];
+  const commandName = `pico-cli perf ${mode} run`;
+  const evidence = { ...provenance, profiler, command: { path: cli.path, args } };
+  const runResult = await runPicoCli(cli, args, { timeoutMs: (sec + 90) * 1000 });
   if (runResult.timedOut || runResult.code !== 0) {
     // Three honest failure classes: cli-missing is handled above; a usage/unknown-option dump means
     // OUR wrapped flags drifted from the installed CLI (retrying unchanged cannot help); everything
@@ -101,17 +188,17 @@ export async function runPerfDiagnose(
       status: "failed",
       failureClass,
       note: failureClass === "flag-or-version-drift"
-        ? `pico-cli rejected the invocation (installed: ${cli.raw || "unknown"}) — the flags this wrapper passes were verified against 0.3.0 and no longer match; report outputTail upstream instead of retrying.`
+        ? `pico-cli rejected the selected invocation (${profiler.identity}, version ${profiler.version ?? cli.version ?? "unknown"}); report command and outputTail upstream instead of retrying unchanged.`
         : failureClass === "setup-required"
           ? "The resolved CLI package is runnable, but this utility payload is not provisioned. Run the returned command manually, then retry."
-          : "pico-cli perf monitor run failed at runtime — read outputTail (the CLI's own words) before assuming a cause; a stopped app or wrong device serial are common but NOT proven by this wrapper.",
+          : `${commandName} failed at runtime — read outputTail (the CLI's own words) before assuming a cause; a stopped app or wrong device serial are common but NOT proven by this wrapper.`,
       ...(failureClass === "setup-required" ? { setupCommand: { path: cli.path, args: ["setup"] } } : {}),
       error: runResult.spawnError ?? (runResult.timedOut
-        ? `pico-cli perf monitor run timed out after ${sec + 90}s and was killed.`
-        : `pico-cli perf monitor run exited with code ${runResult.code}.`),
+        ? `${commandName} timed out after ${sec + 90}s and was killed.`
+        : `${commandName} exited with code ${runResult.code}.`),
       ...(tail ? { outputTail: tail } : {}),
       ...(runResult.outputTruncated ? { outputTruncated: true } : {}),
-      ...provenance,
+      ...evidence,
     };
   }
 
@@ -125,14 +212,14 @@ export async function runPerfDiagnose(
       note: `pico-cli reported success but the report at ${reportPath} is missing/unparseable.`,
       error: e instanceof Error ? e.message : String(e),
       ...(runResult.outputTruncated ? { outputTruncated: true } : {}),
-      ...provenance,
+      ...evidence,
     };
   }
 
   const jank = Array.isArray(report.jankWindows) ? report.jankWindows : [];
   return {
     status: "ok",
-    source: "pico-cli perf monitor run (official PICO profiler + diagnosis engine)",
+    source: `${commandName} (official PICO profiler + diagnosis engine)`,
     reportPath,
     metadata: report.metadata ?? null,
     diagnosis: report.diagnosis ?? null,
@@ -141,7 +228,7 @@ export async function runPerfDiagnose(
     jankWindows: jank.slice(0, 5),
     honesty: HONESTY,
     ...(runResult.outputTruncated ? { outputTruncated: true } : {}),
-    ...provenance,
+    ...evidence,
   };
 }
 
@@ -176,8 +263,9 @@ export function registerPerfCliTools(server: McpServer) {
     "perf_diagnose",
     {
       description:
-        "Run PICO's OFFICIAL performance profiler (`pico-cli perf monitor run`) against a running app for a fixed window " +
-        "and return its JSON report: app/system FPS percentiles, CPU/GPU usage, jank windows, and pico-cli's DIAGNOSIS " +
+        "Run PICO's OFFICIAL performance profiler against a running app for a fixed window. Detects profiler-cli 0.1.0 " +
+        "for `perf live run --save`, with the confirmed embedded pico-cli 0.3.0 monitor command retained; unknown versions refuse sampling. " +
+        "Returns its JSON report: app/system FPS percentiles, CPU/GPU usage, jank windows, and pico-cli's DIAGNOSIS " +
         "(bottleneck category + rule + evidence — e.g. no_3d_frame, app-bound, compositor-bound). Prefer this over " +
         "measure_perf for engine/3D-pipeline analysis; keep measure_perf for the 2D UI-frame (gfxinfo) view. " +
         "Resolves the latest managed @picoxr/pico-cli lazily on first use and runs its absolute path; successful resolution " +
@@ -189,6 +277,8 @@ export function registerPerfCliTools(server: McpServer) {
       outputSchema: z.object({
         status: z.enum(["ok", "failed", "unavailable"]).describe("ok = a report was produced and parsed; failed = the run or report failed (see failureClass/outputTail); unavailable = pico-cli absent/unusable."),
         ...cliWrapperContractShape,
+        command: perfCommandSchema.optional().describe("Exact absolute executable path and argv used for the sampling attempt; absent when selection refused before sampling."),
+        profiler: profilerSchema.optional().describe("Detected helper identity plus the bounded version/help probes used to select or refuse the command. The legacy embedded helper has no independently measured version."),
         source: z.string().optional(),
         reportPath: z.string().optional().describe("The full pico-cli report JSON, persisted for deep dives."),
         metadata: z.unknown().optional(),

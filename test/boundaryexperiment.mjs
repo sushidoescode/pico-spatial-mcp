@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { makePng } from "./helpers/runreceipt-fixture.mjs";
+import { importedApkFixture, IMPORTED_MANIFEST_DUMP, IMPORTED_PACKAGE, scopedImportedManifestDump } from "./helpers/imported-apk-fixture.mjs";
 import * as boundaryExperiment from "../dist/boundaryexperiment.js";
 
 import {
@@ -248,6 +249,14 @@ function attestation(captureSha256, visibleState = "boundarylab_mixed", override
   };
 }
 
+function clearBoundaryHostWindow(overrides = {}) {
+  return {
+    status: "ok", occluded: false, frontmost: true, overlappingOwners: [],
+    observedAt: "2026-09-08T12:00:00.000Z", qemuWindowId: 7,
+    qemuWindowOwnerPid: 93013, detail: null, ...overrides,
+  };
+}
+
 function fakeDependencies() {
   const calls = { prepare: [], recapture: [], waypoint: [], recover: [] };
   let waypointOrdinal = 0;
@@ -258,6 +267,7 @@ function fakeDependencies() {
       now: () => "2026-08-31T12:00:00.000Z",
       monotonicNs: (() => { let value = 1000n; return () => ++value; })(),
       readNativeRunReceipt: fakeM0ReceiptReader,
+      probeHostWindow: async () => clearBoundaryHostWindow(),
       readReviewImage: () => Buffer.alloc(0),
       collectPreparation: async (context) => {
         calls.prepare.push(context);
@@ -923,6 +933,195 @@ test("prepare reserves one external run, publishes complete baseline review, and
   }
   assert.equal(JSON.stringify(result).includes("capability"), false);
   assert.equal(fs.readFileSync(path.join(artifactRoot, "run.json"), "utf8").includes("capability\""), false);
+});
+
+test("boundary host-window preflight refuses covered, missing, and unavailable windows without preparation effects", async (t) => {
+  for (const [label, probe, code] of [
+    ["covered despite frontmost", clearBoundaryHostWindow({ occluded: true, overlappingOwners: ["Terminal", "Codex"] }), "host_window_occluded"],
+    ["no window", clearBoundaryHostWindow({ status: "no_window", occluded: null, frontmost: null, qemuWindowId: null, qemuWindowOwnerPid: null }), "host_window_unavailable"],
+    ["missing probe dependency", null, "host_window_unavailable"],
+    ["throwing probe", new Error("window inventory failed"), "host_window_unavailable"],
+  ]) await t.test(label, async (t) => {
+    const fake = fakeDependencies();
+    const artifactRoot = path.join(scratch(t), "run");
+    if (probe === null) delete fake.deps.probeHostWindow;
+    else fake.deps.probeHostWindow = async () => {
+      if (probe instanceof Error) throw probe;
+      return structuredClone(probe);
+    };
+    const result = await createBoundaryExperimentOrchestrator(fake.deps).execute(prepareInput(artifactRoot));
+    assert.equal(result.status, "preflight_rejected");
+    assert.equal(result.structuralStop, code);
+    assert.equal(result.hostWindowError.code, code);
+    if (code === "host_window_occluded") {
+      assert.match(result.error, /Terminal/);
+      assert.match(result.error, /Codex/);
+    }
+    assert.equal(result.hostWindowProbes.length, 1);
+    assert.equal(fake.calls.prepare.length, 0);
+    assert.equal(fs.existsSync(artifactRoot), false);
+  });
+});
+
+test("boundary preparation retains clear non-frontmost host probes in its immutable evidence", async (t) => {
+  const fake = fakeDependencies();
+  fake.deps.probeHostWindow = async () => clearBoundaryHostWindow({ frontmost: false });
+  const result = await createBoundaryExperimentOrchestrator(fake.deps).execute(prepareInput(path.join(scratch(t), "run")));
+  assert.equal(result.status, "needs_baseline_review");
+  assert.equal(result.hostWindowProbe.frontmost, false);
+  assert.ok(result.hostWindowProbes.length >= 2);
+  const saved = JSON.parse(fs.readFileSync(path.join(result.artifactRoot, "preparation.json"), "utf8"));
+  assert.deepEqual(saved.hostWindowProbes, result.hostWindowProbes);
+});
+
+test("boundary preparation refuses baseline evidence when the host becomes covered during preparation", async (t) => {
+  const fake = fakeDependencies();
+  fake.deps.probeHostWindow = async () => clearBoundaryHostWindow(
+    fake.calls.prepare.length ? { occluded: true, overlappingOwners: ["Terminal"] } : {},
+  );
+  const result = await createBoundaryExperimentOrchestrator(fake.deps).execute(prepareInput(path.join(scratch(t), "run")));
+  assert.equal(result.status, "preparation_failed");
+  assert.equal(result.structuralStop, "host_window_occluded");
+  assert.equal(result.hostWindowProbe.occluded, true);
+  const saved = JSON.parse(fs.readFileSync(path.join(result.artifactRoot, "preparation-failure.json"), "utf8"));
+  assert.deepEqual(saved.hostWindowProbes, result.hostWindowProbes);
+  assert.equal(fake.calls.waypoint.length, 0);
+});
+
+test("boundary step refuses covered or missing windows before route effects", async (t) => {
+  for (const [probe, code] of [
+    [clearBoundaryHostWindow({ occluded: true, overlappingOwners: ["Terminal"] }), "host_window_occluded"],
+    [clearBoundaryHostWindow({ status: "no_window", occluded: null, frontmost: null, qemuWindowId: null, qemuWindowOwnerPid: null }), "host_window_unavailable"],
+  ]) await t.test(code, async (t) => {
+    const fake = fakeDependencies();
+    const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+    const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "run")));
+    fake.deps.probeHostWindow = async () => structuredClone(probe);
+    const result = await orchestrator.execute({
+      action: "step", runId: prepared.runId,
+      reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+    });
+    assert.equal(result.structuralStop, code);
+    assert.equal(fake.calls.waypoint.length, 0);
+    assert.equal(fake.calls.recapture.length, 0);
+    const record = JSON.parse(fs.readFileSync(path.join(result.artifactRoot, "actions.jsonl"), "utf8").trim());
+    assert.equal(record.structuralStop, code);
+    assert.deepEqual(record.hostWindowProbes, result.hostWindowProbes);
+  });
+});
+
+test("boundary step withholds distance claims after host occlusion during recapture or movement", async (t) => {
+  for (const moment of ["recapture", "movement"]) await t.test(moment, async (t) => {
+    const fake = fakeDependencies();
+    const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+    const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "run")));
+    let moved = false;
+    const executeWaypoint = fake.deps.executeWaypoint;
+    fake.deps.executeWaypoint = async (context) => {
+      const result = await executeWaypoint(context);
+      moved = result.routeTrace.usage.actions > 0;
+      return result;
+    };
+    fake.deps.probeHostWindow = async () => clearBoundaryHostWindow(
+      (moment === "recapture" ? fake.calls.recapture.length > 0 : moved)
+        ? { occluded: true, overlappingOwners: ["Terminal"] } : {},
+    );
+    const result = await orchestrator.execute({
+      action: "step", runId: prepared.runId,
+      reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+    });
+    assert.equal(result.structuralStop, "host_window_occluded");
+    assert.equal(moved, moment === "movement");
+    assert.equal(result.requiredReview.some((item) => item.role === "waypoint"), false);
+    const record = JSON.parse(fs.readFileSync(path.join(result.artifactRoot, "actions.jsonl"), "utf8").trim());
+    assert.deepEqual(record.hostWindowProbes, result.hostWindowProbes);
+    const adjudicated = await orchestrator.execute({
+      action: "adjudicate", runId: prepared.runId, scope: "route",
+      frameAttestations: [attestation("1".repeat(64), "system_home"), attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 })],
+    });
+    assert.equal(adjudicated.outcome, "host_window_occluded");
+    assert.equal(adjudicated.evidenceCeiling, "structural");
+    assert.equal(adjudicated.witnessedGateM, 0);
+  });
+});
+
+test("boundary recovery refuses covered evidence before or after an ordered fallback", async (t) => {
+  for (const moment of ["before", "after"]) await t.test(moment, async (t) => {
+    const fake = fakeDependencies();
+    const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+    const { prepared } = await reachEjectedRoute(orchestrator, path.join(scratch(t), "run"));
+    fake.deps.probeHostWindow = async () => clearBoundaryHostWindow(
+      moment === "before" || fake.calls.recover.length > 0
+        ? { occluded: true, overlappingOwners: ["Terminal"] } : {},
+    );
+    const result = await orchestrator.execute({ action: "recover", runId: prepared.runId });
+    assert.equal(result.structuralStop, "host_window_occluded");
+    assert.equal(fake.calls.recover.length, moment === "before" ? 0 : 1);
+    if (moment === "after") {
+      assert.equal(result.recoverySteps[0].structuralOk, false);
+      const last = fs.readFileSync(path.join(result.artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
+      assert.deepEqual(last.hostWindowProbes, result.hostWindowProbes);
+      assert.equal(last.structuralOk, false);
+    }
+  });
+});
+
+test("boundary step rechecks its deadline after a slow clear host-window observation", async (t) => {
+  const fake = fakeDependencies();
+  let nowNs = 1_000_000_000n;
+  fake.deps.monotonicNs = () => ++nowNs;
+  const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+  const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "run")));
+  fake.deps.probeHostWindow = async () => {
+    if (fake.calls.recapture.length > 0) nowNs += 1_000_000_000_000n;
+    return clearBoundaryHostWindow();
+  };
+  const result = await orchestrator.execute({
+    action: "step", runId: prepared.runId,
+    reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+  });
+  assert.equal(result.structuralStop, "budget_exhausted");
+  assert.equal(result.requiredReview.some((item) => item.role === "waypoint"), false);
+});
+
+test("boundary host observations are charged to cumulative route and recovery duration", async (t) => {
+  for (const action of ["step", "recover"]) await t.test(action, async (t) => {
+    const fake = fakeDependencies();
+    let nowNs = 1_000_000_000n;
+    fake.deps.monotonicNs = () => nowNs;
+    const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+    const artifactRoot = path.join(scratch(t), "run");
+    const prepared = action === "step"
+      ? await orchestrator.execute(prepareInput(artifactRoot))
+      : (await reachEjectedRoute(orchestrator, artifactRoot)).prepared;
+    let probeCalls = 0;
+    fake.deps.probeHostWindow = async () => {
+      probeCalls += 1;
+      nowNs += 1_000_000_000n;
+      return clearBoundaryHostWindow();
+    };
+    const result = await orchestrator.execute(action === "step" ? {
+      action, runId: prepared.runId,
+      reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+    } : { action, runId: prepared.runId });
+    const actionRecord = fs.readFileSync(path.join(artifactRoot, "actions.jsonl"), "utf8").trim().split("\n").map(JSON.parse).at(-1);
+    if (action === "step") {
+      assert.equal(result.status, "needs_waypoint_review");
+      assert.equal(fake.calls.waypoint[0].remainingBudgets.maxDurationMs,
+        fake.calls.prepare[0].input.route.budgets.maxDurationMs - 2_000,
+        "inner route deadline must deduct the two completed host preflight observations");
+      assert.ok(result.usage.durationMs >= probeCalls * 1_000);
+      assert.equal(actionRecord.routeTrace.usage.durationMs, result.usage.durationMs);
+    } else {
+      assert.equal(result.status, "needs_recovery_review");
+      assert.equal(fake.calls.recover[0].remainingRecoveryMs,
+        recoveryStepExecutionBudgetMs("manifest_mixed", "observe") - 2_000,
+        "inner fallback deadline must deduct its completed host preflight observations");
+      const persisted = JSON.parse(fs.readFileSync(path.join(artifactRoot, "recovery.json"), "utf8"));
+      assert.ok(persisted.usageMs >= probeCalls * 1_000);
+      assert.equal(actionRecord.durationMs, persisted.usageMs);
+    }
+  });
 });
 
 test("prepare returns retained diagnostic frames and scrubs runtime state when a baseline is unsettled", async (t) => {
@@ -2567,7 +2766,8 @@ test("recover is once-only, route-adjudication-gated, and recovery pixels requir
   const recovery = await orchestrator.execute({ action: "recover", runId: prepared.runId });
   assert.equal(recovery.status, "needs_recovery_review");
   assert.equal(fake.calls.recover.length, 1);
-  assert.equal(fake.calls.recover[0].remainingRecoveryMs, 60_000);
+  // The fake monotonic clock's preflight ticks conservatively consume one millisecond.
+  assert.equal(fake.calls.recover[0].remainingRecoveryMs, 59_999);
   assert.equal((await orchestrator.execute({ action: "recover", runId: prepared.runId })).status, "recovery_review_rejected");
   assert.equal(fake.calls.recover.length, 1);
   const observeAfter = recovery.recoverySteps.at(-1).afterItem;
@@ -2579,7 +2779,7 @@ test("recover is once-only, route-adjudication-gated, and recovery pixels requir
   assert.equal(activity.status, "needs_recovery_review");
   assert.equal(activity.recoverySteps.at(-1).kind, "activity_launch");
   assert.equal(fake.calls.recover.length, 2);
-  assert.equal(fake.calls.recover[1].remainingRecoveryMs, 100_000);
+  assert.equal(fake.calls.recover[1].remainingRecoveryMs, 99_999);
   const recoveryArtifact = JSON.parse(fs.readFileSync(path.join(activity.artifactRoot, "recovery.json"), "utf8"));
   assert.equal(recoveryArtifact.steps.length, 2);
   assert.equal(recoveryArtifact.steps[0].beforeCapture.width, 16);
@@ -2883,9 +3083,9 @@ test("recovery is negative only from a LOOKed settled final post-frame; missing 
     }
     assert.equal(recovery.status, "ready_for_recovery_adjudication");
     assert.deepEqual(fake.calls.recover.map((call) => [call.kind, call.remainingRecoveryMs]), [
-      ["observe", 60_000],
-      ["activity_launch", 100_000],
-      ["force_stop_relaunch", 260_000],
+      ["observe", 59_999],
+      ["activity_launch", 99_999],
+      ["force_stop_relaunch", 259_999],
     ]);
     if (mode === "missing") assert.equal(recovery.responseReview.length, 1);
     const adjudicated = await orchestrator.execute({
@@ -3043,4 +3243,204 @@ test("waypoint transition fallbacks use a distinct deterministic capture target"
   assert.notEqual(transitionPath, waypointPath);
   assert.throws(() => boundaryExperiment.waypointTransitionCapturePath("relative.png"), /absolute PNG/);
   assert.throws(() => boundaryExperiment.waypointTransitionCapturePath(path.join(os.tmpdir(), "frame.jpg")), /absolute PNG/);
+});
+
+function importedMixedInput(fixture, overrides = {}) {
+  const component = `${IMPORTED_PACKAGE}/.platform.LaunchActivity`;
+  return prepareInput(path.join(fixture.root, "imported-run"), {
+    scenario: {
+      id: "hand-built-enclosed-world",
+      packageName: IMPORTED_PACKAGE,
+      launchComponent: component,
+      allowedResumedComponents: [component],
+      entryRoute: "manifest_mixed",
+      expectedManifestStageStyle: "Mixed",
+    },
+    provenance: fixture.provenance,
+    route: route(writeLookedM0Replay(fixture.root)),
+    ...overrides,
+  });
+}
+
+function importedBoundaryDependencies(fixture) {
+  const fake = fakeDependencies();
+  const originalPrepare = fake.deps.collectPreparation;
+  fake.deps.collectPreparation = async (context) => {
+    const prepared = await originalPrepare(context);
+    prepared.continuity = prepared.continuity.map((sample) => ({ ...sample, apkSha256: fixture.provenance.apkSha256 }));
+    return prepared;
+  };
+  return fake;
+}
+
+test("imported APK manifest_mixed replay accepts a hand-built world and retains its inspected provenance", async (t) => {
+  const fixture = importedApkFixture(t);
+  const input = importedMixedInput(fixture);
+  const fake = importedBoundaryDependencies(fixture);
+  const prepared = await createBoundaryExperimentOrchestrator(fake.deps).execute(input);
+  assert.equal(prepared.status, "needs_baseline_review");
+  assert.equal(prepared.provenance.kind, "imported_apk");
+  assert.equal(prepared.provenance.evidenceCeiling, "structural");
+  assert.equal(prepared.provenance.manifestInspection.packageName, IMPORTED_PACKAGE);
+  assert.equal(prepared.provenance.manifestInspection.declaredStageStyle, "1");
+  const manifest = JSON.parse(fs.readFileSync(path.join(input.artifactRoot, "run.json"), "utf8"));
+  assert.equal(manifest.provenance.kind, "imported_apk");
+  assert.equal(manifest.provenanceReceipt.manifestInspection.declaredStageStyle, "1");
+  assert.equal(manifest.replaySource.sourceAdjudicationSha256, input.route.source.calibrationRouteRef.sourceAdjudicationSha256);
+});
+
+for (const [name, mutate, pattern] of [
+  ["SHA mismatch", (input) => { input.provenance.apkSha256 = "a".repeat(64); }, /sha256/i],
+  ["manifest package mismatch", null, /manifest package mismatch/i],
+  ["manifest stage-style mismatch", "style", /stage.style/i],
+]) {
+  test(`imported APK manifest_mixed rejects ${name} before preparation side effects`, async (t) => {
+    const manifestDump = name.includes("package")
+      ? IMPORTED_MANIFEST_DUMP.replaceAll(IMPORTED_PACKAGE, "com.other.handbuilt")
+      : mutate === "style" ? IMPORTED_MANIFEST_DUMP.replace(/value\(0x01010024\)=1/, "value(0x01010024)=3")
+      : IMPORTED_MANIFEST_DUMP;
+    const fixture = importedApkFixture(t, { manifestDump });
+    const input = importedMixedInput(fixture);
+    if (typeof mutate === "function") mutate(input);
+    const fake = importedBoundaryDependencies(fixture);
+    await assert.rejects(createBoundaryExperimentOrchestrator(fake.deps).execute(input), pattern);
+    assert.equal(fake.calls.prepare.length, 0);
+    assert.equal(fs.existsSync(input.artifactRoot), false);
+  });
+}
+
+test("imported APK manifest_mixed cannot become a calibration seed or relax the Claimsight pin", (t) => {
+  const fixture = importedApkFixture(t);
+  const replay = importedMixedInput(fixture);
+  assert.equal(boundaryExperimentInputSchema.safeParse(replay).success, true);
+  assert.equal(boundaryExperimentInputSchema.safeParse({ ...replay, route: route() }).success, false);
+  assert.equal(boundaryExperimentInputSchema.safeParse({
+    ...replay,
+    scenario: editorScenario(),
+    provenance: { ...fixture.provenance, packageName: "com.example.claimsight", declaredStageStyle: "3" },
+  }).success, false);
+});
+
+for (const [name, mutation] of [
+  ["installed APK", { apkSha256: "f".repeat(64) }],
+  ["package", { packageName: "com.other.handbuilt" }],
+  ["boot", { bootId: "another-boot" }],
+  ["process", { pid: 9090 }],
+  ["foreground", { foreground: "different_package" }],
+]) {
+  test(`imported APK replay cannot bypass ${name} continuity binding`, async (t) => {
+    const fixture = importedApkFixture(t);
+    const fake = importedBoundaryDependencies(fixture);
+    const prepare = fake.deps.collectPreparation;
+    fake.deps.collectPreparation = async (context) => {
+      const result = await prepare(context);
+      result.continuity = result.continuity.map((sample) => ({ ...sample, ...mutation }));
+      return result;
+    };
+    const result = await createBoundaryExperimentOrchestrator(fake.deps).execute(importedMixedInput(fixture));
+    assert.equal(result.status, "preparation_failed");
+    assert.equal(fake.calls.waypoint.length, 0);
+    assert.ok(["binding_lost", "app_lifecycle_loss"].includes(result.structuralStop));
+  });
+}
+
+test("imported APK replay reviews its own landmarks and refuses movement after process replacement", async (t) => {
+  const fixture = importedApkFixture(t);
+  const fake = importedBoundaryDependencies(fixture);
+  let moved = false;
+  fake.deps.recaptureReviewedFrame = async (context) => ({
+    matches: true,
+    sha256: context.expectedSha256,
+    continuity: continuity({
+      packageName: IMPORTED_PACKAGE,
+      apkSha256: fixture.provenance.apkSha256,
+      allowedResumedComponents: [`${IMPORTED_PACKAGE}/.platform.LaunchActivity`],
+      resumedComponents: [`${IMPORTED_PACKAGE}/.platform.LaunchActivity`],
+      pid: 9090,
+    }),
+  });
+  fake.deps.executeWaypoint = async (context) => {
+    const preflight = await context.recaptureReviewedFrame();
+    moved = waypointPreflightAllowsMovement(
+      preflight, context.state.lastRequiredHash,
+      context.state.preparation.runtimeBinding, context.state.preparation.applicationBinding,
+      context.state.input.scenario.entryRoute,
+    );
+    return {
+      ...hashOnlyDriftExecution(context, "7".repeat(64), preflight.continuity),
+      preflight,
+    };
+  };
+  const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+  const prepared = await orchestrator.execute(importedMixedInput(fixture));
+  assert.equal(prepared.status, "needs_baseline_review");
+  const stepped = await orchestrator.execute({
+    action: "step", runId: prepared.runId,
+    reviewedPriorFrame: attestation("2".repeat(64), "imported_mixed_environment", { sentinels: ["stone doorway", "ceiling skylight"] }),
+  });
+  assert.equal(moved, false);
+  assert.equal(stepped.status, "needs_waypoint_review");
+  assert.equal(stepped.routeTrace.usage.actions, 0);
+  assert.equal(stepped.routeTrace.usage.waypoints, 0);
+  assert.equal(stepped.requiredReview.at(-1).role, "transition");
+  assert.ok(["binding_lost", "app_lifecycle_loss"].includes(stepped.structuralStop));
+});
+
+for (const identity of ["package", "scenario ID"]) {
+  test(`imported APK manifest_mixed cannot reuse the reserved Claimsight ${identity}`, (t) => {
+    const fixture = importedApkFixture(t);
+    const input = importedMixedInput(fixture);
+    if (identity === "package") {
+      input.scenario.packageName = "com.example.claimsight";
+      input.scenario.launchComponent = "com.example.claimsight/.platform.LaunchActivity";
+      input.scenario.allowedResumedComponents = [input.scenario.launchComponent];
+      input.provenance.packageName = "com.example.claimsight";
+    } else {
+      input.scenario.id = "claimsight-e1";
+    }
+    assert.equal(boundaryExperimentInputSchema.safeParse(input).success, false);
+  });
+}
+
+test("imported APK route adjudication and recovery retain the reviewed world's landmarks", (t) => {
+  const fixture = importedApkFixture(t);
+  const importedScenario = importedMixedInput(fixture).scenario;
+  const wrongWorld = attestation("3".repeat(64), "imported_mixed_environment", { sentinels: ["different world"] });
+  assert.equal(recoveryFrameMatchesExpected(importedScenario, wrongWorld, ["stone doorway"]), false);
+  const baseline = outcomeInput({
+    scenario: importedScenario,
+    attestations: [
+      attestation("1".repeat(64), "system_home"),
+      attestation("2".repeat(64), "imported_mixed_environment", { sentinels: ["stone doorway"] }),
+      { ...wrongWorld, witnessedGateM: 32 },
+    ],
+  });
+  assert.throws(() => deriveBoundaryRouteOutcome(baseline), /landmark/i);
+});
+
+test("imported APK boundary entry refuses stage metadata owned by another activity", async (t) => {
+  const fixture = importedApkFixture(t, { manifestDump: scopedImportedManifestDump({ secondaryStyle: "1" }) });
+  const fake = importedBoundaryDependencies(fixture);
+  await assert.rejects(createBoundaryExperimentOrchestrator(fake.deps).execute(importedMixedInput(fixture)), /stage style/i);
+  assert.equal(fake.calls.prepare.length, 0);
+});
+
+
+test("boundary action receipts retain inspected imported provenance alongside host probes", async (t) => {
+  const fixture = importedApkFixture(t);
+  const fake = importedBoundaryDependencies(fixture);
+  const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+  const prepared = await orchestrator.execute(importedMixedInput(fixture));
+  for (const input of [
+    { action: "step", runId: prepared.runId, reviewedPriorFrame: attestation("9".repeat(64)) },
+    { action: "adjudicate", runId: prepared.runId, scope: "route", frameAttestations: [attestation("1".repeat(64), "system_home")] },
+    { action: "recover", runId: prepared.runId },
+  ]) {
+    const result = await orchestrator.execute(input);
+    assert.deepEqual(result.provenance, prepared.provenance);
+    assert.equal(result.provenance.kind, "imported_apk");
+    assert.equal(result.provenance.manifestInspection.packageName, IMPORTED_PACKAGE);
+    assert.equal(result.hostWindowProbe.status, "ok");
+    assert.ok(result.hostWindowProbes.length > 0);
+  }
 });

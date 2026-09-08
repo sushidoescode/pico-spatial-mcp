@@ -1293,6 +1293,14 @@ function settledCaptureReceipt(outPath, bytes, capturedAt = "2026-09-01T12:00:30
   };
 }
 
+function clearTargetHostWindow(overrides = {}) {
+  return {
+    status: "ok", occluded: false, frontmost: true, overlappingOwners: [],
+    observedAt: "2026-09-08T12:00:00.000Z", qemuWindowId: TARGET_WINDOW.id,
+    qemuWindowOwnerPid: 93013, detail: null, ...overrides,
+  };
+}
+
 function targetFake(input, options = {}) {
   const events = [];
   const artifacts = new Map();
@@ -1488,6 +1496,7 @@ function targetFake(input, options = {}) {
       events.push("bind-qemu");
       return options.bindingResult ?? { ok: true, binding: structuredClone(qemuBinding) };
     },
+    probeHostWindow: async () => clearTargetHostWindow(),
     reserveArtifactSession: async (outDir, runId, ownerNonceHash) => {
       events.push("reserve");
       return { runId, absoluteRoot: outDir, ownerNonceHash };
@@ -1691,6 +1700,7 @@ function targetFake(input, options = {}) {
     repeatedShowStarted,
     releaseRepeatedShow() { releaseRepeatedShow?.(); },
     get guideVisible() { return guideVisible; },
+    advanceClockMs(ms) { nowNs += BigInt(ms) * 1_000_000n; },
   };
 }
 
@@ -2332,6 +2342,119 @@ test("stable scene geometry classifies shrinking or excessive guide projection a
     assert.equal(fake.hideCalls, 2, name);
     assertNoForbiddenNavigationClaims(result);
   }
+});
+
+test("calibration host-window precondition refuses covered, missing, and unavailable windows before effects", async (t) => {
+  for (const [label, probe, code] of [
+    ["covered despite frontmost", clearTargetHostWindow({ occluded: true, overlappingOwners: ["Terminal", "Codex"] }), "host_window_occluded"],
+    ["no window", clearTargetHostWindow({ status: "no_window", occluded: null, frontmost: null, qemuWindowId: null, qemuWindowOwnerPid: null }), "host_window_unavailable"],
+    ["unknown", clearTargetHostWindow({ status: "unavailable", occluded: null, frontmost: null, detail: "window inventory failed" }), "host_window_unavailable"],
+    ["missing dependency", null, "host_window_unavailable"],
+    ["throwing dependency", new Error("window inventory failed"), "host_window_unavailable"],
+  ]) await t.test(label, async () => {
+    const input = targetInput("calibrate");
+    const fake = targetFake(input);
+    if (probe === null) delete fake.deps.probeHostWindow;
+    else fake.deps.probeHostWindow = async () => {
+      if (probe instanceof Error) throw probe;
+      return structuredClone(probe);
+    };
+    const result = await executeNavigateToSceneTarget(input, fake.deps);
+    assert.equal(result.executionStatus, "stopped");
+    assert.equal(result.stopReason, code);
+    assert.equal(result.error.code, code);
+    if (code === "host_window_occluded") {
+      assert.match(result.error.detail, /Terminal/);
+      assert.match(result.error.detail, /Codex/);
+    }
+    assert.equal(result.hostWindowProbes.length, 1);
+    assert.equal(result.hostWindowProbe.status, probe === null || probe instanceof Error ? "unavailable" : probe.status);
+    assert.equal(fake.actionCount, 0);
+    assert.equal(fake.events.some((event) => /^(?:reserve|guide:|capture:|detect:|write-)/.test(event)), false);
+    assert.equal(fake.stored.receipt, null);
+    assert.equal(fake.stored.registry, null);
+  });
+});
+
+test("calibration records a clear non-frontmost host window without equating focus with occlusion", async () => {
+  const input = targetInput("calibrate");
+  const fake = targetFake(input);
+  fake.deps.probeHostWindow = async () => clearTargetHostWindow({ frontmost: false });
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.calibrationStatus, "written");
+  assert.equal(result.hostWindowProbe.frontmost, false);
+  assert.ok(result.hostWindowProbes.length > 24);
+  assert.ok(result.hostWindowProbes.every((sample) => sample.probe.occluded === false));
+  const saved = JSON.parse(fake.artifacts.get(fake.stored.receipt.path));
+  assert.deepEqual(saved.hostWindowProbes, result.hostWindowProbes);
+});
+
+test("calibration refuses measurement when host occlusion begins after a camera action or capture", async (t) => {
+  for (const moment of ["action", "capture"]) await t.test(moment, async () => {
+    const input = targetInput("calibrate");
+    const fake = targetFake(input);
+    let waypointCaptured = false;
+    const capture = fake.deps.captureSettled;
+    fake.deps.captureSettled = async (request) => {
+      const result = await capture(request);
+      if (path.basename(request.outPath).startsWith("waypoint-")) waypointCaptured = true;
+      return result;
+    };
+    fake.deps.probeHostWindow = async () => clearTargetHostWindow(
+      (moment === "action" ? fake.actionCount > 0 : waypointCaptured)
+        ? { occluded: true, overlappingOwners: ["Terminal"] } : {},
+    );
+    const result = await executeNavigateToSceneTarget(input, fake.deps);
+    assert.equal(result.executionStatus, "stopped");
+    assert.equal(result.stopReason, "host_window_occluded");
+    assert.equal(result.routeTraces[0].status, "route_unsettled", "the host refusal must retain the shared route's stopped outcome");
+    assert.match(result.error.detail, /Terminal/);
+    assert.equal(result.hostWindowProbe.occluded, true);
+    assert.equal(fake.actionCount, 1, "a covered host window cannot admit another camera action");
+    assert.equal(fake.events.some((event) => event.startsWith("detect:waypoint-")), false);
+    assert.equal(fake.stored.receipt, null);
+    assert.equal(fake.stored.registry, null);
+    assert.equal(fake.guideVisible, false, "guide cleanup still runs without moving host windows");
+  });
+});
+
+test("navigation rechecks the route deadline after a slow host-window probe before camera input", async () => {
+  const input = targetInput("calibrate");
+  const fake = targetFake(input);
+  let expired = false;
+  fake.deps.probeHostWindow = async () => {
+    if (!expired && fake.events.at(-1) === "continuity") {
+      expired = true;
+      fake.advanceClockMs(input.motionPolicy.maxDurationSec * 1000);
+    }
+    return clearTargetHostWindow();
+  };
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.executionStatus, "stopped");
+  assert.equal(fake.actionCount, 0, "a clear probe that exhausts the admitted route budget must not authorize input");
+  assert.equal(result.stopReason, "budget_exhausted");
+  assert.equal(fake.stored.registry, null);
+});
+
+test("navigation refuses input when a host probe leaves positive time below the full action envelope", async () => {
+  const input = targetInput("calibrate");
+  const fake = targetFake(input);
+  let observed = false;
+  fake.deps.probeHostWindow = async () => {
+    if (!observed && fake.events.at(-1) === "continuity") {
+      observed = true;
+      // Keep the inverse, final cleanup, and a small active slice paid; a 40s drag
+      // plus downstream settlement cannot fit in that remaining active slice.
+      fake.advanceClockMs(input.motionPolicy.maxDurationSec * 1000 - 440_000);
+    }
+    return clearTargetHostWindow();
+  };
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(observed, true);
+  assert.equal(fake.actionCount, 0);
+  assert.equal(result.stopReason, "budget_exhausted");
+  assert.equal(result.routeTraces[0].status, "action_failed");
+  assert.equal(fake.stored.registry, null);
 });
 
 test("calibration refuses a 24-action or 180-second budget before the first motion and writes no valid registry", async () => {

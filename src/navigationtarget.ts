@@ -22,6 +22,7 @@ import {
   type QemuWindowBindingResult,
 } from "./cameradrive.js";
 import { resolveAdb } from "./emulatorlook.js";
+import { hostWindowPrecondition, probeHostWindow, unavailableHostWindowProbe, type HostWindowProbe } from "./hostwindow.js";
 import { analyzeColorKeys, type AuthoredColor, type ColorKeyMeasurements } from "./eye.js";
 import {
   readFreshCameraCalibrationProof,
@@ -165,6 +166,8 @@ export type NavigationTargetStopReason =
   | "scene_not_ready"
   | "budget_exhausted"
   | "ambiguous_host_window"
+  | "host_window_occluded"
+  | "host_window_unavailable"
   | "unsupported_backend"
   | "input_failed"
   | "binding_failed"
@@ -192,6 +195,7 @@ export interface NavigationTargetDependencies {
   readArtifact(path: string): Promise<Buffer>;
   readCalibrationReceipt(ref: NavigationArtifactRef): Promise<Buffer>;
   bindQemuWindow(serial: string): Promise<QemuWindowBindingResult>;
+  probeHostWindow?(serial: string, binding?: BoundQemuWindow): Promise<HostWindowProbe>;
   reserveArtifactSession(outDir: string, runId: string, ownerNonceHash: string): Promise<ReservedArtifactSession>;
   captureSettled(input: CaptureSettledInput): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }>;
   requestGuide(input: AgentBridgeNavigationGuideRequestInput): Promise<AgentBridgeNavigationGuideRequestResult>;
@@ -802,6 +806,8 @@ function newResult(input: ParsedNavigateToSceneTargetInput) {
       selectorReceipt: { candidates: [] } as Record<string, any>,
     },
     qemuBinding: null as BoundQemuWindow | null,
+    hostWindowProbe: unavailableHostWindowProbe("host window has not been sampled"),
+    hostWindowProbes: [] as Array<{ phase: string; probe: HostWindowProbe }>,
     sceneQueries: [] as Record<string, any>[],
     guideTransitions: {
       preflightHide: null as AgentBridgeNavigationGuideRequestResult | null,
@@ -1005,7 +1011,8 @@ async function validateStoredCalibrationReceipt(
   } catch {
     return { status: "stale", detail: "calibration receipt is not valid JSON" };
   }
-  if (!exactKeys(receipt, ["kind", "schemaVersion", "createdAt", "calibration", "actions", "captures", "sceneQueries", "evidenceCeiling"])
+  const receiptKeys = ["kind", "schemaVersion", "createdAt", "calibration", "actions", "captures", "sceneQueries", "evidenceCeiling"];
+  if (!(exactKeys(receipt, receiptKeys) || exactKeys(receipt, [...receiptKeys, "hostWindowProbe", "hostWindowProbes"]))
     || receipt.kind !== "pico.navigation-calibration-receipt"
     || receipt.schemaVersion !== 1 || receipt.evidenceCeiling !== "structural"
     || !receipt.calibration || typeof receipt.calibration !== "object"
@@ -1112,6 +1119,29 @@ export async function executeNavigateToSceneTarget(
   let terminalReason: NavigationTargetStopReason | null = null;
   let terminalDetail: string | null = null;
   let publishCalibration: { record: NavigationCalibrationRecord; payload: Record<string, any> } | null = null;
+  let inputPreconditionFailure: { code: NavigationTargetStopReason; detail: string } | null = null;
+  const requireHostWindow = async (phase: string, remainingMs?: () => number): Promise<void> => {
+    let probe: HostWindowProbe;
+    try {
+      probe = deps.probeHostWindow
+        ? await deps.probeHostWindow(input.serial, qemu ?? undefined)
+        : unavailableHostWindowProbe("host window probe dependency is unavailable", qemu ?? undefined);
+    } catch (error) {
+      probe = unavailableHostWindowProbe(error instanceof Error ? error.message : String(error), qemu ?? undefined);
+    }
+    result.hostWindowProbe = structuredClone(probe);
+    result.hostWindowProbes.push({ phase, probe: structuredClone(probe) });
+    const failure = hostWindowPrecondition(probe);
+    if (failure) {
+      inputPreconditionFailure ??= failure;
+      throw new NavigationTargetStop(failure.code, failure.detail);
+    }
+    if (remainingMs && remainingMs() <= 0) {
+      const failure = { code: "budget_exhausted" as const, detail: `${phase} host window probe exhausted the admitted deadline` };
+      inputPreconditionFailure ??= failure;
+      throw new NavigationTargetStop(failure.code, failure.detail);
+    }
+  };
   const controlAudits = new Map<string, NavigationControlAudit>();
   const accountedAttempts = new Set<string>();
   const attemptKey = (attempt: Pick<RelativeRouteActionAttempt, "identity">) =>
@@ -1150,6 +1180,7 @@ export async function executeNavigateToSceneTarget(
   };
   const capture = async (name: string, priorSha256?: string): Promise<CaptureSettledReceipt> => {
     if (!session) throw new NavigationTargetStop("binding_failed", "artifact session was not reserved");
+    await requireHostWindow(`${name}_before_capture`, () => maximumDurationMs - elapsedMs());
     const captured = await deps.captureSettled({
       serial: input.serial,
       outPath: path.join(session.absoluteRoot, `${name}.png`),
@@ -1158,6 +1189,7 @@ export async function executeNavigateToSceneTarget(
       comparison: SETTLE_COMPARISON,
       ...(priorSha256 ? { priorSha256 } : {}),
     });
+    await requireHostWindow(`${name}_after_capture`, () => maximumDurationMs - elapsedMs());
     const receipt = settledOrThrow(captured.receipt, name);
     if (!scene || !captureMatchesScene(receipt, scene)) {
       throw new NavigationTargetStop("binding_failed", `${name} capture runtime does not match the selected scene runtime`);
@@ -1205,6 +1237,7 @@ export async function executeNavigateToSceneTarget(
   const failStep = (step: RelativeRouteStepOutcome): never => {
     accountStepAttempts(step);
     routeStatus = step.status === "settled" ? "controller_stop" : step.status;
+    if (inputPreconditionFailure) throw new NavigationTargetStop(inputPreconditionFailure.code, inputPreconditionFailure.detail);
     const trace: RelativeRouteTrace = {
       status: routeStatus,
       waypoints: [],
@@ -1216,6 +1249,7 @@ export async function executeNavigateToSceneTarget(
   };
 
   try {
+    await requireHostWindow("preflight");
     const initialScene = await queryAndSelectScene(input, deps, null);
     rememberScene(initialScene);
     const bound = await deps.bindQemuWindow(input.serial);
@@ -1223,6 +1257,7 @@ export async function executeNavigateToSceneTarget(
     qemu = bound.binding;
     if (!exactQemuGeometry(qemu)) throw new NavigationTargetStop("binding_failed", "qemu binding lacks exact measured x/y/width/height/scale geometry");
     result.qemuBinding = qemu;
+    await requireHostWindow("bound_preflight");
 
     const ownerNonceHash = crypto.createHash("sha256").update(deps.randomId()).digest("hex");
     const prospective: ReservedArtifactSession = {
@@ -1361,7 +1396,12 @@ export async function executeNavigateToSceneTarget(
     const adapter = deps.createActionAdapter(input.serial, qemu);
     let waypointSequence = 0;
     execution = createRelativeRouteExecution(boundRoute, {
-      applyRelativeAction: adapter.applyRelativeAction,
+      applyRelativeAction: async (action, budget) => {
+        await requireHostWindow("before_camera_action", () => budget?.canStart() === true
+          ? maximumDurationMs - elapsedMs() - FINAL_GUIDE_CLEANUP_RESERVE_MS
+          : 0);
+        return adapter.applyRelativeAction(action);
+      },
       sampleContinuity: () => deps.sampleContinuity({
         serial: application.serial,
         bootId: application.liveIdentity.bootId,
@@ -1373,14 +1413,17 @@ export async function executeNavigateToSceneTarget(
       }),
       captureSettled: async (capturePath, deadline) => {
         if (deadline.remainingMs() <= 0) throw new Error("route capture deadline exhausted");
-        return (await deps.captureSettled({
+        await requireHostWindow("waypoint_before_capture", deadline.remainingMs);
+        const captured = await deps.captureSettled({
           serial: input.serial,
           outPath: capturePath,
           maxTries: ROUTE_CAPTURE.maxTries,
           intervalMs: ROUTE_CAPTURE.intervalMs,
           comparison: SETTLE_COMPARISON,
           priorSha256: deadline.priorSha256,
-        })).receipt;
+        });
+        await requireHostWindow("waypoint_after_capture", deadline.remainingMs);
+        return captured.receipt;
       },
       allocateWaypointPath: () => path.join(session!.absoluteRoot, `waypoint-${String(++waypointSequence).padStart(4, "0")}.png`),
       sleep: deps.sleep,
@@ -1452,6 +1495,7 @@ export async function executeNavigateToSceneTarget(
       if (action.kind === "look_drag") controllerState.cumulativeDragPx += Math.hypot(action.dxPx, action.dyPx);
       else controllerState.cumulativeHoldMs += action.holdMs;
       controllerState.elapsedMs = elapsedMs();
+      await requireHostWindow("before_waypoint_measurement", () => maximumDurationMs - elapsedMs());
       const observed = await immutableGuideMeasurement(waypoint.settle, input, deps);
       if (acquisition) result.captures.acquisition.push(waypoint.settle);
       const refreshed = await queryAndSelectScene(input, deps, scene!);
@@ -1806,7 +1850,10 @@ export async function executeNavigateToSceneTarget(
         try {
           result.captures.finalClean = await capture("final-clean", result.captures.finalDiagnostic?.sha256 ?? undefined);
         } catch (error: any) {
-          setTerminal("cleanup_failed", error instanceof Error ? error.message : String(error));
+          setTerminal(error instanceof NavigationTargetStop
+            && (error.reason === "host_window_occluded" || error.reason === "host_window_unavailable"
+              || error.reason === "budget_exhausted")
+              ? error.reason : "cleanup_failed", error instanceof Error ? error.message : String(error));
         }
       }
       if (result.cleanup.guideHide?.cleanupProven === true
@@ -1835,6 +1882,8 @@ export async function executeNavigateToSceneTarget(
         actions: result.actions,
         captures: result.captures,
         sceneQueries: result.sceneQueries,
+        hostWindowProbe: result.hostWindowProbe,
+        hostWindowProbes: result.hostWindowProbes,
         evidenceCeiling: "structural",
       });
       const registry = await deps.writeCalibrationRecord(publishCalibration.record.contextKey, publishCalibration.record, receiptRef);
@@ -1909,6 +1958,7 @@ function defaultNavigationTargetDependencies(): NavigationTargetDependencies {
     readArtifact: (artifactPath) => fs.promises.readFile(artifactPath),
     readCalibrationReceipt: (ref) => readNavigationCalibrationReceiptBytes(ref),
     bindQemuWindow: (serial) => bindMacQemuWindow(adb, serial),
+    probeHostWindow,
     reserveArtifactSession: async (outDir, runId, ownerNonceHash) => {
       const absoluteRoot = assertExternalCapturePath(outDir);
       fs.mkdirSync(path.dirname(absoluteRoot), { recursive: true, mode: 0o700 });

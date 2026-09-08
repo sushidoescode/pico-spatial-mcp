@@ -200,6 +200,14 @@ test("non-Full and unknown-key prepare requests fail before any injected depende
   assert.equal(dependencyReads, 0);
 });
 
+function clearLocomotionHostWindow(overrides = {}) {
+  return {
+    status: "ok", occluded: false, frontmost: true, overlappingOwners: [],
+    observedAt: "2026-09-08T12:00:00.000Z", qemuWindowId: 104,
+    qemuWindowOwnerPid: 93013, detail: null, ...overrides,
+  };
+}
+
 const cleanSafety = Object.freeze({
   guardian: "1",
   vstComponent: "1",
@@ -472,6 +480,7 @@ async function createPreparedFixture(t, options = {}) {
       calls.push({ kind: "readSpec", artifactPath, identity });
       return readReceiptBoundEffectiveAppSpec(artifactPath, identity);
     },
+    probeHostWindow: async () => clearLocomotionHostWindow(),
     snapshotPriorForeground: async (context) => {
       calls.push({ kind: "snapshotPrior", context });
       return options.priorSnapshot ?? { component: null, packageName: null, userInstalled: false };
@@ -852,6 +861,147 @@ async function createPreparedFixture(t, options = {}) {
   };
   return { input, dependencies, calls, healthLogs, windowDumps, applicationBinding, bootId, pose, capabilityAck, publishedReceipt, effectiveSpec };
 }
+
+test("prepare host-window precondition refuses occluded, missing, and unavailable windows before device effects", async (t) => {
+  for (const [label, probe, code] of [
+    ["covered despite frontmost", clearLocomotionHostWindow({ occluded: true, overlappingOwners: ["Terminal", "Codex"] }), "host_window_occluded"],
+    ["no window", clearLocomotionHostWindow({ status: "no_window", occluded: null, frontmost: null, qemuWindowId: null, qemuWindowOwnerPid: null }), "host_window_unavailable"],
+    ["missing dependency", null, "host_window_unavailable"],
+    ["throwing dependency", new Error("window inventory failed"), "host_window_unavailable"],
+  ]) await t.test(label, async (t) => {
+    const fixture = await createPreparedFixture(t);
+    if (probe === null) delete fixture.dependencies.probeHostWindow;
+    else fixture.dependencies.probeHostWindow = async () => {
+      if (probe instanceof Error) throw probe;
+      return structuredClone(probe);
+    };
+    const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+    assert.equal(result.status, "preflight_rejected");
+    assert.equal(result.structuralStop, code);
+    if (code === "host_window_occluded") {
+      assert.match(result.primaryError, /Terminal/);
+      assert.match(result.primaryError, /Codex/);
+    }
+    assert.equal(result.hostWindowProbes.length, 1);
+    assert.equal(result.hostWindowProbe.status, probe === null || probe instanceof Error ? "unavailable" : probe.status);
+    assert.deepEqual(deviceCalls(fixture.calls), []);
+    assert.equal(fs.existsSync(fixture.input.artifactRoot), false);
+  });
+});
+
+test("prepare records non-frontmost clear-window probes in returned and immutable receipts", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  fixture.dependencies.probeHostWindow = async () => clearLocomotionHostWindow({ frontmost: false });
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(result.status, "needs_baseline_review");
+  assert.equal(result.hostWindowProbe.frontmost, false);
+  assert.ok(result.hostWindowProbes.length >= 3);
+  assert.deepEqual(committedActionPayloads(fixture.input.artifactRoot)[0].hostWindowProbes, result.hostWindowProbes);
+});
+
+test("prepare refuses a covered baseline after capture and retains the probe in its failed receipt", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  fixture.dependencies.probeHostWindow = async () => clearLocomotionHostWindow(
+    fixture.calls.some((call) => call.kind === "capture")
+      ? { occluded: true, overlappingOwners: ["Terminal"] } : {},
+  );
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(result.status, "preparation_failed");
+  assert.equal(result.structuralStop, "host_window_occluded");
+  assert.equal(result.hostWindowProbe.occluded, true);
+  assert.deepEqual(result.requiredReview, []);
+  const action = committedActionPayloads(fixture.input.artifactRoot)[0];
+  assert.equal(action.status, "failed");
+  assert.deepEqual(action.hostWindowProbes, result.hostWindowProbes);
+});
+
+test("step host-window precondition refuses covered or missing windows before movement and distance measurements", async (t) => {
+  for (const [label, probe, code] of [
+    ["occluded", clearLocomotionHostWindow({ occluded: true, overlappingOwners: ["Terminal"] }), "host_window_occluded"],
+    ["no window", clearLocomotionHostWindow({ status: "no_window", occluded: null, frontmost: null, qemuWindowId: null, qemuWindowOwnerPid: null }), "host_window_unavailable"],
+  ]) await t.test(label, async (t) => {
+    const fixture = await prepareForSteps(t);
+    fixture.calls.length = 0;
+    fixture.dependencies.probeHostWindow = async () => structuredClone(probe);
+    const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+    assert.equal(result.status, "stopped");
+    assert.equal(result.structuralStop, code);
+    assert.equal(result.hmdDrift, null);
+    assert.equal(result.usage.successfulWaypoints, 0);
+    assert.deepEqual(deviceCalls(fixture.calls), []);
+    const action = committedActionPayloads(fixture.input.artifactRoot).find((entry) => entry.action === "step");
+    assert.deepEqual(action.hostWindowProbes, result.hostWindowProbes);
+  });
+});
+
+test("step refuses HMD distance proof if the host becomes covered after motion or capture", async (t) => {
+  for (const moment of ["motion", "capture", "post-hmd"]) await t.test(moment, async (t) => {
+    const fixture = await prepareForSteps(t);
+    fixture.calls.length = 0;
+    fixture.dependencies.probeHostWindow = async () => clearLocomotionHostWindow(
+      fixture.calls.some((call) => moment === "motion" ? call.kind === "locomote"
+        : moment === "capture" ? call.kind === "capture"
+          : call.kind === "hmd" && call.input.tag.endsWith("-post"))
+        ? { occluded: true, overlappingOwners: ["Terminal"] } : {},
+    );
+    const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+    assert.equal(result.status, "stopped");
+    assert.equal(result.structuralStop, "host_window_occluded");
+    assert.match(result.primaryError, /Terminal/);
+    assert.equal(result.hmdDrift, null);
+    assert.equal(result.usage.successfulWaypoints, 0);
+    assert.equal(fixture.calls.filter((call) => call.kind === "locomote").length, 1);
+    assert.equal(result.hostWindowProbe.occluded, true);
+    const action = committedActionPayloads(fixture.input.artifactRoot).find((entry) => entry.action === "step");
+    assert.equal(action.hmdDrift, null);
+    assert.deepEqual(action.hostWindowProbes, result.hostWindowProbes);
+  });
+});
+
+test("step rechecks its measurement deadline after a slow clear host-window probe", async (t) => {
+  let nowNs = 2_000_000_000n;
+  const fixture = await prepareForSteps(t, { monotonicNs: () => ++nowNs });
+  fixture.calls.length = 0;
+  fixture.dependencies.probeHostWindow = async () => {
+    if (fixture.calls.some((call) => call.kind === "hmd" && call.input.tag.endsWith("-post"))) {
+      nowNs += 1_000_000_000_000n;
+    }
+    return clearLocomotionHostWindow();
+  };
+  const result = await fixture.orchestrator.execute(stepRequest(fixture, reviewFor(fixture.baselineReview)));
+  assert.equal(result.status, "stopped");
+  assert.equal(result.hmdDrift, null, "expired host observation cannot authorize a distance proof");
+  assert.equal(result.usage.successfulWaypoints, 0);
+});
+
+test("registered locomotion error receipts retain sampled host visibility and identify unknown visibility", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  let handler;
+  registerInAppLocomotionTools({ registerTool(_name, _definition, run) { handler = run; } }, fixture.dependencies);
+  const receipt = (response) => JSON.parse(response.content.find((item) => item.type === "text").text);
+  const prepared = receipt(await handler(fixture.input));
+  assert.equal(prepared.status, "needs_baseline_review");
+  fixture.calls.length = 0;
+  const covered = clearLocomotionHostWindow({ occluded: true, overlappingOwners: ["Terminal"] });
+  fixture.dependencies.probeHostWindow = async () => structuredClone(covered);
+
+  for (const request of [
+    { action: "step", runId: prepared.runId, reviewedPriorFrame: reviewFor(prepared.requiredReview[0]),
+      waypoint: { ...structuredClone(fixture.input.route.waypoints[0]), seq: 2 } },
+    { action: "adjudicate", runId: prepared.runId, frameAttestations: [reviewFor(prepared.requiredReview[0])] },
+  ]) {
+    const rejected = receipt(await handler(request));
+    assert.equal(rejected.status, "error");
+    assert.deepEqual(rejected.hostWindowProbe, covered, `${request.action} rejection must retain its observation`);
+    assert.deepEqual(rejected.hostWindowProbes, [{ phase: `${request.action}_preflight`, probe: covered }]);
+  }
+  const unknown = receipt(await handler({ action: "adjudicate", runId: "f".repeat(64), frameAttestations: [reviewFor(prepared.requiredReview[0])] }));
+  assert.equal(unknown.status, "error");
+  assert.equal(unknown.hostWindowProbe.status, "unavailable");
+  assert.equal(unknown.hostWindowProbe.occluded, null);
+  assert.deepEqual(unknown.hostWindowProbes, []);
+  assert.deepEqual(deviceCalls(fixture.calls), [], "rejected actions must not issue device commands");
+});
 
 test("prepare binds the receipt/runtime in order, proves 60-second health, and returns one structural baseline review", async (t) => {
   const fixture = await createPreparedFixture(t);

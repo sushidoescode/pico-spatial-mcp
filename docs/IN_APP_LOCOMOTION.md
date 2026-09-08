@@ -6,6 +6,12 @@ staged: `prepare` → reviewed `step` calls → `restore` → `adjudicate`. It b
 the exact native run receipt, APK hash, serial, runtime context, safety state,
 and external artifact root before it accepts a route.
 
+On macOS, preparation and distance measurements require the bound qemu window
+to be visible and unoccluded. Receipts include the host window probes;
+`host_window_occluded` names overlapping window owners. Missing visibility
+evidence fails closed. See [Space Program receipts](SPACE_PROGRAM_RECEIPTS.md)
+for probe semantics and retained settled pairs.
+
 The [CP2 live regression](evidence/in-app-locomotion-cp2-2026-09-05/CP2.md)
 records positive product-route evidence through a generated Boundary Lab Full
 world at protocol-absolute `AgentWorldRoot` targets `0/1/2/4/8/16 m` on

@@ -17,6 +17,14 @@ import { resolveAdb } from "./emulatorlook.js";
 import { parseOnlineAdbSerials, sha256Bytes } from "./observation.js";
 import { readNativeRunReceipt } from "./runreceiptstore.js";
 import { run } from "./util.js";
+import {
+  canonicalApkComponent,
+  importedApkProvenanceSchema,
+  importedApkReceiptSchema,
+  validateImportedApk,
+  type ImportedApkProvenance,
+  type ImportedApkReceipt,
+} from "./importedapk.js";
 
 export const SCENE_HASH_FLOAT_DECIMALS = 6;
 export const GEOMETRY_ARTIFACT_SCHEMA_VERSION = 1 as const;
@@ -104,7 +112,8 @@ export interface SceneDriftPolicy {
 
 export interface SceneScenario {
   packageName: string;
-  expectedBuildReceiptId: string;
+  expectedBuildReceiptId?: string;
+  provenance?: ImportedApkProvenance;
   expectedStageStyle: "Mixed" | "Full";
   expectedRootContainer: "stage";
   sceneDriftPolicy: SceneDriftPolicy;
@@ -143,8 +152,9 @@ export interface ApplicationRuntimeBindingBase {
   startedAtMonotonicNs: string;
   endedAtMonotonicNs: string;
   packageName: string;
-  buildReceiptId: string;
-  buildReceiptPath: string;
+  buildReceiptId: string | null;
+  buildReceiptPath: string | null;
+  provenance?: ImportedApkReceipt;
   apkSha256: string;
   foregroundProcess: { packageName: string; component: string; pid: number; pidStartTicks: string };
   requestedStageStyle: "Mixed" | "Full";
@@ -958,7 +968,7 @@ export async function executeQuerySceneAnchors(
     });
   }
   if (application.buildIdentity.sha256 !== bound.binding.apkSha256) {
-    return terminalResult("binding_failed", input, "bridge-reported APK sha256 does not match the native run receipt/live APK", {
+    return terminalResult("binding_failed", input, "bridge-reported APK sha256 does not match the provenance-bound live APK", {
       binding: bound.binding, actionReceipts, ...trace,
     });
   }
@@ -1161,7 +1171,7 @@ export function exactForegroundComponent(output: string, packageName: string): s
   return components.size === 1 ? [...components][0] : null;
 }
 
-async function defaultBindRuntime(
+export async function bindSceneApplicationRuntime(
   adb: string,
   input: QuerySceneAnchorsInput,
   startedAtMonotonicNs: string,
@@ -1176,10 +1186,23 @@ async function defaultBindRuntime(
       { serial: input.serial, packageName: input.scenario.packageName, buildReceiptId: input.scenario.expectedBuildReceiptId }, detail,
     )],
   });
-  const stored = readNativeRunReceipt(input.scenario.packageName, input.scenario.expectedBuildReceiptId);
-  if (stored.status !== "valid") return failBinding(`native run receipt is invalid: ${stored.issues.join("; ")}`);
-  const native = stored.receipt;
-  if (native.runtime.serial !== input.serial) return failBinding(`run receipt serial '${native.runtime.serial}' does not match '${input.serial}'`);
+  let imported: ImportedApkReceipt | null = null;
+  if (input.scenario.provenance) {
+    if (input.scenario.expectedBuildReceiptId !== undefined) return failBinding("imported APK cannot also claim a native build receipt");
+    try {
+      imported = await validateImportedApk(input.scenario.provenance, {
+        packageName: input.scenario.packageName,
+        declaredStageStyle: input.scenario.expectedStageStyle === "Mixed" ? "1" : "3",
+      });
+    } catch (error) {
+      return failBinding(error instanceof Error ? error.message : String(error));
+    }
+  }
+  const stored = imported ? null : readNativeRunReceipt(input.scenario.packageName, input.scenario.expectedBuildReceiptId ?? "");
+  if (stored && stored.status !== "valid") return failBinding(`native run receipt is invalid: ${stored.issues.join("; ")}`);
+  const native = stored?.status === "valid" ? stored.receipt : null;
+  if (!native && !imported) return failBinding("an explicit imported APK or native run receipt is required");
+  if (native && native.runtime.serial !== input.serial) return failBinding(`run receipt serial '${native.runtime.serial}' does not match '${input.serial}'`);
   const listed = await run(adb, ["devices", "-l"], { timeoutMs: 10_000 });
   if (listed.code !== 0 || listed.timedOut) return failBinding(`adb devices failed: ${listed.stderr || listed.stdout}`);
   const online = parseOnlineAdbSerials(listed.stdout);
@@ -1193,19 +1216,22 @@ async function defaultBindRuntime(
   const boot = await run(adb, ["-s", input.serial, "shell", "cat", "/proc/sys/kernel/random/boot_id"], { timeoutMs: 10_000 });
   if (boot.code !== 0 || boot.timedOut || !boot.stdout.trim()) return failBinding("live boot ID probe failed");
   const bootId = boot.stdout.trim();
-  if (
+  if (native && (
     identity.model !== native.runtime.model
     || identity.fingerprint !== native.runtime.fingerprint
     || identity.bootQemu !== native.runtime.bootQemu
     || bootId !== native.runtime.bootId
-  ) return failBinding("live adb identity does not match the native run receipt runtime");
+  )) return failBinding("live adb identity does not match the native run receipt runtime");
   const packagePath = await run(adb, ["-s", input.serial, "shell", "pm", "path", input.scenario.packageName], { timeoutMs: 10_000 });
   const packageLines = packagePath.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const installedPath = packageLines.length === 1 ? /^package:(\S+)$/.exec(packageLines[0])?.[1] : undefined;
   if (packagePath.code !== 0 || packagePath.timedOut || !installedPath) return failBinding("could not bind exactly one installed base APK path");
   const digest = await run(adb, ["-s", input.serial, "shell", "sha256sum", installedPath], { timeoutMs: 30_000 });
-  const apkSha256 = /^([a-f0-9]{64})\b/.exec(digest.stdout.trim())?.[1];
-  if (digest.code !== 0 || digest.timedOut || !apkSha256 || apkSha256 !== native.apk.sha256) return failBinding("installed APK sha256 does not match the native run receipt");
+  const digestLines = digest.stdout.trim().split(/\r?\n/);
+  const digestLine = digestLines.length === 1 ? /^([a-f0-9]{64})[ \t]+\*?(\S+)$/.exec(digestLines[0]) : null;
+  const apkSha256 = digestLine?.[1];
+  if (digest.code !== 0 || digest.timedOut || !apkSha256 || digestLine?.[2] !== installedPath
+    || apkSha256 !== (native?.apk.sha256 ?? imported!.apkSha256)) return failBinding("installed APK path/sha256 does not match the requested provenance");
   const pidResult = await run(adb, ["-s", input.serial, "shell", "pidof", input.scenario.packageName], { timeoutMs: 10_000 });
   const pids = pidResult.stdout.trim().split(/\s+/).filter((value) => /^[1-9]\d*$/.test(value)).map(Number).filter(Number.isSafeInteger);
   if (pidResult.code !== 0 || pidResult.timedOut || pids.length !== 1) return failBinding("could not bind exactly one running application process");
@@ -1214,12 +1240,16 @@ async function defaultBindRuntime(
   const closeParen = stat.stdout.lastIndexOf(")");
   const afterName = closeParen >= 0 ? stat.stdout.slice(closeParen + 2).trim().split(/\s+/) : [];
   const pidStartTicks = afterName[19];
-  if (stat.code !== 0 || stat.timedOut || !pidStartTicks) return failBinding("could not bind application process start ticks");
-  if (pid !== native.runtime.pid || pidStartTicks !== native.runtime.pidStartTicks) return failBinding("live process identity does not match the native run receipt session");
+  if (stat.code !== 0 || stat.timedOut || !pidStartTicks || !/^[1-9]\d*$/.test(pidStartTicks)) return failBinding("could not bind application process start ticks");
+  if (native && (pid !== native.runtime.pid || pidStartTicks !== native.runtime.pidStartTicks)) return failBinding("live process identity does not match the native run receipt session");
   const foreground = await run(adb, ["-s", input.serial, "shell", "dumpsys", "activity", "activities"], { timeoutMs: 15_000 });
   const foregroundComponent = exactForegroundComponent(foreground.stdout, input.scenario.packageName);
-  if (foreground.code !== 0 || foreground.timedOut || foregroundComponent !== native.runtime.component) {
+  if (foreground.code !== 0 || foreground.timedOut || !foregroundComponent || (native && foregroundComponent !== native.runtime.component)) {
     return failBinding("application is not the exact receipt-bound resumed foreground component");
+  }
+  if (imported?.manifestInspection.launchComponent
+    && canonicalApkComponent(input.scenario.packageName, foregroundComponent) !== imported.manifestInspection.launchComponent) {
+    return failBinding("application foreground does not match the imported APK manifest launch component");
   }
   const binding: ApplicationRuntimeBindingBase = {
     serial: input.serial,
@@ -1232,8 +1262,9 @@ async function defaultBindRuntime(
     startedAtMonotonicNs,
     endedAtMonotonicNs: process.hrtime.bigint().toString(),
     packageName: input.scenario.packageName,
-    buildReceiptId: native.receiptId,
-    buildReceiptPath: stored.receiptPath,
+    buildReceiptId: native?.receiptId ?? null,
+    buildReceiptPath: stored?.status === "valid" ? stored.receiptPath : null,
+    ...(imported ? { provenance: imported } : {}),
     apkSha256,
     foregroundProcess: { packageName: input.scenario.packageName, component: foregroundComponent, pid, pidStartTicks },
     requestedStageStyle: input.scenario.expectedStageStyle,
@@ -1245,7 +1276,7 @@ async function defaultBindRuntime(
     binding,
     actionReceipts: [receipt(
       "bind_application_runtime", "applied", actionStart, binding.endedAtMonotonicNs,
-      { serial: input.serial, packageName: input.scenario.packageName, buildReceiptId: native.receiptId, apkSha256, pid, pidStartTicks },
+      { serial: input.serial, packageName: input.scenario.packageName, buildReceiptId: native?.receiptId ?? null, apkSha256, pid, pidStartTicks, ...(imported ? { provenance: imported } : {}) },
     )],
   };
 }
@@ -1254,7 +1285,7 @@ function defaultDependencies(adb: string): QuerySceneAnchorsDependencies {
   return {
     monotonicNs: () => process.hrtime.bigint(),
     requestId: () => crypto.randomUUID().replaceAll("-", ""),
-    bindRuntime: (input, startedAt) => defaultBindRuntime(adb, input, startedAt),
+    bindRuntime: (input, startedAt) => bindSceneApplicationRuntime(adb, input, startedAt),
     fetchPayload: async (input, requestId) => fetchAgentBridgeSceneSnapshot(adb, {
       serial: input.serial,
       packageName: input.scenario.packageName,
@@ -1282,11 +1313,16 @@ const sceneDriftPolicySchema = z.object({
 
 const scenarioSchema = z.object({
   packageName: z.string().min(1),
-  expectedBuildReceiptId: sha256Schema,
+  expectedBuildReceiptId: sha256Schema.optional(),
+  provenance: importedApkProvenanceSchema.optional(),
   expectedStageStyle: z.enum(["Mixed", "Full"]),
   expectedRootContainer: z.literal("stage"),
   sceneDriftPolicy: sceneDriftPolicySchema,
-}).strict();
+}).strict().superRefine((value, context) => {
+  if ((value.expectedBuildReceiptId === undefined) === (value.provenance === undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "provide exactly one native build receipt ID or imported APK provenance" });
+  }
+});
 
 const geometryRefOutputSchema = z.object({
   path: z.string(), sha256: sha256Schema, bytes: z.number().int().nonnegative(),
@@ -1311,8 +1347,9 @@ const applicationBindingBaseOutputSchema = z.object({
   startedAtMonotonicNs: monotonicNsSchema,
   endedAtMonotonicNs: monotonicNsSchema,
   packageName: z.string().min(1),
-  buildReceiptId: sha256Schema,
-  buildReceiptPath: z.string().min(1),
+  buildReceiptId: sha256Schema.nullable(),
+  buildReceiptPath: z.string().min(1).nullable(),
+  provenance: importedApkReceiptSchema.optional(),
   apkSha256: sha256Schema,
   foregroundProcess: z.object({
     packageName: z.string().min(1),
@@ -1333,6 +1370,19 @@ const applicationBindingOutputSchema = applicationBindingBaseOutputSchema.extend
   bridgeRevision: z.literal(AGENT_BRIDGE_SCENE_REVISION),
   requestId: z.string().regex(/^[A-Za-z0-9_-]{8,96}$/),
 }).strict();
+
+function refineApplicationProvenance(binding: ApplicationRuntimeBindingBase, context: z.RefinementCtx): void {
+  const imported = binding.provenance;
+  if (imported) {
+    if (binding.buildReceiptId !== null || binding.buildReceiptPath !== null
+      || binding.apkSha256 !== imported.apkSha256 || binding.packageName !== imported.packageName
+      || imported.declaredStageStyle !== (binding.requestedStageStyle === "Mixed" ? "1" : "3")) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "imported APK binding must match its inspected provenance and cannot claim a native receipt" });
+    }
+  } else if (binding.buildReceiptId === null || binding.buildReceiptPath === null) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "runtime binding requires a native receipt or inspected imported APK provenance" });
+  }
+}
 
 const geometrySliceOutputSchema = z.object({
   vertexStart: z.number().int().nonnegative(),
@@ -1424,7 +1474,10 @@ const sceneTerminalStatusSchema = z.enum([
 export const querySceneAnchorsOutputSchema = z.object({
   status: sceneTerminalStatusSchema,
   snapshotId: sha256Schema.nullable(),
-  applicationRuntimeBinding: z.union([applicationBindingOutputSchema, applicationBindingBaseOutputSchema]).nullable(),
+  applicationRuntimeBinding: z.union([
+    applicationBindingOutputSchema.superRefine(refineApplicationProvenance),
+    applicationBindingBaseOutputSchema.superRefine(refineApplicationProvenance),
+  ]).nullable(),
   queriedAtMonotonicNs: monotonicNsSchema.nullable(),
   trackingState: z.string().nullable(),
   retries: z.number().int().nonnegative(),

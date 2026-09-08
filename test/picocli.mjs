@@ -1,6 +1,8 @@
 // v31 pico-cli integration lane: shared probe, honest failure classes, perf-axis-v2 scoring,
 // preflight warn-tier row, and the trace/crash/record helper parsers. Run: npm run test:picocli
-// Deliberately spawns NO MCP server and NO pico-cli — everything here is pure-function/fixture.
+// Pure-function/fixture checks plus isolated executable fixtures; no real pico-cli or device.
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
@@ -163,6 +165,10 @@ for (const required of ["adb screenrecord", "pico-cli capture record", "empty/in
     ? ok(`capture_record description names ${required}`)
     : fail(`capture_record description is missing ${required}`);
 }
+
+const perfArgvRegression = spawnSync(process.execPath, ["--test", fileURLToPath(new URL("./perfcli-argv.mjs", import.meta.url))], { encoding: "utf8" });
+if (perfArgvRegression.status === 0) ok("profiler version selection and exact argv receipts pass executable fixtures");
+else fail(`profiler argv regression failed: ${perfArgvRegression.stderr || perfArgvRegression.stdout || perfArgvRegression.error}`);
 
 console.log(`\npico-cli lane test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

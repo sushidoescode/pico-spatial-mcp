@@ -111,7 +111,7 @@ export interface BoundRelativeRouteInput {
 }
 
 export interface RelativeRouteDependencies {
-  applyRelativeAction(action: RelativeCameraAction): Promise<CameraActionReceipt>;
+  applyRelativeAction(action: RelativeCameraAction, context?: RelativeRouteActionContext): Promise<CameraActionReceipt>;
   sampleContinuity?: () => Promise<ApplicationContinuitySample>;
   captureSettled(path: string, context: {
     priorSha256: string;
@@ -120,6 +120,12 @@ export interface RelativeRouteDependencies {
   allocateWaypointPath(seq: number): string;
   sleep(ms: number): Promise<void>;
   monotonicNs(): bigint;
+}
+
+export interface RelativeRouteActionContext {
+  /** Recheck after asynchronous observation: reserves this and later actions, settlement,
+   * post-action continuity, finalization, and the current lane's recovery reserve. */
+  canStart(): boolean;
 }
 
 export interface RelativeRouteDecisionContext {
@@ -1045,7 +1051,19 @@ export function createRelativeRouteExecution(
     let actionReceipts: CameraActionReceipt[];
     let stepAttempts: RelativeRouteActionAttempt[] = [];
     try {
-      actionReceipts = await executeBoundCameraActions(input.runtimeBinding, actions, deps);
+      let actionIndex = 0;
+      actionReceipts = await executeBoundCameraActions(input.runtimeBinding, actions, {
+        applyRelativeAction: (action) => {
+          const remainingOperationMs = waypointDurationForLane(actions.slice(actionIndex++), lane)
+            - (input.continuity.kind === "required" ? APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS : 0);
+          return deps.applyRelativeAction(action, {
+            canStart: () => {
+              const elapsed = elapsedMs();
+              return elapsed !== null && elapsed + remainingOperationMs <= input.budgets.maxDurationMs;
+            },
+          });
+        },
+      });
     } catch (error) {
       if (error instanceof CameraActionExecutionError) {
         for (let index = 0; index < error.attemptedCount; index++) {

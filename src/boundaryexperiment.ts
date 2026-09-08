@@ -39,6 +39,8 @@ import { canonicalJson } from "./runreceiptidentity.js";
 import { readNativeRunReceipt } from "./runreceiptstore.js";
 import { resolveAdb } from "./emulatorlook.js";
 import { okJson, run, sleep } from "./util.js";
+import { importedApkProvenanceSchema, validateImportedApk } from "./importedapk.js";
+import { hostWindowPrecondition, probeHostWindow, unavailableHostWindowProbe, type HostWindowProbe } from "./hostwindow.js";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -47,7 +49,6 @@ const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)
 const CLAIMSIGHT_PHASE1_APK_SHA256 = "7ecce31ec0a5ede24c88e97e0aca2ec82dc467f0a639402661b5749ee5678bbf";
 const JSON_ARTIFACT_MAX_BYTES = 2 * 1024 * 1024;
 const LOG_ARTIFACT_MAX_BYTES = 64 * 1024 * 1024;
-const APK_ARTIFACT_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 const REVIEW_IMAGE_MAX_BYTES = 64 * 1024 * 1024;
 const MAX_ACTIVE_RUNS = 32;
 const RUN_TTL_MS = 6 * 60 * 60 * 1_000;
@@ -239,21 +240,19 @@ const scenarioSchema = z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, path: ["dynamicEntry"], message: "dynamic entry must use the exact generated same-package receiver, action, and stage" });
     }
   }
-  if (value.entryRoute !== "editor_manifest_full") {
-    const expected = GENERATED_SCENARIOS[value.entryRoute];
-    if (value.id !== expected.id || value.packageName !== expected.packageName
-      || value.launchComponent !== `${expected.packageName}/.platform.LaunchActivity`) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["id"], message: "generated scenario identity must match the stable Boundary Lab matrix" });
-    }
-  } else if (value.id !== "claimsight-e1"
+  if (value.entryRoute === "editor_manifest_full" && (value.id !== "claimsight-e1"
     || value.packageName !== "com.example.claimsight"
-    || value.launchComponent !== "com.example.claimsight/.platform.LaunchActivity") {
+    || value.launchComponent !== "com.example.claimsight/.platform.LaunchActivity")) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["id"], message: "Phase-1 editor row is the exact claimsight-e1 CP0-qualified APK" });
   }
 });
 const provenanceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("native_run_receipt"), receiptId: hashSchema, apkSha256: hashSchema }).strict(),
-  z.object({ kind: z.literal("imported_apk"), apkPath: z.string().min(1), apkSha256: hashSchema, inventoryObservedAt: z.string().datetime({ offset: true }) }).strict(),
+  // Preserve the historical pinned E1 call shape; new imported rows require both fields below.
+  importedApkProvenanceSchema.extend({
+    packageName: importedApkProvenanceSchema.shape.packageName.optional(),
+    declaredStageStyle: importedApkProvenanceSchema.shape.declaredStageStyle.optional(),
+  }).strict(),
 ]);
 const capturePolicySchema = z.object({
   maxTries: z.number().int().min(2).max(4),
@@ -266,6 +265,7 @@ const visibleStateSchema = z.enum([
   "boundarylab_manifest_full",
   "boundarylab_dynamic_full",
   "claimsight_environment",
+  "imported_mixed_environment",
   "system_home",
   "black_or_inconclusive",
 ]);
@@ -289,8 +289,28 @@ const prepareSchema = z.object({
   if (value.scenario.entryRoute === "editor_manifest_full" && value.provenance.kind !== "imported_apk") {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["provenance"], message: "editor_manifest_full requires imported_apk provenance" });
   }
-  if (value.scenario.entryRoute !== "editor_manifest_full" && value.provenance.kind !== "native_run_receipt") {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["provenance"], message: "generated Boundary Lab rows require a native_run_receipt" });
+  const importedMixed = value.scenario.entryRoute === "manifest_mixed" && value.provenance.kind === "imported_apk";
+  if (importedMixed && (value.scenario.id === "claimsight-e1" || value.scenario.packageName === "com.example.claimsight")) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["scenario"], message: "the reserved Claimsight identity must use the pinned editor_manifest_full route" });
+  }
+  if (value.scenario.entryRoute !== "editor_manifest_full" && !importedMixed) {
+    if (value.provenance.kind !== "native_run_receipt") {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["provenance"], message: "generated Boundary Lab rows require a native_run_receipt" });
+    }
+    const expected = GENERATED_SCENARIOS[value.scenario.entryRoute];
+    if (value.scenario.id !== expected.id || value.scenario.packageName !== expected.packageName
+      || value.scenario.launchComponent !== `${expected.packageName}/.platform.LaunchActivity`) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["scenario", "id"], message: "generated scenario identity must match the stable Boundary Lab matrix" });
+    }
+  }
+  if (value.provenance.kind === "imported_apk") {
+    const expectedStyle = value.scenario.expectedManifestStageStyle === "Mixed" ? "1" : "3";
+    if ((importedMixed || value.provenance.packageName !== undefined) && value.provenance.packageName !== value.scenario.packageName) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["provenance", "packageName"], message: "imported APK provenance must explicitly bind the scenario package" });
+    }
+    if ((importedMixed || value.provenance.declaredStageStyle !== undefined) && value.provenance.declaredStageStyle !== expectedStyle) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["provenance", "declaredStageStyle"], message: "imported APK provenance must explicitly bind the declared manifest stage style" });
+    }
   }
   if (value.scenario.entryRoute === "editor_manifest_full"
     && value.provenance.kind === "imported_apk"
@@ -302,11 +322,11 @@ const prepareSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["provenance", "apkPath"], message: "imported APK path must be normalized and absolute" });
   }
   const sourceKind = value.route.source.kind;
-  if (value.scenario.entryRoute === "manifest_mixed" && sourceKind !== "calibration_seed") {
+  if (value.scenario.entryRoute === "manifest_mixed" && !importedMixed && sourceKind !== "calibration_seed") {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["route", "source"], message: "M0 is the sole calibration_seed row" });
   }
-  if (value.scenario.entryRoute !== "manifest_mixed" && sourceKind !== "replay") {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["route", "source"], message: "F1, F2, and E1 must replay an adjudicated M0 route" });
+  if ((value.scenario.entryRoute !== "manifest_mixed" || importedMixed) && sourceKind !== "replay") {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["route", "source"], message: "F1, F2, E1, and imported manifest_mixed rows must replay an adjudicated native M0 route" });
   }
   const requiredRecoveryReserveMs = minimumRecoveryReserveMs(value.scenario.entryRoute);
   if (value.route.budgets.recoveryReserveMs < requiredRecoveryReserveMs) {
@@ -395,6 +415,7 @@ export interface BoundaryExperimentDependencies {
   monotonicNs(): bigint;
   readNativeRunReceipt: typeof readNativeRunReceipt;
   readReviewImage: typeof readBoundReviewImage;
+  probeHostWindow?(serial: string, binding?: BoundQemuWindow): Promise<HostWindowProbe>;
   collectPreparation(context: Record<string, any>): Promise<BoundaryPreparationResult>;
   recaptureReviewedFrame(context: Record<string, any>): Promise<{ matches: boolean; sha256: string; continuity: ApplicationContinuitySample }>;
   executeWaypoint(context: Record<string, any>): Promise<{
@@ -444,6 +465,8 @@ interface ExperimentState {
   expiresAtEpochMs: number;
   clockCorrelation: { wallClockIso: string; hostMonotonicNs: string; wallClockMinusMonotonicNs: string };
   input: PrepareInput;
+  provenanceReceipt: Awaited<ReturnType<typeof validateImportedApk>> | null;
+  hostWindowEvidence: BoundaryHostWindowEvidence;
   routeScript: ReturnType<typeof canonicalBoundaryRouteScript>;
   waypoints: BoundaryWaypointPlan[];
   preparation: BoundaryPreparationResult;
@@ -473,7 +496,8 @@ interface ExperimentState {
   recoveryAttempted: boolean;
   recovery: {
     order: RecoveryKind[];
-    steps: Array<{
+    steps: Array<BoundaryHostWindowEvidence & {
+      provenance?: Awaited<ReturnType<typeof validateImportedApk>>;
       kind: RecoveryKind;
       attributionKind: RecoveryAttributionKind;
       structuralOk: boolean;
@@ -494,6 +518,74 @@ interface ExperimentState {
   } | null;
   recoveryAdjudication: Record<string, any> | null;
 }
+
+interface BoundaryHostWindowEvidence {
+  hostWindowProbe: HostWindowProbe;
+  hostWindowProbes: Array<{ phase: string; probe: HostWindowProbe }>;
+  hostWindowError: { code: "host_window_occluded" | "host_window_unavailable" | "budget_exhausted"; detail: string } | null;
+}
+
+class BoundaryHostWindowError extends Error {
+  constructor(readonly code: NonNullable<BoundaryHostWindowEvidence["hostWindowError"]>["code"], detail: string) {
+    super(detail);
+    this.name = "BoundaryHostWindowError";
+  }
+}
+
+function createHostWindowControl(dependencies: BoundaryExperimentDependencies, serial?: string, initialBinding?: BoundQemuWindow) {
+  let binding = initialBinding;
+  let deadlineNs: bigint | null = null;
+  const startedNs = dependencies.monotonicNs();
+  const evidence: BoundaryHostWindowEvidence = {
+    hostWindowProbe: unavailableHostWindowProbe("host window has not been observed", binding),
+    hostWindowProbes: [],
+    hostWindowError: null,
+  };
+  const assert = (): void => {
+    if (evidence.hostWindowError) throw new BoundaryHostWindowError(evidence.hostWindowError.code, evidence.hostWindowError.detail);
+  };
+  const observe = async (phase: string): Promise<HostWindowProbe> => {
+    let probe: HostWindowProbe;
+    try {
+      probe = serial && dependencies.probeHostWindow
+        ? structuredClone(await dependencies.probeHostWindow(serial, binding))
+        : unavailableHostWindowProbe("host-window probe dependency or bound serial is unavailable", binding);
+      const problem = hostWindowPrecondition(probe);
+      if (problem && !evidence.hostWindowError) evidence.hostWindowError = problem;
+    } catch (error) {
+      probe = unavailableHostWindowProbe(`host-window probe failed: ${error instanceof Error ? error.message : String(error)}`, binding);
+      evidence.hostWindowError ??= hostWindowPrecondition(probe);
+    }
+    evidence.hostWindowProbe = probe;
+    evidence.hostWindowProbes.push({ phase, probe });
+    return probe;
+  };
+  return {
+    evidence,
+    observe,
+    assert,
+    elapsedMs: (): number => Math.max(0, Math.ceil(Number(dependencies.monotonicNs() - startedNs) / 1_000_000)),
+    bind: (nextBinding: BoundQemuWindow): void => { binding = nextBinding; },
+    setDuration: (durationMs: number): void => {
+      deadlineNs = startedNs + BigInt(Math.max(0, Math.floor(durationMs * 1_000_000)));
+    },
+    require: async (phase: string, remainingMs?: number | (() => number)): Promise<void> => {
+      const localDeadlineNs = typeof remainingMs === "number"
+        ? dependencies.monotonicNs() + BigInt(Math.max(0, Math.floor(remainingMs * 1_000_000)))
+        : null;
+      await observe(phase);
+      assert();
+      if ((deadlineNs !== null && dependencies.monotonicNs() >= deadlineNs)
+        || (localDeadlineNs !== null && dependencies.monotonicNs() >= localDeadlineNs)
+        || (typeof remainingMs === "function" && remainingMs() <= 0)) {
+        evidence.hostWindowError = { code: "budget_exhausted", detail: `deadline exhausted after ${phase} host-window observation` };
+        assert();
+      }
+    },
+  };
+}
+
+type BoundaryHostWindowControl = ReturnType<typeof createHostWindowControl>;
 
 interface LiveBoundaryRuntime {
   window: BoundQemuWindow;
@@ -908,7 +1000,9 @@ export function canonicalBoundaryRouteScript(
 }
 
 function expectedAppState(scenario: BoundaryScenario): VisualFrameAttestation["visibleState"] {
-  if (scenario.entryRoute === "manifest_mixed") return "boundarylab_mixed";
+  if (scenario.entryRoute === "manifest_mixed") return scenario.id === GENERATED_SCENARIOS.manifest_mixed.id
+    && scenario.packageName === GENERATED_SCENARIOS.manifest_mixed.packageName
+    ? "boundarylab_mixed" : "imported_mixed_environment";
   if (scenario.entryRoute === "manifest_full") return "boundarylab_manifest_full";
   if (scenario.entryRoute === "dynamic_full") return "boundarylab_dynamic_full";
   return "claimsight_environment";
@@ -944,7 +1038,7 @@ function carriesExpectedSentinel(attestation: VisualFrameAttestation): boolean {
   if (attestation.visibleState === "boundarylab_dynamic_full") {
     return attestation.sentinels.includes("DYNAMIC FULL") && !attestation.sentinels.includes("MANIFEST MIXED ROOT");
   }
-  if (attestation.visibleState === "claimsight_environment") return attestation.sentinels.length > 0;
+  if (attestation.visibleState === "claimsight_environment" || attestation.visibleState === "imported_mixed_environment") return attestation.sentinels.length > 0;
   return true;
 }
 
@@ -955,7 +1049,7 @@ export function recoveryFrameMatchesExpected(
 ): boolean {
   return frame.visibleState === expectedAppState(scenario)
     && carriesExpectedSentinel(frame)
-    && (scenario.entryRoute !== "editor_manifest_full"
+    && ((scenario.entryRoute !== "editor_manifest_full" && expectedAppState(scenario) !== "imported_mixed_environment")
       || (claimsightLandmarks.length > 0 && claimsightLandmarks.every((landmark) => frame.sentinels.includes(landmark))));
 }
 
@@ -989,8 +1083,8 @@ export function hasExactDynamicOpenSequence(
   return canonicalJson(openKinds) === canonicalJson(expected);
 }
 
-function retainsReviewedClaimsightLandmarks(state: ExperimentState, attestation: VisualFrameAttestation): boolean {
-  if (state.input.scenario.entryRoute !== "editor_manifest_full" || attestation.visibleState !== "claimsight_environment") return true;
+function retainsReviewedAppLandmarks(state: ExperimentState, attestation: VisualFrameAttestation): boolean {
+  if (attestation.visibleState !== "claimsight_environment" && attestation.visibleState !== "imported_mixed_environment") return true;
   const baseline = state.reviewed.get(state.preparation.appBaseline.sha256);
   if (!baseline) return attestation.sentinels.length > 0;
   return baseline.sentinels.length > 0 && baseline.sentinels.every((landmark) => attestation.sentinels.includes(landmark));
@@ -1026,14 +1120,14 @@ function exactReviewManifest(
       throw new Error(`${item.role.replace("_", " ")} capture ${item.captureSha256} has a visible state incompatible with scenario ${scenario.id}`);
     }
   }
-  if (scenario.entryRoute === "editor_manifest_full") {
+  if (scenario.entryRoute === "editor_manifest_full" || expectedAppState(scenario) === "imported_mixed_environment") {
     const baselineItem = requiredReview.find((item) => item.role === "app_baseline");
     const landmarks = baselineItem ? byHash.get(baselineItem.captureSha256)?.sentinels ?? [] : [];
-    if (baselineItem && landmarks.length === 0) throw new Error("Claimsight baseline requires a stable scene-specific landmark set");
+    if (baselineItem && landmarks.length === 0) throw new Error("imported world baseline requires a stable scene-specific landmark set");
     for (const item of requiredReview.filter((candidate) => candidate.role === "waypoint" || candidate.role === "transition")) {
       const attestation = byHash.get(item.captureSha256)!;
-      if (attestation.visibleState === "claimsight_environment" && landmarks.some((landmark) => !attestation.sentinels.includes(landmark))) {
-        throw new Error("Claimsight route frame does not retain the baseline landmark set");
+      if (attestation.visibleState === expectedAppState(scenario) && landmarks.some((landmark) => !attestation.sentinels.includes(landmark))) {
+        throw new Error("imported world route frame does not retain the baseline landmark set");
       }
     }
   }
@@ -1092,6 +1186,9 @@ export function deriveBoundaryRouteOutcome(input: BoundaryOutcomeInput): {
 
   if (!input.structural.inputReleaseCertain || input.structural.stop === "input_release_uncertain") {
     return result("input_release_uncertain", "FAIL", "structural");
+  }
+  if (input.structural.stop === "host_window_occluded" || input.structural.stop === "host_window_unavailable") {
+    return result(input.structural.stop, "CHARACTERIZE", "structural");
   }
   if (!input.structural.processAlive || input.structural.runtimeHealthFailure) return result("app_lifecycle_loss", "FAIL", "structural");
   if (input.structural.runtimeHealthInconclusive) return result("binding_lost", "CHARACTERIZE", "structural");
@@ -1154,6 +1251,8 @@ export async function executeBoundaryRecoveryProtocol(
 
 function publicState(state: ExperimentState): Record<string, unknown> {
   return {
+    ...state.hostWindowEvidence,
+    ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}),
     runId: state.runId,
     status: state.routeAdjudication ? "route_adjudicated" : state.structuralStop ? "ready_for_route_adjudication" : "active",
     nextWaypoint: state.nextWaypoint,
@@ -1194,8 +1293,14 @@ function recoveryReviewItems(state: ExperimentState): RequiredReviewItem[] {
 function persistRecovery(state: ExperimentState): void {
   if (!state.recovery) return;
   replacePrivateJson(path.join(state.artifactRoot, "recovery.json"), {
+    ...state.hostWindowEvidence,
+    ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}),
     order: state.recovery.order,
     steps: state.recovery.steps.map((step) => ({
+      hostWindowProbe: step.hostWindowProbe,
+      hostWindowProbes: step.hostWindowProbes,
+      hostWindowError: step.hostWindowError,
+      ...(step.provenance ? { provenance: step.provenance } : {}),
       kind: step.kind,
       attributionKind: step.attributionKind,
       structuralOk: step.structuralOk,
@@ -1420,13 +1525,31 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
     visualReviewRequired: true,
   });
 
-  const execute = async (rawInput: BoundaryExperimentInput): Promise<Record<string, any>> => {
+  const executeObserved = async (rawInput: BoundaryExperimentInput, hostWindowControl: BoundaryHostWindowControl): Promise<Record<string, any>> => {
     const input = boundaryExperimentInputSchema.parse(rawInput);
+    const hostEvidence = hostWindowControl.evidence;
     if (input.action === "prepare") {
+      try {
+        hostWindowControl.assert();
+      } catch (error) {
+        if (!(error instanceof BoundaryHostWindowError)) throw error;
+        return { status: "preflight_rejected", structuralStop: error.code, error: error.message };
+      }
+      hostWindowControl.setDuration(input.route.budgets.maxDurationMs);
       sweepExpired();
       if (runs.size + preparing >= MAX_ACTIVE_RUNS) throw new Error(`active boundary run cap (${MAX_ACTIVE_RUNS}) reached; adjudicate or wait for expiry before preparing another run`);
       preparing += 1;
       try {
+        const provenanceReceipt = input.provenance.kind === "imported_apk"
+          ? await validateImportedApk({
+            ...input.provenance,
+            packageName: input.provenance.packageName ?? input.scenario.packageName,
+            declaredStageStyle: input.provenance.declaredStageStyle ?? (input.scenario.expectedManifestStageStyle === "Mixed" ? "1" : "3"),
+          }, {
+            packageName: input.scenario.packageName,
+            declaredStageStyle: input.scenario.expectedManifestStageStyle === "Mixed" ? "1" : "3",
+            launchComponent: input.scenario.launchComponent,
+          }) : null;
         const routeScript = canonicalBoundaryRouteScript(
           { scenarioId: input.scenario.id, route: input.route },
           dependencies.readNativeRunReceipt,
@@ -1466,6 +1589,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           appBaseline: path.join(captureDirectory, "010-app-baseline.png"),
         };
         const manifest = {
+          ...hostEvidence,
           schemaVersion: 1,
           runId,
           ownerNonceHash,
@@ -1474,6 +1598,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           serial: input.serial,
           scenario: input.scenario,
           provenance: input.provenance,
+          ...(provenanceReceipt ? { provenanceReceipt } : {}),
           normalizedRoute: routeScript.script,
           routeScriptSha256: routeScript.sha256,
           replaySource: input.route.source.kind === "replay" ? input.route.source.calibrationRouteRef : null,
@@ -1487,7 +1612,8 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         assertOwnedRootValues(rootBinding);
         let preparation: BoundaryPreparationResult;
         try {
-          preparation = await dependencies.collectPreparation({ input, runId, ownerNonceHash, artifactRoot, capturePaths, routeScript });
+          await hostWindowControl.require("before_preparation");
+          preparation = await dependencies.collectPreparation({ input, runId, ownerNonceHash, artifactRoot, capturePaths, routeScript, hostWindowControl });
         } catch (error) {
           assertOwnedRootValues(rootBinding);
           const partial = error instanceof BoundaryPreparationFailure ? error.evidence : {};
@@ -1509,14 +1635,16 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           let runtimeHealth: PackageRuntimeHealthReceiptV1 | null = null;
           if (partial.runtimeHealth) runtimeHealth = checkedRuntimeHealth(partial.runtimeHealth, input.scenario.packageName, partial.logArtifact);
           for (const sample of partial.continuity ?? []) appendJsonLine(path.join(artifactRoot, "continuity.jsonl"), { scope: "preparation_failure", sample });
-          const structuralStop = partial.structuralStop ?? "preparation_failed";
+          const structuralStop = hostEvidence.hostWindowError?.code ?? partial.structuralStop ?? "preparation_failed";
           const publicFailure = {
+            ...hostEvidence,
+            ...(provenanceReceipt ? { provenance: provenanceReceipt } : {}),
             status: "preparation_failed",
             runId,
             artifactRoot,
             routeScriptSha256: routeScript.sha256,
             structuralStop,
-            error: failureText,
+            error: hostEvidence.hostWindowError?.detail ?? failureText,
             homeClearance: partial.homeClearance ?? null,
             requiredReview,
             logArtifacts,
@@ -1543,9 +1671,15 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
             visualReviewRequired: requiredReview.length > 0,
           };
         }
+        try {
+          await hostWindowControl.require("after_preparation");
+        } catch (error) {
+          if (!(error instanceof BoundaryHostWindowError)) throw error;
+          // Retain diagnostics and continuity, but never admit a covered baseline for routing.
+        }
         assertOwnedRootValues(rootBinding);
         const { privateRuntime: _privateRuntime, ...publicPreparation } = preparation;
-        privateWrite(path.join(artifactRoot, "preparation.json"), `${canonicalJson(publicPreparation)}\n`);
+        privateWrite(path.join(artifactRoot, "preparation.json"), `${canonicalJson({ ...publicPreparation, ...hostEvidence, ...(provenanceReceipt ? { provenance: provenanceReceipt } : {}) })}\n`);
         const requiredReview = [captureToReview(preparation.homeReference), captureToReview(preparation.appBaseline)];
         for (const item of requiredReview) dependencies.readReviewImage(item, artifactRoot);
         const state: ExperimentState = {
@@ -1553,6 +1687,8 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           expiresAtEpochMs: Date.now() + RUN_TTL_MS,
           clockCorrelation,
           input,
+          provenanceReceipt,
+          hostWindowEvidence: hostEvidence,
           routeScript,
           waypoints: routeScript.script.waypoints,
           preparation,
@@ -1608,6 +1744,10 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
             state.structuralStop = "terminal_signal_candidate";
             preparationFailure = "prepared dynamic Full probe history is incomplete, reordered, duplicated, or invalid";
           }
+          if (hostEvidence.hostWindowError) {
+            state.structuralStop = hostEvidence.hostWindowError.code;
+            preparationFailure = hostEvidence.hostWindowError.detail;
+          }
           atomicPrivateJson(path.join(artifactRoot, "state.json"), publicState(state));
           atomicPrivateJson(path.join(artifactRoot, "required-review.json"), requiredReview);
           persistState(state);
@@ -1615,6 +1755,8 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
             scrubRuntime(state);
             persistState(state);
             privateWrite(path.join(artifactRoot, "preparation-failure.json"), `${canonicalJson({
+              ...hostEvidence,
+              ...(provenanceReceipt ? { provenance: provenanceReceipt } : {}),
               runId,
               structuralStop: state.structuralStop,
               error: preparationFailure,
@@ -1631,6 +1773,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
               requiredReview,
               responseReview: [...new Map(requiredReview.map((item) => [item.captureSha256, item])).values()],
               visualReviewRequired: true,
+              ...(provenanceReceipt ? { provenance: provenanceReceipt } : {}),
             };
           }
           runs.set(runId, state);
@@ -1646,6 +1789,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           requiredReview,
           responseReview: requiredReview,
           visualReviewRequired: true,
+          ...(provenanceReceipt ? { provenance: provenanceReceipt } : {}),
           structural: { runtimeBinding: preparation.runtimeBinding, applicationBinding: preparation.applicationBinding, logArtifact: preparation.logArtifact },
         };
       } finally {
@@ -1660,6 +1804,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
     busyRuns.add(state.runId);
     try {
       assertOwnedRunRoot(state);
+      state.hostWindowEvidence = hostEvidence;
       if (input.action === "step") {
         if (state.routeAdjudication) return { status: "already_adjudicated", runId: state.runId, artifactRoot: state.artifactRoot };
         if (state.structuralStop) return terminalResponse(state);
@@ -1668,7 +1813,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         }
         const priorItem = state.requiredReview.find((item) => item.captureSha256 === state.lastRequiredHash);
         if (!priorItem || !compatibleAttestation(priorItem, input.reviewedPriorFrame, state.input.scenario)
-          || !retainsReviewedClaimsightLandmarks(state, input.reviewedPriorFrame)) {
+          || !retainsReviewedAppLandmarks(state, input.reviewedPriorFrame)) {
           return { status: "review_rejected", runId: state.runId, expectedCaptureSha256: state.lastRequiredHash, visualReviewRequired: true };
         }
         try {
@@ -1701,6 +1846,20 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           persistState(state);
           return terminalResponse(state);
         }
+        hostWindowControl.setDuration(remainingBudgets(state).maxDurationMs - state.input.route.budgets.recoveryReserveMs);
+        try {
+          await hostWindowControl.require("before_waypoint");
+        } catch (error) {
+          if (!(error instanceof BoundaryHostWindowError)) throw error;
+          state.routeAttempted = true;
+          state.structuralStop = error.code;
+          appendJsonLine(path.join(state.artifactRoot, "actions.jsonl"), {
+            waypointSeq: waypoint.seq, status: "preflight_rejected", structuralStop: error.code, error: error.message,
+            ...hostEvidence, ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}),
+          });
+          persistState(state);
+          return { ...terminalResponse(state), error: error.message };
+        }
         const retryingInitialWaypoint = state.nextWaypoint === 0 && state.rebaselineOrdinal > 0;
         const attemptOrdinal = retryingInitialWaypoint ? state.rebaselineOrdinal + 1 : 1;
         const attemptSuffix = attemptOrdinal === 1 ? "" : `-attempt-${attemptOrdinal}`;
@@ -1711,6 +1870,8 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         persistState(state);
         let executed: Awaited<ReturnType<BoundaryExperimentDependencies["executeWaypoint"]>>;
         try {
+          const delegatedBudgets = remainingBudgets(state);
+          delegatedBudgets.maxDurationMs = Math.max(0, delegatedBudgets.maxDurationMs - hostWindowControl.elapsedMs());
           executed = await dependencies.executeWaypoint({
             state,
             waypoint: structuredClone(waypoint),
@@ -1718,23 +1879,42 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
             stepLogPath,
             preflightLogPath,
             attemptOrdinal,
-            remainingBudgets: remainingBudgets(state),
-            recaptureReviewedFrame: (limits: Record<string, any> = {}) => dependencies.recaptureReviewedFrame({
-              state,
-              expectedSha256: state.lastRequiredHash,
-              attestation: input.reviewedPriorFrame,
-              ...limits,
-            }),
+            remainingBudgets: delegatedBudgets,
+            hostWindowControl,
+            recaptureReviewedFrame: async (limits: Record<string, any> = {}) => {
+              await hostWindowControl.require("before_reviewed_frame_recapture", limits.remainingMs);
+              const recaptured = await dependencies.recaptureReviewedFrame({
+                state, expectedSha256: state.lastRequiredHash, attestation: input.reviewedPriorFrame,
+                ...limits, hostWindowControl,
+              });
+              await hostWindowControl.require("after_reviewed_frame_recapture", limits.remainingMs);
+              return recaptured;
+            },
           });
         } catch (error) {
           assertOwnedRunRoot(state);
-          state.structuralStop = "action_failed";
-          appendJsonLine(path.join(state.artifactRoot, "actions.jsonl"), { waypointSeq: waypoint.seq, status: "dependency_failed", error: error instanceof Error ? error.message : String(error) });
+          state.structuralStop = hostEvidence.hostWindowError?.code ?? "action_failed";
+          appendJsonLine(path.join(state.artifactRoot, "actions.jsonl"), { waypointSeq: waypoint.seq, status: "dependency_failed", structuralStop: state.structuralStop, error: error instanceof Error ? error.message : String(error), ...hostEvidence, ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}) });
           persistState(state);
           return { ...terminalResponse(state), executionError: error instanceof Error ? error.message : String(error) };
         }
+        try {
+          await hostWindowControl.require("after_waypoint_before_distance");
+        } catch (error) {
+          if (!(error instanceof BoundaryHostWindowError)) throw error;
+        }
+        const dependencyDurationMs = Number(executed.routeTrace.usage?.durationMs ?? 0);
+        if (Number.isFinite(dependencyDurationMs) && dependencyDurationMs >= 0) {
+          executed.routeTrace = {
+            ...executed.routeTrace,
+            usage: { ...executed.routeTrace.usage, durationMs: Math.max(dependencyDurationMs, hostWindowControl.elapsedMs()) },
+          };
+        }
         assertOwnedRunRoot(state);
         appendJsonLine(path.join(state.artifactRoot, "actions.jsonl"), {
+          ...hostEvidence,
+          ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}),
+          ...(hostEvidence.hostWindowError ? { structuralStop: hostEvidence.hostWindowError.code } : {}),
           waypointSeq: waypoint.seq,
           routeTrace: executed.routeTrace,
           capture: executed.capture,
@@ -1771,6 +1951,11 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           state.inputReleaseCertain = false;
           state.structuralStop = "input_release_uncertain";
           scrubRuntime(state);
+        }
+        if (hostEvidence.hostWindowError) {
+          if (state.inputReleaseCertain) state.structuralStop = hostEvidence.hostWindowError.code;
+          persistState(state);
+          return { ...terminalResponse(state), routeTrace: executed.routeTrace, error: hostEvidence.hostWindowError.detail };
         }
         if (!executed.capture) {
           const exhaustedBeforeInput = traceStop === "budget_exhausted"
@@ -1913,7 +2098,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
               runtimeHealthInconclusive: state.runtimeHealthInconclusive,
             },
           });
-          const adjudication = { runId: state.runId, ...outcome, routeScriptSha256: state.routeScript.sha256, requiredReview: state.requiredReview, frameAttestations: input.frameAttestations, adjudicatedAt: dependencies.now() };
+          const adjudication = { ...hostEvidence, ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}), runId: state.runId, ...outcome, routeScriptSha256: state.routeScript.sha256, requiredReview: state.requiredReview, frameAttestations: input.frameAttestations, adjudicatedAt: dependencies.now() };
           privateWrite(path.join(state.artifactRoot, "adjudication.json"), `${canonicalJson(adjudication)}\n`);
           state.routeAdjudication = adjudication;
           if (["retained_immersive_through_route", "no_ejection_within_observed_budget", "input_release_uncertain"].includes(outcome.outcome)) scrubRuntime(state);
@@ -1938,6 +2123,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         let recoveryResult = "recovery_inconclusive";
         let recoveredAtStep: string | null = null;
         const claimsightLandmarks = state.input.scenario.entryRoute === "editor_manifest_full"
+          || expectedAppState(state.input.scenario) === "imported_mixed_environment"
           ? (state.routeAdjudication?.frameAttestations as VisualFrameAttestation[] | undefined)
             ?.find((frame) => frame.captureSha256 === state.preparation.appBaseline.sha256)?.sentinels ?? []
           : [];
@@ -1970,6 +2156,8 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           }
         }
         const recoveryAdjudication = {
+          ...hostEvidence,
+          ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}),
           runId: state.runId,
           recoveryResult,
           recoveredAtStep,
@@ -1998,7 +2186,19 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         requiredReview: recoveryReviewItems(state),
         responseReview,
         visualReviewRequired: true,
+        ...(hostEvidence.hostWindowError ? { structuralStop: hostEvidence.hostWindowError.code } : {}),
       });
+
+      const recoveryPreflightError = structuredClone(hostEvidence.hostWindowError);
+      if (recoveryPreflightError) {
+        appendJsonLine(path.join(state.artifactRoot, "actions.jsonl"), {
+          recovery: "preflight_rejected", structuralStop: recoveryPreflightError.code,
+          ...hostEvidence, ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}),
+        });
+        persistState(state);
+        return { status: "recovery_rejected", runId: state.runId, artifactRoot: state.artifactRoot,
+          structuralStop: recoveryPreflightError.code, error: recoveryPreflightError.detail };
+      }
 
       if (!state.recovery) {
         if (state.recoveryAttempted) return { status: "recovery_rejected", runId: state.runId, reason: "the once-only recovery attempt failed and cannot be repeated" };
@@ -2032,7 +2232,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         if (!priorStep?.afterItem || !input.reviewedPriorFrame
           || input.reviewedPriorFrame.captureSha256 !== priorStep.afterItem.captureSha256
           || !compatibleAttestation(priorStep.afterItem, input.reviewedPriorFrame, state.input.scenario)
-          || !retainsReviewedClaimsightLandmarks(state, input.reviewedPriorFrame)) {
+          || !retainsReviewedAppLandmarks(state, input.reviewedPriorFrame)) {
           return {
             status: "recovery_review_rejected",
             runId: state.runId,
@@ -2067,6 +2267,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           if (includeReopen) state.recovery.order.splice(1, 0, "reopen_stage");
         }
         const claimsightLandmarks = state.input.scenario.entryRoute === "editor_manifest_full"
+          || expectedAppState(state.input.scenario) === "imported_mixed_environment"
           ? (state.routeAdjudication.frameAttestations as VisualFrameAttestation[] | undefined)
             ?.find((frame) => frame.captureSha256 === state.preparation.appBaseline.sha256)?.sentinels ?? []
           : [];
@@ -2116,12 +2317,15 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
       let recovered: Awaited<ReturnType<BoundaryExperimentDependencies["executeRecoveryStep"]>>;
       const runtimeSecret = (state.preparation.privateRuntime as { secret?: string } | undefined)?.secret ?? "";
       try {
+        hostWindowControl.setDuration(remainingRecoveryMs);
+        await hostWindowControl.require("before_recovery_step");
         recovered = await dependencies.executeRecoveryStep({
           state,
           kind,
           stepOrdinal: stepIndex + 1,
           captureDirectory: path.join(state.artifactRoot, "captures"),
-          remainingRecoveryMs,
+          remainingRecoveryMs: Math.max(0, remainingRecoveryMs - hostWindowControl.elapsedMs()),
+          hostWindowControl,
         });
       } catch (error) {
         const recoveryError = redactSensitiveText(error, [runtimeSecret]);
@@ -2132,7 +2336,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         let artifactError: string | null = null;
         try {
           assertOwnedRunRoot(state);
-          appendJsonLine(path.join(state.artifactRoot, "actions.jsonl"), { recovery: "partial_failed", recoveryStep: kind, error: recoveryError });
+          appendJsonLine(path.join(state.artifactRoot, "actions.jsonl"), { recovery: "partial_failed", recoveryStep: kind, error: recoveryError, ...hostEvidence, ...(hostEvidence.hostWindowError ? { structuralStop: hostEvidence.hostWindowError.code } : {}), ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}) });
           persistRecovery(state);
           persistState(state);
         } catch (persistenceError) {
@@ -2144,10 +2348,17 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           artifactRoot: state.artifactRoot,
           reason: "the once-only recovery attempt failed after it was reserved; it will not be repeated",
           error: [recoveryError, artifactError ? `failure evidence could not be persisted: ${artifactError}` : null].filter(Boolean).join("; "),
+          ...(hostEvidence.hostWindowError ? { structuralStop: hostEvidence.hostWindowError.code } : {}),
         };
+      }
+      try {
+        await hostWindowControl.require("after_recovery_step_before_measurement");
+      } catch (error) {
+        if (!(error instanceof BoundaryHostWindowError)) throw error;
       }
       const recoveredCandidate = recovered as Partial<Awaited<ReturnType<BoundaryExperimentDependencies["executeRecoveryStep"]>>> | null;
       const terminalDependencyStep = stepIndex === recovery.order.length - 1
+        || hostEvidence.hostWindowError !== null
         || recoveredCandidate?.reserveExhausted === true
         || recoveredCandidate?.protocolStopped === true
         || recoveredCandidate?.afterCapture == null;
@@ -2158,6 +2369,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         if (!Number.isFinite(recovered.durationMs) || recovered.durationMs < 0 || recovered.durationMs > remainingRecoveryMs) {
           throw new Error("recovery dependency exceeded or malformed its remaining reserve usage");
         }
+        const recoveryDurationMs = Math.max(recovered.durationMs, hostWindowControl.elapsedMs());
         const captureDirectory = path.join(state.artifactRoot, "captures");
         for (const retained of [recovered.beforeCapture, recovered.afterCapture].filter((item): item is BoundaryCapture => item !== null)) {
           if (retained.role !== "recovery" || !isWithin(captureDirectory, retained.path)) throw new Error("recovery dependency returned a capture outside the owned recovery directory");
@@ -2167,10 +2379,12 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         if (recoveryLogArtifact) state.logArtifacts.push(recoveryLogArtifact);
         if (recovered.coverageRuntimeHealth) recordRuntimeHealth(state, recovered.coverageRuntimeHealth, recoveryLogArtifact);
         recordRuntimeHealth(state, recovered.runtimeHealth, recoveryLogArtifact);
-        const effectiveStructuralOk = recovered.structuralOk && recovered.runtimeHealth.status === "no_attributed_failure";
+        const effectiveStructuralOk = recovered.structuralOk && recovered.runtimeHealth.status === "no_attributed_failure" && hostEvidence.hostWindowError === null;
         const beforeItem = recovered.beforeCapture ? captureToReview(recovered.beforeCapture, { recoveryStep: kind }) : null;
         const afterItem = recovered.afterCapture ? captureToReview(recovered.afterCapture, { recoveryStep: kind }) : null;
         recovery.steps.push({
+          ...hostEvidence,
+          ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}),
           kind,
           attributionKind: recovered.attributionKind ?? kind,
           structuralOk: effectiveStructuralOk,
@@ -2183,16 +2397,19 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           ...(recovered.coverageRuntimeHealth ? { coverageRuntimeHealth: recovered.coverageRuntimeHealth } : {}),
           receipt: recovered.receipt,
         });
-        recovery.usageMs += Math.ceil(recovered.durationMs);
+        recovery.usageMs += Math.ceil(recoveryDurationMs);
         recovery.stopAfterCurrent = terminalDependencyStep;
         if (afterItem === null) recovery.complete = true;
         appendJsonLine(path.join(state.artifactRoot, "actions.jsonl"), {
+          ...hostEvidence,
+          ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}),
+          ...(hostEvidence.hostWindowError ? { structuralStop: hostEvidence.hostWindowError.code } : {}),
           recoveryStep: kind,
           structuralOk: effectiveStructuralOk,
           dependencyStructuralOk: recovered.structuralOk,
           runtimeHealth: recovered.runtimeHealth,
           coverageRuntimeHealth: recovered.coverageRuntimeHealth ?? null,
-          durationMs: recovered.durationMs,
+          durationMs: recoveryDurationMs,
           receipt: recovered.receipt,
           beforeCapture: recovered.beforeCapture,
           afterCapture: recovered.afterCapture,
@@ -2210,7 +2427,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         let artifactError: string | null = null;
         try {
           assertOwnedRunRoot(state);
-          appendJsonLine(path.join(state.artifactRoot, "actions.jsonl"), { recovery: "invalid_dependency_receipt", recoveryStep: kind, error: recoveryError });
+          appendJsonLine(path.join(state.artifactRoot, "actions.jsonl"), { recovery: "invalid_dependency_receipt", recoveryStep: kind, error: recoveryError, ...hostEvidence, ...(state.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}) });
           persistRecovery(state);
           persistState(state);
         } catch (persistenceError) {
@@ -2237,9 +2454,25 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         requiredReview: recoveryReviewItems(state),
         responseReview,
         visualReviewRequired: true,
+        ...(hostEvidence.hostWindowError ? { structuralStop: hostEvidence.hostWindowError.code } : {}),
       };
     } finally {
       busyRuns.delete(state.runId);
+    }
+  };
+  const execute = async (rawInput: BoundaryExperimentInput): Promise<Record<string, any>> => {
+    const state = rawInput?.action !== "prepare" ? runs.get(rawInput?.runId) : undefined;
+    const serial = rawInput?.action === "prepare" ? rawInput.serial : state?.input.serial;
+    const binding = (state?.preparation.privateRuntime as LiveBoundaryRuntime | undefined)?.window;
+    const control = createHostWindowControl(dependencies, serial, binding);
+    await control.observe(`${rawInput?.action ?? "unknown"}_preflight`);
+    try {
+      const result = await executeObserved(rawInput, control);
+      return { ...result, ...control.evidence,
+        ...(state?.provenanceReceipt ? { provenance: state.provenanceReceipt } : {}) };
+    } catch (error) {
+      if (error instanceof Error) Object.assign(error, { hostWindowEvidence: control.evidence, provenance: state?.provenanceReceipt ?? null });
+      throw error;
     }
   };
   return { execute };
@@ -2648,11 +2881,13 @@ export async function probeBoundedCaptureIdentity(
 async function liveCapture(
   adb: string,
   input: PrepareInput,
+  hostWindowControl: BoundaryHostWindowControl,
   outPath: string,
   role: BoundaryCapture["role"],
   remainingMs?: () => number,
   priorSha256?: string,
 ): Promise<BoundaryCapture> {
+  await hostWindowControl.require(`before_${role}_capture`, remainingMs);
   const boundedTimeout = (capMs: number, label: string): number => {
     if (!remainingMs) return capMs;
     const remaining = Math.floor(remainingMs());
@@ -2684,6 +2919,7 @@ async function liveCapture(
       return output.split("\n").slice(1).map((line) => line.trim().split(/\s+/)).filter((fields) => fields[1] === "device").map((fields) => fields[0]);
     },
     probeIdentity: identity,
+    probeHostWindow: () => hostWindowControl.observe(`${role}_capture_observation`),
     capture: (serial) => captureAdbFrame(adb, serial, boundedTimeout(input.capture.attemptTimeoutMs, "bounded recovery screencap")),
     sleep: async (milliseconds) => {
       if (remainingMs && remainingMs() < milliseconds) throw new Error("capture settlement delay would exceed the recovery reserve");
@@ -2692,6 +2928,7 @@ async function liveCapture(
     hash: sha256Bytes,
     writeFrame: (absolutePath, bytes) => fs.writeFileSync(absolutePath, bytes, { mode: 0o600 }),
   });
+  await hostWindowControl.require(`after_${role}_capture`, remainingMs);
   const ref = captured.receipt.captureRef;
   if (!ref || !captured.receipt.sha256 || !captured.receipt.path) throw new Error(`${role} capture failed: ${captured.receipt.error?.detail ?? captured.receipt.status}`);
   return {
@@ -2943,6 +3180,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
     monotonicNs: () => process.hrtime.bigint(),
     readNativeRunReceipt,
     readReviewImage: readBoundReviewImage,
+    probeHostWindow,
     collectPreparation: async (context) => {
       const input = context.input as PrepareInput;
       if (input.provenance.kind === "native_run_receipt") {
@@ -2973,10 +3211,8 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
           || canonicalJson(spec?.boundaryLab?.gateSequenceM) !== canonicalJson(GATES)) {
           throw new Error("effective AppSpec route, variant, or Boundary Lab gates contradict the exact scenario");
         }
-      } else {
-        const identity = hashRegularExternalFile(input.provenance.apkPath, "imported APK", APK_ARTIFACT_MAX_BYTES);
-        if (identity.sha256 !== input.provenance.apkSha256) throw new Error("imported APK sha256 does not match provenance");
       }
+      // Imported bytes and compiled manifest were checked before run reservation by the orchestrator.
       const selected = await bindMacQemuWindow(adb, input.serial);
       if (!selected.ok) throw new Error(`${selected.code}: ${selected.detail}`);
       if (selected.binding.bindingMethod !== "discovery-pid-window"
@@ -2984,6 +3220,8 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
         || selected.binding.qemuWindowOwnerPid !== selected.binding.qemuPid) {
         throw new Error("application-aware boundary preparation requires an exact discovery PID to qemu-window binding");
       }
+      context.hostWindowControl.bind(selected.binding);
+      await context.hostWindowControl.require("bound_preparation_before_home_clearance");
       let homeClearance: BoundarySystemHomeReceipt;
       try {
         homeClearance = await clearLiveBoundarySystemHome(adb, input.serial, input.scenario.packageName);
@@ -2996,7 +3234,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
       let homeReference: BoundaryCapture;
       try {
         homeReference = await captureAfterPreparationVisualSettle(
-          () => liveCapture(adb, input, context.capturePaths.homeReference, "home_reference"),
+          () => liveCapture(adb, input, context.hostWindowControl, context.capturePaths.homeReference, "home_reference"),
         );
       } catch (error) {
         throw new BoundaryPreparationFailure(redactSensitiveText(error, []), { homeClearance, structuralStop: "preparation_failed" });
@@ -3051,9 +3289,11 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
           if (input.scenario.entryRoute === "dynamic_full") {
             launchArgs.push("--es", "pico.boundary.session", sessionId, "--es", "pico.boundary.capability", secret, "--el", "pico.boundary.generation", String(generation));
           }
+          await context.hostWindowControl.require("before_preparation_launch");
           checkedAdb(await run(adb, launchArgs, { timeoutMs: 30_000 }), "application launch");
           if (input.scenario.entryRoute === "dynamic_full") {
             const dynamic = input.scenario.dynamicEntry!;
+            await context.hostWindowControl.require("before_preparation_stage_open");
             checkedDynamicBroadcast(await run(adb, [
               "-s", input.serial, "shell", "am", "broadcast", "-a", dynamic.action, "-n", dynamic.receiverComponent,
               "--es", "pico.boundary.session", sessionId,
@@ -3064,7 +3304,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
             ], { timeoutMs: 30_000 }), "dynamic Full open command");
           }
           const appBaseline = await captureAfterPreparationVisualSettle(
-            () => liveCapture(adb, input, context.capturePaths.appBaseline, "app_baseline"),
+            () => liveCapture(adb, input, context.hostWindowControl, context.capturePaths.appBaseline, "app_baseline"),
           );
           partial.appBaseline = appBaseline;
           const current = await currentApplicationBinding(adb, input);
@@ -3329,12 +3569,17 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                   decided = true;
                   return waypoint.actions as RelativeCameraAction[];
                 }, {
-                  ...createBoundCameraActionAdapter(state.input.serial, live.window),
+                  applyRelativeAction: async (action, budget) => {
+                    await context.hostWindowControl.require("before_camera_action", () => budget?.canStart() === true
+                      ? remainingWaypointWorkMs() : 0);
+                    return createBoundCameraActionAdapter(state.input.serial, live.window).applyRelativeAction(action);
+                  },
                   sampleContinuity: live.sampler,
                   captureSettled: async (capturePath, captureContext) => {
                     const captured = await liveCapture(
                       adb,
                       state.input,
+                      context.hostWindowControl,
                       capturePath,
                       "waypoint",
                       captureContext.remainingMs,
@@ -3380,6 +3625,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                 capture = await liveCapture(
                   adb,
                   state.input,
+                  context.hostWindowControl,
                   waypointTransitionCapturePath(context.capturePath as string),
                   "transition",
                   remainingTransitionMs,
@@ -3565,6 +3811,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
             observed.beforeCapture = await liveCapture(
               adb,
               state.input,
+              context.hostWindowControl,
               path.join(captureDirectory, `${prefix}-before.png`),
               "recovery",
               remainingRecoveryMs,
@@ -3609,6 +3856,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                 observed.beforeCapture = await liveCapture(
                   adb,
                   state.input,
+                  context.hostWindowControl,
                   path.join(captureDirectory, `${prefix}-before.png`),
                   "recovery",
                   remainingWorkMs,
@@ -3627,6 +3875,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
               }
               if (kind === "observe") {
                 try {
+                  await context.hostWindowControl.require("before_recovery_intervention", remainingWorkMs);
                   operationResult = await operation(rememberSecret);
                 } catch (error) {
                   errors.push(redactSensitiveText(error, secrets));
@@ -3676,6 +3925,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                   };
                 } else {
                   try {
+                    await context.hostWindowControl.require("before_recovery_intervention", remainingWorkMs);
                     operationResult = await operation(rememberSecret);
                   } catch (error) {
                     errors.push(redactSensitiveText(error, secrets));
@@ -3686,6 +3936,7 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                 observed.afterCapture = await liveCapture(
                   adb,
                   state.input,
+                  context.hostWindowControl,
                   path.join(captureDirectory, `${prefix}-after.png`),
                   "recovery",
                   remainingWorkMs,
@@ -3972,7 +4223,7 @@ export function registerBoundaryExperimentTools(server: McpServer): void {
   server.registerTool(
     "run_immersive_boundary_experiment",
     {
-      description: "Run one receipt-bound immersive boundary experiment as staged prepare → reviewed step(s) → exact-hash adjudication → one logical once-only recovery attempt. Recovery executes at most one ordered fallback per call; each continuation supplies reviewedPriorFrame for the preceding fallback's post-frame, so a structural candidate cannot suppress LOOK or unlock a later intervention by itself. Collection never assigns pixel semantics. Full-surface only; explicit serial and an external non-existing artifact root are mandatory.",
+      description: "Run one receipt-bound immersive boundary experiment as staged prepare → reviewed step(s) → exact-hash adjudication → one logical once-only recovery attempt. Recovery executes at most one ordered fallback per call; each continuation supplies reviewedPriorFrame for the preceding fallback's post-frame, so a structural candidate cannot suppress LOOK or unlock a later intervention by itself. Collection never assigns pixel semantics. Imported APK manifest_mixed rows replay an adjudicated native M0 route after exact APK and manifest inspection; imported evidence remains structural until LOOK adjudication. Host-window obstruction or unavailable visibility refuses measurement and input without raising or moving windows. Full-surface only; explicit serial and an external non-existing artifact root are mandatory.",
       inputSchema: boundaryExperimentInputSchema,
     },
     async (args) => {
@@ -3992,7 +4243,13 @@ export function registerBoundaryExperimentTools(server: McpServer): void {
         content.push({ type: "text", text: JSON.stringify(publicResult, null, 2) });
         return { content };
       } catch (error) {
-        return okJson({ status: "error", error: error instanceof Error ? error.message : String(error) });
+        return okJson({ status: "error", error: error instanceof Error ? error.message : String(error),
+          ...((error as { hostWindowEvidence?: BoundaryHostWindowEvidence })?.hostWindowEvidence ?? {
+            hostWindowProbe: unavailableHostWindowProbe("boundary action failed before a host-window observation was retained"),
+            hostWindowProbes: [],
+          }),
+          ...((error as { provenance?: unknown })?.provenance ? { provenance: (error as { provenance: unknown }).provenance } : {}),
+        });
       }
     },
   );

@@ -10,6 +10,7 @@ import {
   executeRelativeCameraRoute,
 } from "../dist/navigation.js";
 import * as navigation from "../dist/navigation.js";
+import { APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS } from "../dist/runtimecontinuity.js";
 import {
   createBoundCameraActionAdapter,
   createCameraActionBindingReceipt,
@@ -1536,6 +1537,87 @@ test("route rechecks its elapsed deadline after pre-action continuity and refuse
   assert.equal(samples, 1);
   assert.equal(appliedCount, 0);
   assert.equal(captureCount, 0);
+});
+
+test("post-observation action admission retains the full remaining operation budget", async (t) => {
+  for (const action of [{ kind: "key_hold", key: "w", holdMs: 250 }, { kind: "look_drag", dxPx: 40, dyPx: 0 }]) {
+    await t.test(action.kind, async () => {
+      const input = routeInput();
+      const requiredMs = navigation.estimateRelativeRouteDurationMs(input, [[action]]);
+      let now = 0n;
+      const appliedActions = [];
+      let captures = 0;
+      const trace = await executeRelativeCameraRoute(input, () => [action], dependencies({
+        monotonicNs: () => now,
+        applyRelativeAction: async (request, budget) => {
+          // A read-only observation leaves positive time, but one millisecond too little
+          // for the action and its complete downstream capture/finalization envelope.
+          now = BigInt(input.budgets.maxDurationMs - requiredMs + 1) * 1_000_000n;
+          if (budget?.canStart() === false) throw new Error("post-probe operation budget exhausted");
+          appliedActions.push(request);
+          return applied(request);
+        },
+        captureSettled: async (capturePath) => { captures++; return settled(capturePath); },
+      }));
+      assert.equal(appliedActions.length, 0);
+      assert.equal(captures, 0);
+      assert.equal(trace.status, "action_failed");
+    });
+  }
+});
+
+test("post-observation action admission drops completed group actions from the remaining envelope", async () => {
+  const input = routeInput({ continuity: { kind: "required", binding: applicationBinding } });
+  const actions = [{ kind: "key_hold", key: "w", holdMs: 250 }, { kind: "look_drag", dxPx: 40, dyPx: 0 }];
+  const finalRequiredMs = navigation.estimateRelativeRouteDurationMs(input, [[actions[1]]]) - APPLICATION_CONTINUITY_SAMPLE_RESERVE_MS;
+  let now = 0n;
+  const allowed = [];
+  const trace = await executeRelativeCameraRoute(input, (waypoints) => waypoints.length ? "stop" : actions, dependencies({
+    monotonicNs: () => now,
+    sampleContinuity: async () => continuitySample(),
+    applyRelativeAction: async (action, budget) => {
+      if (allowed.length === 1) now = BigInt(input.budgets.maxDurationMs - finalRequiredMs) * 1_000_000n;
+      allowed.push(budget?.canStart() ?? null);
+      if (allowed.at(-1) === false) throw new Error("remaining operation does not fit");
+      return applied(action);
+    },
+  }));
+  assert.deepEqual(allowed, [true, true]);
+  assert.equal(trace.status, "controller_stop");
+  assert.equal(trace.usage.actions, 2);
+});
+
+test("post-observation action admission uses the paid inverse recovery lane", async (t) => {
+  for (const overrunMs of [0, 1]) await t.test(overrunMs ? "refuses exhausted inverse envelope" : "uses paid inverse reserve", async () => {
+    const input = routeInput({ budgets: { ...defaultBudgets, maxDurationMs: 400_000, recoveryReserveMs: 180_000 } });
+    const outbound = { kind: "look_drag", dxPx: 40, dyPx: 0 };
+    const inverse = { kind: "look_drag", dxPx: -40, dyPx: 0 };
+    const inverseMs = navigation.estimateRelativeRouteDurationMs({ ...input, budgets: { ...input.budgets, recoveryReserveMs: 0 } }, [[inverse]]);
+    let now = 0n;
+    const appliedActions = [];
+    let captures = 0;
+    const allowed = [];
+    const execution = navigation.createRelativeRouteExecution(input, dependencies({
+      monotonicNs: () => now,
+      applyRelativeAction: async (action, budget) => {
+        if (appliedActions.length === 1) now = BigInt(input.budgets.maxDurationMs - inverseMs + overrunMs) * 1_000_000n;
+        allowed.push(budget?.canStart() ?? null);
+        if (allowed.at(-1) === false) throw new Error("inverse operation envelope exhausted");
+        appliedActions.push(action);
+        return applied(action);
+      },
+      captureSettled: async (capturePath) => {
+        captures++;
+        if (captures === 1) now = 250_000_000_000n;
+        return settled(capturePath, captures === 1 ? "d".repeat(64) : "e".repeat(64));
+      },
+    }));
+    const pair = await execution.executePairedStep(outbound, inverse, { pairId: "probe-budget-pair" });
+    assert.equal(pair.recoveryUsed, true);
+    assert.deepEqual(allowed, [true, overrunMs === 0]);
+    assert.equal(appliedActions.length, overrunMs ? 1 : 2);
+    assert.equal(pair.restore.status, overrunMs ? "action_failed" : "settled");
+  });
 });
 
 test("route rechecks its elapsed deadline after the render dwell and refuses a late capture", async () => {

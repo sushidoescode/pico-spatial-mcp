@@ -30,6 +30,7 @@ import {
   type RequiredReviewItem,
 } from "./boundaryexperiment.js";
 import { resolveAdb } from "./emulatorlook.js";
+import { hostWindowPrecondition, probeHostWindow, unavailableHostWindowProbe, type HostWindowProbe } from "./hostwindow.js";
 import {
   parseForegroundActivities,
   parseInstalledApkPath,
@@ -691,7 +692,13 @@ export class LocomotionStopClearanceError extends Error {
   }
 }
 
+interface LocomotionHostWindowEvidence {
+  hostWindowProbe: HostWindowProbe;
+  hostWindowProbes: Array<{ phase: string; probe: HostWindowProbe }>;
+}
+
 export interface InAppLocomotionDependencies {
+  probeHostWindow?(serial: string): Promise<HostWindowProbe>;
   sleep?(durationMs: number): Promise<void>;
   randomBytes(size: number): Buffer;
   now(): string;
@@ -2795,9 +2802,68 @@ export function createInAppLocomotionOrchestrator(
   const serialOwners = new Map<string, SerialLease>();
   const preparingRoots = new Set<string>();
 
-  const executePrepare = async (input: InAppLocomotionPrepareInput): Promise<LocomotionPrepareReceipt> => {
+  const observeHostWindow = async (
+    serial: string,
+    evidence: LocomotionHostWindowEvidence,
+    phase: string,
+  ): Promise<void> => {
+    let probe: HostWindowProbe;
+    try {
+      probe = dependencies.probeHostWindow
+        ? await dependencies.probeHostWindow(serial)
+        : unavailableHostWindowProbe("host window probe dependency is unavailable");
+    } catch (error) {
+      probe = unavailableHostWindowProbe(errorText(error));
+    }
+    evidence.hostWindowProbe = structuredClone(probe);
+    evidence.hostWindowProbes.push({ phase, probe: structuredClone(probe) });
+  };
+  const assertHostWindow = (evidence: LocomotionHostWindowEvidence): void => {
+    const failure = hostWindowPrecondition(evidence.hostWindowProbe);
+    if (failure) throw new LocomotionStageError(failure.code, failure.detail);
+  };
+  const requireHostWindow = async (
+    serial: string,
+    evidence: LocomotionHostWindowEvidence,
+    phase: string,
+    deadlineNs: bigint,
+  ): Promise<void> => {
+    await observeHostWindow(serial, evidence, phase);
+    assertHostWindow(evidence);
+    if (checkedMonotonic(dependencies) >= deadlineNs) {
+      throw new LocomotionStageError("budget_exhausted", `${phase} host window probe exhausted the admitted deadline`);
+    }
+  };
+  const initialHostWindowEvidence = async (serial: string, phase: string): Promise<LocomotionHostWindowEvidence> => {
+    const evidence: LocomotionHostWindowEvidence = {
+      hostWindowProbe: unavailableHostWindowProbe("host window has not been sampled"),
+      hostWindowProbes: [],
+    };
+    await observeHostWindow(serial, evidence, phase);
+    return evidence;
+  };
+  const executeWithHostWindowEvidence = async (
+    serial: string,
+    phase: string,
+    action: (evidence: LocomotionHostWindowEvidence) => Promise<Record<string, any>>,
+  ): Promise<Record<string, any>> => {
+    const evidence = await initialHostWindowEvidence(serial, phase);
+    try {
+      return { ...await action(evidence), ...evidence };
+    } catch (cause) {
+      const error = cause instanceof Error ? cause : new Error(errorText(cause));
+      Object.assign(error, { hostWindowEvidence: structuredClone(evidence) });
+      throw error;
+    }
+  };
+
+  const executePrepare = async (
+    input: InAppLocomotionPrepareInput,
+    hostWindows: LocomotionHostWindowEvidence,
+  ): Promise<LocomotionPrepareReceipt> => {
     let authority: ReceiptAndSpecBinding;
     try {
+      assertHostWindow(hostWindows);
       authority = assertReceiptAndSpec(input, dependencies);
     } catch (error) {
       return preparationFailure(error instanceof LocomotionStageError ? error.code : "preflight_failed", error, null, null, null);
@@ -3094,6 +3160,7 @@ export function createInAppLocomotionOrchestrator(
         || !ROOT_INCARNATION.test(root.incarnation)) {
         throw new LocomotionStageError("capability_unavailable", "commands preflight did not bind one registered AgentWorldRoot generation/incarnation");
       }
+      await requireHostWindow(input.serial, hostWindows, "prepare_before_hmd", prepareDeadlineNs);
       const hmd = await acquireFreshHmdPose(dependencies, prepareDeadlineNs, "baseline HMD pose", {
         serial: input.serial,
         packageName: input.scenario.packageName,
@@ -3167,6 +3234,7 @@ export function createInAppLocomotionOrchestrator(
           throw new Error("fresh-launch dialog result does not reproduce from its retained raw window dump");
         }
       }
+      await requireHostWindow(input.serial, hostWindows, "prepare_before_capture", prepareDeadlineNs);
       const baselinePath = path.join(artifact.absoluteRoot, "captures", "000-app-baseline.png");
       const captured = await captureWithinDeadline(
         reserved.startedAtNs,
@@ -3193,6 +3261,7 @@ export function createInAppLocomotionOrchestrator(
       const baselineCaptureFence = baselineCaptureInvocation.fence;
       if (!baselineCaptureInput || !baselineCaptureFence) throw new Error("baseline capture request/invocation was not retained");
       baselineCaptureReceipt = captured.receipt;
+      await requireHostWindow(input.serial, hostWindows, "prepare_after_capture", prepareDeadlineNs);
       const review = captureReview(captured, {
         captureInput: baselineCaptureInput,
         captureInvocation: baselineCaptureFence,
@@ -3279,6 +3348,7 @@ export function createInAppLocomotionOrchestrator(
       if (runs.has(artifact.runId)) throw new Error("run identifier collision");
       const actionAudit = appendAction(artifact, {
         action: "prepare",
+        ...hostWindows,
         status: "completed",
         runtime,
         receiptBinding: {
@@ -3459,6 +3529,7 @@ export function createInAppLocomotionOrchestrator(
         try {
           failureActionMaintenance = appendAction(artifact, {
             action: "prepare",
+            ...hostWindows,
             status: "failed",
             ...(completedPrepareActionCommitted
               ? { compensatesActionOperationId: "prepare:terminal" }
@@ -3518,7 +3589,11 @@ export function createInAppLocomotionOrchestrator(
     }
   };
 
-  const executeStep = async (input: InAppLocomotionStepInput, state: LocomotionState): Promise<LocomotionStepReceipt> => {
+  const executeStep = async (
+    input: InAppLocomotionStepInput,
+    state: LocomotionState,
+    hostWindows: LocomotionHostWindowEvidence,
+  ): Promise<LocomotionStepReceipt> => {
     if (state.status !== "prepared" && state.status !== "stepped") throw new Error(`step is out of order from state '${state.status}'`);
     if (state.nextWaypoint >= state.input.route.waypoints.length) {
       throw new Error("step is out of order because the planned route is complete and requires restore");
@@ -3628,6 +3703,7 @@ export function createInAppLocomotionOrchestrator(
     let postContinuity: ApplicationContinuitySample | null = null;
     let locomotionNonceCleanup: AgentBridgeLocomotionNonceCleanupReceipt | null = null;
     try {
+      assertHostWindow(hostWindows);
       const routeWorkFloorNs = BigInt(routeStepFloorMs(
         state.input.capture.deadlineMs,
         state.input.route.glideDurationMs,
@@ -3661,6 +3737,7 @@ export function createInAppLocomotionOrchestrator(
       }));
       const preContinuityProblem = continuityProblem(preContinuity, state.runtime);
       if (preContinuityProblem) throw new LocomotionStageError("binding_lost", preContinuityProblem);
+      await requireHostWindow(state.input.serial, hostWindows, "step_before_hmd", preHmdDeadlineNs);
       preHmd = await acquireFreshHmdPose(dependencies, stepDeadlineNs, "pre-step HMD pose", {
         serial: state.input.serial,
         packageName: state.input.scenario.packageName,
@@ -3672,6 +3749,7 @@ export function createInAppLocomotionOrchestrator(
         state.input.capture.deadlineMs,
         state.input.route.glideDurationMs,
       ), state.lastHmdSample);
+      await requireHostWindow(state.input.serial, hostWindows, "step_before_distance_measurement", locomotionDeadlineNs);
       if (translationDistance(state.baselineHmd.position, preHmd.position) > 0.02) {
         throw new LocomotionStageError("hmd_translation_drift", "pre-step Euclidean HMD translation drift exceeded exactly 0.02 m");
       }
@@ -3765,6 +3843,7 @@ export function createInAppLocomotionOrchestrator(
         throw new LocomotionStageError("root_readback_mismatch", "locomotion acknowledgement lost exact mechanism/target/root-generation readback binding");
       }
       state.rootGeneration = expectedGeneration;
+      await requireHostWindow(state.input.serial, hostWindows, "step_after_motion", captureDeadlineNs);
       const captureRemainingMs = remainingUntilMs(captureDeadlineNs, dependencies);
       if (captureRemainingMs < 2) throw new LocomotionStageError("budget_exhausted", "route budget was exhausted before transition capture");
       const capturePath = path.join(state.artifact.absoluteRoot, "captures", `${String(waypoint.seq).padStart(3, "0")}-waypoint.png`);
@@ -3798,6 +3877,7 @@ export function createInAppLocomotionOrchestrator(
       if (captured.receipt.status !== "settled") {
         throw new LocomotionStageError(captured.receipt.error?.code ?? "route_unsettled", captured.receipt.error?.detail ?? "transition capture did not settle");
       }
+      await requireHostWindow(state.input.serial, hostWindows, "step_after_capture", captureDeadlineNs);
       capturedReview = captureReview(captured, {
         captureInput: waypointCaptureInput,
         captureInvocation: waypointCaptureFence,
@@ -3814,6 +3894,7 @@ export function createInAppLocomotionOrchestrator(
         expectedRootGeneration: state.rootGeneration,
         expectedRootIncarnation: state.rootIncarnation,
       }, postHmdAcquisition, POST_HMD_DOWNSTREAM_RESERVE_MS, preHmd);
+      await requireHostWindow(state.input.serial, hostWindows, "step_before_drift_measurement", postSafetyDeadlineNs);
       drift = driftReceipt(state.baselineHmd, preHmd, postHmd);
       postSafety = await withinDeadline(postSafetyDeadlineNs, dependencies, "post-step safety", (timeoutMs) => dependencies.sampleSafety({
         serial: state.input.serial,
@@ -4001,6 +4082,7 @@ export function createInAppLocomotionOrchestrator(
     try {
       actionAudit = appendAction(state.artifact, {
         action: "step",
+        ...hostWindows,
         waypointSeq: waypoint.seq,
         waypoint: input.waypoint,
         status: succeeded ? "completed" : "stopped",
@@ -4070,7 +4152,7 @@ export function createInAppLocomotionOrchestrator(
     };
   };
 
-  const executeRestore = async (input: InAppLocomotionRestoreInput, state: LocomotionState): Promise<LocomotionRestoreReceipt> => {
+  const executeRestore = async (input: InAppLocomotionRestoreInput, state: LocomotionState, hostWindows: LocomotionHostWindowEvidence): Promise<LocomotionRestoreReceipt> => {
     const terminalRestore = state.completedRestore ?? state.terminalSafeRelease;
     if (terminalRestore !== null) {
       if (input.reviewedPriorFrame.captureSha256 !== terminalRestore.reviewedPriorSha256
@@ -4772,6 +4854,7 @@ export function createInAppLocomotionOrchestrator(
     try {
       actionAudit = appendAction(state.artifact, {
         action: "restore",
+        ...hostWindows,
         restoreAttempt,
         restoreDeadlineSource,
         status: completed ? "completed" : "failed",
@@ -4892,7 +4975,7 @@ export function createInAppLocomotionOrchestrator(
     actionAuditMaintenance: actionAuditMaintenance(state.artifact),
   });
 
-  const executeAdjudicate = async (input: InAppLocomotionAdjudicateInput, state: LocomotionState): Promise<LocomotionAdjudicateReceipt> => {
+  const executeAdjudicate = async (input: InAppLocomotionAdjudicateInput, state: LocomotionState, hostWindows: LocomotionHostWindowEvidence): Promise<LocomotionAdjudicateReceipt> => {
     if (!state.restoreCompleted || state.status !== "restored") {
       throw new Error("adjudicate is out of order until one completed restore");
     }
@@ -4924,6 +5007,7 @@ export function createInAppLocomotionOrchestrator(
     const artifactPath = path.join(state.artifact.absoluteRoot, "adjudication.json");
     const aggregate = {
       schemaVersion: 1,
+      ...hostWindows,
       runId: state.artifact.runId,
       evidenceCeiling: "structural" as const,
       lookRequired: true as const,
@@ -4938,6 +5022,7 @@ export function createInAppLocomotionOrchestrator(
     try {
       actionAudit = appendAction(state.artifact, {
         action: "adjudicate",
+        ...hostWindows,
         status: "structural_complete",
         captureCount: frames.length,
         captureSha256: frames.map((frame) => frame.captureSha256),
@@ -4982,7 +5067,8 @@ export function createInAppLocomotionOrchestrator(
       if (busySerials.has(input.serial)) throw new Error(`a mutation is already in progress for exact serial '${input.serial}'`);
       busySerials.add(input.serial);
       try {
-        return await executePrepare(input);
+        return await executeWithHostWindowEvidence(input.serial, "prepare_preflight",
+          (hostWindows) => executePrepare(input, hostWindows));
       } finally {
         busySerials.delete(input.serial);
       }
@@ -4999,9 +5085,11 @@ export function createInAppLocomotionOrchestrator(
     busyRuns.add(input.runId);
     if (mutatesSerial) busySerials.add(state.input.serial);
     try {
-      if (input.action === "step") return await executeStep(input, state);
-      if (input.action === "restore") return await executeRestore(input, state);
-      return await executeAdjudicate(input, state);
+      return await executeWithHostWindowEvidence(state.input.serial, `${input.action}_preflight`, (hostWindows) => {
+        if (input.action === "step") return executeStep(input, state, hostWindows);
+        if (input.action === "restore") return executeRestore(input, state, hostWindows);
+        return executeAdjudicate(input, state, hostWindows);
+      });
     } finally {
       busyRuns.delete(input.runId);
       if (mutatesSerial) busySerials.delete(state.input.serial);
@@ -5396,6 +5484,7 @@ export function createLiveInAppLocomotionDependencies(
     monotonicNs: clockNs,
     readNativeRunReceipt,
     readEffectiveAppSpec: readReceiptBoundEffectiveAppSpec,
+    probeHostWindow,
     snapshotPriorForeground: async (context) => {
       const { serial } = context;
       const activityOutput = await checked(serial, ["shell", "dumpsys", "activity", "activities"], "prior foreground activity snapshot", context, 20_000);
@@ -5867,8 +5956,10 @@ export function registerInAppLocomotionTools(
       inputSchema: inAppLocomotionInputSchema,
     },
     async (args) => {
+      let responseEvidence: LocomotionHostWindowEvidence | null = null;
       try {
         const result = await orchestrator.execute(args as InAppLocomotionInput);
+        responseEvidence = { hostWindowProbe: result.hostWindowProbe, hostWindowProbes: result.hostWindowProbes };
         const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: "image/png" }> = [];
         const reviews = Array.isArray(result.requiredReview) ? result.requiredReview as LocomotionReviewItem[] : [];
         let responseBytes = 0;
@@ -5881,7 +5972,12 @@ export function registerInAppLocomotionTools(
         content.push({ type: "text", text: JSON.stringify(result, null, 2) });
         return { content };
       } catch (error) {
-        return okJson({ status: "error", error: errorText(error), evidenceCeiling: "structural", lookRequired: true });
+        const evidence = (error as { hostWindowEvidence?: LocomotionHostWindowEvidence } | null)?.hostWindowEvidence
+          ?? responseEvidence ?? {
+            hostWindowProbe: unavailableHostWindowProbe("locomotion action failed before a host-window observation was retained"),
+            hostWindowProbes: [],
+          };
+        return okJson({ status: "error", error: errorText(error), evidenceCeiling: "structural", lookRequired: true, ...evidence });
       }
     },
   );

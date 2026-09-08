@@ -9,6 +9,7 @@ import { probeDeviceIdentity, type ProbedDeviceIdentity } from "./deviceidentity
 import { validateCaptureBuffer } from "./evidence.js";
 import { resolveAdb } from "./emulatorlook.js";
 import { expandHome, run, runBinary, sleep } from "./util.js";
+import { probeHostWindow, unavailableHostWindowProbe, hostWindowPrecondition, type HostWindowProbe } from "./hostwindow.js";
 
 export const SETTLE_COMPARISON = "byte_exact" as const;
 export const CAPTURE_SOURCE = "adb-exec-out-screencap" as const;
@@ -70,6 +71,7 @@ export type SettledFrameResult = SettledFrameBase & (
       frame: CapturedFrame;
       sha256: string;
       stablePair: [string, string];
+      stablePairFrames: [CapturedFrame, CapturedFrame];
     }
   | {
       status: "timeout";
@@ -239,6 +241,7 @@ export async function captureSettledFrames(
         frame,
         sha256,
         stablePair: [sha256, sha256],
+        stablePairFrames: [candidate!.frame, frame],
       };
     }
     if (attempt < policy.maxTries && policy.intervalMs > 0) {
@@ -285,6 +288,11 @@ export interface CaptureSettledReceipt {
   settlementSatisfied: boolean;
   comparison: typeof SETTLE_COMPARISON;
   stablePair: [string, string] | null;
+  stablePairCaptureRefs?: [CaptureRef, CaptureRef] | null;
+  receiptPath?: string | null;
+  hostWindowProbe?: HostWindowProbe;
+  hostWindowProbes?: HostWindowProbe[];
+  warnings?: Array<{ code: string; detail: string }>;
   mode: SettleMode;
   deadlineMs: number;
   attemptTimeoutMs: number;
@@ -321,6 +329,7 @@ export interface CaptureSettledDependencies {
   sleep: (ms: number) => Promise<void>;
   hash: (bytes: Buffer) => string;
   writeFrame: (absolutePath: string, bytes: Buffer) => void;
+  probeHostWindow?: (serial: string) => Promise<HostWindowProbe>;
 }
 
 function identityProblem(identity: CaptureLiveIdentity, serial: string): string | null {
@@ -548,6 +557,50 @@ export async function executeCaptureSettled(
   input: CaptureSettledInput,
   deps: CaptureSettledDependencies,
 ): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }> {
+  const sample = async () => {
+    try {
+      return deps.probeHostWindow
+        ? await deps.probeHostWindow(input.serial)
+        : unavailableHostWindowProbe("host window probe dependency is unavailable");
+    } catch (error: any) {
+      return unavailableHostWindowProbe(error?.message ?? String(error));
+    }
+  };
+  const before = await sample();
+  const result = await executeCaptureSettledCore(input, deps);
+  const after = result.receipt.attempts > 0 ? await sample() : before;
+  const probes = before === after ? [before] : [before, after];
+  const warnings = probes.map(hostWindowPrecondition).filter((warning) => warning !== null);
+  Object.assign(result.receipt, {
+    stablePairCaptureRefs: result.receipt.stablePairCaptureRefs ?? null,
+    receiptPath: null,
+    hostWindowProbe: after,
+    hostWindowProbes: probes,
+    warnings: warnings.filter((warning, i) => warnings.findIndex((w) => w.code === warning.code && w.detail === warning.detail) === i),
+  });
+  if (result.receipt.path) {
+    try {
+      result.receipt.receiptPath = `${result.receipt.path}.receipt.json`;
+      const bytes = Buffer.from(JSON.stringify(result.receipt, null, 2) + "\n");
+      publishExternalFrame(result.receipt.receiptPath, bytes, sha256Bytes(bytes), {
+        hash: sha256Bytes, writeFrame: (target, data) => fs.writeFileSync(target, data),
+      });
+    } catch (error: any) {
+      result.receipt.receiptPath = null;
+      result.receipt.status = "capture_failed";
+      result.receipt.settlementSatisfied = false;
+      result.receipt.stablePair = null;
+      result.receipt.lastValidCaptureRef = result.receipt.captureRef;
+      result.receipt.error = { code: "artifact_write_failed", detail: error?.message ?? String(error) };
+    }
+  }
+  return result;
+}
+
+async function executeCaptureSettledCore(
+  input: CaptureSettledInput,
+  deps: CaptureSettledDependencies,
+): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }> {
   const startedAtMonotonicNs = deps.monotonicNs().toString();
   let absolutePath: string;
   try {
@@ -670,7 +723,18 @@ export async function executeCaptureSettled(
   const binding = closeBinding();
 
   let published: { path: string; bytes: Buffer; sha256: string };
+  let firstRef: CaptureRef | null = null;
   try {
+    if (settled.status === "settled") {
+      const first = settled.stablePairFrames[0];
+      const target = `${absolutePath}.pair-1.${crypto.randomUUID()}.png`;
+      const retained = publishExternalFrame(target, first.bytes, settled.stablePair[0], deps);
+      firstRef = {
+        path: retained.path, sha256: retained.sha256, bytes: retained.bytes.length,
+        width: first.width, height: first.height, dimensions: { width: first.width, height: first.height },
+        sourceSerial: input.serial, capturedAt: first.capturedAt,
+      };
+    }
     published = publishExternalFrame(absolutePath, settled.frame.bytes, settled.sha256, deps);
   } catch (error: any) {
     return {
@@ -702,6 +766,7 @@ export async function executeCaptureSettled(
         sha256: published.sha256,
         captureRef,
         lastValidCaptureRef: captureRef,
+        stablePairCaptureRefs: firstRef ? [firstRef, captureRef] : null,
       },
       frame: published.bytes,
     };
@@ -715,6 +780,7 @@ export async function executeCaptureSettled(
     settlementSatisfied: settled.settlementSatisfied,
     comparison: SETTLE_COMPARISON,
     stablePair: settled.stablePair,
+    stablePairCaptureRefs: firstRef ? [firstRef, captureRef] : null,
     mode: settled.mode,
     deadlineMs: settled.deadlineMs,
     attemptTimeoutMs: settled.attemptTimeoutMs,
@@ -745,6 +811,7 @@ function defaultDependencies(
     sleep,
     hash: sha256Bytes,
     writeFrame: (absolutePath, bytes) => fs.writeFileSync(absolutePath, bytes),
+    probeHostWindow,
   };
 }
 
@@ -834,6 +901,15 @@ export function registerObservationTools(server: McpServer) {
         settlementSatisfied: z.boolean(),
         comparison: z.literal(SETTLE_COMPARISON),
         stablePair: z.tuple([z.string(), z.string()]).nullable(),
+        stablePairCaptureRefs: z.tuple([captureRefSchema, captureRefSchema]).nullable(),
+        receiptPath: z.string().nullable(),
+        hostWindowProbe: z.object({
+          status: z.enum(["ok", "no_window", "unavailable", "not_applicable"]),
+          occluded: z.boolean().nullable(), frontmost: z.boolean().nullable(), overlappingOwners: z.array(z.string()),
+          observedAt: z.string(), qemuWindowId: z.number().nullable(), qemuWindowOwnerPid: z.number().nullable(), detail: z.string().nullable(),
+        }),
+        hostWindowProbes: z.array(z.unknown()),
+        warnings: z.array(z.object({ code: z.string(), detail: z.string() })),
         mode: z.enum(SETTLE_MODES),
         deadlineMs: z.number().int().nonnegative(),
         attemptTimeoutMs: z.number().int().nonnegative(),

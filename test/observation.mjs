@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import "./hostwindow.mjs";
 import {
   captureSettledFrames,
   executeCaptureSettled,
@@ -17,6 +18,7 @@ import {
   focusQemuForActions,
   keyHold,
   selectQemuWindowBinding,
+  registerCameraDriveTools,
 } from "../dist/cameradrive.js";
 import { resolveGrpcEndpointBinding } from "../dist/grpc.js";
 
@@ -389,6 +391,116 @@ test("executeCaptureSettled returns every settled contract field and external ca
   assert.equal(receipt.lookRequired, true);
   assert.deepEqual(receipt.actionReceipts, []);
   assert.equal(receipt.error, null);
+});
+
+test("executeCaptureSettled retains both consecutive frames with independent paths, timestamps and hashes", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-settled-pair-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const { receipt } = await executeCaptureSettled(
+    { serial: "emulator-5554", outPath: path.join(scratch, "settled.png"), maxTries: 3, intervalMs: 0, comparison: SETTLE_COMPARISON },
+    executionDeps({ sequence: [frame("moving"), frame("stable", "2026-09-08T00:00:01Z"), frame("stable", "2026-09-08T00:00:02Z")] }),
+  );
+  assert.equal(receipt.status, "settled");
+  assert.equal(receipt.stablePairCaptureRefs?.length, 2);
+  const [first, second] = receipt.stablePairCaptureRefs;
+  assert.notEqual(first.path, second.path);
+  assert.deepEqual(second, receipt.captureRef);
+  assert.equal(first.capturedAt, "2026-09-08T00:00:01Z");
+  assert.equal(second.capturedAt, "2026-09-08T00:00:02Z");
+  for (const ref of [first, second]) {
+    assert.equal(fs.readFileSync(ref.path).toString(), "stable");
+    assert.equal(sha256Bytes(fs.readFileSync(ref.path)), ref.sha256);
+  }
+  assert.deepEqual(receipt.stablePair, [first.sha256, second.sha256]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(receipt.receiptPath, "utf8")), receipt);
+});
+
+test("settled pair artifacts from distinct output filenames cannot overwrite an earlier receipt's first frame", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-settled-pair-names-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const capture = (name, pixels) => executeCaptureSettled(
+    { serial: "emulator-5554", outPath: path.join(scratch, name), maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON },
+    executionDeps({ sequence: [frame(pixels), frame(pixels)] }),
+  );
+  const first = await capture("frame.png", "first scene");
+  const second = await capture("frame", "second scene");
+  assert.equal(first.receipt.status, "settled");
+  assert.equal(second.receipt.status, "settled");
+  for (const ref of first.receipt.stablePairCaptureRefs) {
+    assert.equal(sha256Bytes(fs.readFileSync(ref.path)), ref.sha256);
+  }
+});
+
+test("receipt publication failure keeps the published frame as the last valid capture", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-settled-receipt-failure-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const outPath = path.join(scratch, "frame.png");
+  fs.mkdirSync(`${outPath}.receipt.json`);
+  const { receipt } = await executeCaptureSettled(
+    { serial: "emulator-5554", outPath, maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON }, executionDeps(),
+  );
+  assert.equal(receipt.status, "capture_failed");
+  assert.equal(receipt.error.code, "artifact_write_failed");
+  assert.equal(receipt.receiptPath, null);
+  assert.equal(receipt.stablePair, null);
+  assert.equal(receipt.lastValidCaptureRef?.path, fs.realpathSync(outPath));
+  assert.equal(sha256Bytes(fs.readFileSync(receipt.lastValidCaptureRef.path)), receipt.sha256);
+});
+
+test("executeCaptureSettled warns on host occlusion and retains the probe even on an early refusal", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-occlusion-capture-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const probe = { status: "ok", occluded: true, frontmost: false, overlappingOwners: ["Google Chrome"],
+    observedAt: "2026-09-08T00:00:00Z", qemuWindowId: 7, qemuWindowOwnerPid: 99, detail: null };
+  const input = { serial: "emulator-5554", outPath: path.join(scratch, "settled.png"), maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON };
+  const captured = await executeCaptureSettled(input, { ...executionDeps(), probeHostWindow: async () => probe });
+  assert.equal(captured.receipt.status, "settled");
+  assert.deepEqual(captured.receipt.hostWindowProbe, probe);
+  assert.equal(captured.receipt.warnings[0].code, "host_window_occluded");
+  assert.match(captured.receipt.warnings[0].detail, /Google Chrome/);
+  const failed = await executeCaptureSettled(input, { ...executionDeps({ online: [] }), probeHostWindow: async () => probe });
+  assert.equal(failed.receipt.status, "capture_failed");
+  assert.deepEqual(failed.receipt.hostWindowProbe, probe);
+});
+
+test("orbit and multiview captures retain host-window warnings on successful captures and binding refusals", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-drive-window-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const probe = { status: "ok", occluded: true, frontmost: true, overlappingOwners: ["Floating Panel"],
+    observedAt: "2026-09-08T00:00:00Z", qemuWindowId: 7, qemuWindowOwnerPid: 99, detail: null };
+  const handlers = new Map();
+  let bound = true;
+  let probeCount = 0;
+  registerCameraDriveTools({ registerTool: (name, _schema, handler) => handlers.set(name, handler) }, {
+    platform: "darwin",
+    bindWindow: async () => bound ? { ok: true, binding: { qemuWindowId: 7, qemuWindowOwnerPid: 99 } }
+      : { ok: false, code: "binding_failed", detail: "no window" },
+    probeHostWindow: async () => ++probeCount < 3 ? { ...probe, occluded: false, overlappingOwners: [] } : probe,
+    focus: async () => null,
+    applyMoves: async () => ({ actionReceipts: [] }),
+    settleCapture: async () => ({ status: "settled", attempts: 2, settlementSatisfied: true, sha256: "a".repeat(64),
+      stablePair: ["a".repeat(64), "a".repeat(64)], frame: frame("pixels") }),
+    writeShrunk: async (bytes, target) => { fs.writeFileSync(target, bytes); return target; },
+  });
+  for (const name of ["capture_orbit", "capture_multiview"]) {
+    probeCount = 0;
+    const args = { moves: [{ key: "w" }], outPath: path.join(scratch, "orbit.png"), outDir: scratch };
+    const result = await handlers.get(name)(args);
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(result.structuredContent?.hostWindowProbe, probe);
+    assert.equal(result.structuredContent.warnings[0].code, "host_window_occluded");
+    assert.match(JSON.stringify(result.content), /Floating Panel/);
+    const text = result.content.find((item) => item.type === "text" && item.text.includes("settleReceipt")).text;
+    const settle = name === "capture_orbit"
+      ? JSON.parse(text.match(/settleReceipt=(\{.*\}) actionReceipts=/)[1])
+      : JSON.parse(text.match(/settleReceipts=(\[.*\]) actionReceipts=/)[1])[0];
+    assert.equal(settle.hostWindowProbe.occluded, true);
+    assert.equal(settle.warnings[0]?.code, "host_window_occluded");
+  }
+  bound = false;
+  const failed = await handlers.get("capture_orbit")({ moves: [{ key: "w" }] });
+  assert.equal(failed.isError, true);
+  assert.deepEqual(failed.structuredContent.hostWindowProbe, probe);
 });
 
 test("executeLiveCaptureSettled catches an internal caller that forks the public settled-capture implementation", async (t) => {
@@ -1027,7 +1139,7 @@ test("bound action receipts distinguish focus-independent gRPC keys from acknowl
   assert.equal(focusCalls, 2);
 });
 
-test("frontmostQemu refuses a successful focus request when fresh frontmost-PID readback disagrees", { skip: process.platform !== "darwin" }, () => {
+test("frontmostQemu checks focus without raising or moving any host window", { skip: process.platform !== "darwin" }, () => {
   const utilUrl = new URL("../dist/util.js", import.meta.url).href;
   const cameradriveUrl = new URL("../dist/cameradrive.js", import.meta.url).href;
   const script = String.raw`
@@ -1071,32 +1183,32 @@ test("frontmostQemu refuses a successful focus request when fresh frontmost-PID 
     };
     const success = { code: 0, stdout: "", stderr: "", timedOut: false };
 
-    responses = [success, { code: 0, stdout: "416\n", stderr: "", timedOut: false }];
+    responses = [{ code: 0, stdout: "416\n", stderr: "", timedOut: false }];
     assert.equal(
       await frontmostQemu(binding),
       "frontmost PID readback mismatch: expected 93013, observed 416",
     );
 
-    responses = [success, { code: 0, stdout: "not-a-pid\n", stderr: "", timedOut: false }];
+    responses = [{ code: 0, stdout: "not-a-pid\n", stderr: "", timedOut: false }];
     assert.equal(
       await frontmostQemu(binding),
       "frontmost PID readback malformed: expected one positive integer",
     );
 
-    responses = [success, { code: 1, stdout: "", stderr: "permission denied", timedOut: false }];
+    responses = [{ code: 1, stdout: "", stderr: "permission denied", timedOut: false }];
     assert.equal(
       await frontmostQemu(binding),
       "frontmost PID readback failed: command exited 1",
     );
 
-    responses = [success, { code: 0, stdout: "93013\n", stderr: "", timedOut: false }];
+    responses = [{ code: 0, stdout: "93013\n", stderr: "", timedOut: false }];
     assert.equal(await frontmostQemu(binding), null);
 
     responses = [{ code: 1, stdout: "", stderr: "not permitted", timedOut: false }];
-    assert.equal(await frontmostQemu(binding), "osascript frontmost failed: not permitted");
+    assert.equal(await frontmostQemu(binding), "frontmost PID readback failed: command exited 1");
     assert.equal(responses.length, 0);
-    assert.equal(calls.filter(({ cmd }) => cmd === "osascript").length, 5);
-    assert.equal(calls.filter(({ cmd }) => cmd === "swift").length, 4);
+    assert.equal(calls.filter(({ cmd }) => cmd === "osascript").length, 0);
+    assert.equal(calls.filter(({ cmd }) => cmd === "swift").length, 5);
   `;
   execFileSync(process.execPath, ["--experimental-test-module-mocks", "--input-type=module", "--eval", script], {
     cwd: process.cwd(),
