@@ -10,6 +10,7 @@ import { validateCaptureBuffer } from "./evidence.js";
 import { resolveAdb } from "./emulatorlook.js";
 import { expandHome, run, runBinary, sleep } from "./util.js";
 import { probeHostWindow, unavailableHostWindowProbe, hostWindowPrecondition, type HostWindowProbe } from "./hostwindow.js";
+import type { BoundQemuWindow } from "./cameradrive.js";
 
 export const SETTLE_COMPARISON = "byte_exact" as const;
 export const CAPTURE_SOURCE = "adb-exec-out-screencap" as const;
@@ -329,7 +330,7 @@ export interface CaptureSettledDependencies {
   sleep: (ms: number) => Promise<void>;
   hash: (bytes: Buffer) => string;
   writeFrame: (absolutePath: string, bytes: Buffer) => void;
-  probeHostWindow?: (serial: string) => Promise<HostWindowProbe>;
+  probeHostWindow?: (serial: string, binding?: BoundQemuWindow) => Promise<HostWindowProbe>;
 }
 
 function identityProblem(identity: CaptureLiveIdentity, serial: string): string | null {
@@ -566,10 +567,9 @@ export async function executeCaptureSettled(
       return unavailableHostWindowProbe(error?.message ?? String(error));
     }
   };
-  const before = await sample();
   const result = await executeCaptureSettledCore(input, deps);
-  const after = result.receipt.attempts > 0 ? await sample() : before;
-  const probes = before === after ? [before] : [before, after];
+  const after = await sample();
+  const probes = [after];
   const warnings = probes.map(hostWindowPrecondition).filter((warning) => warning !== null);
   Object.assign(result.receipt, {
     stablePairCaptureRefs: result.receipt.stablePairCaptureRefs ?? null,
@@ -583,15 +583,11 @@ export async function executeCaptureSettled(
       result.receipt.receiptPath = `${result.receipt.path}.receipt.json`;
       const bytes = Buffer.from(JSON.stringify(result.receipt, null, 2) + "\n");
       publishExternalFrame(result.receipt.receiptPath, bytes, sha256Bytes(bytes), {
-        hash: sha256Bytes, writeFrame: (target, data) => fs.writeFileSync(target, data),
+        hash: sha256Bytes, writeFrame: deps.writeFrame,
       });
     } catch (error: any) {
       result.receipt.receiptPath = null;
-      result.receipt.status = "capture_failed";
-      result.receipt.settlementSatisfied = false;
-      result.receipt.stablePair = null;
-      result.receipt.lastValidCaptureRef = result.receipt.captureRef;
-      result.receipt.error = { code: "artifact_write_failed", detail: error?.message ?? String(error) };
+      result.receipt.warnings!.push({ code: "receipt_write_failed", detail: error?.message ?? String(error) });
     }
   }
   return result;
@@ -811,7 +807,16 @@ function defaultDependencies(
     sleep,
     hash: sha256Bytes,
     writeFrame: (absolutePath, bytes) => fs.writeFileSync(absolutePath, bytes),
-    probeHostWindow,
+    probeHostWindow: async (serial, binding) => {
+      if (process.platform !== "darwin" || !serial.startsWith("emulator-")) return probeHostWindow(serial, binding);
+      if (!binding) {
+        const { bindMacQemuWindow } = await import("./cameradrive.js");
+        const selected = await bindMacQemuWindow(adb, serial);
+        if (!selected.ok) return unavailableHostWindowProbe(selected.detail);
+        binding = selected.binding;
+      }
+      return probeHostWindow(serial, binding);
+    },
   };
 }
 
@@ -820,6 +825,7 @@ export interface ExecuteLiveCaptureSettledOptions {
   attemptTimeoutMs?: number;
   dependencies?: CaptureSettledDependencies;
   monotonicNs?: () => bigint;
+  hostWindowBinding?: BoundQemuWindow;
 }
 
 /** Shared live entrypoint used by both the MCP handler and internal bounded route orchestrators. */
@@ -833,9 +839,13 @@ export async function executeLiveCaptureSettled(
   }
   const baseDependencies = options.dependencies
     ?? defaultDependencies(options.adbPath ?? resolveAdb(), options.monotonicNs);
-  const dependencies = options.monotonicNs === undefined
-    ? baseDependencies
-    : { ...baseDependencies, monotonicNs: options.monotonicNs };
+  const dependencies = {
+    ...baseDependencies,
+    ...(options.monotonicNs ? { monotonicNs: options.monotonicNs } : {}),
+    ...(options.hostWindowBinding && baseDependencies.probeHostWindow ? {
+      probeHostWindow: (serial: string) => baseDependencies.probeHostWindow!(serial, options.hostWindowBinding),
+    } : {}),
+  };
   return executeCaptureSettled(
     { ...input, attemptTimeoutMs },
     dependencies,
@@ -906,6 +916,7 @@ export function registerObservationTools(server: McpServer) {
         hostWindowProbe: z.object({
           status: z.enum(["ok", "no_window", "unavailable", "not_applicable"]),
           occluded: z.boolean().nullable(), frontmost: z.boolean().nullable(), overlappingOwners: z.array(z.string()),
+          durationMs: z.number().nonnegative(),
           observedAt: z.string(), qemuWindowId: z.number().nullable(), qemuWindowOwnerPid: z.number().nullable(), detail: z.string().nullable(),
         }),
         hostWindowProbes: z.array(z.unknown()),

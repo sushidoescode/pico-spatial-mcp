@@ -29,6 +29,10 @@ export { picoCliPath } from "./picocli.js";
  * This deliberately builds ON the official toolchain instead of rebuilding it; our own
  * measure_perf (gfxinfo UI-frame probe) stays as the complementary 2D-surface view.
  *
+ * Profiler-cli 0.1.0 help surface verified 2026-09-08; live sampling behavior through this
+ * wrapper remains unverified. Retained help-only evidence (with truncated help excerpts):
+ * docs/evidence/perfcli-0.1.0-help-2026-09-08.txt.
+ *
  * HONESTY (load-bearing): all numbers are real measurements from pico-cli; anything the device
  * does not report arrives as 0/absent — on the EMULATOR the GPU counters are typically
  * unparseable (verified 2026-07-12), so gpu* zeros mean "not measured", never "GPU idle". The
@@ -37,6 +41,7 @@ export { picoCliPath } from "./picocli.js";
  */
 
 const HONESTY =
+  "Profiler-cli 0.1.0 help surface verified 2026-09-08; live sampling behavior through this wrapper remains unverified. " +
   "All metrics are real pico-cli measurements; absent counters arrive as 0/absent — on the emulator " +
   "GPU counters are typically unparseable, so gpu* zeros mean 'not measured', never 'GPU idle'. The " +
   "diagnosis block is pico-cli's own rule engine quoted verbatim (rule + evidence included). " +

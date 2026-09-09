@@ -1,0 +1,78 @@
+# Real pico-cli 0.4.4 + profiler-cli 0.1.0 help surface, captured 2026-09-09T06:37:52Z by the MCP orchestrator (help-only, read-only, no device)
+# global: pico-cli/0.4.4 (public) darwin-arm64 node-v25.8.1
+
+$ pico-cli perf -V
+0.1.0
+[stderr]
+[exit=0]
+
+$ pico-cli perf --help
+Usage: perf [global-options] <command> [command-options]
+
+PICO Spatial Profiler CLI
+
+Options:
+  -V, --version   output the version number
+  -v, --verbose   Verbose output
+  --debug         Debug mode
+  --envelope      Output a machine-readable JSON envelope
+  --daemon        Run as daemon (internal use)
+  --port <port>   Daemon listen port (internal use) (default: "9500")
+  -h, --help      display help for command
+
+Commands:
+  daemon          Manage the daemon process
+  session         Manage sessions
+  doc
+[stderr]
+[exit=0]
+
+$ pico-cli perf live run --help
+Usage: perf live run [options]
+
+Run foreground live performance collection (Ctrl+C to stop)
+
+Options:
+  --app <package_name>      Target app package name (e.g. com.picoxr.example)
+  --adb <path>              Path to adb executable (optional, overrides
+                            ADB_PATH/PROFILER_ADB/PATH)
+  --device <device_id>      Device ID to connect (if multiple connected)
+  -o, --output <path>       Explicit report file path (requires --save or
+                            --report-mode)
+  -d, --durati
+[stderr]
+[exit=0]
+
+$ pico-cli perf monitor run --help
+Usage: perf [global-options] <command> [command-options]
+
+PICO Spatial Profiler CLI
+
+Options:
+  -V, --version   output the version number
+  -v, --verbose   Verbose output
+  --debug         Debug mode
+  --envelope      Output a machine-readable JSON envelope
+  --daemon        Run as daemon (internal use)
+  --port <port>   Daemon listen port (internal use) (default: "9500")
+  -h, --help      display help for command
+
+Commands:
+  daemon          Manage the daemon process
+  session         Manage sessions
+  doc
+[stderr]
+[exit=0]
+
+$ pico-cli perf monitor run
+
+[stderr]
+error: unknown command 'monitor'
+(Did you mean doctor?)
+[exit=1]
+
+$ pico-cli perf live run -o /tmp/x.json -d 1
+
+[stderr]
+error: required option '--app <package_name>' not specified
+[exit=1]

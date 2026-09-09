@@ -101,6 +101,7 @@ const fakeServer = {
   },
 };
 registerEyeTools(fakeServer, {
+  analyzeColorKeysFn: async () => { throw new Error("color-key analysis is outside the recenter test"); },
   sendXrRecenterFn: async (_toolsVersion, options) => {
     recenteredSerial = options?.serial;
     return { ok: true, accepted: true, effect: "unverified" };
@@ -132,6 +133,10 @@ const judgeServer = {
   },
 };
 registerEyeTools(judgeServer, {
+  sendXrRecenterFn: async () => { throw new Error("recenter is outside the visual-judge test"); },
+  runBinaryFn: async () => { throw new Error("device capture is outside the visual-judge test"); },
+  analyzeColorKeysFn: async () => { throw new Error("color-key analysis is outside the visual-judge test"); },
+  resolveAdbFn: () => { throw new Error("adb resolution is outside the visual-judge test"); },
   analyzeFrameFn: async () => ({
     available: true,
     objectCount: 6,
@@ -193,6 +198,10 @@ registerEyeTools({
     if (name === "visual_judge") swapJudgeHandler = handler;
   },
 }, {
+  sendXrRecenterFn: async () => { throw new Error("recenter is outside the byte-binding test"); },
+  runBinaryFn: async () => { throw new Error("device capture is outside the byte-binding test"); },
+  analyzeColorKeysFn: async () => { throw new Error("color-key analysis is outside the byte-binding test"); },
+  resolveAdbFn: () => { throw new Error("adb resolution is outside the byte-binding test"); },
   analyzeFrameFn: async (measuredPath) => {
     const sha256 = crypto.createHash("sha256").update(fs.readFileSync(measuredPath)).digest("hex");
     fs.writeFileSync(swapSource, replacementBytes);

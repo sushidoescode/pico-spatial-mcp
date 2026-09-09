@@ -70,6 +70,7 @@ const server = {
   },
 };
 registerUsdRenderTools(server, {
+  usdrecordBinFn: () => "/fixture/usdrecord",
   runFn: async (_command, args) => {
     const freshOutput = args.at(-1);
     if (nextRun.bytes !== undefined) fs.writeFileSync(freshOutput, nextRun.bytes);

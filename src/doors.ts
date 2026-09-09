@@ -4,6 +4,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
+import { completeDependencies } from "./dependencies.js";
 import { fileURLToPath } from "node:url";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
 import { hasSpatialNavigatorFullStageCall } from "./lint.js";
@@ -327,8 +328,25 @@ export interface DoorToolDependencies {
 }
 
 export function registerDoorTools(server: McpServer, dependencies?: DoorToolDependencies) {
+  const selected = completeDependencies<DoorToolDependencies>(
+    "registerDoorTools", dependencies, { call: true },
+    () => {
+      let connecting: Promise<InnerCache> | null = null;
+      return {
+        call: async (name, args) => {
+          // Doctor and next start parallel probes; share their initial connection.
+          const pending = connecting ??= inner();
+          const client = await pending.catch((error) => {
+            if (connecting === pending) connecting = null;
+            throw error;
+          });
+          return client.call(name, args);
+        },
+      };
+    },
+  );
   const doorCall = async (): Promise<DoorToolDependencies["call"]> =>
-    dependencies?.call ?? (await inner()).call;
+    selected.call;
   const door = (name: string, description: string, inputSchema: any, handler: (args: any) => Promise<any>) =>
     server.registerTool(name, { description, inputSchema }, async (args: any) => {
       try {
@@ -388,7 +406,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       labelQueries: z.array(z.string()).optional().describe("Scene-specific vocabulary ('bar counter', 'neon sign') — sharper labels than the generic default."),
     },
     async ({ splatPath, labelQueries }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       const scan = await call("semantic_splat_scan", { splatPath, autoLabel: true, ...(labelQueries ? { labelQueries } : {}) });
       if (!scan?.clusters) return { status: "scan-failed", detail: scan, fix: "Check the splat path; OWL-v2 needs the pico venv python (pico_doctor)." };
       const labels = scan.autoLabels?.labels ?? {};
@@ -421,7 +439,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     },
     async ({ semanticScenePath, label, relation, childSize }) => {
       const scene = JSON.parse(fs.readFileSync(semanticScenePath, "utf8"));
-      const { call } = await inner();
+      const call = await doorCall();
       return call("resolve_semantic_placement", { objects: scene.objects, anchorTo: { label, ...(relation ? { relation } : {}) }, ...(childSize ? { childSize } : {}), floorY: scene.floorY, bounds: scene.bounds });
     },
   );
@@ -431,7 +449,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 4 — Capture the emulator's forward view deterministically and return the image path. READ the image; that look is what turns a claim into vision_verified (record it with pico_record). NO pose control exists on this path: deterministic = the fixed forward screencap; the multi-angle alternatives are Accessibility-gated GUI drags whose free-cam drifts — so bring content into the forward FOV instead of moving the camera. OCCLUSION: a docked HUD/menu panel can cover the scene; when the app's generated wiring routes the panel DEBUG_CMDs, drive 'panel:hide' before a scene capture and 'panel:show' after (adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd panel:hide). Apps without that route ignore the broadcast — confirm with the capture itself, never by assumption.",
     {},
     async () => {
-      const { call } = await inner();
+      const call = await doorCall();
       const cap = await call("capture_canonical", {});
       return typeof cap === "object" ? cap : { status: "ok", detail: cap };
     },
@@ -442,7 +460,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 5 — Verify ANY PICO APK through the honest loop (v22 pico-verify core): install → launch → settle → deterministic capture → calibrated-eye judgment. Works for apps this server never built (including official PICO samples). Returns verdict + capture; escalations require a look.",
     { apkPath: z.string(), packageName: z.string().describe("The APK's applicationId."), settleSec: z.number().optional() },
     async ({ apkPath, packageName, settleSec }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("verify_pico_apk", { apkPath, packageName, ...(settleSec ? { settleSec } : {}) });
     },
   );
@@ -455,17 +473,17 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       targets: z.array(z.object({ name: z.string(), colorKey: z.array(z.number()).length(3), expectedPosition: z.array(z.number()).length(3), expectedSize: z.array(z.number()).length(3).optional() })).min(1),
     },
     async (args) => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("measure_placement", args);
     },
   );
 
   door(
     "pico_perf",
-    "DOOR 7 — Profile a running app with PICO's OFFICIAL profiler (pico-cli perf): FPS percentiles, CPU/GPU, jank windows, and PICO's own diagnosis engine. Structural evidence — numbers, not looks.",
+    "DOOR 7 — Profile a running app with PICO's OFFICIAL profiler (pico-cli perf): FPS percentiles, CPU/GPU, jank windows, and PICO's own diagnosis engine. Profiler-cli 0.1.0 help surface verified 2026-09-08; sampling behavior unverified live. Structural evidence — numbers, not looks.",
     { packageName: z.string(), durationSec: z.number().optional() },
     async (args) => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("perf_diagnose", args);
     },
   );
@@ -475,7 +493,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 8 — Look up the EXACT PICO Spatial SDK declaration (constructors with parameter order and unit docs, properties, enum values) from the official 0.13.3 agent-vault before writing SDK code. The app skeleton builds on SDK 6.0.0; consult docs/SDK_6_0_0_DRIFT.md for the measured near-zero public-API drift caveat. All-Float signatures compile silently with swapped args — check first.",
     { symbol: z.string() },
     async (args) => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("vault_api", args);
     },
   );
@@ -485,7 +503,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 9 — Health-check the local PICO environment: the read-only preflight (node/adb/emulator/gRPC/Accessibility/calibration/disk — every failure carries the exact fix), toolchain payloads, emulator state, and the v20 camera calibration. Run this FIRST on a new machine, and whenever anything smells off. Pass {calibrate:true} to also RUN the one-time camera calibration end-to-end (fleet_build(['calib']) → calibrate_capture_camera): the inner child server already runs the FULL surface, so no surface switch or client restart is needed — it does need a running emulator and takes a few minutes.",
     { calibrate: z.boolean().optional().describe("Build+launch the calib brief and solve the capture camera through the full-surface inner server. Requires a running emulator; takes minutes.") },
     async ({ calibrate }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       const [tc, emu, pre] = await Promise.all([call("validate_toolchain", {}), call("emulator_status", {}), call("preflight_env", {})]);
       let calibrationRun: any = null;
       if (calibrate) {
@@ -539,7 +557,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 11 — What can this toolchain actually do, and how is each capability PROVEN? Generated from the trust ledger: every row's best evidence class, with vision_verified meaning a human/agent looked at a rendered frame.",
     {},
     async () => {
-      const { call } = await inner();
+      const call = await doorCall();
       return call("capability_matrix", {});
     },
   );
@@ -563,7 +581,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
       }).optional().describe("After you SOLVE a novel gotcha: persist it as a retained-lessons lint rule. Passed through unchanged to record_lesson, which validates the regex + fixtures before persisting."),
     },
     async ({ error, kotlin, recordLesson }) => {
-      const { call } = await inner();
+      const call = await doorCall();
       // v27-pre first-light fix: diagnose takes a strict symptom enum — piping free text into it
       // leaked a raw schema error at the stranger. Map keywords -> symptom; no match is honest.
       const SYMPTOM_KEYWORDS: Array<[RegExp, string]> = [
@@ -672,7 +690,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
           honesty: "Not executed by this tool: the cold restart kills a host process by PID, so it stays a human-run command.",
         };
       }
-      const { call } = await inner();
+      const call = await doorCall();
       const out = await call(action === "boot" ? "emulator_boot" : "emulator_status", {});
       return typeof out === "object" && out !== null ? out : { status: "ok", detail: out };
     },
@@ -683,7 +701,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     "DOOR 15 — What should I do NOW? Reads the ACTUAL local state — preflight checks, emulator, camera calibration, your generated briefs with their build/capture/trust-ledger progress — and returns {situation, nextAction:{door,argsExample,why}, alternatives}. Every recommendation names a real door on this surface; nothing is executed for you, and a LOOK step still means YOU read the capture.",
     {},
     async () => {
-      const { call } = await inner();
+      const call = await doorCall();
       // a probe that cannot run (e.g. no adb) reads as its unhealthy state, not as a door error
       const [pre, emu] = await Promise.all([call("preflight_env", {}).catch(() => null), call("emulator_status", {}).catch(() => null)]);
       const failing = (Array.isArray(pre?.checks) ? pre.checks : []).filter((c: any) => c.status === "fail");

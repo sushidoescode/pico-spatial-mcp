@@ -1080,6 +1080,7 @@ test("bound action adapter freshly revalidates every endpoint and exact window f
     let drags = 0;
     const changed = { ...selected.binding, ...mutation };
     const adapter = createBoundCameraActionAdapter(runtimeBinding.serial, selected.binding, {
+      keyHold: async () => { throw new Error("key input is outside the drag revalidation test"); },
       revalidateWindow: async () => ({
         ok: true,
         binding: structuredClone(revalidations++ === 0 ? selected.binding : changed),
@@ -1102,6 +1103,8 @@ test("bound action adapter freshly revalidates every endpoint and exact window f
   let keyRevalidations = 0;
   const moved = { ...selected.binding, qemuWindowX: selected.binding.qemuWindowX + 1 };
   const keyAdapter = createBoundCameraActionAdapter(runtimeBinding.serial, selected.binding, {
+    focusQemu: async () => { throw new Error("focus is outside the key revalidation test"); },
+    rightDrag: async () => { throw new Error("drag input is outside the key revalidation test"); },
     revalidateWindow: async () => ({
       ok: true,
       binding: structuredClone(keyRevalidations++ === 0 ? selected.binding : moved),

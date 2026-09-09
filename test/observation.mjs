@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import "./dependency-isolation.mjs";
 import "./hostwindow.mjs";
 import {
   captureSettledFrames,
@@ -431,20 +432,36 @@ test("settled pair artifacts from distinct output filenames cannot overwrite an 
   }
 });
 
-test("receipt publication failure keeps the published frame as the last valid capture", async (t) => {
+test("receipt publication failure warns without changing a settled capture or its returned frame", async (t) => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-settled-receipt-failure-"));
   t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
   const outPath = path.join(scratch, "frame.png");
   fs.mkdirSync(`${outPath}.receipt.json`);
-  const { receipt } = await executeCaptureSettled(
+  const { receipt, frame: pixels } = await executeCaptureSettled(
     { serial: "emulator-5554", outPath, maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON }, executionDeps(),
   );
-  assert.equal(receipt.status, "capture_failed");
-  assert.equal(receipt.error.code, "artifact_write_failed");
+  assert.equal(receipt.status, "settled");
+  assert.equal(receipt.settlementSatisfied, true);
+  assert.equal(receipt.error, null);
+  assert.equal(receipt.warnings.find((warning) => warning.code === "receipt_write_failed")?.code, "receipt_write_failed");
   assert.equal(receipt.receiptPath, null);
-  assert.equal(receipt.stablePair, null);
-  assert.equal(receipt.lastValidCaptureRef?.path, fs.realpathSync(outPath));
-  assert.equal(sha256Bytes(fs.readFileSync(receipt.lastValidCaptureRef.path)), receipt.sha256);
+  assert.deepEqual(receipt.stablePair, [receipt.sha256, receipt.sha256]);
+  assert.equal(receipt.captureRef?.path, fs.realpathSync(outPath));
+  assert.equal(sha256Bytes(pixels), receipt.sha256);
+  assert.equal(sha256Bytes(fs.readFileSync(receipt.captureRef.path)), receipt.sha256);
+});
+
+test("settle receipt publication uses the supplied writeFrame hook", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-settled-receipt-hook-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const writes = [];
+  const { receipt } = await executeCaptureSettled(
+    { serial: "emulator-5554", outPath: path.join(scratch, "frame.png"), maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON },
+    executionDeps({ writeFrame: (target, bytes) => { writes.push(Buffer.from(bytes)); fs.writeFileSync(target, bytes); } }),
+  );
+  assert.equal(receipt.status, "settled");
+  assert.equal(writes.length, 3, "both frames and their receipt must pass through the supplied writer");
+  assert.deepEqual(JSON.parse(writes[2].toString()), receipt);
 });
 
 test("executeCaptureSettled warns on host occlusion and retains the probe even on an early refusal", async (t) => {
@@ -453,11 +470,14 @@ test("executeCaptureSettled warns on host occlusion and retains the probe even o
   const probe = { status: "ok", occluded: true, frontmost: false, overlappingOwners: ["Google Chrome"],
     observedAt: "2026-09-08T00:00:00Z", qemuWindowId: 7, qemuWindowOwnerPid: 99, detail: null };
   const input = { serial: "emulator-5554", outPath: path.join(scratch, "settled.png"), maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON };
-  const captured = await executeCaptureSettled(input, { ...executionDeps(), probeHostWindow: async () => probe });
+  const order = [];
+  const captured = await executeCaptureSettled(input, { ...executionDeps({ onCapture: () => order.push("capture") }),
+    probeHostWindow: async () => { order.push("probe"); return probe; } });
   assert.equal(captured.receipt.status, "settled");
   assert.deepEqual(captured.receipt.hostWindowProbe, probe);
   assert.equal(captured.receipt.warnings[0].code, "host_window_occluded");
   assert.match(captured.receipt.warnings[0].detail, /Google Chrome/);
+  assert.deepEqual(order, ["capture", "capture", "probe"], "one post-capture observation must cover the settled pair");
   const failed = await executeCaptureSettled(input, { ...executionDeps({ online: [] }), probeHostWindow: async () => probe });
   assert.equal(failed.receipt.status, "capture_failed");
   assert.deepEqual(failed.receipt.hostWindowProbe, probe);
@@ -471,12 +491,20 @@ test("orbit and multiview captures retain host-window warnings on successful cap
   const handlers = new Map();
   let bound = true;
   let probeCount = 0;
+  let focusCount = 0;
+  let bindCount = 0;
+  const windowBinding = { qemuWindowId: 7, qemuWindowOwnerPid: 99 };
   registerCameraDriveTools({ registerTool: (name, _schema, handler) => handlers.set(name, handler) }, {
     platform: "darwin",
-    bindWindow: async () => bound ? { ok: true, binding: { qemuWindowId: 7, qemuWindowOwnerPid: 99 } }
+    bindWindow: async () => ++bindCount && bound ? { ok: true, binding: windowBinding }
       : { ok: false, code: "binding_failed", detail: "no window" },
-    probeHostWindow: async () => ++probeCount < 3 ? { ...probe, occluded: false, overlappingOwners: [] } : probe,
-    focus: async () => null,
+    probeHostWindow: async (_serial, observedBinding) => {
+      ++probeCount;
+      assert.deepEqual(observedBinding, windowBinding, "every probe must use the already-bound window");
+      assert.ok(focusCount > 0, "focus is requested before observation");
+      return probe;
+    },
+    focus: async () => { focusCount++; return null; },
     applyMoves: async () => ({ actionReceipts: [] }),
     settleCapture: async () => ({ status: "settled", attempts: 2, settlementSatisfied: true, sha256: "a".repeat(64),
       stablePair: ["a".repeat(64), "a".repeat(64)], frame: frame("pixels") }),
@@ -484,6 +512,8 @@ test("orbit and multiview captures retain host-window warnings on successful cap
   });
   for (const name of ["capture_orbit", "capture_multiview"]) {
     probeCount = 0;
+    bindCount = 0;
+    focusCount = 0;
     const args = { moves: [{ key: "w" }], outPath: path.join(scratch, "orbit.png"), outDir: scratch };
     const result = await handlers.get(name)(args);
     assert.equal(result.isError, undefined);
@@ -496,11 +526,50 @@ test("orbit and multiview captures retain host-window warnings on successful cap
       : JSON.parse(text.match(/settleReceipts=(\[.*\]) actionReceipts=/)[1])[0];
     assert.equal(settle.hostWindowProbe.occluded, true);
     assert.equal(settle.warnings[0]?.code, "host_window_occluded");
+    assert.equal(probeCount, name === "capture_orbit" ? 1 : 5, "one probe per capture, including restored frame");
+    assert.equal(bindCount, 1, "no unbound pre-handler or trailing rediscovery");
+    assert.equal(result.structuredContent.hostWindowFocusRequest.status, "requested");
   }
   bound = false;
   const failed = await handlers.get("capture_orbit")({ moves: [{ key: "w" }] });
   assert.equal(failed.isError, true);
-  assert.deepEqual(failed.structuredContent.hostWindowProbe, probe);
+  assert.equal(failed.structuredContent.hostWindowProbe.status, "unavailable");
+});
+
+test("orbit records a failed focus request while key-only captures remain available", async (t) => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-drive-focus-"));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  const handlers = new Map();
+  const order = [];
+  const binding = { qemuWindowId: 7, qemuWindowOwnerPid: 99 };
+  registerCameraDriveTools({ registerTool: (name, _schema, handler) => handlers.set(name, handler) }, {
+    platform: "darwin",
+    bindWindow: async () => ({ ok: true, binding }),
+    probeHostWindow: async (_serial, bound) => {
+      assert.equal(bound, binding);
+      order.push("probe");
+      return { status: "ok", occluded: false, frontmost: true, overlappingOwners: [],
+        observedAt: "2026-09-09T00:00:00Z", durationMs: 0,
+        qemuWindowId: 7, qemuWindowOwnerPid: 99, detail: null };
+    },
+    focus: async () => { order.push("focus"); return "osascript frontmost failed: permission denied"; },
+    applyMoves: async () => { order.push("move"); return { error: null, actionReceipts: [] }; },
+    settleCapture: async () => {
+      order.push("capture");
+      return { status: "settled", attempts: 2, settlementSatisfied: true, sha256: "a".repeat(64),
+        stablePair: ["a".repeat(64), "a".repeat(64)], frame: frame("pixels") };
+    },
+    writeShrunk: async (bytes, target) => { fs.writeFileSync(target, bytes); return target; },
+  });
+  const result = await handlers.get("capture_orbit")({ moves: [{ key: "w" }], outPath: path.join(scratch, "orbit.png") });
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent.hostWindowFocusRequest.status, "failed");
+  assert.match(result.structuredContent.hostWindowFocusRequest.error, /permission denied/);
+  assert.deepEqual(order, ["focus", "move", "capture", "probe"]);
+  order.length = 0;
+  const refused = await handlers.get("capture_orbit")({ moves: [{ dragDx: 1 }] });
+  assert.equal(refused.isError, true, "CGEvent look still requires focus acknowledgement");
+  assert.deepEqual(order, ["focus", "probe"]);
 });
 
 test("executeLiveCaptureSettled catches an internal caller that forks the public settled-capture implementation", async (t) => {
@@ -1139,7 +1208,7 @@ test("bound action receipts distinguish focus-independent gRPC keys from acknowl
   assert.equal(focusCalls, 2);
 });
 
-test("frontmostQemu checks focus without raising or moving any host window", { skip: process.platform !== "darwin" }, () => {
+test("frontmostQemu requests focus before exact PID readback and reports a refused raise", { skip: process.platform !== "darwin" }, () => {
   const utilUrl = new URL("../dist/util.js", import.meta.url).href;
   const cameradriveUrl = new URL("../dist/cameradrive.js", import.meta.url).href;
   const script = String.raw`
@@ -1183,32 +1252,32 @@ test("frontmostQemu checks focus without raising or moving any host window", { s
     };
     const success = { code: 0, stdout: "", stderr: "", timedOut: false };
 
-    responses = [{ code: 0, stdout: "416\n", stderr: "", timedOut: false }];
+    responses = [success, { code: 0, stdout: "416\n", stderr: "", timedOut: false }];
     assert.equal(
       await frontmostQemu(binding),
       "frontmost PID readback mismatch: expected 93013, observed 416",
     );
 
-    responses = [{ code: 0, stdout: "not-a-pid\n", stderr: "", timedOut: false }];
+    responses = [success, { code: 0, stdout: "not-a-pid\n", stderr: "", timedOut: false }];
     assert.equal(
       await frontmostQemu(binding),
       "frontmost PID readback malformed: expected one positive integer",
     );
 
-    responses = [{ code: 1, stdout: "", stderr: "permission denied", timedOut: false }];
+    responses = [success, { code: 1, stdout: "", stderr: "permission denied", timedOut: false }];
     assert.equal(
       await frontmostQemu(binding),
       "frontmost PID readback failed: command exited 1",
     );
 
-    responses = [{ code: 0, stdout: "93013\n", stderr: "", timedOut: false }];
+    responses = [success, { code: 0, stdout: "93013\n", stderr: "", timedOut: false }];
     assert.equal(await frontmostQemu(binding), null);
 
     responses = [{ code: 1, stdout: "", stderr: "not permitted", timedOut: false }];
-    assert.equal(await frontmostQemu(binding), "frontmost PID readback failed: command exited 1");
+    assert.equal(await frontmostQemu(binding), "osascript frontmost failed: not permitted");
     assert.equal(responses.length, 0);
-    assert.equal(calls.filter(({ cmd }) => cmd === "osascript").length, 0);
-    assert.equal(calls.filter(({ cmd }) => cmd === "swift").length, 5);
+    assert.deepEqual(calls.map(({ cmd }) => cmd), ["osascript", "swift", "osascript", "swift", "osascript", "swift", "osascript", "swift", "osascript"]);
+    assert.match(calls[0].args[1], /set frontmost.*unix id is 93013.*to true/);
   `;
   execFileSync(process.execPath, ["--experimental-test-module-mocks", "--input-type=module", "--eval", script], {
     cwd: process.cwd(),

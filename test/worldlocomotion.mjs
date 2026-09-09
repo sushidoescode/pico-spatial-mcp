@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import childProcess from "node:child_process";
 import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -204,9 +207,15 @@ function clearLocomotionHostWindow(overrides = {}) {
   return {
     status: "ok", occluded: false, frontmost: true, overlappingOwners: [],
     observedAt: "2026-09-08T12:00:00.000Z", qemuWindowId: 104,
-    qemuWindowOwnerPid: 93013, detail: null, ...overrides,
+    qemuWindowOwnerPid: 93013, detail: null, durationMs: 0, ...overrides,
   };
 }
+
+const LOCOMOTION_WINDOW = Object.freeze({
+  discoveredSerial: "emulator-5554", discoveryFile: "/tmp/pico-emulator/pid_93013.ini",
+  address: "127.0.0.1:8554", qemuPid: 93013, qemuWindowOwnerPid: 93013,
+  qemuWindowId: 104, bindingMethod: "discovery-pid-window",
+});
 
 const cleanSafety = Object.freeze({
   guardian: "1",
@@ -480,6 +489,9 @@ async function createPreparedFixture(t, options = {}) {
       calls.push({ kind: "readSpec", artifactPath, identity });
       return readReceiptBoundEffectiveAppSpec(artifactPath, identity);
     },
+    platform: "darwin",
+    bindQemuWindow: async () => ({ ok: true, binding: LOCOMOTION_WINDOW }),
+    focusQemuWindow: async () => null,
     probeHostWindow: async () => clearLocomotionHostWindow(),
     snapshotPriorForeground: async (context) => {
       calls.push({ kind: "snapshotPrior", context });
@@ -861,6 +873,127 @@ async function createPreparedFixture(t, options = {}) {
   };
   return { input, dependencies, calls, healthLogs, windowDumps, applicationBinding, bootId, pose, capabilityAck, publishedReceipt, effectiveSpec };
 }
+
+test("locomotion reuses one bound window through prepare and step and consumes capture observations", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  let bindCalls = 0;
+  let focused = false;
+  let probeCalls = 0;
+  let captureCalls = 0;
+  fixture.dependencies.bindQemuWindow = async () => {
+    bindCalls++;
+    return { ok: true, binding: LOCOMOTION_WINDOW };
+  };
+  fixture.dependencies.focusQemuWindow = async (binding) => {
+    assert.equal(binding, LOCOMOTION_WINDOW);
+    focused = true;
+    return null;
+  };
+  fixture.dependencies.probeHostWindow = async (serial, binding) => {
+    probeCalls++;
+    assert.equal(serial, fixture.input.serial);
+    assert.equal(binding, LOCOMOTION_WINDOW);
+    return clearLocomotionHostWindow({ occluded: !focused, overlappingOwners: focused ? [] : ["Terminal"] });
+  };
+  const capture = fixture.dependencies.captureSettled;
+  fixture.dependencies.captureSettled = async (input, context) => {
+    captureCalls++;
+    assert.equal(context?.hostWindowBinding, LOCOMOTION_WINDOW);
+    const captured = await capture(input);
+    captured.receipt.hostWindowProbe = clearLocomotionHostWindow({ observedAt: `capture-${captureCalls}` });
+    return captured;
+  };
+  const orchestrator = createInAppLocomotionOrchestrator(fixture.dependencies);
+  const prepared = await orchestrator.execute(fixture.input);
+  assert.equal(prepared.status, "needs_baseline_review");
+  const stepped = await orchestrator.execute({
+    action: "step", runId: prepared.runId, reviewedPriorFrame: reviewFor(prepared.requiredReview[0]),
+    waypoint: structuredClone(fixture.input.route.waypoints[0]),
+  });
+  assert.equal(stepped.status, "needs_waypoint_review");
+  assert.equal(bindCalls, 1);
+  assert.equal(prepared.hostWindowFocusRequest.status, "requested");
+  assert.equal(stepped.hostWindowFocusRequest.status, "requested");
+  const samples = [...prepared.hostWindowProbes, ...stepped.hostWindowProbes];
+  assert.equal(samples.length, probeCalls + captureCalls);
+  assert.equal(samples.filter((sample) => sample.probe.observedAt.startsWith("capture-")).length, 2);
+  assert.equal(probeCalls, 6, "prepare and step retain input/measurement gates without capture-only host queries");
+});
+
+test("prepare charges bound-window focus time to its original phase deadline", async (t) => {
+  let nowNs = 0n;
+  const fixture = await createPreparedFixture(t, {
+    inputOverrides: { budgets: { maxDurationMs: 320_000, routeReserveMs: 105_000, restorationReserveMs: 105_000 } },
+    monotonicNs: () => nowNs,
+  });
+  fixture.dependencies.focusQemuWindow = async () => { nowNs = 111_000_000_000n; return null; };
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(result.status, "preparation_failed");
+  assert.match(result.primaryError, /deadline|budget/i);
+  assert.equal(fixture.calls.some((call) => call.kind === "snapshotPrior" || call.kind === "launch"), false,
+    "focus must not restart a fresh preparation budget after the admitted phase has elapsed");
+});
+
+test("locomotion refuses a retained covered baseline capture before accepting its review", async (t) => {
+  const fixture = await createPreparedFixture(t);
+  const capture = fixture.dependencies.captureSettled;
+  fixture.dependencies.captureSettled = async (input) => {
+    const captured = await capture(input);
+    captured.receipt.hostWindowProbe = clearLocomotionHostWindow({ occluded: true, overlappingOwners: ["Terminal"] });
+    return captured;
+  };
+  const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+  assert.equal(result.status, "preparation_failed");
+  assert.equal(result.structuralStop, "host_window_occluded");
+  assert.equal(fixture.calls.some((call) => call.kind === "readReview"), false);
+});
+
+test("injected locomotion device runners cannot fall through capture or host operations into real processes", async (t) => {
+  const liveEffects = [];
+  const deny = (name) => () => {
+    liveEffects.push(name);
+    throw new Error(`forbidden live effect: ${name}`);
+  };
+  for (const name of ["spawn", "spawnSync", "exec", "execSync", "execFile", "execFileSync", "fork"]) {
+    t.mock.method(childProcess, name, deny(name));
+  }
+  t.mock.method(net.Socket.prototype, "connect", deny("socket.connect"));
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const unused = () => { throw new Error("injected runner must not be needed for unsupported capability"); };
+  const selfModifying = {
+    resolveAdb: () => { delete selfModifying.resolveAdb; return "/fixture/adb"; },
+    runText: unused, runBytes: unused, sleep: unused, monotonicNs: () => 1n,
+  };
+  for (const options of [
+    { resolveAdb: () => "/fixture/adb", runText: unused, runBytes: unused, sleep: unused, monotonicNs: () => 1n },
+    Object.create({ resolveAdb: () => "/fixture/adb", runText: unused, runBytes: unused, sleep: unused, monotonicNs: () => 1n }),
+    selfModifying,
+  ]) {
+    const dependencies = worldLocomotion.createLiveInAppLocomotionDependencies(options);
+    const capture = dependencies.captureSettled({ serial: "emulator-5554", outPath: path.join(os.tmpdir(), "injected-locomotion.png"), maxTries: 2, intervalMs: 0, comparison: "byte_exact" });
+    await assert.rejects(capture, /capture is unavailable with injected device runners/);
+    assert.equal((await dependencies.bindQemuWindow("emulator-5554")).ok, false);
+    assert.match(await dependencies.focusQemuWindow(LOCOMOTION_WINDOW), /unavailable/);
+    assert.equal((await dependencies.probeHostWindow("emulator-5554", LOCOMOTION_WINDOW)).status, "unavailable");
+  }
+  assert.deepEqual(liveEffects, [], "complete fake device runners cannot unlock omitted host or capture backends");
+});
+
+test("locomotion adb and bridge preparation is available off macOS without binding or focusing a host window", async (t) => {
+  for (const platform of ["linux", "win32"]) await t.test(platform, async (t) => {
+    const fixture = await createPreparedFixture(t);
+    fixture.dependencies.platform = platform;
+    fixture.dependencies.bindQemuWindow = async () => { throw new Error("host binding must not run"); };
+    fixture.dependencies.focusQemuWindow = async () => { throw new Error("host focus must not run"); };
+    fixture.dependencies.probeHostWindow = async () => { throw new Error("CoreGraphics must not run"); };
+    const result = await createInAppLocomotionOrchestrator(fixture.dependencies).execute(fixture.input);
+    assert.equal(result.status, "needs_baseline_review");
+    assert.equal(result.hostWindowFocusRequest.status, "not_applicable");
+    assert.ok(result.hostWindowProbes.every((sample) => sample.probe.status === "not_applicable"));
+    assert.ok(fixture.calls.some((call) => call.kind === "launch"));
+  });
+});
 
 test("prepare host-window precondition refuses occluded, missing, and unavailable windows before device effects", async (t) => {
   for (const [label, probe, code] of [
@@ -5753,6 +5886,7 @@ function liveLaunchRetryFixture(results, onSleep = () => {}) {
   let index = 0;
   const effects = [];
   const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+    runBytes: async () => { throw new Error("binary runner is outside this fixture"); },
     resolveAdb: () => "/fixture/injected-adb",
     monotonicNs: () => nowNs,
     sleep: async (ms) => {
@@ -5834,6 +5968,7 @@ function liveSafetyReadinessFixture(snapshots, onSleep = async () => {}) {
   let sampleIndex = 0;
   const effects = [];
   const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+    runBytes: async () => { throw new Error("binary runner is outside this fixture"); },
     resolveAdb: () => "/fixture/injected-adb",
     monotonicNs: () => nowNs,
     sleep: async (ms) => {
@@ -5956,6 +6091,7 @@ function liveCurrentLogFixture(t, overrides = {}) {
   let nowNs = 0n;
   const effects = [];
   const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+    runBytes: async () => { throw new Error("binary runner is outside this fixture"); },
     resolveAdb: () => "/fixture/injected-adb",
     monotonicNs: () => nowNs,
     sleep: async (ms) => { nowNs += BigInt(ms) * 1_000_000n; },
@@ -6144,6 +6280,7 @@ test("live prepare clearance waits for both exact process and foreground absence
       const cleared = new Set();
       const effects = [];
       const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+        runBytes: async () => { throw new Error("binary runner is outside this fixture"); },
         resolveAdb: () => "/fixture/injected-adb",
         monotonicNs: () => nowNs,
         sleep: async (ms) => { nowNs += BigInt(ms) * 1_000_000n; },
@@ -6196,6 +6333,7 @@ test("live prepare clearance rejects uncertain PID probes and obeys the absolute
       let nowNs = 0n;
       const effects = [];
       const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+        runBytes: async () => { throw new Error("binary runner is outside this fixture"); },
         resolveAdb: () => "/fixture/injected-adb",
         monotonicNs: () => nowNs,
         sleep: async (ms) => { nowNs += BigInt(ms) * 1_000_000n; },
@@ -6448,6 +6586,7 @@ test("receipt-bound prepare failure records known stale when PID absence precede
       let stoppingPackage = null;
       const effects = [];
       const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+        runBytes: async () => { throw new Error("binary runner is outside this fixture"); },
         resolveAdb: () => "/fixture/injected-adb",
         monotonicNs: () => 1_000_000_000n,
         sleep: async () => {},
@@ -6511,6 +6650,7 @@ test("receipt-bound prepare failure records explicit unknown freshness after a c
       });
       let stoppingPackage = null;
       const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+        runBytes: async () => { throw new Error("binary runner is outside this fixture"); },
         resolveAdb: () => "/fixture/injected-adb",
         monotonicNs: () => 1_000_000_000n,
         sleep: async () => {},
@@ -6561,6 +6701,7 @@ test("receipt-bound prepare failure records explicit unknown freshness after a c
 
 test("non-prepare live stops retain the unchanged exact four-key receipt", async () => {
   const live = worldLocomotion.createLiveInAppLocomotionDependencies({
+    runBytes: async () => { throw new Error("binary runner is outside this fixture"); },
     resolveAdb: () => "/fixture/injected-adb",
     monotonicNs: () => 1_000_000_000n,
     sleep: async () => {},

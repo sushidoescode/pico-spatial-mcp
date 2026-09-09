@@ -887,6 +887,13 @@ const FAILURE_RECEIPT_MATCHERS: Readonly<Record<string, FailureReceiptMatcher>> 
       && observedPostWorldSpaceReceiptMatches(state.result)
       && !worldSpaceMatchesTarget(observed, state.verification.target);
   },
+  imported_apk_invalid: (state) => {
+    const receipt = failureQuery(state);
+    return state.verification.runtime.provenance !== undefined
+      && receipt !== null
+      && receipt.query === null
+      && receipt.snapshotId === null;
+  },
   bridge_result_invalid: (state) => {
     const receipt = failureQuery(state);
     if (receipt === null) return false;
@@ -980,6 +987,7 @@ const FAILURE_CODE_PHASES: Readonly<Record<string, readonly VerificationFailureP
   world_space_observation_invalid: ["pre_world_space", "post_world_space"],
   world_space_observation_missing: ["pre_world_space", "post_world_space"],
   coarse_scene_mismatch: ["pre_query", "post_world_space"],
+  imported_apk_invalid: ["pre_query", "post_query"],
   bridge_result_invalid: ["pre_query", "post_query"],
   bridge_label_absent: ["pre_query", "post_query"],
   bridge_not_ready: ["pre_query", "post_query"],
@@ -1437,15 +1445,24 @@ function baselineMatches(dataset: HomeEnvironmentDataset, runtime: SelectorRunti
     && canonicalIdentity(baseline.provenance ?? null).sha256 === canonicalIdentity(runtime.provenance ?? null).sha256;
 }
 
+class ImportedApkValidationError extends Error {}
+
 async function validatedQuery(
   deps: HomeEnvironmentSelectorDependencies,
   runtime: SelectorRuntimeInput,
 ): Promise<z.infer<typeof querySceneAnchorsOutputSchema>> {
   // Check the caller's bytes and compiled manifest before any bridge or picker operation.
-  const imported = runtime.provenance ? await validateImportedApk(runtime.provenance, {
-    packageName: runtime.packageName,
-    declaredStageStyle: runtime.expectedStageStyle === "Mixed" ? "1" : "3",
-  }) : null;
+  let imported: Awaited<ReturnType<typeof validateImportedApk>> | null = null;
+  if (runtime.provenance) {
+    try {
+      imported = await validateImportedApk(runtime.provenance, {
+        packageName: runtime.packageName,
+        declaredStageStyle: runtime.expectedStageStyle === "Mixed" ? "1" : "3",
+      });
+    } catch (error) {
+      throw new ImportedApkValidationError(errorDetail(error));
+    }
+  }
   const query = querySceneAnchorsOutputSchema.parse(await deps.querySceneAnchors(sceneQueryInput(runtime)));
   if (imported && query.applicationRuntimeBinding?.provenance
     && canonicalIdentity(imported).sha256 !== canonicalIdentity(query.applicationRuntimeBinding.provenance).sha256) {
@@ -1551,7 +1568,7 @@ async function verifyPostSwitch(
   try {
     post = await validatedQuery(deps, runtime);
   } catch (error) {
-    return failure(context, "post_query", "bridge_result_invalid", errorDetail(error));
+    return failure(context, "post_query", error instanceof ImportedApkValidationError ? "imported_apk_invalid" : "bridge_result_invalid", errorDetail(error));
   }
   verification.postQuery = post;
   verification.postSnapshotId = post.snapshotId;
@@ -1673,7 +1690,7 @@ export async function executeSelectHomeEnvironment(
   try {
     pre = await validatedQuery(deps, runtime);
   } catch (error) {
-    return failure(initial, "pre_query", "bridge_result_invalid", errorDetail(error));
+    return failure(initial, "pre_query", error instanceof ImportedApkValidationError ? "imported_apk_invalid" : "bridge_result_invalid", errorDetail(error));
   }
   verification.preQuery = pre;
   verification.preSnapshotId = pre.snapshotId;
@@ -1842,7 +1859,7 @@ export function registerHomeEnvironmentSelectorTools(
     "select_home_environment",
     {
       description:
-        "Rank measured PICO Emulator 6.0 home environments, optionally perform one guarded host selection, and report success only after a changed receipt-bound mesh uniquely classifies as the target. Runtime binding accepts native receipts and inspected imported_apk provenance with APK and process continuity. Scene ID and host clicks are non-discriminating; evidence ceiling is structural.",
+        "Rank measured PICO Emulator 6.0 home environments, optionally perform one guarded host selection, and report success only after a changed receipt-bound mesh uniquely classifies as the target. Runtime binding accepts native receipts and inspected imported_apk provenance with APK and process continuity. Local APK hashing or manifest-inspection failures return imported_apk_invalid; invalid bridge results return bridge_result_invalid. Scene ID and host clicks are non-discriminating; evidence ceiling is structural.",
       inputSchema: selectHomeEnvironmentInputSchema,
       // SDK 1.30 advertises/validates only a root ZodObject or raw shape here;
       // the handler applies the relational superRefine before publishing content.

@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { completeDependencies } from "./dependencies.js";
 import {
   AGENT_BRIDGE_LOCOMOTION_CACHE_DIRECTORY,
   AGENT_BRIDGE_LOCOMOTION_ROOT_ID,
@@ -30,6 +31,7 @@ import {
   type RequiredReviewItem,
 } from "./boundaryexperiment.js";
 import { resolveAdb } from "./emulatorlook.js";
+import { bindMacQemuWindow, frontmostQemu, type BoundQemuWindow, type QemuWindowBindingResult } from "./cameradrive.js";
 import { hostWindowPrecondition, probeHostWindow, unavailableHostWindowProbe, type HostWindowProbe } from "./hostwindow.js";
 import {
   parseForegroundActivities,
@@ -693,12 +695,22 @@ export class LocomotionStopClearanceError extends Error {
 }
 
 interface LocomotionHostWindowEvidence {
+  hostWindowFocusRequest: {
+    status: "requested" | "failed" | "not_applicable";
+    error: string | null;
+    qemuWindowId: number | null;
+    qemuWindowOwnerPid: number | null;
+    durationMs: number;
+  } | null;
   hostWindowProbe: HostWindowProbe;
   hostWindowProbes: Array<{ phase: string; probe: HostWindowProbe }>;
 }
 
 export interface InAppLocomotionDependencies {
-  probeHostWindow?(serial: string): Promise<HostWindowProbe>;
+  platform?: NodeJS.Platform;
+  bindQemuWindow?(serial: string): Promise<QemuWindowBindingResult>;
+  focusQemuWindow?(binding: BoundQemuWindow): Promise<string | null>;
+  probeHostWindow?(serial: string, binding?: BoundQemuWindow): Promise<HostWindowProbe>;
   sleep?(durationMs: number): Promise<void>;
   randomBytes(size: number): Buffer;
   now(): string;
@@ -738,7 +750,7 @@ export interface InAppLocomotionDependencies {
     runtime: LocomotionRuntimeBinding;
     onFirstWindowSample(sample: FreshLaunchMonitorHandoff): Promise<void>;
   } & LocomotionEffectBudget): Promise<FreshLaunchMonitorReceipt>;
-  captureSettled(input: CaptureSettledInput): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }>;
+  captureSettled(input: CaptureSettledInput, context?: { hostWindowBinding?: BoundQemuWindow }): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }>;
   readReviewImage(item: LocomotionReviewItem, artifactRoot: string): Buffer;
   sampleContinuity(context: {
     serial: string;
@@ -819,6 +831,7 @@ interface OwnedArtifactBinding extends ReservedArtifactSession {
 }
 
 interface LocomotionState {
+  hostWindowBinding?: BoundQemuWindow;
   input: InAppLocomotionPrepareInput;
   artifact: OwnedArtifactBinding;
   status: "prepared" | "stepped" | "stopped" | "restored" | "adjudicated";
@@ -842,8 +855,8 @@ interface LocomotionState {
   usage: { waypointAttempts: number; successfulWaypoints: number; routeDurationMs: number };
   restoreAttempts: number;
   restoreCompleted: boolean;
-  completedRestore: { reviewedPriorSha256: string; receipt: LocomotionRestoreReceipt } | null;
-  terminalSafeRelease: { reviewedPriorSha256: string; receipt: LocomotionRestoreReceipt } | null;
+  completedRestore: { reviewedPriorSha256: string; receipt: LocomotionRestoreReceipt; hostWindowEvidence: LocomotionHostWindowEvidence } | null;
+  terminalSafeRelease: { reviewedPriorSha256: string; receipt: LocomotionRestoreReceipt; hostWindowEvidence: LocomotionHostWindowEvidence } | null;
   priorRestoreProofDisposition: "accepted" | "state_proven_after_attempt_error" | "state_proven_without_attempt" | null;
   zeroOffsetRecoveryProven: boolean;
   nonzeroMutationMayHaveApplied: boolean;
@@ -1608,7 +1621,7 @@ function validateOwnedArtifactsWithoutMaintenance(
   }
 }
 
-function reserveArtifacts(input: InAppLocomotionPrepareInput, dependencies: InAppLocomotionDependencies): {
+function reserveArtifacts(input: InAppLocomotionPrepareInput, dependencies: InAppLocomotionDependencies, admittedAtNs?: bigint): {
   binding: OwnedArtifactBinding;
   createdAt: string;
   startedAtNs: bigint;
@@ -1617,7 +1630,7 @@ function reserveArtifacts(input: InAppLocomotionPrepareInput, dependencies: InAp
   if (artifactRootIssue(physical)) throw new Error(artifactRootIssue(physical)!);
   const nonce = dependencies.randomBytes(32);
   if (!Buffer.isBuffer(nonce) || nonce.length !== 32) throw new Error("random source must return exactly 32 bytes");
-  const startedAtNs = checkedMonotonic(dependencies);
+  const startedAtNs = admittedAtNs ?? checkedMonotonic(dependencies);
   const createdAt = checkedNow(dependencies);
   const runId = sha256Bytes(Buffer.concat([nonce, Buffer.from(input.serial), Buffer.from(startedAtNs.toString())]));
   const ownerNonceHash = sha256Bytes(nonce);
@@ -2645,6 +2658,7 @@ async function captureWithinDeadline(
   label: string,
   state: CaptureInvocationState,
   buildInput: (remainingMs: number) => CaptureSettledInput,
+  hostWindowBinding?: BoundQemuWindow,
 ): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }> {
   const admittedAtNs = checkedMonotonic(dependencies);
   if (admittedAtNs < phaseStartedNs) {
@@ -2660,7 +2674,7 @@ async function captureWithinDeadline(
   state.captureInput = buildInput(remainingMs);
   let captured: { receipt: CaptureSettledReceipt; frame: Buffer | null };
   try {
-    captured = await dependencies.captureSettled(state.captureInput);
+    captured = await dependencies.captureSettled(state.captureInput, { hostWindowBinding });
   } catch (error) {
     try {
       const completedAtNs = checkedMonotonic(dependencies);
@@ -2801,17 +2815,26 @@ export function createInAppLocomotionOrchestrator(
   const busySerials = new Set<string>();
   const serialOwners = new Map<string, SerialLease>();
   const preparingRoots = new Set<string>();
+  const windowBindings = new WeakMap<LocomotionHostWindowEvidence, BoundQemuWindow>();
+  const preparationStarts = new WeakMap<LocomotionHostWindowEvidence, bigint>();
+  const hostWindowApplies = (): boolean => (dependencies.platform ?? process.platform) === "darwin";
 
   const observeHostWindow = async (
     serial: string,
     evidence: LocomotionHostWindowEvidence,
     phase: string,
+    retainedProbe?: HostWindowProbe,
   ): Promise<void> => {
     let probe: HostWindowProbe;
     try {
-      probe = dependencies.probeHostWindow
-        ? await dependencies.probeHostWindow(serial)
-        : unavailableHostWindowProbe("host window probe dependency is unavailable");
+      const binding = windowBindings.get(evidence);
+      probe = !hostWindowApplies()
+        ? { ...unavailableHostWindowProbe("host window visibility is not applicable on this platform"), status: "not_applicable" }
+        : retainedProbe ?? (!binding
+          ? unavailableHostWindowProbe(evidence.hostWindowProbe.detail ?? "host window binding is unavailable")
+          : dependencies.probeHostWindow
+            ? await dependencies.probeHostWindow(serial, binding)
+            : unavailableHostWindowProbe("host window probe dependency is unavailable", binding));
     } catch (error) {
       probe = unavailableHostWindowProbe(errorText(error));
     }
@@ -2827,18 +2850,51 @@ export function createInAppLocomotionOrchestrator(
     evidence: LocomotionHostWindowEvidence,
     phase: string,
     deadlineNs: bigint,
+    retainedProbe?: HostWindowProbe,
   ): Promise<void> => {
-    await observeHostWindow(serial, evidence, phase);
+    await observeHostWindow(serial, evidence, phase, retainedProbe);
     assertHostWindow(evidence);
     if (checkedMonotonic(dependencies) >= deadlineNs) {
       throw new LocomotionStageError("budget_exhausted", `${phase} host window probe exhausted the admitted deadline`);
     }
   };
-  const initialHostWindowEvidence = async (serial: string, phase: string): Promise<LocomotionHostWindowEvidence> => {
+  const initialHostWindowEvidence = async (serial: string, phase: string, initialBinding?: BoundQemuWindow): Promise<LocomotionHostWindowEvidence> => {
     const evidence: LocomotionHostWindowEvidence = {
+      hostWindowFocusRequest: null,
       hostWindowProbe: unavailableHostWindowProbe("host window has not been sampled"),
       hostWindowProbes: [],
     };
+    if (phase === "prepare_preflight") preparationStarts.set(evidence, checkedMonotonic(dependencies));
+    if (!hostWindowApplies()) {
+      evidence.hostWindowFocusRequest = {
+        status: "not_applicable", error: null, qemuWindowId: null, qemuWindowOwnerPid: null, durationMs: 0,
+      };
+    } else {
+      let binding = initialBinding;
+      try {
+        if (!binding && phase === "prepare_preflight") {
+          const selected = dependencies.bindQemuWindow ? await dependencies.bindQemuWindow(serial) : null;
+          if (!selected?.ok) throw new Error(selected?.detail ?? "host window binding dependency is unavailable");
+          binding = selected.binding;
+        }
+        if (!binding || binding.discoveredSerial !== serial) throw new Error("the run has no exact serial-bound host window");
+        windowBindings.set(evidence, binding);
+        const startedNs = dependencies.monotonicNs();
+        let error: string | null;
+        try {
+          error = dependencies.focusQemuWindow ? await dependencies.focusQemuWindow(binding) : "host window focus dependency is unavailable";
+        } catch (cause) {
+          error = errorText(cause);
+        }
+        evidence.hostWindowFocusRequest = {
+          status: error ? "failed" : "requested", error,
+          qemuWindowId: binding.qemuWindowId, qemuWindowOwnerPid: binding.qemuWindowOwnerPid,
+          durationMs: Math.max(0, Number(dependencies.monotonicNs() - startedNs) / 1_000_000),
+        };
+      } catch (error) {
+        evidence.hostWindowProbe = unavailableHostWindowProbe(errorText(error), binding);
+      }
+    }
     await observeHostWindow(serial, evidence, phase);
     return evidence;
   };
@@ -2846,8 +2902,9 @@ export function createInAppLocomotionOrchestrator(
     serial: string,
     phase: string,
     action: (evidence: LocomotionHostWindowEvidence) => Promise<Record<string, any>>,
+    initialBinding?: BoundQemuWindow,
   ): Promise<Record<string, any>> => {
-    const evidence = await initialHostWindowEvidence(serial, phase);
+    const evidence = await initialHostWindowEvidence(serial, phase, initialBinding);
     try {
       return { ...await action(evidence), ...evidence };
     } catch (cause) {
@@ -3028,7 +3085,7 @@ export function createInAppLocomotionOrchestrator(
     };
 
     try {
-      const reserved = reserveArtifacts(input, dependencies);
+      const reserved = reserveArtifacts(input, dependencies, preparationStarts.get(hostWindows));
       artifact = reserved.binding;
       healthBoundaryMarker = `PICO_LOCOMOTION_${artifact.runId.slice(0, 16)}_PREPARE_BEGIN`;
       const deadlineNs = reserved.startedAtNs + BigInt(input.budgets.maxDurationMs) * 1_000_000n;
@@ -3234,7 +3291,6 @@ export function createInAppLocomotionOrchestrator(
           throw new Error("fresh-launch dialog result does not reproduce from its retained raw window dump");
         }
       }
-      await requireHostWindow(input.serial, hostWindows, "prepare_before_capture", prepareDeadlineNs);
       const baselinePath = path.join(artifact.absoluteRoot, "captures", "000-app-baseline.png");
       const captured = await captureWithinDeadline(
         reserved.startedAtNs,
@@ -3256,12 +3312,13 @@ export function createInAppLocomotionOrchestrator(
             mode: "stable",
           };
         },
+        windowBindings.get(hostWindows),
       );
       const baselineCaptureInput = baselineCaptureInvocation.captureInput;
       const baselineCaptureFence = baselineCaptureInvocation.fence;
       if (!baselineCaptureInput || !baselineCaptureFence) throw new Error("baseline capture request/invocation was not retained");
       baselineCaptureReceipt = captured.receipt;
-      await requireHostWindow(input.serial, hostWindows, "prepare_after_capture", prepareDeadlineNs);
+      await requireHostWindow(input.serial, hostWindows, "prepare_after_capture", prepareDeadlineNs, captured.receipt.hostWindowProbe);
       const review = captureReview(captured, {
         captureInput: baselineCaptureInput,
         captureInvocation: baselineCaptureFence,
@@ -3307,6 +3364,7 @@ export function createInAppLocomotionOrchestrator(
       const preparationLog = await finalizePreparationBracket(true);
       if (!preparationLog) throw new Error("preparation launch-handoff bracket was not retained");
       const state: LocomotionState = {
+        hostWindowBinding: windowBindings.get(hostWindows),
         input,
         artifact,
         status: "prepared",
@@ -3843,7 +3901,6 @@ export function createInAppLocomotionOrchestrator(
         throw new LocomotionStageError("root_readback_mismatch", "locomotion acknowledgement lost exact mechanism/target/root-generation readback binding");
       }
       state.rootGeneration = expectedGeneration;
-      await requireHostWindow(state.input.serial, hostWindows, "step_after_motion", captureDeadlineNs);
       const captureRemainingMs = remainingUntilMs(captureDeadlineNs, dependencies);
       if (captureRemainingMs < 2) throw new LocomotionStageError("budget_exhausted", "route budget was exhausted before transition capture");
       const capturePath = path.join(state.artifact.absoluteRoot, "captures", `${String(waypoint.seq).padStart(3, "0")}-waypoint.png`);
@@ -3868,6 +3925,7 @@ export function createInAppLocomotionOrchestrator(
             priorSha256: state.currentReview.captureSha256,
           };
         },
+        state.hostWindowBinding,
       );
       const waypointCaptureInput = captureInvocation.captureInput;
       const waypointCaptureFence = captureInvocation.fence;
@@ -3877,7 +3935,7 @@ export function createInAppLocomotionOrchestrator(
       if (captured.receipt.status !== "settled") {
         throw new LocomotionStageError(captured.receipt.error?.code ?? "route_unsettled", captured.receipt.error?.detail ?? "transition capture did not settle");
       }
-      await requireHostWindow(state.input.serial, hostWindows, "step_after_capture", captureDeadlineNs);
+      await requireHostWindow(state.input.serial, hostWindows, "step_after_capture", captureDeadlineNs, captured.receipt.hostWindowProbe);
       capturedReview = captureReview(captured, {
         captureInput: waypointCaptureInput,
         captureInvocation: waypointCaptureFence,
@@ -4489,11 +4547,13 @@ export function createInAppLocomotionOrchestrator(
             ...(reviewedMovedFrame ? { priorSha256: state.currentReview.captureSha256 } : {}),
           };
         },
+        state.hostWindowBinding,
       );
       const restoreCaptureInput = captureInvocation.captureInput;
       const restoreCaptureFence = captureInvocation.fence;
       if (!restoreCaptureInput || !restoreCaptureFence) throw new Error("restore capture request/invocation was not retained");
       captureReceipt = captured.receipt;
+      await observeHostWindow(state.input.serial, hostWindows, "restore_after_capture", captured.receipt.hostWindowProbe);
       if (captured.receipt.status !== "settled") {
         throw new LocomotionStageError(captured.receipt.error?.code ?? "restoration_unsettled", captured.receipt.error?.detail ?? "restoration capture did not settle");
       }
@@ -4946,11 +5006,13 @@ export function createInAppLocomotionOrchestrator(
       state.completedRestore = {
         reviewedPriorSha256: input.reviewedPriorFrame.captureSha256,
         receipt,
+        hostWindowEvidence: structuredClone(hostWindows),
       };
     } else if (safeRelease) {
       state.terminalSafeRelease = {
         reviewedPriorSha256: input.reviewedPriorFrame.captureSha256,
         receipt,
+        hostWindowEvidence: structuredClone(hostWindows),
       };
     }
     return receipt;
@@ -5085,11 +5147,16 @@ export function createInAppLocomotionOrchestrator(
     busyRuns.add(input.runId);
     if (mutatesSerial) busySerials.add(state.input.serial);
     try {
+      const terminalRestore = state.completedRestore ?? state.terminalSafeRelease;
+      if (input.action === "restore" && terminalRestore) {
+        const retainedHostWindows = structuredClone(terminalRestore.hostWindowEvidence);
+        return { ...await executeRestore(input, state, retainedHostWindows), ...retainedHostWindows };
+      }
       return await executeWithHostWindowEvidence(state.input.serial, `${input.action}_preflight`, (hostWindows) => {
         if (input.action === "step") return executeStep(input, state, hostWindows);
         if (input.action === "restore") return executeRestore(input, state, hostWindows);
         return executeAdjudicate(input, state, hostWindows);
-      });
+      }, state.hostWindowBinding);
     } finally {
       busyRuns.delete(input.runId);
       if (mutatesSerial) busySerials.delete(state.input.serial);
@@ -5242,11 +5309,20 @@ export interface LiveInAppLocomotionOptions {
 export function createLiveInAppLocomotionDependencies(
   options: LiveInAppLocomotionOptions = {},
 ): InAppLocomotionDependencies {
-  const adb = (options.resolveAdb ?? resolveAdb)();
-  const liveRunText = options.runText ?? run;
-  const liveRunBytes = options.runBytes ?? runBinary;
-  const liveSleep = options.sleep ?? sleep;
-  const liveClock = options.monotonicNs ?? (() => process.hrtime.bigint());
+  let useLiveBackends = false;
+  const selected = completeDependencies<Required<LiveInAppLocomotionOptions>>(
+    "createLiveInAppLocomotionDependencies", options,
+    { resolveAdb: true, runText: true, runBytes: true, sleep: true, monotonicNs: true },
+    () => {
+      useLiveBackends = true;
+      return { resolveAdb, runText: run, runBytes: runBinary, sleep, monotonicNs: () => process.hrtime.bigint() };
+    },
+  );
+  const adb = selected.resolveAdb();
+  const liveRunText = selected.runText;
+  const liveRunBytes = selected.runBytes;
+  const liveSleep = selected.sleep;
+  const liveClock = selected.monotonicNs;
 
   const clockNs = (): bigint => {
     const value = liveClock();
@@ -5478,13 +5554,22 @@ export function createLiveInAppLocomotionDependencies(
   };
 
   return {
+    platform: process.platform,
+    bindQemuWindow: useLiveBackends
+      ? (serial) => bindMacQemuWindow(adb, serial)
+      : async () => ({ ok: false, code: "binding_failed", detail: "host window binding is unavailable with injected device runners" }),
+    focusQemuWindow: useLiveBackends
+      ? frontmostQemu
+      : async () => "host window focus is unavailable with injected device runners",
     sleep: liveSleep,
     randomBytes: (size) => crypto.randomBytes(size),
     now: () => new Date().toISOString(),
     monotonicNs: clockNs,
     readNativeRunReceipt,
     readEffectiveAppSpec: readReceiptBoundEffectiveAppSpec,
-    probeHostWindow,
+    probeHostWindow: useLiveBackends
+      ? probeHostWindow
+      : async (_serial, binding) => unavailableHostWindowProbe("host window probe is unavailable with injected device runners", binding),
     snapshotPriorForeground: async (context) => {
       const { serial } = context;
       const activityOutput = await checked(serial, ["shell", "dumpsys", "activity", "activities"], "prior foreground activity snapshot", context, 20_000);
@@ -5812,7 +5897,11 @@ export function createLiveInAppLocomotionDependencies(
         rawWindowDumps,
       };
     },
-    captureSettled: (input) => executeLiveCaptureSettled(input, { adbPath: adb, monotonicNs: clockNs }),
+    captureSettled: useLiveBackends
+      ? (input, context) => executeLiveCaptureSettled(input, {
+        adbPath: adb, monotonicNs: clockNs, hostWindowBinding: context?.hostWindowBinding,
+      })
+      : async () => { throw new Error("settled capture is unavailable with injected device runners"); },
     readReviewImage: readBoundReviewImage,
     sampleContinuity: sampleContinuityLive,
     requestLocomotion: (input) => requestAgentBridgeLocomotion(adb, input, {
@@ -5952,14 +6041,18 @@ export function registerInAppLocomotionTools(
   server.registerTool(
     "run_in_app_locomotion_route",
     {
-      description: "Run one receipt-bound Full-stage in-app world-root route as strict prepare, reviewed step, restore, and structural adjudicate actions. A receipt-bound prior foreground is withheld and not relaunched because relaunch would orphan its immutable receipt. Every mutation uses one explicit direct or replacement mechanism, exact serial and runtime binding, stable captures, safety/continuity evidence, and a caller-reserved external artifact root. Returned captures still require LOOK; the tool does not award visual or device verification.",
+      description: "Run one receipt-bound Full-stage in-app world-root route as strict prepare, reviewed step, restore, and structural adjudicate actions. A receipt-bound prior foreground is withheld and not relaunched because relaunch would orphan its immutable receipt. Every mutation uses one explicit direct or replacement mechanism, exact serial and runtime binding, stable captures, safety/continuity evidence, and a caller-reserved external artifact root. On macOS, request focus for the run's bound qemu window and require clear visibility before measurement; other hosts record host-window checks as not_applicable. Returned captures still require LOOK; the tool does not award visual or device verification.",
       inputSchema: inAppLocomotionInputSchema,
     },
     async (args) => {
       let responseEvidence: LocomotionHostWindowEvidence | null = null;
       try {
         const result = await orchestrator.execute(args as InAppLocomotionInput);
-        responseEvidence = { hostWindowProbe: result.hostWindowProbe, hostWindowProbes: result.hostWindowProbes };
+        responseEvidence = {
+          hostWindowFocusRequest: result.hostWindowFocusRequest,
+          hostWindowProbe: result.hostWindowProbe,
+          hostWindowProbes: result.hostWindowProbes,
+        };
         const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: "image/png" }> = [];
         const reviews = Array.isArray(result.requiredReview) ? result.requiredReview as LocomotionReviewItem[] : [];
         let responseBytes = 0;
@@ -5974,6 +6067,7 @@ export function registerInAppLocomotionTools(
       } catch (error) {
         const evidence = (error as { hostWindowEvidence?: LocomotionHostWindowEvidence } | null)?.hostWindowEvidence
           ?? responseEvidence ?? {
+            hostWindowFocusRequest: null,
             hostWindowProbe: unavailableHostWindowProbe("locomotion action failed before a host-window observation was retained"),
             hostWindowProbes: [],
           };

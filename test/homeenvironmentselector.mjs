@@ -3183,9 +3183,91 @@ for (const [name, mutate, expectedError] of [
     const deps = selectorDeps();
     const result = await execute(switchInput({ runtime: importedSelectorRuntime(provenance) }), deps);
     assert.equal(result.status, "verification_failed");
+    assert.equal(result.error.code, "imported_apk_invalid");
+    assert.equal(result.failurePhase, "pre_query");
     assert.match(result.error.detail, expectedError);
     assert.equal(deps.hostInputs.length, 0);
     assert.equal(deps.queryInputs.length, 0);
+  });
+}
+
+test("imported APK inspection failure names the missing local aapt2 dependency before querying the bridge", async (t) => {
+  const fixture = importedApkFixture(t);
+  fs.rmSync(path.join(fixture.root, "sdk", "build-tools"), { recursive: true });
+  const deps = selectorDeps();
+  const result = await execute(switchInput({ runtime: importedSelectorRuntime(fixture.provenance) }), deps);
+  assert.equal(result.status, "verification_failed");
+  assert.equal(result.error.code, "imported_apk_invalid");
+  assert.equal(result.failurePhase, "pre_query");
+  assert.match(result.error.detail, /requires.*aapt2/i);
+  assert.equal(deps.queryInputs.length, 0);
+  assert.equal(deps.hostInputs.length, 0);
+  const nativeFailure = structuredClone(result);
+  nativeFailure.verification.runtime = RUNTIME;
+  assert.equal(selectHomeEnvironmentOutputSchema.safeParse(nativeFailure).success, false,
+    "an imported APK failure requires imported provenance in the returned runtime");
+});
+
+test("imported APK replacement after selection remains a local validation failure before the post query", async (t) => {
+  const fixture = importedApkFixture(t);
+  const deps = selectorDeps({
+    preQuery: importedSelectorQuery(bedroomDayQuery, fixture.receipt),
+    postQuery: importedSelectorQuery(livingroomDayQuery, fixture.receipt),
+  });
+  const selectHost = deps.selectHost;
+  deps.selectHost = async (...args) => {
+    const selected = await selectHost(...args);
+    fs.appendFileSync(fixture.provenance.apkPath, "changed after selection");
+    return selected;
+  };
+  const result = await execute(switchInput({ runtime: importedSelectorRuntime(fixture.provenance) }), deps);
+  assert.equal(result.status, "verification_failed");
+  assert.equal(result.error.code, "imported_apk_invalid");
+  assert.equal(result.failurePhase, "post_query");
+  assert.equal(deps.queryInputs.length, 1, "only the valid pre-switch bridge query ran");
+  assert.equal(deps.hostInputs.length, 1);
+  assert.equal(result.verification.postQuery, null);
+  assert.equal(result.verification.postSnapshotId, null);
+  const inventedQuery = structuredClone(result);
+  inventedQuery.verification.postQuery = importedSelectorQuery(livingroomDayQuery, fixture.receipt);
+  inventedQuery.verification.postSnapshotId = inventedQuery.verification.postQuery.snapshotId;
+  assert.equal(selectHomeEnvironmentOutputSchema.safeParse(inventedQuery).success, false,
+    "local APK validation failure cannot carry a query that was never performed");
+});
+
+test("imported APK verify rechecks local bytes before the post query", async (t) => {
+  const fixture = importedApkFixture(t);
+  const runtime = importedSelectorRuntime(fixture.provenance);
+  const switched = await execute(switchInput({ runtime }), selectorDeps({
+    preQuery: importedSelectorQuery(bedroomDayQuery, fixture.receipt),
+    hostResult: hostManual(),
+  }));
+  assert.equal(switched.status, "manual_switch_required");
+  fs.rmSync(fixture.provenance.apkPath);
+  const deps = selectorDeps({ verifyOnly: true });
+  const result = await execute({
+    action: "verify", ...SOURCE, runtime,
+    baseline: switched.baseline, marker: switched.verification.marker,
+  }, deps);
+  assert.equal(result.status, "verification_failed");
+  assert.equal(result.error.code, "imported_apk_invalid");
+  assert.equal(result.failurePhase, "post_query");
+  assert.equal(deps.queryInputs.length, 0);
+  assert.equal(result.hostSelection, null);
+});
+
+for (const kind of ["invalid bridge payload", "mismatched bridge manifest provenance"]) {
+  test(`a locally valid imported APK keeps ${kind} classified as bridge_result_invalid`, async (t) => {
+    const fixture = importedApkFixture(t);
+    const preQuery = importedSelectorQuery(bedroomDayQuery, fixture.receipt);
+    if (kind === "invalid bridge payload") delete preQuery.applicationRuntimeBinding.provenance;
+    else preQuery.applicationRuntimeBinding.provenance.manifestInspection.manifestDumpSha256 = "a".repeat(64);
+    const deps = selectorDeps({ preQuery });
+    const result = await execute(switchInput({ runtime: importedSelectorRuntime(fixture.provenance) }), deps);
+    assert.equal(result.status, "verification_failed");
+    assert.equal(result.error.code, "bridge_result_invalid");
+    assert.equal(deps.queryInputs.length, 1, "local inspection succeeded and the bridge was queried");
+    assert.equal(deps.hostInputs.length, 0);
   });
 }
 
@@ -3327,6 +3409,7 @@ for (const [kind, options, pattern] of [
     const deps = selectorDeps();
     const result = await execute(switchInput({ runtime: importedSelectorRuntime(fixture.provenance) }), deps);
     assert.equal(result.status, "verification_failed");
+    assert.equal(result.error.code, "imported_apk_invalid");
     assert.match(result.error.detail, pattern);
     assert.equal(deps.hostInputs.length, 0);
     assert.equal(deps.queryInputs.length, 0);
@@ -3339,6 +3422,7 @@ test("imported APK selector rejects a missing launcher while explicit component 
   const deps = selectorDeps();
   const result = await execute(switchInput({ runtime: importedSelectorRuntime(fixture.provenance) }), deps);
   assert.equal(result.status, "verification_failed");
+  assert.equal(result.error.code, "imported_apk_invalid");
   assert.match(result.error.detail, /no.*launch|one.*launch/i);
   assert.equal(deps.queryInputs.length, 0);
   assert.equal(deps.hostInputs.length, 0);

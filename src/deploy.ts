@@ -4,6 +4,7 @@ import os from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, runBinary, okJson, fail, image, expandHome } from "./util.js";
+import { completeDependencies } from "./dependencies.js";
 import { probeDeviceIdentity, selectPicoDevice } from "./swanparity.js";
 import { validateCaptureBuffer } from "./evidence.js";
 
@@ -21,20 +22,22 @@ function resolveAdb(): string {
   return "adb";
 }
 
-export function registerDeployTools(
-  server: McpServer,
-  deps: {
-    runFn?: typeof run;
-    runBinaryFn?: typeof runBinary;
-    probeDeviceIdentityFn?: typeof probeDeviceIdentity;
-    resolveAdbFn?: typeof resolveAdb;
-    sleepFn?: (ms: number) => Promise<void>;
-  } = {},
-) {
-  const runFn = deps.runFn ?? run;
-  const runBinaryFn = deps.runBinaryFn ?? runBinary;
-  const identityProbe = deps.probeDeviceIdentityFn ?? probeDeviceIdentity;
-  const sleepFn = deps.sleepFn ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+interface DeployDependencies {
+  runFn: typeof run;
+  runBinaryFn: typeof runBinary;
+  probeDeviceIdentityFn: typeof probeDeviceIdentity;
+  resolveAdbFn: typeof resolveAdb;
+  sleepFn: (ms: number) => Promise<void>;
+}
+
+export function registerDeployTools(server: McpServer, overrides: Partial<DeployDependencies> = {}) {
+  const deps = completeDependencies<DeployDependencies>(
+    "registerDeployTools", overrides,
+    { runFn: true, runBinaryFn: true, probeDeviceIdentityFn: true, resolveAdbFn: true, sleepFn: true },
+    () => ({ runFn: run, runBinaryFn: runBinary, probeDeviceIdentityFn: probeDeviceIdentity, resolveAdbFn: resolveAdb,
+      sleepFn: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)) }),
+  );
+  const { runFn, runBinaryFn, probeDeviceIdentityFn: identityProbe, sleepFn } = deps;
   server.registerTool(
     "deploy_to_device",
     {
@@ -48,7 +51,7 @@ export function registerDeployTools(
       },
     },
     async ({ apkPath, packageName, activity, deviceSerial }) => {
-      const adb = (deps.resolveAdbFn ?? resolveAdb)();
+      const adb = deps.resolveAdbFn();
       const listed = await runFn(adb, ["devices"], { timeoutMs: 10_000 });
       if (listed.code !== 0 || listed.timedOut) return fail(`adb devices failed (exit ${listed.code}${listed.timedOut ? ", timeout" : ""}): ${listed.stderr.trim() || "no stderr"}`);
       const devs = listed.stdout

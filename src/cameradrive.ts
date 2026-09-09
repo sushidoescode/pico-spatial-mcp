@@ -4,6 +4,7 @@ import os from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, fail, okJson, expandHome, sleep } from "./util.js";
+import { completeDependencies } from "./dependencies.js";
 import { probeHostWindow, unavailableHostWindowProbe, hostWindowPrecondition, type HostWindowProbe } from "./hostwindow.js";
 import { resolveAdb } from "./emulatorlook.js";
 import { readDiscovery, type EmulatorDiscoveryRecord } from "./emulator.js";
@@ -214,6 +215,10 @@ print(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0)
 export async function frontmostQemu(binding: BoundQemuWindow | null): Promise<string | null> {
   if (process.platform !== "darwin") return null;
   if (!binding) return "ambiguous_host_window: no serial-bound qemu process is available";
+  const requested = await run("osascript", ["-e",
+    `tell application "System Events" to set frontmost of (first process whose unix id is ${binding.qemuWindowOwnerPid}) to true`,
+  ], { timeoutMs: 5000 });
+  if (requested.code !== 0 || requested.timedOut) return `osascript frontmost failed: ${requested.stderr || requested.stdout || "request timed out"}`;
   const readback = await run("swift", ["-e", FRONTMOST_PID_SWIFT], { timeoutMs: 5000 });
   if (readback.timedOut) return "frontmost PID readback failed: command timed out";
   if (readback.code !== 0) return `frontmost PID readback failed: command exited ${readback.code ?? "without an exit code"}`;
@@ -268,18 +273,26 @@ interface KeyHoldDependencies {
 }
 
 /** gRPC key hold with exact-serial discovery on initial/reconnect paths and a paired keyup. */
-export async function keyHold(
+export function keyHold(
   serial: string,
   key: string,
   holdMs: number,
   injected: Partial<KeyHoldDependencies> = {},
 ): Promise<CameraActionReceipt> {
-  const deps: KeyHoldDependencies = {
-    getClient: injected.getClient ?? getClient,
-    unary: injected.unary ?? unary,
-    sleep: injected.sleep ?? sleep,
-    monotonicNs: injected.monotonicNs ?? (() => process.hrtime.bigint()),
-  };
+  const deps = completeDependencies<KeyHoldDependencies>(
+    "keyHold", injected,
+    { getClient: true, unary: true, sleep: true, monotonicNs: true },
+    () => ({ getClient, unary, sleep, monotonicNs: () => process.hrtime.bigint() }),
+  );
+  return executeKeyHold(serial, key, holdMs, deps);
+}
+
+async function executeKeyHold(
+  serial: string,
+  key: string,
+  holdMs: number,
+  deps: KeyHoldDependencies,
+): Promise<CameraActionReceipt> {
   const startedAtMonotonicNs = deps.monotonicNs().toString();
   let connection = deps.getClient(undefined, serial);
   const finish = (
@@ -477,16 +490,32 @@ export function createCameraActionBindingReceipt(
   };
 }
 
+interface BoundCameraActionDependencies {
+  focusQemu: typeof frontmostQemu;
+  keyHold: typeof keyHold;
+  rightDrag: typeof rightDrag;
+}
+
 export function createBoundCameraActionAdapter(
   serial: string,
   windowBinding: BoundQemuWindow | null,
-  options: {
-    focusQemu?: typeof frontmostQemu;
-    keyHold?: typeof keyHold;
-    rightDrag?: typeof rightDrag;
+  options: Partial<BoundCameraActionDependencies> & {
     revalidateWindow?: () => Promise<QemuWindowBindingResult>;
   } = {},
 ): { applyRelativeAction(action: RelativeCameraAction): Promise<CameraActionReceipt> } {
+  // Revalidation is an optional guard on the chosen action lanes, not a replacement
+  // for one of them. Injecting any action lane requires all three action dependencies.
+  const { revalidateWindow, ...actionOverrides } = options;
+  if ("focusQemu" in options || "keyHold" in options || "rightDrag" in options) {
+    Object.assign(actionOverrides, {
+      focusQemu: options.focusQemu, keyHold: options.keyHold, rightDrag: options.rightDrag,
+    });
+  }
+  const deps = completeDependencies<BoundCameraActionDependencies>(
+    "createBoundCameraActionAdapter", actionOverrides,
+    { focusQemu: true, keyHold: true, rightDrag: true },
+    () => ({ focusQemu: frontmostQemu, keyHold, rightDrag }),
+  );
   const exactBindingMatch = (observed: BoundQemuWindow): boolean => !!windowBinding
     && observed.discoveryFile === windowBinding.discoveryFile
     && observed.discoveredSerial === windowBinding.discoveredSerial
@@ -555,10 +584,10 @@ export function createBoundCameraActionAdapter(
     applyRelativeAction: async (action) => {
       const startedAtMonotonicNs = process.hrtime.bigint().toString();
       let revalidatedBinding: BoundQemuWindow | null = null;
-      if (options.revalidateWindow) {
+      if (revalidateWindow) {
         let observed: QemuWindowBindingResult;
         try {
-          observed = await options.revalidateWindow();
+          observed = await revalidateWindow();
         } catch (error: any) {
           observed = { ok: false, code: "binding_failed", detail: error?.message ?? String(error) };
         }
@@ -568,7 +597,7 @@ export function createBoundCameraActionAdapter(
         revalidatedBinding = observed.binding;
       }
       if (action.kind === "key_hold") {
-        const receipt = await (options.keyHold ?? keyHold)(serial, action.key, action.holdMs);
+        const receipt = await deps.keyHold(serial, action.key, action.holdMs);
         receipt.ack.hostWindow = windowBinding;
         if (revalidatedBinding) receipt.ack.bindingRevalidation = { status: "matched", expected: windowBinding, observed: revalidatedBinding };
         receipt.ack.hostFocusRequired = false;
@@ -579,13 +608,13 @@ export function createBoundCameraActionAdapter(
       }
       let focusError: string | null;
       try {
-        focusError = await (options.focusQemu ?? frontmostQemu)(windowBinding);
+        focusError = await deps.focusQemu(windowBinding);
       } catch (error: any) {
         focusError = `focus verification failed: ${error?.message ?? String(error)}`;
       }
       const err = focusError
         ? `look-drag requires acknowledged bound qemu host focus: ${focusError}`
-        : await (options.rightDrag ?? rightDrag)(windowBinding, action.dxPx, action.dyPx);
+        : await deps.rightDrag(windowBinding, action.dxPx, action.dyPx);
       const focusAcknowledged = focusError === null;
       return {
         action: "look_drag",
@@ -677,28 +706,46 @@ interface CameraDriveDependencies {
 }
 
 export function registerCameraDriveTools(server: McpServer, overrides: Partial<CameraDriveDependencies> = {}) {
-  const deps: CameraDriveDependencies = {
-    platform: process.platform, bindWindow: bindMacQemuWindow, probeHostWindow, focus: frontmostQemu,
-    applyMoves, settleCapture, writeShrunk, ...overrides,
-  };
-  // Retain visibility on success and early refusals, including the no-capture orbit path.
-  const observed = (handler: (args: any, sample: (binding?: BoundQemuWindow) => Promise<HostWindowProbe>) => Promise<any>) => async (args: any) => {
+  const deps = completeDependencies<CameraDriveDependencies>(
+    "registerCameraDriveTools", overrides,
+    { platform: true, bindWindow: true, probeHostWindow: true, focus: true, applyMoves: true, settleCapture: true, writeShrunk: true },
+    () => ({ platform: process.platform, bindWindow: bindMacQemuWindow, probeHostWindow, focus: frontmostQemu,
+      applyMoves, settleCapture, writeShrunk }),
+  );
+  // Each capture samples its already-bound window once. Early refusals retain honest unknown evidence.
+  const observed = (handler: (
+    args: any,
+    sample: (binding: BoundQemuWindow) => Promise<HostWindowProbe>,
+    focus: (binding: BoundQemuWindow) => Promise<string | null>,
+  ) => Promise<any>) => async (args: any) => {
     const probes: HostWindowProbe[] = [];
-    const sample = async (binding?: BoundQemuWindow) => {
+    let focusRequest: Record<string, unknown> | null = null;
+    const sample = async (binding: BoundQemuWindow) => {
       let probe: HostWindowProbe;
       try { probe = await deps.probeHostWindow(args.serial ?? "emulator-5554", binding); }
       catch (error: any) { probe = unavailableHostWindowProbe(error?.message ?? String(error), binding); }
       probes.push(probe);
       return probe;
     };
-    await sample();
+    const focus = async (binding: BoundQemuWindow): Promise<string | null> => {
+      const started = process.hrtime.bigint();
+      let error: string | null;
+      try { error = await deps.focus(binding); }
+      catch (cause: any) { error = cause?.message ?? String(cause); }
+      focusRequest = {
+        status: error ? "failed" : "requested", error,
+        qemuWindowId: binding.qemuWindowId, qemuWindowOwnerPid: binding.qemuWindowOwnerPid,
+        durationMs: Number(process.hrtime.bigint() - started) / 1_000_000,
+      };
+      return error;
+    };
     let result;
-    try { result = await handler(args, sample); }
+    try { result = await handler(args, sample, focus); }
     catch (error: any) { result = fail(error?.message ?? String(error)); }
-    const last = await sample();
+    const last = probes.at(-1) ?? unavailableHostWindowProbe("camera request ended before a bound-window observation");
     const warnings = probes.map(hostWindowPrecondition).filter((warning) => warning !== null);
     const evidence = {
-      hostWindowProbe: last, hostWindowProbes: probes,
+      hostWindowProbe: last, hostWindowProbes: probes, hostWindowFocusRequest: focusRequest,
       warnings: warnings.filter((warning, i) => warnings.findIndex((w) => w.code === warning.code && w.detail === warning.detail) === i),
     };
     return {
@@ -719,7 +766,7 @@ export function registerCameraDriveTools(server: McpServer, overrides: Partial<C
         capture: z.boolean().optional().describe("Capture + return the frame after moving (default true)"),
       },
     },
-    observed(async ({ moves, serial, outPath, maxDim, capture }, sample) => {
+    observed(async ({ moves, serial, outPath, maxDim, capture }, sample, focus) => {
       if (deps.platform !== "darwin") {
         return fail(
           "unsupported_backend: non-macOS gRPC key delivery has no measured focus/rendered-camera binding; " +
@@ -731,13 +778,17 @@ export function registerCameraDriveTools(server: McpServer, overrides: Partial<C
       const selected = await deps.bindWindow(adb, dev);
       if (!selected.ok) return fail(`${selected.code}: ${selected.detail}`);
       const windowBinding = selected.binding;
-      const actions = expandMoves(moves);
-      const hostWindowProbe = await sample(windowBinding);
-      const focusErr = await focusQemuForActions(actions, windowBinding, deps.focus);
-      if (focusErr) return fail(focusErr);
+      const focusErr = await focus(windowBinding);
+      if (focusErr && expandMoves(moves).some((action) => action.kind === "look_drag")) {
+        await sample(windowBinding);
+        return fail(focusErr);
+      }
       const moved = await deps.applyMoves(dev, moves, windowBinding);
-      if (moved.error) return fail(`${moved.error}\nactionReceipts=${JSON.stringify(moved.actionReceipts)}`);
-      if (capture === false) return okJson({ status: "ok", note: "moves applied (no capture requested)", actionReceipts: moved.actionReceipts });
+      if (moved.error) { await sample(windowBinding); return fail(`${moved.error}\nactionReceipts=${JSON.stringify(moved.actionReceipts)}`); }
+      if (capture === false) {
+        await sample(windowBinding);
+        return okJson({ status: "ok", note: "moves applied (no capture requested)", actionReceipts: moved.actionReceipts });
+      }
       const settled = await deps.settleCapture(adb, dev);
       const hostWindowAfter = await sample(windowBinding);
       const settleReceipt = {
@@ -747,8 +798,8 @@ export function registerCameraDriveTools(server: McpServer, overrides: Partial<C
         sha256: settled.sha256,
         stablePair: settled.stablePair,
         hostWindowProbe: hostWindowAfter,
-        hostWindowProbes: [hostWindowProbe, hostWindowAfter],
-        warnings: [hostWindowProbe, hostWindowAfter].map(hostWindowPrecondition).filter(Boolean),
+        hostWindowProbes: [hostWindowAfter],
+        warnings: [hostWindowAfter].map(hostWindowPrecondition).filter(Boolean),
       };
       if (!settled.frame) return fail(
         `screencap failed after moves: ${settled.status === "capture_failed" ? settled.detail : "no valid frame"}` +
@@ -788,7 +839,7 @@ export function registerCameraDriveTools(server: McpServer, overrides: Partial<C
         maxDim: z.number().int().positive().optional().describe("Max dimension of returned images (default 900)"),
       },
     },
-    observed(async ({ serial, outDir, sideHolds, aimSideDrag, upHolds, aimDownDrag, maxDim }, sample) => {
+    observed(async ({ serial, outDir, sideHolds, aimSideDrag, upHolds, aimDownDrag, maxDim }, sample, focus) => {
       if (deps.platform !== "darwin") {
         return fail("capture_multiview needs the macOS look-drag lane for its high/oblique aims; use capture_orbit with key moves only on this platform");
       }
@@ -805,8 +856,8 @@ export function registerCameraDriveTools(server: McpServer, overrides: Partial<C
       const selected = await deps.bindWindow(adb, dev);
       if (!selected.ok) return fail(`${selected.code}: ${selected.detail}`);
       const windowBinding = selected.binding;
-      const focusErr = await deps.focus(windowBinding);
-      if (focusErr) return fail(focusErr);
+      const focusErr = await focus(windowBinding);
+      if (focusErr) { await sample(windowBinding); return fail(focusErr); }
 
       const legs: Array<{ name: string; go: Array<z.infer<typeof moveSchema>>; back: Array<z.infer<typeof moveSchema>> }> = [
         { name: "front", go: [], back: [] },
@@ -853,7 +904,6 @@ export function registerCameraDriveTools(server: McpServer, overrides: Partial<C
           actionReceipts.push(...moved.actionReceipts);
           if (moved.error) return finishFailure(`${leg.name}: ${moved.error}`);
         }
-        const hostWindowProbe = await sample(windowBinding);
         const settled = await deps.settleCapture(adb, dev);
         const hostWindowAfter = await sample(windowBinding);
         const settleReceipt = {
@@ -864,8 +914,8 @@ export function registerCameraDriveTools(server: McpServer, overrides: Partial<C
           sha256: settled.sha256,
           stablePair: settled.stablePair,
           hostWindowProbe: hostWindowAfter,
-          hostWindowProbes: [hostWindowProbe, hostWindowAfter],
-          warnings: [hostWindowProbe, hostWindowAfter].map(hostWindowPrecondition).filter(Boolean),
+          hostWindowProbes: [hostWindowAfter],
+          warnings: [hostWindowAfter].map(hostWindowPrecondition).filter(Boolean),
         };
         settleReceipts.push(settleReceipt);
         if (!settled.frame) return finishFailure(
@@ -886,7 +936,6 @@ export function registerCameraDriveTools(server: McpServer, overrides: Partial<C
         }
       }
 
-      const hostWindowBeforeRestore = await sample(windowBinding);
       const final = await deps.settleCapture(adb, dev);
       const hostWindowAfterRestore = await sample(windowBinding);
       settleReceipts.push({
@@ -897,8 +946,8 @@ export function registerCameraDriveTools(server: McpServer, overrides: Partial<C
         sha256: final.sha256,
         stablePair: final.stablePair,
         hostWindowProbe: hostWindowAfterRestore,
-        hostWindowProbes: [hostWindowBeforeRestore, hostWindowAfterRestore],
-        warnings: [hostWindowBeforeRestore, hostWindowAfterRestore].map(hostWindowPrecondition).filter(Boolean),
+        hostWindowProbes: [hostWindowAfterRestore],
+        warnings: [hostWindowAfterRestore].map(hostWindowPrecondition).filter(Boolean),
       });
       const roundTripClosed = final.status === "settled" && !!(final.frame && frontHash && final.frame.bytes.equals(frontHash));
       if (final.frame) fs.writeFileSync(path.join(dir, "restored.png"), final.frame.bytes);

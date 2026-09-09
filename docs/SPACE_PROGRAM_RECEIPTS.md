@@ -4,19 +4,26 @@ Timing evidence depends on the emulator window remaining visible. On macOS the
 host probe reads CoreGraphics' on-screen windows in front-to-back order and
 compares their rectangles with the exact bound qemu window. Receipts retain
 `hostWindowProbe` and the sampled `hostWindowProbes`, including observation
-times, window identity, `occluded`, `frontmost`, and `overlappingOwners`.
-Windows touching only an edge, fully transparent windows, and windows behind
-qemu do not count as overlaps. A missing window or failed probe is unknown,
-never a clear-window result. Samples describe their observation times; they
-do not establish continuous visibility between samples.
+times, `durationMs`, window identity, `occluded`, `frontmost`, and
+`overlappingOwners`. Only layer-zero windows owned by another process can
+occlude qemu. Dock/menu layers, qemu's own toolbar and child windows, invalid
+helper rectangles, edge-only contact, transparent windows, and windows behind
+qemu are excluded. Missing alpha is treated as opaque. A missing target window
+or failed probe is unknown, never a clear-window result. Samples describe their
+observation times; they do not establish continuous visibility between samples.
 
 `capture_settled`, `capture_orbit`, and `capture_multiview` retain warnings when
-qemu is covered. Calibration in `navigate_to_scene_target`, preparation and
+qemu is covered. Calibration and navigation in `navigate_to_scene_target`, preparation and
 distance measurement in `run_in_app_locomotion_route`, and timing-sensitive
 boundary experiment work refuse with `host_window_occluded` and the overlapping
 owners. An unavailable visibility result refuses with `host_window_unavailable`.
-The probe never raises, activates, or moves windows. Camera drags require qemu
-to be frontmost already; a clear window can still lack keyboard focus.
+The probe never raises, activates, or moves windows. The separate, recorded
+focus request raises the bound qemu process before the timing precondition is
+sampled; a window that remains occluded still refuses measurement. Camera
+actions retain their focus checks. Capture flows use one visibility snapshot
+per capture and pass the existing window binding into it. The adb/bridge-only
+locomotion tool treats host visibility as `not_applicable` off macOS; navigation
+and boundary experiments require the macOS CGEvent lane.
 
 ## Retained settled pairs
 
@@ -30,7 +37,10 @@ no settled pair and retains its last valid capture as before.
 
 `receiptPath` points to `<output-path>.receipt.json` whenever a capture artifact
 was published and its receipt could be retained. Both frames and the receipt
-use checked publication to an external session directory. Settlement proves
+use checked publication to an external session directory. If only receipt
+publication fails, `receiptPath` is null and a `receipt_write_failed` warning
+records the problem; capture status, settlement, and retained frames keep their
+original meanings. Settlement proves
 byte equality only: the evidence ceiling stays `structural`, and pixel claims
 still require LOOK.
 
@@ -43,9 +53,17 @@ confirms the command and required flags. An unknown helper version or failed
 probe refuses sampling. The receipt's `profiler` field records the version
 probe, and `command` records the exact executable and sampling arguments.
 
+Profiler-cli `0.1.0` help surface verified 2026-09-08; sampling behavior unverified
+live. The [retained help-only capture](evidence/perfcli-0.1.0-help-2026-09-08.txt)
+contains truncated root/live help excerpts. It records bare `perf -V` returning
+`0.1.0`, rejection of `monitor run`, and root help returned successfully for
+`monitor run --help`. These observations establish command syntax, not sampled
+performance results.
+
 ## Imported APK provenance
 
-Both consumers accept the same explicit identity:
+`select_home_environment`, `query_scene_anchors`, and
+`run_immersive_boundary_experiment` accept the same explicit imported APK identity:
 
 | Field | Meaning |
 | --- | --- |
@@ -72,15 +90,26 @@ the inspected `imported_apk` provenance. The returned verification baseline
 also binds APK, boot, PID, process start ticks, and resumed component across
 the environment switch. The app must still expose the scene bridge required
 by the selector.
+Local APK hashing or manifest-inspection failures return `imported_apk_invalid`
+at `pre_query` or `post_query`; invalid bridge results keep `bridge_result_invalid`.
+
+For `query_scene_anchors`, supply `scenario.provenance` and omit
+`scenario.expectedBuildReceiptId`. The query validates the local APK and compiled
+manifest, then binds installed APK bytes and the foreground process. Imported
+bindings retain inspected provenance and null native receipt fields.
 
 For `run_immersive_boundary_experiment`, supply the object as `provenance`
 with a `manifest_mixed` scenario and `route.source.kind: "replay"`. Its stage
 must be `"1"`. Replay still requires an adjudicated native M0 calibration
 route, exact route and runtime bindings, and reviewed waypoint continuity.
-Imported worlds use the `imported_mixed_environment` review state and their
-reviewed landmarks. They cannot author the native calibration seed or reuse
+Imported worlds use `imported_mixed_environment` and reviewed landmarks, except
+a `manifest_mixed` scenario with native M0 ID `boundarylab-mixed` and package
+`com.fleet.boundarylabmixed`: that identity uses `boundarylab_mixed` even with
+imported provenance. Imported `manifest_mixed` rows cannot author the native calibration seed or reuse
 the reserved Claimsight identity. The existing Claimsight E1 route retains
-its exact SHA pin.
+its exact SHA pin. The pinned Claimsight E1 route also requires installed Android
+SDK `aapt2` for compiled-manifest inspection; its exact SHA pin does not bypass
+this prerequisite.
 
 An imported Mixed route without a visually witnessed 32 m gate can report
 `no_ejection_within_observed_budget` with `CHARACTERIZE`. Replaying a calibrated

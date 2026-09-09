@@ -18,6 +18,7 @@ import {
 import {
   bindMacQemuWindow,
   createBoundCameraActionAdapter,
+  frontmostQemu,
   type BoundQemuWindow,
   type QemuWindowBindingResult,
 } from "./cameradrive.js";
@@ -195,9 +196,10 @@ export interface NavigationTargetDependencies {
   readArtifact(path: string): Promise<Buffer>;
   readCalibrationReceipt(ref: NavigationArtifactRef): Promise<Buffer>;
   bindQemuWindow(serial: string): Promise<QemuWindowBindingResult>;
+  focusQemuWindow?(binding: BoundQemuWindow): Promise<string | null>;
   probeHostWindow?(serial: string, binding?: BoundQemuWindow): Promise<HostWindowProbe>;
   reserveArtifactSession(outDir: string, runId: string, ownerNonceHash: string): Promise<ReservedArtifactSession>;
-  captureSettled(input: CaptureSettledInput): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }>;
+  captureSettled(input: CaptureSettledInput, context?: { hostWindowBinding?: BoundQemuWindow }): Promise<{ receipt: CaptureSettledReceipt; frame: Buffer | null }>;
   requestGuide(input: AgentBridgeNavigationGuideRequestInput): Promise<AgentBridgeNavigationGuideRequestResult>;
   detectColorKeys(path: string, authored: AuthoredColor[]): Promise<ColorKeyMeasurements>;
   readCameraCalibrationProof(serial: string, expectedBootId: string): Promise<FreshCameraCalibrationProofResult>;
@@ -806,6 +808,13 @@ function newResult(input: ParsedNavigateToSceneTargetInput) {
       selectorReceipt: { candidates: [] } as Record<string, any>,
     },
     qemuBinding: null as BoundQemuWindow | null,
+    hostWindowFocusRequest: null as {
+      status: "requested" | "failed" | "not_applicable";
+      error: string | null;
+      qemuWindowId: number | null;
+      qemuWindowOwnerPid: number | null;
+      durationMs: number;
+    } | null,
     hostWindowProbe: unavailableHostWindowProbe("host window has not been sampled"),
     hostWindowProbes: [] as Array<{ phase: string; probe: HostWindowProbe }>,
     sceneQueries: [] as Record<string, any>[],
@@ -1012,7 +1021,8 @@ async function validateStoredCalibrationReceipt(
     return { status: "stale", detail: "calibration receipt is not valid JSON" };
   }
   const receiptKeys = ["kind", "schemaVersion", "createdAt", "calibration", "actions", "captures", "sceneQueries", "evidenceCeiling"];
-  if (!(exactKeys(receipt, receiptKeys) || exactKeys(receipt, [...receiptKeys, "hostWindowProbe", "hostWindowProbes"]))
+  if (!(exactKeys(receipt, receiptKeys) || exactKeys(receipt, [...receiptKeys, "hostWindowProbe", "hostWindowProbes"])
+    || exactKeys(receipt, [...receiptKeys, "hostWindowFocusRequest", "hostWindowProbe", "hostWindowProbes"]))
     || receipt.kind !== "pico.navigation-calibration-receipt"
     || receipt.schemaVersion !== 1 || receipt.evidenceCeiling !== "structural"
     || !receipt.calibration || typeof receipt.calibration !== "object"
@@ -1120,12 +1130,12 @@ export async function executeNavigateToSceneTarget(
   let terminalDetail: string | null = null;
   let publishCalibration: { record: NavigationCalibrationRecord; payload: Record<string, any> } | null = null;
   let inputPreconditionFailure: { code: NavigationTargetStopReason; detail: string } | null = null;
-  const requireHostWindow = async (phase: string, remainingMs?: () => number): Promise<void> => {
+  const requireHostWindow = async (phase: string, remainingMs?: () => number, retainedProbe?: HostWindowProbe): Promise<void> => {
     let probe: HostWindowProbe;
     try {
-      probe = deps.probeHostWindow
+      probe = retainedProbe ?? (deps.probeHostWindow
         ? await deps.probeHostWindow(input.serial, qemu ?? undefined)
-        : unavailableHostWindowProbe("host window probe dependency is unavailable", qemu ?? undefined);
+        : unavailableHostWindowProbe("host window probe dependency is unavailable", qemu ?? undefined));
     } catch (error) {
       probe = unavailableHostWindowProbe(error instanceof Error ? error.message : String(error), qemu ?? undefined);
     }
@@ -1180,7 +1190,7 @@ export async function executeNavigateToSceneTarget(
   };
   const capture = async (name: string, priorSha256?: string): Promise<CaptureSettledReceipt> => {
     if (!session) throw new NavigationTargetStop("binding_failed", "artifact session was not reserved");
-    await requireHostWindow(`${name}_before_capture`, () => maximumDurationMs - elapsedMs());
+    if (maximumDurationMs - elapsedMs() <= 0) throw new NavigationTargetStop("budget_exhausted", `${name} capture deadline exhausted`);
     const captured = await deps.captureSettled({
       serial: input.serial,
       outPath: path.join(session.absoluteRoot, `${name}.png`),
@@ -1188,8 +1198,8 @@ export async function executeNavigateToSceneTarget(
       intervalMs: ROUTE_CAPTURE.intervalMs,
       comparison: SETTLE_COMPARISON,
       ...(priorSha256 ? { priorSha256 } : {}),
-    });
-    await requireHostWindow(`${name}_after_capture`, () => maximumDurationMs - elapsedMs());
+    }, { hostWindowBinding: qemu ?? undefined });
+    await requireHostWindow(`${name}_after_capture`, () => maximumDurationMs - elapsedMs(), captured.receipt.hostWindowProbe);
     const receipt = settledOrThrow(captured.receipt, name);
     if (!scene || !captureMatchesScene(receipt, scene)) {
       throw new NavigationTargetStop("binding_failed", `${name} capture runtime does not match the selected scene runtime`);
@@ -1249,7 +1259,6 @@ export async function executeNavigateToSceneTarget(
   };
 
   try {
-    await requireHostWindow("preflight");
     const initialScene = await queryAndSelectScene(input, deps, null);
     rememberScene(initialScene);
     const bound = await deps.bindQemuWindow(input.serial);
@@ -1257,6 +1266,20 @@ export async function executeNavigateToSceneTarget(
     qemu = bound.binding;
     if (!exactQemuGeometry(qemu)) throw new NavigationTargetStop("binding_failed", "qemu binding lacks exact measured x/y/width/height/scale geometry");
     result.qemuBinding = qemu;
+    const focusStartedNs = deps.monotonicNs();
+    let focusError: string | null;
+    try {
+      focusError = deps.focusQemuWindow ? await deps.focusQemuWindow(qemu) : "host window focus dependency is unavailable";
+    } catch (error) {
+      focusError = error instanceof Error ? error.message : String(error);
+    }
+    result.hostWindowFocusRequest = {
+      status: focusError ? "failed" : "requested",
+      error: focusError,
+      qemuWindowId: qemu.qemuWindowId,
+      qemuWindowOwnerPid: qemu.qemuWindowOwnerPid,
+      durationMs: Math.max(0, Number(deps.monotonicNs() - focusStartedNs) / 1_000_000),
+    };
     await requireHostWindow("bound_preflight");
 
     const ownerNonceHash = crypto.createHash("sha256").update(deps.randomId()).digest("hex");
@@ -1397,9 +1420,14 @@ export async function executeNavigateToSceneTarget(
     let waypointSequence = 0;
     execution = createRelativeRouteExecution(boundRoute, {
       applyRelativeAction: async (action, budget) => {
-        await requireHostWindow("before_camera_action", () => budget?.canStart() === true
-          ? maximumDurationMs - elapsedMs() - FINAL_GUIDE_CLEANUP_RESERVE_MS
-          : 0);
+        await requireHostWindow("before_camera_action", () => maximumDurationMs - elapsedMs() - FINAL_GUIDE_CLEANUP_RESERVE_MS);
+        if (budget?.canStart() !== true) {
+          inputPreconditionFailure ??= {
+            code: "budget_exhausted",
+            detail: "insufficient remaining budget for the complete action and settlement envelope",
+          };
+          throw new NavigationTargetStop(inputPreconditionFailure.code, inputPreconditionFailure.detail);
+        }
         return adapter.applyRelativeAction(action);
       },
       sampleContinuity: () => deps.sampleContinuity({
@@ -1413,7 +1441,6 @@ export async function executeNavigateToSceneTarget(
       }),
       captureSettled: async (capturePath, deadline) => {
         if (deadline.remainingMs() <= 0) throw new Error("route capture deadline exhausted");
-        await requireHostWindow("waypoint_before_capture", deadline.remainingMs);
         const captured = await deps.captureSettled({
           serial: input.serial,
           outPath: capturePath,
@@ -1421,8 +1448,8 @@ export async function executeNavigateToSceneTarget(
           intervalMs: ROUTE_CAPTURE.intervalMs,
           comparison: SETTLE_COMPARISON,
           priorSha256: deadline.priorSha256,
-        });
-        await requireHostWindow("waypoint_after_capture", deadline.remainingMs);
+        }, { hostWindowBinding: qemu ?? undefined });
+        await requireHostWindow("waypoint_after_capture", deadline.remainingMs, captured.receipt.hostWindowProbe);
         return captured.receipt;
       },
       allocateWaypointPath: () => path.join(session!.absoluteRoot, `waypoint-${String(++waypointSequence).padStart(4, "0")}.png`),
@@ -1882,6 +1909,7 @@ export async function executeNavigateToSceneTarget(
         actions: result.actions,
         captures: result.captures,
         sceneQueries: result.sceneQueries,
+        hostWindowFocusRequest: result.hostWindowFocusRequest,
         hostWindowProbe: result.hostWindowProbe,
         hostWindowProbes: result.hostWindowProbes,
         evidenceCeiling: "structural",
@@ -1958,6 +1986,7 @@ function defaultNavigationTargetDependencies(): NavigationTargetDependencies {
     readArtifact: (artifactPath) => fs.promises.readFile(artifactPath),
     readCalibrationReceipt: (ref) => readNavigationCalibrationReceiptBytes(ref),
     bindQemuWindow: (serial) => bindMacQemuWindow(adb, serial),
+    focusQemuWindow: frontmostQemu,
     probeHostWindow,
     reserveArtifactSession: async (outDir, runId, ownerNonceHash) => {
       const absoluteRoot = assertExternalCapturePath(outDir);
@@ -1967,7 +1996,9 @@ function defaultNavigationTargetDependencies(): NavigationTargetDependencies {
       fs.writeFileSync(marker, `${JSON.stringify({ runId, ownerNonceHash })}\n`, { flag: "wx", mode: 0o600 });
       return { runId, absoluteRoot: fs.realpathSync(absoluteRoot), ownerNonceHash };
     },
-    captureSettled: (input) => executeLiveCaptureSettled(input, { adbPath: adb, attemptTimeoutMs: ROUTE_CAPTURE.attemptTimeoutMs }),
+    captureSettled: (input, context) => executeLiveCaptureSettled(input, {
+      adbPath: adb, attemptTimeoutMs: ROUTE_CAPTURE.attemptTimeoutMs, hostWindowBinding: context?.hostWindowBinding,
+    }),
     requestGuide: (input) => requestAgentBridgeNavigationGuide(adb, input),
     detectColorKeys: analyzeColorKeys,
     readCameraCalibrationProof: (serial, expectedBootId) => readFreshCameraCalibrationProof({
@@ -2041,7 +2072,7 @@ export function registerNavigationTargetTools(server: McpServer) {
     "navigate_to_scene_target",
     {
       description:
-        "Select one fresh largest-horizontal scene target, bind its exact runtime and qemu window, and run bounded guide acquisition/calibration/navigation through settled shared camera routes. Output remains structural and every returned diagnostic requires an explicit LOOK.",
+        "Select one fresh largest-horizontal scene target on macOS, bind its exact runtime and qemu window, request focus, then probe visibility before bounded guide acquisition/calibration/navigation through settled shared camera routes. Output remains structural and every returned diagnostic requires an explicit LOOK.",
       inputSchema: navigationTargetToolInputSchema,
     },
     async (candidate: unknown) => {

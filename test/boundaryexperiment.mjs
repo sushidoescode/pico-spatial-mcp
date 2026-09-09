@@ -253,9 +253,15 @@ function clearBoundaryHostWindow(overrides = {}) {
   return {
     status: "ok", occluded: false, frontmost: true, overlappingOwners: [],
     observedAt: "2026-09-08T12:00:00.000Z", qemuWindowId: 7,
-    qemuWindowOwnerPid: 93013, detail: null, ...overrides,
+    qemuWindowOwnerPid: 93013, detail: null, durationMs: 0, ...overrides,
   };
 }
+
+const BOUNDARY_WINDOW = Object.freeze({
+  discoveredSerial: SERIAL, discoveryFile: "/tmp/pico-emulator/pid_93013.ini",
+  address: "127.0.0.1:8554", qemuPid: 93013, qemuWindowOwnerPid: 93013,
+  qemuWindowId: 7, bindingMethod: "discovery-pid-window",
+});
 
 function fakeDependencies() {
   const calls = { prepare: [], recapture: [], waypoint: [], recover: [] };
@@ -267,6 +273,8 @@ function fakeDependencies() {
       now: () => "2026-08-31T12:00:00.000Z",
       monotonicNs: (() => { let value = 1000n; return () => ++value; })(),
       readNativeRunReceipt: fakeM0ReceiptReader,
+      bindQemuWindow: async () => ({ ok: true, binding: BOUNDARY_WINDOW }),
+      focusQemuWindow: async () => null,
       probeHostWindow: async () => clearBoundaryHostWindow(),
       readReviewImage: () => Buffer.alloc(0),
       collectPreparation: async (context) => {
@@ -935,6 +943,65 @@ test("prepare reserves one external run, publishes complete baseline review, and
   assert.equal(fs.readFileSync(path.join(artifactRoot, "run.json"), "utf8").includes("capability\""), false);
 });
 
+test("boundary focuses before visibility admission and reuses its exact prepared binding on later actions", async (t) => {
+  const fake = fakeDependencies();
+  let bindCalls = 0;
+  let focused = false;
+  fake.deps.bindQemuWindow = async () => {
+    bindCalls++;
+    return { ok: true, binding: BOUNDARY_WINDOW };
+  };
+  fake.deps.focusQemuWindow = async (binding) => {
+    assert.equal(binding, BOUNDARY_WINDOW);
+    focused = true;
+    return null;
+  };
+  fake.deps.probeHostWindow = async (serial, binding) => {
+    assert.equal(serial, SERIAL);
+    assert.equal(binding, BOUNDARY_WINDOW);
+    return clearBoundaryHostWindow({ occluded: !focused, overlappingOwners: focused ? [] : ["Terminal"] });
+  };
+  const orchestrator = createBoundaryExperimentOrchestrator(fake.deps);
+  const prepared = await orchestrator.execute(prepareInput(path.join(scratch(t), "run")));
+  assert.equal(prepared.status, "needs_baseline_review");
+  const stepped = await orchestrator.execute({
+    action: "step", runId: prepared.runId,
+    reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
+  });
+  assert.equal(stepped.status, "needs_waypoint_review");
+  assert.equal(bindCalls, 1);
+  assert.equal(prepared.hostWindowFocusRequest.status, "requested");
+  assert.equal(stepped.hostWindowFocusRequest.qemuWindowId, 7);
+});
+
+test("boundary rejects malformed preparation before requesting host focus", async (t) => {
+  const fake = fakeDependencies();
+  let focusRequests = 0;
+  fake.deps.focusQemuWindow = async () => { focusRequests++; return null; };
+  const input = structuredClone(prepareInput(path.join(scratch(t), "run")));
+  input.route.budgets.maxDurationMs = -1;
+  await assert.rejects(createBoundaryExperimentOrchestrator(fake.deps).execute(input));
+  assert.equal(focusRequests, 0);
+  assert.equal(fake.calls.prepare.length, 0);
+});
+
+test("boundary rejects a retained covered baseline without replacing it with a newer clear observation", async (t) => {
+  const fake = fakeDependencies();
+  const prepare = fake.deps.collectPreparation;
+  let probeCalls = 0;
+  fake.deps.probeHostWindow = async () => { probeCalls++; return clearBoundaryHostWindow(); };
+  fake.deps.collectPreparation = async (context) => {
+    const result = await prepare(context);
+    result.appBaseline.receipt = { hostWindowProbe: clearBoundaryHostWindow({ occluded: true, overlappingOwners: ["Terminal"] }) };
+    return result;
+  };
+  const result = await createBoundaryExperimentOrchestrator(fake.deps).execute(prepareInput(path.join(scratch(t), "run")));
+  assert.equal(result.status, "preparation_failed");
+  assert.equal(result.structuralStop, "host_window_occluded");
+  assert.equal(result.hostWindowProbe.occluded, true);
+  assert.equal(result.hostWindowProbes.length, probeCalls + 1, "baseline admission must retain the capture probe without re-querying the host");
+});
+
 test("boundary host-window preflight refuses covered, missing, and unavailable windows without preparation effects", async (t) => {
   for (const [label, probe, code] of [
     ["covered despite frontmost", clearBoundaryHostWindow({ occluded: true, overlappingOwners: ["Terminal", "Codex"] }), "host_window_occluded"],
@@ -1356,6 +1423,8 @@ test("later actions reject a replaced run root before touching dependencies or a
 
 test("only one state-changing call may operate on a run at a time", async (t) => {
   const fake = fakeDependencies();
+  let focusRequests = 0;
+  fake.deps.focusQemuWindow = async () => { focusRequests++; return null; };
   let releaseRecapture;
   let enteredRecapture;
   const recaptureEntered = new Promise((resolve) => { enteredRecapture = resolve; });
@@ -1374,6 +1443,7 @@ test("only one state-changing call may operate on a run at a time", async (t) =>
     reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
   });
   await recaptureEntered;
+  const admittedFocusRequests = focusRequests;
   try {
     const concurrent = await orchestrator.execute({
       action: "step",
@@ -1381,11 +1451,13 @@ test("only one state-changing call may operate on a run at a time", async (t) =>
       reviewedPriorFrame: attestation("2".repeat(64), "boundarylab_mixed", { witnessedGateM: 0 }),
     });
     assert.equal(concurrent.status, "action_in_progress");
+    assert.equal(focusRequests, admittedFocusRequests, "a busy-run rejection must not raise the admitted run's window");
     assert.equal(concurrent.runId, prepared.runId);
     assert.equal(fake.calls.recapture.length, 1);
     assert.equal(fake.calls.waypoint.length, 1);
   } finally {
     releaseRecapture();
+    await first;
   }
   const completed = await first;
   assert.equal(completed.status, "needs_waypoint_review");

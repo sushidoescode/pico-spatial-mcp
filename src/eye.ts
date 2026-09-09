@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, runBinary, okJson, fail, expandHome } from "./util.js";
+import { completeDependencies } from "./dependencies.js";
 import { readCaptureBytes, validateCapture, validateCaptureBuffer } from "./evidence.js";
 import { appendAutoJudgedEntry } from "./ledger.js";
 import { sendXrRecenter } from "./grpc.js";
@@ -291,16 +292,21 @@ export function visualJudgePassNote(confidence: number, record: boolean | undefi
   return `${prefix} — NOT recorded: ${why}. Repair the ledger before treating this as durable auto_judged evidence.`;
 }
 
-export function registerEyeTools(
-  server: McpServer,
-  deps: {
-    sendXrRecenterFn?: typeof sendXrRecenter;
-    runBinaryFn?: typeof runBinary;
-    analyzeFrameFn?: typeof analyzeFrame;
-    analyzeColorKeysFn?: typeof analyzeColorKeys;
-    resolveAdbFn?: typeof resolveAdb;
-  } = {},
-) {
+interface EyeDependencies {
+  sendXrRecenterFn: typeof sendXrRecenter;
+  runBinaryFn: typeof runBinary;
+  analyzeFrameFn: typeof analyzeFrame;
+  analyzeColorKeysFn: typeof analyzeColorKeys;
+  resolveAdbFn: typeof resolveAdb;
+}
+
+export function registerEyeTools(server: McpServer, overrides: Partial<EyeDependencies> = {}) {
+  const deps = completeDependencies<EyeDependencies>(
+    "registerEyeTools", overrides,
+    { sendXrRecenterFn: true, runBinaryFn: true, analyzeFrameFn: true, analyzeColorKeysFn: true, resolveAdbFn: true },
+    () => ({ sendXrRecenterFn: sendXrRecenter, runBinaryFn: runBinary, analyzeFrameFn: analyzeFrame,
+      analyzeColorKeysFn: analyzeColorKeys, resolveAdbFn: resolveAdb }),
+  );
   server.registerTool(
     "capture_canonical",
     {
@@ -315,22 +321,22 @@ export function registerEyeTools(
       },
     },
     async ({ serial, outPath, recenter, settleMs, expectSha }) => {
-      const adb = (deps.resolveAdbFn ?? resolveAdb)();
+      const adb = deps.resolveAdbFn();
       const dev = serial ?? "emulator-5554";
       const full = expandHome(outPath ?? "/tmp/pico-render/canonical.png");
       fs.mkdirSync(path.dirname(full), { recursive: true });
       let recenterEffect: "unverified" | undefined;
       if (recenter) {
-        const recenterResult = await (deps.sendXrRecenterFn ?? sendXrRecenter)(undefined, { serial: dev });
+        const recenterResult = await deps.sendXrRecenterFn(undefined, { serial: dev });
         if (!recenterResult.ok) return fail(`RECENTER was requested but the gRPC command failed; capture not taken: ${recenterResult.error}`);
         recenterEffect = recenterResult.effect;
       }
       await new Promise((r) => setTimeout(r, settleMs ?? 600));
-      const res = await (deps.runBinaryFn ?? runBinary)(adb, ["-s", dev, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
+      const res = await deps.runBinaryFn(adb, ["-s", dev, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
       if (res.code !== 0 || res.stdout.length < 1000) return fail(`screencap failed (code ${res.code}, ${res.stdout.length} bytes). Is ${dev} running?`);
       fs.writeFileSync(full, res.stdout);
       const sha = crypto.createHash("sha256").update(res.stdout).digest("hex");
-      const measurements = await (deps.analyzeFrameFn ?? analyzeFrame)(full);
+      const measurements = await deps.analyzeFrameFn(full);
       const drift = expectSha ? (sha === expectSha ? "MATCH" : "DRIFT") : undefined;
       return okJson({
         status: "captured",
@@ -389,10 +395,10 @@ export function registerEyeTools(
       const snapshotPath = path.join(snapshotDir, `frame.${sourceCapture.format === "jpeg" ? "jpg" : "png"}`);
       fs.writeFileSync(snapshotPath, source.bytes, { flag: "wx", mode: 0o600 });
       try {
-        const measured = await (deps.analyzeFrameFn ?? analyzeFrame)(snapshotPath);
+        const measured = await deps.analyzeFrameFn(snapshotPath);
         const m: FrameMeasurements = { ...measured };
         if (!m.available) return okJson({ status: "error", verdict: "ESCALATE", reason: m.error ?? "could not measure frame", measurements: m });
-        if (expect.authoredColors?.length) m.colorKey = await (deps.analyzeColorKeysFn ?? analyzeColorKeys)(snapshotPath, expect.authoredColors);
+        if (expect.authoredColors?.length) m.colorKey = await deps.analyzeColorKeysFn(snapshotPath, expect.authoredColors);
 
         const after = readCaptureBytes(snapshotPath);
         const afterCapture = after.ok ? validateCaptureBuffer(after.bytes, snapshotPath) : after;

@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, okJson, fail, expandHome } from "./util.js";
+import { completeDependencies } from "./dependencies.js";
 import { analyzeFrame, type FrameMeasurements } from "./eye.js";
 import { readCaptureBytes, validateCapture, validateCaptureBuffer } from "./evidence.js";
 import { appendUsdHostRenderEntry } from "./ledger.js";
@@ -116,15 +117,19 @@ function renderRig(assetPath: string, domeIntensity: number, keyIntensity: numbe
   ].join("\n");
 }
 
-export function registerUsdRenderTools(
-  server: McpServer,
-  deps: {
-    runFn?: typeof run;
-    analyzeFrameFn?: typeof analyzeFrame;
-    appendUsdHostRenderEntryFn?: typeof appendUsdHostRenderEntry;
-    usdrecordBinFn?: typeof usdrecordBin;
-  } = {},
-) {
+interface UsdRenderDependencies {
+  runFn: typeof run;
+  analyzeFrameFn: typeof analyzeFrame;
+  appendUsdHostRenderEntryFn: typeof appendUsdHostRenderEntry;
+  usdrecordBinFn: typeof usdrecordBin;
+}
+
+export function registerUsdRenderTools(server: McpServer, overrides: Partial<UsdRenderDependencies> = {}) {
+  const deps = completeDependencies<UsdRenderDependencies>(
+    "registerUsdRenderTools", overrides,
+    { runFn: true, analyzeFrameFn: true, appendUsdHostRenderEntryFn: true, usdrecordBinFn: true },
+    () => ({ runFn: run, analyzeFrameFn: analyzeFrame, appendUsdHostRenderEntryFn: appendUsdHostRenderEntry, usdrecordBinFn: usdrecordBin }),
+  );
   server.registerTool(
     "render_usd_offscreen",
     {
@@ -156,7 +161,7 @@ export function registerUsdRenderTools(
       } catch (error: any) {
         return fail(`asset could not be read: ${error?.message ?? String(error)}`);
       }
-      const bin = (deps.usdrecordBinFn ?? usdrecordBin)();
+      const bin = deps.usdrecordBinFn();
       const out = expandHome(outPath ?? path.join(os.tmpdir(), "usdrender", `${path.basename(asset).replace(/\.[^.]+$/, "")}.png`));
       if (path.resolve(out) === path.resolve(asset)) return fail("outPath must not overwrite the source USD asset");
       if (record && !app) return okJson({
@@ -179,7 +184,7 @@ export function registerUsdRenderTools(
       if (camera) args.push("--camera", camera);
       args.push(rigPath, freshOut);
       try {
-        const r = await (deps.runFn ?? run)(bin, args, { timeoutMs: 60_000, maxOutputBytes: 256 * 1024 });
+        const r = await deps.runFn(bin, args, { timeoutMs: 60_000, maxOutputBytes: 256 * 1024 });
         if (r.code !== 0 || r.timedOut) return okJson({
           status: "render_failed",
           reason: `usdrecord failed${r.timedOut ? " (timed out)" : ` with code ${r.code}`}: ${(r.stderr || r.stdout || "no diagnostic output").trim()}`.slice(0, 600),
@@ -206,7 +211,7 @@ export function registerUsdRenderTools(
           compositionProof: { measuredAccepted: false, durable: false },
           note: "The output was not an accepted scene raster, so this attempt provides no composition proof.",
         });
-        const measurements = await (deps.analyzeFrameFn ?? analyzeFrame)(freshOut).catch((error: any) => ({ available: false, error: error?.message ?? String(error) } as FrameMeasurements));
+        const measurements = await deps.analyzeFrameFn(freshOut).catch((error: any) => ({ available: false, error: error?.message ?? String(error) } as FrameMeasurements));
         const accepted = acceptUsdMeasurements(measurements);
         if (!accepted.ok) return okJson({
           status: "render_rejected",
@@ -304,7 +309,7 @@ export function registerUsdRenderTools(
         let ledger: any;
         if (record && app) {
           try {
-            ledger = (deps.appendUsdHostRenderEntryFn ?? appendUsdHostRenderEntry)(app, {
+            ledger = deps.appendUsdHostRenderEntryFn(app, {
               claim: measuredClaim,
               artifactPath: out,
               artifactBytes: finalRead.bytes,

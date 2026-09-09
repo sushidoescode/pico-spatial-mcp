@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { bindMacQemuWindow, createBoundCameraActionAdapter, type BoundQemuWindow } from "./cameradrive.js";
+import { bindMacQemuWindow, createBoundCameraActionAdapter, frontmostQemu, type BoundQemuWindow, type QemuWindowBindingResult } from "./cameradrive.js";
 import {
   executeRelativeCameraRoute,
   ROUTE_FINALIZATION_RESERVE_MS,
@@ -415,6 +415,8 @@ export interface BoundaryExperimentDependencies {
   monotonicNs(): bigint;
   readNativeRunReceipt: typeof readNativeRunReceipt;
   readReviewImage: typeof readBoundReviewImage;
+  bindQemuWindow?(serial: string): Promise<QemuWindowBindingResult>;
+  focusQemuWindow?(binding: BoundQemuWindow): Promise<string | null>;
   probeHostWindow?(serial: string, binding?: BoundQemuWindow): Promise<HostWindowProbe>;
   collectPreparation(context: Record<string, any>): Promise<BoundaryPreparationResult>;
   recaptureReviewedFrame(context: Record<string, any>): Promise<{ matches: boolean; sha256: string; continuity: ApplicationContinuitySample }>;
@@ -467,6 +469,7 @@ interface ExperimentState {
   input: PrepareInput;
   provenanceReceipt: Awaited<ReturnType<typeof validateImportedApk>> | null;
   hostWindowEvidence: BoundaryHostWindowEvidence;
+  hostWindowBinding?: BoundQemuWindow;
   routeScript: ReturnType<typeof canonicalBoundaryRouteScript>;
   waypoints: BoundaryWaypointPlan[];
   preparation: BoundaryPreparationResult;
@@ -520,6 +523,13 @@ interface ExperimentState {
 }
 
 interface BoundaryHostWindowEvidence {
+  hostWindowFocusRequest: {
+    status: "requested" | "failed" | "not_applicable";
+    error: string | null;
+    qemuWindowId: number | null;
+    qemuWindowOwnerPid: number | null;
+    durationMs: number;
+  } | null;
   hostWindowProbe: HostWindowProbe;
   hostWindowProbes: Array<{ phase: string; probe: HostWindowProbe }>;
   hostWindowError: { code: "host_window_occluded" | "host_window_unavailable" | "budget_exhausted"; detail: string } | null;
@@ -537,6 +547,7 @@ function createHostWindowControl(dependencies: BoundaryExperimentDependencies, s
   let deadlineNs: bigint | null = null;
   const startedNs = dependencies.monotonicNs();
   const evidence: BoundaryHostWindowEvidence = {
+    hostWindowFocusRequest: null,
     hostWindowProbe: unavailableHostWindowProbe("host window has not been observed", binding),
     hostWindowProbes: [],
     hostWindowError: null,
@@ -544,43 +555,76 @@ function createHostWindowControl(dependencies: BoundaryExperimentDependencies, s
   const assert = (): void => {
     if (evidence.hostWindowError) throw new BoundaryHostWindowError(evidence.hostWindowError.code, evidence.hostWindowError.detail);
   };
-  const observe = async (phase: string): Promise<HostWindowProbe> => {
-    let probe: HostWindowProbe;
+  const sample = async (): Promise<HostWindowProbe> => {
     try {
-      probe = serial && dependencies.probeHostWindow
+      return serial && binding && dependencies.probeHostWindow
         ? structuredClone(await dependencies.probeHostWindow(serial, binding))
-        : unavailableHostWindowProbe("host-window probe dependency or bound serial is unavailable", binding);
-      const problem = hostWindowPrecondition(probe);
-      if (problem && !evidence.hostWindowError) evidence.hostWindowError = problem;
+        : unavailableHostWindowProbe("host-window probe dependency or bound window is unavailable", binding);
     } catch (error) {
-      probe = unavailableHostWindowProbe(`host-window probe failed: ${error instanceof Error ? error.message : String(error)}`, binding);
-      evidence.hostWindowError ??= hostWindowPrecondition(probe);
+      return unavailableHostWindowProbe(`host-window probe failed: ${error instanceof Error ? error.message : String(error)}`, binding);
     }
+  };
+  const observe = async (phase: string, retainedProbe?: HostWindowProbe): Promise<HostWindowProbe> => {
+    const probe = retainedProbe ?? await sample();
+    const problem = hostWindowPrecondition(probe);
+    if (problem && !evidence.hostWindowError) evidence.hostWindowError = problem;
     evidence.hostWindowProbe = probe;
     evidence.hostWindowProbes.push({ phase, probe });
     return probe;
   };
+  const checkDeadline = (phase: string, remainingMs?: number | (() => number), localDeadlineNs: bigint | null = null): void => {
+    if ((deadlineNs !== null && dependencies.monotonicNs() >= deadlineNs)
+      || (localDeadlineNs !== null && dependencies.monotonicNs() >= localDeadlineNs)
+      || (typeof remainingMs === "number" && remainingMs <= 0)
+      || (typeof remainingMs === "function" && remainingMs() <= 0)) {
+      evidence.hostWindowError = { code: "budget_exhausted", detail: `deadline exhausted at ${phase}` };
+      assert();
+    }
+  };
   return {
     evidence,
+    sample,
     observe,
     assert,
+    checkDeadline,
     elapsedMs: (): number => Math.max(0, Math.ceil(Number(dependencies.monotonicNs() - startedNs) / 1_000_000)),
-    bind: (nextBinding: BoundQemuWindow): void => { binding = nextBinding; },
+    binding: (): BoundQemuWindow | undefined => binding,
+    bindAndFocus: async (): Promise<void> => {
+      try {
+        if (!binding) {
+          const selected = serial && dependencies.bindQemuWindow ? await dependencies.bindQemuWindow(serial) : null;
+          if (!selected?.ok) throw new Error(selected?.detail ?? "host-window binding dependency or serial is unavailable");
+          binding = selected.binding;
+        }
+        if (binding.discoveredSerial !== serial) throw new Error("bound host window belongs to another serial");
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        evidence.hostWindowError = { code: "host_window_unavailable", detail };
+        return;
+      }
+      const startedNs = dependencies.monotonicNs();
+      let error: string | null;
+      try {
+        error = dependencies.focusQemuWindow ? await dependencies.focusQemuWindow(binding) : "host-window focus dependency is unavailable";
+      } catch (cause) {
+        error = cause instanceof Error ? cause.message : String(cause);
+      }
+      evidence.hostWindowFocusRequest = {
+        status: error ? "failed" : "requested", error,
+        qemuWindowId: binding.qemuWindowId, qemuWindowOwnerPid: binding.qemuWindowOwnerPid,
+        durationMs: Math.max(0, Number(dependencies.monotonicNs() - startedNs) / 1_000_000),
+      };
+    },
     setDuration: (durationMs: number): void => {
       deadlineNs = startedNs + BigInt(Math.max(0, Math.floor(durationMs * 1_000_000)));
     },
-    require: async (phase: string, remainingMs?: number | (() => number)): Promise<void> => {
+    require: async (phase: string, remainingMs?: number | (() => number), retainedProbe?: HostWindowProbe): Promise<void> => {
       const localDeadlineNs = typeof remainingMs === "number"
         ? dependencies.monotonicNs() + BigInt(Math.max(0, Math.floor(remainingMs * 1_000_000)))
         : null;
-      await observe(phase);
+      await observe(phase, retainedProbe);
       assert();
-      if ((deadlineNs !== null && dependencies.monotonicNs() >= deadlineNs)
-        || (localDeadlineNs !== null && dependencies.monotonicNs() >= localDeadlineNs)
-        || (typeof remainingMs === "function" && remainingMs() <= 0)) {
-        evidence.hostWindowError = { code: "budget_exhausted", detail: `deadline exhausted after ${phase} host-window observation` };
-        assert();
-      }
+      checkDeadline(phase, remainingMs, localDeadlineNs);
     },
   };
 }
@@ -1529,17 +1573,19 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
     const input = boundaryExperimentInputSchema.parse(rawInput);
     const hostEvidence = hostWindowControl.evidence;
     if (input.action === "prepare") {
-      try {
-        hostWindowControl.assert();
-      } catch (error) {
-        if (!(error instanceof BoundaryHostWindowError)) throw error;
-        return { status: "preflight_rejected", structuralStop: error.code, error: error.message };
-      }
       hostWindowControl.setDuration(input.route.budgets.maxDurationMs);
       sweepExpired();
       if (runs.size + preparing >= MAX_ACTIVE_RUNS) throw new Error(`active boundary run cap (${MAX_ACTIVE_RUNS}) reached; adjudicate or wait for expiry before preparing another run`);
       preparing += 1;
       try {
+        await hostWindowControl.bindAndFocus();
+        await hostWindowControl.observe("prepare_preflight");
+        try {
+          hostWindowControl.assert();
+        } catch (error) {
+          if (!(error instanceof BoundaryHostWindowError)) throw error;
+          return { status: "preflight_rejected", structuralStop: error.code, error: error.message };
+        }
         const provenanceReceipt = input.provenance.kind === "imported_apk"
           ? await validateImportedApk({
             ...input.provenance,
@@ -1672,7 +1718,8 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           };
         }
         try {
-          await hostWindowControl.require("after_preparation");
+          await hostWindowControl.require("after_preparation", undefined,
+            (preparation.appBaseline.receipt as { hostWindowProbe?: HostWindowProbe })?.hostWindowProbe);
         } catch (error) {
           if (!(error instanceof BoundaryHostWindowError)) throw error;
           // Retain diagnostics and continuity, but never admit a covered baseline for routing.
@@ -1689,6 +1736,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           input,
           provenanceReceipt,
           hostWindowEvidence: hostEvidence,
+          hostWindowBinding: hostWindowControl.binding(),
           routeScript,
           waypoints: routeScript.script.waypoints,
           preparation,
@@ -1804,6 +1852,8 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
     busyRuns.add(state.runId);
     try {
       assertOwnedRunRoot(state);
+      await hostWindowControl.bindAndFocus();
+      await hostWindowControl.observe(`${input.action}_preflight`);
       state.hostWindowEvidence = hostEvidence;
       if (input.action === "step") {
         if (state.routeAdjudication) return { status: "already_adjudicated", runId: state.runId, artifactRoot: state.artifactRoot };
@@ -1882,7 +1932,7 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
             remainingBudgets: delegatedBudgets,
             hostWindowControl,
             recaptureReviewedFrame: async (limits: Record<string, any> = {}) => {
-              await hostWindowControl.require("before_reviewed_frame_recapture", limits.remainingMs);
+              hostWindowControl.checkDeadline("before_reviewed_frame_recapture", limits.remainingMs);
               const recaptured = await dependencies.recaptureReviewedFrame({
                 state, expectedSha256: state.lastRequiredHash, attestation: input.reviewedPriorFrame,
                 ...limits, hostWindowControl,
@@ -1899,7 +1949,8 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
           return { ...terminalResponse(state), executionError: error instanceof Error ? error.message : String(error) };
         }
         try {
-          await hostWindowControl.require("after_waypoint_before_distance");
+          await hostWindowControl.require("after_waypoint_before_distance", undefined,
+            (executed.capture?.receipt as { hostWindowProbe?: HostWindowProbe } | undefined)?.hostWindowProbe);
         } catch (error) {
           if (!(error instanceof BoundaryHostWindowError)) throw error;
         }
@@ -2352,7 +2403,8 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
         };
       }
       try {
-        await hostWindowControl.require("after_recovery_step_before_measurement");
+        await hostWindowControl.require("after_recovery_step_before_measurement", undefined,
+          (recovered.afterCapture?.receipt as { hostWindowProbe?: HostWindowProbe } | undefined)?.hostWindowProbe);
       } catch (error) {
         if (!(error instanceof BoundaryHostWindowError)) throw error;
       }
@@ -2463,9 +2515,8 @@ export function createBoundaryExperimentOrchestrator(dependencies: BoundaryExper
   const execute = async (rawInput: BoundaryExperimentInput): Promise<Record<string, any>> => {
     const state = rawInput?.action !== "prepare" ? runs.get(rawInput?.runId) : undefined;
     const serial = rawInput?.action === "prepare" ? rawInput.serial : state?.input.serial;
-    const binding = (state?.preparation.privateRuntime as LiveBoundaryRuntime | undefined)?.window;
+    const binding = state?.hostWindowBinding;
     const control = createHostWindowControl(dependencies, serial, binding);
-    await control.observe(`${rawInput?.action ?? "unknown"}_preflight`);
     try {
       const result = await executeObserved(rawInput, control);
       return { ...result, ...control.evidence,
@@ -2887,7 +2938,7 @@ async function liveCapture(
   remainingMs?: () => number,
   priorSha256?: string,
 ): Promise<BoundaryCapture> {
-  await hostWindowControl.require(`before_${role}_capture`, remainingMs);
+  hostWindowControl.checkDeadline(`before_${role}_capture`, remainingMs);
   const boundedTimeout = (capMs: number, label: string): number => {
     if (!remainingMs) return capMs;
     const remaining = Math.floor(remainingMs());
@@ -2919,7 +2970,7 @@ async function liveCapture(
       return output.split("\n").slice(1).map((line) => line.trim().split(/\s+/)).filter((fields) => fields[1] === "device").map((fields) => fields[0]);
     },
     probeIdentity: identity,
-    probeHostWindow: () => hostWindowControl.observe(`${role}_capture_observation`),
+    probeHostWindow: () => hostWindowControl.sample(),
     capture: (serial) => captureAdbFrame(adb, serial, boundedTimeout(input.capture.attemptTimeoutMs, "bounded recovery screencap")),
     sleep: async (milliseconds) => {
       if (remainingMs && remainingMs() < milliseconds) throw new Error("capture settlement delay would exceed the recovery reserve");
@@ -2928,7 +2979,7 @@ async function liveCapture(
     hash: sha256Bytes,
     writeFrame: (absolutePath, bytes) => fs.writeFileSync(absolutePath, bytes, { mode: 0o600 }),
   });
-  await hostWindowControl.require(`after_${role}_capture`, remainingMs);
+  await hostWindowControl.require(`after_${role}_capture`, remainingMs, captured.receipt.hostWindowProbe);
   const ref = captured.receipt.captureRef;
   if (!ref || !captured.receipt.sha256 || !captured.receipt.path) throw new Error(`${role} capture failed: ${captured.receipt.error?.detail ?? captured.receipt.status}`);
   return {
@@ -3180,6 +3231,8 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
     monotonicNs: () => process.hrtime.bigint(),
     readNativeRunReceipt,
     readReviewImage: readBoundReviewImage,
+    bindQemuWindow: (serial) => bindMacQemuWindow(adb, serial),
+    focusQemuWindow: frontmostQemu,
     probeHostWindow,
     collectPreparation: async (context) => {
       const input = context.input as PrepareInput;
@@ -3213,14 +3266,14 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
         }
       }
       // Imported bytes and compiled manifest were checked before run reservation by the orchestrator.
-      const selected = await bindMacQemuWindow(adb, input.serial);
-      if (!selected.ok) throw new Error(`${selected.code}: ${selected.detail}`);
+      const binding = context.hostWindowControl.binding() as BoundQemuWindow | undefined;
+      if (!binding) throw new Error("boundary preparation has no admitted host-window binding");
+      const selected = { binding };
       if (selected.binding.bindingMethod !== "discovery-pid-window"
         || !selected.binding.qemuPid
         || selected.binding.qemuWindowOwnerPid !== selected.binding.qemuPid) {
         throw new Error("application-aware boundary preparation requires an exact discovery PID to qemu-window binding");
       }
-      context.hostWindowControl.bind(selected.binding);
       await context.hostWindowControl.require("bound_preparation_before_home_clearance");
       let homeClearance: BoundarySystemHomeReceipt;
       try {
@@ -3570,8 +3623,12 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
                   return waypoint.actions as RelativeCameraAction[];
                 }, {
                   applyRelativeAction: async (action, budget) => {
-                    await context.hostWindowControl.require("before_camera_action", () => budget?.canStart() === true
-                      ? remainingWaypointWorkMs() : 0);
+                    await context.hostWindowControl.require("before_camera_action", remainingWaypointWorkMs);
+                    if (budget?.canStart() !== true) {
+                      const detail = "insufficient remaining budget for the complete action and settlement envelope";
+                      context.hostWindowControl.evidence.hostWindowError = { code: "budget_exhausted", detail };
+                      throw new BoundaryHostWindowError("budget_exhausted", detail);
+                    }
                     return createBoundCameraActionAdapter(state.input.serial, live.window).applyRelativeAction(action);
                   },
                   sampleContinuity: live.sampler,
@@ -4223,7 +4280,7 @@ export function registerBoundaryExperimentTools(server: McpServer): void {
   server.registerTool(
     "run_immersive_boundary_experiment",
     {
-      description: "Run one receipt-bound immersive boundary experiment as staged prepare → reviewed step(s) → exact-hash adjudication → one logical once-only recovery attempt. Recovery executes at most one ordered fallback per call; each continuation supplies reviewedPriorFrame for the preceding fallback's post-frame, so a structural candidate cannot suppress LOOK or unlock a later intervention by itself. Collection never assigns pixel semantics. Imported APK manifest_mixed rows replay an adjudicated native M0 route after exact APK and manifest inspection; imported evidence remains structural until LOOK adjudication. Host-window obstruction or unavailable visibility refuses measurement and input without raising or moving windows. Full-surface only; explicit serial and an external non-existing artifact root are mandatory.",
+      description: "Run one receipt-bound immersive boundary experiment as staged prepare → reviewed step(s) → exact-hash adjudication → one logical once-only recovery attempt. Recovery executes at most one ordered fallback per call; each continuation supplies reviewedPriorFrame for the preceding fallback's post-frame, so a structural candidate cannot suppress LOOK or unlock a later intervention by itself. Collection never assigns pixel semantics. Imported APK manifest_mixed rows replay an adjudicated native M0 route after exact APK and manifest inspection; imported evidence remains structural until LOOK adjudication. This macOS lane requests focus for its exact bound qemu window before probing visibility; remaining obstruction or unavailable visibility refuses measurement and input. Full-surface only; explicit serial and an external non-existing artifact root are mandatory.",
       inputSchema: boundaryExperimentInputSchema,
     },
     async (args) => {
@@ -4245,6 +4302,7 @@ export function registerBoundaryExperimentTools(server: McpServer): void {
       } catch (error) {
         return okJson({ status: "error", error: error instanceof Error ? error.message : String(error),
           ...((error as { hostWindowEvidence?: BoundaryHostWindowEvidence })?.hostWindowEvidence ?? {
+            hostWindowFocusRequest: null,
             hostWindowProbe: unavailableHostWindowProbe("boundary action failed before a host-window observation was retained"),
             hostWindowProbes: [],
           }),

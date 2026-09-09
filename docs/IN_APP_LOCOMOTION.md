@@ -6,10 +6,13 @@ staged: `prepare` → reviewed `step` calls → `restore` → `adjudicate`. It b
 the exact native run receipt, APK hash, serial, runtime context, safety state,
 and external artifact root before it accepts a route.
 
-On macOS, preparation and distance measurements require the bound qemu window
-to be visible and unoccluded. Receipts include the host window probes;
+On macOS, preparation and distance measurements request focus for the run's
+bound qemu window, then require it to be visible and unoccluded. Receipts
+include the focus request and host window probes;
 `host_window_occluded` names overlapping window owners. Missing visibility
-evidence fails closed. See [Space Program receipts](SPACE_PROGRAM_RECEIPTS.md)
+evidence fails closed. This precondition is not yet exercised in a live regression.
+Linux and Windows record host-window visibility as `not_applicable` and keep
+the adb and bridge route available. See [Space Program receipts](SPACE_PROGRAM_RECEIPTS.md)
 for probe semantics and retained settled pairs.
 
 The [CP2 live regression](evidence/in-app-locomotion-cp2-2026-09-05/CP2.md)

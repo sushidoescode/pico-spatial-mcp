@@ -1297,7 +1297,7 @@ function clearTargetHostWindow(overrides = {}) {
   return {
     status: "ok", occluded: false, frontmost: true, overlappingOwners: [],
     observedAt: "2026-09-08T12:00:00.000Z", qemuWindowId: TARGET_WINDOW.id,
-    qemuWindowOwnerPid: 93013, detail: null, ...overrides,
+    qemuWindowOwnerPid: 93013, detail: null, durationMs: 0, ...overrides,
   };
 }
 
@@ -1496,6 +1496,7 @@ function targetFake(input, options = {}) {
       events.push("bind-qemu");
       return options.bindingResult ?? { ok: true, binding: structuredClone(qemuBinding) };
     },
+    focusQemuWindow: async () => null,
     probeHostWindow: async () => clearTargetHostWindow(),
     reserveArtifactSession: async (outDir, runId, ownerNonceHash) => {
       events.push("reserve");
@@ -2344,6 +2345,76 @@ test("stable scene geometry classifies shrinking or excessive guide projection a
   }
 });
 
+test("navigation focuses its one exact binding before visibility admission and reuses retained capture probes", async () => {
+  const input = targetInput("calibrate");
+  const fake = targetFake(input);
+  const bind = fake.deps.bindQemuWindow;
+  const capture = fake.deps.captureSettled;
+  let binding;
+  let focused = false;
+  let probeCalls = 0;
+  let captureCalls = 0;
+  fake.deps.bindQemuWindow = async (serial) => {
+    const result = await bind(serial);
+    binding = result.binding;
+    return result;
+  };
+  fake.deps.focusQemuWindow = async (window) => {
+    assert.equal(window, binding);
+    focused = true;
+    return null;
+  };
+  fake.deps.probeHostWindow = async (serial, window) => {
+    probeCalls++;
+    assert.equal(serial, TARGET_SERIAL);
+    assert.equal(window, binding, "every observation must receive the original bound window");
+    return clearTargetHostWindow({ occluded: !focused, overlappingOwners: focused ? [] : ["Terminal"] });
+  };
+  fake.deps.captureSettled = async (request, context) => {
+    captureCalls++;
+    assert.equal(context?.hostWindowBinding, binding, "capture must reuse the selected window");
+    const captured = await capture(request);
+    captured.receipt.hostWindowProbe = clearTargetHostWindow({ observedAt: `capture-${captureCalls}` });
+    return captured;
+  };
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.calibrationStatus, "written");
+  assert.equal(fake.events.filter((event) => event === "bind-qemu").length, 1);
+  assert.equal(result.hostWindowFocusRequest.status, "requested");
+  assert.equal(result.hostWindowFocusRequest.qemuWindowId, TARGET_WINDOW.id);
+  assert.equal(result.hostWindowProbes.filter((sample) => sample.probe.observedAt.startsWith("capture-")).length, captureCalls);
+  assert.equal(result.hostWindowProbes.length, probeCalls + captureCalls, "retained post-capture observations must not trigger another host probe");
+  assert.equal(result.hostWindowProbes.some((sample) => sample.phase.endsWith("_before_capture")), false,
+    "capture-only admission must not add another host query before the capture's retained observation");
+});
+
+test("navigation refuses retained capture occlusion even if a later explicit probe would be clear", async () => {
+  const input = targetInput("calibrate");
+  const fake = targetFake(input);
+  const capture = fake.deps.captureSettled;
+  fake.deps.captureSettled = async (request) => {
+    const captured = await capture(request);
+    captured.receipt.hostWindowProbe = clearTargetHostWindow({ occluded: true, overlappingOwners: ["Terminal"] });
+    return captured;
+  };
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.stopReason, "host_window_occluded");
+  assert.equal(fake.actionCount, 0);
+  assert.equal(fake.stored.registry, null);
+  assert.ok(result.hostWindowProbes.some((sample) => sample.phase.endsWith("_after_capture") && sample.probe.occluded));
+});
+
+test("navigation records a failed focus request and admits a measured clear window", async () => {
+  const input = targetInput("calibrate");
+  const fake = targetFake(input);
+  fake.deps.focusQemuWindow = async () => "focus readback failed";
+  const result = await executeNavigateToSceneTarget(input, fake.deps);
+  assert.equal(result.calibrationStatus, "written");
+  assert.equal(result.hostWindowFocusRequest?.status, "failed");
+  assert.equal(result.hostWindowFocusRequest.error, "focus readback failed");
+  assert.equal(result.hostWindowProbe.occluded, false);
+});
+
 test("calibration host-window precondition refuses covered, missing, and unavailable windows before effects", async (t) => {
   for (const [label, probe, code] of [
     ["covered despite frontmost", clearTargetHostWindow({ occluded: true, overlappingOwners: ["Terminal", "Codex"] }), "host_window_occluded"],
@@ -2454,6 +2525,8 @@ test("navigation refuses input when a host probe leaves positive time below the 
   assert.equal(fake.actionCount, 0);
   assert.equal(result.stopReason, "budget_exhausted");
   assert.equal(result.routeTraces[0].status, "action_failed");
+  assert.match(result.error.detail, /remaining.*action.*settlement.*envelope/i);
+  assert.doesNotMatch(result.error.detail, /host.*probe.*exhausted/i);
   assert.equal(fake.stored.registry, null);
 });
 

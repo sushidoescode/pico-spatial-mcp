@@ -1,0 +1,12 @@
+{
+  "frontmostOwnerPid": 92857,
+  "windows": [
+    { "windowId": 410, "ownerPid": 410, "ownerName": "Dock", "layer": 20, "alpha": 1, "x": 0, "y": 0, "width": 1728, "height": 1117 },
+    { "windowId": 411, "ownerPid": 411, "ownerName": "Window Server menu", "layer": 25, "alpha": 1, "x": 100, "y": 33, "width": 500, "height": 40 },
+    { "windowId": 25258, "ownerPid": 92857, "ownerName": "qemu-system-aarch64 toolbar", "layer": 0, "alpha": 1, "x": 0, "y": 33, "width": 984, "height": 48 },
+    { "windowId": 412, "ownerPid": 412, "ownerName": "Zero-size helper", "layer": 0, "alpha": 1, "x": 0, "y": 33, "width": 0, "height": 1 },
+    { "windowId": 413, "ownerPid": 413, "ownerName": "Invalid helper", "layer": 0, "alpha": 1, "x": null, "y": 33, "width": 100, "height": 100 },
+    { "windowId": 25257, "ownerPid": 92857, "ownerName": "qemu-system-aarch64", "layer": 0, "alpha": 1, "x": 0, "y": 33, "width": 984, "height": 1012 },
+    { "windowId": 414, "ownerPid": 414, "ownerName": "Behind", "layer": 0, "alpha": 1, "x": 0, "y": 33, "width": 984, "height": 1012 }
+  ]
+}

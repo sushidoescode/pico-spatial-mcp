@@ -2,6 +2,8 @@
 // the external profiler. No npm requests, device operations, or writes to the user's home.
 import test from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { runPerfDiagnose } from "../dist/perfcli.js";
 
 const fixtureDriver = fileURLToPath(new URL("./fixtures/fake-perf-cli.mjs", import.meta.url));
+const retainedHelpPath = fileURLToPath(new URL("../docs/evidence/perfcli-0.1.0-help-2026-09-08.txt", import.meta.url));
 
 function perfFixture(t, config) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico-perf argv-"));
@@ -42,7 +45,11 @@ function perfFixture(t, config) {
     }
     fs.rmSync(root, { recursive: true, force: true });
   });
-  return { root, cliPath, calls: () => fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) };
+  return {
+    root, cliPath,
+    invoke: (args) => spawnSync(process.execPath, [fixtureDriver, configPath, ...args], { encoding: "utf8", cwd: root }),
+    calls: () => fs.readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse),
+  };
 }
 
 function assertRunReceipt(result, fixture, expectedArgs) {
@@ -50,6 +57,76 @@ function assertRunReceipt(result, fixture, expectedArgs) {
   const runs = fixture.calls().filter((args) => args[0] === "perf" && args[2] === "run" && args.at(-1) !== "--help");
   assert.deepEqual(runs, [expectedArgs], "receipt must equal the single invocation actually executed");
 }
+
+// The external CLI double must retain the observed parser traps; a permissive fake could
+// otherwise approve a removed command or invalid output arguments in the production wrapper.
+// Source: docs/evidence/perfcli-0.1.0-help-2026-09-08.txt (help-only; excerpts are truncated).
+test("retained profiler help evidence preserves the original capture bytes", () => {
+  assert.equal(fs.existsSync(retainedHelpPath), true, "the real help capture must be tracked with the fixture");
+  assert.equal(crypto.createHash("sha256").update(fs.readFileSync(retainedHelpPath)).digest("hex"),
+    "19ffb931b7e2f2cab2c02876c2598da262611743817c506a7a61d6355597ff9d");
+});
+
+test("profiler fixture exposes the bare 0.1.0 version", (t) => {
+  const fixture = perfFixture(t, {});
+  const version = fixture.invoke(["perf", "-V"]);
+  assert.equal(version.status, 0);
+  assert.equal(version.stdout, "0.1.0\n");
+  assert.equal(version.stderr, "");
+});
+
+test("profiler fixture advertises the current root command groups", (t) => {
+  const fixture = perfFixture(t, {});
+  const rootHelp = fixture.invoke(["perf", "--help"]);
+  assert.equal(rootHelp.status, 0);
+  assert.equal(rootHelp.stderr, "");
+  assert.match(rootHelp.stdout, /^Usage: perf \[global-options\] <command> \[command-options\]\n/);
+  assert.deepEqual([...rootHelp.stdout.matchAll(/^  ([a-z]+)(?:[ \t]|$)/gm)].map((match) => match[1]),
+    ["daemon", "session", "doctor", "live", "trace", "help"]);
+});
+
+test("profiler fixture rejects the removed monitor command", (t) => {
+  const fixture = perfFixture(t, {});
+  const rejected = fixture.invoke(["perf", "monitor", "run"]);
+  assert.equal(rejected.status, 1);
+  assert.equal(rejected.stdout, "");
+  assert.equal(rejected.stderr, "error: unknown command 'monitor'\n(Did you mean doctor?)\n");
+});
+
+test("profiler fixture monitor help succeeds with root help", (t) => {
+  const fixture = perfFixture(t, {});
+  const misleadingHelp = fixture.invoke(["perf", "monitor", "run", "--help"]);
+  assert.equal(misleadingHelp.status, 0);
+  assert.equal(misleadingHelp.stderr, "");
+  assert.equal(misleadingHelp.stdout, fixture.invoke(["perf", "--help"]).stdout);
+  assert.match(misleadingHelp.stdout, /^Usage: perf \[global-options\]/);
+});
+
+test("profiler fixture validates required --app before the output save dependency", (t) => {
+  const fixture = perfFixture(t, {});
+  const rejected = fixture.invoke(["perf", "live", "run", "-o", path.join(fixture.root, "missing-app.json"), "-d", "1"]);
+  assert.equal(rejected.status, 1);
+  assert.equal(rejected.stdout, "");
+  assert.equal(rejected.stderr, "error: required option '--app <package_name>' not specified\n");
+});
+
+test("profiler fixture requires --save or --report-mode for explicit live output", (t) => {
+  const fixture = perfFixture(t, {});
+  const output = path.join(fixture.root, "report.json");
+  const args = ["perf", "live", "run", "--app", "com.fleet.demo", "-o", output, "-d", "1"];
+  const rejected = fixture.invoke(args);
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /requires.*--save.*--report-mode/);
+  assert.equal(fs.existsSync(output), false);
+});
+
+test("profiler fixture accepts --report-mode as the explicit output save dependency", (t) => {
+  const fixture = perfFixture(t, { runMode: "live" });
+  const output = path.join(fixture.root, "report.json");
+  const accepted = fixture.invoke(["perf", "live", "run", "--app", "com.fleet.demo", "-o", output, "-d", "1", "--report-mode"]);
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(output, "utf8")).metadata.app, "com.fleet.demo");
+});
 
 test("profiler 0.1.0 produces a report through live run with --save and retains exact argv", async (t) => {
   const fixture = perfFixture(t, { profilerVersion: "0.1.0", runMode: "live" });
