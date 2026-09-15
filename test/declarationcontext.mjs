@@ -742,3 +742,119 @@ test("the module reads only; it never spawns a process, runs Gradle or the CLI, 
   assert.equal(typeof io.tree.reads.find((p) => p === RECORD_PATH), "string", "the record was read through the injected io");
   assert.ok(!Object.keys(io).some((k) => /write|remove|unlink/i.test(k)), "the DeclarationIO surface has no write channel");
 });
+
+// ═══ 6. consumer headline and packaged-index state (vault.ts, fix round 1) ═════════════════════
+// The consumer must not headline a lookup `target-verified` when only some of its returned
+// matches are in the verified scope, and a MISSING or INVALID packaged index must read
+// differently from an index that simply lists no records.
+const { describeDeclarationAuthority, lookupHeadline } = await import("../dist/vault.js");
+
+const OTHER_REL = "knowledge/api-reference/com.pico.spatial.other.md";
+const OTHER_MD = ["# com.pico.spatial.other", "# Entity", "package com.pico.spatial.other {", "    class Entity {", "        constructor ();", "    }", "}", ""].join("\n");
+const OTHER_ENTITY = "com.pico.spatial.other.Entity";
+const twoEntityVault = () => ({ ...vaultFiles(), [`${VAULT}/${OTHER_REL}`]: OTHER_MD });
+
+/** A real authority tuple: reader identity, resolved project, loader output, resolver context. */
+function authorityFor(io, source, target, recordPaths) {
+  const loaded = loadVerifiedCompatibilityEvidence(recordPaths, source, target, io);
+  const context = resolveDeclarationContext(source, target, loaded.accepted);
+  return { identity: { status: "ok", identity: source }, target, accepted: loaded.accepted, context };
+}
+
+test("a multi-match lookup is headlined target-verified only when EVERY returned match is verified; a partial match stays unknown and names the verified ones", () => {
+  assert.equal(typeof lookupHeadline, "function", "vault.ts exports lookupHeadline");
+  const vault = twoEntityVault();
+  const source = sourceOf(vault);
+  const scoped = recordFor(source); // scoped to com.pico.spatial.core.ecs.Entity only
+  const io = ioFor(specFor({ vault, records: [{ rel: RECORD_REL, bytes: recordBytes(scoped) }] }));
+  const authority = authorityFor(io, source, identityA, [RECORD_PATH]);
+  assert.equal(authority.accepted.length, 1);
+  assert.equal(authority.context.status, "target-compatible");
+
+  const partial = lookupHeadline(authority, [SYMBOL, OTHER_ENTITY]);
+  assert.equal(partial.symbolAuthority, "unknown", "one verified match out of two is not a verified lookup");
+  assert.notEqual(partial.lookup, "target-verified");
+  assert.equal(partial.lookup, "historical");
+  assert.deepEqual(partial.verifiedMatches, [SYMBOL], "exactly the scoped match is listed");
+  assert.deepEqual(partial.incompatibleMatches, []);
+
+  const full = lookupHeadline(authority, [SYMBOL]);
+  assert.equal(full.symbolAuthority, "target-compatible");
+  assert.equal(full.lookup, "target-verified");
+  assert.deepEqual(full.verifiedMatches, [SYMBOL]);
+
+  const none = lookupHeadline(authority, [OTHER_ENTITY]);
+  assert.equal(none.symbolAuthority, "unknown");
+  assert.deepEqual(none.verifiedMatches, []);
+  assert.equal(lookupHeadline(authority, []).symbolAuthority, "unknown", "no matches is never verified");
+
+  // an incompatible record scoped to the other Entity: any incompatible match headlines incompatible
+  const bad = recordFor(source, { id: "fixture-other-incompatible", verdict: "incompatible", symbols: [OTHER_ENTITY], sourceFiles: [{ path: OTHER_REL, sha256: sha256(OTHER_MD) }] });
+  const badRel = "records/fixture-other-incompatible.json";
+  const badPath = path.join(DATA_DIR, badRel);
+  const both = authorityFor(ioFor(specFor({ vault, records: [{ rel: RECORD_REL, bytes: recordBytes(scoped) }, { rel: badRel, bytes: recordBytes(bad) }] })), source, identityA, [RECORD_PATH, badPath]);
+  assert.equal(both.accepted.length, 2);
+  const mixed = lookupHeadline(both, [SYMBOL, OTHER_ENTITY]);
+  assert.equal(mixed.symbolAuthority, "incompatible");
+  assert.equal(mixed.lookup, "target-verified");
+  assert.deepEqual(mixed.verifiedMatches, [SYMBOL]);
+  assert.deepEqual(mixed.incompatibleMatches, [OTHER_ENTITY]);
+  assert.equal(lookupHeadline(both, [SYMBOL]).symbolAuthority, "target-compatible", "the compatible scope alone is still verified");
+
+  // no target: historical regardless of matches; unavailable identity: unavailable
+  const historical = lookupHeadline({ ...authority, target: null, context: resolveDeclarationContext(source, null, authority.accepted) }, [SYMBOL]);
+  assert.equal(historical.symbolAuthority, "historical");
+  assert.equal(historical.lookup, "historical");
+  assert.deepEqual(historical.verifiedMatches, []);
+  const unavailable = lookupHeadline({ identity: { status: "unavailable", code: "root-unavailable", detail: "x" }, target: identityA, accepted: [], context: null }, [SYMBOL]);
+  assert.equal(unavailable.symbolAuthority, "unavailable");
+  assert.deepEqual(unavailable.verifiedMatches, []);
+});
+
+test("a missing or invalid packaged index is reported distinctly from an index that lists no records", () => {
+  const index = (io, hints = { projectRoot: rootA }) => describeDeclarationAuthority(VAULT, hints, io).report;
+
+  const empty = index(ioFor(specFor()));
+  assert.equal(empty.compatibilityIndex.status, "present");
+  assert.equal(empty.compatibilityIndex.records, 0);
+  assert.equal(empty.compatibilityIndex.code, null);
+  assert.equal(empty.compatibilityIndex.path, INDEX_PATH);
+  assert.equal(empty.context.status, "unknown");
+  assert.match(empty.note, /lists no records/);
+
+  const missing = index(ioFor(specFor({ index: null })));
+  assert.equal(missing.compatibilityIndex.status, "missing");
+  assert.equal(missing.compatibilityIndex.code, "index-missing");
+  assert.equal(missing.compatibilityIndex.path, INDEX_PATH);
+  assert.equal(missing.compatibilityIndex.records, 0);
+  assert.equal(missing.context.status, "unknown");
+  assert.match(missing.note, /reviewed compatibility index/);
+  assert.match(missing.note, /missing/);
+  assert.doesNotMatch(missing.note, /lists no records/);
+
+  const tampered = index(ioFor(specFor({ historical: [{ ...DRIFT_REF, sha256: "0".repeat(64) }, PROVENANCE_REF, FIXTURE_BASIS_REF] })));
+  assert.equal(tampered.compatibilityIndex.status, "invalid");
+  assert.equal(tampered.compatibilityIndex.code, "evidence-hash");
+  assert.match(tampered.note, /invalid/);
+  const malformed = index(ioFor(specFor({ index: "{ nope" })));
+  assert.equal(malformed.compatibilityIndex.status, "invalid");
+  assert.equal(malformed.compatibilityIndex.code, "index-schema");
+
+  // present WITH a record: the declared-only project hint is target-unresolved and the count is reported
+  const { spec } = scenario();
+  const withRecord = index(ioFor(spec));
+  assert.equal(withRecord.compatibilityIndex.status, "present");
+  assert.equal(withRecord.compatibilityIndex.records, 1);
+  assert.deepEqual(withRecord.evidence.rejected.map((r) => r.code), ["target-unresolved"]);
+  assert.match(withRecord.note, /Rejected records: target-unresolved/);
+
+  // a caller record path under a missing index is still not reviewed, and the index state still shows
+  const callerUnderMissing = index(ioFor(specFor({ index: null, records: [{ rel: RECORD_REL, bytes: spec.files[RECORD_PATH] }] })), { projectRoot: rootA, recordPaths: [RECORD_PATH] });
+  assert.equal(callerUnderMissing.compatibilityIndex.status, "missing");
+  assert.deepEqual(callerUnderMissing.evidence.rejected.map((r) => r.code), ["record-not-reviewed"]);
+  // no target: the index state is still reported, the context is historical
+  const noTarget = index(ioFor(specFor({ index: null })), {});
+  assert.equal(noTarget.compatibilityIndex.status, "missing");
+  assert.equal(noTarget.context.status, "historical");
+});
+

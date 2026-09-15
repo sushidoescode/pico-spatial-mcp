@@ -971,6 +971,7 @@ export function registerLintTools(
             findings,
             declarationIdentity: authority.report.declarationIdentity,
             target: authority.report.target,
+            compatibilityIndex: authority.report.compatibilityIndex,
             declarationContext: authority.report.context ? { ...authority.report.context, rejected: authority.report.evidence?.rejected ?? [] } : { status: "unavailable", rejected: [] },
             authorityNote,
             note: findings.length

@@ -10,14 +10,15 @@ import { hostToolchainIO } from "./toolchain.js";
 import { isVersionToken, resolveRootCandidate } from "./toolchainselection.js";
 import {
   hostDeclarationIO,
-  indexedRecordPaths,
   loadVerifiedCompatibilityEvidence,
   parsePackageRevision,
+  readCompatibilityIndex,
   readDeclarationIdentity,
   resolveDeclarationContext,
+  SDK_COMPATIBILITY_DATA_DIR,
   SDK_COMPATIBILITY_INDEX_PATH,
 } from "./declarationcontext.js";
-import type { CompatibilityLoadResult, DeclarationContext, DeclarationIO, DeclarationIdentityResult, VerifiedCompatibilityEvidence } from "./declarationcontext.js";
+import type { CompatibilityIndexResult, CompatibilityLoadResult, DeclarationContext, DeclarationIO, DeclarationIdentityResult, VerifiedCompatibilityEvidence } from "./declarationcontext.js";
 import { readProjectSdkIdentity } from "./projectidentity.js";
 import type { ProjectSdkIdentity } from "./projectidentity.js";
 
@@ -912,7 +913,30 @@ export interface DeclarationAuthorityHints {
 
 export type SymbolAuthority = "unavailable" | "historical" | "unknown" | "incompatible" | "target-compatible";
 
+/**
+ * The state of the package-owned reviewed index, reported DISTINCTLY from "no records": an
+ * index that is missing (not packaged, not readable) or invalid (schema, or a referenced file
+ * whose bytes no longer match) means nothing can be verified — which is not the same fact as a
+ * present index that lists no reviewed mappings yet.
+ */
+export interface CompatibilityIndexState {
+  status: "present" | "missing" | "invalid";
+  path: string;
+  code: string | null;
+  detail: string | null;
+  records: number;
+}
+
+export function describeCompatibilityIndex(io: DeclarationIO = hostDeclarationIO()): { state: CompatibilityIndexState; result: CompatibilityIndexResult } {
+  const result = readCompatibilityIndex(io);
+  const state: CompatibilityIndexState = result.status === "ok"
+    ? { status: "present", path: SDK_COMPATIBILITY_INDEX_PATH, code: null, detail: null, records: result.index.records.length }
+    : { status: result.code === "index-missing" ? "missing" : "invalid", path: SDK_COMPATIBILITY_INDEX_PATH, code: result.code, detail: result.detail, records: 0 };
+  return { state, result };
+}
+
 export interface DeclarationAuthorityReport {
+  compatibilityIndex: CompatibilityIndexState;
   declarationIdentity:
     | { status: "ok"; root: string; packageRevision: string | null; authority: "declarations" | "prose"; fingerprint: string; sourceCount: number }
     | { status: "unavailable"; code: string; detail: string };
@@ -935,7 +959,7 @@ export interface DeclarationAuthority {
   context: DeclarationContext | null;
 }
 
-function contextNote(identity: DeclarationIdentityResult, target: ProjectSdkIdentity | null, context: DeclarationContext | null, loaded: CompatibilityLoadResult | null): string {
+function contextNote(identity: DeclarationIdentityResult, target: ProjectSdkIdentity | null, context: DeclarationContext | null, loaded: CompatibilityLoadResult | null, compatibilityIndex: CompatibilityIndexState): string {
   if (identity.status !== "ok") {
     return `Declaration identity unavailable (${identity.code}): ${identity.detail}. The symbol index below (when present) is a HISTORICAL lookup with no declared package revision behind it and no target authority.`;
   }
@@ -953,8 +977,16 @@ function contextNote(identity: DeclarationIdentityResult, target: ProjectSdkIden
       return `Target-verified: a reviewed compatibility record binds these ${revision} declarations to project ${target.projectRoot} (BOM ${bom}) for the listed verifiedSymbols only; any other symbol remains unknown.${rejections}`;
     case "incompatible":
       return `INCOMPATIBLE: a reviewed record verifies that at least one scoped signature of these ${revision} declarations does NOT hold for project ${target.projectRoot} (BOM ${bom}); verifiedSymbols lists the scopes that do.${rejections}`;
-    default:
-      return `Target linkage UNKNOWN: no reviewed compatibility record verifies these ${revision} declarations against project ${target.projectRoot} (BOM ${bom}, identity ${target.status}). Treat every declaration as historical ${revision} truth, not as a statement about the project's SDK.${rejections}`;
+    default: {
+      const why = compatibilityIndex.status === "missing"
+        ? `the reviewed compatibility index is missing (${compatibilityIndex.code}: ${compatibilityIndex.detail}), so nothing can be verified`
+        : compatibilityIndex.status === "invalid"
+          ? `the reviewed compatibility index is invalid (${compatibilityIndex.code}: ${compatibilityIndex.detail}), so nothing can be verified`
+          : compatibilityIndex.records === 0 && !loaded?.rejected.length
+            ? `the reviewed compatibility index lists no records, so nothing verifies these ${revision} declarations`
+            : `no reviewed compatibility record verifies these ${revision} declarations`;
+      return `Target linkage UNKNOWN for project ${target.projectRoot} (BOM ${bom}, identity ${target.status}): ${why}. Treat every declaration as historical ${revision} truth, not as a statement about the project's SDK.${rejections}`;
+    }
   }
 }
 
@@ -966,16 +998,19 @@ function contextNote(identity: DeclarationIdentityResult, target: ProjectSdkIden
 export function describeDeclarationAuthority(vaultRoot: string, hints: DeclarationAuthorityHints = {}, io: DeclarationIO = hostDeclarationIO()): DeclarationAuthority {
   const identity = readDeclarationIdentity(vaultRoot, io);
   const target = hints.projectRoot?.trim() ? readProjectSdkIdentity(hints.projectRoot.trim()) : null;
+  const { state: compatibilityIndex, result: index } = describeCompatibilityIndex(io);
   let loaded: CompatibilityLoadResult | null = null;
   let context: DeclarationContext | null = null;
   if (identity.status === "ok") {
     if (target) {
-      const paths = hints.recordPaths?.length ? hints.recordPaths : indexedRecordPaths(io);
+      const indexed = index.status === "ok" ? index.index.records.map((r) => path.join(SDK_COMPATIBILITY_DATA_DIR, ...r.path.split("/"))) : [];
+      const paths = hints.recordPaths?.length ? hints.recordPaths : indexed;
       loaded = loadVerifiedCompatibilityEvidence(paths, identity.identity, target, io);
     }
     context = resolveDeclarationContext(identity.identity, target, loaded?.accepted ?? []);
   }
   const report: DeclarationAuthorityReport = {
+    compatibilityIndex,
     declarationIdentity: identity.status === "ok"
       ? { status: "ok", root: identity.identity.root, packageRevision: identity.identity.packageRevision, authority: identity.identity.authority, fingerprint: identity.identity.fingerprint, sourceCount: identity.identity.sources.length }
       : { status: "unavailable", code: identity.code, detail: identity.detail },
@@ -988,22 +1023,49 @@ export function describeDeclarationAuthority(vaultRoot: string, hints: Declarati
       }
       : null,
     context: context ? { status: context.status, evidencePaths: context.evidencePaths, verifiedSymbols: context.verifiedSymbols } : null,
-    note: contextNote(identity, target, context, loaded),
+    note: contextNote(identity, target, context, loaded, compatibilityIndex),
   };
   return { report, identity, target, accepted: loaded?.accepted ?? [], context };
 }
 
-/** The authority label for ONE lookup: the strongest claim the verified scope supports for these symbols. */
-export function symbolAuthorityOf(authority: DeclarationAuthority, symbols: readonly string[]): SymbolAuthority {
-  if (authority.identity.status !== "ok" || !authority.context) return "unavailable";
-  if (!authority.target) return "historical";
+export interface LookupHeadline {
+  symbolAuthority: SymbolAuthority;
+  /** `target-verified` only when the headline is a verified verdict; everything else is a historical lookup. */
+  lookup: "historical" | "target-verified";
+  /** Exactly the returned matches that are inside the verified-compatible scope. */
+  verifiedMatches: string[];
+  /** Exactly the returned matches that a verified record marks incompatible. */
+  incompatibleMatches: string[];
+}
+
+/**
+ * The headline for ONE lookup over the matches it returns. Conservative in both directions: any
+ * match a verified record marks incompatible headlines `incompatible`; `target-compatible` requires
+ * EVERY returned match to be in the verified scope — one verified `Entity` beside an unverified
+ * same-named `Entity` from another package is `unknown`, with `verifiedMatches` naming the one.
+ */
+export function lookupHeadline(authority: Pick<DeclarationAuthority, "identity" | "target" | "accepted" | "context">, matchNames: readonly string[]): LookupHeadline {
+  const none = { lookup: "historical" as const, verifiedMatches: [] as string[], incompatibleMatches: [] as string[] };
+  if (authority.identity.status !== "ok" || !authority.context) return { symbolAuthority: "unavailable", ...none };
+  if (!authority.target) return { symbolAuthority: "historical", ...none };
   const { context } = authority;
-  if (context.status === "unknown" || authority.identity.identity.authority !== "declarations") return "unknown";
+  if (context.status === "unknown" || authority.identity.identity.authority !== "declarations") return { symbolAuthority: "unknown", ...none };
   const applicable = authority.accepted.filter((e) => context.evidencePaths.includes(e.record.path));
   const incompatible = new Set(applicable.filter((e) => e.verdict === "incompatible").flatMap((e) => [...e.symbols]));
-  if (symbols.some((s) => incompatible.has(s))) return "incompatible";
-  if (symbols.some((s) => context.verifiedSymbols.includes(s))) return "target-compatible";
-  return "unknown";
+  const names = [...new Set(matchNames)];
+  const incompatibleMatches = names.filter((name) => incompatible.has(name));
+  const verifiedMatches = names.filter((name) => context.verifiedSymbols.includes(name));
+  const symbolAuthority: SymbolAuthority = incompatibleMatches.length
+    ? "incompatible"
+    : names.length > 0 && verifiedMatches.length === names.length
+      ? "target-compatible"
+      : "unknown";
+  return {
+    symbolAuthority,
+    lookup: symbolAuthority === "target-compatible" || symbolAuthority === "incompatible" ? "target-verified" : "historical",
+    verifiedMatches,
+    incompatibleMatches,
+  };
 }
 
 function vaultProvenance(index: VaultIndex | null, selection?: VaultSelection, authority?: DeclarationAuthority) {
@@ -1055,6 +1117,7 @@ export function registerVaultTools(server: McpServer) {
         return okJson({
           status: "unavailable", code: selection.code, symbol: symbol.trim(), symbolAuthority: "unavailable" as SymbolAuthority,
           note: `${selection.detail}. agent-vault workspaces live under ${vaultSdkBase()} (override the default with PICO_AGENT_VAULT). ${managedSetupGuidance}`,
+          compatibilityIndex: describeCompatibilityIndex().state,
           vaultProvenance: vaultProvenance(null, selection),
         });
       }
@@ -1068,17 +1131,27 @@ export function registerVaultTools(server: McpServer) {
           vaultSelection: { root, source: selection.source, version: selection.version },
           declarationIdentity: authority.report.declarationIdentity,
           target: authority.report.target,
+          compatibilityIndex: authority.report.compatibilityIndex,
           vaultProvenance: vaultProvenance(null, selection, authority),
         });
       }
-      const authorityFields = (symbols: readonly string[]) => ({
-        symbolAuthority: symbolAuthorityOf(authority, symbols),
-        vaultSelection: { root, source: selection.source, version: selection.version },
-        declarationIdentity: authority.report.declarationIdentity,
-        target: authority.report.target,
-        declarationContext: authority.report.context ? { ...authority.report.context, rejected: authority.report.evidence?.rejected ?? [], note: authority.report.note } : { status: "unavailable" as const, rejected: [], note: authority.report.note },
-        vaultProvenance: vaultProvenance(index, selection, authority),
-      });
+      // The headline is computed over the matches a result RETURNS, never over the query string
+      // alone: every returned match must be verified before the result is called target-verified.
+      const authorityFields = (matchNames: readonly string[]) => {
+        const headline = lookupHeadline(authority, matchNames);
+        return {
+          symbolAuthority: headline.symbolAuthority,
+          lookup: headline.lookup,
+          verifiedMatches: headline.verifiedMatches,
+          incompatibleMatches: headline.incompatibleMatches,
+          vaultSelection: { root, source: selection.source, version: selection.version },
+          declarationIdentity: authority.report.declarationIdentity,
+          target: authority.report.target,
+          compatibilityIndex: authority.report.compatibilityIndex,
+          declarationContext: authority.report.context ? { ...authority.report.context, rejected: authority.report.evidence?.rejected ?? [], note: authority.report.note } : { status: "unavailable" as const, rejected: [], note: authority.report.note },
+          vaultProvenance: vaultProvenance(index, selection, authority),
+        };
+      };
       const wanted = symbol.trim();
       const matches: VaultType[] = [];
       let memberNote: string | undefined;
@@ -1132,7 +1205,7 @@ export function registerVaultTools(server: McpServer) {
           : "";
         if (docHits.length) {
           return okJson({
-            status: "documented-only", sdkVersion: index.sdkVersion, symbol: wanted, lookup: "historical",
+            status: "documented-only", sdkVersion: index.sdkVersion, symbol: wanted,
             note: "NOT in api-reference/ (which covers the ECS/type surface), but documented in the vault's prose docs — this is the SpatialUI/Compose surface: modifiers, composables and gesture functions. The symbol is REAL; the api-reference simply does not carry it. Read the cited doc for the call shape — do NOT invent parameters it does not show. Prose is secondary evidence and grants no declaration authority." + absenceScope,
             documentation: docHits,
             ...authorityFields([wanted]),
@@ -1140,20 +1213,18 @@ export function registerVaultTools(server: McpServer) {
           });
         }
         return okJson({
-          status: "not-found", sdkVersion: index.sdkVersion, symbol: wanted, lookup: "historical",
+          status: "not-found", sdkVersion: index.sdkVersion, symbol: wanted,
           note: `no vault declaration and no prose-doc mention in the ${revisionLabel} vault — either the symbol does not exist in that revision or it is a vault coverage gap (cf. GaussianSplatting*). Do NOT invent a signature.` + absenceScope,
           ...authorityFields([wanted]),
           ...(near.size ? { similar: [...near].slice(0, 10) } : {}),
         });
       }
-      const matchNames = matches.slice(0, 5).map((t) => t.qualifiedName);
-      const fields = authorityFields([...matchNames, wanted]);
+      const returned = matches.slice(0, 5);
       return okJson({
         status: "ok", sdkVersion: index.sdkVersion,
-        lookup: fields.symbolAuthority === "target-compatible" || fields.symbolAuthority === "incompatible" ? "target-verified" : "historical",
         ...(memberNote ? { note: memberNote } : {}),
-        matches: matches.slice(0, 5).map(typeCard),
-        ...fields,
+        matches: returned.map(typeCard),
+        ...authorityFields(returned.map((t) => t.qualifiedName)),
       });
     },
   );

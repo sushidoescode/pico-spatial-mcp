@@ -420,6 +420,12 @@ if (!real) {
 
     const noTarget = await call({ symbol: "Entity", vaultRoot: sandbox });
     assert(noTarget.symbolAuthority === "historical" && noTarget.declarationContext.status === "historical" && noTarget.target === null, `S5: no project hint -> historical (got ${noTarget.symbolAuthority}/${noTarget.declarationContext?.status})`);
+    // fix round 1: the packaged index state is reported distinctly from "no records", and a headline
+    // is only ever target-verified when EVERY returned match is verified — here nothing is
+    assert(bound.compatibilityIndex?.status === "present" && bound.compatibilityIndex.records === 0 && bound.compatibilityIndex.code === null && typeof bound.compatibilityIndex.path === "string", `S5: the packaged index is present with no records (got ${JSON.stringify(bound.compatibilityIndex)})`);
+    assert(/lists no records/.test(bound.declarationContext.note), `S5: the note says the index lists no records, not that it is missing (got ${bound.declarationContext.note})`);
+    assert(JSON.stringify(bound.verifiedMatches) === "[]" && JSON.stringify(bound.incompatibleMatches) === "[]" && bound.lookup === "historical", `S5: no reviewed record -> no verified/incompatible matches and a historical headline (got ${JSON.stringify({ v: bound.verifiedMatches, i: bound.incompatibleMatches, lookup: bound.lookup })})`);
+    assert(noTarget.compatibilityIndex?.status === "present" && missing.compatibilityIndex?.status === "present", "S5: every lookup branch reports the index state");
     assert(/HISTORICAL lookup/.test(noTarget.declarationContext.note) && /pass projectRoot/.test(noTarget.declarationContext.note), "S5: the historical note explains how to bind a target");
 
     const traversal = await call({ symbol: "Entity", sdkVersion: "../../../etc" });
@@ -427,6 +433,7 @@ if (!real) {
     assert(!/etc\/agent-vault|etc\\agent-vault/.test(JSON.stringify(traversal)), "S5: the refused label is never joined into a path");
     assert(/ensure_pico_cli/.test(traversal.note) && /returned absolute path/.test(traversal.note), "S5: version-invalid keeps the managed setup guidance");
     assertSdk6Provenance(traversal, "S5 version-invalid result");
+    assert(traversal.compatibilityIndex?.status === "present", "S5: the version-invalid branch still reports the packaged index state");
     const spelled = await call({ symbol: "Entity", sdkVersion: "0.13.3.4" });
     assert(spelled.status === "unavailable" && spelled.code === "version-invalid", "S5: a four-part label is not a numeric version token");
     const relativeRoot = await call({ symbol: "Entity", vaultRoot: "../x" });

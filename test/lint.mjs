@@ -184,6 +184,8 @@ if (nestedCommentedGotcha.some((v) => v.ruleId === "displayColor-flat-white")) {
     else fail(`S5: historical wording wrong: ${JSON.stringify({ note: declared.vault?.note, authorityNote: declared.vault?.authorityNote })}`);
     if (JSON.stringify(declared.vault?.declarationContext?.rejected) === "[]" && JSON.stringify(declared.vault?.declarationContext?.verifiedSymbols) === "[]") console.log("  ok   S5: the packaged index has no records, so nothing is verified and nothing is rejected");
     else fail(`S5: evidence lists wrong: ${JSON.stringify(declared.vault?.declarationContext)}`);
+    if (declared.vault?.compatibilityIndex?.status === "present" && declared.vault.compatibilityIndex.records === 0 && declared.vault.compatibilityIndex.code === null) console.log("  ok   S5: the advisory block reports the packaged index as present with no records, distinct from missing");
+    else fail(`S5: compatibilityIndex missing from the advisory block: ${JSON.stringify(declared.vault?.compatibilityIndex)}`);
     if (declared.clean === (declared.violations.length === 0 && declared.counts.projectErrors === 0)) console.log("  ok   S5: clean semantics unchanged with a declared vault and a project hint");
     else fail("S5: clean drifted with a declared vault");
   } finally {
