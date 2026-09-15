@@ -144,3 +144,51 @@ Both belong to the release/integration owner; ownership boundaries kept them out
 
 Until edit 1 lands, `derivedSiblingDirs()` derives `data` from the built output and
 `npm run test:tarball` fails with `payload MISSING: data/`. That red is the canary working.
+
+---
+
+## Appended 2026-09-15 by Task I1 — the packaged drift basis is now a recorded derivative
+
+Both handoff edits above landed (commit `f88a7d0`). Shipping `data/sdk-compatibility` then exposed
+a second, independent release invariant that S6 could not see, because `npm run test:tarball` was
+already red for the missing-directory reason and was deliberately not run: `scripts/verify-tarball.mjs`
+`[M4]` byte-scans **every shipped file** for `/Users/<name>`, and the packaged basis
+`data/sdk-compatibility/basis/sdk-6.0.0-drift.md` was a byte copy of `docs/SDK_6_0_0_DRIFT.md`,
+which carries the maintainer's home directory in 12 command transcripts.
+
+Reconciled on controller ruling: the historical evidence stays untouched, and the **packaged** copy
+becomes a deterministic derivative of it.
+
+| | path | sha256 |
+| --- | --- | --- |
+| original (untouched, **not shipped**) | `docs/SDK_6_0_0_DRIFT.md` | `e1671fbdaf1ee278298258f4aa3c5771861a677e37e22e8281d0ffc7eb7d6b5a` |
+| packaged derivative (**shipped**) | `data/sdk-compatibility/basis/sdk-6.0.0-drift.md` | `4867469dc576a6fec2eaa81f27d3dff388787db18d62b2b681bc2f1b92148bda` |
+
+Transform — `home-path-redaction`, 12 occurrences replaced, nothing else changed:
+
+```
+packaged = original.replace(/\/Users\/[A-Za-z0-9._-]+/g, () => "$HOME")
+```
+
+The index entry for that basis is pinned at the **packaged** hash and records its origin in a new
+optional `derivedFrom` field (`{path, sha256, transform, pattern, replacement}`). `e1671fbd…`, the
+hash this entry used to carry, is now `derivedFrom.sha256`.
+
+**Deviation from the ruling's literal wording, and why.** The ruling specified
+`pattern: "/Users/sushantsrikrish"`. That literal would have put the maintainer's home directory
+name into `index.v1.json`, which **is** a shipped file — re-introducing the exact leak and leaving
+`[M4]` red. The recorded pattern is therefore the non-naming character class
+`/Users/[A-Za-z0-9._-]+`, which (a) produces byte-identical output on this document, verified by
+digest, and (b) does not itself match `[M4]`'s regex, because the character after `/Users/` is `[`.
+The concrete host name that was redacted away is `sushantsrikrish`, recorded here in this
+un-shipped evidence note rather than in the payload.
+
+`basis/sdk-adoption-provenance.json` is **byte-identical and untouched** —
+`grep -cE '(/Users/[A-Za-z0-9._-]+|/home/[A-Za-z0-9._-]+|[A-Z]:\\Users\\[A-Za-z0-9._-]+)'` returns
+`0` for it and for `index.v1.json`. The `[M4]` leak scan over the whole payload now reports 0 hits.
+
+Loader and canary were widened minimally and additively: `derivedFrom` is tolerated **only** on
+`historicalReferences`, its shape is validated, and it is then **dropped** — `readCompatibilityIndex`
+and `verifySdkCompatibilityPayload` keep verifying packaged bytes against the entry's own `sha256`
+and never resolve `derivedFrom.path`, which names a file no installed package contains.
+S6's installed lifecycle suite passes unchanged (8/8), which is the backwards-compatibility proof.

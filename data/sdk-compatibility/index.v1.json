@@ -4,7 +4,14 @@
   "historicalReferences": [
     {
       "path": "basis/sdk-6.0.0-drift.md",
-      "sha256": "e1671fbdaf1ee278298258f4aa3c5771861a677e37e22e8281d0ffc7eb7d6b5a"
+      "sha256": "4867469dc576a6fec2eaa81f27d3dff388787db18d62b2b681bc2f1b92148bda",
+      "derivedFrom": {
+        "path": "docs/SDK_6_0_0_DRIFT.md",
+        "sha256": "e1671fbdaf1ee278298258f4aa3c5771861a677e37e22e8281d0ffc7eb7d6b5a",
+        "transform": "home-path-redaction",
+        "pattern": "/Users/[A-Za-z0-9._-]+",
+        "replacement": "$HOME"
+      }
     },
     {
       "path": "basis/sdk-adoption-provenance.json",

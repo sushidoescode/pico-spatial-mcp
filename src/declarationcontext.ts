@@ -43,9 +43,14 @@ import { readProjectSdkIdentity, type ProjectSdkIdentity, type ResolvedArtifact 
  * the working directory or a checkout path). A caller can SELECT reviewed records by path; it can
  * never add one, and it can never pass a DeclarationIdentity, a compatibility boolean or a
  * fingerprint that this module treats as authority. The index lists `records` (empty until a
- * complete reviewed mapping exists) and `historicalReferences` — byte-identical snapshots of the
- * SDK 6.0.0 drift measurement and the 0.13.3 adoption-provenance fixture, which are retained as
- * historical INPUTS: they grant neither whole-vault 6.0.0 compatibility nor any 6.1 authority.
+ * complete reviewed mapping exists) and `historicalReferences` — snapshots of the SDK 6.0.0 drift
+ * measurement and the 0.13.3 adoption-provenance fixture, which are retained as historical INPUTS:
+ * they grant neither whole-vault 6.0.0 compatibility nor any 6.1 authority. A historical reference
+ * may be a DERIVATIVE of an unpackaged original rather than a byte copy of it (the drift page is
+ * home-path-redacted so the maintainer's home directory name cannot ship); such an entry records
+ * its origin in an optional `derivedFrom`. That field is provenance for reviewers, never authority:
+ * this module verifies the PACKAGED bytes against the entry's own `sha256` exactly as before, and
+ * never resolves, reads or trusts the original it names.
  *
  * Signature derivation. A record binds each scoped symbol to the verified inputs on both sides:
  *   sourceSha256 = sha256("pico-signature-source/1\n" + symbol + "\n" + declarationFingerprint + "\n"
@@ -340,7 +345,31 @@ export function readDeclarationIdentity(root: string, io: DeclarationIO = hostDe
 
 // ──────────────────────────────────────────────────────────────────────────── reviewed index
 
-function fileIdentityList(value: unknown, field: string): FileIdentity[] | string {
+/**
+ * The optional provenance an entry may carry when the PACKAGED bytes are a deterministic
+ * derivative of an original that is not in the package (today: the home-path-redacted drift page,
+ * whose untouched original stays in `docs/` and never ships). Validated for shape so a malformed
+ * claim is refused, and then deliberately DROPPED: `path` here names a file outside
+ * `data/sdk-compatibility/`, so this module must never resolve or read it, and the packaged bytes
+ * keep being checked against the entry's own `sha256` alone. Reproducing the transform is the
+ * repository's job, not the installed server's.
+ */
+function derivedFromProblem(value: unknown, field: string): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return `${field} must be an object`;
+  const entry = value as Record<string, unknown>;
+  const keys = Object.keys(entry).sort().join(",");
+  if (keys !== "path,pattern,replacement,sha256,transform") {
+    return `${field} must have exactly the fields path, sha256, transform, pattern and replacement (got ${keys || "none"})`;
+  }
+  if (!isBoundedRelativePath(entry.path)) return `${field}.path must be a relative path (got ${JSON.stringify(entry.path)})`;
+  if (typeof entry.sha256 !== "string" || !SHA256_HEX.test(entry.sha256)) return `${field}.sha256 must be 64 lowercase hex characters`;
+  for (const key of ["transform", "pattern", "replacement"] as const) {
+    if (typeof entry[key] !== "string" || entry[key] === "") return `${field}.${key} must be a non-empty string`;
+  }
+  return null;
+}
+
+function fileIdentityList(value: unknown, field: string, { allowDerivedFrom = false } = {}): FileIdentity[] | string {
   if (!Array.isArray(value)) return `${field} must be an array of {path, sha256}`;
   const out: FileIdentity[] = [];
   const seen = new Set<string>();
@@ -348,7 +377,15 @@ function fileIdentityList(value: unknown, field: string): FileIdentity[] | strin
     const entry = value[i] as Record<string, unknown> | null;
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return `${field}[${i}] must be {path, sha256}`;
     const keys = Object.keys(entry).sort();
-    if (keys.join(",") !== "path,sha256") return `${field}[${i}] must have exactly the fields path and sha256 (got ${keys.join(", ") || "none"})`;
+    const shape = keys.join(",");
+    const derived = allowDerivedFrom && shape === "derivedFrom,path,sha256";
+    if (!derived && shape !== "path,sha256") {
+      return `${field}[${i}] must have exactly the fields path and sha256${allowDerivedFrom ? " (plus an optional derivedFrom)" : ""} (got ${keys.join(", ") || "none"})`;
+    }
+    if (derived) {
+      const problem = derivedFromProblem(entry.derivedFrom, `${field}[${i}].derivedFrom`);
+      if (problem) return problem;
+    }
     if (!isBoundedRelativePath(entry.path)) return `${field}[${i}].path must be a relative path inside data/sdk-compatibility (got ${JSON.stringify(entry.path)})`;
     if (typeof entry.sha256 !== "string" || !SHA256_HEX.test(entry.sha256)) return `${field}[${i}].sha256 must be 64 lowercase hex characters`;
     if (seen.has(entry.path)) return `${field}[${i}].path ${entry.path} is listed twice`;
@@ -383,7 +420,7 @@ export function readCompatibilityIndex(io: DeclarationIO = hostDeclarationIO()):
   if (unexpected.length) return schema(`unexpected field ${unexpected.map((k) => JSON.stringify(k)).join(", ")}`);
   const records = fileIdentityList(object.records, "records");
   if (typeof records === "string") return schema(records);
-  const historicalReferences = fileIdentityList(object.historicalReferences, "historicalReferences");
+  const historicalReferences = fileIdentityList(object.historicalReferences, "historicalReferences", { allowDerivedFrom: true });
   if (typeof historicalReferences === "string") return schema(historicalReferences);
   const overlap = records.filter((r) => historicalReferences.some((h) => h.path === r.path));
   if (overlap.length) return schema(`${overlap[0]!.path} is listed both as a record and as a historical reference`);

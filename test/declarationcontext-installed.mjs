@@ -148,6 +148,34 @@ test("the relocated package loads its historical references through its own modu
     assert.equal(sha256(fs.readFileSync(dataFile(installed, ref.path))), ref.sha256, ref.path);
   }
   assert.deepEqual(sdk.indexedRecordPaths(), []);
+
+  // A basis may be a recorded DERIVATIVE of an original that deliberately does not ship — the
+  // drift page is home-path-redacted, because verify-tarball [M4] refuses to publish any file
+  // carrying /Users/<name>. Two things must hold in an installed package: the shipped bytes carry
+  // no home path at all, and the original the provenance names is genuinely absent, so nothing
+  // here can be tempted to resolve or re-derive it.
+  const LEAK_RE = /(\/Users\/[A-Za-z0-9._-]+|\/home\/[A-Za-z0-9._-]+|[A-Z]:\\Users\\[A-Za-z0-9._-]+)/g;
+  const leaks = [];
+  (function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(abs); continue; }
+      const hits = fs.readFileSync(abs).toString("latin1").match(LEAK_RE);
+      if (hits) leaks.push(`${path.relative(installed, abs)} (${[...new Set(hits)].join(", ")})`);
+    }
+  })(path.join(installed, DATA_REL));
+  assert.deepEqual(leaks, [], "an installed compatibility payload must carry no absolute home path");
+
+  const derived = readIndex(installed).historicalReferences.filter((ref) => ref.derivedFrom);
+  assert.equal(derived.length, 1, "exactly the drift page is a recorded derivative today");
+  assert.equal(derived[0].path, "basis/sdk-6.0.0-drift.md");
+  assert.equal(derived[0].derivedFrom.transform, "home-path-redaction");
+  assert.equal(
+    fs.existsSync(path.join(installed, ...derived[0].derivedFrom.path.split("/"))),
+    false,
+    "the unpackaged original must not be reachable from an installed package",
+  );
+  assert.notEqual(derived[0].sha256, derived[0].derivedFrom.sha256);
 });
 
 // ═══ 3. basis lifecycle inside one process ════════════════════════════════════════════════════

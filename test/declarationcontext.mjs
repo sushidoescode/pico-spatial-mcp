@@ -121,7 +121,14 @@ const ARTIFACT_TABLE = [
   { coordinate: APP_COORD, sha256: APP_SHA, path: "/artifacts/app.aar" },
 ];
 
-// ─── the packaged historical basis (read from disk to prove byte identity) + a synthetic basis ──
+// ─── the packaged historical basis + a synthetic basis ─────────────────────────────────────────
+// The drift page is NOT a byte copy any more. `docs/SDK_6_0_0_DRIFT.md` is untouched historical
+// evidence and stays out of the package; the PACKAGED copy is a deterministic derivative of it,
+// because the maintainer's home directory name must not ship (scripts/verify-tarball.mjs [M4]
+// byte-scans every shipped file for /Users/<name>). The index records the transform in
+// `derivedFrom`, and the test below re-derives the packaged bytes from the original rather than
+// trusting either copy.
+const DRIFT_ORIGINAL_PATH = path.join(repoRoot, "docs", "SDK_6_0_0_DRIFT.md");
 const DRIFT_BYTES = fs.readFileSync(path.join(DATA_DIR, "basis", "sdk-6.0.0-drift.md"));
 const PROVENANCE_BYTES = fs.readFileSync(path.join(DATA_DIR, "basis", "sdk-adoption-provenance.json"));
 const FIXTURE_BASIS = "# FIXTURE basis\n\nSynthetic derivation notes for the declarationcontext test record. Not a real SDK measurement.\n";
@@ -250,7 +257,25 @@ const hashTree = (root) => {
 test("the reviewed index is a fixed module-relative path and its packaged basis is byte-identical to the historical sources", () => {
   assert.equal(SDK_COMPATIBILITY_DATA_DIR, DATA_DIR);
   assert.equal(SDK_COMPATIBILITY_INDEX_PATH, INDEX_PATH);
-  assert.ok(DRIFT_BYTES.equals(fs.readFileSync(path.join(repoRoot, "docs", "SDK_6_0_0_DRIFT.md"))), "basis/sdk-6.0.0-drift.md is a byte copy of docs/SDK_6_0_0_DRIFT.md");
+  // The packaged drift basis is the recorded transform of the untouched original — re-derived
+  // here from the index's own `derivedFrom`, so a silent edit to either copy, to the pattern or to
+  // the replacement fails this. The original is asserted to still hold what was redacted away.
+  const rawIndex = JSON.parse(fs.readFileSync(INDEX_PATH, "utf8"));
+  const driftEntry = rawIndex.historicalReferences.find((e) => e.path === "basis/sdk-6.0.0-drift.md");
+  assert.ok(driftEntry?.derivedFrom, "the packaged drift basis must record where it was derived from");
+  assert.deepEqual(Object.keys(driftEntry.derivedFrom).sort(), ["path", "pattern", "replacement", "sha256", "transform"]);
+  assert.equal(driftEntry.derivedFrom.path, "docs/SDK_6_0_0_DRIFT.md");
+  assert.equal(driftEntry.derivedFrom.transform, "home-path-redaction");
+  const driftOriginal = fs.readFileSync(DRIFT_ORIGINAL_PATH);
+  assert.equal(sha256(driftOriginal), driftEntry.derivedFrom.sha256, "docs/SDK_6_0_0_DRIFT.md is the untouched original the index names");
+  const rederived = Buffer.from(
+    driftOriginal.toString("utf8").replace(new RegExp(driftEntry.derivedFrom.pattern, "g"), () => driftEntry.derivedFrom.replacement),
+    "utf8",
+  );
+  assert.ok(DRIFT_BYTES.equals(rederived), "basis/sdk-6.0.0-drift.md is docs/SDK_6_0_0_DRIFT.md under the recorded transform");
+  assert.equal(sha256(DRIFT_BYTES), driftEntry.sha256, "the index pins the PACKAGED bytes, not the original");
+  assert.notEqual(driftEntry.sha256, driftEntry.derivedFrom.sha256, "a derivative must not be pinned at its original's hash");
+  assert.match(driftOriginal.toString("utf8"), /\/Users\/[A-Za-z0-9._-]+/, "the original still carries the home paths the package must not");
   assert.ok(PROVENANCE_BYTES.equals(fs.readFileSync(path.join(repoRoot, "test", "fixtures", "sdk-adoption-provenance.json"))), "basis/sdk-adoption-provenance.json is a byte copy of the fixture");
   // the historical core hashes stay INPUTS: present in the basis text, absent from any record
   const drift = DRIFT_BYTES.toString("utf8");
@@ -263,12 +288,64 @@ test("the reviewed index is a fixed module-relative path and its packaged basis 
   const packaged = readCompatibilityIndex();
   assert.equal(packaged.status, "ok", JSON.stringify(packaged));
   assert.deepEqual(packaged.index.records, [], "records start EMPTY — no reviewed mapping exists yet");
+  // Exact pins, on the PACKAGED bytes. The drift entry's hash is the derivative's; its original's
+  // hash (e1671fbd…, which this entry used to be pinned at) now lives in derivedFrom, below.
   assert.deepEqual(packaged.index.historicalReferences, [
-    { path: "basis/sdk-6.0.0-drift.md", sha256: "e1671fbdaf1ee278298258f4aa3c5771861a677e37e22e8281d0ffc7eb7d6b5a" },
+    { path: "basis/sdk-6.0.0-drift.md", sha256: "4867469dc576a6fec2eaa81f27d3dff388787db18d62b2b681bc2f1b92148bda" },
     { path: "basis/sdk-adoption-provenance.json", sha256: "058bbf48ae902a22dd77f23e6a4427fc2bb5349ee09cede268aefbf76fa3f20e" },
-  ]);
+  ], "the loader verifies packaged bytes and drops derivedFrom, which is provenance and never authority");
+  assert.equal(driftEntry.derivedFrom.sha256, "e1671fbdaf1ee278298258f4aa3c5771861a677e37e22e8281d0ffc7eb7d6b5a");
   assert.deepEqual(packaged.index.historicalReferences, [DRIFT_REF, PROVENANCE_REF], "the index hashes are the hashes of the packaged bytes");
   assert.deepEqual(indexedRecordPaths(), []);
+});
+
+test("no packaged compatibility file carries an absolute home path, and the loader refuses a malformed or misplaced derivedFrom", () => {
+  // The rule this pins: scripts/verify-tarball.mjs [M4] byte-scans every SHIPPED file for
+  // /Users/<name>, and data/sdk-compatibility/ is in package.json `files[]`. A future basis
+  // snapshot copied straight out of a local transcript would make the release gate red; catch it
+  // here instead, where the message names the file. Same regex as [M4].
+  const LEAK_RE = /(\/Users\/[A-Za-z0-9._-]+|\/home\/[A-Za-z0-9._-]+|[A-Z]:\\Users\\[A-Za-z0-9._-]+)/g;
+  const leaks = [];
+  (function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(abs); continue; }
+      const hits = fs.readFileSync(abs).toString("latin1").match(LEAK_RE);
+      if (hits) leaks.push(`${path.relative(DATA_DIR, abs)} (${[...new Set(hits)].join(", ")})`);
+    }
+  })(DATA_DIR);
+  assert.deepEqual(leaks, [], "packaged compatibility data must not ship an absolute home path");
+  // …including the recorded pattern itself: it describes the redaction without naming anyone.
+  assert.equal(LEAK_RE.test("/Users/[A-Za-z0-9._-]+"), false);
+
+  // derivedFrom is tolerated on a historical reference and refused everywhere else, so it can
+  // never become a second, unverified way to describe a reviewed record.
+  const at = (index) => readCompatibilityIndex(ioFor(specFor({ index })));
+  const baseline = { schemaVersion: 1, records: [], historicalReferences: [DRIFT_REF, PROVENANCE_REF, FIXTURE_BASIS_REF] };
+  const goodProvenance = { path: "docs/SDK_6_0_0_DRIFT.md", sha256: "e".repeat(64), transform: "home-path-redaction", pattern: "/Users/[A-Za-z0-9._-]+", replacement: "$HOME" };
+  const withProvenance = at({ ...baseline, historicalReferences: [{ ...DRIFT_REF, derivedFrom: goodProvenance }, PROVENANCE_REF, FIXTURE_BASIS_REF] });
+  assert.equal(withProvenance.status, "ok", JSON.stringify(withProvenance));
+  assert.deepEqual(withProvenance.index.historicalReferences[0], DRIFT_REF, "derivedFrom is dropped, not promoted into the verified identity");
+
+  for (const [name, broken, pattern] of [
+    ["a missing field", { ...goodProvenance, pattern: undefined }, /exactly the fields path, sha256, transform, pattern and replacement/],
+    ["an extra field", { ...goodProvenance, trustMe: true }, /exactly the fields path, sha256, transform, pattern and replacement/],
+    ["a short origin hash", { ...goodProvenance, sha256: "abc" }, /64 lowercase hex/],
+    ["an escaping origin path", { ...goodProvenance, path: "../../etc/passwd" }, /must be a relative path/],
+    ["an empty transform", { ...goodProvenance, transform: "" }, /transform must be a non-empty string/],
+    ["a non-object", "home-path-redaction", /must be an object/],
+  ]) {
+    const refused = at({ ...baseline, historicalReferences: [{ ...DRIFT_REF, derivedFrom: broken === undefined ? undefined : JSON.parse(JSON.stringify(broken)) }, PROVENANCE_REF, FIXTURE_BASIS_REF] });
+    assert.equal(refused.status, "unavailable", name);
+    assert.equal(refused.code, "index-schema", name);
+    assert.match(refused.detail, pattern, `${name}: ${refused.detail}`);
+  }
+
+  const onARecord = at({ ...baseline, records: [{ path: "records/x.json", sha256: "d".repeat(64), derivedFrom: goodProvenance }] });
+  assert.equal(onARecord.status, "unavailable");
+  assert.equal(onARecord.code, "index-schema");
+  assert.match(onARecord.detail, /records\[0\] must have exactly the fields path and sha256 \(got/);
+  assert.doesNotMatch(onARecord.detail, /optional derivedFrom/, "the records list must not advertise the tolerance");
 });
 
 test("brief snippet: an unindexed caller record is never a candidate, the context stays unknown, and a missing vault is unavailable", () => {

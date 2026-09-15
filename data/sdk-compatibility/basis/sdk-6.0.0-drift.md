@@ -133,7 +133,7 @@ python3 - <<'PY'
 from pathlib import Path
 from zipfile import ZipFile
 
-root = Path('/Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1/com.pico.spatial.tools/com.pico.spatial.tools.gradle.plugin')
+root = Path('$HOME/.gradle/caches/modules-2/files-2.1/com.pico.spatial.tools/com.pico.spatial.tools.gradle.plugin')
 old = next((root / '0.13.2').glob('*/*.jar'))
 new = next((root / '6.0.0').glob('*/*.jar'))
 with ZipFile(old) as left, ZipFile(new) as right:
@@ -163,7 +163,7 @@ python3 - <<'PY'
 from pathlib import Path
 from zipfile import ZipFile
 
-cache = Path('/Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1')
+cache = Path('$HOME/.gradle/caches/modules-2/files-2.1')
 modules = [
     ('com.pico.spatial.core', 'core'),
     ('com.pico.spatial.foundation', 'foundation'),
@@ -386,7 +386,7 @@ from pathlib import Path
 from zipfile import ZipFile
 from xml.etree import ElementTree as ET
 
-cache = Path('/Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1')
+cache = Path('$HOME/.gradle/caches/modules-2/files-2.1')
 modules = [
     ('com.pico.spatial.core', 'core'),
     ('com.pico.spatial.foundation', 'foundation'),
@@ -431,7 +431,7 @@ from difflib import unified_diff
 from pathlib import Path
 from zipfile import ZipFile
 
-cache = Path('/Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1')
+cache = Path('$HOME/.gradle/caches/modules-2/files-2.1')
 modules = [
     ('com.pico.spatial.core', 'core'),
     ('com.pico.spatial.foundation', 'foundation'),
@@ -455,8 +455,8 @@ for group, artifact in modules:
                 fromfile='old', tofile='new', n=3,
             )))
 PY
-unzip -p /Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1/com.pico.spatial.ui/design/0.13.3/9f13712e8fbbf8e3961b6c13afcf83c56f298934/design-0.13.3.aar res/values/values.xml | rg 'pico_sys_motion'
-unzip -p /Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1/com.pico.spatial.ui/design/6.0.0/c093dd1b7d10bcf7430c2038849ec5e33de48e18/design-6.0.0.aar res/values/values.xml | rg 'pico_sys_motion'
+unzip -p $HOME/.gradle/caches/modules-2/files-2.1/com.pico.spatial.ui/design/0.13.3/9f13712e8fbbf8e3961b6c13afcf83c56f298934/design-0.13.3.aar res/values/values.xml | rg 'pico_sys_motion'
+unzip -p $HOME/.gradle/caches/modules-2/files-2.1/com.pico.spatial.ui/design/6.0.0/c093dd1b7d10bcf7430c2038849ec5e33de48e18/design-6.0.0.aar res/values/values.xml | rg 'pico_sys_motion'
 ```
 
 ## 5. Generator-emitted `com.pico.spatial.*` imports
@@ -704,7 +704,7 @@ python3 - <<'PY'
 from pathlib import Path
 from zipfile import ZipFile
 
-cache = Path('/Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1')
+cache = Path('$HOME/.gradle/caches/modules-2/files-2.1')
 modules = [
     ('com.pico.spatial.ui.foundation', 'foundation-android'),
     ('com.pico.spatial.ui', 'ui-android'),
@@ -728,7 +728,7 @@ PY
 ## Artifact identity
 
 All artifacts were selected from
-`/Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1`. Full SHA-256 identities follow.
+`$HOME/.gradle/caches/modules-2/files-2.1`. Full SHA-256 identities follow.
 
 | Coordinate / version | Binary SHA-256 | Sources SHA-256 |
 | --- | --- | --- |
@@ -760,13 +760,13 @@ All artifacts were selected from
 Artifact discovery and hashing commands:
 
 ```sh
-find /Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1 \
+find $HOME/.gradle/caches/modules-2/files-2.1 \
   -type f \( -name '*.aar' -o -name '*.jar' \) \
   -path '*com.pico.spatial*' -print
-shasum -a 256 /Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1/com.pico.spatial.core/core/0.13.3/*/*
-shasum -a 256 /Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1/com.pico.spatial.core/core/6.0.0/*/*
+shasum -a 256 $HOME/.gradle/caches/modules-2/files-2.1/com.pico.spatial.core/core/0.13.3/*/*
+shasum -a 256 $HOME/.gradle/caches/modules-2/files-2.1/com.pico.spatial.core/core/6.0.0/*/*
 python3 /private/tmp/pico_sdk6_source_diff.py
-find /Users/sushantsrikrish/.gradle/caches/modules-2/files-2.1/com.pico.spatial.tools \
+find $HOME/.gradle/caches/modules-2/files-2.1/com.pico.spatial.tools \
   -type f -name '*-sources.jar' -print
 ```
 

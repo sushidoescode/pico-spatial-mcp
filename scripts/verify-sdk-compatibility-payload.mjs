@@ -16,7 +16,9 @@
  * What it checks, in one pass:
  *   1. `<packageRoot>/data/sdk-compatibility/index.v1.json` exists and is a v1 reviewed index.
  *   2. every file the index references — reviewed records AND historical basis snapshots — is
- *      present and hashes to exactly its indexed sha256, inside the data directory.
+ *      present and hashes to exactly its indexed sha256, inside the data directory. A basis that
+ *      is a recorded derivative of an unpackaged original (`derivedFrom`) is checked the same way,
+ *      against the PACKAGED bytes; the original is never resolved from here.
  *   3. every reviewed record parses and cites only basis snapshots the index declares at the same
  *      hash, so the transitively required basis really shipped with the record that needs it.
  *
@@ -54,8 +56,30 @@ function readFileBytes(target) {
   }
 }
 
+/**
+ * A historical reference may carry `derivedFrom` when the PACKAGED bytes are a deterministic
+ * derivative of an original that is NOT in the package — today the home-path-redacted drift page,
+ * whose untouched original lives in `docs/` and never ships. Shape is validated so a malformed
+ * claim is refused; the field is then dropped. This canary deliberately does not resolve
+ * `derivedFrom.path`: it names a file outside the payload, and an installed package has no way to
+ * re-derive anything. Packaged bytes keep being checked against the entry's own `sha256` alone.
+ */
+function derivedFromProblem(value, field) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return `${field} must be an object`;
+  const keys = Object.keys(value).sort().join(",");
+  if (keys !== "path,pattern,replacement,sha256,transform") {
+    return `${field} must have exactly the fields path, sha256, transform, pattern and replacement (got ${keys || "none"})`;
+  }
+  if (!boundedRelativePath(value.path)) return `${field}.path must be a relative path (got ${JSON.stringify(value.path)})`;
+  if (typeof value.sha256 !== "string" || !SHA256_HEX.test(value.sha256)) return `${field}.sha256 must be 64 lowercase hex characters`;
+  for (const key of ["transform", "pattern", "replacement"]) {
+    if (typeof value[key] !== "string" || value[key] === "") return `${field}.${key} must be a non-empty string`;
+  }
+  return null;
+}
+
 /** `{path, sha256}[]`, or a string describing the first structural problem. */
-function fileIdentityList(value, field) {
+function fileIdentityList(value, field, { allowDerivedFrom = false } = {}) {
   if (!Array.isArray(value)) return `${field} must be an array of {path, sha256}`;
   const out = [];
   const seen = new Set();
@@ -63,7 +87,14 @@ function fileIdentityList(value, field) {
     const entry = value[i];
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return `${field}[${i}] must be {path, sha256}`;
     const keys = Object.keys(entry).sort().join(",");
-    if (keys !== "path,sha256") return `${field}[${i}] must have exactly the fields path and sha256 (got ${keys || "none"})`;
+    const derived = allowDerivedFrom && keys === "derivedFrom,path,sha256";
+    if (!derived && keys !== "path,sha256") {
+      return `${field}[${i}] must have exactly the fields path and sha256${allowDerivedFrom ? " (plus an optional derivedFrom)" : ""} (got ${keys || "none"})`;
+    }
+    if (derived) {
+      const problem = derivedFromProblem(entry.derivedFrom, `${field}[${i}].derivedFrom`);
+      if (problem) return problem;
+    }
     if (!boundedRelativePath(entry.path)) return `${field}[${i}].path must be a relative path inside ${DATA_REL} (got ${JSON.stringify(entry.path)})`;
     if (typeof entry.sha256 !== "string" || !SHA256_HEX.test(entry.sha256)) return `${field}[${i}].sha256 must be 64 lowercase hex characters`;
     if (seen.has(entry.path)) return `${field}[${i}].path ${entry.path} is listed twice`;
@@ -113,7 +144,7 @@ export function verifySdkCompatibilityPayload(packageRoot) {
   if (unexpected.length) return schema(`unexpected field ${unexpected.map((k) => JSON.stringify(k)).join(", ")}`);
   const records = fileIdentityList(parsed.records, "records");
   if (typeof records === "string") return schema(records);
-  const historicalReferences = fileIdentityList(parsed.historicalReferences, "historicalReferences");
+  const historicalReferences = fileIdentityList(parsed.historicalReferences, "historicalReferences", { allowDerivedFrom: true });
   if (typeof historicalReferences === "string") return schema(historicalReferences);
   const overlap = records.filter((r) => historicalReferences.some((h) => h.path === r.path));
   if (overlap.length) return schema(`${overlap[0].path} is listed both as a record and as a historical reference`);
