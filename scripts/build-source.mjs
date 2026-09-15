@@ -26,8 +26,13 @@ const DEFAULT_WAIT_MS = 30_000;
 const POLL_MS = 50;
 const COMPILE_TIMEOUT_MS = 10 * 60 * 1000;
 
-/** Active leases, keyed by the lease object itself: a caller cannot forge one, only hold one. */
-const ACTIVE_LEASES = new WeakMap();
+const INTERRUPT_SIGNALS = ["SIGINT", "SIGTERM"];
+
+/**
+ * Active leases, keyed by the lease object itself: a caller cannot forge one, only hold one. The
+ * value is the scratch this process currently owns, which is what an interrupt has to clean up.
+ */
+const ACTIVE_LEASES = new Map();
 
 const defaultClock = {
   now: () => performance.now(),
@@ -60,6 +65,107 @@ function readOwnerRecord(lockPath) {
   try { return JSON.parse(fs.readFileSync(lockPath, "utf8")); } catch { return null; }
 }
 
+/** true / false / null when the platform will not say. EPERM means it exists but is not ours. */
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  try { process.kill(pid, 0); return true; }
+  catch (error) {
+    if (error.code === "ESRCH") return false;
+    if (error.code === "EPERM") return true;
+    return null;
+  }
+}
+
+/** Drop this process's own lock, and only ever this process's own lock. */
+function releaseLock({ lockPath, token }) {
+  if (readOwnerRecord(lockPath)?.token !== token) return;
+  try { fs.rmSync(lockPath, { force: true }); } catch {}
+}
+
+/**
+ * Remove scratch that an earlier, interrupted build left behind.
+ *
+ * Deleting other builds' directories is only safe because this runs while we hold the setup lock:
+ * holding it proves no other build owns scratch in this root right now. Names are matched against
+ * the same `<prefix><random>` shape every removal uses, and `readdirSync` on the root means nothing
+ * outside it is ever a candidate.
+ */
+export function sweepStaleScratch(root) {
+  const swept = [];
+  let entries;
+  try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return swept; }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const prefix = entry.name.startsWith(STAGING_PREFIX) ? STAGING_PREFIX
+      : entry.name.startsWith(BACKUP_PREFIX) ? BACKUP_PREFIX
+      : null;
+    if (!prefix || entry.name.length === prefix.length) continue;
+    try {
+      removeOwnedScratch(root, path.join(root, entry.name), prefix);
+      swept.push(entry.name);
+    } catch {}
+  }
+  return swept;
+}
+
+/**
+ * Say whether the recorded holder is still running. A dead pid is never grounds for taking the lock
+ * — the waiter cannot know the file is not about to be rewritten — but it is exactly what the
+ * person reading the failure needs, so the message names it and hands over the recovery command.
+ */
+function lockTimeoutError(lockPath, waitMs) {
+  const holder = readOwnerRecord(lockPath);
+  const alive = holder ? pidAlive(holder.pid) : null;
+  const who = holder?.pid ? ` (pid ${holder.pid}${alive === false ? ", which is no longer running" : ""})` : "";
+  const remedy = alive === false
+    ? `That build did not finish. Remove the stale lock: ${removeCommand(lockPath)}`
+    : "Wait for it to finish, or remove the lock only if that process is gone.";
+  return new Error(`another build is holding ${lockPath}${who}; waited ${waitMs}ms. ${remedy}`);
+}
+
+function removeCommand(target) {
+  return process.platform === "win32" ? `del "${target}"` : `rm ${target}`;
+}
+
+const interruptListener = (signal) => handleInterrupt(signal);
+let interruptArmed = false;
+
+/** Stand down, then re-raise: with no listener left the signal takes its default course. */
+function raiseDefaultSignal(signal) {
+  for (const name of INTERRUPT_SIGNALS) process.removeListener(name, interruptListener);
+  interruptArmed = false;
+  process.kill(process.pid, signal);
+}
+
+/**
+ * Ctrl-C during a build: `finally` blocks never run, so without this a killed build leaves its lock
+ * and a full copy of the emitted tree behind, and every later build waits out the full deadline
+ * against a pid that is already gone. Release what this process owns, then let the signal take its
+ * normal course so `npm` still sees the interruption (exit 128+signal) rather than a clean exit.
+ */
+export function handleInterrupt(signal, { raise = raiseDefaultSignal } = {}) {
+  for (const record of [...ACTIVE_LEASES.values()]) {
+    if (record.staging) {
+      try { removeOwnedScratch(record.checkout, record.staging, STAGING_PREFIX); } catch {}
+      record.staging = null;
+    }
+    releaseLock(record);
+  }
+  raise(signal);
+}
+
+function armInterruptCleanup() {
+  if (interruptArmed) return;
+  interruptArmed = true;
+  for (const name of INTERRUPT_SIGNALS) process.once(name, interruptListener);
+}
+
+function disarmInterruptCleanup() {
+  if (!interruptArmed || ACTIVE_LEASES.size > 0) return;
+  interruptArmed = false;
+  for (const name of INTERRUPT_SIGNALS) process.removeListener(name, interruptListener);
+}
+
 /**
  * Hold the source-setup lock for `root` while `work(lease)` runs.
  *
@@ -72,7 +178,7 @@ export async function withSourceSetup({ root, owner, waitMs = DEFAULT_WAIT_MS, c
   const checkout = fs.realpathSync(path.resolve(root));
 
   if (owner !== undefined) {
-    if (typeof owner !== "object" || owner === null || ACTIVE_LEASES.get(owner) !== checkout) {
+    if (typeof owner !== "object" || owner === null || ACTIVE_LEASES.get(owner)?.checkout !== checkout) {
       throw new Error(`the supplied owner is not an active source-setup lease for ${checkout}`);
     }
     return work(owner);
@@ -90,27 +196,22 @@ export async function withSourceSetup({ root, owner, waitMs = DEFAULT_WAIT_MS, c
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
       const remaining = deadline - clock.now();
-      if (remaining <= 0) {
-        const holder = readOwnerRecord(lockPath);
-        throw new Error(
-          `another build is holding ${lockPath}${holder?.pid ? ` (pid ${holder.pid})` : ""}; waited ${waitMs}ms. ` +
-            "Wait for it to finish, or remove the lock only if that process is gone.",
-        );
-      }
+      if (remaining <= 0) throw lockTimeoutError(lockPath, waitMs);
       await clock.wait(Math.min(POLL_MS, remaining));
     }
   }
 
   const lease = Object.freeze({ kind: "pico-source-setup-owner" });
-  ACTIVE_LEASES.set(lease, checkout);
+  const held = { checkout, lockPath, token, staging: null };
+  ACTIVE_LEASES.set(lease, held);
+  armInterruptCleanup();
   try {
     return await work(lease);
   } finally {
     ACTIVE_LEASES.delete(lease);
+    disarmInterruptCleanup();
     // Only ever release our own lock: a lock we lost is someone else's to clear.
-    if (readOwnerRecord(lockPath)?.token === token) {
-      try { fs.rmSync(lockPath, { force: true }); } catch {}
-    }
+    releaseLock(held);
   }
 }
 
@@ -185,10 +286,15 @@ export function publishStaging(root, staging) {
  * source changed while the compiler was running.
  */
 export async function buildSource({ root, runCompiler: compile = runCompiler, owner }) {
-  return withSourceSetup({ root, owner }, async () => {
+  return withSourceSetup({ root, owner }, async (lease) => {
     const checkout = fs.realpathSync(path.resolve(root));
+    const recovered = sweepStaleScratch(checkout);
+    if (recovered.length) log(`build-source: recovered scratch from an interrupted build: ${recovered.join(", ")}`);
+
+    const held = ACTIVE_LEASES.get(lease);
     const staging = path.join(checkout, scratchName(STAGING_PREFIX));
     const before = inputIdentity(checkout);
+    held.staging = staging;
     try {
       fs.mkdirSync(staging, { recursive: true });
       await compile({ root: checkout, outDir: staging });
@@ -200,6 +306,7 @@ export async function buildSource({ root, runCompiler: compile = runCompiler, ow
       writeReceipt(checkout, staging, after);
       publishStaging(checkout, staging);
     } finally {
+      held.staging = null;
       // Cleanup is best-effort reporting: it must never mask the failure that brought us here.
       try {
         if (fs.existsSync(staging)) removeOwnedScratch(checkout, staging, STAGING_PREFIX);

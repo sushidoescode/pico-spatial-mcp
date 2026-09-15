@@ -6,9 +6,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
+import { spawnSync } from "node:child_process";
 
 import { inputIdentity, verifyBuild } from "../scripts/build-identity.mjs";
-import { assertOwnedScratch, buildSource, publishStaging, runCompiler, withSourceSetup } from "../scripts/build-source.mjs";
+import {
+  assertOwnedScratch,
+  buildSource,
+  handleInterrupt,
+  publishStaging,
+  runCompiler,
+  sweepStaleScratch,
+  withSourceSetup,
+} from "../scripts/build-source.mjs";
 
 const LOCK_NAME = ".pico-source-setup.lock";
 const fixtures = [];
@@ -410,4 +419,144 @@ test("every destructive step refuses paths the build does not own", async () => 
   assert.throws(() => publishStaging(root, foreign), /is not a .* path owned by/);
   assert.equal(fs.existsSync(foreign), true, "a foreign staging tree was consumed");
   assert.equal(fs.existsSync(path.join(root, "dist")), false);
+});
+
+test("holding the lock sweeps scratch an interrupted build left, and nothing else", async () => {
+  const root = createCheckout();
+  const outside = createCheckout();
+
+  const stale = path.join(root, ".dist-staging-interrupted");
+  const staleBackup = path.join(root, ".dist-backup-interrupted");
+  for (const dir of [stale, staleBackup]) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "index.js"), "half-written output\n");
+  }
+  // Look-alikes that are not scratch: a bare prefix, a file, and a real source directory.
+  const barePrefix = path.join(root, ".dist-staging-");
+  fs.mkdirSync(barePrefix, { recursive: true });
+  fs.writeFileSync(path.join(root, ".dist-staging-notadir"), "a file, not a staging tree\n");
+  // A staging tree belonging to a different checkout must not be a candidate at all.
+  const foreign = path.join(outside, ".dist-staging-foreign");
+  fs.mkdirSync(foreign, { recursive: true });
+
+  const swept = sweepStaleScratch(root).sort();
+  assert.deepEqual(swept, [".dist-backup-interrupted", ".dist-staging-interrupted"]);
+  assert.equal(fs.existsSync(stale), false);
+  assert.equal(fs.existsSync(staleBackup), false);
+  assert.equal(fs.existsSync(barePrefix), true, "a bare prefix is not a scratch name");
+  assert.equal(fs.existsSync(path.join(root, ".dist-staging-notadir")), true, "a file is not a staging tree");
+  assert.equal(fs.existsSync(foreign), true, "the sweep escaped the root it was given");
+  assert.equal(fs.existsSync(path.join(root, "src", "index.ts")), true);
+
+  fs.rmSync(barePrefix, { recursive: true });
+  fs.rmSync(path.join(root, ".dist-staging-notadir"));
+});
+
+test("the next build recovers scratch an interrupted build left behind", async () => {
+  const root = createCheckout();
+  const abandoned = path.join(root, ".dist-staging-abandoned");
+  fs.mkdirSync(abandoned, { recursive: true });
+  fs.writeFileSync(path.join(abandoned, "index.js"), "half-written output\n");
+
+  await buildSource({ root, runCompiler: transpiler() });
+  assert.equal(fs.existsSync(abandoned), false, "the interrupted build's staging tree survived");
+  assert.equal(verifyBuild(root).current, true);
+  assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith(".dist-")), []);
+});
+
+test("an interrupt releases this build's lock and staging, then re-raises the signal", async () => {
+  const root = createCheckout();
+  await buildSource({ root, runCompiler: transpiler() });
+  const publishedBytes = fs.readFileSync(path.join(root, "dist", "index.js"));
+
+  const raised = [];
+  let staging;
+  let afterHandler;
+  await assert.rejects(
+    buildSource({
+      root,
+      runCompiler: async ({ outDir }) => {
+        staging = outDir;
+        fs.writeFileSync(path.join(outDir, "index.js"), "half-written output\n");
+        assert.equal(fs.existsSync(path.join(root, LOCK_NAME)), true);
+        // Stand in for Ctrl-C: the handler is the only cleanup a killed build ever gets.
+        handleInterrupt("SIGINT", { raise: (signal) => raised.push(signal) });
+        // Read the disk HERE. A real signal never reaches the `finally` below, so anything the
+        // handler did not clean up is what would actually be left in the checkout.
+        afterHandler = {
+          staging: fs.existsSync(outDir),
+          lock: fs.existsSync(path.join(root, LOCK_NAME)),
+        };
+        throw new Error("interrupted");
+      },
+    }),
+    /interrupted/,
+  );
+
+  assert.deepEqual(raised, ["SIGINT"], "the signal was swallowed instead of re-raised");
+  assert.equal(afterHandler.staging, false, "a Ctrl-C would leave the staging tree behind");
+  assert.equal(afterHandler.lock, false, "a Ctrl-C would leave the lock behind");
+  assert.deepEqual(fs.readFileSync(path.join(root, "dist", "index.js")), publishedBytes);
+  assert.equal(verifyBuild(root).current, true);
+  assert.equal(fs.existsSync(staging), false);
+});
+
+test("an interrupt never releases a lock that is no longer this build's", async () => {
+  const root = createCheckout();
+  const lockPath = path.join(root, LOCK_NAME);
+  const foreign = `${JSON.stringify({ pid: process.pid + 1, token: "f".repeat(32) })}\n`;
+
+  let afterHandler;
+  await assert.rejects(
+    buildSource({
+      root,
+      runCompiler: async ({ outDir }) => {
+        // Our lock has been taken over: the handler may clean our staging, never this record.
+        fs.writeFileSync(lockPath, foreign);
+        handleInterrupt("SIGTERM", { raise: () => {} });
+        afterHandler = { lock: fs.readFileSync(lockPath, "utf8"), staging: fs.existsSync(outDir) };
+        throw new Error("interrupted");
+      },
+    }),
+    /interrupted/,
+  );
+
+  assert.equal(afterHandler.lock, foreign, "the handler released a lock it does not own");
+  assert.equal(afterHandler.staging, false, "a Ctrl-C would leave the staging tree behind");
+  assert.equal(fs.readFileSync(lockPath, "utf8"), foreign, "the exit path released a lock it does not own");
+  fs.rmSync(lockPath);
+});
+
+test("a lock whose holder has exited is reported as dead, with a recovery command, not stolen", async () => {
+  const root = createCheckout();
+  const lockPath = path.join(root, LOCK_NAME);
+  const exited = spawnSync(process.execPath, ["-e", ""]);
+  assert.equal(exited.status, 0);
+  const deadPid = exited.pid;
+  fs.writeFileSync(lockPath, `${JSON.stringify({ pid: deadPid, token: "d".repeat(32) })}\n`, { flag: "wx" });
+
+  const clock = fakeClock();
+  await assert.rejects(
+    withSourceSetup({ root, waitMs: 30_000, clock }, async () => { throw new Error("must not run"); }),
+    (error) => {
+      assert.match(error.message, new RegExp(`pid ${deadPid}, which is no longer running`));
+      assert.match(error.message, new RegExp(`Remove the stale lock: (rm|del) `));
+      assert.ok(error.message.includes(lockPath));
+      return true;
+    },
+  );
+  assert.equal(fs.existsSync(lockPath), true, "a dead pid is not a licence to steal the lock");
+
+  // The live-holder wording stays distinct, and still never steals.
+  fs.writeFileSync(lockPath, `${JSON.stringify({ pid: process.pid, token: "l".repeat(32) })}\n`);
+  await assert.rejects(
+    withSourceSetup({ root, waitMs: 30_000, clock: fakeClock() }, async () => {}),
+    (error) => {
+      assert.doesNotMatch(error.message, /no longer running/);
+      assert.match(error.message, /remove the lock only if that process is gone/);
+      return true;
+    },
+  );
+  assert.equal(fs.existsSync(lockPath), true);
+  fs.rmSync(lockPath);
 });
