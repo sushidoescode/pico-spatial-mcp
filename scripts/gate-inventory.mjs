@@ -66,7 +66,7 @@ export const GATES = Object.freeze({
   "test:briefroute": { host: "linux", scope: "fixture", commands: [["node", "test/briefroute.mjs"]] },
   "test:emulator-restart": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/emulator.mjs", "test/restart-emulator.mjs", "test/observation.mjs", "test/navigation.mjs", "test/runtimecontinuity.mjs", "test/navigationtarget.mjs", "test/worldlocomotion.mjs"]] },
   "test:modelmeasure": { host: "linux", scope: "fixture", commands: [["node", "test/modelmeasure.mjs"]] },
-  "test:docsmeta": { host: "linux", scope: "fixture", commands: [["node", "test/docsmeta.mjs"]] },
+  "test:docsmeta": { host: "linux", scope: "fixture", commands: [["node", "test/docsmeta.mjs"], ["node", "--test", "test/public-docs.mjs"]] },
   "test:picocli": { host: "linux", scope: "fixture", commands: [["node", "test/picocli.mjs"], ["node", "--test", "test/picocli-autoinstall.mjs", "test/picocli-sweep.mjs"]] },
   "test:runreceipt": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/runreceipt-identity.mjs", "test/runreceipt-store.mjs", "test/nativefleetreceipt.mjs", "test/fleetreceipt.mjs", "test/runreceipt-ledger.mjs", "test/runreceipt-ship.mjs", "test/runreceipt-portability.mjs"]] },
   "test:runrevision": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/runrevision-contracts.mjs", "test/runrevision-store.mjs", "test/runrevision-locator.mjs", "test/runrevision-locks.mjs"]] },

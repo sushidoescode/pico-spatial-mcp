@@ -6,12 +6,41 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  parsePackagedInventory,
+  parseTrackedPaths,
+  publicMarkdownFiles,
+  relativeLinkReport,
+} from "../scripts/public-docs.mjs";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let failures = 0;
 const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
 const warn = (m) => console.log(`  WARN ${m}`);
 const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), "utf8");
+
+// ── modes ───────────────────────────────────────────────────────────────────────────────────────
+// Default: the public documentation set is whatever Git tracks, so this gate grades the same files
+// in a developer checkout and in a clean CI checkout.
+//   --packaged <inventory.json>  a source-less installed tarball has no Git metadata; the document
+//                                list must then be stated explicitly, never guessed from a scan.
+//   --local                      additionally audit the untracked notes a developer checkout
+//                                carries. Warnings only — it never changes the public set or the
+//                                result, which is the whole point of the split.
+const USAGE = "usage: node test/docsmeta.mjs [--local] [--packaged <inventory.json>]";
+let localMode = false;
+let packagedInventoryPath = null;
+const argv = process.argv.slice(2);
+for (let i = 0; i < argv.length; i++) {
+  const arg = argv[i];
+  if (arg === "--local") localMode = true;
+  else if (arg === "--packaged") {
+    packagedInventoryPath = argv[++i] ?? null;
+    if (!packagedInventoryPath) { console.error(`docsmeta: --packaged needs a path\n${USAGE}`); process.exit(2); }
+  } else if (arg.startsWith("--packaged=")) packagedInventoryPath = arg.slice("--packaged=".length);
+  else { console.error(`docsmeta: unknown argument ${arg}\n${USAGE}`); process.exit(2); }
+}
 
 // ── (a) one version everywhere ──────────────────────────────────────────────────────────────────
 const pkgVersion = JSON.parse(read("package.json")).version;
@@ -53,33 +82,75 @@ else {
   console.log(((check.stdout || "") + (check.stderr || "")).trim().split("\n").map((l) => `       ${l}`).join("\n"));
 }
 
-// ── (c) every relative markdown link in root *.md + docs/** resolves ────────────────────────────
-const mdFiles = fs.readdirSync(repoRoot).filter((f) => f.endsWith(".md"));
-(function walk(dir) {
-  for (const e of fs.readdirSync(path.join(repoRoot, dir), { withFileTypes: true })) {
-    const rel = path.join(dir, e.name);
-    if (e.isDirectory()) walk(rel);
-    else if (e.name.endsWith(".md")) mdFiles.push(rel);
+// ── (c) every relative markdown link in the public documentation set resolves ───────────────────
+// Public documentation is tracked root *.md plus tracked docs/**/*.md, decided by `git ls-files`
+// and never by listing the working tree. A developer checkout carries gitignored root notes
+// (CLAUDE.md, HANDOFF.md, NEXT-AGENT-PROMPT.md, the generated pico-cli plugin-context file) that a
+// clean CI checkout does not, so a scan graded a different set of documents in the two places.
+// `git ls-files` reads the index, so documents staged for this very commit are graded too.
+let publicDocs = null;
+if (packagedInventoryPath) {
+  try {
+    const inventory = parsePackagedInventory(fs.readFileSync(packagedInventoryPath, "utf8"));
+    publicDocs = publicMarkdownFiles({ root: repoRoot, trackedPaths: inventory });
+    ok(`public docs: ${publicDocs.length} file(s) named by the packaged inventory ${packagedInventoryPath}`);
+  } catch (e) {
+    fail(`public docs: packaged inventory ${packagedInventoryPath} is unusable — ${e.message}`);
   }
-})("docs");
-let links = 0;
-let broken = 0;
-for (const file of mdFiles) {
-  // fenced blocks and inline code carry example paths, not links — strip before scanning
-  const src = read(file).replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
-  for (const m of src.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/g)) {
-    let target = m[1].trim().split(/\s+/)[0]; // drop an optional "title" part
-    if (/^(https?:|mailto:|#|<)/.test(target)) continue;
-    target = target.replace(/#.*$/, "");
-    if (!target) continue;
-    links++;
-    if (!fs.existsSync(path.resolve(repoRoot, path.dirname(file), target))) {
-      broken++;
-      fail(`${file}: broken relative link -> ${m[1]}`);
-    }
+} else {
+  const tracked = spawnSync("git", ["-C", repoRoot, "ls-files", "-z", "--", "*.md"], {
+    encoding: "utf8",
+    shell: false,
+    timeout: 60_000,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (tracked.error || tracked.status !== 0) {
+    const detail = tracked.error?.message || (tracked.stderr || "").trim() || `git exited with ${tracked.status}`;
+    fail(`public docs: not a git checkout — ${detail}. Run this gate from a git checkout, or pass `
+      + `--packaged <inventory.json> for a source-less install. This gate never falls back to scanning the tree.`);
+  } else {
+    publicDocs = publicMarkdownFiles({ root: repoRoot, trackedPaths: parseTrackedPaths(tracked.stdout) });
   }
 }
-if (!broken) ok(`all ${links} relative markdown links resolve (${mdFiles.length} files: root *.md + docs/**)`);
+
+if (publicDocs) {
+  const report = relativeLinkReport({ root: repoRoot, files: publicDocs });
+  for (const f of report.failures) {
+    fail(`${f.file}: ${f.reason} relative link -> ${f.target || "(the document itself could not be read)"}`);
+  }
+  if (report.failures.length === 0) {
+    const source = packagedInventoryPath ? "files named by the packaged inventory" : "git-tracked files";
+    ok(`all ${report.links} relative markdown links resolve (${publicDocs.length} ${source}: root *.md + docs/**)`);
+  }
+}
+
+// ── (c2) --local: the notes only this working tree has, as warnings that change nothing ─────────
+if (localMode) {
+  console.log("\n  -- --local: untracked local markdown (warnings only; never part of the gate result) --");
+  const publicSet = new Set(publicDocs ?? []);
+  const local = fs.readdirSync(repoRoot, { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith(".md") && !publicSet.has(e.name))
+    .map((e) => e.name);
+  if (fs.existsSync(path.join(repoRoot, "docs"))) {
+    (function walk(dir) {
+      for (const e of fs.readdirSync(path.join(repoRoot, dir), { withFileTypes: true })) {
+        const rel = path.posix.join(dir, e.name);
+        if (e.isDirectory()) walk(rel);
+        else if (e.isFile() && e.name.endsWith(".md") && !publicSet.has(rel)) local.push(rel);
+      }
+    })("docs");
+  }
+  local.sort();
+  if (local.length === 0) warn("no untracked local markdown in root *.md or docs/**");
+  else {
+    warn(`${local.length} local file(s) outside the public set: ${local.join(", ")}`);
+    const localReport = relativeLinkReport({ root: repoRoot, files: local });
+    for (const f of localReport.failures) {
+      warn(`${f.file}: ${f.reason} relative link -> ${f.target || "(the document itself could not be read)"}`);
+    }
+    if (localReport.failures.length === 0) warn(`all ${localReport.links} local relative link(s) resolve`);
+  }
+}
 
 // ── (d) homepage vs git origin — WARNING only: whether PICO-MCP -> pico-spatial-mcp was a repo
 // rename is not decidable locally and this gate must not touch the network ──────────────────────
