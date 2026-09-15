@@ -7,7 +7,9 @@ import { expandHome, fail, image, ok, okJson, run, runBinary, sleep, tail, type 
 import {
   gradleEnv,
   isToolchainFailure,
+  prepareOperationToolchain,
   resolveOperationToolchain,
+  settleOperationToolchain,
   toolchainProvenance,
   toolchainProvenanceLine,
   verifyOperationOverride,
@@ -177,17 +179,11 @@ export async function resolveSceneToolchain(
     primary: "packer" as ToolComponent,
     allowBinaryOverride: true,
   };
-  const settle = async (prepared: OperationToolchain): Promise<OperationToolchain | { error: string }> => {
-    const verified = await verifyOperationOverride(prepared, probe);
-    return isToolchainFailure(verified) ? { error: `${verified.code}: ${verified.detail}` } : verified;
-  };
   if (opts.needEditor) {
     const withEditor = resolve({ ...base, required: ["packer", "editor"] });
-    if (!isToolchainFailure(withEditor)) return settle(withEditor);
+    if (!isToolchainFailure(withEditor)) return settleOperationToolchain(withEditor, probe);
   }
-  const packerOnly = resolve({ ...base, required: ["packer"] });
-  if (isToolchainFailure(packerOnly)) return { error: `${packerOnly.code}: ${packerOnly.detail}` };
-  return settle(packerOnly);
+  return prepareOperationToolchain({ ...base, required: ["packer"] }, { probe, resolve });
 }
 
 export function registerWorkflowTools(server: McpServer) {

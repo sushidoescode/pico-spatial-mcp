@@ -290,6 +290,42 @@ export async function verifyOperationOverride(
   return { ...context, binaryOverride: { ...override, reportedVersion: reported } };
 }
 
+/**
+ * Resolve + verify, with the structured failure flattened to the `{error}` shape every packer
+ * consumer returns. `src/bundle.ts`, `src/editorexport.ts`, `src/bundlediff.ts` and
+ * `src/workflow.ts` each carried a byte-identical copy of these six lines; four copies of a
+ * two-step protocol is four places for a later edit to drop the verification half, which is the
+ * step that stops an unverified $PICO_SPATIALBUNDLE from packing under a version pin it does not
+ * satisfy. The `${code}: ${detail}` shape is preserved exactly — each caller still adds its own
+ * prefix ("iterate_scene: …", "pack failed with …").
+ *
+ * `io`, `probe` and `resolve` are injected by tests only; production takes the host defaults.
+ */
+export async function prepareOperationToolchain(
+  request: OperationToolchainRequest,
+  options: {
+    io?: ToolchainIO;
+    probe?: OverrideVersionProbe;
+    resolve?: (request: OperationToolchainRequest, io?: ToolchainIO) => OperationToolchain | UnusableToolchain;
+  } = {},
+): Promise<OperationToolchain | { error: string }> {
+  const prepared = (options.resolve ?? resolveOperationToolchain)(request, options.io);
+  if (isToolchainFailure(prepared)) return { error: `${prepared.code}: ${prepared.detail}` };
+  return settleOperationToolchain(prepared, options.probe);
+}
+
+/**
+ * The verification half on its own, for the one caller that must choose between two already
+ * resolved selections (`resolveSceneToolchain`'s packer+editor preference) before settling.
+ */
+export async function settleOperationToolchain(
+  prepared: OperationToolchain,
+  probe?: OverrideVersionProbe,
+): Promise<OperationToolchain | { error: string }> {
+  const verified = await verifyOperationOverride(prepared, probe);
+  return isToolchainFailure(verified) ? { error: `${verified.code}: ${verified.detail}` } : verified;
+}
+
 /** The provenance every pack/launch result discloses: what was selected, and what actually ran. */
 export function toolchainProvenance(context: OperationToolchain): Record<string, unknown> {
   return {

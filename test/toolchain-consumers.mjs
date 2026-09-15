@@ -19,6 +19,7 @@ import {
   extractReportedVersion,
   isToolchainFailure,
   reportedVersionMatchesPin,
+  prepareOperationToolchain,
   resolveOperationToolchain,
   toolchainProvenance,
   toolchainProvenanceLine,
@@ -642,8 +643,33 @@ test("no src/*.ts still carries the hardcoded 0.13 spatialbundle fallback", () =
 });
 
 test("the packer consumers import the shared selection rather than rebuilding one", () => {
+  // S4 extracted the resolve+verify pair the four packer wrappers each held a copy of into
+  // `prepareOperationToolchain`, so reaching the seam through THAT satisfies this gate too. What
+  // must never come back is a consumer resolving (or, worse, hardcoding) a binary of its own.
   for (const name of ["bundle.ts", "editorexport.ts", "bundlediff.ts", "workflow.ts", "editor.ts"]) {
     const text = fs.readFileSync(path.join(repoRoot, "src", name), "utf8");
-    assert.match(text, /resolveOperationToolchain/, `${name} must resolve through ./toolchain.js`);
+    assert.match(text, /(?:resolve|prepare)OperationToolchain/, `${name} must resolve through ./toolchain.js`);
   }
+});
+
+test("the extracted helper still performs BOTH halves for every packer wrapper", async () => {
+  // The step a copy-paste refactor is most likely to drop is the override VERIFICATION, which is
+  // what stops an unverified $PICO_SPATIALBUNDLE from packing under a version pin it fails. Prove
+  // it survives through the shared helper, in both directions.
+  const io = toolchainIOFromTree({
+    platform: "darwin", home: "/fixture",
+    env: { PICO_SPATIALBUNDLE: "/opt/custom/spatialbundle" },
+    files: {
+      "/sdk/6.1/editor/spatialbundle/spatialbundle": { bytes: "packer-6.1", executable: true },
+      "/opt/custom/spatialbundle": { bytes: "override-bytes", executable: true },
+    },
+  });
+  const request = { toolsRoot: "/sdk", toolsVersion: "6.1", required: ["packer"], primary: "packer", allowBinaryOverride: true };
+  const conflict = await prepareOperationToolchain(request, { io, probe: async () => "spatialbundle 6.0.0" });
+  assert.match(conflict.error ?? "", /override-version-conflict/);
+  const agreeing = await prepareOperationToolchain(request, { io, probe: async () => "spatialbundle 6.1.0-rls.7" });
+  assert.equal(agreeing.binaryOverride?.reportedVersion, "6.1.0");
+  // and the resolve half still flattens a structural failure to the same `code: detail` shape
+  const missing = await prepareOperationToolchain({ ...request, toolsVersion: "9.9" }, { io, probe: async () => "" });
+  assert.match(missing.error ?? "", /^unavailable\/[a-z-]+: /);
 });

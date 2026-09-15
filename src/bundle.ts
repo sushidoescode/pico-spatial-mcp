@@ -6,11 +6,9 @@ import { z } from "zod";
 import { expandHome, fail, ok, okJson, run, tail } from "./util.js";
 import {
   ANDROID_PROJECT_ROOT_DESCRIPTION,
-  isToolchainFailure,
-  resolveOperationToolchain,
+  prepareOperationToolchain,
   toolchainProvenance,
   toolchainProvenanceLine,
-  verifyOperationOverride,
   type OperationToolchain,
   type OverrideVersionProbe,
   type ToolchainIO,
@@ -41,7 +39,7 @@ export async function packerToolchain(
   io?: ToolchainIO,
   probe?: OverrideVersionProbe,
 ): Promise<OperationToolchain | { error: string }> {
-  const prepared = resolveOperationToolchain(
+  return prepareOperationToolchain(
     {
       androidProjectRoot: opts.androidProjectRoot,
       toolsVersion: opts.toolsVersion,
@@ -49,12 +47,8 @@ export async function packerToolchain(
       primary: "packer",
       allowBinaryOverride: opts.allowBinaryOverride ?? true,
     },
-    io,
+    { io, probe },
   );
-  if (isToolchainFailure(prepared)) return { error: `${prepared.code}: ${prepared.detail}` };
-  const verified = await verifyOperationOverride(prepared, probe);
-  if (isToolchainFailure(verified)) return { error: `${verified.code}: ${verified.detail}` };
-  return verified;
 }
 
 /**

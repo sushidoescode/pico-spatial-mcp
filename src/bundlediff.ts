@@ -3,11 +3,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, okJson, fail, expandHome } from "./util.js";
 import {
-  isToolchainFailure,
-  resolveOperationToolchain,
+  prepareOperationToolchain,
   toolchainProvenance,
   toolchainProvenanceLine,
-  verifyOperationOverride,
   type OperationToolchain,
 } from "./toolchain.js";
 
@@ -26,11 +24,7 @@ import {
  * either bundle.
  */
 async function packerToolchain(): Promise<OperationToolchain | { error: string }> {
-  const prepared = resolveOperationToolchain({ required: ["packer"], primary: "packer", allowBinaryOverride: true });
-  if (isToolchainFailure(prepared)) return { error: `${prepared.code}: ${prepared.detail}` };
-  const verified = await verifyOperationOverride(prepared);
-  if (isToolchainFailure(verified)) return { error: `${verified.code}: ${verified.detail}` };
-  return verified;
+  return prepareOperationToolchain({ required: ["packer"], primary: "packer", allowBinaryOverride: true });
 }
 
 interface Info { exportVersion: string | null; modelCount: number | null; assetCount: number | null; fingerprint: string[]; raw: string; }
