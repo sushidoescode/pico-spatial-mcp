@@ -9,9 +9,11 @@ import {
   parseInstalledApkPath,
   parsePid,
   parseProcStartTicks,
+  parseLocalPropertiesSdk,
   parseRemoteSha256,
   produceNativeFleetReceipt,
 } from "../dist/nativefleetreceipt.js";
+import { serializeJavaProperty } from "../dist/toolchainselection.js";
 import { readNativeRunReceipt } from "../dist/runreceiptstore.js";
 import {
   authoredSpec,
@@ -1263,4 +1265,52 @@ test("command failures report bounded factual exit and timeout state", async (t)
   assert.equal(timedOut.status, "failed");
   assert.match(timedOut.reason, /exit=null/);
   assert.match(timedOut.reason, /timedOut=true/);
+});
+
+// Task S4 (carried): local.properties is a java.util.Properties file, and since S3 this server
+// WRITES sdk.dir / spatial.tools.dir through serializeJavaProperty — which escapes `#`, `!`, `=`,
+// `:` and everything outside printable ASCII as `\uXXXX`. This reader only unescaped `\:` and
+// `\\`, so a perfectly ordinary Android SDK under a non-ASCII home, or a volume with a `#` in its
+// name, round-tripped to a path that does not exist and silently downgraded aapt2/apksigner
+// inspection to "Android SDK root was not found".
+test("the local.properties sdk.dir reader uses real java.util.Properties escaping", async (t) => {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s4-localprops-"));
+  t.after(() => fs.rmSync(sandbox, { recursive: true, force: true }));
+
+  for (const sdkDir of [
+    "/Users/té st/Library/Android/sdk",          // non-ASCII -> \uXXXX on write
+    "/Volumes/Team Drive/PICO #1/Android/sdk",   // `#` and spaces
+    "/Volumes/build!/Android=sdk",               // `!` and `=`
+    "C:\\Program Files\\Android\\sdk",           // backslashes and a drive colon
+  ]) {
+    const projectDir = fs.mkdtempSync(path.join(sandbox, "proj-"));
+    fs.writeFileSync(
+      path.join(projectDir, "local.properties"),
+      `# generated\n${serializeJavaProperty("sdk.dir", sdkDir)}\n`,
+    );
+    assert.equal(
+      parseLocalPropertiesSdk(projectDir),
+      path.resolve(projectDir, sdkDir),
+      `sdk.dir did not round-trip: ${sdkDir}`,
+    );
+  }
+
+  // the shapes Properties.load accepts that a single `^\s*sdk\.dir\s*=` regex does not
+  const shapes = [
+    ["colon separator", "sdk.dir:/opt/android/sdk", "/opt/android/sdk"],
+    ["whitespace separator", "sdk.dir /opt/android/sdk", "/opt/android/sdk"],
+    ["escaped key dot", "sdk\\.dir=/opt/android/sdk", "/opt/android/sdk"],
+    ["line continuation", "sdk.dir=/opt/and\\\n   roid/sdk", "/opt/android/sdk"],
+    ["`!` comment is not a declaration", "! sdk.dir=/decoy\nsdk.dir=/opt/android/sdk", "/opt/android/sdk"],
+  ];
+  for (const [label, body, expected] of shapes) {
+    const projectDir = fs.mkdtempSync(path.join(sandbox, "shape-"));
+    fs.writeFileSync(path.join(projectDir, "local.properties"), `${body}\n`);
+    assert.equal(parseLocalPropertiesSdk(projectDir), expected, `${label} was not parsed`);
+  }
+
+  const none = fs.mkdtempSync(path.join(sandbox, "none-"));
+  assert.equal(parseLocalPropertiesSdk(none), null, "an absent local.properties is null, not a throw");
+  fs.writeFileSync(path.join(none, "local.properties"), "# nothing declared\n");
+  assert.equal(parseLocalPropertiesSdk(none), null, "a file with no sdk.dir is null");
 });

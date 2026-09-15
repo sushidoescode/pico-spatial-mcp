@@ -19,6 +19,7 @@ import {
   type PublishedNativeRunReceipt,
 } from "./runreceiptstore.js";
 import { gradleEnv as defaultGradleEnv } from "./toolchain.js";
+import { parseJavaProperties } from "./toolchainselection.js";
 import {
   run,
   runBinary,
@@ -280,7 +281,22 @@ function writeUniqueCapture(targetPath: string, bytes: Buffer, randomUUID: () =>
   return fs.realpathSync(targetPath);
 }
 
-function parseLocalPropertiesSdk(projectDir: string): string | null {
+/**
+ * `local.properties` is a java.util.Properties file, so it is parsed as one (Task S4).
+ *
+ * The hand-rolled `^\s*sdk\.dir\s*=` + unescape-`\:`-and-`\\` reader this replaces understood a
+ * strict subset of what Gradle's own `Properties.load` accepts, and — since S3 — a strict subset
+ * of what this server WRITES: `serializeJavaProperty` escapes `#`, `!`, `=`, `:` and everything
+ * outside printable ASCII as `\uXXXX`, exactly like `Properties.store`. An Android SDK under a
+ * non-ASCII home or on a volume with a `#` in its name therefore read back as a path that does
+ * not exist, and aapt2/apksigner inspection silently degraded to "Android SDK root was not
+ * found" — a receipt weakened by a parser bug rather than by anything about the machine.
+ *
+ * The first declaration still wins (unchanged behaviour for a pathological duplicate key), and
+ * the value is no longer trimmed, because `Properties.load` does not trim trailing spaces and
+ * `serializeJavaProperty` writes them literally.
+ */
+export function parseLocalPropertiesSdk(projectDir: string): string | null {
   const propertiesPath = path.join(projectDir, "local.properties");
   let text: string;
   try {
@@ -289,11 +305,7 @@ function parseLocalPropertiesSdk(projectDir: string): string | null {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
-  const line = text.split(/\r?\n/).find((entry) => /^\s*sdk\.dir\s*=/.test(entry));
-  if (!line) return null;
-  const value = line.slice(line.indexOf("=") + 1).trim()
-    .replace(/\\:/g, ":")
-    .replace(/\\\\/g, "\\");
+  const value = parseJavaProperties(text).find((entry) => entry.key === "sdk.dir")?.value;
   return value ? path.resolve(projectDir, value) : null;
 }
 
