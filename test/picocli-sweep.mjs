@@ -8,8 +8,22 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assertSafeCliArgv } from "../scripts/compare-picocli-surfaces.mjs";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sweepScript = path.join(repoRoot, "scripts", "compare-picocli-surfaces.mjs");
+const helpFixtureRoot = path.join(repoRoot, "test", "fixtures", "picocli", "help");
+const helpIndex = JSON.parse(fs.readFileSync(path.join(helpFixtureRoot, "index.json"), "utf8"));
+const helpFixture = (version, invocation) => {
+  const entry = helpIndex.entries.find((item) => item.version === version && item.invocation === invocation);
+  if (!entry) throw new Error(`missing help fixture ${version}/${invocation}`);
+  return {
+    entry,
+    stdoutFile: path.join(helpFixtureRoot, entry.files["stdout.txt"]),
+    stderrFile: path.join(helpFixtureRoot, entry.files["stderr.txt"]),
+    code: entry.code,
+  };
+};
 const roots = [];
 
 test.after(() => {
@@ -81,6 +95,8 @@ if (entry.spawnDetachedInheritedStdioMs) {
 }
 if (entry.signal) process.kill(process.pid, entry.signal);
 if (entry.hangMs) setTimeout(() => {}, entry.hangMs);
+if (entry.stdoutFile) process.stdout.write(fs.readFileSync(entry.stdoutFile));
+if (entry.stderrFile) process.stderr.write(fs.readFileSync(entry.stderrFile));
 if (entry.stdout) process.stdout.write(entry.stdout);
 if (entry.stderr) process.stderr.write(entry.stderr);
 if (!entry.hangMs) process.exit(entry.code ?? 0);
@@ -751,3 +767,165 @@ test("timeout, spawn failure, and output truncation are fatal and atomic output 
     assert.deepEqual(result.calls, []);
   });
 });
+
+function retainedFixture(version, invocation) {
+  const fx = helpFixture(version, invocation);
+  return { stdoutFile: fx.stdoutFile, stderrFile: fx.stderrFile, code: fx.code };
+}
+
+test("retains per-invocation raw streams and exposes error-only subtrees as partial coverage", () => {
+  // Real retained bytes replayed through real child processes: 0.4.4 perf --help (012, exit 1)
+  // and the 0.5.0 perf parent (082, exit 0) with five exit-3 children (137-141).
+  const fromRoot = help(["app  Install, launch, and inspect apps", "perf  Spatial app performance utilities"]);
+  const toRoot = help(["app  Install, launch, and inspect apps", "perf  Record, query, and inspect performance traces"]);
+  const fix = fixture({
+    latest: "2.0.0",
+    versions: {
+      "1.0.0": { tree: { "pico-cli": { stdout: fromRoot }, app: { stdout: "app leaf\n" }, perf: retainedFixture("0.4.4", "012") } },
+      "2.0.0": { tree: {
+        "pico-cli": { stdout: toRoot },
+        app: { stdout: "app leaf\n" },
+        perf: retainedFixture("0.5.0", "082"),
+        "perf daemon": retainedFixture("0.5.0", "137"),
+        "perf doctor": retainedFixture("0.5.0", "138"),
+        "perf live": retainedFixture("0.5.0", "139"),
+        "perf session": retainedFixture("0.5.0", "140"),
+        "perf trace": retainedFixture("0.5.0", "141"),
+      } },
+    },
+  });
+  const retain = path.join(fix.root, "retained");
+  const result = runSweep(fix, ["--retain", retain]);
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(fs.readFileSync(result.output, "utf8"));
+  const gate044 = helpFixture("0.4.4", "012").entry;
+  const gate050 = helpFixture("0.5.0", "141").entry;
+  assert.equal(report.coverage.state, "partial");
+  assert.deepEqual(report.coverage.from, {
+    state: "partial",
+    inaccessibleSubtrees: [{ command: "perf", exitCode: 1, reason: "utilities-not-installed", stdoutSha256: gate044.stdoutSha256, stderrSha256: gate044.stderrSha256 }],
+  });
+  assert.equal(report.coverage.to.state, "partial");
+  assert.deepEqual(report.coverage.to.inaccessibleSubtrees.map((item) => item.command), ["perf daemon", "perf doctor", "perf live", "perf session", "perf trace"]);
+  for (const item of report.coverage.to.inaccessibleSubtrees) {
+    assert.equal(item.exitCode, 3, item.command);
+    assert.equal(item.reason, "utilities-not-installed", item.command);
+    assert.equal(item.stderrSha256, gate050.stderrSha256, item.command);
+  }
+  assert.deepEqual(report.addedCommands, ["perf daemon", "perf doctor", "perf live", "perf session", "perf trace"]);
+  assert.deepEqual(report.from, { requested: "1.0.0", version: "1.0.0", commandCount: 3 });
+  assert.deepEqual(report.to, { requested: "2.0.0", version: "2.0.0", commandCount: 8 });
+  assert.equal(report.retainedIndex, path.join(retain, "index.json"));
+
+  const index = JSON.parse(fs.readFileSync(path.join(retain, "index.json"), "utf8"));
+  assert.equal(index.schemaVersion, 1);
+  assert.equal(index.completion, "complete");
+  assert.equal(index.failure, null);
+  assert.deepEqual(index.limits, { timeoutMs: 120_000, killGraceMs: 250, maxOutputBytes: 8 * 1024 * 1024, maxDepth: 8, maxHelpInvocations: 256 });
+  const cliCalls = result.calls.filter((call) => call.role === "cli");
+  assert.equal(index.invocations.length, cliCalls.length, "every CLI invocation (version probes included) is retained");
+  for (const invocation of index.invocations) {
+    assert.deepEqual(Object.keys(invocation).sort(), [
+      "argv", "code", "endedAt", "files", "label", "outputTruncated", "signal", "spawnError", "startedAt",
+      "stderrBytes", "stderrSha256", "stdoutBytes", "stdoutSha256", "timedOut", "version",
+    ]);
+    for (const file of Object.values(invocation.files)) assert.ok(fs.existsSync(path.join(retain, file)), file);
+    assert.equal(sha(fs.readFileSync(path.join(retain, invocation.files.stdout))), invocation.stdoutSha256);
+    assert.equal(sha(fs.readFileSync(path.join(retain, invocation.files.stderr))), invocation.stderrSha256);
+  }
+  const perfFrom = index.invocations.find((item) => item.version === "1.0.0" && item.argv.join(" ") === "perf --help");
+  assert.equal(perfFrom.code, 1);
+  assert.equal(perfFrom.stderrSha256, gate044.stderrSha256, "retained stderr bytes equal the evidence bytes");
+  assert.equal(perfFrom.stderrBytes, gate044.stderrBytes);
+  const traceTo = index.invocations.find((item) => item.version === "2.0.0" && item.argv.join(" ") === "perf trace --help");
+  assert.equal(traceTo.code, 3);
+  assert.equal(traceTo.stderrSha256, gate050.stderrSha256);
+  assert.ok(index.invocations.some((item) => item.argv.length === 1 && item.argv[0] === "-v"));
+});
+
+test("retains raw streams and failed completion state when the sweep fails", async (t) => {
+  function failing(entry) {
+    return fixture({ latest: "2.0.0", versions: {
+      "1.0.0": { tree: { "pico-cli": entry } }, "2.0.0": { tree: { "pico-cli": { stdout: help([]) } } },
+    } });
+  }
+
+  await t.test("timeout", () => {
+    // 1.5 s (as in the detached-descendant timeout case) lets the fast -v probe complete even
+    // when this file runs concurrently with the autoinstall suite; only the hanging root help
+    // invocation may time out.
+    const fix = failing({ hangMs: 10_000, stderr: "TIMEOUT_RETAINED_MARKER\n" });
+    const retain = path.join(fix.root, "retained");
+    const result = runSweep(fix, ["--retain", retain], { PICO_CLI_SWEEP_TIMEOUT_MS: "1500", PICO_CLI_SWEEP_KILL_GRACE_MS: "50" }, 8_000);
+    assert.notEqual(result.status, 0);
+    assert.equal(fs.existsSync(result.output), false, "no comparison report on failure");
+    const index = JSON.parse(fs.readFileSync(path.join(retain, "index.json"), "utf8"));
+    assert.equal(index.completion, "failed");
+    assert.match(index.failure, /timed out/);
+    assert.equal(index.limits.timeoutMs, 1500);
+    const timedOut = index.invocations.filter((item) => item.timedOut);
+    assert.deepEqual(timedOut.map((item) => item.argv), [["--help"]], JSON.stringify(index.invocations));
+    const root = timedOut[0];
+    assert.equal(root.code, null);
+    assert.equal(fs.readFileSync(path.join(retain, root.files.stderr), "utf8"), "TIMEOUT_RETAINED_MARKER\n");
+    assert.equal(sha(fs.readFileSync(path.join(retain, root.files.stdout)), fs.readFileSync(path.join(retain, root.files.stderr))), sha(Buffer.alloc(0), "TIMEOUT_RETAINED_MARKER\n"));
+  });
+
+  await t.test("truncation", () => {
+    const fix = failing({ stdout: "x".repeat(2_000) });
+    const retain = path.join(fix.root, "retained");
+    const result = runSweep(fix, ["--retain", retain], { PICO_CLI_SWEEP_MAX_OUTPUT_BYTES: "256" });
+    assert.notEqual(result.status, 0);
+    const index = JSON.parse(fs.readFileSync(path.join(retain, "index.json"), "utf8"));
+    assert.equal(index.completion, "failed");
+    assert.match(index.failure, /exceeded the output capture limit/);
+    assert.equal(index.limits.maxOutputBytes, 256);
+    const root = index.invocations.find((item) => item.argv.join(" ") === "--help");
+    assert.equal(root.outputTruncated, true);
+    assert.ok(root.stdoutBytes <= 256);
+  });
+
+  await t.test("registry outage before any CLI call still writes an empty index", () => {
+    const fix = fixture({ latest: "2.0.0", registryExit: 2, versions: {} });
+    const retain = path.join(fix.root, "retained");
+    const output = path.join(fix.root, "outage.json");
+    const result = spawnSync(process.execPath, [sweepScript, "--from", "1.0.0", "--to", "latest", "--output", output, "--retain", retain], {
+      cwd: repoRoot, encoding: "utf8", env: { ...process.env, PATH: fix.bin, FAKE_SWEEP_CONFIG: fix.configPath, FAKE_SWEEP_LOG: fix.logPath },
+    });
+    assert.notEqual(result.status, 0);
+    const index = JSON.parse(fs.readFileSync(path.join(retain, "index.json"), "utf8"));
+    assert.equal(index.completion, "failed");
+    assert.deepEqual(index.invocations, []);
+    assert.equal(fs.existsSync(output), false);
+  });
+
+  for (const item of [
+    { name: "relative retain directory", retain: () => "relative-retained" },
+    { name: "existing retain directory", retain: (fix) => { const dir = path.join(fix.root, "exists"); fs.mkdirSync(dir); return dir; } },
+    { name: "retain parent missing", retain: (fix) => path.join(fix.root, "missing-parent", "retained") },
+  ]) await t.test(item.name, () => {
+    const fix = failing({ stdout: help([]) });
+    const result = runSweep(fix, ["--retain", item.retain(fix)]);
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(result.calls, [], "argument validation must fail before any process runs");
+    assert.equal(fs.existsSync(result.output), false);
+  });
+});
+
+test("the central CLI safety guard rejects the setup subtree, mutating update, and non-help argv", () => {
+  for (const argv of [["-v"], ["--help"], ["app", "--help"], ["emulator", "status", "--help"], ["update", "--help"]]) {
+    assert.doesNotThrow(() => assertSafeCliArgv(argv), JSON.stringify(argv));
+  }
+  for (const [argv, pattern] of [
+    [["setup", "--help"], /setup subtree/],
+    [["setup", "component", "--help"], /setup subtree/],
+    [["update", "--check", "--help"], /update --check/],
+    [["update", "--check"], /rejected/],
+    [["emulator", "start"], /rejected/],
+    [["-v", "extra"], /rejected/],
+    [[], /rejected/],
+  ]) {
+    assert.throws(() => assertSafeCliArgv(argv), pattern, JSON.stringify(argv));
+  }
+});
+

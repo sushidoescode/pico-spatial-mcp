@@ -1,0 +1,8 @@
+Description:
+Start the PICO development knowledge MCP server
+
+Usage:
+  $ pico-cli knowledge server
+
+Options:
+  -h, --help  Display this message

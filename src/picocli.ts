@@ -6,22 +6,36 @@ import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import {
+  externalCliCapabilityIdentity,
   inspectManagedPicoCli,
+  managedPicoCliCapabilityIdentity,
   managedPicoCliExecutionHandle,
+  readCliCapabilityEvidence,
   resolveManagedPicoCli,
   validateManagedPicoCliExecution,
+  type CliCapabilityReport,
   type ManagedPicoCliExecutionHandle,
   type ManagedPicoCliIO,
   type ManagedPicoCliOptions,
   type PicoCliEnsureResult,
 } from "./picoclimanaged.js";
+import {
+  PICO_CLI_ENVIRONMENT_PATTERN,
+  PICO_CLI_USAGE_DRIFT_PATTERN,
+  PICO_CLI_UTILITIES_GATE_PATTERN,
+  resolveOperationCapability,
+  unknownCapability,
+  type CliOperation,
+  type OperationCapability,
+} from "./clicapabilities.js";
 
 export {
   PICO_CLI_PACKAGE,
   PICO_CLI_PATH_ENV,
   PICO_CLI_POLICY_ENV,
 } from "./picoclimanaged.js";
-export type { ManagedPicoCliOptions, PicoCliEnsureResult } from "./picoclimanaged.js";
+export type { CliCapabilityReport, ManagedPicoCliOptions, PicoCliEnsureResult } from "./picoclimanaged.js";
+export type { CliOperation, OperationCapability } from "./clicapabilities.js";
 
 // Node's native spawn/execFile cannot reliably execute npm's `.cmd` shims on Windows. cross-spawn
 // does that without `shell:true` interpolation (some pico-cli argv, notably trace SQL, is user
@@ -160,6 +174,7 @@ export type PicoCliExecutionGuards = {
 };
 
 const executionTargetHandles = new WeakMap<object, ManagedPicoCliExecutionHandle>();
+const executionTargetCapabilities = new WeakMap<object, CliCapabilityReport>();
 
 let probeMemo: PicoCliProbe | null = null;
 
@@ -211,6 +226,7 @@ export type PicoCliFailureClass =
   | "cli-unusable"
   | "flag-or-version-drift"
   | "setup-required"
+  | "environment"
   | "latest-unknown"
   | "update-failed"
   | "cli-disabled"
@@ -772,7 +788,26 @@ export function picoCliFromEnsure(result: PicoCliEnsureResult): PicoCliExecution
     if (!handle) return null;
     executionTargetHandles.set(target, handle);
   }
+  if (result.capabilities) executionTargetCapabilities.set(target, result.capabilities);
   return target;
+}
+
+/**
+ * Per-operation availability for an execution target. The bound report is honored only when the
+ * target's freshly derived identity matches the report's entire identity and the operation's
+ * evidence bytes still verify; anything else is `unknown` with the exact reason, so a wrapper can
+ * refuse dispatch or ask for fresh bounded discovery (ensure_pico_cli).
+ */
+export function picoCliOperationCapability(cli: PicoCliExecutionTarget, operation: CliOperation): OperationCapability {
+  const report = executionTargetCapabilities.get(cli) ?? null;
+  const handle = cli.source === "managed" ? executionTargetHandles.get(cli) : undefined;
+  const identity = cli.source === "managed"
+    ? (handle ? managedPicoCliCapabilityIdentity(handle) : null)
+    : externalCliCapabilityIdentity(cli.path, cli.version ?? "");
+  if (!identity) {
+    return unknownCapability(operation, "stale-identity: the execution target's package identity could not be derived; request fresh bounded discovery (ensure_pico_cli)");
+  }
+  return resolveOperationCapability({ set: report, target: identity, operation, readEvidence: readCliCapabilityEvidence });
 }
 
 function managedHomeFromSnapshot(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string {
@@ -931,20 +966,195 @@ export function extractPicoCliRemediations(value: unknown, cap = 32): string[] {
 
 /**
  * Classify a FAILED pico-cli invocation honestly. A "…are not installed. Run `pico-cli setup`"
- * refusal is the 0.4.x utilities gate (measured 2026-08-12 on 0.4.2: the whole perf family exits 1
- * with "Perf utilities 0.1.0 are not installed" until a one-time `pico-cli setup`) — that is a
- * provisioning gap with an exact user-run remedy, not drift and not a device problem. Usage dumps /
- * unknown-option complaints mean the wrapped flags no longer match the installed CLI (drift —
+ * refusal is the utilities gate (measured 2026-08-12 on 0.4.2; retained 2026-09-15 as 0.4.4
+ * invocation 012 exit 1 and 0.5.0 invocations 137-141 exit 3): a provisioning gap with an exact
+ * user-run remedy, not drift and not a device problem. "PICO_HOME is not set" / "must be an
+ * absolute path" (0.5.0 profiler resolution, source-inspected PERF_ENV050) is an environment
+ * problem: the CLI read its environment before locating any payload, so provisioning is not
+ * assumed to be its fix. Usage dumps, unknown-option complaints and the 0.5.0 router's
+ * "Unknown perf subcommand" mean the wrapped argv no longer matches the installed CLI (drift —
  * retrying unchanged cannot help); anything else is a runtime failure whose cause lives in the
  * CLI's own output, not in a guess of ours.
  */
 export function classifyPicoCliFailure(
   stderr: string,
   stdout: string,
-): "flag-or-version-drift" | "setup-required" | "runtime" {
-  const text = `${stderr}\n${stdout}`.toLowerCase();
-  if (/not installed[\s\S]{0,120}pico-cli setup/.test(text)) return "setup-required";
-  return /unknown option|unknown command|unknown argument|missing required|\busage:/.test(text)
-    ? "flag-or-version-drift"
-    : "runtime";
+): "flag-or-version-drift" | "setup-required" | "environment" | "runtime" {
+  const text = `${stderr}\n${stdout}`;
+  if (PICO_CLI_UTILITIES_GATE_PATTERN.test(text)) return "setup-required";
+  if (PICO_CLI_ENVIRONMENT_PATTERN.test(text)) return "environment";
+  return PICO_CLI_USAGE_DRIFT_PATTERN.test(text) ? "flag-or-version-drift" : "runtime";
+}
+
+/** The operations whose PICO_HOME read is evidenced: PERF_ENV050 places it inside profiler-entry
+ * resolution, so only a perf/trace route can be said to have read it "before locating its profiler
+ * payload". Any other operation gets the same remedy without that unevidenced clause. */
+const PICO_CLI_PROFILER_OPERATIONS: ReadonlySet<CliOperation> = new Set<CliOperation>([
+  "perf-live", "trace-record", "trace-decode", "trace-load", "trace-query",
+]);
+
+/**
+ * Exact guidance for an `environment` failure, or null when the output shows no such condition.
+ * It names the variable the CLI read and what it must contain; it never prescribes running
+ * setup, because an unset environment root is not evidence that the payload is absent.
+ *
+ * `operation` makes the payload clause operation-conditional: the retained excerpt that shows the
+ * PICO_HOME read (PERF_ENV050) is the profiler-entry resolver, so claiming "profiler payload" for a
+ * watch or capture run would attribute a cause we have not observed for it.
+ *
+ * For a perf/trace operation the same resolver checks PICO_CLI_PROFILER_ENTRY_PATH FIRST and
+ * returns immediately when it is set, so that variable is the explicit alternative to a PICO_HOME
+ * root and is named as such (PERF_ENV050 / PERF_ENV044). It is a different question from the SDK
+ * tools-root selection this server performs for its own build/emulator lanes: the CLI resolves its
+ * profiler payload under its own layout, and this server sets neither variable.
+ */
+export function describePicoCliEnvironmentFailure(
+  stderr: string,
+  stdout: string,
+  operation?: CliOperation,
+): string | null {
+  const text = `${stderr}\n${stdout}`;
+  if (!PICO_CLI_ENVIRONMENT_PATTERN.test(text)) return null;
+  const profilerScoped = operation === undefined || PICO_CLI_PROFILER_OPERATIONS.has(operation);
+  return (profilerScoped
+    ? "pico-cli read PICO_HOME before locating its profiler payload and found it unset or not absolute. "
+    : "pico-cli read PICO_HOME and found it unset or not absolute. ")
+    + "Set PICO_HOME to the absolute PICO SDK root for the MCP server process (the root validate_toolchain resolves), "
+    + "restart the MCP server, and retry. This server never sets PICO_HOME implicitly; "
+    + (profilerScoped
+      ? "the CLI's documented alternative is an explicit absolute PICO_CLI_PROFILER_ENTRY_PATH, which its resolver honors before reading PICO_HOME at all — "
+        + "this server sets neither, and the root it resolves for its own SDK build/emulator lanes is a separate selection. "
+        + "Whether the profiler payload itself is provisioned is a further separate question answered by the CLI's own utilities message, not by this classification."
+      : "which payload this operation could not resolve is answered by the CLI's own output, not by this classification.");
+}
+
+// Retained CLI observations -------------------------------------------------------------------
+// Bounded raw output from a CLI-backed operation, written once into a run-unique directory in the
+// MCP-owned managed store, beside the per-operation help evidence discovery retains
+// (picoclimanaged.ts: <managedRoot>/capabilities/<version>/<identityKey>/<runId>/). Same rules:
+// `wx` + fsync, never overwritten, and a retention failure is reported, never thrown.
+
+const OBSERVATION_STORE_DIRECTORY = "observations";
+const OBSERVATION_RECORD_FILE = "observation.json";
+
+/** <managedRoot>/observations — the default root for retained CLI observations. */
+export function picoCliObservationRoot(): string {
+  const home = managedHomeFromSnapshot(process.env, process.platform);
+  return path.join(path.resolve(path.join(home, ".pico-mcp", "cli")), OBSERVATION_STORE_DIRECTORY);
+}
+
+export type PicoCliObservationRetentionInput = {
+  /** The MCP operation that produced the bytes, e.g. "watch-crash". Used as the store subtree. */
+  operation: string;
+  argv: string[];
+  result: Pick<PicoCliCommandResult, "code" | "signal" | "stdout" | "stderr" | "timedOut" | "outputTruncated"> & { spawnError?: string };
+  /** Extra immutable facts recorded beside the bytes (coverage, requested window, provenance). */
+  metadata?: Record<string, unknown>;
+  /**
+   * Whole artifacts produced by the same run, copied into the run directory under the given file
+   * name so the evidence survives even if the CLI's own output path is later overwritten. Written
+   * with the same `wx` + fsync rules as the streams; a name containing a path separator is refused.
+   */
+  artifacts?: Array<{ name: string; bytes: Buffer; sourcePath?: string }>;
+  /** Injected for deterministic run directories in tests; production uses a fresh UUID. */
+  runId?: string;
+  now?: () => number;
+};
+
+export type PicoCliRetainedObservation =
+  | {
+      retained: true;
+      directory: string;
+      stdoutPath: string;
+      stderrPath: string;
+      recordPath: string;
+      stdoutSha256: string;
+      stderrSha256: string;
+      stdoutBytes: number;
+      stderrBytes: number;
+      /** Retained copies of whole run artifacts, in the order they were supplied. */
+      artifacts: Array<{ name: string; path: string; bytes: number; sha256: string; sourcePath?: string }>;
+      outputTruncated: boolean;
+    }
+  | { retained: false; error: string };
+
+function writeImmutableBytes(file: string, bytes: Buffer): void {
+  const descriptor = fs.openSync(file, "wx");
+  try {
+    fs.writeFileSync(descriptor, bytes);
+    fs.fsyncSync(descriptor);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+/**
+ * Retain one bounded observation's raw streams. The run directory is created non-recursively and
+ * every file is opened `wx`, so an existing run is refused rather than overwritten; the caller gets
+ * `{retained:false, error}` and can still report the observation without its evidence paths.
+ */
+export function retainPicoCliObservation(
+  input: PicoCliObservationRetentionInput,
+  root: string = picoCliObservationRoot(),
+): PicoCliRetainedObservation {
+  const retainedAt = new Date((input.now ?? Date.now)()).toISOString();
+  const runId = input.runId ?? `${retainedAt.replace(/[-:.]/g, "")}-${randomUUID()}`;
+  const directory = path.join(root, input.operation, runId);
+  try {
+    fs.mkdirSync(path.dirname(directory), { recursive: true });
+    fs.mkdirSync(directory);
+    const stdoutBytes = Buffer.from(input.result.stdout, "utf8");
+    const stderrBytes = Buffer.from(input.result.stderr, "utf8");
+    const stdoutPath = path.join(directory, "stdout.txt");
+    const stderrPath = path.join(directory, "stderr.txt");
+    const recordPath = path.join(directory, OBSERVATION_RECORD_FILE);
+    writeImmutableBytes(stdoutPath, stdoutBytes);
+    writeImmutableBytes(stderrPath, stderrBytes);
+    const artifacts: Array<{ name: string; path: string; bytes: number; sha256: string; sourcePath?: string }> = [];
+    for (const artifact of input.artifacts ?? []) {
+      if (artifact.name.includes("/") || artifact.name.includes("\\") || artifact.name === "." || artifact.name === "..") {
+        throw new Error(`retained artifact name ${JSON.stringify(artifact.name)} must be a plain file name`);
+      }
+      const artifactPath = path.join(directory, artifact.name);
+      writeImmutableBytes(artifactPath, artifact.bytes);
+      artifacts.push({
+        name: artifact.name,
+        path: artifactPath,
+        bytes: artifact.bytes.length,
+        sha256: createHash("sha256").update(artifact.bytes).digest("hex"),
+        ...(artifact.sourcePath ? { sourcePath: artifact.sourcePath } : {}),
+      });
+    }
+    const record = {
+      schemaVersion: 1,
+      operation: input.operation,
+      argv: [...input.argv],
+      retainedAt,
+      exitCode: input.result.code,
+      signal: input.result.signal,
+      timedOut: input.result.timedOut,
+      outputTruncated: input.result.outputTruncated,
+      ...(input.result.spawnError ? { spawnError: input.result.spawnError } : {}),
+      stdout: { path: stdoutPath, bytes: stdoutBytes.length, sha256: createHash("sha256").update(stdoutBytes).digest("hex") },
+      stderr: { path: stderrPath, bytes: stderrBytes.length, sha256: createHash("sha256").update(stderrBytes).digest("hex") },
+      ...(artifacts.length ? { artifacts } : {}),
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+    };
+    writeImmutableBytes(recordPath, Buffer.from(`${JSON.stringify(record, null, 2)}\n`, "utf8"));
+    return {
+      retained: true,
+      directory,
+      stdoutPath,
+      stderrPath,
+      recordPath,
+      stdoutSha256: record.stdout.sha256,
+      stderrSha256: record.stderr.sha256,
+      stdoutBytes: record.stdout.bytes,
+      stderrBytes: record.stderr.bytes,
+      artifacts,
+      outputTruncated: input.result.outputTruncated,
+    };
+  } catch (error) {
+    return { retained: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }

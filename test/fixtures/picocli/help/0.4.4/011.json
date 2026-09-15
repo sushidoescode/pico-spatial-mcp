@@ -1,0 +1,16 @@
+{
+  "label": "0.4.4 mcp --help",
+  "argv": [
+    "mcp",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:48.608Z",
+  "endedAt": "2026-09-15T09:11:48.705Z",
+  "code": 0,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "f767b20cb09e821855cfc9c53943438ee254afc6c8351498832784dcaf3c90e7",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

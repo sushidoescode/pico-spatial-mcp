@@ -2,9 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { okJson } from "./util.js";
 import { fileURLToPath } from "node:url";
+import { createInnerClientProvider, decodeDomainValue, domainValueText, isInnerToolError, type InnerClient, type InnerSession } from "./innerclient.js";
 import { writeUserBrief, findBriefPath, userBriefsDir } from "./briefstore.js";
 import { hasSpatialNavigatorFullStageCall } from "./lint.js";
 import { CANONICAL_APP_KEY_PATTERN, isPassingDeviceEvidence, isPassingDeviceEvidenceForReceipt, readLedger } from "./ledger.js";
@@ -233,15 +235,38 @@ export function loopNeedsLookHonesty(needsLook: LoopCriterionOutcome[]): string 
   return `No PASS/FAIL visual score was available (${verdicts.join(", ") || "unscored"}). This is an unscored look obligation, not evidence that the calibrated eye classified the frame. Everything else measurable passed. LOOK at the capture (or have a vision-capable agent do it), then record what you actually saw with pico_record {evidenceType:'vision_verified'} — that look, not this loop, decides success.`;
 }
 
-type InnerCache = {
+/**
+ * Inner full-surface server: connection + result lanes (C5, 2026-09-15; see innerclient.ts).
+ *
+ * Which door uses which lane
+ *   raw    — pico_look (capture_canonical) and pico_verify_app (verify_pico_apk): artifact-forwarding
+ *            doors. The inner CallToolResult (image/resource blocks, structuredContent, isError) IS
+ *            the door's result, verbatim.
+ *   domain — every other door (pico_build_app, pico_scan_world, pico_place, pico_measure, pico_perf,
+ *            pico_sdk, pico_doctor, pico_ship, pico_capabilities, pico_fix, pico_record, pico_emulator,
+ *            pico_next, pico_loop) and innerCall() (spatialbench): decoded values exactly as before
+ *            for successful results. An inner isError arrives as {status:"error", tool, error,
+ *            structuredContent?, fix}; when a door returns that payload as its whole result, the
+ *            door's envelope is additionally flagged isError (additive — the JSON shape is unchanged).
+ */
+type InnerLanes = {
   call: (name: string, args?: any) => Promise<any>;
+  callRaw: (name: string, args?: any) => Promise<CallToolResult>;
   close: () => Promise<void>;
 };
 
-let cached: InnerCache | null = null;
+function lanesOf(callRaw: InnerLanes["callRaw"], close: InnerLanes["close"]): InnerLanes {
+  return {
+    callRaw,
+    call: async (name, args = {}) => decodeDomainValue(name, await callRaw(name, args)),
+    close,
+  };
+}
 
-async function inner() {
-  if (cached) return cached;
+/** One inner child per generation. The transport's own close (child exit, broken pipe) retires the
+ * generation through the session, so the next door call reconnects instead of failing forever on a
+ * dead client. Clean stdio: the child inherits only stderr; nothing here writes to stdout. */
+async function connectInner(session: InnerSession): Promise<InnerClient> {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
   const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
@@ -261,20 +286,30 @@ async function inner() {
     env: childEnv,
   });
   const client = new Client({ name: "doors", version: "1" });
+  let transportClosed = false;
+  client.onclose = () => {
+    transportClosed = true;
+    void session.retire(new Error("inner full-surface server transport closed"));
+  };
   await client.connect(transport);
-  const entry: InnerCache = {
-    call: async (name: string, args: any = {}) => {
-      const r: any = await client.callTool({ name, arguments: args }, undefined, { timeout: 2_700_000 });
-      const text = (r.content ?? []).map((c: any) => (c.type === "text" ? c.text : "")).join("\n");
-      try { return JSON.parse(text); } catch { return text; }
-    },
+  return {
+    callRaw: async (name, args = {}) =>
+      (await client.callTool({ name, arguments: args }, undefined, { timeout: 2_700_000 })) as CallToolResult,
     close: async () => {
+      if (transportClosed) return;
       await client.close().catch(() => {});
-      if (cached === entry) cached = null;
     },
   };
-  cached = entry;
-  return cached;
+}
+
+const innerProvider = createInnerClientProvider(connectInner);
+
+/** The live inner client's lanes. Concurrent first callers share ONE pending connect (one child);
+ * a failed first initialization rejects them all and the next call retries; a retired generation
+ * (close, child exit) reconnects on the next call. */
+async function inner(): Promise<InnerLanes> {
+  const client = await innerProvider.acquire();
+  return lanesOf((name, args = {}) => client.callRaw(name, args), () => innerProvider.retire(client));
 }
 
 const fixOf = (hint: string) => hint;
@@ -316,25 +351,48 @@ export function buildAppDoorStatus(result: any): "failed" | "built-not-installed
   return "built-needs-look";
 }
 
-/** Call a full-surface tool through the cached inner client (shared by the doors + spatialbench). */
+/** Call a full-surface tool through the shared inner client — domain lane (the doors + spatialbench). */
 export async function innerCall(name: string, args: any = {}) {
   const { call } = await inner();
   return call(name, args);
 }
 
 export interface DoorToolDependencies {
-  call: (name: string, args?: any) => Promise<any>;
+  /** Domain-lane seam (decoded values). Used only when no callRaw is injected. */
+  call?: (name: string, args?: any) => Promise<any>;
+  /** Raw-lane seam (the inner CallToolResult). When present the domain lane is DERIVED from it with
+   * the production decoder, so lane fixtures exercise the real decoding, not a stand-in. */
+  callRaw?: (name: string, args?: any) => Promise<CallToolResult>;
 }
 
 export function registerDoorTools(server: McpServer, dependencies?: DoorToolDependencies) {
-  const doorCall = async (): Promise<DoorToolDependencies["call"]> =>
-    dependencies?.call ?? (await inner()).call;
+  const injected: Partial<InnerLanes> | null = dependencies?.callRaw
+    ? lanesOf(dependencies.callRaw, async () => {})
+    : dependencies?.call ? { call: dependencies.call } : null;
+  const doorCall = async (): Promise<InnerLanes["call"]> => injected?.call ?? (await inner()).call;
+  const doorCallRaw = async (): Promise<InnerLanes["callRaw"]> => injected?.callRaw ?? (await inner()).callRaw;
+  const doorFailure = (e: unknown) =>
+    okJson({ status: "error", error: e instanceof Error ? e.message : String(e), fix: "Run pico_doctor to check the local toolchain; if healthy, retry — the inner server log is on stderr." });
+  /** Domain-lane door: the handler's value is JSON-wrapped exactly as before. When that value IS an
+   * inner tool's error payload (a forwarding door returned it whole), the envelope is also flagged
+   * isError — additive; the nested JSON shape does not change. */
   const door = (name: string, description: string, inputSchema: any, handler: (args: any) => Promise<any>) =>
     server.registerTool(name, { description, inputSchema }, async (args: any) => {
       try {
-        return okJson(await handler(args));
+        const value = await handler(args);
+        return isInnerToolError(value) ? { ...okJson(value), isError: true } : okJson(value);
       } catch (e) {
-        return okJson({ status: "error", error: e instanceof Error ? e.message : String(e), fix: "Run pico_doctor to check the local toolchain; if healthy, retry — the inner server log is on stderr." });
+        return doorFailure(e);
+      }
+    });
+  /** Raw-lane door: the inner CallToolResult is the door's result, verbatim (image/resource blocks,
+   * structuredContent, isError). Only the door's own exceptions take the status:error shape. */
+  const forwardDoor = (name: string, description: string, inputSchema: any, handler: (args: any) => Promise<CallToolResult>) =>
+    server.registerTool(name, { description, inputSchema }, async (args: any) => {
+      try {
+        return await handler(args);
+      } catch (e) {
+        return doorFailure(e);
       }
     });
 
@@ -426,24 +484,26 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
     },
   );
 
-  door(
+  forwardDoor(
     "pico_look",
     "DOOR 4 — Capture the emulator's forward view deterministically and return the image path. READ the image; that look is what turns a claim into vision_verified (record it with pico_record). NO pose control exists on this path: deterministic = the fixed forward screencap; the multi-angle alternatives are Accessibility-gated GUI drags whose free-cam drifts — so bring content into the forward FOV instead of moving the camera. OCCLUSION: a docked HUD/menu panel can cover the scene; when the app's generated wiring routes the panel DEBUG_CMDs, drive 'panel:hide' before a scene capture and 'panel:show' after (adb shell am broadcast -a <pkg>.DEBUG_CMD --es cmd panel:hide). Apps without that route ignore the broadcast — confirm with the capture itself, never by assumption.",
     {},
     async () => {
-      const { call } = await inner();
-      const cap = await call("capture_canonical", {});
-      return typeof cap === "object" ? cap : { status: "ok", detail: cap };
+      // raw lane: the capture tool's own result (path/sha JSON, or its fail() text as isError) is
+      // forwarded verbatim — a screencap failure is never rewrapped as {status:'ok', detail}.
+      const callRaw = await doorCallRaw();
+      return callRaw("capture_canonical", {});
     },
   );
 
-  door(
+  forwardDoor(
     "pico_verify_app",
     "DOOR 5 — Verify ANY PICO APK through the honest loop (v22 pico-verify core): install → launch → settle → deterministic capture → calibrated-eye judgment. Works for apps this server never built (including official PICO samples). Returns verdict + capture; escalations require a look.",
     { apkPath: z.string(), packageName: z.string().describe("The APK's applicationId."), settleSec: z.number().optional() },
     async ({ apkPath, packageName, settleSec }) => {
-      const { call } = await inner();
-      return call("verify_pico_apk", { apkPath, packageName, ...(settleSec ? { settleSec } : {}) });
+      // raw lane: verdict + capture provenance (and any structured or isError result) verbatim
+      const callRaw = await doorCallRaw();
+      return callRaw("verify_pico_apk", { apkPath, packageName, ...(settleSec ? { settleSec } : {}) });
     },
   );
 
@@ -678,7 +738,7 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
           honesty: "Not executed by this tool: the cold restart kills a host process by PID, so it stays a human-run command.",
         };
       }
-      const { call } = await inner();
+      const call = await doorCall();
       const out = await call(action === "boot" ? "emulator_boot" : "emulator_status", {});
       return typeof out === "object" && out !== null ? out : { status: "ok", detail: out };
     },
@@ -973,8 +1033,9 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
                   ? { kind: "structural", status: "pass", detail: `${v.scene?.entityCount ?? "?"} entities; all asserts hold` }
                   : { kind: "structural", status: "fail", detail: JSON.stringify((v.results ?? []).filter((x: any) => !x.pass)).slice(0, 400) });
               } else {
-                // isError text (no Agent Bridge, broadcast failed) comes back as a raw string.
-                outcomes.push({ kind: "structural", status: "unmeasurable", detail: (typeof v === "string" ? v : JSON.stringify(v ?? null)).slice(0, 300) });
+                // an inner isError (no Agent Bridge, broadcast failed) arrives as the domain lane's
+                // error payload — keep the tool's own words as the detail.
+                outcomes.push({ kind: "structural", status: "unmeasurable", detail: domainValueText(v).slice(0, 300) });
               }
             } else if (c.kind === "logcat") {
               if (!c.pattern) { outcomes.push({ kind: "logcat", status: "unmeasurable", detail: "kind:'logcat' requires a pattern" }); continue; }
@@ -984,16 +1045,20 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
                   ? { kind: "logcat", status: "pass", detail: l.line }
                   : { kind: "logcat", status: "fail", detail: `no logcat match for '${c.pattern}' within ${c.timeoutSec ?? 20}s` });
               } else {
-                // isError text (bad regex, no device) — the tool's own words, never a fabricated
+                // an inner isError (bad regex, no device) — the tool's own words, never a fabricated
                 // "no match" measurement that replanning would then chase.
-                outcomes.push({ kind: "logcat", status: "unmeasurable", detail: (typeof l === "string" ? l : JSON.stringify(l ?? null)).slice(0, 300) });
+                outcomes.push({ kind: "logcat", status: "unmeasurable", detail: domainValueText(l).slice(0, 300) });
               }
             } else if (c.kind === "perf") {
               const p = await call("perf_diagnose", { packageName: app, ...(c.durationSec ? { durationSec: c.durationSec } : {}) });
               const appFps = p?.summary?.appFps;
               const p5 = typeof appFps?.p5 === "number" ? appFps.p5 : null;
               const avg = typeof appFps?.avg === "number" ? appFps.avg : null;
-              if (p5 === null || avg === null || avg === 0) {
+              // C4: the wrapper now grades its own report. measurement:'missing' carries the
+              // profiler's OWN SKIP/INSUFFICIENT_DATA verdict and the no-app-frames case, so it is
+              // unmeasurable here — Spatial Runtime/compositor FPS never stands in for app FPS,
+              // and an absent counter is never read as an idle one.
+              if (p?.measurement === "missing" || p5 === null || avg === null || avg === 0) {
                 outcomes.push({
                   kind: "perf",
                   status: "unmeasurable",
@@ -1009,6 +1074,8 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
                   ...(typeof appFps?.p10 === "number" ? { p10: appFps.p10 } : {}),
                   ...(typeof appFps?.p50 === "number" ? { p50: appFps.p50 } : {}),
                   avg,
+                  ...(typeof p?.measurement === "string" ? { measurement: p.measurement } : {}),
+                  ...(Array.isArray(p?.missingCounters) && p.missingCounters.length ? { missingCounters: p.missingCounters } : {}),
                   ...(typeof p?.jankWindowCount === "number" ? { jankWindows: p.jankWindowCount } : {}),
                   ...(p?.reportPath ? { reportPath: p.reportPath } : {}),
                 });
@@ -1029,9 +1096,11 @@ export function registerDoorTools(server: McpServer, dependencies?: DoorToolDepe
         // the door's contract promises an entry per iteration, so a broken ledger lane must show).
         const perfNow = perfTrail.length && (perfTrail[perfTrail.length - 1] as any).iteration === i ? perfTrail[perfTrail.length - 1] as any : null;
         const led = await call("record_verification", { app, claim: `pico_loop iteration ${i}/${maxIterations} [${goal.slice(0, 80)}]: ${outcomes.map((o) => `${o.kind}=${o.status}`).join(" ")}${perfNow ? ` | appFps p5=${perfNow.p5} avg=${perfNow.avg} (pico-cli measured)` : ""}`, evidenceType: "structural" }).catch((e) => `record_verification threw: ${e instanceof Error ? e.message : String(e)}`);
+        // an inner isError arrives as the domain lane's error payload — the tool's own words lead
+        // the detail, so the 200-char budget is not spent on the {"status":"error",…} wrapper.
         const ledger = led && typeof led === "object" && led.status === "recorded"
           ? "recorded"
-          : `NOT recorded: ${(typeof led === "string" ? led : JSON.stringify(led ?? null)).slice(0, 200)}`;
+          : `NOT recorded: ${domainValueText(led).slice(0, 200)}`;
         iterationsLog.push({
           iteration: i,
           outcomes,

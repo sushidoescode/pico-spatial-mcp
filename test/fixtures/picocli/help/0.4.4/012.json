@@ -1,0 +1,16 @@
+{
+  "label": "0.4.4 perf --help",
+  "argv": [
+    "perf",
+    "--help"
+  ],
+  "startedAt": "2026-09-15T09:11:48.705Z",
+  "endedAt": "2026-09-15T09:11:48.798Z",
+  "code": 1,
+  "signal": null,
+  "timedOut": false,
+  "outputTruncated": false,
+  "spawnError": null,
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "d22fe9b905cc5a56866b8ea4d8e88fe33e0e640078a9678aa882c179df943477"
+}

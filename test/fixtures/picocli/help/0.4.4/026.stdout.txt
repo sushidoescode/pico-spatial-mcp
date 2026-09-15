@@ -1,0 +1,8 @@
+Usage:
+  $ pico-cli capture record
+
+Options:
+  -d, --device <device>  Target device id 
+  -o, --out <path>       Local output path 
+  -t, --time <seconds>   Recording duration seconds (1-180) (default: 15)
+  -h, --help             Display this message 

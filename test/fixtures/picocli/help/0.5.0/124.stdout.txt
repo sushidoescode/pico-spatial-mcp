@@ -1,0 +1,15 @@
+Description:
+Detect emulator status via process and adb
+
+Usage:
+  $ pico-cli emulator status
+
+Options:
+  --adb-device <id>  Target adb device id (e.g. emulator-5554)
+  --format <format>  Output format (plain | json) (default: plain)
+  -h, --help         Display this message
+
+Examples:
+  $ pico-cli emulator status
+  $ pico-cli emulator status --adb-device emulator-5554
+  $ pico-cli emulator status --format json

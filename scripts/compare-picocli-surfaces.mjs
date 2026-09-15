@@ -4,6 +4,24 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { classifyHelpFailureText } from "../dist/clicapabilities.js";
+
+/**
+ * compare-picocli-surfaces.mjs — scheduled, help-only observation of two exact @picoxr/pico-cli
+ * versions installed into an isolated scratch prefix (never global, never PATH).
+ *
+ * Baseline policy: the workflow passes `--from 0.4.4`, the last managed version this MCP was
+ * validated against (2026-09-15 audit). `--to latest` is resolved freshly from the registry at run
+ * time; no version is ever assumed to be eternally latest. A completed comparison is an
+ * observation of advertised help text, not semantic certification and not a release request.
+ *
+ * With `--retain <absolute new directory>` every CLI invocation's argv, exit status, raw stdout and
+ * stderr bytes, byte limits and completion state are written as they happen, and `index.json`
+ * summarizes them on both success and failure. A child that answers an error instead of a command
+ * listing keeps its subtree unenumerated; the report exposes that as partial coverage.
+ */
 
 const PACKAGE = "@picoxr/pico-cli";
 const STABLE_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -33,8 +51,8 @@ const timeoutMs = positiveEnvInteger("PICO_CLI_SWEEP_TIMEOUT_MS", DEFAULT_TIMEOU
 const killGraceMs = positiveEnvInteger("PICO_CLI_SWEEP_KILL_GRACE_MS", DEFAULT_KILL_GRACE_MS);
 const maxOutputBytes = positiveEnvInteger("PICO_CLI_SWEEP_MAX_OUTPUT_BYTES", DEFAULT_MAX_OUTPUT_BYTES);
 
-function parseArguments(argv) {
-  const allowed = new Set(["--from", "--to", "--output"]);
+export function parseArguments(argv) {
+  const allowed = new Set(["--from", "--to", "--output", "--retain"]);
   const values = new Map();
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
@@ -43,17 +61,25 @@ function parseArguments(argv) {
     if (values.has(flag)) fail(`duplicate argument ${flag}`);
     values.set(flag, value);
   }
-  if (values.size !== 3) fail("usage: compare-picocli-surfaces.mjs --from <semver> --to <semver|latest> --output <absolute-json-path>");
+  const usage = "usage: compare-picocli-surfaces.mjs --from <semver> --to <semver|latest> --output <absolute-json-path> [--retain <absolute-new-directory>]";
+  if (!values.has("--from") || !values.has("--to") || !values.has("--output")) fail(usage);
   const from = values.get("--from");
   const to = values.get("--to");
   const output = values.get("--output");
+  const retain = values.get("--retain") ?? null;
   if (!STABLE_SEMVER.test(from)) fail("--from must be a stable semantic version");
   if (to !== "latest" && !STABLE_SEMVER.test(to)) fail("--to must be a stable semantic version or latest");
   if (!path.isAbsolute(output)) fail("--output must be an absolute path");
   if (fs.existsSync(output)) fail("--output already exists; refusing to replace it");
   const parent = path.dirname(output);
   if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) fail("--output parent directory must exist");
-  return { from, to, output };
+  if (retain !== null) {
+    if (!path.isAbsolute(retain)) fail("--retain must be an absolute path");
+    if (fs.existsSync(retain)) fail("--retain already exists; refusing to reuse a retention directory");
+    const retainParent = path.dirname(retain);
+    if (!fs.existsSync(retainParent) || !fs.statSync(retainParent).isDirectory()) fail("--retain parent directory must exist");
+  }
+  return { from, to, output, retain };
 }
 
 function terminateDirectOrGroup(child, signal) {
@@ -329,7 +355,9 @@ function requireComplete(result, label, allowNonzero = false) {
   return result;
 }
 
-function assertSafeCliArgv(argv) {
+/** Central guard: only `-v` and `--help`-terminated argv, never the setup subtree, never
+ * `update --check` (it writes a local update cache). Every CLI invocation passes through here. */
+export function assertSafeCliArgv(argv) {
   const isVersion = argv.length === 1 && argv[0] === "-v";
   const isHelp = argv.length >= 1 && argv.at(-1) === "--help";
   if (!isVersion && !isHelp) fail(`central CLI safety guard rejected ${JSON.stringify(argv)}`);
@@ -339,9 +367,54 @@ function assertSafeCliArgv(argv) {
   }
 }
 
-async function invokeCli(session, cliPath, argv, label, allowNonzero = false) {
+function retainInvocation(session, label, version, argv, startedAt, result) {
+  if (!session.retain) return;
+  const ordinal = String(session.retain.records.length + 1).padStart(3, "0");
+  const files = { json: `${ordinal}.json`, stdout: `${ordinal}.stdout.txt`, stderr: `${ordinal}.stderr.txt` };
+  const record = {
+    label,
+    version,
+    argv,
+    startedAt,
+    endedAt: new Date().toISOString(),
+    code: result.code,
+    signal: result.signal,
+    timedOut: result.timedOut,
+    outputTruncated: result.outputTruncated,
+    spawnError: result.spawnError ?? null,
+    stdoutSha256: crypto.createHash("sha256").update(result.stdout).digest("hex"),
+    stderrSha256: crypto.createHash("sha256").update(result.stderr).digest("hex"),
+    stdoutBytes: result.stdout.length,
+    stderrBytes: result.stderr.length,
+    files,
+  };
+  fs.writeFileSync(path.join(session.retain.directory, files.stdout), result.stdout, { flag: "wx" });
+  fs.writeFileSync(path.join(session.retain.directory, files.stderr), result.stderr, { flag: "wx" });
+  fs.writeFileSync(path.join(session.retain.directory, files.json), `${JSON.stringify(record, null, 2)}\n`, { flag: "wx" });
+  session.retain.records.push(record);
+}
+
+function writeRetainedIndex(session, args, completion, failure) {
+  if (!session.retain) return;
+  const index = {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    from: args.from,
+    to: args.to,
+    limits: { timeoutMs, killGraceMs, maxOutputBytes, maxDepth: MAX_DEPTH, maxHelpInvocations: MAX_HELP_INVOCATIONS },
+    completion,
+    failure,
+    invocations: session.retain.records,
+  };
+  fs.writeFileSync(path.join(session.retain.directory, "index.json"), `${JSON.stringify(index, null, 2)}\n`, { flag: "wx" });
+}
+
+async function invokeCli(session, cliPath, argv, label, allowNonzero = false, version = null) {
   assertSafeCliArgv(argv);
-  return requireComplete(await runBounded(session, cliPath, argv), label, allowNonzero);
+  const startedAt = new Date().toISOString();
+  const result = await runBounded(session, cliPath, argv);
+  retainInvocation(session, label, version, argv, startedAt, result);
+  return requireComplete(result, label, allowNonzero);
 }
 
 function parseVersion(bytes) {
@@ -380,7 +453,7 @@ async function installExact(session, requested, exactVersion) {
   let stat;
   try { stat = fs.statSync(cliPath); } catch { fail(`${PACKAGE}@${exactVersion} did not install its CLI shim`); }
   if (!stat.isFile()) fail(`${PACKAGE}@${exactVersion} CLI shim is not a file`);
-  const versionResult = await invokeCli(session, cliPath, ["-v"], `${PACKAGE}@${exactVersion} version`);
+  const versionResult = await invokeCli(session, cliPath, ["-v"], `${PACKAGE}@${exactVersion} version`, false, exactVersion);
   const reportedVersion = parseVersion(Buffer.concat([versionResult.stdout, versionResult.stderr]));
   if (reportedVersion !== exactVersion) fail(`${PACKAGE}@${exactVersion} reported version ${reportedVersion ?? "unknown"}`);
   return { requested, version: exactVersion, cliPath };
@@ -395,7 +468,7 @@ const SAFE_COMMAND_TOKEN = new RegExp(`^${SAFE_COMMAND_TOKEN_SOURCE}$`);
 const SAFE_COMMAND_SEQUENCE_PREFIX = new RegExp(`^${SAFE_COMMAND_TOKEN_SOURCE}(?:[ \\t]+${SAFE_COMMAND_TOKEN_SOURCE})*`);
 const COMMAND_ARGUMENT_NOTATION = /^(?:(?:\s+|=)?(?:<[^<>\r\n]+>|\[[^\[\]\r\n]+\]))+$/;
 
-function advertisedCommands(helpBytes) {
+export function advertisedCommands(helpBytes) {
   const lines = helpBytes.toString("utf8").replace(ANSI_CSI, "").replace(/\r\n/g, "\n").split("\n");
   const normalizedLines = lines.map((line) => ({
     line,
@@ -457,18 +530,30 @@ async function enumerateSurface(session, installed) {
   const queued = new Set([JSON.stringify([])]);
   const visited = new Set();
   const hashes = new Map();
+  const inaccessibleSubtrees = [];
   while (queue.length > 0) {
     if (visited.size >= MAX_HELP_INVOCATIONS) fail(`${installed.version} exceeded ${MAX_HELP_INVOCATIONS} help invocations`);
     const tokens = queue.shift();
     const serialized = JSON.stringify(tokens);
     if (visited.has(serialized)) continue;
     visited.add(serialized);
-    const result = await invokeCli(session, installed.cliPath, [...tokens, "--help"], `${installed.version} ${commandKey(tokens)} --help`, true);
+    const result = await invokeCli(session, installed.cliPath, [...tokens, "--help"], `${installed.version} ${commandKey(tokens)} --help`, true, installed.version);
     const exactHelp = Buffer.concat([result.stdout, result.stderr]);
     hashes.set(commandKey(tokens), crypto.createHash("sha256").update(exactHelp).digest("hex"));
     const advertised = advertisedCommands(exactHelp);
     if (tokens.length === 0 && !advertised.recognizedHeading) {
       fail(`${installed.version} root help did not expose a recognized root command heading`);
+    }
+    if (result.code !== 0 && advertised.commands.length === 0) {
+      // An error answered instead of a command listing: whatever lives below this path was not
+      // observable, so the comparison must not present the subtree as covered.
+      inaccessibleSubtrees.push({
+        command: commandKey(tokens),
+        exitCode: result.code,
+        reason: classifyHelpFailureText(exactHelp.toString("utf8")),
+        stdoutSha256: crypto.createHash("sha256").update(result.stdout).digest("hex"),
+        stderrSha256: crypto.createHash("sha256").update(result.stderr).digest("hex"),
+      });
     }
     for (const advertisedTokens of advertised.commands) {
       const child = [...tokens, ...advertisedTokens];
@@ -482,10 +567,16 @@ async function enumerateSurface(session, installed) {
     }
     if (visited.size + queue.length > MAX_HELP_INVOCATIONS) fail(`${installed.version} advertised more than ${MAX_HELP_INVOCATIONS} help paths`);
   }
-  return hashes;
+  inaccessibleSubtrees.sort((left, right) => left.command < right.command ? -1 : left.command > right.command ? 1 : 0);
+  return {
+    hashes,
+    coverage: { state: inaccessibleSubtrees.length === 0 ? "complete" : "partial", inaccessibleSubtrees },
+  };
 }
 
-function reportFor(fromInstalled, toInstalled, fromHashes, toHashes) {
+function reportFor(fromInstalled, toInstalled, fromSurface, toSurface, retainedIndex) {
+  const fromHashes = fromSurface.hashes;
+  const toHashes = toSurface.hashes;
   const fromKeys = new Set(fromHashes.keys());
   const toKeys = new Set(toHashes.keys());
   const addedCommands = [...toKeys].filter((key) => !fromKeys.has(key)).sort();
@@ -502,6 +593,12 @@ function reportFor(fromInstalled, toInstalled, fromHashes, toHashes) {
     removedCommands,
     changedHelp,
     unchangedCommands,
+    coverage: {
+      state: fromSurface.coverage.state === "complete" && toSurface.coverage.state === "complete" ? "complete" : "partial",
+      from: fromSurface.coverage,
+      to: toSurface.coverage,
+    },
+    retainedIndex,
     safety: { setupInvoked: false, nonHelpCommandsInvoked: false },
   };
 }
@@ -528,6 +625,7 @@ function writeAtomicNew(output, report) {
 
 async function main() {
   const args = parseArguments(process.argv.slice(2));
+  if (args.retain) fs.mkdirSync(args.retain);
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pico-cli-surface-session-")));
   const home = path.join(root, "home");
   const cwd = path.join(root, "cwd");
@@ -552,21 +650,33 @@ async function main() {
       XDG_CACHE_HOME: xdgCache,
       XDG_DATA_HOME: xdgData,
     },
+    retain: args.retain ? { directory: args.retain, records: [] } : null,
   };
+  let completion = "failed";
+  let failure = null;
   try {
     const toVersion = args.to === "latest" ? await resolveLatest(session) : args.to;
     const fromInstalled = await installExact(session, args.from, args.from);
-    const fromHashes = await enumerateSurface(session, fromInstalled);
+    const fromSurface = await enumerateSurface(session, fromInstalled);
     const toInstalled = await installExact(session, args.to, toVersion);
-    const toHashes = await enumerateSurface(session, toInstalled);
-    writeAtomicNew(args.output, reportFor(fromInstalled, toInstalled, fromHashes, toHashes));
+    const toSurface = await enumerateSurface(session, toInstalled);
+    const retainedIndex = session.retain ? path.join(session.retain.directory, "index.json") : null;
+    writeAtomicNew(args.output, reportFor(fromInstalled, toInstalled, fromSurface, toSurface, retainedIndex));
+    completion = "complete";
     process.stdout.write(`${args.output}\n`);
+  } catch (error) {
+    failure = error?.message ?? String(error);
+    throw error;
   } finally {
+    try { writeRetainedIndex(session, args, completion, failure); }
+    catch (indexError) { process.stderr.write(`retained index could not be written: ${indexError?.message ?? String(indexError)}\n`); }
     fs.rmSync(root, { recursive: true, force: true });
   }
 }
 
-main().catch((error) => {
-  process.stderr.write(`pico-cli surface comparison failed: ${error?.message ?? String(error)}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().catch((error) => {
+    process.stderr.write(`pico-cli surface comparison failed: ${error?.message ?? String(error)}\n`);
+    process.exitCode = 1;
+  });
+}

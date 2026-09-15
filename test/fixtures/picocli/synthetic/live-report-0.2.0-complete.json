@@ -1,0 +1,37 @@
+{
+  "metadata": {
+    "package": "com.example.fixture",
+    "report_id": "synthetic-0200-complete",
+    "durationSeconds": 15,
+    "totalSamples": 15,
+    "timestamp": "2026-09-15T00:00:00.000Z",
+    "timeAlignment": {
+      "strategy": "logcat-anchor-with-hb-fallback",
+      "heartbeatMs": 1000
+    }
+  },
+  "diagnosis": {
+    "result": "PASS",
+    "category": "NO_ISSUE",
+    "suggestion": ""
+  },
+  "summary": {
+    "appFps": { "avg": 71.2, "max": 72, "min": 58, "p5": 62, "p10": 66, "p50": 71, "dropsCount": 1 },
+    "sysFps": { "avg": 89.4, "max": 90, "min": 84, "p5": 86, "p10": 87, "p50": 90 },
+    "gpuUsage": { "avg": 41.5, "max": 68 },
+    "gpuFreq": { "avg": 490, "max": 700 },
+    "systemCpu": { "avg": 28.1, "max": 55 },
+    "appCpu": { "avg": 12.7, "max": 24 },
+    "gpuTemp": { "start": 38, "end": 44, "max": 45, "trend": "rising" }
+  },
+  "jankWindows": [
+    {
+      "process": "APP",
+      "startTime": "2026-09-15T00:00:04.000Z",
+      "endTime": "2026-09-15T00:00:05.000Z",
+      "appFps": { "avg": 58, "max": 62, "min": 54 },
+      "sprFps": { "avg": 88, "max": 90, "min": 85 }
+    }
+  ],
+  "rawData": []
+}

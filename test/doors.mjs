@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { VERIFY_APK_TEARDOWN_MS } from "../dist/verifyapk.js";
 import * as doorsModule from "../dist/doors.js";
+import { decodeDomainValue } from "../dist/innerclient.js";
 import * as plannerModule from "../dist/planner.js";
 import { innerFailureDetail } from "../dist/fleetbuild.js";
 import { createManagedRuntimeHarness } from "./helpers/picocli-managed-fixture.mjs";
@@ -98,10 +99,16 @@ if (doorsModule.registerDoorTools.length < 2) {
   };
   let injectedFleetResult = fleetResult;
   let injectedRecordArgs = null;
+  let injectedLedgerFailure = null;
   const injectedCall = async (name, args) => {
     if (name === "plan_app_spec") return { status: "ok", spec: { meta: { packageName: "com.example.fixture" } } };
     if (name === "fleet_build") return { status: "ok", results: [injectedFleetResult] };
-    if (name === "record_verification") { injectedRecordArgs = args; return { status: "recorded", entry: { evidenceType: args.evidenceType } }; }
+    if (name === "record_verification") {
+      injectedRecordArgs = args;
+      // a failed ledger lane reaches the loop as the domain lane's error payload (production decoder)
+      if (injectedLedgerFailure) return decodeDomainValue("record_verification", { content: [{ type: "text", text: injectedLedgerFailure }], isError: true });
+      return { status: "recorded", entry: { evidenceType: args.evidenceType } };
+    }
     throw new Error(`unexpected injected door call: ${name}`);
   };
   const receiptServer = new McpServer({ name: "door-receipt-test", version: "0.0.0" });
@@ -154,6 +161,20 @@ if (doorsModule.registerDoorTools.length < 2) {
       ok("pico_loop carries the receipt identity, exact capture, and usable absolute project path through its exit");
     else fail(`pico_loop dropped or rewrote fleet receipt identity: ${JSON.stringify(loopedOut).slice(0, 420)}`);
 
+    // C5 fix round 1: a failed ledger lane is disclosed with the tool's OWN words first. The
+    // {"status":"error",…} payload wrapper must not lead the detail and eat its 200-char budget.
+    injectedLedgerFailure = "ledger root is read-only: EACCES /fixture/ledgers/com.example.fixture.json";
+    const ledgerFailed = await receiptClient.callTool({
+      name: "pico_loop",
+      arguments: { goal: loopGoal, draftSpec: { meta: { packageName: "com.example.fixture" } }, acceptance: [{ kind: "visual" }], budget: { iterations: 1 } },
+    });
+    const ledgerFailedOut = JSON.parse(ledgerFailed.content[0].text);
+    const ledgerDetail = ledgerFailedOut.iterationsLog?.[0]?.ledger ?? "";
+    if (ledgerDetail.startsWith(`NOT recorded: ${injectedLedgerFailure}`) && !/"status":"error"/.test(ledgerDetail))
+      ok("pico_loop discloses a failed ledger lane with the tool's own words first");
+    else fail(`pico_loop ledger detail wraps or hides the tool's words: ${JSON.stringify({ ledgerDetail, status: ledgerFailedOut.status }).slice(0, 360)}`);
+    injectedLedgerFailure = null;
+
     injectedFleetResult = { ...fleetResult, concluded: false, artifact: null, receipt: null, notes: ["after-install failed"] };
     const receiptless = await receiptClient.callTool({
       name: "pico_loop",
@@ -169,6 +190,128 @@ if (doorsModule.registerDoorTools.length < 2) {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
     fs.rmSync(receiptHome, { recursive: true, force: true });
+  }
+}
+
+// ── C5 result lanes (2026-09-15) — no process ──
+// The door adapter must never launder an inner tool's isError into a success payload, and the
+// artifact-forwarding doors (pico_look, pico_verify_app) must carry image/resource blocks and
+// structuredContent verbatim. Exercised through the REAL registered doors with an injected raw
+// inner lane. `legacyCall` reproduces the pre-C5 text-only decoder for doors that already honored
+// the injected seam. The pre-C5 pico_look/pico_verify_app/pico_emulator bypassed the seam and
+// spawned a REAL inner server (observed in the 2026-09-15 RED run), so PICO_ADB is pinned to an
+// exit-1 stub for the block: a run against an old adapter is RED without touching hardware.
+{
+  const PNG_1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  const laneTmp = fs.mkdtempSync(path.join(os.tmpdir(), "pico-door-lanes-"));
+  const laneAdbStub = path.join(laneTmp, "adb");
+  fs.writeFileSync(laneAdbStub, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const previousPicoAdb = process.env.PICO_ADB;
+  process.env.PICO_ADB = laneAdbStub;
+  const responses = new Map();
+  const rawCalls = [];
+  const callRaw = async (name, args = {}) => {
+    rawCalls.push({ name, args });
+    const response = responses.get(name);
+    if (!response) throw new Error(`lane fixture has no response for ${name}`);
+    return structuredClone(response);
+  };
+  const legacyCall = async (name, args = {}) => {
+    const r = await callRaw(name, args);
+    const text = (r.content ?? []).map((c) => (c.type === "text" ? c.text : "")).join("\n");
+    try { return JSON.parse(text); } catch { return text; }
+  };
+  const laneServer = new McpServer({ name: "doors-lane-fixture", version: "0.0.0" });
+  doorsModule.registerDoorTools(laneServer, { call: legacyCall, callRaw });
+  const [laneClientTransport, laneServerTransport] = InMemoryTransport.createLinkedPair();
+  await laneServer.connect(laneServerTransport);
+  const laneClient = new Client({ name: "doors-lane-test", version: "0.0.0" });
+  await laneClient.connect(laneClientTransport);
+  const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  try {
+    // raw lane — structured success with an image block survives byte-for-byte
+    const captured = {
+      content: [
+        { type: "image", data: PNG_1x1, mimeType: "image/png" },
+        { type: "text", text: JSON.stringify({ status: "captured", path: "/tmp/pico-render/canonical.png" }, null, 2) },
+      ],
+      structuredContent: { status: "captured", path: "/tmp/pico-render/canonical.png" },
+    };
+    responses.set("capture_canonical", captured);
+    const look = await laneClient.callTool({ name: "pico_look", arguments: {} });
+    if (sameJson(look.content, captured.content) && sameJson(look.structuredContent, captured.structuredContent) && !look.isError)
+      ok("pico_look forwards an image block + structuredContent verbatim (raw lane)");
+    else fail(`pico_look dropped inner content: ${JSON.stringify(look).slice(0, 300)}`);
+
+    // raw lane — text-only failure keeps isError and the tool's own words (never {status:'ok', detail})
+    const screencapFailed = { content: [{ type: "text", text: "screencap failed (code 1, 0 bytes). Is emulator-5554 running?" }], isError: true };
+    responses.set("capture_canonical", screencapFailed);
+    const lookFailed = await laneClient.callTool({ name: "pico_look", arguments: {} });
+    if (lookFailed.isError === true && sameJson(lookFailed.content, screencapFailed.content))
+      ok("pico_look forwards an inner isError text result as an error, not a success object");
+    else fail(`pico_look laundered an inner error: ${JSON.stringify(lookFailed).slice(0, 300)}`);
+
+    // raw lane — an embedded resource block survives verbatim
+    const resourceResult = {
+      content: [
+        { type: "resource", resource: { uri: "file:///tmp/pico-render/canonical.png", mimeType: "image/png", blob: PNG_1x1 } },
+        { type: "text", text: "canonical capture attached" },
+      ],
+    };
+    responses.set("capture_canonical", resourceResult);
+    const lookResource = await laneClient.callTool({ name: "pico_look", arguments: {} });
+    if (sameJson(lookResource.content, resourceResult.content) && !lookResource.isError)
+      ok("pico_look forwards an embedded resource block verbatim (raw lane)");
+    else fail(`pico_look dropped a resource block: ${JSON.stringify(lookResource).slice(0, 300)}`);
+
+    // raw lane — structured failure keeps isError AND structuredContent, and the door's args reach the tool
+    const blocked = { content: [{ type: "text", text: "launch blocked by incumbent" }], structuredContent: { status: "attention", launched: false }, isError: true };
+    responses.set("verify_pico_apk", blocked);
+    const verify = await laneClient.callTool({ name: "pico_verify_app", arguments: { apkPath: "/tmp/fixture.apk", packageName: "com.example.fixture" } });
+    const verifyArgs = rawCalls.at(-1);
+    if (verify.isError === true && sameJson(verify.content, blocked.content) && sameJson(verify.structuredContent, blocked.structuredContent)
+        && verifyArgs?.name === "verify_pico_apk" && sameJson(verifyArgs.args, { apkPath: "/tmp/fixture.apk", packageName: "com.example.fixture" }))
+      ok("pico_verify_app forwards a structured failure verbatim (isError + structuredContent) with its args intact");
+    else fail(`pico_verify_app lost the structured failure: ${JSON.stringify({ verify, verifyArgs }).slice(0, 400)}`);
+
+    // domain lane — success keeps today's decoded-JSON contract
+    responses.set("emulator_status", { content: [{ type: "text", text: JSON.stringify({ running: false, grpcDiscovery: null }) }] });
+    const status = await laneClient.callTool({ name: "pico_emulator", arguments: { action: "status" } });
+    if (!status.isError && sameJson(JSON.parse(status.content[0].text), { running: false, grpcDiscovery: null }))
+      ok("pico_emulator returns the decoded inner JSON object unchanged (domain lane success)");
+    else fail(`pico_emulator domain success drifted: ${JSON.stringify(status).slice(0, 300)}`);
+
+    // domain lane — text-only failure becomes the documented status:error payload, marked isError
+    responses.set("emulator_status", { content: [{ type: "text", text: "adb not found on PATH" }], isError: true });
+    const statusFailed = await laneClient.callTool({ name: "pico_emulator", arguments: { action: "status" } });
+    const statusFailedOut = JSON.parse(statusFailed.content[0].text);
+    if (statusFailed.isError === true && statusFailedOut.status === "error" && statusFailedOut.error === "adb not found on PATH"
+        && statusFailedOut.tool === "emulator_status" && typeof statusFailedOut.fix === "string")
+      ok("pico_emulator carries an inner isError as status:error with the tool's own words (domain lane), never {status:'ok', detail}");
+    else fail(`pico_emulator laundered an inner error: ${JSON.stringify(statusFailed).slice(0, 300)}`);
+
+    // domain lane — structured failure keeps structuredContent beside the text
+    responses.set("emulator_status", { content: [{ type: "text", text: "boot refused" }], structuredContent: { running: false, reason: "already-online" }, isError: true });
+    const structuredFailed = JSON.parse((await laneClient.callTool({ name: "pico_emulator", arguments: { action: "status" } })).content[0].text);
+    if (structuredFailed.status === "error" && structuredFailed.error === "boot refused" && sameJson(structuredFailed.structuredContent, { running: false, reason: "already-online" }))
+      ok("pico_emulator keeps a structured failure's structuredContent beside the inner error text");
+    else fail(`pico_emulator dropped structured failure content: ${JSON.stringify(structuredFailed).slice(0, 300)}`);
+
+    // domain lane — a structured SUCCESS decodes the text block (intentional: structuredContent is raw-lane data)
+    responses.set("emulator_status", {
+      content: [{ type: "text", text: JSON.stringify({ running: true, serial: "emulator-5554" }) }],
+      structuredContent: { running: true, serial: "emulator-5554", extra: "structured-only" },
+    });
+    const structuredSuccess = await laneClient.callTool({ name: "pico_emulator", arguments: { action: "status" } });
+    if (!structuredSuccess.isError && sameJson(JSON.parse(structuredSuccess.content[0].text), { running: true, serial: "emulator-5554" }))
+      ok("pico_emulator decodes a structured success from its text block (documented domain-lane semantics)");
+    else fail(`pico_emulator structured-success decoding drifted: ${JSON.stringify(structuredSuccess).slice(0, 300)}`);
+  } finally {
+    await laneClient.close();
+    await laneServer.close();
+    if (previousPicoAdb === undefined) delete process.env.PICO_ADB;
+    else process.env.PICO_ADB = previousPicoAdb;
+    fs.rmSync(laneTmp, { recursive: true, force: true });
   }
 }
 
@@ -609,6 +752,57 @@ else fail(`pico_loop patternless-logcat pre-flight broken: ${JSON.stringify(loop
 
 await client.close();
 fs.rmSync(managedHarness.root, { recursive: true, force: true });
+
+// ── C5 single-flight inner server (2026-09-15) — the one real end-to-end case ──
+// A COLD doors server receiving 20 concurrent door calls must start exactly ONE inner
+// full-surface child. Before C5, inner() tested its cache, awaited connect, then stored the
+// cache, so every concurrent first caller spawned its own dist/index.js. The fake node proxy on
+// the fixture PATH logs each inner lifetime; PICO_ADB points at an exit-1 stub so the raw-lane
+// check below can never reach a real adb or emulator. eye.ts resolves PICO_ADB by EXISTENCE first
+// and falls through to a real adb when it is missing, so the stub records every argv it receives
+// (proof it ran) and is asserted present + executable immediately before the call.
+{
+  const coldHarness = createManagedRuntimeHarness();
+  const coldAdb = path.join(coldHarness.root, "adb");
+  const coldAdbMarker = path.join(coldHarness.root, "adb-invocations.log");
+  fs.writeFileSync(coldAdb, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${coldAdbMarker}'\nexit 1\n`, { mode: 0o755 });
+  const coldTransport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["dist/index.js"],
+    env: { ...coldHarness.env, PICO_MCP_SURFACE: "doors", PICO_ADB: coldAdb },
+  });
+  const coldClient = new Client({ name: "doors-cold-concurrency-test", version: "0.0.0" });
+  const innerStarts = () => coldHarness.calls().filter((call) => call.role === "node-proxy" && call.args.some((arg) => /dist[/\\]index\.js$/.test(arg))).length;
+  try {
+    await coldClient.connect(coldTransport);
+    const burst = await Promise.all(Array.from({ length: 20 }, () => coldClient.callTool({ name: "pico_sdk", arguments: { symbol: "Entity" } })));
+    const statuses = burst.map((r) => JSON.parse(r.content[0].text).status);
+    const startsAfterBurst = innerStarts();
+    if (startsAfterBurst === 1 && statuses.every((s) => s === statuses[0] && s !== "error"))
+      ok(`20 concurrent first door calls started exactly one inner server (all ${statuses[0]})`);
+    else fail(`concurrent first use started ${startsAfterBurst} inner servers (statuses: ${[...new Set(statuses)].join(", ")})`);
+
+    // raw lane over the real transport: capture_canonical's fail() must arrive as an error.
+    // Guarded: a missing/non-executable stub would let eye.ts fall through to a real adb, so the
+    // call is only made once the stub is proven present, and the marker proves it actually ran.
+    const stubExecutable = (() => { try { fs.accessSync(coldAdb, fs.constants.X_OK); return fs.statSync(coldAdb).isFile(); } catch { return false; } })();
+    if (!stubExecutable) {
+      fail(`the e2e adb stub is missing or not executable immediately before pico_look (${coldAdb}); the call was NOT made`);
+    } else {
+      ok("the e2e adb stub exists and is executable immediately before pico_look");
+      const look = await coldClient.callTool({ name: "pico_look", arguments: {} });
+      const lookText = look.content?.[0]?.text ?? "";
+      const stubInvocations = fs.existsSync(coldAdbMarker) ? fs.readFileSync(coldAdbMarker, "utf8").split("\n").filter(Boolean) : [];
+      const stubRanScreencap = stubInvocations.some((line) => /exec-out screencap/.test(line));
+      if (look.isError === true && /screencap failed/.test(lookText) && !/"status": "ok"/.test(lookText) && innerStarts() === 1 && stubRanScreencap)
+        ok(`pico_look forwards the inner screencap failure as isError over the real inner transport (stub adb ran: ${stubInvocations.length} invocation(s), screencap argv recorded)`);
+      else fail(`pico_look laundered, re-spawned, or bypassed the stub: ${JSON.stringify({ isError: look.isError, lookText: lookText.slice(0, 160), innerStarts: innerStarts(), stubInvocations })}`);
+    }
+  } finally {
+    await coldClient.close();
+    fs.rmSync(coldHarness.root, { recursive: true, force: true });
+  }
+}
 
 // v36.3 default-surface flip: with PICO_MCP_SURFACE UNSET, the server must serve the doors
 // surface — the docs told every host to set doors while the code defaulted to full, so one
