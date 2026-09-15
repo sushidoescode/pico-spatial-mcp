@@ -1,0 +1,204 @@
+battery checkout: /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15
+host: macos
+log: /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/evidence/2026-09-15-cli050-sdk61-evolution-impl-001/fix-wave/battery-38.0.0-fixwave.log (a fresh file is reserved if that name is taken)
+
+PASS 1/55 smoke (1.1s)
+PASS 2/55 test:tarball (12.9s)
+PASS 3/55 test:smoke-isolation (2.1s)
+PASS 4/55 test:sdk-integration (0.2s)
+PASS 5/55 test:lint (1.3s)
+PASS 6/55 test:projectgen (0.3s)
+PASS 7/55 test:unitygen (0.2s)
+PASS 8/55 test:surfaceplace (0.2s)
+PASS 9/55 test:vault (0.2s)
+PASS 10/55 test:semantic (0.3s)
+PASS 11/55 test:ledger (28.2s)
+PASS 12/55 test:eye (2.4s)
+PASS 13/55 test:assetgate (0.2s)
+PASS 14/55 test:worldenv (0.2s)
+PASS 15/55 test:referring (0.1s)
+PASS 16/55 test:doors (19.4s)
+PASS 17/55 test:prompts (0.8s)
+PASS 18/55 test:archetype (2.5s)
+FAIL 19/55 test:claims (16.1s)
+
+> pico-spatial-mcp@38.0.0 test:claims
+> node scripts/run-gate.mjs test:claims
+
+  ok   capture sha256 surfaces verbatim (the verifiable part)
+  ok   attestation text is HTML-escaped (no injection)
+  ok   dimensions + artifact name rendered
+  ok   public page states that generated proof is a dated, revalidated snapshot
+  ok   broken provenance publishes its claimed tier, reason, and actual hash
+  ok   public claims disclose a legacy producer-tier downgrade and its reason
+  ok   public claims disclose why legacy hardware evidence counts only as vision_verified
+  ok   public claims preserve a looked-at device FAIL without presenting it as positive proof
+  ok   public claims visibly disclose unreadable ledgers instead of omitting them
+  ok   claims manifest reports a corrupt ledger rather than silently dropping it
+  ok   structured corrections keep known-false and stale-readiness rows out of public claims
+  ok   CAPABILITIES.md headline/totals match the tracked effective claims snapshot
+  ok   tracked claims HTML is exactly generated from the tracked JSON snapshot
+  ok   real ledgers load (97 apps, 764 claims)
+  ok   minEvidence=auto_judged drops weaker classes (353/764 kept)
+  FAIL tracked public claims snapshot is stale against the current effective ledger read
+
+Claims-page test done. Failures: 1
+
+PASS 20/55 test:bench (0.5s)
+PASS 21/55 test:affordance (0.2s)
+PASS 22/55 test:occupancy (0.3s)
+PASS 23/55 test:copilot (0.2s)
+PASS 24/55 test:vaultdiff (0.2s)
+PASS 25/55 test:preflight (1.5s)
+PASS 26/55 test:provision (4.2s)
+PASS 27/55 test:bridge (3.1s)
+PASS 28/55 test:vcam (1.4s)
+PASS 29/55 test:vcamtransport (0.5s)
+PASS 30/55 test:vcamboundary (0.2s)
+PASS 31/55 test:vcamreader (0.2s)
+PASS 32/55 test:vcamthroughput (0.2s)
+PASS 33/55 test:vcammaterialize (0.2s)
+PASS 34/55 test:vcamtransport-native (1.5s)
+PASS 35/55 test:vcamreader-native (1.5s)
+PASS 36/55 test:briefroute (1.2s)
+PASS 37/55 test:emulator-restart (24.9s)
+PASS 38/55 test:modelmeasure (0.1s)
+PASS 39/55 test:docsmeta (0.4s)
+PASS 40/55 test:picocli (98.5s)
+PASS 41/55 test:runreceipt (43.9s)
+FAIL 42/55 test:runrevision (121.7s)
+  ✔ external-input plus one is rejected by stat before content allocation (109.900625ms)
+  ✔ compiler-ledger exact stored bound is content-validated (99.214916ms)
+  ✔ compiler-ledger plus one is rejected by stat before content allocation (119.034875ms)
+  ✔ public-result exact stored bound is content-validated (108.055625ms)
+  ✔ public-result plus one is rejected by stat before content allocation (121.597209ms)
+✔ every global CAS target is validated even when unreferenced (2329.509333ms)
+✔ unsafe run IDs are rejected before path construction (0.712791ms)
+✔ authority is rechecked at the revision link, HEAD rename, and recovery commit boundaries (205.667416ms)
+✔ a HEAD replacement performed by the authority boundary immediately before rename is rejected (207.907125ms)
+✔ the final HEAD authority boundary revalidates the complete next chain before rename (207.296208ms)
+✔ Round 2: an authority-side HEAD stage overwrite cannot publish unintended bytes (211.641042ms)
+▶ recovery reports publication stages conservatively and every control result parses
+  ✔ rename visible but run-directory fsync failed is publication-in-doubt (198.13175ms)
+  ✔ Round 2: post-fsync run-directory replacement remains publication-in-doubt (211.56775ms)
+  ✔ completed writeHead remains durable when its later chain confirmation fails (197.000083ms)
+✔ recovery reports publication stages conservatively and every control result parses (626.462167ms)
+▶ Round 2: globally charged other-run identities remain stable through selected-run CAS validation
+  ✔ charged leaf growth is detected after its enumeration (109.601875ms)
+  ✔ charged other-run revisions-directory replacement is detected (112.530833ms)
+  ✔ other-run staging growth cannot split charged size from retained identity (117.241583ms)
+  ✔ CAS staging growth cannot split charged size from retained identity (106.95275ms)
+  ✔ publication revalidates an earlier CAS staging leaf after later namespace traversal (160.182833ms)
+✔ Round 2: globally charged other-run identities remain stable through selected-run CAS validation (620.310833ms)
+✔ Round 2: raw invalid UTF-8 in an unreferenced CAS leaf is rejected (125.2885ms)
+▶ conflicting duplicate snapshot refs are rejected independent of traversal order
+  ✔ revision 0 declares conflicting bytes (210.106416ms)
+  ✔ revision 1 declares conflicting bytes (198.544916ms)
+  ✔ identical duplicate refs dedupe to one unique run snapshot (211.798ms)
+✔ conflicting duplicate snapshot refs are rejected independent of traversal order (634.916166ms)
+✔ a HEAD replacement at the final revision authority check prevents the stale link (174.602875ms)
+✔ a revisions-directory replacement at the final authority check prevents publication (166.439375ms)
+▶ directory-entry capacity is reserved before every store mutation
+  ✔ root objects creation is preflighted (10867.250042ms)
+  ✔ run and revisions creation are independently preflighted (4068.883958ms)
+  ✔ revisions directory creation is preflighted (132.550167ms)
+  ✔ revision staging plus link peak fails unchanged at the exact limit (366.617375ms)
+  ✔ revision staging plus link peak succeeds one entry below the limit (501.482791ms)
+  ✔ first HEAD staging is preflighted at the direct-entry limit (189.032292ms)
+  ✔ replacement HEAD staging is preflighted without changing HEAD (252.711792ms)
+✔ directory-entry capacity is reserved before every store mutation (17203.131208ms)
+▶ root, run-directory, and object enumeration accept exact count and reject plus one
+  ✔ root 4096 / 4097 (4033.515792ms)
+  ✔ run 1024 / 1025 (214.533334ms)
+  ✔ objects 32768 / 32769 (16205.586875ms)
+  ✔ root canonical bytes 512 MiB / plus one (67.176625ms)
+✔ root, run-directory, and object enumeration accept exact count and reject plus one (22158.717084ms)
+▶ Round 2: root-wide reservations make concurrent admission atomic
+  ✔ combined CAS publishers cannot cross the global object ceiling (13793.346542ms)
+  ✔ combined CAS publishers reserve the fixed canonical-byte peak (180.443792ms)
+  ✔ different-run publishers cannot cross the root ceiling (5932.6ms)
+✔ Round 2: root-wide reservations make concurrent admission atomic (22033.520042ms)
+▶ Round 2: reservation leftovers are bounded evidence and malformed records fail closed
+  ✔ SIGKILL preserves only the producer reservation and reports it (289.273625ms)
+  ✔ partial reservation records are never skipped (70.027458ms)
+  ✔ duplicate reservation tokens fail closed (62.11325ms)
+  ✔ operation-specific reservation delta shapes are exact (63.69575ms)
+  ✔ snapshot missing objects also reserves its namespace (61.982166ms)
+  ✔ revision missing run also reserves its revisions directory (60.943167ms)
+  ✔ HEAD byte peak cannot be an arbitrary undercharge (69.042708ms)
+  ✔ reservation slots accept exactly 64 and reject a 65th (70.959042ms)
+✔ Round 2: reservation leftovers are bounded evidence and malformed records fail closed (793.581708ms)
+▶ aggregate nested and revision enumeration accept exact bounds and reject plus one
+  ✔ aggregate nested run entries 65536 / 65537 (8130.461ms)
+  ✔ aggregate revision envelopes 16384 / 16385 (2043.983625ms)
+✔ aggregate nested and revision enumeration accept exact bounds and reject plus one (13001.559375ms)
+▶ per-run unique declared snapshot bytes are charged as a complete set before reads
+  ✔ exact 512 MiB reaches missing-content validation (87.8365ms)
+  ✔ plus one byte fails aggregate admission before any missing CAS read (63.572583ms)
+✔ per-run unique declared snapshot bytes are charged as a complete set before reads (153.178417ms)
+✔ Round 2: a real referenced CAS leaf reaches production actual-byte accounting (80.360875ms)
+▶ fixed pure accumulator covers exact and plus-one unique run snapshot totals
+  ✔ declared exact 512 MiB (0.0485ms)
+  ✔ declared plus one (0.028333ms)
+  ✔ actual exact 512 MiB (0.01925ms)
+  ✔ actual plus one (0.031833ms)
+  ✔ prospective admission starts from the prior chain total (0.015833ms)
+  ✔ store surface remains the approved five methods (0.167208ms)
+✔ fixed pure accumulator covers exact and plus-one unique run snapshot totals (0.584708ms)
+▶ SIGKILL publication cuts classify staging, aliases, tails, and committed HEAD exactly
+  ✔ before-revision-link (134.388875ms)
+  ✔ after-revision-link (134.519166ms)
+  ✔ after-staging-unlink (136.740375ms)
+  ✔ after-revision-directory-flush (141.558042ms)
+  ✔ before-head-rename (158.531333ms)
+  ✔ after-head-rename (157.692042ms)
+  ✔ after-run-directory-flush (161.643833ms)
+✔ SIGKILL publication cuts classify staging, aliases, tails, and committed HEAD exactly (1034.096875ms)
+✔ revision zero without HEAD is the only recoverable first-head cut (121.878542ms)
+▶ authoritative interrupted attempts preserve exact stored external-mutation certainty
+  ✔ attempt-started reports possible (162.985917ms)
+  ✔ attempt-in-doubt reports confirmed (165.054083ms)
+✔ authoritative interrupted attempts preserve exact stored external-mutation certainty (330.8475ms)
+✔ attempt-started tail recovery advances once and remains interrupted in doubt without owner cleanup (168.14775ms)
+✔ recovery never moves HEAD backward or skips a corrupt or second tail (120.785625ms)
+ℹ tests 327
+ℹ suites 0
+ℹ pass 326
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 121511.266334
+
+✖ failing tests:
+
+test at test/runrevision-locks.mjs:2625:1
+✖ concurrent cross-process enrollment cannot cross exact lock namespace or aggregate capacity (18051.452875ms)
+  AssertionError [ERR_ASSERTION]: [{"kind":"capacity-result","status":"run-busy","detail":"shared acquisition budget expired behind a live capacity enrollment"},{"kind":"capacity-result","status":"acquired"}]
+      at TestContext.<anonymous> (file:///Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/test/runrevision-locks.mjs:2637:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:831:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+PASS 43/55 test:sdkselection (0.4s)
+PASS 44/55 test:swan (0.4s)
+PASS 45/55 test:placeonsurface (0.2s)
+PASS 46/55 test:menuactions (0.2s)
+PASS 47/55 test:adoption-safety (3.0s)
+PASS 48/55 test:spatialui-adoption (0.2s)
+PASS 49/55 test:distribution-adoption (21.5s)
+PASS 50/55 test:knowledge-lifecycle (27.2s)
+PASS 51/55 test:conformance (1.7s)
+PASS 52/55 test:buildfreshness (0.8s)
+PASS 53/55 test:plugin-bootstrap-freshness (0.7s)
+PASS 54/55 test:observation (0.5s)
+PASS 55/55 test:picocli-win (92.4s)
+BATTERY FAIL 53/55 passed; 2 failed: test:claims [exit 1], test:runrevision [exit 1]
+Full log: /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/evidence/2026-09-15-cli050-sdk61-evolution-impl-001/fix-wave/battery-38.0.0-fixwave.log

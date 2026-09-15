@@ -38,8 +38,9 @@ and commits show them, and neither asserts anything about runtime behavior.
 | Branch / worktree | `cli050-sdk61-evolution-2026-09-15` in `.worktrees/cli050-sdk61-evolution-2026-09-15` |
 | Release version | **38.0.0** (was 37.0.0) |
 | Source files | 190 `src/*.ts` (182 at base) |
-| Build receipt input sha256 (source identity) | `e51cb8f1b72bfdde1b7f4b0b7927b4db8f8184f899e7c7cfaf21471307cbca3f` |
-| Build receipt output sha256 | `68a3d0a73884eb5bb57c6a906600e443c56922b2a34dfae29bb434a97eabd7ce` |
+| Fix-wave content head | `1a22709` (six `fix:`/`docs:` commits on `8ef62e4`; the evidence commit that records this table follows it) |
+| Build receipt input sha256 (source identity), final tree | `eb105535d1378282c4fbaf15c8f111761451173cc8d8e209f52b0c5300654a1c` (F1's `e51cb8f1b72bfdde1b7f4b0b7927b4db8f8184f899e7c7cfaf21471307cbca3f` is the pre-fix-wave value, superseded) |
+| Build receipt output sha256, final tree | `5d245218bf71c550eda5a2c8048b3938a96eeffeee71f383f361188c762a6d94` (F1's `68a3d0a73884eb5bb57c6a906600e443c56922b2a34dfae29bb434a97eabd7ce` superseded) |
 | Build published | 190 `dist/*.js` + `dist/build-receipt.json` |
 | Toolchain | Node `v25.8.1`, TypeScript `5.9.3`, macOS (`darwin-arm64`) |
 | Baseline identity record | `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/IDENTITY_BASELINE_001.json` (`host-executed`) |
@@ -374,7 +375,78 @@ inventory once is what surfaced it.
 
 
 
+### Step 5b — the fix-wave battery: no export, a tripwire `adb` first on `PATH`
+
+Run on the final tree after the fix-wave commits, deliberately WITHOUT `PICO_ADB` exported
+(`printenv PICO_ADB` → unset in the launching shell), with a directory holding an executable `adb`
+prepended to `PATH` that appends its argv to `evidence/…/fix-wave/adb-tripwire.marker` and exits 66
+(self-tested first: it wrote `adb devices -l` and exited 66; the self-test marker was then deleted).
+Any suite that reached an adb through `PATH` would have written that file.
+
+```
+PATH="<tripwire dir>:$PATH" node scripts/run-battery.mjs "$PWD" \
+  "$PWD/evidence/2026-09-15-cli050-sdk61-evolution-impl-001/fix-wave/battery-38.0.0-fixwave.log"
+
+PICO gate battery (55 invocations)   host: macos
+BATTERY FAIL  53/55 passed; 2 failed:
+  test:claims [exit 1], test:runrevision [exit 1]
+```
+
+- **`adb-tripwire.marker` does not exist** after the run — checked immediately afterwards, again
+  after the isolated re-run below, and again after the republish. Negative evidence: no gate child
+  reached an adb through `PATH`. Every `fixture`/`installed-artifact` child ran under the run-gate
+  default, and the fixtures that name their own adb (`test/emulator.mjs`, `test/doors.mjs`,
+  `[M11]`) used theirs.
+- **`test:claims` — red by ruling**, unchanged (host-state snapshot drift; not regenerated).
+- **`test:runrevision` — red in the battery, green in isolation; a timing margin, not a regression.**
+  One case, `concurrent cross-process enrollment cannot cross exact lock namespace or aggregate
+  capacity` (`test/runrevision-locks.mjs:2625`), took 18,051 ms and failed with
+  `[{"kind":"capacity-result","status":"run-busy","detail":"shared acquisition budget expired behind a live capacity enrollment"},{"kind":"capacity-result","status":"acquired"}]`:
+  the second child waited behind the first's live enrollment past `ACQUIRE_BUDGET_MS = 15_000`
+  (`src/runlocks.ts:41`). Re-run alone under identical conditions (no export, tripwire on `PATH`):
+  `npm run test:runrevision` → 327 / 327 pass, that case in 16,365 ms. A 15 s shared budget inside
+  a case whose own wall time is 16–18 s, on a machine that had just written 12,285 residue files
+  and was mid-battery. Nothing in the fix wave touches `src/runlocks.ts` or the revision store, and
+  the gate child's only env difference is `PICO_ADB`, which the lock path never reads. Left red in
+  the recorded battery log and disclosed, not "fixed": widening a concurrency budget to make a gate
+  green is not this wave's call. Recorded in the known-gaps table.
+- Everything else: 53 passes, **0 skipped** (both native-contract gates really compiled on this
+  macOS host, 2.0 s / 1.7 s).
+
+Logs: `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/fix-wave/battery-38.0.0-fixwave.log`
+(sha256 `efe7757dea6006326d19c9cbebbbcffda35069bb1ce348b5f198d9a73a151608`; a byte-identical copy
+at `…/release/final/battery-38.0.0-fixwave.log`), the runner's own stdout in
+`…/fix-wave/battery-38.0.0-fixwave.runner.out`, the isolated re-run in
+`…/fix-wave/test-runrevision-rerun.log`, and one log per targeted suite (`…/fix-wave/<gate>.log`,
+all twelve green with the export: `test:lint`, `test:docsmeta`, `test:distribution-adoption`,
+`test:prompts`, `test:picocli`, `test:observation`, `test:doors`, `test:sdkselection`,
+`test:tarball`, `test:knowledge-lifecycle`, `test:buildfreshness`,
+`test:plugin-bootstrap-freshness`).
+
 ### Step 6 — the distributable
+
+**The final artifact (fix wave, republished from the final tree).** Same non-replacing route,
+fresh path; nothing under `release/` was touched.
+
+```
+node scripts/verify-tarball.mjs --publish \
+  "$PWD/evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/final/pico-spatial-mcp-38.0.0.tgz"
+
+Tarball verification done. Failures: 0        (48 checks, all pass; 14 s)
+```
+
+| | |
+|---|---|
+| Artifact | `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/final/pico-spatial-mcp-38.0.0.tgz` (untracked, `*.tgz`) |
+| sha256 | `c08e1a8baf2b850cae5bdd09eb259fab5270645dda3d635eeb1bc7cb51c435f5` |
+| Bytes | 2,161,859 |
+| Receipt (tracked) | [`final/pico-spatial-mcp-38.0.0.tgz.receipt.json`](../../evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/final/pico-spatial-mcp-38.0.0.tgz.receipt.json) — 48 checks, all `pass`, 0 skip |
+| Packed build receipt binds | source `eb105535d1378282c4fbaf15c8f111761451173cc8d8e209f52b0c5300654a1c` (195 input files) → output `5d245218bf71c550eda5a2c8048b3938a96eeffeee71f383f361188c762a6d94` (190 emitted files), TypeScript 5.9.3, Node major 25 |
+| Platform | `darwin/arm64`, Node `v25.8.1` |
+| Receipt `limitations` | darwin/arm64 only; no host-plugin discovery; no emulator, device or visual claim |
+
+**The F1 artifact — pre-fix-wave, superseded, byte-identical.** Re-hashed after the fix wave
+(`shasum -a 256`): unchanged.
 
 ```
 node scripts/verify-tarball.mjs --publish \
@@ -385,16 +457,18 @@ Tarball verification done. Failures: 0
 
 | | |
 |---|---|
-| Artifact | `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/pico-spatial-mcp-38.0.0.tgz` |
+| Artifact | `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/pico-spatial-mcp-38.0.0.tgz` — **pre-fix-wave, superseded, byte-identical** |
 | sha256 | `941e402bb2c234c444e31c62c9bc9dc2c69055ac3aeee48c960e870e100f36d6` |
 | Bytes | 2,158,783 |
 | Receipt (tracked) | [`pico-spatial-mcp-38.0.0.tgz.receipt.json`](../../evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/pico-spatial-mcp-38.0.0.tgz.receipt.json) — 48 checks, all `pass` |
 | Packed build receipt binds | source `e51cb8f1b72b` (195 input files) → output `68a3d0a73884` (190 emitted files), TypeScript 5.9.3, Node major 25 |
 | Platform | `darwin/arm64`, Node `v25.8.1` |
 
-The `.tgz` itself is untracked (the repository gitignores `*.tgz`); the receipt is tracked and
-carries the artifact's hash and byte count, so the archive's identity survives in Git even though
-its bytes do not.
+Both `.tgz` files are untracked (the repository gitignores `*.tgz`); both receipts are tracked and
+carry the artifact's hash and byte count, so each archive's identity survives in Git even though
+its bytes do not. The two differ because the fix wave changed shipped sources (`src/doors.ts`,
+`src/verifyapk.ts`, `src/picoclitools.ts`, `src/editorpalette.ts`, `src/knowledge.ts`,
+`src/adb.ts`) and shipped scripts (`scripts/gate-inventory.mjs`, `scripts/run-gate.mjs`).
 
 **Prior archives are untouched.** Re-hashed read-only at the end of this task, against the hashes
 published in `evidence/2026-09-15-cli050-sdk61-evolution-audit-001/README.md`:
@@ -607,6 +681,7 @@ fixture *name* the tools it uses rather than arranging for the right one to be f
 | Emulator-family tools keep the emulator default **by design** | `docs/DEVICE_VERIFICATION.md` §6 ("Serial support") records the routing, and it is unchanged at 38.0.0: `verify_baseline`, `verify_visual` and `capture_canonical` accept a serial but default to the emulator; `capture_canonical`/`pico_look` are the no-input LOOK door (first row of this table); `logcat`, `assert_logcat`, `app_broadcast` and the basic adb tools resolve the sole connected device when no serial is passed; `screenrecord`, `wait_for_log`, `check_crash` and `ui_dump` accept a serial through the agent-loop adb path. None of these is covered by the explicit-target ruling. |
 | Nine doors bypass the injection seam entirely | `pico_scan_world`, `pico_place`, `pico_measure`, `pico_perf`, `pico_sdk`, `pico_doctor`, `pico_capabilities`, `pico_fix` and `pico_next` call `inner()` directly instead of `doorCall`, so `registerDoorTools(server, dependencies)` cannot redirect them and a fixture server that drives one of them spawns the real inner full-surface server. The fix wave (commit `7297f68`) closed the raw lane — `pico_look` and `pico_verify_app` on a call-only fixture now refuse at the seam — which was the reviewed finding; these nine are pre-existing and outside it. Every test that drives them today does so over the real inner transport with `PICO_ADB` pinned to a stub (`test/doors.mjs`'s e2e block, `[M11]`). Next surface sweep. |
 | `check_toolchain_updates` (`src/toolchainwatch.ts:22,27`) reads the **0.13** emulator `package.xml` and editor `version` file directly | An informational reporter comparing installed versions against PICO's release feed: it selects nothing and launches nothing, but on a host without a 0.13 payload its "installed" columns are empty rather than the selected 6.1 versions, and on a host with both it reports the legacy ones. Never routed through the S1/S2 selection and covered by no S6 row (corrected in `evidence/2026-09-15-cli050-sdk61-evolution-impl-001/sdk61-selection/REVIEW.md`). Not migrated — no plan task; next surface sweep. |
+| `test:runrevision`'s cross-process capacity case runs a 15 s shared budget inside a 16–18 s case | `ACQUIRE_BUDGET_MS = 15_000` (`src/runlocks.ts:41`) bounds how long the second child waits behind a live enrollment; the test (`test/runrevision-locks.mjs:2625`) spends 16–18 s of wall time, so under load the budget expires and the second result is `run-busy` instead of `acquired`/`limit-exceeded`. Red once in the fix-wave battery (18,051 ms), green in isolation under identical conditions (16,365 ms; 327/327). Timing-sensitive, not a regression from anything on this branch. Next sweep: give the test an explicit `deadlineMonotonicMs` sized to what it measures, or decouple the assertion from the shared budget. |
 | Residual `0.13` literals in `src/` | 134 matches at the fix wave (`grep -n '0\.13' src/*.ts`), every one enumerated with a disposition in the subsection below. Two are executed paths (`toolchainwatch.ts`, the row above), one is a retained last-candidate path (`preflight.ts` `LEGACY_SDK_ADB`), one is a default vault workspace label (`vault.ts`), one is remedy text (`diagnose.ts`); the rest are version-label examples, provenance references to the 0.13.3 declarations, or numeric coincidences. `install_editor_palette`'s executed path was removed in the fix wave (commit `48aebc9`). |
 | `docs/claims/claims.json` was not annotated | Its `attestation` for P21 describes the removed `status=ok`/`processAlive`/`crashed` shape and the logcat clear. The file is **generated** from the trust ledgers by `generate_claims_page`, not hand-maintained, and the attestation is a verbatim historical record. Hand-editing it would rewrite history *and* be overwritten on the next regeneration. It is already a month stale (see `test:claims` above). Correction lands when the page is next regenerated on the ledger-owning machine — and that regeneration must be made with the Mission Replay question settled first. |
 | `gates.yml` has one raw step the inventory cannot see | The macOS lane runs `node --test test/homeenvironmenthost.mjs` directly rather than through a named gate, so `AGENTS.md`'s "one inventory owns every gate command" is true of every *named* gate but not of that line — and the same file already runs inside `test:bridge` on the Linux lane, so the macOS step is a duplicate invocation the inventory's duplicate check cannot see. Left as is (disclosed); since the fix wave the workflow-level `env: PICO_ADB` covers that raw step, which `run-gate` cannot. |

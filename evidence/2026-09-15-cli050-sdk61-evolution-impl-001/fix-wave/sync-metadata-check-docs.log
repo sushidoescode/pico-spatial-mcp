@@ -1,0 +1,5 @@
+truth: version=38.0.0  macOS-tools=255  other-host-tools=252  doors=18
+
+sync-metadata --check (dry run):
+
+--check: 0 stale site(s), 0 warning(s).

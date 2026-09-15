@@ -1,0 +1,60 @@
+sandbox: /var/folders/qq/mr_6xdvn7018qqh55db0j1wc0000gn/T/pico mcp tester é 8ETLM8
+
+  ok   packed pico-spatial-mcp-38.0.0.tgz (2111 kB, sha256 c08e1a8baf2b850cae5bdd09eb259fab5270645dda3d635eeb1bc7cb51c435f5)
+  ok   installed into a clean directory with --omit=dev
+  ok   installed home environment dataset directory contains exactly the versioned JSON
+  ok   installed home environment dataset bytes match the exact packed source dataset
+  ok   home environment dataset ships in the installed package
+  ok   installed dataset keeps Mesume Day excluded for its zero-geometry public-parser failure
+  ok   installed dataset keeps both Livingroom refresh surface extensions
+  ok   installed dataset keeps the evidence-falsified Day guarantees and optional cluster ranges
+  ok   installed dataset retains complete one-to-one measured-potential Livingroom ranking inputs
+  ok   installed dataset carries only accepted, syntactically pinned refresh evidence
+  ok   installed selector ranks complete Day/Night potential and receipts the canonical dataset hash
+  ok   derived out-of-dist dependencies from the build: appskeleton, assets, briefs, data, package.json, scripts, tools, unityskeleton
+  ok   payload present: appskeleton/
+  ok   payload present: assets/
+  ok   payload present: briefs/
+  ok   payload present: data/
+  ok   payload present: package.json/
+  ok   payload present: scripts/
+  ok   payload present: tools/
+  ok   payload present: unityskeleton/
+  ok   reviewed SDK-compatibility payload verified (3 files, index + every referenced record/basis)
+  ok   briefs/ carries 22 briefs
+  ok   brief canary parses: gallery.json
+  ok   brief canary parses: knockdown.json
+  ok   no build droppings anywhere in the package
+  ok   no absolute home paths in any shipped file
+  ok   TESTERS.md ships
+  ok   reader-facing doc ships: SKILLS.md
+  ok   reader-facing doc ships: DESIGN.md
+  ok   reader-facing doc ships: GETTING_STARTED.md
+  ok   app skeleton ships complete and non-empty (17 canaries)
+  ok   appskeleton/gradlew kept its exec bit through pack+install
+  ok   gradle wrapper jar ships intact
+  ok   dot-less _gitignore survived packing (npm drops files named .gitignore)
+  ok   menu.bundle ships for GameMenu briefs
+  ok   unity skeleton ships complete (11 canaries)
+  ok   unityskeleton _gitignore survived packing
+  ok   bin entry has a shebang
+pico-spatial-mcp ready (stdio)
+  ok   installed server listed exactly 255 tools for darwin (255 on the full macOS surface)
+  ok   all 43 anchor tools present
+  ok   preflight_env ran from the installed copy (14 checks, status: problems)
+  ok   preflight fixes contain no repo-only commands
+pico-spatial-mcp ready (stdio)
+  ok   doors surface registered all 18 door tools
+pico-spatial-mcp ready (stdio)
+  ok   a door tool completed its inner self-client spawn from a path containing a space
+pico-spatial-mcp ready (stdio)
+pico-spatial-mcp ready (stdio)
+  ok   20 concurrent first door calls on the installed artifact started exactly one inner server (all unavailable)
+  ok   installed pico_look forwards the inner screencap failure as isError, never as status ok (stub adb ran: 1 invocation(s), screencap argv recorded)
+pico-spatial-mcp ready (stdio)
+  ok   PICO_MCP_SURFACE unset serves the 18-tool doors surface (full stays explicit opt-in)
+  ok   packed dist/build-receipt.json binds the payload to source eb105535d137 / output 5d245218bf71
+  ok   published the VERIFIED tarball to /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/final/pico-spatial-mcp-38.0.0.tgz (2161859 bytes, sha256 c08e1a8baf2b850cae5bdd09eb259fab5270645dda3d635eeb1bc7cb51c435f5)
+  ok   wrote the publication receipt to /Users/sushantsrikrish/PICO-MCP/.worktrees/cli050-sdk61-evolution-2026-09-15/evidence/2026-09-15-cli050-sdk61-evolution-impl-001/release/final/pico-spatial-mcp-38.0.0.tgz.receipt.json
+
+Tarball verification done. Failures: 0
