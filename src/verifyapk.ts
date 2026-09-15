@@ -543,8 +543,20 @@ export function registerVerifyApkTools(server: McpServer, deps: VerifyApkDepende
         status = "inconclusive"; reason = `no live process identity for ${packageName}, so no frame or log can be attributed to it: ${(identity.process as any).reason}`;
       } else if (crash.attributed === true) {
         status = "inconclusive"; reason = `the bounded log attributes a crash/ANR to ${packageName} — read logs.crash.lines`;
+      } else if (crash.attributed === null) {
+        // Unknown is not "no crash". The log could not be read, so this observation cannot say the
+        // app ran without crashing — and an observation that cannot say that is not clean.
+        status = "inconclusive"; reason = `crash state is UNKNOWN because the bounded log could not be read (${crash.reason}); unknown is not 'no crash'`;
       } else if (identity.installedApk && (identity.installedApk as any).status === "missing") {
         status = "inconclusive"; reason = `the installed APK identity could not be observed: ${(identity.installedApk as any).reason}`;
+      } else if (identity.bootId && (identity.bootId as any).status === "missing") {
+        // Without a boot identity nothing below is pinned to one device run, so continuity was
+        // never established rather than established and unbroken.
+        status = "inconclusive"; reason = `the device boot identity could not be observed, so nothing here is pinned to one device run: ${(identity.bootId as any).reason}`;
+      } else if (identity.foreground && (identity.foreground as any).status === "missing") {
+        // No resumed activity was readable, so "our app was in front" was never observed — which is
+        // exactly the gap a foreign foreground would also occupy.
+        status = "inconclusive"; reason = `the foreground could not be observed, so the captured frame cannot be attributed to ${packageName}: ${(identity.foreground as any).reason}`;
       } else if (captureStatus !== "captured") {
         status = "inconclusive"; reason = captureReason || "no frame was captured";
       } else if (!retention.retained) {

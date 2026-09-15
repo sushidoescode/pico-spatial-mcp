@@ -10,6 +10,7 @@ import { readCaptureBytes, validateCapture, validateCaptureBuffer } from "./evid
 import { appendAutoJudgedEntry } from "./ledger.js";
 import { sendXrRecenter } from "./grpc.js";
 import { adbExecutable } from "./adb.js";
+import { inspectPng } from "./artifactinspection.js";
 
 /**
  * eye.ts — v6.3 THE TRUSTWORTHY AUTOMATED EYE + DETERMINISTIC CAPTURE (now MR-aware).
@@ -306,7 +307,7 @@ export function registerEyeTools(
     "capture_canonical",
     {
       description:
-        "DETERMINISTIC capture (v6.2). Grabs the emulator's forward immersive frame via `adb exec-out screencap` — byte-stable across repeated captures and across kill+relaunch (measured MAE=0) because content is authored in the forward FOV and this path does not drift (unlike the GUI free-cam orbit). With recenter:true it sends the actual gRPC xr_command RECENTER first; command acceptance is reported, while its rendered-pose effect remains unverified on emulator 0.13.1. Returns the saved path + content sha256 + objective measurements. Pass expectSha to detect drift instead of silently verifying a different view.",
+        "DETERMINISTIC capture (v6.2). Grabs the emulator's forward immersive frame via `adb exec-out screencap` — byte-stable across repeated captures and across kill+relaunch (measured MAE=0) because content is authored in the forward FOV and this path does not drift (unlike the GUI free-cam orbit). With recenter:true it sends the actual gRPC xr_command RECENTER first; command acceptance is reported, while its rendered-pose effect remains unverified on emulator 0.13.1. Returns the saved path + content sha256 + dimensions + objective measurements. The bytes are structurally inspected (signature, chunk CRCs, raster) before anything is written: a truncated or non-image screencap is refused rather than saved as the canonical frame. Pass expectSha to detect drift instead of silently verifying a different view.",
       inputSchema: {
         serial: z.string().optional().describe("adb device serial (default emulator-5554)."),
         outPath: z.string().optional().describe("Full-res PNG output path (default /tmp/pico-render/canonical.png)."),
@@ -329,6 +330,17 @@ export function registerEyeTools(
       await new Promise((r) => setTimeout(r, settleMs ?? 600));
       const res = await (deps.runBinaryFn ?? runBinary)(adb, ["-s", dev, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
       if (res.code !== 0 || res.stdout.length < 1000) return fail(`screencap failed (code ${res.code}, ${res.stdout.length} bytes). Is ${dev} running?`);
+      // A byte count is not an image (C6). Everything downstream — the sha, the drift verdict, the
+      // measurements, and every ledger claim anchored to "the canonical frame" — treats these bytes
+      // as a picture, so malformed bytes are refused HERE rather than written and then described as
+      // inspected. Same gate as capture_frame; evidence.ts owns the actual PNG validation.
+      const inspected = inspectPng(res.stdout);
+      if (!inspected.valid) {
+        return fail(`screencap returned ${res.stdout.length} bytes from ${dev} that are not a valid image: ${inspected.reason}. Nothing was written; re-capture rather than treating these bytes as the canonical frame.`);
+      }
+      if (!inspected.meetsCaptureFloor) {
+        return fail(`screencap returned a valid but unusable frame from ${dev} (${inspected.width}x${inspected.height}): ${inspected.captureFloorReason}. Nothing was written.`);
+      }
       fs.writeFileSync(full, res.stdout);
       const sha = crypto.createHash("sha256").update(res.stdout).digest("hex");
       const measurements = await (deps.analyzeFrameFn ?? analyzeFrame)(full);
@@ -338,6 +350,8 @@ export function registerEyeTools(
         path: full,
         sha256: sha,
         bytes: res.stdout.length,
+        width: inspected.width,
+        height: inspected.height,
         ...(recenterEffect ? { recenter: { commandAccepted: true, targetSerial: dev, renderedPoseEffect: recenterEffect } } : {}),
         ...(drift ? { drift, expectSha } : {}),
         measurements,

@@ -192,7 +192,7 @@ export function registerUnityGenTools(server: McpServer) {
           ...r,
           next: [
             `unity_build_apk with projectDir='${r.created}' (first build resolves packages — network needed${r.mode === "immersive" ? "; immersive pixels stay structural on emulator 0.13.x" : ""}).`,
-            `Then verify_pico_apk with the built APK + packageName='${r.packageName}'.`,
+            `Then verify_pico_apk with the built APK + packageName='${r.packageName}' + the serial of the device to observe (no default target).`,
             `Drive it: adb shell am broadcast -a ${r.packageName}.DEBUG_CMD --es cmd ping   (logcat tag PicoAgent, prefix PICOAGENT|).`,
           ],
         });

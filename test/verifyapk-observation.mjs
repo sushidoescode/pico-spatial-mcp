@@ -110,7 +110,11 @@ function fakeDevice(overrides = {}) {
       const digest = o.remoteApkSha256 ?? o.localApkSha256;
       return text(`${digest}  ${o.remoteApkPath}\n`);
     }
-    if (joined.includes("/proc/sys/kernel/random/boot_id")) return text(`${takeNext(bootIds, "boot_id")}\n`);
+    if (joined.includes("/proc/sys/kernel/random/boot_id")) {
+      const bootId = takeNext(bootIds, "boot_id");
+      // null models a read that FAILS on this call only — the before/after reads are separate facts.
+      return bootId === null ? text("", 1, "cat: /proc/sys/kernel/random/boot_id: Permission denied") : text(`${bootId}\n`);
+    }
     if (joined.includes("shell am start") || joined.includes("shell monkey")) return text(o.launchOutput, o.launchCode);
     if (joined.includes("shell pidof")) {
       const pid = takeNext(pids, "pidof");
@@ -120,7 +124,11 @@ function fakeDevice(overrides = {}) {
       const pid = /\/proc\/(\d+)\/stat/.exec(joined)[1];
       return text(procStat(pid, takeNext(startTicks, "proc-stat")));
     }
-    if (joined.includes("dumpsys activity activities")) return text(foregroundDump(takeNext(foregroundPackages, "foreground")));
+    if (joined.includes("dumpsys activity activities")) {
+      const pkg = takeNext(foregroundPackages, "foreground");
+      // null models a dump that names no resumed activity at all.
+      return text(pkg === null ? "  Display #0 (activities from top to bottom):\n" : foregroundDump(pkg));
+    }
     if (joined.includes("logcat")) return text(o.logcat, o.logcatCode);
     throw new Error(`fixture reached an UNMODELLED device command: ${command} ${joined}`);
   };
@@ -352,6 +360,35 @@ test("a valid DARK frame is an inconclusive capture route, not a rendering failu
   assert.equal(payload.status, "observed", "a dark but valid frame is still an observation — the LOOK decides");
 });
 
+// ── the ladder closes on identity it never observed (fix round 1) ──────────────────────────────
+
+test("a boot identity that was never observed is INCONCLUSIVE, not a clean observation", async () => {
+  // Only the FIRST read fails, so there is no continuity BREAK to report — the gap is that
+  // continuity was never established. Before the fix this fell through to status 'observed'.
+  const { payload } = await observe({ bootIds: [null, BOOT_ID] }, { label: "noboot" });
+  assert.equal(payload.identity.bootId.status, "missing");
+  assert.equal(payload.status, "inconclusive");
+  assert.match(payload.reason, /boot identity could not be observed/i);
+  assert.ok(payload.reason.includes(payload.identity.bootId.reason),
+    "the ladder must carry the missing field's own reason, not a paraphrase");
+});
+
+test("a foreground that was never observed is INCONCLUSIVE — the frame is unattributable", async () => {
+  const { payload } = await observe({ foregroundPackages: [null] }, { label: "nofg" });
+  assert.equal(payload.identity.foreground.status, "missing");
+  assert.equal(payload.status, "inconclusive");
+  assert.match(payload.reason, /foreground could not be observed/i);
+  assert.ok(payload.reason.includes(payload.identity.foreground.reason));
+  assert.ok(!("conflict" in payload), "no resumed activity is not the same finding as a foreign one");
+});
+
+test("an UNKNOWN crash state is INCONCLUSIVE — unknown is not 'no crash'", async () => {
+  const { payload } = await observe({ logcatCode: 1, logcat: "" }, { label: "unknowncrash" });
+  assert.equal(payload.logs.crash.attributed, null);
+  assert.equal(payload.status, "inconclusive");
+  assert.match(payload.reason, /unknown is not 'no crash'/);
+});
+
 // ── logs ───────────────────────────────────────────────────────────────────────────────────────
 
 test("logcat is never cleared, is bounded, and is scoped to the observed PID", async () => {
@@ -403,6 +440,7 @@ test("a log read that fails leaves logs unavailable and never implies 'no crash'
   const { payload } = await observe({ logcatCode: 1, logcat: "" }, { label: "nologs" });
   assert.equal(payload.logs.status, "unavailable");
   assert.equal(payload.logs.crash.attributed, null, "unknown is not false");
+  assert.notEqual(payload.status, "observed", "an observation that could not read the log is not clean");
 });
 
 // ── run directories and paths ──────────────────────────────────────────────────────────────────
@@ -528,4 +566,42 @@ test("the loud-runner fixture would actually catch a spawn", async () => {
   assert.equal(reached.length > 0, true, "the tripwire must fire on the first device invocation");
   assert.match(reached[0], /^\/fixture\/usable\/adb /);
   assert.notEqual(payload.status, "observed", "a spawn failure can never read as a clean observation");
+});
+
+// ── explicit capture targets (fix round 1) ─────────────────────────────────────────────────────
+// capture_frame and capture_record are the other two tools that used to act on whatever device
+// happened to be attached. Only their REFUSAL paths are exercised here, and deliberately so: both
+// return before they resolve adb or the CLI, so these cases cannot reach a device even by accident.
+// Neither tool takes an injectable runner, so calling them WITH a target would reach the real one.
+
+test("capture_frame refuses to capture without an explicit serial, before resolving adb", async () => {
+  const { registerCaptureTools } = await import("../dist/capture.js");
+  const handlers = {};
+  registerCaptureTools({ registerTool: (name, _metadata, fn) => { handlers[name] = fn; } });
+  const result = await handlers.capture_frame({});
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /serial is required/i);
+  assert.match(result.content[0].text, /no default target/i);
+
+  const source = fs.readFileSync(new URL("../dist/capture.js", import.meta.url), "utf8");
+  assert.ok(!source.includes("emulator-5554"), "capture_frame must not carry a default serial");
+  assert.ok(!source.includes("/tmp/pico-render"), "capture_frame must not write to a fixed shared path");
+  assert.ok(source.includes("capture-frame"), "the default path must live under the observation root");
+});
+
+test("capture_record refuses to record without an explicit device, before any CLI work", async () => {
+  const { registerPicoCliTools } = await import("../dist/picoclitools.js");
+  const handlers = {};
+  registerPicoCliTools({ registerTool: (name, _metadata, fn) => { handlers[name] = fn; } });
+  const payload = JSON.parse((await handlers.capture_record({ durationSec: 1 })).content[0].text);
+  assert.equal(payload.status, "failed");
+  assert.match(payload.note, /device is required/i);
+  assert.match(payload.note, /no default target/i);
+  // `picoCli` provenance only ever appears after a successful ensure, so its absence is evidence
+  // the refusal came first: no registry lookup, no provisioning, no managed-store write.
+  assert.ok(!("picoCli" in payload), "the refusal must precede CLI resolution entirely");
+
+  const source = fs.readFileSync(new URL("../dist/picoclitools.js", import.meta.url), "utf8");
+  assert.ok(!/"-d", device \?\?/.test(source), "capture_record must not fall back to a default device");
+  assert.ok(source.includes("capture-record"), "the default recording path must live under the observation root");
 });

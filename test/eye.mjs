@@ -100,6 +100,14 @@ const fakeServer = {
     if (name === "capture_canonical") captureHandler = handler;
   },
 };
+// The screencap payload is a REAL committed PNG fixture (test/fixtures/media, provenance in its
+// README — none is a device capture). The previous version of this fixture returned 1200 bytes of
+// constant 7: a payload that is not an image at all, which passed only because the tool's own gate
+// was `length < 1000`. That is the defect C6 fix round 1 closes, so the fixture has to stop
+// depending on it.
+const mediaFixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "media");
+const validFramePng = fs.readFileSync(path.join(mediaFixtures, "valid-small.png"));
+let screencapPayload = validFramePng;
 registerEyeTools(fakeServer, {
   sendXrRecenterFn: async (_toolsVersion, options) => {
     recenteredSerial = options?.serial;
@@ -107,7 +115,7 @@ registerEyeTools(fakeServer, {
   },
   runBinaryFn: async (_command, args) => {
     screencapSerial = args[1];
-    return { code: 0, stdout: Buffer.alloc(1200, 7), stderr: "" };
+    return { code: 0, stdout: screencapPayload, stderr: "" };
   },
   analyzeFrameFn: async () => ({ available: true }),
   resolveAdbFn: () => "fake-adb",
@@ -120,6 +128,23 @@ const captureResult = JSON.parse((await captureHandler({
   settleMs: 0,
 })).content[0].text);
 check("capture_canonical binds RECENTER and screencap to one requested serial", captureResult.status === "captured" && recenteredSerial === "emulator-5580" && screencapSerial === "emulator-5580" && captureResult.recenter?.targetSerial === "emulator-5580");
+check("capture_canonical reports the inspected frame's real dimensions", captureResult.width === 64 && captureResult.height === 64);
+
+// C6 fix round 1: a malformed payload ABOVE the old 1000-byte floor must be refused, and nothing
+// may be written — the canonical frame is what every later sha/drift/measurement claim is anchored
+// to, so "big enough" was never an inspection.
+screencapPayload = fs.readFileSync(path.join(mediaFixtures, "truncated.png"));
+const malformedOut = path.join(captureScratch, "malformed.png");
+const malformedResult = await captureHandler({ serial: "emulator-5580", outPath: malformedOut, settleMs: 0 });
+const malformedText = malformedResult.content[0].text;
+check(
+  `capture_canonical refuses a malformed >1000-byte screencap and writes nothing (${screencapPayload.length} bytes)`,
+  screencapPayload.length > 1000
+    && malformedResult.isError === true
+    && /not a valid image/.test(malformedText)
+    && !fs.existsSync(malformedOut),
+);
+screencapPayload = validFramePng;
 fs.rmSync(captureScratch, { recursive: true, force: true });
 
 // Public visual_judge regression: the caller's prose names semantic content that the calibrated

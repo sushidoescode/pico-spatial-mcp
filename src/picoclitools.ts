@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { okJson, tail, okJsonStructured } from "./util.js";
 import {
   ensurePicoCli,
@@ -15,6 +15,7 @@ import {
   describePicoCliEnvironmentFailure,
   picoCliOperationCapability,
   retainPicoCliObservation,
+  picoCliObservationRoot,
   type PicoCliCommandResult,
   type PicoCliObservationRetentionInput,
   type PicoCliRetainedObservation,
@@ -485,11 +486,20 @@ export function registerPicoCliTools(server: McpServer) {
       }).passthrough(),
       inputSchema: {
         durationSec: z.number().min(1).max(180).optional().describe("Recording length in seconds (CLI range 1-180; default 15)."),
-        device: z.string().optional().describe("Device serial (default emulator-5554)."),
-        outputPath: z.string().optional().describe("Local output path (default ~/.pico-mcp/recordings/rec-<timestamp>.mp4)."),
+        device: z.string().optional().describe("REQUIRED adb device serial. There is no default: a recording names the device it came from."),
+        outputPath: z.string().optional().describe("Local output path. Default: a run-unique file under the observation root, never a fixed or shared path a later recording can overwrite."),
       },
     },
     async ({ durationSec, device, outputPath }) => {
+      // Explicit target identity, checked before any CLI work: a recording that cannot name its
+      // device is not evidence about any device, and a default serial records whatever is attached.
+      if (!device || !device.trim()) {
+        return okJsonStructured({
+          status: "failed",
+          failureClass: "runtime",
+          note: "device is required: capture_record names the device the recording came from, and there is no default target. Pass the adb serial of the device to record.",
+        });
+      }
       const ensured = await ensurePicoCli();
       if (ensured.status !== "ok") {
         return okJsonStructured({
@@ -502,10 +512,12 @@ export function registerPicoCliTools(server: McpServer) {
       const cli = picoCliFromEnsure(ensured)!;
       const provenance = { picoCli: picoCliProvenance(ensured) };
       const sec = Math.min(180, Math.max(1, Math.round(durationSec ?? 15)));
-      const outDir = path.join(os.homedir(), ".pico-mcp", "recordings");
-      fs.mkdirSync(outDir, { recursive: true });
-      const artifact = outputPath ?? path.join(outDir, `rec-${new Date().toISOString().replace(/[:.]/g, "-")}.mp4`);
-      const args = ["capture", "record", "-t", String(sec), "-o", artifact, "-d", device ?? "emulator-5554"];
+      // Run-unique by construction. The old default was a wall-clock name in one shared directory:
+      // two recordings started in the same millisecond collided, and nothing tied a file to its run.
+      const runId = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
+      const artifact = outputPath ?? path.join(picoCliObservationRoot(), "capture-record", runId, "recording.mp4");
+      fs.mkdirSync(path.dirname(artifact), { recursive: true });
+      const args = ["capture", "record", "-t", String(sec), "-o", artifact, "-d", device];
 
       // The CLI blocks for the recording duration, then pulls the file — allow generous pull time.
       const r = await runPicoCli(cli, args, { timeoutMs: (sec + 120) * 1000 });

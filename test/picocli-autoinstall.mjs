@@ -1992,7 +1992,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
       const missingArtifactPath = path.join(harness.root, "recording-that-fixture-does-not-create.mp4");
       const artifactFailure = JSON.parse((await client.callTool({
         name: "capture_record",
-        arguments: { durationSec: 1, outputPath: missingArtifactPath },
+        arguments: { durationSec: 1, outputPath: missingArtifactPath, device: "fixture-record-0001" },
       })).content[0].text);
 
       const missingTracePath = path.join(harness.root, "trace-that-fixture-does-not-create.perfetto-trace");
@@ -2047,7 +2047,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
       const capturePath = path.join(harness.root, "empty-capture.mp4");
       const capture = JSON.parse((await client.callTool({
         name: "capture_record",
-        arguments: { durationSec: 1, outputPath: capturePath },
+        arguments: { durationSec: 1, outputPath: capturePath, device: "fixture-record-0001" },
       })).content[0].text);
 
       const tracePath = path.join(harness.root, "empty-trace.perfetto-trace");
@@ -2097,7 +2097,7 @@ test("Task 4 production adapters use the managed absolute CLI without eager prov
     await withServer(harness, "full", async (client) => {
       const capture = JSON.parse((await client.callTool({
         name: "capture_record",
-        arguments: { durationSec: 1, outputPath: path.join(harness.root, "capture-directory") },
+        arguments: { durationSec: 1, outputPath: path.join(harness.root, "capture-directory"), device: "fixture-record-0001" },
       })).content[0].text);
       const trace = JSON.parse((await client.callTool({
         name: "perf_trace",

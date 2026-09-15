@@ -1,11 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { run, runBinary, image, fail, expandHome } from "./util.js";
 import { adbExecutable } from "./adb.js";
+import { randomUUID } from "node:crypto";
 import { inspectPng, classifyFrame } from "./artifactinspection.js";
+import { picoCliObservationRoot } from "./picocli.js";
+
+/**
+ * A run-unique capture path under the observation root. The old default was one fixed file, so the
+ * second capture silently overwrote the frame the first one was still being cited for — and two
+ * agents capturing at once produced one file and two claims about it.
+ */
+function defaultCapturePath(): string {
+  const runId = `${new Date().toISOString().replace(/[-:.]/g, "")}-${randomUUID()}`;
+  return path.join(picoCliObservationRoot(), "capture-frame", runId, "capture_frame.png");
+}
 
 /**
  * capture_frame — the VISUAL GROUND-TRUTH primitive. Grabs a frame via `adb exec-out screencap`
@@ -38,15 +49,20 @@ export function registerCaptureTools(server: McpServer) {
       description:
         "Capture a frame with `adb exec-out screencap` (headless, no macOS perms) and return it as an image the agent MUST visually inspect. ROUTE: this composites the CURRENT DISPLAY through the device shell — for the checked runs that display carried the forward immersive view, but for an XR-runtime immersive layer the same command can return black while the app renders correctly, so a black frame is inconclusive about the route rather than a rendering verdict. The bytes are structurally inspected (signature, chunk CRCs, raster) before being returned; a truncated or non-image capture is refused instead of saved. This is the ground-truth check: code/logcat prove a thing EXISTS, only looking proves it RENDERS correctly. Downscales for the response and also saves full-res to disk. Content outside the captured field of view (e.g. pins in a ring behind the viewer) won't appear; reposition/navigate to inspect the rest.",
       inputSchema: {
-        serial: z.string().optional().describe("adb device serial (default emulator-5554)."),
-        outPath: z.string().optional().describe("Full-res PNG output path (default /tmp/pico-render/capture_frame.png)."),
+        serial: z.string().optional().describe("REQUIRED adb device serial. There is no default: a frame names the device it came from."),
+        outPath: z.string().optional().describe("Full-res PNG output path. Default: a run-unique file under the observation root, never a fixed shared path a later capture can overwrite."),
         maxDim: z.number().int().positive().optional().describe("Max dimension of the returned (downscaled) image (default 1200)."),
       },
     },
     async ({ serial, outPath, maxDim }) => {
+      // Explicit target identity: a capture that cannot name its device is not evidence about any
+      // device, and a default serial acts on whatever happens to be attached.
+      if (!serial || !serial.trim()) {
+        return fail("serial is required: capture_frame names the device the frame came from, and there is no default target. Pass the adb serial of the device to capture.");
+      }
       const adb = resolveAdb();
-      const dev = serial ?? "emulator-5554";
-      const full = expandHome(outPath ?? "/tmp/pico-render/capture_frame.png");
+      const dev = serial;
+      const full = expandHome(outPath ?? defaultCapturePath());
       fs.mkdirSync(path.dirname(full), { recursive: true });
 
       const res = await runBinary(adb, ["-s", dev, "exec-out", "screencap", "-p"], { timeoutMs: 30_000 });
