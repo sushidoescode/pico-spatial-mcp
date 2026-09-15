@@ -132,7 +132,10 @@ export function registerVerifyApkTools(server: McpServer, deps: VerifyApkDepende
       inputSchema: {
         apkPath: z.string().describe("Absolute path to the .apk the external builder emitted; its bytes are hashed locally."),
         packageName: z.string().describe("Android package id, e.g. com.example.unityxr."),
-        serial: z.string().optional().describe("REQUIRED adb serial of the target device. There is no default: an observation names the device it observed."),
+        // Required in the SCHEMA, not merely in the prose: a client that omits it is refused by
+        // the protocol before the handler runs. The handler's own refusal below still covers the
+        // empty / whitespace-only string, which the schema cannot reject.
+        serial: z.string().describe("REQUIRED adb serial of the target device. There is no default: an observation names the device it observed."),
         activity: z.string().optional().describe("Fully-qualified launch activity. If omitted, launched via a monkey LAUNCHER intent."),
         expectLogcatContains: z.string().optional().describe("Optional substring to look for in the bounded log. Sets logcatMatch true/false; null when not provided."),
         settleSec: z.number().min(0).max(120).optional().describe("Seconds to wait after launch before observing (default 8)."),

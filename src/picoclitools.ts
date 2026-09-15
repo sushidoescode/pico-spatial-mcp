@@ -486,10 +486,15 @@ export function registerPicoCliTools(server: McpServer) {
         "Record the device screen with PICO's OFFICIAL recorder (`pico-cli capture record`, 1-180s) and pull the file " +
         "locally as a RECORDING evidence artifact — the video lane for demos and ledger evidence that single-frame " +
         "captures lack. Returns the stat-checked output path + size. Resolves the latest managed @picoxr/pico-cli " +
-        "lazily and runs its absolute path; successful resolution is returned as picoCli provenance. HONESTY: " + RECORD_HONESTY,
+        "lazily and runs its absolute path; successful resolution is returned as picoCli provenance. READ `status` AND " +
+        "`media` TOGETHER: `status` grades the recording CALL (ok = the CLI exited 0, the file exists with real bytes, " +
+        "and container inspection did not fail); `media` is the separate validation verdict — validated = the " +
+        "container parsed, invalid = it did not (status is then failed), unvalidated = the container was NOT inspected " +
+        "at all (over the inspection budget, or unreadable), so status ok with media unvalidated is an uninspected " +
+        "file, never a validated recording. HONESTY: " + RECORD_HONESTY,
       // Typed contract (2026-07-28 revision lane): the shared CLI-wrapper core + the artifact fields.
       outputSchema: z.object({
-        status: z.enum(["ok", "failed", "unavailable"]).describe("ok = the recording exists with real bytes (stat-checked — exit 0 alone is never ok); failed = run failed or the file is missing/empty; unavailable = pico-cli absent/unusable."),
+        status: z.enum(["ok", "failed", "unavailable"]).describe("Grades the recording CALL only: ok = the CLI exited 0, the recording exists with real bytes (stat-checked — exit 0 alone is never ok) and container inspection did not fail; failed = run failed, the file is missing/empty, or the container is invalid; unavailable = pico-cli absent/unusable. Read `media` for whether the container was actually validated."),
         ...cliWrapperContractShape,
         artifact: z.string().optional().describe("The recording path. Its pixels prove nothing until LOOKED at."),
         artifactExists: z.boolean().optional(),
@@ -497,13 +502,16 @@ export function registerPicoCliTools(server: McpServer) {
         durationSec: z.number().optional().describe("Deprecated alias of requestedDurationSec — the CLAMPED REQUEST, never a measurement."),
         requestedDurationSec: z.number().optional().describe("What this wrapper asked the CLI for, after clamping to the 1-180s range."),
         measuredDurationSec: z.number().nullable().optional().describe("Duration read from the recording's OWN movie header. null when the container states none or nothing could inspect it."),
-        media: z.enum(["validated", "unvalidated", "invalid"]).optional().describe("validated = the container parsed; invalid = it did not; unvalidated = nothing could inspect the bytes (never a successful decode)."),
+        media: z.enum(["validated", "unvalidated", "invalid"]).optional().describe("The validation verdict, separate from `status`: validated = the container parsed; invalid = it did not (status is then failed); unvalidated = the container was NOT inspected (over the inspection budget, or unreadable) — never a successful decode, so status ok beside it means an uninspected file."),
         artifactSha256: z.string().nullable().optional(),
         exitCode: z.number().nullable().optional(),
       }).passthrough(),
       inputSchema: {
         durationSec: z.number().min(1).max(180).optional().describe("Recording length in seconds (CLI range 1-180; default 15)."),
-        device: z.string().optional().describe("REQUIRED adb device serial. There is no default: a recording names the device it came from."),
+        // Required in the SCHEMA, not merely in the prose: a client that omits it is refused by
+        // the protocol before the handler runs. The handler's own refusal below still covers the
+        // empty / whitespace-only string, which the schema cannot reject.
+        device: z.string().describe("REQUIRED adb device serial. There is no default: a recording names the device it came from."),
         outputPath: z.string().optional().describe("Local output path. Default: a run-unique file under the observation root, never a fixed or shared path a later recording can overwrite."),
       },
     },

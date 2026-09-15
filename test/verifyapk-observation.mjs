@@ -502,6 +502,26 @@ test("the serial is REQUIRED — there is no emulator-5554 default to leak into"
   assert.match(payload.reason, /serial/i);
   assert.deepEqual(device.calls, [], "no device command may run without an explicit target");
 
+  // A whitespace-only serial is the case a schema cannot reject, so the handler must.
+  const blank = JSON.parse((await handler({ apkPath, packageName: PACKAGE, serial: "   ", settleSec: 0 })).content[0].text);
+  assert.equal(blank.status, "failed");
+  assert.match(blank.reason, /serial is required/i);
+  assert.deepEqual(device.calls, [], "a blank serial must not reach the device either");
+
+  // The schema is the first line of defence (38.0.0): a client omitting `serial` is refused by
+  // the protocol, not merely by the handler — the same shape watch_crash and capture_record carry.
+  const metadata = {};
+  registerVerifyApkTools({ registerTool: (name, meta) => { metadata[name] = meta; } }, {
+    runTextFn: device.runText,
+    runBinaryFn: device.runBinary,
+    resolveAdbFn: () => "/fixture/adb",
+    sleepFn: async () => {},
+    observationRoot: () => path.join(root, "observations"),
+  });
+  assert.equal(metadata.verify_pico_apk.inputSchema.serial.isOptional(), false, "serial must be required in the registered schema");
+  assert.match(metadata.verify_pico_apk.inputSchema.serial.description, /REQUIRED/);
+  assert.match(metadata.verify_pico_apk.inputSchema.serial.description, /no default/i);
+
   // Both the SOURCE and the shipped build, because tsc erases a doc comment attached to an erased
   // type declaration — so a dist-only check can pass for a reason that has nothing to do with the
   // code. The reserved serial, the old mutable capture path and the log-clear must be absent from
@@ -592,7 +612,8 @@ test("capture_frame refuses to capture without an explicit serial, before resolv
 test("capture_record refuses to record without an explicit device, before any CLI work", async () => {
   const { registerPicoCliTools } = await import("../dist/picoclitools.js");
   const handlers = {};
-  registerPicoCliTools({ registerTool: (name, _metadata, fn) => { handlers[name] = fn; } });
+  const metadata = {};
+  registerPicoCliTools({ registerTool: (name, meta, fn) => { metadata[name] = meta; handlers[name] = fn; } });
   const payload = JSON.parse((await handlers.capture_record({ durationSec: 1 })).content[0].text);
   assert.equal(payload.status, "failed");
   assert.match(payload.note, /device is required/i);
@@ -600,6 +621,16 @@ test("capture_record refuses to record without an explicit device, before any CL
   // `picoCli` provenance only ever appears after a successful ensure, so its absence is evidence
   // the refusal came first: no registry lookup, no provisioning, no managed-store write.
   assert.ok(!("picoCli" in payload), "the refusal must precede CLI resolution entirely");
+  // A whitespace-only serial is the case the schema cannot reject, so the handler must.
+  const blank = JSON.parse((await handlers.capture_record({ durationSec: 1, device: "   " })).content[0].text);
+  assert.equal(blank.status, "failed");
+  assert.match(blank.note, /device is required/i);
+  assert.ok(!("picoCli" in blank));
+
+  // The schema is the first line of defence (38.0.0): a client omitting `device` is refused by
+  // the protocol, not merely by the handler — the same shape watch_crash carries.
+  assert.equal(metadata.capture_record.inputSchema.device.isOptional(), false, "device must be required in the registered schema");
+  assert.match(metadata.capture_record.inputSchema.device.description, /REQUIRED/);
 
   const source = fs.readFileSync(new URL("../dist/picoclitools.js", import.meta.url), "utf8");
   assert.ok(!/"-d", device \?\?/.test(source), "capture_record must not fall back to a default device");
