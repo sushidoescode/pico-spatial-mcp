@@ -29,7 +29,13 @@ export const GATE_SCOPES = Object.freeze(["fixture", "native-contract", "install
 /** Every gate, in the order the battery runs them. @type {Readonly<Record<string, {host: "linux"|"windows"|"macos", commands: string[][], scope: "fixture"|"native-contract"|"installed-artifact"}>>} */
 export const GATES = Object.freeze({
   smoke: { host: "linux", scope: "fixture", commands: [["node", "test/smoke.mjs"]] },
-  "test:tarball": { host: "linux", scope: "installed-artifact", commands: [["node", "scripts/verify-tarball.mjs"]] },
+  // The hermetic publication suite runs first: it needs no network, and a broken publication
+  // primitive should fail in milliseconds rather than after a full pack-and-install.
+  "test:tarball": {
+    host: "linux",
+    scope: "installed-artifact",
+    commands: [["node", "--test", "test/publish-tarball.mjs"], ["node", "scripts/verify-tarball.mjs"]],
+  },
   "test:smoke-isolation": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/smoke-isolation.mjs"]] },
   "test:sdk-integration": { host: "linux", scope: "fixture", commands: [["node", "--test", "test/sdk-integration.mjs"]] },
   "test:lint": { host: "linux", scope: "fixture", commands: [["node", "test/lint.mjs"], ["node", "--test", "test/run-battery.mjs", "test/gate-inventory.mjs"]] },
