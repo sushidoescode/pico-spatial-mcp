@@ -490,6 +490,9 @@ fs.rmSync(cachedManaged.root, { recursive: true, force: true });
       io: {
         ...healthyIO,
         adbInspection,
+        // Declared explicitly so these rows never read this HOST's $PICO_ADB: without it a
+        // developer machine that exports one would silently change which candidates are probed.
+        adbOverride: null,
         exec: (cmd, args) => {
           if (args[0] === "version") { probed.push(cmd); return { ok: working.includes(cmd), stdout: working.includes(cmd) ? "Android Debug Bridge version 1.0.41" : "", stderr: "" }; }
           return healthyIO.exec(cmd, args);

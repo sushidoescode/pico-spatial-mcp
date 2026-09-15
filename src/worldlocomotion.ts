@@ -5858,8 +5858,18 @@ export function registerInAppLocomotionTools(
   server: McpServer,
   dependencies?: InAppLocomotionDependencies,
 ): void {
-  const selectedDependencies = dependencies ?? createLiveInAppLocomotionDependencies();
-  const orchestrator = createInAppLocomotionOrchestrator(selectedDependencies);
+  // Built on FIRST USE, not during registration. createLiveInAppLocomotionDependencies() resolves
+  // adb, and the adb adapter fails closed on an unusable explicit $PICO_ADB — so resolving here
+  // let one stale PICO_ADB export abort server startup, taking down tools/list and every non-device
+  // lane along with it, and hiding the very doctor row that explains the problem. An injected
+  // `dependencies` is still honoured eagerly, because a caller that supplies one has already
+  // resolved whatever it needs.
+  let resolvedDependencies: InAppLocomotionDependencies | null = dependencies ?? null;
+  const liveDependencies = (): InAppLocomotionDependencies =>
+    (resolvedDependencies ??= createLiveInAppLocomotionDependencies());
+  let orchestratorInstance: ReturnType<typeof createInAppLocomotionOrchestrator> | null = null;
+  const orchestrator = (): ReturnType<typeof createInAppLocomotionOrchestrator> =>
+    (orchestratorInstance ??= createInAppLocomotionOrchestrator(liveDependencies()));
   server.registerTool(
     "run_in_app_locomotion_route",
     {
@@ -5868,12 +5878,12 @@ export function registerInAppLocomotionTools(
     },
     async (args) => {
       try {
-        const result = await orchestrator.execute(args as InAppLocomotionInput);
+        const result = await orchestrator().execute(args as InAppLocomotionInput);
         const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: "image/png" }> = [];
         const reviews = Array.isArray(result.requiredReview) ? result.requiredReview as LocomotionReviewItem[] : [];
         let responseBytes = 0;
         for (const item of reviews) {
-          const bytes = selectedDependencies.readReviewImage(item, result.artifactRoot);
+          const bytes = liveDependencies().readReviewImage(item, result.artifactRoot);
           responseBytes += bytes.length;
           if (responseBytes > 128 * 1024 * 1024) throw new Error("locomotion review images exceed the 128 MiB response cap");
           content.push({ type: "image", data: bytes.toString("base64"), mimeType: "image/png" });

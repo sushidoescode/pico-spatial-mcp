@@ -3966,7 +3966,20 @@ function createLiveBoundaryExperimentDependencies(): BoundaryExperimentDependenc
   };
 }
 
-const liveOrchestrator = createBoundaryExperimentOrchestrator(createLiveBoundaryExperimentDependencies());
+/**
+ * Built on FIRST USE, not at import.
+ *
+ * `createLiveBoundaryExperimentDependencies()` resolves adb, and since the adb adapter fails
+ * closed on an unusable explicit `$PICO_ADB`, doing that at module scope meant a single stale
+ * `PICO_ADB` export crashed the whole server before it could register a tool — taking down
+ * `tools/list`, `preflight_env` and every lane that has nothing to do with a device, with the
+ * doctor that would have explained the problem never reachable. Deferring it puts the refusal
+ * inside the one handler that actually needs a device, where the caller sees it.
+ */
+let liveOrchestratorInstance: ReturnType<typeof createBoundaryExperimentOrchestrator> | null = null;
+function liveOrchestrator(): ReturnType<typeof createBoundaryExperimentOrchestrator> {
+  return (liveOrchestratorInstance ??= createBoundaryExperimentOrchestrator(createLiveBoundaryExperimentDependencies()));
+}
 
 export function registerBoundaryExperimentTools(server: McpServer): void {
   server.registerTool(
@@ -3977,7 +3990,7 @@ export function registerBoundaryExperimentTools(server: McpServer): void {
     },
     async (args) => {
       try {
-        const result = await liveOrchestrator.execute(args as BoundaryExperimentInput);
+        const result = await liveOrchestrator().execute(args as BoundaryExperimentInput);
         const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [];
         const responseReview = Array.isArray(result.responseReview) ? result.responseReview as RequiredReviewItem[] : [];
         if (responseReview.length > 10) throw new Error("one response may return at most ten newly collected review frames");

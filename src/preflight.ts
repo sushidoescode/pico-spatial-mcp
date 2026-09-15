@@ -214,9 +214,15 @@ function picoSdkCheck(io: PreflightIO): CheckResult {
   return { name: "pico-sdk", status: "pass", detail, fix: null };
 }
 
-/** The explicitly configured adb, from the injected context (production captures process.env). */
+/**
+ * The explicitly configured adb, from the injected context (production captures process.env).
+ * `undefined` means "not supplied, read this process"; an explicit `null` means "there is none",
+ * which `??` alone would have collapsed back into a host read — the leak this field exists to
+ * remove. The jdk row's `javaHomeEnv` is read the same way.
+ */
 function declaredAdbOverride(io: PreflightIO): string {
-  return (io.adbOverride ?? process.env.PICO_ADB ?? "").trim();
+  const declared = io.adbOverride !== undefined ? io.adbOverride : process.env.PICO_ADB ?? null;
+  return (declared ?? "").trim();
 }
 
 /**

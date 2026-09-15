@@ -16,13 +16,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { IdentityCache } from "../dist/identitycache.js";
 import { adbExecutable, clearAdbResolutionCache, resolveAdbExecutable } from "../dist/adb.js";
 import { clearProtoCache, loadProto } from "../dist/grpc.js";
 import { detectJavaHome, gradleEnv } from "../dist/toolchain.js";
-import { executeLiveCaptureSettled, SETTLE_COMPARISON } from "../dist/observation.js";
+import { registerDeployTools } from "../dist/deploy.js";
 import { toolchainIOFromTree } from "./helpers/toolchain-fixture.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -435,46 +436,86 @@ test("gradleEnv and detectJavaHome answer from the same injected context", () =>
 
 // ──────────────────────────────────────────── the refusal reaches a real consumer, and stays lazy
 
-test("a real consumer surfaces the refusal through its own error path, spawning no adb", async (t) => {
-  // executeLiveCaptureSettled is the live entrypoint test/observation.mjs already drives with a
-  // captured-runner fixture. Called WITHOUT injected dependencies it goes through
-  // emulatorlook.resolveAdb() -> adbExecutable(), which is the whole point: the throw has to land
-  // on the consumer's own handler path rather than the consumer quietly capturing with some other
-  // adb. Nothing is spawned, because the refusal happens before the dependency set is built.
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "pico-s4-consumer-"));
-  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
-  const outPath = path.join(scratch, "refused.png");
-  const configured = path.join(scratch, "not-an-adb");
-  fs.writeFileSync(configured, "not executable", { mode: 0o644 });
+test("a real consumer surfaces the refusal through its own error path, spawning no adb", async () => {
+  // STRUCTURALLY hermetic, not incidentally so. `deploy_to_device` reads
+  // `(deps.resolveAdbFn ?? resolveAdb)()` and then runs adb through `deps.runFn` — so leaving
+  // resolveAdbFn UNSET exercises the real adapter (that is the point of a consumer-level case)
+  // while every function that could reach a process is a tripwire that fails this test loudly.
+  //
+  // The previous version of this case passed `{}` for the dependencies and was hermetic only
+  // because production happens to evaluate resolveAdb() before building its runners. That is an
+  // emergent property of adb.ts, not a guarantee of the test: run against pre-fix code it fell
+  // through and executed a real `adb devices -l` on this host (see the report's fix round 2).
+  const reached = [];
+  const tripwire = (name) => (...args) => {
+    reached.push(`${name}(${args.map((a) => JSON.stringify(a)).join(", ")})`);
+    throw new Error(`fixture reached a real spawn: ${name}`);
+  };
+  const handlers = {};
+  registerDeployTools(
+    { registerTool: (name, _metadata, fn) => { handlers[name] = fn; } },
+    {
+      runFn: tripwire("run"),
+      runBinaryFn: tripwire("runBinary"),
+      probeDeviceIdentityFn: tripwire("probeDeviceIdentity"),
+      sleepFn: tripwire("sleep"),
+      // resolveAdbFn deliberately NOT injected: the real adapter must be the thing under test.
+    },
+  );
 
+  const configured = "/fixture/no/such/adb";
   const prior = process.env.PICO_ADB;
   process.env.PICO_ADB = configured;
   clearAdbResolutionCache();
   try {
     await assert.rejects(
-      () => executeLiveCaptureSettled(
-        { serial: "emulator-5554", outPath, maxTries: 2, intervalMs: 0, comparison: SETTLE_COMPARISON },
-        {},
-      ),
+      () => handlers.deploy_to_device({
+        apkPath: "/fixture/app.apk",
+        packageName: "com.fixture.app",
+        // A fixture serial, never emulator-5554 and never a real device: this repository reserves
+        // emulator-5554 for the user, so no test of mine may name it as a target.
+        deviceSerial: "fixture-swan-0000",
+      }),
       (error) => {
-        assert.match(error.message, new RegExp(configured.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-        assert.match(error.message, /not an executable file/);
-        assert.match(error.message, /no fallback was attempted/i);
+        assert.match(error.message, /\/fixture\/no\/such\/adb/, "the configured path must be named");
+        assert.match(error.message, /names no existing file/, "the reason must be named");
+        assert.match(error.message, /no fallback was attempted/i, "the refusal to fall back must be stated");
         return true;
       },
+      "deploy_to_device must surface the refusal instead of running some other adb",
     );
   } finally {
     if (prior === undefined) delete process.env.PICO_ADB; else process.env.PICO_ADB = prior;
     clearAdbResolutionCache();
   }
-  assert.equal(fs.existsSync(outPath), false, "nothing may be captured when the configured adb was refused");
+  assert.deepEqual(reached, [], "no injected runner may be invoked: the refusal must precede every spawn");
+});
+
+test("the loud-runner fixture would actually catch a spawn", async () => {
+  // A tripwire nobody proves can fire is decoration. Same consumer, same stubs, a WORKING
+  // $PICO_ADB — so resolution succeeds and the very next thing the handler does is call runFn.
+  const reached = [];
+  const handlers = {};
+  registerDeployTools(
+    { registerTool: (name, _metadata, fn) => { handlers[name] = fn; } },
+    {
+      runFn: (...args) => { reached.push(args[0]); throw new Error("fixture reached a real spawn: run"); },
+      runBinaryFn: () => { throw new Error("fixture reached a real spawn: runBinary"); },
+      probeDeviceIdentityFn: () => { throw new Error("fixture reached a real spawn: probeDeviceIdentity"); },
+      sleepFn: async () => {},
+      resolveAdbFn: () => "/fixture/usable/adb",
+    },
+  );
+  await assert.rejects(
+    () => handlers.deploy_to_device({ apkPath: "/fixture/app.apk", packageName: "com.fixture.app", deviceSerial: "fixture-swan-0000" }),
+    /fixture reached a real spawn: run/,
+  );
+  assert.deepEqual(reached, ["/fixture/usable/adb"], "the tripwire fires on the first adb invocation");
 });
 
 test("no consumer resolves adb at module load", () => {
-  // src/verifyapk.ts froze its adb into a module constant, and src/index.ts imports it at server
-  // start: one consumer's adb fixed for the process lifetime, a PATH walk plus a sha256 added to
-  // every `tools/list`, and — worst — a bad $PICO_ADB able to throw during server startup instead
-  // of inside the handler that asked for it.
+  // The textual half. src/verifyapk.ts froze its adb into a module constant, and src/index.ts
+  // imports it at server start.
   const offenders = [];
   for (const name of fs.readdirSync(path.join(repoRoot, "src")).filter((f) => f.endsWith(".ts"))) {
     if (name === "adb.ts") continue; // where adbExecutable is defined
@@ -486,4 +527,46 @@ test("no consumer resolves adb at module load", () => {
     }
   }
   assert.deepEqual(offenders, [], "adb must be resolved per call, never frozen at import time");
+});
+
+test("a broken $PICO_ADB cannot break server startup or tool registration", () => {
+  // The BEHAVIOURAL half, and the one that matters: the textual gate above only sees a literal
+  // `adbExecutable(` and missed two real offenders that reached it one hop away —
+  // boundaryexperiment.ts built its live orchestrator at module scope, and worldlocomotion.ts
+  // built its dependencies during registerInAppLocomotionTools(). With a stale PICO_ADB export,
+  // fail-closed resolution turned both into a server that died before registering anything:
+  // tools/list gone, preflight_env gone, and the doctor row that explains the problem
+  // unreachable. Every device-free lane must survive a bad override.
+  //
+  // Runs in a CHILD process so the module registry is clean (this suite has already imported
+  // several dist modules under a good environment) and so the hostile env cannot leak into the
+  // rest of the run. The child imports every dist module except index.js — which would start a
+  // server — and calls every exported register*Tools with a stub. No adb, no device, no emulator.
+  const probe = [
+    'import fs from "node:fs";',
+    'import path from "node:path";',
+    "const dist = process.argv[1];",
+    "const stub = { registerTool: () => {}, tool: () => {}, registerResource: () => {}, registerPrompt: () => {} };",
+    "const failures = [];",
+    'for (const file of fs.readdirSync(dist).filter((f) => f.endsWith(".js") && f !== "index.js").sort()) {',
+    "  let mod;",
+    "  try { mod = await import(path.join(dist, file)); }",
+    "  catch (e) { failures.push(`import ${file}: ${e?.message ?? e}`); continue; }",
+    "  for (const [name, value] of Object.entries(mod)) {",
+    '    if (typeof value !== "function" || !/^register\\w*Tools$/.test(name)) continue;',
+    "    try { value(stub); } catch (e) { failures.push(`${file} ${name}(): ${e?.message ?? e}`); }",
+    "  }",
+    "}",
+    "console.log(JSON.stringify(failures));",
+  ].join("\n");
+
+  const result = spawnSync(
+    process.execPath,
+    ["--input-type=module", "-e", probe, path.join(repoRoot, "dist")],
+    { encoding: "utf8", timeout: 120_000, env: { ...process.env, PICO_ADB: "/fixture/no/such/adb" } },
+  );
+  assert.equal(result.status, 0, `startup probe did not complete: ${result.stderr}`);
+  const failures = JSON.parse(result.stdout.trim().split("\n").pop());
+  const adbFailures = failures.filter((f) => /PICO_ADB|adbExecutable|adb not found/i.test(f));
+  assert.deepEqual(adbFailures, [], "a bad $PICO_ADB must reach the handler that needs a device, never server startup");
 });
