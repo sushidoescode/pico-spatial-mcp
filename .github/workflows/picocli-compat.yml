@@ -24,12 +24,19 @@ jobs:
       - run: npm run build
       - name: Compare complete advertised help-only surfaces
         id: compare
+        # Baseline: 0.4.4 is the documented supported baseline — the last managed version this MCP
+        # was validated against (2026-09-15 audit). `--to latest` is resolved freshly from the
+        # registry on every run; no version is hardcoded as eternally latest. The retained
+        # directory keeps every invocation's argv, exit status, raw streams and limits so a failed
+        # run still leaves evidence. A completed comparison is an observation of advertised help
+        # text, not semantic certification and not a request to publish.
         run: |
           mkdir -p .artifacts
           node scripts/compare-picocli-surfaces.mjs \
-            --from 0.4.2 \
+            --from 0.4.4 \
             --to latest \
-            --output "$GITHUB_WORKSPACE/.artifacts/picocli-compat.json"
+            --output "$GITHUB_WORKSPACE/.artifacts/picocli-compat.json" \
+            --retain "$GITHUB_WORKSPACE/.artifacts/picocli-compat-raw"
       - name: Summarize observational evidence
         if: always()
         env:
@@ -39,18 +46,30 @@ jobs:
             node --input-type=module <<'NODE' >> "$GITHUB_STEP_SUMMARY"
           import fs from "node:fs";
           const report = JSON.parse(fs.readFileSync(".artifacts/picocli-compat.json", "utf8"));
+          const subtrees = (side) => side.inaccessibleSubtrees.map((item) => `${item.command} (exit ${item.exitCode}, ${item.reason})`).join(", ") || "none";
           console.log("## pico-cli help-surface observation");
-          console.log(`- Complete comparison: yes (${report.from.version} → ${report.to.version})`);
+          console.log(`- Comparison completed: yes (${report.from.version} → ${report.to.version}; --to latest resolved at run time)`);
+          console.log(`- Coverage: ${report.coverage.state}`);
+          console.log(`- Inaccessible subtrees in ${report.from.version}: ${subtrees(report.coverage.from)}`);
+          console.log(`- Inaccessible subtrees in ${report.to.version}: ${subtrees(report.coverage.to)}`);
           console.log(`- Added: ${report.addedCommands.length}; removed: ${report.removedCommands.length}; changed help: ${report.changedHelp.length}`);
-          console.log("- Evidence limit: structural help text from the complete reachable advertised help-only tree, excluding the prohibited top-level setup subtree. This does not prove runtime compatibility, hidden aliases, setup-gated descendants, emulator/device behavior, or Windows behavior.");
+          console.log("- Evidence limit: structural help text from the reachable advertised help-only tree, excluding the prohibited top-level setup subtree. Partial coverage means a child answered an error instead of a command listing (for example an unprovisioned profiler payload), so its subtree was not observable. This does not prove runtime compatibility, hidden aliases, setup-gated descendants, emulator/device behavior, or Windows behavior, and it is not a release request.");
           NODE
           else
             {
               echo "## pico-cli help-surface observation"
-              echo "- Complete comparison: no"
-              echo "- No report artifact was published because registry, install, invocation, traversal, or report generation did not complete."
+              echo "- Comparison completed: no"
+              echo "- No comparison report was published because registry, install, invocation, traversal, or report generation did not complete. The retained raw outputs (if any invocation ran) are uploaded as picocli-compat-raw."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Upload retained raw outputs (success and failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: picocli-compat-raw
+          path: .artifacts/picocli-compat-raw
+          retention-days: 30
+          if-no-files-found: warn
       - name: Upload complete comparison only
         if: steps.compare.outcome == 'success'
         uses: actions/upload-artifact@v4
