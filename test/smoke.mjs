@@ -190,4 +190,7 @@ fs.rmSync(scratch, { recursive: true, force: true });
 // check; the fixture log travels with it so the isolation proof needs no shared temp directory.
 console.log(`\nSMOKE_SUMMARY ${JSON.stringify({ checks, failures, fixture: { calls: log.calls, probes: log.probes, refused: log.refused, npmCalls: log.npmCalls } })}`);
 console.log(`\nSmoke test done. Failures: ${failures}`);
-process.exit(failures ? 1 : 0);
+// exitCode, not exit(): stdout to a pipe is asynchronous, and test/smoke-isolation.mjs parses the
+// SMOKE_SUMMARY line above. Exiting here can truncate it. Both clients are closed, so the loop
+// drains on its own and the process still ends promptly.
+process.exitCode = failures ? 1 : 0;

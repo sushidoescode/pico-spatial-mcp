@@ -38,11 +38,17 @@ get a hand-built `.tgz`.
 Smoke builds the server's whole environment itself — an empty tools root, a fixture home, a PATH
 whose first entry holds a fake `adb` that serves only `fixture-serial`, a fake Gradle, and an `npm`
 that refuses every call — so it cannot select host tooling and its result is not a property of your
-machine. `test:smoke-isolation` is what holds that line: it runs smoke twice under two different
-host homes and compares the checks one for one, with tripwire binaries in the second home. The
-tools that genuinely need an SDK live in `node test/sdk-integration.mjs run --project … --bundle …
---output …` — three absolute paths, nothing discovered, deliberately not a gate. Put a host probe
-back into smoke and `test:smoke-isolation` fails; it will not quietly pass because CI is bare.
+machine. `test:smoke-isolation` holds two specific lines, and it is worth knowing which. It runs
+smoke twice — once under an empty home, once under a home stocked with tripwire SDK binaries and a
+`PICO_HOME` naming them — and asserts the check lists and outcomes match, that both runs pass, that
+no tripwire ran, and that the fixture log shows only `fixture-serial` and Gradle calls with no npm.
+It separately asserts, against the source, that `test/smoke.mjs` contains no `process.env`,
+`os.homedir()` or `AndroidStudioProjects`. A leak that changes an outcome (a host PATH, a host
+home) fails the first; a leak that changes only the tools root is caught by the second, because no
+retained check reads the toolchain. The tools that genuinely need an SDK live in
+`node test/sdk-integration.mjs run --project … --bundle … --output …` — three absolute paths,
+nothing discovered, deliberately not a gate, and its report says "no SDK evidence produced" unless
+every step really ran.
 
 **One inventory owns every gate command and its CI lane.** `scripts/gate-inventory.mjs` holds
 `GATES`; each `test:*`/`smoke` script is only `node scripts/run-gate.mjs <name>`, and `run-gate`

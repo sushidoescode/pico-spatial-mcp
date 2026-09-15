@@ -168,11 +168,25 @@ export function createdOutputDirectory(records) {
   return records.find((entry) => entry.check === "output-fresh")?.status === "pass";
 }
 
-/** A run is a pass only if nothing failed. Skips are reported, never counted as evidence. */
+/**
+ * Three separate facts, kept separate because conflating them is exactly how a host with no SDK on
+ * it reports success:
+ *
+ *   noFailures  did anything fail? A skip does not.
+ *   status      `fail` when something did, `pass` when nothing did — a statement about breakage only.
+ *   evidence    did every SDK step actually pass? A skipped step is a labeled absence of tooling,
+ *               never proof that the step would have worked. All seven skipped is `false`.
+ *
+ * `status: "pass"` therefore means "nothing broke", not "the toolchain was exercised". Only
+ * `evidence` says the latter, and the run's final line and `integration-report.json` both carry it.
+ */
 export function summarizeIntegration(records) {
   const counts = { pass: 0, fail: 0, skipped: 0 };
   for (const entry of records) counts[entry.status] += 1;
-  return { status: counts.fail > 0 ? "fail" : "pass", counts, evidence: counts.pass > 0 && counts.fail === 0 };
+  const noFailures = counts.fail === 0;
+  const evidence = noFailures
+    && INTEGRATION_STEPS.every((step) => records.find((entry) => entry.check === step)?.status === "pass");
+  return { status: noFailures ? "pass" : "fail", counts, noFailures, evidence };
 }
 
 /** Steps whose only prerequisite is a live server; they carry no SDK requirement of their own. */
@@ -249,8 +263,11 @@ async function runIntegration(argv) {
     fs.writeFileSync(path.join(args.outputDir, "integration-report.json"), `${JSON.stringify({ args, toolsRoot, spatialbundle, emulatorPayload, records, summary }, null, 2)}\n`);
   }
   for (const entry of records) console.log(`${entry.status.padEnd(7)} ${entry.check}${entry.reason ? ` — ${entry.reason}` : ""}`);
-  console.log(`\nSDK integration ${summary.status}: ${summary.counts.pass} pass, ${summary.counts.fail} fail, ${summary.counts.skipped} skipped`);
-  process.exit(summary.status === "fail" ? 1 : 0);
+  console.log(`\nSDK integration ${summary.status}: ${summary.counts.pass} pass, ${summary.counts.fail} fail, `
+    + `${summary.counts.skipped} skipped${summary.evidence ? "" : " — no SDK evidence produced"}`);
+  // exitCode, not exit(): stdout to a pipe is asynchronous, and exiting here can truncate the
+  // report lines above. Every client is closed by now, so the loop drains on its own.
+  process.exitCode = summary.status === "fail" ? 1 : 0;
 }
 
 // --------------------------------------------------------------------------- fixtures-only gate
@@ -364,17 +381,57 @@ function registerUnitTests() {
       assert.equal(summarizeIntegration(records).status, "pass", "a missing optional payload is not a failure");
 
       assert.deepEqual(summarizeIntegration([record("a", "skipped", "")]), {
-        status: "pass", counts: { pass: 0, fail: 0, skipped: 1 }, evidence: false,
+        status: "pass", counts: { pass: 0, fail: 0, skipped: 1 }, noFailures: true, evidence: false,
       });
+      // The shape the old aggregate got wrong: some prerequisite passed, an SDK step skipped.
       assert.deepEqual(summarizeIntegration([record("a", "pass", ""), record("b", "skipped", "")]), {
-        status: "pass", counts: { pass: 1, fail: 0, skipped: 1 }, evidence: true,
+        status: "pass", counts: { pass: 1, fail: 0, skipped: 1 }, noFailures: true, evidence: false,
       });
       assert.deepEqual(summarizeIntegration([record("a", "pass", ""), record("b", "fail", "boom")]), {
-        status: "fail", counts: { pass: 1, fail: 1, skipped: 0 }, evidence: false,
+        status: "fail", counts: { pass: 1, fail: 1, skipped: 0 }, noFailures: false, evidence: false,
       });
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test("a run that exercised no SDK step reports no evidence, however few things failed", () => {
+    const prerequisites = [
+      record("project-readable", "pass", ""), record("bundle-readable", "pass", ""),
+      record("output-fresh", "pass", ""),
+      record("spatialbundle-available", "skipped", "no spatialbundle payload"),
+      record("emulator-payload-available", "skipped", "no emulator payload"),
+    ];
+
+    // A host with neither payload: nothing fails, five prerequisites pass, every SDK step skips.
+    const bare = summarizeIntegration([
+      ...prerequisites,
+      ...INTEGRATION_STEPS.map((step) => record(step, "skipped", "no payload on this host")),
+    ]);
+    assert.equal(bare.status, "pass", "nothing broke");
+    assert.equal(bare.noFailures, true);
+    assert.equal(bare.evidence, false, "all seven steps skipped is an absence of tooling, not proof");
+    assert.deepEqual(bare.counts, { pass: 3, fail: 0, skipped: 9 });
+
+    // One step short of a full run is still not evidence.
+    const almost = summarizeIntegration([
+      ...prerequisites,
+      ...INTEGRATION_STEPS.map((step, index) => record(step, index === 0 ? "skipped" : "pass", "")),
+    ]);
+    assert.equal(almost.evidence, false, "a single skipped SDK step withdraws the evidence claim");
+
+    const full = summarizeIntegration([
+      ...prerequisites,
+      ...INTEGRATION_STEPS.map((step) => record(step, "pass", "")),
+    ]);
+    assert.equal(full.evidence, true, "every SDK step passed");
+    assert.equal(full.status, "pass");
+
+    // A blocked run reaches no step at all, so it can never claim evidence either.
+    const blocked = [record("output-fresh", "fail", "already exists")];
+    const summary = summarizeIntegration([...blocked, ...blockedStepRecords(blocked)]);
+    assert.equal(summary.status, "fail");
+    assert.equal(summary.evidence, false);
   });
 
   test("a tool error, a thrown call, and a schema mismatch are each a failure", () => {

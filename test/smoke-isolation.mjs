@@ -60,15 +60,33 @@ function decoyHome(root, tripwire) {
   fs.writeFileSync(path.join(bundleDir, "decoy.bundle"), "decoy bundle bytes");
   fs.writeFileSync(path.join(project, "DecoyPackContent.spatialproject"), "{}");
   fs.writeFileSync(path.join(sceneDir, "Main.usda"), "#usda 1.0\n");
-  return home;
+  return { home, toolsRoot: path.dirname(sdk) };
 }
 
-function runSmoke(home) {
+/**
+ * Host variables that name a toolchain. They are stripped from smoke's own environment before it
+ * runs, because leaving them in would collapse the axis this suite exists to vary: a PICO developer
+ * has `PICO_HOME` set, so both runs would resolve the *same* real tools root, and a regression that
+ * re-spread `process.env` into the server would produce identical check lists, never touch the
+ * decoy, and pass. Stripped, the two runs differ on the tools root as well as the home — the decoy
+ * run points `PICO_HOME` at its own tripwired SDK — so a leak resolves different toolchains and is
+ * caught by the comparison or by the tripwire.
+ */
+const HOST_TOOLCHAIN_ENV = /^(?:PICO_|ANDROID_)|^JAVA_HOME$/;
+
+export function smokeChildEnv(home, extra = {}) {
+  const inherited = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !HOST_TOOLCHAIN_ENV.test(key)),
+  );
+  return { ...inherited, HOME: home, USERPROFILE: home, ...extra };
+}
+
+function runSmoke(home, extra = {}) {
   const result = spawnSync(process.execPath, [SMOKE], {
     cwd: repoRoot,
     encoding: "utf8",
     timeout: 300_000,
-    env: { ...process.env, HOME: home, USERPROFILE: home },
+    env: smokeChildEnv(home, extra),
   });
   const line = (result.stdout ?? "").split("\n").find((l) => l.startsWith("SMOKE_SUMMARY "));
   assert.ok(line, `smoke printed no SMOKE_SUMMARY line.\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
@@ -79,8 +97,13 @@ test("default smoke reports the same checks and outcomes whether or not the host
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "pico-smoke-isolation-"));
   const tripwire = path.join(root, "decoy-binary-invocations.log");
   try {
+    const decoyTree = decoyHome(root, tripwire);
+    assert.equal(fs.existsSync(path.join(decoyTree.toolsRoot, "0.13")), true,
+      "the decoy tools root must hold a version directory, or a leak would resolve nothing");
+
     const empty = runSmoke(emptyHome(root));
-    const decoy = runSmoke(decoyHome(root, tripwire));
+    // The second run varies BOTH axes: a different home, and a PICO_HOME naming the decoy SDK.
+    const decoy = runSmoke(decoyTree.home, { PICO_HOME: decoyTree.toolsRoot });
 
     for (const [label, run] of [["empty host home", empty], ["decoy host home", decoy]]) {
       assert.equal(run.status, 0, `${label}: smoke exited ${run.status}\n${run.stdout}\n${run.stderr}`);
@@ -91,7 +114,7 @@ test("default smoke reports the same checks and outcomes whether or not the host
     assert.deepEqual(
       decoy.summary.checks,
       empty.summary.checks,
-      "smoke's check list and outcomes must not depend on what the host home contains",
+      "smoke's check list and outcomes must not depend on the host home or the host PICO_HOME",
     );
 
     assert.equal(
@@ -121,4 +144,21 @@ test("default smoke cannot select host tooling: no host-home lookup and no envir
 
   const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "gates.yml"), "utf8");
   assert.equal(workflow.includes("SMOKE_SDK_OPTIONAL"), false, "CI must not carry an escape hatch for the smoke gate");
+});
+
+test("the child environment strips the host's toolchain variables and keeps only what is passed", () => {
+  const env = smokeChildEnv("/fixture/home", { PICO_HOME: "/fixture/tools" });
+  assert.equal(env.HOME, "/fixture/home");
+  assert.equal(env.USERPROFILE, "/fixture/home");
+  assert.equal(env.PICO_HOME, "/fixture/tools", "only an explicitly passed tools root survives");
+  assert.deepEqual(
+    Object.keys(env).filter((key) => /^(?:PICO_|ANDROID_)|^JAVA_HOME$/.test(key)),
+    ["PICO_HOME"],
+    "no host PICO_*, ANDROID_* or JAVA_HOME may reach the child",
+  );
+  assert.deepEqual(
+    Object.keys(smokeChildEnv("/fixture/home")).filter((key) => /^(?:PICO_|ANDROID_)|^JAVA_HOME$/.test(key)),
+    [],
+    "with nothing passed, the child inherits no toolchain variable at all",
+  );
 });
