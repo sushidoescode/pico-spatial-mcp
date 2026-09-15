@@ -64,6 +64,13 @@ export type CliOperationRoute = {
   argvPrefix: string[] | null;
   /** Which retained evidence or byte-checked source excerpt establishes (or denies) the route. */
   provenance: string;
+  /**
+   * True only when the retained evidence (test/fixtures/picocli/help/index.json) contains an
+   * exit-0 help for this route, i.e. the phrase rule has a positive example. Without one, an
+   * exit-0 help that fails the phrase rule and is not a proven parent shape stays `unknown`
+   * instead of asserting a terminal `unavailable` from an unvalidated branch.
+   */
+  exitZeroHelpObserved: boolean;
 };
 
 export type CliVersionLine = "0.4.x" | "0.5.x";
@@ -89,42 +96,53 @@ const USAGE_SECTION_PATTERN = /\busage\b/i;
 // (`mcp:dev-knowledge`, `knowledge:server`) are single argv tokens and are deliberately not used;
 // the removed spaced `mcp dev-knowledge` route is never resurrected on 0.5.x, and the former
 // `perf monitor run` route is rejected by the 0.5.0 router and appears in no table.
-type RouteTable = Record<CliOperation, { argv: readonly string[] | null; provenance: string }>;
+type RouteTable = Record<CliOperation, { argv: readonly string[] | null; provenance: string; exitZeroHelpObserved: boolean }>;
 
 const ROUTES_0_4: RouteTable = {
+  // exitZeroHelpObserved cites the fixture index entry that holds the exit-0 help for the route.
   "knowledge-server": {
     argv: ["mcp", "dev-knowledge"],
     provenance: "0.4.4 invocation 062 (`mcp dev-knowledge --help`, exit 0) and registration excerpt K044",
+    exitZeroHelpObserved: true, // index.json 0.4.4/062
   },
-  "watch-crash": { argv: ["app", "watch-crash"], provenance: "0.4.4 invocation 025 (`app watch-crash --help`, exit 0)" },
-  "capture-record": { argv: ["capture", "record"], provenance: "0.4.4 invocation 026 (`capture record --help`, exit 0)" },
+  "watch-crash": { argv: ["app", "watch-crash"], provenance: "0.4.4 invocation 025 (`app watch-crash --help`, exit 0)", exitZeroHelpObserved: true /* index.json 0.4.4/025 */ },
+  "capture-record": { argv: ["capture", "record"], provenance: "0.4.4 invocation 026 (`capture record --help`, exit 0)", exitZeroHelpObserved: true /* index.json 0.4.4/026 */ },
   "perf-live": {
     argv: null,
     provenance: "no 0.4.x live-collection route is dispatched: 0.4.4 invocation 012 (`perf --help`) exited 1 at the "
       + "utilities gate (PERF_ENV044 fails before delegating any perf argv) and the former `perf monitor run` route is "
       + "rejected by the 0.5.0 router (PERF_ROUTER050); live collection is routed on 0.5.x only",
+    exitZeroHelpObserved: false, // no route, no help
   },
-  "trace-record": { argv: ["perf", "trace", "record"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012" },
-  "trace-decode": { argv: ["perf", "trace", "decode"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012" },
-  "trace-load": { argv: ["perf", "trace", "load"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012" },
-  "trace-query": { argv: ["perf", "trace", "query"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012" },
+  // The four trace routes have no retained exit-0 help: the only 0.4.4 perf observation (index.json
+  // 0.4.4/012) exited 1 at the utilities gate, so the provisioned 0.1.0 profiler help was never seen.
+  "trace-record": { argv: ["perf", "trace", "record"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false },
+  "trace-decode": { argv: ["perf", "trace", "decode"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false },
+  "trace-load": { argv: ["perf", "trace", "load"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false },
+  "trace-query": { argv: ["perf", "trace", "query"], provenance: "PERF_ENV044 forwards argv to the vendored 0.1.0 profiler; reachability is decided by the utilities gate observed in 0.4.4 invocation 012", exitZeroHelpObserved: false },
 };
 
 const ROUTES_0_5: RouteTable = {
+  // exitZeroHelpObserved cites the fixture index entry that holds the exit-0 help for the route.
   "knowledge-server": {
     argv: ["knowledge", "server"],
     provenance: "0.5.0 invocation 136 (`knowledge server --help`, exit 0) and registration excerpt K050 (spaced `mcp dev-knowledge` removed)",
+    exitZeroHelpObserved: true, // index.json 0.5.0/136
   },
-  "watch-crash": { argv: ["app", "watch-crash"], provenance: "0.5.0 invocation 096 (`app watch-crash --help`, exit 0) and WATCH_ARGS050" },
-  "capture-record": { argv: ["capture", "record"], provenance: "0.5.0 invocation 097 (`capture record --help`, exit 0) and CAPTURE_ARGS050" },
+  "watch-crash": { argv: ["app", "watch-crash"], provenance: "0.5.0 invocation 096 (`app watch-crash --help`, exit 0) and WATCH_ARGS050", exitZeroHelpObserved: true /* index.json 0.5.0/096 */ },
+  "capture-record": { argv: ["capture", "record"], provenance: "0.5.0 invocation 097 (`capture record --help`, exit 0) and CAPTURE_ARGS050", exitZeroHelpObserved: true /* index.json 0.5.0/097 */ },
+  // The five perf routes have no retained exit-0 help: every 0.5.0 perf child observation
+  // (index.json 0.5.0/137-141) exited 3 at the utilities gate, so the help a provisioned 0.2.0
+  // profiler renders (re-rendered by the CLI under `pico-cli perf`, PERF_ROUTER050) was never seen.
   "perf-live": {
     argv: ["perf", "live", "run"],
     provenance: "PERF_ROUTER050 permits live: run/start/stop; 0.5.0 invocation 139 (`perf live --help`) exited 3 at the utilities gate, so evidence decides reachability",
+    exitZeroHelpObserved: false,
   },
-  "trace-record": { argv: ["perf", "trace", "record"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate" },
-  "trace-decode": { argv: ["perf", "trace", "decode"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate" },
-  "trace-load": { argv: ["perf", "trace", "load"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate" },
-  "trace-query": { argv: ["perf", "trace", "query"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate" },
+  "trace-record": { argv: ["perf", "trace", "record"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false },
+  "trace-decode": { argv: ["perf", "trace", "decode"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false },
+  "trace-load": { argv: ["perf", "trace", "load"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false },
+  "trace-query": { argv: ["perf", "trace", "query"], provenance: "PERF_ROUTER050 permits trace: record/stop/decode/load/query/analysis; 0.5.0 invocation 141 (`perf trace --help`) exited 3 at the utilities gate", exitZeroHelpObserved: false },
 };
 
 /** 0.4.x and older lines use the 0.4.4 table; 0.5.x and every newer line is probed with the newest
@@ -142,6 +160,7 @@ export function cliOperationRoutes(version: string): CliOperationRoute[] {
     operation,
     argvPrefix: table[operation].argv ? [...table[operation].argv] : null,
     provenance: `${line}: ${table[operation].provenance}`,
+    exitZeroHelpObserved: table[operation].exitZeroHelpObserved,
   }));
 }
 
@@ -161,22 +180,44 @@ export type HelpClassificationOptions = {
   spawnError?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  /** See CliOperationRoute.exitZeroHelpObserved; defaults to false (the conservative branch). */
+  exitZeroHelpObserved?: boolean;
 };
 
 function firstLine(text: string): string {
   return text.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? "";
 }
 
-function operationPhrasePattern(argvPrefix: string[]): RegExp {
-  const escaped = argvPrefix.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  return new RegExp(`(?:^|[^A-Za-z0-9_-])${escaped.join("[ \\t]+")}(?![A-Za-z0-9_-])`, "m");
+/**
+ * What the help's `pico-cli …` usage/invocation lines say about the route. Every retained child
+ * help (0.4.4 062/025/026, 0.5.0 136/096/097) carries a usage line that starts with the route's
+ * full argv (`$ pico-cli knowledge server`), and every retained parent help (0.4.4 002/011,
+ * 0.5.0 072/080/082) carries `pico-cli <proper prefix of the route> <placeholder>` with the
+ * placeholder starting `[` or `<` (or the line ending). Descriptions are ignored on purpose:
+ * the 0.5.0 `knowledge --help` parent (080) mentions "knowledge server" in prose.
+ */
+function usageRouteMatch(argvPrefix: string[], text: string): "route" | "parent" | null {
+  let parent = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const match = /^\$?\s*pico-cli(?:\s+(.*))?$/.exec(raw.trim());
+    if (!match) continue;
+    const tokens = (match[1] ?? "").trim().split(/\s+/).filter(Boolean);
+    let matched = 0;
+    while (matched < argvPrefix.length && tokens[matched] === argvPrefix[matched]) matched += 1;
+    if (matched === argvPrefix.length) return "route";
+    const next = tokens[matched];
+    if (next === undefined || next.startsWith("[") || next.startsWith("<")) parent = true;
+  }
+  return parent ? "parent" : null;
 }
 
 /**
  * Pure classification of one bounded `<argvPrefix> --help` observation. Nonzero exits are read
- * through their text (utilities gate, environment, router rejection, other); exit-zero output must
- * contain a usage section that names the exact operation phrase, otherwise it is generic parent
- * help (`unavailable`) or malformed (`unknown`).
+ * through their text (utilities gate, environment, router rejection, other). Exit-zero output must
+ * contain a usage section whose `pico-cli …` line names the route's full argv to be `supported`;
+ * a proven parent usage shape is `unavailable` (generic parent help); any other exit-0 shape is
+ * `unavailable` only for routes with a retained exit-0 example and `unknown` otherwise; output
+ * without a usage section is malformed (`unknown`).
  */
 export function classifyHelpOutput(
   operation: CliOperation,
@@ -224,11 +265,19 @@ export function classifyHelpOutput(
   if (!USAGE_SECTION_PATTERN.test(text)) {
     return { state: "unknown", reason: `malformed-help: ${probe} exited 0 but printed no usage section (${firstLine(text).slice(0, 80)})` };
   }
-  if (!operationPhrasePattern(argvPrefix).test(text)) {
+  const routeMatch = usageRouteMatch(argvPrefix, text);
+  if (routeMatch !== "route") {
     const usage = text.split(/\r?\n/).map((line) => line.trim()).find((line) => /pico-cli|usage/i.test(line) && !/^usage:?$/i.test(line)) ?? firstLine(text);
-    return { state: "unavailable", reason: `generic-parent-help: the help rendered for ${probe} does not name \`${phrase}\` (${usage.slice(0, 120)})` };
+    const detail = `no pico-cli usage line in the help rendered for ${probe} names \`${phrase}\` (${usage.slice(0, 120)})`;
+    if (routeMatch === "parent") {
+      return { state: "unavailable", reason: `generic-parent-help: ${detail}; a parent command's usage was rendered instead of the operation's` };
+    }
+    if (options.exitZeroHelpObserved === true) {
+      return { state: "unavailable", reason: `generic-parent-help: ${detail}; the usage rule is validated by retained exit-0 help for this route` };
+    }
+    return { state: "unknown", reason: `generic-parent-help: ${detail}; no retained exit-0 help validates this route's usage shape, so it stays unknown` };
   }
-  return { state: "supported", reason: `help-names-operation: ${probe} exited 0 and its usage names \`${phrase}\`` };
+  return { state: "supported", reason: `help-names-operation: ${probe} exited 0 and a pico-cli usage line names \`${phrase}\`` };
 }
 
 export type ObservedHelp = {
@@ -255,6 +304,7 @@ export function classifyOperation(route: CliOperationRoute, observations: Observ
   }
   const latest = observations[observations.length - 1];
   const outcome = classifyHelpOutput(route.operation, argvPrefix, latest.observation, latest.stdout, latest.stderr, {
+    exitZeroHelpObserved: route.exitZeroHelpObserved,
     ...(latest.spawnError !== undefined ? { spawnError: latest.spawnError } : {}),
     ...(latest.timeoutMs !== undefined ? { timeoutMs: latest.timeoutMs } : {}),
     ...(latest.maxOutputBytes !== undefined ? { maxOutputBytes: latest.maxOutputBytes } : {}),
@@ -316,9 +366,13 @@ export type CapabilityVerification = { status: "ok" } | { status: "rejected"; re
 
 /**
  * Re-read, hash-verify and re-classify one record's evidence. The stored state is a cache: it is
- * honored only when the retained bytes reproduce it.
+ * honored only when the retained bytes reproduce it under the route table for `version`.
  */
-export function verifyOperationCapability(capability: OperationCapability, readEvidence: EvidenceReader): CapabilityVerification {
+export function verifyOperationCapability(
+  capability: OperationCapability,
+  readEvidence: EvidenceReader,
+  version: string,
+): CapabilityVerification {
   const { operation } = capability;
   if (capability.argvPrefix === null) {
     return capability.state === "unavailable" && capability.evidence.length === 0
@@ -344,7 +398,13 @@ export function verifyOperationCapability(capability: OperationCapability, readE
     }
     observed.push({ observation, stdout: stdout.toString("utf8"), stderr: stderr.toString("utf8") });
   }
-  const recomputed = classifyOperation({ operation, argvPrefix: capability.argvPrefix, provenance: "stored record" }, observed);
+  const tableRoute = cliOperationRoutes(version).find((route) => route.operation === operation);
+  const recomputed = classifyOperation({
+    operation,
+    argvPrefix: capability.argvPrefix,
+    provenance: "stored record",
+    exitZeroHelpObserved: tableRoute?.exitZeroHelpObserved ?? false,
+  }, observed);
   if (recomputed.state !== capability.state) {
     return {
       status: "rejected",
@@ -356,7 +416,7 @@ export function verifyOperationCapability(capability: OperationCapability, readE
 
 export function verifyCapabilitySet(set: CliCapabilitySet, readEvidence: EvidenceReader): CapabilityVerification {
   for (const capability of set.operations) {
-    const verification = verifyOperationCapability(capability, readEvidence);
+    const verification = verifyOperationCapability(capability, readEvidence, set.identity.version);
     if (verification.status !== "ok") return verification;
   }
   return { status: "ok" };
@@ -385,7 +445,7 @@ export function resolveOperationCapability(args: {
   if (!record) {
     return unknownCapability(operation, `no-discovery: the bound capability report has no record for ${operation}; call ensure_pico_cli for fresh bounded discovery`);
   }
-  const verification = verifyOperationCapability(record, readEvidence);
+  const verification = verifyOperationCapability(record, readEvidence, set.identity.version);
   if (verification.status !== "ok") return unknownCapability(operation, verification.reason, record.argvPrefix);
   return cloneCapability(record);
 }

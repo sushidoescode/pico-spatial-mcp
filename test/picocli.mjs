@@ -345,6 +345,58 @@ parseCliCapabilitySet(JSON.parse(JSON.stringify(terminalSet))) !== null
   ? ok("parseCliCapabilitySet accepts schema 1 and rejects unknown schema/state values")
   : fail("parseCliCapabilitySet validation wrong");
 
+// --- Fix round 1: an exit-0 help that fails the phrase rule is terminal only when the retained
+// evidence proves the shape. Parent usage lines (002, 011, 072, 080, 082 all render
+// `pico-cli <proper prefix> <placeholder>`) stay unavailable; routes with a retained exit-0 help
+// (062/136, 025/096, 026/097) keep the terminal answer; the five perf routes have no exit-0
+// example (012, 137-141 all exited at the utilities gate), so their unproven branch stays unknown.
+expectState("0.4.4 mcp parent help for mcp dev-knowledge", classify("knowledge-server", ["mcp", "dev-knowledge"], fixture("0.4.4", "011")), "unavailable", /^generic-parent-help:/);
+expectState("0.5.0 knowledge parent help for knowledge server", classify("knowledge-server", ["knowledge", "server"], fixture("0.5.0", "080")), "unavailable", /^generic-parent-help:/);
+expectState("0.4.4 root help for mcp dev-knowledge", classify("knowledge-server", ["mcp", "dev-knowledge"], fixture("0.4.4", "002")), "unavailable", /^generic-parent-help:/);
+expectState("perf parent help (082) for trace-record", classify("trace-record", ["perf", "trace", "record"], fixture("0.5.0", "082")), "unavailable", /^generic-parent-help:/);
+expectState("perf parent help (082) for trace-query via the route flag", classify("trace-query", ["perf", "trace", "query"], fixture("0.5.0", "082"), {}, { exitZeroHelpObserved: false }), "unavailable", /^generic-parent-help:/);
+// Synthetic provisioned-profiler help. Source-derived shape only (the 0.5.0 CLI re-renders
+// profiler help under `pico-cli perf` per PERF_ROUTER050; option names from TRACE_RECORD_ARGS);
+// never observed on this host, which is exactly why the no-phrase branch must not be terminal.
+const provisionedTrace = { ...emptyFixture, stdout: Buffer.from("Description:\nRecord a Perfetto trace from the target device\n\nUsage:\n  $ pico-cli perf trace record [options]\n\nOptions:\n  -a, --package <package>   Target application package name\n  -t, --duration <seconds>  Recording duration in seconds (default: 60)\n  -o, --output <path>       Output trace file path\n") };
+expectState("synthetic provisioned profiler help naming the route", classify("trace-record", ["perf", "trace", "record"], provisionedTrace), "supported", /^help-names-operation:/);
+const unrenderedTrace = { ...emptyFixture, stdout: Buffer.from("Usage: pspp-profiler-cli trace record [options]\n\nOptions:\n  -t, --duration <seconds>  Recording duration in seconds\n") };
+expectState("synthetic profiler help without the phrase stays unknown for an unproven route", classify("trace-record", ["perf", "trace", "record"], unrenderedTrace, {}, { exitZeroHelpObserved: false }), "unknown", /^generic-parent-help:.*unknown/);
+expectState("the unproven branch is the conservative default", classify("trace-record", ["perf", "trace", "record"], unrenderedTrace), "unknown", /^generic-parent-help:/);
+const rewrittenTrace = { ...emptyFixture, stdout: Buffer.from("Usage:\n  $ pico-cli perf record [options]\n") };
+expectState("synthetic re-rendered help naming a different perf path stays unknown", classify("trace-record", ["perf", "trace", "record"], rewrittenTrace), "unknown", /^generic-parent-help:/);
+const liveUnrendered = { ...emptyFixture, stdout: Buffer.from("Usage: profiler live run [options]\n\nOptions:\n  --package <package_name>  Target app package name\n") };
+expectState("synthetic live help without the phrase stays unknown", classify("perf-live", ["perf", "live", "run"], liveUnrendered), "unknown", /^generic-parent-help:/);
+const foreignKnowledge = { ...emptyFixture, stdout: Buffer.from("Usage:\n  $ pico-cli knowledge doctor\n\nOptions:\n  --format <format>  Output format\n") };
+expectState("validated route: exit-0 help naming another child is unavailable", classify("knowledge-server", ["knowledge", "server"], foreignKnowledge, {}, { exitZeroHelpObserved: true }), "unavailable", /^generic-parent-help:/);
+const observedFlags = Object.fromEntries(cliOperationRoutes("0.5.0").map((route) => [route.operation, route.exitZeroHelpObserved]));
+const validatedOperations = ["knowledge-server", "watch-crash", "capture-record"];
+CLI_OPERATIONS.every((operation) => observedFlags[operation] === validatedOperations.includes(operation))
+  && cliOperationRoutes("0.4.4").every((route) => route.exitZeroHelpObserved === validatedOperations.includes(route.operation))
+  ? ok("route tables record which routes have a retained exit-0 help example")
+  : fail(`exitZeroHelpObserved wrong: ${JSON.stringify(observedFlags)}`);
+const traceRoute = cliOperationRoutes("0.5.0").find((route) => route.operation === "trace-record");
+const unknownTrace = classifyOperation(traceRoute, [{
+  observation: { ...observation(emptyFixture, traceRoute.argvPrefix), stdoutPath: "trace.stdout", stderrPath: "trace.stderr", stdoutSha256: sha256(unrenderedTrace.stdout) },
+  stdout: unrenderedTrace.stdout.toString("utf8"),
+  stderr: "",
+}]);
+unknownTrace.state === "unknown" && /^generic-parent-help:/.test(unknownTrace.reason)
+  && capabilityCoverage({ operations: [ksRecord, unknownTrace] }) === "partial"
+  ? ok("an unproven exit-0 classification leaves the operation unknown and the coverage partial")
+  : fail(`unproven exit-0 handling wrong: ${JSON.stringify(unknownTrace)}`);
+const validatedKnowledge = classifyOperation(ksRoute, [{
+  observation: { ...observation(emptyFixture, ksRoute.argvPrefix), stdoutSha256: sha256(fixture("0.5.0", "080").stdout) },
+  stdout: fixture("0.5.0", "080").stdout.toString("utf8"),
+  stderr: "",
+}]);
+validatedKnowledge.state === "unavailable" && capabilityCoverage({ operations: [ksRecord, validatedKnowledge] }) === "complete"
+  ? ok("classifyOperation keeps the proven parent-help answer terminal")
+  : fail(`proven parent-help handling wrong: ${JSON.stringify(validatedKnowledge)}`);
+const staleUnavailable = { ...terminalSet, operations: [{ ...unknownTrace, state: "unavailable", reason: "generic-parent-help: stored by an older classifier" }] };
+const readTraceEvidence = (file) => file === "trace.stdout" ? unrenderedTrace.stdout : file === "trace.stderr" ? Buffer.alloc(0) : null;
+expectState("a stored terminal answer for an unproven byte shape is rejected on re-verification", resolveOperationCapability({ set: staleUnavailable, target: identity, operation: "trace-record", readEvidence: readTraceEvidence }), "unknown", /^report-inconsistent:/);
+
 // --- classifyPicoCliFailure: retained bytes plus the 0.5.0 router/environment strings.
 classifyPicoCliFailure(fixture("0.4.4", "012").stderr.toString("utf8"), "") === "setup-required"
   && classifyPicoCliFailure(fixture("0.5.0", "139").stderr.toString("utf8"), "") === "setup-required"
