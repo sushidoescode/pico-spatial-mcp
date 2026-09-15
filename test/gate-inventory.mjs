@@ -22,9 +22,11 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  FIXTURE_NO_ADB,
   GATES,
   GATE_HOSTS,
   GATE_SCOPES,
+  gateChildEnv,
   gateHostCounts,
   gateScriptCommand,
   gatesForHost,
@@ -366,7 +368,9 @@ test("commands run sequentially, with no shell, inheriting stdio, in the given r
     assert.equal(call.options.shell, false);
     assert.equal(call.options.stdio, "inherit");
     assert.equal(call.options.cwd, "/tmp/some checkout");
-    assert.deepEqual(call.options.env, { PICO_FIXTURE: "1" });
+    // The caller's env plus the hermeticity default: test:eye is a fixture gate and the caller
+    // set no PICO_ADB, so the child gets FIXTURE_NO_ADB (the cases below take that apart).
+    assert.deepEqual(call.options.env, { PICO_FIXTURE: "1", PICO_ADB: FIXTURE_NO_ADB });
     assert.equal(
       call.options.timeout,
       undefined,
@@ -374,6 +378,94 @@ test("commands run sequentially, with no shell, inheriting stdio, in the given r
     );
   }
   assert.ok(GATE_TIMEOUT_MS > 0 && GATE_KILL_GRACE_MS > 0, "both rungs of the bound must be positive");
+});
+
+// --------------------------------------------------------------------------------------------
+// run-gate: the PICO_ADB hermeticity barrier is applied, not remembered
+// --------------------------------------------------------------------------------------------
+//
+// The 38.0.0 checkpoint's every recorded run exported PICO_ADB=/fixture/no/such/adb by hand, and
+// three RED-phase runs reached real hardware before that ruling existed. These cases pin the
+// barrier as run-gate behaviour: a fixture or installed-artifact child whose caller set nothing
+// runs under the literal; a caller-set value always wins; a native-contract child is untouched;
+// and nothing here writes process.env.
+
+test("FIXTURE_NO_ADB is the exact literal the checkpoint's runs exported, and names no file", () => {
+  assert.equal(FIXTURE_NO_ADB, "/fixture/no/such/adb");
+  assert.equal(fs.existsSync(FIXTURE_NO_ADB), false, "the barrier only works because src/adb.ts cannot find this file");
+});
+
+test("a fixture gate child gets PICO_ADB=FIXTURE_NO_ADB when the caller set none", async () => {
+  const record = [];
+  const callerEnv = { PATH: "/usr/bin" };
+  const exit = await runGate("test:ledger", { root: repoRoot, env: callerEnv, spawnChild: fakeSpawn(record), verify: fresh });
+  assert.equal(exit, 0);
+  assert.equal(record.length, 1);
+  assert.deepEqual(record[0].options.env, { PATH: "/usr/bin", PICO_ADB: FIXTURE_NO_ADB });
+  assert.deepEqual(callerEnv, { PATH: "/usr/bin" }, "the caller's env object must not be written");
+});
+
+test("an installed-artifact gate child gets the same default", async () => {
+  const record = [];
+  const exit = await runGate("test:tarball", { root: repoRoot, env: { PATH: "/usr/bin" }, spawnChild: fakeSpawn(record), verify: fresh });
+  assert.equal(exit, 0);
+  assert.equal(record.length, GATES["test:tarball"].commands.length, "every command of the gate ran");
+  for (const call of record) assert.equal(call.options.env.PICO_ADB, FIXTURE_NO_ADB);
+});
+
+test("a caller-set PICO_ADB always wins over the default", async () => {
+  const record = [];
+  await runGate("test:ledger", {
+    root: repoRoot,
+    env: { PATH: "/usr/bin", PICO_ADB: "/opt/fixture/own-adb" },
+    spawnChild: fakeSpawn(record),
+    verify: fresh,
+  });
+  assert.deepEqual(record[0].options.env, { PATH: "/usr/bin", PICO_ADB: "/opt/fixture/own-adb" });
+  // An explicitly EMPTY value is still the caller's choice (src/adb.ts treats it as unset and
+  // walks PATH), not an invitation to substitute the fixture path.
+  const emptied = [];
+  await runGate("test:ledger", { root: repoRoot, env: { PICO_ADB: "" }, spawnChild: fakeSpawn(emptied), verify: fresh });
+  assert.deepEqual(emptied[0].options.env, { PICO_ADB: "" });
+});
+
+test("a native-contract gate child gets no PICO_ADB default", async () => {
+  const record = [];
+  const callerEnv = { PATH: "/usr/bin" };
+  const exit = await runGate("test:vcamtransport-native", {
+    root: repoRoot,
+    env: callerEnv,
+    spawnChild: fakeSpawn(record),
+    verify: () => ({ current: false, reasons: ["stale"] }),
+  });
+  assert.equal(exit, 0);
+  assert.equal(record[0].options.env, callerEnv, "a shell contract runs under exactly the env it was handed");
+  assert.equal("PICO_ADB" in record[0].options.env, false);
+});
+
+test("the default is built into the child env, never written to process.env", async () => {
+  const before = process.env.PICO_ADB;
+  const record = [];
+  const env = {};
+  await runGate("test:ledger", { root: repoRoot, env, spawnChild: fakeSpawn(record), verify: fresh });
+  assert.equal(record[0].options.env.PICO_ADB, FIXTURE_NO_ADB);
+  assert.equal(process.env.PICO_ADB, before, "runGate must not export the pin into its own process");
+  assert.deepEqual(env, {}, "the env object the caller passed must stay as it was");
+  assert.notEqual(gateChildEnv(GATES["test:ledger"], env), env, "a fixture gate gets a fresh env object");
+  assert.equal(gateChildEnv(GATES["test:vcamtransport-native"], env), env, "a native-contract gate gets the very same object");
+});
+
+test("gates.yml carries the same literal at workflow level, covering the one raw node --test step", () => {
+  const workflow = readWorkflow();
+  const jobsAt = workflow.indexOf("\njobs:\n");
+  assert.ok(jobsAt > 0, "gates.yml must declare jobs:");
+  const beforeJobs = workflow.slice(0, jobsAt + 1);
+  assert.match(beforeJobs, new RegExp(`^env:\\n  PICO_ADB: ${FIXTURE_NO_ADB.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}\\n`, "m"),
+    "a workflow-level env: block must pin PICO_ADB to FIXTURE_NO_ADB before the first job");
+  // The raw step this exists for is still raw (it is not a named gate, so run-gate cannot pin it).
+  assert.match(workflow, /run: node --test test\/homeenvironmenthost\.mjs/);
+  // …and adding the block did not confuse the lane parser.
+  assert.deepEqual(parseWorkflowLanes(workflow).map((lane) => lane.job), ["picocli-windows", "gates", "vcam-native"]);
 });
 
 test("the first nonzero exit propagates and stops the remaining commands", async () => {

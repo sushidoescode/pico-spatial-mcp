@@ -26,6 +26,29 @@
 export const GATE_HOSTS = Object.freeze(["linux", "windows", "macos"]);
 export const GATE_SCOPES = Object.freeze(["fixture", "native-contract", "installed-artifact"]);
 
+/**
+ * The `$PICO_ADB` every `fixture` and `installed-artifact` gate child runs under unless the caller
+ * set one: a path that names no file, so `src/adb.ts` — which fails CLOSED on an explicit override
+ * it cannot use and probes nothing else — turns any suite that still reaches a real adb into a
+ * loud failure instead of a device contact.
+ *
+ * This is the exact literal the 38.0.0 checkpoint's every recorded run exported by hand, made an
+ * invariant. Three RED-phase runs in that checkpoint reached real hardware because the barrier was
+ * procedural (a ruling to export it) rather than enforced: a real `adb devices -l` against the
+ * host's adb server (S4), a real device listing alongside a real packer launch (R4/C5), and ~20
+ * irreversible `logcat -c` clears of the user's emulator (C6). Fixtures that need their own adb
+ * already name it in the child env, which is why a caller-set value always wins here.
+ * `native-contract` gates compile native sources and never resolve adb, so they get no default.
+ */
+export const FIXTURE_NO_ADB = "/fixture/no/such/adb";
+
+/** The env a gate child is spawned with. Never mutates the env it is handed. */
+export function gateChildEnv(gate, env) {
+  if (gate.scope === "native-contract") return env;
+  if (env.PICO_ADB !== undefined) return env;
+  return { ...env, PICO_ADB: FIXTURE_NO_ADB };
+}
+
 /** Every gate, in the order the battery runs them. @type {Readonly<Record<string, {host: "linux"|"windows"|"macos", commands: string[][], scope: "fixture"|"native-contract"|"installed-artifact"}>>} */
 export const GATES = Object.freeze({
   smoke: { host: "linux", scope: "fixture", commands: [["node", "test/smoke.mjs"]] },

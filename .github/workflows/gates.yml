@@ -8,6 +8,14 @@ concurrency:
   group: gates-${{ github.ref }}
   cancel-in-progress: true
 
+# The hermeticity barrier every lane runs under. scripts/run-gate.mjs applies the same literal
+# (FIXTURE_NO_ADB in scripts/gate-inventory.mjs) to every fixture/installed-artifact gate child
+# whose caller set nothing; this workflow-level value also covers the one raw `node --test` step
+# below that does not go through run-gate. src/adb.ts fails closed on an explicit adb that names
+# no file, so a suite that still reaches adb fails loudly instead of starting the runner's adb.
+env:
+  PICO_ADB: /fixture/no/such/adb
+
 jobs:
   picocli-windows:
     runs-on: windows-latest

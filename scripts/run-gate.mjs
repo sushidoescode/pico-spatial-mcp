@@ -13,6 +13,11 @@
  * script and never load `dist/`, so a stale TypeScript build is not their problem and checking it
  * would only produce a confusing failure.
  *
+ * The same two scopes also get the hermeticity barrier by default: unless the caller set
+ * `$PICO_ADB` itself, the child runs under `FIXTURE_NO_ADB` (scripts/gate-inventory.mjs), a path
+ * naming no file, which `src/adb.ts` refuses outright instead of falling through to a real adb.
+ * A suite that still reaches adb therefore fails loudly here rather than touching a device.
+ *
  * Every command is spawned with `shell:false` and inherited stdio, in order, bounded by
  * GATE_TIMEOUT_MS. The first nonzero exit is returned and the rest of the gate does not run.
  */
@@ -21,7 +26,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { verifyBuild } from "./build-identity.mjs";
-import { GATES } from "./gate-inventory.mjs";
+import { GATES, gateChildEnv } from "./gate-inventory.mjs";
 import { npmLaunch } from "./plugin-bootstrap.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -165,8 +170,14 @@ export async function runGate(name, {
     }
   }
 
+  // The hermeticity barrier, applied here rather than remembered: a `fixture` or
+  // `installed-artifact` child whose caller set no `$PICO_ADB` runs under FIXTURE_NO_ADB, which
+  // `src/adb.ts` refuses without probing anything else. A caller-set value always wins, a
+  // `native-contract` gate is left alone, and `process.env` is never written — the child gets a
+  // fresh object (see gateChildEnv).
+  const childEnv = gateChildEnv(gate, env);
   for (const argv of gate.commands) {
-    const exit = await runArgv(argv, { root, env, timeoutMs, graceMs, platform, spawnChild });
+    const exit = await runArgv(argv, { root, env: childEnv, timeoutMs, graceMs, platform, spawnChild });
     if (exit !== 0) return exit;
   }
   return 0;
