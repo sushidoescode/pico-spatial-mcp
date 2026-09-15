@@ -71,7 +71,17 @@ export type CliOperationRoute = {
    * instead of asserting a terminal `unavailable` from an unvalidated branch.
    */
   exitZeroHelpObserved: boolean;
+  /**
+   * The flag this route's line advertises for bounding its OWN observation window, or null when
+   * the line advertises none. Consumers pass the requested duration through this flag instead of
+   * relying on an outer kill; see cliobservations.ts. Never derived from a version comparison —
+   * every entry cites the retained help that advertises (or lacks) the flag.
+   */
+  nativeDurationFlag: CliRouteDurationFlag | null;
 };
+
+/** A duration flag advertised by a route's retained help, with the evidence that advertises it. */
+export type CliRouteDurationFlag = { flag: string; provenance: string };
 
 export type CliVersionLine = "0.4.x" | "0.5.x";
 
@@ -96,7 +106,7 @@ const USAGE_SECTION_PATTERN = /\busage\b/i;
 // (`mcp:dev-knowledge`, `knowledge:server`) are single argv tokens and are deliberately not used;
 // the removed spaced `mcp dev-knowledge` route is never resurrected on 0.5.x, and the former
 // `perf monitor run` route is rejected by the 0.5.0 router and appears in no table.
-type RouteTable = Record<CliOperation, { argv: readonly string[] | null; provenance: string; exitZeroHelpObserved: boolean }>;
+type RouteTable = Record<CliOperation, { argv: readonly string[] | null; provenance: string; exitZeroHelpObserved: boolean; nativeDurationFlag?: CliRouteDurationFlag }>;
 
 const ROUTES_0_4: RouteTable = {
   // exitZeroHelpObserved cites the fixture index entry that holds the exit-0 help for the route.
@@ -105,6 +115,8 @@ const ROUTES_0_4: RouteTable = {
     provenance: "0.4.4 invocation 062 (`mcp dev-knowledge --help`, exit 0) and registration excerpt K044",
     exitZeroHelpObserved: true, // index.json 0.4.4/062
   },
+  // No nativeDurationFlag on this line: retained help 0.4.4/025 advertises --launch-timeout only,
+  // and WATCH044 shows the monitoring loop bounded by an internal 30 s constant with no flag.
   "watch-crash": { argv: ["app", "watch-crash"], provenance: "0.4.4 invocation 025 (`app watch-crash --help`, exit 0)", exitZeroHelpObserved: true /* index.json 0.4.4/025 */ },
   "capture-record": { argv: ["capture", "record"], provenance: "0.4.4 invocation 026 (`capture record --help`, exit 0)", exitZeroHelpObserved: true /* index.json 0.4.4/026 */ },
   "perf-live": {
@@ -129,7 +141,17 @@ const ROUTES_0_5: RouteTable = {
     provenance: "0.5.0 invocation 136 (`knowledge server --help`, exit 0) and registration excerpt K050 (spaced `mcp dev-knowledge` removed)",
     exitZeroHelpObserved: true, // index.json 0.5.0/136
   },
-  "watch-crash": { argv: ["app", "watch-crash"], provenance: "0.5.0 invocation 096 (`app watch-crash --help`, exit 0) and WATCH_ARGS050", exitZeroHelpObserved: true /* index.json 0.5.0/096 */ },
+  "watch-crash": {
+    argv: ["app", "watch-crash"],
+    provenance: "0.5.0 invocation 096 (`app watch-crash --help`, exit 0) and WATCH_ARGS050",
+    exitZeroHelpObserved: true, // index.json 0.5.0/096
+    nativeDurationFlag: {
+      flag: "--monitor-timeout",
+      provenance: "index.json 0.5.0/096 (`app watch-crash --help`, exit 0) advertises "
+        + "`--monitor-timeout <seconds>  Total wall-clock seconds to wait for the process and crash signals (default: 30)`; "
+        + "WATCH_ARGS050 declares the same option and WATCH050 shows one shared deadline covering launch, PID wait, polling and final log collection",
+    },
+  },
   "capture-record": { argv: ["capture", "record"], provenance: "0.5.0 invocation 097 (`capture record --help`, exit 0) and CAPTURE_ARGS050", exitZeroHelpObserved: true /* index.json 0.5.0/097 */ },
   // The five perf routes have no retained exit-0 help: every 0.5.0 perf child observation
   // (index.json 0.5.0/137-141) exited 3 at the utilities gate, so the help a provisioned 0.2.0
@@ -161,7 +183,23 @@ export function cliOperationRoutes(version: string): CliOperationRoute[] {
     argvPrefix: table[operation].argv ? [...table[operation].argv] : null,
     provenance: `${line}: ${table[operation].provenance}`,
     exitZeroHelpObserved: table[operation].exitZeroHelpObserved,
+    nativeDurationFlag: table[operation].nativeDurationFlag
+      ? { ...table[operation].nativeDurationFlag as CliRouteDurationFlag }
+      : null,
   }));
+}
+
+/**
+ * The duration flag this operation's line advertises, or null when it advertises none. A caller
+ * must still hold a `supported` capability for the same target before dispatching: this answers
+ * "does the resolved line document the flag", never "can this package run the operation".
+ */
+export function cliOperationNativeDurationFlag(version: string, operation: CliOperation): CliRouteDurationFlag | null {
+  // A duration flag is a POSITIVE claim about the installed CLI. cliOperationRoutes deliberately
+  // probes an unrecognizable line with the newest table (candidate argv the evidence then judges),
+  // but an unparseable version must never inherit that table's flag: nothing would judge it.
+  if (!/^v?\d+\.\d+(?:\.|$)/.test(version.trim())) return null;
+  return cliOperationRoutes(version).find((route) => route.operation === operation)?.nativeDurationFlag ?? null;
 }
 
 export type HelpFailureKind = "utilities-not-installed" | "environment" | "unknown-command" | "nonzero-exit";
@@ -404,6 +442,9 @@ export function verifyOperationCapability(
     argvPrefix: capability.argvPrefix,
     provenance: "stored record",
     exitZeroHelpObserved: tableRoute?.exitZeroHelpObserved ?? false,
+    // Re-verification only re-classifies the retained bytes; the dispatch-time duration flag is
+    // read from the live route table, never from a stored record.
+    nativeDurationFlag: null,
   }, observed);
   if (recomputed.state !== capability.state) {
     return {
@@ -459,6 +500,21 @@ const FRESH_DISCOVERY_REASON_PATTERN = /^(?:no-discovery|stale-identity|evidence
 
 export function capabilityNeedsFreshDiscovery(reason: string): boolean {
   return FRESH_DISCOVERY_REASON_PATTERN.test(reason);
+}
+
+/** The failure classes a capability refusal can carry — a subset of picocli.ts's PicoCliFailureClass. */
+export type CapabilityFailureClass = "setup-required" | "environment" | "flag-or-version-drift" | "cli-unusable";
+
+/**
+ * Honest failure class for a capability that cannot serve its route. The reason prefixes are the
+ * stable contract of `classifyHelpOutput`, so this map lives beside them (and beside
+ * capabilityNeedsFreshDiscovery) rather than being re-derived by each consumer.
+ */
+export function capabilityFailureClass(capability: Pick<OperationCapability, "reason">): CapabilityFailureClass {
+  if (/^utilities-not-installed:/.test(capability.reason)) return "setup-required";
+  if (/^environment:/.test(capability.reason)) return "environment";
+  if (/^unknown-command:/.test(capability.reason)) return "flag-or-version-drift";
+  return "cli-unusable";
 }
 
 const SHA256_HEX = /^[a-f0-9]{64}$/;

@@ -415,5 +415,62 @@ typeof environmentGuidance === "string" && /PICO_HOME/.test(environmentGuidance)
   ? ok("environment guidance names PICO_HOME exactly and never prescribes running setup")
   : fail(`environment guidance wrong: ${JSON.stringify(environmentGuidance)}`);
 
+// --- C3: watch-crash observation coverage, native-timeout route facts and the shared failure map.
+// The route fact is checked against the RETAINED HELP BYTES, not against a version string: 0.4.4
+// invocation 025 advertises only --launch-timeout, 0.5.0 invocation 096 adds --monitor-timeout.
+const {
+  capabilityFailureClass,
+  cliOperationNativeDurationFlag,
+} = await import("../dist/clicapabilities.js");
+const { watchArgv } = await import("../dist/cliobservations.js");
+
+const watchHelp044 = fixture("0.4.4", "025").stdout.toString("utf8");
+const watchHelp050 = fixture("0.5.0", "096").stdout.toString("utf8");
+!/--monitor-timeout/.test(watchHelp044) && /--monitor-timeout <seconds>/.test(watchHelp050)
+  && /Total wall-clock seconds to wait for the process and crash signals/.test(watchHelp050)
+  ? ok("retained watch-crash help: 0.4.4 has no --monitor-timeout; 0.5.0 documents it as shared wall-clock budget")
+  : fail("retained watch-crash help bytes do not match the recorded --monitor-timeout facts");
+cliOperationNativeDurationFlag("0.4.4", "watch-crash") === null
+  && cliOperationNativeDurationFlag("0.5.0", "watch-crash")?.flag === "--monitor-timeout"
+  && /096/.test(cliOperationNativeDurationFlag("0.5.0", "watch-crash")?.provenance ?? "")
+  ? ok("the native watch duration flag is a per-version route fact citing the retained 096 help")
+  : fail(`native duration route fact wrong: ${JSON.stringify(cliOperationNativeDurationFlag("0.5.0", "watch-crash"))}`);
+CLI_OPERATIONS.filter((operation) => operation !== "watch-crash")
+  .every((operation) => cliOperationNativeDurationFlag("0.5.0", operation) === null
+    && cliOperationNativeDurationFlag("0.4.4", operation) === null)
+  ? ok("no other operation claims a native duration flag on either line")
+  : fail("a non-watch operation claims a native duration flag");
+JSON.stringify(watchArgv("com.example.fixture", "fixture-serial", 60, true))
+    === JSON.stringify(["app", "watch-crash", "com.example.fixture", "-d", "fixture-serial", "--monitor-timeout", "60"])
+  && JSON.stringify(watchArgv("com.example.fixture", "fixture-serial", 60, false))
+    === JSON.stringify(["app", "watch-crash", "com.example.fixture", "-d", "fixture-serial"])
+  ? ok("watchArgv passes --monitor-timeout only when the route facts say the flag exists")
+  : fail(`watchArgv wrong: ${JSON.stringify(watchArgv("com.example.fixture", "fixture-serial", 60, true))}`);
+
+// The reason-prefix -> failure-class map now lives beside capabilityNeedsFreshDiscovery so the
+// knowledge, watch and (later) perf consumers all read one table.
+capabilityFailureClass({ reason: "utilities-not-installed: `app watch-crash --help` exited 1" }) === "setup-required"
+  && capabilityFailureClass({ reason: "environment: `app watch-crash --help` exited 3" }) === "environment"
+  && capabilityFailureClass({ reason: "unknown-command: the installed CLI rejected `app watch-crash --help`" }) === "flag-or-version-drift"
+  && capabilityFailureClass({ reason: "no-discovery: no bounded help observation was recorded" }) === "cli-unusable"
+  ? ok("capabilityFailureClass maps the stable reason prefixes for every capability consumer")
+  : fail("capabilityFailureClass reason-prefix mapping wrong");
+
+// The environment remedy no longer asserts "profiler payload" for an operation that never
+// resolves one (PERF_ENV050 places the PICO_HOME read inside profiler-entry resolution only).
+const perfEnvironmentGuidance = describePicoCliEnvironmentFailure("Error: [warn] PICO_HOME is not set.", "", "trace-record");
+const watchEnvironmentGuidance = describePicoCliEnvironmentFailure("Error: [warn] PICO_HOME is not set.", "", "watch-crash");
+/profiler payload/.test(perfEnvironmentGuidance ?? "") && !/profiler payload/.test(watchEnvironmentGuidance ?? "")
+  && /PICO_HOME/.test(watchEnvironmentGuidance ?? "") && !/pico-cli\s+setup/i.test(watchEnvironmentGuidance ?? "")
+  ? ok("environment guidance names the profiler payload only for perf operations")
+  : fail(`operation-conditional environment guidance wrong: ${JSON.stringify({ perfEnvironmentGuidance, watchEnvironmentGuidance })}`);
+
+// The watch_crash surface no longer repeats the retired "no duration flag" claim.
+const watchDescription = picoCliToolMetadata.watch_crash?.description ?? "";
+!/no duration flag/i.test(watchDescription) && !/streams indefinitely/i.test(watchDescription)
+  && /--monitor-timeout/.test(watchDescription) && /observed/i.test(watchDescription)
+  ? ok("watch_crash description states the observed-window contract instead of the retired claim")
+  : fail(`watch_crash description still carries retired wording: ${JSON.stringify(watchDescription.slice(0, 200))}`);
+
 console.log(`\npico-cli lane test done. Failures: ${failures}`);
 process.exit(failures ? 1 : 0);

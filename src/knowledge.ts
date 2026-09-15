@@ -21,6 +21,7 @@ import {
   type PicoCliProvenance,
 } from "./picocli.js";
 import {
+  capabilityFailureClass,
   capabilityNeedsFreshDiscovery,
   cliOperationRoutes,
   unknownCapability,
@@ -921,15 +922,6 @@ async function retireKnowledgeGeneration(
     ]);
   }
   return finishRetirementValidation(session, deadlineMs, outcome);
-}
-
-/** Honest CLI failure class for a capability that cannot serve the knowledge route. The reason
- * prefixes are the stable contract of `classifyHelpOutput`. */
-function capabilityFailureClass(capability: OperationCapability): PicoCliFailureClass {
-  if (/^utilities-not-installed:/.test(capability.reason)) return "setup-required";
-  if (/^environment:/.test(capability.reason)) return "environment";
-  if (/^unknown-command:/.test(capability.reason)) return "flag-or-version-drift";
-  return "cli-unusable";
 }
 
 function knowledgeTransportRefusal(capability: OperationCapability): KnowledgeTransportRefusal {

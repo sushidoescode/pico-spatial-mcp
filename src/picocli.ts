@@ -986,16 +986,142 @@ export function classifyPicoCliFailure(
   return PICO_CLI_USAGE_DRIFT_PATTERN.test(text) ? "flag-or-version-drift" : "runtime";
 }
 
+/** The operations whose PICO_HOME read is evidenced: PERF_ENV050 places it inside profiler-entry
+ * resolution, so only a perf/trace route can be said to have read it "before locating its profiler
+ * payload". Any other operation gets the same remedy without that unevidenced clause. */
+const PICO_CLI_PROFILER_OPERATIONS: ReadonlySet<CliOperation> = new Set<CliOperation>([
+  "perf-live", "trace-record", "trace-decode", "trace-load", "trace-query",
+]);
+
 /**
  * Exact guidance for an `environment` failure, or null when the output shows no such condition.
  * It names the variable the CLI read and what it must contain; it never prescribes running
  * setup, because an unset environment root is not evidence that the payload is absent.
+ *
+ * `operation` makes the payload clause operation-conditional: the retained excerpt that shows the
+ * PICO_HOME read (PERF_ENV050) is the profiler-entry resolver, so claiming "profiler payload" for a
+ * watch or capture run would attribute a cause we have not observed for it.
  */
-export function describePicoCliEnvironmentFailure(stderr: string, stdout: string): string | null {
+export function describePicoCliEnvironmentFailure(
+  stderr: string,
+  stdout: string,
+  operation?: CliOperation,
+): string | null {
   const text = `${stderr}\n${stdout}`;
   if (!PICO_CLI_ENVIRONMENT_PATTERN.test(text)) return null;
-  return "pico-cli read PICO_HOME before locating its profiler payload and found it unset or not absolute. "
+  const profilerScoped = operation === undefined || PICO_CLI_PROFILER_OPERATIONS.has(operation);
+  return (profilerScoped
+    ? "pico-cli read PICO_HOME before locating its profiler payload and found it unset or not absolute. "
+    : "pico-cli read PICO_HOME and found it unset or not absolute. ")
     + "Set PICO_HOME to the absolute PICO SDK root for the MCP server process (the root validate_toolchain resolves), "
-    + "restart the MCP server, and retry. This server never sets PICO_HOME implicitly; whether the profiler payload "
-    + "itself is provisioned is a separate question answered by the CLI's own utilities message, not by this classification.";
+    + "restart the MCP server, and retry. This server never sets PICO_HOME implicitly; "
+    + (profilerScoped
+      ? "whether the profiler payload itself is provisioned is a separate question answered by the CLI's own utilities message, not by this classification."
+      : "which payload this operation could not resolve is answered by the CLI's own output, not by this classification.");
+}
+
+// Retained CLI observations -------------------------------------------------------------------
+// Bounded raw output from a CLI-backed operation, written once into a run-unique directory in the
+// MCP-owned managed store, beside the per-operation help evidence discovery retains
+// (picoclimanaged.ts: <managedRoot>/capabilities/<version>/<identityKey>/<runId>/). Same rules:
+// `wx` + fsync, never overwritten, and a retention failure is reported, never thrown.
+
+const OBSERVATION_STORE_DIRECTORY = "observations";
+const OBSERVATION_RECORD_FILE = "observation.json";
+
+/** <managedRoot>/observations — the default root for retained CLI observations. */
+export function picoCliObservationRoot(): string {
+  const home = managedHomeFromSnapshot(process.env, process.platform);
+  return path.join(path.resolve(path.join(home, ".pico-mcp", "cli")), OBSERVATION_STORE_DIRECTORY);
+}
+
+export type PicoCliObservationRetentionInput = {
+  /** The MCP operation that produced the bytes, e.g. "watch-crash". Used as the store subtree. */
+  operation: string;
+  argv: string[];
+  result: Pick<PicoCliCommandResult, "code" | "signal" | "stdout" | "stderr" | "timedOut" | "outputTruncated"> & { spawnError?: string };
+  /** Extra immutable facts recorded beside the bytes (coverage, requested window, provenance). */
+  metadata?: Record<string, unknown>;
+  /** Injected for deterministic run directories in tests; production uses a fresh UUID. */
+  runId?: string;
+  now?: () => number;
+};
+
+export type PicoCliRetainedObservation =
+  | {
+      retained: true;
+      directory: string;
+      stdoutPath: string;
+      stderrPath: string;
+      recordPath: string;
+      stdoutSha256: string;
+      stderrSha256: string;
+      stdoutBytes: number;
+      stderrBytes: number;
+      outputTruncated: boolean;
+    }
+  | { retained: false; error: string };
+
+function writeImmutableBytes(file: string, bytes: Buffer): void {
+  const descriptor = fs.openSync(file, "wx");
+  try {
+    fs.writeFileSync(descriptor, bytes);
+    fs.fsyncSync(descriptor);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+/**
+ * Retain one bounded observation's raw streams. The run directory is created non-recursively and
+ * every file is opened `wx`, so an existing run is refused rather than overwritten; the caller gets
+ * `{retained:false, error}` and can still report the observation without its evidence paths.
+ */
+export function retainPicoCliObservation(
+  input: PicoCliObservationRetentionInput,
+  root: string = picoCliObservationRoot(),
+): PicoCliRetainedObservation {
+  const retainedAt = new Date((input.now ?? Date.now)()).toISOString();
+  const runId = input.runId ?? `${retainedAt.replace(/[-:.]/g, "")}-${randomUUID()}`;
+  const directory = path.join(root, input.operation, runId);
+  try {
+    fs.mkdirSync(path.dirname(directory), { recursive: true });
+    fs.mkdirSync(directory);
+    const stdoutBytes = Buffer.from(input.result.stdout, "utf8");
+    const stderrBytes = Buffer.from(input.result.stderr, "utf8");
+    const stdoutPath = path.join(directory, "stdout.txt");
+    const stderrPath = path.join(directory, "stderr.txt");
+    const recordPath = path.join(directory, OBSERVATION_RECORD_FILE);
+    writeImmutableBytes(stdoutPath, stdoutBytes);
+    writeImmutableBytes(stderrPath, stderrBytes);
+    const record = {
+      schemaVersion: 1,
+      operation: input.operation,
+      argv: [...input.argv],
+      retainedAt,
+      exitCode: input.result.code,
+      signal: input.result.signal,
+      timedOut: input.result.timedOut,
+      outputTruncated: input.result.outputTruncated,
+      ...(input.result.spawnError ? { spawnError: input.result.spawnError } : {}),
+      stdout: { path: stdoutPath, bytes: stdoutBytes.length, sha256: createHash("sha256").update(stdoutBytes).digest("hex") },
+      stderr: { path: stderrPath, bytes: stderrBytes.length, sha256: createHash("sha256").update(stderrBytes).digest("hex") },
+      ...(input.metadata ? { metadata: input.metadata } : {}),
+    };
+    writeImmutableBytes(recordPath, Buffer.from(`${JSON.stringify(record, null, 2)}\n`, "utf8"));
+    return {
+      retained: true,
+      directory,
+      stdoutPath,
+      stderrPath,
+      recordPath,
+      stdoutSha256: record.stdout.sha256,
+      stderrSha256: record.stderr.sha256,
+      stdoutBytes: record.stdout.bytes,
+      stderrBytes: record.stderr.bytes,
+      outputTruncated: input.result.outputTruncated,
+    };
+  } catch (error) {
+    return { retained: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
