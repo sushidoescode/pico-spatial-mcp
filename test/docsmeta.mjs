@@ -19,6 +19,15 @@ const ok = (m) => console.log(`  ok   ${m}`);
 const fail = (m) => { console.log(`  FAIL ${m}`); failures++; };
 const warn = (m) => console.log(`  WARN ${m}`);
 const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), "utf8");
+/**
+ * A link failure names the link. A document-level failure carries no target, because the document
+ * itself is the problem — it resolves outside the checkout, or it could not be read at all.
+ */
+const describeDocFailure = (f) => {
+  if (f.target) return `${f.file}: ${f.reason} relative link -> ${f.target}`;
+  if (f.reason === "escapes-checkout") return `${f.file}: the document resolves outside the checkout and was not read`;
+  return `${f.file}: the document could not be read (${f.reason})`;
+};
 
 // ── modes ───────────────────────────────────────────────────────────────────────────────────────
 // Default: the public documentation set is whatever Git tracks, so this gate grades the same files
@@ -115,9 +124,7 @@ if (packagedInventoryPath) {
 
 if (publicDocs) {
   const report = relativeLinkReport({ root: repoRoot, files: publicDocs });
-  for (const f of report.failures) {
-    fail(`${f.file}: ${f.reason} relative link -> ${f.target || "(the document itself could not be read)"}`);
-  }
+  for (const f of report.failures) fail(describeDocFailure(f));
   if (report.failures.length === 0) {
     const source = packagedInventoryPath ? "files named by the packaged inventory" : "git-tracked files";
     ok(`all ${report.links} relative markdown links resolve (${publicDocs.length} ${source}: root *.md + docs/**)`);
@@ -145,9 +152,7 @@ if (localMode) {
   else {
     warn(`${local.length} local file(s) outside the public set: ${local.join(", ")}`);
     const localReport = relativeLinkReport({ root: repoRoot, files: local });
-    for (const f of localReport.failures) {
-      warn(`${f.file}: ${f.reason} relative link -> ${f.target || "(the document itself could not be read)"}`);
-    }
+    for (const f of localReport.failures) warn(describeDocFailure(f));
     if (localReport.failures.length === 0) warn(`all ${localReport.links} local relative link(s) resolve`);
   }
 }

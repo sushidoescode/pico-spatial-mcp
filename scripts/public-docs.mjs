@@ -22,7 +22,7 @@ import path from "node:path";
 /** The closed vocabulary of link-failure reasons. A caller may match on these. */
 export const LINK_FAILURE_REASONS = Object.freeze([
   "missing", // resolves inside the checkout, but nothing is there
-  "escapes-checkout", // resolves outside the checkout, directly or through a symlink
+  "escapes-checkout", // the document, or a target in it, resolves outside the checkout (symlinks too)
   "undecodable", // a malformed percent escape — the target cannot be turned into a path at all
   "unreadable", // the selected document itself could not be read (staged then deleted, bad mode)
 ]);
@@ -150,9 +150,19 @@ export function relativeLinkReport(options = {}) {
   let links = 0;
 
   for (const file of files) {
+    // The document itself must be inside the checkout before it is opened, on the same terms as the
+    // targets found inside it. `publicMarkdownFiles` can only check the path lexically, and a
+    // lexically innocent `docs/evil.md` may be a symlink to anywhere; `git ls-files` tracks symlinks
+    // as ordinary entries, and a hand-written --packaged inventory is not trusted at all. Checking
+    // here, before the read, is what stops an outside file being opened and graded as ours.
+    const absolute = path.join(root, file);
+    if (!withinRoot(rootReal, absolute)) {
+      failures.push({ file, target: "", reason: "escapes-checkout" });
+      continue;
+    }
     let source;
     try {
-      source = fs.readFileSync(path.join(root, file), "utf8");
+      source = fs.readFileSync(absolute, "utf8");
     } catch {
       failures.push({ file, target: "", reason: "unreadable" });
       continue;
@@ -172,7 +182,7 @@ export function relativeLinkReport(options = {}) {
         failures.push({ file, target, reason: "undecodable" });
         continue;
       }
-      const resolved = path.resolve(path.dirname(path.join(root, file)), decoded);
+      const resolved = path.resolve(path.dirname(absolute), decoded);
       if (!withinRoot(rootReal, resolved)) {
         failures.push({ file, target, reason: "escapes-checkout" });
         continue;

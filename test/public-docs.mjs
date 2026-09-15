@@ -181,6 +181,30 @@ test("a symlink that leaves the checkout fails even though the target exists", (
     [{ file: "docs/a.md", target: "escape.md", reason: "escapes-checkout" }]);
 });
 
+test("a selected document that is itself a symlink out of the checkout is refused, unread", (t) => {
+  const { root, outside } = makeFixture(t);
+  // Content that would raise a second, *different* failure if it were ever scanned, so a passing
+  // assertion cannot be explained by the document merely being empty.
+  fs.writeFileSync(path.join(outside, "secret.md"), "[nowhere](./definitely-not-here.md)\n");
+  fs.symlinkSync(path.join(outside, "secret.md"), path.join(root, "docs", "evil.md"));
+  assert.ok(fs.existsSync(path.join(root, "docs", "evil.md")), "the symlink must resolve, or this proves nothing");
+  const report = relativeLinkReport({ root, files: ["docs/evil.md"] });
+  assert.deepEqual(report.failures, [{ file: "docs/evil.md", target: "", reason: "escapes-checkout" }]);
+  assert.equal(report.links, 0, "the document is refused before it is read, so none of its links are counted");
+});
+
+test("a packaged inventory cannot smuggle in a document that resolves outside the checkout", (t) => {
+  const { root, outside, write } = makeFixture(t);
+  fs.writeFileSync(path.join(outside, "secret.md"), "[nowhere](./definitely-not-here.md)\n");
+  fs.symlinkSync(path.join(outside, "secret.md"), path.join(root, "docs", "evil.md"));
+  write("docs/ok.md", "# ok\n");
+  const files = publicMarkdownFiles({ root, trackedPaths: parsePackagedInventory('{"files":["docs/evil.md","docs/ok.md"]}') });
+  assert.deepEqual(files, ["docs/evil.md", "docs/ok.md"], "selection is lexical and cannot see through a symlink");
+  const report = relativeLinkReport({ root, files });
+  assert.deepEqual(report.failures, [{ file: "docs/evil.md", target: "", reason: "escapes-checkout" }]);
+  assert.equal(report.links, 0);
+});
+
 test("a relative path that climbs out of the checkout fails even though the target exists", (t) => {
   const { root, outside, write } = makeFixture(t);
   fs.writeFileSync(path.join(outside, "secret.md"), "# outside the checkout\n");
